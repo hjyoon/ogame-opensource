@@ -83,7 +83,9 @@ function AddDBRow ( array $row, string $tabname ) : int
             $columns .= ", ";
         }
         $values .= "'".mysqli_real_escape_string($db_connect, (string)$value)."'";
-        $columns .= $col;
+        $c = (string)$col;
+        $c = str_replace("`", "``", $c);
+        $columns .= "`".$c."`";
         $first = false;
     }
     $values .= ");";

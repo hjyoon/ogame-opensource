@@ -21,7 +21,8 @@ COPY ./game /var/www/html/game
 # PHP extensions
 COPY php.ini /usr/local/etc/php/conf.d/custom.ini
 RUN a2enmod rewrite
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    msmtp msmtp-mta \
     libfreetype6-dev \
     libjpeg62-turbo-dev \
     libpng-dev \

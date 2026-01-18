@@ -109,11 +109,12 @@ function GetLastRegistrationByIP ( string $ip ) : int
 
     $query = "SELECT * FROM ".$db_prefix."iplogs WHERE ip = '".$ip."' AND reg = 1 ORDER BY date DESC LIMIT 1";
     $result = dbquery ( $query );
-    if ( $result == null ) return 0;
-    else {
-        $row = dbarray ( $result );
-        return $row['date'];
-    }
+    if ( !$result ) return 0;
+
+    $row = dbarray($result);
+    if (!$row) return 0;
+
+    return intval($row['date'] ?? 0);
 }
 
 // User action logs.

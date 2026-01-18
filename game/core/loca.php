@@ -68,9 +68,10 @@ function loca (string $key) : string
 
 // Similar to regular loca(), but the language is selected from a method parameter rather than a global variable.
 // It is used when it is necessary to work simultaneously with several languages (e.g. battle reports for players with different languages).
-function loca_lang (string $key, string $lang) : string
+function loca_lang (string $key, ?string $lang) : string
 {
     global $LOCA;
+    if ($lang === null || $lang === '') $lang = 'en';
     if ( !isset ( $LOCA[$lang][$key] ) ) return $key;
     else return loca_subst_ogame ($LOCA[$lang][$key]);
 }
@@ -80,19 +81,13 @@ function loca_add ( string $section, string $lang='en', string $dir='' ) : void
 {
     global $LOCA, $Languages;
 
-    // Check if the language is on the list (to exclude injections)
-    $found = false;
-    foreach ($Languages as $i=>$name ) {
-        if ( $i === $lang) { $found = true; break; }
-    }
-    if ( !$found ) return;
+    if (!isset($Languages[$lang])) return;
 
-    $path = str_replace('\\', '/', $dir);
-    if ($dir !== "" && !str_ends_with($path, '/')) {
-        $path .= '/';
-    }
+    $base = ($dir !== '')
+        ? rtrim(str_replace('\\','/',$dir), '/')
+        : dirname(__DIR__); // /var/www/html/game (core/loca.php 기준)
 
-    include_once $path."loca/".$lang."_".$lang."/".$section.".php";
+    include_once $base . "/loca/{$lang}_{$lang}/{$section}.php";
 }
 
 ?>

@@ -72,7 +72,9 @@ if ( key_exists("install", $_POST) && CheckParameters() )
         {
             if ( !$first ) $opt .= ", ";
             if ( $first ) $first = false;
-            $opt .= $row . " " . $type;
+            $col = (string)$row;
+            $col = str_replace("`", "``", $col);
+            $opt .= "`" . $col . "` " . $type;
         }
         $opt .= ")";
 

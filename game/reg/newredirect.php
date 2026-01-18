@@ -24,8 +24,7 @@ $uni = LoadUniverse ();
 
 if ( $_SERVER['REQUEST_METHOD'] === "POST" )
 {
-    if ( $_POST['agb'] !== 'on' ) $AGB = 0;
-    else $AGB = 1;
+    $AGB = (isset($_POST['agb']) && $_POST['agb'] === 'on') ? 1 : 0;
 
     $ip = $_SERVER['REMOTE_ADDR'];
     $now = time ();
