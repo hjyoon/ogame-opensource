@@ -65,9 +65,16 @@ function RocketAttack ( int $fleet_id, int $planet_id, int $when ) : void
     $origin = LoadPlanetById ($fleet['start_planet']);
     $target = LoadPlanetById ($planet_id);
     $moon_attack = $target['type'] == PTYP_MOON;
+
+    $moon_planet = [];
+
     if ($moon_attack) {
         // If a missile attack is made on the Moon, interceptors from the planet are involved in defense
         $moon_planet = LoadPlanet ($target['g'], $target['s'], $target['p'], 1);
+
+        if (!is_array($moon_planet)) {
+            $moon_planet = [];
+        }
     }
     $origin_user = LoadUser ($origin['owner_id']);
     $target_user = LoadUser ($target['owner_id']);
@@ -83,7 +90,7 @@ function RocketAttack ( int $fleet_id, int $planet_id, int $when ) : void
 
     // Write back the defense's losses.
     SetPlanetDefense ( $planet_id, $target );
-    if ($moon_attack) {
+    if ($moon_attack && isset($moon_planet['planet_id'])) {
         SetPlanetDefense ( $moon_planet['planet_id'], $moon_planet );
     }
 
