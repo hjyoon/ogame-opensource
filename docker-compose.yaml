@@ -1,0 +1,49 @@
+services:
+  server:
+    build:
+      context: .
+    ports:
+      - "8888:80"
+    volumes:
+      - web_configs:/var/www/html/persistent_configs
+    depends_on:
+      - mysql
+      - mailhog # Add dependency on mailhog
+
+  mysql:
+    image: mysql:5.7
+    env_file:
+      - .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123}
+      MYSQL_DATABASE: master
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      # This is the web UI where you will view the emails
+      - "8026:8025"
+      # This is the SMTP port PHP will connect to
+      # - "1025:1025"
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_ARBITRARY: 1
+      UPLOAD_LIMIT: 100M
+    ports:
+      - "8080:80"
+    depends_on:
+      - mysql
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  web_configs:
