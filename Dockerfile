@@ -17,10 +17,24 @@ COPY ./download /var/www/html/download
 # Universe (game) files
 COPY ./game /var/www/html/game
 
+# ---- Apache modules (rewrite + remoteip) ----
+RUN a2enmod rewrite remoteip
+
+# RemoteIP configuration (trust only your proxy networks)
+# Create this file in your repo root: apache-remoteip.conf
+COPY apache-remoteip.conf /etc/apache2/conf-available/remoteip.conf
+RUN a2enconf remoteip
+
+# (Optional but handy) log the rewritten client IP rather than the proxy IP
+# `%a` is the client IP after RemoteIP processing; `%h` is the immediate peer.
+# This replaces `%h` -> `%a` in the default log format.
+RUN sed -i 's/%h/%a/g' /etc/apache2/apache2.conf
+
 # PHP extensions
 COPY php.ini /usr/local/etc/php/conf.d/custom.ini
 RUN a2enmod rewrite
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    msmtp-mta \
     libfreetype6-dev \
     libjpeg62-turbo-dev \
     libpng-dev \
