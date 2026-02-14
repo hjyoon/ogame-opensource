@@ -3,7 +3,7 @@ services:
     build:
       context: .
     ports:
-      - "80:80"
+      - "8888:80"
     volumes:
       - web_configs:/var/www/html/persistent_configs
     depends_on:
@@ -26,9 +26,9 @@ services:
     image: mailhog/mailhog
     ports:
       # This is the web UI where you will view the emails
-      - "8025:8025"
+      - "8026:8025"
       # This is the SMTP port PHP will connect to
-      - "1025:1025"
+      # - "1025:1025"
 
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
