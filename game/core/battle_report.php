@@ -179,7 +179,7 @@ function BattleReport ( array $res, int $now, array|null $loss, array|null $capt
             {
                 $text .= "<br>";
                 $need_comma = false;
-                foreach ($repairmap as $i=>$gid)
+                foreach ($repairmap as $gid)
                 {
                     if ($repaired[$i][$gid])
                     {

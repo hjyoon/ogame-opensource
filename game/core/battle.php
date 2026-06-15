@@ -64,7 +64,7 @@ function RepairDefense ( array $d, array $res, int $defrepair, int $defrepair_de
                 {
                     if ( $amount < 10 )
                     {
-                        for ($i=0; $i<$amount; $i++)
+                        for ($roll=0; $roll<$amount; $roll++)
                         {
                             if ( mt_rand (0, 99) < $defrepair ) $repaired[$i][$gid]++;
                         }
