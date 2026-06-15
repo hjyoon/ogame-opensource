@@ -11,34 +11,44 @@ Go to the local Git repository of the project and run the command `docker compos
 <img width="711" height="210" alt="image" src="/wiki/imgstore/531411110-3a85a86e-013b-4fe6-acd3-5d275626e07f.png" />
 
 :warning: You can first copy the `.env.example` file to `.env` and change the MySQL root password there. If you don't do this, the root password will be `123`.
-The Docker setup automatically installs the master database by default with these environment variables:
+The Docker setup automatically installs the master database and Universe 1 by default with these environment variables:
 
 ```
 OGAME_AUTO_INSTALL=1
 OGAME_MDB_HOST=mysql
 OGAME_MDB_USER=root
 OGAME_MDB_NAME=master
+OGAME_UNI_AUTO_INSTALL=1
+OGAME_UNI_URL=localhost:8888
+OGAME_UNI_DB_NAME=uni
+OGAME_UNI_DB_SECRET=change-me
+OGAME_ADMIN_EMAIL=admin@example.local
+OGAME_ADMIN_PASSWORD=admin
 ```
 
 If `OGAME_MDB_PASS` is not set, it follows `MYSQL_ROOT_PASSWORD`.
-Set `OGAME_AUTO_INSTALL=0` if you want to use the web installer manually.
+If `OGAME_UNI_DB_PASS` is not set, it also follows `MYSQL_ROOT_PASSWORD`.
+Set `OGAME_AUTO_INSTALL=0` if you want to use the web installers manually.
+Set `OGAME_UNI_AUTO_INSTALL=0` if you only want to skip the lobby installer and keep the `/game` installer manual.
+The default administrator login is `legor` / `admin`; change `OGAME_ADMIN_PASSWORD` for anything outside local testing.
 
 Well, that's basically it. Docker will deploy all the necessary containers and launch a local web server:
 
 <img width="1553" height="801" alt="image" src="/wiki/imgstore/531412314-b0b8752b-7b08-4176-a633-455eba6d0b65.png" />
 
-## Setting up the Lobby and installing the Master database
+## Setting up the Lobby and installing Universe 1
 
-With `OGAME_AUTO_INSTALL=1`, the master database is initialized when the `server` container starts and the lobby opens directly at `localhost:8888`.
+With `OGAME_AUTO_INSTALL=1` and `OGAME_UNI_AUTO_INSTALL=1`, the master database and Universe 1 are initialized when the `server` container starts.
+The lobby opens directly at `localhost:8888`, and the universe is registered in the dropdown.
 If you set `OGAME_AUTO_INSTALL=0`, open `localhost:8888` and enter credentials to connect to MySQL root:
 
 <img width="931" height="525" alt="image" src="/wiki/imgstore/531413062-eea522b1-7e2c-4c96-b14e-f18ef7c31904.png" />
 
 Click the "Install" button and make sure the green text appears. You're all set.
 
-## Installation of the Universe
+## Manual installation of the Universe
 
-Open local phpMyAdmin at `localhost:8080` and log in as root:
+If you set `OGAME_UNI_AUTO_INSTALL=0`, open local phpMyAdmin at `localhost:8080` and log in as root:
 
 <img width="406" height="517" alt="image" src="/wiki/imgstore/531413384-edb51356-290c-410d-97e3-3ea8011f8b20.png" />
 
@@ -54,7 +64,8 @@ After clicking the "Install" button, make sure a green sign appears. The univers
 
 ## Log in as Legor
 
-Enter Legor's login and password on the main page and you'll be taken to the game:
+Enter Legor's login and password on the main page and you'll be taken to the game.
+With the default Docker environment, use `legor` / `admin`:
 
 <img width="1720" height="700" alt="image" src="/wiki/imgstore/531416154-21a6b1a9-38bc-4c46-8811-1fc6b34b0685.png" />
 
