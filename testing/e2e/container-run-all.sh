@@ -1,0 +1,55 @@
+#!/bin/sh
+set -eu
+
+ROOT="${OGAME_E2E_ROOT:-/tmp/ogame-e2e}"
+OUT_DIR="${OGAME_E2E_OUT_DIR:-/tmp/ogame-e2e-results}"
+mkdir -p "$OUT_DIR"
+
+failures=0
+
+run_json_case() {
+  name="$1"
+  file="$2"
+  output="$OUT_DIR/${name}.json"
+
+  printf '==> %s\n' "$name"
+  if php "$file" > "$output"; then
+    if php "$ROOT/assert-json-pass.php" "$output"; then
+      printf 'PASS %s\n' "$name"
+    else
+      printf 'FAIL %s\n' "$name"
+      failures=$((failures + 1))
+    fi
+  else
+    printf 'ERROR %s\n' "$name"
+    failures=$((failures + 1))
+  fi
+}
+
+cleanup() {
+  php "$ROOT/teardown-fixtures.php" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT INT TERM
+
+run_json_case http_flow "$ROOT/http_flow_e2e.php"
+
+eval "$(php "$ROOT/setup-fixtures.php")"
+export OGAME_E2E_ATTACKER_ID OGAME_E2E_ATTACKER_PLANET
+export OGAME_E2E_DEFENDER_ID OGAME_E2E_DEFENDER_PLANET
+export OGAME_E2E_ATTACKER_NAME OGAME_E2E_ATTACKER_PASSWORD
+export OGAME_E2E_DEFENDER_NAME OGAME_E2E_DEFENDER_PASSWORD
+
+run_json_case report_simulation "$ROOT/cases/report_simulation.php"
+run_json_case economy "$ROOT/cases/economy_case_tests.php"
+run_json_case missile "$ROOT/cases/missile_case_tests.php"
+run_json_case colony_moon "$ROOT/cases/colony_moon_case_tests.php"
+run_json_case moon_edges "$ROOT/cases/moon_edge_tests.php"
+run_json_case fleet_slots "$ROOT/cases/fleet_slot_sweep.php"
+run_json_case expedition "$ROOT/cases/expedition_case_tests.php"
+
+if [ "$failures" -ne 0 ]; then
+  printf 'E2E failed: %s case(s). JSON results: %s\n' "$failures" "$OUT_DIR"
+  exit 1
+fi
+
+printf 'E2E passed. JSON results: %s\n' "$OUT_DIR"
