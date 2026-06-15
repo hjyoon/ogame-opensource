@@ -258,7 +258,7 @@ $prem = PremiumStatus ($GlobalUser);
 
             // Save skin path + checkbox show/disable skin.
             // TODO : OPTIONS_MSG_SKIN
-            $design_path = SecureText($_POST['dpath']);
+            $design_path = NormalizeSkinPath(SecureText($_POST['dpath']));
             ChangeSkinPath ( $GlobalUser['player_id'], $design_path );
             $enable_design = key_exists('design', $_POST) ? ($_POST['design']==="on"?true:false) : false;
             EnableSkin ( $GlobalUser['player_id'], $enable_design );
@@ -428,51 +428,51 @@ $prem = PremiumStatus ($GlobalUser);
    </th>
  </tr>
 
-  <th><?php echo loca("OPTIONS_GENERAL_SKINPATH");?><br /> <a href="<?=hostname();?>download/" target="_blank"><?php echo loca("OPTIONS_GENERAL_DOWNLOAD");?></a></th>
-   <th><input type=text name="dpath" maxlength="80" size="40" value="<?php echo $GlobalUser['skin'];?>" /> <br />
+  <th><?php echo loca("OPTIONS_GENERAL_SKINPATH");?><br /> <a href="/download/" target="_blank"><?php echo loca("OPTIONS_GENERAL_DOWNLOAD");?></a></th>
+   <th><input type=text name="dpath" maxlength="80" size="40" value="<?php echo NormalizeSkinPath($GlobalUser['skin']);?>" /> <br />
   <?php
             // If the skin path is empty, output a list of available skins on the graphics server.
             if ( $GlobalUser['skin'] === "" ) {
     ?>
   <select name="dpath" size="1" >
    <option selected>  </option>
-      <option value="<?=hostname();?>download/use/allesnurgeklaut/">allesnurgeklaut </option>
-      <option value="<?=hostname();?>download/use/ally-cpb/">allycpb </option>
-      <option value="<?=hostname();?>download/use/asgard/">asgard </option>
-      <option value="<?=hostname();?>download/use/aurora/">aurora </option>
-      <option value="<?=hostname();?>download/use/bluedream/">bluedream </option>
-      <option value="<?=hostname();?>download/use/bluegalaxy/">bluegalaxy </option>
-      <option value="<?=hostname();?>download/use/blueplanet/">blueplanet </option>
-      <option value="<?=hostname();?>download/use/bluechaos/">bluechaos </option>
-      <option value="<?=hostname();?>download/use/bluemx/">blue-mx </option>
-      <option value="<?=hostname();?>download/use/brace/">brace </option>
-      <option value="<?=hostname();?>download/use/brotstyle/">brotstyle </option>
-      <option value="<?=hostname();?>download/use/dd/">dd </option>
-      <option value="<?=hostname();?>download/use/eclipse/">eclipse </option>
-      <option value="<?=hostname();?>download/use/empire/">empire </option>
-      <option value="<?=hostname();?>download/use/EpicBlue/">epicblue </option>
-      <option value="<?=hostname();?>download/use/evolution/">evolution </option>
-      <option value="<?=hostname();?>download/use/freakyfriday/">freakyfriday </option>
-      <option value="<?=hostname();?>download/use/g3cko/">g3cko </option>
-      <option value="<?=hostname();?>download/use/gruen/">gruen </option>
-      <option value="<?=hostname();?>download/use/infraos/">infraos </option>
-      <option value="<?=hostname();?>download/use/lambda/">lambda </option>
-      <option value="<?=hostname();?>download/use/lego/">lego </option>
-      <option value="<?=hostname();?>download/use/militaryskin/">militaryskin </option>
-      <option value="<?=hostname();?>download/use/okno/">okno </option>
-      <option value="<?=hostname();?>download/use/ovisio/">ovisio </option>
-      <option value="<?=hostname();?>download/use/ovisiofarbig/">ovisiofarbig </option>
-      <option value="<?=hostname();?>download/use/Paint/">paint </option>
-      <option value="<?=hostname();?>download/use/quadratorstyle/">quadratorstyle </option>
-      <option value="<?=hostname();?>download/use/real/">real </option>
-      <option value="<?=hostname();?>download/use/redfuturistisch/">redfuturistisch </option>
-      <option value="<?=hostname();?>download/use/redvision/">redvision </option>
-      <option value="<?=hostname();?>download/use/reloaded/">reloaded </option>
-      <option value="<?=hostname();?>download/use/shadowpato/">shadowpato </option>
-      <option value="<?=hostname();?>download/use/simpel/">simpel </option>
-      <option value="<?=hostname();?>download/use/starwars/">starwars </option>
-      <option value="<?=hostname();?>download/use/w4wooden4ce/">w4wooden4ce </option>
-      <option value="<?=hostname();?>download/use/xonic/">xonic </option>
+      <option value="/download/use/allesnurgeklaut/">allesnurgeklaut </option>
+      <option value="/download/use/ally-cpb/">allycpb </option>
+      <option value="/download/use/asgard/">asgard </option>
+      <option value="/download/use/aurora/">aurora </option>
+      <option value="/download/use/bluedream/">bluedream </option>
+      <option value="/download/use/bluegalaxy/">bluegalaxy </option>
+      <option value="/download/use/blueplanet/">blueplanet </option>
+      <option value="/download/use/bluechaos/">bluechaos </option>
+      <option value="/download/use/bluemx/">blue-mx </option>
+      <option value="/download/use/brace/">brace </option>
+      <option value="/download/use/brotstyle/">brotstyle </option>
+      <option value="/download/use/dd/">dd </option>
+      <option value="/download/use/eclipse/">eclipse </option>
+      <option value="/download/use/empire/">empire </option>
+      <option value="/download/use/EpicBlue/">epicblue </option>
+      <option value="/download/use/evolution/">evolution </option>
+      <option value="/download/use/freakyfriday/">freakyfriday </option>
+      <option value="/download/use/g3cko/">g3cko </option>
+      <option value="/download/use/gruen/">gruen </option>
+      <option value="/download/use/infraos/">infraos </option>
+      <option value="/download/use/lambda/">lambda </option>
+      <option value="/download/use/lego/">lego </option>
+      <option value="/download/use/militaryskin/">militaryskin </option>
+      <option value="/download/use/okno/">okno </option>
+      <option value="/download/use/ovisio/">ovisio </option>
+      <option value="/download/use/ovisiofarbig/">ovisiofarbig </option>
+      <option value="/download/use/Paint/">paint </option>
+      <option value="/download/use/quadratorstyle/">quadratorstyle </option>
+      <option value="/download/use/real/">real </option>
+      <option value="/download/use/redfuturistisch/">redfuturistisch </option>
+      <option value="/download/use/redvision/">redvision </option>
+      <option value="/download/use/reloaded/">reloaded </option>
+      <option value="/download/use/shadowpato/">shadowpato </option>
+      <option value="/download/use/simpel/">simpel </option>
+      <option value="/download/use/starwars/">starwars </option>
+      <option value="/download/use/w4wooden4ce/">w4wooden4ce </option>
+      <option value="/download/use/xonic/">xonic </option>
     <?php
             }
   ?>

@@ -60,11 +60,101 @@ function GetPlanetImage (string $skinpath, array $planet) : string
     else return "img/admin_planets.png";        // Special objects of the galaxy (destroyed planets, etc.)
 }
 
+function SkinDefaultPort (string $scheme) : int
+{
+    return strtolower($scheme) === 'https' ? 443 : 80;
+}
+
+function SkinHost (string $host) : string
+{
+    return strtolower(trim($host, '[]'));
+}
+
+function SkinRequestHost () : string
+{
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+
+    if (str_starts_with($host, '[')) {
+        $pos = strpos($host, ']');
+        return $pos === false ? SkinHost($host) : SkinHost(substr($host, 1, $pos - 1));
+    }
+
+    $parts = explode(':', $host);
+    return SkinHost($parts[0] ?? '');
+}
+
+function SkinRequestPort () : int
+{
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+
+    if (str_starts_with($host, '[')) {
+        $pos = strpos($host, ']');
+        if ($pos !== false && substr($host, $pos + 1, 1) === ':') {
+            return (int) substr($host, $pos + 2);
+        }
+    } else {
+        $parts = explode(':', $host);
+        if (count($parts) === 2) {
+            return (int) $parts[1];
+        }
+    }
+
+    if (!empty($_SERVER['SERVER_PORT'])) {
+        return (int) $_SERVER['SERVER_PORT'];
+    }
+
+    return !empty($_SERVER['HTTPS']) ? 443 : 80;
+}
+
+function SkinIsLoopbackHost (string $host) : bool
+{
+    $host = SkinHost($host);
+
+    return $host === 'localhost' || $host === '::1' || preg_match('/^127(?:\.\d{1,3}){3}$/', $host) === 1;
+}
+
+function SkinIsCurrentOrigin (array $parts) : bool
+{
+    if (empty($parts['host'])) {
+        return false;
+    }
+
+    $scheme = strtolower($parts['scheme'] ?? 'http');
+    $port = (int) ($parts['port'] ?? SkinDefaultPort($scheme));
+
+    return SkinHost($parts['host']) === SkinRequestHost() && $port === SkinRequestPort();
+}
+
+function NormalizeSkinPath (string $skin) : string
+{
+    $skin = trim($skin);
+    if ($skin === '') {
+        return '/evolution/';
+    }
+
+    $parts = parse_url($skin);
+    if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
+        return $skin;
+    }
+
+    $scheme = strtolower($parts['scheme']);
+    if ($scheme !== 'http' && $scheme !== 'https') {
+        return $skin;
+    }
+
+    if (!SkinIsLoopbackHost($parts['host']) && !SkinIsCurrentOrigin($parts)) {
+        return $skin;
+    }
+
+    $path = $parts['path'] ?? '/';
+    return rtrim($path, '/') . '/';
+}
+
 function UserSkin () : string
 {
     global $GlobalUser;
-    if ( key_exists('useskin', $GlobalUser) && $GlobalUser['useskin']) return $GlobalUser['skin'];
-    else return hostname () . "evolution/";
+    if ( key_exists('useskin', $GlobalUser) && $GlobalUser['useskin']) return NormalizeSkinPath($GlobalUser['skin']);
+    else return '/evolution/';
 }
 
 function PageHeader (string $page, bool $noheader=false, bool $leftmenu=true, string $redirect_page="", int $redirect_sec=0) : void
