@@ -68,3 +68,11 @@ RUN chown -R www-data:www-data /var/www/html
 # C battle engine
 RUN g++ /var/www/html/game/battle/*.cpp -lm -o /usr/lib/cgi-bin/battle
 RUN chmod 755 /usr/lib/cgi-bin/battle
+
+# Docker startup helpers
+COPY docker/auto-install.php /usr/local/bin/ogame-auto-install.php
+COPY docker/entrypoint.sh /usr/local/bin/ogame-entrypoint
+RUN chmod 755 /usr/local/bin/ogame-entrypoint
+
+ENTRYPOINT ["ogame-entrypoint"]
+CMD ["apache2-foreground"]

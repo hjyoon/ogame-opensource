@@ -2,6 +2,12 @@ services:
   server:
     build:
       context: .
+    environment:
+      OGAME_AUTO_INSTALL: ${OGAME_AUTO_INSTALL:-1}
+      OGAME_MDB_HOST: ${OGAME_MDB_HOST:-mysql}
+      OGAME_MDB_USER: ${OGAME_MDB_USER:-root}
+      OGAME_MDB_PASS: ${OGAME_MDB_PASS:-${MYSQL_ROOT_PASSWORD:-123}}
+      OGAME_MDB_NAME: ${OGAME_MDB_NAME:-master}
     ports:
       - "8888:80"
     volumes:
@@ -12,11 +18,9 @@ services:
 
   mysql:
     image: mysql:8.0
-    env_file:
-      - .env
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123}
-      MYSQL_DATABASE: master
+      MYSQL_DATABASE: ${OGAME_MDB_NAME:-master}
     ports:
       - "3306:3306"
     volumes:

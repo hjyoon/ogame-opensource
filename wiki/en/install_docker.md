@@ -11,6 +11,17 @@ Go to the local Git repository of the project and run the command `docker compos
 <img width="711" height="210" alt="image" src="/wiki/imgstore/531411110-3a85a86e-013b-4fe6-acd3-5d275626e07f.png" />
 
 :warning: You can first copy the `.env.example` file to `.env` and change the MySQL root password there. If you don't do this, the root password will be `123`.
+The Docker setup automatically installs the master database by default with these environment variables:
+
+```
+OGAME_AUTO_INSTALL=1
+OGAME_MDB_HOST=mysql
+OGAME_MDB_USER=root
+OGAME_MDB_NAME=master
+```
+
+If `OGAME_MDB_PASS` is not set, it follows `MYSQL_ROOT_PASSWORD`.
+Set `OGAME_AUTO_INSTALL=0` if you want to use the web installer manually.
 
 Well, that's basically it. Docker will deploy all the necessary containers and launch a local web server:
 
@@ -18,7 +29,8 @@ Well, that's basically it. Docker will deploy all the necessary containers and l
 
 ## Setting up the Lobby and installing the Master database
 
-Open `localhost` and enter credentials to connect to MySQL root:
+With `OGAME_AUTO_INSTALL=1`, the master database is initialized when the `server` container starts and the lobby opens directly at `localhost:8888`.
+If you set `OGAME_AUTO_INSTALL=0`, open `localhost:8888` and enter credentials to connect to MySQL root:
 
 <img width="931" height="525" alt="image" src="/wiki/imgstore/531413062-eea522b1-7e2c-4c96-b14e-f18ef7c31904.png" />
 
@@ -34,7 +46,7 @@ Create a `uni` database to store universe data:
 
 <img width="834" height="302" alt="image" src="/wiki/imgstore/531413655-2de38ce3-8487-4bd4-8ac2-2ff5002343da.png" />
 
-Go to the game at `localhost/game` and configure everything as shown in the picture:
+Go to the game at `localhost:8888/game` and configure everything as shown in the picture:
 
 <img width="987" height="885" alt="image" src="/wiki/imgstore/531414041-a9b2ecc3-c238-4a2d-b018-fad229d88dc1.png" />
 
