@@ -28,6 +28,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Render and asset smoke coverage for public/login pages and core authenticated pages, including referenced CSS/JS/image resources.
 - Account action flows for notes, private messages, planet rename, options, resource settings, and building enqueue.
 - Account security flows for private-session cookie enforcement, public/private session rotation, existing-session admin downgrade, logout invalidation, password change and re-login, email validation, and account deletion schedule/cancel.
+- Localization and force-language edge flows for missing translation fallback, user language option persistence, forced universe language override, and invalid user-language fallback.
 - Password recovery flows for the forgot-password form, missing/unknown email rejection, permanent/temporary email lookup, MailHog delivery, old password invalidation, and recovered-password login.
 - Registration validation flows for `new.php`/`newredirect.php` input rejection, duplicate username/email handling, missing-field hardening, welcome-mail delivery, and activation-link verification.
 - Message and report lifecycle flows for inbox read state, selected/displayed deletion, PM operator reports, report popup access control, deleted report links, and expiry cleanup.
@@ -42,6 +43,8 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Alliance management flows for rank creation/rights/assignment/deletion, direct-URL permission denial, rank-scoped circular messages, and alliance text/settings updates.
 - Admin and account-state flows for admin-area access control, operator write restrictions, admin user updates, ban/unban login blocking, and vacation-mode action blocking.
 - Admin permission matrix edge flows for regular-user denial across admin modes and operator-vs-admin mutation boundaries for queue controls, universe settings, coupon creation, and planet actions.
+- Admin audit/log flows for UserLogs, Debug, Errors, Browse, Logins, Fleetlogs rendering, seeded audit marker visibility, regular-user denial, and operator delete-boundary checks.
+- Admin tool smoke flows for Bots, BotEdit, Mods, Checksum, and DB pages, including regular-user denial and checksum baseline rendering.
 - Coupon and Dark Matter payment flows for admin coupon creation/listing/deletion, invalid/used coupon rejection, paid-DM redemption, duplicate redemption prevention, and periodic coupon queue creation/removal.
 - Queue and fleet validation flows for building/research/shipyard queue create/cancel/complete, admin queue freeze/unfreeze/remove, active-queue vacation blocking, transport launch, and rejected fleet sends.
 - Queue/event idempotency flows for repeated `UpdateQueue()` runs across building, research, shipyard, transport fleet arrival/return completion, recalc-points, and a multi-day long scheduler drain.

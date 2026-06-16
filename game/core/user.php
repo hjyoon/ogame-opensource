@@ -590,6 +590,7 @@ function AuthUser ( string $session ) : bool
     $loca_lang = $GlobalUser['lang'];
     if ( !key_exists ( $loca_lang, $Languages ) ) $loca_lang = $GlobalUni['lang'];
     if ( !key_exists ( $loca_lang, $Languages ) ) $loca_lang = $DefaultLanguage;
+    $GlobalUser['lang'] = $loca_lang;
 
     return true;
 }
