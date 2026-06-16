@@ -41,6 +41,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - ACS and hold flows for unauthorized hold rejection, buddy hold orbit/return, ACS union creation, invited participant join, battle resolution, and return.
 - Alliance Depot ACS fuel supply flows for hold-fleet rendering, successful hold extension with deuterium spending, and no-op handling without a depot or enough fuel.
 - Trader, premium officer, and moon-tool flows for merchant calls/exchanges, officer purchase, lunar base construction, jump gates, and phalanx scans.
+- Jump Gate edge flows for target filtering, invalid source/target moons, missing gates, foreign moons, empty/oversized ship selections, cooldown direct-POST rejection, same-moon rejection, and solar-satellite exclusion.
 - Battle reports and espionage reports.
 - Plunder, debris creation, debris recycling, resource return, and defense writeback.
 - Interplanetary missile and anti-ballistic missile cases.

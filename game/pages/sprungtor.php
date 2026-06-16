@@ -24,8 +24,8 @@ foreach ( $fleetmap_revnosat as $i=>$gid)
 $source = LoadPlanetById ( $source_id );
 $target = LoadPlanetById ( $target_id );
 
-if ( $source['type'] != PTYP_MOON ) $PageError .= "<center>\n".loca("GATE_ERR_START")."<br></center>\n";
-if ( $target['type'] != PTYP_MOON ) $PageError .= "<center>\n".loca("GATE_ERR_TARGET")."<br></center>\n";
+if ( $source === null || $source['type'] != PTYP_MOON ) $PageError .= "<center>\n".loca("GATE_ERR_START")."<br></center>\n";
+if ( $target === null || $target['type'] != PTYP_MOON ) $PageError .= "<center>\n".loca("GATE_ERR_TARGET")."<br></center>\n";
 
 if ( $PageError === "" )
 {
@@ -37,6 +37,21 @@ if ( $PageError === "" )
 {
     if ( ($source['owner_id'] != $GlobalUser['player_id']) ||
          ($target['owner_id'] != $GlobalUser['player_id'])  ) $PageError .= "<center>\n".loca("GATE_ERR_MOON")."<br></center>\n";
+}
+
+if ( $PageError === "" )
+{
+    if ( $source_id == $target_id ) $PageError .= "<center>\n".loca("GATE_ERR_TARGET")."<br></center>\n";
+}
+
+if ( $PageError === "" )
+{
+    $gate_now = time ();
+    if ( $gate_now < $source['gate_until'] || $gate_now < $target['gate_until'] )
+    {
+        $cooldown_left = max ( $source['gate_until'], $target['gate_until'] ) - $gate_now;
+        $PageError .= "<center>\n".va(loca("GATE_NOT_READY"), date ('i\m\i\n s\s\e\c', $cooldown_left))."<br></center>\n";
+    }
 }
 
 if ( $PageError === "" )
@@ -68,11 +83,11 @@ if ( $PageError === "" )
     AdjustShips ( $fleet, $source_id, '-' );
     AdjustShips ( $fleet, $target_id, '+' );
 
+    $now = time ();
     $cooldown_time = (60*60) / $GlobalUni['fspeed'] - 1;
     $cooldown = $now + $cooldown_time;
 
     // Warm up the gate
-    $now = time ();
     $query = "UPDATE ".$db_prefix."planets SET gate_until=".$cooldown." WHERE planet_id=$source_id";
     dbquery ($query);
     $query = "UPDATE ".$db_prefix."planets SET gate_until=".$cooldown." WHERE planet_id=$target_id";
