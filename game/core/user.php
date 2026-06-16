@@ -72,6 +72,18 @@ Q - task in the task queue is used to process this event.
 // Attention! Using caches in the game introduces a significant probability of obscure errors ("Heisenbugs"), so it is NOT recommended to use persistent cache (which is kept between HTTP requests)
 $UserCache = array ();
 
+function GenerateActivationCode () : string
+{
+    global $db_secret;
+
+    try {
+        return bin2hex(random_bytes(16));
+    }
+    catch (Throwable $e) {
+        return md5(uniqid('', true) . $db_secret);
+    }
+}
+
 // Corrected version of date
 function fixed_date ( string $fmt, int $timestamp ) : string
 {
@@ -177,7 +189,7 @@ function CreateUser ( string $name, string $pass, string $email, bool $bot=false
     $name = mb_strtolower ($name, 'UTF-8');
     $email = mb_strtolower ($email, 'UTF-8');
     $md = md5 ($pass . $db_secret);
-    $ack = md5(time ().$db_secret);
+    $ack = GenerateActivationCode ();
 
     // Increase the user count in the universe.
     $query = "SELECT * FROM ".$db_prefix."uni".";";
@@ -362,7 +374,7 @@ function ChangeActivationCode ( string $name) : string
 {
     global $db_prefix, $db_secret;
     $name = mb_strtolower ($name, 'UTF-8');
-    $ack = md5(time ().$db_secret);
+    $ack = GenerateActivationCode ();
     $query = "UPDATE ".$db_prefix."users SET validatemd = '".$ack."' WHERE name = '".$name."'";
     dbquery ($query);
     return $ack;
@@ -815,7 +827,7 @@ function ReactivateUser (int $player_id) : void
 
     $name = $user['oname'];
     $email = $user['pemail'];
-    $ack = md5(time ().$db_secret);
+    $ack = GenerateActivationCode ();
 
     $query = "UPDATE ".$db_prefix."users SET validatemd = '".$ack."', validated = 0, password = '".$md."' WHERE player_id = $player_id";
     dbquery ($query);

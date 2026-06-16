@@ -222,6 +222,19 @@ function e2e_user_snapshot_by_name(string $name): ?array
     );
 }
 
+function e2e_wait_for_user_activation(string $name): ?array
+{
+    $last = null;
+    for ($i = 0; $i < 10; $i++) {
+        $last = e2e_user_snapshot_by_name($name);
+        if ($last !== null && (int)$last['validated'] === 1 && $last['validatemd'] === '') {
+            return $last;
+        }
+        usleep(100000);
+    }
+    return $last;
+}
+
 function e2e_user_snapshot_by_id(int $userId): ?array
 {
     global $db_prefix;
@@ -229,6 +242,31 @@ function e2e_user_snapshot_by_id(int $userId): ?array
         "SELECT player_id, name, oname, session, private_session, password, pemail, email, validated, validatemd, hplanetid " .
         "FROM {$db_prefix}users WHERE player_id={$userId} LIMIT 1"
     );
+}
+
+function e2e_user_snapshot_by_session(string $session): ?array
+{
+    global $db_prefix;
+    if ($session === '') {
+        return null;
+    }
+    return e2e_one_row(
+        "SELECT player_id, name, oname, session, private_session, password, pemail, email, validated, validatemd, hplanetid " .
+        "FROM {$db_prefix}users WHERE session='" . e2e_sql_escape($session) . "' LIMIT 1"
+    );
+}
+
+function e2e_wait_for_user_activation_by_id(int $userId): ?array
+{
+    $last = null;
+    for ($i = 0; $i < 10; $i++) {
+        $last = e2e_user_snapshot_by_id($userId);
+        if ($last !== null && (int)$last['validated'] === 1 && $last['validatemd'] === '') {
+            return $last;
+        }
+        usleep(100000);
+    }
+    return $last;
 }
 
 function e2e_user_count_by_name(string $name): int
@@ -245,6 +283,12 @@ function e2e_remove_user_by_name(string $name): void
     if ($row !== null) {
         RemoveUser((int)$row['player_id'], time());
     }
+}
+
+function e2e_clear_registration_rate_limit(): void
+{
+    global $db_prefix;
+    dbquery("DELETE FROM {$db_prefix}iplogs WHERE reg=1");
 }
 
 function e2e_login_request(string $base, string $name, string $password, array &$cookies): array
@@ -406,6 +450,7 @@ try {
         )),
     ));
 
+    e2e_clear_registration_rate_limit();
     e2e_mailhog_clear();
     $successCookies = array();
     $successResponse = e2e_http_request('POST', $publicGameBase . '/reg/new.php', array(
@@ -444,8 +489,9 @@ try {
     );
     $activationCookies = array();
     $activationResponse = $activationLink === '' ? array('status' => 0, 'location' => '', 'headers' => array(), 'body' => '') : e2e_http_request('GET', $activationLink, array(), $activationCookies);
-    $afterActivation = e2e_user_snapshot_by_name($successName);
     $activationSession = e2e_extract_session($activationResponse['location'] . $activationResponse['body']);
+    $afterActivation = $registeredUser === null ? e2e_wait_for_user_activation($successName) : e2e_wait_for_user_activation_by_id((int)$registeredUser['player_id']);
+    $activationSessionUser = e2e_user_snapshot_by_session($activationSession);
     if ($activationSession === '' && $afterActivation !== null) {
         $activationSession = $afterActivation['session'] ?? '';
     }
@@ -466,7 +512,7 @@ try {
                 e2e_case(strpos($preActivationLogin['location'], 'page=overview') !== false, 'pre-activation login still reaches the overview page', array('location' => $preActivationLogin['location'])),
                 e2e_case(stripos($preActivationOverview['body'], 'has not been activated yet') !== false, 'pre-activation overview displays the activation warning'),
                 e2e_case(strpos($activationResponse['location'], 'page=overview') !== false, 'activation link redirects into the overview page', array('location' => $activationResponse['location'])),
-                e2e_case($afterActivation !== null && (int)$afterActivation['validated'] === 1 && $afterActivation['validatemd'] === '' && $afterActivation['pemail'] === $successEmail, 'activation marks the account validated and clears the activation code', $afterActivation ?? array()),
+                e2e_case($afterActivation !== null && (int)$afterActivation['validated'] === 1 && $afterActivation['validatemd'] === '' && $afterActivation['pemail'] === $successEmail, 'activation marks the account validated and clears the activation code', array('by_id' => $afterActivation, 'by_session' => $activationSessionUser)),
                 e2e_case(stripos($postActivationOverview['body'], 'has not been activated yet') === false, 'post-activation overview no longer displays the activation warning'),
             )
         ),

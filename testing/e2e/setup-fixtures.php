@@ -64,7 +64,7 @@ function e2e_create_user(string $name): array
     }
     dbquery(
         "UPDATE {$db_prefix}users SET " . implode(',', $parts) .
-        ", validated=1, deact_ip=1, lang='en', skin='/evolution/', useskin=1, adm_until=0, " .
+        ", validated=1, validatemd='', deact_ip=1, lang='en', skin='/evolution/', useskin=1, adm_until=0, " .
         "dmfree=0, trader=0, rate_m=0, rate_k=0, rate_d=0 WHERE player_id={$id}"
     );
     InvalidateUserCache();

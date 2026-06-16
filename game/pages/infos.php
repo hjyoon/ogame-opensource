@@ -346,7 +346,7 @@ else
                 AdjustStats ( $aktplanet['owner_id'], $points, 0, 0, '-');
             }
 
-            $amount2 = min ($aktplanet[GID_D_ABM], key_exists ('ab'.GID_D_IPM, $_POST) ? intval ( $_POST['ab'.GID_D_IPM] ) : 0 );
+            $amount2 = min ($aktplanet[GID_D_IPM], key_exists ('ab'.GID_D_IPM, $_POST) ? intval ( $_POST['ab'.GID_D_IPM] ) : 0 );
             if ( $amount2 > 0) {
                 $aktplanet[GID_D_IPM] -= $amount2;
                 $cost = TechPrice ( GID_D_IPM, 1 );
