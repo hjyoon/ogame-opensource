@@ -56,19 +56,18 @@ $nowfleet = dbrows ($result);
 $maxfleet = $maxfleet_no_bonus = 0;
 GetMaxFleet ($GlobalUser, $aktplanet, $maxfleet, $maxfleet_no_bonus);
 
-// Limit the speed and make it a multiple of 10.
-$fleetspeed = round ( abs(intval($_POST['speed']) * 10) / 10) * 10;
-$fleetspeed = min ( max (10, $fleetspeed), 100 ) / 10;
+// Limit the speed to the UI-supported 10% steps.
+$fleetspeed = min ( max (1, intval($_POST['speed'] ?? 10)), 10 );
 
 // Turn all empty parameters into zeros.
 
 $resource = array();
 foreach ($transportableResources as $i=>$rc) {
     if ( !key_exists('resource'.($i+1), $_POST) ) $_POST['resource'.($i+1)] = 0;
-    $resource[$i+1] = min ( intval($aktplanet[$rc]), abs(intval($_POST['resource'.($i+1)])) );        
+    $resource[$i+1] = min ( intval($aktplanet[$rc]), max (0, intval($_POST['resource'.($i+1)])) );
 }
 
-$order = intval($_POST['order']);
+$order = intval($_POST['order'] ?? 0);
 $union_id = 0;
 
 // Fleet List.
@@ -77,7 +76,7 @@ foreach ($fleetmap as $i=>$gid)
 {
     $fleet[$gid] = 0;
     if (isset($aktplanet[$gid])) {
-        if ( key_exists("ship$gid", $_POST) ) $fleet[$gid] = min ( $aktplanet[$gid], intval($_POST["ship$gid"]) );
+        if ( key_exists("ship$gid", $_POST) ) $fleet[$gid] = min ( $aktplanet[$gid], max (0, intval($_POST["ship$gid"])) );
     }
 }
 $fleet[GID_F_SAT] = 0;        // solar satellites can't fly.

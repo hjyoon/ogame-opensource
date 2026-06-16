@@ -12,10 +12,13 @@ class Buildings extends Page {
         global $now;
 
         // POST request processing.
-        if ( method () === "POST" && !$GlobalUser['vacation'] )
+        if ( method () === "POST" && !$GlobalUser['vacation'] && isset($_POST['fmenge']) && is_array($_POST['fmenge']) )
         {
             foreach ( $_POST['fmenge'] as $gid=>$value )
             {
+                $gid = intval($gid);
+                $value = intval($value);
+
                 $result = GetShipyardQueue ( $aktplanet['planet_id'] );    // Limit the number of shipyard orders.
                 if ( dbrows ($result) >= MAX_SHIPYARD_ORDERS ) $value = 0;
 

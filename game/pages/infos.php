@@ -338,7 +338,7 @@ else
         $rak_space = $aktplanet[GID_B_MISS_SILO] * 10;
         if ( key_exists ( 'aktion', $_POST) )
         {
-            $amount1 = min ( $aktplanet[GID_D_ABM], key_exists ('ab'.GID_D_ABM, $_POST) ? intval ( $_POST['ab'.GID_D_ABM] ) : 0 );
+            $amount1 = min ( $aktplanet[GID_D_ABM], max (0, key_exists ('ab'.GID_D_ABM, $_POST) ? intval ( $_POST['ab'.GID_D_ABM] ) : 0) );
             if ( $amount1 > 0) {
                 $aktplanet[GID_D_ABM] -= $amount1;
                 $cost = TechPrice ( GID_D_ABM, 1 );
@@ -346,7 +346,7 @@ else
                 AdjustStats ( $aktplanet['owner_id'], $points, 0, 0, '-');
             }
 
-            $amount2 = min ($aktplanet[GID_D_IPM], key_exists ('ab'.GID_D_IPM, $_POST) ? intval ( $_POST['ab'.GID_D_IPM] ) : 0 );
+            $amount2 = min ($aktplanet[GID_D_IPM], max (0, key_exists ('ab'.GID_D_IPM, $_POST) ? intval ( $_POST['ab'.GID_D_IPM] ) : 0) );
             if ( $amount2 > 0) {
                 $aktplanet[GID_D_IPM] -= $amount2;
                 $cost = TechPrice ( GID_D_IPM, 1 );

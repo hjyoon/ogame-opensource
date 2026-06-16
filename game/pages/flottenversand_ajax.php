@@ -48,7 +48,7 @@ $galaxy = intval($_POST['galaxy']);
 $system = intval($_POST['system']);
 $planet = intval($_POST['planet']);
 $planettype = intval($_POST['planettype']);
-$shipcount = abs (intval($_POST['shipcount']));
+$shipcount = max (0, intval($_POST['shipcount']));
 $speed = 1;
 
 // You cannot send a fleet if the previous one was sent less than a second ago.

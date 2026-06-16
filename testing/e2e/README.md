@@ -36,6 +36,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Planet context flows for owned/foreign/missing `cp` selection, moon selection, per-planet resource/build queue isolation, spoofed fleet-origin rejection, and colony abandon fallback.
 - Social and access-control flows for alliance creation/application/acceptance/leave/dismiss, buddy request/reject/accept/delete, unauthenticated private-page redirects, report ownership, note ownership, and foreign-planet build attempts.
 - Cross-user IDOR sweeps for message deletion/reporting, foreign `cp` resource-setting and missile-silo demolition attempts, and direct foreign planet deletion attempts.
+- Input hardening sweeps for malformed numeric POST fields in resource settings, options, shipyard orders, missile demolition, fleet dispatch, and AJAX quick dispatch.
 - Alliance management flows for rank creation/rights/assignment/deletion, direct-URL permission denial, rank-scoped circular messages, and alliance text/settings updates.
 - Admin and account-state flows for admin-area access control, operator write restrictions, admin user updates, ban/unban login blocking, and vacation-mode action blocking.
 - Coupon and Dark Matter payment flows for admin coupon creation/listing/deletion, invalid/used coupon rejection, paid-DM redemption, duplicate redemption prevention, and periodic coupon queue creation/removal.

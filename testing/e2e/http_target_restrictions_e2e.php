@@ -366,7 +366,7 @@ try {
     $cases[] = e2e_finalize_case(array(
         'case' => 'direct_attack_allowed_when_scores_are_comparable',
         'checks' => array_merge(e2e_response_check($response, 'allowed direct attack'), array(
-            e2e_case(stripos($response['body'], 'Fleet dispatched') !== false, 'allowed attack renders the dispatch success page'),
+            e2e_case(stripos($response['body'], 'Fleet dispatched') !== false, 'allowed attack renders the dispatch success page', array('body_excerpt' => substr(trim(preg_replace('/\s+/', ' ', strip_tags($response['body']))), 0, 1000))),
             e2e_case($fleet !== null && (int)$fleet['mission'] === FTYP_ATTACK && (int)$fleet['target_planet'] === $defenderPlanet && (int)$fleet['light_fighters'] === 1, 'allowed attack creates an attack fleet row', $fleet ?? array()),
             e2e_case(e2e_active_fleet_count($attackerId) === 1, 'allowed attack creates one active fleet queue task'),
         )),
