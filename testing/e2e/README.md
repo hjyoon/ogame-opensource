@@ -37,6 +37,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Statistics and ranking flows for recalculated asset scores, queue-completion score adjustments, rank ordering, and statistics page rendering.
 - Fleet lifecycle flows for transport delivery/return, deploy arrival, and recalled transport return.
 - ACS and hold flows for unauthorized hold rejection, buddy hold orbit/return, ACS union creation, invited participant join, battle resolution, and return.
+- Alliance Depot ACS fuel supply flows for hold-fleet rendering, successful hold extension with deuterium spending, and no-op handling without a depot or enough fuel.
 - Trader, premium officer, and moon-tool flows for merchant calls/exchanges, officer purchase, lunar base construction, jump gates, and phalanx scans.
 - Battle reports and espionage reports.
 - Plunder, debris creation, debris recycling, resource return, and defense writeback.
