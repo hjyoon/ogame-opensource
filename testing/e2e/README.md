@@ -31,17 +31,21 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Password recovery flows for the forgot-password form, missing/unknown email rejection, permanent/temporary email lookup, MailHog delivery, old password invalidation, and recovered-password login.
 - Registration validation flows for `new.php`/`newredirect.php` input rejection, duplicate username/email handling, missing-field hardening, welcome-mail delivery, and activation-link verification.
 - Message and report lifecycle flows for inbox read state, selected/displayed deletion, PM operator reports, report popup access control, deleted report links, and expiry cleanup.
+- Report retention and ownership edge flows for reported PM audit-row retention after source deletion, crafted foreign report POST rejection, owner-scoped expiry cleanup, and admin/operator message retention.
 - Fleet template and galaxy action flows for Commander template access, template create/update/delete limits, template use on fleet dispatch screens, galaxy quick-action links, remote-system deuterium cost, IPM form opening, and AJAX spy/recycle dispatch.
 - Target restriction flows for noob/strong score protection, vacation targets, operator/admin targets, temporary attack bans, Galaxy AJAX espionage errors, and IPM restriction handling.
 - Planet context flows for owned/foreign/missing `cp` selection, moon selection, per-planet resource/build queue isolation, spoofed fleet-origin rejection, and colony abandon fallback.
+- Planet cleanup edge flows for removed-planet cleanup recalling inbound fleets before deletion and debris cleanup preserving active recycler targets while removing inactive empty debris.
 - Social and access-control flows for alliance creation/application/acceptance/leave/dismiss, buddy request/reject/accept/delete, unauthenticated private-page redirects, report ownership, note ownership, and foreign-planet build attempts.
 - Cross-user IDOR sweeps for message deletion/reporting, foreign `cp` resource-setting and missile-silo demolition attempts, and direct foreign planet deletion attempts.
 - Input hardening sweeps for malformed numeric POST fields in resource settings, options, shipyard orders, missile demolition, fleet dispatch, and AJAX quick dispatch.
 - Alliance management flows for rank creation/rights/assignment/deletion, direct-URL permission denial, rank-scoped circular messages, and alliance text/settings updates.
 - Admin and account-state flows for admin-area access control, operator write restrictions, admin user updates, ban/unban login blocking, and vacation-mode action blocking.
+- Admin permission matrix edge flows for regular-user denial across admin modes and operator-vs-admin mutation boundaries for queue controls, universe settings, coupon creation, and planet actions.
 - Coupon and Dark Matter payment flows for admin coupon creation/listing/deletion, invalid/used coupon rejection, paid-DM redemption, duplicate redemption prevention, and periodic coupon queue creation/removal.
 - Queue and fleet validation flows for building/research/shipyard queue create/cancel/complete, admin queue freeze/unfreeze/remove, active-queue vacation blocking, transport launch, and rejected fleet sends.
 - Queue/event idempotency flows for repeated `UpdateQueue()` runs across building, research, shipyard, transport fleet arrival/return completion, recalc-points, and a multi-day long scheduler drain.
+- Vacation/freeze timing edge flows for vacation enable rejection with active build/fleet queues, vacation-mode build/shipyard mutation blocking, and universe-freeze pause/resume behavior for due queues.
 - Global maintenance queue flows for user state timers, score recalculation, old-score snapshots, debris cleanup, removed-planet cleanup, and disabled-player cleanup.
 - Concurrency/race-condition flows for parallel building, research, shipyard, and fleet-dispatch requests so repeated clicks or multi-tab requests cannot duplicate queues, overspend resources, or duplicate fleet rows.
 - Technology unlock gates and economy edge cases for building/research/shipyard requirements, energy-shortage production, storage caps, and production-ratio ticks.

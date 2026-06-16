@@ -626,11 +626,17 @@ function AddShipyard (int $player_id, int $planet_id, int $gid, int $value, int 
     $user = LoadUser ( $player_id );
     if ($user == null) return false;
 
-    $cost = TechPrice ( $gid, 1 );
+    $unit_cost = TechPrice ( $gid, 1 );
     foreach ($resourcemap as $i=>$rc) {
-        if (isset($cost[$rc])) {
-            $cost[$rc] *= $value;
+        if (isset($unit_cost[$rc]) && $unit_cost[$rc] > 0) {
+            $value = min ($value, (int)floor ($planet[$rc] / $unit_cost[$rc]));
         }
+    }
+    if ( $value <= 0 ) return false;
+
+    $cost = $unit_cost;
+    foreach ($resourcemap as $i=>$rc) {
+        if (isset($cost[$rc])) $cost[$rc] *= $value;
     }
 
     if ( IsEnoughResources ( $user, $planet, $cost ) && TechMeetRequirement ($user, $planet, $gid) ) {
