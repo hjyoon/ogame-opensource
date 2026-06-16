@@ -28,6 +28,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Render and asset smoke coverage for public/login pages and core authenticated pages, including referenced CSS/JS/image resources.
 - Account action flows for notes, private messages, planet rename, options, resource settings, and building enqueue.
 - Message and report lifecycle flows for inbox read state, selected/displayed deletion, PM operator reports, report popup access control, deleted report links, and expiry cleanup.
+- Fleet template and galaxy action flows for Commander template access, template create/update/delete limits, template use on fleet dispatch screens, galaxy quick-action links, remote-system deuterium cost, IPM form opening, and AJAX spy/recycle dispatch.
 - Social and access-control flows for alliance creation/application/acceptance/leave/dismiss, buddy request/reject/accept/delete, unauthenticated private-page redirects, report ownership, note ownership, and foreign-planet build attempts.
 - Admin and account-state flows for admin-area access control, operator write restrictions, admin user updates, ban/unban login blocking, and vacation-mode action blocking.
 - Queue and fleet validation flows for building/research/shipyard queue create/cancel/complete, admin queue freeze/unfreeze/remove, active-queue vacation blocking, transport launch, and rejected fleet sends.
