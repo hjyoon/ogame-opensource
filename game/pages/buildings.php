@@ -11,67 +11,78 @@ class Buildings extends Page {
         global $PageError;
         global $now;
 
-        // POST request processing.
-        if ( method () === "POST" && !$GlobalUser['vacation'] && isset($_POST['fmenge']) && is_array($_POST['fmenge']) )
-        {
-            foreach ( $_POST['fmenge'] as $gid=>$value )
+        $mutatesQueue = (
+            ( method () === "POST" && !$GlobalUser['vacation'] && isset($_POST['fmenge']) && is_array($_POST['fmenge']) ) ||
+            ( method () === "GET" && !$GlobalUser['vacation'] && ($_GET['mode'] ?? '') === "Forschung" && ( key_exists ('bau', $_GET) || key_exists ('unbau', $_GET) ) )
+        );
+
+        if ($mutatesQueue) LockTables ();
+        try {
+            // POST request processing.
+            if ( method () === "POST" && !$GlobalUser['vacation'] && isset($_POST['fmenge']) && is_array($_POST['fmenge']) )
             {
-                $gid = intval($gid);
-                $value = intval($value);
+                foreach ( $_POST['fmenge'] as $gid=>$value )
+                {
+                    $gid = intval($gid);
+                    $value = intval($value);
 
-                $result = GetShipyardQueue ( $aktplanet['planet_id'] );    // Limit the number of shipyard orders.
-                if ( dbrows ($result) >= MAX_SHIPYARD_ORDERS ) $value = 0;
+                    $result = GetShipyardQueue ( $aktplanet['planet_id'] );    // Limit the number of shipyard orders.
+                    if ( dbrows ($result) >= MAX_SHIPYARD_ORDERS ) $value = 0;
 
-                if ( $value < 0 ) $value = 0;
-                if ( $value > 0 ) {
-                    // Calculate amount (no more than the resources on the planet and no more than `max_werf`)
-                    if ( $value > $GlobalUni['max_werf'] ) $value = $GlobalUni['max_werf'];
+                    if ( $value < 0 ) $value = 0;
+                    if ( $value > 0 ) {
+                        // Calculate amount (no more than the resources on the planet and no more than `max_werf`)
+                        if ( $value > $GlobalUni['max_werf'] ) $value = $GlobalUni['max_werf'];
 
-                    $res = TechPrice ( $gid, 1 );
-                    $m = $res[GID_RC_METAL]; $k = $res[GID_RC_CRYSTAL]; $d = $res[GID_RC_DEUTERIUM];
+                        $res = TechPrice ( $gid, 1 );
+                        $m = $res[GID_RC_METAL]; $k = $res[GID_RC_CRYSTAL]; $d = $res[GID_RC_DEUTERIUM];
 
-                    if ( !IsEnoughResources($GlobalUser, $aktplanet, $res) ) continue;    // insufficient resources for one unit
+                        if ( !IsEnoughResources($GlobalUser, $aktplanet, $res) ) continue;    // insufficient resources for one unit
 
-                    // Shield Domes.
-                    if ( $gid == GID_D_SDOME || $gid == GID_D_LDOME ) $value = 1;
+                        // Shield Domes.
+                        if ( $gid == GID_D_SDOME || $gid == GID_D_LDOME ) $value = 1;
 
-                    // Limit the number of missiles to the capacity of the silo.
-                    $free_space = $aktplanet[GID_B_MISS_SILO] * 10 - ($aktplanet[GID_D_ABM] + 2 * $aktplanet[GID_D_IPM]);
-                    if ( $gid == GID_D_ABM ) $value = min ( $free_space, $value );
-                    if ( $gid == GID_D_IPM ) $value = min ( floor ($free_space / 2), $value );
-                    
-                    if ($m) $cm = floor ($aktplanet[GID_RC_METAL] / $m);
-                    else $cm = 1000;
-                    if ($k) $ck = floor ($aktplanet[GID_RC_CRYSTAL] / $k);
-                    else $ck = 1000;
-                    if ($d) $cd = floor ($aktplanet[GID_RC_DEUTERIUM] / $d);
-                    else $cd = 1000;
-                    $v = min ( $cm, min ($ck, $cd) );
-                    if ( $value > $v ) $value = $v;
+                        // Limit the number of missiles to the capacity of the silo.
+                        $free_space = $aktplanet[GID_B_MISS_SILO] * 10 - ($aktplanet[GID_D_ABM] + 2 * $aktplanet[GID_D_IPM]);
+                        if ( $gid == GID_D_ABM ) $value = min ( $free_space, $value );
+                        if ( $gid == GID_D_IPM ) $value = min ( floor ($free_space / 2), $value );
 
-                    AddShipyard ( $GlobalUser['player_id'], $aktplanet['planet_id'], intval ($gid), intval ($value) );
-                    $aktplanet = GetUpdatePlanet ( $GlobalUser['aktplanet'], $now );    // update the planet's state.
+                        if ($m) $cm = floor ($aktplanet[GID_RC_METAL] / $m);
+                        else $cm = 1000;
+                        if ($k) $ck = floor ($aktplanet[GID_RC_CRYSTAL] / $k);
+                        else $ck = 1000;
+                        if ($d) $cd = floor ($aktplanet[GID_RC_DEUTERIUM] / $d);
+                        else $cd = 1000;
+                        $v = min ( $cm, min ($ck, $cd) );
+                        if ( $value > $v ) $value = $v;
+
+                        AddShipyard ( $GlobalUser['player_id'], $aktplanet['planet_id'], intval ($gid), intval ($value) );
+                        $aktplanet = GetUpdatePlanet ( $GlobalUser['aktplanet'], $now );    // update the planet's state.
+                    }
+                }
+            }
+
+            // GET request processing.
+            if ( method () === "GET"  && !$GlobalUser['vacation'] )
+            {
+                if ( $_GET['mode'] === "Forschung" ) {
+                    $result = GetResearchQueue ( $GlobalUser['player_id'] );
+                    $resqueue = dbarray ($result);
+                    if ( $resqueue == null )        // The research is not in progress (run)
+                    {
+                        if ( key_exists ( 'bau', $_GET ) ) $PageError = StartResearch ( $GlobalUser['player_id'], $aktplanet['planet_id'], intval ($_GET['bau']), $now );
+                        $aktplanet = GetUpdatePlanet ( $GlobalUser['aktplanet'], $now );    // update the planet's state.
+                    }
+                    else    // Research in progress (cancel)
+                    {
+                        if ( key_exists ( 'unbau', $_GET ) ) StopResearch ( $GlobalUser['player_id'] );
+                        $aktplanet = GetUpdatePlanet ( $GlobalUser['aktplanet'], $now );    // update the planet's state.
+                    }
                 }
             }
         }
-
-        // GET request processing.
-        if ( method () === "GET"  && !$GlobalUser['vacation'] )
-        {
-            if ( $_GET['mode'] === "Forschung" ) {
-                $result = GetResearchQueue ( $GlobalUser['player_id'] );
-                $resqueue = dbarray ($result);
-                if ( $resqueue == null )        // The research is not in progress (run)
-                {
-                    if ( key_exists ( 'bau', $_GET ) ) $PageError = StartResearch ( $GlobalUser['player_id'], $aktplanet['planet_id'], intval ($_GET['bau']), $now );
-                    $aktplanet = GetUpdatePlanet ( $GlobalUser['aktplanet'], $now );    // update the planet's state.
-                }
-                else    // Research in progress (cancel)
-                {
-                    if ( key_exists ( 'unbau', $_GET ) ) StopResearch ( $GlobalUser['player_id'] );
-                    $aktplanet = GetUpdatePlanet ( $GlobalUser['aktplanet'], $now );    // update the planet's state.
-                }
-            }
+        finally {
+            if ($mutatesQueue) UnlockTables ();
         }
 
         return true;

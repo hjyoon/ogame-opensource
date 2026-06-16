@@ -12,13 +12,19 @@ class B_Building extends Page {
         // Processing parameters.
         if ( key_exists ('modus', $_GET) && !$GlobalUser['vacation'] )
         {
-            if ( $_GET['modus'] === 'add' ) $PageError = BuildEnque ( $GlobalUser, intval ($_GET['planet']), intval ($_GET['techid']), 0 );
-            else if ( $_GET['modus'] === 'destroy' ) $PageError = BuildEnque ( $GlobalUser, intval ($_GET['planet']), intval ($_GET['techid']), 1 );
-            else if ( $_GET['modus'] === 'remove' ) $PageError = BuildDeque ( $GlobalUser, intval ($_GET['planet']), intval ($_GET['listid']) );
+            LockTables ();
+            try {
+                if ( $_GET['modus'] === 'add' ) $PageError = BuildEnque ( $GlobalUser, intval ($_GET['planet']), intval ($_GET['techid']), 0 );
+                else if ( $_GET['modus'] === 'destroy' ) $PageError = BuildEnque ( $GlobalUser, intval ($_GET['planet']), intval ($_GET['techid']), 1 );
+                else if ( $_GET['modus'] === 'remove' ) $PageError = BuildDeque ( $GlobalUser, intval ($_GET['planet']), intval ($_GET['listid']) );
 
-            $aktplanet = GetUpdatePlanet ( $GlobalUser['aktplanet'], time() );    // reload the planet.
-            if ($aktplanet == null) {
-                Error ("Can't get aktplanet");
+                $aktplanet = GetUpdatePlanet ( $GlobalUser['aktplanet'], time() );    // reload the planet.
+                if ($aktplanet == null) {
+                    Error ("Can't get aktplanet");
+                }
+            }
+            finally {
+                UnlockTables ();
             }
         }
 

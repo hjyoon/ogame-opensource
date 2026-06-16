@@ -329,41 +329,47 @@ if ($FleetError) {
 // All checks have been successful, we can send the fleet out.
 else {
 
-    // Fleet lock
+    // Fleet lock. Create the lock atomically so parallel submits cannot all pass
+    // the pre-flight checks and dispatch duplicate fleets.
     $fleetlock = "temp/fleetlock_" . $aktplanet['planet_id'];
-    if ( file_exists ($fleetlock) ) {
-        $fileCreationTime = filectime($filename);
-        if ((time() - $fileCreationTime) < 3) {
-            MyGoto ( "flotten1" );
-        } else {
-            unlink ( $fleetlock );
+    $fleetlock_handle = @fopen ( $fleetlock, 'x' );
+    if ( $fleetlock_handle === false ) {
+        clearstatcache ( true, $fleetlock );
+        if ( file_exists ($fleetlock) && (time () - filemtime ($fleetlock)) >= 3 ) {
+            @unlink ( $fleetlock );
+            $fleetlock_handle = @fopen ( $fleetlock, 'x' );
         }
     }
-    $f = fopen ( $fleetlock, 'w' );
-    fclose ($f);
-
-    $fleet_id = DispatchFleet ( $fleet, $origin, $target, $order, $flighttime, 
-        $resources, 
-        (int)($cons['fleet'] + $cons['probes']), time(), $union_id, (int)$hold_time );
-    $queue = GetFleetQueue ($fleet_id);
-
-    UserLog ( $aktplanet['owner_id'], "FLEET", 
-        va(loca_lang("DEBUG_LOG_FLEET_SEND1", $GlobalUni['lang']), $fleet_id) . GetMissionNameDebug ($order) . " " .
-        $origin['name'] ." [".$origin['g'].":".$origin['s'].":".$origin['p']."] -&gt; ".$target['name']." [".$target['g'].":".$target['s'].":".$target['p']."]<br>" .
-        DumpFleet ($fleet) . "<br>" .
-        va(loca_lang("DEBUG_LOG_FLEET_SEND2", $GlobalUni['lang']), DurationFormat ($flighttime), DurationFormat ($hold_time), nicenum ($cons['fleet'] + $cons['probes']), $union_id) );
-
-    if ( $union_id ) {
-        $union_time = UpdateUnionTime ( $union_id, $queue['end'], $fleet_id );
-        UpdateFleetTime ( $fleet_id, $union_time );
+    if ( $fleetlock_handle === false ) {
+        MyGoto ( "flotten1" );
     }
 
-    // Lift off.
-    $resources[GID_RC_DEUTERIUM] += $cons['fleet'] + $cons['probes'];
-    AdjustResources ( $resources, $origin['planet_id'], '-' );
-    AdjustShips ( $fleet, $origin['planet_id'], '-' );
+    try {
+        $fleet_id = DispatchFleet ( $fleet, $origin, $target, $order, $flighttime,
+            $resources,
+            (int)($cons['fleet'] + $cons['probes']), time(), $union_id, (int)$hold_time );
+        $queue = GetFleetQueue ($fleet_id);
 
-    unlink ( $fleetlock );
+        UserLog ( $aktplanet['owner_id'], "FLEET",
+            va(loca_lang("DEBUG_LOG_FLEET_SEND1", $GlobalUni['lang']), $fleet_id) . GetMissionNameDebug ($order) . " " .
+            $origin['name'] ." [".$origin['g'].":".$origin['s'].":".$origin['p']."] -&gt; ".$target['name']." [".$target['g'].":".$target['s'].":".$target['p']."]<br>" .
+            DumpFleet ($fleet) . "<br>" .
+            va(loca_lang("DEBUG_LOG_FLEET_SEND2", $GlobalUni['lang']), DurationFormat ($flighttime), DurationFormat ($hold_time), nicenum ($cons['fleet'] + $cons['probes']), $union_id) );
+
+        if ( $union_id ) {
+            $union_time = UpdateUnionTime ( $union_id, $queue['end'], $fleet_id );
+            UpdateFleetTime ( $fleet_id, $union_time );
+        }
+
+        // Lift off.
+        $resources[GID_RC_DEUTERIUM] += $cons['fleet'] + $cons['probes'];
+        AdjustResources ( $resources, $origin['planet_id'], '-' );
+        AdjustShips ( $fleet, $origin['planet_id'], '-' );
+    }
+    finally {
+        fclose ( $fleetlock_handle );
+        @unlink ( $fleetlock );
+    }
 
 ?>
   <script language="JavaScript" src="js/flotten.js"></script>

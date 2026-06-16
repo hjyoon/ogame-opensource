@@ -43,6 +43,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Queue and fleet validation flows for building/research/shipyard queue create/cancel/complete, admin queue freeze/unfreeze/remove, active-queue vacation blocking, transport launch, and rejected fleet sends.
 - Queue/event idempotency flows for repeated `UpdateQueue()` runs across building, research, shipyard, and transport fleet arrival/return completion.
 - Global maintenance queue flows for user state timers, score recalculation, old-score snapshots, debris cleanup, removed-planet cleanup, and disabled-player cleanup.
+- Concurrency/race-condition flows for parallel building, research, shipyard, and fleet-dispatch requests so repeated clicks or multi-tab requests cannot duplicate queues, overspend resources, or duplicate fleet rows.
 - Technology unlock gates and economy edge cases for building/research/shipyard requirements, energy-shortage production, storage caps, and production-ratio ticks.
 - Statistics and ranking flows for recalculated asset scores, queue-completion score adjustments, rank ordering, and statistics page rendering.
 - Fleet lifecycle flows for transport delivery/return, deploy arrival, and recalled transport return.
