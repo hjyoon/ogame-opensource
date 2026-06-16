@@ -34,7 +34,7 @@ $uninum = $GlobalUni['num'];
 
 $pass_ok = false;
 if ( method () === "POST" ) {
-    $email = $_POST['email'];
+    $email = $_POST['email'] ?? "";
     if ( isValidEmail ($email) ) {
         $user = EmailExist ( $email );
         if ( $user ) {
