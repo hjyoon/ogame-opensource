@@ -233,6 +233,8 @@ function e2e_reset_user_and_planet(int $userId, int $planetId, string $name): vo
         "prod1=1, prod2=1, prod3=1, prod4=1, prod12=1, prod212=1, fields=0, maxfields=300, lastpeek={$now}, lastakt={$now} " .
         "WHERE planet_id={$planetId}"
     );
+    dbquery("UPDATE {$db_prefix}users SET hplanetid={$planetId} WHERE player_id={$userId}");
+    SelectPlanet($userId, $planetId);
     InvalidateUserCache();
 }
 

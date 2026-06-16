@@ -635,8 +635,8 @@ function AddShipyard (int $player_id, int $planet_id, int $gid, int $value, int 
         $nanits = $planet[GID_B_NANITES];
         $seconds = TechDuration ( $gid, 1, PROD_SHIPYARD_DURATION_FACTOR, $shipyard, $nanits, $speed );
 
-        // Write off resources.
-        AdjustResources ( $cost, $planet_id, '-' );
+        // Write off resources only if they are still available after concurrent requests.
+        if ( !SpendResourcesIfEnough ( $cost, $planet_id ) ) return false;
 
         AddQueue ($player_id, QTYP_SHIPYARD, $planet_id, $gid, $value, $now, $seconds);
         return true;

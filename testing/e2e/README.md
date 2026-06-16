@@ -59,6 +59,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Colony ship colonization success and failure paths.
 - Moon creation, moon destruction, and moon-destruction failure paths.
 - Expedition flow and expedition result cases.
+- Database invariant audit coverage for non-negative resources/counts, gameplay-critical orphaned references, queue/fleet/buildqueue consistency, coordinate uniqueness, alliance/buddy references, fixture runtime cleanup, and stale fleet lock files.
 
 ## Public Host Strict Mode
 

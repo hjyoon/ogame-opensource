@@ -236,6 +236,8 @@ function e2e_reset_user_and_planet(int $userId, int $planetId, string $name, int
     dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id={$userId} OR planet_id={$planetId}");
     e2e_reset_user($userId);
     e2e_prepare_planet($planetId, $userId, $name, $smallCargo);
+    dbquery("UPDATE {$db_prefix}users SET hplanetid={$planetId} WHERE player_id={$userId}");
+    SelectPlanet($userId, $planetId);
 }
 
 function e2e_find_empty_position(array $near): array

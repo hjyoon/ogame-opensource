@@ -74,6 +74,7 @@ run_json_case colony_moon "$ROOT/cases/colony_moon_case_tests.php"
 run_json_case moon_edges "$ROOT/cases/moon_edge_tests.php"
 run_json_case fleet_slots "$ROOT/cases/fleet_slot_sweep.php"
 run_json_case expedition "$ROOT/cases/expedition_case_tests.php"
+run_json_case db_invariant_audit "$ROOT/http_db_invariant_audit_e2e.php"
 
 if [ "$failures" -ne 0 ]; then
   printf 'E2E failed: %s case(s). JSON results: %s\n' "$failures" "$OUT_DIR"

@@ -193,6 +193,8 @@ function e2e_restore_fixture_user(?array $user, int $planetId): void
         "prod1=0, prod2=0, prod3=0, prod4=0, prod12=0, prod212=0, fields=0, maxfields=200, type=" . PTYP_PLANET . ", remove=0, owner_id={$userId} " .
         "WHERE planet_id={$planetId}"
     );
+    dbquery("UPDATE {$db_prefix}users SET hplanetid={$planetId} WHERE player_id={$userId}");
+    SelectPlanet($userId, $planetId);
     InvalidateUserCache();
 }
 

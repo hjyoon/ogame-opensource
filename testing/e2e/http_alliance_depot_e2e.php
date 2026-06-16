@@ -210,9 +210,13 @@ function e2e_prepare_planet(int $planetId, int $ownerId, int $smallCargo = 10, i
 
 function e2e_reset_user_and_planet(int $userId, int $planetId, int $smallCargo = 10, int $lightFighter = 10): void
 {
+    global $db_prefix;
+
     e2e_cleanup_fleets(array($userId), array($planetId));
     e2e_prepare_user($userId);
     e2e_prepare_planet($planetId, $userId, $smallCargo, $lightFighter);
+    dbquery("UPDATE {$db_prefix}users SET hplanetid={$planetId} WHERE player_id={$userId}");
+    SelectPlanet($userId, $planetId);
 }
 
 function e2e_fleet_payload(array $origin, array $target, int $order, array $ships, array $resources = array(), array $extra = array()): array

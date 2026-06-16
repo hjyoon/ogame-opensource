@@ -209,6 +209,8 @@ function e2e_reset_user_and_planet(int $userId, int $planetId): void
     dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id={$userId} OR planet_id={$planetId}");
     e2e_reset_user($userId);
     e2e_prepare_planet($planetId, $userId);
+    dbquery("UPDATE {$db_prefix}users SET hplanetid={$planetId} WHERE player_id={$userId}");
+    SelectPlanet($userId, $planetId);
 }
 
 function e2e_prepare_moon(int $moonId, int $ownerId, array $buildings = array(), array $ships = array(), array $resources = array()): void

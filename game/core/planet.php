@@ -407,6 +407,31 @@ function AdjustResources (array $cost, int $planet_id, string $sign) : void
     dbquery ($query);
 }
 
+// Atomically spend planet resources, only if all required resources are still available.
+function SpendResourcesIfEnough (array $cost, int $planet_id) : bool
+{
+    global $db_connect, $db_prefix;
+    global $resourcemap;
+
+    $updates = array();
+    $conditions = array("planet_id=$planet_id");
+    foreach ($resourcemap as $i=>$rc) {
+        if (isset($cost[$rc]) && $cost[$rc] > 0) {
+            $amount = (float)$cost[$rc];
+            $updates[] = "`".$rc."`=`".$rc."` - ".$amount;
+            $conditions[] = "`".$rc."` >= ".$amount;
+        }
+    }
+
+    if (empty($updates)) {
+        return true;
+    }
+
+    $query = "UPDATE ".$db_prefix."planets SET ".implode(", ", $updates).", lastpeek = ".time()." WHERE ".implode(" AND ", $conditions)." LIMIT 1;";
+    dbquery ($query);
+    return mysqli_affected_rows ($db_connect) === 1;
+}
+
 // Destroy the moon, return fleets, modify player stats.
 // fleet_id - ID of the fleet that destroyed the moon. The return of this fleet is controlled by the battle engine.
 function DestroyMoon (int $moon_id, int $when, int $fleet_id) : void
