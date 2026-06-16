@@ -196,7 +196,7 @@ function message_rows(int $ownerId, int $after): array
                 'dark_matter' => str_contains($text, 'Dark Matter'),
                 'found_resources' => str_contains($text, 'You got') && (str_contains($text, 'Metal') || str_contains($text, 'Crystal') || str_contains($text, 'Deuterium')),
                 'found_fleet' => str_contains($text, 'following ships are now part of the fleet'),
-                'black_hole_or_lost' => str_contains($text, 'lost forever') || str_contains($text, 'black hole') || str_contains($text, 'entire expedition fleet'),
+                'black_hole_or_lost' => str_contains($text, 'lost forever') || str_contains($text, 'black hole') || str_contains($text, 'entire expedition fleet') || str_contains(strtolower($text), 'transmission terminated'),
                 'trader' => str_contains($text, 'representative with goods to trade') || str_contains($text, 'exclusive client'),
                 'pirates' => str_contains(strtolower($text), 'pirate'),
                 'aliens' => str_contains(strtolower($text), 'alien') || str_contains(strtolower($text), 'unknown species'),

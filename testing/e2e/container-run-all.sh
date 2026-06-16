@@ -39,6 +39,8 @@ export OGAME_E2E_DEFENDER_ID OGAME_E2E_DEFENDER_PLANET
 export OGAME_E2E_ATTACKER_NAME OGAME_E2E_ATTACKER_PASSWORD
 export OGAME_E2E_DEFENDER_NAME OGAME_E2E_DEFENDER_PASSWORD
 
+run_json_case route_matrix "$ROOT/http_route_matrix_e2e.php"
+run_json_case account_actions "$ROOT/http_account_actions_e2e.php"
 run_json_case report_simulation "$ROOT/cases/report_simulation.php"
 run_json_case economy "$ROOT/cases/economy_case_tests.php"
 run_json_case missile "$ROOT/cases/missile_case_tests.php"

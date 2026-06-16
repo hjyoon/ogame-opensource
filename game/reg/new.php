@@ -61,8 +61,8 @@ if ( method() === "POST" )        // Register a player.
 ?>
 <html>
 <head>
-<link rel="stylesheet" type="text/css" href="<?=hostname();?>evolution/formate.css">
-<link rel="stylesheet" type="text/css" href="<?=hostname();?>game/css/registration.css" />
+<link rel="stylesheet" type="text/css" href="/evolution/formate.css">
+<link rel="stylesheet" type="text/css" href="/game/css/registration.css" />
 <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
 </head>
 <body >
@@ -110,11 +110,11 @@ if ( method() === "POST" )        // Register a player.
 
 <html>
 <head>
-<link rel="stylesheet" type="text/css" href="<?=hostname();?>evolution/formate.css">
-<link rel="stylesheet" type="text/css" href="<?=hostname();?>game/css/registration.css" />
+<link rel="stylesheet" type="text/css" href="/evolution/formate.css">
+<link rel="stylesheet" type="text/css" href="/game/css/registration.css" />
 <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
-<script language="JavaScript" src="<?=hostname();?>game/js/tw-sack.js"></script>
-<script language="JavaScript" src="<?=hostname();?>game/js/registration.js"></script>
+<script language="JavaScript" src="/game/js/tw-sack.js"></script>
+<script language="JavaScript" src="/game/js/registration.js"></script>
 <script language="JavaScript">
 function printMessage(code, div) {
     var textclass = "";

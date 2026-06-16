@@ -24,6 +24,8 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 
 - Docker auto-install smoke check: the root page must not show the Master Database Settings installer.
 - HTTP registration, login, core post-login pages, and internal asset URL checks.
+- Public and authenticated route matrix coverage for main game pages, including pages that need minimal GET/POST parameters.
+- Account action flows for notes, private messages, planet rename, options, resource settings, and building enqueue.
 - Battle reports and espionage reports.
 - Plunder, debris creation, debris recycling, resource return, and defense writeback.
 - Interplanetary missile and anti-ballistic missile cases.
