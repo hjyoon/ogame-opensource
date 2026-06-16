@@ -85,6 +85,12 @@ $fleet[GID_F_SAT] = 0;        // solar satellites can't fly.
 $origin = LoadPlanet ( intval($_POST['thisgalaxy']), intval($_POST['thissystem']), intval($_POST['thisplanet']), intval($_POST['thisplanettype']) );
 $target = LoadPlanet ( intval($_POST['galaxy']), intval($_POST['system']), intval($_POST['planet']), intval($_POST['planettype']) );
 
+if ( $origin == null || $origin['owner_id'] != $GlobalUser['player_id'] || $origin['planet_id'] != $aktplanet['planet_id'] )
+{
+    FleetError ( loca("FLEET_ERR_INVALID") );
+    $origin = $aktplanet;
+}
+
 if ( $GlobalUni['freeze'] ) FleetError (loca("FLEET_ERR_FREEZE") );
 
 if (  ( $_POST['thisgalaxy'] == $_POST['galaxy'] ) &&
@@ -104,6 +110,10 @@ if (
 }
 
 $origin_user = LoadUser ( $origin['owner_id'] );
+if ($origin_user == null) {
+    FleetError ( loca("FLEET_ERR_INVALID") );
+    $origin_user = $GlobalUser;
+}
 
 if ($target != null) {
 
