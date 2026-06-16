@@ -576,6 +576,11 @@ function AddShipyard (int $player_id, int $planet_id, int $gid, int $value, int 
     global $defmap;
     global $resourcemap;
 
+    // Serialize same-planet shipyard mutations across parallel HTTP workers.
+    $shipyardLock = @fopen(__DIR__ . '/../temp/shipyardlock_' . $planet_id, 'c');
+    $shipyardLocked = $shipyardLock !== false && @flock($shipyardLock, LOCK_EX);
+
+    try {
     if ( in_array ( $gid, $defmap ) ) UserLog ( $player_id, "DEFENSE", va(loca_lang("DEBUG_LOG_DEFENSE", $GlobalUni['lang']), loca("NAME_$gid"), $value, $planet_id)  );
     else UserLog ( $player_id, "SHIPYARD", va(loca_lang("DEBUG_LOG_SHIPYARD", $GlobalUni['lang']), loca("NAME_$gid"), $value, $planet_id)  );
 
@@ -643,6 +648,11 @@ function AddShipyard (int $player_id, int $planet_id, int $gid, int $value, int 
     }
     else {
         return false;
+    }
+    }
+    finally {
+        if ($shipyardLocked) @flock($shipyardLock, LOCK_UN);
+        if ($shipyardLock !== false) @fclose($shipyardLock);
     }
 }
 

@@ -27,7 +27,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Public and authenticated route matrix coverage for main game pages, including pages that need minimal GET/POST parameters.
 - Render and asset smoke coverage for public/login pages and core authenticated pages, including referenced CSS/JS/image resources.
 - Account action flows for notes, private messages, planet rename, options, resource settings, and building enqueue.
-- Account security flows for private-session cookie enforcement, logout invalidation, password change and re-login, email validation, and account deletion schedule/cancel.
+- Account security flows for private-session cookie enforcement, public/private session rotation, existing-session admin downgrade, logout invalidation, password change and re-login, email validation, and account deletion schedule/cancel.
 - Password recovery flows for the forgot-password form, missing/unknown email rejection, permanent/temporary email lookup, MailHog delivery, old password invalidation, and recovered-password login.
 - Registration validation flows for `new.php`/`newredirect.php` input rejection, duplicate username/email handling, missing-field hardening, welcome-mail delivery, and activation-link verification.
 - Message and report lifecycle flows for inbox read state, selected/displayed deletion, PM operator reports, report popup access control, deleted report links, and expiry cleanup.
@@ -41,7 +41,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Admin and account-state flows for admin-area access control, operator write restrictions, admin user updates, ban/unban login blocking, and vacation-mode action blocking.
 - Coupon and Dark Matter payment flows for admin coupon creation/listing/deletion, invalid/used coupon rejection, paid-DM redemption, duplicate redemption prevention, and periodic coupon queue creation/removal.
 - Queue and fleet validation flows for building/research/shipyard queue create/cancel/complete, admin queue freeze/unfreeze/remove, active-queue vacation blocking, transport launch, and rejected fleet sends.
-- Queue/event idempotency flows for repeated `UpdateQueue()` runs across building, research, shipyard, and transport fleet arrival/return completion.
+- Queue/event idempotency flows for repeated `UpdateQueue()` runs across building, research, shipyard, transport fleet arrival/return completion, recalc-points, and a multi-day long scheduler drain.
 - Global maintenance queue flows for user state timers, score recalculation, old-score snapshots, debris cleanup, removed-planet cleanup, and disabled-player cleanup.
 - Concurrency/race-condition flows for parallel building, research, shipyard, and fleet-dispatch requests so repeated clicks or multi-tab requests cannot duplicate queues, overspend resources, or duplicate fleet rows.
 - Technology unlock gates and economy edge cases for building/research/shipyard requirements, energy-shortage production, storage caps, and production-ratio ticks.
@@ -51,7 +51,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - ACS and hold flows for unauthorized hold rejection, buddy hold orbit/return, ACS union creation, invited participant join, battle resolution, and return.
 - Alliance Depot ACS fuel supply flows for hold-fleet rendering, successful hold extension with deuterium spending, and no-op handling without a depot or enough fuel.
 - Admin destructive flows for queue freeze/unfreeze/complete/delete controls, account deletion scheduling, admin planet creation, universe freeze, and admin-triggered score recalculation.
-- Trader, premium officer, and moon-tool flows for merchant calls/exchanges, officer purchase, lunar base construction, jump gates, and phalanx scans.
+- Trader, premium officer, and moon-tool flows for merchant calls/exchanges, officer purchase, paid/free DM spending order, insufficient/invalid premium purchases, lunar base construction, jump gates, and phalanx scans.
 - Jump Gate edge flows for target filtering, invalid source/target moons, missing gates, foreign moons, empty/oversized ship selections, cooldown direct-POST rejection, same-moon rejection, and solar-satellite exclusion.
 - Battle reports and espionage reports.
 - Plunder, debris creation, debris recycling, resource return, and defense writeback.

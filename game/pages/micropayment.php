@@ -28,9 +28,9 @@ function OfficerLeft ( int $type ) : string
 // Process GET request.
 if ( key_exists ( 'buynow', $_GET ) )
 {
-    $type = intval ( $_GET['type'] );
-    $days = intval ( $_GET['days'] );
-    if ( $days == 7 || $days == 90 )
+    $type = intval ( $_GET['type'] ?? 0 );
+    $days = intval ( $_GET['days'] ?? 0 );
+    if ( ($days == 7 || $days == 90) && $type >= USER_OFFICER_COMMANDER && $type <= USER_OFFICER_TECHNOCRATE && isset($price[$type]) )
     {
         $dm = $GlobalUser['dm'] + $GlobalUser['dmfree'];
         if ( $days == 7) $required = $price[$type];
@@ -41,22 +41,19 @@ if ( key_exists ( 'buynow', $_GET ) )
         }
         else
         {
-            if ( $type >= USER_OFFICER_COMMANDER && $type <= USER_OFFICER_TECHNOCRATE )
-            {
-                // Списать ТМ.
-                if ( $GlobalUser['dm'] >= $required ) $GlobalUser['dm'] -= $required;
-                else {
-                    $GlobalUser['dmfree'] -= $required - $GlobalUser['dm'];
-                    $GlobalUser['dm'] = 0;
-                }
-
-                $query = "UPDATE ".$db_prefix."users SET dm = '".$GlobalUser['dm']."', dmfree = '".$GlobalUser['dmfree']."' WHERE player_id = " . $GlobalUser['player_id'];
-                dbquery ( $query );
-
-                RecruitOfficer ( $GlobalUser['player_id'], $type, $days * 24 * 60 * 60 );
-                
-                $PageMessage = loca ("PREM_OK") . "<br>";
+            // Списать ТМ.
+            if ( $GlobalUser['dm'] >= $required ) $GlobalUser['dm'] -= $required;
+            else {
+                $GlobalUser['dmfree'] -= $required - $GlobalUser['dm'];
+                $GlobalUser['dm'] = 0;
             }
+
+            $query = "UPDATE ".$db_prefix."users SET dm = '".$GlobalUser['dm']."', dmfree = '".$GlobalUser['dmfree']."' WHERE player_id = " . $GlobalUser['player_id'];
+            dbquery ( $query );
+
+            RecruitOfficer ( $GlobalUser['player_id'], $type, $days * 24 * 60 * 60 );
+            
+            $PageMessage = loca ("PREM_OK") . "<br>";
         }
     }
 }
