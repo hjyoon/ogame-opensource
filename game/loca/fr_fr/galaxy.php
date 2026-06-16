@@ -10,6 +10,7 @@ $LOCA["fr"]["GALAXY_RAK_WEAK_DRIVE"] = "La portée (niveau de recherche du moteu
 $LOCA["fr"]["GALAXY_RAK_VACATION_SELF"] = "Vous ne pouvez pas lancer de roquettes en mode vacance!";
 $LOCA["fr"]["GALAXY_RAK_VACATION_OTHER"] = "Ce joueur est en mode vacance!";
 $LOCA["fr"]["GALAXY_RAK_SELF"] = "Impossible d'attaquer sa propre planète!";
+$LOCA["fr"]["GALAXY_RAK_ADMIN"] = "You cannot launch rockets at game operators or administrators!";
 $LOCA["fr"]["GALAXY_RAK_NOOB"] = "La planète est protégée par le bouclier du débutant!";
 $LOCA["fr"]["GALAXY_RAK_LAUNCHED"] = "Départ de la roquette #1!";
 

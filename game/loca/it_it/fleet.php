@@ -88,6 +88,7 @@ $LOCA["it"]["FLEET_ERR_SAME_PLANET"] = "Coordinate di destinazione devono essere
 $LOCA["it"]["FLEET_ERR_INVALID"] = "Coordinate di destinazione non corrette!";
 $LOCA["it"]["FLEET_ERR_VACATION_SELF"] = "Non puoi inviare flotte in modalit&agrave; vacanza!";
 $LOCA["it"]["FLEET_ERR_VACATION_OTHER"] = "Giocatore in modalit&agrave; vacanza!";
+$LOCA["it"]["FLEET_ERR_ADMIN"] = "You cannot send hostile fleets to game operators or administrators!";
 $LOCA["it"]["FLEET_ERR_MAX_FLEET"] = "Tutti gli slot flotta sono occupati!";
 $LOCA["it"]["FLEET_ERR_IP"] = "Stesso indirizzo IP!";
 $LOCA["it"]["FLEET_ERR_FUEL"] = "Non hai abbastanza deuterio!";

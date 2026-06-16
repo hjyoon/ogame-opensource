@@ -10,6 +10,7 @@ $LOCA["it"]["GALAXY_RAK_WEAK_DRIVE"] = "La distanza &egrave; superiore alla port
 $LOCA["it"]["GALAXY_RAK_VACATION_SELF"] = "Non puoi inviare missili interplanetari in modalit&agrave; vacanza!";
 $LOCA["it"]["GALAXY_RAK_VACATION_OTHER"] = "Giocatore in modalit&agrave; vacanza!";
 $LOCA["it"]["GALAXY_RAK_SELF"] = "Non puoi attaccare i tuoi pianeti!";
+$LOCA["it"]["GALAXY_RAK_ADMIN"] = "You cannot launch rockets at game operators or administrators!";
 $LOCA["it"]["GALAXY_RAK_NOOB"] = "Non puoi attaccare questo giocatore!";
 $LOCA["it"]["GALAXY_RAK_LAUNCHED"] = "#1 Missili interplanetari lanciati!";
 

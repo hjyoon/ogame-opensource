@@ -92,6 +92,7 @@ $LOCA["de"]["FLEET_ERR_SAME_PLANET"] = "Und wie stellen Sie sich das vor?";
 $LOCA["de"]["FLEET_ERR_INVALID"] = "Der Planet ist unbewohnt oder muss kolonisiert werden!";
 $LOCA["de"]["FLEET_ERR_VACATION_SELF"] = "Sie können im Urlaubsmodus keine Flotte senden!";
 $LOCA["de"]["FLEET_ERR_VACATION_OTHER"] = "Dieser Spieler ist im Urlaubsmodus!";
+$LOCA["de"]["FLEET_ERR_ADMIN"] = "You cannot send hostile fleets to game operators or administrators!";
 $LOCA["de"]["FLEET_ERR_MAX_FLEET"] = "Maximale Anzahl von Flotten erreicht";
 $LOCA["de"]["FLEET_ERR_IP"] = "Es ist nicht möglich, sich dem Spieler zu nähern!";
 $LOCA["de"]["FLEET_ERR_FUEL"] = "Nicht genug Treibstoff!";

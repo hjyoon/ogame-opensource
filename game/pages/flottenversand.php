@@ -24,6 +24,11 @@ function FleetError (string $text) : void
     $FleetError = true;
 }
 
+function FleetAdminTargetProtected(array $target_user): bool
+{
+    return $target_user['admin'] > USER_TYPE_PLAYER && $target_user['player_id'] != USER_SPACE;
+}
+
 // If the page is opened through a browser, make a redirect to the main page.
 if ( method () === "GET" )
 {
@@ -178,10 +183,11 @@ switch ( $order )
             ( $origin_user['ally_id'] == $target_user['ally_id'] && $origin_user['ally_id'] > 0 )   || 
              IsBuddy ( $origin_user['player_id'],  $target_user['player_id']) ) ) $BlockAttack = 0;
 
-        if ( IsPlayerNewbie ($target['owner_id']) || IsPlayerStrong ($target['owner_id']) ) FleetError ( loca("FLEET_ERR_NOOB") );
+        if ( $target != NULL && FleetAdminTargetProtected ($target_user) ) FleetError ( loca("FLEET_ERR_ADMIN") );
+        else if ( IsPlayerNewbie ($target['owner_id']) || IsPlayerStrong ($target['owner_id']) ) FleetError ( loca("FLEET_ERR_NOOB") );
         else if ( $target['owner_id'] == $origin['owner_id'] ) FleetError ( loca("FLEET_ERR_OWN_PLANET") );
         else if ($BlockAttack) FleetError ( loca("FLEET_ERR_ATTACK_BAN_UNI") );
-        else if ($GlobalUser['noattack']) FleetError ( va ( loca("FLEET_ERR_ATTACK_BAN_PLAYER"), date ( "d.m.Y H:i:s", $GlobalUser['noattack_util'])) );
+        else if ($GlobalUser['noattack']) FleetError ( va ( loca("FLEET_ERR_ATTACK_BAN_PLAYER"), date ( "d.m.Y H:i:s", $GlobalUser['noattack_until'])) );
         else if ($numships > $GlobalUni['battle_max']) FleetError ( loca("FLEET_ERR_BATTLE_MAX") );
         break;
 
@@ -199,11 +205,12 @@ switch ( $order )
         $enum_result = EnumUnionFleets ($union_id);
         $acs_fleets = dbrows ($enum_result);
         if ( ! IsPlayerInUnion ( $GlobalUser['player_id'], $union) || $union == null ) FleetError ( loca("FLEET_ERR_ACS_OTHER") );
+        else if ( $target != NULL && FleetAdminTargetProtected ($target_user) ) FleetError ( loca("FLEET_ERR_ADMIN") );
         else if ( $target['owner_id'] == $origin['owner_id'] ) FleetError ( loca("FLEET_ERR_OWN_PLANET") );
         else if ( IsPlayerNewbie ($target['owner_id']) || IsPlayerStrong ($target['owner_id']) ) FleetError ( loca("FLEET_ERR_NOOB") );
         else if ( $flighttime > $acs_flighttime * 1.3 ) FleetError ( loca("FLEET_ERR_ACS_SLOW") );
         else if ($BlockAttack) FleetError ( loca("FLEET_ERR_ATTACK_BAN_UNI") );
-        else if ($GlobalUser['noattack']) FleetError ( va ( loca("FLEET_ERR_ATTACK_BAN_PLAYER"), date ( "d.m.Y H:i:s", $GlobalUser['noattack_util'])) );
+        else if ($GlobalUser['noattack']) FleetError ( va ( loca("FLEET_ERR_ATTACK_BAN_PLAYER"), date ( "d.m.Y H:i:s", $GlobalUser['noattack_until'])) );
         else if ($acs_fleets >= $GlobalUni['acs'] * $GlobalUni['acs']) FleetError ( va (loca("FLEET_ERR_ACS_LIMIT"), $GlobalUni['acs'] * $GlobalUni['acs']) );
         else if ($numships + GetUnionUnitsCount($union['union_id']) > $GlobalUni['battle_max']) FleetError ( loca("FLEET_ERR_BATTLE_MAX") );
         break;
@@ -234,10 +241,11 @@ switch ( $order )
              IsBuddy ( $origin_user['player_id'],  $target_user['player_id']) ) ) $BlockAttack = 0;
 
         if ( $target['owner_id'] == $origin['owner_id'] ) FleetError ( loca("FLEET_ERR_SPY_OWN") );
+        else if ( $target != NULL && FleetAdminTargetProtected ($target_user) ) FleetError ( loca("FLEET_ERR_ADMIN") );
         else if ( IsPlayerNewbie ($target['owner_id']) || IsPlayerStrong ($target['owner_id']) ) FleetError ( loca("FLEET_ERR_SPY_NOOB") );
         else if ( $fleet[GID_F_PROBE] == 0 ) FleetError ( loca("FLEET_ERR_SPY_REQUIRED") );
         else if ($BlockAttack) FleetError ( loca("FLEET_ERR_ATTACK_BAN_UNI") );
-        else if ($GlobalUser['noattack']) FleetError ( va ( loca("FLEET_ERR_ATTACK_BAN_PLAYER"), date ( "d.m.Y H:i:s", $GlobalUser['noattack_util'])) );
+        else if ($GlobalUser['noattack']) FleetError ( va ( loca("FLEET_ERR_ATTACK_BAN_PLAYER"), date ( "d.m.Y H:i:s", $GlobalUser['noattack_until'])) );
         else if ($numships > $GlobalUni['battle_max']) FleetError ( loca("FLEET_ERR_BATTLE_MAX") );
         break;
 
@@ -262,10 +270,11 @@ switch ( $order )
             ( $origin_user['ally_id'] == $target_user['ally_id'] && $origin_user['ally_id'] > 0 )   || 
              IsBuddy ( $origin_user['player_id'],  $target_user['player_id']) ) ) $BlockAttack = 0;
 
-        if ( $fleet[GID_F_DEATHSTAR] == 0 ) FleetError ( loca("FLEET_ERR_DESTROY_REQUIRED") );
+        if ( $target != NULL && FleetAdminTargetProtected ($target_user) ) FleetError ( loca("FLEET_ERR_ADMIN") );
+        else if ( $fleet[GID_F_DEATHSTAR] == 0 ) FleetError ( loca("FLEET_ERR_DESTROY_REQUIRED") );
         else if ($target['type'] != PTYP_MOON ) FleetError ( loca("FLEET_ERR_DESTROY_MOON") );
         else if ($BlockAttack) FleetError ( loca("FLEET_ERR_ATTACK_BAN_UNI") );
-        else if ($GlobalUser['noattack']) FleetError ( va ( loca("FLEET_ERR_ATTACK_BAN_PLAYER"), date ( "d.m.Y H:i:s", $GlobalUser['noattack_util'])) );
+        else if ($GlobalUser['noattack']) FleetError ( va ( loca("FLEET_ERR_ATTACK_BAN_PLAYER"), date ( "d.m.Y H:i:s", $GlobalUser['noattack_until'])) );
         else if ($numships > $GlobalUni['battle_max']) FleetError ( loca("FLEET_ERR_BATTLE_MAX") );
         break;
 

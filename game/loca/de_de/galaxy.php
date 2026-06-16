@@ -10,6 +10,7 @@ $LOCA["de"]["GALAXY_RAK_WEAK_DRIVE"] = "Die Reichweite (Impulsantrieb-Forschungs
 $LOCA["de"]["GALAXY_RAK_VACATION_SELF"] = "Im Urlaubsmodus kann man keine Raketen abschießen!";
 $LOCA["de"]["GALAXY_RAK_VACATION_OTHER"] = "Dieser Spieler ist im Urlaubsmodus!";
 $LOCA["de"]["GALAXY_RAK_SELF"] = "Es ist unmöglich seinen eigenen Planeten anzugreifen!";
+$LOCA["de"]["GALAXY_RAK_ADMIN"] = "You cannot launch rockets at game operators or administrators!";
 $LOCA["de"]["GALAXY_RAK_NOOB"] = "Dieser Planet ist unter Noobschutz!";
 $LOCA["de"]["GALAXY_RAK_LAUNCHED"] = "Raketenstart Nr. 1!";
 

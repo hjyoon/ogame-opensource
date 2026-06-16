@@ -68,6 +68,7 @@ if ( method () === "POST" && isset($_POST['aktion']) )
             if ($GlobalUser['vacation']) $PageError = loca("GALAXY_RAK_VACATION_SELF");
             else if ($target_user['vacation']) $PageError = loca("GALAXY_RAK_VACATION_OTHER");
             else if ($target['owner_id'] == $GlobalUser['player_id']) $PageError = loca("GALAXY_RAK_SELF");
+            else if ($target_user['admin'] > USER_TYPE_PLAYER && $target_user['player_id'] != USER_SPACE) $PageError = loca("GALAXY_RAK_ADMIN");
             else if ( IsPlayerNewbie($target_user['player_id']) || IsPlayerStrong($target_user['player_id']) ) $PageError = loca("GALAXY_RAK_NOOB");
         }
 

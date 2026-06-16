@@ -10,6 +10,7 @@ $LOCA["es"]["GALAXY_RAK_WEAK_DRIVE"] = "The range (impulse engine research level
 $LOCA["es"]["GALAXY_RAK_VACATION_SELF"] = "You can't launch rockets while in vacation mode!";
 $LOCA["es"]["GALAXY_RAK_VACATION_OTHER"] = "This player is in vacation mode!";
 $LOCA["es"]["GALAXY_RAK_SELF"] = "It's impossible to attack your own planet!";
+$LOCA["es"]["GALAXY_RAK_ADMIN"] = "You cannot launch rockets at game operators or administrators!";
 $LOCA["es"]["GALAXY_RAK_NOOB"] = "The planet is under noob protection!";
 $LOCA["es"]["GALAXY_RAK_LAUNCHED"] = "Start of rocket #1!";
 
