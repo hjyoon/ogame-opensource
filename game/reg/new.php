@@ -28,6 +28,8 @@ $from_reg = true;
 $error = $agbclass = "";
 if ( method() === "POST" )        // Register a player.
 {
+    $character = $_POST['character'] ?? "";
+    $email = $_POST['email'] ?? "";
     $ip = $_SERVER['REMOTE_ADDR'];
     $now = time ();
     $last = GetLastRegistrationByIP ( $ip );
@@ -38,17 +40,17 @@ if ( method() === "POST" )        // Register a player.
     }
 
     else if ( ( $now - $last ) < 10 * 60 && !localhost($ip) ) $error = loca("REG_NEW_ERROR_IP");
-    else if ( mb_strlen ($_POST['character']) < 3 || mb_strlen ($_POST['character']) > 20 || preg_match ('/[;,<>()\`\"\']/', $_POST['character']) ) $error = va ( loca("REG_NEW_ERROR_CHARS"), $_POST['character'] );
-    else if ( IsUserExist ( $_POST['character'])) $error = va ( loca("REG_NEW_ERROR_EXISTS"), $_POST['character'] ) ;
-    else if ( !isValidEmail ($_POST['email']) ) $error = va ( loca("REG_NEW_ERROR_EMAIL"), $_POST['email'] ) ;
-    else if ( IsEmailExist ( $_POST['email'])) $error = va ( loca("REG_NEW_ERROR_EMAIL_EXISTS"), $_POST['email'] );
+    else if ( mb_strlen ($character) < 3 || mb_strlen ($character) > 20 || preg_match ('/[;,<>()\`\"\']/', $character) ) $error = va ( loca("REG_NEW_ERROR_CHARS"), $character );
+    else if ( IsUserExist ( $character)) $error = va ( loca("REG_NEW_ERROR_EXISTS"), $character ) ;
+    else if ( !isValidEmail ($email) ) $error = va ( loca("REG_NEW_ERROR_EMAIL"), $email ) ;
+    else if ( IsEmailExist ( $email)) $error = va ( loca("REG_NEW_ERROR_EMAIL_EXISTS"), $email );
     else if ( GetUsersCount() >= $GlobalUni['maxusers']) $error = va (loca("REG_NEW_ERROR_MAX_PLAYERS"), $GlobalUni['maxusers']);
 
     $forbidden = explode ( ",", FORBIDDEN_LOGINS );
-    $lower = mb_strtolower ($_POST['character'], 'UTF-8');
+    $lower = mb_strtolower ($character, 'UTF-8');
     foreach ( $forbidden as $i=>$name) {
         if ( strpos($lower, $name) !== false ) {
-            $error = va ( loca("REG_NEW_ERROR_CHARS"), $_POST['character'] );
+            $error = va ( loca("REG_NEW_ERROR_CHARS"), $character );
             break;
         }
     }
@@ -56,7 +58,7 @@ if ( method() === "POST" )        // Register a player.
     if ( $error === "" )
     {
         $password = gen_trivial_password ();
-        CreateUser ( $_POST['character'], $password, $_POST['email'], false );
+        CreateUser ( $character, $password, $email, false );
 
 ?>
 <html>
@@ -77,9 +79,9 @@ if ( method() === "POST" )        // Register a player.
 <th style="text-align: left;">
 <?php
     echo va(loca("REG_NEW_TEXT"),
-        $_POST['character'],
+        $character,
         $uninum,
-        $_POST['email'],
+        $email,
         $StartPage,
         $StartPage,
         loca("OGAME_LOC")
@@ -89,7 +91,7 @@ if ( method() === "POST" )        // Register a player.
 </table>
 <div style="position:relative; width: 700px; height: 300px; color: #000000; text-align: left; border: 1px solid #415680;"><a href="<?=hostname();?>"><img src="login.jpg" width="700" height="300" alt="" /></a>
 	<div style="position:absolute; top:135px; left:170px; width:130px; height:16px;"><?=va(loca("REG_NEW_UNI"), $uninum);?></div>
-	<div style="position:absolute; top:135px; left:345px; width:85px; height:16px;"><?=$_POST['character'];?></div>
+	<div style="position:absolute; top:135px; left:345px; width:85px; height:16px;"><?=$character;?></div>
 
 	<div style="position:absolute; top:135px; left:435px; width:85px; height:16px;">********</div>
 
