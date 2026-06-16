@@ -84,7 +84,16 @@ function PageAlly_MemberSettings () : void
 
     if ( method() === "GET" && $_GET['a'] == 13 && $selected_user)        // Kick member
     {
+        $myrank = LoadRank ( $ally['ally_id'], $GlobalUser['allyrank'] );
         $leaver = LoadUser ($selected_user);
+        if ( ! ($myrank['rights'] & ARANK_KICK) ||
+             !$leaver ||
+             $leaver['ally_id'] != $ally['ally_id'] ||
+             $leaver['allyrank'] == 0 )
+        {
+            $PageError = "<center>\n".loca("ALLY_NO_WAY")."<br></center>";
+            return;
+        }
 
         $query = "UPDATE ".$db_prefix."users SET ally_id = 0 WHERE player_id = $selected_user";
         dbquery ($query);
@@ -112,9 +121,21 @@ function PageAlly_MemberSettings () : void
 
     if ( method() === "POST" && $_GET['a'] == 16 && $selected_user)        // Assign a rank to a player
     {
-        $newrank = intval($_POST['newrang']);
-        $query = "UPDATE ".$db_prefix."users SET allyrank = $newrank WHERE player_id = $selected_user";
-        dbquery ($query);
+        $myrank = LoadRank ( $ally['ally_id'], $GlobalUser['allyrank'] );
+        $member = LoadUser ($selected_user);
+        if ( ! ($myrank['rights'] & ARANK_W_MEMBERS) ||
+             !$member ||
+             $member['ally_id'] != $ally['ally_id'] ||
+             $member['allyrank'] == 0 )
+        {
+            $PageError = "<center>\n".loca("ALLY_NO_WAY")."<br></center>";
+            return;
+        }
+        else {
+            $newrank = intval($_POST['newrang']);
+            $query = "UPDATE ".$db_prefix."users SET allyrank = $newrank WHERE player_id = $selected_user";
+            dbquery ($query);
+        }
     }
 
     $now = time ();

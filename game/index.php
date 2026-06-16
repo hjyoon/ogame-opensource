@@ -109,6 +109,12 @@ if ($pk != false) {
         $external = $router[$pk]['external'];
     }
 
+    if (!$external && !key_exists ( 'session', $_GET )) {
+        RedirectHome ();
+        ob_end_flush ();
+        exit ();
+    }
+
     if (!$external && key_exists ( 'session', $_GET )) {
 
         if ( key_exists ('cp', $_GET)) SelectPlanet ($GlobalUser['player_id'], intval($_GET['cp']));

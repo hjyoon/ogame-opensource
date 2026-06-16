@@ -26,6 +26,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - HTTP registration, login, core post-login pages, and internal asset URL checks.
 - Public and authenticated route matrix coverage for main game pages, including pages that need minimal GET/POST parameters.
 - Account action flows for notes, private messages, planet rename, options, resource settings, and building enqueue.
+- Social and access-control flows for alliance creation/application/acceptance/leave/dismiss, buddy request/reject/accept/delete, unauthenticated private-page redirects, report ownership, note ownership, and foreign-planet build attempts.
 - Battle reports and espionage reports.
 - Plunder, debris creation, debris recycling, resource return, and defense writeback.
 - Interplanetary missile and anti-ballistic missile cases.

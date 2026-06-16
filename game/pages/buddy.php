@@ -224,23 +224,27 @@ else if ( key_exists ('action', $_GET) && $_GET['action'] == 2 && $_GET['buddy_i
 {
     $buddy_id = intval ($_GET['buddy_id']);
     $buddy = LoadBuddy ($buddy_id);
-    AcceptBuddy ($buddy_id);
-    SendMessage ( $buddy['request_from'], loca("BUDDY_LIST"), loca("BUDDY_CONFIRM"), va(loca("BUDDY_MSG_ADDED"), $GlobalUser['oname']), MTYP_PM);
+    if ( $buddy && $buddy['request_to'] == $GlobalUser['player_id'] ) {
+        AcceptBuddy ($buddy_id);
+        SendMessage ( $buddy['request_from'], loca("BUDDY_LIST"), loca("BUDDY_CONFIRM"), va(loca("BUDDY_MSG_ADDED"), $GlobalUser['oname']), MTYP_PM);
+    }
     Buddy_Income ();
 }
 else if ( key_exists ('action', $_GET) && $_GET['action'] == 3 && $_GET['buddy_id'])    // Reject the request
 {
     $buddy_id = intval ($_GET['buddy_id']);
     $buddy = LoadBuddy ($buddy_id);
-    RemoveBuddy ($buddy_id);
-    SendMessage ( $buddy['request_from'], loca("BUDDY_LIST"), loca("BUDDY_REQUEST"), va(loca("BUDDY_MSG_DECLINED"), $GlobalUser['oname']), MTYP_PM);
+    if ( $buddy && $buddy['request_to'] == $GlobalUser['player_id'] ) {
+        RemoveBuddy ($buddy_id);
+        SendMessage ( $buddy['request_from'], loca("BUDDY_LIST"), loca("BUDDY_REQUEST"), va(loca("BUDDY_MSG_DECLINED"), $GlobalUser['oname']), MTYP_PM);
+    }
     Buddy_Income ();
 }
 else if ( key_exists ('action', $_GET) && $_GET['action'] == 4 && $_GET['buddy_id'])    // Withdraw your request.
 {
     $buddy_id = intval ($_GET['buddy_id']);
     $buddy = LoadBuddy ($buddy_id);
-    if ( $buddy['request_from'] == $GlobalUser['player_id'] )    // only your own
+    if ( $buddy && $buddy['request_from'] == $GlobalUser['player_id'] )    // only your own
     {
         RemoveBuddy ($buddy_id);
         SendMessage ( $buddy['request_to'], loca("BUDDY_LIST"), loca("BUDDY_REQUEST"), va (loca("BUDDY_MSG_RECALLED"), $GlobalUser['oname']), MTYP_PM );
@@ -254,12 +258,12 @@ else if ( key_exists ('action', $_GET) && $_GET['action'] == 8 && $_GET['buddy_i
 {
     $buddy_id = intval ($_GET['buddy_id']);
     $buddy = LoadBuddy ($buddy_id);
-    if ($buddy['request_from'] == $GlobalUser['player_id'] )    // only your own
+    if ($buddy && $buddy['request_from'] == $GlobalUser['player_id'] )    // only your own
     {
         RemoveBuddy ($buddy_id);
         SendMessage ( $buddy['request_to'], loca("BUDDY_LIST"), loca("BUDDY_CONFIRM"), va (loca("BUDDY_MSG_DELETED"), $GlobalUser['oname']), MTYP_PM );
     }
-    if ($buddy['request_to'] == $GlobalUser['player_id'] )
+    if ($buddy && $buddy['request_to'] == $GlobalUser['player_id'] )
     {
         RemoveBuddy ($buddy_id);
         SendMessage ( $buddy['request_from'], loca("BUDDY_LIST"), loca("BUDDY_CONFIRM"), va (loca("BUDDY_MSG_DELETED"), $GlobalUser['oname']), MTYP_PM );
