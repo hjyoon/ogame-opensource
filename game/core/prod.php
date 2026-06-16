@@ -113,13 +113,16 @@ function ResearchNetwork ( int $planetid, int $id ) : int
 function IsEnoughResources (array $user, array $planet, array $cost) : bool
 {
     foreach ($cost as $rc=>$value) {
+        if ($value <= 0) {
+            continue;
+        }
         if (isset($user[$rc])) {
-            if ($value > 0 && $user[$rc] < $value) {
+            if ($user[$rc] < $value) {
                 return false;
             }
         }
         else if (isset($planet[$rc])) {
-            if ($value > 0 && $planet[$rc] < $value) {
+            if ($planet[$rc] < $value) {
                 return false;
             }
         }
