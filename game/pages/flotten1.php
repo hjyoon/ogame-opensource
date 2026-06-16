@@ -69,8 +69,9 @@ if ( method () === "POST" )
     {
         $fleet_id = intval ($_POST['order_return']);
         $fleet_obj = LoadFleet ( $fleet_id );
-        if (  ($fleet_obj['owner_id'] == $GlobalUser['player_id']) &&
-              ($fleet_obj['mission'] < FTYP_RETURN || $fleet_obj['mission'] > FTYP_ORBITING )  ) 
+        if (  ($fleet_obj !== null && $fleet_obj !== false) &&
+              ($fleet_obj['owner_id'] == $GlobalUser['player_id']) &&
+              ($fleet_obj['mission'] < FTYP_RETURN || $fleet_obj['mission'] > FTYP_ORBITING )  )
             RecallFleet ( $fleet_id );
     }
 

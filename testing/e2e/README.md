@@ -38,6 +38,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Technology unlock gates and economy edge cases for building/research/shipyard requirements, energy-shortage production, storage caps, and production-ratio ticks.
 - Statistics and ranking flows for recalculated asset scores, queue-completion score adjustments, rank ordering, and statistics page rendering.
 - Fleet lifecycle flows for transport delivery/return, deploy arrival, and recalled transport return.
+- Fleet recall edge flows for invalid fleet ids, foreign fleet recall rejection, already-returning/completed fleet recall no-ops, transport/deploy cargo returns, and orbiting ACS hold recall.
 - ACS and hold flows for unauthorized hold rejection, buddy hold orbit/return, ACS union creation, invited participant join, battle resolution, and return.
 - Alliance Depot ACS fuel supply flows for hold-fleet rendering, successful hold extension with deuterium spending, and no-op handling without a depot or enough fuel.
 - Trader, premium officer, and moon-tool flows for merchant calls/exchanges, officer purchase, lunar base construction, jump gates, and phalanx scans.

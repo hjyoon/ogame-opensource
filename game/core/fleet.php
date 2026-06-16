@@ -400,6 +400,8 @@ function RecallFleet (int $fleet_id, int $now=0) : void
 
     if ($now == 0) $now = time ();
     $fleet_obj = LoadFleet ($fleet_id);
+    if ( $fleet_obj === null || $fleet_obj === false ) return;
+
     global $fleetmap;
     $fleet = array ();
     foreach ($fleetmap as $i=>$gid) $fleet[$gid] = $fleet_obj[$gid];
@@ -412,6 +414,7 @@ function RecallFleet (int $fleet_id, int $now=0) : void
     $target = LoadPlanetById ( $fleet_obj['target_planet'] );
     if ($target == null) return;
     $queue = GetFleetQueue ($fleet_obj['fleet_id']);
+    if ( $queue === null || $queue === false ) return;
 
     if ($fleet_obj['mission'] < FTYP_RETURN) $new_mission = $fleet_obj['mission'] + FTYP_RETURN;
     else $new_mission = $fleet_obj['mission'] - FTYP_RETURN;
