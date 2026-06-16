@@ -50,6 +50,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Fleet recall edge flows for invalid fleet ids, foreign fleet recall rejection, already-returning/completed fleet recall no-ops, transport/deploy cargo returns, and orbiting ACS hold recall.
 - ACS and hold flows for unauthorized hold rejection, buddy hold orbit/return, ACS union creation, invited participant join, battle resolution, and return.
 - Alliance Depot ACS fuel supply flows for hold-fleet rendering, successful hold extension with deuterium spending, and no-op handling without a depot or enough fuel.
+- Admin destructive flows for queue freeze/unfreeze/complete/delete controls, account deletion scheduling, admin planet creation, universe freeze, and admin-triggered score recalculation.
 - Trader, premium officer, and moon-tool flows for merchant calls/exchanges, officer purchase, lunar base construction, jump gates, and phalanx scans.
 - Jump Gate edge flows for target filtering, invalid source/target moons, missing gates, foreign moons, empty/oversized ship selections, cooldown direct-POST rejection, same-moon rejection, and solar-satellite exclusion.
 - Battle reports and espionage reports.

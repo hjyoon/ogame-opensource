@@ -54,7 +54,7 @@ class Admin_Users extends Page {
                         $query .= "disable = 1, disable_until = " . ($now+7*24*60*60).", ";
                 }
                 else {
-                    $query .= "disable = 0, ";
+                    $query .= "disable = 0, disable_until = 0, ";
                 }
                 if ( key_exists('vacation', $_POST) && $_POST['vacation'] === "on" ) {
                     $query .= "vacation = 1, vacation_until = " . ($now+((2*24*60*60)/ $speed)) .", ";
@@ -106,7 +106,7 @@ class Admin_Users extends Page {
                 $p = $_POST['p'];    if ($p === "" ) $p = 1;
                 if ( ! HasPlanet ( $g, $s, $p ) ) { 
                     $planet_id = CreatePlanet ($g, $s, $p, $_GET['player_id'] );
-                    $query = "UPDATE ".$db_prefix."planets SET mprod = 0, kprod = 0, dprod = 0 WHERE planet_id = " . $planet_id;
+                    $query = "UPDATE ".$db_prefix."planets SET prod1 = 0, prod2 = 0, prod3 = 0 WHERE planet_id = " . $planet_id;
                     dbquery ( $query );
                 }
             }
