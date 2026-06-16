@@ -979,6 +979,7 @@ function AddChangeEmailEvent (int $player_id) : int
     $now = time ();
     $when = $now + 7 * 24 * 60 * 60;
     $id = AddQueue ($player_id, QTYP_CHANGE_EMAIL, 0, 0, 0, $now, $when, QUEUE_PRIO_LOWEST);
+    return $id;
 }
 
 // Update permanent mail address

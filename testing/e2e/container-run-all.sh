@@ -42,6 +42,7 @@ export OGAME_E2E_DEFENDER_NAME OGAME_E2E_DEFENDER_PASSWORD
 run_json_case route_matrix "$ROOT/http_route_matrix_e2e.php"
 run_json_case render_asset_smoke "$ROOT/http_render_asset_smoke_e2e.php"
 run_json_case account_actions "$ROOT/http_account_actions_e2e.php"
+run_json_case account_security "$ROOT/http_account_security_e2e.php"
 run_json_case message_lifecycle "$ROOT/http_message_lifecycle_e2e.php"
 run_json_case galaxy_templates "$ROOT/http_galaxy_templates_e2e.php"
 run_json_case target_restrictions "$ROOT/http_target_restrictions_e2e.php"
