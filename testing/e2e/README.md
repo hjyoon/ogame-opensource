@@ -31,6 +31,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Admin and account-state flows for admin-area access control, operator write restrictions, admin user updates, ban/unban login blocking, and vacation-mode action blocking.
 - Queue and fleet validation flows for building/research/shipyard queue create/cancel/complete, admin queue freeze/unfreeze/remove, active-queue vacation blocking, transport launch, and rejected fleet sends.
 - Fleet lifecycle flows for transport delivery/return, deploy arrival, and recalled transport return.
+- ACS and hold flows for unauthorized hold rejection, buddy hold orbit/return, ACS union creation, invited participant join, battle resolution, and return.
 - Battle reports and espionage reports.
 - Plunder, debris creation, debris recycling, resource return, and defense writeback.
 - Interplanetary missile and anti-ballistic missile cases.
