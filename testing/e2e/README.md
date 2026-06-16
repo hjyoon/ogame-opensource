@@ -30,6 +30,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Social and access-control flows for alliance creation/application/acceptance/leave/dismiss, buddy request/reject/accept/delete, unauthenticated private-page redirects, report ownership, note ownership, and foreign-planet build attempts.
 - Admin and account-state flows for admin-area access control, operator write restrictions, admin user updates, ban/unban login blocking, and vacation-mode action blocking.
 - Queue and fleet validation flows for building/research/shipyard queue create/cancel/complete, admin queue freeze/unfreeze/remove, active-queue vacation blocking, transport launch, and rejected fleet sends.
+- Technology unlock gates and economy edge cases for building/research/shipyard requirements, energy-shortage production, storage caps, and production-ratio ticks.
 - Fleet lifecycle flows for transport delivery/return, deploy arrival, and recalled transport return.
 - ACS and hold flows for unauthorized hold rejection, buddy hold orbit/return, ACS union creation, invited participant join, battle resolution, and return.
 - Trader, premium officer, and moon-tool flows for merchant calls/exchanges, officer purchase, lunar base construction, jump gates, and phalanx scans.
