@@ -165,7 +165,7 @@ function message_rows(int $ownerId, int $after): array
                 'colony_max' => str_contains($text, 'empire becomes too large'),
                 'moon_created' => str_contains($text, 'form a moon'),
                 'moon_attack' => str_contains($subj, 'Moon attack') || str_contains($subj, 'Moon quakes'),
-                'moon_destroyed' => str_contains($text, 'destroy the satellite') || str_contains($text, 'eventually explodes'),
+                'moon_destroyed' => str_contains($text, 'destroy the satellite') || str_contains($text, 'eventually explodes') || str_contains($text, 'breaks into millions of pieces'),
             ),
         );
     }

@@ -183,6 +183,7 @@ function message_rows(int $ownerId, int $after): array
     $res = q("SELECT msg_id, owner_id, pm, subj, text FROM {$db_prefix}messages WHERE owner_id={$ownerId} AND msg_id>{$after} ORDER BY msg_id ASC");
     while ($row = dbarray($res)) {
         $text = stripslashes($row['text'] ?? '');
+        $textLower = strtolower($text);
         $subj = stripslashes($row['subj'] ?? '');
         $plain = trim(preg_replace('/\s+/', ' ', html_entity_decode(strip_tags($subj . ' ' . $text), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
         $rows[] = array(
@@ -196,12 +197,18 @@ function message_rows(int $ownerId, int $after): array
                 'dark_matter' => str_contains($text, 'Dark Matter'),
                 'found_resources' => str_contains($text, 'You got') && (str_contains($text, 'Metal') || str_contains($text, 'Crystal') || str_contains($text, 'Deuterium')),
                 'found_fleet' => str_contains($text, 'following ships are now part of the fleet'),
-                'black_hole_or_lost' => str_contains($text, 'lost forever') || str_contains($text, 'black hole') || str_contains($text, 'entire expedition fleet') || str_contains(strtolower($text), 'transmission terminated'),
+                'black_hole_or_lost' => str_contains($text, 'lost forever') || str_contains($textLower, 'black hole') || str_contains($text, 'entire expedition fleet') || str_contains($textLower, 'transmission terminated'),
                 'trader' => str_contains($text, 'representative with goods to trade') || str_contains($text, 'exclusive client'),
-                'pirates' => str_contains(strtolower($text), 'pirate'),
-                'aliens' => str_contains(strtolower($text), 'alien') || str_contains(strtolower($text), 'unknown species'),
-                'delay' => str_contains(strtolower($text), 'return later') || str_contains(strtolower($text), 'return trip') || str_contains(strtolower($text), 'take longer') || str_contains(strtolower($text), 'longer than thought'),
-                'accel' => str_contains(strtolower($text), 'earlier') || str_contains(strtolower($text), 'expedited') || str_contains(strtolower($text), 'shorten'),
+                'pirates' => str_contains($textLower, 'pirate'),
+                'aliens' => str_contains($textLower, 'alien') || str_contains($textLower, 'unknown species'),
+                'delay' => str_contains($textLower, 'return later')
+                    || str_contains($textLower, 'return trip')
+                    || str_contains($textLower, 'take longer')
+                    || str_contains($textLower, 'longer than thought')
+                    || str_contains($textLower, 'big delay')
+                    || str_contains($textLower, 'make their way back')
+                    || str_contains($textLower, 'needed repair'),
+                'accel' => str_contains($textLower, 'earlier') || str_contains($textLower, 'expedited') || str_contains($textLower, 'shorten'),
             ),
         );
     }
