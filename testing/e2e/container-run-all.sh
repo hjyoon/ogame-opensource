@@ -4,6 +4,7 @@ set -eu
 ROOT="${OGAME_E2E_ROOT:-/tmp/ogame-e2e}"
 OUT_DIR="${OGAME_E2E_OUT_DIR:-/tmp/ogame-e2e-results}"
 mkdir -p "$OUT_DIR"
+export OGAME_E2E_OUT_DIR="$OUT_DIR"
 
 failures=0
 

@@ -174,6 +174,115 @@ function e2e_metric(array $response, int $thresholdMs): array
     );
 }
 
+function e2e_perf_baseline_path(): string
+{
+    $override = trim((string)(getenv('OGAME_E2E_PERF_COMPARE_FILE') ?: ''));
+    if ($override !== '') {
+        return $override;
+    }
+
+    $outDir = rtrim((string)(getenv('OGAME_E2E_OUT_DIR') ?: '/tmp/ogame-e2e-results'), '/');
+    return $outDir . '/performance-baseline-metrics.json';
+}
+
+function e2e_perf_history_path(): string
+{
+    $override = trim((string)(getenv('OGAME_E2E_PERF_HISTORY_FILE') ?: ''));
+    if ($override !== '') {
+        return $override;
+    }
+
+    $outDir = rtrim((string)(getenv('OGAME_E2E_OUT_DIR') ?: '/tmp/ogame-e2e-results'), '/');
+    return $outDir . '/performance-baseline-history.jsonl';
+}
+
+function e2e_load_perf_baseline(string $path): ?array
+{
+    if ($path === '' || !is_file($path)) {
+        return null;
+    }
+
+    $raw = @file_get_contents($path);
+    if ($raw === false || trim($raw) === '') {
+        return null;
+    }
+
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded) || !isset($decoded['metrics']) || !is_array($decoded['metrics'])) {
+        return null;
+    }
+
+    return $decoded;
+}
+
+function e2e_ensure_file_dir(string $path): bool
+{
+    $dir = dirname($path);
+    return is_dir($dir) || @mkdir($dir, 0777, true);
+}
+
+function e2e_write_perf_json(string $path, array $record): bool
+{
+    if (!e2e_ensure_file_dir($path)) {
+        return false;
+    }
+
+    $json = json_encode($record, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    return $json !== false && @file_put_contents($path, $json . PHP_EOL) !== false;
+}
+
+function e2e_append_perf_history(string $path, array $record): bool
+{
+    if (!e2e_ensure_file_dir($path)) {
+        return false;
+    }
+
+    $json = json_encode($record, JSON_UNESCAPED_SLASHES);
+    return $json !== false && @file_put_contents($path, $json . PHP_EOL, FILE_APPEND | LOCK_EX) !== false;
+}
+
+function e2e_perf_regression_checks(array $metrics, ?array $baseline, string $baselinePath): array
+{
+    $checks = array();
+    $multiplier = max(1.0, (float)(getenv('OGAME_E2E_PERF_REGRESSION_MULTIPLIER') ?: 10.0));
+    $minDeltaMs = max(0, intval(getenv('OGAME_E2E_PERF_REGRESSION_MIN_DELTA_MS') ?: 2000));
+
+    if ($baseline === null) {
+        return array(e2e_case(true, 'performance baseline comparison is initialized', array(
+            'baseline_file' => $baselinePath,
+            'previous_baseline' => null,
+        )));
+    }
+
+    foreach ($metrics as $label => $current) {
+        $previous = $baseline['metrics'][$label] ?? null;
+        if (!is_array($previous) || !isset($previous['elapsed_ms'])) {
+            $checks[] = e2e_case(true, "{$label} has no previous performance sample yet", array(
+                'baseline_file' => $baselinePath,
+                'recorded_at' => $baseline['recorded_at'] ?? null,
+            ));
+            continue;
+        }
+
+        $currentMs = (int)$current['elapsed_ms'];
+        $previousMs = (int)$previous['elapsed_ms'];
+        $thresholdMs = (int)($current['threshold_ms'] ?? 0);
+        $allowedMs = max($thresholdMs, (int)ceil($previousMs * $multiplier), $previousMs + $minDeltaMs);
+        $checks[] = e2e_case($currentMs <= $allowedMs, "{$label} does not regress beyond the stored performance baseline", array(
+            'current_ms' => $currentMs,
+            'previous_ms' => $previousMs,
+            'allowed_ms' => $allowedMs,
+            'threshold_ms' => $thresholdMs,
+            'multiplier' => $multiplier,
+            'min_delta_ms' => $minDeltaMs,
+            'baseline_file' => $baselinePath,
+            'baseline_recorded_at' => $baseline['recorded_at'] ?? null,
+        ));
+    }
+
+    return $checks;
+}
+
 $cases = array();
 $attackerId = intval(getenv('OGAME_E2E_ATTACKER_ID') ?: 0);
 
@@ -197,6 +306,9 @@ try {
     $pageThreshold = max(1, intval(getenv('OGAME_E2E_PERF_PAGE_MS') ?: 5000));
     $adminThreshold = max(1, intval(getenv('OGAME_E2E_PERF_ADMIN_MS') ?: 8000));
     $totalThreshold = max(1, intval(getenv('OGAME_E2E_PERF_TOTAL_MS') ?: 15000));
+    $baselinePath = e2e_perf_baseline_path();
+    $historyPath = e2e_perf_history_path();
+    $previousBaseline = e2e_load_perf_baseline($baselinePath);
 
     $playerAuth = e2e_prepare_session($attackerId, 'perf-player', USER_TYPE_PLAYER);
     $playerCookies = $playerAuth['cookies'];
@@ -246,10 +358,34 @@ try {
         $metrics[$label] = e2e_metric($response, $threshold);
         $checks = array_merge($checks, e2e_response_checks($response, $label, $threshold));
     }
+    $metrics['aggregate_total'] = array(
+        'status' => 200,
+        'elapsed_ms' => $totalMs,
+        'bytes' => array_reduce($requests, fn($sum, $request) => $sum + (int)$request['response']['bytes'], 0),
+        'threshold_ms' => $totalThreshold,
+        'page_count' => count($requests),
+    );
     $checks[] = e2e_case($totalMs <= $totalThreshold, 'tracked pages stay within the aggregate render baseline', array('total_ms' => $totalMs, 'threshold_ms' => $totalThreshold));
+    $checks = array_merge($checks, e2e_perf_regression_checks($metrics, $previousBaseline, $baselinePath));
+
+    $record = array(
+        'recorded_at' => gmdate('c'),
+        'base_url' => $gameBase,
+        'metrics' => $metrics,
+    );
+    $baselineWritten = e2e_write_perf_json($baselinePath, $record);
+    $historyWritten = e2e_append_perf_history($historyPath, $record);
+    $checks[] = e2e_case($baselineWritten && $historyWritten, 'performance metrics are persisted for future comparison', array(
+        'baseline_file' => $baselinePath,
+        'history_file' => $historyPath,
+        'baseline_written' => $baselineWritten,
+        'history_written' => $historyWritten,
+    ));
 
     $cases[] = e2e_finalize_case(array(
         'case' => 'core_pages_stay_within_performance_baseline',
+        'baseline_file' => $baselinePath,
+        'history_file' => $historyPath,
         'metrics' => $metrics,
         'checks' => $checks,
     ));
