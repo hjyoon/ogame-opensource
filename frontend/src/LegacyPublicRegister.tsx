@@ -74,6 +74,7 @@ export function LegacyPublicRegister({
           universes={universes}
         />
         <LoginStrip
+          autoFocusUniverse={false}
           loginDraft={loginDraft}
           loginError={loginError}
           loginPending={loginPending}
@@ -122,6 +123,7 @@ function RegisterContent({
                   <td className="legacy-register-label">Username:</td>
                   <td className="legacy-register-input-cell">
                     <input
+                      autoFocus
                       className="legacy-public-input legacy-register-field"
                       name="character"
                       onChange={(event) => onRegistrationChange("character", event.currentTarget.value)}

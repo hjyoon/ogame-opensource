@@ -42,20 +42,25 @@ All newly migrated code must follow Clean Architecture. This is mandatory, not a
 
 ## QA Rules
 
-Use the existing PHP E2E suite as the baseline:
+Legacy PHP E2E is the baseline:
 
 ```sh
 testing/e2e/run-docker-e2e.sh
 ```
 
-For migration smoke checks:
+Migration smoke:
 
 ```sh
 testing/e2e/run-golang-migration-qa.sh
 ```
 
-Set `OGAME_RUN_LEGACY_E2E=0` only for local frontend/backend smoke work. Do not use that skip for final validation of migrated game behavior.
-Reuse existing E2E behavior as the oracle: full PHP E2E stays on the legacy stack, and HTTP black-box checks are ported to Go with the same JSON result shape.
+During page migration, write or extend Playwright headless visual E2E so legacy PHP and Go/React screenshots plus key boxes are compared before visual parity is claimed:
+
+```sh
+testing/e2e/run-playwright-visual-e2e.sh
+```
+
+Set `OGAME_RUN_LEGACY_E2E=0` only for local frontend/backend smoke work, never final game-behavior validation. Port HTTP black-box checks to Go with the same JSON result shape.
 
 Go internal package coverage must stay at or above 97%:
 

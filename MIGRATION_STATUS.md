@@ -21,15 +21,17 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - `/api/game/overview` returns a session-guarded read-only overview summary from legacy `users`, `planets`, and `uni`.
 - `/game/overview` targets the legacy PHP game visual composition: skin, header/menu, overview table, planet image, and resource summary.
 - Go migration QA smoke covers health, routes, assets, registration validation/creation, login, session lookup, overview lookup, and method guards.
+- Playwright headless visual E2E compares legacy PHP and Go/React public pages by screenshot diff plus key box geometry.
 
 ## Latest Verified Implementation
 
-- Milestone: native registration creation plus login-after-register now passes current Go migration QA.
+- Milestone: public page visual parity is guarded by headless Playwright comparison.
 
 ## Verified QA
 
 - `bun run build && bun run check && bun test`: passing.
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
+- `testing/e2e/run-playwright-visual-e2e.sh`: passing for public desktop/mobile pages.
 - Go internal coverage gate: `98.1% >= 97%`.
 - Go smoke JSON: `all_pass: true`, including registration-created overview access.
 

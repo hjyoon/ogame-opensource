@@ -74,7 +74,7 @@ export function LegacyPublicHome({
       </a>
       <div className="legacy-public-main">
         <LanguageLinks />
-        <MainMenu active="home" />
+        <MainMenu active="home" withHomeCounterSpace />
         <HomeContent />
         <LoginStrip
           loginDraft={loginDraft}
@@ -111,7 +111,7 @@ export function LanguageLinks() {
   );
 }
 
-export function MainMenu({ active }: { active?: "home" | "about" | "preview" | "reg" }) {
+export function MainMenu({ active, withHomeCounterSpace = false }: { active?: "home" | "about" | "preview" | "reg"; withHomeCounterSpace?: boolean }) {
   const items = [
     { key: "home", label: "Start", href: "/home" },
     { key: "about", label: "About OGame", href: "/about" },
@@ -132,6 +132,12 @@ export function MainMenu({ active }: { active?: "home" | "about" | "preview" | "
           </a>
         )
       )}
+      {withHomeCounterSpace ? (
+        <>
+          <br />
+          <br />
+        </>
+      ) : null}
     </nav>
   );
 }
@@ -162,8 +168,9 @@ export function LoginStrip({
   loginPending,
   loginError,
   onLoginChange,
-  onLoginSubmit
-}: LegacyPublicLoginProps) {
+  onLoginSubmit,
+  autoFocusUniverse = true
+}: LegacyPublicLoginProps & { autoFocusUniverse?: boolean }) {
   return (
     <section className="legacy-public-login" id="pustekuchen">
       <div className="legacy-public-login-labels">
@@ -176,6 +183,7 @@ export function LoginStrip({
             <tr>
               <td>
                 <select
+                  autoFocus={autoFocusUniverse}
                   className="legacy-public-input"
                   name="universe"
                   onChange={(event) => onLoginChange("universe", event.currentTarget.value)}

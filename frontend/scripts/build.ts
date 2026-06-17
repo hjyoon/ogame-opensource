@@ -6,6 +6,7 @@ const dist = new URL("dist/", root);
 const assets = new URL("assets/", dist);
 const publicAssets = new URL("public-assets/", dist);
 const legacyPublicImages = new URL("../wwwroot/img/", root);
+const legacyFavicon = new URL("../wwwroot/favicon.ico", root);
 
 await rm(fileURLToPath(dist), { force: true, recursive: true });
 await mkdir(fileURLToPath(assets), { recursive: true });
@@ -34,6 +35,10 @@ if (!result.success) {
 await copyFile(
   fileURLToPath(new URL("src/index.html", root)),
   fileURLToPath(new URL("index.html", dist))
+);
+await copyFile(
+  fileURLToPath(legacyFavicon),
+  fileURLToPath(new URL("favicon.ico", dist))
 );
 
 await cp(
