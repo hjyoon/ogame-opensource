@@ -32,16 +32,77 @@ function htmlsafe (mixed $value) : string
     return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8");
 }
 
-function NormalizeExternalUrl (string $url) : string
+function IsPrivateOrReservedIp (string $ip) : bool
+{
+    if (preg_match('/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i', $ip, $m)) {
+        return IsPrivateOrReservedIp($m[1]);
+    }
+    if (preg_match('/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i', $ip, $m)) {
+        $mapped = long2ip((hexdec($m[1]) << 16) + hexdec($m[2]));
+        return $mapped === false || IsPrivateOrReservedIp($mapped);
+    }
+
+    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+        $long = sprintf("%u", ip2long($ip));
+        $ranges = array(
+            array(ip2long("0.0.0.0"), ip2long("0.255.255.255")),
+            array(ip2long("10.0.0.0"), ip2long("10.255.255.255")),
+            array(ip2long("100.64.0.0"), ip2long("100.127.255.255")),
+            array(ip2long("127.0.0.0"), ip2long("127.255.255.255")),
+            array(ip2long("169.254.0.0"), ip2long("169.254.255.255")),
+            array(ip2long("172.16.0.0"), ip2long("172.31.255.255")),
+            array(ip2long("192.0.0.0"), ip2long("192.0.0.255")),
+            array(ip2long("192.0.2.0"), ip2long("192.0.2.255")),
+            array(ip2long("192.168.0.0"), ip2long("192.168.255.255")),
+            array(ip2long("198.18.0.0"), ip2long("198.19.255.255")),
+            array(ip2long("198.51.100.0"), ip2long("198.51.100.255")),
+            array(ip2long("203.0.113.0"), ip2long("203.0.113.255")),
+            array(ip2long("224.0.0.0"), ip2long("255.255.255.255")),
+        );
+        foreach ($ranges as $range) {
+            $start = sprintf("%u", $range[0]);
+            $end = sprintf("%u", $range[1]);
+            if ($long >= $start && $long <= $end) return true;
+        }
+        return false;
+    }
+
+    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false) {
+        return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false;
+    }
+
+    return false;
+}
+
+function IsUnsafeExternalHost (string $host) : bool
+{
+    $host = strtolower(trim($host, "[] \t\n\r\0\x0B."));
+    if ($host === "") return true;
+    if ($host === "localhost" || str_ends_with($host, ".localhost") || str_ends_with($host, ".local")) return true;
+
+    if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+        return IsPrivateOrReservedIp($host);
+    }
+
+    if (preg_match('/^[0-9.]+$/', $host)) return true;
+    if (preg_match('/^0x[0-9a-f]+$/i', $host)) return true;
+
+    return false;
+}
+
+function NormalizeExternalUrl (string $url, bool $rejectLocalHost = false) : string
 {
     $url = trim($url);
     if ($url === "") return "";
+    if (preg_match('/[\x00-\x1f\x7f]/', $url)) return "";
 
     $parts = parse_url($url);
-    if ($parts === false || !isset($parts['scheme'])) return "";
+    if ($parts === false || !isset($parts['scheme']) || !isset($parts['host'])) return "";
 
     $scheme = strtolower($parts['scheme']);
     if ($scheme !== "http" && $scheme !== "https") return "";
+    if (isset($parts['user']) || isset($parts['pass'])) return "";
+    if ($rejectLocalHost && IsUnsafeExternalHost($parts['host'])) return "";
 
     return $url;
 }

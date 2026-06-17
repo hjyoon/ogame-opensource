@@ -17,6 +17,18 @@ InitDB();
 
 //print_r ($_REQUEST);
 
+function FeedText (string $html) : string
+{
+	$html = preg_replace('/<a[^>]*>(.*?)<\/a>/is', '$1', $html);
+	$text = trim(html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
+	return preg_replace('/\s+/u', ' ', $text);
+}
+
+function FeedCData (string $text) : string
+{
+	return str_replace(']]>', ']]&gt;', $text);
+}
+
 if (!key_exists('feedid', $_REQUEST)) {
 	exit("No feed specified");
 }
@@ -66,6 +78,11 @@ $query = "SELECT * FROM ".$db_prefix."messages WHERE owner_id = $player_id AND d
 $result = dbquery ($query);
 //print_r ($result);
 
+$safe_oname = htmlsafe($user['oname']);
+$safe_feedid = htmlsafe($feedid);
+$feed_url = hostname("feed")."feed/show.php?feedid=".rawurlencode($feedid);
+$safe_feed_url = htmlsafe($feed_url);
+
 	echo "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
 
 	// Atom Format
@@ -73,26 +90,29 @@ $result = dbquery ($query);
 	if (($user['flags'] & USER_FLAG_FEED_ATOM) != 0) {
 ?>
 <feed xmlns="http://www.w3.org/2005/Atom">
-	<title>OGame-Nachrichten von <?=$user['oname'];?></title>
-	<link href="<?=hostname("feed");?>feed/show.php?feedid=<?=$feedid;?>" rel="self" type="application/rss+xml" />
+	<title>OGame-Nachrichten von <?=$safe_oname;?></title>
+	<link href="<?=$safe_feed_url;?>" rel="self" type="application/rss+xml" />
 	<updated><?=date('c', $lastfeed);?></updated>
 	<author>
 		<name>OGame Feed Commander</name>
 	</author>
-	<id><?=hostname("feed");?>feed/show.php?feedid=<?=$feedid;?></id>
+	<id><?=$safe_feed_url;?></id>
 <?php
 	$num = dbrows ($result);
 	while ($num--) {
 		$msg = dbarray ($result);
+		$item_url = hostname("feed")."feed/viewitem.php?mid=".$msg['msg_id']."&amp;feedid=".$safe_feedid."&amp;type=i";
+		$title = htmlsafe(FeedText($msg['subj']));
+		$text = FeedCData(FeedText(stripslashes($msg['text'])));
 
 		echo "	<entry>\n";
-		echo "		<title>". preg_replace('/<a[^>]*>(.*?)<\/a>/is', '$1', $msg['subj']) ."</title>\n";
-		echo "		<link href=\"".hostname("feed")."feed/viewitem.php?mid=".$msg['msg_id']."&amp;feedid=$feedid&amp;type=i\"/>\n";
-		echo "		<id>".hostname("feed")."feed/viewitem.php?mid=".$msg['msg_id']."&amp;feedid=$feedid&amp;type=i</id>\n";
+		echo "		<title>".$title."</title>\n";
+		echo "		<link href=\"".$item_url."\"/>\n";
+		echo "		<id>".$item_url."</id>\n";
 		echo "		<updated>".date('c', $msg['date'])."</updated>\n";
 		echo "		<content type=\"html\">\n";
 		echo "			<![CDATA[\n";
-		echo "				". preg_replace('/<a[^>]*>(.*?)<\/a>/is', '$1', $msg['text']) ."\n";
+		echo "				".$text."\n";
 		echo "			]]>\n";
 		echo "		</content>\n";
 		echo "	</entry>\n";
@@ -108,27 +128,30 @@ $result = dbquery ($query);
 ?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
 	<channel>
-		<title>OGame-Nachrichten von <?=$user['oname'];?></title>
-		<link><?=hostname("feed");?>feed/show.php?feedid=<?=$feedid;?></link>
-		<atom:link href="<?=hostname("feed");?>feed/show.php?feedid=<?=$feedid;?>" rel="self" type="application/rss+xml" />
-		<description>Kampfberichte, Spionagereports und Systemmeldungen des OGame-Accounts von <?=$user['oname'];?></description>
+		<title>OGame-Nachrichten von <?=$safe_oname;?></title>
+		<link><?=$safe_feed_url;?></link>
+		<atom:link href="<?=$safe_feed_url;?>" rel="self" type="application/rss+xml" />
+		<description>Kampfberichte, Spionagereports und Systemmeldungen des OGame-Accounts von <?=$safe_oname;?></description>
 		<language>de-de</language>
 		<pubDate><?=date('D, d M Y H:i:s O', $lastfeed);?></pubDate>
 <?php
 	$num = dbrows ($result);
 	while ($num--) {
 		$msg = dbarray ($result);
+		$item_url = hostname("feed")."feed/viewitem.php?mid=".$msg['msg_id']."&amp;feedid=".$safe_feedid."&amp;type=i";
+		$title = htmlsafe(FeedText($msg['subj']));
+		$text = FeedCData(FeedText(stripslashes($msg['text'])));
 
 		echo "		<item>\n";
-		echo "			<title>". preg_replace('/<a[^>]*>(.*?)<\/a>/is', '$1', $msg['subj']) ."</title>\n";
+		echo "			<title>".$title."</title>\n";
 		echo "			<description>\n";
 		echo "				<![CDATA[\n";
-		echo "					". preg_replace('/<a[^>]*>(.*?)<\/a>/is', '$1', $msg['text']) ."\n";
+		echo "					".$text."\n";
 		echo "				]]>\n";
 		echo "			</description>\n";
-		echo "			<link>".hostname("feed")."feed/viewitem.php?mid=".$msg['msg_id']."&amp;feedid=$feedid&amp;type=i</link>\n";
-		echo "			<author>feedcommander.noreply@".$_SERVER['SERVER_NAME']." (OGame Feed Commander)</author>\n";
-		echo "			<guid isPermaLink=\"false\">".$msg['msg_id'].".$feedid.".$msg['date'].".i</guid>\n";
+		echo "			<link>".$item_url."</link>\n";
+		echo "			<author>feedcommander.noreply@".htmlsafe($_SERVER['SERVER_NAME'])." (OGame Feed Commander)</author>\n";
+		echo "			<guid isPermaLink=\"false\">".$msg['msg_id'].".".$safe_feedid.".".$msg['date'].".i</guid>\n";
 		echo "			<pubDate>".date('D, d M Y H:i:s O', $msg['date'])."</pubDate>\n";
 		echo "		</item>\n";
 	}

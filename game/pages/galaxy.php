@@ -463,7 +463,7 @@ href='#' onclick='doit(8, <?=$coord_g;?>, <?=$coord_s;?>, <?=$p;?>, 2, <?=$harve
         }
         $allytext .= "<tr><td><a href=index.php?page=statistics&session=$session&start=".(floor($ally['place1']/100)*100+1)."&who=ally >".loca("GALAXY_ALLY_STATS")."</a></td></tr>";
         if ($ally['homepage'] !== "") {
-            $allytext .= "<tr><td><a href=redir.php?url=".$ally['homepage']." target=_blank >".loca("GALAXY_ALLY_HOMEPAGE")."</td></tr>";
+            $allytext .= "<tr><td><a href=redir.php?url=".rawurlencode($ally['homepage'])." target=_blank >".loca("GALAXY_ALLY_HOMEPAGE")."</td></tr>";
         }
         $allytext .= "</table></th></table>', STICKY, MOUSEOFF, DELAY, 750, CENTER, OFFSETY, -50 );\" onmouseout=\"return nd();\">\n";
         $allytext .= "   ".$ally['tag']." </a>";

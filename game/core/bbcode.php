@@ -1123,13 +1123,10 @@ class bb_img extends bbcode {
         foreach ($this -> tree as $text) {
             if ('text' == $text['type']) { $src .= $text['str']; }
         }
-        $src = htmlentities($src, ENT_QUOTES);
-        $src = str_replace('.', '&#'.ord('.').';', $src);
-        $src = str_replace(':', '&#'.ord(':').';', $src);
-        $src = str_replace('(', '&#'.ord('(').';', $src);
-        $src = str_replace(')', '&#'.ord(')').';', $src);
+        $src = trim($src);
+        $proxied_src = "pic.php?url=" . rawurlencode($src);
 
-        return "<img class=reloadimage title=$src src=pic.php?url=".$src." />";
+        return '<img class="reloadimage" title="'.htmlsafe($proxied_src).'" src="/game/img/preload.gif"'.$attr.' />';
 //      return '<img src="'.$src.'" '.$attr.' />';
     }
 }

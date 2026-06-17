@@ -17,6 +17,13 @@ InitDB();
 
 //print_r ($_REQUEST);
 
+function FeedItemText (string $html) : string
+{
+	$html = preg_replace('/<a[^>]*>(.*?)<\/a>/is', '$1', $html);
+	$text = trim(html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
+	return preg_replace('/\s+/u', ' ', $text);
+}
+
 if (!key_exists('feedid', $_REQUEST)) {
 	exit("No feed specified");
 }
@@ -57,7 +64,7 @@ $player_id = $user['player_id'];
 
 $query = "SELECT * FROM ".$db_prefix."messages WHERE msg_id = $msg_id";
 $result = dbquery ($query);
-if ( !$result ) {
+if ( !$result || dbrows($result) == 0 ) {
 	exit("No message");
 }
 $msg = dbarray ($result);
@@ -69,8 +76,8 @@ if ( $msg['owner_id'] != $player_id ) {
 	exit();
 }
 
-$subj = preg_replace('/<a[^>]*>(.*?)<\/a>/is', '$1', $msg['subj']);
-$text = preg_replace('/<a[^>]*>(.*?)<\/a>/is', '$1', $msg['text']);
+$subj = htmlsafe(FeedItemText($msg['subj']));
+$text = nl2br(htmlsafe(FeedItemText(stripslashes($msg['text']))), false);
 
 ?>
 <html><head><title><?=$subj;?></title></head><body><h1><?=$subj;?></h1><p><?=$text;?></p><body></html>
