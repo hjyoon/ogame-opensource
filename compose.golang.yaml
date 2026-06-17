@@ -20,5 +20,6 @@ services:
       OGAME_UNI_DB_NAME: ${OGAME_UNI_DB_NAME:-uni}
       OGAME_UNI_DB_PREFIX: ${OGAME_UNI_DB_PREFIX:-uni1_}
       OGAME_UNI_DB_SECRET: ${OGAME_UNI_DB_SECRET:-docker-secret}
+      OGAME_UNI_NUMBER: ${OGAME_UNI_NUMBER:-1}
     ports:
       - "${OGAME_GO_PORT:-8890}:8080"

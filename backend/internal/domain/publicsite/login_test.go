@@ -41,6 +41,33 @@ func TestLoginCredentialsAllowAuthenticatedUnbannedUser(t *testing.T) {
 	}
 }
 
+func TestLoginSessionUsesLegacyCookieName(t *testing.T) {
+	session := LoginSession{PlayerID: 42, UniverseNumber: 7}
+
+	if got := session.PrivateCookieName(); got != "prsess_42_7" {
+		t.Fatalf("unexpected private session cookie name: %q", got)
+	}
+}
+
+func TestLoginSessionBuildsNaturalOverviewRedirect(t *testing.T) {
+	session := LoginSession{
+		PublicID:     "abc123",
+		RedirectPath: "/game/overview",
+	}
+
+	if got := session.RedirectTarget(); got != "/game/overview?lgn=1&session=abc123" {
+		t.Fatalf("unexpected redirect target: %q", got)
+	}
+}
+
+func TestLoginSessionRedirectDefaultsToOverview(t *testing.T) {
+	session := LoginSession{PublicID: "public session"}
+
+	if got := session.RedirectTarget(); got != "/game/overview?lgn=1&session=public+session" {
+		t.Fatalf("unexpected default redirect target: %q", got)
+	}
+}
+
 func assertLoginIssue(t *testing.T, result LoginValidation, code string, legacyCode int) {
 	t.Helper()
 	for _, issue := range result.Issues {

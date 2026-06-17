@@ -161,6 +161,23 @@ try {
     wrongCredentialsLoginBody = {};
   }
 
+  const sessionLogin = await request("/api/public/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      login: loginSmokeUser,
+      pass: loginSmokePassword,
+      universe: universes[0]?.baseUrl ?? "http://localhost:8888"
+    })
+  });
+  let sessionLoginBody = {};
+  try {
+    sessionLoginBody = JSON.parse(sessionLogin.body);
+  } catch {
+    sessionLoginBody = {};
+  }
+  const sessionCookie = sessionLogin.headers["set-cookie"] ?? "";
+
   const invalidLogin = await request("/api/public/login/validate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -188,6 +205,11 @@ try {
       check(wrongCredentialsLogin.status === 200, "wrong login credentials return HTTP 200", { status: wrongCredentialsLogin.status }),
       check(wrongCredentialsLoginBody.valid === false, "wrong login credentials are rejected", wrongCredentialsLoginBody),
       check(wrongCredentialsIssues.some((issue) => issue.code === "credentials_invalid" && issue.legacyErrorCode === 2), "wrong login credentials map to legacy error 2", wrongCredentialsLoginBody),
+      check(sessionLogin.status === 200, "login submit returns HTTP 200", { status: sessionLogin.status }),
+      check(sessionLoginBody.valid === true, "login submit creates a session", sessionLoginBody),
+      check(typeof sessionLoginBody.session?.redirectTo === "string" && sessionLoginBody.session.redirectTo.startsWith("/game/overview?"), "login submit returns natural overview redirect", sessionLoginBody),
+      check(sessionCookie.includes("prsess_") && sessionCookie.includes("HttpOnly"), "login submit sets private session cookie", { setCookie: sessionCookie }),
+      check(!sessionLogin.body.includes(loginSmokePassword), "login submit response does not echo password"),
       check(invalidLogin.status === 200, "invalid login draft returns HTTP 200", { status: invalidLogin.status }),
       check(invalidLoginBody.valid === false, "invalid login draft is rejected", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),
@@ -284,7 +306,7 @@ try {
       check(js.body.includes("/register") && js.body.includes("/universes"), "React bundle contains natural public route model"),
       check(js.body.includes("/api/public/universes"), "React bundle consumes universe catalog API"),
       check(js.body.includes("/api/public/registration/validate"), "React bundle consumes registration validation API"),
-      check(js.body.includes("/api/public/login/validate"), "React bundle consumes login validation API")
+      check(js.body.includes("/api/public/login"), "React bundle consumes login submit API")
     ]
   }));
 
@@ -302,6 +324,7 @@ try {
   const postHealth = await request("/api/healthz", { method: "POST" });
   const getRegistrationValidation = await request("/api/public/registration/validate");
   const getLoginValidation = await request("/api/public/login/validate");
+  const getLoginSubmit = await request("/api/public/login");
   cases.push(finalize({
     case: "go_method_guards",
     checks: [
@@ -310,7 +333,9 @@ try {
       check(getRegistrationValidation.status === 405, "GET registration validation endpoint is rejected", { status: getRegistrationValidation.status }),
       check(hasHeader(getRegistrationValidation, "allow", "POST"), "registration validation method rejection returns Allow header"),
       check(getLoginValidation.status === 405, "GET login validation endpoint is rejected", { status: getLoginValidation.status }),
-      check(hasHeader(getLoginValidation, "allow", "POST"), "login validation method rejection returns Allow header")
+      check(hasHeader(getLoginValidation, "allow", "POST"), "login validation method rejection returns Allow header"),
+      check(getLoginSubmit.status === 405, "GET login submit endpoint is rejected", { status: getLoginSubmit.status }),
+      check(hasHeader(getLoginSubmit, "allow", "POST"), "login submit method rejection returns Allow header")
     ]
   }));
 } catch (error) {

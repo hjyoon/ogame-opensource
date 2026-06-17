@@ -18,6 +18,7 @@ import (
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlregistration"
 	infraruntime "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/runtime"
+	infrasession "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/session"
 )
 
 func main() {
@@ -49,12 +50,14 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	universes := apppublicsite.NewUniverseCatalogService(universeRepository(cfg, logger))
 	registrationDrafts := registrationValidator(cfg, logger)
 	loginDrafts := loginValidator(cfg, logger)
+	login := loginAuthenticator(cfg, logger)
 
 	return httpdelivery.New(httpdelivery.Dependencies{
 		Health:             health,
 		Universes:          universes,
 		RegistrationDrafts: registrationDrafts,
 		LoginDrafts:        loginDrafts,
+		Login:              login,
 		Frontend:           filesystem.StaticDir{Root: cfg.StaticDir},
 		LegacyAssets:       filesystem.NewNoListingFS(cfg.LegacyAssetDir),
 		Logger:             logger,
@@ -87,6 +90,39 @@ func loginValidator(cfg config.Config, logger *slog.Logger) apppublicsite.LoginD
 
 	logger.Info("universe DB login credentials enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return apppublicsite.NewLoginDraftValidatorWithCredentials(mysqlregistration.NewCredentialChecker(db, cfg.UniDBPrefix, cfg.UniDBSecret))
+}
+
+func loginAuthenticator(cfg config.Config, logger *slog.Logger) apppublicsite.LoginAuthenticator {
+	if !cfg.UniDBEnabled {
+		return apppublicsite.LoginAuthenticator{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB login sessions disabled", "error", err)
+		return apppublicsite.LoginAuthenticator{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB login sessions disabled", "error", err)
+		_ = db.Close()
+		return apppublicsite.LoginAuthenticator{}
+	}
+
+	logger.Info("universe DB login sessions enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
+	return apppublicsite.NewLoginAuthenticator(
+		mysqlregistration.NewCredentialChecker(db, cfg.UniDBPrefix, cfg.UniDBSecret),
+		mysqlregistration.NewSessionStore(db, cfg.UniDBPrefix),
+		infrasession.TokenGenerator{},
+		cfg.UniNumber,
+	)
 }
 
 func registrationValidator(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationDraftValidator {

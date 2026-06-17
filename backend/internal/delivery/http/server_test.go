@@ -286,6 +286,120 @@ func TestLoginValidationReturnsUnavailableForUseCaseError(t *testing.T) {
 	}
 }
 
+func TestLoginEndpointCreatesSessionCookie(t *testing.T) {
+	login := &fakeLogin{
+		result: domainpublicsite.LoginAuthentication{
+			Valid: true,
+			Session: domainpublicsite.LoginSession{
+				PlayerID:       42,
+				PublicID:       "public123456",
+				PrivateID:      "private1234567890private1234567890",
+				UniverseNumber: 1,
+				LastLogin:      1700000000,
+				RedirectPath:   "/game/overview",
+			},
+		},
+	}
+	server := testServerWithLogin(t, login)
+	body := `{"login":"legor","pass":"admin","universe":"http://localhost:8888"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/public/login", strings.NewReader(body))
+	req.RemoteAddr = "203.0.113.10:4321"
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response loginResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Valid || response.Session == nil || response.Session.RedirectTo != "/game/overview?lgn=1&session=public123456" {
+		t.Fatalf("expected valid login response, got %+v", response)
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("expected one private session cookie, got %+v", cookies)
+	}
+	if cookies[0].Name != "prsess_42_1" || cookies[0].Value != "private1234567890private1234567890" || !cookies[0].HttpOnly {
+		t.Fatalf("unexpected private session cookie: %+v", cookies[0])
+	}
+	if login.command.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("expected normalized remote IP, got %+v", login.command)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("admin")) || bytes.Contains(rec.Body.Bytes(), []byte("private1234567890private1234567890")) {
+		t.Fatalf("login response must not echo password or private session: %s", rec.Body.String())
+	}
+}
+
+func TestLoginEndpointReturnsIssuesWithoutCookie(t *testing.T) {
+	login := &fakeLogin{
+		result: domainpublicsite.LoginAuthentication{
+			Valid: false,
+			Issues: []domainpublicsite.LoginIssue{{
+				Field:           "login",
+				Code:            "credentials_invalid",
+				Message:         "Commander name or password is invalid.",
+				LegacyErrorCode: 2,
+			}},
+		},
+	}
+	server := testServerWithLogin(t, login)
+	body := `{"login":"legor","pass":"wrong","universe":"http://localhost:8888"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/public/login", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected validation result to return 200, got %d", rec.Code)
+	}
+	var response loginResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Valid || !hasLoginIssue(loginValidationResponse{Issues: response.Issues}, "credentials_invalid", 2) {
+		t.Fatalf("expected credential issue response, got %+v", response)
+	}
+	if len(rec.Result().Cookies()) != 0 {
+		t.Fatalf("expected no session cookie for invalid login, got %+v", rec.Result().Cookies())
+	}
+}
+
+func TestLoginEndpointRejectsMalformedJSON(t *testing.T) {
+	server := testServerWithLogin(t, &fakeLogin{})
+	req := httptest.NewRequest(http.MethodPost, "/api/public/login", strings.NewReader("{"))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected malformed JSON to return 400, got %d", rec.Code)
+	}
+}
+
+func TestLoginEndpointReturnsUnavailableWithoutUseCase(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	body := `{"login":"legor","pass":"admin","universe":"http://localhost:8888"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/public/login", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing login use case to return 503, got %d", rec.Code)
+	}
+}
+
+func TestLoginEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
+	server := testServerWithLogin(t, &fakeLogin{err: errors.New("login failed")})
+	body := `{"login":"legor","pass":"admin","universe":"http://localhost:8888"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/public/login", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected login use case error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestLegacyPublicHTMLRoutesServeReactShell(t *testing.T) {
 	staticDir := t.TempDir()
 	writeFile(t, filepath.Join(staticDir, "index.html"), "ogame react shell")
@@ -385,6 +499,14 @@ func TestPostOnlyRejectsReadMethods(t *testing.T) {
 	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "POST" {
 		t.Fatalf("expected login method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/public/login", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "POST" {
+		t.Fatalf("expected login submit method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
 }
 
 func TestSecurityHeadersIncludeHSTSForForwardedHTTPS(t *testing.T) {
@@ -452,6 +574,19 @@ func testServerWithRegistrationDrafts(t *testing.T, registrationDrafts Registrat
 func testServerWithLoginDrafts(t *testing.T, loginDrafts LoginDraftUseCase) http.Handler {
 	t.Helper()
 	return testServerWithCustomDrafts(t, apppublicsite.NewRegistrationDraftValidator(), loginDrafts)
+}
+
+func testServerWithLogin(t *testing.T, login LoginUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		Login:              login,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
 }
 
 func testServerWithCustomDrafts(t *testing.T, registrationDrafts RegistrationDraftUseCase, loginDrafts LoginDraftUseCase) http.Handler {
@@ -539,4 +674,15 @@ type failingLoginDrafts struct {
 
 func (f failingLoginDrafts) ValidateLoginDraft(context.Context, apppublicsite.LoginDraftCommand) (domainpublicsite.LoginValidation, error) {
 	return domainpublicsite.LoginValidation{}, f.err
+}
+
+type fakeLogin struct {
+	result  domainpublicsite.LoginAuthentication
+	err     error
+	command apppublicsite.LoginCommand
+}
+
+func (f *fakeLogin) AuthenticateLogin(_ context.Context, command apppublicsite.LoginCommand) (domainpublicsite.LoginAuthentication, error) {
+	f.command = command
+	return f.result, f.err
 }

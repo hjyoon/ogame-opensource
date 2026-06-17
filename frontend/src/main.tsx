@@ -67,6 +67,10 @@ type LoginValidation = {
     login: string;
     universe: string;
   };
+  session?: {
+    redirectTo: string;
+    universeNumber: number;
+  };
 };
 
 type LoginDraft = {
@@ -198,18 +202,18 @@ function App() {
     setLoginError(null);
   };
 
-  const validateLogin = (event: React.FormEvent<HTMLFormElement>) => {
+  const submitLogin = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoginPending(true);
     setLoginError(null);
-    fetch("/api/public/login/validate", {
+    fetch("/api/public/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(loginDraft)
     })
       .then((response) => {
         if (!response.ok) {
-          throw new Error(`login validation returned ${response.status}`);
+          throw new Error(`login returned ${response.status}`);
         }
         return response.json() as Promise<LoginValidation>;
       })
@@ -295,12 +299,12 @@ function App() {
       {route.key === "home" ? (
         <section className="panel" data-testid="login-draft">
           <div className="panel-title">
-            <span>Login Draft</span>
+            <span>Login</span>
             <strong className={loginResult?.valid ? "badge good" : "badge neutral"}>
-              {loginResult ? (loginResult.valid ? "valid" : "review") : "draft"}
+              {loginResult ? (loginResult.valid ? "session" : "review") : "ready"}
             </strong>
           </div>
-          <form className="registration-form" onSubmit={validateLogin}>
+          <form className="registration-form" onSubmit={submitLogin}>
             <label>
               <span>Commander</span>
               <input
@@ -334,7 +338,7 @@ function App() {
               </select>
             </label>
             <button disabled={loginPending} type="submit">
-              {loginPending ? "Checking" : "Validate"}
+              {loginPending ? "Signing in" : "Sign in"}
             </button>
           </form>
           {loginError ? <p className="form-error">{loginError}</p> : null}
@@ -348,7 +352,9 @@ function App() {
               ))}
             </ul>
           ) : null}
-          {loginResult?.valid ? <p className="form-success">Draft accepted for the next authentication migration step.</p> : null}
+          {loginResult?.valid ? (
+            <p className="form-success">Session ready: {loginResult.session?.redirectTo ?? "/game/overview"}</p>
+          ) : null}
         </section>
       ) : null}
 

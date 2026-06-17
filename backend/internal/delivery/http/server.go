@@ -30,11 +30,16 @@ type LoginDraftUseCase interface {
 	ValidateLoginDraft(context.Context, apppublicsite.LoginDraftCommand) (domainpublicsite.LoginValidation, error)
 }
 
+type LoginUseCase interface {
+	AuthenticateLogin(context.Context, apppublicsite.LoginCommand) (domainpublicsite.LoginAuthentication, error)
+}
+
 type Dependencies struct {
 	Health             HealthUseCase
 	Universes          UniverseCatalogUseCase
 	RegistrationDrafts RegistrationDraftUseCase
 	LoginDrafts        LoginDraftUseCase
+	Login              LoginUseCase
 	Frontend           FrontendAssets
 	LegacyAssets       http.FileSystem
 	Logger             *slog.Logger
@@ -51,6 +56,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/public/universes", getOnly(a.handleUniverses))
 	mux.HandleFunc("/api/public/registration/validate", postOnly(a.handleRegistrationValidation))
 	mux.HandleFunc("/api/public/login/validate", postOnly(a.handleLoginValidation))
+	mux.HandleFunc("/api/public/login", postOnly(a.handleLogin))
 	mux.Handle("/legacy-assets/", http.StripPrefix("/legacy-assets/", http.FileServer(deps.LegacyAssets)))
 	mux.HandleFunc("/", getOnly(a.handleFrontend))
 	handler := securityHeaders(mux)

@@ -1,6 +1,10 @@
 package publicsite
 
-import "strings"
+import (
+	"fmt"
+	"net/url"
+	"strings"
+)
 
 const (
 	LoginIssueLoginRequired      = "login_required"
@@ -31,11 +35,26 @@ type LoginValidation struct {
 	Issues []LoginIssue
 }
 
+type LoginAuthentication struct {
+	Valid   bool
+	Issues  []LoginIssue
+	Session LoginSession
+}
+
 type LoginCredentials struct {
 	Authenticated bool
 	PlayerID      int
 	Banned        bool
 	BannedUntil   int
+}
+
+type LoginSession struct {
+	PlayerID       int
+	PublicID       string
+	PrivateID      string
+	UniverseNumber int
+	LastLogin      int64
+	RedirectPath   string
 }
 
 func (d LoginDraft) Validate() LoginValidation {
@@ -90,4 +109,19 @@ func (c LoginCredentials) Validate() []LoginIssue {
 		}}
 	}
 	return nil
+}
+
+func (s LoginSession) PrivateCookieName() string {
+	return fmt.Sprintf("prsess_%d_%d", s.PlayerID, s.UniverseNumber)
+}
+
+func (s LoginSession) RedirectTarget() string {
+	path := strings.TrimSpace(s.RedirectPath)
+	if path == "" {
+		path = "/game/overview"
+	}
+	values := url.Values{}
+	values.Set("session", s.PublicID)
+	values.Set("lgn", "1")
+	return path + "?" + values.Encode()
 }

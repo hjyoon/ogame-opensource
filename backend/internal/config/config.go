@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strconv"
+)
 
 const (
 	GoTarget    = "1.25"
@@ -28,6 +31,7 @@ type Config struct {
 	UniDBName        string
 	UniDBPrefix      string
 	UniDBSecret      string
+	UniNumber        int
 }
 
 func Load() Config {
@@ -51,6 +55,7 @@ func Load() Config {
 		UniDBName:        env("OGAME_UNI_DB_NAME", "uni"),
 		UniDBPrefix:      env("OGAME_UNI_DB_PREFIX", "uni1_"),
 		UniDBSecret:      env("OGAME_UNI_DB_SECRET", "docker-secret"),
+		UniNumber:        envInt("OGAME_UNI_NUMBER", 1),
 	}
 }
 
@@ -68,4 +73,16 @@ func envBool(key string, fallback bool) bool {
 		return fallback
 	}
 	return value == "1" || value == "true" || value == "TRUE" || value == "on" || value == "ON"
+}
+
+func envInt(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
