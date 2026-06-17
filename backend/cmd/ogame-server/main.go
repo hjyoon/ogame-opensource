@@ -45,13 +45,15 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		ReactTarget:    config.ReactTarget,
 	}, filesystem.Probe{}, infraruntime.GoRuntime{})
 	universes := apppublicsite.NewUniverseCatalogService(universeRepository(cfg, logger))
+	registrationDrafts := apppublicsite.NewRegistrationDraftValidator()
 
 	return httpdelivery.New(httpdelivery.Dependencies{
-		Health:       health,
-		Universes:    universes,
-		Frontend:     filesystem.StaticDir{Root: cfg.StaticDir},
-		LegacyAssets: filesystem.NewNoListingFS(cfg.LegacyAssetDir),
-		Logger:       logger,
+		Health:             health,
+		Universes:          universes,
+		RegistrationDrafts: registrationDrafts,
+		Frontend:           filesystem.StaticDir{Root: cfg.StaticDir},
+		LegacyAssets:       filesystem.NewNoListingFS(cfg.LegacyAssetDir),
+		Logger:             logger,
 	})
 }
 

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	apppublicsite "github.com/hjyoon/ogame-opensource/backend/internal/application/publicsite"
 	domainpublicsite "github.com/hjyoon/ogame-opensource/backend/internal/domain/publicsite"
 	domainsystem "github.com/hjyoon/ogame-opensource/backend/internal/domain/system"
 )
@@ -21,12 +22,17 @@ type UniverseCatalogUseCase interface {
 	ListUniverses(context.Context) ([]domainpublicsite.Universe, error)
 }
 
+type RegistrationDraftUseCase interface {
+	ValidateRegistrationDraft(context.Context, apppublicsite.RegistrationDraftCommand) (domainpublicsite.RegistrationValidation, error)
+}
+
 type Dependencies struct {
-	Health       HealthUseCase
-	Universes    UniverseCatalogUseCase
-	Frontend     FrontendAssets
-	LegacyAssets http.FileSystem
-	Logger       *slog.Logger
+	Health             HealthUseCase
+	Universes          UniverseCatalogUseCase
+	RegistrationDrafts RegistrationDraftUseCase
+	Frontend           FrontendAssets
+	LegacyAssets       http.FileSystem
+	Logger             *slog.Logger
 }
 
 type app struct {
@@ -38,6 +44,7 @@ func New(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/healthz", getOnly(a.handleHealthz))
 	mux.HandleFunc("/api/public/universes", getOnly(a.handleUniverses))
+	mux.HandleFunc("/api/public/registration/validate", postOnly(a.handleRegistrationValidation))
 	mux.Handle("/legacy-assets/", http.StripPrefix("/legacy-assets/", http.FileServer(deps.LegacyAssets)))
 	mux.HandleFunc("/", getOnly(a.handleFrontend))
 	handler := securityHeaders(mux)
@@ -51,6 +58,17 @@ func getOnly(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		next(w, r)
+	}
+}
+
+func postOnly(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", "POST")
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}

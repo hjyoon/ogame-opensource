@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	apppublicsite "github.com/hjyoon/ogame-opensource/backend/internal/application/publicsite"
@@ -123,6 +124,64 @@ func TestUniversesEndpointReturnsUnavailableForInvalidCatalog(t *testing.T) {
 	}
 }
 
+func TestRegistrationValidationEndpointAcceptsValidDraft(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	body := `{"character":"Commander01","password":"E2E_http123","email":"commander@example.local","universe":"http://localhost:8888","agb":true}`
+	req := httptest.NewRequest(http.MethodPost, "/api/public/registration/validate", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response registrationValidationResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Valid || len(response.Issues) != 0 {
+		t.Fatalf("expected valid registration response, got %+v", response)
+	}
+	if response.Draft.Character != "Commander01" || response.Draft.AGB != true {
+		t.Fatalf("unexpected sanitized draft response: %+v", response.Draft)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("E2E_http123")) {
+		t.Fatalf("registration response must not echo password: %s", rec.Body.String())
+	}
+}
+
+func TestRegistrationValidationEndpointReturnsIssues(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	body := `{"character":"ad","password":"short","email":"invalid","universe":"","agb":false}`
+	req := httptest.NewRequest(http.MethodPost, "/api/public/registration/validate", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected validation result to return 200, got %d", rec.Code)
+	}
+	var response registrationValidationResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Valid {
+		t.Fatalf("expected invalid registration response, got %+v", response)
+	}
+	if !hasRegistrationIssue(response, "character_invalid", 103) || !hasRegistrationIssue(response, "password_too_short", 107) {
+		t.Fatalf("expected legacy-compatible issues, got %+v", response.Issues)
+	}
+}
+
+func TestRegistrationValidationRejectsMalformedJSON(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodPost, "/api/public/registration/validate", strings.NewReader("{"))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected malformed JSON to return 400, got %d", rec.Code)
+	}
+}
+
 func TestLegacyPublicHTMLRoutesServeReactShell(t *testing.T) {
 	staticDir := t.TempDir()
 	writeFile(t, filepath.Join(staticDir, "index.html"), "ogame react shell")
@@ -204,6 +263,18 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 	}
 }
 
+func TestPostOnlyRejectsReadMethods(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/public/registration/validate", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "POST" {
+		t.Fatalf("expected method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
+}
+
 func TestSecurityHeadersIncludeHSTSForForwardedHTTPS(t *testing.T) {
 	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
 
@@ -275,13 +346,15 @@ func testServerWithLogger(cfg config.Config, logger *slog.Logger) http.Handler {
 		RawJSON:       cfg.PublicUniverses,
 		LegacyBaseURL: cfg.LegacyBaseURL,
 	})
+	registrationDrafts := apppublicsite.NewRegistrationDraftValidator()
 
 	return New(Dependencies{
-		Health:       health,
-		Universes:    universes,
-		Frontend:     filesystem.StaticDir{Root: cfg.StaticDir},
-		LegacyAssets: filesystem.NewNoListingFS(cfg.LegacyAssetDir),
-		Logger:       logger,
+		Health:             health,
+		Universes:          universes,
+		RegistrationDrafts: registrationDrafts,
+		Frontend:           filesystem.StaticDir{Root: cfg.StaticDir},
+		LegacyAssets:       filesystem.NewNoListingFS(cfg.LegacyAssetDir),
+		Logger:             logger,
 	})
 }
 
@@ -296,4 +369,13 @@ func writeFile(t *testing.T, name string, data string) {
 	if err := os.WriteFile(name, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func hasRegistrationIssue(response registrationValidationResponse, code string, legacyCode int) bool {
+	for _, issue := range response.Issues {
+		if issue.Code == code && issue.LegacyErrorCode == legacyCode {
+			return true
+		}
+	}
+	return false
 }

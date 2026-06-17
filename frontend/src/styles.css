@@ -198,6 +198,98 @@ dd {
   text-decoration: none;
 }
 
+.registration-form {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.registration-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.registration-form label span {
+  color: #b8c0bc;
+  font-size: 13px;
+}
+
+.registration-form input,
+.registration-form select {
+  background: #101317;
+  border: 1px solid #3d4650;
+  border-radius: 8px;
+  color: #f3f0e8;
+  font: inherit;
+  min-height: 40px;
+  padding: 9px 10px;
+  width: 100%;
+}
+
+.registration-form input:focus,
+.registration-form select:focus {
+  border-color: #7ab8aa;
+  outline: 2px solid rgba(122, 184, 170, 0.2);
+}
+
+.registration-form button {
+  align-self: end;
+  background: #9bd4c4;
+  border: 0;
+  border-radius: 8px;
+  color: #101317;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  min-height: 40px;
+  padding: 9px 14px;
+}
+
+.registration-form button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.check-row {
+  align-items: center;
+  display: flex !important;
+}
+
+.check-row input {
+  min-height: auto;
+  width: auto;
+}
+
+.issue-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.issue-list li {
+  border: 1px solid #5a3b3b;
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+}
+
+.issue-list span,
+.form-error {
+  color: #ffd6d2;
+}
+
+.form-error,
+.form-success {
+  margin-top: 14px;
+}
+
+.form-success {
+  color: #b9f2df;
+}
+
 .dot {
   border-radius: 50%;
   display: inline-block;
@@ -251,6 +343,10 @@ dd {
     align-items: flex-start;
     display: grid;
     gap: 10px;
+  }
+
+  .registration-form {
+    grid-template-columns: 1fr;
   }
 
   .planet {

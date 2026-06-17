@@ -45,10 +45,10 @@ export const publicRoutes: PublicRoute[] = [
     label: "Register",
     eyebrow: "New Commander",
     title: "Create an account",
-    summary: "Registration is being rebuilt as a native React flow backed by Go use cases.",
-    status: "Queued for port",
+    summary: "Registration draft validation now runs through a native Go use case before account creation is ported.",
+    status: "Validation API",
     image: "/legacy-assets/use/uV/planeten/small/s_dschjungelplanet03.jpg",
-    points: ["Email validation parity", "Universe selection", "Legacy anti-abuse checks"]
+    points: ["Legacy field names", "Universe selection", "No account mutation yet"]
   },
   {
     key: "universes",

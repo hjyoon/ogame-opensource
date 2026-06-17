@@ -27,6 +27,32 @@ type UniverseSummary = {
   open: boolean;
 };
 
+type RegistrationIssue = {
+  field: string;
+  code: string;
+  message: string;
+  legacyErrorCode: number;
+};
+
+type RegistrationValidation = {
+  valid: boolean;
+  issues: RegistrationIssue[];
+  draft: {
+    character: string;
+    email: string;
+    universe: string;
+    agb: boolean;
+  };
+};
+
+type RegistrationDraft = {
+  character: string;
+  password: string;
+  email: string;
+  universe: string;
+  agb: boolean;
+};
+
 const phases = [
   { key: "legacy", label: "Legacy QA", state: "active", owner: "PHP E2E" },
   { key: "shell", label: "React Shell", state: "active", owner: "Bun 1.3" },
@@ -39,6 +65,16 @@ function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [universes, setUniverses] = useState<UniverseSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [registrationDraft, setRegistrationDraft] = useState<RegistrationDraft>({
+    character: "",
+    password: "",
+    email: "",
+    universe: "",
+    agb: false
+  });
+  const [registrationResult, setRegistrationResult] = useState<RegistrationValidation | null>(null);
+  const [registrationPending, setRegistrationPending] = useState(false);
+  const [registrationError, setRegistrationError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
 
@@ -67,6 +103,12 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (registrationDraft.universe === "" && universes[0]?.baseUrl) {
+      setRegistrationDraft((current) => ({ ...current, universe: universes[0].baseUrl }));
+    }
+  }, [registrationDraft.universe, universes]);
+
+  useEffect(() => {
     const onPopState = () => setPathname(window.location.pathname);
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -89,6 +131,32 @@ function App() {
     event.preventDefault();
     window.history.pushState({}, "", path);
     setPathname(path);
+  };
+
+  const updateRegistrationDraft = (field: keyof RegistrationDraft, value: string | boolean) => {
+    setRegistrationDraft((current) => ({ ...current, [field]: value }));
+    setRegistrationResult(null);
+    setRegistrationError(null);
+  };
+
+  const validateRegistration = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setRegistrationPending(true);
+    setRegistrationError(null);
+    fetch("/api/public/registration/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(registrationDraft)
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`registration validation returned ${response.status}`);
+        }
+        return response.json() as Promise<RegistrationValidation>;
+      })
+      .then(setRegistrationResult)
+      .catch((err: unknown) => setRegistrationError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setRegistrationPending(false));
   };
 
   return (
@@ -164,6 +232,84 @@ function App() {
           </div>
         </div>
       </section>
+
+      {route.key === "register" ? (
+        <section className="panel" data-testid="registration-draft">
+          <div className="panel-title">
+            <span>Registration Draft</span>
+            <strong className={registrationResult?.valid ? "badge good" : "badge neutral"}>
+              {registrationResult ? (registrationResult.valid ? "valid" : "review") : "draft"}
+            </strong>
+          </div>
+          <form className="registration-form" onSubmit={validateRegistration}>
+            <label>
+              <span>Commander</span>
+              <input
+                name="character"
+                onChange={(event) => updateRegistrationDraft("character", event.currentTarget.value)}
+                value={registrationDraft.character}
+              />
+            </label>
+            <label>
+              <span>Email</span>
+              <input
+                name="email"
+                onChange={(event) => updateRegistrationDraft("email", event.currentTarget.value)}
+                type="email"
+                value={registrationDraft.email}
+              />
+            </label>
+            <label>
+              <span>Password</span>
+              <input
+                name="password"
+                onChange={(event) => updateRegistrationDraft("password", event.currentTarget.value)}
+                type="password"
+                value={registrationDraft.password}
+              />
+            </label>
+            <label>
+              <span>Universe</span>
+              <select
+                name="universe"
+                onChange={(event) => updateRegistrationDraft("universe", event.currentTarget.value)}
+                value={registrationDraft.universe}
+              >
+                <option value="">Select universe</option>
+                {universes.map((universe) => (
+                  <option key={universe.number} value={universe.baseUrl}>
+                    {universe.number} - {universe.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="check-row">
+              <input
+                checked={registrationDraft.agb}
+                name="agb"
+                onChange={(event) => updateRegistrationDraft("agb", event.currentTarget.checked)}
+                type="checkbox"
+              />
+              <span>Basic policies accepted</span>
+            </label>
+            <button disabled={registrationPending} type="submit">
+              {registrationPending ? "Checking" : "Validate"}
+            </button>
+          </form>
+          {registrationError ? <p className="form-error">{registrationError}</p> : null}
+          {registrationResult && !registrationResult.valid ? (
+            <ul className="issue-list">
+              {registrationResult.issues.map((issue) => (
+                <li key={`${issue.field}-${issue.code}`}>
+                  <strong>{issue.field}</strong>
+                  <span>{issue.message}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {registrationResult?.valid ? <p className="form-success">Draft accepted for the next registration migration step.</p> : null}
+        </section>
+      ) : null}
 
       {route.key === "universes" ? (
         <section className="panel" data-testid="universe-catalog">

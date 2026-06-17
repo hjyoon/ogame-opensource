@@ -74,6 +74,58 @@ try {
     ]
   }));
 
+  const validRegistration = await request("/api/public/registration/validate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      character: "Commander01",
+      password: "E2E_http123",
+      email: "commander@example.local",
+      universe: universes[0]?.baseUrl ?? "http://localhost:8888",
+      agb: true
+    })
+  });
+  let validRegistrationBody = {};
+  try {
+    validRegistrationBody = JSON.parse(validRegistration.body);
+  } catch {
+    validRegistrationBody = {};
+  }
+
+  const invalidRegistration = await request("/api/public/registration/validate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      character: "ad",
+      password: "short",
+      email: "invalid",
+      universe: "",
+      agb: false
+    })
+  });
+  let invalidRegistrationBody = {};
+  try {
+    invalidRegistrationBody = JSON.parse(invalidRegistration.body);
+  } catch {
+    invalidRegistrationBody = {};
+  }
+  const invalidIssues = Array.isArray(invalidRegistrationBody.issues) ? invalidRegistrationBody.issues : [];
+  cases.push(finalize({
+    case: "go_registration_validation_api",
+    checks: [
+      check(validRegistration.status === 200, "valid registration draft returns HTTP 200", { status: validRegistration.status }),
+      check(hasHeader(validRegistration, "content-type", "application/json"), "valid registration draft returns JSON"),
+      check(validRegistrationBody.valid === true, "valid registration draft is accepted", validRegistrationBody),
+      check(!validRegistration.body.includes("E2E_http123"), "registration validation response does not echo password"),
+      check(invalidRegistration.status === 200, "invalid registration draft returns HTTP 200", { status: invalidRegistration.status }),
+      check(invalidRegistrationBody.valid === false, "invalid registration draft is rejected", invalidRegistrationBody),
+      check(invalidIssues.some((issue) => issue.code === "character_invalid" && issue.legacyErrorCode === 103), "invalid name maps to legacy error 103", invalidRegistrationBody),
+      check(invalidIssues.some((issue) => issue.code === "password_too_short" && issue.legacyErrorCode === 107), "short password maps to legacy error 107", invalidRegistrationBody),
+      check(invalidIssues.some((issue) => issue.code === "email_invalid" && issue.legacyErrorCode === 104), "invalid email maps to legacy error 104", invalidRegistrationBody),
+      check(invalidIssues.some((issue) => issue.code === "terms_required" && issue.legacyErrorCode === 204), "missing terms maps to legacy registration policy issue", invalidRegistrationBody)
+    ]
+  }));
+
   const root = await request("/");
   cases.push(finalize({
     case: "go_react_shell",
@@ -160,7 +212,8 @@ try {
       check(hasHeader(js, "content-type", "javascript"), "React JS bundle has JavaScript content type"),
       check(hasHeader(css, "content-type", "text/css"), "React CSS bundle has CSS content type"),
       check(js.body.includes("/register") && js.body.includes("/universes"), "React bundle contains natural public route model"),
-      check(js.body.includes("/api/public/universes"), "React bundle consumes universe catalog API")
+      check(js.body.includes("/api/public/universes"), "React bundle consumes universe catalog API"),
+      check(js.body.includes("/api/public/registration/validate"), "React bundle consumes registration validation API")
     ]
   }));
 
@@ -176,11 +229,14 @@ try {
   }));
 
   const postHealth = await request("/api/healthz", { method: "POST" });
+  const getRegistrationValidation = await request("/api/public/registration/validate");
   cases.push(finalize({
     case: "go_method_guards",
     checks: [
       check(postHealth.status === 405, "POST health endpoint is rejected", { status: postHealth.status }),
-      check(hasHeader(postHealth, "allow", "GET, HEAD"), "method rejection returns Allow header")
+      check(hasHeader(postHealth, "allow", "GET, HEAD"), "method rejection returns Allow header"),
+      check(getRegistrationValidation.status === 405, "GET registration validation endpoint is rejected", { status: getRegistrationValidation.status }),
+      check(hasHeader(getRegistrationValidation, "allow", "POST"), "registration validation method rejection returns Allow header")
     ]
   }));
 } catch (error) {
