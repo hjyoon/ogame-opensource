@@ -11,7 +11,7 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - Runtime logs use JSON through `log/slog`.
 - Go app runs through `compose.golang.yaml`; default local port is `8890`.
 - `/api/healthz` reports tool targets and asset readiness.
-- Public React shell is available for natural routes and legacy public `.php` aliases.
+- Public routes exist for natural paths and legacy `.php` aliases; visual parity with PHP public screens is still pending.
 - Legacy image/assets are served through Go without loopback absolute URLs.
 - Public universe catalog is exposed at `/api/public/universes`, backed by the master DB with config fallback.
 - Registration draft validation exists at `/api/public/registration/validate`.
@@ -22,22 +22,17 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - `/api/public/login` creates public/private sessions, updates legacy `users` session fields, sets the private cookie, and returns a natural `/game/overview` redirect target.
 - `/api/game/session` validates public session plus private cookie, including banned and IP checks.
 - `/api/game/overview` returns a session-guarded read-only overview summary from legacy `users`, `planets`, and `uni`.
-- `/game/overview` is still a React shell route, but it can show the native commander/current-planet resource summary after login.
+- `/game/overview` now targets the legacy PHP visual composition: skin, header/menu, overview table, planet image, and resource summary.
 - Go migration QA smoke covers health, routes, assets, registration, login, session lookup, overview lookup, and method guards.
 
-## Latest Verified Commits
+## Latest Verified Commit
 
-- Migration foundation range: `6f96b2ab` through `eaed003e`.
-- Current milestone: native game overview read API.
-- `eaed003e` Add native login session endpoint
-- `3de92447` Validate login credentials against universe DB
-- `23f77579` Check registration availability against universe DB
-- `ee363317` Add native login draft validation
-- `40ab2fa3` Add native registration draft validation
+- `cd2eef8c` Add native overview read API.
+- Current milestone: legacy-visual overview pass on top of the native overview API.
 
 ## Verified QA
 
-- `backend/scripts/test-coverage.sh`: passing, Go internal coverage `97.6%`.
+- `backend/scripts/test-coverage.sh`: passing, Go internal coverage `97.3%`.
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
 - Direct smoke after restart: `GET /api/healthz`, `POST /api/public/login`, `GET /api/game/session`, `GET /api/game/overview`, and JSON DB enablement logs passed.
 
@@ -45,10 +40,11 @@ Full legacy E2E was not run for the latest Go migration steps unless explicitly 
 
 ## Remaining Work
 
-- Implement native registration creation, activation policy, and login-after-register behavior.
+- Implement native registration creation, activation, and login-after-register behavior.
 - Add logout, expiry, and session security behavior.
-- Expand authenticated React game routes beyond the current overview summary.
+- Expand authenticated React game routes beyond the current overview summary using legacy PHP screen composition.
 - Port current planet switching and full overview state/actions from legacy DB.
+- Restyle all migrated public/game/admin pages to match their PHP screen composition.
 - Port resource production/read model, queues, buildings, research, shipyard, defense, fleet, reports, messages, galaxy, alliance, admin, maintenance, options, password recovery, deletion, vacation, bans, and permissions.
 - Convert legacy E2E cases into Go compatibility checks as each flow is migrated.
 - Keep legacy PHP behavior as the oracle until each migrated flow has focused unit tests and E2E coverage.

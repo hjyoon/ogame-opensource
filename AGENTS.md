@@ -12,7 +12,9 @@ Do not remove or weaken legacy behavior while porting. Each migrated flow must b
 
 ## Migration Interpretation
 
-Do not translate PHP files one-for-one. Reinterpret screens, APIs, state, and modules naturally for React and Go. New routes do not need `.php` suffixes. Preserve legacy URLs only as compatibility entry points.
+Do not translate PHP files one-for-one. Reinterpret APIs, state, and modules naturally for React and Go. New routes do not need `.php` suffixes. Preserve legacy URLs only as compatibility entry points.
+
+Visible page composition is not free-form: every migrated public, game, and admin page must match the corresponding legacy PHP screen layout, skin, table density, labels, and asset choices unless a documented compatibility exception exists.
 
 Game mechanics are different: resource math, timings, combat, queues, economy, targeting, reports, and permissions must behave exactly like the legacy game. Prove equivalence with focused unit tests plus E2E checks against the PHP oracle.
 
@@ -74,8 +76,8 @@ backend/scripts/test-coverage.sh
 
 - Use Bun 1.3 commands and lockfiles.
 - Use React 19.
-- Reuse legacy visual assets during the transition.
-- Keep screens dense and game-operational, not marketing-oriented.
+- Reuse legacy visual assets and page composition during the transition.
+- Keep screens dense and game-operational; do not replace legacy screens with marketing or console-style UI.
 
 ## Markdown Limit
 

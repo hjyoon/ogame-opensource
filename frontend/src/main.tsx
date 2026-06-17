@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { LegacyGameOverview, type GameOverviewStatus } from "./LegacyGameOverview";
 import { publicRoutes, resolvePublicRoute } from "./routes";
 import "./styles.css";
 
@@ -77,38 +78,6 @@ type LoginDraft = {
   login: string;
   pass: string;
   universe: string;
-};
-
-type GameOverviewStatus = {
-  authenticated: boolean;
-  issues: { code: string; message: string }[];
-  overview?: {
-    commander: string;
-    score: {
-      points: number;
-      rank: number;
-      universePlayers: number;
-    };
-    currentPlanet: {
-      id: number;
-      name: string;
-      coordinates: {
-        galaxy: number;
-        system: number;
-        position: number;
-      };
-      resources: {
-        metal: number;
-        crystal: number;
-        deuterium: number;
-      };
-    };
-    planetSwitcher: {
-      id: number;
-      name: string;
-      current: boolean;
-    }[];
-  };
 };
 
 const phases = [
@@ -230,6 +199,10 @@ function App() {
     setPathname(path);
     setSearch("");
   };
+
+  if (pathname.startsWith("/game")) {
+    return <LegacyGameOverview error={gameOverviewError} status={gameOverview} />;
+  }
 
   const updateRegistrationDraft = (field: keyof RegistrationDraft, value: string | boolean) => {
     setRegistrationDraft((current) => ({ ...current, [field]: value }));
