@@ -4,6 +4,10 @@ export type PublicUniverse = {
   number: number;
   name: string;
   baseUrl: string;
+  speed?: number;
+  fleetSpeed?: number;
+  status?: string;
+  open?: boolean;
 };
 
 export type PublicLoginDraft = {

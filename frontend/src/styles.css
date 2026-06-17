@@ -676,6 +676,16 @@ dd {
   z-index: 1;
 }
 
+.legacy-public-universes-panel {
+  background-image: var(--legacy-public-panel-bg);
+  height: 384px;
+  left: 400px;
+  position: absolute;
+  top: 70px;
+  width: 450px;
+  z-index: 1;
+}
+
 .legacy-public-title {
   color: #0a1c25;
   font-size: 16px;
@@ -767,6 +777,37 @@ dd {
 
 .legacy-rules-note {
   color: crimson;
+}
+
+.legacy-universes-title2 {
+  border-bottom: 1px solid #2a2f33;
+  font-size: 14px;
+  font-weight: bold;
+  padding-bottom: 3px;
+  padding-top: 25px;
+  width: 380px;
+}
+
+.legacy-universes-content {
+  padding-left: 70px;
+  padding-top: 10px;
+}
+
+.legacy-universes-content a,
+.legacy-closed-universe {
+  display: block;
+}
+
+.legacy-universes-content a {
+  color: #878787;
+}
+
+.legacy-universes-content a:hover {
+  color: #fff;
+}
+
+.legacy-closed-universe {
+  color: #535353;
 }
 
 .legacy-story-link {

@@ -8,6 +8,7 @@ import { LegacyPublicRegister } from "./LegacyPublicRegister";
 import { LegacyPublicRules } from "./LegacyPublicRules";
 import { LegacyPublicScreenshots } from "./LegacyPublicScreenshots";
 import { LegacyPublicStory } from "./LegacyPublicStory";
+import { LegacyPublicUniverses } from "./LegacyPublicUniverses";
 import { publicRoutes, resolvePublicRoute } from "./routes";
 import "./styles.css";
 
@@ -353,6 +354,20 @@ function App() {
     );
   }
 
+  if (route.key === "universes") {
+    return (
+      <LegacyPublicUniverses
+        loginDraft={loginDraft}
+        loginError={loginError}
+        loginPending={loginPending}
+        loginResult={loginResult}
+        onLoginChange={updateLoginDraft}
+        onLoginSubmit={submitLogin}
+        universes={universes}
+      />
+    );
+  }
+
   if (route.key === "legal") {
     return <LegacyPublicLegal />;
   }
@@ -445,26 +460,6 @@ function App() {
           </div>
         </div>
       </section>
-
-      {route.key === "universes" ? (
-        <section className="panel" data-testid="universe-catalog">
-          <div className="panel-title">
-            <span>Universe Catalog</span>
-            <strong className="badge good">{universes.length} listed</strong>
-          </div>
-          <div className="universe-list">
-            {universes.map((universe) => (
-              <article className="universe-row" key={universe.number}>
-                <div>
-                  <h2>{universe.name}</h2>
-                  <p>{universe.language.toUpperCase()} · Economy {universe.speed}x · Fleet {universe.fleetSpeed}x</p>
-                </div>
-                <a href={universe.baseUrl}>{universe.open ? "Open" : "Closed"}</a>
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : null}
 
       <section className="panel" id="migration">
         <div className="panel-title">
