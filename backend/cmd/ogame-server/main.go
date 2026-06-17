@@ -11,8 +11,10 @@ import (
 	appsystem "github.com/hjyoon/ogame-opensource/backend/internal/application/system"
 	"github.com/hjyoon/ogame-opensource/backend/internal/config"
 	httpdelivery "github.com/hjyoon/ogame-opensource/backend/internal/delivery/http"
+	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/catalogrepo"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/configcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/filesystem"
+	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlcatalog"
 	infraruntime "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/runtime"
 )
 
@@ -42,10 +44,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		BunTarget:      config.BunTarget,
 		ReactTarget:    config.ReactTarget,
 	}, filesystem.Probe{}, infraruntime.GoRuntime{})
-	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{
-		RawJSON:       cfg.PublicUniverses,
-		LegacyBaseURL: cfg.LegacyBaseURL,
-	})
+	universes := apppublicsite.NewUniverseCatalogService(universeRepository(cfg, logger))
 
 	return httpdelivery.New(httpdelivery.Dependencies{
 		Health:       health,
@@ -54,6 +53,34 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		LegacyAssets: filesystem.NewNoListingFS(cfg.LegacyAssetDir),
 		Logger:       logger,
 	})
+}
+
+func universeRepository(cfg config.Config, logger *slog.Logger) apppublicsite.UniverseRepository {
+	fallback := configcatalog.UniverseCatalog{
+		RawJSON:       cfg.PublicUniverses,
+		LegacyBaseURL: cfg.LegacyBaseURL,
+	}
+
+	if strings.TrimSpace(cfg.PublicUniverses) != "" || !cfg.MasterDBEnabled {
+		return fallback
+	}
+
+	db, err := mysqlcatalog.Open(mysqlcatalog.MasterDBConfig{
+		Host:     cfg.MasterDBHost,
+		User:     cfg.MasterDBUser,
+		Password: cfg.MasterDBPassword,
+		Name:     cfg.MasterDBName,
+	})
+	if err != nil {
+		logger.Warn("master DB universe catalog disabled", "error", err)
+		return fallback
+	}
+
+	logger.Info("master DB universe catalog enabled", "host", cfg.MasterDBHost, "database", cfg.MasterDBName)
+	return catalogrepo.FallbackUniverseCatalog{
+		Primary:  mysqlcatalog.NewMasterUniverseCatalog(db),
+		Fallback: fallback,
+	}
 }
 
 func newLogger(levelName string) *slog.Logger {
