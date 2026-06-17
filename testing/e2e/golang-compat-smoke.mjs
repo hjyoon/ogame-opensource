@@ -126,6 +126,53 @@ try {
     ]
   }));
 
+  const validLogin = await request("/api/public/login/validate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      login: "Commander01",
+      pass: "E2E_http123",
+      universe: universes[0]?.baseUrl ?? "http://localhost:8888"
+    })
+  });
+  let validLoginBody = {};
+  try {
+    validLoginBody = JSON.parse(validLogin.body);
+  } catch {
+    validLoginBody = {};
+  }
+
+  const invalidLogin = await request("/api/public/login/validate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      login: "",
+      pass: "",
+      universe: ""
+    })
+  });
+  let invalidLoginBody = {};
+  try {
+    invalidLoginBody = JSON.parse(invalidLogin.body);
+  } catch {
+    invalidLoginBody = {};
+  }
+  const invalidLoginIssues = Array.isArray(invalidLoginBody.issues) ? invalidLoginBody.issues : [];
+  cases.push(finalize({
+    case: "go_login_validation_api",
+    checks: [
+      check(validLogin.status === 200, "valid login draft returns HTTP 200", { status: validLogin.status }),
+      check(hasHeader(validLogin, "content-type", "application/json"), "valid login draft returns JSON"),
+      check(validLoginBody.valid === true, "valid login draft is accepted", validLoginBody),
+      check(!validLogin.body.includes("E2E_http123"), "login validation response does not echo password"),
+      check(invalidLogin.status === 200, "invalid login draft returns HTTP 200", { status: invalidLogin.status }),
+      check(invalidLoginBody.valid === false, "invalid login draft is rejected", invalidLoginBody),
+      check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),
+      check(invalidLoginIssues.some((issue) => issue.code === "password_required" && issue.legacyErrorCode === 2), "missing password maps to legacy error 2", invalidLoginBody),
+      check(invalidLoginIssues.some((issue) => issue.code === "universe_required"), "missing universe is reported for multi-universe entry", invalidLoginBody)
+    ]
+  }));
+
   const root = await request("/");
   cases.push(finalize({
     case: "go_react_shell",
@@ -213,7 +260,8 @@ try {
       check(hasHeader(css, "content-type", "text/css"), "React CSS bundle has CSS content type"),
       check(js.body.includes("/register") && js.body.includes("/universes"), "React bundle contains natural public route model"),
       check(js.body.includes("/api/public/universes"), "React bundle consumes universe catalog API"),
-      check(js.body.includes("/api/public/registration/validate"), "React bundle consumes registration validation API")
+      check(js.body.includes("/api/public/registration/validate"), "React bundle consumes registration validation API"),
+      check(js.body.includes("/api/public/login/validate"), "React bundle consumes login validation API")
     ]
   }));
 
@@ -230,13 +278,16 @@ try {
 
   const postHealth = await request("/api/healthz", { method: "POST" });
   const getRegistrationValidation = await request("/api/public/registration/validate");
+  const getLoginValidation = await request("/api/public/login/validate");
   cases.push(finalize({
     case: "go_method_guards",
     checks: [
       check(postHealth.status === 405, "POST health endpoint is rejected", { status: postHealth.status }),
       check(hasHeader(postHealth, "allow", "GET, HEAD"), "method rejection returns Allow header"),
       check(getRegistrationValidation.status === 405, "GET registration validation endpoint is rejected", { status: getRegistrationValidation.status }),
-      check(hasHeader(getRegistrationValidation, "allow", "POST"), "registration validation method rejection returns Allow header")
+      check(hasHeader(getRegistrationValidation, "allow", "POST"), "registration validation method rejection returns Allow header"),
+      check(getLoginValidation.status === 405, "GET login validation endpoint is rejected", { status: getLoginValidation.status }),
+      check(hasHeader(getLoginValidation, "allow", "POST"), "login validation method rejection returns Allow header")
     ]
   }));
 } catch (error) {

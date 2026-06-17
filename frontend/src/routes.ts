@@ -34,10 +34,10 @@ export const publicRoutes: PublicRoute[] = [
     label: "Home",
     eyebrow: "Command Entry",
     title: "OGame Classic",
-    summary: "A React public shell for the Go migration, keeping the old game rules as the oracle.",
-    status: "Public shell",
+    summary: "A React public entry backed by Go draft validation, keeping the old game rules as the oracle.",
+    status: "Login validation",
     image: "/legacy-assets/use/uV/planeten/small/s_normaltempplanet01.jpg",
-    points: ["Universe login entry", "Legacy asset compatibility", "Strict game-rule parity"]
+    points: ["Legacy login field names", "Universe selection", "Strict game-rule parity"]
   },
   {
     key: "register",

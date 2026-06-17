@@ -53,6 +53,28 @@ type RegistrationDraft = {
   agb: boolean;
 };
 
+type LoginIssue = {
+  field: string;
+  code: string;
+  message: string;
+  legacyErrorCode: number;
+};
+
+type LoginValidation = {
+  valid: boolean;
+  issues: LoginIssue[];
+  draft: {
+    login: string;
+    universe: string;
+  };
+};
+
+type LoginDraft = {
+  login: string;
+  pass: string;
+  universe: string;
+};
+
 const phases = [
   { key: "legacy", label: "Legacy QA", state: "active", owner: "PHP E2E" },
   { key: "shell", label: "React Shell", state: "active", owner: "Bun 1.3" },
@@ -75,6 +97,14 @@ function App() {
   const [registrationResult, setRegistrationResult] = useState<RegistrationValidation | null>(null);
   const [registrationPending, setRegistrationPending] = useState(false);
   const [registrationError, setRegistrationError] = useState<string | null>(null);
+  const [loginDraft, setLoginDraft] = useState<LoginDraft>({
+    login: "",
+    pass: "",
+    universe: ""
+  });
+  const [loginResult, setLoginResult] = useState<LoginValidation | null>(null);
+  const [loginPending, setLoginPending] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
 
@@ -106,7 +136,10 @@ function App() {
     if (registrationDraft.universe === "" && universes[0]?.baseUrl) {
       setRegistrationDraft((current) => ({ ...current, universe: universes[0].baseUrl }));
     }
-  }, [registrationDraft.universe, universes]);
+    if (loginDraft.universe === "" && universes[0]?.baseUrl) {
+      setLoginDraft((current) => ({ ...current, universe: universes[0].baseUrl }));
+    }
+  }, [loginDraft.universe, registrationDraft.universe, universes]);
 
   useEffect(() => {
     const onPopState = () => setPathname(window.location.pathname);
@@ -157,6 +190,32 @@ function App() {
       .then(setRegistrationResult)
       .catch((err: unknown) => setRegistrationError(err instanceof Error ? err.message : String(err)))
       .finally(() => setRegistrationPending(false));
+  };
+
+  const updateLoginDraft = (field: keyof LoginDraft, value: string) => {
+    setLoginDraft((current) => ({ ...current, [field]: value }));
+    setLoginResult(null);
+    setLoginError(null);
+  };
+
+  const validateLogin = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setLoginPending(true);
+    setLoginError(null);
+    fetch("/api/public/login/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(loginDraft)
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`login validation returned ${response.status}`);
+        }
+        return response.json() as Promise<LoginValidation>;
+      })
+      .then(setLoginResult)
+      .catch((err: unknown) => setLoginError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoginPending(false));
   };
 
   return (
@@ -232,6 +291,66 @@ function App() {
           </div>
         </div>
       </section>
+
+      {route.key === "home" ? (
+        <section className="panel" data-testid="login-draft">
+          <div className="panel-title">
+            <span>Login Draft</span>
+            <strong className={loginResult?.valid ? "badge good" : "badge neutral"}>
+              {loginResult ? (loginResult.valid ? "valid" : "review") : "draft"}
+            </strong>
+          </div>
+          <form className="registration-form" onSubmit={validateLogin}>
+            <label>
+              <span>Commander</span>
+              <input
+                name="login"
+                onChange={(event) => updateLoginDraft("login", event.currentTarget.value)}
+                value={loginDraft.login}
+              />
+            </label>
+            <label>
+              <span>Password</span>
+              <input
+                name="pass"
+                onChange={(event) => updateLoginDraft("pass", event.currentTarget.value)}
+                type="password"
+                value={loginDraft.pass}
+              />
+            </label>
+            <label>
+              <span>Universe</span>
+              <select
+                name="universe"
+                onChange={(event) => updateLoginDraft("universe", event.currentTarget.value)}
+                value={loginDraft.universe}
+              >
+                <option value="">Select universe</option>
+                {universes.map((universe) => (
+                  <option key={universe.number} value={universe.baseUrl}>
+                    {universe.number} - {universe.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button disabled={loginPending} type="submit">
+              {loginPending ? "Checking" : "Validate"}
+            </button>
+          </form>
+          {loginError ? <p className="form-error">{loginError}</p> : null}
+          {loginResult && !loginResult.valid ? (
+            <ul className="issue-list">
+              {loginResult.issues.map((issue) => (
+                <li key={`${issue.field}-${issue.code}`}>
+                  <strong>{issue.field}</strong>
+                  <span>{issue.message}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {loginResult?.valid ? <p className="form-success">Draft accepted for the next authentication migration step.</p> : null}
+        </section>
+      ) : null}
 
       {route.key === "register" ? (
         <section className="panel" data-testid="registration-draft">

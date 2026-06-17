@@ -182,6 +182,83 @@ func TestRegistrationValidationRejectsMalformedJSON(t *testing.T) {
 	}
 }
 
+func TestLoginValidationEndpointAcceptsValidDraft(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	body := `{"login":"Commander01","pass":"E2E_http123","universe":"http://localhost:8888"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/public/login/validate", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response loginValidationResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Valid || len(response.Issues) != 0 {
+		t.Fatalf("expected valid login response, got %+v", response)
+	}
+	if response.Draft.Login != "Commander01" {
+		t.Fatalf("unexpected sanitized login draft response: %+v", response.Draft)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("E2E_http123")) {
+		t.Fatalf("login response must not echo password: %s", rec.Body.String())
+	}
+}
+
+func TestLoginValidationEndpointAcceptsPasswordAlias(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	body := `{"login":"Commander01","password":"E2E_http123","universe":"http://localhost:8888"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/public/login/validate", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response loginValidationResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Valid {
+		t.Fatalf("expected password alias to produce valid login response, got %+v", response)
+	}
+}
+
+func TestLoginValidationEndpointReturnsIssues(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	body := `{"login":"","pass":"","universe":""}`
+	req := httptest.NewRequest(http.MethodPost, "/api/public/login/validate", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected validation result to return 200, got %d", rec.Code)
+	}
+	var response loginValidationResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Valid {
+		t.Fatalf("expected invalid login response, got %+v", response)
+	}
+	if !hasLoginIssue(response, "login_required", 2) || !hasLoginIssue(response, "password_required", 2) {
+		t.Fatalf("expected legacy-compatible login issues, got %+v", response.Issues)
+	}
+}
+
+func TestLoginValidationRejectsMalformedJSON(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodPost, "/api/public/login/validate", strings.NewReader("{"))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected malformed JSON to return 400, got %d", rec.Code)
+	}
+}
+
 func TestLegacyPublicHTMLRoutesServeReactShell(t *testing.T) {
 	staticDir := t.TempDir()
 	writeFile(t, filepath.Join(staticDir, "index.html"), "ogame react shell")
@@ -271,7 +348,15 @@ func TestPostOnlyRejectsReadMethods(t *testing.T) {
 	server.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "POST" {
-		t.Fatalf("expected method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+		t.Fatalf("expected registration method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/public/login/validate", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "POST" {
+		t.Fatalf("expected login method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 }
 
@@ -347,11 +432,13 @@ func testServerWithLogger(cfg config.Config, logger *slog.Logger) http.Handler {
 		LegacyBaseURL: cfg.LegacyBaseURL,
 	})
 	registrationDrafts := apppublicsite.NewRegistrationDraftValidator()
+	loginDrafts := apppublicsite.NewLoginDraftValidator()
 
 	return New(Dependencies{
 		Health:             health,
 		Universes:          universes,
 		RegistrationDrafts: registrationDrafts,
+		LoginDrafts:        loginDrafts,
 		Frontend:           filesystem.StaticDir{Root: cfg.StaticDir},
 		LegacyAssets:       filesystem.NewNoListingFS(cfg.LegacyAssetDir),
 		Logger:             logger,
@@ -372,6 +459,15 @@ func writeFile(t *testing.T, name string, data string) {
 }
 
 func hasRegistrationIssue(response registrationValidationResponse, code string, legacyCode int) bool {
+	for _, issue := range response.Issues {
+		if issue.Code == code && issue.LegacyErrorCode == legacyCode {
+			return true
+		}
+	}
+	return false
+}
+
+func hasLoginIssue(response loginValidationResponse, code string, legacyCode int) bool {
 	for _, issue := range response.Issues {
 		if issue.Code == code && issue.LegacyErrorCode == legacyCode {
 			return true
