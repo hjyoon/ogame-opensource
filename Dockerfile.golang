@@ -1,0 +1,26 @@
+FROM golang:1.25 AS backend-builder
+WORKDIR /src/backend
+COPY backend/go.mod ./
+COPY backend ./
+RUN CGO_ENABLED=0 go build -o /out/ogame-server ./cmd/ogame-server
+
+FROM oven/bun:1.3 AS frontend-builder
+WORKDIR /src/frontend
+COPY frontend/package.json frontend/bun.lock ./
+RUN bun install --frozen-lockfile
+COPY frontend ./
+RUN bun run build
+
+FROM alpine:3.22
+RUN adduser -D -H -u 10001 ogame
+WORKDIR /srv/ogame
+COPY --from=backend-builder /out/ogame-server /usr/local/bin/ogame-server
+COPY --from=frontend-builder /src/frontend/dist /srv/ogame/frontend
+COPY download /srv/ogame/download
+ENV OGAME_ENV=production
+ENV OGAME_HTTP_ADDR=:8080
+ENV OGAME_STATIC_DIR=/srv/ogame/frontend
+ENV OGAME_LEGACY_ASSET_DIR=/srv/ogame/download
+EXPOSE 8080
+USER ogame
+ENTRYPOINT ["ogame-server"]

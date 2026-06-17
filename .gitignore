@@ -3,3 +3,6 @@
 .phpunit.result.cache
 /html
 /latex
+/frontend/node_modules
+/frontend/dist
+/.tmp

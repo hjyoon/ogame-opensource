@@ -5,6 +5,34 @@
 
 This is revived OGame v 0.84 with old design.
 
+## Go/React migration
+
+The `hjyoon/golang` branch starts a staged port to React 19 on Bun 1.3 and Go 1.25 with the native `net/http` module. The legacy PHP app remains the compatibility oracle until each flow is fully migrated.
+
+New migration code must follow Clean Architecture. Domain rules stay independent from HTTP, SQL, React, and legacy adapters.
+
+New code lives in:
+
+- `backend/`: Go server, health API, static React serving, legacy asset serving.
+- `frontend/`: React migration shell built by Bun.
+- `testing/e2e/run-golang-migration-qa.sh`: migration QA entrypoint using the existing Docker E2E suite plus Go/React smoke checks.
+
+Local migration smoke:
+
+```sh
+cd frontend && bun install && bun run build
+cd ../backend && go test ./...
+docker compose -f compose.golang.yaml up -d --build goapp
+```
+
+Full compatibility QA still starts with:
+
+```sh
+testing/e2e/run-docker-e2e.sh
+```
+
+Markdown files are capped at 4KB. Split larger docs by topic and link them from a short index.
+
 Need help with installation? You have the following options:
 - Use the millennial guide: [install](/wiki/en/install.md)
 - Use the zoomer guide: [install_docker](/wiki/en/install_docker.md)
