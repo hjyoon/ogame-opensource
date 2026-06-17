@@ -11,10 +11,7 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - `compose.golang.yaml` runs the Go app; default local port is `8890`.
 - `/api/healthz` reports tool targets and static/legacy asset readiness.
 - Natural public routes and legacy `.php` aliases resolve through the React shell.
-- `/home`, `/home.php`, `/`, and `/index.php` target the legacy PHP public start composition.
-- `/register` and `/register.php` target the legacy PHP public registration composition, including main menu, login strip, registration panel, field names, universe select, and terms checkbox.
-- `/about` and `/about.php` target the legacy PHP public about composition, including the large panel, scrolled content, floated images, and story link.
-- `/story` and `/story.php` target the legacy PHP public story composition, including the large panel, scrolled narrative, story images, and join link.
+- `/home`, `/register`, `/about`, `/story`, `/screenshots`, and legacy aliases target their PHP public compositions.
 - Legacy public images from `wwwroot/img` are copied into `frontend/dist/public-assets/img` and served without loopback absolute URLs.
 - `/api/public/universes` exposes the universe catalog from the master DB with config fallback.
 - `/api/public/registration/validate` performs draft validation and duplicate/capacity checks against the legacy universe DB.
@@ -27,15 +24,15 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 
 ## Latest Verified Implementation
 
-- `a9dd63a4` Apply legacy public story layout.
-- Milestone: legacy-visual public home/register/about/story and game overview pass current Go migration QA.
+- `008a714c` Apply legacy public screenshots layout.
+- Milestone: legacy-visual public home/register/about/story/screenshots and game overview pass current Go migration QA.
 
 ## Verified QA
 
 - `bun run build && bun run check && bun test`: passing.
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
 - Go internal coverage gate: `97.3% >= 97%`.
-- Direct smoke after restart: `GET /story`, `GET /story.php`, public story assets, bundle marker checks, and `docker ps` for `goapp` passed.
+- Direct smoke after restart: `GET /screenshots`, `GET /screenshots.php`, screenshot thumbnail assets, bundle marker checks, and `docker ps` for `goapp` passed.
 
 Full legacy PHP E2E was not run for this Go migration step. Keep legacy PHP behavior as the oracle until each migrated flow has focused unit tests and E2E coverage.
 
@@ -43,7 +40,7 @@ Full legacy PHP E2E was not run for this Go migration step. Keep legacy PHP beha
 
 - Implement native registration creation, activation, welcome mail, and login-after-register behavior.
 - Add logout, expiry, and deeper session security behavior.
-- Restyle remaining public pages to match PHP composition: `/screenshots`, `/rules`, `/legal`, `/universes`.
+- Restyle remaining public pages to match PHP composition: `/rules`, `/legal`, `/universes`.
 - Expand authenticated React game routes beyond overview with legacy PHP screen composition.
 - Port current planet switching and full overview actions from legacy DB.
 - Port resource production, queues, buildings, research, shipyard, defense, fleet, reports, messages, galaxy, alliance, admin, maintenance, options, recovery, deletion, vacation, bans, and permissions.
