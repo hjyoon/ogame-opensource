@@ -19,6 +19,8 @@ testing/e2e/run-docker-e2e.sh
 The wrapper copies `testing/e2e` into the `server` container, creates disposable fixture users, runs every case, and removes the fixture users at exit.
 
 JSON result files are written inside the container under `/tmp/ogame-e2e-results`.
+The runner also writes `summary.json` and `summary.md` in that directory after every run.
+Each PHP case gets a sibling `.stderr` file; any non-empty stderr output fails that case so PHP warnings and notices cannot pass silently.
 
 ## Covered Areas
 

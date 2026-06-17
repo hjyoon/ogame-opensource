@@ -5,6 +5,7 @@ ROOT="${OGAME_E2E_ROOT:-/tmp/ogame-e2e}"
 OUT_DIR="${OGAME_E2E_OUT_DIR:-/tmp/ogame-e2e-results}"
 mkdir -p "$OUT_DIR"
 export OGAME_E2E_OUT_DIR="$OUT_DIR"
+find "$OUT_DIR" -maxdepth 1 -type f \( -name '*.stderr' -o -name '*.json' -o -name 'summary.md' \) ! -name 'performance-baseline-metrics.json' -exec rm -f {} \;
 
 failures=0
 
@@ -12,10 +13,16 @@ run_json_case() {
   name="$1"
   file="$2"
   output="$OUT_DIR/${name}.json"
+  stderr="$OUT_DIR/${name}.stderr"
 
   printf '==> %s\n' "$name"
-  if php "$file" > "$output"; then
-    if php "$ROOT/assert-json-pass.php" "$output"; then
+  if php "$file" > "$output" 2>"$stderr"; then
+    if [ -s "$stderr" ]; then
+      printf 'FAIL %s\n' "$name"
+      printf 'PHP stderr was not empty for %s:\n' "$name"
+      sed -n '1,20p' "$stderr"
+      failures=$((failures + 1))
+    elif php "$ROOT/assert-json-pass.php" "$output"; then
       printf 'PASS %s\n' "$name"
     else
       printf 'FAIL %s\n' "$name"
@@ -23,6 +30,10 @@ run_json_case() {
     fi
   else
     printf 'ERROR %s\n' "$name"
+    if [ -s "$stderr" ]; then
+      printf 'PHP stderr for %s:\n' "$name"
+      sed -n '1,20p' "$stderr"
+    fi
     failures=$((failures + 1))
   fi
 }
@@ -107,6 +118,13 @@ run_json_case moon_edges "$ROOT/cases/moon_edge_tests.php"
 run_json_case fleet_slots "$ROOT/cases/fleet_slot_sweep.php"
 run_json_case expedition "$ROOT/cases/expedition_case_tests.php"
 run_json_case db_invariant_audit "$ROOT/http_db_invariant_audit_e2e.php"
+
+if php "$ROOT/summarize-results.php" "$OUT_DIR"; then
+  printf 'E2E summary: %s/summary.md\n' "$OUT_DIR"
+else
+  printf 'E2E summary generation failed.\n'
+  failures=$((failures + 1))
+fi
 
 if [ "$failures" -ne 0 ]; then
   printf 'E2E failed: %s case(s). JSON results: %s\n' "$failures" "$OUT_DIR"
