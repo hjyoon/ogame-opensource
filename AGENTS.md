@@ -24,7 +24,10 @@ All newly migrated code must follow Clean Architecture. This is mandatory, not a
 
 ## Layout
 
-- `backend/`: Go HTTP server and future domain/API ports.
+- `backend/internal/domain`: pure game rules and value objects.
+- `backend/internal/application`: use cases and ports.
+- `backend/internal/infrastructure`: MySQL, files, runtime, and legacy adapters.
+- `backend/internal/delivery`: HTTP handlers and other delivery adapters.
 - `frontend/`: React shell built with Bun.
 - `game/`, `wwwroot/`, `download/`: legacy runtime and assets.
 - `testing/e2e/`: regression suite. Prefer extending this before replacing it.
@@ -45,10 +48,18 @@ testing/e2e/run-golang-migration-qa.sh
 
 Set `OGAME_RUN_LEGACY_E2E=0` only for local frontend/backend smoke work. Do not use that skip for final validation of migrated game behavior.
 
+Go internal package coverage must stay at or above 97%:
+
+```sh
+backend/scripts/test-coverage.sh
+```
+
 ## Backend Rules
 
 - Use Go 1.25.
 - Use the standard library HTTP stack first: `net/http`, `http.ServeMux`, `httptest`.
+- Serve the React production build from Go. Bun is the build tool, not the runtime server.
+- Runtime logs must be JSON. Use Go `log/slog` JSON handlers at the edge.
 - Keep route handlers small and push game rules into package-level services.
 - Preserve legacy URLs until a compatibility redirect or replacement is covered by tests.
 
