@@ -1,4 +1,6 @@
 const baseUrl = (process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890").replace(/\/+$/, "");
+const loginSmokeUser = process.env.OGAME_GO_LOGIN_SMOKE_USER ?? "legor";
+const loginSmokePassword = process.env.OGAME_GO_LOGIN_SMOKE_PASS ?? "admin";
 
 function check(pass, message, context = {}) {
   return { pass, message, context };
@@ -131,8 +133,8 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      login: "Commander01",
-      pass: "E2E_http123",
+      login: loginSmokeUser,
+      pass: loginSmokePassword,
       universe: universes[0]?.baseUrl ?? "http://localhost:8888"
     })
   });
@@ -141,6 +143,22 @@ try {
     validLoginBody = JSON.parse(validLogin.body);
   } catch {
     validLoginBody = {};
+  }
+
+  const wrongCredentialsLogin = await request("/api/public/login/validate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      login: loginSmokeUser,
+      pass: `${loginSmokePassword}-wrong`,
+      universe: universes[0]?.baseUrl ?? "http://localhost:8888"
+    })
+  });
+  let wrongCredentialsLoginBody = {};
+  try {
+    wrongCredentialsLoginBody = JSON.parse(wrongCredentialsLogin.body);
+  } catch {
+    wrongCredentialsLoginBody = {};
   }
 
   const invalidLogin = await request("/api/public/login/validate", {
@@ -158,6 +176,7 @@ try {
   } catch {
     invalidLoginBody = {};
   }
+  const wrongCredentialsIssues = Array.isArray(wrongCredentialsLoginBody.issues) ? wrongCredentialsLoginBody.issues : [];
   const invalidLoginIssues = Array.isArray(invalidLoginBody.issues) ? invalidLoginBody.issues : [];
   cases.push(finalize({
     case: "go_login_validation_api",
@@ -165,7 +184,10 @@ try {
       check(validLogin.status === 200, "valid login draft returns HTTP 200", { status: validLogin.status }),
       check(hasHeader(validLogin, "content-type", "application/json"), "valid login draft returns JSON"),
       check(validLoginBody.valid === true, "valid login draft is accepted", validLoginBody),
-      check(!validLogin.body.includes("E2E_http123"), "login validation response does not echo password"),
+      check(!validLogin.body.includes(loginSmokePassword), "login validation response does not echo password"),
+      check(wrongCredentialsLogin.status === 200, "wrong login credentials return HTTP 200", { status: wrongCredentialsLogin.status }),
+      check(wrongCredentialsLoginBody.valid === false, "wrong login credentials are rejected", wrongCredentialsLoginBody),
+      check(wrongCredentialsIssues.some((issue) => issue.code === "credentials_invalid" && issue.legacyErrorCode === 2), "wrong login credentials map to legacy error 2", wrongCredentialsLoginBody),
       check(invalidLogin.status === 200, "invalid login draft returns HTTP 200", { status: invalidLogin.status }),
       check(invalidLoginBody.valid === false, "invalid login draft is rejected", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),

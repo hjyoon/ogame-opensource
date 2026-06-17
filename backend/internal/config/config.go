@@ -27,6 +27,7 @@ type Config struct {
 	UniDBPassword    string
 	UniDBName        string
 	UniDBPrefix      string
+	UniDBSecret      string
 }
 
 func Load() Config {
@@ -49,6 +50,7 @@ func Load() Config {
 		UniDBPassword:    env("OGAME_UNI_DB_PASS", env("MYSQL_ROOT_PASSWORD", "123")),
 		UniDBName:        env("OGAME_UNI_DB_NAME", "uni"),
 		UniDBPrefix:      env("OGAME_UNI_DB_PREFIX", "uni1_"),
+		UniDBSecret:      env("OGAME_UNI_DB_SECRET", "docker-secret"),
 	}
 }
 

@@ -21,6 +21,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("OGAME_UNI_DB_PASS", "")
 	t.Setenv("OGAME_UNI_DB_NAME", "")
 	t.Setenv("OGAME_UNI_DB_PREFIX", "")
+	t.Setenv("OGAME_UNI_DB_SECRET", "")
 	t.Setenv("MYSQL_ROOT_PASSWORD", "")
 
 	cfg := Load()
@@ -37,7 +38,7 @@ func TestLoadDefaults(t *testing.T) {
 	if !cfg.MasterDBEnabled || cfg.MasterDBHost != "mysql" || cfg.MasterDBUser != "root" || cfg.MasterDBPassword != "123" || cfg.MasterDBName != "master" {
 		t.Fatalf("unexpected default master DB config: %+v", cfg)
 	}
-	if !cfg.UniDBEnabled || cfg.UniDBHost != "mysql" || cfg.UniDBUser != "root" || cfg.UniDBPassword != "123" || cfg.UniDBName != "uni" || cfg.UniDBPrefix != "uni1_" {
+	if !cfg.UniDBEnabled || cfg.UniDBHost != "mysql" || cfg.UniDBUser != "root" || cfg.UniDBPassword != "123" || cfg.UniDBName != "uni" || cfg.UniDBPrefix != "uni1_" || cfg.UniDBSecret != "docker-secret" {
 		t.Fatalf("unexpected default universe DB config: %+v", cfg)
 	}
 }
@@ -61,6 +62,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("OGAME_UNI_DB_PASS", "uni-secret")
 	t.Setenv("OGAME_UNI_DB_NAME", "uni_test")
 	t.Setenv("OGAME_UNI_DB_PREFIX", "u2_")
+	t.Setenv("OGAME_UNI_DB_SECRET", "legacy-secret")
 
 	cfg := Load()
 
@@ -76,7 +78,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	if cfg.MasterDBEnabled || cfg.MasterDBHost != "db.local:3307" || cfg.MasterDBUser != "ogame" || cfg.MasterDBPassword != "secret" || cfg.MasterDBName != "master_test" {
 		t.Fatalf("unexpected master DB override: %+v", cfg)
 	}
-	if cfg.UniDBEnabled || cfg.UniDBHost != "uni-db.local:3307" || cfg.UniDBUser != "uni" || cfg.UniDBPassword != "uni-secret" || cfg.UniDBName != "uni_test" || cfg.UniDBPrefix != "u2_" {
+	if cfg.UniDBEnabled || cfg.UniDBHost != "uni-db.local:3307" || cfg.UniDBUser != "uni" || cfg.UniDBPassword != "uni-secret" || cfg.UniDBName != "uni_test" || cfg.UniDBPrefix != "u2_" || cfg.UniDBSecret != "legacy-secret" {
 		t.Fatalf("unexpected universe DB override: %+v", cfg)
 	}
 }

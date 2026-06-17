@@ -48,7 +48,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	}, filesystem.Probe{}, infraruntime.GoRuntime{})
 	universes := apppublicsite.NewUniverseCatalogService(universeRepository(cfg, logger))
 	registrationDrafts := registrationValidator(cfg, logger)
-	loginDrafts := apppublicsite.NewLoginDraftValidator()
+	loginDrafts := loginValidator(cfg, logger)
 
 	return httpdelivery.New(httpdelivery.Dependencies{
 		Health:             health,
@@ -59,6 +59,34 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		LegacyAssets:       filesystem.NewNoListingFS(cfg.LegacyAssetDir),
 		Logger:             logger,
 	})
+}
+
+func loginValidator(cfg config.Config, logger *slog.Logger) apppublicsite.LoginDraftValidator {
+	if !cfg.UniDBEnabled {
+		return apppublicsite.NewLoginDraftValidator()
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB login credentials disabled", "error", err)
+		return apppublicsite.NewLoginDraftValidator()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB login credentials disabled", "error", err)
+		_ = db.Close()
+		return apppublicsite.NewLoginDraftValidator()
+	}
+
+	logger.Info("universe DB login credentials enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
+	return apppublicsite.NewLoginDraftValidatorWithCredentials(mysqlregistration.NewCredentialChecker(db, cfg.UniDBPrefix, cfg.UniDBSecret))
 }
 
 func registrationValidator(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationDraftValidator {

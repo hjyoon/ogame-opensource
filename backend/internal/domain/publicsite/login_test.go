@@ -25,6 +25,22 @@ func TestLoginDraftReportsRequiredFields(t *testing.T) {
 	}
 }
 
+func TestLoginCredentialsReportLegacyCompatibleIssues(t *testing.T) {
+	result := LoginValidation{Issues: LoginCredentials{}.Validate()}
+	assertLoginIssue(t, result, LoginIssueCredentialsInvalid, LegacyLoginErrorCredentials)
+
+	result = LoginValidation{Issues: LoginCredentials{Authenticated: true, Banned: true, BannedUntil: 123}.Validate()}
+	assertLoginIssue(t, result, LoginIssueUserBanned, LegacyLoginErrorBanned)
+}
+
+func TestLoginCredentialsAllowAuthenticatedUnbannedUser(t *testing.T) {
+	issues := LoginCredentials{Authenticated: true, PlayerID: 1}.Validate()
+
+	if len(issues) != 0 {
+		t.Fatalf("expected authenticated unbanned user to pass, got %+v", issues)
+	}
+}
+
 func assertLoginIssue(t *testing.T, result LoginValidation, code string, legacyCode int) {
 	t.Helper()
 	for _, issue := range result.Issues {

@@ -12,17 +12,38 @@ type LoginDraftCommand struct {
 	Universe string
 }
 
-type LoginDraftValidator struct{}
+type LoginCredentialChecker interface {
+	CheckLoginCredentials(context.Context, domain.LoginDraft) (domain.LoginCredentials, error)
+}
+
+type LoginDraftValidator struct {
+	credentials LoginCredentialChecker
+}
 
 func NewLoginDraftValidator() LoginDraftValidator {
 	return LoginDraftValidator{}
 }
 
+func NewLoginDraftValidatorWithCredentials(credentials LoginCredentialChecker) LoginDraftValidator {
+	return LoginDraftValidator{credentials: credentials}
+}
+
 func (v LoginDraftValidator) ValidateLoginDraft(ctx context.Context, command LoginDraftCommand) (domain.LoginValidation, error) {
-	_ = ctx
-	return domain.LoginDraft{
+	draft := domain.LoginDraft{
 		Login:    command.Login,
 		Password: command.Password,
 		Universe: command.Universe,
-	}.Validate(), nil
+	}
+	result := draft.Validate()
+	if !result.Valid || v.credentials == nil {
+		return result, nil
+	}
+
+	credentials, err := v.credentials.CheckLoginCredentials(ctx, draft)
+	if err != nil {
+		return domain.LoginValidation{}, err
+	}
+	result.Issues = append(result.Issues, credentials.Validate()...)
+	result.Valid = len(result.Issues) == 0
+	return result, nil
 }
