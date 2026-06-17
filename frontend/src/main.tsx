@@ -351,7 +351,15 @@ function App() {
         }
         return response.json() as Promise<LoginValidation>;
       })
-      .then(setLoginResult)
+      .then((result) => {
+        setLoginResult(result);
+        if (result.valid && result.session?.redirectTo) {
+          const target = new URL(result.session.redirectTo, window.location.origin);
+          window.history.pushState({}, "", `${target.pathname}${target.search}`);
+          setPathname(target.pathname);
+          setSearch(target.search);
+        }
+      })
       .catch((err: unknown) => setLoginError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoginPending(false));
   };

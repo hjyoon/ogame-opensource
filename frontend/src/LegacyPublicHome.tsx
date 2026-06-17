@@ -345,11 +345,7 @@ function LoginFeedback({ loginError, loginResult }: Pick<LegacyPublicHomeProps, 
     return null;
   }
   if (loginResult.valid) {
-    return (
-      <div className="legacy-public-login-feedback">
-        <a href={loginResult.session?.redirectTo ?? "/game/overview"}>Open overview</a>
-      </div>
-    );
+    return null;
   }
   return <div className="legacy-public-login-feedback">{loginResult.issues[0]?.message ?? "Login failed."}</div>;
 }

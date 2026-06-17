@@ -11,12 +11,16 @@ type StepResult = {
   details: Record<string, unknown>;
 };
 
+type LoginFixture = {
+  login: string;
+  password: string;
+  universe: string;
+};
+
 const rootDir = resolve(import.meta.dir, "../..");
 const browserName = browserEnv("OGAME_PLAYWRIGHT_BROWSER", "chromium");
 const outputDir = resolve(rootDir, ".tmp/playwright-csr", browserName);
 const migratedBaseURL = trimTrailingSlash(process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890");
-const loginSmokeUser = process.env.OGAME_GO_LOGIN_SMOKE_USER ?? "legor";
-const loginSmokePassword = process.env.OGAME_GO_LOGIN_SMOKE_PASS ?? "admin";
 const defaultChromeExecutable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const defaultBrowserExecutable = browserName === "firefox" ? undefined : defaultChromeExecutable;
 const browserExecutable =
@@ -58,12 +62,10 @@ try {
   await page.goto(`${migratedBaseURL}/home`, { waitUntil: "networkidle", timeout: 15_000 });
   await assertClientNavigation(page, "home register CTA", "#register.bigbutton", "/register.php");
 
-  const gameSessionSearch = await authenticateGameSession(page);
-  await page.goto(`${migratedBaseURL}/game/overview${gameSessionSearch}`, { waitUntil: "networkidle", timeout: 15_000 });
-  await page.evaluate(() => {
-    window.__ogameCsrProbe = "game-overview-load";
-  });
-  await record("game overview shell loads with session", async () => gameShellState(page, "game-overview-load", "Overview"));
+  await page.goto(`${migratedBaseURL}/home`, { waitUntil: "networkidle", timeout: 15_000 });
+  const loginFixture = await createLoginFixture();
+  await assertLoginFormRedirectsToGame(page, loginFixture);
+  await record("game overview shell loads with session", async () => gameShellState(page, "login-form-submit", "Overview"));
   await assertGameClientNavigation(page, "game buildings menu preserves CSR", "a[href^='/game/buildings']", "/game/buildings", "Buildings");
   await assertGameClientNavigation(page, "game fleet menu preserves CSR", "a[href^='/game/fleet']", "/game/fleet", "Fleet");
   await assertGameClientNavigation(page, "game overview menu preserves CSR", "a[href^='/game/overview']", "/game/overview", "Overview");
@@ -122,6 +124,51 @@ async function assertHistoryNavigation(page: Page, name: string, direction: "bac
   });
 }
 
+async function assertLoginFormRedirectsToGame(page: Page, fixture: LoginFixture) {
+  await page.evaluate(() => {
+    window.__ogameCsrProbe = "login-form-submit";
+  });
+  await page.locator("select[name='universe']").selectOption(fixture.universe);
+  await page.locator("input[name='login']").fill(fixture.login);
+  await page.locator("input[name='pass']").fill(fixture.password);
+  await page.locator("input.legacy-public-login-button").click();
+  await page.waitForFunction(() => window.location.pathname === "/game/overview" && window.location.search.includes("session="), undefined, {
+    timeout: 10_000
+  });
+  await record("login form redirects directly to game", async () => {
+    const state = await gameShellState(page, "login-form-submit", "Overview");
+    return {
+      pass: state.pass && state.details.openOverviewLinks === 0,
+      details: state.details
+    };
+  });
+}
+
+async function createLoginFixture(): Promise<LoginFixture> {
+  const universesResponse = await fetch(`${migratedBaseURL}/api/public/universes`);
+  const universesPayload = await universesResponse.json();
+  const universe = universesPayload.universes?.[0]?.baseUrl ?? "http://localhost:8888";
+  const suffix = `${browserName.slice(0, 2)}${Date.now().toString(36).slice(-8)}${Math.random().toString(36).slice(2, 4)}`;
+  const login = `Csr${suffix}`.slice(0, 20);
+  const password = "E2E_http123";
+  const registrationResponse = await fetch(`${migratedBaseURL}/api/public/registration`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      character: login,
+      password,
+      email: `${login.toLowerCase()}@example.local`,
+      universe,
+      agb: true
+    })
+  });
+  const registrationPayload = await registrationResponse.json();
+  if (registrationResponse.status !== 200 || registrationPayload.valid !== true || registrationPayload.created !== true) {
+    throw new Error(`Unable to create CSR login fixture: ${JSON.stringify(registrationPayload)}`);
+  }
+  return { login, password, universe };
+}
+
 async function assertGameClientNavigation(
   page: Page,
   name: string,
@@ -173,6 +220,7 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     activeMenuLabel: document.querySelector(".legacy-menu a[aria-current='page']")?.textContent?.trim() ?? "",
     legacyCssLinks: document.head.querySelectorAll("link[data-legacy-public-css]").length,
     legacyBody: document.body.classList.contains("legacy-public-body"),
+    openOverviewLinks: Array.from(document.querySelectorAll("a")).filter((link) => link.textContent?.trim() === "Open overview").length,
     pendingText: document.body.textContent?.includes("queued for React and Go migration") ?? false
   }));
   return {
@@ -194,39 +242,6 @@ async function csrState(page: Page) {
     legacyCssLinks: document.head.querySelectorAll("link[data-legacy-public-css]").length,
     legacyBody: document.body.classList.contains("legacy-public-body")
   }));
-}
-
-async function authenticateGameSession(page: Page): Promise<string> {
-  const universesResponse = await fetch(`${migratedBaseURL}/api/public/universes`);
-  const universesPayload = await universesResponse.json();
-  const universe = universesPayload.universes?.[0]?.baseUrl ?? "http://localhost:8888";
-  const loginResponse = await fetch(`${migratedBaseURL}/api/public/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      login: loginSmokeUser,
-      pass: loginSmokePassword,
-      universe
-    })
-  });
-  const loginPayload = await loginResponse.json();
-  const redirectTo = loginPayload.session?.redirectTo;
-  const setCookie = loginResponse.headers.get("set-cookie") ?? "";
-  const [cookiePair] = setCookie.split(";");
-  const separator = cookiePair?.indexOf("=") ?? -1;
-  if (loginResponse.status !== 200 || loginPayload.valid !== true || typeof redirectTo !== "string" || separator <= 0) {
-    throw new Error(`Unable to create game session: ${JSON.stringify(loginPayload)}`);
-  }
-  await page.context().addCookies([
-    {
-      name: cookiePair.slice(0, separator),
-      value: cookiePair.slice(separator + 1),
-      url: migratedBaseURL,
-      httpOnly: setCookie.toLowerCase().includes("httponly"),
-      sameSite: "Lax"
-    }
-  ]);
-  return new URL(redirectTo, migratedBaseURL).search;
 }
 
 async function record(name: string, run: () => Promise<{ pass: boolean; details: Record<string, unknown> }>) {
