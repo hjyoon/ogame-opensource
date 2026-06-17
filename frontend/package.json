@@ -6,6 +6,7 @@
   "scripts": {
     "build": "bun run scripts/build.ts",
     "check": "bunx tsc --noEmit",
+    "e2e:csr": "bun run scripts/playwright-csr-e2e.ts",
     "e2e:visual": "bun run scripts/playwright-visual-e2e.ts",
     "test": "bun test"
   },
