@@ -5,8 +5,44 @@
     <title>OGame Migration Console</title>
     <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon" />
     <link rel="stylesheet" href="/assets/main.css" />
+    <script>
+      (function () {
+        var aliases = {
+          "/": true,
+          "/about": true,
+          "/about.php": true,
+          "/home": true,
+          "/home.php": true,
+          "/index.php": true,
+          "/install.php": true,
+          "/register": true,
+          "/register.php": true,
+          "/regeln.php": true,
+          "/rules": true,
+          "/screenshots": true,
+          "/screenshots.php": true,
+          "/story": true,
+          "/story.php": true,
+          "/unis.php": true,
+          "/universes": true
+        };
+        if (!aliases[window.location.pathname]) {
+          return;
+        }
+        document.documentElement.dataset.legacyPublic = "true";
+        ["/public-assets/css/styles.css", "/public-assets/css/about.css"].forEach(function (href) {
+          document.write('<link data-legacy-public-css="' + href + '" rel="stylesheet" href="' + href + '">');
+        });
+      })();
+    </script>
   </head>
   <body>
+    <script>
+      if (document.documentElement.dataset.legacyPublic === "true") {
+        document.body.classList.add("legacy-public-body");
+        document.body.style.setProperty("--legacy-public-body-bg", 'url("/public-assets/img/sterne_bg2.jpg")');
+      }
+    </script>
     <div id="root"></div>
     <script type="module" src="/assets/main.js"></script>
   </body>

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { LegacyGameOverview, type GameOverviewStatus } from "./LegacyGameOverview";
 import { LegacyPublicAbout } from "./LegacyPublicAbout";
@@ -105,6 +105,55 @@ const phases = [
   { key: "domain", label: "Domain Ports", state: "queued", owner: "Core rules" }
 ];
 
+const legacyPublicCssHrefs = ["/public-assets/css/styles.css", "/public-assets/css/about.css"];
+const legacyPublicRouteKeys = new Set(["home", "register", "about", "story", "screenshots", "rules", "universes"]);
+
+function isLegacyPublicPath(pathname: string) {
+  return legacyPublicRouteKeys.has(resolvePublicRoute(pathname).route.key);
+}
+
+function ensureLegacyPublicCss() {
+  for (const href of legacyPublicCssHrefs) {
+    if (!document.head.querySelector(`link[data-legacy-public-css="${href}"]`)) {
+      const link = document.createElement("link");
+      link.dataset.legacyPublicCss = href;
+      link.href = href;
+      link.rel = "stylesheet";
+      document.head.appendChild(link);
+    }
+  }
+}
+
+function syncLegacyPublicChrome(enabled: boolean) {
+  document.body.classList.toggle("legacy-public-body", enabled);
+  if (enabled) {
+    document.body.style.setProperty("--legacy-public-body-bg", 'url("/public-assets/img/sterne_bg2.jpg")');
+    ensureLegacyPublicCss();
+    return;
+  }
+  document.body.style.removeProperty("--legacy-public-body-bg");
+  document.head.querySelectorAll("link[data-legacy-public-css]").forEach((link) => link.remove());
+}
+
+function dispatchClientNavigation(url: string) {
+  window.history.pushState({}, "", url);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
+function clientNavigableURL(href: string) {
+  const target = new URL(href, window.location.href);
+  const targetPath = `${target.pathname}${target.search}`;
+  const currentPath = `${window.location.pathname}${window.location.search}`;
+  if (target.origin !== window.location.origin || target.hash !== "" || targetPath === currentPath) {
+    return null;
+  }
+  const route = resolvePublicRoute(target.pathname).route;
+  if (legacyPublicRouteKeys.has(route.key) || target.pathname.startsWith("/game")) {
+    return targetPath;
+  }
+  return null;
+}
+
 function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname);
   const [search, setSearch] = useState(() => window.location.search);
@@ -133,31 +182,31 @@ function App() {
   const [gameOverviewError, setGameOverviewError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
-  const isLegacyPublicRoute = ["home", "register", "about", "story", "screenshots", "rules", "universes"].includes(route.key);
+  const isLegacyPublicRoute = legacyPublicRouteKeys.has(route.key);
+
+  useLayoutEffect(() => {
+    syncLegacyPublicChrome(isLegacyPublicRoute);
+  }, [isLegacyPublicRoute]);
 
   useEffect(() => {
-    document.body.classList.toggle("legacy-public-body", isLegacyPublicRoute);
-    if (isLegacyPublicRoute) {
-      document.body.style.setProperty("--legacy-public-body-bg", 'url("/public-assets/img/sterne_bg2.jpg")');
-      for (const href of ["/public-assets/css/styles.css", "/public-assets/css/about.css"]) {
-        if (!document.head.querySelector(`link[data-legacy-public-css="${href}"]`)) {
-          const link = document.createElement("link");
-          link.dataset.legacyPublicCss = href;
-          link.href = href;
-          link.rel = "stylesheet";
-          document.head.appendChild(link);
-        }
+    const onClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+        return;
       }
-    } else {
-      document.body.style.removeProperty("--legacy-public-body-bg");
-      document.head.querySelectorAll("link[data-legacy-public-css]").forEach((link) => link.remove());
-    }
-    return () => {
-      document.body.classList.remove("legacy-public-body");
-      document.body.style.removeProperty("--legacy-public-body-bg");
-      document.head.querySelectorAll("link[data-legacy-public-css]").forEach((link) => link.remove());
+      const anchor = (event.target instanceof Element ? event.target.closest("a[href]") : null) as HTMLAnchorElement | null;
+      if (!anchor || (anchor.target && anchor.target !== "_self")) {
+        return;
+      }
+      const target = clientNavigableURL(anchor.getAttribute("href") ?? "");
+      if (!target) {
+        return;
+      }
+      event.preventDefault();
+      dispatchClientNavigation(target);
     };
-  }, [isLegacyPublicRoute]);
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, []);
 
   useEffect(() => {
     fetch("/api/healthz")
@@ -238,9 +287,7 @@ function App() {
       return;
     }
     event.preventDefault();
-    window.history.pushState({}, "", path);
-    setPathname(path);
-    setSearch("");
+    dispatchClientNavigation(path);
   };
 
   if (pathname.startsWith("/game")) {
@@ -534,4 +581,5 @@ function Gate({ label, ready }: { label: string; ready: boolean }) {
   );
 }
 
+syncLegacyPublicChrome(isLegacyPublicPath(window.location.pathname));
 createRoot(document.getElementById("root") as HTMLElement).render(<App />);

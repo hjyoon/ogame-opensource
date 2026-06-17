@@ -20,7 +20,13 @@ type PageSpec = {
   legacyPath: string;
   migratedPath: string;
   boxes: BoxPair[];
-  checkDownmenu?: boolean;
+  contracts?: DomContractSpec[];
+};
+
+type DomContractSpec = {
+  name: string;
+  selector: string;
+  includeInnerHTML?: boolean;
 };
 
 type Box = {
@@ -36,7 +42,7 @@ type PageCapture = {
   failedRequests: string[];
   badResponses: string[];
   boxes: Record<string, Box | null>;
-  downmenu: DownmenuSnapshot | null;
+  contracts: Record<string, DomContractSnapshot | null>;
   screenshotPath: string;
 };
 
@@ -57,27 +63,36 @@ type BoxCheck = {
   migrated: Box | null;
 };
 
-type DownmenuLinkSnapshot = {
+type DomContractImageSnapshot = {
+  alt: string | null;
+  title: string | null;
+  style: Record<string, string>;
+  rect: Box;
+};
+
+type DomContractLinkSnapshot = {
   text: string;
   href: string | null;
   target: string | null;
   style: Record<string, string>;
   rect: Box;
+  images: DomContractImageSnapshot[];
 };
 
-type DownmenuSnapshot = {
-  text: string;
-  innerHTML: string;
+type DomContractSnapshot = {
+  tagName: string;
+  innerHTML?: string;
   style: Record<string, string>;
   rect: Box;
-  links: DownmenuLinkSnapshot[];
+  links: DomContractLinkSnapshot[];
 };
 
-type DownmenuCheck = {
+type DomContractCheck = {
+  name: string;
   pass: boolean;
   mismatches: string[];
-  legacy: DownmenuSnapshot | null;
-  migrated: DownmenuSnapshot | null;
+  legacy: DomContractSnapshot | null;
+  migrated: DomContractSnapshot | null;
 };
 
 type CaseResult = {
@@ -89,7 +104,7 @@ type CaseResult = {
   diff: DiffResult;
   maxDiffRatio: number;
   boxChecks: BoxCheck[];
-  downmenuCheck: DownmenuCheck | null;
+  contractChecks: DomContractCheck[];
 };
 
 const rootDir = resolve(import.meta.dir, "../..");
@@ -106,7 +121,7 @@ const browserExecutable =
 const defaultMaxDiffRatio = numberEnv("OGAME_VISUAL_MAX_DIFF_RATIO", 0);
 const defaultMaxBoxDelta = numberEnv("OGAME_VISUAL_MAX_BOX_DELTA", 0);
 const colorDeltaThreshold = numberEnv("OGAME_VISUAL_COLOR_DELTA", 0);
-const downmenuStyleProperties = [
+const domContractStyleProperties = [
   "display",
   "position",
   "left",
@@ -132,6 +147,14 @@ const downmenuStyleProperties = [
   "marginBottom",
   "marginLeft"
 ] as const;
+
+const publicShellContracts: DomContractSpec[] = [
+  { name: "products", selector: ".products" },
+  { name: "mainmenu", selector: "#mainmenu" },
+  { name: "login_text_2", selector: "#login_text_2" },
+  { name: "copyright", selector: "#copyright" },
+  { name: "downmenu", selector: "#downmenu", includeInnerHTML: true }
+];
 
 const viewports: ViewportSpec[] = [
   { name: "desktop", width: 1024, height: 768 },
@@ -192,7 +215,7 @@ const pageSpecs: PageSpec[] = [
     legacyPath: "/impressum.php",
     migratedPath: "/legal",
     boxes: [{ name: "document", legacy: "table", migrated: ".legacy-legal-document" }],
-    checkDownmenu: false
+    contracts: []
   }
 ];
 
@@ -219,7 +242,8 @@ try {
       const maxBoxDelta = defaultMaxBoxDelta;
       const boxChecks = spec.boxes.map((pair) => compareBoxes(pair.name, legacy.boxes[pair.name], migrated.boxes[pair.name], maxBoxDelta));
       const maxDiffRatio = defaultMaxDiffRatio;
-      const downmenuCheck = spec.checkDownmenu === false ? null : compareDownmenus(legacy.downmenu, migrated.downmenu);
+      const contractSpecs = spec.contracts ?? publicShellContracts;
+      const contractChecks = contractSpecs.map((contract) => compareDomContracts(contract.name, legacy.contracts[contract.name], migrated.contracts[contract.name]));
       const pass =
         legacy.status === 200 &&
         migrated.status === 200 &&
@@ -231,8 +255,8 @@ try {
         migrated.badResponses.length === 0 &&
         diff.diffRatio <= maxDiffRatio &&
         boxChecks.every((check) => check.pass) &&
-        (downmenuCheck === null || downmenuCheck.pass);
-      results.push({ page: spec.name, viewport: viewport.name, pass, legacy, migrated, diff, maxDiffRatio, boxChecks, downmenuCheck });
+        contractChecks.every((check) => check.pass);
+      results.push({ page: spec.name, viewport: viewport.name, pass, legacy, migrated, diff, maxDiffRatio, boxChecks, contractChecks });
     }
     await context.close();
   }
@@ -296,7 +320,8 @@ async function capturePage(
     const selector = side === "legacy" ? pair.legacy : pair.migrated;
     boxes[pair.name] = await boxFor(page, selector);
   }
-  const downmenu = spec.checkDownmenu === false ? null : await downmenuFor(page);
+  const contractEntries = await Promise.all((spec.contracts ?? publicShellContracts).map(async (contract) => [contract.name, await domContractFor(page, contract)] as const));
+  const contracts = Object.fromEntries(contractEntries);
   const screenshotPath = join(screenshotDir, `${spec.name}-${viewport.name}-${side}.png`);
   await page.screenshot({ path: screenshotPath, fullPage: false });
   await page.close();
@@ -307,7 +332,7 @@ async function capturePage(
     failedRequests,
     badResponses,
     boxes,
-    downmenu,
+    contracts,
     screenshotPath
   };
 }
@@ -329,18 +354,24 @@ async function boxFor(page: Page, selector: string): Promise<Box | null> {
   };
 }
 
-async function downmenuFor(page: Page): Promise<DownmenuSnapshot | null> {
-  return await page.evaluate((properties) => {
-    const menu = document.querySelector("#downmenu");
-    if (!(menu instanceof HTMLElement)) {
+async function domContractFor(page: Page, contract: DomContractSpec): Promise<DomContractSnapshot | null> {
+  return await page.evaluate(({ properties, contract }) => {
+    const root = document.querySelector(contract.selector);
+    if (!(root instanceof HTMLElement)) {
       return null;
     }
 
     const styleOf = (element: Element): Record<string, string> => {
       const computed = getComputedStyle(element);
       return Object.fromEntries(
-        properties.map((property) => [property, (computed as CSSStyleDeclaration & Record<string, string>)[property] ?? ""])
+        properties.map((property) => [property, normalizeStyleValue(property, (computed as CSSStyleDeclaration & Record<string, string>)[property] ?? "")])
       );
+    };
+    const normalizeStyleValue = (property: string, value: string) => {
+      if (property === "textAlign" && (value.startsWith("-webkit-") || value.startsWith("-moz-"))) {
+        return value.replace(/^-(webkit|moz)-/, "");
+      }
+      return value;
     };
     const rectOf = (element: Element): Box => {
       const rect = element.getBoundingClientRect();
@@ -352,20 +383,29 @@ async function downmenuFor(page: Page): Promise<DownmenuSnapshot | null> {
       };
     };
 
-    return {
-      text: menu.textContent?.replace(/\s+/g, " ").trim() ?? "",
-      innerHTML: menu.innerHTML,
-      style: styleOf(menu),
-      rect: rectOf(menu),
-      links: Array.from(menu.querySelectorAll("a")).map((link) => ({
+    const snapshot: DomContractSnapshot = {
+      tagName: root.tagName.toLowerCase(),
+      style: styleOf(root),
+      rect: rectOf(root),
+      links: Array.from(root.querySelectorAll("a")).map((link) => ({
         text: link.textContent?.trim() ?? "",
         href: link.getAttribute("href"),
         target: link.getAttribute("target"),
         style: styleOf(link),
-        rect: rectOf(link)
+        rect: rectOf(link),
+        images: Array.from(link.querySelectorAll("img")).map((image) => ({
+          alt: image.getAttribute("alt"),
+          title: image.getAttribute("title"),
+          style: styleOf(image),
+          rect: rectOf(image)
+        }))
       }))
     };
-  }, [...downmenuStyleProperties]);
+    if (contract.includeInnerHTML) {
+      snapshot.innerHTML = root.innerHTML;
+    }
+    return snapshot;
+  }, { properties: [...domContractStyleProperties], contract });
 }
 
 async function compareScreenshots(browser: Browser, legacyPath: string, migratedPath: string): Promise<DiffResult> {
@@ -445,10 +485,11 @@ function compareBoxes(name: string, legacy: Box | null, migrated: Box | null, ma
   return { name, pass: maxDelta <= maxBoxDelta, maxDelta, legacy, migrated };
 }
 
-function compareDownmenus(legacy: DownmenuSnapshot | null, migrated: DownmenuSnapshot | null): DownmenuCheck {
+function compareDomContracts(name: string, legacy: DomContractSnapshot | null, migrated: DomContractSnapshot | null): DomContractCheck {
   const mismatches: string[] = [];
-  collectMismatches("downmenu", legacy, migrated, mismatches);
+  collectMismatches(name, legacy, migrated, mismatches);
   return {
+    name,
     pass: mismatches.length === 0,
     mismatches,
     legacy,
@@ -523,7 +564,7 @@ function renderMarkdown(report: {
       ...result.legacy.badResponses.map((value) => `legacy response: ${value}`),
       ...result.migrated.badResponses.map((value) => `migrated response: ${value}`),
       ...result.boxChecks.filter((check) => !check.pass).map((check) => `box ${check.name} delta ${formatNumber(check.maxDelta)}`),
-      ...(result.downmenuCheck?.mismatches.map((value) => `downmenu mismatch: ${value}`) ?? [])
+      ...result.contractChecks.flatMap((check) => check.mismatches.map((value) => `contract mismatch: ${value}`))
     ];
     lines.push(
       `| ${result.page} | ${result.viewport} | ${result.pass ? "PASS" : "FAIL"} | ${formatNumber(result.diff.diffRatio)} | ${

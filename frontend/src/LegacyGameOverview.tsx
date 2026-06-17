@@ -125,7 +125,8 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
                     <select
                       aria-label="Planet selector"
                       onChange={(event) => {
-                        window.location.href = planetHref(Number(event.currentTarget.value));
+                        window.history.pushState({}, "", planetHref(Number(event.currentTarget.value)));
+                        window.dispatchEvent(new PopStateEvent("popstate"));
                       }}
                       value={planet.id}
                     >

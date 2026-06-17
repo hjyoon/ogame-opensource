@@ -46,6 +46,7 @@ export type LegacyPublicLoginProps = Pick<
 >;
 
 export const publicImageBase = "/public-assets/img";
+const legacyAlignRightProps = { align: "right" } as React.HTMLAttributes<HTMLDivElement> & { align: string };
 
 export function legacyPublicStyle(panelImage = "part_register.jpg"): React.CSSProperties {
   return {
@@ -148,29 +149,29 @@ export function LanguageLinks() {
   ];
 
   return (
-    <div className="products legacy-public-products">
+    <div {...legacyAlignRightProps} className="products legacy-public-products">
       {flags.map(([lang, label, file]) => (
         <React.Fragment key={lang}>
-          <a href="/home">
+          <a href="#">
             <img alt={label} src={`${publicImageBase}/flags/${file}`} title={label} />
           </a>{" "}
         </React.Fragment>
       ))}
-      <a href="/home">Choose your language</a>
+      <a href="#">Choose your language</a>
     </div>
   );
 }
 
 export function MainMenu({ active, withHomeCounterSpace = false }: { active?: "home" | "about" | "preview" | "reg"; withHomeCounterSpace?: boolean }) {
   const items = [
-    { key: "home", label: "Start", href: "/home" },
-    { key: "about", label: "About OGame", href: "/about" },
-    { key: "preview", label: "Pictures", href: "/screenshots" },
-    { key: "reg", label: "Join Now!", href: "/register" }
+    { key: "home", label: "Start", href: "home.php" },
+    { key: "about", label: "About OGame", href: "about.php" },
+    { key: "preview", label: "Pictures", href: "screenshots.php" },
+    { key: "reg", label: "Join Now!", href: "register.php" }
   ] as const;
 
   return (
-    <nav className="legacy-public-mainmenu" id="mainmenu" aria-label="Main menu">
+    <div className="legacy-public-mainmenu" id="mainmenu">
       {items.map((item) =>
         item.key === active ? (
           <div className="menupoint legacy-public-menupoint" key={item.key}>
@@ -188,7 +189,7 @@ export function MainMenu({ active, withHomeCounterSpace = false }: { active?: "h
           <br />
         </>
       ) : null}
-    </nav>
+    </div>
   );
 }
 
@@ -204,9 +205,16 @@ function HomeContent() {
               "<strong>OGame</strong> is a <strong>strategic space simulation game</strong>with \n<strong>thousands of players</strong> across the world competing with each other <strong>simultaneously</strong>. All you need to play is a standard web browser."
           }}
         />
-        <a className="bigbutton legacy-public-register-button" id="register" href="/register">
+        <div
+          className="bigbutton legacy-public-register-button"
+          id="register"
+          onClick={() => {
+            window.history.pushState({}, "", "register.php");
+            window.dispatchEvent(new PopStateEvent("popstate"));
+          }}
+        >
           Play for free now!
-        </a>
+        </div>
         <div className="legacy-public-text2" id="text2">Register now and enter the fantastic world of OGame!</div>
       </div>
     </section>
@@ -306,16 +314,16 @@ export function LoginStrip({
         </table>
       </div>
       <div className="legacy-public-login-links" id="login_text_2">
-        <div className="legacy-public-login-confirm">
-          By logging in, I accept the <a href="/legal">T&amp;C&apos;s</a>.
-        </div>
         <div className="legacy-public-remind">
-          <a href="/home">Forgot your password?</a>
+          <a href="#">Forgot your password?</a>
+        </div>
+        <div className="legacy-public-login-confirm">
+          By logging in, I accept the <a href="#" target="_blank">T&amp;C&apos;s</a>.
         </div>
       </div>
       <LoginFeedback loginError={loginError} loginResult={loginResult} />
       <div className="legacy-public-copyright" id="copyright">
-        (C) 2007 by <a href="http://www.gameforge.de">Gameforge Productions GmbH</a>. All rights reserved.
+        (C) 2007 by <a href="http://www.gameforge.de" target="_blank">Gameforge Productions GmbH</a>. All rights reserved.&nbsp;&nbsp;
       </div>
       <div
         className="legacy-public-downmenu"
