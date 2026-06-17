@@ -22,6 +22,7 @@ else {
 header('Pragma:no-cache');
 
 require_once "core/core.php";
+SendSecurityHeaders();
 
 InitDB();
 

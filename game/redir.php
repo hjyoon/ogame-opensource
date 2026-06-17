@@ -9,6 +9,7 @@ if ( !file_exists ("config.php"))
 
 require_once "config.php";
 require_once "core/core.php";
+SendSecurityHeaders();
 
 // All links from the game to the outside go through this script.
 // Supposedly there could be filters for undesirable websites here.

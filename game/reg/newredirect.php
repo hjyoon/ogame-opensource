@@ -11,6 +11,7 @@ else {
 }
 
 require_once "../core/core.php";
+SendSecurityHeaders();
 
 loca_add ( "common", $loca_lang, "../" );
 loca_add ( "debug", $loca_lang, "../" );

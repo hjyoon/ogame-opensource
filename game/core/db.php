@@ -29,8 +29,7 @@ function dbquery (string $query, bool $mute=false) : mixed
     $query_log .= $query . "<br>\n";
     $result = @mysqli_query($db_connect, $query);
     if (!$result && $mute==false) {
-        echo "$query <br>";
-        echo mysqli_error ($db_connect);
+        error_log("SQL error: ".mysqli_error ($db_connect)." Query: ".$query);
         //Debug ( mysqli_error($db_connect) . "<br>" . $query . "<br>" . BackTrace () ) ;
         return false;
     }
@@ -45,13 +44,11 @@ function dbrows (mixed $result) : int
 
 function dbarray (mixed $result) : mixed
 {
-    global $db_connect;
-    $arr = @mysqli_fetch_assoc($result);
-    if (!$arr) {
-        echo mysqli_error($db_connect);
+    if ($result === false || $result === null || $result === true) {
         return false;
     }
-    else return $arr;
+    $arr = @mysqli_fetch_assoc($result);
+    return $arr === null ? false : $arr;
 }
 
 function dbfree (mixed $result) : void {
@@ -59,13 +56,152 @@ function dbfree (mixed $result) : void {
 }
 
 // Connect to the database
-function InitDB () : void
+function InitDB (bool $apply_migrations = true) : void
 {
     global $db_host, $db_user, $db_pass, $db_name;
     dbconnect ($db_host, $db_user, $db_pass, $db_name);
     dbquery("SET NAMES 'utf8';");
     dbquery("SET CHARACTER SET 'utf8';");
     dbquery("SET SESSION collation_connection = 'utf8_general_ci';");
+    if ($apply_migrations) {
+        ApplyCoreSchemaMigrations();
+    }
+}
+
+function DbIdent (string $name) : string
+{
+    return "`".str_replace("`", "``", $name)."`";
+}
+
+function CoreIndexDefinitions () : array
+{
+    return array(
+        'users' => array(
+            'idx_users_name' => array('name'),
+            'idx_users_session' => array('session'),
+            'idx_users_email' => array('email'),
+            'idx_users_pemail' => array('pemail'),
+            'idx_users_feedid' => array('feedid'),
+            'idx_users_disable_until' => array('disable', 'disable_until', 'admin'),
+            'idx_users_lastclick_cleanup' => array('lastclick', 'admin', 'dm'),
+        ),
+        'planets' => array(
+            'idx_planets_coords_type' => array('g', 's', 'p', 'type'),
+            'idx_planets_owner_type' => array('owner_id', 'type'),
+            'idx_planets_remove_type' => array('remove', 'type'),
+        ),
+        'queue' => array(
+            'idx_queue_due' => array('end', 'freeze', 'prio'),
+            'idx_queue_owner_type_end' => array('owner_id', 'type', 'end'),
+            'idx_queue_type_sub' => array('type', 'sub_id'),
+        ),
+        'buildqueue' => array(
+            'idx_buildqueue_planet_list' => array('planet_id', 'list_id'),
+            'idx_buildqueue_owner' => array('owner_id'),
+        ),
+        'fleet' => array(
+            'idx_fleet_owner_mission' => array('owner_id', 'mission'),
+            'idx_fleet_target_mission' => array('target_planet', 'mission'),
+            'idx_fleet_start_planet' => array('start_planet'),
+        ),
+        'messages' => array(
+            'idx_messages_owner_date' => array('owner_id', 'date'),
+            'idx_messages_owner_pm_date' => array('owner_id', 'pm', 'date'),
+        ),
+        'reports' => array(
+            'idx_reports_owner_date' => array('owner_id', 'date'),
+            'idx_reports_msg' => array('msg_id'),
+        ),
+        'notes' => array(
+            'idx_notes_owner_date' => array('owner_id', 'date'),
+        ),
+        'buddy' => array(
+            'idx_buddy_from_to' => array('request_from', 'request_to'),
+            'idx_buddy_to_accepted' => array('request_to', 'accepted'),
+        ),
+        'allyapps' => array(
+            'idx_allyapps_ally_player' => array('ally_id', 'player_id'),
+        ),
+        'template' => array(
+            'idx_template_owner_date' => array('owner_id', 'date'),
+        ),
+        'userlogs' => array(
+            'idx_userlogs_owner_date' => array('owner_id', 'date'),
+        ),
+        'fleetlogs' => array(
+            'idx_fleetlogs_owner_start' => array('owner_id', 'start'),
+            'idx_fleetlogs_target_start' => array('target_id', 'start'),
+        ),
+    );
+}
+
+function CoreTableExists (string $table) : bool
+{
+    global $db_connect, $db_name, $db_prefix;
+    $schema = mysqli_real_escape_string($db_connect, $db_name);
+    $tableName = mysqli_real_escape_string($db_connect, $db_prefix.$table);
+    $result = dbquery("SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='{$schema}' AND TABLE_NAME='{$tableName}' LIMIT 1", true);
+    return $result !== false && dbarray($result) !== false;
+}
+
+function CoreIndexExists (string $table, string $indexName) : bool
+{
+    global $db_connect, $db_name, $db_prefix;
+    $schema = mysqli_real_escape_string($db_connect, $db_name);
+    $tableName = mysqli_real_escape_string($db_connect, $db_prefix.$table);
+    $index = mysqli_real_escape_string($db_connect, $indexName);
+    $result = dbquery("SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA='{$schema}' AND TABLE_NAME='{$tableName}' AND INDEX_NAME='{$index}' LIMIT 1", true);
+    return $result !== false && dbarray($result) !== false;
+}
+
+function EnsureCoreIndex (string $table, string $indexName, array $columns) : bool
+{
+    global $db_prefix;
+    if (!CoreTableExists($table) || CoreIndexExists($table, $indexName)) {
+        return true;
+    }
+
+    $columnSql = implode(',', array_map(fn($column) => DbIdent((string)$column), $columns));
+    $query = "ALTER TABLE ".DbIdent($db_prefix.$table)." ADD INDEX ".DbIdent($indexName)." (".$columnSql.")";
+    return dbquery($query, true) !== false;
+}
+
+function EnsureCoreIndexes () : bool
+{
+    foreach (CoreIndexDefinitions() as $table => $indexes) {
+        foreach ($indexes as $indexName => $columns) {
+            if (!EnsureCoreIndex($table, $indexName, $columns)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+function ApplyCoreSchemaMigrations () : void
+{
+    static $applied = false;
+    global $db_prefix;
+    if ($applied) return;
+    $applied = true;
+
+    $table = $db_prefix."schema_migrations";
+    $created = dbquery(
+        "CREATE TABLE IF NOT EXISTS ".DbIdent($table)." (".
+        "id VARCHAR(80) PRIMARY KEY, applied_at INT UNSIGNED NOT NULL".
+        ") CHARACTER SET utf8 COLLATE utf8_general_ci",
+        true
+    );
+    if ($created === false) return;
+
+    $migrationId = "20260617_core_indexes";
+    $safeId = mysqli_real_escape_string($GLOBALS['db_connect'], $migrationId);
+    $result = dbquery("SELECT id FROM ".DbIdent($table)." WHERE id='{$safeId}' LIMIT 1", true);
+    if ($result !== false && dbarray($result) !== false) return;
+
+    if (EnsureCoreIndexes()) {
+        dbquery("INSERT INTO ".DbIdent($table)." (id, applied_at) VALUES ('{$safeId}', ".time().")", true);
+    }
 }
 
 // Add a row to the table.

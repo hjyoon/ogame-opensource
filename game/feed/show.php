@@ -12,6 +12,7 @@ else {
 }
 
 require_once "../core/core.php";
+SendSecurityHeaders();
 
 InitDB();
 

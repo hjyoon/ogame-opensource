@@ -48,7 +48,7 @@ class Admin_Botedit extends Page {
                 $result = dbquery ($query);
                 $row = dbarray ($result);
                 ob_clean ();
-                setcookie ( "uni".$GlobalUni['num']."_".$GlobalUser['name']."_strategy", $id, 9999 );
+                SetGameCookie ( "uni".$GlobalUni['num']."_".$GlobalUser['name']."_strategy", (string)$id, 9999 );
                 die ($row['source']);
             }
             else if ( $_POST['action'] === "save" ) {    // Save

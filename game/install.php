@@ -12,6 +12,7 @@ ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 require_once "core/core.php";
+SendSecurityHeaders();
 
 if ( !key_exists ( 'ogamelang', $_COOKIE ) ) $loca_lang = $DefaultLanguage;
 else $loca_lang = $_COOKIE['ogamelang'];
@@ -62,7 +63,7 @@ if ( key_exists("install", $_POST) && CheckParameters() )
     $db_prefix = $_POST["db_prefix"];
 
     // Delete all tables and create new empty tables.
-    InitDB ();
+    InitDB (false);
 
     foreach ( $tabs as $tabname => $tab )
     {
@@ -216,6 +217,7 @@ if ( key_exists("install", $_POST) && CheckParameters() )
     dbquery ( "ALTER TABLE ".$db_prefix."fleetlogs AUTO_INCREMENT = 1;" );
     dbquery ( "ALTER TABLE ".$db_prefix."iplogs AUTO_INCREMENT = 1;" );
     dbquery ( "INSERT INTO ".$db_prefix."botstrat VALUES ( 1, 'backup', '')" );
+    ApplyCoreSchemaMigrations();
 
     // Put the universe into the Master Base.
     $mdb_enable = (key_exists ('mdb_enable', $_POST) && $_POST["mdb_enable"]==="on"?1:0);

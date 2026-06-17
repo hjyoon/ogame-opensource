@@ -100,6 +100,41 @@ function e2e_response_check(array $response, string $label): array
     );
 }
 
+function e2e_header_values(array $response, string $name): array
+{
+    $values = array();
+    foreach (($response['headers'] ?? array()) as $header) {
+        if (stripos($header, $name . ':') === 0) {
+            $values[] = trim(substr($header, strlen($name) + 1));
+        }
+    }
+    return $values;
+}
+
+function e2e_has_header_value(array $response, string $name, string $expected): bool
+{
+    foreach (e2e_header_values($response, $name) as $value) {
+        if (strcasecmp($value, $expected) === 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function e2e_has_set_cookie_attribute(array $response, string $cookiePrefix, string $attribute): bool
+{
+    foreach (($response['headers'] ?? array()) as $header) {
+        if (stripos($header, 'Set-Cookie:') !== 0) {
+            continue;
+        }
+        $cookie = trim(substr($header, 11));
+        if (str_starts_with($cookie, $cookiePrefix) && stripos($cookie, $attribute) !== false) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function e2e_finalize_case(array $case): array
 {
     $case['pass'] = array_reduce($case['checks'], fn($ok, $check) => $ok && $check['pass'], true);
@@ -190,6 +225,7 @@ $attackerId = intval(getenv('OGAME_E2E_ATTACKER_ID') ?: 0);
 $attackerPlanet = intval(getenv('OGAME_E2E_ATTACKER_PLANET') ?: 0);
 $defenderId = intval(getenv('OGAME_E2E_DEFENDER_ID') ?: 0);
 $attackerName = getenv('OGAME_E2E_ATTACKER_NAME') ?: '';
+$attackerPassword = getenv('OGAME_E2E_ATTACKER_PASSWORD') ?: '';
 $base = rtrim(getenv('OGAME_E2E_HTTP_BASE') ?: 'http://127.0.0.1', '/');
 $gameBase = $base . '/game';
 $token = 'E2EHARD' . substr(md5((string)microtime(true)), 0, 8);
@@ -201,7 +237,7 @@ $badBackup = null;
 $nonBackup = null;
 
 try {
-    if ($attackerId <= 0 || $attackerPlanet <= 0 || $defenderId <= 0 || $attackerName === '') {
+    if ($attackerId <= 0 || $attackerPlanet <= 0 || $defenderId <= 0 || $attackerName === '' || $attackerPassword === '') {
         throw new RuntimeException('Fixture environment variables are missing.');
     }
 
@@ -210,6 +246,29 @@ try {
     if ($attackerSnapshot === null || $defenderSnapshot === null) {
         throw new RuntimeException('Fixture users are missing.');
     }
+
+    $publicHome = e2e_http_request('GET', $base . '/home.php');
+    $loginResponse = e2e_http_request('POST', $gameBase . '/reg/login2.php', array(
+        'login' => $attackerName,
+        'pass' => $attackerPassword,
+    ));
+    $loginCookiePrefix = 'prsess_' . $attackerId . '_' . $GlobalUni['num'] . '=';
+    $cases[] = e2e_finalize_case(array(
+        'case' => 'security_headers_and_session_cookie_flags_are_set',
+        'checks' => array_merge(
+            e2e_response_check($publicHome, 'public home page security headers'),
+            e2e_response_check($loginResponse, 'login response security headers'),
+            array(
+                e2e_case(e2e_has_header_value($publicHome, 'X-Frame-Options', 'SAMEORIGIN'), 'public home page sends SAMEORIGIN frame protection', array('headers' => e2e_header_values($publicHome, 'X-Frame-Options'))),
+                e2e_case(e2e_has_header_value($publicHome, 'X-Content-Type-Options', 'nosniff'), 'public home page sends nosniff header', array('headers' => e2e_header_values($publicHome, 'X-Content-Type-Options'))),
+                e2e_case(e2e_has_header_value($loginResponse, 'X-Frame-Options', 'SAMEORIGIN'), 'game login sends SAMEORIGIN frame protection', array('headers' => e2e_header_values($loginResponse, 'X-Frame-Options'))),
+                e2e_case(e2e_has_header_value($loginResponse, 'X-Content-Type-Options', 'nosniff'), 'game login sends nosniff header', array('headers' => e2e_header_values($loginResponse, 'X-Content-Type-Options'))),
+                e2e_case(e2e_has_set_cookie_attribute($loginResponse, $loginCookiePrefix, 'HttpOnly'), 'private session cookie is HttpOnly', array('cookie_prefix' => $loginCookiePrefix)),
+                e2e_case(e2e_has_set_cookie_attribute($loginResponse, $loginCookiePrefix, 'SameSite=Lax'), 'private session cookie uses SameSite=Lax', array('cookie_prefix' => $loginCookiePrefix)),
+            )
+        ),
+    ));
+    e2e_restore_user($attackerSnapshot);
 
     $adminAuth = e2e_prepare_session($attackerId, USER_TYPE_ADMIN, 'hardening-admin');
     $adminCookies = $adminAuth['cookies'];

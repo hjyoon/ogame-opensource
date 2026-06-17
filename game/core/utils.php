@@ -22,6 +22,47 @@ function hostname (string $dir = "game") : string {
     return substr ( $host, 0, $pos+1 );
 }
 
+function IsHttpsRequest () : bool
+{
+    if (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off') return true;
+    if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string)$_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https') return true;
+    return false;
+}
+
+function SendSecurityHeaders () : void
+{
+    if (headers_sent()) return;
+
+    header('X-Frame-Options: SAMEORIGIN');
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: same-origin');
+    header("Content-Security-Policy: frame-ancestors 'self'");
+    if (IsHttpsRequest()) {
+        header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+    }
+}
+
+function SetGameCookie (string $name, string $value, int $expires = 0, string $path = "/") : bool
+{
+    $secure = IsHttpsRequest();
+    if (PHP_VERSION_ID >= 70300) {
+        return setcookie($name, $value, array(
+            'expires' => $expires,
+            'path' => $path,
+            'secure' => $secure,
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ));
+    }
+
+    return setcookie($name, $value, $expires, $path, "", $secure, true);
+}
+
+function ClearGameCookie (string $name, string $path = "/") : bool
+{
+    return SetGameCookie($name, "", time() - 3600, $path);
+}
+
 function nicenum (float|int $number) : string
 {
     return number_format($number,0,",",".");

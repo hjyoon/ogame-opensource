@@ -575,7 +575,7 @@ function Logout ( string|null $session ) : void
     $uni = $unitab['num'];
     $query = "UPDATE ".$db_prefix."users SET session = '' WHERE player_id = $player_id";
     dbquery ($query);
-    setcookie ( "prsess_".$player_id."_".$uni, '');
+    ClearGameCookie ( "prsess_".$player_id."_".$uni );
 }
 
 // Authenticate user. Called on every game page is loaded.
@@ -641,12 +641,18 @@ function Login ( string $login, string $pass, string $passmd="" ) : never
 
         $lastlogin = time ();
         // Create a private session.
-        $prsess = md5 ( $login . $lastlogin . $db_secret);
+        try {
+            $prsess = bin2hex(random_bytes(16));
+            $sess = bin2hex(random_bytes(6));
+        }
+        catch (Throwable $e) {
+            $prsess = md5 ( $login . $lastlogin . $db_secret . uniqid('', true));
+            $sess = substr (md5 ( $prsess . sha1 ($pass) . $db_secret . $lastlogin), 0, 12);
+        }
         // Create a public session
-        $sess = substr (md5 ( $prsess . sha1 ($pass) . $db_secret . $lastlogin), 0, 12);
 
         // Write the private session to cookies and update the database.
-        setcookie ( "prsess_".$player_id."_".$uni, $prsess, time()+24*60*60, "/" );
+        SetGameCookie ( "prsess_".$player_id."_".$uni, $prsess, time()+24*60*60, "/" );
         $query = "UPDATE ".$db_prefix."users SET lastlogin = $lastlogin, session = '".$sess."', private_session = '".$prsess."' WHERE player_id = $player_id";
         dbquery ($query);
 

@@ -86,6 +86,15 @@ function e2e_type_list(array $types): string
     return implode(',', array_map(fn($type) => "'" . e2e_sql_escape($type) . "'", $types));
 }
 
+function e2e_index_exists(string $table, string $indexName): bool
+{
+    global $db_connect, $db_name, $db_prefix;
+    $schema = mysqli_real_escape_string($db_connect, $db_name);
+    $tableName = mysqli_real_escape_string($db_connect, $db_prefix . $table);
+    $index = mysqli_real_escape_string($db_connect, $indexName);
+    return e2e_count("SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA='{$schema}' AND TABLE_NAME='{$tableName}' AND INDEX_NAME='{$index}'") > 0;
+}
+
 function e2e_baseline_id(string $envName): int
 {
     $value = getenv($envName);
@@ -106,6 +115,19 @@ try {
     $planetNegativeWhere = e2e_negative_conditions($planetNonNegativeCols) . " OR fields < 0 OR maxfields < 0";
     $userResearchNegativeWhere = e2e_negative_conditions($resmap);
     $fleetNegativeWhere = e2e_negative_conditions(array_merge($fleetmap, $transportableResources)) . " OR fuel < 0 OR ipm_amount < 0";
+
+    $cases[] = e2e_finalize_case(array(
+        'case' => 'core_schema_migrations_and_hot_path_indexes_are_present',
+        'checks' => array(
+            e2e_case(e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}schema_migrations WHERE id='20260617_core_indexes'") === 1, 'core index schema migration is recorded'),
+            e2e_case(e2e_index_exists('queue', 'idx_queue_due'), 'queue due-task index exists'),
+            e2e_case(e2e_index_exists('queue', 'idx_queue_owner_type_end'), 'queue owner/type/end index exists'),
+            e2e_case(e2e_index_exists('fleet', 'idx_fleet_target_mission'), 'fleet target/mission index exists'),
+            e2e_case(e2e_index_exists('planets', 'idx_planets_coords_type'), 'planet coordinate/type index exists'),
+            e2e_case(e2e_index_exists('users', 'idx_users_session'), 'user public-session index exists'),
+            e2e_case(e2e_index_exists('messages', 'idx_messages_owner_date'), 'message owner/date index exists'),
+        ),
+    ));
 
     $cases[] = e2e_finalize_case(array(
         'case' => 'numeric_state_has_no_negative_counts',

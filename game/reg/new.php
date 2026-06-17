@@ -11,6 +11,7 @@ else {
 }
 
 require_once "../core/core.php";
+SendSecurityHeaders();
 
 if ( !key_exists ( 'ogamelang', $_COOKIE ) ) $loca_lang = $DefaultLanguage;
 else $loca_lang = $_COOKIE['ogamelang'];

@@ -41,6 +41,7 @@ class Admin_DB extends Page {
 
         include "core/install_tabs.php";
         ModsExecRef ('install_tabs_included', $tabs);
+        $internal_tables = array('schema_migrations' => true);
 
         $text_out = "";
 
@@ -118,6 +119,9 @@ class Admin_DB extends Page {
         $res = "";
         foreach ($db_tabs as $i=>$cols) {
             
+            if (isset($internal_tables[$i])) {
+                continue;
+            }
             if (key_exists($i, $tabs)) {
                 $res .= $this->DiffTab ($i, $db_tabs[$i], $tabs[$i]);
             }

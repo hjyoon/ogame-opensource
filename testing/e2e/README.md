@@ -32,7 +32,7 @@ Each PHP case gets a sibling `.stderr` file; any non-empty stderr output fails t
 - Account action flows for notes, private messages, planet rename, options, resource settings, and building enqueue.
 - Account security flows for private-session cookie enforcement, public/private session rotation, existing-session admin downgrade, logout invalidation, password change and re-login, email validation, and account deletion schedule/cancel.
 - Localization and force-language edge flows for missing translation fallback, user language option persistence, forced universe language override, and invalid user-language fallback.
-- Security hardening flows for DB backup filename/restore validation, stored private-message and alliance text rendering, script-scheme alliance URL rejection, and universe-scoped private-session cookies.
+- Security hardening flows for DB backup filename/restore validation, security headers, private-session cookie flags, stored private-message and alliance text rendering, script-scheme alliance URL rejection, and universe-scoped private-session cookies.
 - Direct-entry security flows for unsafe external redirect/image-proxy URL rejection, feed token ownership and output escaping, disabled/prohibited feed behavior, and GET requests that must not trigger POST-only mutations.
 - Password recovery flows for the forgot-password form, missing/unknown email rejection, permanent/temporary email lookup, MailHog delivery, old password invalidation, and recovered-password login.
 - Registration validation flows for `new.php`/`newredirect.php` input rejection, duplicate username/email handling, missing-field hardening, welcome-mail delivery, and activation-link verification.
@@ -79,7 +79,7 @@ Each PHP case gets a sibling `.stderr` file; any non-empty stderr output fails t
 - Colony ship colonization success, failure, max-planet, and same-tick competition paths.
 - Moon creation, moon destruction, moon-destruction failure paths, and destroyed-moon fleet retargeting/return cleanup.
 - Expedition flow and expedition result cases.
-- Database invariant audit coverage for non-negative resources/counts, gameplay-critical orphaned references, queue/fleet/buildqueue consistency, coordinate uniqueness, alliance/buddy/message/report references, self-cleaning fixture user isolation, stale fleet lock files, and battle scratch file cleanup.
+- Database invariant audit coverage for schema migration/index presence, non-negative resources/counts, gameplay-critical orphaned references, queue/fleet/buildqueue consistency, coordinate uniqueness, alliance/buddy/message/report references, self-cleaning fixture user isolation, stale fleet lock files, and battle scratch file cleanup.
 
 ## Public Host Strict Mode
 

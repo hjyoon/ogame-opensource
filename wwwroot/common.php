@@ -1,5 +1,12 @@
 <?php
 
+if (!headers_sent()) {
+    header('X-Frame-Options: SAMEORIGIN');
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: same-origin');
+    header("Content-Security-Policy: frame-ancestors 'self'");
+}
+
 function mainmenu ($select)
 {
     if ($select == 'home') echo "    <div class=\"menupoint\">" . loca("MENU_START") . "</div>\n";
@@ -19,4 +26,3 @@ function mainmenu ($select)
         else echo "    <a href=\"" . loca("WIKIADDR") . "\" target=_top>" . loca("MENU_WIKI") . "</a>\n";
     }
 }
-
