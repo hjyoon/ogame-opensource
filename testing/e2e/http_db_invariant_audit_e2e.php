@@ -359,8 +359,8 @@ try {
     }
     $fixtureChecks[] = e2e_violation_check(
         'temporary E2E users from self-cleaning cases do not remain after case cleanup',
-        "SELECT COUNT(*) AS cnt FROM {$db_prefix}users WHERE name REGEXP '^(e2eh|e2epw_|e2emq_|e2ebulk_|e2erg_|e2ebad_|e2emiss_|e2eagb)'",
-        "SELECT player_id, name, email, hplanetid FROM {$db_prefix}users WHERE name REGEXP '^(e2eh|e2epw_|e2emq_|e2ebulk_|e2erg_|e2ebad_|e2emiss_|e2eagb)'"
+        "SELECT COUNT(*) AS cnt FROM {$db_prefix}users WHERE name REGEXP '^(e2eh|e2epw_|e2emq_|e2ebulk_|e2erg_|e2ebad_|e2emiss_|e2eagb|e2edel_)'",
+        "SELECT player_id, name, email, hplanetid FROM {$db_prefix}users WHERE name REGEXP '^(e2eh|e2epw_|e2emq_|e2ebulk_|e2erg_|e2ebad_|e2emiss_|e2eagb|e2edel_)'"
     );
     $fleetLocks = array_map('basename', glob('temp/fleetlock_*') ?: array());
     $fixtureChecks[] = e2e_case(count($fleetLocks) === 0, 'no temporary fleet lock files remain after E2E cases', array('fleet_locks' => $fleetLocks));
