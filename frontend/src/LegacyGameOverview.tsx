@@ -7,6 +7,12 @@ export type GameOverviewStatus = {
   overview?: GameOverview;
 };
 
+export type GameBuildingsStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  buildings?: GameBuildings;
+};
+
 type GameOverview = {
   commander: string;
   score: {
@@ -51,17 +57,48 @@ type Resources = {
   deuterium: number;
 };
 
+type GameBuildings = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  items: GameBuildingItem[];
+};
+
+type GameBuildingItem = {
+  id: number;
+  name: string;
+  description: string;
+  level: number;
+  nextLevel: number;
+  cost: BuildingCost;
+  durationSeconds: number;
+  canBuild: boolean;
+  action: string;
+};
+
+type BuildingCost = {
+  metal: number;
+  crystal: number;
+  deuterium: number;
+  energy: number;
+};
+
 type LegacyGameOverviewProps = {
   status: GameOverviewStatus | null;
   error: string | null;
   route: GameRoute;
+  buildingsStatus: GameBuildingsStatus | null;
+  buildingsError: string | null;
 };
 
 const skinBase = "/legacy-assets/use/uV";
 
-export function LegacyGameOverview({ status, error, route }: LegacyGameOverviewProps) {
+export function LegacyGameOverview({ status, error, route, buildingsStatus, buildingsError }: LegacyGameOverviewProps) {
   const overview = status?.authenticated ? status.overview : undefined;
   const issue = status && !status.authenticated ? status.issues[0]?.message ?? "Session is invalid." : null;
+  const buildings = buildingsStatus?.authenticated ? buildingsStatus.buildings : undefined;
+  const buildingsIssue =
+    buildingsStatus && !buildingsStatus.authenticated ? buildingsStatus.issues[0]?.message ?? "Session is invalid." : null;
 
   return (
     <main
@@ -81,8 +118,16 @@ export function LegacyGameOverview({ status, error, route }: LegacyGameOverviewP
         {error ? <LegacyMessage tone="error" text={error} /> : null}
         {!error && issue ? <LegacyMessage tone="error" text={issue} /> : null}
         {!error && !issue && !overview ? <LegacyMessage tone="neutral" text="Loading overview..." /> : null}
+        {route.key === "buildings" && buildingsError ? <LegacyMessage tone="error" text={buildingsError} /> : null}
+        {route.key === "buildings" && !buildingsError && buildingsIssue ? (
+          <LegacyMessage tone="error" text={buildingsIssue} />
+        ) : null}
         {overview && route.key === "overview" ? <OverviewTable overview={overview} /> : null}
-        {overview && route.key !== "overview" ? <MigrationPendingGameTable route={route} /> : null}
+        {overview && route.key === "buildings" && !buildings && !buildingsError && !buildingsIssue ? (
+          <LegacyMessage tone="neutral" text="Loading buildings..." />
+        ) : null}
+        {buildings && route.key === "buildings" ? <BuildingsTable buildings={buildings} /> : null}
+        {overview && route.key !== "overview" && route.key !== "buildings" ? <MigrationPendingGameTable route={route} /> : null}
       </section>
     </main>
   );
@@ -217,6 +262,57 @@ function MigrationPendingGameTable({ route }: { route: GameRoute }) {
         <tr>
           <th>The authenticated game shell, resource header, and session guard are active.</th>
         </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function BuildingsTable({ buildings }: { buildings: GameBuildings }) {
+  return (
+    <table className="legacy-overview-table legacy-buildings-table" width={530}>
+      <tbody>
+        <tr>
+          <td className="legacy-c" colSpan={3}>
+            Buildings on planet "{buildings.currentPlanet.name}"
+          </td>
+        </tr>
+        {buildings.items.map((item) => (
+          <tr data-building-row={item.id} key={item.id}>
+            <td className="legacy-l legacy-building-image">
+              <a href={gameRouteURL("/game/technology", window.location.search)}>
+                <img alt="" height={120} src={`${skinBase}/gebaeude/${item.id}.gif`} width={120} />
+              </a>
+            </td>
+            <td className="legacy-l legacy-building-description">
+              <a href={gameRouteURL("/game/technology", window.location.search)}>{item.name}</a>
+              {item.level > 0 ? <> (level {item.level})</> : null}
+              <br />
+              {item.description}
+              <br />
+              Cost:
+              {costParts(item.cost).map((part) => (
+                <React.Fragment key={part.name}>
+                  {" "}
+                  {part.name}: <b>{formatNumber(part.value)}</b>
+                </React.Fragment>
+              ))}
+              <br />
+              Duration: {formatDuration(item.durationSeconds)}
+              <br />
+            </td>
+            <td className="legacy-k legacy-building-action">
+              <span className={item.canBuild ? "legacy-build-ok" : "legacy-build-blocked"}>
+                {item.action}
+                {item.action === "Build level" ? (
+                  <>
+                    <br />
+                    level {item.nextLevel}
+                  </>
+                ) : null}
+              </span>
+            </td>
+          </tr>
+        ))}
       </tbody>
     </table>
   );
@@ -375,7 +471,7 @@ function planetImagePath(planet: GamePlanetOverview | GamePlanetSummary, small: 
   if (planet.type === 0) {
     return `${skinBase}/planeten/${small ? "small/s_" : ""}mond.jpg`;
   }
-  const imageID = (planet.id % 10) + 1;
+  const imageID = (planet.id % 7) + 1;
   const category = planetCategory(planet.coordinates.position);
   const filename = `${category}${String(imageID).padStart(2, "0")}.jpg`;
   return `${skinBase}/planeten/${small ? "small/s_" : ""}${filename}`;
@@ -403,4 +499,21 @@ function formatCoordinates(coordinates: Coordinates): string {
 
 function formatNumber(value: number): string {
   return Math.floor(Math.max(0, value)).toLocaleString("en-US");
+}
+
+function formatDuration(totalSeconds: number): string {
+  const safe = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const seconds = safe % 60;
+  return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function costParts(cost: BuildingCost): { name: string; value: number }[] {
+  return [
+    { name: "Metal", value: cost.metal },
+    { name: "Crystal", value: cost.crystal },
+    { name: "Deuterium", value: cost.deuterium },
+    { name: "Energy", value: cost.energy }
+  ].filter((part) => part.value > 0);
 }

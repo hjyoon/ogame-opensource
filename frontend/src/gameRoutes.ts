@@ -23,7 +23,7 @@ export type GameRoute = {
 export const gameRoutes: GameRoute[] = [
   { key: "overview", label: "Overview", path: "/game/overview", migrated: true },
   { key: "empire", label: "Empire", path: "/game/empire", migrated: false },
-  { key: "buildings", label: "Buildings", path: "/game/buildings", migrated: false },
+  { key: "buildings", label: "Buildings", path: "/game/buildings", migrated: true },
   { key: "resources", label: "Resources", path: "/game/resources", migrated: false },
   { key: "research", label: "Research", path: "/game/research", migrated: false },
   { key: "shipyard", label: "Shipyard", path: "/game/shipyard", migrated: false },

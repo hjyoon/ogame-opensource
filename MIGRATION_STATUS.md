@@ -19,13 +19,13 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - `/api/public/login/validate` and `/api/public/login` validate credentials, create public/private sessions, update legacy session fields, set the private cookie, and return a natural `/game/overview` redirect.
 - `/api/game/session` validates public session plus private cookie, including banned and IP checks.
 - `/api/game/overview` returns a session-guarded read-only overview summary from legacy `users`, `planets`, and `uni`.
-- Authenticated `/game/*` routes resolve through the React game shell, preserve session query parameters, and render overview or pending legacy-style tables.
-- Go migration QA smoke covers health, routes, assets, registration validation/creation, login, session lookup, overview lookup, and method guards.
+- Authenticated `/game/*` routes preserve session query parameters; overview and buildings render legacy-style read-only data tables.
+- Go migration QA smoke covers health, routes, assets, registration validation/creation, login, session lookup, overview/buildings lookup, and method guards.
 - Playwright visual/CSR E2E compares public pages and checks game menu session-preserving navigation.
 
 ## Latest Verified Implementation
 
-- Milestone: public visual parity plus authenticated game route shell are guarded by automated checks.
+- Milestone: public visual parity, login redirect, and game overview/buildings are guarded by automated checks.
 
 ## Verified QA
 
@@ -42,7 +42,7 @@ Full legacy PHP E2E was not run for this Go migration step. Keep legacy PHP beha
 - Implement activation confirmation, welcome mail/message, IP log, cleanup timer, and rank recalculation side effects.
 - Add logout, expiry, and deeper session security behavior.
 - Public legacy visual baseline is complete for the current public route set.
-- Port authenticated game screens beyond route shell placeholders with legacy PHP screen composition.
+- Port remaining authenticated game screens beyond buildings with legacy PHP screen composition.
 - Port current planet switching and full overview actions from legacy DB.
 - Port resource production, queues, buildings, research, shipyard, defense, fleet, reports, messages, galaxy, alliance, admin, maintenance, options, recovery, deletion, vacation, bans, and permissions.
 - Convert legacy E2E cases into Go compatibility checks as each flow is migrated.

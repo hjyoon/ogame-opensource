@@ -523,6 +523,24 @@ dd {
   text-align: left;
 }
 
+.legacy-overview-table td.legacy-l,
+.legacy-overview-table td.legacy-k {
+  background-color: #3a243c;
+  border: 1px #552f55 solid;
+  color: #faccff;
+  font-weight: normal;
+  padding: 3px;
+  vertical-align: middle;
+}
+
+.legacy-overview-table td.legacy-l {
+  text-align: left;
+}
+
+.legacy-overview-table td.legacy-k {
+  text-align: center;
+}
+
 .legacy-overview-table img,
 .legacy-planet-list img {
   border: 0;
@@ -543,6 +561,30 @@ dd {
 
 .legacy-nowrap {
   white-space: nowrap;
+}
+
+.legacy-buildings-table {
+  margin-bottom: 40px;
+}
+
+.legacy-building-image {
+  width: 126px;
+}
+
+.legacy-building-description {
+  width: 318px;
+}
+
+.legacy-building-action {
+  width: 86px;
+}
+
+.legacy-build-ok {
+  color: #00ff00;
+}
+
+.legacy-build-blocked {
+  color: #ff0000;
 }
 
 .legacy-public-page {

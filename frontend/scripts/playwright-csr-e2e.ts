@@ -182,8 +182,21 @@ async function assertGameClientNavigation(
   }, marker);
   await page.locator(selector).click();
   await page.waitForFunction((pathname) => window.location.pathname === pathname, expectedPathname, { timeout: 5_000 });
+  if (expectedMenuLabel === "Buildings") {
+    await page.locator("[data-building-row]").first().waitFor({ timeout: 10_000 });
+  } else if (expectedMenuLabel !== "Overview") {
+    await page.waitForFunction(() => document.body.textContent?.includes("queued for React and Go migration"), undefined, {
+      timeout: 5_000
+    });
+  }
   await record(name, async () => {
     const state = await gameShellState(page, marker, expectedMenuLabel);
+    const contentReady =
+      expectedMenuLabel === "Buildings"
+        ? state.details.buildingRows > 0 && state.details.buildingNames.includes("Metal Mine") && state.details.pendingText === false
+        : expectedMenuLabel === "Overview"
+          ? state.details.pendingText === false
+          : state.details.pendingText === true;
     return {
       pass:
         state.details.pathname === expectedPathname &&
@@ -191,7 +204,7 @@ async function assertGameClientNavigation(
         state.details.search.includes("session=") &&
         state.details.gameShell === true &&
         state.details.activeMenuLabel === expectedMenuLabel &&
-        (expectedMenuLabel === "Overview" || state.details.pendingText === true) &&
+        contentReady &&
         state.details.legacyCssLinks === 0 &&
         state.details.legacyBody === false,
       details: state.details
@@ -221,6 +234,10 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     legacyCssLinks: document.head.querySelectorAll("link[data-legacy-public-css]").length,
     legacyBody: document.body.classList.contains("legacy-public-body"),
     openOverviewLinks: Array.from(document.querySelectorAll("a")).filter((link) => link.textContent?.trim() === "Open overview").length,
+    buildingRows: document.querySelectorAll("[data-building-row]").length,
+    buildingNames: Array.from(document.querySelectorAll("[data-building-row] .legacy-building-description a")).map(
+      (link) => link.textContent?.trim() ?? ""
+    ),
     pendingText: document.body.textContent?.includes("queued for React and Go migration") ?? false
   }));
   return {

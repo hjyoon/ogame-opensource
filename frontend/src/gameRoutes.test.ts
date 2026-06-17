@@ -18,7 +18,7 @@ describe("game route model", () => {
   test("resolves natural authenticated game routes", () => {
     expect(resolveGameRoute("/game").key).toBe("overview");
     expect(resolveGameRoute("/game/overview").migrated).toBe(true);
-    expect(resolveGameRoute("/game/buildings").key).toBe("buildings");
+    expect(resolveGameRoute("/game/buildings")).toMatchObject({ key: "buildings", migrated: true });
     expect(resolveGameRoute("/game/messages").label).toBe("Messages");
   });
 

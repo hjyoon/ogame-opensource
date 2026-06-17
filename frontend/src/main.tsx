@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { LegacyGameOverview, type GameOverviewStatus } from "./LegacyGameOverview";
+import { LegacyGameOverview, type GameBuildingsStatus, type GameOverviewStatus } from "./LegacyGameOverview";
 import { LegacyPublicAbout } from "./LegacyPublicAbout";
 import { LegacyPublicHome } from "./LegacyPublicHome";
 import { LegacyPublicLegal } from "./LegacyPublicLegal";
@@ -181,8 +181,11 @@ function App() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [gameOverview, setGameOverview] = useState<GameOverviewStatus | null>(null);
   const [gameOverviewError, setGameOverviewError] = useState<string | null>(null);
+  const [gameBuildings, setGameBuildings] = useState<GameBuildingsStatus | null>(null);
+  const [gameBuildingsError, setGameBuildingsError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
+  const gameRoute = pathname.startsWith("/game") ? resolveGameRoute(pathname) : null;
   const isLegacyPublicRoute = legacyPublicRouteKeys.has(route.key);
 
   useLayoutEffect(() => {
@@ -273,6 +276,28 @@ function App() {
       .catch((err: unknown) => setGameOverviewError(err instanceof Error ? err.message : String(err)));
   }, [pathname, search]);
 
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "buildings" || publicSession === "") {
+      setGameBuildings(null);
+      setGameBuildingsError(null);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const buildingsSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      buildingsSearch.set("cp", selectedPlanet);
+    }
+    fetch(`/api/game/buildings?${buildingsSearch.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameBuildingsStatus>)
+      .then((payload) => {
+        setGameBuildings(payload);
+        setGameBuildingsError(null);
+      })
+      .catch((err: unknown) => setGameBuildingsError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
   const checks = useMemo(
     () => [
       ["Go target", health?.goTarget ?? "1.25"],
@@ -292,7 +317,15 @@ function App() {
   };
 
   if (pathname.startsWith("/game")) {
-    return <LegacyGameOverview error={gameOverviewError} route={resolveGameRoute(pathname)} status={gameOverview} />;
+    return (
+      <LegacyGameOverview
+        buildingsError={gameBuildingsError}
+        buildingsStatus={gameBuildings}
+        error={gameOverviewError}
+        route={gameRoute ?? resolveGameRoute(pathname)}
+        status={gameOverview}
+      />
+    );
   }
 
   const updateRegistrationDraft = (field: keyof RegistrationDraft, value: string | boolean) => {
