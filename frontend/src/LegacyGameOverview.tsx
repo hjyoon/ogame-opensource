@@ -324,11 +324,6 @@ function BuildingsTable({ buildings }: { buildings: GameBuildings }) {
   return (
     <table className="legacy-overview-table legacy-buildings-table" width={530}>
       <tbody>
-        <tr>
-          <td className="legacy-c" colSpan={3}>
-            Buildings on planet "{buildings.currentPlanet.name}"
-          </td>
-        </tr>
         {buildings.items.map((item) => (
           <tr data-building-row={item.id} key={item.id}>
             <td className="legacy-l legacy-building-image">
@@ -350,10 +345,10 @@ function BuildingsTable({ buildings }: { buildings: GameBuildings }) {
                 </React.Fragment>
               ))}
               <br />
-              Duration: {formatDuration(item.durationSeconds)}
+              Duration: {formatLegacyDuration(item.durationSeconds)}
               <br />
             </td>
-            <td className="legacy-k legacy-building-action">
+            <td className="legacy-l legacy-building-action">
               <span className={item.canBuild ? "legacy-build-ok" : "legacy-build-blocked"}>
                 {item.action}
                 {item.action === "Build level" ? (
@@ -395,7 +390,7 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
         </tr>
         <tr>
           <th>Server time</th>
-          <th colSpan={3}>{new Date().toUTCString()}</th>
+          <th colSpan={3}>{formatLegacyDate(new Date())}</th>
         </tr>
         <tr>
           <td className="legacy-c" colSpan={4}>
@@ -459,18 +454,14 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
         </tr>
         <tr>
           <th>Diameter</th>
-          <th colSpan={3}>{formatNumber(planet.diameter)} km</th>
-        </tr>
-        <tr>
-          <th>Fields</th>
           <th colSpan={3}>
-            {planet.fields} / {planet.maxFields}
+            {formatLegacyNumber(planet.diameter)} км ({planet.fields} / {planet.maxFields} fields)
           </th>
         </tr>
         <tr>
           <th>Temperature</th>
           <th colSpan={3}>
-            approx. {planet.temperature}C to {planet.temperature + 40}C
+            approx. {planet.temperature}°C to {planet.temperature + 40}°C
           </th>
         </tr>
         <tr>
@@ -482,8 +473,9 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
         <tr>
           <th>Points</th>
           <th colSpan={3}>
-            {formatNumber(overview.score.points)} (Rank{" "}
-            <a href="/game/overview">{formatNumber(overview.score.rank)}</a> of {formatNumber(overview.score.universePlayers)})
+            {formatLegacyNumber(overview.score.points)} (Rank{" "}
+            <a href="/game/overview">{formatLegacyNumber(overview.score.rank)}</a> of {formatLegacyNumber(overview.score.universePlayers)}
+            )
           </th>
         </tr>
       </tbody>
@@ -554,12 +546,38 @@ function formatNumber(value: number): string {
   return Math.floor(Math.max(0, value)).toLocaleString("en-US");
 }
 
-function formatDuration(totalSeconds: number): string {
+function formatLegacyDuration(totalSeconds: number): string {
   const safe = Math.max(0, Math.floor(totalSeconds));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
+  const days = Math.floor(safe / 86400);
+  const hours = Math.floor(safe / 3600) % 24;
+  const minutes = Math.floor(safe / 60) % 60;
   const seconds = safe % 60;
-  return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  const parts: string[] = [];
+  if (days > 0) {
+    parts.push(`${days}d`);
+  }
+  if (hours > 0 || days > 0) {
+    parts.push(`${hours}h`);
+  }
+  if (minutes > 0 || days > 0) {
+    parts.push(`${minutes}m`);
+  }
+  if (seconds > 0 || parts.length === 0) {
+    parts.push(`${seconds}s`);
+  }
+  return parts.join(" ");
+}
+
+function formatLegacyDate(date: Date): string {
+  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${weekdays[date.getDay()]} ${months[date.getMonth()]} ${date.getDate()} ${date.getHours()}:${String(
+    date.getMinutes()
+  ).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
+}
+
+function formatLegacyNumber(value: number): string {
+  return Math.floor(Math.max(0, value)).toLocaleString("de-DE");
 }
 
 function costParts(cost: BuildingCost): { name: string; value: number }[] {
