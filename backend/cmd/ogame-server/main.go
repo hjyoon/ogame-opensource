@@ -7,9 +7,11 @@ import (
 	"strings"
 	"time"
 
+	apppublicsite "github.com/hjyoon/ogame-opensource/backend/internal/application/publicsite"
 	appsystem "github.com/hjyoon/ogame-opensource/backend/internal/application/system"
 	"github.com/hjyoon/ogame-opensource/backend/internal/config"
 	httpdelivery "github.com/hjyoon/ogame-opensource/backend/internal/delivery/http"
+	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/configcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/filesystem"
 	infraruntime "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/runtime"
 )
@@ -40,9 +42,14 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		BunTarget:      config.BunTarget,
 		ReactTarget:    config.ReactTarget,
 	}, filesystem.Probe{}, infraruntime.GoRuntime{})
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{
+		RawJSON:       cfg.PublicUniverses,
+		LegacyBaseURL: cfg.LegacyBaseURL,
+	})
 
 	return httpdelivery.New(httpdelivery.Dependencies{
 		Health:       health,
+		Universes:    universes,
 		Frontend:     filesystem.StaticDir{Root: cfg.StaticDir},
 		LegacyAssets: filesystem.NewNoListingFS(cfg.LegacyAssetDir),
 		Logger:       logger,

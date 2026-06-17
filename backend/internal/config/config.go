@@ -9,22 +9,24 @@ const (
 )
 
 type Config struct {
-	Addr           string
-	Environment    string
-	LogLevel       string
-	StaticDir      string
-	LegacyAssetDir string
-	LegacyBaseURL  string
+	Addr            string
+	Environment     string
+	LogLevel        string
+	StaticDir       string
+	LegacyAssetDir  string
+	LegacyBaseURL   string
+	PublicUniverses string
 }
 
 func Load() Config {
 	return Config{
-		Addr:           env("OGAME_HTTP_ADDR", ":8080"),
-		Environment:    env("OGAME_ENV", "development"),
-		LogLevel:       env("OGAME_LOG_LEVEL", "info"),
-		StaticDir:      env("OGAME_STATIC_DIR", "frontend/dist"),
-		LegacyAssetDir: env("OGAME_LEGACY_ASSET_DIR", "download"),
-		LegacyBaseURL:  env("OGAME_LEGACY_BASE_URL", "http://localhost:8888"),
+		Addr:            env("OGAME_HTTP_ADDR", ":8080"),
+		Environment:     env("OGAME_ENV", "development"),
+		LogLevel:        env("OGAME_LOG_LEVEL", "info"),
+		StaticDir:       env("OGAME_STATIC_DIR", "frontend/dist"),
+		LegacyAssetDir:  env("OGAME_LEGACY_ASSET_DIR", "download"),
+		LegacyBaseURL:   env("OGAME_LEGACY_BASE_URL", "http://localhost:8888"),
+		PublicUniverses: env("OGAME_PUBLIC_UNIVERSES", ""),
 	}
 }
 

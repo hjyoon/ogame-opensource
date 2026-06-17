@@ -10,8 +10,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	apppublicsite "github.com/hjyoon/ogame-opensource/backend/internal/application/publicsite"
 	appsystem "github.com/hjyoon/ogame-opensource/backend/internal/application/system"
 	"github.com/hjyoon/ogame-opensource/backend/internal/config"
+	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/configcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/filesystem"
 )
 
@@ -76,6 +78,48 @@ func TestFrontendServesIndexAndSpaFallback(t *testing.T) {
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected missing assets to 404, got %d", rec.Code)
+	}
+}
+
+func TestUniversesEndpointReturnsCatalog(t *testing.T) {
+	server := testServer(config.Config{
+		StaticDir:       t.TempDir(),
+		LegacyAssetDir:  t.TempDir(),
+		LegacyBaseURL:   "http://legacy.local",
+		PublicUniverses: `[{"number":2,"name":"Beta","baseUrl":"http://beta.local","language":"en","speed":128,"fleetSpeed":64,"status":"online"}]`,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/public/universes", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var body struct {
+		Universes []universeResponse `json:"universes"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Universes) != 1 || body.Universes[0].Number != 2 || !body.Universes[0].Open {
+		t.Fatalf("unexpected universe response: %+v", body)
+	}
+}
+
+func TestUniversesEndpointReturnsUnavailableForInvalidCatalog(t *testing.T) {
+	server := testServer(config.Config{
+		StaticDir:       t.TempDir(),
+		LegacyAssetDir:  t.TempDir(),
+		PublicUniverses: `[{"number":0}]`,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/public/universes", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", rec.Code)
 	}
 }
 
@@ -227,9 +271,14 @@ func testServerWithLogger(cfg config.Config, logger *slog.Logger) http.Handler {
 		BunTarget:      config.BunTarget,
 		ReactTarget:    config.ReactTarget,
 	}, filesystem.Probe{}, fakeRuntime{})
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{
+		RawJSON:       cfg.PublicUniverses,
+		LegacyBaseURL: cfg.LegacyBaseURL,
+	})
 
 	return New(Dependencies{
 		Health:       health,
+		Universes:    universes,
 		Frontend:     filesystem.StaticDir{Root: cfg.StaticDir},
 		LegacyAssets: filesystem.NewNoListingFS(cfg.LegacyAssetDir),
 		Logger:       logger,

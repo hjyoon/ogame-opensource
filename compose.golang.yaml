@@ -7,5 +7,6 @@ services:
       OGAME_ENV: ${OGAME_ENV:-development}
       OGAME_HTTP_ADDR: :8080
       OGAME_LEGACY_BASE_URL: ${OGAME_LEGACY_BASE_URL:-http://localhost:8888}
+      OGAME_PUBLIC_UNIVERSES: ${OGAME_PUBLIC_UNIVERSES:-}
     ports:
       - "${OGAME_GO_PORT:-8890}:8080"

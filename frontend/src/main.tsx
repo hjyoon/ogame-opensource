@@ -16,6 +16,17 @@ type Health = {
   legacyBaseUrl: string;
 };
 
+type UniverseSummary = {
+  number: number;
+  name: string;
+  baseUrl: string;
+  language: string;
+  speed: number;
+  fleetSpeed: number;
+  status: string;
+  open: boolean;
+};
+
 const phases = [
   { key: "legacy", label: "Legacy QA", state: "active", owner: "PHP E2E" },
   { key: "shell", label: "React Shell", state: "active", owner: "Bun 1.3" },
@@ -26,6 +37,7 @@ const phases = [
 function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname);
   const [health, setHealth] = useState<Health | null>(null);
+  const [universes, setUniverses] = useState<UniverseSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
@@ -39,6 +51,18 @@ function App() {
         return response.json() as Promise<Health>;
       })
       .then(setHealth)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/public/universes")
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`universes returned ${response.status}`);
+        }
+        return response.json() as Promise<{ universes: UniverseSummary[] }>;
+      })
+      .then((payload) => setUniverses(payload.universes))
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
   }, []);
 
@@ -136,9 +160,30 @@ function App() {
             <Gate label="Existing Docker E2E" ready />
             <Gate label="Static React build" ready={Boolean(health?.staticReady)} />
             <Gate label="Legacy image assets" ready={Boolean(health?.legacyAssetsReady)} />
+            <Gate label="Universe catalog API" ready={universes.length > 0} />
           </div>
         </div>
       </section>
+
+      {route.key === "universes" ? (
+        <section className="panel" data-testid="universe-catalog">
+          <div className="panel-title">
+            <span>Universe Catalog</span>
+            <strong className="badge good">{universes.length} listed</strong>
+          </div>
+          <div className="universe-list">
+            {universes.map((universe) => (
+              <article className="universe-row" key={universe.number}>
+                <div>
+                  <h2>{universe.name}</h2>
+                  <p>{universe.language.toUpperCase()} · Economy {universe.speed}x · Fleet {universe.fleetSpeed}x</p>
+                </div>
+                <a href={universe.baseUrl}>{universe.open ? "Open" : "Closed"}</a>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="panel" id="migration">
         <div className="panel-title">

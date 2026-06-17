@@ -54,6 +54,26 @@ try {
     ]
   }));
 
+  const universeCatalog = await request("/api/public/universes");
+  let universeCatalogBody = {};
+  try {
+    universeCatalogBody = JSON.parse(universeCatalog.body);
+  } catch {
+    universeCatalogBody = {};
+  }
+  const universes = Array.isArray(universeCatalogBody.universes) ? universeCatalogBody.universes : [];
+  cases.push(finalize({
+    case: "go_universe_catalog_api",
+    checks: [
+      check(universeCatalog.status === 200, "universe catalog returns HTTP 200", { status: universeCatalog.status }),
+      check(hasHeader(universeCatalog, "content-type", "application/json"), "universe catalog returns JSON content type"),
+      check(universes.length > 0, "universe catalog lists at least one universe", universeCatalogBody),
+      check(universes[0]?.number === 1, "default universe keeps legacy universe number", universes[0] ?? {}),
+      check(typeof universes[0]?.baseUrl === "string" && universes[0].baseUrl.length > 0, "universe exposes a base URL", universes[0] ?? {}),
+      check(universes[0]?.open === true, "default universe is open", universes[0] ?? {})
+    ]
+  }));
+
   const root = await request("/");
   cases.push(finalize({
     case: "go_react_shell",
@@ -139,7 +159,8 @@ try {
       check(hasHeader(css, "cache-control", "immutable"), "React CSS bundle is immutable-cacheable"),
       check(hasHeader(js, "content-type", "javascript"), "React JS bundle has JavaScript content type"),
       check(hasHeader(css, "content-type", "text/css"), "React CSS bundle has CSS content type"),
-      check(js.body.includes("/register") && js.body.includes("/universes"), "React bundle contains natural public route model")
+      check(js.body.includes("/register") && js.body.includes("/universes"), "React bundle contains natural public route model"),
+      check(js.body.includes("/api/public/universes"), "React bundle consumes universe catalog API")
     ]
   }));
 

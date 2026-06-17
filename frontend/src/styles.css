@@ -171,6 +171,33 @@ dd {
   margin-top: 16px;
 }
 
+.universe-list {
+  display: grid;
+  gap: 10px;
+}
+
+.universe-row {
+  align-items: center;
+  border: 1px solid #303640;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  min-height: 74px;
+  padding: 12px;
+}
+
+.universe-row p {
+  color: #aeb8b2;
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+.universe-row a {
+  color: #9bd4c4;
+  font-weight: 700;
+  text-decoration: none;
+}
+
 .dot {
   border-radius: 50%;
   display: inline-block;
@@ -218,6 +245,12 @@ dd {
   .status-band {
     align-items: flex-start;
     display: grid;
+  }
+
+  .universe-row {
+    align-items: flex-start;
+    display: grid;
+    gap: 10px;
   }
 
   .planet {

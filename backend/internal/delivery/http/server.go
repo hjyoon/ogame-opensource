@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	domainpublicsite "github.com/hjyoon/ogame-opensource/backend/internal/domain/publicsite"
 	domainsystem "github.com/hjyoon/ogame-opensource/backend/internal/domain/system"
 )
 
@@ -16,8 +17,13 @@ type FrontendAssets interface {
 	Serve(w http.ResponseWriter, r *http.Request, rel string) bool
 }
 
+type UniverseCatalogUseCase interface {
+	ListUniverses(context.Context) ([]domainpublicsite.Universe, error)
+}
+
 type Dependencies struct {
 	Health       HealthUseCase
+	Universes    UniverseCatalogUseCase
 	Frontend     FrontendAssets
 	LegacyAssets http.FileSystem
 	Logger       *slog.Logger
@@ -31,6 +37,7 @@ func New(deps Dependencies) http.Handler {
 	a := app{deps: deps}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/healthz", getOnly(a.handleHealthz))
+	mux.HandleFunc("/api/public/universes", getOnly(a.handleUniverses))
 	mux.Handle("/legacy-assets/", http.StripPrefix("/legacy-assets/", http.FileServer(deps.LegacyAssets)))
 	mux.HandleFunc("/", getOnly(a.handleFrontend))
 	handler := securityHeaders(mux)

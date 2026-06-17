@@ -9,6 +9,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("OGAME_STATIC_DIR", "")
 	t.Setenv("OGAME_LEGACY_ASSET_DIR", "")
 	t.Setenv("OGAME_LEGACY_BASE_URL", "")
+	t.Setenv("OGAME_PUBLIC_UNIVERSES", "")
 
 	cfg := Load()
 
@@ -17,6 +18,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.StaticDir != "frontend/dist" || cfg.LegacyAssetDir != "download" || cfg.LegacyBaseURL != "http://localhost:8888" {
 		t.Fatalf("unexpected default paths: %+v", cfg)
+	}
+	if cfg.PublicUniverses != "" {
+		t.Fatalf("unexpected default public universes: %+v", cfg)
 	}
 }
 
@@ -27,6 +31,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("OGAME_STATIC_DIR", "/static")
 	t.Setenv("OGAME_LEGACY_ASSET_DIR", "/legacy")
 	t.Setenv("OGAME_LEGACY_BASE_URL", "http://legacy.local")
+	t.Setenv("OGAME_PUBLIC_UNIVERSES", `[{"number":1}]`)
 
 	cfg := Load()
 
@@ -35,5 +40,8 @@ func TestLoadEnvOverrides(t *testing.T) {
 	}
 	if cfg.StaticDir != "/static" || cfg.LegacyAssetDir != "/legacy" || cfg.LegacyBaseURL != "http://legacy.local" {
 		t.Fatalf("unexpected override paths: %+v", cfg)
+	}
+	if cfg.PublicUniverses != `[{"number":1}]` {
+		t.Fatalf("unexpected public universes override: %+v", cfg)
 	}
 }
