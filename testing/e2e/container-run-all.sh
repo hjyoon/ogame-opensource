@@ -31,6 +31,16 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+eval "$(php "$ROOT/audit-baseline.php")"
+export OGAME_E2E_AUDIT_BASE_MESSAGE_ID
+export OGAME_E2E_AUDIT_BASE_NOTE_ID
+export OGAME_E2E_AUDIT_BASE_REPORT_ID
+export OGAME_E2E_AUDIT_BASE_TEMPLATE_ID
+export OGAME_E2E_AUDIT_BASE_BOTVAR_ID
+export OGAME_E2E_AUDIT_BASE_ALLYAPP_ID
+export OGAME_E2E_AUDIT_BASE_UNION_ID
+export OGAME_E2E_AUDIT_BASE_BATTLE_ID
+
 run_json_case http_flow "$ROOT/http_flow_e2e.php"
 
 eval "$(php "$ROOT/setup-fixtures.php")"
@@ -73,6 +83,7 @@ run_json_case queue_idempotency "$ROOT/http_queue_idempotency_e2e.php"
 run_json_case long_scheduler "$ROOT/http_long_scheduler_e2e.php"
 run_json_case soak_state_invariants "$ROOT/http_soak_state_invariants_e2e.php"
 run_json_case recovery_bulk_journey "$ROOT/http_recovery_bulk_journey_e2e.php"
+run_json_case performance_baseline "$ROOT/http_performance_baseline_e2e.php"
 run_json_case vacation_freeze_edges "$ROOT/http_vacation_freeze_edges_e2e.php"
 run_json_case global_maintenance_queue "$ROOT/http_global_maintenance_queue_e2e.php"
 run_json_case cron_resilience "$ROOT/http_cron_resilience_e2e.php"

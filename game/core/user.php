@@ -272,6 +272,28 @@ function RemoveUser ( int $player_id, int $when) : void
     $query = "DELETE FROM ".$db_prefix."buildqueue WHERE owner_id = $player_id";
     dbquery ($query);    
 
+    // Delete auxiliary player data that otherwise survives as orphaned rows.
+    $query = "DELETE FROM ".$db_prefix."reports WHERE owner_id = $player_id OR msg_id IN (SELECT msg_id FROM ".$db_prefix."messages WHERE owner_id = $player_id)";
+    dbquery ($query);
+    $query = "DELETE FROM ".$db_prefix."messages WHERE owner_id = $player_id";
+    dbquery ($query);
+    $query = "DELETE FROM ".$db_prefix."notes WHERE owner_id = $player_id";
+    dbquery ($query);
+    $query = "DELETE FROM ".$db_prefix."browse WHERE owner_id = $player_id";
+    dbquery ($query);
+    $query = "DELETE FROM ".$db_prefix."template WHERE owner_id = $player_id";
+    dbquery ($query);
+    $query = "DELETE FROM ".$db_prefix."botvars WHERE owner_id = $player_id";
+    dbquery ($query);
+    $query = "DELETE FROM ".$db_prefix."userlogs WHERE owner_id = $player_id";
+    dbquery ($query);
+    $query = "DELETE FROM ".$db_prefix."fleetlogs WHERE owner_id = $player_id OR target_id = $player_id";
+    dbquery ($query);
+    $query = "DELETE FROM ".$db_prefix."iplogs WHERE user_id = $player_id";
+    dbquery ($query);
+    $query = "DELETE FROM ".$db_prefix."union WHERE target_player = $player_id OR players REGEXP '(^|,)".$player_id."(,|$)'";
+    dbquery ($query);
+
     // Delete all planets other than the DF that go into space possession.
     $query = "DELETE FROM ".$db_prefix."planets WHERE owner_id = $player_id AND type <> " . PTYP_DF;
     dbquery ($query);

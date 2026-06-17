@@ -55,6 +55,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Queue/event idempotency flows for repeated and parallel-worker `UpdateQueue()` runs across building, research, shipyard, transport fleet arrival/return completion, same-tick transport arrivals, same-tick attack-before-recycle ordering, recalc-points, and a multi-day long scheduler drain.
 - Soak and state-invariant flows for queue batches larger than `QUEUE_BATCH`, transport return completion after batch drains, active build/fleet completion after direct account-state changes, and seeded battle writeback invariants.
 - Recovery, bulk, and real HTTP journey flows for fresh-process queue recovery, build-to-battle-report-to-recycle user actions, and bounded-load rendering of overview, galaxy, statistics, and admin queue pages.
+- Performance baseline flows for authenticated overview, resources, galaxy, statistics, messages, and admin queue page renders, with per-page and aggregate timing thresholds configurable through `OGAME_E2E_PERF_PAGE_MS`, `OGAME_E2E_PERF_ADMIN_MS`, and `OGAME_E2E_PERF_TOTAL_MS`.
 - Vacation/freeze timing edge flows for vacation enable rejection with active build/fleet queues, vacation-mode build/shipyard mutation blocking, and universe-freeze pause/resume behavior for due queues.
 - Global maintenance queue flows for user state timers, score recalculation, old-score snapshots, debris cleanup, removed-planet cleanup, and disabled-player cleanup.
 - Cron resilience flows for browser access denial, due task idempotency, unknown task debug auditing, frozen task preservation, and universe-freeze queue blocking.
@@ -75,7 +76,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Colony ship colonization success, failure, max-planet, and same-tick competition paths.
 - Moon creation, moon destruction, moon-destruction failure paths, and destroyed-moon fleet retargeting/return cleanup.
 - Expedition flow and expedition result cases.
-- Database invariant audit coverage for non-negative resources/counts, gameplay-critical orphaned references, queue/fleet/buildqueue consistency, coordinate uniqueness, alliance/buddy references, fixture runtime cleanup, and stale fleet lock files.
+- Database invariant audit coverage for non-negative resources/counts, gameplay-critical orphaned references, queue/fleet/buildqueue consistency, coordinate uniqueness, alliance/buddy/message/report references, self-cleaning fixture user isolation, stale fleet lock files, and battle scratch file cleanup.
 
 ## Public Host Strict Mode
 
