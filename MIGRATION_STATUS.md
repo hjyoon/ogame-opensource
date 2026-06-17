@@ -2,58 +2,48 @@
 
 Last updated: 2026-06-17 KST, branch `hjyoon/golang`.
 
-Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http` backend migration. Update it whenever a step is completed, deferred, or re-scoped.
+Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http` backend migration. Keep this file under 4KB; split details into linked docs before exceeding that limit.
 
 ## Current State
 
 - Clean Architecture baseline exists under `backend/internal/{domain,application,infrastructure,delivery}`.
-- Go serves the React production build from `frontend/dist`.
-- Runtime logs use JSON through `log/slog`.
-- Go app runs through `compose.golang.yaml`; default local port is `8890`.
-- `/api/healthz` reports tool targets and asset readiness.
-- Public routes exist for natural paths and legacy `.php` aliases.
-- `/home` targets the legacy PHP public start composition: background, main menu, login strip, language flags, and start content.
-- Legacy image/assets are served through Go without loopback absolute URLs.
-- Public universe catalog is exposed at `/api/public/universes`, backed by the master DB with config fallback.
-- Registration draft validation exists at `/api/public/registration/validate`.
-- Registration availability checks legacy universe DB state for duplicate names, duplicate email, and max-user capacity.
-- Native account creation/activation is not migrated yet.
-- Login draft validation exists at `/api/public/login/validate`.
-- Login credential validation checks legacy `users.name/password/banned` in the universe DB.
-- `/api/public/login` creates public/private sessions, updates legacy `users` session fields, sets the private cookie, and returns a natural `/game/overview` redirect target.
+- Go serves the React production build from `frontend/dist` and logs JSON through `log/slog`.
+- `compose.golang.yaml` runs the Go app; default local port is `8890`.
+- `/api/healthz` reports tool targets and static/legacy asset readiness.
+- Natural public routes and legacy `.php` aliases resolve through the React shell.
+- `/home`, `/home.php`, `/`, and `/index.php` target the legacy PHP public start composition.
+- `/register` and `/register.php` target the legacy PHP public registration composition, including main menu, login strip, registration panel, field names, universe select, and terms checkbox.
+- Legacy public images from `wwwroot/img` are copied into `frontend/dist/public-assets/img` and served without loopback absolute URLs.
+- `/api/public/universes` exposes the universe catalog from the master DB with config fallback.
+- `/api/public/registration/validate` performs draft validation and duplicate/capacity checks against the legacy universe DB.
+- Native registration creation, activation, and login-after-register are not migrated yet.
+- `/api/public/login/validate` and `/api/public/login` validate credentials, create public/private sessions, update legacy session fields, set the private cookie, and return a natural `/game/overview` redirect.
 - `/api/game/session` validates public session plus private cookie, including banned and IP checks.
 - `/api/game/overview` returns a session-guarded read-only overview summary from legacy `users`, `planets`, and `uni`.
-- `/game/overview` now targets the legacy PHP visual composition: skin, header/menu, overview table, planet image, and resource summary.
-- Go migration QA smoke covers health, routes, assets, registration, login, session lookup, overview lookup, and method guards.
+- `/game/overview` targets the legacy PHP game visual composition: skin, header/menu, overview table, planet image, and resource summary.
+- Go migration QA smoke covers health, routes, assets, registration validation, login, session lookup, overview lookup, and method guards.
 
-## Latest Verified Commit
+## Latest Verified Implementation
 
-- `cd2eef8c` Add native overview read API.
-- Current milestone: legacy-visual home and overview passes.
+- `68b7794e` Apply legacy public register layout.
+- Milestone: legacy-visual public home/register and game overview pass current Go migration QA.
 
 ## Verified QA
 
-- `backend/scripts/test-coverage.sh`: passing, Go internal coverage `97.3%`.
+- `bun run build && bun run check && bun test`: passing.
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
-- Direct smoke after restart: `GET /api/healthz`, `POST /api/public/login`, `GET /api/game/session`, `GET /api/game/overview`, and JSON DB enablement logs passed.
+- Go internal coverage gate: `97.3% >= 97%`.
+- Direct smoke after restart: `GET /register`, `GET /public-assets/img/part_register2.jpg`, bundle marker checks, and `docker ps` for `goapp` passed.
 
-Full legacy E2E was not run for the latest Go migration steps unless explicitly noted in a later update.
+Full legacy PHP E2E was not run for this Go migration step. Keep legacy PHP behavior as the oracle until each migrated flow has focused unit tests and E2E coverage.
 
 ## Remaining Work
 
-- Implement native registration creation, activation, and login-after-register behavior.
-- Add logout, expiry, and session security behavior.
-- Expand authenticated React game routes beyond the current overview summary using legacy PHP screen composition.
-- Port current planet switching and full overview state/actions from legacy DB.
-- Restyle remaining public/game/admin pages to match their PHP screen composition.
+- Implement native registration creation, activation, welcome mail, and login-after-register behavior.
+- Add logout, expiry, and deeper session security behavior.
+- Restyle remaining public pages to match PHP composition: `/about`, `/story`, `/screenshots`, `/rules`, `/legal`, `/universes`.
+- Expand authenticated React game routes beyond overview with legacy PHP screen composition.
+- Port current planet switching and full overview actions from legacy DB.
 - Port resource production/read model, queues, buildings, research, shipyard, defense, fleet, reports, messages, galaxy, alliance, admin, maintenance, options, password recovery, deletion, vacation, bans, and permissions.
 - Convert legacy E2E cases into Go compatibility checks as each flow is migrated.
-- Keep legacy PHP behavior as the oracle until each migrated flow has focused unit tests and E2E coverage.
 - Run full legacy E2E before declaring any game-flow migration equivalent.
-
-## Update Rules
-
-- Update this file in the same change set as each migration milestone.
-- Keep this file under 4KB. If detail grows, split by topic and link the child docs here.
-- Record the latest commit, QA commands, coverage percentage, and any skipped validation.
-- Do not mark a flow migrated until the React/Go implementation is tested against the legacy behavior.
