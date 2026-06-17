@@ -49,6 +49,14 @@ func TestLoginSessionUsesLegacyCookieName(t *testing.T) {
 	}
 }
 
+func TestGameSessionUsesLegacyCookieName(t *testing.T) {
+	session := GameSession{PlayerID: 42, UniverseNumber: 7}
+
+	if got := session.PrivateCookieName(); got != "prsess_42_7" {
+		t.Fatalf("unexpected private session cookie name: %q", got)
+	}
+}
+
 func TestLoginSessionBuildsNaturalOverviewRedirect(t *testing.T) {
 	session := LoginSession{
 		PublicID:     "abc123",
@@ -65,6 +73,67 @@ func TestLoginSessionRedirectDefaultsToOverview(t *testing.T) {
 
 	if got := session.RedirectTarget(); got != "/game/overview?lgn=1&session=public+session" {
 		t.Fatalf("unexpected default redirect target: %q", got)
+	}
+}
+
+func TestGameSessionValidatesLegacySessionContract(t *testing.T) {
+	session := GameSession{
+		Found:          true,
+		PrivateID:      "private",
+		IPAddress:      "203.0.113.10",
+		DisableIPCheck: false,
+	}
+
+	if issues := session.Validate("private", "203.0.113.10"); len(issues) != 0 {
+		t.Fatalf("expected valid session, got %+v", issues)
+	}
+}
+
+func TestGameSessionAllowsLocalhostIPMismatch(t *testing.T) {
+	session := GameSession{
+		Found:     true,
+		PrivateID: "private",
+		IPAddress: "203.0.113.10",
+	}
+
+	if issues := session.Validate("private", "127.0.0.1"); len(issues) != 0 {
+		t.Fatalf("expected localhost session to pass, got %+v", issues)
+	}
+}
+
+func TestGameSessionAllowsDisabledIPCheck(t *testing.T) {
+	session := GameSession{
+		Found:          true,
+		PrivateID:      "private",
+		IPAddress:      "203.0.113.10",
+		DisableIPCheck: true,
+	}
+
+	if issues := session.Validate("private", "198.51.100.20"); len(issues) != 0 {
+		t.Fatalf("expected disabled IP check session to pass, got %+v", issues)
+	}
+}
+
+func TestGameSessionReportsInvalidSessionStates(t *testing.T) {
+	cases := []struct {
+		name    string
+		session GameSession
+		private string
+		remote  string
+		code    string
+	}{
+		{name: "missing", session: GameSession{}, code: SessionIssueInvalid},
+		{name: "private", session: GameSession{Found: true, PrivateID: "private"}, private: "wrong", code: SessionIssuePrivateInvalid},
+		{name: "banned", session: GameSession{Found: true, PrivateID: "private", Banned: true}, private: "private", code: SessionIssueBanned},
+		{name: "ip", session: GameSession{Found: true, PrivateID: "private", IPAddress: "203.0.113.10"}, private: "private", remote: "198.51.100.20", code: SessionIssueIPMismatch},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			issues := tc.session.Validate(tc.private, tc.remote)
+			if len(issues) != 1 || issues[0].Code != tc.code {
+				t.Fatalf("expected issue %s, got %+v", tc.code, issues)
+			}
+		})
 	}
 }
 

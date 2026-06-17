@@ -20,12 +20,14 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - Login draft validation exists at `/api/public/login/validate`.
 - Login credential validation checks legacy `users.name/password/banned` in the universe DB.
 - `/api/public/login` creates public/private sessions, updates legacy `users` session fields, sets the private cookie, and returns a natural `/game/overview` redirect target.
-- Login submit does not yet authenticate and render native game pages; `/game/overview` still falls back to the React shell.
-- Go migration QA smoke covers health, routes, assets, registration, login validation, login submit, and method guards.
+- `/api/game/session` validates public session plus private cookie, including banned and IP checks.
+- Native game pages are not rendered yet; `/game/overview` still falls back to the React shell.
+- Go migration QA smoke covers health, routes, assets, registration, login, session lookup, and method guards.
 
 ## Latest Verified Commits
 
 - Migration foundation range: `6f96b2ab` through `eaed003e`.
+- Current milestone: native game session lookup API.
 - `eaed003e` Add native login session endpoint
 - `3de92447` Validate login credentials against universe DB
 - `23f77579` Check registration availability against universe DB
@@ -36,14 +38,14 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 
 - `backend/scripts/test-coverage.sh`: passing, Go internal coverage `97.6%`.
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
-- Direct smoke after restart: `GET /api/healthz`, `POST /api/public/login`, and JSON DB enablement logs all passed.
+- Direct smoke after restart: `GET /api/healthz`, `POST /api/public/login`, `GET /api/game/session`, and JSON DB enablement logs passed.
 
 Full legacy E2E was not run for the latest Go migration steps unless explicitly noted in a later update.
 
 ## Remaining Work
 
 - Implement native registration creation, activation policy, and login-after-register behavior.
-- Add authenticated session lookup, logout, expiry, and session security behavior.
+- Use session lookup to guard native game APIs; add logout, expiry, and session security behavior.
 - Build authenticated React game routes, starting with `/game/overview`.
 - Port current planet selection and overview state from legacy DB.
 - Port resource production/read model, queues, buildings, research, shipyard, defense, fleet, reports, messages, galaxy, alliance, admin, maintenance, options, password recovery, deletion, vacation, bans, and permissions.

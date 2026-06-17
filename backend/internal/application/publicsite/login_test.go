@@ -245,6 +245,91 @@ func TestLoginAuthenticatorRequiresDependencies(t *testing.T) {
 	}
 }
 
+func TestGameSessionLookupAuthenticatesLegacySession(t *testing.T) {
+	reader := &fakeGameSessionReader{session: domain.GameSession{
+		Found:        true,
+		PlayerID:     42,
+		Commander:    "legor",
+		PublicID:     "public",
+		PrivateID:    "private",
+		IPAddress:    "203.0.113.10",
+		HomePlanetID: 99,
+	}}
+	lookup := NewGameSessionLookup(reader, 1)
+
+	result, err := lookup.GetGameSession(context.Background(), GameSessionCommand{
+		PublicSession: " public ",
+		PrivateSessions: map[string]string{
+			"prsess_42_1": "private",
+		},
+		RemoteAddr: "203.0.113.10",
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Authenticated || result.Session.PlayerID != 42 || result.Session.UniverseNumber != 1 {
+		t.Fatalf("expected authenticated session, got %+v", result)
+	}
+	if reader.publicID != "public" {
+		t.Fatalf("expected trimmed public session, got %q", reader.publicID)
+	}
+}
+
+func TestGameSessionLookupRequiresPublicSession(t *testing.T) {
+	lookup := NewGameSessionLookup(&fakeGameSessionReader{}, 1)
+
+	result, err := lookup.GetGameSession(context.Background(), GameSessionCommand{})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Authenticated || len(result.Issues) != 1 || result.Issues[0].Code != domain.SessionIssueRequired {
+		t.Fatalf("expected required session issue, got %+v", result)
+	}
+}
+
+func TestGameSessionLookupReturnsInvalidPrivateSession(t *testing.T) {
+	lookup := NewGameSessionLookup(&fakeGameSessionReader{session: domain.GameSession{
+		Found:     true,
+		PlayerID:  42,
+		PrivateID: "private",
+		IPAddress: "203.0.113.10",
+	}}, 1)
+
+	result, err := lookup.GetGameSession(context.Background(), GameSessionCommand{
+		PublicSession:   "public",
+		PrivateSessions: map[string]string{"prsess_42_1": "wrong"},
+		RemoteAddr:      "203.0.113.10",
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Authenticated || len(result.Issues) != 1 || result.Issues[0].Code != domain.SessionIssuePrivateInvalid {
+		t.Fatalf("expected private session issue, got %+v", result)
+	}
+}
+
+func TestGameSessionLookupReturnsReaderError(t *testing.T) {
+	wantErr := errors.New("session read failed")
+	lookup := NewGameSessionLookup(&fakeGameSessionReader{err: wantErr}, 1)
+
+	_, err := lookup.GetGameSession(context.Background(), GameSessionCommand{PublicSession: "public"})
+
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected reader error, got %v", err)
+	}
+}
+
+func TestGameSessionLookupRequiresDependency(t *testing.T) {
+	_, err := (GameSessionLookup{}).GetGameSession(context.Background(), GameSessionCommand{PublicSession: "public"})
+
+	if err == nil {
+		t.Fatal("expected missing dependency error")
+	}
+}
+
 func hasLoginIssue(result domain.LoginValidation, code string) bool {
 	for _, issue := range result.Issues {
 		if issue.Code == code {
@@ -290,6 +375,17 @@ type fakeTokenGenerator struct {
 	public  []string
 	private []string
 	err     error
+}
+
+type fakeGameSessionReader struct {
+	session  domain.GameSession
+	err      error
+	publicID string
+}
+
+func (f *fakeGameSessionReader) FindGameSession(_ context.Context, publicID string) (domain.GameSession, error) {
+	f.publicID = publicID
+	return f.session, f.err
 }
 
 func (f *fakeTokenGenerator) NewPublicSession() (string, error) {

@@ -3,6 +3,7 @@ package publicsite
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	domain "github.com/hjyoon/ogame-opensource/backend/internal/domain/publicsite"
@@ -22,6 +23,10 @@ type LoginSessionWriter interface {
 	SaveLoginSession(context.Context, domain.LoginSession, string) error
 }
 
+type GameSessionReader interface {
+	FindGameSession(context.Context, string) (domain.GameSession, error)
+}
+
 type LoginTokenGenerator interface {
 	NewPublicSession() (string, error)
 	NewPrivateSession() (string, error)
@@ -38,11 +43,22 @@ type LoginCommand struct {
 	RemoteAddr string
 }
 
+type GameSessionCommand struct {
+	PublicSession   string
+	PrivateSessions map[string]string
+	RemoteAddr      string
+}
+
 type LoginAuthenticator struct {
 	credentials    LoginCredentialChecker
 	sessions       LoginSessionWriter
 	tokens         LoginTokenGenerator
 	now            func() time.Time
+	universeNumber int
+}
+
+type GameSessionLookup struct {
+	sessions       GameSessionReader
 	universeNumber int
 }
 
@@ -134,4 +150,37 @@ func (a LoginAuthenticator) AuthenticateLogin(ctx context.Context, command Login
 		return domain.LoginAuthentication{}, err
 	}
 	return domain.LoginAuthentication{Valid: true, Session: session}, nil
+}
+
+func NewGameSessionLookup(sessions GameSessionReader, universeNumber int) GameSessionLookup {
+	return GameSessionLookup{sessions: sessions, universeNumber: universeNumber}
+}
+
+func (l GameSessionLookup) GetGameSession(ctx context.Context, command GameSessionCommand) (domain.SessionAuthentication, error) {
+	publicSession := strings.TrimSpace(command.PublicSession)
+	if publicSession == "" {
+		return domain.SessionAuthentication{
+			Authenticated: false,
+			Issues: []domain.SessionIssue{{
+				Code:    domain.SessionIssueRequired,
+				Message: "Session is required.",
+			}},
+		}, nil
+	}
+	if l.sessions == nil {
+		return domain.SessionAuthentication{}, errors.New("game session lookup dependency unavailable")
+	}
+
+	session, err := l.sessions.FindGameSession(ctx, publicSession)
+	if err != nil {
+		return domain.SessionAuthentication{}, err
+	}
+	session.UniverseNumber = l.universeNumber
+	privateSession := command.PrivateSessions[session.PrivateCookieName()]
+	issues := session.Validate(privateSession, command.RemoteAddr)
+	return domain.SessionAuthentication{
+		Authenticated: len(issues) == 0,
+		Issues:        issues,
+		Session:       session,
+	}, nil
 }

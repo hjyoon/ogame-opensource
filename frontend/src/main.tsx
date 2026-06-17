@@ -79,6 +79,17 @@ type LoginDraft = {
   universe: string;
 };
 
+type GameSessionStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  session?: {
+    playerId: number;
+    commander: string;
+    universeNumber: number;
+    homePlanetId: number;
+  };
+};
+
 const phases = [
   { key: "legacy", label: "Legacy QA", state: "active", owner: "PHP E2E" },
   { key: "shell", label: "React Shell", state: "active", owner: "Bun 1.3" },
@@ -88,6 +99,7 @@ const phases = [
 
 function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname);
+  const [search, setSearch] = useState(() => window.location.search);
   const [health, setHealth] = useState<Health | null>(null);
   const [universes, setUniverses] = useState<UniverseSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +121,8 @@ function App() {
   const [loginResult, setLoginResult] = useState<LoginValidation | null>(null);
   const [loginPending, setLoginPending] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [gameSession, setGameSession] = useState<GameSessionStatus | null>(null);
+  const [gameSessionError, setGameSessionError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
 
@@ -146,10 +160,29 @@ function App() {
   }, [loginDraft.universe, registrationDraft.universe, universes]);
 
   useEffect(() => {
-    const onPopState = () => setPathname(window.location.pathname);
+    const onPopState = () => {
+      setPathname(window.location.pathname);
+      setSearch(window.location.search);
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (!pathname.startsWith("/game") || publicSession === "") {
+      setGameSession(null);
+      setGameSessionError(null);
+      return;
+    }
+    fetch(`/api/game/session?session=${encodeURIComponent(publicSession)}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameSessionStatus>)
+      .then((payload) => {
+        setGameSession(payload);
+        setGameSessionError(null);
+      })
+      .catch((err: unknown) => setGameSessionError(err instanceof Error ? err.message : String(err)));
+  }, [pathname, search]);
 
   const checks = useMemo(
     () => [
@@ -168,6 +201,7 @@ function App() {
     event.preventDefault();
     window.history.pushState({}, "", path);
     setPathname(path);
+    setSearch("");
   };
 
   const updateRegistrationDraft = (field: keyof RegistrationDraft, value: string | boolean) => {
@@ -263,6 +297,13 @@ function App() {
           {resolution.isLegacyAlias ? (
             <p className="alias-note">Legacy URL alias. Canonical route: {resolution.canonicalPath}</p>
           ) : null}
+          {pathname.startsWith("/game") && gameSession?.authenticated ? (
+            <p className="form-success">Commander session: {gameSession.session?.commander ?? "unknown"}</p>
+          ) : null}
+          {pathname.startsWith("/game") && gameSession && !gameSession.authenticated ? (
+            <p className="form-error">{gameSession.issues[0]?.message ?? "Session is invalid."}</p>
+          ) : null}
+          {pathname.startsWith("/game") && gameSessionError ? <p className="form-error">{gameSessionError}</p> : null}
         </div>
 
         <div className="panel">
@@ -353,7 +394,9 @@ function App() {
             </ul>
           ) : null}
           {loginResult?.valid ? (
-            <p className="form-success">Session ready: {loginResult.session?.redirectTo ?? "/game/overview"}</p>
+            <p className="form-success">
+              Session ready: <a href={loginResult.session?.redirectTo ?? "/game/overview"}>Open overview</a>
+            </p>
           ) : null}
         </section>
       ) : null}

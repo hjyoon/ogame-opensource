@@ -34,12 +34,17 @@ type LoginUseCase interface {
 	AuthenticateLogin(context.Context, apppublicsite.LoginCommand) (domainpublicsite.LoginAuthentication, error)
 }
 
+type GameSessionUseCase interface {
+	GetGameSession(context.Context, apppublicsite.GameSessionCommand) (domainpublicsite.SessionAuthentication, error)
+}
+
 type Dependencies struct {
 	Health             HealthUseCase
 	Universes          UniverseCatalogUseCase
 	RegistrationDrafts RegistrationDraftUseCase
 	LoginDrafts        LoginDraftUseCase
 	Login              LoginUseCase
+	GameSessions       GameSessionUseCase
 	Frontend           FrontendAssets
 	LegacyAssets       http.FileSystem
 	Logger             *slog.Logger
@@ -57,6 +62,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/public/registration/validate", postOnly(a.handleRegistrationValidation))
 	mux.HandleFunc("/api/public/login/validate", postOnly(a.handleLoginValidation))
 	mux.HandleFunc("/api/public/login", postOnly(a.handleLogin))
+	mux.HandleFunc("/api/game/session", getOnly(a.handleGameSession))
 	mux.Handle("/legacy-assets/", http.StripPrefix("/legacy-assets/", http.FileServer(deps.LegacyAssets)))
 	mux.HandleFunc("/", getOnly(a.handleFrontend))
 	handler := securityHeaders(mux)

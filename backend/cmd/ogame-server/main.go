@@ -51,6 +51,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	registrationDrafts := registrationValidator(cfg, logger)
 	loginDrafts := loginValidator(cfg, logger)
 	login := loginAuthenticator(cfg, logger)
+	gameSessions := gameSessionLookup(cfg, logger)
 
 	return httpdelivery.New(httpdelivery.Dependencies{
 		Health:             health,
@@ -58,6 +59,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		RegistrationDrafts: registrationDrafts,
 		LoginDrafts:        loginDrafts,
 		Login:              login,
+		GameSessions:       gameSessions,
 		Frontend:           filesystem.StaticDir{Root: cfg.StaticDir},
 		LegacyAssets:       filesystem.NewNoListingFS(cfg.LegacyAssetDir),
 		Logger:             logger,
@@ -123,6 +125,34 @@ func loginAuthenticator(cfg config.Config, logger *slog.Logger) apppublicsite.Lo
 		infrasession.TokenGenerator{},
 		cfg.UniNumber,
 	)
+}
+
+func gameSessionLookup(cfg config.Config, logger *slog.Logger) apppublicsite.GameSessionLookup {
+	if !cfg.UniDBEnabled {
+		return apppublicsite.GameSessionLookup{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game session lookup disabled", "error", err)
+		return apppublicsite.GameSessionLookup{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game session lookup disabled", "error", err)
+		_ = db.Close()
+		return apppublicsite.GameSessionLookup{}
+	}
+
+	logger.Info("universe DB game session lookup enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
+	return apppublicsite.NewGameSessionLookup(mysqlregistration.NewSessionStore(db, cfg.UniDBPrefix), cfg.UniNumber)
 }
 
 func registrationValidator(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationDraftValidator {

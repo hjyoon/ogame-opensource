@@ -257,6 +257,8 @@ func (r *fakeRows) Scan(dest ...any) error {
 		switch d := dest[i].(type) {
 		case *int:
 			*d = value.(int)
+		case *string:
+			*d = value.(string)
 		default:
 			return errors.New("unsupported scan destination")
 		}

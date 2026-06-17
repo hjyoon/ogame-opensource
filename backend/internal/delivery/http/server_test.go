@@ -400,6 +400,92 @@ func TestLoginEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 	}
 }
 
+func TestGameSessionEndpointReturnsAuthenticatedSession(t *testing.T) {
+	gameSessions := &fakeGameSessions{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session: domainpublicsite.GameSession{
+			PlayerID:       42,
+			Commander:      "legor",
+			PrivateID:      "private",
+			HomePlanetID:   99,
+			UniverseNumber: 1,
+		},
+	}}
+	server := testServerWithGameSessions(t, gameSessions)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/session?session=public", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameSessionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Session == nil || response.Session.PlayerID != 42 || response.Session.HomePlanetID != 99 {
+		t.Fatalf("expected authenticated session response, got %+v", response)
+	}
+	if gameSessions.command.PublicSession != "public" || gameSessions.command.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected session command: %+v", gameSessions.command)
+	}
+	if gameSessions.command.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("expected private session cookie to be passed, got %+v", gameSessions.command.PrivateSessions)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("private")) {
+		t.Fatalf("game session response must not echo private session: %s", rec.Body.String())
+	}
+}
+
+func TestGameSessionEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
+	gameSessions := &fakeGameSessions{result: domainpublicsite.SessionAuthentication{
+		Authenticated: false,
+		Issues: []domainpublicsite.SessionIssue{{
+			Code:    domainpublicsite.SessionIssuePrivateInvalid,
+			Message: "Private session is invalid.",
+		}},
+	}}
+	server := testServerWithGameSessions(t, gameSessions)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/session?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var response gameSessionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Authenticated || len(response.Issues) != 1 || response.Issues[0].Code != domainpublicsite.SessionIssuePrivateInvalid {
+		t.Fatalf("expected invalid session response, got %+v", response)
+	}
+}
+
+func TestGameSessionEndpointReturnsUnavailableWithoutUseCase(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/session?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game session use case to return 503, got %d", rec.Code)
+	}
+}
+
+func TestGameSessionEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
+	server := testServerWithGameSessions(t, &fakeGameSessions{err: errors.New("session failed")})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/session?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game session error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestLegacyPublicHTMLRoutesServeReactShell(t *testing.T) {
 	staticDir := t.TempDir()
 	writeFile(t, filepath.Join(staticDir, "index.html"), "ogame react shell")
@@ -478,6 +564,14 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 
 	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
 		t.Fatalf("expected method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/session", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("expected game session method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 }
 
@@ -589,6 +683,19 @@ func testServerWithLogin(t *testing.T, login LoginUseCase) http.Handler {
 	})
 }
 
+func testServerWithGameSessions(t *testing.T, gameSessions GameSessionUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		GameSessions:       gameSessions,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
 func testServerWithCustomDrafts(t *testing.T, registrationDrafts RegistrationDraftUseCase, loginDrafts LoginDraftUseCase) http.Handler {
 	t.Helper()
 	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
@@ -683,6 +790,17 @@ type fakeLogin struct {
 }
 
 func (f *fakeLogin) AuthenticateLogin(_ context.Context, command apppublicsite.LoginCommand) (domainpublicsite.LoginAuthentication, error) {
+	f.command = command
+	return f.result, f.err
+}
+
+type fakeGameSessions struct {
+	result  domainpublicsite.SessionAuthentication
+	err     error
+	command apppublicsite.GameSessionCommand
+}
+
+func (f *fakeGameSessions) GetGameSession(_ context.Context, command apppublicsite.GameSessionCommand) (domainpublicsite.SessionAuthentication, error) {
 	f.command = command
 	return f.result, f.err
 }

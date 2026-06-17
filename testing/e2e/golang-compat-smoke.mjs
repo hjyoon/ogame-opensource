@@ -177,6 +177,27 @@ try {
     sessionLoginBody = {};
   }
   const sessionCookie = sessionLogin.headers["set-cookie"] ?? "";
+  const sessionCookiePair = sessionCookie.split(";")[0] ?? "";
+  const sessionSearch = typeof sessionLoginBody.session?.redirectTo === "string"
+    ? new URL(sessionLoginBody.session.redirectTo, baseUrl).search
+    : "?session=";
+  const gameSession = await request(`/api/game/session${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameSessionBody = {};
+  try {
+    gameSessionBody = JSON.parse(gameSession.body);
+  } catch {
+    gameSessionBody = {};
+  }
+
+  const gameSessionWithoutCookie = await request(`/api/game/session${sessionSearch}`);
+  let gameSessionWithoutCookieBody = {};
+  try {
+    gameSessionWithoutCookieBody = JSON.parse(gameSessionWithoutCookie.body);
+  } catch {
+    gameSessionWithoutCookieBody = {};
+  }
 
   const invalidLogin = await request("/api/public/login/validate", {
     method: "POST",
@@ -210,6 +231,12 @@ try {
       check(typeof sessionLoginBody.session?.redirectTo === "string" && sessionLoginBody.session.redirectTo.startsWith("/game/overview?"), "login submit returns natural overview redirect", sessionLoginBody),
       check(sessionCookie.includes("prsess_") && sessionCookie.includes("HttpOnly"), "login submit sets private session cookie", { setCookie: sessionCookie }),
       check(!sessionLogin.body.includes(loginSmokePassword), "login submit response does not echo password"),
+      check(gameSession.status === 200, "game session lookup returns HTTP 200 with private cookie", { status: gameSession.status }),
+      check(gameSessionBody.authenticated === true, "game session lookup authenticates the login session", gameSessionBody),
+      check(gameSessionBody.session?.commander === loginSmokeUser, "game session lookup returns commander identity", gameSessionBody),
+      check(!gameSession.body.includes(sessionCookiePair), "game session lookup response does not echo private cookie"),
+      check(gameSessionWithoutCookie.status === 401, "game session lookup rejects missing private cookie", { status: gameSessionWithoutCookie.status }),
+      check(gameSessionWithoutCookieBody.authenticated === false, "missing private cookie is unauthenticated", gameSessionWithoutCookieBody),
       check(invalidLogin.status === 200, "invalid login draft returns HTTP 200", { status: invalidLogin.status }),
       check(invalidLoginBody.valid === false, "invalid login draft is rejected", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),
@@ -306,7 +333,8 @@ try {
       check(js.body.includes("/register") && js.body.includes("/universes"), "React bundle contains natural public route model"),
       check(js.body.includes("/api/public/universes"), "React bundle consumes universe catalog API"),
       check(js.body.includes("/api/public/registration/validate"), "React bundle consumes registration validation API"),
-      check(js.body.includes("/api/public/login"), "React bundle consumes login submit API")
+      check(js.body.includes("/api/public/login"), "React bundle consumes login submit API"),
+      check(js.body.includes("/api/game/session"), "React bundle consumes game session API")
     ]
   }));
 
@@ -325,6 +353,7 @@ try {
   const getRegistrationValidation = await request("/api/public/registration/validate");
   const getLoginValidation = await request("/api/public/login/validate");
   const getLoginSubmit = await request("/api/public/login");
+  const postGameSession = await request("/api/game/session", { method: "POST" });
   cases.push(finalize({
     case: "go_method_guards",
     checks: [
@@ -335,7 +364,9 @@ try {
       check(getLoginValidation.status === 405, "GET login validation endpoint is rejected", { status: getLoginValidation.status }),
       check(hasHeader(getLoginValidation, "allow", "POST"), "login validation method rejection returns Allow header"),
       check(getLoginSubmit.status === 405, "GET login submit endpoint is rejected", { status: getLoginSubmit.status }),
-      check(hasHeader(getLoginSubmit, "allow", "POST"), "login submit method rejection returns Allow header")
+      check(hasHeader(getLoginSubmit, "allow", "POST"), "login submit method rejection returns Allow header"),
+      check(postGameSession.status === 405, "POST game session endpoint is rejected", { status: postGameSession.status }),
+      check(hasHeader(postGameSession, "allow", "GET, HEAD"), "game session method rejection returns Allow header")
     ]
   }));
 } catch (error) {

@@ -63,6 +63,79 @@ func TestNewSessionStoreUsesSQLExecer(t *testing.T) {
 	if _, ok := store.execer.(SQLExecer); !ok {
 		t.Fatalf("expected SQLExecer, got %T", store.execer)
 	}
+	if _, ok := store.queryer.(SQLQueryer); !ok {
+		t.Fatalf("expected SQLQueryer, got %T", store.queryer)
+	}
+}
+
+func TestSessionStoreFindsLegacyGameSession(t *testing.T) {
+	queryer := &fakeQueryer{responses: []fakeResponse{
+		{rows: &fakeRows{items: []fakeRow{{values: []any{42, "legor", "public", "private", "203.0.113.10", 1, 0, 99}}}}},
+	}}
+	store := NewSessionStoreWithQueryer(queryer, "uni1_")
+
+	session, err := store.FindGameSession(context.Background(), "public")
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !session.Found || session.PlayerID != 42 || session.Commander != "legor" || session.PublicID != "public" || session.PrivateID != "private" {
+		t.Fatalf("unexpected session: %+v", session)
+	}
+	if !session.DisableIPCheck || session.Banned || session.HomePlanetID != 99 {
+		t.Fatalf("unexpected session flags: %+v", session)
+	}
+	if !strings.Contains(queryer.calls[0].query, "`uni1_users`") || queryer.calls[0].args[0] != "public" {
+		t.Fatalf("unexpected query: %+v", queryer.calls[0])
+	}
+}
+
+func TestSessionStoreReportsMissingGameSession(t *testing.T) {
+	store := NewSessionStoreWithQueryer(&fakeQueryer{responses: []fakeResponse{{rows: &fakeRows{}}}}, "uni1_")
+
+	session, err := store.FindGameSession(context.Background(), "missing")
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Found {
+		t.Fatalf("expected missing session, got %+v", session)
+	}
+}
+
+func TestSessionStoreFindGameSessionReturnsQueryError(t *testing.T) {
+	wantErr := errors.New("session query failed")
+	store := NewSessionStoreWithQueryer(&fakeQueryer{responses: []fakeResponse{{err: wantErr}}}, "uni1_")
+
+	if _, err := store.FindGameSession(context.Background(), "public"); !errors.Is(err, wantErr) {
+		t.Fatalf("expected query error, got %v", err)
+	}
+}
+
+func TestSessionStoreFindGameSessionReturnsRowsError(t *testing.T) {
+	store := NewSessionStoreWithQueryer(&fakeQueryer{responses: []fakeResponse{{rows: &fakeRows{err: errors.New("rows failed")}}}}, "uni1_")
+
+	if _, err := store.FindGameSession(context.Background(), "public"); err == nil {
+		t.Fatal("expected rows error")
+	}
+}
+
+func TestSessionStoreFindGameSessionReturnsScanError(t *testing.T) {
+	store := NewSessionStoreWithQueryer(&fakeQueryer{responses: []fakeResponse{
+		{rows: &fakeRows{items: []fakeRow{{values: []any{42, "legor", "public", "private", "203.0.113.10", 1, 0, 99}, scanErr: errors.New("scan failed")}}}},
+	}}, "uni1_")
+
+	if _, err := store.FindGameSession(context.Background(), "public"); err == nil {
+		t.Fatal("expected scan error")
+	}
+}
+
+func TestSessionStoreFindGameSessionRejectsUnsafePrefix(t *testing.T) {
+	store := NewSessionStoreWithQueryer(&fakeQueryer{}, "uni1_;DROP")
+
+	if _, err := store.FindGameSession(context.Background(), "public"); err == nil {
+		t.Fatal("expected unsafe prefix error")
+	}
 }
 
 type fakeExecer struct {
