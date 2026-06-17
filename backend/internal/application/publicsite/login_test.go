@@ -130,6 +130,14 @@ func TestLoginAuthenticatorCreatesSession(t *testing.T) {
 	}
 }
 
+func TestLoginAuthenticatorUsesDefaultClock(t *testing.T) {
+	authenticator := NewLoginAuthenticatorWithClock(nil, nil, nil, 1, nil)
+
+	if authenticator.now == nil {
+		t.Fatal("expected default clock")
+	}
+}
+
 func TestLoginAuthenticatorReturnsLocalValidationIssues(t *testing.T) {
 	writer := &recordingSessionWriter{}
 	authenticator := NewLoginAuthenticator(

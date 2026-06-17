@@ -45,12 +45,22 @@ type RegistrationIssue = {
 
 type RegistrationValidation = {
   valid: boolean;
+  created?: boolean;
   issues: RegistrationIssue[];
   draft: {
     character: string;
     email: string;
     universe: string;
     agb: boolean;
+  };
+  account?: {
+    playerId: number;
+    homePlanetId: number;
+    activationRequired: boolean;
+  };
+  session?: {
+    redirectTo: string;
+    universeNumber: number;
   };
 };
 
@@ -218,22 +228,31 @@ function App() {
     setRegistrationError(null);
   };
 
-  const validateRegistration = (event: React.FormEvent<HTMLFormElement>) => {
+  const submitRegistration = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setRegistrationPending(true);
     setRegistrationError(null);
-    fetch("/api/public/registration/validate", {
+    fetch("/api/public/registration", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify(registrationDraft)
     })
       .then((response) => {
         if (!response.ok) {
-          throw new Error(`registration validation returned ${response.status}`);
+          throw new Error(`registration returned ${response.status}`);
         }
         return response.json() as Promise<RegistrationValidation>;
       })
-      .then(setRegistrationResult)
+      .then((result) => {
+        setRegistrationResult(result);
+        if (result.valid && result.created && result.session?.redirectTo) {
+          const target = new URL(result.session.redirectTo, window.location.origin);
+          window.history.pushState({}, "", `${target.pathname}${target.search}`);
+          setPathname(target.pathname);
+          setSearch(target.search);
+        }
+      })
       .catch((err: unknown) => setRegistrationError(err instanceof Error ? err.message : String(err)))
       .finally(() => setRegistrationPending(false));
   };
@@ -288,7 +307,7 @@ function App() {
         onLoginChange={updateLoginDraft}
         onLoginSubmit={submitLogin}
         onRegistrationChange={updateRegistrationDraft}
-        onRegistrationSubmit={validateRegistration}
+        onRegistrationSubmit={submitRegistration}
         registrationDraft={registrationDraft}
         registrationError={registrationError}
         registrationPending={registrationPending}

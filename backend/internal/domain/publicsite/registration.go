@@ -45,6 +45,20 @@ type RegistrationValidation struct {
 	Issues []RegistrationIssue
 }
 
+type RegisteredAccount struct {
+	PlayerID       int
+	HomePlanetID   int
+	ActivationCode string
+	Validated      bool
+}
+
+type RegistrationCreation struct {
+	Valid   bool
+	Issues  []RegistrationIssue
+	Account RegisteredAccount
+	Session LoginSession
+}
+
 type RegistrationAvailability struct {
 	CharacterExists bool
 	EmailExists     bool

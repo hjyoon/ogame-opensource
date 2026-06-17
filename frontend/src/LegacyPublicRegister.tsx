@@ -16,7 +16,12 @@ export type PublicRegistrationIssue = {
 
 export type PublicRegistrationResult = {
   valid: boolean;
+  created?: boolean;
   issues: PublicRegistrationIssue[];
+  session?: {
+    redirectTo: string;
+    universeNumber: number;
+  };
 };
 
 export type PublicRegistrationDraft = {
@@ -204,7 +209,7 @@ function RegisterContent({
           form="legacy-register-form"
           type="submit"
         >
-          {registrationPending ? "Checking..." : "Join now!"}
+          {registrationPending ? "Creating..." : "Join now!"}
         </button>
       </div>
     </section>
@@ -230,7 +235,17 @@ function RegistrationFeedback({
     return <div className="legacy-register-info" />;
   }
   if (result.valid) {
-    return <div className="legacy-register-status legacy-register-fine">Registration draft accepted.</div>;
+    return (
+      <div className="legacy-register-status legacy-register-fine">
+        Registration was successful.
+        {result.session?.redirectTo ? (
+          <>
+            {" "}
+            <a href={result.session.redirectTo}>Open overview</a>
+          </>
+        ) : null}
+      </div>
+    );
   }
   return (
     <div className="legacy-register-status legacy-register-warning">

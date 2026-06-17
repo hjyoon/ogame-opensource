@@ -109,15 +109,7 @@ func (a app) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	var session *loginSessionResponse
 	if result.Valid {
-		http.SetCookie(w, &http.Cookie{
-			Name:     result.Session.PrivateCookieName(),
-			Value:    result.Session.PrivateID,
-			Path:     "/",
-			Expires:  time.Unix(result.Session.LastLogin, 0).Add(24 * time.Hour),
-			MaxAge:   24 * 60 * 60,
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-		})
+		setLoginSessionCookie(w, result.Session)
 		session = &loginSessionResponse{
 			RedirectTo:     result.Session.RedirectTarget(),
 			UniverseNumber: result.Session.UniverseNumber,
@@ -133,6 +125,18 @@ func (a app) handleLogin(w http.ResponseWriter, r *http.Request) {
 			Universe: request.Universe,
 		},
 		Session: session,
+	})
+}
+
+func setLoginSessionCookie(w http.ResponseWriter, session domain.LoginSession) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     session.PrivateCookieName(),
+		Value:    session.PrivateID,
+		Path:     "/",
+		Expires:  time.Unix(session.LastLogin, 0).Add(24 * time.Hour),
+		MaxAge:   24 * 60 * 60,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 

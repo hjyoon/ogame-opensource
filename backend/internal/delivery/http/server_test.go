@@ -199,6 +199,130 @@ func TestRegistrationValidationReturnsUnavailableForUseCaseError(t *testing.T) {
 	}
 }
 
+func TestRegistrationEndpointCreatesSessionCookie(t *testing.T) {
+	registration := &fakeRegistration{
+		result: domainpublicsite.RegistrationCreation{
+			Valid: true,
+			Account: domainpublicsite.RegisteredAccount{
+				PlayerID:       42,
+				HomePlanetID:   99,
+				ActivationCode: "activation-secret",
+				Validated:      false,
+			},
+			Session: domainpublicsite.LoginSession{
+				PlayerID:       42,
+				PublicID:       "public123456",
+				PrivateID:      "private1234567890private1234567890",
+				UniverseNumber: 1,
+				LastLogin:      1700000000,
+				RedirectPath:   "/game/overview",
+			},
+		},
+	}
+	server := testServerWithRegistration(t, registration)
+	body := `{"character":"Commander01","password":"E2E_http123","email":"commander@example.local","universe":"http://localhost:8888","agb":true}`
+	req := httptest.NewRequest(http.MethodPost, "/api/public/registration", strings.NewReader(body))
+	req.RemoteAddr = "203.0.113.10:4321"
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response registrationResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Valid || !response.Created || response.Account == nil || response.Account.PlayerID != 42 || !response.Account.ActivationRequired {
+		t.Fatalf("unexpected registration response: %+v", response)
+	}
+	if response.Session == nil || !strings.Contains(response.Session.RedirectTo, "/game/overview?") || !strings.Contains(response.Session.RedirectTo, "session=public123456") {
+		t.Fatalf("unexpected session response: %+v", response.Session)
+	}
+	if !strings.Contains(rec.Header().Get("Set-Cookie"), "prsess_42_1=private1234567890private1234567890") {
+		t.Fatalf("expected private session cookie, got %q", rec.Header().Get("Set-Cookie"))
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("E2E_http123")) || bytes.Contains(rec.Body.Bytes(), []byte("activation-secret")) {
+		t.Fatalf("registration response must not echo password or activation code: %s", rec.Body.String())
+	}
+	if registration.command.RemoteAddr != "203.0.113.10" || !registration.command.TermsAccepted {
+		t.Fatalf("unexpected registration command: %+v", registration.command)
+	}
+}
+
+func TestRegistrationEndpointReturnsIssuesWithoutCookie(t *testing.T) {
+	server := testServerWithRegistration(t, &fakeRegistration{
+		result: domainpublicsite.RegistrationCreation{
+			Valid: false,
+			Issues: []domainpublicsite.RegistrationIssue{{
+				Field:           "email",
+				Code:            domainpublicsite.RegistrationIssueEmailInvalid,
+				Message:         "Email address is invalid.",
+				LegacyErrorCode: domainpublicsite.LegacyRegistrationErrorEmail,
+			}},
+		},
+	})
+	body := `{"character":"Commander01","password":"E2E_http123","email":"invalid","universe":"http://localhost:8888","agb":true}`
+	req := httptest.NewRequest(http.MethodPost, "/api/public/registration", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected validation result to return 200, got %d", rec.Code)
+	}
+	var response registrationResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Valid || response.Created || response.Session != nil || rec.Header().Get("Set-Cookie") != "" {
+		t.Fatalf("expected invalid registration without session, got response=%+v cookie=%q", response, rec.Header().Get("Set-Cookie"))
+	}
+	if len(response.Issues) != 1 || response.Issues[0].LegacyErrorCode != 104 {
+		t.Fatalf("unexpected registration issues: %+v", response.Issues)
+	}
+}
+
+func TestRegistrationEndpointRejectsMalformedJSON(t *testing.T) {
+	server := testServerWithRegistration(t, &fakeRegistration{})
+	req := httptest.NewRequest(http.MethodPost, "/api/public/registration", strings.NewReader("{"))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected malformed JSON to return 400, got %d", rec.Code)
+	}
+}
+
+func TestRegistrationEndpointReturnsUnavailable(t *testing.T) {
+	server := testServerWithRegistration(t, &fakeRegistration{err: errors.New("registration failed")})
+	body := `{"character":"Commander01","password":"E2E_http123","email":"commander@example.local","universe":"http://localhost:8888","agb":true}`
+	req := httptest.NewRequest(http.MethodPost, "/api/public/registration", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected use case error to return 503, got %d", rec.Code)
+	}
+}
+
+func TestRegistrationEndpointReturnsUnavailableWithoutUseCase(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	body := `{"character":"Commander01","password":"E2E_http123","email":"commander@example.local","universe":"http://localhost:8888","agb":true}`
+	req := httptest.NewRequest(http.MethodPost, "/api/public/registration", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing use case to return 503, got %d", rec.Code)
+	}
+}
+
+func TestRemoteIPAcceptsAddressWithoutPort(t *testing.T) {
+	if got := remoteIP("203.0.113.10"); got != "203.0.113.10" {
+		t.Fatalf("unexpected remote IP: %q", got)
+	}
+}
+
 func TestLoginValidationEndpointAcceptsValidDraft(t *testing.T) {
 	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
 	body := `{"login":"Commander01","pass":"E2E_http123","universe":"http://localhost:8888"}`
@@ -735,6 +859,14 @@ func TestPostOnlyRejectsReadMethods(t *testing.T) {
 		t.Fatalf("expected login method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
+	req = httptest.NewRequest(http.MethodGet, "/api/public/registration", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "POST" {
+		t.Fatalf("expected registration submit method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
+
 	req = httptest.NewRequest(http.MethodGet, "/api/public/login", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -819,6 +951,19 @@ func testServerWithLogin(t *testing.T, login LoginUseCase) http.Handler {
 		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
 		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
 		Login:              login,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
+func testServerWithRegistration(t *testing.T, registration RegistrationUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		Registration:       registration,
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
 		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
 		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
 	})
@@ -944,6 +1089,17 @@ type fakeLogin struct {
 }
 
 func (f *fakeLogin) AuthenticateLogin(_ context.Context, command apppublicsite.LoginCommand) (domainpublicsite.LoginAuthentication, error) {
+	f.command = command
+	return f.result, f.err
+}
+
+type fakeRegistration struct {
+	result  domainpublicsite.RegistrationCreation
+	err     error
+	command apppublicsite.RegistrationCommand
+}
+
+func (f *fakeRegistration) RegisterAccount(_ context.Context, command apppublicsite.RegistrationCommand) (domainpublicsite.RegistrationCreation, error) {
 	f.command = command
 	return f.result, f.err
 }

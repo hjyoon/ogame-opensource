@@ -51,6 +51,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	}, filesystem.Probe{}, infraruntime.GoRuntime{})
 	universes := apppublicsite.NewUniverseCatalogService(universeRepository(cfg, logger))
 	registrationDrafts := registrationValidator(cfg, logger)
+	registration := registrationRegistrar(cfg, logger)
 	loginDrafts := loginValidator(cfg, logger)
 	login := loginAuthenticator(cfg, logger)
 	gameSessions := gameSessionLookup(cfg, logger)
@@ -60,6 +61,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		Health:             health,
 		Universes:          universes,
 		RegistrationDrafts: registrationDrafts,
+		Registration:       registration,
 		LoginDrafts:        loginDrafts,
 		Login:              login,
 		GameSessions:       gameSessions,
@@ -68,6 +70,40 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		LegacyAssets:       filesystem.NewNoListingFS(cfg.LegacyAssetDir),
 		Logger:             logger,
 	})
+}
+
+func registrationRegistrar(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationRegistrar {
+	if !cfg.UniDBEnabled {
+		return apppublicsite.RegistrationRegistrar{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB registration creation disabled", "error", err)
+		return apppublicsite.RegistrationRegistrar{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB registration creation disabled", "error", err)
+		_ = db.Close()
+		return apppublicsite.RegistrationRegistrar{}
+	}
+
+	logger.Info("universe DB registration creation enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
+	return apppublicsite.NewRegistrationRegistrar(
+		mysqlregistration.NewAvailabilityChecker(db, cfg.UniDBPrefix),
+		mysqlregistration.NewAccountCreator(db, cfg.UniDBPrefix, cfg.UniDBSecret),
+		mysqlregistration.NewSessionStore(db, cfg.UniDBPrefix),
+		infrasession.TokenGenerator{},
+		cfg.UniNumber,
+	)
 }
 
 func loginValidator(cfg config.Config, logger *slog.Logger) apppublicsite.LoginDraftValidator {

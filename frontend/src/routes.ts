@@ -45,10 +45,10 @@ export const publicRoutes: PublicRoute[] = [
     label: "Register",
     eyebrow: "New Commander",
     title: "Create an account",
-    summary: "Registration draft validation now runs through a native Go use case before account creation is ported.",
-    status: "Validation API",
+    summary: "Registration creation now runs through native Go while keeping legacy account and home planet defaults.",
+    status: "Creation API",
     image: "/legacy-assets/use/uV/planeten/small/s_dschjungelplanet03.jpg",
-    points: ["Legacy field names", "Universe selection", "No account mutation yet"]
+    points: ["Legacy field names", "Universe selection", "Login after registration"]
   },
   {
     key: "universes",

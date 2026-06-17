@@ -2,6 +2,8 @@ package publicsite
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	domain "github.com/hjyoon/ogame-opensource/backend/internal/domain/publicsite"
 )
@@ -18,8 +20,30 @@ type RegistrationAvailabilityChecker interface {
 	CheckRegistrationAvailability(context.Context, domain.RegistrationDraft) (domain.RegistrationAvailability, error)
 }
 
+type RegistrationAccountCreator interface {
+	CreateRegistrationAccount(context.Context, domain.RegistrationDraft, string) (domain.RegisteredAccount, error)
+}
+
 type RegistrationDraftValidator struct {
 	availability RegistrationAvailabilityChecker
+}
+
+type RegistrationCommand struct {
+	Character     string
+	Password      string
+	Email         string
+	Universe      string
+	TermsAccepted bool
+	RemoteAddr    string
+}
+
+type RegistrationRegistrar struct {
+	availability   RegistrationAvailabilityChecker
+	accounts       RegistrationAccountCreator
+	sessions       LoginSessionWriter
+	tokens         LoginTokenGenerator
+	now            func() time.Time
+	universeNumber int
 }
 
 func NewRegistrationDraftValidator() RegistrationDraftValidator {
@@ -50,4 +74,91 @@ func (v RegistrationDraftValidator) ValidateRegistrationDraft(ctx context.Contex
 	result.Issues = append(result.Issues, availability.Validate()...)
 	result.Valid = len(result.Issues) == 0
 	return result, nil
+}
+
+func NewRegistrationRegistrar(
+	availability RegistrationAvailabilityChecker,
+	accounts RegistrationAccountCreator,
+	sessions LoginSessionWriter,
+	tokens LoginTokenGenerator,
+	universeNumber int,
+) RegistrationRegistrar {
+	return NewRegistrationRegistrarWithClock(availability, accounts, sessions, tokens, universeNumber, time.Now)
+}
+
+func NewRegistrationRegistrarWithClock(
+	availability RegistrationAvailabilityChecker,
+	accounts RegistrationAccountCreator,
+	sessions LoginSessionWriter,
+	tokens LoginTokenGenerator,
+	universeNumber int,
+	now func() time.Time,
+) RegistrationRegistrar {
+	if now == nil {
+		now = time.Now
+	}
+	return RegistrationRegistrar{
+		availability:   availability,
+		accounts:       accounts,
+		sessions:       sessions,
+		tokens:         tokens,
+		now:            now,
+		universeNumber: universeNumber,
+	}
+}
+
+func (r RegistrationRegistrar) RegisterAccount(ctx context.Context, command RegistrationCommand) (domain.RegistrationCreation, error) {
+	draft := domain.RegistrationDraft{
+		Character:     command.Character,
+		Password:      command.Password,
+		Email:         command.Email,
+		Universe:      command.Universe,
+		TermsAccepted: command.TermsAccepted,
+	}
+	validation := draft.Validate()
+	if !validation.Valid {
+		return domain.RegistrationCreation{Valid: false, Issues: validation.Issues}, nil
+	}
+	if r.accounts == nil || r.sessions == nil || r.tokens == nil {
+		return domain.RegistrationCreation{}, errors.New("registration registrar dependencies unavailable")
+	}
+	if r.availability != nil {
+		availability, err := r.availability.CheckRegistrationAvailability(ctx, draft)
+		if err != nil {
+			return domain.RegistrationCreation{}, err
+		}
+		if issues := availability.Validate(); len(issues) > 0 {
+			return domain.RegistrationCreation{Valid: false, Issues: issues}, nil
+		}
+	}
+
+	account, err := r.accounts.CreateRegistrationAccount(ctx, draft, command.RemoteAddr)
+	if err != nil {
+		return domain.RegistrationCreation{}, err
+	}
+	publicSession, err := r.tokens.NewPublicSession()
+	if err != nil {
+		return domain.RegistrationCreation{}, err
+	}
+	privateSession, err := r.tokens.NewPrivateSession()
+	if err != nil {
+		return domain.RegistrationCreation{}, err
+	}
+	session := domain.LoginSession{
+		PlayerID:       account.PlayerID,
+		PublicID:       publicSession,
+		PrivateID:      privateSession,
+		UniverseNumber: r.universeNumber,
+		LastLogin:      r.now().Unix(),
+		RedirectPath:   "/game/overview",
+	}
+	if err := r.sessions.SaveLoginSession(ctx, session, command.RemoteAddr); err != nil {
+		return domain.RegistrationCreation{}, err
+	}
+
+	return domain.RegistrationCreation{
+		Valid:   true,
+		Account: account,
+		Session: session,
+	}, nil
 }

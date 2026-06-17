@@ -2,8 +2,12 @@ package mysqlgame
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"io"
 	"strings"
+	"sync"
 	"testing"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
@@ -57,6 +61,27 @@ func TestNewOverviewRepositoryKeepsSQLQueryer(t *testing.T) {
 	}
 	if _, ok := repository.queryer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL queryer, got %T", repository.queryer)
+	}
+}
+
+func TestSQLQueryerUsesDatabase(t *testing.T) {
+	db := openOverviewTestDB(t)
+	defer db.Close()
+
+	rows, err := (SQLQueryer{DB: db}).QueryContext(context.Background(), "SELECT value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		t.Fatal("expected fake row")
+	}
+	var value int
+	if err := rows.Scan(&value); err != nil {
+		t.Fatal(err)
+	}
+	if value != 1 {
+		t.Fatalf("unexpected fake value: %d", value)
 	}
 }
 
@@ -315,6 +340,75 @@ func TestPlanetOrder(t *testing.T) {
 
 func overviewQuery(playerID int, planetID int) appgame.OverviewQuery {
 	return appgame.OverviewQuery{PlayerID: playerID, PlanetID: planetID}
+}
+
+var registerOverviewTestDriver sync.Once
+
+func openOverviewTestDB(t *testing.T) *sql.DB {
+	t.Helper()
+	registerOverviewTestDriver.Do(func() {
+		sql.Register("overview_queryer_test", overviewTestDriver{})
+	})
+	db, err := sql.Open("overview_queryer_test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
+
+type overviewTestDriver struct{}
+
+func (overviewTestDriver) Open(string) (driver.Conn, error) {
+	return overviewTestConn{}, nil
+}
+
+type overviewTestConn struct{}
+
+func (overviewTestConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("prepare unsupported")
+}
+
+func (overviewTestConn) Close() error {
+	return nil
+}
+
+func (overviewTestConn) Begin() (driver.Tx, error) {
+	return overviewTestTx{}, nil
+}
+
+func (overviewTestConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	return &overviewTestRows{}, nil
+}
+
+type overviewTestTx struct{}
+
+func (overviewTestTx) Commit() error {
+	return nil
+}
+
+func (overviewTestTx) Rollback() error {
+	return nil
+}
+
+type overviewTestRows struct {
+	done bool
+}
+
+func (r *overviewTestRows) Columns() []string {
+	return []string{"value"}
+}
+
+func (r *overviewTestRows) Close() error {
+	return nil
+}
+
+func (r *overviewTestRows) Next(dest []driver.Value) error {
+	if r.done {
+		return io.EOF
+	}
+	dest[0] = int64(1)
+	r.done = true
+	return nil
 }
 
 type fakeQueryer struct {

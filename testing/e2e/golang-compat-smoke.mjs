@@ -129,6 +129,61 @@ try {
     ]
   }));
 
+  const registrationPassword = "E2E_http123";
+  const createdRegistration = await request("/api/public/registration", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      character: `NewPilot${runId}`,
+      password: registrationPassword,
+      email: `new-pilot-${runId}@example.local`,
+      universe: universes[0]?.baseUrl ?? "http://localhost:8888",
+      agb: true
+    })
+  });
+  let createdRegistrationBody = {};
+  try {
+    createdRegistrationBody = JSON.parse(createdRegistration.body);
+  } catch {
+    createdRegistrationBody = {};
+  }
+  const createdRegistrationCookie = createdRegistration.headers["set-cookie"] ?? "";
+  const createdRegistrationCookiePair = createdRegistrationCookie.split(";")[0] ?? "";
+  let createdRegistrationSession = "";
+  try {
+    createdRegistrationSession = new URL(createdRegistrationBody.session?.redirectTo ?? "", baseUrl).searchParams.get("session") ?? "";
+  } catch {
+    createdRegistrationSession = "";
+  }
+  const createdOverview = createdRegistrationSession
+    ? await request(`/api/game/overview?session=${encodeURIComponent(createdRegistrationSession)}`, {
+      headers: { Cookie: createdRegistrationCookiePair }
+    })
+    : { status: 0, headers: {}, body: "" };
+  let createdOverviewBody = {};
+  try {
+    createdOverviewBody = JSON.parse(createdOverview.body);
+  } catch {
+    createdOverviewBody = {};
+  }
+  cases.push(finalize({
+    case: "go_registration_creation_api",
+    checks: [
+      check(createdRegistration.status === 200, "registration creation returns HTTP 200", { status: createdRegistration.status }),
+      check(hasHeader(createdRegistration, "content-type", "application/json"), "registration creation returns JSON"),
+      check(createdRegistrationBody.valid === true && createdRegistrationBody.created === true, "registration creation succeeds", createdRegistrationBody),
+      check(Number.isInteger(createdRegistrationBody.account?.playerId) && createdRegistrationBody.account.playerId > 0, "registration returns the new player id", createdRegistrationBody.account ?? {}),
+      check(Number.isInteger(createdRegistrationBody.account?.homePlanetId) && createdRegistrationBody.account.homePlanetId > 0, "registration creates a home planet", createdRegistrationBody.account ?? {}),
+      check(typeof createdRegistrationBody.session?.redirectTo === "string" && createdRegistrationBody.session.redirectTo.includes("/game/overview"), "registration returns overview redirect", createdRegistrationBody.session ?? {}),
+      check(createdRegistrationCookiePair.startsWith(`prsess_${createdRegistrationBody.account?.playerId ?? ""}_`), "registration sets private session cookie", { cookie: createdRegistrationCookiePair }),
+      check(!createdRegistration.body.includes(registrationPassword), "registration creation response does not echo password"),
+      check(!createdRegistration.body.includes("validatemd") && !createdRegistration.body.includes("activationCode"), "registration creation response does not expose activation code"),
+      check(createdOverview.status === 200, "created registration session can read game overview", { status: createdOverview.status }),
+      check(createdOverviewBody.authenticated === true, "created registration overview is authenticated", createdOverviewBody),
+      check(createdOverviewBody.overview?.currentPlanet?.id === createdRegistrationBody.account?.homePlanetId, "created overview uses home planet", createdOverviewBody.overview?.currentPlanet ?? {})
+    ]
+  }));
+
   const validLogin = await request("/api/public/login/validate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -397,7 +452,7 @@ try {
       check(hasHeader(css, "content-type", "text/css"), "React CSS bundle has CSS content type"),
       check(js.body.includes("/register") && js.body.includes("/universes"), "React bundle contains natural public route model"),
       check(js.body.includes("/api/public/universes"), "React bundle consumes universe catalog API"),
-      check(js.body.includes("/api/public/registration/validate"), "React bundle consumes registration validation API"),
+      check(js.body.includes("/api/public/registration"), "React bundle consumes registration creation API"),
       check(js.body.includes("/api/public/login"), "React bundle consumes login submit API"),
       check(js.body.includes("/api/game/overview"), "React bundle consumes game overview API"),
       check(js.body.includes("legacy-public-main"), "React bundle contains legacy public home layout"),
@@ -425,6 +480,7 @@ try {
 
   const postHealth = await request("/api/healthz", { method: "POST" });
   const getRegistrationValidation = await request("/api/public/registration/validate");
+  const getRegistration = await request("/api/public/registration");
   const getLoginValidation = await request("/api/public/login/validate");
   const getLoginSubmit = await request("/api/public/login");
   const postGameSession = await request("/api/game/session", { method: "POST" });
@@ -436,6 +492,8 @@ try {
       check(hasHeader(postHealth, "allow", "GET, HEAD"), "method rejection returns Allow header"),
       check(getRegistrationValidation.status === 405, "GET registration validation endpoint is rejected", { status: getRegistrationValidation.status }),
       check(hasHeader(getRegistrationValidation, "allow", "POST"), "registration validation method rejection returns Allow header"),
+      check(getRegistration.status === 405, "GET registration creation endpoint is rejected", { status: getRegistration.status }),
+      check(hasHeader(getRegistration, "allow", "POST"), "registration creation method rejection returns Allow header"),
       check(getLoginValidation.status === 405, "GET login validation endpoint is rejected", { status: getLoginValidation.status }),
       check(hasHeader(getLoginValidation, "allow", "POST"), "login validation method rejection returns Allow header"),
       check(getLoginSubmit.status === 405, "GET login submit endpoint is rejected", { status: getLoginSubmit.status }),

@@ -2,7 +2,11 @@ package mysqlcatalog
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"io"
+	"sync"
 	"testing"
 
 	"github.com/go-sql-driver/mysql"
@@ -30,6 +34,40 @@ func TestNewMasterUniverseCatalogUsesSQLQueryer(t *testing.T) {
 
 	if _, ok := catalog.queryer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQLQueryer, got %T", catalog.queryer)
+	}
+}
+
+func TestOpenReturnsDatabaseHandle(t *testing.T) {
+	db, err := Open(MasterDBConfig{Name: "master"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if db == nil {
+		t.Fatal("expected database handle")
+	}
+}
+
+func TestSQLQueryerUsesDatabase(t *testing.T) {
+	db := openMasterCatalogTestDB(t)
+	defer db.Close()
+
+	rows, err := (SQLQueryer{DB: db}).QueryContext(context.Background(), "SELECT num, uniurl FROM unis")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		t.Fatal("expected fake row")
+	}
+	var number int
+	var rawURL string
+	if err := rows.Scan(&number, &rawURL); err != nil {
+		t.Fatal(err)
+	}
+	if number != 1 || rawURL != "localhost:8888" {
+		t.Fatalf("unexpected fake row: %d %q", number, rawURL)
 	}
 }
 
@@ -171,5 +209,75 @@ func (r *fakeRows) Scan(dest ...any) error {
 	r.index++
 	*(dest[0].(*int)) = item.number
 	*(dest[1].(*string)) = item.rawURL
+	return nil
+}
+
+var registerMasterCatalogTestDriver sync.Once
+
+func openMasterCatalogTestDB(t *testing.T) *sql.DB {
+	t.Helper()
+	registerMasterCatalogTestDriver.Do(func() {
+		sql.Register("master_catalog_test", masterCatalogTestDriver{})
+	})
+	db, err := sql.Open("master_catalog_test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
+
+type masterCatalogTestDriver struct{}
+
+func (masterCatalogTestDriver) Open(string) (driver.Conn, error) {
+	return masterCatalogTestConn{}, nil
+}
+
+type masterCatalogTestConn struct{}
+
+func (masterCatalogTestConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("prepare unsupported")
+}
+
+func (masterCatalogTestConn) Close() error {
+	return nil
+}
+
+func (masterCatalogTestConn) Begin() (driver.Tx, error) {
+	return masterCatalogTestTx{}, nil
+}
+
+func (masterCatalogTestConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	return &masterCatalogTestRows{}, nil
+}
+
+type masterCatalogTestTx struct{}
+
+func (masterCatalogTestTx) Commit() error {
+	return nil
+}
+
+func (masterCatalogTestTx) Rollback() error {
+	return nil
+}
+
+type masterCatalogTestRows struct {
+	done bool
+}
+
+func (r *masterCatalogTestRows) Columns() []string {
+	return []string{"num", "uniurl"}
+}
+
+func (r *masterCatalogTestRows) Close() error {
+	return nil
+}
+
+func (r *masterCatalogTestRows) Next(dest []driver.Value) error {
+	if r.done {
+		return io.EOF
+	}
+	dest[0] = int64(1)
+	dest[1] = "localhost:8888"
+	r.done = true
 	return nil
 }
