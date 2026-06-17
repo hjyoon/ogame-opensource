@@ -36,7 +36,23 @@ type LegacyPublicHomeProps = {
   onLoginSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 };
 
-const publicImageBase = "/public-assets/img";
+export type LegacyPublicLoginProps = Pick<
+  LegacyPublicHomeProps,
+  "universes" | "loginDraft" | "loginResult" | "loginPending" | "loginError" | "onLoginChange" | "onLoginSubmit"
+>;
+
+export const publicImageBase = "/public-assets/img";
+
+export function legacyPublicStyle(panelImage = "part_register.jpg"): React.CSSProperties {
+  return {
+    "--legacy-public-body-bg": `url("${publicImageBase}/sterne_bg2.jpg")`,
+    "--legacy-public-main-bg": `url("${publicImageBase}/startseite_bg.jpg")`,
+    "--legacy-public-login-bg": `url("${publicImageBase}/part_login2.jpg")`,
+    "--legacy-public-panel-bg": `url("${publicImageBase}/${panelImage}")`,
+    "--legacy-public-input-bg": `url("${publicImageBase}/eingabe_back.png")`,
+    "--legacy-public-point-bg": `url("${publicImageBase}/point.png")`
+  } as React.CSSProperties;
+}
 
 export function LegacyPublicHome({
   universes,
@@ -48,25 +64,13 @@ export function LegacyPublicHome({
   onLoginSubmit
 }: LegacyPublicHomeProps) {
   return (
-    <main
-      className="legacy-public-page"
-      style={
-        {
-          "--legacy-public-body-bg": `url("${publicImageBase}/sterne_bg2.jpg")`,
-          "--legacy-public-main-bg": `url("${publicImageBase}/startseite_bg.jpg")`,
-          "--legacy-public-login-bg": `url("${publicImageBase}/part_login2.jpg")`,
-          "--legacy-public-panel-bg": `url("${publicImageBase}/part_register.jpg")`,
-          "--legacy-public-input-bg": `url("${publicImageBase}/eingabe_back.png")`,
-          "--legacy-public-point-bg": `url("${publicImageBase}/point.png")`
-        } as React.CSSProperties
-      }
-    >
+    <main className="legacy-public-page" style={legacyPublicStyle()}>
       <a className="legacy-public-skip" href="#pustekuchen">
         Link Login
       </a>
       <div className="legacy-public-main">
         <LanguageLinks />
-        <MainMenu />
+        <MainMenu active="home" />
         <HomeContent />
         <LoginStrip
           loginDraft={loginDraft}
@@ -82,7 +86,7 @@ export function LegacyPublicHome({
   );
 }
 
-function LanguageLinks() {
+export function LanguageLinks() {
   const flags = [
     ["de", "Deutschland", "de.gif"],
     ["en", "English", "gb.gif"],
@@ -103,13 +107,27 @@ function LanguageLinks() {
   );
 }
 
-function MainMenu() {
+export function MainMenu({ active }: { active: "home" | "about" | "preview" | "reg" }) {
+  const items = [
+    { key: "home", label: "Start", href: "/home" },
+    { key: "about", label: "About OGame", href: "/about" },
+    { key: "preview", label: "Pictures", href: "/screenshots" },
+    { key: "reg", label: "Join Now!", href: "/register" }
+  ] as const;
+
   return (
     <nav className="legacy-public-mainmenu" aria-label="Main menu">
-      <div className="legacy-public-menupoint">Start</div>
-      <a href="/about">About OGame</a>
-      <a href="/screenshots">Pictures</a>
-      <a href="/register">Join Now!</a>
+      {items.map((item) =>
+        item.key === active ? (
+          <div className="legacy-public-menupoint" key={item.key}>
+            {item.label}
+          </div>
+        ) : (
+          <a href={item.href} key={item.key}>
+            {item.label}
+          </a>
+        )
+      )}
     </nav>
   );
 }
@@ -133,7 +151,7 @@ function HomeContent() {
   );
 }
 
-function LoginStrip({
+export function LoginStrip({
   universes,
   loginDraft,
   loginResult,
@@ -141,7 +159,7 @@ function LoginStrip({
   loginError,
   onLoginChange,
   onLoginSubmit
-}: LegacyPublicHomeProps) {
+}: LegacyPublicLoginProps) {
   return (
     <section className="legacy-public-login" id="pustekuchen">
       <div className="legacy-public-login-labels">

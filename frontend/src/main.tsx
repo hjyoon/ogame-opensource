@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { LegacyGameOverview, type GameOverviewStatus } from "./LegacyGameOverview";
 import { LegacyPublicHome } from "./LegacyPublicHome";
+import { LegacyPublicRegister } from "./LegacyPublicRegister";
 import { publicRoutes, resolvePublicRoute } from "./routes";
 import "./styles.css";
 
@@ -271,6 +272,26 @@ function App() {
     );
   }
 
+  if (route.key === "register") {
+    return (
+      <LegacyPublicRegister
+        loginDraft={loginDraft}
+        loginError={loginError}
+        loginPending={loginPending}
+        loginResult={loginResult}
+        onLoginChange={updateLoginDraft}
+        onLoginSubmit={submitLogin}
+        onRegistrationChange={updateRegistrationDraft}
+        onRegistrationSubmit={validateRegistration}
+        registrationDraft={registrationDraft}
+        registrationError={registrationError}
+        registrationPending={registrationPending}
+        registrationResult={registrationResult}
+        universes={universes}
+      />
+    );
+  }
+
   return (
     <main className="app-shell" data-route={route.key} data-legacy-alias={resolution.isLegacyAlias ? "true" : "false"}>
       <nav className="top-nav" aria-label="Public navigation">
@@ -359,84 +380,6 @@ function App() {
           </div>
         </div>
       </section>
-
-      {route.key === "register" ? (
-        <section className="panel" data-testid="registration-draft">
-          <div className="panel-title">
-            <span>Registration Draft</span>
-            <strong className={registrationResult?.valid ? "badge good" : "badge neutral"}>
-              {registrationResult ? (registrationResult.valid ? "valid" : "review") : "draft"}
-            </strong>
-          </div>
-          <form className="registration-form" onSubmit={validateRegistration}>
-            <label>
-              <span>Commander</span>
-              <input
-                name="character"
-                onChange={(event) => updateRegistrationDraft("character", event.currentTarget.value)}
-                value={registrationDraft.character}
-              />
-            </label>
-            <label>
-              <span>Email</span>
-              <input
-                name="email"
-                onChange={(event) => updateRegistrationDraft("email", event.currentTarget.value)}
-                type="email"
-                value={registrationDraft.email}
-              />
-            </label>
-            <label>
-              <span>Password</span>
-              <input
-                name="password"
-                onChange={(event) => updateRegistrationDraft("password", event.currentTarget.value)}
-                type="password"
-                value={registrationDraft.password}
-              />
-            </label>
-            <label>
-              <span>Universe</span>
-              <select
-                name="universe"
-                onChange={(event) => updateRegistrationDraft("universe", event.currentTarget.value)}
-                value={registrationDraft.universe}
-              >
-                <option value="">Select universe</option>
-                {universes.map((universe) => (
-                  <option key={universe.number} value={universe.baseUrl}>
-                    {universe.number} - {universe.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="check-row">
-              <input
-                checked={registrationDraft.agb}
-                name="agb"
-                onChange={(event) => updateRegistrationDraft("agb", event.currentTarget.checked)}
-                type="checkbox"
-              />
-              <span>Basic policies accepted</span>
-            </label>
-            <button disabled={registrationPending} type="submit">
-              {registrationPending ? "Checking" : "Validate"}
-            </button>
-          </form>
-          {registrationError ? <p className="form-error">{registrationError}</p> : null}
-          {registrationResult && !registrationResult.valid ? (
-            <ul className="issue-list">
-              {registrationResult.issues.map((issue) => (
-                <li key={`${issue.field}-${issue.code}`}>
-                  <strong>{issue.field}</strong>
-                  <span>{issue.message}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {registrationResult?.valid ? <p className="form-success">Draft accepted for the next registration migration step.</p> : null}
-        </section>
-      ) : null}
 
       {route.key === "universes" ? (
         <section className="panel" data-testid="universe-catalog">

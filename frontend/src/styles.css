@@ -626,6 +626,16 @@ dd {
   z-index: 1;
 }
 
+.legacy-public-register-panel {
+  background-image: var(--legacy-public-panel-bg);
+  height: 384px;
+  left: 400px;
+  position: absolute;
+  top: 70px;
+  width: 450px;
+  z-index: 1;
+}
+
 .legacy-public-title {
   color: #0a1c25;
   font-size: 16px;
@@ -644,6 +654,132 @@ dd {
   text-align: left;
   top: 50px;
   width: 400px;
+}
+
+.legacy-register-head {
+  color: #b1daf2;
+  font-size: 12px;
+  text-align: justify;
+  width: 400px;
+}
+
+.legacy-register-container {
+  height: 300px;
+  left: 10px;
+  position: absolute;
+  top: 80px;
+  width: 380px;
+}
+
+.legacy-register-container table {
+  border-collapse: collapse;
+  border-spacing: 0;
+  color: #ccc;
+  font-size: 10px;
+  text-align: right;
+}
+
+.legacy-register-container td {
+  padding: 1px;
+  vertical-align: middle;
+}
+
+.legacy-register-label,
+.legacy-register-uni-label {
+  color: #ccc;
+  min-width: 128px;
+  text-align: right;
+}
+
+.legacy-register-input-cell {
+  text-align: left;
+}
+
+.legacy-register-field {
+  height: 15px;
+  text-align: left;
+  width: 120px;
+}
+
+select.legacy-register-universe {
+  height: 17px;
+  width: 122px;
+}
+
+.legacy-register-uni-info {
+  font-size: 10px;
+  line-height: 12px;
+  text-align: left;
+}
+
+.legacy-register-agb-row td {
+  padding-top: 6px;
+}
+
+.legacy-register-agb-cell {
+  color: #ccc;
+  line-height: 13px;
+  text-align: left;
+  width: 220px;
+}
+
+.legacy-register-agb {
+  color: #ccc;
+}
+
+.legacy-register-agb:hover {
+  color: #fff;
+}
+
+.legacy-register-info {
+  position: absolute;
+  top: 210px;
+  width: 400px;
+}
+
+.legacy-register-status {
+  font-size: 10px;
+  left: 0;
+  line-height: 13px;
+  max-height: 42px;
+  overflow: hidden;
+  position: absolute;
+  top: 210px;
+  width: 400px;
+}
+
+.legacy-register-warning {
+  color: #ff7876;
+}
+
+.legacy-register-fine {
+  color: #00ff00;
+}
+
+.legacy-register-submit {
+  background: transparent;
+  border: 0;
+  color: #497ec7;
+  cursor: pointer;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 13px;
+  font-weight: bold;
+  height: 20px;
+  left: 75px;
+  padding-top: 4px;
+  position: absolute;
+  text-align: center;
+  top: 286px;
+  width: 250px;
+}
+
+.legacy-register-submit:hover {
+  color: #fff;
+}
+
+.legacy-register-submit:disabled {
+  cursor: wait;
+  opacity: 0.7;
 }
 
 .legacy-public-register-button {
