@@ -10,6 +10,12 @@ This branch starts a staged migration from the legacy PHP game to:
 
 Do not remove or weaken legacy behavior while porting. Each migrated flow must be checked against the existing E2E coverage or a new compatibility case.
 
+## Migration Interpretation
+
+Do not translate PHP files one-for-one. Reinterpret screens, APIs, state, and modules naturally for React and Go. New routes do not need `.php` suffixes. Preserve legacy URLs only as compatibility entry points.
+
+Game mechanics are different: resource math, timings, combat, queues, economy, targeting, reports, and permissions must behave exactly like the legacy game. Prove equivalence with focused unit tests plus E2E checks against the PHP oracle.
+
 ## Architecture Rule
 
 All newly migrated code must follow Clean Architecture. This is mandatory, not advisory.
