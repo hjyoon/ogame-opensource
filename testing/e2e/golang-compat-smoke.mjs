@@ -298,6 +298,8 @@ try {
   const publicAboutImage = await request("/public-assets/img/ogame_admiral.jpg");
   const publicStoryImage = await request("/public-assets/img/legorians.jpg");
   const publicFightImage = await request("/public-assets/img/fight.gif");
+  const publicScreenshotThumb = await request("/public-assets/img/overview_t.jpg");
+  const publicWallpaperThumb = await request("/public-assets/img/battleship_t.jpg");
   cases.push(finalize({
     case: "go_public_legacy_assets",
     checks: [
@@ -314,7 +316,11 @@ try {
       check(publicStoryImage.status === 200, "legacy public story image returns HTTP 200", { status: publicStoryImage.status }),
       check(hasHeader(publicStoryImage, "content-type", "image/jpeg"), "legacy public story image has JPEG content type"),
       check(publicFightImage.status === 200, "legacy public story gif returns HTTP 200", { status: publicFightImage.status }),
-      check(hasHeader(publicFightImage, "content-type", "image/gif"), "legacy public story gif has GIF content type")
+      check(hasHeader(publicFightImage, "content-type", "image/gif"), "legacy public story gif has GIF content type"),
+      check(publicScreenshotThumb.status === 200, "legacy public screenshot thumbnail returns HTTP 200", { status: publicScreenshotThumb.status }),
+      check(hasHeader(publicScreenshotThumb, "content-type", "image/jpeg"), "legacy public screenshot thumbnail has JPEG content type"),
+      check(publicWallpaperThumb.status === 200, "legacy public wallpaper thumbnail returns HTTP 200", { status: publicWallpaperThumb.status }),
+      check(hasHeader(publicWallpaperThumb, "content-type", "image/jpeg"), "legacy public wallpaper thumbnail has JPEG content type")
     ]
   }));
 
@@ -398,6 +404,7 @@ try {
       check(js.body.includes("legacy-public-register-panel"), "React bundle contains legacy public registration layout"),
       check(js.body.includes("legacy-public-about-panel"), "React bundle contains legacy public about layout"),
       check(js.body.includes("legacy-public-story-panel"), "React bundle contains legacy public story layout"),
+      check(js.body.includes("legacy-public-screenshots-panel"), "React bundle contains legacy public screenshots layout"),
       check(js.body.includes("legacy-game-shell"), "React bundle contains legacy game overview layout")
     ]
   }));

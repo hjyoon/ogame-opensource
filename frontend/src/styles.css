@@ -656,6 +656,16 @@ dd {
   z-index: 1;
 }
 
+.legacy-public-screenshots-panel {
+  background-image: var(--legacy-public-panel-bg);
+  height: 384px;
+  left: 400px;
+  position: absolute;
+  top: 70px;
+  width: 450px;
+  z-index: 1;
+}
+
 .legacy-public-title {
   color: #0a1c25;
   font-size: 16px;
@@ -683,6 +693,10 @@ dd {
   width: 405px;
 }
 
+.legacy-screenshots-scroll {
+  text-align: center;
+}
+
 .legacy-public-scroll p {
   margin: 12px 0;
 }
@@ -697,6 +711,24 @@ dd {
   font-size: 14px;
   font-weight: bold;
   text-align: left;
+}
+
+.legacy-screenshots-headline {
+  font-size: 14px;
+  font-weight: bold;
+  text-align: center;
+}
+
+.legacy-screenshot-image {
+  padding-bottom: 10px;
+}
+
+.legacy-screenshot-image img {
+  border: 1px solid #516274;
+}
+
+.legacy-screenshot-image a:hover img {
+  border-color: #fff;
 }
 
 .legacy-story-link {
