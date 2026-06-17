@@ -1,4 +1,5 @@
 import React from "react";
+import { gameRouteURL, gameRoutes, type GameRoute } from "./gameRoutes";
 
 export type GameOverviewStatus = {
   authenticated: boolean;
@@ -53,27 +54,12 @@ type Resources = {
 type LegacyGameOverviewProps = {
   status: GameOverviewStatus | null;
   error: string | null;
+  route: GameRoute;
 };
 
 const skinBase = "/legacy-assets/use/uV";
 
-const menuItems = [
-  "Overview",
-  "Empire",
-  "Buildings",
-  "Resources",
-  "Research",
-  "Shipyard",
-  "Fleet",
-  "Technology",
-  "Galaxy",
-  "Defense",
-  "Alliance",
-  "Statistics",
-  "Messages"
-];
-
-export function LegacyGameOverview({ status, error }: LegacyGameOverviewProps) {
+export function LegacyGameOverview({ status, error, route }: LegacyGameOverviewProps) {
   const overview = status?.authenticated ? status.overview : undefined;
   const issue = status && !status.authenticated ? status.issues[0]?.message ?? "Session is invalid." : null;
 
@@ -90,12 +76,13 @@ export function LegacyGameOverview({ status, error }: LegacyGameOverviewProps) {
       <header className="legacy-header-top">
         {overview ? <LegacyResourceHeader overview={overview} /> : <div className="legacy-header-placeholder">OGame</div>}
       </header>
-      <LegacyLeftMenu />
+      <LegacyLeftMenu activeRoute={route} />
       <section className="legacy-content">
         {error ? <LegacyMessage tone="error" text={error} /> : null}
         {!error && issue ? <LegacyMessage tone="error" text={issue} /> : null}
         {!error && !issue && !overview ? <LegacyMessage tone="neutral" text="Loading overview..." /> : null}
-        {overview ? <OverviewTable overview={overview} /> : null}
+        {overview && route.key === "overview" ? <OverviewTable overview={overview} /> : null}
+        {overview && route.key !== "overview" ? <MigrationPendingGameTable route={route} /> : null}
       </section>
     </main>
   );
@@ -175,7 +162,7 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
   );
 }
 
-function LegacyLeftMenu() {
+function LegacyLeftMenu({ activeRoute }: { activeRoute: GameRoute }) {
   return (
     <aside className="legacy-leftmenu">
       <div className="legacy-center">
@@ -190,11 +177,16 @@ function LegacyLeftMenu() {
                   <img alt="" height={40} src={`${skinBase}/gfx/ogame-produktion.jpg`} width={110} />
                 </td>
               </tr>
-              {menuItems.map((item) => (
-                <tr key={item}>
-                <td>
+              {gameRoutes.map((route) => (
+                <tr key={route.key}>
+                  <td>
                     <div className="legacy-center">
-                      <a href="/game/overview">{item}</a>
+                      <a
+                        aria-current={route.key === activeRoute.key ? "page" : undefined}
+                        href={gameRouteURL(route.path, window.location.search)}
+                      >
+                        {route.label}
+                      </a>
                     </div>
                   </td>
                 </tr>
@@ -209,6 +201,24 @@ function LegacyLeftMenu() {
         </div>
       </div>
     </aside>
+  );
+}
+
+function MigrationPendingGameTable({ route }: { route: GameRoute }) {
+  return (
+    <table className="legacy-overview-table" width={519}>
+      <tbody>
+        <tr>
+          <td className="legacy-c">{route.label}</td>
+        </tr>
+        <tr>
+          <th>This screen is queued for React and Go migration.</th>
+        </tr>
+        <tr>
+          <th>The authenticated game shell, resource header, and session guard are active.</th>
+        </tr>
+      </tbody>
+    </table>
   );
 }
 
@@ -358,7 +368,7 @@ function rowsOfTwo(items: GamePlanetSummary[]): GamePlanetSummary[][] {
 function planetHref(planetID: number): string {
   const search = new URLSearchParams(window.location.search);
   search.set("cp", String(planetID));
-  return `/game/overview?${search.toString()}`;
+  return gameRouteURL("/game/overview", search.toString());
 }
 
 function planetImagePath(planet: GamePlanetOverview | GamePlanetSummary, small: boolean): string {

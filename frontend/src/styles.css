@@ -445,6 +445,11 @@ dd {
   vertical-align: middle;
 }
 
+.legacy-menu a[aria-current="page"] {
+  color: #fff;
+  text-decoration: underline;
+}
+
 .legacy-content {
   height: calc(100vh - 96px);
   left: 190px;

@@ -1,6 +1,6 @@
 # Migration Status
 
-Last updated: 2026-06-17 KST, branch `hjyoon/golang`.
+Last updated: 2026-06-18 KST, branch `hjyoon/golang`.
 
 Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http` backend migration. Keep this file under 4KB; split details into linked docs before exceeding that limit.
 
@@ -19,19 +19,19 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - `/api/public/login/validate` and `/api/public/login` validate credentials, create public/private sessions, update legacy session fields, set the private cookie, and return a natural `/game/overview` redirect.
 - `/api/game/session` validates public session plus private cookie, including banned and IP checks.
 - `/api/game/overview` returns a session-guarded read-only overview summary from legacy `users`, `planets`, and `uni`.
-- `/game/overview` targets the legacy PHP game visual composition: skin, header/menu, overview table, planet image, and resource summary.
+- Authenticated `/game/*` routes resolve through the React game shell, preserve session query parameters, and render overview or pending legacy-style tables.
 - Go migration QA smoke covers health, routes, assets, registration validation/creation, login, session lookup, overview lookup, and method guards.
-- Playwright headless visual E2E compares legacy PHP and Go/React public pages by screenshot diff plus key box geometry.
+- Playwright visual/CSR E2E compares public pages and checks game menu session-preserving navigation.
 
 ## Latest Verified Implementation
 
-- Milestone: public page visual parity is guarded by headless Playwright comparison.
+- Milestone: public visual parity plus authenticated game route shell are guarded by automated checks.
 
 ## Verified QA
 
 - `bun run build && bun run check && bun test`: passing.
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
-- `testing/e2e/run-playwright-visual-e2e.sh`: passing for public desktop/mobile pages.
+- Playwright visual and CSR E2E: passing in Chromium and Firefox for public parity and game menu navigation.
 - Go internal coverage gate: `98.1% >= 97%`.
 - Go smoke JSON: `all_pass: true`, including registration-created overview access.
 
@@ -42,7 +42,7 @@ Full legacy PHP E2E was not run for this Go migration step. Keep legacy PHP beha
 - Implement activation confirmation, welcome mail/message, IP log, cleanup timer, and rank recalculation side effects.
 - Add logout, expiry, and deeper session security behavior.
 - Public legacy visual baseline is complete for the current public route set.
-- Expand authenticated React game routes beyond overview with legacy PHP screen composition.
+- Port authenticated game screens beyond route shell placeholders with legacy PHP screen composition.
 - Port current planet switching and full overview actions from legacy DB.
 - Port resource production, queues, buildings, research, shipyard, defense, fleet, reports, messages, galaxy, alliance, admin, maintenance, options, recovery, deletion, vacation, bans, and permissions.
 - Convert legacy E2E cases into Go compatibility checks as each flow is migrated.

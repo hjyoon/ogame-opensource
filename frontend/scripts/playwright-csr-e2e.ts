@@ -15,6 +15,8 @@ const rootDir = resolve(import.meta.dir, "../..");
 const browserName = browserEnv("OGAME_PLAYWRIGHT_BROWSER", "chromium");
 const outputDir = resolve(rootDir, ".tmp/playwright-csr", browserName);
 const migratedBaseURL = trimTrailingSlash(process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890");
+const loginSmokeUser = process.env.OGAME_GO_LOGIN_SMOKE_USER ?? "legor";
+const loginSmokePassword = process.env.OGAME_GO_LOGIN_SMOKE_PASS ?? "admin";
 const defaultChromeExecutable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const defaultBrowserExecutable = browserName === "firefox" ? undefined : defaultChromeExecutable;
 const browserExecutable =
@@ -55,6 +57,16 @@ try {
 
   await page.goto(`${migratedBaseURL}/home`, { waitUntil: "networkidle", timeout: 15_000 });
   await assertClientNavigation(page, "home register CTA", "#register.bigbutton", "/register.php");
+
+  const gameSessionSearch = await authenticateGameSession(page);
+  await page.goto(`${migratedBaseURL}/game/overview${gameSessionSearch}`, { waitUntil: "networkidle", timeout: 15_000 });
+  await page.evaluate(() => {
+    window.__ogameCsrProbe = "game-overview-load";
+  });
+  await record("game overview shell loads with session", async () => gameShellState(page, "game-overview-load", "Overview"));
+  await assertGameClientNavigation(page, "game buildings menu preserves CSR", "a[href^='/game/buildings']", "/game/buildings", "Buildings");
+  await assertGameClientNavigation(page, "game fleet menu preserves CSR", "a[href^='/game/fleet']", "/game/fleet", "Fleet");
+  await assertGameClientNavigation(page, "game overview menu preserves CSR", "a[href^='/game/overview']", "/game/overview", "Overview");
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -110,6 +122,36 @@ async function assertHistoryNavigation(page: Page, name: string, direction: "bac
   });
 }
 
+async function assertGameClientNavigation(
+  page: Page,
+  name: string,
+  selector: string,
+  expectedPathname: string,
+  expectedMenuLabel: string
+) {
+  const marker = `probe-${name}`;
+  await page.evaluate((value) => {
+    window.__ogameCsrProbe = value;
+  }, marker);
+  await page.locator(selector).click();
+  await page.waitForFunction((pathname) => window.location.pathname === pathname, expectedPathname, { timeout: 5_000 });
+  await record(name, async () => {
+    const state = await gameShellState(page, marker, expectedMenuLabel);
+    return {
+      pass:
+        state.details.pathname === expectedPathname &&
+        state.details.probe === marker &&
+        state.details.search.includes("session=") &&
+        state.details.gameShell === true &&
+        state.details.activeMenuLabel === expectedMenuLabel &&
+        (expectedMenuLabel === "Overview" || state.details.pendingText === true) &&
+        state.details.legacyCssLinks === 0 &&
+        state.details.legacyBody === false,
+      details: state.details
+    };
+  });
+}
+
 async function publicChromeState(page: Page) {
   const state = await page.evaluate(() => ({
     legacyCssLinks: document.head.querySelectorAll("link[data-legacy-public-css]").length,
@@ -122,6 +164,29 @@ async function publicChromeState(page: Page) {
   };
 }
 
+async function gameShellState(page: Page, expectedProbe: string, expectedMenuLabel: string) {
+  const state = await page.evaluate(() => ({
+    pathname: window.location.pathname,
+    search: window.location.search,
+    probe: window.__ogameCsrProbe,
+    gameShell: document.querySelector(".legacy-game-shell") !== null,
+    activeMenuLabel: document.querySelector(".legacy-menu a[aria-current='page']")?.textContent?.trim() ?? "",
+    legacyCssLinks: document.head.querySelectorAll("link[data-legacy-public-css]").length,
+    legacyBody: document.body.classList.contains("legacy-public-body"),
+    pendingText: document.body.textContent?.includes("queued for React and Go migration") ?? false
+  }));
+  return {
+    pass:
+      state.gameShell &&
+      state.search.includes("session=") &&
+      state.activeMenuLabel === expectedMenuLabel &&
+      state.probe === expectedProbe &&
+      state.legacyCssLinks === 0 &&
+      !state.legacyBody,
+    details: state
+  };
+}
+
 async function csrState(page: Page) {
   return await page.evaluate(() => ({
     pathname: window.location.pathname,
@@ -129,6 +194,39 @@ async function csrState(page: Page) {
     legacyCssLinks: document.head.querySelectorAll("link[data-legacy-public-css]").length,
     legacyBody: document.body.classList.contains("legacy-public-body")
   }));
+}
+
+async function authenticateGameSession(page: Page): Promise<string> {
+  const universesResponse = await fetch(`${migratedBaseURL}/api/public/universes`);
+  const universesPayload = await universesResponse.json();
+  const universe = universesPayload.universes?.[0]?.baseUrl ?? "http://localhost:8888";
+  const loginResponse = await fetch(`${migratedBaseURL}/api/public/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      login: loginSmokeUser,
+      pass: loginSmokePassword,
+      universe
+    })
+  });
+  const loginPayload = await loginResponse.json();
+  const redirectTo = loginPayload.session?.redirectTo;
+  const setCookie = loginResponse.headers.get("set-cookie") ?? "";
+  const [cookiePair] = setCookie.split(";");
+  const separator = cookiePair?.indexOf("=") ?? -1;
+  if (loginResponse.status !== 200 || loginPayload.valid !== true || typeof redirectTo !== "string" || separator <= 0) {
+    throw new Error(`Unable to create game session: ${JSON.stringify(loginPayload)}`);
+  }
+  await page.context().addCookies([
+    {
+      name: cookiePair.slice(0, separator),
+      value: cookiePair.slice(separator + 1),
+      url: migratedBaseURL,
+      httpOnly: setCookie.toLowerCase().includes("httponly"),
+      sameSite: "Lax"
+    }
+  ]);
+  return new URL(redirectTo, migratedBaseURL).search;
 }
 
 async function record(name: string, run: () => Promise<{ pass: boolean; details: Record<string, unknown> }>) {

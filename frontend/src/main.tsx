@@ -9,6 +9,7 @@ import { LegacyPublicRules } from "./LegacyPublicRules";
 import { LegacyPublicScreenshots } from "./LegacyPublicScreenshots";
 import { LegacyPublicStory } from "./LegacyPublicStory";
 import { LegacyPublicUniverses } from "./LegacyPublicUniverses";
+import { resolveGameRoute } from "./gameRoutes";
 import { publicRoutes, resolvePublicRoute } from "./routes";
 import "./styles.css";
 
@@ -291,7 +292,7 @@ function App() {
   };
 
   if (pathname.startsWith("/game")) {
-    return <LegacyGameOverview error={gameOverviewError} status={gameOverview} />;
+    return <LegacyGameOverview error={gameOverviewError} route={resolveGameRoute(pathname)} status={gameOverview} />;
   }
 
   const updateRegistrationDraft = (field: keyof RegistrationDraft, value: string | boolean) => {
