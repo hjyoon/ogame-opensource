@@ -1,4 +1,4 @@
-import { chromium, firefox } from "@playwright/test";
+import { chromium, firefox, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -50,6 +50,8 @@ try {
   await assertClientNavigation(page, "mainmenu about alias", "#mainmenu a[href='about.php']", "/about.php");
   await assertClientNavigation(page, "mainmenu screenshots alias", "#mainmenu a[href='screenshots.php']", "/screenshots.php");
   await assertClientNavigation(page, "downmenu rules alias", "#downmenu a[href='regeln.php']", "/regeln.php");
+  await assertHistoryNavigation(page, "browser back preserves CSR", "back", "/screenshots.php");
+  await assertHistoryNavigation(page, "browser forward preserves CSR", "forward", "/regeln.php");
 
   await page.goto(`${migratedBaseURL}/home`, { waitUntil: "networkidle", timeout: 15_000 });
   await assertClientNavigation(page, "home register CTA", "#register.bigbutton", "/register.php");
@@ -72,7 +74,7 @@ try {
   await browser.close();
 }
 
-async function assertClientNavigation(page: Awaited<ReturnType<typeof browser.newPage>>, name: string, selector: string, expectedPathname: string) {
+async function assertClientNavigation(page: Page, name: string, selector: string, expectedPathname: string) {
   const marker = `probe-${name}`;
   await page.evaluate((value) => {
     window.__ogameCsrProbe = value;
@@ -80,12 +82,7 @@ async function assertClientNavigation(page: Awaited<ReturnType<typeof browser.ne
   await page.locator(selector).click();
   await page.waitForFunction((pathname) => window.location.pathname === pathname, expectedPathname, { timeout: 5_000 });
   await record(name, async () => {
-    const state = await page.evaluate(() => ({
-      pathname: window.location.pathname,
-      probe: window.__ogameCsrProbe,
-      legacyCssLinks: document.head.querySelectorAll("link[data-legacy-public-css]").length,
-      legacyBody: document.body.classList.contains("legacy-public-body")
-    }));
+    const state = await csrState(page);
     return {
       pass: state.pathname === expectedPathname && state.probe === marker && state.legacyCssLinks === 2 && state.legacyBody,
       details: state
@@ -93,7 +90,27 @@ async function assertClientNavigation(page: Awaited<ReturnType<typeof browser.ne
   });
 }
 
-async function publicChromeState(page: Awaited<ReturnType<typeof browser.newPage>>) {
+async function assertHistoryNavigation(page: Page, name: string, direction: "back" | "forward", expectedPathname: string) {
+  const marker = `probe-${name}`;
+  await page.evaluate((value) => {
+    window.__ogameCsrProbe = value;
+  }, marker);
+  if (direction === "back") {
+    await page.goBack();
+  } else {
+    await page.goForward();
+  }
+  await page.waitForFunction((pathname) => window.location.pathname === pathname, expectedPathname, { timeout: 5_000 });
+  await record(name, async () => {
+    const state = await csrState(page);
+    return {
+      pass: state.pathname === expectedPathname && state.probe === marker && state.legacyCssLinks === 2 && state.legacyBody,
+      details: state
+    };
+  });
+}
+
+async function publicChromeState(page: Page) {
   const state = await page.evaluate(() => ({
     legacyCssLinks: document.head.querySelectorAll("link[data-legacy-public-css]").length,
     legacyBody: document.body.classList.contains("legacy-public-body"),
@@ -103,6 +120,15 @@ async function publicChromeState(page: Awaited<ReturnType<typeof browser.newPage
     pass: state.legacyCssLinks === 2 && state.legacyBody && state.bodyBackground.includes("sterne_bg2.jpg"),
     details: state
   };
+}
+
+async function csrState(page: Page) {
+  return await page.evaluate(() => ({
+    pathname: window.location.pathname,
+    probe: window.__ogameCsrProbe,
+    legacyCssLinks: document.head.querySelectorAll("link[data-legacy-public-css]").length,
+    legacyBody: document.body.classList.contains("legacy-public-body")
+  }));
 }
 
 async function record(name: string, run: () => Promise<{ pass: boolean; details: Record<string, unknown> }>) {
