@@ -56,6 +56,31 @@ func TestRegistrationDraftRejectsLegacyNameForbiddenCharacters(t *testing.T) {
 	}
 }
 
+func TestRegistrationAvailabilityReportsLegacyCompatibleIssues(t *testing.T) {
+	issues := RegistrationAvailability{
+		CharacterExists: true,
+		EmailExists:     true,
+		UserCount:       10,
+		MaxUsers:        10,
+	}.Validate()
+
+	result := RegistrationValidation{Issues: issues}
+	assertIssue(t, result, RegistrationIssueCharacterExists, LegacyRegistrationErrorUserExists)
+	assertIssue(t, result, RegistrationIssueEmailExists, LegacyRegistrationErrorEmailExists)
+	assertIssue(t, result, RegistrationIssueUniverseFull, LegacyRegistrationErrorMaxPlayers)
+}
+
+func TestRegistrationAvailabilityAllowsUnlimitedCapacityWhenMaxUsersUnset(t *testing.T) {
+	issues := RegistrationAvailability{
+		UserCount: 10,
+		MaxUsers:  0,
+	}.Validate()
+
+	if len(issues) != 0 {
+		t.Fatalf("expected unset max users to allow registration, got %+v", issues)
+	}
+}
+
 func assertIssue(t *testing.T, result RegistrationValidation, code string, legacyCode int) {
 	t.Helper()
 	for _, issue := range result.Issues {

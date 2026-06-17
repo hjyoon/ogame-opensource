@@ -10,12 +10,18 @@ const (
 	RegistrationIssueTermsRequired      = "terms_required"
 	RegistrationIssuePasswordTooShort   = "password_too_short"
 	RegistrationIssueCharacterInvalid   = "character_invalid"
+	RegistrationIssueCharacterExists    = "character_exists"
 	RegistrationIssueEmailInvalid       = "email_invalid"
+	RegistrationIssueEmailExists        = "email_exists"
 	RegistrationIssueUniverseRequired   = "universe_required"
+	RegistrationIssueUniverseFull       = "universe_full"
 	LegacyRegistrationErrorTerms        = 204
+	LegacyRegistrationErrorUserExists   = 101
+	LegacyRegistrationErrorEmailExists  = 102
 	LegacyRegistrationErrorCharacter    = 103
 	LegacyRegistrationErrorEmail        = 104
 	LegacyRegistrationErrorPassword     = 107
+	LegacyRegistrationErrorMaxPlayers   = 109
 	LegacyRegistrationErrorNoEquivalent = 0
 )
 
@@ -37,6 +43,13 @@ type RegistrationIssue struct {
 type RegistrationValidation struct {
 	Valid  bool
 	Issues []RegistrationIssue
+}
+
+type RegistrationAvailability struct {
+	CharacterExists bool
+	EmailExists     bool
+	UserCount       int
+	MaxUsers        int
 }
 
 func (d RegistrationDraft) Validate() RegistrationValidation {
@@ -87,6 +100,35 @@ func (d RegistrationDraft) Validate() RegistrationValidation {
 		Valid:  len(issues) == 0,
 		Issues: issues,
 	}
+}
+
+func (a RegistrationAvailability) Validate() []RegistrationIssue {
+	issues := make([]RegistrationIssue, 0)
+	if a.CharacterExists {
+		issues = append(issues, RegistrationIssue{
+			Field:           "character",
+			Code:            RegistrationIssueCharacterExists,
+			Message:         "Commander name already exists.",
+			LegacyErrorCode: LegacyRegistrationErrorUserExists,
+		})
+	}
+	if a.EmailExists {
+		issues = append(issues, RegistrationIssue{
+			Field:           "email",
+			Code:            RegistrationIssueEmailExists,
+			Message:         "Email address already exists.",
+			LegacyErrorCode: LegacyRegistrationErrorEmailExists,
+		})
+	}
+	if a.MaxUsers > 0 && a.UserCount >= a.MaxUsers {
+		issues = append(issues, RegistrationIssue{
+			Field:           "universe",
+			Code:            RegistrationIssueUniverseFull,
+			Message:         "The maximum number of players has been reached.",
+			LegacyErrorCode: LegacyRegistrationErrorMaxPlayers,
+		})
+	}
+	return issues
 }
 
 func invalidCharacter(name string) bool {

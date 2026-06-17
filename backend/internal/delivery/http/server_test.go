@@ -2,7 +2,9 @@ package httpdelivery
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +16,7 @@ import (
 	apppublicsite "github.com/hjyoon/ogame-opensource/backend/internal/application/publicsite"
 	appsystem "github.com/hjyoon/ogame-opensource/backend/internal/application/system"
 	"github.com/hjyoon/ogame-opensource/backend/internal/config"
+	domainpublicsite "github.com/hjyoon/ogame-opensource/backend/internal/domain/publicsite"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/configcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/filesystem"
 )
@@ -182,6 +185,18 @@ func TestRegistrationValidationRejectsMalformedJSON(t *testing.T) {
 	}
 }
 
+func TestRegistrationValidationReturnsUnavailableForUseCaseError(t *testing.T) {
+	server := testServerWithRegistrationDrafts(t, failingRegistrationDrafts{err: errors.New("availability failed")})
+	body := `{"character":"Commander01","password":"E2E_http123","email":"commander@example.local","universe":"http://localhost:8888","agb":true}`
+	req := httptest.NewRequest(http.MethodPost, "/api/public/registration/validate", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected use case error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestLoginValidationEndpointAcceptsValidDraft(t *testing.T) {
 	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
 	body := `{"login":"Commander01","pass":"E2E_http123","universe":"http://localhost:8888"}`
@@ -256,6 +271,18 @@ func TestLoginValidationRejectsMalformedJSON(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected malformed JSON to return 400, got %d", rec.Code)
+	}
+}
+
+func TestLoginValidationReturnsUnavailableForUseCaseError(t *testing.T) {
+	server := testServerWithLoginDrafts(t, failingLoginDrafts{err: errors.New("login failed")})
+	body := `{"login":"Commander01","pass":"E2E_http123","universe":"http://localhost:8888"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/public/login/validate", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected use case error to return 503, got %d", rec.Code)
 	}
 }
 
@@ -417,6 +444,28 @@ func testServer(cfg config.Config) http.Handler {
 	return testServerWithLogger(cfg, nil)
 }
 
+func testServerWithRegistrationDrafts(t *testing.T, registrationDrafts RegistrationDraftUseCase) http.Handler {
+	t.Helper()
+	return testServerWithCustomDrafts(t, registrationDrafts, apppublicsite.NewLoginDraftValidator())
+}
+
+func testServerWithLoginDrafts(t *testing.T, loginDrafts LoginDraftUseCase) http.Handler {
+	t.Helper()
+	return testServerWithCustomDrafts(t, apppublicsite.NewRegistrationDraftValidator(), loginDrafts)
+}
+
+func testServerWithCustomDrafts(t *testing.T, registrationDrafts RegistrationDraftUseCase, loginDrafts LoginDraftUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: registrationDrafts,
+		LoginDrafts:        loginDrafts,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
 func testServerWithLogger(cfg config.Config, logger *slog.Logger) http.Handler {
 	health := appsystem.NewHealthService(appsystem.HealthConfig{
 		Environment:    cfg.Environment,
@@ -474,4 +523,20 @@ func hasLoginIssue(response loginValidationResponse, code string, legacyCode int
 		}
 	}
 	return false
+}
+
+type failingRegistrationDrafts struct {
+	err error
+}
+
+func (f failingRegistrationDrafts) ValidateRegistrationDraft(context.Context, apppublicsite.RegistrationDraftCommand) (domainpublicsite.RegistrationValidation, error) {
+	return domainpublicsite.RegistrationValidation{}, f.err
+}
+
+type failingLoginDrafts struct {
+	err error
+}
+
+func (f failingLoginDrafts) ValidateLoginDraft(context.Context, apppublicsite.LoginDraftCommand) (domainpublicsite.LoginValidation, error) {
+	return domainpublicsite.LoginValidation{}, f.err
 }

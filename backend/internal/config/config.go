@@ -21,6 +21,12 @@ type Config struct {
 	MasterDBUser     string
 	MasterDBPassword string
 	MasterDBName     string
+	UniDBEnabled     bool
+	UniDBHost        string
+	UniDBUser        string
+	UniDBPassword    string
+	UniDBName        string
+	UniDBPrefix      string
 }
 
 func Load() Config {
@@ -37,6 +43,12 @@ func Load() Config {
 		MasterDBUser:     env("OGAME_MDB_USER", "root"),
 		MasterDBPassword: env("OGAME_MDB_PASS", env("MYSQL_ROOT_PASSWORD", "123")),
 		MasterDBName:     env("OGAME_MDB_NAME", "master"),
+		UniDBEnabled:     envBool("OGAME_UNI_DB_ENABLE", true),
+		UniDBHost:        env("OGAME_UNI_DB_HOST", "mysql"),
+		UniDBUser:        env("OGAME_UNI_DB_USER", "root"),
+		UniDBPassword:    env("OGAME_UNI_DB_PASS", env("MYSQL_ROOT_PASSWORD", "123")),
+		UniDBName:        env("OGAME_UNI_DB_NAME", "uni"),
+		UniDBPrefix:      env("OGAME_UNI_DB_PREFIX", "uni1_"),
 	}
 }
 

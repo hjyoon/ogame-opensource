@@ -15,6 +15,12 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("OGAME_MDB_USER", "")
 	t.Setenv("OGAME_MDB_PASS", "")
 	t.Setenv("OGAME_MDB_NAME", "")
+	t.Setenv("OGAME_UNI_DB_ENABLE", "")
+	t.Setenv("OGAME_UNI_DB_HOST", "")
+	t.Setenv("OGAME_UNI_DB_USER", "")
+	t.Setenv("OGAME_UNI_DB_PASS", "")
+	t.Setenv("OGAME_UNI_DB_NAME", "")
+	t.Setenv("OGAME_UNI_DB_PREFIX", "")
 	t.Setenv("MYSQL_ROOT_PASSWORD", "")
 
 	cfg := Load()
@@ -31,6 +37,9 @@ func TestLoadDefaults(t *testing.T) {
 	if !cfg.MasterDBEnabled || cfg.MasterDBHost != "mysql" || cfg.MasterDBUser != "root" || cfg.MasterDBPassword != "123" || cfg.MasterDBName != "master" {
 		t.Fatalf("unexpected default master DB config: %+v", cfg)
 	}
+	if !cfg.UniDBEnabled || cfg.UniDBHost != "mysql" || cfg.UniDBUser != "root" || cfg.UniDBPassword != "123" || cfg.UniDBName != "uni" || cfg.UniDBPrefix != "uni1_" {
+		t.Fatalf("unexpected default universe DB config: %+v", cfg)
+	}
 }
 
 func TestLoadEnvOverrides(t *testing.T) {
@@ -46,6 +55,12 @@ func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("OGAME_MDB_USER", "ogame")
 	t.Setenv("OGAME_MDB_PASS", "secret")
 	t.Setenv("OGAME_MDB_NAME", "master_test")
+	t.Setenv("OGAME_UNI_DB_ENABLE", "0")
+	t.Setenv("OGAME_UNI_DB_HOST", "uni-db.local:3307")
+	t.Setenv("OGAME_UNI_DB_USER", "uni")
+	t.Setenv("OGAME_UNI_DB_PASS", "uni-secret")
+	t.Setenv("OGAME_UNI_DB_NAME", "uni_test")
+	t.Setenv("OGAME_UNI_DB_PREFIX", "u2_")
 
 	cfg := Load()
 
@@ -61,6 +76,9 @@ func TestLoadEnvOverrides(t *testing.T) {
 	if cfg.MasterDBEnabled || cfg.MasterDBHost != "db.local:3307" || cfg.MasterDBUser != "ogame" || cfg.MasterDBPassword != "secret" || cfg.MasterDBName != "master_test" {
 		t.Fatalf("unexpected master DB override: %+v", cfg)
 	}
+	if cfg.UniDBEnabled || cfg.UniDBHost != "uni-db.local:3307" || cfg.UniDBUser != "uni" || cfg.UniDBPassword != "uni-secret" || cfg.UniDBName != "uni_test" || cfg.UniDBPrefix != "u2_" {
+		t.Fatalf("unexpected universe DB override: %+v", cfg)
+	}
 }
 
 func TestLoadMasterDBPasswordFromMySQLRootPassword(t *testing.T) {
@@ -71,5 +89,8 @@ func TestLoadMasterDBPasswordFromMySQLRootPassword(t *testing.T) {
 
 	if cfg.MasterDBPassword != "root-secret" {
 		t.Fatalf("expected MySQL root password fallback, got %+v", cfg)
+	}
+	if cfg.UniDBPassword != "root-secret" {
+		t.Fatalf("expected universe DB password to use MySQL root password fallback, got %+v", cfg)
 	}
 }

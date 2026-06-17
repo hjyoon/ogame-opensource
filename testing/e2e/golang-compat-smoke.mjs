@@ -31,6 +31,7 @@ function noLoopbackAsset(body) {
 const cases = [];
 
 try {
+  const runId = Date.now().toString(36);
   const health = await request("/api/healthz");
   let healthBody = {};
   try {
@@ -78,9 +79,9 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      character: "Commander01",
+      character: `Pilot${runId}`,
       password: "E2E_http123",
-      email: "commander@example.local",
+      email: `pilot-${runId}@example.local`,
       universe: universes[0]?.baseUrl ?? "http://localhost:8888",
       agb: true
     })

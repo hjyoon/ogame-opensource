@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/configcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/filesystem"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlcatalog"
+	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlregistration"
 	infraruntime "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/runtime"
 )
 
@@ -45,7 +47,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		ReactTarget:    config.ReactTarget,
 	}, filesystem.Probe{}, infraruntime.GoRuntime{})
 	universes := apppublicsite.NewUniverseCatalogService(universeRepository(cfg, logger))
-	registrationDrafts := apppublicsite.NewRegistrationDraftValidator()
+	registrationDrafts := registrationValidator(cfg, logger)
 	loginDrafts := apppublicsite.NewLoginDraftValidator()
 
 	return httpdelivery.New(httpdelivery.Dependencies{
@@ -57,6 +59,34 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		LegacyAssets:       filesystem.NewNoListingFS(cfg.LegacyAssetDir),
 		Logger:             logger,
 	})
+}
+
+func registrationValidator(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationDraftValidator {
+	if !cfg.UniDBEnabled {
+		return apppublicsite.NewRegistrationDraftValidator()
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB registration availability disabled", "error", err)
+		return apppublicsite.NewRegistrationDraftValidator()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB registration availability disabled", "error", err)
+		_ = db.Close()
+		return apppublicsite.NewRegistrationDraftValidator()
+	}
+
+	logger.Info("universe DB registration availability enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
+	return apppublicsite.NewRegistrationDraftValidatorWithAvailability(mysqlregistration.NewAvailabilityChecker(db, cfg.UniDBPrefix))
 }
 
 func universeRepository(cfg config.Config, logger *slog.Logger) apppublicsite.UniverseRepository {

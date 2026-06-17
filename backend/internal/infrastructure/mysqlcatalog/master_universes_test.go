@@ -25,6 +25,14 @@ func TestDSN(t *testing.T) {
 	}
 }
 
+func TestNewMasterUniverseCatalogUsesSQLQueryer(t *testing.T) {
+	catalog := NewMasterUniverseCatalog(nil)
+
+	if _, ok := catalog.queryer.(SQLQueryer); !ok {
+		t.Fatalf("expected SQLQueryer, got %T", catalog.queryer)
+	}
+}
+
 func TestHostPort(t *testing.T) {
 	cases := map[string]string{
 		"":              "mysql:3306",
