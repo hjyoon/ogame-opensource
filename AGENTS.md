@@ -47,6 +47,7 @@ testing/e2e/run-golang-migration-qa.sh
 ```
 
 Set `OGAME_RUN_LEGACY_E2E=0` only for local frontend/backend smoke work. Do not use that skip for final validation of migrated game behavior.
+Reuse existing E2E behavior as the oracle: full PHP E2E stays on the legacy stack, and HTTP black-box checks are ported to Go with the same JSON result shape.
 
 Go internal package coverage must stay at or above 97%:
 
