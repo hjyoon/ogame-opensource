@@ -33,6 +33,8 @@ testing/e2e/run-docker-e2e.sh
 
 Markdown files are capped at 4KB. Split larger docs by topic and link them from a short index.
 
+Current migration progress and remaining work are tracked in [MIGRATION_STATUS.md](./MIGRATION_STATUS.md).
+
 Need help with installation? You have the following options:
 - Use the millennial guide: [install](/wiki/en/install.md)
 - Use the zoomer guide: [install_docker](/wiki/en/install_docker.md)

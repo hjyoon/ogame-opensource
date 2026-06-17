@@ -1,0 +1,59 @@
+# Migration Status
+
+Last updated: 2026-06-17 KST, branch `hjyoon/golang`.
+
+Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http` backend migration. Update it whenever a step is completed, deferred, or re-scoped.
+
+## Current State
+
+- Clean Architecture baseline exists under `backend/internal/{domain,application,infrastructure,delivery}`.
+- Go serves the React production build from `frontend/dist`.
+- Runtime logs use JSON through `log/slog`.
+- Go app runs through `compose.golang.yaml`; default local port is `8890`.
+- `/api/healthz` reports tool targets and asset readiness.
+- Public React shell is available for natural routes and legacy public `.php` aliases.
+- Legacy image/assets are served through Go without loopback absolute URLs.
+- Public universe catalog is exposed at `/api/public/universes`, backed by the master DB with config fallback.
+- Registration draft validation exists at `/api/public/registration/validate`.
+- Registration availability checks legacy universe DB state for duplicate names, duplicate email, and max-user capacity.
+- Native account creation/activation is not migrated yet.
+- Login draft validation exists at `/api/public/login/validate`.
+- Login credential validation checks legacy `users.name/password/banned` in the universe DB.
+- `/api/public/login` creates public/private sessions, updates legacy `users` session fields, sets the private cookie, and returns a natural `/game/overview` redirect target.
+- Login submit does not yet authenticate and render native game pages; `/game/overview` still falls back to the React shell.
+- Go migration QA smoke covers health, routes, assets, registration, login validation, login submit, and method guards.
+
+## Latest Verified Commits
+
+- Migration foundation range: `6f96b2ab` through `eaed003e`.
+- `eaed003e` Add native login session endpoint
+- `3de92447` Validate login credentials against universe DB
+- `23f77579` Check registration availability against universe DB
+- `ee363317` Add native login draft validation
+- `40ab2fa3` Add native registration draft validation
+
+## Verified QA
+
+- `backend/scripts/test-coverage.sh`: passing, Go internal coverage `97.6%`.
+- `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
+- Direct smoke after restart: `GET /api/healthz`, `POST /api/public/login`, and JSON DB enablement logs all passed.
+
+Full legacy E2E was not run for the latest Go migration steps unless explicitly noted in a later update.
+
+## Remaining Work
+
+- Implement native registration creation, activation policy, and login-after-register behavior.
+- Add authenticated session lookup, logout, expiry, and session security behavior.
+- Build authenticated React game routes, starting with `/game/overview`.
+- Port current planet selection and overview state from legacy DB.
+- Port resource production/read model, queues, buildings, research, shipyard, defense, fleet, reports, messages, galaxy, alliance, admin, maintenance, options, password recovery, deletion, vacation, bans, and permissions.
+- Convert legacy E2E cases into Go compatibility checks as each flow is migrated.
+- Keep legacy PHP behavior as the oracle until each migrated flow has focused unit tests and E2E coverage.
+- Run full legacy E2E before declaring any game-flow migration equivalent.
+
+## Update Rules
+
+- Update this file in the same change set as each migration milestone.
+- Keep this file under 4KB. If detail grows, split by topic and link the child docs here.
+- Record the latest commit, QA commands, coverage percentage, and any skipped validation.
+- Do not mark a flow migrated until the React/Go implementation is tested against the legacy behavior.

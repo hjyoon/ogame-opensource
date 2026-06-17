@@ -80,3 +80,7 @@ backend/scripts/test-coverage.sh
 ## Markdown Limit
 
 Keep every Markdown file at or below 4KB. If a document needs more detail, split it by topic and link the parts from a short index.
+
+## Status Tracking
+
+Keep `MIGRATION_STATUS.md` current. Update it with every migration milestone, QA result, skipped validation, and remaining-work change.
