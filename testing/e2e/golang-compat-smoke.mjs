@@ -77,6 +77,31 @@ try {
     ]
   }));
 
+  const naturalPublicPaths = [
+    "/home",
+    "/register",
+    "/universes",
+    "/about",
+    "/story",
+    "/screenshots",
+    "/rules",
+    "/legal",
+    "/migration"
+  ];
+  const naturalPublicChecks = [];
+  for (const path of naturalPublicPaths) {
+    const response = await request(path);
+    naturalPublicChecks.push(
+      check(response.status === 200, `${path} returns React shell`, { status: response.status }),
+      check(response.body.includes('<div id="root">'), `${path} renders React mount node`),
+      check(!response.body.includes("Master Database Settings"), `${path} does not render installer form`)
+    );
+  }
+  cases.push(finalize({
+    case: "go_natural_public_routes",
+    checks: naturalPublicChecks
+  }));
+
   const legacyPublicPaths = [
     "/about.php",
     "/home.php",
@@ -113,7 +138,8 @@ try {
       check(hasHeader(js, "cache-control", "immutable"), "React JS bundle is immutable-cacheable"),
       check(hasHeader(css, "cache-control", "immutable"), "React CSS bundle is immutable-cacheable"),
       check(hasHeader(js, "content-type", "javascript"), "React JS bundle has JavaScript content type"),
-      check(hasHeader(css, "content-type", "text/css"), "React CSS bundle has CSS content type")
+      check(hasHeader(css, "content-type", "text/css"), "React CSS bundle has CSS content type"),
+      check(js.body.includes("/register") && js.body.includes("/universes"), "React bundle contains natural public route model")
     ]
   }));
 

@@ -18,6 +18,29 @@ body {
   padding: 28px;
 }
 
+.top-nav {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.top-nav a {
+  border: 1px solid #303640;
+  border-radius: 8px;
+  color: #d7ddd8;
+  font-size: 14px;
+  padding: 8px 11px;
+  text-decoration: none;
+}
+
+.top-nav a:hover,
+.top-nav a[aria-current="page"] {
+  background: #26322f;
+  border-color: #5d746d;
+  color: #f3f0e8;
+}
+
 .status-band {
   align-items: center;
   background: #1d211f;
@@ -135,6 +158,17 @@ dd {
 .gate-list {
   display: grid;
   gap: 12px;
+}
+
+.route-points {
+  display: grid;
+  gap: 12px;
+}
+
+.alias-note {
+  color: #d1b978;
+  font-size: 13px;
+  margin-top: 16px;
 }
 
 .dot {

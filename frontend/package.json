@@ -5,7 +5,8 @@
   "packageManager": "bun@1.3.14",
   "scripts": {
     "build": "bun run scripts/build.ts",
-    "check": "bunx tsc --noEmit"
+    "check": "bunx tsc --noEmit",
+    "test": "bun test"
   },
   "dependencies": {
     "react": "19",

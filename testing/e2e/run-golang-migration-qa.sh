@@ -10,7 +10,7 @@ if [ "${OGAME_RUN_LEGACY_E2E:-1}" = "1" ]; then
 fi
 
 if command -v bun >/dev/null 2>&1; then
-  (cd "$ROOT_DIR/frontend" && bun install && bun run build && bun run check)
+  (cd "$ROOT_DIR/frontend" && bun install && bun run build && bun run check && bun run test)
 else
   printf 'SKIP frontend build: bun was not found\n'
 fi

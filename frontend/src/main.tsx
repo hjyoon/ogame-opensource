@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { publicRoutes, resolvePublicRoute } from "./routes";
 import "./styles.css";
 
 type Health = {
@@ -23,8 +24,11 @@ const phases = [
 ];
 
 function App() {
+  const [pathname, setPathname] = useState(() => window.location.pathname);
   const [health, setHealth] = useState<Health | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const resolution = resolvePublicRoute(pathname);
+  const route = resolution.route;
 
   useEffect(() => {
     fetch("/api/healthz")
@@ -38,6 +42,12 @@ function App() {
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
   }, []);
 
+  useEffect(() => {
+    const onPopState = () => setPathname(window.location.pathname);
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
   const checks = useMemo(
     () => [
       ["Go target", health?.goTarget ?? "1.25"],
@@ -48,22 +58,58 @@ function App() {
     [health]
   );
 
+  const navigate = (event: React.MouseEvent<HTMLAnchorElement>, path: string) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    window.history.pushState({}, "", path);
+    setPathname(path);
+  };
+
   return (
-    <main className="app-shell">
+    <main className="app-shell" data-route={route.key} data-legacy-alias={resolution.isLegacyAlias ? "true" : "false"}>
+      <nav className="top-nav" aria-label="Public navigation">
+        {publicRoutes.slice(0, 8).map((item) => (
+          <a
+            aria-current={item.key === route.key ? "page" : undefined}
+            href={item.path}
+            key={item.key}
+            onClick={(event) => navigate(event, item.path)}
+          >
+            {item.label}
+          </a>
+        ))}
+      </nav>
+
       <section className="status-band">
         <div>
-          <p className="eyebrow">Migration Console</p>
-          <h1>OGame Go/React Port</h1>
-          <p className="subtle">Compatibility-first migration from the current PHP runtime.</p>
+          <p className="eyebrow">{route.eyebrow}</p>
+          <h1>{route.title}</h1>
+          <p className="subtle">{route.summary}</p>
         </div>
-        <img
-          className="planet"
-          alt="Legacy planet asset"
-          src="/legacy-assets/use/uV/planeten/small/s_normaltempplanet01.jpg"
-        />
+        <img className="planet" alt={`${route.label} visual asset`} src={route.image} />
       </section>
 
       <section className="grid two">
+        <div className="panel">
+          <div className="panel-title">
+            <span>{route.label}</span>
+            <strong className="badge neutral">{route.status}</strong>
+          </div>
+          <div className="route-points">
+            {route.points.map((point) => (
+              <div className="gate" key={point}>
+                <span className="dot active" />
+                <span>{point}</span>
+              </div>
+            ))}
+          </div>
+          {resolution.isLegacyAlias ? (
+            <p className="alias-note">Legacy URL alias. Canonical route: {resolution.canonicalPath}</p>
+          ) : null}
+        </div>
+
         <div className="panel">
           <div className="panel-title">
             <span>Runtime</span>
@@ -94,7 +140,7 @@ function App() {
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel" id="migration">
         <div className="panel-title">
           <span>Migration Phases</span>
           <strong className="badge neutral">stepwise</strong>
