@@ -1,12 +1,15 @@
-import { copyFile, mkdir, rm } from "node:fs/promises";
+import { copyFile, cp, mkdir, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 const root = new URL("../", import.meta.url);
 const dist = new URL("dist/", root);
 const assets = new URL("assets/", dist);
+const publicAssets = new URL("public-assets/", dist);
+const legacyPublicImages = new URL("../wwwroot/img/", root);
 
 await rm(fileURLToPath(dist), { force: true, recursive: true });
 await mkdir(fileURLToPath(assets), { recursive: true });
+await mkdir(fileURLToPath(publicAssets), { recursive: true });
 
 const result = await Bun.build({
   entrypoints: [fileURLToPath(new URL("src/main.tsx", root))],
@@ -31,4 +34,10 @@ if (!result.success) {
 await copyFile(
   fileURLToPath(new URL("src/index.html", root)),
   fileURLToPath(new URL("index.html", dist))
+);
+
+await cp(
+  fileURLToPath(legacyPublicImages),
+  fileURLToPath(new URL("img/", publicAssets)),
+  { recursive: true }
 );

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { LegacyGameOverview, type GameOverviewStatus } from "./LegacyGameOverview";
+import { LegacyPublicHome } from "./LegacyPublicHome";
 import { publicRoutes, resolvePublicRoute } from "./routes";
 import "./styles.css";
 
@@ -256,6 +257,20 @@ function App() {
       .finally(() => setLoginPending(false));
   };
 
+  if (route.key === "home") {
+    return (
+      <LegacyPublicHome
+        loginDraft={loginDraft}
+        loginError={loginError}
+        loginPending={loginPending}
+        loginResult={loginResult}
+        onLoginChange={updateLoginDraft}
+        onLoginSubmit={submitLogin}
+        universes={universes}
+      />
+    );
+  }
+
   return (
     <main className="app-shell" data-route={route.key} data-legacy-alias={resolution.isLegacyAlias ? "true" : "false"}>
       <nav className="top-nav" aria-label="Public navigation">
@@ -344,70 +359,6 @@ function App() {
           </div>
         </div>
       </section>
-
-      {route.key === "home" ? (
-        <section className="panel" data-testid="login-draft">
-          <div className="panel-title">
-            <span>Login</span>
-            <strong className={loginResult?.valid ? "badge good" : "badge neutral"}>
-              {loginResult ? (loginResult.valid ? "session" : "review") : "ready"}
-            </strong>
-          </div>
-          <form className="registration-form" onSubmit={submitLogin}>
-            <label>
-              <span>Commander</span>
-              <input
-                name="login"
-                onChange={(event) => updateLoginDraft("login", event.currentTarget.value)}
-                value={loginDraft.login}
-              />
-            </label>
-            <label>
-              <span>Password</span>
-              <input
-                name="pass"
-                onChange={(event) => updateLoginDraft("pass", event.currentTarget.value)}
-                type="password"
-                value={loginDraft.pass}
-              />
-            </label>
-            <label>
-              <span>Universe</span>
-              <select
-                name="universe"
-                onChange={(event) => updateLoginDraft("universe", event.currentTarget.value)}
-                value={loginDraft.universe}
-              >
-                <option value="">Select universe</option>
-                {universes.map((universe) => (
-                  <option key={universe.number} value={universe.baseUrl}>
-                    {universe.number} - {universe.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button disabled={loginPending} type="submit">
-              {loginPending ? "Signing in" : "Sign in"}
-            </button>
-          </form>
-          {loginError ? <p className="form-error">{loginError}</p> : null}
-          {loginResult && !loginResult.valid ? (
-            <ul className="issue-list">
-              {loginResult.issues.map((issue) => (
-                <li key={`${issue.field}-${issue.code}`}>
-                  <strong>{issue.field}</strong>
-                  <span>{issue.message}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {loginResult?.valid ? (
-            <p className="form-success">
-              Session ready: <a href={loginResult.session?.redirectTo ?? "/game/overview"}>Open overview</a>
-            </p>
-          ) : null}
-        </section>
-      ) : null}
 
       {route.key === "register" ? (
         <section className="panel" data-testid="registration-draft">

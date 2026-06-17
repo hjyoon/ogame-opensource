@@ -11,7 +11,8 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - Runtime logs use JSON through `log/slog`.
 - Go app runs through `compose.golang.yaml`; default local port is `8890`.
 - `/api/healthz` reports tool targets and asset readiness.
-- Public routes exist for natural paths and legacy `.php` aliases; visual parity with PHP public screens is still pending.
+- Public routes exist for natural paths and legacy `.php` aliases.
+- `/home` targets the legacy PHP public start composition: background, main menu, login strip, language flags, and start content.
 - Legacy image/assets are served through Go without loopback absolute URLs.
 - Public universe catalog is exposed at `/api/public/universes`, backed by the master DB with config fallback.
 - Registration draft validation exists at `/api/public/registration/validate`.
@@ -28,7 +29,7 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 ## Latest Verified Commit
 
 - `cd2eef8c` Add native overview read API.
-- Current milestone: legacy-visual overview pass on top of the native overview API.
+- Current milestone: legacy-visual home and overview passes.
 
 ## Verified QA
 
@@ -44,7 +45,7 @@ Full legacy E2E was not run for the latest Go migration steps unless explicitly 
 - Add logout, expiry, and session security behavior.
 - Expand authenticated React game routes beyond the current overview summary using legacy PHP screen composition.
 - Port current planet switching and full overview state/actions from legacy DB.
-- Restyle all migrated public/game/admin pages to match their PHP screen composition.
+- Restyle remaining public/game/admin pages to match their PHP screen composition.
 - Port resource production/read model, queues, buildings, research, shipyard, defense, fleet, reports, messages, galaxy, alliance, admin, maintenance, options, password recovery, deletion, vacation, bans, and permissions.
 - Convert legacy E2E cases into Go compatibility checks as each flow is migrated.
 - Keep legacy PHP behavior as the oracle until each migrated flow has focused unit tests and E2E coverage.

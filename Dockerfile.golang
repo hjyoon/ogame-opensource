@@ -9,6 +9,7 @@ WORKDIR /src/frontend
 COPY frontend/package.json frontend/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY frontend ./
+COPY wwwroot/img ../wwwroot/img
 RUN bun run build
 
 FROM alpine:3.22

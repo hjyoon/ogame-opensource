@@ -291,6 +291,18 @@ try {
     ]
   }));
 
+  const publicStartBackground = await request("/public-assets/img/startseite_bg.jpg");
+  const publicLoginButton = await request("/public-assets/img/login_button.jpg");
+  cases.push(finalize({
+    case: "go_public_legacy_assets",
+    checks: [
+      check(publicStartBackground.status === 200, "legacy public start background returns HTTP 200", { status: publicStartBackground.status }),
+      check(hasHeader(publicStartBackground, "content-type", "image/jpeg"), "legacy public start background has JPEG content type"),
+      check(publicLoginButton.status === 200, "legacy public login button returns HTTP 200", { status: publicLoginButton.status }),
+      check(hasHeader(publicLoginButton, "content-type", "image/jpeg"), "legacy public login button has JPEG content type")
+    ]
+  }));
+
   const fallback = await request("/game/overview");
   cases.push(finalize({
     case: "go_spa_fallback",
@@ -366,7 +378,9 @@ try {
       check(js.body.includes("/api/public/universes"), "React bundle consumes universe catalog API"),
       check(js.body.includes("/api/public/registration/validate"), "React bundle consumes registration validation API"),
       check(js.body.includes("/api/public/login"), "React bundle consumes login submit API"),
-      check(js.body.includes("/api/game/overview"), "React bundle consumes game overview API")
+      check(js.body.includes("/api/game/overview"), "React bundle consumes game overview API"),
+      check(js.body.includes("legacy-public-main"), "React bundle contains legacy public home layout"),
+      check(js.body.includes("legacy-game-shell"), "React bundle contains legacy game overview layout")
     ]
   }));
 
