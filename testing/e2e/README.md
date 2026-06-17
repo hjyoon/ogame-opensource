@@ -51,7 +51,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Admin DB backup flows for operator mutation denial, admin backup creation, restore rollback of post-backup data, and backup deletion.
 - Coupon and Dark Matter payment flows for admin coupon creation/listing/deletion, invalid/used coupon rejection, paid-DM redemption, duplicate redemption prevention, and periodic coupon queue creation/removal.
 - Queue and fleet validation flows for building/research/shipyard queue create/cancel/complete, admin queue freeze/unfreeze/remove, active-queue vacation blocking, transport launch, and rejected fleet sends.
-- Queue/event idempotency flows for repeated `UpdateQueue()` runs across building, research, shipyard, transport fleet arrival/return completion, same-tick transport arrivals, recalc-points, and a multi-day long scheduler drain.
+- Queue/event idempotency flows for repeated `UpdateQueue()` runs across building, research, shipyard, transport fleet arrival/return completion, same-tick transport arrivals, same-tick attack-before-recycle ordering, recalc-points, and a multi-day long scheduler drain.
 - Vacation/freeze timing edge flows for vacation enable rejection with active build/fleet queues, vacation-mode build/shipyard mutation blocking, and universe-freeze pause/resume behavior for due queues.
 - Global maintenance queue flows for user state timers, score recalculation, old-score snapshots, debris cleanup, removed-planet cleanup, and disabled-player cleanup.
 - Cron resilience flows for browser access denial, due task idempotency, unknown task debug auditing, frozen task preservation, and universe-freeze queue blocking.
@@ -66,10 +66,10 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Trader, premium officer, and moon-tool flows for merchant calls/exchanges, officer purchase, paid/free DM spending order, insufficient/invalid premium purchases, lunar base construction, jump gates, and phalanx scans.
 - Jump Gate edge flows for target filtering, invalid source/target moons, missing gates, foreign moons, empty/oversized ship selections, cooldown direct-POST rejection, same-moon rejection, and solar-satellite exclusion.
 - Battle reports and espionage reports.
-- Plunder, debris creation, debris recycling, resource return, and defense writeback.
+- Plunder, debris creation, debris recycling, competing recycler collection, resource return, and defense writeback.
 - Interplanetary missile and anti-ballistic missile cases.
 - Computer technology fleet-slot limits.
-- Colony ship colonization success and failure paths.
+- Colony ship colonization success, failure, max-planet, and same-tick competition paths.
 - Moon creation, moon destruction, and moon-destruction failure paths.
 - Expedition flow and expedition result cases.
 - Database invariant audit coverage for non-negative resources/counts, gameplay-critical orphaned references, queue/fleet/buildqueue consistency, coordinate uniqueness, alliance/buddy references, fixture runtime cleanup, and stale fleet lock files.

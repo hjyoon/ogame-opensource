@@ -349,6 +349,20 @@ function AdjustShips (array $fleet, int $planet_id, string $sign) : void
     dbquery ($query);
 }
 
+function FleetQueuePriority (int $order) : int
+{
+    if ( $order == FTYP_MISSILE ) {
+        return QUEUE_PRIO_FLEET + 1300;
+    }
+    if ( $order == FTYP_ATTACK || $order == FTYP_ACS_ATTACK || $order == FTYP_ACS_ATTACK_HEAD || $order == FTYP_DESTROY ) {
+        return QUEUE_PRIO_FLEET + 1000 + $order;
+    }
+    if ( $order == FTYP_RECYCLE ) {
+        return QUEUE_PRIO_FLEET + 900;
+    }
+    return QUEUE_PRIO_FLEET + $order;
+}
+
 // Dispatch the fleet. No checks are performed. Returns the ID of the fleet.
 function DispatchFleet (array $fleet, array $origin, array $target, int $order, int $seconds, array $resources, int $cons, int $when, int $union_id=0, int $deploy_time=0) : int
 {
@@ -359,7 +373,7 @@ function DispatchFleet (array $fleet, array $origin, array $target, int $order, 
     if ( $uni['freeze'] ) return 0;
 
     $now = $when;
-    $prio = QUEUE_PRIO_FLEET + $order;
+    $prio = FleetQueuePriority ($order);
     $flight_time = $seconds;
 
     // Add the fleet.
@@ -519,7 +533,7 @@ function LaunchRockets ( array $origin, array $target, int $seconds, int $amount
     if ( $amount > $origin[GID_D_IPM] ) return 0;    // You can't launch more missiles than there are rockets on the planet.
 
     $now = time ();
-    $prio = QUEUE_PRIO_FLEET + FTYP_MISSILE;
+    $prio = FleetQueuePriority (FTYP_MISSILE);
 
     // Write the IPM off the planet.
     $origin[GID_D_IPM] -= $amount;

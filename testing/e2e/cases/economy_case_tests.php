@@ -127,6 +127,18 @@ function latest_return_fleet(int $ownerId, int $mission): ?array
     return sql_row("SELECT fleet_id, mission, start_planet, target_planet, `700`, `701`, `702`, `202`, `203`, `204`, `207`, `209` FROM {$db_prefix}fleet WHERE owner_id={$ownerId} AND mission={$mission} ORDER BY fleet_id DESC LIMIT 1");
 }
 
+function return_fleets_for_mission(array $ownerIds, int $mission): array
+{
+    global $db_prefix;
+    $owners = implode(',', array_map('intval', $ownerIds));
+    $rows = array();
+    $res = sql_exec("SELECT fleet_id, owner_id, mission, start_planet, target_planet, `700`, `701`, `702`, `209` FROM {$db_prefix}fleet WHERE owner_id IN ({$owners}) AND mission={$mission} ORDER BY fleet_id ASC");
+    while ($row = dbarray($res)) {
+        $rows[] = $row;
+    }
+    return $rows;
+}
+
 function debris_at_target(): ?array
 {
     global $db_prefix;
@@ -277,6 +289,125 @@ function run_recycle_case(): array
     );
 }
 
+function run_same_tick_attack_before_recycle_case(): array
+{
+    global $ATTACKER_ID, $DEFENDER_ID, $ATTACKER_PLANET, $DEFENDER_PLANET;
+
+    cleanup_runtime();
+    mt_srand(300);
+    srand(300);
+    set_user_tech($ATTACKER_ID, array(106 => 10, 109 => 10, 110 => 10, 111 => 10));
+    set_user_tech($DEFENDER_ID, array(106 => 0, 109 => 0, 110 => 0, 111 => 0));
+
+    $attackFleet = array(GID_F_BATTLESHIP => 50);
+    $recycleFleet = array(GID_F_RECYCLER => 2);
+    set_planet_state($ATTACKER_PLANET, 'PriorityAttacker', $attackFleet + $recycleFleet, array(), array(), array(700 => 1000000, 701 => 1000000, 702 => 1000000));
+    set_planet_state($DEFENDER_PLANET, 'PriorityDefender', array(GID_F_SC => 100), array(), array(), array(700 => 0, 701 => 0, 702 => 0));
+
+    $target = LoadPlanetById($DEFENDER_PLANET);
+    $dfId = CreateDebris(intval($target['g']), intval($target['s']), intval($target['p']), $DEFENDER_ID);
+    $start = time() + 1;
+    $due = $start + 1;
+    [$attackFleetId, $attackQueue] = dispatch_test_fleet(FTYP_ATTACK, $ATTACKER_PLANET, $DEFENDER_PLANET, $attackFleet, $start);
+    [$recycleFleetId, $recycleQueue] = dispatch_test_fleet(FTYP_RECYCLE, $ATTACKER_PLANET, $dfId, $recycleFleet, $start);
+
+    UpdateQueue($due);
+    UpdateQueue($due);
+
+    $defenderAfter = LoadPlanetById($DEFENDER_PLANET);
+    $debrisAfter = LoadPlanetById($dfId);
+    $recycleReturn = latest_return_fleet($ATTACKER_ID, FTYP_RECYCLE + FTYP_RETURN);
+    $attackReturn = latest_return_fleet($ATTACKER_ID, FTYP_ATTACK + FTYP_RETURN);
+    $recycleCargo = $recycleReturn === null ? 0 : intval($recycleReturn[700]) + intval($recycleReturn[701]);
+
+    return array(
+        'case' => 'same_tick_attack_generates_debris_before_recycle',
+        'queue_priorities' => array('attack' => $attackQueue['prio'] ?? null, 'recycle' => $recycleQueue['prio'] ?? null),
+        'recycle_return' => $recycleReturn,
+        'attack_return' => $attackReturn,
+        'debris_after' => $debrisAfter,
+        'checks' => array(
+            assert_case($attackFleetId > 0 && $recycleFleetId > 0, 'attack and recycler fleets are dispatched for the same tick', array('attack_fleet_id' => $attackFleetId, 'recycle_fleet_id' => $recycleFleetId)),
+            assert_case(($attackQueue['prio'] ?? 0) > ($recycleQueue['prio'] ?? 0), 'attack queue priority is higher than recycle priority at the same second', array('attack_queue' => $attackQueue, 'recycle_queue' => $recycleQueue)),
+            assert_case($attackReturn !== null, 'same-tick attack resolves and creates an attack return fleet', $attackReturn ?? array()),
+            assert_case($recycleReturn !== null && $recycleCargo > 0, 'same-tick recycler harvests debris created by the attack', array('recycle_return' => $recycleReturn, 'cargo' => $recycleCargo)),
+            assert_case($debrisAfter !== null && (floatval($debrisAfter[700]) + floatval($debrisAfter[701])) > 0, 'recycler capacity leaves remaining debris after harvesting the new field', $debrisAfter ?? array()),
+            assert_case(intval($defenderAfter[GID_F_SC]) === 0, 'attack battle writes defender fleet losses before recycle runs', array('defender_small_cargo' => $defenderAfter[GID_F_SC])),
+        ),
+    );
+}
+
+function run_competing_recyclers_split_debris_case(): array
+{
+    global $ATTACKER_ID, $DEFENDER_ID, $ATTACKER_PLANET, $DEFENDER_PLANET;
+
+    cleanup_runtime();
+    set_user_tech($ATTACKER_ID, array(106 => 10, 109 => 10, 110 => 10, 111 => 10));
+    set_user_tech($DEFENDER_ID, array(106 => 10, 109 => 10, 110 => 10, 111 => 10));
+
+    set_planet_state($ATTACKER_PLANET, 'RecyclerA', array(GID_F_RECYCLER => 2), array(), array(), array(700 => 1000000, 701 => 1000000, 702 => 1000000));
+    set_planet_state($DEFENDER_PLANET, 'RecyclerB', array(GID_F_RECYCLER => 4), array(), array(), array(700 => 1000000, 701 => 1000000, 702 => 1000000));
+
+    $target = LoadPlanetById($DEFENDER_PLANET);
+    $dfId = CreateDebris(intval($target['g']), intval($target['s']), intval($target['p']), USER_SPACE);
+    AddDebris($dfId, 70000, 30000);
+    $beforeAttacker = LoadPlanetById($ATTACKER_PLANET);
+    $beforeDefender = LoadPlanetById($DEFENDER_PLANET);
+    $beforeDebris = LoadPlanetById($dfId);
+
+    $start = time() + 1;
+    $due = $start + 1;
+    [$attackerFleetId, $attackerQueue] = dispatch_test_fleet(FTYP_RECYCLE, $ATTACKER_PLANET, $dfId, array(GID_F_RECYCLER => 2), $start);
+    [$defenderFleetId, $defenderQueue] = dispatch_test_fleet(FTYP_RECYCLE, $DEFENDER_PLANET, $dfId, array(GID_F_RECYCLER => 4), $start);
+    UpdateQueue($due);
+    UpdateQueue($due);
+
+    $returns = return_fleets_for_mission(array($ATTACKER_ID, $DEFENDER_ID), FTYP_RECYCLE + FTYP_RETURN);
+    $cargoByOwner = array($ATTACKER_ID => array(700 => 0, 701 => 0), $DEFENDER_ID => array(700 => 0, 701 => 0));
+    foreach ($returns as $returnFleet) {
+        $ownerId = intval($returnFleet['owner_id']);
+        $cargoByOwner[$ownerId][700] += intval($returnFleet[700]);
+        $cargoByOwner[$ownerId][701] += intval($returnFleet[701]);
+    }
+    $totalHarvested = $cargoByOwner[$ATTACKER_ID][700] + $cargoByOwner[$ATTACKER_ID][701] + $cargoByOwner[$DEFENDER_ID][700] + $cargoByOwner[$DEFENDER_ID][701];
+    $debrisAfterHarvest = LoadPlanetById($dfId);
+
+    foreach ($returns as $returnFleet) {
+        $returnQueue = GetFleetQueue(intval($returnFleet['fleet_id']));
+        if ($returnQueue) {
+            Queue_Fleet_End($returnQueue);
+        }
+    }
+
+    $afterAttacker = LoadPlanetById($ATTACKER_PLANET);
+    $afterDefender = LoadPlanetById($DEFENDER_PLANET);
+    $attackerGain = array(
+        700 => intval(floor(floatval($afterAttacker[700]) - floatval($beforeAttacker[700]))),
+        701 => intval(floor(floatval($afterAttacker[701]) - floatval($beforeAttacker[701]))),
+    );
+    $defenderGain = array(
+        700 => intval(floor(floatval($afterDefender[700]) - floatval($beforeDefender[700]))),
+        701 => intval(floor(floatval($afterDefender[701]) - floatval($beforeDefender[701]))),
+    );
+
+    return array(
+        'case' => 'competing_recyclers_split_same_debris_field',
+        'before_debris' => $beforeDebris,
+        'debris_after_harvest' => $debrisAfterHarvest,
+        'cargo_by_owner' => $cargoByOwner,
+        'checks' => array(
+            assert_case($attackerFleetId > 0 && $defenderFleetId > 0, 'both players dispatch recyclers to the same debris field', array('attacker_fleet_id' => $attackerFleetId, 'defender_fleet_id' => $defenderFleetId)),
+            assert_case(($attackerQueue['end'] ?? 0) === ($defenderQueue['end'] ?? -1), 'competing recyclers arrive on the same tick', array('attacker_queue' => $attackerQueue, 'defender_queue' => $defenderQueue)),
+            assert_case(count($returns) === 2, 'both recycler arrivals create return fleets', array('returns' => $returns)),
+            assert_case($totalHarvested === 100000, 'competing recyclers harvest the full debris field exactly once in total', array('total_harvested' => $totalHarvested, 'cargo_by_owner' => $cargoByOwner)),
+            assert_case($cargoByOwner[$ATTACKER_ID][700] + $cargoByOwner[$ATTACKER_ID][701] <= 40000 && $cargoByOwner[$DEFENDER_ID][700] + $cargoByOwner[$DEFENDER_ID][701] <= 80000, 'each recycler fleet respects its own cargo capacity', $cargoByOwner),
+            assert_case($debrisAfterHarvest !== null && intval($debrisAfterHarvest[700]) === 0 && intval($debrisAfterHarvest[701]) === 0, 'shared debris field is depleted after both arrivals', $debrisAfterHarvest ?? array()),
+            assert_case($attackerGain === $cargoByOwner[$ATTACKER_ID] && $defenderGain === $cargoByOwner[$DEFENDER_ID], 'returning recyclers unload each player harvest onto the correct origin', array('attacker_gain' => $attackerGain, 'defender_gain' => $defenderGain, 'cargo_by_owner' => $cargoByOwner)),
+            assert_case(intval($afterAttacker[GID_F_RECYCLER]) === 2 && intval($afterDefender[GID_F_RECYCLER]) === 4, 'all competing recyclers return to their owners', array('attacker_recyclers' => $afterAttacker[GID_F_RECYCLER], 'defender_recyclers' => $afterDefender[GID_F_RECYCLER])),
+        ),
+    );
+}
+
 function restore_test_accounts(): array
 {
     global $db_prefix, $ATTACKER_ID, $DEFENDER_ID, $ATTACKER_PLANET, $DEFENDER_PLANET;
@@ -296,6 +427,8 @@ $result = array('cases' => array());
 $result['cases'][] = run_plunder_debris_case();
 $result['cases'][] = run_defence_win_case();
 $result['cases'][] = run_recycle_case();
+$result['cases'][] = run_same_tick_attack_before_recycle_case();
+$result['cases'][] = run_competing_recyclers_split_debris_case();
 $result['restored'] = restore_test_accounts();
 
 $noise = trim(ob_get_clean());

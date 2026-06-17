@@ -428,7 +428,10 @@ function SpendResourcesIfEnough (array $cost, int $planet_id) : bool
     }
 
     $query = "UPDATE ".$db_prefix."planets SET ".implode(", ", $updates).", lastpeek = ".time()." WHERE ".implode(" AND ", $conditions)." LIMIT 1;";
-    dbquery ($query);
+    $result = dbquery ($query);
+    if ($result === false) {
+        return false;
+    }
     return mysqli_affected_rows ($db_connect) === 1;
 }
 

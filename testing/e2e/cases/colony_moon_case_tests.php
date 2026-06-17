@@ -48,6 +48,16 @@ function sql_row(string $sql): ?array
     return $row === false ? null : $row;
 }
 
+function sql_rows(string $sql): array
+{
+    $rows = array();
+    $res = sql_exec($sql);
+    while ($row = dbarray($res)) {
+        $rows[] = $row;
+    }
+    return $rows;
+}
+
 function sql_value(string $sql): mixed
 {
     $row = sql_row($sql);
@@ -136,6 +146,13 @@ function latest_fleet(int $ownerId, int $mission): ?array
 {
     global $db_prefix;
     return sql_row("SELECT * FROM {$db_prefix}fleet WHERE owner_id={$ownerId} AND mission={$mission} ORDER BY fleet_id DESC LIMIT 1");
+}
+
+function fleets_for_mission(array $ownerIds, int $mission): array
+{
+    global $db_prefix;
+    $owners = implode(',', array_map('intval', $ownerIds));
+    return sql_rows("SELECT * FROM {$db_prefix}fleet WHERE owner_id IN ({$owners}) AND mission={$mission} ORDER BY fleet_id ASC");
 }
 
 function max_msg_id(): int
@@ -298,6 +315,71 @@ function run_colonization_occupied_case(): array
     );
 }
 
+function run_colonization_same_tick_competition_case(): array
+{
+    global $ATTACKER_ID, $DEFENDER_ID, $ATTACKER_PLANET, $DEFENDER_PLANET, $db_prefix;
+
+    cleanup_runtime();
+    set_user_tech($ATTACKER_ID, array(GID_R_COMPUTER => 10, GID_R_IMPULSE_DRIVE => 3));
+    set_user_tech($DEFENDER_ID, array(GID_R_COMPUTER => 10, GID_R_IMPULSE_DRIVE => 3));
+    set_planet_state($ATTACKER_PLANET, 'ColonizerA', array(GID_F_COLON => 1), array(), array(), array());
+    set_planet_state($DEFENDER_PLANET, 'ColonizerB', array(GID_F_COLON => 1), array(), array(), array());
+
+    [$g, $s, $p] = find_free_position(470);
+    $phantomA = CreateColonyPhantom($g, $s, $p, USER_SPACE);
+    $phantomB = CreateColonyPhantom($g, $s, $p, USER_SPACE);
+    $afterMsg = max_msg_id();
+    $start = time() + 1;
+    $due = $start + 1;
+    [$fleetA, $queueA] = launch_fleet(FTYP_COLONIZE, $ATTACKER_PLANET, $phantomA, array(GID_F_COLON => 1), $start);
+    [$fleetB, $queueB] = launch_fleet(FTYP_COLONIZE, $DEFENDER_PLANET, $phantomB, array(GID_F_COLON => 1), $start);
+
+    UpdateQueue($due);
+    UpdateQueue($due);
+
+    $colonies = sql_rows("SELECT planet_id, owner_id, type, g, s, p FROM {$db_prefix}planets WHERE g={$g} AND s={$s} AND p={$p} AND type=" . PTYP_PLANET . " ORDER BY planet_id ASC");
+    $winnerId = count($colonies) === 1 ? intval($colonies[0]['owner_id']) : 0;
+    $loserId = $winnerId === $ATTACKER_ID ? $DEFENDER_ID : ($winnerId === $DEFENDER_ID ? $ATTACKER_ID : 0);
+    $returnFleets = fleets_for_mission(array($ATTACKER_ID, $DEFENDER_ID), FTYP_COLONIZE + FTYP_RETURN);
+    $phantomsBeforeReturn = intval(sql_value("SELECT COUNT(*) FROM {$db_prefix}planets WHERE g={$g} AND s={$s} AND p={$p} AND type=" . PTYP_COLONY_PHANTOM));
+
+    foreach ($returnFleets as $returnFleet) {
+        $returnQueue = GetFleetQueue(intval($returnFleet['fleet_id']));
+        if ($returnQueue) {
+            Queue_Fleet_End($returnQueue);
+        }
+    }
+
+    $attackerOrigin = LoadPlanetById($ATTACKER_PLANET);
+    $defenderOrigin = LoadPlanetById($DEFENDER_PLANET);
+    $winnerOrigin = $winnerId === $ATTACKER_ID ? $attackerOrigin : ($winnerId === $DEFENDER_ID ? $defenderOrigin : null);
+    $loserOrigin = $loserId === $ATTACKER_ID ? $attackerOrigin : ($loserId === $DEFENDER_ID ? $defenderOrigin : null);
+    $phantomsAfterReturn = intval(sql_value("SELECT COUNT(*) FROM {$db_prefix}planets WHERE g={$g} AND s={$s} AND p={$p} AND type=" . PTYP_COLONY_PHANTOM));
+    $remainingFleetRows = intval(sql_value("SELECT COUNT(*) FROM {$db_prefix}fleet WHERE owner_id IN ({$ATTACKER_ID},{$DEFENDER_ID}) AND mission IN (" . FTYP_COLONIZE . "," . (FTYP_COLONIZE + FTYP_RETURN) . ")"));
+    $remainingQueueRows = intval(sql_value("SELECT COUNT(*) FROM {$db_prefix}queue WHERE owner_id IN ({$ATTACKER_ID},{$DEFENDER_ID}) AND type='" . QTYP_FLEET . "'"));
+    $messages = array_merge(message_rows($ATTACKER_ID, $afterMsg), message_rows($DEFENDER_ID, $afterMsg));
+
+    return array(
+        'case' => 'same_tick_colony_ship_competition_creates_one_colony',
+        'coordinate' => array($g, $s, $p),
+        'phantoms' => array($phantomA, $phantomB),
+        'queues' => array('attacker' => $queueA, 'defender' => $queueB),
+        'colonies' => $colonies,
+        'return_fleets' => array_map(fn($fleet) => array('fleet_id' => intval($fleet['fleet_id']), 'owner_id' => intval($fleet['owner_id']), 'colony_ship' => intval($fleet[GID_F_COLON])), $returnFleets),
+        'checks' => array(
+            assert_case($fleetA > 0 && $fleetB > 0 && ($queueA['end'] ?? 0) === ($queueB['end'] ?? -1), 'both colony ships arrive at the same coordinate on the same tick', array('fleet_a' => $fleetA, 'fleet_b' => $fleetB, 'queue_a' => $queueA, 'queue_b' => $queueB)),
+            assert_case(count($colonies) === 1 && in_array($winnerId, array($ATTACKER_ID, $DEFENDER_ID), true), 'same-tick colonization competition creates exactly one owned colony', array('colonies' => $colonies, 'winner_id' => $winnerId)),
+            assert_case(count($returnFleets) === 1 && intval($returnFleets[0][GID_F_COLON]) === 1 && intval($returnFleets[0]['owner_id']) === $loserId, 'losing colony ship enters a return fleet', array('return_fleets' => $returnFleets, 'loser_id' => $loserId)),
+            assert_case($phantomsBeforeReturn === 1, 'winning phantom is removed and losing phantom remains until return', array('phantoms_before_return' => $phantomsBeforeReturn)),
+            assert_case($winnerOrigin !== null && intval($winnerOrigin[GID_F_COLON]) === 0, 'winning colony ship is consumed', array('winner_id' => $winnerId, 'winner_colony_ship' => $winnerOrigin[GID_F_COLON] ?? null)),
+            assert_case($loserOrigin !== null && intval($loserOrigin[GID_F_COLON]) === 1, 'losing colony ship returns to origin', array('loser_id' => $loserId, 'loser_colony_ship' => $loserOrigin[GID_F_COLON] ?? null)),
+            assert_case($phantomsAfterReturn === 0, 'all same-coordinate colonization phantoms are removed after return', array('phantoms_after_return' => $phantomsAfterReturn)),
+            assert_case($remainingFleetRows === 0 && $remainingQueueRows === 0, 'same-tick colonization competition leaves no fleet or queue rows behind', array('fleet_rows' => $remainingFleetRows, 'queue_rows' => $remainingQueueRows)),
+            assert_case(count(array_filter($messages, fn($m) => $m['flags']['colony_success'])) >= 1 && count(array_filter($messages, fn($m) => $m['flags']['colony_fail'])) >= 1, 'competition produces both success and failure settler reports'),
+        ),
+    );
+}
+
 function run_colonization_max_planets_case(): array
 {
     global $ATTACKER_ID, $ATTACKER_PLANET, $db_prefix;
@@ -441,6 +523,7 @@ $result = array('cases' => array());
 $result['cases'][] = run_fleet_slot_cases();
 $result['cases'][] = run_colonization_success_case();
 $result['cases'][] = run_colonization_occupied_case();
+$result['cases'][] = run_colonization_same_tick_competition_case();
 $result['cases'][] = run_colonization_max_planets_case();
 $result['cases'][] = run_moon_creation_case();
 $result['cases'][] = run_moon_destruction_case();
