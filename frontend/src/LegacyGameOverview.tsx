@@ -130,6 +130,7 @@ export function LegacyGameOverview({ status, error, route, buildingsStatus, buil
   const buildings = buildingsStatus?.authenticated ? buildingsStatus.buildings : undefined;
   const buildingsIssue =
     buildingsStatus && !buildingsStatus.authenticated ? buildingsStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const contentClassName = route.key === "overview" ? "legacy-content legacy-content-overview" : "legacy-content";
 
   return (
     <main
@@ -146,7 +147,7 @@ export function LegacyGameOverview({ status, error, route, buildingsStatus, buil
         {overview ? <LegacyResourceHeader overview={overview} /> : <div className="legacy-header-placeholder">OGame</div>}
       </header>
       <LegacyLeftMenu activeRoute={route} />
-      <section className="legacy-content" id="content">
+      <section className={contentClassName} id="content">
         {error ? <LegacyMessage tone="error" text={error} /> : null}
         {!error && issue ? <LegacyMessage tone="error" text={issue} /> : null}
         {!error && !issue && !overview ? <LegacyMessage tone="neutral" text="Loading overview..." /> : null}

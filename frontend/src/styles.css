@@ -405,8 +405,13 @@ dd {
   left: 190px;
   overflow: visible;
   position: absolute;
+  text-align: center;
   top: 1px;
   width: calc(100% - 205px);
+}
+
+.legacy-header-top > .legacy-header-table {
+  margin: 0 auto;
 }
 
 .legacy-header-placeholder {
@@ -418,10 +423,12 @@ dd {
 
 .legacy-leftmenu {
   background: transparent;
+  height: 0;
   left: 1px;
+  overflow: visible;
   position: absolute;
   top: 1px;
-  width: 190px;
+  width: calc(100% - 9px);
 }
 
 .legacy-menu {
@@ -453,12 +460,17 @@ dd {
 }
 
 .legacy-content {
-  height: calc(100vh - 96px);
+  height: calc(100vh - 101px);
   left: 190px;
   overflow: auto;
   position: absolute;
   top: 91px;
   width: calc(100% - 205px);
+}
+
+.legacy-content-overview {
+  height: calc(100vh - 124px);
+  top: 114px;
 }
 
 .legacy-header-table,
@@ -494,7 +506,7 @@ dd {
 }
 
 .legacy-resource-table td {
-  width: 90px;
+  width: 85px;
 }
 
 .legacy-resource-name {
@@ -508,7 +520,7 @@ dd {
 }
 
 .legacy-overview-table {
-  margin: 0;
+  margin: 0 auto;
 }
 
 .legacy-overview-table th,
