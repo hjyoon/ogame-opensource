@@ -79,6 +79,35 @@ func TestFrontendServesIndexAndSpaFallback(t *testing.T) {
 	}
 }
 
+func TestLegacyPublicHTMLRoutesServeReactShell(t *testing.T) {
+	staticDir := t.TempDir()
+	writeFile(t, filepath.Join(staticDir, "index.html"), "ogame react shell")
+	server := testServer(config.Config{StaticDir: staticDir, LegacyAssetDir: t.TempDir()})
+
+	for _, target := range []string{
+		"/about.php",
+		"/home.php",
+		"/impressum.php",
+		"/index.php",
+		"/install.php",
+		"/register.php",
+		"/regeln.php",
+		"/screenshots.php",
+		"/story.php",
+		"/unis.php",
+	} {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: expected 200, got %d", target, rec.Code)
+		}
+		if rec.Body.String() != "ogame react shell" {
+			t.Fatalf("%s: unexpected body %q", target, rec.Body.String())
+		}
+	}
+}
+
 func TestFrontendReturnsUnavailableWhenBuildMissing(t *testing.T) {
 	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
 
@@ -88,6 +117,20 @@ func TestFrontendReturnsUnavailableWhenBuildMissing(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected missing frontend build to return 503, got %d", rec.Code)
+	}
+}
+
+func TestUnknownPHPRouteDoesNotFallbackToReactShell(t *testing.T) {
+	staticDir := t.TempDir()
+	writeFile(t, filepath.Join(staticDir, "index.html"), "ogame react shell")
+	server := testServer(config.Config{StaticDir: staticDir, LegacyAssetDir: t.TempDir()})
+
+	req := httptest.NewRequest(http.MethodGet, "/unknown.php", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected unknown PHP path to 404, got %d", rec.Code)
 	}
 }
 

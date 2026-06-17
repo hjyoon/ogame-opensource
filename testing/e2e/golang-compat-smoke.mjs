@@ -77,6 +77,32 @@ try {
     ]
   }));
 
+  const legacyPublicPaths = [
+    "/about.php",
+    "/home.php",
+    "/impressum.php",
+    "/index.php",
+    "/install.php",
+    "/register.php",
+    "/regeln.php",
+    "/screenshots.php",
+    "/story.php",
+    "/unis.php"
+  ];
+  const legacyPublicChecks = [];
+  for (const path of legacyPublicPaths) {
+    const response = await request(path);
+    legacyPublicChecks.push(
+      check(response.status === 200, `${path} returns React shell`, { status: response.status }),
+      check(response.body.includes('<div id="root">'), `${path} renders React mount node`),
+      check(!response.body.includes("Master Database Settings"), `${path} does not render installer form`)
+    );
+  }
+  cases.push(finalize({
+    case: "go_legacy_public_routes",
+    checks: legacyPublicChecks
+  }));
+
   const js = await request("/assets/main.js");
   const css = await request("/assets/main.css");
   cases.push(finalize({
