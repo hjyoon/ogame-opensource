@@ -53,6 +53,7 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Coupon and Dark Matter payment flows for admin coupon creation/listing/deletion, invalid/used coupon rejection, paid-DM redemption, duplicate redemption prevention, and periodic coupon queue creation/removal.
 - Queue and fleet validation flows for building/research/shipyard queue create/cancel/complete, admin queue freeze/unfreeze/remove, active-queue vacation blocking, transport launch, and rejected fleet sends.
 - Queue/event idempotency flows for repeated and parallel-worker `UpdateQueue()` runs across building, research, shipyard, transport fleet arrival/return completion, same-tick transport arrivals, same-tick attack-before-recycle ordering, recalc-points, and a multi-day long scheduler drain.
+- Soak and state-invariant flows for queue batches larger than `QUEUE_BATCH`, transport return completion after batch drains, active build/fleet completion after direct account-state changes, and seeded battle writeback invariants.
 - Vacation/freeze timing edge flows for vacation enable rejection with active build/fleet queues, vacation-mode build/shipyard mutation blocking, and universe-freeze pause/resume behavior for due queues.
 - Global maintenance queue flows for user state timers, score recalculation, old-score snapshots, debris cleanup, removed-planet cleanup, and disabled-player cleanup.
 - Cron resilience flows for browser access denial, due task idempotency, unknown task debug auditing, frozen task preservation, and universe-freeze queue blocking.
