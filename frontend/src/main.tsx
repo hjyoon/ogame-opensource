@@ -4,6 +4,7 @@ import { LegacyGameOverview, type GameOverviewStatus } from "./LegacyGameOvervie
 import { LegacyPublicAbout } from "./LegacyPublicAbout";
 import { LegacyPublicHome } from "./LegacyPublicHome";
 import { LegacyPublicRegister } from "./LegacyPublicRegister";
+import { LegacyPublicRules } from "./LegacyPublicRules";
 import { LegacyPublicScreenshots } from "./LegacyPublicScreenshots";
 import { LegacyPublicStory } from "./LegacyPublicStory";
 import { publicRoutes, resolvePublicRoute } from "./routes";
@@ -326,6 +327,20 @@ function App() {
   if (route.key === "screenshots") {
     return (
       <LegacyPublicScreenshots
+        loginDraft={loginDraft}
+        loginError={loginError}
+        loginPending={loginPending}
+        loginResult={loginResult}
+        onLoginChange={updateLoginDraft}
+        onLoginSubmit={submitLogin}
+        universes={universes}
+      />
+    );
+  }
+
+  if (route.key === "rules") {
+    return (
+      <LegacyPublicRules
         loginDraft={loginDraft}
         loginError={loginError}
         loginPending={loginPending}

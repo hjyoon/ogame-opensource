@@ -107,7 +107,7 @@ export function LanguageLinks() {
   );
 }
 
-export function MainMenu({ active }: { active: "home" | "about" | "preview" | "reg" }) {
+export function MainMenu({ active }: { active?: "home" | "about" | "preview" | "reg" }) {
   const items = [
     { key: "home", label: "Start", href: "/home" },
     { key: "about", label: "About OGame", href: "/about" },

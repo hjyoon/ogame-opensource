@@ -666,6 +666,16 @@ dd {
   z-index: 1;
 }
 
+.legacy-public-rules-panel {
+  background-image: var(--legacy-public-panel-bg);
+  height: 384px;
+  left: 400px;
+  position: absolute;
+  top: 70px;
+  width: 450px;
+  z-index: 1;
+}
+
 .legacy-public-title {
   color: #0a1c25;
   font-size: 16px;
@@ -695,6 +705,10 @@ dd {
 
 .legacy-screenshots-scroll {
   text-align: center;
+}
+
+.legacy-rules-scroll {
+  text-align: justify;
 }
 
 .legacy-public-scroll p {
@@ -729,6 +743,30 @@ dd {
 
 .legacy-screenshot-image a:hover img {
   border-color: #fff;
+}
+
+.legacy-rules-section h2 {
+  color: #b1daf2;
+  font-size: 16px;
+  font-weight: normal;
+  margin: 14px 0 6px;
+}
+
+.legacy-rules-section ul {
+  margin: 6px 0 12px 20px;
+  padding: 0;
+}
+
+.legacy-rules-section li {
+  margin-bottom: 5px;
+}
+
+.legacy-rules-warning {
+  color: red;
+}
+
+.legacy-rules-note {
+  color: crimson;
 }
 
 .legacy-story-link {
