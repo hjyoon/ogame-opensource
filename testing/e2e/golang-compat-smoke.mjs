@@ -294,6 +294,8 @@ try {
   const publicStartBackground = await request("/public-assets/img/startseite_bg.jpg");
   const publicLoginButton = await request("/public-assets/img/login_button.jpg");
   const publicRegisterPanel = await request("/public-assets/img/part_register2.jpg");
+  const publicBigPanel = await request("/public-assets/img/part_big.jpg");
+  const publicAboutImage = await request("/public-assets/img/ogame_admiral.jpg");
   cases.push(finalize({
     case: "go_public_legacy_assets",
     checks: [
@@ -302,7 +304,11 @@ try {
       check(publicLoginButton.status === 200, "legacy public login button returns HTTP 200", { status: publicLoginButton.status }),
       check(hasHeader(publicLoginButton, "content-type", "image/jpeg"), "legacy public login button has JPEG content type"),
       check(publicRegisterPanel.status === 200, "legacy public registration panel returns HTTP 200", { status: publicRegisterPanel.status }),
-      check(hasHeader(publicRegisterPanel, "content-type", "image/jpeg"), "legacy public registration panel has JPEG content type")
+      check(hasHeader(publicRegisterPanel, "content-type", "image/jpeg"), "legacy public registration panel has JPEG content type"),
+      check(publicBigPanel.status === 200, "legacy public big panel returns HTTP 200", { status: publicBigPanel.status }),
+      check(hasHeader(publicBigPanel, "content-type", "image/jpeg"), "legacy public big panel has JPEG content type"),
+      check(publicAboutImage.status === 200, "legacy public about image returns HTTP 200", { status: publicAboutImage.status }),
+      check(hasHeader(publicAboutImage, "content-type", "image/jpeg"), "legacy public about image has JPEG content type")
     ]
   }));
 
@@ -384,6 +390,7 @@ try {
       check(js.body.includes("/api/game/overview"), "React bundle consumes game overview API"),
       check(js.body.includes("legacy-public-main"), "React bundle contains legacy public home layout"),
       check(js.body.includes("legacy-public-register-panel"), "React bundle contains legacy public registration layout"),
+      check(js.body.includes("legacy-public-about-panel"), "React bundle contains legacy public about layout"),
       check(js.body.includes("legacy-game-shell"), "React bundle contains legacy game overview layout")
     ]
   }));
