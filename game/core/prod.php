@@ -379,7 +379,7 @@ function SetDefaultProduction (array &$planet) : void {
 // NOTE: The calculation excludes external events, such as the end of officers' actions, attack of another player, completion of building construction, etc.
 function GetUpdatePlanet ( int $planet_id, int $time_to) : array|null
 {
-    global $db_prefix, $GlobalUni;
+    global $db_connect, $db_prefix, $GlobalUni;
     global $storagemap;
     global $resourcesWithNonZeroDerivative;
 
@@ -409,22 +409,38 @@ function GetUpdatePlanet ( int $planet_id, int $time_to) : array|null
     $time_from = $planet['lastpeek'];
     $diff = $time_to - $time_from;
 
-    // Calculate resource growth (only for resources that change over time)
-    $update_query = "";
-    foreach ($resourcesWithNonZeroDerivative as $i=>$rc) {
+    if ($diff > 0) {
+        // Calculate resource growth (only for resources that change over time).
+        // Guard the write with lastpeek so a stale concurrent request cannot restore
+        // resources that another request has already spent.
+        $update_query = "";
+        foreach ($resourcesWithNonZeroDerivative as $i=>$rc) {
 
-        $hourly = $planet['balance'][$rc];
-        $cap = isset($planet['max'.$rc]) ? $planet['max'.$rc] : PHP_INT_MAX;
-        if ($planet[$rc] < $cap) {
-            $planet[$rc] = min ($planet[$rc] + ($hourly * $diff) / 3600, $cap);
-            $update_query .= "`".$rc."` = ".$planet[$rc].", ";
+            $hourly = $planet['balance'][$rc];
+            $cap = isset($planet['max'.$rc]) ? $planet['max'.$rc] : PHP_INT_MAX;
+            if ($planet[$rc] < $cap) {
+                $planet[$rc] = min ($planet[$rc] + ($hourly * $diff) / 3600, $cap);
+                $update_query .= "`".$rc."` = ".$planet[$rc].", ";
+            }
+        }
+
+        $planet_id = $planet['planet_id'];
+        $query = "UPDATE ".$db_prefix."planets SET $update_query lastpeek = ".$time_to." WHERE planet_id = $planet_id AND lastpeek = ".$time_from;
+        dbquery ($query);
+        if (mysqli_affected_rows ($db_connect) === 1) {
+            $planet['lastpeek'] = $time_to;
+        }
+        else {
+            $current = LoadPlanetById ($planet_id);
+            if ($current != null) {
+                $planet = $current;
+                ProdResources ($GlobalUni, $user, $planet);
+                foreach ($storagemap as $rc=>$gid) {
+                    $planet['max'.$rc] = store_capacity ( $planet[$gid] );
+                }
+            }
         }
     }
-
-    $planet_id = $planet['planet_id'];
-    $query = "UPDATE ".$db_prefix."planets SET $update_query lastpeek = ".$time_to." WHERE planet_id = $planet_id";
-    dbquery ($query);
-    $planet['lastpeek'] = $time_to;
 
     // TODO: Still needed for IsEnoughResources method :(
     // Set energy as a virtual resource, obtained only when calling GetUpdatePlanet. Loading a raw planet using the LoadPlanetById method will not provide energy.

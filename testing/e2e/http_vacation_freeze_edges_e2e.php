@@ -266,6 +266,12 @@ try {
     $auth = e2e_prepare_session($attackerId, 'vacation-freeze-attacker');
 
     $buildError = BuildEnque(LoadUser($attackerId), $attackerPlanet, GID_B_METAL_MINE, 0, time());
+    $futureBuildEnd = time() + 600;
+    $buildQueueRow = e2e_one_row("SELECT task_id, sub_id FROM {$db_prefix}queue WHERE owner_id={$attackerId} AND type='" . QTYP_BUILD . "' ORDER BY task_id DESC LIMIT 1");
+    if ($buildQueueRow !== null) {
+        dbquery("UPDATE {$db_prefix}queue SET end={$futureBuildEnd} WHERE task_id=" . (int)$buildQueueRow['task_id']);
+        dbquery("UPDATE {$db_prefix}buildqueue SET end={$futureBuildEnd} WHERE id=" . (int)$buildQueueRow['sub_id']);
+    }
     $buildQueueBefore = e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}queue WHERE owner_id={$attackerId} AND type='" . QTYP_BUILD . "'");
     $response = e2e_http_request(
         'POST',

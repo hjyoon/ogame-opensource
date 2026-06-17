@@ -41,6 +41,7 @@ export OGAME_E2E_DEFENDER_NAME OGAME_E2E_DEFENDER_PASSWORD
 
 run_json_case route_matrix "$ROOT/http_route_matrix_e2e.php"
 run_json_case render_asset_smoke "$ROOT/http_render_asset_smoke_e2e.php"
+run_json_case multi_universe_isolation "$ROOT/http_multi_universe_isolation_e2e.php"
 run_json_case account_actions "$ROOT/http_account_actions_e2e.php"
 run_json_case account_security "$ROOT/http_account_security_e2e.php"
 run_json_case localization_edges "$ROOT/http_localization_edges_e2e.php"

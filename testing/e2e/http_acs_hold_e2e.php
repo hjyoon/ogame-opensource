@@ -341,6 +341,19 @@ function e2e_active_fleet_count(int $userId): int
     return e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}queue WHERE owner_id={$userId} AND type='" . QTYP_FLEET . "'");
 }
 
+function e2e_max_message_id(): int
+{
+    global $db_prefix;
+    $row = e2e_one_row("SELECT COALESCE(MAX(msg_id), 0) AS max_id FROM {$db_prefix}messages");
+    return $row === null ? 0 : (int)$row['max_id'];
+}
+
+function e2e_message_count_after(int $userId, int $after, int $pm): int
+{
+    global $db_prefix;
+    return e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}messages WHERE owner_id={$userId} AND msg_id>{$after} AND pm={$pm}");
+}
+
 function e2e_planet_snapshot(int $planetId): ?array
 {
     global $db_prefix;
@@ -512,6 +525,67 @@ try {
             e2e_case($headOriginBefore !== null && $headOriginAfterReturn !== null && (int)$headOriginAfterReturn['light_fighter'] === (int)$headOriginBefore['light_fighter'], 'ACS head return restores attacker fighter', array('before' => $headOriginBefore, 'after_return' => $headOriginAfterReturn)),
             e2e_case($supportOriginBefore !== null && $supportOriginAfterReturn !== null && (int)$supportOriginAfterReturn['light_fighter'] === (int)$supportOriginBefore['light_fighter'], 'ACS support return restores support fighter', array('before' => $supportOriginBefore, 'after_return' => $supportOriginAfterReturn)),
             e2e_case(e2e_active_fleet_count($attackerId) === 0 && e2e_active_fleet_count($supportId) === 0, 'ACS lifecycle leaves no active attacker/support fleet queue tasks'),
+        )),
+    ));
+
+    e2e_cleanup_fleets(array($attackerId, $defenderId, $supportId), array($attackerPlanet, $defenderPlanet, $supportHome, $supportPlanet));
+    e2e_cleanup_relations(array($attackerId, $defenderId, $supportId));
+    e2e_reset_user_and_planet($attackerId, $attackerPlanet, 10, 10);
+    e2e_reset_user_and_planet($defenderId, $defenderPlanet, 0, 0);
+    e2e_prepare_planet($supportPlanet, $supportId, 10, 10);
+
+    $recallHeadBefore = e2e_planet_snapshot($attackerPlanet);
+    $recallSupportBefore = e2e_planet_snapshot($supportPlanet);
+    $origin = LoadPlanetById($attackerPlanet);
+    $target = LoadPlanetById($defenderPlanet);
+    $recallHeadResponse = e2e_http_request(
+        'POST',
+        $gameBase . '/index.php?page=flottenversand&session=' . rawurlencode($attackerSession) . '&cp=' . $attackerPlanet,
+        e2e_fleet_payload($origin, $target, FTYP_ATTACK, array(GID_F_LF => 1)),
+        $attackerCookies
+    );
+    $recallHeadAttack = e2e_latest_fleet($attackerId, FTYP_ATTACK);
+    $recallUnionId = $recallHeadAttack === null ? 0 : CreateUnion((int)$recallHeadAttack['fleet_id'], 'E2ERECALL' . substr(md5((string)microtime(true)), 0, 6));
+    $recallHeadAfterUnion = $recallUnionId > 0 ? e2e_latest_fleet($attackerId, FTYP_ACS_ATTACK_HEAD) : null;
+    $GlobalUser = LoadUser($attackerId);
+    $recallInviteResult = $recallUnionId > 0 ? AddUnionMember($recallUnionId, $supportUser['name']) : 'union not created';
+    $supportOrigin = LoadPlanetById($supportPlanet);
+    $recallSupportResponse = e2e_http_request(
+        'POST',
+        $gameBase . '/index.php?page=flottenversand&session=' . rawurlencode($supportSession) . '&cp=' . $supportPlanet,
+        e2e_fleet_payload($supportOrigin, $target, FTYP_ACS_ATTACK, array(GID_F_LF => 1), array(), array('union2' => $recallUnionId)),
+        $supportCookies
+    );
+    $recallSupportFleet = e2e_latest_fleet($supportId, FTYP_ACS_ATTACK);
+    $battleMsgStart = e2e_max_message_id();
+    if ($recallSupportFleet !== null) {
+        RecallFleet((int)$recallSupportFleet['fleet_id'], time() + 1);
+    }
+    $supportReturnAfterRecall = e2e_latest_fleet($supportId, FTYP_ACS_ATTACK + FTYP_RETURN);
+    $unionFleetCountAfterRecall = $recallUnionId > 0 ? e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}fleet WHERE union_id={$recallUnionId}") : 0;
+    $completedRecallBattle = e2e_complete_fleet($recallHeadAfterUnion);
+    $recallUnionAfterBattle = $recallUnionId > 0 ? LoadUnion($recallUnionId) : null;
+    $recallHeadReturn = e2e_latest_fleet($attackerId, FTYP_ACS_ATTACK_HEAD + FTYP_RETURN);
+    $completedRecallHeadReturn = e2e_complete_fleet($recallHeadReturn);
+    $completedRecallSupportReturn = e2e_complete_fleet($supportReturnAfterRecall);
+    $recallHeadAfterReturn = e2e_planet_snapshot($attackerPlanet);
+    $recallSupportAfterReturn = e2e_planet_snapshot($supportPlanet);
+    $attackerBattleReports = e2e_message_count_after($attackerId, $battleMsgStart, MTYP_BATTLE_REPORT_TEXT);
+    $defenderBattleReports = e2e_message_count_after($defenderId, $battleMsgStart, MTYP_BATTLE_REPORT_TEXT);
+    $supportBattleReports = e2e_message_count_after($supportId, $battleMsgStart, MTYP_BATTLE_REPORT_TEXT);
+    $cases[] = e2e_finalize_case(array(
+        'case' => 'acs_participant_recall_before_battle_excludes_participant',
+        'checks' => array_merge(e2e_response_check($recallHeadResponse), e2e_response_check($recallSupportResponse), array(
+            e2e_case($recallUnionId > 0 && $recallHeadAfterUnion !== null, 'ACS recall scenario creates a head union fleet', array('union_id' => $recallUnionId, 'head' => $recallHeadAfterUnion)),
+            e2e_case($recallInviteResult === '' && $recallSupportFleet !== null, 'support participant joins before recall', array('invite_result' => $recallInviteResult, 'support_fleet' => $recallSupportFleet)),
+            e2e_case($supportReturnAfterRecall !== null && (int)$supportReturnAfterRecall['mission'] === FTYP_ACS_ATTACK + FTYP_RETURN, 'recalled ACS participant becomes a return fleet before battle', $supportReturnAfterRecall ?? array()),
+            e2e_case($unionFleetCountAfterRecall === 1, 'union retains only the head fleet after participant recall', array('union_fleet_count' => $unionFleetCountAfterRecall)),
+            e2e_case($completedRecallBattle && $recallUnionAfterBattle === null, 'head battle completes and removes the ACS union after recalled participant is excluded'),
+            e2e_case($recallHeadReturn !== null && $completedRecallHeadReturn && $completedRecallSupportReturn, 'head and recalled support return fleets complete cleanly', array('head_return' => $recallHeadReturn, 'support_return' => $supportReturnAfterRecall)),
+            e2e_case($attackerBattleReports >= 1 && $defenderBattleReports >= 1 && $supportBattleReports === 0, 'battle report recipients exclude the recalled ACS participant', array('attacker_reports' => $attackerBattleReports, 'defender_reports' => $defenderBattleReports, 'support_reports' => $supportBattleReports)),
+            e2e_case($recallHeadBefore !== null && $recallHeadAfterReturn !== null && (int)$recallHeadAfterReturn['light_fighter'] === (int)$recallHeadBefore['light_fighter'], 'head fighter returns to attacker origin', array('before' => $recallHeadBefore, 'after' => $recallHeadAfterReturn)),
+            e2e_case($recallSupportBefore !== null && $recallSupportAfterReturn !== null && (int)$recallSupportAfterReturn['light_fighter'] === (int)$recallSupportBefore['light_fighter'], 'recalled participant fighter returns to support origin', array('before' => $recallSupportBefore, 'after' => $recallSupportAfterReturn)),
+            e2e_case(e2e_active_fleet_count($attackerId) === 0 && e2e_active_fleet_count($supportId) === 0, 'ACS recall scenario leaves no active attacker/support fleet queues'),
         )),
     ));
 } catch (Throwable $e) {

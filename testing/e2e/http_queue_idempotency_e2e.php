@@ -126,6 +126,51 @@ function e2e_update_queue_twice(int $now): void
     UpdateQueue($now);
 }
 
+function e2e_run_update_queue_workers(int $until, int $workers = 4): array
+{
+    $root = getenv('OGAME_E2E_ROOT') ?: '/tmp/ogame-e2e';
+    $script = $root . '/update_queue_worker_once.php';
+    $processes = array();
+    $results = array();
+
+    for ($i = 0; $i < $workers; $i++) {
+        $pipes = array();
+        $proc = proc_open(
+            array('php', $script, (string)$until),
+            array(
+                0 => array('pipe', 'r'),
+                1 => array('pipe', 'w'),
+                2 => array('pipe', 'w'),
+            ),
+            $pipes
+        );
+        if (!is_resource($proc)) {
+            $results[] = array('started' => false, 'exit_code' => -1, 'stdout' => '', 'stderr' => 'proc_open failed');
+            continue;
+        }
+        fclose($pipes[0]);
+        $processes[] = array('proc' => $proc, 'pipes' => $pipes);
+    }
+
+    foreach ($processes as $entry) {
+        $stdout = stream_get_contents($entry['pipes'][1]);
+        $stderr = stream_get_contents($entry['pipes'][2]);
+        fclose($entry['pipes'][1]);
+        fclose($entry['pipes'][2]);
+        $exit = proc_close($entry['proc']);
+        $decoded = json_decode(trim($stdout), true);
+        $results[] = array(
+            'started' => true,
+            'exit_code' => $exit,
+            'stdout' => trim($stdout),
+            'stderr' => trim($stderr),
+            'json' => is_array($decoded) ? $decoded : null,
+        );
+    }
+
+    return $results;
+}
+
 function e2e_planet_snapshot(int $planetId): ?array
 {
     global $db_prefix;
@@ -290,6 +335,60 @@ try {
             e2e_case($targetAfterArrival !== null && $targetAfterReturn !== null && (int)$targetAfterReturn['metal'] === (int)$targetAfterArrival['metal'] && (int)$targetAfterReturn['crystal'] === (int)$targetAfterArrival['crystal'], 'return completion does not redeliver transport cargo', array('after_arrival' => $targetAfterArrival, 'after_return' => $targetAfterReturn)),
             e2e_case(e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}fleet WHERE owner_id={$attackerId}") === 0, 'fleet rows are removed after idempotent return completion'),
             e2e_case(e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}queue WHERE owner_id={$attackerId} AND type='" . QTYP_FLEET . "'") === 0, 'fleet queue rows are removed after idempotent return completion'),
+        ),
+    ));
+
+    e2e_reset_user_and_planet($attackerId, $attackerPlanet);
+    e2e_reset_user_and_planet($defenderId, $defenderPlanet);
+    e2e_cleanup_fleets(array($attackerId, $defenderId), array($attackerPlanet, $defenderPlanet));
+
+    $workerNow = time();
+    $workerOriginBefore = e2e_planet_snapshot($attackerPlanet);
+    $workerTargetBefore = e2e_planet_snapshot($defenderPlanet);
+    $origin = LoadPlanetById($attackerPlanet);
+    $target = LoadPlanetById($defenderPlanet);
+    $fleet = e2e_empty_fleet();
+    $fleet[GID_F_SC] = 1;
+    $cargo = e2e_empty_resources();
+    $cargo[GID_RC_METAL] = 321;
+    $cargo[GID_RC_CRYSTAL] = 123;
+    $cargo[GID_RC_DEUTERIUM] = 45;
+    AdjustShips($fleet, $attackerPlanet, '-');
+    AdjustResources($cargo, $attackerPlanet, '-');
+    $workerFleetId = DispatchFleet($fleet, $origin, $target, FTYP_TRANSPORT, 3600, $cargo, 0, $workerNow + 5);
+    $workerQueue = $workerFleetId > 0 ? GetFleetQueue($workerFleetId) : null;
+    if ($workerQueue !== null && $workerQueue !== false) {
+        e2e_force_queue_due((int)$workerQueue['task_id'], $workerNow);
+    }
+
+    $arrivalWorkers = e2e_run_update_queue_workers($workerNow, 4);
+    $workerTargetAfterArrival = e2e_planet_snapshot($defenderPlanet);
+    $workerReturnFleet = e2e_latest_fleet($attackerId, FTYP_TRANSPORT + FTYP_RETURN);
+    $workerReturnCount = e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}fleet WHERE owner_id={$attackerId} AND mission=" . (FTYP_TRANSPORT + FTYP_RETURN));
+    $workerOutgoingCount = e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}fleet WHERE owner_id={$attackerId} AND mission=" . FTYP_TRANSPORT);
+    $workerReturnQueue = $workerReturnFleet ? GetFleetQueue((int)$workerReturnFleet['fleet_id']) : null;
+    if ($workerReturnQueue !== null && $workerReturnQueue !== false) {
+        e2e_force_queue_due((int)$workerReturnQueue['task_id'], $workerNow);
+    }
+
+    $returnWorkers = e2e_run_update_queue_workers($workerNow, 4);
+    $workerOriginAfterReturn = e2e_planet_snapshot($attackerPlanet);
+    $workerFleetRowsAfterReturn = e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}fleet WHERE owner_id={$attackerId}");
+    $workerQueueRowsAfterReturn = e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}queue WHERE owner_id={$attackerId} AND type='" . QTYP_FLEET . "'");
+    $workerExitsOk = count(array_filter(array_merge($arrivalWorkers, $returnWorkers), fn($worker) => ($worker['exit_code'] ?? -1) === 0 && ($worker['json'] ?? null) !== null)) === 8;
+
+    $cases[] = e2e_finalize_case(array(
+        'case' => 'parallel_update_queue_workers_process_fleet_once',
+        'workers' => array('arrival' => $arrivalWorkers, 'return' => $returnWorkers),
+        'checks' => array(
+            e2e_case($workerFleetId > 0 && $workerQueue !== null && $workerQueue !== false, 'transport fleet and due queue are prepared for worker competition', array('fleet_id' => $workerFleetId, 'queue' => $workerQueue ?: null)),
+            e2e_case($workerExitsOk, 'all parallel UpdateQueue workers exit cleanly with JSON output', array('arrival_workers' => $arrivalWorkers, 'return_workers' => $returnWorkers)),
+            e2e_case($workerTargetBefore !== null && $workerTargetAfterArrival !== null && (int)$workerTargetAfterArrival['metal'] === (int)$workerTargetBefore['metal'] + 321, 'parallel workers deliver metal exactly once', array('before' => $workerTargetBefore, 'after' => $workerTargetAfterArrival)),
+            e2e_case($workerTargetBefore !== null && $workerTargetAfterArrival !== null && (int)$workerTargetAfterArrival['crystal'] === (int)$workerTargetBefore['crystal'] + 123, 'parallel workers deliver crystal exactly once', array('before' => $workerTargetBefore, 'after' => $workerTargetAfterArrival)),
+            e2e_case($workerTargetBefore !== null && $workerTargetAfterArrival !== null && (int)$workerTargetAfterArrival['deuterium'] === (int)$workerTargetBefore['deuterium'] + 45, 'parallel workers deliver deuterium exactly once', array('before' => $workerTargetBefore, 'after' => $workerTargetAfterArrival)),
+            e2e_case($workerOutgoingCount === 0 && $workerReturnCount === 1, 'worker competition creates one return fleet and removes the outgoing fleet once', array('outgoing' => $workerOutgoingCount, 'returns' => $workerReturnCount)),
+            e2e_case($workerOriginBefore !== null && $workerOriginAfterReturn !== null && (int)$workerOriginAfterReturn['small_cargo'] === (int)$workerOriginBefore['small_cargo'], 'parallel return workers restore the ship exactly once', array('before' => $workerOriginBefore, 'after' => $workerOriginAfterReturn)),
+            e2e_case($workerFleetRowsAfterReturn === 0 && $workerQueueRowsAfterReturn === 0, 'parallel worker return completion leaves no fleet or fleet queue rows', array('fleet_rows' => $workerFleetRowsAfterReturn, 'queue_rows' => $workerQueueRowsAfterReturn)),
         ),
     ));
 

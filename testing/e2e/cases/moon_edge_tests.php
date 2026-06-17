@@ -135,6 +135,46 @@ function launch_to_moon(int $mission, int $targetMoonId, array $ships): void
     Queue_Fleet_End($queue);
 }
 
+function dispatch_between(int $mission, int $originPlanetId, int $targetPlanetId, array $ships, int $when, array $resources = array()): array
+{
+    global $fleetmap, $transportableResources;
+    $fleet = merge_units(zero_units($fleetmap), $ships);
+    $cargo = zero_units($transportableResources);
+    foreach ($resources as $gid => $amount) {
+        $cargo[$gid] = $amount;
+    }
+    $origin = LoadPlanetById($originPlanetId);
+    $target = LoadPlanetById($targetPlanetId);
+    AdjustShips($fleet, $originPlanetId, '-');
+    AdjustResources($cargo, $originPlanetId, '-');
+    $fleetId = DispatchFleet($fleet, $origin, $target, $mission, 3600, $cargo, 0, $when);
+    return array($fleetId, GetFleetQueue($fleetId));
+}
+
+function fleet_row(int $fleetId): ?array
+{
+    global $db_prefix;
+    $res = run_sql("SELECT fleet_id, owner_id, mission, start_planet, target_planet, `" . GID_F_SC . "` AS small_cargo, `" . GID_RC_METAL . "` AS metal FROM {$db_prefix}fleet WHERE fleet_id={$fleetId} LIMIT 1");
+    $row = dbarray($res);
+    return $row === false ? null : $row;
+}
+
+function latest_owner_fleet(int $ownerId, int $mission): ?array
+{
+    global $db_prefix;
+    $res = run_sql("SELECT fleet_id, owner_id, mission, start_planet, target_planet, `" . GID_F_SC . "` AS small_cargo, `" . GID_RC_METAL . "` AS metal FROM {$db_prefix}fleet WHERE owner_id={$ownerId} AND mission={$mission} ORDER BY fleet_id DESC LIMIT 1");
+    $row = dbarray($res);
+    return $row === false ? null : $row;
+}
+
+function planet_snapshot(int $planetId): ?array
+{
+    global $db_prefix;
+    $res = run_sql("SELECT planet_id, owner_id, type, g, s, p, `" . GID_F_SC . "` AS small_cargo, `" . GID_RC_METAL . "` AS metal FROM {$db_prefix}planets WHERE planet_id={$planetId} LIMIT 1");
+    $row = dbarray($res);
+    return $row === false ? null : $row;
+}
+
 function create_test_moon(int $diameter): int
 {
     global $DEFENDER_ID, $DEFENDER_PLANET, $db_prefix;
@@ -203,6 +243,69 @@ try {
             $moonStillExists &&
             count(array_filter($attackerMessages, fn($m) => $m['moon_notice'])) === 0 &&
             count(array_filter($defenderMessages, fn($m) => $m['moon_notice'])) === 0,
+    );
+
+    cleanup_moon_edges();
+    set_user_research($ATTACKER_ID);
+    set_user_research($DEFENDER_ID);
+    set_planet_units($ATTACKER_PLANET, 'MoonFollowupAttacker', array(GID_F_SC => 2));
+    set_planet_units($DEFENDER_PLANET, 'MoonFollowupDefender', array(GID_F_SC => 2), array());
+    $moonId = create_test_moon(1000);
+    set_planet_units($moonId, 'EdgeMoon', array(GID_F_SC => 1), array());
+    $attackerBefore = planet_snapshot($ATTACKER_PLANET);
+    $when = time() + 1;
+    [$foreignInboundId, $foreignInboundQueue] = dispatch_between(FTYP_TRANSPORT, $ATTACKER_PLANET, $moonId, array(GID_F_SC => 1), $when, array(GID_RC_METAL => 100));
+    [$ownerOutboundId, $ownerOutboundQueue] = dispatch_between(FTYP_TRANSPORT, $moonId, $ATTACKER_PLANET, array(GID_F_SC => 1), $when, array());
+    [$ownerInboundId, $ownerInboundQueue] = dispatch_between(FTYP_TRANSPORT, $DEFENDER_PLANET, $moonId, array(GID_F_SC => 1), $when, array());
+
+    DestroyMoon($moonId, $when + 1, 0);
+    $foreignReturn = latest_owner_fleet($ATTACKER_ID, FTYP_TRANSPORT + FTYP_RETURN);
+    $ownerOutboundAfter = fleet_row($ownerOutboundId);
+    $ownerInboundAfter = fleet_row($ownerInboundId);
+    $moonReferencesAfterDestroy = intval(first_value("SELECT COUNT(*) FROM {$db_prefix}fleet WHERE start_planet={$moonId} OR target_planet={$moonId}"));
+    $moonRowAfterDestroy = planet_snapshot($moonId);
+
+    $foreignReturnCompleted = false;
+    if ($foreignReturn !== null) {
+        $returnQueue = GetFleetQueue(intval($foreignReturn['fleet_id']));
+        if ($returnQueue) {
+            Queue_Fleet_End($returnQueue);
+            $foreignReturnCompleted = true;
+        }
+    }
+    $attackerAfterReturn = planet_snapshot($ATTACKER_PLANET);
+    $foreignReturnLeft = $foreignReturn === null ? 0 : intval(first_value("SELECT COUNT(*) FROM {$db_prefix}fleet WHERE fleet_id=" . intval($foreignReturn['fleet_id'])));
+
+    $cases[] = array(
+        'case' => 'destroyed_moon_retargets_related_fleets_to_planet',
+        'moon_id' => $moonId,
+        'prepared_fleets' => array(
+            'foreign_inbound' => array('fleet_id' => $foreignInboundId, 'queue' => $foreignInboundQueue),
+            'owner_outbound' => array('fleet_id' => $ownerOutboundId, 'queue' => $ownerOutboundQueue),
+            'owner_inbound' => array('fleet_id' => $ownerInboundId, 'queue' => $ownerInboundQueue),
+        ),
+        'foreign_return' => $foreignReturn,
+        'owner_outbound_after' => $ownerOutboundAfter,
+        'owner_inbound_after' => $ownerInboundAfter,
+        'pass' =>
+            $foreignInboundId > 0 &&
+            $ownerOutboundId > 0 &&
+            $ownerInboundId > 0 &&
+            PlanetHasMoon($DEFENDER_PLANET) === 0 &&
+            $moonRowAfterDestroy === null &&
+            $foreignReturn !== null &&
+            intval($foreignReturn['target_planet']) === $DEFENDER_PLANET &&
+            $ownerOutboundAfter !== null &&
+            intval($ownerOutboundAfter['start_planet']) === $DEFENDER_PLANET &&
+            $ownerInboundAfter !== null &&
+            intval($ownerInboundAfter['target_planet']) === $DEFENDER_PLANET &&
+            $moonReferencesAfterDestroy === 0 &&
+            $foreignReturnCompleted &&
+            $foreignReturnLeft === 0 &&
+            $attackerBefore !== null &&
+            $attackerAfterReturn !== null &&
+            intval($attackerAfterReturn['small_cargo']) === intval($attackerBefore['small_cargo']) &&
+            intval($attackerAfterReturn['metal']) === intval($attackerBefore['metal']),
     );
 } finally {
     $restored = restore_accounts();

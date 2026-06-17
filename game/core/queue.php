@@ -571,12 +571,22 @@ function ShipyardLatestTime (int $planet_id, int $now) : int
 // Add fleet/defense at the shipyard ($gid - unit type, $value - quantity)
 function AddShipyard (int $player_id, int $planet_id, int $gid, int $value, int $now=0 ) : bool
 {
-    global $db_prefix, $GlobalUni;
+    global $db_connect, $db_prefix, $GlobalUni;
     global $fleetmap;
     global $defmap;
     global $resourcemap;
 
     // Serialize same-planet shipyard mutations across parallel HTTP workers.
+    $shipyardDbLockName = $db_prefix . "shipyard_" . $planet_id;
+    $shipyardDbLockEsc = mysqli_real_escape_string ($db_connect, $shipyardDbLockName);
+    $shipyardDbLock = false;
+    $lockResult = dbquery ( "SELECT GET_LOCK('".$shipyardDbLockEsc."', 10) AS locked" );
+    if ($lockResult) {
+        $lockRow = dbarray ($lockResult);
+        $shipyardDbLock = $lockRow !== false && intval($lockRow['locked']) === 1;
+    }
+    if (!$shipyardDbLock) return false;
+
     $shipyardLock = @fopen(__DIR__ . '/../temp/shipyardlock_' . $planet_id, 'c');
     $shipyardLocked = $shipyardLock !== false && @flock($shipyardLock, LOCK_EX);
 
@@ -595,7 +605,11 @@ function AddShipyard (int $player_id, int $planet_id, int $gid, int $value, int 
 
     if ($now == 0) $now = time ();
 
-    $planet = GetUpdatePlanet ( $planet_id, $now );
+    // The request dispatcher already updates the active planet before reaching this page.
+    // Re-running production here can make parallel shipyard orders see freshly generated
+    // resources between serialized attempts, so use the persisted row for the spend check.
+    $planet = LoadPlanetById ( $planet_id );
+    if ($planet == null) return false;
 
     // If the planet already has a shield dome, we don't build it.
     if ( ($gid == GID_D_SDOME || $gid == GID_D_LDOME) && $planet[$gid] > 0 ) return false;
@@ -659,6 +673,7 @@ function AddShipyard (int $player_id, int $planet_id, int $gid, int $value, int 
     finally {
         if ($shipyardLocked) @flock($shipyardLock, LOCK_UN);
         if ($shipyardLock !== false) @fclose($shipyardLock);
+        if ($shipyardDbLock) dbquery ( "SELECT RELEASE_LOCK('".$shipyardDbLockEsc."')" );
     }
 }
 

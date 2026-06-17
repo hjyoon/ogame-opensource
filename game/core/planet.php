@@ -455,10 +455,11 @@ function DestroyMoon (int $moon_id, int $when, int $fleet_id) : void
         RecallFleet ( $fleet_obj['fleet_id'], $when );
     }
 
-    // Redirect own returning and departing fleets to the planet.
+    // Redirect all remaining fleet references from the destroyed moon to the planet.
+    // Foreign inbound fleets were recalled above; their return rows still need a live target for queue completion.
     $query = "UPDATE ".$db_prefix."fleet SET start_planet = ".$planet['planet_id']." WHERE start_planet = $moon_id;";
     dbquery ( $query );
-    $query = "UPDATE ".$db_prefix."fleet SET target_planet = ".$planet['planet_id']." WHERE owner_id = ".$planet['owner_id']." AND target_planet = $moon_id;";
+    $query = "UPDATE ".$db_prefix."fleet SET target_planet = ".$planet['planet_id']." WHERE target_planet = $moon_id;";
     dbquery ( $query );    
 
     // Modify player statistics

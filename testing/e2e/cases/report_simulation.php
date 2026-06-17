@@ -174,6 +174,54 @@ function max_msg_id(): int
     return intval(sql_value("SELECT COALESCE(MAX(msg_id), 0) FROM {$db_prefix}messages"));
 }
 
+function max_battle_id(): int
+{
+    global $db_prefix;
+    return intval(sql_value("SELECT COALESCE(MAX(battle_id), 0) FROM {$db_prefix}battledata"));
+}
+
+function battle_log_after(int $after): ?array
+{
+    global $db_prefix;
+    return sql_row("SELECT battle_id, title, report FROM {$db_prefix}battledata WHERE battle_id>{$after} ORDER BY battle_id ASC LIMIT 1");
+}
+
+function first_attacker_shots(string $report): int
+{
+    if (preg_match('/The attacking fleet fires ([0-9.,]+) times/i', html_entity_decode(strip_tags($report), ENT_QUOTES | ENT_HTML5, 'UTF-8'), $m) !== 1) {
+        return 0;
+    }
+    return intval(preg_replace('/\D+/', '', $m[1]));
+}
+
+function set_universe_battle_options(?int $rapid = null, ?int $defrepair = null, ?int $defrepairDelta = null): array
+{
+    global $db_prefix, $GlobalUni;
+    $before = LoadUniverse();
+    $parts = array();
+    if ($rapid !== null) $parts[] = "rapid={$rapid}";
+    if ($defrepair !== null) $parts[] = "defrepair={$defrepair}";
+    if ($defrepairDelta !== null) $parts[] = "defrepair_delta={$defrepairDelta}";
+    if (!empty($parts)) {
+        sql_exec("UPDATE {$db_prefix}uni SET " . implode(',', $parts));
+        $GlobalUni = LoadUniverse();
+    }
+    return $before;
+}
+
+function restore_universe_battle_options(array $snapshot): void
+{
+    global $db_prefix, $GlobalUni;
+    sql_exec(
+        "UPDATE {$db_prefix}uni SET " .
+        "rapid=" . intval($snapshot['rapid']) . ", " .
+        "defrepair=" . intval($snapshot['defrepair']) . ", " .
+        "defrepair_delta=" . intval($snapshot['defrepair_delta']) . ", " .
+        "battle_max=" . intval($snapshot['battle_max'])
+    );
+    $GlobalUni = LoadUniverse();
+}
+
 function message_rows(int $ownerId, int $after): array
 {
     global $db_prefix;
@@ -225,7 +273,7 @@ function assert_case(bool $condition, string $message, array $context = array())
     return array('pass' => $condition, 'message' => $message, 'context' => $context);
 }
 
-function run_battle_case(string $name, array $attShips, array $defShips, array $defence, array $resources): array
+function run_battle_case(string $name, array $attShips, array $defShips, array $defence, array $resources, ?int $seed = null): array
 {
     global $ATTACKER_ID, $DEFENDER_ID, $DEFENDER_PLANET;
 
@@ -235,7 +283,12 @@ function run_battle_case(string $name, array $attShips, array $defShips, array $
     reset_planets($attShips, $defShips, $defence, array(), $resources);
 
     $after = max_msg_id();
+    $afterBattle = max_battle_id();
     $when = time() + 1;
+    if ($seed !== null) {
+        mt_srand($seed);
+        srand($seed);
+    }
     [$fleetId, $queue] = dispatch_test_fleet(FTYP_ATTACK, $attShips, $when);
     $result = StartBattle($fleetId, $DEFENDER_PLANET, intval($queue['end']));
     DeleteFleet($fleetId);
@@ -245,6 +298,7 @@ function run_battle_case(string $name, array $attShips, array $defShips, array $
     $defMessages = message_rows($DEFENDER_ID, $after);
     $attackerReport = first_report($attMessages, MTYP_BATTLE_REPORT_TEXT);
     $defenderReport = first_report($defMessages, MTYP_BATTLE_REPORT_TEXT);
+    $battleLog = battle_log_after($afterBattle);
     $expected = str_contains($name, 'attacker_wins') ? 'attacker_won' : (str_contains($name, 'defender_wins') ? 'defender_won' : 'draw');
     $actual = array(BATTLE_RESULT_AWON => 'attacker_won', BATTLE_RESULT_DWON => 'defender_won', BATTLE_RESULT_DRAW => 'draw')[$result] ?? 'unknown';
 
@@ -253,12 +307,98 @@ function run_battle_case(string $name, array $attShips, array $defShips, array $
         'result' => $actual,
         'attacker_report' => $attackerReport,
         'defender_report' => $defenderReport,
+        'battle_log' => $battleLog === null ? null : array('battle_id' => intval($battleLog['battle_id']), 'title' => $battleLog['title'], 'report_len' => strlen($battleLog['report'] ?? '')),
         'attacker_messages' => $attMessages,
         'defender_messages' => $defMessages,
         'checks' => array(
             assert_case($actual === $expected, 'battle result matches expected outcome', array('expected' => $expected, 'actual' => $actual)),
             assert_case($attackerReport !== null, 'attacker battle report is generated'),
             assert_case($defenderReport !== null, 'defender battle report is generated'),
+            assert_case($battleLog !== null && strlen($battleLog['report'] ?? '') > 0, 'battledata log report is persisted for simulator/admin views', $battleLog === null ? array() : array('battle_id' => intval($battleLog['battle_id']), 'report_len' => strlen($battleLog['report'] ?? ''))),
+        ),
+    );
+}
+
+function run_rapid_fire_toggle_case(): array
+{
+    global $ATTACKER_ID, $DEFENDER_ID, $DEFENDER_PLANET;
+
+    $snapshot = set_universe_battle_options(0, null, null);
+    try {
+        $runs = array();
+        foreach (array(0, 1) as $rapid) {
+            set_universe_battle_options($rapid, null, null);
+            cleanup_runtime(false);
+            set_user_tech($ATTACKER_ID, array(109 => 0, 110 => 0, 111 => 0, 106 => 0));
+            set_user_tech($DEFENDER_ID, array(109 => 0, 110 => 0, 111 => 0, 106 => 0));
+            reset_planets(array(GID_F_CRUISER => 6), array(GID_F_LF => 120), array(), array(), array(700 => 0, 701 => 0, 702 => 0));
+            $afterBattle = max_battle_id();
+            $when = time() + 1;
+            mt_srand(404);
+            srand(404);
+            [$fleetId, $queue] = dispatch_test_fleet(FTYP_ATTACK, array(GID_F_CRUISER => 6), $when);
+            $result = StartBattle($fleetId, $DEFENDER_PLANET, intval($queue['end']));
+            DeleteFleet($fleetId);
+            RemoveQueue(intval($queue['task_id']));
+            $battleLog = battle_log_after($afterBattle);
+            $defenderAfter = sql_row("SELECT `" . GID_F_LF . "` AS light_fighter FROM {$GLOBALS['db_prefix']}planets WHERE planet_id={$DEFENDER_PLANET} LIMIT 1");
+            $runs[$rapid] = array(
+                'result' => $result,
+                'shots' => $battleLog === null ? 0 : first_attacker_shots($battleLog['report'] ?? ''),
+                'defender_light_fighter_after' => $defenderAfter === null ? null : intval($defenderAfter['light_fighter']),
+                'battle_log' => $battleLog === null ? null : array('battle_id' => intval($battleLog['battle_id']), 'report_len' => strlen($battleLog['report'] ?? '')),
+            );
+        }
+    } finally {
+        restore_universe_battle_options($snapshot);
+    }
+
+    return array(
+        'case' => 'rapid_fire_toggle_changes_battle_round_output',
+        'runs' => $runs,
+        'checks' => array(
+            assert_case(($runs[0]['shots'] ?? 0) > 0 && ($runs[1]['shots'] ?? 0) > 0, 'both rapid-fire comparison runs produce parseable attacker shot counts', $runs),
+            assert_case(($runs[1]['shots'] ?? 0) > ($runs[0]['shots'] ?? 0), 'rapid-fire enabled produces more attacker shots than rapid-fire disabled for cruiser-vs-light-fighter combat', array('rapid_off_shots' => $runs[0]['shots'] ?? null, 'rapid_on_shots' => $runs[1]['shots'] ?? null)),
+            assert_case(($runs[1]['defender_light_fighter_after'] ?? PHP_INT_MAX) <= ($runs[0]['defender_light_fighter_after'] ?? 0), 'rapid-fire enabled does not leave more light fighters than the same seeded battle without rapid-fire', array('rapid_off' => $runs[0]['defender_light_fighter_after'] ?? null, 'rapid_on' => $runs[1]['defender_light_fighter_after'] ?? null)),
+        ),
+    );
+}
+
+function run_defense_repair_writeback_case(): array
+{
+    global $ATTACKER_ID, $DEFENDER_ID, $DEFENDER_PLANET, $db_prefix;
+
+    $snapshot = set_universe_battle_options(null, 100, 0);
+    try {
+        cleanup_runtime(false);
+        set_user_tech($ATTACKER_ID, array(109 => 10, 110 => 10, 111 => 10, 106 => 0));
+        set_user_tech($DEFENDER_ID, array(109 => 0, 110 => 0, 111 => 0, 106 => 0));
+        reset_planets(array(GID_F_BATTLESHIP => 80), array(), array(GID_D_RL => 300), array(), array(700 => 0, 701 => 0, 702 => 0));
+        $before = sql_row("SELECT `" . GID_D_RL . "` AS rocket_launcher FROM {$db_prefix}planets WHERE planet_id={$DEFENDER_PLANET} LIMIT 1");
+        $afterBattle = max_battle_id();
+        $when = time() + 1;
+        mt_srand(505);
+        srand(505);
+        [$fleetId, $queue] = dispatch_test_fleet(FTYP_ATTACK, array(GID_F_BATTLESHIP => 80), $when);
+        $result = StartBattle($fleetId, $DEFENDER_PLANET, intval($queue['end']));
+        DeleteFleet($fleetId);
+        RemoveQueue(intval($queue['task_id']));
+        $after = sql_row("SELECT `" . GID_D_RL . "` AS rocket_launcher FROM {$db_prefix}planets WHERE planet_id={$DEFENDER_PLANET} LIMIT 1");
+        $battleLog = battle_log_after($afterBattle);
+        $plainReport = $battleLog === null ? '' : html_entity_decode(strip_tags($battleLog['report'] ?? ''), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    } finally {
+        restore_universe_battle_options($snapshot);
+    }
+
+    return array(
+        'case' => 'defense_repair_report_and_writeback',
+        'battle_result' => array(BATTLE_RESULT_AWON => 'attacker_won', BATTLE_RESULT_DWON => 'defender_won', BATTLE_RESULT_DRAW => 'draw')[$result] ?? 'unknown',
+        'before' => $before,
+        'after' => $after,
+        'battle_log' => $battleLog === null ? null : array('battle_id' => intval($battleLog['battle_id']), 'report_len' => strlen($battleLog['report'] ?? '')),
+        'checks' => array(
+            assert_case($battleLog !== null && str_contains($plainReport, 'could be repaired'), 'battle report includes repaired-defense text', array('report_preview' => mb_substr($plainReport, -260, 260, 'UTF-8'))),
+            assert_case($before !== null && $after !== null && intval($after['rocket_launcher']) === intval($before['rocket_launcher']), '100 percent defense repair writes repaired rocket launchers back to the planet', array('before' => $before, 'after' => $after)),
         ),
     );
 }
@@ -333,6 +473,9 @@ $result['battle_cases'][] = run_battle_case(
     array(),
     array(700 => 0, 701 => 0, 702 => 0)
 );
+
+$result['battle_cases'][] = run_rapid_fire_toggle_case();
+$result['battle_cases'][] = run_defense_repair_writeback_case();
 
 $result['spy_cases'][] = run_spy_case(
     'resources_only_level_0',
