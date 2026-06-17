@@ -292,6 +292,67 @@ try {
             e2e_case(e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}queue WHERE owner_id={$attackerId} AND type='" . QTYP_FLEET . "'") === 0, 'fleet queue rows are removed after idempotent return completion'),
         ),
     ));
+
+    e2e_reset_user_and_planet($attackerId, $attackerPlanet);
+    e2e_reset_user_and_planet($defenderId, $defenderPlanet);
+    e2e_cleanup_fleets(array($attackerId, $defenderId), array($attackerPlanet, $defenderPlanet));
+    dbquery("UPDATE {$db_prefix}planets SET `" . GID_F_SC . "`=2 WHERE planet_id={$attackerPlanet}");
+
+    $sameTickTargetBefore = e2e_planet_snapshot($defenderPlanet);
+    $sameTickFleetIds = array();
+    $sameTickQueues = array();
+    $sameTickCargos = array(
+        array(GID_RC_METAL => 111, GID_RC_CRYSTAL => 22, GID_RC_DEUTERIUM => 3),
+        array(GID_RC_METAL => 222, GID_RC_CRYSTAL => 44, GID_RC_DEUTERIUM => 6),
+    );
+    foreach ($sameTickCargos as $cargoSpec) {
+        $origin = LoadPlanetById($attackerPlanet);
+        $target = LoadPlanetById($defenderPlanet);
+        $fleet = e2e_empty_fleet();
+        $fleet[GID_F_SC] = 1;
+        $cargo = e2e_empty_resources();
+        foreach ($cargoSpec as $rc => $amount) {
+            $cargo[$rc] = $amount;
+        }
+        AdjustShips($fleet, $attackerPlanet, '-');
+        AdjustResources($cargo, $attackerPlanet, '-');
+        $sameTickFleetId = DispatchFleet($fleet, $origin, $target, FTYP_TRANSPORT, 3600, $cargo, 0, $now + 4);
+        $sameTickFleetIds[] = $sameTickFleetId;
+        $sameTickQueue = $sameTickFleetId > 0 ? GetFleetQueue($sameTickFleetId) : null;
+        $sameTickQueues[] = $sameTickQueue;
+        if ($sameTickQueue !== null && $sameTickQueue !== false) {
+            e2e_force_queue_due((int)$sameTickQueue['task_id'], $now);
+        }
+    }
+    e2e_update_queue_twice($now);
+    $sameTickTargetAfter = e2e_planet_snapshot($defenderPlanet);
+    $sameTickReturnCount = e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}fleet WHERE owner_id={$attackerId} AND mission=" . (FTYP_TRANSPORT + FTYP_RETURN));
+    $sameTickOutgoingCount = e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}fleet WHERE owner_id={$attackerId} AND mission=" . FTYP_TRANSPORT);
+    $sameTickFleetQueueCount = e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}queue WHERE owner_id={$attackerId} AND type='" . QTYP_FLEET . "'");
+    $sameTickQueuedReturnCount = e2e_count(
+        "SELECT COUNT(*) AS cnt FROM {$db_prefix}queue q " .
+        "JOIN {$db_prefix}fleet f ON f.fleet_id=q.sub_id " .
+        "WHERE q.owner_id={$attackerId} AND q.type='" . QTYP_FLEET . "' AND f.mission=" . (FTYP_TRANSPORT + FTYP_RETURN)
+    );
+    $sameTickFleetIdsValid = count(array_filter($sameTickFleetIds, fn($id) => $id > 0)) === 2;
+    $sameTickQueuesValid = count(array_filter($sameTickQueues, fn($queue) => $queue !== null && $queue !== false)) === 2;
+    $sameTickMetal = array_sum(array_map(fn($cargo) => $cargo[GID_RC_METAL], $sameTickCargos));
+    $sameTickCrystal = array_sum(array_map(fn($cargo) => $cargo[GID_RC_CRYSTAL], $sameTickCargos));
+    $sameTickDeuterium = array_sum(array_map(fn($cargo) => $cargo[GID_RC_DEUTERIUM], $sameTickCargos));
+
+    $cases[] = e2e_finalize_case(array(
+        'case' => 'same_tick_transport_arrivals_are_processed_once_each',
+        'checks' => array(
+            e2e_case($sameTickFleetIdsValid, 'two same-tick transport fleets are dispatched', array('fleet_ids' => $sameTickFleetIds)),
+            e2e_case($sameTickQueuesValid, 'two same-tick outgoing queue tasks are created', array('queues' => $sameTickQueues)),
+            e2e_case($sameTickTargetBefore !== null && $sameTickTargetAfter !== null && (int)$sameTickTargetAfter['metal'] === (int)$sameTickTargetBefore['metal'] + $sameTickMetal, 'same-tick transports deliver combined metal exactly once', array('before' => $sameTickTargetBefore, 'after' => $sameTickTargetAfter)),
+            e2e_case($sameTickTargetBefore !== null && $sameTickTargetAfter !== null && (int)$sameTickTargetAfter['crystal'] === (int)$sameTickTargetBefore['crystal'] + $sameTickCrystal, 'same-tick transports deliver combined crystal exactly once', array('before' => $sameTickTargetBefore, 'after' => $sameTickTargetAfter)),
+            e2e_case($sameTickTargetBefore !== null && $sameTickTargetAfter !== null && (int)$sameTickTargetAfter['deuterium'] === (int)$sameTickTargetBefore['deuterium'] + $sameTickDeuterium, 'same-tick transports deliver combined deuterium exactly once', array('before' => $sameTickTargetBefore, 'after' => $sameTickTargetAfter)),
+            e2e_case($sameTickOutgoingCount === 0, 'same-tick outgoing transport fleet rows are removed after arrival', array('outgoing_fleets' => $sameTickOutgoingCount)),
+            e2e_case($sameTickReturnCount === 2, 'same-tick transport arrivals create one return fleet per outgoing fleet', array('return_fleets' => $sameTickReturnCount)),
+            e2e_case($sameTickFleetQueueCount === 2 && $sameTickQueuedReturnCount === 2, 'second UpdateQueue call does not duplicate or remove pending same-tick return queues', array('fleet_queue_rows' => $sameTickFleetQueueCount, 'queued_returns' => $sameTickQueuedReturnCount)),
+        ),
+    ));
 } catch (Throwable $e) {
     $cases[] = array(
         'case' => 'queue_idempotency_exception',

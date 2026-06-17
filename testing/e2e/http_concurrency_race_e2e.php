@@ -244,7 +244,9 @@ function e2e_planet_snapshot(int $planetId): ?array
     return e2e_one_row(
         "SELECT planet_id, owner_id, type, fields, " .
         "`" . GID_RC_METAL . "` AS metal, `" . GID_RC_CRYSTAL . "` AS crystal, `" . GID_RC_DEUTERIUM . "` AS deuterium, " .
-        "`" . GID_B_METAL_MINE . "` AS metal_mine, `" . GID_F_SC . "` AS small_cargo " .
+        "`" . GID_B_METAL_MINE . "` AS metal_mine, `" . GID_B_MISS_SILO . "` AS missile_silo, " .
+        "`" . GID_F_SC . "` AS small_cargo, `" . GID_D_RL . "` AS rocket_launcher, `" . GID_D_SDOME . "` AS small_dome, " .
+        "`" . GID_D_ABM . "` AS abm, `" . GID_D_IPM . "` AS ipm " .
         "FROM {$db_prefix}planets WHERE planet_id={$planetId} LIMIT 1"
     );
 }
@@ -390,6 +392,68 @@ try {
             e2e_case((int)$shipyardQueue['total_level'] <= $shipCount, 'parallel shipyard requests do not queue more ships than resources allow', $shipyardQueue),
             e2e_case((int)$shipyardQueue['cnt'] <= 1, 'parallel shipyard requests leave at most one small-cargo queue row for the resource-limited order', $shipyardQueue),
             e2e_case($planetAfterShipyardRace !== null && (int)$planetAfterShipyardRace['metal'] >= 0 && (int)$planetAfterShipyardRace['crystal'] >= 0 && (int)$planetAfterShipyardRace['deuterium'] >= 0, 'parallel shipyard requests do not overspend resources below zero', $planetAfterShipyardRace ?? array()),
+        )),
+    ));
+
+    e2e_reset_user_and_planet($attackerId, $attackerPlanet, 'Concurrency Origin');
+    $defenseCost = TechPrice(GID_D_RL, 1);
+    $defenseCount = 3;
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_D_RL . "`=0, `" . GID_RC_METAL . "`=" . ((int)$defenseCost[GID_RC_METAL] * $defenseCount) . ", `" .
+        GID_RC_CRYSTAL . "`=" . ((int)$defenseCost[GID_RC_CRYSTAL] * $defenseCount) . ", `" . GID_RC_DEUTERIUM . "`=" . ((int)($defenseCost[GID_RC_DEUTERIUM] ?? 0) * $defenseCount) .
+        " WHERE planet_id={$attackerPlanet}"
+    );
+    $defenseUrl = $gameBase . '/index.php?page=buildings&session=' . rawurlencode($session) . '&cp=' . $attackerPlanet . '&mode=Verteidigung';
+    $defenseResponses = e2e_parallel_requests('POST', $defenseUrl, array('fmenge' => array(GID_D_RL => $defenseCount)), $cookies, 4);
+    $defenseQueue = e2e_queue_sum(QTYP_SHIPYARD, $attackerId, GID_D_RL, $attackerPlanet);
+    $planetAfterDefenseRace = e2e_planet_snapshot($attackerPlanet);
+    $cases[] = e2e_finalize_case(array(
+        'case' => 'parallel_defense_orders_do_not_exceed_available_resources',
+        'checks' => array_merge(e2e_all_responses_ok($defenseResponses, 'parallel defense order'), array(
+            e2e_case((int)$defenseQueue['total_level'] <= $defenseCount, 'parallel defense requests do not queue more defenses than resources allow', $defenseQueue),
+            e2e_case((int)$defenseQueue['cnt'] <= 1, 'parallel defense requests leave at most one rocket-launcher queue row for the resource-limited order', $defenseQueue),
+            e2e_case($planetAfterDefenseRace !== null && (int)$planetAfterDefenseRace['metal'] >= 0 && (int)$planetAfterDefenseRace['crystal'] >= 0 && (int)$planetAfterDefenseRace['deuterium'] >= 0, 'parallel defense requests do not overspend resources below zero', $planetAfterDefenseRace ?? array()),
+        )),
+    ));
+
+    e2e_reset_user_and_planet($attackerId, $attackerPlanet, 'Concurrency Origin');
+    $domeCost = TechPrice(GID_D_SDOME, 1);
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_D_SDOME . "`=0, `" . GID_RC_METAL . "`=" . ((int)$domeCost[GID_RC_METAL] * 4) . ", `" .
+        GID_RC_CRYSTAL . "`=" . ((int)$domeCost[GID_RC_CRYSTAL] * 4) . ", `" . GID_RC_DEUTERIUM . "`=" . ((int)($domeCost[GID_RC_DEUTERIUM] ?? 0) * 4) .
+        " WHERE planet_id={$attackerPlanet}"
+    );
+    $domeResponses = e2e_parallel_requests('POST', $defenseUrl, array('fmenge' => array(GID_D_SDOME => 1)), $cookies, 4);
+    $domeQueue = e2e_queue_sum(QTYP_SHIPYARD, $attackerId, GID_D_SDOME, $attackerPlanet);
+    $planetAfterDomeRace = e2e_planet_snapshot($attackerPlanet);
+    $cases[] = e2e_finalize_case(array(
+        'case' => 'parallel_shield_dome_orders_create_single_dome_queue',
+        'checks' => array_merge(e2e_all_responses_ok($domeResponses, 'parallel shield-dome order'), array(
+            e2e_case((int)$domeQueue['cnt'] <= 1 && (int)$domeQueue['total_level'] <= 1, 'parallel dome requests leave at most one queued small shield dome', $domeQueue),
+            e2e_case($planetAfterDomeRace !== null && (int)$planetAfterDomeRace['small_dome'] === 0, 'parallel dome enqueue does not prematurely complete the dome', $planetAfterDomeRace ?? array()),
+            e2e_case($planetAfterDomeRace !== null && (int)$planetAfterDomeRace['metal'] >= 0 && (int)$planetAfterDomeRace['crystal'] >= 0 && (int)$planetAfterDomeRace['deuterium'] >= 0, 'parallel dome requests do not overspend resources below zero', $planetAfterDomeRace ?? array()),
+        )),
+    ));
+
+    e2e_reset_user_and_planet($attackerId, $attackerPlanet, 'Concurrency Origin');
+    $missileCost = TechPrice(GID_D_ABM, 1);
+    $missileCapacity = 20;
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_B_MISS_SILO . "`=2, `" . GID_D_ABM . "`=0, `" . GID_D_IPM . "`=0, `" .
+        GID_RC_METAL . "`=" . ((int)$missileCost[GID_RC_METAL] * $missileCapacity) . ", `" .
+        GID_RC_CRYSTAL . "`=" . ((int)($missileCost[GID_RC_CRYSTAL] ?? 0) * $missileCapacity) . ", `" . GID_RC_DEUTERIUM . "`=" . ((int)($missileCost[GID_RC_DEUTERIUM] ?? 0) * $missileCapacity) .
+        " WHERE planet_id={$attackerPlanet}"
+    );
+    $missileResponses = e2e_parallel_requests('POST', $defenseUrl, array('fmenge' => array(GID_D_ABM => 99)), $cookies, 4);
+    $missileQueue = e2e_queue_sum(QTYP_SHIPYARD, $attackerId, GID_D_ABM, $attackerPlanet);
+    $planetAfterMissileRace = e2e_planet_snapshot($attackerPlanet);
+    $cases[] = e2e_finalize_case(array(
+        'case' => 'parallel_missile_orders_respect_silo_capacity',
+        'checks' => array_merge(e2e_all_responses_ok($missileResponses, 'parallel missile order'), array(
+            e2e_case((int)$missileQueue['total_level'] <= $missileCapacity, 'parallel missile requests do not queue more ABMs than silo capacity allows', $missileQueue),
+            e2e_case((int)$missileQueue['cnt'] <= 1, 'parallel missile requests leave at most one ABM queue row for the capacity-limited order', $missileQueue),
+            e2e_case($planetAfterMissileRace !== null && (int)$planetAfterMissileRace['abm'] === 0, 'parallel missile enqueue does not prematurely complete ABMs', $planetAfterMissileRace ?? array()),
+            e2e_case($planetAfterMissileRace !== null && (int)$planetAfterMissileRace['metal'] >= 0 && (int)$planetAfterMissileRace['crystal'] >= 0 && (int)$planetAfterMissileRace['deuterium'] >= 0, 'parallel missile requests do not overspend resources below zero', $planetAfterMissileRace ?? array()),
         )),
     ));
 

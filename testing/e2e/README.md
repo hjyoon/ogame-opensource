@@ -51,11 +51,11 @@ JSON result files are written inside the container under `/tmp/ogame-e2e-results
 - Admin DB backup flows for operator mutation denial, admin backup creation, restore rollback of post-backup data, and backup deletion.
 - Coupon and Dark Matter payment flows for admin coupon creation/listing/deletion, invalid/used coupon rejection, paid-DM redemption, duplicate redemption prevention, and periodic coupon queue creation/removal.
 - Queue and fleet validation flows for building/research/shipyard queue create/cancel/complete, admin queue freeze/unfreeze/remove, active-queue vacation blocking, transport launch, and rejected fleet sends.
-- Queue/event idempotency flows for repeated `UpdateQueue()` runs across building, research, shipyard, transport fleet arrival/return completion, recalc-points, and a multi-day long scheduler drain.
+- Queue/event idempotency flows for repeated `UpdateQueue()` runs across building, research, shipyard, transport fleet arrival/return completion, same-tick transport arrivals, recalc-points, and a multi-day long scheduler drain.
 - Vacation/freeze timing edge flows for vacation enable rejection with active build/fleet queues, vacation-mode build/shipyard mutation blocking, and universe-freeze pause/resume behavior for due queues.
 - Global maintenance queue flows for user state timers, score recalculation, old-score snapshots, debris cleanup, removed-planet cleanup, and disabled-player cleanup.
 - Cron resilience flows for browser access denial, due task idempotency, unknown task debug auditing, frozen task preservation, and universe-freeze queue blocking.
-- Concurrency/race-condition flows for parallel building, research, shipyard, and fleet-dispatch requests so repeated clicks or multi-tab requests cannot duplicate queues, overspend resources, or duplicate fleet rows.
+- Concurrency/race-condition flows for parallel building, research, shipyard, defense, shield-dome, missile, and fleet-dispatch requests so repeated clicks or multi-tab requests cannot duplicate queues, overspend resources, exceed missile capacity, or duplicate fleet rows.
 - Technology unlock gates and economy edge cases for building/research/shipyard requirements, energy-shortage production, storage caps, and production-ratio ticks.
 - Statistics and ranking flows for recalculated asset scores, queue-completion score adjustments, rank ordering, and statistics page rendering.
 - Fleet lifecycle flows for transport delivery/return, deploy arrival, and recalled transport return.
