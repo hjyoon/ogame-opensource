@@ -58,6 +58,54 @@ export function legacyPublicStyle(panelImage = "part_register.jpg"): React.CSSPr
   } as React.CSSProperties;
 }
 
+export function useLegacyPublicAutoFocus<T extends HTMLElement>(ref: React.RefObject<T | null>, enabled = true) {
+  React.useEffect(() => {
+    if (!enabled) {
+      return undefined;
+    }
+    let cancelled = false;
+    let focusFrame: number | undefined;
+    let pollTimer: number | undefined;
+    const startedAt = window.performance.now();
+
+    const focus = () => {
+      if (cancelled) {
+        return;
+      }
+      focusFrame = window.requestAnimationFrame(() => {
+        ref.current?.focus();
+      });
+    };
+
+    const waitForLegacyCss = () => {
+      if (cancelled) {
+        return;
+      }
+      const links = Array.from(document.querySelectorAll<HTMLLinkElement>("link[data-legacy-public-css]"));
+      const legacyCssReady =
+        document.body.classList.contains("legacy-public-body") &&
+        links.length >= 2 &&
+        links.every((link) => link.sheet !== null);
+      if (legacyCssReady || window.performance.now() - startedAt > 1000) {
+        focus();
+        return;
+      }
+      pollTimer = window.setTimeout(waitForLegacyCss, 16);
+    };
+
+    waitForLegacyCss();
+    return () => {
+      cancelled = true;
+      if (focusFrame !== undefined) {
+        window.cancelAnimationFrame(focusFrame);
+      }
+      if (pollTimer !== undefined) {
+        window.clearTimeout(pollTimer);
+      }
+    };
+  }, [enabled, ref]);
+}
+
 export function LegacyPublicHome({
   universes,
   loginDraft,
@@ -72,7 +120,7 @@ export function LegacyPublicHome({
       <a className="legacy-public-skip" href="#pustekuchen">
         Link Login
       </a>
-      <div className="legacy-public-main">
+      <div className="legacy-public-main" id="main">
         <LanguageLinks />
         <MainMenu active="home" withHomeCounterSpace />
         <HomeContent />
@@ -100,11 +148,13 @@ export function LanguageLinks() {
   ];
 
   return (
-    <div className="legacy-public-products">
+    <div className="products legacy-public-products">
       {flags.map(([lang, label, file]) => (
-        <a href="/home" key={lang}>
-          <img alt={label} src={`${publicImageBase}/flags/${file}`} title={label} />
-        </a>
+        <React.Fragment key={lang}>
+          <a href="/home">
+            <img alt={label} src={`${publicImageBase}/flags/${file}`} title={label} />
+          </a>{" "}
+        </React.Fragment>
       ))}
       <a href="/home">Choose your language</a>
     </div>
@@ -120,10 +170,10 @@ export function MainMenu({ active, withHomeCounterSpace = false }: { active?: "h
   ] as const;
 
   return (
-    <nav className="legacy-public-mainmenu" aria-label="Main menu">
+    <nav className="legacy-public-mainmenu" id="mainmenu" aria-label="Main menu">
       {items.map((item) =>
         item.key === active ? (
-          <div className="legacy-public-menupoint" key={item.key}>
+          <div className="menupoint legacy-public-menupoint" key={item.key}>
             {item.label}
           </div>
         ) : (
@@ -144,18 +194,20 @@ export function MainMenu({ active, withHomeCounterSpace = false }: { active?: "h
 
 function HomeContent() {
   return (
-    <section className="legacy-public-rightmenu">
-      <div className="legacy-public-title">Welcome to OGame</div>
-      <div className="legacy-public-content">
-        <div>
-          <strong>OGame</strong> is a <strong>strategic space simulation game</strong> with{" "}
-          <strong>thousands of players</strong> across the world competing with each other{" "}
-          <strong>simultaneously</strong>. All you need to play is a standard web browser.
-        </div>
-        <a className="legacy-public-register-button" href="/register">
+    <section className="rightmenu legacy-public-rightmenu" id="rightmenu">
+      <div className="legacy-public-title" id="title">Welcome to OGame</div>
+      <div className="legacy-public-content" id="content">
+        <div
+          id="text1"
+          dangerouslySetInnerHTML={{
+            __html:
+              "<strong>OGame</strong> is a <strong>strategic space simulation game</strong>with \n<strong>thousands of players</strong> across the world competing with each other <strong>simultaneously</strong>. All you need to play is a standard web browser."
+          }}
+        />
+        <a className="bigbutton legacy-public-register-button" id="register" href="/register">
           Play for free now!
         </a>
-        <div className="legacy-public-text2">Register now and enter the fantastic world of OGame!</div>
+        <div className="legacy-public-text2" id="text2">Register now and enter the fantastic world of OGame!</div>
       </div>
     </section>
   );
@@ -171,59 +223,79 @@ export function LoginStrip({
   onLoginSubmit,
   autoFocusUniverse = true
 }: LegacyPublicLoginProps & { autoFocusUniverse?: boolean }) {
+  const universeRef = React.useRef<HTMLSelectElement>(null);
+
+  useLegacyPublicAutoFocus(universeRef, autoFocusUniverse);
+
   return (
-    <section className="legacy-public-login" id="pustekuchen">
-      <div className="legacy-public-login-labels">
+    <section className="legacy-public-login" id="login">
+      <a id="pustekuchen"></a>
+      <div className="legacy-public-login-labels" id="login_text_1">
         <div className="legacy-public-login-name">Username</div>
         <div className="legacy-public-login-pass">Password</div>
       </div>
-      <form className="legacy-public-login-input" name="loginForm" onSubmit={onLoginSubmit}>
-        <table>
+      <div className="legacy-public-login-input" id="login_input">
+        <table cellPadding={0} cellSpacing={0}>
           <tbody>
-            <tr>
-              <td>
-                <select
-                  autoFocus={autoFocusUniverse}
-                  className="legacy-public-input"
-                  name="universe"
-                  onChange={(event) => onLoginChange("universe", event.currentTarget.value)}
-                  tabIndex={1}
-                  value={loginDraft.universe}
-                >
-                  <option value="">Choose a universe...</option>
-                  {universes.map((universe) => (
-                    <option key={universe.number} value={universe.baseUrl}>
-                      {universe.number}. Universe
-                    </option>
-                  ))}
-                </select>
+            <tr style={{ verticalAlign: "top" }}>
+              <td style={{ paddingRight: 4 }}>
+                <form id="legacy-public-login-form" name="loginForm" onSubmit={onLoginSubmit}>
+                  <input name="v" type="hidden" value="2" />
+                  <span>
+                    <select
+                      className="eingabe legacy-public-input"
+                      name="universe"
+                      onChange={(event) => onLoginChange("universe", event.currentTarget.value)}
+                      ref={universeRef}
+                      style={{ width: 144 }}
+                      tabIndex={1}
+                      value={loginDraft.universe}
+                    >
+                      <option value="">Choose a universe...</option>
+                      {universes.map((universe) => (
+                        <option key={universe.number} value={universe.baseUrl}>
+                          {universe.number}. Universe
+                        </option>
+                      ))}
+                    </select>
+                  </span>
+                </form>
+              </td>
+              <td style={{ paddingRight: 3 }}>
+                <span>
+                  <input
+                    className="eingabe legacy-public-input legacy-public-login-field"
+                    form="legacy-public-login-form"
+                    maxLength={20}
+                    name="login"
+                    onChange={(event) => onLoginChange("login", event.currentTarget.value)}
+                    style={{ top: 0, width: 111 }}
+                    tabIndex={2}
+                    value={loginDraft.login}
+                  />
+                </span>
               </td>
               <td>
-                <input
-                  className="legacy-public-input legacy-public-login-field"
-                  maxLength={20}
-                  name="login"
-                  onChange={(event) => onLoginChange("login", event.currentTarget.value)}
-                  tabIndex={2}
-                  value={loginDraft.login}
-                />
+                <span>
+                  <input
+                    className="eingabe legacy-public-input legacy-public-password-field"
+                    form="legacy-public-login-form"
+                    maxLength={20}
+                    name="pass"
+                    onChange={(event) => onLoginChange("pass", event.currentTarget.value)}
+                    style={{ top: 0, width: 113 }}
+                    tabIndex={3}
+                    type="password"
+                    value={loginDraft.pass}
+                  />
+                </span>
               </td>
-              <td>
-                <input
-                  className="legacy-public-input legacy-public-password-field"
-                  maxLength={20}
-                  name="pass"
-                  onChange={(event) => onLoginChange("pass", event.currentTarget.value)}
-                  tabIndex={3}
-                  type="password"
-                  value={loginDraft.pass}
-                />
-              </td>
-              <td className="legacy-public-login-button-cell">
+              <td className="legacy-public-login-button-cell" style={{ paddingTop: 2 }}>
                 <input
                   alt="Login"
-                  className="legacy-public-login-button"
+                  className="loginButton legacy-public-login-button"
                   disabled={loginPending}
+                  form="legacy-public-login-form"
                   name="button"
                   src={`${publicImageBase}/login_button.jpg`}
                   type="image"
@@ -232,8 +304,8 @@ export function LoginStrip({
             </tr>
           </tbody>
         </table>
-      </form>
-      <div className="legacy-public-login-links">
+      </div>
+      <div className="legacy-public-login-links" id="login_text_2">
         <div className="legacy-public-login-confirm">
           By logging in, I accept the <a href="/legal">T&amp;C&apos;s</a>.
         </div>
@@ -242,10 +314,10 @@ export function LoginStrip({
         </div>
       </div>
       <LoginFeedback loginError={loginError} loginResult={loginResult} />
-      <div className="legacy-public-copyright">
+      <div className="legacy-public-copyright" id="copyright">
         (C) 2007 by <a href="http://www.gameforge.de">Gameforge Productions GmbH</a>. All rights reserved.
       </div>
-      <div className="legacy-public-downmenu">
+      <div className="legacy-public-downmenu" id="downmenu">
         <a href="/rules">Rules</a>&nbsp;
         <a href="/legal">Imprint</a>&nbsp;
         <a href="/legal">T&amp;C&apos;s</a>

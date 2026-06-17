@@ -6,6 +6,7 @@ const dist = new URL("dist/", root);
 const assets = new URL("assets/", dist);
 const publicAssets = new URL("public-assets/", dist);
 const legacyPublicImages = new URL("../wwwroot/img/", root);
+const legacyPublicCss = new URL("../wwwroot/css/", root);
 const legacyFavicon = new URL("../wwwroot/favicon.ico", root);
 
 await rm(fileURLToPath(dist), { force: true, recursive: true });
@@ -44,5 +45,11 @@ await copyFile(
 await cp(
   fileURLToPath(legacyPublicImages),
   fileURLToPath(new URL("img/", publicAssets)),
+  { recursive: true }
+);
+
+await cp(
+  fileURLToPath(legacyPublicCss),
+  fileURLToPath(new URL("css/", publicAssets)),
   { recursive: true }
 );

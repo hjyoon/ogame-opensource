@@ -1,4 +1,4 @@
-import { chromium, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { chromium, firefox, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -69,15 +69,17 @@ type CaseResult = {
 };
 
 const rootDir = resolve(import.meta.dir, "../..");
-const outputDir = resolve(rootDir, ".tmp/playwright-visual");
+const browserName = browserEnv("OGAME_PLAYWRIGHT_BROWSER", "chromium");
+const outputDir = resolve(rootDir, ".tmp/playwright-visual", browserName);
 const screenshotDir = join(outputDir, "screenshots");
 const legacyBaseURL = trimTrailingSlash(process.env.OGAME_LEGACY_BASE_URL ?? "http://127.0.0.1:8888");
 const migratedBaseURL = trimTrailingSlash(process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890");
 const defaultChromeExecutable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const chromeExecutable =
+const defaultBrowserExecutable = browserName === "firefox" ? undefined : defaultChromeExecutable;
+const browserExecutable =
   process.env.OGAME_PLAYWRIGHT_EXECUTABLE ??
-  (existsSync(defaultChromeExecutable) ? defaultChromeExecutable : undefined);
-const defaultMaxDiffRatio = numberEnv("OGAME_VISUAL_MAX_DIFF_RATIO", 0.18);
+  (defaultBrowserExecutable && existsSync(defaultBrowserExecutable) ? defaultBrowserExecutable : undefined);
+const defaultMaxDiffRatio = numberEnv("OGAME_VISUAL_MAX_DIFF_RATIO", 0.00001);
 const defaultMaxBoxDelta = numberEnv("OGAME_VISUAL_MAX_BOX_DELTA", 6);
 const colorDeltaThreshold = numberEnv("OGAME_VISUAL_COLOR_DELTA", 34);
 
@@ -147,8 +149,9 @@ const pageSpecs: PageSpec[] = [
 
 await mkdir(screenshotDir, { recursive: true });
 
-const browser = await chromium.launch({
-  ...(chromeExecutable ? { executablePath: chromeExecutable } : {}),
+const browserType = browserName === "firefox" ? firefox : chromium;
+const browser = await browserType.launch({
+  ...(browserExecutable ? { executablePath: browserExecutable } : {}),
   headless: true
 });
 
@@ -187,7 +190,8 @@ try {
     generatedAt: new Date().toISOString(),
     legacyBaseURL,
     migratedBaseURL,
-    chromeExecutable: chromeExecutable ?? "playwright-default",
+    browserName,
+    browserExecutable: browserExecutable ?? "playwright-default",
     thresholds: {
       defaultMaxDiffRatio,
       defaultMaxBoxDelta,
@@ -234,6 +238,8 @@ async function capturePage(
 
   const response = await page.goto(url, { waitUntil: "networkidle", timeout: 15_000 });
   await page.waitForTimeout(250);
+  await page.keyboard.press("Escape").catch(() => undefined);
+  await page.waitForTimeout(50);
   const boxes: Record<string, Box | null> = {};
   for (const pair of spec.boxes) {
     const selector = side === "legacy" ? pair.legacy : pair.migrated;
@@ -352,6 +358,8 @@ function renderMarkdown(report: {
   generatedAt: string;
   legacyBaseURL: string;
   migratedBaseURL: string;
+  browserName?: string;
+  browserExecutable?: string;
   allPass: boolean;
   results: CaseResult[];
 }): string {
@@ -361,6 +369,7 @@ function renderMarkdown(report: {
     `- Generated: ${report.generatedAt}`,
     `- Legacy: ${report.legacyBaseURL}`,
     `- Migrated: ${report.migratedBaseURL}`,
+    `- Browser: ${report.browserName ?? "chromium"} (${report.browserExecutable ?? "playwright-default"})`,
     `- Result: ${report.allPass ? "PASS" : "FAIL"}`,
     "",
     "| Page | Viewport | Pass | Diff Ratio | Box Max Delta | Notes |",
@@ -398,6 +407,14 @@ function numberEnv(name: string, fallback: number): number {
   }
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function browserEnv(name: string, fallback: "chromium" | "firefox"): "chromium" | "firefox" {
+  const raw = process.env[name];
+  if (raw === "chromium" || raw === "firefox") {
+    return raw;
+  }
+  return fallback;
 }
 
 function round(value: number): number {

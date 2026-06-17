@@ -133,6 +133,31 @@ function App() {
   const [gameOverviewError, setGameOverviewError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
+  const isLegacyPublicRoute = ["home", "register", "about", "story", "screenshots", "rules", "universes"].includes(route.key);
+
+  useEffect(() => {
+    document.body.classList.toggle("legacy-public-body", isLegacyPublicRoute);
+    if (isLegacyPublicRoute) {
+      document.body.style.setProperty("--legacy-public-body-bg", 'url("/public-assets/img/sterne_bg2.jpg")');
+      for (const href of ["/public-assets/css/styles.css", "/public-assets/css/about.css"]) {
+        if (!document.head.querySelector(`link[data-legacy-public-css="${href}"]`)) {
+          const link = document.createElement("link");
+          link.dataset.legacyPublicCss = href;
+          link.href = href;
+          link.rel = "stylesheet";
+          document.head.appendChild(link);
+        }
+      }
+    } else {
+      document.body.style.removeProperty("--legacy-public-body-bg");
+      document.head.querySelectorAll("link[data-legacy-public-css]").forEach((link) => link.remove());
+    }
+    return () => {
+      document.body.classList.remove("legacy-public-body");
+      document.body.style.removeProperty("--legacy-public-body-bg");
+      document.head.querySelectorAll("link[data-legacy-public-css]").forEach((link) => link.remove());
+    };
+  }, [isLegacyPublicRoute]);
 
   useEffect(() => {
     fetch("/api/healthz")
@@ -159,13 +184,13 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (registrationDraft.universe === "" && universes[0]?.baseUrl) {
-      setRegistrationDraft((current) => ({ ...current, universe: universes[0].baseUrl }));
+    if (registrationDraft.universe === "" && universes.length > 0) {
+      const recommended = universes.find((universe) => universe.number === 3 && universe.baseUrl) ?? universes[0];
+      if (recommended?.baseUrl) {
+        setRegistrationDraft((current) => ({ ...current, universe: recommended.baseUrl }));
+      }
     }
-    if (loginDraft.universe === "" && universes[0]?.baseUrl) {
-      setLoginDraft((current) => ({ ...current, universe: universes[0].baseUrl }));
-    }
-  }, [loginDraft.universe, registrationDraft.universe, universes]);
+  }, [registrationDraft.universe, universes]);
 
   useEffect(() => {
     const onPopState = () => {

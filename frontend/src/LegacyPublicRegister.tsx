@@ -4,6 +4,7 @@ import {
   LoginStrip,
   MainMenu,
   legacyPublicStyle,
+  useLegacyPublicAutoFocus,
   type LegacyPublicLoginProps,
   type PublicUniverse
 } from "./LegacyPublicHome";
@@ -61,7 +62,7 @@ export function LegacyPublicRegister({
       <a className="legacy-public-skip" href="#pustekuchen">
         Link Login
       </a>
-      <div className="legacy-public-main">
+      <div className="legacy-public-main" id="main">
         <LanguageLinks />
         <MainMenu active="reg" />
         <RegisterContent
@@ -106,27 +107,48 @@ function RegisterContent({
   | "onRegistrationChange"
   | "onRegistrationSubmit"
 >) {
+  const characterRef = React.useRef<HTMLInputElement>(null);
+  const formRef = React.useRef<HTMLFormElement>(null);
+
+  useLegacyPublicAutoFocus(characterRef);
+
+  const submitRegistration = () => {
+    if (!registrationPending) {
+      formRef.current?.requestSubmit();
+    }
+  };
+
+  const submitRegistrationFromKeyboard = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      submitRegistration();
+    }
+  };
+
   return (
-    <section className="legacy-public-register-panel">
-      <div className="legacy-public-title">Registration</div>
-      <div className="legacy-public-content">
-        <div className="legacy-register-head">
-          In order to play you only have to enter a <strong>username</strong>, a <strong>password</strong> and an{" "}
-          <strong>E-Mail address</strong> and <strong>proceed to read the terms and conditions</strong> before
-          activating the check box about your agreement to them.
-        </div>
-        <div className="legacy-register-container">
-          <form id="legacy-register-form" name="registerForm" onSubmit={onRegistrationSubmit}>
+    <section className="rightmenu_register legacy-public-register-panel" id="rightmenu">
+      <div className="legacy-public-title" id="title">Registration</div>
+      <div className="legacy-public-content" id="content">
+        <div
+          className="legacy-register-head"
+          id="text1"
+          dangerouslySetInnerHTML={{
+            __html:
+              "In order to play you only have to enter a <strong>username</strong>, a <strong>password</strong> and an <strong>E-Mail address</strong> and <strong>proceed to read the terms and conditions</strong> before activating the check box about your agreement to them."
+          }}
+        />
+        <div className="legacy-register-container" id="register_container">
+          <form id="legacy-register-form" name="registerForm" onSubmit={onRegistrationSubmit} ref={formRef}>
             <table>
               <tbody>
                 <tr>
-                  <td className="legacy-register-label">Username:</td>
-                  <td className="legacy-register-input-cell">
+                  <td className="table_lable legacy-register-label">Username:</td>
+                  <td className="table_input legacy-register-input-cell">
                     <input
-                      autoFocus
-                      className="legacy-public-input legacy-register-field"
+                      className="eingabe legacy-public-input legacy-register-field"
                       name="character"
                       onChange={(event) => onRegistrationChange("character", event.currentTarget.value)}
+                      ref={characterRef}
                       size={20}
                       type="text"
                       value={registrationDraft.character}
@@ -134,10 +156,10 @@ function RegisterContent({
                   </td>
                 </tr>
                 <tr>
-                  <td className="legacy-register-label">E-Mail-Address:</td>
-                  <td className="legacy-register-input-cell">
+                  <td className="table_lable legacy-register-label">E-Mail-Address:</td>
+                  <td className="table_input legacy-register-input-cell">
                     <input
-                      className="legacy-public-input legacy-register-field"
+                      className="eingabe legacy-public-input legacy-register-field"
                       name="email"
                       onChange={(event) => onRegistrationChange("email", event.currentTarget.value)}
                       size={20}
@@ -147,10 +169,10 @@ function RegisterContent({
                   </td>
                 </tr>
                 <tr>
-                  <td className="legacy-register-label">Password:</td>
-                  <td className="legacy-register-input-cell">
+                  <td className="table_lable legacy-register-label">Password:</td>
+                  <td className="table_input legacy-register-input-cell">
                     <input
-                      className="legacy-public-input legacy-register-field"
+                      className="eingabe legacy-public-input legacy-register-field"
                       name="password"
                       onChange={(event) => onRegistrationChange("password", event.currentTarget.value)}
                       size={20}
@@ -160,13 +182,14 @@ function RegisterContent({
                   </td>
                 </tr>
                 <tr>
-                  <td className="legacy-register-uni-label">Universe:</td>
-                  <td className="legacy-register-input-cell">
+                  <td className="legacy-register-uni-label" id="uni_label">Universe:</td>
+                  <td className="table_input legacy-register-input-cell">
                     <select
-                      className="legacy-public-input legacy-register-universe"
+                      className="eingabe legacy-public-input legacy-register-universe"
                       name="universe"
                       onChange={(event) => onRegistrationChange("universe", event.currentTarget.value)}
                       size={1}
+                      style={{ width: 122 }}
                       value={registrationDraft.universe}
                     >
                       <option value="">Choose a universe...</option>
@@ -174,14 +197,14 @@ function RegisterContent({
                         <UniverseOption key={universe.number} universe={universe} />
                       ))}
                     </select>
-                    <div className="legacy-register-uni-info">
+                    <div className="legacy-register-uni-info" id="uni_infos_link">
                       <a href="/universes">Specials of the universes</a>
                     </div>
                   </td>
                 </tr>
-                <tr className="legacy-register-agb-row">
+                <tr className="legacy-register-agb-row" id="agb_zeile">
                   <td />
-                  <td className="legacy-register-agb-cell">
+                  <td className="legacy-register-agb-cell" id="table_agb">
                     <input
                       checked={registrationDraft.agb}
                       name="agb"
@@ -189,7 +212,7 @@ function RegisterContent({
                       type="checkbox"
                     />{" "}
                     I accept the{" "}
-                    <a className="legacy-register-agb" href="/legal">
+                    <a className="register_agb legacy-register-agb" href="/legal">
                       T&amp;C&apos;s
                     </a>
                   </td>
@@ -205,21 +228,23 @@ function RegisterContent({
           </form>
         </div>
         <RegistrationFeedback error={registrationError} result={registrationResult} />
-        <button
-          className="legacy-register-submit"
-          disabled={registrationPending}
-          form="legacy-register-form"
-          type="submit"
+        <div
+          aria-disabled={registrationPending}
+          id="register_submit"
+          onClick={submitRegistration}
+          onKeyDown={submitRegistrationFromKeyboard}
+          role="button"
+          tabIndex={0}
         >
-          {registrationPending ? "Creating..." : "Join now!"}
-        </button>
+          Join now!
+        </div>
       </div>
     </section>
   );
 }
 
 function UniverseOption({ universe }: { universe: PublicUniverse }) {
-  const label = universe.number === 1 ? `${universe.number} (recommended)` : String(universe.number);
+  const label = universe.number === 3 ? `${universe.number} (recommended)` : String(universe.number);
   return <option value={universe.baseUrl}>{label}</option>;
 }
 
@@ -231,14 +256,23 @@ function RegistrationFeedback({
   result: PublicRegistrationResult | null;
 }) {
   if (error) {
-    return <div className="legacy-register-status legacy-register-warning">{error}</div>;
+    return <div id="statustext"><span className="warning">{error}</span></div>;
   }
   if (!result) {
-    return <div className="legacy-register-info" />;
+    return (
+      <>
+        <div id="infotext">
+        Name in the game: <br />
+        This is the name you use in the game. It is unique throughout the universe.
+        </div>
+        <div id="statustext" />
+      </>
+    );
   }
   if (result.valid) {
     return (
-      <div className="legacy-register-status legacy-register-fine">
+      <div id="statustext">
+        <span className="fine">
         Registration was successful.
         {result.session?.redirectTo ? (
           <>
@@ -246,12 +280,13 @@ function RegistrationFeedback({
             <a href={result.session.redirectTo}>Open overview</a>
           </>
         ) : null}
+        </span>
       </div>
     );
   }
   return (
-    <div className="legacy-register-status legacy-register-warning">
-      {result.issues.map((issue) => issue.message).join(" ")}
+    <div id="statustext">
+      <span className="warning">{result.issues.map((issue) => issue.message).join(" ")}</span>
     </div>
   );
 }

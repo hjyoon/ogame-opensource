@@ -21,7 +21,7 @@ export function LegacyPublicScreenshots({
       <a className="legacy-public-skip" href="#pustekuchen">
         Link Login
       </a>
-      <div className="legacy-public-main">
+      <div className="legacy-public-main" id="main">
         <LanguageLinks />
         <MainMenu active="preview" />
         <ScreenshotsContent />
@@ -53,15 +53,15 @@ const wallpapers = [
 
 function ScreenshotsContent() {
   return (
-    <section className="legacy-public-screenshots-panel">
-      <div className="legacy-public-title">Pictures</div>
-      <div className="legacy-public-content">
-        <div className="legacy-public-scroll legacy-screenshots-scroll">
-          <p className="legacy-screenshots-headline">Screenshots</p>
+    <section className="rightmenu_big legacy-public-screenshots-panel" id="rightmenu">
+      <div className="legacy-public-title" id="title">Pictures</div>
+      <div className="legacy-public-content" id="content">
+        <div className="legacy-public-scroll legacy-screenshots-scroll" id="contentscroll" style={{ textAlign: "center" }}>
+          <p className="headline legacy-screenshots-headline">Screenshots</p>
           {screenshots.map((item) => (
             <ScreenshotLink item={item} key={item.thumb} />
           ))}
-          <p className="legacy-screenshots-headline">Wallpapers</p>
+          <p className="headline legacy-screenshots-headline">Wallpapers</p>
           {wallpapers.map((item) => (
             <ScreenshotLink item={item} key={item.thumb} />
           ))}
@@ -73,7 +73,7 @@ function ScreenshotsContent() {
 
 function ScreenshotLink({ item }: { item: { label: string; thumb: string; full: string } }) {
   return (
-    <div className="legacy-screenshot-image">
+    <div className="image legacy-screenshot-image">
       <a href={`${publicImageBase}/${item.full}`}>
         <img alt={item.label} src={`${publicImageBase}/${item.thumb}`} />
       </a>

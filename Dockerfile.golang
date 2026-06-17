@@ -10,6 +10,7 @@ COPY frontend/package.json frontend/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY frontend ./
 COPY wwwroot/img ../wwwroot/img
+COPY wwwroot/css ../wwwroot/css
 COPY wwwroot/favicon.ico ../wwwroot/favicon.ico
 RUN bun run build
 

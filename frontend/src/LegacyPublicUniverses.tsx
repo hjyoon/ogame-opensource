@@ -1,17 +1,4 @@
-import {
-  LanguageLinks,
-  LoginStrip,
-  MainMenu,
-  legacyPublicStyle,
-  type LegacyPublicLoginProps,
-  type PublicUniverse
-} from "./LegacyPublicHome";
-
-const legacyOpenDates = new Map([
-  [1, "27.03.11"],
-  [2, "09.05.12"],
-  [3, "09.05.12"]
-]);
+import { LoginStrip, MainMenu, legacyPublicStyle, type LegacyPublicLoginProps } from "./LegacyPublicHome";
 
 export function LegacyPublicUniverses({
   universes,
@@ -22,17 +9,14 @@ export function LegacyPublicUniverses({
   onLoginChange,
   onLoginSubmit
 }: LegacyPublicLoginProps) {
-  const listedUniverses = universes.length > 0 ? universes : fallbackUniverses;
-
   return (
     <main className="legacy-public-page" style={legacyPublicStyle("part_big.jpg")}>
       <a className="legacy-public-skip" href="#pustekuchen">
         Link Login
       </a>
-      <div className="legacy-public-main">
-        <LanguageLinks />
+      <div className="legacy-public-main" id="main">
         <MainMenu />
-        <UniversesContent universes={listedUniverses} />
+        <UniversesContent />
         <LoginStrip
           loginDraft={loginDraft}
           loginError={loginError}
@@ -47,50 +31,24 @@ export function LegacyPublicUniverses({
   );
 }
 
-function UniversesContent({ universes }: { universes: PublicUniverse[] }) {
+function UniversesContent() {
   return (
-    <section className="legacy-public-universes-panel">
-      <div className="legacy-public-title">Особенности во вселенных</div>
-      <div className="legacy-public-content">
-        <div className="legacy-public-scroll">
-          <div className="legacy-universes-text">
+    <section className="rightmenu_big legacy-public-universes-panel" id="rightmenu">
+      <div className="legacy-public-title" id="title">Особенности во вселенных</div>
+      <div className="legacy-public-content" id="content">
+        <div className="legacy-public-scroll" id="contentscroll">
+          <div className="legacy-universes-text" id="text1">
             <p>Вселенные, на которые нельзя нажать, в данный момент заполнены.</p>
             <p>3-я Вселенная: скорость игры x4, скорость флота x2, 70% флота в обломки, 5 галактик.</p>
           </div>
-          <div className="legacy-universes-title2">Вселенная:</div>
-          <div className="legacy-universes-content">
-            {universes.map((universe) => (
-              <UniverseLink key={universe.number} universe={universe} />
-            ))}
+          <div className="legacy-universes-title2" id="unis_title2">Вселенная:</div>
+          <div className="legacy-universes-content" id="unis_content">
+            <a href="/register?linkuni=1">Вселенная 1 (открыта 27.03.11)</a>
+            <a href="/register?linkuni=2">Вселенная 2 (открыта 09.05.12)</a>
+            <a href="/register?linkuni=3">Вселенная 3 (открыта 09.05.12)</a>
           </div>
         </div>
       </div>
     </section>
   );
 }
-
-function UniverseLink({ universe }: { universe: PublicUniverse }) {
-  const label = universeLabel(universe);
-  if (universe.open === false) {
-    return (
-      <span className="legacy-closed-universe" title={universe.status ?? "closed"}>
-        {label}
-      </span>
-    );
-  }
-  return <a href={`/register?linkuni=${universe.number}`}>{label}</a>;
-}
-
-function universeLabel(universe: PublicUniverse): string {
-  const opened = legacyOpenDates.get(universe.number);
-  if (opened) {
-    return `Вселенная ${universe.number} (открыта ${opened})`;
-  }
-  return universe.name || `Вселенная ${universe.number}`;
-}
-
-const fallbackUniverses: PublicUniverse[] = [
-  { number: 1, name: "Вселенная 1", baseUrl: "", open: true },
-  { number: 2, name: "Вселенная 2", baseUrl: "", open: true },
-  { number: 3, name: "Вселенная 3", baseUrl: "", open: true }
-];
