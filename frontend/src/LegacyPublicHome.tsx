@@ -317,11 +317,14 @@ export function LoginStrip({
       <div className="legacy-public-copyright" id="copyright">
         (C) 2007 by <a href="http://www.gameforge.de">Gameforge Productions GmbH</a>. All rights reserved.
       </div>
-      <div className="legacy-public-downmenu" id="downmenu">
-        <a href="/rules">Rules</a>&nbsp;
-        <a href="/legal">Imprint</a>&nbsp;
-        <a href="/legal">T&amp;C&apos;s</a>
-      </div>
+      <div
+        className="legacy-public-downmenu"
+        id="downmenu"
+        dangerouslySetInnerHTML={{
+          __html:
+            '\n        <a href="regeln.php">Rules</a>&nbsp;\n        <a target="_blank" href="impressum.php">Imprint</a>&nbsp;\n        <a target="_blank" href="#">T&amp;C\'s</a>\n\n     '
+        }}
+      />
     </section>
   );
 }

@@ -20,8 +20,7 @@ type PageSpec = {
   legacyPath: string;
   migratedPath: string;
   boxes: BoxPair[];
-  maxDiffRatio?: number;
-  maxBoxDelta?: number;
+  checkDownmenu?: boolean;
 };
 
 type Box = {
@@ -37,6 +36,7 @@ type PageCapture = {
   failedRequests: string[];
   badResponses: string[];
   boxes: Record<string, Box | null>;
+  downmenu: DownmenuSnapshot | null;
   screenshotPath: string;
 };
 
@@ -57,6 +57,29 @@ type BoxCheck = {
   migrated: Box | null;
 };
 
+type DownmenuLinkSnapshot = {
+  text: string;
+  href: string | null;
+  target: string | null;
+  style: Record<string, string>;
+  rect: Box;
+};
+
+type DownmenuSnapshot = {
+  text: string;
+  innerHTML: string;
+  style: Record<string, string>;
+  rect: Box;
+  links: DownmenuLinkSnapshot[];
+};
+
+type DownmenuCheck = {
+  pass: boolean;
+  mismatches: string[];
+  legacy: DownmenuSnapshot | null;
+  migrated: DownmenuSnapshot | null;
+};
+
 type CaseResult = {
   page: string;
   viewport: string;
@@ -66,6 +89,7 @@ type CaseResult = {
   diff: DiffResult;
   maxDiffRatio: number;
   boxChecks: BoxCheck[];
+  downmenuCheck: DownmenuCheck | null;
 };
 
 const rootDir = resolve(import.meta.dir, "../..");
@@ -79,9 +103,35 @@ const defaultBrowserExecutable = browserName === "firefox" ? undefined : default
 const browserExecutable =
   process.env.OGAME_PLAYWRIGHT_EXECUTABLE ??
   (defaultBrowserExecutable && existsSync(defaultBrowserExecutable) ? defaultBrowserExecutable : undefined);
-const defaultMaxDiffRatio = numberEnv("OGAME_VISUAL_MAX_DIFF_RATIO", 0.00001);
-const defaultMaxBoxDelta = numberEnv("OGAME_VISUAL_MAX_BOX_DELTA", 6);
-const colorDeltaThreshold = numberEnv("OGAME_VISUAL_COLOR_DELTA", 34);
+const defaultMaxDiffRatio = numberEnv("OGAME_VISUAL_MAX_DIFF_RATIO", 0);
+const defaultMaxBoxDelta = numberEnv("OGAME_VISUAL_MAX_BOX_DELTA", 0);
+const colorDeltaThreshold = numberEnv("OGAME_VISUAL_COLOR_DELTA", 0);
+const downmenuStyleProperties = [
+  "display",
+  "position",
+  "left",
+  "top",
+  "width",
+  "height",
+  "fontFamily",
+  "fontSize",
+  "fontWeight",
+  "fontStyle",
+  "lineHeight",
+  "color",
+  "textDecorationLine",
+  "textDecorationColor",
+  "textAlign",
+  "backgroundColor",
+  "paddingTop",
+  "paddingRight",
+  "paddingBottom",
+  "paddingLeft",
+  "marginTop",
+  "marginRight",
+  "marginBottom",
+  "marginLeft"
+] as const;
 
 const viewports: ViewportSpec[] = [
   { name: "desktop", width: 1024, height: 768 },
@@ -142,8 +192,7 @@ const pageSpecs: PageSpec[] = [
     legacyPath: "/impressum.php",
     migratedPath: "/legal",
     boxes: [{ name: "document", legacy: "table", migrated: ".legacy-legal-document" }],
-    maxDiffRatio: 0.1,
-    maxBoxDelta: 30
+    checkDownmenu: false
   }
 ];
 
@@ -167,9 +216,10 @@ try {
       const legacy = await capturePage(context, spec, "legacy", legacyBaseURL + spec.legacyPath, viewport);
       const migrated = await capturePage(context, spec, "migrated", migratedBaseURL + spec.migratedPath, viewport);
       const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath);
-      const maxBoxDelta = spec.maxBoxDelta ?? defaultMaxBoxDelta;
+      const maxBoxDelta = defaultMaxBoxDelta;
       const boxChecks = spec.boxes.map((pair) => compareBoxes(pair.name, legacy.boxes[pair.name], migrated.boxes[pair.name], maxBoxDelta));
-      const maxDiffRatio = spec.maxDiffRatio ?? defaultMaxDiffRatio;
+      const maxDiffRatio = defaultMaxDiffRatio;
+      const downmenuCheck = spec.checkDownmenu === false ? null : compareDownmenus(legacy.downmenu, migrated.downmenu);
       const pass =
         legacy.status === 200 &&
         migrated.status === 200 &&
@@ -180,8 +230,9 @@ try {
         legacy.badResponses.length === 0 &&
         migrated.badResponses.length === 0 &&
         diff.diffRatio <= maxDiffRatio &&
-        boxChecks.every((check) => check.pass);
-      results.push({ page: spec.name, viewport: viewport.name, pass, legacy, migrated, diff, maxDiffRatio, boxChecks });
+        boxChecks.every((check) => check.pass) &&
+        (downmenuCheck === null || downmenuCheck.pass);
+      results.push({ page: spec.name, viewport: viewport.name, pass, legacy, migrated, diff, maxDiffRatio, boxChecks, downmenuCheck });
     }
     await context.close();
   }
@@ -245,6 +296,7 @@ async function capturePage(
     const selector = side === "legacy" ? pair.legacy : pair.migrated;
     boxes[pair.name] = await boxFor(page, selector);
   }
+  const downmenu = spec.checkDownmenu === false ? null : await downmenuFor(page);
   const screenshotPath = join(screenshotDir, `${spec.name}-${viewport.name}-${side}.png`);
   await page.screenshot({ path: screenshotPath, fullPage: false });
   await page.close();
@@ -255,6 +307,7 @@ async function capturePage(
     failedRequests,
     badResponses,
     boxes,
+    downmenu,
     screenshotPath
   };
 }
@@ -269,11 +322,50 @@ async function boxFor(page: Page, selector: string): Promise<Box | null> {
     return null;
   }
   return {
-    x: round(box.x),
-    y: round(box.y),
-    width: round(box.width),
-    height: round(box.height)
+    x: box.x,
+    y: box.y,
+    width: box.width,
+    height: box.height
   };
+}
+
+async function downmenuFor(page: Page): Promise<DownmenuSnapshot | null> {
+  return await page.evaluate((properties) => {
+    const menu = document.querySelector("#downmenu");
+    if (!(menu instanceof HTMLElement)) {
+      return null;
+    }
+
+    const styleOf = (element: Element): Record<string, string> => {
+      const computed = getComputedStyle(element);
+      return Object.fromEntries(
+        properties.map((property) => [property, (computed as CSSStyleDeclaration & Record<string, string>)[property] ?? ""])
+      );
+    };
+    const rectOf = (element: Element): Box => {
+      const rect = element.getBoundingClientRect();
+      return {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height
+      };
+    };
+
+    return {
+      text: menu.textContent?.replace(/\s+/g, " ").trim() ?? "",
+      innerHTML: menu.innerHTML,
+      style: styleOf(menu),
+      rect: rectOf(menu),
+      links: Array.from(menu.querySelectorAll("a")).map((link) => ({
+        text: link.textContent?.trim() ?? "",
+        href: link.getAttribute("href"),
+        target: link.getAttribute("target"),
+        style: styleOf(link),
+        rect: rectOf(link)
+      }))
+    };
+  }, [...downmenuStyleProperties]);
 }
 
 async function compareScreenshots(browser: Browser, legacyPath: string, migratedPath: string): Promise<DiffResult> {
@@ -304,9 +396,10 @@ async function compareScreenshots(browser: Browser, legacyPath: string, migrated
         const delta =
           Math.abs(leftPixels[i] - rightPixels[i]) +
           Math.abs(leftPixels[i + 1] - rightPixels[i + 1]) +
-          Math.abs(leftPixels[i + 2] - rightPixels[i + 2]);
-        totalDelta += delta / 3;
-        if (delta / 3 > threshold) {
+          Math.abs(leftPixels[i + 2] - rightPixels[i + 2]) +
+          Math.abs(leftPixels[i + 3] - rightPixels[i + 3]);
+        totalDelta += delta / 4;
+        if (delta / 4 > threshold) {
           changedPixels += 1;
         }
       }
@@ -335,9 +428,7 @@ async function compareScreenshots(browser: Browser, legacyPath: string, migrated
   );
   await page.close();
   return {
-    ...result,
-    diffRatio: round(result.diffRatio),
-    averageDelta: round(result.averageDelta)
+    ...result
   };
 }
 
@@ -351,7 +442,46 @@ function compareBoxes(name: string, legacy: Box | null, migrated: Box | null, ma
     Math.abs(legacy.width - migrated.width),
     Math.abs(legacy.height - migrated.height)
   );
-  return { name, pass: maxDelta <= maxBoxDelta, maxDelta: round(maxDelta), legacy, migrated };
+  return { name, pass: maxDelta <= maxBoxDelta, maxDelta, legacy, migrated };
+}
+
+function compareDownmenus(legacy: DownmenuSnapshot | null, migrated: DownmenuSnapshot | null): DownmenuCheck {
+  const mismatches: string[] = [];
+  collectMismatches("downmenu", legacy, migrated, mismatches);
+  return {
+    pass: mismatches.length === 0,
+    mismatches,
+    legacy,
+    migrated
+  };
+}
+
+function collectMismatches(path: string, legacy: unknown, migrated: unknown, mismatches: string[]): void {
+  if (JSON.stringify(legacy) === JSON.stringify(migrated)) {
+    return;
+  }
+  if (
+    legacy !== null &&
+    migrated !== null &&
+    typeof legacy === "object" &&
+    typeof migrated === "object" &&
+    !Array.isArray(legacy) &&
+    !Array.isArray(migrated)
+  ) {
+    const keys = new Set([...Object.keys(legacy), ...Object.keys(migrated)]);
+    for (const key of keys) {
+      collectMismatches(`${path}.${key}`, (legacy as Record<string, unknown>)[key], (migrated as Record<string, unknown>)[key], mismatches);
+    }
+    return;
+  }
+  if (Array.isArray(legacy) && Array.isArray(migrated)) {
+    const length = Math.max(legacy.length, migrated.length);
+    for (let index = 0; index < length; index += 1) {
+      collectMismatches(`${path}[${index}]`, legacy[index], migrated[index], mismatches);
+    }
+    return;
+  }
+  mismatches.push(path);
 }
 
 function renderMarkdown(report: {
@@ -360,6 +490,11 @@ function renderMarkdown(report: {
   migratedBaseURL: string;
   browserName?: string;
   browserExecutable?: string;
+  thresholds: {
+    defaultMaxDiffRatio: number;
+    defaultMaxBoxDelta: number;
+    colorDeltaThreshold: number;
+  };
   allPass: boolean;
   results: CaseResult[];
 }): string {
@@ -370,6 +505,9 @@ function renderMarkdown(report: {
     `- Legacy: ${report.legacyBaseURL}`,
     `- Migrated: ${report.migratedBaseURL}`,
     `- Browser: ${report.browserName ?? "chromium"} (${report.browserExecutable ?? "playwright-default"})`,
+    `- Max Diff Ratio: ${formatNumber(report.thresholds.defaultMaxDiffRatio)}`,
+    `- Max Box Delta: ${formatNumber(report.thresholds.defaultMaxBoxDelta)}`,
+    `- Color Delta Threshold: ${formatNumber(report.thresholds.colorDeltaThreshold)}`,
     `- Result: ${report.allPass ? "PASS" : "FAIL"}`,
     "",
     "| Page | Viewport | Pass | Diff Ratio | Box Max Delta | Notes |",
@@ -384,11 +522,12 @@ function renderMarkdown(report: {
       ...result.migrated.failedRequests.map((value) => `migrated failed: ${value}`),
       ...result.legacy.badResponses.map((value) => `legacy response: ${value}`),
       ...result.migrated.badResponses.map((value) => `migrated response: ${value}`),
-      ...result.boxChecks.filter((check) => !check.pass).map((check) => `box ${check.name} delta ${check.maxDelta}`)
+      ...result.boxChecks.filter((check) => !check.pass).map((check) => `box ${check.name} delta ${formatNumber(check.maxDelta)}`),
+      ...(result.downmenuCheck?.mismatches.map((value) => `downmenu mismatch: ${value}`) ?? [])
     ];
     lines.push(
-      `| ${result.page} | ${result.viewport} | ${result.pass ? "PASS" : "FAIL"} | ${result.diff.diffRatio} | ${
-        worstBox?.maxDelta ?? 0
+      `| ${result.page} | ${result.viewport} | ${result.pass ? "PASS" : "FAIL"} | ${formatNumber(result.diff.diffRatio)} | ${
+        formatNumber(worstBox?.maxDelta ?? 0)
       } | ${notes.join("<br>") || "-"} |`
     );
   }
@@ -417,6 +556,9 @@ function browserEnv(name: string, fallback: "chromium" | "firefox"): "chromium" 
   return fallback;
 }
 
-function round(value: number): number {
-  return Math.round(value * 1000) / 1000;
+function formatNumber(value: number): string {
+  if (value === 0 || Number.isInteger(value)) {
+    return String(value);
+  }
+  return value.toPrecision(12).replace(/\.?0+$/, "");
 }
