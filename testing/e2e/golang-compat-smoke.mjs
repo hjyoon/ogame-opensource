@@ -406,6 +406,7 @@ try {
       check(js.body.includes("legacy-public-story-panel"), "React bundle contains legacy public story layout"),
       check(js.body.includes("legacy-public-screenshots-panel"), "React bundle contains legacy public screenshots layout"),
       check(js.body.includes("legacy-public-rules-panel"), "React bundle contains legacy public rules layout"),
+      check(js.body.includes("legacy-legal-page"), "React bundle contains legacy legal layout"),
       check(js.body.includes("legacy-game-shell"), "React bundle contains legacy game overview layout")
     ]
   }));

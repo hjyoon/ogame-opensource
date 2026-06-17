@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { LegacyGameOverview, type GameOverviewStatus } from "./LegacyGameOverview";
 import { LegacyPublicAbout } from "./LegacyPublicAbout";
 import { LegacyPublicHome } from "./LegacyPublicHome";
+import { LegacyPublicLegal } from "./LegacyPublicLegal";
 import { LegacyPublicRegister } from "./LegacyPublicRegister";
 import { LegacyPublicRules } from "./LegacyPublicRules";
 import { LegacyPublicScreenshots } from "./LegacyPublicScreenshots";
@@ -350,6 +351,10 @@ function App() {
         universes={universes}
       />
     );
+  }
+
+  if (route.key === "legal") {
+    return <LegacyPublicLegal />;
   }
 
   return (
