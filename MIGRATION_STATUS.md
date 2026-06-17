@@ -21,17 +21,18 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - `/api/game/overview` returns a session-guarded read-only overview summary from legacy `users`, `planets`, and `uni`.
 - Authenticated `/game/*` routes preserve session query parameters; overview and buildings render legacy-style read-only data tables.
 - Go migration QA smoke covers health, routes, assets, registration validation/creation, login, session lookup, overview/buildings lookup, and method guards.
-- Playwright visual/CSR E2E compares public pages and checks game menu session-preserving navigation.
+- Playwright visual/CSR E2E compares public pages, checks game menu navigation, and audits authenticated overview/buildings against PHP.
 
 ## Latest Verified Implementation
 
-- Milestone: public visual parity, login redirect, and game overview/buildings are guarded by automated checks.
+- Milestone: public visual parity, login redirect, and authenticated overview/buildings audit are guarded by automated checks.
 
 ## Verified QA
 
 - `bun run build && bun run check && bun test`: passing.
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
-- Playwright visual and CSR E2E: passing in Chromium and Firefox for public parity and game menu navigation.
+- Playwright visual, authenticated visual audit, and CSR E2E: passing in Chromium and Firefox.
+- Authenticated visual audit reports current overview/buildings parity miss; exact diff/layout enforcement is not yet enabled.
 - Go internal coverage gate: `98.1% >= 97%`.
 - Go smoke JSON: `all_pass: true`, including registration-created overview access.
 
@@ -42,6 +43,7 @@ Full legacy PHP E2E was not run for this Go migration step. Keep legacy PHP beha
 - Implement activation confirmation, welcome mail/message, IP log, cleanup timer, and rank recalculation side effects.
 - Add logout, expiry, and deeper session security behavior.
 - Public legacy visual baseline is complete for the current public route set.
+- Close authenticated visual diff for overview/buildings before claiming game-page parity.
 - Port remaining authenticated game screens beyond buildings with legacy PHP screen composition.
 - Port current planet switching and full overview actions from legacy DB.
 - Port resource production, queues, buildings, research, shipyard, defense, fleet, reports, messages, galaxy, alliance, admin, maintenance, options, recovery, deletion, vacation, bans, and permissions.

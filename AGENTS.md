@@ -54,11 +54,7 @@ Migration smoke:
 testing/e2e/run-golang-migration-qa.sh
 ```
 
-During page migration, write or extend Playwright headless visual E2E so legacy PHP and Go/React screenshots plus key boxes are compared before visual parity is claimed:
-
-```sh
-testing/e2e/run-playwright-visual-e2e.sh
-```
+During page migration, extend Playwright visual E2E before claiming parity. Public: `testing/e2e/run-playwright-visual-e2e.sh`; auth: `testing/e2e/run-playwright-auth-visual-e2e.sh`. State whether auth diff/layout enforcement is enabled or audit-only.
 
 Set `OGAME_RUN_LEGACY_E2E=0` only for local frontend/backend smoke work, never final game-behavior validation. Port HTTP black-box checks to Go with the same JSON result shape.
 
