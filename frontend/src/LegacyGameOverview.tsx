@@ -91,7 +91,38 @@ type LegacyGameOverviewProps = {
   buildingsError: string | null;
 };
 
-const skinBase = "/legacy-assets/use/uV";
+type LegacyMenuEntry =
+  | { type: "image"; height: number; src: string; width: number }
+  | { type: "route"; key: GameRoute["key"] };
+
+const skinBase = "/public-assets/evolution";
+const gameImageBase = "/public-assets/game-img";
+const gameRouteByKey = new Map(gameRoutes.map((route) => [route.key, route]));
+const legacyMenuEntries: LegacyMenuEntry[] = [
+  { type: "image", height: 40, src: `${skinBase}/gfx/ogame-produktion.jpg`, width: 110 },
+  { type: "route", key: "overview" },
+  { type: "route", key: "admin" },
+  { type: "route", key: "buildings" },
+  { type: "route", key: "resources" },
+  { type: "route", key: "merchant" },
+  { type: "route", key: "research" },
+  { type: "route", key: "shipyard" },
+  { type: "route", key: "fleet" },
+  { type: "route", key: "technology" },
+  { type: "route", key: "galaxy" },
+  { type: "route", key: "defense" },
+  { type: "image", height: 19, src: `${skinBase}/gfx/info-help.jpg`, width: 110 },
+  { type: "route", key: "alliance" },
+  { type: "route", key: "officers" },
+  { type: "route", key: "statistics" },
+  { type: "route", key: "search" },
+  { type: "image", height: 19, src: `${skinBase}/gfx/user-menu.jpg`, width: 110 },
+  { type: "route", key: "messages" },
+  { type: "route", key: "notes" },
+  { type: "route", key: "buddy" },
+  { type: "route", key: "options" },
+  { type: "route", key: "logout" }
+];
 
 export function LegacyGameOverview({ status, error, route, buildingsStatus, buildingsError }: LegacyGameOverviewProps) {
   const overview = status?.authenticated ? status.overview : undefined;
@@ -106,15 +137,16 @@ export function LegacyGameOverview({ status, error, route, buildingsStatus, buil
       style={
         {
           "--legacy-body-bg": `url("${skinBase}/img/background.jpg")`,
-          "--legacy-title-bg": `url("${skinBase}/img/bg1.gif")`
+          "--legacy-title-bg": `url("${skinBase}/img/bg1.gif")`,
+          "--legacy-row-bg": `url("${skinBase}/img/bg2.gif")`
         } as React.CSSProperties
       }
     >
-      <header className="legacy-header-top">
+      <header className="legacy-header-top" id="header_top">
         {overview ? <LegacyResourceHeader overview={overview} /> : <div className="legacy-header-placeholder">OGame</div>}
       </header>
       <LegacyLeftMenu activeRoute={route} />
-      <section className="legacy-content">
+      <section className="legacy-content" id="content">
         {error ? <LegacyMessage tone="error" text={error} /> : null}
         {!error && issue ? <LegacyMessage tone="error" text={issue} /> : null}
         {!error && !issue && !overview ? <LegacyMessage tone="neutral" text="Loading overview..." /> : null}
@@ -139,8 +171,10 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
     { name: "Metal", value: planet.resources.metal, img: `${skinBase}/images/metall.gif` },
     { name: "Crystal", value: planet.resources.crystal, img: `${skinBase}/images/kristall.gif` },
     { name: "Deuterium", value: planet.resources.deuterium, img: `${skinBase}/images/deuterium.gif` },
+    { name: "Dark Matter", value: 0, img: `${gameImageBase}/dm_klein_2.jpg` },
     { name: "Energy", value: 0, secondary: 0, img: `${skinBase}/images/energie.gif` }
   ];
+  const officers = ["commander", "admiral", "ingenieur", "geologe", "technokrat"];
 
   return (
     <table className="legacy-header-table">
@@ -174,32 +208,45 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
             </table>
           </td>
           <td className="legacy-header-cell">
-            <table className="legacy-resource-table" id="resources">
-              <tbody>
-                <tr>
-                  {resources.map((resource) => (
-                    <td className="legacy-header-cell" key={resource.name}>
-                      <img alt="" height={22} src={resource.img} width={42} />
-                    </td>
-                  ))}
-                </tr>
-                <tr>
-                  {resources.map((resource) => (
-                    <td className="legacy-header-cell legacy-resource-name" key={resource.name}>
-                      {resource.name}
-                    </td>
-                  ))}
-                </tr>
-                <tr>
-                  {resources.map((resource) => (
-                    <td className="legacy-header-cell" key={resource.name}>
-                      {formatNumber(resource.value)}
-                      {resource.secondary !== undefined ? `/${formatNumber(resource.secondary)}` : null}
-                    </td>
-                  ))}
-                </tr>
-              </tbody>
-            </table>
+            <div className="legacy-header-stack">
+              <table className="legacy-resource-table" id="resources">
+                <tbody>
+                  <tr>
+                    {resources.map((resource) => (
+                      <td className="legacy-header-cell" key={resource.name}>
+                        <img alt="" height={22} src={resource.img} width={42} />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    {resources.map((resource) => (
+                      <td className="legacy-header-cell legacy-resource-name" key={resource.name}>
+                        {resource.name}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    {resources.map((resource) => (
+                      <td className="legacy-header-cell" key={resource.name}>
+                        {formatNumber(resource.value)}
+                        {resource.secondary !== undefined ? `/${formatNumber(resource.secondary)}` : null}
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+              <table className="legacy-officer-table">
+                <tbody>
+                  <tr>
+                    {officers.map((officer) => (
+                      <td className="legacy-header-cell" key={officer}>
+                        <img alt="" height={30} src={`${gameImageBase}/${officer}_ikon_un.gif`} width={30} />
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </td>
         </tr>
       </tbody>
@@ -209,43 +256,48 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
 
 function LegacyLeftMenu({ activeRoute }: { activeRoute: GameRoute }) {
   return (
-    <aside className="legacy-leftmenu">
+    <aside className="legacy-leftmenu" id="leftmenu">
       <div className="legacy-center">
-        <div className="legacy-menu">
+        <div className="legacy-menu" id="menu">
           <p>
             <span className="legacy-nowrap">Universe 1 (v 0.84)</span>
           </p>
           <table>
             <tbody>
-              <tr>
-                <td>
-                  <img alt="" height={40} src={`${skinBase}/gfx/ogame-produktion.jpg`} width={110} />
-                </td>
-              </tr>
-              {gameRoutes.map((route) => (
-                <tr key={route.key}>
-                  <td>
-                    <div className="legacy-center">
-                      <a
-                        aria-current={route.key === activeRoute.key ? "page" : undefined}
-                        href={gameRouteURL(route.path, window.location.search)}
-                      >
-                        {route.label}
-                      </a>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              <tr>
-                <td>
-                  <img alt="" height={19} src={`${skinBase}/gfx/info-help.jpg`} width={110} />
-                </td>
-              </tr>
+              {legacyMenuEntries.map((entry, index) =>
+                entry.type === "image" ? (
+                  <tr key={`${entry.src}-${index}`}>
+                    <td>
+                      <img alt="" height={entry.height} src={entry.src} width={entry.width} />
+                    </td>
+                  </tr>
+                ) : (
+                  <LegacyMenuRoute activeRoute={activeRoute} entry={entry} key={entry.key} />
+                )
+              )}
             </tbody>
           </table>
         </div>
       </div>
     </aside>
+  );
+}
+
+function LegacyMenuRoute({ activeRoute, entry }: { activeRoute: GameRoute; entry: Extract<LegacyMenuEntry, { type: "route" }> }) {
+  const route = gameRouteByKey.get(entry.key);
+  if (!route) {
+    return null;
+  }
+  return (
+    <tr>
+      <td>
+        <div className="legacy-center">
+          <a aria-current={route.key === activeRoute.key ? "page" : undefined} href={gameRouteURL(route.path, window.location.search)}>
+            {route.label}
+          </a>
+        </div>
+      </td>
+    </tr>
   );
 }
 

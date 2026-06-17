@@ -366,16 +366,18 @@ dd {
 
 .legacy-game-shell {
   background-attachment: fixed;
-  background-color: #000;
+  background-color: #040e1e;
   background-image: var(--legacy-body-bg);
-  background-position: left top;
+  background-position: top right;
   background-repeat: no-repeat;
-  color: #faccff;
+  color: #e6ebfb;
   font-family: Tahoma, sans-serif;
   font-size: 11px;
-  min-height: 100vh;
+  margin: -8px;
+  min-height: calc(100vh + 16px);
   overflow: hidden;
   position: relative;
+  width: calc(100% + 16px);
 }
 
 .legacy-game-shell *,
@@ -404,7 +406,7 @@ dd {
   overflow: visible;
   position: absolute;
   top: 1px;
-  width: calc(100% - 210px);
+  width: calc(100% - 205px);
 }
 
 .legacy-header-placeholder {
@@ -416,9 +418,9 @@ dd {
 
 .legacy-leftmenu {
   background: transparent;
-  left: 0;
-  position: fixed;
-  top: 0;
+  left: 1px;
+  position: absolute;
+  top: 1px;
   width: 190px;
 }
 
@@ -427,7 +429,7 @@ dd {
 }
 
 .legacy-menu p {
-  color: #faccff;
+  color: #e6ebfb;
   margin: 11px 0 6px;
   width: 110px;
 }
@@ -438,8 +440,8 @@ dd {
 
 .legacy-menu td {
   background-color: #344566;
-  border-top: 0 solid #415680;
-  color: #faccff;
+  border: 0;
+  color: #e6ebfb;
   padding: 1px;
   text-align: center;
   vertical-align: middle;
@@ -455,19 +457,20 @@ dd {
   left: 190px;
   overflow: auto;
   position: absolute;
-  top: 86px;
-  width: calc(100% - 210px);
+  top: 91px;
+  width: calc(100% - 205px);
 }
 
 .legacy-header-table,
-.legacy-resource-table {
+.legacy-resource-table,
+.legacy-officer-table {
   background: transparent;
 }
 
 .legacy-header-cell {
   background: transparent;
   border: 0;
-  color: #faccff;
+  color: #e6ebfb;
   padding: 1px;
   text-align: center;
 }
@@ -478,10 +481,16 @@ dd {
 }
 
 .legacy-header-cell select {
-  background-color: #352238;
-  border: 1px #552f55 solid;
-  color: #faccff;
+  background-color: #344566;
+  border: 1px #415680 solid;
+  color: #e6ebfb;
   min-height: 18px;
+}
+
+.legacy-header-stack {
+  display: inline-grid;
+  gap: 2px;
+  justify-items: center;
 }
 
 .legacy-resource-table td {
@@ -489,9 +498,13 @@ dd {
 }
 
 .legacy-resource-name {
-  color: #fff;
+  color: #e6ebfb;
   font-style: italic;
   font-weight: bold;
+}
+
+.legacy-officer-table td {
+  width: 32px;
 }
 
 .legacy-overview-table {
@@ -501,9 +514,9 @@ dd {
 .legacy-overview-table th,
 .legacy-overview-table td,
 .legacy-planet-list th {
-  background-color: #3a243c;
-  border: 1px #552f55 solid;
-  color: #faccff;
+  background-color: #344566;
+  border: 1px #415680 solid;
+  color: #e6ebfb;
   font-weight: normal;
   padding-left: 3px;
   padding-right: 3px;
@@ -517,7 +530,7 @@ dd {
 
 .legacy-overview-table td.legacy-c {
   background-image: var(--legacy-title-bg);
-  color: #faccff;
+  color: #e6ebfb;
   font-weight: bold;
   padding-left: 3px;
   text-align: left;
@@ -525,15 +538,16 @@ dd {
 
 .legacy-overview-table td.legacy-l,
 .legacy-overview-table td.legacy-k {
-  background-color: #3a243c;
-  border: 1px #552f55 solid;
-  color: #faccff;
+  background-color: #344566;
+  border: 1px #415680 solid;
+  color: #e6ebfb;
   font-weight: normal;
   padding: 3px;
   vertical-align: middle;
 }
 
 .legacy-overview-table td.legacy-l {
+  background-image: var(--legacy-row-bg);
   text-align: left;
 }
 

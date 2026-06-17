@@ -12,28 +12,28 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - `/api/healthz` reports tool targets and static/legacy asset readiness.
 - Natural public routes and legacy `.php` aliases resolve through the React shell.
 - `/home`, `/register`, `/about`, `/story`, `/screenshots`, `/rules`, `/legal`, `/universes`, and legacy aliases target their PHP public compositions.
-- Legacy public images from `wwwroot/img` are copied into `frontend/dist/public-assets/img` and served without loopback absolute URLs.
+- Legacy public, evolution skin, and game images are copied into `frontend/dist/public-assets`.
 - `/api/public/universes` exposes the universe catalog from the master DB with config fallback.
 - `/api/public/registration/validate` performs draft validation and duplicate/capacity checks against the legacy universe DB.
 - `/api/public/registration` creates a legacy-compatible unvalidated user, activation code, home planet, private/public session, and `/game/overview` redirect.
 - `/api/public/login/validate` and `/api/public/login` validate credentials, create public/private sessions, update legacy session fields, set the private cookie, and return a natural `/game/overview` redirect.
 - `/api/game/session` validates public session plus private cookie, including banned and IP checks.
 - `/api/game/overview` returns a session-guarded read-only overview summary from legacy `users`, `planets`, and `uni`.
-- Authenticated `/game/*` routes preserve session query parameters; overview and buildings render legacy-style read-only data tables.
+- Authenticated `/game/*` routes preserve sessions; overview/buildings use the legacy `evolution` skin and read-only tables.
 - Go migration QA smoke covers health, routes, assets, registration validation/creation, login, session lookup, overview/buildings lookup, and method guards.
 - Playwright visual/CSR E2E compares public pages, checks game menu navigation, and audits authenticated overview/buildings against PHP.
 
 ## Latest Verified Implementation
 
-- Milestone: public visual parity, login redirect, and authenticated overview/buildings audit are guarded by automated checks.
+- Milestone: public visual parity, login redirect, and evolution-skinned overview/buildings audit are guarded by automated checks.
 
 ## Verified QA
 
 - `bun run build && bun run check && bun test`: passing.
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
 - Playwright visual, authenticated visual audit, and CSR E2E: passing in Chromium and Firefox.
-- Authenticated visual audit reports current overview/buildings parity miss; exact diff/layout enforcement is not yet enabled.
-- Go internal coverage gate: `98.1% >= 97%`.
+- Auth visual contract passes in Chromium/Firefox; parity still misses (diff about 37-65%, box delta 825).
+- Go internal coverage gate: `97.4% >= 97%`.
 - Go smoke JSON: `all_pass: true`, including registration-created overview access.
 
 Full legacy PHP E2E was not run for this Go migration step. Keep legacy PHP behavior as the oracle until each migrated flow has focused unit tests and E2E coverage.

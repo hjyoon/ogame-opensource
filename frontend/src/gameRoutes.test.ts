@@ -7,6 +7,8 @@ describe("game route model", () => {
     expect(gameRoutes.every((route) => !route.path.endsWith(".php"))).toBe(true);
     expect(gameRoutes.map((route) => route.path)).toContain("/game/buildings");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/fleet");
+    expect(gameRoutes.map((route) => route.path)).toContain("/game/merchant");
+    expect(gameRoutes.map((route) => route.path)).toContain("/game/officers");
   });
 
   test("normalizes game paths", () => {
@@ -19,6 +21,7 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game").key).toBe("overview");
     expect(resolveGameRoute("/game/overview").migrated).toBe(true);
     expect(resolveGameRoute("/game/buildings")).toMatchObject({ key: "buildings", migrated: true });
+    expect(resolveGameRoute("/game/options").label).toBe("Options");
     expect(resolveGameRoute("/game/messages").label).toBe("Messages");
   });
 

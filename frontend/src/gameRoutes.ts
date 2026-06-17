@@ -1,8 +1,10 @@
 export type GameRouteKey =
   | "overview"
+  | "admin"
   | "empire"
   | "buildings"
   | "resources"
+  | "merchant"
   | "research"
   | "shipyard"
   | "fleet"
@@ -10,8 +12,14 @@ export type GameRouteKey =
   | "galaxy"
   | "defense"
   | "alliance"
+  | "officers"
   | "statistics"
-  | "messages";
+  | "search"
+  | "messages"
+  | "notes"
+  | "buddy"
+  | "options"
+  | "logout";
 
 export type GameRoute = {
   key: GameRouteKey;
@@ -22,9 +30,11 @@ export type GameRoute = {
 
 export const gameRoutes: GameRoute[] = [
   { key: "overview", label: "Overview", path: "/game/overview", migrated: true },
+  { key: "admin", label: "*Admin Area*", path: "/game/admin", migrated: false },
   { key: "empire", label: "Empire", path: "/game/empire", migrated: false },
   { key: "buildings", label: "Buildings", path: "/game/buildings", migrated: true },
   { key: "resources", label: "Resources", path: "/game/resources", migrated: false },
+  { key: "merchant", label: "Merchant", path: "/game/merchant", migrated: false },
   { key: "research", label: "Research", path: "/game/research", migrated: false },
   { key: "shipyard", label: "Shipyard", path: "/game/shipyard", migrated: false },
   { key: "fleet", label: "Fleet", path: "/game/fleet", migrated: false },
@@ -32,8 +42,14 @@ export const gameRoutes: GameRoute[] = [
   { key: "galaxy", label: "Galaxy", path: "/game/galaxy", migrated: false },
   { key: "defense", label: "Defense", path: "/game/defense", migrated: false },
   { key: "alliance", label: "Alliance", path: "/game/alliance", migrated: false },
+  { key: "officers", label: "Officers Recruitment", path: "/game/officers", migrated: false },
   { key: "statistics", label: "Statistics", path: "/game/statistics", migrated: false },
-  { key: "messages", label: "Messages", path: "/game/messages", migrated: false }
+  { key: "search", label: "Search", path: "/game/search", migrated: false },
+  { key: "messages", label: "Messages", path: "/game/messages", migrated: false },
+  { key: "notes", label: "Notes", path: "/game/notes", migrated: false },
+  { key: "buddy", label: "Buddylist", path: "/game/buddy", migrated: false },
+  { key: "options", label: "Options", path: "/game/options", migrated: false },
+  { key: "logout", label: "Logout", path: "/game/logout", migrated: false }
 ];
 
 const overviewRoute = gameRoutes[0];

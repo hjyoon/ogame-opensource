@@ -11,7 +11,9 @@ RUN bun install --frozen-lockfile
 COPY frontend ./
 COPY wwwroot/img ../wwwroot/img
 COPY wwwroot/css ../wwwroot/css
+COPY wwwroot/evolution ../wwwroot/evolution
 COPY wwwroot/favicon.ico ../wwwroot/favicon.ico
+COPY game/img ../game/img
 RUN bun run build
 
 FROM alpine:3.22
