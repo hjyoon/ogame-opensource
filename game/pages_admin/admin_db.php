@@ -11,9 +11,10 @@
 class Admin_DB extends Page {
 
     public function controller () : bool {
+        global $GlobalUser;
 
         // POST request processing.
-        if ( method () === "POST" )
+        if ( method () === "POST" && $GlobalUser['admin'] >= USER_TYPE_ADMIN )
         {
             if (key_exists('action', $_GET) && $_GET['action'] === "create") {
                 $this->CreateBackup ();
@@ -21,7 +22,7 @@ class Admin_DB extends Page {
         }
 
         // GET request processing.
-        if ( method() === "GET" )
+        if ( method() === "GET" && $GlobalUser['admin'] >= USER_TYPE_ADMIN )
         {
             if (key_exists('action', $_GET) && $_GET['action'] === "restore") {
                 $this->RestoreBackup ($_GET['fname']);

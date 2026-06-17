@@ -8,13 +8,14 @@ class Admin_Expedition extends Page {
     private string $pie_values = "";
 
     public function controller () : bool {
+        global $GlobalUser;
 
         // POST request processing.
         if ( method () === "POST" )
         {
 
             // Simulate expeditions
-            if (key_exists('action', $_GET) && $_GET['action'] === "sim") {
+            if (key_exists('action', $_GET) && $_GET['action'] === "sim" && $GlobalUser['admin'] != USER_TYPE_PLAYER) {
 
                 $result = array();
                 $exptab = LoadExpeditionSettings ();
@@ -52,7 +53,7 @@ class Admin_Expedition extends Page {
             }
 
             // New Settings
-            if (key_exists('action', $_GET) && $_GET['action'] === "settings") {
+            if (key_exists('action', $_GET) && $_GET['action'] === "settings" && $GlobalUser['admin'] >= USER_TYPE_ADMIN) {
 
                 if (key_exists('dm_factor', $_POST)) $exptab['dm_factor'] = intval($_POST['dm_factor']);
 
