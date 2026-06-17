@@ -79,14 +79,35 @@ type LoginDraft = {
   universe: string;
 };
 
-type GameSessionStatus = {
+type GameOverviewStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
-  session?: {
-    playerId: number;
+  overview?: {
     commander: string;
-    universeNumber: number;
-    homePlanetId: number;
+    score: {
+      points: number;
+      rank: number;
+      universePlayers: number;
+    };
+    currentPlanet: {
+      id: number;
+      name: string;
+      coordinates: {
+        galaxy: number;
+        system: number;
+        position: number;
+      };
+      resources: {
+        metal: number;
+        crystal: number;
+        deuterium: number;
+      };
+    };
+    planetSwitcher: {
+      id: number;
+      name: string;
+      current: boolean;
+    }[];
   };
 };
 
@@ -121,8 +142,8 @@ function App() {
   const [loginResult, setLoginResult] = useState<LoginValidation | null>(null);
   const [loginPending, setLoginPending] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [gameSession, setGameSession] = useState<GameSessionStatus | null>(null);
-  const [gameSessionError, setGameSessionError] = useState<string | null>(null);
+  const [gameOverview, setGameOverview] = useState<GameOverviewStatus | null>(null);
+  const [gameOverviewError, setGameOverviewError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
 
@@ -171,17 +192,23 @@ function App() {
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (!pathname.startsWith("/game") || publicSession === "") {
-      setGameSession(null);
-      setGameSessionError(null);
+      setGameOverview(null);
+      setGameOverviewError(null);
       return;
     }
-    fetch(`/api/game/session?session=${encodeURIComponent(publicSession)}`, { credentials: "same-origin" })
-      .then((response) => response.json() as Promise<GameSessionStatus>)
+    const currentSearch = new URLSearchParams(search);
+    const overviewSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      overviewSearch.set("cp", selectedPlanet);
+    }
+    fetch(`/api/game/overview?${overviewSearch.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameOverviewStatus>)
       .then((payload) => {
-        setGameSession(payload);
-        setGameSessionError(null);
+        setGameOverview(payload);
+        setGameOverviewError(null);
       })
-      .catch((err: unknown) => setGameSessionError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) => setGameOverviewError(err instanceof Error ? err.message : String(err)));
   }, [pathname, search]);
 
   const checks = useMemo(
@@ -297,13 +324,20 @@ function App() {
           {resolution.isLegacyAlias ? (
             <p className="alias-note">Legacy URL alias. Canonical route: {resolution.canonicalPath}</p>
           ) : null}
-          {pathname.startsWith("/game") && gameSession?.authenticated ? (
-            <p className="form-success">Commander session: {gameSession.session?.commander ?? "unknown"}</p>
+          {pathname.startsWith("/game") && gameOverview?.authenticated && gameOverview.overview ? (
+            <p className="form-success">
+              Commander: {gameOverview.overview.commander} · {gameOverview.overview.currentPlanet.name} [
+              {gameOverview.overview.currentPlanet.coordinates.galaxy}:{gameOverview.overview.currentPlanet.coordinates.system}:
+              {gameOverview.overview.currentPlanet.coordinates.position}] · Metal{" "}
+              {Math.floor(gameOverview.overview.currentPlanet.resources.metal)} · Crystal{" "}
+              {Math.floor(gameOverview.overview.currentPlanet.resources.crystal)} · Deuterium{" "}
+              {Math.floor(gameOverview.overview.currentPlanet.resources.deuterium)}
+            </p>
           ) : null}
-          {pathname.startsWith("/game") && gameSession && !gameSession.authenticated ? (
-            <p className="form-error">{gameSession.issues[0]?.message ?? "Session is invalid."}</p>
+          {pathname.startsWith("/game") && gameOverview && !gameOverview.authenticated ? (
+            <p className="form-error">{gameOverview.issues[0]?.message ?? "Session is invalid."}</p>
           ) : null}
-          {pathname.startsWith("/game") && gameSessionError ? <p className="form-error">{gameSessionError}</p> : null}
+          {pathname.startsWith("/game") && gameOverviewError ? <p className="form-error">{gameOverviewError}</p> : null}
         </div>
 
         <div className="panel">
@@ -333,6 +367,7 @@ function App() {
             <Gate label="Static React build" ready={Boolean(health?.staticReady)} />
             <Gate label="Legacy image assets" ready={Boolean(health?.legacyAssetsReady)} />
             <Gate label="Universe catalog API" ready={universes.length > 0} />
+            <Gate label="Game overview API" ready={Boolean(gameOverview?.authenticated || !pathname.startsWith("/game"))} />
           </div>
         </div>
       </section>

@@ -13,9 +13,11 @@ import (
 	"strings"
 	"testing"
 
+	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	apppublicsite "github.com/hjyoon/ogame-opensource/backend/internal/application/publicsite"
 	appsystem "github.com/hjyoon/ogame-opensource/backend/internal/application/system"
 	"github.com/hjyoon/ogame-opensource/backend/internal/config"
+	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 	domainpublicsite "github.com/hjyoon/ogame-opensource/backend/internal/domain/publicsite"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/configcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/filesystem"
@@ -486,6 +488,137 @@ func TestGameSessionEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 	}
 }
 
+func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
+	overview := &fakeGameOverview{result: appgame.OverviewResult{
+		Authenticated: true,
+		Overview: domaingame.Overview{
+			Commander: "legor",
+			Score: domaingame.ScoreSummary{
+				RawScore:        123456,
+				Rank:            7,
+				UniversePlayers: 2,
+			},
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:   99,
+				Name: "Arakis",
+				Type: 1,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+				Diameter:    12800,
+				Temperature: 19,
+				Fields:      12,
+				MaxFields:   163,
+				Resources: domaingame.Resources{
+					Metal:     1234.5,
+					Crystal:   234.5,
+					Deuterium: 12,
+				},
+			},
+			PlanetSwitcher: []domaingame.PlanetSummary{{
+				ID:   99,
+				Name: "Arakis",
+				Type: 1,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+				Current: true,
+			}},
+		},
+	}}
+	server := testServerWithGameOverview(t, overview)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/overview?session=public&cp=99", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameOverviewResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Overview == nil || response.Overview.Commander != "legor" {
+		t.Fatalf("expected authenticated overview response, got %+v", response)
+	}
+	if response.Overview.Score.Points != 123 || response.Overview.CurrentPlanet.Coordinates.Position != 3 || response.Overview.CurrentPlanet.Resources.Metal != 1234.5 {
+		t.Fatalf("unexpected overview mapping: %+v", response.Overview)
+	}
+	if overview.command.PublicSession != "public" || overview.command.PlanetID != 99 || overview.command.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected overview command: %+v", overview.command)
+	}
+	if overview.command.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("expected private session cookie to be passed, got %+v", overview.command.PrivateSessions)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("private")) {
+		t.Fatalf("game overview response must not echo private session: %s", rec.Body.String())
+	}
+}
+
+func TestGameOverviewEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
+	overview := &fakeGameOverview{result: appgame.OverviewResult{
+		Authenticated: false,
+		Issues: []domainpublicsite.SessionIssue{{
+			Code:    domainpublicsite.SessionIssuePrivateInvalid,
+			Message: "Private session is invalid.",
+		}},
+	}}
+	server := testServerWithGameOverview(t, overview)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/overview?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var response gameOverviewResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Authenticated || response.Overview != nil || len(response.Issues) != 1 {
+		t.Fatalf("expected invalid overview session response, got %+v", response)
+	}
+}
+
+func TestGameOverviewEndpointRejectsInvalidPlanetID(t *testing.T) {
+	server := testServerWithGameOverview(t, &fakeGameOverview{})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/overview?session=public&cp=abc", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid selected planet to return 400, got %d", rec.Code)
+	}
+}
+
+func TestGameOverviewEndpointReturnsUnavailableWithoutUseCase(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/overview?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game overview use case to return 503, got %d", rec.Code)
+	}
+}
+
+func TestGameOverviewEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
+	server := testServerWithGameOverview(t, &fakeGameOverview{err: errors.New("overview failed")})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/overview?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game overview error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestLegacyPublicHTMLRoutesServeReactShell(t *testing.T) {
 	staticDir := t.TempDir()
 	writeFile(t, filepath.Join(staticDir, "index.html"), "ogame react shell")
@@ -572,6 +705,14 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 
 	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
 		t.Fatalf("expected game session method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/overview", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("expected game overview method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 }
 
@@ -696,6 +837,19 @@ func testServerWithGameSessions(t *testing.T, gameSessions GameSessionUseCase) h
 	})
 }
 
+func testServerWithGameOverview(t *testing.T, overview GameOverviewUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		GameOverview:       overview,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
 func testServerWithCustomDrafts(t *testing.T, registrationDrafts RegistrationDraftUseCase, loginDrafts LoginDraftUseCase) http.Handler {
 	t.Helper()
 	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
@@ -801,6 +955,17 @@ type fakeGameSessions struct {
 }
 
 func (f *fakeGameSessions) GetGameSession(_ context.Context, command apppublicsite.GameSessionCommand) (domainpublicsite.SessionAuthentication, error) {
+	f.command = command
+	return f.result, f.err
+}
+
+type fakeGameOverview struct {
+	result  appgame.OverviewResult
+	err     error
+	command appgame.OverviewCommand
+}
+
+func (f *fakeGameOverview) GetOverview(_ context.Context, command appgame.OverviewCommand) (appgame.OverviewResult, error) {
 	f.command = command
 	return f.result, f.err
 }

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	apppublicsite "github.com/hjyoon/ogame-opensource/backend/internal/application/publicsite"
 	domainpublicsite "github.com/hjyoon/ogame-opensource/backend/internal/domain/publicsite"
 	domainsystem "github.com/hjyoon/ogame-opensource/backend/internal/domain/system"
@@ -38,6 +39,10 @@ type GameSessionUseCase interface {
 	GetGameSession(context.Context, apppublicsite.GameSessionCommand) (domainpublicsite.SessionAuthentication, error)
 }
 
+type GameOverviewUseCase interface {
+	GetOverview(context.Context, appgame.OverviewCommand) (appgame.OverviewResult, error)
+}
+
 type Dependencies struct {
 	Health             HealthUseCase
 	Universes          UniverseCatalogUseCase
@@ -45,6 +50,7 @@ type Dependencies struct {
 	LoginDrafts        LoginDraftUseCase
 	Login              LoginUseCase
 	GameSessions       GameSessionUseCase
+	GameOverview       GameOverviewUseCase
 	Frontend           FrontendAssets
 	LegacyAssets       http.FileSystem
 	Logger             *slog.Logger
@@ -63,6 +69,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/public/login/validate", postOnly(a.handleLoginValidation))
 	mux.HandleFunc("/api/public/login", postOnly(a.handleLogin))
 	mux.HandleFunc("/api/game/session", getOnly(a.handleGameSession))
+	mux.HandleFunc("/api/game/overview", getOnly(a.handleGameOverview))
 	mux.Handle("/legacy-assets/", http.StripPrefix("/legacy-assets/", http.FileServer(deps.LegacyAssets)))
 	mux.HandleFunc("/", getOnly(a.handleFrontend))
 	handler := securityHeaders(mux)

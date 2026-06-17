@@ -199,6 +199,24 @@ try {
     gameSessionWithoutCookieBody = {};
   }
 
+  const gameOverview = await request(`/api/game/overview${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameOverviewBody = {};
+  try {
+    gameOverviewBody = JSON.parse(gameOverview.body);
+  } catch {
+    gameOverviewBody = {};
+  }
+
+  const gameOverviewWithoutCookie = await request(`/api/game/overview${sessionSearch}`);
+  let gameOverviewWithoutCookieBody = {};
+  try {
+    gameOverviewWithoutCookieBody = JSON.parse(gameOverviewWithoutCookie.body);
+  } catch {
+    gameOverviewWithoutCookieBody = {};
+  }
+
   const invalidLogin = await request("/api/public/login/validate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -237,6 +255,20 @@ try {
       check(!gameSession.body.includes(sessionCookiePair), "game session lookup response does not echo private cookie"),
       check(gameSessionWithoutCookie.status === 401, "game session lookup rejects missing private cookie", { status: gameSessionWithoutCookie.status }),
       check(gameSessionWithoutCookieBody.authenticated === false, "missing private cookie is unauthenticated", gameSessionWithoutCookieBody),
+      check(gameOverview.status === 200, "game overview returns HTTP 200 with private cookie", { status: gameOverview.status }),
+      check(gameOverviewBody.authenticated === true, "game overview authenticates the login session", gameOverviewBody),
+      check(
+        typeof gameOverviewBody.overview?.commander === "string"
+          && gameOverviewBody.overview.commander.toLowerCase() === loginSmokeUser.toLowerCase(),
+        "game overview returns commander identity",
+        gameOverviewBody
+      ),
+      check(typeof gameOverviewBody.overview?.currentPlanet?.name === "string" && gameOverviewBody.overview.currentPlanet.name.length > 0, "game overview returns current planet", gameOverviewBody),
+      check(Number.isFinite(gameOverviewBody.overview?.currentPlanet?.coordinates?.galaxy), "game overview returns coordinates", gameOverviewBody),
+      check(Number.isFinite(gameOverviewBody.overview?.currentPlanet?.resources?.metal), "game overview returns resources", gameOverviewBody),
+      check(!gameOverview.body.includes(sessionCookiePair), "game overview response does not echo private cookie"),
+      check(gameOverviewWithoutCookie.status === 401, "game overview rejects missing private cookie", { status: gameOverviewWithoutCookie.status }),
+      check(gameOverviewWithoutCookieBody.authenticated === false, "game overview missing private cookie is unauthenticated", gameOverviewWithoutCookieBody),
       check(invalidLogin.status === 200, "invalid login draft returns HTTP 200", { status: invalidLogin.status }),
       check(invalidLoginBody.valid === false, "invalid login draft is rejected", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),
@@ -334,7 +366,7 @@ try {
       check(js.body.includes("/api/public/universes"), "React bundle consumes universe catalog API"),
       check(js.body.includes("/api/public/registration/validate"), "React bundle consumes registration validation API"),
       check(js.body.includes("/api/public/login"), "React bundle consumes login submit API"),
-      check(js.body.includes("/api/game/session"), "React bundle consumes game session API")
+      check(js.body.includes("/api/game/overview"), "React bundle consumes game overview API")
     ]
   }));
 
@@ -354,6 +386,7 @@ try {
   const getLoginValidation = await request("/api/public/login/validate");
   const getLoginSubmit = await request("/api/public/login");
   const postGameSession = await request("/api/game/session", { method: "POST" });
+  const postGameOverview = await request("/api/game/overview", { method: "POST" });
   cases.push(finalize({
     case: "go_method_guards",
     checks: [
@@ -366,7 +399,9 @@ try {
       check(getLoginSubmit.status === 405, "GET login submit endpoint is rejected", { status: getLoginSubmit.status }),
       check(hasHeader(getLoginSubmit, "allow", "POST"), "login submit method rejection returns Allow header"),
       check(postGameSession.status === 405, "POST game session endpoint is rejected", { status: postGameSession.status }),
-      check(hasHeader(postGameSession, "allow", "GET, HEAD"), "game session method rejection returns Allow header")
+      check(hasHeader(postGameSession, "allow", "GET, HEAD"), "game session method rejection returns Allow header"),
+      check(postGameOverview.status === 405, "POST game overview endpoint is rejected", { status: postGameOverview.status }),
+      check(hasHeader(postGameOverview, "allow", "GET, HEAD"), "game overview method rejection returns Allow header")
     ]
   }));
 } catch (error) {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	apppublicsite "github.com/hjyoon/ogame-opensource/backend/internal/application/publicsite"
 	appsystem "github.com/hjyoon/ogame-opensource/backend/internal/application/system"
 	"github.com/hjyoon/ogame-opensource/backend/internal/config"
@@ -16,6 +17,7 @@ import (
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/configcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/filesystem"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlcatalog"
+	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlgame"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlregistration"
 	infraruntime "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/runtime"
 	infrasession "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/session"
@@ -52,6 +54,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	loginDrafts := loginValidator(cfg, logger)
 	login := loginAuthenticator(cfg, logger)
 	gameSessions := gameSessionLookup(cfg, logger)
+	gameOverview := gameOverviewService(cfg, logger, gameSessions)
 
 	return httpdelivery.New(httpdelivery.Dependencies{
 		Health:             health,
@@ -60,6 +63,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		LoginDrafts:        loginDrafts,
 		Login:              login,
 		GameSessions:       gameSessions,
+		GameOverview:       gameOverview,
 		Frontend:           filesystem.StaticDir{Root: cfg.StaticDir},
 		LegacyAssets:       filesystem.NewNoListingFS(cfg.LegacyAssetDir),
 		Logger:             logger,
@@ -153,6 +157,34 @@ func gameSessionLookup(cfg config.Config, logger *slog.Logger) apppublicsite.Gam
 
 	logger.Info("universe DB game session lookup enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
 	return apppublicsite.NewGameSessionLookup(mysqlregistration.NewSessionStore(db, cfg.UniDBPrefix), cfg.UniNumber)
+}
+
+func gameOverviewService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.OverviewService {
+	if !cfg.UniDBEnabled {
+		return appgame.OverviewService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game overview disabled", "error", err)
+		return appgame.OverviewService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game overview disabled", "error", err)
+		_ = db.Close()
+		return appgame.OverviewService{}
+	}
+
+	logger.Info("universe DB game overview enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
+	return appgame.NewOverviewService(sessions, mysqlgame.NewOverviewRepository(db, cfg.UniDBPrefix))
 }
 
 func registrationValidator(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationDraftValidator {
