@@ -27,6 +27,25 @@ function nicenum (float|int $number) : string
     return number_format($number,0,",",".");
 }
 
+function htmlsafe (mixed $value) : string
+{
+    return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8");
+}
+
+function NormalizeExternalUrl (string $url) : string
+{
+    $url = trim($url);
+    if ($url === "") return "";
+
+    $parts = parse_url($url);
+    if ($parts === false || !isset($parts['scheme'])) return "";
+
+    $scheme = strtolower($parts['scheme']);
+    if ($scheme !== "http" && $scheme !== "https") return "";
+
+    return $url;
+}
+
 function RedirectHome () : void
 {
     // The start page address can be found in config.php

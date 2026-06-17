@@ -24,18 +24,18 @@ else {
 
 <table width=519>
 <tr><td class=c colspan=2><?=loca("AINFO_INFO");?></td></tr><?php
-    if ($ally && $ally['imglogo'] !== "") 
+    if ($ally && $ally['imglogo'] !== "")
     {
-        echo "<tr><th colspan=2><img src=\"/game/img/preload.gif\" class=\"reloadimage\" title=\"pic.php?url=".$ally['imglogo']."\"></td></tr>\n";
+        echo "<tr><th colspan=2><img src=\"/game/img/preload.gif\" class=\"reloadimage\" title=\"pic.php?url=".rawurlencode($ally['imglogo'])."\"></td></tr>\n";
     }
-?><tr><th><?=loca("AINFO_TAG");?></th><th><?=$ally['tag'];?><?php
-    if ( $now < $ally['tag_until'] ) echo " (".loca("AINFO_PREV")." ".$ally['old_tag'].")";
+?><tr><th><?=loca("AINFO_TAG");?></th><th><?=htmlsafe($ally['tag']);?><?php
+    if ( $now < $ally['tag_until'] ) echo " (".loca("AINFO_PREV")." ".htmlsafe($ally['old_tag']).")";
 ?></th></tr>
-<tr><th><?=loca("AINFO_NAME");?></th><th><?=$ally['name'];?><?php
-    if ( $now < $ally['name_until'] ) echo " (".loca("AINFO_PREV")." ".$ally['old_name'].")";
+<tr><th><?=loca("AINFO_NAME");?></th><th><?=htmlsafe($ally['name']);?><?php
+    if ( $now < $ally['name_until'] ) echo " (".loca("AINFO_PREV")." ".htmlsafe($ally['old_name']).")";
 ?></th></tr>
 <tr><th><?=loca("AINFO_MEMBERS");?></th><th><?=$members;?></th></tr>
 <tr><th colspan=2 height=100><?=bb($ally['exttext']);?></th></tr>
 <tr><th><?=loca("AINFO_HOMEPAGE");?></th><th>
-<a href="redir.php?url=<?=$ally['homepage'];?>" target="_blank"><?=$ally['homepage'];?></a></th></tr>
+<a href="redir.php?url=<?=rawurlencode($ally['homepage']);?>" target="_blank"><?=htmlsafe($ally['homepage']);?></a></th></tr>
 </table>

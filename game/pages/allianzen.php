@@ -25,8 +25,8 @@ function AllyPage_CreateAlly (string $tag, string $name) : void
     echo "<form action=\"index.php?page=allianzen&session=".$_GET['session']."&a=1&weiter=1\" method=POST>\n";
     echo "<table width=519>\n";
     echo "<tr><td class=c colspan=2>".loca("ALLY_FOUND_ALLY")."</td></tr>\n";
-    echo "<tr><th>".loca("ALLY_FOUND_TAG")."</th><th><input type=text name=\"tag\" size=8 maxlength=8 value=\"$tag\"></th></tr>\n";
-    echo "<tr><th>".loca("ALLY_FOUND_NAME")."</th><th><input type=text name=\"name\" size=20 maxlength=30 value=\"$name\"></th></tr>\n";
+    echo "<tr><th>".loca("ALLY_FOUND_TAG")."</th><th><input type=text name=\"tag\" size=8 maxlength=8 value=\"".htmlsafe($tag)."\"></th></tr>\n";
+    echo "<tr><th>".loca("ALLY_FOUND_NAME")."</th><th><input type=text name=\"name\" size=20 maxlength=30 value=\"".htmlsafe($name)."\"></th></tr>\n";
     echo "<tr><th colspan=2><input type=submit value=\"".loca("ALLY_FOUND_SUBMIT")."\"></th></tr></table></form><br><br><br><br>\n";
 }
 
@@ -37,7 +37,7 @@ function AllyPage_Search (string $text, string $results="") : void
     echo "<tr><td class=c colspan=2>".loca("ALLY_FIND_ALLY")."</td></tr>\n";
     echo "<tr><th>".loca("ALLY_FIND_HEAD")."</th><th>\n";
     echo "<form action=\"index.php?page=allianzen&session=".$_GET['session']."&a=2\" method=POST>\n";
-    echo "<input type=text name=suchtext value=\"$text\"><input type=submit value=\"".loca("ALLY_FIND_SUBMIT")."\">\n";
+    echo "<input type=text name=suchtext value=\"".htmlsafe($text)."\"><input type=submit value=\"".loca("ALLY_FIND_SUBMIT")."\">\n";
     echo "</th></tr></form></table><br>\n";
     echo "$results\n";
     echo "<br><br><br>\n";
@@ -59,8 +59,8 @@ function AllyPage_SearchResult (mixed $result) : void
         $ally = dbarray ($result);
         $enum = EnumerateAlly ($ally['ally_id']);
         $players = dbrows ($enum);
-        $SearchResults .= "<tr><th><center>[<a href=\"index.php?page=bewerben&session=".$_GET['session']."&allyid=".$ally['ally_id']."\">".$ally['tag']."</a>]</center></th>\n";
-        $SearchResults .= "<th><center>".$ally['name']."</center></th>\n";
+        $SearchResults .= "<tr><th><center>[<a href=\"index.php?page=bewerben&session=".$_GET['session']."&allyid=".$ally['ally_id']."\">".htmlsafe($ally['tag'])."</a>]</center></th>\n";
+        $SearchResults .= "<th><center>".htmlsafe($ally['name'])."</center></th>\n";
         $SearchResults .= "<th><center>".$players."</center></th></tr>\n";
     }
     $SearchResults .= "</table><br>\n";

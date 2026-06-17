@@ -277,4 +277,30 @@ function DeserializeDB (string $text) : void
     }
 }
 
+function IsSerializedDBBackup (string $text) : bool
+{
+    $db_tabs = json_decode ($text, true);
+    if (!is_array($db_tabs) || json_last_error() !== JSON_ERROR_NONE) return false;
+
+    include "install_tabs.php";
+    ModsExecRef ('install_tabs_included', $tabs);
+
+    foreach ($tabs as $name=>$cols) {
+        if (!isset($db_tabs[$name]) || !is_array($db_tabs[$name])) return false;
+        if (!isset($db_tabs[$name]['cols']) || !is_array($db_tabs[$name]['cols'])) return false;
+        if (!isset($db_tabs[$name]['values']) || !is_array($db_tabs[$name]['values'])) return false;
+        if (!array_key_exists('auto_increment', $db_tabs[$name])) return false;
+
+        $expected_cols = array_map('strval', array_keys($cols));
+        if ($db_tabs[$name]['cols'] !== $expected_cols) return false;
+
+        $col_count = count($expected_cols);
+        foreach ($db_tabs[$name]['values'] as $row) {
+            if (!is_array($row) || count($row) !== $col_count) return false;
+        }
+    }
+
+    return true;
+}
+
 ?>

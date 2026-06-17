@@ -11,6 +11,7 @@ function as_sel (int $option, int $value) : string
 function PageAlly_Settings () : void
 {
     global $db_prefix;
+    global $db_connect;
     global $session;
     global $ally;
     global $GlobalUser;
@@ -37,6 +38,7 @@ function PageAlly_Settings () : void
             $text = str_replace ( '\"', "&quot;", $_POST['text'] );
             $text = str_replace ( '\'', "&rsquo;", $text );
             $text = str_replace ( '\`', "&lsquo;", $text );
+            $text = mysqli_real_escape_string($db_connect, mb_substr($text, 0, $MAXTEXT, "UTF-8"));
 
             if ( $_GET['t'] == 2 ) $query = "UPDATE ".$db_prefix."ally SET inttext = '".$text."' WHERE ally_id = $ally_id";
             else if ( $_GET['t'] == 3 ) {
@@ -52,16 +54,19 @@ function PageAlly_Settings () : void
         if ( $_GET['a'] == 11 && $_GET['d'] == 2 )        // Change settings
         {
             $ally_id = $ally['ally_id'];
+            $homepage = mysqli_real_escape_string($db_connect, NormalizeExternalUrl($_POST['hp']));
+            $imglogo = mysqli_real_escape_string($db_connect, NormalizeExternalUrl($_POST['logo']));
             $query = "UPDATE ".$db_prefix."ally SET open = " . (intval($_POST['bew']) == 0 ? 1 : 0);
-            $query .= ", homepage = '".$_POST['hp']."'";
-            $query .= ", imglogo = '".$_POST['logo']."'";
+            $query .= ", homepage = '".$homepage."'";
+            $query .= ", imglogo = '".$imglogo."'";
             $query .= " WHERE ally_id = $ally_id";
             dbquery ($query);
 
             if ($_POST['fname'] !== "") {    // Name of the founder's rank
                 if ( !preg_match ("/^[a-zA-Z0-9\.\_\- ]+$/", $_POST['fname'] ) ) $PageError = "<center>\n".loca("ALLY_RANK_ERROR_SPECIAL_CHARS")."<br></center>";
                 else {
-                    $query = "UPDATE ".$db_prefix."allyranks SET name = '".$_POST['fname']."' WHERE ally_id = $ally_id AND rank_id = 0";
+                    $rank_name = mysqli_real_escape_string($db_connect, $_POST['fname']);
+                    $query = "UPDATE ".$db_prefix."allyranks SET name = '".$rank_name."' WHERE ally_id = $ally_id AND rank_id = 0";
                     dbquery ($query);
                 }
             }
@@ -103,9 +108,9 @@ function PageAlly_Settings () : void
 ?></span> / <?=va(loca("ALLY_SETTINGS_CHARS"), $MAXTEXT);?>)</td></tr>
 <tr><th colspan=3><textarea name="text" cols=70 rows=15 onkeyup="javascript:cntchar(<?=$MAXTEXT;?>)">
 <?php
-    if ( $_GET['t'] == 2 ) echo $ally['inttext'];
-    else if ( $_GET['t'] == 3 ) echo $ally['apptext'];
-    else echo $ally['exttext'];
+    if ( $_GET['t'] == 2 ) echo htmlsafe($ally['inttext']);
+    else if ( $_GET['t'] == 3 ) echo htmlsafe($ally['apptext']);
+    else echo htmlsafe($ally['exttext']);
 ?></textarea></th></tr>
 <?php
     if ( $_GET['t'] == 3)
@@ -123,10 +128,10 @@ function PageAlly_Settings () : void
 
 <form action="index.php?page=allianzen&session=<?=$session;?>&a=11&d=2" method=POST><table width=519>
 <tr><td class=c colspan=2><?=loca("ALLY_SETTINGS_TITLE");?></td></tr>
-<tr><th><?=loca("ALLY_SETTINGS_HOMEPAGE");?></th><th><input type=text name="hp" value="<?=$ally['homepage'];?>" size="70"></th></tr>
-<tr><th><?=loca("ALLY_SETTINGS_LOGO");?></th><th><input type=text name="logo" value="<?=$ally['imglogo'];?>" size="70"></th></tr>
+<tr><th><?=loca("ALLY_SETTINGS_HOMEPAGE");?></th><th><input type=text name="hp" value="<?=htmlsafe($ally['homepage']);?>" size="70"></th></tr>
+<tr><th><?=loca("ALLY_SETTINGS_LOGO");?></th><th><input type=text name="logo" value="<?=htmlsafe($ally['imglogo']);?>" size="70"></th></tr>
 <tr><th><?=loca("ALLY_SETTINGS_APPS");?></th><th><select name=bew><option value=0 <?=as_sel($ally['open'], 1);?>><?=loca("ALLY_SETTINGS_APPS_OPEN");?></option><option value=1 <?=as_sel($ally['open'], 0);?>><?=loca("ALLY_SETTINGS_APPS_CLOSED");?></option></select></th></tr>
-<tr><th><?=loca("ALLY_SETTINGS_FOUNDER");?></th><th><input type=text name=fname value="<?=$owner_name;?>" size=30></th>
+<tr><th><?=loca("ALLY_SETTINGS_FOUNDER");?></th><th><input type=text name=fname value="<?=htmlsafe($owner_name);?>" size=30></th>
 <tr><th colspan=2><input type=submit value="<?=loca("ALLY_SETTINGS_SAVE");?>"></th></tr>
 </table></form>
 

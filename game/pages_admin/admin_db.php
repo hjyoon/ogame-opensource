@@ -178,11 +178,14 @@ class Admin_DB extends Page {
         $backup_dir = 'temp';
         $files = scandir ($backup_dir);
         foreach ($files as $i=>$filename) {
-            if (strstr ($filename, "backup")) {
+            $path = $this->BackupPath($filename);
+            if ($path !== null && is_file($path)) {
+                $safe_filename = htmlsafe($filename);
+                $encoded_filename = rawurlencode($filename);
                 echo "<tr><td>";
-                echo $filename . "<br/>";
-                echo "</td><td><a href=\"index.php?page=admin&session=$session&mode=DB&action=restore&fname=".$filename."\">".loca("ADM_DB_BACKUP_RESTORE")."</a> ";
-                echo "<a href=\"index.php?page=admin&session=$session&mode=DB&action=delete&fname=".$filename."\">".loca("ADM_DB_BACKUP_DELETE")."</a></td></tr>\n";
+                echo $safe_filename . "<br/>";
+                echo "</td><td><a href=\"index.php?page=admin&session=$session&mode=DB&action=restore&fname=".$encoded_filename."\">".loca("ADM_DB_BACKUP_RESTORE")."</a> ";
+                echo "<a href=\"index.php?page=admin&session=$session&mode=DB&action=delete&fname=".$encoded_filename."\">".loca("ADM_DB_BACKUP_DELETE")."</a></td></tr>\n";
             }
         }
 
@@ -201,28 +204,45 @@ class Admin_DB extends Page {
         $PageMessage .= va(loca("ADM_DB_BACKUP_SAVED"), $fname);
     }
 
+    private function BackupPath (string $fname) : ?string
+    {
+        if ($fname !== basename($fname)) return null;
+        if (!preg_match('/^backup_[A-Za-z0-9_.-]+\.json$/', $fname)) return null;
+        return "temp/" . $fname;
+    }
+
     private function DeleteBackup (string $fname) : void
     {
         global $PageMessage, $PageError;
-        $fname = "temp/" . $fname;
-        if (strstr ($fname, "backup") && file_exists($fname)) {
-            unlink ($fname);
-            $PageMessage .= va(loca("ADM_DB_BACKUP_DELETED"), $fname);
+        $path = $this->BackupPath ($fname);
+        if ($path !== null && is_file($path)) {
+            unlink ($path);
+            $PageMessage .= va(loca("ADM_DB_BACKUP_DELETED"), $path);
         }
         else {
-            $PageError .= va(loca("ADM_DB_BACKUP_NOT_FOUND"), $fname);
+            $PageError .= va(loca("ADM_DB_BACKUP_NOT_FOUND"), htmlsafe($fname));
         }
     }
 
     private function RestoreBackup (string $fname) : void
     {
-        global $PageMessage;
+        global $PageMessage, $PageError;
+        $path = $this->BackupPath ($fname);
+        if ($path === null || !is_file($path)) {
+            $PageError .= va(loca("ADM_DB_BACKUP_NOT_FOUND"), htmlsafe($fname));
+            return;
+        }
+
+        $source = file_get_contents ($path);
+        if ($source === false || !IsSerializedDBBackup($source)) {
+            $PageError .= va(loca("ADM_DB_BACKUP_NOT_FOUND"), htmlsafe($fname));
+            return;
+        }
+
         LockTables ();
-        $fname = "temp/" . $fname;
-        $source = file_get_contents ($fname);
         DeserializeDB ($source);
         UnlockTables ();
-        $PageMessage .= va(loca("ADM_DB_BACKUP_RESTORED"), $fname);
+        $PageMessage .= va(loca("ADM_DB_BACKUP_RESTORED"), $path);
     }
 
 }

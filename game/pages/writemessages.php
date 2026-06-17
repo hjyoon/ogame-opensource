@@ -83,8 +83,10 @@ if ( key_exists ('gesendet', $_GET) )
             $text = str_replace ( '\'', "&rsquo;", $text );
             $text = str_replace ( '\`', "&lsquo;", $text );
 
-            $from = $GlobalUser['oname'] . " <a href=\"index.php?page=galaxy&galaxy=".$ownhome['g']."&system=".$ownhome['s']."&position=".$ownhome['p']."&session={PUBLIC_SESSION}\">[".$ownhome['g'].":".$ownhome['s'].":".$ownhome['p']."]</a>\n";
-            $subj = $subj . " <a href=\"index.php?page=writemessages&session={PUBLIC_SESSION}&messageziel=".$GlobalUser['player_id']."&re=1&betreff=Re:".$subj."\">\n"
+            $safe_subj = htmlsafe($subj);
+            $reply_subj = rawurlencode("Re:" . $subj);
+            $from = htmlsafe($GlobalUser['oname']) . " <a href=\"index.php?page=galaxy&galaxy=".$ownhome['g']."&system=".$ownhome['s']."&position=".$ownhome['p']."&session={PUBLIC_SESSION}\">[".$ownhome['g'].":".$ownhome['s'].":".$ownhome['p']."]</a>\n";
+            $subj = $safe_subj . " <a href=\"index.php?page=writemessages&session={PUBLIC_SESSION}&messageziel=".$GlobalUser['player_id']."&re=1&betreff=".$reply_subj."\">\n"
                        . "<img border=\"0\" alt=\"".loca("WRITE_MSG_ALT_REPLY")."\" src=\"".$skin."img/m.gif\" /></a>\n";
             SendMessage ( $user['player_id'], $from, $subj, $text, MTYP_PM);
             $write_error = "<center><font color=#00FF00>".loca("WRITE_MSG_SUCCESS")."</font><br/></center>\n";
@@ -97,8 +99,8 @@ echo "<center>\n";
 echo "<form action=\"index.php?page=writemessages&session=".$_GET['session']."&gesendet=1&messageziel=".intval($_GET['messageziel'])."\" method=\"post\">\n";
 echo "<table width=\"519\">\n\n";
 echo "<tr><td class=\"c\" colspan=\"2\">".loca("WRITE_MSG_WRITE")."</td></tr>\n";
-echo "<tr><th>".loca("WRITE_MSG_USER")."</th><th><input type=\"text\" name=\"to\" size=\"40\" value=\"".$user['oname']." [".$home['g'].":".$home['s'].":".$home['p']."]\" /></th></tr>\n";
-echo "<tr><th>".loca("WRITE_MSG_SUBJ")."</th><th><input type=\"text\" name=\"betreff\" size=\"40\" maxlength=\"40\" value=\"".$betreff."\" /></th></tr>\n";
+echo "<tr><th>".loca("WRITE_MSG_USER")."</th><th><input type=\"text\" name=\"to\" size=\"40\" value=\"".htmlsafe($user['oname'])." [".$home['g'].":".$home['s'].":".$home['p']."]\" /></th></tr>\n";
+echo "<tr><th>".loca("WRITE_MSG_SUBJ")."</th><th><input type=\"text\" name=\"betreff\" size=\"40\" maxlength=\"40\" value=\"".htmlsafe($betreff)."\" /></th></tr>\n";
 echo "<tr>\n";
 echo "<th>".va(loca("WRITE_MSG_CHAR_COUNT"), "<span id=\"cntChars\">0</span>", $MAXCHARS)."</th>\n";
 echo "<th><textarea name=\"text\" cols=\"40\" rows=\"10\" size=\"100\" onkeyup=\"javascript:cntchar($MAXCHARS)\"></textarea></th>\n";
