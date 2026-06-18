@@ -37,6 +37,12 @@ export type GameFleetStatus = {
   fleet?: GameFleet;
 };
 
+export type GameGalaxyStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  galaxy?: GameGalaxy;
+};
+
 export type GameDefenseStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
@@ -145,6 +151,94 @@ type GameFleet = {
   };
   missions: GameFleetMission[];
   ships: GameFleetShip[];
+};
+
+type GameGalaxy = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  coordinates: Coordinates;
+  bounds: {
+    galaxies: number;
+    systems: number;
+  };
+  rows: GameGalaxyRow[];
+  populated: number;
+  slots: {
+    used: number;
+    max: number;
+    baseMax: number;
+    admiral: boolean;
+  };
+  extra: {
+    commander: boolean;
+    spyProbes: number;
+    recyclers: number;
+    missiles: number;
+    slots: {
+      used: number;
+      max: number;
+      baseMax: number;
+      admiral: boolean;
+    };
+  };
+  notEnoughDeuterium: boolean;
+  remoteSystemCostDue: boolean;
+};
+
+type GameGalaxyRow = {
+  position: number;
+  planet?: GameGalaxyPlanet;
+  moon?: GameGalaxyPlanet;
+  debris?: GameGalaxyDebris;
+};
+
+type GameGalaxyPlanet = {
+  id: number;
+  name: string;
+  displayName: string;
+  type: number;
+  coordinates: Coordinates;
+  diameter: number;
+  temperature: number;
+  activityText: string;
+  destroyed: boolean;
+  abandoned: boolean;
+  own: boolean;
+  player?: GameGalaxyPlayer;
+  alliance?: { id: number; tag: string };
+  actions: GameGalaxyActions;
+};
+
+type GameGalaxyPlayer = {
+  id: number;
+  name: string;
+  rank: number;
+  status: string;
+  statusClass: string;
+  suffixes: { text: string; class: string }[];
+  own: boolean;
+};
+
+type GameGalaxyDebris = {
+  id: number;
+  metal: number;
+  crystal: number;
+  harvesters: number;
+  visible: boolean;
+};
+
+type GameGalaxyActions = {
+  deploy: boolean;
+  transport: boolean;
+  spy: boolean;
+  message: boolean;
+  buddy: boolean;
+  missile: boolean;
+  attack: boolean;
+  defend: boolean;
+  destroy: boolean;
+  recycle: boolean;
 };
 
 type GameFleetMission = {
@@ -296,6 +390,8 @@ type LegacyGameOverviewProps = {
   shipyardError: string | null;
   fleetStatus: GameFleetStatus | null;
   fleetError: string | null;
+  galaxyStatus: GameGalaxyStatus | null;
+  galaxyError: string | null;
   defenseStatus: GameDefenseStatus | null;
   defenseError: string | null;
   technologyStatus: GameTechnologyStatus | null;
@@ -308,6 +404,7 @@ type LegacyMenuEntry =
 
 const skinBase = "/public-assets/evolution";
 const gameImageBase = "/public-assets/game-img";
+const GalaxyDeuteriumCostText = "10";
 const gameRouteByKey = new Map(gameRoutes.map((route) => [route.key, route]));
 const legacyMenuEntries: LegacyMenuEntry[] = [
   { type: "image", height: 40, src: `${skinBase}/gfx/ogame-produktion.jpg`, width: 110 },
@@ -351,6 +448,8 @@ export function LegacyGameOverview({
   shipyardError,
   fleetStatus,
   fleetError,
+  galaxyStatus,
+  galaxyError,
   defenseStatus,
   defenseError,
   technologyStatus,
@@ -372,6 +471,9 @@ export function LegacyGameOverview({
     shipyardStatus && !shipyardStatus.authenticated ? shipyardStatus.issues[0]?.message ?? "Session is invalid." : null;
   const fleet = fleetStatus?.authenticated ? fleetStatus.fleet : undefined;
   const fleetIssue = fleetStatus && !fleetStatus.authenticated ? fleetStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const galaxy = galaxyStatus?.authenticated ? galaxyStatus.galaxy : undefined;
+  const galaxyIssue =
+    galaxyStatus && !galaxyStatus.authenticated ? galaxyStatus.issues[0]?.message ?? "Session is invalid." : null;
   const defense = defenseStatus?.authenticated ? defenseStatus.defense : undefined;
   const defenseIssue =
     defenseStatus && !defenseStatus.authenticated ? defenseStatus.issues[0]?.message ?? "Session is invalid." : null;
@@ -417,6 +519,8 @@ export function LegacyGameOverview({
         ) : null}
         {route.key === "fleet" && fleetError ? <LegacyMessage tone="error" text={fleetError} /> : null}
         {route.key === "fleet" && !fleetError && fleetIssue ? <LegacyMessage tone="error" text={fleetIssue} /> : null}
+        {route.key === "galaxy" && galaxyError ? <LegacyMessage tone="error" text={galaxyError} /> : null}
+        {route.key === "galaxy" && !galaxyError && galaxyIssue ? <LegacyMessage tone="error" text={galaxyIssue} /> : null}
         {route.key === "defense" && defenseError ? <LegacyMessage tone="error" text={defenseError} /> : null}
         {route.key === "defense" && !defenseError && defenseIssue ? <LegacyMessage tone="error" text={defenseIssue} /> : null}
         {route.key === "technology" && technologyError ? <LegacyMessage tone="error" text={technologyError} /> : null}
@@ -446,6 +550,10 @@ export function LegacyGameOverview({
           <LegacyMessage tone="neutral" text="Loading fleet..." />
         ) : null}
         {fleet && route.key === "fleet" ? <FleetTable fleet={fleet} /> : null}
+        {overview && route.key === "galaxy" && !galaxy && !galaxyError && !galaxyIssue ? (
+          <LegacyMessage tone="neutral" text="Loading galaxy..." />
+        ) : null}
+        {galaxy && route.key === "galaxy" ? <GalaxyTable galaxy={galaxy} /> : null}
         {overview && route.key === "defense" && !defense && !defenseError && !defenseIssue ? (
           <LegacyMessage tone="neutral" text="Loading defense..." />
         ) : null}
@@ -461,6 +569,7 @@ export function LegacyGameOverview({
         route.key !== "research" &&
         route.key !== "shipyard" &&
         route.key !== "fleet" &&
+        route.key !== "galaxy" &&
         route.key !== "defense" &&
         route.key !== "technology" ? (
           <MigrationPendingGameTable route={route} />
@@ -998,6 +1107,248 @@ function FleetTable({ fleet }: { fleet: GameFleet }) {
   );
 }
 
+function GalaxyTable({ galaxy }: { galaxy: GameGalaxy }) {
+  const navigateTo = (coordinates: Coordinates) => {
+    const search = new URLSearchParams(window.location.search);
+    search.set("galaxy", String(clampNumber(coordinates.galaxy, 1, galaxy.bounds.galaxies)));
+    search.set("system", String(clampNumber(coordinates.system, 1, galaxy.bounds.systems)));
+    search.set("position", String(clampNumber(coordinates.position, 1, 16)));
+    window.history.pushState({}, "", gameRouteURL("/game/galaxy", search.toString()));
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
+  const submitCoordinates = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    navigateTo({
+      galaxy: Number(data.get("galaxy")) || galaxy.coordinates.galaxy,
+      system: Number(data.get("system")) || galaxy.coordinates.system,
+      position: galaxy.coordinates.position
+    });
+  };
+
+  return (
+    <>
+      {galaxy.notEnoughDeuterium ? (
+        <table className="legacy-overview-table legacy-galaxy-error-table" width={569}>
+          <tbody>
+            <tr>
+              <td className="legacy-c"> Error</td>
+            </tr>
+            <tr>
+              <th>Not enough deuterium!</th>
+            </tr>
+          </tbody>
+        </table>
+      ) : null}
+      <form className="legacy-galaxy-form" onSubmit={submitCoordinates}>
+        <table className="legacy-overview-table legacy-galaxy-nav-table" width={569}>
+          <tbody>
+            <tr>
+              <td className="legacy-c">Galaxy</td>
+              <td className="legacy-c">Solar system</td>
+            </tr>
+            <tr>
+              <th>
+                <input
+                  aria-label="Galaxy"
+                  defaultValue={galaxy.coordinates.galaxy}
+                  maxLength={3}
+                  name="galaxy"
+                  size={3}
+                  type="text"
+                />
+                <input
+                  aria-label="Previous galaxy"
+                  onClick={() => navigateTo({ ...galaxy.coordinates, galaxy: galaxy.coordinates.galaxy - 1 })}
+                  type="button"
+                  value="&lt;"
+                />
+                <input
+                  aria-label="Next galaxy"
+                  onClick={() => navigateTo({ ...galaxy.coordinates, galaxy: galaxy.coordinates.galaxy + 1 })}
+                  type="button"
+                  value="&gt;"
+                />
+              </th>
+              <th>
+                <input
+                  aria-label="Solar system"
+                  defaultValue={galaxy.coordinates.system}
+                  maxLength={3}
+                  name="system"
+                  size={3}
+                  type="text"
+                />
+                <input
+                  aria-label="Previous system"
+                  onClick={() => navigateTo({ ...galaxy.coordinates, system: galaxy.coordinates.system - 1 })}
+                  type="button"
+                  value="&lt;"
+                />
+                <input
+                  aria-label="Next system"
+                  onClick={() => navigateTo({ ...galaxy.coordinates, system: galaxy.coordinates.system + 1 })}
+                  type="button"
+                  value="&gt;"
+                />
+              </th>
+            </tr>
+            <tr>
+              <th colSpan={2}>
+                <input type="submit" value="Show" />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+      <table className="legacy-overview-table legacy-galaxy-table" width={569}>
+        <tbody>
+          <tr>
+            <td className="legacy-c" colSpan={8}>
+              Solar system {galaxy.coordinates.galaxy}:{galaxy.coordinates.system}
+            </td>
+          </tr>
+          <tr>
+            {["Coord.", "Planet", "Title (activity)", "Moon", "Debris", "Player", "Alliance", "Actions"].map((label) => (
+              <td className="legacy-c" key={label}>
+                {label}
+              </td>
+            ))}
+          </tr>
+          {galaxy.rows.map((row) => (
+            <GalaxyTableRow key={row.position} row={row} />
+          ))}
+          <tr>
+            <th style={{ height: 32 }}>16</th>
+            <th colSpan={7}>
+              <a href={fleetTargetHref(galaxy.coordinates, 16, 15)}>Outer space</a>
+            </th>
+          </tr>
+          <tr>
+            <td className="legacy-c" colSpan={6}>
+              (Populated {galaxy.populated} planets)
+            </td>
+            <td className="legacy-c" colSpan={2}>
+              <a href="#legend" onClick={(event) => event.preventDefault()}>
+                Legend
+              </a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <table className="legacy-overview-table legacy-galaxy-info-table" width={569}>
+        <tbody>
+          <tr>
+            <td className="legacy-c" colSpan={2}>
+              {galaxy.extra.commander ? (
+                <>
+                  Espionage Probes {formatLegacyNumber(galaxy.extra.spyProbes)} Recycler {formatLegacyNumber(galaxy.extra.recyclers)}{" "}
+                  Interplanetary Missiles {formatLegacyNumber(galaxy.extra.missiles)}
+                  <br />
+                  {galaxy.extra.slots.used} of {galaxy.extra.slots.max} slots are in use
+                </>
+              ) : null}
+              {galaxy.remoteSystemCostDue ? (
+                <>
+                  {galaxy.extra.commander ? <br /> : null}
+                  Deuterium: {GalaxyDeuteriumCostText}
+                </>
+              ) : null}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <br />
+      <br />
+    </>
+  );
+}
+
+function GalaxyTableRow({ row }: { row: GameGalaxyRow }) {
+  const planet = row.planet;
+  const player = planet?.player;
+  const debrisCoordinates = row.planet?.coordinates ?? row.moon?.coordinates;
+  return (
+    <tr data-galaxy-position={row.position}>
+      <th style={{ width: 30 }}>
+        <a href={`#position-${row.position}`}>{row.position}</a>
+      </th>
+      <th style={{ width: 30 }}>
+        {planet && planet.type === 1 ? (
+          <a href={fleetTargetHref(planet.coordinates, planet.coordinates.position, planet.own ? 4 : 1)}>
+            <img alt="" height={30} src={galaxyPlanetImagePath(planet, true)} width={30} />
+          </a>
+        ) : null}
+      </th>
+      <th className="legacy-galaxy-name" style={{ width: 130 }}>
+        {planet ? (
+          <>
+            <span className={planet.abandoned ? "longinactive" : planet.destroyed ? "banned" : undefined}>{planet.displayName}</span>
+            {planet.activityText ? <> {planet.activityText}</> : null}
+          </>
+        ) : null}
+      </th>
+      <th style={{ width: 30 }}>
+        {row.moon ? (
+          <a className={row.moon.destroyed ? "legacy-galaxy-destroyed-moon" : undefined} href={fleetTargetHref(row.moon.coordinates, row.moon.coordinates.position, 3)}>
+            <img alt="" height={22} src={galaxyPlanetImagePath(row.moon, true)} width={22} />
+          </a>
+        ) : null}
+      </th>
+      <th style={{ width: 30 }}>
+        {row.debris?.visible && debrisCoordinates ? (
+          <a href={fleetTargetHref(debrisCoordinates, row.position, 8, 2)}>
+            <img alt="" height={22} src={`${skinBase}/planeten/debris.jpg`} title={`${formatLegacyNumber(row.debris.metal)} / ${formatLegacyNumber(row.debris.crystal)}`} width={22} />
+          </a>
+        ) : null}
+      </th>
+      <th style={{ width: 150 }}>
+        {player ? (
+          <>
+            <span className={player.statusClass}>{player.name}</span>
+            {player.suffixes.length > 0 ? (
+              <>
+                (
+                {player.suffixes.map((suffix, index) => (
+                  <React.Fragment key={`${suffix.class}-${suffix.text}`}>
+                    {index > 0 ? " " : null}
+                    <span className={suffix.class}>{suffix.text}</span>
+                  </React.Fragment>
+                ))}
+                )
+              </>
+            ) : null}
+          </>
+        ) : null}
+      </th>
+      <th style={{ width: 80 }}>{planet?.alliance ? <a href="#alliance">{planet.alliance.tag}</a> : null}</th>
+      <th className="legacy-galaxy-actions" style={{ whiteSpace: "nowrap", width: 125 }}>
+        {planet ? <GalaxyActionIcons planet={planet} /> : null}
+      </th>
+    </tr>
+  );
+}
+
+function GalaxyActionIcons({ planet }: { planet: GameGalaxyPlanet }) {
+  const actions = [
+    { enabled: planet.actions.spy, icon: "e.gif", label: "Espionage", mission: 6 },
+    { enabled: planet.actions.message, icon: "m.gif", label: "Write message", mission: 0 },
+    { enabled: planet.actions.buddy, icon: "b.gif", label: "Buddy request", mission: 0 },
+    { enabled: planet.actions.missile, icon: "r.gif", label: "Rocket attack", mission: 20 }
+  ];
+  return (
+    <>
+      {actions.map((action) =>
+        action.enabled ? (
+          <a href={action.mission > 0 ? fleetTargetHref(planet.coordinates, planet.coordinates.position, action.mission) : "#"} key={action.icon}>
+            <img alt={action.label} src={`${skinBase}/img/${action.icon}`} title={action.label} />
+          </a>
+        ) : null
+      )}
+    </>
+  );
+}
+
 function DefenseTable({ defense }: { defense: GameDefense }) {
   if (!defense.hasShipyard) {
     return (
@@ -1501,6 +1852,17 @@ function galaxyHref(coordinates: Coordinates): string {
   return gameRouteURL("/game/galaxy", search.toString());
 }
 
+function fleetTargetHref(coordinates: Coordinates, position: number, mission: number, planetType = 1): string {
+  const search = new URLSearchParams(window.location.search);
+  search.set("galaxy", String(coordinates.galaxy));
+  search.set("system", String(coordinates.system));
+  search.set("position", String(position));
+  search.set("planet", String(position));
+  search.set("planettype", String(planetType));
+  search.set("target_mission", String(mission));
+  return gameRouteURL("/game/fleet", search.toString());
+}
+
 function technologyInfoURL(itemID: number): string {
   const search = new URLSearchParams(window.location.search);
   search.delete("tid");
@@ -1517,6 +1879,16 @@ function technologyDetailURL(itemID: number): string {
 
 function planetImagePath(planet: GamePlanetOverview | GamePlanetSummary, small: boolean): string {
   if (planet.type === 0) {
+    return `${skinBase}/planeten/${small ? "small/s_" : ""}mond.jpg`;
+  }
+  const imageID = (planet.id % 7) + 1;
+  const category = planetCategory(planet.coordinates.position);
+  const filename = `${category}${String(imageID).padStart(2, "0")}.jpg`;
+  return `${skinBase}/planeten/${small ? "small/s_" : ""}${filename}`;
+}
+
+function galaxyPlanetImagePath(planet: GameGalaxyPlanet, small: boolean): string {
+  if (planet.type === 0 || planet.type === 10003) {
     return `${skinBase}/planeten/${small ? "small/s_" : ""}mond.jpg`;
   }
   const imageID = (planet.id % 7) + 1;
@@ -1543,6 +1915,10 @@ function planetCategory(position: number): string {
 
 function formatCoordinates(coordinates: Coordinates): string {
   return `${coordinates.galaxy}:${coordinates.system}:${coordinates.position}`;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function formatLegacyDuration(totalSeconds: number): string {

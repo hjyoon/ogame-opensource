@@ -5,6 +5,7 @@ import {
   type GameBuildingsStatus,
   type GameDefenseStatus,
   type GameFleetStatus,
+  type GameGalaxyStatus,
   type GameOverviewStatus,
   type GameResearchStatus,
   type GameResourcesStatus,
@@ -199,6 +200,8 @@ function App() {
   const [gameShipyardError, setGameShipyardError] = useState<string | null>(null);
   const [gameFleet, setGameFleet] = useState<GameFleetStatus | null>(null);
   const [gameFleetError, setGameFleetError] = useState<string | null>(null);
+  const [gameGalaxy, setGameGalaxy] = useState<GameGalaxyStatus | null>(null);
+  const [gameGalaxyError, setGameGalaxyError] = useState<string | null>(null);
   const [gameDefense, setGameDefense] = useState<GameDefenseStatus | null>(null);
   const [gameDefenseError, setGameDefenseError] = useState<string | null>(null);
   const [gameTechnology, setGameTechnology] = useState<GameTechnologyStatus | null>(null);
@@ -447,6 +450,30 @@ function App() {
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "galaxy" || publicSession === "") {
+      setGameGalaxy(null);
+      setGameGalaxyError(null);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const galaxySearch = new URLSearchParams({ session: publicSession });
+    for (const key of ["cp", "galaxy", "system", "position", "p1", "p2", "p3"]) {
+      const value = currentSearch.get(key);
+      if (value) {
+        galaxySearch.set(key, value);
+      }
+    }
+    fetch(`/api/game/galaxy?${galaxySearch.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameGalaxyStatus>)
+      .then((payload) => {
+        setGameGalaxy(payload);
+        setGameGalaxyError(null);
+      })
+      .catch((err: unknown) => setGameGalaxyError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "defense" || publicSession === "") {
       setGameDefense(null);
       setGameDefenseError(null);
@@ -521,6 +548,8 @@ function App() {
         error={gameOverviewError}
         fleetError={gameFleetError}
         fleetStatus={gameFleet}
+        galaxyError={gameGalaxyError}
+        galaxyStatus={gameGalaxy}
         onResourcesSubmit={submitGameResources}
         route={gameRoute ?? resolveGameRoute(pathname)}
         resourcesError={gameResourcesError}

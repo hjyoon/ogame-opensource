@@ -68,6 +68,10 @@ type GameFleetUseCase interface {
 	GetFleet(context.Context, appgame.FleetCommand) (appgame.FleetResult, error)
 }
 
+type GameGalaxyUseCase interface {
+	GetGalaxy(context.Context, appgame.GalaxyCommand) (appgame.GalaxyResult, error)
+}
+
 type GameDefenseUseCase interface {
 	GetDefense(context.Context, appgame.DefenseCommand) (appgame.DefenseResult, error)
 }
@@ -90,6 +94,7 @@ type Dependencies struct {
 	GameResearch       GameResearchUseCase
 	GameShipyard       GameShipyardUseCase
 	GameFleet          GameFleetUseCase
+	GameGalaxy         GameGalaxyUseCase
 	GameDefense        GameDefenseUseCase
 	GameTechnology     GameTechnologyUseCase
 	Frontend           FrontendAssets
@@ -117,6 +122,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/research", getOnly(a.handleGameResearch))
 	mux.HandleFunc("/api/game/shipyard", getOnly(a.handleGameShipyard))
 	mux.HandleFunc("/api/game/fleet", getOnly(a.handleGameFleet))
+	mux.HandleFunc("/api/game/galaxy", getOnly(a.handleGameGalaxy))
 	mux.HandleFunc("/api/game/defense", getOnly(a.handleGameDefense))
 	mux.HandleFunc("/api/game/technology", getOnly(a.handleGameTechnology))
 	mux.Handle("/legacy-assets/", http.StripPrefix("/legacy-assets/", http.FileServer(deps.LegacyAssets)))

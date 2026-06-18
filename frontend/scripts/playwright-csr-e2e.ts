@@ -73,6 +73,7 @@ try {
   await assertGameClientNavigation(page, "game shipyard menu preserves CSR", "a[href^='/game/shipyard']", "/game/shipyard", "Shipyard");
   await assertGameClientNavigation(page, "game defense menu preserves CSR", "a[href^='/game/defense']", "/game/defense", "Defense");
   await assertGameClientNavigation(page, "game fleet menu preserves CSR", "a[href^='/game/fleet']", "/game/fleet", "Fleet");
+  await assertGameClientNavigation(page, "game galaxy menu preserves CSR", "a[href^='/game/galaxy']", "/game/galaxy", "Galaxy");
   await assertGameClientNavigation(page, "game technology menu preserves CSR", "a[href^='/game/technology']", "/game/technology", "Technology");
   await assertTechnologyDetailsNavigation(page);
   await assertGameClientNavigation(page, "game overview menu preserves CSR", "a[href^='/game/overview']", "/game/overview", "Overview");
@@ -235,6 +236,8 @@ async function assertGameClientNavigation(
     await page.locator(".legacy-shipyard-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Fleet") {
     await page.locator(".legacy-fleet-table").first().waitFor({ timeout: 10_000 });
+  } else if (expectedMenuLabel === "Galaxy") {
+    await page.locator(".legacy-galaxy-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Defense") {
     await page.locator(".legacy-defense-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Technology") {
@@ -260,16 +263,21 @@ async function assertGameClientNavigation(
                   state.details.fleetSelectTable === true &&
                   state.details.fleetHeaderText.includes("Fleets") &&
                   state.details.pendingText === false
-                : expectedMenuLabel === "Defense"
-                  ? state.details.defenseTable === true && state.details.defenseRows >= 0 && state.details.pendingText === false
-                  : expectedMenuLabel === "Technology"
-                    ? state.details.technologyTable === true &&
-                      state.details.technologyRows > 0 &&
-                      state.details.technologyNames.includes("Metal Mine") &&
-                      state.details.pendingText === false
-                    : expectedMenuLabel === "Overview"
-                      ? state.details.pendingText === false
-                      : state.details.pendingText === true;
+                : expectedMenuLabel === "Galaxy"
+                  ? state.details.galaxyTable === true &&
+                    state.details.galaxyRows === 15 &&
+                    state.details.galaxyText.includes("Solar system") &&
+                    state.details.pendingText === false
+                  : expectedMenuLabel === "Defense"
+                    ? state.details.defenseTable === true && state.details.defenseRows >= 0 && state.details.pendingText === false
+                    : expectedMenuLabel === "Technology"
+                      ? state.details.technologyTable === true &&
+                        state.details.technologyRows > 0 &&
+                        state.details.technologyNames.includes("Metal Mine") &&
+                        state.details.pendingText === false
+                      : expectedMenuLabel === "Overview"
+                        ? state.details.pendingText === false
+                        : state.details.pendingText === true;
     return {
       pass:
         state.details.pathname === expectedPathname &&
@@ -362,6 +370,9 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     fleetMissionRows: document.querySelectorAll("[data-fleet-mission-row]").length,
     fleetShipRows: document.querySelectorAll("[data-fleet-ship-row]").length,
     fleetHeaderText: document.querySelector(".legacy-fleet-table tr:first-child td")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
+    galaxyTable: document.querySelector(".legacy-galaxy-table") !== null,
+    galaxyRows: document.querySelectorAll("[data-galaxy-position]").length,
+    galaxyText: document.querySelector(".legacy-galaxy-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     defenseRows: document.querySelectorAll("[data-defense-row]").length,
     defenseTable: document.querySelector(".legacy-defense-table") !== null,
     defenseNames: Array.from(document.querySelectorAll("[data-defense-row] .legacy-building-description a")).map(

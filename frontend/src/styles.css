@@ -614,6 +614,58 @@ dd {
   color: #ff0000;
 }
 
+.legacy-galaxy-table {
+  margin-top: 4px;
+}
+
+.legacy-galaxy-nav-table input,
+.legacy-galaxy-table input {
+  background-color: #1f2d45;
+  border: 1px #415680 solid;
+  color: #e6ebfb;
+  margin-left: 2px;
+}
+
+.legacy-galaxy-name {
+  white-space: nowrap;
+}
+
+.legacy-galaxy-actions img {
+  height: 16px;
+  margin-left: 1px;
+  width: 16px;
+}
+
+.legacy-galaxy-destroyed-moon {
+  border: 2px solid #ff0000;
+  display: inline-block;
+  line-height: 0;
+}
+
+.noob {
+  color: #a0ffa0;
+}
+
+.strong {
+  color: #ff8080;
+}
+
+.inactive {
+  color: #cccccc;
+}
+
+.longinactive {
+  color: #999999;
+}
+
+.vacation {
+  color: #66ccff;
+}
+
+.banned {
+  color: #ff3333;
+}
+
 .legacy-technology-name-table td {
   background: transparent;
   border: 0;

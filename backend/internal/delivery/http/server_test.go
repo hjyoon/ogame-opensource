@@ -1272,6 +1272,167 @@ func TestGameFleetEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 	}
 }
 
+func TestGameGalaxyEndpointReturnsGalaxy(t *testing.T) {
+	galaxy := &fakeGameGalaxy{result: appgame.GalaxyResult{
+		Authenticated: true,
+		Galaxy: domaingame.Galaxy{
+			Commander: "legor",
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:          99,
+				Name:        "Arakis",
+				Type:        domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			},
+			PlanetSwitcher: []domaingame.PlanetSummary{{
+				ID:          99,
+				Name:        "Arakis",
+				Type:        domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+				Current:     true,
+			}},
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Bounds:      domaingame.GalaxyBounds{Galaxies: 9, Systems: 499},
+			Rows: []domaingame.GalaxyRow{{
+				Position: 4,
+				Planet: &domaingame.GalaxyPlanet{
+					ID:           200,
+					Name:         "Target",
+					DisplayName:  "Target",
+					Type:         domaingame.PlanetTypePlanet,
+					Coordinates:  domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4},
+					ActivityText: "(*)",
+					Player: &domaingame.GalaxyPlayerStatus{
+						ID:          7,
+						Name:        "enemy",
+						Rank:        12,
+						Status:      "noob",
+						StatusClass: "noob",
+						Suffixes:    []domaingame.GalaxyStatusSuffix{{Text: "n", Class: "noob"}},
+					},
+					Alliance: &domaingame.GalaxyAlliance{ID: 5, Tag: "TAG"},
+					Actions:  domaingame.GalaxyActions{Spy: true, Message: true, Buddy: true},
+				},
+				Debris: &domaingame.GalaxyDebris{ID: 201, Metal: 200, Crystal: 100, Harvesters: 1, Visible: true},
+			}},
+			Populated: 1,
+			Slots:     domaingame.FleetSlots{Used: 1, Max: 4, BaseMax: 4},
+			Extra:     domaingame.GalaxyExtra{Commander: true, SpyProbes: 4, Recyclers: 3, Missiles: 2, Slots: domaingame.FleetSlots{Used: 1, Max: 4, BaseMax: 4}},
+		},
+	}}
+	server := testServerWithGameGalaxy(t, galaxy)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/galaxy?session=public&cp=99&p1=1&p2=2&p3=4", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameGalaxyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Galaxy == nil || response.Galaxy.Commander != "legor" || len(response.Galaxy.Rows) != 1 {
+		t.Fatalf("expected authenticated galaxy response, got %+v", response)
+	}
+	if response.Galaxy.Rows[0].Planet == nil || response.Galaxy.Rows[0].Planet.Player == nil ||
+		response.Galaxy.Rows[0].Planet.Player.Suffixes[0].Text != "n" || response.Galaxy.Rows[0].Debris.Harvesters != 1 {
+		t.Fatalf("unexpected galaxy row mapping: %+v", response.Galaxy.Rows[0])
+	}
+	if response.Galaxy.Extra.SpyProbes != 4 || !response.Galaxy.Extra.Commander {
+		t.Fatalf("unexpected galaxy extra mapping: %+v", response.Galaxy.Extra)
+	}
+	if galaxy.command.PublicSession != "public" || galaxy.command.PlanetID != 99 || galaxy.command.Coordinates.Position != 4 ||
+		galaxy.command.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected galaxy command: %+v", galaxy.command)
+	}
+	if galaxy.command.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("expected private session cookie to be passed, got %+v", galaxy.command.PrivateSessions)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("private")) {
+		t.Fatalf("game galaxy response must not echo private session: %s", rec.Body.String())
+	}
+}
+
+func TestGameGalaxyEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
+	galaxy := &fakeGameGalaxy{result: appgame.GalaxyResult{
+		Authenticated: false,
+		Issues: []domainpublicsite.SessionIssue{{
+			Code:    domainpublicsite.SessionIssuePrivateInvalid,
+			Message: "Private session is invalid.",
+		}},
+	}}
+	server := testServerWithGameGalaxy(t, galaxy)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/galaxy?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var response gameGalaxyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Authenticated || response.Galaxy != nil || len(response.Issues) != 1 {
+		t.Fatalf("expected invalid galaxy session response, got %+v", response)
+	}
+}
+
+func TestGameGalaxyEndpointRejectsInvalidInputs(t *testing.T) {
+	server := testServerWithGameGalaxy(t, &fakeGameGalaxy{})
+	for _, target := range []string{
+		"/api/game/galaxy?session=public&cp=abc",
+		"/api/game/galaxy?session=public&galaxy=bad",
+		"/api/game/galaxy?session=public&p2=bad",
+		"/api/game/galaxy?session=public&p3=bad",
+	} {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s: expected bad request, got %d", target, rec.Code)
+		}
+	}
+}
+
+func TestGameGalaxyMappingHandlesOptionalNilValues(t *testing.T) {
+	row := toGameGalaxyRow(domaingame.GalaxyRow{Position: 1})
+	if row.Position != 1 || row.Planet != nil || row.Moon != nil || row.Debris != nil {
+		t.Fatalf("unexpected empty galaxy row mapping: %+v", row)
+	}
+	if toGameGalaxyPlanet(nil) != nil || toGameGalaxyPlayerStatus(nil) != nil || toGameGalaxyAlliance(nil) != nil || toGameGalaxyDebris(nil) != nil {
+		t.Fatal("expected nil optional mappings to stay nil")
+	}
+	player := toGameGalaxyPlayerStatus(&domaingame.GalaxyPlayerStatus{ID: 1, Name: "legor"})
+	if player == nil || len(player.Suffixes) != 0 {
+		t.Fatalf("unexpected no-suffix player mapping: %+v", player)
+	}
+}
+
+func TestGameGalaxyEndpointReturnsUnavailableWithoutUseCase(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/galaxy?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game galaxy use case to return 503, got %d", rec.Code)
+	}
+}
+
+func TestGameGalaxyEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
+	server := testServerWithGameGalaxy(t, &fakeGameGalaxy{err: errors.New("galaxy failed")})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/galaxy?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game galaxy error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestGameDefenseEndpointReturnsDefense(t *testing.T) {
 	defense := &fakeGameDefense{result: appgame.DefenseResult{
 		Authenticated: true,
@@ -2004,6 +2165,14 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game fleet method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "/api/game/galaxy", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("expected game galaxy method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
+
 	req = httptest.NewRequest(http.MethodPost, "/api/game/defense", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -2249,6 +2418,19 @@ func testServerWithGameFleet(t *testing.T, fleet GameFleetUseCase) http.Handler 
 	})
 }
 
+func testServerWithGameGalaxy(t *testing.T, galaxy GameGalaxyUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		GameGalaxy:         galaxy,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
 func testServerWithGameDefense(t *testing.T, defense GameDefenseUseCase) http.Handler {
 	t.Helper()
 	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
@@ -2446,6 +2628,17 @@ type fakeGameFleet struct {
 }
 
 func (f *fakeGameFleet) GetFleet(_ context.Context, command appgame.FleetCommand) (appgame.FleetResult, error) {
+	f.command = command
+	return f.result, f.err
+}
+
+type fakeGameGalaxy struct {
+	result  appgame.GalaxyResult
+	err     error
+	command appgame.GalaxyCommand
+}
+
+func (f *fakeGameGalaxy) GetGalaxy(_ context.Context, command appgame.GalaxyCommand) (appgame.GalaxyResult, error) {
 	f.command = command
 	return f.result, f.err
 }

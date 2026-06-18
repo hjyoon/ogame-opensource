@@ -61,6 +61,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	gameResearch := gameResearchService(cfg, logger, gameSessions)
 	gameShipyard := gameShipyardService(cfg, logger, gameSessions)
 	gameFleet := gameFleetService(cfg, logger, gameSessions)
+	gameGalaxy := gameGalaxyService(cfg, logger, gameSessions)
 	gameDefense := gameDefenseService(cfg, logger, gameSessions)
 	gameTechnology := gameTechnologyService(cfg, logger, gameSessions)
 
@@ -78,6 +79,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		GameResearch:       gameResearch,
 		GameShipyard:       gameShipyard,
 		GameFleet:          gameFleet,
+		GameGalaxy:         gameGalaxy,
 		GameDefense:        gameDefense,
 		GameTechnology:     gameTechnology,
 		Frontend:           filesystem.StaticDir{Root: cfg.StaticDir},
@@ -403,6 +405,34 @@ func gameFleetService(cfg config.Config, logger *slog.Logger, sessions apppublic
 
 	logger.Info("universe DB game fleet enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewFleetService(sessions, mysqlgame.NewFleetRepository(db, cfg.UniDBPrefix))
+}
+
+func gameGalaxyService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.GalaxyService {
+	if !cfg.UniDBEnabled {
+		return appgame.GalaxyService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game galaxy disabled", "error", err)
+		return appgame.GalaxyService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game galaxy disabled", "error", err)
+		_ = db.Close()
+		return appgame.GalaxyService{}
+	}
+
+	logger.Info("universe DB game galaxy enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
+	return appgame.NewGalaxyService(sessions, mysqlgame.NewGalaxyRepository(db, cfg.UniDBPrefix))
 }
 
 func gameTechnologyService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.TechnologyService {

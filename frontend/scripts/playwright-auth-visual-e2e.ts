@@ -19,8 +19,11 @@ type AuthPageSpec = {
   migratedQuery?: Record<string, string>;
   legacyReady: string;
   migratedReady: string;
+  requiredBoxes?: LayoutBoxName[];
   expectedTexts: string[];
 };
+
+type LayoutBoxName = "header" | "menu" | "content";
 
 type Box = {
   x: number;
@@ -136,6 +139,15 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["Fleets", "Expeditions", "Mission", "Ships (total)", "Please select your ships for this mission:", "Ship Type", "Available"]
   },
   {
+    name: "game-galaxy",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Galaxy", "Solar system", "Coord.", "Planet", "Title (activity)", "Moon", "Debris", "Player", "Alliance", "Actions", "Legend"]
+  },
+  {
     name: "game-technology",
     legacyPage: "techtree",
     migratedPath: "/game/technology",
@@ -192,7 +204,7 @@ try {
       }
       const migrated = await capturePage(migratedContext, spec, "migrated", migratedURL(spec, migratedSession), viewport);
       const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath);
-      const boxMaxDelta = maxPairBoxDelta(legacy.boxes, migrated.boxes);
+      const boxMaxDelta = maxPairBoxDelta(legacy.boxes, migrated.boxes, spec.requiredBoxes);
       const notes = caseNotes(legacy, migrated, diff, boxMaxDelta);
       const parityPass = diff.diffRatio <= maxDiffRatio && boxMaxDelta <= maxBoxDelta;
       const contractPass =
@@ -204,8 +216,8 @@ try {
         migrated.failedRequests.length === 0 &&
         legacy.badResponses.length === 0 &&
         migrated.badResponses.length === 0 &&
-        boxesPresent(legacy.boxes) &&
-        boxesPresent(migrated.boxes) &&
+        boxesPresent(legacy.boxes, spec.requiredBoxes) &&
+        boxesPresent(migrated.boxes, spec.requiredBoxes) &&
         Object.values(legacy.textChecks).every(Boolean) &&
         Object.values(migrated.textChecks).every(Boolean);
       const pass = contractPass && (!diffEnforced || diff.diffRatio <= maxDiffRatio) && (!layoutEnforced || boxMaxDelta <= maxBoxDelta);
@@ -458,13 +470,17 @@ async function compareScreenshots(browser: Browser, legacyPath: string, migrated
   return result;
 }
 
-function boxesPresent(boxes: Record<string, Box | null>): boolean {
-  return Object.values(boxes).every((box) => box !== null);
+function boxesPresent(boxes: Record<string, Box | null>, requiredBoxes: LayoutBoxName[] = ["header", "menu", "content"]): boolean {
+  return requiredBoxes.every((boxName) => boxes[boxName] !== null);
 }
 
-function maxPairBoxDelta(left: Record<string, Box | null>, right: Record<string, Box | null>): number {
+function maxPairBoxDelta(
+  left: Record<string, Box | null>,
+  right: Record<string, Box | null>,
+  requiredBoxes: LayoutBoxName[] = ["header", "menu", "content"]
+): number {
   let maxDelta = 0;
-  for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) {
+  for (const key of requiredBoxes) {
     const leftBox = left[key];
     const rightBox = right[key];
     if (!leftBox || !rightBox) {
