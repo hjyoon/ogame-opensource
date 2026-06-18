@@ -346,6 +346,24 @@ try {
     gameDefenseWithoutCookieBody = {};
   }
 
+  const gameTechnology = await request(`/api/game/technology${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameTechnologyBody = {};
+  try {
+    gameTechnologyBody = JSON.parse(gameTechnology.body);
+  } catch {
+    gameTechnologyBody = {};
+  }
+
+  const gameTechnologyWithoutCookie = await request(`/api/game/technology${sessionSearch}`);
+  let gameTechnologyWithoutCookieBody = {};
+  try {
+    gameTechnologyWithoutCookieBody = JSON.parse(gameTechnologyWithoutCookie.body);
+  } catch {
+    gameTechnologyWithoutCookieBody = {};
+  }
+
   const gameResources = await request(`/api/game/resources${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -469,6 +487,17 @@ try {
       check(!gameDefense.body.includes(sessionCookiePair), "game defense response does not echo private cookie"),
       check(gameDefenseWithoutCookie.status === 401, "game defense rejects missing private cookie", { status: gameDefenseWithoutCookie.status }),
       check(gameDefenseWithoutCookieBody.authenticated === false, "game defense missing private cookie is unauthenticated", gameDefenseWithoutCookieBody),
+      check(gameTechnology.status === 200, "game technology returns HTTP 200 with private cookie", { status: gameTechnology.status }),
+      check(gameTechnologyBody.authenticated === true, "game technology authenticates the login session", gameTechnologyBody),
+      check(Array.isArray(gameTechnologyBody.technology?.groups), "game technology returns migrated technology groups", gameTechnologyBody),
+      check(
+        gameTechnologyBody.technology?.groups?.some((group) => group.name === "Buildings" && Array.isArray(group.items)),
+        "game technology returns building requirement group",
+        gameTechnologyBody
+      ),
+      check(!gameTechnology.body.includes(sessionCookiePair), "game technology response does not echo private cookie"),
+      check(gameTechnologyWithoutCookie.status === 401, "game technology rejects missing private cookie", { status: gameTechnologyWithoutCookie.status }),
+      check(gameTechnologyWithoutCookieBody.authenticated === false, "game technology missing private cookie is unauthenticated", gameTechnologyWithoutCookieBody),
       check(gameResources.status === 200, "game resources returns HTTP 200 with private cookie", { status: gameResources.status }),
       check(gameResourcesBody.authenticated === true, "game resources authenticates the login session", gameResourcesBody),
       check(Number.isFinite(gameResourcesBody.resources?.factor), "game resources returns production factor", gameResourcesBody),
@@ -597,6 +626,7 @@ try {
       check(js.body.includes("/api/game/research"), "React bundle consumes game research API"),
       check(js.body.includes("/api/game/shipyard"), "React bundle consumes game shipyard API"),
       check(js.body.includes("/api/game/defense"), "React bundle consumes game defense API"),
+      check(js.body.includes("/api/game/technology"), "React bundle consumes game technology API"),
       check(js.body.includes("legacy-public-main"), "React bundle contains legacy public home layout"),
       check(js.body.includes("legacy-public-register-panel"), "React bundle contains legacy public registration layout"),
       check(js.body.includes("legacy-public-about-panel"), "React bundle contains legacy public about layout"),
@@ -610,7 +640,8 @@ try {
       check(js.body.includes("legacy-resources-table"), "React bundle contains legacy game resources layout"),
       check(js.body.includes("legacy-research-table"), "React bundle contains legacy game research layout"),
       check(js.body.includes("legacy-shipyard-table"), "React bundle contains legacy game shipyard layout"),
-      check(js.body.includes("legacy-defense-table"), "React bundle contains legacy game defense layout")
+      check(js.body.includes("legacy-defense-table"), "React bundle contains legacy game defense layout"),
+      check(js.body.includes("legacy-technology-table"), "React bundle contains legacy game technology layout")
     ]
   }));
 
@@ -636,6 +667,7 @@ try {
   const postGameResearch = await request("/api/game/research", { method: "POST" });
   const postGameShipyard = await request("/api/game/shipyard", { method: "POST" });
   const postGameDefense = await request("/api/game/defense", { method: "POST" });
+  const postGameTechnology = await request("/api/game/technology", { method: "POST" });
   const putGameResources = await request("/api/game/resources", { method: "PUT" });
   cases.push(finalize({
     case: "go_method_guards",
@@ -662,6 +694,8 @@ try {
       check(hasHeader(postGameShipyard, "allow", "GET, HEAD"), "game shipyard method rejection returns Allow header"),
       check(postGameDefense.status === 405, "POST game defense endpoint is rejected", { status: postGameDefense.status }),
       check(hasHeader(postGameDefense, "allow", "GET, HEAD"), "game defense method rejection returns Allow header"),
+      check(postGameTechnology.status === 405, "POST game technology endpoint is rejected", { status: postGameTechnology.status }),
+      check(hasHeader(postGameTechnology, "allow", "GET, HEAD"), "game technology method rejection returns Allow header"),
       check(putGameResources.status === 405, "PUT game resources endpoint is rejected", { status: putGameResources.status }),
       check(hasHeader(putGameResources, "allow", "GET, HEAD, POST"), "game resources method rejection returns Allow header")
     ]

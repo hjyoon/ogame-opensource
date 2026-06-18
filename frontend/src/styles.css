@@ -614,6 +614,13 @@ dd {
   color: #ff0000;
 }
 
+.legacy-technology-name-table td {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  padding: 0;
+}
+
 .legacy-resources-form {
   margin: 0;
 }

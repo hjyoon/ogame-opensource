@@ -7,7 +7,8 @@ import {
   type GameOverviewStatus,
   type GameResearchStatus,
   type GameResourcesStatus,
-  type GameShipyardStatus
+  type GameShipyardStatus,
+  type GameTechnologyStatus
 } from "./LegacyGameOverview";
 import { LegacyPublicAbout } from "./LegacyPublicAbout";
 import { LegacyPublicHome } from "./LegacyPublicHome";
@@ -197,6 +198,8 @@ function App() {
   const [gameShipyardError, setGameShipyardError] = useState<string | null>(null);
   const [gameDefense, setGameDefense] = useState<GameDefenseStatus | null>(null);
   const [gameDefenseError, setGameDefenseError] = useState<string | null>(null);
+  const [gameTechnology, setGameTechnology] = useState<GameTechnologyStatus | null>(null);
+  const [gameTechnologyError, setGameTechnologyError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
   const gameRoute = pathname.startsWith("/game") ? resolveGameRoute(pathname) : null;
@@ -439,6 +442,32 @@ function App() {
       .catch((err: unknown) => setGameDefenseError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
 
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "technology" || publicSession === "") {
+      setGameTechnology(null);
+      setGameTechnologyError(null);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const technologySearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      technologySearch.set("cp", selectedPlanet);
+    }
+    const selectedTechnology = currentSearch.get("tid") ?? currentSearch.get("gid");
+    if (selectedTechnology) {
+      technologySearch.set("tid", selectedTechnology);
+    }
+    fetch(`/api/game/technology?${technologySearch.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameTechnologyStatus>)
+      .then((payload) => {
+        setGameTechnology(payload);
+        setGameTechnologyError(null);
+      })
+      .catch((err: unknown) => setGameTechnologyError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
   const checks = useMemo(
     () => [
       ["Go target", health?.goTarget ?? "1.25"],
@@ -475,6 +504,8 @@ function App() {
         shipyardError={gameShipyardError}
         shipyardStatus={gameShipyard}
         status={gameOverview}
+        technologyError={gameTechnologyError}
+        technologyStatus={gameTechnology}
       />
     );
   }

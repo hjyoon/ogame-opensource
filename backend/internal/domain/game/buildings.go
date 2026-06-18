@@ -308,6 +308,6 @@ var buildingCatalog = []buildingSpec{
 	{BuildingAllianceDepot, "Alliance Depot", "The alliance depot supplies fuel to friendly fleets in orbit helping with defense.", BuildingCost{Metal: 20000, Crystal: 40000}, 2, nil, planetOnly},
 	{BuildingLunarBase, "Lunar Base", "Since the moon has no atmosphere, a lunar base is required to generate habitable space.", BuildingCost{Metal: 20000, Crystal: 40000, Deuterium: 20000}, 2, nil, moonOnly},
 	{BuildingSensorPhalanx, "Sensor Phalanx", "Using the sensor phalanx, fleets of other empires can be discovered and observed. The bigger the sensor phalanx array, the larger the range it can scan.", BuildingCost{Metal: 20000, Crystal: 40000, Deuterium: 20000}, 2, map[int]int{BuildingLunarBase: 1}, moonOnly},
-	{BuildingJumpGate, "Jump Gate", "Jump gates are huge transceivers capable of sending even the biggest fleet in no time to a distant jump gate.", BuildingCost{Metal: 2000000, Crystal: 4000000, Deuterium: 2000000}, 2, map[int]int{BuildingLunarBase: 1}, moonOnly},
+	{BuildingJumpGate, "Jump Gate", "Jump gates are huge transceivers capable of sending even the biggest fleet in no time to a distant jump gate.", BuildingCost{Metal: 2000000, Crystal: 4000000, Deuterium: 2000000}, 2, map[int]int{BuildingLunarBase: 1, ResearchHyperspace: 7}, moonOnly},
 	{BuildingMissileSilo, "Missile Silo", "Missile silos are used to store missiles.", BuildingCost{Metal: 20000, Crystal: 20000, Deuterium: 1000}, 2, map[int]int{BuildingShipyard: 1}, planetOnly},
 }

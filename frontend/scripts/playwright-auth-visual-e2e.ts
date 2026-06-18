@@ -127,6 +127,14 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["In order to do that, you need to build a shipyard!"]
   },
   {
+    name: "game-technology",
+    legacyPage: "techtree",
+    migratedPath: "/game/technology",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-technology-table",
+    expectedTexts: ["Buildings", "Requirements", "Metal Mine", "Research", "Ships", "Defense", "Lunar Buildings"]
+  },
+  {
     name: "game-defense",
     legacyPage: "buildings",
     legacyQuery: { mode: "Verteidigung" },

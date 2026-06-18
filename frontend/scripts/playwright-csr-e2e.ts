@@ -73,6 +73,7 @@ try {
   await assertGameClientNavigation(page, "game shipyard menu preserves CSR", "a[href^='/game/shipyard']", "/game/shipyard", "Shipyard");
   await assertGameClientNavigation(page, "game defense menu preserves CSR", "a[href^='/game/defense']", "/game/defense", "Defense");
   await assertGameClientNavigation(page, "game fleet menu preserves CSR", "a[href^='/game/fleet']", "/game/fleet", "Fleet");
+  await assertGameClientNavigation(page, "game technology menu preserves CSR", "a[href^='/game/technology']", "/game/technology", "Technology");
   await assertGameClientNavigation(page, "game overview menu preserves CSR", "a[href^='/game/overview']", "/game/overview", "Overview");
 
   const report = {
@@ -233,6 +234,8 @@ async function assertGameClientNavigation(
     await page.locator(".legacy-shipyard-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Defense") {
     await page.locator(".legacy-defense-table").first().waitFor({ timeout: 10_000 });
+  } else if (expectedMenuLabel === "Technology") {
+    await page.locator(".legacy-technology-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel !== "Overview") {
     await page.waitForFunction(() => document.body.textContent?.includes("queued for React and Go migration"), undefined, {
       timeout: 5_000
@@ -251,9 +254,14 @@ async function assertGameClientNavigation(
               ? state.details.shipyardTable === true && state.details.shipyardRows >= 0 && state.details.pendingText === false
               : expectedMenuLabel === "Defense"
                 ? state.details.defenseTable === true && state.details.defenseRows >= 0 && state.details.pendingText === false
-                : expectedMenuLabel === "Overview"
-                  ? state.details.pendingText === false
-                  : state.details.pendingText === true;
+                : expectedMenuLabel === "Technology"
+                  ? state.details.technologyTable === true &&
+                    state.details.technologyRows > 0 &&
+                    state.details.technologyNames.includes("Metal Mine") &&
+                    state.details.pendingText === false
+                  : expectedMenuLabel === "Overview"
+                    ? state.details.pendingText === false
+                    : state.details.pendingText === true;
     return {
       pass:
         state.details.pathname === expectedPathname &&
@@ -314,6 +322,11 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     defenseRows: document.querySelectorAll("[data-defense-row]").length,
     defenseTable: document.querySelector(".legacy-defense-table") !== null,
     defenseNames: Array.from(document.querySelectorAll("[data-defense-row] .legacy-building-description a")).map(
+      (link) => link.textContent?.trim() ?? ""
+    ),
+    technologyRows: document.querySelectorAll("[data-technology-row]").length,
+    technologyTable: document.querySelector(".legacy-technology-table") !== null,
+    technologyNames: Array.from(document.querySelectorAll("[data-technology-row] .legacy-technology-name-link")).map(
       (link) => link.textContent?.trim() ?? ""
     ),
     pendingText: document.body.textContent?.includes("queued for React and Go migration") ?? false

@@ -61,6 +61,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	gameResearch := gameResearchService(cfg, logger, gameSessions)
 	gameShipyard := gameShipyardService(cfg, logger, gameSessions)
 	gameDefense := gameDefenseService(cfg, logger, gameSessions)
+	gameTechnology := gameTechnologyService(cfg, logger, gameSessions)
 
 	return httpdelivery.New(httpdelivery.Dependencies{
 		Health:             health,
@@ -76,6 +77,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		GameResearch:       gameResearch,
 		GameShipyard:       gameShipyard,
 		GameDefense:        gameDefense,
+		GameTechnology:     gameTechnology,
 		Frontend:           filesystem.StaticDir{Root: cfg.StaticDir},
 		LegacyAssets:       filesystem.NewNoListingFS(cfg.LegacyAssetDir),
 		Logger:             logger,
@@ -371,6 +373,34 @@ func gameDefenseService(cfg config.Config, logger *slog.Logger, sessions apppubl
 
 	logger.Info("universe DB game defense enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewDefenseService(sessions, mysqlgame.NewDefenseRepository(db, cfg.UniDBPrefix))
+}
+
+func gameTechnologyService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.TechnologyService {
+	if !cfg.UniDBEnabled {
+		return appgame.TechnologyService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game technology disabled", "error", err)
+		return appgame.TechnologyService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game technology disabled", "error", err)
+		_ = db.Close()
+		return appgame.TechnologyService{}
+	}
+
+	logger.Info("universe DB game technology enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
+	return appgame.NewTechnologyService(sessions, mysqlgame.NewTechnologyRepository(db, cfg.UniDBPrefix))
 }
 
 func registrationValidator(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationDraftValidator {

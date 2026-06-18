@@ -37,6 +37,12 @@ export type GameDefenseStatus = {
   defense?: GameDefense;
 };
 
+export type GameTechnologyStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  technology?: GameTechnology;
+};
+
 type GameOverview = {
   commander: string;
   score: {
@@ -115,6 +121,34 @@ type GameDefense = {
   hasShipyard: boolean;
   busy: boolean;
   items: GameShipyardItem[];
+};
+
+type GameTechnology = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  groups: GameTechnologyGroup[];
+};
+
+type GameTechnologyGroup = {
+  key: string;
+  name: string;
+  items: GameTechnologyItem[];
+};
+
+type GameTechnologyItem = {
+  id: number;
+  name: string;
+  requirements: GameTechnologyRequirement[];
+  detailsAvailable: boolean;
+};
+
+type GameTechnologyRequirement = {
+  id: number;
+  name: string;
+  level: number;
+  currentLevel: number;
+  met: boolean;
 };
 
 type GameBuildingItem = {
@@ -199,6 +233,8 @@ type LegacyGameOverviewProps = {
   shipyardError: string | null;
   defenseStatus: GameDefenseStatus | null;
   defenseError: string | null;
+  technologyStatus: GameTechnologyStatus | null;
+  technologyError: string | null;
 };
 
 type LegacyMenuEntry =
@@ -249,7 +285,9 @@ export function LegacyGameOverview({
   shipyardStatus,
   shipyardError,
   defenseStatus,
-  defenseError
+  defenseError,
+  technologyStatus,
+  technologyError
 }: LegacyGameOverviewProps) {
   const overview = status?.authenticated ? status.overview : undefined;
   const issue = status && !status.authenticated ? status.issues[0]?.message ?? "Session is invalid." : null;
@@ -268,6 +306,9 @@ export function LegacyGameOverview({
   const defense = defenseStatus?.authenticated ? defenseStatus.defense : undefined;
   const defenseIssue =
     defenseStatus && !defenseStatus.authenticated ? defenseStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const technology = technologyStatus?.authenticated ? technologyStatus.technology : undefined;
+  const technologyIssue =
+    technologyStatus && !technologyStatus.authenticated ? technologyStatus.issues[0]?.message ?? "Session is invalid." : null;
   const contentClassName = route.key === "overview" ? "legacy-content legacy-content-overview" : "legacy-content";
 
   return (
@@ -307,6 +348,10 @@ export function LegacyGameOverview({
         ) : null}
         {route.key === "defense" && defenseError ? <LegacyMessage tone="error" text={defenseError} /> : null}
         {route.key === "defense" && !defenseError && defenseIssue ? <LegacyMessage tone="error" text={defenseIssue} /> : null}
+        {route.key === "technology" && technologyError ? <LegacyMessage tone="error" text={technologyError} /> : null}
+        {route.key === "technology" && !technologyError && technologyIssue ? (
+          <LegacyMessage tone="error" text={technologyIssue} />
+        ) : null}
         {overview && route.key === "overview" ? <OverviewTable overview={overview} /> : null}
         {overview && route.key === "buildings" && !buildings && !buildingsError && !buildingsIssue ? (
           <LegacyMessage tone="neutral" text="Loading buildings..." />
@@ -330,13 +375,18 @@ export function LegacyGameOverview({
           <LegacyMessage tone="neutral" text="Loading defense..." />
         ) : null}
         {defense && route.key === "defense" ? <DefenseTable defense={defense} /> : null}
+        {overview && route.key === "technology" && !technology && !technologyError && !technologyIssue ? (
+          <LegacyMessage tone="neutral" text="Loading technology..." />
+        ) : null}
+        {technology && route.key === "technology" ? <TechnologyTable technology={technology} /> : null}
         {overview &&
         route.key !== "overview" &&
         route.key !== "buildings" &&
         route.key !== "resources" &&
         route.key !== "research" &&
         route.key !== "shipyard" &&
-        route.key !== "defense" ? (
+        route.key !== "defense" &&
+        route.key !== "technology" ? (
           <MigrationPendingGameTable route={route} />
         ) : null}
       </section>
@@ -793,6 +843,59 @@ function DefenseTable({ defense }: { defense: GameDefense }) {
   );
 }
 
+function TechnologyTable({ technology }: { technology: GameTechnology }) {
+  return (
+    <div className="legacy-center">
+      <table className="legacy-overview-table legacy-technology-table" width={470}>
+        <tbody>
+          {technology.groups.map((group) => (
+            <React.Fragment key={group.key}>
+              <tr>
+                <td className="legacy-c">{group.name}</td>
+                <td className="legacy-c">Requirements</td>
+              </tr>
+              {group.items.map((item) => (
+                <tr data-technology-row={item.id} key={item.id}>
+                  <td className="legacy-l">
+                    <table border={0} cellPadding={0} cellSpacing={0} className="legacy-technology-name-table" width="100%">
+                      <tbody>
+                        <tr>
+                          <td align="left">
+                            <a className="legacy-technology-name-link" href={technologyInfoURL(item.id)}>
+                              {item.name}
+                            </a>
+                          </td>
+                          <td align="right">
+                            {item.detailsAvailable ? <a href={technologyDetailURL(item.id)}>[i]</a> : "\u00a0"}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </td>
+                  <td className="legacy-l">
+                    {item.requirements.map((requirement) => (
+                      <React.Fragment key={requirement.id}>
+                        <span style={{ color: requirement.met ? "#00ff00" : "#ff0000" }}>
+                          {requirement.name} (level {requirement.level})
+                        </span>
+                        <br />
+                      </React.Fragment>
+                    ))}
+                  </td>
+                </tr>
+              ))}
+            </React.Fragment>
+          ))}
+        </tbody>
+      </table>
+      <br />
+      <br />
+      <br />
+      <br />
+    </div>
+  );
+}
+
 const resourceColumns: { key: keyof Pick<ResourceProductionValues, "metal" | "crystal" | "deuterium" | "energy">; label: string }[] = [
   { key: "metal", label: "Metal" },
   { key: "crystal", label: "Crystal" },
@@ -1084,6 +1187,18 @@ function planetHref(planetID: number): string {
   const search = new URLSearchParams(window.location.search);
   search.set("cp", String(planetID));
   return gameRouteURL("/game/overview", search.toString());
+}
+
+function technologyInfoURL(itemID: number): string {
+  const search = new URLSearchParams(window.location.search);
+  search.set("gid", String(itemID));
+  return gameRouteURL("/game/technology", search.toString());
+}
+
+function technologyDetailURL(itemID: number): string {
+  const search = new URLSearchParams(window.location.search);
+  search.set("tid", String(itemID));
+  return gameRouteURL("/game/technology", search.toString());
 }
 
 function planetImagePath(planet: GamePlanetOverview | GamePlanetSummary, small: boolean): string {
