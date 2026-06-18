@@ -58,6 +58,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	gameOverview := gameOverviewService(cfg, logger, gameSessions)
 	gameBuildings := gameBuildingsService(cfg, logger, gameSessions)
 	gameResources := gameResourcesService(cfg, logger, gameSessions)
+	gameResearch := gameResearchService(cfg, logger, gameSessions)
 
 	return httpdelivery.New(httpdelivery.Dependencies{
 		Health:             health,
@@ -70,6 +71,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		GameOverview:       gameOverview,
 		GameBuildings:      gameBuildings,
 		GameResources:      gameResources,
+		GameResearch:       gameResearch,
 		Frontend:           filesystem.StaticDir{Root: cfg.StaticDir},
 		LegacyAssets:       filesystem.NewNoListingFS(cfg.LegacyAssetDir),
 		Logger:             logger,
@@ -281,6 +283,34 @@ func gameResourcesService(cfg config.Config, logger *slog.Logger, sessions apppu
 
 	logger.Info("universe DB game resources enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewResourcesService(sessions, mysqlgame.NewResourcesRepository(db, cfg.UniDBPrefix))
+}
+
+func gameResearchService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.ResearchService {
+	if !cfg.UniDBEnabled {
+		return appgame.ResearchService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game research disabled", "error", err)
+		return appgame.ResearchService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game research disabled", "error", err)
+		_ = db.Close()
+		return appgame.ResearchService{}
+	}
+
+	logger.Info("universe DB game research enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
+	return appgame.NewResearchService(sessions, mysqlgame.NewResearchRepository(db, cfg.UniDBPrefix))
 }
 
 func registrationValidator(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationDraftValidator {

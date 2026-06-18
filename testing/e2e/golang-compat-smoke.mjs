@@ -292,6 +292,24 @@ try {
     gameBuildingsWithoutCookieBody = {};
   }
 
+  const gameResearch = await request(`/api/game/research${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameResearchBody = {};
+  try {
+    gameResearchBody = JSON.parse(gameResearch.body);
+  } catch {
+    gameResearchBody = {};
+  }
+
+  const gameResearchWithoutCookie = await request(`/api/game/research${sessionSearch}`);
+  let gameResearchWithoutCookieBody = {};
+  try {
+    gameResearchWithoutCookieBody = JSON.parse(gameResearchWithoutCookie.body);
+  } catch {
+    gameResearchWithoutCookieBody = {};
+  }
+
   const gameResources = await request(`/api/game/resources${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -395,6 +413,12 @@ try {
       check(!gameBuildings.body.includes(sessionCookiePair), "game buildings response does not echo private cookie"),
       check(gameBuildingsWithoutCookie.status === 401, "game buildings rejects missing private cookie", { status: gameBuildingsWithoutCookie.status }),
       check(gameBuildingsWithoutCookieBody.authenticated === false, "game buildings missing private cookie is unauthenticated", gameBuildingsWithoutCookieBody),
+      check(gameResearch.status === 200, "game research returns HTTP 200 with private cookie", { status: gameResearch.status }),
+      check(gameResearchBody.authenticated === true, "game research authenticates the login session", gameResearchBody),
+      check(Array.isArray(gameResearchBody.research?.items), "game research returns migrated research rows array", gameResearchBody),
+      check(!gameResearch.body.includes(sessionCookiePair), "game research response does not echo private cookie"),
+      check(gameResearchWithoutCookie.status === 401, "game research rejects missing private cookie", { status: gameResearchWithoutCookie.status }),
+      check(gameResearchWithoutCookieBody.authenticated === false, "game research missing private cookie is unauthenticated", gameResearchWithoutCookieBody),
       check(gameResources.status === 200, "game resources returns HTTP 200 with private cookie", { status: gameResources.status }),
       check(gameResourcesBody.authenticated === true, "game resources authenticates the login session", gameResourcesBody),
       check(Number.isFinite(gameResourcesBody.resources?.factor), "game resources returns production factor", gameResourcesBody),
@@ -520,6 +544,7 @@ try {
       check(js.body.includes("/api/game/overview"), "React bundle consumes game overview API"),
       check(js.body.includes("/api/game/buildings"), "React bundle consumes game buildings API"),
       check(js.body.includes("/api/game/resources"), "React bundle consumes game resources API"),
+      check(js.body.includes("/api/game/research"), "React bundle consumes game research API"),
       check(js.body.includes("legacy-public-main"), "React bundle contains legacy public home layout"),
       check(js.body.includes("legacy-public-register-panel"), "React bundle contains legacy public registration layout"),
       check(js.body.includes("legacy-public-about-panel"), "React bundle contains legacy public about layout"),
@@ -530,7 +555,8 @@ try {
       check(js.body.includes("legacy-public-universes-panel"), "React bundle contains legacy public universes layout"),
       check(js.body.includes("legacy-game-shell"), "React bundle contains legacy game overview layout"),
       check(js.body.includes("legacy-buildings-table"), "React bundle contains legacy game buildings layout"),
-      check(js.body.includes("legacy-resources-table"), "React bundle contains legacy game resources layout")
+      check(js.body.includes("legacy-resources-table"), "React bundle contains legacy game resources layout"),
+      check(js.body.includes("legacy-research-table"), "React bundle contains legacy game research layout")
     ]
   }));
 
@@ -553,6 +579,7 @@ try {
   const postGameSession = await request("/api/game/session", { method: "POST" });
   const postGameOverview = await request("/api/game/overview", { method: "POST" });
   const postGameBuildings = await request("/api/game/buildings", { method: "POST" });
+  const postGameResearch = await request("/api/game/research", { method: "POST" });
   const putGameResources = await request("/api/game/resources", { method: "PUT" });
   cases.push(finalize({
     case: "go_method_guards",
@@ -573,6 +600,8 @@ try {
       check(hasHeader(postGameOverview, "allow", "GET, HEAD"), "game overview method rejection returns Allow header"),
       check(postGameBuildings.status === 405, "POST game buildings endpoint is rejected", { status: postGameBuildings.status }),
       check(hasHeader(postGameBuildings, "allow", "GET, HEAD"), "game buildings method rejection returns Allow header"),
+      check(postGameResearch.status === 405, "POST game research endpoint is rejected", { status: postGameResearch.status }),
+      check(hasHeader(postGameResearch, "allow", "GET, HEAD"), "game research method rejection returns Allow header"),
       check(putGameResources.status === 405, "PUT game resources endpoint is rejected", { status: putGameResources.status }),
       check(hasHeader(putGameResources, "allow", "GET, HEAD, POST"), "game resources method rejection returns Allow header")
     ]

@@ -1,6 +1,12 @@
 import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { LegacyGameOverview, type GameBuildingsStatus, type GameOverviewStatus, type GameResourcesStatus } from "./LegacyGameOverview";
+import {
+  LegacyGameOverview,
+  type GameBuildingsStatus,
+  type GameOverviewStatus,
+  type GameResearchStatus,
+  type GameResourcesStatus
+} from "./LegacyGameOverview";
 import { LegacyPublicAbout } from "./LegacyPublicAbout";
 import { LegacyPublicHome } from "./LegacyPublicHome";
 import { LegacyPublicLegal } from "./LegacyPublicLegal";
@@ -183,6 +189,8 @@ function App() {
   const [gameResources, setGameResources] = useState<GameResourcesStatus | null>(null);
   const [gameResourcesError, setGameResourcesError] = useState<string | null>(null);
   const [gameResourcesPending, setGameResourcesPending] = useState(false);
+  const [gameResearch, setGameResearch] = useState<GameResearchStatus | null>(null);
+  const [gameResearchError, setGameResearchError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
   const gameRoute = pathname.startsWith("/game") ? resolveGameRoute(pathname) : null;
@@ -359,6 +367,28 @@ function App() {
       .catch((err: unknown) => setGameResourcesError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
 
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "research" || publicSession === "") {
+      setGameResearch(null);
+      setGameResearchError(null);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const researchSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      researchSearch.set("cp", selectedPlanet);
+    }
+    fetch(`/api/game/research?${researchSearch.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameResearchStatus>)
+      .then((payload) => {
+        setGameResearch(payload);
+        setGameResearchError(null);
+      })
+      .catch((err: unknown) => setGameResearchError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
   const checks = useMemo(
     () => [
       ["Go target", health?.goTarget ?? "1.25"],
@@ -388,6 +418,8 @@ function App() {
         resourcesError={gameResourcesError}
         resourcesPending={gameResourcesPending}
         resourcesStatus={gameResources}
+        researchError={gameResearchError}
+        researchStatus={gameResearch}
         status={gameOverview}
       />
     );

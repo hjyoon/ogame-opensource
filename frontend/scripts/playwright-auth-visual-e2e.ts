@@ -14,6 +14,7 @@ type ViewportSpec = {
 type AuthPageSpec = {
   name: string;
   legacyPage: string;
+  legacyQuery?: Record<string, string>;
   migratedPath: string;
   legacyReady: string;
   migratedReady: string;
@@ -106,6 +107,15 @@ const pageSpecs: AuthPageSpec[] = [
     legacyReady: "#content form#ressourcen",
     migratedReady: ".legacy-resources-table",
     expectedTexts: ["Production factor:", "Resource settings on planet", "Basic Income", "Storage capacity", "Total per hour:"]
+  },
+  {
+    name: "game-research",
+    legacyPage: "buildings",
+    legacyQuery: { mode: "Forschung" },
+    migratedPath: "/game/research",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-research-table",
+    expectedTexts: ["In order to do this, you need to build a research lab!"]
   }
 ];
 
@@ -200,7 +210,11 @@ try {
 }
 
 function legacyURL(spec: AuthPageSpec, session: string): string {
-  return `${legacyBaseURL}/game/index.php?page=${encodeURIComponent(spec.legacyPage)}&session=${encodeURIComponent(session)}`;
+  const query = new URLSearchParams({ page: spec.legacyPage, session });
+  for (const [key, value] of Object.entries(spec.legacyQuery ?? {})) {
+    query.set(key, value);
+  }
+  return `${legacyBaseURL}/game/index.php?${query.toString()}`;
 }
 
 function migratedURL(spec: AuthPageSpec, session: string): string {

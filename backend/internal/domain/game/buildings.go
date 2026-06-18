@@ -32,8 +32,22 @@ const (
 	BuildingJumpGate        = 43
 	BuildingMissileSilo     = 44
 
-	ResearchComputer = 108
-	ResearchEnergy   = 113
+	ResearchEspionage            = 106
+	ResearchComputer             = 108
+	ResearchWeapon               = 109
+	ResearchShield               = 110
+	ResearchArmour               = 111
+	ResearchEnergy               = 113
+	ResearchHyperspace           = 114
+	ResearchCombustionDrive      = 115
+	ResearchImpulseDrive         = 117
+	ResearchHyperspaceDrive      = 118
+	ResearchLaser                = 120
+	ResearchIon                  = 121
+	ResearchPlasma               = 122
+	ResearchIntergalacticNetwork = 123
+	ResearchExpedition           = 124
+	ResearchGraviton             = 199
 )
 
 const buildingDurationFactor = 2500
@@ -102,6 +116,27 @@ func BuildingIDs() []int {
 
 func BuildingResearchIDs() []int {
 	return []int{ResearchComputer, ResearchEnergy}
+}
+
+func ResearchIDs() []int {
+	return []int{
+		ResearchEspionage,
+		ResearchComputer,
+		ResearchWeapon,
+		ResearchShield,
+		ResearchArmour,
+		ResearchEnergy,
+		ResearchHyperspace,
+		ResearchCombustionDrive,
+		ResearchImpulseDrive,
+		ResearchHyperspaceDrive,
+		ResearchLaser,
+		ResearchIon,
+		ResearchPlasma,
+		ResearchIntergalacticNetwork,
+		ResearchExpedition,
+		ResearchGraviton,
+	}
 }
 
 func BuildBuildings(overview Overview, levels BuildingLevels, research ResearchLevels, speed float64) Buildings {

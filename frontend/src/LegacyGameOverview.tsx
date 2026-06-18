@@ -19,6 +19,12 @@ export type GameResourcesStatus = {
   resources?: GameResourceProduction;
 };
 
+export type GameResearchStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  research?: GameResearch;
+};
+
 type GameOverview = {
   commander: string;
   score: {
@@ -70,6 +76,14 @@ type GameBuildings = {
   commander: string;
   currentPlanet: GamePlanetOverview;
   planetSwitcher: GamePlanetSummary[];
+  items: GameBuildingItem[];
+};
+
+type GameResearch = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  hasLab: boolean;
   items: GameBuildingItem[];
 };
 
@@ -136,6 +150,8 @@ type LegacyGameOverviewProps = {
   resourcesError: string | null;
   resourcesPending: boolean;
   onResourcesSubmit: (production: Record<string, string>) => void;
+  researchStatus: GameResearchStatus | null;
+  researchError: string | null;
 };
 
 type LegacyMenuEntry =
@@ -180,7 +196,9 @@ export function LegacyGameOverview({
   resourcesStatus,
   resourcesError,
   resourcesPending,
-  onResourcesSubmit
+  onResourcesSubmit,
+  researchStatus,
+  researchError
 }: LegacyGameOverviewProps) {
   const overview = status?.authenticated ? status.overview : undefined;
   const issue = status && !status.authenticated ? status.issues[0]?.message ?? "Session is invalid." : null;
@@ -190,6 +208,9 @@ export function LegacyGameOverview({
   const resources = resourcesStatus?.authenticated ? resourcesStatus.resources : undefined;
   const resourcesIssue =
     resourcesStatus && !resourcesStatus.authenticated ? resourcesStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const research = researchStatus?.authenticated ? researchStatus.research : undefined;
+  const researchIssue =
+    researchStatus && !researchStatus.authenticated ? researchStatus.issues[0]?.message ?? "Session is invalid." : null;
   const contentClassName = route.key === "overview" ? "legacy-content legacy-content-overview" : "legacy-content";
 
   return (
@@ -219,6 +240,10 @@ export function LegacyGameOverview({
         {route.key === "resources" && !resourcesError && resourcesIssue ? (
           <LegacyMessage tone="error" text={resourcesIssue} />
         ) : null}
+        {route.key === "research" && researchError ? <LegacyMessage tone="error" text={researchError} /> : null}
+        {route.key === "research" && !researchError && researchIssue ? (
+          <LegacyMessage tone="error" text={researchIssue} />
+        ) : null}
         {overview && route.key === "overview" ? <OverviewTable overview={overview} /> : null}
         {overview && route.key === "buildings" && !buildings && !buildingsError && !buildingsIssue ? (
           <LegacyMessage tone="neutral" text="Loading buildings..." />
@@ -230,7 +255,11 @@ export function LegacyGameOverview({
         {resources && route.key === "resources" ? (
           <ResourcesTable onSubmit={onResourcesSubmit} pending={resourcesPending} resources={resources} />
         ) : null}
-        {overview && route.key !== "overview" && route.key !== "buildings" && route.key !== "resources" ? (
+        {overview && route.key === "research" && !research && !researchError && !researchIssue ? (
+          <LegacyMessage tone="neutral" text="Loading research..." />
+        ) : null}
+        {research && route.key === "research" ? <ResearchTable research={research} /> : null}
+        {overview && route.key !== "overview" && route.key !== "buildings" && route.key !== "resources" && route.key !== "research" ? (
           <MigrationPendingGameTable route={route} />
         ) : null}
       </section>
@@ -431,6 +460,74 @@ function BuildingsTable({ buildings }: { buildings: GameBuildings }) {
               <span className={item.canBuild ? "legacy-build-ok" : "legacy-build-blocked"}>
                 {item.action}
                 {item.action === "Build level" ? (
+                  <>
+                    <br />
+                    level {item.nextLevel}
+                  </>
+                ) : null}
+              </span>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function ResearchTable({ research }: { research: GameResearch }) {
+  if (!research.hasLab) {
+    return (
+      <table className="legacy-overview-table legacy-research-table" width={530}>
+        <tbody>
+          <tr>
+            <td className="legacy-c">Research</td>
+          </tr>
+          <tr>
+            <th>In order to do this, you need to build a research lab!</th>
+          </tr>
+        </tbody>
+      </table>
+    );
+  }
+  return (
+    <table className="legacy-overview-table legacy-research-table" width={530}>
+      <tbody>
+        <tr>
+          <td className="legacy-l" colSpan={2}>
+            Description
+          </td>
+          <td className="legacy-l">
+            <b>Qty.</b>
+          </td>
+        </tr>
+        {research.items.map((item) => (
+          <tr data-research-row={item.id} key={item.id}>
+            <td className="legacy-l legacy-building-image">
+              <a href={gameRouteURL("/game/technology", window.location.search)}>
+                <img alt="" height={120} src={`${skinBase}/gebaeude/${item.id}.gif`} width={120} />
+              </a>
+            </td>
+            <td className="legacy-l legacy-building-description">
+              <a href={gameRouteURL("/game/technology", window.location.search)}>{item.name}</a>
+              {item.level > 0 ? <> (level {item.level})</> : null}
+              <br />
+              {item.description}
+              <br />
+              Cost:
+              {costParts(item.cost).map((part) => (
+                <React.Fragment key={part.name}>
+                  {" "}
+                  {part.name}: <b>{formatLegacyNumber(part.value)}</b>
+                </React.Fragment>
+              ))}
+              <br />
+              Duration: {formatLegacyDuration(item.durationSeconds)}
+              <br />
+            </td>
+            <td className="legacy-l legacy-building-action">
+              <span className={item.canBuild ? "legacy-build-ok" : "legacy-build-blocked"}>
+                {item.action}
+                {item.action === "Research level" ? (
                   <>
                     <br />
                     level {item.nextLevel}

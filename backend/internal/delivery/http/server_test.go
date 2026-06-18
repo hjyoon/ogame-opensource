@@ -860,6 +860,135 @@ func TestGameBuildingsEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 	}
 }
 
+func TestGameResearchEndpointReturnsResearch(t *testing.T) {
+	research := &fakeGameResearch{result: appgame.ResearchResult{
+		Authenticated: true,
+		Research: domaingame.Research{
+			Commander: "legor",
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:   99,
+				Name: "Arakis",
+				Type: domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+			},
+			PlanetSwitcher: []domaingame.PlanetSummary{{
+				ID:   99,
+				Name: "Arakis",
+				Type: domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+				Current: true,
+			}},
+			HasLab: true,
+			Items: []domaingame.BuildingItem{{
+				ID:              domaingame.ResearchComputer,
+				Name:            "Computer Technology",
+				Description:     "More fleets can be commanded.",
+				Level:           1,
+				NextLevel:       2,
+				Cost:            domaingame.BuildingCost{Crystal: 800, Deuterium: 1200},
+				DurationSeconds: 240,
+				CanBuild:        true,
+				Action:          "Research level",
+			}},
+		},
+	}}
+	server := testServerWithGameResearch(t, research)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/research?session=public&cp=99", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameResearchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Research == nil || response.Research.Commander != "legor" || !response.Research.HasLab || len(response.Research.Items) != 1 || len(response.Research.PlanetSwitcher) != 1 {
+		t.Fatalf("expected authenticated research response, got %+v", response)
+	}
+	if response.Research.Items[0].Cost.Crystal != 800 || response.Research.Items[0].DurationSeconds != 240 {
+		t.Fatalf("unexpected research mapping: %+v", response.Research.Items[0])
+	}
+	if research.command.PublicSession != "public" || research.command.PlanetID != 99 || research.command.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected research command: %+v", research.command)
+	}
+	if research.command.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("expected private session cookie to be passed, got %+v", research.command.PrivateSessions)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("private")) {
+		t.Fatalf("game research response must not echo private session: %s", rec.Body.String())
+	}
+}
+
+func TestGameResearchEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
+	research := &fakeGameResearch{result: appgame.ResearchResult{
+		Authenticated: false,
+		Issues: []domainpublicsite.SessionIssue{{
+			Code:    domainpublicsite.SessionIssuePrivateInvalid,
+			Message: "Private session is invalid.",
+		}},
+	}}
+	server := testServerWithGameResearch(t, research)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/research?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var response gameResearchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Authenticated || response.Research != nil || len(response.Issues) != 1 {
+		t.Fatalf("expected invalid research session response, got %+v", response)
+	}
+}
+
+func TestGameResearchEndpointRejectsInvalidPlanetID(t *testing.T) {
+	server := testServerWithGameResearch(t, &fakeGameResearch{})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/research?session=public&cp=abc", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid selected planet to return 400, got %d", rec.Code)
+	}
+}
+
+func TestGameResearchEndpointReturnsUnavailableWithoutUseCase(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/research?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game research use case to return 503, got %d", rec.Code)
+	}
+}
+
+func TestGameResearchEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
+	server := testServerWithGameResearch(t, &fakeGameResearch{err: errors.New("research failed")})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/research?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game research error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestGameResourcesEndpointReturnsResources(t *testing.T) {
 	resources := &fakeGameResources{result: appgame.ResourcesResult{
 		Authenticated: true,
@@ -1272,6 +1401,14 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game buildings method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "/api/game/research", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("expected game research method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
+
 	req = httptest.NewRequest(http.MethodPut, "/api/game/resources", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -1462,6 +1599,19 @@ func testServerWithGameResources(t *testing.T, resources GameResourcesUseCase) h
 	})
 }
 
+func testServerWithGameResearch(t *testing.T, research GameResearchUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		GameResearch:       research,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
 func testServerWithCustomDrafts(t *testing.T, registrationDrafts RegistrationDraftUseCase, loginDrafts LoginDraftUseCase) http.Handler {
 	t.Helper()
 	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
@@ -1600,6 +1750,17 @@ type fakeGameBuildings struct {
 }
 
 func (f *fakeGameBuildings) GetBuildings(_ context.Context, command appgame.BuildingsCommand) (appgame.BuildingsResult, error) {
+	f.command = command
+	return f.result, f.err
+}
+
+type fakeGameResearch struct {
+	result  appgame.ResearchResult
+	err     error
+	command appgame.ResearchCommand
+}
+
+func (f *fakeGameResearch) GetResearch(_ context.Context, command appgame.ResearchCommand) (appgame.ResearchResult, error) {
 	f.command = command
 	return f.result, f.err
 }

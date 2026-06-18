@@ -56,6 +56,10 @@ type GameResourcesUseCase interface {
 	UpdateResources(context.Context, appgame.ResourcesUpdateCommand) (appgame.ResourcesResult, error)
 }
 
+type GameResearchUseCase interface {
+	GetResearch(context.Context, appgame.ResearchCommand) (appgame.ResearchResult, error)
+}
+
 type Dependencies struct {
 	Health             HealthUseCase
 	Universes          UniverseCatalogUseCase
@@ -67,6 +71,7 @@ type Dependencies struct {
 	GameOverview       GameOverviewUseCase
 	GameBuildings      GameBuildingsUseCase
 	GameResources      GameResourcesUseCase
+	GameResearch       GameResearchUseCase
 	Frontend           FrontendAssets
 	LegacyAssets       http.FileSystem
 	Logger             *slog.Logger
@@ -89,6 +94,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/overview", getOnly(a.handleGameOverview))
 	mux.HandleFunc("/api/game/buildings", getOnly(a.handleGameBuildings))
 	mux.HandleFunc("/api/game/resources", a.handleGameResources)
+	mux.HandleFunc("/api/game/research", getOnly(a.handleGameResearch))
 	mux.Handle("/legacy-assets/", http.StripPrefix("/legacy-assets/", http.FileServer(deps.LegacyAssets)))
 	mux.HandleFunc("/", getOnly(a.handleFrontend))
 	handler := securityHeaders(mux)

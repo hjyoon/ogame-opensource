@@ -22,6 +22,7 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/overview").migrated).toBe(true);
     expect(resolveGameRoute("/game/buildings")).toMatchObject({ key: "buildings", migrated: true });
     expect(resolveGameRoute("/game/resources")).toMatchObject({ key: "resources", migrated: true });
+    expect(resolveGameRoute("/game/research")).toMatchObject({ key: "research", migrated: true });
     expect(resolveGameRoute("/game/options").label).toBe("Options");
     expect(resolveGameRoute("/game/messages").label).toBe("Messages");
   });
