@@ -993,7 +993,7 @@ function StatisticsTable({ statistics }: { statistics: GameStatistics }) {
         <table className="legacy-overview-table legacy-statistics-head-table" width={525}>
           <tbody>
             <tr>
-              <td className="legacy-c">Statistics (as of: {formatLegacyDateTime(statistics.generatedAt)})</td>
+              <td className="legacy-c">Statistics (as of: {formatLegacyStatisticsDateTime(statistics.generatedAt)})</td>
             </tr>
             <tr>
               <th>
@@ -2895,6 +2895,10 @@ function formatLegacyDateTime(seconds: number): string {
   )} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(
     date.getSeconds()
   ).padStart(2, "0")}`;
+}
+
+function formatLegacyStatisticsDateTime(seconds: number): string {
+  return formatLegacyDateTime(seconds).replace(" ", ", ");
 }
 
 function formatFleetTimestamp(seconds: number): string {

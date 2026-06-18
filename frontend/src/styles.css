@@ -813,9 +813,9 @@ dd {
 
 .legacy-game-shell .legacy-statistics-player-table td:first-child,
 .legacy-game-shell .legacy-statistics-player-table th:first-child {
-  max-width: 32px;
+  max-width: 36px;
   white-space: normal;
-  width: 32px;
+  width: 36px;
 }
 
 .legacy-game-shell .legacy-statistics-player-table tr:nth-child(n + 11) th:first-child a {
@@ -824,12 +824,12 @@ dd {
 
 .legacy-game-shell .legacy-statistics-player-table td:nth-child(3),
 .legacy-game-shell .legacy-statistics-player-table th:nth-child(3) {
-  width: 40px;
+  width: 49px;
 }
 
 .legacy-game-shell .legacy-statistics-player-table td:nth-child(5),
 .legacy-game-shell .legacy-statistics-player-table th:nth-child(5) {
-  width: 70px;
+  width: 76px;
 }
 
 .legacy-game-shell .legacy-statistics-head-table select,
