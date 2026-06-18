@@ -288,6 +288,8 @@ type GameStatisticsRow = {
   delta: number;
   score: number;
   displayScore: number;
+  members: number;
+  perMember: number;
   scoreDate: number;
   player: { id: number; name: string };
   alliance?: { id: number; tag: string };
@@ -825,6 +827,7 @@ function StatisticsTable({ statistics }: { statistics: GameStatistics }) {
           event.preventDefault();
           const form = new FormData(event.currentTarget);
           const query = new URLSearchParams(window.location.search);
+          query.delete("tid");
           query.set("who", String(form.get("who") ?? "player"));
           query.set("type", String(form.get("type") ?? "ressources"));
           query.set("start", String(form.get("start") ?? "-1"));
@@ -866,52 +869,94 @@ function StatisticsTable({ statistics }: { statistics: GameStatistics }) {
           </tbody>
         </table>
       </form>
-      <table className="legacy-overview-table legacy-statistics-table" width={525}>
-        <tbody>
-          <tr>
-            <td className="legacy-c" width={30}>
-              Place
-            </td>
-            <td className="legacy-c">Player</td>
-            <td className="legacy-c">&nbsp;</td>
-            <td className="legacy-c">Alliance</td>
-            <td className="legacy-c">Points</td>
-          </tr>
-          {statistics.rows.map((row) => (
-            <tr data-statistics-row key={`${row.player.id}-${row.place}`}>
-              <th>
-                {row.place}&nbsp;&nbsp;
-                <StatisticsDelta row={row} />
-              </th>
-              <th>
-                <a
-                  href={row.own ? "#" : gameRouteURL("/game/galaxy", galaxyTargetSearch(row.coordinates))}
-                  style={{ color: row.own ? "lime" : "#FFFFFF" }}
-                >
-                  {row.player.name}
-                </a>
-              </th>
-              <th>
-                {!row.own ? (
-                  <a href={gameRouteURL("/game/messages", window.location.search)}>
-                    <img alt="Write message" src={`${skinBase}/img/m.gif`} style={{ border: 0 }} />
-                  </a>
-                ) : null}
-                &nbsp;
-              </th>
-              <th>
-                {row.alliance ? (
-                  <a href={gameRouteURL("/game/alliance", window.location.search)}>{row.alliance.tag}</a>
-                ) : (
-                  <a href={gameRouteURL("/game/alliance", window.location.search)}>&nbsp;</a>
-                )}
-              </th>
-              <th>{formatLegacyNumber(row.displayScore)}</th>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {statistics.who === "ally" ? <AllianceStatisticsTable statistics={statistics} /> : <PlayerStatisticsTable statistics={statistics} />}
     </>
+  );
+}
+
+function PlayerStatisticsTable({ statistics }: { statistics: GameStatistics }) {
+  return (
+    <table className="legacy-overview-table legacy-statistics-table" width={525}>
+      <tbody>
+        <tr>
+          <td className="legacy-c" width={30}>
+            Place
+          </td>
+          <td className="legacy-c">Player</td>
+          <td className="legacy-c">&nbsp;</td>
+          <td className="legacy-c">Alliance</td>
+          <td className="legacy-c">Points</td>
+        </tr>
+        {statistics.rows.map((row) => (
+          <tr data-statistics-row key={`${row.player.id}-${row.place}`}>
+            <th>
+              {row.place}&nbsp;&nbsp;
+              <StatisticsDelta row={row} />
+            </th>
+            <th>
+              <a
+                href={row.own ? "#" : gameRouteURL("/game/galaxy", galaxyTargetSearch(row.coordinates))}
+                style={{ color: row.own ? "lime" : "#FFFFFF" }}
+              >
+                {row.player.name}
+              </a>
+            </th>
+            <th>
+              {!row.own ? (
+                <a href={gameRouteURL("/game/messages", window.location.search)}>
+                  <img alt="Write message" src={`${skinBase}/img/m.gif`} style={{ border: 0 }} />
+                </a>
+              ) : null}
+              &nbsp;
+            </th>
+            <th>
+              {row.alliance ? (
+                <a href={gameRouteURL("/game/alliance", window.location.search)}>{row.alliance.tag}</a>
+              ) : (
+                <a href={gameRouteURL("/game/alliance", window.location.search)}>&nbsp;</a>
+              )}
+            </th>
+            <th>{formatLegacyNumber(row.displayScore)}</th>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function AllianceStatisticsTable({ statistics }: { statistics: GameStatistics }) {
+  return (
+    <table className="legacy-overview-table legacy-statistics-table" width={519}>
+      <tbody>
+        <tr>
+          <td className="legacy-c" width={30}>
+            Place
+          </td>
+          <td className="legacy-c">Alliance</td>
+          <td className="legacy-c">&nbsp;</td>
+          <td className="legacy-c">Num.</td>
+          <td className="legacy-c">Thousand points</td>
+          <td className="legacy-c">Per person</td>
+        </tr>
+        {statistics.rows.map((row) => (
+          <tr data-statistics-row key={`${row.alliance?.id ?? 0}-${row.place}`}>
+            <th>
+              {row.place}&nbsp;&nbsp;
+              <StatisticsDelta row={row} />
+            </th>
+            <th>
+              <a href={row.own ? "#" : gameRouteURL("/game/alliance", window.location.search)} style={{ color: row.own ? "lime" : "#FFFFFF" }}>
+                {row.alliance?.tag ?? ""}
+              </a>
+            </th>
+            <th>&nbsp;</th>
+            <th>{formatLegacyNumber(row.members)}</th>
+            <th>{formatLegacyNumber(row.displayScore)}</th>
+            <th>{formatLegacyNumber(row.perMember)}</th>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

@@ -77,6 +77,7 @@ try {
   await assertGameClientNavigation(page, "game technology menu preserves CSR", "a[href^='/game/technology']", "/game/technology", "Technology");
   await assertTechnologyDetailsNavigation(page);
   await assertGameClientNavigation(page, "game statistics menu preserves CSR", "a[href^='/game/statistics']", "/game/statistics", "Statistics");
+  await assertStatisticsAllianceMode(page);
   await assertGameClientNavigation(page, "game overview menu preserves CSR", "a[href^='/game/overview']", "/game/overview", "Overview");
   await assertGameLogout(page);
 
@@ -332,6 +333,36 @@ async function assertTechnologyDetailsNavigation(page: Page) {
   });
 }
 
+async function assertStatisticsAllianceMode(page: Page) {
+  const marker = "probe-game-statistics-alliance";
+  await page.evaluate((value) => {
+    window.__ogameCsrProbe = value;
+  }, marker);
+  await page.locator("select[name='who']").selectOption("ally");
+  await page.locator(".legacy-statistics-head-table input[type='submit']").click();
+  await page.waitForFunction(() => window.location.pathname === "/game/statistics" && window.location.search.includes("who=ally"), undefined, {
+    timeout: 5_000
+  });
+  await page.locator(".legacy-statistics-table", { hasText: "Per person" }).waitFor({ timeout: 10_000 });
+  await record("game statistics alliance mode preserves CSR", async () => {
+    const state = await gameShellState(page, marker, "Statistics");
+    return {
+      pass:
+        state.pass &&
+        state.details.pathname === "/game/statistics" &&
+        state.details.search.includes("who=ally") &&
+        !state.details.search.includes("tid=") &&
+        state.details.statisticsTable === true &&
+        state.details.statisticsRows >= 0 &&
+        state.details.statisticsBodyText.includes("Alliance") &&
+        state.details.statisticsBodyText.includes("Num.") &&
+        state.details.statisticsBodyText.includes("Per person") &&
+        state.details.pendingText === false,
+      details: state.details
+    };
+  });
+}
+
 async function assertGameLogout(page: Page) {
   const marker = "probe-game-logout";
   await page.evaluate((value) => {
@@ -428,6 +459,7 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     statisticsTable: document.querySelector(".legacy-statistics-table") !== null,
     statisticsRows: document.querySelectorAll("[data-statistics-row]").length,
     statisticsText: document.querySelector(".legacy-statistics-head-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
+    statisticsBodyText: document.querySelector(".legacy-statistics-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     logoutTable: document.querySelector(".legacy-logout-table") !== null,
     logoutText: document.querySelector(".legacy-logout-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     pendingText: document.body.textContent?.includes("queued for React and Go migration") ?? false

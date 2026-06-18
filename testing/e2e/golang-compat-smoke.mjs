@@ -480,6 +480,16 @@ try {
     gameResearchStatisticsBody = {};
   }
 
+  const gameAllianceStatistics = await request(`/api/game/statistics${sessionSearch}&who=ally&type=ressources&start=1`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameAllianceStatisticsBody = {};
+  try {
+    gameAllianceStatisticsBody = JSON.parse(gameAllianceStatistics.body);
+  } catch {
+    gameAllianceStatisticsBody = {};
+  }
+
   const gameStatisticsWithoutCookie = await request(`/api/game/statistics${sessionSearch}`);
   let gameStatisticsWithoutCookieBody = {};
   try {
@@ -698,6 +708,16 @@ try {
         status: gameResearchStatistics.status
       }),
       check(gameResearchStatisticsBody.statistics?.type === "research", "game research statistics returns research type", gameResearchStatisticsBody),
+      check(gameAllianceStatistics.status === 200, "game alliance statistics returns HTTP 200 with private cookie", {
+        status: gameAllianceStatistics.status
+      }),
+      check(gameAllianceStatisticsBody.statistics?.who === "ally", "game alliance statistics keeps alliance mode", gameAllianceStatisticsBody),
+      check(
+        Array.isArray(gameAllianceStatisticsBody.statistics?.rows) &&
+          gameAllianceStatisticsBody.statistics.rows.every((row) => Number.isFinite(row.members) && Number.isFinite(row.perMember)),
+        "game alliance statistics rows expose member and per-member scores",
+        gameAllianceStatisticsBody
+      ),
       check(!gameStatistics.body.includes(sessionCookiePair), "game statistics response does not echo private cookie"),
       check(gameStatisticsWithoutCookie.status === 401, "game statistics rejects missing private cookie", { status: gameStatisticsWithoutCookie.status }),
       check(gameStatisticsWithoutCookieBody.authenticated === false, "game statistics missing private cookie is unauthenticated", gameStatisticsWithoutCookieBody),

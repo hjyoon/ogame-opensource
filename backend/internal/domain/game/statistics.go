@@ -29,6 +29,7 @@ type StatisticsRow struct {
 	Player        StatisticsPlayer
 	Alliance      *StatisticsAlliance
 	Coordinates   Coordinates
+	Members       int
 	Own           bool
 }
 
@@ -87,6 +88,14 @@ func (r StatisticsRow) DisplayScore(statType string) int64 {
 		return r.Score / 1000
 	}
 	return r.Score
+}
+
+func (r StatisticsRow) DisplayScorePerMember(statType string) int64 {
+	if r.Members <= 0 {
+		return 0
+	}
+	score := r.DisplayScore(statType)
+	return (score + int64(r.Members) - 1) / int64(r.Members)
 }
 
 func (r StatisticsRow) PlaceDelta() int {

@@ -33,6 +33,8 @@ type gameStatisticsRowResponse struct {
 	Delta         int                             `json:"delta"`
 	Score         int64                           `json:"score"`
 	DisplayScore  int64                           `json:"displayScore"`
+	Members       int                             `json:"members"`
+	PerMember     int64                           `json:"perMember"`
 	ScoreDate     int64                           `json:"scoreDate"`
 	Player        gameStatisticsPlayerResponse    `json:"player"`
 	Alliance      *gameStatisticsAllianceResponse `json:"alliance,omitempty"`
@@ -132,6 +134,8 @@ func toGameStatisticsRowResponse(row domaingame.StatisticsRow, statType string) 
 		Delta:         row.PlaceDelta(),
 		Score:         row.Score,
 		DisplayScore:  row.DisplayScore(statType),
+		Members:       row.Members,
+		PerMember:     row.DisplayScorePerMember(statType),
 		ScoreDate:     row.ScoreDate,
 		Player: gameStatisticsPlayerResponse{
 			ID:   row.Player.ID,

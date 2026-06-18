@@ -1837,6 +1837,7 @@ func TestGameStatisticsEndpointReturnsStatistics(t *testing.T) {
 				Player:        domaingame.StatisticsPlayer{ID: 42, Name: "legor"},
 				Alliance:      &domaingame.StatisticsAlliance{ID: 7, Tag: "TAG"},
 				Coordinates:   domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+				Members:       3,
 				Own:           true,
 			}},
 		},
@@ -1859,7 +1860,7 @@ func TestGameStatisticsEndpointReturnsStatistics(t *testing.T) {
 		t.Fatalf("expected authenticated statistics response, got %+v", response)
 	}
 	row := response.Statistics.Rows[0]
-	if row.DisplayScore != 950000 || row.Delta != -2 || !row.Own || row.Alliance == nil || row.Alliance.Tag != "TAG" {
+	if row.DisplayScore != 950000 || row.Members != 3 || row.PerMember != 316667 || row.Delta != -2 || !row.Own || row.Alliance == nil || row.Alliance.Tag != "TAG" {
 		t.Fatalf("unexpected statistics row mapping: %+v", row)
 	}
 	if statistics.command.PublicSession != "public" || statistics.command.PlanetID != 99 ||

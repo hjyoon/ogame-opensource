@@ -183,6 +183,16 @@ const pageSpecs: AuthPageSpec[] = [
     legacyReady: "#content table",
     migratedReady: ".legacy-statistics-table",
     expectedTexts: ["Statistics", "What kind of", "Player", "Alliance", "Points"]
+  },
+  {
+    name: "game-statistics-alliance",
+    legacyPage: "statistics",
+    legacyQuery: { who: "ally", type: "ressources", start: "1" },
+    migratedPath: "/game/statistics",
+    migratedQuery: { who: "ally", type: "ressources", start: "1" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-statistics-table",
+    expectedTexts: ["Statistics", "What kind of", "Alliance", "Num.", "Thousand points", "Per person"]
   }
 ];
 

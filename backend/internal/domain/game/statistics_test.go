@@ -31,12 +31,16 @@ func TestStatisticsScoreColumnsAndDisplayScoreMatchLegacy(t *testing.T) {
 		t.Fatalf("unexpected research columns: %s %s %s", score, place, oldPlace)
 	}
 
-	row := StatisticsRow{Place: 2, PreviousPlace: 5, Score: 950000000}
-	if row.DisplayScore(StatisticsTypeResources) != 950000 || row.DisplayScore(StatisticsTypeFleet) != 950000000 || row.PlaceDelta() != -3 {
+	row := StatisticsRow{Place: 2, PreviousPlace: 5, Score: 950000000, Members: 3}
+	if row.DisplayScore(StatisticsTypeResources) != 950000 ||
+		row.DisplayScore(StatisticsTypeFleet) != 950000000 ||
+		row.DisplayScorePerMember(StatisticsTypeResources) != 316667 ||
+		row.PlaceDelta() != -3 {
 		t.Fatalf("unexpected row display values: %+v", row)
 	}
 	row.Score = -1
-	if row.DisplayScore(StatisticsTypeResources) != 0 {
-		t.Fatal("negative scores should display as zero")
+	row.Members = 0
+	if row.DisplayScore(StatisticsTypeResources) != 0 || row.DisplayScorePerMember(StatisticsTypeResources) != 0 {
+		t.Fatal("negative scores and missing members should display as zero")
 	}
 }
