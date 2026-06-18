@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import {
   LegacyGameOverview,
   type GameBuildingsStatus,
+  type GameDefenseStatus,
   type GameOverviewStatus,
   type GameResearchStatus,
   type GameResourcesStatus,
@@ -194,6 +195,8 @@ function App() {
   const [gameResearchError, setGameResearchError] = useState<string | null>(null);
   const [gameShipyard, setGameShipyard] = useState<GameShipyardStatus | null>(null);
   const [gameShipyardError, setGameShipyardError] = useState<string | null>(null);
+  const [gameDefense, setGameDefense] = useState<GameDefenseStatus | null>(null);
+  const [gameDefenseError, setGameDefenseError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
   const gameRoute = pathname.startsWith("/game") ? resolveGameRoute(pathname) : null;
@@ -414,6 +417,28 @@ function App() {
       .catch((err: unknown) => setGameShipyardError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
 
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "defense" || publicSession === "") {
+      setGameDefense(null);
+      setGameDefenseError(null);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const defenseSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      defenseSearch.set("cp", selectedPlanet);
+    }
+    fetch(`/api/game/defense?${defenseSearch.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameDefenseStatus>)
+      .then((payload) => {
+        setGameDefense(payload);
+        setGameDefenseError(null);
+      })
+      .catch((err: unknown) => setGameDefenseError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
   const checks = useMemo(
     () => [
       ["Go target", health?.goTarget ?? "1.25"],
@@ -437,6 +462,8 @@ function App() {
       <LegacyGameOverview
         buildingsError={gameBuildingsError}
         buildingsStatus={gameBuildings}
+        defenseError={gameDefenseError}
+        defenseStatus={gameDefense}
         error={gameOverviewError}
         onResourcesSubmit={submitGameResources}
         route={gameRoute ?? resolveGameRoute(pathname)}

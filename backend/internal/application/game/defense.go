@@ -1,0 +1,74 @@
+package game
+
+import (
+	"context"
+	"errors"
+
+	apppublicsite "github.com/hjyoon/ogame-opensource/backend/internal/application/publicsite"
+	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainpublicsite "github.com/hjyoon/ogame-opensource/backend/internal/domain/publicsite"
+)
+
+type DefenseRepository interface {
+	GetDefense(context.Context, DefenseQuery) (domaingame.Defense, error)
+}
+
+type DefenseQuery struct {
+	PlayerID int
+	PlanetID int
+}
+
+type DefenseCommand struct {
+	PublicSession   string
+	PrivateSessions map[string]string
+	RemoteAddr      string
+	PlanetID        int
+}
+
+type DefenseResult struct {
+	Authenticated bool
+	Issues        []domainpublicsite.SessionIssue
+	Defense       domaingame.Defense
+}
+
+type DefenseService struct {
+	sessions   SessionLookup
+	repository DefenseRepository
+}
+
+func NewDefenseService(sessions SessionLookup, repository DefenseRepository) DefenseService {
+	return DefenseService{sessions: sessions, repository: repository}
+}
+
+func (s DefenseService) GetDefense(ctx context.Context, command DefenseCommand) (DefenseResult, error) {
+	if s.sessions == nil || s.repository == nil {
+		return DefenseResult{}, errors.New("defense dependencies unavailable")
+	}
+
+	session, err := s.sessions.GetGameSession(ctx, apppublicsite.GameSessionCommand{
+		PublicSession:   command.PublicSession,
+		PrivateSessions: command.PrivateSessions,
+		RemoteAddr:      command.RemoteAddr,
+	})
+	if err != nil {
+		return DefenseResult{}, err
+	}
+	if !session.Authenticated {
+		return DefenseResult{
+			Authenticated: false,
+			Issues:        session.Issues,
+		}, nil
+	}
+
+	defense, err := s.repository.GetDefense(ctx, DefenseQuery{
+		PlayerID: session.Session.PlayerID,
+		PlanetID: command.PlanetID,
+	})
+	if err != nil {
+		return DefenseResult{}, err
+	}
+	return DefenseResult{
+		Authenticated: true,
+		Defense:       defense,
+	}, nil
+}

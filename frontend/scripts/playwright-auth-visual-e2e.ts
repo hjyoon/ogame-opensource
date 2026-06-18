@@ -125,6 +125,15 @@ const pageSpecs: AuthPageSpec[] = [
     legacyReady: "#content table",
     migratedReady: ".legacy-shipyard-table",
     expectedTexts: ["In order to do that, you need to build a shipyard!"]
+  },
+  {
+    name: "game-defense",
+    legacyPage: "buildings",
+    legacyQuery: { mode: "Verteidigung" },
+    migratedPath: "/game/defense",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-defense-table",
+    expectedTexts: ["In order to do that, you need to build a shipyard!"]
   }
 ];
 

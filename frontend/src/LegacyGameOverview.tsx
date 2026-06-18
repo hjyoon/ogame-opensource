@@ -31,6 +31,12 @@ export type GameShipyardStatus = {
   shipyard?: GameShipyard;
 };
 
+export type GameDefenseStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  defense?: GameDefense;
+};
+
 type GameOverview = {
   commander: string;
   score: {
@@ -94,6 +100,15 @@ type GameResearch = {
 };
 
 type GameShipyard = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  hasShipyard: boolean;
+  busy: boolean;
+  items: GameShipyardItem[];
+};
+
+type GameDefense = {
   commander: string;
   currentPlanet: GamePlanetOverview;
   planetSwitcher: GamePlanetSummary[];
@@ -182,6 +197,8 @@ type LegacyGameOverviewProps = {
   researchError: string | null;
   shipyardStatus: GameShipyardStatus | null;
   shipyardError: string | null;
+  defenseStatus: GameDefenseStatus | null;
+  defenseError: string | null;
 };
 
 type LegacyMenuEntry =
@@ -230,7 +247,9 @@ export function LegacyGameOverview({
   researchStatus,
   researchError,
   shipyardStatus,
-  shipyardError
+  shipyardError,
+  defenseStatus,
+  defenseError
 }: LegacyGameOverviewProps) {
   const overview = status?.authenticated ? status.overview : undefined;
   const issue = status && !status.authenticated ? status.issues[0]?.message ?? "Session is invalid." : null;
@@ -246,6 +265,9 @@ export function LegacyGameOverview({
   const shipyard = shipyardStatus?.authenticated ? shipyardStatus.shipyard : undefined;
   const shipyardIssue =
     shipyardStatus && !shipyardStatus.authenticated ? shipyardStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const defense = defenseStatus?.authenticated ? defenseStatus.defense : undefined;
+  const defenseIssue =
+    defenseStatus && !defenseStatus.authenticated ? defenseStatus.issues[0]?.message ?? "Session is invalid." : null;
   const contentClassName = route.key === "overview" ? "legacy-content legacy-content-overview" : "legacy-content";
 
   return (
@@ -283,6 +305,8 @@ export function LegacyGameOverview({
         {route.key === "shipyard" && !shipyardError && shipyardIssue ? (
           <LegacyMessage tone="error" text={shipyardIssue} />
         ) : null}
+        {route.key === "defense" && defenseError ? <LegacyMessage tone="error" text={defenseError} /> : null}
+        {route.key === "defense" && !defenseError && defenseIssue ? <LegacyMessage tone="error" text={defenseIssue} /> : null}
         {overview && route.key === "overview" ? <OverviewTable overview={overview} /> : null}
         {overview && route.key === "buildings" && !buildings && !buildingsError && !buildingsIssue ? (
           <LegacyMessage tone="neutral" text="Loading buildings..." />
@@ -302,12 +326,17 @@ export function LegacyGameOverview({
           <LegacyMessage tone="neutral" text="Loading shipyard..." />
         ) : null}
         {shipyard && route.key === "shipyard" ? <ShipyardTable shipyard={shipyard} /> : null}
+        {overview && route.key === "defense" && !defense && !defenseError && !defenseIssue ? (
+          <LegacyMessage tone="neutral" text="Loading defense..." />
+        ) : null}
+        {defense && route.key === "defense" ? <DefenseTable defense={defense} /> : null}
         {overview &&
         route.key !== "overview" &&
         route.key !== "buildings" &&
         route.key !== "resources" &&
         route.key !== "research" &&
-        route.key !== "shipyard" ? (
+        route.key !== "shipyard" &&
+        route.key !== "defense" ? (
           <MigrationPendingGameTable route={route} />
         ) : null}
       </section>
@@ -651,6 +680,93 @@ function ShipyardTable({ shipyard }: { shipyard: GameShipyard }) {
               <td className="legacy-l legacy-building-action">
                 {!item.meetsRequirement ? <span className="legacy-build-blocked">impossibly</span> : null}
                 {item.meetsRequirement && item.canBuild ? (
+                  <>
+                    <input aria-label={item.name} defaultValue={0} maxLength={6} name={`fmenge[${item.id}]`} size={6} type="text" />
+                    {item.maxBuild > 0 ? (
+                      <>
+                        <br />
+                        <a href="#max" onClick={(event) => event.preventDefault()}>
+                          (max. {item.maxBuild})
+                        </a>
+                      </>
+                    ) : null}
+                  </>
+                ) : null}
+              </td>
+            </tr>
+          ))}
+          <tr>
+            <td className="legacy-c" colSpan={2}>
+              <input type="submit" value="Build" />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  );
+}
+
+function DefenseTable({ defense }: { defense: GameDefense }) {
+  if (!defense.hasShipyard) {
+    return (
+      <table className="legacy-overview-table legacy-defense-table" width={530}>
+        <tbody>
+          <tr>
+            <td className="legacy-l" colSpan={2}>
+              Description
+            </td>
+            <td className="legacy-l">
+              <b>Qty.</b>
+            </td>
+          </tr>
+          <tr>
+            <td className="legacy-c" colSpan={3}>
+              In order to do that, you need to build a shipyard!
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    );
+  }
+  return (
+    <form className="legacy-defense-form" onSubmit={(event) => event.preventDefault()}>
+      <table className="legacy-overview-table legacy-defense-table" width={530}>
+        <tbody>
+          <tr>
+            <td className="legacy-l" colSpan={2}>
+              Description
+            </td>
+            <td className="legacy-l">
+              <b>Qty.</b>
+            </td>
+          </tr>
+          {defense.items.map((item) => (
+            <tr data-defense-row={item.id} key={item.id}>
+              <td className="legacy-l legacy-building-image">
+                <a href={gameRouteURL("/game/technology", window.location.search)}>
+                  <img alt="" height={120} src={`${skinBase}/gebaeude/${item.id}.gif`} width={120} />
+                </a>
+              </td>
+              <td className="legacy-l legacy-building-description">
+                <a href={gameRouteURL("/game/technology", window.location.search)}>{item.name}</a>
+                {item.count > 0 ? <> (in stock {item.count})</> : null}
+                <br />
+                {item.description}
+                <br />
+                Cost:
+                {costParts(item.cost).map((part) => (
+                  <React.Fragment key={part.name}>
+                    {" "}
+                    {part.name}: <b>{formatLegacyNumber(part.value)}</b>
+                  </React.Fragment>
+                ))}
+                <br />
+                Duration: {formatLegacyDuration(item.durationSeconds)}
+                <br />
+              </td>
+              <td className="legacy-l legacy-building-action">
+                {item.blockedReason ? <span className="legacy-build-blocked">{item.blockedReason}</span> : null}
+                {!item.blockedReason && item.canBuild ? (
                   <>
                     <input aria-label={item.name} defaultValue={0} maxLength={6} name={`fmenge[${item.id}]`} size={6} type="text" />
                     {item.maxBuild > 0 ? (

@@ -64,6 +64,10 @@ type GameShipyardUseCase interface {
 	GetShipyard(context.Context, appgame.ShipyardCommand) (appgame.ShipyardResult, error)
 }
 
+type GameDefenseUseCase interface {
+	GetDefense(context.Context, appgame.DefenseCommand) (appgame.DefenseResult, error)
+}
+
 type Dependencies struct {
 	Health             HealthUseCase
 	Universes          UniverseCatalogUseCase
@@ -77,6 +81,7 @@ type Dependencies struct {
 	GameResources      GameResourcesUseCase
 	GameResearch       GameResearchUseCase
 	GameShipyard       GameShipyardUseCase
+	GameDefense        GameDefenseUseCase
 	Frontend           FrontendAssets
 	LegacyAssets       http.FileSystem
 	Logger             *slog.Logger
@@ -101,6 +106,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/resources", a.handleGameResources)
 	mux.HandleFunc("/api/game/research", getOnly(a.handleGameResearch))
 	mux.HandleFunc("/api/game/shipyard", getOnly(a.handleGameShipyard))
+	mux.HandleFunc("/api/game/defense", getOnly(a.handleGameDefense))
 	mux.Handle("/legacy-assets/", http.StripPrefix("/legacy-assets/", http.FileServer(deps.LegacyAssets)))
 	mux.HandleFunc("/", getOnly(a.handleFrontend))
 	handler := securityHeaders(mux)

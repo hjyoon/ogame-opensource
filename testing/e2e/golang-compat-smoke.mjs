@@ -328,6 +328,24 @@ try {
     gameShipyardWithoutCookieBody = {};
   }
 
+  const gameDefense = await request(`/api/game/defense${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameDefenseBody = {};
+  try {
+    gameDefenseBody = JSON.parse(gameDefense.body);
+  } catch {
+    gameDefenseBody = {};
+  }
+
+  const gameDefenseWithoutCookie = await request(`/api/game/defense${sessionSearch}`);
+  let gameDefenseWithoutCookieBody = {};
+  try {
+    gameDefenseWithoutCookieBody = JSON.parse(gameDefenseWithoutCookie.body);
+  } catch {
+    gameDefenseWithoutCookieBody = {};
+  }
+
   const gameResources = await request(`/api/game/resources${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -444,6 +462,13 @@ try {
       check(!gameShipyard.body.includes(sessionCookiePair), "game shipyard response does not echo private cookie"),
       check(gameShipyardWithoutCookie.status === 401, "game shipyard rejects missing private cookie", { status: gameShipyardWithoutCookie.status }),
       check(gameShipyardWithoutCookieBody.authenticated === false, "game shipyard missing private cookie is unauthenticated", gameShipyardWithoutCookieBody),
+      check(gameDefense.status === 200, "game defense returns HTTP 200 with private cookie", { status: gameDefense.status }),
+      check(gameDefenseBody.authenticated === true, "game defense authenticates the login session", gameDefenseBody),
+      check(Array.isArray(gameDefenseBody.defense?.items), "game defense returns migrated defense rows array", gameDefenseBody),
+      check(typeof gameDefenseBody.defense?.hasShipyard === "boolean", "game defense returns shipyard availability", gameDefenseBody),
+      check(!gameDefense.body.includes(sessionCookiePair), "game defense response does not echo private cookie"),
+      check(gameDefenseWithoutCookie.status === 401, "game defense rejects missing private cookie", { status: gameDefenseWithoutCookie.status }),
+      check(gameDefenseWithoutCookieBody.authenticated === false, "game defense missing private cookie is unauthenticated", gameDefenseWithoutCookieBody),
       check(gameResources.status === 200, "game resources returns HTTP 200 with private cookie", { status: gameResources.status }),
       check(gameResourcesBody.authenticated === true, "game resources authenticates the login session", gameResourcesBody),
       check(Number.isFinite(gameResourcesBody.resources?.factor), "game resources returns production factor", gameResourcesBody),
@@ -571,6 +596,7 @@ try {
       check(js.body.includes("/api/game/resources"), "React bundle consumes game resources API"),
       check(js.body.includes("/api/game/research"), "React bundle consumes game research API"),
       check(js.body.includes("/api/game/shipyard"), "React bundle consumes game shipyard API"),
+      check(js.body.includes("/api/game/defense"), "React bundle consumes game defense API"),
       check(js.body.includes("legacy-public-main"), "React bundle contains legacy public home layout"),
       check(js.body.includes("legacy-public-register-panel"), "React bundle contains legacy public registration layout"),
       check(js.body.includes("legacy-public-about-panel"), "React bundle contains legacy public about layout"),
@@ -583,7 +609,8 @@ try {
       check(js.body.includes("legacy-buildings-table"), "React bundle contains legacy game buildings layout"),
       check(js.body.includes("legacy-resources-table"), "React bundle contains legacy game resources layout"),
       check(js.body.includes("legacy-research-table"), "React bundle contains legacy game research layout"),
-      check(js.body.includes("legacy-shipyard-table"), "React bundle contains legacy game shipyard layout")
+      check(js.body.includes("legacy-shipyard-table"), "React bundle contains legacy game shipyard layout"),
+      check(js.body.includes("legacy-defense-table"), "React bundle contains legacy game defense layout")
     ]
   }));
 
@@ -608,6 +635,7 @@ try {
   const postGameBuildings = await request("/api/game/buildings", { method: "POST" });
   const postGameResearch = await request("/api/game/research", { method: "POST" });
   const postGameShipyard = await request("/api/game/shipyard", { method: "POST" });
+  const postGameDefense = await request("/api/game/defense", { method: "POST" });
   const putGameResources = await request("/api/game/resources", { method: "PUT" });
   cases.push(finalize({
     case: "go_method_guards",
@@ -632,6 +660,8 @@ try {
       check(hasHeader(postGameResearch, "allow", "GET, HEAD"), "game research method rejection returns Allow header"),
       check(postGameShipyard.status === 405, "POST game shipyard endpoint is rejected", { status: postGameShipyard.status }),
       check(hasHeader(postGameShipyard, "allow", "GET, HEAD"), "game shipyard method rejection returns Allow header"),
+      check(postGameDefense.status === 405, "POST game defense endpoint is rejected", { status: postGameDefense.status }),
+      check(hasHeader(postGameDefense, "allow", "GET, HEAD"), "game defense method rejection returns Allow header"),
       check(putGameResources.status === 405, "PUT game resources endpoint is rejected", { status: putGameResources.status }),
       check(hasHeader(putGameResources, "allow", "GET, HEAD, POST"), "game resources method rejection returns Allow header")
     ]

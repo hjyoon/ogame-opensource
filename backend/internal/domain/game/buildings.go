@@ -62,6 +62,17 @@ const (
 	FleetDestroyer      = 213
 	FleetDeathstar      = 214
 	FleetBattlecruiser  = 215
+
+	DefenseRocketLauncher        = 401
+	DefenseLightLaser            = 402
+	DefenseHeavyLaser            = 403
+	DefenseGaussCannon           = 404
+	DefenseIonCannon             = 405
+	DefensePlasmaTurret          = 406
+	DefenseSmallShieldDome       = 407
+	DefenseLargeShieldDome       = 408
+	DefenseAntiBallisticMissile  = 502
+	DefenseInterplanetaryMissile = 503
 )
 
 const buildingDurationFactor = 2500
@@ -169,6 +180,21 @@ func FleetIDs() []int {
 		FleetDestroyer,
 		FleetDeathstar,
 		FleetBattlecruiser,
+	}
+}
+
+func DefenseIDs() []int {
+	return []int{
+		DefenseRocketLauncher,
+		DefenseLightLaser,
+		DefenseHeavyLaser,
+		DefenseGaussCannon,
+		DefenseIonCannon,
+		DefensePlasmaTurret,
+		DefenseSmallShieldDome,
+		DefenseLargeShieldDome,
+		DefenseAntiBallisticMissile,
+		DefenseInterplanetaryMissile,
 	}
 }
 

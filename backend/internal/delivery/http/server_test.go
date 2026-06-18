@@ -1118,6 +1118,135 @@ func TestGameShipyardEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 	}
 }
 
+func TestGameDefenseEndpointReturnsDefense(t *testing.T) {
+	defense := &fakeGameDefense{result: appgame.DefenseResult{
+		Authenticated: true,
+		Defense: domaingame.Defense{
+			Commander: "legor",
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:   99,
+				Name: "Arakis",
+				Type: domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+			},
+			PlanetSwitcher: []domaingame.PlanetSummary{{
+				ID:   99,
+				Name: "Arakis",
+				Type: domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+				Current: true,
+			}},
+			HasShipyard: true,
+			Items: []domaingame.ShipyardItem{{
+				ID:               domaingame.DefenseRocketLauncher,
+				Name:             "Rocket Launcher",
+				Description:      "The rocket launcher is a simple defensive option.",
+				Count:            2,
+				Cost:             domaingame.BuildingCost{Metal: 2000},
+				DurationSeconds:  720,
+				CanBuild:         true,
+				MeetsRequirement: true,
+				MaxBuild:         5,
+			}},
+		},
+	}}
+	server := testServerWithGameDefense(t, defense)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/defense?session=public&cp=99", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameDefenseResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Defense == nil || response.Defense.Commander != "legor" || !response.Defense.HasShipyard || len(response.Defense.Items) != 1 || len(response.Defense.PlanetSwitcher) != 1 {
+		t.Fatalf("expected authenticated defense response, got %+v", response)
+	}
+	if response.Defense.Items[0].Cost.Metal != 2000 || response.Defense.Items[0].DurationSeconds != 720 || response.Defense.Items[0].MaxBuild != 5 {
+		t.Fatalf("unexpected defense mapping: %+v", response.Defense.Items[0])
+	}
+	if defense.command.PublicSession != "public" || defense.command.PlanetID != 99 || defense.command.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected defense command: %+v", defense.command)
+	}
+	if defense.command.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("expected private session cookie to be passed, got %+v", defense.command.PrivateSessions)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("private")) {
+		t.Fatalf("game defense response must not echo private session: %s", rec.Body.String())
+	}
+}
+
+func TestGameDefenseEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
+	defense := &fakeGameDefense{result: appgame.DefenseResult{
+		Authenticated: false,
+		Issues: []domainpublicsite.SessionIssue{{
+			Code:    domainpublicsite.SessionIssuePrivateInvalid,
+			Message: "Private session is invalid.",
+		}},
+	}}
+	server := testServerWithGameDefense(t, defense)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/defense?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var response gameDefenseResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Authenticated || response.Defense != nil || len(response.Issues) != 1 {
+		t.Fatalf("expected invalid defense session response, got %+v", response)
+	}
+}
+
+func TestGameDefenseEndpointRejectsInvalidPlanetID(t *testing.T) {
+	server := testServerWithGameDefense(t, &fakeGameDefense{})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/defense?session=public&cp=abc", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid selected planet to return 400, got %d", rec.Code)
+	}
+}
+
+func TestGameDefenseEndpointReturnsUnavailableWithoutUseCase(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/defense?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game defense use case to return 503, got %d", rec.Code)
+	}
+}
+
+func TestGameDefenseEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
+	server := testServerWithGameDefense(t, &fakeGameDefense{err: errors.New("defense failed")})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/defense?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game defense error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestGameResourcesEndpointReturnsResources(t *testing.T) {
 	resources := &fakeGameResources{result: appgame.ResourcesResult{
 		Authenticated: true,
@@ -1546,6 +1675,14 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game shipyard method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "/api/game/defense", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("expected game defense method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
+
 	req = httptest.NewRequest(http.MethodPut, "/api/game/resources", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -1762,6 +1899,19 @@ func testServerWithGameShipyard(t *testing.T, shipyard GameShipyardUseCase) http
 	})
 }
 
+func testServerWithGameDefense(t *testing.T, defense GameDefenseUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		GameDefense:        defense,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
 func testServerWithCustomDrafts(t *testing.T, registrationDrafts RegistrationDraftUseCase, loginDrafts LoginDraftUseCase) http.Handler {
 	t.Helper()
 	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
@@ -1922,6 +2072,17 @@ type fakeGameShipyard struct {
 }
 
 func (f *fakeGameShipyard) GetShipyard(_ context.Context, command appgame.ShipyardCommand) (appgame.ShipyardResult, error) {
+	f.command = command
+	return f.result, f.err
+}
+
+type fakeGameDefense struct {
+	result  appgame.DefenseResult
+	err     error
+	command appgame.DefenseCommand
+}
+
+func (f *fakeGameDefense) GetDefense(_ context.Context, command appgame.DefenseCommand) (appgame.DefenseResult, error) {
 	f.command = command
 	return f.result, f.err
 }
