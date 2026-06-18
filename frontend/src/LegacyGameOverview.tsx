@@ -2509,7 +2509,7 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
   const otherPlanets = overview.planetSwitcher.filter((item) => item.type !== 0 && item.id !== planet.id);
 
   return (
-    <table className="legacy-overview-table" width={519}>
+    <table className="legacy-overview-table legacy-overview-main-table" width={519}>
       <tbody>
         <tr>
           <td className="legacy-c" colSpan={4}>

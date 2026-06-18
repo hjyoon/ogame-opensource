@@ -549,6 +549,16 @@ dd {
   margin: 0 auto;
 }
 
+.legacy-game-shell .legacy-overview-main-table,
+.legacy-game-shell .legacy-overview-main-table .legacy-planet-list {
+  border-collapse: separate;
+  border-spacing: 2px;
+}
+
+.legacy-game-shell .legacy-overview-main-table th {
+  font-weight: bold;
+}
+
 .legacy-overview-table th,
 .legacy-overview-table td,
 .legacy-planet-list th {
