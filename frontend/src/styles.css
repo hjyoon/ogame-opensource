@@ -411,7 +411,7 @@ dd {
 }
 
 .legacy-header-top > .legacy-header-table {
-  margin: 0 0 0 28px;
+  margin: 0 auto;
 }
 
 .legacy-header-placeholder {
@@ -432,16 +432,18 @@ dd {
 }
 
 .legacy-menu {
+  display: flow-root;
   width: 190px;
 }
 
 .legacy-menu p {
   color: #e6ebfb;
-  margin: 11px 0 6px;
+  margin: 11px auto 6px;
   width: 110px;
 }
 
 .legacy-menu table {
+  margin: 0 auto;
   width: 110px;
 }
 
@@ -511,14 +513,13 @@ dd {
   min-height: 18px;
 }
 
-.legacy-header-stack {
-  display: inline-grid;
-  gap: 2px;
-  justify-items: center;
+.legacy-resource-table {
+  table-layout: fixed;
+  width: 40vw;
 }
 
 .legacy-resource-table td {
-  width: 85px;
+  width: auto;
 }
 
 .legacy-resource-name {
@@ -528,7 +529,7 @@ dd {
 }
 
 .legacy-officer-table td {
-  width: 32px;
+  width: 35px;
 }
 
 .legacy-overview-table {
@@ -588,10 +589,6 @@ dd {
 
 .legacy-planet-list {
   margin: 0 auto;
-}
-
-.legacy-overview-table .legacy-s {
-  min-width: 110px;
 }
 
 .legacy-center {

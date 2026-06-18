@@ -829,47 +829,48 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
             </table>
           </td>
           <td className="legacy-header-cell">
-            <div className="legacy-header-stack">
-              <table className="legacy-resource-table" id="resources">
-                <tbody>
-                  <tr>
-                    {resources.map((resource) => (
-                      <td className="legacy-header-cell" key={resource.name}>
-                        <img alt="" height={22} src={resource.img} width={42} />
-                      </td>
-                    ))}
-                  </tr>
-                  <tr>
-                    {resources.map((resource) => (
-                      <td className="legacy-header-cell legacy-resource-name" key={resource.name}>
-                        {resource.name}
-                      </td>
-                    ))}
-                  </tr>
-                  <tr>
-                    {resources.map((resource) => (
-                      <td className="legacy-header-cell" key={resource.name}>
-                        <span style={resource.capacity !== undefined && resource.value >= resource.capacity ? { color: "#ff0000" } : undefined}>
-                          {formatLegacyNumber(resource.value)}
-                        </span>
-                        {resource.secondary !== undefined ? `/${formatLegacyNumber(resource.secondary)}` : null}
-                      </td>
-                    ))}
-                  </tr>
-                </tbody>
-              </table>
-              <table className="legacy-officer-table">
-                <tbody>
-                  <tr>
-                    {officers.map((officer) => (
-                      <td className="legacy-header-cell" key={officer}>
-                        <img alt="" height={30} src={`${gameImageBase}/${officer}_ikon_un.gif`} width={30} />
-                      </td>
-                    ))}
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <table className="legacy-resource-table" id="resources">
+              <tbody>
+                <tr>
+                  {resources.map((resource) => (
+                    <td className="legacy-header-cell" key={resource.name}>
+                      <img alt="" height={22} src={resource.img} width={42} />
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  {resources.map((resource) => (
+                    <td className="legacy-header-cell legacy-resource-name" key={resource.name}>
+                      {resource.name}
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  {resources.map((resource) => (
+                    <td className="legacy-header-cell" key={resource.name}>
+                      <span style={resource.capacity !== undefined && resource.value >= resource.capacity ? { color: "#ff0000" } : undefined}>
+                        {formatLegacyNumber(resource.value)}
+                      </span>
+                      {resource.secondary !== undefined ? `/${formatLegacyNumber(resource.secondary)}` : null}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </td>
+          <td className="legacy-header-cell">
+            <table className="legacy-officer-table">
+              <tbody>
+                <tr>
+                  {officers.map((officer) => (
+                    <td className="legacy-header-cell" key={officer}>
+                      <img alt="" height={32} src={`${gameImageBase}/${officer}_ikon_un.gif`} width={32} />
+                    </td>
+                  ))}
+                  <td className="legacy-header-cell" />
+                </tr>
+              </tbody>
+            </table>
           </td>
         </tr>
       </tbody>
@@ -2503,12 +2504,9 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
           <th className="legacy-s">
             <table className="legacy-planet-list">
               <tbody>
-                {otherPlanets.length === 0 ? (
-                  <tr>
-                    <th>&nbsp;</th>
-                  </tr>
-                ) : (
-                  rowsOfTwo(otherPlanets).map((row, index) => (
+                {otherPlanets.length === 0
+                  ? null
+                  : rowsOfTwo(otherPlanets).map((row, index) => (
                     <tr key={index}>
                       {row.map((item) => (
                         <th key={item.id}>
@@ -2528,8 +2526,7 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
                         </th>
                       ))}
                     </tr>
-                  ))
-                )}
+                  ))}
               </tbody>
             </table>
           </th>
