@@ -1,5 +1,9 @@
 package game
 
+import "strings"
+
+const PlanetNameLimit = 20
+
 type Overview struct {
 	Commander      string
 	Score          ScoreSummary
@@ -57,4 +61,37 @@ func (s ScoreSummary) DisplayPoints() int64 {
 
 func (c Coordinates) Valid() bool {
 	return c.Galaxy > 0 && c.System > 0 && c.Position > 0
+}
+
+func NormalizePlanetName(name string, planetType int) (string, bool) {
+	name = truncateRunes(name, planetNameLimit(planetType))
+	if strings.ContainsAny(name, ";,<>,`") {
+		return "", false
+	}
+	name = strings.Map(func(r rune) rune {
+		switch r {
+		case '\\', '(', ')', '*', '"', '\'':
+			return -1
+		default:
+			return r
+		}
+	}, name)
+	name = strings.Join(strings.Fields(name), " ")
+	if name == "" {
+		if planetType == PlanetTypeMoon {
+			return "Moon", true
+		}
+		return "\u043f\u043b\u0430\u043d\u0435\u0442\u0430", true
+	}
+	if planetType == PlanetTypeMoon {
+		name += " (Moon)"
+	}
+	return name, true
+}
+
+func planetNameLimit(planetType int) int {
+	if planetType == PlanetTypeMoon {
+		return PlanetNameLimit - len([]rune(" (Moon)"))
+	}
+	return PlanetNameLimit
 }

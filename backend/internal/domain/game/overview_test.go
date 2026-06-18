@@ -24,3 +24,29 @@ func TestCoordinatesValid(t *testing.T) {
 		t.Fatal("expected missing system to be invalid")
 	}
 }
+
+func TestNormalizePlanetNameMatchesLegacy(t *testing.T) {
+	name, ok := NormalizePlanetName(`  New   /Colony*(Alpha)'  `, PlanetTypePlanet)
+	if !ok || name != "New /ColonyAlp" {
+		t.Fatalf("unexpected sanitized planet name: name=%q ok=%t", name, ok)
+	}
+
+	name, ok = NormalizePlanetName("abcdefghijklmnopqrstuvwxyz", PlanetTypePlanet)
+	if !ok || name != "abcdefghijklmnopqrst" {
+		t.Fatalf("unexpected truncated planet name: name=%q ok=%t", name, ok)
+	}
+
+	name, ok = NormalizePlanetName("abcdefghijklmnop", PlanetTypeMoon)
+	if !ok || name != "abcdefghijklm (Moon)" {
+		t.Fatalf("unexpected moon name: name=%q ok=%t", name, ok)
+	}
+
+	if name, ok = NormalizePlanetName("bad;name", PlanetTypePlanet); ok || name != "" {
+		t.Fatalf("forbidden characters should keep the legacy name unchanged: name=%q ok=%t", name, ok)
+	}
+
+	name, ok = NormalizePlanetName(`   ()*"'\   `, PlanetTypePlanet)
+	if !ok || name != "\u043f\u043b\u0430\u043d\u0435\u0442\u0430" {
+		t.Fatalf("empty planet name should use legacy default: name=%q ok=%t", name, ok)
+	}
+}

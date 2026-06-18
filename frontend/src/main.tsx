@@ -194,6 +194,7 @@ function App() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [gameOverview, setGameOverview] = useState<GameOverviewStatus | null>(null);
   const [gameOverviewError, setGameOverviewError] = useState<string | null>(null);
+  const [gameOverviewPending, setGameOverviewPending] = useState(false);
   const [gameBuildings, setGameBuildings] = useState<GameBuildingsStatus | null>(null);
   const [gameBuildingsError, setGameBuildingsError] = useState<string | null>(null);
   const [gameResources, setGameResources] = useState<GameResourcesStatus | null>(null);
@@ -312,6 +313,45 @@ function App() {
       })
       .catch((err: unknown) => setGameOverviewError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, pathname, search]);
+
+  const submitGamePlanetRename = (name: string) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameOverviewError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const overviewSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      overviewSearch.set("cp", selectedPlanet);
+    }
+    setGameOverviewPending(true);
+    setGameOverviewError(null);
+    fetch(`/api/game/overview?${overviewSearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ action: "rename", name })
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameOverviewStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `overview returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("overview response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameOverview(payload);
+        setGameOverviewError(null);
+      })
+      .catch((err: unknown) => setGameOverviewError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameOverviewPending(false));
+  };
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
@@ -756,7 +796,9 @@ function App() {
         onNotesCreate={submitGameNoteCreate}
         onNotesDelete={submitGameNoteDelete}
         onNotesUpdate={submitGameNoteUpdate}
+        onPlanetRename={submitGamePlanetRename}
         onResourcesSubmit={submitGameResources}
+        overviewPending={gameOverviewPending}
         route={gameRoute ?? resolveGameRoute(pathname)}
         resourcesError={gameResourcesError}
         resourcesPending={gameResourcesPending}

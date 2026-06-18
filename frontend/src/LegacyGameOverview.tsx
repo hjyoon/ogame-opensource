@@ -480,6 +480,8 @@ type LegacyGameOverviewProps = {
   status: GameOverviewStatus | null;
   error: string | null;
   route: GameRoute;
+  overviewPending: boolean;
+  onPlanetRename: (name: string) => void;
   buildingsStatus: GameBuildingsStatus | null;
   buildingsError: string | null;
   resourcesStatus: GameResourcesStatus | null;
@@ -556,6 +558,8 @@ export function LegacyGameOverview({
   status,
   error,
   route,
+  overviewPending,
+  onPlanetRename,
   buildingsStatus,
   buildingsError,
   resourcesStatus,
@@ -676,6 +680,9 @@ export function LegacyGameOverview({
         {route.key === "notes" && notesError ? <LegacyMessage tone="error" text={notesError} /> : null}
         {route.key === "notes" && !notesError && notesIssue ? <LegacyMessage tone="error" text={notesIssue} /> : null}
         {overview && route.key === "overview" ? <OverviewTable overview={overview} /> : null}
+        {overview && route.key === "renamePlanet" ? (
+          <RenamePlanetTable onRename={onPlanetRename} overview={overview} pending={overviewPending} />
+        ) : null}
         {overview && route.key === "buildings" && !buildings && !buildingsError && !buildingsIssue ? (
           <LegacyMessage tone="neutral" text="Loading buildings..." />
         ) : null}
@@ -732,6 +739,7 @@ export function LegacyGameOverview({
         ) : null}
         {overview &&
         route.key !== "overview" &&
+        route.key !== "renamePlanet" &&
         route.key !== "buildings" &&
         route.key !== "resources" &&
         route.key !== "research" &&
@@ -2434,7 +2442,7 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
       <tbody>
         <tr>
           <td className="legacy-c" colSpan={4}>
-            <a href="/game/overview" title="Planet menu">
+            <a href={gameRouteURL("/game/rename-planet", window.location.search)} title="Planet menu">
               Planet "{planet.name}"
             </a>{" "}
             ({overview.commander})
@@ -2532,6 +2540,70 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
         </tr>
       </tbody>
     </table>
+  );
+}
+
+function RenamePlanetTable({
+  overview,
+  onRename,
+  pending
+}: {
+  overview: GameOverview;
+  onRename: (name: string) => void;
+  pending: boolean;
+}) {
+  const planet = overview.currentPlanet;
+  return (
+    <>
+      <h1>Rename/leave the planet</h1>
+      <form
+        action={gameRouteURL("/game/rename-planet", window.location.search)}
+        method="post"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          onRename(String(form.get("newname") ?? ""));
+        }}
+      >
+        <center>
+          <table className="legacy-overview-table legacy-rename-planet-table" width={519}>
+            <tbody>
+              <tr>
+                <td className="legacy-c" colSpan={3}>
+                  Planet information
+                </td>
+              </tr>
+              <tr>
+                <th>Coordinates</th>
+                <th>Name</th>
+                <th>Actions</th>
+              </tr>
+              <tr>
+                <th>{formatCoordinates(planet.coordinates)}</th>
+                <th>{planet.name}</th>
+                <th>
+                  <input disabled={pending} name="aktion" type="button" value="Abandon the colony" />
+                </th>
+              </tr>
+              <tr>
+                <th>Rename</th>
+                <th>
+                  <input disabled={pending} maxLength={20} name="newname" size={25} type="text" />
+                  <br />
+                </th>
+                <th>
+                  <input disabled={pending} name="aktion" type="submit" value="Rename" />
+                </th>
+              </tr>
+            </tbody>
+          </table>
+        </center>
+      </form>
+      <br />
+      <br />
+      <br />
+      <br />
+    </>
   );
 }
 

@@ -313,6 +313,43 @@ try {
   } catch {
     gameOverviewRestoredBody = {};
   }
+  const originalPlanetName = gameOverviewRestoredBody.overview?.currentPlanet?.name ?? "";
+  const renamedPlanetName = `Smoke ${runId.slice(0, 8)}`.slice(0, 20);
+  const gameOverviewRenamed = await request(`/api/game/overview${restoreSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+    body: JSON.stringify({ action: "rename", name: renamedPlanetName })
+  });
+  let gameOverviewRenamedBody = {};
+  try {
+    gameOverviewRenamedBody = JSON.parse(gameOverviewRenamed.body);
+  } catch {
+    gameOverviewRenamedBody = {};
+  }
+  const gameOverviewRenameForbidden = await request(`/api/game/overview${restoreSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+    body: JSON.stringify({ action: "rename", name: "bad;name" })
+  });
+  let gameOverviewRenameForbiddenBody = {};
+  try {
+    gameOverviewRenameForbiddenBody = JSON.parse(gameOverviewRenameForbidden.body);
+  } catch {
+    gameOverviewRenameForbiddenBody = {};
+  }
+  const gameOverviewRenameRestored = originalPlanetName
+    ? await request(`/api/game/overview${restoreSearch}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+      body: JSON.stringify({ action: "rename", name: originalPlanetName })
+    })
+    : { status: 0, headers: {}, body: "" };
+  let gameOverviewRenameRestoredBody = {};
+  try {
+    gameOverviewRenameRestoredBody = JSON.parse(gameOverviewRenameRestored.body);
+  } catch {
+    gameOverviewRenameRestoredBody = {};
+  }
   const missingPlanetSearch = withQueryParam(sessionSearch, "cp", "987654321");
   const gameOverviewMissingPlanet = await request(`/api/game/overview${missingPlanetSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -737,6 +774,13 @@ try {
       check(gameOverviewSwitchedBody.overview?.currentPlanet?.id === switchPlanetID, "game overview switches to requested planet", gameOverviewSwitchedBody),
       check(gameOverviewAfterSwitchBody.overview?.currentPlanet?.id === switchPlanetID, "game overview persists selected planet like legacy", gameOverviewAfterSwitchBody),
       check(gameOverviewRestoredBody.overview?.currentPlanet?.id === basePlanetID, "game overview can switch back to base planet", gameOverviewRestoredBody),
+      check(gameOverviewRenamed.status === 200, "game overview rename mutation returns HTTP 200", { status: gameOverviewRenamed.status }),
+      check(gameOverviewRenamedBody.authenticated === true, "game overview rename mutation stays authenticated", gameOverviewRenamedBody),
+      check(gameOverviewRenamedBody.overview?.currentPlanet?.name === renamedPlanetName, "game overview rename mutation updates the current planet name", gameOverviewRenamedBody.overview?.currentPlanet ?? {}),
+      check(gameOverviewRenameForbidden.status === 200, "game overview forbidden legacy rename is accepted as a no-op", { status: gameOverviewRenameForbidden.status }),
+      check(gameOverviewRenameForbiddenBody.overview?.currentPlanet?.name === renamedPlanetName, "forbidden legacy rename keeps the previous planet name", gameOverviewRenameForbiddenBody.overview?.currentPlanet ?? {}),
+      check(gameOverviewRenameRestored.status === 200, "game overview rename mutation can restore the original planet name", { status: gameOverviewRenameRestored.status }),
+      check(gameOverviewRenameRestoredBody.overview?.currentPlanet?.name === originalPlanetName, "game overview rename restore updates the current planet name", gameOverviewRenameRestoredBody.overview?.currentPlanet ?? {}),
       check(gameOverviewMissingPlanet.status === 200, "game overview accepts missing cp fallback", { status: gameOverviewMissingPlanet.status }),
       check(gameOverviewMissingPlanetBody.overview?.currentPlanet?.id === basePlanetID, "game overview missing cp falls back to base planet", gameOverviewMissingPlanetBody),
       check(gameOverviewAfterMissingPlanetBody.overview?.currentPlanet?.id === basePlanetID, "game overview persists missing cp fallback", gameOverviewAfterMissingPlanetBody),
@@ -1076,7 +1120,7 @@ try {
   const getLoginValidation = await request("/api/public/login/validate");
   const getLoginSubmit = await request("/api/public/login");
   const postGameSession = await request("/api/game/session", { method: "POST" });
-  const postGameOverview = await request("/api/game/overview", { method: "POST" });
+  const putGameOverview = await request("/api/game/overview", { method: "PUT" });
   const postGameBuildings = await request("/api/game/buildings", { method: "POST" });
   const postGameResearch = await request("/api/game/research", { method: "POST" });
   const postGameShipyard = await request("/api/game/shipyard", { method: "POST" });
@@ -1104,8 +1148,8 @@ try {
       check(hasHeader(getLoginSubmit, "allow", "POST"), "login submit method rejection returns Allow header"),
       check(postGameSession.status === 405, "POST game session endpoint is rejected", { status: postGameSession.status }),
       check(hasHeader(postGameSession, "allow", "GET, HEAD"), "game session method rejection returns Allow header"),
-      check(postGameOverview.status === 405, "POST game overview endpoint is rejected", { status: postGameOverview.status }),
-      check(hasHeader(postGameOverview, "allow", "GET, HEAD"), "game overview method rejection returns Allow header"),
+      check(putGameOverview.status === 405, "PUT game overview endpoint is rejected", { status: putGameOverview.status }),
+      check(hasHeader(putGameOverview, "allow", "GET, HEAD, POST"), "game overview method rejection returns Allow header"),
       check(postGameBuildings.status === 405, "POST game buildings endpoint is rejected", { status: postGameBuildings.status }),
       check(hasHeader(postGameBuildings, "allow", "GET, HEAD"), "game buildings method rejection returns Allow header"),
       check(postGameResearch.status === 405, "POST game research endpoint is rejected", { status: postGameResearch.status }),

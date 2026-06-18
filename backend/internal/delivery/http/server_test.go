@@ -760,6 +760,93 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	}
 }
 
+func TestGameOverviewEndpointRenamesPlanet(t *testing.T) {
+	overview := &fakeGameOverview{result: appgame.OverviewResult{
+		Authenticated: true,
+		Overview: domaingame.Overview{
+			Commander:     "legor",
+			CurrentPlanet: domaingame.PlanetOverview{ID: 99, Name: "New Colony"},
+			PlanetSwitcher: []domaingame.PlanetSummary{{
+				ID:      99,
+				Name:    "New Colony",
+				Current: true,
+			}},
+		},
+	}}
+	server := testServerWithGameOverview(t, overview)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/overview?session=public&cp=99", strings.NewReader(`{"action":"rename","name":"New Colony"}`))
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response gameOverviewResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Overview == nil || response.Overview.CurrentPlanet.Name != "New Colony" {
+		t.Fatalf("expected renamed overview response, got %+v", response)
+	}
+	if overview.renameCommand.PublicSession != "public" || overview.renameCommand.PlanetID != 99 ||
+		overview.renameCommand.Name != "New Colony" || overview.renameCommand.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected rename command: %+v", overview.renameCommand)
+	}
+	if overview.renameCommand.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("expected private session cookie to be passed, got %+v", overview.renameCommand.PrivateSessions)
+	}
+}
+
+func TestGameOverviewEndpointRenameReturnsUnauthorizedForInvalidSession(t *testing.T) {
+	overview := &fakeGameOverview{result: appgame.OverviewResult{
+		Authenticated: false,
+		Issues: []domainpublicsite.SessionIssue{{
+			Code:    domainpublicsite.SessionIssuePrivateInvalid,
+			Message: "Private session is invalid.",
+		}},
+	}}
+	server := testServerWithGameOverview(t, overview)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/overview?session=public", strings.NewReader(`{"action":"rename","name":"New Colony"}`))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var response gameOverviewResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Authenticated || response.Overview != nil || len(response.Issues) != 1 {
+		t.Fatalf("expected invalid overview rename session response, got %+v", response)
+	}
+}
+
+func TestGameOverviewEndpointRejectsInvalidRenameRequests(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		target string
+		body   string
+	}{
+		{"invalid planet", "/api/game/overview?session=public&cp=bad", `{"action":"rename","name":"New Colony"}`},
+		{"malformed", "/api/game/overview?session=public", `{`},
+		{"unknown action", "/api/game/overview?session=public", `{"action":"delete","name":"New Colony"}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			server := testServerWithGameOverview(t, &fakeGameOverview{})
+			req := httptest.NewRequest(http.MethodPost, tt.target, strings.NewReader(tt.body))
+			rec := httptest.NewRecorder()
+			server.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d", rec.Code)
+			}
+		})
+	}
+}
+
 func TestGameOverviewEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
 	overview := &fakeGameOverview{result: appgame.OverviewResult{
 		Authenticated: false,
@@ -805,6 +892,13 @@ func TestGameOverviewEndpointReturnsUnavailableWithoutUseCase(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected missing game overview use case to return 503, got %d", rec.Code)
 	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/overview?session=public", strings.NewReader(`{"action":"rename","name":"New Colony"}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game overview rename use case to return 503, got %d", rec.Code)
+	}
 }
 
 func TestGameOverviewEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
@@ -815,6 +909,13 @@ func TestGameOverviewEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected game overview error to return 503, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/overview?session=public", strings.NewReader(`{"action":"rename","name":"New Colony"}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game overview rename error to return 503, got %d", rec.Code)
 	}
 }
 
@@ -2753,11 +2854,11 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game session method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/game/overview", nil)
+	req = httptest.NewRequest(http.MethodPut, "/api/game/overview", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD, POST" {
 		t.Fatalf("expected game overview method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
@@ -3301,13 +3402,19 @@ func (f *fakeLogout) Logout(_ context.Context, command apppublicsite.LogoutComma
 }
 
 type fakeGameOverview struct {
-	result  appgame.OverviewResult
-	err     error
-	command appgame.OverviewCommand
+	result        appgame.OverviewResult
+	err           error
+	command       appgame.OverviewCommand
+	renameCommand appgame.OverviewRenameCommand
 }
 
 func (f *fakeGameOverview) GetOverview(_ context.Context, command appgame.OverviewCommand) (appgame.OverviewResult, error) {
 	f.command = command
+	return f.result, f.err
+}
+
+func (f *fakeGameOverview) RenamePlanet(_ context.Context, command appgame.OverviewRenameCommand) (appgame.OverviewResult, error) {
+	f.renameCommand = command
 	return f.result, f.err
 }
 

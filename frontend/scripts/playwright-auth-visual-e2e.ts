@@ -97,6 +97,22 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["Arakis", "Legor", "Diameter", "Temperature", "[1:1:2]", "Points"]
   },
   {
+    name: "game-rename-planet",
+    legacyPage: "renameplanet",
+    migratedPath: "/game/rename-planet",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-rename-planet-table",
+    requiredBoxes: ["content"],
+    expectedTexts: [
+      "Rename/leave the planet",
+      "Planet information",
+      "Coordinates",
+      "Name",
+      "Actions",
+      "Rename"
+    ]
+  },
+  {
     name: "game-buildings",
     legacyPage: "b_building",
     migratedPath: "/game/buildings",

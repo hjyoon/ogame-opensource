@@ -125,6 +125,35 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 	}, nil
 }
 
+func (r OverviewRepository) RenamePlanet(ctx context.Context, query appgame.OverviewRenameQuery) (domaingame.Overview, error) {
+	if r.execer == nil {
+		return domaingame.Overview{}, errors.New("overview updater unavailable")
+	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return domaingame.Overview{}, err
+	}
+	overview, err := r.GetOverview(ctx, appgame.OverviewQuery{PlayerID: query.PlayerID, PlanetID: query.PlanetID})
+	if err != nil {
+		return domaingame.Overview{}, err
+	}
+	name, ok := domaingame.NormalizePlanetName(query.Name, overview.CurrentPlanet.Type)
+	if !ok {
+		return overview, nil
+	}
+	if _, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET name = ? WHERE planet_id = ? AND owner_id = ? AND type < ? LIMIT 1", planetsTable),
+		name,
+		overview.CurrentPlanet.ID,
+		query.PlayerID,
+		planetTypeDebris,
+	); err != nil {
+		return domaingame.Overview{}, err
+	}
+	return r.GetOverview(ctx, appgame.OverviewQuery{PlayerID: query.PlayerID, PlanetID: overview.CurrentPlanet.ID})
+}
+
 func (r OverviewRepository) resolveCurrentPlanet(ctx context.Context, planetsTable string, user overviewUser, query appgame.OverviewQuery) (int, domaingame.PlanetOverview, bool, error) {
 	if query.PlanetID == 0 {
 		if user.ActivePlanetID != 0 {

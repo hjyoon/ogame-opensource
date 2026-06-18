@@ -64,7 +64,24 @@ type gamePlanetSummaryResponse struct {
 	Current     bool                    `json:"current"`
 }
 
+type gameOverviewMutationRequest struct {
+	Action string `json:"action"`
+	Name   string `json:"name"`
+}
+
 func (a app) handleGameOverview(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		a.handleGameOverviewGet(w, r)
+	case http.MethodPost:
+		a.handleGameOverviewPost(w, r)
+	default:
+		w.Header().Set("Allow", "GET, HEAD, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (a app) handleGameOverviewGet(w http.ResponseWriter, r *http.Request) {
 	if a.deps.GameOverview == nil {
 		http.Error(w, "game overview unavailable", http.StatusServiceUnavailable)
 		return
@@ -87,6 +104,50 @@ func (a app) handleGameOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	writeGameOverviewResponse(w, result)
+}
+
+func (a app) handleGameOverviewPost(w http.ResponseWriter, r *http.Request) {
+	if a.deps.GameOverview == nil {
+		http.Error(w, "game overview unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	planetID, err := selectedPlanetID(r)
+	if err != nil {
+		http.Error(w, "invalid selected planet", http.StatusBadRequest)
+		return
+	}
+	mutation, err := decodeGameOverviewMutation(r)
+	if err != nil || mutation.Action != "rename" {
+		http.Error(w, "invalid overview request", http.StatusBadRequest)
+		return
+	}
+	result, err := a.deps.GameOverview.RenamePlanet(r.Context(), appgame.OverviewRenameCommand{
+		PublicSession:   r.URL.Query().Get("session"),
+		PrivateSessions: cookieMap(r),
+		RemoteAddr:      remoteIP(r.RemoteAddr),
+		PlanetID:        planetID,
+		Name:            mutation.Name,
+	})
+	if err != nil {
+		http.Error(w, "game overview unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	writeGameOverviewResponse(w, result)
+}
+
+func decodeGameOverviewMutation(r *http.Request) (gameOverviewMutationRequest, error) {
+	defer r.Body.Close()
+	var request gameOverviewMutationRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		return gameOverviewMutationRequest{}, err
+	}
+	return request, nil
+}
+
+func writeGameOverviewResponse(w http.ResponseWriter, result appgame.OverviewResult) {
 	status := http.StatusOK
 	var overview *gameOverviewSummary
 	if result.Authenticated {

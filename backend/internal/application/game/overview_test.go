@@ -94,6 +94,76 @@ func TestOverviewServiceRequiresDependencies(t *testing.T) {
 	}
 }
 
+func TestOverviewServiceRenamesPlanetForAuthenticatedSession(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}
+	repository := &fakeOverviewRepository{overview: domaingame.Overview{
+		Commander:     "legor",
+		CurrentPlanet: domaingame.PlanetOverview{ID: 99, Name: "New Colony"},
+	}}
+	service := NewOverviewService(sessions, repository)
+
+	result, err := service.RenamePlanet(context.Background(), OverviewRenameCommand{
+		PublicSession:   "public",
+		PrivateSessions: map[string]string{"prsess_42_1": "private"},
+		RemoteAddr:      "203.0.113.10",
+		PlanetID:        99,
+		Name:            "New Colony",
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Authenticated || result.Overview.CurrentPlanet.Name != "New Colony" {
+		t.Fatalf("expected renamed overview result, got %+v", result)
+	}
+	if repository.renameQuery.PlayerID != 42 || repository.renameQuery.PlanetID != 99 || repository.renameQuery.Name != "New Colony" {
+		t.Fatalf("unexpected rename query: %+v", repository.renameQuery)
+	}
+	if sessions.command.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected session command: %+v", sessions.command)
+	}
+}
+
+func TestOverviewServiceRenameReturnsSessionIssues(t *testing.T) {
+	service := NewOverviewService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: false,
+		Issues: []domainpublicsite.SessionIssue{{
+			Code:    domainpublicsite.SessionIssuePrivateInvalid,
+			Message: "Private session is invalid.",
+		}},
+	}}, &fakeOverviewRepository{})
+
+	result, err := service.RenamePlanet(context.Background(), OverviewRenameCommand{PublicSession: "public"})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Authenticated || len(result.Issues) != 1 || result.Issues[0].Code != domainpublicsite.SessionIssuePrivateInvalid {
+		t.Fatalf("expected session issue result, got %+v", result)
+	}
+}
+
+func TestOverviewServiceRenameErrors(t *testing.T) {
+	if _, err := (OverviewService{}).RenamePlanet(context.Background(), OverviewRenameCommand{}); err == nil {
+		t.Fatal("expected missing dependency error")
+	}
+	wantErr := errors.New("session failed")
+	if _, err := NewOverviewService(&fakeSessionLookup{err: wantErr}, &fakeOverviewRepository{}).RenamePlanet(context.Background(), OverviewRenameCommand{}); !errors.Is(err, wantErr) {
+		t.Fatalf("expected session error, got %v", err)
+	}
+	wantErr = errors.New("rename failed")
+	service := NewOverviewService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}, &fakeOverviewRepository{err: wantErr})
+	if _, err := service.RenamePlanet(context.Background(), OverviewRenameCommand{}); !errors.Is(err, wantErr) {
+		t.Fatalf("expected repository error, got %v", err)
+	}
+}
+
 type fakeSessionLookup struct {
 	result  domainpublicsite.SessionAuthentication
 	err     error
@@ -106,12 +176,18 @@ func (f *fakeSessionLookup) GetGameSession(_ context.Context, command apppublics
 }
 
 type fakeOverviewRepository struct {
-	overview domaingame.Overview
-	err      error
-	query    OverviewQuery
+	overview    domaingame.Overview
+	err         error
+	query       OverviewQuery
+	renameQuery OverviewRenameQuery
 }
 
 func (f *fakeOverviewRepository) GetOverview(_ context.Context, query OverviewQuery) (domaingame.Overview, error) {
 	f.query = query
+	return f.overview, f.err
+}
+
+func (f *fakeOverviewRepository) RenamePlanet(_ context.Context, query OverviewRenameQuery) (domaingame.Overview, error) {
+	f.renameQuery = query
 	return f.overview, f.err
 }

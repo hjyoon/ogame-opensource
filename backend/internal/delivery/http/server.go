@@ -49,6 +49,7 @@ type LogoutUseCase interface {
 
 type GameOverviewUseCase interface {
 	GetOverview(context.Context, appgame.OverviewCommand) (appgame.OverviewResult, error)
+	RenamePlanet(context.Context, appgame.OverviewRenameCommand) (appgame.OverviewResult, error)
 }
 
 type GameBuildingsUseCase interface {
@@ -140,7 +141,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/public/login", postOnly(a.handleLogin))
 	mux.HandleFunc("/api/game/session", getOnly(a.handleGameSession))
 	mux.HandleFunc("/api/game/logout", postOnly(a.handleGameLogout))
-	mux.HandleFunc("/api/game/overview", getOnly(a.handleGameOverview))
+	mux.HandleFunc("/api/game/overview", a.handleGameOverview)
 	mux.HandleFunc("/api/game/buildings", getOnly(a.handleGameBuildings))
 	mux.HandleFunc("/api/game/resources", a.handleGameResources)
 	mux.HandleFunc("/api/game/research", getOnly(a.handleGameResearch))

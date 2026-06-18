@@ -181,6 +181,66 @@ func TestOverviewRepositoryPersistsRequestedPlanet(t *testing.T) {
 	}
 }
 
+func TestOverviewRepositoryRenamesCurrentPlanet(t *testing.T) {
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: append(overviewResultsForPlanet(99, "Arakis"),
+		overviewResultsForPlanet(99, "New Colony")...,
+	)}}
+	repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+
+	overview, err := repository.RenamePlanet(context.Background(), appgame.OverviewRenameQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Name:     ` New   Colony*" `,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.CurrentPlanet.Name != "New Colony" {
+		t.Fatalf("expected refreshed overview with renamed planet, got %+v", overview.CurrentPlanet)
+	}
+	if !strings.Contains(runner.execSQL, "UPDATE `ogame_planets` SET name = ? WHERE planet_id = ? AND owner_id = ? AND type < ? LIMIT 1") {
+		t.Fatalf("expected legacy rename update, got %q", runner.execSQL)
+	}
+	if len(runner.execArgs) != 4 || runner.execArgs[0] != "New Colony" || runner.execArgs[1] != 99 || runner.execArgs[2] != 42 || runner.execArgs[3] != planetTypeDebris {
+		t.Fatalf("unexpected rename args: %+v", runner.execArgs)
+	}
+}
+
+func TestOverviewRepositoryRenameNoopsForForbiddenName(t *testing.T) {
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: overviewResultsForPlanet(99, "Arakis")}}
+	repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+
+	overview, err := repository.RenamePlanet(context.Background(), appgame.OverviewRenameQuery{PlayerID: 42, PlanetID: 99, Name: "bad;name"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.CurrentPlanet.Name != "Arakis" || runner.execSQL != "" {
+		t.Fatalf("forbidden legacy name should not update, overview=%+v exec=%q", overview.CurrentPlanet, runner.execSQL)
+	}
+}
+
+func TestOverviewRepositoryRenameErrors(t *testing.T) {
+	repository := NewOverviewRepositoryWithRunner(&fakeQueryer{}, nil, "ogame_")
+	if _, err := repository.RenamePlanet(context.Background(), appgame.OverviewRenameQuery{}); err == nil || !strings.Contains(err.Error(), "updater unavailable") {
+		t.Fatalf("expected missing updater error, got %v", err)
+	}
+
+	runner := &fakeOverviewRunner{}
+	repository = NewOverviewRepositoryWithRunner(runner, runner, "bad-prefix_")
+	if _, err := repository.RenamePlanet(context.Background(), appgame.OverviewRenameQuery{}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected unsafe prefix error, got %v", err)
+	}
+
+	runner = &fakeOverviewRunner{
+		fakeQueryer: fakeQueryer{results: overviewResultsForPlanet(99, "Arakis")},
+		execErr:     errors.New("rename failed"),
+	}
+	repository = NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+	if _, err := repository.RenamePlanet(context.Background(), appgame.OverviewRenameQuery{PlayerID: 42, PlanetID: 99, Name: "New Colony"}); err == nil || !strings.Contains(err.Error(), "rename failed") {
+		t.Fatalf("expected rename exec error, got %v", err)
+	}
+}
+
 func TestOverviewRepositoryMatchesLegacyPlanetSelectionEdges(t *testing.T) {
 	t.Run("foreign cp keeps previous selected planet", func(t *testing.T) {
 		runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
@@ -498,6 +558,15 @@ func TestPlanetOrder(t *testing.T) {
 
 func overviewQuery(playerID int, planetID int) appgame.OverviewQuery {
 	return appgame.OverviewQuery{PlayerID: playerID, PlanetID: planetID}
+}
+
+func overviewResultsForPlanet(planetID int, name string) []fakeQueryResult {
+	return []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, planetID, 1, 0, 0})},
+		{rows: fakeRowsFromValues([]any{planetID, name, 1, 1, 2, 3, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{planetID, name, 1, 1, 2, 3})},
+		{rows: fakeRowsFromValues([]any{1})},
+	}
 }
 
 type fakeOverviewRunner struct {

@@ -15,6 +15,7 @@ type SessionLookup interface {
 
 type OverviewRepository interface {
 	GetOverview(context.Context, OverviewQuery) (domaingame.Overview, error)
+	RenamePlanet(context.Context, OverviewRenameQuery) (domaingame.Overview, error)
 }
 
 type OverviewQuery struct {
@@ -22,11 +23,25 @@ type OverviewQuery struct {
 	PlanetID int
 }
 
+type OverviewRenameQuery struct {
+	PlayerID int
+	PlanetID int
+	Name     string
+}
+
 type OverviewCommand struct {
 	PublicSession   string
 	PrivateSessions map[string]string
 	RemoteAddr      string
 	PlanetID        int
+}
+
+type OverviewRenameCommand struct {
+	PublicSession   string
+	PrivateSessions map[string]string
+	RemoteAddr      string
+	PlanetID        int
+	Name            string
 }
 
 type OverviewResult struct {
@@ -49,11 +64,7 @@ func (s OverviewService) GetOverview(ctx context.Context, command OverviewComman
 		return OverviewResult{}, errors.New("overview dependencies unavailable")
 	}
 
-	session, err := s.sessions.GetGameSession(ctx, apppublicsite.GameSessionCommand{
-		PublicSession:   command.PublicSession,
-		PrivateSessions: command.PrivateSessions,
-		RemoteAddr:      command.RemoteAddr,
-	})
+	session, err := s.authenticatedSession(ctx, command.PublicSession, command.PrivateSessions, command.RemoteAddr)
 	if err != nil {
 		return OverviewResult{}, err
 	}
@@ -75,4 +86,42 @@ func (s OverviewService) GetOverview(ctx context.Context, command OverviewComman
 		Authenticated: true,
 		Overview:      overview,
 	}, nil
+}
+
+func (s OverviewService) RenamePlanet(ctx context.Context, command OverviewRenameCommand) (OverviewResult, error) {
+	if s.sessions == nil || s.repository == nil {
+		return OverviewResult{}, errors.New("overview dependencies unavailable")
+	}
+
+	session, err := s.authenticatedSession(ctx, command.PublicSession, command.PrivateSessions, command.RemoteAddr)
+	if err != nil {
+		return OverviewResult{}, err
+	}
+	if !session.Authenticated {
+		return OverviewResult{
+			Authenticated: false,
+			Issues:        session.Issues,
+		}, nil
+	}
+
+	overview, err := s.repository.RenamePlanet(ctx, OverviewRenameQuery{
+		PlayerID: session.Session.PlayerID,
+		PlanetID: command.PlanetID,
+		Name:     command.Name,
+	})
+	if err != nil {
+		return OverviewResult{}, err
+	}
+	return OverviewResult{
+		Authenticated: true,
+		Overview:      overview,
+	}, nil
+}
+
+func (s OverviewService) authenticatedSession(ctx context.Context, publicSession string, privateSessions map[string]string, remoteAddr string) (domainpublicsite.SessionAuthentication, error) {
+	return s.sessions.GetGameSession(ctx, apppublicsite.GameSessionCommand{
+		PublicSession:   publicSession,
+		PrivateSessions: privateSessions,
+		RemoteAddr:      remoteAddr,
+	})
 }

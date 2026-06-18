@@ -1,5 +1,6 @@
 export type GameRouteKey =
   | "overview"
+  | "renamePlanet"
   | "admin"
   | "empire"
   | "buildings"
@@ -30,6 +31,7 @@ export type GameRoute = {
 
 export const gameRoutes: GameRoute[] = [
   { key: "overview", label: "Overview", path: "/game/overview", migrated: true },
+  { key: "renamePlanet", label: "Planet menu", path: "/game/rename-planet", migrated: true },
   { key: "admin", label: "*Admin Area*", path: "/game/admin", migrated: false },
   { key: "empire", label: "Empire", path: "/game/empire", migrated: false },
   { key: "buildings", label: "Buildings", path: "/game/buildings", migrated: true },

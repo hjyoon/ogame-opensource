@@ -6,6 +6,7 @@ describe("game route model", () => {
     expect(gameRoutes.every((route) => route.path.startsWith("/game/"))).toBe(true);
     expect(gameRoutes.every((route) => !route.path.endsWith(".php"))).toBe(true);
     expect(gameRoutes.map((route) => route.path)).toContain("/game/buildings");
+    expect(gameRoutes.map((route) => route.path)).toContain("/game/rename-planet");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/fleet");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/merchant");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/officers");
@@ -20,6 +21,7 @@ describe("game route model", () => {
   test("resolves natural authenticated game routes", () => {
     expect(resolveGameRoute("/game").key).toBe("overview");
     expect(resolveGameRoute("/game/overview").migrated).toBe(true);
+    expect(resolveGameRoute("/game/rename-planet")).toMatchObject({ key: "renamePlanet", migrated: true });
     expect(resolveGameRoute("/game/buildings")).toMatchObject({ key: "buildings", migrated: true });
     expect(resolveGameRoute("/game/resources")).toMatchObject({ key: "resources", migrated: true });
     expect(resolveGameRoute("/game/research")).toMatchObject({ key: "research", migrated: true });
