@@ -240,13 +240,24 @@ func (r OverviewRepository) DeletePlanet(ctx context.Context, query appgame.Over
 			return domaingame.Overview{}, nil, err
 		}
 		if found && moon.Type == domaingame.PlanetTypeMoon {
+			moonScore, err := r.loadPlanetScore(ctx, planetsTable, moon.ID)
+			if err != nil {
+				return domaingame.Overview{}, nil, err
+			}
 			if err := r.markPlanetDestroyed(ctx, planetsTable, moon.ID, planetTypeDestroyedMoon, when, removeAt); err != nil {
 				return domaingame.Overview{}, nil, err
 			}
 			if err := r.flushPlanetQueue(ctx, queueTable, buildQueueTable, moon.ID); err != nil {
 				return domaingame.Overview{}, nil, err
 			}
+			if err := r.applyPlanetScoreRemoval(ctx, usersTable, moonScore); err != nil {
+				return domaingame.Overview{}, nil, err
+			}
 		}
+	}
+	targetScore, err := r.loadPlanetScore(ctx, planetsTable, target.ID)
+	if err != nil {
+		return domaingame.Overview{}, nil, err
 	}
 	destroyedType := planetTypeDestroyed
 	if target.Type == domaingame.PlanetTypeMoon {
@@ -256,6 +267,9 @@ func (r OverviewRepository) DeletePlanet(ctx context.Context, query appgame.Over
 		return domaingame.Overview{}, nil, err
 	}
 	if err := r.flushPlanetQueue(ctx, queueTable, buildQueueTable, target.ID); err != nil {
+		return domaingame.Overview{}, nil, err
+	}
+	if err := r.applyPlanetScoreRemoval(ctx, usersTable, targetScore); err != nil {
 		return domaingame.Overview{}, nil, err
 	}
 	if err := r.updateActivePlanet(ctx, usersTable, query.PlayerID, user.HomePlanetID); err != nil {
@@ -368,6 +382,83 @@ func scanOverviewDeletePlanet(rows Rows) (overviewDeletePlanet, error) {
 	return planet, err
 }
 
+type overviewPlanetScore struct {
+	OwnerID int
+	Score   domaingame.PlanetScore
+}
+
+func (r OverviewRepository) loadPlanetScore(ctx context.Context, planetsTable string, planetID int) (overviewPlanetScore, error) {
+	buildingIDs := domaingame.BuildingIDs()
+	fleetIDs := domaingame.FleetIDs()
+	defenseIDs := domaingame.DefenseIDs()
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT owner_id, %s, %s, %s FROM %s WHERE planet_id = ? LIMIT 1",
+			numericColumns(buildingIDs),
+			numericColumns(fleetIDs),
+			numericColumns(defenseIDs),
+			planetsTable,
+		),
+		planetID,
+	)
+	if err != nil {
+		return overviewPlanetScore{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return overviewPlanetScore{}, err
+		}
+		return overviewPlanetScore{}, errors.New("planet score not found")
+	}
+	score, err := scanPlanetScore(rows, buildingIDs, fleetIDs, defenseIDs)
+	if err != nil {
+		return overviewPlanetScore{}, err
+	}
+	if err := rows.Err(); err != nil {
+		return overviewPlanetScore{}, err
+	}
+	return score, nil
+}
+
+func scanPlanetScore(rows Rows, buildingIDs []int, fleetIDs []int, defenseIDs []int) (overviewPlanetScore, error) {
+	var ownerID int
+	buildingValues := make([]int, len(buildingIDs))
+	fleetValues := make([]int, len(fleetIDs))
+	defenseValues := make([]int, len(defenseIDs))
+	dest := []any{&ownerID}
+	dest = appendIntDest(dest, buildingValues)
+	dest = appendIntDest(dest, fleetValues)
+	dest = appendIntDest(dest, defenseValues)
+	if err := rows.Scan(dest...); err != nil {
+		return overviewPlanetScore{}, err
+	}
+	buildings := make(domaingame.BuildingLevels, len(buildingIDs))
+	for index, id := range buildingIDs {
+		buildings[id] = buildingValues[index]
+	}
+	fleet := make(domaingame.FleetCounts, len(fleetIDs))
+	for index, id := range fleetIDs {
+		fleet[id] = fleetValues[index]
+	}
+	defense := make(domaingame.DefenseCounts, len(defenseIDs))
+	for index, id := range defenseIDs {
+		defense[id] = defenseValues[index]
+	}
+	return overviewPlanetScore{
+		OwnerID: ownerID,
+		Score:   domaingame.CalculatePlanetScore(buildings, fleet, defense),
+	}, nil
+}
+
+func appendIntDest(dest []any, values []int) []any {
+	for index := range values {
+		dest = append(dest, &values[index])
+	}
+	return dest
+}
+
 func (r OverviewRepository) fleetExists(ctx context.Context, fleetTable string, condition string, args ...any) (bool, error) {
 	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT fleet_id FROM %s WHERE %s LIMIT 1", fleetTable, condition), args...)
 	if err != nil {
@@ -402,6 +493,44 @@ func (r OverviewRepository) markPlanetDestroyed(ctx context.Context, planetsTabl
 		planetID,
 	)
 	return err
+}
+
+func (r OverviewRepository) applyPlanetScoreRemoval(ctx context.Context, usersTable string, score overviewPlanetScore) error {
+	if err := r.adjustStats(ctx, usersTable, score.OwnerID, score.Score); err != nil {
+		return err
+	}
+	return r.recalcRanks(ctx, usersTable)
+}
+
+func (r OverviewRepository) adjustStats(ctx context.Context, usersTable string, playerID int, score domaingame.PlanetScore) error {
+	_, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET score1 = score1 - ?, score2 = score2 - ?, score3 = score3 - ? WHERE player_id = ? AND banned = 0 AND admin = 0", usersTable),
+		score.Points,
+		score.FleetPoints,
+		0,
+		playerID,
+	)
+	return err
+}
+
+func (r OverviewRepository) recalcRanks(ctx context.Context, usersTable string) error {
+	statements := []string{
+		fmt.Sprintf("UPDATE %s SET score1 = -1, score2 = -1, score3 = -1 WHERE admin > 0", usersTable),
+		"SET @pos := 0",
+		fmt.Sprintf("UPDATE %s SET place1 = (SELECT @pos := @pos+1) ORDER BY score1 DESC", usersTable),
+		"SET @pos := 0",
+		fmt.Sprintf("UPDATE %s SET place2 = (SELECT @pos := @pos+1) ORDER BY score2 DESC", usersTable),
+		"SET @pos := 0",
+		fmt.Sprintf("UPDATE %s SET place3 = (SELECT @pos := @pos+1) ORDER BY score3 DESC", usersTable),
+		fmt.Sprintf("UPDATE %s SET place1 = 0, place2 = 0, place3 = 0 WHERE admin > 0", usersTable),
+	}
+	for _, statement := range statements {
+		if _, err := r.execer.ExecContext(ctx, statement); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r OverviewRepository) flushPlanetQueue(ctx context.Context, queueTable string, buildQueueTable string, planetID int) error {

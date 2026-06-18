@@ -30,7 +30,7 @@ Tracker for React 19/Bun 1.3 + Go 1.25 native `net/http` migration. Keep under 4
 - Technology covers `techtree` and recursive details; statistics covers player/alliance rankings; search covers player/planet/alliance results.
 - Notes covers `notizen` list, create/edit forms, and add/update/delete mutations.
 - Current planet switching follows legacy owned/foreign/missing/moon `cp` behavior.
-- Overview rename/delete covers legacy name rules, password/home/fleet blockers, destroy markers, queue flush, and active-planet restore.
+- Overview rename/delete covers legacy name rules, password/home/fleet blockers, destroy markers, queue flush, stat/rank updates, and active-planet restore.
 
 ## Verified QA
 
@@ -49,7 +49,7 @@ Full legacy PHP E2E was not run for this Go step. Keep legacy PHP as oracle unti
 - Implement activation confirmation, welcome mail/message, IP log, cleanup timer, and rank recalculation side effects.
 - Add expiry and deeper session security behavior.
 - Close authenticated visual diff for overview/buildings before claiming game-page parity.
-- Port overview stat/rank side effects and remaining legacy actions.
+- Port remaining overview legacy actions.
 - Port queue mutations, research start/cancel, shipyard/defense orders, fleet dispatch/recall/ACS/templates, galaxy quick actions, reports, messages, alliance, admin, maintenance, options, recovery, deletion, vacation, bans, and permissions.
 - Convert legacy E2E cases into Go compatibility checks as each flow is migrated.
 - Run full legacy PHP E2E before declaring any game-flow migration equivalent.

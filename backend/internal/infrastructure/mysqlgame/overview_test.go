@@ -252,6 +252,8 @@ func TestOverviewRepositoryDeletesColonyAndMoon(t *testing.T) {
 		fakeQueryResult{rows: fakeRowsFromValues()},
 		fakeQueryResult{rows: fakeRowsFromValues()},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{200, domaingame.PlanetTypeMoon, 1, 2, 3})},
+		fakeQueryResult{rows: fakeRowsFromValues(overviewScoreRow(42, map[int]int{domaingame.BuildingLunarBase: 1}, nil, nil))},
+		fakeQueryResult{rows: fakeRowsFromValues(overviewScoreRow(42, map[int]int{domaingame.BuildingMetalMine: 2}, map[int]int{domaingame.FleetSmallCargo: 3}, map[int]int{domaingame.DefenseRocketLauncher: 4}))},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1})},
@@ -277,7 +279,7 @@ func TestOverviewRepositoryDeletesColonyAndMoon(t *testing.T) {
 	if overview.CurrentPlanet.ID != 1 || overview.CurrentPlanet.Name != "Homeworld" {
 		t.Fatalf("expected refreshed home overview, got %+v", overview.CurrentPlanet)
 	}
-	if len(runner.execCalls) != 9 {
+	if len(runner.execCalls) != 27 {
 		t.Fatalf("expected moon/planet destroy, queue flush, and active planet update execs, got %+v", runner.execCalls)
 	}
 	first := runner.execCalls[0]
@@ -286,9 +288,17 @@ func TestOverviewRepositoryDeletesColonyAndMoon(t *testing.T) {
 		first.args[2] != int64(1000) || first.args[3] != int64(87400) || first.args[5] != 200 {
 		t.Fatalf("unexpected moon destroy exec: %+v", first)
 	}
-	planetDestroy := runner.execCalls[4]
+	moonStats := runner.execCalls[4]
+	if !strings.Contains(moonStats.sql, "score1 = score1 - ?") || moonStats.args[0] != int64(80000) || moonStats.args[1] != int64(0) || moonStats.args[3] != 42 {
+		t.Fatalf("unexpected moon stats adjustment: %+v", moonStats)
+	}
+	planetDestroy := runner.execCalls[13]
 	if planetDestroy.args[0] != planetTypeDestroyed || planetDestroy.args[5] != 99 {
 		t.Fatalf("unexpected planet destroy exec: %+v", planetDestroy)
+	}
+	planetStats := runner.execCalls[17]
+	if !strings.Contains(planetStats.sql, "score1 = score1 - ?") || planetStats.args[0] != int64(20187) || planetStats.args[1] != int64(3) || planetStats.args[3] != 42 {
+		t.Fatalf("unexpected planet stats adjustment: %+v", planetStats)
 	}
 	last := runner.execCalls[len(runner.execCalls)-1]
 	if !strings.Contains(last.sql, "UPDATE `ogame_users` SET aktplanet = ?") || last.args[0] != 1 || last.args[1] != 42 {
@@ -305,6 +315,7 @@ func TestOverviewRepositoryDeletesColonyWithoutReDeletingDestroyedMoon(t *testin
 		fakeQueryResult{rows: fakeRowsFromValues()},
 		fakeQueryResult{rows: fakeRowsFromValues()},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{200, planetTypeDestroyedMoon, 1, 2, 3})},
+		fakeQueryResult{rows: fakeRowsFromValues(overviewScoreRow(42, nil, nil, nil))},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1})},
@@ -326,7 +337,7 @@ func TestOverviewRepositoryDeletesColonyWithoutReDeletingDestroyedMoon(t *testin
 	if issue != nil || overview.CurrentPlanet.ID != 1 {
 		t.Fatalf("expected colony delete to restore home, overview=%+v issue=%+v", overview.CurrentPlanet, issue)
 	}
-	if len(runner.execCalls) != 5 {
+	if len(runner.execCalls) != 14 {
 		t.Fatalf("destroyed moon marker should not be updated again, execs=%+v", runner.execCalls)
 	}
 	if runner.execCalls[0].args[0] != planetTypeDestroyed || runner.execCalls[0].args[5] != 99 {
@@ -527,6 +538,47 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 			want: "moon failed",
 		},
 		{
+			name: "moon score query",
+			results: append(overviewResultsForPlanet(99, "Colony"),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{200, domaingame.PlanetTypeMoon, 1, 2, 3})},
+				fakeQueryResult{err: errors.New("moon score failed")},
+			),
+			want: "moon score failed",
+		},
+		{
+			name: "target score query",
+			results: append(overviewResultsForPlanet(99, "Colony"),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{err: errors.New("target score failed")},
+			),
+			want: "target score failed",
+		},
+		{
+			name: "moon stats adjustment exec",
+			results: append(overviewResultsForPlanet(99, "Colony"),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{200, domaingame.PlanetTypeMoon, 1, 2, 3})},
+				fakeQueryResult{rows: fakeRowsFromValues(overviewScoreRow(42, nil, nil, nil))},
+			),
+			execErr:   errors.New("moon stats failed"),
+			execErrAt: 5,
+			want:      "moon stats failed",
+		},
+		{
 			name: "destroy exec",
 			results: append(overviewResultsForPlanet(99, "Colony"),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
@@ -535,6 +587,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues(overviewScoreRow(42, nil, nil, nil))},
 			),
 			execErr: errors.New("destroy failed"),
 			want:    "destroy failed",
@@ -548,6 +601,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues(overviewScoreRow(42, nil, nil, nil))},
 			),
 			execErr:   errors.New("flush failed"),
 			execErrAt: 2,
@@ -562,6 +616,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues(overviewScoreRow(42, nil, nil, nil))},
 			),
 			execErr:   errors.New("build flush failed"),
 			execErrAt: 3,
@@ -576,10 +631,41 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues(overviewScoreRow(42, nil, nil, nil))},
 			),
 			execErr:   errors.New("buildqueue flush failed"),
 			execErrAt: 4,
 			want:      "buildqueue flush failed",
+		},
+		{
+			name: "stats adjustment exec",
+			results: append(overviewResultsForPlanet(99, "Colony"),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues(overviewScoreRow(42, nil, nil, nil))},
+			),
+			execErr:   errors.New("stats adjustment failed"),
+			execErrAt: 5,
+			want:      "stats adjustment failed",
+		},
+		{
+			name: "rank recalculation exec",
+			results: append(overviewResultsForPlanet(99, "Colony"),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues(overviewScoreRow(42, nil, nil, nil))},
+			),
+			execErr:   errors.New("rank failed"),
+			execErrAt: 6,
+			want:      "rank failed",
 		},
 		{
 			name: "active restore exec",
@@ -590,9 +676,10 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues(overviewScoreRow(42, nil, nil, nil))},
 			),
 			execErr:   errors.New("active restore failed"),
-			execErrAt: 5,
+			execErrAt: 14,
 			want:      "active restore failed",
 		},
 		{
@@ -604,6 +691,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues(overviewScoreRow(42, nil, nil, nil))},
 				fakeQueryResult{err: errors.New("final overview failed")},
 			),
 			want: "final overview failed",
@@ -637,6 +725,7 @@ func TestOverviewRepositoryDeletesMoon(t *testing.T) {
 		fakeQueryResult{rows: fakeRowsFromValues([]any{200, domaingame.PlanetTypeMoon, 1, 2, 3})},
 		fakeQueryResult{rows: fakeRowsFromValues()},
 		fakeQueryResult{rows: fakeRowsFromValues()},
+		fakeQueryResult{rows: fakeRowsFromValues(overviewScoreRow(42, map[int]int{domaingame.BuildingLunarBase: 1}, nil, nil))},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1})},
@@ -721,6 +810,34 @@ func TestOverviewRepositoryDeleteHelpers(t *testing.T) {
 		t.Fatal("expected moon scan error")
 	}
 
+	queryer = &fakeQueryer{results: []fakeQueryResult{{err: errors.New("score query failed")}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	if _, err := repository.loadPlanetScore(context.Background(), "`ogame_planets`", 99); err == nil || !strings.Contains(err.Error(), "score query failed") {
+		t.Fatalf("expected score query error, got %v", err)
+	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("score empty rows failed"))}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	if _, err := repository.loadPlanetScore(context.Background(), "`ogame_planets`", 99); err == nil || !strings.Contains(err.Error(), "score empty rows failed") {
+		t.Fatalf("expected score empty rows error, got %v", err)
+	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	if _, err := repository.loadPlanetScore(context.Background(), "`ogame_planets`", 99); err == nil || !strings.Contains(err.Error(), "planet score not found") {
+		t.Fatalf("expected missing score error, got %v", err)
+	}
+	scoreRow := overviewScoreRow(42, nil, nil, nil)
+	scoreRow[0] = "bad"
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(scoreRow)}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	if _, err := repository.loadPlanetScore(context.Background(), "`ogame_planets`", 99); err == nil {
+		t.Fatal("expected score scan error")
+	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("score rows failed"), overviewScoreRow(42, nil, nil, nil))}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	if _, err := repository.loadPlanetScore(context.Background(), "`ogame_planets`", 99); err == nil || !strings.Contains(err.Error(), "score rows failed") {
+		t.Fatalf("expected score rows error, got %v", err)
+	}
+
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}
 	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
 	if _, err := repository.fleetExists(context.Background(), "`ogame_fleet`", "start_planet = ?", 99); err == nil {
@@ -739,6 +856,17 @@ func TestOverviewRepositoryDeleteHelpers(t *testing.T) {
 }
 
 func TestOverviewRepositoryMatchesLegacyPlanetSelectionEdges(t *testing.T) {
+	t.Run("empty cp uses home when there is no active planet", func(t *testing.T) {
+		repository := NewOverviewRepositoryWithQueryer(&fakeQueryer{}, "ogame_")
+		planetID, current, persist, err := repository.resolveCurrentPlanet(context.Background(), "`ogame_planets`", overviewUser{HomePlanetID: 99}, appgame.OverviewQuery{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if planetID != 99 || current.ID != 0 || persist {
+			t.Fatalf("expected home fallback without persistence, planet=%d current=%+v persist=%v", planetID, current, persist)
+		}
+	})
+
 	t.Run("foreign cp keeps previous selected planet", func(t *testing.T) {
 		runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 			{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 100, 99, 0, 0})},
@@ -888,6 +1016,21 @@ func TestOverviewRepositoryReturnsErrors(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("foreign selectable cp uses home when there is no active planet", func(t *testing.T) {
+		queryer := &fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues()},
+			{rows: fakeRowsFromValues([]any{555})},
+		}}
+		repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+		planetID, current, persist, err := repository.resolveCurrentPlanet(context.Background(), "`ogame_planets`", overviewUser{HomePlanetID: 99}, appgame.OverviewQuery{PlayerID: 42, PlanetID: 555})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if planetID != 99 || current.ID != 0 || persist {
+			t.Fatalf("expected home fallback for selectable foreign cp, planet=%d current=%+v persist=%v", planetID, current, persist)
+		}
+	})
 }
 
 func TestOverviewRepositoryPropagatesRowErrors(t *testing.T) {
@@ -1053,6 +1196,12 @@ func TestPlanetOrder(t *testing.T) {
 	}
 }
 
+func TestStorageCapacityClampsNegativeLevel(t *testing.T) {
+	if storageCapacity(-5) != storageCapacity(0) {
+		t.Fatalf("expected negative storage level to clamp to zero")
+	}
+}
+
 func overviewQuery(playerID int, planetID int) appgame.OverviewQuery {
 	return appgame.OverviewQuery{PlayerID: playerID, PlanetID: planetID}
 }
@@ -1064,6 +1213,20 @@ func overviewResultsForPlanet(planetID int, name string) []fakeQueryResult {
 		{rows: fakeRowsFromValues([]any{planetID, name, 1, 1, 2, 3})},
 		{rows: fakeRowsFromValues([]any{1})},
 	}
+}
+
+func overviewScoreRow(ownerID int, buildings map[int]int, fleet map[int]int, defense map[int]int) []any {
+	row := []any{ownerID}
+	for _, id := range domaingame.BuildingIDs() {
+		row = append(row, buildings[id])
+	}
+	for _, id := range domaingame.FleetIDs() {
+		row = append(row, fleet[id])
+	}
+	for _, id := range domaingame.DefenseIDs() {
+		row = append(row, defense[id])
+	}
+	return row
 }
 
 type fakeOverviewRunner struct {
