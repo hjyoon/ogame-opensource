@@ -13,7 +13,7 @@ import (
 func TestBuildingsRepositoryReadsLegacyBuildings(t *testing.T) {
 	queryer := &fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 7, 99, 1, 0, 0})},
-		{rows: fakeRowsFromValues([]any{99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3, 12800, 19, 4, 163, 10000.0, 10000.0, 10000.0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3, 12800, 19, 4, 163, 10000.0, 10000.0, 10000.0, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3})},
 		{rows: fakeRowsFromValues([]any{2})},
 		{rows: fakeRowsFromValues(buildingLevelRow(map[int]int{
@@ -111,7 +111,7 @@ func TestBuildingsRepositoryReturnsErrors(t *testing.T) {
 			prefix: "ogame_",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
-				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0})},
+				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1})},
 				{rows: fakeRowsFromValues([]any{1})},
 				{err: errors.New("building query failed")},
@@ -123,7 +123,7 @@ func TestBuildingsRepositoryReturnsErrors(t *testing.T) {
 			prefix: "ogame_",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
-				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0})},
+				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1})},
 				{rows: fakeRowsFromValues([]any{1})},
 				{rows: fakeRowsFromValues()},
@@ -135,7 +135,7 @@ func TestBuildingsRepositoryReturnsErrors(t *testing.T) {
 			prefix: "ogame_",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
-				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0})},
+				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1})},
 				{rows: fakeRowsFromValues([]any{1})},
 				{rows: fakeRowsError(errors.New("building rows failed"))},
@@ -147,7 +147,7 @@ func TestBuildingsRepositoryReturnsErrors(t *testing.T) {
 			prefix: "ogame_",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
-				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0})},
+				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1})},
 				{rows: fakeRowsFromValues([]any{1})},
 				{rows: fakeRowsFromValues([]any{"bad"})},
@@ -159,7 +159,7 @@ func TestBuildingsRepositoryReturnsErrors(t *testing.T) {
 			prefix: "ogame_",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
-				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0})},
+				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1})},
 				{rows: fakeRowsFromValues([]any{1})},
 				{rows: fakeRowsFromValues(buildingLevelRow(nil))},
@@ -172,7 +172,7 @@ func TestBuildingsRepositoryReturnsErrors(t *testing.T) {
 			prefix: "ogame_",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
-				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0})},
+				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1})},
 				{rows: fakeRowsFromValues([]any{1})},
 				{rows: fakeRowsFromValues(buildingLevelRow(nil))},
@@ -185,7 +185,7 @@ func TestBuildingsRepositoryReturnsErrors(t *testing.T) {
 			prefix: "ogame_",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
-				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0})},
+				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1})},
 				{rows: fakeRowsFromValues([]any{1})},
 				{rows: fakeRowsFromValues(buildingLevelRow(nil))},
@@ -198,7 +198,7 @@ func TestBuildingsRepositoryReturnsErrors(t *testing.T) {
 			prefix: "ogame_",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
-				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0})},
+				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1})},
 				{rows: fakeRowsFromValues([]any{1})},
 				{rows: fakeRowsFromValues(buildingLevelRow(nil))},
@@ -211,7 +211,7 @@ func TestBuildingsRepositoryReturnsErrors(t *testing.T) {
 			prefix: "ogame_",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
-				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0})},
+				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1})},
 				{rows: fakeRowsFromValues([]any{1})},
 				{rows: fakeRowsFromValues(buildingLevelRow(nil))},
@@ -225,7 +225,7 @@ func TestBuildingsRepositoryReturnsErrors(t *testing.T) {
 			prefix: "ogame_",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
-				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0})},
+				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1})},
 				{rows: fakeRowsFromValues([]any{1})},
 				{rows: fakeRowsFromValues(buildingLevelRow(nil))},
@@ -239,7 +239,7 @@ func TestBuildingsRepositoryReturnsErrors(t *testing.T) {
 			prefix: "ogame_",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
-				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0})},
+				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Home", domaingame.PlanetTypePlanet, 1, 1, 1})},
 				{rows: fakeRowsFromValues([]any{1})},
 				{rows: fakeRowsFromValues(buildingLevelRow(nil))},

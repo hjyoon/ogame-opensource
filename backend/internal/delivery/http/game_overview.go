@@ -36,9 +36,12 @@ type gameCoordinatesResponse struct {
 }
 
 type gameResourcesResponse struct {
-	Metal     float64 `json:"metal"`
-	Crystal   float64 `json:"crystal"`
-	Deuterium float64 `json:"deuterium"`
+	Metal             float64 `json:"metal"`
+	Crystal           float64 `json:"crystal"`
+	Deuterium         float64 `json:"deuterium"`
+	MetalCapacity     int     `json:"metalCapacity"`
+	CrystalCapacity   int     `json:"crystalCapacity"`
+	DeuteriumCapacity int     `json:"deuteriumCapacity"`
 }
 
 type gamePlanetOverviewResponse struct {
@@ -143,9 +146,12 @@ func toGamePlanetOverviewResponse(planet domaingame.PlanetOverview) gamePlanetOv
 		Fields:      planet.Fields,
 		MaxFields:   planet.MaxFields,
 		Resources: gameResourcesResponse{
-			Metal:     planet.Resources.Metal,
-			Crystal:   planet.Resources.Crystal,
-			Deuterium: planet.Resources.Deuterium,
+			Metal:             planet.Resources.Metal,
+			Crystal:           planet.Resources.Crystal,
+			Deuterium:         planet.Resources.Deuterium,
+			MetalCapacity:     planet.Resources.MetalCapacity,
+			CrystalCapacity:   planet.Resources.CrystalCapacity,
+			DeuteriumCapacity: planet.Resources.DeuteriumCapacity,
 		},
 	}
 }

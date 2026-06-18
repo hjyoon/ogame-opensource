@@ -40,9 +40,12 @@ type Coordinates struct {
 }
 
 type Resources struct {
-	Metal     float64
-	Crystal   float64
-	Deuterium float64
+	Metal             float64
+	Crystal           float64
+	Deuterium         float64
+	MetalCapacity     int
+	CrystalCapacity   int
+	DeuteriumCapacity int
 }
 
 func (s ScoreSummary) DisplayPoints() int64 {

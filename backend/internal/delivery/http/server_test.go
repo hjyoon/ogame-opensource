@@ -636,9 +636,12 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 				Fields:      12,
 				MaxFields:   163,
 				Resources: domaingame.Resources{
-					Metal:     1234.5,
-					Crystal:   234.5,
-					Deuterium: 12,
+					Metal:             1234.5,
+					Crystal:           234.5,
+					Deuterium:         12,
+					MetalCapacity:     100000,
+					CrystalCapacity:   150000,
+					DeuteriumCapacity: 200000,
 				},
 			},
 			PlanetSwitcher: []domaingame.PlanetSummary{{
@@ -671,7 +674,10 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	if !response.Authenticated || response.Overview == nil || response.Overview.Commander != "legor" {
 		t.Fatalf("expected authenticated overview response, got %+v", response)
 	}
-	if response.Overview.Score.Points != 123 || response.Overview.CurrentPlanet.Coordinates.Position != 3 || response.Overview.CurrentPlanet.Resources.Metal != 1234.5 {
+	if response.Overview.Score.Points != 123 ||
+		response.Overview.CurrentPlanet.Coordinates.Position != 3 ||
+		response.Overview.CurrentPlanet.Resources.Metal != 1234.5 ||
+		response.Overview.CurrentPlanet.Resources.CrystalCapacity != 150000 {
 		t.Fatalf("unexpected overview mapping: %+v", response.Overview)
 	}
 	if overview.command.PublicSession != "public" || overview.command.PlanetID != 99 || overview.command.RemoteAddr != "203.0.113.10" {

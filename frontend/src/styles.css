@@ -561,6 +561,7 @@ dd {
 .legacy-overview-table td.legacy-l {
   background-image: var(--legacy-row-bg);
   text-align: left;
+  vertical-align: top;
 }
 
 .legacy-overview-table td.legacy-k {

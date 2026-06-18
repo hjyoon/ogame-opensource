@@ -55,6 +55,9 @@ type Resources = {
   metal: number;
   crystal: number;
   deuterium: number;
+  metalCapacity: number;
+  crystalCapacity: number;
+  deuteriumCapacity: number;
 };
 
 type GameBuildings = {
@@ -169,9 +172,14 @@ export function LegacyGameOverview({ status, error, route, buildingsStatus, buil
 function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
   const planet = overview.currentPlanet;
   const resources = [
-    { name: "Metal", value: planet.resources.metal, img: `${skinBase}/images/metall.gif` },
-    { name: "Crystal", value: planet.resources.crystal, img: `${skinBase}/images/kristall.gif` },
-    { name: "Deuterium", value: planet.resources.deuterium, img: `${skinBase}/images/deuterium.gif` },
+    { name: "Metal", value: planet.resources.metal, capacity: planet.resources.metalCapacity, img: `${skinBase}/images/metall.gif` },
+    { name: "Crystal", value: planet.resources.crystal, capacity: planet.resources.crystalCapacity, img: `${skinBase}/images/kristall.gif` },
+    {
+      name: "Deuterium",
+      value: planet.resources.deuterium,
+      capacity: planet.resources.deuteriumCapacity,
+      img: `${skinBase}/images/deuterium.gif`
+    },
     { name: "Dark Matter", value: 0, img: `${gameImageBase}/dm_klein_2.jpg` },
     { name: "Energy", value: 0, secondary: 0, img: `${skinBase}/images/energie.gif` }
   ];
@@ -229,8 +237,10 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
                   <tr>
                     {resources.map((resource) => (
                       <td className="legacy-header-cell" key={resource.name}>
-                        {formatNumber(resource.value)}
-                        {resource.secondary !== undefined ? `/${formatNumber(resource.secondary)}` : null}
+                        <span style={resource.capacity !== undefined && resource.value >= resource.capacity ? { color: "#ff0000" } : undefined}>
+                          {formatLegacyNumber(resource.value)}
+                        </span>
+                        {resource.secondary !== undefined ? `/${formatLegacyNumber(resource.secondary)}` : null}
                       </td>
                     ))}
                   </tr>
@@ -341,7 +351,7 @@ function BuildingsTable({ buildings }: { buildings: GameBuildings }) {
               {costParts(item.cost).map((part) => (
                 <React.Fragment key={part.name}>
                   {" "}
-                  {part.name}: <b>{formatNumber(part.value)}</b>
+                  {part.name}: <b>{formatLegacyNumber(part.value)}</b>
                 </React.Fragment>
               ))}
               <br />
@@ -540,10 +550,6 @@ function planetCategory(position: number): string {
 
 function formatCoordinates(coordinates: Coordinates): string {
   return `${coordinates.galaxy}:${coordinates.system}:${coordinates.position}`;
-}
-
-function formatNumber(value: number): string {
-  return Math.floor(Math.max(0, value)).toLocaleString("en-US");
 }
 
 function formatLegacyDuration(totalSeconds: number): string {

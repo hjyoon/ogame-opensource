@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
@@ -12,10 +13,13 @@ import (
 )
 
 const (
-	resourceMetal     = 700
-	resourceCrystal   = 701
-	resourceDeuterium = 702
-	planetTypeDebris  = 2
+	buildingMetalStorage     = 22
+	buildingCrystalStorage   = 23
+	buildingDeuteriumStorage = 24
+	resourceMetal            = 700
+	resourceCrystal          = 701
+	resourceDeuterium        = 702
+	planetTypeDebris         = 2
 )
 
 type Queryer interface {
@@ -146,7 +150,16 @@ func (r OverviewRepository) loadUser(ctx context.Context, usersTable string, pla
 func (r OverviewRepository) loadPlanet(ctx context.Context, planetsTable string, playerID int, planetID int) (domaingame.PlanetOverview, error) {
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT planet_id, name, type, g, s, p, diameter, temp, fields, maxfields, `%d`, `%d`, `%d` FROM %s WHERE planet_id = ? AND owner_id = ? AND type < ? LIMIT 1", resourceMetal, resourceCrystal, resourceDeuterium, planetsTable),
+		fmt.Sprintf(
+			"SELECT planet_id, name, type, g, s, p, diameter, temp, fields, maxfields, `%d`, `%d`, `%d`, `%d`, `%d`, `%d` FROM %s WHERE planet_id = ? AND owner_id = ? AND type < ? LIMIT 1",
+			resourceMetal,
+			resourceCrystal,
+			resourceDeuterium,
+			buildingMetalStorage,
+			buildingCrystalStorage,
+			buildingDeuteriumStorage,
+			planetsTable,
+		),
 		planetID,
 		playerID,
 		planetTypeDebris,
@@ -225,6 +238,9 @@ func (r OverviewRepository) loadUniversePlayers(ctx context.Context) (int, error
 
 func scanPlanetOverview(rows Rows) (domaingame.PlanetOverview, error) {
 	var planet domaingame.PlanetOverview
+	var metalStorageLevel int
+	var crystalStorageLevel int
+	var deuteriumStorageLevel int
 	err := rows.Scan(
 		&planet.ID,
 		&planet.Name,
@@ -239,8 +255,25 @@ func scanPlanetOverview(rows Rows) (domaingame.PlanetOverview, error) {
 		&planet.Resources.Metal,
 		&planet.Resources.Crystal,
 		&planet.Resources.Deuterium,
+		&metalStorageLevel,
+		&crystalStorageLevel,
+		&deuteriumStorageLevel,
 	)
-	return planet, err
+	if err != nil {
+		return planet, err
+	}
+	planet.Resources.MetalCapacity = storageCapacity(metalStorageLevel)
+	planet.Resources.CrystalCapacity = storageCapacity(crystalStorageLevel)
+	planet.Resources.DeuteriumCapacity = storageCapacity(deuteriumStorageLevel)
+	return planet, nil
+}
+
+func storageCapacity(level int) int {
+	if level < 0 {
+		level = 0
+	}
+	capacity := 100000.0 + 50000.0*(math.Ceil(math.Pow(1.6, float64(level)))-1)
+	return int(capacity)
 }
 
 func planetOrder(sortBy int, sortOrder int) string {
