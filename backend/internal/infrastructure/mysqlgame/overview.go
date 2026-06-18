@@ -78,28 +78,27 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 	if err != nil {
 		return domaingame.Overview{}, err
 	}
-	planetID := query.PlanetID
-	if planetID == 0 {
-		planetID = user.ActivePlanetID
-	}
-	if planetID == 0 {
-		planetID = user.HomePlanetID
-	}
-
-	current, err := r.loadPlanet(ctx, planetsTable, query.PlayerID, planetID)
+	planetID, current, persistActive, err := r.resolveCurrentPlanet(ctx, planetsTable, user, query)
 	if err != nil {
 		return domaingame.Overview{}, err
+	}
+	if current.ID == 0 {
+		current, err = r.loadPlanet(ctx, planetsTable, query.PlayerID, planetID)
+		if err != nil {
+			return domaingame.Overview{}, err
+		}
 	}
 	if current.ID == 0 && planetID != user.HomePlanetID {
 		current, err = r.loadPlanet(ctx, planetsTable, query.PlayerID, user.HomePlanetID)
 		if err != nil {
 			return domaingame.Overview{}, err
 		}
+		persistActive = query.PlanetID != 0
 	}
 	if current.ID == 0 {
 		return domaingame.Overview{}, errors.New("current planet not found")
 	}
-	if query.PlanetID != 0 && current.ID == query.PlanetID && current.ID != user.ActivePlanetID {
+	if persistActive && current.ID != user.ActivePlanetID {
 		if err := r.updateActivePlanet(ctx, usersTable, query.PlayerID, current.ID); err != nil {
 			return domaingame.Overview{}, err
 		}
@@ -124,6 +123,33 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 		CurrentPlanet:  current,
 		PlanetSwitcher: planets,
 	}, nil
+}
+
+func (r OverviewRepository) resolveCurrentPlanet(ctx context.Context, planetsTable string, user overviewUser, query appgame.OverviewQuery) (int, domaingame.PlanetOverview, bool, error) {
+	if query.PlanetID == 0 {
+		if user.ActivePlanetID != 0 {
+			return user.ActivePlanetID, domaingame.PlanetOverview{}, false, nil
+		}
+		return user.HomePlanetID, domaingame.PlanetOverview{}, false, nil
+	}
+	current, err := r.loadPlanet(ctx, planetsTable, query.PlayerID, query.PlanetID)
+	if err != nil {
+		return 0, domaingame.PlanetOverview{}, false, err
+	}
+	if current.ID == query.PlanetID {
+		return query.PlanetID, current, true, nil
+	}
+	exists, err := r.selectablePlanetExists(ctx, planetsTable, query.PlanetID)
+	if err != nil {
+		return 0, domaingame.PlanetOverview{}, false, err
+	}
+	if exists {
+		if user.ActivePlanetID != 0 {
+			return user.ActivePlanetID, domaingame.PlanetOverview{}, false, nil
+		}
+		return user.HomePlanetID, domaingame.PlanetOverview{}, false, nil
+	}
+	return user.HomePlanetID, domaingame.PlanetOverview{}, true, nil
 }
 
 type overviewUser struct {
@@ -197,6 +223,33 @@ func (r OverviewRepository) loadPlanet(ctx context.Context, planetsTable string,
 		return domaingame.PlanetOverview{}, err
 	}
 	return planet, nil
+}
+
+func (r OverviewRepository) selectablePlanetExists(ctx context.Context, planetsTable string, planetID int) (bool, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT planet_id FROM %s WHERE planet_id = ? AND type < ? LIMIT 1", planetsTable),
+		planetID,
+		planetTypeDebris,
+	)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	var id int
+	if err := rows.Scan(&id); err != nil {
+		return false, err
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return id != 0, nil
 }
 
 func (r OverviewRepository) updateActivePlanet(ctx context.Context, usersTable string, playerID int, planetID int) error {

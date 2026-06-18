@@ -313,6 +313,25 @@ try {
   } catch {
     gameOverviewRestoredBody = {};
   }
+  const missingPlanetSearch = withQueryParam(sessionSearch, "cp", "987654321");
+  const gameOverviewMissingPlanet = await request(`/api/game/overview${missingPlanetSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameOverviewMissingPlanetBody = {};
+  try {
+    gameOverviewMissingPlanetBody = JSON.parse(gameOverviewMissingPlanet.body);
+  } catch {
+    gameOverviewMissingPlanetBody = {};
+  }
+  const gameOverviewAfterMissingPlanet = await request(`/api/game/overview${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameOverviewAfterMissingPlanetBody = {};
+  try {
+    gameOverviewAfterMissingPlanetBody = JSON.parse(gameOverviewAfterMissingPlanet.body);
+  } catch {
+    gameOverviewAfterMissingPlanetBody = {};
+  }
 
   const gameBuildings = await request(`/api/game/buildings${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -718,6 +737,9 @@ try {
       check(gameOverviewSwitchedBody.overview?.currentPlanet?.id === switchPlanetID, "game overview switches to requested planet", gameOverviewSwitchedBody),
       check(gameOverviewAfterSwitchBody.overview?.currentPlanet?.id === switchPlanetID, "game overview persists selected planet like legacy", gameOverviewAfterSwitchBody),
       check(gameOverviewRestoredBody.overview?.currentPlanet?.id === basePlanetID, "game overview can switch back to base planet", gameOverviewRestoredBody),
+      check(gameOverviewMissingPlanet.status === 200, "game overview accepts missing cp fallback", { status: gameOverviewMissingPlanet.status }),
+      check(gameOverviewMissingPlanetBody.overview?.currentPlanet?.id === basePlanetID, "game overview missing cp falls back to base planet", gameOverviewMissingPlanetBody),
+      check(gameOverviewAfterMissingPlanetBody.overview?.currentPlanet?.id === basePlanetID, "game overview persists missing cp fallback", gameOverviewAfterMissingPlanetBody),
       check(gameBuildings.status === 200, "game buildings returns HTTP 200 with private cookie", { status: gameBuildings.status }),
       check(gameBuildingsBody.authenticated === true, "game buildings authenticates the login session", gameBuildingsBody),
       check(

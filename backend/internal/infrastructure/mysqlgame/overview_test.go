@@ -181,6 +181,66 @@ func TestOverviewRepositoryPersistsRequestedPlanet(t *testing.T) {
 	}
 }
 
+func TestOverviewRepositoryMatchesLegacyPlanetSelectionEdges(t *testing.T) {
+	t.Run("foreign cp keeps previous selected planet", func(t *testing.T) {
+		runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 100, 99, 0, 0})},
+			{rows: fakeRowsFromValues()},
+			{rows: fakeRowsFromValues([]any{555})},
+			{rows: fakeRowsFromValues([]any{100, "Colony", 1, 1, 2, 4, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
+			{rows: fakeRowsFromValues([]any{99, "Home", 1, 1, 2, 3}, []any{100, "Colony", 1, 1, 2, 4})},
+			{rows: fakeRowsFromValues([]any{2})},
+		}}}
+		repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+
+		overview, err := repository.GetOverview(context.Background(), overviewQuery(42, 555))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if overview.CurrentPlanet.ID != 100 || runner.execSQL != "" {
+			t.Fatalf("foreign cp should keep active planet without update, overview=%+v exec=%q", overview.CurrentPlanet, runner.execSQL)
+		}
+	})
+
+	t.Run("missing cp falls back and persists home planet", func(t *testing.T) {
+		runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 100, 99, 0, 0})},
+			{rows: fakeRowsFromValues()},
+			{rows: fakeRowsFromValues()},
+			{rows: fakeRowsFromValues([]any{99, "Home", 1, 1, 2, 3, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
+			{rows: fakeRowsFromValues([]any{99, "Home", 1, 1, 2, 3}, []any{100, "Colony", 1, 1, 2, 4})},
+			{rows: fakeRowsFromValues([]any{2})},
+		}}}
+		repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+
+		overview, err := repository.GetOverview(context.Background(), overviewQuery(42, 987654321))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if overview.CurrentPlanet.ID != 99 || runner.execArgs[0] != 99 || runner.execArgs[1] != 42 {
+			t.Fatalf("missing cp should persist home planet, overview=%+v exec=%+v", overview.CurrentPlanet, runner.execArgs)
+		}
+	})
+
+	t.Run("owned moon can become selected planet", func(t *testing.T) {
+		runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 99, 0, 0})},
+			{rows: fakeRowsFromValues([]any{200, "Moon", 0, 1, 2, 3, 12800, 19, 1, 1, 0.0, 0.0, 0.0, 0, 0, 0})},
+			{rows: fakeRowsFromValues([]any{99, "Home", 1, 1, 2, 3}, []any{200, "Moon", 0, 1, 2, 3})},
+			{rows: fakeRowsFromValues([]any{2})},
+		}}}
+		repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+
+		overview, err := repository.GetOverview(context.Background(), overviewQuery(42, 200))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if overview.CurrentPlanet.ID != 200 || overview.CurrentPlanet.Type != 0 || runner.execArgs[0] != 200 {
+			t.Fatalf("owned moon should become active, overview=%+v exec=%+v", overview.CurrentPlanet, runner.execArgs)
+		}
+	})
+}
+
 func TestOverviewRepositoryReturnsActivePlanetUpdateError(t *testing.T) {
 	runner := &fakeOverviewRunner{
 		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
@@ -370,6 +430,43 @@ func TestOverviewRepositoryPropagatesRowErrors(t *testing.T) {
 			repository := NewOverviewRepositoryWithQueryer(tt.queryer, "ogame_")
 
 			_, err := repository.GetOverview(context.Background(), overviewQuery(42, 0))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestOverviewRepositorySelectablePlanetExistsEdges(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		queryer *fakeQueryer
+		want    string
+	}{
+		{
+			name:    "query error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{err: errors.New("selectable query failed")}}},
+			want:    "selectable query failed",
+		},
+		{
+			name:    "empty rows error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("selectable empty rows failed"))}}},
+			want:    "selectable empty rows failed",
+		},
+		{
+			name:    "scan error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}},
+			want:    "expected int",
+		},
+		{
+			name:    "rows error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("selectable rows failed"), []any{1})}}},
+			want:    "selectable rows failed",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewOverviewRepositoryWithQueryer(tt.queryer, "ogame_")
+			_, err := repository.selectablePlanetExists(context.Background(), "ogame_planets", 1)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("expected %q error, got %v", tt.want, err)
 			}

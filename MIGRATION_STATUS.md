@@ -2,7 +2,7 @@
 
 Updated: 2026-06-18 KST, branch `hjyoon/golang`.
 
-Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http` backend migration. Keep under 4KB; split details into linked docs first.
+Tracker for React 19/Bun 1.3 + Go 1.25 native `net/http` migration. Keep under 4KB; split linked docs first.
 
 ## Current State
 
@@ -11,14 +11,14 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - `/api/healthz` reports tool targets plus static and legacy asset readiness.
 - Natural routes and legacy `.php` aliases resolve through the React shell.
 - Aliases, CSS bootstrap, smoke routes, and visual specs share manifests.
-- `/home`, `/register`, `/about`, `/story`, `/screenshots`, `/rules`, `/legal`, `/universes`, and aliases match the legacy public compositions.
+- Public routes and aliases match the legacy public compositions.
 - Legacy public assets, evolution skin, and game images are copied into `frontend/dist/public-assets`.
 - `/api/public/universes` reads the master DB with config fallback.
 - Registration validates drafts, checks duplicates/capacity, then creates legacy-compatible user, home planet, sessions, and `/game/overview` redirect.
 - Login/logout create and clear legacy sessions, private cookies, and `/game` redirects.
 - `/api/game/session` validates public session plus private cookie, bans, and IP checks.
 - `/api/game/{overview,buildings,resources,research,shipyard,fleet,galaxy,defense,technology,statistics,search,notes}` return models; resources/notes store settings.
-- Auth `/game/*` routes preserve sessions and `cp`; migrated game screens use the legacy `evolution` skin.
+- Auth `/game/*` routes preserve sessions and persist `cp`; migrated game screens use the legacy `evolution` skin.
 - Modernization: [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
 
 ## Latest Verified Implementation
@@ -29,13 +29,14 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - Defense covers display state only: shipyard gate, requirements, shield dome/missile caps, busy state, costs, durations, counts, and max hints.
 - Technology covers `techtree` and recursive details; statistics covers player/alliance rankings; search covers player/planet/alliance results.
 - Notes covers `notizen` list, create/edit forms, and add/update/delete mutations.
+- Current planet switching follows legacy owned/foreign/missing/moon `cp` behavior.
 
 ## Verified QA
 
 - `bun run build && bun run check && bun test`: passing.
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
-- Go smoke covers health, routes, assets, registration, login, session/logout, migrated reads incl. stats/search/notes, guards, and private-cookie non-disclosure.
-- Playwright visual/CSR E2E covers public pages, flags, menu, and auth overview/buildings/resources/research/shipyard/fleet/galaxy/defense/technology/stats/search/notes in Chromium/Firefox.
+- Go smoke covers health, routes, assets, auth/session/logout, migrated reads/mutations, guards, and private-cookie non-disclosure.
+- Playwright visual/CSR E2E covers public pages and auth game routes in Chromium/Firefox.
 - Auth visual contract passes in Chromium/Firefox; parity still misses (diff about 12.5-54.5%, box delta <=2).
 - Go internal coverage gate: `97.0% >= 97%`.
 - Go smoke JSON: `all_pass: true`.
@@ -47,7 +48,7 @@ Full legacy PHP E2E was not run for this Go step. Keep legacy PHP as oracle unti
 - Implement activation confirmation, welcome mail/message, IP log, cleanup timer, and rank recalculation side effects.
 - Add expiry and deeper session security behavior.
 - Close authenticated visual diff for overview/buildings before claiming game-page parity.
-- Port current planet switching and full overview actions from legacy DB.
+- Port full overview actions from legacy DB.
 - Port queue mutations, research start/cancel, shipyard/defense orders, fleet dispatch/recall/ACS/templates, galaxy quick actions, reports, messages, alliance, admin, maintenance, options, recovery, deletion, vacation, bans, and permissions.
 - Convert legacy E2E cases into Go compatibility checks as each flow is migrated.
 - Run full legacy PHP E2E before declaring any game-flow migration equivalent.
