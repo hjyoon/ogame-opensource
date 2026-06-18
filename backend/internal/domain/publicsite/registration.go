@@ -52,6 +52,14 @@ type RegisteredAccount struct {
 	Validated      bool
 }
 
+type RegistrationWelcomeMail struct {
+	Character      string
+	Password       string
+	Email          string
+	ActivationCode string
+	UniverseNumber int
+}
+
 type ActivatedAccount struct {
 	Found    bool
 	PlayerID int

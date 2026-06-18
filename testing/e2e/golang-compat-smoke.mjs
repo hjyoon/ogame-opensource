@@ -1,6 +1,7 @@
 import { publicRouteAliases, publicRoutes } from "../../frontend/src/routes.ts";
 
 const baseUrl = (process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890").replace(/\/+$/, "");
+const mailhogBaseUrl = (process.env.OGAME_MAILHOG_BASE_URL ?? "http://127.0.0.1:8026").replace(/\/+$/, "");
 const loginSmokeUser = process.env.OGAME_GO_LOGIN_SMOKE_USER ?? "legor";
 const loginSmokePassword = process.env.OGAME_GO_LOGIN_SMOKE_PASS ?? "admin";
 
@@ -36,6 +37,77 @@ function withQueryParam(search, key, value) {
 
 function noLoopbackAsset(body) {
   return !/(?:src|href|background)=["']https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\//i.test(body);
+}
+
+async function mailhogRequest(path, options = {}) {
+  try {
+    const response = await fetch(`${mailhogBaseUrl}${path}`, options);
+    return {
+      ok: response.ok,
+      status: response.status,
+      body: await response.text()
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      body: "",
+      error: String(error)
+    };
+  }
+}
+
+async function clearMailhog() {
+  let last = { ok: false, status: 0, body: "" };
+  for (let index = 0; index < 20; index += 1) {
+    last = await mailhogRequest("/api/v1/messages", { method: "DELETE" });
+    if (last.ok) {
+      return last;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return last;
+}
+
+async function readMailhogMessages() {
+  const response = await mailhogRequest("/api/v2/messages");
+  let parsed = {};
+  try {
+    parsed = JSON.parse(response.body);
+  } catch {
+    parsed = {};
+  }
+  return {
+    response,
+    messages: Array.isArray(parsed.items) ? parsed.items : []
+  };
+}
+
+function mailhogRecipients(message) {
+  const rawTo = Array.isArray(message?.Raw?.To) ? message.Raw.To : [];
+  const headerTo = Array.isArray(message?.Content?.Headers?.To) ? message.Content.Headers.To : [];
+  return [...rawTo, ...headerTo].map((item) => String(item).toLowerCase());
+}
+
+function mailhogBody(message) {
+  return String(message?.Content?.Body ?? "");
+}
+
+async function waitForMailhogMessage(email, needle) {
+  let last = { response: { ok: false, status: 0, body: "" }, messages: [] };
+  for (let index = 0; index < 20; index += 1) {
+    last = await readMailhogMessages();
+    const message = last.messages.find((item) => {
+      const recipients = mailhogRecipients(item);
+      return recipients.some((recipient) => recipient.includes(email.toLowerCase())) &&
+        mailhogBody(item).toLowerCase().includes(needle.toLowerCase());
+    });
+    if (message) {
+      return { ...last, message };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return { ...last, message: null };
 }
 
 const cases = [];
@@ -138,13 +210,15 @@ try {
   }));
 
   const registrationPassword = "E2E_http123";
+  const registrationEmail = `new-pilot-${runId}@example.local`;
+  const mailhogClear = await clearMailhog();
   const createdRegistration = await request("/api/public/registration", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       character: `NewPilot${runId}`,
       password: registrationPassword,
-      email: `new-pilot-${runId}@example.local`,
+      email: registrationEmail,
       universe: universes[0]?.baseUrl ?? "http://localhost:8888",
       agb: true
     })
@@ -174,9 +248,13 @@ try {
   } catch {
     createdOverviewBody = {};
   }
+  const welcomeMail = await waitForMailhogMessage(registrationEmail, "activate your account");
+  const welcomeMailBody = welcomeMail.message ? mailhogBody(welcomeMail.message) : "";
+  const activationLinkPattern = /https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/game\/validate\.php\?ack=[a-f0-9]+/i;
   cases.push(finalize({
     case: "go_registration_creation_api",
     checks: [
+      check(mailhogClear.ok, "MailHog inbox can be cleared before registration", mailhogClear),
       check(createdRegistration.status === 200, "registration creation returns HTTP 200", { status: createdRegistration.status }),
       check(hasHeader(createdRegistration, "content-type", "application/json"), "registration creation returns JSON"),
       check(createdRegistrationBody.valid === true && createdRegistrationBody.created === true, "registration creation succeeds", createdRegistrationBody),
@@ -188,7 +266,16 @@ try {
       check(!createdRegistration.body.includes("validatemd") && !createdRegistration.body.includes("activationCode"), "registration creation response does not expose activation code"),
       check(createdOverview.status === 200, "created registration session can read game overview", { status: createdOverview.status }),
       check(createdOverviewBody.authenticated === true, "created registration overview is authenticated", createdOverviewBody),
-      check(createdOverviewBody.overview?.currentPlanet?.id === createdRegistrationBody.account?.homePlanetId, "created overview uses home planet", createdOverviewBody.overview?.currentPlanet ?? {})
+      check(createdOverviewBody.overview?.currentPlanet?.id === createdRegistrationBody.account?.homePlanetId, "created overview uses home planet", createdOverviewBody.overview?.currentPlanet ?? {}),
+      check(welcomeMail.message !== null, "registration sends a welcome mail through MailHog", {
+        mailhogStatus: welcomeMail.response.status,
+        recipients: welcomeMail.message ? mailhogRecipients(welcomeMail.message) : []
+      }),
+      check(welcomeMailBody.includes("Click on this link to activate your account:"), "welcome mail contains legacy activation prompt"),
+      check(welcomeMailBody.includes(`Password: ${registrationPassword}`), "welcome mail contains the registration password"),
+      check(activationLinkPattern.test(welcomeMailBody), "welcome mail contains a legacy activation link", {
+        match: welcomeMailBody.match(activationLinkPattern)?.[0] ?? ""
+      })
     ]
   }));
 

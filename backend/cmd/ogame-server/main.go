@@ -16,6 +16,7 @@ import (
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/catalogrepo"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/configcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/filesystem"
+	inframail "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mail"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlgame"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlregistration"
@@ -156,13 +157,26 @@ func registrationRegistrar(cfg config.Config, logger *slog.Logger) apppublicsite
 	}
 
 	logger.Info("universe DB registration creation enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
-	return apppublicsite.NewRegistrationRegistrar(
+	return apppublicsite.NewRegistrationRegistrarWithMailer(
 		mysqlregistration.NewAvailabilityChecker(db, cfg.UniDBPrefix),
 		mysqlregistration.NewAccountCreator(db, cfg.UniDBPrefix, cfg.UniDBSecret),
 		mysqlregistration.NewSessionStore(db, cfg.UniDBPrefix),
 		infrasession.TokenGenerator{},
 		cfg.UniNumber,
+		registrationWelcomeMailer(cfg, logger),
 	)
+}
+
+func registrationWelcomeMailer(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationWelcomeMailer {
+	if !cfg.SMTPEnabled {
+		return nil
+	}
+	logger.Info("registration welcome SMTP enabled", "addr", cfg.SMTPAddr, "publicBaseURL", cfg.PublicBaseURL)
+	return inframail.NewRegistrationWelcomeMailer(inframail.SMTPConfig{
+		Addr:          cfg.SMTPAddr,
+		From:          cfg.SMTPFrom,
+		PublicBaseURL: cfg.PublicBaseURL,
+	})
 }
 
 func loginValidator(cfg config.Config, logger *slog.Logger) apppublicsite.LoginDraftValidator {

@@ -25,6 +25,10 @@ type RegistrationAccountCreator interface {
 	CreateRegistrationAccount(context.Context, domain.RegistrationDraft, string) (domain.RegisteredAccount, error)
 }
 
+type RegistrationWelcomeMailer interface {
+	SendRegistrationWelcome(context.Context, domain.RegistrationWelcomeMail) error
+}
+
 type RegistrationAccountActivator interface {
 	ActivateRegistrationAccount(context.Context, string) (domain.ActivatedAccount, error)
 }
@@ -47,6 +51,7 @@ type RegistrationRegistrar struct {
 	accounts       RegistrationAccountCreator
 	sessions       LoginSessionWriter
 	tokens         LoginTokenGenerator
+	mailer         RegistrationWelcomeMailer
 	now            func() time.Time
 	universeNumber int
 }
@@ -104,6 +109,17 @@ func NewRegistrationRegistrar(
 	return NewRegistrationRegistrarWithClock(availability, accounts, sessions, tokens, universeNumber, time.Now)
 }
 
+func NewRegistrationRegistrarWithMailer(
+	availability RegistrationAvailabilityChecker,
+	accounts RegistrationAccountCreator,
+	sessions LoginSessionWriter,
+	tokens LoginTokenGenerator,
+	universeNumber int,
+	mailer RegistrationWelcomeMailer,
+) RegistrationRegistrar {
+	return NewRegistrationRegistrarWithClockAndMailer(availability, accounts, sessions, tokens, universeNumber, time.Now, mailer)
+}
+
 func NewRegistrationRegistrarWithClock(
 	availability RegistrationAvailabilityChecker,
 	accounts RegistrationAccountCreator,
@@ -111,6 +127,18 @@ func NewRegistrationRegistrarWithClock(
 	tokens LoginTokenGenerator,
 	universeNumber int,
 	now func() time.Time,
+) RegistrationRegistrar {
+	return NewRegistrationRegistrarWithClockAndMailer(availability, accounts, sessions, tokens, universeNumber, now, nil)
+}
+
+func NewRegistrationRegistrarWithClockAndMailer(
+	availability RegistrationAvailabilityChecker,
+	accounts RegistrationAccountCreator,
+	sessions LoginSessionWriter,
+	tokens LoginTokenGenerator,
+	universeNumber int,
+	now func() time.Time,
+	mailer RegistrationWelcomeMailer,
 ) RegistrationRegistrar {
 	if now == nil {
 		now = time.Now
@@ -120,6 +148,7 @@ func NewRegistrationRegistrarWithClock(
 		accounts:       accounts,
 		sessions:       sessions,
 		tokens:         tokens,
+		mailer:         mailer,
 		now:            now,
 		universeNumber: universeNumber,
 	}
@@ -181,6 +210,18 @@ func (r RegistrationRegistrar) RegisterAccount(ctx context.Context, command Regi
 	account, err := r.accounts.CreateRegistrationAccount(ctx, draft, command.RemoteAddr)
 	if err != nil {
 		return domain.RegistrationCreation{}, err
+	}
+	if r.mailer != nil {
+		err := r.mailer.SendRegistrationWelcome(ctx, domain.RegistrationWelcomeMail{
+			Character:      draft.Character,
+			Password:       draft.Password,
+			Email:          draft.Email,
+			ActivationCode: account.ActivationCode,
+			UniverseNumber: r.universeNumber,
+		})
+		if err != nil {
+			return domain.RegistrationCreation{}, err
+		}
 	}
 	publicSession, err := r.tokens.NewPublicSession()
 	if err != nil {

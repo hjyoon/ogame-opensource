@@ -18,7 +18,11 @@ type Config struct {
 	StaticDir        string
 	LegacyAssetDir   string
 	LegacyBaseURL    string
+	PublicBaseURL    string
 	PublicUniverses  string
+	SMTPEnabled      bool
+	SMTPAddr         string
+	SMTPFrom         string
 	MasterDBEnabled  bool
 	MasterDBHost     string
 	MasterDBUser     string
@@ -35,14 +39,19 @@ type Config struct {
 }
 
 func Load() Config {
+	legacyBaseURL := env("OGAME_LEGACY_BASE_URL", "http://localhost:8888")
 	return Config{
 		Addr:             env("OGAME_HTTP_ADDR", ":8080"),
 		Environment:      env("OGAME_ENV", "development"),
 		LogLevel:         env("OGAME_LOG_LEVEL", "info"),
 		StaticDir:        env("OGAME_STATIC_DIR", "frontend/dist"),
 		LegacyAssetDir:   env("OGAME_LEGACY_ASSET_DIR", "download"),
-		LegacyBaseURL:    env("OGAME_LEGACY_BASE_URL", "http://localhost:8888"),
+		LegacyBaseURL:    legacyBaseURL,
+		PublicBaseURL:    env("OGAME_PUBLIC_BASE_URL", legacyBaseURL),
 		PublicUniverses:  env("OGAME_PUBLIC_UNIVERSES", ""),
+		SMTPEnabled:      envBool("OGAME_SMTP_ENABLE", false),
+		SMTPAddr:         env("OGAME_SMTP_ADDR", "localhost:1025"),
+		SMTPFrom:         env("OGAME_SMTP_FROM", "OGame <noreply@localhost>"),
 		MasterDBEnabled:  envBool("OGAME_MASTER_DB_ENABLE", true),
 		MasterDBHost:     env("OGAME_MDB_HOST", "mysql"),
 		MasterDBUser:     env("OGAME_MDB_USER", "root"),

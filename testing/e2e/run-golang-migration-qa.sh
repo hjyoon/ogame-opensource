@@ -4,6 +4,7 @@ set -eu
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 ROOT_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
 GO_BASE_URL="http://127.0.0.1:${OGAME_GO_PORT:-8890}"
+MAILHOG_BASE_URL="http://127.0.0.1:${OGAME_MAILHOG_PORT:-8026}"
 
 wait_for_url() {
   url="$1"
@@ -44,7 +45,7 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
   wait_for_url "$GO_BASE_URL/"
   if command -v bun >/dev/null 2>&1; then
     mkdir -p "$ROOT_DIR/.tmp"
-    OGAME_GO_BASE_URL="$GO_BASE_URL" bun "$SCRIPT_DIR/golang-compat-smoke.mjs" > "$ROOT_DIR/.tmp/golang-compat-smoke.json"
+    OGAME_GO_BASE_URL="$GO_BASE_URL" OGAME_MAILHOG_BASE_URL="$MAILHOG_BASE_URL" bun "$SCRIPT_DIR/golang-compat-smoke.mjs" > "$ROOT_DIR/.tmp/golang-compat-smoke.json"
     printf 'Go compatibility smoke: %s\n' "$ROOT_DIR/.tmp/golang-compat-smoke.json"
   fi
 fi

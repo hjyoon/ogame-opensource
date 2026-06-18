@@ -7,7 +7,11 @@ services:
       OGAME_ENV: ${OGAME_ENV:-development}
       OGAME_HTTP_ADDR: :8080
       OGAME_LEGACY_BASE_URL: ${OGAME_LEGACY_BASE_URL:-http://localhost:8888}
+      OGAME_PUBLIC_BASE_URL: ${OGAME_PUBLIC_BASE_URL:-http://localhost:${OGAME_GO_PORT:-8890}}
       OGAME_PUBLIC_UNIVERSES: ${OGAME_PUBLIC_UNIVERSES:-}
+      OGAME_SMTP_ENABLE: ${OGAME_SMTP_ENABLE:-1}
+      OGAME_SMTP_ADDR: ${OGAME_SMTP_ADDR:-mailhog:1025}
+      OGAME_SMTP_FROM: ${OGAME_SMTP_FROM:-OGame <noreply@localhost>}
       OGAME_MASTER_DB_ENABLE: ${OGAME_MASTER_DB_ENABLE:-1}
       OGAME_MDB_HOST: ${OGAME_MDB_HOST:-mysql}
       OGAME_MDB_USER: ${OGAME_MDB_USER:-root}
@@ -23,3 +27,10 @@ services:
       OGAME_UNI_NUMBER: ${OGAME_UNI_NUMBER:-1}
     ports:
       - "${OGAME_GO_PORT:-8890}:8080"
+    depends_on:
+      - mailhog
+
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "${OGAME_MAILHOG_PORT:-8026}:8025"

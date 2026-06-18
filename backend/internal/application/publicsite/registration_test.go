@@ -169,6 +169,55 @@ func TestRegistrationRegistrarCreatesAccountAndSavesLoginSession(t *testing.T) {
 	}
 }
 
+func TestRegistrationRegistrarSendsWelcomeMail(t *testing.T) {
+	accounts := &recordingAccountCreator{
+		account: domain.RegisteredAccount{PlayerID: 42, HomePlanetID: 99, ActivationCode: "activation"},
+	}
+	mailer := &recordingRegistrationMailer{}
+	registrar := NewRegistrationRegistrarWithClockAndMailer(
+		nil,
+		accounts,
+		fakeSessionWriter{},
+		fakeLoginTokens{},
+		7,
+		fixedRegistrationTime,
+		mailer,
+	)
+
+	_, err := registrar.RegisterAccount(context.Background(), validRegistrationCommand())
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !mailer.called {
+		t.Fatal("expected welcome mailer to be called")
+	}
+	if mailer.message.Character != "Commander01" || mailer.message.Password != "E2E_http123" || mailer.message.Email != "commander@example.local" {
+		t.Fatalf("unexpected welcome mail payload: %+v", mailer.message)
+	}
+	if mailer.message.ActivationCode != "activation" || mailer.message.UniverseNumber != 7 {
+		t.Fatalf("unexpected welcome mail activation payload: %+v", mailer.message)
+	}
+}
+
+func TestRegistrationRegistrarReturnsWelcomeMailError(t *testing.T) {
+	wantErr := errors.New("mail failed")
+	registrar := NewRegistrationRegistrarWithMailer(
+		nil,
+		fakeAccountCreator{account: domain.RegisteredAccount{PlayerID: 42, HomePlanetID: 99, ActivationCode: "activation"}},
+		fakeSessionWriter{},
+		fakeLoginTokens{},
+		1,
+		&recordingRegistrationMailer{err: wantErr},
+	)
+
+	_, err := registrar.RegisterAccount(context.Background(), validRegistrationCommand())
+
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected welcome mail error, got %v", err)
+	}
+}
+
 func TestRegistrationRegistrarReturnsDependencyError(t *testing.T) {
 	registrar := NewRegistrationRegistrar(nil, nil, nil, nil, 1)
 
@@ -408,6 +457,18 @@ func (r *recordingAccountCreator) CreateRegistrationAccount(_ context.Context, d
 	r.draft = draft
 	r.remoteAddr = remoteAddr
 	return r.account, r.err
+}
+
+type recordingRegistrationMailer struct {
+	called  bool
+	message domain.RegistrationWelcomeMail
+	err     error
+}
+
+func (r *recordingRegistrationMailer) SendRegistrationWelcome(_ context.Context, message domain.RegistrationWelcomeMail) error {
+	r.called = true
+	r.message = message
+	return r.err
 }
 
 type fakeSessionWriter struct {
