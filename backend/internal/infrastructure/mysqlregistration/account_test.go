@@ -17,13 +17,15 @@ import (
 func TestAccountCreatorCreatesLegacyUserAndHomePlanet(t *testing.T) {
 	txer := &fakeRegistrationTxRunner{tx: &fakeRegistrationTx{
 		queryResponses: []fakeResponse{
-			{rows: &fakeRows{items: []fakeRow{{values: []any{1, 499, 9, "en", 0, 5000}}}}},
+			{rows: &fakeRows{items: []fakeRow{{values: []any{1, 499, 9, "en", 0, 5000, "https://board.example", "https://tutorial.example"}}}}},
 			{rows: &fakeRows{}},
 		},
 		execResults: []sql.Result{
 			fakeSQLResult{id: 0},
 			fakeSQLResult{id: 42},
+			fakeSQLResult{id: 0},
 			fakeSQLResult{id: 99},
+			fakeSQLResult{id: 0},
 			fakeSQLResult{id: 0},
 		},
 	}}
@@ -47,8 +49,8 @@ func TestAccountCreatorCreatesLegacyUserAndHomePlanet(t *testing.T) {
 	if !txer.called {
 		t.Fatal("expected account creation to run in a transaction")
 	}
-	if len(txer.tx.execCalls) != 4 {
-		t.Fatalf("expected four exec calls, got %+v", txer.tx.execCalls)
+	if len(txer.tx.execCalls) != 6 {
+		t.Fatalf("expected six exec calls, got %+v", txer.tx.execCalls)
 	}
 	userInsert := txer.tx.execCalls[1]
 	if !strings.Contains(userInsert.query, "INSERT INTO `uni1_users`") {
@@ -60,7 +62,12 @@ func TestAccountCreatorCreatesLegacyUserAndHomePlanet(t *testing.T) {
 	if !containsArg(userInsert.args, "commander@example.local") || !containsArg(userInsert.args, "07569eae982eee30eaaa91c2b8b1d058") {
 		t.Fatalf("expected legacy email and password hash, got %+v", userInsert.args)
 	}
-	planetInsert := txer.tx.execCalls[2]
+	ipLogInsert := txer.tx.execCalls[2]
+	if !strings.Contains(ipLogInsert.query, "INSERT INTO `uni1_iplogs`") ||
+		!containsArg(ipLogInsert.args, "203.0.113.10") || !containsArg(ipLogInsert.args, 42) || !containsArg(ipLogInsert.args, 1) {
+		t.Fatalf("expected registration IP log insert, got %+v", ipLogInsert)
+	}
+	planetInsert := txer.tx.execCalls[3]
 	if !strings.Contains(planetInsert.query, "INSERT INTO `uni1_planets`") {
 		t.Fatalf("expected planets insert, got %q", planetInsert.query)
 	}
@@ -69,8 +76,20 @@ func TestAccountCreatorCreatesLegacyUserAndHomePlanet(t *testing.T) {
 			t.Fatalf("expected planet insert arg %#v, got %+v", expected, planetInsert.args)
 		}
 	}
-	if !strings.Contains(txer.tx.execCalls[3].query, "hplanetid") || txer.tx.execCalls[3].args[0] != 99 || txer.tx.execCalls[3].args[2] != 42 {
-		t.Fatalf("unexpected home planet update: %+v", txer.tx.execCalls[3])
+	if !strings.Contains(txer.tx.execCalls[4].query, "hplanetid") || txer.tx.execCalls[4].args[0] != 99 || txer.tx.execCalls[4].args[2] != 42 {
+		t.Fatalf("unexpected home planet update: %+v", txer.tx.execCalls[4])
+	}
+	greetingInsert := txer.tx.execCalls[5]
+	if !strings.Contains(greetingInsert.query, "INSERT INTO `uni1_messages`") ||
+		!containsArg(greetingInsert.args, 42) || !containsArg(greetingInsert.args, 5) ||
+		!containsArg(greetingInsert.args, "Fleet Command") || !containsArg(greetingInsert.args, "Welcome to OGame!") {
+		t.Fatalf("expected welcome message insert, got %+v", greetingInsert)
+	}
+	if !containsArg(greetingInsert.args, int(fixedAccountTime().Unix())) {
+		t.Fatalf("expected welcome message date to match registration time, got %+v", greetingInsert.args)
+	}
+	if !containsStringArg(greetingInsert.args, "https://tutorial.example/") || !containsStringArg(greetingInsert.args, "https://board.example/") {
+		t.Fatalf("expected welcome message to include universe links, got %+v", greetingInsert.args)
 	}
 }
 
@@ -234,18 +253,28 @@ func TestAccountCreatorReturnsStageErrors(t *testing.T) {
 			queryResponses: []fakeResponse{validUniverse()},
 			execResults:    []sql.Result{fakeSQLResult{id: 0}, fakeSQLResult{id: 0}},
 		},
+		"ip log": {
+			queryResponses: []fakeResponse{validUniverse()},
+			execResults:    []sql.Result{fakeSQLResult{id: 0}, fakeSQLResult{id: 42}},
+			execErrors:     []error{nil, nil, errors.New("ip log failed")},
+		},
 		"coordinates": {
 			queryResponses: []fakeResponse{validUniverse(), {err: errors.New("coordinates failed")}},
 			execResults:    []sql.Result{fakeSQLResult{id: 0}, fakeSQLResult{id: 42}},
 		},
 		"planet insert": {
 			queryResponses: []fakeResponse{validUniverse(), {rows: &fakeRows{}}},
-			execResults:    []sql.Result{fakeSQLResult{id: 0}, fakeSQLResult{id: 42}, fakeSQLResult{id: 0}},
+			execResults:    []sql.Result{fakeSQLResult{id: 0}, fakeSQLResult{id: 42}, fakeSQLResult{id: 0}, fakeSQLResult{id: 0}},
 		},
 		"home update": {
 			queryResponses: []fakeResponse{validUniverse(), {rows: &fakeRows{}}},
-			execResults:    []sql.Result{fakeSQLResult{id: 0}, fakeSQLResult{id: 42}, fakeSQLResult{id: 99}, fakeSQLResult{id: 0}},
-			execErrors:     []error{nil, nil, nil, errors.New("home update failed")},
+			execResults:    []sql.Result{fakeSQLResult{id: 0}, fakeSQLResult{id: 42}, fakeSQLResult{id: 0}, fakeSQLResult{id: 99}, fakeSQLResult{id: 0}},
+			execErrors:     []error{nil, nil, nil, nil, errors.New("home update failed")},
+		},
+		"welcome message": {
+			queryResponses: []fakeResponse{validUniverse(), {rows: &fakeRows{}}},
+			execResults:    []sql.Result{fakeSQLResult{id: 0}, fakeSQLResult{id: 42}, fakeSQLResult{id: 0}, fakeSQLResult{id: 99}, fakeSQLResult{id: 0}},
+			execErrors:     []error{nil, nil, nil, nil, nil, errors.New("welcome failed")},
 		},
 	}
 	for name, tx := range cases {
@@ -405,6 +434,16 @@ func fixedRandomBytes(size int) ([]byte, error) {
 func containsArg(args []any, expected any) bool {
 	for _, arg := range args {
 		if arg == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func containsStringArg(args []any, expected string) bool {
+	for _, arg := range args {
+		value, ok := arg.(string)
+		if ok && strings.Contains(value, expected) {
 			return true
 		}
 	}

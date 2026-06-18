@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"html"
 	"math"
 	"strings"
 	"time"
@@ -46,6 +47,8 @@ type registrationUniverse struct {
 	Language  string
 	ForceLang int
 	StartDM   int
+	BoardURL  string
+	Tutorial  string
 }
 
 type planetCoordinates struct {
@@ -113,6 +116,14 @@ func (c AccountCreator) CreateRegistrationAccount(ctx context.Context, draft dom
 	if err != nil {
 		return domain.RegisteredAccount{}, err
 	}
+	iplogsTable, err := tableName(c.prefix, "iplogs")
+	if err != nil {
+		return domain.RegisteredAccount{}, err
+	}
+	messagesTable, err := tableName(c.prefix, "messages")
+	if err != nil {
+		return domain.RegisteredAccount{}, err
+	}
 
 	random, err := c.randomBytes(17)
 	if err != nil {
@@ -146,6 +157,9 @@ func (c AccountCreator) CreateRegistrationAccount(ctx context.Context, draft dom
 		if err != nil {
 			return err
 		}
+		if err := insertRegistrationIPLog(ctx, tx, iplogsTable, playerID, remoteAddr, registeredAt); err != nil {
+			return err
+		}
 		coords, err := nextHomePlanetCoordinates(ctx, tx, planetsTable, universe)
 		if err != nil {
 			return err
@@ -160,6 +174,9 @@ func (c AccountCreator) CreateRegistrationAccount(ctx context.Context, draft dom
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET hplanetid = ?, aktplanet = ? WHERE player_id = ?", usersTable), homePlanetID, homePlanetID, playerID); err != nil {
+			return err
+		}
+		if err := insertRegistrationGreeting(ctx, tx, messagesTable, playerID, universe, registeredAt); err != nil {
 			return err
 		}
 		account.PlayerID = playerID
@@ -192,7 +209,7 @@ type homePlanetRow struct {
 }
 
 func loadRegistrationUniverse(ctx context.Context, tx registrationTx, uniTable string) (registrationUniverse, error) {
-	rows, err := tx.QueryContext(ctx, fmt.Sprintf("SELECT num, systems, galaxies, lang, force_lang, start_dm FROM %s LIMIT 1", uniTable))
+	rows, err := tx.QueryContext(ctx, fmt.Sprintf("SELECT num, systems, galaxies, lang, force_lang, start_dm, COALESCE(ext_board, ''), COALESCE(ext_tutorial, '') FROM %s LIMIT 1", uniTable))
 	if err != nil {
 		return registrationUniverse{}, err
 	}
@@ -201,7 +218,16 @@ func loadRegistrationUniverse(ctx context.Context, tx registrationTx, uniTable s
 		return registrationUniverse{}, errors.New("registration universe row not found")
 	}
 	var universe registrationUniverse
-	if err := rows.Scan(&universe.Number, &universe.Systems, &universe.Galaxies, &universe.Language, &universe.ForceLang, &universe.StartDM); err != nil {
+	if err := rows.Scan(
+		&universe.Number,
+		&universe.Systems,
+		&universe.Galaxies,
+		&universe.Language,
+		&universe.ForceLang,
+		&universe.StartDM,
+		&universe.BoardURL,
+		&universe.Tutorial,
+	); err != nil {
 		return registrationUniverse{}, err
 	}
 	if err := rows.Err(); err != nil {
@@ -312,6 +338,59 @@ func insertHomePlanet(ctx context.Context, tx registrationTx, planetsTable strin
 		return 0, err
 	}
 	return lastInsertID(result)
+}
+
+func insertRegistrationIPLog(ctx context.Context, tx registrationTx, iplogsTable string, playerID int, remoteAddr string, registeredAt int) error {
+	columns := []string{"ip", "user_id", "reg", "date"}
+	args := []any{remoteAddr, playerID, 1, registeredAt}
+	_, err := tx.ExecContext(ctx, insertStatement(iplogsTable, columns), args...)
+	return err
+}
+
+func insertRegistrationGreeting(ctx context.Context, tx registrationTx, messagesTable string, playerID int, universe registrationUniverse, registeredAt int) error {
+	columns := []string{"owner_id", "pm", "msgfrom", "subj", "text", "shown", "date", "planet_id"}
+	args := []any{
+		playerID,
+		5,
+		"Fleet Command",
+		"Welcome to OGame!",
+		registrationGreetingText(universe.BoardURL, universe.Tutorial),
+		0,
+		registeredAt,
+		0,
+	}
+	_, err := tx.ExecContext(ctx, insertStatement(messagesTable, columns), args...)
+	return err
+}
+
+func registrationGreetingText(boardURL string, tutorialURL string) string {
+	boardURL = registrationGreetingURL(boardURL)
+	tutorialURL = registrationGreetingURL(tutorialURL)
+	return fmt.Sprintf(
+		"Welcome to <b>OGame</b> !<br />\n<br />\n"+
+			"First you need to develop the mines.<br />\n"+
+			"You can do this in the &quot;Buildings&quot; menu.<br />\n"+
+			"Select a metal mine and press &quot;build&quot;.<br />\n"+
+			"Now you have some time to familiarize yourself with the game.<br />\n"+
+			"You can find help for the game at these links: <br />\n"+
+			"<a href=\"%s\">Tutorial</a><br />\n"+
+			"<a href=\"%s\">Forum</a><br />\n<br />\n"+
+			"In the meantime, your mine should be built by now.<br />\n"+
+			"The mines need energy to operate, so build a solar power plant to get it.<br />\n"+
+			"To do this, go back to the &quot;Buildings&quot; menu and click on the power plant.<br />\n"+
+			"To see how far you&#39;ve come in your development, go to the &quot;Technology&quot; menu.<br />\n"+
+			"So, your victorious march through the universe has begun... Good luck!<br />\n",
+		tutorialURL,
+		boardURL,
+	)
+}
+
+func registrationGreetingURL(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "/"
+	}
+	return html.EscapeString(strings.TrimRight(trimmed, "/") + "/")
 }
 
 func insertStatement(table string, columns []string) string {

@@ -14,7 +14,7 @@ Tracker for React 19/Bun 1.3 + Go 1.25 native `net/http` migration. Keep under 4
 - Public routes and aliases match the legacy public compositions.
 - Legacy public assets, evolution skin, and game images are copied into `frontend/dist/public-assets`.
 - `/api/public/universes` reads the master DB with config fallback.
-- Registration validates drafts, checks duplicates/capacity, then creates legacy-compatible user, home planet, sessions, and `/game/overview` redirect.
+- Registration validates drafts, checks duplicates/capacity, then creates user, home planet, reg IP log, welcome message, sessions, and redirect.
 - Login/logout create and clear legacy sessions, private cookies, and `/game` redirects.
 - `/api/game/session` validates public session plus private cookie, bans, and IP checks.
 - `/api/game/{overview,buildings,resources,research,shipyard,fleet,galaxy,defense,technology,statistics,search,notes}` return models; overview/resources/notes store settings.
@@ -29,6 +29,7 @@ Tracker for React 19/Bun 1.3 + Go 1.25 native `net/http` migration. Keep under 4
 - Defense covers display state only: shipyard gate, requirements, shield dome/missile caps, busy state, costs, durations, counts, and max hints.
 - Technology covers `techtree` and recursive details; statistics covers player/alliance rankings; search covers player/planet/alliance results.
 - Notes covers `notizen` list, create/edit forms, and add/update/delete mutations.
+- Registration now writes the legacy in-game welcome message and `iplogs.reg=1` row during account creation.
 - Overview covers legacy `cp`, `lgn` activity, rename/delete name rules, blockers, destroy markers, queue flush, stat/rank updates, and active restore.
 
 ## Verified QA
@@ -45,7 +46,7 @@ Full legacy PHP E2E was not run for this Go step. Keep legacy PHP as oracle unti
 
 ## Remaining Work
 
-- Implement activation confirmation, welcome mail/message, IP log, cleanup timer, and rank recalculation side effects.
+- Implement activation confirmation, welcome mail, cleanup timer, and rank recalculation side effects.
 - Add expiry and deeper session security behavior.
 - Close authenticated visual diff for overview/buildings before claiming game-page parity.
 - Port remaining overview legacy actions.
