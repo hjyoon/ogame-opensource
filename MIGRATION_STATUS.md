@@ -25,7 +25,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 
 - Public parity, language flags, login/logout, and migrated game read models are guarded.
 - Fleet covers `flotten1` summary, slots, expeditions, ships, speed/cargo/consumption; dispatch/recall/ACS/templates pending.
-- Galaxy covers coordinate clamp, rows 1-15, player status, moon, debris, actions, slots, and deuterium warning; quick actions pending.
+- Galaxy covers clamp, rows, status, moon/debris/actions, slots, deuterium warning, and legacy no-header/table spacing; quick actions pending.
 - Defense covers display state: shipyard gate, requirements, caps, busy state, costs, durations, counts, and max hints.
 - Technology/name-cell and notes popup layouts now follow legacy chrome/spacing; statistics/search cover read models.
 - Registration writes legacy side effects and sends SMTP/MailHog welcome mail with activation link/password lines.
@@ -39,7 +39,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
 - Go smoke covers health, routes, assets, MailHog, activation cleanup/reuse, auth/session cookie expiry/security, logout, reads/mutations, guards, and privacy.
 - Playwright visual/CSR E2E covers public pages and auth game routes in Chromium/Firefox.
-- Auth visual contract passes in Chromium/Firefox; Chromium diff: notes 0.4-1.8%, buildings 7.6%, technology 14.8%, overview 17.8%.
+- Auth visual contract passes in Chromium/Firefox; Chromium diff: notes 0.4-1.8%, buildings 7.6%, galaxy 9.3%, technology 14.8%.
 - Go internal coverage gate: `97.0% >= 97%`.
 - Go smoke JSON: `all_pass: true`.
 
@@ -47,7 +47,7 @@ Full legacy PHP E2E was not run for this Go step. Keep PHP as oracle until each 
 
 ## Remaining Work
 
-- Close authenticated visual diff for galaxy/statistics before claiming game-page parity.
+- Close authenticated visual diff for statistics and remaining game-page nits before claiming parity.
 - Port remaining overview legacy actions.
 - Port queue mutations, research start/cancel, shipyard/defense orders, fleet actions, galaxy quick actions, reports, messages, alliance, admin, options, recovery, deletion, vacation, bans, permissions.
 - Convert legacy E2E cases into Go compatibility checks per migrated flow.

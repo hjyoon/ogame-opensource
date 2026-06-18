@@ -627,10 +627,13 @@ export function LegacyGameOverview({
   const searchIssue = searchStatus && !searchStatus.authenticated ? searchStatus.issues[0]?.message ?? "Session is invalid." : null;
   const notes = notesStatus?.authenticated ? notesStatus.notes : undefined;
   const notesIssue = notesStatus && !notesStatus.authenticated ? notesStatus.issues[0]?.message ?? "Session is invalid." : null;
-  const hasGameChrome = route.key !== "notes";
+  const hasHeader = route.key !== "notes" && route.key !== "galaxy";
+  const hasMenu = route.key !== "notes";
   const contentClassName =
     route.key === "overview"
       ? "legacy-content legacy-content-overview"
+      : route.key === "galaxy"
+        ? "legacy-content legacy-content-noheader"
       : route.key === "notes"
         ? "legacy-content legacy-content-popup"
         : "legacy-content";
@@ -646,13 +649,13 @@ export function LegacyGameOverview({
         } as React.CSSProperties
       }
     >
-      {hasGameChrome ? (
+      {hasHeader ? (
         <header className="legacy-header-top" id="header_top">
           {overview ? <LegacyResourceHeader overview={overview} /> : <div className="legacy-header-placeholder">OGame</div>}
         </header>
       ) : null}
-      {hasGameChrome ? <LegacyLeftMenu activeRoute={route} /> : null}
-      {hasGameChrome && overview && route.key === "overview" && overview.messages && overview.messages.length > 0 ? (
+      {hasMenu ? <LegacyLeftMenu activeRoute={route} /> : null}
+      {hasHeader && overview && route.key === "overview" && overview.messages && overview.messages.length > 0 ? (
         <LegacyPageMessage messages={overview.messages} />
       ) : null}
       <section className={contentClassName} id="content">
@@ -1552,62 +1555,98 @@ function GalaxyTable({ galaxy }: { galaxy: GameGalaxy }) {
         </table>
       ) : null}
       <form className="legacy-galaxy-form" onSubmit={submitCoordinates}>
-        <table className="legacy-overview-table legacy-galaxy-nav-table" width={569}>
+        <table className="legacy-galaxy-nav-table legacy-header-table" id="t1">
           <tbody>
             <tr>
-              <td className="legacy-c">Galaxy</td>
-              <td className="legacy-c">Solar system</td>
+              <td className="legacy-header-cell">
+                <table className="legacy-header-table" id="t2">
+                  <tbody>
+                    <tr>
+                      <td className="legacy-c" colSpan={3}>
+                        Galaxy
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="legacy-l">
+                        <input
+                          aria-label="Previous galaxy"
+                          name="galaxyLeft"
+                          onClick={() => navigateTo({ ...galaxy.coordinates, galaxy: galaxy.coordinates.galaxy - 1 })}
+                          type="button"
+                          value="<-"
+                        />
+                      </td>
+                      <td className="legacy-l">
+                        <input
+                          aria-label="Galaxy"
+                          defaultValue={galaxy.coordinates.galaxy}
+                          maxLength={3}
+                          name="galaxy"
+                          size={5}
+                          tabIndex={1}
+                          type="text"
+                        />
+                      </td>
+                      <td className="legacy-l">
+                        <input
+                          aria-label="Next galaxy"
+                          name="galaxyRight"
+                          onClick={() => navigateTo({ ...galaxy.coordinates, galaxy: galaxy.coordinates.galaxy + 1 })}
+                          type="button"
+                          value="->"
+                        />
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </td>
+              <td className="legacy-header-cell">
+                <table className="legacy-header-table" id="t3">
+                  <tbody>
+                    <tr>
+                      <td className="legacy-c" colSpan={3}>
+                        Solar system
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="legacy-l">
+                        <input
+                          aria-label="Previous system"
+                          name="systemLeft"
+                          onClick={() => navigateTo({ ...galaxy.coordinates, system: galaxy.coordinates.system - 1 })}
+                          type="button"
+                          value="<-"
+                        />
+                      </td>
+                      <td className="legacy-l">
+                        <input
+                          aria-label="Solar system"
+                          defaultValue={galaxy.coordinates.system}
+                          maxLength={3}
+                          name="system"
+                          size={5}
+                          tabIndex={2}
+                          type="text"
+                        />
+                      </td>
+                      <td className="legacy-l">
+                        <input
+                          aria-label="Next system"
+                          name="systemRight"
+                          onClick={() => navigateTo({ ...galaxy.coordinates, system: galaxy.coordinates.system + 1 })}
+                          type="button"
+                          value="->"
+                        />
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </td>
             </tr>
             <tr>
-              <th>
-                <input
-                  aria-label="Galaxy"
-                  defaultValue={galaxy.coordinates.galaxy}
-                  maxLength={3}
-                  name="galaxy"
-                  size={3}
-                  type="text"
-                />
-                <input
-                  aria-label="Previous galaxy"
-                  onClick={() => navigateTo({ ...galaxy.coordinates, galaxy: galaxy.coordinates.galaxy - 1 })}
-                  type="button"
-                  value="&lt;"
-                />
-                <input
-                  aria-label="Next galaxy"
-                  onClick={() => navigateTo({ ...galaxy.coordinates, galaxy: galaxy.coordinates.galaxy + 1 })}
-                  type="button"
-                  value="&gt;"
-                />
-              </th>
-              <th>
-                <input
-                  aria-label="Solar system"
-                  defaultValue={galaxy.coordinates.system}
-                  maxLength={3}
-                  name="system"
-                  size={3}
-                  type="text"
-                />
-                <input
-                  aria-label="Previous system"
-                  onClick={() => navigateTo({ ...galaxy.coordinates, system: galaxy.coordinates.system - 1 })}
-                  type="button"
-                  value="&lt;"
-                />
-                <input
-                  aria-label="Next system"
-                  onClick={() => navigateTo({ ...galaxy.coordinates, system: galaxy.coordinates.system + 1 })}
-                  type="button"
-                  value="&gt;"
-                />
-              </th>
-            </tr>
-            <tr>
-              <th colSpan={2}>
+              <td className="legacy-header-cell legacy-galaxy-show-cell" colSpan={2}>
                 <input type="submit" value="Show" />
-              </th>
+              </td>
             </tr>
           </tbody>
         </table>

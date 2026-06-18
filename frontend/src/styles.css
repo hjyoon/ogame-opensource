@@ -475,6 +475,11 @@ dd {
   top: 114px;
 }
 
+.legacy-content-noheader {
+  height: calc(100vh - 20px);
+  top: 10px;
+}
+
 .legacy-content-popup {
   height: calc(100vh - 20px);
   left: 0;
@@ -634,16 +639,66 @@ dd {
   color: #ff0000;
 }
 
-.legacy-galaxy-table {
-  margin-top: 4px;
+.legacy-game-shell .legacy-galaxy-table {
+  border-collapse: separate;
+  border-spacing: 2px;
+  margin-top: 15px;
 }
 
-.legacy-galaxy-nav-table input,
-.legacy-galaxy-table input {
+.legacy-game-shell .legacy-galaxy-table th {
+  font-weight: bold;
+}
+
+.legacy-game-shell .legacy-galaxy-nav-table {
+  background: transparent;
+  border: 0;
+  border-collapse: separate;
+  border-spacing: 2px;
+  margin: 0 auto;
+}
+
+.legacy-game-shell .legacy-galaxy-nav-table .legacy-header-cell,
+.legacy-game-shell .legacy-galaxy-nav-table .legacy-header-table {
+  background: transparent;
+  border: 0;
+  border-collapse: separate;
+  border-spacing: 2px;
+  color: #e6ebfb;
+}
+
+.legacy-game-shell .legacy-galaxy-nav-table .legacy-c,
+.legacy-game-shell .legacy-galaxy-nav-table .legacy-l {
+  border: 1px #415680 solid;
+  color: #e6ebfb;
+  padding-left: 3px;
+  padding-right: 3px;
+}
+
+.legacy-game-shell .legacy-galaxy-nav-table .legacy-c {
+  background-image: var(--legacy-title-bg);
+  font-weight: bold;
+  text-align: left;
+}
+
+.legacy-game-shell .legacy-galaxy-nav-table .legacy-l {
+  background-image: var(--legacy-row-bg);
+  background-color: #344566;
+}
+
+.legacy-game-shell .legacy-galaxy-show-cell {
+  text-align: center;
+}
+
+.legacy-game-shell .legacy-galaxy-nav-table input,
+.legacy-game-shell .legacy-galaxy-table input {
   background-color: #1f2d45;
   border: 1px #415680 solid;
   color: #e6ebfb;
   margin-left: 2px;
+}
+
+.legacy-game-shell .legacy-galaxy-nav-table input {
+  margin-left: 0;
 }
 
 .legacy-galaxy-name {
