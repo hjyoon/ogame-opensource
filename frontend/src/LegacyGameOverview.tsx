@@ -2553,6 +2553,10 @@ function RenamePlanetTable({
   pending: boolean;
 }) {
   const planet = overview.currentPlanet;
+  const [showDestroyMenu, setShowDestroyMenu] = React.useState(false);
+  if (showDestroyMenu) {
+    return <RenamePlanetDestroyMenu overview={overview} />;
+  }
   return (
     <>
       <h1>Rename/leave the planet</h1>
@@ -2582,7 +2586,16 @@ function RenamePlanetTable({
                 <th>{formatCoordinates(planet.coordinates)}</th>
                 <th>{planet.name}</th>
                 <th>
-                  <input disabled={pending} name="aktion" type="button" value="Abandon the colony" />
+                  <input
+                    disabled={pending}
+                    name="aktion"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setShowDestroyMenu(true);
+                    }}
+                    type="submit"
+                    value="Abandon the colony"
+                  />
                 </th>
               </tr>
               <tr>
@@ -2593,6 +2606,49 @@ function RenamePlanetTable({
                 </th>
                 <th>
                   <input disabled={pending} name="aktion" type="submit" value="Rename" />
+                </th>
+              </tr>
+            </tbody>
+          </table>
+        </center>
+      </form>
+      <br />
+      <br />
+      <br />
+      <br />
+    </>
+  );
+}
+
+function RenamePlanetDestroyMenu({ overview }: { overview: GameOverview }) {
+  const planet = overview.currentPlanet;
+  return (
+    <>
+      <h1>Rename/leave the planet</h1>
+      <form
+        action={gameRouteURL("/game/rename-planet", window.location.search)}
+        method="post"
+        onSubmit={(event) => event.preventDefault()}
+      >
+        <center>
+          <table className="legacy-overview-table legacy-rename-destroy-table" width={519}>
+            <tbody>
+              <tr>
+                <td className="legacy-c" colSpan={3}>
+                  Just in case
+                </td>
+              </tr>
+              <tr>
+                <th colSpan={3}>Destruction of the planet [{formatCoordinates(planet.coordinates)}] confirm password</th>
+              </tr>
+              <tr>
+                <th>Password</th>
+                <th>
+                  <input name="deleteid" type="hidden" value={planet.id} />
+                  <input name="pw" type="password" />
+                </th>
+                <th>
+                  <input alt="Abandon the colony" name="aktion" type="submit" value="Delete the planet!" />
                 </th>
               </tr>
             </tbody>

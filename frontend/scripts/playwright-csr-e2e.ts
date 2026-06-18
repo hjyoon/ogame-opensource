@@ -350,7 +350,7 @@ async function assertRenamePlanetFlow(page: Page) {
   });
 
   await page.locator(".legacy-rename-planet-table input[name='newname']").fill(name);
-  await page.locator(".legacy-rename-planet-table input[type='submit']").click();
+  await page.locator(".legacy-rename-planet-table input[name='aktion'][value='Rename']").click();
   await page.locator(".legacy-rename-planet-table", { hasText: name }).waitFor({ timeout: 10_000 });
   await record("game rename planet mutation preserves CSR", async () => {
     const state = await gameShellState(page, marker, "");
@@ -362,6 +362,29 @@ async function assertRenamePlanetFlow(page: Page) {
         state.details.gameShell === true &&
         state.details.renameTable === true &&
         state.details.renameText.includes(name) &&
+        state.details.pendingText === false &&
+        state.details.legacyCssLinks === 0 &&
+        state.details.legacyBody === false,
+      details: state.details
+    };
+  });
+
+  await page.locator(".legacy-rename-planet-table input[name='aktion'][value='Abandon the colony']").click();
+  await page.locator(".legacy-rename-destroy-table", { hasText: "Just in case" }).waitFor({ timeout: 10_000 });
+  await record("game rename planet abandon confirmation preserves CSR", async () => {
+    const state = await gameShellState(page, marker, "");
+    return {
+      pass:
+        state.details.pathname === "/game/rename-planet" &&
+        state.details.search.includes("session=") &&
+        state.details.probe === marker &&
+        state.details.gameShell === true &&
+        state.details.renameDestroyTable === true &&
+        state.details.renameTitle === "Rename/leave the planet" &&
+        state.details.renameDestroyText.includes("Just in case") &&
+        state.details.renameDestroyText.includes("confirm password") &&
+        state.details.renamePasswordInput === true &&
+        state.details.renameDeleteValue === "Delete the planet!" &&
         state.details.pendingText === false &&
         state.details.legacyCssLinks === 0 &&
         state.details.legacyBody === false,
@@ -642,9 +665,16 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     renameTitle: document.querySelector("h1")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     renameText: document.querySelector(".legacy-rename-planet-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     renameAbandonValue:
-      document.querySelector<HTMLInputElement>(".legacy-rename-planet-table input[type='button']")?.value ?? "",
+      document.querySelector<HTMLInputElement>(".legacy-rename-planet-table input[name='aktion'][value='Abandon the colony']")
+        ?.value ?? "",
     renameSubmitValue:
-      document.querySelector<HTMLInputElement>(".legacy-rename-planet-table input[type='submit']")?.value ?? "",
+      document.querySelector<HTMLInputElement>(".legacy-rename-planet-table input[name='aktion'][value='Rename']")?.value ?? "",
+    renameDestroyTable: document.querySelector(".legacy-rename-destroy-table") !== null,
+    renameDestroyText: document.querySelector(".legacy-rename-destroy-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
+    renamePasswordInput: document.querySelector(".legacy-rename-destroy-table input[name='pw']") !== null,
+    renameDeleteValue:
+      document.querySelector<HTMLInputElement>(".legacy-rename-destroy-table input[name='aktion'][value='Delete the planet!']")
+        ?.value ?? "",
     logoutTable: document.querySelector(".legacy-logout-table") !== null,
     logoutText: document.querySelector(".legacy-logout-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     pendingText: document.body.textContent?.includes("queued for React and Go migration") ?? false
