@@ -60,6 +60,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	gameResources := gameResourcesService(cfg, logger, gameSessions)
 	gameResearch := gameResearchService(cfg, logger, gameSessions)
 	gameShipyard := gameShipyardService(cfg, logger, gameSessions)
+	gameFleet := gameFleetService(cfg, logger, gameSessions)
 	gameDefense := gameDefenseService(cfg, logger, gameSessions)
 	gameTechnology := gameTechnologyService(cfg, logger, gameSessions)
 
@@ -76,6 +77,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		GameResources:      gameResources,
 		GameResearch:       gameResearch,
 		GameShipyard:       gameShipyard,
+		GameFleet:          gameFleet,
 		GameDefense:        gameDefense,
 		GameTechnology:     gameTechnology,
 		Frontend:           filesystem.StaticDir{Root: cfg.StaticDir},
@@ -373,6 +375,34 @@ func gameDefenseService(cfg config.Config, logger *slog.Logger, sessions apppubl
 
 	logger.Info("universe DB game defense enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewDefenseService(sessions, mysqlgame.NewDefenseRepository(db, cfg.UniDBPrefix))
+}
+
+func gameFleetService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.FleetService {
+	if !cfg.UniDBEnabled {
+		return appgame.FleetService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game fleet disabled", "error", err)
+		return appgame.FleetService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game fleet disabled", "error", err)
+		_ = db.Close()
+		return appgame.FleetService{}
+	}
+
+	logger.Info("universe DB game fleet enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
+	return appgame.NewFleetService(sessions, mysqlgame.NewFleetRepository(db, cfg.UniDBPrefix))
 }
 
 func gameTechnologyService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.TechnologyService {

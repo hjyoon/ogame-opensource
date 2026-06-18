@@ -31,6 +31,12 @@ export type GameShipyardStatus = {
   shipyard?: GameShipyard;
 };
 
+export type GameFleetStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  fleet?: GameFleet;
+};
+
 export type GameDefenseStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
@@ -121,6 +127,52 @@ type GameDefense = {
   hasShipyard: boolean;
   busy: boolean;
   items: GameShipyardItem[];
+};
+
+type GameFleet = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  slots: {
+    used: number;
+    max: number;
+    baseMax: number;
+    admiral: boolean;
+  };
+  expeditions: {
+    used: number;
+    max: number;
+  };
+  missions: GameFleetMission[];
+  ships: GameFleetShip[];
+};
+
+type GameFleetMission = {
+  id: number;
+  mission: number;
+  missionName: string;
+  stateTitle: string;
+  stateShort: string;
+  ships: { id: number; name: string; count: number }[];
+  totalShips: number;
+  origin: Coordinates;
+  target: Coordinates;
+  targetType: number;
+  targetOwnerName: string;
+  departureAt: number;
+  arrivalAt: number;
+  canRecall: boolean;
+  canCreateUnion: boolean;
+};
+
+type GameFleetShip = {
+  id: number;
+  name: string;
+  count: number;
+  speed: number;
+  cargo: number;
+  consumption: number;
+  selectable: boolean;
 };
 
 type GameTechnology = {
@@ -242,6 +294,8 @@ type LegacyGameOverviewProps = {
   researchError: string | null;
   shipyardStatus: GameShipyardStatus | null;
   shipyardError: string | null;
+  fleetStatus: GameFleetStatus | null;
+  fleetError: string | null;
   defenseStatus: GameDefenseStatus | null;
   defenseError: string | null;
   technologyStatus: GameTechnologyStatus | null;
@@ -295,6 +349,8 @@ export function LegacyGameOverview({
   researchError,
   shipyardStatus,
   shipyardError,
+  fleetStatus,
+  fleetError,
   defenseStatus,
   defenseError,
   technologyStatus,
@@ -314,6 +370,8 @@ export function LegacyGameOverview({
   const shipyard = shipyardStatus?.authenticated ? shipyardStatus.shipyard : undefined;
   const shipyardIssue =
     shipyardStatus && !shipyardStatus.authenticated ? shipyardStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const fleet = fleetStatus?.authenticated ? fleetStatus.fleet : undefined;
+  const fleetIssue = fleetStatus && !fleetStatus.authenticated ? fleetStatus.issues[0]?.message ?? "Session is invalid." : null;
   const defense = defenseStatus?.authenticated ? defenseStatus.defense : undefined;
   const defenseIssue =
     defenseStatus && !defenseStatus.authenticated ? defenseStatus.issues[0]?.message ?? "Session is invalid." : null;
@@ -357,6 +415,8 @@ export function LegacyGameOverview({
         {route.key === "shipyard" && !shipyardError && shipyardIssue ? (
           <LegacyMessage tone="error" text={shipyardIssue} />
         ) : null}
+        {route.key === "fleet" && fleetError ? <LegacyMessage tone="error" text={fleetError} /> : null}
+        {route.key === "fleet" && !fleetError && fleetIssue ? <LegacyMessage tone="error" text={fleetIssue} /> : null}
         {route.key === "defense" && defenseError ? <LegacyMessage tone="error" text={defenseError} /> : null}
         {route.key === "defense" && !defenseError && defenseIssue ? <LegacyMessage tone="error" text={defenseIssue} /> : null}
         {route.key === "technology" && technologyError ? <LegacyMessage tone="error" text={technologyError} /> : null}
@@ -382,6 +442,10 @@ export function LegacyGameOverview({
           <LegacyMessage tone="neutral" text="Loading shipyard..." />
         ) : null}
         {shipyard && route.key === "shipyard" ? <ShipyardTable shipyard={shipyard} /> : null}
+        {overview && route.key === "fleet" && !fleet && !fleetError && !fleetIssue ? (
+          <LegacyMessage tone="neutral" text="Loading fleet..." />
+        ) : null}
+        {fleet && route.key === "fleet" ? <FleetTable fleet={fleet} /> : null}
         {overview && route.key === "defense" && !defense && !defenseError && !defenseIssue ? (
           <LegacyMessage tone="neutral" text="Loading defense..." />
         ) : null}
@@ -396,6 +460,7 @@ export function LegacyGameOverview({
         route.key !== "resources" &&
         route.key !== "research" &&
         route.key !== "shipyard" &&
+        route.key !== "fleet" &&
         route.key !== "defense" &&
         route.key !== "technology" ? (
           <MigrationPendingGameTable route={route} />
@@ -764,6 +829,172 @@ function ShipyardTable({ shipyard }: { shipyard: GameShipyard }) {
         </tbody>
       </table>
     </form>
+  );
+}
+
+function FleetTable({ fleet }: { fleet: GameFleet }) {
+  return (
+    <>
+      <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-table" width={519}>
+        <tbody>
+          <tr style={{ height: 20 }}>
+            <td className="legacy-c" colSpan={8}>
+              <table border={0} width="100%">
+                <tbody>
+                  <tr>
+                    <td style={{ backgroundColor: "transparent" }}>
+                      Fleets {fleet.slots.used} / {fleet.slots.baseMax}
+                      {fleet.slots.admiral ? (
+                        <span style={{ color: "lime" }}> +2</span>
+                      ) : null}
+                    </td>
+                    <td align="right" style={{ backgroundColor: "transparent" }}>
+                      {fleet.expeditions.used}/{fleet.expeditions.max} Expeditions
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </td>
+          </tr>
+          <tr style={{ height: 20 }}>
+            {["ID", "Mission", "Ships (total)", "Origin", "Departure Time", "Target", "Arrival Time", "Commands"].map((label) => (
+              <th key={label}>{label}</th>
+            ))}
+          </tr>
+          {fleet.missions.length === 0 ? (
+            <tr style={{ height: 20 }}>
+              {Array.from({ length: 8 }).map((_, index) => (
+                <th key={index}>-</th>
+              ))}
+            </tr>
+          ) : (
+            fleet.missions.map((mission, index) => (
+              <tr data-fleet-mission-row={mission.id} key={mission.id} style={{ height: 20 }}>
+                <th>{index + 1}</th>
+                <th>
+                  <a title="">{mission.missionName}</a>
+                  <br />
+                  <a title={mission.stateTitle}>{mission.stateShort}</a>
+                </th>
+                <th>
+                  <a title={mission.ships.map((ship) => `${ship.name}: ${formatLegacyNumber(ship.count)}`).join("\n")}>
+                    {formatLegacyNumber(mission.totalShips)}
+                  </a>
+                </th>
+                <th>
+                  <a href={galaxyHref(mission.origin)}>[{formatCoordinates(mission.origin)}]</a>
+                </th>
+                <th>{formatFleetTimestamp(mission.departureAt)}</th>
+                <th>
+                  <a href={galaxyHref(mission.target)}>[{formatCoordinates(mission.target)}]</a>
+                  {mission.targetOwnerName && mission.targetOwnerName !== "space" && mission.targetType <= 1 ? (
+                    <>
+                      <br />
+                      {mission.targetOwnerName}
+                    </>
+                  ) : null}
+                </th>
+                <th>{formatFleetTimestamp(mission.arrivalAt)}</th>
+                <th>
+                  {mission.canCreateUnion ? (
+                    <form onSubmit={(event) => event.preventDefault()}>
+                      <input name="order_union" type="hidden" value={mission.id} />
+                      <input type="submit" value="Union" />
+                    </form>
+                  ) : null}
+                  {mission.canRecall ? (
+                    <form onSubmit={(event) => event.preventDefault()}>
+                      <input name="order_return" type="hidden" value={mission.id} />
+                      <input type="submit" value="Recall" />
+                    </form>
+                  ) : null}
+                </th>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+
+      <form className="legacy-fleet-form" onSubmit={(event) => event.preventDefault()}>
+        <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-select-table" width={519}>
+          <tbody>
+            {fleet.slots.used >= fleet.slots.max ? (
+              <tr style={{ height: 20 }}>
+                <th colSpan={4}>
+                  <span style={{ color: "red" }}>Maximum fleet size has been reached!</span>
+                </th>
+              </tr>
+            ) : null}
+            <tr style={{ height: 20 }}>
+              <td className="legacy-c" colSpan={4}>
+                Please select your ships for this mission:
+              </td>
+            </tr>
+            <tr style={{ height: 20 }}>
+              <th>Ship Type</th>
+              <th>Available</th>
+              <th>-</th>
+              <th>-</th>
+            </tr>
+            {fleet.ships.map((ship) => (
+              <tr data-fleet-ship-row={ship.id} key={ship.id} style={{ height: 20 }}>
+                <th>
+                  <a title={`Speed: ${formatLegacyNumber(ship.speed)}`}>{ship.name}</a>
+                </th>
+                <th>
+                  {formatLegacyNumber(ship.count)}
+                  <input name={`maxship${ship.id}`} type="hidden" value={ship.count} />
+                  <input name={`consumption${ship.id}`} type="hidden" value={ship.consumption} />
+                  <input name={`speed${ship.id}`} type="hidden" value={ship.speed} />
+                  <input name={`capacity${ship.id}`} type="hidden" value={ship.cargo} />
+                </th>
+                {ship.selectable ? (
+                  <>
+                    <th>
+                      <a href="#max-ship" onClick={(event) => event.preventDefault()}>
+                        all
+                      </a>
+                    </th>
+                    <th>
+                      <input aria-label={ship.name} defaultValue={0} name={`ship${ship.id}`} size={10} />
+                    </th>
+                  </>
+                ) : (
+                  <>
+                    <th></th>
+                    <th></th>
+                  </>
+                )}
+              </tr>
+            ))}
+            <tr style={{ height: 20 }}>
+              <th colSpan={2}>
+                <a href="#clear-ships" onClick={(event) => event.preventDefault()}>
+                  no ships
+                </a>
+              </th>
+              <th colSpan={2}>
+                <a href="#all-ships" onClick={(event) => event.preventDefault()}>
+                  all ships
+                </a>
+              </th>
+            </tr>
+            <tr style={{ height: 20 }}>
+              <th colSpan={4}>
+                <input type="submit" value="continue" />
+              </th>
+            </tr>
+            <tr>
+              <th colSpan={4}></th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+      <br />
+      <br />
+      <br />
+      <br />
+    </>
   );
 }
 
@@ -1262,6 +1493,14 @@ function planetHref(planetID: number): string {
   return gameRouteURL("/game/overview", search.toString());
 }
 
+function galaxyHref(coordinates: Coordinates): string {
+  const search = new URLSearchParams(window.location.search);
+  search.set("galaxy", String(coordinates.galaxy));
+  search.set("system", String(coordinates.system));
+  search.set("position", String(coordinates.position));
+  return gameRouteURL("/game/galaxy", search.toString());
+}
+
 function technologyInfoURL(itemID: number): string {
   const search = new URLSearchParams(window.location.search);
   search.delete("tid");
@@ -1334,6 +1573,10 @@ function formatLegacyDate(date: Date): string {
   return `${weekdays[date.getDay()]} ${months[date.getMonth()]} ${date.getDate()} ${date.getHours()}:${String(
     date.getMinutes()
   ).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
+}
+
+function formatFleetTimestamp(seconds: number): string {
+  return formatLegacyDate(new Date(seconds * 1000));
 }
 
 function formatLegacyNumber(value: number): string {

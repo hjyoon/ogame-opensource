@@ -233,6 +233,8 @@ async function assertGameClientNavigation(
     await page.locator(".legacy-research-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Shipyard") {
     await page.locator(".legacy-shipyard-table").first().waitFor({ timeout: 10_000 });
+  } else if (expectedMenuLabel === "Fleet") {
+    await page.locator(".legacy-fleet-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Defense") {
     await page.locator(".legacy-defense-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Technology") {
@@ -253,16 +255,21 @@ async function assertGameClientNavigation(
             ? state.details.researchTable === true && state.details.researchRows >= 0 && state.details.pendingText === false
             : expectedMenuLabel === "Shipyard"
               ? state.details.shipyardTable === true && state.details.shipyardRows >= 0 && state.details.pendingText === false
-              : expectedMenuLabel === "Defense"
-                ? state.details.defenseTable === true && state.details.defenseRows >= 0 && state.details.pendingText === false
-                : expectedMenuLabel === "Technology"
-                  ? state.details.technologyTable === true &&
-                    state.details.technologyRows > 0 &&
-                    state.details.technologyNames.includes("Metal Mine") &&
-                    state.details.pendingText === false
-                  : expectedMenuLabel === "Overview"
-                    ? state.details.pendingText === false
-                    : state.details.pendingText === true;
+              : expectedMenuLabel === "Fleet"
+                ? state.details.fleetTable === true &&
+                  state.details.fleetSelectTable === true &&
+                  state.details.fleetHeaderText.includes("Fleets") &&
+                  state.details.pendingText === false
+                : expectedMenuLabel === "Defense"
+                  ? state.details.defenseTable === true && state.details.defenseRows >= 0 && state.details.pendingText === false
+                  : expectedMenuLabel === "Technology"
+                    ? state.details.technologyTable === true &&
+                      state.details.technologyRows > 0 &&
+                      state.details.technologyNames.includes("Metal Mine") &&
+                      state.details.pendingText === false
+                    : expectedMenuLabel === "Overview"
+                      ? state.details.pendingText === false
+                      : state.details.pendingText === true;
     return {
       pass:
         state.details.pathname === expectedPathname &&
@@ -350,6 +357,11 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     shipyardNames: Array.from(document.querySelectorAll("[data-shipyard-row] .legacy-building-description a")).map(
       (link) => link.textContent?.trim() ?? ""
     ),
+    fleetTable: document.querySelector(".legacy-fleet-table") !== null,
+    fleetSelectTable: document.querySelector(".legacy-fleet-select-table") !== null,
+    fleetMissionRows: document.querySelectorAll("[data-fleet-mission-row]").length,
+    fleetShipRows: document.querySelectorAll("[data-fleet-ship-row]").length,
+    fleetHeaderText: document.querySelector(".legacy-fleet-table tr:first-child td")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     defenseRows: document.querySelectorAll("[data-defense-row]").length,
     defenseTable: document.querySelector(".legacy-defense-table") !== null,
     defenseNames: Array.from(document.querySelectorAll("[data-defense-row] .legacy-building-description a")).map(

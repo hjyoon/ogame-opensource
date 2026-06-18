@@ -128,6 +128,14 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["In order to do that, you need to build a shipyard!"]
   },
   {
+    name: "game-fleet",
+    legacyPage: "flotten1",
+    migratedPath: "/game/fleet",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-fleet-table",
+    expectedTexts: ["Fleets", "Expeditions", "Mission", "Ships (total)", "Please select your ships for this mission:", "Ship Type", "Available"]
+  },
+  {
     name: "game-technology",
     legacyPage: "techtree",
     migratedPath: "/game/technology",

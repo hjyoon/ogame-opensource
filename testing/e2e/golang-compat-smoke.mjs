@@ -328,6 +328,24 @@ try {
     gameShipyardWithoutCookieBody = {};
   }
 
+  const gameFleet = await request(`/api/game/fleet${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameFleetBody = {};
+  try {
+    gameFleetBody = JSON.parse(gameFleet.body);
+  } catch {
+    gameFleetBody = {};
+  }
+
+  const gameFleetWithoutCookie = await request(`/api/game/fleet${sessionSearch}`);
+  let gameFleetWithoutCookieBody = {};
+  try {
+    gameFleetWithoutCookieBody = JSON.parse(gameFleetWithoutCookie.body);
+  } catch {
+    gameFleetWithoutCookieBody = {};
+  }
+
   const gameDefense = await request(`/api/game/defense${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -490,6 +508,16 @@ try {
       check(!gameShipyard.body.includes(sessionCookiePair), "game shipyard response does not echo private cookie"),
       check(gameShipyardWithoutCookie.status === 401, "game shipyard rejects missing private cookie", { status: gameShipyardWithoutCookie.status }),
       check(gameShipyardWithoutCookieBody.authenticated === false, "game shipyard missing private cookie is unauthenticated", gameShipyardWithoutCookieBody),
+      check(gameFleet.status === 200, "game fleet returns HTTP 200 with private cookie", { status: gameFleet.status }),
+      check(gameFleetBody.authenticated === true, "game fleet authenticates the login session", gameFleetBody),
+      check(Number.isFinite(gameFleetBody.fleet?.slots?.used), "game fleet returns used fleet slots", gameFleetBody),
+      check(Number.isFinite(gameFleetBody.fleet?.slots?.max), "game fleet returns max fleet slots", gameFleetBody),
+      check(Number.isFinite(gameFleetBody.fleet?.expeditions?.max), "game fleet returns expedition slots", gameFleetBody),
+      check(Array.isArray(gameFleetBody.fleet?.missions), "game fleet returns active mission rows array", gameFleetBody),
+      check(Array.isArray(gameFleetBody.fleet?.ships), "game fleet returns selectable ship rows array", gameFleetBody),
+      check(!gameFleet.body.includes(sessionCookiePair), "game fleet response does not echo private cookie"),
+      check(gameFleetWithoutCookie.status === 401, "game fleet rejects missing private cookie", { status: gameFleetWithoutCookie.status }),
+      check(gameFleetWithoutCookieBody.authenticated === false, "game fleet missing private cookie is unauthenticated", gameFleetWithoutCookieBody),
       check(gameDefense.status === 200, "game defense returns HTTP 200 with private cookie", { status: gameDefense.status }),
       check(gameDefenseBody.authenticated === true, "game defense authenticates the login session", gameDefenseBody),
       check(Array.isArray(gameDefenseBody.defense?.items), "game defense returns migrated defense rows array", gameDefenseBody),
@@ -648,6 +676,7 @@ try {
       check(js.body.includes("/api/game/resources"), "React bundle consumes game resources API"),
       check(js.body.includes("/api/game/research"), "React bundle consumes game research API"),
       check(js.body.includes("/api/game/shipyard"), "React bundle consumes game shipyard API"),
+      check(js.body.includes("/api/game/fleet"), "React bundle consumes game fleet API"),
       check(js.body.includes("/api/game/defense"), "React bundle consumes game defense API"),
       check(js.body.includes("/api/game/technology"), "React bundle consumes game technology API"),
       check(js.body.includes("legacy-public-main"), "React bundle contains legacy public home layout"),
@@ -663,6 +692,8 @@ try {
       check(js.body.includes("legacy-resources-table"), "React bundle contains legacy game resources layout"),
       check(js.body.includes("legacy-research-table"), "React bundle contains legacy game research layout"),
       check(js.body.includes("legacy-shipyard-table"), "React bundle contains legacy game shipyard layout"),
+      check(js.body.includes("legacy-fleet-table"), "React bundle contains legacy game fleet active missions layout"),
+      check(js.body.includes("legacy-fleet-select-table"), "React bundle contains legacy game fleet ship selection layout"),
       check(js.body.includes("legacy-defense-table"), "React bundle contains legacy game defense layout"),
       check(js.body.includes("legacy-technology-table"), "React bundle contains legacy game technology layout"),
       check(js.body.includes("legacy-technology-details-table"), "React bundle contains legacy game technology details layout")
@@ -690,6 +721,7 @@ try {
   const postGameBuildings = await request("/api/game/buildings", { method: "POST" });
   const postGameResearch = await request("/api/game/research", { method: "POST" });
   const postGameShipyard = await request("/api/game/shipyard", { method: "POST" });
+  const postGameFleet = await request("/api/game/fleet", { method: "POST" });
   const postGameDefense = await request("/api/game/defense", { method: "POST" });
   const postGameTechnology = await request("/api/game/technology", { method: "POST" });
   const putGameResources = await request("/api/game/resources", { method: "PUT" });
@@ -716,6 +748,8 @@ try {
       check(hasHeader(postGameResearch, "allow", "GET, HEAD"), "game research method rejection returns Allow header"),
       check(postGameShipyard.status === 405, "POST game shipyard endpoint is rejected", { status: postGameShipyard.status }),
       check(hasHeader(postGameShipyard, "allow", "GET, HEAD"), "game shipyard method rejection returns Allow header"),
+      check(postGameFleet.status === 405, "POST game fleet endpoint is rejected", { status: postGameFleet.status }),
+      check(hasHeader(postGameFleet, "allow", "GET, HEAD"), "game fleet method rejection returns Allow header"),
       check(postGameDefense.status === 405, "POST game defense endpoint is rejected", { status: postGameDefense.status }),
       check(hasHeader(postGameDefense, "allow", "GET, HEAD"), "game defense method rejection returns Allow header"),
       check(postGameTechnology.status === 405, "POST game technology endpoint is rejected", { status: postGameTechnology.status }),

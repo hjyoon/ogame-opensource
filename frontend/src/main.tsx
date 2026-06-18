@@ -4,6 +4,7 @@ import {
   LegacyGameOverview,
   type GameBuildingsStatus,
   type GameDefenseStatus,
+  type GameFleetStatus,
   type GameOverviewStatus,
   type GameResearchStatus,
   type GameResourcesStatus,
@@ -196,6 +197,8 @@ function App() {
   const [gameResearchError, setGameResearchError] = useState<string | null>(null);
   const [gameShipyard, setGameShipyard] = useState<GameShipyardStatus | null>(null);
   const [gameShipyardError, setGameShipyardError] = useState<string | null>(null);
+  const [gameFleet, setGameFleet] = useState<GameFleetStatus | null>(null);
+  const [gameFleetError, setGameFleetError] = useState<string | null>(null);
   const [gameDefense, setGameDefense] = useState<GameDefenseStatus | null>(null);
   const [gameDefenseError, setGameDefenseError] = useState<string | null>(null);
   const [gameTechnology, setGameTechnology] = useState<GameTechnologyStatus | null>(null);
@@ -422,6 +425,28 @@ function App() {
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "fleet" || publicSession === "") {
+      setGameFleet(null);
+      setGameFleetError(null);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const fleetSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      fleetSearch.set("cp", selectedPlanet);
+    }
+    fetch(`/api/game/fleet?${fleetSearch.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameFleetStatus>)
+      .then((payload) => {
+        setGameFleet(payload);
+        setGameFleetError(null);
+      })
+      .catch((err: unknown) => setGameFleetError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "defense" || publicSession === "") {
       setGameDefense(null);
       setGameDefenseError(null);
@@ -494,6 +519,8 @@ function App() {
         defenseError={gameDefenseError}
         defenseStatus={gameDefense}
         error={gameOverviewError}
+        fleetError={gameFleetError}
+        fleetStatus={gameFleet}
         onResourcesSubmit={submitGameResources}
         route={gameRoute ?? resolveGameRoute(pathname)}
         resourcesError={gameResourcesError}

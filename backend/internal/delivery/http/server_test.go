@@ -1118,6 +1118,160 @@ func TestGameShipyardEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 	}
 }
 
+func TestGameFleetEndpointReturnsFleet(t *testing.T) {
+	fleet := &fakeGameFleet{result: appgame.FleetResult{
+		Authenticated: true,
+		Fleet: domaingame.Fleet{
+			Commander: "legor",
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:   99,
+				Name: "Arakis",
+				Type: domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+			},
+			PlanetSwitcher: []domaingame.PlanetSummary{{
+				ID:   99,
+				Name: "Arakis",
+				Type: domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+				Current: true,
+			}},
+			Slots:       domaingame.FleetSlots{Used: 1, Max: 6, BaseMax: 4, Admiral: true},
+			Expeditions: domaingame.ExpeditionSlots{Used: 0, Max: 2},
+			Missions: []domaingame.FleetMission{{
+				ID:              11,
+				Mission:         domaingame.FleetMissionTransport,
+				MissionName:     "Transport",
+				StateTitle:      "Going on a mission",
+				StateShort:      "(G)",
+				TotalShips:      2,
+				Origin:          domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+				Target:          domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4},
+				TargetType:      domaingame.PlanetTypePlanet,
+				TargetOwnerName: "target",
+				DepartureAt:     100,
+				ArrivalAt:       200,
+				CanRecall:       true,
+				Ships: []domaingame.FleetShipCount{{
+					ID:    domaingame.FleetSmallCargo,
+					Name:  "Small Cargo",
+					Count: 2,
+				}},
+			}},
+			Ships: []domaingame.FleetShipSelection{{
+				ID:          domaingame.FleetSmallCargo,
+				Name:        "Small Cargo",
+				Count:       4,
+				Speed:       20000,
+				Cargo:       5000,
+				Consumption: 20,
+				Selectable:  true,
+			}},
+		},
+	}}
+	server := testServerWithGameFleet(t, fleet)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/fleet?session=public&cp=99", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameFleetResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Fleet == nil || response.Fleet.Commander != "legor" || len(response.Fleet.Missions) != 1 || len(response.Fleet.Ships) != 1 || len(response.Fleet.PlanetSwitcher) != 1 {
+		t.Fatalf("expected authenticated fleet response, got %+v", response)
+	}
+	if response.Fleet.Slots.Used != 1 || response.Fleet.Slots.Max != 6 || response.Fleet.Expeditions.Max != 2 {
+		t.Fatalf("unexpected fleet slot mapping: %+v", response.Fleet)
+	}
+	if response.Fleet.Missions[0].MissionName != "Transport" || response.Fleet.Missions[0].Origin.Galaxy != 1 || !response.Fleet.Missions[0].CanRecall {
+		t.Fatalf("unexpected fleet mission mapping: %+v", response.Fleet.Missions[0])
+	}
+	if response.Fleet.Ships[0].Speed != 20000 || response.Fleet.Ships[0].Cargo != 5000 || !response.Fleet.Ships[0].Selectable {
+		t.Fatalf("unexpected fleet ship mapping: %+v", response.Fleet.Ships[0])
+	}
+	if fleet.command.PublicSession != "public" || fleet.command.PlanetID != 99 || fleet.command.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected fleet command: %+v", fleet.command)
+	}
+	if fleet.command.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("expected private session cookie to be passed, got %+v", fleet.command.PrivateSessions)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("private")) {
+		t.Fatalf("game fleet response must not echo private session: %s", rec.Body.String())
+	}
+}
+
+func TestGameFleetEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
+	fleet := &fakeGameFleet{result: appgame.FleetResult{
+		Authenticated: false,
+		Issues: []domainpublicsite.SessionIssue{{
+			Code:    domainpublicsite.SessionIssuePrivateInvalid,
+			Message: "Private session is invalid.",
+		}},
+	}}
+	server := testServerWithGameFleet(t, fleet)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/fleet?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var response gameFleetResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Authenticated || response.Fleet != nil || len(response.Issues) != 1 {
+		t.Fatalf("expected invalid fleet session response, got %+v", response)
+	}
+}
+
+func TestGameFleetEndpointRejectsInvalidPlanetID(t *testing.T) {
+	server := testServerWithGameFleet(t, &fakeGameFleet{})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/fleet?session=public&cp=abc", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid selected planet to return 400, got %d", rec.Code)
+	}
+}
+
+func TestGameFleetEndpointReturnsUnavailableWithoutUseCase(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/fleet?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game fleet use case to return 503, got %d", rec.Code)
+	}
+}
+
+func TestGameFleetEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
+	server := testServerWithGameFleet(t, &fakeGameFleet{err: errors.New("fleet failed")})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/fleet?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game fleet error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestGameDefenseEndpointReturnsDefense(t *testing.T) {
 	defense := &fakeGameDefense{result: appgame.DefenseResult{
 		Authenticated: true,
@@ -1842,6 +1996,14 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game shipyard method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "/api/game/fleet", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("expected game fleet method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
+
 	req = httptest.NewRequest(http.MethodPost, "/api/game/defense", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -2074,6 +2236,19 @@ func testServerWithGameShipyard(t *testing.T, shipyard GameShipyardUseCase) http
 	})
 }
 
+func testServerWithGameFleet(t *testing.T, fleet GameFleetUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		GameFleet:          fleet,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
 func testServerWithGameDefense(t *testing.T, defense GameDefenseUseCase) http.Handler {
 	t.Helper()
 	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
@@ -2260,6 +2435,17 @@ type fakeGameShipyard struct {
 }
 
 func (f *fakeGameShipyard) GetShipyard(_ context.Context, command appgame.ShipyardCommand) (appgame.ShipyardResult, error) {
+	f.command = command
+	return f.result, f.err
+}
+
+type fakeGameFleet struct {
+	result  appgame.FleetResult
+	err     error
+	command appgame.FleetCommand
+}
+
+func (f *fakeGameFleet) GetFleet(_ context.Context, command appgame.FleetCommand) (appgame.FleetResult, error) {
 	f.command = command
 	return f.result, f.err
 }
