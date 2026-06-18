@@ -25,6 +25,10 @@ type gameSessionSummary struct {
 	Commander      string `json:"commander"`
 	UniverseNumber int    `json:"universeNumber"`
 	HomePlanetID   int    `json:"homePlanetId"`
+	VacationMode   bool   `json:"vacationMode"`
+	VacationUntil  int    `json:"vacationUntil,omitempty"`
+	DeletionQueued bool   `json:"deletionQueued"`
+	DeletionAt     int    `json:"deletionAt,omitempty"`
 }
 
 func (a app) handleGameSession(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +55,10 @@ func (a app) handleGameSession(w http.ResponseWriter, r *http.Request) {
 			Commander:      result.Session.Commander,
 			UniverseNumber: result.Session.UniverseNumber,
 			HomePlanetID:   result.Session.HomePlanetID,
+			VacationMode:   result.Session.VacationMode,
+			VacationUntil:  result.Session.VacationUntil,
+			DeletionQueued: result.Session.DeletionQueued,
+			DeletionAt:     result.Session.DeletionAt,
 		}
 	} else {
 		status = http.StatusUnauthorized

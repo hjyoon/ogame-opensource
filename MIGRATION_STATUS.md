@@ -16,7 +16,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - Registration creates user, planet, reg IP log, greeting, TimeLimit, ranks, sessions, welcome mail, redirect.
 - `/game/validate.php?ack=` and `/activation?ack=` activate accounts and sessions.
 - Login/logout create and clear legacy sessions, private cookies, and `/game` redirects.
-- `/api/game/session` validates public session plus private cookie, bans/IP with ban expiry, and touches `lastclick` on success.
+- `/api/game/session` validates public session plus private cookie, bans/IP with expiry, preserves vacation/deletion state, and touches `lastclick`.
 - `/api/game/{overview,buildings,resources,research,shipyard,fleet,galaxy,defense,technology,statistics,search,notes}` return models; overview/resources/notes mutate settings.
 - Auth `/game/*` routes preserve sessions and persist `cp`; migrated game screens use the legacy `evolution` skin.
 - Modernization: [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
@@ -46,7 +46,6 @@ Full legacy PHP E2E was not run for this Go step. Keep PHP as oracle until each 
 
 ## Remaining Work
 
-- Add deeper vacation/disable session edge behavior.
 - Close authenticated visual diff for overview/buildings before claiming game-page parity.
 - Port remaining overview legacy actions.
 - Port queue mutations, research start/cancel, shipyard/defense orders, fleet actions, galaxy quick actions, reports, messages, alliance, admin, options, recovery, deletion, vacation, bans, permissions.

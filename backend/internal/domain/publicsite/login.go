@@ -78,6 +78,10 @@ type GameSession struct {
 	DisableIPCheck bool
 	Banned         bool
 	BannedUntil    int
+	VacationMode   bool
+	VacationUntil  int
+	DeletionQueued bool
+	DeletionAt     int
 	HomePlanetID   int
 	UniverseNumber int
 }

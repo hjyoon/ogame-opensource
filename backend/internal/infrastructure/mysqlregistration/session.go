@@ -94,7 +94,7 @@ func (s SessionStore) FindGameSession(ctx context.Context, publicSession string)
 	}
 	rows, err := s.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT player_id, name, session, private_session, ip_addr, deact_ip, banned, banned_until, hplanetid FROM %s WHERE session = ? LIMIT 1", usersTable),
+		fmt.Sprintf("SELECT player_id, name, session, private_session, ip_addr, deact_ip, banned, banned_until, vacation, vacation_until, disable, disable_until, hplanetid FROM %s WHERE session = ? LIMIT 1", usersTable),
 		publicSession,
 	)
 	if err != nil {
@@ -117,8 +117,12 @@ func (s SessionStore) FindGameSession(ctx context.Context, publicSession string)
 	var deactIP int
 	var banned int
 	var bannedUntil int
+	var vacation int
+	var vacationUntil int
+	var deletionQueued int
+	var deletionAt int
 	var homePlanetID int
-	if err := rows.Scan(&playerID, &commander, &sessionID, &privateID, &ipAddress, &deactIP, &banned, &bannedUntil, &homePlanetID); err != nil {
+	if err := rows.Scan(&playerID, &commander, &sessionID, &privateID, &ipAddress, &deactIP, &banned, &bannedUntil, &vacation, &vacationUntil, &deletionQueued, &deletionAt, &homePlanetID); err != nil {
 		return domain.GameSession{}, err
 	}
 	if err := rows.Err(); err != nil {
@@ -135,6 +139,10 @@ func (s SessionStore) FindGameSession(ctx context.Context, publicSession string)
 		DisableIPCheck: deactIP != 0,
 		Banned:         banned != 0,
 		BannedUntil:    bannedUntil,
+		VacationMode:   vacation != 0,
+		VacationUntil:  vacationUntil,
+		DeletionQueued: deletionQueued != 0,
+		DeletionAt:     deletionAt,
 		HomePlanetID:   homePlanetID,
 	}, nil
 }

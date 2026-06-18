@@ -114,6 +114,22 @@ func TestGameSessionAllowsDisabledIPCheck(t *testing.T) {
 	}
 }
 
+func TestGameSessionAllowsVacationAndDeletionQueuedSessions(t *testing.T) {
+	session := GameSession{
+		Found:          true,
+		PrivateID:      "private",
+		IPAddress:      "203.0.113.10",
+		VacationMode:   true,
+		VacationUntil:  12345,
+		DeletionQueued: true,
+		DeletionAt:     23456,
+	}
+
+	if issues := session.Validate("private", "203.0.113.10"); len(issues) != 0 {
+		t.Fatalf("expected vacation/deletion state to remain authenticated, got %+v", issues)
+	}
+}
+
 func TestGameSessionReportsInvalidSessionStates(t *testing.T) {
 	cases := []struct {
 		name    string

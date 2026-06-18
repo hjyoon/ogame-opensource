@@ -622,6 +622,10 @@ func TestGameSessionEndpointReturnsAuthenticatedSession(t *testing.T) {
 			PrivateID:      "private",
 			HomePlanetID:   99,
 			UniverseNumber: 1,
+			VacationMode:   true,
+			VacationUntil:  12345,
+			DeletionQueued: true,
+			DeletionAt:     23456,
 		},
 	}}
 	server := testServerWithGameSessions(t, gameSessions)
@@ -640,6 +644,9 @@ func TestGameSessionEndpointReturnsAuthenticatedSession(t *testing.T) {
 	}
 	if !response.Authenticated || response.Session == nil || response.Session.PlayerID != 42 || response.Session.HomePlanetID != 99 {
 		t.Fatalf("expected authenticated session response, got %+v", response)
+	}
+	if !response.Session.VacationMode || response.Session.VacationUntil != 12345 || !response.Session.DeletionQueued || response.Session.DeletionAt != 23456 {
+		t.Fatalf("expected session state response, got %+v", response.Session)
 	}
 	if gameSessions.command.PublicSession != "public" || gameSessions.command.RemoteAddr != "203.0.113.10" {
 		t.Fatalf("unexpected session command: %+v", gameSessions.command)
