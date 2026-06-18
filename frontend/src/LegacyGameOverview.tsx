@@ -504,8 +504,18 @@ type LegacyGameOverviewProps = {
   searchError: string | null;
   notesStatus: GameNotesStatus | null;
   notesError: string | null;
+  notesPending: boolean;
+  onNotesCreate: (draft: GameNoteDraft) => void;
+  onNotesUpdate: (noteID: number, draft: GameNoteDraft) => void;
+  onNotesDelete: (noteIDs: number[]) => void;
   logoutStatus: GameLogoutStatus | null;
   logoutError: string | null;
+};
+
+export type GameNoteDraft = {
+  subject: string;
+  text: string;
+  priority: number;
 };
 
 type LegacyMenuEntry =
@@ -570,6 +580,10 @@ export function LegacyGameOverview({
   searchError,
   notesStatus,
   notesError,
+  notesPending,
+  onNotesCreate,
+  onNotesUpdate,
+  onNotesDelete,
   logoutStatus,
   logoutError
 }: LegacyGameOverviewProps) {
@@ -707,7 +721,15 @@ export function LegacyGameOverview({
         {overview && route.key === "notes" && !notes && !notesError && !notesIssue ? (
           <LegacyMessage tone="neutral" text="Loading notes..." />
         ) : null}
-        {notes && route.key === "notes" ? <NotesTable notes={notes} /> : null}
+        {notes && route.key === "notes" ? (
+          <NotesTable
+            notes={notes}
+            onCreate={onNotesCreate}
+            onDelete={onNotesDelete}
+            onUpdate={onNotesUpdate}
+            pending={notesPending}
+          />
+        ) : null}
         {overview &&
         route.key !== "overview" &&
         route.key !== "buildings" &&
@@ -1837,12 +1859,24 @@ function SearchTable({ search }: { search: GameSearch }) {
   );
 }
 
-function NotesTable({ notes }: { notes: GameNotes }) {
+function NotesTable({
+  notes,
+  onCreate,
+  onDelete,
+  onUpdate,
+  pending
+}: {
+  notes: GameNotes;
+  onCreate: (draft: GameNoteDraft) => void;
+  onDelete: (noteIDs: number[]) => void;
+  onUpdate: (noteID: number, draft: GameNoteDraft) => void;
+  pending: boolean;
+}) {
   if (notes.action === "create") {
-    return <NoteForm mode="create" />;
+    return <NoteForm mode="create" onCreate={onCreate} onUpdate={onUpdate} pending={pending} />;
   }
   if (notes.action === "edit" && notes.editNote) {
-    return <NoteForm mode="edit" note={notes.editNote} />;
+    return <NoteForm mode="edit" note={notes.editNote} onCreate={onCreate} onUpdate={onUpdate} pending={pending} />;
   }
   return (
     <form
@@ -1850,6 +1884,15 @@ function NotesTable({ notes }: { notes: GameNotes }) {
       method="post"
       onSubmit={(event) => {
         event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        const ids: number[] = [];
+        form.forEach((value, key) => {
+          const match = /^delmes\[(\d+)\]$/.exec(key);
+          if (match && value === "y") {
+            ids.push(Number(match[1]));
+          }
+        });
+        onDelete(ids);
       }}
     >
       <table className="legacy-overview-table legacy-notes-table" width={519}>
@@ -1874,7 +1917,7 @@ function NotesTable({ notes }: { notes: GameNotes }) {
             notes.rows.map((note) => (
               <tr data-note-row={note.id} key={note.id}>
                 <th style={{ width: 20 }}>
-                  <input name={`delmes[${note.id}]`} type="checkbox" value="y" />
+                  <input disabled={pending} name={`delmes[${note.id}]`} type="checkbox" value="y" />
                 </th>
                 <th style={{ width: 150 }}>{formatLegacyDateTime(note.date)}</th>
                 <th>
@@ -1894,7 +1937,7 @@ function NotesTable({ notes }: { notes: GameNotes }) {
           )}
           <tr>
             <td colSpan={4}>
-              <input type="submit" value="Delete" />
+              <input disabled={pending} type="submit" value="Delete" />
             </td>
           </tr>
         </tbody>
@@ -1903,7 +1946,19 @@ function NotesTable({ notes }: { notes: GameNotes }) {
   );
 }
 
-function NoteForm({ mode, note }: { mode: "create" | "edit"; note?: GameNote }) {
+function NoteForm({
+  mode,
+  note,
+  onCreate,
+  onUpdate,
+  pending
+}: {
+  mode: "create" | "edit";
+  note?: GameNote;
+  onCreate: (draft: GameNoteDraft) => void;
+  onUpdate: (noteID: number, draft: GameNoteDraft) => void;
+  pending: boolean;
+}) {
   const editNote = mode === "edit" ? note : undefined;
   const isEdit = editNote !== undefined;
   const priority = editNote ? editNote.priority : 2;
@@ -1913,6 +1968,17 @@ function NoteForm({ mode, note }: { mode: "create" | "edit"; note?: GameNote }) 
       method="post"
       onSubmit={(event) => {
         event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        const draft = {
+          subject: String(form.get("betreff") ?? ""),
+          text: String(form.get("text") ?? ""),
+          priority: Number(form.get("u") ?? priority)
+        };
+        if (editNote) {
+          onUpdate(editNote.id, draft);
+        } else {
+          onCreate(draft);
+        }
       }}
     >
       <input name="s" type="hidden" value={isEdit ? 2 : 1} />
@@ -1927,7 +1993,7 @@ function NoteForm({ mode, note }: { mode: "create" | "edit"; note?: GameNote }) 
           <tr>
             <th>Priority</th>
             <th>
-              <select name="u" defaultValue={priority}>
+              <select disabled={pending} name="u" defaultValue={priority}>
                 <option value={2}>Important</option>
                 <option value={1}>Normal</option>
                 <option value={0}>Unimportant</option>
@@ -1937,7 +2003,7 @@ function NoteForm({ mode, note }: { mode: "create" | "edit"; note?: GameNote }) 
           <tr>
             <th>Subject</th>
             <th>
-              <input maxLength={30} name="betreff" size={30} type="text" defaultValue={editNote ? editNote.subject : ""} />
+              <input disabled={pending} maxLength={30} name="betreff" size={30} type="text" defaultValue={editNote ? editNote.subject : ""} />
             </th>
           </tr>
           <tr>
@@ -1945,7 +2011,7 @@ function NoteForm({ mode, note }: { mode: "create" | "edit"; note?: GameNote }) 
               {isEdit ? "Note" : "Notice"} (<span id="cntChars">{editNote ? editNote.textSize : 0}</span> / 5000 characters)
             </th>
             <th>
-              <textarea cols={60} name="text" rows={10} defaultValue={editNote ? editNote.text : ""} />
+              <textarea cols={60} disabled={pending} name="text" rows={10} defaultValue={editNote ? editNote.text : ""} />
             </th>
           </tr>
           <tr>
@@ -1953,8 +2019,8 @@ function NoteForm({ mode, note }: { mode: "create" | "edit"; note?: GameNote }) 
               <a href={noteURL({})}>Back</a>
             </td>
             <td className="legacy-c">
-              {isEdit ? <input type="reset" value="Reset" /> : null}
-              <input type="submit" value={isEdit ? "Apply" : "Save"} />
+              {isEdit ? <input disabled={pending} type="reset" value="Reset" /> : null}
+              <input disabled={pending} type="submit" value={isEdit ? "Apply" : "Save"} />
             </td>
           </tr>
         </tbody>

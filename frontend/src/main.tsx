@@ -7,6 +7,7 @@ import {
   type GameFleetStatus,
   type GameGalaxyStatus,
   type GameLogoutStatus,
+  type GameNoteDraft,
   type GameNotesStatus,
   type GameOverviewStatus,
   type GameResearchStatus,
@@ -216,6 +217,7 @@ function App() {
   const [gameSearchError, setGameSearchError] = useState<string | null>(null);
   const [gameNotes, setGameNotes] = useState<GameNotesStatus | null>(null);
   const [gameNotesError, setGameNotesError] = useState<string | null>(null);
+  const [gameNotesPending, setGameNotesPending] = useState(false);
   const [gameLogout, setGameLogout] = useState<GameLogoutStatus | null>(null);
   const [gameLogoutError, setGameLogoutError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
@@ -604,6 +606,58 @@ function App() {
       .catch((err: unknown) => setGameNotesError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
 
+  const submitGameNotesMutation = (body: Record<string, unknown>) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameNotesError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const notesSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      notesSearch.set("cp", selectedPlanet);
+    }
+    setGameNotesPending(true);
+    setGameNotesError(null);
+    fetch(`/api/game/notes?${notesSearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(body)
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameNotesStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `notes returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("notes response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameNotes(payload);
+        setGameNotesError(null);
+        dispatchClientNavigation(`/game/notes?${notesSearch.toString()}`);
+      })
+      .catch((err: unknown) => setGameNotesError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameNotesPending(false));
+  };
+
+  const submitGameNoteCreate = (draft: GameNoteDraft) => {
+    submitGameNotesMutation({ action: "create", subject: draft.subject, text: draft.text, priority: draft.priority });
+  };
+
+  const submitGameNoteUpdate = (noteId: number, draft: GameNoteDraft) => {
+    submitGameNotesMutation({ action: "update", noteId, subject: draft.subject, text: draft.text, priority: draft.priority });
+  };
+
+  const submitGameNoteDelete = (noteIds: number[]) => {
+    submitGameNotesMutation({ action: "delete", noteIds });
+  };
+
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "logout") {
@@ -697,7 +751,11 @@ function App() {
         logoutError={gameLogoutError}
         logoutStatus={gameLogout}
         notesError={gameNotesError}
+        notesPending={gameNotesPending}
         notesStatus={gameNotes}
+        onNotesCreate={submitGameNoteCreate}
+        onNotesDelete={submitGameNoteDelete}
+        onNotesUpdate={submitGameNoteUpdate}
         onResourcesSubmit={submitGameResources}
         route={gameRoute ?? resolveGameRoute(pathname)}
         resourcesError={gameResourcesError}

@@ -2165,6 +2165,124 @@ func TestGameNotesEndpointReturnsEditNote(t *testing.T) {
 	}
 }
 
+func TestGameNotesEndpointMutatesNotes(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		body       string
+		wantAction string
+		assert     func(t *testing.T, notes *fakeGameNotes)
+	}{
+		{
+			name:       "create",
+			body:       `{"action":"create","subject":"Subject","text":"Body","priority":2}`,
+			wantAction: "create",
+			assert: func(t *testing.T, notes *fakeGameNotes) {
+				t.Helper()
+				if notes.createCommand.Subject != "Subject" || notes.createCommand.Text != "Body" || notes.createCommand.Priority != 2 {
+					t.Fatalf("unexpected create command: %+v", notes.createCommand)
+				}
+			},
+		},
+		{
+			name:       "update",
+			body:       `{"action":"update","noteId":11,"subject":"Subject","text":"Body","priority":1}`,
+			wantAction: "update",
+			assert: func(t *testing.T, notes *fakeGameNotes) {
+				t.Helper()
+				if notes.updateCommand.NoteID != 11 || notes.updateCommand.Priority != 1 {
+					t.Fatalf("unexpected update command: %+v", notes.updateCommand)
+				}
+			},
+		},
+		{
+			name:       "delete",
+			body:       `{"action":"delete","noteIds":[11,12]}`,
+			wantAction: "delete",
+			assert: func(t *testing.T, notes *fakeGameNotes) {
+				t.Helper()
+				if len(notes.deleteCommand.NoteIDs) != 2 || notes.deleteCommand.NoteIDs[1] != 12 {
+					t.Fatalf("unexpected delete command: %+v", notes.deleteCommand)
+				}
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			notes := &fakeGameNotes{result: appgame.NotesResult{
+				Authenticated: true,
+				Notes: domaingame.Notes{
+					Commander: "legor",
+					Action:    domaingame.NotesActionList,
+					Rows:      []domaingame.Note{{ID: 11, Subject: "Subject", TextSize: 4, Priority: 2, Date: 1700000000}},
+				},
+			}}
+			server := testServerWithGameNotes(t, notes)
+			req := httptest.NewRequest(http.MethodPost, "/api/game/notes?session=public&cp=99", strings.NewReader(tt.body))
+			req.RemoteAddr = "203.0.113.10:4321"
+			req.Header.Set("Content-Type", "application/json")
+			req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+			rec := httptest.NewRecorder()
+			server.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+			}
+			var response gameNotesResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if !response.Authenticated || response.Notes == nil || len(response.Notes.Rows) != 1 {
+				t.Fatalf("unexpected notes mutation response: %+v", response)
+			}
+			tt.assert(t, notes)
+		})
+	}
+}
+
+func TestGameNotesEndpointMutationRejectsInvalidRequests(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		target string
+		body   string
+	}{
+		{"malformed", "/api/game/notes?session=public", `{`},
+		{"unknown action", "/api/game/notes?session=public", `{"action":"bogus"}`},
+		{"missing update note", "/api/game/notes?session=public", `{"action":"update"}`},
+		{"invalid planet", "/api/game/notes?session=public&cp=bad", `{"action":"create"}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			server := testServerWithGameNotes(t, &fakeGameNotes{})
+			req := httptest.NewRequest(http.MethodPost, tt.target, strings.NewReader(tt.body))
+			rec := httptest.NewRecorder()
+			server.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d", rec.Code)
+			}
+		})
+	}
+}
+
+func TestGameNotesEndpointMutationReturnsUnauthorizedForInvalidSession(t *testing.T) {
+	notes := &fakeGameNotes{result: appgame.NotesResult{
+		Authenticated: false,
+		Issues:        []domainpublicsite.SessionIssue{{Code: "missing", Message: "missing session"}},
+	}}
+	server := testServerWithGameNotes(t, notes)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/notes?session=public", strings.NewReader(`{"action":"create"}`))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var response gameNotesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Authenticated || response.Notes != nil || len(response.Issues) != 1 {
+		t.Fatalf("expected invalid notes mutation session response, got %+v", response)
+	}
+}
+
 func TestGameNotesEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
 	notes := &fakeGameNotes{result: appgame.NotesResult{
 		Authenticated: false,
@@ -2215,12 +2333,27 @@ func TestGameNotesEndpointReturnsUnavailable(t *testing.T) {
 		t.Fatalf("expected missing game notes use case to return 503, got %d", rec.Code)
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "/api/game/notes?session=public", strings.NewReader(`{"action":"create"}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game notes mutation use case to return 503, got %d", rec.Code)
+	}
+
 	server = testServerWithGameNotes(t, &fakeGameNotes{err: errors.New("notes failed")})
 	req = httptest.NewRequest(http.MethodGet, "/api/game/notes?session=public", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected game notes error to return 503, got %d", rec.Code)
+	}
+
+	server = testServerWithGameNotes(t, &fakeGameNotes{err: errors.New("notes failed")})
+	req = httptest.NewRequest(http.MethodPost, "/api/game/notes?session=public", strings.NewReader(`{"action":"create"}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game notes mutation error to return 503, got %d", rec.Code)
 	}
 }
 
@@ -2698,6 +2831,14 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 
 	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
 		t.Fatalf("expected game search method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
+
+	req = httptest.NewRequest(http.MethodPut, "/api/game/notes", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD, POST" {
+		t.Fatalf("expected game notes method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
 	req = httptest.NewRequest(http.MethodPut, "/api/game/resources", nil)
@@ -3270,13 +3411,31 @@ func (f *fakeGameSearch) GetSearch(_ context.Context, command appgame.SearchComm
 }
 
 type fakeGameNotes struct {
-	result  appgame.NotesResult
-	err     error
-	command appgame.NotesCommand
+	result        appgame.NotesResult
+	err           error
+	command       appgame.NotesCommand
+	createCommand appgame.NotesMutationCommand
+	updateCommand appgame.NotesMutationCommand
+	deleteCommand appgame.NotesMutationCommand
 }
 
 func (f *fakeGameNotes) GetNotes(_ context.Context, command appgame.NotesCommand) (appgame.NotesResult, error) {
 	f.command = command
+	return f.result, f.err
+}
+
+func (f *fakeGameNotes) CreateNote(_ context.Context, command appgame.NotesMutationCommand) (appgame.NotesResult, error) {
+	f.createCommand = command
+	return f.result, f.err
+}
+
+func (f *fakeGameNotes) UpdateNote(_ context.Context, command appgame.NotesMutationCommand) (appgame.NotesResult, error) {
+	f.updateCommand = command
+	return f.result, f.err
+}
+
+func (f *fakeGameNotes) DeleteNotes(_ context.Context, command appgame.NotesMutationCommand) (appgame.NotesResult, error) {
+	f.deleteCommand = command
 	return f.result, f.err
 }
 

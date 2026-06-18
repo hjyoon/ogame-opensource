@@ -554,6 +554,54 @@ try {
     gameNotesWithoutCookieBody = {};
   }
 
+  const noteSubject = `smoke-note-${runId}`;
+  const updatedNoteSubject = `${noteSubject}-updated`;
+  const gameNotesCreatePost = await request(`/api/game/notes${sessionSearch}`, {
+    method: "POST",
+    headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "create", subject: noteSubject, text: "smoke body", priority: 2 })
+  });
+  let gameNotesCreatePostBody = {};
+  try {
+    gameNotesCreatePostBody = JSON.parse(gameNotesCreatePost.body);
+  } catch {
+    gameNotesCreatePostBody = {};
+  }
+  const createdNote = Array.isArray(gameNotesCreatePostBody.notes?.rows)
+    ? gameNotesCreatePostBody.notes.rows.find((row) => row.subject === noteSubject)
+    : null;
+
+  const gameNotesUpdatePost = createdNote
+    ? await request(`/api/game/notes${sessionSearch}`, {
+        method: "POST",
+        headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update", noteId: createdNote.id, subject: updatedNoteSubject, text: "updated body", priority: 0 })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  let gameNotesUpdatePostBody = {};
+  try {
+    gameNotesUpdatePostBody = JSON.parse(gameNotesUpdatePost.body);
+  } catch {
+    gameNotesUpdatePostBody = {};
+  }
+  const updatedNote = Array.isArray(gameNotesUpdatePostBody.notes?.rows)
+    ? gameNotesUpdatePostBody.notes.rows.find((row) => row.subject === updatedNoteSubject)
+    : null;
+
+  const gameNotesDeletePost = updatedNote
+    ? await request(`/api/game/notes${sessionSearch}`, {
+        method: "POST",
+        headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", noteIds: [updatedNote.id] })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  let gameNotesDeletePostBody = {};
+  try {
+    gameNotesDeletePostBody = JSON.parse(gameNotesDeletePost.body);
+  } catch {
+    gameNotesDeletePostBody = {};
+  }
+
   const gameResources = await request(`/api/game/resources${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -797,6 +845,21 @@ try {
         status: gameNotesCreate.status
       }),
       check(gameNotesCreateBody.notes?.action === "create", "game notes keeps legacy create action", gameNotesCreateBody),
+      check(gameNotesCreatePost.status === 200, "game notes creates notes over POST", { status: gameNotesCreatePost.status }),
+      check(createdNote?.subject === noteSubject && createdNote?.priority === 2, "game notes create returns the new note", {
+        createdNote
+      }),
+      check(gameNotesUpdatePost.status === 200, "game notes updates notes over POST", { status: gameNotesUpdatePost.status }),
+      check(updatedNote?.subject === updatedNoteSubject && updatedNote?.priority === 0, "game notes update returns the updated note", {
+        updatedNote
+      }),
+      check(gameNotesDeletePost.status === 200, "game notes deletes notes over POST", { status: gameNotesDeletePost.status }),
+      check(
+        Array.isArray(gameNotesDeletePostBody.notes?.rows) &&
+          !gameNotesDeletePostBody.notes.rows.some((row) => row.subject === updatedNoteSubject),
+        "game notes delete removes the note from the returned list",
+        gameNotesDeletePostBody
+      ),
       check(!gameNotes.body.includes(sessionCookiePair), "game notes response does not echo private cookie"),
       check(gameNotesWithoutCookie.status === 401, "game notes rejects missing private cookie", { status: gameNotesWithoutCookie.status }),
       check(gameNotesWithoutCookieBody.authenticated === false, "game notes missing private cookie is unauthenticated", gameNotesWithoutCookieBody),
@@ -1001,7 +1064,7 @@ try {
   const postGameTechnology = await request("/api/game/technology", { method: "POST" });
   const postGameStatistics = await request("/api/game/statistics", { method: "POST" });
   const postGameSearch = await request("/api/game/search", { method: "POST" });
-  const postGameNotes = await request("/api/game/notes", { method: "POST" });
+  const putGameNotes = await request("/api/game/notes", { method: "PUT" });
   const getGameLogout = await request("/api/game/logout");
   const putGameResources = await request("/api/game/resources", { method: "PUT" });
   cases.push(finalize({
@@ -1039,8 +1102,8 @@ try {
       check(hasHeader(postGameStatistics, "allow", "GET, HEAD"), "game statistics method rejection returns Allow header"),
       check(postGameSearch.status === 405, "POST game search endpoint is rejected", { status: postGameSearch.status }),
       check(hasHeader(postGameSearch, "allow", "GET, HEAD"), "game search method rejection returns Allow header"),
-      check(postGameNotes.status === 405, "POST game notes endpoint is rejected", { status: postGameNotes.status }),
-      check(hasHeader(postGameNotes, "allow", "GET, HEAD"), "game notes method rejection returns Allow header"),
+      check(putGameNotes.status === 405, "PUT game notes endpoint is rejected", { status: putGameNotes.status }),
+      check(hasHeader(putGameNotes, "allow", "GET, HEAD, POST"), "game notes method rejection returns Allow header"),
       check(getGameLogout.status === 405, "GET game logout endpoint is rejected", { status: getGameLogout.status }),
       check(hasHeader(getGameLogout, "allow", "POST"), "game logout method rejection returns Allow header"),
       check(putGameResources.status === 405, "PUT game resources endpoint is rejected", { status: putGameResources.status }),

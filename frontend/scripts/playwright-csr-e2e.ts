@@ -81,7 +81,7 @@ try {
   await assertGameClientNavigation(page, "game search menu preserves CSR", "a[href^='/game/search']", "/game/search", "Search");
   await assertSearchForm(page, loginFixture.login);
   await assertGameClientNavigation(page, "game notes menu preserves CSR", "a[href^='/game/notes']", "/game/notes", "Notes");
-  await assertNotesCreateForm(page);
+  await assertNotesMutationFlow(page);
   await assertGameClientNavigation(page, "game overview menu preserves CSR", "a[href^='/game/overview']", "/game/overview", "Overview");
   await assertGameLogout(page);
 
@@ -409,8 +409,10 @@ async function assertSearchForm(page: Page, login: string) {
   });
 }
 
-async function assertNotesCreateForm(page: Page) {
+async function assertNotesMutationFlow(page: Page) {
   const marker = "probe-game-notes-create";
+  const subject = `CSR note ${Date.now()}`;
+  const updatedSubject = `${subject} updated`;
   await page.evaluate((value) => {
     window.__ogameCsrProbe = value;
   }, marker);
@@ -431,6 +433,47 @@ async function assertNotesCreateForm(page: Page) {
         state.details.notesFormText.includes("Create note") &&
         state.details.notesFormText.includes("Priority") &&
         state.details.notesFormText.includes("Notice") &&
+        state.details.pendingText === false,
+      details: state.details
+    };
+  });
+
+  await page.locator(".legacy-notes-form-table input[name='betreff']").fill(subject);
+  await page.locator(".legacy-notes-form-table textarea[name='text']").fill("Body");
+  await page.locator(".legacy-notes-form-table select[name='u']").selectOption("2");
+  await page.locator(".legacy-notes-form-table input[type='submit']").click();
+  await page.waitForFunction(() => window.location.pathname === "/game/notes" && !window.location.search.includes("a=1"), undefined, {
+    timeout: 5_000
+  });
+  await page.locator(".legacy-notes-table", { hasText: subject }).waitFor({ timeout: 10_000 });
+
+  await page.locator(".legacy-notes-table a", { hasText: subject }).first().click();
+  await page.waitForFunction(() => window.location.pathname === "/game/notes" && window.location.search.includes("a=2"), undefined, {
+    timeout: 5_000
+  });
+  await page.locator(".legacy-notes-form-table", { hasText: "Edit note" }).waitFor({ timeout: 10_000 });
+  await page.locator(".legacy-notes-form-table input[name='betreff']").fill(updatedSubject);
+  await page.locator(".legacy-notes-form-table textarea[name='text']").fill("Updated body");
+  await page.locator(".legacy-notes-form-table select[name='u']").selectOption("0");
+  await page.locator(".legacy-notes-form-table input[type='submit']").click();
+  await page.waitForFunction(() => window.location.pathname === "/game/notes" && !window.location.search.includes("a=2"), undefined, {
+    timeout: 5_000
+  });
+  await page.locator(".legacy-notes-table", { hasText: updatedSubject }).waitFor({ timeout: 10_000 });
+
+  const row = page.locator("[data-note-row]", { hasText: updatedSubject }).first();
+  await row.locator("input[type='checkbox']").check();
+  await page.locator(".legacy-notes-table input[type='submit']").click();
+  await page.waitForFunction((text) => !document.body.textContent?.includes(text), updatedSubject, { timeout: 10_000 });
+  await record("game notes mutations preserve CSR", async () => {
+    const state = await gameShellState(page, marker, "Notes");
+    return {
+      pass:
+        state.details.pathname === "/game/notes" &&
+        state.details.search.includes("session=") &&
+        state.details.probe === marker &&
+        state.details.notesTable === true &&
+        !state.details.notesText.includes(updatedSubject) &&
         state.details.pendingText === false,
       details: state.details
     };

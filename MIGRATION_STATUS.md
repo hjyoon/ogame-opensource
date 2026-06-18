@@ -17,7 +17,7 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - Registration validates drafts, checks duplicates/capacity, then creates legacy-compatible user, home planet, sessions, and `/game/overview` redirect.
 - Login/logout create and clear legacy sessions, private cookies, and `/game` redirects.
 - `/api/game/session` validates public session plus private cookie, bans, and IP checks.
-- `/api/game/{overview,buildings,resources,research,shipyard,fleet,galaxy,defense,technology,statistics,search,notes}` return read models; resources stores settings.
+- `/api/game/{overview,buildings,resources,research,shipyard,fleet,galaxy,defense,technology,statistics,search,notes}` return models; resources/notes store settings.
 - Auth `/game/*` routes preserve sessions and `cp`; migrated game screens use the legacy `evolution` skin.
 - Modernization: [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
 
@@ -28,7 +28,7 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - Galaxy covers the `galaxy` read screen: coordinate clamp, rows 1-15, player status, moon, debris, actions, slots, and deuterium warning. Quick actions and cost mutation pending.
 - Defense covers display state only: shipyard gate, requirements, shield dome/missile caps, busy state, costs, durations, counts, and max hints.
 - Technology covers `techtree` and recursive details; statistics covers player/alliance rankings; search covers player/planet/alliance results.
-- Notes covers `notizen` list and create/edit forms. Add/update/delete pending.
+- Notes covers `notizen` list, create/edit forms, and add/update/delete mutations.
 
 ## Verified QA
 
@@ -48,6 +48,6 @@ Full legacy PHP E2E was not run for this Go step. Keep legacy PHP as oracle unti
 - Add expiry and deeper session security behavior.
 - Close authenticated visual diff for overview/buildings before claiming game-page parity.
 - Port current planet switching and full overview actions from legacy DB.
-- Port queue mutations, research start/cancel, shipyard/defense orders, fleet dispatch/recall/ACS/templates, galaxy quick actions, notes mutations, reports, messages, alliance, admin, maintenance, options, recovery, deletion, vacation, bans, and permissions.
+- Port queue mutations, research start/cancel, shipyard/defense orders, fleet dispatch/recall/ACS/templates, galaxy quick actions, reports, messages, alliance, admin, maintenance, options, recovery, deletion, vacation, bans, and permissions.
 - Convert legacy E2E cases into Go compatibility checks as each flow is migrated.
 - Run full legacy PHP E2E before declaring any game-flow migration equivalent.

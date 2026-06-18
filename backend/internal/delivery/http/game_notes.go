@@ -34,7 +34,28 @@ type gameNoteResponse struct {
 	Date          int64  `json:"date"`
 }
 
+type gameNotesMutationRequest struct {
+	Action   string `json:"action"`
+	NoteID   int    `json:"noteId"`
+	Subject  string `json:"subject"`
+	Text     string `json:"text"`
+	Priority int    `json:"priority"`
+	NoteIDs  []int  `json:"noteIds"`
+}
+
 func (a app) handleGameNotes(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		a.handleGameNotesGet(w, r)
+	case http.MethodPost:
+		a.handleGameNotesPost(w, r)
+	default:
+		w.Header().Set("Allow", "GET, HEAD, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (a app) handleGameNotesGet(w http.ResponseWriter, r *http.Request) {
 	if a.deps.GameNotes == nil {
 		http.Error(w, "game notes unavailable", http.StatusServiceUnavailable)
 		return
@@ -73,6 +94,86 @@ func (a app) handleGameNotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	status := http.StatusOK
+	var notes *gameNotesSummary
+	if result.Authenticated {
+		mapped := toGameNotesSummary(result.Notes)
+		notes = &mapped
+	} else {
+		status = http.StatusUnauthorized
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(gameNotesResponse{
+		Authenticated: result.Authenticated,
+		Issues:        toGameSessionIssueResponses(result.Issues),
+		Notes:         notes,
+	})
+}
+
+func (a app) handleGameNotesPost(w http.ResponseWriter, r *http.Request) {
+	if a.deps.GameNotes == nil {
+		http.Error(w, "game notes unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	planetID, err := selectedPlanetID(r)
+	if err != nil {
+		http.Error(w, "invalid selected planet", http.StatusBadRequest)
+		return
+	}
+	mutation, err := decodeGameNotesMutation(r)
+	if err != nil {
+		http.Error(w, "invalid notes request", http.StatusBadRequest)
+		return
+	}
+
+	command := appgame.NotesMutationCommand{
+		PublicSession:   r.URL.Query().Get("session"),
+		PrivateSessions: cookieMap(r),
+		RemoteAddr:      remoteIP(r.RemoteAddr),
+		PlanetID:        planetID,
+		NoteID:          mutation.NoteID,
+		Subject:         mutation.Subject,
+		Text:            mutation.Text,
+		Priority:        mutation.Priority,
+		NoteIDs:         mutation.NoteIDs,
+	}
+	var result appgame.NotesResult
+	switch mutation.Action {
+	case "create":
+		result, err = a.deps.GameNotes.CreateNote(r.Context(), command)
+	case "update", "edit":
+		if mutation.NoteID <= 0 {
+			http.Error(w, "invalid note id", http.StatusBadRequest)
+			return
+		}
+		result, err = a.deps.GameNotes.UpdateNote(r.Context(), command)
+	case "delete":
+		result, err = a.deps.GameNotes.DeleteNotes(r.Context(), command)
+	default:
+		http.Error(w, "invalid notes request", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		http.Error(w, "game notes unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	writeGameNotesResponse(w, result)
+}
+
+func decodeGameNotesMutation(r *http.Request) (gameNotesMutationRequest, error) {
+	defer r.Body.Close()
+	var request gameNotesMutationRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		return gameNotesMutationRequest{}, err
+	}
+	return request, nil
+}
+
+func writeGameNotesResponse(w http.ResponseWriter, result appgame.NotesResult) {
 	status := http.StatusOK
 	var notes *gameNotesSummary
 	if result.Authenticated {

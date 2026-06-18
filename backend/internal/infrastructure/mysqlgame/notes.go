@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
@@ -12,15 +13,29 @@ import (
 
 type NotesRepository struct {
 	queryer Queryer
+	execer  Execer
 	prefix  string
+	now     func() time.Time
 }
 
 func NewNotesRepository(db *sql.DB, prefix string) NotesRepository {
-	return NotesRepository{queryer: SQLQueryer{DB: db}, prefix: prefix}
+	runner := SQLQueryer{DB: db}
+	return NotesRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now}
 }
 
 func NewNotesRepositoryWithQueryer(queryer Queryer, prefix string) NotesRepository {
-	return NotesRepository{queryer: queryer, prefix: prefix}
+	var execer Execer
+	if runner, ok := queryer.(Execer); ok {
+		execer = runner
+	}
+	return NewNotesRepositoryWithRunner(queryer, execer, prefix, time.Now)
+}
+
+func NewNotesRepositoryWithRunner(queryer Queryer, execer Execer, prefix string, now func() time.Time) NotesRepository {
+	if now == nil {
+		now = time.Now
+	}
+	return NotesRepository{queryer: queryer, execer: execer, prefix: prefix, now: now}
 }
 
 func (r NotesRepository) GetNotes(ctx context.Context, query appgame.NotesQuery) (domaingame.Notes, error) {
@@ -62,6 +77,76 @@ func (r NotesRepository) GetNotes(ctx context.Context, query appgame.NotesQuery)
 	}
 	notes.Rows = rows
 	return notes, nil
+}
+
+func (r NotesRepository) CreateNote(ctx context.Context, query appgame.NotesMutationQuery) (domaingame.Notes, error) {
+	if r.execer == nil {
+		return domaingame.Notes{}, errors.New("notes updater unavailable")
+	}
+	notesTable, err := tableName(r.prefix, "notes")
+	if err != nil {
+		return domaingame.Notes{}, err
+	}
+	if _, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("INSERT INTO %s (owner_id, subj, text, textsize, prio, date) VALUES (?, ?, ?, ?, ?, ?)", notesTable),
+		query.PlayerID,
+		query.Draft.Subject,
+		query.Draft.Text,
+		query.Draft.TextSize,
+		query.Draft.Priority,
+		r.now().Unix(),
+	); err != nil {
+		return domaingame.Notes{}, err
+	}
+	return r.GetNotes(ctx, appgame.NotesQuery{PlayerID: query.PlayerID, PlanetID: query.PlanetID})
+}
+
+func (r NotesRepository) UpdateNote(ctx context.Context, query appgame.NotesMutationQuery) (domaingame.Notes, error) {
+	if r.execer == nil {
+		return domaingame.Notes{}, errors.New("notes updater unavailable")
+	}
+	notesTable, err := tableName(r.prefix, "notes")
+	if err != nil {
+		return domaingame.Notes{}, err
+	}
+	if query.NoteID > 0 {
+		if _, err := r.execer.ExecContext(
+			ctx,
+			fmt.Sprintf("UPDATE %s SET subj = ?, text = ?, textsize = ?, prio = ?, date = ? WHERE owner_id = ? AND note_id = ?", notesTable),
+			query.Draft.Subject,
+			query.Draft.Text,
+			query.Draft.TextSize,
+			query.Draft.Priority,
+			r.now().Unix(),
+			query.PlayerID,
+			query.NoteID,
+		); err != nil {
+			return domaingame.Notes{}, err
+		}
+	}
+	return r.GetNotes(ctx, appgame.NotesQuery{PlayerID: query.PlayerID, PlanetID: query.PlanetID})
+}
+
+func (r NotesRepository) DeleteNotes(ctx context.Context, query appgame.NotesDeleteQuery) (domaingame.Notes, error) {
+	if r.execer == nil {
+		return domaingame.Notes{}, errors.New("notes updater unavailable")
+	}
+	notesTable, err := tableName(r.prefix, "notes")
+	if err != nil {
+		return domaingame.Notes{}, err
+	}
+	for _, noteID := range query.NoteIDs {
+		if _, err := r.execer.ExecContext(
+			ctx,
+			fmt.Sprintf("DELETE FROM %s WHERE owner_id = ? AND note_id = ?", notesTable),
+			query.PlayerID,
+			noteID,
+		); err != nil {
+			return domaingame.Notes{}, err
+		}
+	}
+	return r.GetNotes(ctx, appgame.NotesQuery{PlayerID: query.PlayerID, PlanetID: query.PlanetID})
 }
 
 func (r NotesRepository) loadNotes(ctx context.Context, notesTable string, playerID int) ([]domaingame.Note, error) {
