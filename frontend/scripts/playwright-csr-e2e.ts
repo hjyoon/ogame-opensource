@@ -76,6 +76,7 @@ try {
   await assertGameClientNavigation(page, "game galaxy menu preserves CSR", "a[href^='/game/galaxy']", "/game/galaxy", "Galaxy");
   await assertGameClientNavigation(page, "game technology menu preserves CSR", "a[href^='/game/technology']", "/game/technology", "Technology");
   await assertTechnologyDetailsNavigation(page);
+  await assertGameClientNavigation(page, "game statistics menu preserves CSR", "a[href^='/game/statistics']", "/game/statistics", "Statistics");
   await assertGameClientNavigation(page, "game overview menu preserves CSR", "a[href^='/game/overview']", "/game/overview", "Overview");
   await assertGameLogout(page);
 
@@ -243,6 +244,8 @@ async function assertGameClientNavigation(
     await page.locator(".legacy-defense-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Technology") {
     await page.locator(".legacy-technology-table").first().waitFor({ timeout: 10_000 });
+  } else if (expectedMenuLabel === "Statistics") {
+    await page.locator(".legacy-statistics-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel !== "Overview") {
     await page.waitForFunction(() => document.body.textContent?.includes("queued for React and Go migration"), undefined, {
       timeout: 5_000
@@ -276,6 +279,11 @@ async function assertGameClientNavigation(
                         state.details.technologyRows > 0 &&
                         state.details.technologyNames.includes("Metal Mine") &&
                         state.details.pendingText === false
+                      : expectedMenuLabel === "Statistics"
+                        ? state.details.statisticsTable === true &&
+                          state.details.statisticsRows > 0 &&
+                          state.details.statisticsText.includes("Statistics") &&
+                          state.details.pendingText === false
                       : expectedMenuLabel === "Overview"
                         ? state.details.pendingText === false
                         : state.details.pendingText === true;
@@ -417,6 +425,9 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     technologyDetailRows: document.querySelectorAll("[data-technology-detail-row]").length,
     technologyDetailTable: document.querySelector(".legacy-technology-details-table") !== null,
     technologyDetailTarget: document.querySelector(".legacy-technology-details-table tr:first-child td")?.textContent?.trim() ?? "",
+    statisticsTable: document.querySelector(".legacy-statistics-table") !== null,
+    statisticsRows: document.querySelectorAll("[data-statistics-row]").length,
+    statisticsText: document.querySelector(".legacy-statistics-head-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     logoutTable: document.querySelector(".legacy-logout-table") !== null,
     logoutText: document.querySelector(".legacy-logout-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     pendingText: document.body.textContent?.includes("queued for React and Go migration") ?? false

@@ -173,6 +173,16 @@ const pageSpecs: AuthPageSpec[] = [
     legacyReady: "#content table",
     migratedReady: ".legacy-defense-table",
     expectedTexts: ["In order to do that, you need to build a shipyard!"]
+  },
+  {
+    name: "game-statistics",
+    legacyPage: "statistics",
+    legacyQuery: { type: "ressources", start: "1" },
+    migratedPath: "/game/statistics",
+    migratedQuery: { type: "ressources", start: "1" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-statistics-table",
+    expectedTexts: ["Statistics", "What kind of", "Player", "Alliance", "Points"]
   }
 ];
 

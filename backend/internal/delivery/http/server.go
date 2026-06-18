@@ -84,6 +84,10 @@ type GameTechnologyUseCase interface {
 	GetTechnology(context.Context, appgame.TechnologyCommand) (appgame.TechnologyResult, error)
 }
 
+type GameStatisticsUseCase interface {
+	GetStatistics(context.Context, appgame.StatisticsCommand) (appgame.StatisticsResult, error)
+}
+
 type Dependencies struct {
 	Health             HealthUseCase
 	Universes          UniverseCatalogUseCase
@@ -102,6 +106,7 @@ type Dependencies struct {
 	GameGalaxy         GameGalaxyUseCase
 	GameDefense        GameDefenseUseCase
 	GameTechnology     GameTechnologyUseCase
+	GameStatistics     GameStatisticsUseCase
 	Frontend           FrontendAssets
 	LegacyAssets       http.FileSystem
 	Logger             *slog.Logger
@@ -131,6 +136,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/galaxy", getOnly(a.handleGameGalaxy))
 	mux.HandleFunc("/api/game/defense", getOnly(a.handleGameDefense))
 	mux.HandleFunc("/api/game/technology", getOnly(a.handleGameTechnology))
+	mux.HandleFunc("/api/game/statistics", getOnly(a.handleGameStatistics))
 	mux.Handle("/legacy-assets/", http.StripPrefix("/legacy-assets/", http.FileServer(deps.LegacyAssets)))
 	mux.HandleFunc("/", getOnly(a.handleFrontend))
 	handler := securityHeaders(mux)

@@ -1798,6 +1798,145 @@ func TestGameTechnologyEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 	}
 }
 
+func TestGameStatisticsEndpointReturnsStatistics(t *testing.T) {
+	statistics := &fakeGameStatistics{result: appgame.StatisticsResult{
+		Authenticated: true,
+		Statistics: domaingame.Statistics{
+			Commander: "legor",
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:   99,
+				Name: "Arakis",
+				Type: domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+			},
+			PlanetSwitcher: []domaingame.PlanetSummary{{
+				ID:   99,
+				Name: "Arakis",
+				Type: domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+				Current: true,
+			}},
+			Who:         domaingame.StatisticsWhoPlayer,
+			Type:        domaingame.StatisticsTypeResources,
+			Start:       1,
+			Total:       2,
+			GeneratedAt: 123456,
+			Rows: []domaingame.StatisticsRow{{
+				Place:         1,
+				PreviousPlace: 3,
+				Score:         950000000,
+				ScoreDate:     123400,
+				Player:        domaingame.StatisticsPlayer{ID: 42, Name: "legor"},
+				Alliance:      &domaingame.StatisticsAlliance{ID: 7, Tag: "TAG"},
+				Coordinates:   domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+				Own:           true,
+			}},
+		},
+	}}
+	server := testServerWithGameStatistics(t, statistics)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/statistics?session=public&cp=99&type=ressources&who=player&start=1", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameStatisticsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Statistics == nil || response.Statistics.Commander != "legor" || len(response.Statistics.Rows) != 1 {
+		t.Fatalf("expected authenticated statistics response, got %+v", response)
+	}
+	row := response.Statistics.Rows[0]
+	if row.DisplayScore != 950000 || row.Delta != -2 || !row.Own || row.Alliance == nil || row.Alliance.Tag != "TAG" {
+		t.Fatalf("unexpected statistics row mapping: %+v", row)
+	}
+	if statistics.command.PublicSession != "public" || statistics.command.PlanetID != 99 ||
+		statistics.command.Type != "ressources" || statistics.command.Who != "player" || statistics.command.Start != 1 ||
+		statistics.command.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected statistics command: %+v", statistics.command)
+	}
+	if statistics.command.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("expected private session cookie to be passed, got %+v", statistics.command.PrivateSessions)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("private")) {
+		t.Fatalf("game statistics response must not echo private session: %s", rec.Body.String())
+	}
+}
+
+func TestGameStatisticsEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
+	statistics := &fakeGameStatistics{result: appgame.StatisticsResult{
+		Authenticated: false,
+		Issues: []domainpublicsite.SessionIssue{{
+			Code:    domainpublicsite.SessionIssuePrivateInvalid,
+			Message: "Private session is invalid.",
+		}},
+	}}
+	server := testServerWithGameStatistics(t, statistics)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/statistics?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var response gameStatisticsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Authenticated || response.Statistics != nil || len(response.Issues) != 1 {
+		t.Fatalf("expected invalid statistics session response, got %+v", response)
+	}
+}
+
+func TestGameStatisticsEndpointRejectsInvalidQuery(t *testing.T) {
+	server := testServerWithGameStatistics(t, &fakeGameStatistics{})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/statistics?session=public&cp=abc", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid selected planet to return 400, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/game/statistics?session=public&start=abc", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid start to return 400, got %d", rec.Code)
+	}
+}
+
+func TestGameStatisticsEndpointReturnsUnavailable(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/statistics?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game statistics use case to return 503, got %d", rec.Code)
+	}
+
+	server = testServerWithGameStatistics(t, &fakeGameStatistics{err: errors.New("statistics failed")})
+	req = httptest.NewRequest(http.MethodGet, "/api/game/statistics?session=public", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game statistics error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestGameResourcesEndpointReturnsResources(t *testing.T) {
 	resources := &fakeGameResources{result: appgame.ResourcesResult{
 		Authenticated: true,
@@ -2258,6 +2397,14 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game technology method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "/api/game/statistics", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("expected game statistics method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
+
 	req = httptest.NewRequest(http.MethodPut, "/api/game/resources", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -2547,6 +2694,19 @@ func testServerWithGameTechnology(t *testing.T, technology GameTechnologyUseCase
 	})
 }
 
+func testServerWithGameStatistics(t *testing.T, statistics GameStatisticsUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		GameStatistics:     statistics,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
 func testServerWithCustomDrafts(t *testing.T, registrationDrafts RegistrationDraftUseCase, loginDrafts LoginDraftUseCase) http.Handler {
 	t.Helper()
 	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
@@ -2762,6 +2922,17 @@ type fakeGameTechnology struct {
 }
 
 func (f *fakeGameTechnology) GetTechnology(_ context.Context, command appgame.TechnologyCommand) (appgame.TechnologyResult, error) {
+	f.command = command
+	return f.result, f.err
+}
+
+type fakeGameStatistics struct {
+	result  appgame.StatisticsResult
+	err     error
+	command appgame.StatisticsCommand
+}
+
+func (f *fakeGameStatistics) GetStatistics(_ context.Context, command appgame.StatisticsCommand) (appgame.StatisticsResult, error) {
 	f.command = command
 	return f.result, f.err
 }

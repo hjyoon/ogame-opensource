@@ -450,6 +450,44 @@ try {
     gameTechnologyWithoutCookieBody = {};
   }
 
+  const gameStatistics = await request(`/api/game/statistics${sessionSearch}&type=ressources&start=1`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameStatisticsBody = {};
+  try {
+    gameStatisticsBody = JSON.parse(gameStatistics.body);
+  } catch {
+    gameStatisticsBody = {};
+  }
+
+  const gameFleetStatistics = await request(`/api/game/statistics${sessionSearch}&type=fleet&start=1`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameFleetStatisticsBody = {};
+  try {
+    gameFleetStatisticsBody = JSON.parse(gameFleetStatistics.body);
+  } catch {
+    gameFleetStatisticsBody = {};
+  }
+
+  const gameResearchStatistics = await request(`/api/game/statistics${sessionSearch}&type=research&start=1`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameResearchStatisticsBody = {};
+  try {
+    gameResearchStatisticsBody = JSON.parse(gameResearchStatistics.body);
+  } catch {
+    gameResearchStatisticsBody = {};
+  }
+
+  const gameStatisticsWithoutCookie = await request(`/api/game/statistics${sessionSearch}`);
+  let gameStatisticsWithoutCookieBody = {};
+  try {
+    gameStatisticsWithoutCookieBody = JSON.parse(gameStatisticsWithoutCookie.body);
+  } catch {
+    gameStatisticsWithoutCookieBody = {};
+  }
+
   const gameResources = await request(`/api/game/resources${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -642,6 +680,27 @@ try {
       check(!gameTechnology.body.includes(sessionCookiePair), "game technology response does not echo private cookie"),
       check(gameTechnologyWithoutCookie.status === 401, "game technology rejects missing private cookie", { status: gameTechnologyWithoutCookie.status }),
       check(gameTechnologyWithoutCookieBody.authenticated === false, "game technology missing private cookie is unauthenticated", gameTechnologyWithoutCookieBody),
+      check(gameStatistics.status === 200, "game statistics returns HTTP 200 with private cookie", { status: gameStatistics.status }),
+      check(gameStatisticsBody.authenticated === true, "game statistics authenticates the login session", gameStatisticsBody),
+      check(gameStatisticsBody.statistics?.type === "ressources", "game statistics keeps legacy points type spelling", gameStatisticsBody),
+      check(Array.isArray(gameStatisticsBody.statistics?.rows), "game statistics returns ranking rows array", gameStatisticsBody),
+      check(Number.isFinite(gameStatisticsBody.statistics?.start), "game statistics returns selected ranking window", gameStatisticsBody),
+      check(
+        gameStatisticsBody.statistics?.rows?.some((row) => typeof row.player?.name === "string" && row.player.name.length > 0),
+        "game statistics rows include player names",
+        gameStatisticsBody
+      ),
+      check(gameFleetStatistics.status === 200, "game fleet statistics returns HTTP 200 with private cookie", {
+        status: gameFleetStatistics.status
+      }),
+      check(gameFleetStatisticsBody.statistics?.type === "fleet", "game fleet statistics returns fleet type", gameFleetStatisticsBody),
+      check(gameResearchStatistics.status === 200, "game research statistics returns HTTP 200 with private cookie", {
+        status: gameResearchStatistics.status
+      }),
+      check(gameResearchStatisticsBody.statistics?.type === "research", "game research statistics returns research type", gameResearchStatisticsBody),
+      check(!gameStatistics.body.includes(sessionCookiePair), "game statistics response does not echo private cookie"),
+      check(gameStatisticsWithoutCookie.status === 401, "game statistics rejects missing private cookie", { status: gameStatisticsWithoutCookie.status }),
+      check(gameStatisticsWithoutCookieBody.authenticated === false, "game statistics missing private cookie is unauthenticated", gameStatisticsWithoutCookieBody),
       check(gameResources.status === 200, "game resources returns HTTP 200 with private cookie", { status: gameResources.status }),
       check(gameResourcesBody.authenticated === true, "game resources authenticates the login session", gameResourcesBody),
       check(Number.isFinite(gameResourcesBody.resources?.factor), "game resources returns production factor", gameResourcesBody),
@@ -785,6 +844,7 @@ try {
       check(js.body.includes("/api/game/galaxy"), "React bundle consumes game galaxy API"),
       check(js.body.includes("/api/game/defense"), "React bundle consumes game defense API"),
       check(js.body.includes("/api/game/technology"), "React bundle consumes game technology API"),
+      check(js.body.includes("/api/game/statistics"), "React bundle consumes game statistics API"),
       check(js.body.includes("/api/game/logout"), "React bundle consumes game logout API"),
       check(js.body.includes("legacy-public-main"), "React bundle contains legacy public home layout"),
       check(js.body.includes("legacy-public-register-panel"), "React bundle contains legacy public registration layout"),
@@ -805,6 +865,7 @@ try {
       check(js.body.includes("legacy-defense-table"), "React bundle contains legacy game defense layout"),
       check(js.body.includes("legacy-technology-table"), "React bundle contains legacy game technology layout"),
       check(js.body.includes("legacy-technology-details-table"), "React bundle contains legacy game technology details layout"),
+      check(js.body.includes("legacy-statistics-table"), "React bundle contains legacy game statistics layout"),
       check(js.body.includes("legacy-logout-table"), "React bundle contains legacy game logout layout")
     ]
   }));
@@ -834,6 +895,7 @@ try {
   const postGameGalaxy = await request("/api/game/galaxy", { method: "POST" });
   const postGameDefense = await request("/api/game/defense", { method: "POST" });
   const postGameTechnology = await request("/api/game/technology", { method: "POST" });
+  const postGameStatistics = await request("/api/game/statistics", { method: "POST" });
   const getGameLogout = await request("/api/game/logout");
   const putGameResources = await request("/api/game/resources", { method: "PUT" });
   cases.push(finalize({
@@ -867,6 +929,8 @@ try {
       check(hasHeader(postGameDefense, "allow", "GET, HEAD"), "game defense method rejection returns Allow header"),
       check(postGameTechnology.status === 405, "POST game technology endpoint is rejected", { status: postGameTechnology.status }),
       check(hasHeader(postGameTechnology, "allow", "GET, HEAD"), "game technology method rejection returns Allow header"),
+      check(postGameStatistics.status === 405, "POST game statistics endpoint is rejected", { status: postGameStatistics.status }),
+      check(hasHeader(postGameStatistics, "allow", "GET, HEAD"), "game statistics method rejection returns Allow header"),
       check(getGameLogout.status === 405, "GET game logout endpoint is rejected", { status: getGameLogout.status }),
       check(hasHeader(getGameLogout, "allow", "POST"), "game logout method rejection returns Allow header"),
       check(putGameResources.status === 405, "PUT game resources endpoint is rejected", { status: putGameResources.status }),

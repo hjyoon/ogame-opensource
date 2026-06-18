@@ -55,6 +55,12 @@ export type GameTechnologyStatus = {
   technology?: GameTechnology;
 };
 
+export type GameStatisticsStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  statistics?: GameStatistics;
+};
+
 export type GameLogoutStatus = {
   loggedOut: boolean;
   redirectTo: string;
@@ -264,6 +270,31 @@ type GameFleetMission = {
   canCreateUnion: boolean;
 };
 
+type GameStatistics = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  who: string;
+  type: string;
+  start: number;
+  total: number;
+  generatedAt: number;
+  rows: GameStatisticsRow[];
+};
+
+type GameStatisticsRow = {
+  place: number;
+  previousPlace: number;
+  delta: number;
+  score: number;
+  displayScore: number;
+  scoreDate: number;
+  player: { id: number; name: string };
+  alliance?: { id: number; tag: string };
+  coordinates: Coordinates;
+  own: boolean;
+};
+
 type GameFleetShip = {
   id: number;
   name: string;
@@ -401,6 +432,8 @@ type LegacyGameOverviewProps = {
   defenseError: string | null;
   technologyStatus: GameTechnologyStatus | null;
   technologyError: string | null;
+  statisticsStatus: GameStatisticsStatus | null;
+  statisticsError: string | null;
   logoutStatus: GameLogoutStatus | null;
   logoutError: string | null;
 };
@@ -461,6 +494,8 @@ export function LegacyGameOverview({
   defenseError,
   technologyStatus,
   technologyError,
+  statisticsStatus,
+  statisticsError,
   logoutStatus,
   logoutError
 }: LegacyGameOverviewProps) {
@@ -489,6 +524,9 @@ export function LegacyGameOverview({
   const technology = technologyStatus?.authenticated ? technologyStatus.technology : undefined;
   const technologyIssue =
     technologyStatus && !technologyStatus.authenticated ? technologyStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const statistics = statisticsStatus?.authenticated ? statisticsStatus.statistics : undefined;
+  const statisticsIssue =
+    statisticsStatus && !statisticsStatus.authenticated ? statisticsStatus.issues[0]?.message ?? "Session is invalid." : null;
   const contentClassName = route.key === "overview" ? "legacy-content legacy-content-overview" : "legacy-content";
 
   return (
@@ -537,6 +575,10 @@ export function LegacyGameOverview({
         {route.key === "technology" && !technologyError && technologyIssue ? (
           <LegacyMessage tone="error" text={technologyIssue} />
         ) : null}
+        {route.key === "statistics" && statisticsError ? <LegacyMessage tone="error" text={statisticsError} /> : null}
+        {route.key === "statistics" && !statisticsError && statisticsIssue ? (
+          <LegacyMessage tone="error" text={statisticsIssue} />
+        ) : null}
         {overview && route.key === "overview" ? <OverviewTable overview={overview} /> : null}
         {overview && route.key === "buildings" && !buildings && !buildingsError && !buildingsIssue ? (
           <LegacyMessage tone="neutral" text="Loading buildings..." />
@@ -572,6 +614,10 @@ export function LegacyGameOverview({
           <LegacyMessage tone="neutral" text="Loading technology..." />
         ) : null}
         {technology && route.key === "technology" ? <TechnologyTable technology={technology} /> : null}
+        {overview && route.key === "statistics" && !statistics && !statisticsError && !statisticsIssue ? (
+          <LegacyMessage tone="neutral" text="Loading statistics..." />
+        ) : null}
+        {statistics && route.key === "statistics" ? <StatisticsTable statistics={statistics} /> : null}
         {overview &&
         route.key !== "overview" &&
         route.key !== "buildings" &&
@@ -582,6 +628,7 @@ export function LegacyGameOverview({
         route.key !== "galaxy" &&
         route.key !== "defense" &&
         route.key !== "technology" &&
+        route.key !== "statistics" &&
         route.key !== "logout" ? (
           <MigrationPendingGameTable route={route} />
         ) : null}
@@ -765,6 +812,147 @@ function LogoutTable({ error, status }: { error: string | null; status: GameLogo
       </tbody>
     </table>
   );
+}
+
+function StatisticsTable({ statistics }: { statistics: GameStatistics }) {
+  const windows = statisticsWindows(statistics.total, statistics.start);
+  return (
+    <>
+      <form
+        action={gameRouteURL("/game/statistics", window.location.search)}
+        method="get"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          const query = new URLSearchParams(window.location.search);
+          query.set("who", String(form.get("who") ?? "player"));
+          query.set("type", String(form.get("type") ?? "ressources"));
+          query.set("start", String(form.get("start") ?? "-1"));
+          window.history.pushState({}, "", gameRouteURL("/game/statistics", query.toString()));
+          window.dispatchEvent(new PopStateEvent("popstate"));
+        }}
+      >
+        <table className="legacy-overview-table legacy-statistics-head-table" width={525}>
+          <tbody>
+            <tr>
+              <td className="legacy-c">Statistics (as of: {formatLegacyDateTime(statistics.generatedAt)})</td>
+            </tr>
+            <tr>
+              <th>
+                What kind of&nbsp;
+                <select name="who" defaultValue={statistics.who}>
+                  <option value="player">Player</option>
+                  <option value="ally">Alliance</option>
+                </select>
+                &nbsp;by&nbsp;
+                <select name="type" defaultValue={statistics.type}>
+                  <option value="ressources">Points</option>
+                  <option value="fleet">Fleets</option>
+                  <option value="research">Research</option>
+                </select>
+                &nbsp;in place&nbsp;
+                <select name="start" defaultValue={String(statistics.start)}>
+                  <option value="-1">[Own position]</option>
+                  {windows.map((start) => (
+                    <option key={start} value={start}>
+                      {start}-{start + 99}
+                    </option>
+                  ))}
+                </select>
+                &nbsp;
+                <input type="submit" value="Show" />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+      <table className="legacy-overview-table legacy-statistics-table" width={525}>
+        <tbody>
+          <tr>
+            <td className="legacy-c" width={30}>
+              Place
+            </td>
+            <td className="legacy-c">Player</td>
+            <td className="legacy-c">&nbsp;</td>
+            <td className="legacy-c">Alliance</td>
+            <td className="legacy-c">Points</td>
+          </tr>
+          {statistics.rows.map((row) => (
+            <tr data-statistics-row key={`${row.player.id}-${row.place}`}>
+              <th>
+                {row.place}&nbsp;&nbsp;
+                <StatisticsDelta row={row} />
+              </th>
+              <th>
+                <a
+                  href={row.own ? "#" : gameRouteURL("/game/galaxy", galaxyTargetSearch(row.coordinates))}
+                  style={{ color: row.own ? "lime" : "#FFFFFF" }}
+                >
+                  {row.player.name}
+                </a>
+              </th>
+              <th>
+                {!row.own ? (
+                  <a href={gameRouteURL("/game/messages", window.location.search)}>
+                    <img alt="Write message" src={`${skinBase}/img/m.gif`} style={{ border: 0 }} />
+                  </a>
+                ) : null}
+                &nbsp;
+              </th>
+              <th>
+                {row.alliance ? (
+                  <a href={gameRouteURL("/game/alliance", window.location.search)}>{row.alliance.tag}</a>
+                ) : (
+                  <a href={gameRouteURL("/game/alliance", window.location.search)}>&nbsp;</a>
+                )}
+              </th>
+              <th>{formatLegacyNumber(row.displayScore)}</th>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+function StatisticsDelta({ row }: { row: GameStatisticsRow }) {
+  const title = `From ${formatLegacyDateTime(row.scoreDate)}`;
+  if (row.delta < 0) {
+    return (
+      <a href="#" title={`+${Math.abs(row.delta)} ${title}`}>
+        <span style={{ color: "lime" }}>+</span>
+      </a>
+    );
+  }
+  if (row.delta > 0) {
+    return (
+      <a href="#" title={`-${Math.abs(row.delta)} ${title}`}>
+        <span style={{ color: "red" }}>-</span>
+      </a>
+    );
+  }
+  return (
+    <a href="#" title={`* ${title}`}>
+      <span style={{ color: "#87CEEB" }}>*</span>
+    </a>
+  );
+}
+
+function statisticsWindows(total: number, selectedStart: number): number[] {
+  const windows: number[] = [];
+  const max = Math.max(total, selectedStart, 1);
+  for (let start = 1; start <= max; start += 100) {
+    windows.push(start);
+  }
+  return windows;
+}
+
+function galaxyTargetSearch(coordinates: Coordinates): string {
+  const query = new URLSearchParams(window.location.search);
+  query.set("galaxy", String(coordinates.galaxy));
+  query.set("system", String(coordinates.system));
+  query.set("position", String(coordinates.position));
+  return query.toString();
 }
 
 function BuildingsTable({ buildings }: { buildings: GameBuildings }) {
@@ -1974,6 +2162,16 @@ function formatLegacyDate(date: Date): string {
   return `${weekdays[date.getDay()]} ${months[date.getMonth()]} ${date.getDate()} ${date.getHours()}:${String(
     date.getMinutes()
   ).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
+}
+
+function formatLegacyDateTime(seconds: number): string {
+  const date = new Date(seconds * 1000);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(
+    2,
+    "0"
+  )} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(
+    date.getSeconds()
+  ).padStart(2, "0")}`;
 }
 
 function formatFleetTimestamp(seconds: number): string {

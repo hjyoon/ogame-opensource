@@ -11,6 +11,7 @@ import {
   type GameResearchStatus,
   type GameResourcesStatus,
   type GameShipyardStatus,
+  type GameStatisticsStatus,
   type GameTechnologyStatus
 } from "./LegacyGameOverview";
 import { LegacyPublicAbout } from "./LegacyPublicAbout";
@@ -207,6 +208,8 @@ function App() {
   const [gameDefenseError, setGameDefenseError] = useState<string | null>(null);
   const [gameTechnology, setGameTechnology] = useState<GameTechnologyStatus | null>(null);
   const [gameTechnologyError, setGameTechnologyError] = useState<string | null>(null);
+  const [gameStatistics, setGameStatistics] = useState<GameStatisticsStatus | null>(null);
+  const [gameStatisticsError, setGameStatisticsError] = useState<string | null>(null);
   const [gameLogout, setGameLogout] = useState<GameLogoutStatus | null>(null);
   const [gameLogoutError, setGameLogoutError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
@@ -525,6 +528,30 @@ function App() {
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "statistics" || publicSession === "") {
+      setGameStatistics(null);
+      setGameStatisticsError(null);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const statisticsSearch = new URLSearchParams({ session: publicSession });
+    for (const key of ["cp", "who", "type", "start"]) {
+      const value = currentSearch.get(key);
+      if (value) {
+        statisticsSearch.set(key, value);
+      }
+    }
+    fetch(`/api/game/statistics?${statisticsSearch.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameStatisticsStatus>)
+      .then((payload) => {
+        setGameStatistics(payload);
+        setGameStatisticsError(null);
+      })
+      .catch((err: unknown) => setGameStatisticsError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "logout") {
       setGameLogout(null);
       setGameLogoutError(null);
@@ -624,6 +651,8 @@ function App() {
         researchStatus={gameResearch}
         shipyardError={gameShipyardError}
         shipyardStatus={gameShipyard}
+        statisticsError={gameStatisticsError}
+        statisticsStatus={gameStatistics}
         status={gameOverview}
         technologyError={gameTechnologyError}
         technologyStatus={gameTechnology}
