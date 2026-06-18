@@ -19,7 +19,7 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - `/api/public/registration` creates a legacy-compatible unvalidated user, activation code, home planet, private/public session, and `/game/overview` redirect.
 - `/api/public/login/validate` and `/api/public/login` validate credentials, create public/private sessions, update legacy session fields, set the private cookie, and return a natural `/game/overview` redirect.
 - `/api/game/session` validates public session plus private cookie, including banned and IP checks.
-- `/api/game/{overview,resources}` return session-guarded planet/resource data from legacy DB.
+- `/api/game/{overview,resources}` return planet/resource data; resources also stores legacy production settings.
 - Authenticated `/game/*` routes preserve sessions; overview/buildings/resources use the legacy `evolution` skin.
 - Go migration QA smoke covers health, routes, assets, registration, login, session lookup, overview/buildings/resources, and guards.
 - Playwright visual/CSR E2E compares public pages, language flags, game menu navigation, and auth overview/buildings/resources.

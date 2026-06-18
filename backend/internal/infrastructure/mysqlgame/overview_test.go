@@ -88,6 +88,18 @@ func TestSQLQueryerUsesDatabase(t *testing.T) {
 	if value != 1 {
 		t.Fatalf("unexpected fake value: %d", value)
 	}
+
+	result, err := (SQLQueryer{DB: db}).ExecContext(context.Background(), "UPDATE value SET value = ?", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if affected != 1 {
+		t.Fatalf("unexpected affected rows: %d", affected)
+	}
 }
 
 func TestOverviewRepositoryFallsBackToHomePlanet(t *testing.T) {
@@ -385,6 +397,10 @@ func (overviewTestConn) QueryContext(context.Context, string, []driver.NamedValu
 	return &overviewTestRows{}, nil
 }
 
+func (overviewTestConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
+	return overviewTestResult(1), nil
+}
+
 type overviewTestTx struct{}
 
 func (overviewTestTx) Commit() error {
@@ -414,6 +430,16 @@ func (r *overviewTestRows) Next(dest []driver.Value) error {
 	dest[0] = int64(1)
 	r.done = true
 	return nil
+}
+
+type overviewTestResult int64
+
+func (r overviewTestResult) LastInsertId() (int64, error) {
+	return 0, nil
+}
+
+func (r overviewTestResult) RowsAffected() (int64, error) {
+	return int64(r), nil
 }
 
 type fakeQueryer struct {

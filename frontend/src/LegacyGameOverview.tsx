@@ -134,6 +134,8 @@ type LegacyGameOverviewProps = {
   buildingsError: string | null;
   resourcesStatus: GameResourcesStatus | null;
   resourcesError: string | null;
+  resourcesPending: boolean;
+  onResourcesSubmit: (production: Record<string, string>) => void;
 };
 
 type LegacyMenuEntry =
@@ -176,7 +178,9 @@ export function LegacyGameOverview({
   buildingsStatus,
   buildingsError,
   resourcesStatus,
-  resourcesError
+  resourcesError,
+  resourcesPending,
+  onResourcesSubmit
 }: LegacyGameOverviewProps) {
   const overview = status?.authenticated ? status.overview : undefined;
   const issue = status && !status.authenticated ? status.issues[0]?.message ?? "Session is invalid." : null;
@@ -223,7 +227,9 @@ export function LegacyGameOverview({
         {overview && route.key === "resources" && !resources && !resourcesError && !resourcesIssue ? (
           <LegacyMessage tone="neutral" text="Loading resources..." />
         ) : null}
-        {resources && route.key === "resources" ? <ResourcesTable resources={resources} /> : null}
+        {resources && route.key === "resources" ? (
+          <ResourcesTable onSubmit={onResourcesSubmit} pending={resourcesPending} resources={resources} />
+        ) : null}
         {overview && route.key !== "overview" && route.key !== "buildings" && route.key !== "resources" ? (
           <MigrationPendingGameTable route={route} />
         ) : null}
@@ -446,13 +452,22 @@ const resourceColumns: { key: keyof Pick<ResourceProductionValues, "metal" | "cr
   { key: "energy", label: "Energy" }
 ];
 
-function ResourcesTable({ resources }: { resources: GameResourceProduction }) {
+function ResourcesTable({
+  resources,
+  pending,
+  onSubmit
+}: {
+  resources: GameResourceProduction;
+  pending: boolean;
+  onSubmit: (production: Record<string, string>) => void;
+}) {
   return (
     <form
       className="legacy-resources-form"
       id="ressourcen"
       onSubmit={(event) => {
         event.preventDefault();
+        onSubmit(resourceProductionFormValues(event.currentTarget));
       }}
     >
       <div className="legacy-center">
@@ -508,7 +523,7 @@ function ResourcesTable({ resources }: { resources: GameResourceProduction }) {
                 </td>
               ))}
               <td className="legacy-k">
-                <input name="action" type="submit" value="Calculate" />
+                <input disabled={pending} name="action" type="submit" value="Calculate" />
               </td>
             </tr>
             <tr>
@@ -526,6 +541,18 @@ function ResourcesTable({ resources }: { resources: GameResourceProduction }) {
       </div>
     </form>
   );
+}
+
+function resourceProductionFormValues(form: HTMLFormElement): Record<string, string> {
+  const formData = new FormData(form);
+  const production: Record<string, string> = {};
+  for (const [key, value] of formData.entries()) {
+    if (!key.startsWith("last")) {
+      continue;
+    }
+    production[key.slice(4)] = String(value);
+  }
+  return production;
 }
 
 function ResourceProductionCell({

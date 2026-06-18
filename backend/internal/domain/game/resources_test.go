@@ -1,9 +1,34 @@
 package game
 
 import (
+	"errors"
 	"math"
 	"testing"
 )
+
+func TestNormalizeProductionSettingsMatchesLegacyResourcePost(t *testing.T) {
+	settings, err := NormalizeProductionSettings(ProductionPercents{
+		BuildingMetalMine:      -250,
+		BuildingCrystalMine:    0,
+		BuildingDeuteriumSynth: 35,
+		BuildingSolarPlant:     100,
+		9999:                   70,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if settings[BuildingMetalMine] != 0 || settings[BuildingCrystalMine] != 0 || settings[BuildingDeuteriumSynth] != 0.4 || settings[BuildingSolarPlant] != 1 {
+		t.Fatalf("unexpected normalized settings: %+v", settings)
+	}
+	if _, ok := settings[9999]; ok {
+		t.Fatalf("expected unsupported producer to be ignored: %+v", settings)
+	}
+
+	if _, err := NormalizeProductionSettings(ProductionPercents{BuildingMetalMine: 101}); !errors.Is(err, ErrProductionPercentTooHigh) {
+		t.Fatalf("expected >100 percent error, got %v", err)
+	}
+}
 
 func TestBuildResourceProductionUsesLegacyNaturalAndMineFormula(t *testing.T) {
 	overview := resourceOverview(PlanetTypePlanet)

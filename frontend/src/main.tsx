@@ -182,6 +182,7 @@ function App() {
   const [gameBuildingsError, setGameBuildingsError] = useState<string | null>(null);
   const [gameResources, setGameResources] = useState<GameResourcesStatus | null>(null);
   const [gameResourcesError, setGameResourcesError] = useState<string | null>(null);
+  const [gameResourcesPending, setGameResourcesPending] = useState(false);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
   const gameRoute = pathname.startsWith("/game") ? resolveGameRoute(pathname) : null;
@@ -297,6 +298,45 @@ function App() {
       .catch((err: unknown) => setGameBuildingsError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
 
+  const submitGameResources = (production: Record<string, string>) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameResourcesError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const resourcesSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      resourcesSearch.set("cp", selectedPlanet);
+    }
+    setGameResourcesPending(true);
+    setGameResourcesError(null);
+    fetch(`/api/game/resources?${resourcesSearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ production })
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameResourcesStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `resources returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("resources response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameResources(payload);
+        setGameResourcesError(null);
+      })
+      .catch((err: unknown) => setGameResourcesError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameResourcesPending(false));
+  };
+
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "resources" || publicSession === "") {
@@ -343,8 +383,10 @@ function App() {
         buildingsError={gameBuildingsError}
         buildingsStatus={gameBuildings}
         error={gameOverviewError}
+        onResourcesSubmit={submitGameResources}
         route={gameRoute ?? resolveGameRoute(pathname)}
         resourcesError={gameResourcesError}
+        resourcesPending={gameResourcesPending}
         resourcesStatus={gameResources}
         status={gameOverview}
       />

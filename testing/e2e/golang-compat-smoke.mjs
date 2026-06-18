@@ -302,6 +302,27 @@ try {
     gameResourcesBody = {};
   }
 
+  const gameResourcesUpdate = await request(`/api/game/resources${sessionSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+    body: JSON.stringify({
+      production: {
+        1: -250,
+        2: "not-a-number",
+        3: 35,
+        4: 100,
+        12: 70,
+        212: 10
+      }
+    })
+  });
+  let gameResourcesUpdateBody = {};
+  try {
+    gameResourcesUpdateBody = JSON.parse(gameResourcesUpdate.body);
+  } catch {
+    gameResourcesUpdateBody = {};
+  }
+
   const gameResourcesWithoutCookie = await request(`/api/game/resources${sessionSearch}`);
   let gameResourcesWithoutCookieBody = {};
   try {
@@ -381,6 +402,10 @@ try {
       check(Number.isFinite(gameResourcesBody.resources?.totals?.hour?.metal), "game resources returns hourly totals", gameResourcesBody),
       check(Array.isArray(gameResourcesBody.resources?.rows), "game resources returns production rows array", gameResourcesBody),
       check(!gameResources.body.includes(sessionCookiePair), "game resources response does not echo private cookie"),
+      check(gameResourcesUpdate.status === 200, "game resources production update returns HTTP 200 with private cookie", { status: gameResourcesUpdate.status }),
+      check(gameResourcesUpdateBody.authenticated === true, "game resources production update authenticates the login session", gameResourcesUpdateBody),
+      check(Number.isFinite(gameResourcesUpdateBody.resources?.factor), "game resources production update returns recalculated resources", gameResourcesUpdateBody),
+      check(!gameResourcesUpdate.body.includes(sessionCookiePair), "game resources production update response does not echo private cookie"),
       check(gameResourcesWithoutCookie.status === 401, "game resources rejects missing private cookie", { status: gameResourcesWithoutCookie.status }),
       check(gameResourcesWithoutCookieBody.authenticated === false, "game resources missing private cookie is unauthenticated", gameResourcesWithoutCookieBody),
       check(invalidLogin.status === 200, "invalid login draft returns HTTP 200", { status: invalidLogin.status }),
@@ -528,7 +553,7 @@ try {
   const postGameSession = await request("/api/game/session", { method: "POST" });
   const postGameOverview = await request("/api/game/overview", { method: "POST" });
   const postGameBuildings = await request("/api/game/buildings", { method: "POST" });
-  const postGameResources = await request("/api/game/resources", { method: "POST" });
+  const putGameResources = await request("/api/game/resources", { method: "PUT" });
   cases.push(finalize({
     case: "go_method_guards",
     checks: [
@@ -548,8 +573,8 @@ try {
       check(hasHeader(postGameOverview, "allow", "GET, HEAD"), "game overview method rejection returns Allow header"),
       check(postGameBuildings.status === 405, "POST game buildings endpoint is rejected", { status: postGameBuildings.status }),
       check(hasHeader(postGameBuildings, "allow", "GET, HEAD"), "game buildings method rejection returns Allow header"),
-      check(postGameResources.status === 405, "POST game resources endpoint is rejected", { status: postGameResources.status }),
-      check(hasHeader(postGameResources, "allow", "GET, HEAD"), "game resources method rejection returns Allow header")
+      check(putGameResources.status === 405, "PUT game resources endpoint is rejected", { status: putGameResources.status }),
+      check(hasHeader(putGameResources, "allow", "GET, HEAD, POST"), "game resources method rejection returns Allow header")
     ]
   }));
 } catch (error) {

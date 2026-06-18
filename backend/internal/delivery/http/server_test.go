@@ -933,6 +933,183 @@ func TestGameResourcesEndpointReturnsResources(t *testing.T) {
 	}
 }
 
+func TestGameResourcesEndpointUpdatesProduction(t *testing.T) {
+	resources := &fakeGameResources{updateResult: appgame.ResourcesResult{
+		Authenticated: true,
+		Resources: domaingame.ResourceProduction{
+			Commander: "legor",
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:   99,
+				Name: "Arakis",
+				Type: domaingame.PlanetTypePlanet,
+			},
+			Factor: 1,
+		},
+	}}
+	server := testServerWithGameResources(t, resources)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/resources?session=public&cp=99", strings.NewReader(`{"production":{"1":"-250","2":"not-a-number","3":35,"4":100,"9999":70}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response gameResourceProductionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Resources == nil || response.Resources.Commander != "legor" {
+		t.Fatalf("expected authenticated resources update response, got %+v", response)
+	}
+	if resources.updateCommand.PublicSession != "public" || resources.updateCommand.PlanetID != 99 || resources.updateCommand.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected resources update command: %+v", resources.updateCommand)
+	}
+	if resources.updateCommand.Production[domaingame.BuildingMetalMine] != -250 ||
+		resources.updateCommand.Production[domaingame.BuildingCrystalMine] != 0 ||
+		resources.updateCommand.Production[domaingame.BuildingDeuteriumSynth] != 35 ||
+		resources.updateCommand.Production[domaingame.BuildingSolarPlant] != 100 ||
+		resources.updateCommand.Production[9999] != 70 {
+		t.Fatalf("unexpected parsed production settings: %+v", resources.updateCommand.Production)
+	}
+}
+
+func TestGameResourcesEndpointUpdatesProductionFromLegacyForm(t *testing.T) {
+	resources := &fakeGameResources{updateResult: appgame.ResourcesResult{Authenticated: true}}
+	server := testServerWithGameResources(t, resources)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/resources?session=public", strings.NewReader("last1=35&last2=bad&action=Calculate"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if resources.updateCommand.Production[domaingame.BuildingMetalMine] != 35 || resources.updateCommand.Production[domaingame.BuildingCrystalMine] != 0 {
+		t.Fatalf("unexpected form production settings: %+v", resources.updateCommand.Production)
+	}
+}
+
+func TestGameResourcesEndpointRejectsInvalidProductionUpdate(t *testing.T) {
+	server := testServerWithGameResources(t, &fakeGameResources{updateErr: domaingame.ErrProductionPercentTooHigh})
+	req := httptest.NewRequest(http.MethodPost, "/api/game/resources?session=public", strings.NewReader(`{"production":{"1":101}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid production update to return 400, got %d", rec.Code)
+	}
+}
+
+func TestGameResourcesEndpointReturnsUnauthorizedForInvalidUpdateSession(t *testing.T) {
+	resources := &fakeGameResources{updateResult: appgame.ResourcesResult{
+		Authenticated: false,
+		Issues: []domainpublicsite.SessionIssue{{
+			Code:    domainpublicsite.SessionIssuePrivateInvalid,
+			Message: "Private session is invalid.",
+		}},
+	}}
+	server := testServerWithGameResources(t, resources)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/resources?session=public", strings.NewReader(`{"production":{"1":50}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var response gameResourceProductionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Authenticated || response.Resources != nil || len(response.Issues) != 1 {
+		t.Fatalf("expected invalid resources update session response, got %+v", response)
+	}
+}
+
+func TestGameResourcesEndpointRejectsMalformedProductionUpdate(t *testing.T) {
+	server := testServerWithGameResources(t, &fakeGameResources{})
+	req := httptest.NewRequest(http.MethodPost, "/api/game/resources?session=public", strings.NewReader(`{"production":`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected malformed production update to return 400, got %d", rec.Code)
+	}
+}
+
+func TestGameResourcesEndpointRejectsInvalidUpdatePlanetID(t *testing.T) {
+	server := testServerWithGameResources(t, &fakeGameResources{})
+	req := httptest.NewRequest(http.MethodPost, "/api/game/resources?session=public&cp=abc", strings.NewReader(`{"production":{"1":50}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid selected planet to return 400, got %d", rec.Code)
+	}
+}
+
+func TestGameResourcesEndpointReturnsUnavailableForUpdateUseCaseError(t *testing.T) {
+	server := testServerWithGameResources(t, &fakeGameResources{updateErr: errors.New("resources update failed")})
+	req := httptest.NewRequest(http.MethodPost, "/api/game/resources?session=public", strings.NewReader(`{"production":{"1":50}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game resources update error to return 503, got %d", rec.Code)
+	}
+}
+
+func TestGameResourcesEndpointReturnsUnavailableForUpdateWithoutUseCase(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodPost, "/api/game/resources?session=public", strings.NewReader(`{"production":{"1":50}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game resources update use case to return 503, got %d", rec.Code)
+	}
+}
+
+func TestDecodeResourceProductionUpdateUsesLegacyCoercion(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/game/resources", strings.NewReader(`{"production":{"last1":" 90 ","2":25.9,"bad":100,"last3":"bad","4":true}}`))
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	settings, err := decodeResourceProductionUpdate(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings[domaingame.BuildingMetalMine] != 90 || settings[domaingame.BuildingCrystalMine] != 25 ||
+		settings[domaingame.BuildingDeuteriumSynth] != 0 || settings[domaingame.BuildingSolarPlant] != 0 {
+		t.Fatalf("unexpected json production settings: %+v", settings)
+	}
+	if _, ok := settings[0]; ok {
+		t.Fatalf("expected invalid keys to be ignored: %+v", settings)
+	}
+
+	form := "last1=75&last2=&lastbad=80&other=100"
+	req = httptest.NewRequest(http.MethodPost, "/api/game/resources", strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	settings, err = decodeResourceProductionUpdate(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings[domaingame.BuildingMetalMine] != 75 || settings[domaingame.BuildingCrystalMine] != 0 {
+		t.Fatalf("unexpected form production settings: %+v", settings)
+	}
+	if _, ok := settings[0]; ok {
+		t.Fatalf("expected invalid form keys to be ignored: %+v", settings)
+	}
+}
+
 func TestGameResourcesEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
 	resources := &fakeGameResources{result: appgame.ResourcesResult{
 		Authenticated: false,
@@ -1095,11 +1272,11 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game buildings method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/game/resources", nil)
+	req = httptest.NewRequest(http.MethodPut, "/api/game/resources", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD, POST" {
 		t.Fatalf("expected game resources method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 }
@@ -1428,12 +1605,20 @@ func (f *fakeGameBuildings) GetBuildings(_ context.Context, command appgame.Buil
 }
 
 type fakeGameResources struct {
-	result  appgame.ResourcesResult
-	err     error
-	command appgame.ResourcesCommand
+	result        appgame.ResourcesResult
+	updateResult  appgame.ResourcesResult
+	err           error
+	updateErr     error
+	command       appgame.ResourcesCommand
+	updateCommand appgame.ResourcesUpdateCommand
 }
 
 func (f *fakeGameResources) GetResources(_ context.Context, command appgame.ResourcesCommand) (appgame.ResourcesResult, error) {
 	f.command = command
 	return f.result, f.err
+}
+
+func (f *fakeGameResources) UpdateResources(_ context.Context, command appgame.ResourcesUpdateCommand) (appgame.ResourcesResult, error) {
+	f.updateCommand = command
+	return f.updateResult, f.updateErr
 }

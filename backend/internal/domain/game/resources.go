@@ -1,8 +1,13 @@
 package game
 
-import "math"
+import (
+	"errors"
+	"math"
+)
 
 const FleetSolarSatellite = 212
+
+var ErrProductionPercentTooHigh = errors.New("production percent cannot exceed 100")
 
 type ResourceProduction struct {
 	Commander      string
@@ -49,6 +54,7 @@ type ResourceProductionInputs struct {
 }
 
 type ProductionFactors map[int]float64
+type ProductionPercents map[int]int
 
 type producerOutput struct {
 	id      int
@@ -67,6 +73,31 @@ func ResourceProducerIDs() []int {
 		BuildingFusionReactor,
 		FleetSolarSatellite,
 	}
+}
+
+func NormalizeProductionSettings(settings ProductionPercents) (ProductionFactors, error) {
+	normalized := make(ProductionFactors, len(settings))
+	for id, percent := range settings {
+		if !resourceProducerID(id) {
+			continue
+		}
+		factor, err := NormalizeProductionPercent(percent)
+		if err != nil {
+			return nil, err
+		}
+		normalized[id] = factor
+	}
+	return normalized, nil
+}
+
+func NormalizeProductionPercent(percent int) (float64, error) {
+	if percent > 100 {
+		return 0, ErrProductionPercentTooHigh
+	}
+	if percent < 0 {
+		percent = 0
+	}
+	return float64(int(math.Round(float64(percent)/10))*10) / 100, nil
 }
 
 func BuildResourceProduction(overview Overview, inputs ResourceProductionInputs) ResourceProduction {
@@ -296,4 +327,13 @@ func ceilPositive(value float64) float64 {
 		return 0
 	}
 	return math.Ceil(value)
+}
+
+func resourceProducerID(id int) bool {
+	for _, candidate := range ResourceProducerIDs() {
+		if candidate == id {
+			return true
+		}
+	}
+	return false
 }

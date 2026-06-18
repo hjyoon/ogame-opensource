@@ -53,6 +53,7 @@ type GameBuildingsUseCase interface {
 
 type GameResourcesUseCase interface {
 	GetResources(context.Context, appgame.ResourcesCommand) (appgame.ResourcesResult, error)
+	UpdateResources(context.Context, appgame.ResourcesUpdateCommand) (appgame.ResourcesResult, error)
 }
 
 type Dependencies struct {
@@ -87,7 +88,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/session", getOnly(a.handleGameSession))
 	mux.HandleFunc("/api/game/overview", getOnly(a.handleGameOverview))
 	mux.HandleFunc("/api/game/buildings", getOnly(a.handleGameBuildings))
-	mux.HandleFunc("/api/game/resources", getOnly(a.handleGameResources))
+	mux.HandleFunc("/api/game/resources", a.handleGameResources)
 	mux.Handle("/legacy-assets/", http.StripPrefix("/legacy-assets/", http.FileServer(deps.LegacyAssets)))
 	mux.HandleFunc("/", getOnly(a.handleFrontend))
 	handler := securityHeaders(mux)
