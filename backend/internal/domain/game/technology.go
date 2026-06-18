@@ -41,6 +41,56 @@ type TechnologyDetailsLevel struct {
 	Requirements []TechnologyRequirement
 }
 
+var legacyTechnologyRequirementOrder = map[int][]int{
+	BuildingFusionReactor:        {BuildingDeuteriumSynth, ResearchEnergy},
+	BuildingNaniteFactory:        {BuildingRoboticsFactory, ResearchComputer},
+	BuildingShipyard:             {BuildingRoboticsFactory},
+	BuildingTerraformer:          {BuildingNaniteFactory, ResearchEnergy},
+	BuildingMissileSilo:          {BuildingShipyard},
+	ResearchEspionage:            {BuildingResearchLab},
+	ResearchComputer:             {BuildingResearchLab},
+	ResearchWeapon:               {BuildingResearchLab},
+	ResearchShield:               {ResearchEnergy, BuildingResearchLab},
+	ResearchArmour:               {BuildingResearchLab},
+	ResearchEnergy:               {BuildingResearchLab},
+	ResearchHyperspace:           {ResearchEnergy, ResearchShield, BuildingResearchLab},
+	ResearchCombustionDrive:      {ResearchEnergy},
+	ResearchImpulseDrive:         {ResearchEnergy, BuildingResearchLab},
+	ResearchHyperspaceDrive:      {ResearchHyperspace},
+	ResearchLaser:                {ResearchEnergy},
+	ResearchIon:                  {BuildingResearchLab, ResearchLaser, ResearchEnergy},
+	ResearchPlasma:               {ResearchEnergy, ResearchLaser, ResearchIon},
+	ResearchIntergalacticNetwork: {BuildingResearchLab, ResearchComputer, ResearchHyperspace},
+	ResearchExpedition:           {ResearchEspionage, ResearchImpulseDrive},
+	ResearchGraviton:             {BuildingResearchLab},
+	FleetSmallCargo:              {BuildingShipyard, ResearchCombustionDrive},
+	FleetLargeCargo:              {BuildingShipyard, ResearchCombustionDrive},
+	FleetLightFighter:            {BuildingShipyard, ResearchCombustionDrive},
+	FleetHeavyFighter:            {BuildingShipyard, ResearchArmour, ResearchImpulseDrive},
+	FleetCruiser:                 {BuildingShipyard, ResearchImpulseDrive, ResearchIon},
+	FleetBattleship:              {BuildingShipyard, ResearchHyperspaceDrive},
+	FleetColonyShip:              {BuildingShipyard, ResearchImpulseDrive},
+	FleetRecycler:                {BuildingShipyard, ResearchCombustionDrive, ResearchShield},
+	FleetEspionageProbe:          {BuildingShipyard, ResearchCombustionDrive, ResearchEspionage},
+	FleetBomber:                  {ResearchImpulseDrive, BuildingShipyard, ResearchPlasma},
+	FleetSolarSatellite:          {BuildingShipyard},
+	FleetDestroyer:               {BuildingShipyard, ResearchHyperspaceDrive, ResearchHyperspace},
+	FleetDeathstar:               {BuildingShipyard, ResearchHyperspaceDrive, ResearchHyperspace, ResearchGraviton},
+	FleetBattlecruiser:           {ResearchHyperspace, ResearchLaser, ResearchHyperspaceDrive, BuildingShipyard},
+	DefenseRocketLauncher:        {BuildingShipyard},
+	DefenseLightLaser:            {ResearchEnergy, BuildingShipyard, ResearchLaser},
+	DefenseHeavyLaser:            {ResearchEnergy, BuildingShipyard, ResearchLaser},
+	DefenseGaussCannon:           {BuildingShipyard, ResearchEnergy, ResearchWeapon, ResearchShield},
+	DefenseIonCannon:             {BuildingShipyard, ResearchIon},
+	DefensePlasmaTurret:          {BuildingShipyard, ResearchPlasma},
+	DefenseSmallShieldDome:       {ResearchShield, BuildingShipyard},
+	DefenseLargeShieldDome:       {ResearchShield, BuildingShipyard},
+	DefenseAntiBallisticMissile:  {BuildingMissileSilo, BuildingShipyard},
+	DefenseInterplanetaryMissile: {BuildingMissileSilo, BuildingShipyard, ResearchImpulseDrive},
+	BuildingSensorPhalanx:        {BuildingLunarBase},
+	BuildingJumpGate:             {BuildingLunarBase, ResearchHyperspace},
+}
+
 func BuildTechnology(overview Overview, levels BuildingLevels, research ResearchLevels) Technology {
 	return Technology{
 		Commander:      overview.Commander,
@@ -82,12 +132,12 @@ func BuildTechnologyDetails(id int, levels BuildingLevels, research ResearchLeve
 		return TechnologyDetails{}, false
 	}
 
-	tree := technologyRequirementsByDepth{}
-	maxDepth := walkTechnologyRequirements(spec.requirements, 0, tree)
+	tree := newTechnologyRequirementsByDepth()
+	maxDepth := walkTechnologyRequirements(id, spec.requirements, 0, tree)
 	detailLevels := make([]TechnologyDetailsLevel, 0, maxDepth)
 	step := 1
 	for depth := maxDepth - 1; depth >= 0; depth-- {
-		requirements := buildTechnologyRequirements(tree[depth], levels, research)
+		requirements := buildTechnologyRequirementsOrdered(tree.requirements[depth], tree.order[depth], levels, research)
 		if len(requirements) == 0 {
 			continue
 		}
@@ -102,7 +152,7 @@ func BuildTechnologyDetails(id int, levels BuildingLevels, research ResearchLeve
 		Target: TechnologyItem{
 			ID:               id,
 			Name:             spec.name,
-			Requirements:     buildTechnologyRequirements(spec.requirements, levels, research),
+			Requirements:     buildTechnologyRequirements(id, spec.requirements, levels, research),
 			DetailsAvailable: len(spec.requirements) > 0,
 		},
 		Levels: detailLevels,
@@ -116,7 +166,7 @@ func buildTechnologyGroup(key string, name string, ids []int, levels BuildingLev
 		if !ok {
 			continue
 		}
-		requirements := buildTechnologyRequirements(spec.requirements, levels, research)
+		requirements := buildTechnologyRequirements(id, spec.requirements, levels, research)
 		items = append(items, TechnologyItem{
 			ID:               id,
 			Name:             spec.name,
@@ -127,26 +177,35 @@ func buildTechnologyGroup(key string, name string, ids []int, levels BuildingLev
 	return TechnologyGroup{Key: key, Name: name, Items: items}
 }
 
-type technologyRequirementsByDepth map[int]map[int]int
+type technologyRequirementsByDepth struct {
+	requirements map[int]map[int]int
+	order        map[int][]int
+}
 
-func walkTechnologyRequirements(requirements map[int]int, depth int, tree technologyRequirementsByDepth) int {
+func newTechnologyRequirementsByDepth() *technologyRequirementsByDepth {
+	return &technologyRequirementsByDepth{
+		requirements: map[int]map[int]int{},
+		order:        map[int][]int{},
+	}
+}
+
+func walkTechnologyRequirements(targetID int, requirements map[int]int, depth int, tree *technologyRequirementsByDepth) int {
 	if len(requirements) == 0 {
 		return depth
 	}
-	if tree[depth] == nil {
-		tree[depth] = map[int]int{}
+	if tree.requirements[depth] == nil {
+		tree.requirements[depth] = map[int]int{}
 	}
-	ids := make([]int, 0, len(requirements))
-	for id := range requirements {
-		ids = append(ids, id)
-	}
-	sort.Ints(ids)
+	ids := legacyTechnologyRequirementIDs(targetID, requirements)
 
 	maxDepth := depth + 1
 	for _, id := range ids {
 		level := requirements[id]
-		if tree[depth][id] < level {
-			tree[depth][id] = level
+		if _, exists := tree.requirements[depth][id]; !exists {
+			tree.order[depth] = append(tree.order[depth], id)
+		}
+		if tree.requirements[depth][id] < level {
+			tree.requirements[depth][id] = level
 		}
 	}
 	for _, id := range ids {
@@ -154,39 +213,98 @@ func walkTechnologyRequirements(requirements map[int]int, depth int, tree techno
 		if !ok {
 			continue
 		}
-		if childDepth := walkTechnologyRequirements(spec.requirements, depth+1, tree); childDepth > maxDepth {
+		if childDepth := walkTechnologyRequirements(id, spec.requirements, depth+1, tree); childDepth > maxDepth {
 			maxDepth = childDepth
 		}
 	}
 	return maxDepth
 }
 
-func buildTechnologyRequirements(requirements map[int]int, levels BuildingLevels, research ResearchLevels) []TechnologyRequirement {
+func buildTechnologyRequirements(targetID int, requirements map[int]int, levels BuildingLevels, research ResearchLevels) []TechnologyRequirement {
+	return buildTechnologyRequirementsOrdered(requirements, legacyTechnologyRequirementIDs(targetID, requirements), levels, research)
+}
+
+func buildTechnologyRequirementsOrdered(requirements map[int]int, ids []int, levels BuildingLevels, research ResearchLevels) []TechnologyRequirement {
 	if len(requirements) == 0 {
 		return nil
 	}
-	ids := make([]int, 0, len(requirements))
-	for id := range requirements {
-		ids = append(ids, id)
+	if len(ids) == 0 {
+		ids = make([]int, 0, len(requirements))
+		for id := range requirements {
+			ids = append(ids, id)
+		}
+		sort.Ints(ids)
 	}
-	sort.Ints(ids)
 
 	result := make([]TechnologyRequirement, 0, len(ids))
+	seen := map[int]bool{}
 	for _, id := range ids {
-		required := requirements[id]
-		current := levels[id]
-		if isResearchID(id) {
-			current = research[id]
+		required, ok := requirements[id]
+		if !ok {
+			continue
 		}
-		result = append(result, TechnologyRequirement{
-			ID:           id,
-			Name:         technologyName(id),
-			Level:        required,
-			CurrentLevel: current,
-			Met:          current >= required,
-		})
+		seen[id] = true
+		result = append(result, technologyRequirement(id, required, levels, research))
+	}
+	missing := make([]int, 0)
+	for id := range requirements {
+		if !seen[id] {
+			missing = append(missing, id)
+		}
+	}
+	sort.Ints(missing)
+	for _, id := range missing {
+		result = append(result, technologyRequirement(id, requirements[id], levels, research))
 	}
 	return result
+}
+
+func technologyRequirement(id int, required int, levels BuildingLevels, research ResearchLevels) TechnologyRequirement {
+	current := levels[id]
+	if isResearchID(id) {
+		current = research[id]
+	}
+	return TechnologyRequirement{
+		ID:           id,
+		Name:         technologyName(id),
+		Level:        required,
+		CurrentLevel: current,
+		Met:          current >= required,
+	}
+}
+
+func legacyTechnologyRequirementIDs(targetID int, requirements map[int]int) []int {
+	if len(requirements) == 0 {
+		return nil
+	}
+	legacyIDs, ok := legacyTechnologyRequirementOrder[targetID]
+	if !ok {
+		ids := make([]int, 0, len(requirements))
+		for id := range requirements {
+			ids = append(ids, id)
+		}
+		sort.Ints(ids)
+		return ids
+	}
+	ids := make([]int, 0, len(requirements))
+	seen := map[int]bool{}
+	for _, id := range legacyIDs {
+		if _, exists := requirements[id]; exists {
+			ids = append(ids, id)
+			seen[id] = true
+		}
+	}
+	missing := make([]int, 0)
+	for _, id := range ids {
+		seen[id] = true
+	}
+	for id := range requirements {
+		if !seen[id] {
+			missing = append(missing, id)
+		}
+	}
+	sort.Ints(missing)
+	return append(ids, missing...)
 }
 
 func technologySpecByID(id int) (buildingSpec, bool) {

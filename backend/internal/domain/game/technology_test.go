@@ -39,6 +39,11 @@ func TestBuildTechnologyUsesLegacyGroupsAndRequirements(t *testing.T) {
 	if metalMine.DetailsAvailable || len(metalMine.Requirements) != 0 {
 		t.Fatalf("expected no-requirement building row, got %+v", metalMine)
 	}
+
+	hyperspace := technologyItemByID(t, technology, ResearchHyperspace)
+	assertRequirementIDs(t, hyperspace.Requirements, []int{ResearchEnergy, ResearchShield, BuildingResearchLab})
+	ion := technologyItemByID(t, technology, ResearchIon)
+	assertRequirementIDs(t, ion.Requirements, []int{BuildingResearchLab, ResearchLaser, ResearchEnergy})
 }
 
 func TestBuildTechnologyIncludesDefenseMissilesAndMoonBuildings(t *testing.T) {
@@ -81,6 +86,13 @@ func TestBuildTechnologyDetailsUsesLegacyDepthOrder(t *testing.T) {
 	if lastLevel.Requirements[1].ID != ResearchImpulseDrive || !lastLevel.Requirements[1].Met {
 		t.Fatalf("expected met impulse drive requirement, got %+v", lastLevel.Requirements)
 	}
+
+	hyperspace, ok := BuildTechnologyDetails(ResearchHyperspace, BuildingLevels{}, ResearchLevels{})
+	if !ok {
+		t.Fatal("expected hyperspace technology details")
+	}
+	assertRequirementIDs(t, hyperspace.Target.Requirements, []int{ResearchEnergy, ResearchShield, BuildingResearchLab})
+	assertRequirementIDs(t, hyperspace.Levels[len(hyperspace.Levels)-1].Requirements, []int{ResearchEnergy, ResearchShield, BuildingResearchLab})
 }
 
 func TestBuildTechnologyDetailsHandlesNoConditionsAndUnknownIDs(t *testing.T) {
@@ -97,6 +109,21 @@ func TestBuildTechnologyDetailsHandlesNoConditionsAndUnknownIDs(t *testing.T) {
 	}
 }
 
+func TestLegacyTechnologyRequirementOrderingFallbacks(t *testing.T) {
+	requirements := map[int]int{ResearchLaser: 5, BuildingResearchLab: 4, ResearchEnergy: 4, 9999: 1}
+	assertIDs(t, legacyTechnologyRequirementIDs(ResearchIon, requirements), []int{BuildingResearchLab, ResearchLaser, ResearchEnergy, 9999})
+	assertIDs(t, legacyTechnologyRequirementIDs(9998, requirements), []int{BuildingResearchLab, ResearchEnergy, ResearchLaser, 9999})
+
+	ordered := buildTechnologyRequirementsOrdered(requirements, nil, BuildingLevels{BuildingResearchLab: 5}, ResearchLevels{ResearchEnergy: 3, ResearchLaser: 5})
+	assertRequirementIDs(t, ordered, []int{BuildingResearchLab, ResearchEnergy, ResearchLaser, 9999})
+	if !ordered[0].Met || ordered[1].Met || !ordered[2].Met || ordered[3].Name != "" {
+		t.Fatalf("unexpected fallback requirement values: %+v", ordered)
+	}
+	if name := technologyName(9999); name != "" {
+		t.Fatalf("expected unknown technology name to be empty, got %q", name)
+	}
+}
+
 func technologyItemByID(t *testing.T, technology Technology, id int) TechnologyItem {
 	t.Helper()
 	for _, group := range technology.Groups {
@@ -108,4 +135,28 @@ func technologyItemByID(t *testing.T, technology Technology, id int) TechnologyI
 	}
 	t.Fatalf("technology item %d not found in %+v", id, technology.Groups)
 	return TechnologyItem{}
+}
+
+func assertRequirementIDs(t *testing.T, requirements []TechnologyRequirement, expected []int) {
+	t.Helper()
+	if len(requirements) != len(expected) {
+		t.Fatalf("expected requirement ids %v, got %+v", expected, requirements)
+	}
+	for i, id := range expected {
+		if requirements[i].ID != id {
+			t.Fatalf("expected requirement ids %v, got %+v", expected, requirements)
+		}
+	}
+}
+
+func assertIDs(t *testing.T, ids []int, expected []int) {
+	t.Helper()
+	if len(ids) != len(expected) {
+		t.Fatalf("expected ids %v, got %v", expected, ids)
+	}
+	for i, id := range expected {
+		if ids[i] != id {
+			t.Fatalf("expected ids %v, got %v", expected, ids)
+		}
+	}
 }
