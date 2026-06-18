@@ -781,6 +781,7 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 		Authenticated: true,
 		Overview: domaingame.Overview{
 			Commander: "legor",
+			Messages:  []string{domaingame.OverviewAdminNotice},
 			Score: domaingame.ScoreSummary{
 				RawScore:        123456,
 				Rank:            7,
@@ -843,6 +844,9 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 		response.Overview.CurrentPlanet.Resources.Metal != 1234.5 ||
 		response.Overview.CurrentPlanet.Resources.CrystalCapacity != 150000 {
 		t.Fatalf("unexpected overview mapping: %+v", response.Overview)
+	}
+	if len(response.Overview.Messages) != 1 || response.Overview.Messages[0] != domaingame.OverviewAdminNotice {
+		t.Fatalf("expected overview messages, got %+v", response.Overview.Messages)
 	}
 	if overview.command.PublicSession != "public" || overview.command.PlanetID != 99 || overview.command.RemoteAddr != "203.0.113.10" ||
 		!overview.command.Login {

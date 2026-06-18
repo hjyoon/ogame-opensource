@@ -26,6 +26,7 @@ type gameOverviewSummary struct {
 	Score          gameScoreResponse           `json:"score"`
 	CurrentPlanet  gamePlanetOverviewResponse  `json:"currentPlanet"`
 	PlanetSwitcher []gamePlanetSummaryResponse `json:"planetSwitcher"`
+	Messages       []string                    `json:"messages,omitempty"`
 }
 
 type gameScoreResponse struct {
@@ -235,6 +236,7 @@ func toGameOverviewSummary(overview domaingame.Overview) gameOverviewSummary {
 		},
 		CurrentPlanet:  toGamePlanetOverviewResponse(overview.CurrentPlanet),
 		PlanetSwitcher: planets,
+		Messages:       overview.Messages,
 	}
 }
 

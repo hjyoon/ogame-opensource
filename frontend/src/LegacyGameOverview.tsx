@@ -81,6 +81,7 @@ export type GameLogoutStatus = {
 
 type GameOverview = {
   commander: string;
+  messages?: string[];
   score: {
     points: number;
     rawScore: number;
@@ -643,6 +644,9 @@ export function LegacyGameOverview({
         {overview ? <LegacyResourceHeader overview={overview} /> : <div className="legacy-header-placeholder">OGame</div>}
       </header>
       <LegacyLeftMenu activeRoute={route} />
+      {overview && route.key === "overview" && overview.messages && overview.messages.length > 0 ? (
+        <LegacyPageMessage messages={overview.messages} />
+      ) : null}
       <section className={contentClassName} id="content">
         {error ? <LegacyMessage tone="error" text={error} /> : null}
         {!error && issue ? <LegacyMessage tone="error" text={issue} /> : null}
@@ -759,6 +763,21 @@ export function LegacyGameOverview({
         ) : null}
       </section>
     </main>
+  );
+}
+
+function LegacyPageMessage({ messages }: { messages: string[] }) {
+  return (
+    <div className="legacy-page-messagebox" id="messagebox">
+      <center>
+        {messages.map((message, index) => (
+          <React.Fragment key={`${message}-${index}`}>
+            {message}
+            <br />
+          </React.Fragment>
+        ))}
+      </center>
+    </div>
   );
 }
 

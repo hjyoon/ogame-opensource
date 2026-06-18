@@ -94,7 +94,7 @@ const pageSpecs: AuthPageSpec[] = [
     migratedPath: "/game/overview",
     legacyReady: "#content table",
     migratedReady: ".legacy-overview-table",
-    expectedTexts: ["Arakis", "Legor", "Diameter", "Temperature", "[1:1:2]", "Points"]
+    expectedTexts: ["Arakis", "Legor", "Diameter", "Temperature", "[1:1:2]", "Points", "administrator mode"]
   },
   {
     name: "game-rename-planet",

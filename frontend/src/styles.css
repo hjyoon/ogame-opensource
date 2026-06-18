@@ -411,7 +411,7 @@ dd {
 }
 
 .legacy-header-top > .legacy-header-table {
-  margin: 0 auto;
+  margin: 0 0 0 28px;
 }
 
 .legacy-header-placeholder {
@@ -471,6 +471,18 @@ dd {
 .legacy-content-overview {
   height: calc(100vh - 124px);
   top: 114px;
+}
+
+.legacy-page-messagebox {
+  border: 1px solid #00ff00;
+  box-sizing: border-box;
+  display: block;
+  left: 190px;
+  margin: 3px 0;
+  padding: 4px 3px;
+  position: absolute;
+  top: 80px;
+  width: 78%;
 }
 
 .legacy-header-table,

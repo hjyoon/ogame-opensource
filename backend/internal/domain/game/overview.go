@@ -9,6 +9,7 @@ const (
 	OverviewIssueHomePlanet      = "home_planet"
 	OverviewIssueFleetIncoming   = "fleet_incoming"
 	OverviewIssueFleetOutgoing   = "fleet_outgoing"
+	OverviewAdminNotice          = "In the administrator mode Overview and Admin do not update event queue."
 )
 
 type Overview struct {
@@ -16,6 +17,7 @@ type Overview struct {
 	Score          ScoreSummary
 	CurrentPlanet  PlanetOverview
 	PlanetSwitcher []PlanetSummary
+	Messages       []string
 }
 
 type OverviewActionIssue struct {

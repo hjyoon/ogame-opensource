@@ -145,6 +145,7 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 		},
 		CurrentPlanet:  current,
 		PlanetSwitcher: planets,
+		Messages:       overviewMessages(user),
 	}, nil
 }
 
@@ -615,12 +616,13 @@ type overviewUser struct {
 	HomePlanetID   int
 	SortBy         int
 	SortOrder      int
+	AdminLevel     int
 }
 
 func (r OverviewRepository) loadUser(ctx context.Context, usersTable string, playerID int) (overviewUser, error) {
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT oname, score1, place1, aktplanet, hplanetid, sortby, sortorder FROM %s WHERE player_id = ? LIMIT 1", usersTable),
+		fmt.Sprintf("SELECT oname, score1, place1, aktplanet, hplanetid, sortby, sortorder, admin FROM %s WHERE player_id = ? LIMIT 1", usersTable),
 		playerID,
 	)
 	if err != nil {
@@ -634,13 +636,20 @@ func (r OverviewRepository) loadUser(ctx context.Context, usersTable string, pla
 		return overviewUser{}, errors.New("overview user not found")
 	}
 	var user overviewUser
-	if err := rows.Scan(&user.Commander, &user.Score, &user.Rank, &user.ActivePlanetID, &user.HomePlanetID, &user.SortBy, &user.SortOrder); err != nil {
+	if err := rows.Scan(&user.Commander, &user.Score, &user.Rank, &user.ActivePlanetID, &user.HomePlanetID, &user.SortBy, &user.SortOrder, &user.AdminLevel); err != nil {
 		return overviewUser{}, err
 	}
 	if err := rows.Err(); err != nil {
 		return overviewUser{}, err
 	}
 	return user, nil
+}
+
+func overviewMessages(user overviewUser) []string {
+	if user.AdminLevel <= 0 {
+		return nil
+	}
+	return []string{domaingame.OverviewAdminNotice}
 }
 
 func (r OverviewRepository) loadPlanet(ctx context.Context, planetsTable string, playerID int, planetID int) (domaingame.PlanetOverview, error) {

@@ -30,7 +30,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - Technology, statistics, search, and notes cover read models plus note mutations.
 - Registration writes legacy side effects and sends SMTP/MailHog welcome mail with activation link/password lines.
 - Activation clears `validatemd`, sets `validated=1`, copies `email` to `pemail`, redirects, and rejects link reuse.
-- Overview covers legacy `cp`, `lgn` activity, rename/delete name rules, blockers, destroy markers, queue flush, stat/rank updates, and active restore.
+- Overview covers legacy `cp`, `lgn` activity, admin notice, rename/delete name rules, blockers, destroy markers, queue flush, stat/rank updates, and active restore.
 
 ## Verified QA
 

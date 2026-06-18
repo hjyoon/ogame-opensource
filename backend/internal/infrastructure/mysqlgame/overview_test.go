@@ -17,7 +17,7 @@ import (
 
 func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	queryer := &fakeQueryer{results: []fakeQueryResult{
-		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 7, 99, 1, 0, 0})},
+		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 7, 99, 1, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 12, 163, 1234.5, 234.5, 12.0, 0, 1, 2})},
 		{rows: fakeRowsFromValues(
 			[]any{99, "Arakis", 1, 1, 2, 3},
@@ -57,6 +57,28 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	}
 	if !strings.Contains(queryer.calls[0].sql, "`ogame_users`") || !strings.Contains(queryer.calls[1].sql, "`ogame_planets`") {
 		t.Fatalf("expected prefixed table names, got %+v", queryer.calls)
+	}
+}
+
+func TestOverviewRepositoryAddsAdminNotice(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 2})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 12, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3})},
+		{rows: fakeRowsFromValues([]any{1})},
+	}}
+	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+
+	overview, err := repository.GetOverview(context.Background(), overviewQuery(42, 0))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(overview.Messages) != 1 || overview.Messages[0] != domaingame.OverviewAdminNotice {
+		t.Fatalf("expected admin notice, got %+v", overview.Messages)
+	}
+	if !strings.Contains(queryer.calls[0].sql, "admin") {
+		t.Fatalf("expected admin column in overview user query, got %q", queryer.calls[0].sql)
 	}
 }
 
@@ -109,7 +131,7 @@ func TestSQLQueryerUsesDatabase(t *testing.T) {
 
 func TestOverviewRepositoryFallsBackToHomePlanet(t *testing.T) {
 	queryer := &fakeQueryer{results: []fakeQueryResult{
-		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 999, 1, 1, 1})},
+		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 999, 1, 1, 1, 0})},
 		{rows: fakeRowsFromValues()},
 		{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 2, 3, 4, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 2, 3, 4})},
@@ -132,7 +154,7 @@ func TestOverviewRepositoryFallsBackToHomePlanet(t *testing.T) {
 
 func TestOverviewRepositoryUsesRequestedPlanet(t *testing.T) {
 	queryer := &fakeQueryer{results: []fakeQueryResult{
-		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 2, 0})},
+		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 2, 0, 0})},
 		{rows: fakeRowsFromValues([]any{100, "Colony", 1, 1, 2, 4, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3}, []any{100, "Colony", 1, 1, 2, 4})},
 		{rows: fakeRowsFromValues()},
@@ -160,7 +182,7 @@ func TestOverviewRepositoryUsesRequestedPlanet(t *testing.T) {
 
 func TestOverviewRepositoryPersistsRequestedPlanet(t *testing.T) {
 	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
-		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{100, "Colony", 1, 1, 2, 4, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3}, []any{100, "Colony", 1, 1, 2, 4})},
 		{rows: fakeRowsFromValues([]any{2})},
@@ -288,14 +310,14 @@ func TestOverviewRepositoryDeletesColonyAndMoon(t *testing.T) {
 	results := overviewResultsForPlanet(99, "Colony")
 	results = append(results,
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 		fakeQueryResult{rows: fakeRowsFromValues()},
 		fakeQueryResult{rows: fakeRowsFromValues()},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{200, domaingame.PlanetTypeMoon, 1, 2, 3})},
 		fakeQueryResult{rows: fakeRowsFromValues(overviewScoreRow(42, map[int]int{domaingame.BuildingLunarBase: 1}, nil, nil))},
 		fakeQueryResult{rows: fakeRowsFromValues(overviewScoreRow(42, map[int]int{domaingame.BuildingMetalMine: 2}, map[int]int{domaingame.FleetSmallCargo: 3}, map[int]int{domaingame.DefenseRocketLauncher: 4}))},
-		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{1})},
@@ -351,13 +373,13 @@ func TestOverviewRepositoryDeletesColonyWithoutReDeletingDestroyedMoon(t *testin
 	results := overviewResultsForPlanet(99, "Colony")
 	results = append(results,
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 		fakeQueryResult{rows: fakeRowsFromValues()},
 		fakeQueryResult{rows: fakeRowsFromValues()},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{200, planetTypeDestroyedMoon, 1, 2, 3})},
 		fakeQueryResult{rows: fakeRowsFromValues(overviewScoreRow(42, nil, nil, nil))},
-		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{1})},
@@ -417,7 +439,7 @@ func TestOverviewRepositoryDeleteBlocksHomeAndFleet(t *testing.T) {
 			name: "home planet",
 			results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{42})},
-				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, domaingame.PlanetTypePlanet, 1, 1, 1})},
 			},
 			want: domaingame.OverviewIssueHomePlanet,
@@ -426,7 +448,7 @@ func TestOverviewRepositoryDeleteBlocksHomeAndFleet(t *testing.T) {
 			name: "incoming fleet",
 			results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{42})},
-				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 				{rows: fakeRowsFromValues([]any{7})},
 			},
@@ -436,7 +458,7 @@ func TestOverviewRepositoryDeleteBlocksHomeAndFleet(t *testing.T) {
 			name: "outgoing fleet",
 			results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{42})},
-				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 				{rows: fakeRowsFromValues()},
 				{rows: fakeRowsFromValues([]any{8})},
@@ -473,7 +495,7 @@ func TestOverviewRepositoryDeleteNoopsForForeignPlanet(t *testing.T) {
 	results := overviewResultsForPlanet(99, "Colony")
 	results = append(results,
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues()},
 	)
 	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: results}}
@@ -540,7 +562,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 			name: "target query",
 			results: append(overviewResultsForPlanet(99, "Colony"),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 				fakeQueryResult{err: errors.New("target failed")},
 			),
 			want: "target failed",
@@ -549,7 +571,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 			name: "incoming query",
 			results: append(overviewResultsForPlanet(99, "Colony"),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 				fakeQueryResult{err: errors.New("incoming failed")},
 			),
@@ -559,7 +581,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 			name: "outgoing query",
 			results: append(overviewResultsForPlanet(99, "Colony"),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{err: errors.New("outgoing failed")},
@@ -570,7 +592,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 			name: "moon query",
 			results: append(overviewResultsForPlanet(99, "Colony"),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
@@ -582,7 +604,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 			name: "moon score query",
 			results: append(overviewResultsForPlanet(99, "Colony"),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
@@ -595,7 +617,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 			name: "target score query",
 			results: append(overviewResultsForPlanet(99, "Colony"),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
@@ -608,7 +630,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 			name: "moon stats adjustment exec",
 			results: append(overviewResultsForPlanet(99, "Colony"),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
@@ -623,7 +645,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 			name: "destroy exec",
 			results: append(overviewResultsForPlanet(99, "Colony"),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
@@ -637,7 +659,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 			name: "queue flush exec",
 			results: append(overviewResultsForPlanet(99, "Colony"),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
@@ -652,7 +674,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 			name: "queue build flush exec",
 			results: append(overviewResultsForPlanet(99, "Colony"),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
@@ -667,7 +689,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 			name: "buildqueue flush exec",
 			results: append(overviewResultsForPlanet(99, "Colony"),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
@@ -682,7 +704,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 			name: "stats adjustment exec",
 			results: append(overviewResultsForPlanet(99, "Colony"),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
@@ -697,7 +719,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 			name: "rank recalculation exec",
 			results: append(overviewResultsForPlanet(99, "Colony"),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
@@ -712,7 +734,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 			name: "active restore exec",
 			results: append(overviewResultsForPlanet(99, "Colony"),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
@@ -727,7 +749,7 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 			name: "final overview",
 			results: append(overviewResultsForPlanet(99, "Colony"),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 				fakeQueryResult{rows: fakeRowsFromValues()},
@@ -762,12 +784,12 @@ func TestOverviewRepositoryDeletesMoon(t *testing.T) {
 	results := overviewResultsForPlanet(200, "Moon")
 	results = append(results,
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
-		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 200, 1, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 200, 1, 0, 0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{200, domaingame.PlanetTypeMoon, 1, 2, 3})},
 		fakeQueryResult{rows: fakeRowsFromValues()},
 		fakeQueryResult{rows: fakeRowsFromValues()},
 		fakeQueryResult{rows: fakeRowsFromValues(overviewScoreRow(42, map[int]int{domaingame.BuildingLunarBase: 1}, nil, nil))},
-		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{1})},
@@ -910,7 +932,7 @@ func TestOverviewRepositoryMatchesLegacyPlanetSelectionEdges(t *testing.T) {
 
 	t.Run("foreign cp keeps previous selected planet", func(t *testing.T) {
 		runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
-			{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 100, 99, 0, 0})},
+			{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 100, 99, 0, 0, 0})},
 			{rows: fakeRowsFromValues()},
 			{rows: fakeRowsFromValues([]any{555})},
 			{rows: fakeRowsFromValues([]any{100, "Colony", 1, 1, 2, 4, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
@@ -930,7 +952,7 @@ func TestOverviewRepositoryMatchesLegacyPlanetSelectionEdges(t *testing.T) {
 
 	t.Run("missing cp falls back and persists home planet", func(t *testing.T) {
 		runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
-			{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 100, 99, 0, 0})},
+			{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 100, 99, 0, 0, 0})},
 			{rows: fakeRowsFromValues()},
 			{rows: fakeRowsFromValues()},
 			{rows: fakeRowsFromValues([]any{99, "Home", 1, 1, 2, 3, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
@@ -950,7 +972,7 @@ func TestOverviewRepositoryMatchesLegacyPlanetSelectionEdges(t *testing.T) {
 
 	t.Run("owned moon can become selected planet", func(t *testing.T) {
 		runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
-			{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 99, 0, 0})},
+			{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 99, 0, 0, 0})},
 			{rows: fakeRowsFromValues([]any{200, "Moon", 0, 1, 2, 3, 12800, 19, 1, 1, 0.0, 0.0, 0.0, 0, 0, 0})},
 			{rows: fakeRowsFromValues([]any{99, "Home", 1, 1, 2, 3}, []any{200, "Moon", 0, 1, 2, 3})},
 			{rows: fakeRowsFromValues([]any{2})},
@@ -970,7 +992,7 @@ func TestOverviewRepositoryMatchesLegacyPlanetSelectionEdges(t *testing.T) {
 func TestOverviewRepositoryReturnsActivePlanetUpdateError(t *testing.T) {
 	runner := &fakeOverviewRunner{
 		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
-			{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+			{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 			{rows: fakeRowsFromValues([]any{100, "Colony", 1, 1, 2, 4, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 		}},
 		execErr: errors.New("active planet update failed"),
@@ -1018,7 +1040,7 @@ func TestOverviewRepositoryReturnsErrors(t *testing.T) {
 			name:   "missing current planet after fallback",
 			prefix: "ogame_",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
-				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 9, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 9, 1, 0, 0, 0})},
 				{rows: fakeRowsFromValues()},
 				{rows: fakeRowsFromValues()},
 			}},
@@ -1028,7 +1050,7 @@ func TestOverviewRepositoryReturnsErrors(t *testing.T) {
 			name:   "planet list",
 			prefix: "ogame_",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
-				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 				{err: errors.New("planet list failed")},
 			}},
@@ -1038,7 +1060,7 @@ func TestOverviewRepositoryReturnsErrors(t *testing.T) {
 			name:   "universe",
 			prefix: "ogame_",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
-				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1})},
 				{err: errors.New("universe failed")},
@@ -1090,14 +1112,14 @@ func TestOverviewRepositoryPropagatesRowErrors(t *testing.T) {
 		{
 			name: "user scan error",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
-				{rows: fakeRowsFromValues([]any{99, int64(0), 0, 1, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{99, int64(0), 0, 1, 1, 0, 0, 0})},
 			}},
 			want: "expected string",
 		},
 		{
 			name: "current planet query error",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
-				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0, 0})},
 				{err: errors.New("current planet failed")},
 			}},
 			want: "current planet failed",
@@ -1105,7 +1127,7 @@ func TestOverviewRepositoryPropagatesRowErrors(t *testing.T) {
 		{
 			name: "current planet rows error",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
-				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0, 0})},
 				{rows: fakeRowsError(errors.New("current planet rows failed"))},
 			}},
 			want: "current planet rows failed",
@@ -1113,7 +1135,7 @@ func TestOverviewRepositoryPropagatesRowErrors(t *testing.T) {
 		{
 			name: "current planet scan error",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
-				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{"bad", "Homeworld", 1, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 			}},
 			want: "expected int",
@@ -1121,7 +1143,7 @@ func TestOverviewRepositoryPropagatesRowErrors(t *testing.T) {
 		{
 			name: "current planet post-scan rows error",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
-				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0, 0})},
 				{rows: fakeRowsFromValuesWithErr(errors.New("current planet post scan failed"), []any{1, "Homeworld", 1, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 			}},
 			want: "current planet post scan failed",
@@ -1129,7 +1151,7 @@ func TestOverviewRepositoryPropagatesRowErrors(t *testing.T) {
 		{
 			name: "planet list scan error",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
-				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{"bad", "Homeworld", 1, 1, 1, 1})},
 			}},
@@ -1138,7 +1160,7 @@ func TestOverviewRepositoryPropagatesRowErrors(t *testing.T) {
 		{
 			name: "planet list rows error",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
-				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 				{rows: fakeRowsFromValuesWithErr(errors.New("planet list rows failed"), []any{1, "Homeworld", 1, 1, 1, 1})},
 			}},
@@ -1147,7 +1169,7 @@ func TestOverviewRepositoryPropagatesRowErrors(t *testing.T) {
 		{
 			name: "universe scan error",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
-				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1})},
 				{rows: fakeRowsFromValues([]any{"bad"})},
@@ -1157,7 +1179,7 @@ func TestOverviewRepositoryPropagatesRowErrors(t *testing.T) {
 		{
 			name: "universe rows error",
 			queryer: &fakeQueryer{results: []fakeQueryResult{
-				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 				{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1})},
 				{rows: fakeRowsFromValuesWithErr(errors.New("universe rows failed"), []any{1})},
@@ -1249,7 +1271,7 @@ func overviewQuery(playerID int, planetID int) appgame.OverviewQuery {
 
 func overviewResultsForPlanet(planetID int, name string) []fakeQueryResult {
 	return []fakeQueryResult{
-		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, planetID, 1, 0, 0})},
+		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, planetID, 1, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{planetID, name, 1, 1, 2, 3, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{planetID, name, 1, 1, 2, 3})},
 		{rows: fakeRowsFromValues([]any{1})},

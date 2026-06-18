@@ -14,7 +14,7 @@ import (
 func TestResearchRepositoryReadsLegacyResearch(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	queryer := &fakeQueryer{results: []fakeQueryResult{
-		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 7, 99, 1, 0, 0})},
+		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 7, 99, 1, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3, 12800, 19, 4, 163, 10000.0, 10000.0, 10000.0, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3})},
 		{rows: fakeRowsFromValues([]any{2})},
@@ -182,7 +182,7 @@ func TestResearchRepositoryReturnsErrors(t *testing.T) {
 
 func researchOverviewResults() []fakeQueryResult {
 	return []fakeQueryResult{
-		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3})},
 		{rows: fakeRowsFromValues([]any{1})},
