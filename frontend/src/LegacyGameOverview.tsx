@@ -55,6 +55,11 @@ export type GameTechnologyStatus = {
   technology?: GameTechnology;
 };
 
+export type GameLogoutStatus = {
+  loggedOut: boolean;
+  redirectTo: string;
+};
+
 type GameOverview = {
   commander: string;
   score: {
@@ -396,6 +401,8 @@ type LegacyGameOverviewProps = {
   defenseError: string | null;
   technologyStatus: GameTechnologyStatus | null;
   technologyError: string | null;
+  logoutStatus: GameLogoutStatus | null;
+  logoutError: string | null;
 };
 
 type LegacyMenuEntry =
@@ -453,7 +460,9 @@ export function LegacyGameOverview({
   defenseStatus,
   defenseError,
   technologyStatus,
-  technologyError
+  technologyError,
+  logoutStatus,
+  logoutError
 }: LegacyGameOverviewProps) {
   const overview = status?.authenticated ? status.overview : undefined;
   const issue = status && !status.authenticated ? status.issues[0]?.message ?? "Session is invalid." : null;
@@ -500,7 +509,8 @@ export function LegacyGameOverview({
       <section className={contentClassName} id="content">
         {error ? <LegacyMessage tone="error" text={error} /> : null}
         {!error && issue ? <LegacyMessage tone="error" text={issue} /> : null}
-        {!error && !issue && !overview ? <LegacyMessage tone="neutral" text="Loading overview..." /> : null}
+        {!error && !issue && !overview && route.key !== "logout" ? <LegacyMessage tone="neutral" text="Loading overview..." /> : null}
+        {route.key === "logout" ? <LogoutTable error={logoutError} status={logoutStatus} /> : null}
         {route.key === "buildings" && buildingsError ? <LegacyMessage tone="error" text={buildingsError} /> : null}
         {route.key === "buildings" && !buildingsError && buildingsIssue ? (
           <LegacyMessage tone="error" text={buildingsIssue} />
@@ -571,7 +581,8 @@ export function LegacyGameOverview({
         route.key !== "fleet" &&
         route.key !== "galaxy" &&
         route.key !== "defense" &&
-        route.key !== "technology" ? (
+        route.key !== "technology" &&
+        route.key !== "logout" ? (
           <MigrationPendingGameTable route={route} />
         ) : null}
       </section>
@@ -734,6 +745,22 @@ function MigrationPendingGameTable({ route }: { route: GameRoute }) {
         </tr>
         <tr>
           <th>The authenticated game shell, resource header, and session guard are active.</th>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function LogoutTable({ error, status }: { error: string | null; status: GameLogoutStatus | null }) {
+  const text = error ? error : status ? "See you soon!!" : "Logging out...";
+  return (
+    <table className="legacy-overview-table legacy-logout-table" width={519}>
+      <tbody>
+        <tr>
+          <td className="legacy-c">Logout</td>
+        </tr>
+        <tr>
+          <th>{text}</th>
         </tr>
       </tbody>
     </table>

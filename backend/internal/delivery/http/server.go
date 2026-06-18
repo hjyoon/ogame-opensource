@@ -43,6 +43,10 @@ type GameSessionUseCase interface {
 	GetGameSession(context.Context, apppublicsite.GameSessionCommand) (domainpublicsite.SessionAuthentication, error)
 }
 
+type LogoutUseCase interface {
+	Logout(context.Context, apppublicsite.LogoutCommand) (apppublicsite.LogoutResult, error)
+}
+
 type GameOverviewUseCase interface {
 	GetOverview(context.Context, appgame.OverviewCommand) (appgame.OverviewResult, error)
 }
@@ -88,6 +92,7 @@ type Dependencies struct {
 	LoginDrafts        LoginDraftUseCase
 	Login              LoginUseCase
 	GameSessions       GameSessionUseCase
+	Logout             LogoutUseCase
 	GameOverview       GameOverviewUseCase
 	GameBuildings      GameBuildingsUseCase
 	GameResources      GameResourcesUseCase
@@ -116,6 +121,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/public/login/validate", postOnly(a.handleLoginValidation))
 	mux.HandleFunc("/api/public/login", postOnly(a.handleLogin))
 	mux.HandleFunc("/api/game/session", getOnly(a.handleGameSession))
+	mux.HandleFunc("/api/game/logout", postOnly(a.handleGameLogout))
 	mux.HandleFunc("/api/game/overview", getOnly(a.handleGameOverview))
 	mux.HandleFunc("/api/game/buildings", getOnly(a.handleGameBuildings))
 	mux.HandleFunc("/api/game/resources", a.handleGameResources)

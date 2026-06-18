@@ -241,6 +241,7 @@ try {
   }
   const sessionCookie = sessionLogin.headers["set-cookie"] ?? "";
   const sessionCookiePair = sessionCookie.split(";")[0] ?? "";
+  const sessionCookieName = sessionCookiePair.split("=")[0] ?? "";
   const sessionSearch = typeof sessionLoginBody.session?.redirectTo === "string"
     ? new URL(sessionLoginBody.session.redirectTo, baseUrl).search
     : "?session=";
@@ -488,6 +489,27 @@ try {
     gameResourcesWithoutCookieBody = {};
   }
 
+  const gameLogout = await request(`/api/game/logout${sessionSearch}`, {
+    method: "POST",
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameLogoutBody = {};
+  try {
+    gameLogoutBody = JSON.parse(gameLogout.body);
+  } catch {
+    gameLogoutBody = {};
+  }
+  const gameLogoutCookie = gameLogout.headers["set-cookie"] ?? "";
+  const gameSessionAfterLogout = await request(`/api/game/session${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameSessionAfterLogoutBody = {};
+  try {
+    gameSessionAfterLogoutBody = JSON.parse(gameSessionAfterLogout.body);
+  } catch {
+    gameSessionAfterLogoutBody = {};
+  }
+
   const invalidLogin = await request("/api/public/login/validate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -633,6 +655,18 @@ try {
       check(!gameResourcesUpdate.body.includes(sessionCookiePair), "game resources production update response does not echo private cookie"),
       check(gameResourcesWithoutCookie.status === 401, "game resources rejects missing private cookie", { status: gameResourcesWithoutCookie.status }),
       check(gameResourcesWithoutCookieBody.authenticated === false, "game resources missing private cookie is unauthenticated", gameResourcesWithoutCookieBody),
+      check(gameLogout.status === 200, "game logout returns HTTP 200 with private cookie", { status: gameLogout.status }),
+      check(gameLogoutBody.loggedOut === true, "game logout clears the active legacy session", gameLogoutBody),
+      check(gameLogoutBody.redirectTo === "/home", "game logout redirects to public home", gameLogoutBody),
+      check(
+        gameLogoutCookie.includes(`${sessionCookieName}=;`) && gameLogoutCookie.includes("Max-Age=0"),
+        "game logout expires the private session cookie",
+        { setCookie: gameLogoutCookie }
+      ),
+      check(gameSessionAfterLogout.status === 401, "game session lookup rejects the logged-out public session", {
+        status: gameSessionAfterLogout.status
+      }),
+      check(gameSessionAfterLogoutBody.authenticated === false, "logged-out public session is unauthenticated", gameSessionAfterLogoutBody),
       check(invalidLogin.status === 200, "invalid login draft returns HTTP 200", { status: invalidLogin.status }),
       check(invalidLoginBody.valid === false, "invalid login draft is rejected", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),
@@ -751,6 +785,7 @@ try {
       check(js.body.includes("/api/game/galaxy"), "React bundle consumes game galaxy API"),
       check(js.body.includes("/api/game/defense"), "React bundle consumes game defense API"),
       check(js.body.includes("/api/game/technology"), "React bundle consumes game technology API"),
+      check(js.body.includes("/api/game/logout"), "React bundle consumes game logout API"),
       check(js.body.includes("legacy-public-main"), "React bundle contains legacy public home layout"),
       check(js.body.includes("legacy-public-register-panel"), "React bundle contains legacy public registration layout"),
       check(js.body.includes("legacy-public-about-panel"), "React bundle contains legacy public about layout"),
@@ -769,7 +804,8 @@ try {
       check(js.body.includes("legacy-galaxy-table"), "React bundle contains legacy game galaxy layout"),
       check(js.body.includes("legacy-defense-table"), "React bundle contains legacy game defense layout"),
       check(js.body.includes("legacy-technology-table"), "React bundle contains legacy game technology layout"),
-      check(js.body.includes("legacy-technology-details-table"), "React bundle contains legacy game technology details layout")
+      check(js.body.includes("legacy-technology-details-table"), "React bundle contains legacy game technology details layout"),
+      check(js.body.includes("legacy-logout-table"), "React bundle contains legacy game logout layout")
     ]
   }));
 
@@ -798,6 +834,7 @@ try {
   const postGameGalaxy = await request("/api/game/galaxy", { method: "POST" });
   const postGameDefense = await request("/api/game/defense", { method: "POST" });
   const postGameTechnology = await request("/api/game/technology", { method: "POST" });
+  const getGameLogout = await request("/api/game/logout");
   const putGameResources = await request("/api/game/resources", { method: "PUT" });
   cases.push(finalize({
     case: "go_method_guards",
@@ -830,6 +867,8 @@ try {
       check(hasHeader(postGameDefense, "allow", "GET, HEAD"), "game defense method rejection returns Allow header"),
       check(postGameTechnology.status === 405, "POST game technology endpoint is rejected", { status: postGameTechnology.status }),
       check(hasHeader(postGameTechnology, "allow", "GET, HEAD"), "game technology method rejection returns Allow header"),
+      check(getGameLogout.status === 405, "GET game logout endpoint is rejected", { status: getGameLogout.status }),
+      check(hasHeader(getGameLogout, "allow", "POST"), "game logout method rejection returns Allow header"),
       check(putGameResources.status === 405, "PUT game resources endpoint is rejected", { status: putGameResources.status }),
       check(hasHeader(putGameResources, "allow", "GET, HEAD, POST"), "game resources method rejection returns Allow header")
     ]

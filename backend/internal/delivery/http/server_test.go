@@ -612,6 +612,75 @@ func TestGameSessionEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 	}
 }
 
+func TestGameLogoutEndpointClearsSessionCookie(t *testing.T) {
+	logout := &fakeLogout{result: apppublicsite.LogoutResult{
+		Found: true,
+		Session: domainpublicsite.GameSession{
+			PlayerID:       42,
+			UniverseNumber: 1,
+		},
+	}}
+	server := testServerWithLogout(t, logout)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/logout?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameLogoutResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.LoggedOut || response.RedirectTo != "/home" {
+		t.Fatalf("unexpected logout response: %+v", response)
+	}
+	if logout.command.PublicSession != "public" {
+		t.Fatalf("unexpected logout command: %+v", logout.command)
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != "prsess_42_1" || cookies[0].MaxAge != -1 {
+		t.Fatalf("expected expired private session cookie, got %+v", cookies)
+	}
+}
+
+func TestGameLogoutEndpointIsIdempotentForMissingSession(t *testing.T) {
+	server := testServerWithLogout(t, &fakeLogout{result: apppublicsite.LogoutResult{Found: false}})
+	req := httptest.NewRequest(http.MethodPost, "/api/game/logout?session=missing", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameLogoutResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.LoggedOut || response.RedirectTo != "/home" || len(rec.Result().Cookies()) != 0 {
+		t.Fatalf("unexpected missing logout response: response=%+v cookies=%+v", response, rec.Result().Cookies())
+	}
+}
+
+func TestGameLogoutEndpointReturnsUnavailable(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodPost, "/api/game/logout?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing logout use case to return 503, got %d", rec.Code)
+	}
+
+	server = testServerWithLogout(t, &fakeLogout{err: errors.New("logout failed")})
+	req = httptest.NewRequest(http.MethodPost, "/api/game/logout?session=public", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected logout use case error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	overview := &fakeGameOverview{result: appgame.OverviewResult{
 		Authenticated: true,
@@ -2232,6 +2301,14 @@ func TestPostOnlyRejectsReadMethods(t *testing.T) {
 	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "POST" {
 		t.Fatalf("expected login submit method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/game/logout", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "POST" {
+		t.Fatalf("expected logout method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
 }
 
 func TestSecurityHeadersIncludeHSTSForForwardedHTTPS(t *testing.T) {
@@ -2335,6 +2412,19 @@ func testServerWithGameSessions(t *testing.T, gameSessions GameSessionUseCase) h
 		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
 		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
 		GameSessions:       gameSessions,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
+func testServerWithLogout(t *testing.T, logout LogoutUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		Logout:             logout,
 		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
 		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
 	})
@@ -2573,6 +2663,17 @@ type fakeGameSessions struct {
 }
 
 func (f *fakeGameSessions) GetGameSession(_ context.Context, command apppublicsite.GameSessionCommand) (domainpublicsite.SessionAuthentication, error) {
+	f.command = command
+	return f.result, f.err
+}
+
+type fakeLogout struct {
+	result  apppublicsite.LogoutResult
+	err     error
+	command apppublicsite.LogoutCommand
+}
+
+func (f *fakeLogout) Logout(_ context.Context, command apppublicsite.LogoutCommand) (apppublicsite.LogoutResult, error) {
 	f.command = command
 	return f.result, f.err
 }

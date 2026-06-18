@@ -338,6 +338,78 @@ func TestGameSessionLookupRequiresDependency(t *testing.T) {
 	}
 }
 
+func TestLogoutServiceClearsLegacySession(t *testing.T) {
+	store := &fakeGameSessionStore{session: domain.GameSession{
+		Found:     true,
+		PlayerID:  42,
+		PublicID:  "public",
+		PrivateID: "private",
+	}}
+	service := NewLogoutService(store, 1)
+
+	result, err := service.Logout(context.Background(), LogoutCommand{PublicSession: " public "})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Found || result.Session.PlayerID != 42 || result.Session.UniverseNumber != 1 {
+		t.Fatalf("expected cleared session result, got %+v", result)
+	}
+	if store.publicID != "public" || store.clearedPublicID != "public" || store.clearedPlayerID != 42 {
+		t.Fatalf("unexpected store calls: %+v", store)
+	}
+}
+
+func TestLogoutServiceIsIdempotentForMissingSession(t *testing.T) {
+	store := &fakeGameSessionStore{session: domain.GameSession{Found: false}}
+	service := NewLogoutService(store, 1)
+
+	result, err := service.Logout(context.Background(), LogoutCommand{PublicSession: "public"})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Found || store.clearedPublicID != "" {
+		t.Fatalf("missing session should not clear, got result=%+v store=%+v", result, store)
+	}
+}
+
+func TestLogoutServiceRequiresDependency(t *testing.T) {
+	_, err := (LogoutService{}).Logout(context.Background(), LogoutCommand{PublicSession: "public"})
+
+	if err == nil {
+		t.Fatal("expected missing dependency error")
+	}
+}
+
+func TestLogoutServiceReturnsStoreErrors(t *testing.T) {
+	readErr := errors.New("read failed")
+	_, err := NewLogoutService(&fakeGameSessionStore{err: readErr}, 1).Logout(context.Background(), LogoutCommand{PublicSession: "public"})
+	if !errors.Is(err, readErr) {
+		t.Fatalf("expected read error, got %v", err)
+	}
+
+	clearErr := errors.New("clear failed")
+	_, err = NewLogoutService(&fakeGameSessionStore{
+		session:  domain.GameSession{Found: true, PlayerID: 42},
+		clearErr: clearErr,
+	}, 1).Logout(context.Background(), LogoutCommand{PublicSession: "public"})
+	if !errors.Is(err, clearErr) {
+		t.Fatalf("expected clear error, got %v", err)
+	}
+}
+
+func TestLogoutServiceIgnoresBlankSession(t *testing.T) {
+	result, err := NewLogoutService(&fakeGameSessionStore{}, 1).Logout(context.Background(), LogoutCommand{})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Found {
+		t.Fatalf("blank session should not be found: %+v", result)
+	}
+}
+
 func hasLoginIssue(result domain.LoginValidation, code string) bool {
 	for _, issue := range result.Issues {
 		if issue.Code == code {
@@ -394,6 +466,26 @@ type fakeGameSessionReader struct {
 func (f *fakeGameSessionReader) FindGameSession(_ context.Context, publicID string) (domain.GameSession, error) {
 	f.publicID = publicID
 	return f.session, f.err
+}
+
+type fakeGameSessionStore struct {
+	session         domain.GameSession
+	err             error
+	clearErr        error
+	publicID        string
+	clearedPublicID string
+	clearedPlayerID int
+}
+
+func (f *fakeGameSessionStore) FindGameSession(_ context.Context, publicID string) (domain.GameSession, error) {
+	f.publicID = publicID
+	return f.session, f.err
+}
+
+func (f *fakeGameSessionStore) ClearGameSession(_ context.Context, publicID string, playerID int) error {
+	f.clearedPublicID = publicID
+	f.clearedPlayerID = playerID
+	return f.clearErr
 }
 
 func (f *fakeTokenGenerator) NewPublicSession() (string, error) {

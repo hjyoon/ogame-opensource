@@ -55,6 +55,20 @@ func (s SessionStore) SaveLoginSession(ctx context.Context, session domain.Login
 	return err
 }
 
+func (s SessionStore) ClearGameSession(ctx context.Context, publicSession string, playerID int) error {
+	usersTable, err := tableName(s.prefix, "users")
+	if err != nil {
+		return err
+	}
+	_, err = s.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET session = '' WHERE player_id = ? AND session = ?", usersTable),
+		playerID,
+		publicSession,
+	)
+	return err
+}
+
 func (s SessionStore) FindGameSession(ctx context.Context, publicSession string) (domain.GameSession, error) {
 	usersTable, err := tableName(s.prefix, "users")
 	if err != nil {

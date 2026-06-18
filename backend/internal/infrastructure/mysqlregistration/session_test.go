@@ -46,6 +46,42 @@ func TestSessionStoreReturnsExecError(t *testing.T) {
 	}
 }
 
+func TestSessionStoreClearsLegacyPublicSession(t *testing.T) {
+	execer := &fakeExecer{}
+	store := NewSessionStoreWithExecer(execer, "uni1_")
+
+	err := store.ClearGameSession(context.Background(), "public123456", 42)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(execer.query, "UPDATE `uni1_users` SET session = '' WHERE player_id = ? AND session = ?") {
+		t.Fatalf("expected legacy logout update, got %q", execer.query)
+	}
+	if len(execer.args) != 2 || execer.args[0] != 42 || execer.args[1] != "public123456" {
+		t.Fatalf("unexpected clear args: %+v", execer.args)
+	}
+}
+
+func TestSessionStoreClearGameSessionReturnsExecError(t *testing.T) {
+	wantErr := errors.New("clear failed")
+	store := NewSessionStoreWithExecer(&fakeExecer{err: wantErr}, "uni1_")
+
+	err := store.ClearGameSession(context.Background(), "public", 42)
+
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected clear error, got %v", err)
+	}
+}
+
+func TestSessionStoreClearGameSessionRejectsUnsafePrefix(t *testing.T) {
+	store := NewSessionStoreWithExecer(&fakeExecer{}, "uni1_;DROP")
+
+	if err := store.ClearGameSession(context.Background(), "public", 42); err == nil {
+		t.Fatal("expected unsafe prefix error")
+	}
+}
+
 func TestSessionStoreRejectsUnsafePrefix(t *testing.T) {
 	store := NewSessionStoreWithExecer(&fakeExecer{}, "uni1_;DROP")
 

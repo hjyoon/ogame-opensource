@@ -77,6 +77,7 @@ try {
   await assertGameClientNavigation(page, "game technology menu preserves CSR", "a[href^='/game/technology']", "/game/technology", "Technology");
   await assertTechnologyDetailsNavigation(page);
   await assertGameClientNavigation(page, "game overview menu preserves CSR", "a[href^='/game/overview']", "/game/overview", "Overview");
+  await assertGameLogout(page);
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -323,6 +324,36 @@ async function assertTechnologyDetailsNavigation(page: Page) {
   });
 }
 
+async function assertGameLogout(page: Page) {
+  const marker = "probe-game-logout";
+  await page.evaluate((value) => {
+    window.__ogameCsrProbe = value;
+  }, marker);
+  await page.locator("a[href^='/game/logout']").click();
+  await page.waitForFunction((pathname) => window.location.pathname === pathname, "/game/logout", { timeout: 5_000 });
+  await page.locator(".legacy-logout-table", { hasText: "See you soon!!" }).waitFor({ timeout: 10_000 });
+  await record("game logout preserves CSR and shows legacy message", async () => {
+    const state = await gameShellState(page, marker, "Logout");
+    return {
+      pass:
+        state.pass &&
+        state.details.pathname === "/game/logout" &&
+        state.details.logoutTable === true &&
+        state.details.logoutText.includes("See you soon!!") &&
+        state.details.pendingText === false,
+      details: state.details
+    };
+  });
+  await page.waitForFunction(() => window.location.pathname === "/home", undefined, { timeout: 6_000 });
+  await record("game logout redirects home through CSR", async () => {
+    const state = await csrState(page);
+    return {
+      pass: state.pathname === "/home" && state.probe === marker && state.legacyCssLinks === 2 && state.legacyBody === true,
+      details: state
+    };
+  });
+}
+
 async function publicChromeState(page: Page) {
   const state = await page.evaluate(() => ({
     legacyCssLinks: document.head.querySelectorAll("link[data-legacy-public-css]").length,
@@ -386,6 +417,8 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     technologyDetailRows: document.querySelectorAll("[data-technology-detail-row]").length,
     technologyDetailTable: document.querySelector(".legacy-technology-details-table") !== null,
     technologyDetailTarget: document.querySelector(".legacy-technology-details-table tr:first-child td")?.textContent?.trim() ?? "",
+    logoutTable: document.querySelector(".legacy-logout-table") !== null,
+    logoutText: document.querySelector(".legacy-logout-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     pendingText: document.body.textContent?.includes("queued for React and Go migration") ?? false
   }));
   return {

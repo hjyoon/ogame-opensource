@@ -27,6 +27,10 @@ type GameSessionReader interface {
 	FindGameSession(context.Context, string) (domain.GameSession, error)
 }
 
+type GameSessionClearer interface {
+	ClearGameSession(context.Context, string, int) error
+}
+
 type LoginTokenGenerator interface {
 	NewPublicSession() (string, error)
 	NewPrivateSession() (string, error)
@@ -49,6 +53,15 @@ type GameSessionCommand struct {
 	RemoteAddr      string
 }
 
+type LogoutCommand struct {
+	PublicSession string
+}
+
+type LogoutResult struct {
+	Found   bool
+	Session domain.GameSession
+}
+
 type LoginAuthenticator struct {
 	credentials    LoginCredentialChecker
 	sessions       LoginSessionWriter
@@ -59,6 +72,14 @@ type LoginAuthenticator struct {
 
 type GameSessionLookup struct {
 	sessions       GameSessionReader
+	universeNumber int
+}
+
+type LogoutService struct {
+	sessions interface {
+		GameSessionReader
+		GameSessionClearer
+	}
 	universeNumber int
 }
 
@@ -156,6 +177,13 @@ func NewGameSessionLookup(sessions GameSessionReader, universeNumber int) GameSe
 	return GameSessionLookup{sessions: sessions, universeNumber: universeNumber}
 }
 
+func NewLogoutService(sessions interface {
+	GameSessionReader
+	GameSessionClearer
+}, universeNumber int) LogoutService {
+	return LogoutService{sessions: sessions, universeNumber: universeNumber}
+}
+
 func (l GameSessionLookup) GetGameSession(ctx context.Context, command GameSessionCommand) (domain.SessionAuthentication, error) {
 	publicSession := strings.TrimSpace(command.PublicSession)
 	if publicSession == "" {
@@ -183,4 +211,26 @@ func (l GameSessionLookup) GetGameSession(ctx context.Context, command GameSessi
 		Issues:        issues,
 		Session:       session,
 	}, nil
+}
+
+func (s LogoutService) Logout(ctx context.Context, command LogoutCommand) (LogoutResult, error) {
+	publicSession := strings.TrimSpace(command.PublicSession)
+	if publicSession == "" {
+		return LogoutResult{}, nil
+	}
+	if s.sessions == nil {
+		return LogoutResult{}, errors.New("logout dependency unavailable")
+	}
+	session, err := s.sessions.FindGameSession(ctx, publicSession)
+	if err != nil {
+		return LogoutResult{}, err
+	}
+	if !session.Found {
+		return LogoutResult{}, nil
+	}
+	session.UniverseNumber = s.universeNumber
+	if err := s.sessions.ClearGameSession(ctx, publicSession, session.PlayerID); err != nil {
+		return LogoutResult{}, err
+	}
+	return LogoutResult{Found: true, Session: session}, nil
 }

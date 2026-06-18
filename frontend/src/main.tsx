@@ -6,6 +6,7 @@ import {
   type GameDefenseStatus,
   type GameFleetStatus,
   type GameGalaxyStatus,
+  type GameLogoutStatus,
   type GameOverviewStatus,
   type GameResearchStatus,
   type GameResourcesStatus,
@@ -206,6 +207,8 @@ function App() {
   const [gameDefenseError, setGameDefenseError] = useState<string | null>(null);
   const [gameTechnology, setGameTechnology] = useState<GameTechnologyStatus | null>(null);
   const [gameTechnologyError, setGameTechnologyError] = useState<string | null>(null);
+  const [gameLogout, setGameLogout] = useState<GameLogoutStatus | null>(null);
+  const [gameLogoutError, setGameLogoutError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
   const gameRoute = pathname.startsWith("/game") ? resolveGameRoute(pathname) : null;
@@ -279,7 +282,7 @@ function App() {
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
-    if (!pathname.startsWith("/game") || publicSession === "") {
+    if (!pathname.startsWith("/game") || gameRoute?.key === "logout" || publicSession === "") {
       setGameOverview(null);
       setGameOverviewError(null);
       return;
@@ -297,7 +300,7 @@ function App() {
         setGameOverviewError(null);
       })
       .catch((err: unknown) => setGameOverviewError(err instanceof Error ? err.message : String(err)));
-  }, [pathname, search]);
+  }, [gameRoute?.key, pathname, search]);
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
@@ -520,6 +523,66 @@ function App() {
       .catch((err: unknown) => setGameTechnologyError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
 
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "logout") {
+      setGameLogout(null);
+      setGameLogoutError(null);
+      return;
+    }
+
+    let cancelled = false;
+    let redirectTimer: number | undefined;
+    const scheduleHomeRedirect = (target: string) => {
+      redirectTimer = window.setTimeout(() => dispatchClientNavigation(target || "/home"), 3_000);
+    };
+
+    if (publicSession === "") {
+      setGameLogout({ loggedOut: false, redirectTo: "/home" });
+      setGameLogoutError(null);
+      scheduleHomeRedirect("/home");
+      return () => {
+        if (redirectTimer !== undefined) {
+          window.clearTimeout(redirectTimer);
+        }
+      };
+    }
+
+    setGameLogout(null);
+    setGameLogoutError(null);
+    fetch(`/api/game/logout?${new URLSearchParams({ session: publicSession }).toString()}`, {
+      method: "POST",
+      credentials: "same-origin"
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        if (!response.ok) {
+          throw new Error(text || `logout returned ${response.status}`);
+        }
+        return (text ? JSON.parse(text) : { loggedOut: false, redirectTo: "/home" }) as GameLogoutStatus;
+      })
+      .then((payload) => {
+        if (cancelled) {
+          return;
+        }
+        setGameLogout(payload);
+        setGameLogoutError(null);
+        scheduleHomeRedirect(payload.redirectTo);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setGameLogoutError(err instanceof Error ? err.message : String(err));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      if (redirectTimer !== undefined) {
+        window.clearTimeout(redirectTimer);
+      }
+    };
+  }, [gameRoute?.key, search]);
+
   const checks = useMemo(
     () => [
       ["Go target", health?.goTarget ?? "1.25"],
@@ -550,6 +613,8 @@ function App() {
         fleetStatus={gameFleet}
         galaxyError={gameGalaxyError}
         galaxyStatus={gameGalaxy}
+        logoutError={gameLogoutError}
+        logoutStatus={gameLogout}
         onResourcesSubmit={submitGameResources}
         route={gameRoute ?? resolveGameRoute(pathname)}
         resourcesError={gameResourcesError}

@@ -15,7 +15,7 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - Legacy public assets, evolution skin, and game images are copied into `frontend/dist/public-assets`.
 - `/api/public/universes` reads the master DB with config fallback.
 - Registration validates drafts, checks duplicates/capacity, then creates a legacy-compatible unvalidated user, home planet, sessions, and `/game/overview` redirect.
-- Login validates credentials, creates sessions, sets the private cookie, and redirects to `/game/overview`.
+- Login/logout create and clear legacy sessions, private cookies, and `/game` redirects.
 - `/api/game/session` validates public session plus private cookie, bans, and IP checks.
 - `/api/game/{overview,buildings,resources,research,shipyard,fleet,galaxy,defense,technology}` return read models; resources stores production settings, and technology supports `tid`.
 - Auth `/game/*` routes preserve sessions and `cp`; migrated game screens use the legacy `evolution` skin.
@@ -23,7 +23,7 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 
 ## Latest Verified Implementation
 
-- Milestone: public parity, language flags, login redirect, and migrated game read models are guarded.
+- Milestone: public parity, language flags, login/logout, and migrated game read models are guarded.
 - Fleet covers `flotten1` summary, slots, expeditions, ship rows, and speed/cargo/consumption. Dispatch/recall/ACS/templates pending.
 - Galaxy covers the `galaxy` read screen: coordinate clamp, rows 1-15, player status, moon, debris, actions, slots, and deuterium warning. Quick actions and cost mutation pending.
 - Defense covers display state only: shipyard gate, requirements, shield dome/missile caps, busy state, costs, durations, counts, and max hints.
@@ -33,7 +33,7 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 
 - `bun run build && bun run check && bun test`: passing.
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
-- Go smoke covers health, routes, assets, registration, login, session lookup, migrated game read models, method guards, and private-cookie non-disclosure.
+- Go smoke covers health, routes, assets, registration, login, session lookup/logout, migrated game read models, method guards, and private-cookie non-disclosure.
 - Playwright visual/CSR E2E covers public pages, language flags, game menu navigation, and auth overview/buildings/resources/research/shipyard/fleet/galaxy/defense/technology/detail in Chromium/Firefox.
 - Auth visual contract passes in Chromium/Firefox; parity still misses (diff about 12.5-54.5%, box delta <=2).
 - Go internal coverage gate: `97.1% >= 97%`.
@@ -44,7 +44,7 @@ Full legacy PHP E2E was not run for this Go step. Keep legacy PHP as oracle unti
 ## Remaining Work
 
 - Implement activation confirmation, welcome mail/message, IP log, cleanup timer, and rank recalculation side effects.
-- Add logout, expiry, and deeper session security behavior.
+- Add expiry and deeper session security behavior.
 - Close authenticated visual diff for overview/buildings before claiming game-page parity.
 - Port current planet switching and full overview actions from legacy DB.
 - Port queue mutations, research start/cancel, shipyard/defense orders, fleet dispatch/recall/ACS/templates, galaxy quick actions, reports, messages, alliance, admin, maintenance, options, recovery, deletion, vacation, bans, and permissions.

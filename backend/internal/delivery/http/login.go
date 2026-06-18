@@ -140,6 +140,21 @@ func setLoginSessionCookie(w http.ResponseWriter, session domain.LoginSession) {
 	})
 }
 
+func clearLoginSessionCookie(w http.ResponseWriter, name string) {
+	if name == "" {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
 func toLoginIssueResponses(issues []domain.LoginIssue) []loginIssueResponse {
 	responses := make([]loginIssueResponse, 0, len(issues))
 	for _, issue := range issues {

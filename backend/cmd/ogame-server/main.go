@@ -55,6 +55,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	loginDrafts := loginValidator(cfg, logger)
 	login := loginAuthenticator(cfg, logger)
 	gameSessions := gameSessionLookup(cfg, logger)
+	logout := logoutService(cfg, logger)
 	gameOverview := gameOverviewService(cfg, logger, gameSessions)
 	gameBuildings := gameBuildingsService(cfg, logger, gameSessions)
 	gameResources := gameResourcesService(cfg, logger, gameSessions)
@@ -73,6 +74,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		LoginDrafts:        loginDrafts,
 		Login:              login,
 		GameSessions:       gameSessions,
+		Logout:             logout,
 		GameOverview:       gameOverview,
 		GameBuildings:      gameBuildings,
 		GameResources:      gameResources,
@@ -209,6 +211,34 @@ func gameSessionLookup(cfg config.Config, logger *slog.Logger) apppublicsite.Gam
 
 	logger.Info("universe DB game session lookup enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
 	return apppublicsite.NewGameSessionLookup(mysqlregistration.NewSessionStore(db, cfg.UniDBPrefix), cfg.UniNumber)
+}
+
+func logoutService(cfg config.Config, logger *slog.Logger) apppublicsite.LogoutService {
+	if !cfg.UniDBEnabled {
+		return apppublicsite.LogoutService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB logout disabled", "error", err)
+		return apppublicsite.LogoutService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB logout disabled", "error", err)
+		_ = db.Close()
+		return apppublicsite.LogoutService{}
+	}
+
+	logger.Info("universe DB logout enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
+	return apppublicsite.NewLogoutService(mysqlregistration.NewSessionStore(db, cfg.UniDBPrefix), cfg.UniNumber)
 }
 
 func gameOverviewService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.OverviewService {
