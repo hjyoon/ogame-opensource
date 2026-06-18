@@ -2297,7 +2297,7 @@ function TechnologyDetailsTable({ details }: { details: GameTechnologyDetails })
       <table className="legacy-overview-table legacy-technology-details-table" width={270}>
         <tbody>
           <tr>
-            <td align="center" className="legacy-c" style={{ whiteSpace: "nowrap" }}>
+            <td align="center" className="legacy-c legacy-technology-details-title" style={{ whiteSpace: "nowrap" }}>
               Building conditions for{" "}
               <a className="legacy-technology-detail-target" href={technologyInfoURL(details.target.id)}>
                 &apos;{details.target.name}&apos;

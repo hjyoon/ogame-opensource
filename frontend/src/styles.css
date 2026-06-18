@@ -756,6 +756,19 @@ dd {
   border-spacing: 2px;
 }
 
+.legacy-game-shell .legacy-technology-details-table {
+  border-collapse: separate;
+  border-spacing: 2px;
+}
+
+.legacy-game-shell .legacy-technology-details-title {
+  text-align: center;
+}
+
+.legacy-game-shell .legacy-technology-details-table .legacy-technology-name-table {
+  border-spacing: 2px;
+}
+
 .legacy-game-shell .legacy-technology-table td.legacy-l {
   text-align: left;
 }
