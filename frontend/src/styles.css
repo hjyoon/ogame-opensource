@@ -614,6 +614,23 @@ dd {
   color: #ff0000;
 }
 
+.legacy-resources-form {
+  margin: 0;
+}
+
+.legacy-resources-table {
+  margin-top: 0;
+}
+
+.legacy-resources-table select,
+.legacy-resources-table input {
+  background-color: #344566;
+  border: 1px #415680 solid;
+  color: #e6ebfb;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 11px;
+}
+
 .legacy-public-page {
   color: #b1daf2;
   font-family: Arial, Helvetica, sans-serif;

@@ -19,10 +19,10 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - `/api/public/registration` creates a legacy-compatible unvalidated user, activation code, home planet, private/public session, and `/game/overview` redirect.
 - `/api/public/login/validate` and `/api/public/login` validate credentials, create public/private sessions, update legacy session fields, set the private cookie, and return a natural `/game/overview` redirect.
 - `/api/game/session` validates public session plus private cookie, including banned and IP checks.
-- `/api/game/overview` returns session-guarded summary, resources, storage caps, and planet switcher data from legacy DB.
-- Authenticated `/game/*` routes preserve sessions; overview/buildings use the legacy `evolution` skin and read-only tables.
-- Go migration QA smoke covers health, routes, assets, registration validation/creation, login, session lookup, overview/buildings lookup, and method guards.
-- Playwright visual/CSR E2E compares public pages, language flags, game menu navigation, and auth overview/buildings.
+- `/api/game/{overview,resources}` return session-guarded planet/resource data from legacy DB.
+- Authenticated `/game/*` routes preserve sessions; overview/buildings/resources use the legacy `evolution` skin.
+- Go migration QA smoke covers health, routes, assets, registration, login, session lookup, overview/buildings/resources, and guards.
+- Playwright visual/CSR E2E compares public pages, language flags, game menu navigation, and auth overview/buildings/resources.
 - Modernization backlog: [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
 
 ## Latest Verified Implementation
@@ -48,6 +48,6 @@ Full legacy PHP E2E was not run for this Go migration step. Keep legacy PHP beha
 - Close authenticated visual diff for overview/buildings before claiming game-page parity.
 - Port remaining authenticated game screens beyond buildings with legacy PHP screen composition.
 - Port current planet switching and full overview actions from legacy DB.
-- Port resource production, queues, buildings, research, shipyard, defense, fleet, reports, messages, galaxy, alliance, admin, maintenance, options, recovery, deletion, vacation, bans, and permissions.
+- Port queues, research, shipyard, defense, fleet, reports, messages, galaxy, alliance, admin, maintenance, options, recovery, deletion, vacation, bans, and permissions.
 - Convert legacy E2E cases into Go compatibility checks as each flow is migrated.
 - Run full legacy E2E before declaring any game-flow migration equivalent.

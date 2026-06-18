@@ -98,6 +98,14 @@ const pageSpecs: AuthPageSpec[] = [
     legacyReady: "#content img[src*='gebaeude/1.gif']",
     migratedReady: "[data-building-row='1']",
     expectedTexts: ["Metal Mine", "Crystal Mine", "Deuterium Synthesizer", "Cost:", "Duration:"]
+  },
+  {
+    name: "game-resources",
+    legacyPage: "resources",
+    migratedPath: "/game/resources",
+    legacyReady: "#content form#ressourcen",
+    migratedReady: ".legacy-resources-table",
+    expectedTexts: ["Production factor:", "Resource settings on planet", "Basic Income", "Storage capacity", "Total per hour:"]
   }
 ];
 

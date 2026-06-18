@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { LegacyGameOverview, type GameBuildingsStatus, type GameOverviewStatus } from "./LegacyGameOverview";
+import { LegacyGameOverview, type GameBuildingsStatus, type GameOverviewStatus, type GameResourcesStatus } from "./LegacyGameOverview";
 import { LegacyPublicAbout } from "./LegacyPublicAbout";
 import { LegacyPublicHome } from "./LegacyPublicHome";
 import { LegacyPublicLegal } from "./LegacyPublicLegal";
@@ -180,6 +180,8 @@ function App() {
   const [gameOverviewError, setGameOverviewError] = useState<string | null>(null);
   const [gameBuildings, setGameBuildings] = useState<GameBuildingsStatus | null>(null);
   const [gameBuildingsError, setGameBuildingsError] = useState<string | null>(null);
+  const [gameResources, setGameResources] = useState<GameResourcesStatus | null>(null);
+  const [gameResourcesError, setGameResourcesError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
   const gameRoute = pathname.startsWith("/game") ? resolveGameRoute(pathname) : null;
@@ -295,6 +297,28 @@ function App() {
       .catch((err: unknown) => setGameBuildingsError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
 
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "resources" || publicSession === "") {
+      setGameResources(null);
+      setGameResourcesError(null);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const resourcesSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      resourcesSearch.set("cp", selectedPlanet);
+    }
+    fetch(`/api/game/resources?${resourcesSearch.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameResourcesStatus>)
+      .then((payload) => {
+        setGameResources(payload);
+        setGameResourcesError(null);
+      })
+      .catch((err: unknown) => setGameResourcesError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
   const checks = useMemo(
     () => [
       ["Go target", health?.goTarget ?? "1.25"],
@@ -320,6 +344,8 @@ function App() {
         buildingsStatus={gameBuildings}
         error={gameOverviewError}
         route={gameRoute ?? resolveGameRoute(pathname)}
+        resourcesError={gameResourcesError}
+        resourcesStatus={gameResources}
         status={gameOverview}
       />
     );

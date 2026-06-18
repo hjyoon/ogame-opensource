@@ -13,6 +13,12 @@ export type GameBuildingsStatus = {
   buildings?: GameBuildings;
 };
 
+export type GameResourcesStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  resources?: GameResourceProduction;
+};
+
 type GameOverview = {
   commander: string;
   score: {
@@ -86,12 +92,48 @@ type BuildingCost = {
   energy: number;
 };
 
+type GameResourceProduction = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  factor: number;
+  natural: ResourceProductionValues;
+  rows: ResourceProductionRow[];
+  storage: ResourceProductionValues;
+  totals: ResourceProductionTotals;
+};
+
+type ResourceProductionRow = {
+  id: number;
+  name: string;
+  level: number;
+  percent: number;
+  values: ResourceProductionValues;
+};
+
+type ResourceProductionValues = {
+  metal: number;
+  crystal: number;
+  deuterium: number;
+  energy: number;
+  energyRaw: number;
+  energyStored: boolean;
+};
+
+type ResourceProductionTotals = {
+  hour: ResourceProductionValues;
+  day: ResourceProductionValues;
+  week: ResourceProductionValues;
+};
+
 type LegacyGameOverviewProps = {
   status: GameOverviewStatus | null;
   error: string | null;
   route: GameRoute;
   buildingsStatus: GameBuildingsStatus | null;
   buildingsError: string | null;
+  resourcesStatus: GameResourcesStatus | null;
+  resourcesError: string | null;
 };
 
 type LegacyMenuEntry =
@@ -127,12 +169,23 @@ const legacyMenuEntries: LegacyMenuEntry[] = [
   { type: "route", key: "logout" }
 ];
 
-export function LegacyGameOverview({ status, error, route, buildingsStatus, buildingsError }: LegacyGameOverviewProps) {
+export function LegacyGameOverview({
+  status,
+  error,
+  route,
+  buildingsStatus,
+  buildingsError,
+  resourcesStatus,
+  resourcesError
+}: LegacyGameOverviewProps) {
   const overview = status?.authenticated ? status.overview : undefined;
   const issue = status && !status.authenticated ? status.issues[0]?.message ?? "Session is invalid." : null;
   const buildings = buildingsStatus?.authenticated ? buildingsStatus.buildings : undefined;
   const buildingsIssue =
     buildingsStatus && !buildingsStatus.authenticated ? buildingsStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const resources = resourcesStatus?.authenticated ? resourcesStatus.resources : undefined;
+  const resourcesIssue =
+    resourcesStatus && !resourcesStatus.authenticated ? resourcesStatus.issues[0]?.message ?? "Session is invalid." : null;
   const contentClassName = route.key === "overview" ? "legacy-content legacy-content-overview" : "legacy-content";
 
   return (
@@ -158,12 +211,22 @@ export function LegacyGameOverview({ status, error, route, buildingsStatus, buil
         {route.key === "buildings" && !buildingsError && buildingsIssue ? (
           <LegacyMessage tone="error" text={buildingsIssue} />
         ) : null}
+        {route.key === "resources" && resourcesError ? <LegacyMessage tone="error" text={resourcesError} /> : null}
+        {route.key === "resources" && !resourcesError && resourcesIssue ? (
+          <LegacyMessage tone="error" text={resourcesIssue} />
+        ) : null}
         {overview && route.key === "overview" ? <OverviewTable overview={overview} /> : null}
         {overview && route.key === "buildings" && !buildings && !buildingsError && !buildingsIssue ? (
           <LegacyMessage tone="neutral" text="Loading buildings..." />
         ) : null}
         {buildings && route.key === "buildings" ? <BuildingsTable buildings={buildings} /> : null}
-        {overview && route.key !== "overview" && route.key !== "buildings" ? <MigrationPendingGameTable route={route} /> : null}
+        {overview && route.key === "resources" && !resources && !resourcesError && !resourcesIssue ? (
+          <LegacyMessage tone="neutral" text="Loading resources..." />
+        ) : null}
+        {resources && route.key === "resources" ? <ResourcesTable resources={resources} /> : null}
+        {overview && route.key !== "overview" && route.key !== "buildings" && route.key !== "resources" ? (
+          <MigrationPendingGameTable route={route} />
+        ) : null}
       </section>
     </main>
   );
@@ -376,6 +439,132 @@ function BuildingsTable({ buildings }: { buildings: GameBuildings }) {
   );
 }
 
+const resourceColumns: { key: keyof Pick<ResourceProductionValues, "metal" | "crystal" | "deuterium" | "energy">; label: string }[] = [
+  { key: "metal", label: "Metal" },
+  { key: "crystal", label: "Crystal" },
+  { key: "deuterium", label: "Deuterium" },
+  { key: "energy", label: "Energy" }
+];
+
+function ResourcesTable({ resources }: { resources: GameResourceProduction }) {
+  return (
+    <form
+      className="legacy-resources-form"
+      id="ressourcen"
+      onSubmit={(event) => {
+        event.preventDefault();
+      }}
+    >
+      <div className="legacy-center">
+        <br />
+        <br />
+        Production factor: {formatProductionFactor(resources.factor)}
+        <table className="legacy-overview-table legacy-resources-table" width={550}>
+          <tbody>
+            <tr>
+              <td className="legacy-c" colSpan={6}>
+                Resource settings on planet &quot;{resources.currentPlanet.name}&quot;
+              </td>
+            </tr>
+            <tr>
+              <th colSpan={2}></th>
+              {resourceColumns.map((column) => (
+                <th key={column.key}>{column.label}</th>
+              ))}
+            </tr>
+            <tr>
+              <th colSpan={2}>Basic Income</th>
+              {resourceColumns.map((column) => (
+                <td className="legacy-k" key={column.key}>
+                  {formatLegacyPlainNumber(resourceValue(resources.natural, column.key))}
+                </td>
+              ))}
+            </tr>
+            {resources.rows.map((row) => (
+              <tr data-resource-row={row.id} key={row.id}>
+                <th>
+                  {row.name} ({row.id === 212 ? "Amount" : "level"} {row.level})
+                </th>
+                <th>&nbsp;</th>
+                {resourceColumns.map((column) => (
+                  <ResourceProductionCell column={column.key} key={column.key} values={row.values} />
+                ))}
+                <th>
+                  <select aria-label={`${row.name} production`} defaultValue={row.percent} name={`last${row.id}`} size={1}>
+                    {productionPercentOptions().map((percent) => (
+                      <option key={percent} value={percent}>
+                        {percent}%
+                      </option>
+                    ))}
+                  </select>
+                </th>
+              </tr>
+            ))}
+            <tr>
+              <th colSpan={2}>Storage capacity</th>
+              {resourceColumns.map((column) => (
+                <td className="legacy-k" key={column.key}>
+                  <span style={{ color: "#00ff00" }}>{formatStorageValue(resources.storage, column.key)}</span>
+                </td>
+              ))}
+              <td className="legacy-k">
+                <input name="action" type="submit" value="Calculate" />
+              </td>
+            </tr>
+            <tr>
+              <th colSpan={6} style={{ height: 4 }}></th>
+            </tr>
+            <ResourceTotalRow label="Total per hour:" values={resources.totals.hour} />
+            <ResourceTotalRow label="Total per day:" values={resources.totals.day} />
+            <ResourceTotalRow label="Total per week:" values={resources.totals.week} />
+          </tbody>
+        </table>
+        <br />
+        <br />
+        <br />
+        <br />
+      </div>
+    </form>
+  );
+}
+
+function ResourceProductionCell({
+  column,
+  values
+}: {
+  column: keyof Pick<ResourceProductionValues, "metal" | "crystal" | "deuterium" | "energy">;
+  values: ResourceProductionValues;
+}) {
+  const value = resourceValue(values, column);
+  const raw = column === "energy" ? values.energyRaw : value;
+  const text =
+    column === "energy" && raw < 0
+      ? `${formatLegacyPlainNumber(Math.abs(value))}/${formatLegacyPlainNumber(Math.abs(raw))}`
+      : formatLegacySignedNumber(value);
+  const color = raw > 0 || value > 0 ? "#00FF00" : raw < 0 || value < 0 ? "#FF0000" : "#FFFFFF";
+  return (
+    <th>
+      <span style={{ color }}>{text}</span>
+    </th>
+  );
+}
+
+function ResourceTotalRow({ label, values }: { label: string; values: ResourceProductionValues }) {
+  return (
+    <tr>
+      <th colSpan={2}>{label}</th>
+      {resourceColumns.map((column) => {
+        const value = resourceValue(values, column.key);
+        return (
+          <td className="legacy-k" key={column.key}>
+            <span style={{ color: value > 0 ? "#00ff00" : "#ff0000" }}>{formatLegacySignedNumber(value)}</span>
+          </td>
+        );
+      })}
+    </tr>
+  );
+}
+
 function OverviewTable({ overview }: { overview: GameOverview }) {
   const planet = overview.currentPlanet;
   const moon = overview.planetSwitcher.find(
@@ -584,6 +773,45 @@ function formatLegacyDate(date: Date): string {
 
 function formatLegacyNumber(value: number): string {
   return Math.floor(Math.max(0, value)).toLocaleString("de-DE");
+}
+
+function formatLegacyPlainNumber(value: number): string {
+  return Math.round(Math.max(0, value)).toLocaleString("de-DE");
+}
+
+function formatLegacySignedNumber(value: number): string {
+  const rounded = Math.round(value);
+  const absolute = Math.abs(rounded).toLocaleString("de-DE");
+  return rounded < 0 ? `-${absolute}` : absolute;
+}
+
+function formatProductionFactor(value: number): string {
+  return (Math.round(value * 100) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+function formatStorageValue(
+  values: ResourceProductionValues,
+  column: keyof Pick<ResourceProductionValues, "metal" | "crystal" | "deuterium" | "energy">
+): string {
+  if (column === "energy" && !values.energyStored) {
+    return "-";
+  }
+  return `${formatLegacyPlainNumber(resourceValue(values, column) / 1000)}k`;
+}
+
+function resourceValue(
+  values: ResourceProductionValues,
+  column: keyof Pick<ResourceProductionValues, "metal" | "crystal" | "deuterium" | "energy">
+): number {
+  return values[column];
+}
+
+function productionPercentOptions(): number[] {
+  const options: number[] = [];
+  for (let value = 100; value >= 0; value -= 10) {
+    options.push(value);
+  }
+  return options;
 }
 
 function costParts(cost: BuildingCost): { name: string; value: number }[] {

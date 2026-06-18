@@ -33,7 +33,7 @@ export const gameRoutes: GameRoute[] = [
   { key: "admin", label: "*Admin Area*", path: "/game/admin", migrated: false },
   { key: "empire", label: "Empire", path: "/game/empire", migrated: false },
   { key: "buildings", label: "Buildings", path: "/game/buildings", migrated: true },
-  { key: "resources", label: "Resources", path: "/game/resources", migrated: false },
+  { key: "resources", label: "Resources", path: "/game/resources", migrated: true },
   { key: "merchant", label: "Merchant", path: "/game/merchant", migrated: false },
   { key: "research", label: "Research", path: "/game/research", migrated: false },
   { key: "shipyard", label: "Shipyard", path: "/game/shipyard", migrated: false },
