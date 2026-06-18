@@ -152,7 +152,13 @@ export function LanguageLinks() {
     <div {...legacyAlignRightProps} className="products legacy-public-products">
       {flags.map(([lang, label, file]) => (
         <React.Fragment key={lang}>
-          <a href="#">
+          <a
+            href="#"
+            onClick={(event) => {
+              event.preventDefault();
+              setLegacyLanguage(lang);
+            }}
+          >
             <img alt={label} src={`${publicImageBase}/flags/${file}`} title={label} />
           </a>{" "}
         </React.Fragment>
@@ -160,6 +166,13 @@ export function LanguageLinks() {
       <a href="#">Choose your language</a>
     </div>
   );
+}
+
+function setLegacyLanguage(lang: string) {
+  const expires = new Date();
+  expires.setTime(expires.getTime() + 9999 * 24 * 60 * 60 * 1000);
+  document.cookie = `ogamelang=${lang}; expires=${expires.toUTCString()}; path=/`;
+  window.location.reload();
 }
 
 export function MainMenu({ active, withHomeCounterSpace = false }: { active?: "home" | "about" | "preview" | "reg"; withHomeCounterSpace?: boolean }) {

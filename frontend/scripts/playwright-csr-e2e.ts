@@ -52,6 +52,7 @@ try {
   await record("initial legacy CSS before app idle", async () => publicChromeState(page));
   await page.waitForLoadState("networkidle");
   await record("legacy CSS remains after app idle", async () => publicChromeState(page));
+  await assertPublicLanguageFlagReload(page);
 
   await assertClientNavigation(page, "mainmenu about alias", "#mainmenu a[href='about.php']", "/about.php");
   await assertClientNavigation(page, "mainmenu screenshots alias", "#mainmenu a[href='screenshots.php']", "/screenshots.php");
@@ -140,6 +141,42 @@ async function assertLoginFormRedirectsToGame(page: Page, fixture: LoginFixture)
     return {
       pass: state.pass && state.details.openOverviewLinks === 0,
       details: state.details
+    };
+  });
+}
+
+async function assertPublicLanguageFlagReload(page: Page) {
+  await page.context().clearCookies();
+  await page.goto(`${migratedBaseURL}/home`, { waitUntil: "networkidle", timeout: 15_000 });
+  await page.evaluate(() => {
+    window.__ogameCsrProbe = "language-flag-before";
+  });
+  const navigation = page
+    .waitForNavigation({ waitUntil: "domcontentloaded", timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  await page.locator("a:has(img[alt='Deutschland'])").click();
+  const reloaded = await navigation;
+  await page.waitForLoadState("networkidle").catch(() => undefined);
+  await record("public language flag reloads like legacy", async () => {
+    const state = await page.evaluate(() => ({
+      pathname: window.location.pathname,
+      hash: window.location.hash,
+      cookie: document.cookie,
+      probe: window.__ogameCsrProbe,
+      legacyCssLinks: document.head.querySelectorAll("link[data-legacy-public-css]").length,
+      legacyBody: document.body.classList.contains("legacy-public-body")
+    }));
+    return {
+      pass:
+        reloaded &&
+        state.pathname === "/home" &&
+        state.hash === "" &&
+        state.cookie.split("; ").includes("ogamelang=de") &&
+        state.probe === undefined &&
+        state.legacyCssLinks === 2 &&
+        state.legacyBody,
+      details: { ...state, reloaded }
     };
   });
 }

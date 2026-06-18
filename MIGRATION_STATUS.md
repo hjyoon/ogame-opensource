@@ -21,11 +21,11 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - `/api/game/overview` returns a session-guarded read-only overview summary from legacy `users`, `planets`, and `uni`.
 - Authenticated `/game/*` routes preserve sessions; overview/buildings use the legacy `evolution` skin and read-only tables.
 - Go migration QA smoke covers health, routes, assets, registration validation/creation, login, session lookup, overview/buildings lookup, and method guards.
-- Playwright visual/CSR E2E compares public pages, checks game menu navigation, and audits authenticated overview/buildings against PHP.
+- Playwright visual/CSR E2E compares public pages, language flags, game menu navigation, and auth overview/buildings.
 
 ## Latest Verified Implementation
 
-- Milestone: public visual parity, login redirect, and evolution-skinned overview/buildings audit are guarded by automated checks.
+- Milestone: public visual parity, language flags, login redirect, and evolution overview/buildings audit are guarded.
 
 ## Verified QA
 

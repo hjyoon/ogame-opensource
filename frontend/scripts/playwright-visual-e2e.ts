@@ -107,6 +107,26 @@ type CaseResult = {
   contractChecks: DomContractCheck[];
 };
 
+type PublicBehaviorObservation = {
+  status: number | null;
+  beforeHref: string;
+  afterHref: string;
+  beforePathname: string;
+  afterPathname: string;
+  afterHash: string;
+  cookieValue: string;
+  reloaded: boolean;
+  probeAfter?: string;
+};
+
+type BehaviorResult = {
+  name: string;
+  pass: boolean;
+  mismatches: string[];
+  legacy: PublicBehaviorObservation;
+  migrated: PublicBehaviorObservation;
+};
+
 const rootDir = resolve(import.meta.dir, "../..");
 const browserName = browserEnv("OGAME_PLAYWRIGHT_BROWSER", "chromium");
 const outputDir = resolve(rootDir, ".tmp/playwright-visual", browserName);
@@ -260,6 +280,18 @@ try {
     }
     await context.close();
   }
+  const behaviorResults = [
+    await comparePublicBehavior(browser, "public language flag", "a:has(img[alt='Deutschland'])", {
+      cookieValue: "de",
+      reloaded: true,
+      afterHrefEndsWithHash: false
+    }),
+    await comparePublicBehavior(browser, "public choose language link", ".products a:last-child", {
+      cookieValue: "",
+      reloaded: false,
+      afterHrefEndsWithHash: true
+    })
+  ];
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -272,7 +304,8 @@ try {
       defaultMaxBoxDelta,
       colorDeltaThreshold
     },
-    allPass: results.every((result) => result.pass),
+    allPass: results.every((result) => result.pass) && behaviorResults.every((result) => result.pass),
+    behaviorResults,
     results
   };
   await writeFile(join(outputDir, "report.json"), JSON.stringify(report, null, 2));
@@ -525,6 +558,97 @@ function collectMismatches(path: string, legacy: unknown, migrated: unknown, mis
   mismatches.push(path);
 }
 
+async function comparePublicBehavior(
+  browser: Browser,
+  name: string,
+  selector: string,
+  expected: { cookieValue: string; reloaded: boolean; afterHrefEndsWithHash: boolean }
+): Promise<BehaviorResult> {
+  const legacy = await observePublicBehavior(browser, legacyBaseURL + "/home.php", selector);
+  const migrated = await observePublicBehavior(browser, migratedBaseURL + "/home", selector);
+  const mismatches: string[] = [];
+  if (legacy.status !== 200) {
+    mismatches.push(`legacy status ${legacy.status}`);
+  }
+  if (migrated.status !== 200) {
+    mismatches.push(`migrated status ${migrated.status}`);
+  }
+  if (legacy.cookieValue !== expected.cookieValue || migrated.cookieValue !== expected.cookieValue) {
+    mismatches.push(`cookie ${legacy.cookieValue}/${migrated.cookieValue}`);
+  }
+  if (legacy.reloaded !== expected.reloaded || migrated.reloaded !== expected.reloaded) {
+    mismatches.push(`reloaded ${legacy.reloaded}/${migrated.reloaded}`);
+  }
+  if ((legacy.probeAfter === undefined) !== expected.reloaded || (migrated.probeAfter === undefined) !== expected.reloaded) {
+    mismatches.push(`probeAfter ${legacy.probeAfter ?? "undefined"}/${migrated.probeAfter ?? "undefined"}`);
+  }
+  if (legacy.beforePathname !== legacy.afterPathname || migrated.beforePathname !== migrated.afterPathname) {
+    mismatches.push(`pathname ${legacy.beforePathname}->${legacy.afterPathname}/${migrated.beforePathname}->${migrated.afterPathname}`);
+  }
+  if (legacy.afterHref.endsWith("#") !== expected.afterHrefEndsWithHash || migrated.afterHref.endsWith("#") !== expected.afterHrefEndsWithHash) {
+    mismatches.push(`href hash ${legacy.afterHref}/${migrated.afterHref}`);
+  }
+  return {
+    name,
+    pass: mismatches.length === 0,
+    mismatches,
+    legacy,
+    migrated
+  };
+}
+
+async function observePublicBehavior(browser: Browser, url: string, selector: string): Promise<PublicBehaviorObservation> {
+  const context = await browser.newContext({
+    viewport: { width: 1024, height: 768 },
+    deviceScaleFactor: 1,
+    locale: "en-US"
+  });
+  try {
+    await context.clearCookies();
+    const page = await context.newPage();
+    const response = await page.goto(url, { waitUntil: "networkidle", timeout: 15_000 });
+    const before = await page.evaluate(() => ({
+      href: window.location.href,
+      pathname: window.location.pathname
+    }));
+    await page.evaluate(() => {
+      (window as Window & { __ogameBehaviorProbe?: string }).__ogameBehaviorProbe = "before";
+    });
+    const navigation = page
+      .waitForNavigation({ waitUntil: "domcontentloaded", timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    await page.locator(selector).click();
+    await navigation;
+    await page.waitForLoadState("networkidle").catch(() => undefined);
+    await page.waitForTimeout(50);
+    const after = await page.evaluate(
+      ({ status, before }) => ({
+        status,
+        beforeHref: before.href,
+        afterHref: window.location.href,
+        beforePathname: before.pathname,
+        afterPathname: window.location.pathname,
+        afterHash: window.location.hash,
+        cookieValue:
+          document.cookie
+            .split("; ")
+            .find((cookie) => cookie.startsWith("ogamelang="))
+            ?.split("=")[1] ?? "",
+        reloaded: false,
+        probeAfter: (window as Window & { __ogameBehaviorProbe?: string }).__ogameBehaviorProbe
+      }),
+      { status: response?.status() ?? null, before }
+    );
+    return {
+      ...after,
+      reloaded: after.probeAfter === undefined
+    };
+  } finally {
+    await context.close();
+  }
+}
+
 function renderMarkdown(report: {
   generatedAt: string;
   legacyBaseURL: string;
@@ -537,6 +661,7 @@ function renderMarkdown(report: {
     colorDeltaThreshold: number;
   };
   allPass: boolean;
+  behaviorResults: BehaviorResult[];
   results: CaseResult[];
 }): string {
   const lines = [
@@ -571,6 +696,10 @@ function renderMarkdown(report: {
         formatNumber(worstBox?.maxDelta ?? 0)
       } | ${notes.join("<br>") || "-"} |`
     );
+  }
+  lines.push("", "| Behavior | Pass | Notes |", "| --- | --- | --- |");
+  for (const result of report.behaviorResults) {
+    lines.push(`| ${result.name} | ${result.pass ? "PASS" : "FAIL"} | ${result.mismatches.join("<br>") || "-"} |`);
   }
   lines.push("");
   return lines.join("\n");
