@@ -3,6 +3,7 @@ package publicsite
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	domain "github.com/hjyoon/ogame-opensource/backend/internal/domain/publicsite"
@@ -24,6 +25,10 @@ type RegistrationAccountCreator interface {
 	CreateRegistrationAccount(context.Context, domain.RegistrationDraft, string) (domain.RegisteredAccount, error)
 }
 
+type RegistrationAccountActivator interface {
+	ActivateRegistrationAccount(context.Context, string) (domain.ActivatedAccount, error)
+}
+
 type RegistrationDraftValidator struct {
 	availability RegistrationAvailabilityChecker
 }
@@ -40,6 +45,19 @@ type RegistrationCommand struct {
 type RegistrationRegistrar struct {
 	availability   RegistrationAvailabilityChecker
 	accounts       RegistrationAccountCreator
+	sessions       LoginSessionWriter
+	tokens         LoginTokenGenerator
+	now            func() time.Time
+	universeNumber int
+}
+
+type RegistrationActivationCommand struct {
+	ActivationCode string
+	RemoteAddr     string
+}
+
+type RegistrationActivationService struct {
+	accounts       RegistrationAccountActivator
 	sessions       LoginSessionWriter
 	tokens         LoginTokenGenerator
 	now            func() time.Time
@@ -107,6 +125,34 @@ func NewRegistrationRegistrarWithClock(
 	}
 }
 
+func NewRegistrationActivationService(
+	accounts RegistrationAccountActivator,
+	sessions LoginSessionWriter,
+	tokens LoginTokenGenerator,
+	universeNumber int,
+) RegistrationActivationService {
+	return NewRegistrationActivationServiceWithClock(accounts, sessions, tokens, universeNumber, time.Now)
+}
+
+func NewRegistrationActivationServiceWithClock(
+	accounts RegistrationAccountActivator,
+	sessions LoginSessionWriter,
+	tokens LoginTokenGenerator,
+	universeNumber int,
+	now func() time.Time,
+) RegistrationActivationService {
+	if now == nil {
+		now = time.Now
+	}
+	return RegistrationActivationService{
+		accounts:       accounts,
+		sessions:       sessions,
+		tokens:         tokens,
+		now:            now,
+		universeNumber: universeNumber,
+	}
+}
+
 func (r RegistrationRegistrar) RegisterAccount(ctx context.Context, command RegistrationCommand) (domain.RegistrationCreation, error) {
 	draft := domain.RegistrationDraft{
 		Character:     command.Character,
@@ -160,5 +206,49 @@ func (r RegistrationRegistrar) RegisterAccount(ctx context.Context, command Regi
 		Valid:   true,
 		Account: account,
 		Session: session,
+	}, nil
+}
+
+func (s RegistrationActivationService) ActivateAccount(ctx context.Context, command RegistrationActivationCommand) (domain.RegistrationActivation, error) {
+	code := strings.TrimSpace(command.ActivationCode)
+	if code == "" {
+		return domain.RegistrationActivation{}, nil
+	}
+	if s.accounts == nil || s.sessions == nil || s.tokens == nil {
+		return domain.RegistrationActivation{}, errors.New("registration activation dependencies unavailable")
+	}
+
+	account, err := s.accounts.ActivateRegistrationAccount(ctx, code)
+	if err != nil {
+		return domain.RegistrationActivation{}, err
+	}
+	if !account.Found {
+		return domain.RegistrationActivation{Account: account}, nil
+	}
+
+	publicSession, err := s.tokens.NewPublicSession()
+	if err != nil {
+		return domain.RegistrationActivation{}, err
+	}
+	privateSession, err := s.tokens.NewPrivateSession()
+	if err != nil {
+		return domain.RegistrationActivation{}, err
+	}
+	session := domain.LoginSession{
+		PlayerID:       account.PlayerID,
+		PublicID:       publicSession,
+		PrivateID:      privateSession,
+		UniverseNumber: s.universeNumber,
+		LastLogin:      s.now().Unix(),
+		RedirectPath:   "/game/overview",
+	}
+	if err := s.sessions.SaveLoginSession(ctx, session, command.RemoteAddr); err != nil {
+		return domain.RegistrationActivation{}, err
+	}
+
+	return domain.RegistrationActivation{
+		Activated: true,
+		Account:   account,
+		Session:   session,
 	}, nil
 }

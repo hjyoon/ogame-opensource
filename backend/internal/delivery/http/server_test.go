@@ -317,6 +317,93 @@ func TestRegistrationEndpointReturnsUnavailableWithoutUseCase(t *testing.T) {
 	}
 }
 
+func TestRegistrationActivationRedirectsWithSessionCookie(t *testing.T) {
+	activation := &fakeActivation{
+		result: domainpublicsite.RegistrationActivation{
+			Activated: true,
+			Account:   domainpublicsite.ActivatedAccount{Found: true, PlayerID: 42},
+			Session: domainpublicsite.LoginSession{
+				PlayerID:       42,
+				PublicID:       "public123456",
+				PrivateID:      "private1234567890private1234567890",
+				UniverseNumber: 1,
+				LastLogin:      1700000000,
+				RedirectPath:   "/game/overview",
+			},
+		},
+	}
+	server := testServerWithActivation(t, activation)
+	req := httptest.NewRequest(http.MethodGet, "/game/validate.php?ack=activation-secret", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected activation redirect, got %d", rec.Code)
+	}
+	if activation.command.ActivationCode != "activation-secret" || activation.command.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected activation command: %+v", activation.command)
+	}
+	if !strings.Contains(rec.Header().Get("Location"), "/game/overview?") || !strings.Contains(rec.Header().Get("Location"), "session=public123456") {
+		t.Fatalf("unexpected activation location: %q", rec.Header().Get("Location"))
+	}
+	if !strings.Contains(rec.Header().Get("Set-Cookie"), "prsess_42_1=private1234567890private1234567890") {
+		t.Fatalf("expected private session cookie, got %q", rec.Header().Get("Set-Cookie"))
+	}
+}
+
+func TestRegistrationActivationRedirectsHomeForMissingCodeOrAccount(t *testing.T) {
+	cases := map[string]struct {
+		path       string
+		activation *fakeActivation
+		called     bool
+	}{
+		"blank": {
+			path:       "/game/validate.php",
+			activation: &fakeActivation{},
+		},
+		"not found": {
+			path:       "/activation?ack=missing",
+			activation: &fakeActivation{result: domainpublicsite.RegistrationActivation{Account: domainpublicsite.ActivatedAccount{Found: false}}},
+			called:     true,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			server := testServerWithActivation(t, tc.activation)
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rec := httptest.NewRecorder()
+			server.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/home" {
+				t.Fatalf("expected home redirect, got code=%d location=%q", rec.Code, rec.Header().Get("Location"))
+			}
+			if (tc.activation.command.ActivationCode != "") != tc.called {
+				t.Fatalf("unexpected activation call state: %+v", tc.activation.command)
+			}
+		})
+	}
+}
+
+func TestRegistrationActivationReturnsUnavailable(t *testing.T) {
+	server := testServerWithActivation(t, &fakeActivation{err: errors.New("activation failed")})
+	req := httptest.NewRequest(http.MethodGet, "/game/validate.php?ack=activation-secret", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected activation error to return 503, got %d", rec.Code)
+	}
+
+	server = testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req = httptest.NewRequest(http.MethodGet, "/game/validate.php?ack=activation-secret", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing activation use case to return 503, got %d", rec.Code)
+	}
+}
+
 func TestRemoteIPAcceptsAddressWithoutPort(t *testing.T) {
 	if got := remoteIP("203.0.113.10"); got != "203.0.113.10" {
 		t.Fatalf("unexpected remote IP: %q", got)
@@ -3157,6 +3244,19 @@ func testServerWithRegistration(t *testing.T, registration RegistrationUseCase) 
 	})
 }
 
+func testServerWithActivation(t *testing.T, activation RegistrationActivationUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		Activation:         activation,
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
 func testServerWithGameSessions(t *testing.T, gameSessions GameSessionUseCase) http.Handler {
 	t.Helper()
 	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
@@ -3444,6 +3544,17 @@ type fakeRegistration struct {
 }
 
 func (f *fakeRegistration) RegisterAccount(_ context.Context, command apppublicsite.RegistrationCommand) (domainpublicsite.RegistrationCreation, error) {
+	f.command = command
+	return f.result, f.err
+}
+
+type fakeActivation struct {
+	result  domainpublicsite.RegistrationActivation
+	err     error
+	command apppublicsite.RegistrationActivationCommand
+}
+
+func (f *fakeActivation) ActivateAccount(_ context.Context, command apppublicsite.RegistrationActivationCommand) (domainpublicsite.RegistrationActivation, error) {
 	f.command = command
 	return f.result, f.err
 }

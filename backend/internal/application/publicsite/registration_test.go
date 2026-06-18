@@ -225,6 +225,94 @@ func TestRegistrationRegistrarUsesDefaultClock(t *testing.T) {
 	}
 }
 
+func TestRegistrationActivationServiceActivatesAndSavesLoginSession(t *testing.T) {
+	accounts := &recordingAccountActivator{account: domain.ActivatedAccount{Found: true, PlayerID: 42}}
+	sessions := &recordingRegistrationSessionWriter{}
+	service := NewRegistrationActivationServiceWithClock(
+		accounts,
+		sessions,
+		fakeLoginTokens{publicID: "public123456", privateID: "private1234567890private1234567890"},
+		7,
+		fixedRegistrationTime,
+	)
+
+	result, err := service.ActivateAccount(context.Background(), RegistrationActivationCommand{
+		ActivationCode: " activation-code ",
+		RemoteAddr:     "203.0.113.10",
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Activated || result.Account.PlayerID != 42 || result.Session.PublicID != "public123456" {
+		t.Fatalf("unexpected activation result: %+v", result)
+	}
+	if accounts.code != "activation-code" {
+		t.Fatalf("expected trimmed activation code, got %q", accounts.code)
+	}
+	if sessions.session.PlayerID != 42 || sessions.session.UniverseNumber != 7 || sessions.remoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected saved activation session: session=%+v remote=%q", sessions.session, sessions.remoteAddr)
+	}
+}
+
+func TestRegistrationActivationServiceSkipsBlankOrMissingCode(t *testing.T) {
+	accounts := &recordingAccountActivator{}
+	service := NewRegistrationActivationService(accounts, fakeSessionWriter{}, fakeLoginTokens{}, 1)
+
+	result, err := service.ActivateAccount(context.Background(), RegistrationActivationCommand{ActivationCode: " "})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Activated || accounts.called {
+		t.Fatalf("expected blank activation to be ignored, result=%+v called=%v", result, accounts.called)
+	}
+}
+
+func TestRegistrationActivationServiceReturnsNotFoundWithoutSession(t *testing.T) {
+	accounts := &recordingAccountActivator{account: domain.ActivatedAccount{Found: false}}
+	sessions := &recordingRegistrationSessionWriter{}
+	service := NewRegistrationActivationService(accounts, sessions, fakeLoginTokens{}, 1)
+
+	result, err := service.ActivateAccount(context.Background(), RegistrationActivationCommand{ActivationCode: "missing"})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Activated || sessions.called {
+		t.Fatalf("expected missing activation without session, result=%+v sessions=%v", result, sessions.called)
+	}
+}
+
+func TestRegistrationActivationServiceReturnsDependencyAndStageErrors(t *testing.T) {
+	if _, err := (RegistrationActivationService{}).ActivateAccount(context.Background(), RegistrationActivationCommand{ActivationCode: "ack"}); err == nil {
+		t.Fatal("expected dependency error")
+	}
+
+	account := domain.ActivatedAccount{Found: true, PlayerID: 42}
+	cases := map[string]RegistrationActivationService{
+		"account": NewRegistrationActivationService(fakeAccountActivator{err: errors.New("account failed")}, fakeSessionWriter{}, fakeLoginTokens{}, 1),
+		"public":  NewRegistrationActivationService(fakeAccountActivator{account: account}, fakeSessionWriter{}, fakeLoginTokens{publicErr: errors.New("public failed")}, 1),
+		"private": NewRegistrationActivationService(fakeAccountActivator{account: account}, fakeSessionWriter{}, fakeLoginTokens{privateErr: errors.New("private failed")}, 1),
+		"session": NewRegistrationActivationService(fakeAccountActivator{account: account}, fakeSessionWriter{err: errors.New("session failed")}, fakeLoginTokens{}, 1),
+	}
+	for name, service := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := service.ActivateAccount(context.Background(), RegistrationActivationCommand{ActivationCode: "ack"}); err == nil {
+				t.Fatal("expected activation error")
+			}
+		})
+	}
+}
+
+func TestRegistrationActivationServiceUsesDefaultClock(t *testing.T) {
+	service := NewRegistrationActivationServiceWithClock(nil, nil, nil, 1, nil)
+
+	if service.now == nil {
+		t.Fatal("expected default clock")
+	}
+}
+
 func hasIssue(result domain.RegistrationValidation, code string) bool {
 	for _, issue := range result.Issues {
 		if issue.Code == code {
@@ -283,6 +371,28 @@ type fakeAccountCreator struct {
 
 func (f fakeAccountCreator) CreateRegistrationAccount(context.Context, domain.RegistrationDraft, string) (domain.RegisteredAccount, error) {
 	return f.account, f.err
+}
+
+type fakeAccountActivator struct {
+	account domain.ActivatedAccount
+	err     error
+}
+
+func (f fakeAccountActivator) ActivateRegistrationAccount(context.Context, string) (domain.ActivatedAccount, error) {
+	return f.account, f.err
+}
+
+type recordingAccountActivator struct {
+	called  bool
+	code    string
+	account domain.ActivatedAccount
+	err     error
+}
+
+func (r *recordingAccountActivator) ActivateRegistrationAccount(_ context.Context, code string) (domain.ActivatedAccount, error) {
+	r.called = true
+	r.code = code
+	return r.account, r.err
 }
 
 type recordingAccountCreator struct {

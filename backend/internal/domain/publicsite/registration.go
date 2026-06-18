@@ -52,11 +52,22 @@ type RegisteredAccount struct {
 	Validated      bool
 }
 
+type ActivatedAccount struct {
+	Found    bool
+	PlayerID int
+}
+
 type RegistrationCreation struct {
 	Valid   bool
 	Issues  []RegistrationIssue
 	Account RegisteredAccount
 	Session LoginSession
+}
+
+type RegistrationActivation struct {
+	Activated bool
+	Account   ActivatedAccount
+	Session   LoginSession
 }
 
 type RegistrationAvailability struct {

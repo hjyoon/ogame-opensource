@@ -52,6 +52,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	universes := apppublicsite.NewUniverseCatalogService(universeRepository(cfg, logger))
 	registrationDrafts := registrationValidator(cfg, logger)
 	registration := registrationRegistrar(cfg, logger)
+	activation := registrationActivation(cfg, logger)
 	loginDrafts := loginValidator(cfg, logger)
 	login := loginAuthenticator(cfg, logger)
 	gameSessions := gameSessionLookup(cfg, logger)
@@ -74,6 +75,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		Universes:          universes,
 		RegistrationDrafts: registrationDrafts,
 		Registration:       registration,
+		Activation:         activation,
 		LoginDrafts:        loginDrafts,
 		Login:              login,
 		GameSessions:       gameSessions,
@@ -94,6 +96,39 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		LegacyAssets:       filesystem.NewNoListingFS(cfg.LegacyAssetDir),
 		Logger:             logger,
 	})
+}
+
+func registrationActivation(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationActivationService {
+	if !cfg.UniDBEnabled {
+		return apppublicsite.RegistrationActivationService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB registration activation disabled", "error", err)
+		return apppublicsite.RegistrationActivationService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB registration activation disabled", "error", err)
+		_ = db.Close()
+		return apppublicsite.RegistrationActivationService{}
+	}
+
+	logger.Info("universe DB registration activation enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
+	return apppublicsite.NewRegistrationActivationService(
+		mysqlregistration.NewAccountActivator(db, cfg.UniDBPrefix),
+		mysqlregistration.NewSessionStore(db, cfg.UniDBPrefix),
+		infrasession.TokenGenerator{},
+		cfg.UniNumber,
+	)
 }
 
 func registrationRegistrar(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationRegistrar {

@@ -1145,6 +1145,7 @@ try {
   const postHealth = await request("/api/healthz", { method: "POST" });
   const getRegistrationValidation = await request("/api/public/registration/validate");
   const getRegistration = await request("/api/public/registration");
+  const postActivation = await request("/game/validate.php?ack=missing", { method: "POST" });
   const getLoginValidation = await request("/api/public/login/validate");
   const getLoginSubmit = await request("/api/public/login");
   const postGameSession = await request("/api/game/session", { method: "POST" });
@@ -1170,6 +1171,8 @@ try {
       check(hasHeader(getRegistrationValidation, "allow", "POST"), "registration validation method rejection returns Allow header"),
       check(getRegistration.status === 405, "GET registration creation endpoint is rejected", { status: getRegistration.status }),
       check(hasHeader(getRegistration, "allow", "POST"), "registration creation method rejection returns Allow header"),
+      check(postActivation.status === 405, "POST registration activation endpoint is rejected", { status: postActivation.status }),
+      check(hasHeader(postActivation, "allow", "GET, HEAD"), "registration activation method rejection returns Allow header"),
       check(getLoginValidation.status === 405, "GET login validation endpoint is rejected", { status: getLoginValidation.status }),
       check(hasHeader(getLoginValidation, "allow", "POST"), "login validation method rejection returns Allow header"),
       check(getLoginSubmit.status === 405, "GET login submit endpoint is rejected", { status: getLoginSubmit.status }),
@@ -1202,6 +1205,18 @@ try {
       check(hasHeader(getGameLogout, "allow", "POST"), "game logout method rejection returns Allow header"),
       check(putGameResources.status === 405, "PUT game resources endpoint is rejected", { status: putGameResources.status }),
       check(hasHeader(putGameResources, "allow", "GET, HEAD, POST"), "game resources method rejection returns Allow header")
+    ]
+  }));
+
+  const missingActivation = await request("/game/validate.php");
+  const naturalMissingActivation = await request("/activation?ack=missing");
+  cases.push(finalize({
+    case: "go_registration_activation_route",
+    checks: [
+      check(missingActivation.status === 302, "legacy activation without ack redirects", { status: missingActivation.status }),
+      check(missingActivation.headers.location === "/home", "legacy activation without ack returns home location", { location: missingActivation.headers.location }),
+      check(naturalMissingActivation.status === 302, "natural activation with missing ack redirects", { status: naturalMissingActivation.status }),
+      check(naturalMissingActivation.headers.location === "/home", "natural activation missing account returns home location", { location: naturalMissingActivation.headers.location })
     ]
   }));
 } catch (error) {

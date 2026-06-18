@@ -31,6 +31,10 @@ type RegistrationUseCase interface {
 	RegisterAccount(context.Context, apppublicsite.RegistrationCommand) (domainpublicsite.RegistrationCreation, error)
 }
 
+type RegistrationActivationUseCase interface {
+	ActivateAccount(context.Context, apppublicsite.RegistrationActivationCommand) (domainpublicsite.RegistrationActivation, error)
+}
+
 type LoginDraftUseCase interface {
 	ValidateLoginDraft(context.Context, apppublicsite.LoginDraftCommand) (domainpublicsite.LoginValidation, error)
 }
@@ -106,6 +110,7 @@ type Dependencies struct {
 	Universes          UniverseCatalogUseCase
 	RegistrationDrafts RegistrationDraftUseCase
 	Registration       RegistrationUseCase
+	Activation         RegistrationActivationUseCase
 	LoginDrafts        LoginDraftUseCase
 	Login              LoginUseCase
 	GameSessions       GameSessionUseCase
@@ -138,6 +143,8 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/public/universes", getOnly(a.handleUniverses))
 	mux.HandleFunc("/api/public/registration/validate", postOnly(a.handleRegistrationValidation))
 	mux.HandleFunc("/api/public/registration", postOnly(a.handleRegistration))
+	mux.HandleFunc("/game/validate.php", getOnly(a.handleRegistrationActivation))
+	mux.HandleFunc("/activation", getOnly(a.handleRegistrationActivation))
 	mux.HandleFunc("/api/public/login/validate", postOnly(a.handleLoginValidation))
 	mux.HandleFunc("/api/public/login", postOnly(a.handleLogin))
 	mux.HandleFunc("/api/game/session", getOnly(a.handleGameSession))
