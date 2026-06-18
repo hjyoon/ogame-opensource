@@ -37,7 +37,7 @@ func (r DefenseRepository) GetDefense(ctx context.Context, query appgame.Defense
 		return domaingame.Defense{}, err
 	}
 
-	overviewRepository := OverviewRepository{queryer: r.queryer, prefix: r.prefix}
+	overviewRepository := NewOverviewRepositoryWithQueryer(r.queryer, r.prefix)
 	overview, err := overviewRepository.GetOverview(ctx, appgame.OverviewQuery{
 		PlayerID: query.PlayerID,
 		PlanetID: query.PlanetID,

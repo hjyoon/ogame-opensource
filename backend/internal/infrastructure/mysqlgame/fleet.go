@@ -56,7 +56,7 @@ func (r FleetRepository) GetFleet(ctx context.Context, query appgame.FleetQuery)
 		return domaingame.Fleet{}, err
 	}
 
-	overviewRepository := OverviewRepository{queryer: r.queryer, prefix: r.prefix}
+	overviewRepository := NewOverviewRepositoryWithQueryer(r.queryer, r.prefix)
 	overview, err := overviewRepository.GetOverview(ctx, appgame.OverviewQuery{
 		PlayerID: query.PlayerID,
 		PlanetID: query.PlanetID,

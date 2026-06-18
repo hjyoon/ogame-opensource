@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { gameRouteURL, gameRoutes, normalizeGamePath, resolveGameRoute } from "./gameRoutes";
+import { gamePlanetSwitchURL, gameRouteURL, gameRoutes, normalizeGamePath, resolveGameRoute } from "./gameRoutes";
 
 describe("game route model", () => {
   test("uses natural game route paths without php suffixes", () => {
@@ -40,5 +40,11 @@ describe("game route model", () => {
     expect(gameRouteURL("/game/buildings", "?session=abc&cp=42")).toBe("/game/buildings?session=abc&cp=42");
     expect(gameRouteURL("/game/fleet", "session=abc")).toBe("/game/fleet?session=abc");
     expect(gameRouteURL("/game/overview", "")).toBe("/game/overview");
+  });
+
+  test("switches planets without leaving the active game page", () => {
+    expect(gamePlanetSwitchURL("/game/buildings", "?session=abc&cp=1", 42)).toBe("/game/buildings?session=abc&cp=42");
+    expect(gamePlanetSwitchURL("/game/technology", "?session=abc&tid=206", "7")).toBe("/game/technology?session=abc&tid=206&cp=7");
+    expect(gamePlanetSwitchURL("/game/does-not-exist", "?session=abc", 9)).toBe("/game/overview?session=abc&cp=9");
   });
 });

@@ -57,7 +57,7 @@ func (r ResourcesRepository) GetResources(ctx context.Context, query appgame.Res
 		return domaingame.ResourceProduction{}, err
 	}
 
-	overviewRepository := OverviewRepository{queryer: r.queryer, prefix: r.prefix}
+	overviewRepository := NewOverviewRepositoryWithRunner(r.queryer, r.execer, r.prefix)
 	overview, err := overviewRepository.GetOverview(ctx, appgame.OverviewQuery{
 		PlayerID: query.PlayerID,
 		PlanetID: query.PlanetID,
@@ -103,7 +103,7 @@ func (r ResourcesRepository) UpdateProduction(ctx context.Context, query appgame
 		return domaingame.ResourceProduction{}, err
 	}
 
-	overviewRepository := OverviewRepository{queryer: r.queryer, prefix: r.prefix}
+	overviewRepository := NewOverviewRepositoryWithRunner(r.queryer, r.execer, r.prefix)
 	overview, err := overviewRepository.GetOverview(ctx, appgame.OverviewQuery{
 		PlayerID: query.PlayerID,
 		PlanetID: query.PlanetID,

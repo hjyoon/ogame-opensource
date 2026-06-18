@@ -67,6 +67,9 @@ func TestNewOverviewRepositoryKeepsSQLQueryer(t *testing.T) {
 	if _, ok := repository.queryer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL queryer, got %T", repository.queryer)
 	}
+	if _, ok := repository.execer.(SQLQueryer); !ok {
+		t.Fatalf("expected SQL execer, got %T", repository.execer)
+	}
 }
 
 func TestSQLQueryerUsesDatabase(t *testing.T) {
@@ -150,6 +153,47 @@ func TestOverviewRepositoryUsesRequestedPlanet(t *testing.T) {
 	}
 	if overview.Score.UniversePlayers != 0 {
 		t.Fatalf("expected missing universe player row to default to zero, got %+v", overview.Score)
+	}
+}
+
+func TestOverviewRepositoryPersistsRequestedPlanet(t *testing.T) {
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+		{rows: fakeRowsFromValues([]any{100, "Colony", 1, 1, 2, 4, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3}, []any{100, "Colony", 1, 1, 2, 4})},
+		{rows: fakeRowsFromValues([]any{2})},
+	}}}
+	repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+
+	overview, err := repository.GetOverview(context.Background(), overviewQuery(42, 100))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if overview.CurrentPlanet.ID != 100 {
+		t.Fatalf("expected requested planet, got %+v", overview.CurrentPlanet)
+	}
+	if !strings.Contains(runner.execSQL, "UPDATE `ogame_users` SET aktplanet = ? WHERE player_id = ? LIMIT 1") {
+		t.Fatalf("expected active planet update, got %q", runner.execSQL)
+	}
+	if len(runner.execArgs) != 2 || runner.execArgs[0] != 100 || runner.execArgs[1] != 42 {
+		t.Fatalf("unexpected active planet update args: %+v", runner.execArgs)
+	}
+}
+
+func TestOverviewRepositoryReturnsActivePlanetUpdateError(t *testing.T) {
+	runner := &fakeOverviewRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+			{rows: fakeRowsFromValues([]any{100, "Colony", 1, 1, 2, 4, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
+		}},
+		execErr: errors.New("active planet update failed"),
+	}
+	repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+
+	_, err := repository.GetOverview(context.Background(), overviewQuery(42, 100))
+	if err == nil || !strings.Contains(err.Error(), "active planet update failed") {
+		t.Fatalf("expected active planet update error, got %v", err)
 	}
 }
 
@@ -357,6 +401,19 @@ func TestPlanetOrder(t *testing.T) {
 
 func overviewQuery(playerID int, planetID int) appgame.OverviewQuery {
 	return appgame.OverviewQuery{PlayerID: playerID, PlanetID: planetID}
+}
+
+type fakeOverviewRunner struct {
+	fakeQueryer
+	execSQL  string
+	execArgs []any
+	execErr  error
+}
+
+func (f *fakeOverviewRunner) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {
+	f.execSQL = query
+	f.execArgs = args
+	return fakeSQLResult(1), f.execErr
 }
 
 var registerOverviewTestDriver sync.Once

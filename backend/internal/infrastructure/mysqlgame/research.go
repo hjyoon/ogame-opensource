@@ -38,7 +38,7 @@ func (r ResearchRepository) GetResearch(ctx context.Context, query appgame.Resea
 		return domaingame.Research{}, err
 	}
 
-	overviewRepository := OverviewRepository{queryer: r.queryer, prefix: r.prefix}
+	overviewRepository := NewOverviewRepositoryWithQueryer(r.queryer, r.prefix)
 	overview, err := overviewRepository.GetOverview(ctx, appgame.OverviewQuery{
 		PlayerID: query.PlayerID,
 		PlanetID: query.PlanetID,

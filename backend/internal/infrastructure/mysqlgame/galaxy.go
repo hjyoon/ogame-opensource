@@ -54,7 +54,7 @@ func (r GalaxyRepository) GetGalaxy(ctx context.Context, query appgame.GalaxyQue
 		return domaingame.Galaxy{}, err
 	}
 
-	overview, err := OverviewRepository{queryer: r.queryer, prefix: r.prefix}.GetOverview(ctx, appgame.OverviewQuery{
+	overview, err := NewOverviewRepositoryWithQueryer(r.queryer, r.prefix).GetOverview(ctx, appgame.OverviewQuery{
 		PlayerID: query.PlayerID,
 		PlanetID: query.PlanetID,
 	})

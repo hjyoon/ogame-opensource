@@ -34,7 +34,7 @@ func (r BuildingsRepository) GetBuildings(ctx context.Context, query appgame.Bui
 		return domaingame.Buildings{}, err
 	}
 
-	overviewRepository := OverviewRepository{queryer: r.queryer, prefix: r.prefix}
+	overviewRepository := NewOverviewRepositoryWithQueryer(r.queryer, r.prefix)
 	overview, err := overviewRepository.GetOverview(ctx, appgame.OverviewQuery{
 		PlayerID: query.PlayerID,
 		PlanetID: query.PlanetID,

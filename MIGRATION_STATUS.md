@@ -18,7 +18,7 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - Login validates credentials, creates sessions, sets the private cookie, and redirects to `/game/overview`.
 - `/api/game/session` validates public session plus private cookie, bans, and IP checks.
 - `/api/game/{overview,buildings,resources,research,shipyard,fleet,galaxy,defense,technology}` return read models; resources stores production settings, and technology supports `tid`.
-- Auth `/game/*` routes preserve sessions; migrated game screens use the legacy `evolution` skin.
+- Auth `/game/*` routes preserve sessions and `cp`; migrated game screens use the legacy `evolution` skin.
 - Modernization: [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
 
 ## Latest Verified Implementation

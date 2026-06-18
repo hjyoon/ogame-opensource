@@ -1,5 +1,5 @@
 import React from "react";
-import { gameRouteURL, gameRoutes, type GameRoute } from "./gameRoutes";
+import { gamePlanetSwitchURL, gameRouteURL, gameRoutes, type GameRoute } from "./gameRoutes";
 
 export type GameOverviewStatus = {
   authenticated: boolean;
@@ -1839,9 +1839,7 @@ function rowsOfTwo(items: GamePlanetSummary[]): GamePlanetSummary[][] {
 }
 
 function planetHref(planetID: number): string {
-  const search = new URLSearchParams(window.location.search);
-  search.set("cp", String(planetID));
-  return gameRouteURL("/game/overview", search.toString());
+  return gamePlanetSwitchURL(window.location.pathname, window.location.search, planetID);
 }
 
 function galaxyHref(coordinates: Coordinates): string {

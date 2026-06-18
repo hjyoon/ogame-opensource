@@ -43,15 +43,25 @@ func (q SQLQueryer) QueryContext(ctx context.Context, query string, args ...any)
 
 type OverviewRepository struct {
 	queryer Queryer
+	execer  Execer
 	prefix  string
 }
 
 func NewOverviewRepository(db *sql.DB, prefix string) OverviewRepository {
-	return OverviewRepository{queryer: SQLQueryer{DB: db}, prefix: prefix}
+	runner := SQLQueryer{DB: db}
+	return OverviewRepository{queryer: runner, execer: runner, prefix: prefix}
 }
 
 func NewOverviewRepositoryWithQueryer(queryer Queryer, prefix string) OverviewRepository {
-	return OverviewRepository{queryer: queryer, prefix: prefix}
+	var execer Execer
+	if runner, ok := queryer.(Execer); ok {
+		execer = runner
+	}
+	return NewOverviewRepositoryWithRunner(queryer, execer, prefix)
+}
+
+func NewOverviewRepositoryWithRunner(queryer Queryer, execer Execer, prefix string) OverviewRepository {
+	return OverviewRepository{queryer: queryer, execer: execer, prefix: prefix}
 }
 
 func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.OverviewQuery) (domaingame.Overview, error) {
@@ -88,6 +98,11 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 	}
 	if current.ID == 0 {
 		return domaingame.Overview{}, errors.New("current planet not found")
+	}
+	if query.PlanetID != 0 && current.ID == query.PlanetID && current.ID != user.ActivePlanetID {
+		if err := r.updateActivePlanet(ctx, usersTable, query.PlayerID, current.ID); err != nil {
+			return domaingame.Overview{}, err
+		}
 	}
 
 	planets, err := r.loadPlanets(ctx, planetsTable, query.PlayerID, current.ID, user.SortBy, user.SortOrder)
@@ -182,6 +197,19 @@ func (r OverviewRepository) loadPlanet(ctx context.Context, planetsTable string,
 		return domaingame.PlanetOverview{}, err
 	}
 	return planet, nil
+}
+
+func (r OverviewRepository) updateActivePlanet(ctx context.Context, usersTable string, playerID int, planetID int) error {
+	if r.execer == nil {
+		return nil
+	}
+	_, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET aktplanet = ? WHERE player_id = ? LIMIT 1", usersTable),
+		planetID,
+		playerID,
+	)
+	return err
 }
 
 func (r OverviewRepository) loadPlanets(ctx context.Context, planetsTable string, playerID int, currentPlanetID int, sortBy int, sortOrder int) ([]domaingame.PlanetSummary, error) {

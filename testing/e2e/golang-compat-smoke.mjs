@@ -28,6 +28,12 @@ function hasHeader(response, name, expected) {
   return expected === undefined ? actual !== "" : actual.toLowerCase().includes(expected.toLowerCase());
 }
 
+function withQueryParam(search, key, value) {
+  const query = new URLSearchParams(search);
+  query.set(key, String(value));
+  return `?${query.toString()}`;
+}
+
 function noLoopbackAsset(body) {
   return !/(?:src|href|background)=["']https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\//i.test(body);
 }
@@ -273,6 +279,39 @@ try {
   } catch {
     gameOverviewWithoutCookieBody = {};
   }
+  const planetSwitcher = Array.isArray(gameOverviewBody.overview?.planetSwitcher) ? gameOverviewBody.overview.planetSwitcher : [];
+  const currentPlanetID = gameOverviewBody.overview?.currentPlanet?.id;
+  const basePlanetID = planetSwitcher.find((planet) => planet.type === 1)?.id ?? currentPlanetID;
+  const switchPlanetID = planetSwitcher.find((planet) => planet.id !== basePlanetID)?.id ?? basePlanetID;
+  const switchedSearch = switchPlanetID ? withQueryParam(sessionSearch, "cp", switchPlanetID) : sessionSearch;
+  const gameOverviewSwitched = await request(`/api/game/overview${switchedSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameOverviewSwitchedBody = {};
+  try {
+    gameOverviewSwitchedBody = JSON.parse(gameOverviewSwitched.body);
+  } catch {
+    gameOverviewSwitchedBody = {};
+  }
+  const gameOverviewAfterSwitch = await request(`/api/game/overview${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameOverviewAfterSwitchBody = {};
+  try {
+    gameOverviewAfterSwitchBody = JSON.parse(gameOverviewAfterSwitch.body);
+  } catch {
+    gameOverviewAfterSwitchBody = {};
+  }
+  const restoreSearch = basePlanetID ? withQueryParam(sessionSearch, "cp", basePlanetID) : sessionSearch;
+  const gameOverviewRestored = await request(`/api/game/overview${restoreSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameOverviewRestoredBody = {};
+  try {
+    gameOverviewRestoredBody = JSON.parse(gameOverviewRestored.body);
+  } catch {
+    gameOverviewRestoredBody = {};
+  }
 
   const gameBuildings = await request(`/api/game/buildings${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -501,6 +540,10 @@ try {
       check(!gameOverview.body.includes(sessionCookiePair), "game overview response does not echo private cookie"),
       check(gameOverviewWithoutCookie.status === 401, "game overview rejects missing private cookie", { status: gameOverviewWithoutCookie.status }),
       check(gameOverviewWithoutCookieBody.authenticated === false, "game overview missing private cookie is unauthenticated", gameOverviewWithoutCookieBody),
+      check(gameOverviewSwitched.status === 200, "game overview accepts selected cp", { status: gameOverviewSwitched.status, switchPlanetID }),
+      check(gameOverviewSwitchedBody.overview?.currentPlanet?.id === switchPlanetID, "game overview switches to requested planet", gameOverviewSwitchedBody),
+      check(gameOverviewAfterSwitchBody.overview?.currentPlanet?.id === switchPlanetID, "game overview persists selected planet like legacy", gameOverviewAfterSwitchBody),
+      check(gameOverviewRestoredBody.overview?.currentPlanet?.id === basePlanetID, "game overview can switch back to base planet", gameOverviewRestoredBody),
       check(gameBuildings.status === 200, "game buildings returns HTTP 200 with private cookie", { status: gameBuildings.status }),
       check(gameBuildingsBody.authenticated === true, "game buildings authenticates the login session", gameBuildingsBody),
       check(

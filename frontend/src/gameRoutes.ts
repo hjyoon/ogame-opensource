@@ -73,3 +73,9 @@ export function gameRouteURL(path: string, search: string): string {
   const encoded = query.toString();
   return encoded ? `${path}?${encoded}` : path;
 }
+
+export function gamePlanetSwitchURL(pathname: string, search: string, planetID: number | string): string {
+  const query = new URLSearchParams(search);
+  query.set("cp", String(planetID));
+  return gameRouteURL(resolveGameRoute(pathname).path, query.toString());
+}
