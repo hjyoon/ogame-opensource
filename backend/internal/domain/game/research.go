@@ -1,7 +1,9 @@
 package game
 
-import "math"
-import "sort"
+import (
+	"math"
+	"sort"
+)
 
 const (
 	maxResearchLevel       = 99

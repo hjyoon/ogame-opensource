@@ -36,7 +36,7 @@ export const gameRoutes: GameRoute[] = [
   { key: "resources", label: "Resources", path: "/game/resources", migrated: true },
   { key: "merchant", label: "Merchant", path: "/game/merchant", migrated: false },
   { key: "research", label: "Research", path: "/game/research", migrated: true },
-  { key: "shipyard", label: "Shipyard", path: "/game/shipyard", migrated: false },
+  { key: "shipyard", label: "Shipyard", path: "/game/shipyard", migrated: true },
   { key: "fleet", label: "Fleet", path: "/game/fleet", migrated: false },
   { key: "technology", label: "Technology", path: "/game/technology", migrated: false },
   { key: "galaxy", label: "Galaxy", path: "/game/galaxy", migrated: false },

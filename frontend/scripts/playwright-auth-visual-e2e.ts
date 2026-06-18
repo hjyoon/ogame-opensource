@@ -116,6 +116,15 @@ const pageSpecs: AuthPageSpec[] = [
     legacyReady: "#content table",
     migratedReady: ".legacy-research-table",
     expectedTexts: ["In order to do this, you need to build a research lab!"]
+  },
+  {
+    name: "game-shipyard",
+    legacyPage: "buildings",
+    legacyQuery: { mode: "Flotte" },
+    migratedPath: "/game/shipyard",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-shipyard-table",
+    expectedTexts: ["In order to do that, you need to build a shipyard!"]
   }
 ];
 

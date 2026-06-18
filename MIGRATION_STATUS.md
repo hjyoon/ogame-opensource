@@ -19,15 +19,15 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - `/api/public/registration` creates a legacy-compatible unvalidated user, activation code, home planet, private/public session, and `/game/overview` redirect.
 - `/api/public/login/validate` and `/api/public/login` validate credentials, create public/private sessions, update legacy session fields, set the private cookie, and return a natural `/game/overview` redirect.
 - `/api/game/session` validates public session plus private cookie, including banned and IP checks.
-- `/api/game/{overview,resources,research}` return planet/resource/research data; resources also stores legacy production settings.
-- Authenticated `/game/*` routes preserve sessions; overview/buildings/resources/research use the legacy `evolution` skin.
-- Go migration QA smoke covers health, routes, assets, registration, login, session lookup, overview/buildings/resources/research, and guards.
-- Playwright visual/CSR E2E compares public pages, language flags, game menu navigation, and auth overview/buildings/resources/research.
-- Modernization backlog: [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
+- `/api/game/{overview,buildings,resources,research,shipyard}` return game read models; resources stores production settings.
+- Auth `/game/*` routes preserve sessions; overview/buildings/resources/research/shipyard use the legacy `evolution` skin.
+- Go migration QA smoke covers health, routes, assets, registration, login, session lookup, overview/buildings/resources/research/shipyard, guards.
+- Playwright visual/CSR E2E compares public pages, language flags, game menu navigation, and auth overview/buildings/resources/research/shipyard.
+- Modernization: [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
 
 ## Latest Verified Implementation
 
-- Milestone: public parity, language flags, resource header caps, login redirect, and evolution auth audit are guarded.
+- Milestone: public parity, language flags, resource header caps, login redirect, research read model, and shipyard read model are guarded.
 
 ## Verified QA
 
@@ -35,7 +35,7 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
 - Playwright visual, authenticated visual audit, and CSR E2E: passing in Chromium and Firefox.
 - Auth visual contract passes in Chromium/Firefox; parity still misses (diff about 24-55%, box delta <=2).
-- Go internal coverage gate: `97.2% >= 97%`.
+- Go internal coverage gate: `97.3% >= 97%`.
 - Go smoke JSON: `all_pass: true`, including registration-created overview access.
 
 Full legacy PHP E2E was not run for this Go migration step. Keep legacy PHP behavior as the oracle until each migrated flow has focused unit tests and E2E coverage.
@@ -48,6 +48,6 @@ Full legacy PHP E2E was not run for this Go migration step. Keep legacy PHP beha
 - Close authenticated visual diff for overview/buildings before claiming game-page parity.
 - Port remaining authenticated game screens beyond buildings with legacy PHP screen composition.
 - Port current planet switching and full overview actions from legacy DB.
-- Port queues, research, shipyard, defense, fleet, reports, messages, galaxy, alliance, admin, maintenance, options, recovery, deletion, vacation, bans, and permissions.
+- Port queue mutations, research start/cancel, shipyard orders, defense, fleet, reports, messages, galaxy, alliance, admin, maintenance, options, recovery, deletion, vacation, bans, and permissions.
 - Convert legacy E2E cases into Go compatibility checks as each flow is migrated.
 - Run full legacy E2E before declaring any game-flow migration equivalent.

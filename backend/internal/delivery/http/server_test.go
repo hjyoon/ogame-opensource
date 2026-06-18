@@ -989,6 +989,135 @@ func TestGameResearchEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 	}
 }
 
+func TestGameShipyardEndpointReturnsShipyard(t *testing.T) {
+	shipyard := &fakeGameShipyard{result: appgame.ShipyardResult{
+		Authenticated: true,
+		Shipyard: domaingame.Shipyard{
+			Commander: "legor",
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:   99,
+				Name: "Arakis",
+				Type: domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+			},
+			PlanetSwitcher: []domaingame.PlanetSummary{{
+				ID:   99,
+				Name: "Arakis",
+				Type: domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+				Current: true,
+			}},
+			HasShipyard: true,
+			Items: []domaingame.ShipyardItem{{
+				ID:               domaingame.FleetSmallCargo,
+				Name:             "Small Cargo",
+				Description:      "The small cargo is an agile ship.",
+				Count:            2,
+				Cost:             domaingame.BuildingCost{Metal: 2000, Crystal: 2000},
+				DurationSeconds:  240,
+				CanBuild:         true,
+				MeetsRequirement: true,
+				MaxBuild:         5,
+			}},
+		},
+	}}
+	server := testServerWithGameShipyard(t, shipyard)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/shipyard?session=public&cp=99", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameShipyardResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Shipyard == nil || response.Shipyard.Commander != "legor" || !response.Shipyard.HasShipyard || len(response.Shipyard.Items) != 1 || len(response.Shipyard.PlanetSwitcher) != 1 {
+		t.Fatalf("expected authenticated shipyard response, got %+v", response)
+	}
+	if response.Shipyard.Items[0].Cost.Metal != 2000 || response.Shipyard.Items[0].DurationSeconds != 240 || response.Shipyard.Items[0].MaxBuild != 5 {
+		t.Fatalf("unexpected shipyard mapping: %+v", response.Shipyard.Items[0])
+	}
+	if shipyard.command.PublicSession != "public" || shipyard.command.PlanetID != 99 || shipyard.command.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected shipyard command: %+v", shipyard.command)
+	}
+	if shipyard.command.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("expected private session cookie to be passed, got %+v", shipyard.command.PrivateSessions)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("private")) {
+		t.Fatalf("game shipyard response must not echo private session: %s", rec.Body.String())
+	}
+}
+
+func TestGameShipyardEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
+	shipyard := &fakeGameShipyard{result: appgame.ShipyardResult{
+		Authenticated: false,
+		Issues: []domainpublicsite.SessionIssue{{
+			Code:    domainpublicsite.SessionIssuePrivateInvalid,
+			Message: "Private session is invalid.",
+		}},
+	}}
+	server := testServerWithGameShipyard(t, shipyard)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/shipyard?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var response gameShipyardResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Authenticated || response.Shipyard != nil || len(response.Issues) != 1 {
+		t.Fatalf("expected invalid shipyard session response, got %+v", response)
+	}
+}
+
+func TestGameShipyardEndpointRejectsInvalidPlanetID(t *testing.T) {
+	server := testServerWithGameShipyard(t, &fakeGameShipyard{})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/shipyard?session=public&cp=abc", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid selected planet to return 400, got %d", rec.Code)
+	}
+}
+
+func TestGameShipyardEndpointReturnsUnavailableWithoutUseCase(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/shipyard?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game shipyard use case to return 503, got %d", rec.Code)
+	}
+}
+
+func TestGameShipyardEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
+	server := testServerWithGameShipyard(t, &fakeGameShipyard{err: errors.New("shipyard failed")})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/shipyard?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game shipyard error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestGameResourcesEndpointReturnsResources(t *testing.T) {
 	resources := &fakeGameResources{result: appgame.ResourcesResult{
 		Authenticated: true,
@@ -1409,6 +1538,14 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game research method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "/api/game/shipyard", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("expected game shipyard method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
+
 	req = httptest.NewRequest(http.MethodPut, "/api/game/resources", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -1612,6 +1749,19 @@ func testServerWithGameResearch(t *testing.T, research GameResearchUseCase) http
 	})
 }
 
+func testServerWithGameShipyard(t *testing.T, shipyard GameShipyardUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		GameShipyard:       shipyard,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
 func testServerWithCustomDrafts(t *testing.T, registrationDrafts RegistrationDraftUseCase, loginDrafts LoginDraftUseCase) http.Handler {
 	t.Helper()
 	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
@@ -1761,6 +1911,17 @@ type fakeGameResearch struct {
 }
 
 func (f *fakeGameResearch) GetResearch(_ context.Context, command appgame.ResearchCommand) (appgame.ResearchResult, error) {
+	f.command = command
+	return f.result, f.err
+}
+
+type fakeGameShipyard struct {
+	result  appgame.ShipyardResult
+	err     error
+	command appgame.ShipyardCommand
+}
+
+func (f *fakeGameShipyard) GetShipyard(_ context.Context, command appgame.ShipyardCommand) (appgame.ShipyardResult, error) {
 	f.command = command
 	return f.result, f.err
 }

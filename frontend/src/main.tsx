@@ -5,7 +5,8 @@ import {
   type GameBuildingsStatus,
   type GameOverviewStatus,
   type GameResearchStatus,
-  type GameResourcesStatus
+  type GameResourcesStatus,
+  type GameShipyardStatus
 } from "./LegacyGameOverview";
 import { LegacyPublicAbout } from "./LegacyPublicAbout";
 import { LegacyPublicHome } from "./LegacyPublicHome";
@@ -191,6 +192,8 @@ function App() {
   const [gameResourcesPending, setGameResourcesPending] = useState(false);
   const [gameResearch, setGameResearch] = useState<GameResearchStatus | null>(null);
   const [gameResearchError, setGameResearchError] = useState<string | null>(null);
+  const [gameShipyard, setGameShipyard] = useState<GameShipyardStatus | null>(null);
+  const [gameShipyardError, setGameShipyardError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
   const gameRoute = pathname.startsWith("/game") ? resolveGameRoute(pathname) : null;
@@ -389,6 +392,28 @@ function App() {
       .catch((err: unknown) => setGameResearchError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
 
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "shipyard" || publicSession === "") {
+      setGameShipyard(null);
+      setGameShipyardError(null);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const shipyardSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      shipyardSearch.set("cp", selectedPlanet);
+    }
+    fetch(`/api/game/shipyard?${shipyardSearch.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameShipyardStatus>)
+      .then((payload) => {
+        setGameShipyard(payload);
+        setGameShipyardError(null);
+      })
+      .catch((err: unknown) => setGameShipyardError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
   const checks = useMemo(
     () => [
       ["Go target", health?.goTarget ?? "1.25"],
@@ -420,6 +445,8 @@ function App() {
         resourcesStatus={gameResources}
         researchError={gameResearchError}
         researchStatus={gameResearch}
+        shipyardError={gameShipyardError}
+        shipyardStatus={gameShipyard}
         status={gameOverview}
       />
     );

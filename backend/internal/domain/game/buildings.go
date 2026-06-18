@@ -48,6 +48,20 @@ const (
 	ResearchIntergalacticNetwork = 123
 	ResearchExpedition           = 124
 	ResearchGraviton             = 199
+
+	FleetSmallCargo     = 202
+	FleetLargeCargo     = 203
+	FleetLightFighter   = 204
+	FleetHeavyFighter   = 205
+	FleetCruiser        = 206
+	FleetBattleship     = 207
+	FleetColonyShip     = 208
+	FleetRecycler       = 209
+	FleetEspionageProbe = 210
+	FleetBomber         = 211
+	FleetDestroyer      = 213
+	FleetDeathstar      = 214
+	FleetBattlecruiser  = 215
 )
 
 const buildingDurationFactor = 2500
@@ -136,6 +150,25 @@ func ResearchIDs() []int {
 		ResearchIntergalacticNetwork,
 		ResearchExpedition,
 		ResearchGraviton,
+	}
+}
+
+func FleetIDs() []int {
+	return []int{
+		FleetSmallCargo,
+		FleetLargeCargo,
+		FleetLightFighter,
+		FleetHeavyFighter,
+		FleetCruiser,
+		FleetBattleship,
+		FleetColonyShip,
+		FleetRecycler,
+		FleetEspionageProbe,
+		FleetBomber,
+		FleetSolarSatellite,
+		FleetDestroyer,
+		FleetDeathstar,
+		FleetBattlecruiser,
 	}
 }
 
