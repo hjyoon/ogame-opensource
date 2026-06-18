@@ -78,6 +78,8 @@ try {
   await assertTechnologyDetailsNavigation(page);
   await assertGameClientNavigation(page, "game statistics menu preserves CSR", "a[href^='/game/statistics']", "/game/statistics", "Statistics");
   await assertStatisticsAllianceMode(page);
+  await assertGameClientNavigation(page, "game search menu preserves CSR", "a[href^='/game/search']", "/game/search", "Search");
+  await assertSearchForm(page, loginFixture.login);
   await assertGameClientNavigation(page, "game overview menu preserves CSR", "a[href^='/game/overview']", "/game/overview", "Overview");
   await assertGameLogout(page);
 
@@ -247,6 +249,8 @@ async function assertGameClientNavigation(
     await page.locator(".legacy-technology-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Statistics") {
     await page.locator(".legacy-statistics-table").first().waitFor({ timeout: 10_000 });
+  } else if (expectedMenuLabel === "Search") {
+    await page.locator(".legacy-search-head-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel !== "Overview") {
     await page.waitForFunction(() => document.body.textContent?.includes("queued for React and Go migration"), undefined, {
       timeout: 5_000
@@ -285,9 +289,13 @@ async function assertGameClientNavigation(
                           state.details.statisticsRows > 0 &&
                           state.details.statisticsText.includes("Statistics") &&
                           state.details.pendingText === false
-                      : expectedMenuLabel === "Overview"
-                        ? state.details.pendingText === false
-                        : state.details.pendingText === true;
+                        : expectedMenuLabel === "Search"
+                          ? state.details.searchHeadTable === true &&
+                            state.details.searchText.includes("Search Universe") &&
+                            state.details.pendingText === false
+                          : expectedMenuLabel === "Overview"
+                            ? state.details.pendingText === false
+                            : state.details.pendingText === true;
     return {
       pass:
         state.details.pathname === expectedPathname &&
@@ -357,6 +365,36 @@ async function assertStatisticsAllianceMode(page: Page) {
         state.details.statisticsBodyText.includes("Alliance") &&
         state.details.statisticsBodyText.includes("Num.") &&
         state.details.statisticsBodyText.includes("Per person") &&
+        state.details.pendingText === false,
+      details: state.details
+    };
+  });
+}
+
+async function assertSearchForm(page: Page, login: string) {
+  const marker = "probe-game-search-form";
+  await page.evaluate((value) => {
+    window.__ogameCsrProbe = value;
+  }, marker);
+  await page.locator("select[name='type']").selectOption("playername");
+  await page.locator("input[name='searchtext']").fill(login);
+  await page.locator(".legacy-search-head-table input[type='submit']").click();
+  await page.waitForFunction(() => window.location.pathname === "/game/search" && window.location.search.includes("searchtext="), undefined, {
+    timeout: 5_000
+  });
+  await page.locator(".legacy-search-results-table", { hasText: login }).waitFor({ timeout: 10_000 });
+  await record("game search form preserves CSR", async () => {
+    const state = await gameShellState(page, marker, "Search");
+    return {
+      pass:
+        state.pass &&
+        state.details.pathname === "/game/search" &&
+        state.details.search.includes("type=playername") &&
+        state.details.search.includes("searchtext=") &&
+        state.details.searchHeadTable === true &&
+        state.details.searchRows > 0 &&
+        state.details.searchBodyText.includes(login) &&
+        state.details.searchBodyText.includes("Position") &&
         state.details.pendingText === false,
       details: state.details
     };
@@ -460,6 +498,11 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     statisticsRows: document.querySelectorAll("[data-statistics-row]").length,
     statisticsText: document.querySelector(".legacy-statistics-head-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     statisticsBodyText: document.querySelector(".legacy-statistics-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
+    searchHeadTable: document.querySelector(".legacy-search-head-table") !== null,
+    searchResultsTable: document.querySelector(".legacy-search-results-table") !== null,
+    searchRows: document.querySelectorAll("[data-search-row]").length,
+    searchText: document.querySelector(".legacy-search-head-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
+    searchBodyText: document.querySelector(".legacy-search-results-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     logoutTable: document.querySelector(".legacy-logout-table") !== null,
     logoutText: document.querySelector(".legacy-logout-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     pendingText: document.body.textContent?.includes("queued for React and Go migration") ?? false

@@ -10,6 +10,7 @@ import {
   type GameOverviewStatus,
   type GameResearchStatus,
   type GameResourcesStatus,
+  type GameSearchStatus,
   type GameShipyardStatus,
   type GameStatisticsStatus,
   type GameTechnologyStatus
@@ -210,6 +211,8 @@ function App() {
   const [gameTechnologyError, setGameTechnologyError] = useState<string | null>(null);
   const [gameStatistics, setGameStatistics] = useState<GameStatisticsStatus | null>(null);
   const [gameStatisticsError, setGameStatisticsError] = useState<string | null>(null);
+  const [gameSearch, setGameSearch] = useState<GameSearchStatus | null>(null);
+  const [gameSearchError, setGameSearchError] = useState<string | null>(null);
   const [gameLogout, setGameLogout] = useState<GameLogoutStatus | null>(null);
   const [gameLogoutError, setGameLogoutError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
@@ -552,6 +555,30 @@ function App() {
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "search" || publicSession === "") {
+      setGameSearch(null);
+      setGameSearchError(null);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const searchRequest = new URLSearchParams({ session: publicSession });
+    for (const key of ["cp", "type", "searchtext"]) {
+      const value = currentSearch.get(key);
+      if (value) {
+        searchRequest.set(key, value);
+      }
+    }
+    fetch(`/api/game/search?${searchRequest.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameSearchStatus>)
+      .then((payload) => {
+        setGameSearch(payload);
+        setGameSearchError(null);
+      })
+      .catch((err: unknown) => setGameSearchError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "logout") {
       setGameLogout(null);
       setGameLogoutError(null);
@@ -653,6 +680,8 @@ function App() {
         shipyardStatus={gameShipyard}
         statisticsError={gameStatisticsError}
         statisticsStatus={gameStatistics}
+        searchError={gameSearchError}
+        searchStatus={gameSearch}
         status={gameOverview}
         technologyError={gameTechnologyError}
         technologyStatus={gameTechnology}

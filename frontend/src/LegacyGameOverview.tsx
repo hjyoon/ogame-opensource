@@ -61,6 +61,12 @@ export type GameStatisticsStatus = {
   statistics?: GameStatistics;
 };
 
+export type GameSearchStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  search?: GameSearch;
+};
+
 export type GameLogoutStatus = {
   loggedOut: boolean;
   redirectTo: string;
@@ -297,6 +303,39 @@ type GameStatisticsRow = {
   own: boolean;
 };
 
+type GameSearch = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  type: string;
+  text: string;
+  message: string;
+  playerRows: GameSearchPlayerRow[];
+  allianceRows: GameSearchAllianceRow[];
+};
+
+type GameSearchPlayerRow = {
+  playerId: number;
+  playerName: string;
+  alliance?: { id: number; tag: string };
+  planetId: number;
+  planetName: string;
+  coordinates: Coordinates;
+  place: number;
+  own: boolean;
+  sameAlliance: boolean;
+};
+
+type GameSearchAllianceRow = {
+  allianceId: number;
+  tag: string;
+  name: string;
+  members: number;
+  score: number;
+  displayScore: number;
+  own: boolean;
+};
+
 type GameFleetShip = {
   id: number;
   name: string;
@@ -436,6 +475,8 @@ type LegacyGameOverviewProps = {
   technologyError: string | null;
   statisticsStatus: GameStatisticsStatus | null;
   statisticsError: string | null;
+  searchStatus: GameSearchStatus | null;
+  searchError: string | null;
   logoutStatus: GameLogoutStatus | null;
   logoutError: string | null;
 };
@@ -498,6 +539,8 @@ export function LegacyGameOverview({
   technologyError,
   statisticsStatus,
   statisticsError,
+  searchStatus,
+  searchError,
   logoutStatus,
   logoutError
 }: LegacyGameOverviewProps) {
@@ -529,6 +572,8 @@ export function LegacyGameOverview({
   const statistics = statisticsStatus?.authenticated ? statisticsStatus.statistics : undefined;
   const statisticsIssue =
     statisticsStatus && !statisticsStatus.authenticated ? statisticsStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const search = searchStatus?.authenticated ? searchStatus.search : undefined;
+  const searchIssue = searchStatus && !searchStatus.authenticated ? searchStatus.issues[0]?.message ?? "Session is invalid." : null;
   const contentClassName = route.key === "overview" ? "legacy-content legacy-content-overview" : "legacy-content";
 
   return (
@@ -581,6 +626,8 @@ export function LegacyGameOverview({
         {route.key === "statistics" && !statisticsError && statisticsIssue ? (
           <LegacyMessage tone="error" text={statisticsIssue} />
         ) : null}
+        {route.key === "search" && searchError ? <LegacyMessage tone="error" text={searchError} /> : null}
+        {route.key === "search" && !searchError && searchIssue ? <LegacyMessage tone="error" text={searchIssue} /> : null}
         {overview && route.key === "overview" ? <OverviewTable overview={overview} /> : null}
         {overview && route.key === "buildings" && !buildings && !buildingsError && !buildingsIssue ? (
           <LegacyMessage tone="neutral" text="Loading buildings..." />
@@ -620,6 +667,10 @@ export function LegacyGameOverview({
           <LegacyMessage tone="neutral" text="Loading statistics..." />
         ) : null}
         {statistics && route.key === "statistics" ? <StatisticsTable statistics={statistics} /> : null}
+        {overview && route.key === "search" && !search && !searchError && !searchIssue ? (
+          <LegacyMessage tone="neutral" text="Loading search..." />
+        ) : null}
+        {search && route.key === "search" ? <SearchTable search={search} /> : null}
         {overview &&
         route.key !== "overview" &&
         route.key !== "buildings" &&
@@ -631,6 +682,7 @@ export function LegacyGameOverview({
         route.key !== "defense" &&
         route.key !== "technology" &&
         route.key !== "statistics" &&
+        route.key !== "search" &&
         route.key !== "logout" ? (
           <MigrationPendingGameTable route={route} />
         ) : null}
@@ -1694,6 +1746,171 @@ function DefenseTable({ defense }: { defense: GameDefense }) {
       </table>
     </form>
   );
+}
+
+function SearchTable({ search }: { search: GameSearch }) {
+  return (
+    <>
+      <form
+        action={gameRouteURL("/game/search", window.location.search)}
+        method="get"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          const query = new URLSearchParams(window.location.search);
+          for (const key of ["gid", "tid", "who", "start"]) {
+            query.delete(key);
+          }
+          query.set("type", String(form.get("type") ?? "playername"));
+          query.set("searchtext", String(form.get("searchtext") ?? ""));
+          window.history.pushState({}, "", gameRouteURL("/game/search", query.toString()));
+          window.dispatchEvent(new PopStateEvent("popstate"));
+        }}
+      >
+        <table className="legacy-overview-table legacy-search-head-table" width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c">Search Universe</td>
+            </tr>
+            <tr>
+              <th>
+                <select name="type" defaultValue={search.type}>
+                  <option value="playername">Player Name</option>
+                  <option value="planetname">Planet Name</option>
+                  <option value="allytag">Alliance Tag</option>
+                  <option value="allyname">Alliance Name</option>
+                </select>
+                &nbsp;&nbsp;
+                <input name="searchtext" type="text" defaultValue={search.text} />
+                &nbsp;&nbsp;
+                <input type="submit" value="search" />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+      {search.message ? <SearchMessage text={search.message} /> : null}
+      {search.type === "allytag" || search.type === "allyname" ? (
+        <AllianceSearchResults rows={search.allianceRows} />
+      ) : (
+        <PlayerSearchResults rows={search.playerRows} />
+      )}
+    </>
+  );
+}
+
+function SearchMessage({ text }: { text: string }) {
+  return (
+    <table className="legacy-overview-table legacy-search-message-table" width={519}>
+      <tbody>
+        <tr>
+          <th>{text}</th>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function PlayerSearchResults({ rows }: { rows: GameSearchPlayerRow[] }) {
+  if (rows.length === 0) {
+    return null;
+  }
+  return (
+    <table className="legacy-overview-table legacy-search-results-table" width={519}>
+      <tbody>
+        <tr>
+          <td className="legacy-c">Name</td>
+          <td className="legacy-c">&nbsp;</td>
+          <td className="legacy-c">Alliance</td>
+          <td className="legacy-c">Planet</td>
+          <td className="legacy-c">Position</td>
+          <td className="legacy-c">Place</td>
+        </tr>
+        {rows.map((row) => (
+          <tr data-search-row key={`${row.playerId}-${row.planetId}`}>
+            <th>
+              <span style={{ color: row.own ? "lime" : row.sameAlliance ? "#87CEEB" : undefined }}>{row.playerName}</span>
+            </th>
+            <th>
+              {!row.own ? (
+                <>
+                  <a href={gameSearchMessageHref(row.playerId)}>
+                    <img alt="write message" src={`${skinBase}/img/m.gif`} title="write message" />
+                  </a>
+                  <a href={gameSearchBuddyHref(row.playerId)}>
+                    <img alt="Buddy request" src={`${skinBase}/img/b.gif`} style={{ border: 0 }} title="Buddy request" />
+                  </a>
+                </>
+              ) : (
+                <>&nbsp;</>
+              )}
+            </th>
+            <th>
+              <a href={gameRouteURL("/game/alliance", window.location.search)} target="_ally">
+                {row.alliance?.tag ?? ""}
+              </a>
+            </th>
+            <th>{row.planetName}</th>
+            <th>
+              <a href={gameRouteURL("/game/galaxy", galaxyTargetSearch(row.coordinates))}>{formatCoordinates(row.coordinates)}</a>
+            </th>
+            <th>
+              <a href={gameSearchStatisticsHref(row.place)}>{formatLegacyNumber(row.place)}</a>
+            </th>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function AllianceSearchResults({ rows }: { rows: GameSearchAllianceRow[] }) {
+  if (rows.length === 0) {
+    return null;
+  }
+  return (
+    <table className="legacy-overview-table legacy-search-results-table" width={519}>
+      <tbody>
+        <tr>
+          <td className="legacy-c">Tag</td>
+          <td className="legacy-c">Name</td>
+          <td className="legacy-c">Member</td>
+          <td className="legacy-c">Points</td>
+        </tr>
+        {rows.map((row) => (
+          <tr data-search-row key={row.allianceId}>
+            <th>
+              <a href={gameRouteURL("/game/alliance", window.location.search)} target="_ally">
+                <span style={{ color: row.own ? "lime" : undefined }}>{row.tag}</span>
+              </a>
+            </th>
+            <th>{row.name}</th>
+            <th>{formatLegacyNumber(row.members)}</th>
+            <th>{formatLegacyNumber(row.displayScore)}</th>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function gameSearchMessageHref(playerID: number): string {
+  const search = new URLSearchParams(window.location.search);
+  search.set("messageziel", String(playerID));
+  return gameRouteURL("/game/messages", search.toString());
+}
+
+function gameSearchBuddyHref(playerID: number): string {
+  const search = new URLSearchParams(window.location.search);
+  search.set("action", "7");
+  search.set("buddy_id", String(playerID));
+  return gameRouteURL("/game/buddy", search.toString());
+}
+
+function gameSearchStatisticsHref(place: number): string {
+  const search = new URLSearchParams(window.location.search);
+  search.set("start", String(Math.floor(place / 100) * 100 + 1));
+  return gameRouteURL("/game/statistics", search.toString());
 }
 
 function TechnologyTable({ technology }: { technology: GameTechnology }) {

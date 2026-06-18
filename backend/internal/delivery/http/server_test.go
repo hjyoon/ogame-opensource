@@ -1938,6 +1938,143 @@ func TestGameStatisticsEndpointReturnsUnavailable(t *testing.T) {
 	}
 }
 
+func TestGameSearchEndpointReturnsSearch(t *testing.T) {
+	search := &fakeGameSearch{result: appgame.SearchResult{
+		Authenticated: true,
+		Search: domaingame.Search{
+			Commander: "legor",
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:   99,
+				Name: "Arakis",
+				Type: domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+			},
+			PlanetSwitcher: []domaingame.PlanetSummary{{
+				ID:   99,
+				Name: "Arakis",
+				Type: domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+				Current: true,
+			}},
+			Type: domaingame.SearchTypePlayerName,
+			Text: "legor",
+			PlayerRows: []domaingame.SearchPlayerRow{{
+				PlayerID:    42,
+				PlayerName:  "legor",
+				Alliance:    &domaingame.StatisticsAlliance{ID: 7, Tag: "TAG"},
+				PlanetID:    99,
+				PlanetName:  "Arakis",
+				Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+				Place:       101,
+				Own:         true,
+			}},
+			AllianceRows: []domaingame.SearchAllianceRow{{
+				AllianceID: 7,
+				Tag:        "TAG",
+				Name:       "The Alliance",
+				Members:    3,
+				Score:      950000000,
+				Own:        true,
+			}},
+		},
+	}}
+	server := testServerWithGameSearch(t, search)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/search?session=public&cp=99&type=playername&searchtext=legor", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameSearchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Search == nil || response.Search.Commander != "legor" || len(response.Search.PlayerRows) != 1 || len(response.Search.AllianceRows) != 1 {
+		t.Fatalf("expected authenticated search response, got %+v", response)
+	}
+	player := response.Search.PlayerRows[0]
+	if player.PlayerName != "legor" || !player.Own || player.Alliance == nil || player.Alliance.Tag != "TAG" || player.Coordinates.Galaxy != 1 {
+		t.Fatalf("unexpected search player row mapping: %+v", player)
+	}
+	alliance := response.Search.AllianceRows[0]
+	if alliance.Tag != "TAG" || alliance.DisplayScore != 950000 || alliance.Members != 3 || !alliance.Own {
+		t.Fatalf("unexpected search alliance row mapping: %+v", alliance)
+	}
+	if search.command.PublicSession != "public" || search.command.PlanetID != 99 || search.command.Type != "playername" ||
+		search.command.Text != "legor" || search.command.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected search command: %+v", search.command)
+	}
+	if search.command.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("expected private session cookie to be passed, got %+v", search.command.PrivateSessions)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("private")) {
+		t.Fatalf("game search response must not echo private session: %s", rec.Body.String())
+	}
+}
+
+func TestGameSearchEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
+	search := &fakeGameSearch{result: appgame.SearchResult{
+		Authenticated: false,
+		Issues:        []domainpublicsite.SessionIssue{{Code: "missing", Message: "missing session"}},
+	}}
+	server := testServerWithGameSearch(t, search)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/search?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var response gameSearchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Authenticated || response.Search != nil || len(response.Issues) != 1 {
+		t.Fatalf("expected invalid search session response, got %+v", response)
+	}
+}
+
+func TestGameSearchEndpointRejectsInvalidPlanet(t *testing.T) {
+	server := testServerWithGameSearch(t, &fakeGameSearch{})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/search?session=public&cp=abc", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid selected planet to return 400, got %d", rec.Code)
+	}
+}
+
+func TestGameSearchEndpointReturnsUnavailable(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/search?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game search use case to return 503, got %d", rec.Code)
+	}
+
+	server = testServerWithGameSearch(t, &fakeGameSearch{err: errors.New("search failed")})
+	req = httptest.NewRequest(http.MethodGet, "/api/game/search?session=public", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game search error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestGameResourcesEndpointReturnsResources(t *testing.T) {
 	resources := &fakeGameResources{result: appgame.ResourcesResult{
 		Authenticated: true,
@@ -2406,6 +2543,14 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game statistics method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "/api/game/search", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("expected game search method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
+
 	req = httptest.NewRequest(http.MethodPut, "/api/game/resources", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -2708,6 +2853,19 @@ func testServerWithGameStatistics(t *testing.T, statistics GameStatisticsUseCase
 	})
 }
 
+func testServerWithGameSearch(t *testing.T, search GameSearchUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		GameSearch:         search,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
 func testServerWithCustomDrafts(t *testing.T, registrationDrafts RegistrationDraftUseCase, loginDrafts LoginDraftUseCase) http.Handler {
 	t.Helper()
 	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
@@ -2934,6 +3092,17 @@ type fakeGameStatistics struct {
 }
 
 func (f *fakeGameStatistics) GetStatistics(_ context.Context, command appgame.StatisticsCommand) (appgame.StatisticsResult, error) {
+	f.command = command
+	return f.result, f.err
+}
+
+type fakeGameSearch struct {
+	result  appgame.SearchResult
+	err     error
+	command appgame.SearchCommand
+}
+
+func (f *fakeGameSearch) GetSearch(_ context.Context, command appgame.SearchCommand) (appgame.SearchResult, error) {
 	f.command = command
 	return f.result, f.err
 }

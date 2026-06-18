@@ -17,7 +17,7 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - Registration validates drafts, checks duplicates/capacity, then creates legacy-compatible user, home planet, sessions, and `/game/overview` redirect.
 - Login/logout create and clear legacy sessions, private cookies, and `/game` redirects.
 - `/api/game/session` validates public session plus private cookie, bans, and IP checks.
-- `/api/game/{overview,buildings,resources,research,shipyard,fleet,galaxy,defense,technology,statistics}` return read models; resources stores settings, technology supports `tid`.
+- `/api/game/{overview,buildings,resources,research,shipyard,fleet,galaxy,defense,technology,statistics,search}` return read models; resources stores settings.
 - Auth `/game/*` routes preserve sessions and `cp`; migrated game screens use the legacy `evolution` skin.
 - Modernization: [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
 
@@ -27,15 +27,14 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - Fleet covers `flotten1` summary, slots, expeditions, ship rows, and speed/cargo/consumption. Dispatch/recall/ACS/templates pending.
 - Galaxy covers the `galaxy` read screen: coordinate clamp, rows 1-15, player status, moon, debris, actions, slots, and deuterium warning. Quick actions and cost mutation pending.
 - Defense covers display state only: shipyard gate, requirements, shield dome/missile caps, busy state, costs, durations, counts, and max hints.
-- Technology covers `techtree` plus recursive `techtreedetails` via `/game/technology?tid=...`.
-- Statistics covers player and alliance points/fleet/research ranking windows.
+- Technology covers `techtree` and recursive `techtreedetails`; statistics covers player/alliance rankings; search covers player/planet/alliance results.
 
 ## Verified QA
 
 - `bun run build && bun run check && bun test`: passing.
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
-- Go smoke covers health, routes, assets, registration, login, session lookup/logout, migrated reads incl. player/alliance stats, guards, and private-cookie non-disclosure.
-- Playwright visual/CSR E2E covers public pages, language flags, game menu navigation, and auth overview/buildings/resources/research/shipyard/fleet/galaxy/defense/technology/player+alliance stats in Chromium/Firefox.
+- Go smoke covers health, routes, assets, registration, login, session lookup/logout, migrated reads incl. stats/search, guards, and private-cookie non-disclosure.
+- Playwright visual/CSR E2E covers public pages, flags, game menu, and auth overview/buildings/resources/research/shipyard/fleet/galaxy/defense/technology/stats/search in Chromium/Firefox.
 - Auth visual contract passes in Chromium/Firefox; parity still misses (diff about 12.5-54.5%, box delta <=2).
 - Go internal coverage gate: `97.0% >= 97%`.
 - Go smoke JSON: `all_pass: true`.

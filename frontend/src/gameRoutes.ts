@@ -44,7 +44,7 @@ export const gameRoutes: GameRoute[] = [
   { key: "alliance", label: "Alliance", path: "/game/alliance", migrated: false },
   { key: "officers", label: "Officers Recruitment", path: "/game/officers", migrated: false },
   { key: "statistics", label: "Statistics", path: "/game/statistics", migrated: true },
-  { key: "search", label: "Search", path: "/game/search", migrated: false },
+  { key: "search", label: "Search", path: "/game/search", migrated: true },
   { key: "messages", label: "Messages", path: "/game/messages", migrated: false },
   { key: "notes", label: "Notes", path: "/game/notes", migrated: false },
   { key: "buddy", label: "Buddylist", path: "/game/buddy", migrated: false },

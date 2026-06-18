@@ -193,6 +193,14 @@ const pageSpecs: AuthPageSpec[] = [
     legacyReady: "#content table",
     migratedReady: ".legacy-statistics-table",
     expectedTexts: ["Statistics", "What kind of", "Alliance", "Num.", "Thousand points", "Per person"]
+  },
+  {
+    name: "game-search",
+    legacyPage: "suche",
+    migratedPath: "/game/search",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-search-head-table",
+    expectedTexts: ["Search Universe", "Player Name", "Planet Name", "Alliance Tag", "Alliance Name", "search"]
   }
 ];
 
