@@ -475,6 +475,14 @@ dd {
   top: 114px;
 }
 
+.legacy-content-popup {
+  height: calc(100vh - 20px);
+  left: 0;
+  overflow: auto;
+  top: 10px;
+  width: 100%;
+}
+
 .legacy-page-messagebox {
   border: 1px solid #00ff00;
   box-sizing: border-box;
@@ -705,6 +713,32 @@ dd {
 
 .legacy-game-shell .legacy-technology-name-table td:last-child {
   text-align: right;
+}
+
+.legacy-game-shell .legacy-notes-table,
+.legacy-game-shell .legacy-notes-form-table {
+  border-collapse: separate;
+  border-spacing: 2px;
+}
+
+.legacy-game-shell .legacy-notes-table th,
+.legacy-game-shell .legacy-notes-form-table th {
+  font-weight: bold;
+}
+
+.legacy-game-shell .legacy-notes-form-table input,
+.legacy-game-shell .legacy-notes-form-table select,
+.legacy-game-shell .legacy-notes-form-table textarea,
+.legacy-game-shell .legacy-notes-table input {
+  background-color: #344566;
+  border: 1px #415680 solid;
+  color: #e6ebfb;
+  font-family: Tahoma, sans-serif;
+  font-size: 11px;
+}
+
+.legacy-game-shell .legacy-notes-form-table textarea {
+  width: 100%;
 }
 
 .legacy-resources-form {

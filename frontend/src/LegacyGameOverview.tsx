@@ -627,7 +627,13 @@ export function LegacyGameOverview({
   const searchIssue = searchStatus && !searchStatus.authenticated ? searchStatus.issues[0]?.message ?? "Session is invalid." : null;
   const notes = notesStatus?.authenticated ? notesStatus.notes : undefined;
   const notesIssue = notesStatus && !notesStatus.authenticated ? notesStatus.issues[0]?.message ?? "Session is invalid." : null;
-  const contentClassName = route.key === "overview" ? "legacy-content legacy-content-overview" : "legacy-content";
+  const hasGameChrome = route.key !== "notes";
+  const contentClassName =
+    route.key === "overview"
+      ? "legacy-content legacy-content-overview"
+      : route.key === "notes"
+        ? "legacy-content legacy-content-popup"
+        : "legacy-content";
 
   return (
     <main
@@ -640,11 +646,13 @@ export function LegacyGameOverview({
         } as React.CSSProperties
       }
     >
-      <header className="legacy-header-top" id="header_top">
-        {overview ? <LegacyResourceHeader overview={overview} /> : <div className="legacy-header-placeholder">OGame</div>}
-      </header>
-      <LegacyLeftMenu activeRoute={route} />
-      {overview && route.key === "overview" && overview.messages && overview.messages.length > 0 ? (
+      {hasGameChrome ? (
+        <header className="legacy-header-top" id="header_top">
+          {overview ? <LegacyResourceHeader overview={overview} /> : <div className="legacy-header-placeholder">OGame</div>}
+        </header>
+      ) : null}
+      {hasGameChrome ? <LegacyLeftMenu activeRoute={route} /> : null}
+      {hasGameChrome && overview && route.key === "overview" && overview.messages && overview.messages.length > 0 ? (
         <LegacyPageMessage messages={overview.messages} />
       ) : null}
       <section className={contentClassName} id="content">
