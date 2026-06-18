@@ -975,6 +975,7 @@ function StatisticsTable({ statistics }: { statistics: GameStatistics }) {
   return (
     <>
       <form
+        className="legacy-statistics-form"
         action={gameRouteURL("/game/statistics", window.location.search)}
         method="get"
         onSubmit={(event) => {
@@ -1030,7 +1031,7 @@ function StatisticsTable({ statistics }: { statistics: GameStatistics }) {
 
 function PlayerStatisticsTable({ statistics }: { statistics: GameStatistics }) {
   return (
-    <table className="legacy-overview-table legacy-statistics-table" width={525}>
+    <table className="legacy-overview-table legacy-statistics-table legacy-statistics-player-table" width={525}>
       <tbody>
         <tr>
           <td className="legacy-c" width={30}>
@@ -1080,7 +1081,7 @@ function PlayerStatisticsTable({ statistics }: { statistics: GameStatistics }) {
 
 function AllianceStatisticsTable({ statistics }: { statistics: GameStatistics }) {
   return (
-    <table className="legacy-overview-table legacy-statistics-table" width={519}>
+    <table className="legacy-overview-table legacy-statistics-table legacy-statistics-alliance-table" width={519}>
       <tbody>
         <tr>
           <td className="legacy-c" width={30}>

@@ -1,6 +1,6 @@
 # Migration Status
 
-Updated: 2026-06-18 KST, branch `hjyoon/golang`.
+Updated: 2026-06-19 KST, branch `hjyoon/golang`.
 
 React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split linked docs first.
 
@@ -27,7 +27,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - Fleet covers `flotten1` summary, slots, expeditions, ships, speed/cargo/consumption; dispatch/recall/ACS/templates pending.
 - Galaxy covers clamp, rows, status, moon/debris/actions, slots, deuterium warning, and legacy no-header/table spacing; quick actions pending.
 - Defense covers display state: shipyard gate, requirements, caps, busy state, costs, durations, counts, and max hints.
-- Technology/name-cell and notes popup layouts now follow legacy chrome/spacing; statistics/search cover read models.
+- Technology/name-cell, statistics table, and notes popup layouts now follow legacy chrome/spacing; search covers read models.
 - Registration writes legacy side effects and sends SMTP/MailHog welcome mail with activation link/password lines.
 - Activation clears `validatemd`, sets `validated=1`, copies `email` to `pemail`, redirects, and rejects link reuse.
 - Overview covers legacy `cp`, `lgn` activity, admin notice, header/menu/table layout parity work, rename/delete name rules, blockers, destroy markers, queue flush, stat/rank updates, and active restore.
@@ -39,7 +39,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
 - Go smoke covers health, routes, assets, MailHog, activation cleanup/reuse, auth/session cookie expiry/security, logout, reads/mutations, guards, and privacy.
 - Playwright visual/CSR E2E covers public pages and auth game routes in Chromium/Firefox.
-- Auth visual contract passes in Chromium/Firefox; Chromium diff: notes 0.4-1.8%, buildings 7.6%, galaxy 9.3%, technology 14.8%.
+- Auth visual contract passes in Chromium/Firefox; Chromium diff: stats 6.1-22.5%, notes 0.4-1.8%, buildings 7.6%, galaxy 9.3%.
 - Go internal coverage gate: `97.0% >= 97%`.
 - Go smoke JSON: `all_pass: true`.
 
