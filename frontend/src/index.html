@@ -7,30 +7,13 @@
     <link rel="stylesheet" href="/assets/main.css" />
     <script>
       (function () {
-        var aliases = {
-          "/": true,
-          "/about": true,
-          "/about.php": true,
-          "/home": true,
-          "/home.php": true,
-          "/index.php": true,
-          "/install.php": true,
-          "/register": true,
-          "/register.php": true,
-          "/regeln.php": true,
-          "/rules": true,
-          "/screenshots": true,
-          "/screenshots.php": true,
-          "/story": true,
-          "/story.php": true,
-          "/unis.php": true,
-          "/universes": true
-        };
+        var aliases = /* __OGAME_LEGACY_PUBLIC_BOOTSTRAP_PATHS__ */ { "/": true };
         if (!aliases[window.location.pathname]) {
           return;
         }
         document.documentElement.dataset.legacyPublic = "true";
-        ["/public-assets/css/styles.css", "/public-assets/css/about.css"].forEach(function (href) {
+        var cssHrefs = /* __OGAME_LEGACY_PUBLIC_CSS_HREFS__ */ ["/public-assets/css/styles.css", "/public-assets/css/about.css"];
+        cssHrefs.forEach(function (href) {
           document.write('<link data-legacy-public-css="' + href + '" rel="stylesheet" href="' + href + '">');
         });
       })();

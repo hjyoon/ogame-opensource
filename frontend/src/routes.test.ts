@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { normalizePath, publicRoutes, resolvePublicRoute } from "./routes";
+import {
+  legacyPublicBootstrapPaths,
+  legacyPublicCssHrefs,
+  legacyPublicRouteKeys,
+  normalizePath,
+  publicRouteAliases,
+  publicRoutes,
+  resolvePublicRoute
+} from "./routes";
 
 describe("public route model", () => {
   test("uses natural route paths without php suffixes", () => {
@@ -31,6 +39,21 @@ describe("public route model", () => {
     expect(register.route.key).toBe("register");
     expect(register.canonicalPath).toBe("/register");
     expect(impressum.route.key).toBe("legal");
+  });
+
+  test("derives aliases and bootstrap chrome from the route manifest", () => {
+    expect(publicRouteAliases.get("/regeln.php")).toBe("/rules");
+    expect(publicRouteAliases.get("/unis.php")).toBe("/universes");
+    expect(publicRouteAliases.get("/impressum.php")).toBe("/legal");
+    expect(legacyPublicRouteKeys.has("home")).toBe(true);
+    expect(legacyPublicRouteKeys.has("legal")).toBe(false);
+    for (const path of ["/", "/home", "/home.php", "/register", "/register.php", "/about.php", "/regeln.php", "/unis.php"]) {
+      expect(legacyPublicBootstrapPaths).toContain(path);
+    }
+    expect(legacyPublicBootstrapPaths).not.toContain("/legal");
+    expect(legacyPublicBootstrapPaths).not.toContain("/impressum.php");
+    expect(new Set(legacyPublicBootstrapPaths).size).toBe(legacyPublicBootstrapPaths.length);
+    expect(legacyPublicCssHrefs).toEqual(["/public-assets/css/styles.css", "/public-assets/css/about.css"]);
   });
 
   test("unknown routes fall back to the migration console", () => {

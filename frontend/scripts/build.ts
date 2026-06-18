@@ -1,5 +1,6 @@
-import { copyFile, cp, mkdir, rm } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { legacyPublicBootstrapPaths, legacyPublicCssHrefs } from "../src/routes";
 
 const root = new URL("../", import.meta.url);
 const dist = new URL("dist/", root);
@@ -35,9 +36,19 @@ if (!result.success) {
   process.exit(1);
 }
 
-await copyFile(
-  fileURLToPath(new URL("src/index.html", root)),
-  fileURLToPath(new URL("index.html", dist))
+const indexHtml = await readFile(fileURLToPath(new URL("src/index.html", root)), "utf8");
+const legacyPublicBootstrapMap = Object.fromEntries(legacyPublicBootstrapPaths.map((path) => [path, true]));
+await writeFile(
+  fileURLToPath(new URL("index.html", dist)),
+  indexHtml
+    .replace(
+      '/* __OGAME_LEGACY_PUBLIC_BOOTSTRAP_PATHS__ */ { "/": true }',
+      JSON.stringify(legacyPublicBootstrapMap, null, 10)
+    )
+    .replace(
+      '/* __OGAME_LEGACY_PUBLIC_CSS_HREFS__ */ ["/public-assets/css/styles.css", "/public-assets/css/about.css"]',
+      JSON.stringify(legacyPublicCssHrefs, null, 10)
+    )
 );
 await copyFile(
   fileURLToPath(legacyFavicon),

@@ -10,7 +10,7 @@ import { LegacyPublicScreenshots } from "./LegacyPublicScreenshots";
 import { LegacyPublicStory } from "./LegacyPublicStory";
 import { LegacyPublicUniverses } from "./LegacyPublicUniverses";
 import { resolveGameRoute } from "./gameRoutes";
-import { publicRoutes, resolvePublicRoute } from "./routes";
+import { legacyPublicCssHrefs, legacyPublicRouteKeys, publicRoutes, resolvePublicRoute } from "./routes";
 import "./styles.css";
 
 type Health = {
@@ -105,9 +105,6 @@ const phases = [
   { key: "api", label: "Go API", state: "active", owner: "net/http" },
   { key: "domain", label: "Domain Ports", state: "queued", owner: "Core rules" }
 ];
-
-const legacyPublicCssHrefs = ["/public-assets/css/styles.css", "/public-assets/css/about.css"];
-const legacyPublicRouteKeys = new Set(["home", "register", "about", "story", "screenshots", "rules", "universes"]);
 
 function isLegacyPublicPath(pathname: string) {
   return legacyPublicRouteKeys.has(resolvePublicRoute(pathname).route.key);

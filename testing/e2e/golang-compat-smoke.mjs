@@ -1,3 +1,5 @@
+import { publicRouteAliases, publicRoutes } from "../../frontend/src/routes.ts";
+
 const baseUrl = (process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890").replace(/\/+$/, "");
 const loginSmokeUser = process.env.OGAME_GO_LOGIN_SMOKE_USER ?? "legor";
 const loginSmokePassword = process.env.OGAME_GO_LOGIN_SMOKE_PASS ?? "admin";
@@ -418,17 +420,7 @@ try {
     ]
   }));
 
-  const naturalPublicPaths = [
-    "/home",
-    "/register",
-    "/universes",
-    "/about",
-    "/story",
-    "/screenshots",
-    "/rules",
-    "/legal",
-    "/migration"
-  ];
+  const naturalPublicPaths = publicRoutes.map((route) => route.path);
   const naturalPublicChecks = [];
   for (const path of naturalPublicPaths) {
     const response = await request(path);
@@ -443,18 +435,7 @@ try {
     checks: naturalPublicChecks
   }));
 
-  const legacyPublicPaths = [
-    "/about.php",
-    "/home.php",
-    "/impressum.php",
-    "/index.php",
-    "/install.php",
-    "/register.php",
-    "/regeln.php",
-    "/screenshots.php",
-    "/story.php",
-    "/unis.php"
-  ];
+  const legacyPublicPaths = Array.from(publicRouteAliases.keys());
   const legacyPublicChecks = [];
   for (const path of legacyPublicPaths) {
     const response = await request(path);
