@@ -11,7 +11,7 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - `compose.golang.yaml` runs the Go app; default local port is `8890`.
 - `/api/healthz` reports tool targets and static/legacy asset readiness.
 - Natural public routes and legacy `.php` aliases resolve through the React shell.
-- Public aliases and early CSS bootstrap derive from one route manifest.
+- Public aliases, early CSS bootstrap, Go smoke routes, and public visual specs derive from one route manifest.
 - `/home`, `/register`, `/about`, `/story`, `/screenshots`, `/rules`, `/legal`, `/universes`, and legacy aliases target their PHP public compositions.
 - Legacy public, evolution skin, and game images are copied into `frontend/dist/public-assets`.
 - `/api/public/universes` exposes the universe catalog from the master DB with config fallback.

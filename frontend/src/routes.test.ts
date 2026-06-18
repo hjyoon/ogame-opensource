@@ -8,6 +8,7 @@ import {
   publicRoutes,
   resolvePublicRoute
 } from "./routes";
+import { publicRouteManifest } from "./publicRouteManifest";
 
 describe("public route model", () => {
   test("uses natural route paths without php suffixes", () => {
@@ -54,6 +55,16 @@ describe("public route model", () => {
     expect(legacyPublicBootstrapPaths).not.toContain("/impressum.php");
     expect(new Set(legacyPublicBootstrapPaths).size).toBe(legacyPublicBootstrapPaths.length);
     expect(legacyPublicCssHrefs).toEqual(["/public-assets/css/styles.css", "/public-assets/css/about.css"]);
+  });
+
+  test("keeps visual parity targets tied to legacy aliases", () => {
+    const visualRoutes = publicRouteManifest.filter((route) => route.legacyVisualPath !== undefined);
+    expect(visualRoutes.map((route) => route.key)).toEqual(["home", "register", "universes", "about", "story", "screenshots", "rules", "legal"]);
+    for (const route of visualRoutes) {
+      const visualPath = route.legacyVisualPath ?? "";
+      expect(route.legacyAliases).toContain(visualPath);
+      expect(publicRouteAliases.get(visualPath)).toBe(route.path);
+    }
   });
 
   test("unknown routes fall back to the migration console", () => {

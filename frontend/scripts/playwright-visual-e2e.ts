@@ -2,6 +2,8 @@ import { chromium, firefox, type Browser, type BrowserContext, type Page } from 
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { publicRouteManifest } from "../src/publicRouteManifest";
+import type { PublicRouteKey } from "../src/routes";
 
 type ViewportSpec = {
   name: string;
@@ -187,57 +189,38 @@ const publicMainBoxes: BoxPair[] = [
   { name: "login", legacy: "#login", migrated: ".legacy-public-login" }
 ];
 
-const pageSpecs: PageSpec[] = [
-  {
-    name: "home",
-    legacyPath: "/home.php",
-    migratedPath: "/home",
-    boxes: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu", migrated: ".legacy-public-rightmenu" }]
-  },
-  {
-    name: "register",
-    legacyPath: "/register.php",
-    migratedPath: "/register",
-    boxes: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu_register", migrated: ".legacy-public-register-panel" }]
-  },
-  {
-    name: "about",
-    legacyPath: "/about.php",
-    migratedPath: "/about",
-    boxes: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu_big", migrated: ".legacy-public-about-panel" }]
-  },
-  {
-    name: "story",
-    legacyPath: "/story.php",
-    migratedPath: "/story",
-    boxes: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu_big", migrated: ".legacy-public-story-panel" }]
-  },
-  {
-    name: "screenshots",
-    legacyPath: "/screenshots.php",
-    migratedPath: "/screenshots",
-    boxes: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu_big", migrated: ".legacy-public-screenshots-panel" }]
-  },
-  {
-    name: "rules",
-    legacyPath: "/regeln.php",
-    migratedPath: "/rules",
-    boxes: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu_big", migrated: ".legacy-public-rules-panel" }]
-  },
-  {
-    name: "universes",
-    legacyPath: "/unis.php",
-    migratedPath: "/universes",
-    boxes: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu_big", migrated: ".legacy-public-universes-panel" }]
-  },
-  {
-    name: "legal",
-    legacyPath: "/impressum.php",
-    migratedPath: "/legal",
-    boxes: [{ name: "document", legacy: "table", migrated: ".legacy-legal-document" }],
-    contracts: []
+const visualBoxesByRouteKey: Partial<Record<PublicRouteKey, BoxPair[]>> = {
+  home: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu", migrated: ".legacy-public-rightmenu" }],
+  register: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu_register", migrated: ".legacy-public-register-panel" }],
+  about: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu_big", migrated: ".legacy-public-about-panel" }],
+  story: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu_big", migrated: ".legacy-public-story-panel" }],
+  screenshots: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu_big", migrated: ".legacy-public-screenshots-panel" }],
+  rules: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu_big", migrated: ".legacy-public-rules-panel" }],
+  universes: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu_big", migrated: ".legacy-public-universes-panel" }],
+  legal: [{ name: "document", legacy: "table", migrated: ".legacy-legal-document" }]
+};
+
+const visualContractsByRouteKey: Partial<Record<PublicRouteKey, DomContractSpec[]>> = {
+  legal: []
+};
+
+type VisualPublicRouteEntry = (typeof publicRouteManifest)[number] & { legacyVisualPath: string };
+
+const visualRouteEntries = publicRouteManifest.filter((route): route is VisualPublicRouteEntry => route.legacyVisualPath !== undefined);
+
+const pageSpecs: PageSpec[] = visualRouteEntries.map((route) => {
+  const boxes = visualBoxesByRouteKey[route.key];
+  if (!boxes) {
+    throw new Error(`Missing visual box mapping for public route ${route.key}`);
   }
-];
+  return {
+    name: route.key,
+    legacyPath: route.legacyVisualPath,
+    migratedPath: route.path,
+    boxes,
+    contracts: visualContractsByRouteKey[route.key]
+  };
+});
 
 await mkdir(screenshotDir, { recursive: true });
 

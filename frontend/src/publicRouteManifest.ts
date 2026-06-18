@@ -3,6 +3,7 @@ import type { PublicRoute } from "./routes";
 export type PublicRouteManifestEntry = PublicRoute & {
   legacyAliases: string[];
   legacyPublicChrome: boolean;
+  legacyVisualPath?: string;
 };
 
 export const legacyPublicCssHrefs = ["/public-assets/css/styles.css", "/public-assets/css/about.css"];
@@ -19,7 +20,8 @@ export const publicRouteManifest: PublicRouteManifestEntry[] = [
     image: "/legacy-assets/use/uV/planeten/small/s_normaltempplanet01.jpg",
     points: ["Legacy login field names", "Universe selection", "Strict game-rule parity"],
     legacyAliases: ["/home.php", "/index.php", "/install.php"],
-    legacyPublicChrome: true
+    legacyPublicChrome: true,
+    legacyVisualPath: "/home.php"
   },
   {
     key: "register",
@@ -32,7 +34,8 @@ export const publicRouteManifest: PublicRouteManifestEntry[] = [
     image: "/legacy-assets/use/uV/planeten/small/s_dschjungelplanet03.jpg",
     points: ["Legacy field names", "Universe selection", "Login after registration"],
     legacyAliases: ["/register.php"],
-    legacyPublicChrome: true
+    legacyPublicChrome: true,
+    legacyVisualPath: "/register.php"
   },
   {
     key: "universes",
@@ -45,7 +48,8 @@ export const publicRouteManifest: PublicRouteManifestEntry[] = [
     image: "/legacy-assets/use/uV/planeten/small/s_gasplanet04.jpg",
     points: ["Multi-universe ready", "Natural route names", "Legacy URL aliases"],
     legacyAliases: ["/unis.php"],
-    legacyPublicChrome: true
+    legacyPublicChrome: true,
+    legacyVisualPath: "/unis.php"
   },
   {
     key: "about",
@@ -58,7 +62,8 @@ export const publicRouteManifest: PublicRouteManifestEntry[] = [
     image: "/legacy-assets/use/uV/planeten/small/s_trockenplanet08.jpg",
     points: ["Go backend", "React frontend", "PHP oracle QA"],
     legacyAliases: ["/about.php"],
-    legacyPublicChrome: true
+    legacyPublicChrome: true,
+    legacyVisualPath: "/about.php"
   },
   {
     key: "story",
@@ -71,7 +76,8 @@ export const publicRouteManifest: PublicRouteManifestEntry[] = [
     image: "/legacy-assets/use/uV/planeten/small/s_wasserplanet06.jpg",
     points: ["Content route", "Asset reuse", "No PHP page coupling"],
     legacyAliases: ["/story.php"],
-    legacyPublicChrome: true
+    legacyPublicChrome: true,
+    legacyVisualPath: "/story.php"
   },
   {
     key: "screenshots",
@@ -84,7 +90,8 @@ export const publicRouteManifest: PublicRouteManifestEntry[] = [
     image: "/legacy-assets/use/uV/planeten/small/s_eisplanet08.jpg",
     points: ["Visual regression anchor", "Classic UI density", "Responsive shell"],
     legacyAliases: ["/screenshots.php"],
-    legacyPublicChrome: true
+    legacyPublicChrome: true,
+    legacyVisualPath: "/screenshots.php"
   },
   {
     key: "rules",
@@ -97,7 +104,8 @@ export const publicRouteManifest: PublicRouteManifestEntry[] = [
     image: "/legacy-assets/use/uV/planeten/small/s_normaltempplanet04.jpg",
     points: ["Public read route", "No server mutation", "Future moderation hooks"],
     legacyAliases: ["/regeln.php"],
-    legacyPublicChrome: true
+    legacyPublicChrome: true,
+    legacyVisualPath: "/regeln.php"
   },
   {
     key: "legal",
@@ -110,7 +118,8 @@ export const publicRouteManifest: PublicRouteManifestEntry[] = [
     image: "/legacy-assets/use/uV/planeten/small/s_trockenplanet04.jpg",
     points: ["Natural URL", "Static content shell", "Legacy alias support"],
     legacyAliases: ["/impressum.php"],
-    legacyPublicChrome: false
+    legacyPublicChrome: false,
+    legacyVisualPath: "/impressum.php"
   },
   {
     key: "migration",

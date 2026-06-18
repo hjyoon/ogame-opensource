@@ -29,7 +29,7 @@ export type RouteResolution = {
   isLegacyAlias: boolean;
 };
 
-export const publicRoutes: PublicRoute[] = publicRouteManifest.map(({ legacyAliases, legacyPublicChrome, ...route }) => route);
+export const publicRoutes: PublicRoute[] = publicRouteManifest.map(({ legacyAliases, legacyPublicChrome, legacyVisualPath, ...route }) => route);
 
 const routeByPath = new Map(publicRoutes.map((route) => [route.path, route]));
 
