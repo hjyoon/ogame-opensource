@@ -77,13 +77,15 @@ type GameSession struct {
 	IPAddress      string
 	DisableIPCheck bool
 	Banned         bool
+	BannedUntil    int
 	HomePlanetID   int
 	UniverseNumber int
 }
 
 type SessionIssue struct {
-	Code    string
-	Message string
+	Code        string
+	Message     string
+	BannedUntil int
 }
 
 func (d LoginDraft) Validate() LoginValidation {
@@ -167,7 +169,7 @@ func (s GameSession) Validate(privateSession string, remoteIP string) []SessionI
 		return []SessionIssue{{Code: SessionIssuePrivateInvalid, Message: "Private session is invalid."}}
 	}
 	if s.Banned {
-		return []SessionIssue{{Code: SessionIssueBanned, Message: "Commander account is banned."}}
+		return []SessionIssue{{Code: SessionIssueBanned, Message: "Commander account is banned.", BannedUntil: s.BannedUntil}}
 	}
 	if !s.DisableIPCheck && !legacyLocalhost(remoteIP) && remoteIP != s.IPAddress {
 		return []SessionIssue{{Code: SessionIssueIPMismatch, Message: "Session IP address does not match."}}

@@ -124,7 +124,7 @@ func TestGameSessionReportsInvalidSessionStates(t *testing.T) {
 	}{
 		{name: "missing", session: GameSession{}, code: SessionIssueInvalid},
 		{name: "private", session: GameSession{Found: true, PrivateID: "private"}, private: "wrong", code: SessionIssuePrivateInvalid},
-		{name: "banned", session: GameSession{Found: true, PrivateID: "private", Banned: true}, private: "private", code: SessionIssueBanned},
+		{name: "banned", session: GameSession{Found: true, PrivateID: "private", Banned: true, BannedUntil: 12345}, private: "private", code: SessionIssueBanned},
 		{name: "ip", session: GameSession{Found: true, PrivateID: "private", IPAddress: "203.0.113.10"}, private: "private", remote: "198.51.100.20", code: SessionIssueIPMismatch},
 	}
 	for _, tc := range cases {
@@ -132,6 +132,9 @@ func TestGameSessionReportsInvalidSessionStates(t *testing.T) {
 			issues := tc.session.Validate(tc.private, tc.remote)
 			if len(issues) != 1 || issues[0].Code != tc.code {
 				t.Fatalf("expected issue %s, got %+v", tc.code, issues)
+			}
+			if tc.code == SessionIssueBanned && issues[0].BannedUntil != 12345 {
+				t.Fatalf("expected ban expiry to be preserved, got %+v", issues[0])
 			}
 		})
 	}

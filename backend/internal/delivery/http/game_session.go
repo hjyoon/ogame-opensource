@@ -15,8 +15,9 @@ type gameSessionResponse struct {
 }
 
 type gameSessionIssueResponse struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code        string `json:"code"`
+	Message     string `json:"message"`
+	BannedUntil int    `json:"bannedUntil,omitempty"`
 }
 
 type gameSessionSummary struct {
@@ -68,8 +69,9 @@ func toGameSessionIssueResponses(issues []domain.SessionIssue) []gameSessionIssu
 	responses := make([]gameSessionIssueResponse, 0, len(issues))
 	for _, issue := range issues {
 		responses = append(responses, gameSessionIssueResponse{
-			Code:    issue.Code,
-			Message: issue.Message,
+			Code:        issue.Code,
+			Message:     issue.Message,
+			BannedUntil: issue.BannedUntil,
 		})
 	}
 	return responses

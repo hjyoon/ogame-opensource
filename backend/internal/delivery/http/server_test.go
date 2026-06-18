@@ -656,8 +656,9 @@ func TestGameSessionEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
 	gameSessions := &fakeGameSessions{result: domainpublicsite.SessionAuthentication{
 		Authenticated: false,
 		Issues: []domainpublicsite.SessionIssue{{
-			Code:    domainpublicsite.SessionIssuePrivateInvalid,
-			Message: "Private session is invalid.",
+			Code:        domainpublicsite.SessionIssueBanned,
+			Message:     "Commander account is banned.",
+			BannedUntil: 12345,
 		}},
 	}}
 	server := testServerWithGameSessions(t, gameSessions)
@@ -672,7 +673,7 @@ func TestGameSessionEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Authenticated || len(response.Issues) != 1 || response.Issues[0].Code != domainpublicsite.SessionIssuePrivateInvalid {
+	if response.Authenticated || len(response.Issues) != 1 || response.Issues[0].Code != domainpublicsite.SessionIssueBanned || response.Issues[0].BannedUntil != 12345 {
 		t.Fatalf("expected invalid session response, got %+v", response)
 	}
 }

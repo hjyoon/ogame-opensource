@@ -150,7 +150,7 @@ func TestNewSessionStoreUsesSQLExecer(t *testing.T) {
 
 func TestSessionStoreFindsLegacyGameSession(t *testing.T) {
 	queryer := &fakeQueryer{responses: []fakeResponse{
-		{rows: &fakeRows{items: []fakeRow{{values: []any{42, "legor", "public", "private", "203.0.113.10", 1, 0, 99}}}}},
+		{rows: &fakeRows{items: []fakeRow{{values: []any{42, "legor", "public", "private", "203.0.113.10", 1, 0, 0, 99}}}}},
 	}}
 	store := NewSessionStoreWithQueryer(queryer, "uni1_")
 
@@ -162,11 +162,27 @@ func TestSessionStoreFindsLegacyGameSession(t *testing.T) {
 	if !session.Found || session.PlayerID != 42 || session.Commander != "legor" || session.PublicID != "public" || session.PrivateID != "private" {
 		t.Fatalf("unexpected session: %+v", session)
 	}
-	if !session.DisableIPCheck || session.Banned || session.HomePlanetID != 99 {
+	if !session.DisableIPCheck || session.Banned || session.BannedUntil != 0 || session.HomePlanetID != 99 {
 		t.Fatalf("unexpected session flags: %+v", session)
 	}
-	if !strings.Contains(queryer.calls[0].query, "`uni1_users`") || queryer.calls[0].args[0] != "public" {
+	if !strings.Contains(queryer.calls[0].query, "`uni1_users`") || !strings.Contains(queryer.calls[0].query, "banned_until") || queryer.calls[0].args[0] != "public" {
 		t.Fatalf("unexpected query: %+v", queryer.calls[0])
+	}
+}
+
+func TestSessionStoreFindsBannedGameSessionExpiry(t *testing.T) {
+	queryer := &fakeQueryer{responses: []fakeResponse{
+		{rows: &fakeRows{items: []fakeRow{{values: []any{42, "legor", "public", "private", "203.0.113.10", 0, 1, 12345, 99}}}}},
+	}}
+	store := NewSessionStoreWithQueryer(queryer, "uni1_")
+
+	session, err := store.FindGameSession(context.Background(), "public")
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !session.Banned || session.BannedUntil != 12345 {
+		t.Fatalf("expected banned session expiry, got %+v", session)
 	}
 }
 
@@ -202,7 +218,7 @@ func TestSessionStoreFindGameSessionReturnsRowsError(t *testing.T) {
 
 func TestSessionStoreFindGameSessionReturnsScanError(t *testing.T) {
 	store := NewSessionStoreWithQueryer(&fakeQueryer{responses: []fakeResponse{
-		{rows: &fakeRows{items: []fakeRow{{values: []any{42, "legor", "public", "private", "203.0.113.10", 1, 0, 99}, scanErr: errors.New("scan failed")}}}},
+		{rows: &fakeRows{items: []fakeRow{{values: []any{42, "legor", "public", "private", "203.0.113.10", 1, 0, 0, 99}, scanErr: errors.New("scan failed")}}}},
 	}}, "uni1_")
 
 	if _, err := store.FindGameSession(context.Background(), "public"); err == nil {
