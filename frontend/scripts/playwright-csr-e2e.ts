@@ -74,6 +74,7 @@ try {
   await assertGameClientNavigation(page, "game defense menu preserves CSR", "a[href^='/game/defense']", "/game/defense", "Defense");
   await assertGameClientNavigation(page, "game fleet menu preserves CSR", "a[href^='/game/fleet']", "/game/fleet", "Fleet");
   await assertGameClientNavigation(page, "game technology menu preserves CSR", "a[href^='/game/technology']", "/game/technology", "Technology");
+  await assertTechnologyDetailsNavigation(page);
   await assertGameClientNavigation(page, "game overview menu preserves CSR", "a[href^='/game/overview']", "/game/overview", "Overview");
 
   const report = {
@@ -277,6 +278,36 @@ async function assertGameClientNavigation(
   });
 }
 
+async function assertTechnologyDetailsNavigation(page: Page) {
+  const marker = "probe-game-technology-details";
+  await page.evaluate((value) => {
+    window.__ogameCsrProbe = value;
+  }, marker);
+  await page.locator("[data-technology-row] a", { hasText: "[i]" }).first().click();
+  await page.waitForFunction(() => window.location.pathname === "/game/technology" && window.location.search.includes("tid="), undefined, {
+    timeout: 5_000
+  });
+  await page.locator(".legacy-technology-details-table").first().waitFor({ timeout: 10_000 });
+  await record("game technology details preserves CSR", async () => {
+    const state = await gameShellState(page, marker, "Technology");
+    return {
+      pass:
+        state.details.pathname === "/game/technology" &&
+        state.details.search.includes("session=") &&
+        state.details.search.includes("tid=") &&
+        state.details.probe === marker &&
+        state.details.gameShell === true &&
+        state.details.activeMenuLabel === "Technology" &&
+        state.details.technologyDetailTable === true &&
+        state.details.technologyDetailTarget.includes("Building conditions for") &&
+        state.details.pendingText === false &&
+        state.details.legacyCssLinks === 0 &&
+        state.details.legacyBody === false,
+      details: state.details
+    };
+  });
+}
+
 async function publicChromeState(page: Page) {
   const state = await page.evaluate(() => ({
     legacyCssLinks: document.head.querySelectorAll("link[data-legacy-public-css]").length,
@@ -329,6 +360,9 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     technologyNames: Array.from(document.querySelectorAll("[data-technology-row] .legacy-technology-name-link")).map(
       (link) => link.textContent?.trim() ?? ""
     ),
+    technologyDetailRows: document.querySelectorAll("[data-technology-detail-row]").length,
+    technologyDetailTable: document.querySelector(".legacy-technology-details-table") !== null,
+    technologyDetailTarget: document.querySelector(".legacy-technology-details-table tr:first-child td")?.textContent?.trim() ?? "",
     pendingText: document.body.textContent?.includes("queued for React and Go migration") ?? false
   }));
   return {

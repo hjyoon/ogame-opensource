@@ -16,6 +16,7 @@ type AuthPageSpec = {
   legacyPage: string;
   legacyQuery?: Record<string, string>;
   migratedPath: string;
+  migratedQuery?: Record<string, string>;
   legacyReady: string;
   migratedReady: string;
   expectedTexts: string[];
@@ -135,6 +136,16 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["Buildings", "Requirements", "Metal Mine", "Research", "Ships", "Defense", "Lunar Buildings"]
   },
   {
+    name: "game-technology-details",
+    legacyPage: "techtreedetails",
+    legacyQuery: { tid: "206" },
+    migratedPath: "/game/technology",
+    migratedQuery: { tid: "206" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-technology-details-table",
+    expectedTexts: ["Building conditions for", "Cruiser", "Shipyard", "Impulse Drive", "Ion Technology"]
+  },
+  {
     name: "game-defense",
     legacyPage: "buildings",
     legacyQuery: { mode: "Verteidigung" },
@@ -244,7 +255,11 @@ function legacyURL(spec: AuthPageSpec, session: string): string {
 }
 
 function migratedURL(spec: AuthPageSpec, session: string): string {
-  return `${migratedBaseURL}${spec.migratedPath}?lgn=1&session=${encodeURIComponent(session)}`;
+  const query = new URLSearchParams({ lgn: "1", session });
+  for (const [key, value] of Object.entries(spec.migratedQuery ?? {})) {
+    query.set(key, value);
+  }
+  return `${migratedBaseURL}${spec.migratedPath}?${query.toString()}`;
 }
 
 async function newContext(browser: Browser, viewport: ViewportSpec): Promise<BrowserContext> {

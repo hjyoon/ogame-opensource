@@ -50,5 +50,11 @@ func (r TechnologyRepository) GetTechnology(ctx context.Context, query appgame.T
 		return domaingame.Technology{}, err
 	}
 
-	return domaingame.BuildTechnology(overview, levels, research), nil
+	technology := domaingame.BuildTechnology(overview, levels, research)
+	if query.TechnologyID > 0 {
+		if details, ok := domaingame.BuildTechnologyDetails(query.TechnologyID, levels, research); ok {
+			technology.Details = &details
+		}
+	}
+	return technology, nil
 }

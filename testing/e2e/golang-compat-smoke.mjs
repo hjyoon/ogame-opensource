@@ -356,6 +356,16 @@ try {
     gameTechnologyBody = {};
   }
 
+  const gameTechnologyDetails = await request(`/api/game/technology${sessionSearch}&tid=206`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameTechnologyDetailsBody = {};
+  try {
+    gameTechnologyDetailsBody = JSON.parse(gameTechnologyDetails.body);
+  } catch {
+    gameTechnologyDetailsBody = {};
+  }
+
   const gameTechnologyWithoutCookie = await request(`/api/game/technology${sessionSearch}`);
   let gameTechnologyWithoutCookieBody = {};
   try {
@@ -494,6 +504,19 @@ try {
         gameTechnologyBody.technology?.groups?.some((group) => group.name === "Buildings" && Array.isArray(group.items)),
         "game technology returns building requirement group",
         gameTechnologyBody
+      ),
+      check(gameTechnologyDetails.status === 200, "game technology details returns HTTP 200 with private cookie", {
+        status: gameTechnologyDetails.status
+      }),
+      check(
+        gameTechnologyDetailsBody.technology?.details?.target?.name === "Cruiser",
+        "game technology details returns selected target",
+        gameTechnologyDetailsBody
+      ),
+      check(
+        Array.isArray(gameTechnologyDetailsBody.technology?.details?.levels),
+        "game technology details returns recursive requirement levels",
+        gameTechnologyDetailsBody
       ),
       check(!gameTechnology.body.includes(sessionCookiePair), "game technology response does not echo private cookie"),
       check(gameTechnologyWithoutCookie.status === 401, "game technology rejects missing private cookie", { status: gameTechnologyWithoutCookie.status }),
@@ -641,7 +664,8 @@ try {
       check(js.body.includes("legacy-research-table"), "React bundle contains legacy game research layout"),
       check(js.body.includes("legacy-shipyard-table"), "React bundle contains legacy game shipyard layout"),
       check(js.body.includes("legacy-defense-table"), "React bundle contains legacy game defense layout"),
-      check(js.body.includes("legacy-technology-table"), "React bundle contains legacy game technology layout")
+      check(js.body.includes("legacy-technology-table"), "React bundle contains legacy game technology layout"),
+      check(js.body.includes("legacy-technology-details-table"), "React bundle contains legacy game technology details layout")
     ]
   }));
 

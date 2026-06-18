@@ -1289,10 +1289,27 @@ func TestGameTechnologyEndpointReturnsTechnology(t *testing.T) {
 					}},
 				}},
 			}},
+			Details: &domaingame.TechnologyDetails{
+				Target: domaingame.TechnologyItem{
+					ID:               domaingame.FleetCruiser,
+					Name:             "Cruiser",
+					DetailsAvailable: true,
+				},
+				Levels: []domaingame.TechnologyDetailsLevel{{
+					Step: 1,
+					Requirements: []domaingame.TechnologyRequirement{{
+						ID:           domaingame.ResearchImpulseDrive,
+						Name:         "Impulse Drive",
+						Level:        4,
+						CurrentLevel: 3,
+						Met:          false,
+					}},
+				}},
+			},
 		},
 	}}
 	server := testServerWithGameTechnology(t, technology)
-	req := httptest.NewRequest(http.MethodGet, "/api/game/technology?session=public&cp=99", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/technology?session=public&cp=99&tid=206", nil)
 	req.RemoteAddr = "203.0.113.10:4321"
 	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
 	rec := httptest.NewRecorder()
@@ -1312,7 +1329,12 @@ func TestGameTechnologyEndpointReturnsTechnology(t *testing.T) {
 	if requirement.ID != domaingame.BuildingDeuteriumSynth || requirement.Level != 5 || requirement.CurrentLevel != 4 || requirement.Met {
 		t.Fatalf("unexpected technology requirement mapping: %+v", requirement)
 	}
-	if technology.command.PublicSession != "public" || technology.command.PlanetID != 99 || technology.command.RemoteAddr != "203.0.113.10" {
+	if response.Technology.Details == nil || response.Technology.Details.Target.ID != domaingame.FleetCruiser ||
+		response.Technology.Details.Levels[0].Requirements[0].ID != domaingame.ResearchImpulseDrive {
+		t.Fatalf("unexpected technology detail mapping: %+v", response.Technology.Details)
+	}
+	if technology.command.PublicSession != "public" || technology.command.PlanetID != 99 ||
+		technology.command.TechnologyID != domaingame.FleetCruiser || technology.command.RemoteAddr != "203.0.113.10" {
 		t.Fatalf("unexpected technology command: %+v", technology.command)
 	}
 	if technology.command.PrivateSessions["prsess_42_1"] != "private" {
@@ -1356,6 +1378,17 @@ func TestGameTechnologyEndpointRejectsInvalidPlanetID(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected invalid selected planet to return 400, got %d", rec.Code)
+	}
+}
+
+func TestGameTechnologyEndpointRejectsInvalidTechnologyID(t *testing.T) {
+	server := testServerWithGameTechnology(t, &fakeGameTechnology{})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/technology?session=public&tid=abc", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid selected technology to return 400, got %d", rec.Code)
 	}
 }
 

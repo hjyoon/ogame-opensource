@@ -3,6 +3,7 @@ package httpdelivery
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
@@ -15,10 +16,11 @@ type gameTechnologyResponse struct {
 }
 
 type gameTechnologySummary struct {
-	Commander      string                        `json:"commander"`
-	CurrentPlanet  gamePlanetOverviewResponse    `json:"currentPlanet"`
-	PlanetSwitcher []gamePlanetSummaryResponse   `json:"planetSwitcher"`
-	Groups         []gameTechnologyGroupResponse `json:"groups"`
+	Commander      string                         `json:"commander"`
+	CurrentPlanet  gamePlanetOverviewResponse     `json:"currentPlanet"`
+	PlanetSwitcher []gamePlanetSummaryResponse    `json:"planetSwitcher"`
+	Groups         []gameTechnologyGroupResponse  `json:"groups"`
+	Details        *gameTechnologyDetailsResponse `json:"details,omitempty"`
 }
 
 type gameTechnologyGroupResponse struct {
@@ -42,6 +44,16 @@ type gameTechnologyRequirementResponse struct {
 	Met          bool   `json:"met"`
 }
 
+type gameTechnologyDetailsResponse struct {
+	Target gameTechnologyItemResponse           `json:"target"`
+	Levels []gameTechnologyDetailsLevelResponse `json:"levels"`
+}
+
+type gameTechnologyDetailsLevelResponse struct {
+	Step         int                                 `json:"step"`
+	Requirements []gameTechnologyRequirementResponse `json:"requirements"`
+}
+
 func (a app) handleGameTechnology(w http.ResponseWriter, r *http.Request) {
 	if a.deps.GameTechnology == nil {
 		http.Error(w, "game technology unavailable", http.StatusServiceUnavailable)
@@ -53,12 +65,18 @@ func (a app) handleGameTechnology(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid selected planet", http.StatusBadRequest)
 		return
 	}
+	technologyID, err := selectedTechnologyID(r)
+	if err != nil {
+		http.Error(w, "invalid selected technology", http.StatusBadRequest)
+		return
+	}
 
 	result, err := a.deps.GameTechnology.GetTechnology(r.Context(), appgame.TechnologyCommand{
 		PublicSession:   r.URL.Query().Get("session"),
 		PrivateSessions: cookieMap(r),
 		RemoteAddr:      remoteIP(r.RemoteAddr),
 		PlanetID:        planetID,
+		TechnologyID:    technologyID,
 	})
 	if err != nil {
 		http.Error(w, "game technology unavailable", http.StatusServiceUnavailable)
@@ -97,6 +115,7 @@ func toGameTechnologySummary(technology domaingame.Technology) gameTechnologySum
 		CurrentPlanet:  toGamePlanetOverviewResponse(technology.CurrentPlanet),
 		PlanetSwitcher: planets,
 		Groups:         groups,
+		Details:        toGameTechnologyDetailsResponse(technology.Details),
 	}
 }
 
@@ -129,4 +148,43 @@ func toGameTechnologyItemResponse(item domaingame.TechnologyItem) gameTechnology
 		Requirements:     requirements,
 		DetailsAvailable: item.DetailsAvailable,
 	}
+}
+
+func toGameTechnologyDetailsResponse(details *domaingame.TechnologyDetails) *gameTechnologyDetailsResponse {
+	if details == nil {
+		return nil
+	}
+	levels := make([]gameTechnologyDetailsLevelResponse, 0, len(details.Levels))
+	for _, level := range details.Levels {
+		requirements := make([]gameTechnologyRequirementResponse, 0, len(level.Requirements))
+		for _, requirement := range level.Requirements {
+			requirements = append(requirements, gameTechnologyRequirementResponse{
+				ID:           requirement.ID,
+				Name:         requirement.Name,
+				Level:        requirement.Level,
+				CurrentLevel: requirement.CurrentLevel,
+				Met:          requirement.Met,
+			})
+		}
+		levels = append(levels, gameTechnologyDetailsLevelResponse{
+			Step:         level.Step,
+			Requirements: requirements,
+		})
+	}
+	return &gameTechnologyDetailsResponse{
+		Target: toGameTechnologyItemResponse(details.Target),
+		Levels: levels,
+	}
+}
+
+func selectedTechnologyID(r *http.Request) (int, error) {
+	raw := r.URL.Query().Get("tid")
+	if raw == "" {
+		return 0, nil
+	}
+	id, err := strconv.Atoi(raw)
+	if err != nil || id < 0 {
+		return 0, strconv.ErrSyntax
+	}
+	return id, nil
 }

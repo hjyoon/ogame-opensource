@@ -455,7 +455,7 @@ function App() {
     if (selectedPlanet) {
       technologySearch.set("cp", selectedPlanet);
     }
-    const selectedTechnology = currentSearch.get("tid") ?? currentSearch.get("gid");
+    const selectedTechnology = currentSearch.get("tid");
     if (selectedTechnology) {
       technologySearch.set("tid", selectedTechnology);
     }

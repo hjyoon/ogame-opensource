@@ -24,6 +24,7 @@ func TestTechnologyServiceReturnsAuthenticatedTechnology(t *testing.T) {
 		PrivateSessions: map[string]string{"private": "secret"},
 		RemoteAddr:      "203.0.113.10",
 		PlanetID:        99,
+		TechnologyID:    206,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +32,7 @@ func TestTechnologyServiceReturnsAuthenticatedTechnology(t *testing.T) {
 	if !result.Authenticated || result.Technology.Commander != "legor" {
 		t.Fatalf("unexpected technology result: %+v", result)
 	}
-	if repository.query.PlayerID != 42 || repository.query.PlanetID != 99 {
+	if repository.query.PlayerID != 42 || repository.query.PlanetID != 99 || repository.query.TechnologyID != 206 {
 		t.Fatalf("unexpected repository query: %+v", repository.query)
 	}
 	if sessions.command.PublicSession != "public" || sessions.command.RemoteAddr != "203.0.113.10" {

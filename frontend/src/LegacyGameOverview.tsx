@@ -128,6 +128,7 @@ type GameTechnology = {
   currentPlanet: GamePlanetOverview;
   planetSwitcher: GamePlanetSummary[];
   groups: GameTechnologyGroup[];
+  details?: GameTechnologyDetails;
 };
 
 type GameTechnologyGroup = {
@@ -149,6 +150,16 @@ type GameTechnologyRequirement = {
   level: number;
   currentLevel: number;
   met: boolean;
+};
+
+type GameTechnologyDetails = {
+  target: GameTechnologyItem;
+  levels: GameTechnologyDetailsLevel[];
+};
+
+type GameTechnologyDetailsLevel = {
+  step: number;
+  requirements: GameTechnologyRequirement[];
 };
 
 type GameBuildingItem = {
@@ -844,6 +855,9 @@ function DefenseTable({ defense }: { defense: GameDefense }) {
 }
 
 function TechnologyTable({ technology }: { technology: GameTechnology }) {
+  if (technology.details) {
+    return <TechnologyDetailsTable details={technology.details} />;
+  }
   return (
     <div className="legacy-center">
       <table className="legacy-overview-table legacy-technology-table" width={470}>
@@ -886,6 +900,65 @@ function TechnologyTable({ technology }: { technology: GameTechnology }) {
               ))}
             </React.Fragment>
           ))}
+        </tbody>
+      </table>
+      <br />
+      <br />
+      <br />
+      <br />
+    </div>
+  );
+}
+
+function TechnologyDetailsTable({ details }: { details: GameTechnologyDetails }) {
+  return (
+    <div className="legacy-center">
+      <table className="legacy-overview-table legacy-technology-details-table" width={270}>
+        <tbody>
+          <tr>
+            <td align="center" className="legacy-c" style={{ whiteSpace: "nowrap" }}>
+              Building conditions for{" "}
+              <a className="legacy-technology-detail-target" href={technologyInfoURL(details.target.id)}>
+                &apos;{details.target.name}&apos;
+              </a>
+            </td>
+          </tr>
+          {details.levels.length === 0 ? (
+            <tr>
+              <td align="center" className="legacy-l">
+                No conditions
+              </td>
+            </tr>
+          ) : (
+            details.levels.map((level) => (
+              <React.Fragment key={level.step}>
+                <tr>
+                  <td className="legacy-c">{level.step}</td>
+                </tr>
+                {level.requirements.map((requirement) => (
+                  <tr data-technology-detail-row={requirement.id} key={`${level.step}-${requirement.id}`}>
+                    <td align="center" className="legacy-l">
+                      <table border={0} className="legacy-technology-name-table" width="100%">
+                        <tbody>
+                          <tr>
+                            <td align="left">
+                              <span style={{ color: requirement.met ? "#00ff00" : "#ff0000" }}>
+                                {" "}
+                                {requirement.name} (level {requirement.level}){" "}
+                              </span>
+                            </td>
+                            <td align="right">
+                              <a href={technologyDetailURL(requirement.id)}>[i]</a>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                ))}
+              </React.Fragment>
+            ))
+          )}
         </tbody>
       </table>
       <br />
@@ -1191,12 +1264,14 @@ function planetHref(planetID: number): string {
 
 function technologyInfoURL(itemID: number): string {
   const search = new URLSearchParams(window.location.search);
+  search.delete("tid");
   search.set("gid", String(itemID));
   return gameRouteURL("/game/technology", search.toString());
 }
 
 function technologyDetailURL(itemID: number): string {
   const search = new URLSearchParams(window.location.search);
+  search.delete("gid");
   search.set("tid", String(itemID));
   return gameRouteURL("/game/technology", search.toString());
 }

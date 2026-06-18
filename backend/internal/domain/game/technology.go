@@ -7,6 +7,7 @@ type Technology struct {
 	CurrentPlanet  PlanetOverview
 	PlanetSwitcher []PlanetSummary
 	Groups         []TechnologyGroup
+	Details        *TechnologyDetails
 }
 
 type TechnologyGroup struct {
@@ -28,6 +29,16 @@ type TechnologyRequirement struct {
 	Level        int
 	CurrentLevel int
 	Met          bool
+}
+
+type TechnologyDetails struct {
+	Target TechnologyItem
+	Levels []TechnologyDetailsLevel
+}
+
+type TechnologyDetailsLevel struct {
+	Step         int
+	Requirements []TechnologyRequirement
 }
 
 func BuildTechnology(overview Overview, levels BuildingLevels, research ResearchLevels) Technology {
@@ -65,6 +76,39 @@ func BuildTechnology(overview Overview, levels BuildingLevels, research Research
 	}
 }
 
+func BuildTechnologyDetails(id int, levels BuildingLevels, research ResearchLevels) (TechnologyDetails, bool) {
+	spec, ok := technologySpecByID(id)
+	if !ok {
+		return TechnologyDetails{}, false
+	}
+
+	tree := technologyRequirementsByDepth{}
+	maxDepth := walkTechnologyRequirements(spec.requirements, 0, tree)
+	detailLevels := make([]TechnologyDetailsLevel, 0, maxDepth)
+	step := 1
+	for depth := maxDepth - 1; depth >= 0; depth-- {
+		requirements := buildTechnologyRequirements(tree[depth], levels, research)
+		if len(requirements) == 0 {
+			continue
+		}
+		detailLevels = append(detailLevels, TechnologyDetailsLevel{
+			Step:         step,
+			Requirements: requirements,
+		})
+		step++
+	}
+
+	return TechnologyDetails{
+		Target: TechnologyItem{
+			ID:               id,
+			Name:             spec.name,
+			Requirements:     buildTechnologyRequirements(spec.requirements, levels, research),
+			DetailsAvailable: len(spec.requirements) > 0,
+		},
+		Levels: detailLevels,
+	}, true
+}
+
 func buildTechnologyGroup(key string, name string, ids []int, levels BuildingLevels, research ResearchLevels) TechnologyGroup {
 	items := make([]TechnologyItem, 0, len(ids))
 	for _, id := range ids {
@@ -81,6 +125,40 @@ func buildTechnologyGroup(key string, name string, ids []int, levels BuildingLev
 		})
 	}
 	return TechnologyGroup{Key: key, Name: name, Items: items}
+}
+
+type technologyRequirementsByDepth map[int]map[int]int
+
+func walkTechnologyRequirements(requirements map[int]int, depth int, tree technologyRequirementsByDepth) int {
+	if len(requirements) == 0 {
+		return depth
+	}
+	if tree[depth] == nil {
+		tree[depth] = map[int]int{}
+	}
+	ids := make([]int, 0, len(requirements))
+	for id := range requirements {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+
+	maxDepth := depth + 1
+	for _, id := range ids {
+		level := requirements[id]
+		if tree[depth][id] < level {
+			tree[depth][id] = level
+		}
+	}
+	for _, id := range ids {
+		spec, ok := technologySpecByID(id)
+		if !ok {
+			continue
+		}
+		if childDepth := walkTechnologyRequirements(spec.requirements, depth+1, tree); childDepth > maxDepth {
+			maxDepth = childDepth
+		}
+	}
+	return maxDepth
 }
 
 func buildTechnologyRequirements(requirements map[int]int, levels BuildingLevels, research ResearchLevels) []TechnologyRequirement {

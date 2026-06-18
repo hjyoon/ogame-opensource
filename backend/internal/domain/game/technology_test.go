@@ -54,6 +54,49 @@ func TestBuildTechnologyIncludesDefenseMissilesAndMoonBuildings(t *testing.T) {
 	}
 }
 
+func TestBuildTechnologyDetailsUsesLegacyDepthOrder(t *testing.T) {
+	details, ok := BuildTechnologyDetails(FleetCruiser, BuildingLevels{
+		BuildingShipyard: 5,
+	}, ResearchLevels{
+		ResearchEnergy:       2,
+		ResearchImpulseDrive: 4,
+		ResearchLaser:        3,
+	})
+	if !ok {
+		t.Fatal("expected cruiser technology details")
+	}
+	if details.Target.ID != FleetCruiser || details.Target.Name != "Cruiser" || len(details.Levels) != 4 {
+		t.Fatalf("unexpected cruiser details: %+v", details)
+	}
+	if details.Levels[0].Step != 1 || len(details.Levels[0].Requirements) != 1 {
+		t.Fatalf("expected deepest requirements first, got %+v", details.Levels)
+	}
+	if details.Levels[0].Requirements[0].ID != BuildingResearchLab {
+		t.Fatalf("unexpected deepest requirement: %+v", details.Levels[0].Requirements)
+	}
+	lastLevel := details.Levels[len(details.Levels)-1]
+	if lastLevel.Step != 4 || len(lastLevel.Requirements) != 3 {
+		t.Fatalf("expected direct requirements last, got %+v", lastLevel)
+	}
+	if lastLevel.Requirements[1].ID != ResearchImpulseDrive || !lastLevel.Requirements[1].Met {
+		t.Fatalf("expected met impulse drive requirement, got %+v", lastLevel.Requirements)
+	}
+}
+
+func TestBuildTechnologyDetailsHandlesNoConditionsAndUnknownIDs(t *testing.T) {
+	details, ok := BuildTechnologyDetails(BuildingMetalMine, BuildingLevels{}, ResearchLevels{})
+	if !ok {
+		t.Fatal("expected metal mine details")
+	}
+	if details.Target.ID != BuildingMetalMine || details.Target.DetailsAvailable || len(details.Levels) != 0 {
+		t.Fatalf("expected no-condition metal mine details, got %+v", details)
+	}
+
+	if _, ok := BuildTechnologyDetails(9999, BuildingLevels{}, ResearchLevels{}); ok {
+		t.Fatal("expected unknown technology id to be rejected")
+	}
+}
+
 func technologyItemByID(t *testing.T, technology Technology, id int) TechnologyItem {
 	t.Helper()
 	for _, group := range technology.Groups {
