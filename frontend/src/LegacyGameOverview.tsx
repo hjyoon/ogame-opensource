@@ -67,6 +67,12 @@ export type GameSearchStatus = {
   search?: GameSearch;
 };
 
+export type GameNotesStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  notes?: GameNotes;
+};
+
 export type GameLogoutStatus = {
   loggedOut: boolean;
   redirectTo: string;
@@ -336,6 +342,25 @@ type GameSearchAllianceRow = {
   own: boolean;
 };
 
+type GameNotes = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  action: "list" | "create" | "edit";
+  rows: GameNote[];
+  editNote?: GameNote;
+};
+
+type GameNote = {
+  id: number;
+  subject: string;
+  text: string;
+  textSize: number;
+  priority: number;
+  priorityColor: string;
+  date: number;
+};
+
 type GameFleetShip = {
   id: number;
   name: string;
@@ -477,6 +502,8 @@ type LegacyGameOverviewProps = {
   statisticsError: string | null;
   searchStatus: GameSearchStatus | null;
   searchError: string | null;
+  notesStatus: GameNotesStatus | null;
+  notesError: string | null;
   logoutStatus: GameLogoutStatus | null;
   logoutError: string | null;
 };
@@ -541,6 +568,8 @@ export function LegacyGameOverview({
   statisticsError,
   searchStatus,
   searchError,
+  notesStatus,
+  notesError,
   logoutStatus,
   logoutError
 }: LegacyGameOverviewProps) {
@@ -574,6 +603,8 @@ export function LegacyGameOverview({
     statisticsStatus && !statisticsStatus.authenticated ? statisticsStatus.issues[0]?.message ?? "Session is invalid." : null;
   const search = searchStatus?.authenticated ? searchStatus.search : undefined;
   const searchIssue = searchStatus && !searchStatus.authenticated ? searchStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const notes = notesStatus?.authenticated ? notesStatus.notes : undefined;
+  const notesIssue = notesStatus && !notesStatus.authenticated ? notesStatus.issues[0]?.message ?? "Session is invalid." : null;
   const contentClassName = route.key === "overview" ? "legacy-content legacy-content-overview" : "legacy-content";
 
   return (
@@ -628,6 +659,8 @@ export function LegacyGameOverview({
         ) : null}
         {route.key === "search" && searchError ? <LegacyMessage tone="error" text={searchError} /> : null}
         {route.key === "search" && !searchError && searchIssue ? <LegacyMessage tone="error" text={searchIssue} /> : null}
+        {route.key === "notes" && notesError ? <LegacyMessage tone="error" text={notesError} /> : null}
+        {route.key === "notes" && !notesError && notesIssue ? <LegacyMessage tone="error" text={notesIssue} /> : null}
         {overview && route.key === "overview" ? <OverviewTable overview={overview} /> : null}
         {overview && route.key === "buildings" && !buildings && !buildingsError && !buildingsIssue ? (
           <LegacyMessage tone="neutral" text="Loading buildings..." />
@@ -671,6 +704,10 @@ export function LegacyGameOverview({
           <LegacyMessage tone="neutral" text="Loading search..." />
         ) : null}
         {search && route.key === "search" ? <SearchTable search={search} /> : null}
+        {overview && route.key === "notes" && !notes && !notesError && !notesIssue ? (
+          <LegacyMessage tone="neutral" text="Loading notes..." />
+        ) : null}
+        {notes && route.key === "notes" ? <NotesTable notes={notes} /> : null}
         {overview &&
         route.key !== "overview" &&
         route.key !== "buildings" &&
@@ -683,6 +720,7 @@ export function LegacyGameOverview({
         route.key !== "technology" &&
         route.key !== "statistics" &&
         route.key !== "search" &&
+        route.key !== "notes" &&
         route.key !== "logout" ? (
           <MigrationPendingGameTable route={route} />
         ) : null}
@@ -1797,6 +1835,145 @@ function SearchTable({ search }: { search: GameSearch }) {
       )}
     </>
   );
+}
+
+function NotesTable({ notes }: { notes: GameNotes }) {
+  if (notes.action === "create") {
+    return <NoteForm mode="create" />;
+  }
+  if (notes.action === "edit" && notes.editNote) {
+    return <NoteForm mode="edit" note={notes.editNote} />;
+  }
+  return (
+    <form
+      action={noteURL({})}
+      method="post"
+      onSubmit={(event) => {
+        event.preventDefault();
+      }}
+    >
+      <table className="legacy-overview-table legacy-notes-table" width={519}>
+        <tbody>
+          <tr>
+            <td className="legacy-c" colSpan={4}>
+              Notes
+            </td>
+          </tr>
+          <tr>
+            <th colSpan={4}>
+              <a href={noteURL({ action: 1 })}>Create a new note</a>
+            </th>
+          </tr>
+          <tr>
+            <td className="legacy-c">&nbsp;</td>
+            <td className="legacy-c">Date</td>
+            <td className="legacy-c">Subject</td>
+            <td className="legacy-c">Size</td>
+          </tr>
+          {notes.rows.length > 0 ? (
+            notes.rows.map((note) => (
+              <tr data-note-row={note.id} key={note.id}>
+                <th style={{ width: 20 }}>
+                  <input name={`delmes[${note.id}]`} type="checkbox" value="y" />
+                </th>
+                <th style={{ width: 150 }}>{formatLegacyDateTime(note.date)}</th>
+                <th>
+                  <a href={noteURL({ action: 2, noteID: note.id })}>
+                    <span style={{ color: note.priorityColor }}>{note.subject}</span>
+                  </a>
+                </th>
+                <th align="right" style={{ width: 40 }}>
+                  {note.textSize}
+                </th>
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <th colSpan={4}>no notes recorded</th>
+            </tr>
+          )}
+          <tr>
+            <td colSpan={4}>
+              <input type="submit" value="Delete" />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  );
+}
+
+function NoteForm({ mode, note }: { mode: "create" | "edit"; note?: GameNote }) {
+  const editNote = mode === "edit" ? note : undefined;
+  const isEdit = editNote !== undefined;
+  const priority = editNote ? editNote.priority : 2;
+  return (
+    <form
+      action={noteURL({})}
+      method="post"
+      onSubmit={(event) => {
+        event.preventDefault();
+      }}
+    >
+      <input name="s" type="hidden" value={isEdit ? 2 : 1} />
+      {editNote ? <input name="n" type="hidden" value={editNote.id} /> : null}
+      <table className="legacy-overview-table legacy-notes-form-table" width={519}>
+        <tbody>
+          <tr>
+            <td className="legacy-c" colSpan={2}>
+              {isEdit ? "Edit note" : "Create note"}
+            </td>
+          </tr>
+          <tr>
+            <th>Priority</th>
+            <th>
+              <select name="u" defaultValue={priority}>
+                <option value={2}>Important</option>
+                <option value={1}>Normal</option>
+                <option value={0}>Unimportant</option>
+              </select>
+            </th>
+          </tr>
+          <tr>
+            <th>Subject</th>
+            <th>
+              <input maxLength={30} name="betreff" size={30} type="text" defaultValue={editNote ? editNote.subject : ""} />
+            </th>
+          </tr>
+          <tr>
+            <th>
+              {isEdit ? "Note" : "Notice"} (<span id="cntChars">{editNote ? editNote.textSize : 0}</span> / 5000 characters)
+            </th>
+            <th>
+              <textarea cols={60} name="text" rows={10} defaultValue={editNote ? editNote.text : ""} />
+            </th>
+          </tr>
+          <tr>
+            <td className="legacy-c">
+              <a href={noteURL({})}>Back</a>
+            </td>
+            <td className="legacy-c">
+              {isEdit ? <input type="reset" value="Reset" /> : null}
+              <input type="submit" value={isEdit ? "Apply" : "Save"} />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  );
+}
+
+function noteURL({ action, noteID }: { action?: number; noteID?: number }): string {
+  const query = new URLSearchParams(window.location.search);
+  query.delete("a");
+  query.delete("n");
+  if (action !== undefined) {
+    query.set("a", String(action));
+  }
+  if (noteID !== undefined) {
+    query.set("n", String(noteID));
+  }
+  return gameRouteURL("/game/notes", query.toString());
 }
 
 function SearchMessage({ text }: { text: string }) {

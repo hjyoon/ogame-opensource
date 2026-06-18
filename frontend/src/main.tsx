@@ -7,6 +7,7 @@ import {
   type GameFleetStatus,
   type GameGalaxyStatus,
   type GameLogoutStatus,
+  type GameNotesStatus,
   type GameOverviewStatus,
   type GameResearchStatus,
   type GameResourcesStatus,
@@ -213,6 +214,8 @@ function App() {
   const [gameStatisticsError, setGameStatisticsError] = useState<string | null>(null);
   const [gameSearch, setGameSearch] = useState<GameSearchStatus | null>(null);
   const [gameSearchError, setGameSearchError] = useState<string | null>(null);
+  const [gameNotes, setGameNotes] = useState<GameNotesStatus | null>(null);
+  const [gameNotesError, setGameNotesError] = useState<string | null>(null);
   const [gameLogout, setGameLogout] = useState<GameLogoutStatus | null>(null);
   const [gameLogoutError, setGameLogoutError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
@@ -579,6 +582,30 @@ function App() {
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "notes" || publicSession === "") {
+      setGameNotes(null);
+      setGameNotesError(null);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const notesRequest = new URLSearchParams({ session: publicSession });
+    for (const key of ["cp", "a", "n"]) {
+      const value = currentSearch.get(key);
+      if (value) {
+        notesRequest.set(key, value);
+      }
+    }
+    fetch(`/api/game/notes?${notesRequest.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameNotesStatus>)
+      .then((payload) => {
+        setGameNotes(payload);
+        setGameNotesError(null);
+      })
+      .catch((err: unknown) => setGameNotesError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "logout") {
       setGameLogout(null);
       setGameLogoutError(null);
@@ -669,6 +696,8 @@ function App() {
         galaxyStatus={gameGalaxy}
         logoutError={gameLogoutError}
         logoutStatus={gameLogout}
+        notesError={gameNotesError}
+        notesStatus={gameNotes}
         onResourcesSubmit={submitGameResources}
         route={gameRoute ?? resolveGameRoute(pathname)}
         resourcesError={gameResourcesError}

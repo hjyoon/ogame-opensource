@@ -526,6 +526,34 @@ try {
     gameSearchWithoutCookieBody = {};
   }
 
+  const gameNotes = await request(`/api/game/notes${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameNotesBody = {};
+  try {
+    gameNotesBody = JSON.parse(gameNotes.body);
+  } catch {
+    gameNotesBody = {};
+  }
+
+  const gameNotesCreate = await request(`/api/game/notes${sessionSearch}&a=1`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameNotesCreateBody = {};
+  try {
+    gameNotesCreateBody = JSON.parse(gameNotesCreate.body);
+  } catch {
+    gameNotesCreateBody = {};
+  }
+
+  const gameNotesWithoutCookie = await request(`/api/game/notes${sessionSearch}`);
+  let gameNotesWithoutCookieBody = {};
+  try {
+    gameNotesWithoutCookieBody = JSON.parse(gameNotesWithoutCookie.body);
+  } catch {
+    gameNotesWithoutCookieBody = {};
+  }
+
   const gameResources = await request(`/api/game/resources${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -761,6 +789,17 @@ try {
       check(!gameSearch.body.includes(sessionCookiePair), "game search response does not echo private cookie"),
       check(gameSearchWithoutCookie.status === 401, "game search rejects missing private cookie", { status: gameSearchWithoutCookie.status }),
       check(gameSearchWithoutCookieBody.authenticated === false, "game search missing private cookie is unauthenticated", gameSearchWithoutCookieBody),
+      check(gameNotes.status === 200, "game notes returns HTTP 200 with private cookie", { status: gameNotes.status }),
+      check(gameNotesBody.authenticated === true, "game notes authenticates the login session", gameNotesBody),
+      check(gameNotesBody.notes?.action === "list", "game notes defaults to list action", gameNotesBody),
+      check(Array.isArray(gameNotesBody.notes?.rows), "game notes returns notes rows array", gameNotesBody),
+      check(gameNotesCreate.status === 200, "game notes create form returns HTTP 200 with private cookie", {
+        status: gameNotesCreate.status
+      }),
+      check(gameNotesCreateBody.notes?.action === "create", "game notes keeps legacy create action", gameNotesCreateBody),
+      check(!gameNotes.body.includes(sessionCookiePair), "game notes response does not echo private cookie"),
+      check(gameNotesWithoutCookie.status === 401, "game notes rejects missing private cookie", { status: gameNotesWithoutCookie.status }),
+      check(gameNotesWithoutCookieBody.authenticated === false, "game notes missing private cookie is unauthenticated", gameNotesWithoutCookieBody),
       check(gameResources.status === 200, "game resources returns HTTP 200 with private cookie", { status: gameResources.status }),
       check(gameResourcesBody.authenticated === true, "game resources authenticates the login session", gameResourcesBody),
       check(Number.isFinite(gameResourcesBody.resources?.factor), "game resources returns production factor", gameResourcesBody),
@@ -906,6 +945,7 @@ try {
       check(js.body.includes("/api/game/technology"), "React bundle consumes game technology API"),
       check(js.body.includes("/api/game/statistics"), "React bundle consumes game statistics API"),
       check(js.body.includes("/api/game/search"), "React bundle consumes game search API"),
+      check(js.body.includes("/api/game/notes"), "React bundle consumes game notes API"),
       check(js.body.includes("/api/game/logout"), "React bundle consumes game logout API"),
       check(js.body.includes("legacy-public-main"), "React bundle contains legacy public home layout"),
       check(js.body.includes("legacy-public-register-panel"), "React bundle contains legacy public registration layout"),
@@ -928,6 +968,8 @@ try {
       check(js.body.includes("legacy-technology-details-table"), "React bundle contains legacy game technology details layout"),
       check(js.body.includes("legacy-statistics-table"), "React bundle contains legacy game statistics layout"),
       check(js.body.includes("legacy-search-results-table"), "React bundle contains legacy game search layout"),
+      check(js.body.includes("legacy-notes-table"), "React bundle contains legacy game notes layout"),
+      check(js.body.includes("legacy-notes-form-table"), "React bundle contains legacy game notes form layout"),
       check(js.body.includes("legacy-logout-table"), "React bundle contains legacy game logout layout")
     ]
   }));
@@ -959,6 +1001,7 @@ try {
   const postGameTechnology = await request("/api/game/technology", { method: "POST" });
   const postGameStatistics = await request("/api/game/statistics", { method: "POST" });
   const postGameSearch = await request("/api/game/search", { method: "POST" });
+  const postGameNotes = await request("/api/game/notes", { method: "POST" });
   const getGameLogout = await request("/api/game/logout");
   const putGameResources = await request("/api/game/resources", { method: "PUT" });
   cases.push(finalize({
@@ -996,6 +1039,8 @@ try {
       check(hasHeader(postGameStatistics, "allow", "GET, HEAD"), "game statistics method rejection returns Allow header"),
       check(postGameSearch.status === 405, "POST game search endpoint is rejected", { status: postGameSearch.status }),
       check(hasHeader(postGameSearch, "allow", "GET, HEAD"), "game search method rejection returns Allow header"),
+      check(postGameNotes.status === 405, "POST game notes endpoint is rejected", { status: postGameNotes.status }),
+      check(hasHeader(postGameNotes, "allow", "GET, HEAD"), "game notes method rejection returns Allow header"),
       check(getGameLogout.status === 405, "GET game logout endpoint is rejected", { status: getGameLogout.status }),
       check(hasHeader(getGameLogout, "allow", "POST"), "game logout method rejection returns Allow header"),
       check(putGameResources.status === 405, "PUT game resources endpoint is rejected", { status: putGameResources.status }),

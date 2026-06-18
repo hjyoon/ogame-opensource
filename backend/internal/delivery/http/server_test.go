@@ -2075,6 +2075,155 @@ func TestGameSearchEndpointReturnsUnavailable(t *testing.T) {
 	}
 }
 
+func TestGameNotesEndpointReturnsNotes(t *testing.T) {
+	notes := &fakeGameNotes{result: appgame.NotesResult{
+		Authenticated: true,
+		Notes: domaingame.Notes{
+			Commander: "legor",
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:          99,
+				Name:        "Arakis",
+				Type:        domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			},
+			PlanetSwitcher: []domaingame.PlanetSummary{{
+				ID:          99,
+				Name:        "Arakis",
+				Type:        domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+				Current:     true,
+			}},
+			Action: domaingame.NotesActionList,
+			Rows: []domaingame.Note{{
+				ID:       11,
+				Subject:  "Important",
+				Text:     "Remember this",
+				TextSize: 13,
+				Priority: 2,
+				Date:     1700000000,
+			}},
+		},
+	}}
+	server := testServerWithGameNotes(t, notes)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/notes?session=public&cp=99", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameNotesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Notes == nil || response.Notes.Commander != "legor" || len(response.Notes.Rows) != 1 {
+		t.Fatalf("expected authenticated notes response, got %+v", response)
+	}
+	row := response.Notes.Rows[0]
+	if row.Subject != "Important" || row.PriorityColor != "red" || row.Date != 1700000000 {
+		t.Fatalf("unexpected notes row mapping: %+v", row)
+	}
+	if notes.command.PublicSession != "public" || notes.command.PlanetID != 99 || notes.command.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected notes command: %+v", notes.command)
+	}
+	if notes.command.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("expected private session cookie to be passed, got %+v", notes.command.PrivateSessions)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("private")) {
+		t.Fatalf("game notes response must not echo private session: %s", rec.Body.String())
+	}
+}
+
+func TestGameNotesEndpointReturnsEditNote(t *testing.T) {
+	notes := &fakeGameNotes{result: appgame.NotesResult{
+		Authenticated: true,
+		Notes: domaingame.Notes{
+			Commander: "legor",
+			Action:    domaingame.NotesActionEdit,
+			EditNote:  &domaingame.Note{ID: 11, Subject: "Subject", Text: "Body", TextSize: 4, Priority: 0, Date: 1700000000},
+		},
+	}}
+	server := testServerWithGameNotes(t, notes)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/notes?session=public&a=2&n=11", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameNotesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Notes == nil || response.Notes.Action != "edit" || response.Notes.EditNote == nil || response.Notes.EditNote.PriorityColor != "lime" {
+		t.Fatalf("unexpected edit notes response: %+v", response)
+	}
+	if notes.command.Action != 2 || notes.command.NoteID != 11 {
+		t.Fatalf("unexpected edit command: %+v", notes.command)
+	}
+}
+
+func TestGameNotesEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
+	notes := &fakeGameNotes{result: appgame.NotesResult{
+		Authenticated: false,
+		Issues:        []domainpublicsite.SessionIssue{{Code: "missing", Message: "missing session"}},
+	}}
+	server := testServerWithGameNotes(t, notes)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/notes?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var response gameNotesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Authenticated || response.Notes != nil || len(response.Issues) != 1 {
+		t.Fatalf("expected invalid notes session response, got %+v", response)
+	}
+}
+
+func TestGameNotesEndpointRejectsInvalidQuery(t *testing.T) {
+	for _, target := range []string{
+		"/api/game/notes?session=public&cp=abc",
+		"/api/game/notes?session=public&a=9",
+		"/api/game/notes?session=public&a=2",
+		"/api/game/notes?session=public&n=bad",
+	} {
+		server := testServerWithGameNotes(t, &fakeGameNotes{})
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s: expected 400, got %d", target, rec.Code)
+		}
+	}
+}
+
+func TestGameNotesEndpointReturnsUnavailable(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/notes?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game notes use case to return 503, got %d", rec.Code)
+	}
+
+	server = testServerWithGameNotes(t, &fakeGameNotes{err: errors.New("notes failed")})
+	req = httptest.NewRequest(http.MethodGet, "/api/game/notes?session=public", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game notes error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestGameResourcesEndpointReturnsResources(t *testing.T) {
 	resources := &fakeGameResources{result: appgame.ResourcesResult{
 		Authenticated: true,
@@ -2866,6 +3015,19 @@ func testServerWithGameSearch(t *testing.T, search GameSearchUseCase) http.Handl
 	})
 }
 
+func testServerWithGameNotes(t *testing.T, notes GameNotesUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		GameNotes:          notes,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
 func testServerWithCustomDrafts(t *testing.T, registrationDrafts RegistrationDraftUseCase, loginDrafts LoginDraftUseCase) http.Handler {
 	t.Helper()
 	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
@@ -3103,6 +3265,17 @@ type fakeGameSearch struct {
 }
 
 func (f *fakeGameSearch) GetSearch(_ context.Context, command appgame.SearchCommand) (appgame.SearchResult, error) {
+	f.command = command
+	return f.result, f.err
+}
+
+type fakeGameNotes struct {
+	result  appgame.NotesResult
+	err     error
+	command appgame.NotesCommand
+}
+
+func (f *fakeGameNotes) GetNotes(_ context.Context, command appgame.NotesCommand) (appgame.NotesResult, error) {
 	f.command = command
 	return f.result, f.err
 }

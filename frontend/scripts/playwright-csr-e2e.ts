@@ -80,6 +80,8 @@ try {
   await assertStatisticsAllianceMode(page);
   await assertGameClientNavigation(page, "game search menu preserves CSR", "a[href^='/game/search']", "/game/search", "Search");
   await assertSearchForm(page, loginFixture.login);
+  await assertGameClientNavigation(page, "game notes menu preserves CSR", "a[href^='/game/notes']", "/game/notes", "Notes");
+  await assertNotesCreateForm(page);
   await assertGameClientNavigation(page, "game overview menu preserves CSR", "a[href^='/game/overview']", "/game/overview", "Overview");
   await assertGameLogout(page);
 
@@ -251,6 +253,8 @@ async function assertGameClientNavigation(
     await page.locator(".legacy-statistics-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Search") {
     await page.locator(".legacy-search-head-table").first().waitFor({ timeout: 10_000 });
+  } else if (expectedMenuLabel === "Notes") {
+    await page.locator(".legacy-notes-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel !== "Overview") {
     await page.waitForFunction(() => document.body.textContent?.includes("queued for React and Go migration"), undefined, {
       timeout: 5_000
@@ -293,6 +297,10 @@ async function assertGameClientNavigation(
                           ? state.details.searchHeadTable === true &&
                             state.details.searchText.includes("Search Universe") &&
                             state.details.pendingText === false
+                          : expectedMenuLabel === "Notes"
+                            ? state.details.notesTable === true &&
+                              state.details.notesText.includes("Create a new note") &&
+                              state.details.pendingText === false
                           : expectedMenuLabel === "Overview"
                             ? state.details.pendingText === false
                             : state.details.pendingText === true;
@@ -401,6 +409,34 @@ async function assertSearchForm(page: Page, login: string) {
   });
 }
 
+async function assertNotesCreateForm(page: Page) {
+  const marker = "probe-game-notes-create";
+  await page.evaluate((value) => {
+    window.__ogameCsrProbe = value;
+  }, marker);
+  await page.locator(".legacy-notes-table a", { hasText: "Create a new note" }).click();
+  await page.waitForFunction(() => window.location.pathname === "/game/notes" && window.location.search.includes("a=1"), undefined, {
+    timeout: 5_000
+  });
+  await page.locator(".legacy-notes-form-table", { hasText: "Create note" }).waitFor({ timeout: 10_000 });
+  await record("game notes create form preserves CSR", async () => {
+    const state = await gameShellState(page, marker, "Notes");
+    return {
+      pass:
+        state.details.pathname === "/game/notes" &&
+        state.details.search.includes("session=") &&
+        state.details.search.includes("a=1") &&
+        state.details.probe === marker &&
+        state.details.notesFormTable === true &&
+        state.details.notesFormText.includes("Create note") &&
+        state.details.notesFormText.includes("Priority") &&
+        state.details.notesFormText.includes("Notice") &&
+        state.details.pendingText === false,
+      details: state.details
+    };
+  });
+}
+
 async function assertGameLogout(page: Page) {
   const marker = "probe-game-logout";
   await page.evaluate((value) => {
@@ -503,6 +539,11 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     searchRows: document.querySelectorAll("[data-search-row]").length,
     searchText: document.querySelector(".legacy-search-head-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     searchBodyText: document.querySelector(".legacy-search-results-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
+    notesTable: document.querySelector(".legacy-notes-table") !== null,
+    notesRows: document.querySelectorAll("[data-note-row]").length,
+    notesText: document.querySelector(".legacy-notes-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
+    notesFormTable: document.querySelector(".legacy-notes-form-table") !== null,
+    notesFormText: document.querySelector(".legacy-notes-form-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     logoutTable: document.querySelector(".legacy-logout-table") !== null,
     logoutText: document.querySelector(".legacy-logout-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     pendingText: document.body.textContent?.includes("queued for React and Go migration") ?? false

@@ -201,6 +201,26 @@ const pageSpecs: AuthPageSpec[] = [
     legacyReady: "#content table",
     migratedReady: ".legacy-search-head-table",
     expectedTexts: ["Search Universe", "Player Name", "Planet Name", "Alliance Tag", "Alliance Name", "search"]
+  },
+  {
+    name: "game-notes",
+    legacyPage: "notizen",
+    migratedPath: "/game/notes",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-notes-table",
+    requiredBoxes: ["content"],
+    expectedTexts: ["Notes", "Create a new note", "Date", "Subject", "Size"]
+  },
+  {
+    name: "game-notes-create",
+    legacyPage: "notizen",
+    legacyQuery: { a: "1" },
+    migratedPath: "/game/notes",
+    migratedQuery: { a: "1" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-notes-form-table",
+    requiredBoxes: ["content"],
+    expectedTexts: ["Create note", "Priority", "Important", "Normal", "Unimportant", "Subject", "Notice", "Back"]
   }
 ];
 
