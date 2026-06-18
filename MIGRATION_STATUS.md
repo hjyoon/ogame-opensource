@@ -22,6 +22,7 @@ Living tracker for the React 19 + Bun 1.3 frontend and Go 1.25 native `net/http`
 - Authenticated `/game/*` routes preserve sessions; overview/buildings use the legacy `evolution` skin and read-only tables.
 - Go migration QA smoke covers health, routes, assets, registration validation/creation, login, session lookup, overview/buildings lookup, and method guards.
 - Playwright visual/CSR E2E compares public pages, language flags, game menu navigation, and auth overview/buildings.
+- Modernization backlog: [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
 
 ## Latest Verified Implementation
 

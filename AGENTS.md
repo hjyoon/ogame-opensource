@@ -2,11 +2,11 @@
 
 ## Scope
 
-This branch starts a staged migration from the legacy PHP game to:
+This branch stages migration from legacy PHP to:
 
-- Frontend: React 19, Bun 1.3.
-- Backend: Go 1.25, native `net/http`.
-- Compatibility oracle: the existing Docker PHP app and `testing/e2e`.
+- Frontend: React 19/Bun 1.3.
+- Backend: Go 1.25 `net/http`.
+- Oracle: Docker PHP app and `testing/e2e`.
 
 Do not remove or weaken legacy behavior while porting. Each migrated flow must be checked against the existing E2E coverage or a new compatibility case.
 
@@ -14,27 +14,27 @@ Do not remove or weaken legacy behavior while porting. Each migrated flow must b
 
 Do not translate PHP files one-for-one. Reinterpret APIs, state, and modules naturally for React and Go. New routes do not need `.php` suffixes. Preserve legacy URLs only as compatibility entry points.
 
-Visible page composition is not free-form: every migrated public, game, and admin page must match the corresponding legacy PHP screen layout, skin, table density, labels, and asset choices unless a documented compatibility exception exists.
+Visible page composition is not free-form: every migrated public, game, and admin page must match the corresponding legacy PHP screen layout, skin, table density, labels, and assets unless a documented compatibility exception exists. If legacy code is inefficient or dated, preserve parity first and record modernization options for later cleanup after compatibility tests exist.
 
 Game mechanics are different: resource math, timings, combat, queues, economy, targeting, reports, and permissions must behave exactly like the legacy game. Prove equivalence with focused unit tests plus E2E checks against the PHP oracle.
 
 ## Architecture Rule
 
-All newly migrated code must follow Clean Architecture. This is mandatory, not advisory.
+New migrated code must follow Clean Architecture. Mandatory.
 
 - Domain rules must not depend on HTTP, SQL, React, files, clocks, or external services.
 - Application/use-case code coordinates domain rules through explicit interfaces.
 - Infrastructure code implements those interfaces for MySQL, HTTP, files, mail, queues, and legacy adapters.
 - Delivery code is only transport/UI: Go handlers, React components, request parsing, response shaping.
-- Dependencies must point inward: `delivery -> application -> domain`; infrastructure is wired at the edge.
+- Dependencies point inward: `delivery -> application -> domain`; infrastructure is wired at the edge.
 - Do not put game rules in React components, HTTP handlers, SQL rows, or migration glue.
-- New ports should be covered with unit tests at the domain/application layer and E2E compatibility tests at the boundary.
+- Cover new ports with domain/application unit tests and boundary E2E compatibility tests.
 
 ## Layout
 
 - `backend/internal/domain`: pure game rules and value objects.
 - `backend/internal/application`: use cases and ports.
-- `backend/internal/infrastructure`: MySQL, files, runtime, and legacy adapters.
+- `backend/internal/infrastructure`: MySQL, files, runtime, legacy adapters.
 - `backend/internal/delivery`: HTTP handlers and other delivery adapters.
 - `frontend/`: React shell built with Bun.
 - `game/`, `wwwroot/`, `download/`: legacy runtime and assets.
@@ -54,7 +54,7 @@ Migration smoke:
 testing/e2e/run-golang-migration-qa.sh
 ```
 
-During page migration, extend Playwright visual E2E before claiming parity. Public: `testing/e2e/run-playwright-visual-e2e.sh`; auth: `testing/e2e/run-playwright-auth-visual-e2e.sh`. State whether auth diff/layout enforcement is enabled or audit-only.
+During page migration, extend Playwright visual E2E before claiming parity. Public: `testing/e2e/run-playwright-visual-e2e.sh`; auth: `testing/e2e/run-playwright-auth-visual-e2e.sh`. State if auth diff/layout is enforced or audit-only.
 
 Set `OGAME_RUN_LEGACY_E2E=0` only for local frontend/backend smoke work, never final game-behavior validation. Port HTTP black-box checks to Go with the same JSON result shape.
 
