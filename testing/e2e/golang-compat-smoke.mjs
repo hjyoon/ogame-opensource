@@ -24,6 +24,15 @@ async function request(path, options = {}) {
   return { status: response.status, headers, body };
 }
 
+function pathFromURL(value) {
+  try {
+    const url = new URL(value, baseUrl);
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return "";
+  }
+}
+
 function hasHeader(response, name, expected) {
   const actual = response.headers[name.toLowerCase()] ?? "";
   return expected === undefined ? actual !== "" : actual.toLowerCase().includes(expected.toLowerCase());
@@ -251,6 +260,33 @@ try {
   const welcomeMail = await waitForMailhogMessage(registrationEmail, "activate your account");
   const welcomeMailBody = welcomeMail.message ? mailhogBody(welcomeMail.message) : "";
   const activationLinkPattern = /https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/game\/validate\.php\?ack=[a-f0-9]+/i;
+  const welcomeActivationLink = welcomeMailBody.match(activationLinkPattern)?.[0] ?? "";
+  const welcomeActivationPath = pathFromURL(welcomeActivationLink);
+  const welcomeActivation = welcomeActivationPath
+    ? await request(welcomeActivationPath)
+    : { status: 0, headers: {}, body: "" };
+  const welcomeActivationCookie = welcomeActivation.headers["set-cookie"] ?? "";
+  const welcomeActivationCookiePair = welcomeActivationCookie.split(";")[0] ?? "";
+  let welcomeActivationSession = "";
+  try {
+    welcomeActivationSession = new URL(welcomeActivation.headers.location ?? "", baseUrl).searchParams.get("session") ?? "";
+  } catch {
+    welcomeActivationSession = "";
+  }
+  const welcomeActivationOverview = welcomeActivationSession
+    ? await request(`/api/game/overview?session=${encodeURIComponent(welcomeActivationSession)}`, {
+      headers: { Cookie: welcomeActivationCookiePair }
+    })
+    : { status: 0, headers: {}, body: "" };
+  let welcomeActivationOverviewBody = {};
+  try {
+    welcomeActivationOverviewBody = JSON.parse(welcomeActivationOverview.body);
+  } catch {
+    welcomeActivationOverviewBody = {};
+  }
+  const repeatedWelcomeActivation = welcomeActivationPath
+    ? await request(welcomeActivationPath)
+    : { status: 0, headers: {}, body: "" };
   cases.push(finalize({
     case: "go_registration_creation_api",
     checks: [
@@ -274,7 +310,25 @@ try {
       check(welcomeMailBody.includes("Click on this link to activate your account:"), "welcome mail contains legacy activation prompt"),
       check(welcomeMailBody.includes(`Password: ${registrationPassword}`), "welcome mail contains the registration password"),
       check(activationLinkPattern.test(welcomeMailBody), "welcome mail contains a legacy activation link", {
-        match: welcomeMailBody.match(activationLinkPattern)?.[0] ?? ""
+        match: welcomeActivationLink
+      }),
+      check(welcomeActivation.status === 302, "welcome activation link redirects after activation", {
+        status: welcomeActivation.status,
+        location: welcomeActivation.headers.location ?? ""
+      }),
+      check(typeof welcomeActivation.headers.location === "string" && welcomeActivation.headers.location.includes("/game/overview?"), "welcome activation redirects to overview", {
+        location: welcomeActivation.headers.location ?? ""
+      }),
+      check(welcomeActivationCookiePair.startsWith(`prsess_${createdRegistrationBody.account?.playerId ?? ""}_`), "welcome activation sets a private session cookie", {
+        cookie: welcomeActivationCookiePair
+      }),
+      check(welcomeActivationOverview.status === 200, "welcome activation session can read game overview", {
+        status: welcomeActivationOverview.status
+      }),
+      check(welcomeActivationOverviewBody.authenticated === true, "welcome activation overview is authenticated", welcomeActivationOverviewBody),
+      check(repeatedWelcomeActivation.status === 302 && repeatedWelcomeActivation.headers.location === "/home", "consumed activation link redirects home on reuse", {
+        status: repeatedWelcomeActivation.status,
+        location: repeatedWelcomeActivation.headers.location ?? ""
       })
     ]
   }));

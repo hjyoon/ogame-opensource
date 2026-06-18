@@ -29,14 +29,14 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - Defense covers display state: shipyard gate, requirements, caps, busy state, costs, durations, counts, and max hints.
 - Technology, statistics, search, and notes cover read models plus note mutations.
 - Registration writes legacy side effects and sends SMTP/MailHog welcome mail with activation link/password lines.
-- Activation clears `validatemd`, sets `validated=1`, copies `email` to `pemail`, then redirects.
+- Activation clears `validatemd`, sets `validated=1`, copies `email` to `pemail`, redirects, and rejects link reuse.
 - Overview covers legacy `cp`, `lgn` activity, rename/delete name rules, blockers, destroy markers, queue flush, stat/rank updates, and active restore.
 
 ## Verified QA
 
 - `bun run build && bun run check && bun test`: passing.
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
-- Go smoke covers health, routes, assets, MailHog delivery, auth/session/logout, reads/mutations, guards, and cookie privacy.
+- Go smoke covers health, routes, assets, MailHog delivery, activation cleanup/reuse, auth/session/logout, reads/mutations, guards, and cookie privacy.
 - Playwright visual/CSR E2E covers public pages and auth game routes in Chromium/Firefox.
 - Auth visual contract passes in Chromium/Firefox; parity still misses (diff about 12.5-54.5%, box delta <=2).
 - Go internal coverage gate: `97.0% >= 97%`.
@@ -46,7 +46,6 @@ Full legacy PHP E2E was not run for this Go step. Keep PHP as oracle until each 
 
 ## Remaining Work
 
-- Add activation cleanup enforcement after any remaining legacy validation branches are ported.
 - Add expiry and deeper session security behavior.
 - Close authenticated visual diff for overview/buildings before claiming game-page parity.
 - Port remaining overview legacy actions.
