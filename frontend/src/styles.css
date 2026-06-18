@@ -678,11 +678,33 @@ dd {
   color: #ff3333;
 }
 
-.legacy-technology-name-table td {
+.legacy-game-shell .legacy-technology-table {
+  border-collapse: separate;
+  border-spacing: 2px;
+}
+
+.legacy-game-shell .legacy-technology-table td.legacy-l {
+  text-align: left;
+}
+
+.legacy-game-shell .legacy-technology-name-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.legacy-game-shell .legacy-technology-name-table td {
   background: transparent;
   border: 0;
   color: inherit;
-  padding: 0;
+  padding: 1px;
+}
+
+.legacy-game-shell .legacy-technology-name-table td:first-child {
+  text-align: left;
+}
+
+.legacy-game-shell .legacy-technology-name-table td:last-child {
+  text-align: right;
 }
 
 .legacy-resources-form {
