@@ -72,6 +72,7 @@ export function resolveGameRoute(pathname: string): GameRoute {
 
 export function gameRouteURL(path: string, search: string): string {
   const query = new URLSearchParams(search);
+  query.delete("lgn");
   const encoded = query.toString();
   return encoded ? `${path}?${encoded}` : path;
 }

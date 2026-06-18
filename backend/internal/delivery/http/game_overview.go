@@ -106,6 +106,7 @@ func (a app) handleGameOverviewGet(w http.ResponseWriter, r *http.Request) {
 		PrivateSessions: cookieMap(r),
 		RemoteAddr:      remoteIP(r.RemoteAddr),
 		PlanetID:        planetID,
+		Login:           hasOverviewLoginMarker(r),
 	})
 	if err != nil {
 		http.Error(w, "game overview unavailable", http.StatusServiceUnavailable)
@@ -113,6 +114,11 @@ func (a app) handleGameOverviewGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeGameOverviewResponse(w, result)
+}
+
+func hasOverviewLoginMarker(r *http.Request) bool {
+	_, ok := r.URL.Query()["lgn"]
+	return ok
 }
 
 func (a app) handleGameOverviewPost(w http.ResponseWriter, r *http.Request) {

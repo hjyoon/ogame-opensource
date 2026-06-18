@@ -29,8 +29,7 @@ Tracker for React 19/Bun 1.3 + Go 1.25 native `net/http` migration. Keep under 4
 - Defense covers display state only: shipyard gate, requirements, shield dome/missile caps, busy state, costs, durations, counts, and max hints.
 - Technology covers `techtree` and recursive details; statistics covers player/alliance rankings; search covers player/planet/alliance results.
 - Notes covers `notizen` list, create/edit forms, and add/update/delete mutations.
-- Current planet switching follows legacy owned/foreign/missing/moon `cp` behavior.
-- Overview rename/delete covers legacy name rules, password/home/fleet blockers, destroy markers, queue flush, stat/rank updates, and active-planet restore.
+- Overview covers legacy `cp`, `lgn` activity, rename/delete name rules, blockers, destroy markers, queue flush, stat/rank updates, and active restore.
 
 ## Verified QA
 

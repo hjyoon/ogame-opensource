@@ -727,7 +727,7 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 		},
 	}}
 	server := testServerWithGameOverview(t, overview)
-	req := httptest.NewRequest(http.MethodGet, "/api/game/overview?session=public&cp=99", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/overview?session=public&cp=99&lgn=1", nil)
 	req.RemoteAddr = "203.0.113.10:4321"
 	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
 	rec := httptest.NewRecorder()
@@ -749,7 +749,8 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 		response.Overview.CurrentPlanet.Resources.CrystalCapacity != 150000 {
 		t.Fatalf("unexpected overview mapping: %+v", response.Overview)
 	}
-	if overview.command.PublicSession != "public" || overview.command.PlanetID != 99 || overview.command.RemoteAddr != "203.0.113.10" {
+	if overview.command.PublicSession != "public" || overview.command.PlanetID != 99 || overview.command.RemoteAddr != "203.0.113.10" ||
+		!overview.command.Login {
 		t.Fatalf("unexpected overview command: %+v", overview.command)
 	}
 	if overview.command.PrivateSessions["prsess_42_1"] != "private" {

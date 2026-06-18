@@ -183,6 +183,47 @@ func TestOverviewRepositoryPersistsRequestedPlanet(t *testing.T) {
 	}
 }
 
+func TestOverviewRepositoryUpdatesActivityOnLoginMarker(t *testing.T) {
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: overviewResultsForPlanet(99, "Arakis")}}
+	repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+	repository.now = func() time.Time { return time.Unix(1234, 0) }
+
+	overview, err := repository.GetOverview(context.Background(), appgame.OverviewQuery{PlayerID: 42, PlanetID: 99, Login: true})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.CurrentPlanet.ID != 99 {
+		t.Fatalf("expected login overview to load current planet, got %+v", overview.CurrentPlanet)
+	}
+	if len(runner.execCalls) != 1 {
+		t.Fatalf("expected only activity update, got %+v", runner.execCalls)
+	}
+	call := runner.execCalls[0]
+	if !strings.Contains(call.sql, "UPDATE `ogame_planets` SET lastakt = ? WHERE planet_id = ?") ||
+		call.args[0] != int64(1234) || call.args[1] != 99 {
+		t.Fatalf("unexpected activity update: %+v", call)
+	}
+}
+
+func TestOverviewRepositoryActivityUpdateErrors(t *testing.T) {
+	repository := NewOverviewRepositoryWithQueryer(&fakeQueryer{results: overviewResultsForPlanet(99, "Arakis")}, "ogame_")
+	_, err := repository.GetOverview(context.Background(), appgame.OverviewQuery{PlayerID: 42, PlanetID: 99, Login: true})
+	if err == nil || !strings.Contains(err.Error(), "activity updater unavailable") {
+		t.Fatalf("expected missing activity updater error, got %v", err)
+	}
+
+	runner := &fakeOverviewRunner{
+		fakeQueryer: fakeQueryer{results: overviewResultsForPlanet(99, "Arakis")},
+		execErr:     errors.New("activity failed"),
+	}
+	repository = NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+	_, err = repository.GetOverview(context.Background(), appgame.OverviewQuery{PlayerID: 42, PlanetID: 99, Login: true})
+	if err == nil || !strings.Contains(err.Error(), "activity failed") {
+		t.Fatalf("expected activity exec error, got %v", err)
+	}
+}
+
 func TestOverviewRepositoryRenamesCurrentPlanet(t *testing.T) {
 	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: append(overviewResultsForPlanet(99, "Arakis"),
 		overviewResultsForPlanet(99, "New Colony")...,

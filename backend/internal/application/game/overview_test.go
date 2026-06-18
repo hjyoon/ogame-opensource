@@ -26,6 +26,7 @@ func TestOverviewServiceReturnsOverviewForAuthenticatedSession(t *testing.T) {
 		PrivateSessions: map[string]string{"prsess_42_1": "private"},
 		RemoteAddr:      "203.0.113.10",
 		PlanetID:        99,
+		Login:           true,
 	})
 
 	if err != nil {
@@ -37,7 +38,7 @@ func TestOverviewServiceReturnsOverviewForAuthenticatedSession(t *testing.T) {
 	if sessions.command.PublicSession != "public" || sessions.command.PrivateSessions["prsess_42_1"] != "private" {
 		t.Fatalf("unexpected session command: %+v", sessions.command)
 	}
-	if repository.query.PlayerID != 42 || repository.query.PlanetID != 99 {
+	if repository.query.PlayerID != 42 || repository.query.PlanetID != 99 || !repository.query.Login {
 		t.Fatalf("unexpected repository query: %+v", repository.query)
 	}
 }

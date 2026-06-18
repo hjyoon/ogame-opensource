@@ -45,6 +45,7 @@ describe("game route model", () => {
   test("preserves active session query parameters in menu links", () => {
     expect(gameRouteURL("/game/buildings", "?session=abc&cp=42")).toBe("/game/buildings?session=abc&cp=42");
     expect(gameRouteURL("/game/fleet", "session=abc")).toBe("/game/fleet?session=abc");
+    expect(gameRouteURL("/game/buildings", "?session=abc&lgn=1&cp=42")).toBe("/game/buildings?session=abc&cp=42");
     expect(gameRouteURL("/game/overview", "")).toBe("/game/overview");
   });
 

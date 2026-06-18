@@ -305,6 +305,9 @@ function App() {
     if (selectedPlanet) {
       overviewSearch.set("cp", selectedPlanet);
     }
+    if (gameRoute?.key === "overview" && currentSearch.has("lgn")) {
+      overviewSearch.set("lgn", currentSearch.get("lgn") ?? "1");
+    }
     fetch(`/api/game/overview?${overviewSearch.toString()}`, { credentials: "same-origin" })
       .then((response) => response.json() as Promise<GameOverviewStatus>)
       .then((payload) => {

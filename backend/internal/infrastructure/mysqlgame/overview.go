@@ -121,6 +121,11 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 			return domaingame.Overview{}, err
 		}
 	}
+	if query.Login {
+		if err := r.updatePlanetActivity(ctx, planetsTable, current.ID); err != nil {
+			return domaingame.Overview{}, err
+		}
+	}
 
 	planets, err := r.loadPlanets(ctx, planetsTable, query.PlayerID, current.ID, user.SortBy, user.SortOrder)
 	if err != nil {
@@ -711,6 +716,19 @@ func (r OverviewRepository) updateActivePlanet(ctx context.Context, usersTable s
 		fmt.Sprintf("UPDATE %s SET aktplanet = ? WHERE player_id = ? LIMIT 1", usersTable),
 		planetID,
 		playerID,
+	)
+	return err
+}
+
+func (r OverviewRepository) updatePlanetActivity(ctx context.Context, planetsTable string, planetID int) error {
+	if r.execer == nil {
+		return errors.New("overview activity updater unavailable")
+	}
+	_, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET lastakt = ? WHERE planet_id = ?", planetsTable),
+		r.currentTime().Unix(),
+		planetID,
 	)
 	return err
 }

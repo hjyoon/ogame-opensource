@@ -22,6 +22,7 @@ type OverviewRepository interface {
 type OverviewQuery struct {
 	PlayerID int
 	PlanetID int
+	Login    bool
 }
 
 type OverviewRenameQuery struct {
@@ -42,6 +43,7 @@ type OverviewCommand struct {
 	PrivateSessions map[string]string
 	RemoteAddr      string
 	PlanetID        int
+	Login           bool
 }
 
 type OverviewRenameCommand struct {
@@ -96,6 +98,7 @@ func (s OverviewService) GetOverview(ctx context.Context, command OverviewComman
 	overview, err := s.repository.GetOverview(ctx, OverviewQuery{
 		PlayerID: session.Session.PlayerID,
 		PlanetID: command.PlanetID,
+		Login:    command.Login,
 	})
 	if err != nil {
 		return OverviewResult{}, err
