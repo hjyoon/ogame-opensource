@@ -284,6 +284,119 @@ func TestGameSessionLookupAuthenticatesLegacySession(t *testing.T) {
 	}
 }
 
+func TestGameSessionLookupTouchesActivityAfterAuthentication(t *testing.T) {
+	store := &fakeGameSessionStore{session: domain.GameSession{
+		Found:     true,
+		PlayerID:  42,
+		PublicID:  "public",
+		PrivateID: "private",
+		IPAddress: "203.0.113.10",
+	}}
+	lookup := NewGameSessionLookupWithClockAndActivity(
+		store,
+		store,
+		1,
+		func() time.Time { return time.Unix(1700000000, 0) },
+	)
+
+	result, err := lookup.GetGameSession(context.Background(), GameSessionCommand{
+		PublicSession:   "public",
+		PrivateSessions: map[string]string{"prsess_42_1": "private"},
+		RemoteAddr:      "203.0.113.10",
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Authenticated {
+		t.Fatalf("expected authenticated session, got %+v", result)
+	}
+	if store.touchedPlayerID != 42 || store.touchedAt != 1700000000 {
+		t.Fatalf("expected lastclick touch, got player=%d at=%d", store.touchedPlayerID, store.touchedAt)
+	}
+}
+
+func TestGameSessionLookupWithActivityUsesDefaultClock(t *testing.T) {
+	store := &fakeGameSessionStore{session: domain.GameSession{
+		Found:     true,
+		PlayerID:  42,
+		PublicID:  "public",
+		PrivateID: "private",
+		IPAddress: "203.0.113.10",
+	}}
+	lookup := NewGameSessionLookupWithActivity(store, store, 1)
+
+	result, err := lookup.GetGameSession(context.Background(), GameSessionCommand{
+		PublicSession:   "public",
+		PrivateSessions: map[string]string{"prsess_42_1": "private"},
+		RemoteAddr:      "203.0.113.10",
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Authenticated || store.touchedAt <= 0 {
+		t.Fatalf("expected authenticated touch with default clock, result=%+v store=%+v", result, store)
+	}
+}
+
+func TestGameSessionLookupWithNilClockUsesDefaultClock(t *testing.T) {
+	lookup := NewGameSessionLookupWithClockAndActivity(nil, nil, 1, nil)
+
+	if lookup.now == nil {
+		t.Fatal("expected default clock")
+	}
+}
+
+func TestGameSessionLookupSkipsActivityTouchForRejectedSession(t *testing.T) {
+	store := &fakeGameSessionStore{session: domain.GameSession{
+		Found:     true,
+		PlayerID:  42,
+		PublicID:  "public",
+		PrivateID: "private",
+		IPAddress: "203.0.113.10",
+	}}
+	lookup := NewGameSessionLookupWithClockAndActivity(store, store, 1, func() time.Time { return time.Unix(1700000000, 0) })
+
+	result, err := lookup.GetGameSession(context.Background(), GameSessionCommand{
+		PublicSession:   "public",
+		PrivateSessions: map[string]string{"prsess_42_1": "wrong"},
+		RemoteAddr:      "203.0.113.10",
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Authenticated || store.touchedPlayerID != 0 {
+		t.Fatalf("expected rejected session without activity touch, result=%+v store=%+v", result, store)
+	}
+}
+
+func TestGameSessionLookupReturnsActivityTouchError(t *testing.T) {
+	wantErr := errors.New("lastclick failed")
+	store := &fakeGameSessionStore{
+		session: domain.GameSession{
+			Found:     true,
+			PlayerID:  42,
+			PublicID:  "public",
+			PrivateID: "private",
+			IPAddress: "203.0.113.10",
+		},
+		touchErr: wantErr,
+	}
+	lookup := NewGameSessionLookupWithClockAndActivity(store, store, 1, func() time.Time { return time.Unix(1700000000, 0) })
+
+	_, err := lookup.GetGameSession(context.Background(), GameSessionCommand{
+		PublicSession:   "public",
+		PrivateSessions: map[string]string{"prsess_42_1": "private"},
+		RemoteAddr:      "203.0.113.10",
+	})
+
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected activity touch error, got %v", err)
+	}
+}
+
 func TestGameSessionLookupRequiresPublicSession(t *testing.T) {
 	lookup := NewGameSessionLookup(&fakeGameSessionReader{}, 1)
 
@@ -472,9 +585,12 @@ type fakeGameSessionStore struct {
 	session         domain.GameSession
 	err             error
 	clearErr        error
+	touchErr        error
 	publicID        string
 	clearedPublicID string
 	clearedPlayerID int
+	touchedPlayerID int
+	touchedAt       int64
 }
 
 func (f *fakeGameSessionStore) FindGameSession(_ context.Context, publicID string) (domain.GameSession, error) {
@@ -486,6 +602,12 @@ func (f *fakeGameSessionStore) ClearGameSession(_ context.Context, publicID stri
 	f.clearedPublicID = publicID
 	f.clearedPlayerID = playerID
 	return f.clearErr
+}
+
+func (f *fakeGameSessionStore) TouchGameSession(_ context.Context, playerID int, at int64) error {
+	f.touchedPlayerID = playerID
+	f.touchedAt = at
+	return f.touchErr
 }
 
 func (f *fakeTokenGenerator) NewPublicSession() (string, error) {

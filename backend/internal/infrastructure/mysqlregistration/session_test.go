@@ -63,6 +63,50 @@ func TestSessionStoreClearsLegacyPublicSession(t *testing.T) {
 	}
 }
 
+func TestSessionStoreTouchesLegacyLastClick(t *testing.T) {
+	execer := &fakeExecer{}
+	store := NewSessionStoreWithExecer(execer, "uni1_")
+
+	err := store.TouchGameSession(context.Background(), 42, 1700000000)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(execer.query, "UPDATE `uni1_users` SET lastclick = ? WHERE player_id = ?") {
+		t.Fatalf("expected legacy lastclick update, got %q", execer.query)
+	}
+	if len(execer.args) != 2 || execer.args[0] != int64(1700000000) || execer.args[1] != 42 {
+		t.Fatalf("unexpected touch args: %+v", execer.args)
+	}
+}
+
+func TestSessionStoreTouchGameSessionReturnsExecError(t *testing.T) {
+	wantErr := errors.New("touch failed")
+	store := NewSessionStoreWithExecer(&fakeExecer{err: wantErr}, "uni1_")
+
+	err := store.TouchGameSession(context.Background(), 42, 1700000000)
+
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected touch error, got %v", err)
+	}
+}
+
+func TestSessionStoreTouchGameSessionRejectsUnsafePrefix(t *testing.T) {
+	store := NewSessionStoreWithExecer(&fakeExecer{}, "uni1_;DROP")
+
+	if err := store.TouchGameSession(context.Background(), 42, 1700000000); err == nil {
+		t.Fatal("expected unsafe prefix error")
+	}
+}
+
+func TestSessionStoreTouchGameSessionRequiresDependency(t *testing.T) {
+	store := NewSessionStoreWithQueryer(&fakeQueryer{}, "uni1_")
+
+	if err := store.TouchGameSession(context.Background(), 42, 1700000000); err == nil {
+		t.Fatal("expected missing exec dependency error")
+	}
+}
+
 func TestSessionStoreClearGameSessionReturnsExecError(t *testing.T) {
 	wantErr := errors.New("clear failed")
 	store := NewSessionStoreWithExecer(&fakeExecer{err: wantErr}, "uni1_")

@@ -16,7 +16,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - Registration creates user, planet, reg IP log, greeting, TimeLimit, ranks, sessions, welcome mail, redirect.
 - `/game/validate.php?ack=` and `/activation?ack=` activate accounts and sessions.
 - Login/logout create and clear legacy sessions, private cookies, and `/game` redirects.
-- `/api/game/session` validates public session plus private cookie, bans, and IP checks.
+- `/api/game/session` validates public session plus private cookie, bans/IP, and touches `lastclick` on success.
 - `/api/game/{overview,buildings,resources,research,shipyard,fleet,galaxy,defense,technology,statistics,search,notes}` return models; overview/resources/notes mutate settings.
 - Auth `/game/*` routes preserve sessions and persist `cp`; migrated game screens use the legacy `evolution` skin.
 - Modernization: [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
@@ -36,7 +36,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 
 - `bun run build && bun run check && bun test`: passing.
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
-- Go smoke covers health, routes, assets, MailHog delivery, activation cleanup/reuse, auth/session/logout, reads/mutations, guards, and cookie privacy.
+- Go smoke covers health, routes, assets, MailHog, activation cleanup/reuse, auth/session cookie expiry/security, logout, reads/mutations, guards, and privacy.
 - Playwright visual/CSR E2E covers public pages and auth game routes in Chromium/Firefox.
 - Auth visual contract passes in Chromium/Firefox; parity still misses (diff about 12.5-54.5%, box delta <=2).
 - Go internal coverage gate: `97.0% >= 97%`.
@@ -46,7 +46,7 @@ Full legacy PHP E2E was not run for this Go step. Keep PHP as oracle until each 
 
 ## Remaining Work
 
-- Add expiry and deeper session security behavior.
+- Add deeper ban/vacation/disable session edge behavior.
 - Close authenticated visual diff for overview/buildings before claiming game-page parity.
 - Port remaining overview legacy actions.
 - Port queue mutations, research start/cancel, shipyard/defense orders, fleet actions, galaxy quick actions, reports, messages, alliance, admin, options, recovery, deletion, vacation, bans, permissions.

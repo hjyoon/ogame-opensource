@@ -27,6 +27,10 @@ type GameSessionReader interface {
 	FindGameSession(context.Context, string) (domain.GameSession, error)
 }
 
+type GameSessionActivityToucher interface {
+	TouchGameSession(context.Context, int, int64) error
+}
+
 type GameSessionClearer interface {
 	ClearGameSession(context.Context, string, int) error
 }
@@ -72,6 +76,8 @@ type LoginAuthenticator struct {
 
 type GameSessionLookup struct {
 	sessions       GameSessionReader
+	activity       GameSessionActivityToucher
+	now            func() time.Time
 	universeNumber int
 }
 
@@ -174,7 +180,18 @@ func (a LoginAuthenticator) AuthenticateLogin(ctx context.Context, command Login
 }
 
 func NewGameSessionLookup(sessions GameSessionReader, universeNumber int) GameSessionLookup {
-	return GameSessionLookup{sessions: sessions, universeNumber: universeNumber}
+	return NewGameSessionLookupWithClockAndActivity(sessions, nil, universeNumber, time.Now)
+}
+
+func NewGameSessionLookupWithActivity(sessions GameSessionReader, activity GameSessionActivityToucher, universeNumber int) GameSessionLookup {
+	return NewGameSessionLookupWithClockAndActivity(sessions, activity, universeNumber, time.Now)
+}
+
+func NewGameSessionLookupWithClockAndActivity(sessions GameSessionReader, activity GameSessionActivityToucher, universeNumber int, now func() time.Time) GameSessionLookup {
+	if now == nil {
+		now = time.Now
+	}
+	return GameSessionLookup{sessions: sessions, activity: activity, now: now, universeNumber: universeNumber}
 }
 
 func NewLogoutService(sessions interface {
@@ -206,8 +223,14 @@ func (l GameSessionLookup) GetGameSession(ctx context.Context, command GameSessi
 	session.UniverseNumber = l.universeNumber
 	privateSession := command.PrivateSessions[session.PrivateCookieName()]
 	issues := session.Validate(privateSession, command.RemoteAddr)
+	authenticated := len(issues) == 0
+	if authenticated && l.activity != nil {
+		if err := l.activity.TouchGameSession(ctx, session.PlayerID, l.now().Unix()); err != nil {
+			return domain.SessionAuthentication{}, err
+		}
+	}
 	return domain.SessionAuthentication{
-		Authenticated: len(issues) == 0,
+		Authenticated: authenticated,
 		Issues:        issues,
 		Session:       session,
 	}, nil

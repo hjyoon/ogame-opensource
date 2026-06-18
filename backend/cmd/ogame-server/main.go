@@ -265,7 +265,8 @@ func gameSessionLookup(cfg config.Config, logger *slog.Logger) apppublicsite.Gam
 	}
 
 	logger.Info("universe DB game session lookup enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
-	return apppublicsite.NewGameSessionLookup(mysqlregistration.NewSessionStore(db, cfg.UniDBPrefix), cfg.UniNumber)
+	store := mysqlregistration.NewSessionStore(db, cfg.UniDBPrefix)
+	return apppublicsite.NewGameSessionLookupWithActivity(store, store, cfg.UniNumber)
 }
 
 func logoutService(cfg config.Config, logger *slog.Logger) apppublicsite.LogoutService {

@@ -3,6 +3,7 @@ package mysqlregistration
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	domain "github.com/hjyoon/ogame-opensource/backend/internal/domain/publicsite"
@@ -65,6 +66,23 @@ func (s SessionStore) ClearGameSession(ctx context.Context, publicSession string
 		fmt.Sprintf("UPDATE %s SET session = '' WHERE player_id = ? AND session = ?", usersTable),
 		playerID,
 		publicSession,
+	)
+	return err
+}
+
+func (s SessionStore) TouchGameSession(ctx context.Context, playerID int, at int64) error {
+	if s.execer == nil {
+		return errors.New("session activity dependency unavailable")
+	}
+	usersTable, err := tableName(s.prefix, "users")
+	if err != nil {
+		return err
+	}
+	_, err = s.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET lastclick = ? WHERE player_id = ?", usersTable),
+		at,
+		playerID,
 	)
 	return err
 }

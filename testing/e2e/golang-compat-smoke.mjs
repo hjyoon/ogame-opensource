@@ -912,6 +912,8 @@ try {
       check(sessionLoginBody.valid === true, "login submit creates a session", sessionLoginBody),
       check(typeof sessionLoginBody.session?.redirectTo === "string" && sessionLoginBody.session.redirectTo.startsWith("/game/overview?"), "login submit returns natural overview redirect", sessionLoginBody),
       check(sessionCookie.includes("prsess_") && sessionCookie.includes("HttpOnly"), "login submit sets private session cookie", { setCookie: sessionCookie }),
+      check(sessionCookie.includes("Max-Age=86400"), "login submit sets a 24 hour private session cookie", { setCookie: sessionCookie }),
+      check(sessionCookie.includes("SameSite=Lax"), "login submit sets lax same-site cookie policy", { setCookie: sessionCookie }),
       check(!sessionLogin.body.includes(loginSmokePassword), "login submit response does not echo password"),
       check(gameSession.status === 200, "game session lookup returns HTTP 200 with private cookie", { status: gameSession.status }),
       check(gameSessionBody.authenticated === true, "game session lookup authenticates the login session", gameSessionBody),
