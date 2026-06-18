@@ -124,6 +124,10 @@ func (c AccountCreator) CreateRegistrationAccount(ctx context.Context, draft dom
 	if err != nil {
 		return domain.RegisteredAccount{}, err
 	}
+	botvarsTable, err := tableName(c.prefix, "botvars")
+	if err != nil {
+		return domain.RegisteredAccount{}, err
+	}
 
 	random, err := c.randomBytes(17)
 	if err != nil {
@@ -177,6 +181,12 @@ func (c AccountCreator) CreateRegistrationAccount(ctx context.Context, draft dom
 			return err
 		}
 		if err := insertRegistrationGreeting(ctx, tx, messagesTable, playerID, universe, registeredAt); err != nil {
+			return err
+		}
+		if err := insertRegistrationTimeLimit(ctx, tx, botvarsTable, playerID); err != nil {
+			return err
+		}
+		if err := recalcRegistrationRanks(ctx, tx, usersTable); err != nil {
 			return err
 		}
 		account.PlayerID = playerID
@@ -361,6 +371,32 @@ func insertRegistrationGreeting(ctx context.Context, tx registrationTx, messages
 	}
 	_, err := tx.ExecContext(ctx, insertStatement(messagesTable, columns), args...)
 	return err
+}
+
+func insertRegistrationTimeLimit(ctx context.Context, tx registrationTx, botvarsTable string, playerID int) error {
+	columns := []string{"owner_id", "var", "value"}
+	args := []any{playerID, "TimeLimit", "94608000"}
+	_, err := tx.ExecContext(ctx, insertStatement(botvarsTable, columns), args...)
+	return err
+}
+
+func recalcRegistrationRanks(ctx context.Context, tx registrationTx, usersTable string) error {
+	queries := []string{
+		fmt.Sprintf("UPDATE %s SET score1 = -1, score2 = -1, score3 = -1 WHERE admin > 0", usersTable),
+		"SET @pos := 0",
+		fmt.Sprintf("UPDATE %s SET place1 = (SELECT @pos := @pos+1) ORDER BY score1 DESC", usersTable),
+		"SET @pos := 0",
+		fmt.Sprintf("UPDATE %s SET place2 = (SELECT @pos := @pos+1) ORDER BY score2 DESC", usersTable),
+		"SET @pos := 0",
+		fmt.Sprintf("UPDATE %s SET place3 = (SELECT @pos := @pos+1) ORDER BY score3 DESC", usersTable),
+		fmt.Sprintf("UPDATE %s SET place1 = 0, place2 = 0, place3 = 0 WHERE admin > 0", usersTable),
+	}
+	for _, query := range queries {
+		if _, err := tx.ExecContext(ctx, query); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func registrationGreetingText(boardURL string, tutorialURL string) string {

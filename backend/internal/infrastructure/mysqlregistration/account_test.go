@@ -49,8 +49,8 @@ func TestAccountCreatorCreatesLegacyUserAndHomePlanet(t *testing.T) {
 	if !txer.called {
 		t.Fatal("expected account creation to run in a transaction")
 	}
-	if len(txer.tx.execCalls) != 6 {
-		t.Fatalf("expected six exec calls, got %+v", txer.tx.execCalls)
+	if len(txer.tx.execCalls) != 15 {
+		t.Fatalf("expected fifteen exec calls, got %+v", txer.tx.execCalls)
 	}
 	userInsert := txer.tx.execCalls[1]
 	if !strings.Contains(userInsert.query, "INSERT INTO `uni1_users`") {
@@ -90,6 +90,16 @@ func TestAccountCreatorCreatesLegacyUserAndHomePlanet(t *testing.T) {
 	}
 	if !containsStringArg(greetingInsert.args, "https://tutorial.example/") || !containsStringArg(greetingInsert.args, "https://board.example/") {
 		t.Fatalf("expected welcome message to include universe links, got %+v", greetingInsert.args)
+	}
+	timeLimitInsert := txer.tx.execCalls[6]
+	if !strings.Contains(timeLimitInsert.query, "INSERT INTO `uni1_botvars`") ||
+		!containsArg(timeLimitInsert.args, 42) || !containsArg(timeLimitInsert.args, "TimeLimit") || !containsArg(timeLimitInsert.args, "94608000") {
+		t.Fatalf("expected TimeLimit botvar insert, got %+v", timeLimitInsert)
+	}
+	if !strings.Contains(txer.tx.execCalls[7].query, "score1 = -1") || !strings.Contains(txer.tx.execCalls[9].query, "place1") ||
+		!strings.Contains(txer.tx.execCalls[11].query, "place2") || !strings.Contains(txer.tx.execCalls[13].query, "place3") ||
+		!strings.Contains(txer.tx.execCalls[14].query, "admin > 0") {
+		t.Fatalf("expected legacy rank recalculation queries, got %+v", txer.tx.execCalls[7:])
 	}
 }
 
@@ -275,6 +285,16 @@ func TestAccountCreatorReturnsStageErrors(t *testing.T) {
 			queryResponses: []fakeResponse{validUniverse(), {rows: &fakeRows{}}},
 			execResults:    []sql.Result{fakeSQLResult{id: 0}, fakeSQLResult{id: 42}, fakeSQLResult{id: 0}, fakeSQLResult{id: 99}, fakeSQLResult{id: 0}},
 			execErrors:     []error{nil, nil, nil, nil, nil, errors.New("welcome failed")},
+		},
+		"time limit": {
+			queryResponses: []fakeResponse{validUniverse(), {rows: &fakeRows{}}},
+			execResults:    []sql.Result{fakeSQLResult{id: 0}, fakeSQLResult{id: 42}, fakeSQLResult{id: 0}, fakeSQLResult{id: 99}, fakeSQLResult{id: 0}, fakeSQLResult{id: 0}},
+			execErrors:     []error{nil, nil, nil, nil, nil, nil, errors.New("timelimit failed")},
+		},
+		"rank recalc": {
+			queryResponses: []fakeResponse{validUniverse(), {rows: &fakeRows{}}},
+			execResults:    []sql.Result{fakeSQLResult{id: 0}, fakeSQLResult{id: 42}, fakeSQLResult{id: 0}, fakeSQLResult{id: 99}, fakeSQLResult{id: 0}, fakeSQLResult{id: 0}, fakeSQLResult{id: 0}},
+			execErrors:     []error{nil, nil, nil, nil, nil, nil, nil, errors.New("rank failed")},
 		},
 	}
 	for name, tx := range cases {
