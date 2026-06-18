@@ -599,20 +599,23 @@ dd {
   white-space: nowrap;
 }
 
-.legacy-buildings-table {
+.legacy-game-shell .legacy-buildings-table {
+  border-collapse: separate;
+  border-spacing: 2px;
   margin-bottom: 40px;
+  margin-top: 3px;
 }
 
-.legacy-building-image {
-  width: 126px;
+.legacy-game-shell .legacy-building-image {
+  width: auto;
 }
 
-.legacy-building-description {
-  width: 364px;
+.legacy-game-shell .legacy-building-description {
+  width: auto;
 }
 
-.legacy-building-action {
-  width: 40px;
+.legacy-game-shell .legacy-building-action {
+  width: auto;
 }
 
 .legacy-build-ok {

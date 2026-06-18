@@ -31,6 +31,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - Registration writes legacy side effects and sends SMTP/MailHog welcome mail with activation link/password lines.
 - Activation clears `validatemd`, sets `validated=1`, copies `email` to `pemail`, redirects, and rejects link reuse.
 - Overview covers legacy `cp`, `lgn` activity, admin notice, header/menu/table layout parity work, rename/delete name rules, blockers, destroy markers, queue flush, stat/rank updates, and active restore.
+- Buildings table layout now matches legacy row spacing and image/action cell geometry closely; mutations still pending.
 
 ## Verified QA
 
@@ -38,7 +39,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
 - Go smoke covers health, routes, assets, MailHog, activation cleanup/reuse, auth/session cookie expiry/security, logout, reads/mutations, guards, and privacy.
 - Playwright visual/CSR E2E covers public pages and auth game routes in Chromium/Firefox.
-- Auth visual contract passes in Chromium/Firefox; overview Chromium diff is down to about 17.8%, broader parity still misses.
+- Auth visual contract passes in Chromium/Firefox; Chromium diff: buildings about 7.6%, overview about 17.8%, broader parity still misses.
 - Go internal coverage gate: `97.0% >= 97%`.
 - Go smoke JSON: `all_pass: true`.
 
@@ -46,7 +47,7 @@ Full legacy PHP E2E was not run for this Go step. Keep PHP as oracle until each 
 
 ## Remaining Work
 
-- Close authenticated visual diff for overview/buildings before claiming game-page parity.
+- Close authenticated visual diff for technology/galaxy/notes before claiming game-page parity.
 - Port remaining overview legacy actions.
 - Port queue mutations, research start/cancel, shipyard/defense orders, fleet actions, galaxy quick actions, reports, messages, alliance, admin, options, recovery, deletion, vacation, bans, permissions.
 - Convert legacy E2E cases into Go compatibility checks per migrated flow.
