@@ -16,6 +16,7 @@ type SessionLookup interface {
 type OverviewRepository interface {
 	GetOverview(context.Context, OverviewQuery) (domaingame.Overview, error)
 	RenamePlanet(context.Context, OverviewRenameQuery) (domaingame.Overview, error)
+	DeletePlanet(context.Context, OverviewDeleteQuery) (domaingame.Overview, *domaingame.OverviewActionIssue, error)
 }
 
 type OverviewQuery struct {
@@ -27,6 +28,13 @@ type OverviewRenameQuery struct {
 	PlayerID int
 	PlanetID int
 	Name     string
+}
+
+type OverviewDeleteQuery struct {
+	PlayerID int
+	PlanetID int
+	DeleteID int
+	Password string
 }
 
 type OverviewCommand struct {
@@ -44,10 +52,20 @@ type OverviewRenameCommand struct {
 	Name            string
 }
 
+type OverviewDeleteCommand struct {
+	PublicSession   string
+	PrivateSessions map[string]string
+	RemoteAddr      string
+	PlanetID        int
+	DeleteID        int
+	Password        string
+}
+
 type OverviewResult struct {
 	Authenticated bool
 	Issues        []domainpublicsite.SessionIssue
 	Overview      domaingame.Overview
+	ActionIssue   *domaingame.OverviewActionIssue
 }
 
 type OverviewService struct {
@@ -115,6 +133,38 @@ func (s OverviewService) RenamePlanet(ctx context.Context, command OverviewRenam
 	return OverviewResult{
 		Authenticated: true,
 		Overview:      overview,
+	}, nil
+}
+
+func (s OverviewService) DeletePlanet(ctx context.Context, command OverviewDeleteCommand) (OverviewResult, error) {
+	if s.sessions == nil || s.repository == nil {
+		return OverviewResult{}, errors.New("overview dependencies unavailable")
+	}
+
+	session, err := s.authenticatedSession(ctx, command.PublicSession, command.PrivateSessions, command.RemoteAddr)
+	if err != nil {
+		return OverviewResult{}, err
+	}
+	if !session.Authenticated {
+		return OverviewResult{
+			Authenticated: false,
+			Issues:        session.Issues,
+		}, nil
+	}
+
+	overview, actionIssue, err := s.repository.DeletePlanet(ctx, OverviewDeleteQuery{
+		PlayerID: session.Session.PlayerID,
+		PlanetID: command.PlanetID,
+		DeleteID: command.DeleteID,
+		Password: command.Password,
+	})
+	if err != nil {
+		return OverviewResult{}, err
+	}
+	return OverviewResult{
+		Authenticated: true,
+		Overview:      overview,
+		ActionIssue:   actionIssue,
 	}, nil
 }
 

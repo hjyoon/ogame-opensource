@@ -50,6 +50,7 @@ type LogoutUseCase interface {
 type GameOverviewUseCase interface {
 	GetOverview(context.Context, appgame.OverviewCommand) (appgame.OverviewResult, error)
 	RenamePlanet(context.Context, appgame.OverviewRenameCommand) (appgame.OverviewResult, error)
+	DeletePlanet(context.Context, appgame.OverviewDeleteCommand) (appgame.OverviewResult, error)
 }
 
 type GameBuildingsUseCase interface {

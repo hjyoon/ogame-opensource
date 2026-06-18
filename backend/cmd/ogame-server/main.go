@@ -272,7 +272,7 @@ func gameOverviewService(cfg config.Config, logger *slog.Logger, sessions apppub
 	}
 
 	logger.Info("universe DB game overview enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
-	return appgame.NewOverviewService(sessions, mysqlgame.NewOverviewRepository(db, cfg.UniDBPrefix))
+	return appgame.NewOverviewService(sessions, mysqlgame.NewOverviewRepositoryWithSecret(db, cfg.UniDBPrefix, cfg.UniDBSecret))
 }
 
 func gameBuildingsService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.BuildingsService {

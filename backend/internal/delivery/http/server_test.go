@@ -825,6 +825,73 @@ func TestGameOverviewEndpointRenameReturnsUnauthorizedForInvalidSession(t *testi
 	}
 }
 
+func TestGameOverviewEndpointDeletesPlanet(t *testing.T) {
+	overview := &fakeGameOverview{result: appgame.OverviewResult{
+		Authenticated: true,
+		Overview: domaingame.Overview{
+			Commander:     "legor",
+			CurrentPlanet: domaingame.PlanetOverview{ID: 1, Name: "Homeworld"},
+			PlanetSwitcher: []domaingame.PlanetSummary{{
+				ID:      1,
+				Name:    "Homeworld",
+				Current: true,
+			}},
+		},
+	}}
+	server := testServerWithGameOverview(t, overview)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/overview?session=public&cp=99", strings.NewReader(`{"action":"delete","deleteId":99,"password":"admin"}`))
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response gameOverviewResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Overview == nil || response.Overview.CurrentPlanet.Name != "Homeworld" {
+		t.Fatalf("expected delete overview response, got %+v", response)
+	}
+	if overview.deleteCommand.PublicSession != "public" || overview.deleteCommand.PlanetID != 99 ||
+		overview.deleteCommand.DeleteID != 99 || overview.deleteCommand.Password != "admin" ||
+		overview.deleteCommand.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected delete command: %+v", overview.deleteCommand)
+	}
+	if overview.deleteCommand.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("expected private session cookie to be passed, got %+v", overview.deleteCommand.PrivateSessions)
+	}
+}
+
+func TestGameOverviewEndpointDeleteReturnsActionIssue(t *testing.T) {
+	overview := &fakeGameOverview{result: appgame.OverviewResult{
+		Authenticated: true,
+		ActionIssue: &domaingame.OverviewActionIssue{
+			Code:    domaingame.OverviewIssuePasswordInvalid,
+			Message: "The password is wrong.",
+		},
+		Overview: domaingame.Overview{CurrentPlanet: domaingame.PlanetOverview{ID: 99, Name: "Colony"}},
+	}}
+	server := testServerWithGameOverview(t, overview)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/overview?session=public&cp=99", strings.NewReader(`{"action":"delete","deleteId":99,"password":"wrong"}`))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response gameOverviewResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.ActionIssue == nil || response.ActionIssue.Code != domaingame.OverviewIssuePasswordInvalid {
+		t.Fatalf("expected action issue response, got %+v", response)
+	}
+}
+
 func TestGameOverviewEndpointRejectsInvalidRenameRequests(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
@@ -834,6 +901,7 @@ func TestGameOverviewEndpointRejectsInvalidRenameRequests(t *testing.T) {
 		{"invalid planet", "/api/game/overview?session=public&cp=bad", `{"action":"rename","name":"New Colony"}`},
 		{"malformed", "/api/game/overview?session=public", `{`},
 		{"unknown action", "/api/game/overview?session=public", `{"action":"delete","name":"New Colony"}`},
+		{"missing delete id", "/api/game/overview?session=public", `{"action":"delete","password":"admin"}`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			server := testServerWithGameOverview(t, &fakeGameOverview{})
@@ -3406,6 +3474,7 @@ type fakeGameOverview struct {
 	err           error
 	command       appgame.OverviewCommand
 	renameCommand appgame.OverviewRenameCommand
+	deleteCommand appgame.OverviewDeleteCommand
 }
 
 func (f *fakeGameOverview) GetOverview(_ context.Context, command appgame.OverviewCommand) (appgame.OverviewResult, error) {
@@ -3415,6 +3484,11 @@ func (f *fakeGameOverview) GetOverview(_ context.Context, command appgame.Overvi
 
 func (f *fakeGameOverview) RenamePlanet(_ context.Context, command appgame.OverviewRenameCommand) (appgame.OverviewResult, error) {
 	f.renameCommand = command
+	return f.result, f.err
+}
+
+func (f *fakeGameOverview) DeletePlanet(_ context.Context, command appgame.OverviewDeleteCommand) (appgame.OverviewResult, error) {
+	f.deleteCommand = command
 	return f.result, f.err
 }
 

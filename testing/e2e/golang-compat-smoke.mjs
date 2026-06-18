@@ -350,6 +350,28 @@ try {
   } catch {
     gameOverviewRenameRestoredBody = {};
   }
+  const gameOverviewDeleteWrongPassword = await request(`/api/game/overview${restoreSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+    body: JSON.stringify({ action: "delete", deleteId: basePlanetID, password: `${loginSmokePassword}-wrong` })
+  });
+  let gameOverviewDeleteWrongPasswordBody = {};
+  try {
+    gameOverviewDeleteWrongPasswordBody = JSON.parse(gameOverviewDeleteWrongPassword.body);
+  } catch {
+    gameOverviewDeleteWrongPasswordBody = {};
+  }
+  const gameOverviewDeleteHome = await request(`/api/game/overview${restoreSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+    body: JSON.stringify({ action: "delete", deleteId: basePlanetID, password: loginSmokePassword })
+  });
+  let gameOverviewDeleteHomeBody = {};
+  try {
+    gameOverviewDeleteHomeBody = JSON.parse(gameOverviewDeleteHome.body);
+  } catch {
+    gameOverviewDeleteHomeBody = {};
+  }
   const missingPlanetSearch = withQueryParam(sessionSearch, "cp", "987654321");
   const gameOverviewMissingPlanet = await request(`/api/game/overview${missingPlanetSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -781,6 +803,12 @@ try {
       check(gameOverviewRenameForbiddenBody.overview?.currentPlanet?.name === renamedPlanetName, "forbidden legacy rename keeps the previous planet name", gameOverviewRenameForbiddenBody.overview?.currentPlanet ?? {}),
       check(gameOverviewRenameRestored.status === 200, "game overview rename mutation can restore the original planet name", { status: gameOverviewRenameRestored.status }),
       check(gameOverviewRenameRestoredBody.overview?.currentPlanet?.name === originalPlanetName, "game overview rename restore updates the current planet name", gameOverviewRenameRestoredBody.overview?.currentPlanet ?? {}),
+      check(gameOverviewDeleteWrongPassword.status === 200, "game overview delete wrong password returns HTTP 200", { status: gameOverviewDeleteWrongPassword.status }),
+      check(gameOverviewDeleteWrongPasswordBody.actionIssue?.code === "password_invalid", "game overview delete wrong password returns legacy issue", gameOverviewDeleteWrongPasswordBody.actionIssue ?? {}),
+      check(gameOverviewDeleteWrongPasswordBody.overview?.currentPlanet?.id === basePlanetID, "game overview delete wrong password keeps current planet", gameOverviewDeleteWrongPasswordBody.overview?.currentPlanet ?? {}),
+      check(gameOverviewDeleteHome.status === 200, "game overview home delete returns HTTP 200", { status: gameOverviewDeleteHome.status }),
+      check(gameOverviewDeleteHomeBody.actionIssue?.code === "home_planet", "game overview home delete is blocked", gameOverviewDeleteHomeBody.actionIssue ?? {}),
+      check(gameOverviewDeleteHomeBody.overview?.currentPlanet?.id === basePlanetID, "game overview home delete keeps current planet", gameOverviewDeleteHomeBody.overview?.currentPlanet ?? {}),
       check(gameOverviewMissingPlanet.status === 200, "game overview accepts missing cp fallback", { status: gameOverviewMissingPlanet.status }),
       check(gameOverviewMissingPlanetBody.overview?.currentPlanet?.id === basePlanetID, "game overview missing cp falls back to base planet", gameOverviewMissingPlanetBody),
       check(gameOverviewAfterMissingPlanetBody.overview?.currentPlanet?.id === basePlanetID, "game overview persists missing cp fallback", gameOverviewAfterMissingPlanetBody),

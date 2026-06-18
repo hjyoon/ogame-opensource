@@ -391,6 +391,26 @@ async function assertRenamePlanetFlow(page: Page) {
       details: state.details
     };
   });
+
+  await page.locator(".legacy-rename-destroy-table input[name='pw']").fill("wrong-password");
+  await page.locator(".legacy-rename-destroy-table input[name='aktion'][value='Delete the planet!']").click();
+  await page.locator(".legacy-overview-table", { hasText: "The password is wrong." }).waitFor({ timeout: 10_000 });
+  await record("game rename planet delete wrong password preserves CSR", async () => {
+    const state = await gameShellState(page, marker, "");
+    return {
+      pass:
+        state.details.pathname === "/game/rename-planet" &&
+        state.details.search.includes("session=") &&
+        state.details.probe === marker &&
+        state.details.gameShell === true &&
+        state.details.renameTable === true &&
+        state.details.overviewErrorText.includes("The password is wrong.") &&
+        state.details.pendingText === false &&
+        state.details.legacyCssLinks === 0 &&
+        state.details.legacyBody === false,
+      details: state.details
+    };
+  });
 }
 
 async function assertTechnologyDetailsNavigation(page: Page) {
@@ -606,6 +626,11 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     legacyCssLinks: document.head.querySelectorAll("link[data-legacy-public-css]").length,
     legacyBody: document.body.classList.contains("legacy-public-body"),
     openOverviewLinks: Array.from(document.querySelectorAll("a")).filter((link) => link.textContent?.trim() === "Open overview").length,
+    overviewErrorText:
+      Array.from(document.querySelectorAll(".legacy-overview-table"))
+        .find((table) => table.textContent?.includes("The password is wrong."))
+        ?.textContent?.trim()
+        .replace(/\s+/g, " ") ?? "",
     buildingRows: document.querySelectorAll("[data-building-row]").length,
     buildingNames: Array.from(document.querySelectorAll("[data-building-row] .legacy-building-description a")).map(
       (link) => link.textContent?.trim() ?? ""

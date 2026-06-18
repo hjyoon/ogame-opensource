@@ -13,6 +13,12 @@ type gameOverviewResponse struct {
 	Authenticated bool                       `json:"authenticated"`
 	Issues        []gameSessionIssueResponse `json:"issues"`
 	Overview      *gameOverviewSummary       `json:"overview,omitempty"`
+	ActionIssue   *gameOverviewActionIssue   `json:"actionIssue,omitempty"`
+}
+
+type gameOverviewActionIssue struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 type gameOverviewSummary struct {
@@ -65,8 +71,10 @@ type gamePlanetSummaryResponse struct {
 }
 
 type gameOverviewMutationRequest struct {
-	Action string `json:"action"`
-	Name   string `json:"name"`
+	Action   string `json:"action"`
+	Name     string `json:"name"`
+	DeleteID int    `json:"deleteId"`
+	Password string `json:"password"`
 }
 
 func (a app) handleGameOverview(w http.ResponseWriter, r *http.Request) {
@@ -119,17 +127,37 @@ func (a app) handleGameOverviewPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mutation, err := decodeGameOverviewMutation(r)
-	if err != nil || mutation.Action != "rename" {
+	if err != nil {
 		http.Error(w, "invalid overview request", http.StatusBadRequest)
 		return
 	}
-	result, err := a.deps.GameOverview.RenamePlanet(r.Context(), appgame.OverviewRenameCommand{
-		PublicSession:   r.URL.Query().Get("session"),
-		PrivateSessions: cookieMap(r),
-		RemoteAddr:      remoteIP(r.RemoteAddr),
-		PlanetID:        planetID,
-		Name:            mutation.Name,
-	})
+	var result appgame.OverviewResult
+	switch mutation.Action {
+	case "rename":
+		result, err = a.deps.GameOverview.RenamePlanet(r.Context(), appgame.OverviewRenameCommand{
+			PublicSession:   r.URL.Query().Get("session"),
+			PrivateSessions: cookieMap(r),
+			RemoteAddr:      remoteIP(r.RemoteAddr),
+			PlanetID:        planetID,
+			Name:            mutation.Name,
+		})
+	case "delete":
+		if mutation.DeleteID <= 0 {
+			http.Error(w, "invalid overview request", http.StatusBadRequest)
+			return
+		}
+		result, err = a.deps.GameOverview.DeletePlanet(r.Context(), appgame.OverviewDeleteCommand{
+			PublicSession:   r.URL.Query().Get("session"),
+			PrivateSessions: cookieMap(r),
+			RemoteAddr:      remoteIP(r.RemoteAddr),
+			PlanetID:        planetID,
+			DeleteID:        mutation.DeleteID,
+			Password:        mutation.Password,
+		})
+	default:
+		http.Error(w, "invalid overview request", http.StatusBadRequest)
+		return
+	}
 	if err != nil {
 		http.Error(w, "game overview unavailable", http.StatusServiceUnavailable)
 		return
@@ -163,7 +191,15 @@ func writeGameOverviewResponse(w http.ResponseWriter, result appgame.OverviewRes
 		Authenticated: result.Authenticated,
 		Issues:        toGameSessionIssueResponses(result.Issues),
 		Overview:      overview,
+		ActionIssue:   toGameOverviewActionIssue(result.ActionIssue),
 	})
+}
+
+func toGameOverviewActionIssue(issue *domaingame.OverviewActionIssue) *gameOverviewActionIssue {
+	if issue == nil {
+		return nil
+	}
+	return &gameOverviewActionIssue{Code: issue.Code, Message: issue.Message}
 }
 
 func selectedPlanetID(r *http.Request) (int, error) {

@@ -4,6 +4,7 @@ import { gamePlanetSwitchURL, gameRouteURL, gameRoutes, type GameRoute } from ".
 export type GameOverviewStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
+  actionIssue?: { code: string; message: string };
   overview?: GameOverview;
 };
 
@@ -481,6 +482,7 @@ type LegacyGameOverviewProps = {
   error: string | null;
   route: GameRoute;
   overviewPending: boolean;
+  onPlanetDelete: (password: string, deleteID: number) => void;
   onPlanetRename: (name: string) => void;
   buildingsStatus: GameBuildingsStatus | null;
   buildingsError: string | null;
@@ -559,6 +561,7 @@ export function LegacyGameOverview({
   error,
   route,
   overviewPending,
+  onPlanetDelete,
   onPlanetRename,
   buildingsStatus,
   buildingsError,
@@ -681,7 +684,7 @@ export function LegacyGameOverview({
         {route.key === "notes" && !notesError && notesIssue ? <LegacyMessage tone="error" text={notesIssue} /> : null}
         {overview && route.key === "overview" ? <OverviewTable overview={overview} /> : null}
         {overview && route.key === "renamePlanet" ? (
-          <RenamePlanetTable onRename={onPlanetRename} overview={overview} pending={overviewPending} />
+          <RenamePlanetTable onDelete={onPlanetDelete} onRename={onPlanetRename} overview={overview} pending={overviewPending} />
         ) : null}
         {overview && route.key === "buildings" && !buildings && !buildingsError && !buildingsIssue ? (
           <LegacyMessage tone="neutral" text="Loading buildings..." />
@@ -2545,17 +2548,28 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
 
 function RenamePlanetTable({
   overview,
+  onDelete,
   onRename,
   pending
 }: {
   overview: GameOverview;
+  onDelete: (password: string, deleteID: number) => void;
   onRename: (name: string) => void;
   pending: boolean;
 }) {
   const planet = overview.currentPlanet;
   const [showDestroyMenu, setShowDestroyMenu] = React.useState(false);
   if (showDestroyMenu) {
-    return <RenamePlanetDestroyMenu overview={overview} />;
+    return (
+      <RenamePlanetDestroyMenu
+        onDelete={(password, deleteID) => {
+          setShowDestroyMenu(false);
+          onDelete(password, deleteID);
+        }}
+        overview={overview}
+        pending={pending}
+      />
+    );
   }
   return (
     <>
@@ -2620,7 +2634,15 @@ function RenamePlanetTable({
   );
 }
 
-function RenamePlanetDestroyMenu({ overview }: { overview: GameOverview }) {
+function RenamePlanetDestroyMenu({
+  onDelete,
+  overview,
+  pending
+}: {
+  onDelete: (password: string, deleteID: number) => void;
+  overview: GameOverview;
+  pending: boolean;
+}) {
   const planet = overview.currentPlanet;
   return (
     <>
@@ -2628,7 +2650,11 @@ function RenamePlanetDestroyMenu({ overview }: { overview: GameOverview }) {
       <form
         action={gameRouteURL("/game/rename-planet", window.location.search)}
         method="post"
-        onSubmit={(event) => event.preventDefault()}
+        onSubmit={(event) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          onDelete(String(form.get("pw") ?? ""), Number(form.get("deleteid") ?? planet.id));
+        }}
       >
         <center>
           <table className="legacy-overview-table legacy-rename-destroy-table" width={519}>
@@ -2645,10 +2671,10 @@ function RenamePlanetDestroyMenu({ overview }: { overview: GameOverview }) {
                 <th>Password</th>
                 <th>
                   <input name="deleteid" type="hidden" value={planet.id} />
-                  <input name="pw" type="password" />
+                  <input disabled={pending} name="pw" type="password" />
                 </th>
                 <th>
-                  <input alt="Abandon the colony" name="aktion" type="submit" value="Delete the planet!" />
+                  <input disabled={pending} alt="Abandon the colony" name="aktion" type="submit" value="Delete the planet!" />
                 </th>
               </tr>
             </tbody>

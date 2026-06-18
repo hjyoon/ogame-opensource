@@ -9,8 +9,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
+	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 )
 
 func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
@@ -238,6 +240,501 @@ func TestOverviewRepositoryRenameErrors(t *testing.T) {
 	repository = NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
 	if _, err := repository.RenamePlanet(context.Background(), appgame.OverviewRenameQuery{PlayerID: 42, PlanetID: 99, Name: "New Colony"}); err == nil || !strings.Contains(err.Error(), "rename failed") {
 		t.Fatalf("expected rename exec error, got %v", err)
+	}
+}
+
+func TestOverviewRepositoryDeletesColonyAndMoon(t *testing.T) {
+	results := overviewResultsForPlanet(99, "Colony")
+	results = append(results,
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{200, domaingame.PlanetTypeMoon, 1, 2, 3})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{1})},
+	)
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewOverviewRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret")
+	repository.now = func() time.Time { return time.Unix(1000, 0) }
+
+	overview, issue, err := repository.DeletePlanet(context.Background(), appgame.OverviewDeleteQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		DeleteID: 99,
+		Password: "admin",
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue != nil {
+		t.Fatalf("expected successful delete without issue, got %+v", issue)
+	}
+	if overview.CurrentPlanet.ID != 1 || overview.CurrentPlanet.Name != "Homeworld" {
+		t.Fatalf("expected refreshed home overview, got %+v", overview.CurrentPlanet)
+	}
+	if len(runner.execCalls) != 9 {
+		t.Fatalf("expected moon/planet destroy, queue flush, and active planet update execs, got %+v", runner.execCalls)
+	}
+	first := runner.execCalls[0]
+	if !strings.Contains(first.sql, "UPDATE `ogame_planets` SET type = ?") ||
+		first.args[0] != planetTypeDestroyedMoon || first.args[1] != userSpace ||
+		first.args[2] != int64(1000) || first.args[3] != int64(87400) || first.args[5] != 200 {
+		t.Fatalf("unexpected moon destroy exec: %+v", first)
+	}
+	planetDestroy := runner.execCalls[4]
+	if planetDestroy.args[0] != planetTypeDestroyed || planetDestroy.args[5] != 99 {
+		t.Fatalf("unexpected planet destroy exec: %+v", planetDestroy)
+	}
+	last := runner.execCalls[len(runner.execCalls)-1]
+	if !strings.Contains(last.sql, "UPDATE `ogame_users` SET aktplanet = ?") || last.args[0] != 1 || last.args[1] != 42 {
+		t.Fatalf("expected active planet restore, got %+v", last)
+	}
+}
+
+func TestOverviewRepositoryDeletesColonyWithoutReDeletingDestroyedMoon(t *testing.T) {
+	results := overviewResultsForPlanet(99, "Colony")
+	results = append(results,
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{200, planetTypeDestroyedMoon, 1, 2, 3})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{1})},
+	)
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewOverviewRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret")
+
+	overview, issue, err := repository.DeletePlanet(context.Background(), appgame.OverviewDeleteQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		DeleteID: 99,
+		Password: "admin",
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue != nil || overview.CurrentPlanet.ID != 1 {
+		t.Fatalf("expected colony delete to restore home, overview=%+v issue=%+v", overview.CurrentPlanet, issue)
+	}
+	if len(runner.execCalls) != 5 {
+		t.Fatalf("destroyed moon marker should not be updated again, execs=%+v", runner.execCalls)
+	}
+	if runner.execCalls[0].args[0] != planetTypeDestroyed || runner.execCalls[0].args[5] != 99 {
+		t.Fatalf("expected colony destroy first, got %+v", runner.execCalls[0])
+	}
+}
+
+func TestOverviewRepositoryDeleteReturnsPasswordIssue(t *testing.T) {
+	results := overviewResultsForPlanet(99, "Colony")
+	results = append(results, fakeQueryResult{rows: fakeRowsFromValues()})
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewOverviewRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret")
+
+	overview, issue, err := repository.DeletePlanet(context.Background(), appgame.OverviewDeleteQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		DeleteID: 99,
+		Password: "wrong",
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.CurrentPlanet.Name != "Colony" || issue == nil || issue.Code != domaingame.OverviewIssuePasswordInvalid || runner.execSQL != "" {
+		t.Fatalf("expected wrong password no-op issue, overview=%+v issue=%+v exec=%q", overview.CurrentPlanet, issue, runner.execSQL)
+	}
+}
+
+func TestOverviewRepositoryDeleteBlocksHomeAndFleet(t *testing.T) {
+	tests := []struct {
+		name    string
+		results []fakeQueryResult
+		want    string
+	}{
+		{
+			name: "home planet",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{42})},
+				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{1, domaingame.PlanetTypePlanet, 1, 1, 1})},
+			},
+			want: domaingame.OverviewIssueHomePlanet,
+		},
+		{
+			name: "incoming fleet",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{42})},
+				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+				{rows: fakeRowsFromValues([]any{7})},
+			},
+			want: domaingame.OverviewIssueFleetIncoming,
+		},
+		{
+			name: "outgoing fleet",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{42})},
+				{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+				{rows: fakeRowsFromValues()},
+				{rows: fakeRowsFromValues([]any{8})},
+			},
+			want: domaingame.OverviewIssueFleetOutgoing,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results := overviewResultsForPlanet(99, "Colony")
+			results = append(results, tt.results...)
+			runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: results}}
+			repository := NewOverviewRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret")
+
+			_, issue, err := repository.DeletePlanet(context.Background(), appgame.OverviewDeleteQuery{
+				PlayerID: 42,
+				PlanetID: 99,
+				DeleteID: 99,
+				Password: "admin",
+			})
+
+			if err != nil {
+				t.Fatal(err)
+			}
+			if issue == nil || issue.Code != tt.want || runner.execSQL != "" {
+				t.Fatalf("expected %s issue without exec, issue=%+v exec=%q", tt.want, issue, runner.execSQL)
+			}
+		})
+	}
+}
+
+func TestOverviewRepositoryDeleteNoopsForForeignPlanet(t *testing.T) {
+	results := overviewResultsForPlanet(99, "Colony")
+	results = append(results,
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+	)
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewOverviewRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret")
+
+	overview, issue, err := repository.DeletePlanet(context.Background(), appgame.OverviewDeleteQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		DeleteID: 404,
+		Password: "admin",
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue != nil || overview.CurrentPlanet.ID != 99 || runner.execSQL != "" {
+		t.Fatalf("expected foreign delete no-op, overview=%+v issue=%+v exec=%q", overview.CurrentPlanet, issue, runner.execSQL)
+	}
+}
+
+func TestOverviewRepositoryDeleteErrors(t *testing.T) {
+	repository := NewOverviewRepositoryWithRunner(&fakeQueryer{}, nil, "ogame_")
+	if _, _, err := repository.DeletePlanet(context.Background(), appgame.OverviewDeleteQuery{}); err == nil || !strings.Contains(err.Error(), "updater unavailable") {
+		t.Fatalf("expected missing updater error, got %v", err)
+	}
+
+	runner := &fakeOverviewRunner{}
+	repository = NewOverviewRepositoryWithRunner(runner, runner, "bad-prefix_")
+	if _, _, err := repository.DeletePlanet(context.Background(), appgame.OverviewDeleteQuery{}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected unsafe prefix error, got %v", err)
+	}
+
+	for _, tt := range []struct {
+		name      string
+		results   []fakeQueryResult
+		execErr   error
+		execErrAt int
+		want      string
+	}{
+		{
+			name:    "overview",
+			results: []fakeQueryResult{{err: errors.New("overview failed")}},
+			want:    "overview failed",
+		},
+		{
+			name:    "password query",
+			results: append(overviewResultsForPlanet(99, "Colony"), fakeQueryResult{err: errors.New("password failed")}),
+			want:    "password failed",
+		},
+		{
+			name:    "password scan",
+			results: append(overviewResultsForPlanet(99, "Colony"), fakeQueryResult{rows: fakeRowsFromValues([]any{"bad"})}),
+			want:    "expected int",
+		},
+		{
+			name: "user reload",
+			results: append(overviewResultsForPlanet(99, "Colony"),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+				fakeQueryResult{err: errors.New("user failed")},
+			),
+			want: "user failed",
+		},
+		{
+			name: "target query",
+			results: append(overviewResultsForPlanet(99, "Colony"),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{err: errors.New("target failed")},
+			),
+			want: "target failed",
+		},
+		{
+			name: "incoming query",
+			results: append(overviewResultsForPlanet(99, "Colony"),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+				fakeQueryResult{err: errors.New("incoming failed")},
+			),
+			want: "incoming failed",
+		},
+		{
+			name: "outgoing query",
+			results: append(overviewResultsForPlanet(99, "Colony"),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{err: errors.New("outgoing failed")},
+			),
+			want: "outgoing failed",
+		},
+		{
+			name: "moon query",
+			results: append(overviewResultsForPlanet(99, "Colony"),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{err: errors.New("moon failed")},
+			),
+			want: "moon failed",
+		},
+		{
+			name: "destroy exec",
+			results: append(overviewResultsForPlanet(99, "Colony"),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+			),
+			execErr: errors.New("destroy failed"),
+			want:    "destroy failed",
+		},
+		{
+			name: "queue flush exec",
+			results: append(overviewResultsForPlanet(99, "Colony"),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+			),
+			execErr:   errors.New("flush failed"),
+			execErrAt: 2,
+			want:      "flush failed",
+		},
+		{
+			name: "queue build flush exec",
+			results: append(overviewResultsForPlanet(99, "Colony"),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+			),
+			execErr:   errors.New("build flush failed"),
+			execErrAt: 3,
+			want:      "build flush failed",
+		},
+		{
+			name: "buildqueue flush exec",
+			results: append(overviewResultsForPlanet(99, "Colony"),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+			),
+			execErr:   errors.New("buildqueue flush failed"),
+			execErrAt: 4,
+			want:      "buildqueue flush failed",
+		},
+		{
+			name: "active restore exec",
+			results: append(overviewResultsForPlanet(99, "Colony"),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+			),
+			execErr:   errors.New("active restore failed"),
+			execErrAt: 5,
+			want:      "active restore failed",
+		},
+		{
+			name: "final overview",
+			results: append(overviewResultsForPlanet(99, "Colony"),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{99, domaingame.PlanetTypePlanet, 1, 2, 3})},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{err: errors.New("final overview failed")},
+			),
+			want: "final overview failed",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeOverviewRunner{
+				fakeQueryer: fakeQueryer{results: tt.results},
+				execErr:     tt.execErr,
+				execErrAt:   tt.execErrAt,
+			}
+			repository := NewOverviewRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret")
+			_, _, err := repository.DeletePlanet(context.Background(), appgame.OverviewDeleteQuery{
+				PlayerID: 42,
+				PlanetID: 99,
+				DeleteID: 99,
+				Password: "admin",
+			})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestOverviewRepositoryDeletesMoon(t *testing.T) {
+	results := overviewResultsForPlanet(200, "Moon")
+	results = append(results,
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 200, 1, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{200, domaingame.PlanetTypeMoon, 1, 2, 3})},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 1, 1, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{1, "Homeworld", 1, 1, 1, 1})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{1})},
+	)
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewOverviewRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret")
+
+	overview, issue, err := repository.DeletePlanet(context.Background(), appgame.OverviewDeleteQuery{
+		PlayerID: 42,
+		PlanetID: 200,
+		DeleteID: 200,
+		Password: "admin",
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue != nil || overview.CurrentPlanet.ID != 1 {
+		t.Fatalf("expected moon delete to restore home, overview=%+v issue=%+v", overview.CurrentPlanet, issue)
+	}
+	if runner.execCalls[0].args[0] != planetTypeDestroyedMoon || runner.execCalls[0].args[5] != 200 {
+		t.Fatalf("expected moon destroy marker, got %+v", runner.execCalls[0])
+	}
+}
+
+func TestOverviewRepositoryDeleteHelpers(t *testing.T) {
+	repository := NewOverviewRepositoryWithRunner(&fakeOverviewRunner{}, nil, "ogame_")
+	if !repository.currentTime().After(time.Time{}) {
+		t.Fatal("expected default current time")
+	}
+	emptyRepository := OverviewRepository{}
+	if !emptyRepository.currentTime().After(time.Time{}) {
+		t.Fatal("expected nil clock to fall back to current time")
+	}
+
+	queryer := &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("password rows failed"))}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	if _, err := repository.passwordMatches(context.Background(), "`ogame_users`", 42, "admin"); err == nil || !strings.Contains(err.Error(), "password rows failed") {
+		t.Fatalf("expected password rows error, got %v", err)
+	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("password post scan failed"), []any{42})}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	if _, err := repository.passwordMatches(context.Background(), "`ogame_users`", 42, "admin"); err == nil || !strings.Contains(err.Error(), "password post scan failed") {
+		t.Fatalf("expected password post-scan rows error, got %v", err)
+	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{41})}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	if matched, err := repository.passwordMatches(context.Background(), "`ogame_users`", 42, "admin"); err != nil || matched {
+		t.Fatalf("expected mismatched password row to fail, matched=%v err=%v", matched, err)
+	}
+
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", 1, 2, 3, 4})}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	if _, _, err := repository.loadDeletePlanet(context.Background(), "`ogame_planets`", 42, 99); err == nil {
+		t.Fatal("expected delete planet scan error")
+	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("delete empty rows failed"))}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	if _, _, err := repository.loadDeletePlanet(context.Background(), "`ogame_planets`", 42, 99); err == nil || !strings.Contains(err.Error(), "delete empty rows failed") {
+		t.Fatalf("expected delete empty rows error, got %v", err)
+	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("delete rows failed"), []any{99, domaingame.PlanetTypePlanet, 1, 2, 3})}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	if _, _, err := repository.loadDeletePlanet(context.Background(), "`ogame_planets`", 42, 99); err == nil || !strings.Contains(err.Error(), "delete rows failed") {
+		t.Fatalf("expected delete rows error, got %v", err)
+	}
+
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("moon rows failed"), []any{200, domaingame.PlanetTypeMoon, 1, 2, 3})}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	if _, _, err := repository.loadCoordinateMoon(context.Background(), "`ogame_planets`", domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}); err == nil || !strings.Contains(err.Error(), "moon rows failed") {
+		t.Fatalf("expected moon rows error, got %v", err)
+	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("moon empty rows failed"))}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	if _, _, err := repository.loadCoordinateMoon(context.Background(), "`ogame_planets`", domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}); err == nil || !strings.Contains(err.Error(), "moon empty rows failed") {
+		t.Fatalf("expected moon empty rows error, got %v", err)
+	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", domaingame.PlanetTypeMoon, 1, 2, 3})}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	if _, _, err := repository.loadCoordinateMoon(context.Background(), "`ogame_planets`", domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}); err == nil {
+		t.Fatal("expected moon scan error")
+	}
+
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	if _, err := repository.fleetExists(context.Background(), "`ogame_fleet`", "start_planet = ?", 99); err == nil {
+		t.Fatal("expected fleet scan error")
+	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("fleet empty rows failed"))}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	if _, err := repository.fleetExists(context.Background(), "`ogame_fleet`", "start_planet = ?", 99); err == nil || !strings.Contains(err.Error(), "fleet empty rows failed") {
+		t.Fatalf("expected fleet empty rows error, got %v", err)
+	}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("fleet rows failed"), []any{7})}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	if _, err := repository.fleetExists(context.Background(), "`ogame_fleet`", "start_planet = ?", 99); err == nil || !strings.Contains(err.Error(), "fleet rows failed") {
+		t.Fatalf("expected fleet rows error, got %v", err)
 	}
 }
 
@@ -571,14 +1068,25 @@ func overviewResultsForPlanet(planetID int, name string) []fakeQueryResult {
 
 type fakeOverviewRunner struct {
 	fakeQueryer
-	execSQL  string
-	execArgs []any
-	execErr  error
+	execSQL   string
+	execArgs  []any
+	execErr   error
+	execErrAt int
+	execCalls []fakeExecCall
+}
+
+type fakeExecCall struct {
+	sql  string
+	args []any
 }
 
 func (f *fakeOverviewRunner) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {
 	f.execSQL = query
 	f.execArgs = args
+	f.execCalls = append(f.execCalls, fakeExecCall{sql: query, args: args})
+	if f.execErrAt > 0 && len(f.execCalls) == f.execErrAt {
+		return fakeSQLResult(0), f.execErr
+	}
 	return fakeSQLResult(1), f.execErr
 }
 

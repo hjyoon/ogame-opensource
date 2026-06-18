@@ -353,6 +353,45 @@ function App() {
       .finally(() => setGameOverviewPending(false));
   };
 
+  const submitGamePlanetDelete = (password: string, deleteID: number) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameOverviewError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const overviewSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      overviewSearch.set("cp", selectedPlanet);
+    }
+    setGameOverviewPending(true);
+    setGameOverviewError(null);
+    fetch(`/api/game/overview?${overviewSearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ action: "delete", deleteId: deleteID, password })
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameOverviewStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `overview returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("overview response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameOverview(payload);
+        setGameOverviewError(payload.actionIssue?.message ?? null);
+      })
+      .catch((err: unknown) => setGameOverviewError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameOverviewPending(false));
+  };
+
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "buildings" || publicSession === "") {
@@ -796,6 +835,7 @@ function App() {
         onNotesCreate={submitGameNoteCreate}
         onNotesDelete={submitGameNoteDelete}
         onNotesUpdate={submitGameNoteUpdate}
+        onPlanetDelete={submitGamePlanetDelete}
         onPlanetRename={submitGamePlanetRename}
         onResourcesSubmit={submitGameResources}
         overviewPending={gameOverviewPending}

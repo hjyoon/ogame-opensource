@@ -4,11 +4,23 @@ import "strings"
 
 const PlanetNameLimit = 20
 
+const (
+	OverviewIssuePasswordInvalid = "password_invalid"
+	OverviewIssueHomePlanet      = "home_planet"
+	OverviewIssueFleetIncoming   = "fleet_incoming"
+	OverviewIssueFleetOutgoing   = "fleet_outgoing"
+)
+
 type Overview struct {
 	Commander      string
 	Score          ScoreSummary
 	CurrentPlanet  PlanetOverview
 	PlanetSwitcher []PlanetSummary
+}
+
+type OverviewActionIssue struct {
+	Code    string
+	Message string
 }
 
 type ScoreSummary struct {
