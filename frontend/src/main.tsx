@@ -503,7 +503,7 @@ function App() {
     }
     const currentSearch = new URLSearchParams(search);
     const empireSearch = new URLSearchParams({ session: publicSession });
-    for (const key of ["cp", "planettype"]) {
+    for (const key of ["cp", "planettype", "modus", "planet", "techid", "listid"]) {
       const value = currentSearch.get(key);
       if (value) {
         empireSearch.set(key, value);

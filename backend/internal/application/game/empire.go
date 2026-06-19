@@ -11,6 +11,7 @@ import (
 
 type EmpireRepository interface {
 	GetEmpire(context.Context, EmpireQuery) (domaingame.Empire, *domaingame.EmpireActionIssue, error)
+	MutateEmpire(context.Context, EmpireMutationQuery) (EmpireMutationOutcome, error)
 }
 
 type EmpireQuery struct {
@@ -25,6 +26,30 @@ type EmpireCommand struct {
 	RemoteAddr      string
 	PlanetID        int
 	PlanetType      int
+}
+
+type EmpireMutationQuery struct {
+	PlayerID int
+	PlanetID int
+	Action   string
+	TechID   int
+	ListID   int
+}
+
+type EmpireMutationCommand struct {
+	PublicSession   string
+	PrivateSessions map[string]string
+	RemoteAddr      string
+	PlanetID        int
+	PlanetType      int
+	Action          string
+	TargetPlanetID  int
+	TechID          int
+	ListID          int
+}
+
+type EmpireMutationOutcome struct {
+	ActionIssue *domaingame.EmpireActionIssue
 }
 
 type EmpireResult struct {
@@ -61,6 +86,45 @@ func (s EmpireService) GetEmpire(ctx context.Context, command EmpireCommand) (Em
 	})
 	if err != nil {
 		return EmpireResult{}, err
+	}
+	return EmpireResult{Authenticated: true, Empire: empire, ActionIssue: issue}, nil
+}
+
+func (s EmpireService) MutateEmpire(ctx context.Context, command EmpireMutationCommand) (EmpireResult, error) {
+	if s.sessions == nil || s.repository == nil {
+		return EmpireResult{}, errors.New("empire dependencies unavailable")
+	}
+	session, err := s.authenticatedSession(ctx, command.PublicSession, command.PrivateSessions, command.RemoteAddr)
+	if err != nil {
+		return EmpireResult{}, err
+	}
+	if !session.Authenticated {
+		return EmpireResult{Authenticated: false, Issues: session.Issues}, nil
+	}
+	targetPlanetID := command.TargetPlanetID
+	if targetPlanetID == 0 {
+		targetPlanetID = command.PlanetID
+	}
+	outcome, err := s.repository.MutateEmpire(ctx, EmpireMutationQuery{
+		PlayerID: session.Session.PlayerID,
+		PlanetID: targetPlanetID,
+		Action:   command.Action,
+		TechID:   command.TechID,
+		ListID:   command.ListID,
+	})
+	if err != nil {
+		return EmpireResult{}, err
+	}
+	empire, issue, err := s.repository.GetEmpire(ctx, EmpireQuery{
+		PlayerID:   session.Session.PlayerID,
+		PlanetID:   command.PlanetID,
+		PlanetType: command.PlanetType,
+	})
+	if err != nil {
+		return EmpireResult{}, err
+	}
+	if outcome.ActionIssue != nil {
+		issue = outcome.ActionIssue
 	}
 	return EmpireResult{Authenticated: true, Empire: empire, ActionIssue: issue}, nil
 }

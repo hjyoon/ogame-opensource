@@ -100,18 +100,66 @@ func (a app) handleGameEmpire(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid planet type", http.StatusBadRequest)
 		return
 	}
-	result, err := a.deps.GameEmpire.GetEmpire(r.Context(), appgame.EmpireCommand{
-		PublicSession:   r.URL.Query().Get("session"),
-		PrivateSessions: cookieMap(r),
-		RemoteAddr:      remoteIP(r.RemoteAddr),
-		PlanetID:        planetID,
-		PlanetType:      planetType,
-	})
+	shortcut := selectedEmpireShortcut(r, planetID)
+	var result appgame.EmpireResult
+	if shortcut.Action != "" && r.Method == http.MethodGet {
+		result, err = a.deps.GameEmpire.MutateEmpire(r.Context(), appgame.EmpireMutationCommand{
+			PublicSession:   r.URL.Query().Get("session"),
+			PrivateSessions: cookieMap(r),
+			RemoteAddr:      remoteIP(r.RemoteAddr),
+			PlanetID:        planetID,
+			PlanetType:      planetType,
+			Action:          shortcut.Action,
+			TargetPlanetID:  shortcut.TargetPlanetID,
+			TechID:          shortcut.TechID,
+			ListID:          shortcut.ListID,
+		})
+	} else {
+		result, err = a.deps.GameEmpire.GetEmpire(r.Context(), appgame.EmpireCommand{
+			PublicSession:   r.URL.Query().Get("session"),
+			PrivateSessions: cookieMap(r),
+			RemoteAddr:      remoteIP(r.RemoteAddr),
+			PlanetID:        planetID,
+			PlanetType:      planetType,
+		})
+	}
 	if err != nil {
 		http.Error(w, "game empire unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	writeGameEmpireResponse(w, result)
+}
+
+type empireShortcut struct {
+	Action         string
+	TargetPlanetID int
+	TechID         int
+	ListID         int
+}
+
+func selectedEmpireShortcut(r *http.Request, fallbackPlanetID int) empireShortcut {
+	action := domaingame.NormalizeBuildingsMutationAction(r.URL.Query().Get("modus"))
+	if action == "" {
+		return empireShortcut{}
+	}
+	targetPlanetID := legacyQueryInt(r, "planet")
+	if targetPlanetID == 0 {
+		targetPlanetID = fallbackPlanetID
+	}
+	return empireShortcut{
+		Action:         action,
+		TargetPlanetID: targetPlanetID,
+		TechID:         legacyQueryInt(r, "techid"),
+		ListID:         legacyQueryInt(r, "listid"),
+	}
+}
+
+func legacyQueryInt(r *http.Request, key string) int {
+	value, err := strconv.Atoi(r.URL.Query().Get(key))
+	if err != nil || value < 0 {
+		return 0
+	}
+	return value
 }
 
 func selectedEmpirePlanetType(r *http.Request) (int, error) {

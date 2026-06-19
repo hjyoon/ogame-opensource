@@ -2,6 +2,7 @@ package mysqlgame
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"testing"
@@ -87,6 +88,63 @@ func TestEmpireRepositoryFlushesDueQueuesWhenWritable(t *testing.T) {
 	if len(runner.calls) < 14 || !strings.Contains(runner.calls[0].sql, "SELECT speed, freeze") ||
 		!strings.Contains(runner.calls[2].sql, "SELECT speed, max_werf, freeze") {
 		t.Fatalf("expected queue flush queries before empire read, got %+v", runner.calls[:4])
+	}
+}
+
+func TestEmpireRepositoryMutatesLegacyShortcutThroughBuildings(t *testing.T) {
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(buildingMutationUserRow(0, 9_999, nil))},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{2.0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues(buildingMutationPlanetRow(map[int]int{}))},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+	)}, results: []sql.Result{buildingSQLResult{affected: 1}, buildingSQLResult{id: 7}, buildingSQLResult{id: 8}}}
+	repository := NewEmpireRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+
+	outcome, err := repository.MutateEmpire(context.Background(), appgame.EmpireMutationQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Action:   domaingame.BuildingsMutationAdd,
+		TechID:   domaingame.BuildingMetalMine,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.ActionIssue != nil {
+		t.Fatalf("unexpected empire shortcut issue: %+v", outcome.ActionIssue)
+	}
+	if len(runner.execs) != 3 ||
+		!strings.Contains(runner.execs[1].sql, "INSERT INTO `ogame_buildqueue`") ||
+		!strings.Contains(runner.execs[2].sql, "INSERT INTO `ogame_queue`") ||
+		runner.execs[1].args[0] != 42 ||
+		runner.execs[1].args[1] != 99 ||
+		runner.execs[1].args[3] != domaingame.BuildingMetalMine {
+		t.Fatalf("expected empire shortcut to reuse building queue writes, got %+v", runner.execs)
+	}
+}
+
+func TestEmpireRepositoryConvertsBuildingShortcutIssue(t *testing.T) {
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(buildingMutationUserRow(0, 9_999, nil))},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{2.0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues(buildingMutationPlanetRow(map[int]int{}))},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+	)}}
+	repository := NewEmpireRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+
+	outcome, err := repository.MutateEmpire(context.Background(), appgame.EmpireMutationQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Action:   domaingame.BuildingsMutationAdd,
+		TechID:   999_999,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.ActionIssue == nil || outcome.ActionIssue.Code != domaingame.BuildingsIssueInvalid {
+		t.Fatalf("expected invalid building issue, got %+v", outcome.ActionIssue)
+	}
+	if len(runner.execs) != 0 {
+		t.Fatalf("invalid shortcut should not write, got %+v", runner.execs)
 	}
 }
 

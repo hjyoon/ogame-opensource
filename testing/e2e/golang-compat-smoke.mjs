@@ -710,6 +710,16 @@ try {
     gameEmpireMoonsBody = {};
   }
 
+  const gameEmpireInvalidShortcut = await request(`/api/game/empire${sessionSearch}&modus=add&planet=${basePlanetID ?? 0}&techid=999999`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameEmpireInvalidShortcutBody = {};
+  try {
+    gameEmpireInvalidShortcutBody = JSON.parse(gameEmpireInvalidShortcut.body);
+  } catch {
+    gameEmpireInvalidShortcutBody = {};
+  }
+
   const gameEmpireWithoutCookie = await request(`/api/game/empire${sessionSearch}`);
   let gameEmpireWithoutCookieBody = {};
   try {
@@ -1265,6 +1275,11 @@ try {
       check(Array.isArray(gameEmpireBody.empire?.defense), "game empire returns defense rows array", gameEmpireBody),
       check(gameEmpireMoons.status === 200, "game empire accepts moon planet type", { status: gameEmpireMoons.status }),
       check([1, 3].includes(gameEmpireMoonsBody.empire?.planetType), "game empire normalizes planet type like legacy", gameEmpireMoonsBody),
+      check(gameEmpireInvalidShortcut.status === 200, "game empire accepts legacy GET shortcut parameters", {
+        status: gameEmpireInvalidShortcut.status
+      }),
+      check(gameEmpireInvalidShortcutBody.authenticated === true, "game empire shortcut authenticates the login session", gameEmpireInvalidShortcutBody),
+      check(gameEmpireInvalidShortcutBody.actionIssue?.code === "invalid_building", "game empire shortcut reports invalid building without writing", gameEmpireInvalidShortcutBody.actionIssue ?? {}),
       check(!gameEmpire.body.includes(sessionCookiePair), "game empire response does not echo private cookie"),
       check(gameEmpireWithoutCookie.status === 401, "game empire rejects missing private cookie", { status: gameEmpireWithoutCookie.status }),
       check(gameEmpireWithoutCookieBody.authenticated === false, "game empire missing private cookie is unauthenticated", gameEmpireWithoutCookieBody),

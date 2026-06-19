@@ -57,6 +57,51 @@ func TestGameEmpireEndpointReturnsEmpire(t *testing.T) {
 	}
 }
 
+func TestGameEmpireEndpointAppliesLegacyShortcut(t *testing.T) {
+	empireUseCase := &fakeGameEmpire{mutationResult: appgame.EmpireResult{
+		Authenticated: true,
+		Empire:        sampleGameEmpire(),
+		ActionIssue:   &domaingame.EmpireActionIssue{Code: domaingame.BuildingsIssueNoResources, Message: "Not enough resources."},
+	}}
+	server := testServerWithGameEmpire(t, empireUseCase)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/empire?session=public&cp=99&planettype=3&modus=add&planet=100&techid=1", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response gameEmpireResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.ActionIssue == nil || response.ActionIssue.Code != domaingame.BuildingsIssueNoResources {
+		t.Fatalf("expected building issue to be returned, got %+v", response)
+	}
+	if empireUseCase.mutationCommand.PublicSession != "public" ||
+		empireUseCase.mutationCommand.PlanetID != 99 ||
+		empireUseCase.mutationCommand.PlanetType != domaingame.EmpirePlanetTypeMoons ||
+		empireUseCase.mutationCommand.TargetPlanetID != 100 ||
+		empireUseCase.mutationCommand.Action != domaingame.BuildingsMutationAdd ||
+		empireUseCase.mutationCommand.TechID != domaingame.BuildingMetalMine ||
+		empireUseCase.mutationCommand.RemoteAddr != "203.0.113.10" ||
+		empireUseCase.mutationCommand.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("unexpected empire mutation command: %+v", empireUseCase.mutationCommand)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/game/empire?session=public&cp=99&modus=remove&listid=2", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK ||
+		empireUseCase.mutationCommand.TargetPlanetID != 99 ||
+		empireUseCase.mutationCommand.Action != domaingame.BuildingsMutationRemove ||
+		empireUseCase.mutationCommand.ListID != 2 {
+		t.Fatalf("expected missing shortcut planet to fall back to cp, code=%d command=%+v", rec.Code, empireUseCase.mutationCommand)
+	}
+}
+
 func TestGameEmpireEndpointReturnsUnauthorizedAndErrors(t *testing.T) {
 	empireUseCase := &fakeGameEmpire{result: appgame.EmpireResult{
 		Authenticated: false,
@@ -115,14 +160,25 @@ func testServerWithGameEmpire(t *testing.T, empire GameEmpireUseCase) http.Handl
 }
 
 type fakeGameEmpire struct {
-	result  appgame.EmpireResult
-	err     error
-	command appgame.EmpireCommand
+	result          appgame.EmpireResult
+	mutationResult  appgame.EmpireResult
+	err             error
+	mutationErr     error
+	command         appgame.EmpireCommand
+	mutationCommand appgame.EmpireMutationCommand
 }
 
 func (f *fakeGameEmpire) GetEmpire(_ context.Context, command appgame.EmpireCommand) (appgame.EmpireResult, error) {
 	f.command = command
 	return f.result, f.err
+}
+
+func (f *fakeGameEmpire) MutateEmpire(_ context.Context, command appgame.EmpireMutationCommand) (appgame.EmpireResult, error) {
+	f.mutationCommand = command
+	if f.mutationResult.Authenticated || f.mutationResult.Empire.Commander != "" || len(f.mutationResult.Issues) > 0 || f.mutationResult.ActionIssue != nil {
+		return f.mutationResult, f.mutationErr
+	}
+	return f.result, f.mutationErr
 }
 
 func sampleGameEmpire() domaingame.Empire {

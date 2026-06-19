@@ -110,6 +110,31 @@ func (r EmpireRepository) GetEmpire(ctx context.Context, query appgame.EmpireQue
 	return empire, nil, nil
 }
 
+func (r EmpireRepository) MutateEmpire(ctx context.Context, query appgame.EmpireMutationQuery) (appgame.EmpireMutationOutcome, error) {
+	if r.execer == nil {
+		return appgame.EmpireMutationOutcome{}, errors.New("empire updater unavailable")
+	}
+	buildings := BuildingsRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now, updateResources: r.updateResources}
+	outcome, err := buildings.MutateBuildings(ctx, appgame.BuildingsMutationQuery{
+		PlayerID: query.PlayerID,
+		PlanetID: query.PlanetID,
+		Action:   query.Action,
+		TechID:   query.TechID,
+		ListID:   query.ListID,
+	})
+	if err != nil {
+		return appgame.EmpireMutationOutcome{}, err
+	}
+	return appgame.EmpireMutationOutcome{ActionIssue: empireActionIssueFromBuildings(outcome.ActionIssue)}, nil
+}
+
+func empireActionIssueFromBuildings(issue *domaingame.BuildingsActionIssue) *domaingame.EmpireActionIssue {
+	if issue == nil {
+		return nil
+	}
+	return &domaingame.EmpireActionIssue{Code: issue.Code, Message: issue.Message}
+}
+
 func (r EmpireRepository) loadEmpireUser(ctx context.Context, usersTable string, playerID int) (empireUser, error) {
 	rows, err := r.queryer.QueryContext(
 		ctx,

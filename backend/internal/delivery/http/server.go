@@ -64,6 +64,7 @@ type GameBuildingsUseCase interface {
 
 type GameEmpireUseCase interface {
 	GetEmpire(context.Context, appgame.EmpireCommand) (appgame.EmpireResult, error)
+	MutateEmpire(context.Context, appgame.EmpireMutationCommand) (appgame.EmpireResult, error)
 }
 
 type GameResourcesUseCase interface {
