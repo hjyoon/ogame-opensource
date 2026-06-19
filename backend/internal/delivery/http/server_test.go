@@ -1885,6 +1885,84 @@ func TestGameFleetEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 	}
 }
 
+func TestGameFleetEndpointRecallsFleet(t *testing.T) {
+	fleet := &fakeGameFleet{result: appgame.FleetResult{
+		Authenticated: true,
+		Fleet: domaingame.Fleet{
+			Commander: "legor",
+			Missions: []domaingame.FleetMission{{
+				ID:        123,
+				Mission:   domaingame.FleetMissionTransport + domaingame.FleetMissionReturnOffset,
+				CanRecall: false,
+			}},
+		},
+	}}
+	server := testServerWithGameFleet(t, fleet)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/fleet?session=public&cp=99", bytes.NewBufferString(`{"action":"recall","fleetId":123}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fleet.recall.PublicSession != "public" || fleet.recall.PlanetID != 99 || fleet.recall.FleetID != 123 || fleet.recall.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected fleet recall command: %+v", fleet.recall)
+	}
+	if fleet.recall.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("expected private session cookie to be passed, got %+v", fleet.recall.PrivateSessions)
+	}
+	var response gameFleetResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Fleet == nil || len(response.Fleet.Missions) != 1 || response.Fleet.Missions[0].CanRecall {
+		t.Fatalf("unexpected recall response: %+v", response)
+	}
+}
+
+func TestGameFleetEndpointRejectsBadRecallPayload(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodPost, "/api/game/fleet?session=public", strings.NewReader(`{"action":"recall","fleetId":123}`))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing fleet recall use case to return 503, got %d", rec.Code)
+	}
+
+	server = testServerWithGameFleet(t, &fakeGameFleet{})
+	req = httptest.NewRequest(http.MethodPost, "/api/game/fleet?session=public&cp=abc", strings.NewReader(`{"action":"recall","fleetId":123}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid recall selected planet to return 400, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/fleet?session=public", strings.NewReader(`{`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected bad recall payload to return 400, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/fleet?session=public", strings.NewReader(`{"action":"launch"}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected unsupported recall action to return 400, got %d", rec.Code)
+	}
+
+	server = testServerWithGameFleet(t, &fakeGameFleet{err: errors.New("recall failed")})
+	req = httptest.NewRequest(http.MethodPost, "/api/game/fleet?session=public", strings.NewReader(`{"action":"recall","fleetId":123}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected recall use case error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestGameFleetTemplatesEndpointMutatesTemplates(t *testing.T) {
 	fleet := &fakeGameFleet{result: appgame.FleetResult{
 		Authenticated: true,
@@ -3756,11 +3834,11 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game shipyard method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/game/fleet", nil)
+	req = httptest.NewRequest(http.MethodPut, "/api/game/fleet", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD, POST" {
 		t.Fatalf("expected game fleet method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
@@ -4403,6 +4481,7 @@ type fakeGameFleet struct {
 	err      error
 	command  appgame.FleetCommand
 	mutation appgame.FleetTemplateMutationCommand
+	recall   appgame.FleetRecallCommand
 }
 
 func (f *fakeGameFleet) GetFleet(_ context.Context, command appgame.FleetCommand) (appgame.FleetResult, error) {
@@ -4412,6 +4491,11 @@ func (f *fakeGameFleet) GetFleet(_ context.Context, command appgame.FleetCommand
 
 func (f *fakeGameFleet) MutateFleetTemplate(_ context.Context, command appgame.FleetTemplateMutationCommand) (appgame.FleetResult, error) {
 	f.mutation = command
+	return f.result, f.err
+}
+
+func (f *fakeGameFleet) RecallFleet(_ context.Context, command appgame.FleetRecallCommand) (appgame.FleetResult, error) {
+	f.recall = command
 	return f.result, f.err
 }
 

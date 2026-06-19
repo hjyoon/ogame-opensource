@@ -24,7 +24,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 ## Latest Verified Implementation
 
 - Public parity, language flags, login/logout, and migrated game read models are guarded.
-- Fleet covers `flotten1` summary, slots, expeditions, ships, speed/cargo/consumption, and Commander standard fleet templates; dispatch/recall/ACS pending.
+- Fleet covers summary, slots, expeditions, ships, speed/cargo, Commander templates, and recall; dispatch/ACS pending.
 - Galaxy covers clamp, rows, status, moon/debris/actions, slots, deuterium warning, and legacy no-header/table spacing; quick actions pending.
 - Shipyard/defense cover display plus POST orders into legacy `Shipyard` queue with due partial/full completion.
 - Technology/stat/search/buddy/notes layouts follow legacy chrome; buddy add/accept/decline/withdraw/delete sends legacy PMs.
@@ -51,6 +51,6 @@ Full legacy PHP E2E was not run for this step; keep PHP as oracle.
 
 - Close authenticated visual diff for statistics and remaining game-page nits before claiming parity.
 - Port remaining overview legacy actions.
-- Port fleet dispatch/recall/ACS, galaxy quick actions, reports/messages/alliance/admin/options/recovery/deletion/vacation/bans/permissions.
+- Port fleet dispatch/ACS, galaxy quick actions, reports/messages/alliance/admin/options/recovery/deletion/vacation/bans/permissions.
 - Convert legacy E2E cases into Go compatibility checks per migrated flow.
 - Run full legacy PHP E2E before declaring any game-flow migration equivalent.

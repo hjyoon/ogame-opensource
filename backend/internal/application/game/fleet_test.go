@@ -116,6 +116,55 @@ func TestFleetServiceMutationReturnsSessionIssuesWithoutRepository(t *testing.T)
 	}
 }
 
+func TestFleetServiceRecallsFleetAndReloadsFleet(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}
+	repository := &fakeFleetRepository{result: domaingame.Fleet{Commander: "legor"}}
+	service := NewFleetService(sessions, repository)
+
+	result, err := service.RecallFleet(context.Background(), FleetRecallCommand{
+		PublicSession:   "public",
+		PrivateSessions: map[string]string{"private": "secret"},
+		RemoteAddr:      "203.0.113.10",
+		PlanetID:        99,
+		FleetID:         123,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Authenticated || result.Fleet.Commander != "legor" {
+		t.Fatalf("unexpected recall result: %+v", result)
+	}
+	if repository.recall.PlayerID != 42 || repository.recall.FleetID != 123 {
+		t.Fatalf("unexpected recall query: %+v", repository.recall)
+	}
+	if repository.query.PlayerID != 42 || repository.query.PlanetID != 99 {
+		t.Fatalf("expected recall to reload selected fleet screen, got %+v", repository.query)
+	}
+}
+
+func TestFleetServiceRecallReturnsSessionIssuesWithoutRepository(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: false,
+		Issues: []domainpublicsite.SessionIssue{{
+			Code:    domainpublicsite.SessionIssuePrivateInvalid,
+			Message: "Private session is invalid.",
+		}},
+	}}
+	repository := &fakeFleetRepository{}
+	service := NewFleetService(sessions, repository)
+
+	result, err := service.RecallFleet(context.Background(), FleetRecallCommand{PublicSession: "public"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Authenticated || len(result.Issues) != 1 || repository.called || repository.recalled {
+		t.Fatalf("expected unauthenticated recall without repository call, got %+v", result)
+	}
+}
+
 func TestFleetServicePropagatesErrors(t *testing.T) {
 	sessionErr := errors.New("session failed")
 	service := NewFleetService(&fakeSessionLookup{err: sessionErr}, &fakeFleetRepository{})
@@ -124,6 +173,9 @@ func TestFleetServicePropagatesErrors(t *testing.T) {
 	}
 	if _, err := service.MutateFleetTemplate(context.Background(), FleetTemplateMutationCommand{}); !errors.Is(err, sessionErr) {
 		t.Fatalf("expected mutation session error, got %v", err)
+	}
+	if _, err := service.RecallFleet(context.Background(), FleetRecallCommand{}); !errors.Is(err, sessionErr) {
+		t.Fatalf("expected recall session error, got %v", err)
 	}
 
 	repoErr := errors.New("repository failed")
@@ -142,6 +194,9 @@ func TestFleetServicePropagatesErrors(t *testing.T) {
 	if _, err := service.MutateFleetTemplate(context.Background(), FleetTemplateMutationCommand{}); !errors.Is(err, repoErr) {
 		t.Fatalf("expected mutation repository error, got %v", err)
 	}
+	if _, err := service.RecallFleet(context.Background(), FleetRecallCommand{}); !errors.Is(err, repoErr) {
+		t.Fatalf("expected recall repository error, got %v", err)
+	}
 
 	reloadErr := errors.New("fleet reload failed")
 	service = NewFleetService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
@@ -150,6 +205,9 @@ func TestFleetServicePropagatesErrors(t *testing.T) {
 	}}, &fakeFleetRepository{getErr: reloadErr})
 	if _, err := service.MutateFleetTemplate(context.Background(), FleetTemplateMutationCommand{}); !errors.Is(err, reloadErr) {
 		t.Fatalf("expected mutation reload error, got %v", err)
+	}
+	if _, err := service.RecallFleet(context.Background(), FleetRecallCommand{}); !errors.Is(err, reloadErr) {
+		t.Fatalf("expected recall reload error, got %v", err)
 	}
 }
 
@@ -160,6 +218,9 @@ func TestFleetServiceRequiresDependencies(t *testing.T) {
 	if _, err := (FleetService{}).MutateFleetTemplate(context.Background(), FleetTemplateMutationCommand{}); err == nil {
 		t.Fatal("expected mutation dependency error")
 	}
+	if _, err := (FleetService{}).RecallFleet(context.Background(), FleetRecallCommand{}); err == nil {
+		t.Fatal("expected recall dependency error")
+	}
 }
 
 type fakeFleetRepository struct {
@@ -168,8 +229,10 @@ type fakeFleetRepository struct {
 	getErr   error
 	query    FleetQuery
 	mutation FleetTemplateMutationQuery
+	recall   FleetRecallQuery
 	called   bool
 	mutated  bool
+	recalled bool
 }
 
 func (f *fakeFleetRepository) GetFleet(_ context.Context, query FleetQuery) (domaingame.Fleet, error) {
@@ -184,5 +247,11 @@ func (f *fakeFleetRepository) GetFleet(_ context.Context, query FleetQuery) (dom
 func (f *fakeFleetRepository) MutateFleetTemplate(_ context.Context, query FleetTemplateMutationQuery) error {
 	f.mutation = query
 	f.mutated = true
+	return f.err
+}
+
+func (f *fakeFleetRepository) RecallFleet(_ context.Context, query FleetRecallQuery) error {
+	f.recall = query
+	f.recalled = true
 	return f.err
 }

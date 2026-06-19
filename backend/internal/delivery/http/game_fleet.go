@@ -99,7 +99,24 @@ type gameFleetTemplateMutationRequest struct {
 	Ships      map[string]int `json:"ships"`
 }
 
+type gameFleetMutationRequest struct {
+	Action  string `json:"action"`
+	FleetID int    `json:"fleetId"`
+}
+
 func (a app) handleGameFleet(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		a.handleGameFleetGet(w, r)
+	case http.MethodPost:
+		a.handleGameFleetPost(w, r)
+	default:
+		w.Header().Set("Allow", "GET, HEAD, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (a app) handleGameFleetGet(w http.ResponseWriter, r *http.Request) {
 	if a.deps.GameFleet == nil {
 		http.Error(w, "game fleet unavailable", http.StatusServiceUnavailable)
 		return
@@ -116,6 +133,40 @@ func (a app) handleGameFleet(w http.ResponseWriter, r *http.Request) {
 		PrivateSessions: cookieMap(r),
 		RemoteAddr:      remoteIP(r.RemoteAddr),
 		PlanetID:        planetID,
+	})
+	if err != nil {
+		http.Error(w, "game fleet unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	writeGameFleetResponse(w, result)
+}
+
+func (a app) handleGameFleetPost(w http.ResponseWriter, r *http.Request) {
+	if a.deps.GameFleet == nil {
+		http.Error(w, "game fleet unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	planetID, err := selectedPlanetID(r)
+	if err != nil {
+		http.Error(w, "invalid selected planet", http.StatusBadRequest)
+		return
+	}
+	var payload gameFleetMutationRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "invalid fleet payload", http.StatusBadRequest)
+		return
+	}
+	if payload.Action != "recall" {
+		http.Error(w, "unsupported fleet action", http.StatusBadRequest)
+		return
+	}
+	result, err := a.deps.GameFleet.RecallFleet(r.Context(), appgame.FleetRecallCommand{
+		PublicSession:   r.URL.Query().Get("session"),
+		PrivateSessions: cookieMap(r),
+		RemoteAddr:      remoteIP(r.RemoteAddr),
+		PlanetID:        planetID,
+		FleetID:         payload.FleetID,
 	})
 	if err != nil {
 		http.Error(w, "game fleet unavailable", http.StatusServiceUnavailable)

@@ -408,6 +408,418 @@ func TestFleetRepositoryTemplateMutationErrors(t *testing.T) {
 	}
 }
 
+func TestFleetRepositoryRecallsOutboundFleetWithLegacyReturnQueue(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, map[int]int{domaingame.FleetSmallCargo: 2, domaingame.FleetSolarSatellite: 1}))},
+		{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
+		{rows: fakeRowsFromValues([]any{44})},
+		{rows: fakeRowsFromValues([]any{100})},
+	}}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	if err := repository.RecallFleet(context.Background(), appgame.FleetRecallQuery{PlayerID: 42, FleetID: 123}); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execCalls) != 4 {
+		t.Fatalf("expected insert return fleet, insert queue, delete fleet, delete queue calls, got %+v", runner.execCalls)
+	}
+	insertFleet := runner.execCalls[0]
+	if !strings.Contains(insertFleet.sql, "INSERT INTO `ogame_fleet`") {
+		t.Fatalf("expected fleet insert, got %s", insertFleet.sql)
+	}
+	if insertFleet.args[0] != 44 || insertFleet.args[5] != 25 || insertFleet.args[6] != domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset || insertFleet.args[9] != int64(60) {
+		t.Fatalf("unexpected return fleet args: %+v", insertFleet.args)
+	}
+	if insertFleet.args[11] != 2 || insertFleet.args[21] != 1 {
+		t.Fatalf("recall must preserve ship counts, got args: %+v", insertFleet.args)
+	}
+	insertQueue := runner.execCalls[1]
+	if !strings.Contains(insertQueue.sql, "INSERT INTO `ogame_queue`") {
+		t.Fatalf("expected queue insert, got %s", insertQueue.sql)
+	}
+	if insertQueue.args[0] != 44 || insertQueue.args[1] != queueTypeFleet || insertQueue.args[2] != 1 || insertQueue.args[5] != int64(1_000) || insertQueue.args[6] != int64(1_060) {
+		t.Fatalf("unexpected return queue args: %+v", insertQueue.args)
+	}
+	if !strings.Contains(runner.execCalls[2].sql, "DELETE FROM `ogame_fleet`") || !strings.Contains(runner.execCalls[3].sql, "DELETE FROM `ogame_queue`") {
+		t.Fatalf("expected original fleet and queue deletes, got %+v", runner.execCalls)
+	}
+}
+
+func TestFleetRepositoryRecallSkipsFrozenReturningAndMissingFleet(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	tests := []struct {
+		name    string
+		results []fakeQueryResult
+	}{
+		{
+			name: "frozen universe",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{1})},
+			},
+		},
+		{
+			name: "missing fleet",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues()},
+			},
+		},
+		{
+			name: "already returning",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset, 0, nil))},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: tt.results}}
+			repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+			if err := repository.RecallFleet(context.Background(), appgame.FleetRecallQuery{PlayerID: 42, FleetID: 123}); err != nil {
+				t.Fatal(err)
+			}
+			if len(runner.execCalls) != 0 {
+				t.Fatalf("recall no-op should not write, got %+v", runner.execCalls)
+			}
+		})
+	}
+}
+
+func TestFleetRepositoryRecallCleansUpEmptyACSUnion(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionACSAttack, 77, map[int]int{domaingame.FleetLightFighter: 3}))},
+		{rows: fakeRowsFromValues([]any{55, int64(900), int64(1_200)})},
+		{rows: fakeRowsFromValues([]any{44})},
+		{rows: fakeRowsFromValues([]any{100})},
+		{rows: fakeRowsFromValues([]any{0})},
+	}}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	if err := repository.RecallFleet(context.Background(), appgame.FleetRecallQuery{PlayerID: 42, FleetID: 123}); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execCalls) != 5 || !strings.Contains(runner.execCalls[4].sql, "DELETE FROM `ogame_union`") {
+		t.Fatalf("expected empty ACS union delete, got %+v", runner.execCalls)
+	}
+}
+
+func TestFleetRepositoryRecallErrorsAndHelpers(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	repository := NewFleetRepositoryWithQueryer(&fakeQueryer{}, "ogame_", func() time.Time { return now })
+	if err := repository.RecallFleet(context.Background(), appgame.FleetRecallQuery{PlayerID: 42, FleetID: 123}); err == nil || !strings.Contains(err.Error(), "writer unavailable") {
+		t.Fatalf("expected missing writer error, got %v", err)
+	}
+
+	runner := &fakeFleetRunner{}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "bad-prefix_", func() time.Time { return now })
+	if err := repository.RecallFleet(context.Background(), appgame.FleetRecallQuery{PlayerID: 42, FleetID: 123}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected unsafe prefix error, got %v", err)
+	}
+
+	if err := repository.RecallFleet(context.Background(), appgame.FleetRecallQuery{PlayerID: 42}); err != nil {
+		t.Fatalf("zero fleet id should be no-op, got %v", err)
+	}
+	if !fleetRecallable(domaingame.FleetMissionTransport) || fleetRecallable(domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset) {
+		t.Fatal("unexpected recallability")
+	}
+	mission, seconds := recallMissionAndDuration(recallFleetRow{Mission: domaingame.FleetMissionTransport}, recallQueueRow{Start: 1_010}, 1_000)
+	if mission != domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset || seconds != 0 {
+		t.Fatalf("unexpected negative outbound duration clamp: mission=%d seconds=%d", mission, seconds)
+	}
+	mission, seconds = recallMissionAndDuration(recallFleetRow{Mission: domaingame.FleetMissionOrbitingOffset + domaingame.FleetMissionDeploy, DeployTime: -1}, recallQueueRow{}, 1_000)
+	if mission != domaingame.FleetMissionDeploy+domaingame.FleetMissionReturnOffset || seconds != 0 {
+		t.Fatalf("unexpected orbiting duration clamp: mission=%d seconds=%d", mission, seconds)
+	}
+	if fleetQueuePriority(domaingame.FleetMissionMissile) != queuePriorityFleet+1300 || fleetQueuePriority(domaingame.FleetMissionRecycle) != queuePriorityFleet+900 {
+		t.Fatal("unexpected fleet queue priority")
+	}
+	if fleetQueuePriority(domaingame.FleetMissionAttack) != queuePriorityFleet+1000+domaingame.FleetMissionAttack {
+		t.Fatal("unexpected attack queue priority")
+	}
+	values := fleetCountValues(domaingame.FleetIDs(), map[int]int{domaingame.FleetSmallCargo: -3, domaingame.FleetSolarSatellite: 2})
+	if values[0] != 0 || values[10] != 2 {
+		t.Fatalf("fleet count values should clamp negatives while preserving satellites, got %+v", values)
+	}
+}
+
+func TestFleetRepositoryRecallPropagatesPipelineErrors(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	baseResults := func(mission int, unionID int) []fakeQueryResult {
+		return []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{0})},
+			{rows: fakeRowsFromValues(recallFleetTestRow(mission, unionID, map[int]int{domaingame.FleetSmallCargo: 2}))},
+			{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
+			{rows: fakeRowsFromValues([]any{44})},
+			{rows: fakeRowsFromValues([]any{100})},
+		}
+	}
+	tests := []struct {
+		name        string
+		results     []fakeQueryResult
+		execErrs    []error
+		execResults []sql.Result
+		want        string
+	}{
+		{
+			name:    "universe query",
+			results: []fakeQueryResult{{err: errors.New("freeze failed")}},
+			want:    "freeze failed",
+		},
+		{
+			name: "fleet query",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{err: errors.New("fleet failed")},
+			},
+			want: "fleet failed",
+		},
+		{
+			name: "queue query",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, nil))},
+				{err: errors.New("queue failed")},
+			},
+			want: "queue failed",
+		},
+		{
+			name: "origin query",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, nil))},
+				{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
+				{err: errors.New("origin failed")},
+			},
+			want: "origin failed",
+		},
+		{
+			name: "target query",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, nil))},
+				{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
+				{rows: fakeRowsFromValues([]any{44})},
+				{err: errors.New("target failed")},
+			},
+			want: "target failed",
+		},
+		{
+			name:     "return fleet insert",
+			results:  baseResults(domaingame.FleetMissionTransport, 0),
+			execErrs: []error{errors.New("insert fleet failed")},
+			want:     "insert fleet failed",
+		},
+		{
+			name:        "return fleet id",
+			results:     baseResults(domaingame.FleetMissionTransport, 0),
+			execResults: []sql.Result{fakeFleetSQLErrorResult{idErr: errors.New("last id failed")}},
+			want:        "last id failed",
+		},
+		{
+			name:        "return fleet zero id",
+			results:     baseResults(domaingame.FleetMissionTransport, 0),
+			execResults: []sql.Result{fakeFleetSQLResult(0)},
+			want:        "recall return fleet id unavailable",
+		},
+		{
+			name:     "return queue insert",
+			results:  baseResults(domaingame.FleetMissionTransport, 0),
+			execErrs: []error{nil, errors.New("insert queue failed")},
+			want:     "insert queue failed",
+		},
+		{
+			name:     "old fleet delete",
+			results:  baseResults(domaingame.FleetMissionTransport, 0),
+			execErrs: []error{nil, nil, errors.New("delete fleet failed")},
+			want:     "delete fleet failed",
+		},
+		{
+			name:     "old queue delete",
+			results:  baseResults(domaingame.FleetMissionTransport, 0),
+			execErrs: []error{nil, nil, nil, errors.New("delete queue failed")},
+			want:     "delete queue failed",
+		},
+		{
+			name:    "acs union query",
+			results: append(baseResults(domaingame.FleetMissionACSAttack, 77), fakeQueryResult{err: errors.New("union count failed")}),
+			want:    "union count failed",
+		},
+		{
+			name:     "acs union delete",
+			results:  append(baseResults(domaingame.FleetMissionACSAttack, 77), fakeQueryResult{rows: fakeRowsFromValues([]any{0})}),
+			execErrs: []error{nil, nil, nil, nil, errors.New("union delete failed")},
+			want:     "union delete failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeFleetRunner{
+				fakeQueryer: fakeQueryer{results: tt.results},
+				execErrs:    append([]error(nil), tt.execErrs...),
+				execResults: append([]sql.Result(nil), tt.execResults...),
+			}
+			repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+			err := repository.RecallFleet(context.Background(), appgame.FleetRecallQuery{PlayerID: 42, FleetID: 123})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestFleetRepositoryRecallNoOpsWhenIntermediateRowsAreMissing(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	tests := []struct {
+		name    string
+		results []fakeQueryResult
+	}{
+		{
+			name: "missing queue",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, nil))},
+				{rows: fakeRowsFromValues()},
+			},
+		},
+		{
+			name: "missing origin",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, nil))},
+				{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
+				{rows: fakeRowsFromValues()},
+			},
+		},
+		{
+			name: "missing target",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, nil))},
+				{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
+				{rows: fakeRowsFromValues([]any{44})},
+				{rows: fakeRowsFromValues()},
+			},
+		},
+		{
+			name: "acs union still has fleets",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionACSAttack, 77, nil))},
+				{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
+				{rows: fakeRowsFromValues([]any{44})},
+				{rows: fakeRowsFromValues([]any{100})},
+				{rows: fakeRowsFromValues([]any{1})},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: tt.results}}
+			repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+			if err := repository.RecallFleet(context.Background(), appgame.FleetRecallQuery{PlayerID: 42, FleetID: 123}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestFleetRepositoryRecallLoaderEdges(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("freeze rows failed"))}}}, "ogame_", func() time.Time { return now })
+	if _, err := repository.loadUniverseFrozen(context.Background(), "ogame_uni"); err == nil || !strings.Contains(err.Error(), "freeze rows failed") {
+		t.Fatalf("expected freeze rows error, got %v", err)
+	}
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}, "ogame_", func() time.Time { return now })
+	if _, err := repository.loadUniverseFrozen(context.Background(), "ogame_uni"); err == nil || !strings.Contains(err.Error(), "expected int") {
+		t.Fatalf("expected freeze scan error, got %v", err)
+	}
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("freeze trailer failed"), []any{0})}}}, "ogame_", func() time.Time { return now })
+	if _, err := repository.loadUniverseFrozen(context.Background(), "ogame_uni"); err == nil || !strings.Contains(err.Error(), "freeze trailer failed") {
+		t.Fatalf("expected freeze trailing rows error, got %v", err)
+	}
+
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("fleet rows failed"))}}}, "ogame_", func() time.Time { return now })
+	if _, _, err := repository.loadRecallFleet(context.Background(), "ogame_fleet", 42, 123); err == nil || !strings.Contains(err.Error(), "fleet rows failed") {
+		t.Fatalf("expected fleet rows error, got %v", err)
+	}
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}, "ogame_", func() time.Time { return now })
+	if _, _, err := repository.loadRecallFleet(context.Background(), "ogame_fleet", 42, 123); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+		t.Fatalf("expected fleet scan error, got %v", err)
+	}
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("fleet row trailer failed"), recallFleetTestRow(domaingame.FleetMissionTransport, 0, nil))}}}, "ogame_", func() time.Time { return now })
+	if _, _, err := repository.loadRecallFleet(context.Background(), "ogame_fleet", 42, 123); err == nil || !strings.Contains(err.Error(), "fleet row trailer failed") {
+		t.Fatalf("expected fleet trailing rows error, got %v", err)
+	}
+
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("queue rows failed"))}}}, "ogame_", func() time.Time { return now })
+	if _, _, err := repository.loadRecallQueue(context.Background(), "ogame_queue", 123); err == nil || !strings.Contains(err.Error(), "queue rows failed") {
+		t.Fatalf("expected queue rows error, got %v", err)
+	}
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}, "ogame_", func() time.Time { return now })
+	if _, _, err := repository.loadRecallQueue(context.Background(), "ogame_queue", 123); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+		t.Fatalf("expected queue scan error, got %v", err)
+	}
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("queue trailer failed"), []any{55, int64(940), int64(1_240)})}}}, "ogame_", func() time.Time { return now })
+	if _, _, err := repository.loadRecallQueue(context.Background(), "ogame_queue", 123); err == nil || !strings.Contains(err.Error(), "queue trailer failed") {
+		t.Fatalf("expected queue trailing rows error, got %v", err)
+	}
+
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("owner rows failed"))}}}, "ogame_", func() time.Time { return now })
+	if _, _, err := repository.loadRecallOriginOwner(context.Background(), "ogame_planets", 99); err == nil || !strings.Contains(err.Error(), "owner rows failed") {
+		t.Fatalf("expected owner rows error, got %v", err)
+	}
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}, "ogame_", func() time.Time { return now })
+	if _, _, err := repository.loadRecallOriginOwner(context.Background(), "ogame_planets", 99); err == nil || !strings.Contains(err.Error(), "expected int") {
+		t.Fatalf("expected owner scan error, got %v", err)
+	}
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("owner trailer failed"), []any{44})}}}, "ogame_", func() time.Time { return now })
+	if _, _, err := repository.loadRecallOriginOwner(context.Background(), "ogame_planets", 99); err == nil || !strings.Contains(err.Error(), "owner trailer failed") {
+		t.Fatalf("expected owner trailing rows error, got %v", err)
+	}
+
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("target rows failed"))}}}, "ogame_", func() time.Time { return now })
+	if _, err := repository.recallPlanetExists(context.Background(), "ogame_planets", 100); err == nil || !strings.Contains(err.Error(), "target rows failed") {
+		t.Fatalf("expected target rows error, got %v", err)
+	}
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}, "ogame_", func() time.Time { return now })
+	if _, err := repository.recallPlanetExists(context.Background(), "ogame_planets", 100); err == nil || !strings.Contains(err.Error(), "expected int") {
+		t.Fatalf("expected target scan error, got %v", err)
+	}
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("target trailer failed"), []any{100})}}}, "ogame_", func() time.Time { return now })
+	if _, err := repository.recallPlanetExists(context.Background(), "ogame_planets", 100); err == nil || !strings.Contains(err.Error(), "target trailer failed") {
+		t.Fatalf("expected target trailing rows error, got %v", err)
+	}
+
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("union rows failed"))}}}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	if err := repository.removeEmptyRecallUnion(context.Background(), "ogame_fleet", "ogame_union", 77); err == nil || !strings.Contains(err.Error(), "union rows failed") {
+		t.Fatalf("expected union rows error, got %v", err)
+	}
+	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	if err := repository.removeEmptyRecallUnion(context.Background(), "ogame_fleet", "ogame_union", 77); err == nil || !strings.Contains(err.Error(), "expected int") {
+		t.Fatalf("expected union scan error, got %v", err)
+	}
+	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	if err := repository.removeEmptyRecallUnion(context.Background(), "ogame_fleet", "ogame_union", 77); err != nil || len(runner.execCalls) != 0 {
+		t.Fatalf("empty union count should be no-op, calls=%+v err=%v", runner.execCalls, err)
+	}
+	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("union trailer failed"), []any{0})}}}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	if err := repository.removeEmptyRecallUnion(context.Background(), "ogame_fleet", "ogame_union", 77); err == nil || !strings.Contains(err.Error(), "union trailer failed") {
+		t.Fatalf("expected union trailing rows error, got %v", err)
+	}
+}
+
 func fleetCountsPrefixResults() []fakeQueryResult {
 	return append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues(allResearchLevelRow(map[int]int{
@@ -448,6 +860,14 @@ func templateRow(id int, name string, updatedAt int64, ships map[int]int) []any 
 	return row
 }
 
+func recallFleetTestRow(mission int, unionID int, ships map[int]int) []any {
+	row := []any{123, 42, unionID, float64(100), float64(200), float64(300), 50, mission, 99, 100, 300, 600}
+	for _, shipID := range domaingame.FleetIDs() {
+		row = append(row, ships[shipID])
+	}
+	return row
+}
+
 func fleetCallContains(calls []fakeQueryCall, needle string) bool {
 	for _, call := range calls {
 		if strings.Contains(call.sql, needle) {
@@ -459,8 +879,10 @@ func fleetCallContains(calls []fakeQueryCall, needle string) bool {
 
 type fakeFleetRunner struct {
 	fakeQueryer
-	execCalls []fakeFleetExecCall
-	execErr   error
+	execCalls   []fakeFleetExecCall
+	execErr     error
+	execErrs    []error
+	execResults []sql.Result
 }
 
 type fakeFleetExecCall struct {
@@ -468,17 +890,42 @@ type fakeFleetExecCall struct {
 	args []any
 }
 
-func (f *fakeFleetRunner) ExecContext(_ context.Context, sql string, args ...any) (sql.Result, error) {
-	f.execCalls = append(f.execCalls, fakeFleetExecCall{sql: sql, args: args})
-	return fakeFleetSQLResult(1), f.execErr
+func (f *fakeFleetRunner) ExecContext(_ context.Context, sqlText string, args ...any) (sql.Result, error) {
+	f.execCalls = append(f.execCalls, fakeFleetExecCall{sql: sqlText, args: args})
+	result := sql.Result(fakeFleetSQLResult(1))
+	if len(f.execResults) > 0 {
+		result = f.execResults[0]
+		f.execResults = f.execResults[1:]
+	}
+	err := f.execErr
+	if len(f.execErrs) > 0 {
+		err = f.execErrs[0]
+		f.execErrs = f.execErrs[1:]
+	}
+	return result, err
 }
 
 type fakeFleetSQLResult int64
 
 func (r fakeFleetSQLResult) LastInsertId() (int64, error) {
-	return 0, nil
+	return int64(r), nil
 }
 
 func (r fakeFleetSQLResult) RowsAffected() (int64, error) {
 	return int64(r), nil
+}
+
+type fakeFleetSQLErrorResult struct {
+	id      int64
+	idErr   error
+	rows    int64
+	rowsErr error
+}
+
+func (r fakeFleetSQLErrorResult) LastInsertId() (int64, error) {
+	return r.id, r.idErr
+}
+
+func (r fakeFleetSQLErrorResult) RowsAffected() (int64, error) {
+	return r.rows, r.rowsErr
 }

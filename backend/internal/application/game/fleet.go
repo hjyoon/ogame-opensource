@@ -12,6 +12,7 @@ import (
 type FleetRepository interface {
 	GetFleet(context.Context, FleetQuery) (domaingame.Fleet, error)
 	MutateFleetTemplate(context.Context, FleetTemplateMutationQuery) error
+	RecallFleet(context.Context, FleetRecallQuery) error
 }
 
 type FleetQuery struct {
@@ -43,6 +44,19 @@ type FleetTemplateMutationCommand struct {
 	Action          string
 	Name            string
 	Ships           map[int]int
+}
+
+type FleetRecallQuery struct {
+	PlayerID int
+	FleetID  int
+}
+
+type FleetRecallCommand struct {
+	PublicSession   string
+	PrivateSessions map[string]string
+	RemoteAddr      string
+	PlanetID        int
+	FleetID         int
 }
 
 type FleetResult struct {
@@ -119,6 +133,46 @@ func (s FleetService) MutateFleetTemplate(ctx context.Context, command FleetTemp
 		Action:     command.Action,
 		Name:       command.Name,
 		Ships:      command.Ships,
+	}); err != nil {
+		return FleetResult{}, err
+	}
+
+	fleet, err := s.repository.GetFleet(ctx, FleetQuery{
+		PlayerID: session.Session.PlayerID,
+		PlanetID: command.PlanetID,
+	})
+	if err != nil {
+		return FleetResult{}, err
+	}
+	return FleetResult{
+		Authenticated: true,
+		Fleet:         fleet,
+	}, nil
+}
+
+func (s FleetService) RecallFleet(ctx context.Context, command FleetRecallCommand) (FleetResult, error) {
+	if s.sessions == nil || s.repository == nil {
+		return FleetResult{}, errors.New("fleet dependencies unavailable")
+	}
+
+	session, err := s.sessions.GetGameSession(ctx, apppublicsite.GameSessionCommand{
+		PublicSession:   command.PublicSession,
+		PrivateSessions: command.PrivateSessions,
+		RemoteAddr:      command.RemoteAddr,
+	})
+	if err != nil {
+		return FleetResult{}, err
+	}
+	if !session.Authenticated {
+		return FleetResult{
+			Authenticated: false,
+			Issues:        session.Issues,
+		}, nil
+	}
+
+	if err := s.repository.RecallFleet(ctx, FleetRecallQuery{
+		PlayerID: session.Session.PlayerID,
+		FleetID:  command.FleetID,
 	}); err != nil {
 		return FleetResult{}, err
 	}

@@ -575,6 +575,7 @@ type LegacyGameOverviewProps = {
   fleetStatus: GameFleetStatus | null;
   fleetError: string | null;
   fleetPending: boolean;
+  onFleetRecall: (fleetID: number) => void;
   onFleetTemplateAction: (action: "save" | "delete", templateID: number, name: string, ships: Record<string, number>) => void;
   galaxyStatus: GameGalaxyStatus | null;
   galaxyError: string | null;
@@ -669,6 +670,7 @@ export function LegacyGameOverview({
   fleetStatus,
   fleetError,
   fleetPending,
+  onFleetRecall,
   onFleetTemplateAction,
   galaxyStatus,
   galaxyError,
@@ -833,7 +835,7 @@ export function LegacyGameOverview({
         {overview && (route.key === "fleet" || route.key === "fleetTemplates") && !fleet && !fleetError && !fleetIssue ? (
           <LegacyMessage tone="neutral" text="Loading fleet..." />
         ) : null}
-        {fleet && route.key === "fleet" ? <FleetTable fleet={fleet} /> : null}
+        {fleet && route.key === "fleet" ? <FleetTable fleet={fleet} onRecall={onFleetRecall} pending={fleetPending} /> : null}
         {fleet && route.key === "fleetTemplates" ? (
           <FleetTemplatesTable fleet={fleet} onAction={onFleetTemplateAction} pending={fleetPending} />
         ) : null}
@@ -1634,7 +1636,7 @@ function ShipyardTable({
   );
 }
 
-function FleetTable({ fleet }: { fleet: GameFleet }) {
+function FleetTable({ fleet, onRecall, pending }: { fleet: GameFleet; onRecall: (fleetID: number) => void; pending: boolean }) {
   return (
     <>
       <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-table" width={519}>
@@ -1705,9 +1707,14 @@ function FleetTable({ fleet }: { fleet: GameFleet }) {
                     </form>
                   ) : null}
                   {mission.canRecall ? (
-                    <form onSubmit={(event) => event.preventDefault()}>
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        onRecall(mission.id);
+                      }}
+                    >
                       <input name="order_return" type="hidden" value={mission.id} />
-                      <input type="submit" value="Recall" />
+                      <input disabled={pending} type="submit" value="Recall" />
                     </form>
                   ) : null}
                 </th>
