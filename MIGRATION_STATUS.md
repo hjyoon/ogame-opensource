@@ -32,7 +32,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep <4KB; split docs first.
 - Overview covers `cp`, `lgn`, notices, header/menu/table parity, rename/delete rules, blockers, destroy markers, queue flush, stats/ranks, and active restore.
 - Buildings/research/resources write legacy queues, resources, stats/ranks, caps, and active queue state.
 - Empire ports the Commander-gated `imperium` table, build queue markers, and legacy GET add/destroy/remove shortcuts.
-- Fleet dispatch launches basic drafts with resources, math, clamps, and colonize/expedition targets/limits.
+- Fleet dispatch launches basic drafts with resources, math, hold clamps, and colonize/expedition targets/limits.
 - Options reads account/settings flags and saves language, skin path/toggle, IP check, sort, spy/fleet counts, and deletion queue toggle.
 
 ## Verified QA

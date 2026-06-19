@@ -351,7 +351,7 @@ func (s FleetService) LaunchFleetDispatch(ctx context.Context, command FleetDisp
 		Origin:      fleet.CurrentPlanet,
 		Draft:       draft,
 		UnionID:     command.UnionID,
-		HoldSeconds: fleetDispatchHoldSeconds(draft.Mission, command.HoldHours, command.ExpeditionHours),
+		HoldSeconds: fleetDispatchHoldSeconds(draft.Mission, command.HoldHours, command.ExpeditionHours, fleet.ExpeditionLevel),
 	})
 	if err != nil {
 		return FleetResult{}, err
@@ -417,21 +417,27 @@ func (s FleetService) RecallFleet(ctx context.Context, command FleetRecallComman
 	}, nil
 }
 
-func fleetDispatchHoldSeconds(mission int, holdHours int, expeditionHours int) int {
+func fleetDispatchHoldSeconds(mission int, holdHours int, expeditionHours int, expeditionLevel int) int {
 	hours := 0
 	switch mission {
 	case domaingame.FleetMissionExpedition:
 		hours = expeditionHours
+		if hours < 1 {
+			hours = 1
+		}
+		if expeditionLevel > 0 && hours > expeditionLevel {
+			hours = expeditionLevel
+		}
 	case domaingame.FleetMissionACSHold:
 		hours = holdHours
+		if hours < 0 {
+			hours = 0
+		}
+		if hours > 32 {
+			hours = 32
+		}
 	default:
 		return 0
-	}
-	if hours < 0 {
-		hours = 0
-	}
-	if hours > 32 {
-		hours = 32
 	}
 	return hours * 60 * 60
 }

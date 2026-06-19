@@ -31,7 +31,7 @@ func TestBuildFleetUsesLegacySlotsAndShipSelection(t *testing.T) {
 	if fleet.Slots.Used != 2 || fleet.Slots.BaseMax != 4 || fleet.Slots.Max != 6 || !fleet.Slots.Admiral {
 		t.Fatalf("unexpected fleet slots: %+v", fleet.Slots)
 	}
-	if fleet.Expeditions.Used != 1 || fleet.Expeditions.Max != 2 {
+	if fleet.Expeditions.Used != 1 || fleet.Expeditions.Max != 2 || fleet.ExpeditionLevel != 4 {
 		t.Fatalf("unexpected expedition slots: %+v", fleet.Expeditions)
 	}
 	if len(fleet.Ships) != 2 || fleet.Ships[0].ID != FleetSmallCargo || fleet.Ships[0].Speed != 20000 || fleet.Ships[0].Consumption != 20 || !fleet.Ships[0].Selectable {
@@ -127,7 +127,7 @@ func TestBuildFleetDispatchDraftMissionOptionsMatchLegacyEdges(t *testing.T) {
 		Ships:  map[int]int{FleetSmallCargo: 1},
 		Target: Coordinates{Galaxy: 1, System: 2, Position: GalaxyFarSpace},
 	})
-	if len(expedition.MissionOptions) != 1 || expedition.MissionOptions[0].ID != FleetMissionExpedition || expedition.MissionOptions[0].Warning == "" || len(expedition.ExpeditionHours) != 3 {
+	if len(expedition.MissionOptions) != 1 || expedition.MissionOptions[0].ID != FleetMissionExpedition || expedition.MissionOptions[0].Warning == "" || len(expedition.ExpeditionHours) != 9 {
 		t.Fatalf("unexpected expedition missions: %+v hours=%+v", expedition.MissionOptions, expedition.ExpeditionHours)
 	}
 

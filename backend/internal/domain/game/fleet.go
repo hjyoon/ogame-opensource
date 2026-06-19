@@ -27,6 +27,7 @@ type Fleet struct {
 	PlanetSwitcher  []PlanetSummary
 	Slots           FleetSlots
 	Expeditions     ExpeditionSlots
+	ExpeditionLevel int
 	SpeedFactor     int
 	Missions        []FleetMission
 	Ships           []FleetShipSelection
@@ -194,9 +195,10 @@ func BuildFleet(overview Overview, counts FleetCounts, research ResearchLevels, 
 			Used: expeditions,
 			Max:  int(math.Floor(math.Sqrt(float64(research[ResearchExpedition])))),
 		},
-		SpeedFactor: 1,
-		Missions:    normalizedMissions,
-		Ships:       buildFleetShipSelections(counts, research),
+		ExpeditionLevel: research[ResearchExpedition],
+		SpeedFactor:     1,
+		Missions:        normalizedMissions,
+		Ships:           buildFleetShipSelections(counts, research),
 	}
 }
 
@@ -284,7 +286,7 @@ func BuildFleetDispatchDraft(fleet Fleet, input FleetDispatchDraftInput) FleetDi
 		MissionOptions:  missions,
 		Resources:       fleetDispatchResources(fleet.CurrentPlanet.Resources),
 		HoldHours:       fleetDispatchHoldHours(missions),
-		ExpeditionHours: fleetDispatchExpeditionHours(fleet.Expeditions.Max),
+		ExpeditionHours: fleetDispatchExpeditionHours(fleet.ExpeditionLevel),
 	}
 }
 

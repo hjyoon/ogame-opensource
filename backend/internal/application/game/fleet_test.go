@@ -259,6 +259,71 @@ func TestFleetServiceLaunchesReadyDispatchAndReloadsFleet(t *testing.T) {
 	}
 }
 
+func TestFleetServiceLaunchNormalizesExpeditionHoldSeconds(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}
+	repository := &fakeFleetRepository{result: domaingame.Fleet{
+		CurrentPlanet: domaingame.PlanetOverview{
+			ID:          99,
+			Type:        domaingame.PlanetTypePlanet,
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Resources:   domaingame.Resources{Deuterium: 100000},
+		},
+		Slots:           domaingame.FleetSlots{Used: 0, Max: 4},
+		Expeditions:     domaingame.ExpeditionSlots{Used: 0, Max: 1},
+		ExpeditionLevel: 3,
+		Ships: []domaingame.FleetShipSelection{{
+			ID:          domaingame.FleetSmallCargo,
+			Name:        "Small Cargo",
+			Count:       4,
+			Speed:       5500,
+			Cargo:       5000,
+			Consumption: 10,
+			Selectable:  true,
+		}},
+	}}
+	service := NewFleetService(sessions, repository)
+
+	result, err := service.LaunchFleetDispatch(context.Background(), FleetDispatchLaunchCommand{
+		PublicSession:   "public",
+		PrivateSessions: map[string]string{"private": "secret"},
+		RemoteAddr:      "203.0.113.10",
+		PlanetID:        99,
+		Ships:           map[int]int{domaingame.FleetSmallCargo: 1},
+		Target:          domaingame.Coordinates{Galaxy: 1, System: 2, Position: domaingame.GalaxyFarSpace},
+		TargetType:      domaingame.GamePlanetTypePlanet,
+		Mission:         domaingame.FleetMissionExpedition,
+		Speed:           10,
+		ExpeditionHours: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Authenticated || result.ActionIssue != nil || !repository.launched || repository.launch.HoldSeconds != 60*60 {
+		t.Fatalf("expected expedition hold to clamp to one hour, result=%+v launch=%+v", result, repository.launch)
+	}
+
+	repository = &fakeFleetRepository{result: repository.result}
+	service = NewFleetService(sessions, repository)
+	if _, err := service.LaunchFleetDispatch(context.Background(), FleetDispatchLaunchCommand{
+		PublicSession:   "public",
+		PlanetID:        99,
+		Ships:           map[int]int{domaingame.FleetSmallCargo: 1},
+		Target:          domaingame.Coordinates{Galaxy: 1, System: 2, Position: domaingame.GalaxyFarSpace},
+		TargetType:      domaingame.GamePlanetTypePlanet,
+		Mission:         domaingame.FleetMissionExpedition,
+		Speed:           10,
+		ExpeditionHours: 99,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if repository.launch.HoldSeconds != 3*60*60 {
+		t.Fatalf("expected expedition hold to clamp to research level, launch=%+v", repository.launch)
+	}
+}
+
 func TestFleetServiceLaunchReturnsValidationIssueWithoutRepositoryWrite(t *testing.T) {
 	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
 		Authenticated: true,
@@ -601,10 +666,12 @@ func TestFleetServiceRequiresDependencies(t *testing.T) {
 	if _, err := (FleetService{}).RecallFleet(context.Background(), FleetRecallCommand{}); err == nil {
 		t.Fatal("expected recall dependency error")
 	}
-	if fleetDispatchHoldSeconds(domaingame.FleetMissionTransport, 4, 4) != 0 ||
-		fleetDispatchHoldSeconds(domaingame.FleetMissionACSHold, -1, 0) != 0 ||
-		fleetDispatchHoldSeconds(domaingame.FleetMissionACSHold, 40, 0) != 32*60*60 ||
-		fleetDispatchHoldSeconds(domaingame.FleetMissionExpedition, 0, 2) != 2*60*60 {
+	if fleetDispatchHoldSeconds(domaingame.FleetMissionTransport, 4, 4, 4) != 0 ||
+		fleetDispatchHoldSeconds(domaingame.FleetMissionACSHold, -1, 0, 4) != 0 ||
+		fleetDispatchHoldSeconds(domaingame.FleetMissionACSHold, 40, 0, 4) != 32*60*60 ||
+		fleetDispatchHoldSeconds(domaingame.FleetMissionExpedition, 0, 2, 4) != 2*60*60 ||
+		fleetDispatchHoldSeconds(domaingame.FleetMissionExpedition, 0, 0, 4) != 60*60 ||
+		fleetDispatchHoldSeconds(domaingame.FleetMissionExpedition, 0, 99, 4) != 4*60*60 {
 		t.Fatal("unexpected fleet hold second normalization")
 	}
 }
