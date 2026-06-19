@@ -422,6 +422,7 @@ dd {
 
 .legacy-header-top > .legacy-header-table {
   margin: 0 auto;
+  transform: translate(-7px, 0);
 }
 
 .legacy-header-placeholder {
@@ -442,33 +443,45 @@ dd {
 }
 
 .legacy-menu {
-  display: flow-root;
+  display: block;
+  left: -1px;
+  position: relative;
+  top: -1px;
   width: 190px;
 }
 
 .legacy-menu p {
+  box-sizing: content-box;
   color: #e6ebfb;
-  margin: 11px auto 6px;
+  margin: 11px auto;
   width: 110px;
 }
 
 .legacy-menu table {
+  border-collapse: separate;
+  border-spacing: 0;
   margin: 0 auto;
   width: 110px;
+}
+
+.legacy-menu img {
+  display: block;
 }
 
 .legacy-menu td {
   background-color: #344566;
   border: 0;
+  border-collapse: separate;
+  box-sizing: content-box;
   color: #e6ebfb;
   padding: 1px;
-  text-align: center;
+  text-align: start;
   vertical-align: middle;
 }
 
 .legacy-menu a[aria-current="page"] {
-  color: #fff;
-  text-decoration: underline;
+  color: #e6ebfb;
+  text-decoration: none;
 }
 
 .legacy-content {
@@ -518,11 +531,18 @@ dd {
 .legacy-resource-table,
 .legacy-officer-table {
   background: transparent;
+  border-collapse: separate;
+}
+
+.legacy-game-shell .legacy-header-table {
+  border-collapse: separate;
+  border-spacing: 2px;
 }
 
 .legacy-header-cell {
   background: transparent;
   border: 0;
+  box-sizing: content-box;
   color: #e6ebfb;
   padding: 1px;
   text-align: center;
@@ -530,6 +550,7 @@ dd {
 
 .legacy-header-cell img {
   border: 0;
+  box-sizing: content-box;
   vertical-align: middle;
 }
 
@@ -541,6 +562,7 @@ dd {
 }
 
 .legacy-resource-table {
+  border-spacing: 0;
   table-layout: fixed;
   width: 40vw;
 }
@@ -551,12 +573,25 @@ dd {
 
 .legacy-resource-name {
   color: #e6ebfb;
-  font-style: italic;
-  font-weight: bold;
+  font-style: normal;
+  font-weight: normal;
 }
 
-.legacy-officer-table td {
+.legacy-resource-label {
+  color: #fff;
+}
+
+.legacy-game-shell .legacy-officer-table {
+  border-spacing: 2px;
+  transform: translateX(2px);
+}
+
+.legacy-officer-table td:not(:last-child) {
   width: 35px;
+}
+
+.legacy-officer-table td:last-child {
+  width: auto;
 }
 
 .legacy-overview-table {

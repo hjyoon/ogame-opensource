@@ -949,7 +949,7 @@ const legacyMenuEntries: LegacyMenuEntry[] = [
   { type: "route", key: "officers" },
   { type: "route", key: "statistics" },
   { type: "route", key: "search" },
-  { type: "image", height: 19, src: `${skinBase}/gfx/user-menu.jpg`, width: 110 },
+  { type: "image", height: 35, src: `${skinBase}/gfx/user-menu.jpg`, width: 110 },
   { type: "route", key: "messages" },
   { type: "route", key: "notes" },
   { type: "route", key: "buddy" },
@@ -1369,25 +1369,29 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
             </table>
           </td>
           <td className="legacy-header-cell">
-            <table className="legacy-resource-table" id="resources">
+            <table cellPadding={0} cellSpacing={0} className="legacy-resource-table" id="resources">
               <tbody>
                 <tr>
                   {resources.map((resource) => (
-                    <td className="legacy-header-cell" key={resource.name}>
+                    <td className="legacy-header-cell" key={resource.name} width={85}>
                       <img alt="" height={22} src={resource.img} width={42} />
                     </td>
                   ))}
                 </tr>
                 <tr>
                   {resources.map((resource) => (
-                    <td className="legacy-header-cell legacy-resource-name" key={resource.name}>
-                      {resource.name}
+                    <td className="legacy-header-cell legacy-resource-name" key={resource.name} width={85}>
+                      <i>
+                        <b>
+                          <span className="legacy-resource-label">{resource.name}</span>
+                        </b>
+                      </i>
                     </td>
                   ))}
                 </tr>
                 <tr>
                   {resources.map((resource) => (
-                    <td className="legacy-header-cell" key={resource.name}>
+                    <td className="legacy-header-cell" key={resource.name} width={90}>
                       <span style={resource.capacity !== undefined && resource.value >= resource.capacity ? { color: "#ff0000" } : undefined}>
                         {formatLegacyNumber(resource.value)}
                       </span>
@@ -1424,9 +1428,11 @@ function LegacyLeftMenu({ activeRoute }: { activeRoute: GameRoute }) {
       <div className="legacy-center">
         <div className="legacy-menu" id="menu">
           <p>
-            <span className="legacy-nowrap">Universe 1 (v 0.84)</span>
+            <span className="legacy-nowrap">
+              Universe 1 (<a href={gameRouteURL("/game/changelog", window.location.search)}>v 0.84</a>)
+            </span>
           </p>
-          <table>
+          <table cellPadding={0} cellSpacing={0} width={110}>
             <tbody>
               {legacyMenuEntries.map((entry, index) =>
                 entry.type === "image" ? (

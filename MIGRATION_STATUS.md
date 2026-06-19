@@ -41,7 +41,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep <4KB; split docs first.
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
 - Go smoke covers health, routes, assets, MailHog, activation cleanup/reuse, auth/session expiry/security, reads/mutations, guards, and privacy.
 - Playwright visual/CSR E2E passes Chromium/Firefox; auth supports page filters and consumes `lgn` once.
-- Chromium diff remains highest on stats/tech/overview/resources/fleet.
+- Auth overview visual audit is down to 1.92%; highest diffs remain stats/tech/resources/fleet.
 - Go internal coverage gate: `97.0% >= 97%`.
 - Go smoke JSON: `all_pass: true`.
 
@@ -50,7 +50,6 @@ Full legacy PHP E2E was not run for this step; keep PHP as oracle.
 ## Remaining Work
 
 - Close authenticated visual diff for statistics and remaining game-page nits before claiming parity.
-- Audit overview parity.
 - Finish mission restrictions, galaxy instant actions, alliance/admin/recovery/bans/permissions, and deeper options mutations.
 - Convert legacy E2E cases into Go compatibility checks per migrated flow.
 - Run full legacy PHP E2E before declaring any game-flow migration equivalent.
