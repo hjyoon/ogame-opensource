@@ -39,6 +39,14 @@ func BuildingScoreForLevel(id int, level int) (int64, bool) {
 	return scoreCost(cost), true
 }
 
+func ResearchScoreForLevel(id int, level int) (int64, bool) {
+	cost, ok := ResearchCostForLevel(id, level)
+	if !ok {
+		return 0, false
+	}
+	return scoreCost(cost), true
+}
+
 func scoreCost(cost BuildingCost) int64 {
 	return int64(cost.Metal + cost.Crystal + cost.Deuterium)
 }

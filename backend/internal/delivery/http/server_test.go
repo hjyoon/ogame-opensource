@@ -1319,6 +1319,14 @@ func TestGameResearchEndpointReturnsResearch(t *testing.T) {
 				Current: true,
 			}},
 			HasLab: true,
+			Active: &domaingame.ResearchQueue{
+				TaskID:           7,
+				PlanetID:         99,
+				TechID:           domaingame.ResearchComputer,
+				Level:            2,
+				RemainingSeconds: 120,
+				Cancelable:       true,
+			},
 			Items: []domaingame.BuildingItem{{
 				ID:              domaingame.ResearchComputer,
 				Name:            "Computer Technology",
@@ -1352,6 +1360,9 @@ func TestGameResearchEndpointReturnsResearch(t *testing.T) {
 	if response.Research.Items[0].Cost.Crystal != 800 || response.Research.Items[0].DurationSeconds != 240 {
 		t.Fatalf("unexpected research mapping: %+v", response.Research.Items[0])
 	}
+	if response.Research.Active == nil || response.Research.Active.TechID != domaingame.ResearchComputer || !response.Research.Active.Cancelable {
+		t.Fatalf("unexpected active research mapping: %+v", response.Research.Active)
+	}
 	if research.command.PublicSession != "public" || research.command.PlanetID != 99 || research.command.RemoteAddr != "203.0.113.10" {
 		t.Fatalf("unexpected research command: %+v", research.command)
 	}
@@ -1360,6 +1371,82 @@ func TestGameResearchEndpointReturnsResearch(t *testing.T) {
 	}
 	if bytes.Contains(rec.Body.Bytes(), []byte("private")) {
 		t.Fatalf("game research response must not echo private session: %s", rec.Body.String())
+	}
+}
+
+func TestGameResearchEndpointMutatesResearch(t *testing.T) {
+	research := &fakeGameResearch{result: appgame.ResearchResult{
+		Authenticated: true,
+		ActionIssue:   domaingame.BuildingActionIssue(domaingame.BuildingsIssueNoResources),
+		Research:      domaingame.Research{Commander: "legor", HasLab: true},
+	}}
+	server := testServerWithGameResearch(t, research)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/research?session=public&cp=99", strings.NewReader(`{"action":"start","techId":108}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response gameResearchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.ActionIssue == nil || response.ActionIssue.Code != domaingame.BuildingsIssueNoResources {
+		t.Fatalf("expected research mutation response, got %+v", response)
+	}
+	if research.mutation.PublicSession != "public" || research.mutation.PlanetID != 99 || research.mutation.Action != "start" || research.mutation.TechID != domaingame.ResearchComputer {
+		t.Fatalf("unexpected research mutation command: %+v", research.mutation)
+	}
+	if research.mutation.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("expected private session cookie to be passed, got %+v", research.mutation.PrivateSessions)
+	}
+}
+
+func TestGameResearchEndpointRejectsInvalidMutation(t *testing.T) {
+	server := testServerWithGameResearch(t, &fakeGameResearch{})
+	req := httptest.NewRequest(http.MethodPost, "/api/game/research?session=public&cp=99", strings.NewReader(`{`))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid research mutation to return 400, got %d", rec.Code)
+	}
+}
+
+func TestGameResearchEndpointRejectsInvalidMutationPlanetID(t *testing.T) {
+	server := testServerWithGameResearch(t, &fakeGameResearch{})
+	req := httptest.NewRequest(http.MethodPost, "/api/game/research?session=public&cp=abc", strings.NewReader(`{"action":"start","techId":108}`))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid selected planet to return 400, got %d", rec.Code)
+	}
+}
+
+func TestGameResearchEndpointMutationReturnsUnavailableWithoutUseCase(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodPost, "/api/game/research?session=public", strings.NewReader(`{"action":"start","techId":108}`))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game research mutation use case to return 503, got %d", rec.Code)
+	}
+}
+
+func TestGameResearchEndpointMutationReturnsUnavailableForUseCaseError(t *testing.T) {
+	server := testServerWithGameResearch(t, &fakeGameResearch{err: errors.New("research failed")})
+	req := httptest.NewRequest(http.MethodPost, "/api/game/research?session=public", strings.NewReader(`{"action":"start","techId":108}`))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game research mutation error to return 503, got %d", rec.Code)
 	}
 }
 
@@ -3362,11 +3449,11 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game buildings method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/game/research", nil)
+	req = httptest.NewRequest(http.MethodPut, "/api/game/research", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD, POST" {
 		t.Fatalf("expected game research method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
@@ -3979,13 +4066,19 @@ func (f *fakeGameBuildings) MutateBuildings(_ context.Context, command appgame.B
 }
 
 type fakeGameResearch struct {
-	result  appgame.ResearchResult
-	err     error
-	command appgame.ResearchCommand
+	result   appgame.ResearchResult
+	err      error
+	command  appgame.ResearchCommand
+	mutation appgame.ResearchMutationCommand
 }
 
 func (f *fakeGameResearch) GetResearch(_ context.Context, command appgame.ResearchCommand) (appgame.ResearchResult, error) {
 	f.command = command
+	return f.result, f.err
+}
+
+func (f *fakeGameResearch) MutateResearch(_ context.Context, command appgame.ResearchMutationCommand) (appgame.ResearchResult, error) {
+	f.mutation = command
 	return f.result, f.err
 }
 

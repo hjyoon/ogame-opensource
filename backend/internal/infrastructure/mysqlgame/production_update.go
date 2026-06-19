@@ -48,6 +48,14 @@ func (r ResourcesRepository) updatePlanetResources(ctx context.Context, usersTab
 	return updatePlanetResources(ctx, r.queryer, r.execer, r.prefix, usersTable, planetsTable, playerID, planetID, until, now)
 }
 
+func (r ResearchRepository) updatePlanetResources(ctx context.Context, usersTable string, planetsTable string, playerID int, planetID int, until int) error {
+	now := time.Now()
+	if r.now != nil {
+		now = r.now()
+	}
+	return updatePlanetResources(ctx, r.queryer, r.execer, r.prefix, usersTable, planetsTable, playerID, planetID, until, now)
+}
+
 func updatePlanetResources(ctx context.Context, queryer Queryer, execer Execer, prefix string, usersTable string, planetsTable string, playerID int, planetID int, until int, now time.Time) error {
 	if execer == nil || planetID <= 0 || until <= 0 {
 		return nil

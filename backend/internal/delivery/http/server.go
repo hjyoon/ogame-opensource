@@ -69,6 +69,7 @@ type GameResourcesUseCase interface {
 
 type GameResearchUseCase interface {
 	GetResearch(context.Context, appgame.ResearchCommand) (appgame.ResearchResult, error)
+	MutateResearch(context.Context, appgame.ResearchMutationCommand) (appgame.ResearchResult, error)
 }
 
 type GameShipyardUseCase interface {
@@ -159,7 +160,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/overview", a.handleGameOverview)
 	mux.HandleFunc("/api/game/buildings", a.handleGameBuildings)
 	mux.HandleFunc("/api/game/resources", a.handleGameResources)
-	mux.HandleFunc("/api/game/research", getOnly(a.handleGameResearch))
+	mux.HandleFunc("/api/game/research", a.handleGameResearch)
 	mux.HandleFunc("/api/game/shipyard", getOnly(a.handleGameShipyard))
 	mux.HandleFunc("/api/game/fleet", getOnly(a.handleGameFleet))
 	mux.HandleFunc("/api/game/galaxy", getOnly(a.handleGameGalaxy))

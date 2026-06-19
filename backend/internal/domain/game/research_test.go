@@ -20,7 +20,7 @@ func TestBuildResearchUsesLegacyCostDurationAndRequirements(t *testing.T) {
 	research := ResearchLevels{ResearchEnergy: 1}
 	labs := BuildResearchLabLevels(levels[BuildingResearchLab], nil, research)
 
-	result := BuildResearch(overview, levels, research, labs, 1, false)
+	result := BuildResearch(overview, levels, research, labs, 1, false, nil)
 
 	if !result.HasLab || result.Commander != "legor" {
 		t.Fatalf("unexpected research summary: %+v", result)
@@ -48,7 +48,7 @@ func TestBuildResearchHandlesLabNetworkTechnocratAndNoLab(t *testing.T) {
 	levels := BuildingLevels{BuildingResearchLab: 3}
 	research := ResearchLevels{ResearchComputer: 1, ResearchIntergalacticNetwork: 1}
 	labs := BuildResearchLabLevels(levels[BuildingResearchLab], []int{7, 1}, research)
-	result := BuildResearch(overview, levels, research, labs, 2, true)
+	result := BuildResearch(overview, levels, research, labs, 2, true, nil)
 
 	computer := findResearch(t, result, ResearchComputer)
 	if computer.DurationSeconds != 119 {
@@ -58,7 +58,7 @@ func TestBuildResearchHandlesLabNetworkTechnocratAndNoLab(t *testing.T) {
 		t.Fatalf("expected next-level action, got %+v", computer)
 	}
 
-	noLab := BuildResearch(overview, BuildingLevels{}, research, nil, 1, false)
+	noLab := BuildResearch(overview, BuildingLevels{}, research, nil, 1, false, nil)
 	if noLab.HasLab || len(noLab.Items) != 0 {
 		t.Fatalf("expected research lab requirement screen, got %+v", noLab)
 	}
@@ -72,10 +72,60 @@ func TestBuildResearchMarksMaximumLevel(t *testing.T) {
 		BuildResearchLabLevels(1, nil, ResearchLevels{ResearchComputer: maxResearchLevel}),
 		1,
 		false,
+		nil,
 	)
 	computer := findResearch(t, result, ResearchComputer)
 	if computer.CanBuild || computer.Action != "Maximum level reached." {
 		t.Fatalf("expected max-level research block, got %+v", computer)
+	}
+}
+
+func TestBuildResearchMarksActiveQueue(t *testing.T) {
+	overview := Overview{CurrentPlanet: PlanetOverview{ID: 99, Type: PlanetTypePlanet, Resources: Resources{Crystal: 1e9, Deuterium: 1e9}}}
+	levels := BuildingLevels{BuildingResearchLab: 1}
+	research := ResearchLevels{}
+	active := &ResearchQueue{TaskID: 7, PlanetID: 99, TechID: ResearchComputer, Level: 1, RemainingSeconds: 30, Cancelable: true}
+
+	result := BuildResearch(overview, levels, research, BuildResearchLabLevels(1, nil, research), 1, false, active)
+
+	computer := findResearch(t, result, ResearchComputer)
+	if result.Active == nil || computer.Action != "Cancel" || !computer.CanBuild {
+		t.Fatalf("expected active research to be cancelable, got active=%+v item=%+v", result.Active, computer)
+	}
+	energy := findResearch(t, result, ResearchEnergy)
+	if energy.Action != "-" || energy.CanBuild {
+		t.Fatalf("expected other research rows to be blocked while active, got %+v", energy)
+	}
+}
+
+func TestBuildResearchFallsBackSpeedAndLabLevel(t *testing.T) {
+	overview := Overview{CurrentPlanet: PlanetOverview{
+		Type:      PlanetTypePlanet,
+		Resources: Resources{Metal: 10_000, Crystal: 10_000, Deuterium: 10_000},
+	}}
+	result := BuildResearch(
+		overview,
+		BuildingLevels{BuildingResearchLab: 2},
+		ResearchLevels{},
+		ResearchLabLevels{},
+		0,
+		false,
+		nil,
+	)
+	if result.Items[0].DurationSeconds <= 0 {
+		t.Fatalf("expected fallback speed and lab level to produce duration, got %+v", result.Items[0])
+	}
+}
+
+func TestResearchHelpersRejectUnknownIDs(t *testing.T) {
+	if _, ok := ResearchCostForLevel(-1, 1); ok {
+		t.Fatal("expected unknown research cost to be rejected")
+	}
+	if _, ok := ResearchDurationForLevel(-1, 1, 1, 1); ok {
+		t.Fatal("expected unknown research duration to be rejected")
+	}
+	if ResearchRequirementsMet(-1, BuildingLevels{}, ResearchLevels{}) {
+		t.Fatal("expected unknown research requirements to be rejected")
 	}
 }
 

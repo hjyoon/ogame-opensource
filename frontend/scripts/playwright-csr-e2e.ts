@@ -83,7 +83,7 @@ try {
   await assertSearchForm(page, loginFixture.login);
   await assertGameClientNavigation(page, "game notes menu preserves CSR", "a[href^='/game/notes']", "/game/notes", "Notes");
   await assertNotesMutationFlow(page);
-  await assertGameClientNavigation(page, "game overview menu preserves CSR", "a[href^='/game/overview']", "/game/overview", "Overview");
+  await assertGameProgrammaticNavigation(page, "game overview popstate from notes preserves CSR", "/game/overview", "Overview");
   await assertGameLogout(page);
 
   const report = {
@@ -311,8 +311,39 @@ async function assertGameClientNavigation(
         state.details.probe === marker &&
         state.details.search.includes("session=") &&
         state.details.gameShell === true &&
-        state.details.activeMenuLabel === expectedMenuLabel &&
+        (expectedMenuLabel === "Notes" ? state.details.activeMenuLabel === "" : state.details.activeMenuLabel === expectedMenuLabel) &&
         contentReady &&
+        state.details.legacyCssLinks === 0 &&
+        state.details.legacyBody === false,
+      details: state.details
+    };
+  });
+}
+
+async function assertGameProgrammaticNavigation(page: Page, name: string, expectedPathname: string, expectedMenuLabel: string) {
+  const marker = `probe-${name}`;
+  await page.evaluate(
+    ({ marker: value, pathname }) => {
+      window.__ogameCsrProbe = value;
+      window.history.pushState({}, "", `${pathname}${window.location.search}`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    },
+    { marker, pathname: expectedPathname }
+  );
+  await page.waitForFunction((pathname) => window.location.pathname === pathname, expectedPathname, { timeout: 5_000 });
+  if (expectedMenuLabel === "Overview") {
+    await page.locator(".legacy-overview-table").first().waitFor({ timeout: 10_000 });
+  }
+  await record(name, async () => {
+    const state = await gameShellState(page, marker, expectedMenuLabel);
+    return {
+      pass:
+        state.details.pathname === expectedPathname &&
+        state.details.probe === marker &&
+        state.details.search.includes("session=") &&
+        state.details.gameShell === true &&
+        state.details.activeMenuLabel === expectedMenuLabel &&
+        state.details.pendingText === false &&
         state.details.legacyCssLinks === 0 &&
         state.details.legacyBody === false,
       details: state.details

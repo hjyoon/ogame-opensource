@@ -214,6 +214,7 @@ function App() {
   const [gameResourcesPending, setGameResourcesPending] = useState(false);
   const [gameResearch, setGameResearch] = useState<GameResearchStatus | null>(null);
   const [gameResearchError, setGameResearchError] = useState<string | null>(null);
+  const [gameResearchPending, setGameResearchPending] = useState(false);
   const [gameShipyard, setGameShipyard] = useState<GameShipyardStatus | null>(null);
   const [gameShipyardError, setGameShipyardError] = useState<string | null>(null);
   const [gameFleet, setGameFleet] = useState<GameFleetStatus | null>(null);
@@ -542,6 +543,7 @@ function App() {
     if (gameRoute?.key !== "research" || publicSession === "") {
       setGameResearch(null);
       setGameResearchError(null);
+      setGameResearchPending(false);
       return;
     }
     const currentSearch = new URLSearchParams(search);
@@ -558,6 +560,50 @@ function App() {
       })
       .catch((err: unknown) => setGameResearchError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
+
+  const submitGameResearchMutation = (body: { action: "start" | "cancel"; techId: number }) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameResearchError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const researchSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      researchSearch.set("cp", selectedPlanet);
+    }
+    setGameResearchPending(true);
+    setGameResearchError(null);
+    fetch(`/api/game/research?${researchSearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(body)
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameResearchStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `research returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("research response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameResearch(payload);
+        setGameResearchError(payload.actionIssue?.message ?? null);
+        dispatchClientNavigation(`/game/research?${researchSearch.toString()}`);
+      })
+      .catch((err: unknown) => setGameResearchError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameResearchPending(false));
+  };
+
+  const submitGameResearchAction = (action: "start" | "cancel", techId: number) => {
+    submitGameResearchMutation({ action, techId });
+  };
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
@@ -985,7 +1031,9 @@ function App() {
         resourcesPending={gameResourcesPending}
         resourcesStatus={gameResources}
         researchError={gameResearchError}
+        researchPending={gameResearchPending}
         researchStatus={gameResearch}
+        onResearchAction={submitGameResearchAction}
         shipyardError={gameShipyardError}
         shipyardStatus={gameShipyard}
         statisticsError={gameStatisticsError}

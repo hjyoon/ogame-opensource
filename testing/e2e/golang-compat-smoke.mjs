@@ -1392,7 +1392,7 @@ try {
   const postGameSession = await request("/api/game/session", { method: "POST" });
   const putGameOverview = await request("/api/game/overview", { method: "PUT" });
   const putGameBuildings = await request("/api/game/buildings", { method: "PUT" });
-  const postGameResearch = await request("/api/game/research", { method: "POST" });
+  const putGameResearch = await request("/api/game/research", { method: "PUT" });
   const postGameShipyard = await request("/api/game/shipyard", { method: "POST" });
   const postGameFleet = await request("/api/game/fleet", { method: "POST" });
   const postGameGalaxy = await request("/api/game/galaxy", { method: "POST" });
@@ -1425,8 +1425,8 @@ try {
       check(hasHeader(putGameOverview, "allow", "GET, HEAD, POST"), "game overview method rejection returns Allow header"),
       check(putGameBuildings.status === 405, "PUT game buildings endpoint is rejected", { status: putGameBuildings.status }),
       check(hasHeader(putGameBuildings, "allow", "GET, HEAD, POST"), "game buildings method rejection returns Allow header"),
-      check(postGameResearch.status === 405, "POST game research endpoint is rejected", { status: postGameResearch.status }),
-      check(hasHeader(postGameResearch, "allow", "GET, HEAD"), "game research method rejection returns Allow header"),
+      check(putGameResearch.status === 405, "PUT game research endpoint is rejected", { status: putGameResearch.status }),
+      check(hasHeader(putGameResearch, "allow", "GET, HEAD, POST"), "game research method rejection returns Allow header"),
       check(postGameShipyard.status === 405, "POST game shipyard endpoint is rejected", { status: postGameShipyard.status }),
       check(hasHeader(postGameShipyard, "allow", "GET, HEAD"), "game shipyard method rejection returns Allow header"),
       check(postGameFleet.status === 405, "POST game fleet endpoint is rejected", { status: postGameFleet.status }),

@@ -24,6 +24,7 @@ export type GameResourcesStatus = {
 export type GameResearchStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
+  actionIssue?: { code: string; message: string };
   research?: GameResearch;
 };
 
@@ -147,7 +148,19 @@ type GameResearch = {
   currentPlanet: GamePlanetOverview;
   planetSwitcher: GamePlanetSummary[];
   hasLab: boolean;
+  active?: GameResearchQueue;
   items: GameBuildingItem[];
+};
+
+type GameResearchQueue = {
+  taskId: number;
+  planetId: number;
+  techId: number;
+  level: number;
+  start: number;
+  end: number;
+  remainingSeconds: number;
+  cancelable: boolean;
 };
 
 type GameShipyard = {
@@ -530,6 +543,8 @@ type LegacyGameOverviewProps = {
   onResourcesSubmit: (production: Record<string, string>) => void;
   researchStatus: GameResearchStatus | null;
   researchError: string | null;
+  researchPending: boolean;
+  onResearchAction: (action: "start" | "cancel", techID: number) => void;
   shipyardStatus: GameShipyardStatus | null;
   shipyardError: string | null;
   fleetStatus: GameFleetStatus | null;
@@ -616,6 +631,8 @@ export function LegacyGameOverview({
   onResourcesSubmit,
   researchStatus,
   researchError,
+  researchPending,
+  onResearchAction,
   shipyardStatus,
   shipyardError,
   fleetStatus,
@@ -769,7 +786,9 @@ export function LegacyGameOverview({
         {overview && route.key === "research" && !research && !researchError && !researchIssue ? (
           <LegacyMessage tone="neutral" text="Loading research..." />
         ) : null}
-        {research && route.key === "research" ? <ResearchTable research={research} /> : null}
+        {research && route.key === "research" ? (
+          <ResearchTable onAction={onResearchAction} pending={researchPending} research={research} />
+        ) : null}
         {overview && route.key === "shipyard" && !shipyard && !shipyardError && !shipyardIssue ? (
           <LegacyMessage tone="neutral" text="Loading shipyard..." />
         ) : null}
@@ -1319,7 +1338,15 @@ function buildingActionURL(action: "add" | "destroy" | "remove", techID: number,
   return gameRouteURL("/game/buildings", `?${query.toString()}`);
 }
 
-function ResearchTable({ research }: { research: GameResearch }) {
+function ResearchTable({
+  onAction,
+  pending,
+  research
+}: {
+  onAction: (action: "start" | "cancel", techID: number) => void;
+  pending: boolean;
+  research: GameResearch;
+}) {
   if (!research.hasLab) {
     return (
       <table className="legacy-overview-table legacy-research-table" width={530}>
@@ -1345,32 +1372,17 @@ function ResearchTable({ research }: { research: GameResearch }) {
             <b>Qty.</b>
           </td>
         </tr>
-        {research.items.map((item) => (
-          <tr data-research-row={item.id} key={item.id}>
-            <td className="legacy-l legacy-building-image">
-              <a href={gameRouteURL("/game/technology", window.location.search)}>
-                <img alt="" height={120} src={`${skinBase}/gebaeude/${item.id}.gif`} width={120} />
-              </a>
-            </td>
-            <td className="legacy-l legacy-building-description">
-              <a href={gameRouteURL("/game/technology", window.location.search)}>{item.name}</a>
-              {item.level > 0 ? <> (level {item.level})</> : null}
-              <br />
-              {item.description}
-              <br />
-              Cost:
-              {costParts(item.cost).map((part) => (
-                <React.Fragment key={part.name}>
-                  {" "}
-                  {part.name}: <b>{formatLegacyNumber(part.value)}</b>
-                </React.Fragment>
-              ))}
-              <br />
-              Duration: {formatLegacyDuration(item.durationSeconds)}
-              <br />
-            </td>
-            <td className="legacy-l legacy-building-action">
-              <span className={item.canBuild ? "legacy-build-ok" : "legacy-build-blocked"}>
+        {research.items.map((item) => {
+          const active = research.active?.techId === item.id ? research.active : undefined;
+          const actionContent =
+            item.action === "Cancel" && active ? (
+              <>
+                {formatLegacyDuration(active.remainingSeconds)}
+                <br />
+                Cancel
+              </>
+            ) : (
+              <>
                 {item.action}
                 {item.action === "Research level" ? (
                   <>
@@ -1378,13 +1390,67 @@ function ResearchTable({ research }: { research: GameResearch }) {
                     level {item.nextLevel}
                   </>
                 ) : null}
-              </span>
-            </td>
-          </tr>
-        ))}
+              </>
+            );
+          const action = item.action === "Cancel" ? "cancel" : "start";
+          return (
+            <tr data-research-row={item.id} key={item.id}>
+              <td className="legacy-l legacy-building-image">
+                <a href={gameRouteURL("/game/technology", window.location.search)}>
+                  <img alt="" height={120} src={`${skinBase}/gebaeude/${item.id}.gif`} width={120} />
+                </a>
+              </td>
+              <td className="legacy-l legacy-building-description">
+                <a href={gameRouteURL("/game/technology", window.location.search)}>{item.name}</a>
+                {item.level > 0 ? <> (level {item.level})</> : null}
+                <br />
+                {item.description}
+                <br />
+                Cost:
+                {costParts(item.cost).map((part) => (
+                  <React.Fragment key={part.name}>
+                    {" "}
+                    {part.name}: <b>{formatLegacyNumber(part.value)}</b>
+                  </React.Fragment>
+                ))}
+                <br />
+                Duration: {formatLegacyDuration(item.durationSeconds)}
+                <br />
+              </td>
+              <td className="legacy-l legacy-building-action">
+                {item.canBuild ? (
+                  <a
+                    className="legacy-build-ok"
+                    href={researchActionURL(action, item.id)}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      if (!pending) {
+                        onAction(action, item.id);
+                      }
+                    }}
+                  >
+                    {actionContent}
+                  </a>
+                ) : (
+                  <span className="legacy-build-blocked">{actionContent}</span>
+                )}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
+}
+
+function researchActionURL(action: "start" | "cancel", techID: number) {
+  const query = new URLSearchParams(window.location.search);
+  if (action === "start") {
+    query.set("bau", String(techID));
+  } else {
+    query.set("unbau", String(techID));
+  }
+  return gameRouteURL("/game/research", `?${query.toString()}`);
 }
 
 function ShipyardTable({ shipyard }: { shipyard: GameShipyard }) {

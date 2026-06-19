@@ -15,7 +15,19 @@ type Research struct {
 	CurrentPlanet  PlanetOverview
 	PlanetSwitcher []PlanetSummary
 	HasLab         bool
+	Active         *ResearchQueue
 	Items          []BuildingItem
+}
+
+type ResearchQueue struct {
+	TaskID           int
+	PlanetID         int
+	TechID           int
+	Level            int
+	Start            int
+	End              int
+	RemainingSeconds int
+	Cancelable       bool
 }
 
 type ResearchLabLevels map[int]int
@@ -43,7 +55,7 @@ func BuildResearchLabLevels(currentLab int, otherLabs []int, research ResearchLe
 	return levels
 }
 
-func BuildResearch(overview Overview, levels BuildingLevels, research ResearchLevels, labLevels ResearchLabLevels, speed float64, technocrat bool) Research {
+func BuildResearch(overview Overview, levels BuildingLevels, research ResearchLevels, labLevels ResearchLabLevels, speed float64, technocrat bool, active *ResearchQueue) Research {
 	if speed <= 0 {
 		speed = 1
 	}
@@ -62,6 +74,15 @@ func BuildResearch(overview Overview, levels BuildingLevels, research ResearchLe
 			nextLevel := level + 1
 			cost := spec.price(nextLevel)
 			canResearch := level < maxResearchLevel && cost.enough(overview.CurrentPlanet.Resources)
+			action := researchAction(level, nextLevel, canResearch)
+			if active != nil {
+				canResearch = active.TechID == spec.id && active.Cancelable
+				if active.TechID == spec.id {
+					action = "Cancel"
+				} else {
+					action = "-"
+				}
+			}
 			labLevel := labLevels[spec.id]
 			if labLevel <= 0 {
 				labLevel = levels[BuildingResearchLab]
@@ -75,7 +96,7 @@ func BuildResearch(overview Overview, levels BuildingLevels, research ResearchLe
 				Cost:            cost,
 				DurationSeconds: researchDuration(cost, labLevel, speed),
 				CanBuild:        canResearch,
-				Action:          researchAction(level, nextLevel, canResearch),
+				Action:          action,
 			})
 		}
 	}
@@ -84,6 +105,7 @@ func BuildResearch(overview Overview, levels BuildingLevels, research ResearchLe
 		CurrentPlanet:  overview.CurrentPlanet,
 		PlanetSwitcher: overview.PlanetSwitcher,
 		HasLab:         hasLab,
+		Active:         active,
 		Items:          items,
 	}
 }
@@ -105,6 +127,32 @@ func researchAction(level int, nextLevel int, canResearch bool) string {
 	}
 	_ = nextLevel
 	return "Research level"
+}
+
+func ResearchCostForLevel(id int, level int) (BuildingCost, bool) {
+	for _, spec := range researchCatalog {
+		if spec.id == id {
+			return spec.price(level), true
+		}
+	}
+	return BuildingCost{}, false
+}
+
+func ResearchDurationForLevel(id int, level int, labLevel int, speed float64) (int, bool) {
+	cost, ok := ResearchCostForLevel(id, level)
+	if !ok {
+		return 0, false
+	}
+	return researchDuration(cost, labLevel, speed), true
+}
+
+func ResearchRequirementsMet(id int, buildings BuildingLevels, research ResearchLevels) bool {
+	for _, spec := range researchCatalog {
+		if spec.id == id {
+			return requirementsMet(spec.requirements, buildings, research)
+		}
+	}
+	return false
 }
 
 func mathFloorPositive(value float64) int {
