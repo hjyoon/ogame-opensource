@@ -24,8 +24,8 @@ func TestSessionStoreSavesLegacySessionFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(execer.query, "`uni1_users`") {
-		t.Fatalf("expected prefixed users table, got %q", execer.query)
+	if !strings.Contains(execer.query, "UPDATE `uni1_users` SET lastlogin = ?, session = ?, private_session = ?, ip_addr = ?, aktplanet = hplanetid WHERE player_id = ?") {
+		t.Fatalf("expected legacy login update with home planet selection, got %q", execer.query)
 	}
 	expectedArgs := []any{int64(1700000000), "public123456", "private1234567890private1234567890", "203.0.113.10", 42}
 	for i, expected := range expectedArgs {

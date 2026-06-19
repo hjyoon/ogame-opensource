@@ -46,7 +46,7 @@ func (s SessionStore) SaveLoginSession(ctx context.Context, session domain.Login
 	}
 	_, err = s.execer.ExecContext(
 		ctx,
-		fmt.Sprintf("UPDATE %s SET lastlogin = ?, session = ?, private_session = ?, ip_addr = ? WHERE player_id = ?", usersTable),
+		fmt.Sprintf("UPDATE %s SET lastlogin = ?, session = ?, private_session = ?, ip_addr = ?, aktplanet = hplanetid WHERE player_id = ?", usersTable),
 		session.LastLogin,
 		session.PublicID,
 		session.PrivateID,

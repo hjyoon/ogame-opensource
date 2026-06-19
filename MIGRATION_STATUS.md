@@ -15,7 +15,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - `/api/public/universes` reads the master DB with config fallback.
 - Registration creates user, planet, reg IP log, greeting, TimeLimit, ranks, sessions, welcome mail, redirect.
 - `/game/validate.php?ack=` and `/activation?ack=` activate accounts and sessions.
-- Login/logout create and clear legacy sessions, private cookies, and `/game` redirects.
+- Login/logout create/clear sessions, private cookies, home `aktplanet`, and `/game` redirects.
 - `/api/game/session` validates public session plus private cookie, bans/IP with expiry, preserves vacation/deletion state, and touches `lastclick`.
 - `/api/game/{overview,buildings,resources,research,shipyard,fleet,galaxy,defense,technology,statistics,search,notes}` return models; overview/resources/notes mutate settings.
 - Auth `/game/*` routes preserve sessions and persist `cp`; migrated game screens use the legacy `evolution` skin.
