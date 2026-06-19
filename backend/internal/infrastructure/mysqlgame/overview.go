@@ -59,6 +59,7 @@ type OverviewRepository struct {
 	updateResources   bool
 	includeUnread     bool
 	includeBuildQueue bool
+	includeEvents     bool
 }
 
 func NewOverviewRepository(db *sql.DB, prefix string) OverviewRepository {
@@ -67,7 +68,7 @@ func NewOverviewRepository(db *sql.DB, prefix string) OverviewRepository {
 
 func NewOverviewRepositoryWithSecret(db *sql.DB, prefix string, secret string) OverviewRepository {
 	runner := SQLQueryer{DB: db}
-	return OverviewRepository{queryer: runner, execer: runner, prefix: prefix, secret: secret, now: time.Now, updateResources: true, includeUnread: true, includeBuildQueue: true}
+	return OverviewRepository{queryer: runner, execer: runner, prefix: prefix, secret: secret, now: time.Now, updateResources: true, includeUnread: true, includeBuildQueue: true, includeEvents: true}
 }
 
 func NewOverviewRepositoryWithQueryer(queryer Queryer, prefix string) OverviewRepository {
@@ -105,6 +106,18 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 	buildQueueTable := ""
 	if r.includeBuildQueue {
 		buildQueueTable, err = tableName(r.prefix, "buildqueue")
+		if err != nil {
+			return domaingame.Overview{}, err
+		}
+	}
+	queueTable := ""
+	fleetTable := ""
+	if r.includeEvents {
+		queueTable, err = tableName(r.prefix, "queue")
+		if err != nil {
+			return domaingame.Overview{}, err
+		}
+		fleetTable, err = tableName(r.prefix, "fleet")
 		if err != nil {
 			return domaingame.Overview{}, err
 		}
@@ -190,6 +203,13 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 			return domaingame.Overview{}, err
 		}
 	}
+	events := []domaingame.FleetMission(nil)
+	if r.includeEvents {
+		events, err = r.loadOverviewEvents(ctx, queueTable, fleetTable, planetsTable, usersTable, query.PlayerID)
+		if err != nil {
+			return domaingame.Overview{}, err
+		}
+	}
 
 	return domaingame.Overview{
 		Commander:  user.Commander,
@@ -203,6 +223,7 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 		PlanetSwitcher: planets,
 		Messages:       overviewMessages(user),
 		UnreadMessages: unreadMessages,
+		Events:         events,
 	}, nil
 }
 
@@ -926,6 +947,14 @@ func (r OverviewRepository) loadUnreadMessages(ctx context.Context, messagesTabl
 		return 0, err
 	}
 	return count, nil
+}
+
+func (r OverviewRepository) loadOverviewEvents(ctx context.Context, queueTable string, fleetTable string, planetsTable string, usersTable string, playerID int) ([]domaingame.FleetMission, error) {
+	missions, err := (FleetRepository{queryer: r.queryer, prefix: r.prefix, now: r.now}).loadActiveMissions(ctx, queueTable, fleetTable, planetsTable, usersTable, playerID)
+	if err != nil {
+		return nil, err
+	}
+	return domaingame.BuildOverviewEvents(missions), nil
 }
 
 func overviewTechnologyName(techID int) string {

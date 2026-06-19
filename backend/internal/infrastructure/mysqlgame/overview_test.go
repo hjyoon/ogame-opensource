@@ -30,10 +30,12 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 		)},
 		{rows: fakeRowsFromValues([]any{2})},
 		{rows: fakeRowsFromValues([]any{4})},
+		{rows: fakeRowsFromValues(fleetMissionRow(domaingame.FleetMissionTransport, map[int]int{domaingame.FleetSmallCargo: 2}, 100, 200))},
 	}}
 	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
 	repository.includeUnread = true
 	repository.includeBuildQueue = true
+	repository.includeEvents = true
 	repository.now = func() time.Time { return time.Date(2026, 6, 19, 15, 23, 7, 0, time.UTC) }
 
 	overview, err := repository.GetOverview(context.Background(), overviewQuery(42, 0))
@@ -64,6 +66,12 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	if overview.UnreadMessages != 4 {
 		t.Fatalf("expected unread messages, got %d", overview.UnreadMessages)
 	}
+	if len(overview.Events) != 1 ||
+		overview.Events[0].MissionName != "Transport" ||
+		overview.Events[0].TotalShips != 2 ||
+		overview.Events[0].StateShort != "(G)" {
+		t.Fatalf("unexpected overview events: %+v", overview.Events)
+	}
 	if overview.CurrentPlanet.BuildQueue == nil ||
 		overview.CurrentPlanet.BuildQueue.Name != "Metal Mine" ||
 		overview.CurrentPlanet.BuildQueue.Level != 3 ||
@@ -87,6 +95,9 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	}
 	if !strings.Contains(queryer.calls[3].sql, "FROM `ogame_buildqueue`") || !strings.Contains(queryer.calls[3].sql, "ORDER BY planet_id ASC, list_id ASC") {
 		t.Fatalf("expected overview buildqueue query, got %+v", queryer.calls[3])
+	}
+	if !strings.Contains(queryer.calls[6].sql, "FROM `ogame_queue`") || !strings.Contains(queryer.calls[6].sql, "JOIN `ogame_fleet`") {
+		t.Fatalf("expected overview event query, got %+v", queryer.calls[6])
 	}
 	if !strings.Contains(queryer.calls[0].sql, "`ogame_users`") || !strings.Contains(queryer.calls[1].sql, "`ogame_planets`") {
 		t.Fatalf("expected prefixed table names, got %+v", queryer.calls)
@@ -128,7 +139,7 @@ func TestNewOverviewRepositoryKeepsSQLQueryer(t *testing.T) {
 	if _, ok := repository.execer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL execer, got %T", repository.execer)
 	}
-	if !repository.updateResources || !repository.includeUnread || !repository.includeBuildQueue {
+	if !repository.updateResources || !repository.includeUnread || !repository.includeBuildQueue || !repository.includeEvents {
 		t.Fatalf("expected production overview repository to update resources and overview side data")
 	}
 }
@@ -1090,6 +1101,17 @@ func TestOverviewRepositoryReturnsResourceUpdateError(t *testing.T) {
 	}
 }
 
+func TestOverviewRepositoryReturnsEventLoadError(t *testing.T) {
+	results := append(overviewResultsForPlanet(99, "Arakis"), fakeQueryResult{err: errors.New("overview event load failed")})
+	repository := NewOverviewRepositoryWithQueryer(&fakeQueryer{results: results}, "ogame_")
+	repository.includeEvents = true
+
+	_, err := repository.GetOverview(context.Background(), overviewQuery(42, 0))
+	if err == nil || !strings.Contains(err.Error(), "overview event load failed") {
+		t.Fatalf("expected overview event load error, got %v", err)
+	}
+}
+
 func TestOverviewRepositoryReturnsErrors(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1435,6 +1457,15 @@ func TestOverviewRepositoryAttachBuildQueuesEdges(t *testing.T) {
 	repository := NewOverviewRepositoryWithQueryer(&fakeQueryer{}, "ogame_")
 	if err := repository.attachOverviewBuildQueues(context.Background(), "`ogame_buildqueue`", 42, nil, nil); err != nil {
 		t.Fatalf("expected empty planet list to skip query, got %v", err)
+	}
+}
+
+func TestOverviewRepositoryLoadOverviewEventsEdges(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{{err: errors.New("overview event query failed")}}}
+	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+
+	if _, err := repository.loadOverviewEvents(context.Background(), "`ogame_queue`", "`ogame_fleet`", "`ogame_planets`", "`ogame_users`", 42); err == nil || !strings.Contains(err.Error(), "overview event query failed") {
+		t.Fatalf("expected overview event query error, got %v", err)
 	}
 }
 

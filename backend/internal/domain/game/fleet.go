@@ -165,20 +165,13 @@ func BuildFleet(overview Overview, counts FleetCounts, research ResearchLevels, 
 		maxFleet += 2
 	}
 
-	normalizedMissions := make([]FleetMission, 0, len(missions))
+	normalizedMissions := normalizeFleetMissions(missions, acsEnabled)
 	expeditions := 0
-	for _, mission := range missions {
-		baseMission, title, short := fleetMissionDisplay(mission.Mission)
-		mission.MissionName = fleetMissionName(baseMission)
-		mission.StateTitle = title
-		mission.StateShort = short
-		mission.TotalShips = fleetTotalShips(mission.Ships)
-		mission.CanRecall = mission.Mission < FleetMissionReturnOffset || mission.Mission > FleetMissionOrbitingOffset
-		mission.CanCreateUnion = acsEnabled && (mission.Mission == FleetMissionAttack || mission.Mission == FleetMissionACSAttackHead)
+	for _, mission := range normalizedMissions {
+		baseMission, _, _ := fleetMissionDisplay(mission.Mission)
 		if baseMission == FleetMissionExpedition {
 			expeditions++
 		}
-		normalizedMissions = append(normalizedMissions, mission)
 	}
 
 	return Fleet{
@@ -200,6 +193,25 @@ func BuildFleet(overview Overview, counts FleetCounts, research ResearchLevels, 
 		Missions:        normalizedMissions,
 		Ships:           buildFleetShipSelections(counts, research),
 	}
+}
+
+func BuildOverviewEvents(missions []FleetMission) []FleetMission {
+	return normalizeFleetMissions(missions, false)
+}
+
+func normalizeFleetMissions(missions []FleetMission, acsEnabled bool) []FleetMission {
+	normalized := make([]FleetMission, 0, len(missions))
+	for _, mission := range missions {
+		baseMission, title, short := fleetMissionDisplay(mission.Mission)
+		mission.MissionName = fleetMissionName(baseMission)
+		mission.StateTitle = title
+		mission.StateShort = short
+		mission.TotalShips = fleetTotalShips(mission.Ships)
+		mission.CanRecall = mission.Mission < FleetMissionReturnOffset || mission.Mission > FleetMissionOrbitingOffset
+		mission.CanCreateUnion = acsEnabled && (mission.Mission == FleetMissionAttack || mission.Mission == FleetMissionACSAttackHead)
+		normalized = append(normalized, mission)
+	}
+	return normalized
 }
 
 func BuildFleetDispatchDraft(fleet Fleet, input FleetDispatchDraftInput) FleetDispatchDraft {

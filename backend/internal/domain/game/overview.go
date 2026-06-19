@@ -23,6 +23,7 @@ type Overview struct {
 	PlanetSwitcher []PlanetSummary
 	Messages       []string
 	UnreadMessages int
+	Events         []FleetMission
 }
 
 type OverviewActionIssue struct {

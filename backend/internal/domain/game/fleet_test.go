@@ -60,6 +60,21 @@ func TestBuildFleetMarksAttackUnionAvailability(t *testing.T) {
 	}
 }
 
+func TestBuildOverviewEventsNormalizesMissionRows(t *testing.T) {
+	events := BuildOverviewEvents([]FleetMission{
+		BuildFleetMission(7, FleetMissionTransport+FleetMissionReturnOffset, FleetCounts{FleetSmallCargo: 3}, Coordinates{Galaxy: 1, System: 2, Position: 3}, Coordinates{Galaxy: 1, System: 2, Position: 4}, PlanetTypePlanet, "target", 100, 200),
+	})
+
+	if len(events) != 1 ||
+		events[0].MissionName != "Transport" ||
+		events[0].StateShort != "(F)" ||
+		events[0].CanRecall ||
+		events[0].CanCreateUnion ||
+		events[0].TotalShips != 3 {
+		t.Fatalf("unexpected overview event normalization: %+v", events)
+	}
+}
+
 func TestBuildFleetDispatchDraftNormalizesLegacySelection(t *testing.T) {
 	fleet := BuildFleet(Overview{
 		CurrentPlanet: PlanetOverview{
@@ -203,6 +218,24 @@ func TestBuildFleetDispatchValidationPlansLegacyResourceLoading(t *testing.T) {
 	}
 	if len(draft.Resources) != 3 || draft.Resources[0].Loaded != 15000 || draft.Resources[1].Loaded != 2236 || draft.Resources[2].Loaded != 0 {
 		t.Fatalf("unexpected capped resource loading plan: %+v", draft.Resources)
+	}
+}
+
+func TestFleetDispatchResourcePlanClampsRequestedResources(t *testing.T) {
+	rows, remaining := fleetDispatchResourcePlan(
+		Resources{Metal: 100, Crystal: 50, Deuterium: 25},
+		map[int]int{ResourceMetal: -10, ResourceCrystal: 500, ResourceDeuterium: 20},
+		60,
+	)
+
+	if remaining != 0 ||
+		rows[0].Requested != 0 ||
+		rows[0].Loaded != 0 ||
+		rows[1].Requested != 50 ||
+		rows[1].Loaded != 50 ||
+		rows[2].Requested != 20 ||
+		rows[2].Loaded != 10 {
+		t.Fatalf("unexpected clamped resource plan: rows=%+v remaining=%d", rows, remaining)
 	}
 }
 

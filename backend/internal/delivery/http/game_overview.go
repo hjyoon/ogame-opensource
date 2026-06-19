@@ -29,6 +29,7 @@ type gameOverviewSummary struct {
 	PlanetSwitcher []gamePlanetSummaryResponse `json:"planetSwitcher"`
 	Messages       []string                    `json:"messages,omitempty"`
 	UnreadMessages int                         `json:"unreadMessages"`
+	Events         []gameFleetMissionResponse  `json:"events"`
 }
 
 type gameScoreResponse struct {
@@ -238,6 +239,10 @@ func toGameOverviewSummary(overview domaingame.Overview) gameOverviewSummary {
 	for _, planet := range overview.PlanetSwitcher {
 		planets = append(planets, toGamePlanetSummaryResponse(planet))
 	}
+	events := make([]gameFleetMissionResponse, 0, len(overview.Events))
+	for _, event := range overview.Events {
+		events = append(events, toGameFleetMissionResponse(event))
+	}
 	return gameOverviewSummary{
 		Commander:  overview.Commander,
 		ServerTime: overview.ServerTime,
@@ -251,6 +256,7 @@ func toGameOverviewSummary(overview domaingame.Overview) gameOverviewSummary {
 		PlanetSwitcher: planets,
 		Messages:       overview.Messages,
 		UnreadMessages: overview.UnreadMessages,
+		Events:         events,
 	}
 }
 

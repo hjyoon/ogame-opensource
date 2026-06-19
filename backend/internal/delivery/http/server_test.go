@@ -847,6 +847,9 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 					End:     2000,
 				},
 			}},
+			Events: []domaingame.FleetMission{domaingame.BuildOverviewEvents([]domaingame.FleetMission{
+				domaingame.BuildFleetMission(11, domaingame.FleetMissionTransport, domaingame.FleetCounts{domaingame.FleetSmallCargo: 2}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4}, domaingame.PlanetTypePlanet, "target", 100, 200),
+			})[0]},
 		},
 	}}
 	server := testServerWithGameOverview(t, overview)
@@ -874,6 +877,9 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 		response.Overview.CurrentPlanet.BuildQueue.Name != "Metal Mine" ||
 		response.Overview.CurrentPlanet.BuildQueue.End != 2000 {
 		t.Fatalf("unexpected overview mapping: %+v", response.Overview)
+	}
+	if len(response.Overview.Events) != 1 || response.Overview.Events[0].MissionName != "Transport" || response.Overview.Events[0].TotalShips != 2 {
+		t.Fatalf("expected overview event mapping, got %+v", response.Overview.Events)
 	}
 	if len(response.Overview.Messages) != 1 || response.Overview.Messages[0] != domaingame.OverviewAdminNotice {
 		t.Fatalf("expected overview messages, got %+v", response.Overview.Messages)

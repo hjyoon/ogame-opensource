@@ -156,6 +156,7 @@ type GameOverview = {
   };
   currentPlanet: GamePlanetOverview;
   planetSwitcher: GamePlanetSummary[];
+  events: GameFleetMission[];
 };
 
 type GamePlanetOverview = {
@@ -4889,6 +4890,7 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
             Events
           </td>
         </tr>
+        <OverviewEventRows events={overview.events ?? []} />
         <tr>
           <th>
             {moon ? (
@@ -4966,6 +4968,105 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
       </tbody>
     </table>
   );
+}
+
+function OverviewEventRows({ events }: { events: GameFleetMission[] }) {
+  if (events.length === 0) {
+    return null;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  return (
+    <>
+      {events.map((event) => {
+        const remaining = Math.max(0, event.arrivalAt - now);
+        return (
+          <tr className={overviewEventRowClass(event)} key={event.id}>
+            <th>
+              <div title={String(remaining)}>{formatLegacyDuration(remaining)}</div>
+            </th>
+            <th colSpan={3}>
+              <span className={overviewEventMissionClass(event)}>
+                <a title={overviewEventShipTitle(event)}>Your {formatLegacyNumber(event.totalShips)} fleet</a>{" "}
+                {overviewEventDirectionText(event)} <a href={galaxyHref(event.origin)}>[{formatCoordinates(event.origin)}]</a>{" "}
+                {overviewEventTargetText(event)} <a href={galaxyHref(event.target)}>[{formatCoordinates(event.target)}]</a>. Mission:{" "}
+                {event.missionName}
+              </span>
+            </th>
+          </tr>
+        );
+      })}
+    </>
+  );
+}
+
+function overviewEventRowClass(event: GameFleetMission): string {
+  if (event.mission >= 200) {
+    return "holding";
+  }
+  if (event.mission >= 100) {
+    return "return";
+  }
+  return "flight";
+}
+
+function overviewEventMissionClass(event: GameFleetMission): string {
+  switch (overviewEventBaseMission(event.mission)) {
+    case 1:
+    case 21:
+      return "ownattack";
+    case 2:
+      return "ownfederation";
+    case 4:
+      return "owndeploy";
+    case 5:
+      return "ownhold";
+    case 6:
+      return "ownespionage";
+    case 7:
+      return "owncolony";
+    case 8:
+      return "ownharvest";
+    case 9:
+      return "owndestroy";
+    case 20:
+      return "ownmissile";
+    default:
+      return "owntransport";
+  }
+}
+
+function overviewEventBaseMission(mission: number): number {
+  if (mission >= 200) {
+    return mission - 200;
+  }
+  if (mission >= 100) {
+    return mission - 100;
+  }
+  return mission;
+}
+
+function overviewEventDirectionText(event: GameFleetMission): string {
+  if (event.mission >= 100 && event.mission < 200) {
+    return "returns from";
+  }
+  if (event.mission >= 200) {
+    return "holds from";
+  }
+  return "from";
+}
+
+function overviewEventTargetText(event: GameFleetMission): string {
+  if (event.mission >= 100 && event.mission < 200) {
+    return "to";
+  }
+  if (event.mission >= 200) {
+    return "onto";
+  }
+  return "sent to";
+}
+
+function overviewEventShipTitle(event: GameFleetMission): string {
+  return event.ships.map((ship) => `${ship.name}: ${formatLegacyNumber(ship.count)}`).join("\n");
 }
 
 function overviewBuildQueueText(queue: GameOverviewBuildQueue | undefined, includeLevel: boolean): string {
