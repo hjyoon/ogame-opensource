@@ -28,10 +28,16 @@ describe("game route model", () => {
     expect(normalizeGamePath("/game")).toBe("/game/overview");
     expect(normalizeGamePath("/game/overview/")).toBe("/game/overview");
     expect(normalizeGamePath("/game/resources?session=abc")).toBe("/game/resources");
+    expect(normalizeGamePath("/game/index.php", "?page=b_building&session=abc")).toBe("/game/buildings");
     expect(normalizeGamePath("/game/index.php", "?page=fleet_templates&session=abc")).toBe("/game/fleet-templates");
+    expect(normalizeGamePath("/game/index.php", "?page=flottenversand&session=abc")).toBe("/game/fleet");
     expect(normalizeGamePath("/game/index.php?page=flotten1&session=abc")).toBe("/game/fleet");
     expect(normalizeGamePath("/game/index.php?page=writemessages&messageziel=42&session=abc")).toBe("/game/messages");
     expect(normalizeGamePath("/game/index.php?page=bericht&bericht=11&session=abc")).toBe("/game/report");
+    expect(normalizeGamePath("/game/index.php?page=notizen&session=abc")).toBe("/game/notes");
+    expect(normalizeGamePath("/game/index.php?page=options&session=abc")).toBe("/game/options");
+    expect(normalizeGamePath("/game/index.php?page=suche&session=abc")).toBe("/game/search");
+    expect(normalizeGamePath("/game/index.php?page=techtree&session=abc")).toBe("/game/technology");
   });
 
   test("resolves natural authenticated game routes", () => {
@@ -57,6 +63,19 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/messages")).toMatchObject({ key: "messages", migrated: true });
     expect(resolveGameRoute("/game/report")).toMatchObject({ key: "report", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=bericht&bericht=11")).toMatchObject({ key: "report", migrated: true });
+  });
+
+  test("maps legacy php pages to migrated or pending natural routes", () => {
+    expect(resolveGameRoute("/game/index.php", "?page=b_building")).toMatchObject({ key: "buildings", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=notizen")).toMatchObject({ key: "notes", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=options")).toMatchObject({ key: "options", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=suche")).toMatchObject({ key: "search", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=techtree")).toMatchObject({ key: "technology", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=allianzen")).toMatchObject({ key: "alliance", migrated: false });
+    expect(resolveGameRoute("/game/index.php", "?page=imperium")).toMatchObject({ key: "empire", migrated: false });
+    expect(resolveGameRoute("/game/index.php", "?page=trader")).toMatchObject({ key: "merchant", migrated: false });
+    expect(resolveGameRoute("/game/index.php", "?page=micropayment")).toMatchObject({ key: "officers", migrated: false });
+    expect(resolveGameRoute("/game/index.php", "?page=admin")).toMatchObject({ key: "admin", migrated: false });
   });
 
   test("falls back unknown game paths to overview", () => {

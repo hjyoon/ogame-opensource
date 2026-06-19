@@ -10,6 +10,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - Go serves `frontend/dist`, logs JSON, and runs from `compose.golang.yaml` on port `8890`.
 - `/api/healthz` reports tool targets plus static/legacy asset readiness.
 - Natural routes, `.php` aliases, CSS bootstrap, smoke routes, visual specs, public routes, and aliases share manifests.
+- Legacy game `page=` aliases route to migrated screens or explicit pending screens instead of falling back to overview.
 - Public assets, evolution skin, and game images copy into `frontend/dist/public-assets`.
 - `/api/public/universes` reads the master DB with config fallback.
 - Registration creates user, planet, IP log, greeting, TimeLimit, ranks, sessions, mail, redirect.
@@ -22,7 +23,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 
 ## Latest Verified Implementation
 
-- Public parity, language flags, login/logout, and game read models are guarded.
+- Public parity, language flags, login/logout, legacy route aliases, and game read models are guarded.
 - Fleet covers summary, slots, expeditions, ships, speed/cargo, Commander templates, recall; dispatch/ACS pending.
 - Galaxy covers clamp, rows, status, moon/debris/actions, slots, deut warning, quick links/prefill; instant sends pending.
 - Shipyard/defense cover display plus POST orders into legacy `Shipyard` queue.
