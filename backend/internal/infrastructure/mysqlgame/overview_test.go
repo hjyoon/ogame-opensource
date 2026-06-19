@@ -71,7 +71,7 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	if overview.UnreadMessages != 4 {
 		t.Fatalf("expected unread messages, got %d", overview.UnreadMessages)
 	}
-	if len(overview.Events) != 3 ||
+	if len(overview.Events) != 4 ||
 		overview.Events[0].MissionName != "Transport" ||
 		overview.Events[0].TotalShips != 2 ||
 		overview.Events[0].StateShort != "(G)" ||
@@ -93,6 +93,13 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 		!overview.Events[2].Foreign ||
 		overview.Events[2].CanRecall {
 		t.Fatalf("unexpected missile overview event: %+v", overview.Events[2])
+	}
+	if overview.Events[3].MissionName != "Transport" ||
+		overview.Events[3].StateShort != "(F)" ||
+		overview.Events[3].Origin.Position != 4 ||
+		overview.Events[3].Target.Position != 3 ||
+		overview.Events[3].CanRecall {
+		t.Fatalf("unexpected own return pseudo-event: %+v", overview.Events[3])
 	}
 	if overview.CurrentPlanet.BuildQueue == nil ||
 		overview.CurrentPlanet.BuildQueue.Name != "Metal Mine" ||
@@ -1560,6 +1567,104 @@ func TestOverviewRepositoryLoadsACSOverviewEvents(t *testing.T) {
 	}
 }
 
+func TestOverviewRepositoryLoadsNonACSOverviewPseudoEvents(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(
+			overviewEventRowWithDeploy(31, 42, "legor", domaingame.FleetMissionExpedition, map[int]int{domaingame.FleetSmallCargo: 1}, 100, 200, 60, 3, 16),
+			overviewEventRowWithDeploy(32, 77, "holder", domaingame.FleetMissionACSHold, map[int]int{domaingame.FleetCruiser: 2}, 110, 210, 50, 4, 3),
+			overviewEventRow(33, 42, "legor", domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset, map[int]int{domaingame.FleetSmallCargo: 3}, 120, 220, 5, 6),
+		)},
+		{rows: fakeRowsFromValues()},
+	}}
+	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+
+	events, err := repository.loadOverviewEvents(context.Background(), "`ogame_queue`", "`ogame_fleet`", "`ogame_planets`", "`ogame_users`", "`ogame_union`", 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(events) != 6 {
+		t.Fatalf("expected actual plus pseudo events, got %+v", events)
+	}
+	if events[2].Mission != domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset ||
+		events[2].Origin.Position != 6 ||
+		events[2].Target.Position != 5 {
+		t.Fatalf("expected actual return coordinates to be reversed, got %+v", events[2])
+	}
+	if events[3].Mission != domaingame.FleetMissionExpedition+domaingame.FleetMissionOrbitingOffset ||
+		events[3].ArrivalAt != 260 ||
+		events[3].StateShort != "(H)" {
+		t.Fatalf("expected expedition hold pseudo-event, got %+v", events[3])
+	}
+	if events[4].Mission != domaingame.FleetMissionACSHold+domaingame.FleetMissionOrbitingOffset ||
+		events[4].ArrivalAt != 260 ||
+		!events[4].Foreign {
+		t.Fatalf("expected foreign ACS hold pseudo-event, got %+v", events[4])
+	}
+	if events[5].Mission != domaingame.FleetMissionExpedition+domaingame.FleetMissionReturnOffset ||
+		events[5].ArrivalAt != 360 ||
+		events[5].Origin.Position != 16 ||
+		events[5].Target.Position != 3 ||
+		events[5].CanRecall {
+		t.Fatalf("expected expedition return pseudo-event, got %+v", events[5])
+	}
+}
+
+func TestOverviewPseudoEventHelpersEdges(t *testing.T) {
+	base := domaingame.BuildFleetMission(
+		41,
+		domaingame.FleetMissionTransport,
+		domaingame.FleetCounts{domaingame.FleetSmallCargo: 2},
+		domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+		domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4},
+		domaingame.PlanetTypePlanet,
+		"target",
+		300,
+		200,
+	)
+	base.OwnerID = 42
+
+	hold := overviewHoldPseudoMission(base, -1)
+	if hold.Mission != domaingame.FleetMissionTransport+domaingame.FleetMissionOrbitingOffset ||
+		hold.ArrivalAt != base.ArrivalAt {
+		t.Fatalf("expected negative deploy to clamp in hold pseudo-event, got %+v", hold)
+	}
+	returning := overviewReturnPseudoMission(base, -1, -1)
+	if returning.Mission != domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset ||
+		returning.ArrivalAt != base.ArrivalAt ||
+		returning.Origin.Position != 4 ||
+		returning.Target.Position != 3 {
+		t.Fatalf("expected negative return timing to clamp and reverse coordinates, got %+v", returning)
+	}
+	unionReturn := overviewUnionReturnMission(base, -1, 9)
+	if unionReturn.ArrivalAt != base.ArrivalAt || unionReturn.UnionID != 9 {
+		t.Fatalf("expected union return negative flight clamp, got %+v", unionReturn)
+	}
+
+	foreign := base
+	foreign.OwnerID = 77
+	deploy := base
+	deploy.Mission = domaingame.FleetMissionDeploy
+	missile := base
+	missile.Mission = domaingame.FleetMissionMissile
+	if overviewShouldAddReturnPseudoMission(foreign, 42) ||
+		overviewShouldAddReturnPseudoMission(deploy, 42) ||
+		overviewShouldAddReturnPseudoMission(missile, 42) {
+		t.Fatalf("expected foreign/deploy/missile fleets to skip return pseudo-events")
+	}
+
+	orbitingExpedition := base
+	orbitingExpedition.Mission = domaingame.FleetMissionExpedition + domaingame.FleetMissionOrbitingOffset
+	orbitingExpedition.DepartureAt = 100
+	orbitingExpedition.ArrivalAt = 500
+	orbitingReturn := overviewReturnPseudoMission(orbitingExpedition, 100, 30)
+	if orbitingReturn.Mission != domaingame.FleetMissionExpedition+domaingame.FleetMissionReturnOffset ||
+		orbitingReturn.ArrivalAt != 530 ||
+		overviewBaseMission(domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset) != domaingame.FleetMissionTransport {
+		t.Fatalf("expected orbiting expedition return pseudo-event, got %+v", orbitingReturn)
+	}
+}
+
 func TestOverviewRepositoryLoadOverviewUnionEventsEdges(t *testing.T) {
 	fleetIDs := domaingame.FleetIDs()
 	for _, tt := range []struct {
@@ -1704,15 +1809,23 @@ func overviewScoreRow(ownerID int, buildings map[int]int, fleet map[int]int, def
 }
 
 func overviewEventRow(id int, ownerID int, ownerName string, mission int, ships map[int]int, start int64, end int64, originPosition int, targetPosition int) []any {
-	return overviewEventRowWithMissile(id, ownerID, ownerName, mission, 0, 0, ships, start, end, originPosition, targetPosition)
+	return overviewEventRowWithDeploy(id, ownerID, ownerName, mission, ships, start, end, 0, originPosition, targetPosition)
 }
 
 func overviewMissileEventRow(id int, ownerID int, ownerName string, amount int, targetID int, start int64, end int64, originPosition int, targetPosition int) []any {
 	return overviewEventRowWithMissile(id, ownerID, ownerName, domaingame.FleetMissionMissile, amount, targetID, nil, start, end, originPosition, targetPosition)
 }
 
+func overviewEventRowWithDeploy(id int, ownerID int, ownerName string, mission int, ships map[int]int, start int64, end int64, deploy int64, originPosition int, targetPosition int) []any {
+	return overviewEventRowWithMissileAndDeploy(id, ownerID, ownerName, mission, 0, 0, ships, start, end, deploy, originPosition, targetPosition)
+}
+
 func overviewEventRowWithMissile(id int, ownerID int, ownerName string, mission int, missileAmount int, missileTargetID int, ships map[int]int, start int64, end int64, originPosition int, targetPosition int) []any {
-	row := []any{id, start, end, end - start, mission, missileAmount, missileTargetID, ownerID, ownerName, 99, 100}
+	return overviewEventRowWithMissileAndDeploy(id, ownerID, ownerName, mission, missileAmount, missileTargetID, ships, start, end, 0, originPosition, targetPosition)
+}
+
+func overviewEventRowWithMissileAndDeploy(id int, ownerID int, ownerName string, mission int, missileAmount int, missileTargetID int, ships map[int]int, start int64, end int64, deploy int64, originPosition int, targetPosition int) []any {
+	row := []any{id, start, end, end - start, deploy, mission, missileAmount, missileTargetID, ownerID, ownerName, 99, 100}
 	for _, fleetID := range domaingame.FleetIDs() {
 		row = append(row, ships[fleetID])
 	}
