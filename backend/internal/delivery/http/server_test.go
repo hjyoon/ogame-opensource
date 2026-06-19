@@ -1934,13 +1934,18 @@ func TestGameFleetEndpointPreparesDispatchDraft(t *testing.T) {
 					Name:  "Small Cargo",
 					Count: 3,
 				}},
-				TotalShips:   3,
-				Target:       domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
-				TargetType:   domaingame.GamePlanetTypeMoon,
-				Mission:      domaingame.FleetMissionTransport,
-				Speed:        9,
-				Cargo:        15000,
-				HasSelection: true,
+				TotalShips:      3,
+				Target:          domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+				TargetType:      domaingame.GamePlanetTypeMoon,
+				Mission:         domaingame.FleetMissionTransport,
+				Speed:           9,
+				Cargo:           15000,
+				Distance:        20000,
+				DurationSeconds: 2121,
+				MaxSpeed:        5500,
+				FuelConsumption: 2765,
+				SpeedFactor:     1,
+				HasSelection:    true,
 				MissionOptions: []domaingame.FleetMissionOption{{
 					ID:       domaingame.FleetMissionTransport,
 					Name:     "Transport",
@@ -1980,6 +1985,9 @@ func TestGameFleetEndpointPreparesDispatchDraft(t *testing.T) {
 		t.Fatalf("unexpected prepare response: %+v", response)
 	}
 	if response.Fleet.DispatchDraft.MissionOptions[0].ID != domaingame.FleetMissionTransport || response.Fleet.DispatchDraft.Resources[0].Available != 1200 {
+		t.Fatalf("unexpected prepare draft mapping: %+v", response.Fleet.DispatchDraft)
+	}
+	if response.Fleet.DispatchDraft.Distance != 20000 || response.Fleet.DispatchDraft.DurationSeconds != 2121 || response.Fleet.DispatchDraft.MaxSpeed != 5500 || response.Fleet.DispatchDraft.FuelConsumption != 2765 || response.Fleet.DispatchDraft.SpeedFactor != 1 {
 		t.Fatalf("unexpected prepare draft mapping: %+v", response.Fleet.DispatchDraft)
 	}
 }

@@ -1286,6 +1286,26 @@ try {
         "game fleet dispatch draft returns transportable resource rows",
         gameFleetPrepareBody.fleet?.dispatchDraft ?? {}
       ),
+      check(
+        !selectableFleetShip || Number.isFinite(gameFleetPrepareBody.fleet?.dispatchDraft?.distance) && gameFleetPrepareBody.fleet.dispatchDraft.distance > 0,
+        "game fleet dispatch draft returns legacy flight distance",
+        gameFleetPrepareBody.fleet?.dispatchDraft ?? {}
+      ),
+      check(
+        !selectableFleetShip || Number.isFinite(gameFleetPrepareBody.fleet?.dispatchDraft?.durationSeconds) && gameFleetPrepareBody.fleet.dispatchDraft.durationSeconds > 0,
+        "game fleet dispatch draft returns legacy flight duration",
+        gameFleetPrepareBody.fleet?.dispatchDraft ?? {}
+      ),
+      check(
+        !selectableFleetShip || Number.isFinite(gameFleetPrepareBody.fleet?.dispatchDraft?.maxSpeed) && gameFleetPrepareBody.fleet.dispatchDraft.maxSpeed > 0,
+        "game fleet dispatch draft returns legacy slowest fleet speed",
+        gameFleetPrepareBody.fleet?.dispatchDraft ?? {}
+      ),
+      check(
+        !selectableFleetShip || Number.isFinite(gameFleetPrepareBody.fleet?.dispatchDraft?.fuelConsumption) && gameFleetPrepareBody.fleet.dispatchDraft.fuelConsumption >= 0,
+        "game fleet dispatch draft returns legacy fuel consumption",
+        gameFleetPrepareBody.fleet?.dispatchDraft ?? {}
+      ),
       check(!gameFleet.body.includes(sessionCookiePair), "game fleet response does not echo private cookie"),
       check(gameFleetWithoutCookie.status === 401, "game fleet rejects missing private cookie", { status: gameFleetWithoutCookie.status }),
       check(gameFleetWithoutCookieBody.authenticated === false, "game fleet missing private cookie is unauthenticated", gameFleetWithoutCookieBody),
@@ -1659,6 +1679,7 @@ try {
       check(js.body.includes("legacy-fleet-select-table"), "React bundle contains legacy game fleet ship selection layout"),
       check(js.body.includes("legacy-fleet-dispatch-table"), "React bundle contains legacy game fleet dispatch preview layout"),
       check(js.body.includes("legacy-fleet-dispatch-form") && js.body.includes("remainingresources"), "React bundle contains legacy fleet mission/resource draft layout"),
+      check(js.body.includes("legacy-fleet-flight-math"), "React bundle contains legacy fleet flight math draft layout"),
       check(js.body.includes("legacy-fleet-templates-table"), "React bundle contains legacy game standard fleets layout"),
       check(js.body.includes("legacy-galaxy-table"), "React bundle contains legacy game galaxy layout"),
       check(js.body.includes("target_galaxy") && js.body.includes("target_mission"), "React bundle preserves legacy fleet target prefill fields"),

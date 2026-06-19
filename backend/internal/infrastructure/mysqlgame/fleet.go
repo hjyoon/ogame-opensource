@@ -122,12 +122,17 @@ func (r FleetRepository) GetFleet(ctx context.Context, query appgame.FleetQuery)
 	if err != nil {
 		return domaingame.Fleet{}, err
 	}
+	speedFactor, err := r.loadFleetSpeedFactor(ctx, uniTable)
+	if err != nil {
+		return domaingame.Fleet{}, err
+	}
 	missions, err := r.loadActiveMissions(ctx, queueTable, fleetTable, planetsTable, usersTable, query.PlayerID)
 	if err != nil {
 		return domaingame.Fleet{}, err
 	}
 
 	fleet := domaingame.BuildFleet(overview, counts, research, missions, admiral, acsEnabled)
+	fleet.SpeedFactor = speedFactor
 	fleet.CommanderActive = commanderActive
 	fleet.TemplateLimit = research[domaingame.ResearchComputer] + 1
 	if commanderActive {
@@ -699,6 +704,31 @@ func (r FleetRepository) loadACSEnabled(ctx context.Context, uniTable string) (b
 		return false, err
 	}
 	return acs > 0, nil
+}
+
+func (r FleetRepository) loadFleetSpeedFactor(ctx context.Context, uniTable string) (int, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT fspeed FROM %s LIMIT 1", uniTable))
+	if err != nil {
+		return 1, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return 1, err
+		}
+		return 1, nil
+	}
+	var speedFactor int
+	if err := rows.Scan(&speedFactor); err != nil {
+		return 1, err
+	}
+	if err := rows.Err(); err != nil {
+		return 1, err
+	}
+	if speedFactor < 1 {
+		return 1, nil
+	}
+	return speedFactor, nil
 }
 
 func (r FleetRepository) loadActiveMissions(ctx context.Context, queueTable string, fleetTable string, planetsTable string, usersTable string, playerID int) ([]domaingame.FleetMission, error) {

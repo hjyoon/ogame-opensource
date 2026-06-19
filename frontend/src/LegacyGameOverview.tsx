@@ -335,6 +335,11 @@ type GameFleetDispatchDraft = {
   mission: number;
   speed: number;
   cargo: number;
+  distance: number;
+  durationSeconds: number;
+  maxSpeed: number;
+  fuelConsumption: number;
+  speedFactor: number;
   hasSelection: boolean;
   missionOptions: GameFleetMissionOption[];
   resources: GameFleetResourceLoad[];
@@ -2409,6 +2414,13 @@ function FleetDispatchResourcesTable({ draft, fleet }: { draft: GameFleetDispatc
             {draft.ships.map((ship) => `${ship.name}: ${formatLegacyNumber(ship.count)}`).join(", ")}
             {draft.ships.length > 0 ? <br /> : null}
             {formatLegacyNumber(draft.totalShips)} ships, {formatLegacyNumber(draft.cargo)} capacity from {fleet.currentPlanet.name}
+            <br />
+            <span className="legacy-fleet-flight-math">
+              Distance: <span id="distance">{formatLegacyNumber(draft.distance)}</span>, Duration:{" "}
+              <span id="duration">{formatLegacyDuration(draft.durationSeconds)}</span>, Fuel consumption:{" "}
+              <span id="consumption">{formatLegacyNumber(draft.fuelConsumption)}</span>, Max speed:{" "}
+              <span id="maxspeed">{formatLegacyNumber(draft.maxSpeed)}</span>
+            </span>
           </th>
         </tr>
       </tbody>

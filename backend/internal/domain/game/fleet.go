@@ -27,6 +27,7 @@ type Fleet struct {
 	PlanetSwitcher  []PlanetSummary
 	Slots           FleetSlots
 	Expeditions     ExpeditionSlots
+	SpeedFactor     int
 	Missions        []FleetMission
 	Ships           []FleetShipSelection
 	TemplateLimit   int
@@ -96,6 +97,11 @@ type FleetDispatchDraft struct {
 	Mission         int
 	Speed           int
 	Cargo           int
+	Distance        int
+	DurationSeconds int
+	MaxSpeed        int
+	FuelConsumption int
+	SpeedFactor     int
 	HasSelection    bool
 	MissionOptions  []FleetMissionOption
 	Resources       []FleetResourceLoad
@@ -153,8 +159,9 @@ func BuildFleet(overview Overview, counts FleetCounts, research ResearchLevels, 
 			Used: expeditions,
 			Max:  int(math.Floor(math.Sqrt(float64(research[ResearchExpedition])))),
 		},
-		Missions: normalizedMissions,
-		Ships:    buildFleetShipSelections(counts, research),
+		SpeedFactor: 1,
+		Missions:    normalizedMissions,
+		Ships:       buildFleetShipSelections(counts, research),
 	}
 }
 
@@ -179,6 +186,10 @@ func BuildFleetDispatchDraft(fleet Fleet, input FleetDispatchDraftInput) FleetDi
 	}
 	if target.Position <= 0 {
 		target.Position = fleet.CurrentPlanet.Coordinates.Position
+	}
+	speedFactor := fleet.SpeedFactor
+	if speedFactor <= 0 {
+		speedFactor = 1
 	}
 
 	ships := make([]FleetShipCount, 0, len(fleet.Ships))
@@ -212,6 +223,14 @@ func BuildFleetDispatchDraft(fleet Fleet, input FleetDispatchDraftInput) FleetDi
 		selectedMission = missions[0].ID
 		missions[0].Selected = true
 	}
+	distance := fleetFlightDistance(fleet.CurrentPlanet.Coordinates, target)
+	maxSpeed := fleetDispatchMaxSpeed(fleet.Ships, selectedCounts)
+	durationSeconds := 0
+	fuelConsumption := 0
+	if total > 0 && maxSpeed > 0 {
+		durationSeconds = fleetFlightTime(distance, maxSpeed, speed, speedFactor)
+		fuelConsumption = fleetFlightConsumption(fleet.Ships, selectedCounts, distance, durationSeconds, speedFactor, 0)
+	}
 
 	return FleetDispatchDraft{
 		Ships:           ships,
@@ -221,6 +240,11 @@ func BuildFleetDispatchDraft(fleet Fleet, input FleetDispatchDraftInput) FleetDi
 		Mission:         selectedMission,
 		Speed:           speed,
 		Cargo:           cargo,
+		Distance:        distance,
+		DurationSeconds: durationSeconds,
+		MaxSpeed:        maxSpeed,
+		FuelConsumption: fuelConsumption,
+		SpeedFactor:     speedFactor,
 		HasSelection:    total > 0,
 		MissionOptions:  missions,
 		Resources:       fleetDispatchResources(fleet.CurrentPlanet.Resources),
@@ -300,6 +324,75 @@ func fleetDispatchHoldHours(options []FleetMissionOption) []int {
 		return nil
 	}
 	return []int{0, 1, 2, 4, 8, 16, 32}
+}
+
+func fleetFlightDistance(origin Coordinates, target Coordinates) int {
+	if origin.Galaxy == target.Galaxy {
+		if origin.System == target.System {
+			if origin.Position == target.Position {
+				return 5
+			}
+			return int(math.Abs(float64(target.Position-origin.Position)))*5 + 1000
+		}
+		return int(math.Abs(float64(target.System-origin.System)))*5*19 + 2700
+	}
+	return int(math.Abs(float64(target.Galaxy-origin.Galaxy))) * 20000
+}
+
+func fleetDispatchMaxSpeed(ships []FleetShipSelection, counts FleetCounts) int {
+	maxSpeed := 0
+	for _, ship := range ships {
+		if counts[ship.ID] <= 0 || ship.Speed <= 0 {
+			continue
+		}
+		if maxSpeed == 0 || ship.Speed < maxSpeed {
+			maxSpeed = ship.Speed
+		}
+	}
+	return maxSpeed
+}
+
+func fleetFlightTime(distance int, slowestSpeed int, speed int, speedFactor int) int {
+	if distance <= 0 || slowestSpeed <= 0 {
+		return 0
+	}
+	if speed < 1 {
+		speed = 10
+	}
+	if speed > 10 {
+		speed = 10
+	}
+	if speedFactor <= 0 {
+		speedFactor = 1
+	}
+	seconds := (35000/float64(speed*10)*math.Sqrt(float64(distance*10)/float64(slowestSpeed)) + 10) / float64(speedFactor)
+	return int(math.Round(seconds))
+}
+
+func fleetFlightConsumption(ships []FleetShipSelection, counts FleetCounts, distance int, flightTime int, speedFactor int, holdHours int) int {
+	if distance <= 0 || flightTime <= 0 {
+		return 0
+	}
+	if speedFactor <= 0 {
+		speedFactor = 1
+	}
+	denominator := float64(flightTime*speedFactor - 10)
+	if denominator <= 0 {
+		return 0
+	}
+	total := 0
+	for _, ship := range ships {
+		amount := counts[ship.ID]
+		if amount <= 0 || ship.Speed <= 0 || ship.Consumption <= 0 {
+			continue
+		}
+		fleetSpeed := 35000 / denominator * math.Sqrt(float64(distance*10)/float64(ship.Speed))
+		baseConsumption := float64(amount * ship.Consumption)
+		consumption := baseConsumption * float64(distance) / 35000 * math.Pow(fleetSpeed/10+1, 2)
+		consumption += float64(holdHours*amount*ship.Consumption) / 10
+		total += int(consumption)
+	}
+	return total
 }
 
 func gamePlanetTypeFromPlanet(planetType int) int {

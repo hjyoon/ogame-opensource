@@ -101,6 +101,11 @@ type gameFleetDispatchDraft struct {
 	Mission         int                          `json:"mission"`
 	Speed           int                          `json:"speed"`
 	Cargo           int                          `json:"cargo"`
+	Distance        int                          `json:"distance"`
+	DurationSeconds int                          `json:"durationSeconds"`
+	MaxSpeed        int                          `json:"maxSpeed"`
+	FuelConsumption int                          `json:"fuelConsumption"`
+	SpeedFactor     int                          `json:"speedFactor"`
 	HasSelection    bool                         `json:"hasSelection"`
 	MissionOptions  []gameFleetMissionOption     `json:"missionOptions"`
 	Resources       []gameFleetResourceLoad      `json:"resources"`
@@ -458,6 +463,11 @@ func toGameFleetDispatchDraft(draft *domaingame.FleetDispatchDraft) *gameFleetDi
 		Mission:         draft.Mission,
 		Speed:           draft.Speed,
 		Cargo:           draft.Cargo,
+		Distance:        draft.Distance,
+		DurationSeconds: draft.DurationSeconds,
+		MaxSpeed:        draft.MaxSpeed,
+		FuelConsumption: draft.FuelConsumption,
+		SpeedFactor:     draft.SpeedFactor,
 		HasSelection:    draft.HasSelection,
 		MissionOptions:  missions,
 		Resources:       resources,

@@ -28,6 +28,9 @@ func TestFleetRepositoryReadsLegacyFleetScreen(t *testing.T) {
 	if fleet.Commander != "legor" || fleet.CurrentPlanet.ID != 99 || len(fleet.Missions) != 1 || len(fleet.Ships) != 2 {
 		t.Fatalf("unexpected fleet summary: %+v", fleet)
 	}
+	if fleet.SpeedFactor != 128 {
+		t.Fatalf("expected universe fleet speed factor, got %d", fleet.SpeedFactor)
+	}
 	if !fleet.CommanderActive || fleet.TemplateLimit != 4 || len(fleet.Templates) != 1 || fleet.Templates[0].Name != "raid wing" {
 		t.Fatalf("unexpected fleet template summary: %+v", fleet)
 	}
@@ -51,6 +54,7 @@ func TestFleetRepositorySkipsTemplatesForNonCommanderFleetScreen(t *testing.T) {
 		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{1})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{128})},
 		fakeQueryResult{rows: fakeRowsFromValues()},
 	)}
 	repository := NewFleetRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
@@ -134,6 +138,12 @@ func TestFleetRepositoryReturnsErrors(t *testing.T) {
 			want:    "acs failed",
 		},
 		{
+			name:    "fleet speed factor",
+			prefix:  "ogame_",
+			queryer: &fakeQueryer{results: append(fleetCountsPrefixResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})}, fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})}, fakeQueryResult{rows: fakeRowsFromValues([]any{1})}, fakeQueryResult{err: errors.New("fspeed failed")})},
+			want:    "fspeed failed",
+		},
+		{
 			name:    "templates",
 			prefix:  "ogame_",
 			queryer: &fakeQueryer{results: append(fleetReadPrefixResults(now), fakeQueryResult{rows: fakeRowsFromValues()}, fakeQueryResult{err: errors.New("templates failed")})},
@@ -142,7 +152,7 @@ func TestFleetRepositoryReturnsErrors(t *testing.T) {
 		{
 			name:    "missions",
 			prefix:  "ogame_",
-			queryer: &fakeQueryer{results: append(fleetCountsPrefixResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix()})}, fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})}, fakeQueryResult{rows: fakeRowsFromValues([]any{1})}, fakeQueryResult{err: errors.New("missions failed")})},
+			queryer: &fakeQueryer{results: append(fleetCountsPrefixResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix()})}, fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})}, fakeQueryResult{rows: fakeRowsFromValues([]any{1})}, fakeQueryResult{rows: fakeRowsFromValues([]any{128})}, fakeQueryResult{err: errors.New("missions failed")})},
 			want:    "missions failed",
 		},
 	}
@@ -200,6 +210,30 @@ func TestFleetRepositoryLoadersHandleOptionalAndScanEdges(t *testing.T) {
 	repository = NewFleetRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
 	if _, err := repository.loadACSEnabled(context.Background(), "ogame_uni"); err == nil || !strings.Contains(err.Error(), "expected int") {
 		t.Fatalf("expected ACS scan error, got %v", err)
+	}
+
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}
+	repository = NewFleetRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+	if speedFactor, err := repository.loadFleetSpeedFactor(context.Background(), "ogame_uni"); err != nil || speedFactor != 1 {
+		t.Fatalf("empty fleet speed factor row set should default to 1, speedFactor=%d err=%v", speedFactor, err)
+	}
+
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{0})}}}
+	repository = NewFleetRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+	if speedFactor, err := repository.loadFleetSpeedFactor(context.Background(), "ogame_uni"); err != nil || speedFactor != 1 {
+		t.Fatalf("non-positive fleet speed factor should default to 1, speedFactor=%d err=%v", speedFactor, err)
+	}
+
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("fspeed rows failed"), []any{128})}}}
+	repository = NewFleetRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+	if _, err := repository.loadFleetSpeedFactor(context.Background(), "ogame_uni"); err == nil || !strings.Contains(err.Error(), "fspeed rows failed") {
+		t.Fatalf("expected fleet speed rows error, got %v", err)
+	}
+
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}
+	repository = NewFleetRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+	if _, err := repository.loadFleetSpeedFactor(context.Background(), "ogame_uni"); err == nil || !strings.Contains(err.Error(), "expected int") {
+		t.Fatalf("expected fleet speed scan error, got %v", err)
 	}
 
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("mission rows failed"))}}}
@@ -840,6 +874,7 @@ func fleetReadPrefixResults(now time.Time) []fakeQueryResult {
 		fakeQueryResult{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix()})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix()})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{4})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{128})},
 	)
 }
 

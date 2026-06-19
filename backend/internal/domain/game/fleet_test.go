@@ -94,6 +94,9 @@ func TestBuildFleetDispatchDraftNormalizesLegacySelection(t *testing.T) {
 	if draft.Cargo != 4*fleetShipCargo(FleetSmallCargo) {
 		t.Fatalf("probe cargo and satellites should be excluded from legacy cargo summary, got %d", draft.Cargo)
 	}
+	if draft.Distance != 20000 || draft.MaxSpeed != 5500 || draft.DurationSeconds != 2121 || draft.FuelConsumption != 2765 || draft.SpeedFactor != 1 {
+		t.Fatalf("unexpected legacy flight math: %+v", draft)
+	}
 	if len(draft.MissionOptions) != 3 || !draft.MissionOptions[2].Selected || draft.MissionOptions[2].ID != FleetMissionSpy {
 		t.Fatalf("expected spy to be selected from legacy mission options, got %+v", draft.MissionOptions)
 	}
@@ -104,6 +107,9 @@ func TestBuildFleetDispatchDraftNormalizesLegacySelection(t *testing.T) {
 	empty := BuildFleetDispatchDraft(fleet, FleetDispatchDraftInput{Ships: map[int]int{}, Speed: -1})
 	if empty.HasSelection || empty.Speed != 10 || empty.Target != fleet.CurrentPlanet.Coordinates || empty.TargetType != GamePlanetTypePlanet || empty.Mission != FleetMissionTransport {
 		t.Fatalf("unexpected empty dispatch draft defaults: %+v", empty)
+	}
+	if empty.Distance != 5 || empty.MaxSpeed != 0 || empty.DurationSeconds != 0 || empty.FuelConsumption != 0 {
+		t.Fatalf("empty draft should keep only normalized distance, got %+v", empty)
 	}
 }
 
@@ -159,6 +165,69 @@ func TestBuildFleetDispatchDraftMissionOptionsMatchLegacyEdges(t *testing.T) {
 	})
 	if len(colony.MissionOptions) != 3 || colony.MissionOptions[2].ID != FleetMissionColonize {
 		t.Fatalf("planet target with colony ship should include colonize draft option: %+v", colony.MissionOptions)
+	}
+}
+
+func TestFleetDispatchFlightMathMatchesLegacyFormulas(t *testing.T) {
+	origin := Coordinates{Galaxy: 1, System: 2, Position: 3}
+	if got := fleetFlightDistance(origin, Coordinates{Galaxy: 1, System: 2, Position: 3}); got != 5 {
+		t.Fatalf("unexpected same planet distance: %d", got)
+	}
+	if got := fleetFlightDistance(origin, Coordinates{Galaxy: 1, System: 2, Position: 5}); got != 1010 {
+		t.Fatalf("unexpected same system distance: %d", got)
+	}
+	if got := fleetFlightDistance(origin, Coordinates{Galaxy: 1, System: 4, Position: 9}); got != 2890 {
+		t.Fatalf("unexpected same galaxy distance: %d", got)
+	}
+	if got := fleetFlightDistance(origin, Coordinates{Galaxy: 2, System: 4, Position: 9}); got != 20000 {
+		t.Fatalf("unexpected cross galaxy distance: %d", got)
+	}
+	if got := fleetFlightTime(1010, 5500, 10, 1); got != 484 {
+		t.Fatalf("unexpected legacy flight time: %d", got)
+	}
+	if got := fleetFlightTime(20000, 5500, 10, 128); got != 17 {
+		t.Fatalf("unexpected 128x legacy flight time: %d", got)
+	}
+	ships := []FleetShipSelection{
+		{ID: FleetSmallCargo, Speed: 5500, Consumption: 10},
+		{ID: FleetEspionageProbe, Speed: 110000000, Consumption: 1},
+	}
+	counts := FleetCounts{FleetSmallCargo: 4, FleetEspionageProbe: 2}
+	if got := fleetDispatchMaxSpeed(ships, counts); got != 5500 {
+		t.Fatalf("unexpected slowest fleet speed: %d", got)
+	}
+	if got := fleetFlightConsumption(ships, counts, 20000, 2121, 1, 0); got != 2765 {
+		t.Fatalf("unexpected legacy fuel consumption: %d", got)
+	}
+	if got := fleetFlightConsumption(ships, counts, 20000, 17, 128, 0); got != 2639 {
+		t.Fatalf("unexpected 128x legacy fuel consumption: %d", got)
+	}
+}
+
+func TestFleetDispatchFlightMathDefensiveEdges(t *testing.T) {
+	if hours := fleetDispatchHoldHours([]FleetMissionOption{{ID: FleetMissionACSHold}}); len(hours) != 7 || hours[0] != 0 || hours[6] != 32 {
+		t.Fatalf("unexpected ACS hold hours: %+v", hours)
+	}
+	if got := fleetFlightTime(0, 5500, 10, 1); got != 0 {
+		t.Fatalf("zero distance should not produce a duration: %d", got)
+	}
+	if got := fleetFlightTime(1010, 5500, -1, 0); got != 484 {
+		t.Fatalf("invalid speed and speed factor should default to legacy values, got %d", got)
+	}
+	if got := fleetFlightTime(1010, 5500, 99, 1); got != 484 {
+		t.Fatalf("oversized speed should clamp to 100%%, got %d", got)
+	}
+	if got := fleetFlightConsumption(nil, nil, 0, 10, 1, 0); got != 0 {
+		t.Fatalf("zero distance should not consume fuel: %d", got)
+	}
+	if got := fleetFlightConsumption([]FleetShipSelection{{ID: FleetSmallCargo, Speed: 5500, Consumption: 10}}, FleetCounts{FleetSmallCargo: 1}, 5, 10, 1, 0); got != 0 {
+		t.Fatalf("non-positive denominator should not consume fuel: %d", got)
+	}
+	if got := fleetFlightConsumption([]FleetShipSelection{{ID: FleetSmallCargo}}, FleetCounts{FleetSmallCargo: 1}, 1010, 484, 0, 1); got != 0 {
+		t.Fatalf("ships without speed and consumption should be ignored: %d", got)
+	}
+	if got := gamePlanetTypeFromPlanet(PlanetTypeMoon); got != GamePlanetTypeMoon {
+		t.Fatalf("moon planet type should map to game moon type, got %d", got)
 	}
 }
 
