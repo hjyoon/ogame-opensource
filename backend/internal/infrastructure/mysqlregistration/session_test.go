@@ -55,10 +55,10 @@ func TestSessionStoreClearsLegacyPublicSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(execer.query, "UPDATE `uni1_users` SET session = '' WHERE player_id = ? AND session = ?") {
+	if !strings.Contains(execer.query, "UPDATE `uni1_users` SET session = '' WHERE player_id = ?") {
 		t.Fatalf("expected legacy logout update, got %q", execer.query)
 	}
-	if len(execer.args) != 2 || execer.args[0] != 42 || execer.args[1] != "public123456" {
+	if len(execer.args) != 1 || execer.args[0] != 42 {
 		t.Fatalf("unexpected clear args: %+v", execer.args)
 	}
 }
