@@ -954,7 +954,7 @@ func (r OverviewRepository) loadOverviewEvents(ctx context.Context, queueTable s
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT q.sub_id, q.start, q.end, f.mission, f.owner_id, COALESCE(owner_user.oname, ''), f.start_planet, f.target_planet, %s, COALESCE(o.g, 0), COALESCE(o.s, 0), COALESCE(o.p, 0), COALESCE(t.g, 0), COALESCE(t.s, 0), COALESCE(t.p, 0), COALESCE(t.type, ?), COALESCE(target_user.oname, 'space') FROM %s q JOIN %s f ON f.fleet_id = q.sub_id LEFT JOIN %s o ON o.planet_id = f.start_planet LEFT JOIN %s owner_user ON owner_user.player_id = f.owner_id LEFT JOIN %s t ON t.planet_id = f.target_planet LEFT JOIN %s target_user ON target_user.player_id = t.owner_id WHERE q.type = ? AND f.mission <> ? AND COALESCE(f.union_id, 0) = 0 AND (f.owner_id = ? OR (f.target_planet IN (SELECT planet_id FROM %s WHERE owner_id = ? AND type < ?) AND (f.mission < ? OR f.mission = ?))) ORDER BY q.end ASC, q.prio DESC",
+			"SELECT q.sub_id, q.start, q.end, f.mission, COALESCE(f.ipm_amount, 0), COALESCE(f.ipm_target, 0), f.owner_id, COALESCE(owner_user.oname, ''), f.start_planet, f.target_planet, %s, COALESCE(o.g, 0), COALESCE(o.s, 0), COALESCE(o.p, 0), COALESCE(t.g, 0), COALESCE(t.s, 0), COALESCE(t.p, 0), COALESCE(t.type, ?), COALESCE(target_user.oname, 'space') FROM %s q JOIN %s f ON f.fleet_id = q.sub_id LEFT JOIN %s o ON o.planet_id = f.start_planet LEFT JOIN %s owner_user ON owner_user.player_id = f.owner_id LEFT JOIN %s t ON t.planet_id = f.target_planet LEFT JOIN %s target_user ON target_user.player_id = t.owner_id WHERE q.type = ? AND COALESCE(f.union_id, 0) = 0 AND (f.owner_id = ? OR (f.target_planet IN (SELECT planet_id FROM %s WHERE owner_id = ? AND type < ?) AND (f.mission < ? OR f.mission = ?))) ORDER BY q.end ASC, q.prio DESC",
 			prefixedNumericColumns("f", fleetIDs),
 			queueTable,
 			fleetTable,
@@ -966,7 +966,6 @@ func (r OverviewRepository) loadOverviewEvents(ctx context.Context, queueTable s
 		),
 		legacyPlanetTypeAbandoned,
 		queueTypeFleet,
-		domaingame.FleetMissionMissile,
 		playerID,
 		playerID,
 		planetTypeDebris,
@@ -997,6 +996,8 @@ func scanOverviewEventRow(rows Rows, fleetIDs []int, playerID int) (domaingame.F
 	var departureAt int64
 	var arrivalAt int64
 	var mission int
+	var missileAmount int
+	var missileTargetID int
 	var ownerID int
 	var ownerName string
 	var startPlanetID int
@@ -1007,7 +1008,7 @@ func scanOverviewEventRow(rows Rows, fleetIDs []int, playerID int) (domaingame.F
 	var targetType int
 	var targetOwner string
 
-	dest := []any{&id, &departureAt, &arrivalAt, &mission, &ownerID, &ownerName, &startPlanetID, &targetPlanetID}
+	dest := []any{&id, &departureAt, &arrivalAt, &mission, &missileAmount, &missileTargetID, &ownerID, &ownerName, &startPlanetID, &targetPlanetID}
 	for index := range shipValues {
 		dest = append(dest, &shipValues[index])
 	}
@@ -1033,6 +1034,11 @@ func scanOverviewEventRow(rows Rows, fleetIDs []int, playerID int) (domaingame.F
 	event.OwnerID = ownerID
 	event.OwnerName = ownerName
 	event.Foreign = ownerID != 0 && ownerID != playerID
+	event.MissileAmount = missileAmount
+	event.MissileTargetID = missileTargetID
+	if missileTargetID > 0 {
+		event.MissileTarget = overviewTechnologyName(missileTargetID)
+	}
 	return event, nil
 }
 

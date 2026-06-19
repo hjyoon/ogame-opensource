@@ -503,6 +503,9 @@ type GameFleetMission = {
   stateShort: string;
   ships: { id: number; name: string; count: number }[];
   totalShips: number;
+  missileAmount: number;
+  missileTargetId: number;
+  missileTarget: string;
   origin: Coordinates;
   target: Coordinates;
   targetType: number;
@@ -4989,15 +4992,36 @@ function OverviewEventRows({ events }: { events: GameFleetMission[] }) {
             </th>
             <th colSpan={3}>
               <span className={overviewEventMissionClass(event)}>
-                <a title={overviewEventShipTitle(event)}>{overviewEventFleetLabel(event)}</a>{" "}
-                {overviewEventDirectionText(event)} <a href={galaxyHref(event.origin)}>[{formatCoordinates(event.origin)}]</a>{" "}
-                {overviewEventTargetText(event)} <a href={galaxyHref(event.target)}>[{formatCoordinates(event.target)}]</a>. Mission:{" "}
-                {event.missionName}
+                <OverviewEventBody event={event} />
               </span>
             </th>
           </tr>
         );
       })}
+    </>
+  );
+}
+
+function OverviewEventBody({ event }: { event: GameFleetMission }) {
+  if (overviewEventBaseMission(event.mission) === 20) {
+    return <OverviewMissileEventBody event={event} />;
+  }
+  return (
+    <>
+      <a title={overviewEventShipTitle(event)}>{overviewEventFleetLabel(event)}</a> {overviewEventDirectionText(event)}{" "}
+      <a href={galaxyHref(event.origin)}>[{formatCoordinates(event.origin)}]</a> {overviewEventTargetText(event)}{" "}
+      <a href={galaxyHref(event.target)}>[{formatCoordinates(event.target)}]</a>. Mission: {event.missionName}
+    </>
+  );
+}
+
+function OverviewMissileEventBody({ event }: { event: GameFleetMission }) {
+  return (
+    <>
+      Rocket Attack ({formatLegacyNumber(event.missileAmount)}) from{" "}
+      <a href={galaxyHref(event.origin)}>[{formatCoordinates(event.origin)}]</a> to{" "}
+      <a href={galaxyHref(event.target)}>[{formatCoordinates(event.target)}]</a>
+      {event.missileTargetId > 0 ? ` Main target ${event.missileTarget || `NAME_${event.missileTargetId}`}` : ""}
     </>
   );
 }

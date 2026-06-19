@@ -33,6 +33,7 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 		{rows: fakeRowsFromValues(
 			overviewEventRow(11, 42, "legor", domaingame.FleetMissionTransport, map[int]int{domaingame.FleetSmallCargo: 2}, 100, 200, 3, 4),
 			overviewEventRow(12, 77, "raider", domaingame.FleetMissionAttack, map[int]int{domaingame.FleetLightFighter: 5}, 110, 210, 4, 3),
+			overviewMissileEventRow(13, 77, "raider", 4, domaingame.DefenseHeavyLaser, 120, 220, 4, 3),
 		)},
 	}}
 	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
@@ -69,7 +70,7 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	if overview.UnreadMessages != 4 {
 		t.Fatalf("expected unread messages, got %d", overview.UnreadMessages)
 	}
-	if len(overview.Events) != 2 ||
+	if len(overview.Events) != 3 ||
 		overview.Events[0].MissionName != "Transport" ||
 		overview.Events[0].TotalShips != 2 ||
 		overview.Events[0].StateShort != "(G)" ||
@@ -83,6 +84,14 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 		overview.Events[1].TotalShips != 5 ||
 		overview.Events[1].CanRecall {
 		t.Fatalf("unexpected incoming overview event: %+v", overview.Events[1])
+	}
+	if overview.Events[2].MissionName != "Missile Attack" ||
+		overview.Events[2].MissileAmount != 4 ||
+		overview.Events[2].MissileTargetID != domaingame.DefenseHeavyLaser ||
+		overview.Events[2].MissileTarget != "Heavy Laser" ||
+		!overview.Events[2].Foreign ||
+		overview.Events[2].CanRecall {
+		t.Fatalf("unexpected missile overview event: %+v", overview.Events[2])
 	}
 	if overview.CurrentPlanet.BuildQueue == nil ||
 		overview.CurrentPlanet.BuildQueue.Name != "Metal Mine" ||
@@ -1578,7 +1587,15 @@ func overviewScoreRow(ownerID int, buildings map[int]int, fleet map[int]int, def
 }
 
 func overviewEventRow(id int, ownerID int, ownerName string, mission int, ships map[int]int, start int64, end int64, originPosition int, targetPosition int) []any {
-	row := []any{id, start, end, mission, ownerID, ownerName, 99, 100}
+	return overviewEventRowWithMissile(id, ownerID, ownerName, mission, 0, 0, ships, start, end, originPosition, targetPosition)
+}
+
+func overviewMissileEventRow(id int, ownerID int, ownerName string, amount int, targetID int, start int64, end int64, originPosition int, targetPosition int) []any {
+	return overviewEventRowWithMissile(id, ownerID, ownerName, domaingame.FleetMissionMissile, amount, targetID, nil, start, end, originPosition, targetPosition)
+}
+
+func overviewEventRowWithMissile(id int, ownerID int, ownerName string, mission int, missileAmount int, missileTargetID int, ships map[int]int, start int64, end int64, originPosition int, targetPosition int) []any {
+	row := []any{id, start, end, mission, missileAmount, missileTargetID, ownerID, ownerName, 99, 100}
 	for _, fleetID := range domaingame.FleetIDs() {
 		row = append(row, ships[fleetID])
 	}

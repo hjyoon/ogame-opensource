@@ -57,6 +57,9 @@ type gameFleetMissionResponse struct {
 	StateShort      string                       `json:"stateShort"`
 	Ships           []gameFleetShipCountResponse `json:"ships"`
 	TotalShips      int                          `json:"totalShips"`
+	MissileAmount   int                          `json:"missileAmount"`
+	MissileTargetID int                          `json:"missileTargetId"`
+	MissileTarget   string                       `json:"missileTarget"`
 	Origin          gameCoordinatesResponse      `json:"origin"`
 	Target          gameCoordinatesResponse      `json:"target"`
 	TargetType      int                          `json:"targetType"`
@@ -446,6 +449,9 @@ func toGameFleetMissionResponse(mission domaingame.FleetMission) gameFleetMissio
 		StateShort:      mission.StateShort,
 		Ships:           ships,
 		TotalShips:      mission.TotalShips,
+		MissileAmount:   mission.MissileAmount,
+		MissileTargetID: mission.MissileTargetID,
+		MissileTarget:   mission.MissileTarget,
 		Origin:          toGameCoordinatesResponse(mission.Origin),
 		Target:          toGameCoordinatesResponse(mission.Target),
 		TargetType:      mission.TargetType,

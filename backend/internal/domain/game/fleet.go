@@ -59,6 +59,9 @@ type FleetMission struct {
 	StateShort      string
 	Ships           []FleetShipCount
 	TotalShips      int
+	MissileAmount   int
+	MissileTargetID int
+	MissileTarget   string
 	Origin          Coordinates
 	Target          Coordinates
 	TargetType      int
@@ -210,7 +213,7 @@ func normalizeFleetMissions(missions []FleetMission, acsEnabled bool) []FleetMis
 		mission.StateTitle = title
 		mission.StateShort = short
 		mission.TotalShips = fleetTotalShips(mission.Ships)
-		mission.CanRecall = !mission.Foreign && (mission.Mission < FleetMissionReturnOffset || mission.Mission > FleetMissionOrbitingOffset)
+		mission.CanRecall = !mission.Foreign && mission.Mission != FleetMissionMissile && (mission.Mission < FleetMissionReturnOffset || mission.Mission > FleetMissionOrbitingOffset)
 		mission.CanCreateUnion = !mission.Foreign && acsEnabled && (mission.Mission == FleetMissionAttack || mission.Mission == FleetMissionACSAttackHead)
 		normalized = append(normalized, mission)
 	}

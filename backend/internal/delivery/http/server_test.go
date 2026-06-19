@@ -788,6 +788,14 @@ func TestGameLogoutEndpointReturnsUnavailable(t *testing.T) {
 }
 
 func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
+	missile := domaingame.BuildFleetMission(12, domaingame.FleetMissionMissile, nil, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, domaingame.PlanetTypePlanet, "legor", 120, 220)
+	missile.MissileAmount = 3
+	missile.MissileTargetID = domaingame.DefenseRocketLauncher
+	missile.MissileTarget = "Rocket Launcher"
+	overviewEvents := domaingame.BuildOverviewEvents([]domaingame.FleetMission{
+		domaingame.BuildFleetMission(11, domaingame.FleetMissionTransport, domaingame.FleetCounts{domaingame.FleetSmallCargo: 2}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4}, domaingame.PlanetTypePlanet, "target", 100, 200),
+		missile,
+	})
 	overview := &fakeGameOverview{result: appgame.OverviewResult{
 		Authenticated: true,
 		Overview: domaingame.Overview{
@@ -847,9 +855,7 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 					End:     2000,
 				},
 			}},
-			Events: []domaingame.FleetMission{domaingame.BuildOverviewEvents([]domaingame.FleetMission{
-				domaingame.BuildFleetMission(11, domaingame.FleetMissionTransport, domaingame.FleetCounts{domaingame.FleetSmallCargo: 2}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4}, domaingame.PlanetTypePlanet, "target", 100, 200),
-			})[0]},
+			Events: overviewEvents,
 		},
 	}}
 	server := testServerWithGameOverview(t, overview)
@@ -878,11 +884,17 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 		response.Overview.CurrentPlanet.BuildQueue.End != 2000 {
 		t.Fatalf("unexpected overview mapping: %+v", response.Overview)
 	}
-	if len(response.Overview.Events) != 1 || !response.Overview.Events[0].Own || response.Overview.Events[0].OwnerID != 0 {
+	if len(response.Overview.Events) != 2 || !response.Overview.Events[0].Own || response.Overview.Events[0].OwnerID != 0 {
 		t.Fatalf("unexpected overview event mapping: %+v", response.Overview.Events)
 	}
-	if len(response.Overview.Events) != 1 || response.Overview.Events[0].MissionName != "Transport" || response.Overview.Events[0].TotalShips != 2 {
+	if response.Overview.Events[0].MissionName != "Transport" || response.Overview.Events[0].TotalShips != 2 {
 		t.Fatalf("expected overview event mapping, got %+v", response.Overview.Events)
+	}
+	if response.Overview.Events[1].MissionName != "Missile Attack" ||
+		response.Overview.Events[1].MissileAmount != 3 ||
+		response.Overview.Events[1].MissileTargetID != domaingame.DefenseRocketLauncher ||
+		response.Overview.Events[1].MissileTarget != "Rocket Launcher" {
+		t.Fatalf("expected overview missile event mapping, got %+v", response.Overview.Events[1])
 	}
 	if len(response.Overview.Messages) != 1 || response.Overview.Messages[0] != domaingame.OverviewAdminNotice {
 		t.Fatalf("expected overview messages, got %+v", response.Overview.Messages)

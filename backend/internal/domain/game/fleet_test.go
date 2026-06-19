@@ -65,12 +65,16 @@ func TestBuildOverviewEventsNormalizesMissionRows(t *testing.T) {
 	incoming.OwnerID = 77
 	incoming.OwnerName = "raider"
 	incoming.Foreign = true
+	missile := BuildFleetMission(9, FleetMissionMissile, nil, Coordinates{Galaxy: 1, System: 2, Position: 3}, Coordinates{Galaxy: 1, System: 2, Position: 4}, PlanetTypePlanet, "target", 100, 200)
+	missile.MissileAmount = 3
+	missile.MissileTargetID = DefenseRocketLauncher
 	events := BuildOverviewEvents([]FleetMission{
 		BuildFleetMission(7, FleetMissionTransport+FleetMissionReturnOffset, FleetCounts{FleetSmallCargo: 3}, Coordinates{Galaxy: 1, System: 2, Position: 3}, Coordinates{Galaxy: 1, System: 2, Position: 4}, PlanetTypePlanet, "target", 100, 200),
 		incoming,
+		missile,
 	})
 
-	if len(events) != 2 ||
+	if len(events) != 3 ||
 		events[0].MissionName != "Transport" ||
 		events[0].StateShort != "(F)" ||
 		events[0].CanRecall ||
@@ -85,6 +89,12 @@ func TestBuildOverviewEventsNormalizesMissionRows(t *testing.T) {
 		events[1].CanCreateUnion ||
 		events[1].TotalShips != 5 {
 		t.Fatalf("unexpected incoming overview event normalization: %+v", events[1])
+	}
+	if events[2].MissionName != "Missile Attack" ||
+		events[2].MissileAmount != 3 ||
+		events[2].CanRecall ||
+		events[2].CanCreateUnion {
+		t.Fatalf("unexpected missile overview event normalization: %+v", events[2])
 	}
 }
 
