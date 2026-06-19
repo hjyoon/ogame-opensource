@@ -95,6 +95,12 @@ export type GameNotesStatus = {
   notes?: GameNotes;
 };
 
+export type GameMessagesStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  messages?: GameMessages;
+};
+
 export type GameLogoutStatus = {
   loggedOut: boolean;
   redirectTo: string;
@@ -444,6 +450,36 @@ type GameNote = {
   date: number;
 };
 
+type GameMessages = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  action: "inbox" | "compose";
+  rows: GameMessage[];
+  compose?: GameMessageCompose;
+};
+
+type GameMessage = {
+  id: number;
+  type: number;
+  from: string;
+  subject: string;
+  text: string;
+  date: number;
+  unread: boolean;
+  reportable: boolean;
+};
+
+type GameMessageCompose = {
+  target: {
+    playerId: number;
+    name: string;
+    coordinates: Coordinates;
+  };
+  subject: string;
+  maxChars: number;
+};
+
 type GameFleetShip = {
   id: number;
   name: string;
@@ -610,6 +646,8 @@ type LegacyGameOverviewProps = {
   onNotesCreate: (draft: GameNoteDraft) => void;
   onNotesUpdate: (noteID: number, draft: GameNoteDraft) => void;
   onNotesDelete: (noteIDs: number[]) => void;
+  messagesStatus: GameMessagesStatus | null;
+  messagesError: string | null;
   logoutStatus: GameLogoutStatus | null;
   logoutError: string | null;
 };
@@ -705,6 +743,8 @@ export function LegacyGameOverview({
   onNotesCreate,
   onNotesUpdate,
   onNotesDelete,
+  messagesStatus,
+  messagesError,
   logoutStatus,
   logoutError
 }: LegacyGameOverviewProps) {
@@ -742,6 +782,9 @@ export function LegacyGameOverview({
   const buddyIssue = buddyStatus && !buddyStatus.authenticated ? buddyStatus.issues[0]?.message ?? "Session is invalid." : null;
   const notes = notesStatus?.authenticated ? notesStatus.notes : undefined;
   const notesIssue = notesStatus && !notesStatus.authenticated ? notesStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const messages = messagesStatus?.authenticated ? messagesStatus.messages : undefined;
+  const messagesIssue =
+    messagesStatus && !messagesStatus.authenticated ? messagesStatus.issues[0]?.message ?? "Session is invalid." : null;
   const hasHeader = route.key !== "notes" && route.key !== "galaxy";
   const hasMenu = route.key !== "notes";
   const contentClassName =
@@ -812,6 +855,8 @@ export function LegacyGameOverview({
         {route.key === "search" && !searchError && searchIssue ? <LegacyMessage tone="error" text={searchIssue} /> : null}
         {route.key === "buddy" && buddyError ? <LegacyMessage tone="error" text={buddyError} /> : null}
         {route.key === "buddy" && !buddyError && buddyIssue ? <LegacyMessage tone="error" text={buddyIssue} /> : null}
+        {route.key === "messages" && messagesError ? <LegacyMessage tone="error" text={messagesError} /> : null}
+        {route.key === "messages" && !messagesError && messagesIssue ? <LegacyMessage tone="error" text={messagesIssue} /> : null}
         {route.key === "notes" && notesError ? <LegacyMessage tone="error" text={notesError} /> : null}
         {route.key === "notes" && !notesError && notesIssue ? <LegacyMessage tone="error" text={notesIssue} /> : null}
         {overview && route.key === "overview" ? <OverviewTable overview={overview} /> : null}
@@ -877,6 +922,10 @@ export function LegacyGameOverview({
         {buddy && route.key === "buddy" ? (
           <BuddyTable buddy={buddy} onAction={onBuddyAction} onRequest={onBuddyRequest} pending={buddyPending} />
         ) : null}
+        {overview && route.key === "messages" && !messages && !messagesError && !messagesIssue ? (
+          <LegacyMessage tone="neutral" text="Loading messages..." />
+        ) : null}
+        {messages && route.key === "messages" ? <MessagesTable messages={messages} /> : null}
         {overview && route.key === "notes" && !notes && !notesError && !notesIssue ? (
           <LegacyMessage tone="neutral" text="Loading notes..." />
         ) : null}
@@ -903,6 +952,7 @@ export function LegacyGameOverview({
         route.key !== "statistics" &&
         route.key !== "search" &&
         route.key !== "buddy" &&
+        route.key !== "messages" &&
         route.key !== "notes" &&
         route.key !== "logout" ? (
           <MigrationPendingGameTable route={route} />
@@ -2740,6 +2790,152 @@ function buddyGalaxyURL(coordinates: Coordinates): string {
   return gameRouteURL("/game/galaxy", galaxyTargetSearch(coordinates));
 }
 
+function MessagesTable({ messages }: { messages: GameMessages }) {
+  if (messages.action === "compose" && messages.compose) {
+    return <MessageComposeTable compose={messages.compose} />;
+  }
+  return (
+    <form
+      action={gameRouteURL("/game/messages", window.location.search)}
+      method="post"
+      onSubmit={(event) => event.preventDefault()}
+    >
+      <table className="legacy-overview-table legacy-messages-table" width={519}>
+        <tbody>
+          <tr>
+            <td className="legacy-c" colSpan={4}>
+              Messages
+            </td>
+          </tr>
+          <tr>
+            <td className="legacy-c" width={20}>
+              Action
+            </td>
+            <td className="legacy-c" width={150}>
+              Date
+            </td>
+            <td className="legacy-c" width={129}>
+              From
+            </td>
+            <td className="legacy-c" width={220}>
+              Subject
+            </td>
+          </tr>
+          {messages.rows.length > 0 ? (
+            messages.rows.map((message) => (
+              <React.Fragment key={message.id}>
+                <tr data-message-row={message.id}>
+                  <th>
+                    <input name={`delmes[${message.id}]`} type="checkbox" value="y" />
+                  </th>
+                  <th className={message.unread ? "legacy-message-unread" : undefined}>{formatLegacyMessageDate(message.date)}</th>
+                  <th>
+                    <LegacyMessageHTML html={message.from} />
+                  </th>
+                  <th>
+                    <LegacyMessageHTML html={message.subject} />
+                  </th>
+                </tr>
+                {message.text !== "" ? (
+                  <tr>
+                    <th className="legacy-message-text" colSpan={4}>
+                      <LegacyMessageHTML html={message.text} />
+                    </th>
+                  </tr>
+                ) : null}
+                {message.reportable ? (
+                  <tr>
+                    <th colSpan={4}>
+                      <input name={`sneak${message.id}`} type="checkbox" />
+                      <input type="submit" value="Report" />
+                    </th>
+                  </tr>
+                ) : null}
+              </React.Fragment>
+            ))
+          ) : (
+            <tr>
+              <th colSpan={4}>There are no messages.</th>
+            </tr>
+          )}
+          <tr>
+            <th colSpan={4}>
+              <input type="submit" value="Delete" />
+              <input type="submit" value="Delete all messages" />
+            </th>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  );
+}
+
+function MessageComposeTable({ compose }: { compose: GameMessageCompose }) {
+  const targetText = `${compose.target.name} [${formatCoordinates(compose.target.coordinates)}]`;
+  return (
+    <form
+      action={gameRouteURL("/game/messages", window.location.search)}
+      method="post"
+      onSubmit={(event) => event.preventDefault()}
+    >
+      <table className="legacy-overview-table legacy-messages-compose-table" width={519}>
+        <tbody>
+          <tr>
+            <td className="legacy-c" colSpan={2}>
+              Write message
+            </td>
+          </tr>
+          <tr>
+            <th>Recipient</th>
+            <th>
+              <input name="to" readOnly size={40} type="text" value={targetText} />
+            </th>
+          </tr>
+          <tr>
+            <th>Subject</th>
+            <th>
+              <input defaultValue={compose.subject} maxLength={40} name="betreff" size={40} type="text" />
+            </th>
+          </tr>
+          <tr>
+            <th colSpan={2}>
+              <textarea cols={40} maxLength={compose.maxChars} name="text" rows={10} />
+            </th>
+          </tr>
+          <tr>
+            <th colSpan={2}>
+              <input name="messageziel" type="hidden" value={compose.target.playerId} />
+              <input type="submit" value="Send" />
+            </th>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  );
+}
+
+function LegacyMessageHTML({ html }: { html: string }) {
+  return <span dangerouslySetInnerHTML={{ __html: sanitizeLegacyMessageHTML(html) }} />;
+}
+
+function sanitizeLegacyMessageHTML(value: string): string {
+  if (typeof DOMParser === "undefined") {
+    return value;
+  }
+  const doc = new DOMParser().parseFromString(`<div>${value}</div>`, "text/html");
+  doc.querySelectorAll("script,style,iframe,object,embed,meta,link").forEach((node) => node.remove());
+  doc.body.querySelectorAll("*").forEach((element) => {
+    for (const attribute of Array.from(element.attributes)) {
+      const name = attribute.name.toLowerCase();
+      const rawValue = attribute.value.trim().toLowerCase();
+      if (name.startsWith("on") || ((name === "href" || name === "src" || name === "xlink:href") && rawValue.startsWith("javascript:"))) {
+        element.removeAttribute(attribute.name);
+      }
+    }
+  });
+  return doc.body.innerHTML;
+}
+
 function NotesTable({
   notes,
   onCreate,
@@ -3699,6 +3895,13 @@ function formatLegacyDateTime(seconds: number): string {
     2,
     "0"
   )}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
+}
+
+function formatLegacyMessageDate(seconds: number): string {
+  const date = new Date(seconds * 1000);
+  return `${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")} ${String(
+    date.getUTCHours()
+  ).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
 }
 
 function formatLegacyStatisticsDateTime(seconds: number): string {

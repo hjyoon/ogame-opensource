@@ -8,6 +8,7 @@ import {
   type GameFleetStatus,
   type GameGalaxyStatus,
   type GameLogoutStatus,
+  type GameMessagesStatus,
   type GameNoteDraft,
   type GameNotesStatus,
   type GameOverviewStatus,
@@ -238,6 +239,8 @@ function App() {
   const [gameNotes, setGameNotes] = useState<GameNotesStatus | null>(null);
   const [gameNotesError, setGameNotesError] = useState<string | null>(null);
   const [gameNotesPending, setGameNotesPending] = useState(false);
+  const [gameMessages, setGameMessages] = useState<GameMessagesStatus | null>(null);
+  const [gameMessagesError, setGameMessagesError] = useState<string | null>(null);
   const [gameLogout, setGameLogout] = useState<GameLogoutStatus | null>(null);
   const [gameLogoutError, setGameLogoutError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
@@ -1012,6 +1015,30 @@ function App() {
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "messages" || publicSession === "") {
+      setGameMessages(null);
+      setGameMessagesError(null);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const messagesRequest = new URLSearchParams({ session: publicSession });
+    for (const key of ["cp", "messageziel"]) {
+      const value = currentSearch.get(key);
+      if (value) {
+        messagesRequest.set(key, value);
+      }
+    }
+    fetch(`/api/game/messages?${messagesRequest.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameMessagesStatus>)
+      .then((payload) => {
+        setGameMessages(payload);
+        setGameMessagesError(null);
+      })
+      .catch((err: unknown) => setGameMessagesError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "notes" || publicSession === "") {
       setGameNotes(null);
       setGameNotesError(null);
@@ -1184,6 +1211,8 @@ function App() {
         galaxyStatus={gameGalaxy}
         logoutError={gameLogoutError}
         logoutStatus={gameLogout}
+        messagesError={gameMessagesError}
+        messagesStatus={gameMessages}
         notesError={gameNotesError}
         notesPending={gameNotesPending}
         notesStatus={gameNotes}

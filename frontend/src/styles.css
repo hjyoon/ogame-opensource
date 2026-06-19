@@ -844,20 +844,27 @@ dd {
 }
 
 .legacy-game-shell .legacy-notes-table,
-.legacy-game-shell .legacy-notes-form-table {
+.legacy-game-shell .legacy-notes-form-table,
+.legacy-game-shell .legacy-messages-table,
+.legacy-game-shell .legacy-messages-compose-table {
   border-collapse: separate;
   border-spacing: 2px;
 }
 
 .legacy-game-shell .legacy-notes-table th,
-.legacy-game-shell .legacy-notes-form-table th {
+.legacy-game-shell .legacy-notes-form-table th,
+.legacy-game-shell .legacy-messages-table th,
+.legacy-game-shell .legacy-messages-compose-table th {
   font-weight: bold;
 }
 
 .legacy-game-shell .legacy-notes-form-table input,
 .legacy-game-shell .legacy-notes-form-table select,
 .legacy-game-shell .legacy-notes-form-table textarea,
-.legacy-game-shell .legacy-notes-table input {
+.legacy-game-shell .legacy-notes-table input,
+.legacy-game-shell .legacy-messages-table input,
+.legacy-game-shell .legacy-messages-compose-table input,
+.legacy-game-shell .legacy-messages-compose-table textarea {
   background-color: #344566;
   border: 1px #415680 solid;
   color: #e6ebfb;
@@ -867,6 +874,14 @@ dd {
 
 .legacy-game-shell .legacy-notes-form-table textarea {
   width: 100%;
+}
+
+.legacy-game-shell .legacy-message-text {
+  text-align: left;
+}
+
+.legacy-game-shell .legacy-message-unread {
+  color: #ffffff;
 }
 
 .legacy-game-shell .legacy-statistics-head-table,

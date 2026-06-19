@@ -3124,6 +3124,155 @@ func TestGameBuddyEndpointReturnsUnavailable(t *testing.T) {
 	}
 }
 
+func TestGameMessagesEndpointReturnsInbox(t *testing.T) {
+	messages := &fakeGameMessages{result: appgame.MessagesResult{
+		Authenticated: true,
+		Messages: domaingame.Messages{
+			Commander: "legor",
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:          99,
+				Name:        "Arakis",
+				Type:        domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			},
+			PlanetSwitcher: []domaingame.PlanetSummary{{
+				ID:          99,
+				Name:        "Arakis",
+				Type:        domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+				Current:     true,
+			}},
+			Action: domaingame.MessagesActionInbox,
+			Rows: []domaingame.Message{{
+				ID:         11,
+				Type:       domaingame.MessageTypePM,
+				From:       "Sender",
+				Subject:    "Subject",
+				Text:       "<b>Body</b>",
+				Date:       1700000000,
+				Unread:     true,
+				Reportable: true,
+			}},
+		},
+	}}
+	server := testServerWithGameMessages(t, messages)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/messages?session=public&cp=99&messageziel=77", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameMessagesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Messages == nil || response.Messages.Commander != "legor" || len(response.Messages.Rows) != 1 {
+		t.Fatalf("expected authenticated messages response, got %+v", response)
+	}
+	row := response.Messages.Rows[0]
+	if row.Subject != "Subject" || row.Text != "<b>Body</b>" || !row.Reportable {
+		t.Fatalf("unexpected message row mapping: %+v", row)
+	}
+	if messages.command.PublicSession != "public" || messages.command.PlanetID != 99 || messages.command.TargetPlayerID != 77 || messages.command.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected messages command: %+v", messages.command)
+	}
+	if messages.command.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("expected private session cookie to be passed, got %+v", messages.command.PrivateSessions)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("private")) {
+		t.Fatalf("game messages response must not echo private session: %s", rec.Body.String())
+	}
+}
+
+func TestGameMessagesEndpointReturnsComposeTarget(t *testing.T) {
+	messages := &fakeGameMessages{result: appgame.MessagesResult{
+		Authenticated: true,
+		Messages: domaingame.Messages{
+			Action: domaingame.MessagesActionCompose,
+			Compose: &domaingame.MessageCompose{
+				Target:   domaingame.MessageTarget{PlayerID: 77, Name: "Target", Coordinates: domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4}},
+				Subject:  "no subject",
+				MaxChars: domaingame.MessageComposeMaxChars,
+			},
+		},
+	}}
+	server := testServerWithGameMessages(t, messages)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/messages?session=public&messageziel=77", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameMessagesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Messages == nil || response.Messages.Action != "compose" || response.Messages.Compose == nil || response.Messages.Compose.Target.PlayerID != 77 {
+		t.Fatalf("unexpected compose messages response: %+v", response)
+	}
+}
+
+func TestGameMessagesEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
+	messages := &fakeGameMessages{result: appgame.MessagesResult{
+		Authenticated: false,
+		Issues:        []domainpublicsite.SessionIssue{{Code: "missing", Message: "missing session"}},
+	}}
+	server := testServerWithGameMessages(t, messages)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/messages?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var response gameMessagesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Authenticated || response.Messages != nil || len(response.Issues) != 1 {
+		t.Fatalf("expected invalid messages session response, got %+v", response)
+	}
+}
+
+func TestGameMessagesEndpointRejectsInvalidQuery(t *testing.T) {
+	for _, target := range []string{
+		"/api/game/messages?session=public&cp=abc",
+		"/api/game/messages?session=public&messageziel=bad",
+	} {
+		server := testServerWithGameMessages(t, &fakeGameMessages{})
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s: expected 400, got %d", target, rec.Code)
+		}
+	}
+}
+
+func TestGameMessagesEndpointReturnsUnavailable(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/messages?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game messages use case to return 503, got %d", rec.Code)
+	}
+
+	server = testServerWithGameMessages(t, &fakeGameMessages{err: errors.New("messages failed")})
+	req = httptest.NewRequest(http.MethodGet, "/api/game/messages?session=public", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game messages error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestGameNotesEndpointReturnsNotes(t *testing.T) {
 	notes := &fakeGameNotes{result: appgame.NotesResult{
 		Authenticated: true,
@@ -3906,6 +4055,14 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game notes method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "/api/game/messages", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("expected game messages method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
+
 	req = httptest.NewRequest(http.MethodPut, "/api/game/resources", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -4260,6 +4417,19 @@ func testServerWithGameNotes(t *testing.T, notes GameNotesUseCase) http.Handler 
 	})
 }
 
+func testServerWithGameMessages(t *testing.T, messages GameMessagesUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		GameMessages:       messages,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
 func testServerWithCustomDrafts(t *testing.T, registrationDrafts RegistrationDraftUseCase, loginDrafts LoginDraftUseCase) http.Handler {
 	t.Helper()
 	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
@@ -4603,6 +4773,17 @@ func (f *fakeGameNotes) UpdateNote(_ context.Context, command appgame.NotesMutat
 
 func (f *fakeGameNotes) DeleteNotes(_ context.Context, command appgame.NotesMutationCommand) (appgame.NotesResult, error) {
 	f.deleteCommand = command
+	return f.result, f.err
+}
+
+type fakeGameMessages struct {
+	result  appgame.MessagesResult
+	err     error
+	command appgame.MessagesCommand
+}
+
+func (f *fakeGameMessages) GetMessages(_ context.Context, command appgame.MessagesCommand) (appgame.MessagesResult, error) {
+	f.command = command
 	return f.result, f.err
 }
 
