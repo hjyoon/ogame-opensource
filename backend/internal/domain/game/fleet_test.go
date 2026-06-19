@@ -268,6 +268,32 @@ func TestBuildFleetDispatchValidationReturnsLegacyCommonIssues(t *testing.T) {
 			input: FleetDispatchValidationInput{Ships: map[int]int{FleetBomber: 1}, Target: Coordinates{Galaxy: 2, System: 2, Position: 4}, TargetType: GamePlanetTypePlanet, Mission: FleetMissionTransport, Speed: 10},
 			want:  FleetIssueNoCargo,
 		},
+		{
+			name: "expedition limit",
+			fleet: BuildFleet(Overview{
+				CurrentPlanet: PlanetOverview{Type: PlanetTypePlanet, Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 3}, Resources: Resources{Deuterium: 100000}},
+			}, FleetCounts{FleetSmallCargo: 1}, ResearchLevels{ResearchComputer: 3, ResearchCombustionDrive: 1, ResearchExpedition: 1}, []FleetMission{
+				BuildFleetMission(7, FleetMissionExpedition, FleetCounts{FleetSmallCargo: 1}, Coordinates{}, Coordinates{}, PlanetTypePlanet, "", 0, 0),
+			}, false, false),
+			input: FleetDispatchValidationInput{Ships: map[int]int{FleetSmallCargo: 1}, Target: Coordinates{Galaxy: 1, System: 2, Position: GalaxyFarSpace}, TargetType: GamePlanetTypePlanet, Mission: FleetMissionExpedition, Speed: 10},
+			want:  FleetIssueExpLimit,
+		},
+		{
+			name: "expedition probe only",
+			fleet: BuildFleet(Overview{
+				CurrentPlanet: PlanetOverview{Type: PlanetTypePlanet, Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 3}, Resources: Resources{Deuterium: 100000}},
+			}, FleetCounts{FleetEspionageProbe: 1}, ResearchLevels{ResearchCombustionDrive: 1, ResearchExpedition: 4}, nil, false, false),
+			input: FleetDispatchValidationInput{Ships: map[int]int{FleetEspionageProbe: 1}, Target: Coordinates{Galaxy: 1, System: 2, Position: GalaxyFarSpace}, TargetType: GamePlanetTypePlanet, Mission: FleetMissionExpedition, Speed: 10},
+			want:  FleetIssueExpRequired,
+		},
+		{
+			name: "expedition invalid far space target",
+			fleet: BuildFleet(Overview{
+				CurrentPlanet: PlanetOverview{Type: PlanetTypePlanet, Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 3}, Resources: Resources{Deuterium: 100000}},
+			}, FleetCounts{FleetSmallCargo: 1}, ResearchLevels{ResearchCombustionDrive: 1, ResearchExpedition: 4}, nil, false, false),
+			input: FleetDispatchValidationInput{Ships: map[int]int{FleetSmallCargo: 1}, Target: Coordinates{Galaxy: 1, System: 2, Position: 17}, TargetType: GamePlanetTypePlanet, Mission: FleetMissionExpedition, Speed: 10},
+			want:  FleetIssueInvalidTarget,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

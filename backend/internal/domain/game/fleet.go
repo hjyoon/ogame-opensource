@@ -151,6 +151,8 @@ const (
 	FleetIssueInvalidTarget = "invalid_target"
 	FleetIssueNoFuel        = "no_fuel"
 	FleetIssueNoCargo       = "no_cargo"
+	FleetIssueExpLimit      = "expedition_limit"
+	FleetIssueExpRequired   = "expedition_required"
 	FleetIssueFrozen        = "frozen"
 	FleetIssueLaunchRace    = "launch_race"
 )
@@ -294,7 +296,8 @@ func BuildFleetDispatchValidation(fleet Fleet, input FleetDispatchValidationInpu
 		Mission:    input.Mission,
 		Speed:      input.Speed,
 	})
-	fleetFuel, _ := fleetFlightConsumptionParts(fleet.Ships, fleetCountsFromShipCounts(draft.Ships), draft.Distance, draft.DurationSeconds, draft.SpeedFactor, 0)
+	selectedCounts := fleetCountsFromShipCounts(draft.Ships)
+	fleetFuel, _ := fleetFlightConsumptionParts(fleet.Ships, selectedCounts, draft.Distance, draft.DurationSeconds, draft.SpeedFactor, 0)
 	cargoSpace := draft.Cargo - fleetFuel
 	resourceRows, remainingCargo := fleetDispatchResourcePlan(fleet.CurrentPlanet.Resources, input.Resources, cargoSpace)
 	draft.Resources = resourceRows
@@ -311,6 +314,17 @@ func BuildFleetDispatchValidation(fleet Fleet, input FleetDispatchValidationInpu
 	}
 	if input.Mission <= 0 || !missionOptionExists(draft.MissionOptions, input.Mission) {
 		return draft, FleetActionIssueFor(FleetIssueInvalidOrder)
+	}
+	if input.Mission == FleetMissionExpedition {
+		if draft.TargetType != GamePlanetTypePlanet || draft.Target.Position != GalaxyFarSpace {
+			return draft, FleetActionIssueFor(FleetIssueInvalidTarget)
+		}
+		if fleet.Expeditions.Max <= 0 || fleet.Expeditions.Used >= fleet.Expeditions.Max {
+			return draft, FleetActionIssueFor(FleetIssueExpLimit)
+		}
+		if !fleetHasMannedShips(selectedCounts) {
+			return draft, FleetActionIssueFor(FleetIssueExpRequired)
+		}
 	}
 	if int(fleet.CurrentPlanet.Resources.Deuterium) < draft.FuelConsumption {
 		return draft, FleetActionIssueFor(FleetIssueNoFuel)
@@ -331,6 +345,8 @@ func FleetActionIssueFor(code string) *FleetActionIssue {
 		FleetIssueInvalidTarget: "Target not found.",
 		FleetIssueNoFuel:        "Not enough deuterium.",
 		FleetIssueNoCargo:       "Not enough cargo capacity.",
+		FleetIssueExpLimit:      "Maximum number of expeditions has been reached.",
+		FleetIssueExpRequired:   "An expedition needs at least one crewed ship.",
 		FleetIssueFrozen:        "The universe is currently frozen.",
 		FleetIssueLaunchRace:    "Selected ships or resources are no longer available.",
 	}[code]
@@ -520,6 +536,15 @@ func fleetCountsFromShipCounts(ships []FleetShipCount) FleetCounts {
 		counts[ship.ID] = ship.Count
 	}
 	return counts
+}
+
+func fleetHasMannedShips(counts FleetCounts) bool {
+	for id, count := range counts {
+		if count > 0 && id != FleetEspionageProbe {
+			return true
+		}
+	}
+	return false
 }
 
 func gamePlanetTypeFromPlanet(planetType int) int {
