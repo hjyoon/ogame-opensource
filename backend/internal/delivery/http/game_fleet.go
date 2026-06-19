@@ -48,6 +48,9 @@ type gameExpeditionSlotsResponse struct {
 
 type gameFleetMissionResponse struct {
 	ID              int                          `json:"id"`
+	OwnerID         int                          `json:"ownerId"`
+	OwnerName       string                       `json:"ownerName"`
+	Own             bool                         `json:"own"`
 	Mission         int                          `json:"mission"`
 	MissionName     string                       `json:"missionName"`
 	StateTitle      string                       `json:"stateTitle"`
@@ -434,6 +437,9 @@ func toGameFleetMissionResponse(mission domaingame.FleetMission) gameFleetMissio
 	}
 	return gameFleetMissionResponse{
 		ID:              mission.ID,
+		OwnerID:         mission.OwnerID,
+		OwnerName:       mission.OwnerName,
+		Own:             !mission.Foreign,
 		Mission:         mission.Mission,
 		MissionName:     mission.MissionName,
 		StateTitle:      mission.StateTitle,

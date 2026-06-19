@@ -30,7 +30,10 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 		)},
 		{rows: fakeRowsFromValues([]any{2})},
 		{rows: fakeRowsFromValues([]any{4})},
-		{rows: fakeRowsFromValues(fleetMissionRow(domaingame.FleetMissionTransport, map[int]int{domaingame.FleetSmallCargo: 2}, 100, 200))},
+		{rows: fakeRowsFromValues(
+			overviewEventRow(11, 42, "legor", domaingame.FleetMissionTransport, map[int]int{domaingame.FleetSmallCargo: 2}, 100, 200, 3, 4),
+			overviewEventRow(12, 77, "raider", domaingame.FleetMissionAttack, map[int]int{domaingame.FleetLightFighter: 5}, 110, 210, 4, 3),
+		)},
 	}}
 	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
 	repository.includeUnread = true
@@ -66,11 +69,20 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	if overview.UnreadMessages != 4 {
 		t.Fatalf("expected unread messages, got %d", overview.UnreadMessages)
 	}
-	if len(overview.Events) != 1 ||
+	if len(overview.Events) != 2 ||
 		overview.Events[0].MissionName != "Transport" ||
 		overview.Events[0].TotalShips != 2 ||
-		overview.Events[0].StateShort != "(G)" {
+		overview.Events[0].StateShort != "(G)" ||
+		overview.Events[0].Foreign {
 		t.Fatalf("unexpected overview events: %+v", overview.Events)
+	}
+	if overview.Events[1].OwnerID != 77 ||
+		overview.Events[1].OwnerName != "raider" ||
+		!overview.Events[1].Foreign ||
+		overview.Events[1].MissionName != "Attack" ||
+		overview.Events[1].TotalShips != 5 ||
+		overview.Events[1].CanRecall {
+		t.Fatalf("unexpected incoming overview event: %+v", overview.Events[1])
 	}
 	if overview.CurrentPlanet.BuildQueue == nil ||
 		overview.CurrentPlanet.BuildQueue.Name != "Metal Mine" ||
@@ -98,6 +110,9 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	}
 	if !strings.Contains(queryer.calls[6].sql, "FROM `ogame_queue`") || !strings.Contains(queryer.calls[6].sql, "JOIN `ogame_fleet`") {
 		t.Fatalf("expected overview event query, got %+v", queryer.calls[6])
+	}
+	if !strings.Contains(queryer.calls[6].sql, "owner_id = ? AND type < ?") || !strings.Contains(queryer.calls[6].sql, "COALESCE(f.union_id, 0) = 0") {
+		t.Fatalf("expected incoming non-ACS event filter, got %+v", queryer.calls[6])
 	}
 	if !strings.Contains(queryer.calls[0].sql, "`ogame_users`") || !strings.Contains(queryer.calls[1].sql, "`ogame_planets`") {
 		t.Fatalf("expected prefixed table names, got %+v", queryer.calls)
@@ -1461,11 +1476,33 @@ func TestOverviewRepositoryAttachBuildQueuesEdges(t *testing.T) {
 }
 
 func TestOverviewRepositoryLoadOverviewEventsEdges(t *testing.T) {
-	queryer := &fakeQueryer{results: []fakeQueryResult{{err: errors.New("overview event query failed")}}}
-	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
-
-	if _, err := repository.loadOverviewEvents(context.Background(), "`ogame_queue`", "`ogame_fleet`", "`ogame_planets`", "`ogame_users`", 42); err == nil || !strings.Contains(err.Error(), "overview event query failed") {
-		t.Fatalf("expected overview event query error, got %v", err)
+	for _, tt := range []struct {
+		name    string
+		queryer *fakeQueryer
+		want    string
+	}{
+		{
+			name:    "query error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{err: errors.New("overview event query failed")}}},
+			want:    "overview event query failed",
+		},
+		{
+			name:    "scan error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}},
+			want:    "unexpected scan destination count",
+		},
+		{
+			name:    "rows error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("overview event rows failed"), overviewEventRow(11, 42, "legor", domaingame.FleetMissionTransport, nil, 100, 200, 3, 4))}}},
+			want:    "overview event rows failed",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewOverviewRepositoryWithQueryer(tt.queryer, "ogame_")
+			if _, err := repository.loadOverviewEvents(context.Background(), "`ogame_queue`", "`ogame_fleet`", "`ogame_planets`", "`ogame_users`", 42); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
 	}
 }
 
@@ -1537,6 +1574,15 @@ func overviewScoreRow(ownerID int, buildings map[int]int, fleet map[int]int, def
 	for _, id := range domaingame.DefenseIDs() {
 		row = append(row, defense[id])
 	}
+	return row
+}
+
+func overviewEventRow(id int, ownerID int, ownerName string, mission int, ships map[int]int, start int64, end int64, originPosition int, targetPosition int) []any {
+	row := []any{id, start, end, mission, ownerID, ownerName, 99, 100}
+	for _, fleetID := range domaingame.FleetIDs() {
+		row = append(row, ships[fleetID])
+	}
+	row = append(row, 1, 2, originPosition, 1, 2, targetPosition, domaingame.PlanetTypePlanet, "target")
 	return row
 }
 

@@ -950,11 +950,90 @@ func (r OverviewRepository) loadUnreadMessages(ctx context.Context, messagesTabl
 }
 
 func (r OverviewRepository) loadOverviewEvents(ctx context.Context, queueTable string, fleetTable string, planetsTable string, usersTable string, playerID int) ([]domaingame.FleetMission, error) {
-	missions, err := (FleetRepository{queryer: r.queryer, prefix: r.prefix, now: r.now}).loadActiveMissions(ctx, queueTable, fleetTable, planetsTable, usersTable, playerID)
+	fleetIDs := domaingame.FleetIDs()
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT q.sub_id, q.start, q.end, f.mission, f.owner_id, COALESCE(owner_user.oname, ''), f.start_planet, f.target_planet, %s, COALESCE(o.g, 0), COALESCE(o.s, 0), COALESCE(o.p, 0), COALESCE(t.g, 0), COALESCE(t.s, 0), COALESCE(t.p, 0), COALESCE(t.type, ?), COALESCE(target_user.oname, 'space') FROM %s q JOIN %s f ON f.fleet_id = q.sub_id LEFT JOIN %s o ON o.planet_id = f.start_planet LEFT JOIN %s owner_user ON owner_user.player_id = f.owner_id LEFT JOIN %s t ON t.planet_id = f.target_planet LEFT JOIN %s target_user ON target_user.player_id = t.owner_id WHERE q.type = ? AND f.mission <> ? AND COALESCE(f.union_id, 0) = 0 AND (f.owner_id = ? OR (f.target_planet IN (SELECT planet_id FROM %s WHERE owner_id = ? AND type < ?) AND (f.mission < ? OR f.mission = ?))) ORDER BY q.end ASC, q.prio DESC",
+			prefixedNumericColumns("f", fleetIDs),
+			queueTable,
+			fleetTable,
+			planetsTable,
+			usersTable,
+			planetsTable,
+			usersTable,
+			planetsTable,
+		),
+		legacyPlanetTypeAbandoned,
+		queueTypeFleet,
+		domaingame.FleetMissionMissile,
+		playerID,
+		playerID,
+		planetTypeDebris,
+		domaingame.FleetMissionReturnOffset,
+		domaingame.FleetMissionACSHold+domaingame.FleetMissionOrbitingOffset,
+	)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
+
+	missions := make([]domaingame.FleetMission, 0)
+	for rows.Next() {
+		mission, err := scanOverviewEventRow(rows, fleetIDs, playerID)
+		if err != nil {
+			return nil, err
+		}
+		missions = append(missions, mission)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return domaingame.BuildOverviewEvents(missions), nil
+}
+
+func scanOverviewEventRow(rows Rows, fleetIDs []int, playerID int) (domaingame.FleetMission, error) {
+	var id int
+	var departureAt int64
+	var arrivalAt int64
+	var mission int
+	var ownerID int
+	var ownerName string
+	var startPlanetID int
+	var targetPlanetID int
+	shipValues := make([]int, len(fleetIDs))
+	var origin domaingame.Coordinates
+	var target domaingame.Coordinates
+	var targetType int
+	var targetOwner string
+
+	dest := []any{&id, &departureAt, &arrivalAt, &mission, &ownerID, &ownerName, &startPlanetID, &targetPlanetID}
+	for index := range shipValues {
+		dest = append(dest, &shipValues[index])
+	}
+	dest = append(dest,
+		&origin.Galaxy,
+		&origin.System,
+		&origin.Position,
+		&target.Galaxy,
+		&target.System,
+		&target.Position,
+		&targetType,
+		&targetOwner,
+	)
+	if err := rows.Scan(dest...); err != nil {
+		return domaingame.FleetMission{}, err
+	}
+
+	ships := make(domaingame.FleetCounts, len(fleetIDs))
+	for index, fleetID := range fleetIDs {
+		ships[fleetID] = shipValues[index]
+	}
+	event := domaingame.BuildFleetMission(id, mission, ships, origin, target, targetType, targetOwner, departureAt, arrivalAt)
+	event.OwnerID = ownerID
+	event.OwnerName = ownerName
+	event.Foreign = ownerID != 0 && ownerID != playerID
+	return event, nil
 }
 
 func overviewTechnologyName(techID int) string {

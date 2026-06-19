@@ -494,6 +494,9 @@ type GameGalaxyActions = {
 
 type GameFleetMission = {
   id: number;
+  ownerId: number;
+  ownerName: string;
+  own: boolean;
   mission: number;
   missionName: string;
   stateTitle: string;
@@ -4986,7 +4989,7 @@ function OverviewEventRows({ events }: { events: GameFleetMission[] }) {
             </th>
             <th colSpan={3}>
               <span className={overviewEventMissionClass(event)}>
-                <a title={overviewEventShipTitle(event)}>Your {formatLegacyNumber(event.totalShips)} fleet</a>{" "}
+                <a title={overviewEventShipTitle(event)}>{overviewEventFleetLabel(event)}</a>{" "}
                 {overviewEventDirectionText(event)} <a href={galaxyHref(event.origin)}>[{formatCoordinates(event.origin)}]</a>{" "}
                 {overviewEventTargetText(event)} <a href={galaxyHref(event.target)}>[{formatCoordinates(event.target)}]</a>. Mission:{" "}
                 {event.missionName}
@@ -5010,28 +5013,29 @@ function overviewEventRowClass(event: GameFleetMission): string {
 }
 
 function overviewEventMissionClass(event: GameFleetMission): string {
+  const own = event.own !== false;
   switch (overviewEventBaseMission(event.mission)) {
     case 1:
     case 21:
-      return "ownattack";
+      return own ? "ownattack" : "attack";
     case 2:
-      return "ownfederation";
+      return own ? "ownfederation" : "federation";
     case 4:
-      return "owndeploy";
+      return own ? "owndeploy" : "deploy";
     case 5:
-      return "ownhold";
+      return own ? "ownhold" : "hold";
     case 6:
-      return "ownespionage";
+      return own ? "ownespionage" : "espionage";
     case 7:
-      return "owncolony";
+      return own ? "owncolony" : "colony";
     case 8:
-      return "ownharvest";
+      return own ? "ownharvest" : "harvest";
     case 9:
-      return "owndestroy";
+      return own ? "owndestroy" : "destroy";
     case 20:
-      return "ownmissile";
+      return own ? "ownmissile" : "missile";
     default:
-      return "owntransport";
+      return own ? "owntransport" : "transport";
   }
 }
 
@@ -5063,6 +5067,15 @@ function overviewEventTargetText(event: GameFleetMission): string {
     return "onto";
   }
   return "sent to";
+}
+
+function overviewEventFleetLabel(event: GameFleetMission): string {
+  const count = formatLegacyNumber(event.totalShips);
+  if (event.own !== false) {
+    return `Your ${count} fleet`;
+  }
+  const owner = event.ownerName.trim() || "Enemy";
+  return `${owner}'s ${count} fleet`;
 }
 
 function overviewEventShipTitle(event: GameFleetMission): string {

@@ -61,17 +61,30 @@ func TestBuildFleetMarksAttackUnionAvailability(t *testing.T) {
 }
 
 func TestBuildOverviewEventsNormalizesMissionRows(t *testing.T) {
+	incoming := BuildFleetMission(8, FleetMissionAttack, FleetCounts{FleetLightFighter: 5}, Coordinates{Galaxy: 1, System: 2, Position: 4}, Coordinates{Galaxy: 1, System: 2, Position: 3}, PlanetTypePlanet, "legor", 100, 200)
+	incoming.OwnerID = 77
+	incoming.OwnerName = "raider"
+	incoming.Foreign = true
 	events := BuildOverviewEvents([]FleetMission{
 		BuildFleetMission(7, FleetMissionTransport+FleetMissionReturnOffset, FleetCounts{FleetSmallCargo: 3}, Coordinates{Galaxy: 1, System: 2, Position: 3}, Coordinates{Galaxy: 1, System: 2, Position: 4}, PlanetTypePlanet, "target", 100, 200),
+		incoming,
 	})
 
-	if len(events) != 1 ||
+	if len(events) != 2 ||
 		events[0].MissionName != "Transport" ||
 		events[0].StateShort != "(F)" ||
 		events[0].CanRecall ||
 		events[0].CanCreateUnion ||
 		events[0].TotalShips != 3 {
 		t.Fatalf("unexpected overview event normalization: %+v", events)
+	}
+	if events[1].MissionName != "Attack" ||
+		events[1].OwnerName != "raider" ||
+		!events[1].Foreign ||
+		events[1].CanRecall ||
+		events[1].CanCreateUnion ||
+		events[1].TotalShips != 5 {
+		t.Fatalf("unexpected incoming overview event normalization: %+v", events[1])
 	}
 }
 

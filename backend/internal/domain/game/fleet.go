@@ -50,6 +50,9 @@ type ExpeditionSlots struct {
 
 type FleetMission struct {
 	ID              int
+	OwnerID         int
+	OwnerName       string
+	Foreign         bool
 	Mission         int
 	MissionName     string
 	StateTitle      string
@@ -207,8 +210,8 @@ func normalizeFleetMissions(missions []FleetMission, acsEnabled bool) []FleetMis
 		mission.StateTitle = title
 		mission.StateShort = short
 		mission.TotalShips = fleetTotalShips(mission.Ships)
-		mission.CanRecall = mission.Mission < FleetMissionReturnOffset || mission.Mission > FleetMissionOrbitingOffset
-		mission.CanCreateUnion = acsEnabled && (mission.Mission == FleetMissionAttack || mission.Mission == FleetMissionACSAttackHead)
+		mission.CanRecall = !mission.Foreign && (mission.Mission < FleetMissionReturnOffset || mission.Mission > FleetMissionOrbitingOffset)
+		mission.CanCreateUnion = !mission.Foreign && acsEnabled && (mission.Mission == FleetMissionAttack || mission.Mission == FleetMissionACSAttackHead)
 		normalized = append(normalized, mission)
 	}
 	return normalized

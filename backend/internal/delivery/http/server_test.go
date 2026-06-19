@@ -878,6 +878,9 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 		response.Overview.CurrentPlanet.BuildQueue.End != 2000 {
 		t.Fatalf("unexpected overview mapping: %+v", response.Overview)
 	}
+	if len(response.Overview.Events) != 1 || !response.Overview.Events[0].Own || response.Overview.Events[0].OwnerID != 0 {
+		t.Fatalf("unexpected overview event mapping: %+v", response.Overview.Events)
+	}
 	if len(response.Overview.Events) != 1 || response.Overview.Events[0].MissionName != "Transport" || response.Overview.Events[0].TotalShips != 2 {
 		t.Fatalf("expected overview event mapping, got %+v", response.Overview.Events)
 	}
