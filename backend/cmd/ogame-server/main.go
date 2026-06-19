@@ -69,6 +69,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	gameTechnology := gameTechnologyService(cfg, logger, gameSessions)
 	gameStatistics := gameStatisticsService(cfg, logger, gameSessions)
 	gameSearch := gameSearchService(cfg, logger, gameSessions)
+	gameBuddy := gameBuddyService(cfg, logger, gameSessions)
 	gameNotes := gameNotesService(cfg, logger, gameSessions)
 
 	return httpdelivery.New(httpdelivery.Dependencies{
@@ -92,6 +93,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		GameTechnology:     gameTechnology,
 		GameStatistics:     gameStatistics,
 		GameSearch:         gameSearch,
+		GameBuddy:          gameBuddy,
 		GameNotes:          gameNotes,
 		Frontend:           filesystem.StaticDir{Root: cfg.StaticDir},
 		LegacyAssets:       filesystem.NewNoListingFS(cfg.LegacyAssetDir),
@@ -603,6 +605,34 @@ func gameSearchService(cfg config.Config, logger *slog.Logger, sessions apppubli
 
 	logger.Info("universe DB game search enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewSearchService(sessions, mysqlgame.NewSearchRepository(db, cfg.UniDBPrefix))
+}
+
+func gameBuddyService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.BuddyService {
+	if !cfg.UniDBEnabled {
+		return appgame.BuddyService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game buddy disabled", "error", err)
+		return appgame.BuddyService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game buddy disabled", "error", err)
+		_ = db.Close()
+		return appgame.BuddyService{}
+	}
+
+	logger.Info("universe DB game buddy enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
+	return appgame.NewBuddyService(sessions, mysqlgame.NewBuddyRepository(db, cfg.UniDBPrefix))
 }
 
 func gameNotesService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.NotesService {

@@ -2346,6 +2346,143 @@ func TestGameSearchEndpointReturnsUnavailable(t *testing.T) {
 	}
 }
 
+func TestGameBuddyEndpointReturnsBuddy(t *testing.T) {
+	buddy := &fakeGameBuddy{result: appgame.BuddyResult{
+		Authenticated: true,
+		Buddy: domaingame.Buddy{
+			Commander: "legor",
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:   99,
+				Name: "Arakis",
+				Type: domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+			},
+			PlanetSwitcher: []domaingame.PlanetSummary{{
+				ID:   99,
+				Name: "Arakis",
+				Type: domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+				Current: true,
+			}},
+			Action: domaingame.BuddyActionIncoming,
+			Rows: []domaingame.BuddyRow{{
+				BuddyID: 11,
+				Player: domaingame.BuddyPlayer{
+					PlayerID:    43,
+					Name:        "target",
+					Alliance:    &domaingame.BuddyAlliance{ID: 7, Tag: "TAG", Founder: true},
+					Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4},
+				},
+				Text:   "hello",
+				Status: domaingame.BuddyStatus{Text: "On", Color: "lime"},
+			}},
+			Target: &domaingame.BuddyPlayer{
+				PlayerID:    44,
+				Name:        "request target",
+				Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 5},
+			},
+		},
+	}}
+	server := testServerWithGameBuddy(t, buddy)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/buddy?session=public&cp=99&action=5&buddy_id=11", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameBuddyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Buddy == nil || response.Buddy.Commander != "legor" || response.Buddy.Action != domaingame.BuddyActionIncoming || len(response.Buddy.Rows) != 1 {
+		t.Fatalf("expected authenticated buddy response, got %+v", response)
+	}
+	row := response.Buddy.Rows[0]
+	if row.BuddyID != 11 || row.Player.Name != "target" || row.Player.Alliance == nil || !row.Player.Alliance.Founder ||
+		row.Player.Coordinates.Position != 4 || row.Text != "hello" || row.Status.Color != "lime" || response.Buddy.Target == nil {
+		t.Fatalf("unexpected buddy row mapping: %+v target=%+v", row, response.Buddy.Target)
+	}
+	if buddy.command.PublicSession != "public" || buddy.command.PlanetID != 99 || buddy.command.Action != 5 ||
+		buddy.command.BuddyID != 11 || buddy.command.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected buddy command: %+v", buddy.command)
+	}
+	if buddy.command.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("expected private session cookie to be passed, got %+v", buddy.command.PrivateSessions)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("private")) {
+		t.Fatalf("game buddy response must not echo private session: %s", rec.Body.String())
+	}
+}
+
+func TestGameBuddyEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
+	buddy := &fakeGameBuddy{result: appgame.BuddyResult{
+		Authenticated: false,
+		Issues:        []domainpublicsite.SessionIssue{{Code: "missing", Message: "missing session"}},
+	}}
+	server := testServerWithGameBuddy(t, buddy)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/buddy?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var response gameBuddyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Authenticated || response.Buddy != nil || len(response.Issues) != 1 {
+		t.Fatalf("expected invalid buddy session response, got %+v", response)
+	}
+}
+
+func TestGameBuddyEndpointRejectsInvalidQuery(t *testing.T) {
+	server := testServerWithGameBuddy(t, &fakeGameBuddy{})
+	tests := []string{
+		"/api/game/buddy?session=public&cp=abc",
+		"/api/game/buddy?session=public&action=bad",
+		"/api/game/buddy?session=public&buddy_id=bad",
+	}
+	for _, target := range tests {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected %s to return 400, got %d", target, rec.Code)
+		}
+	}
+}
+
+func TestGameBuddyEndpointReturnsUnavailable(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/buddy?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game buddy use case to return 503, got %d", rec.Code)
+	}
+
+	server = testServerWithGameBuddy(t, &fakeGameBuddy{err: errors.New("buddy failed")})
+	req = httptest.NewRequest(http.MethodGet, "/api/game/buddy?session=public", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game buddy error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestGameNotesEndpointReturnsNotes(t *testing.T) {
 	notes := &fakeGameNotes{result: appgame.NotesResult{
 		Authenticated: true,
@@ -3104,6 +3241,14 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game search method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "/api/game/buddy", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("expected game buddy method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
+
 	req = httptest.NewRequest(http.MethodPut, "/api/game/notes", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -3440,6 +3585,19 @@ func testServerWithGameSearch(t *testing.T, search GameSearchUseCase) http.Handl
 	})
 }
 
+func testServerWithGameBuddy(t *testing.T, buddy GameBuddyUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		GameBuddy:          buddy,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
 func testServerWithGameNotes(t *testing.T, notes GameNotesUseCase) http.Handler {
 	t.Helper()
 	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
@@ -3713,6 +3871,17 @@ type fakeGameSearch struct {
 }
 
 func (f *fakeGameSearch) GetSearch(_ context.Context, command appgame.SearchCommand) (appgame.SearchResult, error) {
+	f.command = command
+	return f.result, f.err
+}
+
+type fakeGameBuddy struct {
+	result  appgame.BuddyResult
+	err     error
+	command appgame.BuddyCommand
+}
+
+func (f *fakeGameBuddy) GetBuddy(_ context.Context, command appgame.BuddyCommand) (appgame.BuddyResult, error) {
 	f.command = command
 	return f.result, f.err
 }

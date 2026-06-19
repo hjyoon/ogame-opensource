@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   LegacyGameOverview,
+  type GameBuddyStatus,
   type GameBuildingsStatus,
   type GameDefenseStatus,
   type GameFleetStatus,
@@ -216,6 +217,8 @@ function App() {
   const [gameStatisticsError, setGameStatisticsError] = useState<string | null>(null);
   const [gameSearch, setGameSearch] = useState<GameSearchStatus | null>(null);
   const [gameSearchError, setGameSearchError] = useState<string | null>(null);
+  const [gameBuddy, setGameBuddy] = useState<GameBuddyStatus | null>(null);
+  const [gameBuddyError, setGameBuddyError] = useState<string | null>(null);
   const [gameNotes, setGameNotes] = useState<GameNotesStatus | null>(null);
   const [gameNotesError, setGameNotesError] = useState<string | null>(null);
   const [gameNotesPending, setGameNotesPending] = useState(false);
@@ -666,6 +669,30 @@ function App() {
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "buddy" || publicSession === "") {
+      setGameBuddy(null);
+      setGameBuddyError(null);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const buddyRequest = new URLSearchParams({ session: publicSession });
+    for (const key of ["cp", "action", "buddy_id"]) {
+      const value = currentSearch.get(key);
+      if (value) {
+        buddyRequest.set(key, value);
+      }
+    }
+    fetch(`/api/game/buddy?${buddyRequest.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameBuddyStatus>)
+      .then((payload) => {
+        setGameBuddy(payload);
+        setGameBuddyError(null);
+      })
+      .catch((err: unknown) => setGameBuddyError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "notes" || publicSession === "") {
       setGameNotes(null);
       setGameNotesError(null);
@@ -821,6 +848,8 @@ function App() {
   if (pathname.startsWith("/game")) {
     return (
       <LegacyGameOverview
+        buddyError={gameBuddyError}
+        buddyStatus={gameBuddy}
         buildingsError={gameBuildingsError}
         buildingsStatus={gameBuildings}
         defenseError={gameDefenseError}

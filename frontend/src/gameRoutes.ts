@@ -49,7 +49,7 @@ export const gameRoutes: GameRoute[] = [
   { key: "search", label: "Search", path: "/game/search", migrated: true },
   { key: "messages", label: "Messages", path: "/game/messages", migrated: false },
   { key: "notes", label: "Notes", path: "/game/notes", migrated: true },
-  { key: "buddy", label: "Buddylist", path: "/game/buddy", migrated: false },
+  { key: "buddy", label: "Buddylist", path: "/game/buddy", migrated: true },
   { key: "options", label: "Options", path: "/game/options", migrated: false },
   { key: "logout", label: "Logout", path: "/game/logout", migrated: true }
 ];

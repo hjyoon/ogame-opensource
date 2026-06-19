@@ -68,6 +68,12 @@ export type GameSearchStatus = {
   search?: GameSearch;
 };
 
+export type GameBuddyStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  buddy?: GameBuddy;
+};
+
 export type GameNotesStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
@@ -345,6 +351,32 @@ type GameSearchAllianceRow = {
   own: boolean;
 };
 
+type GameBuddy = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  action: number;
+  rows: GameBuddyRow[];
+  target?: GameBuddyPlayer;
+};
+
+type GameBuddyRow = {
+  buddyId: number;
+  player: GameBuddyPlayer;
+  text: string;
+  status: {
+    text: string;
+    color: string;
+  };
+};
+
+type GameBuddyPlayer = {
+  playerId: number;
+  name: string;
+  alliance?: { id: number; tag: string; founder: boolean };
+  coordinates: Coordinates;
+};
+
 type GameNotes = {
   commander: string;
   currentPlanet: GamePlanetOverview;
@@ -508,6 +540,8 @@ type LegacyGameOverviewProps = {
   statisticsError: string | null;
   searchStatus: GameSearchStatus | null;
   searchError: string | null;
+  buddyStatus: GameBuddyStatus | null;
+  buddyError: string | null;
   notesStatus: GameNotesStatus | null;
   notesError: string | null;
   notesPending: boolean;
@@ -587,6 +621,8 @@ export function LegacyGameOverview({
   statisticsError,
   searchStatus,
   searchError,
+  buddyStatus,
+  buddyError,
   notesStatus,
   notesError,
   notesPending,
@@ -626,6 +662,8 @@ export function LegacyGameOverview({
     statisticsStatus && !statisticsStatus.authenticated ? statisticsStatus.issues[0]?.message ?? "Session is invalid." : null;
   const search = searchStatus?.authenticated ? searchStatus.search : undefined;
   const searchIssue = searchStatus && !searchStatus.authenticated ? searchStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const buddy = buddyStatus?.authenticated ? buddyStatus.buddy : undefined;
+  const buddyIssue = buddyStatus && !buddyStatus.authenticated ? buddyStatus.issues[0]?.message ?? "Session is invalid." : null;
   const notes = notesStatus?.authenticated ? notesStatus.notes : undefined;
   const notesIssue = notesStatus && !notesStatus.authenticated ? notesStatus.issues[0]?.message ?? "Session is invalid." : null;
   const hasHeader = route.key !== "notes" && route.key !== "galaxy";
@@ -696,6 +734,8 @@ export function LegacyGameOverview({
         ) : null}
         {route.key === "search" && searchError ? <LegacyMessage tone="error" text={searchError} /> : null}
         {route.key === "search" && !searchError && searchIssue ? <LegacyMessage tone="error" text={searchIssue} /> : null}
+        {route.key === "buddy" && buddyError ? <LegacyMessage tone="error" text={buddyError} /> : null}
+        {route.key === "buddy" && !buddyError && buddyIssue ? <LegacyMessage tone="error" text={buddyIssue} /> : null}
         {route.key === "notes" && notesError ? <LegacyMessage tone="error" text={notesError} /> : null}
         {route.key === "notes" && !notesError && notesIssue ? <LegacyMessage tone="error" text={notesIssue} /> : null}
         {overview && route.key === "overview" ? <OverviewTable overview={overview} /> : null}
@@ -744,6 +784,10 @@ export function LegacyGameOverview({
           <LegacyMessage tone="neutral" text="Loading search..." />
         ) : null}
         {search && route.key === "search" ? <SearchTable search={search} /> : null}
+        {overview && route.key === "buddy" && !buddy && !buddyError && !buddyIssue ? (
+          <LegacyMessage tone="neutral" text="Loading buddy list..." />
+        ) : null}
+        {buddy && route.key === "buddy" ? <BuddyTable buddy={buddy} /> : null}
         {overview && route.key === "notes" && !notes && !notesError && !notesIssue ? (
           <LegacyMessage tone="neutral" text="Loading notes..." />
         ) : null}
@@ -769,6 +813,7 @@ export function LegacyGameOverview({
         route.key !== "technology" &&
         route.key !== "statistics" &&
         route.key !== "search" &&
+        route.key !== "buddy" &&
         route.key !== "notes" &&
         route.key !== "logout" ? (
           <MigrationPendingGameTable route={route} />
@@ -1953,6 +1998,220 @@ function SearchTable({ search }: { search: GameSearch }) {
       )}
     </>
   );
+}
+
+function BuddyTable({ buddy }: { buddy: GameBuddy }) {
+  if (buddy.action === 7) {
+    return <BuddyRequestTable buddy={buddy} />;
+  }
+  if (buddy.action === 5 || buddy.action === 6) {
+    return <BuddyRequestsTable buddy={buddy} />;
+  }
+  return (
+    <table className="legacy-overview-table legacy-buddy-table" width={519}>
+      <tbody>
+        <tr>
+          <td className="legacy-c" colSpan={6}>
+            Buddylist
+          </td>
+        </tr>
+        <tr>
+          <th colSpan={6}>
+            <a href={buddyURL({ action: 5 })}>Request</a>
+          </th>
+        </tr>
+        <tr>
+          <th colSpan={6}>
+            <a href={buddyURL({ action: 6 })}>Your requests</a>
+          </th>
+        </tr>
+        <tr>
+          <td className="legacy-c">&nbsp;</td>
+          <td className="legacy-c">Name</td>
+          <td className="legacy-c">Alliance</td>
+          <td className="legacy-c">Coords</td>
+          <td className="legacy-c">Status</td>
+          <td className="legacy-c">&nbsp;</td>
+        </tr>
+        {buddy.rows.length > 0 ? (
+          buddy.rows.map((row, index) => (
+            <tr data-buddy-row={row.buddyId} key={row.buddyId}>
+              <th style={{ width: 20 }}>{index + 1}</th>
+              <th>
+                <a href={buddyMessageURL(row.player.playerId)}>{row.player.name}</a>
+              </th>
+              <th>{buddyAllianceLink(row.player)}</th>
+              <th>
+                <a href={buddyGalaxyURL(row.player.coordinates)}>{formatCoordinates(row.player.coordinates)}</a>
+              </th>
+              <th>
+                <span style={{ color: row.status.color }}>{row.status.text}</span>
+              </th>
+              <th>
+                <a href={buddyURL({ action: 8, buddyID: row.buddyId })}>delete</a>
+              </th>
+            </tr>
+          ))
+        ) : (
+          <tr>
+            <th colSpan={6}>No buddies found</th>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  );
+}
+
+function BuddyRequestsTable({ buddy }: { buddy: GameBuddy }) {
+  const incoming = buddy.action === 5;
+  return (
+    <table className="legacy-overview-table legacy-buddy-table" width={519}>
+      <tbody>
+        <tr>
+          <td className="legacy-c" colSpan={6}>
+            {incoming ? "Request" : "Your requests"}
+          </td>
+        </tr>
+        {buddy.rows.length > 0 ? (
+          <>
+            <tr>
+              <th>&nbsp;</th>
+              <th>User</th>
+              <th>Alliance</th>
+              <th>Coords</th>
+              <th>Text</th>
+              <th>&nbsp;</th>
+            </tr>
+            {buddy.rows.map((row, index) => (
+              <tr data-buddy-row={row.buddyId} key={row.buddyId}>
+                <th style={{ width: 20 }}>{index + 1}</th>
+                <th>
+                  <a href={buddyMessageURL(row.player.playerId)}>{row.player.name}</a>
+                </th>
+                <th>{buddyAllianceLink(row.player)}</th>
+                <th>
+                  <a href={buddyGalaxyURL(row.player.coordinates)}>{formatCoordinates(row.player.coordinates)}</a>
+                </th>
+                <th>{row.text}</th>
+                <th style={{ width: 100 }}>
+                  {incoming ? (
+                    <>
+                      <a href={buddyURL({ action: 2, buddyID: row.buddyId })}>accept</a>{" "}
+                      <a href={buddyURL({ action: 3, buddyID: row.buddyId })}>decline</a>
+                    </>
+                  ) : (
+                    <a href={buddyURL({ action: 4, buddyID: row.buddyId })}>withdraw request</a>
+                  )}
+                </th>
+              </tr>
+            ))}
+          </>
+        ) : (
+          <tr>
+            <th colSpan={6}>no entries</th>
+          </tr>
+        )}
+        <tr>
+          <td className="legacy-c" colSpan={6}>
+            <a href={buddyURL({})}>back</a>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function BuddyRequestTable({ buddy }: { buddy: GameBuddy }) {
+  const target = buddy.target;
+  if (!target) {
+    return (
+      <table className="legacy-overview-table legacy-buddy-table" width={519}>
+        <tbody>
+          <tr>
+            <td className="legacy-c" colSpan={2}>
+              Buddy request
+            </td>
+          </tr>
+          <tr>
+            <th colSpan={2}>Player not found</th>
+          </tr>
+          <tr>
+            <td className="legacy-c" colSpan={2}>
+              <a href={buddyURL({})}>back</a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    );
+  }
+  return (
+    <form action={buddyURL({ action: 1, buddyID: target.playerId })} method="post" onSubmit={(event) => event.preventDefault()}>
+      <table className="legacy-overview-table legacy-buddy-table" width={519}>
+        <tbody>
+          <tr>
+            <td className="legacy-c" colSpan={2}>
+              Buddy request
+            </td>
+          </tr>
+          <tr>
+            <th>Player</th>
+            <th>{target.name}</th>
+          </tr>
+          <tr>
+            <th>
+              Request text(<span id="cntChars">0</span> / 5000 characters)
+            </th>
+            <th>
+              <textarea cols={60} name="text" rows={10} />
+            </th>
+          </tr>
+          <tr>
+            <td className="legacy-c">
+              <a href={buddyURL({})}>back</a>
+            </td>
+            <td className="legacy-c">
+              <input type="submit" value="send" />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  );
+}
+
+function buddyAllianceLink(player: GameBuddyPlayer) {
+  if (!player.alliance) {
+    return <a href={gameRouteURL("/game/alliance", window.location.search)}>&nbsp;</a>;
+  }
+  return (
+    <a href={gameRouteURL("/game/alliance", window.location.search)} target="_ally">
+      {player.alliance.tag}
+      {player.alliance.founder ? "  (G)" : ""}
+    </a>
+  );
+}
+
+function buddyURL({ action, buddyID }: { action?: number; buddyID?: number }): string {
+  const query = new URLSearchParams(window.location.search);
+  query.delete("action");
+  query.delete("buddy_id");
+  if (action !== undefined) {
+    query.set("action", String(action));
+  }
+  if (buddyID !== undefined) {
+    query.set("buddy_id", String(buddyID));
+  }
+  return gameRouteURL("/game/buddy", query.toString());
+}
+
+function buddyMessageURL(playerID: number): string {
+  const query = new URLSearchParams(window.location.search);
+  query.set("messageziel", String(playerID));
+  return gameRouteURL("/game/messages", query.toString());
+}
+
+function buddyGalaxyURL(coordinates: Coordinates): string {
+  return gameRouteURL("/game/galaxy", galaxyTargetSearch(coordinates));
 }
 
 function NotesTable({

@@ -219,6 +219,14 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["Search Universe", "Player Name", "Planet Name", "Alliance Tag", "Alliance Name", "search"]
   },
   {
+    name: "game-buddy",
+    legacyPage: "buddy",
+    migratedPath: "/game/buddy",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-buddy-table",
+    expectedTexts: ["Buddylist", "Request", "Your requests", "Name", "Alliance", "Coords", "Status"]
+  },
+  {
     name: "game-notes",
     legacyPage: "notizen",
     migratedPath: "/game/notes",

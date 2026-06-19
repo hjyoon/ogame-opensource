@@ -17,7 +17,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - `/game/validate.php?ack=` and `/activation?ack=` activate accounts and sessions.
 - Login/logout create/clear sessions, private cookies, home `aktplanet`, and `/game` redirects.
 - `/api/game/session` validates public session plus private cookie, bans/IP with expiry, preserves vacation/deletion state, and touches `lastclick`.
-- `/api/game/{overview,buildings,resources,research,shipyard,fleet,galaxy,defense,technology,statistics,search,notes}` return models; overview/resources/notes mutate settings.
+- `/api/game/*` covers overview, build/resource/research/ship/fleet/galaxy/defense/tech/stat/search/buddy/notes models; overview/resources/notes mutate settings.
 - Auth `/game/*` routes preserve sessions and persist `cp`; migrated game screens use the legacy `evolution` skin.
 - Modernization: [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
 
@@ -27,11 +27,11 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - Fleet covers `flotten1` summary, slots, expeditions, ships, speed/cargo/consumption; dispatch/recall/ACS/templates pending.
 - Galaxy covers clamp, rows, status, moon/debris/actions, slots, deuterium warning, and legacy no-header/table spacing; quick actions pending.
 - Defense covers display state: shipyard gate, requirements, caps, busy state, costs, durations, counts, and max hints.
-- Technology, statistics links/colors, and notes popup layouts follow legacy chrome; search covers read models.
+- Technology/stat/search/buddy/notes read layouts follow legacy chrome.
 - Registration writes legacy side effects and sends SMTP/MailHog welcome mail with activation link/password lines.
 - Activation clears `validatemd`, sets `validated=1`, copies `email` to `pemail`, redirects, and rejects link reuse.
 - Overview covers legacy `cp`, `lgn` activity, admin notice, header/menu/table layout parity work, rename/delete name rules, blockers, destroy markers, queue flush, stat/rank updates, and active restore.
-- Buildings table layout now matches legacy row spacing and image/action cell geometry closely; mutations still pending.
+- Buildings layout matches legacy row spacing and image/action geometry closely; mutations pending.
 
 ## Verified QA
 
@@ -49,6 +49,6 @@ Full legacy PHP E2E was not run for this Go step. Keep PHP as oracle until each 
 
 - Close authenticated visual diff for statistics and remaining game-page nits before claiming parity.
 - Port remaining overview legacy actions.
-- Port queue mutations, research start/cancel, shipyard/defense orders, fleet actions, galaxy quick actions, reports, messages, alliance, admin, options, recovery, deletion, vacation, bans, permissions.
+- Port queue mutations, research start/cancel, shipyard/defense orders, fleet actions, galaxy quick actions, buddy mutations, reports/messages/alliance/admin/options/recovery/deletion/vacation/bans/permissions.
 - Convert legacy E2E cases into Go compatibility checks per migrated flow.
 - Run full legacy PHP E2E before declaring any game-flow migration equivalent.
