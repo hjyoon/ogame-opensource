@@ -155,6 +155,58 @@ func TestFleetServicePreparesDispatchDraft(t *testing.T) {
 	}
 }
 
+func TestFleetServiceValidatesDispatchDraft(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}
+	repository := &fakeFleetRepository{result: domaingame.Fleet{
+		CurrentPlanet: domaingame.PlanetOverview{
+			Type:        domaingame.PlanetTypePlanet,
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Resources:   domaingame.Resources{Metal: 1000, Crystal: 500, Deuterium: 5000},
+		},
+		Slots: domaingame.FleetSlots{Used: 0, Max: 4},
+		Ships: []domaingame.FleetShipSelection{{
+			ID:          domaingame.FleetSmallCargo,
+			Name:        "Small Cargo",
+			Count:       4,
+			Speed:       5500,
+			Cargo:       5000,
+			Consumption: 10,
+			Selectable:  true,
+		}},
+	}}
+	service := NewFleetService(sessions, repository)
+
+	result, err := service.ValidateFleetDispatch(context.Background(), FleetDispatchValidateCommand{
+		PublicSession:   "public",
+		PrivateSessions: map[string]string{"private": "secret"},
+		RemoteAddr:      "203.0.113.10",
+		PlanetID:        99,
+		Ships:           map[int]int{domaingame.FleetSmallCargo: 3},
+		Resources:       map[int]int{domaingame.ResourceMetal: 900},
+		Target:          domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+		TargetType:      domaingame.GamePlanetTypePlanet,
+		Mission:         domaingame.FleetMissionTransport,
+		Speed:           9,
+		HoldHours:       4,
+		UnionID:         7,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Authenticated || result.ActionIssue != nil || result.Fleet.DispatchDraft == nil || !result.Fleet.DispatchDraft.Ready {
+		t.Fatalf("unexpected validate result: %+v", result)
+	}
+	if result.Fleet.DispatchDraft.Resources[0].Requested != 900 || result.Fleet.DispatchDraft.Resources[0].Loaded != 900 {
+		t.Fatalf("expected validation to include resource loading plan, got %+v", result.Fleet.DispatchDraft.Resources)
+	}
+	if repository.query.PlayerID != 42 || repository.query.PlanetID != 99 {
+		t.Fatalf("expected validate to load selected fleet screen, got %+v", repository.query)
+	}
+}
+
 func TestFleetServicePrepareReturnsSessionIssuesWithoutRepository(t *testing.T) {
 	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
 		Authenticated: false,
@@ -172,6 +224,26 @@ func TestFleetServicePrepareReturnsSessionIssuesWithoutRepository(t *testing.T) 
 	}
 	if result.Authenticated || len(result.Issues) != 1 || repository.called {
 		t.Fatalf("expected unauthenticated prepare without repository call, got %+v", result)
+	}
+}
+
+func TestFleetServiceValidateReturnsSessionIssuesWithoutRepository(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: false,
+		Issues: []domainpublicsite.SessionIssue{{
+			Code:    domainpublicsite.SessionIssuePrivateInvalid,
+			Message: "Private session is invalid.",
+		}},
+	}}
+	repository := &fakeFleetRepository{}
+	service := NewFleetService(sessions, repository)
+
+	result, err := service.ValidateFleetDispatch(context.Background(), FleetDispatchValidateCommand{PublicSession: "public"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Authenticated || len(result.Issues) != 1 || repository.called {
+		t.Fatalf("expected unauthenticated validate without repository call, got %+v", result)
 	}
 }
 
@@ -236,6 +308,9 @@ func TestFleetServicePropagatesErrors(t *testing.T) {
 	if _, err := service.PrepareFleetDispatch(context.Background(), FleetDispatchPrepareCommand{}); !errors.Is(err, sessionErr) {
 		t.Fatalf("expected prepare session error, got %v", err)
 	}
+	if _, err := service.ValidateFleetDispatch(context.Background(), FleetDispatchValidateCommand{}); !errors.Is(err, sessionErr) {
+		t.Fatalf("expected validate session error, got %v", err)
+	}
 	if _, err := service.RecallFleet(context.Background(), FleetRecallCommand{}); !errors.Is(err, sessionErr) {
 		t.Fatalf("expected recall session error, got %v", err)
 	}
@@ -258,6 +333,9 @@ func TestFleetServicePropagatesErrors(t *testing.T) {
 	}
 	if _, err := service.PrepareFleetDispatch(context.Background(), FleetDispatchPrepareCommand{}); !errors.Is(err, repoErr) {
 		t.Fatalf("expected prepare repository error, got %v", err)
+	}
+	if _, err := service.ValidateFleetDispatch(context.Background(), FleetDispatchValidateCommand{}); !errors.Is(err, repoErr) {
+		t.Fatalf("expected validate repository error, got %v", err)
 	}
 	if _, err := service.RecallFleet(context.Background(), FleetRecallCommand{}); !errors.Is(err, repoErr) {
 		t.Fatalf("expected recall repository error, got %v", err)
@@ -285,6 +363,9 @@ func TestFleetServiceRequiresDependencies(t *testing.T) {
 	}
 	if _, err := (FleetService{}).PrepareFleetDispatch(context.Background(), FleetDispatchPrepareCommand{}); err == nil {
 		t.Fatal("expected prepare dependency error")
+	}
+	if _, err := (FleetService{}).ValidateFleetDispatch(context.Background(), FleetDispatchValidateCommand{}); err == nil {
+		t.Fatal("expected validate dependency error")
 	}
 	if _, err := (FleetService{}).RecallFleet(context.Background(), FleetRecallCommand{}); err == nil {
 		t.Fatal("expected recall dependency error")

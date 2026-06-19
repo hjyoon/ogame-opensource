@@ -89,6 +89,18 @@ type FleetDispatchDraftInput struct {
 	Speed      int
 }
 
+type FleetDispatchValidationInput struct {
+	Ships           map[int]int
+	Resources       map[int]int
+	Target          Coordinates
+	TargetType      int
+	Mission         int
+	Speed           int
+	HoldHours       int
+	ExpeditionHours int
+	UnionID         int
+}
+
 type FleetDispatchDraft struct {
 	Ships           []FleetShipCount
 	TotalShips      int
@@ -102,11 +114,18 @@ type FleetDispatchDraft struct {
 	MaxSpeed        int
 	FuelConsumption int
 	SpeedFactor     int
+	RemainingCargo  int
+	Ready           bool
 	HasSelection    bool
 	MissionOptions  []FleetMissionOption
 	Resources       []FleetResourceLoad
 	HoldHours       []int
 	ExpeditionHours []int
+}
+
+type FleetActionIssue struct {
+	Code    string
+	Message string
 }
 
 type FleetMissionOption struct {
@@ -120,7 +139,18 @@ type FleetResourceLoad struct {
 	ID        int
 	Name      string
 	Available int
+	Requested int
+	Loaded    int
 }
+
+const (
+	FleetIssueNoShips      = "no_ships"
+	FleetIssueSamePlanet   = "same_planet"
+	FleetIssueMaxFleet     = "max_fleet"
+	FleetIssueInvalidOrder = "invalid_order"
+	FleetIssueNoFuel       = "no_fuel"
+	FleetIssueNoCargo      = "no_cargo"
+)
 
 func BuildFleet(overview Overview, counts FleetCounts, research ResearchLevels, missions []FleetMission, admiral bool, acsEnabled bool) Fleet {
 	baseMax := research[ResearchComputer] + 1
@@ -253,6 +283,57 @@ func BuildFleetDispatchDraft(fleet Fleet, input FleetDispatchDraftInput) FleetDi
 	}
 }
 
+func BuildFleetDispatchValidation(fleet Fleet, input FleetDispatchValidationInput) (FleetDispatchDraft, *FleetActionIssue) {
+	draft := BuildFleetDispatchDraft(fleet, FleetDispatchDraftInput{
+		Ships:      input.Ships,
+		Target:     input.Target,
+		TargetType: input.TargetType,
+		Mission:    input.Mission,
+		Speed:      input.Speed,
+	})
+	fleetFuel, _ := fleetFlightConsumptionParts(fleet.Ships, fleetCountsFromShipCounts(draft.Ships), draft.Distance, draft.DurationSeconds, draft.SpeedFactor, 0)
+	cargoSpace := draft.Cargo - fleetFuel
+	resourceRows, remainingCargo := fleetDispatchResourcePlan(fleet.CurrentPlanet.Resources, input.Resources, cargoSpace)
+	draft.Resources = resourceRows
+	draft.RemainingCargo = remainingCargo
+
+	if !draft.HasSelection {
+		return draft, FleetActionIssueFor(FleetIssueNoShips)
+	}
+	if draft.Target == fleet.CurrentPlanet.Coordinates && draft.TargetType == gamePlanetTypeFromPlanet(fleet.CurrentPlanet.Type) {
+		return draft, FleetActionIssueFor(FleetIssueSamePlanet)
+	}
+	if fleet.Slots.Max > 0 && fleet.Slots.Used >= fleet.Slots.Max {
+		return draft, FleetActionIssueFor(FleetIssueMaxFleet)
+	}
+	if input.Mission <= 0 || !missionOptionExists(draft.MissionOptions, input.Mission) {
+		return draft, FleetActionIssueFor(FleetIssueInvalidOrder)
+	}
+	if int(fleet.CurrentPlanet.Resources.Deuterium) < draft.FuelConsumption {
+		return draft, FleetActionIssueFor(FleetIssueNoFuel)
+	}
+	if cargoSpace < 0 {
+		return draft, FleetActionIssueFor(FleetIssueNoCargo)
+	}
+	draft.Ready = true
+	return draft, nil
+}
+
+func FleetActionIssueFor(code string) *FleetActionIssue {
+	message := map[string]string{
+		FleetIssueNoShips:      "No ships have been selected.",
+		FleetIssueSamePlanet:   "Origin and target are the same planet.",
+		FleetIssueMaxFleet:     "Maximum fleet size has been reached.",
+		FleetIssueInvalidOrder: "No suitable mission.",
+		FleetIssueNoFuel:       "Not enough deuterium.",
+		FleetIssueNoCargo:      "Not enough cargo capacity.",
+	}[code]
+	if message == "" {
+		message = "Fleet dispatch failed."
+	}
+	return &FleetActionIssue{Code: code, Message: message}
+}
+
 func fleetDispatchMissionOptions(fleet Fleet, counts FleetCounts, target Coordinates, targetType int, requested int) []FleetMissionOption {
 	ids := make([]int, 0, 5)
 	if target.Position >= GalaxyFarSpace {
@@ -301,11 +382,33 @@ func missionOptionExists(options []FleetMissionOption, mission int) bool {
 }
 
 func fleetDispatchResources(resources Resources) []FleetResourceLoad {
-	return []FleetResourceLoad{
+	rows, _ := fleetDispatchResourcePlan(resources, nil, 0)
+	return rows
+}
+
+func fleetDispatchResourcePlan(resources Resources, requested map[int]int, capacity int) ([]FleetResourceLoad, int) {
+	remaining := max(0, capacity)
+	rows := []FleetResourceLoad{
 		{ID: ResourceMetal, Name: "Metal", Available: max(0, int(resources.Metal))},
 		{ID: ResourceCrystal, Name: "Crystal", Available: max(0, int(resources.Crystal))},
 		{ID: ResourceDeuterium, Name: "Deuterium", Available: max(0, int(resources.Deuterium))},
 	}
+	for index := range rows {
+		request := 0
+		if requested != nil {
+			request = requested[rows[index].ID]
+		}
+		if request < 0 {
+			request = 0
+		}
+		if request > rows[index].Available {
+			request = rows[index].Available
+		}
+		rows[index].Requested = request
+		rows[index].Loaded = min(request, remaining)
+		remaining -= rows[index].Loaded
+	}
+	return rows, remaining
 }
 
 func fleetDispatchExpeditionHours(maxExpeditions int) []int {
@@ -370,17 +473,23 @@ func fleetFlightTime(distance int, slowestSpeed int, speed int, speedFactor int)
 }
 
 func fleetFlightConsumption(ships []FleetShipSelection, counts FleetCounts, distance int, flightTime int, speedFactor int, holdHours int) int {
+	fleetFuel, probeFuel := fleetFlightConsumptionParts(ships, counts, distance, flightTime, speedFactor, holdHours)
+	return fleetFuel + probeFuel
+}
+
+func fleetFlightConsumptionParts(ships []FleetShipSelection, counts FleetCounts, distance int, flightTime int, speedFactor int, holdHours int) (int, int) {
 	if distance <= 0 || flightTime <= 0 {
-		return 0
+		return 0, 0
 	}
 	if speedFactor <= 0 {
 		speedFactor = 1
 	}
 	denominator := float64(flightTime*speedFactor - 10)
 	if denominator <= 0 {
-		return 0
+		return 0, 0
 	}
-	total := 0
+	fleetFuel := 0
+	probeFuel := 0
 	for _, ship := range ships {
 		amount := counts[ship.ID]
 		if amount <= 0 || ship.Speed <= 0 || ship.Consumption <= 0 {
@@ -390,9 +499,21 @@ func fleetFlightConsumption(ships []FleetShipSelection, counts FleetCounts, dist
 		baseConsumption := float64(amount * ship.Consumption)
 		consumption := baseConsumption * float64(distance) / 35000 * math.Pow(fleetSpeed/10+1, 2)
 		consumption += float64(holdHours*amount*ship.Consumption) / 10
-		total += int(consumption)
+		if ship.ID == FleetEspionageProbe {
+			probeFuel += int(consumption)
+		} else {
+			fleetFuel += int(consumption)
+		}
 	}
-	return total
+	return fleetFuel, probeFuel
+}
+
+func fleetCountsFromShipCounts(ships []FleetShipCount) FleetCounts {
+	counts := make(FleetCounts, len(ships))
+	for _, ship := range ships {
+		counts[ship.ID] = ship.Count
+	}
+	return counts
 }
 
 func gamePlanetTypeFromPlanet(planetType int) int {

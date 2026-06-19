@@ -12,7 +12,13 @@ import (
 type gameFleetResponse struct {
 	Authenticated bool                       `json:"authenticated"`
 	Issues        []gameSessionIssueResponse `json:"issues"`
+	ActionIssue   *gameFleetActionIssue      `json:"actionIssue,omitempty"`
 	Fleet         *gameFleetSummary          `json:"fleet,omitempty"`
+}
+
+type gameFleetActionIssue struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 type gameFleetSummary struct {
@@ -106,6 +112,8 @@ type gameFleetDispatchDraft struct {
 	MaxSpeed        int                          `json:"maxSpeed"`
 	FuelConsumption int                          `json:"fuelConsumption"`
 	SpeedFactor     int                          `json:"speedFactor"`
+	RemainingCargo  int                          `json:"remainingCargo"`
+	Ready           bool                         `json:"ready"`
 	HasSelection    bool                         `json:"hasSelection"`
 	MissionOptions  []gameFleetMissionOption     `json:"missionOptions"`
 	Resources       []gameFleetResourceLoad      `json:"resources"`
@@ -124,6 +132,8 @@ type gameFleetResourceLoad struct {
 	ID        int    `json:"id"`
 	Name      string `json:"name"`
 	Available int    `json:"available"`
+	Requested int    `json:"requested"`
+	Loaded    int    `json:"loaded"`
 }
 
 type gameFleetTemplateMutationRequest struct {
@@ -134,17 +144,21 @@ type gameFleetTemplateMutationRequest struct {
 }
 
 type gameFleetMutationRequest struct {
-	Action  string         `json:"action"`
-	FleetID int            `json:"fleetId"`
-	Ships   map[string]int `json:"ships"`
-	Target  struct {
+	Action    string         `json:"action"`
+	FleetID   int            `json:"fleetId"`
+	Ships     map[string]int `json:"ships"`
+	Resources map[string]int `json:"resources"`
+	Target    struct {
 		Galaxy   int `json:"galaxy"`
 		System   int `json:"system"`
 		Position int `json:"position"`
 	} `json:"target"`
-	TargetType int `json:"targetType"`
-	Mission    int `json:"mission"`
-	Speed      int `json:"speed"`
+	TargetType      int `json:"targetType"`
+	Mission         int `json:"mission"`
+	Speed           int `json:"speed"`
+	HoldHours       int `json:"holdHours"`
+	ExpeditionHours int `json:"expeditionHours"`
+	UnionID         int `json:"unionId"`
 }
 
 func (a app) handleGameFleet(w http.ResponseWriter, r *http.Request) {
@@ -225,6 +239,26 @@ func (a app) handleGameFleetPost(w http.ResponseWriter, r *http.Request) {
 			TargetType: payload.TargetType,
 			Mission:    payload.Mission,
 			Speed:      payload.Speed,
+		})
+	case "validate-dispatch":
+		result, err = a.deps.GameFleet.ValidateFleetDispatch(r.Context(), appgame.FleetDispatchValidateCommand{
+			PublicSession:   r.URL.Query().Get("session"),
+			PrivateSessions: cookieMap(r),
+			RemoteAddr:      remoteIP(r.RemoteAddr),
+			PlanetID:        planetID,
+			Ships:           parseFleetTemplateShips(payload.Ships),
+			Resources:       parseFleetTemplateShips(payload.Resources),
+			Target: domaingame.Coordinates{
+				Galaxy:   payload.Target.Galaxy,
+				System:   payload.Target.System,
+				Position: payload.Target.Position,
+			},
+			TargetType:      payload.TargetType,
+			Mission:         payload.Mission,
+			Speed:           payload.Speed,
+			HoldHours:       payload.HoldHours,
+			ExpeditionHours: payload.ExpeditionHours,
+			UnionID:         payload.UnionID,
 		})
 	default:
 		http.Error(w, "unsupported fleet action", http.StatusBadRequest)
@@ -322,8 +356,16 @@ func writeGameFleetResponse(w http.ResponseWriter, result appgame.FleetResult) {
 	_ = json.NewEncoder(w).Encode(gameFleetResponse{
 		Authenticated: result.Authenticated,
 		Issues:        toGameSessionIssueResponses(result.Issues),
+		ActionIssue:   toGameFleetActionIssue(result.ActionIssue),
 		Fleet:         fleet,
 	})
+}
+
+func toGameFleetActionIssue(issue *domaingame.FleetActionIssue) *gameFleetActionIssue {
+	if issue == nil {
+		return nil
+	}
+	return &gameFleetActionIssue{Code: issue.Code, Message: issue.Message}
 }
 
 func toGameFleetSummary(fleet domaingame.Fleet) gameFleetSummary {
@@ -453,6 +495,8 @@ func toGameFleetDispatchDraft(draft *domaingame.FleetDispatchDraft) *gameFleetDi
 			ID:        resource.ID,
 			Name:      resource.Name,
 			Available: resource.Available,
+			Requested: resource.Requested,
+			Loaded:    resource.Loaded,
 		})
 	}
 	return &gameFleetDispatchDraft{
@@ -468,6 +512,8 @@ func toGameFleetDispatchDraft(draft *domaingame.FleetDispatchDraft) *gameFleetDi
 		MaxSpeed:        draft.MaxSpeed,
 		FuelConsumption: draft.FuelConsumption,
 		SpeedFactor:     draft.SpeedFactor,
+		RemainingCargo:  draft.RemainingCargo,
+		Ready:           draft.Ready,
 		HasSelection:    draft.HasSelection,
 		MissionOptions:  missions,
 		Resources:       resources,

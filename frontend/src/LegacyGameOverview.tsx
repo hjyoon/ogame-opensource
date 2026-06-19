@@ -55,6 +55,7 @@ export type GameShipyardStatus = {
 export type GameFleetStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
+  actionIssue?: { code: string; message: string };
   fleet?: GameFleet;
 };
 
@@ -340,6 +341,8 @@ type GameFleetDispatchDraft = {
   maxSpeed: number;
   fuelConsumption: number;
   speedFactor: number;
+  remainingCargo: number;
+  ready: boolean;
   hasSelection: boolean;
   missionOptions: GameFleetMissionOption[];
   resources: GameFleetResourceLoad[];
@@ -358,6 +361,8 @@ type GameFleetResourceLoad = {
   id: number;
   name: string;
   available: number;
+  requested: number;
+  loaded: number;
 };
 
 type GameFleetTemplates = {
@@ -1009,6 +1014,7 @@ export function LegacyGameOverview({
     shipyardStatus && !shipyardStatus.authenticated ? shipyardStatus.issues[0]?.message ?? "Session is invalid." : null;
   const fleet = fleetStatus?.authenticated ? fleetStatus.fleet : undefined;
   const fleetIssue = fleetStatus && !fleetStatus.authenticated ? fleetStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const fleetActionIssue = fleetStatus?.authenticated ? fleetStatus.actionIssue : undefined;
   const galaxy = galaxyStatus?.authenticated ? galaxyStatus.galaxy : undefined;
   const galaxyIssue =
     galaxyStatus && !galaxyStatus.authenticated ? galaxyStatus.issues[0]?.message ?? "Session is invalid." : null;
@@ -1174,6 +1180,9 @@ export function LegacyGameOverview({
         ) : null}
         {overview && (route.key === "fleet" || route.key === "fleetTemplates") && !fleet && !fleetError && !fleetIssue ? (
           <LegacyMessage tone="neutral" text="Loading fleet..." />
+        ) : null}
+        {route.key === "fleet" && !fleetError && fleetActionIssue ? (
+          <LegacyMessage tone="error" text={fleetActionIssue.message} />
         ) : null}
         {fleet && route.key === "fleet" ? (
           <FleetTable fleet={fleet} onPrepare={onFleetPrepare} onRecall={onFleetRecall} pending={fleetPending} />
@@ -2247,7 +2256,7 @@ function FleetTable({
 
 function FleetDispatchPreviewTable({ draft, fleet }: { draft: GameFleetDispatchDraft; fleet: GameFleet }) {
   return (
-    <form className="legacy-fleet-dispatch-form" onSubmit={(event) => event.preventDefault()}>
+    <form className="legacy-fleet-dispatch-form" data-dispatch-action="validate-dispatch" onSubmit={(event) => event.preventDefault()}>
       <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-dispatch-table" width={519}>
         <tbody>
           <tr style={{ height: 20, textAlign: "left" }}>

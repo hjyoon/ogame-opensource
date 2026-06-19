@@ -1992,6 +1992,66 @@ func TestGameFleetEndpointPreparesDispatchDraft(t *testing.T) {
 	}
 }
 
+func TestGameFleetEndpointValidatesDispatchDraft(t *testing.T) {
+	fleet := &fakeGameFleet{result: appgame.FleetResult{
+		Authenticated: true,
+		ActionIssue:   domaingame.FleetActionIssueFor(domaingame.FleetIssueNoCargo),
+		Fleet: domaingame.Fleet{
+			DispatchDraft: &domaingame.FleetDispatchDraft{
+				Ships: []domaingame.FleetShipCount{{
+					ID:    domaingame.FleetBomber,
+					Name:  "Bomber",
+					Count: 1,
+				}},
+				TotalShips:      1,
+				Target:          domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+				TargetType:      domaingame.GamePlanetTypePlanet,
+				Mission:         domaingame.FleetMissionTransport,
+				Speed:           10,
+				Cargo:           500,
+				Distance:        20000,
+				DurationSeconds: 2485,
+				MaxSpeed:        4000,
+				FuelConsumption: 69136,
+				RemainingCargo:  0,
+				HasSelection:    true,
+				Resources: []domaingame.FleetResourceLoad{{
+					ID:        domaingame.ResourceMetal,
+					Name:      "Metal",
+					Available: 900,
+					Requested: 900,
+					Loaded:    0,
+				}},
+			},
+		},
+	}}
+	server := testServerWithGameFleet(t, fleet)
+	body := `{"action":"validate-dispatch","ships":{"211":1},"resources":{"700":900},"target":{"galaxy":2,"system":3,"position":4},"targetType":1,"mission":3,"speed":10,"holdHours":4,"unionId":7}`
+	req := httptest.NewRequest(http.MethodPost, "/api/game/fleet?session=public&cp=99", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fleet.validate.PublicSession != "public" || fleet.validate.PlanetID != 99 || fleet.validate.Ships[domaingame.FleetBomber] != 1 || fleet.validate.Resources[domaingame.ResourceMetal] != 900 || fleet.validate.HoldHours != 4 || fleet.validate.UnionID != 7 {
+		t.Fatalf("unexpected fleet validate command: %+v", fleet.validate)
+	}
+	var response gameFleetResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.ActionIssue == nil || response.ActionIssue.Code != domaingame.FleetIssueNoCargo {
+		t.Fatalf("expected fleet validation issue, got %+v", response)
+	}
+	if response.Fleet == nil || response.Fleet.DispatchDraft == nil || response.Fleet.DispatchDraft.Resources[0].Requested != 900 || response.Fleet.DispatchDraft.Resources[0].Loaded != 0 {
+		t.Fatalf("unexpected validate draft mapping: %+v", response.Fleet)
+	}
+}
+
 func TestGameFleetEndpointRejectsBadRecallPayload(t *testing.T) {
 	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
 	req := httptest.NewRequest(http.MethodPost, "/api/game/fleet?session=public", strings.NewReader(`{"action":"recall","fleetId":123}`))
@@ -5119,6 +5179,7 @@ type fakeGameFleet struct {
 	command  appgame.FleetCommand
 	mutation appgame.FleetTemplateMutationCommand
 	prepare  appgame.FleetDispatchPrepareCommand
+	validate appgame.FleetDispatchValidateCommand
 	recall   appgame.FleetRecallCommand
 }
 
@@ -5134,6 +5195,11 @@ func (f *fakeGameFleet) MutateFleetTemplate(_ context.Context, command appgame.F
 
 func (f *fakeGameFleet) PrepareFleetDispatch(_ context.Context, command appgame.FleetDispatchPrepareCommand) (appgame.FleetResult, error) {
 	f.prepare = command
+	return f.result, f.err
+}
+
+func (f *fakeGameFleet) ValidateFleetDispatch(_ context.Context, command appgame.FleetDispatchValidateCommand) (appgame.FleetResult, error) {
+	f.validate = command
 	return f.result, f.err
 }
 

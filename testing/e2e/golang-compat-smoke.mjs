@@ -651,6 +651,28 @@ try {
   } catch {
     gameFleetPrepareBody = {};
   }
+  const fleetCurrentType = gameFleetBody.fleet?.currentPlanet?.type === 0 ? 3 : 1;
+  const gameFleetValidate = selectableFleetShip
+    ? await request(`/api/game/fleet${sessionSearch}`, {
+        method: "POST",
+        headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "validate-dispatch",
+          ships: { [String(selectableFleetShip.id)]: 1 },
+          resources: { 700: 1 },
+          target: fleetTarget,
+          targetType: fleetCurrentType,
+          mission: 3,
+          speed: 9
+        })
+      })
+    : { status: 0, body: "", headers: {} };
+  let gameFleetValidateBody = {};
+  try {
+    gameFleetValidateBody = JSON.parse(gameFleetValidate.body);
+  } catch {
+    gameFleetValidateBody = {};
+  }
 
   const gameFleetWithoutCookie = await request(`/api/game/fleet${sessionSearch}`);
   let gameFleetWithoutCookieBody = {};
@@ -1306,6 +1328,20 @@ try {
         "game fleet dispatch draft returns legacy fuel consumption",
         gameFleetPrepareBody.fleet?.dispatchDraft ?? {}
       ),
+      check(!selectableFleetShip || gameFleetValidate.status === 200, "game fleet validates final dispatch payload", {
+        status: gameFleetValidate.status,
+        selectableFleetShip
+      }),
+      check(
+        !selectableFleetShip || gameFleetValidateBody.actionIssue?.code === "same_planet",
+        "game fleet final dispatch validation reports same-planet legacy issue",
+        gameFleetValidateBody.actionIssue ?? {}
+      ),
+      check(
+        !selectableFleetShip || Array.isArray(gameFleetValidateBody.fleet?.dispatchDraft?.resources),
+        "game fleet final dispatch validation returns resource loading rows",
+        gameFleetValidateBody.fleet?.dispatchDraft ?? {}
+      ),
       check(!gameFleet.body.includes(sessionCookiePair), "game fleet response does not echo private cookie"),
       check(gameFleetWithoutCookie.status === 401, "game fleet rejects missing private cookie", { status: gameFleetWithoutCookie.status }),
       check(gameFleetWithoutCookieBody.authenticated === false, "game fleet missing private cookie is unauthenticated", gameFleetWithoutCookieBody),
@@ -1680,6 +1716,7 @@ try {
       check(js.body.includes("legacy-fleet-dispatch-table"), "React bundle contains legacy game fleet dispatch preview layout"),
       check(js.body.includes("legacy-fleet-dispatch-form") && js.body.includes("remainingresources"), "React bundle contains legacy fleet mission/resource draft layout"),
       check(js.body.includes("legacy-fleet-flight-math"), "React bundle contains legacy fleet flight math draft layout"),
+      check(js.body.includes("validate-dispatch"), "React bundle contains legacy fleet final dispatch validation action"),
       check(js.body.includes("legacy-fleet-templates-table"), "React bundle contains legacy game standard fleets layout"),
       check(js.body.includes("legacy-galaxy-table"), "React bundle contains legacy game galaxy layout"),
       check(js.body.includes("target_galaxy") && js.body.includes("target_mission"), "React bundle preserves legacy fleet target prefill fields"),

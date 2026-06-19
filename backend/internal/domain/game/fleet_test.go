@@ -168,6 +168,120 @@ func TestBuildFleetDispatchDraftMissionOptionsMatchLegacyEdges(t *testing.T) {
 	}
 }
 
+func TestBuildFleetDispatchValidationPlansLegacyResourceLoading(t *testing.T) {
+	fleet := BuildFleet(Overview{
+		CurrentPlanet: PlanetOverview{
+			Type:        PlanetTypePlanet,
+			Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Resources:   Resources{Metal: 20000, Crystal: 20000, Deuterium: 5000},
+		},
+	}, FleetCounts{
+		FleetSmallCargo:     4,
+		FleetEspionageProbe: 2,
+	}, ResearchLevels{ResearchCombustionDrive: 1}, nil, false, false)
+
+	draft, issue := BuildFleetDispatchValidation(fleet, FleetDispatchValidationInput{
+		Ships: map[int]int{
+			FleetSmallCargo:     4,
+			FleetEspionageProbe: 2,
+		},
+		Resources: map[int]int{
+			ResourceMetal:     15000,
+			ResourceCrystal:   10000,
+			ResourceDeuterium: 100,
+		},
+		Target:     Coordinates{Galaxy: 2, System: 3, Position: 4},
+		TargetType: GamePlanetTypePlanet,
+		Mission:    FleetMissionTransport,
+		Speed:      10,
+	})
+	if issue != nil || !draft.Ready {
+		t.Fatalf("expected dispatch validation to pass, issue=%+v draft=%+v", issue, draft)
+	}
+	if draft.FuelConsumption != 2765 || draft.RemainingCargo != 0 {
+		t.Fatalf("unexpected fuel or remaining cargo: %+v", draft)
+	}
+	if len(draft.Resources) != 3 || draft.Resources[0].Loaded != 15000 || draft.Resources[1].Loaded != 2236 || draft.Resources[2].Loaded != 0 {
+		t.Fatalf("unexpected capped resource loading plan: %+v", draft.Resources)
+	}
+}
+
+func TestBuildFleetDispatchValidationReturnsLegacyCommonIssues(t *testing.T) {
+	base := BuildFleet(Overview{
+		CurrentPlanet: PlanetOverview{
+			Type:        PlanetTypePlanet,
+			Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Resources:   Resources{Deuterium: 5000},
+		},
+	}, FleetCounts{FleetSmallCargo: 1}, ResearchLevels{ResearchCombustionDrive: 1}, nil, false, false)
+	base.Slots = FleetSlots{Used: 0, Max: 1}
+
+	tests := []struct {
+		name  string
+		fleet Fleet
+		input FleetDispatchValidationInput
+		want  string
+	}{
+		{
+			name:  "no ships",
+			fleet: base,
+			input: FleetDispatchValidationInput{Target: Coordinates{Galaxy: 1, System: 2, Position: 4}, TargetType: GamePlanetTypePlanet, Mission: FleetMissionTransport, Speed: 10},
+			want:  FleetIssueNoShips,
+		},
+		{
+			name:  "same planet",
+			fleet: base,
+			input: FleetDispatchValidationInput{Ships: map[int]int{FleetSmallCargo: 1}, Target: base.CurrentPlanet.Coordinates, TargetType: GamePlanetTypePlanet, Mission: FleetMissionTransport, Speed: 10},
+			want:  FleetIssueSamePlanet,
+		},
+		{
+			name: "max fleet",
+			fleet: func() Fleet {
+				fleet := base
+				fleet.Slots = FleetSlots{Used: 1, Max: 1}
+				return fleet
+			}(),
+			input: FleetDispatchValidationInput{Ships: map[int]int{FleetSmallCargo: 1}, Target: Coordinates{Galaxy: 1, System: 2, Position: 4}, TargetType: GamePlanetTypePlanet, Mission: FleetMissionTransport, Speed: 10},
+			want:  FleetIssueMaxFleet,
+		},
+		{
+			name:  "invalid order",
+			fleet: base,
+			input: FleetDispatchValidationInput{Ships: map[int]int{FleetSmallCargo: 1}, Target: Coordinates{Galaxy: 1, System: 2, Position: 4}, TargetType: GamePlanetTypePlanet, Mission: FleetMissionSpy, Speed: 10},
+			want:  FleetIssueInvalidOrder,
+		},
+		{
+			name: "no fuel",
+			fleet: func() Fleet {
+				fleet := base
+				fleet.CurrentPlanet.Resources.Deuterium = 0
+				return fleet
+			}(),
+			input: FleetDispatchValidationInput{Ships: map[int]int{FleetSmallCargo: 1}, Target: Coordinates{Galaxy: 2, System: 2, Position: 4}, TargetType: GamePlanetTypePlanet, Mission: FleetMissionTransport, Speed: 10},
+			want:  FleetIssueNoFuel,
+		},
+		{
+			name: "no cargo",
+			fleet: BuildFleet(Overview{
+				CurrentPlanet: PlanetOverview{Type: PlanetTypePlanet, Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 3}, Resources: Resources{Deuterium: 100000}},
+			}, FleetCounts{FleetBomber: 1}, ResearchLevels{}, nil, false, false),
+			input: FleetDispatchValidationInput{Ships: map[int]int{FleetBomber: 1}, Target: Coordinates{Galaxy: 2, System: 2, Position: 4}, TargetType: GamePlanetTypePlanet, Mission: FleetMissionTransport, Speed: 10},
+			want:  FleetIssueNoCargo,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, issue := BuildFleetDispatchValidation(tt.fleet, tt.input)
+			if issue == nil || issue.Code != tt.want || issue.Message == "" {
+				t.Fatalf("expected issue %q, got %+v", tt.want, issue)
+			}
+		})
+	}
+	if issue := FleetActionIssueFor("unknown"); issue.Code != "unknown" || issue.Message == "" {
+		t.Fatalf("unknown fleet issue should keep code with fallback message: %+v", issue)
+	}
+}
+
 func TestFleetDispatchFlightMathMatchesLegacyFormulas(t *testing.T) {
 	origin := Coordinates{Galaxy: 1, System: 2, Position: 3}
 	if got := fleetFlightDistance(origin, Coordinates{Galaxy: 1, System: 2, Position: 3}); got != 5 {

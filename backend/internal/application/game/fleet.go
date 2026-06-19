@@ -58,6 +58,22 @@ type FleetDispatchPrepareCommand struct {
 	Speed           int
 }
 
+type FleetDispatchValidateCommand struct {
+	PublicSession   string
+	PrivateSessions map[string]string
+	RemoteAddr      string
+	PlanetID        int
+	Ships           map[int]int
+	Resources       map[int]int
+	Target          domaingame.Coordinates
+	TargetType      int
+	Mission         int
+	Speed           int
+	HoldHours       int
+	ExpeditionHours int
+	UnionID         int
+}
+
 type FleetRecallQuery struct {
 	PlayerID int
 	FleetID  int
@@ -74,6 +90,7 @@ type FleetRecallCommand struct {
 type FleetResult struct {
 	Authenticated bool
 	Issues        []domainpublicsite.SessionIssue
+	ActionIssue   *domaingame.FleetActionIssue
 	Fleet         domaingame.Fleet
 }
 
@@ -201,6 +218,54 @@ func (s FleetService) PrepareFleetDispatch(ctx context.Context, command FleetDis
 	}
 	return FleetResult{
 		Authenticated: true,
+		Fleet:         fleet,
+	}, nil
+}
+
+func (s FleetService) ValidateFleetDispatch(ctx context.Context, command FleetDispatchValidateCommand) (FleetResult, error) {
+	if s.sessions == nil || s.repository == nil {
+		return FleetResult{}, errors.New("fleet dependencies unavailable")
+	}
+
+	session, err := s.sessions.GetGameSession(ctx, apppublicsite.GameSessionCommand{
+		PublicSession:   command.PublicSession,
+		PrivateSessions: command.PrivateSessions,
+		RemoteAddr:      command.RemoteAddr,
+	})
+	if err != nil {
+		return FleetResult{}, err
+	}
+	if !session.Authenticated {
+		return FleetResult{
+			Authenticated: false,
+			Issues:        session.Issues,
+		}, nil
+	}
+
+	fleet, err := s.repository.GetFleet(ctx, FleetQuery{
+		PlayerID: session.Session.PlayerID,
+		PlanetID: command.PlanetID,
+	})
+	if err != nil {
+		return FleetResult{}, err
+	}
+	draft, issue := domaingame.BuildFleetDispatchValidation(fleet, domaingame.FleetDispatchValidationInput{
+		Ships:           command.Ships,
+		Resources:       command.Resources,
+		Target:          command.Target,
+		TargetType:      command.TargetType,
+		Mission:         command.Mission,
+		Speed:           command.Speed,
+		HoldHours:       command.HoldHours,
+		ExpeditionHours: command.ExpeditionHours,
+		UnionID:         command.UnionID,
+	})
+	if draft.HasSelection {
+		fleet.DispatchDraft = &draft
+	}
+	return FleetResult{
+		Authenticated: true,
+		ActionIssue:   issue,
 		Fleet:         fleet,
 	}, nil
 }
