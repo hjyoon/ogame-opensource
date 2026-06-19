@@ -960,7 +960,7 @@ func (r OverviewRepository) loadOverviewEvents(ctx context.Context, queueTable s
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT q.sub_id, q.start, q.end, COALESCE(f.flight_time, 0), COALESCE(f.deploy_time, 0), f.mission, COALESCE(f.ipm_amount, 0), COALESCE(f.ipm_target, 0), f.owner_id, COALESCE(owner_user.oname, ''), f.start_planet, f.target_planet, %s, COALESCE(o.g, 0), COALESCE(o.s, 0), COALESCE(o.p, 0), COALESCE(t.g, 0), COALESCE(t.s, 0), COALESCE(t.p, 0), COALESCE(t.type, ?), COALESCE(target_user.oname, 'space') FROM %s q JOIN %s f ON f.fleet_id = q.sub_id LEFT JOIN %s o ON o.planet_id = f.start_planet LEFT JOIN %s owner_user ON owner_user.player_id = f.owner_id LEFT JOIN %s t ON t.planet_id = f.target_planet LEFT JOIN %s target_user ON target_user.player_id = t.owner_id WHERE q.type = ? AND COALESCE(f.union_id, 0) = 0 AND (f.owner_id = ? OR (f.target_planet IN (SELECT planet_id FROM %s WHERE owner_id = ? AND type < ?) AND (f.mission < ? OR f.mission = ?))) ORDER BY q.end ASC, q.prio DESC",
+			"SELECT q.sub_id, q.start, q.end, COALESCE(f.flight_time, 0), COALESCE(f.deploy_time, 0), f.mission, COALESCE(f.ipm_amount, 0), COALESCE(f.ipm_target, 0), f.owner_id, COALESCE(owner_user.oname, ''), f.start_planet, f.target_planet, %s, COALESCE(o.name, ''), COALESCE(o.g, 0), COALESCE(o.s, 0), COALESCE(o.p, 0), COALESCE(t.name, ''), COALESCE(t.g, 0), COALESCE(t.s, 0), COALESCE(t.p, 0), COALESCE(t.type, ?), COALESCE(target_user.oname, 'space') FROM %s q JOIN %s f ON f.fleet_id = q.sub_id LEFT JOIN %s o ON o.planet_id = f.start_planet LEFT JOIN %s owner_user ON owner_user.player_id = f.owner_id LEFT JOIN %s t ON t.planet_id = f.target_planet LEFT JOIN %s target_user ON target_user.player_id = t.owner_id WHERE q.type = ? AND COALESCE(f.union_id, 0) = 0 AND (f.owner_id = ? OR (f.target_planet IN (SELECT planet_id FROM %s WHERE owner_id = ? AND type < ?) AND (f.mission < ? OR f.mission = ?))) ORDER BY q.end ASC, q.prio DESC",
 			prefixedNumericColumns("f", fleetIDs),
 			queueTable,
 			fleetTable,
@@ -1050,7 +1050,7 @@ func (r OverviewRepository) loadOverviewUnionEvent(ctx context.Context, queueTab
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT q.sub_id, q.start, q.end, COALESCE(f.flight_time, 0), COALESCE(f.deploy_time, 0), f.mission, COALESCE(f.ipm_amount, 0), COALESCE(f.ipm_target, 0), f.owner_id, COALESCE(owner_user.oname, ''), f.start_planet, f.target_planet, %s, COALESCE(o.g, 0), COALESCE(o.s, 0), COALESCE(o.p, 0), COALESCE(t.g, 0), COALESCE(t.s, 0), COALESCE(t.p, 0), COALESCE(t.type, ?), COALESCE(target_user.oname, 'space') FROM %s q JOIN %s f ON f.fleet_id = q.sub_id LEFT JOIN %s o ON o.planet_id = f.start_planet LEFT JOIN %s owner_user ON owner_user.player_id = f.owner_id LEFT JOIN %s t ON t.planet_id = f.target_planet LEFT JOIN %s target_user ON target_user.player_id = t.owner_id WHERE q.type = ? AND f.union_id = ? ORDER BY q.end ASC, q.prio DESC",
+			"SELECT q.sub_id, q.start, q.end, COALESCE(f.flight_time, 0), COALESCE(f.deploy_time, 0), f.mission, COALESCE(f.ipm_amount, 0), COALESCE(f.ipm_target, 0), f.owner_id, COALESCE(owner_user.oname, ''), f.start_planet, f.target_planet, %s, COALESCE(o.name, ''), COALESCE(o.g, 0), COALESCE(o.s, 0), COALESCE(o.p, 0), COALESCE(t.name, ''), COALESCE(t.g, 0), COALESCE(t.s, 0), COALESCE(t.p, 0), COALESCE(t.type, ?), COALESCE(target_user.oname, 'space') FROM %s q JOIN %s f ON f.fleet_id = q.sub_id LEFT JOIN %s o ON o.planet_id = f.start_planet LEFT JOIN %s owner_user ON owner_user.player_id = f.owner_id LEFT JOIN %s t ON t.planet_id = f.target_planet LEFT JOIN %s target_user ON target_user.player_id = t.owner_id WHERE q.type = ? AND f.union_id = ? ORDER BY q.end ASC, q.prio DESC",
 			prefixedNumericColumns("f", fleetIDs),
 			queueTable,
 			fleetTable,
@@ -1114,7 +1114,9 @@ func overviewUnionReturnMission(mission domaingame.FleetMission, flightTime int6
 	returnMission.DepartureAt = mission.ArrivalAt
 	returnMission.ArrivalAt = mission.ArrivalAt + flightTime
 	returnMission.Origin = mission.Target
+	returnMission.OriginName = mission.TargetName
 	returnMission.Target = mission.Origin
+	returnMission.TargetName = mission.OriginName
 	returnMission.Foreign = false
 	returnMission.GroupMissions = nil
 	return returnMission
@@ -1139,6 +1141,7 @@ func overviewNonUnionMissions(scanned overviewEventScan, playerID int) []domaing
 func overviewNormalizeEventGeometry(mission domaingame.FleetMission) domaingame.FleetMission {
 	if mission.Mission >= domaingame.FleetMissionReturnOffset && mission.Mission < domaingame.FleetMissionOrbitingOffset {
 		mission.Origin, mission.Target = mission.Target, mission.Origin
+		mission.OriginName, mission.TargetName = mission.TargetName, mission.OriginName
 	}
 	return mission
 }
@@ -1190,7 +1193,9 @@ func overviewReturnPseudoMission(mission domaingame.FleetMission, flightTime int
 	returnMission.DepartureAt = mission.ArrivalAt
 	returnMission.ArrivalAt = returnAt
 	returnMission.Origin = mission.Target
+	returnMission.OriginName = mission.TargetName
 	returnMission.Target = mission.Origin
+	returnMission.TargetName = mission.OriginName
 	returnMission.Foreign = false
 	returnMission.GroupMissions = nil
 	return returnMission
@@ -1231,7 +1236,9 @@ func scanOverviewEventRow(rows Rows, fleetIDs []int, playerID int) (overviewEven
 	var targetPlanetID int
 	shipValues := make([]int, len(fleetIDs))
 	var origin domaingame.Coordinates
+	var originName string
 	var target domaingame.Coordinates
+	var targetName string
 	var targetType int
 	var targetOwner string
 
@@ -1240,9 +1247,11 @@ func scanOverviewEventRow(rows Rows, fleetIDs []int, playerID int) (overviewEven
 		dest = append(dest, &shipValues[index])
 	}
 	dest = append(dest,
+		&originName,
 		&origin.Galaxy,
 		&origin.System,
 		&origin.Position,
+		&targetName,
 		&target.Galaxy,
 		&target.System,
 		&target.Position,
@@ -1260,6 +1269,8 @@ func scanOverviewEventRow(rows Rows, fleetIDs []int, playerID int) (overviewEven
 	event := domaingame.BuildFleetMission(id, mission, ships, origin, target, targetType, targetOwner, departureAt, arrivalAt)
 	event.OwnerID = ownerID
 	event.OwnerName = ownerName
+	event.OriginName = originName
+	event.TargetName = targetName
 	event.Foreign = ownerID != 0 && ownerID != playerID
 	event.MissileAmount = missileAmount
 	event.MissileTargetID = missileTargetID

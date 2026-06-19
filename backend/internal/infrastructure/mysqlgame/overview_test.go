@@ -75,6 +75,8 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 		overview.Events[0].MissionName != "Transport" ||
 		overview.Events[0].TotalShips != 2 ||
 		overview.Events[0].StateShort != "(G)" ||
+		overview.Events[0].OriginName != "Origin" ||
+		overview.Events[0].TargetName != "Target" ||
 		overview.Events[0].Foreign {
 		t.Fatalf("unexpected overview events: %+v", overview.Events)
 	}
@@ -98,6 +100,8 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 		overview.Events[3].StateShort != "(F)" ||
 		overview.Events[3].Origin.Position != 4 ||
 		overview.Events[3].Target.Position != 3 ||
+		overview.Events[3].OriginName != "Target" ||
+		overview.Events[3].TargetName != "Origin" ||
 		overview.Events[3].CanRecall {
 		t.Fatalf("unexpected own return pseudo-event: %+v", overview.Events[3])
 	}
@@ -1561,6 +1565,8 @@ func TestOverviewRepositoryLoadsACSOverviewEvents(t *testing.T) {
 		events[1].ArrivalAt != 500 ||
 		events[1].Origin.Position != 4 ||
 		events[1].Target.Position != 3 ||
+		events[1].OriginName != "Target" ||
+		events[1].TargetName != "Origin" ||
 		events[1].StateShort != "(F)" ||
 		events[1].CanRecall {
 		t.Fatalf("expected ACS return pseudo-event, got %+v", events[1])
@@ -1588,7 +1594,9 @@ func TestOverviewRepositoryLoadsNonACSOverviewPseudoEvents(t *testing.T) {
 	}
 	if events[2].Mission != domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset ||
 		events[2].Origin.Position != 6 ||
-		events[2].Target.Position != 5 {
+		events[2].Target.Position != 5 ||
+		events[2].OriginName != "Target" ||
+		events[2].TargetName != "Origin" {
 		t.Fatalf("expected actual return coordinates to be reversed, got %+v", events[2])
 	}
 	if events[3].Mission != domaingame.FleetMissionExpedition+domaingame.FleetMissionOrbitingOffset ||
@@ -1605,6 +1613,8 @@ func TestOverviewRepositoryLoadsNonACSOverviewPseudoEvents(t *testing.T) {
 		events[5].ArrivalAt != 360 ||
 		events[5].Origin.Position != 16 ||
 		events[5].Target.Position != 3 ||
+		events[5].OriginName != "Target" ||
+		events[5].TargetName != "Origin" ||
 		events[5].CanRecall {
 		t.Fatalf("expected expedition return pseudo-event, got %+v", events[5])
 	}
@@ -1623,6 +1633,8 @@ func TestOverviewPseudoEventHelpersEdges(t *testing.T) {
 		200,
 	)
 	base.OwnerID = 42
+	base.OriginName = "Origin"
+	base.TargetName = "Target"
 
 	hold := overviewHoldPseudoMission(base, -1)
 	if hold.Mission != domaingame.FleetMissionTransport+domaingame.FleetMissionOrbitingOffset ||
@@ -1633,11 +1645,15 @@ func TestOverviewPseudoEventHelpersEdges(t *testing.T) {
 	if returning.Mission != domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset ||
 		returning.ArrivalAt != base.ArrivalAt ||
 		returning.Origin.Position != 4 ||
-		returning.Target.Position != 3 {
+		returning.Target.Position != 3 ||
+		returning.OriginName != "Target" ||
+		returning.TargetName != "Origin" {
 		t.Fatalf("expected negative return timing to clamp and reverse coordinates, got %+v", returning)
 	}
 	unionReturn := overviewUnionReturnMission(base, -1, 9)
-	if unionReturn.ArrivalAt != base.ArrivalAt || unionReturn.UnionID != 9 {
+	if unionReturn.ArrivalAt != base.ArrivalAt || unionReturn.UnionID != 9 ||
+		unionReturn.OriginName != "Target" ||
+		unionReturn.TargetName != "Origin" {
 		t.Fatalf("expected union return negative flight clamp, got %+v", unionReturn)
 	}
 
@@ -1829,7 +1845,7 @@ func overviewEventRowWithMissileAndDeploy(id int, ownerID int, ownerName string,
 	for _, fleetID := range domaingame.FleetIDs() {
 		row = append(row, ships[fleetID])
 	}
-	row = append(row, 1, 2, originPosition, 1, 2, targetPosition, domaingame.PlanetTypePlanet, "target")
+	row = append(row, "Origin", 1, 2, originPosition, "Target", 1, 2, targetPosition, domaingame.PlanetTypePlanet, "target")
 	return row
 }
 

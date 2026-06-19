@@ -29,7 +29,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep <4KB; split docs first.
 - Shipyard/defense cover display plus POST orders into legacy `Shipyard` queue.
 - Tech/stat/search/buddy/notes/messages/report/options follow legacy chrome; messages send/delete/report PMs; `bericht` owner/allied-spy access is ported.
 - Registration/activation side effects, SMTP/MailHog mail, redirects, and link reuse rejection are ported.
-- Overview covers `cp`, `lgn`, notices, unread/build/incoming/missile/fleet pseudo-events, chrome/link/event DOM, rename/delete, blockers, destroy markers, queue flush, stats/ranks, and active restore.
+- Overview covers `cp`, `lgn`, notices, unread/build/incoming/missile/fleet pseudo-events, chrome/link/event names+DOM, rename/delete/blockers/destroy/queue/stats/ranks, and active restore.
 - Buildings/research/resources write legacy queues, resources, stats/ranks, caps, and active queue state.
 - Empire ports the Commander-gated `imperium` table, build queue markers, and legacy GET add/destroy/remove shortcuts.
 - Fleet dispatch covers resources/math, hold fuel/clamps, target/ACS guards, ACS sync, and colonize/exp targets.

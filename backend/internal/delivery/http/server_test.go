@@ -789,17 +789,24 @@ func TestGameLogoutEndpointReturnsUnavailable(t *testing.T) {
 
 func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	missile := domaingame.BuildFleetMission(12, domaingame.FleetMissionMissile, nil, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, domaingame.PlanetTypePlanet, "legor", 120, 220)
+	missile.OriginName = "Enemy"
+	missile.TargetName = "Arakis"
 	missile.MissileAmount = 3
 	missile.MissileTargetID = domaingame.DefenseRocketLauncher
 	missile.MissileTarget = "Rocket Launcher"
 	acs := domaingame.BuildFleetMission(13, domaingame.FleetMissionACSAttackHead, nil, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 5}, domaingame.PlanetTypePlanet, "target", 130, 230)
+	acs.OriginName = "Arakis"
+	acs.TargetName = "Target"
 	acs.UnionID = 7
 	acs.GroupMissions = []domaingame.FleetMission{
 		domaingame.BuildFleetMission(31, domaingame.FleetMissionACSAttackHead, domaingame.FleetCounts{domaingame.FleetCruiser: 2}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 5}, domaingame.PlanetTypePlanet, "target", 130, 230),
 		domaingame.BuildFleetMission(32, domaingame.FleetMissionACSAttack, domaingame.FleetCounts{domaingame.FleetLightFighter: 5}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 5}, domaingame.PlanetTypePlanet, "target", 130, 230),
 	}
+	transport := domaingame.BuildFleetMission(11, domaingame.FleetMissionTransport, domaingame.FleetCounts{domaingame.FleetSmallCargo: 2}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4}, domaingame.PlanetTypePlanet, "target", 100, 200)
+	transport.OriginName = "Arakis"
+	transport.TargetName = "Colony"
 	overviewEvents := domaingame.BuildOverviewEvents([]domaingame.FleetMission{
-		domaingame.BuildFleetMission(11, domaingame.FleetMissionTransport, domaingame.FleetCounts{domaingame.FleetSmallCargo: 2}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4}, domaingame.PlanetTypePlanet, "target", 100, 200),
+		transport,
 		missile,
 		acs,
 	})
@@ -894,7 +901,10 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	if len(response.Overview.Events) != 3 || !response.Overview.Events[0].Own || response.Overview.Events[0].OwnerID != 0 {
 		t.Fatalf("unexpected overview event mapping: %+v", response.Overview.Events)
 	}
-	if response.Overview.Events[0].MissionName != "Transport" || response.Overview.Events[0].TotalShips != 2 {
+	if response.Overview.Events[0].MissionName != "Transport" ||
+		response.Overview.Events[0].TotalShips != 2 ||
+		response.Overview.Events[0].OriginName != "Arakis" ||
+		response.Overview.Events[0].TargetName != "Colony" {
 		t.Fatalf("expected overview event mapping, got %+v", response.Overview.Events)
 	}
 	if response.Overview.Events[1].MissionName != "Missile Attack" ||

@@ -509,7 +509,9 @@ type GameFleetMission = {
   unionId: number;
   groupMissions: GameFleetMission[];
   origin: Coordinates;
+  originName: string;
   target: Coordinates;
+  targetName: string;
   targetType: number;
   targetOwnerName: string;
   departureAt: number;
@@ -5059,8 +5061,8 @@ function OverviewEventBody({ event }: { event: GameFleetMission }) {
   return (
     <>
       <a title={overviewEventShipTitle(event)}>{overviewEventFleetLabel(event)}</a> {overviewEventDirectionText(event)}{" "}
-      <a href={galaxyHref(event.origin)}>[{formatCoordinates(event.origin)}]</a> {overviewEventTargetText(event)}{" "}
-      <a href={galaxyHref(event.target)}>[{formatCoordinates(event.target)}]</a>. Mission: {event.missionName}
+      <OverviewEventEndpoint coordinates={event.origin} name={event.originName} /> {overviewEventTargetText(event)}{" "}
+      <OverviewEventEndpoint coordinates={event.target} name={event.targetName} />. Mission: {event.missionName}
     </>
   );
 }
@@ -5069,11 +5071,26 @@ function OverviewMissileEventBody({ event }: { event: GameFleetMission }) {
   return (
     <>
       Rocket Attack ({formatLegacyNumber(event.missileAmount)}) from{" "}
-      <a href={galaxyHref(event.origin)}>[{formatCoordinates(event.origin)}]</a> to{" "}
-      <a href={galaxyHref(event.target)}>[{formatCoordinates(event.target)}]</a>
+      <OverviewEventEndpoint coordinates={event.origin} name={event.originName} /> to{" "}
+      <OverviewEventEndpoint coordinates={event.target} name={event.targetName} />
       {event.missileTargetId > 0 ? ` Main target ${event.missileTarget || `NAME_${event.missileTargetId}`}` : ""}
     </>
   );
+}
+
+function OverviewEventEndpoint({ coordinates, name }: { coordinates: Coordinates; name: string }) {
+  const label = overviewEventEndpointName(name);
+  return (
+    <>
+      {label ? `${label} ` : ""}
+      <a href={galaxyHref(coordinates)}>[{formatCoordinates(coordinates)}]</a>
+    </>
+  );
+}
+
+function overviewEventEndpointName(name: string): string {
+  const normalized = name.trim();
+  return normalized && normalized.toLowerCase() !== "space" ? normalized : "";
 }
 
 function overviewEventRowClass(event: GameFleetMission): string {

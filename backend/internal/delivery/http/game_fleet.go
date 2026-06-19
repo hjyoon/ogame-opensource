@@ -63,7 +63,9 @@ type gameFleetMissionResponse struct {
 	UnionID         int                          `json:"unionId"`
 	GroupMissions   []gameFleetMissionResponse   `json:"groupMissions"`
 	Origin          gameCoordinatesResponse      `json:"origin"`
+	OriginName      string                       `json:"originName"`
 	Target          gameCoordinatesResponse      `json:"target"`
+	TargetName      string                       `json:"targetName"`
 	TargetType      int                          `json:"targetType"`
 	TargetOwnerName string                       `json:"targetOwnerName"`
 	DepartureAt     int64                        `json:"departureAt"`
@@ -461,7 +463,9 @@ func toGameFleetMissionResponse(mission domaingame.FleetMission) gameFleetMissio
 		UnionID:         mission.UnionID,
 		GroupMissions:   groupMissions,
 		Origin:          toGameCoordinatesResponse(mission.Origin),
+		OriginName:      mission.OriginName,
 		Target:          toGameCoordinatesResponse(mission.Target),
+		TargetName:      mission.TargetName,
 		TargetType:      mission.TargetType,
 		TargetOwnerName: mission.TargetOwnerName,
 		DepartureAt:     mission.DepartureAt,

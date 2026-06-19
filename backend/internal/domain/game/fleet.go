@@ -65,7 +65,9 @@ type FleetMission struct {
 	UnionID         int
 	GroupMissions   []FleetMission
 	Origin          Coordinates
+	OriginName      string
 	Target          Coordinates
+	TargetName      string
 	TargetType      int
 	TargetOwnerName string
 	DepartureAt     int64
