@@ -168,6 +168,7 @@ type GamePlanetOverview = {
   fields: number;
   maxFields: number;
   resources: Resources;
+  buildQueue?: GameOverviewBuildQueue;
 };
 
 type GamePlanetSummary = {
@@ -176,6 +177,15 @@ type GamePlanetSummary = {
   type: number;
   coordinates: Coordinates;
   current: boolean;
+  buildQueue?: GameOverviewBuildQueue;
+};
+
+type GameOverviewBuildQueue = {
+  techId: number;
+  name: string;
+  level: number;
+  destroy: boolean;
+  end: number;
 };
 
 type GameEmpire = {
@@ -4894,7 +4904,7 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
           <th colSpan={2}>
             <img alt="" height={200} src={planetImagePath(planet, false)} width={200} />
             <br />
-            <div className="legacy-center">free</div>
+            <div className="legacy-center">{overviewBuildQueueText(planet.buildQueue, true)}</div>
             <br />
           </th>
           <th className="legacy-s">
@@ -4918,7 +4928,7 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
                             />
                           </a>
                           <br />
-                          <div className="legacy-center">free</div>
+                          <div className="legacy-center">{overviewBuildQueueText(item.buildQueue, false)}</div>
                         </th>
                       ))}
                     </tr>
@@ -4956,6 +4966,17 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
       </tbody>
     </table>
   );
+}
+
+function overviewBuildQueueText(queue: GameOverviewBuildQueue | undefined, includeLevel: boolean): string {
+  if (!queue) {
+    return "free";
+  }
+  if (!includeLevel) {
+    return queue.name;
+  }
+  const level = queue.destroy ? queue.level + 1 : queue.level;
+  return `${queue.name}${queue.destroy ? " Снести" : ""} (${level})`;
 }
 
 function RenamePlanetTable({

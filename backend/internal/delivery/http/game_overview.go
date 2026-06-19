@@ -63,6 +63,7 @@ type gamePlanetOverviewResponse struct {
 	Fields      int                     `json:"fields"`
 	MaxFields   int                     `json:"maxFields"`
 	Resources   gameResourcesResponse   `json:"resources"`
+	BuildQueue  *gameBuildQueueResponse `json:"buildQueue,omitempty"`
 }
 
 type gamePlanetSummaryResponse struct {
@@ -71,6 +72,15 @@ type gamePlanetSummaryResponse struct {
 	Type        int                     `json:"type"`
 	Coordinates gameCoordinatesResponse `json:"coordinates"`
 	Current     bool                    `json:"current"`
+	BuildQueue  *gameBuildQueueResponse `json:"buildQueue,omitempty"`
+}
+
+type gameBuildQueueResponse struct {
+	TechID  int    `json:"techId"`
+	Name    string `json:"name"`
+	Level   int    `json:"level"`
+	Destroy bool   `json:"destroy"`
+	End     int64  `json:"end"`
 }
 
 type gameOverviewMutationRequest struct {
@@ -262,6 +272,7 @@ func toGamePlanetOverviewResponse(planet domaingame.PlanetOverview) gamePlanetOv
 			CrystalCapacity:   planet.Resources.CrystalCapacity,
 			DeuteriumCapacity: planet.Resources.DeuteriumCapacity,
 		},
+		BuildQueue: toGameBuildQueueResponse(planet.BuildQueue),
 	}
 }
 
@@ -272,6 +283,20 @@ func toGamePlanetSummaryResponse(planet domaingame.PlanetSummary) gamePlanetSumm
 		Type:        planet.Type,
 		Coordinates: toGameCoordinatesResponse(planet.Coordinates),
 		Current:     planet.Current,
+		BuildQueue:  toGameBuildQueueResponse(planet.BuildQueue),
+	}
+}
+
+func toGameBuildQueueResponse(queue *domaingame.OverviewBuildQueue) *gameBuildQueueResponse {
+	if queue == nil {
+		return nil
+	}
+	return &gameBuildQueueResponse{
+		TechID:  queue.TechID,
+		Name:    queue.Name,
+		Level:   queue.Level,
+		Destroy: queue.Destroy,
+		End:     queue.End,
 	}
 }
 

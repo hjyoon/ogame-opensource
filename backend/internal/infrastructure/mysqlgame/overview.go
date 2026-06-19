@@ -51,13 +51,14 @@ func (q SQLQueryer) QueryContext(ctx context.Context, query string, args ...any)
 }
 
 type OverviewRepository struct {
-	queryer         Queryer
-	execer          Execer
-	prefix          string
-	secret          string
-	now             func() time.Time
-	updateResources bool
-	includeUnread   bool
+	queryer           Queryer
+	execer            Execer
+	prefix            string
+	secret            string
+	now               func() time.Time
+	updateResources   bool
+	includeUnread     bool
+	includeBuildQueue bool
 }
 
 func NewOverviewRepository(db *sql.DB, prefix string) OverviewRepository {
@@ -66,7 +67,7 @@ func NewOverviewRepository(db *sql.DB, prefix string) OverviewRepository {
 
 func NewOverviewRepositoryWithSecret(db *sql.DB, prefix string, secret string) OverviewRepository {
 	runner := SQLQueryer{DB: db}
-	return OverviewRepository{queryer: runner, execer: runner, prefix: prefix, secret: secret, now: time.Now, updateResources: true, includeUnread: true}
+	return OverviewRepository{queryer: runner, execer: runner, prefix: prefix, secret: secret, now: time.Now, updateResources: true, includeUnread: true, includeBuildQueue: true}
 }
 
 func NewOverviewRepositoryWithQueryer(queryer Queryer, prefix string) OverviewRepository {
@@ -97,6 +98,13 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 	messagesTable := ""
 	if r.includeUnread {
 		messagesTable, err = tableName(r.prefix, "messages")
+		if err != nil {
+			return domaingame.Overview{}, err
+		}
+	}
+	buildQueueTable := ""
+	if r.includeBuildQueue {
+		buildQueueTable, err = tableName(r.prefix, "buildqueue")
 		if err != nil {
 			return domaingame.Overview{}, err
 		}
@@ -165,6 +173,11 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 	planets, err := r.loadPlanets(ctx, planetsTable, query.PlayerID, current.ID, user.SortBy, user.SortOrder)
 	if err != nil {
 		return domaingame.Overview{}, err
+	}
+	if r.includeBuildQueue {
+		if err := r.attachOverviewBuildQueues(ctx, buildQueueTable, query.PlayerID, &current, planets); err != nil {
+			return domaingame.Overview{}, err
+		}
 	}
 	universePlayers, err := r.loadUniversePlayers(ctx)
 	if err != nil {
@@ -812,6 +825,61 @@ func (r OverviewRepository) loadPlanets(ctx context.Context, planetsTable string
 	return planets, nil
 }
 
+func (r OverviewRepository) attachOverviewBuildQueues(ctx context.Context, buildQueueTable string, playerID int, current *domaingame.PlanetOverview, planets []domaingame.PlanetSummary) error {
+	planetIndexes := make(map[int]int, len(planets))
+	for index := range planets {
+		planetIndexes[planets[index].ID] = index
+	}
+	currentID := 0
+	if current != nil && current.ID != 0 {
+		currentID = current.ID
+	}
+	if len(planetIndexes) == 0 && currentID == 0 {
+		return nil
+	}
+
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT planet_id, tech_id, level, destroy, end FROM %s WHERE owner_id = ? ORDER BY planet_id ASC, list_id ASC", buildQueueTable),
+		playerID,
+	)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	seen := make(map[int]bool, len(planetIndexes))
+	for rows.Next() {
+		var planetID int
+		var techID int
+		var level int
+		var destroy int
+		var end int64
+		if err := rows.Scan(&planetID, &techID, &level, &destroy, &end); err != nil {
+			return err
+		}
+		index, ok := planetIndexes[planetID]
+		if (!ok && planetID != currentID) || seen[planetID] || !containsInt(domaingame.BuildingIDs(), techID) {
+			continue
+		}
+		queue := &domaingame.OverviewBuildQueue{
+			TechID:  techID,
+			Name:    overviewTechnologyName(techID),
+			Level:   level,
+			Destroy: destroy != 0,
+			End:     end,
+		}
+		seen[planetID] = true
+		if currentID == planetID {
+			current.BuildQueue = queue
+		}
+		if ok {
+			planets[index].BuildQueue = queue
+		}
+	}
+	return rows.Err()
+}
+
 func (r OverviewRepository) loadUniversePlayers(ctx context.Context) (int, error) {
 	uniTable, err := tableName(r.prefix, "uni")
 	if err != nil {
@@ -858,6 +926,14 @@ func (r OverviewRepository) loadUnreadMessages(ctx context.Context, messagesTabl
 		return 0, err
 	}
 	return count, nil
+}
+
+func overviewTechnologyName(techID int) string {
+	name := domaingame.TechnologyName(techID)
+	if name == "" {
+		return fmt.Sprintf("NAME_%d", techID)
+	}
+	return name
 }
 
 func formatLegacyOverviewTime(now time.Time) string {

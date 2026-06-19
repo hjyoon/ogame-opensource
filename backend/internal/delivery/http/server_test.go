@@ -821,6 +821,13 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 					CrystalCapacity:   150000,
 					DeuteriumCapacity: 200000,
 				},
+				BuildQueue: &domaingame.OverviewBuildQueue{
+					TechID:  domaingame.BuildingMetalMine,
+					Name:    "Metal Mine",
+					Level:   3,
+					Destroy: false,
+					End:     2000,
+				},
 			},
 			PlanetSwitcher: []domaingame.PlanetSummary{{
 				ID:   99,
@@ -832,6 +839,13 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 					Position: 3,
 				},
 				Current: true,
+				BuildQueue: &domaingame.OverviewBuildQueue{
+					TechID:  domaingame.BuildingMetalMine,
+					Name:    "Metal Mine",
+					Level:   3,
+					Destroy: false,
+					End:     2000,
+				},
 			}},
 		},
 	}}
@@ -855,7 +869,10 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	if response.Overview.Score.Points != 123 ||
 		response.Overview.CurrentPlanet.Coordinates.Position != 3 ||
 		response.Overview.CurrentPlanet.Resources.Metal != 1234.5 ||
-		response.Overview.CurrentPlanet.Resources.CrystalCapacity != 150000 {
+		response.Overview.CurrentPlanet.Resources.CrystalCapacity != 150000 ||
+		response.Overview.CurrentPlanet.BuildQueue == nil ||
+		response.Overview.CurrentPlanet.BuildQueue.Name != "Metal Mine" ||
+		response.Overview.CurrentPlanet.BuildQueue.End != 2000 {
 		t.Fatalf("unexpected overview mapping: %+v", response.Overview)
 	}
 	if len(response.Overview.Messages) != 1 || response.Overview.Messages[0] != domaingame.OverviewAdminNotice {

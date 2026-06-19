@@ -23,11 +23,17 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 			[]any{99, "Arakis", 1, 1, 2, 3},
 			[]any{100, "Colony", 1, 1, 2, 4},
 		)},
+		{rows: fakeRowsFromValues(
+			[]any{99, domaingame.BuildingMetalMine, 3, 0, int64(2000)},
+			[]any{100, domaingame.BuildingCrystalMine, 4, 1, int64(2001)},
+			[]any{100, domaingame.BuildingDeuteriumSynth, 5, 0, int64(2002)},
+		)},
 		{rows: fakeRowsFromValues([]any{2})},
 		{rows: fakeRowsFromValues([]any{4})},
 	}}
 	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
 	repository.includeUnread = true
+	repository.includeBuildQueue = true
 	repository.now = func() time.Time { return time.Date(2026, 6, 19, 15, 23, 7, 0, time.UTC) }
 
 	overview, err := repository.GetOverview(context.Background(), overviewQuery(42, 0))
@@ -58,11 +64,29 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	if overview.UnreadMessages != 4 {
 		t.Fatalf("expected unread messages, got %d", overview.UnreadMessages)
 	}
+	if overview.CurrentPlanet.BuildQueue == nil ||
+		overview.CurrentPlanet.BuildQueue.Name != "Metal Mine" ||
+		overview.CurrentPlanet.BuildQueue.Level != 3 ||
+		overview.CurrentPlanet.BuildQueue.Destroy {
+		t.Fatalf("unexpected current build queue: %+v", overview.CurrentPlanet.BuildQueue)
+	}
 	if len(overview.PlanetSwitcher) != 2 || !overview.PlanetSwitcher[0].Current || overview.PlanetSwitcher[1].Current {
 		t.Fatalf("unexpected planet switcher: %+v", overview.PlanetSwitcher)
 	}
+	if overview.PlanetSwitcher[0].BuildQueue == nil || overview.PlanetSwitcher[0].BuildQueue.Name != "Metal Mine" {
+		t.Fatalf("expected current switcher build queue, got %+v", overview.PlanetSwitcher[0].BuildQueue)
+	}
+	if overview.PlanetSwitcher[1].BuildQueue == nil ||
+		overview.PlanetSwitcher[1].BuildQueue.Name != "Crystal Mine" ||
+		overview.PlanetSwitcher[1].BuildQueue.Level != 4 ||
+		!overview.PlanetSwitcher[1].BuildQueue.Destroy {
+		t.Fatalf("unexpected planet switcher build queue: %+v", overview.PlanetSwitcher[1].BuildQueue)
+	}
 	if !strings.Contains(queryer.calls[2].sql, "ORDER BY planet_id ASC, type DESC") {
 		t.Fatalf("expected legacy default planet order, got %q", queryer.calls[2].sql)
+	}
+	if !strings.Contains(queryer.calls[3].sql, "FROM `ogame_buildqueue`") || !strings.Contains(queryer.calls[3].sql, "ORDER BY planet_id ASC, list_id ASC") {
+		t.Fatalf("expected overview buildqueue query, got %+v", queryer.calls[3])
 	}
 	if !strings.Contains(queryer.calls[0].sql, "`ogame_users`") || !strings.Contains(queryer.calls[1].sql, "`ogame_planets`") {
 		t.Fatalf("expected prefixed table names, got %+v", queryer.calls)
@@ -104,8 +128,8 @@ func TestNewOverviewRepositoryKeepsSQLQueryer(t *testing.T) {
 	if _, ok := repository.execer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL execer, got %T", repository.execer)
 	}
-	if !repository.updateResources || !repository.includeUnread {
-		t.Fatalf("expected production overview repository to update resources and unread messages")
+	if !repository.updateResources || !repository.includeUnread || !repository.includeBuildQueue {
+		t.Fatalf("expected production overview repository to update resources and overview side data")
 	}
 }
 
@@ -1341,10 +1365,92 @@ func TestOverviewRepositoryLoadUnreadMessagesEdges(t *testing.T) {
 	}
 }
 
+func TestOverviewRepositoryAttachBuildQueues(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(
+		[]any{99, domaingame.BuildingMetalMine, 3, 0, int64(2000)},
+		[]any{100, domaingame.BuildingCrystalMine, 4, 1, int64(2001)},
+		[]any{100, domaingame.BuildingDeuteriumSynth, 5, 0, int64(2002)},
+		[]any{101, domaingame.ResearchEnergy, 6, 0, int64(2003)},
+	)}}}
+	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	current := domaingame.PlanetOverview{ID: 99}
+	planets := []domaingame.PlanetSummary{{ID: 99}, {ID: 100}, {ID: 101}}
+
+	if err := repository.attachOverviewBuildQueues(context.Background(), "`ogame_buildqueue`", 42, &current, planets); err != nil {
+		t.Fatal(err)
+	}
+
+	if current.BuildQueue == nil || current.BuildQueue.Name != "Metal Mine" || current.BuildQueue.End != 2000 {
+		t.Fatalf("unexpected current build queue: %+v", current.BuildQueue)
+	}
+	if planets[0].BuildQueue == nil || planets[0].BuildQueue.Name != "Metal Mine" {
+		t.Fatalf("expected current planet switcher build queue, got %+v", planets[0].BuildQueue)
+	}
+	if planets[1].BuildQueue == nil ||
+		planets[1].BuildQueue.Name != "Crystal Mine" ||
+		planets[1].BuildQueue.Level != 4 ||
+		!planets[1].BuildQueue.Destroy {
+		t.Fatalf("unexpected planet build queue: %+v", planets[1].BuildQueue)
+	}
+	if planets[2].BuildQueue != nil {
+		t.Fatalf("expected non-building queue row to be ignored, got %+v", planets[2].BuildQueue)
+	}
+	if !strings.Contains(queryer.calls[0].sql, "ORDER BY planet_id ASC, list_id ASC") {
+		t.Fatalf("expected legacy build queue ordering, got %q", queryer.calls[0].sql)
+	}
+}
+
+func TestOverviewRepositoryAttachBuildQueuesEdges(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		queryer *fakeQueryer
+		want    string
+	}{
+		{
+			name:    "query error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{err: errors.New("buildqueue query failed")}}},
+			want:    "buildqueue query failed",
+		},
+		{
+			name:    "scan error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", domaingame.BuildingMetalMine, 3, 0, int64(2000)})}}},
+			want:    "expected int",
+		},
+		{
+			name:    "rows error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("buildqueue rows failed"), []any{99, domaingame.BuildingMetalMine, 3, 0, int64(2000)})}}},
+			want:    "buildqueue rows failed",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewOverviewRepositoryWithQueryer(tt.queryer, "ogame_")
+			current := domaingame.PlanetOverview{ID: 99}
+			err := repository.attachOverviewBuildQueues(context.Background(), "`ogame_buildqueue`", 42, &current, nil)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
+	}
+
+	repository := NewOverviewRepositoryWithQueryer(&fakeQueryer{}, "ogame_")
+	if err := repository.attachOverviewBuildQueues(context.Background(), "`ogame_buildqueue`", 42, nil, nil); err != nil {
+		t.Fatalf("expected empty planet list to skip query, got %v", err)
+	}
+}
+
 func TestFormatLegacyOverviewTimeUsesServerTimezone(t *testing.T) {
 	got := formatLegacyOverviewTime(time.Date(2026, 6, 19, 15, 23, 7, 0, time.UTC))
 	if got != "Fri Jun 19 18:23:07" {
 		t.Fatalf("unexpected legacy overview time: %q", got)
+	}
+}
+
+func TestOverviewTechnologyNameFallsBackToLegacyKey(t *testing.T) {
+	if got := overviewTechnologyName(domaingame.BuildingMetalMine); got != "Metal Mine" {
+		t.Fatalf("unexpected known technology name: %q", got)
+	}
+	if got := overviewTechnologyName(999999); got != "NAME_999999" {
+		t.Fatalf("unexpected fallback technology name: %q", got)
 	}
 }
 

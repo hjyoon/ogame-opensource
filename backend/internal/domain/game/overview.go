@@ -46,6 +46,7 @@ type PlanetOverview struct {
 	Fields      int
 	MaxFields   int
 	Resources   Resources
+	BuildQueue  *OverviewBuildQueue
 }
 
 type PlanetSummary struct {
@@ -54,6 +55,15 @@ type PlanetSummary struct {
 	Type        int
 	Coordinates Coordinates
 	Current     bool
+	BuildQueue  *OverviewBuildQueue
+}
+
+type OverviewBuildQueue struct {
+	TechID  int
+	Name    string
+	Level   int
+	Destroy bool
+	End     int64
 }
 
 type Coordinates struct {
