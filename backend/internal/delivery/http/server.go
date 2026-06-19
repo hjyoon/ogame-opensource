@@ -100,6 +100,7 @@ type GameSearchUseCase interface {
 
 type GameBuddyUseCase interface {
 	GetBuddy(context.Context, appgame.BuddyCommand) (appgame.BuddyResult, error)
+	MutateBuddy(context.Context, appgame.BuddyMutationCommand) (appgame.BuddyResult, error)
 }
 
 type GameNotesUseCase interface {
@@ -165,7 +166,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/technology", getOnly(a.handleGameTechnology))
 	mux.HandleFunc("/api/game/statistics", getOnly(a.handleGameStatistics))
 	mux.HandleFunc("/api/game/search", getOnly(a.handleGameSearch))
-	mux.HandleFunc("/api/game/buddy", getOnly(a.handleGameBuddy))
+	mux.HandleFunc("/api/game/buddy", a.handleGameBuddy)
 	mux.HandleFunc("/api/game/notes", a.handleGameNotes)
 	mux.Handle("/legacy-assets/", http.StripPrefix("/legacy-assets/", http.FileServer(deps.LegacyAssets)))
 	mux.HandleFunc("/", getOnly(a.handleFrontend))

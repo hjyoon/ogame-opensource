@@ -12,7 +12,19 @@ import (
 type gameBuddyResponse struct {
 	Authenticated bool                       `json:"authenticated"`
 	Issues        []gameSessionIssueResponse `json:"issues"`
+	ActionIssue   *gameBuddyActionIssue      `json:"actionIssue,omitempty"`
 	Buddy         *gameBuddySummary          `json:"buddy,omitempty"`
+}
+
+type gameBuddyActionIssue struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type gameBuddyMutationRequest struct {
+	Action  int    `json:"action"`
+	BuddyID int    `json:"buddyId"`
+	Text    string `json:"text"`
 }
 
 type gameBuddySummary struct {
@@ -50,6 +62,18 @@ type gameBuddyStatus struct {
 }
 
 func (a app) handleGameBuddy(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		a.handleGameBuddyGet(w, r)
+	case http.MethodPost:
+		a.handleGameBuddyPost(w, r)
+	default:
+		w.Header().Set("Allow", "GET, HEAD, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (a app) handleGameBuddyGet(w http.ResponseWriter, r *http.Request) {
 	if a.deps.GameBuddy == nil {
 		http.Error(w, "game buddy unavailable", http.StatusServiceUnavailable)
 		return
@@ -85,6 +109,44 @@ func (a app) handleGameBuddy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	writeGameBuddyResponse(w, result)
+}
+
+func (a app) handleGameBuddyPost(w http.ResponseWriter, r *http.Request) {
+	if a.deps.GameBuddy == nil {
+		http.Error(w, "game buddy unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	planetID, err := selectedPlanetID(r)
+	if err != nil {
+		http.Error(w, "invalid selected planet", http.StatusBadRequest)
+		return
+	}
+
+	var mutation gameBuddyMutationRequest
+	if err := json.NewDecoder(r.Body).Decode(&mutation); err != nil {
+		http.Error(w, "invalid buddy mutation", http.StatusBadRequest)
+		return
+	}
+
+	result, err := a.deps.GameBuddy.MutateBuddy(r.Context(), appgame.BuddyMutationCommand{
+		PublicSession:   r.URL.Query().Get("session"),
+		PrivateSessions: cookieMap(r),
+		RemoteAddr:      remoteIP(r.RemoteAddr),
+		PlanetID:        planetID,
+		Action:          mutation.Action,
+		BuddyID:         mutation.BuddyID,
+		Text:            mutation.Text,
+	})
+	if err != nil {
+		http.Error(w, "game buddy unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	writeGameBuddyResponse(w, result)
+}
+
+func writeGameBuddyResponse(w http.ResponseWriter, result appgame.BuddyResult) {
 	status := http.StatusOK
 	var buddy *gameBuddySummary
 	if result.Authenticated {
@@ -99,6 +161,7 @@ func (a app) handleGameBuddy(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(gameBuddyResponse{
 		Authenticated: result.Authenticated,
 		Issues:        toGameSessionIssueResponses(result.Issues),
+		ActionIssue:   toGameBuddyActionIssue(result.ActionIssue),
 		Buddy:         buddy,
 	})
 }
@@ -137,6 +200,13 @@ func toGameBuddySummary(buddy domaingame.Buddy) gameBuddySummary {
 		Rows:           rows,
 		Target:         target,
 	}
+}
+
+func toGameBuddyActionIssue(issue *domaingame.BuddyActionIssue) *gameBuddyActionIssue {
+	if issue == nil {
+		return nil
+	}
+	return &gameBuddyActionIssue{Code: issue.Code, Message: issue.Message}
 }
 
 func toGameBuddyRow(row domaingame.BuddyRow) gameBuddyRow {

@@ -2425,6 +2425,68 @@ func TestGameBuddyEndpointReturnsBuddy(t *testing.T) {
 	}
 }
 
+func TestGameBuddyEndpointMutatesBuddy(t *testing.T) {
+	buddy := &fakeGameBuddy{result: appgame.BuddyResult{
+		Authenticated: true,
+		ActionIssue:   domaingame.BuddyAlreadySentIssue(),
+		Buddy: domaingame.Buddy{
+			Commander: "legor",
+			Action:    domaingame.BuddyActionHome,
+		},
+	}}
+	server := testServerWithGameBuddy(t, buddy)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/buddy?session=public&cp=99", strings.NewReader(`{"action":1,"buddyId":43,"text":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameBuddyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Buddy == nil || response.ActionIssue == nil ||
+		response.ActionIssue.Code != domaingame.BuddyIssueAlreadySent {
+		t.Fatalf("expected authenticated buddy mutation response with action issue, got %+v", response)
+	}
+	if buddy.mutation.PublicSession != "public" || buddy.mutation.PlanetID != 99 || buddy.mutation.Action != 1 ||
+		buddy.mutation.BuddyID != 43 || buddy.mutation.Text != "hello" || buddy.mutation.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected buddy mutation command: %+v", buddy.mutation)
+	}
+	if buddy.mutation.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("expected private session cookie to be passed, got %+v", buddy.mutation.PrivateSessions)
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("private")) {
+		t.Fatalf("game buddy mutation response must not echo private session: %s", rec.Body.String())
+	}
+}
+
+func TestGameBuddyEndpointMutationReturnsUnauthorizedForInvalidSession(t *testing.T) {
+	buddy := &fakeGameBuddy{result: appgame.BuddyResult{
+		Authenticated: false,
+		Issues:        []domainpublicsite.SessionIssue{{Code: "missing", Message: "missing session"}},
+	}}
+	server := testServerWithGameBuddy(t, buddy)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/buddy?session=public", strings.NewReader(`{"action":2,"buddyId":1}`))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var response gameBuddyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Authenticated || response.Buddy != nil || len(response.Issues) != 1 {
+		t.Fatalf("expected invalid buddy mutation session response, got %+v", response)
+	}
+}
+
 func TestGameBuddyEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
 	buddy := &fakeGameBuddy{result: appgame.BuddyResult{
 		Authenticated: false,
@@ -2462,6 +2524,20 @@ func TestGameBuddyEndpointRejectsInvalidQuery(t *testing.T) {
 			t.Fatalf("expected %s to return 400, got %d", target, rec.Code)
 		}
 	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/game/buddy?session=public", strings.NewReader("{"))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid buddy mutation JSON to return 400, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/buddy?session=public&cp=abc", strings.NewReader(`{"action":1}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid buddy mutation selected planet to return 400, got %d", rec.Code)
+	}
 }
 
 func TestGameBuddyEndpointReturnsUnavailable(t *testing.T) {
@@ -2480,6 +2556,21 @@ func TestGameBuddyEndpointReturnsUnavailable(t *testing.T) {
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected game buddy error to return 503, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/buddy?session=public", strings.NewReader(`{"action":1}`))
+	rec = httptest.NewRecorder()
+	testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game buddy mutation use case to return 503, got %d", rec.Code)
+	}
+
+	server = testServerWithGameBuddy(t, &fakeGameBuddy{err: errors.New("buddy failed")})
+	req = httptest.NewRequest(http.MethodPost, "/api/game/buddy?session=public", strings.NewReader(`{"action":1}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game buddy mutation error to return 503, got %d", rec.Code)
 	}
 }
 
@@ -3241,11 +3332,11 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game search method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/game/buddy", nil)
+	req = httptest.NewRequest(http.MethodPut, "/api/game/buddy", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD, POST" {
 		t.Fatalf("expected game buddy method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
@@ -3876,13 +3967,19 @@ func (f *fakeGameSearch) GetSearch(_ context.Context, command appgame.SearchComm
 }
 
 type fakeGameBuddy struct {
-	result  appgame.BuddyResult
-	err     error
-	command appgame.BuddyCommand
+	result   appgame.BuddyResult
+	err      error
+	command  appgame.BuddyCommand
+	mutation appgame.BuddyMutationCommand
 }
 
 func (f *fakeGameBuddy) GetBuddy(_ context.Context, command appgame.BuddyCommand) (appgame.BuddyResult, error) {
 	f.command = command
+	return f.result, f.err
+}
+
+func (f *fakeGameBuddy) MutateBuddy(_ context.Context, command appgame.BuddyMutationCommand) (appgame.BuddyResult, error) {
+	f.mutation = command
 	return f.result, f.err
 }
 

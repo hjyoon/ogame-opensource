@@ -71,6 +71,7 @@ export type GameSearchStatus = {
 export type GameBuddyStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
+  actionIssue?: { code: string; message: string };
   buddy?: GameBuddy;
 };
 
@@ -542,6 +543,9 @@ type LegacyGameOverviewProps = {
   searchError: string | null;
   buddyStatus: GameBuddyStatus | null;
   buddyError: string | null;
+  buddyPending: boolean;
+  onBuddyAction: (action: number, buddyID: number) => void;
+  onBuddyRequest: (buddyID: number, text: string) => void;
   notesStatus: GameNotesStatus | null;
   notesError: string | null;
   notesPending: boolean;
@@ -623,6 +627,9 @@ export function LegacyGameOverview({
   searchError,
   buddyStatus,
   buddyError,
+  buddyPending,
+  onBuddyAction,
+  onBuddyRequest,
   notesStatus,
   notesError,
   notesPending,
@@ -787,7 +794,9 @@ export function LegacyGameOverview({
         {overview && route.key === "buddy" && !buddy && !buddyError && !buddyIssue ? (
           <LegacyMessage tone="neutral" text="Loading buddy list..." />
         ) : null}
-        {buddy && route.key === "buddy" ? <BuddyTable buddy={buddy} /> : null}
+        {buddy && route.key === "buddy" ? (
+          <BuddyTable buddy={buddy} onAction={onBuddyAction} onRequest={onBuddyRequest} pending={buddyPending} />
+        ) : null}
         {overview && route.key === "notes" && !notes && !notesError && !notesIssue ? (
           <LegacyMessage tone="neutral" text="Loading notes..." />
         ) : null}
@@ -2000,12 +2009,22 @@ function SearchTable({ search }: { search: GameSearch }) {
   );
 }
 
-function BuddyTable({ buddy }: { buddy: GameBuddy }) {
+function BuddyTable({
+  buddy,
+  onAction,
+  onRequest,
+  pending
+}: {
+  buddy: GameBuddy;
+  onAction: (action: number, buddyID: number) => void;
+  onRequest: (buddyID: number, text: string) => void;
+  pending: boolean;
+}) {
   if (buddy.action === 7) {
-    return <BuddyRequestTable buddy={buddy} />;
+    return <BuddyRequestTable buddy={buddy} onRequest={onRequest} pending={pending} />;
   }
   if (buddy.action === 5 || buddy.action === 6) {
-    return <BuddyRequestsTable buddy={buddy} />;
+    return <BuddyRequestsTable buddy={buddy} onAction={onAction} pending={pending} />;
   }
   return (
     <table className="legacy-overview-table legacy-buddy-table" width={519}>
@@ -2048,7 +2067,17 @@ function BuddyTable({ buddy }: { buddy: GameBuddy }) {
                 <span style={{ color: row.status.color }}>{row.status.text}</span>
               </th>
               <th>
-                <a href={buddyURL({ action: 8, buddyID: row.buddyId })}>delete</a>
+                <a
+                  href={buddyURL({ action: 8, buddyID: row.buddyId })}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    if (!pending) {
+                      onAction(8, row.buddyId);
+                    }
+                  }}
+                >
+                  delete
+                </a>
               </th>
             </tr>
           ))
@@ -2062,7 +2091,15 @@ function BuddyTable({ buddy }: { buddy: GameBuddy }) {
   );
 }
 
-function BuddyRequestsTable({ buddy }: { buddy: GameBuddy }) {
+function BuddyRequestsTable({
+  buddy,
+  onAction,
+  pending
+}: {
+  buddy: GameBuddy;
+  onAction: (action: number, buddyID: number) => void;
+  pending: boolean;
+}) {
   const incoming = buddy.action === 5;
   return (
     <table className="legacy-overview-table legacy-buddy-table" width={519}>
@@ -2096,11 +2133,41 @@ function BuddyRequestsTable({ buddy }: { buddy: GameBuddy }) {
                 <th style={{ width: 100 }}>
                   {incoming ? (
                     <>
-                      <a href={buddyURL({ action: 2, buddyID: row.buddyId })}>accept</a>{" "}
-                      <a href={buddyURL({ action: 3, buddyID: row.buddyId })}>decline</a>
+                      <a
+                        href={buddyURL({ action: 2, buddyID: row.buddyId })}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          if (!pending) {
+                            onAction(2, row.buddyId);
+                          }
+                        }}
+                      >
+                        accept
+                      </a>{" "}
+                      <a
+                        href={buddyURL({ action: 3, buddyID: row.buddyId })}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          if (!pending) {
+                            onAction(3, row.buddyId);
+                          }
+                        }}
+                      >
+                        decline
+                      </a>
                     </>
                   ) : (
-                    <a href={buddyURL({ action: 4, buddyID: row.buddyId })}>withdraw request</a>
+                    <a
+                      href={buddyURL({ action: 4, buddyID: row.buddyId })}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        if (!pending) {
+                          onAction(4, row.buddyId);
+                        }
+                      }}
+                    >
+                      withdraw request
+                    </a>
                   )}
                 </th>
               </tr>
@@ -2121,7 +2188,15 @@ function BuddyRequestsTable({ buddy }: { buddy: GameBuddy }) {
   );
 }
 
-function BuddyRequestTable({ buddy }: { buddy: GameBuddy }) {
+function BuddyRequestTable({
+  buddy,
+  onRequest,
+  pending
+}: {
+  buddy: GameBuddy;
+  onRequest: (buddyID: number, text: string) => void;
+  pending: boolean;
+}) {
   const target = buddy.target;
   if (!target) {
     return (
@@ -2145,7 +2220,15 @@ function BuddyRequestTable({ buddy }: { buddy: GameBuddy }) {
     );
   }
   return (
-    <form action={buddyURL({ action: 1, buddyID: target.playerId })} method="post" onSubmit={(event) => event.preventDefault()}>
+    <form
+      action={buddyURL({ action: 1, buddyID: target.playerId })}
+      method="post"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        onRequest(target.playerId, String(form.get("text") ?? ""));
+      }}
+    >
       <table className="legacy-overview-table legacy-buddy-table" width={519}>
         <tbody>
           <tr>
@@ -2162,7 +2245,7 @@ function BuddyRequestTable({ buddy }: { buddy: GameBuddy }) {
               Request text(<span id="cntChars">0</span> / 5000 characters)
             </th>
             <th>
-              <textarea cols={60} name="text" rows={10} />
+              <textarea cols={60} disabled={pending} name="text" rows={10} />
             </th>
           </tr>
           <tr>
@@ -2170,7 +2253,7 @@ function BuddyRequestTable({ buddy }: { buddy: GameBuddy }) {
               <a href={buddyURL({})}>back</a>
             </td>
             <td className="legacy-c">
-              <input type="submit" value="send" />
+              <input disabled={pending} type="submit" value="send" />
             </td>
           </tr>
         </tbody>

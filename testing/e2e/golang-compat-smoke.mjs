@@ -765,6 +765,18 @@ try {
     gameBuddyRequestBody = {};
   }
 
+  const gameBuddyMutation = await request(`/api/game/buddy${sessionSearch}`, {
+    method: "POST",
+    headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+    body: JSON.stringify({ action: 8, buddyId: 0 })
+  });
+  let gameBuddyMutationBody = {};
+  try {
+    gameBuddyMutationBody = JSON.parse(gameBuddyMutation.body);
+  } catch {
+    gameBuddyMutationBody = {};
+  }
+
   const gameBuddyWithoutCookie = await request(`/api/game/buddy${sessionSearch}`);
   let gameBuddyWithoutCookieBody = {};
   try {
@@ -1110,6 +1122,11 @@ try {
         status: gameBuddyRequest.status
       }),
       check(gameBuddyRequestBody.buddy?.action === 7, "game buddy keeps legacy request action", gameBuddyRequestBody),
+      check(gameBuddyMutation.status === 200, "game buddy mutation endpoint accepts POST with private cookie", {
+        status: gameBuddyMutation.status
+      }),
+      check(gameBuddyMutationBody.authenticated === true, "game buddy mutation authenticates the login session", gameBuddyMutationBody),
+      check(gameBuddyMutationBody.buddy?.action === 0, "game buddy mutation returns the next legacy screen", gameBuddyMutationBody),
       check(!gameBuddy.body.includes(sessionCookiePair), "game buddy response does not echo private cookie"),
       check(gameBuddyWithoutCookie.status === 401, "game buddy rejects missing private cookie", { status: gameBuddyWithoutCookie.status }),
       check(gameBuddyWithoutCookieBody.authenticated === false, "game buddy missing private cookie is unauthenticated", gameBuddyWithoutCookieBody),
@@ -1343,7 +1360,7 @@ try {
   const postGameTechnology = await request("/api/game/technology", { method: "POST" });
   const postGameStatistics = await request("/api/game/statistics", { method: "POST" });
   const postGameSearch = await request("/api/game/search", { method: "POST" });
-  const postGameBuddy = await request("/api/game/buddy", { method: "POST" });
+  const putGameBuddy = await request("/api/game/buddy", { method: "PUT" });
   const putGameNotes = await request("/api/game/notes", { method: "PUT" });
   const getGameLogout = await request("/api/game/logout");
   const putGameResources = await request("/api/game/resources", { method: "PUT" });
@@ -1384,8 +1401,8 @@ try {
       check(hasHeader(postGameStatistics, "allow", "GET, HEAD"), "game statistics method rejection returns Allow header"),
       check(postGameSearch.status === 405, "POST game search endpoint is rejected", { status: postGameSearch.status }),
       check(hasHeader(postGameSearch, "allow", "GET, HEAD"), "game search method rejection returns Allow header"),
-      check(postGameBuddy.status === 405, "POST game buddy endpoint is rejected", { status: postGameBuddy.status }),
-      check(hasHeader(postGameBuddy, "allow", "GET, HEAD"), "game buddy method rejection returns Allow header"),
+      check(putGameBuddy.status === 405, "PUT game buddy endpoint is rejected", { status: putGameBuddy.status }),
+      check(hasHeader(putGameBuddy, "allow", "GET, HEAD, POST"), "game buddy method rejection returns Allow header"),
       check(putGameNotes.status === 405, "PUT game notes endpoint is rejected", { status: putGameNotes.status }),
       check(hasHeader(putGameNotes, "allow", "GET, HEAD, POST"), "game notes method rejection returns Allow header"),
       check(getGameLogout.status === 405, "GET game logout endpoint is rejected", { status: getGameLogout.status }),

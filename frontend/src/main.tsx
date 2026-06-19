@@ -169,6 +169,16 @@ function clientNavigableURL(href: string) {
   return null;
 }
 
+function buddyRouteForAction(action: number, baseSearch: URLSearchParams) {
+  const query = new URLSearchParams(baseSearch);
+  query.delete("action");
+  query.delete("buddy_id");
+  if (action === 5 || action === 6) {
+    query.set("action", String(action));
+  }
+  return `/game/buddy?${query.toString()}`;
+}
+
 function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname);
   const [search, setSearch] = useState(() => window.location.search);
@@ -219,6 +229,7 @@ function App() {
   const [gameSearchError, setGameSearchError] = useState<string | null>(null);
   const [gameBuddy, setGameBuddy] = useState<GameBuddyStatus | null>(null);
   const [gameBuddyError, setGameBuddyError] = useState<string | null>(null);
+  const [gameBuddyPending, setGameBuddyPending] = useState(false);
   const [gameNotes, setGameNotes] = useState<GameNotesStatus | null>(null);
   const [gameNotesError, setGameNotesError] = useState<string | null>(null);
   const [gameNotesPending, setGameNotesPending] = useState(false);
@@ -691,6 +702,54 @@ function App() {
       .catch((err: unknown) => setGameBuddyError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
 
+  const submitGameBuddyMutation = (body: { action: number; buddyId: number; text?: string }) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameBuddyError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const buddySearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      buddySearch.set("cp", selectedPlanet);
+    }
+    setGameBuddyPending(true);
+    setGameBuddyError(null);
+    fetch(`/api/game/buddy?${buddySearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(body)
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameBuddyStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `buddy returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("buddy response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameBuddy(payload);
+        setGameBuddyError(payload.actionIssue?.message ?? null);
+        dispatchClientNavigation(buddyRouteForAction(payload.buddy?.action ?? 0, buddySearch));
+      })
+      .catch((err: unknown) => setGameBuddyError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameBuddyPending(false));
+  };
+
+  const submitGameBuddyAction = (action: number, buddyId: number) => {
+    submitGameBuddyMutation({ action, buddyId });
+  };
+
+  const submitGameBuddyRequest = (buddyId: number, text: string) => {
+    submitGameBuddyMutation({ action: 1, buddyId, text });
+  };
+
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "notes" || publicSession === "") {
@@ -849,6 +908,7 @@ function App() {
     return (
       <LegacyGameOverview
         buddyError={gameBuddyError}
+        buddyPending={gameBuddyPending}
         buddyStatus={gameBuddy}
         buildingsError={gameBuildingsError}
         buildingsStatus={gameBuildings}
@@ -867,6 +927,8 @@ function App() {
         onNotesCreate={submitGameNoteCreate}
         onNotesDelete={submitGameNoteDelete}
         onNotesUpdate={submitGameNoteUpdate}
+        onBuddyAction={submitGameBuddyAction}
+        onBuddyRequest={submitGameBuddyRequest}
         onPlanetDelete={submitGamePlanetDelete}
         onPlanetRename={submitGamePlanetRename}
         onResourcesSubmit={submitGameResources}

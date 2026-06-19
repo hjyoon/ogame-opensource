@@ -11,6 +11,11 @@ func TestNormalizeBuddyAction(t *testing.T) {
 	if NormalizeBuddyAction(8) != BuddyActionHome {
 		t.Fatalf("state-changing buddy actions should fall back to home until mutations are ported")
 	}
+	if NormalizeBuddyMutationAction(BuddyActionAdd) != BuddyActionAdd ||
+		NormalizeBuddyMutationAction(BuddyActionDelete) != BuddyActionDelete ||
+		NormalizeBuddyMutationAction(99) != BuddyActionHome {
+		t.Fatalf("unexpected mutation action normalization")
+	}
 }
 
 func TestBuddyOnlineStatus(t *testing.T) {
