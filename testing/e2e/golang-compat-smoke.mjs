@@ -1576,6 +1576,7 @@ try {
       check(js.body.includes("/api/game/overview"), "React bundle consumes game overview API"),
       check(js.body.includes("/api/game/buildings"), "React bundle consumes game buildings API"),
       check(js.body.includes("/api/game/empire"), "React bundle consumes game empire API"),
+      check(js.body.includes("sandybrown") && js.body.includes("magenta"), "React bundle contains legacy empire queue marker colors"),
       check(js.body.includes("/api/game/resources"), "React bundle consumes game resources API"),
       check(js.body.includes("/api/game/research"), "React bundle consumes game research API"),
       check(js.body.includes("/api/game/shipyard"), "React bundle consumes game shipyard API"),

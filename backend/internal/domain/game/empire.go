@@ -35,8 +35,16 @@ type EmpirePlanet struct {
 	Resources   Resources
 	Production  EmpireProduction
 	Levels      BuildingLevels
+	BuildQueue  map[int][]EmpireBuildQueueEntry
 	Fleet       FleetCounts
 	Defense     DefenseCounts
+}
+
+type EmpireBuildQueueEntry struct {
+	ListID   int
+	Level    int
+	Active   bool
+	Demolish bool
 }
 
 type EmpireProduction struct {
@@ -72,6 +80,7 @@ type EmpireLevelRow struct {
 type EmpireLevelValue struct {
 	PlanetID int
 	Level    int
+	Queue    []EmpireBuildQueueEntry
 }
 
 type EmpireCountRow struct {
@@ -179,11 +188,13 @@ func buildEmpireLevelRows(ids []int, planets []EmpirePlanet, research ResearchLe
 		total := 0
 		for _, planet := range planets {
 			level := planet.Levels[id]
+			queue := planet.BuildQueue[id]
 			if research != nil {
 				level = research[id]
+				queue = nil
 			}
 			total += level
-			values = append(values, EmpireLevelValue{PlanetID: planet.ID, Level: level})
+			values = append(values, EmpireLevelValue{PlanetID: planet.ID, Level: level, Queue: queue})
 		}
 		if total == 0 && skipZero {
 			continue

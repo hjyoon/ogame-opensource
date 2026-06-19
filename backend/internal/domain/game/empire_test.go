@@ -24,8 +24,14 @@ func TestBuildEmpireAggregatesLegacyRows(t *testing.T) {
 			Resources:   Resources{Metal: 1234.9, Crystal: 100, Deuterium: 50},
 			Production:  EmpireProduction{MetalHourly: 30, CrystalHourly: 20, DeuteriumHourly: 10, EnergyBalance: -4, EnergyCapacity: 100},
 			Levels:      BuildingLevels{BuildingMetalMine: 12, BuildingRoboticsFactory: 2},
-			Fleet:       FleetCounts{FleetSmallCargo: 5},
-			Defense:     DefenseCounts{DefenseRocketLauncher: 7},
+			BuildQueue: map[int][]EmpireBuildQueueEntry{
+				BuildingMetalMine: []EmpireBuildQueueEntry{
+					{ListID: 1, Level: 13, Active: true},
+					{ListID: 2, Level: 14},
+				},
+			},
+			Fleet:   FleetCounts{FleetSmallCargo: 5},
+			Defense: DefenseCounts{DefenseRocketLauncher: 7},
 		},
 		{
 			ID:          2,
@@ -58,9 +64,15 @@ func TestBuildEmpireAggregatesLegacyRows(t *testing.T) {
 	if metalMine.Total != 16 || metalMine.Average != 8 {
 		t.Fatalf("unexpected building row: %+v", metalMine)
 	}
+	if queue := metalMine.Values[0].Queue; len(queue) != 2 || !queue[0].Active || queue[0].Level != 13 || queue[1].ListID != 2 {
+		t.Fatalf("unexpected building queue values: %+v", queue)
+	}
 	research := findEmpireLevelRow(t, empire.Research, ResearchComputer)
 	if research.Total != 3 || research.Average != 3 || research.Values[1].Level != 3 {
 		t.Fatalf("unexpected research row: %+v", research)
+	}
+	if len(research.Values[0].Queue) != 0 {
+		t.Fatalf("research rows must not inherit building queue values: %+v", research.Values[0].Queue)
 	}
 	fleet := findEmpireCountRow(t, empire.Fleet, FleetSmallCargo)
 	if fleet.Total != 6 {

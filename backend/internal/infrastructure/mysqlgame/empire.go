@@ -57,6 +57,10 @@ func (r EmpireRepository) GetEmpire(ctx context.Context, query appgame.EmpireQue
 	if err != nil {
 		return domaingame.Empire{}, nil, err
 	}
+	buildQueueTable, err := tableName(r.prefix, "buildqueue")
+	if err != nil {
+		return domaingame.Empire{}, nil, err
+	}
 	if r.execer != nil {
 		buildings := BuildingsRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now, updateResources: r.updateResources}
 		if err := buildings.FinishDueBuildingQueues(ctx, int(r.currentTime().Unix())); err != nil {
@@ -101,6 +105,9 @@ func (r EmpireRepository) GetEmpire(ctx context.Context, query appgame.EmpireQue
 	}
 	planets, err := r.loadEmpirePlanets(ctx, planetsTable, query.PlayerID, planetType, user, speed)
 	if err != nil {
+		return domaingame.Empire{}, nil, err
+	}
+	if err := r.attachEmpireBuildQueues(ctx, buildQueueTable, query.PlayerID, planets); err != nil {
 		return domaingame.Empire{}, nil, err
 	}
 	empire := domaingame.BuildEmpire(overview, user.CommanderActive, planetType, moonEnabled, hasMoons, planets, research)
@@ -343,6 +350,49 @@ func scanEmpirePlanet(rows Rows, levelIDs []int, user empireUser, speed float64)
 		EnergyCapacity:  int(production.Totals.Hour.Energy),
 	}
 	return planet, nil
+}
+
+func (r EmpireRepository) attachEmpireBuildQueues(ctx context.Context, buildQueueTable string, playerID int, planets []domaingame.EmpirePlanet) error {
+	if len(planets) == 0 {
+		return nil
+	}
+	planetIndexes := make(map[int]int, len(planets))
+	for index := range planets {
+		planetIndexes[planets[index].ID] = index
+	}
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT planet_id, list_id, tech_id, level, destroy FROM %s WHERE owner_id = ? ORDER BY planet_id ASC, list_id ASC", buildQueueTable),
+		playerID,
+	)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var planetID int
+		var listID int
+		var techID int
+		var level int
+		var destroy int
+		if err := rows.Scan(&planetID, &listID, &techID, &level, &destroy); err != nil {
+			return err
+		}
+		index, ok := planetIndexes[planetID]
+		if !ok || !containsInt(domaingame.BuildingIDs(), techID) {
+			continue
+		}
+		if planets[index].BuildQueue == nil {
+			planets[index].BuildQueue = make(map[int][]domaingame.EmpireBuildQueueEntry)
+		}
+		planets[index].BuildQueue[techID] = append(planets[index].BuildQueue[techID], domaingame.EmpireBuildQueueEntry{
+			ListID:   listID,
+			Level:    level,
+			Active:   listID == 1,
+			Demolish: destroy != 0,
+		})
+	}
+	return rows.Err()
 }
 
 func empirePlanetLevelIDs() []int {

@@ -210,6 +210,14 @@ type GameEmpireLevelRow = {
 type GameEmpireLevelValue = {
   planetId: number;
   level: number;
+  queue?: GameEmpireBuildQueueEntry[];
+};
+
+type GameEmpireBuildQueueEntry = {
+  listId: number;
+  level: number;
+  active: boolean;
+  demolish: boolean;
 };
 
 type GameEmpireCountRow = {
@@ -4154,9 +4162,12 @@ function EmpireLevelRow({ planets, row }: { planets: GameEmpirePlanet[]; row: Ga
         return (
           <th key={planet.id} style={{ width: 75 }}>
             {value.level > 0 ? (
-              <a href={gameRouteURL("/game/buildings", withPlanetSearch(planet.id))}>
-                <span style={{ color: "lime" }}>{formatLegacyPlainNumber(value.level)}</span>
-              </a>
+              <>
+                <a href={gameRouteURL("/game/buildings", withPlanetSearch(planet.id))}>
+                  <span style={{ color: "lime" }}>{formatLegacyPlainNumber(value.level)}</span>
+                </a>
+                <EmpireBuildQueueLinks planetID={planet.id} queue={value.queue ?? []} />
+              </>
             ) : (
               <span style={{ color: "white" }}>-</span>
             )}
@@ -4167,6 +4178,35 @@ function EmpireLevelRow({ planets, row }: { planets: GameEmpirePlanet[]; row: Ga
         {formatLegacyPlainNumber(row.total)} ({formatEmpireAverage(row.average)})
       </th>
     </tr>
+  );
+}
+
+function EmpireBuildQueueLinks({ planetID, queue }: { planetID: number; queue: GameEmpireBuildQueueEntry[] }) {
+  if (queue.length === 0) {
+    return null;
+  }
+  return (
+    <>
+      {queue.map((entry) =>
+        entry.active ? (
+          <React.Fragment key={entry.listId}>
+            {" "}
+            <a href={empireQueueRemoveURL(planetID, entry.listId)}>
+              <span style={{ color: "magenta" }}>{formatLegacyPlainNumber(entry.level)}</span>
+            </a>
+          </React.Fragment>
+        ) : (
+          <span key={entry.listId} style={{ color: "sandybrown" }}>
+            {" "}
+            (
+            <a href={empireQueueRemoveURL(planetID, entry.listId)}>
+              <span style={{ color: "sandybrown" }}>{formatLegacyPlainNumber(entry.level)}</span>
+            </a>
+            )
+          </span>
+        )
+      )}
+    </>
   );
 }
 
@@ -4207,12 +4247,20 @@ function withPlanetSearch(planetID: number): string {
   return search.toString();
 }
 
+function empireQueueRemoveURL(planetID: number, listID: number): string {
+  const search = new URLSearchParams(window.location.search);
+  search.set("planet", String(planetID));
+  search.set("modus", "remove");
+  search.set("listid", String(listID));
+  return gameRouteURL("/game/empire", search.toString());
+}
+
 function empireResourceValue(row: GameEmpireResourceRow, planetID: number): GameEmpireResourceValue {
   return row.values.find((value) => value.planetId === planetID) ?? { planetId: planetID, amount: 0, production: 0 };
 }
 
 function empireLevelValue(row: GameEmpireLevelRow, planetID: number): GameEmpireLevelValue {
-  return row.values.find((value) => value.planetId === planetID) ?? { planetId: planetID, level: 0 };
+  return row.values.find((value) => value.planetId === planetID) ?? { planetId: planetID, level: 0, queue: [] };
 }
 
 function empireCountValue(row: GameEmpireCountRow, planetID: number): GameEmpireCountValue {

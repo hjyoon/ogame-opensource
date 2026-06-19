@@ -69,8 +69,16 @@ type gameEmpireLevelRow struct {
 }
 
 type gameEmpireLevelValue struct {
-	PlanetID int `json:"planetId"`
-	Level    int `json:"level"`
+	PlanetID int                         `json:"planetId"`
+	Level    int                         `json:"level"`
+	Queue    []gameEmpireBuildQueueEntry `json:"queue,omitempty"`
+}
+
+type gameEmpireBuildQueueEntry struct {
+	ListID   int  `json:"listId"`
+	Level    int  `json:"level"`
+	Active   bool `json:"active"`
+	Demolish bool `json:"demolish"`
 }
 
 type gameEmpireCountRow struct {
@@ -256,9 +264,25 @@ func toGameEmpireLevelRows(rows []domaingame.EmpireLevelRow) []gameEmpireLevelRo
 	for _, row := range rows {
 		values := make([]gameEmpireLevelValue, 0, len(row.Values))
 		for _, value := range row.Values {
-			values = append(values, gameEmpireLevelValue{PlanetID: value.PlanetID, Level: value.Level})
+			values = append(values, gameEmpireLevelValue{PlanetID: value.PlanetID, Level: value.Level, Queue: toGameEmpireBuildQueueEntries(value.Queue)})
 		}
 		mapped = append(mapped, gameEmpireLevelRow{ID: row.ID, Name: row.Name, Values: values, Total: row.Total, Average: row.Average})
+	}
+	return mapped
+}
+
+func toGameEmpireBuildQueueEntries(entries []domaingame.EmpireBuildQueueEntry) []gameEmpireBuildQueueEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	mapped := make([]gameEmpireBuildQueueEntry, 0, len(entries))
+	for _, entry := range entries {
+		mapped = append(mapped, gameEmpireBuildQueueEntry{
+			ListID:   entry.ListID,
+			Level:    entry.Level,
+			Active:   entry.Active,
+			Demolish: entry.Demolish,
+		})
 	}
 	return mapped
 }

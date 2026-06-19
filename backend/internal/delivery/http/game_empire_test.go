@@ -39,6 +39,7 @@ func TestGameEmpireEndpointReturnsEmpire(t *testing.T) {
 	}
 	if !response.Authenticated || response.Empire == nil || response.Empire.Commander != "legor" ||
 		len(response.Empire.Planets) != 1 || response.Empire.Resources[0].Total != 1234 ||
+		len(response.Empire.Buildings[0].Values[0].Queue) != 1 || !response.Empire.Buildings[0].Values[0].Queue[0].Active ||
 		response.ActionIssue == nil || response.ActionIssue.Code != domaingame.EmpireIssueCommanderRequired {
 		t.Fatalf("unexpected empire response: %+v", response)
 	}
@@ -215,7 +216,7 @@ func sampleGameEmpire() domaingame.Empire {
 			Values: []domaingame.EmpireResourceValue{{PlanetID: 99, Amount: 1234, Production: 42}},
 			Total:  1234,
 		}},
-		Buildings: []domaingame.EmpireLevelRow{{ID: domaingame.BuildingMetalMine, Name: "Metal Mine", Values: []domaingame.EmpireLevelValue{{PlanetID: 99, Level: 12}}, Total: 12, Average: 12}},
+		Buildings: []domaingame.EmpireLevelRow{{ID: domaingame.BuildingMetalMine, Name: "Metal Mine", Values: []domaingame.EmpireLevelValue{{PlanetID: 99, Level: 12, Queue: []domaingame.EmpireBuildQueueEntry{{ListID: 1, Level: 13, Active: true}}}}, Total: 12, Average: 12}},
 		Research:  []domaingame.EmpireLevelRow{{ID: domaingame.ResearchComputer, Name: "Computer Technology", Values: []domaingame.EmpireLevelValue{{PlanetID: 99, Level: 3}}, Total: 3, Average: 3}},
 		Fleet:     []domaingame.EmpireCountRow{{ID: domaingame.FleetSmallCargo, Name: "Small Cargo", Values: []domaingame.EmpireCountValue{{PlanetID: 99, Count: 5}}, Total: 5}},
 		Defense:   []domaingame.EmpireCountRow{{ID: domaingame.DefenseRocketLauncher, Name: "Rocket Launcher", Values: []domaingame.EmpireCountValue{{PlanetID: 99, Count: 7}}, Total: 7}},

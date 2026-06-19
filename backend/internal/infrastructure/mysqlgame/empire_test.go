@@ -36,6 +36,8 @@ func TestEmpireRepositoryReadsLegacyEmpire(t *testing.T) {
 	}
 	if row := findEmpireLevelRowInfra(t, empire.Buildings, domaingame.BuildingLunarBase); row.Total != 3 {
 		t.Fatalf("expected lunar base row, got %+v", row)
+	} else if queue := row.Values[0].Queue; len(queue) != 2 || !queue[0].Active || queue[0].Level != 4 || queue[1].ListID != 2 || !queue[1].Demolish {
+		t.Fatalf("expected lunar base queue rows, got %+v", queue)
 	}
 	if row := findEmpireLevelRowInfra(t, empire.Research, domaingame.ResearchComputer); row.Total != 4 {
 		t.Fatalf("expected computer research row, got %+v", row)
@@ -48,6 +50,9 @@ func TestEmpireRepositoryReadsLegacyEmpire(t *testing.T) {
 	}
 	if !strings.Contains(queryer.calls[9].sql, "type = ?") || queryer.calls[9].args[1] != domaingame.PlanetTypeMoon {
 		t.Fatalf("expected moon planet query, got %+v", queryer.calls[9])
+	}
+	if !strings.Contains(queryer.calls[10].sql, "FROM `ogame_buildqueue`") {
+		t.Fatalf("expected buildqueue query, got %+v", queryer.calls[10])
 	}
 }
 
@@ -148,6 +153,14 @@ func TestEmpireRepositoryConvertsBuildingShortcutIssue(t *testing.T) {
 	}
 }
 
+func TestEmpireRepositoryMutateEmpireRequiresWriter(t *testing.T) {
+	repository := NewEmpireRepositoryWithRunner(&fakeQueryer{}, nil, "ogame_", nil)
+
+	if _, err := repository.MutateEmpire(context.Background(), appgame.EmpireMutationQuery{}); err == nil || !strings.Contains(err.Error(), "empire updater unavailable") {
+		t.Fatalf("expected writer error, got %v", err)
+	}
+}
+
 func TestNewEmpireRepositoryKeepsSQLQueryer(t *testing.T) {
 	repository := NewEmpireRepository(nil, "ogame_")
 	if repository.prefix != "ogame_" {
@@ -172,6 +185,36 @@ func TestNewEmpireRepositoryKeepsSQLQueryer(t *testing.T) {
 	}
 	if _, _, err := NewEmpireRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_", time.Now).GetEmpire(context.Background(), appgame.EmpireQuery{}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
 		t.Fatalf("expected bad prefix error, got %v", err)
+	}
+}
+
+func TestEmpireRepositoryAttachBuildQueueEdges(t *testing.T) {
+	repository := NewEmpireRepositoryWithQueryer(&fakeQueryer{}, "ogame_", nil)
+	if err := repository.attachEmpireBuildQueues(context.Background(), "`ogame_buildqueue`", 42, nil); err != nil {
+		t.Fatalf("empty planets should not query, got %v", err)
+	}
+
+	queryer := &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(
+		[]any{99, 1, domaingame.BuildingMetalMine, 3, 0},
+		[]any{100, 1, domaingame.BuildingMetalMine, 3, 0},
+		[]any{99, 2, 999999, 4, 0},
+	)}}}
+	planets := []domaingame.EmpirePlanet{{ID: 99}}
+	if err := NewEmpireRepositoryWithQueryer(queryer, "ogame_", nil).attachEmpireBuildQueues(context.Background(), "`ogame_buildqueue`", 42, planets); err != nil {
+		t.Fatal(err)
+	}
+	if queue := planets[0].BuildQueue[domaingame.BuildingMetalMine]; len(queue) != 1 || queue[0].Level != 3 {
+		t.Fatalf("expected only matching building queue row, got %+v", planets[0].BuildQueue)
+	}
+
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{99, 1})}}}
+	if err := NewEmpireRepositoryWithQueryer(queryer, "ogame_", nil).attachEmpireBuildQueues(context.Background(), "`ogame_buildqueue`", 42, []domaingame.EmpirePlanet{{ID: 99}}); err == nil || !strings.Contains(err.Error(), "scan") {
+		t.Fatalf("expected scan error, got %v", err)
+	}
+
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("buildqueue rows failed"), []any{99, 1, domaingame.BuildingMetalMine, 3, 0})}}}
+	if err := NewEmpireRepositoryWithQueryer(queryer, "ogame_", nil).attachEmpireBuildQueues(context.Background(), "`ogame_buildqueue`", 42, []domaingame.EmpirePlanet{{ID: 99}}); err == nil || !strings.Contains(err.Error(), "buildqueue rows failed") {
+		t.Fatalf("expected rows error, got %v", err)
 	}
 }
 
@@ -238,6 +281,19 @@ func TestEmpireRepositoryGetEmpireErrors(t *testing.T) {
 				fakeQueryResult{err: errors.New("planets failed")},
 			),
 			want: "planets failed",
+		},
+		{
+			name: "build queues",
+			results: append(empireOverviewResults(),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix(), int64(0), int64(0), 0, 0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{1})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{0})},
+				fakeQueryResult{rows: fakeRowsFromValues(empireResearchRow())},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{1.0})},
+				fakeQueryResult{rows: fakeRowsFromValues(empirePlanetRow())},
+				fakeQueryResult{err: errors.New("buildqueue failed")},
+			),
+			want: "buildqueue failed",
 		},
 	}
 	for _, tt := range tests {
@@ -385,6 +441,7 @@ func empireReadResults(now time.Time, commanderUntil int64) []fakeQueryResult {
 		fakeQueryResult{rows: fakeRowsFromValues(empireResearchRow())},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{128.0})},
 		fakeQueryResult{rows: fakeRowsFromValues(empirePlanetRow())},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{100, 1, domaingame.BuildingLunarBase, 4, 0}, []any{100, 2, domaingame.BuildingLunarBase, 3, 1})},
 	)
 }
 
