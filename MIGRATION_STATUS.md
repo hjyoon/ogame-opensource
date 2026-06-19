@@ -29,7 +29,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep <4KB; split docs first.
 - Shipyard/defense cover display plus POST orders into legacy `Shipyard` queue.
 - Tech/stat/search/buddy/notes/messages/report/options follow legacy chrome; messages send/delete/report PMs; `bericht` owner/allied-spy access is ported.
 - Registration/activation side effects, SMTP/MailHog mail, redirects, and link reuse rejection are ported.
-- Overview covers `cp`, `lgn`, notices, unread/build/incoming/missile/ACS events, chrome parity, rename/delete, blockers, destroy markers, queue flush, stats/ranks, and active restore.
+- Overview covers `cp`, `lgn`, notices, unread/build/incoming/missile/ACS-return events, chrome parity, rename/delete, blockers, destroy markers, queue flush, stats/ranks, and active restore.
 - Buildings/research/resources write legacy queues, resources, stats/ranks, caps, and active queue state.
 - Empire ports the Commander-gated `imperium` table, build queue markers, and legacy GET add/destroy/remove shortcuts.
 - Fleet dispatch covers resources/math, hold fuel/clamps, target/ACS guards, ACS sync, and colonize/exp targets.
@@ -39,7 +39,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep <4KB; split docs first.
 
 - `bun run build && bun run check && bun test`: passing.
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
-- Go smoke covers health, routes, assets, MailHog, activation cleanup/reuse, auth/session cookie expiry/security, reads/mutations, guards, and privacy.
+- Go smoke covers health, routes, assets, MailHog, activation cleanup/reuse, auth/session expiry/security, reads/mutations, guards, and privacy.
 - Playwright visual/CSR E2E passes Chromium/Firefox for public/auth routes; auth `lgn` is consumed once.
 - Chromium diff remains highest on stats/tech/overview/resources/fleet.
 - Go internal coverage gate: `97.0% >= 97%`.
@@ -50,7 +50,7 @@ Full legacy PHP E2E was not run for this step; keep PHP as oracle.
 ## Remaining Work
 
 - Close authenticated visual diff for statistics and remaining game-page nits before claiming parity.
-- Port ACS return pseudo-events.
+- Audit non-ACS overview pseudo-events.
 - Finish mission restrictions, galaxy instant actions, alliance/admin/recovery/bans/permissions, and deeper options mutations.
 - Convert legacy E2E cases into Go compatibility checks per migrated flow.
 - Run full legacy PHP E2E before declaring any game-flow migration equivalent.

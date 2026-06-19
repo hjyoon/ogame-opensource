@@ -1532,7 +1532,7 @@ func TestOverviewRepositoryLoadsACSOverviewEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(events) != 1 ||
+	if len(events) != 2 ||
 		events[0].ID != -7 ||
 		events[0].UnionID != 7 ||
 		events[0].ArrivalAt != 300 ||
@@ -1548,6 +1548,15 @@ func TestOverviewRepositoryLoadsACSOverviewEvents(t *testing.T) {
 	}
 	if !strings.Contains(queryer.calls[1].sql, "FROM `ogame_union`") || !strings.Contains(queryer.calls[2].sql, "f.union_id = ?") {
 		t.Fatalf("expected ACS union queries, got %+v", queryer.calls)
+	}
+	if events[1].UnionID != 7 ||
+		events[1].Mission != domaingame.FleetMissionACSAttackHead+domaingame.FleetMissionReturnOffset ||
+		events[1].ArrivalAt != 500 ||
+		events[1].Origin.Position != 4 ||
+		events[1].Target.Position != 3 ||
+		events[1].StateShort != "(F)" ||
+		events[1].CanRecall {
+		t.Fatalf("expected ACS return pseudo-event, got %+v", events[1])
 	}
 }
 
@@ -1703,7 +1712,7 @@ func overviewMissileEventRow(id int, ownerID int, ownerName string, amount int, 
 }
 
 func overviewEventRowWithMissile(id int, ownerID int, ownerName string, mission int, missileAmount int, missileTargetID int, ships map[int]int, start int64, end int64, originPosition int, targetPosition int) []any {
-	row := []any{id, start, end, mission, missileAmount, missileTargetID, ownerID, ownerName, 99, 100}
+	row := []any{id, start, end, end - start, mission, missileAmount, missileTargetID, ownerID, ownerName, 99, 100}
 	for _, fleetID := range domaingame.FleetIDs() {
 		row = append(row, ships[fleetID])
 	}
