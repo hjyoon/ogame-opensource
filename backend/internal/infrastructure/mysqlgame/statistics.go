@@ -77,12 +77,12 @@ func (r StatisticsRepository) GetStatistics(ctx context.Context, query appgame.S
 		if err != nil {
 			return domaingame.Statistics{}, err
 		}
-		ownPlace, err := r.loadOwnStatisticsPlace(ctx, usersTable, query.PlayerID, statType)
+		ownAllianceID, ownPlace, err := r.loadOwnPlayerStatistics(ctx, usersTable, query.PlayerID, statType)
 		if err != nil {
 			return domaingame.Statistics{}, err
 		}
 		start = domaingame.NormalizeStatisticsStart(query.Start, ownPlace)
-		rows, err = r.loadPlayerStatisticsRows(ctx, usersTable, planetsTable, allyTable, query.PlayerID, statType, start)
+		rows, err = r.loadPlayerStatisticsRows(ctx, usersTable, planetsTable, allyTable, query.PlayerID, ownAllianceID, statType, start)
 		if err != nil {
 			return domaingame.Statistics{}, err
 		}
@@ -146,26 +146,32 @@ func (r StatisticsRepository) loadAllianceStatisticsTotal(ctx context.Context, a
 }
 
 func (r StatisticsRepository) loadOwnStatisticsPlace(ctx context.Context, usersTable string, playerID int, statType string) (int, error) {
+	_, place, err := r.loadOwnPlayerStatistics(ctx, usersTable, playerID, statType)
+	return place, err
+}
+
+func (r StatisticsRepository) loadOwnPlayerStatistics(ctx context.Context, usersTable string, playerID int, statType string) (int, int, error) {
 	_, placeColumn, _ := domaingame.StatisticsScoreColumns(statType)
-	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT %s FROM %s WHERE player_id = ? LIMIT 1", placeColumn, usersTable), playerID)
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COALESCE(ally_id, 0), %s FROM %s WHERE player_id = ? LIMIT 1", placeColumn, usersTable), playerID)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer rows.Close()
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
-			return 0, err
+			return 0, 0, err
 		}
-		return 0, nil
+		return 0, 0, nil
 	}
+	var allianceID int
 	var place int
-	if err := rows.Scan(&place); err != nil {
-		return 0, err
+	if err := rows.Scan(&allianceID, &place); err != nil {
+		return 0, 0, err
 	}
 	if err := rows.Err(); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	return place, nil
+	return allianceID, place, nil
 }
 
 func (r StatisticsRepository) loadOwnAllianceStatistics(ctx context.Context, usersTable string, allyTable string, playerID int, statType string) (int, int, error) {
@@ -196,7 +202,7 @@ func (r StatisticsRepository) loadOwnAllianceStatistics(ctx context.Context, use
 	return allianceID, place, nil
 }
 
-func (r StatisticsRepository) loadPlayerStatisticsRows(ctx context.Context, usersTable string, planetsTable string, allyTable string, playerID int, statType string, start int) ([]domaingame.StatisticsRow, error) {
+func (r StatisticsRepository) loadPlayerStatisticsRows(ctx context.Context, usersTable string, planetsTable string, allyTable string, playerID int, ownAllianceID int, statType string, start int) ([]domaingame.StatisticsRow, error) {
 	scoreColumn, placeColumn, oldPlaceColumn := domaingame.StatisticsScoreColumns(statType)
 	rows, err := r.queryer.QueryContext(
 		ctx,
@@ -241,6 +247,7 @@ func (r StatisticsRepository) loadPlayerStatisticsRows(ctx context.Context, user
 			return nil, err
 		}
 		row.Own = row.Player.ID == playerID
+		row.SameAlliance = ownAllianceID > 0 && allianceID == ownAllianceID && !row.Own
 		if allianceID > 0 {
 			row.Alliance = &domaingame.StatisticsAlliance{ID: allianceID, Tag: allianceTag}
 		}

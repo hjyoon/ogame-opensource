@@ -309,6 +309,7 @@ type GameStatisticsRow = {
   alliance?: { id: number; tag: string };
   coordinates: Coordinates;
   own: boolean;
+  sameAlliance: boolean;
 };
 
 type GameSearch = {
@@ -986,6 +987,7 @@ function StatisticsTable({ statistics }: { statistics: GameStatistics }) {
           query.set("who", String(form.get("who") ?? "player"));
           query.set("type", String(form.get("type") ?? "ressources"));
           query.set("start", String(form.get("start") ?? "-1"));
+          query.set("sort_per_member", String(form.get("sort_per_member") ?? "0"));
           window.history.pushState({}, "", gameRouteURL("/game/statistics", query.toString()));
           window.dispatchEvent(new PopStateEvent("popstate"));
         }}
@@ -1018,6 +1020,7 @@ function StatisticsTable({ statistics }: { statistics: GameStatistics }) {
                   ))}
                 </select>
                 &nbsp;
+                <input id="sort_per_member" name="sort_per_member" type="hidden" value={statisticsSortValue()} readOnly />
                 <input type="submit" value="Show" />
               </th>
             </tr>
@@ -1051,7 +1054,7 @@ function PlayerStatisticsTable({ statistics }: { statistics: GameStatistics }) {
             <th>
               <a
                 href={row.own ? "#" : gameRouteURL("/game/galaxy", galaxyTargetSearch(row.coordinates))}
-                style={{ color: row.own ? "lime" : "#FFFFFF" }}
+                style={{ color: row.own ? "lime" : row.sameAlliance ? "#87CEEB" : "#FFFFFF" }}
               >
                 {row.player.name}
               </a>
@@ -1090,8 +1093,12 @@ function AllianceStatisticsTable({ statistics }: { statistics: GameStatistics })
           <td className="legacy-c">Alliance</td>
           <td className="legacy-c">&nbsp;</td>
           <td className="legacy-c">Num.</td>
-          <td className="legacy-c">Thousand points</td>
-          <td className="legacy-c">Per person</td>
+          <td className="legacy-c">
+            <a href={statisticsSortURL(0)}>Thousand points</a>
+          </td>
+          <td className="legacy-c">
+            <a href={statisticsSortURL(1)}>Per person</a>
+          </td>
         </tr>
         {statistics.rows.map((row) => (
           <tr data-statistics-row key={`${row.alliance?.id ?? 0}-${row.place}`}>
@@ -1113,6 +1120,16 @@ function AllianceStatisticsTable({ statistics }: { statistics: GameStatistics })
       </tbody>
     </table>
   );
+}
+
+function statisticsSortURL(sortPerMember: number): string {
+  const search = new URLSearchParams(window.location.search);
+  search.set("sort_per_member", String(sortPerMember));
+  return gameRouteURL("/game/statistics", search.toString());
+}
+
+function statisticsSortValue(): string {
+  return new URLSearchParams(window.location.search).get("sort_per_member") ?? "0";
 }
 
 function StatisticsDelta({ row }: { row: GameStatisticsRow }) {

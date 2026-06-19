@@ -40,6 +40,7 @@ type gameStatisticsRowResponse struct {
 	Alliance      *gameStatisticsAllianceResponse `json:"alliance,omitempty"`
 	Coordinates   gameCoordinatesResponse         `json:"coordinates"`
 	Own           bool                            `json:"own"`
+	SameAlliance  bool                            `json:"sameAlliance"`
 }
 
 type gameStatisticsPlayerResponse struct {
@@ -141,9 +142,10 @@ func toGameStatisticsRowResponse(row domaingame.StatisticsRow, statType string) 
 			ID:   row.Player.ID,
 			Name: row.Player.Name,
 		},
-		Alliance:    alliance,
-		Coordinates: toGameCoordinatesResponse(row.Coordinates),
-		Own:         row.Own,
+		Alliance:     alliance,
+		Coordinates:  toGameCoordinatesResponse(row.Coordinates),
+		Own:          row.Own,
+		SameAlliance: row.SameAlliance,
 	}
 }
 

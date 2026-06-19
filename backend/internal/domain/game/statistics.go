@@ -31,6 +31,7 @@ type StatisticsRow struct {
 	Coordinates   Coordinates
 	Members       int
 	Own           bool
+	SameAlliance  bool
 }
 
 type StatisticsPlayer struct {

@@ -15,10 +15,10 @@ func TestStatisticsRepositoryReadsLegacyPlayerRankings(t *testing.T) {
 	now := time.Unix(123456, 0)
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{250})},
-		fakeQueryResult{rows: fakeRowsFromValues([]any{101})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{7, 101})},
 		fakeQueryResult{rows: fakeRowsFromValues(
 			[]any{42, "legor", 7, "TAG", 1, 2, 3, int64(950000000), 101, 120, int64(123400)},
-			[]any{43, "target", 0, "", 1, 2, 4, int64(900000000), 102, 102, int64(123401)},
+			[]any{43, "allymate", 7, "TAG", 1, 2, 4, int64(900000000), 102, 102, int64(123401)},
 		)},
 	)}
 	repository := NewStatisticsRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
@@ -37,7 +37,8 @@ func TestStatisticsRepositoryReadsLegacyPlayerRankings(t *testing.T) {
 	if len(statistics.Rows) != 2 || !statistics.Rows[0].Own || statistics.Rows[0].DisplayScore(statistics.Type) != 950000 {
 		t.Fatalf("unexpected statistics rows: %+v", statistics.Rows)
 	}
-	if statistics.Rows[0].Alliance == nil || statistics.Rows[0].Alliance.Tag != "TAG" || statistics.Rows[1].Alliance != nil {
+	if statistics.Rows[0].Alliance == nil || statistics.Rows[0].Alliance.Tag != "TAG" ||
+		statistics.Rows[0].SameAlliance || !statistics.Rows[1].SameAlliance || statistics.Rows[1].Alliance == nil {
 		t.Fatalf("unexpected alliance mapping: %+v", statistics.Rows)
 	}
 	if !strings.Contains(queryer.calls[6].sql, "u.score1, u.place1, u.oldplace1") ||
@@ -62,7 +63,7 @@ func TestStatisticsRepositoryUsesFleetAndResearchColumns(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{2})},
-				fakeQueryResult{rows: fakeRowsFromValues([]any{1})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{0, 1})},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 			)}
 			repository := NewStatisticsRepositoryWithQueryer(queryer, "ogame_", time.Now)
@@ -166,7 +167,7 @@ func TestStatisticsRepositoryReturnsErrors(t *testing.T) {
 			prefix: "ogame_",
 			queryer: &fakeQueryer{results: append(shipyardOverviewResults(),
 				fakeQueryResult{rows: fakeRowsFromValues([]any{2})},
-				fakeQueryResult{rows: fakeRowsFromValues([]any{1})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{0, 1})},
 				fakeQueryResult{err: errors.New("rows failed")},
 			)},
 			want: "rows failed",
@@ -243,7 +244,7 @@ func TestStatisticsRepositoryLoadersHandleRowsAndScanEdges(t *testing.T) {
 		t.Fatalf("expected alliance total scan error, got %v", err)
 	}
 
-	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", 1})}}}
 	repository = NewStatisticsRepositoryWithQueryer(queryer, "ogame_", time.Now)
 	if _, err := repository.loadOwnStatisticsPlace(context.Background(), "ogame_users", 42, domaingame.StatisticsTypeResources); err == nil || !strings.Contains(err.Error(), "expected int") {
 		t.Fatalf("expected place scan error, got %v", err)
@@ -255,7 +256,7 @@ func TestStatisticsRepositoryLoadersHandleRowsAndScanEdges(t *testing.T) {
 		t.Fatalf("empty own place should return zero, got place=%d err=%v", place, err)
 	}
 
-	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("place rows failed"), []any{1})}}}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("place rows failed"), []any{0, 1})}}}
 	repository = NewStatisticsRepositoryWithQueryer(queryer, "ogame_", time.Now)
 	if _, err := repository.loadOwnStatisticsPlace(context.Background(), "ogame_users", 42, domaingame.StatisticsTypeResources); err == nil || !strings.Contains(err.Error(), "place rows failed") {
 		t.Fatalf("expected place rows error, got %v", err)
@@ -275,13 +276,13 @@ func TestStatisticsRepositoryLoadersHandleRowsAndScanEdges(t *testing.T) {
 
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{42, "legor", 0, "", 1, 2, 3, "bad", 1, 1, int64(0)})}}}
 	repository = NewStatisticsRepositoryWithQueryer(queryer, "ogame_", time.Now)
-	if _, err := repository.loadPlayerStatisticsRows(context.Background(), "ogame_users", "ogame_planets", "ogame_ally", 42, domaingame.StatisticsTypeResources, 1); err == nil || !strings.Contains(err.Error(), "expected int64") {
+	if _, err := repository.loadPlayerStatisticsRows(context.Background(), "ogame_users", "ogame_planets", "ogame_ally", 42, 0, domaingame.StatisticsTypeResources, 1); err == nil || !strings.Contains(err.Error(), "expected int64") {
 		t.Fatalf("expected player row scan error, got %v", err)
 	}
 
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("rows failed"), []any{42, "legor", 0, "", 1, 2, 3, int64(1), 1, 1, int64(0)})}}}
 	repository = NewStatisticsRepositoryWithQueryer(queryer, "ogame_", time.Now)
-	if _, err := repository.loadPlayerStatisticsRows(context.Background(), "ogame_users", "ogame_planets", "ogame_ally", 42, domaingame.StatisticsTypeResources, 1); err == nil || !strings.Contains(err.Error(), "rows failed") {
+	if _, err := repository.loadPlayerStatisticsRows(context.Background(), "ogame_users", "ogame_planets", "ogame_ally", 42, 0, domaingame.StatisticsTypeResources, 1); err == nil || !strings.Contains(err.Error(), "rows failed") {
 		t.Fatalf("expected rows error, got %v", err)
 	}
 
