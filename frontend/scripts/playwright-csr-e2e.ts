@@ -68,6 +68,14 @@ try {
   await assertLoginFormRedirectsToGame(page, loginFixture);
   await record("game overview shell loads with session", async () => {
     const state = await gameShellState(page, "login-form-submit", "Overview");
+    const overviewEventTimersValid =
+      state.details.overviewEventTimerIDs.length === 0 ||
+      (state.details.overviewEventTimerIDs.every((id: string, index: number) => id === `bxx${index + 1}`) &&
+        state.details.overviewEventTimerTitles.every((title: string) => /^\d+$/.test(title)) &&
+        state.details.overviewEventTimerDataTimes.every((time: string) => /^\d+$/.test(time)));
+    const overviewEventSpanClassesValid = state.details.overviewEventSpanClasses.every((className: string) =>
+      /\b(ownattack|attack|ownfederation|federation|owntransport|transport|owndeploy|deploy|ownhold|hold|ownespionage|espionage|owncolony|colony|ownharvest|harvest|owndestroy|destroy|ownmissile|missile)\b/.test(className)
+    );
     return {
       pass:
         state.pass &&
@@ -78,7 +86,9 @@ try {
         state.details.overviewPositionHref.includes("position=") &&
         typeof state.details.overviewRankHref === "string" &&
         state.details.overviewRankHref.includes("/game/statistics?") &&
-        state.details.overviewRankHref.includes("start="),
+        state.details.overviewRankHref.includes("start=") &&
+        overviewEventTimersValid &&
+        overviewEventSpanClassesValid,
       details: state.details
     };
   });
@@ -674,6 +684,16 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     openOverviewLinks: Array.from(document.querySelectorAll("a")).filter((link) => link.textContent?.trim() === "Open overview").length,
     overviewPositionHref: document.querySelector<HTMLAnchorElement>(".legacy-overview-position-link")?.href ?? "",
     overviewRankHref: document.querySelector<HTMLAnchorElement>(".legacy-overview-rank-link")?.href ?? "",
+    overviewEventTimerIDs: Array.from(document.querySelectorAll<HTMLElement>(".legacy-overview-event-timer")).map((timer) => timer.id),
+    overviewEventTimerTitles: Array.from(document.querySelectorAll<HTMLElement>(".legacy-overview-event-timer")).map(
+      (timer) => timer.getAttribute("title") ?? ""
+    ),
+    overviewEventTimerDataTimes: Array.from(document.querySelectorAll<HTMLElement>(".legacy-overview-event-timer")).map(
+      (timer) => timer.dataset.time ?? ""
+    ),
+    overviewEventSpanClasses: Array.from(document.querySelectorAll<HTMLElement>(".legacy-overview-main-table th[colspan='3'] span")).map(
+      (span) => span.className
+    ),
     overviewErrorText:
       Array.from(document.querySelectorAll(".legacy-overview-table"))
         .find((table) => table.textContent?.includes("The password is wrong."))

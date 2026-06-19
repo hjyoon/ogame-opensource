@@ -4990,13 +4990,20 @@ function OverviewEventRows({ events }: { events: GameFleetMission[] }) {
   const now = Math.floor(Date.now() / 1000);
   return (
     <>
-      {events.map((event) => {
+      {events.map((event, index) => {
         const remaining = Math.max(0, event.arrivalAt - now);
         const groupMissions = overviewEventGroupMissions(event);
         return (
           <tr className={overviewEventRowClass(event)} key={event.id}>
             <th>
-              <div title={String(remaining)}>{formatLegacyDuration(remaining)}</div>
+              <div
+                className="legacy-overview-event-timer"
+                data-time={String(event.arrivalAt)}
+                id={`bxx${index + 1}`}
+                title={String(remaining)}
+              >
+                {formatLegacyDuration(remaining)}
+              </div>
             </th>
             <th colSpan={3}>
               {groupMissions.map((groupEvent, index) => (
@@ -5007,7 +5014,7 @@ function OverviewEventRows({ events }: { events: GameFleetMission[] }) {
                       <br />
                     </>
                   ) : null}
-                  <span className={overviewEventMissionClass(groupEvent)}>
+                  <span className={overviewEventSpanClass(groupEvent)}>
                     <OverviewEventBody event={groupEvent} />
                   </span>
                 </React.Fragment>
@@ -5022,6 +5029,27 @@ function OverviewEventRows({ events }: { events: GameFleetMission[] }) {
 
 function overviewEventGroupMissions(event: GameFleetMission): GameFleetMission[] {
   return event.groupMissions.length > 0 ? event.groupMissions : [event];
+}
+
+function overviewEventSpanClass(event: GameFleetMission): string {
+  return [overviewEventDirectionClass(event), overviewEventMissionClass(event)].filter(Boolean).join(" ");
+}
+
+function overviewEventDirectionClass(event: GameFleetMission): string {
+  const baseMission = overviewEventBaseMission(event.mission);
+  if (baseMission === 20) {
+    return "";
+  }
+  if (event.mission >= 200) {
+    return "holding";
+  }
+  if (event.mission >= 100) {
+    return "return";
+  }
+  if (event.own === false && (baseMission === 1 || baseMission === 2 || baseMission === 21)) {
+    return "";
+  }
+  return "flight";
 }
 
 function OverviewEventBody({ event }: { event: GameFleetMission }) {
