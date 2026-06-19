@@ -12,6 +12,7 @@ import {
   type GameNoteDraft,
   type GameNotesStatus,
   type GameOverviewStatus,
+  type GameReportStatus,
   type GameResearchStatus,
   type GameResourcesStatus,
   type GameSearchStatus,
@@ -242,6 +243,8 @@ function App() {
   const [gameMessages, setGameMessages] = useState<GameMessagesStatus | null>(null);
   const [gameMessagesError, setGameMessagesError] = useState<string | null>(null);
   const [gameMessagesPending, setGameMessagesPending] = useState(false);
+  const [gameReport, setGameReport] = useState<GameReportStatus | null>(null);
+  const [gameReportError, setGameReportError] = useState<string | null>(null);
   const [gameLogout, setGameLogout] = useState<GameLogoutStatus | null>(null);
   const [gameLogoutError, setGameLogoutError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
@@ -317,7 +320,7 @@ function App() {
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
-    if (!pathname.startsWith("/game") || gameRoute?.key === "logout" || publicSession === "") {
+    if (!pathname.startsWith("/game") || gameRoute?.key === "logout" || gameRoute?.key === "report" || publicSession === "") {
       setGameOverview(null);
       setGameOverviewError(null);
       return;
@@ -1087,6 +1090,31 @@ function App() {
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "report" || publicSession === "") {
+      setGameReport(null);
+      setGameReportError(null);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const reportID = currentSearch.get("bericht") ?? currentSearch.get("report") ?? "";
+    const reportRequest = new URLSearchParams({ session: publicSession });
+    if (reportID) {
+      reportRequest.set("bericht", reportID);
+    }
+    fetch(`/api/game/report?${reportRequest.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameReportStatus>)
+      .then((payload) => {
+        setGameReport(payload);
+        setGameReportError(null);
+        if (payload.report?.title) {
+          document.title = payload.report.title;
+        }
+      })
+      .catch((err: unknown) => setGameReportError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "notes" || publicSession === "") {
       setGameNotes(null);
       setGameNotesError(null);
@@ -1284,6 +1312,8 @@ function App() {
         resourcesError={gameResourcesError}
         resourcesPending={gameResourcesPending}
         resourcesStatus={gameResources}
+        reportError={gameReportError}
+        reportStatus={gameReport}
         researchError={gameResearchError}
         researchPending={gameResearchPending}
         researchStatus={gameResearch}

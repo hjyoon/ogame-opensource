@@ -3364,6 +3364,88 @@ func TestGameMessagesEndpointReturnsUnavailable(t *testing.T) {
 	}
 }
 
+func TestGameReportEndpointReturnsReport(t *testing.T) {
+	reportUseCase := &fakeGameReport{result: appgame.ReportResult{
+		Authenticated: true,
+		Report:        domaingame.NewReport(11, domaingame.MessageTypeSpyReport, "<table>spy</table>", true),
+	}}
+	server := testServerWithGameReport(t, reportUseCase)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/report?session=public&bericht=11", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameReportResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Report == nil || response.Report.Title != domaingame.ReportTitleSpy || response.Report.Text != "<table>spy</table>" {
+		t.Fatalf("unexpected report response: %+v", response)
+	}
+	if reportUseCase.command.PublicSession != "public" || reportUseCase.command.ReportID != 11 ||
+		reportUseCase.command.RemoteAddr != "203.0.113.10" || reportUseCase.command.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("unexpected report command: %+v", reportUseCase.command)
+	}
+}
+
+func TestGameReportEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
+	reportUseCase := &fakeGameReport{result: appgame.ReportResult{
+		Authenticated: false,
+		Issues:        []domainpublicsite.SessionIssue{{Code: "missing", Message: "missing session"}},
+	}}
+	server := testServerWithGameReport(t, reportUseCase)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/report?session=public&report=11", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var response gameReportResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Authenticated || response.Report != nil || len(response.Issues) != 1 {
+		t.Fatalf("expected invalid report session response, got %+v", response)
+	}
+}
+
+func TestGameReportEndpointRejectsInvalidID(t *testing.T) {
+	for _, target := range []string{"/api/game/report?session=public", "/api/game/report?session=public&bericht=bad", "/api/game/report?session=public&bericht=0"} {
+		server := testServerWithGameReport(t, &fakeGameReport{})
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s: expected 400, got %d", target, rec.Code)
+		}
+	}
+}
+
+func TestGameReportEndpointReturnsUnavailable(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/report?session=public&bericht=11", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game report use case to return 503, got %d", rec.Code)
+	}
+
+	server = testServerWithGameReport(t, &fakeGameReport{err: errors.New("report failed")})
+	req = httptest.NewRequest(http.MethodGet, "/api/game/report?session=public&bericht=11", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game report error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestGameNotesEndpointReturnsNotes(t *testing.T) {
 	notes := &fakeGameNotes{result: appgame.NotesResult{
 		Authenticated: true,
@@ -4521,6 +4603,19 @@ func testServerWithGameMessages(t *testing.T, messages GameMessagesUseCase) http
 	})
 }
 
+func testServerWithGameReport(t *testing.T, report GameReportUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		GameReport:         report,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
 func testServerWithCustomDrafts(t *testing.T, registrationDrafts RegistrationDraftUseCase, loginDrafts LoginDraftUseCase) http.Handler {
 	t.Helper()
 	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
@@ -4881,6 +4976,17 @@ func (f *fakeGameMessages) GetMessages(_ context.Context, command appgame.Messag
 
 func (f *fakeGameMessages) MutateMessages(_ context.Context, command appgame.MessagesMutationCommand) (appgame.MessagesResult, error) {
 	f.mutationCommand = command
+	return f.result, f.err
+}
+
+type fakeGameReport struct {
+	result  appgame.ReportResult
+	err     error
+	command appgame.ReportCommand
+}
+
+func (f *fakeGameReport) GetReport(_ context.Context, command appgame.ReportCommand) (appgame.ReportResult, error) {
+	f.command = command
 	return f.result, f.err
 }
 

@@ -19,6 +19,7 @@ describe("game route model", () => {
     expect(gameRoutes.map((route) => route.path)).toContain("/game/rename-planet");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/fleet");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/fleet-templates");
+    expect(gameRoutes.map((route) => route.path)).toContain("/game/report");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/merchant");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/officers");
   });
@@ -30,6 +31,7 @@ describe("game route model", () => {
     expect(normalizeGamePath("/game/index.php", "?page=fleet_templates&session=abc")).toBe("/game/fleet-templates");
     expect(normalizeGamePath("/game/index.php?page=flotten1&session=abc")).toBe("/game/fleet");
     expect(normalizeGamePath("/game/index.php?page=writemessages&messageziel=42&session=abc")).toBe("/game/messages");
+    expect(normalizeGamePath("/game/index.php?page=bericht&bericht=11&session=abc")).toBe("/game/report");
   });
 
   test("resolves natural authenticated game routes", () => {
@@ -53,6 +55,8 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/logout")).toMatchObject({ key: "logout", migrated: true });
     expect(resolveGameRoute("/game/options").label).toBe("Options");
     expect(resolveGameRoute("/game/messages")).toMatchObject({ key: "messages", migrated: true });
+    expect(resolveGameRoute("/game/report")).toMatchObject({ key: "report", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=bericht&bericht=11")).toMatchObject({ key: "report", migrated: true });
   });
 
   test("falls back unknown game paths to overview", () => {

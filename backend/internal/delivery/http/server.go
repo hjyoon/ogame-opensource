@@ -121,6 +121,10 @@ type GameMessagesUseCase interface {
 	MutateMessages(context.Context, appgame.MessagesMutationCommand) (appgame.MessagesResult, error)
 }
 
+type GameReportUseCase interface {
+	GetReport(context.Context, appgame.ReportCommand) (appgame.ReportResult, error)
+}
+
 type Dependencies struct {
 	Health             HealthUseCase
 	Universes          UniverseCatalogUseCase
@@ -145,6 +149,7 @@ type Dependencies struct {
 	GameBuddy          GameBuddyUseCase
 	GameNotes          GameNotesUseCase
 	GameMessages       GameMessagesUseCase
+	GameReport         GameReportUseCase
 	Frontend           FrontendAssets
 	LegacyAssets       http.FileSystem
 	Logger             *slog.Logger
@@ -182,6 +187,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/buddy", a.handleGameBuddy)
 	mux.HandleFunc("/api/game/notes", a.handleGameNotes)
 	mux.HandleFunc("/api/game/messages", a.handleGameMessages)
+	mux.HandleFunc("/api/game/report", getOnly(a.handleGameReport))
 	mux.Handle("/legacy-assets/", http.StripPrefix("/legacy-assets/", http.FileServer(deps.LegacyAssets)))
 	mux.HandleFunc("/", getOnly(a.handleFrontend))
 	handler := securityHeaders(mux)

@@ -102,6 +102,12 @@ export type GameMessagesStatus = {
   messages?: GameMessages;
 };
 
+export type GameReportStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  report?: GameReport;
+};
+
 export type GameLogoutStatus = {
   loggedOut: boolean;
   redirectTo: string;
@@ -471,6 +477,14 @@ type GameMessage = {
   reportable: boolean;
 };
 
+type GameReport = {
+  id: number;
+  type: number;
+  title: string;
+  text: string;
+  allowed: boolean;
+};
+
 type GameMessageCompose = {
   target: {
     playerId: number;
@@ -652,6 +666,8 @@ type LegacyGameOverviewProps = {
   messagesPending: boolean;
   onMessagesDelete: (deleteMode: string, messageIDs: number[], reportIDs: number[]) => void;
   onMessageSend: (targetPlayerID: number, subject: string, text: string) => void;
+  reportStatus: GameReportStatus | null;
+  reportError: string | null;
   logoutStatus: GameLogoutStatus | null;
   logoutError: string | null;
 };
@@ -752,6 +768,8 @@ export function LegacyGameOverview({
   messagesPending,
   onMessagesDelete,
   onMessageSend,
+  reportStatus,
+  reportError,
   logoutStatus,
   logoutError
 }: LegacyGameOverviewProps) {
@@ -792,17 +810,19 @@ export function LegacyGameOverview({
   const messages = messagesStatus?.authenticated ? messagesStatus.messages : undefined;
   const messagesIssue =
     messagesStatus && !messagesStatus.authenticated ? messagesStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const report = reportStatus?.authenticated ? reportStatus.report : undefined;
+  const reportIssue = reportStatus && !reportStatus.authenticated ? reportStatus.issues[0]?.message ?? "Session is invalid." : null;
   const messagesActionIssue = messagesStatus?.authenticated ? messagesStatus.actionIssue : undefined;
   const messagesActionTone =
     messagesActionIssue?.code === "sent" || messagesActionIssue?.code === "reported" ? "neutral" : "error";
-  const hasHeader = route.key !== "notes" && route.key !== "galaxy";
-  const hasMenu = route.key !== "notes";
+  const hasHeader = route.key !== "notes" && route.key !== "galaxy" && route.key !== "report";
+  const hasMenu = route.key !== "notes" && route.key !== "report";
   const contentClassName =
     route.key === "overview"
       ? "legacy-content legacy-content-overview"
       : route.key === "galaxy"
         ? "legacy-content legacy-content-noheader"
-      : route.key === "notes"
+      : route.key === "notes" || route.key === "report"
         ? "legacy-content legacy-content-popup"
         : "legacy-content";
 
@@ -829,7 +849,9 @@ export function LegacyGameOverview({
       <section className={contentClassName} id="content">
         {error ? <LegacyMessage tone="error" text={error} /> : null}
         {!error && issue ? <LegacyMessage tone="error" text={issue} /> : null}
-        {!error && !issue && !overview && route.key !== "logout" ? <LegacyMessage tone="neutral" text="Loading overview..." /> : null}
+        {!error && !issue && !overview && route.key !== "logout" && route.key !== "report" ? (
+          <LegacyMessage tone="neutral" text="Loading overview..." />
+        ) : null}
         {route.key === "logout" ? <LogoutTable error={logoutError} status={logoutStatus} /> : null}
         {route.key === "buildings" && buildingsError ? <LegacyMessage tone="error" text={buildingsError} /> : null}
         {route.key === "buildings" && !buildingsError && buildingsIssue ? (
@@ -874,6 +896,12 @@ export function LegacyGameOverview({
         ) : null}
         {route.key === "notes" && notesError ? <LegacyMessage tone="error" text={notesError} /> : null}
         {route.key === "notes" && !notesError && notesIssue ? <LegacyMessage tone="error" text={notesIssue} /> : null}
+        {route.key === "report" && reportError ? <LegacyMessage tone="error" text={reportError} /> : null}
+        {route.key === "report" && !reportError && reportIssue ? <LegacyMessage tone="error" text={reportIssue} /> : null}
+        {route.key === "report" && !report && !reportError && !reportIssue ? (
+          <LegacyMessage tone="neutral" text="Loading report..." />
+        ) : null}
+        {report && route.key === "report" ? <ReportTable report={report} /> : null}
         {overview && route.key === "overview" ? <OverviewTable overview={overview} /> : null}
         {overview && route.key === "renamePlanet" ? (
           <RenamePlanetTable onDelete={onPlanetDelete} onRename={onPlanetRename} overview={overview} pending={overviewPending} />
@@ -975,6 +1003,7 @@ export function LegacyGameOverview({
         route.key !== "search" &&
         route.key !== "buddy" &&
         route.key !== "messages" &&
+        route.key !== "report" &&
         route.key !== "notes" &&
         route.key !== "logout" ? (
           <MigrationPendingGameTable route={route} />
@@ -2989,6 +3018,27 @@ function LegacyMessageHTML({ html }: { html: string }) {
   return <span dangerouslySetInnerHTML={{ __html: sanitizeLegacyMessageHTML(html) }} />;
 }
 
+function ReportTable({ report }: { report: GameReport }) {
+  return (
+    <>
+      <div id="overDiv" style={{ position: "absolute", visibility: "hidden", zIndex: 1000 }} />
+      <table className="legacy-report-table" width="99%">
+        <tbody>
+          <tr>
+            <td>
+              {report.allowed && report.text !== "" ? <LegacyReportHTML html={report.text} /> : null}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+function LegacyReportHTML({ html }: { html: string }) {
+  return <div dangerouslySetInnerHTML={{ __html: sanitizeLegacyMessageHTML(html) }} />;
+}
+
 function sanitizeLegacyMessageHTML(value: string): string {
   if (typeof DOMParser === "undefined") {
     return value;
@@ -2996,6 +3046,11 @@ function sanitizeLegacyMessageHTML(value: string): string {
   const doc = new DOMParser().parseFromString(`<div>${value}</div>`, "text/html");
   doc.querySelectorAll("script,style,iframe,object,embed,meta,link").forEach((node) => node.remove());
   doc.body.querySelectorAll("*").forEach((element) => {
+    const reportHref = legacyReportHrefFromOnClick(element.getAttribute("onclick") ?? "");
+    if (reportHref && element instanceof HTMLAnchorElement) {
+      element.href = reportHref;
+      element.removeAttribute("target");
+    }
     for (const attribute of Array.from(element.attributes)) {
       const name = attribute.name.toLowerCase();
       const rawValue = attribute.value.trim().toLowerCase();
@@ -3005,6 +3060,30 @@ function sanitizeLegacyMessageHTML(value: string): string {
     }
   });
   return doc.body.innerHTML;
+}
+
+function legacyReportHrefFromOnClick(value: string): string | null {
+  if (!value.toLowerCase().includes("page=bericht")) {
+    return null;
+  }
+  const normalized = value.replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/&amp;/g, "&").replace(/&#039;/g, "'");
+  const match = /(?:index\.php\?)?page=bericht[^'")\s]*/i.exec(normalized);
+  if (!match) {
+    return null;
+  }
+  const rawQuery = match[0].includes("?") ? match[0].slice(match[0].indexOf("?") + 1) : match[0];
+  const source = new URLSearchParams(rawQuery);
+  const reportID = source.get("bericht");
+  if (!reportID) {
+    return null;
+  }
+  const query = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
+  query.set("bericht", reportID);
+  const session = source.get("session") ?? query.get("session");
+  if (session) {
+    query.set("session", session);
+  }
+  return gameRouteURL("/game/report", query.toString());
 }
 
 function NotesTable({

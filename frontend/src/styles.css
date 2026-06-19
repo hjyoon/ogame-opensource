@@ -498,6 +498,10 @@ dd {
   width: 100%;
 }
 
+.legacy-report-table {
+  margin: 0;
+}
+
 .legacy-page-messagebox {
   border: 1px solid #00ff00;
   box-sizing: border-box;

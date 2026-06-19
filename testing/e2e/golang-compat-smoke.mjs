@@ -875,6 +875,40 @@ try {
     gameMessagesSendBody = {};
   }
 
+  const gameMessagesAfterSend = await request(`/api/game/messages${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameMessagesAfterSendBody = {};
+  try {
+    gameMessagesAfterSendBody = JSON.parse(gameMessagesAfterSend.body);
+  } catch {
+    gameMessagesAfterSendBody = {};
+  }
+  const sentMessageRow = Array.isArray(gameMessagesAfterSendBody.messages?.rows)
+    ? gameMessagesAfterSendBody.messages.rows.find((row) => String(row.subject ?? "").includes("Go smoke PM") || String(row.text ?? "").includes("Go migration message smoke"))
+    : null;
+  const sentReportID = Number(sentMessageRow?.id ?? 0);
+  const gameReport = sentReportID > 0
+    ? await request(`/api/game/report${sessionSearch}&bericht=${sentReportID}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  let gameReportBody = {};
+  try {
+    gameReportBody = JSON.parse(gameReport.body);
+  } catch {
+    gameReportBody = {};
+  }
+  const gameReportWithoutCookie = sentReportID > 0
+    ? await request(`/api/game/report${sessionSearch}&bericht=${sentReportID}`)
+    : { status: 0, headers: {}, body: "{}" };
+  let gameReportWithoutCookieBody = {};
+  try {
+    gameReportWithoutCookieBody = JSON.parse(gameReportWithoutCookie.body);
+  } catch {
+    gameReportWithoutCookieBody = {};
+  }
+
   const gameMessagesWithoutCookie = await request(`/api/game/messages${sessionSearch}`);
   let gameMessagesWithoutCookieBody = {};
   try {
@@ -1262,6 +1296,19 @@ try {
       check(gameMessagesSendBody.authenticated === true, "game message send authenticates the login session", gameMessagesSendBody),
       check(gameMessagesSendBody.actionIssue?.code === "sent", "game message send returns sent action issue", gameMessagesSendBody),
       check(gameMessagesSendBody.messages?.action === "compose", "game message send returns compose screen", gameMessagesSendBody),
+      check(gameMessagesAfterSend.status === 200, "game messages inbox can reload after sending a PM", {
+        status: gameMessagesAfterSend.status
+      }),
+      check(sentReportID > 0, "game messages exposes the sent PM id for report-popup compatibility", sentMessageRow ?? {}),
+      check(gameReport.status === 200, "game report returns HTTP 200 with private cookie", { status: gameReport.status }),
+      check(gameReportBody.authenticated === true, "game report authenticates the login session", gameReportBody),
+      check(gameReportBody.report?.id === sentReportID, "game report maps the requested bericht id", gameReportBody),
+      check(gameReportBody.report?.allowed === true, "game report allows owner access", gameReportBody),
+      check(String(gameReportBody.report?.text ?? "").includes("Go migration message smoke"), "game report renders the report body text", gameReportBody),
+      check(gameReportWithoutCookie.status === 401, "game report rejects missing private cookie", {
+        status: gameReportWithoutCookie.status
+      }),
+      check(gameReportWithoutCookieBody.authenticated === false, "game report missing private cookie is unauthenticated", gameReportWithoutCookieBody),
       check(!gameMessages.body.includes(sessionCookiePair), "game messages response does not echo private cookie"),
       check(gameMessagesWithoutCookie.status === 401, "game messages rejects missing private cookie", { status: gameMessagesWithoutCookie.status }),
       check(gameMessagesWithoutCookieBody.authenticated === false, "game messages missing private cookie is unauthenticated", gameMessagesWithoutCookieBody),
@@ -1440,6 +1487,7 @@ try {
       check(js.body.includes("/api/game/buddy"), "React bundle consumes game buddy API"),
       check(js.body.includes("/api/game/notes"), "React bundle consumes game notes API"),
       check(js.body.includes("/api/game/messages"), "React bundle consumes game messages API"),
+      check(js.body.includes("/api/game/report"), "React bundle consumes game report API"),
       check(js.body.includes("/api/game/logout"), "React bundle consumes game logout API"),
       check(js.body.includes("legacy-public-main"), "React bundle contains legacy public home layout"),
       check(js.body.includes("legacy-public-register-panel"), "React bundle contains legacy public registration layout"),
@@ -1468,6 +1516,7 @@ try {
       check(js.body.includes("legacy-search-results-table"), "React bundle contains legacy game search layout"),
       check(js.body.includes("legacy-messages-table"), "React bundle contains legacy game messages layout"),
       check(js.body.includes("legacy-messages-compose-table"), "React bundle contains legacy game message compose layout"),
+      check(js.body.includes("legacy-report-table"), "React bundle contains legacy game report layout"),
       check(js.body.includes("legacy-notes-table"), "React bundle contains legacy game notes layout"),
       check(js.body.includes("legacy-notes-form-table"), "React bundle contains legacy game notes form layout"),
       check(js.body.includes("legacy-logout-table"), "React bundle contains legacy game logout layout")
@@ -1506,6 +1555,7 @@ try {
   const putGameBuddy = await request("/api/game/buddy", { method: "PUT" });
   const putGameNotes = await request("/api/game/notes", { method: "PUT" });
   const putGameMessages = await request("/api/game/messages", { method: "PUT" });
+  const putGameReport = await request("/api/game/report", { method: "PUT" });
   const getGameLogout = await request("/api/game/logout");
   const putGameResources = await request("/api/game/resources", { method: "PUT" });
   cases.push(finalize({
@@ -1553,6 +1603,8 @@ try {
       check(hasHeader(putGameNotes, "allow", "GET, HEAD, POST"), "game notes method rejection returns Allow header"),
       check(putGameMessages.status === 405, "PUT game messages endpoint is rejected", { status: putGameMessages.status }),
       check(hasHeader(putGameMessages, "allow", "GET, HEAD, POST"), "game messages method rejection returns Allow header"),
+      check(putGameReport.status === 405, "PUT game report endpoint is rejected", { status: putGameReport.status }),
+      check(hasHeader(putGameReport, "allow", "GET, HEAD"), "game report method rejection returns Allow header"),
       check(getGameLogout.status === 405, "GET game logout endpoint is rejected", { status: getGameLogout.status }),
       check(hasHeader(getGameLogout, "allow", "POST"), "game logout method rejection returns Allow header"),
       check(putGameResources.status === 405, "PUT game resources endpoint is rejected", { status: putGameResources.status }),
