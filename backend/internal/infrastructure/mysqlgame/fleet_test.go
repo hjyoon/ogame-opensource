@@ -652,6 +652,10 @@ func TestFleetRepositoryLaunchRejectsInvalidLegacySpecialTargets(t *testing.T) {
 				PlayerID: 42,
 				PlanetID: 99,
 				Draft: domaingame.FleetDispatchDraft{
+					Ships: []domaingame.FleetShipCount{{
+						ID:    domaingame.FleetColonyShip,
+						Count: 1,
+					}},
 					Ready:      true,
 					Mission:    domaingame.FleetMissionColonize,
 					Target:     domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
@@ -666,6 +670,10 @@ func TestFleetRepositoryLaunchRejectsInvalidLegacySpecialTargets(t *testing.T) {
 				PlayerID: 42,
 				PlanetID: 99,
 				Draft: domaingame.FleetDispatchDraft{
+					Ships: []domaingame.FleetShipCount{{
+						ID:    domaingame.FleetColonyShip,
+						Count: 1,
+					}},
 					Ready:      true,
 					Mission:    domaingame.FleetMissionColonize,
 					Target:     domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
@@ -683,6 +691,10 @@ func TestFleetRepositoryLaunchRejectsInvalidLegacySpecialTargets(t *testing.T) {
 				PlayerID: 42,
 				PlanetID: 99,
 				Draft: domaingame.FleetDispatchDraft{
+					Ships: []domaingame.FleetShipCount{{
+						ID:    domaingame.FleetSmallCargo,
+						Count: 1,
+					}},
 					Ready:      true,
 					Mission:    domaingame.FleetMissionExpedition,
 					Target:     domaingame.Coordinates{Galaxy: 2, System: 3, Position: 15},
@@ -707,6 +719,222 @@ func TestFleetRepositoryLaunchRejectsInvalidLegacySpecialTargets(t *testing.T) {
 			}
 			if len(runner.execCalls) != 0 {
 				t.Fatalf("invalid special target must not write, got %+v", runner.execCalls)
+			}
+		})
+	}
+}
+
+func TestFleetRepositoryLaunchRejectsMissionShipRequirementsBeforeWrites(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	baseQuery := func(mission int, ships []domaingame.FleetShipCount) appgame.FleetLaunchQuery {
+		return appgame.FleetLaunchQuery{
+			PlayerID: 42,
+			PlanetID: 99,
+			Draft: domaingame.FleetDispatchDraft{
+				Ships:      ships,
+				Ready:      true,
+				Mission:    mission,
+				Target:     domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+				TargetType: domaingame.GamePlanetTypePlanet,
+			},
+		}
+	}
+
+	tests := []struct {
+		name  string
+		query appgame.FleetLaunchQuery
+		code  string
+	}{
+		{
+			name:  "spy without probe",
+			query: baseQuery(domaingame.FleetMissionSpy, []domaingame.FleetShipCount{{ID: domaingame.FleetSmallCargo, Count: 1}}),
+			code:  domaingame.FleetIssueInvalidTarget,
+		},
+		{
+			name:  "colonize without colony ship",
+			query: baseQuery(domaingame.FleetMissionColonize, []domaingame.FleetShipCount{{ID: domaingame.FleetSmallCargo, Count: 1}}),
+			code:  domaingame.FleetIssueInvalidTarget,
+		},
+		{
+			name:  "recycle without recycler",
+			query: baseQuery(domaingame.FleetMissionRecycle, []domaingame.FleetShipCount{{ID: domaingame.FleetSmallCargo, Count: 1}}),
+			code:  domaingame.FleetIssueInvalidTarget,
+		},
+		{
+			name:  "destroy without deathstar",
+			query: baseQuery(domaingame.FleetMissionDestroy, []domaingame.FleetShipCount{{ID: domaingame.FleetSmallCargo, Count: 1}}),
+			code:  domaingame.FleetIssueInvalidTarget,
+		},
+		{
+			name:  "expedition without crewed ship",
+			query: baseQuery(domaingame.FleetMissionExpedition, []domaingame.FleetShipCount{{ID: domaingame.FleetEspionageProbe, Count: 1}}),
+			code:  domaingame.FleetIssueExpRequired,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{0})}}}}
+			repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+			issue, err := repository.LaunchFleetDispatch(context.Background(), tt.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if issue == nil || issue.Code != tt.code {
+				t.Fatalf("expected issue %s, got %+v", tt.code, issue)
+			}
+			if len(runner.execCalls) != 0 || len(runner.calls) != 1 {
+				t.Fatalf("ship requirement failure should stop after freeze check, calls=%+v execs=%+v", runner.calls, runner.execCalls)
+			}
+		})
+	}
+}
+
+func TestFleetRepositoryLaunchRejectsLegacyMissionTargetGuards(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	baseQuery := func(mission int, targetType int, ships []domaingame.FleetShipCount) appgame.FleetLaunchQuery {
+		return appgame.FleetLaunchQuery{
+			PlayerID: 42,
+			PlanetID: 99,
+			Draft: domaingame.FleetDispatchDraft{
+				Ships:      ships,
+				Ready:      true,
+				Mission:    mission,
+				Target:     domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+				TargetType: targetType,
+			},
+		}
+	}
+	smallCargo := []domaingame.FleetShipCount{{ID: domaingame.FleetSmallCargo, Count: 1}}
+
+	tests := []struct {
+		name   string
+		query  appgame.FleetLaunchQuery
+		target []any
+	}{
+		{
+			name:   "attack own planet",
+			query:  baseQuery(domaingame.FleetMissionAttack, domaingame.GamePlanetTypePlanet, smallCargo),
+			target: []any{100, 42, domaingame.PlanetTypePlanet},
+		},
+		{
+			name:   "spy own planet",
+			query:  baseQuery(domaingame.FleetMissionSpy, domaingame.GamePlanetTypePlanet, []domaingame.FleetShipCount{{ID: domaingame.FleetEspionageProbe, Count: 1}}),
+			target: []any{100, 42, domaingame.PlanetTypePlanet},
+		},
+		{
+			name:   "deploy foreign planet",
+			query:  baseQuery(domaingame.FleetMissionDeploy, domaingame.GamePlanetTypePlanet, smallCargo),
+			target: []any{100, 43, domaingame.PlanetTypePlanet},
+		},
+		{
+			name:   "transport debris",
+			query:  baseQuery(domaingame.FleetMissionTransport, domaingame.GamePlanetTypeDebris, smallCargo),
+			target: []any{100, userSpace, domaingame.PlanetTypeDebris},
+		},
+		{
+			name:   "recycle planet",
+			query:  baseQuery(domaingame.FleetMissionRecycle, domaingame.GamePlanetTypePlanet, []domaingame.FleetShipCount{{ID: domaingame.FleetRecycler, Count: 1}}),
+			target: []any{100, 43, domaingame.PlanetTypePlanet},
+		},
+		{
+			name:   "destroy planet",
+			query:  baseQuery(domaingame.FleetMissionDestroy, domaingame.GamePlanetTypePlanet, []domaingame.FleetShipCount{{ID: domaingame.FleetDeathstar, Count: 1}}),
+			target: []any{100, 43, domaingame.PlanetTypePlanet},
+		},
+		{
+			name:   "destroy own moon",
+			query:  baseQuery(domaingame.FleetMissionDestroy, domaingame.GamePlanetTypeMoon, []domaingame.FleetShipCount{{ID: domaingame.FleetDeathstar, Count: 1}}),
+			target: []any{100, 42, domaingame.PlanetTypeMoon},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(tt.target)},
+			}}}
+			repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+			issue, err := repository.LaunchFleetDispatch(context.Background(), tt.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if issue == nil || issue.Code != domaingame.FleetIssueInvalidTarget {
+				t.Fatalf("expected invalid target issue, got %+v", issue)
+			}
+			if len(runner.execCalls) != 0 {
+				t.Fatalf("target guard failure must not write, got %+v", runner.execCalls)
+			}
+		})
+	}
+}
+
+func TestFleetRepositoryLaunchAllowsLegacyMissionTargetGuards(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	baseQuery := func(mission int, targetType int, ships []domaingame.FleetShipCount) appgame.FleetLaunchQuery {
+		return appgame.FleetLaunchQuery{
+			PlayerID: 42,
+			PlanetID: 99,
+			Origin: domaingame.PlanetOverview{
+				Type:        domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+				Resources:   domaingame.Resources{Metal: 1000, Crystal: 1000, Deuterium: 1000},
+			},
+			Draft: domaingame.FleetDispatchDraft{
+				Ships:           ships,
+				Ready:           true,
+				Mission:         mission,
+				Target:          domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+				TargetType:      targetType,
+				DurationSeconds: 42,
+			},
+		}
+	}
+
+	tests := []struct {
+		name   string
+		query  appgame.FleetLaunchQuery
+		target []any
+	}{
+		{
+			name:   "deploy own planet",
+			query:  baseQuery(domaingame.FleetMissionDeploy, domaingame.GamePlanetTypePlanet, []domaingame.FleetShipCount{{ID: domaingame.FleetSmallCargo, Count: 1}}),
+			target: []any{100, 42, domaingame.PlanetTypePlanet},
+		},
+		{
+			name:   "spy foreign planet",
+			query:  baseQuery(domaingame.FleetMissionSpy, domaingame.GamePlanetTypePlanet, []domaingame.FleetShipCount{{ID: domaingame.FleetEspionageProbe, Count: 1}}),
+			target: []any{100, 43, domaingame.PlanetTypePlanet},
+		},
+		{
+			name:   "recycle debris",
+			query:  baseQuery(domaingame.FleetMissionRecycle, domaingame.GamePlanetTypeDebris, []domaingame.FleetShipCount{{ID: domaingame.FleetRecycler, Count: 1}}),
+			target: []any{100, userSpace, domaingame.PlanetTypeDebris},
+		},
+		{
+			name:   "destroy foreign moon",
+			query:  baseQuery(domaingame.FleetMissionDestroy, domaingame.GamePlanetTypeMoon, []domaingame.FleetShipCount{{ID: domaingame.FleetDeathstar, Count: 1}}),
+			target: []any{100, 43, domaingame.PlanetTypeMoon},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(tt.target)},
+			}}}
+			repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+			issue, err := repository.LaunchFleetDispatch(context.Background(), tt.query)
+			if err != nil || issue != nil {
+				t.Fatalf("expected launch success, issue=%+v err=%v", issue, err)
+			}
+			if len(runner.execCalls) != 5 {
+				t.Fatalf("expected normal launch writes, got %+v", runner.execCalls)
 			}
 		})
 	}
@@ -964,6 +1192,7 @@ func TestFleetRepositoryLaunchPropagatesPipelineErrors(t *testing.T) {
 				query := readyQuery()
 				query.Draft.Mission = domaingame.FleetMissionColonize
 				query.Draft.TargetType = domaingame.GamePlanetTypePlanet
+				query.Draft.Ships = []domaingame.FleetShipCount{{ID: domaingame.FleetColonyShip, Count: 1}}
 				return query
 			}(),
 			results: []fakeQueryResult{
@@ -993,6 +1222,7 @@ func TestFleetRepositoryLaunchPropagatesPipelineErrors(t *testing.T) {
 				query := readyQuery()
 				query.Draft.Mission = domaingame.FleetMissionColonize
 				query.Draft.TargetType = domaingame.GamePlanetTypePlanet
+				query.Draft.Ships = []domaingame.FleetShipCount{{ID: domaingame.FleetColonyShip, Count: 1}}
 				return query
 			}(),
 			results: []fakeQueryResult{

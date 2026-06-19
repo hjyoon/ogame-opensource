@@ -220,6 +220,12 @@ func (r FleetRepository) LaunchFleetDispatch(ctx context.Context, query appgame.
 		return domaingame.FleetActionIssueFor(domaingame.FleetIssueFrozen), nil
 	}
 
+	resources := fleetLaunchResources(query.Draft.Resources)
+	ships := fleetLaunchShips(query.Draft.Ships)
+	if issue := validateFleetLaunchShipRequirements(query.Draft.Mission, ships); issue != nil {
+		return issue, nil
+	}
+
 	now := r.now().Unix()
 	target, found, err := r.resolveFleetLaunchTarget(ctx, planetsTable, query, now)
 	if err != nil {
@@ -228,9 +234,9 @@ func (r FleetRepository) LaunchFleetDispatch(ctx context.Context, query appgame.
 	if !found {
 		return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget), nil
 	}
-
-	resources := fleetLaunchResources(query.Draft.Resources)
-	ships := fleetLaunchShips(query.Draft.Ships)
+	if issue := validateFleetLaunchTarget(query, target); issue != nil {
+		return issue, nil
+	}
 	if err := r.deleteOldFleetLogs(ctx, fleetLogsTable, now); err != nil {
 		return nil, err
 	}
@@ -264,6 +270,83 @@ func (r FleetRepository) resolveFleetLaunchTarget(ctx context.Context, planetsTa
 	default:
 		return r.loadFleetLaunchTarget(ctx, planetsTable, query.Draft.Target, query.Draft.TargetType)
 	}
+}
+
+func validateFleetLaunchShipRequirements(mission int, ships domaingame.FleetCounts) *domaingame.FleetActionIssue {
+	switch mission {
+	case domaingame.FleetMissionSpy:
+		if ships[domaingame.FleetEspionageProbe] <= 0 {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget)
+		}
+	case domaingame.FleetMissionColonize:
+		if ships[domaingame.FleetColonyShip] <= 0 {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget)
+		}
+	case domaingame.FleetMissionRecycle:
+		if ships[domaingame.FleetRecycler] <= 0 {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget)
+		}
+	case domaingame.FleetMissionDestroy:
+		if ships[domaingame.FleetDeathstar] <= 0 {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget)
+		}
+	case domaingame.FleetMissionExpedition:
+		if !fleetLaunchHasMannedShips(ships) {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueExpRequired)
+		}
+	}
+	return nil
+}
+
+func validateFleetLaunchTarget(query appgame.FleetLaunchQuery, target fleetLaunchTarget) *domaingame.FleetActionIssue {
+	switch query.Draft.Mission {
+	case domaingame.FleetMissionAttack, domaingame.FleetMissionACSAttack, domaingame.FleetMissionACSAttackHead:
+		if target.OwnerID == query.PlayerID || !fleetLaunchTargetIsPlanetOrMoon(target.Type) {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget)
+		}
+	case domaingame.FleetMissionTransport, domaingame.FleetMissionACSHold:
+		if !fleetLaunchTargetIsPlanetOrMoon(target.Type) {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget)
+		}
+	case domaingame.FleetMissionDeploy:
+		if target.OwnerID != query.PlayerID || !fleetLaunchTargetIsPlanetOrMoon(target.Type) {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget)
+		}
+	case domaingame.FleetMissionSpy:
+		if target.OwnerID == query.PlayerID || !fleetLaunchTargetIsPlanetOrMoon(target.Type) {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget)
+		}
+	case domaingame.FleetMissionColonize:
+		if target.Type != legacyPlanetTypeColony {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget)
+		}
+	case domaingame.FleetMissionRecycle:
+		if target.Type != domaingame.PlanetTypeDebris {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget)
+		}
+	case domaingame.FleetMissionDestroy:
+		if target.OwnerID == query.PlayerID || target.Type != domaingame.PlanetTypeMoon {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget)
+		}
+	case domaingame.FleetMissionExpedition:
+		if target.Type != legacyPlanetTypeFarSpace {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget)
+		}
+	}
+	return nil
+}
+
+func fleetLaunchTargetIsPlanetOrMoon(targetType int) bool {
+	return targetType == domaingame.PlanetTypePlanet || targetType == domaingame.PlanetTypeMoon
+}
+
+func fleetLaunchHasMannedShips(ships domaingame.FleetCounts) bool {
+	for id, count := range ships {
+		if count > 0 && id != domaingame.FleetEspionageProbe {
+			return true
+		}
+	}
+	return false
 }
 
 func (r FleetRepository) resolveFleetLaunchColonizeTarget(ctx context.Context, planetsTable string, coordinates domaingame.Coordinates, targetType int, now int64) (fleetLaunchTarget, bool, error) {
