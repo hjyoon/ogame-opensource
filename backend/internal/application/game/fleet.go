@@ -418,26 +418,5 @@ func (s FleetService) RecallFleet(ctx context.Context, command FleetRecallComman
 }
 
 func fleetDispatchHoldSeconds(mission int, holdHours int, expeditionHours int, expeditionLevel int) int {
-	hours := 0
-	switch mission {
-	case domaingame.FleetMissionExpedition:
-		hours = expeditionHours
-		if hours < 1 {
-			hours = 1
-		}
-		if expeditionLevel > 0 && hours > expeditionLevel {
-			hours = expeditionLevel
-		}
-	case domaingame.FleetMissionACSHold:
-		hours = holdHours
-		if hours < 0 {
-			hours = 0
-		}
-		if hours > 32 {
-			hours = 32
-		}
-	default:
-		return 0
-	}
-	return hours * 60 * 60
+	return domaingame.NormalizeFleetHoldHours(mission, holdHours, expeditionHours, expeditionLevel) * 60 * 60
 }

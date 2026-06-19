@@ -206,6 +206,38 @@ func TestBuildFleetDispatchValidationPlansLegacyResourceLoading(t *testing.T) {
 	}
 }
 
+func TestBuildFleetDispatchValidationAppliesLegacyHoldFuel(t *testing.T) {
+	fleet := BuildFleet(Overview{
+		CurrentPlanet: PlanetOverview{
+			Type:        PlanetTypePlanet,
+			Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Resources:   Resources{Metal: 100000, Deuterium: 100000},
+		},
+	}, FleetCounts{FleetSmallCargo: 1}, ResearchLevels{ResearchCombustionDrive: 1, ResearchExpedition: 9}, nil, false, false)
+
+	draft, issue := BuildFleetDispatchValidation(fleet, FleetDispatchValidationInput{
+		Ships:           map[int]int{FleetSmallCargo: 1},
+		Resources:       map[int]int{ResourceMetal: 100000},
+		Target:          Coordinates{Galaxy: 1, System: 2, Position: GalaxyFarSpace},
+		TargetType:      GamePlanetTypePlanet,
+		Mission:         FleetMissionExpedition,
+		Speed:           10,
+		ExpeditionHours: 3,
+	})
+	if issue != nil || !draft.Ready {
+		t.Fatalf("expected expedition validation to pass, issue=%+v draft=%+v", issue, draft)
+	}
+	counts := FleetCounts{FleetSmallCargo: 1}
+	noHoldFuel := fleetFlightConsumption(fleet.Ships, counts, draft.Distance, draft.DurationSeconds, draft.SpeedFactor, 0)
+	holdFuel := fleetFlightConsumption(fleet.Ships, counts, draft.Distance, draft.DurationSeconds, draft.SpeedFactor, 3)
+	if draft.FuelConsumption != holdFuel || draft.FuelConsumption <= noHoldFuel {
+		t.Fatalf("expected hold fuel %d above no-hold %d, got draft %+v", holdFuel, noHoldFuel, draft)
+	}
+	if draft.Resources[0].Loaded != draft.Cargo-holdFuel {
+		t.Fatalf("expected hold fuel to reduce transport cargo, resources=%+v draft=%+v", draft.Resources, draft)
+	}
+}
+
 func TestBuildFleetDispatchValidationReturnsLegacyCommonIssues(t *testing.T) {
 	base := BuildFleet(Overview{
 		CurrentPlanet: PlanetOverview{

@@ -299,7 +299,9 @@ func BuildFleetDispatchValidation(fleet Fleet, input FleetDispatchValidationInpu
 		Speed:      input.Speed,
 	})
 	selectedCounts := fleetCountsFromShipCounts(draft.Ships)
-	fleetFuel, _ := fleetFlightConsumptionParts(fleet.Ships, selectedCounts, draft.Distance, draft.DurationSeconds, draft.SpeedFactor, 0)
+	holdHours := NormalizeFleetHoldHours(input.Mission, input.HoldHours, input.ExpeditionHours, fleet.ExpeditionLevel)
+	fleetFuel, probeFuel := fleetFlightConsumptionParts(fleet.Ships, selectedCounts, draft.Distance, draft.DurationSeconds, draft.SpeedFactor, holdHours)
+	draft.FuelConsumption = fleetFuel + probeFuel
 	cargoSpace := draft.Cargo - fleetFuel
 	resourceRows, remainingCargo := fleetDispatchResourcePlan(fleet.CurrentPlanet.Resources, input.Resources, cargoSpace)
 	draft.Resources = resourceRows
@@ -356,6 +358,31 @@ func FleetActionIssueFor(code string) *FleetActionIssue {
 		message = "Fleet dispatch failed."
 	}
 	return &FleetActionIssue{Code: code, Message: message}
+}
+
+func NormalizeFleetHoldHours(mission int, holdHours int, expeditionHours int, expeditionLevel int) int {
+	switch mission {
+	case FleetMissionExpedition:
+		hours := expeditionHours
+		if hours < 1 {
+			hours = 1
+		}
+		if expeditionLevel > 0 && hours > expeditionLevel {
+			hours = expeditionLevel
+		}
+		return hours
+	case FleetMissionACSHold:
+		hours := holdHours
+		if hours < 0 {
+			hours = 0
+		}
+		if hours > 32 {
+			hours = 32
+		}
+		return hours
+	default:
+		return 0
+	}
 }
 
 func fleetDispatchMissionOptions(fleet Fleet, counts FleetCounts, target Coordinates, targetType int, requested int) []FleetMissionOption {
