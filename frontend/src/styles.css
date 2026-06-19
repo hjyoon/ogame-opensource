@@ -400,6 +400,16 @@ dd {
   text-decoration: underline;
 }
 
+.legacy-game-shell h1 {
+  border-bottom: 0 #344566 solid;
+  font-family: Tahoma, sans-serif;
+  font-size: 14px;
+  line-height: normal;
+  margin: 0.67em 0;
+  text-align: center;
+  width: 98%;
+}
+
 .legacy-header-top {
   height: 66px;
   left: 190px;
@@ -806,6 +816,26 @@ dd {
 
 .legacy-game-shell .legacy-fleet-table input,
 .legacy-game-shell .legacy-fleet-select-table input {
+  background-color: #344566;
+  border: 1px #415680 solid;
+  color: #e6ebfb;
+  font-family: Tahoma, sans-serif;
+  font-size: 11px;
+}
+
+.legacy-game-shell .legacy-rename-planet-table,
+.legacy-game-shell .legacy-rename-destroy-table {
+  border-collapse: separate;
+  border-spacing: 2px;
+}
+
+.legacy-game-shell .legacy-rename-planet-table th,
+.legacy-game-shell .legacy-rename-destroy-table th {
+  font-weight: bold;
+}
+
+.legacy-game-shell .legacy-rename-planet-table input,
+.legacy-game-shell .legacy-rename-destroy-table input {
   background-color: #344566;
   border: 1px #415680 solid;
   color: #e6ebfb;
