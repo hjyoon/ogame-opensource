@@ -442,6 +442,306 @@ func TestFleetRepositoryTemplateMutationErrors(t *testing.T) {
 	}
 }
 
+func TestFleetRepositoryLaunchesLegacyDispatchWithFleetQueue(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues([]any{100, 43, domaingame.PlanetTypePlanet})},
+	}}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	issue, err := repository.LaunchFleetDispatch(context.Background(), appgame.FleetLaunchQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Origin: domaingame.PlanetOverview{
+			Type:        domaingame.PlanetTypePlanet,
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Resources:   domaingame.Resources{Metal: 1000, Crystal: 900, Deuterium: 800},
+		},
+		Draft: domaingame.FleetDispatchDraft{
+			Ships: []domaingame.FleetShipCount{{
+				ID:    domaingame.FleetSmallCargo,
+				Count: 1,
+			}},
+			Target:          domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+			TargetType:      domaingame.GamePlanetTypePlanet,
+			Mission:         domaingame.FleetMissionTransport,
+			DurationSeconds: 42,
+			FuelConsumption: 7,
+			Ready:           true,
+			Resources: []domaingame.FleetResourceLoad{
+				{ID: domaingame.ResourceMetal, Loaded: 123},
+				{ID: domaingame.ResourceCrystal, Loaded: 45},
+				{ID: domaingame.ResourceDeuterium, Loaded: 6},
+			},
+		},
+		UnionID:     5,
+		HoldSeconds: 60,
+	})
+	if err != nil || issue != nil {
+		t.Fatalf("expected launch success, issue=%+v err=%v", issue, err)
+	}
+	if len(runner.execCalls) != 5 {
+		t.Fatalf("expected fleet log cleanup, origin debit, fleet insert, log insert, queue insert; got %+v", runner.execCalls)
+	}
+	if !strings.Contains(runner.execCalls[0].sql, "DELETE FROM `ogame_fleetlogs`") {
+		t.Fatalf("expected fleet log retention cleanup, got %+v", runner.execCalls[0])
+	}
+	debit := runner.execCalls[1]
+	if !strings.Contains(debit.sql, "UPDATE `ogame_planets`") || !strings.Contains(debit.sql, "`202` = `202` - ?") || !strings.Contains(debit.sql, "`702` >= ?") {
+		t.Fatalf("expected atomic origin debit SQL, got %s", debit.sql)
+	}
+	if debit.args[0] != 123 || debit.args[1] != 45 || debit.args[2] != 13 || debit.args[3] != 1 {
+		t.Fatalf("unexpected origin debit args: %+v", debit.args)
+	}
+	insertFleet := runner.execCalls[2]
+	if !strings.Contains(insertFleet.sql, "INSERT INTO `ogame_fleet`") || !strings.Contains(insertFleet.sql, "`202`") {
+		t.Fatalf("expected legacy fleet insert, got %s", insertFleet.sql)
+	}
+	if insertFleet.args[0] != 42 || insertFleet.args[1] != 5 || insertFleet.args[2] != 123 || insertFleet.args[4] != 6 || insertFleet.args[5] != 7 || insertFleet.args[6] != domaingame.FleetMissionTransport || insertFleet.args[7] != 99 || insertFleet.args[8] != 100 || insertFleet.args[9] != 42 || insertFleet.args[10] != 60 {
+		t.Fatalf("unexpected fleet insert args: %+v", insertFleet.args)
+	}
+	if insertFleet.args[11] != 1 {
+		t.Fatalf("expected small cargo count in first fleet column, got %+v", insertFleet.args)
+	}
+	insertLog := runner.execCalls[3]
+	if !strings.Contains(insertLog.sql, "INSERT INTO `ogame_fleetlogs`") || !strings.Contains(insertLog.sql, "`p700`") || !strings.Contains(insertLog.sql, "`202`") {
+		t.Fatalf("expected legacy fleet log insert, got %s", insertLog.sql)
+	}
+	insertQueue := runner.execCalls[4]
+	if !strings.Contains(insertQueue.sql, "INSERT INTO `ogame_queue`") {
+		t.Fatalf("expected queue insert, got %s", insertQueue.sql)
+	}
+	if insertQueue.args[0] != 42 || insertQueue.args[1] != queueTypeFleet || insertQueue.args[2] != 1 || insertQueue.args[5] != int64(1_000) || insertQueue.args[6] != int64(1_042) || insertQueue.args[7] != fleetQueuePriority(domaingame.FleetMissionTransport) {
+		t.Fatalf("unexpected queue insert args: %+v", insertQueue.args)
+	}
+}
+
+func TestFleetRepositoryLaunchReturnsLegacyIssuesWithoutWrites(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	tests := []struct {
+		name    string
+		query   appgame.FleetLaunchQuery
+		results []fakeQueryResult
+		code    string
+	}{
+		{
+			name:  "unready",
+			query: appgame.FleetLaunchQuery{PlayerID: 42, PlanetID: 99},
+			code:  domaingame.FleetIssueInvalidOrder,
+		},
+		{
+			name: "frozen",
+			query: appgame.FleetLaunchQuery{
+				PlayerID: 42,
+				PlanetID: 99,
+				Draft:    domaingame.FleetDispatchDraft{Ready: true},
+			},
+			results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}},
+			code:    domaingame.FleetIssueFrozen,
+		},
+		{
+			name: "missing target",
+			query: appgame.FleetLaunchQuery{
+				PlayerID: 42,
+				PlanetID: 99,
+				Draft: domaingame.FleetDispatchDraft{
+					Ready:      true,
+					Target:     domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+					TargetType: domaingame.GamePlanetTypePlanet,
+				},
+			},
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues()},
+			},
+			code: domaingame.FleetIssueInvalidTarget,
+		},
+		{
+			name: "lost resources",
+			query: appgame.FleetLaunchQuery{
+				PlayerID: 42,
+				PlanetID: 99,
+				Draft: domaingame.FleetDispatchDraft{
+					Ready:      true,
+					Target:     domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+					TargetType: domaingame.GamePlanetTypePlanet,
+				},
+			},
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues([]any{100, 43, domaingame.PlanetTypePlanet})},
+			},
+			code: domaingame.FleetIssueLaunchRace,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: tt.results}}
+			if tt.name == "lost resources" {
+				runner.execResults = []sql.Result{fakeFleetSQLResult(1), fakeFleetSQLResult(0)}
+			}
+			repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+			issue, err := repository.LaunchFleetDispatch(context.Background(), tt.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if issue == nil || issue.Code != tt.code {
+				t.Fatalf("expected issue %s, got %+v", tt.code, issue)
+			}
+			if tt.name != "lost resources" && len(runner.execCalls) != 0 {
+				t.Fatalf("expected no writes, got %+v", runner.execCalls)
+			}
+		})
+	}
+}
+
+func TestFleetRepositoryLaunchPropagatesPipelineErrors(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	readyQuery := func() appgame.FleetLaunchQuery {
+		return appgame.FleetLaunchQuery{
+			PlayerID: 42,
+			PlanetID: 99,
+			Origin: domaingame.PlanetOverview{
+				Type:        domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			},
+			Draft: domaingame.FleetDispatchDraft{
+				Ships: []domaingame.FleetShipCount{{
+					ID:    domaingame.FleetSmallCargo,
+					Count: 1,
+				}},
+				Target:          domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+				TargetType:      domaingame.GamePlanetTypeMoon,
+				Mission:         domaingame.FleetMissionTransport,
+				DurationSeconds: 42,
+				Ready:           true,
+			},
+		}
+	}
+	baseResults := func() []fakeQueryResult {
+		return []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{0})},
+			{rows: fakeRowsFromValues([]any{100, 43, domaingame.PlanetTypeMoon})},
+		}
+	}
+	tests := []struct {
+		name        string
+		prefix      string
+		query       appgame.FleetLaunchQuery
+		results     []fakeQueryResult
+		execErrs    []error
+		execResults []sql.Result
+		want        string
+	}{
+		{
+			name:   "unsafe prefix",
+			prefix: "bad-prefix_",
+			query:  readyQuery(),
+			want:   "invalid database table prefix",
+		},
+		{
+			name:  "freeze query",
+			query: readyQuery(),
+			results: []fakeQueryResult{
+				{err: errors.New("freeze failed")},
+			},
+			want: "freeze failed",
+		},
+		{
+			name:  "target query",
+			query: readyQuery(),
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{err: errors.New("target failed")},
+			},
+			want: "target failed",
+		},
+		{
+			name:  "target scan",
+			query: readyQuery(),
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues([]any{"bad", 43, domaingame.PlanetTypeMoon})},
+			},
+			want: "expected int",
+		},
+		{
+			name:     "fleet log cleanup",
+			query:    readyQuery(),
+			results:  baseResults(),
+			execErrs: []error{errors.New("cleanup failed")},
+			want:     "cleanup failed",
+		},
+		{
+			name:     "origin debit",
+			query:    readyQuery(),
+			results:  baseResults(),
+			execErrs: []error{nil, errors.New("debit failed")},
+			want:     "debit failed",
+		},
+		{
+			name:     "fleet insert",
+			query:    readyQuery(),
+			results:  baseResults(),
+			execErrs: []error{nil, nil, errors.New("fleet insert failed")},
+			want:     "fleet insert failed",
+		},
+		{
+			name:        "fleet insert id",
+			query:       readyQuery(),
+			results:     baseResults(),
+			execResults: []sql.Result{fakeFleetSQLResult(1), fakeFleetSQLResult(1), fakeFleetSQLErrorResult{idErr: errors.New("id failed")}},
+			want:        "id failed",
+		},
+		{
+			name:        "fleet insert missing id",
+			query:       readyQuery(),
+			results:     baseResults(),
+			execResults: []sql.Result{fakeFleetSQLResult(1), fakeFleetSQLResult(1), fakeFleetSQLResult(0)},
+			want:        "fleet launch id unavailable",
+		},
+		{
+			name:     "fleet log insert",
+			query:    readyQuery(),
+			results:  baseResults(),
+			execErrs: []error{nil, nil, nil, errors.New("log failed")},
+			want:     "log failed",
+		},
+		{
+			name:     "queue insert",
+			query:    readyQuery(),
+			results:  baseResults(),
+			execErrs: []error{nil, nil, nil, nil, errors.New("queue failed")},
+			want:     "queue failed",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prefix := tt.prefix
+			if prefix == "" {
+				prefix = "ogame_"
+			}
+			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: tt.results}, execErrs: tt.execErrs, execResults: tt.execResults}
+			repository := NewFleetRepositoryWithRunner(runner, runner, prefix, func() time.Time { return now })
+			_, err := repository.LaunchFleetDispatch(context.Background(), tt.query)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q, got %v", tt.want, err)
+			}
+		})
+	}
+
+	repository := NewFleetRepositoryWithQueryer(&fakeQueryer{}, "ogame_", func() time.Time { return now })
+	if _, err := repository.LaunchFleetDispatch(context.Background(), readyQuery()); err == nil || !strings.Contains(err.Error(), "writer unavailable") {
+		t.Fatalf("expected missing writer error, got %v", err)
+	}
+	if fleetLaunchPlanetType(domaingame.GamePlanetTypeMoon) != domaingame.PlanetTypeMoon ||
+		fleetLaunchPlanetType(domaingame.GamePlanetTypeDebris) != domaingame.PlanetTypeDebris ||
+		fleetLaunchPlanetType(domaingame.GamePlanetTypePlanet) != domaingame.PlanetTypePlanet {
+		t.Fatal("unexpected fleet launch planet type mapping")
+	}
+}
+
 func TestFleetRepositoryRecallsOutboundFleetWithLegacyReturnQueue(t *testing.T) {
 	now := time.Unix(1_000, 0)
 	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{

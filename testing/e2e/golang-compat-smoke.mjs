@@ -673,6 +673,27 @@ try {
   } catch {
     gameFleetValidateBody = {};
   }
+  const gameFleetLaunch = selectableFleetShip
+    ? await request(`/api/game/fleet${sessionSearch}`, {
+        method: "POST",
+        headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "launch-dispatch",
+          ships: { [String(selectableFleetShip.id)]: 1 },
+          resources: { 700: 1 },
+          target: fleetTarget,
+          targetType: fleetCurrentType,
+          mission: 3,
+          speed: 9
+        })
+      })
+    : { status: 0, body: "", headers: {} };
+  let gameFleetLaunchBody = {};
+  try {
+    gameFleetLaunchBody = JSON.parse(gameFleetLaunch.body);
+  } catch {
+    gameFleetLaunchBody = {};
+  }
 
   const gameFleetWithoutCookie = await request(`/api/game/fleet${sessionSearch}`);
   let gameFleetWithoutCookieBody = {};
@@ -1342,6 +1363,15 @@ try {
         "game fleet final dispatch validation returns resource loading rows",
         gameFleetValidateBody.fleet?.dispatchDraft ?? {}
       ),
+      check(!selectableFleetShip || gameFleetLaunch.status === 200, "game fleet accepts final launch dispatch action", {
+        status: gameFleetLaunch.status,
+        selectableFleetShip
+      }),
+      check(
+        !selectableFleetShip || gameFleetLaunchBody.actionIssue?.code === "same_planet",
+        "game fleet launch action reuses final dispatch validation issues",
+        gameFleetLaunchBody.actionIssue ?? {}
+      ),
       check(!gameFleet.body.includes(sessionCookiePair), "game fleet response does not echo private cookie"),
       check(gameFleetWithoutCookie.status === 401, "game fleet rejects missing private cookie", { status: gameFleetWithoutCookie.status }),
       check(gameFleetWithoutCookieBody.authenticated === false, "game fleet missing private cookie is unauthenticated", gameFleetWithoutCookieBody),
@@ -1716,7 +1746,7 @@ try {
       check(js.body.includes("legacy-fleet-dispatch-table"), "React bundle contains legacy game fleet dispatch preview layout"),
       check(js.body.includes("legacy-fleet-dispatch-form") && js.body.includes("remainingresources"), "React bundle contains legacy fleet mission/resource draft layout"),
       check(js.body.includes("legacy-fleet-flight-math"), "React bundle contains legacy fleet flight math draft layout"),
-      check(js.body.includes("validate-dispatch"), "React bundle contains legacy fleet final dispatch validation action"),
+      check(js.body.includes("launch-dispatch"), "React bundle contains legacy fleet final launch action"),
       check(js.body.includes("legacy-fleet-templates-table"), "React bundle contains legacy game standard fleets layout"),
       check(js.body.includes("legacy-galaxy-table"), "React bundle contains legacy game galaxy layout"),
       check(js.body.includes("target_galaxy") && js.body.includes("target_mission"), "React bundle preserves legacy fleet target prefill fields"),

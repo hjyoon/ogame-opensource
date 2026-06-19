@@ -260,6 +260,26 @@ func (a app) handleGameFleetPost(w http.ResponseWriter, r *http.Request) {
 			ExpeditionHours: payload.ExpeditionHours,
 			UnionID:         payload.UnionID,
 		})
+	case "launch-dispatch":
+		result, err = a.deps.GameFleet.LaunchFleetDispatch(r.Context(), appgame.FleetDispatchLaunchCommand{
+			PublicSession:   r.URL.Query().Get("session"),
+			PrivateSessions: cookieMap(r),
+			RemoteAddr:      remoteIP(r.RemoteAddr),
+			PlanetID:        planetID,
+			Ships:           parseFleetTemplateShips(payload.Ships),
+			Resources:       parseFleetTemplateShips(payload.Resources),
+			Target: domaingame.Coordinates{
+				Galaxy:   payload.Target.Galaxy,
+				System:   payload.Target.System,
+				Position: payload.Target.Position,
+			},
+			TargetType:      payload.TargetType,
+			Mission:         payload.Mission,
+			Speed:           payload.Speed,
+			HoldHours:       payload.HoldHours,
+			ExpeditionHours: payload.ExpeditionHours,
+			UnionID:         payload.UnionID,
+		})
 	default:
 		http.Error(w, "unsupported fleet action", http.StatusBadRequest)
 		return

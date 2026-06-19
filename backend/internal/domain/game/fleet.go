@@ -144,12 +144,15 @@ type FleetResourceLoad struct {
 }
 
 const (
-	FleetIssueNoShips      = "no_ships"
-	FleetIssueSamePlanet   = "same_planet"
-	FleetIssueMaxFleet     = "max_fleet"
-	FleetIssueInvalidOrder = "invalid_order"
-	FleetIssueNoFuel       = "no_fuel"
-	FleetIssueNoCargo      = "no_cargo"
+	FleetIssueNoShips       = "no_ships"
+	FleetIssueSamePlanet    = "same_planet"
+	FleetIssueMaxFleet      = "max_fleet"
+	FleetIssueInvalidOrder  = "invalid_order"
+	FleetIssueInvalidTarget = "invalid_target"
+	FleetIssueNoFuel        = "no_fuel"
+	FleetIssueNoCargo       = "no_cargo"
+	FleetIssueFrozen        = "frozen"
+	FleetIssueLaunchRace    = "launch_race"
 )
 
 func BuildFleet(overview Overview, counts FleetCounts, research ResearchLevels, missions []FleetMission, admiral bool, acsEnabled bool) Fleet {
@@ -321,12 +324,15 @@ func BuildFleetDispatchValidation(fleet Fleet, input FleetDispatchValidationInpu
 
 func FleetActionIssueFor(code string) *FleetActionIssue {
 	message := map[string]string{
-		FleetIssueNoShips:      "No ships have been selected.",
-		FleetIssueSamePlanet:   "Origin and target are the same planet.",
-		FleetIssueMaxFleet:     "Maximum fleet size has been reached.",
-		FleetIssueInvalidOrder: "No suitable mission.",
-		FleetIssueNoFuel:       "Not enough deuterium.",
-		FleetIssueNoCargo:      "Not enough cargo capacity.",
+		FleetIssueNoShips:       "No ships have been selected.",
+		FleetIssueSamePlanet:    "Origin and target are the same planet.",
+		FleetIssueMaxFleet:      "Maximum fleet size has been reached.",
+		FleetIssueInvalidOrder:  "No suitable mission.",
+		FleetIssueInvalidTarget: "Target not found.",
+		FleetIssueNoFuel:        "Not enough deuterium.",
+		FleetIssueNoCargo:       "Not enough cargo capacity.",
+		FleetIssueFrozen:        "The universe is currently frozen.",
+		FleetIssueLaunchRace:    "Selected ships or resources are no longer available.",
 	}[code]
 	if message == "" {
 		message = "Fleet dispatch failed."

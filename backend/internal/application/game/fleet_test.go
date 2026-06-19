@@ -207,6 +207,159 @@ func TestFleetServiceValidatesDispatchDraft(t *testing.T) {
 	}
 }
 
+func TestFleetServiceLaunchesReadyDispatchAndReloadsFleet(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}
+	repository := &fakeFleetRepository{result: domaingame.Fleet{
+		CurrentPlanet: domaingame.PlanetOverview{
+			ID:          99,
+			Type:        domaingame.PlanetTypePlanet,
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Resources:   domaingame.Resources{Metal: 1000, Crystal: 500, Deuterium: 5000},
+		},
+		Slots: domaingame.FleetSlots{Used: 0, Max: 4},
+		Ships: []domaingame.FleetShipSelection{{
+			ID:          domaingame.FleetSmallCargo,
+			Name:        "Small Cargo",
+			Count:       4,
+			Speed:       5500,
+			Cargo:       5000,
+			Consumption: 10,
+			Selectable:  true,
+		}},
+	}}
+	service := NewFleetService(sessions, repository)
+
+	result, err := service.LaunchFleetDispatch(context.Background(), FleetDispatchLaunchCommand{
+		PublicSession:   "public",
+		PrivateSessions: map[string]string{"private": "secret"},
+		RemoteAddr:      "203.0.113.10",
+		PlanetID:        99,
+		Ships:           map[int]int{domaingame.FleetSmallCargo: 1},
+		Resources:       map[int]int{domaingame.ResourceMetal: 900},
+		Target:          domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+		TargetType:      domaingame.GamePlanetTypePlanet,
+		Mission:         domaingame.FleetMissionTransport,
+		Speed:           9,
+		HoldHours:       4,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Authenticated || result.ActionIssue != nil || !repository.launched || repository.launch.Draft.TotalShips != 1 || !repository.launch.Draft.Ready {
+		t.Fatalf("unexpected launch result: result=%+v launch=%+v", result, repository.launch)
+	}
+	if repository.launch.PlayerID != 42 || repository.launch.PlanetID != 99 || repository.launch.Origin.ID != 99 || repository.launch.HoldSeconds != 0 {
+		t.Fatalf("unexpected launch query: %+v", repository.launch)
+	}
+	if repository.calls != 2 {
+		t.Fatalf("expected launch to reload fleet after mutation, got %d calls", repository.calls)
+	}
+}
+
+func TestFleetServiceLaunchReturnsValidationIssueWithoutRepositoryWrite(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}
+	repository := &fakeFleetRepository{result: domaingame.Fleet{
+		CurrentPlanet: domaingame.PlanetOverview{
+			Type:        domaingame.PlanetTypePlanet,
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Resources:   domaingame.Resources{Metal: 1000, Crystal: 500, Deuterium: 5000},
+		},
+		Slots: domaingame.FleetSlots{Used: 0, Max: 4},
+		Ships: []domaingame.FleetShipSelection{{
+			ID:         domaingame.FleetSmallCargo,
+			Name:       "Small Cargo",
+			Count:      4,
+			Speed:      5500,
+			Cargo:      5000,
+			Selectable: true,
+		}},
+	}}
+	service := NewFleetService(sessions, repository)
+
+	result, err := service.LaunchFleetDispatch(context.Background(), FleetDispatchLaunchCommand{
+		PublicSession: "public",
+		PlanetID:      99,
+		Ships:         map[int]int{domaingame.FleetSmallCargo: 1},
+		Target:        domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+		TargetType:    domaingame.GamePlanetTypePlanet,
+		Mission:       domaingame.FleetMissionTransport,
+		Speed:         10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ActionIssue == nil || result.ActionIssue.Code != domaingame.FleetIssueSamePlanet || repository.launched {
+		t.Fatalf("expected same-planet issue without launch write, got result=%+v launched=%v", result, repository.launched)
+	}
+}
+
+func TestFleetServiceLaunchReturnsSessionAndRepositoryIssues(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: false,
+		Issues: []domainpublicsite.SessionIssue{{
+			Code:    domainpublicsite.SessionIssuePrivateInvalid,
+			Message: "Private session is invalid.",
+		}},
+	}}
+	repository := &fakeFleetRepository{}
+	service := NewFleetService(sessions, repository)
+	result, err := service.LaunchFleetDispatch(context.Background(), FleetDispatchLaunchCommand{PublicSession: "public"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Authenticated || len(result.Issues) != 1 || repository.called || repository.launched {
+		t.Fatalf("expected unauthenticated launch without repository call, got result=%+v repository=%+v", result, repository)
+	}
+
+	sessions = &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}
+	repository = &fakeFleetRepository{
+		result: domaingame.Fleet{
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:          99,
+				Type:        domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+				Resources:   domaingame.Resources{Metal: 1000, Crystal: 500, Deuterium: 5000},
+			},
+			Slots: domaingame.FleetSlots{Used: 0, Max: 4},
+			Ships: []domaingame.FleetShipSelection{{
+				ID:          domaingame.FleetSmallCargo,
+				Name:        "Small Cargo",
+				Count:       4,
+				Speed:       5500,
+				Cargo:       5000,
+				Consumption: 10,
+				Selectable:  true,
+			}},
+		},
+		launchIssue: domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget),
+	}
+	service = NewFleetService(sessions, repository)
+	result, err = service.LaunchFleetDispatch(context.Background(), FleetDispatchLaunchCommand{
+		PublicSession: "public",
+		PlanetID:      99,
+		Ships:         map[int]int{domaingame.FleetSmallCargo: 1},
+		Target:        domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+		TargetType:    domaingame.GamePlanetTypePlanet,
+		Mission:       domaingame.FleetMissionTransport,
+		Speed:         10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ActionIssue == nil || result.ActionIssue.Code != domaingame.FleetIssueInvalidTarget || !repository.launched || repository.calls != 1 {
+		t.Fatalf("expected repository launch issue without reload, got result=%+v repository=%+v", result, repository)
+	}
+}
+
 func TestFleetServicePrepareReturnsSessionIssuesWithoutRepository(t *testing.T) {
 	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
 		Authenticated: false,
@@ -337,6 +490,9 @@ func TestFleetServicePropagatesErrors(t *testing.T) {
 	if _, err := service.ValidateFleetDispatch(context.Background(), FleetDispatchValidateCommand{}); !errors.Is(err, repoErr) {
 		t.Fatalf("expected validate repository error, got %v", err)
 	}
+	if _, err := service.LaunchFleetDispatch(context.Background(), FleetDispatchLaunchCommand{}); !errors.Is(err, repoErr) {
+		t.Fatalf("expected launch repository error, got %v", err)
+	}
 	if _, err := service.RecallFleet(context.Background(), FleetRecallCommand{}); !errors.Is(err, repoErr) {
 		t.Fatalf("expected recall repository error, got %v", err)
 	}
@@ -351,6 +507,78 @@ func TestFleetServicePropagatesErrors(t *testing.T) {
 	}
 	if _, err := service.RecallFleet(context.Background(), FleetRecallCommand{}); !errors.Is(err, reloadErr) {
 		t.Fatalf("expected recall reload error, got %v", err)
+	}
+
+	service = NewFleetService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}, &fakeFleetRepository{
+		result: domaingame.Fleet{
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:          99,
+				Type:        domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+				Resources:   domaingame.Resources{Metal: 1000, Crystal: 500, Deuterium: 5000},
+			},
+			Slots: domaingame.FleetSlots{Used: 0, Max: 4},
+			Ships: []domaingame.FleetShipSelection{{
+				ID:          domaingame.FleetSmallCargo,
+				Name:        "Small Cargo",
+				Count:       4,
+				Speed:       5500,
+				Cargo:       5000,
+				Consumption: 10,
+				Selectable:  true,
+			}},
+		},
+		err: repoErr,
+	})
+	if _, err := service.LaunchFleetDispatch(context.Background(), FleetDispatchLaunchCommand{
+		PublicSession: "public",
+		PlanetID:      99,
+		Ships:         map[int]int{domaingame.FleetSmallCargo: 1},
+		Target:        domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+		TargetType:    domaingame.GamePlanetTypePlanet,
+		Mission:       domaingame.FleetMissionTransport,
+		Speed:         10,
+	}); !errors.Is(err, repoErr) {
+		t.Fatalf("expected launch write repository error, got %v", err)
+	}
+
+	service = NewFleetService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}, &fakeFleetRepository{
+		result: domaingame.Fleet{
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:          99,
+				Type:        domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+				Resources:   domaingame.Resources{Metal: 1000, Crystal: 500, Deuterium: 5000},
+			},
+			Slots: domaingame.FleetSlots{Used: 0, Max: 4},
+			Ships: []domaingame.FleetShipSelection{{
+				ID:          domaingame.FleetSmallCargo,
+				Name:        "Small Cargo",
+				Count:       4,
+				Speed:       5500,
+				Cargo:       5000,
+				Consumption: 10,
+				Selectable:  true,
+			}},
+		},
+		getErrs: []error{nil, reloadErr},
+	})
+	if _, err := service.LaunchFleetDispatch(context.Background(), FleetDispatchLaunchCommand{
+		PublicSession: "public",
+		PlanetID:      99,
+		Ships:         map[int]int{domaingame.FleetSmallCargo: 1},
+		Target:        domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+		TargetType:    domaingame.GamePlanetTypePlanet,
+		Mission:       domaingame.FleetMissionTransport,
+		Speed:         10,
+	}); !errors.Is(err, reloadErr) {
+		t.Fatalf("expected launch reload error, got %v", err)
 	}
 }
 
@@ -367,26 +595,48 @@ func TestFleetServiceRequiresDependencies(t *testing.T) {
 	if _, err := (FleetService{}).ValidateFleetDispatch(context.Background(), FleetDispatchValidateCommand{}); err == nil {
 		t.Fatal("expected validate dependency error")
 	}
+	if _, err := (FleetService{}).LaunchFleetDispatch(context.Background(), FleetDispatchLaunchCommand{}); err == nil {
+		t.Fatal("expected launch dependency error")
+	}
 	if _, err := (FleetService{}).RecallFleet(context.Background(), FleetRecallCommand{}); err == nil {
 		t.Fatal("expected recall dependency error")
+	}
+	if fleetDispatchHoldSeconds(domaingame.FleetMissionTransport, 4, 4) != 0 ||
+		fleetDispatchHoldSeconds(domaingame.FleetMissionACSHold, -1, 0) != 0 ||
+		fleetDispatchHoldSeconds(domaingame.FleetMissionACSHold, 40, 0) != 32*60*60 ||
+		fleetDispatchHoldSeconds(domaingame.FleetMissionExpedition, 0, 2) != 2*60*60 {
+		t.Fatal("unexpected fleet hold second normalization")
 	}
 }
 
 type fakeFleetRepository struct {
-	result   domaingame.Fleet
-	err      error
-	getErr   error
-	query    FleetQuery
-	mutation FleetTemplateMutationQuery
-	recall   FleetRecallQuery
-	called   bool
-	mutated  bool
-	recalled bool
+	result      domaingame.Fleet
+	err         error
+	getErr      error
+	getErrs     []error
+	query       FleetQuery
+	mutation    FleetTemplateMutationQuery
+	launch      FleetLaunchQuery
+	launchIssue *domaingame.FleetActionIssue
+	recall      FleetRecallQuery
+	calls       int
+	called      bool
+	mutated     bool
+	launched    bool
+	recalled    bool
 }
 
 func (f *fakeFleetRepository) GetFleet(_ context.Context, query FleetQuery) (domaingame.Fleet, error) {
 	f.query = query
 	f.called = true
+	f.calls++
+	if len(f.getErrs) > 0 {
+		err := f.getErrs[0]
+		f.getErrs = f.getErrs[1:]
+		if err != nil {
+			return f.result, err
+		}
+	}
 	if f.getErr != nil {
 		return f.result, f.getErr
 	}
@@ -397,6 +647,12 @@ func (f *fakeFleetRepository) MutateFleetTemplate(_ context.Context, query Fleet
 	f.mutation = query
 	f.mutated = true
 	return f.err
+}
+
+func (f *fakeFleetRepository) LaunchFleetDispatch(_ context.Context, query FleetLaunchQuery) (*domaingame.FleetActionIssue, error) {
+	f.launch = query
+	f.launched = true
+	return f.launchIssue, f.err
 }
 
 func (f *fakeFleetRepository) RecallFleet(_ context.Context, query FleetRecallQuery) error {

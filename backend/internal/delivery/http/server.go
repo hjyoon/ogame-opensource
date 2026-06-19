@@ -87,6 +87,7 @@ type GameFleetUseCase interface {
 	MutateFleetTemplate(context.Context, appgame.FleetTemplateMutationCommand) (appgame.FleetResult, error)
 	PrepareFleetDispatch(context.Context, appgame.FleetDispatchPrepareCommand) (appgame.FleetResult, error)
 	ValidateFleetDispatch(context.Context, appgame.FleetDispatchValidateCommand) (appgame.FleetResult, error)
+	LaunchFleetDispatch(context.Context, appgame.FleetDispatchLaunchCommand) (appgame.FleetResult, error)
 	RecallFleet(context.Context, appgame.FleetRecallCommand) (appgame.FleetResult, error)
 }
 

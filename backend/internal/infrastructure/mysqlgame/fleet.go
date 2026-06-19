@@ -40,6 +40,12 @@ type recallQueueRow struct {
 	End    int64
 }
 
+type fleetLaunchTarget struct {
+	ID      int
+	OwnerID int
+	Type    int
+}
+
 type FleetRepository struct {
 	queryer Queryer
 	execer  Execer
@@ -176,6 +182,77 @@ func (r FleetRepository) MutateFleetTemplate(ctx context.Context, query appgame.
 	}
 }
 
+func (r FleetRepository) LaunchFleetDispatch(ctx context.Context, query appgame.FleetLaunchQuery) (*domaingame.FleetActionIssue, error) {
+	if r.execer == nil {
+		return nil, errors.New("fleet launch writer unavailable")
+	}
+	if !query.Draft.Ready || query.PlayerID <= 0 || query.PlanetID <= 0 {
+		return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidOrder), nil
+	}
+	fleetTable, err := tableName(r.prefix, "fleet")
+	if err != nil {
+		return nil, err
+	}
+	fleetLogsTable, err := tableName(r.prefix, "fleetlogs")
+	if err != nil {
+		return nil, err
+	}
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return nil, err
+	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return nil, err
+	}
+	uniTable, err := tableName(r.prefix, "uni")
+	if err != nil {
+		return nil, err
+	}
+
+	frozen, err := r.loadUniverseFrozen(ctx, uniTable)
+	if err != nil {
+		return nil, err
+	}
+	if frozen {
+		return domaingame.FleetActionIssueFor(domaingame.FleetIssueFrozen), nil
+	}
+
+	target, found, err := r.loadFleetLaunchTarget(ctx, planetsTable, query.Draft.Target, query.Draft.TargetType)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget), nil
+	}
+
+	now := r.now().Unix()
+	resources := fleetLaunchResources(query.Draft.Resources)
+	ships := fleetLaunchShips(query.Draft.Ships)
+	if err := r.deleteOldFleetLogs(ctx, fleetLogsTable, now); err != nil {
+		return nil, err
+	}
+	reserved, err := r.reserveFleetLaunchOrigin(ctx, planetsTable, query.PlayerID, query.PlanetID, ships, resources, query.Draft.FuelConsumption, int(now))
+	if err != nil {
+		return nil, err
+	}
+	if !reserved {
+		return domaingame.FleetActionIssueFor(domaingame.FleetIssueLaunchRace), nil
+	}
+
+	fleetID, err := r.insertFleetLaunchFleet(ctx, fleetTable, query, target, ships, resources)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.insertFleetLaunchLog(ctx, fleetLogsTable, query, target, ships, resources, now); err != nil {
+		return nil, err
+	}
+	if err := r.insertRecallQueue(ctx, queueTable, query.PlayerID, fleetID, query.Draft.Mission, now, int64(query.Draft.DurationSeconds)); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
 func (r FleetRepository) RecallFleet(ctx context.Context, query appgame.FleetRecallQuery) error {
 	if r.execer == nil {
 		return errors.New("fleet writer unavailable")
@@ -250,6 +327,152 @@ func (r FleetRepository) RecallFleet(ctx context.Context, query appgame.FleetRec
 		return r.removeEmptyRecallUnion(ctx, fleetTable, unionTable, fleet.UnionID)
 	}
 	return nil
+}
+
+func (r FleetRepository) loadFleetLaunchTarget(ctx context.Context, planetsTable string, coordinates domaingame.Coordinates, targetType int) (fleetLaunchTarget, bool, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT planet_id, owner_id, type FROM %s WHERE g = ? AND s = ? AND p = ? AND type = ? LIMIT 1", planetsTable),
+		coordinates.Galaxy,
+		coordinates.System,
+		coordinates.Position,
+		fleetLaunchPlanetType(targetType),
+	)
+	if err != nil {
+		return fleetLaunchTarget{}, false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return fleetLaunchTarget{}, false, err
+		}
+		return fleetLaunchTarget{}, false, nil
+	}
+	var target fleetLaunchTarget
+	if err := rows.Scan(&target.ID, &target.OwnerID, &target.Type); err != nil {
+		return fleetLaunchTarget{}, false, err
+	}
+	if err := rows.Err(); err != nil {
+		return fleetLaunchTarget{}, false, err
+	}
+	return target, true, nil
+}
+
+func (r FleetRepository) deleteOldFleetLogs(ctx context.Context, fleetLogsTable string, now int64) error {
+	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE start < ?", fleetLogsTable), now-4*7*24*60*60)
+	return err
+}
+
+func (r FleetRepository) reserveFleetLaunchOrigin(ctx context.Context, planetsTable string, playerID int, planetID int, ships domaingame.FleetCounts, resources map[int]int, fuel int, now int) (bool, error) {
+	metal := max(0, resources[resourceMetal])
+	crystal := max(0, resources[resourceCrystal])
+	deuterium := max(0, resources[resourceDeuterium]+fuel)
+	setParts := []string{
+		fmt.Sprintf("`%d` = `%d` - ?", resourceMetal, resourceMetal),
+		fmt.Sprintf("`%d` = `%d` - ?", resourceCrystal, resourceCrystal),
+		fmt.Sprintf("`%d` = `%d` - ?", resourceDeuterium, resourceDeuterium),
+	}
+	args := []any{metal, crystal, deuterium}
+	whereParts := []string{
+		"planet_id = ?",
+		"owner_id = ?",
+		fmt.Sprintf("`%d` >= ?", resourceMetal),
+		fmt.Sprintf("`%d` >= ?", resourceCrystal),
+		fmt.Sprintf("`%d` >= ?", resourceDeuterium),
+	}
+	whereArgs := []any{planetID, playerID, metal, crystal, deuterium}
+	for _, id := range domaingame.FleetIDs() {
+		count := ships[id]
+		if count <= 0 {
+			continue
+		}
+		setParts = append(setParts, fmt.Sprintf("`%d` = `%d` - ?", id, id))
+		args = append(args, count)
+		whereParts = append(whereParts, fmt.Sprintf("`%d` >= ?", id))
+		whereArgs = append(whereArgs, count)
+	}
+	setParts = append(setParts, "lastpeek = ?")
+	args = append(args, now)
+	args = append(args, whereArgs...)
+	result, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET %s WHERE %s", planetsTable, strings.Join(setParts, ", "), strings.Join(whereParts, " AND ")), args...)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return true, nil
+	}
+	return affected > 0, nil
+}
+
+func (r FleetRepository) insertFleetLaunchFleet(ctx context.Context, fleetTable string, query appgame.FleetLaunchQuery, target fleetLaunchTarget, ships domaingame.FleetCounts, resources map[int]int) (int, error) {
+	ids := domaingame.FleetIDs()
+	args := []any{
+		query.PlayerID,
+		query.UnionID,
+		resources[resourceMetal],
+		resources[resourceCrystal],
+		resources[resourceDeuterium],
+		query.Draft.FuelConsumption,
+		query.Draft.Mission,
+		query.PlanetID,
+		target.ID,
+		query.Draft.DurationSeconds,
+		query.HoldSeconds,
+	}
+	args = append(args, fleetCountValues(ids, ships)...)
+	result, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("INSERT INTO %s (owner_id, union_id, `%d`, `%d`, `%d`, fuel, mission, start_planet, target_planet, flight_time, deploy_time, %s) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, %s)", fleetTable, resourceMetal, resourceCrystal, resourceDeuterium, numericColumns(ids), placeholders(len(ids))),
+		args...,
+	)
+	if err != nil {
+		return 0, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if id <= 0 {
+		return 0, errors.New("fleet launch id unavailable")
+	}
+	return int(id), nil
+}
+
+func (r FleetRepository) insertFleetLaunchLog(ctx context.Context, fleetLogsTable string, query appgame.FleetLaunchQuery, target fleetLaunchTarget, ships domaingame.FleetCounts, resources map[int]int, now int64) error {
+	ids := domaingame.FleetIDs()
+	args := []any{
+		query.PlayerID,
+		target.OwnerID,
+		query.UnionID,
+		query.Draft.FuelConsumption,
+		query.Draft.Mission,
+		query.Draft.DurationSeconds,
+		query.HoldSeconds,
+		now,
+		now + int64(query.Draft.DurationSeconds),
+		query.Origin.Coordinates.Galaxy,
+		query.Origin.Coordinates.System,
+		query.Origin.Coordinates.Position,
+		query.Origin.Type,
+		query.Draft.Target.Galaxy,
+		query.Draft.Target.System,
+		query.Draft.Target.Position,
+		target.Type,
+		int(query.Origin.Resources.Metal),
+		int(query.Origin.Resources.Crystal),
+		int(query.Origin.Resources.Deuterium),
+		resources[resourceMetal],
+		resources[resourceCrystal],
+		resources[resourceDeuterium],
+	}
+	args = append(args, fleetCountValues(ids, ships)...)
+	_, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("INSERT INTO %s (owner_id, target_id, union_id, fuel, mission, flight_time, deploy_time, start, end, origin_g, origin_s, origin_p, origin_type, target_g, target_s, target_p, target_type, `p%d`, `p%d`, `p%d`, `%d`, `%d`, `%d`, %s) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, %s)", fleetLogsTable, resourceMetal, resourceCrystal, resourceDeuterium, resourceMetal, resourceCrystal, resourceDeuterium, numericColumns(ids), placeholders(len(ids))),
+		args...,
+	)
+	return err
 }
 
 func (r FleetRepository) loadUniverseFrozen(ctx context.Context, uniTable string) (bool, error) {
@@ -852,4 +1075,39 @@ func fleetCountValues(ids []int, ships map[int]int) []any {
 		values = append(values, count)
 	}
 	return values
+}
+
+func fleetLaunchPlanetType(targetType int) int {
+	switch targetType {
+	case domaingame.GamePlanetTypeMoon:
+		return domaingame.PlanetTypeMoon
+	case domaingame.GamePlanetTypeDebris:
+		return domaingame.PlanetTypeDebris
+	default:
+		return domaingame.PlanetTypePlanet
+	}
+}
+
+func fleetLaunchShips(rows []domaingame.FleetShipCount) domaingame.FleetCounts {
+	ships := make(domaingame.FleetCounts, len(rows))
+	for _, row := range rows {
+		if row.Count > 0 {
+			ships[row.ID] = row.Count
+		}
+	}
+	return ships
+}
+
+func fleetLaunchResources(rows []domaingame.FleetResourceLoad) map[int]int {
+	resources := map[int]int{
+		resourceMetal:     0,
+		resourceCrystal:   0,
+		resourceDeuterium: 0,
+	}
+	for _, row := range rows {
+		if row.Loaded > 0 {
+			resources[row.ID] = row.Loaded
+		}
+	}
+	return resources
 }

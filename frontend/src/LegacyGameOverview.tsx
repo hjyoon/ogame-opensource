@@ -67,6 +67,13 @@ export type GameFleetDispatchPrepare = {
   speed: number;
 };
 
+export type GameFleetDispatchLaunch = GameFleetDispatchPrepare & {
+  resources: Record<string, number>;
+  holdHours: number;
+  expeditionHours: number;
+  unionId: number;
+};
+
 export type GameGalaxyStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
@@ -836,6 +843,7 @@ type LegacyGameOverviewProps = {
   fleetError: string | null;
   fleetPending: boolean;
   onFleetPrepare: (draft: GameFleetDispatchPrepare) => void;
+  onFleetLaunch: (draft: GameFleetDispatchLaunch) => void;
   onFleetRecall: (fleetID: number) => void;
   onFleetTemplateAction: (action: "save" | "delete", templateID: number, name: string, ships: Record<string, number>) => void;
   galaxyStatus: GameGalaxyStatus | null;
@@ -955,6 +963,7 @@ export function LegacyGameOverview({
   fleetError,
   fleetPending,
   onFleetPrepare,
+  onFleetLaunch,
   onFleetRecall,
   onFleetTemplateAction,
   galaxyStatus,
@@ -1185,7 +1194,7 @@ export function LegacyGameOverview({
           <LegacyMessage tone="error" text={fleetActionIssue.message} />
         ) : null}
         {fleet && route.key === "fleet" ? (
-          <FleetTable fleet={fleet} onPrepare={onFleetPrepare} onRecall={onFleetRecall} pending={fleetPending} />
+          <FleetTable fleet={fleet} onLaunch={onFleetLaunch} onPrepare={onFleetPrepare} onRecall={onFleetRecall} pending={fleetPending} />
         ) : null}
         {fleet && route.key === "fleetTemplates" ? (
           <FleetTemplatesTable fleet={fleet} onAction={onFleetTemplateAction} pending={fleetPending} />
@@ -2011,11 +2020,13 @@ function ShipyardTable({
 function FleetTable({
   fleet,
   onPrepare,
+  onLaunch,
   onRecall,
   pending
 }: {
   fleet: GameFleet;
   onPrepare: (draft: GameFleetDispatchPrepare) => void;
+  onLaunch: (draft: GameFleetDispatchLaunch) => void;
   onRecall: (fleetID: number) => void;
   pending: boolean;
 }) {
@@ -2245,7 +2256,7 @@ function FleetTable({
           </tbody>
         </table>
       </form>
-      {fleet.dispatchDraft?.hasSelection ? <FleetDispatchPreviewTable draft={fleet.dispatchDraft} fleet={fleet} /> : null}
+      {fleet.dispatchDraft?.hasSelection ? <FleetDispatchPreviewTable draft={fleet.dispatchDraft} fleet={fleet} onLaunch={onLaunch} pending={pending} /> : null}
       <br />
       <br />
       <br />
@@ -2254,9 +2265,34 @@ function FleetTable({
   );
 }
 
-function FleetDispatchPreviewTable({ draft, fleet }: { draft: GameFleetDispatchDraft; fleet: GameFleet }) {
+function FleetDispatchPreviewTable({
+  draft,
+  fleet,
+  onLaunch,
+  pending
+}: {
+  draft: GameFleetDispatchDraft;
+  fleet: GameFleet;
+  onLaunch: (draft: GameFleetDispatchLaunch) => void;
+  pending: boolean;
+}) {
+  const submitLaunch = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    onLaunch({
+      ships: fleetDraftShipsPayload(draft),
+      resources: collectLegacyFleetResources(event.currentTarget),
+      target: draft.target,
+      targetType: draft.targetType,
+      mission: legacyFormInt(form.get("order"), draft.mission),
+      speed: draft.speed,
+      holdHours: legacyFormInt(form.get("holdingtime"), 0),
+      expeditionHours: legacyFormInt(form.get("expeditiontime"), 0),
+      unionId: 0
+    });
+  };
   return (
-    <form className="legacy-fleet-dispatch-form" data-dispatch-action="validate-dispatch" onSubmit={(event) => event.preventDefault()}>
+    <form className="legacy-fleet-dispatch-form" data-dispatch-action="launch-dispatch" onSubmit={submitLaunch}>
       <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-dispatch-table" width={519}>
         <tbody>
           <tr style={{ height: 20, textAlign: "left" }}>
@@ -2274,7 +2310,7 @@ function FleetDispatchPreviewTable({ draft, fleet }: { draft: GameFleetDispatchD
           </tr>
           <tr style={{ height: 20 }}>
             <th colSpan={2}>
-              <input type="submit" value="Next" />
+              <input disabled={pending} type="submit" value="Next" />
             </th>
           </tr>
         </tbody>
@@ -2450,6 +2486,32 @@ function collectLegacyFleetShips(form: HTMLFormElement): Record<string, number> 
       ships[match[1]] = amount;
     }
   }
+  return ships;
+}
+
+function collectLegacyFleetResources(form: HTMLFormElement): Record<string, number> {
+  const resources: Record<string, number> = {};
+  const formData = new FormData(form);
+  for (const [key, value] of formData.entries()) {
+    const match = /^resource\d+$/.exec(key);
+    if (!match || typeof value !== "string") {
+      continue;
+    }
+    const input = form.elements.namedItem(key);
+    const resourceID = input instanceof HTMLInputElement ? input.dataset.resourceId : "";
+    const amount = Number.parseInt(value, 10);
+    if (resourceID && Number.isFinite(amount) && amount > 0) {
+      resources[resourceID] = amount;
+    }
+  }
+  return resources;
+}
+
+function fleetDraftShipsPayload(draft: GameFleetDispatchDraft): Record<string, number> {
+  const ships: Record<string, number> = {};
+  draft.ships.forEach((ship) => {
+    ships[String(ship.id)] = ship.count;
+  });
   return ships;
 }
 
