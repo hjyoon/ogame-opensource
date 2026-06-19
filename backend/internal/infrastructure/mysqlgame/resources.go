@@ -13,10 +13,11 @@ import (
 )
 
 type ResourcesRepository struct {
-	queryer Queryer
-	execer  Execer
-	prefix  string
-	now     func() time.Time
+	queryer         Queryer
+	execer          Execer
+	prefix          string
+	now             func() time.Time
+	updateResources bool
 }
 
 type Execer interface {
@@ -29,7 +30,7 @@ func (q SQLQueryer) ExecContext(ctx context.Context, query string, args ...any) 
 
 func NewResourcesRepository(db *sql.DB, prefix string) ResourcesRepository {
 	runner := SQLQueryer{DB: db}
-	return ResourcesRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now}
+	return ResourcesRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, updateResources: true}
 }
 
 func NewResourcesRepositoryWithQueryer(queryer Queryer, prefix string, now func() time.Time) ResourcesRepository {
@@ -58,6 +59,7 @@ func (r ResourcesRepository) GetResources(ctx context.Context, query appgame.Res
 	}
 
 	overviewRepository := NewOverviewRepositoryWithRunner(r.queryer, r.execer, r.prefix)
+	overviewRepository.updateResources = r.updateResources
 	overview, err := overviewRepository.GetOverview(ctx, appgame.OverviewQuery{
 		PlayerID: query.PlayerID,
 		PlanetID: query.PlanetID,
@@ -104,6 +106,7 @@ func (r ResourcesRepository) UpdateProduction(ctx context.Context, query appgame
 	}
 
 	overviewRepository := NewOverviewRepositoryWithRunner(r.queryer, r.execer, r.prefix)
+	overviewRepository.updateResources = r.updateResources
 	overview, err := overviewRepository.GetOverview(ctx, appgame.OverviewQuery{
 		PlayerID: query.PlayerID,
 		PlanetID: query.PlanetID,

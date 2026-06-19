@@ -63,6 +63,10 @@ func TestNewBuildingsRepositoryKeepsSQLQueryer(t *testing.T) {
 	if _, ok := repository.execer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL execer, got %T", repository.execer)
 	}
+	repository = NewBuildingsRepositoryWithQueryer(&fakeBuildingsRunner{}, "ogame_")
+	if repository.execer == nil {
+		t.Fatalf("expected runner execer detection")
+	}
 	repository = NewBuildingsRepositoryWithRunner(&fakeQueryer{}, nil, "ogame_", nil)
 	if repository.now == nil {
 		t.Fatalf("expected nil clock to default")
@@ -1343,6 +1347,52 @@ func TestBuildingsRepositoryStartNextBuildQueueBranches(t *testing.T) {
 				t.Fatalf("expected %d execs, got %+v", tt.wantExec, runner.execs)
 			}
 		})
+	}
+}
+
+func TestBuildingsRepositoryStartNextBuildQueueUpdatesResourcesFirst(t *testing.T) {
+	runner := &fakeBuildingsRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues(buildingMutationUserRow(0, 0, nil))},
+			{rows: fakeRowsFromValues([]any{1.0, 0})},
+			{rows: fakeRowsFromValues(resourceUpdatePlanetRow(resourceUpdatePlanetFixture{
+				lastPeek: 1000,
+				metal:    1000,
+				crystal:  1000,
+				deut:     1000,
+				levels: map[int]int{
+					domaingame.BuildingMetalMine:  1,
+					domaingame.BuildingSolarPlant: 1,
+				},
+			}))},
+			{rows: fakeRowsFromValues(resourceUpdateUserRow(42, 0, 0, 0))},
+			{rows: fakeRowsFromValues([]any{1.0})},
+			{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 2, OwnerID: 42, PlanetID: 99, ListID: 2, TechID: domaingame.BuildingMetalMine, Level: 1}))},
+			{rows: fakeRowsFromValues(buildingMutationPlanetRow(map[int]int{}))},
+			{rows: fakeRowsFromValues()},
+		}},
+		results: []sql.Result{
+			buildingSQLResult{affected: 1},
+			buildingSQLResult{affected: 1},
+			buildingSQLResult{id: 9},
+			buildingSQLResult{affected: 1},
+		},
+	}
+	repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_005, 0) })
+	repository.updateResources = true
+
+	if err := repository.startNextBuildQueue(context.Background(), "`ogame_planets`", "`ogame_buildqueue`", "`ogame_queue`", 42, 99, 2_005); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(runner.execs) != 4 {
+		t.Fatalf("expected resource, spend, global, and timing writes, got %+v", runner.execs)
+	}
+	if !strings.Contains(runner.execs[0].sql, "lastpeek = ? WHERE planet_id = ?") || runner.execs[0].args[3] != 2_005 {
+		t.Fatalf("expected resource update first, got %+v", runner.execs)
+	}
+	if !strings.Contains(runner.execs[1].sql, "SET `700` = `700` - ?") {
+		t.Fatalf("expected spend after resource update, got %+v", runner.execs)
 	}
 }
 

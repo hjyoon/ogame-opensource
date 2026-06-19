@@ -49,6 +49,10 @@ func TestNewFleetRepositoryKeepsSQLQueryer(t *testing.T) {
 	if _, ok := repository.queryer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL queryer, got %T", repository.queryer)
 	}
+	withDefaultClock := NewFleetRepositoryWithQueryer(nil, "ogame_", nil)
+	if withDefaultClock.now == nil {
+		t.Fatal("expected nil clock to default")
+	}
 }
 
 func TestFleetRepositoryReturnsErrors(t *testing.T) {

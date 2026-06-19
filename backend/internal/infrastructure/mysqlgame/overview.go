@@ -51,11 +51,12 @@ func (q SQLQueryer) QueryContext(ctx context.Context, query string, args ...any)
 }
 
 type OverviewRepository struct {
-	queryer Queryer
-	execer  Execer
-	prefix  string
-	secret  string
-	now     func() time.Time
+	queryer         Queryer
+	execer          Execer
+	prefix          string
+	secret          string
+	now             func() time.Time
+	updateResources bool
 }
 
 func NewOverviewRepository(db *sql.DB, prefix string) OverviewRepository {
@@ -64,7 +65,7 @@ func NewOverviewRepository(db *sql.DB, prefix string) OverviewRepository {
 
 func NewOverviewRepositoryWithSecret(db *sql.DB, prefix string, secret string) OverviewRepository {
 	runner := SQLQueryer{DB: db}
-	return OverviewRepository{queryer: runner, execer: runner, prefix: prefix, secret: secret, now: time.Now}
+	return OverviewRepository{queryer: runner, execer: runner, prefix: prefix, secret: secret, now: time.Now, updateResources: true}
 }
 
 func NewOverviewRepositoryWithQueryer(queryer Queryer, prefix string) OverviewRepository {
@@ -97,17 +98,42 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 	if err != nil {
 		return domaingame.Overview{}, err
 	}
+	updatedPlanetID := 0
+	if r.updateResources {
+		candidatePlanetID := query.PlanetID
+		if candidatePlanetID == 0 {
+			candidatePlanetID = user.ActivePlanetID
+			if candidatePlanetID == 0 {
+				candidatePlanetID = user.HomePlanetID
+			}
+		}
+		if err := r.updatePlanetResources(ctx, usersTable, planetsTable, query.PlayerID, candidatePlanetID, int(r.currentTime().Unix())); err != nil {
+			return domaingame.Overview{}, err
+		}
+		updatedPlanetID = candidatePlanetID
+	}
 	planetID, current, persistActive, err := r.resolveCurrentPlanet(ctx, planetsTable, user, query)
 	if err != nil {
 		return domaingame.Overview{}, err
 	}
 	if current.ID == 0 {
+		if r.updateResources && planetID != updatedPlanetID {
+			if err := r.updatePlanetResources(ctx, usersTable, planetsTable, query.PlayerID, planetID, int(r.currentTime().Unix())); err != nil {
+				return domaingame.Overview{}, err
+			}
+			updatedPlanetID = planetID
+		}
 		current, err = r.loadPlanet(ctx, planetsTable, query.PlayerID, planetID)
 		if err != nil {
 			return domaingame.Overview{}, err
 		}
 	}
 	if current.ID == 0 && planetID != user.HomePlanetID {
+		if r.updateResources && user.HomePlanetID != updatedPlanetID {
+			if err := r.updatePlanetResources(ctx, usersTable, planetsTable, query.PlayerID, user.HomePlanetID, int(r.currentTime().Unix())); err != nil {
+				return domaingame.Overview{}, err
+			}
+		}
 		current, err = r.loadPlanet(ctx, planetsTable, query.PlayerID, user.HomePlanetID)
 		if err != nil {
 			return domaingame.Overview{}, err

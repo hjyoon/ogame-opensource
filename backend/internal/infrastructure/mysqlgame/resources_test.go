@@ -64,6 +64,10 @@ func TestNewResourcesRepositoryKeepsSQLQueryer(t *testing.T) {
 		t.Fatal("expected default clock")
 	}
 
+	withRunner := NewResourcesRepositoryWithQueryer(&fakeResourceRunner{}, "ogame_", time.Now)
+	if withRunner.execer == nil {
+		t.Fatal("expected runner execer detection")
+	}
 	withDefaultClock := NewResourcesRepositoryWithQueryer(nil, "ogame_", nil)
 	if withDefaultClock.now == nil {
 		t.Fatal("expected nil clock to default")

@@ -32,6 +32,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - Activation clears `validatemd`, sets `validated=1`, copies `email` to `pemail`, redirects, and rejects link reuse.
 - Overview covers legacy `cp`, `lgn` activity, admin notice, header/menu/table layout parity work, rename/delete name rules, blockers, destroy markers, queue flush, stat/rank updates, and active restore.
 - Buildings layout matches legacy row geometry; add/remove/demolish/finish writes queues/stats.
+- Resource accrual updates metal/crystal/deuterium from `lastpeek` with caps before overview/resources/building writes.
 
 ## Verified QA
 
@@ -43,12 +44,12 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - Go internal coverage gate: `97.0% >= 97%`.
 - Go smoke JSON: `all_pass: true`.
 
-Full legacy PHP E2E was not run for this Go step. Keep PHP as oracle until each migrated flow has focused checks.
+Full legacy PHP E2E was not run for this step; keep PHP as oracle.
 
 ## Remaining Work
 
 - Close authenticated visual diff for statistics and remaining game-page nits before claiming parity.
 - Port remaining overview legacy actions.
-- Port production accrual, research start/cancel, shipyard/defense orders, fleet actions, galaxy quick actions, reports/messages/alliance/admin/options/recovery/deletion/vacation/bans/permissions.
+- Port research start/cancel, shipyard/defense orders, fleet actions, galaxy quick actions, reports/messages/alliance/admin/options/recovery/deletion/vacation/bans/permissions.
 - Convert legacy E2E cases into Go compatibility checks per migrated flow.
 - Run full legacy PHP E2E before declaring any game-flow migration equivalent.

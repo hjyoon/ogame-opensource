@@ -13,17 +13,18 @@ import (
 )
 
 type BuildingsRepository struct {
-	queryer Queryer
-	execer  Execer
-	prefix  string
-	now     func() time.Time
+	queryer         Queryer
+	execer          Execer
+	prefix          string
+	now             func() time.Time
+	updateResources bool
 }
 
 const buildQueueBatch = 16
 
 func NewBuildingsRepository(db *sql.DB, prefix string) BuildingsRepository {
 	runner := SQLQueryer{DB: db}
-	return BuildingsRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now}
+	return BuildingsRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, updateResources: true}
 }
 
 func NewBuildingsRepositoryWithQueryer(queryer Queryer, prefix string) BuildingsRepository {
@@ -57,6 +58,7 @@ func (r BuildingsRepository) GetBuildings(ctx context.Context, query appgame.Bui
 	}
 
 	overviewRepository := NewOverviewRepositoryWithRunner(r.queryer, r.execer, r.prefix)
+	overviewRepository.updateResources = r.updateResources
 	overview, err := overviewRepository.GetOverview(ctx, appgame.OverviewQuery{
 		PlayerID: query.PlayerID,
 		PlanetID: query.PlanetID,
@@ -102,7 +104,9 @@ func (r BuildingsRepository) MutateBuildings(ctx context.Context, query appgame.
 		return appgame.BuildingsMutationOutcome{}, err
 	}
 
-	overview, err := NewOverviewRepositoryWithRunner(r.queryer, r.execer, r.prefix).GetOverview(ctx, appgame.OverviewQuery{
+	overviewRepository := NewOverviewRepositoryWithRunner(r.queryer, r.execer, r.prefix)
+	overviewRepository.updateResources = r.updateResources
+	overview, err := overviewRepository.GetOverview(ctx, appgame.OverviewQuery{
 		PlayerID: query.PlayerID,
 		PlanetID: query.PlanetID,
 	})
@@ -476,6 +480,11 @@ func (r BuildingsRepository) startNextBuildQueue(ctx context.Context, planetsTab
 	}
 	if user.Vacation || config.Frozen {
 		return nil
+	}
+	if r.updateResources {
+		if err := r.updatePlanetResources(ctx, usersTable, planetsTable, playerID, planetID, now); err != nil {
+			return err
+		}
 	}
 	for {
 		rows, err := r.loadBuildQueueRows(ctx, buildQueueTable, planetID)
