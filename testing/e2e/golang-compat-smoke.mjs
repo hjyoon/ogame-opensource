@@ -690,6 +690,34 @@ try {
     gameDefenseWithoutCookieBody = {};
   }
 
+  const gameEmpire = await request(`/api/game/empire${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameEmpireBody = {};
+  try {
+    gameEmpireBody = JSON.parse(gameEmpire.body);
+  } catch {
+    gameEmpireBody = {};
+  }
+
+  const gameEmpireMoons = await request(`/api/game/empire${sessionSearch}&planettype=3`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameEmpireMoonsBody = {};
+  try {
+    gameEmpireMoonsBody = JSON.parse(gameEmpireMoons.body);
+  } catch {
+    gameEmpireMoonsBody = {};
+  }
+
+  const gameEmpireWithoutCookie = await request(`/api/game/empire${sessionSearch}`);
+  let gameEmpireWithoutCookieBody = {};
+  try {
+    gameEmpireWithoutCookieBody = JSON.parse(gameEmpireWithoutCookie.body);
+  } catch {
+    gameEmpireWithoutCookieBody = {};
+  }
+
   const gameTechnology = await request(`/api/game/technology${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -1227,6 +1255,19 @@ try {
       check(!gameDefense.body.includes(sessionCookiePair), "game defense response does not echo private cookie"),
       check(gameDefenseWithoutCookie.status === 401, "game defense rejects missing private cookie", { status: gameDefenseWithoutCookie.status }),
       check(gameDefenseWithoutCookieBody.authenticated === false, "game defense missing private cookie is unauthenticated", gameDefenseWithoutCookieBody),
+      check(gameEmpire.status === 200, "game empire returns HTTP 200 with private cookie", { status: gameEmpire.status }),
+      check(gameEmpireBody.authenticated === true, "game empire authenticates the login session", gameEmpireBody),
+      check(Array.isArray(gameEmpireBody.empire?.planets), "game empire returns planet columns array", gameEmpireBody),
+      check(Array.isArray(gameEmpireBody.empire?.resources), "game empire returns resource rows array", gameEmpireBody),
+      check(Array.isArray(gameEmpireBody.empire?.buildings), "game empire returns building rows array", gameEmpireBody),
+      check(Array.isArray(gameEmpireBody.empire?.research), "game empire returns research rows array", gameEmpireBody),
+      check(Array.isArray(gameEmpireBody.empire?.fleet), "game empire returns fleet rows array", gameEmpireBody),
+      check(Array.isArray(gameEmpireBody.empire?.defense), "game empire returns defense rows array", gameEmpireBody),
+      check(gameEmpireMoons.status === 200, "game empire accepts moon planet type", { status: gameEmpireMoons.status }),
+      check([1, 3].includes(gameEmpireMoonsBody.empire?.planetType), "game empire normalizes planet type like legacy", gameEmpireMoonsBody),
+      check(!gameEmpire.body.includes(sessionCookiePair), "game empire response does not echo private cookie"),
+      check(gameEmpireWithoutCookie.status === 401, "game empire rejects missing private cookie", { status: gameEmpireWithoutCookie.status }),
+      check(gameEmpireWithoutCookieBody.authenticated === false, "game empire missing private cookie is unauthenticated", gameEmpireWithoutCookieBody),
       check(gameTechnology.status === 200, "game technology returns HTTP 200 with private cookie", { status: gameTechnology.status }),
       check(gameTechnologyBody.authenticated === true, "game technology authenticates the login session", gameTechnologyBody),
       check(Array.isArray(gameTechnologyBody.technology?.groups), "game technology returns migrated technology groups", gameTechnologyBody),
@@ -1519,6 +1560,7 @@ try {
       check(js.body.includes("/api/public/login"), "React bundle consumes login submit API"),
       check(js.body.includes("/api/game/overview"), "React bundle consumes game overview API"),
       check(js.body.includes("/api/game/buildings"), "React bundle consumes game buildings API"),
+      check(js.body.includes("/api/game/empire"), "React bundle consumes game empire API"),
       check(js.body.includes("/api/game/resources"), "React bundle consumes game resources API"),
       check(js.body.includes("/api/game/research"), "React bundle consumes game research API"),
       check(js.body.includes("/api/game/shipyard"), "React bundle consumes game shipyard API"),
@@ -1590,6 +1632,7 @@ try {
   const postGameSession = await request("/api/game/session", { method: "POST" });
   const putGameOverview = await request("/api/game/overview", { method: "PUT" });
   const putGameBuildings = await request("/api/game/buildings", { method: "PUT" });
+  const postGameEmpire = await request("/api/game/empire", { method: "POST" });
   const putGameResearch = await request("/api/game/research", { method: "PUT" });
   const putGameShipyard = await request("/api/game/shipyard", { method: "PUT" });
   const putGameFleet = await request("/api/game/fleet", { method: "PUT" });
@@ -1627,6 +1670,8 @@ try {
       check(hasHeader(putGameOverview, "allow", "GET, HEAD, POST"), "game overview method rejection returns Allow header"),
       check(putGameBuildings.status === 405, "PUT game buildings endpoint is rejected", { status: putGameBuildings.status }),
       check(hasHeader(putGameBuildings, "allow", "GET, HEAD, POST"), "game buildings method rejection returns Allow header"),
+      check(postGameEmpire.status === 405, "POST game empire endpoint is rejected", { status: postGameEmpire.status }),
+      check(hasHeader(postGameEmpire, "allow", "GET, HEAD"), "game empire method rejection returns Allow header"),
       check(putGameResearch.status === 405, "PUT game research endpoint is rejected", { status: putGameResearch.status }),
       check(hasHeader(putGameResearch, "allow", "GET, HEAD, POST"), "game research method rejection returns Allow header"),
       check(putGameShipyard.status === 405, "PUT game shipyard endpoint is rejected", { status: putGameShipyard.status }),

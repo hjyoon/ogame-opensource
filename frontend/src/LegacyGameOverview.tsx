@@ -25,6 +25,13 @@ export type GameBuildingsStatus = {
   buildings?: GameBuildings;
 };
 
+export type GameEmpireStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  actionIssue?: { code: string; message: string };
+  empire?: GameEmpire;
+};
+
 export type GameResourcesStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
@@ -151,6 +158,70 @@ type GamePlanetSummary = {
   type: number;
   coordinates: Coordinates;
   current: boolean;
+};
+
+type GameEmpire = {
+  commander: string;
+  commanderActive: boolean;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  planetType: number;
+  moonEnabled: boolean;
+  hasMoons: boolean;
+  planets: GameEmpirePlanet[];
+  resources: GameEmpireResourceRow[];
+  buildings: GameEmpireLevelRow[];
+  research: GameEmpireLevelRow[];
+  fleet: GameEmpireCountRow[];
+  defense: GameEmpireCountRow[];
+};
+
+type GameEmpirePlanet = {
+  id: number;
+  name: string;
+  type: number;
+  coordinates: Coordinates;
+  fields: number;
+  maxFields: number;
+};
+
+type GameEmpireResourceRow = {
+  id: number;
+  name: string;
+  values: GameEmpireResourceValue[];
+  total: number;
+  production: number;
+};
+
+type GameEmpireResourceValue = {
+  planetId: number;
+  amount: number;
+  production: number;
+};
+
+type GameEmpireLevelRow = {
+  id: number;
+  name: string;
+  values: GameEmpireLevelValue[];
+  total: number;
+  average: number;
+};
+
+type GameEmpireLevelValue = {
+  planetId: number;
+  level: number;
+};
+
+type GameEmpireCountRow = {
+  id: number;
+  name: string;
+  values: GameEmpireCountValue[];
+  total: number;
+};
+
+type GameEmpireCountValue = {
+  planetId: number;
+  count: number;
 };
 
 type Coordinates = {
@@ -686,6 +757,8 @@ type LegacyGameOverviewProps = {
   buildingsError: string | null;
   buildingsPending: boolean;
   onBuildingAction: (action: "add" | "destroy" | "remove", techID: number, listID?: number) => void;
+  empireStatus: GameEmpireStatus | null;
+  empireError: string | null;
   resourcesStatus: GameResourcesStatus | null;
   resourcesError: string | null;
   resourcesPending: boolean;
@@ -802,6 +875,8 @@ export function LegacyGameOverview({
   buildingsError,
   buildingsPending,
   onBuildingAction,
+  empireStatus,
+  empireError,
   resourcesStatus,
   resourcesError,
   resourcesPending,
@@ -861,6 +936,10 @@ export function LegacyGameOverview({
   const buildings = buildingsStatus?.authenticated ? buildingsStatus.buildings : undefined;
   const buildingsIssue =
     buildingsStatus && !buildingsStatus.authenticated ? buildingsStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const empire = empireStatus?.authenticated ? empireStatus.empire : undefined;
+  const empireIssue =
+    empireStatus && !empireStatus.authenticated ? empireStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const empireActionIssue = empireStatus?.authenticated ? empireStatus.actionIssue : undefined;
   const resources = resourcesStatus?.authenticated ? resourcesStatus.resources : undefined;
   const resourcesIssue =
     resourcesStatus && !resourcesStatus.authenticated ? resourcesStatus.issues[0]?.message ?? "Session is invalid." : null;
@@ -944,6 +1023,13 @@ export function LegacyGameOverview({
         {route.key === "buildings" && !buildingsError && buildingsIssue ? (
           <LegacyMessage tone="error" text={buildingsIssue} />
         ) : null}
+        {route.key === "empire" && empireError ? <LegacyMessage tone="error" text={empireError} /> : null}
+        {route.key === "empire" && !empireError && empireActionIssue ? (
+          <LegacyMessage tone="error" text={empireActionIssue.message} />
+        ) : null}
+        {route.key === "empire" && !empireError && !empireActionIssue && empireIssue ? (
+          <LegacyMessage tone="error" text={empireIssue} />
+        ) : null}
         {route.key === "resources" && resourcesError ? <LegacyMessage tone="error" text={resourcesError} /> : null}
         {route.key === "resources" && !resourcesError && resourcesIssue ? (
           <LegacyMessage tone="error" text={resourcesIssue} />
@@ -1006,6 +1092,10 @@ export function LegacyGameOverview({
         {buildings && route.key === "buildings" ? (
           <BuildingsTable buildings={buildings} onAction={onBuildingAction} pending={buildingsPending} />
         ) : null}
+        {overview && route.key === "empire" && !empire && !empireError && !empireIssue && !empireActionIssue ? (
+          <LegacyMessage tone="neutral" text="Loading empire..." />
+        ) : null}
+        {empire && route.key === "empire" ? <EmpireTable empire={empire} /> : null}
         {overview && route.key === "resources" && !resources && !resourcesError && !resourcesIssue ? (
           <LegacyMessage tone="neutral" text="Loading resources..." />
         ) : null}
@@ -1092,6 +1182,7 @@ export function LegacyGameOverview({
         route.key !== "overview" &&
         route.key !== "renamePlanet" &&
         route.key !== "buildings" &&
+        route.key !== "empire" &&
         route.key !== "resources" &&
         route.key !== "research" &&
         route.key !== "shipyard" &&
@@ -3914,6 +4005,227 @@ const resourceColumns: { key: keyof Pick<ResourceProductionValues, "metal" | "cr
   { key: "energy", label: "Energy" }
 ];
 
+function EmpireTable({ empire }: { empire: GameEmpire }) {
+  const planets = empire.planets;
+  const colSpan = planets.length + 2;
+  const sumFields = planets.reduce((sum, planet) => sum + planet.fields, 0);
+  const sumMaxFields = planets.reduce((sum, planet) => sum + planet.maxFields, 0);
+  const avgFields = planets.length > 0 ? Math.ceil(sumFields / planets.length) : 0;
+  const avgMaxFields = planets.length > 0 ? Math.ceil(sumMaxFields / planets.length) : 0;
+
+  return (
+    <div className="legacy-center">
+      <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-empire-table" width={750}>
+        <tbody>
+          <tr style={{ height: 20 }}>
+            <td className="legacy-c" colSpan={colSpan}>
+              Empire Overview
+            </td>
+          </tr>
+          {empire.moonEnabled && empire.hasMoons ? (
+            <tr style={{ height: 20 }}>
+              <th colSpan={Math.ceil(planets.length / 2)}>
+                <a href={empirePlanetTypeURL(1)}>Planets</a>
+              </th>
+              <th colSpan={Math.ceil(planets.length / 2) + (1 - (planets.length % 2))}>
+                <a href={empirePlanetTypeURL(3)}>Moons</a>
+              </th>
+              <th>&nbsp;</th>
+            </tr>
+          ) : null}
+          <tr style={{ height: 75 }}>
+            <th style={{ width: 75 }}></th>
+            {planets.map((planet) => (
+              <th key={planet.id} style={{ padding: 20, width: 75 }}>
+                <a href={planetHref(planet.id)}>
+                  <img alt="" height={71} src={planetImagePath(planet, false)} width={75} />
+                </a>
+              </th>
+            ))}
+            <th style={{ width: 75 }}>Sum</th>
+          </tr>
+          <tr style={{ height: 20 }}>
+            <th style={{ width: 75 }}>Name</th>
+            {planets.map((planet) => (
+              <th key={planet.id} style={{ width: 75 }}>
+                {planet.name}
+              </th>
+            ))}
+            <th style={{ width: 75 }}>&nbsp;</th>
+          </tr>
+          <tr style={{ height: 20 }}>
+            <th style={{ width: 75 }}>Coordinates</th>
+            {planets.map((planet) => (
+              <th key={planet.id} style={{ width: 75 }}>
+                <a href={galaxyHref(planet.coordinates)}>[{formatCoordinates(planet.coordinates)}]</a>
+              </th>
+            ))}
+            <th style={{ width: 75 }}>&nbsp;</th>
+          </tr>
+          <tr style={{ height: 20 }}>
+            <th style={{ width: 75 }}>Fields</th>
+            {planets.map((planet) => (
+              <th key={planet.id} style={{ width: 75 }}>
+                {planet.fields}/{planet.maxFields}
+              </th>
+            ))}
+            <th style={{ width: 75 }}>
+              {formatLegacyNumber(sumFields)} ({formatLegacyNumber(avgFields)}) / {formatLegacyNumber(sumMaxFields)} (
+              {formatLegacyNumber(avgMaxFields)})
+            </th>
+          </tr>
+          <EmpireSectionTitle colSpan={colSpan} title="Resources" />
+          {empire.resources.map((row) => (
+            <EmpireResourceRow key={row.id} planets={planets} row={row} />
+          ))}
+          <EmpireSectionTitle colSpan={colSpan} title="Buildings" />
+          {empire.buildings.map((row) => (
+            <EmpireLevelRow key={row.id} planets={planets} row={row} />
+          ))}
+          <EmpireSectionTitle colSpan={colSpan} title="Research" />
+          {empire.research.map((row) => (
+            <EmpireLevelRow key={row.id} planets={planets} row={row} />
+          ))}
+          <EmpireSectionTitle colSpan={colSpan} title="Fleet" />
+          {empire.fleet.map((row) => (
+            <EmpireCountRow key={row.id} planets={planets} row={row} />
+          ))}
+          <EmpireSectionTitle colSpan={colSpan} title="Defense" />
+          {empire.defense.map((row) => (
+            <EmpireCountRow key={row.id} planets={planets} row={row} />
+          ))}
+        </tbody>
+      </table>
+      <br />
+      <br />
+      <br />
+      <br />
+    </div>
+  );
+}
+
+function EmpireSectionTitle({ colSpan, title }: { colSpan: number; title: string }) {
+  return (
+    <tr style={{ height: 20 }}>
+      <td align="left" className="legacy-c" colSpan={colSpan}>
+        {title}
+      </td>
+    </tr>
+  );
+}
+
+function EmpireResourceRow({ planets, row }: { planets: GameEmpirePlanet[]; row: GameEmpireResourceRow }) {
+  const energy = row.id === 703;
+  return (
+    <tr data-empire-resource-row={row.id} style={{ height: 20 }}>
+      <th style={{ width: 75 }}>{row.name}</th>
+      {planets.map((planet) => {
+        const value = empireResourceValue(row, planet.id);
+        return (
+          <th key={planet.id} style={{ width: 75 }}>
+            {energy ? (
+              <>
+                <span style={{ color: value.amount < 0 ? "red" : undefined }}>{formatLegacyPlainNumber(value.amount)}</span> /{" "}
+                {formatLegacyPlainNumber(value.production)}
+              </>
+            ) : (
+              <a href={gameRouteURL("/game/resources", withPlanetSearch(planet.id))}>
+                {formatLegacyPlainNumber(value.amount)} / {formatLegacyPlainNumber(value.production)}
+              </a>
+            )}
+          </th>
+        );
+      })}
+      <th style={{ width: 75 }}>
+        {formatLegacyPlainNumber(row.total)} / {formatLegacyPlainNumber(row.production)}
+      </th>
+    </tr>
+  );
+}
+
+function EmpireLevelRow({ planets, row }: { planets: GameEmpirePlanet[]; row: GameEmpireLevelRow }) {
+  return (
+    <tr data-empire-level-row={row.id} style={{ height: 20 }}>
+      <th style={{ width: 75 }}>
+        <a href={technologyInfoURL(row.id)}>{row.name}</a>
+      </th>
+      {planets.map((planet) => {
+        const value = empireLevelValue(row, planet.id);
+        return (
+          <th key={planet.id} style={{ width: 75 }}>
+            {value.level > 0 ? (
+              <a href={gameRouteURL("/game/buildings", withPlanetSearch(planet.id))}>
+                <span style={{ color: "lime" }}>{formatLegacyPlainNumber(value.level)}</span>
+              </a>
+            ) : (
+              <span style={{ color: "white" }}>-</span>
+            )}
+          </th>
+        );
+      })}
+      <th style={{ width: 75 }}>
+        {formatLegacyPlainNumber(row.total)} ({formatEmpireAverage(row.average)})
+      </th>
+    </tr>
+  );
+}
+
+function EmpireCountRow({ planets, row }: { planets: GameEmpirePlanet[]; row: GameEmpireCountRow }) {
+  return (
+    <tr data-empire-count-row={row.id} style={{ height: 20 }}>
+      <th style={{ width: 75 }}>
+        <a href={technologyInfoURL(row.id)}>{row.name}</a>
+      </th>
+      {planets.map((planet) => {
+        const value = empireCountValue(row, planet.id);
+        return (
+          <th key={planet.id} style={{ width: 75 }}>
+            {value.count > 0 ? (
+              <a href={gameRouteURL("/game/shipyard", withPlanetSearch(planet.id))}>
+                <span style={{ color: "lime" }}>{formatLegacyPlainNumber(value.count)}</span>
+              </a>
+            ) : (
+              <span style={{ color: "white" }}>-</span>
+            )}
+          </th>
+        );
+      })}
+      <th style={{ width: 75 }}>{formatLegacyPlainNumber(row.total)}</th>
+    </tr>
+  );
+}
+
+function empirePlanetTypeURL(planetType: number): string {
+  const search = new URLSearchParams(window.location.search);
+  search.set("planettype", String(planetType));
+  return gameRouteURL("/game/empire", search.toString());
+}
+
+function withPlanetSearch(planetID: number): string {
+  const search = new URLSearchParams(window.location.search);
+  search.set("cp", String(planetID));
+  return search.toString();
+}
+
+function empireResourceValue(row: GameEmpireResourceRow, planetID: number): GameEmpireResourceValue {
+  return row.values.find((value) => value.planetId === planetID) ?? { planetId: planetID, amount: 0, production: 0 };
+}
+
+function empireLevelValue(row: GameEmpireLevelRow, planetID: number): GameEmpireLevelValue {
+  return row.values.find((value) => value.planetId === planetID) ?? { planetId: planetID, level: 0 };
+}
+
+function empireCountValue(row: GameEmpireCountRow, planetID: number): GameEmpireCountValue {
+  return row.values.find((value) => value.planetId === planetID) ?? { planetId: planetID, count: 0 };
+}
+
+function formatEmpireAverage(value: number): string {
+  if (Number.isInteger(value)) {
+    return formatLegacyPlainNumber(value);
+  }
+  return value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
 function ResourcesTable({
   resources,
   pending,
@@ -4372,7 +4684,7 @@ function technologyDetailURL(itemID: number): string {
   return gameRouteURL("/game/technology", search.toString());
 }
 
-function planetImagePath(planet: GamePlanetOverview | GamePlanetSummary, small: boolean): string {
+function planetImagePath(planet: Pick<GamePlanetOverview, "id" | "type" | "coordinates">, small: boolean): string {
   if (planet.type === 0) {
     return `${skinBase}/planeten/${small ? "small/s_" : ""}mond.jpg`;
   }

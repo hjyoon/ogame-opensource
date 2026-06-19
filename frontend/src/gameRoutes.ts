@@ -35,7 +35,7 @@ export const gameRoutes: GameRoute[] = [
   { key: "overview", label: "Overview", path: "/game/overview", migrated: true },
   { key: "renamePlanet", label: "Planet menu", path: "/game/rename-planet", migrated: true },
   { key: "admin", label: "*Admin Area*", path: "/game/admin", migrated: false },
-  { key: "empire", label: "Empire", path: "/game/empire", migrated: false },
+  { key: "empire", label: "Empire", path: "/game/empire", migrated: true },
   { key: "buildings", label: "Buildings", path: "/game/buildings", migrated: true },
   { key: "resources", label: "Resources", path: "/game/resources", migrated: true },
   { key: "merchant", label: "Merchant", path: "/game/merchant", migrated: false },

@@ -5,6 +5,7 @@ import {
   type GameBuddyStatus,
   type GameBuildingsStatus,
   type GameDefenseStatus,
+  type GameEmpireStatus,
   type GameFleetStatus,
   type GameGalaxyStatus,
   type GameLogoutStatus,
@@ -212,6 +213,8 @@ function App() {
   const [gameBuildings, setGameBuildings] = useState<GameBuildingsStatus | null>(null);
   const [gameBuildingsError, setGameBuildingsError] = useState<string | null>(null);
   const [gameBuildingsPending, setGameBuildingsPending] = useState(false);
+  const [gameEmpire, setGameEmpire] = useState<GameEmpireStatus | null>(null);
+  const [gameEmpireError, setGameEmpireError] = useState<string | null>(null);
   const [gameResources, setGameResources] = useState<GameResourcesStatus | null>(null);
   const [gameResourcesError, setGameResourcesError] = useState<string | null>(null);
   const [gameResourcesPending, setGameResourcesPending] = useState(false);
@@ -490,6 +493,30 @@ function App() {
   const submitGameBuildingAction = (action: "add" | "destroy" | "remove", techId: number, listId?: number) => {
     submitGameBuildingsMutation({ action, techId, listId });
   };
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "empire" || publicSession === "") {
+      setGameEmpire(null);
+      setGameEmpireError(null);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const empireSearch = new URLSearchParams({ session: publicSession });
+    for (const key of ["cp", "planettype"]) {
+      const value = currentSearch.get(key);
+      if (value) {
+        empireSearch.set(key, value);
+      }
+    }
+    fetch(`/api/game/empire?${empireSearch.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameEmpireStatus>)
+      .then((payload) => {
+        setGameEmpire(payload);
+        setGameEmpireError(null);
+      })
+      .catch((err: unknown) => setGameEmpireError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
 
   const submitGameResources = (production: Record<string, string>) => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
@@ -1355,6 +1382,8 @@ function App() {
         defenseError={gameDefenseError}
         defensePending={gameDefensePending}
         defenseStatus={gameDefense}
+        empireError={gameEmpireError}
+        empireStatus={gameEmpire}
         error={gameOverviewError}
         fleetError={gameFleetError}
         fleetPending={gameFleetPending}

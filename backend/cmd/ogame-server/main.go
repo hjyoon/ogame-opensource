@@ -60,6 +60,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	logout := logoutService(cfg, logger)
 	gameOverview := gameOverviewService(cfg, logger, gameSessions)
 	gameBuildings := gameBuildingsService(cfg, logger, gameSessions)
+	gameEmpire := gameEmpireService(cfg, logger, gameSessions)
 	gameResources := gameResourcesService(cfg, logger, gameSessions)
 	gameResearch := gameResearchService(cfg, logger, gameSessions)
 	gameShipyard := gameShipyardService(cfg, logger, gameSessions)
@@ -87,6 +88,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		Logout:             logout,
 		GameOverview:       gameOverview,
 		GameBuildings:      gameBuildings,
+		GameEmpire:         gameEmpire,
 		GameResources:      gameResources,
 		GameResearch:       gameResearch,
 		GameShipyard:       gameShipyard,
@@ -359,6 +361,34 @@ func gameBuildingsService(cfg config.Config, logger *slog.Logger, sessions apppu
 
 	logger.Info("universe DB game buildings enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewBuildingsService(sessions, mysqlgame.NewBuildingsRepository(db, cfg.UniDBPrefix))
+}
+
+func gameEmpireService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.EmpireService {
+	if !cfg.UniDBEnabled {
+		return appgame.EmpireService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game empire disabled", "error", err)
+		return appgame.EmpireService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game empire disabled", "error", err)
+		_ = db.Close()
+		return appgame.EmpireService{}
+	}
+
+	logger.Info("universe DB game empire enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
+	return appgame.NewEmpireService(sessions, mysqlgame.NewEmpireRepository(db, cfg.UniDBPrefix))
 }
 
 func gameResourcesService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.ResourcesService {

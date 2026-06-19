@@ -62,6 +62,10 @@ type GameBuildingsUseCase interface {
 	MutateBuildings(context.Context, appgame.BuildingsMutationCommand) (appgame.BuildingsResult, error)
 }
 
+type GameEmpireUseCase interface {
+	GetEmpire(context.Context, appgame.EmpireCommand) (appgame.EmpireResult, error)
+}
+
 type GameResourcesUseCase interface {
 	GetResources(context.Context, appgame.ResourcesCommand) (appgame.ResourcesResult, error)
 	UpdateResources(context.Context, appgame.ResourcesUpdateCommand) (appgame.ResourcesResult, error)
@@ -142,6 +146,7 @@ type Dependencies struct {
 	Logout             LogoutUseCase
 	GameOverview       GameOverviewUseCase
 	GameBuildings      GameBuildingsUseCase
+	GameEmpire         GameEmpireUseCase
 	GameResources      GameResourcesUseCase
 	GameResearch       GameResearchUseCase
 	GameShipyard       GameShipyardUseCase
@@ -180,6 +185,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/logout", postOnly(a.handleGameLogout))
 	mux.HandleFunc("/api/game/overview", a.handleGameOverview)
 	mux.HandleFunc("/api/game/buildings", a.handleGameBuildings)
+	mux.HandleFunc("/api/game/empire", getOnly(a.handleGameEmpire))
 	mux.HandleFunc("/api/game/resources", a.handleGameResources)
 	mux.HandleFunc("/api/game/research", a.handleGameResearch)
 	mux.HandleFunc("/api/game/shipyard", a.handleGameShipyard)
