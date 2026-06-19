@@ -432,7 +432,7 @@ function App() {
       .catch((err: unknown) => setGameBuildingsError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
 
-  const submitGameBuildingsMutation = (body: { action: "add" | "remove"; techId: number; listId?: number }) => {
+  const submitGameBuildingsMutation = (body: { action: "add" | "destroy" | "remove"; techId: number; listId?: number }) => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (publicSession === "") {
       setGameBuildingsError("Session is invalid.");
@@ -472,7 +472,7 @@ function App() {
       .finally(() => setGameBuildingsPending(false));
   };
 
-  const submitGameBuildingAction = (action: "add" | "remove", techId: number, listId?: number) => {
+  const submitGameBuildingAction = (action: "add" | "destroy" | "remove", techId: number, listId?: number) => {
     submitGameBuildingsMutation({ action, techId, listId });
   };
 

@@ -246,8 +246,11 @@ try {
   } catch {
     createdRegistrationSession = "";
   }
+  const createdRegistrationSearch = createdRegistrationSession
+    ? `?session=${encodeURIComponent(createdRegistrationSession)}`
+    : "";
   const createdOverview = createdRegistrationSession
-    ? await request(`/api/game/overview?session=${encodeURIComponent(createdRegistrationSession)}`, {
+    ? await request(`/api/game/overview${createdRegistrationSearch}`, {
       headers: { Cookie: createdRegistrationCookiePair }
     })
     : { status: 0, headers: {}, body: "" };
@@ -273,8 +276,11 @@ try {
   } catch {
     welcomeActivationSession = "";
   }
+  const welcomeActivationSearch = welcomeActivationSession
+    ? `?session=${encodeURIComponent(welcomeActivationSession)}`
+    : "";
   const welcomeActivationOverview = welcomeActivationSession
-    ? await request(`/api/game/overview?session=${encodeURIComponent(welcomeActivationSession)}`, {
+    ? await request(`/api/game/overview${welcomeActivationSearch}`, {
       headers: { Cookie: welcomeActivationCookiePair }
     })
     : { status: 0, headers: {}, body: "" };
@@ -561,6 +567,18 @@ try {
     gameBuildingsMutationBody = JSON.parse(gameBuildingsMutation.body);
   } catch {
     gameBuildingsMutationBody = {};
+  }
+
+  const gameBuildingsDemolishMutation = await request(`/api/game/buildings${welcomeActivationSearch}`, {
+    method: "POST",
+    headers: { Cookie: welcomeActivationCookiePair, "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "destroy", techId: 33 })
+  });
+  let gameBuildingsDemolishMutationBody = {};
+  try {
+    gameBuildingsDemolishMutationBody = JSON.parse(gameBuildingsDemolishMutation.body);
+  } catch {
+    gameBuildingsDemolishMutationBody = {};
   }
 
   const gameResearch = await request(`/api/game/research${sessionSearch}`, {
@@ -1021,6 +1039,11 @@ try {
       }),
       check(gameBuildingsMutationBody.authenticated === true, "game buildings mutation authenticates the login session", gameBuildingsMutationBody),
       check(Array.isArray(gameBuildingsMutationBody.buildings?.items), "game buildings mutation returns the refreshed screen", gameBuildingsMutationBody),
+      check(gameBuildingsDemolishMutation.status === 200, "game buildings demolish mutation returns HTTP 200", {
+        status: gameBuildingsDemolishMutation.status
+      }),
+      check(gameBuildingsDemolishMutationBody.authenticated === true, "game buildings demolish mutation authenticates the login session", gameBuildingsDemolishMutationBody),
+      check(gameBuildingsDemolishMutationBody.actionIssue?.code === "no_such_building", "game buildings demolish mutation reports absent buildings without writing", gameBuildingsDemolishMutationBody.actionIssue ?? {}),
       check(!gameBuildings.body.includes(sessionCookiePair), "game buildings response does not echo private cookie"),
       check(gameBuildingsWithoutCookie.status === 401, "game buildings rejects missing private cookie", { status: gameBuildingsWithoutCookie.status }),
       check(gameBuildingsWithoutCookieBody.authenticated === false, "game buildings missing private cookie is unauthenticated", gameBuildingsWithoutCookieBody),

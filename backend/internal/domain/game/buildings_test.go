@@ -74,19 +74,27 @@ func TestBuildBuildingsMarksUnavailableWhenResourcesOrFieldsAreMissing(t *testin
 
 func TestBuildingMutationHelpersFollowCatalog(t *testing.T) {
 	if NormalizeBuildingsMutationAction(BuildingsMutationAdd) != BuildingsMutationAdd ||
+		NormalizeBuildingsMutationAction(BuildingsMutationDestroy) != BuildingsMutationDestroy ||
 		NormalizeBuildingsMutationAction(BuildingsMutationRemove) != BuildingsMutationRemove ||
-		NormalizeBuildingsMutationAction("destroy") != "" {
+		NormalizeBuildingsMutationAction("unknown") != "" {
 		t.Fatalf("unexpected building mutation action normalization")
 	}
 	cost, ok := BuildingCostForLevel(BuildingMetalMine, 3)
 	if !ok || cost.Metal != 135 || cost.Crystal != 33.75 {
 		t.Fatalf("unexpected exported building cost: cost=%+v ok=%v", cost, ok)
 	}
+	demolitionCost, ok := BuildingCostForLevel(BuildingMetalMine, 0)
+	if !ok || demolitionCost.Metal != 40 || demolitionCost.Crystal != 10 {
+		t.Fatalf("expected legacy level zero demolition cost, cost=%+v ok=%v", demolitionCost, ok)
+	}
 	if _, ok := BuildingCostForLevel(9999, 1); ok {
 		t.Fatalf("unknown building should not have a cost")
 	}
 	if !BuildingAllowedOnPlanet(BuildingLunarBase, PlanetTypeMoon) || BuildingAllowedOnPlanet(BuildingMetalMine, PlanetTypeMoon) {
 		t.Fatalf("building planet type helper disagrees with catalog")
+	}
+	if !BuildingCanDemolish(BuildingMetalMine) || BuildingCanDemolish(BuildingTerraformer) || BuildingCanDemolish(BuildingLunarBase) || BuildingCanDemolish(9999) {
+		t.Fatalf("demolition helper disagrees with legacy building rules")
 	}
 	if !BuildingRequirementsMet(BuildingFusionReactor, BuildingLevels{BuildingDeuteriumSynth: 5}, ResearchLevels{ResearchEnergy: 3}) {
 		t.Fatalf("expected fusion reactor requirements to be met")

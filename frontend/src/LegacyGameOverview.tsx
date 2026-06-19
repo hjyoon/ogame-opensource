@@ -523,7 +523,7 @@ type LegacyGameOverviewProps = {
   buildingsStatus: GameBuildingsStatus | null;
   buildingsError: string | null;
   buildingsPending: boolean;
-  onBuildingAction: (action: "add" | "remove", techID: number, listID?: number) => void;
+  onBuildingAction: (action: "add" | "destroy" | "remove", techID: number, listID?: number) => void;
   resourcesStatus: GameResourcesStatus | null;
   resourcesError: string | null;
   resourcesPending: boolean;
@@ -1239,7 +1239,7 @@ function BuildingsTable({
   pending
 }: {
   buildings: GameBuildings;
-  onAction: (action: "add" | "remove", techID: number, listID?: number) => void;
+  onAction: (action: "add" | "destroy" | "remove", techID: number, listID?: number) => void;
   pending: boolean;
 }) {
   return (
@@ -1307,10 +1307,10 @@ function BuildingsTable({
   );
 }
 
-function buildingActionURL(action: "add" | "remove", techID: number, listID?: number) {
+function buildingActionURL(action: "add" | "destroy" | "remove", techID: number, listID?: number) {
   const query = new URLSearchParams(window.location.search);
   query.set("modus", action);
-  if (action === "add") {
+  if (action === "add" || action === "destroy") {
     query.set("techid", String(techID));
   }
   if (listID !== undefined) {

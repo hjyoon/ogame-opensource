@@ -107,7 +107,10 @@ func (r BuildingsRepository) MutateBuildings(ctx context.Context, query appgame.
 
 	switch domaingame.NormalizeBuildingsMutationAction(query.Action) {
 	case domaingame.BuildingsMutationAdd:
-		issue, err := r.enqueueBuilding(ctx, usersTable, planetsTable, buildQueueTable, queueTable, query.PlayerID, planetID, query.TechID, int(now))
+		issue, err := r.enqueueBuilding(ctx, usersTable, planetsTable, buildQueueTable, queueTable, query.PlayerID, planetID, query.TechID, false, int(now))
+		return appgame.BuildingsMutationOutcome{ActionIssue: issue}, err
+	case domaingame.BuildingsMutationDestroy:
+		issue, err := r.enqueueBuilding(ctx, usersTable, planetsTable, buildQueueTable, queueTable, query.PlayerID, planetID, query.TechID, true, int(now))
 		return appgame.BuildingsMutationOutcome{ActionIssue: issue}, err
 	case domaingame.BuildingsMutationRemove:
 		if err := r.dequeueBuilding(ctx, planetsTable, buildQueueTable, queueTable, query.PlayerID, planetID, query.ListID, int(now)); err != nil {
@@ -275,7 +278,7 @@ type buildingUniverseConfig struct {
 	Frozen bool
 }
 
-func (r BuildingsRepository) enqueueBuilding(ctx context.Context, usersTable string, planetsTable string, buildQueueTable string, queueTable string, playerID int, planetID int, techID int, now int) (*domaingame.BuildingsActionIssue, error) {
+func (r BuildingsRepository) enqueueBuilding(ctx context.Context, usersTable string, planetsTable string, buildQueueTable string, queueTable string, playerID int, planetID int, techID int, destroy bool, now int) (*domaingame.BuildingsActionIssue, error) {
 	user, err := r.loadBuildingMutationUser(ctx, usersTable, playerID)
 	if err != nil {
 		return nil, err
@@ -326,8 +329,18 @@ func (r BuildingsRepository) enqueueBuilding(ctx context.Context, usersTable str
 	}
 	listID++
 	level := nowLevel + 1
+	destroyFlag := 0
+	queueType := queueTypeBuild
+	if destroy {
+		level = nowLevel - 1
+		destroyFlag = 1
+		queueType = queueTypeDemolish
+		if level < 0 {
+			return domaingame.BuildingActionIssue(domaingame.BuildingsIssueNoSuchBuilding), nil
+		}
+	}
 
-	issue, cost, duration, err := r.validateBuildingOrder(ctx, queueTable, user, planet, techID, level, listID == 1, config.Speed)
+	issue, cost, duration, err := r.validateBuildingOrder(ctx, queueTable, user, planet, techID, level, destroy, listID == 1, config.Speed)
 	if err != nil || issue != nil {
 		return issue, err
 	}
@@ -341,12 +354,12 @@ func (r BuildingsRepository) enqueueBuilding(ctx context.Context, usersTable str
 		}
 	}
 
-	buildQueueID, err := r.insertBuildQueue(ctx, buildQueueTable, playerID, planetID, listID, techID, level, 0, now, now+duration)
+	buildQueueID, err := r.insertBuildQueue(ctx, buildQueueTable, playerID, planetID, listID, techID, level, destroyFlag, now, now+duration)
 	if err != nil {
 		return nil, err
 	}
 	if listID == 1 {
-		if _, err := r.insertGlobalQueue(ctx, queueTable, playerID, queueTypeBuild, buildQueueID, techID, level, now, duration); err != nil {
+		if _, err := r.insertGlobalQueue(ctx, queueTable, playerID, queueType, buildQueueID, techID, level, now, duration); err != nil {
 			return nil, err
 		}
 	}
@@ -414,7 +427,8 @@ func (r BuildingsRepository) startNextBuildQueue(ctx context.Context, planetsTab
 		if err != nil {
 			return err
 		}
-		issue, cost, duration, err := r.validateBuildingOrder(ctx, queueTable, user, planet, row.TechID, row.Level, true, config.Speed)
+		destroy := row.Destroy != 0
+		issue, cost, duration, err := r.validateBuildingOrder(ctx, queueTable, user, planet, row.TechID, row.Level, destroy, true, config.Speed)
 		if err != nil {
 			return err
 		}
@@ -431,19 +445,32 @@ func (r BuildingsRepository) startNextBuildQueue(ctx context.Context, planetsTab
 		if err != nil || !spent {
 			return err
 		}
-		if _, err := r.insertGlobalQueue(ctx, queueTable, playerID, queueTypeBuild, row.ID, row.TechID, row.Level, now, duration); err != nil {
+		queueType := queueTypeBuild
+		if destroy {
+			queueType = queueTypeDemolish
+		}
+		if _, err := r.insertGlobalQueue(ctx, queueTable, playerID, queueType, row.ID, row.TechID, row.Level, now, duration); err != nil {
 			return err
 		}
 		return r.updateBuildQueueTiming(ctx, buildQueueTable, row.ID, now, now+duration)
 	}
 }
 
-func (r BuildingsRepository) validateBuildingOrder(ctx context.Context, queueTable string, user buildingMutationUser, planet buildingMutationPlanet, techID int, level int, requireResources bool, speed float64) (*domaingame.BuildingsActionIssue, domaingame.BuildingCost, int, error) {
+func (r BuildingsRepository) validateBuildingOrder(ctx context.Context, queueTable string, user buildingMutationUser, planet buildingMutationPlanet, techID int, level int, destroy bool, requireResources bool, speed float64) (*domaingame.BuildingsActionIssue, domaingame.BuildingCost, int, error) {
+	if destroy && level < 0 {
+		return domaingame.BuildingActionIssue(domaingame.BuildingsIssueNoSuchBuilding), domaingame.BuildingCost{}, 0, nil
+	}
 	cost, ok := domaingame.BuildingCostForLevel(techID, level)
 	if !ok || !domaingame.BuildingAllowedOnPlanet(techID, planet.Type) {
 		return domaingame.BuildingActionIssue(domaingame.BuildingsIssueInvalid), domaingame.BuildingCost{}, 0, nil
 	}
-	if planet.Fields >= planet.MaxFields {
+	if destroy && !domaingame.BuildingCanDemolish(techID) {
+		return domaingame.BuildingActionIssue(domaingame.BuildingsIssueCannotDemolish), domaingame.BuildingCost{}, 0, nil
+	}
+	if destroy && planet.Levels[techID] <= 0 {
+		return domaingame.BuildingActionIssue(domaingame.BuildingsIssueNoSuchBuilding), domaingame.BuildingCost{}, 0, nil
+	}
+	if !destroy && planet.Fields >= planet.MaxFields {
 		return domaingame.BuildingActionIssue(domaingame.BuildingsIssueNoSpace), domaingame.BuildingCost{}, 0, nil
 	}
 	if !domaingame.BuildingRequirementsMet(techID, planet.Levels, user.Research) {

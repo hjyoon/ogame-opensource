@@ -112,18 +112,21 @@ type BuildingLevels map[int]int
 type ResearchLevels map[int]int
 
 const (
-	BuildingsMutationAdd    = "add"
-	BuildingsMutationRemove = "remove"
+	BuildingsMutationAdd     = "add"
+	BuildingsMutationDestroy = "destroy"
+	BuildingsMutationRemove  = "remove"
 
-	BuildingsIssueInvalid       = "invalid_building"
-	BuildingsIssueVacation      = "vacation"
-	BuildingsIssueNoSpace       = "no_space"
-	BuildingsIssueBusy          = "busy"
-	BuildingsIssueNoResources   = "no_resources"
-	BuildingsIssueRequirements  = "requirements"
-	BuildingsIssueQueueFull     = "queue_full"
-	BuildingsIssueSameSecond    = "same_second"
-	BuildingsIssueUniversePause = "universe_paused"
+	BuildingsIssueInvalid        = "invalid_building"
+	BuildingsIssueCannotDemolish = "cannot_demolish"
+	BuildingsIssueNoSuchBuilding = "no_such_building"
+	BuildingsIssueVacation       = "vacation"
+	BuildingsIssueNoSpace        = "no_space"
+	BuildingsIssueBusy           = "busy"
+	BuildingsIssueNoResources    = "no_resources"
+	BuildingsIssueRequirements   = "requirements"
+	BuildingsIssueQueueFull      = "queue_full"
+	BuildingsIssueSameSecond     = "same_second"
+	BuildingsIssueUniversePause  = "universe_paused"
 )
 
 type buildingSpec struct {
@@ -165,7 +168,7 @@ func BuildingResearchIDs() []int {
 
 func NormalizeBuildingsMutationAction(action string) string {
 	switch action {
-	case BuildingsMutationAdd, BuildingsMutationRemove:
+	case BuildingsMutationAdd, BuildingsMutationDestroy, BuildingsMutationRemove:
 		return action
 	default:
 		return ""
@@ -189,6 +192,14 @@ func BuildingAllowedOnPlanet(id int, planetType int) bool {
 	return ok && spec.allowedPlanetTypes[planetType]
 }
 
+func BuildingCanDemolish(id int) bool {
+	_, ok := buildingSpecByID(id)
+	if !ok {
+		return false
+	}
+	return id != BuildingTerraformer && id != BuildingLunarBase
+}
+
 func BuildingRequirementsMet(id int, buildings BuildingLevels, research ResearchLevels) bool {
 	spec, ok := buildingSpecByID(id)
 	return ok && requirementsMet(spec.requirements, buildings, research)
@@ -196,15 +207,17 @@ func BuildingRequirementsMet(id int, buildings BuildingLevels, research Research
 
 func BuildingActionIssue(code string) *BuildingsActionIssue {
 	message := map[string]string{
-		BuildingsIssueInvalid:       "This building cannot be built here.",
-		BuildingsIssueVacation:      "Vacation mode is active.",
-		BuildingsIssueNoSpace:       "There's no space!",
-		BuildingsIssueBusy:          "The required facility is busy.",
-		BuildingsIssueNoResources:   "Not enough resources.",
-		BuildingsIssueRequirements:  "Requirements are not met.",
-		BuildingsIssueQueueFull:     "The building queue is full.",
-		BuildingsIssueSameSecond:    "Only one building order can be added per second.",
-		BuildingsIssueUniversePause: "The universe is currently paused.",
+		BuildingsIssueInvalid:        "This building cannot be built here.",
+		BuildingsIssueCannotDemolish: "This building cannot be demolished.",
+		BuildingsIssueNoSuchBuilding: "There is no building to demolish.",
+		BuildingsIssueVacation:       "Vacation mode is active.",
+		BuildingsIssueNoSpace:        "There's no space!",
+		BuildingsIssueBusy:           "The required facility is busy.",
+		BuildingsIssueNoResources:    "Not enough resources.",
+		BuildingsIssueRequirements:   "Requirements are not met.",
+		BuildingsIssueQueueFull:      "The building queue is full.",
+		BuildingsIssueSameSecond:     "Only one building order can be added per second.",
+		BuildingsIssueUniversePause:  "The universe is currently paused.",
 	}[code]
 	if message == "" {
 		message = "The building order could not be processed."
@@ -304,9 +317,6 @@ func BuildBuildings(overview Overview, levels BuildingLevels, research ResearchL
 }
 
 func (s buildingSpec) price(level int) BuildingCost {
-	if level < 1 {
-		level = 1
-	}
 	multiplier := math.Pow(s.factor, float64(level-1))
 	return BuildingCost{
 		Metal:     s.initial.Metal * multiplier,

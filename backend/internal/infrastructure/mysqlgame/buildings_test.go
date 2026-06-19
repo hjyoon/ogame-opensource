@@ -96,6 +96,34 @@ func TestBuildingsRepositoryEnqueuesBuilding(t *testing.T) {
 	}
 }
 
+func TestBuildingsRepositoryEnqueuesDemolition(t *testing.T) {
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(buildingMutationUserRow(0, 9_999, nil))},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{2.0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues(buildingMutationPlanetRow(map[int]int{domaingame.BuildingMetalMine: 2}))},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+	)}, results: []sql.Result{buildingSQLResult{affected: 1}, buildingSQLResult{id: 7}, buildingSQLResult{id: 8}}}
+	repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+
+	outcome, err := repository.MutateBuildings(context.Background(), appgame.BuildingsMutationQuery{PlayerID: 42, PlanetID: 99, Action: domaingame.BuildingsMutationDestroy, TechID: domaingame.BuildingMetalMine})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.ActionIssue != nil {
+		t.Fatalf("unexpected demolition mutation issue: %+v", outcome.ActionIssue)
+	}
+	if len(runner.execs) != 3 ||
+		!strings.Contains(runner.execs[0].sql, "UPDATE `ogame_planets` SET `700` = `700` - ?") ||
+		!strings.Contains(runner.execs[1].sql, "INSERT INTO `ogame_buildqueue`") ||
+		!strings.Contains(runner.execs[2].sql, "INSERT INTO `ogame_queue`") ||
+		runner.execs[0].args[0] != 60.0 || runner.execs[0].args[1] != 15.0 ||
+		runner.execs[1].args[2] != 1 || runner.execs[1].args[3] != domaingame.BuildingMetalMine ||
+		runner.execs[1].args[4] != 1 || runner.execs[1].args[5] != 1 ||
+		runner.execs[2].args[1] != queueTypeDemolish || runner.execs[2].args[2] != 7 || runner.execs[2].args[4] != 1 {
+		t.Fatalf("unexpected demolition enqueue execs: %+v", runner.execs)
+	}
+}
+
 func TestBuildingsRepositoryDequeuesCurrentBuildingAndRefunds(t *testing.T) {
 	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 1, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: domaingame.BuildingMetalMine, Level: 1, Start: 2_000, End: 2_011}))},
@@ -150,6 +178,36 @@ func TestBuildingsRepositoryStartsNextBuildAfterCurrentCancel(t *testing.T) {
 		!strings.Contains(runner.execs[6].sql, "UPDATE `ogame_buildqueue` SET start = ?, end = ? WHERE id = ?") ||
 		runner.execs[5].args[2] != 2 || runner.execs[6].args[2] != 2 {
 		t.Fatalf("expected cancel to start next build queue, got %+v", runner.execs)
+	}
+}
+
+func TestBuildingsRepositoryStartsNextDemolitionAfterCurrentCancel(t *testing.T) {
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 1, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: domaingame.BuildingCrystalMine, Level: 1, Start: 2_000, End: 2_011}))},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{8})},
+		fakeQueryResult{rows: fakeRowsFromValues(buildingMutationUserRow(0, 9_999, nil))},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{2.0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 2, OwnerID: 42, PlanetID: 99, ListID: 2, TechID: domaingame.BuildingMetalMine, Level: 1, Destroy: 1, Start: 0, End: 0}))},
+		fakeQueryResult{rows: fakeRowsFromValues(buildingMutationPlanetRow(map[int]int{domaingame.BuildingMetalMine: 2}))},
+	)}, results: []sql.Result{
+		buildingSQLResult{affected: 1},
+		buildingSQLResult{affected: 1},
+		buildingSQLResult{affected: 1},
+		buildingSQLResult{affected: 1},
+		buildingSQLResult{affected: 1},
+		buildingSQLResult{id: 9},
+		buildingSQLResult{affected: 1},
+	}}
+	repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_005, 0) })
+
+	if _, err := repository.MutateBuildings(context.Background(), appgame.BuildingsMutationQuery{PlayerID: 42, PlanetID: 99, Action: domaingame.BuildingsMutationRemove, ListID: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execs) != 7 ||
+		!strings.Contains(runner.execs[4].sql, "UPDATE `ogame_planets` SET `700` = `700` - ?") ||
+		!strings.Contains(runner.execs[5].sql, "INSERT INTO `ogame_queue`") ||
+		runner.execs[5].args[1] != queueTypeDemolish || runner.execs[5].args[2] != 2 || runner.execs[5].args[4] != 1 {
+		t.Fatalf("expected cancel to start next demolition queue, got %+v", runner.execs)
 	}
 }
 
@@ -288,6 +346,59 @@ func TestBuildingsRepositoryEnqueueValidationIssues(t *testing.T) {
 	}
 }
 
+func TestBuildingsRepositoryDemolitionValidationIssues(t *testing.T) {
+	tests := []struct {
+		name   string
+		levels map[int]int
+		techID int
+		want   string
+	}{
+		{
+			name:   "no such building",
+			levels: map[int]int{},
+			techID: domaingame.BuildingMetalMine,
+			want:   domaingame.BuildingsIssueNoSuchBuilding,
+		},
+		{
+			name:   "terraformer cannot be demolished",
+			levels: map[int]int{domaingame.BuildingTerraformer: 1, domaingame.BuildingNaniteFactory: 1},
+			techID: domaingame.BuildingTerraformer,
+			want:   domaingame.BuildingsIssueCannotDemolish,
+		},
+		{
+			name:   "lunar base cannot be demolished",
+			levels: map[int]int{domaingame.BuildingLunarBase: 1},
+			techID: domaingame.BuildingLunarBase,
+			want:   domaingame.BuildingsIssueCannotDemolish,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			planetType := domaingame.PlanetTypePlanet
+			if tt.techID == domaingame.BuildingLunarBase {
+				planetType = domaingame.PlanetTypeMoon
+			}
+			runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
+				fakeQueryResult{rows: fakeRowsFromValues(buildingMutationUserRow(0, 0, map[int]int{domaingame.ResearchEnergy: 12}))},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{1.0, 0})},
+				fakeQueryResult{rows: fakeRowsFromValues(buildingMutationPlanetRowWithFields(tt.levels, planetType, 1, 163))},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+			)}}
+			repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+			outcome, err := repository.MutateBuildings(context.Background(), appgame.BuildingsMutationQuery{PlayerID: 42, PlanetID: 99, Action: domaingame.BuildingsMutationDestroy, TechID: tt.techID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if outcome.ActionIssue == nil || outcome.ActionIssue.Code != tt.want {
+				t.Fatalf("expected issue %q, got %+v", tt.want, outcome.ActionIssue)
+			}
+			if len(runner.execs) != 0 {
+				t.Fatalf("demolition validation issue should not write, got %+v", runner.execs)
+			}
+		})
+	}
+}
+
 func TestBuildingsRepositoryEnqueueReadBranches(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -377,6 +488,7 @@ func TestBuildingsRepositoryBusyQueueValidation(t *testing.T) {
 		},
 		domaingame.BuildingResearchLab,
 		1,
+		false,
 		true,
 		1,
 	)
