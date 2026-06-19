@@ -856,6 +856,25 @@ try {
     gameMessagesComposeBody = {};
   }
 
+  const gameMessagesSend = loginPlayerId > 0
+    ? await request(`/api/game/messages${sessionSearch}`, {
+        method: "POST",
+        headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "send",
+          targetPlayerId: loginPlayerId,
+          subject: "Go smoke PM",
+          text: "Go migration message smoke"
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  let gameMessagesSendBody = {};
+  try {
+    gameMessagesSendBody = JSON.parse(gameMessagesSend.body);
+  } catch {
+    gameMessagesSendBody = {};
+  }
+
   const gameMessagesWithoutCookie = await request(`/api/game/messages${sessionSearch}`);
   let gameMessagesWithoutCookieBody = {};
   try {
@@ -1239,6 +1258,10 @@ try {
         loginPlayerId,
         body: gameMessagesComposeBody
       }),
+      check(gameMessagesSend.status === 200, "game message send accepts POST with private cookie", { status: gameMessagesSend.status }),
+      check(gameMessagesSendBody.authenticated === true, "game message send authenticates the login session", gameMessagesSendBody),
+      check(gameMessagesSendBody.actionIssue?.code === "sent", "game message send returns sent action issue", gameMessagesSendBody),
+      check(gameMessagesSendBody.messages?.action === "compose", "game message send returns compose screen", gameMessagesSendBody),
       check(!gameMessages.body.includes(sessionCookiePair), "game messages response does not echo private cookie"),
       check(gameMessagesWithoutCookie.status === 401, "game messages rejects missing private cookie", { status: gameMessagesWithoutCookie.status }),
       check(gameMessagesWithoutCookieBody.authenticated === false, "game messages missing private cookie is unauthenticated", gameMessagesWithoutCookieBody),
@@ -1482,7 +1505,7 @@ try {
   const postGameSearch = await request("/api/game/search", { method: "POST" });
   const putGameBuddy = await request("/api/game/buddy", { method: "PUT" });
   const putGameNotes = await request("/api/game/notes", { method: "PUT" });
-  const postGameMessages = await request("/api/game/messages", { method: "POST" });
+  const putGameMessages = await request("/api/game/messages", { method: "PUT" });
   const getGameLogout = await request("/api/game/logout");
   const putGameResources = await request("/api/game/resources", { method: "PUT" });
   cases.push(finalize({
@@ -1528,8 +1551,8 @@ try {
       check(hasHeader(putGameBuddy, "allow", "GET, HEAD, POST"), "game buddy method rejection returns Allow header"),
       check(putGameNotes.status === 405, "PUT game notes endpoint is rejected", { status: putGameNotes.status }),
       check(hasHeader(putGameNotes, "allow", "GET, HEAD, POST"), "game notes method rejection returns Allow header"),
-      check(postGameMessages.status === 405, "POST game messages endpoint is rejected", { status: postGameMessages.status }),
-      check(hasHeader(postGameMessages, "allow", "GET, HEAD"), "game messages method rejection returns Allow header"),
+      check(putGameMessages.status === 405, "PUT game messages endpoint is rejected", { status: putGameMessages.status }),
+      check(hasHeader(putGameMessages, "allow", "GET, HEAD, POST"), "game messages method rejection returns Allow header"),
       check(getGameLogout.status === 405, "GET game logout endpoint is rejected", { status: getGameLogout.status }),
       check(hasHeader(getGameLogout, "allow", "POST"), "game logout method rejection returns Allow header"),
       check(putGameResources.status === 405, "PUT game resources endpoint is rejected", { status: putGameResources.status }),

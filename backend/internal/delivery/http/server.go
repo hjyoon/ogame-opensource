@@ -118,6 +118,7 @@ type GameNotesUseCase interface {
 
 type GameMessagesUseCase interface {
 	GetMessages(context.Context, appgame.MessagesCommand) (appgame.MessagesResult, error)
+	MutateMessages(context.Context, appgame.MessagesMutationCommand) (appgame.MessagesResult, error)
 }
 
 type Dependencies struct {
@@ -180,7 +181,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/search", getOnly(a.handleGameSearch))
 	mux.HandleFunc("/api/game/buddy", a.handleGameBuddy)
 	mux.HandleFunc("/api/game/notes", a.handleGameNotes)
-	mux.HandleFunc("/api/game/messages", getOnly(a.handleGameMessages))
+	mux.HandleFunc("/api/game/messages", a.handleGameMessages)
 	mux.Handle("/legacy-assets/", http.StripPrefix("/legacy-assets/", http.FileServer(deps.LegacyAssets)))
 	mux.HandleFunc("/", getOnly(a.handleFrontend))
 	handler := securityHeaders(mux)

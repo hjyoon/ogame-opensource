@@ -241,6 +241,7 @@ function App() {
   const [gameNotesPending, setGameNotesPending] = useState(false);
   const [gameMessages, setGameMessages] = useState<GameMessagesStatus | null>(null);
   const [gameMessagesError, setGameMessagesError] = useState<string | null>(null);
+  const [gameMessagesPending, setGameMessagesPending] = useState(false);
   const [gameLogout, setGameLogout] = useState<GameLogoutStatus | null>(null);
   const [gameLogoutError, setGameLogoutError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
@@ -1037,6 +1038,53 @@ function App() {
       .catch((err: unknown) => setGameMessagesError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
 
+  const submitGameMessagesMutation = (body: Record<string, unknown>) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameMessagesError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const messagesSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      messagesSearch.set("cp", selectedPlanet);
+    }
+    setGameMessagesPending(true);
+    setGameMessagesError(null);
+    fetch(`/api/game/messages?${messagesSearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(body)
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameMessagesStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `messages returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("messages response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameMessages(payload);
+        setGameMessagesError(null);
+      })
+      .catch((err: unknown) => setGameMessagesError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameMessagesPending(false));
+  };
+
+  const submitGameMessagesDelete = (deleteMode: string, messageIds: number[], reportIds: number[]) => {
+    submitGameMessagesMutation({ action: "delete", deleteMode, messageIds, reportIds });
+  };
+
+  const submitGameMessageSend = (targetPlayerId: number, subject: string, text: string) => {
+    submitGameMessagesMutation({ action: "send", targetPlayerId, subject, text });
+  };
+
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "notes" || publicSession === "") {
@@ -1212,6 +1260,7 @@ function App() {
         logoutError={gameLogoutError}
         logoutStatus={gameLogout}
         messagesError={gameMessagesError}
+        messagesPending={gameMessagesPending}
         messagesStatus={gameMessages}
         notesError={gameNotesError}
         notesPending={gameNotesPending}
@@ -1219,6 +1268,8 @@ function App() {
         onNotesCreate={submitGameNoteCreate}
         onNotesDelete={submitGameNoteDelete}
         onNotesUpdate={submitGameNoteUpdate}
+        onMessagesDelete={submitGameMessagesDelete}
+        onMessageSend={submitGameMessageSend}
         onBuddyAction={submitGameBuddyAction}
         onBuddyRequest={submitGameBuddyRequest}
         onBuildingAction={submitGameBuildingAction}

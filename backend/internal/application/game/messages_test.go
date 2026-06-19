@@ -48,6 +48,49 @@ func TestMessagesServiceReturnsMessagesForAuthenticatedSession(t *testing.T) {
 	}
 }
 
+func TestMessagesServiceMutatesMessagesForAuthenticatedSession(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}
+	issue := domaingame.MessageSentIssue()
+	repository := &fakeMessagesRepository{
+		messages: domaingame.Messages{
+			Action:  domaingame.MessagesActionCompose,
+			Compose: &domaingame.MessageCompose{Target: domaingame.MessageTarget{PlayerID: 77}},
+		},
+		outcome: MessagesMutationOutcome{ActionIssue: issue},
+	}
+	service := NewMessagesService(sessions, repository)
+
+	result, err := service.MutateMessages(context.Background(), MessagesMutationCommand{
+		PublicSession:   "public",
+		PrivateSessions: map[string]string{"private": "token"},
+		RemoteAddr:      "203.0.113.9",
+		PlanetID:        99,
+		Action:          domaingame.MessagesMutationActionSend,
+		TargetPlayerID:  77,
+		Subject:         "hello",
+		Text:            "body",
+		MessageIDs:      []int{1, 1, -2},
+		ReportIDs:       []int{3, 3, 0},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Authenticated || result.ActionIssue != issue || result.Messages.Action != domaingame.MessagesActionCompose {
+		t.Fatalf("unexpected mutation result: %+v", result)
+	}
+	if repository.mutation.PlayerID != 42 || repository.mutation.PlanetID != 99 || repository.mutation.TargetPlayerID != 77 ||
+		repository.mutation.Subject != "hello" || repository.mutation.Text != "body" || len(repository.mutation.MessageIDs) != 1 ||
+		len(repository.mutation.ReportIDs) != 1 {
+		t.Fatalf("unexpected mutation query: %+v", repository.mutation)
+	}
+	if repository.query.TargetPlayerID != 77 || sessions.command.RemoteAddr != "203.0.113.9" {
+		t.Fatalf("unexpected returned query/session command: query=%+v session=%+v", repository.query, sessions.command)
+	}
+}
+
 func TestMessagesServiceLeavesPublicSessionPlaceholderWhenMissing(t *testing.T) {
 	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
 		Authenticated: true,
@@ -78,11 +121,22 @@ func TestMessagesServiceReturnsUnauthenticatedSessionIssues(t *testing.T) {
 	if result.Authenticated || len(result.Issues) != 1 || result.Issues[0].Code != "missing" {
 		t.Fatalf("expected unauthenticated issue, got %+v", result)
 	}
+
+	result, err = service.MutateMessages(context.Background(), MessagesMutationCommand{PublicSession: "bad"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Authenticated || len(result.Issues) != 1 || result.Issues[0].Code != "missing" {
+		t.Fatalf("expected unauthenticated mutation issue, got %+v", result)
+	}
 }
 
 func TestMessagesServiceReturnsDependencyAndRepositoryErrors(t *testing.T) {
 	if _, err := (MessagesService{}).GetMessages(context.Background(), MessagesCommand{}); err == nil || !strings.Contains(err.Error(), "dependencies") {
 		t.Fatalf("expected dependency error, got %v", err)
+	}
+	if _, err := (MessagesService{}).MutateMessages(context.Background(), MessagesMutationCommand{}); err == nil || !strings.Contains(err.Error(), "dependencies") {
+		t.Fatalf("expected mutation dependency error, got %v", err)
 	}
 	if _, err := NewMessagesService(&fakeSessionLookup{err: errors.New("session failed")}, &fakeMessagesRepository{}).GetMessages(context.Background(), MessagesCommand{}); err == nil || !strings.Contains(err.Error(), "session failed") {
 		t.Fatalf("expected session error, got %v", err)
@@ -93,18 +147,47 @@ func TestMessagesServiceReturnsDependencyAndRepositoryErrors(t *testing.T) {
 	}}, &fakeMessagesRepository{err: errors.New("messages failed")}).GetMessages(context.Background(), MessagesCommand{}); err == nil || !strings.Contains(err.Error(), "messages failed") {
 		t.Fatalf("expected repository error, got %v", err)
 	}
+	if _, err := NewMessagesService(&fakeSessionLookup{err: errors.New("session failed")}, &fakeMessagesRepository{}).MutateMessages(context.Background(), MessagesMutationCommand{}); err == nil || !strings.Contains(err.Error(), "session failed") {
+		t.Fatalf("expected mutation session error, got %v", err)
+	}
+	if _, err := NewMessagesService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}, &fakeMessagesRepository{err: errors.New("messages failed")}).MutateMessages(context.Background(), MessagesMutationCommand{}); err == nil || !strings.Contains(err.Error(), "messages failed") {
+		t.Fatalf("expected mutation repository error, got %v", err)
+	}
+	if _, err := NewMessagesService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}, &fakeMessagesRepository{getErr: errors.New("messages read failed")}).MutateMessages(context.Background(), MessagesMutationCommand{}); err == nil || !strings.Contains(err.Error(), "messages read failed") {
+		t.Fatalf("expected mutation read error, got %v", err)
+	}
 }
 
 type fakeMessagesRepository struct {
 	messages domaingame.Messages
 	query    MessagesQuery
+	mutation MessagesMutationQuery
+	outcome  MessagesMutationOutcome
 	err      error
+	getErr   error
 }
 
 func (f *fakeMessagesRepository) GetMessages(_ context.Context, query MessagesQuery) (domaingame.Messages, error) {
 	f.query = query
+	if f.getErr != nil {
+		return domaingame.Messages{}, f.getErr
+	}
 	if f.err != nil {
 		return domaingame.Messages{}, f.err
 	}
 	return f.messages, nil
+}
+
+func (f *fakeMessagesRepository) MutateMessages(_ context.Context, query MessagesMutationQuery) (MessagesMutationOutcome, error) {
+	f.mutation = query
+	if f.err != nil {
+		return MessagesMutationOutcome{}, f.err
+	}
+	return f.outcome, nil
 }

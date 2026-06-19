@@ -98,6 +98,7 @@ export type GameNotesStatus = {
 export type GameMessagesStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
+  actionIssue?: { code: string; message: string };
   messages?: GameMessages;
 };
 
@@ -648,6 +649,9 @@ type LegacyGameOverviewProps = {
   onNotesDelete: (noteIDs: number[]) => void;
   messagesStatus: GameMessagesStatus | null;
   messagesError: string | null;
+  messagesPending: boolean;
+  onMessagesDelete: (deleteMode: string, messageIDs: number[], reportIDs: number[]) => void;
+  onMessageSend: (targetPlayerID: number, subject: string, text: string) => void;
   logoutStatus: GameLogoutStatus | null;
   logoutError: string | null;
 };
@@ -745,6 +749,9 @@ export function LegacyGameOverview({
   onNotesDelete,
   messagesStatus,
   messagesError,
+  messagesPending,
+  onMessagesDelete,
+  onMessageSend,
   logoutStatus,
   logoutError
 }: LegacyGameOverviewProps) {
@@ -785,6 +792,9 @@ export function LegacyGameOverview({
   const messages = messagesStatus?.authenticated ? messagesStatus.messages : undefined;
   const messagesIssue =
     messagesStatus && !messagesStatus.authenticated ? messagesStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const messagesActionIssue = messagesStatus?.authenticated ? messagesStatus.actionIssue : undefined;
+  const messagesActionTone =
+    messagesActionIssue?.code === "sent" || messagesActionIssue?.code === "reported" ? "neutral" : "error";
   const hasHeader = route.key !== "notes" && route.key !== "galaxy";
   const hasMenu = route.key !== "notes";
   const contentClassName =
@@ -856,7 +866,12 @@ export function LegacyGameOverview({
         {route.key === "buddy" && buddyError ? <LegacyMessage tone="error" text={buddyError} /> : null}
         {route.key === "buddy" && !buddyError && buddyIssue ? <LegacyMessage tone="error" text={buddyIssue} /> : null}
         {route.key === "messages" && messagesError ? <LegacyMessage tone="error" text={messagesError} /> : null}
-        {route.key === "messages" && !messagesError && messagesIssue ? <LegacyMessage tone="error" text={messagesIssue} /> : null}
+        {route.key === "messages" && !messagesError && messagesActionIssue ? (
+          <LegacyMessage tone={messagesActionTone} text={messagesActionIssue.message} />
+        ) : null}
+        {route.key === "messages" && !messagesError && !messagesActionIssue && messagesIssue ? (
+          <LegacyMessage tone="error" text={messagesIssue} />
+        ) : null}
         {route.key === "notes" && notesError ? <LegacyMessage tone="error" text={notesError} /> : null}
         {route.key === "notes" && !notesError && notesIssue ? <LegacyMessage tone="error" text={notesIssue} /> : null}
         {overview && route.key === "overview" ? <OverviewTable overview={overview} /> : null}
@@ -925,7 +940,14 @@ export function LegacyGameOverview({
         {overview && route.key === "messages" && !messages && !messagesError && !messagesIssue ? (
           <LegacyMessage tone="neutral" text="Loading messages..." />
         ) : null}
-        {messages && route.key === "messages" ? <MessagesTable messages={messages} /> : null}
+        {messages && route.key === "messages" ? (
+          <MessagesTable
+            messages={messages}
+            onDelete={onMessagesDelete}
+            onSend={onMessageSend}
+            pending={messagesPending}
+          />
+        ) : null}
         {overview && route.key === "notes" && !notes && !notesError && !notesIssue ? (
           <LegacyMessage tone="neutral" text="Loading notes..." />
         ) : null}
@@ -2790,15 +2812,46 @@ function buddyGalaxyURL(coordinates: Coordinates): string {
   return gameRouteURL("/game/galaxy", galaxyTargetSearch(coordinates));
 }
 
-function MessagesTable({ messages }: { messages: GameMessages }) {
+function MessagesTable({
+  messages,
+  onDelete,
+  onSend,
+  pending
+}: {
+  messages: GameMessages;
+  onDelete: (deleteMode: string, messageIDs: number[], reportIDs: number[]) => void;
+  onSend: (targetPlayerID: number, subject: string, text: string) => void;
+  pending: boolean;
+}) {
   if (messages.action === "compose" && messages.compose) {
-    return <MessageComposeTable compose={messages.compose} />;
+    return <MessageComposeTable compose={messages.compose} onSend={onSend} pending={pending} />;
   }
+  const submitMessages = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const nativeEvent = event.nativeEvent as SubmitEvent;
+    const submitter = nativeEvent.submitter instanceof HTMLInputElement ? nativeEvent.submitter : null;
+    const deleteMode =
+      submitter?.dataset.deleteMode ?? (submitter?.name === "deletemessages" ? submitter.value : String(data.get("deletemessages") ?? ""));
+    const messageIDs: number[] = [];
+    const reportIDs: number[] = [];
+    for (const [key] of data) {
+      const deleteMatch = /^delmes(\d+)$/.exec(key);
+      if (deleteMatch) {
+        messageIDs.push(Number(deleteMatch[1]));
+      }
+      const reportMatch = /^sneak(\d+)$/.exec(key);
+      if (reportMatch) {
+        reportIDs.push(Number(reportMatch[1]));
+      }
+    }
+    onDelete(deleteMode, messageIDs, reportIDs);
+  };
   return (
     <form
       action={gameRouteURL("/game/messages", window.location.search)}
       method="post"
-      onSubmit={(event) => event.preventDefault()}
+      onSubmit={submitMessages}
     >
       <table className="legacy-overview-table legacy-messages-table" width={519}>
         <tbody>
@@ -2826,7 +2879,7 @@ function MessagesTable({ messages }: { messages: GameMessages }) {
               <React.Fragment key={message.id}>
                 <tr data-message-row={message.id}>
                   <th>
-                    <input name={`delmes[${message.id}]`} type="checkbox" value="y" />
+                    <input disabled={pending} name={`delmes${message.id}`} type="checkbox" value="on" />
                   </th>
                   <th className={message.unread ? "legacy-message-unread" : undefined}>{formatLegacyMessageDate(message.date)}</th>
                   <th>
@@ -2846,8 +2899,8 @@ function MessagesTable({ messages }: { messages: GameMessages }) {
                 {message.reportable ? (
                   <tr>
                     <th colSpan={4}>
-                      <input name={`sneak${message.id}`} type="checkbox" />
-                      <input type="submit" value="Report" />
+                      <input disabled={pending} name={`sneak${message.id}`} type="checkbox" />
+                      <input disabled={pending} type="submit" value="Report" />
                     </th>
                   </tr>
                 ) : null}
@@ -2860,8 +2913,13 @@ function MessagesTable({ messages }: { messages: GameMessages }) {
           )}
           <tr>
             <th colSpan={4}>
-              <input type="submit" value="Delete" />
-              <input type="submit" value="Delete all messages" />
+              <select defaultValue="deletemarked" disabled={pending} name="deletemessages">
+                <option value="deletemarked">delete marked messages</option>
+                <option value="deletenonmarked">delete unmarked messages</option>
+                <option value="deleteallshown">delete all shown messages</option>
+              </select>
+              <input disabled={pending} type="submit" value="Delete" />
+              <input data-delete-mode="deleteall" disabled={pending} type="submit" value="Delete all messages" />
             </th>
           </tr>
         </tbody>
@@ -2870,13 +2928,26 @@ function MessagesTable({ messages }: { messages: GameMessages }) {
   );
 }
 
-function MessageComposeTable({ compose }: { compose: GameMessageCompose }) {
+function MessageComposeTable({
+  compose,
+  onSend,
+  pending
+}: {
+  compose: GameMessageCompose;
+  onSend: (targetPlayerID: number, subject: string, text: string) => void;
+  pending: boolean;
+}) {
   const targetText = `${compose.target.name} [${formatCoordinates(compose.target.coordinates)}]`;
+  const submitMessage = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    onSend(compose.target.playerId, String(data.get("betreff") ?? ""), String(data.get("text") ?? ""));
+  };
   return (
     <form
       action={gameRouteURL("/game/messages", window.location.search)}
       method="post"
-      onSubmit={(event) => event.preventDefault()}
+      onSubmit={submitMessage}
     >
       <table className="legacy-overview-table legacy-messages-compose-table" width={519}>
         <tbody>
@@ -2894,18 +2965,18 @@ function MessageComposeTable({ compose }: { compose: GameMessageCompose }) {
           <tr>
             <th>Subject</th>
             <th>
-              <input defaultValue={compose.subject} maxLength={40} name="betreff" size={40} type="text" />
+              <input defaultValue={compose.subject} disabled={pending} maxLength={40} name="betreff" size={40} type="text" />
             </th>
           </tr>
           <tr>
             <th colSpan={2}>
-              <textarea cols={40} maxLength={compose.maxChars} name="text" rows={10} />
+              <textarea cols={40} disabled={pending} maxLength={compose.maxChars} name="text" rows={10} />
             </th>
           </tr>
           <tr>
             <th colSpan={2}>
               <input name="messageziel" type="hidden" value={compose.target.playerId} />
-              <input type="submit" value="Send" />
+              <input disabled={pending} type="submit" value="Send" />
             </th>
           </tr>
         </tbody>

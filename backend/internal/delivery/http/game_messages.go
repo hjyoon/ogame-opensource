@@ -12,6 +12,7 @@ import (
 type gameMessagesResponse struct {
 	Authenticated bool                       `json:"authenticated"`
 	Issues        []gameSessionIssueResponse `json:"issues"`
+	ActionIssue   *gameMessageIssueResponse  `json:"actionIssue,omitempty"`
 	Messages      *gameMessagesSummary       `json:"messages,omitempty"`
 }
 
@@ -47,7 +48,34 @@ type gameMessageTargetResponse struct {
 	Coordinates gameCoordinatesResponse `json:"coordinates"`
 }
 
+type gameMessagesMutationRequest struct {
+	Action         string `json:"action"`
+	TargetPlayerID int    `json:"targetPlayerId"`
+	Subject        string `json:"subject"`
+	Text           string `json:"text"`
+	DeleteMode     string `json:"deleteMode"`
+	MessageIDs     []int  `json:"messageIds"`
+	ReportIDs      []int  `json:"reportIds"`
+}
+
+type gameMessageIssueResponse struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 func (a app) handleGameMessages(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		a.handleGameMessagesGet(w, r)
+	case http.MethodPost:
+		a.handleGameMessagesPost(w, r)
+	default:
+		w.Header().Set("Allow", "GET, HEAD, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (a app) handleGameMessagesGet(w http.ResponseWriter, r *http.Request) {
 	if a.deps.GameMessages == nil {
 		http.Error(w, "game messages unavailable", http.StatusServiceUnavailable)
 		return
@@ -85,13 +113,53 @@ func (a app) handleGameMessages(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusUnauthorized
 	}
 
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(gameMessagesResponse{
-		Authenticated: result.Authenticated,
-		Issues:        toGameSessionIssueResponses(result.Issues),
-		Messages:      messages,
+	writeGameMessagesResponse(w, status, result, messages)
+}
+
+func (a app) handleGameMessagesPost(w http.ResponseWriter, r *http.Request) {
+	if a.deps.GameMessages == nil {
+		http.Error(w, "game messages unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	planetID, err := selectedPlanetID(r)
+	if err != nil {
+		http.Error(w, "invalid selected planet", http.StatusBadRequest)
+		return
+	}
+	var request gameMessagesMutationRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "invalid messages request", http.StatusBadRequest)
+		return
+	}
+
+	result, err := a.deps.GameMessages.MutateMessages(r.Context(), appgame.MessagesMutationCommand{
+		PublicSession:   r.URL.Query().Get("session"),
+		PrivateSessions: cookieMap(r),
+		RemoteAddr:      remoteIP(r.RemoteAddr),
+		PlanetID:        planetID,
+		Action:          request.Action,
+		TargetPlayerID:  request.TargetPlayerID,
+		Subject:         request.Subject,
+		Text:            request.Text,
+		DeleteMode:      request.DeleteMode,
+		MessageIDs:      request.MessageIDs,
+		ReportIDs:       request.ReportIDs,
 	})
+	if err != nil {
+		http.Error(w, "game messages unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	status := http.StatusOK
+	var messages *gameMessagesSummary
+	if result.Authenticated {
+		mapped := toGameMessagesSummary(result.Messages)
+		messages = &mapped
+	} else {
+		status = http.StatusUnauthorized
+	}
+	writeGameMessagesResponse(w, status, result, messages)
 }
 
 func selectedMessageTargetID(r *http.Request) (int, error) {
@@ -157,4 +225,22 @@ func toGameMessageComposeResponse(compose domaingame.MessageCompose) gameMessage
 		Subject:  compose.Subject,
 		MaxChars: compose.MaxChars,
 	}
+}
+
+func writeGameMessagesResponse(w http.ResponseWriter, status int, result appgame.MessagesResult, messages *gameMessagesSummary) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(gameMessagesResponse{
+		Authenticated: result.Authenticated,
+		Issues:        toGameSessionIssueResponses(result.Issues),
+		ActionIssue:   toGameMessageIssueResponse(result.ActionIssue),
+		Messages:      messages,
+	})
+}
+
+func toGameMessageIssueResponse(issue *domaingame.MessageActionIssue) *gameMessageIssueResponse {
+	if issue == nil {
+		return nil
+	}
+	return &gameMessageIssueResponse{Code: issue.Code, Message: issue.Message}
 }
