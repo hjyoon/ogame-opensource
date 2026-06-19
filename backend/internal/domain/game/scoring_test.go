@@ -33,3 +33,13 @@ func TestCalculatePlanetScoreIgnoresMissingAndNegativeUnits(t *testing.T) {
 		t.Fatalf("expected zero score, got %+v", score)
 	}
 }
+
+func TestBuildingScoreForLevelUsesLegacyPricePoints(t *testing.T) {
+	score, ok := BuildingScoreForLevel(BuildingMetalMine, 2)
+	if !ok || score != 112 {
+		t.Fatalf("unexpected building score: score=%d ok=%v", score, ok)
+	}
+	if _, ok := BuildingScoreForLevel(9999, 1); ok {
+		t.Fatal("unknown building should not have score")
+	}
+}

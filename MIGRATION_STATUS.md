@@ -31,7 +31,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - Registration writes legacy side effects and sends SMTP/MailHog welcome mail with activation link/password lines.
 - Activation clears `validatemd`, sets `validated=1`, copies `email` to `pemail`, redirects, and rejects link reuse.
 - Overview covers legacy `cp`, `lgn` activity, admin notice, header/menu/table layout parity work, rename/delete name rules, blockers, destroy markers, queue flush, stat/rank updates, and active restore.
-- Buildings layout matches legacy row spacing/image/action geometry; add/remove/demolish writes legacy queues.
+- Buildings layout matches legacy row geometry; add/remove/demolish/finish writes queues/stats.
 
 ## Verified QA
 
@@ -49,6 +49,6 @@ Full legacy PHP E2E was not run for this Go step. Keep PHP as oracle until each 
 
 - Close authenticated visual diff for statistics and remaining game-page nits before claiming parity.
 - Port remaining overview legacy actions.
-- Port building finish, research start/cancel, shipyard/defense orders, fleet actions, galaxy quick actions, reports/messages/alliance/admin/options/recovery/deletion/vacation/bans/permissions.
+- Port production accrual, research start/cancel, shipyard/defense orders, fleet actions, galaxy quick actions, reports/messages/alliance/admin/options/recovery/deletion/vacation/bans/permissions.
 - Convert legacy E2E cases into Go compatibility checks per migrated flow.
 - Run full legacy PHP E2E before declaring any game-flow migration equivalent.

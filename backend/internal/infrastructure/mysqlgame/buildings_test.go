@@ -211,6 +211,369 @@ func TestBuildingsRepositoryStartsNextDemolitionAfterCurrentCancel(t *testing.T)
 	}
 }
 
+func TestBuildingsRepositoryFinishesDueBuildQueue(t *testing.T) {
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{1.0, 0})},
+		{rows: fakeRowsFromValues(buildingQueueTaskValues(buildingQueueTask{TaskID: 8, OwnerID: 42, Type: queueTypeBuild, SubID: 7, ObjID: domaingame.BuildingMetalMine, Level: 1, Start: 2_000, End: 2_005, Prio: 20}))},
+		{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 7, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: domaingame.BuildingMetalMine, Level: 1, Start: 2_000, End: 2_005}))},
+		{rows: fakeRowsFromValues(buildingMutationPlanetRow(map[int]int{}))},
+		{rows: fakeRowsFromValues(buildingMutationUserRow(0, 0, nil))},
+		{rows: fakeRowsFromValues([]any{1.0, 0})},
+		{rows: fakeRowsFromValues()},
+	}}}
+	repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_006, 0) })
+
+	if err := repository.FinishDueBuildingQueues(context.Background(), 2_006); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execs) != 4 ||
+		!strings.Contains(runner.execs[0].sql, "UPDATE `ogame_planets` SET `1` = ?, fields = fields + ?") ||
+		runner.execs[0].args[0] != 1 || runner.execs[0].args[1] != 1 ||
+		!strings.Contains(runner.execs[1].sql, "DELETE FROM `ogame_queue` WHERE task_id = ?") ||
+		!strings.Contains(runner.execs[2].sql, "DELETE FROM `ogame_buildqueue` WHERE id = ?") ||
+		!strings.Contains(runner.execs[3].sql, "score1 = score1 + ?") ||
+		runner.execs[3].args[0] != int64(75) {
+		t.Fatalf("unexpected build finish execs: %+v", runner.execs)
+	}
+}
+
+func TestBuildingsRepositoryFinishesDueDemolitionQueue(t *testing.T) {
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{1.0, 0})},
+		{rows: fakeRowsFromValues(buildingQueueTaskValues(buildingQueueTask{TaskID: 8, OwnerID: 42, Type: queueTypeDemolish, SubID: 7, ObjID: domaingame.BuildingMetalMine, Level: 1, Start: 2_000, End: 2_005, Prio: 20}))},
+		{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 7, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: domaingame.BuildingMetalMine, Level: 1, Destroy: 1, Start: 2_000, End: 2_005}))},
+		{rows: fakeRowsFromValues(buildingMutationPlanetRow(map[int]int{domaingame.BuildingMetalMine: 2}))},
+		{rows: fakeRowsFromValues(buildingMutationUserRow(0, 0, nil))},
+		{rows: fakeRowsFromValues([]any{1.0, 0})},
+		{rows: fakeRowsFromValues()},
+	}}}
+	repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_006, 0) })
+
+	if err := repository.FinishDueBuildingQueues(context.Background(), 2_006); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execs) != 4 ||
+		!strings.Contains(runner.execs[0].sql, "UPDATE `ogame_planets` SET `1` = ?, fields = fields + ?") ||
+		runner.execs[0].args[0] != 1 || runner.execs[0].args[1] != -1 ||
+		!strings.Contains(runner.execs[3].sql, "score1 = score1 - ?") ||
+		runner.execs[3].args[0] != int64(112) {
+		t.Fatalf("unexpected demolition finish execs: %+v", runner.execs)
+	}
+}
+
+func TestBuildingsRepositoryFinishesSpecialBuildingFields(t *testing.T) {
+	tests := []struct {
+		name        string
+		techID      int
+		maxIncrease int
+	}{
+		{name: "terraformer", techID: domaingame.BuildingTerraformer, maxIncrease: 5},
+		{name: "lunar base", techID: domaingame.BuildingLunarBase, maxIncrease: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			planetType := domaingame.PlanetTypePlanet
+			if tt.techID == domaingame.BuildingLunarBase {
+				planetType = domaingame.PlanetTypeMoon
+			}
+			runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{1.0, 0})},
+				{rows: fakeRowsFromValues(buildingQueueTaskValues(buildingQueueTask{TaskID: 8, OwnerID: 42, Type: queueTypeBuild, SubID: 7, ObjID: tt.techID, Level: 1, End: 2_005, Prio: 20}))},
+				{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 7, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: tt.techID, Level: 1, End: 2_005}))},
+				{rows: fakeRowsFromValues(buildingMutationPlanetRowWithFields(map[int]int{}, planetType, 0, 163))},
+				{rows: fakeRowsFromValues(buildingMutationUserRow(0, 0, map[int]int{domaingame.ResearchEnergy: 12}))},
+				{rows: fakeRowsFromValues([]any{1.0, 0})},
+				{rows: fakeRowsFromValues()},
+			}}}
+			repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_006, 0) })
+
+			if err := repository.FinishDueBuildingQueues(context.Background(), 2_006); err != nil {
+				t.Fatal(err)
+			}
+			if len(runner.execs) != 4 ||
+				!strings.Contains(runner.execs[0].sql, "maxfields = maxfields + ?") ||
+				runner.execs[0].args[2] != tt.maxIncrease {
+				t.Fatalf("expected maxfields increase for %s, got %+v", tt.name, runner.execs)
+			}
+		})
+	}
+}
+
+func TestBuildingsRepositoryFinishesQueueCleanupBranches(t *testing.T) {
+	tests := []struct {
+		name    string
+		results []fakeQueryResult
+		wantSQL string
+	}{
+		{
+			name: "missing build queue row removes global queue",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{1.0, 0})},
+				{rows: fakeRowsFromValues(buildingQueueTaskValues(buildingQueueTask{TaskID: 8, OwnerID: 42, Type: queueTypeBuild, SubID: 7, ObjID: domaingame.BuildingMetalMine, Level: 1, End: 2_005, Prio: 20}))},
+				{rows: fakeRowsFromValues()},
+			},
+			wantSQL: "DELETE FROM `ogame_queue` WHERE task_id = ?",
+		},
+		{
+			name: "already applied build removes both queue rows",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{1.0, 0})},
+				{rows: fakeRowsFromValues(buildingQueueTaskValues(buildingQueueTask{TaskID: 8, OwnerID: 42, Type: queueTypeBuild, SubID: 7, ObjID: domaingame.BuildingMetalMine, Level: 1, End: 2_005, Prio: 20}))},
+				{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 7, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: domaingame.BuildingMetalMine, Level: 1, End: 2_005}))},
+				{rows: fakeRowsFromValues(buildingMutationPlanetRow(map[int]int{domaingame.BuildingMetalMine: 1}))},
+			},
+			wantSQL: "DELETE FROM `ogame_buildqueue` WHERE id = ?",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: tt.results}}
+			repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_006, 0) })
+
+			if err := repository.FinishDueBuildingQueues(context.Background(), 2_006); err != nil {
+				t.Fatal(err)
+			}
+			if len(runner.execs) == 0 || !strings.Contains(runner.execs[len(runner.execs)-1].sql, tt.wantSQL) {
+				t.Fatalf("expected final cleanup SQL %q, got %+v", tt.wantSQL, runner.execs)
+			}
+		})
+	}
+}
+
+func TestBuildingsRepositoryGetBuildingsFinishesDueQueuesFirst(t *testing.T) {
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{1.0, 0})},
+		{rows: fakeRowsFromValues()},
+	},
+		append(shipyardOverviewResults(),
+			fakeQueryResult{rows: fakeRowsFromValues(buildingLevelRow(map[int]int{}))},
+			fakeQueryResult{rows: fakeRowsFromValues(researchLevelRow(map[int]int{}))},
+			fakeQueryResult{rows: fakeRowsFromValues([]any{1.0})},
+		)...,
+	)}}
+	repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_006, 0) })
+
+	if _, err := repository.GetBuildings(context.Background(), appgame.BuildingsQuery{PlayerID: 42, PlanetID: 99}); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.calls) < 2 ||
+		!strings.Contains(runner.calls[0].sql, "SELECT speed, freeze") ||
+		!strings.Contains(runner.calls[1].sql, "FROM `ogame_queue` WHERE end <= ?") {
+		t.Fatalf("expected due queues to be checked before buildings read, got %+v", runner.calls)
+	}
+}
+
+func TestBuildingsRepositoryGetBuildingsReturnsFinishError(t *testing.T) {
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{err: errors.New("finish before read failed")},
+	}}}
+	repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+
+	if _, err := repository.GetBuildings(context.Background(), appgame.BuildingsQuery{PlayerID: 42, PlanetID: 99}); err == nil || !strings.Contains(err.Error(), "finish before read failed") {
+		t.Fatalf("expected finish error before read, got %v", err)
+	}
+}
+
+func TestBuildingsRepositoryFinishDueQueueBranches(t *testing.T) {
+	if err := NewBuildingsRepositoryWithQueryer(&fakeQueryer{}, "ogame_").FinishDueBuildingQueues(context.Background(), 2_006); err == nil || !strings.Contains(err.Error(), "updater") {
+		t.Fatalf("expected missing updater error, got %v", err)
+	}
+	repository := NewBuildingsRepositoryWithRunner(&fakeBuildingsRunner{}, &fakeBuildingsRunner{}, "bad-prefix_", time.Now)
+	if err := repository.FinishDueBuildingQueues(context.Background(), 2_006); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected prefix error, got %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		results []fakeQueryResult
+		want    string
+	}{
+		{
+			name:    "frozen universe skips queue query",
+			results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1.0, 1})}},
+		},
+		{
+			name: "due queue query error",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{1.0, 0})},
+				{err: errors.New("due query failed")},
+			},
+			want: "due query failed",
+		},
+		{
+			name: "due queue scan error",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{1.0, 0})},
+				{rows: fakeRowsFromValues([]any{"bad"})},
+			},
+			want: "unexpected scan destination count",
+		},
+		{
+			name: "due queue rows error",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{1.0, 0})},
+				{rows: fakeRowsFromValuesWithErr(errors.New("due rows failed"), buildingQueueTaskValues(buildingQueueTask{TaskID: 8}))},
+			},
+			want: "due rows failed",
+		},
+		{
+			name: "task finish error",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{1.0, 0})},
+				{rows: fakeRowsFromValues(buildingQueueTaskValues(buildingQueueTask{TaskID: 8, OwnerID: 42, Type: queueTypeBuild, SubID: 7, ObjID: domaingame.BuildingMetalMine, Level: 1, End: 2_005, Prio: 20}))},
+				{err: errors.New("task finish failed")},
+			},
+			want: "task finish failed",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: tt.results}}
+			repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+			err := repository.FinishDueBuildingQueues(context.Background(), 2_006)
+			if tt.want != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.want) {
+					t.Fatalf("expected %q error, got %v", tt.want, err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if tt.want == "" && len(runner.calls) != 1 {
+				t.Fatalf("expected frozen universe to skip due queue query, got %+v", runner.calls)
+			}
+		})
+	}
+}
+
+func TestBuildingsRepositoryFinishBuildingTaskBranches(t *testing.T) {
+	task := buildingQueueTask{TaskID: 8, OwnerID: 42, Type: queueTypeBuild, SubID: 7, ObjID: domaingame.BuildingMetalMine, Level: 1, End: 2_005}
+	tests := []struct {
+		name     string
+		results  []fakeQueryResult
+		execErrs []error
+		want     string
+		wantExec int
+	}{
+		{
+			name:     "buildqueue query error",
+			results:  []fakeQueryResult{{err: errors.New("buildqueue id failed")}},
+			want:     "buildqueue id failed",
+			wantExec: 0,
+		},
+		{
+			name: "buildqueue scan error",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{"bad"})},
+			},
+			want:     "unexpected scan destination count",
+			wantExec: 0,
+		},
+		{
+			name: "buildqueue rows error",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValuesWithErr(errors.New("buildqueue id rows failed"), buildQueueRowValues(buildQueueRow{ID: 7}))},
+			},
+			want:     "buildqueue id rows failed",
+			wantExec: 0,
+		},
+		{
+			name: "planet missing cleans stale rows",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 7, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: domaingame.BuildingMetalMine, Level: 1}))},
+				{rows: fakeRowsFromValues()},
+			},
+			wantExec: 2,
+		},
+		{
+			name: "planet query error",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 7, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: domaingame.BuildingMetalMine, Level: 1}))},
+				{err: errors.New("finish planet failed")},
+			},
+			want:     "finish planet failed",
+			wantExec: 0,
+		},
+		{
+			name: "completion update error",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 7, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: domaingame.BuildingMetalMine, Level: 1}))},
+				{rows: fakeRowsFromValues(buildingMutationPlanetRow(map[int]int{}))},
+			},
+			execErrs: []error{errors.New("completion update failed")},
+			want:     "completion update failed",
+			wantExec: 1,
+		},
+		{
+			name: "global queue delete error",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 7, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: domaingame.BuildingMetalMine, Level: 1}))},
+				{rows: fakeRowsFromValues(buildingMutationPlanetRow(map[int]int{}))},
+			},
+			execErrs: []error{nil, errors.New("global delete failed")},
+			want:     "global delete failed",
+			wantExec: 2,
+		},
+		{
+			name: "buildqueue delete error",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 7, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: domaingame.BuildingMetalMine, Level: 1}))},
+				{rows: fakeRowsFromValues(buildingMutationPlanetRow(map[int]int{}))},
+			},
+			execErrs: []error{nil, nil, errors.New("buildqueue delete failed")},
+			want:     "buildqueue delete failed",
+			wantExec: 3,
+		},
+		{
+			name: "stats update error",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 7, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: domaingame.BuildingMetalMine, Level: 1}))},
+				{rows: fakeRowsFromValues(buildingMutationPlanetRow(map[int]int{}))},
+			},
+			execErrs: []error{nil, nil, nil, errors.New("stats failed")},
+			want:     "stats failed",
+			wantExec: 4,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: tt.results}, execErrs: tt.execErrs}
+			repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+			err := repository.finishBuildingQueueTask(context.Background(), "`ogame_users`", "`ogame_planets`", "`ogame_buildqueue`", "`ogame_queue`", task)
+			if tt.want != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.want) {
+					t.Fatalf("expected %q error, got %v", tt.want, err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if len(runner.execs) != tt.wantExec {
+				t.Fatalf("expected %d execs, got %+v", tt.wantExec, runner.execs)
+			}
+		})
+	}
+}
+
+func TestBuildingsRepositoryHighLevelFinishRecalculatesRanks(t *testing.T) {
+	task := buildingQueueTask{TaskID: 8, OwnerID: 42, Type: queueTypeBuild, SubID: 7, ObjID: domaingame.BuildingMetalMine, Level: 11, End: 2_005}
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 7, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: domaingame.BuildingMetalMine, Level: 11}))},
+		{rows: fakeRowsFromValues(buildingMutationPlanetRow(map[int]int{domaingame.BuildingMetalMine: 10}))},
+		{rows: fakeRowsFromValues(buildingMutationUserRow(0, 0, nil))},
+		{rows: fakeRowsFromValues([]any{1.0, 0})},
+		{rows: fakeRowsFromValues()},
+	}}}
+	repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+
+	if err := repository.finishBuildingQueueTask(context.Background(), "`ogame_users`", "`ogame_planets`", "`ogame_buildqueue`", "`ogame_queue`", task); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execs) != 12 ||
+		!strings.Contains(runner.execs[4].sql, "UPDATE `ogame_users` SET score1 = -1") ||
+		!strings.Contains(runner.execs[11].sql, "UPDATE `ogame_users` SET place1 = 0") {
+		t.Fatalf("expected high-level completion to recalculate ranks, got %+v", runner.execs)
+	}
+}
+
 func TestBuildingsRepositoryMutationIssuesAndErrors(t *testing.T) {
 	if _, err := NewBuildingsRepositoryWithQueryer(&fakeQueryer{}, "ogame_").MutateBuildings(context.Background(), appgame.BuildingsMutationQuery{}); err == nil || !strings.Contains(err.Error(), "updater") {
 		t.Fatalf("expected missing updater error, got %v", err)
@@ -1222,6 +1585,10 @@ func buildingMutationPlanetRowWithFields(values map[int]int, planetType int, fie
 
 func buildQueueRowValues(row buildQueueRow) []any {
 	return []any{row.ID, row.OwnerID, row.PlanetID, row.ListID, row.TechID, row.Level, row.Destroy, row.Start, row.End}
+}
+
+func buildingQueueTaskValues(row buildingQueueTask) []any {
+	return []any{row.TaskID, row.OwnerID, row.Type, row.SubID, row.ObjID, row.Level, row.Start, row.End, row.Prio, row.Freeze, row.Frozen}
 }
 
 type fakeBuildingsRunner struct {

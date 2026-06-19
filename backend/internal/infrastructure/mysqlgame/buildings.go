@@ -19,6 +19,8 @@ type BuildingsRepository struct {
 	now     func() time.Time
 }
 
+const buildQueueBatch = 16
+
 func NewBuildingsRepository(db *sql.DB, prefix string) BuildingsRepository {
 	runner := SQLQueryer{DB: db}
 	return BuildingsRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now}
@@ -47,6 +49,11 @@ func (r BuildingsRepository) GetBuildings(ctx context.Context, query appgame.Bui
 	planetsTable, err := tableName(r.prefix, "planets")
 	if err != nil {
 		return domaingame.Buildings{}, err
+	}
+	if r.execer != nil {
+		if err := r.FinishDueBuildingQueues(ctx, int(r.now().Unix())); err != nil {
+			return domaingame.Buildings{}, err
+		}
 	}
 
 	overviewRepository := NewOverviewRepositoryWithRunner(r.queryer, r.execer, r.prefix)
@@ -273,9 +280,62 @@ type buildQueueRow struct {
 	End      int
 }
 
+type buildingQueueTask struct {
+	TaskID  int
+	OwnerID int
+	Type    string
+	SubID   int
+	ObjID   int
+	Level   int
+	Start   int
+	End     int
+	Prio    int
+	Freeze  int
+	Frozen  int
+}
+
 type buildingUniverseConfig struct {
 	Speed  float64
 	Frozen bool
+}
+
+func (r BuildingsRepository) FinishDueBuildingQueues(ctx context.Context, until int) error {
+	if r.execer == nil {
+		return errors.New("building queue updater unavailable")
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return err
+	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return err
+	}
+	buildQueueTable, err := tableName(r.prefix, "buildqueue")
+	if err != nil {
+		return err
+	}
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return err
+	}
+	config, err := r.loadBuildingUniverseConfig(ctx)
+	if err != nil {
+		return err
+	}
+	if config.Frozen {
+		return nil
+	}
+	tasks, err := r.loadDueBuildingQueueTasks(ctx, queueTable, until, buildQueueBatch)
+	if err != nil {
+		return err
+	}
+	for _, task := range tasks {
+		if err := r.finishBuildingQueueTask(ctx, usersTable, planetsTable, buildQueueTable, queueTable, task); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r BuildingsRepository) enqueueBuilding(ctx context.Context, usersTable string, planetsTable string, buildQueueTable string, queueTable string, playerID int, planetID int, techID int, destroy bool, now int) (*domaingame.BuildingsActionIssue, error) {
@@ -456,6 +516,59 @@ func (r BuildingsRepository) startNextBuildQueue(ctx context.Context, planetsTab
 	}
 }
 
+func (r BuildingsRepository) finishBuildingQueueTask(ctx context.Context, usersTable string, planetsTable string, buildQueueTable string, queueTable string, task buildingQueueTask) error {
+	row, err := r.loadBuildQueueRowByID(ctx, buildQueueTable, task.SubID)
+	if err != nil {
+		return err
+	}
+	if row == nil {
+		return r.removeGlobalQueue(ctx, queueTable, task.TaskID)
+	}
+	planet, err := r.loadBuildingMutationPlanet(ctx, planetsTable, task.OwnerID, row.PlanetID)
+	if err != nil {
+		return err
+	}
+	if planet.ID == 0 {
+		if err := r.removeGlobalQueue(ctx, queueTable, task.TaskID); err != nil {
+			return err
+		}
+		return r.removeBuildQueueRow(ctx, buildQueueTable, row.ID)
+	}
+	demolish := task.Type == queueTypeDemolish
+	currentLevel := planet.Levels[task.ObjID]
+	if (!demolish && currentLevel >= task.Level) || (demolish && currentLevel <= task.Level) {
+		if err := r.removeGlobalQueue(ctx, queueTable, task.TaskID); err != nil {
+			return err
+		}
+		return r.removeBuildQueueRow(ctx, buildQueueTable, row.ID)
+	}
+	if err := r.applyBuildingQueueCompletion(ctx, planetsTable, task, row.PlanetID, demolish); err != nil {
+		return err
+	}
+	if err := r.removeGlobalQueue(ctx, queueTable, task.TaskID); err != nil {
+		return err
+	}
+	if err := r.removeBuildQueueRow(ctx, buildQueueTable, row.ID); err != nil {
+		return err
+	}
+	pointsLevel := task.Level
+	if demolish {
+		pointsLevel = task.Level + 1
+	}
+	points, ok := domaingame.BuildingScoreForLevel(task.ObjID, pointsLevel)
+	if ok {
+		if err := r.adjustBuildingStats(ctx, usersTable, task.OwnerID, points, !demolish); err != nil {
+			return err
+		}
+	}
+	if task.Level > 10 {
+		if err := (OverviewRepository{execer: r.execer}).recalcRanks(ctx, usersTable); err != nil {
+			return err
+		}
+	}
+	return r.startNextBuildQueue(ctx, planetsTable, buildQueueTable, queueTable, task.OwnerID, row.PlanetID, task.End)
+}
+
 func (r BuildingsRepository) validateBuildingOrder(ctx context.Context, queueTable string, user buildingMutationUser, planet buildingMutationPlanet, techID int, level int, destroy bool, requireResources bool, speed float64) (*domaingame.BuildingsActionIssue, domaingame.BuildingCost, int, error) {
 	if destroy && level < 0 {
 		return domaingame.BuildingActionIssue(domaingame.BuildingsIssueNoSuchBuilding), domaingame.BuildingCost{}, 0, nil
@@ -634,6 +747,58 @@ func (r BuildingsRepository) loadBuildQueueRow(ctx context.Context, buildQueueTa
 	return &row, nil
 }
 
+func (r BuildingsRepository) loadBuildQueueRowByID(ctx context.Context, buildQueueTable string, buildQueueID int) (*buildQueueRow, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT id, owner_id, planet_id, list_id, tech_id, level, destroy, start, end FROM %s WHERE id = ? LIMIT 1", buildQueueTable), buildQueueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+	var row buildQueueRow
+	if err := rows.Scan(&row.ID, &row.OwnerID, &row.PlanetID, &row.ListID, &row.TechID, &row.Level, &row.Destroy, &row.Start, &row.End); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+func (r BuildingsRepository) loadDueBuildingQueueTasks(ctx context.Context, queueTable string, until int, limit int) ([]buildingQueueTask, error) {
+	if limit <= 0 {
+		limit = buildQueueBatch
+	}
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT task_id, owner_id, type, sub_id, obj_id, level, start, end, prio, freeze, frozen FROM %s WHERE end <= ? AND freeze = 0 AND (type = ? OR type = ?) ORDER BY end ASC, prio DESC LIMIT ?", queueTable),
+		until,
+		queueTypeBuild,
+		queueTypeDemolish,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	tasks := []buildingQueueTask{}
+	for rows.Next() {
+		var task buildingQueueTask
+		if err := rows.Scan(&task.TaskID, &task.OwnerID, &task.Type, &task.SubID, &task.ObjID, &task.Level, &task.Start, &task.End, &task.Prio, &task.Freeze, &task.Frozen); err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return tasks, nil
+}
+
 func (r BuildingsRepository) buildingBlocksOnBusyQueue(ctx context.Context, queueTable string, techID int, planetID int, playerID int) (bool, error) {
 	switch techID {
 	case domaingame.BuildingResearchLab:
@@ -786,6 +951,48 @@ func (r BuildingsRepository) removeBuildQueueRow(ctx context.Context, buildQueue
 
 func (r BuildingsRepository) updateBuildQueueTiming(ctx context.Context, buildQueueTable string, buildQueueID int, start int, end int) error {
 	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET start = ?, end = ? WHERE id = ?", buildQueueTable), start, end, buildQueueID)
+	return err
+}
+
+func (r BuildingsRepository) applyBuildingQueueCompletion(ctx context.Context, planetsTable string, task buildingQueueTask, planetID int, demolish bool) error {
+	fieldDelta := 1
+	if demolish {
+		fieldDelta = -1
+	}
+	assignments := fmt.Sprintf("`%d` = ?, fields = fields + ?", task.ObjID)
+	args := []any{task.Level, fieldDelta}
+	if !demolish {
+		switch task.ObjID {
+		case domaingame.BuildingTerraformer:
+			assignments += ", maxfields = maxfields + ?"
+			args = append(args, 5)
+		case domaingame.BuildingLunarBase:
+			assignments += ", maxfields = maxfields + ?"
+			args = append(args, 3)
+		}
+	}
+	args = append(args, planetID, task.OwnerID)
+	_, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET %s WHERE planet_id = ? AND owner_id = ? LIMIT 1", planetsTable, assignments),
+		args...,
+	)
+	return err
+}
+
+func (r BuildingsRepository) adjustBuildingStats(ctx context.Context, usersTable string, playerID int, points int64, add bool) error {
+	operator := "+"
+	if !add {
+		operator = "-"
+	}
+	_, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET score1 = score1 %s ?, score2 = score2 %s ?, score3 = score3 %s ? WHERE player_id = ? AND banned = 0 AND admin = 0", usersTable, operator, operator, operator),
+		points,
+		int64(0),
+		int64(0),
+		playerID,
+	)
 	return err
 }
 
