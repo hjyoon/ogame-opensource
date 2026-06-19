@@ -176,6 +176,7 @@ async function assertLoginFormRedirectsToGame(page: Page, fixture: LoginFixture)
   await page.waitForFunction(() => window.location.pathname === "/game/overview" && window.location.search.includes("session="), undefined, {
     timeout: 10_000
   });
+  await page.locator(".legacy-overview-main-table").first().waitFor({ timeout: 10_000 });
   await record("login form redirects directly to game", async () => {
     const state = await gameShellState(page, "login-form-submit", "Overview");
     return {
@@ -281,6 +282,8 @@ async function assertGameClientNavigation(
     await page.locator(".legacy-search-head-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Notes") {
     await page.locator(".legacy-notes-table").first().waitFor({ timeout: 10_000 });
+  } else if (expectedMenuLabel === "Overview") {
+    await page.locator(".legacy-overview-main-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel !== "Overview") {
     await page.waitForFunction(() => document.body.textContent?.includes("queued for React and Go migration"), undefined, {
       timeout: 5_000
@@ -357,7 +360,7 @@ async function assertGameProgrammaticNavigation(page: Page, name: string, expect
   );
   await page.waitForFunction((pathname) => window.location.pathname === pathname, expectedPathname, { timeout: 5_000 });
   if (expectedMenuLabel === "Overview") {
-    await page.locator(".legacy-overview-table").first().waitFor({ timeout: 10_000 });
+    await page.locator(".legacy-overview-main-table").first().waitFor({ timeout: 10_000 });
   }
   await record(name, async () => {
     const state = await gameShellState(page, marker, expectedMenuLabel);

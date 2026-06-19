@@ -957,6 +957,14 @@ const legacyMenuEntries: LegacyMenuEntry[] = [
   { type: "route", key: "logout" }
 ];
 
+function LegacyCenter({ children }: { children: React.ReactNode }) {
+  return React.createElement("center", null, children);
+}
+
+function LegacyFont({ children, color }: { children: React.ReactNode; color?: string }) {
+  return React.createElement("font", color ? ({ color } as React.HTMLAttributes<HTMLElement> & { color: string }) : null, children);
+}
+
 export function LegacyGameOverview({
   status,
   error,
@@ -1106,9 +1114,9 @@ export function LegacyGameOverview({
       }
     >
       {hasHeader ? (
-        <header className="legacy-header-top" id="header_top">
-          {overview ? <LegacyResourceHeader overview={overview} /> : <div className="legacy-header-placeholder">OGame</div>}
-        </header>
+        <div className="legacy-header-top" id="header_top">
+          <LegacyCenter>{overview ? <LegacyResourceHeader overview={overview} /> : <div className="legacy-header-placeholder">OGame</div>}</LegacyCenter>
+        </div>
       ) : null}
       {hasMenu ? <LegacyLeftMenu activeRoute={route} /> : null}
       {hasHeader && overview && route.key === "overview" && overview.messages && overview.messages.length > 0 ? (
@@ -1347,7 +1355,7 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
     <table className="legacy-header-table header">
       <tbody>
         <tr className="header">
-          <td className="legacy-header-cell header">
+          <td className="legacy-header-cell header" style={{ width: 5 }}>
             <table className="legacy-header-table header">
               <tbody>
                 <tr className="header">
@@ -1357,6 +1365,7 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
                   <td className="legacy-header-cell header">
                     <select
                       aria-label="Planet selector"
+                      size={1}
                       onChange={(event) => {
                         window.history.pushState({}, "", planetHref(Number(event.currentTarget.value)));
                         window.dispatchEvent(new PopStateEvent("popstate"));
@@ -1365,7 +1374,7 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
                     >
                       {overview.planetSwitcher.map((item) => (
                         <option key={item.id} value={item.id}>
-                          {item.name} [{formatCoordinates(item.coordinates)}]
+                          {item.name}  [{formatCoordinates(item.coordinates)}]
                         </option>
                       ))}
                     </select>
@@ -1379,17 +1388,23 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
               <tbody>
                 <tr className="header">
                   {resources.map((resource) => (
-                    <td className="legacy-header-cell header" key={resource.name} width={85}>
-                      <img alt="" height={22} src={resource.img} width={42} />
+                    <td align="center" className="legacy-header-cell header" key={resource.name} width={85}>
+                      {resource.name === "Dark Matter" ? (
+                        <a href={gameRouteURL("/game/merchant", window.location.search)}>
+                          <img alt="" height={22} src={resource.img} title="Dark Matter" width={42} />
+                        </a>
+                      ) : (
+                        <img alt="" height={22} src={resource.img} width={42} />
+                      )}
                     </td>
                   ))}
                 </tr>
                 <tr className="header">
                   {resources.map((resource) => (
-                    <td className="legacy-header-cell legacy-resource-name header" key={resource.name} width={85}>
+                    <td align="center" className="legacy-header-cell legacy-resource-name header" key={resource.name} width={85}>
                       <i>
                         <b>
-                          <span className="legacy-resource-label">{resource.name}</span>
+                          <LegacyFont color="#ffffff">{resource.name}</LegacyFont>
                         </b>
                       </i>
                     </td>
@@ -1397,10 +1412,10 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
                 </tr>
                 <tr className="header">
                   {resources.map((resource) => (
-                    <td className="legacy-header-cell header" key={resource.name} width={90}>
-                      <span style={resource.capacity !== undefined && resource.value >= resource.capacity ? { color: "#ff0000" } : undefined}>
+                    <td align="center" className="legacy-header-cell header" key={resource.name} width={90}>
+                      <LegacyFont color={resource.capacity !== undefined && resource.value >= resource.capacity ? "#ff0000" : undefined}>
                         {formatLegacyNumber(resource.value)}
-                      </span>
+                      </LegacyFont>
                       {resource.secondary !== undefined ? `/${formatLegacyNumber(resource.secondary)}` : null}
                     </td>
                   ))}
@@ -1413,11 +1428,11 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
               <tbody>
                 <tr className="header">
                   {officers.map((officer) => (
-                    <td className="legacy-header-cell header" key={officer}>
+                    <td align="center" className="legacy-header-cell header" key={officer} width={35}>
                       <img alt="" height={32} src={`${gameImageBase}/${officer}_ikon_un.gif`} width={32} />
                     </td>
                   ))}
-                  <td className="legacy-header-cell header" />
+                  <td align="center" className="legacy-header-cell header" />
                 </tr>
               </tbody>
             </table>
@@ -4933,14 +4948,14 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
           <th colSpan={2}>
             <img alt="" height={200} src={planetImagePath(planet, false)} width={200} />
             <br />
-            <div className="legacy-center">{overviewBuildQueueText(planet.buildQueue, true)}</div>
+            <LegacyCenter>{overviewBuildQueueText(planet.buildQueue, true)}</LegacyCenter>
             <br />
           </th>
           <th className="legacy-s s">
             <table className="legacy-planet-list s">
               <tbody>
                 {otherPlanets.length === 0
-                  ? null
+                  ? <tr />
                   : rowsOfTwo(otherPlanets).map((row, index) => (
                     <tr key={index}>
                       {row.map((item) => (
@@ -4957,7 +4972,7 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
                             />
                           </a>
                           <br />
-                          <div className="legacy-center">{overviewBuildQueueText(item.buildQueue, false)}</div>
+                          <LegacyCenter>{overviewBuildQueueText(item.buildQueue, false)}</LegacyCenter>
                         </th>
                       ))}
                     </tr>
@@ -4967,19 +4982,20 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
           </th>
         </tr>
         <tr>
-          <th>Diameter</th>
+          <th> Diameter</th>
           <th colSpan={3}>
-            {formatLegacyNumber(planet.diameter)} км ({planet.fields} / {planet.maxFields} fields)
+            {formatLegacyNumber(planet.diameter)} км {"     ("}
+            <a title="Developed fields">{planet.fields} </a> / <a title="max. developed fields">{planet.maxFields} </a> fields){"   "}
           </th>
         </tr>
         <tr>
-          <th>Temperature</th>
+          <th> Temperature </th>
           <th colSpan={3}>
             approx. {planet.temperature}°C to {planet.temperature + 40}°C
           </th>
         </tr>
         <tr>
-          <th>Position</th>
+          <th> Position</th>
           <th colSpan={3}>
             <a className="legacy-overview-position-link" href={galaxyHref(planet.coordinates)}>
               [{formatCoordinates(planet.coordinates)}]
@@ -4987,7 +5003,7 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
           </th>
         </tr>
         <tr>
-          <th>Points</th>
+          <th> Points</th>
           <th colSpan={3}>
             {formatLegacyNumber(overview.score.points)} (Rank{" "}
             <a className="legacy-overview-rank-link" href={overviewRankHref(overview.score.rank)}>
