@@ -62,12 +62,15 @@ func TestBuildFleetMarksAttackUnionAvailability(t *testing.T) {
 
 func TestBuildFleetDispatchDraftNormalizesLegacySelection(t *testing.T) {
 	fleet := BuildFleet(Overview{
-		CurrentPlanet: PlanetOverview{Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 3}},
+		CurrentPlanet: PlanetOverview{
+			Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Resources:   Resources{Metal: 1200.9, Crystal: 500, Deuterium: 99},
+		},
 	}, FleetCounts{
 		FleetSmallCargo:     4,
 		FleetEspionageProbe: 5,
 		FleetSolarSatellite: 9,
-	}, ResearchLevels{ResearchCombustionDrive: 1}, nil, false, false)
+	}, ResearchLevels{ResearchCombustionDrive: 1, ResearchExpedition: 4}, nil, false, false)
 
 	draft := BuildFleetDispatchDraft(fleet, FleetDispatchDraftInput{
 		Ships: map[int]int{
@@ -91,10 +94,71 @@ func TestBuildFleetDispatchDraftNormalizesLegacySelection(t *testing.T) {
 	if draft.Cargo != 4*fleetShipCargo(FleetSmallCargo) {
 		t.Fatalf("probe cargo and satellites should be excluded from legacy cargo summary, got %d", draft.Cargo)
 	}
+	if len(draft.MissionOptions) != 3 || !draft.MissionOptions[2].Selected || draft.MissionOptions[2].ID != FleetMissionSpy {
+		t.Fatalf("expected spy to be selected from legacy mission options, got %+v", draft.MissionOptions)
+	}
+	if len(draft.Resources) != 3 || draft.Resources[0].Available != 1200 || draft.Resources[2].Available != 99 {
+		t.Fatalf("expected current planet transportable resources, got %+v", draft.Resources)
+	}
 
 	empty := BuildFleetDispatchDraft(fleet, FleetDispatchDraftInput{Ships: map[int]int{}, Speed: -1})
-	if empty.HasSelection || empty.Speed != 10 || empty.Target != fleet.CurrentPlanet.Coordinates || empty.TargetType != GamePlanetTypePlanet {
+	if empty.HasSelection || empty.Speed != 10 || empty.Target != fleet.CurrentPlanet.Coordinates || empty.TargetType != GamePlanetTypePlanet || empty.Mission != FleetMissionTransport {
 		t.Fatalf("unexpected empty dispatch draft defaults: %+v", empty)
+	}
+}
+
+func TestBuildFleetDispatchDraftMissionOptionsMatchLegacyEdges(t *testing.T) {
+	base := BuildFleet(Overview{
+		CurrentPlanet: PlanetOverview{Type: PlanetTypePlanet, Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 3}},
+	}, FleetCounts{
+		FleetSmallCargo: 1,
+		FleetRecycler:   1,
+		FleetColonyShip: 1,
+		FleetDeathstar:  1,
+	}, ResearchLevels{ResearchCombustionDrive: 1, ResearchImpulseDrive: 3, ResearchHyperspaceDrive: 1, ResearchExpedition: 9}, nil, false, false)
+
+	expedition := BuildFleetDispatchDraft(base, FleetDispatchDraftInput{
+		Ships:  map[int]int{FleetSmallCargo: 1},
+		Target: Coordinates{Galaxy: 1, System: 2, Position: GalaxyFarSpace},
+	})
+	if len(expedition.MissionOptions) != 1 || expedition.MissionOptions[0].ID != FleetMissionExpedition || expedition.MissionOptions[0].Warning == "" || len(expedition.ExpeditionHours) != 3 {
+		t.Fatalf("unexpected expedition missions: %+v hours=%+v", expedition.MissionOptions, expedition.ExpeditionHours)
+	}
+
+	debris := BuildFleetDispatchDraft(base, FleetDispatchDraftInput{
+		Ships:      map[int]int{FleetRecycler: 1},
+		Target:     Coordinates{Galaxy: 1, System: 2, Position: 4},
+		TargetType: GamePlanetTypeDebris,
+	})
+	if len(debris.MissionOptions) != 1 || debris.MissionOptions[0].ID != FleetMissionRecycle {
+		t.Fatalf("unexpected debris missions with recycler: %+v", debris.MissionOptions)
+	}
+
+	noRecycler := BuildFleetDispatchDraft(base, FleetDispatchDraftInput{
+		Ships:      map[int]int{FleetSmallCargo: 1},
+		Target:     Coordinates{Galaxy: 1, System: 2, Position: 4},
+		TargetType: GamePlanetTypeDebris,
+	})
+	if len(noRecycler.MissionOptions) != 0 {
+		t.Fatalf("debris without recycler should have no suitable missions: %+v", noRecycler.MissionOptions)
+	}
+
+	moon := BuildFleetDispatchDraft(base, FleetDispatchDraftInput{
+		Ships:      map[int]int{FleetDeathstar: 1},
+		Target:     Coordinates{Galaxy: 1, System: 2, Position: 4},
+		TargetType: GamePlanetTypeMoon,
+	})
+	if len(moon.MissionOptions) != 3 || moon.MissionOptions[2].ID != FleetMissionDestroy {
+		t.Fatalf("moon with deathstar should include destroy: %+v", moon.MissionOptions)
+	}
+
+	colony := BuildFleetDispatchDraft(base, FleetDispatchDraftInput{
+		Ships:      map[int]int{FleetColonyShip: 1},
+		Target:     Coordinates{Galaxy: 1, System: 2, Position: 5},
+		TargetType: GamePlanetTypePlanet,
+	})
+	if len(colony.MissionOptions) != 3 || colony.MissionOptions[2].ID != FleetMissionColonize {
+		t.Fatalf("planet target with colony ship should include colonize draft option: %+v", colony.MissionOptions)
 	}
 }
 

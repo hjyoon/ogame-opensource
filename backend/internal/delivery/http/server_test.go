@@ -1941,6 +1941,16 @@ func TestGameFleetEndpointPreparesDispatchDraft(t *testing.T) {
 				Speed:        9,
 				Cargo:        15000,
 				HasSelection: true,
+				MissionOptions: []domaingame.FleetMissionOption{{
+					ID:       domaingame.FleetMissionTransport,
+					Name:     "Transport",
+					Selected: true,
+				}},
+				Resources: []domaingame.FleetResourceLoad{{
+					ID:        domaingame.ResourceMetal,
+					Name:      "Metal",
+					Available: 1200,
+				}},
 			},
 		},
 	}}
@@ -1968,6 +1978,9 @@ func TestGameFleetEndpointPreparesDispatchDraft(t *testing.T) {
 	}
 	if !response.Authenticated || response.Fleet == nil || response.Fleet.DispatchDraft == nil || response.Fleet.DispatchDraft.Cargo != 15000 || response.Fleet.DispatchDraft.Ships[0].Count != 3 {
 		t.Fatalf("unexpected prepare response: %+v", response)
+	}
+	if response.Fleet.DispatchDraft.MissionOptions[0].ID != domaingame.FleetMissionTransport || response.Fleet.DispatchDraft.Resources[0].Available != 1200 {
+		t.Fatalf("unexpected prepare draft mapping: %+v", response.Fleet.DispatchDraft)
 	}
 }
 

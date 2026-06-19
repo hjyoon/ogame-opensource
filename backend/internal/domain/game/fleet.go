@@ -89,14 +89,31 @@ type FleetDispatchDraftInput struct {
 }
 
 type FleetDispatchDraft struct {
-	Ships        []FleetShipCount
-	TotalShips   int
-	Target       Coordinates
-	TargetType   int
-	Mission      int
-	Speed        int
-	Cargo        int
-	HasSelection bool
+	Ships           []FleetShipCount
+	TotalShips      int
+	Target          Coordinates
+	TargetType      int
+	Mission         int
+	Speed           int
+	Cargo           int
+	HasSelection    bool
+	MissionOptions  []FleetMissionOption
+	Resources       []FleetResourceLoad
+	HoldHours       []int
+	ExpeditionHours []int
+}
+
+type FleetMissionOption struct {
+	ID       int
+	Name     string
+	Selected bool
+	Warning  string
+}
+
+type FleetResourceLoad struct {
+	ID        int
+	Name      string
+	Available int
 }
 
 func BuildFleet(overview Overview, counts FleetCounts, research ResearchLevels, missions []FleetMission, admiral bool, acsEnabled bool) Fleet {
@@ -165,6 +182,7 @@ func BuildFleetDispatchDraft(fleet Fleet, input FleetDispatchDraftInput) FleetDi
 	}
 
 	ships := make([]FleetShipCount, 0, len(fleet.Ships))
+	selectedCounts := make(FleetCounts, len(fleet.Ships))
 	total := 0
 	cargo := 0
 	for _, available := range fleet.Ships {
@@ -182,22 +200,113 @@ func BuildFleetDispatchDraft(fleet Fleet, input FleetDispatchDraftInput) FleetDi
 			continue
 		}
 		ships = append(ships, FleetShipCount{ID: available.ID, Name: available.Name, Count: count})
+		selectedCounts[available.ID] = count
 		total += count
 		if available.ID != FleetEspionageProbe {
 			cargo += available.Cargo * count
 		}
 	}
+	missions := fleetDispatchMissionOptions(fleet, selectedCounts, target, targetType, input.Mission)
+	selectedMission := input.Mission
+	if !missionOptionExists(missions, selectedMission) && len(missions) > 0 {
+		selectedMission = missions[0].ID
+		missions[0].Selected = true
+	}
 
 	return FleetDispatchDraft{
-		Ships:        ships,
-		TotalShips:   total,
-		Target:       target,
-		TargetType:   targetType,
-		Mission:      input.Mission,
-		Speed:        speed,
-		Cargo:        cargo,
-		HasSelection: total > 0,
+		Ships:           ships,
+		TotalShips:      total,
+		Target:          target,
+		TargetType:      targetType,
+		Mission:         selectedMission,
+		Speed:           speed,
+		Cargo:           cargo,
+		HasSelection:    total > 0,
+		MissionOptions:  missions,
+		Resources:       fleetDispatchResources(fleet.CurrentPlanet.Resources),
+		HoldHours:       fleetDispatchHoldHours(missions),
+		ExpeditionHours: fleetDispatchExpeditionHours(fleet.Expeditions.Max),
 	}
+}
+
+func fleetDispatchMissionOptions(fleet Fleet, counts FleetCounts, target Coordinates, targetType int, requested int) []FleetMissionOption {
+	ids := make([]int, 0, 5)
+	if target.Position >= GalaxyFarSpace {
+		ids = append(ids, FleetMissionExpedition)
+	} else if targetType == GamePlanetTypeDebris {
+		if counts[FleetRecycler] > 0 {
+			ids = append(ids, FleetMissionRecycle)
+		}
+	} else if target == fleet.CurrentPlanet.Coordinates && targetType == gamePlanetTypeFromPlanet(fleet.CurrentPlanet.Type) {
+		ids = append(ids, FleetMissionTransport, FleetMissionDeploy)
+	} else {
+		ids = append(ids, FleetMissionTransport, FleetMissionAttack)
+		if counts[FleetColonyShip] > 0 && targetType == GamePlanetTypePlanet {
+			ids = append(ids, FleetMissionColonize)
+		}
+		if counts[FleetDeathstar] > 0 && targetType == GamePlanetTypeMoon {
+			ids = append(ids, FleetMissionDestroy)
+		}
+		if counts[FleetEspionageProbe] > 0 {
+			ids = append(ids, FleetMissionSpy)
+		}
+	}
+
+	options := make([]FleetMissionOption, 0, len(ids))
+	for _, id := range ids {
+		option := FleetMissionOption{
+			ID:       id,
+			Name:     fleetMissionName(id),
+			Selected: id == requested,
+		}
+		if id == FleetMissionExpedition {
+			option.Warning = "WARNING: Expedition is a very risky mission, not meant to be a save."
+		}
+		options = append(options, option)
+	}
+	return options
+}
+
+func missionOptionExists(options []FleetMissionOption, mission int) bool {
+	for _, option := range options {
+		if option.ID == mission {
+			return true
+		}
+	}
+	return false
+}
+
+func fleetDispatchResources(resources Resources) []FleetResourceLoad {
+	return []FleetResourceLoad{
+		{ID: ResourceMetal, Name: "Metal", Available: max(0, int(resources.Metal))},
+		{ID: ResourceCrystal, Name: "Crystal", Available: max(0, int(resources.Crystal))},
+		{ID: ResourceDeuterium, Name: "Deuterium", Available: max(0, int(resources.Deuterium))},
+	}
+}
+
+func fleetDispatchExpeditionHours(maxExpeditions int) []int {
+	if maxExpeditions < 1 {
+		return nil
+	}
+	hours := make([]int, 0, maxExpeditions)
+	for hour := 1; hour <= maxExpeditions; hour++ {
+		hours = append(hours, hour)
+	}
+	return hours
+}
+
+func fleetDispatchHoldHours(options []FleetMissionOption) []int {
+	if !missionOptionExists(options, FleetMissionACSHold) {
+		return nil
+	}
+	return []int{0, 1, 2, 4, 8, 16, 32}
+}
+
+func gamePlanetTypeFromPlanet(planetType int) int {
+	if planetType == PlanetTypeMoon {
+		return GamePlanetTypeMoon
+	}
+	return GamePlanetTypePlanet
 }
 
 func BuildFleetMission(id int, mission int, ships FleetCounts, origin Coordinates, target Coordinates, targetType int, targetOwner string, departureAt int64, arrivalAt int64) FleetMission {

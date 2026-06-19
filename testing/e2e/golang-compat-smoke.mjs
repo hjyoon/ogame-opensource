@@ -1276,6 +1276,16 @@ try {
         "game fleet dispatch draft preserves the requested legacy mission",
         gameFleetPrepareBody.fleet?.dispatchDraft ?? {}
       ),
+      check(
+        !selectableFleetShip || Array.isArray(gameFleetPrepareBody.fleet?.dispatchDraft?.missionOptions),
+        "game fleet dispatch draft returns legacy mission options",
+        gameFleetPrepareBody.fleet?.dispatchDraft ?? {}
+      ),
+      check(
+        !selectableFleetShip || Array.isArray(gameFleetPrepareBody.fleet?.dispatchDraft?.resources) && gameFleetPrepareBody.fleet.dispatchDraft.resources.length === 3,
+        "game fleet dispatch draft returns transportable resource rows",
+        gameFleetPrepareBody.fleet?.dispatchDraft ?? {}
+      ),
       check(!gameFleet.body.includes(sessionCookiePair), "game fleet response does not echo private cookie"),
       check(gameFleetWithoutCookie.status === 401, "game fleet rejects missing private cookie", { status: gameFleetWithoutCookie.status }),
       check(gameFleetWithoutCookieBody.authenticated === false, "game fleet missing private cookie is unauthenticated", gameFleetWithoutCookieBody),
@@ -1648,6 +1658,7 @@ try {
       check(js.body.includes("legacy-fleet-table"), "React bundle contains legacy game fleet active missions layout"),
       check(js.body.includes("legacy-fleet-select-table"), "React bundle contains legacy game fleet ship selection layout"),
       check(js.body.includes("legacy-fleet-dispatch-table"), "React bundle contains legacy game fleet dispatch preview layout"),
+      check(js.body.includes("legacy-fleet-dispatch-form") && js.body.includes("remainingresources"), "React bundle contains legacy fleet mission/resource draft layout"),
       check(js.body.includes("legacy-fleet-templates-table"), "React bundle contains legacy game standard fleets layout"),
       check(js.body.includes("legacy-galaxy-table"), "React bundle contains legacy game galaxy layout"),
       check(js.body.includes("target_galaxy") && js.body.includes("target_mission"), "React bundle preserves legacy fleet target prefill fields"),

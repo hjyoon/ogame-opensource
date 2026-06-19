@@ -94,14 +94,31 @@ type gameFleetTemplateShipResponse struct {
 }
 
 type gameFleetDispatchDraft struct {
-	Ships        []gameFleetShipCountResponse `json:"ships"`
-	TotalShips   int                          `json:"totalShips"`
-	Target       gameCoordinatesResponse      `json:"target"`
-	TargetType   int                          `json:"targetType"`
-	Mission      int                          `json:"mission"`
-	Speed        int                          `json:"speed"`
-	Cargo        int                          `json:"cargo"`
-	HasSelection bool                         `json:"hasSelection"`
+	Ships           []gameFleetShipCountResponse `json:"ships"`
+	TotalShips      int                          `json:"totalShips"`
+	Target          gameCoordinatesResponse      `json:"target"`
+	TargetType      int                          `json:"targetType"`
+	Mission         int                          `json:"mission"`
+	Speed           int                          `json:"speed"`
+	Cargo           int                          `json:"cargo"`
+	HasSelection    bool                         `json:"hasSelection"`
+	MissionOptions  []gameFleetMissionOption     `json:"missionOptions"`
+	Resources       []gameFleetResourceLoad      `json:"resources"`
+	HoldHours       []int                        `json:"holdHours,omitempty"`
+	ExpeditionHours []int                        `json:"expeditionHours,omitempty"`
+}
+
+type gameFleetMissionOption struct {
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	Selected bool   `json:"selected"`
+	Warning  string `json:"warning,omitempty"`
+}
+
+type gameFleetResourceLoad struct {
+	ID        int    `json:"id"`
+	Name      string `json:"name"`
+	Available int    `json:"available"`
 }
 
 type gameFleetTemplateMutationRequest struct {
@@ -416,15 +433,36 @@ func toGameFleetDispatchDraft(draft *domaingame.FleetDispatchDraft) *gameFleetDi
 			Count: ship.Count,
 		})
 	}
+	missions := make([]gameFleetMissionOption, 0, len(draft.MissionOptions))
+	for _, mission := range draft.MissionOptions {
+		missions = append(missions, gameFleetMissionOption{
+			ID:       mission.ID,
+			Name:     mission.Name,
+			Selected: mission.Selected,
+			Warning:  mission.Warning,
+		})
+	}
+	resources := make([]gameFleetResourceLoad, 0, len(draft.Resources))
+	for _, resource := range draft.Resources {
+		resources = append(resources, gameFleetResourceLoad{
+			ID:        resource.ID,
+			Name:      resource.Name,
+			Available: resource.Available,
+		})
+	}
 	return &gameFleetDispatchDraft{
-		Ships:        ships,
-		TotalShips:   draft.TotalShips,
-		Target:       toGameCoordinatesResponse(draft.Target),
-		TargetType:   draft.TargetType,
-		Mission:      draft.Mission,
-		Speed:        draft.Speed,
-		Cargo:        draft.Cargo,
-		HasSelection: draft.HasSelection,
+		Ships:           ships,
+		TotalShips:      draft.TotalShips,
+		Target:          toGameCoordinatesResponse(draft.Target),
+		TargetType:      draft.TargetType,
+		Mission:         draft.Mission,
+		Speed:           draft.Speed,
+		Cargo:           draft.Cargo,
+		HasSelection:    draft.HasSelection,
+		MissionOptions:  missions,
+		Resources:       resources,
+		HoldHours:       draft.HoldHours,
+		ExpeditionHours: draft.ExpeditionHours,
 	}
 }
 

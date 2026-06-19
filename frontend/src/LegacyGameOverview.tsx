@@ -336,6 +336,23 @@ type GameFleetDispatchDraft = {
   speed: number;
   cargo: number;
   hasSelection: boolean;
+  missionOptions: GameFleetMissionOption[];
+  resources: GameFleetResourceLoad[];
+  holdHours?: number[];
+  expeditionHours?: number[];
+};
+
+type GameFleetMissionOption = {
+  id: number;
+  name: string;
+  selected: boolean;
+  warning?: string;
+};
+
+type GameFleetResourceLoad = {
+  id: number;
+  name: string;
+  available: number;
 };
 
 type GameFleetTemplates = {
@@ -2225,34 +2242,174 @@ function FleetTable({
 
 function FleetDispatchPreviewTable({ draft, fleet }: { draft: GameFleetDispatchDraft; fleet: GameFleet }) {
   return (
-    <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-dispatch-table" width={519}>
+    <form className="legacy-fleet-dispatch-form" onSubmit={(event) => event.preventDefault()}>
+      <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-dispatch-table" width={519}>
+        <tbody>
+          <tr style={{ height: 20, textAlign: "left" }}>
+            <td className="legacy-c" colSpan={2}>
+              {formatCoordinates(draft.target)} - {fleetPlanetTypeName(draft.targetType)}
+            </td>
+          </tr>
+          <tr style={{ textAlign: "left", verticalAlign: "top" }}>
+            <th style={{ width: "50%" }}>
+              <FleetDispatchMissionTable draft={draft} />
+            </th>
+            <th>
+              <FleetDispatchResourcesTable draft={draft} fleet={fleet} />
+            </th>
+          </tr>
+          <tr style={{ height: 20 }}>
+            <th colSpan={2}>
+              <input type="submit" value="Next" />
+            </th>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  );
+}
+
+function FleetDispatchMissionTable({ draft }: { draft: GameFleetDispatchDraft }) {
+  return (
+    <table border={0} cellPadding={0} cellSpacing={0} width={259}>
       <tbody>
         <tr style={{ height: 20 }}>
           <td className="legacy-c" colSpan={2}>
-            Send fleet
+            Mission
           </td>
         </tr>
+        {draft.missionOptions.length === 0 ? (
+          <tr style={{ height: 20 }}>
+            <th>
+              <span style={{ color: "red" }}>No suitable missions</span>
+            </th>
+          </tr>
+        ) : (
+          draft.missionOptions.map((mission) => (
+            <tr key={mission.id} style={{ height: 20 }}>
+              <th>
+                <input defaultChecked={mission.selected} name="order" type="radio" value={mission.id} />
+                {mission.name}
+                {mission.warning ? (
+                  <>
+                    <br />
+                    <br />
+                    <span style={{ color: "red" }}>{mission.warning}</span>
+                  </>
+                ) : null}
+              </th>
+            </tr>
+          ))
+        )}
+      </tbody>
+    </table>
+  );
+}
+
+function FleetDispatchResourcesTable({ draft, fleet }: { draft: GameFleetDispatchDraft; fleet: GameFleet }) {
+  const expeditionSelected = draft.missionOptions.some((mission) => mission.id === 15);
+  return (
+    <table border={0} cellPadding={0} cellSpacing={0} width={259}>
+      <tbody>
         <tr style={{ height: 20 }}>
-          <th style={{ width: "50%" }}>Target</th>
-          <th>
-            {formatCoordinates(draft.target)} - {fleetPlanetTypeName(draft.targetType)}
+          <td className="legacy-c" colSpan={3}>
+            Resources
+          </td>
+        </tr>
+        {draft.resources.map((resource, index) => (
+          <tr key={resource.id} style={{ height: 20 }}>
+            <th>{resource.name}</th>
+            <th>
+              <a
+                href="#max-resource"
+                onClick={(event) => {
+                  event.preventDefault();
+                  setLegacyFleetResourceAmount(event.currentTarget, index + 1, resource.available);
+                }}
+              >
+                max
+              </a>
+            </th>
+            <th>
+              <input
+                aria-label={resource.name}
+                data-resource-id={resource.id}
+                defaultValue={0}
+                name={`resource${index + 1}`}
+                size={10}
+                title={`${resource.name} ${formatLegacyNumber(resource.available)}`}
+                type="text"
+              />
+            </th>
+          </tr>
+        ))}
+        <tr style={{ height: 20 }}>
+          <th>Residue</th>
+          <th colSpan={2}>
+            <div id="remainingresources">-</div>
           </th>
         </tr>
         <tr style={{ height: 20 }}>
-          <th>Speed</th>
-          <th>{draft.speed * 10}%</th>
+          <th colSpan={3}>
+            <a
+              href="#max-resources"
+              onClick={(event) => {
+                event.preventDefault();
+                setLegacyFleetAllResources(event.currentTarget, draft.resources);
+              }}
+            >
+              All resources
+            </a>
+          </th>
         </tr>
+        {draft.holdHours && draft.holdHours.length > 0 ? (
+          <>
+            <tr style={{ height: 20 }}>
+              <td className="legacy-c" colSpan={3}>
+                Hold time
+              </td>
+            </tr>
+            <tr style={{ height: 20 }}>
+              <th colSpan={3}>
+                <select name="holdingtime" defaultValue={1}>
+                  {draft.holdHours.map((hour) => (
+                    <option key={hour} value={hour}>
+                      {hour}
+                    </option>
+                  ))}
+                </select>{" "}
+                Time in hours
+              </th>
+            </tr>
+          </>
+        ) : null}
+        {expeditionSelected && draft.expeditionHours && draft.expeditionHours.length > 0 ? (
+          <>
+            <tr style={{ height: 20 }}>
+              <td className="legacy-c" colSpan={3}>
+                Hold time
+              </td>
+            </tr>
+            <tr style={{ height: 20 }}>
+              <th colSpan={3}>
+                <select name="expeditiontime">
+                  {draft.expeditionHours.map((hour) => (
+                    <option key={hour} value={hour}>
+                      {hour}
+                    </option>
+                  ))}
+                </select>{" "}
+                Time in hours
+              </th>
+            </tr>
+          </>
+        ) : null}
         <tr style={{ height: 20 }}>
-          <th>Ships</th>
-          <th>{draft.ships.map((ship) => `${ship.name}: ${formatLegacyNumber(ship.count)}`).join(", ")}</th>
-        </tr>
-        <tr style={{ height: 20 }}>
-          <th>Total ships</th>
-          <th>{formatLegacyNumber(draft.totalShips)}</th>
-        </tr>
-        <tr style={{ height: 20 }}>
-          <th>Storage capacity</th>
-          <th>{formatLegacyNumber(draft.cargo)}</th>
+          <th colSpan={3}>
+            {draft.ships.map((ship) => `${ship.name}: ${formatLegacyNumber(ship.count)}`).join(", ")}
+            {draft.ships.length > 0 ? <br /> : null}
+            {formatLegacyNumber(draft.totalShips)} ships, {formatLegacyNumber(draft.cargo)} capacity from {fleet.currentPlanet.name}
+          </th>
         </tr>
       </tbody>
     </table>
@@ -2273,6 +2430,27 @@ function collectLegacyFleetShips(form: HTMLFormElement): Record<string, number> 
     }
   }
   return ships;
+}
+
+function setLegacyFleetResourceAmount(anchor: HTMLAnchorElement, resourceIndex: number, amount: number) {
+  const form = anchor.closest("form");
+  const input = form?.elements.namedItem(`resource${resourceIndex}`);
+  if (input instanceof HTMLInputElement) {
+    input.value = String(amount);
+  }
+}
+
+function setLegacyFleetAllResources(anchor: HTMLAnchorElement, resources: GameFleetResourceLoad[]) {
+  const form = anchor.closest("form");
+  if (!form) {
+    return;
+  }
+  resources.forEach((resource, index) => {
+    const input = form.elements.namedItem(`resource${index + 1}`);
+    if (input instanceof HTMLInputElement) {
+      input.value = String(resource.available);
+    }
+  });
 }
 
 function setLegacyFleetShipAmount(anchor: HTMLAnchorElement, shipID: number, amount: number) {
