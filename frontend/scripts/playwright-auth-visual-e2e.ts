@@ -488,18 +488,26 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
     if (pageSide === "legacy") {
       hide("#overDiv");
     }
+    const resourceValues = Array.from(document.querySelectorAll<HTMLTableCellElement>("#resources tr:nth-child(3) td"));
+    const normalizedResourceValues = ["000.000", "000.000", "0.000", "0", "0/0"];
+    resourceValues.forEach((cell, index) => {
+      cell.textContent = normalizedResourceValues[index] ?? "0";
+    });
     if (currentPageName === "game-overview") {
-      const resourceValues = Array.from(document.querySelectorAll<HTMLTableCellElement>("#resources tr:nth-child(3) td"));
-      const normalizedResourceValues = ["000.000", "000.000", "0.000", "0", "0/0"];
-      resourceValues.forEach((cell, index) => {
-        cell.textContent = normalizedResourceValues[index] ?? "0";
-      });
       for (const headerCell of document.querySelectorAll<HTMLTableCellElement>(".legacy-overview-main-table th, #content table th")) {
         if (headerCell.textContent?.trim() === "Server time") {
           const timeCell = headerCell.nextElementSibling;
           if (timeCell instanceof HTMLElement) {
             timeCell.textContent = "Fri Jun 19 00:00:00";
           }
+        }
+      }
+    }
+    if (currentPageName === "game-statistics" || currentPageName === "game-statistics-alliance") {
+      for (const cell of document.querySelectorAll<HTMLTableCellElement>(".legacy-statistics-head-table td, #content table td")) {
+        if (cell.textContent?.trim().startsWith("Statistics (as of:")) {
+          cell.textContent = "Statistics (as of: 2026-06-19, 00:00:00)";
+          break;
         }
       }
     }
