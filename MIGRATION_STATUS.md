@@ -38,7 +38,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - `bun run build && bun run check && bun test`: passing.
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
 - Go smoke covers health, routes, assets, MailHog, activation cleanup/reuse, auth/session cookie expiry/security, logout, reads/mutations, guards, and privacy.
-- Playwright visual/CSR E2E covers public pages and auth game routes in Chromium/Firefox.
+- Playwright visual/CSR E2E covers public/auth routes; auth `lgn` is consumed once.
 - Auth visual passes Chromium/Firefox; Chromium diff: stats 6.1-21.3%, tech 14.5%, overview 14.1%, resources/fleet 10.4/10.1%, rename 9.6%, buildings 7.6%.
 - Go internal coverage gate: `97.0% >= 97%`.
 - Go smoke JSON: `all_pass: true`.

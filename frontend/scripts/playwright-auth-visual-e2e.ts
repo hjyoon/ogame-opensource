@@ -339,7 +339,7 @@ function legacyURL(spec: AuthPageSpec, session: string): string {
 }
 
 function migratedURL(spec: AuthPageSpec, session: string): string {
-  const query = new URLSearchParams({ lgn: "1", session });
+  const query = new URLSearchParams({ session });
   for (const [key, value] of Object.entries(spec.migratedQuery ?? {})) {
     query.set(key, value);
   }
@@ -379,6 +379,7 @@ async function loginMigrated(context: BrowserContext): Promise<string> {
   await page.waitForFunction(() => window.location.pathname === "/game/overview" && window.location.search.includes("session="), undefined, {
     timeout: 10_000
   });
+  await page.locator(".legacy-overview-table").first().waitFor({ timeout: 10_000 });
   const session = new URL(page.url()).searchParams.get("session") ?? "";
   await page.close();
   if (!session) {
