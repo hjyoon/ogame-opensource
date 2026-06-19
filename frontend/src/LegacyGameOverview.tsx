@@ -925,7 +925,7 @@ export type GameNoteDraft = {
 
 type LegacyMenuEntry =
   | { type: "image"; height: number; src: string; width: number }
-  | { type: "route"; key: GameRoute["key"] };
+  | { type: "route"; color?: string; id?: string; key: GameRoute["key"] };
 
 const skinBase = "/public-assets/evolution";
 const gameImageBase = "/public-assets/game-img";
@@ -937,7 +937,7 @@ const legacyMenuEntries: LegacyMenuEntry[] = [
   { type: "route", key: "admin" },
   { type: "route", key: "buildings" },
   { type: "route", key: "resources" },
-  { type: "route", key: "merchant" },
+  { type: "route", color: "#FF8900", key: "merchant" },
   { type: "route", key: "research" },
   { type: "route", key: "shipyard" },
   { type: "route", key: "fleet" },
@@ -946,7 +946,7 @@ const legacyMenuEntries: LegacyMenuEntry[] = [
   { type: "route", key: "defense" },
   { type: "image", height: 19, src: `${skinBase}/gfx/info-help.jpg`, width: 110 },
   { type: "route", key: "alliance" },
-  { type: "route", key: "officers" },
+  { type: "route", id: "darkmatter2", key: "officers" },
   { type: "route", key: "statistics" },
   { type: "route", key: "search" },
   { type: "image", height: 35, src: `${skinBase}/gfx/user-menu.jpg`, width: 110 },
@@ -1087,6 +1087,12 @@ export function LegacyGameOverview({
       : route.key === "notes" || route.key === "report"
         ? "legacy-content legacy-content-popup"
         : "legacy-content";
+  const contentStyle: React.CSSProperties =
+    route.key === "overview"
+      ? { height: "calc(100vh - 124px)" }
+      : route.key === "galaxy" || route.key === "notes" || route.key === "report"
+        ? { height: "calc(100vh - 20px)" }
+        : { height: "calc(100vh - 101px)" };
 
   return (
     <main
@@ -1108,7 +1114,7 @@ export function LegacyGameOverview({
       {hasHeader && overview && route.key === "overview" && overview.messages && overview.messages.length > 0 ? (
         <LegacyPageMessage messages={overview.messages} />
       ) : null}
-      <section className={contentClassName} id="content">
+      <section className={contentClassName} id="content" style={contentStyle}>
         {error ? <LegacyMessage tone="error" text={error} /> : null}
         {!error && issue ? <LegacyMessage tone="error" text={issue} /> : null}
         {!error && !issue && !overview && route.key !== "logout" && route.key !== "report" ? (
@@ -1308,7 +1314,7 @@ export function LegacyGameOverview({
 
 function LegacyPageMessage({ messages }: { messages: string[] }) {
   return (
-    <div className="legacy-page-messagebox" id="messagebox">
+    <div className="legacy-page-messagebox" id="messagebox" style={{ display: "block" }}>
       <center>
         {messages.map((message, index) => (
           <React.Fragment key={`${message}-${index}`}>
@@ -1338,17 +1344,17 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
   const officers = ["commander", "admiral", "ingenieur", "geologe", "technokrat"];
 
   return (
-    <table className="legacy-header-table">
+    <table className="legacy-header-table header">
       <tbody>
-        <tr>
-          <td className="legacy-header-cell">
-            <table className="legacy-header-table">
+        <tr className="header">
+          <td className="legacy-header-cell header">
+            <table className="legacy-header-table header">
               <tbody>
-                <tr>
-                  <td className="legacy-header-cell">
+                <tr className="header">
+                  <td className="legacy-header-cell header">
                     <img alt="" height={50} src={planetImagePath(planet, true)} width={50} />
                   </td>
-                  <td className="legacy-header-cell">
+                  <td className="legacy-header-cell header">
                     <select
                       aria-label="Planet selector"
                       onChange={(event) => {
@@ -1368,19 +1374,19 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
               </tbody>
             </table>
           </td>
-          <td className="legacy-header-cell">
-            <table cellPadding={0} cellSpacing={0} className="legacy-resource-table" id="resources">
+          <td className="legacy-header-cell header">
+            <table cellPadding={0} cellSpacing={0} className="legacy-resource-table header" id="resources">
               <tbody>
-                <tr>
+                <tr className="header">
                   {resources.map((resource) => (
-                    <td className="legacy-header-cell" key={resource.name} width={85}>
+                    <td className="legacy-header-cell header" key={resource.name} width={85}>
                       <img alt="" height={22} src={resource.img} width={42} />
                     </td>
                   ))}
                 </tr>
-                <tr>
+                <tr className="header">
                   {resources.map((resource) => (
-                    <td className="legacy-header-cell legacy-resource-name" key={resource.name} width={85}>
+                    <td className="legacy-header-cell legacy-resource-name header" key={resource.name} width={85}>
                       <i>
                         <b>
                           <span className="legacy-resource-label">{resource.name}</span>
@@ -1389,9 +1395,9 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
                     </td>
                   ))}
                 </tr>
-                <tr>
+                <tr className="header">
                   {resources.map((resource) => (
-                    <td className="legacy-header-cell" key={resource.name} width={90}>
+                    <td className="legacy-header-cell header" key={resource.name} width={90}>
                       <span style={resource.capacity !== undefined && resource.value >= resource.capacity ? { color: "#ff0000" } : undefined}>
                         {formatLegacyNumber(resource.value)}
                       </span>
@@ -1402,16 +1408,16 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
               </tbody>
             </table>
           </td>
-          <td className="legacy-header-cell">
-            <table className="legacy-officer-table">
+          <td className="legacy-header-cell header">
+            <table className="legacy-officer-table header">
               <tbody>
-                <tr>
+                <tr className="header">
                   {officers.map((officer) => (
-                    <td className="legacy-header-cell" key={officer}>
+                    <td className="legacy-header-cell header" key={officer}>
                       <img alt="" height={32} src={`${gameImageBase}/${officer}_ikon_un.gif`} width={32} />
                     </td>
                   ))}
-                  <td className="legacy-header-cell" />
+                  <td className="legacy-header-cell header" />
                 </tr>
               </tbody>
             </table>
@@ -1462,8 +1468,13 @@ function LegacyMenuRoute({ activeRoute, entry }: { activeRoute: GameRoute; entry
     <tr>
       <td>
         <div className="legacy-center">
-          <a aria-current={route.key === activeRoute.key ? "page" : undefined} href={gameRouteURL(route.path, window.location.search)}>
-            {route.label}
+          <a
+            aria-current={route.key === activeRoute.key ? "page" : undefined}
+            href={gameRouteURL(route.path, window.location.search)}
+            id={entry.id}
+            style={entry.id === "darkmatter2" ? { cursor: "pointer", width: 110 } : undefined}
+          >
+            {entry.color ? <span style={{ color: entry.color }}>{route.label}</span> : route.label}
           </a>
         </div>
       </td>
@@ -1476,7 +1487,7 @@ function MigrationPendingGameTable({ route }: { route: GameRoute }) {
     <table className="legacy-overview-table" width={519}>
       <tbody>
         <tr>
-          <td className="legacy-c">{route.label}</td>
+          <td className="legacy-c c">{route.label}</td>
         </tr>
         <tr>
           <th>This screen is queued for React and Go migration.</th>
@@ -1495,7 +1506,7 @@ function LogoutTable({ error, status }: { error: string | null; status: GameLogo
     <table className="legacy-overview-table legacy-logout-table" width={519}>
       <tbody>
         <tr>
-          <td className="legacy-c">Logout</td>
+          <td className="legacy-c c">Logout</td>
         </tr>
         <tr>
           <th>{text}</th>
@@ -1529,7 +1540,7 @@ function StatisticsTable({ statistics }: { statistics: GameStatistics }) {
         <table className="legacy-overview-table legacy-statistics-head-table" width={525}>
           <tbody>
             <tr>
-              <td className="legacy-c">Statistics (as of: {formatLegacyStatisticsDateTime(statistics.generatedAt)})</td>
+              <td className="legacy-c c">Statistics (as of: {formatLegacyStatisticsDateTime(statistics.generatedAt)})</td>
             </tr>
             <tr>
               <th>
@@ -1571,13 +1582,13 @@ function PlayerStatisticsTable({ statistics }: { statistics: GameStatistics }) {
     <table className="legacy-overview-table legacy-statistics-table legacy-statistics-player-table" width={525}>
       <tbody>
         <tr>
-          <td className="legacy-c" width={30}>
+          <td className="legacy-c c" width={30}>
             Place
           </td>
-          <td className="legacy-c">Player</td>
-          <td className="legacy-c">&nbsp;</td>
-          <td className="legacy-c">Alliance</td>
-          <td className="legacy-c">Points</td>
+          <td className="legacy-c c">Player</td>
+          <td className="legacy-c c">&nbsp;</td>
+          <td className="legacy-c c">Alliance</td>
+          <td className="legacy-c c">Points</td>
         </tr>
         {statistics.rows.map((row) => (
           <tr data-statistics-row key={`${row.player.id}-${row.place}`}>
@@ -1621,16 +1632,16 @@ function AllianceStatisticsTable({ statistics }: { statistics: GameStatistics })
     <table className="legacy-overview-table legacy-statistics-table legacy-statistics-alliance-table" width={519}>
       <tbody>
         <tr>
-          <td className="legacy-c" width={30}>
+          <td className="legacy-c c" width={30}>
             Place
           </td>
-          <td className="legacy-c">Alliance</td>
-          <td className="legacy-c">&nbsp;</td>
-          <td className="legacy-c">Num.</td>
-          <td className="legacy-c">
+          <td className="legacy-c c">Alliance</td>
+          <td className="legacy-c c">&nbsp;</td>
+          <td className="legacy-c c">Num.</td>
+          <td className="legacy-c c">
             <a href={statisticsSortURL(0)}>Thousand points</a>
           </td>
-          <td className="legacy-c">
+          <td className="legacy-c c">
             <a href={statisticsSortURL(1)}>Per person</a>
           </td>
         </tr>
@@ -1732,12 +1743,12 @@ function BuildingsTable({
           );
           return (
             <tr data-building-row={item.id} key={item.id}>
-              <td className="legacy-l legacy-building-image">
+              <td className="legacy-l l legacy-building-image">
                 <a href={gameRouteURL("/game/technology", window.location.search)}>
                   <img alt="" height={120} src={`${skinBase}/gebaeude/${item.id}.gif`} width={120} />
                 </a>
               </td>
-              <td className="legacy-l legacy-building-description">
+              <td className="legacy-l l legacy-building-description">
                 <a href={gameRouteURL("/game/technology", window.location.search)}>{item.name}</a>
                 {item.level > 0 ? <> (level {item.level})</> : null}
                 <br />
@@ -1754,7 +1765,7 @@ function BuildingsTable({
                 Duration: {formatLegacyDuration(item.durationSeconds)}
                 <br />
               </td>
-              <td className="legacy-l legacy-building-action">
+              <td className="legacy-l l legacy-building-action">
                 {item.canBuild ? (
                   <a
                     className="legacy-build-ok"
@@ -1806,7 +1817,7 @@ function ResearchTable({
       <table className="legacy-overview-table legacy-research-table" width={530}>
         <tbody>
           <tr>
-            <td className="legacy-c">Research</td>
+            <td className="legacy-c c">Research</td>
           </tr>
           <tr>
             <th>In order to do this, you need to build a research lab!</th>
@@ -1819,10 +1830,10 @@ function ResearchTable({
     <table className="legacy-overview-table legacy-research-table" width={530}>
       <tbody>
         <tr>
-          <td className="legacy-l" colSpan={2}>
+          <td className="legacy-l l" colSpan={2}>
             Description
           </td>
-          <td className="legacy-l">
+          <td className="legacy-l l">
             <b>Qty.</b>
           </td>
         </tr>
@@ -1849,12 +1860,12 @@ function ResearchTable({
           const action = item.action === "Cancel" ? "cancel" : "start";
           return (
             <tr data-research-row={item.id} key={item.id}>
-              <td className="legacy-l legacy-building-image">
+              <td className="legacy-l l legacy-building-image">
                 <a href={gameRouteURL("/game/technology", window.location.search)}>
                   <img alt="" height={120} src={`${skinBase}/gebaeude/${item.id}.gif`} width={120} />
                 </a>
               </td>
-              <td className="legacy-l legacy-building-description">
+              <td className="legacy-l l legacy-building-description">
                 <a href={gameRouteURL("/game/technology", window.location.search)}>{item.name}</a>
                 {item.level > 0 ? <> (level {item.level})</> : null}
                 <br />
@@ -1871,7 +1882,7 @@ function ResearchTable({
                 Duration: {formatLegacyDuration(item.durationSeconds)}
                 <br />
               </td>
-              <td className="legacy-l legacy-building-action">
+              <td className="legacy-l l legacy-building-action">
                 {item.canBuild ? (
                   <a
                     className="legacy-build-ok"
@@ -1945,15 +1956,15 @@ function ShipyardTable({
       <table className="legacy-overview-table legacy-shipyard-table" width={530}>
         <tbody>
           <tr>
-            <td className="legacy-l" colSpan={2}>
+            <td className="legacy-l l" colSpan={2}>
               Description
             </td>
-            <td className="legacy-l">
+            <td className="legacy-l l">
               <b>Qty.</b>
             </td>
           </tr>
           <tr>
-            <td className="legacy-c" colSpan={3}>
+            <td className="legacy-c c" colSpan={3}>
               In order to do that, you need to build a shipyard!
             </td>
           </tr>
@@ -1972,21 +1983,21 @@ function ShipyardTable({
       <table className="legacy-overview-table legacy-shipyard-table" width={530}>
         <tbody>
           <tr>
-            <td className="legacy-l" colSpan={2}>
+            <td className="legacy-l l" colSpan={2}>
               Description
             </td>
-            <td className="legacy-l">
+            <td className="legacy-l l">
               <b>Qty.</b>
             </td>
           </tr>
           {shipyard.items.map((item) => (
             <tr data-shipyard-row={item.id} key={item.id}>
-              <td className="legacy-l legacy-building-image">
+              <td className="legacy-l l legacy-building-image">
                 <a href={gameRouteURL("/game/technology", window.location.search)}>
                   <img alt="" height={120} src={`${skinBase}/gebaeude/${item.id}.gif`} width={120} />
                 </a>
               </td>
-              <td className="legacy-l legacy-building-description">
+              <td className="legacy-l l legacy-building-description">
                 <a href={gameRouteURL("/game/technology", window.location.search)}>{item.name}</a>
                 {item.count > 0 ? <> (in stock {item.count})</> : null}
                 <br />
@@ -2003,7 +2014,7 @@ function ShipyardTable({
                 Duration: {formatLegacyDuration(item.durationSeconds)}
                 <br />
               </td>
-              <td className="legacy-l legacy-building-action">
+              <td className="legacy-l l legacy-building-action">
                 {!item.meetsRequirement ? <span className="legacy-build-blocked">impossibly</span> : null}
                 {item.meetsRequirement && item.canBuild ? (
                   <>
@@ -2036,7 +2047,7 @@ function ShipyardTable({
             </tr>
           ))}
           <tr>
-            <td className="legacy-c" colSpan={2}>
+            <td className="legacy-c c" colSpan={2}>
               <input disabled={pending} type="submit" value="Build" />
             </td>
           </tr>
@@ -2084,7 +2095,7 @@ function FleetTable({
       <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-table" width={519}>
         <tbody>
           <tr style={{ height: 20 }}>
-            <td className="legacy-c" colSpan={8}>
+            <td className="legacy-c c" colSpan={8}>
               <table border={0} width="100%">
                 <tbody>
                   <tr>
@@ -2179,7 +2190,7 @@ function FleetTable({
             ) : null}
             {fleet.templates.commanderActive ? (
               <tr style={{ height: 20 }}>
-                <td className="legacy-c" colSpan={4}>
+                <td className="legacy-c c" colSpan={4}>
                   <a href={gameRouteURL("/game/fleet-templates", window.location.search)}>Standard fleets</a>
                   {fleet.templates.items.length > 0 ? (
                     <>
@@ -2203,7 +2214,7 @@ function FleetTable({
               </tr>
             ) : null}
             <tr style={{ height: 20 }}>
-              <td className="legacy-c" colSpan={4}>
+              <td className="legacy-c c" colSpan={4}>
                 Please select your ships for this mission:
               </td>
             </tr>
@@ -2325,7 +2336,7 @@ function FleetDispatchPreviewTable({
       <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-dispatch-table" width={519}>
         <tbody>
           <tr style={{ height: 20, textAlign: "left" }}>
-            <td className="legacy-c" colSpan={2}>
+            <td className="legacy-c c" colSpan={2}>
               {formatCoordinates(draft.target)} - {fleetPlanetTypeName(draft.targetType)}
             </td>
           </tr>
@@ -2353,7 +2364,7 @@ function FleetDispatchMissionTable({ draft }: { draft: GameFleetDispatchDraft })
     <table border={0} cellPadding={0} cellSpacing={0} width={259}>
       <tbody>
         <tr style={{ height: 20 }}>
-          <td className="legacy-c" colSpan={2}>
+          <td className="legacy-c c" colSpan={2}>
             Mission
           </td>
         </tr>
@@ -2391,7 +2402,7 @@ function FleetDispatchResourcesTable({ draft, fleet }: { draft: GameFleetDispatc
     <table border={0} cellPadding={0} cellSpacing={0} width={259}>
       <tbody>
         <tr style={{ height: 20 }}>
-          <td className="legacy-c" colSpan={3}>
+          <td className="legacy-c c" colSpan={3}>
             Resources
           </td>
         </tr>
@@ -2444,7 +2455,7 @@ function FleetDispatchResourcesTable({ draft, fleet }: { draft: GameFleetDispatc
         {draft.holdHours && draft.holdHours.length > 0 ? (
           <>
             <tr style={{ height: 20 }}>
-              <td className="legacy-c" colSpan={3}>
+              <td className="legacy-c c" colSpan={3}>
                 Hold time
               </td>
             </tr>
@@ -2465,7 +2476,7 @@ function FleetDispatchResourcesTable({ draft, fleet }: { draft: GameFleetDispatc
         {expeditionSelected && draft.expeditionHours && draft.expeditionHours.length > 0 ? (
           <>
             <tr style={{ height: 20 }}>
-              <td className="legacy-c" colSpan={3}>
+              <td className="legacy-c c" colSpan={3}>
                 Hold time
               </td>
             </tr>
@@ -2650,7 +2661,7 @@ function FleetTemplatesTable({
         <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-templates-table" width={519}>
           <tbody>
             <tr style={{ height: 20 }}>
-              <td className="legacy-c" colSpan={4}>
+              <td className="legacy-c c" colSpan={4}>
                 Standard fleets {fleet.templates.items.length} / {fleet.templates.max}
               </td>
             </tr>
@@ -2689,7 +2700,7 @@ function FleetTemplatesTable({
               </tr>
             ))}
             <tr style={{ height: 20 }}>
-              <td className="legacy-c" colSpan={4}>
+              <td className="legacy-c c" colSpan={4}>
                 {templateID > 0 ? "Edit standard fleet" : "Create standard fleet"}
               </td>
             </tr>
@@ -2785,7 +2796,7 @@ function GalaxyTable({ galaxy }: { galaxy: GameGalaxy }) {
         <table className="legacy-overview-table legacy-galaxy-error-table" width={569}>
           <tbody>
             <tr>
-              <td className="legacy-c"> Error</td>
+              <td className="legacy-c c"> Error</td>
             </tr>
             <tr>
               <th>Not enough deuterium!</th>
@@ -2801,12 +2812,12 @@ function GalaxyTable({ galaxy }: { galaxy: GameGalaxy }) {
                 <table className="legacy-header-table" id="t2">
                   <tbody>
                     <tr>
-                      <td className="legacy-c" colSpan={3}>
+                      <td className="legacy-c c" colSpan={3}>
                         Galaxy
                       </td>
                     </tr>
                     <tr>
-                      <td className="legacy-l">
+                      <td className="legacy-l l">
                         <input
                           aria-label="Previous galaxy"
                           name="galaxyLeft"
@@ -2815,7 +2826,7 @@ function GalaxyTable({ galaxy }: { galaxy: GameGalaxy }) {
                           value="<-"
                         />
                       </td>
-                      <td className="legacy-l">
+                      <td className="legacy-l l">
                         <input
                           aria-label="Galaxy"
                           defaultValue={galaxy.coordinates.galaxy}
@@ -2826,7 +2837,7 @@ function GalaxyTable({ galaxy }: { galaxy: GameGalaxy }) {
                           type="text"
                         />
                       </td>
-                      <td className="legacy-l">
+                      <td className="legacy-l l">
                         <input
                           aria-label="Next galaxy"
                           name="galaxyRight"
@@ -2843,12 +2854,12 @@ function GalaxyTable({ galaxy }: { galaxy: GameGalaxy }) {
                 <table className="legacy-header-table" id="t3">
                   <tbody>
                     <tr>
-                      <td className="legacy-c" colSpan={3}>
+                      <td className="legacy-c c" colSpan={3}>
                         Solar system
                       </td>
                     </tr>
                     <tr>
-                      <td className="legacy-l">
+                      <td className="legacy-l l">
                         <input
                           aria-label="Previous system"
                           name="systemLeft"
@@ -2857,7 +2868,7 @@ function GalaxyTable({ galaxy }: { galaxy: GameGalaxy }) {
                           value="<-"
                         />
                       </td>
-                      <td className="legacy-l">
+                      <td className="legacy-l l">
                         <input
                           aria-label="Solar system"
                           defaultValue={galaxy.coordinates.system}
@@ -2868,7 +2879,7 @@ function GalaxyTable({ galaxy }: { galaxy: GameGalaxy }) {
                           type="text"
                         />
                       </td>
-                      <td className="legacy-l">
+                      <td className="legacy-l l">
                         <input
                           aria-label="Next system"
                           name="systemRight"
@@ -2893,13 +2904,13 @@ function GalaxyTable({ galaxy }: { galaxy: GameGalaxy }) {
       <table className="legacy-overview-table legacy-galaxy-table" width={569}>
         <tbody>
           <tr>
-            <td className="legacy-c" colSpan={8}>
+            <td className="legacy-c c" colSpan={8}>
               Solar system {galaxy.coordinates.galaxy}:{galaxy.coordinates.system}
             </td>
           </tr>
           <tr>
             {["Coord.", "Planet", "Title (activity)", "Moon", "Debris", "Player", "Alliance", "Actions"].map((label) => (
-              <td className="legacy-c" key={label}>
+              <td className="legacy-c c" key={label}>
                 {label}
               </td>
             ))}
@@ -2914,10 +2925,10 @@ function GalaxyTable({ galaxy }: { galaxy: GameGalaxy }) {
             </th>
           </tr>
           <tr>
-            <td className="legacy-c" colSpan={6}>
+            <td className="legacy-c c" colSpan={6}>
               (Populated {galaxy.populated} planets)
             </td>
-            <td className="legacy-c" colSpan={2}>
+            <td className="legacy-c c" colSpan={2}>
               <a href="#legend" onClick={(event) => event.preventDefault()}>
                 Legend
               </a>
@@ -2928,7 +2939,7 @@ function GalaxyTable({ galaxy }: { galaxy: GameGalaxy }) {
       <table className="legacy-overview-table legacy-galaxy-info-table" width={569}>
         <tbody>
           <tr>
-            <td className="legacy-c" colSpan={2}>
+            <td className="legacy-c c" colSpan={2}>
               {galaxy.extra.commander ? (
                 <>
                   Espionage Probes {formatLegacyNumber(galaxy.extra.spyProbes)} Recycler {formatLegacyNumber(galaxy.extra.recyclers)}{" "}
@@ -3053,15 +3064,15 @@ function DefenseTable({
       <table className="legacy-overview-table legacy-defense-table" width={530}>
         <tbody>
           <tr>
-            <td className="legacy-l" colSpan={2}>
+            <td className="legacy-l l" colSpan={2}>
               Description
             </td>
-            <td className="legacy-l">
+            <td className="legacy-l l">
               <b>Qty.</b>
             </td>
           </tr>
           <tr>
-            <td className="legacy-c" colSpan={3}>
+            <td className="legacy-c c" colSpan={3}>
               In order to do that, you need to build a shipyard!
             </td>
           </tr>
@@ -3080,21 +3091,21 @@ function DefenseTable({
       <table className="legacy-overview-table legacy-defense-table" width={530}>
         <tbody>
           <tr>
-            <td className="legacy-l" colSpan={2}>
+            <td className="legacy-l l" colSpan={2}>
               Description
             </td>
-            <td className="legacy-l">
+            <td className="legacy-l l">
               <b>Qty.</b>
             </td>
           </tr>
           {defense.items.map((item) => (
             <tr data-defense-row={item.id} key={item.id}>
-              <td className="legacy-l legacy-building-image">
+              <td className="legacy-l l legacy-building-image">
                 <a href={gameRouteURL("/game/technology", window.location.search)}>
                   <img alt="" height={120} src={`${skinBase}/gebaeude/${item.id}.gif`} width={120} />
                 </a>
               </td>
-              <td className="legacy-l legacy-building-description">
+              <td className="legacy-l l legacy-building-description">
                 <a href={gameRouteURL("/game/technology", window.location.search)}>{item.name}</a>
                 {item.count > 0 ? <> (in stock {item.count})</> : null}
                 <br />
@@ -3111,7 +3122,7 @@ function DefenseTable({
                 Duration: {formatLegacyDuration(item.durationSeconds)}
                 <br />
               </td>
-              <td className="legacy-l legacy-building-action">
+              <td className="legacy-l l legacy-building-action">
                 {item.blockedReason ? <span className="legacy-build-blocked">{item.blockedReason}</span> : null}
                 {!item.blockedReason && item.canBuild ? (
                   <>
@@ -3144,7 +3155,7 @@ function DefenseTable({
             </tr>
           ))}
           <tr>
-            <td className="legacy-c" colSpan={2}>
+            <td className="legacy-c c" colSpan={2}>
               <input disabled={pending} type="submit" value="Build" />
             </td>
           </tr>
@@ -3176,7 +3187,7 @@ function SearchTable({ search }: { search: GameSearch }) {
         <table className="legacy-overview-table legacy-search-head-table" width={519}>
           <tbody>
             <tr>
-              <td className="legacy-c">Search Universe</td>
+              <td className="legacy-c c">Search Universe</td>
             </tr>
             <tr>
               <th>
@@ -3226,7 +3237,7 @@ function BuddyTable({
     <table className="legacy-overview-table legacy-buddy-table" width={519}>
       <tbody>
         <tr>
-          <td className="legacy-c" colSpan={6}>
+          <td className="legacy-c c" colSpan={6}>
             Buddylist
           </td>
         </tr>
@@ -3241,12 +3252,12 @@ function BuddyTable({
           </th>
         </tr>
         <tr>
-          <td className="legacy-c">&nbsp;</td>
-          <td className="legacy-c">Name</td>
-          <td className="legacy-c">Alliance</td>
-          <td className="legacy-c">Coords</td>
-          <td className="legacy-c">Status</td>
-          <td className="legacy-c">&nbsp;</td>
+          <td className="legacy-c c">&nbsp;</td>
+          <td className="legacy-c c">Name</td>
+          <td className="legacy-c c">Alliance</td>
+          <td className="legacy-c c">Coords</td>
+          <td className="legacy-c c">Status</td>
+          <td className="legacy-c c">&nbsp;</td>
         </tr>
         {buddy.rows.length > 0 ? (
           buddy.rows.map((row, index) => (
@@ -3301,7 +3312,7 @@ function BuddyRequestsTable({
     <table className="legacy-overview-table legacy-buddy-table" width={519}>
       <tbody>
         <tr>
-          <td className="legacy-c" colSpan={6}>
+          <td className="legacy-c c" colSpan={6}>
             {incoming ? "Request" : "Your requests"}
           </td>
         </tr>
@@ -3375,7 +3386,7 @@ function BuddyRequestsTable({
           </tr>
         )}
         <tr>
-          <td className="legacy-c" colSpan={6}>
+          <td className="legacy-c c" colSpan={6}>
             <a href={buddyURL({})}>back</a>
           </td>
         </tr>
@@ -3399,7 +3410,7 @@ function BuddyRequestTable({
       <table className="legacy-overview-table legacy-buddy-table" width={519}>
         <tbody>
           <tr>
-            <td className="legacy-c" colSpan={2}>
+            <td className="legacy-c c" colSpan={2}>
               Buddy request
             </td>
           </tr>
@@ -3407,7 +3418,7 @@ function BuddyRequestTable({
             <th colSpan={2}>Player not found</th>
           </tr>
           <tr>
-            <td className="legacy-c" colSpan={2}>
+            <td className="legacy-c c" colSpan={2}>
               <a href={buddyURL({})}>back</a>
             </td>
           </tr>
@@ -3428,7 +3439,7 @@ function BuddyRequestTable({
       <table className="legacy-overview-table legacy-buddy-table" width={519}>
         <tbody>
           <tr>
-            <td className="legacy-c" colSpan={2}>
+            <td className="legacy-c c" colSpan={2}>
               Buddy request
             </td>
           </tr>
@@ -3445,10 +3456,10 @@ function BuddyRequestTable({
             </th>
           </tr>
           <tr>
-            <td className="legacy-c">
+            <td className="legacy-c c">
               <a href={buddyURL({})}>back</a>
             </td>
-            <td className="legacy-c">
+            <td className="legacy-c c">
               <input disabled={pending} type="submit" value="send" />
             </td>
           </tr>
@@ -3537,21 +3548,21 @@ function MessagesTable({
       <table className="legacy-overview-table legacy-messages-table" width={519}>
         <tbody>
           <tr>
-            <td className="legacy-c" colSpan={4}>
+            <td className="legacy-c c" colSpan={4}>
               Messages
             </td>
           </tr>
           <tr>
-            <td className="legacy-c" width={20}>
+            <td className="legacy-c c" width={20}>
               Action
             </td>
-            <td className="legacy-c" width={150}>
+            <td className="legacy-c c" width={150}>
               Date
             </td>
-            <td className="legacy-c" width={129}>
+            <td className="legacy-c c" width={129}>
               From
             </td>
-            <td className="legacy-c" width={220}>
+            <td className="legacy-c c" width={220}>
               Subject
             </td>
           </tr>
@@ -3633,7 +3644,7 @@ function MessageComposeTable({
       <table className="legacy-overview-table legacy-messages-compose-table" width={519}>
         <tbody>
           <tr>
-            <td className="legacy-c" colSpan={2}>
+            <td className="legacy-c c" colSpan={2}>
               Write message
             </td>
           </tr>
@@ -3727,7 +3738,7 @@ function OptionsTable({
       <table className="legacy-overview-table legacy-options-table" width={519}>
         <tbody>
           <tr>
-            <td className="legacy-c" colSpan={2}>
+            <td className="legacy-c c" colSpan={2}>
               User Data
             </td>
           </tr>
@@ -3778,7 +3789,7 @@ function OptionsTable({
             <th colSpan={2} />
           </tr>
           <tr>
-            <td className="legacy-c" colSpan={2}>
+            <td className="legacy-c c" colSpan={2}>
               General Options
             </td>
           </tr>
@@ -3845,7 +3856,7 @@ function OptionsTable({
             </th>
           </tr>
           <tr>
-            <td className="legacy-c" colSpan={2}>
+            <td className="legacy-c c" colSpan={2}>
               Galaxy View Options
             </td>
           </tr>
@@ -3882,7 +3893,7 @@ function OptionsTable({
                 </tr>
               ))}
               <tr>
-                <td className="legacy-c" colSpan={2}>
+                <td className="legacy-c c" colSpan={2}>
                   Message Options
                 </td>
               </tr>
@@ -3893,7 +3904,7 @@ function OptionsTable({
                 </th>
               </tr>
               <tr>
-                <td className="legacy-c" colSpan={2}>
+                <td className="legacy-c c" colSpan={2}>
                   <span style={{ color: "#ff8900" }}>Newsfeed</span>
                 </td>
               </tr>
@@ -3908,7 +3919,7 @@ function OptionsTable({
           {options.user.admin === 1 ? (
             <>
               <tr>
-                <td className="legacy-c" colSpan={2}>
+                <td className="legacy-c c" colSpan={2}>
                   Operator settings
                 </td>
               </tr>
@@ -3921,7 +3932,7 @@ function OptionsTable({
             </>
           ) : null}
           <tr>
-            <td className="legacy-c" colSpan={2}>
+            <td className="legacy-c c" colSpan={2}>
               Vacation mode / Delete account
             </td>
           </tr>
@@ -4085,7 +4096,7 @@ function NotesTable({
       <table className="legacy-overview-table legacy-notes-table" width={519}>
         <tbody>
           <tr>
-            <td className="legacy-c" colSpan={4}>
+            <td className="legacy-c c" colSpan={4}>
               Notes
             </td>
           </tr>
@@ -4095,10 +4106,10 @@ function NotesTable({
             </th>
           </tr>
           <tr>
-            <td className="legacy-c">&nbsp;</td>
-            <td className="legacy-c">Date</td>
-            <td className="legacy-c">Subject</td>
-            <td className="legacy-c">Size</td>
+            <td className="legacy-c c">&nbsp;</td>
+            <td className="legacy-c c">Date</td>
+            <td className="legacy-c c">Subject</td>
+            <td className="legacy-c c">Size</td>
           </tr>
           {notes.rows.length > 0 ? (
             notes.rows.map((note) => (
@@ -4173,7 +4184,7 @@ function NoteForm({
       <table className="legacy-overview-table legacy-notes-form-table" width={519}>
         <tbody>
           <tr>
-            <td className="legacy-c" colSpan={2}>
+            <td className="legacy-c c" colSpan={2}>
               {isEdit ? "Edit note" : "Create note"}
             </td>
           </tr>
@@ -4202,10 +4213,10 @@ function NoteForm({
             </th>
           </tr>
           <tr>
-            <td className="legacy-c">
+            <td className="legacy-c c">
               <a href={noteURL({})}>Back</a>
             </td>
-            <td className="legacy-c">
+            <td className="legacy-c c">
               {isEdit ? <input disabled={pending} type="reset" value="Reset" /> : null}
               <input disabled={pending} type="submit" value={isEdit ? "Apply" : "Save"} />
             </td>
@@ -4249,12 +4260,12 @@ function PlayerSearchResults({ rows }: { rows: GameSearchPlayerRow[] }) {
     <table className="legacy-overview-table legacy-search-results-table" width={519}>
       <tbody>
         <tr>
-          <td className="legacy-c">Name</td>
-          <td className="legacy-c">&nbsp;</td>
-          <td className="legacy-c">Alliance</td>
-          <td className="legacy-c">Planet</td>
-          <td className="legacy-c">Position</td>
-          <td className="legacy-c">Place</td>
+          <td className="legacy-c c">Name</td>
+          <td className="legacy-c c">&nbsp;</td>
+          <td className="legacy-c c">Alliance</td>
+          <td className="legacy-c c">Planet</td>
+          <td className="legacy-c c">Position</td>
+          <td className="legacy-c c">Place</td>
         </tr>
         {rows.map((row) => (
           <tr data-search-row key={`${row.playerId}-${row.planetId}`}>
@@ -4302,10 +4313,10 @@ function AllianceSearchResults({ rows }: { rows: GameSearchAllianceRow[] }) {
     <table className="legacy-overview-table legacy-search-results-table" width={519}>
       <tbody>
         <tr>
-          <td className="legacy-c">Tag</td>
-          <td className="legacy-c">Name</td>
-          <td className="legacy-c">Member</td>
-          <td className="legacy-c">Points</td>
+          <td className="legacy-c c">Tag</td>
+          <td className="legacy-c c">Name</td>
+          <td className="legacy-c c">Member</td>
+          <td className="legacy-c c">Points</td>
         </tr>
         {rows.map((row) => (
           <tr data-search-row key={row.allianceId}>
@@ -4354,12 +4365,12 @@ function TechnologyTable({ technology }: { technology: GameTechnology }) {
           {technology.groups.map((group) => (
             <React.Fragment key={group.key}>
               <tr>
-                <td className="legacy-c">{group.name}</td>
-                <td className="legacy-c">Requirements</td>
+                <td className="legacy-c c">{group.name}</td>
+                <td className="legacy-c c">Requirements</td>
               </tr>
               {group.items.map((item) => (
                 <tr data-technology-row={item.id} key={item.id}>
-                  <td className="legacy-l">
+                  <td className="legacy-l l">
                     <table border={0} cellPadding={0} cellSpacing={0} className="legacy-technology-name-table" width="100%">
                       <tbody>
                         <tr>
@@ -4375,7 +4386,7 @@ function TechnologyTable({ technology }: { technology: GameTechnology }) {
                       </tbody>
                     </table>
                   </td>
-                  <td className="legacy-l">
+                  <td className="legacy-l l">
                     {item.requirements.map((requirement) => (
                       <React.Fragment key={requirement.id}>
                         <span style={{ color: requirement.met ? "#00ff00" : "#ff0000" }}>
@@ -4405,7 +4416,7 @@ function TechnologyDetailsTable({ details }: { details: GameTechnologyDetails })
       <table className="legacy-overview-table legacy-technology-details-table" width={270}>
         <tbody>
           <tr>
-            <td align="center" className="legacy-c legacy-technology-details-title" style={{ whiteSpace: "nowrap" }}>
+            <td align="center" className="legacy-c c legacy-technology-details-title" style={{ whiteSpace: "nowrap" }}>
               Building conditions for{" "}
               <a className="legacy-technology-detail-target" href={technologyInfoURL(details.target.id)}>
                 &apos;{details.target.name}&apos;
@@ -4414,7 +4425,7 @@ function TechnologyDetailsTable({ details }: { details: GameTechnologyDetails })
           </tr>
           {details.levels.length === 0 ? (
             <tr>
-              <td align="center" className="legacy-l">
+              <td align="center" className="legacy-l l">
                 No conditions
               </td>
             </tr>
@@ -4422,11 +4433,11 @@ function TechnologyDetailsTable({ details }: { details: GameTechnologyDetails })
             details.levels.map((level) => (
               <React.Fragment key={level.step}>
                 <tr>
-                  <td className="legacy-c">{level.step}</td>
+                  <td className="legacy-c c">{level.step}</td>
                 </tr>
                 {level.requirements.map((requirement) => (
                   <tr data-technology-detail-row={requirement.id} key={`${level.step}-${requirement.id}`}>
-                    <td align="center" className="legacy-l">
+                    <td align="center" className="legacy-l l">
                       <table border={0} className="legacy-technology-name-table" width="100%">
                         <tbody>
                           <tr>
@@ -4478,7 +4489,7 @@ function EmpireTable({ empire }: { empire: GameEmpire }) {
       <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-empire-table" width={750}>
         <tbody>
           <tr style={{ height: 20 }}>
-            <td className="legacy-c" colSpan={colSpan}>
+            <td className="legacy-c c" colSpan={colSpan}>
               Empire Overview
             </td>
           </tr>
@@ -4567,7 +4578,7 @@ function EmpireTable({ empire }: { empire: GameEmpire }) {
 function EmpireSectionTitle({ colSpan, title }: { colSpan: number; title: string }) {
   return (
     <tr style={{ height: 20 }}>
-      <td align="left" className="legacy-c" colSpan={colSpan}>
+      <td align="left" className="legacy-c c" colSpan={colSpan}>
         {title}
       </td>
     </tr>
@@ -4751,7 +4762,7 @@ function ResourcesTable({
         <table className="legacy-overview-table legacy-resources-table" width={550}>
           <tbody>
             <tr>
-              <td className="legacy-c" colSpan={6}>
+              <td className="legacy-c c" colSpan={6}>
                 Resource settings on planet &quot;{resources.currentPlanet.name}&quot;
               </td>
             </tr>
@@ -4764,7 +4775,7 @@ function ResourcesTable({
             <tr>
               <th colSpan={2}>Basic Income</th>
               {resourceColumns.map((column) => (
-                <td className="legacy-k" key={column.key}>
+                <td className="legacy-k k" key={column.key}>
                   {formatLegacyPlainNumber(resourceValue(resources.natural, column.key))}
                 </td>
               ))}
@@ -4792,11 +4803,11 @@ function ResourcesTable({
             <tr>
               <th colSpan={2}>Storage capacity</th>
               {resourceColumns.map((column) => (
-                <td className="legacy-k" key={column.key}>
+                <td className="legacy-k k" key={column.key}>
                   <span style={{ color: "#00ff00" }}>{formatStorageValue(resources.storage, column.key)}</span>
                 </td>
               ))}
-              <td className="legacy-k">
+              <td className="legacy-k k">
                 <input disabled={pending} name="action" type="submit" value="Recalculate" />
               </td>
             </tr>
@@ -4857,7 +4868,7 @@ function ResourceTotalRow({ label, values }: { label: string; values: ResourcePr
       {resourceColumns.map((column) => {
         const value = resourceValue(values, column.key);
         return (
-          <td className="legacy-k" key={column.key}>
+          <td className="legacy-k k" key={column.key}>
             <span style={{ color: value > 0 ? "#00ff00" : "#ff0000" }}>{formatLegacySignedNumber(value)}</span>
           </td>
         );
@@ -4881,7 +4892,7 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
     <table className="legacy-overview-table legacy-overview-main-table" width={519}>
       <tbody>
         <tr>
-          <td className="legacy-c" colSpan={4}>
+          <td className="legacy-c c" colSpan={4}>
             <a href={gameRouteURL("/game/rename-planet", window.location.search)} title="Planet menu">
               Planet "{planet.name}"
             </a>{" "}
@@ -4902,7 +4913,7 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
           <th colSpan={3}>{overview.serverTime || formatLegacyDate(new Date())}</th>
         </tr>
         <tr>
-          <td className="legacy-c" colSpan={4}>
+          <td className="legacy-c c" colSpan={4}>
             Events
           </td>
         </tr>
@@ -4925,8 +4936,8 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
             <div className="legacy-center">{overviewBuildQueueText(planet.buildQueue, true)}</div>
             <br />
           </th>
-          <th className="legacy-s">
-            <table className="legacy-planet-list">
+          <th className="legacy-s s">
+            <table className="legacy-planet-list s">
               <tbody>
                 {otherPlanets.length === 0
                   ? null
@@ -5234,7 +5245,7 @@ function RenamePlanetTable({
           <table className="legacy-overview-table legacy-rename-planet-table" width={519}>
             <tbody>
               <tr>
-                <td className="legacy-c" colSpan={3}>
+                <td className="legacy-c c" colSpan={3}>
                   Planet information
                 </td>
               </tr>
@@ -5307,7 +5318,7 @@ function RenamePlanetDestroyMenu({
           <table className="legacy-overview-table legacy-rename-destroy-table" width={519}>
             <tbody>
               <tr>
-                <td className="legacy-c" colSpan={3}>
+                <td className="legacy-c c" colSpan={3}>
                   Just in case
                 </td>
               </tr>
@@ -5341,7 +5352,7 @@ function LegacyMessage({ tone, text }: { tone: "error" | "neutral"; text: string
     <table className="legacy-overview-table" width={519}>
       <tbody>
         <tr>
-          <td className="legacy-c">{tone === "error" ? "Error" : "Overview"}</td>
+          <td className="legacy-c c">{tone === "error" ? "Error" : "Overview"}</td>
         </tr>
         <tr>
           <th>{text}</th>

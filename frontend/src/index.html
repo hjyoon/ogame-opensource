@@ -8,14 +8,24 @@
     <script>
       (function () {
         var aliases = /* __OGAME_LEGACY_PUBLIC_BOOTSTRAP_PATHS__ */ { "/": true };
-        if (!aliases[window.location.pathname]) {
-          return;
+        if (aliases[window.location.pathname]) {
+          document.documentElement.dataset.legacyPublic = "true";
+          var cssHrefs = /* __OGAME_LEGACY_PUBLIC_CSS_HREFS__ */ ["/public-assets/css/styles.css", "/public-assets/css/about.css"];
+          cssHrefs.forEach(function (href) {
+            document.write('<link data-legacy-public-css="' + href + '" rel="stylesheet" href="' + href + '">');
+          });
         }
-        document.documentElement.dataset.legacyPublic = "true";
-        var cssHrefs = /* __OGAME_LEGACY_PUBLIC_CSS_HREFS__ */ ["/public-assets/css/styles.css", "/public-assets/css/about.css"];
-        cssHrefs.forEach(function (href) {
-          document.write('<link data-legacy-public-css="' + href + '" rel="stylesheet" href="' + href + '">');
-        });
+        if (window.location.pathname.indexOf("/game") === 0) {
+          document.documentElement.dataset.legacyGame = "true";
+          [
+            "/public-assets/game/css/default.css",
+            "/public-assets/game/css/formate.css",
+            "/public-assets/game/css/combox.css",
+            "/public-assets/evolution/formate.css"
+          ].forEach(function (href) {
+            document.write('<link data-legacy-game-css="' + href + '" rel="stylesheet" href="' + href + '">');
+          });
+        }
       })();
     </script>
   </head>
@@ -24,6 +34,9 @@
       if (document.documentElement.dataset.legacyPublic === "true") {
         document.body.classList.add("legacy-public-body");
         document.body.style.setProperty("--legacy-public-body-bg", 'url("/public-assets/img/sterne_bg2.jpg")');
+      }
+      if (document.documentElement.dataset.legacyGame === "true") {
+        document.body.classList.add("legacy-game-body");
       }
     </script>
     <div id="root"></div>

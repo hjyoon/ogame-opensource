@@ -128,6 +128,12 @@ const phases = [
   { key: "api", label: "Go API", state: "active", owner: "net/http" },
   { key: "domain", label: "Domain Ports", state: "queued", owner: "Core rules" }
 ];
+const legacyGameCssHrefs = [
+  "/public-assets/game/css/default.css",
+  "/public-assets/game/css/formate.css",
+  "/public-assets/game/css/combox.css",
+  "/public-assets/evolution/formate.css"
+];
 
 function isLegacyPublicPath(pathname: string) {
   return legacyPublicRouteKeys.has(resolvePublicRoute(pathname).route.key);
@@ -154,6 +160,27 @@ function syncLegacyPublicChrome(enabled: boolean) {
   }
   document.body.style.removeProperty("--legacy-public-body-bg");
   document.head.querySelectorAll("link[data-legacy-public-css]").forEach((link) => link.remove());
+}
+
+function ensureLegacyGameCss() {
+  for (const href of legacyGameCssHrefs) {
+    if (!document.head.querySelector(`link[data-legacy-game-css="${href}"]`)) {
+      const link = document.createElement("link");
+      link.dataset.legacyGameCss = href;
+      link.href = href;
+      link.rel = "stylesheet";
+      document.head.appendChild(link);
+    }
+  }
+}
+
+function syncLegacyGameChrome(enabled: boolean) {
+  document.body.classList.toggle("legacy-game-body", enabled);
+  if (enabled) {
+    ensureLegacyGameCss();
+    return;
+  }
+  document.head.querySelectorAll("link[data-legacy-game-css]").forEach((link) => link.remove());
 }
 
 function dispatchClientNavigation(url: string) {
@@ -263,7 +290,8 @@ function App() {
 
   useLayoutEffect(() => {
     syncLegacyPublicChrome(isLegacyPublicRoute);
-  }, [isLegacyPublicRoute]);
+    syncLegacyGameChrome(gameRoute !== null);
+  }, [gameRoute, isLegacyPublicRoute]);
 
   useEffect(() => {
     const onClick = (event: MouseEvent) => {
@@ -1822,4 +1850,5 @@ function Gate({ label, ready }: { label: string; ready: boolean }) {
 }
 
 syncLegacyPublicChrome(isLegacyPublicPath(window.location.pathname));
+syncLegacyGameChrome(window.location.pathname.startsWith("/game"));
 createRoot(document.getElementById("root") as HTMLElement).render(<App />);

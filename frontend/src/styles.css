@@ -380,13 +380,18 @@ dd {
   width: calc(100% + 16px);
 }
 
-.legacy-game-shell *,
-.legacy-game-shell table {
-  border-collapse: collapse;
-  border-spacing: 0;
-  font-family: Tahoma, sans-serif;
-  font-size: 11px;
+.legacy-game-shell * {
   letter-spacing: 0;
+}
+
+body.legacy-game-body .legacy-game-shell {
+  margin: -1px;
+  min-height: calc(100vh + 2px);
+  width: calc(100% + 9px);
+}
+
+body.legacy-game-body {
+  overflow: hidden;
 }
 
 .legacy-game-shell a {
@@ -422,7 +427,6 @@ dd {
 
 .legacy-header-top > .legacy-header-table {
   margin: 0 auto;
-  transform: translate(-7px, 0);
 }
 
 .legacy-header-placeholder {
@@ -583,7 +587,6 @@ dd {
 
 .legacy-game-shell .legacy-officer-table {
   border-spacing: 2px;
-  transform: translateX(2px);
 }
 
 .legacy-officer-table td:not(:last-child) {
@@ -606,51 +609,6 @@ dd {
 
 .legacy-game-shell .legacy-overview-main-table th {
   font-weight: bold;
-}
-
-.legacy-overview-table th,
-.legacy-overview-table td,
-.legacy-planet-list th {
-  background-color: #344566;
-  border: 1px #415680 solid;
-  color: #e6ebfb;
-  font-weight: normal;
-  padding-left: 3px;
-  padding-right: 3px;
-  text-align: center;
-  vertical-align: middle;
-}
-
-.legacy-overview-table th {
-  font-weight: normal;
-}
-
-.legacy-overview-table td.legacy-c {
-  background-image: var(--legacy-title-bg);
-  color: #e6ebfb;
-  font-weight: bold;
-  padding-left: 3px;
-  text-align: left;
-}
-
-.legacy-overview-table td.legacy-l,
-.legacy-overview-table td.legacy-k {
-  background-color: #344566;
-  border: 1px #415680 solid;
-  color: #e6ebfb;
-  font-weight: normal;
-  padding: 3px;
-  vertical-align: middle;
-}
-
-.legacy-overview-table td.legacy-l {
-  background-image: var(--legacy-row-bg);
-  text-align: left;
-  vertical-align: top;
-}
-
-.legacy-overview-table td.legacy-k {
-  text-align: center;
 }
 
 .legacy-overview-table img,

@@ -137,7 +137,7 @@ const pageSpecs: AuthPageSpec[] = [
     migratedPath: "/game/research",
     legacyReady: "#content table",
     migratedReady: ".legacy-research-table",
-    expectedTexts: ["In order to do this, you need to build a research lab!"]
+    expectedTexts: ["Description", "Computer Technology", "Energy Technology", "Combustion Drive", "Research level"]
   },
   {
     name: "game-shipyard",
@@ -146,7 +146,7 @@ const pageSpecs: AuthPageSpec[] = [
     migratedPath: "/game/shipyard",
     legacyReady: "#content table",
     migratedReady: ".legacy-shipyard-table",
-    expectedTexts: ["In order to do that, you need to build a shipyard!"]
+    expectedTexts: ["Description", "Light Fighter", "Solar Satellite", "Qty.", "Build"]
   },
   {
     name: "game-fleet",
@@ -190,7 +190,7 @@ const pageSpecs: AuthPageSpec[] = [
     migratedPath: "/game/defense",
     legacyReady: "#content table",
     migratedReady: ".legacy-defense-table",
-    expectedTexts: ["In order to do that, you need to build a shipyard!"]
+    expectedTexts: ["Description", "Rocket Launcher", "Qty.", "Build"]
   },
   {
     name: "game-statistics",
