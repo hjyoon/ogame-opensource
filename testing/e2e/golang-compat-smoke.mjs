@@ -1032,6 +1032,36 @@ try {
     gameResourcesWithoutCookieBody = {};
   }
 
+  const gameOptions = await request(`/api/game/options${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameOptionsBody = {};
+  try {
+    gameOptionsBody = JSON.parse(gameOptions.body);
+  } catch {
+    gameOptionsBody = {};
+  }
+
+  const gameOptionsUpdate = await request(`/api/game/options${sessionSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: sessionCookiePair },
+    body: "lang=en&dpath=http%3A%2F%2F127.0.0.1%3A8890%2Fevolution&design=on&settings_sort=9999&settings_order=-9999&spio_anz=-42&settings_fleetactions=99999"
+  });
+  let gameOptionsUpdateBody = {};
+  try {
+    gameOptionsUpdateBody = JSON.parse(gameOptionsUpdate.body);
+  } catch {
+    gameOptionsUpdateBody = {};
+  }
+
+  const gameOptionsWithoutCookie = await request(`/api/game/options${sessionSearch}`);
+  let gameOptionsWithoutCookieBody = {};
+  try {
+    gameOptionsWithoutCookieBody = JSON.parse(gameOptionsWithoutCookie.body);
+  } catch {
+    gameOptionsWithoutCookieBody = {};
+  }
+
   const gameLogout = await request(`/api/game/logout${sessionSearch}`, {
     method: "POST",
     headers: { Cookie: sessionCookiePair }
@@ -1351,6 +1381,21 @@ try {
       check(!gameResourcesUpdate.body.includes(sessionCookiePair), "game resources production update response does not echo private cookie"),
       check(gameResourcesWithoutCookie.status === 401, "game resources rejects missing private cookie", { status: gameResourcesWithoutCookie.status }),
       check(gameResourcesWithoutCookieBody.authenticated === false, "game resources missing private cookie is unauthenticated", gameResourcesWithoutCookieBody),
+      check(gameOptions.status === 200, "game options returns HTTP 200 with private cookie", { status: gameOptions.status }),
+      check(gameOptionsBody.authenticated === true, "game options authenticates the login session", gameOptionsBody),
+      check(typeof gameOptionsBody.options?.user?.name === "string" && gameOptionsBody.options.user.name.length > 0, "game options returns user data", gameOptionsBody),
+      check(Number.isFinite(gameOptionsBody.options?.settings?.maxSpy), "game options returns galaxy settings", gameOptionsBody),
+      check(Array.isArray(gameOptionsBody.options?.planetSwitcher), "game options returns planet switcher", gameOptionsBody),
+      check(gameOptionsUpdate.status === 200, "game options accepts legacy form POST", { status: gameOptionsUpdate.status }),
+      check(gameOptionsUpdateBody.authenticated === true, "game options update authenticates the login session", gameOptionsUpdateBody),
+      check(gameOptionsUpdateBody.options?.settings?.skinPath === "/evolution/", "game options normalizes loopback skin path", gameOptionsUpdateBody),
+      check(gameOptionsUpdateBody.options?.settings?.sortBy === 2, "game options clamps sort field like legacy", gameOptionsUpdateBody),
+      check(gameOptionsUpdateBody.options?.settings?.sortOrder === 0, "game options clamps sort direction like legacy", gameOptionsUpdateBody),
+      check(gameOptionsUpdateBody.options?.settings?.maxSpy === 1, "game options clamps spy probes like legacy", gameOptionsUpdateBody),
+      check(gameOptionsUpdateBody.options?.settings?.maxFleetMessages === 99, "game options clamps max fleet messages like legacy", gameOptionsUpdateBody),
+      check(!gameOptions.body.includes(sessionCookiePair), "game options response does not echo private cookie"),
+      check(gameOptionsWithoutCookie.status === 401, "game options rejects missing private cookie", { status: gameOptionsWithoutCookie.status }),
+      check(gameOptionsWithoutCookieBody.authenticated === false, "game options missing private cookie is unauthenticated", gameOptionsWithoutCookieBody),
       check(gameLogout.status === 200, "game logout returns HTTP 200 with private cookie", { status: gameLogout.status }),
       check(gameLogoutBody.loggedOut === true, "game logout clears the active legacy session", gameLogoutBody),
       check(gameLogoutBody.redirectTo === "/home", "game logout redirects to public home", gameLogoutBody),
@@ -1488,6 +1533,7 @@ try {
       check(js.body.includes("/api/game/notes"), "React bundle consumes game notes API"),
       check(js.body.includes("/api/game/messages"), "React bundle consumes game messages API"),
       check(js.body.includes("/api/game/report"), "React bundle consumes game report API"),
+      check(js.body.includes("/api/game/options"), "React bundle consumes game options API"),
       check(js.body.includes("/api/game/logout"), "React bundle consumes game logout API"),
       check(js.body.includes("legacy-public-main"), "React bundle contains legacy public home layout"),
       check(js.body.includes("legacy-public-register-panel"), "React bundle contains legacy public registration layout"),
@@ -1517,6 +1563,7 @@ try {
       check(js.body.includes("legacy-messages-table"), "React bundle contains legacy game messages layout"),
       check(js.body.includes("legacy-messages-compose-table"), "React bundle contains legacy game message compose layout"),
       check(js.body.includes("legacy-report-table"), "React bundle contains legacy game report layout"),
+      check(js.body.includes("legacy-options-table"), "React bundle contains legacy game options layout"),
       check(js.body.includes("legacy-notes-table"), "React bundle contains legacy game notes layout"),
       check(js.body.includes("legacy-notes-form-table"), "React bundle contains legacy game notes form layout"),
       check(js.body.includes("legacy-logout-table"), "React bundle contains legacy game logout layout")
@@ -1556,6 +1603,7 @@ try {
   const putGameNotes = await request("/api/game/notes", { method: "PUT" });
   const putGameMessages = await request("/api/game/messages", { method: "PUT" });
   const putGameReport = await request("/api/game/report", { method: "PUT" });
+  const putGameOptions = await request("/api/game/options", { method: "PUT" });
   const getGameLogout = await request("/api/game/logout");
   const putGameResources = await request("/api/game/resources", { method: "PUT" });
   cases.push(finalize({
@@ -1605,6 +1653,8 @@ try {
       check(hasHeader(putGameMessages, "allow", "GET, HEAD, POST"), "game messages method rejection returns Allow header"),
       check(putGameReport.status === 405, "PUT game report endpoint is rejected", { status: putGameReport.status }),
       check(hasHeader(putGameReport, "allow", "GET, HEAD"), "game report method rejection returns Allow header"),
+      check(putGameOptions.status === 405, "PUT game options endpoint is rejected", { status: putGameOptions.status }),
+      check(hasHeader(putGameOptions, "allow", "GET, HEAD, POST"), "game options method rejection returns Allow header"),
       check(getGameLogout.status === 405, "GET game logout endpoint is rejected", { status: getGameLogout.status }),
       check(hasHeader(getGameLogout, "allow", "POST"), "game logout method rejection returns Allow header"),
       check(putGameResources.status === 405, "PUT game resources endpoint is rejected", { status: putGameResources.status }),

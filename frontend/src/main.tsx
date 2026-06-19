@@ -11,6 +11,7 @@ import {
   type GameMessagesStatus,
   type GameNoteDraft,
   type GameNotesStatus,
+  type GameOptionsStatus,
   type GameOverviewStatus,
   type GameReportStatus,
   type GameResearchStatus,
@@ -245,6 +246,9 @@ function App() {
   const [gameMessagesPending, setGameMessagesPending] = useState(false);
   const [gameReport, setGameReport] = useState<GameReportStatus | null>(null);
   const [gameReportError, setGameReportError] = useState<string | null>(null);
+  const [gameOptions, setGameOptions] = useState<GameOptionsStatus | null>(null);
+  const [gameOptionsError, setGameOptionsError] = useState<string | null>(null);
+  const [gameOptionsPending, setGameOptionsPending] = useState(false);
   const [gameLogout, setGameLogout] = useState<GameLogoutStatus | null>(null);
   const [gameLogoutError, setGameLogoutError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
@@ -1115,6 +1119,78 @@ function App() {
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "options" || publicSession === "") {
+      setGameOptions(null);
+      setGameOptionsError(null);
+      setGameOptionsPending(false);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const optionsRequest = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      optionsRequest.set("cp", selectedPlanet);
+    }
+    fetch(`/api/game/options?${optionsRequest.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameOptionsStatus>)
+      .then((payload) => {
+        setGameOptions(payload);
+        setGameOptionsError(null);
+      })
+      .catch((err: unknown) => setGameOptionsError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
+  const submitGameOptions = (settings: {
+    language: string;
+    skinPath: string;
+    useSkin: boolean;
+    deactivateIp: boolean;
+    sortBy: number;
+    sortOrder: number;
+    maxSpy: number;
+    maxFleetMessages: number;
+    deleteAccount: boolean;
+  }) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameOptionsError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const optionsSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      optionsSearch.set("cp", selectedPlanet);
+    }
+    setGameOptionsPending(true);
+    setGameOptionsError(null);
+    fetch(`/api/game/options?${optionsSearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(settings)
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameOptionsStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `options returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("options response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameOptions(payload);
+        setGameOptionsError(payload.actionIssue?.message ?? null);
+      })
+      .catch((err: unknown) => setGameOptionsError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameOptionsPending(false));
+  };
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "notes" || publicSession === "") {
       setGameNotes(null);
       setGameNotesError(null);
@@ -1293,9 +1369,13 @@ function App() {
         notesError={gameNotesError}
         notesPending={gameNotesPending}
         notesStatus={gameNotes}
+        optionsError={gameOptionsError}
+        optionsPending={gameOptionsPending}
+        optionsStatus={gameOptions}
         onNotesCreate={submitGameNoteCreate}
         onNotesDelete={submitGameNoteDelete}
         onNotesUpdate={submitGameNoteUpdate}
+        onOptionsSubmit={submitGameOptions}
         onMessagesDelete={submitGameMessagesDelete}
         onMessageSend={submitGameMessageSend}
         onBuddyAction={submitGameBuddyAction}

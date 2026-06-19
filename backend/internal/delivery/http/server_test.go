@@ -3,6 +3,7 @@ package httpdelivery
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -3446,6 +3447,205 @@ func TestGameReportEndpointReturnsUnavailable(t *testing.T) {
 	}
 }
 
+func TestGameOptionsEndpointReturnsOptions(t *testing.T) {
+	optionsUseCase := &fakeGameOptions{result: appgame.OptionsResult{
+		Authenticated: true,
+		Options:       sampleGameOptions(),
+	}}
+	server := testServerWithGameOptions(t, optionsUseCase)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/options?session=public&cp=99", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameOptionsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.Options == nil || response.Options.User.Name != "Legor" || response.Options.Settings.MaxSpy != 5 {
+		t.Fatalf("unexpected options response: %+v", response)
+	}
+	if optionsUseCase.command.PublicSession != "public" || optionsUseCase.command.PlanetID != 99 ||
+		optionsUseCase.command.RemoteAddr != "203.0.113.10" || optionsUseCase.command.PrivateSessions["prsess_42_1"] != "private" {
+		t.Fatalf("unexpected options command: %+v", optionsUseCase.command)
+	}
+}
+
+func TestGameOptionsEndpointUpdatesOptionsFromJSON(t *testing.T) {
+	optionsUseCase := &fakeGameOptions{updateResult: appgame.OptionsResult{
+		Authenticated: true,
+		Options:       sampleGameOptions(),
+		ActionIssue:   domaingame.OptionsSavedIssue(),
+	}}
+	server := testServerWithGameOptions(t, optionsUseCase)
+	body := strings.NewReader(`{"language":"fr","skinPath":"http://127.0.0.1:8890/evolution","useSkin":true,"deactivateIp":true,"sortBy":2,"sortOrder":1,"maxSpy":9,"maxFleetMessages":11,"deleteAccount":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/options?session=public&cp=99", body)
+	req.Host = "10.8.0.2:8890"
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if optionsUseCase.updateCommand.Mutation.SkinPath != "/evolution/" ||
+		optionsUseCase.updateCommand.Mutation.SortBy != 2 ||
+		optionsUseCase.updateCommand.Mutation.MaxSpy != 9 ||
+		!optionsUseCase.updateCommand.Mutation.DeleteAccount {
+		t.Fatalf("unexpected update command: %+v", optionsUseCase.updateCommand)
+	}
+	var response gameOptionsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.ActionIssue == nil || response.ActionIssue.Code != domaingame.OptionsIssueSaved {
+		t.Fatalf("expected saved action issue, got %+v", response)
+	}
+}
+
+func TestGameOptionsEndpointUpdatesOptionsFromLegacyForm(t *testing.T) {
+	optionsUseCase := &fakeGameOptions{updateResult: appgame.OptionsResult{Authenticated: true, Options: sampleGameOptions()}}
+	server := testServerWithGameOptions(t, optionsUseCase)
+	body := strings.NewReader("lang=english&dpath=http%3A%2F%2F10.8.0.2%3A8890%2Fevolution&design=on&noipcheck=on&settings_sort=9999&settings_order=-9999&spio_anz=-42&settings_fleetactions=99999&db_deaktjava=on")
+	req := httptest.NewRequest(http.MethodPost, "/api/game/options?session=public", body)
+	req.Host = "10.8.0.2:8890"
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	mutation := optionsUseCase.updateCommand.Mutation
+	if mutation.Language != "english" || mutation.SkinPath != "/evolution/" ||
+		mutation.SortBy != 9999 || mutation.SortOrder != -9999 ||
+		mutation.MaxSpy != -42 || mutation.MaxFleetMessages != 99999 ||
+		!mutation.UseSkin || !mutation.DeactivateIP || !mutation.DeleteAccount {
+		t.Fatalf("unexpected form mutation before domain normalization: %+v", mutation)
+	}
+}
+
+func TestGameOptionsEndpointRejectsInvalidMethodAndSelectedPlanet(t *testing.T) {
+	server := testServerWithGameOptions(t, &fakeGameOptions{})
+	req := httptest.NewRequest(http.MethodPut, "/api/game/options?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD, POST" {
+		t.Fatalf("expected PUT 405 with Allow header, got %d %q", rec.Code, rec.Header().Get("Allow"))
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/options?session=public&cp=-1", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid POST selected planet 400, got %d", rec.Code)
+	}
+}
+
+func TestGameOptionsEndpointReturnsUnauthorizedAndErrors(t *testing.T) {
+	optionsUseCase := &fakeGameOptions{result: appgame.OptionsResult{
+		Authenticated: false,
+		Issues:        []domainpublicsite.SessionIssue{{Code: "missing", Message: "missing session"}},
+	}}
+	server := testServerWithGameOptions(t, optionsUseCase)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/options?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+
+	optionsUseCase = &fakeGameOptions{updateResult: appgame.OptionsResult{
+		Authenticated: false,
+		Issues:        []domainpublicsite.SessionIssue{{Code: "missing", Message: "missing session"}},
+	}}
+	server = testServerWithGameOptions(t, optionsUseCase)
+	req = httptest.NewRequest(http.MethodPost, "/api/game/options?session=public", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected POST 401, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/options?session=public", strings.NewReader("{"))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid JSON 400, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/game/options?session=public&cp=bad", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid selected planet 400, got %d", rec.Code)
+	}
+
+	server = testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req = httptest.NewRequest(http.MethodGet, "/api/game/options?session=public", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing use case 503, got %d", rec.Code)
+	}
+
+	server = testServerWithGameOptions(t, &fakeGameOptions{err: errors.New("options failed")})
+	req = httptest.NewRequest(http.MethodGet, "/api/game/options?session=public", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected use case error 503, got %d", rec.Code)
+	}
+
+	server = testServerWithGameOptions(t, &fakeGameOptions{updateErr: errors.New("options update failed")})
+	req = httptest.NewRequest(http.MethodPost, "/api/game/options?session=public", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected update use case error 503, got %d", rec.Code)
+	}
+}
+
+func TestGameOptionsRequestHostPortHelpers(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/game/options", nil)
+	req.Host = "[::1]:8890"
+	host, port := requestHostPort(req)
+	if host != "::1" || port != 8890 {
+		t.Fatalf("unexpected IPv6 host/port: %q %d", host, port)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/game/options", nil)
+	req.Host = "[::1]"
+	host, port = requestHostPort(req)
+	if host != "::1" || port != 80 {
+		t.Fatalf("unexpected IPv6 default host/port: %q %d", host, port)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/game/options", nil)
+	req.Host = ""
+	req.TLS = &tls.ConnectionState{}
+	host, port = requestHostPort(req)
+	if host != "" || port != 443 {
+		t.Fatalf("unexpected TLS default host/port: %q %d", host, port)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/options", strings.NewReader("flag=0"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if err := req.ParseForm(); err != nil {
+		t.Fatal(err)
+	}
+	if formChecked(req, "flag") || formLast(req, "missing") != "" {
+		t.Fatalf("unexpected form helper result: checked=%v last=%q", formChecked(req, "flag"), formLast(req, "missing"))
+	}
+}
+
 func TestGameNotesEndpointReturnsNotes(t *testing.T) {
 	notes := &fakeGameNotes{result: appgame.NotesResult{
 		Authenticated: true,
@@ -4616,6 +4816,19 @@ func testServerWithGameReport(t *testing.T, report GameReportUseCase) http.Handl
 	})
 }
 
+func testServerWithGameOptions(t *testing.T, options GameOptionsUseCase) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		GameOptions:        options,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
 func testServerWithCustomDrafts(t *testing.T, registrationDrafts RegistrationDraftUseCase, loginDrafts LoginDraftUseCase) http.Handler {
 	t.Helper()
 	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
@@ -4988,6 +5201,62 @@ type fakeGameReport struct {
 func (f *fakeGameReport) GetReport(_ context.Context, command appgame.ReportCommand) (appgame.ReportResult, error) {
 	f.command = command
 	return f.result, f.err
+}
+
+type fakeGameOptions struct {
+	result        appgame.OptionsResult
+	updateResult  appgame.OptionsResult
+	err           error
+	updateErr     error
+	command       appgame.OptionsCommand
+	updateCommand appgame.OptionsUpdateCommand
+}
+
+func (f *fakeGameOptions) GetOptions(_ context.Context, command appgame.OptionsCommand) (appgame.OptionsResult, error) {
+	f.command = command
+	return f.result, f.err
+}
+
+func (f *fakeGameOptions) UpdateOptions(_ context.Context, command appgame.OptionsUpdateCommand) (appgame.OptionsResult, error) {
+	f.updateCommand = command
+	return f.updateResult, f.updateErr
+}
+
+func sampleGameOptions() domaingame.Options {
+	return domaingame.Options{
+		Commander: "legor",
+		CurrentPlanet: domaingame.PlanetOverview{
+			ID:          99,
+			Name:        "Arakis",
+			Type:        domaingame.PlanetTypePlanet,
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+		},
+		PlanetSwitcher: []domaingame.PlanetSummary{{
+			ID:          99,
+			Name:        "Arakis",
+			Type:        domaingame.PlanetTypePlanet,
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Current:     true,
+		}},
+		User: domaingame.OptionsUser{
+			Name:        "Legor",
+			Email:       "legor@example.test",
+			PlainEmail:  "permanent@example.test",
+			Validated:   true,
+			CommanderOn: true,
+		},
+		Universe: domaingame.OptionsUniverse{Language: "en", FeedAge: 60},
+		Settings: domaingame.OptionsSettings{
+			Language:         "en",
+			SkinPath:         "/evolution/",
+			UseSkin:          true,
+			SortBy:           1,
+			SortOrder:        0,
+			MaxSpy:           5,
+			MaxFleetMessages: 8,
+		},
+		Flags: domaingame.OptionsFlags{ShowEspionageButton: true},
+	}
 }
 
 type fakeGameResources struct {

@@ -54,7 +54,7 @@ export const gameRoutes: GameRoute[] = [
   { key: "report", label: "Report", path: "/game/report", migrated: true },
   { key: "notes", label: "Notes", path: "/game/notes", migrated: true },
   { key: "buddy", label: "Buddylist", path: "/game/buddy", migrated: true },
-  { key: "options", label: "Options", path: "/game/options", migrated: false },
+  { key: "options", label: "Options", path: "/game/options", migrated: true },
   { key: "logout", label: "Logout", path: "/game/logout", migrated: true }
 ];
 

@@ -937,16 +937,20 @@ dd {
   margin: 0;
 }
 
+.legacy-options-table,
 .legacy-resources-table {
   border-collapse: separate;
   border-spacing: 2px;
   margin-top: 0;
 }
 
+.legacy-game-shell .legacy-options-table th,
 .legacy-game-shell .legacy-resources-table th {
   font-weight: bold;
 }
 
+.legacy-options-table select,
+.legacy-options-table input,
 .legacy-resources-table select,
 .legacy-resources-table input {
   background-color: #344566;

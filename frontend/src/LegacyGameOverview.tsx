@@ -108,6 +108,13 @@ export type GameReportStatus = {
   report?: GameReport;
 };
 
+export type GameOptionsStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  actionIssue?: { code: string; message: string };
+  options?: GameOptions;
+};
+
 export type GameLogoutStatus = {
   loggedOut: boolean;
   redirectTo: string;
@@ -485,6 +492,64 @@ type GameReport = {
   allowed: boolean;
 };
 
+type GameOptions = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  user: GameOptionsUser;
+  universe: GameOptionsUniverse;
+  settings: GameOptionsSettings;
+  account: GameOptionsAccount;
+  flags: GameOptionsFlags;
+};
+
+type GameOptionsUser = {
+  name: string;
+  nameLocked: boolean;
+  email: string;
+  plainEmail: string;
+  validated: boolean;
+  admin: number;
+  feedId: string;
+  commanderOn: boolean;
+};
+
+type GameOptionsUniverse = {
+  language: string;
+  forceLanguage: boolean;
+  feedAge: number;
+};
+
+type GameOptionsSettings = {
+  language: string;
+  skinPath: string;
+  useSkin: boolean;
+  deactivateIp: boolean;
+  sortBy: number;
+  sortOrder: number;
+  maxSpy: number;
+  maxFleetMessages: number;
+};
+
+type GameOptionsAccount = {
+  vacation: boolean;
+  vacationUntil: number;
+  deletionQueued: boolean;
+  deletionAt: number;
+};
+
+type GameOptionsFlags = {
+  showEspionageButton: boolean;
+  showWriteMessage: boolean;
+  showBuddy: boolean;
+  showRocketAttack: boolean;
+  showViewReport: boolean;
+  doNotUseFolders: boolean;
+  feedEnabled: boolean;
+  feedAtom: boolean;
+  hideGoEmail: boolean;
+};
+
 type GameMessageCompose = {
   target: {
     playerId: number;
@@ -668,6 +733,20 @@ type LegacyGameOverviewProps = {
   onMessageSend: (targetPlayerID: number, subject: string, text: string) => void;
   reportStatus: GameReportStatus | null;
   reportError: string | null;
+  optionsStatus: GameOptionsStatus | null;
+  optionsError: string | null;
+  optionsPending: boolean;
+  onOptionsSubmit: (settings: {
+    language: string;
+    skinPath: string;
+    useSkin: boolean;
+    deactivateIp: boolean;
+    sortBy: number;
+    sortOrder: number;
+    maxSpy: number;
+    maxFleetMessages: number;
+    deleteAccount: boolean;
+  }) => void;
   logoutStatus: GameLogoutStatus | null;
   logoutError: string | null;
 };
@@ -770,6 +849,10 @@ export function LegacyGameOverview({
   onMessageSend,
   reportStatus,
   reportError,
+  optionsStatus,
+  optionsError,
+  optionsPending,
+  onOptionsSubmit,
   logoutStatus,
   logoutError
 }: LegacyGameOverviewProps) {
@@ -812,9 +895,13 @@ export function LegacyGameOverview({
     messagesStatus && !messagesStatus.authenticated ? messagesStatus.issues[0]?.message ?? "Session is invalid." : null;
   const report = reportStatus?.authenticated ? reportStatus.report : undefined;
   const reportIssue = reportStatus && !reportStatus.authenticated ? reportStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const options = optionsStatus?.authenticated ? optionsStatus.options : undefined;
+  const optionsIssue =
+    optionsStatus && !optionsStatus.authenticated ? optionsStatus.issues[0]?.message ?? "Session is invalid." : null;
   const messagesActionIssue = messagesStatus?.authenticated ? messagesStatus.actionIssue : undefined;
   const messagesActionTone =
     messagesActionIssue?.code === "sent" || messagesActionIssue?.code === "reported" ? "neutral" : "error";
+  const optionsActionIssue = optionsStatus?.authenticated ? optionsStatus.actionIssue : undefined;
   const hasHeader = route.key !== "notes" && route.key !== "galaxy" && route.key !== "report";
   const hasMenu = route.key !== "notes" && route.key !== "report";
   const contentClassName =
@@ -900,6 +987,13 @@ export function LegacyGameOverview({
         {route.key === "report" && !reportError && reportIssue ? <LegacyMessage tone="error" text={reportIssue} /> : null}
         {route.key === "report" && !report && !reportError && !reportIssue ? (
           <LegacyMessage tone="neutral" text="Loading report..." />
+        ) : null}
+        {route.key === "options" && optionsError ? <LegacyMessage tone="error" text={optionsError} /> : null}
+        {route.key === "options" && !optionsError && optionsActionIssue ? (
+          <LegacyMessage tone="neutral" text={optionsActionIssue.message} />
+        ) : null}
+        {route.key === "options" && !optionsError && !optionsActionIssue && optionsIssue ? (
+          <LegacyMessage tone="error" text={optionsIssue} />
         ) : null}
         {report && route.key === "report" ? <ReportTable report={report} /> : null}
         {overview && route.key === "overview" ? <OverviewTable overview={overview} /> : null}
@@ -988,6 +1082,12 @@ export function LegacyGameOverview({
             pending={notesPending}
           />
         ) : null}
+        {overview && route.key === "options" && !options && !optionsError && !optionsIssue ? (
+          <LegacyMessage tone="neutral" text="Loading options..." />
+        ) : null}
+        {options && route.key === "options" ? (
+          <OptionsTable onSubmit={onOptionsSubmit} options={options} pending={optionsPending} />
+        ) : null}
         {overview &&
         route.key !== "overview" &&
         route.key !== "renamePlanet" &&
@@ -1005,6 +1105,7 @@ export function LegacyGameOverview({
         route.key !== "messages" &&
         route.key !== "report" &&
         route.key !== "notes" &&
+        route.key !== "options" &&
         route.key !== "logout" ? (
           <MigrationPendingGameTable route={route} />
         ) : null}
@@ -3033,6 +3134,314 @@ function ReportTable({ report }: { report: GameReport }) {
       </table>
     </>
   );
+}
+
+function OptionsTable({
+  onSubmit,
+  options,
+  pending
+}: {
+  onSubmit: (settings: {
+    language: string;
+    skinPath: string;
+    useSkin: boolean;
+    deactivateIp: boolean;
+    sortBy: number;
+    sortOrder: number;
+    maxSpy: number;
+    maxFleetMessages: number;
+    deleteAccount: boolean;
+  }) => void;
+  options: GameOptions;
+  pending: boolean;
+}) {
+  const submitOptions = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    onSubmit({
+      language: String(form.get("lang") ?? options.settings.language),
+      skinPath: String(form.get("dpath") ?? ""),
+      useSkin: form.get("design") === "on",
+      deactivateIp: form.get("noipcheck") === "on",
+      sortBy: legacyFormInt(form.get("settings_sort"), 0),
+      sortOrder: legacyFormInt(form.get("settings_order"), 0),
+      maxSpy: legacyFormInt(form.get("spio_anz"), 1),
+      maxFleetMessages: legacyFormInt(form.get("settings_fleetactions"), 3),
+      deleteAccount: form.get("db_deaktjava") === "on"
+    });
+  };
+
+  return (
+    <form action={gameRouteURL("/game/options", window.location.search)} method="POST" onSubmit={submitOptions}>
+      <table className="legacy-overview-table legacy-options-table" width={519}>
+        <tbody>
+          <tr>
+            <td className="legacy-c" colSpan={2}>
+              User Data
+            </td>
+          </tr>
+          <tr>
+            <th>{options.user.nameLocked ? <a title="The username can only be changed once every seven days.">Username</a> : "Username"}</th>
+            <th>
+              {options.user.nameLocked ? (
+                options.user.name
+              ) : (
+                <input disabled name="db_character" readOnly size={20} type="text" value={options.user.name} />
+              )}
+              <br />
+            </th>
+          </tr>
+          <tr>
+            <th>Old password</th>
+            <th>
+              <input disabled name="db_password" size={20} type="password" />
+            </th>
+          </tr>
+          <tr>
+            <th>New password (min. 8 characters)</th>
+            <th>
+              <input disabled maxLength={40} name="newpass1" size={20} type="password" />
+            </th>
+          </tr>
+          <tr>
+            <th>New password (repeat)</th>
+            <th>
+              <input disabled maxLength={40} name="newpass2" size={20} type="password" />
+            </th>
+          </tr>
+          <tr>
+            <th>
+              <a title="You can change this email address at any time. This will be entered as a permanent address after 7 days without changes.">
+                Email address
+              </a>
+            </th>
+            <th>
+              <input disabled maxLength={100} name="db_email" readOnly size={20} type="text" value={options.user.email} />
+            </th>
+          </tr>
+          <tr>
+            <th>Permanent Address</th>
+            <th>{options.user.plainEmail}</th>
+          </tr>
+          <tr>
+            <th colSpan={2} />
+          </tr>
+          <tr>
+            <td className="legacy-c" colSpan={2}>
+              General Options
+            </td>
+          </tr>
+          {!options.universe.forceLanguage ? (
+            <tr>
+              <th>Language:</th>
+              <th>
+                <select defaultValue={options.settings.language} name="lang">
+                  {legacyLanguageOptions.map((language) => (
+                    <option key={language.value} value={language.value}>
+                      {language.label}
+                    </option>
+                  ))}
+                </select>
+              </th>
+            </tr>
+          ) : null}
+          <tr>
+            <th>Sort planets by:</th>
+            <th>
+              <select defaultValue={String(options.settings.sortBy)} name="settings_sort">
+                <option value="0">Order of emergence</option>
+                <option value="1">Coordinates</option>
+                <option value="2">Alphabet</option>
+              </select>
+            </th>
+          </tr>
+          <tr>
+            <th>Assortment sequence:</th>
+            <th>
+              <select defaultValue={String(options.settings.sortOrder)} name="settings_order">
+                <option value="0">ascending</option>
+                <option value="1">descending</option>
+              </select>
+            </th>
+          </tr>
+          <tr>
+            <th>
+              Skin path (e.g. C:/ogame/skin/)
+              <br />{" "}
+              <a href="/download/" rel="noreferrer" target="_blank">
+                download
+              </a>
+            </th>
+            <th>
+              <input defaultValue={options.settings.skinPath} maxLength={80} name="dpath" size={40} type="text" />
+              <br />
+            </th>
+          </tr>
+          <tr>
+            <th>Display skin</th>
+            <th>
+              <input defaultChecked={options.settings.useSkin} name="design" type="checkbox" />
+            </th>
+          </tr>
+          <tr>
+            <th>
+              <a title="IP check means that a security logout occurs automatically when the IP changes or two people are logged into an account from different IPs. Disabling the IP check may represent a security risk!">
+                Disable IP Check - GameOperator Authorization Required
+              </a>
+            </th>
+            <th>
+              <input defaultChecked={options.settings.deactivateIp} name="noipcheck" type="checkbox" />
+            </th>
+          </tr>
+          <tr>
+            <td className="legacy-c" colSpan={2}>
+              Galaxy View Options
+            </td>
+          </tr>
+          <tr>
+            <th>
+              <a title="Number of espionage probes that can be sent directly from each scan in the Galaxy menu.">
+                Number of espionage probes
+              </a>
+            </th>
+            <th>
+              <input defaultValue={options.settings.maxSpy} maxLength={2} name="spio_anz" size={2} type="text" />
+            </th>
+          </tr>
+          <tr>
+            <th>Maximum fleet messages</th>
+            <th>
+              <input defaultValue={options.settings.maxFleetMessages} maxLength={2} name="settings_fleetactions" size={2} type="text" />
+            </th>
+          </tr>
+          {options.user.commanderOn ? (
+            <>
+              <tr>
+                <th>Action shortcuts</th>
+                <th>Confirm</th>
+              </tr>
+              {legacyFlagRows(options.flags).map((row) => (
+                <tr key={row.name}>
+                  <th>
+                    <img alt="" src={`${skinBase}/img/${row.icon}`} /> {row.label}
+                  </th>
+                  <th>
+                    <input defaultChecked={row.checked} disabled name={row.name} type="checkbox" />
+                  </th>
+                </tr>
+              ))}
+              <tr>
+                <td className="legacy-c" colSpan={2}>
+                  Message Options
+                </td>
+              </tr>
+              <tr>
+                <th>No folder sorting</th>
+                <th>
+                  <input defaultChecked={options.flags.doNotUseFolders} disabled name="settings_folders" type="checkbox" />
+                </th>
+              </tr>
+              <tr>
+                <td className="legacy-c" colSpan={2}>
+                  <span style={{ color: "#ff8900" }}>Newsfeed</span>
+                </td>
+              </tr>
+              <tr>
+                <th>{options.flags.feedEnabled ? "Activated" : "Activate"}</th>
+                <th>
+                  <input defaultChecked={options.flags.feedEnabled} disabled name="feed_activated" type="checkbox" />
+                </th>
+              </tr>
+            </>
+          ) : null}
+          {options.user.admin === 1 ? (
+            <>
+              <tr>
+                <td className="legacy-c" colSpan={2}>
+                  Operator settings
+                </td>
+              </tr>
+              <tr>
+                <th>Hide Email on message page for players</th>
+                <th>
+                  <input defaultChecked={options.flags.hideGoEmail} disabled name="hide_go_email" type="checkbox" />
+                </th>
+              </tr>
+            </>
+          ) : null}
+          <tr>
+            <td className="legacy-c" colSpan={2}>
+              Vacation mode / Delete account
+            </td>
+          </tr>
+          <tr>
+            <th>
+              <a title="Vacation mode will protect you during long absences. It can only be activated if nothing is being built, researched, or flown.">
+                Enable vacation mode
+              </a>
+            </th>
+            <th>
+              <input checked={options.account.vacation} disabled name="urlaubs_modus" readOnly type="checkbox" />
+              {options.account.vacationUntil > 0 ? ` until ${formatLegacyTimestamp(options.account.vacationUntil)}` : null}
+            </th>
+          </tr>
+          <tr>
+            <th>
+              <a title="If you mark this box, your account will be deleted automatically after 7 days.">Delete account</a>
+            </th>
+            <th>
+              <input defaultChecked={options.account.deletionQueued} name="db_deaktjava" type="checkbox" />
+              {options.account.deletionQueued && options.account.deletionAt > 0
+                ? ` am: ${formatLegacyTimestamp(options.account.deletionAt)}`
+                : null}
+            </th>
+          </tr>
+          <tr>
+            <th colSpan={2}>
+              <input disabled={pending} type="submit" value="save changes" />
+            </th>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  );
+}
+
+const legacyLanguageOptions = [
+  { value: "de", label: "Deutsch" },
+  { value: "en", label: "English" },
+  { value: "es", label: "Español" },
+  { value: "fr", label: "Français" },
+  { value: "it", label: "Italiano" },
+  { value: "jp", label: "日本語" },
+  { value: "ru", label: "Русский" }
+];
+
+function legacyFlagRows(flags: GameOptionsFlags) {
+  return [
+    { name: "settings_esp", icon: "e.gif", label: "Espionage", checked: flags.showEspionageButton },
+    { name: "settings_wri", icon: "m.gif", label: "Write message", checked: flags.showWriteMessage },
+    { name: "settings_bud", icon: "b.gif", label: "Buddy request", checked: flags.showBuddy },
+    { name: "settings_mis", icon: "r.gif", label: "Missile attack", checked: flags.showRocketAttack },
+    { name: "settings_rep", icon: "s.gif", label: "View report", checked: flags.showViewReport }
+  ];
+}
+
+function legacyFormInt(value: FormDataEntryValue | null, fallback: number): number {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+  const parsed = Number.parseInt(value.trim(), 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function formatLegacyTimestamp(unixSeconds: number): string {
+  if (unixSeconds <= 0) {
+    return "";
+  }
+  const date = new Date(unixSeconds * 1000);
+  const pad = (value: number) => value.toString().padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 function LegacyReportHTML({ html }: { html: string }) {

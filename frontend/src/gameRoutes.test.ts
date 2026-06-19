@@ -53,7 +53,7 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/buddy")).toMatchObject({ key: "buddy", migrated: true });
     expect(resolveGameRoute("/game/notes")).toMatchObject({ key: "notes", migrated: true });
     expect(resolveGameRoute("/game/logout")).toMatchObject({ key: "logout", migrated: true });
-    expect(resolveGameRoute("/game/options").label).toBe("Options");
+    expect(resolveGameRoute("/game/options")).toMatchObject({ key: "options", label: "Options", migrated: true });
     expect(resolveGameRoute("/game/messages")).toMatchObject({ key: "messages", migrated: true });
     expect(resolveGameRoute("/game/report")).toMatchObject({ key: "report", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=bericht&bericht=11")).toMatchObject({ key: "report", migrated: true });

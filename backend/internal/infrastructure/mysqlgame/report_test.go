@@ -28,6 +28,16 @@ func TestReportRepositoryReadsOwnedReport(t *testing.T) {
 	}
 }
 
+func TestNewReportRepositoryKeepsSQLQueryer(t *testing.T) {
+	repository := NewReportRepository(nil, "ogame_")
+	if repository.prefix != "ogame_" {
+		t.Fatalf("unexpected prefix: %q", repository.prefix)
+	}
+	if _, ok := repository.queryer.(SQLQueryer); !ok {
+		t.Fatalf("expected SQL queryer, got %T", repository.queryer)
+	}
+}
+
 func TestReportRepositoryAllowsSameAllianceSpyReportOnly(t *testing.T) {
 	repository := NewReportRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{77, domaingame.MessageTypeSpyReport, "spy", 5, 5})},
@@ -67,7 +77,12 @@ func TestReportRepositoryReturnsEmptyDeniedReportForMissingID(t *testing.T) {
 }
 
 func TestReportRepositoryReturnsQueryAndScanErrors(t *testing.T) {
-	repository := NewReportRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("report query failed")}}}, "ogame_")
+	repository := NewReportRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_")
+	if _, err := repository.GetReport(context.Background(), appgame.ReportQuery{}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected prefix error, got %v", err)
+	}
+
+	repository = NewReportRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("report query failed")}}}, "ogame_")
 	if _, err := repository.GetReport(context.Background(), appgame.ReportQuery{PlayerID: 42, ReportID: 11}); err == nil || !strings.Contains(err.Error(), "report query failed") {
 		t.Fatalf("expected query error, got %v", err)
 	}
@@ -84,5 +99,12 @@ func TestReportRepositoryReturnsQueryAndScanErrors(t *testing.T) {
 	}}, "ogame_")
 	if _, err := repository.GetReport(context.Background(), appgame.ReportQuery{PlayerID: 42, ReportID: 11}); err == nil || !strings.Contains(err.Error(), "report rows failed") {
 		t.Fatalf("expected rows error, got %v", err)
+	}
+
+	repository = NewReportRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsError(errors.New("missing report rows failed"))},
+	}}, "ogame_")
+	if _, err := repository.GetReport(context.Background(), appgame.ReportQuery{PlayerID: 42, ReportID: 11}); err == nil || !strings.Contains(err.Error(), "missing report rows failed") {
+		t.Fatalf("expected missing rows error, got %v", err)
 	}
 }
