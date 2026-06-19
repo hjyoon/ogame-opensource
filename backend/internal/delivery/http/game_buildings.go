@@ -11,7 +11,19 @@ import (
 type gameBuildingsResponse struct {
 	Authenticated bool                       `json:"authenticated"`
 	Issues        []gameSessionIssueResponse `json:"issues"`
+	ActionIssue   *gameBuildingsActionIssue  `json:"actionIssue,omitempty"`
 	Buildings     *gameBuildingsSummary      `json:"buildings,omitempty"`
+}
+
+type gameBuildingsActionIssue struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type gameBuildingsMutationRequest struct {
+	Action string `json:"action"`
+	TechID int    `json:"techId"`
+	ListID int    `json:"listId"`
 }
 
 type gameBuildingsSummary struct {
@@ -41,6 +53,18 @@ type gameBuildingCostResponse struct {
 }
 
 func (a app) handleGameBuildings(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		a.handleGameBuildingsGet(w, r)
+	case http.MethodPost:
+		a.handleGameBuildingsPost(w, r)
+	default:
+		w.Header().Set("Allow", "GET, HEAD, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (a app) handleGameBuildingsGet(w http.ResponseWriter, r *http.Request) {
 	if a.deps.GameBuildings == nil {
 		http.Error(w, "game buildings unavailable", http.StatusServiceUnavailable)
 		return
@@ -63,6 +87,44 @@ func (a app) handleGameBuildings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	writeGameBuildingsResponse(w, result)
+}
+
+func (a app) handleGameBuildingsPost(w http.ResponseWriter, r *http.Request) {
+	if a.deps.GameBuildings == nil {
+		http.Error(w, "game buildings unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	planetID, err := selectedPlanetID(r)
+	if err != nil {
+		http.Error(w, "invalid selected planet", http.StatusBadRequest)
+		return
+	}
+
+	var mutation gameBuildingsMutationRequest
+	if err := json.NewDecoder(r.Body).Decode(&mutation); err != nil {
+		http.Error(w, "invalid buildings mutation", http.StatusBadRequest)
+		return
+	}
+
+	result, err := a.deps.GameBuildings.MutateBuildings(r.Context(), appgame.BuildingsMutationCommand{
+		PublicSession:   r.URL.Query().Get("session"),
+		PrivateSessions: cookieMap(r),
+		RemoteAddr:      remoteIP(r.RemoteAddr),
+		PlanetID:        planetID,
+		Action:          mutation.Action,
+		TechID:          mutation.TechID,
+		ListID:          mutation.ListID,
+	})
+	if err != nil {
+		http.Error(w, "game buildings unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	writeGameBuildingsResponse(w, result)
+}
+
+func writeGameBuildingsResponse(w http.ResponseWriter, result appgame.BuildingsResult) {
 	status := http.StatusOK
 	var buildings *gameBuildingsSummary
 	if result.Authenticated {
@@ -77,6 +139,7 @@ func (a app) handleGameBuildings(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(gameBuildingsResponse{
 		Authenticated: result.Authenticated,
 		Issues:        toGameSessionIssueResponses(result.Issues),
+		ActionIssue:   toGameBuildingsActionIssue(result.ActionIssue),
 		Buildings:     buildings,
 	})
 }
@@ -96,6 +159,13 @@ func toGameBuildingsSummary(buildings domaingame.Buildings) gameBuildingsSummary
 		PlanetSwitcher: planets,
 		Items:          items,
 	}
+}
+
+func toGameBuildingsActionIssue(issue *domaingame.BuildingsActionIssue) *gameBuildingsActionIssue {
+	if issue == nil {
+		return nil
+	}
+	return &gameBuildingsActionIssue{Code: issue.Code, Message: issue.Message}
 }
 
 func toGameBuildingItemResponse(item domaingame.BuildingItem) gameBuildingItemResponse {

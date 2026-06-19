@@ -551,6 +551,18 @@ try {
     gameBuildingsWithoutCookieBody = {};
   }
 
+  const gameBuildingsMutation = await request(`/api/game/buildings${sessionSearch}`, {
+    method: "POST",
+    headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "remove", listId: 0 })
+  });
+  let gameBuildingsMutationBody = {};
+  try {
+    gameBuildingsMutationBody = JSON.parse(gameBuildingsMutation.body);
+  } catch {
+    gameBuildingsMutationBody = {};
+  }
+
   const gameResearch = await request(`/api/game/research${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -1004,6 +1016,11 @@ try {
         gameBuildingsBody
       ),
       check(Number.isFinite(gameBuildingsBody.buildings?.items?.[0]?.durationSeconds), "game buildings returns build durations", gameBuildingsBody),
+      check(gameBuildingsMutation.status === 200, "game buildings mutation endpoint accepts POST with private cookie", {
+        status: gameBuildingsMutation.status
+      }),
+      check(gameBuildingsMutationBody.authenticated === true, "game buildings mutation authenticates the login session", gameBuildingsMutationBody),
+      check(Array.isArray(gameBuildingsMutationBody.buildings?.items), "game buildings mutation returns the refreshed screen", gameBuildingsMutationBody),
       check(!gameBuildings.body.includes(sessionCookiePair), "game buildings response does not echo private cookie"),
       check(gameBuildingsWithoutCookie.status === 401, "game buildings rejects missing private cookie", { status: gameBuildingsWithoutCookie.status }),
       check(gameBuildingsWithoutCookieBody.authenticated === false, "game buildings missing private cookie is unauthenticated", gameBuildingsWithoutCookieBody),
@@ -1351,7 +1368,7 @@ try {
   const getLoginSubmit = await request("/api/public/login");
   const postGameSession = await request("/api/game/session", { method: "POST" });
   const putGameOverview = await request("/api/game/overview", { method: "PUT" });
-  const postGameBuildings = await request("/api/game/buildings", { method: "POST" });
+  const putGameBuildings = await request("/api/game/buildings", { method: "PUT" });
   const postGameResearch = await request("/api/game/research", { method: "POST" });
   const postGameShipyard = await request("/api/game/shipyard", { method: "POST" });
   const postGameFleet = await request("/api/game/fleet", { method: "POST" });
@@ -1383,8 +1400,8 @@ try {
       check(hasHeader(postGameSession, "allow", "GET, HEAD"), "game session method rejection returns Allow header"),
       check(putGameOverview.status === 405, "PUT game overview endpoint is rejected", { status: putGameOverview.status }),
       check(hasHeader(putGameOverview, "allow", "GET, HEAD, POST"), "game overview method rejection returns Allow header"),
-      check(postGameBuildings.status === 405, "POST game buildings endpoint is rejected", { status: postGameBuildings.status }),
-      check(hasHeader(postGameBuildings, "allow", "GET, HEAD"), "game buildings method rejection returns Allow header"),
+      check(putGameBuildings.status === 405, "PUT game buildings endpoint is rejected", { status: putGameBuildings.status }),
+      check(hasHeader(putGameBuildings, "allow", "GET, HEAD, POST"), "game buildings method rejection returns Allow header"),
       check(postGameResearch.status === 405, "POST game research endpoint is rejected", { status: postGameResearch.status }),
       check(hasHeader(postGameResearch, "allow", "GET, HEAD"), "game research method rejection returns Allow header"),
       check(postGameShipyard.status === 405, "POST game shipyard endpoint is rejected", { status: postGameShipyard.status }),

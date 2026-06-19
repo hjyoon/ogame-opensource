@@ -11,6 +11,7 @@ export type GameOverviewStatus = {
 export type GameBuildingsStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
+  actionIssue?: { code: string; message: string };
   buildings?: GameBuildings;
 };
 
@@ -521,6 +522,8 @@ type LegacyGameOverviewProps = {
   onPlanetRename: (name: string) => void;
   buildingsStatus: GameBuildingsStatus | null;
   buildingsError: string | null;
+  buildingsPending: boolean;
+  onBuildingAction: (action: "add" | "remove", techID: number, listID?: number) => void;
   resourcesStatus: GameResourcesStatus | null;
   resourcesError: string | null;
   resourcesPending: boolean;
@@ -605,6 +608,8 @@ export function LegacyGameOverview({
   onPlanetRename,
   buildingsStatus,
   buildingsError,
+  buildingsPending,
+  onBuildingAction,
   resourcesStatus,
   resourcesError,
   resourcesPending,
@@ -752,7 +757,9 @@ export function LegacyGameOverview({
         {overview && route.key === "buildings" && !buildings && !buildingsError && !buildingsIssue ? (
           <LegacyMessage tone="neutral" text="Loading buildings..." />
         ) : null}
-        {buildings && route.key === "buildings" ? <BuildingsTable buildings={buildings} /> : null}
+        {buildings && route.key === "buildings" ? (
+          <BuildingsTable buildings={buildings} onAction={onBuildingAction} pending={buildingsPending} />
+        ) : null}
         {overview && route.key === "resources" && !resources && !resourcesError && !resourcesIssue ? (
           <LegacyMessage tone="neutral" text="Loading resources..." />
         ) : null}
@@ -1226,50 +1233,90 @@ function galaxyTargetSearch(coordinates: Coordinates): string {
   return query.toString();
 }
 
-function BuildingsTable({ buildings }: { buildings: GameBuildings }) {
+function BuildingsTable({
+  buildings,
+  onAction,
+  pending
+}: {
+  buildings: GameBuildings;
+  onAction: (action: "add" | "remove", techID: number, listID?: number) => void;
+  pending: boolean;
+}) {
   return (
     <table className="legacy-overview-table legacy-buildings-table" width={530}>
       <tbody>
-        {buildings.items.map((item) => (
-          <tr data-building-row={item.id} key={item.id}>
-            <td className="legacy-l legacy-building-image">
-              <a href={gameRouteURL("/game/technology", window.location.search)}>
-                <img alt="" height={120} src={`${skinBase}/gebaeude/${item.id}.gif`} width={120} />
-              </a>
-            </td>
-            <td className="legacy-l legacy-building-description">
-              <a href={gameRouteURL("/game/technology", window.location.search)}>{item.name}</a>
-              {item.level > 0 ? <> (level {item.level})</> : null}
-              <br />
-              {item.description}
-              <br />
-              Cost:
-              {costParts(item.cost).map((part) => (
-                <React.Fragment key={part.name}>
-                  {" "}
-                  {part.name}: <b>{formatLegacyNumber(part.value)}</b>
-                </React.Fragment>
-              ))}
-              <br />
-              Duration: {formatLegacyDuration(item.durationSeconds)}
-              <br />
-            </td>
-            <td className="legacy-l legacy-building-action">
-              <span className={item.canBuild ? "legacy-build-ok" : "legacy-build-blocked"}>
-                {item.action}
-                {item.action === "Build level" ? (
-                  <>
-                    <br />
-                    level {item.nextLevel}
-                  </>
-                ) : null}
-              </span>
-            </td>
-          </tr>
-        ))}
+        {buildings.items.map((item) => {
+          const actionContent = (
+            <>
+              {item.action}
+              {item.action === "Build level" ? (
+                <>
+                  <br />
+                  level {item.nextLevel}
+                </>
+              ) : null}
+            </>
+          );
+          return (
+            <tr data-building-row={item.id} key={item.id}>
+              <td className="legacy-l legacy-building-image">
+                <a href={gameRouteURL("/game/technology", window.location.search)}>
+                  <img alt="" height={120} src={`${skinBase}/gebaeude/${item.id}.gif`} width={120} />
+                </a>
+              </td>
+              <td className="legacy-l legacy-building-description">
+                <a href={gameRouteURL("/game/technology", window.location.search)}>{item.name}</a>
+                {item.level > 0 ? <> (level {item.level})</> : null}
+                <br />
+                {item.description}
+                <br />
+                Cost:
+                {costParts(item.cost).map((part) => (
+                  <React.Fragment key={part.name}>
+                    {" "}
+                    {part.name}: <b>{formatLegacyNumber(part.value)}</b>
+                  </React.Fragment>
+                ))}
+                <br />
+                Duration: {formatLegacyDuration(item.durationSeconds)}
+                <br />
+              </td>
+              <td className="legacy-l legacy-building-action">
+                {item.canBuild ? (
+                  <a
+                    className="legacy-build-ok"
+                    href={buildingActionURL("add", item.id)}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      if (!pending) {
+                        onAction("add", item.id);
+                      }
+                    }}
+                  >
+                    {actionContent}
+                  </a>
+                ) : (
+                  <span className="legacy-build-blocked">{actionContent}</span>
+                )}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
+}
+
+function buildingActionURL(action: "add" | "remove", techID: number, listID?: number) {
+  const query = new URLSearchParams(window.location.search);
+  query.set("modus", action);
+  if (action === "add") {
+    query.set("techid", String(techID));
+  }
+  if (listID !== undefined) {
+    query.set("listid", String(listID));
+  }
+  return gameRouteURL("/game/buildings", `?${query.toString()}`);
 }
 
 function ResearchTable({ research }: { research: GameResearch }) {

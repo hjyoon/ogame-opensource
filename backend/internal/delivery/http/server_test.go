@@ -1107,6 +1107,16 @@ func TestGameBuildingsEndpointReturnsBuildings(t *testing.T) {
 					Deuterium: 100,
 				},
 			},
+			PlanetSwitcher: []domaingame.PlanetSummary{{
+				ID:   100,
+				Name: "Moon",
+				Type: domaingame.PlanetTypeMoon,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+			}},
 			Items: []domaingame.BuildingItem{{
 				ID:              domaingame.BuildingMetalMine,
 				Name:            "Metal Mine",
@@ -1137,6 +1147,9 @@ func TestGameBuildingsEndpointReturnsBuildings(t *testing.T) {
 	if !response.Authenticated || response.Buildings == nil || response.Buildings.Commander != "legor" || len(response.Buildings.Items) != 1 {
 		t.Fatalf("expected authenticated buildings response, got %+v", response)
 	}
+	if len(response.Buildings.PlanetSwitcher) != 1 || response.Buildings.PlanetSwitcher[0].Name != "Moon" {
+		t.Fatalf("expected planet switcher mapping, got %+v", response.Buildings.PlanetSwitcher)
+	}
 	if response.Buildings.Items[0].Cost.Metal != 135 || response.Buildings.Items[0].DurationSeconds != 121 {
 		t.Fatalf("unexpected buildings mapping: %+v", response.Buildings.Items[0])
 	}
@@ -1148,6 +1161,49 @@ func TestGameBuildingsEndpointReturnsBuildings(t *testing.T) {
 	}
 	if bytes.Contains(rec.Body.Bytes(), []byte("private")) {
 		t.Fatalf("game buildings response must not echo private session: %s", rec.Body.String())
+	}
+}
+
+func TestGameBuildingsEndpointMutatesBuildings(t *testing.T) {
+	issue := domaingame.BuildingActionIssue(domaingame.BuildingsIssueNoResources)
+	buildings := &fakeGameBuildings{result: appgame.BuildingsResult{
+		Authenticated: true,
+		ActionIssue:   issue,
+		Buildings: domaingame.Buildings{
+			Commander: "legor",
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:   99,
+				Name: "Arakis",
+				Type: domaingame.PlanetTypePlanet,
+			},
+			Items: []domaingame.BuildingItem{{
+				ID:     domaingame.BuildingMetalMine,
+				Name:   "Metal Mine",
+				Action: "build",
+			}},
+		},
+	}}
+	server := testServerWithGameBuildings(t, buildings)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/buildings?session=public&cp=99", strings.NewReader(`{"action":"add","techId":1,"listId":2}`))
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var response gameBuildingsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.ActionIssue == nil || response.ActionIssue.Code != issue.Code || response.Buildings == nil {
+		t.Fatalf("expected mutation buildings response with issue, got %+v", response)
+	}
+	if buildings.mutation.PublicSession != "public" || buildings.mutation.PlanetID != 99 ||
+		buildings.mutation.Action != "add" || buildings.mutation.TechID != 1 || buildings.mutation.ListID != 2 {
+		t.Fatalf("unexpected buildings mutation command: %+v", buildings.mutation)
 	}
 }
 
@@ -1185,6 +1241,20 @@ func TestGameBuildingsEndpointRejectsInvalidPlanetID(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected invalid selected planet to return 400, got %d", rec.Code)
 	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/buildings?session=public&cp=abc", strings.NewReader(`{"action":"add"}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid selected planet mutation to return 400, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/buildings?session=public", strings.NewReader(`{`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid buildings mutation JSON to return 400, got %d", rec.Code)
+	}
 }
 
 func TestGameBuildingsEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
@@ -1195,6 +1265,30 @@ func TestGameBuildingsEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected game buildings error to return 503, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/buildings?session=public", strings.NewReader(`{"action":"add"}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game buildings mutation error to return 503, got %d", rec.Code)
+	}
+}
+
+func TestGameBuildingsEndpointReturnsUnavailableWithoutUseCase(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/buildings?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing buildings use case to return 503, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/buildings?session=public", strings.NewReader(`{"action":"add"}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing buildings mutation use case to return 503, got %d", rec.Code)
 	}
 }
 
@@ -3260,11 +3354,11 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game overview method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/game/buildings", nil)
+	req = httptest.NewRequest(http.MethodPut, "/api/game/buildings", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD, POST" {
 		t.Fatalf("expected game buildings method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
@@ -3868,13 +3962,19 @@ func (f *fakeGameOverview) DeletePlanet(_ context.Context, command appgame.Overv
 }
 
 type fakeGameBuildings struct {
-	result  appgame.BuildingsResult
-	err     error
-	command appgame.BuildingsCommand
+	result   appgame.BuildingsResult
+	err      error
+	command  appgame.BuildingsCommand
+	mutation appgame.BuildingsMutationCommand
 }
 
 func (f *fakeGameBuildings) GetBuildings(_ context.Context, command appgame.BuildingsCommand) (appgame.BuildingsResult, error) {
 	f.command = command
+	return f.result, f.err
+}
+
+func (f *fakeGameBuildings) MutateBuildings(_ context.Context, command appgame.BuildingsMutationCommand) (appgame.BuildingsResult, error) {
+	f.mutation = command
 	return f.result, f.err
 }
 

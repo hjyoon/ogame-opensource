@@ -27,6 +27,7 @@ const (
 	userSpace                = 99999
 	queueTypeBuild           = "Build"
 	queueTypeDemolish        = "Demolish"
+	queueTypeResearch        = "Research"
 	queueTypeShipyard        = "Shipyard"
 )
 

@@ -208,6 +208,7 @@ function App() {
   const [gameOverviewPending, setGameOverviewPending] = useState(false);
   const [gameBuildings, setGameBuildings] = useState<GameBuildingsStatus | null>(null);
   const [gameBuildingsError, setGameBuildingsError] = useState<string | null>(null);
+  const [gameBuildingsPending, setGameBuildingsPending] = useState(false);
   const [gameResources, setGameResources] = useState<GameResourcesStatus | null>(null);
   const [gameResourcesError, setGameResourcesError] = useState<string | null>(null);
   const [gameResourcesPending, setGameResourcesPending] = useState(false);
@@ -430,6 +431,50 @@ function App() {
       })
       .catch((err: unknown) => setGameBuildingsError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
+
+  const submitGameBuildingsMutation = (body: { action: "add" | "remove"; techId: number; listId?: number }) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameBuildingsError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const buildingsSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      buildingsSearch.set("cp", selectedPlanet);
+    }
+    setGameBuildingsPending(true);
+    setGameBuildingsError(null);
+    fetch(`/api/game/buildings?${buildingsSearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(body)
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameBuildingsStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `buildings returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("buildings response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameBuildings(payload);
+        setGameBuildingsError(payload.actionIssue?.message ?? null);
+        dispatchClientNavigation(`/game/buildings?${buildingsSearch.toString()}`);
+      })
+      .catch((err: unknown) => setGameBuildingsError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameBuildingsPending(false));
+  };
+
+  const submitGameBuildingAction = (action: "add" | "remove", techId: number, listId?: number) => {
+    submitGameBuildingsMutation({ action, techId, listId });
+  };
 
   const submitGameResources = (production: Record<string, string>) => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
@@ -911,6 +956,7 @@ function App() {
         buddyPending={gameBuddyPending}
         buddyStatus={gameBuddy}
         buildingsError={gameBuildingsError}
+        buildingsPending={gameBuildingsPending}
         buildingsStatus={gameBuildings}
         defenseError={gameDefenseError}
         defenseStatus={gameDefense}
@@ -929,6 +975,7 @@ function App() {
         onNotesUpdate={submitGameNoteUpdate}
         onBuddyAction={submitGameBuddyAction}
         onBuddyRequest={submitGameBuddyRequest}
+        onBuildingAction={submitGameBuildingAction}
         onPlanetDelete={submitGamePlanetDelete}
         onPlanetRename={submitGamePlanetRename}
         onResourcesSubmit={submitGameResources}

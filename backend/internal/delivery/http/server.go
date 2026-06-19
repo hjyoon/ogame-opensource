@@ -59,6 +59,7 @@ type GameOverviewUseCase interface {
 
 type GameBuildingsUseCase interface {
 	GetBuildings(context.Context, appgame.BuildingsCommand) (appgame.BuildingsResult, error)
+	MutateBuildings(context.Context, appgame.BuildingsMutationCommand) (appgame.BuildingsResult, error)
 }
 
 type GameResourcesUseCase interface {
@@ -156,7 +157,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/session", getOnly(a.handleGameSession))
 	mux.HandleFunc("/api/game/logout", postOnly(a.handleGameLogout))
 	mux.HandleFunc("/api/game/overview", a.handleGameOverview)
-	mux.HandleFunc("/api/game/buildings", getOnly(a.handleGameBuildings))
+	mux.HandleFunc("/api/game/buildings", a.handleGameBuildings)
 	mux.HandleFunc("/api/game/resources", a.handleGameResources)
 	mux.HandleFunc("/api/game/research", getOnly(a.handleGameResearch))
 	mux.HandleFunc("/api/game/shipyard", getOnly(a.handleGameShipyard))

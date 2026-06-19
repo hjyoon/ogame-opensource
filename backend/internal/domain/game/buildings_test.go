@@ -72,6 +72,39 @@ func TestBuildBuildingsMarksUnavailableWhenResourcesOrFieldsAreMissing(t *testin
 	}
 }
 
+func TestBuildingMutationHelpersFollowCatalog(t *testing.T) {
+	if NormalizeBuildingsMutationAction(BuildingsMutationAdd) != BuildingsMutationAdd ||
+		NormalizeBuildingsMutationAction(BuildingsMutationRemove) != BuildingsMutationRemove ||
+		NormalizeBuildingsMutationAction("destroy") != "" {
+		t.Fatalf("unexpected building mutation action normalization")
+	}
+	cost, ok := BuildingCostForLevel(BuildingMetalMine, 3)
+	if !ok || cost.Metal != 135 || cost.Crystal != 33.75 {
+		t.Fatalf("unexpected exported building cost: cost=%+v ok=%v", cost, ok)
+	}
+	if _, ok := BuildingCostForLevel(9999, 1); ok {
+		t.Fatalf("unknown building should not have a cost")
+	}
+	if !BuildingAllowedOnPlanet(BuildingLunarBase, PlanetTypeMoon) || BuildingAllowedOnPlanet(BuildingMetalMine, PlanetTypeMoon) {
+		t.Fatalf("building planet type helper disagrees with catalog")
+	}
+	if !BuildingRequirementsMet(BuildingFusionReactor, BuildingLevels{BuildingDeuteriumSynth: 5}, ResearchLevels{ResearchEnergy: 3}) {
+		t.Fatalf("expected fusion reactor requirements to be met")
+	}
+	if BuildingRequirementsMet(BuildingFusionReactor, BuildingLevels{}, ResearchLevels{}) {
+		t.Fatalf("expected missing fusion reactor requirements")
+	}
+	if !BuildingRequirementsMet(BuildingJumpGate, BuildingLevels{BuildingLunarBase: 1}, ResearchLevels{ResearchHyperspace: 7}) {
+		t.Fatalf("expected jump gate research requirements to be met")
+	}
+	if BuildingDurationForCost(cost, 1, 0, 1) != 121 {
+		t.Fatalf("duration helper should reuse legacy formula")
+	}
+	if BuildingActionIssue(BuildingsIssueNoResources).Message == "" || BuildingActionIssue("unknown").Code != "unknown" {
+		t.Fatalf("expected building action issues to be populated")
+	}
+}
+
 func findBuilding(t *testing.T, buildings Buildings, id int) BuildingItem {
 	t.Helper()
 	for _, item := range buildings.Items {

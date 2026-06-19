@@ -84,6 +84,11 @@ type Buildings struct {
 	Items          []BuildingItem
 }
 
+type BuildingsActionIssue struct {
+	Code    string
+	Message string
+}
+
 type BuildingItem struct {
 	ID              int
 	Name            string
@@ -105,6 +110,21 @@ type BuildingCost struct {
 
 type BuildingLevels map[int]int
 type ResearchLevels map[int]int
+
+const (
+	BuildingsMutationAdd    = "add"
+	BuildingsMutationRemove = "remove"
+
+	BuildingsIssueInvalid       = "invalid_building"
+	BuildingsIssueVacation      = "vacation"
+	BuildingsIssueNoSpace       = "no_space"
+	BuildingsIssueBusy          = "busy"
+	BuildingsIssueNoResources   = "no_resources"
+	BuildingsIssueRequirements  = "requirements"
+	BuildingsIssueQueueFull     = "queue_full"
+	BuildingsIssueSameSecond    = "same_second"
+	BuildingsIssueUniversePause = "universe_paused"
+)
 
 type buildingSpec struct {
 	id                 int
@@ -140,7 +160,56 @@ func BuildingIDs() []int {
 }
 
 func BuildingResearchIDs() []int {
-	return []int{ResearchComputer, ResearchEnergy}
+	return []int{ResearchComputer, ResearchEnergy, ResearchHyperspace}
+}
+
+func NormalizeBuildingsMutationAction(action string) string {
+	switch action {
+	case BuildingsMutationAdd, BuildingsMutationRemove:
+		return action
+	default:
+		return ""
+	}
+}
+
+func BuildingCostForLevel(id int, level int) (BuildingCost, bool) {
+	spec, ok := buildingSpecByID(id)
+	if !ok {
+		return BuildingCost{}, false
+	}
+	return spec.price(level), true
+}
+
+func BuildingDurationForCost(cost BuildingCost, robotics int, nanites int, speed float64) int {
+	return buildingDuration(cost, robotics, nanites, speed)
+}
+
+func BuildingAllowedOnPlanet(id int, planetType int) bool {
+	spec, ok := buildingSpecByID(id)
+	return ok && spec.allowedPlanetTypes[planetType]
+}
+
+func BuildingRequirementsMet(id int, buildings BuildingLevels, research ResearchLevels) bool {
+	spec, ok := buildingSpecByID(id)
+	return ok && requirementsMet(spec.requirements, buildings, research)
+}
+
+func BuildingActionIssue(code string) *BuildingsActionIssue {
+	message := map[string]string{
+		BuildingsIssueInvalid:       "This building cannot be built here.",
+		BuildingsIssueVacation:      "Vacation mode is active.",
+		BuildingsIssueNoSpace:       "There's no space!",
+		BuildingsIssueBusy:          "The required facility is busy.",
+		BuildingsIssueNoResources:   "Not enough resources.",
+		BuildingsIssueRequirements:  "Requirements are not met.",
+		BuildingsIssueQueueFull:     "The building queue is full.",
+		BuildingsIssueSameSecond:    "Only one building order can be added per second.",
+		BuildingsIssueUniversePause: "The universe is currently paused.",
+	}[code]
+	if message == "" {
+		message = "The building order could not be processed."
+	}
+	return &BuildingsActionIssue{Code: code, Message: message}
 }
 
 func ResearchIDs() []int {
@@ -285,6 +354,15 @@ func buildAction(level int, nextLevel int, canBuild bool, full bool) string {
 		return "Build level"
 	}
 	return "Build level"
+}
+
+func buildingSpecByID(id int) (buildingSpec, bool) {
+	for _, spec := range buildingCatalog {
+		if spec.id == id {
+			return spec, true
+		}
+	}
+	return buildingSpec{}, false
 }
 
 var planetOnly = map[int]bool{PlanetTypePlanet: true}
