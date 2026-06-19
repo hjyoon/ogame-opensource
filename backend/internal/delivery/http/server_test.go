@@ -1720,7 +1720,8 @@ func TestGameFleetEndpointReturnsFleet(t *testing.T) {
 	fleet := &fakeGameFleet{result: appgame.FleetResult{
 		Authenticated: true,
 		Fleet: domaingame.Fleet{
-			Commander: "legor",
+			Commander:       "legor",
+			CommanderActive: true,
 			CurrentPlanet: domaingame.PlanetOverview{
 				ID:   99,
 				Name: "Arakis",
@@ -1742,8 +1743,19 @@ func TestGameFleetEndpointReturnsFleet(t *testing.T) {
 				},
 				Current: true,
 			}},
-			Slots:       domaingame.FleetSlots{Used: 1, Max: 6, BaseMax: 4, Admiral: true},
-			Expeditions: domaingame.ExpeditionSlots{Used: 0, Max: 2},
+			Slots:         domaingame.FleetSlots{Used: 1, Max: 6, BaseMax: 4, Admiral: true},
+			Expeditions:   domaingame.ExpeditionSlots{Used: 0, Max: 2},
+			TemplateLimit: 4,
+			Templates: []domaingame.FleetTemplate{{
+				ID:        7,
+				Name:      "raid wing",
+				UpdatedAt: 1000,
+				Ships: []domaingame.FleetTemplateShip{{
+					ID:    domaingame.FleetSmallCargo,
+					Name:  "Small Cargo",
+					Count: 3,
+				}},
+			}},
 			Missions: []domaingame.FleetMission{{
 				ID:              11,
 				Mission:         domaingame.FleetMissionTransport,
@@ -1794,6 +1806,9 @@ func TestGameFleetEndpointReturnsFleet(t *testing.T) {
 	}
 	if response.Fleet.Slots.Used != 1 || response.Fleet.Slots.Max != 6 || response.Fleet.Expeditions.Max != 2 {
 		t.Fatalf("unexpected fleet slot mapping: %+v", response.Fleet)
+	}
+	if !response.Fleet.CommanderActive || !response.Fleet.Templates.CommanderActive || response.Fleet.Templates.Max != 4 || len(response.Fleet.Templates.Items) != 1 || response.Fleet.Templates.Items[0].Ships[0].Count != 3 {
+		t.Fatalf("unexpected fleet template mapping: %+v", response.Fleet.Templates)
 	}
 	if response.Fleet.Missions[0].MissionName != "Transport" || response.Fleet.Missions[0].Origin.Galaxy != 1 || !response.Fleet.Missions[0].CanRecall {
 		t.Fatalf("unexpected fleet mission mapping: %+v", response.Fleet.Missions[0])
@@ -1867,6 +1882,137 @@ func TestGameFleetEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected game fleet error to return 503, got %d", rec.Code)
+	}
+}
+
+func TestGameFleetTemplatesEndpointMutatesTemplates(t *testing.T) {
+	fleet := &fakeGameFleet{result: appgame.FleetResult{
+		Authenticated: true,
+		Fleet: domaingame.Fleet{
+			Commander:       "legor",
+			CommanderActive: true,
+			TemplateLimit:   4,
+			Templates: []domaingame.FleetTemplate{{
+				ID:   7,
+				Name: "raid wing",
+				Ships: []domaingame.FleetTemplateShip{{
+					ID:    domaingame.FleetSmallCargo,
+					Name:  "Small Cargo",
+					Count: 3,
+				}},
+			}},
+		},
+	}}
+	server := testServerWithGameFleet(t, fleet)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/fleet-templates?session=public&cp=99", bytes.NewBufferString(`{"action":"save","templateId":7,"name":"raid wing","ships":{"202":3,"bad":9}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fleet.mutation.PublicSession != "public" || fleet.mutation.PlanetID != 99 || fleet.mutation.TemplateID != 7 || fleet.mutation.Ships[domaingame.FleetSmallCargo] != 3 {
+		t.Fatalf("unexpected fleet template mutation: %+v", fleet.mutation)
+	}
+	var response gameFleetResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Fleet == nil || len(response.Fleet.Templates.Items) != 1 || response.Fleet.Templates.Items[0].Name != "raid wing" {
+		t.Fatalf("unexpected fleet template response: %+v", response.Fleet)
+	}
+}
+
+func TestGameFleetTemplatesEndpointReturnsTemplates(t *testing.T) {
+	fleet := &fakeGameFleet{result: appgame.FleetResult{
+		Authenticated: true,
+		Fleet: domaingame.Fleet{
+			CommanderActive: true,
+			TemplateLimit:   4,
+			Templates: []domaingame.FleetTemplate{{
+				ID:   7,
+				Name: "raid wing",
+			}},
+		},
+	}}
+	server := testServerWithGameFleet(t, fleet)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/fleet-templates?session=public&cp=99", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fleet.command.PublicSession != "public" || fleet.command.PlanetID != 99 || fleet.command.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected fleet template query command: %+v", fleet.command)
+	}
+	var response gameFleetResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Fleet == nil || response.Fleet.Templates.Max != 4 || len(response.Fleet.Templates.Items) != 1 {
+		t.Fatalf("unexpected fleet template response: %+v", response.Fleet)
+	}
+}
+
+func TestGameFleetTemplatesEndpointHandlesUnavailableAndInvalidRequests(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodGet, "/api/game/fleet-templates?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing fleet templates use case to return 503, got %d", rec.Code)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/game/fleet-templates?session=public", bytes.NewBufferString(`{"action":"save"}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing fleet templates mutation use case to return 503, got %d", rec.Code)
+	}
+
+	server = testServerWithGameFleet(t, &fakeGameFleet{})
+	req = httptest.NewRequest(http.MethodGet, "/api/game/fleet-templates?session=public&cp=abc", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid selected planet to return 400, got %d", rec.Code)
+	}
+
+	server = testServerWithGameFleet(t, &fakeGameFleet{err: errors.New("fleet failed")})
+	req = httptest.NewRequest(http.MethodGet, "/api/game/fleet-templates?session=public", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected query use case error to return 503, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/fleet-templates?session=public&cp=abc", bytes.NewBufferString(`{"action":"save"}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid post selected planet to return 400, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/fleet-templates?session=public", bytes.NewBufferString(`{"action":"save"}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected mutation use case error to return 503, got %d", rec.Code)
+	}
+}
+
+func TestGameFleetTemplatesEndpointRejectsBadPayload(t *testing.T) {
+	server := testServerWithGameFleet(t, &fakeGameFleet{})
+	req := httptest.NewRequest(http.MethodPost, "/api/game/fleet-templates?session=public", strings.NewReader(`{`))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected bad payload to return 400, got %d", rec.Code)
 	}
 }
 
@@ -3618,6 +3764,14 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game fleet method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
+	req = httptest.NewRequest(http.MethodPut, "/api/game/fleet-templates", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD, POST" {
+		t.Fatalf("expected game fleet templates method rejection, got code=%d headers=%v", rec.Code, rec.Header())
+	}
+
 	req = httptest.NewRequest(http.MethodPost, "/api/game/galaxy", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -4245,13 +4399,19 @@ func (f *fakeGameShipyard) MutateShipyard(_ context.Context, command appgame.Shi
 }
 
 type fakeGameFleet struct {
-	result  appgame.FleetResult
-	err     error
-	command appgame.FleetCommand
+	result   appgame.FleetResult
+	err      error
+	command  appgame.FleetCommand
+	mutation appgame.FleetTemplateMutationCommand
 }
 
 func (f *fakeGameFleet) GetFleet(_ context.Context, command appgame.FleetCommand) (appgame.FleetResult, error) {
 	f.command = command
+	return f.result, f.err
+}
+
+func (f *fakeGameFleet) MutateFleetTemplate(_ context.Context, command appgame.FleetTemplateMutationCommand) (appgame.FleetResult, error) {
+	f.mutation = command
 	return f.result, f.err
 }
 

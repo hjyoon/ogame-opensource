@@ -21,13 +21,16 @@ const (
 )
 
 type Fleet struct {
-	Commander      string
-	CurrentPlanet  PlanetOverview
-	PlanetSwitcher []PlanetSummary
-	Slots          FleetSlots
-	Expeditions    ExpeditionSlots
-	Missions       []FleetMission
-	Ships          []FleetShipSelection
+	Commander       string
+	CommanderActive bool
+	CurrentPlanet   PlanetOverview
+	PlanetSwitcher  []PlanetSummary
+	Slots           FleetSlots
+	Expeditions     ExpeditionSlots
+	Missions        []FleetMission
+	Ships           []FleetShipSelection
+	TemplateLimit   int
+	Templates       []FleetTemplate
 }
 
 type FleetSlots struct {

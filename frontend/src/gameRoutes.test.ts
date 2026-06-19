@@ -8,6 +8,7 @@ describe("game route model", () => {
     expect(gameRoutes.map((route) => route.path)).toContain("/game/buildings");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/rename-planet");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/fleet");
+    expect(gameRoutes.map((route) => route.path)).toContain("/game/fleet-templates");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/merchant");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/officers");
   });
@@ -16,6 +17,8 @@ describe("game route model", () => {
     expect(normalizeGamePath("/game")).toBe("/game/overview");
     expect(normalizeGamePath("/game/overview/")).toBe("/game/overview");
     expect(normalizeGamePath("/game/resources?session=abc")).toBe("/game/resources");
+    expect(normalizeGamePath("/game/index.php", "?page=fleet_templates&session=abc")).toBe("/game/fleet-templates");
+    expect(normalizeGamePath("/game/index.php?page=flotten1&session=abc")).toBe("/game/fleet");
   });
 
   test("resolves natural authenticated game routes", () => {
@@ -27,6 +30,8 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/research")).toMatchObject({ key: "research", migrated: true });
     expect(resolveGameRoute("/game/shipyard")).toMatchObject({ key: "shipyard", migrated: true });
     expect(resolveGameRoute("/game/fleet")).toMatchObject({ key: "fleet", migrated: true });
+    expect(resolveGameRoute("/game/fleet-templates")).toMatchObject({ key: "fleetTemplates", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=fleet_templates")).toMatchObject({ key: "fleetTemplates", migrated: true });
     expect(resolveGameRoute("/game/galaxy")).toMatchObject({ key: "galaxy", migrated: true });
     expect(resolveGameRoute("/game/defense")).toMatchObject({ key: "defense", migrated: true });
     expect(resolveGameRoute("/game/technology")).toMatchObject({ key: "technology", migrated: true });

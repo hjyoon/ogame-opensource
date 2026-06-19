@@ -60,6 +60,27 @@ func TestBuildFleetMarksAttackUnionAvailability(t *testing.T) {
 	}
 }
 
+func TestBuildFleetTemplateUsesLegacyShipIDsWithoutSolarSatellites(t *testing.T) {
+	template := BuildFleetTemplate(7, "  raid wing  ", 1234, FleetCounts{
+		FleetSmallCargo:     5,
+		FleetSolarSatellite: 9,
+		FleetRecycler:       -1,
+		FleetBattlecruiser:  2,
+	})
+
+	if template.ID != 7 || template.Name != "raid wing" || template.UpdatedAt != 1234 {
+		t.Fatalf("unexpected template header: %+v", template)
+	}
+	if len(template.Ships) != 2 || template.Ships[0].ID != FleetSmallCargo || template.Ships[1].ID != FleetBattlecruiser {
+		t.Fatalf("unexpected template ships: %+v", template.Ships)
+	}
+	for _, id := range FleetTemplateShipIDs() {
+		if id == FleetSolarSatellite {
+			t.Fatal("solar satellites must not be selectable for standard fleets")
+		}
+	}
+}
+
 func TestFleetMissionDisplayAndNames(t *testing.T) {
 	tests := []struct {
 		mission int

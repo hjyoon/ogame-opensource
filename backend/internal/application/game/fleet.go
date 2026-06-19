@@ -11,6 +11,7 @@ import (
 
 type FleetRepository interface {
 	GetFleet(context.Context, FleetQuery) (domaingame.Fleet, error)
+	MutateFleetTemplate(context.Context, FleetTemplateMutationQuery) error
 }
 
 type FleetQuery struct {
@@ -23,6 +24,25 @@ type FleetCommand struct {
 	PrivateSessions map[string]string
 	RemoteAddr      string
 	PlanetID        int
+}
+
+type FleetTemplateMutationQuery struct {
+	PlayerID   int
+	TemplateID int
+	Action     string
+	Name       string
+	Ships      map[int]int
+}
+
+type FleetTemplateMutationCommand struct {
+	PublicSession   string
+	PrivateSessions map[string]string
+	RemoteAddr      string
+	PlanetID        int
+	TemplateID      int
+	Action          string
+	Name            string
+	Ships           map[int]int
 }
 
 type FleetResult struct {
@@ -58,6 +78,49 @@ func (s FleetService) GetFleet(ctx context.Context, command FleetCommand) (Fleet
 			Authenticated: false,
 			Issues:        session.Issues,
 		}, nil
+	}
+
+	fleet, err := s.repository.GetFleet(ctx, FleetQuery{
+		PlayerID: session.Session.PlayerID,
+		PlanetID: command.PlanetID,
+	})
+	if err != nil {
+		return FleetResult{}, err
+	}
+	return FleetResult{
+		Authenticated: true,
+		Fleet:         fleet,
+	}, nil
+}
+
+func (s FleetService) MutateFleetTemplate(ctx context.Context, command FleetTemplateMutationCommand) (FleetResult, error) {
+	if s.sessions == nil || s.repository == nil {
+		return FleetResult{}, errors.New("fleet dependencies unavailable")
+	}
+
+	session, err := s.sessions.GetGameSession(ctx, apppublicsite.GameSessionCommand{
+		PublicSession:   command.PublicSession,
+		PrivateSessions: command.PrivateSessions,
+		RemoteAddr:      command.RemoteAddr,
+	})
+	if err != nil {
+		return FleetResult{}, err
+	}
+	if !session.Authenticated {
+		return FleetResult{
+			Authenticated: false,
+			Issues:        session.Issues,
+		}, nil
+	}
+
+	if err := s.repository.MutateFleetTemplate(ctx, FleetTemplateMutationQuery{
+		PlayerID:   session.Session.PlayerID,
+		TemplateID: command.TemplateID,
+		Action:     command.Action,
+		Name:       command.Name,
+		Ships:      command.Ships,
+	}); err != nil {
+		return FleetResult{}, err
 	}
 
 	fleet, err := s.repository.GetFleet(ctx, FleetQuery{

@@ -635,6 +635,24 @@ try {
     gameFleetWithoutCookieBody = {};
   }
 
+  const gameFleetTemplates = await request(`/api/game/fleet-templates${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameFleetTemplatesBody = {};
+  try {
+    gameFleetTemplatesBody = JSON.parse(gameFleetTemplates.body);
+  } catch {
+    gameFleetTemplatesBody = {};
+  }
+
+  const gameFleetTemplatesWithoutCookie = await request(`/api/game/fleet-templates${sessionSearch}`);
+  let gameFleetTemplatesWithoutCookieBody = {};
+  try {
+    gameFleetTemplatesWithoutCookieBody = JSON.parse(gameFleetTemplatesWithoutCookie.body);
+  } catch {
+    gameFleetTemplatesWithoutCookieBody = {};
+  }
+
   const gameGalaxy = await request(`/api/game/galaxy${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -1067,9 +1085,17 @@ try {
       check(Number.isFinite(gameFleetBody.fleet?.expeditions?.max), "game fleet returns expedition slots", gameFleetBody),
       check(Array.isArray(gameFleetBody.fleet?.missions), "game fleet returns active mission rows array", gameFleetBody),
       check(Array.isArray(gameFleetBody.fleet?.ships), "game fleet returns selectable ship rows array", gameFleetBody),
+      check(Array.isArray(gameFleetBody.fleet?.templates?.items), "game fleet returns standard fleet templates array", gameFleetBody),
       check(!gameFleet.body.includes(sessionCookiePair), "game fleet response does not echo private cookie"),
       check(gameFleetWithoutCookie.status === 401, "game fleet rejects missing private cookie", { status: gameFleetWithoutCookie.status }),
       check(gameFleetWithoutCookieBody.authenticated === false, "game fleet missing private cookie is unauthenticated", gameFleetWithoutCookieBody),
+      check(gameFleetTemplates.status === 200, "game fleet templates return HTTP 200 with private cookie", { status: gameFleetTemplates.status }),
+      check(gameFleetTemplatesBody.authenticated === true, "game fleet templates authenticate the login session", gameFleetTemplatesBody),
+      check(Array.isArray(gameFleetTemplatesBody.fleet?.templates?.items), "game fleet templates endpoint returns template rows array", gameFleetTemplatesBody),
+      check(Number.isFinite(gameFleetTemplatesBody.fleet?.templates?.max), "game fleet templates endpoint returns max standard fleets", gameFleetTemplatesBody),
+      check(!gameFleetTemplates.body.includes(sessionCookiePair), "game fleet templates response does not echo private cookie"),
+      check(gameFleetTemplatesWithoutCookie.status === 401, "game fleet templates reject missing private cookie", { status: gameFleetTemplatesWithoutCookie.status }),
+      check(gameFleetTemplatesWithoutCookieBody.authenticated === false, "game fleet templates missing private cookie is unauthenticated", gameFleetTemplatesWithoutCookieBody),
       check(gameGalaxy.status === 200, "game galaxy returns HTTP 200 with private cookie", { status: gameGalaxy.status }),
       check(gameGalaxyBody.authenticated === true, "game galaxy authenticates the login session", gameGalaxyBody),
       check(Array.isArray(gameGalaxyBody.galaxy?.rows) && gameGalaxyBody.galaxy.rows.length === 15, "game galaxy returns 15 visible system rows", gameGalaxyBody),
@@ -1336,6 +1362,7 @@ try {
       check(js.body.includes("/api/game/research"), "React bundle consumes game research API"),
       check(js.body.includes("/api/game/shipyard"), "React bundle consumes game shipyard API"),
       check(js.body.includes("/api/game/fleet"), "React bundle consumes game fleet API"),
+      check(js.body.includes("/api/game/fleet-templates"), "React bundle consumes game fleet templates API"),
       check(js.body.includes("/api/game/galaxy"), "React bundle consumes game galaxy API"),
       check(js.body.includes("/api/game/defense"), "React bundle consumes game defense API"),
       check(js.body.includes("/api/game/technology"), "React bundle consumes game technology API"),
@@ -1360,6 +1387,7 @@ try {
       check(js.body.includes("legacy-shipyard-table"), "React bundle contains legacy game shipyard layout"),
       check(js.body.includes("legacy-fleet-table"), "React bundle contains legacy game fleet active missions layout"),
       check(js.body.includes("legacy-fleet-select-table"), "React bundle contains legacy game fleet ship selection layout"),
+      check(js.body.includes("legacy-fleet-templates-table"), "React bundle contains legacy game standard fleets layout"),
       check(js.body.includes("legacy-galaxy-table"), "React bundle contains legacy game galaxy layout"),
       check(js.body.includes("legacy-defense-table"), "React bundle contains legacy game defense layout"),
       check(js.body.includes("legacy-technology-table"), "React bundle contains legacy game technology layout"),
@@ -1395,6 +1423,7 @@ try {
   const putGameResearch = await request("/api/game/research", { method: "PUT" });
   const putGameShipyard = await request("/api/game/shipyard", { method: "PUT" });
   const postGameFleet = await request("/api/game/fleet", { method: "POST" });
+  const putGameFleetTemplates = await request("/api/game/fleet-templates", { method: "PUT" });
   const postGameGalaxy = await request("/api/game/galaxy", { method: "POST" });
   const putGameDefense = await request("/api/game/defense", { method: "PUT" });
   const postGameTechnology = await request("/api/game/technology", { method: "POST" });
@@ -1431,6 +1460,8 @@ try {
       check(hasHeader(putGameShipyard, "allow", "GET, HEAD, POST"), "game shipyard method rejection returns Allow header"),
       check(postGameFleet.status === 405, "POST game fleet endpoint is rejected", { status: postGameFleet.status }),
       check(hasHeader(postGameFleet, "allow", "GET, HEAD"), "game fleet method rejection returns Allow header"),
+      check(putGameFleetTemplates.status === 405, "PUT game fleet templates endpoint is rejected", { status: putGameFleetTemplates.status }),
+      check(hasHeader(putGameFleetTemplates, "allow", "GET, HEAD, POST"), "game fleet templates method rejection returns Allow header"),
       check(postGameGalaxy.status === 405, "POST game galaxy endpoint is rejected", { status: postGameGalaxy.status }),
       check(hasHeader(postGameGalaxy, "allow", "GET, HEAD"), "game galaxy method rejection returns Allow header"),
       check(putGameDefense.status === 405, "PUT game defense endpoint is rejected", { status: putGameDefense.status }),

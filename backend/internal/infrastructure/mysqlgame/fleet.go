@@ -19,19 +19,29 @@ const (
 
 type FleetRepository struct {
 	queryer Queryer
+	execer  Execer
 	prefix  string
 	now     func() time.Time
 }
 
 func NewFleetRepository(db *sql.DB, prefix string) FleetRepository {
-	return FleetRepository{queryer: SQLQueryer{DB: db}, prefix: prefix, now: time.Now}
+	runner := SQLQueryer{DB: db}
+	return FleetRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now}
 }
 
 func NewFleetRepositoryWithQueryer(queryer Queryer, prefix string, now func() time.Time) FleetRepository {
 	if now == nil {
 		now = time.Now
 	}
-	return FleetRepository{queryer: queryer, prefix: prefix, now: now}
+	execer, _ := queryer.(Execer)
+	return FleetRepository{queryer: queryer, execer: execer, prefix: prefix, now: now}
+}
+
+func NewFleetRepositoryWithRunner(queryer Queryer, execer Execer, prefix string, now func() time.Time) FleetRepository {
+	if now == nil {
+		now = time.Now
+	}
+	return FleetRepository{queryer: queryer, execer: execer, prefix: prefix, now: now}
 }
 
 func (r FleetRepository) GetFleet(ctx context.Context, query appgame.FleetQuery) (domaingame.Fleet, error) {
@@ -52,6 +62,10 @@ func (r FleetRepository) GetFleet(ctx context.Context, query appgame.FleetQuery)
 		return domaingame.Fleet{}, err
 	}
 	uniTable, err := tableName(r.prefix, "uni")
+	if err != nil {
+		return domaingame.Fleet{}, err
+	}
+	templateTable, err := tableName(r.prefix, "template")
 	if err != nil {
 		return domaingame.Fleet{}, err
 	}
@@ -77,6 +91,10 @@ func (r FleetRepository) GetFleet(ctx context.Context, query appgame.FleetQuery)
 	if err != nil {
 		return domaingame.Fleet{}, err
 	}
+	commanderActive, err := r.loadCommanderActive(ctx, usersTable, query.PlayerID)
+	if err != nil {
+		return domaingame.Fleet{}, err
+	}
 	acsEnabled, err := r.loadACSEnabled(ctx, uniTable)
 	if err != nil {
 		return domaingame.Fleet{}, err
@@ -86,7 +104,48 @@ func (r FleetRepository) GetFleet(ctx context.Context, query appgame.FleetQuery)
 		return domaingame.Fleet{}, err
 	}
 
-	return domaingame.BuildFleet(overview, counts, research, missions, admiral, acsEnabled), nil
+	fleet := domaingame.BuildFleet(overview, counts, research, missions, admiral, acsEnabled)
+	fleet.CommanderActive = commanderActive
+	fleet.TemplateLimit = research[domaingame.ResearchComputer] + 1
+	if commanderActive {
+		templates, err := r.loadFleetTemplates(ctx, templateTable, query.PlayerID, fleet.TemplateLimit)
+		if err != nil {
+			return domaingame.Fleet{}, err
+		}
+		fleet.Templates = templates
+	}
+	return fleet, nil
+}
+
+func (r FleetRepository) MutateFleetTemplate(ctx context.Context, query appgame.FleetTemplateMutationQuery) error {
+	if r.execer == nil {
+		return errors.New("fleet template writer unavailable")
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return err
+	}
+	templateTable, err := tableName(r.prefix, "template")
+	if err != nil {
+		return err
+	}
+
+	commanderActive, maxTemplates, err := r.loadFleetTemplateAccess(ctx, usersTable, query.PlayerID)
+	if err != nil {
+		return err
+	}
+	if !commanderActive {
+		return nil
+	}
+
+	switch query.Action {
+	case "save":
+		return r.saveFleetTemplate(ctx, templateTable, query.PlayerID, maxTemplates, query.TemplateID, query.Name, query.Ships)
+	case "delete":
+		return r.deleteFleetTemplate(ctx, templateTable, query.PlayerID, query.TemplateID)
+	default:
+		return nil
+	}
 }
 
 func (r FleetRepository) loadAdmiral(ctx context.Context, usersTable string, playerID int) (bool, error) {
@@ -109,6 +168,162 @@ func (r FleetRepository) loadAdmiral(ctx context.Context, usersTable string, pla
 		return false, err
 	}
 	return admiralUntil > r.now().Unix(), nil
+}
+
+func (r FleetRepository) loadCommanderActive(ctx context.Context, usersTable string, playerID int) (bool, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT com_until FROM %s WHERE player_id = ? LIMIT 1", usersTable), playerID)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
+		return false, errors.New("fleet commander state not found")
+	}
+	var commanderUntil int64
+	if err := rows.Scan(&commanderUntil); err != nil {
+		return false, err
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return commanderUntil > r.now().Unix(), nil
+}
+
+func (r FleetRepository) loadFleetTemplateAccess(ctx context.Context, usersTable string, playerID int) (bool, int, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT com_until, `%d` FROM %s WHERE player_id = ? LIMIT 1", domaingame.ResearchComputer, usersTable), playerID)
+	if err != nil {
+		return false, 0, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return false, 0, err
+		}
+		return false, 0, errors.New("fleet template access not found")
+	}
+	var commanderUntil int64
+	var computer int
+	if err := rows.Scan(&commanderUntil, &computer); err != nil {
+		return false, 0, err
+	}
+	if err := rows.Err(); err != nil {
+		return false, 0, err
+	}
+	return commanderUntil > r.now().Unix(), computer + 1, nil
+}
+
+func (r FleetRepository) loadFleetTemplates(ctx context.Context, templateTable string, playerID int, limit int) ([]domaingame.FleetTemplate, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	fleetIDs := domaingame.FleetIDs()
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT id, name, date, %s FROM %s WHERE owner_id = ? ORDER BY date DESC, id DESC LIMIT ?", numericColumns(fleetIDs), templateTable),
+		playerID,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	templates := make([]domaingame.FleetTemplate, 0)
+	for rows.Next() {
+		template, err := scanFleetTemplateRow(rows, fleetIDs)
+		if err != nil {
+			return nil, err
+		}
+		templates = append(templates, template)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return templates, nil
+}
+
+func scanFleetTemplateRow(rows Rows, fleetIDs []int) (domaingame.FleetTemplate, error) {
+	var id int
+	var name string
+	var updatedAt int64
+	shipValues := make([]int, len(fleetIDs))
+	dest := []any{&id, &name, &updatedAt}
+	for index := range shipValues {
+		dest = append(dest, &shipValues[index])
+	}
+	if err := rows.Scan(dest...); err != nil {
+		return domaingame.FleetTemplate{}, err
+	}
+
+	ships := make(domaingame.FleetCounts, len(fleetIDs))
+	for index, fleetID := range fleetIDs {
+		ships[fleetID] = shipValues[index]
+	}
+	return domaingame.BuildFleetTemplate(id, name, updatedAt, ships), nil
+}
+
+func (r FleetRepository) saveFleetTemplate(ctx context.Context, templateTable string, playerID int, maxTemplates int, templateID int, name string, ships map[int]int) error {
+	fleetIDs := domaingame.FleetIDs()
+	if templateID > 0 {
+		args := []any{domaingame.NormalizeFleetTemplateName(name), r.now().Unix()}
+		args = append(args, fleetTemplateValues(fleetIDs, ships)...)
+		args = append(args, templateID, playerID)
+		_, err := r.execer.ExecContext(
+			ctx,
+			fmt.Sprintf("UPDATE %s SET name = ?, date = ?, %s WHERE id = ? AND owner_id = ? LIMIT 1", templateTable, numericAssignments(fleetIDs)),
+			args...,
+		)
+		return err
+	}
+
+	count, err := r.countFleetTemplates(ctx, templateTable, playerID)
+	if err != nil {
+		return err
+	}
+	if count >= maxTemplates {
+		return nil
+	}
+	args := []any{playerID, domaingame.NormalizeFleetTemplateName(name), r.now().Unix()}
+	args = append(args, fleetTemplateValues(fleetIDs, ships)...)
+	_, err = r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("INSERT INTO %s (owner_id, name, date, %s) VALUES (?, ?, ?, %s)", templateTable, numericColumns(fleetIDs), placeholders(len(fleetIDs))),
+		args...,
+	)
+	return err
+}
+
+func (r FleetRepository) countFleetTemplates(ctx context.Context, templateTable string, playerID int) (int, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE owner_id = ?", templateTable), playerID)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return 0, err
+		}
+		return 0, nil
+	}
+	var count int
+	if err := rows.Scan(&count); err != nil {
+		return 0, err
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (r FleetRepository) deleteFleetTemplate(ctx context.Context, templateTable string, playerID int, templateID int) error {
+	if templateID <= 0 {
+		return nil
+	}
+	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE id = ? AND owner_id = ? LIMIT 1", templateTable), templateID, playerID)
+	return err
 }
 
 func (r FleetRepository) loadACSEnabled(ctx context.Context, uniTable string) (bool, error) {
@@ -214,4 +429,32 @@ func prefixedNumericColumns(prefix string, ids []int) string {
 		columns = append(columns, fmt.Sprintf("%s.`%d`", prefix, id))
 	}
 	return strings.Join(columns, ", ")
+}
+
+func numericAssignments(ids []int) string {
+	assignments := make([]string, 0, len(ids))
+	for _, id := range ids {
+		assignments = append(assignments, fmt.Sprintf("`%d` = ?", id))
+	}
+	return strings.Join(assignments, ", ")
+}
+
+func placeholders(count int) string {
+	values := make([]string, 0, count)
+	for range count {
+		values = append(values, "?")
+	}
+	return strings.Join(values, ", ")
+}
+
+func fleetTemplateValues(ids []int, ships map[int]int) []any {
+	values := make([]any, 0, len(ids))
+	for _, id := range ids {
+		count := ships[id]
+		if id == domaingame.FleetSolarSatellite || count < 0 {
+			count = 0
+		}
+		values = append(values, count)
+	}
+	return values
 }

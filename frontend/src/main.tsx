@@ -220,6 +220,7 @@ function App() {
   const [gameShipyardPending, setGameShipyardPending] = useState(false);
   const [gameFleet, setGameFleet] = useState<GameFleetStatus | null>(null);
   const [gameFleetError, setGameFleetError] = useState<string | null>(null);
+  const [gameFleetPending, setGameFleetPending] = useState(false);
   const [gameGalaxy, setGameGalaxy] = useState<GameGalaxyStatus | null>(null);
   const [gameGalaxyError, setGameGalaxyError] = useState<string | null>(null);
   const [gameDefense, setGameDefense] = useState<GameDefenseStatus | null>(null);
@@ -241,7 +242,7 @@ function App() {
   const [gameLogoutError, setGameLogoutError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
-  const gameRoute = pathname.startsWith("/game") ? resolveGameRoute(pathname) : null;
+  const gameRoute = pathname.startsWith("/game") ? resolveGameRoute(pathname, search) : null;
   const isLegacyPublicRoute = legacyPublicRouteKeys.has(route.key);
 
   useLayoutEffect(() => {
@@ -671,7 +672,7 @@ function App() {
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
-    if (gameRoute?.key !== "fleet" || publicSession === "") {
+    if ((gameRoute?.key !== "fleet" && gameRoute?.key !== "fleetTemplates") || publicSession === "") {
       setGameFleet(null);
       setGameFleetError(null);
       return;
@@ -682,7 +683,8 @@ function App() {
     if (selectedPlanet) {
       fleetSearch.set("cp", selectedPlanet);
     }
-    fetch(`/api/game/fleet?${fleetSearch.toString()}`, { credentials: "same-origin" })
+    const endpoint = gameRoute?.key === "fleetTemplates" ? "/api/game/fleet-templates" : "/api/game/fleet";
+    fetch(`${endpoint}?${fleetSearch.toString()}`, { credentials: "same-origin" })
       .then((response) => response.json() as Promise<GameFleetStatus>)
       .then((payload) => {
         setGameFleet(payload);
@@ -690,6 +692,51 @@ function App() {
       })
       .catch((err: unknown) => setGameFleetError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
+
+  const submitFleetTemplateAction = (
+    action: "save" | "delete",
+    templateID: number,
+    name: string,
+    ships: Record<string, number>
+  ) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameFleetError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const fleetSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      fleetSearch.set("cp", selectedPlanet);
+    }
+    setGameFleetPending(true);
+    setGameFleetError(null);
+    fetch(`/api/game/fleet-templates?${fleetSearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ action, templateId: templateID, name, ships })
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameFleetStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `fleet templates returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("fleet templates response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameFleet(payload);
+        setGameFleetError(null);
+        dispatchClientNavigation(`/game/fleet-templates?${fleetSearch.toString()}`);
+      })
+      .catch((err: unknown) => setGameFleetError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameFleetPending(false));
+  };
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
@@ -1091,6 +1138,7 @@ function App() {
         defenseStatus={gameDefense}
         error={gameOverviewError}
         fleetError={gameFleetError}
+        fleetPending={gameFleetPending}
         fleetStatus={gameFleet}
         galaxyError={gameGalaxyError}
         galaxyStatus={gameGalaxy}
@@ -1106,11 +1154,12 @@ function App() {
         onBuddyRequest={submitGameBuddyRequest}
         onBuildingAction={submitGameBuildingAction}
         onDefenseSubmit={submitGameDefenseOrders}
+        onFleetTemplateAction={submitFleetTemplateAction}
         onPlanetDelete={submitGamePlanetDelete}
         onPlanetRename={submitGamePlanetRename}
         onResourcesSubmit={submitGameResources}
         overviewPending={gameOverviewPending}
-        route={gameRoute ?? resolveGameRoute(pathname)}
+        route={gameRoute ?? resolveGameRoute(pathname, search)}
         resourcesError={gameResourcesError}
         resourcesPending={gameResourcesPending}
         resourcesStatus={gameResources}

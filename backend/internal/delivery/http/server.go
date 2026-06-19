@@ -79,6 +79,7 @@ type GameShipyardUseCase interface {
 
 type GameFleetUseCase interface {
 	GetFleet(context.Context, appgame.FleetCommand) (appgame.FleetResult, error)
+	MutateFleetTemplate(context.Context, appgame.FleetTemplateMutationCommand) (appgame.FleetResult, error)
 }
 
 type GameGalaxyUseCase interface {
@@ -165,6 +166,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/research", a.handleGameResearch)
 	mux.HandleFunc("/api/game/shipyard", a.handleGameShipyard)
 	mux.HandleFunc("/api/game/fleet", getOnly(a.handleGameFleet))
+	mux.HandleFunc("/api/game/fleet-templates", a.handleGameFleetTemplates)
 	mux.HandleFunc("/api/game/galaxy", getOnly(a.handleGameGalaxy))
 	mux.HandleFunc("/api/game/defense", a.handleGameDefense)
 	mux.HandleFunc("/api/game/technology", getOnly(a.handleGameTechnology))

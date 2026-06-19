@@ -185,6 +185,7 @@ type GameDefense = {
 
 type GameFleet = {
   commander: string;
+  commanderActive: boolean;
   currentPlanet: GamePlanetOverview;
   planetSwitcher: GamePlanetSummary[];
   slots: {
@@ -199,6 +200,26 @@ type GameFleet = {
   };
   missions: GameFleetMission[];
   ships: GameFleetShip[];
+  templates: GameFleetTemplates;
+};
+
+type GameFleetTemplates = {
+  commanderActive: boolean;
+  max: number;
+  items: GameFleetTemplate[];
+};
+
+type GameFleetTemplate = {
+  id: number;
+  name: string;
+  updatedAt: number;
+  ships: GameFleetTemplateShip[];
+};
+
+type GameFleetTemplateShip = {
+  id: number;
+  name: string;
+  count: number;
 };
 
 type GameGalaxy = {
@@ -553,6 +574,8 @@ type LegacyGameOverviewProps = {
   onShipyardSubmit: (orders: Record<string, number>) => void;
   fleetStatus: GameFleetStatus | null;
   fleetError: string | null;
+  fleetPending: boolean;
+  onFleetTemplateAction: (action: "save" | "delete", templateID: number, name: string, ships: Record<string, number>) => void;
   galaxyStatus: GameGalaxyStatus | null;
   galaxyError: string | null;
   defenseStatus: GameDefenseStatus | null;
@@ -645,6 +668,8 @@ export function LegacyGameOverview({
   onShipyardSubmit,
   fleetStatus,
   fleetError,
+  fleetPending,
+  onFleetTemplateAction,
   galaxyStatus,
   galaxyError,
   defenseStatus,
@@ -805,10 +830,13 @@ export function LegacyGameOverview({
         {shipyard && route.key === "shipyard" ? (
           <ShipyardTable onSubmit={onShipyardSubmit} pending={shipyardPending} shipyard={shipyard} />
         ) : null}
-        {overview && route.key === "fleet" && !fleet && !fleetError && !fleetIssue ? (
+        {overview && (route.key === "fleet" || route.key === "fleetTemplates") && !fleet && !fleetError && !fleetIssue ? (
           <LegacyMessage tone="neutral" text="Loading fleet..." />
         ) : null}
         {fleet && route.key === "fleet" ? <FleetTable fleet={fleet} /> : null}
+        {fleet && route.key === "fleetTemplates" ? (
+          <FleetTemplatesTable fleet={fleet} onAction={onFleetTemplateAction} pending={fleetPending} />
+        ) : null}
         {overview && route.key === "galaxy" && !galaxy && !galaxyError && !galaxyIssue ? (
           <LegacyMessage tone="neutral" text="Loading galaxy..." />
         ) : null}
@@ -1699,6 +1727,31 @@ function FleetTable({ fleet }: { fleet: GameFleet }) {
                 </th>
               </tr>
             ) : null}
+            {fleet.templates.commanderActive ? (
+              <tr style={{ height: 20 }}>
+                <td className="legacy-c" colSpan={4}>
+                  <a href={gameRouteURL("/game/fleet-templates", window.location.search)}>Standard fleets</a>
+                  {fleet.templates.items.length > 0 ? (
+                    <>
+                      {" "}
+                      {fleet.templates.items.map((template) => (
+                        <React.Fragment key={template.id}>
+                          <a
+                            href={fleetTemplateJavascriptHref(template)}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              setLegacyFleetTemplateShips(template);
+                            }}
+                          >
+                            {template.name}
+                          </a>{" "}
+                        </React.Fragment>
+                      ))}
+                    </>
+                  ) : null}
+                </td>
+              </tr>
+            ) : null}
             <tr style={{ height: 20 }}>
               <td className="legacy-c" colSpan={4}>
                 Please select your ships for this mission:
@@ -1770,6 +1823,157 @@ function FleetTable({ fleet }: { fleet: GameFleet }) {
       <br />
     </>
   );
+}
+
+function FleetTemplatesTable({
+  fleet,
+  onAction,
+  pending
+}: {
+  fleet: GameFleet;
+  onAction: (action: "save" | "delete", templateID: number, name: string, ships: Record<string, number>) => void;
+  pending: boolean;
+}) {
+  const selectableShips = fleet.ships.filter((ship) => ship.selectable && ship.id !== 212);
+  const emptyDraft = React.useMemo<Record<string, number>>(
+    () => Object.fromEntries(selectableShips.map((ship) => [String(ship.id), 0])),
+    [selectableShips]
+  );
+  const [templateID, setTemplateID] = React.useState(0);
+  const [name, setName] = React.useState("");
+  const [ships, setShips] = React.useState<Record<string, number>>(emptyDraft);
+
+  const editTemplate = (template: GameFleetTemplate) => {
+    const next = { ...emptyDraft };
+    for (const ship of template.ships) {
+      next[String(ship.id)] = ship.count;
+    }
+    setTemplateID(template.id);
+    setName(template.name);
+    setShips(next);
+  };
+
+  return (
+    <>
+      <form
+        action={gameRouteURL("/game/fleet-templates", window.location.search)}
+        method="post"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onAction("save", templateID, name, ships);
+        }}
+      >
+        <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-templates-table" width={519}>
+          <tbody>
+            <tr style={{ height: 20 }}>
+              <td className="legacy-c" colSpan={4}>
+                Standard fleets {fleet.templates.items.length} / {fleet.templates.max}
+              </td>
+            </tr>
+            {!fleet.templates.commanderActive ? (
+              <tr style={{ height: 20 }}>
+                <th colSpan={4}>Commander is required</th>
+              </tr>
+            ) : null}
+            {fleet.templates.items.map((template) => (
+              <tr data-fleet-template-row={template.id} key={template.id} style={{ height: 20 }}>
+                <th>{template.name}</th>
+                <th>{template.ships.map((ship) => `${ship.name}: ${formatLegacyNumber(ship.count)}`).join(", ") || "-"}</th>
+                <th>
+                  <a
+                    href="#edit-template"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      editTemplate(template);
+                    }}
+                  >
+                    O
+                  </a>
+                </th>
+                <th>
+                  <button
+                    disabled={pending}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      onAction("delete", template.id, template.name, {});
+                    }}
+                    type="button"
+                  >
+                    X
+                  </button>
+                </th>
+              </tr>
+            ))}
+            <tr style={{ height: 20 }}>
+              <td className="legacy-c" colSpan={4}>
+                {templateID > 0 ? "Edit standard fleet" : "Create standard fleet"}
+              </td>
+            </tr>
+            <tr style={{ height: 20 }}>
+              <th>Name</th>
+              <th colSpan={3}>
+                <input name="template_id" type="hidden" value={templateID} />
+                <input maxLength={20} name="template_name" onChange={(event) => setName(event.target.value)} size={30} type="text" value={name} />
+              </th>
+            </tr>
+            {selectableShips.map((ship) => (
+              <tr data-fleet-template-ship-row={ship.id} key={ship.id} style={{ height: 20 }}>
+                <th>{ship.name}</th>
+                <th>{formatLegacyNumber(ship.count)}</th>
+                <th colSpan={2}>
+                  <input
+                    aria-label={ship.name}
+                    max={ship.count}
+                    min={0}
+                    name={`ship[${ship.id}]`}
+                    onChange={(event) => setShips((current) => ({ ...current, [String(ship.id)]: Number(event.target.value || 0) }))}
+                    size={10}
+                    type="number"
+                    value={ships[String(ship.id)] ?? 0}
+                  />
+                </th>
+              </tr>
+            ))}
+            <tr style={{ height: 20 }}>
+              <th colSpan={2}>
+                <input disabled={pending || !fleet.templates.commanderActive} type="submit" value="Save" />
+              </th>
+              <th colSpan={2}>
+                <input
+                  disabled={pending}
+                  onClick={() => {
+                    setTemplateID(0);
+                    setName("");
+                    setShips(emptyDraft);
+                  }}
+                  type="button"
+                  value="Clear"
+                />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+      <br />
+      <br />
+      <br />
+      <br />
+    </>
+  );
+}
+
+function fleetTemplateJavascriptHref(template: GameFleetTemplate): string {
+  const args = template.ships.flatMap((ship) => [String(ship.id), String(ship.count)]).join(",");
+  return `javascript:setShips(${args})`;
+}
+
+function setLegacyFleetTemplateShips(template: GameFleetTemplate) {
+  for (const ship of template.ships) {
+    const input = document.querySelector<HTMLInputElement>(`input[name="ship${ship.id}"]`);
+    if (input) {
+      input.value = String(ship.count);
+    }
+  }
 }
 
 function GalaxyTable({ galaxy }: { galaxy: GameGalaxy }) {

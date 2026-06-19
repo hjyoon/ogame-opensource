@@ -9,6 +9,7 @@ export type GameRouteKey =
   | "research"
   | "shipyard"
   | "fleet"
+  | "fleetTemplates"
   | "technology"
   | "galaxy"
   | "defense"
@@ -40,6 +41,7 @@ export const gameRoutes: GameRoute[] = [
   { key: "research", label: "Research", path: "/game/research", migrated: true },
   { key: "shipyard", label: "Shipyard", path: "/game/shipyard", migrated: true },
   { key: "fleet", label: "Fleet", path: "/game/fleet", migrated: true },
+  { key: "fleetTemplates", label: "Standard fleets", path: "/game/fleet-templates", migrated: true },
   { key: "technology", label: "Technology", path: "/game/technology", migrated: true },
   { key: "galaxy", label: "Galaxy", path: "/game/galaxy", migrated: true },
   { key: "defense", label: "Defense", path: "/game/defense", migrated: true },
@@ -56,18 +58,43 @@ export const gameRoutes: GameRoute[] = [
 
 const overviewRoute = gameRoutes[0];
 const routeByPath = new Map(gameRoutes.map((route) => [route.path, route]));
+const legacyPageAliases = new Map<string, string>([
+  ["overview", "/game/overview"],
+  ["renameplanet", "/game/rename-planet"],
+  ["buildings", "/game/buildings"],
+  ["resources", "/game/resources"],
+  ["research", "/game/research"],
+  ["shipyard", "/game/shipyard"],
+  ["fleet", "/game/fleet"],
+  ["fleet1", "/game/fleet"],
+  ["flotten1", "/game/fleet"],
+  ["fleet_templates", "/game/fleet-templates"],
+  ["technology", "/game/technology"],
+  ["galaxy", "/game/galaxy"],
+  ["defense", "/game/defense"],
+  ["statistics", "/game/statistics"],
+  ["search", "/game/search"],
+  ["notes", "/game/notes"],
+  ["buddy", "/game/buddy"],
+  ["logout", "/game/logout"]
+]);
 
-export function normalizeGamePath(pathname: string): string {
+export function normalizeGamePath(pathname: string, search = ""): string {
   const [pathOnly] = pathname.split("?");
+  const query = pathname.includes("?") && search === "" ? pathname.slice(pathname.indexOf("?")) : search;
   const normalized = pathOnly.length > 1 && pathOnly.endsWith("/") ? pathOnly.slice(0, -1) : pathOnly;
   if (normalized === "/game") {
     return "/game/overview";
   }
+  if (normalized === "/game/index.php") {
+    const page = new URLSearchParams(query).get("page") ?? "";
+    return legacyPageAliases.get(page) ?? "/game/overview";
+  }
   return normalized;
 }
 
-export function resolveGameRoute(pathname: string): GameRoute {
-  return routeByPath.get(normalizeGamePath(pathname)) ?? overviewRoute;
+export function resolveGameRoute(pathname: string, search = ""): GameRoute {
+  return routeByPath.get(normalizeGamePath(pathname, search)) ?? overviewRoute;
 }
 
 export function gameRouteURL(path: string, search: string): string {
@@ -80,5 +107,5 @@ export function gameRouteURL(path: string, search: string): string {
 export function gamePlanetSwitchURL(pathname: string, search: string, planetID: number | string): string {
   const query = new URLSearchParams(search);
   query.set("cp", String(planetID));
-  return gameRouteURL(resolveGameRoute(pathname).path, query.toString());
+  return gameRouteURL(resolveGameRoute(pathname, search).path, query.toString());
 }
