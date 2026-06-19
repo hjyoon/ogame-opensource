@@ -116,6 +116,65 @@ func TestFleetServiceMutationReturnsSessionIssuesWithoutRepository(t *testing.T)
 	}
 }
 
+func TestFleetServicePreparesDispatchDraft(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}
+	repository := &fakeFleetRepository{result: domaingame.Fleet{
+		CurrentPlanet: domaingame.PlanetOverview{Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}},
+		Ships: []domaingame.FleetShipSelection{{
+			ID:         domaingame.FleetSmallCargo,
+			Name:       "Small Cargo",
+			Count:      4,
+			Cargo:      5000,
+			Selectable: true,
+		}},
+	}}
+	service := NewFleetService(sessions, repository)
+
+	result, err := service.PrepareFleetDispatch(context.Background(), FleetDispatchPrepareCommand{
+		PublicSession:   "public",
+		PrivateSessions: map[string]string{"private": "secret"},
+		RemoteAddr:      "203.0.113.10",
+		PlanetID:        99,
+		Ships:           map[int]int{domaingame.FleetSmallCargo: 3},
+		Target:          domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+		TargetType:      domaingame.GamePlanetTypeMoon,
+		Mission:         domaingame.FleetMissionTransport,
+		Speed:           9,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Authenticated || result.Fleet.DispatchDraft == nil || result.Fleet.DispatchDraft.TotalShips != 3 {
+		t.Fatalf("unexpected prepare result: %+v", result)
+	}
+	if repository.query.PlayerID != 42 || repository.query.PlanetID != 99 {
+		t.Fatalf("expected prepare to load selected fleet screen, got %+v", repository.query)
+	}
+}
+
+func TestFleetServicePrepareReturnsSessionIssuesWithoutRepository(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: false,
+		Issues: []domainpublicsite.SessionIssue{{
+			Code:    domainpublicsite.SessionIssuePrivateInvalid,
+			Message: "Private session is invalid.",
+		}},
+	}}
+	repository := &fakeFleetRepository{}
+	service := NewFleetService(sessions, repository)
+
+	result, err := service.PrepareFleetDispatch(context.Background(), FleetDispatchPrepareCommand{PublicSession: "public"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Authenticated || len(result.Issues) != 1 || repository.called {
+		t.Fatalf("expected unauthenticated prepare without repository call, got %+v", result)
+	}
+}
+
 func TestFleetServiceRecallsFleetAndReloadsFleet(t *testing.T) {
 	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
 		Authenticated: true,
@@ -174,6 +233,9 @@ func TestFleetServicePropagatesErrors(t *testing.T) {
 	if _, err := service.MutateFleetTemplate(context.Background(), FleetTemplateMutationCommand{}); !errors.Is(err, sessionErr) {
 		t.Fatalf("expected mutation session error, got %v", err)
 	}
+	if _, err := service.PrepareFleetDispatch(context.Background(), FleetDispatchPrepareCommand{}); !errors.Is(err, sessionErr) {
+		t.Fatalf("expected prepare session error, got %v", err)
+	}
 	if _, err := service.RecallFleet(context.Background(), FleetRecallCommand{}); !errors.Is(err, sessionErr) {
 		t.Fatalf("expected recall session error, got %v", err)
 	}
@@ -193,6 +255,9 @@ func TestFleetServicePropagatesErrors(t *testing.T) {
 	}}, &fakeFleetRepository{err: repoErr})
 	if _, err := service.MutateFleetTemplate(context.Background(), FleetTemplateMutationCommand{}); !errors.Is(err, repoErr) {
 		t.Fatalf("expected mutation repository error, got %v", err)
+	}
+	if _, err := service.PrepareFleetDispatch(context.Background(), FleetDispatchPrepareCommand{}); !errors.Is(err, repoErr) {
+		t.Fatalf("expected prepare repository error, got %v", err)
 	}
 	if _, err := service.RecallFleet(context.Background(), FleetRecallCommand{}); !errors.Is(err, repoErr) {
 		t.Fatalf("expected recall repository error, got %v", err)
@@ -217,6 +282,9 @@ func TestFleetServiceRequiresDependencies(t *testing.T) {
 	}
 	if _, err := (FleetService{}).MutateFleetTemplate(context.Background(), FleetTemplateMutationCommand{}); err == nil {
 		t.Fatal("expected mutation dependency error")
+	}
+	if _, err := (FleetService{}).PrepareFleetDispatch(context.Background(), FleetDispatchPrepareCommand{}); err == nil {
+		t.Fatal("expected prepare dependency error")
 	}
 	if _, err := (FleetService{}).RecallFleet(context.Background(), FleetRecallCommand{}); err == nil {
 		t.Fatal("expected recall dependency error")

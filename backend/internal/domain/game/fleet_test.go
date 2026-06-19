@@ -60,6 +60,44 @@ func TestBuildFleetMarksAttackUnionAvailability(t *testing.T) {
 	}
 }
 
+func TestBuildFleetDispatchDraftNormalizesLegacySelection(t *testing.T) {
+	fleet := BuildFleet(Overview{
+		CurrentPlanet: PlanetOverview{Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 3}},
+	}, FleetCounts{
+		FleetSmallCargo:     4,
+		FleetEspionageProbe: 5,
+		FleetSolarSatellite: 9,
+	}, ResearchLevels{ResearchCombustionDrive: 1}, nil, false, false)
+
+	draft := BuildFleetDispatchDraft(fleet, FleetDispatchDraftInput{
+		Ships: map[int]int{
+			FleetSmallCargo:     99,
+			FleetEspionageProbe: 2,
+			FleetSolarSatellite: 9,
+			FleetLargeCargo:     -1,
+		},
+		Target:     Coordinates{Galaxy: 2, System: 3, Position: 4},
+		TargetType: GamePlanetTypeMoon,
+		Mission:    FleetMissionSpy,
+		Speed:      99,
+	})
+
+	if !draft.HasSelection || draft.TotalShips != 6 || draft.Speed != 10 || draft.TargetType != GamePlanetTypeMoon || draft.Mission != FleetMissionSpy {
+		t.Fatalf("unexpected dispatch draft header: %+v", draft)
+	}
+	if len(draft.Ships) != 2 || draft.Ships[0].ID != FleetSmallCargo || draft.Ships[0].Count != 4 || draft.Ships[1].ID != FleetEspionageProbe || draft.Ships[1].Count != 2 {
+		t.Fatalf("unexpected selected ships: %+v", draft.Ships)
+	}
+	if draft.Cargo != 4*fleetShipCargo(FleetSmallCargo) {
+		t.Fatalf("probe cargo and satellites should be excluded from legacy cargo summary, got %d", draft.Cargo)
+	}
+
+	empty := BuildFleetDispatchDraft(fleet, FleetDispatchDraftInput{Ships: map[int]int{}, Speed: -1})
+	if empty.HasSelection || empty.Speed != 10 || empty.Target != fleet.CurrentPlanet.Coordinates || empty.TargetType != GamePlanetTypePlanet {
+		t.Fatalf("unexpected empty dispatch draft defaults: %+v", empty)
+	}
+}
+
 func TestBuildFleetTemplateUsesLegacyShipIDsWithoutSolarSatellites(t *testing.T) {
 	template := BuildFleetTemplate(7, "  raid wing  ", 1234, FleetCounts{
 		FleetSmallCargo:     5,

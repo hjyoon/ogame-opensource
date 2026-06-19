@@ -58,6 +58,14 @@ export type GameFleetStatus = {
   fleet?: GameFleet;
 };
 
+export type GameFleetDispatchPrepare = {
+  ships: Record<string, number>;
+  target: Coordinates;
+  targetType: number;
+  mission: number;
+  speed: number;
+};
+
 export type GameGalaxyStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
@@ -310,6 +318,24 @@ type GameFleet = {
   missions: GameFleetMission[];
   ships: GameFleetShip[];
   templates: GameFleetTemplates;
+  dispatchDraft?: GameFleetDispatchDraft;
+};
+
+type GameFleetShipCount = {
+  id: number;
+  name: string;
+  count: number;
+};
+
+type GameFleetDispatchDraft = {
+  ships: GameFleetShipCount[];
+  totalShips: number;
+  target: Coordinates;
+  targetType: number;
+  mission: number;
+  speed: number;
+  cargo: number;
+  hasSelection: boolean;
 };
 
 type GameFleetTemplates = {
@@ -782,6 +808,7 @@ type LegacyGameOverviewProps = {
   fleetStatus: GameFleetStatus | null;
   fleetError: string | null;
   fleetPending: boolean;
+  onFleetPrepare: (draft: GameFleetDispatchPrepare) => void;
   onFleetRecall: (fleetID: number) => void;
   onFleetTemplateAction: (action: "save" | "delete", templateID: number, name: string, ships: Record<string, number>) => void;
   galaxyStatus: GameGalaxyStatus | null;
@@ -900,6 +927,7 @@ export function LegacyGameOverview({
   fleetStatus,
   fleetError,
   fleetPending,
+  onFleetPrepare,
   onFleetRecall,
   onFleetTemplateAction,
   galaxyStatus,
@@ -1125,7 +1153,9 @@ export function LegacyGameOverview({
         {overview && (route.key === "fleet" || route.key === "fleetTemplates") && !fleet && !fleetError && !fleetIssue ? (
           <LegacyMessage tone="neutral" text="Loading fleet..." />
         ) : null}
-        {fleet && route.key === "fleet" ? <FleetTable fleet={fleet} onRecall={onFleetRecall} pending={fleetPending} /> : null}
+        {fleet && route.key === "fleet" ? (
+          <FleetTable fleet={fleet} onPrepare={onFleetPrepare} onRecall={onFleetRecall} pending={fleetPending} />
+        ) : null}
         {fleet && route.key === "fleetTemplates" ? (
           <FleetTemplatesTable fleet={fleet} onAction={onFleetTemplateAction} pending={fleetPending} />
         ) : null}
@@ -1947,8 +1977,37 @@ function ShipyardTable({
   );
 }
 
-function FleetTable({ fleet, onRecall, pending }: { fleet: GameFleet; onRecall: (fleetID: number) => void; pending: boolean }) {
+function FleetTable({
+  fleet,
+  onPrepare,
+  onRecall,
+  pending
+}: {
+  fleet: GameFleet;
+  onPrepare: (draft: GameFleetDispatchPrepare) => void;
+  onRecall: (fleetID: number) => void;
+  pending: boolean;
+}) {
   const targetPrefill = gameFleetTargetPrefillFromSearch(window.location.search);
+  const dispatchTarget = targetPrefill
+    ? {
+        galaxy: targetPrefill.targetGalaxy,
+        system: targetPrefill.targetSystem,
+        position: targetPrefill.targetPlanet
+      }
+    : fleet.currentPlanet.coordinates;
+  const dispatchTargetType = targetPrefill?.targetPlanetType ?? 1;
+  const dispatchMission = targetPrefill?.targetMission ?? 0;
+  const submitDispatchDraft = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    onPrepare({
+      ships: collectLegacyFleetShips(event.currentTarget),
+      target: dispatchTarget,
+      targetType: dispatchTargetType,
+      mission: dispatchMission,
+      speed: 10
+    });
+  };
   return (
     <>
       <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-table" width={519}>
@@ -2036,7 +2095,7 @@ function FleetTable({ fleet, onRecall, pending }: { fleet: GameFleet; onRecall: 
         </tbody>
       </table>
 
-      <form className="legacy-fleet-form" onSubmit={(event) => event.preventDefault()}>
+      <form className="legacy-fleet-form" onSubmit={submitDispatchDraft}>
         {targetPrefill ? <FleetTargetPrefillInputs prefill={targetPrefill} /> : null}
         <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-select-table" width={519}>
           <tbody>
@@ -2098,7 +2157,13 @@ function FleetTable({ fleet, onRecall, pending }: { fleet: GameFleet; onRecall: 
                 {ship.selectable ? (
                   <>
                     <th>
-                      <a href="#max-ship" onClick={(event) => event.preventDefault()}>
+                      <a
+                        href="#max-ship"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          setLegacyFleetShipAmount(event.currentTarget, ship.id, ship.count);
+                        }}
+                      >
                         all
                       </a>
                     </th>
@@ -2116,12 +2181,24 @@ function FleetTable({ fleet, onRecall, pending }: { fleet: GameFleet; onRecall: 
             ))}
             <tr style={{ height: 20 }}>
               <th colSpan={2}>
-                <a href="#clear-ships" onClick={(event) => event.preventDefault()}>
+                <a
+                  href="#clear-ships"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setLegacyFleetShips(event.currentTarget, fleet.ships, "none");
+                  }}
+                >
                   no ships
                 </a>
               </th>
               <th colSpan={2}>
-                <a href="#all-ships" onClick={(event) => event.preventDefault()}>
+                <a
+                  href="#all-ships"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setLegacyFleetShips(event.currentTarget, fleet.ships, "all");
+                  }}
+                >
                   all ships
                 </a>
               </th>
@@ -2137,12 +2214,97 @@ function FleetTable({ fleet, onRecall, pending }: { fleet: GameFleet; onRecall: 
           </tbody>
         </table>
       </form>
+      {fleet.dispatchDraft?.hasSelection ? <FleetDispatchPreviewTable draft={fleet.dispatchDraft} fleet={fleet} /> : null}
       <br />
       <br />
       <br />
       <br />
     </>
   );
+}
+
+function FleetDispatchPreviewTable({ draft, fleet }: { draft: GameFleetDispatchDraft; fleet: GameFleet }) {
+  return (
+    <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-dispatch-table" width={519}>
+      <tbody>
+        <tr style={{ height: 20 }}>
+          <td className="legacy-c" colSpan={2}>
+            Send fleet
+          </td>
+        </tr>
+        <tr style={{ height: 20 }}>
+          <th style={{ width: "50%" }}>Target</th>
+          <th>
+            {formatCoordinates(draft.target)} - {fleetPlanetTypeName(draft.targetType)}
+          </th>
+        </tr>
+        <tr style={{ height: 20 }}>
+          <th>Speed</th>
+          <th>{draft.speed * 10}%</th>
+        </tr>
+        <tr style={{ height: 20 }}>
+          <th>Ships</th>
+          <th>{draft.ships.map((ship) => `${ship.name}: ${formatLegacyNumber(ship.count)}`).join(", ")}</th>
+        </tr>
+        <tr style={{ height: 20 }}>
+          <th>Total ships</th>
+          <th>{formatLegacyNumber(draft.totalShips)}</th>
+        </tr>
+        <tr style={{ height: 20 }}>
+          <th>Storage capacity</th>
+          <th>{formatLegacyNumber(draft.cargo)}</th>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function collectLegacyFleetShips(form: HTMLFormElement): Record<string, number> {
+  const ships: Record<string, number> = {};
+  const formData = new FormData(form);
+  for (const [key, value] of formData.entries()) {
+    const match = /^ship(\d+)$/.exec(key);
+    if (!match || typeof value !== "string") {
+      continue;
+    }
+    const amount = Number.parseInt(value, 10);
+    if (Number.isFinite(amount) && amount > 0) {
+      ships[match[1]] = amount;
+    }
+  }
+  return ships;
+}
+
+function setLegacyFleetShipAmount(anchor: HTMLAnchorElement, shipID: number, amount: number) {
+  const form = anchor.closest("form");
+  const input = form?.elements.namedItem(`ship${shipID}`);
+  if (input instanceof HTMLInputElement) {
+    input.value = String(amount);
+  }
+}
+
+function setLegacyFleetShips(anchor: HTMLAnchorElement, ships: GameFleetShip[], mode: "all" | "none") {
+  const form = anchor.closest("form");
+  if (!form) {
+    return;
+  }
+  for (const ship of ships) {
+    const input = form.elements.namedItem(`ship${ship.id}`);
+    if (input instanceof HTMLInputElement) {
+      input.value = mode === "all" ? String(ship.count) : "0";
+    }
+  }
+}
+
+function fleetPlanetTypeName(type: number): string {
+  switch (type) {
+    case 2:
+      return "Debris";
+    case 3:
+      return "Moon";
+    default:
+      return "Planet";
+  }
 }
 
 function FleetTargetPrefillInputs({ prefill }: { prefill: GameFleetTargetPrefill }) {

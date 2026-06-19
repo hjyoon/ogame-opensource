@@ -25,6 +25,7 @@ type gameFleetSummary struct {
 	Missions        []gameFleetMissionResponse  `json:"missions"`
 	Ships           []gameFleetShipResponse     `json:"ships"`
 	Templates       gameFleetTemplatesResponse  `json:"templates"`
+	DispatchDraft   *gameFleetDispatchDraft     `json:"dispatchDraft,omitempty"`
 }
 
 type gameFleetSlotsResponse struct {
@@ -92,6 +93,17 @@ type gameFleetTemplateShipResponse struct {
 	Count int    `json:"count"`
 }
 
+type gameFleetDispatchDraft struct {
+	Ships        []gameFleetShipCountResponse `json:"ships"`
+	TotalShips   int                          `json:"totalShips"`
+	Target       gameCoordinatesResponse      `json:"target"`
+	TargetType   int                          `json:"targetType"`
+	Mission      int                          `json:"mission"`
+	Speed        int                          `json:"speed"`
+	Cargo        int                          `json:"cargo"`
+	HasSelection bool                         `json:"hasSelection"`
+}
+
 type gameFleetTemplateMutationRequest struct {
 	Action     string         `json:"action"`
 	TemplateID int            `json:"templateId"`
@@ -100,8 +112,17 @@ type gameFleetTemplateMutationRequest struct {
 }
 
 type gameFleetMutationRequest struct {
-	Action  string `json:"action"`
-	FleetID int    `json:"fleetId"`
+	Action  string         `json:"action"`
+	FleetID int            `json:"fleetId"`
+	Ships   map[string]int `json:"ships"`
+	Target  struct {
+		Galaxy   int `json:"galaxy"`
+		System   int `json:"system"`
+		Position int `json:"position"`
+	} `json:"target"`
+	TargetType int `json:"targetType"`
+	Mission    int `json:"mission"`
+	Speed      int `json:"speed"`
 }
 
 func (a app) handleGameFleet(w http.ResponseWriter, r *http.Request) {
@@ -157,17 +178,36 @@ func (a app) handleGameFleetPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid fleet payload", http.StatusBadRequest)
 		return
 	}
-	if payload.Action != "recall" {
+	var result appgame.FleetResult
+	switch payload.Action {
+	case "recall":
+		result, err = a.deps.GameFleet.RecallFleet(r.Context(), appgame.FleetRecallCommand{
+			PublicSession:   r.URL.Query().Get("session"),
+			PrivateSessions: cookieMap(r),
+			RemoteAddr:      remoteIP(r.RemoteAddr),
+			PlanetID:        planetID,
+			FleetID:         payload.FleetID,
+		})
+	case "prepare":
+		result, err = a.deps.GameFleet.PrepareFleetDispatch(r.Context(), appgame.FleetDispatchPrepareCommand{
+			PublicSession:   r.URL.Query().Get("session"),
+			PrivateSessions: cookieMap(r),
+			RemoteAddr:      remoteIP(r.RemoteAddr),
+			PlanetID:        planetID,
+			Ships:           parseFleetTemplateShips(payload.Ships),
+			Target: domaingame.Coordinates{
+				Galaxy:   payload.Target.Galaxy,
+				System:   payload.Target.System,
+				Position: payload.Target.Position,
+			},
+			TargetType: payload.TargetType,
+			Mission:    payload.Mission,
+			Speed:      payload.Speed,
+		})
+	default:
 		http.Error(w, "unsupported fleet action", http.StatusBadRequest)
 		return
 	}
-	result, err := a.deps.GameFleet.RecallFleet(r.Context(), appgame.FleetRecallCommand{
-		PublicSession:   r.URL.Query().Get("session"),
-		PrivateSessions: cookieMap(r),
-		RemoteAddr:      remoteIP(r.RemoteAddr),
-		PlanetID:        planetID,
-		FleetID:         payload.FleetID,
-	})
 	if err != nil {
 		http.Error(w, "game fleet unavailable", http.StatusServiceUnavailable)
 		return
@@ -292,9 +332,10 @@ func toGameFleetSummary(fleet domaingame.Fleet) gameFleetSummary {
 			Used: fleet.Expeditions.Used,
 			Max:  fleet.Expeditions.Max,
 		},
-		Missions:  missions,
-		Ships:     ships,
-		Templates: toGameFleetTemplatesResponse(fleet),
+		Missions:      missions,
+		Ships:         ships,
+		Templates:     toGameFleetTemplatesResponse(fleet),
+		DispatchDraft: toGameFleetDispatchDraft(fleet.DispatchDraft),
 	}
 }
 
@@ -360,6 +401,30 @@ func toGameFleetTemplatesResponse(fleet domaingame.Fleet) gameFleetTemplatesResp
 		CommanderActive: fleet.CommanderActive,
 		Max:             fleet.TemplateLimit,
 		Items:           items,
+	}
+}
+
+func toGameFleetDispatchDraft(draft *domaingame.FleetDispatchDraft) *gameFleetDispatchDraft {
+	if draft == nil {
+		return nil
+	}
+	ships := make([]gameFleetShipCountResponse, 0, len(draft.Ships))
+	for _, ship := range draft.Ships {
+		ships = append(ships, gameFleetShipCountResponse{
+			ID:    ship.ID,
+			Name:  ship.Name,
+			Count: ship.Count,
+		})
+	}
+	return &gameFleetDispatchDraft{
+		Ships:        ships,
+		TotalShips:   draft.TotalShips,
+		Target:       toGameCoordinatesResponse(draft.Target),
+		TargetType:   draft.TargetType,
+		Mission:      draft.Mission,
+		Speed:        draft.Speed,
+		Cargo:        draft.Cargo,
+		HasSelection: draft.HasSelection,
 	}
 }
 

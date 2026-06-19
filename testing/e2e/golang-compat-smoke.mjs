@@ -627,6 +627,30 @@ try {
   } catch {
     gameFleetBody = {};
   }
+  const selectableFleetShip = Array.isArray(gameFleetBody.fleet?.ships)
+    ? gameFleetBody.fleet.ships.find((ship) => ship?.selectable === true && Number(ship?.count) > 0)
+    : null;
+  const fleetTarget = gameFleetBody.fleet?.currentPlanet?.coordinates ?? gameOverviewBody.overview?.currentPlanet?.coordinates ?? { galaxy: 1, system: 1, position: 1 };
+  const gameFleetPrepare = selectableFleetShip
+    ? await request(`/api/game/fleet${sessionSearch}`, {
+        method: "POST",
+        headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "prepare",
+          ships: { [String(selectableFleetShip.id)]: Number(selectableFleetShip.count) + 1000 },
+          target: fleetTarget,
+          targetType: 1,
+          mission: 3,
+          speed: 9
+        })
+      })
+    : { status: 0, body: "", headers: {} };
+  let gameFleetPrepareBody = {};
+  try {
+    gameFleetPrepareBody = JSON.parse(gameFleetPrepare.body);
+  } catch {
+    gameFleetPrepareBody = {};
+  }
 
   const gameFleetWithoutCookie = await request(`/api/game/fleet${sessionSearch}`);
   let gameFleetWithoutCookieBody = {};
@@ -1238,6 +1262,20 @@ try {
       check(Array.isArray(gameFleetBody.fleet?.missions), "game fleet returns active mission rows array", gameFleetBody),
       check(Array.isArray(gameFleetBody.fleet?.ships), "game fleet returns selectable ship rows array", gameFleetBody),
       check(Array.isArray(gameFleetBody.fleet?.templates?.items), "game fleet returns standard fleet templates array", gameFleetBody),
+      check(!selectableFleetShip || gameFleetPrepare.status === 200, "game fleet prepares a dispatch draft when ships are available", {
+        status: gameFleetPrepare.status,
+        selectableFleetShip
+      }),
+      check(
+        !selectableFleetShip || gameFleetPrepareBody.fleet?.dispatchDraft?.ships?.[0]?.count === Number(selectableFleetShip.count),
+        "game fleet dispatch draft clamps selected ships to the available count",
+        gameFleetPrepareBody.fleet?.dispatchDraft ?? {}
+      ),
+      check(
+        !selectableFleetShip || gameFleetPrepareBody.fleet?.dispatchDraft?.mission === 3,
+        "game fleet dispatch draft preserves the requested legacy mission",
+        gameFleetPrepareBody.fleet?.dispatchDraft ?? {}
+      ),
       check(!gameFleet.body.includes(sessionCookiePair), "game fleet response does not echo private cookie"),
       check(gameFleetWithoutCookie.status === 401, "game fleet rejects missing private cookie", { status: gameFleetWithoutCookie.status }),
       check(gameFleetWithoutCookieBody.authenticated === false, "game fleet missing private cookie is unauthenticated", gameFleetWithoutCookieBody),
@@ -1609,6 +1647,7 @@ try {
       check(js.body.includes("legacy-shipyard-table"), "React bundle contains legacy game shipyard layout"),
       check(js.body.includes("legacy-fleet-table"), "React bundle contains legacy game fleet active missions layout"),
       check(js.body.includes("legacy-fleet-select-table"), "React bundle contains legacy game fleet ship selection layout"),
+      check(js.body.includes("legacy-fleet-dispatch-table"), "React bundle contains legacy game fleet dispatch preview layout"),
       check(js.body.includes("legacy-fleet-templates-table"), "React bundle contains legacy game standard fleets layout"),
       check(js.body.includes("legacy-galaxy-table"), "React bundle contains legacy game galaxy layout"),
       check(js.body.includes("target_galaxy") && js.body.includes("target_mission"), "React bundle preserves legacy fleet target prefill fields"),

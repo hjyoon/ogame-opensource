@@ -32,6 +32,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 - Overview covers `cp`, `lgn`, notices, header/menu/table parity, rename/delete rules, blockers, destroy markers, queue flush, stats/ranks, and active restore.
 - Buildings/research/resources write legacy queues, resources, stats/ranks, caps, and active queue state.
 - Empire ports the Commander-gated `imperium` table, build queue markers, and legacy GET add/destroy/remove shortcuts.
+- Fleet dispatch prepares a legacy `flotten2` draft from ships, target, cargo, mission, speed, and clamps counts.
 - Options reads account/settings flags and saves language, skin path/toggle, IP check, sort, spy/fleet counts, and deletion queue toggle.
 
 ## Verified QA
@@ -50,6 +51,6 @@ Full legacy PHP E2E was not run for this step; keep PHP as oracle.
 
 - Close authenticated visual diff for statistics and remaining game-page nits before claiming parity.
 - Port remaining overview legacy actions.
-- Port fleet dispatch/ACS, galaxy instant actions, alliance/admin/recovery/bans/permissions, and deeper options mutations.
+- Finish fleet final send/ACS, galaxy instant actions, alliance/admin/recovery/bans/permissions, and deeper options mutations.
 - Convert legacy E2E cases into Go compatibility checks per migrated flow.
 - Run full legacy PHP E2E before declaring any game-flow migration equivalent.

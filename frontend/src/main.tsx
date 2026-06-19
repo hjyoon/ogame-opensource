@@ -6,6 +6,7 @@ import {
   type GameBuildingsStatus,
   type GameDefenseStatus,
   type GameEmpireStatus,
+  type GameFleetDispatchPrepare,
   type GameFleetStatus,
   type GameGalaxyStatus,
   type GameLogoutStatus,
@@ -816,6 +817,46 @@ function App() {
       .finally(() => setGameFleetPending(false));
   };
 
+  const submitFleetPrepare = (draft: GameFleetDispatchPrepare) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameFleetError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const fleetSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      fleetSearch.set("cp", selectedPlanet);
+    }
+    setGameFleetPending(true);
+    setGameFleetError(null);
+    fetch(`/api/game/fleet?${fleetSearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ action: "prepare", ...draft })
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameFleetStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `fleet returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("fleet response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameFleet(payload);
+        setGameFleetError(null);
+        dispatchClientNavigation(`/game/fleet?${fleetSearch.toString()}`);
+      })
+      .catch((err: unknown) => setGameFleetError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameFleetPending(false));
+  };
+
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "galaxy" || publicSession === "") {
@@ -1411,6 +1452,7 @@ function App() {
         onBuddyRequest={submitGameBuddyRequest}
         onBuildingAction={submitGameBuildingAction}
         onDefenseSubmit={submitGameDefenseOrders}
+        onFleetPrepare={submitFleetPrepare}
         onFleetRecall={submitFleetRecall}
         onFleetTemplateAction={submitFleetTemplateAction}
         onPlanetDelete={submitGamePlanetDelete}

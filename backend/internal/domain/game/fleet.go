@@ -31,6 +31,7 @@ type Fleet struct {
 	Ships           []FleetShipSelection
 	TemplateLimit   int
 	Templates       []FleetTemplate
+	DispatchDraft   *FleetDispatchDraft
 }
 
 type FleetSlots struct {
@@ -79,6 +80,25 @@ type FleetShipSelection struct {
 	Selectable  bool
 }
 
+type FleetDispatchDraftInput struct {
+	Ships      map[int]int
+	Target     Coordinates
+	TargetType int
+	Mission    int
+	Speed      int
+}
+
+type FleetDispatchDraft struct {
+	Ships        []FleetShipCount
+	TotalShips   int
+	Target       Coordinates
+	TargetType   int
+	Mission      int
+	Speed        int
+	Cargo        int
+	HasSelection bool
+}
+
 func BuildFleet(overview Overview, counts FleetCounts, research ResearchLevels, missions []FleetMission, admiral bool, acsEnabled bool) Fleet {
 	baseMax := research[ResearchComputer] + 1
 	maxFleet := baseMax
@@ -118,6 +138,65 @@ func BuildFleet(overview Overview, counts FleetCounts, research ResearchLevels, 
 		},
 		Missions: normalizedMissions,
 		Ships:    buildFleetShipSelections(counts, research),
+	}
+}
+
+func BuildFleetDispatchDraft(fleet Fleet, input FleetDispatchDraftInput) FleetDispatchDraft {
+	speed := input.Speed
+	if speed < 1 {
+		speed = 10
+	}
+	if speed > 10 {
+		speed = 10
+	}
+	targetType := input.TargetType
+	if targetType <= 0 {
+		targetType = GamePlanetTypePlanet
+	}
+	target := input.Target
+	if target.Galaxy <= 0 {
+		target.Galaxy = fleet.CurrentPlanet.Coordinates.Galaxy
+	}
+	if target.System <= 0 {
+		target.System = fleet.CurrentPlanet.Coordinates.System
+	}
+	if target.Position <= 0 {
+		target.Position = fleet.CurrentPlanet.Coordinates.Position
+	}
+
+	ships := make([]FleetShipCount, 0, len(fleet.Ships))
+	total := 0
+	cargo := 0
+	for _, available := range fleet.Ships {
+		if available.ID == FleetSolarSatellite || !available.Selectable {
+			continue
+		}
+		count := input.Ships[available.ID]
+		if count < 0 {
+			count = 0
+		}
+		if count > available.Count {
+			count = available.Count
+		}
+		if count <= 0 {
+			continue
+		}
+		ships = append(ships, FleetShipCount{ID: available.ID, Name: available.Name, Count: count})
+		total += count
+		if available.ID != FleetEspionageProbe {
+			cargo += available.Cargo * count
+		}
+	}
+
+	return FleetDispatchDraft{
+		Ships:        ships,
+		TotalShips:   total,
+		Target:       target,
+		TargetType:   targetType,
+		Mission:      input.Mission,
+		Speed:        speed,
+		Cargo:        cargo,
+		HasSelection: total > 0,
 	}
 }
 
