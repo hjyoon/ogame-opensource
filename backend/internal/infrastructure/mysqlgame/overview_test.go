@@ -35,6 +35,7 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 			overviewEventRow(12, 77, "raider", domaingame.FleetMissionAttack, map[int]int{domaingame.FleetLightFighter: 5}, 110, 210, 4, 3),
 			overviewMissileEventRow(13, 77, "raider", 4, domaingame.DefenseHeavyLaser, 120, 220, 4, 3),
 		)},
+		{rows: fakeRowsFromValues()},
 	}}
 	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
 	repository.includeUnread = true
@@ -1508,8 +1509,115 @@ func TestOverviewRepositoryLoadOverviewEventsEdges(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			repository := NewOverviewRepositoryWithQueryer(tt.queryer, "ogame_")
-			if _, err := repository.loadOverviewEvents(context.Background(), "`ogame_queue`", "`ogame_fleet`", "`ogame_planets`", "`ogame_users`", 42); err == nil || !strings.Contains(err.Error(), tt.want) {
+			if _, err := repository.loadOverviewEvents(context.Background(), "`ogame_queue`", "`ogame_fleet`", "`ogame_planets`", "`ogame_users`", "`ogame_union`", 42); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestOverviewRepositoryLoadsACSOverviewEvents(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues([]any{7, 42})},
+		{rows: fakeRowsFromValues(
+			overviewEventRow(21, 42, "legor", domaingame.FleetMissionACSAttackHead, map[int]int{domaingame.FleetCruiser: 2}, 100, 300, 3, 4),
+			overviewEventRow(22, 77, "support", domaingame.FleetMissionACSAttack, map[int]int{domaingame.FleetLightFighter: 5}, 110, 300, 5, 4),
+		)},
+	}}
+	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+
+	events, err := repository.loadOverviewEvents(context.Background(), "`ogame_queue`", "`ogame_fleet`", "`ogame_planets`", "`ogame_users`", "`ogame_union`", 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(events) != 1 ||
+		events[0].ID != -7 ||
+		events[0].UnionID != 7 ||
+		events[0].ArrivalAt != 300 ||
+		len(events[0].GroupMissions) != 2 {
+		t.Fatalf("unexpected ACS overview event: %+v", events)
+	}
+	if events[0].GroupMissions[0].MissionName != "Attack" ||
+		events[0].GroupMissions[0].TotalShips != 2 ||
+		events[0].GroupMissions[1].MissionName != "Joint attack" ||
+		events[0].GroupMissions[1].OwnerName != "support" ||
+		!events[0].GroupMissions[1].Foreign {
+		t.Fatalf("unexpected ACS grouped missions: %+v", events[0].GroupMissions)
+	}
+	if !strings.Contains(queryer.calls[1].sql, "FROM `ogame_union`") || !strings.Contains(queryer.calls[2].sql, "f.union_id = ?") {
+		t.Fatalf("expected ACS union queries, got %+v", queryer.calls)
+	}
+}
+
+func TestOverviewRepositoryLoadOverviewUnionEventsEdges(t *testing.T) {
+	fleetIDs := domaingame.FleetIDs()
+	for _, tt := range []struct {
+		name    string
+		queryer *fakeQueryer
+		want    string
+		wantLen int
+	}{
+		{
+			name:    "union query error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{err: errors.New("union query failed")}}},
+			want:    "union query failed",
+		},
+		{
+			name:    "union scan error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", 42})}}},
+			want:    "expected int",
+		},
+		{
+			name:    "union rows error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("union rows failed"), []any{7, 42})}}},
+			want:    "union rows failed",
+		},
+		{
+			name: "event query error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{7, 42})},
+				{err: errors.New("union event query failed")},
+			}},
+			want: "union event query failed",
+		},
+		{
+			name: "event scan error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{7, 42})},
+				{rows: fakeRowsFromValues([]any{"bad"})},
+			}},
+			want: "unexpected scan destination count",
+		},
+		{
+			name: "event rows error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{7, 42})},
+				{rows: fakeRowsFromValuesWithErr(errors.New("union event rows failed"), overviewEventRow(21, 42, "legor", domaingame.FleetMissionACSAttackHead, nil, 100, 300, 3, 4))},
+			}},
+			want: "union event rows failed",
+		},
+		{
+			name: "empty event group",
+			queryer: &fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{7, 42})},
+				{rows: fakeRowsFromValues()},
+			}},
+			wantLen: 0,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewOverviewRepositoryWithQueryer(tt.queryer, "ogame_")
+			events, err := repository.loadOverviewUnionEvents(context.Background(), "`ogame_queue`", "`ogame_fleet`", "`ogame_planets`", "`ogame_users`", "`ogame_union`", fleetIDs, 42)
+			if tt.want != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.want) {
+					t.Fatalf("expected %q error, got %v", tt.want, err)
+				}
+				return
+			}
+			if err != nil || len(events) != tt.wantLen {
+				t.Fatalf("expected %d events and no error, events=%+v err=%v", tt.wantLen, events, err)
 			}
 		})
 	}

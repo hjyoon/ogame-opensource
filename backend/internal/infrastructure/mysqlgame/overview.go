@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"sort"
 	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
@@ -112,12 +113,17 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 	}
 	queueTable := ""
 	fleetTable := ""
+	unionTable := ""
 	if r.includeEvents {
 		queueTable, err = tableName(r.prefix, "queue")
 		if err != nil {
 			return domaingame.Overview{}, err
 		}
 		fleetTable, err = tableName(r.prefix, "fleet")
+		if err != nil {
+			return domaingame.Overview{}, err
+		}
+		unionTable, err = tableName(r.prefix, "union")
 		if err != nil {
 			return domaingame.Overview{}, err
 		}
@@ -205,7 +211,7 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 	}
 	events := []domaingame.FleetMission(nil)
 	if r.includeEvents {
-		events, err = r.loadOverviewEvents(ctx, queueTable, fleetTable, planetsTable, usersTable, query.PlayerID)
+		events, err = r.loadOverviewEvents(ctx, queueTable, fleetTable, planetsTable, usersTable, unionTable, query.PlayerID)
 		if err != nil {
 			return domaingame.Overview{}, err
 		}
@@ -949,7 +955,7 @@ func (r OverviewRepository) loadUnreadMessages(ctx context.Context, messagesTabl
 	return count, nil
 }
 
-func (r OverviewRepository) loadOverviewEvents(ctx context.Context, queueTable string, fleetTable string, planetsTable string, usersTable string, playerID int) ([]domaingame.FleetMission, error) {
+func (r OverviewRepository) loadOverviewEvents(ctx context.Context, queueTable string, fleetTable string, planetsTable string, usersTable string, unionTable string, playerID int) ([]domaingame.FleetMission, error) {
 	fleetIDs := domaingame.FleetIDs()
 	rows, err := r.queryer.QueryContext(
 		ctx,
@@ -988,7 +994,108 @@ func (r OverviewRepository) loadOverviewEvents(ctx context.Context, queueTable s
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return domaingame.BuildOverviewEvents(missions), nil
+	events := domaingame.BuildOverviewEvents(missions)
+	unionEvents, err := r.loadOverviewUnionEvents(ctx, queueTable, fleetTable, planetsTable, usersTable, unionTable, fleetIDs, playerID)
+	if err != nil {
+		return nil, err
+	}
+	events = append(events, unionEvents...)
+	sort.SliceStable(events, func(left int, right int) bool {
+		return events[left].ArrivalAt < events[right].ArrivalAt
+	})
+	return events, nil
+}
+
+type overviewUnionRow struct {
+	ID           int
+	TargetPlayer int
+}
+
+func (r OverviewRepository) loadOverviewUnionEvents(ctx context.Context, queueTable string, fleetTable string, planetsTable string, usersTable string, unionTable string, fleetIDs []int, playerID int) ([]domaingame.FleetMission, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT union_id, target_player FROM %s WHERE target_player = ? OR CONCAT(',', players, ',') LIKE ? ORDER BY union_id ASC", unionTable),
+		playerID,
+		fmt.Sprintf("%%,%d,%%", playerID),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	unions := make([]overviewUnionRow, 0)
+	for rows.Next() {
+		var union overviewUnionRow
+		if err := rows.Scan(&union.ID, &union.TargetPlayer); err != nil {
+			return nil, err
+		}
+		unions = append(unions, union)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	events := make([]domaingame.FleetMission, 0, len(unions))
+	for _, union := range unions {
+		event, found, err := r.loadOverviewUnionEvent(ctx, queueTable, fleetTable, planetsTable, usersTable, fleetIDs, playerID, union.ID)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			events = append(events, event)
+		}
+	}
+	return events, nil
+}
+
+func (r OverviewRepository) loadOverviewUnionEvent(ctx context.Context, queueTable string, fleetTable string, planetsTable string, usersTable string, fleetIDs []int, playerID int, unionID int) (domaingame.FleetMission, bool, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT q.sub_id, q.start, q.end, f.mission, COALESCE(f.ipm_amount, 0), COALESCE(f.ipm_target, 0), f.owner_id, COALESCE(owner_user.oname, ''), f.start_planet, f.target_planet, %s, COALESCE(o.g, 0), COALESCE(o.s, 0), COALESCE(o.p, 0), COALESCE(t.g, 0), COALESCE(t.s, 0), COALESCE(t.p, 0), COALESCE(t.type, ?), COALESCE(target_user.oname, 'space') FROM %s q JOIN %s f ON f.fleet_id = q.sub_id LEFT JOIN %s o ON o.planet_id = f.start_planet LEFT JOIN %s owner_user ON owner_user.player_id = f.owner_id LEFT JOIN %s t ON t.planet_id = f.target_planet LEFT JOIN %s target_user ON target_user.player_id = t.owner_id WHERE q.type = ? AND f.union_id = ? ORDER BY q.end ASC, q.prio DESC",
+			prefixedNumericColumns("f", fleetIDs),
+			queueTable,
+			fleetTable,
+			planetsTable,
+			usersTable,
+			planetsTable,
+			usersTable,
+		),
+		legacyPlanetTypeAbandoned,
+		queueTypeFleet,
+		unionID,
+	)
+	if err != nil {
+		return domaingame.FleetMission{}, false, err
+	}
+	defer rows.Close()
+
+	missions := make([]domaingame.FleetMission, 0)
+	arrivalAt := int64(0)
+	for rows.Next() {
+		mission, err := scanOverviewEventRow(rows, fleetIDs, playerID)
+		if err != nil {
+			return domaingame.FleetMission{}, false, err
+		}
+		mission.UnionID = unionID
+		if mission.ArrivalAt > arrivalAt {
+			arrivalAt = mission.ArrivalAt
+		}
+		missions = append(missions, mission)
+	}
+	if err := rows.Err(); err != nil {
+		return domaingame.FleetMission{}, false, err
+	}
+	if len(missions) == 0 {
+		return domaingame.FleetMission{}, false, nil
+	}
+
+	event := missions[0]
+	event.ID = -unionID
+	event.UnionID = unionID
+	event.ArrivalAt = arrivalAt
+	event.GroupMissions = missions
+	return domaingame.BuildOverviewEvents([]domaingame.FleetMission{event})[0], true, nil
 }
 
 func scanOverviewEventRow(rows Rows, fleetIDs []int, playerID int) (domaingame.FleetMission, error) {

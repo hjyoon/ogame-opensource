@@ -506,6 +506,8 @@ type GameFleetMission = {
   missileAmount: number;
   missileTargetId: number;
   missileTarget: string;
+  unionId: number;
+  groupMissions: GameFleetMission[];
   origin: Coordinates;
   target: Coordinates;
   targetType: number;
@@ -4985,21 +4987,36 @@ function OverviewEventRows({ events }: { events: GameFleetMission[] }) {
     <>
       {events.map((event) => {
         const remaining = Math.max(0, event.arrivalAt - now);
+        const groupMissions = overviewEventGroupMissions(event);
         return (
           <tr className={overviewEventRowClass(event)} key={event.id}>
             <th>
               <div title={String(remaining)}>{formatLegacyDuration(remaining)}</div>
             </th>
             <th colSpan={3}>
-              <span className={overviewEventMissionClass(event)}>
-                <OverviewEventBody event={event} />
-              </span>
+              {groupMissions.map((groupEvent, index) => (
+                <React.Fragment key={groupEvent.id}>
+                  {index > 0 ? (
+                    <>
+                      <br />
+                      <br />
+                    </>
+                  ) : null}
+                  <span className={overviewEventMissionClass(groupEvent)}>
+                    <OverviewEventBody event={groupEvent} />
+                  </span>
+                </React.Fragment>
+              ))}
             </th>
           </tr>
         );
       })}
     </>
   );
+}
+
+function overviewEventGroupMissions(event: GameFleetMission): GameFleetMission[] {
+  return event.groupMissions.length > 0 ? event.groupMissions : [event];
 }
 
 function OverviewEventBody({ event }: { event: GameFleetMission }) {
@@ -5027,6 +5044,9 @@ function OverviewMissileEventBody({ event }: { event: GameFleetMission }) {
 }
 
 function overviewEventRowClass(event: GameFleetMission): string {
+  if (event.groupMissions.length > 0) {
+    return "";
+  }
   if (event.mission >= 200) {
     return "holding";
   }

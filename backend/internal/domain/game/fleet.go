@@ -62,6 +62,8 @@ type FleetMission struct {
 	MissileAmount   int
 	MissileTargetID int
 	MissileTarget   string
+	UnionID         int
+	GroupMissions   []FleetMission
 	Origin          Coordinates
 	Target          Coordinates
 	TargetType      int
@@ -215,6 +217,9 @@ func normalizeFleetMissions(missions []FleetMission, acsEnabled bool) []FleetMis
 		mission.TotalShips = fleetTotalShips(mission.Ships)
 		mission.CanRecall = !mission.Foreign && mission.Mission != FleetMissionMissile && (mission.Mission < FleetMissionReturnOffset || mission.Mission > FleetMissionOrbitingOffset)
 		mission.CanCreateUnion = !mission.Foreign && acsEnabled && (mission.Mission == FleetMissionAttack || mission.Mission == FleetMissionACSAttackHead)
+		if len(mission.GroupMissions) > 0 {
+			mission.GroupMissions = normalizeFleetMissions(mission.GroupMissions, acsEnabled)
+		}
 		normalized = append(normalized, mission)
 	}
 	return normalized

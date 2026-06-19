@@ -60,6 +60,8 @@ type gameFleetMissionResponse struct {
 	MissileAmount   int                          `json:"missileAmount"`
 	MissileTargetID int                          `json:"missileTargetId"`
 	MissileTarget   string                       `json:"missileTarget"`
+	UnionID         int                          `json:"unionId"`
+	GroupMissions   []gameFleetMissionResponse   `json:"groupMissions"`
 	Origin          gameCoordinatesResponse      `json:"origin"`
 	Target          gameCoordinatesResponse      `json:"target"`
 	TargetType      int                          `json:"targetType"`
@@ -438,6 +440,10 @@ func toGameFleetMissionResponse(mission domaingame.FleetMission) gameFleetMissio
 			Count: ship.Count,
 		})
 	}
+	groupMissions := make([]gameFleetMissionResponse, 0, len(mission.GroupMissions))
+	for _, groupMission := range mission.GroupMissions {
+		groupMissions = append(groupMissions, toGameFleetMissionResponse(groupMission))
+	}
 	return gameFleetMissionResponse{
 		ID:              mission.ID,
 		OwnerID:         mission.OwnerID,
@@ -452,6 +458,8 @@ func toGameFleetMissionResponse(mission domaingame.FleetMission) gameFleetMissio
 		MissileAmount:   mission.MissileAmount,
 		MissileTargetID: mission.MissileTargetID,
 		MissileTarget:   mission.MissileTarget,
+		UnionID:         mission.UnionID,
+		GroupMissions:   groupMissions,
 		Origin:          toGameCoordinatesResponse(mission.Origin),
 		Target:          toGameCoordinatesResponse(mission.Target),
 		TargetType:      mission.TargetType,

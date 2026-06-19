@@ -792,9 +792,16 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	missile.MissileAmount = 3
 	missile.MissileTargetID = domaingame.DefenseRocketLauncher
 	missile.MissileTarget = "Rocket Launcher"
+	acs := domaingame.BuildFleetMission(13, domaingame.FleetMissionACSAttackHead, nil, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 5}, domaingame.PlanetTypePlanet, "target", 130, 230)
+	acs.UnionID = 7
+	acs.GroupMissions = []domaingame.FleetMission{
+		domaingame.BuildFleetMission(31, domaingame.FleetMissionACSAttackHead, domaingame.FleetCounts{domaingame.FleetCruiser: 2}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 5}, domaingame.PlanetTypePlanet, "target", 130, 230),
+		domaingame.BuildFleetMission(32, domaingame.FleetMissionACSAttack, domaingame.FleetCounts{domaingame.FleetLightFighter: 5}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 5}, domaingame.PlanetTypePlanet, "target", 130, 230),
+	}
 	overviewEvents := domaingame.BuildOverviewEvents([]domaingame.FleetMission{
 		domaingame.BuildFleetMission(11, domaingame.FleetMissionTransport, domaingame.FleetCounts{domaingame.FleetSmallCargo: 2}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4}, domaingame.PlanetTypePlanet, "target", 100, 200),
 		missile,
+		acs,
 	})
 	overview := &fakeGameOverview{result: appgame.OverviewResult{
 		Authenticated: true,
@@ -884,7 +891,7 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 		response.Overview.CurrentPlanet.BuildQueue.End != 2000 {
 		t.Fatalf("unexpected overview mapping: %+v", response.Overview)
 	}
-	if len(response.Overview.Events) != 2 || !response.Overview.Events[0].Own || response.Overview.Events[0].OwnerID != 0 {
+	if len(response.Overview.Events) != 3 || !response.Overview.Events[0].Own || response.Overview.Events[0].OwnerID != 0 {
 		t.Fatalf("unexpected overview event mapping: %+v", response.Overview.Events)
 	}
 	if response.Overview.Events[0].MissionName != "Transport" || response.Overview.Events[0].TotalShips != 2 {
@@ -895,6 +902,11 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 		response.Overview.Events[1].MissileTargetID != domaingame.DefenseRocketLauncher ||
 		response.Overview.Events[1].MissileTarget != "Rocket Launcher" {
 		t.Fatalf("expected overview missile event mapping, got %+v", response.Overview.Events[1])
+	}
+	if response.Overview.Events[2].UnionID != 7 ||
+		len(response.Overview.Events[2].GroupMissions) != 2 ||
+		response.Overview.Events[2].GroupMissions[1].MissionName != "Joint attack" {
+		t.Fatalf("expected overview ACS group mapping, got %+v", response.Overview.Events[2])
 	}
 	if len(response.Overview.Messages) != 1 || response.Overview.Messages[0] != domaingame.OverviewAdminNotice {
 		t.Fatalf("expected overview messages, got %+v", response.Overview.Messages)
