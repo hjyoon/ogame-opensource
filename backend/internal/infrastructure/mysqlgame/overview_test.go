@@ -24,8 +24,11 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 			[]any{100, "Colony", 1, 1, 2, 4},
 		)},
 		{rows: fakeRowsFromValues([]any{2})},
+		{rows: fakeRowsFromValues([]any{4})},
 	}}
 	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	repository.includeUnread = true
+	repository.now = func() time.Time { return time.Date(2026, 6, 19, 15, 23, 7, 0, time.UTC) }
 
 	overview, err := repository.GetOverview(context.Background(), overviewQuery(42, 0))
 	if err != nil {
@@ -34,6 +37,9 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 
 	if overview.Commander != "legor" || overview.Score.RawScore != 123456 || overview.Score.Rank != 7 || overview.Score.DisplayPoints() != 123 {
 		t.Fatalf("unexpected score overview: %+v", overview)
+	}
+	if overview.ServerTime != "Fri Jun 19 18:23:07" {
+		t.Fatalf("expected legacy server time, got %q", overview.ServerTime)
 	}
 	if overview.CurrentPlanet.ID != 99 || overview.CurrentPlanet.Name != "Arakis" || overview.CurrentPlanet.Coordinates.Position != 3 {
 		t.Fatalf("unexpected current planet: %+v", overview.CurrentPlanet)
@@ -48,6 +54,9 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	}
 	if overview.Score.UniversePlayers != 2 {
 		t.Fatalf("expected universe player count, got %+v", overview.Score)
+	}
+	if overview.UnreadMessages != 4 {
+		t.Fatalf("expected unread messages, got %d", overview.UnreadMessages)
 	}
 	if len(overview.PlanetSwitcher) != 2 || !overview.PlanetSwitcher[0].Current || overview.PlanetSwitcher[1].Current {
 		t.Fatalf("unexpected planet switcher: %+v", overview.PlanetSwitcher)
@@ -66,6 +75,7 @@ func TestOverviewRepositoryAddsAdminNotice(t *testing.T) {
 		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 12, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3})},
 		{rows: fakeRowsFromValues([]any{1})},
+		{rows: fakeRowsFromValues([]any{0})},
 	}}
 	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
 
@@ -93,6 +103,9 @@ func TestNewOverviewRepositoryKeepsSQLQueryer(t *testing.T) {
 	}
 	if _, ok := repository.execer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL execer, got %T", repository.execer)
+	}
+	if !repository.updateResources || !repository.includeUnread {
+		t.Fatalf("expected production overview repository to update resources and unread messages")
 	}
 }
 
@@ -1282,6 +1295,56 @@ func TestOverviewRepositorySelectablePlanetExistsEdges(t *testing.T) {
 				t.Fatalf("expected %q error, got %v", tt.want, err)
 			}
 		})
+	}
+}
+
+func TestOverviewRepositoryLoadUnreadMessagesEdges(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		queryer *fakeQueryer
+		want    string
+	}{
+		{
+			name:    "query error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{err: errors.New("unread query failed")}}},
+			want:    "unread query failed",
+		},
+		{
+			name:    "empty rows error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("unread empty rows failed"))}}},
+			want:    "unread empty rows failed",
+		},
+		{
+			name:    "scan error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}},
+			want:    "expected int",
+		},
+		{
+			name:    "rows error",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("unread rows failed"), []any{1})}}},
+			want:    "unread rows failed",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewOverviewRepositoryWithQueryer(tt.queryer, "ogame_")
+			_, err := repository.loadUnreadMessages(context.Background(), "ogame_messages", 42)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
+	}
+
+	repository := NewOverviewRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "ogame_")
+	count, err := repository.loadUnreadMessages(context.Background(), "ogame_messages", 42)
+	if err != nil || count != 0 {
+		t.Fatalf("expected empty unread rows to default to zero, count=%d err=%v", count, err)
+	}
+}
+
+func TestFormatLegacyOverviewTimeUsesServerTimezone(t *testing.T) {
+	got := formatLegacyOverviewTime(time.Date(2026, 6, 19, 15, 23, 7, 0, time.UTC))
+	if got != "Fri Jun 19 18:23:07" {
+		t.Fatalf("unexpected legacy overview time: %q", got)
 	}
 }
 

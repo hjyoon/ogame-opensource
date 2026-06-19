@@ -16,6 +16,18 @@ func TestScoreSummaryDisplayPoints(t *testing.T) {
 	}
 }
 
+func TestOverviewUnreadMessageText(t *testing.T) {
+	if got := OverviewUnreadMessageText(0); got != "" {
+		t.Fatalf("expected no text for zero unread messages, got %q", got)
+	}
+	if got := OverviewUnreadMessageText(1); got != "You have 1 new message" {
+		t.Fatalf("unexpected singular unread text: %q", got)
+	}
+	if got := OverviewUnreadMessageText(2); got != "You have 2 new messages" {
+		t.Fatalf("unexpected plural unread text: %q", got)
+	}
+}
+
 func TestCoordinatesValid(t *testing.T) {
 	if !(Coordinates{Galaxy: 1, System: 2, Position: 3}).Valid() {
 		t.Fatal("expected positive coordinates to be valid")

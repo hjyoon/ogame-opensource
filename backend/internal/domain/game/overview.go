@@ -1,6 +1,9 @@
 package game
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 const PlanetNameLimit = 20
 
@@ -14,10 +17,12 @@ const (
 
 type Overview struct {
 	Commander      string
+	ServerTime     string
 	Score          ScoreSummary
 	CurrentPlanet  PlanetOverview
 	PlanetSwitcher []PlanetSummary
 	Messages       []string
+	UnreadMessages int
 }
 
 type OverviewActionIssue struct {
@@ -71,6 +76,17 @@ func (s ScoreSummary) DisplayPoints() int64 {
 		return 0
 	}
 	return s.RawScore / 1000
+}
+
+func OverviewUnreadMessageText(count int) string {
+	if count <= 0 {
+		return ""
+	}
+	suffix := ""
+	if count > 1 {
+		suffix = "s"
+	}
+	return "You have " + strconv.Itoa(count) + " new message" + suffix
 }
 
 func (c Coordinates) Valid() bool {

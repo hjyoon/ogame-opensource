@@ -23,10 +23,12 @@ type gameOverviewActionIssue struct {
 
 type gameOverviewSummary struct {
 	Commander      string                      `json:"commander"`
+	ServerTime     string                      `json:"serverTime"`
 	Score          gameScoreResponse           `json:"score"`
 	CurrentPlanet  gamePlanetOverviewResponse  `json:"currentPlanet"`
 	PlanetSwitcher []gamePlanetSummaryResponse `json:"planetSwitcher"`
 	Messages       []string                    `json:"messages,omitempty"`
+	UnreadMessages int                         `json:"unreadMessages"`
 }
 
 type gameScoreResponse struct {
@@ -227,7 +229,8 @@ func toGameOverviewSummary(overview domaingame.Overview) gameOverviewSummary {
 		planets = append(planets, toGamePlanetSummaryResponse(planet))
 	}
 	return gameOverviewSummary{
-		Commander: overview.Commander,
+		Commander:  overview.Commander,
+		ServerTime: overview.ServerTime,
 		Score: gameScoreResponse{
 			Points:          overview.Score.DisplayPoints(),
 			RawScore:        overview.Score.RawScore,
@@ -237,6 +240,7 @@ func toGameOverviewSummary(overview domaingame.Overview) gameOverviewSummary {
 		CurrentPlanet:  toGamePlanetOverviewResponse(overview.CurrentPlanet),
 		PlanetSwitcher: planets,
 		Messages:       overview.Messages,
+		UnreadMessages: overview.UnreadMessages,
 	}
 }
 

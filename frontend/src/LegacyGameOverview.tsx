@@ -145,7 +145,9 @@ export type GameLogoutStatus = {
 
 type GameOverview = {
   commander: string;
+  serverTime?: string;
   messages?: string[];
+  unreadMessages: number;
   score: {
     points: number;
     rawScore: number;
@@ -4859,17 +4861,23 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
             ({overview.commander})
           </td>
         </tr>
+        {overview.unreadMessages > 0 ? (
+          <tr>
+            <th colSpan={4}>
+              <a href={gameRouteURL("/game/messages", window.location.search)}>
+                {overviewUnreadMessageText(overview.unreadMessages)}
+              </a>
+            </th>
+          </tr>
+        ) : null}
         <tr>
           <th>Server time</th>
-          <th colSpan={3}>{formatLegacyDate(new Date())}</th>
+          <th colSpan={3}>{overview.serverTime || formatLegacyDate(new Date())}</th>
         </tr>
         <tr>
           <td className="legacy-c" colSpan={4}>
             Events
           </td>
-        </tr>
-        <tr>
-          <th colSpan={4}>&nbsp;</th>
         </tr>
         <tr>
           <th>
@@ -5163,6 +5171,10 @@ function planetImagePath(planet: Pick<GamePlanetOverview, "id" | "type" | "coord
   const category = planetCategory(planet.coordinates.position);
   const filename = `${category}${String(imageID).padStart(2, "0")}.jpg`;
   return `${skinBase}/planeten/${small ? "small/s_" : ""}${filename}`;
+}
+
+function overviewUnreadMessageText(count: number): string {
+  return `You have ${count} new message${count > 1 ? "s" : ""}`;
 }
 
 function galaxyPlanetImagePath(planet: GameGalaxyPlanet, small: boolean): string {

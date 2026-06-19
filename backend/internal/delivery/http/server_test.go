@@ -791,8 +791,10 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	overview := &fakeGameOverview{result: appgame.OverviewResult{
 		Authenticated: true,
 		Overview: domaingame.Overview{
-			Commander: "legor",
-			Messages:  []string{domaingame.OverviewAdminNotice},
+			Commander:      "legor",
+			ServerTime:     "Fri Jun 19 18:23:07",
+			Messages:       []string{domaingame.OverviewAdminNotice},
+			UnreadMessages: 4,
 			Score: domaingame.ScoreSummary{
 				RawScore:        123456,
 				Rank:            7,
@@ -858,6 +860,12 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	}
 	if len(response.Overview.Messages) != 1 || response.Overview.Messages[0] != domaingame.OverviewAdminNotice {
 		t.Fatalf("expected overview messages, got %+v", response.Overview.Messages)
+	}
+	if response.Overview.ServerTime != "Fri Jun 19 18:23:07" {
+		t.Fatalf("expected overview server time, got %q", response.Overview.ServerTime)
+	}
+	if response.Overview.UnreadMessages != 4 {
+		t.Fatalf("expected unread messages to be mapped, got %d", response.Overview.UnreadMessages)
 	}
 	if overview.command.PublicSession != "public" || overview.command.PlanetID != 99 || overview.command.RemoteAddr != "203.0.113.10" ||
 		!overview.command.Login {

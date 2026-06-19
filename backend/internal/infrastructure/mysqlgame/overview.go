@@ -57,6 +57,7 @@ type OverviewRepository struct {
 	secret          string
 	now             func() time.Time
 	updateResources bool
+	includeUnread   bool
 }
 
 func NewOverviewRepository(db *sql.DB, prefix string) OverviewRepository {
@@ -65,7 +66,7 @@ func NewOverviewRepository(db *sql.DB, prefix string) OverviewRepository {
 
 func NewOverviewRepositoryWithSecret(db *sql.DB, prefix string, secret string) OverviewRepository {
 	runner := SQLQueryer{DB: db}
-	return OverviewRepository{queryer: runner, execer: runner, prefix: prefix, secret: secret, now: time.Now, updateResources: true}
+	return OverviewRepository{queryer: runner, execer: runner, prefix: prefix, secret: secret, now: time.Now, updateResources: true, includeUnread: true}
 }
 
 func NewOverviewRepositoryWithQueryer(queryer Queryer, prefix string) OverviewRepository {
@@ -92,6 +93,13 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 	planetsTable, err := tableName(r.prefix, "planets")
 	if err != nil {
 		return domaingame.Overview{}, err
+	}
+	messagesTable := ""
+	if r.includeUnread {
+		messagesTable, err = tableName(r.prefix, "messages")
+		if err != nil {
+			return domaingame.Overview{}, err
+		}
 	}
 
 	user, err := r.loadUser(ctx, usersTable, query.PlayerID)
@@ -162,9 +170,17 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 	if err != nil {
 		return domaingame.Overview{}, err
 	}
+	unreadMessages := 0
+	if r.includeUnread {
+		unreadMessages, err = r.loadUnreadMessages(ctx, messagesTable, query.PlayerID)
+		if err != nil {
+			return domaingame.Overview{}, err
+		}
+	}
 
 	return domaingame.Overview{
-		Commander: user.Commander,
+		Commander:  user.Commander,
+		ServerTime: formatLegacyOverviewTime(r.currentTime()),
 		Score: domaingame.ScoreSummary{
 			RawScore:        user.Score,
 			Rank:            user.Rank,
@@ -173,6 +189,7 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 		CurrentPlanet:  current,
 		PlanetSwitcher: planets,
 		Messages:       overviewMessages(user),
+		UnreadMessages: unreadMessages,
 	}, nil
 }
 
@@ -819,6 +836,32 @@ func (r OverviewRepository) loadUniversePlayers(ctx context.Context) (int, error
 		return 0, err
 	}
 	return players, nil
+}
+
+func (r OverviewRepository) loadUnreadMessages(ctx context.Context, messagesTable string, playerID int) (int, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE owner_id = ? AND shown = 0", messagesTable), playerID)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return 0, err
+		}
+		return 0, nil
+	}
+	var count int
+	if err := rows.Scan(&count); err != nil {
+		return 0, err
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func formatLegacyOverviewTime(now time.Time) string {
+	return now.In(time.FixedZone("MSK", 3*60*60)).Format("Mon Jan 2 15:04:05")
 }
 
 func scanPlanetOverview(rows Rows) (domaingame.PlanetOverview, error) {
