@@ -74,6 +74,8 @@ const legacyPageAliases = new Map<string, string>([
   ["defense", "/game/defense"],
   ["statistics", "/game/statistics"],
   ["search", "/game/search"],
+  ["writemessages", "/game/messages"],
+  ["messages", "/game/messages"],
   ["notes", "/game/notes"],
   ["buddy", "/game/buddy"],
   ["logout", "/game/logout"]
@@ -108,4 +110,70 @@ export function gamePlanetSwitchURL(pathname: string, search: string, planetID: 
   const query = new URLSearchParams(search);
   query.set("cp", String(planetID));
   return gameRouteURL(resolveGameRoute(pathname, search).path, query.toString());
+}
+
+export type GameFleetTargetLink = {
+  galaxy: number;
+  system: number;
+  position: number;
+  mission: number;
+  planetType?: number;
+};
+
+export type GameFleetTargetPrefill = {
+  targetGalaxy: number;
+  targetSystem: number;
+  targetPlanet: number;
+  targetPlanetType: number;
+  targetMission: number;
+};
+
+export function gameFleetTargetURL(target: GameFleetTargetLink, search: string): string {
+  const query = new URLSearchParams(search);
+  query.set("galaxy", String(target.galaxy));
+  query.set("system", String(target.system));
+  query.set("position", String(target.position));
+  query.set("planet", String(target.position));
+  query.set("planettype", String(target.planetType ?? 1));
+  query.set("target_mission", String(target.mission));
+  return gameRouteURL("/game/fleet", query.toString());
+}
+
+export function gameFleetTargetPrefillFromSearch(search: string): GameFleetTargetPrefill | null {
+  const query = new URLSearchParams(search);
+  const galaxy = parseLegacyFleetTargetInt(query.get("galaxy"));
+  if (galaxy === null) {
+    return null;
+  }
+  return {
+    targetGalaxy: galaxy,
+    targetSystem: parseLegacyFleetTargetInt(query.get("system")) ?? 0,
+    targetPlanet: parseLegacyFleetTargetInt(query.get("planet") ?? query.get("position")) ?? 0,
+    targetPlanetType: parseLegacyFleetTargetInt(query.get("planettype")) ?? 0,
+    targetMission: parseLegacyFleetTargetInt(query.get("target_mission")) ?? 0
+  };
+}
+
+export function gameBuddyRequestURL(playerID: number, search: string): string {
+  const query = new URLSearchParams(search);
+  query.set("action", "7");
+  query.set("buddy_id", String(playerID));
+  return gameRouteURL("/game/buddy", query.toString());
+}
+
+export function gameMessageComposeURL(playerID: number, search: string): string {
+  const query = new URLSearchParams(search);
+  query.set("messageziel", String(playerID));
+  return gameRouteURL("/game/messages", query.toString());
+}
+
+function parseLegacyFleetTargetInt(value: string | null): number | null {
+  if (value === null || value.trim() === "") {
+    return null;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return Math.trunc(Math.abs(parsed));
 }

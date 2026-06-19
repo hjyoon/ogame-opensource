@@ -25,7 +25,7 @@ React 19/Bun 1.3 + Go 1.25 native `net/http` tracker. Keep under 4KB; split link
 
 - Public parity, language flags, login/logout, and migrated game read models are guarded.
 - Fleet covers summary, slots, expeditions, ships, speed/cargo, Commander templates, and recall; dispatch/ACS pending.
-- Galaxy covers clamp, rows, status, moon/debris/actions, slots, deuterium warning, and legacy no-header/table spacing; quick actions pending.
+- Galaxy covers clamp, rows, status, moon/debris/actions, slots, deut warning, quick links/prefill; instant sends pending.
 - Shipyard/defense cover display plus POST orders into legacy `Shipyard` queue with due partial/full completion.
 - Technology/stat/search/buddy/notes layouts follow legacy chrome; buddy add/accept/decline/withdraw/delete sends legacy PMs.
 - Registration writes side effects and sends SMTP/MailHog activation/password mail.

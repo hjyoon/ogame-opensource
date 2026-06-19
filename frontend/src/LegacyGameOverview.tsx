@@ -1,5 +1,15 @@
 import React from "react";
-import { gamePlanetSwitchURL, gameRouteURL, gameRoutes, type GameRoute } from "./gameRoutes";
+import {
+  gameBuddyRequestURL,
+  gameFleetTargetPrefillFromSearch,
+  gameFleetTargetURL,
+  gameMessageComposeURL,
+  gamePlanetSwitchURL,
+  gameRouteURL,
+  gameRoutes,
+  type GameFleetTargetPrefill,
+  type GameRoute
+} from "./gameRoutes";
 
 export type GameOverviewStatus = {
   authenticated: boolean;
@@ -1637,6 +1647,7 @@ function ShipyardTable({
 }
 
 function FleetTable({ fleet, onRecall, pending }: { fleet: GameFleet; onRecall: (fleetID: number) => void; pending: boolean }) {
+  const targetPrefill = gameFleetTargetPrefillFromSearch(window.location.search);
   return (
     <>
       <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-table" width={519}>
@@ -1725,6 +1736,7 @@ function FleetTable({ fleet, onRecall, pending }: { fleet: GameFleet; onRecall: 
       </table>
 
       <form className="legacy-fleet-form" onSubmit={(event) => event.preventDefault()}>
+        {targetPrefill ? <FleetTargetPrefillInputs prefill={targetPrefill} /> : null}
         <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-select-table" width={519}>
           <tbody>
             {fleet.slots.used >= fleet.slots.max ? (
@@ -1828,6 +1840,18 @@ function FleetTable({ fleet, onRecall, pending }: { fleet: GameFleet; onRecall: 
       <br />
       <br />
       <br />
+    </>
+  );
+}
+
+function FleetTargetPrefillInputs({ prefill }: { prefill: GameFleetTargetPrefill }) {
+  return (
+    <>
+      <input name="target_galaxy" type="hidden" value={prefill.targetGalaxy} />
+      <input name="target_system" type="hidden" value={prefill.targetSystem} />
+      <input name="target_planet" type="hidden" value={prefill.targetPlanet} />
+      <input name="target_planettype" type="hidden" value={prefill.targetPlanetType} />
+      <input name="target_mission" type="hidden" value={prefill.targetMission} />
     </>
   );
 }
@@ -2202,7 +2226,7 @@ function GalaxyTableRow({ row }: { row: GameGalaxyRow }) {
       </th>
       <th style={{ width: 30 }}>
         {row.moon ? (
-          <a className={row.moon.destroyed ? "legacy-galaxy-destroyed-moon" : undefined} href={fleetTargetHref(row.moon.coordinates, row.moon.coordinates.position, 3)}>
+          <a className={row.moon.destroyed ? "legacy-galaxy-destroyed-moon" : undefined} href={fleetTargetHref(row.moon.coordinates, row.moon.coordinates.position, 3, 3)}>
             <img alt="" height={22} src={galaxyPlanetImagePath(row.moon, true)} width={22} />
           </a>
         ) : null}
@@ -2242,17 +2266,18 @@ function GalaxyTableRow({ row }: { row: GameGalaxyRow }) {
 }
 
 function GalaxyActionIcons({ planet }: { planet: GameGalaxyPlanet }) {
+  const playerID = planet.player?.id ?? 0;
   const actions = [
-    { enabled: planet.actions.spy, icon: "e.gif", label: "Espionage", mission: 6 },
-    { enabled: planet.actions.message, icon: "m.gif", label: "Write message", mission: 0 },
-    { enabled: planet.actions.buddy, icon: "b.gif", label: "Buddy request", mission: 0 },
-    { enabled: planet.actions.missile, icon: "r.gif", label: "Rocket attack", mission: 20 }
+    { enabled: planet.actions.spy, href: fleetTargetHref(planet.coordinates, planet.coordinates.position, 6), icon: "e.gif", label: "Espionage" },
+    { enabled: planet.actions.message && playerID > 0, href: gameMessageComposeURL(playerID, window.location.search), icon: "m.gif", label: "Write message" },
+    { enabled: planet.actions.buddy && playerID > 0, href: gameBuddyRequestURL(playerID, window.location.search), icon: "b.gif", label: "Buddy request" },
+    { enabled: planet.actions.missile, href: fleetTargetHref(planet.coordinates, planet.coordinates.position, 20), icon: "r.gif", label: "Rocket attack" }
   ];
   return (
     <>
       {actions.map((action) =>
         action.enabled ? (
-          <a href={action.mission > 0 ? fleetTargetHref(planet.coordinates, planet.coordinates.position, action.mission) : "#"} key={action.icon}>
+          <a data-galaxy-action={action.label} href={action.href} key={action.icon}>
             <img alt={action.label} src={`${skinBase}/img/${action.icon}`} title={action.label} />
           </a>
         ) : null
@@ -3566,14 +3591,16 @@ function galaxyHref(coordinates: Coordinates): string {
 }
 
 function fleetTargetHref(coordinates: Coordinates, position: number, mission: number, planetType = 1): string {
-  const search = new URLSearchParams(window.location.search);
-  search.set("galaxy", String(coordinates.galaxy));
-  search.set("system", String(coordinates.system));
-  search.set("position", String(position));
-  search.set("planet", String(position));
-  search.set("planettype", String(planetType));
-  search.set("target_mission", String(mission));
-  return gameRouteURL("/game/fleet", search.toString());
+  return gameFleetTargetURL(
+    {
+      galaxy: coordinates.galaxy,
+      system: coordinates.system,
+      position,
+      mission,
+      planetType
+    },
+    window.location.search
+  );
 }
 
 function technologyInfoURL(itemID: number): string {

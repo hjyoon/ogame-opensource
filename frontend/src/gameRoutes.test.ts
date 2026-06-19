@@ -1,5 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { gamePlanetSwitchURL, gameRouteURL, gameRoutes, normalizeGamePath, resolveGameRoute } from "./gameRoutes";
+import {
+  gameBuddyRequestURL,
+  gameFleetTargetPrefillFromSearch,
+  gameFleetTargetURL,
+  gameMessageComposeURL,
+  gamePlanetSwitchURL,
+  gameRouteURL,
+  gameRoutes,
+  normalizeGamePath,
+  resolveGameRoute
+} from "./gameRoutes";
 
 describe("game route model", () => {
   test("uses natural game route paths without php suffixes", () => {
@@ -19,6 +29,7 @@ describe("game route model", () => {
     expect(normalizeGamePath("/game/resources?session=abc")).toBe("/game/resources");
     expect(normalizeGamePath("/game/index.php", "?page=fleet_templates&session=abc")).toBe("/game/fleet-templates");
     expect(normalizeGamePath("/game/index.php?page=flotten1&session=abc")).toBe("/game/fleet");
+    expect(normalizeGamePath("/game/index.php?page=writemessages&messageziel=42&session=abc")).toBe("/game/messages");
   });
 
   test("resolves natural authenticated game routes", () => {
@@ -59,5 +70,40 @@ describe("game route model", () => {
     expect(gamePlanetSwitchURL("/game/buildings", "?session=abc&cp=1", 42)).toBe("/game/buildings?session=abc&cp=42");
     expect(gamePlanetSwitchURL("/game/technology", "?session=abc&tid=206", "7")).toBe("/game/technology?session=abc&tid=206&cp=7");
     expect(gamePlanetSwitchURL("/game/does-not-exist", "?session=abc", 9)).toBe("/game/overview?session=abc&cp=9");
+  });
+
+  test("builds galaxy action links with legacy fleet target parameters", () => {
+    expect(gameFleetTargetURL({ galaxy: 1, system: 2, position: 3, mission: 1 }, "?session=abc&cp=99")).toBe(
+      "/game/fleet?session=abc&cp=99&galaxy=1&system=2&position=3&planet=3&planettype=1&target_mission=1"
+    );
+    expect(gameFleetTargetURL({ galaxy: 1, system: 2, position: 3, mission: 3, planetType: 3 }, "?session=abc")).toBe(
+      "/game/fleet?session=abc&galaxy=1&system=2&position=3&planet=3&planettype=3&target_mission=3"
+    );
+    expect(gameFleetTargetURL({ galaxy: 1, system: 2, position: 16, mission: 15 }, "?session=abc&lgn=1")).toBe(
+      "/game/fleet?session=abc&galaxy=1&system=2&position=16&planet=16&planettype=1&target_mission=15"
+    );
+  });
+
+  test("parses legacy fleet target prefill values from galaxy links", () => {
+    expect(gameFleetTargetPrefillFromSearch("?session=abc&galaxy=1&system=2&planet=3&planettype=2&target_mission=8")).toEqual({
+      targetGalaxy: 1,
+      targetSystem: 2,
+      targetPlanet: 3,
+      targetPlanetType: 2,
+      targetMission: 8
+    });
+    expect(gameFleetTargetPrefillFromSearch("?session=abc&galaxy=-1&system=bad&position=16")).toEqual({
+      targetGalaxy: 1,
+      targetSystem: 0,
+      targetPlanet: 16,
+      targetPlanetType: 0,
+      targetMission: 0
+    });
+    expect(gameFleetTargetPrefillFromSearch("?session=abc")).toBeNull();
+  });
+
+  test("builds migrated galaxy user action links", () => {
+    expect(gameBuddyRequestURL(42, "?session=abc&cp=99&lgn=1")).toBe("/game/buddy?session=abc&cp=99&action=7&buddy_id=42");
+    expect(gameMessageComposeURL(42, "?session=abc&cp=99")).toBe("/game/messages?session=abc&cp=99&messageziel=42");
   });
 });

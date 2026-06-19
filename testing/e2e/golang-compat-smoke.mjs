@@ -1389,6 +1389,8 @@ try {
       check(js.body.includes("legacy-fleet-select-table"), "React bundle contains legacy game fleet ship selection layout"),
       check(js.body.includes("legacy-fleet-templates-table"), "React bundle contains legacy game standard fleets layout"),
       check(js.body.includes("legacy-galaxy-table"), "React bundle contains legacy game galaxy layout"),
+      check(js.body.includes("target_galaxy") && js.body.includes("target_mission"), "React bundle preserves legacy fleet target prefill fields"),
+      check(js.body.includes("data-galaxy-action") && js.body.includes("/game/buddy"), "React bundle contains migrated galaxy action links"),
       check(js.body.includes("legacy-defense-table"), "React bundle contains legacy game defense layout"),
       check(js.body.includes("legacy-technology-table"), "React bundle contains legacy game technology layout"),
       check(js.body.includes("legacy-technology-details-table"), "React bundle contains legacy game technology details layout"),
