@@ -793,6 +793,26 @@ dd {
   text-align: right;
 }
 
+.legacy-game-shell .legacy-fleet-table,
+.legacy-game-shell .legacy-fleet-select-table {
+  border-collapse: separate;
+  border-spacing: 1px;
+}
+
+.legacy-game-shell .legacy-fleet-table th,
+.legacy-game-shell .legacy-fleet-select-table th {
+  font-weight: bold;
+}
+
+.legacy-game-shell .legacy-fleet-table input,
+.legacy-game-shell .legacy-fleet-select-table input {
+  background-color: #344566;
+  border: 1px #415680 solid;
+  color: #e6ebfb;
+  font-family: Tahoma, sans-serif;
+  font-size: 11px;
+}
+
 .legacy-game-shell .legacy-notes-table,
 .legacy-game-shell .legacy-notes-form-table {
   border-collapse: separate;
