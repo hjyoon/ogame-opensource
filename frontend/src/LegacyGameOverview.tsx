@@ -2428,7 +2428,7 @@ function ResourcesTable({
                 </td>
               ))}
               <td className="legacy-k">
-                <input disabled={pending} name="action" type="submit" value="Calculate" />
+                <input disabled={pending} name="action" type="submit" value="Recalculate" />
               </td>
             </tr>
             <tr>

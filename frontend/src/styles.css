@@ -919,7 +919,13 @@ dd {
 }
 
 .legacy-resources-table {
+  border-collapse: separate;
+  border-spacing: 2px;
   margin-top: 0;
+}
+
+.legacy-game-shell .legacy-resources-table th {
+  font-weight: bold;
 }
 
 .legacy-resources-table select,
@@ -927,7 +933,7 @@ dd {
   background-color: #344566;
   border: 1px #415680 solid;
   color: #e6ebfb;
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: Tahoma, sans-serif;
   font-size: 11px;
 }
 
