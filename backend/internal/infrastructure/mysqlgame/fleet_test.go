@@ -517,6 +517,298 @@ func TestFleetRepositoryLaunchesLegacyDispatchWithFleetQueue(t *testing.T) {
 	}
 }
 
+func TestFleetRepositoryLaunchCreatesLegacySpecialTargets(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	baseQuery := func(mission int, target domaingame.Coordinates) appgame.FleetLaunchQuery {
+		return appgame.FleetLaunchQuery{
+			PlayerID: 42,
+			PlanetID: 99,
+			Origin: domaingame.PlanetOverview{
+				Type:        domaingame.PlanetTypePlanet,
+				Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+				Resources:   domaingame.Resources{Metal: 1000, Crystal: 900, Deuterium: 800},
+			},
+			Draft: domaingame.FleetDispatchDraft{
+				Ships: []domaingame.FleetShipCount{{
+					ID:    domaingame.FleetColonyShip,
+					Count: 1,
+				}},
+				Target:          target,
+				TargetType:      domaingame.GamePlanetTypePlanet,
+				Mission:         mission,
+				DurationSeconds: 42,
+				Ready:           true,
+			},
+		}
+	}
+
+	tests := []struct {
+		name          string
+		query         appgame.FleetLaunchQuery
+		results       []fakeQueryResult
+		execResults   []sql.Result
+		wantExecs     int
+		wantTargetID  int
+		wantType      int
+		wantInsert    bool
+		wantTargetSQL string
+	}{
+		{
+			name: "colonize phantom",
+			query: baseQuery(
+				domaingame.FleetMissionColonize,
+				domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+			),
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues()},
+			},
+			execResults:   []sql.Result{fakeFleetSQLResult(77), fakeFleetSQLResult(1), fakeFleetSQLResult(1), fakeFleetSQLResult(78)},
+			wantExecs:     6,
+			wantTargetID:  77,
+			wantType:      legacyPlanetTypeColony,
+			wantInsert:    true,
+			wantTargetSQL: "INSERT INTO `ogame_planets`",
+		},
+		{
+			name: "expedition far space",
+			query: baseQuery(
+				domaingame.FleetMissionExpedition,
+				domaingame.Coordinates{Galaxy: 2, System: 3, Position: domaingame.GalaxyFarSpace},
+			),
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues()},
+			},
+			execResults:   []sql.Result{fakeFleetSQLResult(88), fakeFleetSQLResult(1), fakeFleetSQLResult(1), fakeFleetSQLResult(89)},
+			wantExecs:     6,
+			wantTargetID:  88,
+			wantType:      legacyPlanetTypeFarSpace,
+			wantInsert:    true,
+			wantTargetSQL: "INSERT INTO `ogame_planets`",
+		},
+		{
+			name: "existing far space",
+			query: baseQuery(
+				domaingame.FleetMissionExpedition,
+				domaingame.Coordinates{Galaxy: 2, System: 3, Position: domaingame.GalaxyFarSpace},
+			),
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues([]any{88, userSpace, legacyPlanetTypeFarSpace})},
+			},
+			execResults:  []sql.Result{fakeFleetSQLResult(1), fakeFleetSQLResult(1), fakeFleetSQLResult(89)},
+			wantExecs:    5,
+			wantTargetID: 88,
+			wantType:     legacyPlanetTypeFarSpace,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: tt.results}, execResults: tt.execResults}
+			repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+			issue, err := repository.LaunchFleetDispatch(context.Background(), tt.query)
+			if err != nil || issue != nil {
+				t.Fatalf("expected special launch success, issue=%+v err=%v", issue, err)
+			}
+			if len(runner.execCalls) != tt.wantExecs {
+				t.Fatalf("unexpected exec calls: %+v", runner.execCalls)
+			}
+			fleetInsertIndex := 2
+			if tt.wantInsert {
+				targetInsert := runner.execCalls[0]
+				if !strings.Contains(targetInsert.sql, tt.wantTargetSQL) {
+					t.Fatalf("expected target insert SQL, got %s", targetInsert.sql)
+				}
+				if targetInsert.args[1] != tt.wantType || targetInsert.args[5] != userSpace || targetInsert.args[10] != int64(1_000) || targetInsert.args[14] != 0 {
+					t.Fatalf("unexpected target insert args: %+v", targetInsert.args)
+				}
+				fleetInsertIndex = 3
+			}
+			insertFleet := runner.execCalls[fleetInsertIndex]
+			if !strings.Contains(insertFleet.sql, "INSERT INTO `ogame_fleet`") || insertFleet.args[8] != tt.wantTargetID {
+				t.Fatalf("expected fleet to use special target id %d, got %+v", tt.wantTargetID, insertFleet)
+			}
+			insertLog := runner.execCalls[fleetInsertIndex+1]
+			if !strings.Contains(insertLog.sql, "INSERT INTO `ogame_fleetlogs`") || insertLog.args[16] != tt.wantType {
+				t.Fatalf("expected log to use special target type %d, got %+v", tt.wantType, insertLog)
+			}
+		})
+	}
+}
+
+func TestFleetRepositoryLaunchRejectsInvalidLegacySpecialTargets(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	tests := []struct {
+		name    string
+		query   appgame.FleetLaunchQuery
+		results []fakeQueryResult
+	}{
+		{
+			name: "colonize wrong target type",
+			query: appgame.FleetLaunchQuery{
+				PlayerID: 42,
+				PlanetID: 99,
+				Draft: domaingame.FleetDispatchDraft{
+					Ready:      true,
+					Mission:    domaingame.FleetMissionColonize,
+					Target:     domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+					TargetType: domaingame.GamePlanetTypeDebris,
+				},
+			},
+			results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{0})}},
+		},
+		{
+			name: "colonize occupied",
+			query: appgame.FleetLaunchQuery{
+				PlayerID: 42,
+				PlanetID: 99,
+				Draft: domaingame.FleetDispatchDraft{
+					Ready:      true,
+					Mission:    domaingame.FleetMissionColonize,
+					Target:     domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+					TargetType: domaingame.GamePlanetTypePlanet,
+				},
+			},
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues([]any{123})},
+			},
+		},
+		{
+			name: "expedition wrong position",
+			query: appgame.FleetLaunchQuery{
+				PlayerID: 42,
+				PlanetID: 99,
+				Draft: domaingame.FleetDispatchDraft{
+					Ready:      true,
+					Mission:    domaingame.FleetMissionExpedition,
+					Target:     domaingame.Coordinates{Galaxy: 2, System: 3, Position: 15},
+					TargetType: domaingame.GamePlanetTypePlanet,
+				},
+			},
+			results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{0})}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: tt.results}}
+			repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+			issue, err := repository.LaunchFleetDispatch(context.Background(), tt.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if issue == nil || issue.Code != domaingame.FleetIssueInvalidTarget {
+				t.Fatalf("expected invalid target issue, got %+v", issue)
+			}
+			if len(runner.execCalls) != 0 {
+				t.Fatalf("invalid special target must not write, got %+v", runner.execCalls)
+			}
+		})
+	}
+}
+
+func TestFleetRepositoryLaunchTargetHelpersHandleEdges(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	coordinates := domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4}
+
+	tests := []struct {
+		name string
+		run  func() error
+		want string
+	}{
+		{
+			name: "normal target row error",
+			run: func() error {
+				repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{
+					rows: fakeRowsFromValuesWithErr(errors.New("target rows failed")),
+				}}}, "ogame_", func() time.Time { return now })
+				_, _, err := repository.loadFleetLaunchTarget(context.Background(), "`ogame_planets`", coordinates, domaingame.GamePlanetTypePlanet)
+				return err
+			},
+			want: "target rows failed",
+		},
+		{
+			name: "special target scan",
+			run: func() error {
+				repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{
+					rows: fakeRowsFromValues([]any{"bad", userSpace, legacyPlanetTypeFarSpace}),
+				}}}, "ogame_", func() time.Time { return now })
+				_, _, err := repository.loadFleetLaunchSpecialTarget(context.Background(), "`ogame_planets`", coordinates, legacyPlanetTypeFarSpace)
+				return err
+			},
+			want: "expected int",
+		},
+		{
+			name: "special target row error",
+			run: func() error {
+				repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{
+					rows: fakeRowsFromValuesWithErr(errors.New("special rows failed"), []any{44, userSpace, legacyPlanetTypeFarSpace}),
+				}}}, "ogame_", func() time.Time { return now })
+				_, _, err := repository.loadFleetLaunchSpecialTarget(context.Background(), "`ogame_planets`", coordinates, legacyPlanetTypeFarSpace)
+				return err
+			},
+			want: "special rows failed",
+		},
+		{
+			name: "occupied row error",
+			run: func() error {
+				repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{
+					rows: fakeRowsFromValuesWithErr(errors.New("occupied rows failed")),
+				}}}, "ogame_", func() time.Time { return now })
+				_, err := repository.fleetLaunchColonizeOccupied(context.Background(), "`ogame_planets`", coordinates)
+				return err
+			},
+			want: "occupied rows failed",
+		},
+		{
+			name: "occupied scan",
+			run: func() error {
+				repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{
+					rows: fakeRowsFromValues([]any{"bad"}),
+				}}}, "ogame_", func() time.Time { return now })
+				_, err := repository.fleetLaunchColonizeOccupied(context.Background(), "`ogame_planets`", coordinates)
+				return err
+			},
+			want: "expected int",
+		},
+		{
+			name: "occupied row error after scan",
+			run: func() error {
+				repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{
+					rows: fakeRowsFromValuesWithErr(errors.New("occupied rows after scan failed"), []any{44}),
+				}}}, "ogame_", func() time.Time { return now })
+				_, err := repository.fleetLaunchColonizeOccupied(context.Background(), "`ogame_planets`", coordinates)
+				return err
+			},
+			want: "occupied rows after scan failed",
+		},
+		{
+			name: "insert target missing id",
+			run: func() error {
+				runner := &fakeFleetRunner{execResults: []sql.Result{fakeFleetSQLResult(0)}}
+				repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+				_, err := repository.insertFleetLaunchPlanetTarget(context.Background(), "`ogame_planets`", "Planet", legacyPlanetTypeColony, coordinates, now.Unix())
+				return err
+			},
+			want: "fleet launch target id unavailable",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run()
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
 func TestFleetRepositoryLaunchReturnsLegacyIssuesWithoutWrites(t *testing.T) {
 	now := time.Unix(1_000, 0)
 	tests := []struct {
@@ -665,6 +957,66 @@ func TestFleetRepositoryLaunchPropagatesPipelineErrors(t *testing.T) {
 				{rows: fakeRowsFromValues([]any{"bad", 43, domaingame.PlanetTypeMoon})},
 			},
 			want: "expected int",
+		},
+		{
+			name: "colonize occupied query",
+			query: func() appgame.FleetLaunchQuery {
+				query := readyQuery()
+				query.Draft.Mission = domaingame.FleetMissionColonize
+				query.Draft.TargetType = domaingame.GamePlanetTypePlanet
+				return query
+			}(),
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{err: errors.New("occupied failed")},
+			},
+			want: "occupied failed",
+		},
+		{
+			name: "expedition far space rows",
+			query: func() appgame.FleetLaunchQuery {
+				query := readyQuery()
+				query.Draft.Mission = domaingame.FleetMissionExpedition
+				query.Draft.TargetType = domaingame.GamePlanetTypePlanet
+				query.Draft.Target.Position = domaingame.GalaxyFarSpace
+				return query
+			}(),
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValuesWithErr(errors.New("far space rows failed"))},
+			},
+			want: "far space rows failed",
+		},
+		{
+			name: "special target insert",
+			query: func() appgame.FleetLaunchQuery {
+				query := readyQuery()
+				query.Draft.Mission = domaingame.FleetMissionColonize
+				query.Draft.TargetType = domaingame.GamePlanetTypePlanet
+				return query
+			}(),
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues()},
+			},
+			execErrs: []error{errors.New("target insert failed")},
+			want:     "target insert failed",
+		},
+		{
+			name: "special target id",
+			query: func() appgame.FleetLaunchQuery {
+				query := readyQuery()
+				query.Draft.Mission = domaingame.FleetMissionExpedition
+				query.Draft.TargetType = domaingame.GamePlanetTypePlanet
+				query.Draft.Target.Position = domaingame.GalaxyFarSpace
+				return query
+			}(),
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues()},
+			},
+			execResults: []sql.Result{fakeFleetSQLErrorResult{idErr: errors.New("target id failed")}},
+			want:        "target id failed",
 		},
 		{
 			name:     "fleet log cleanup",

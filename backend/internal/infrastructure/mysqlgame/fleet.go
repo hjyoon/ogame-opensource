@@ -14,7 +14,9 @@ import (
 
 const (
 	queueTypeFleet            = "Fleet"
+	legacyPlanetTypeColony    = 10002
 	legacyPlanetTypeAbandoned = 10004
+	legacyPlanetTypeFarSpace  = 20000
 	queuePriorityFleet        = 200
 )
 
@@ -218,7 +220,8 @@ func (r FleetRepository) LaunchFleetDispatch(ctx context.Context, query appgame.
 		return domaingame.FleetActionIssueFor(domaingame.FleetIssueFrozen), nil
 	}
 
-	target, found, err := r.loadFleetLaunchTarget(ctx, planetsTable, query.Draft.Target, query.Draft.TargetType)
+	now := r.now().Unix()
+	target, found, err := r.resolveFleetLaunchTarget(ctx, planetsTable, query, now)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +229,6 @@ func (r FleetRepository) LaunchFleetDispatch(ctx context.Context, query appgame.
 		return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget), nil
 	}
 
-	now := r.now().Unix()
 	resources := fleetLaunchResources(query.Draft.Resources)
 	ships := fleetLaunchShips(query.Draft.Ships)
 	if err := r.deleteOldFleetLogs(ctx, fleetLogsTable, now); err != nil {
@@ -251,6 +253,47 @@ func (r FleetRepository) LaunchFleetDispatch(ctx context.Context, query appgame.
 		return nil, err
 	}
 	return nil, nil
+}
+
+func (r FleetRepository) resolveFleetLaunchTarget(ctx context.Context, planetsTable string, query appgame.FleetLaunchQuery, now int64) (fleetLaunchTarget, bool, error) {
+	switch query.Draft.Mission {
+	case domaingame.FleetMissionColonize:
+		return r.resolveFleetLaunchColonizeTarget(ctx, planetsTable, query.Draft.Target, query.Draft.TargetType, now)
+	case domaingame.FleetMissionExpedition:
+		return r.resolveFleetLaunchExpeditionTarget(ctx, planetsTable, query.Draft.Target, query.Draft.TargetType, now)
+	default:
+		return r.loadFleetLaunchTarget(ctx, planetsTable, query.Draft.Target, query.Draft.TargetType)
+	}
+}
+
+func (r FleetRepository) resolveFleetLaunchColonizeTarget(ctx context.Context, planetsTable string, coordinates domaingame.Coordinates, targetType int, now int64) (fleetLaunchTarget, bool, error) {
+	if targetType != domaingame.GamePlanetTypePlanet || !coordinates.Valid() || coordinates.Position > domaingame.GalaxyPositions {
+		return fleetLaunchTarget{}, false, nil
+	}
+	occupied, err := r.fleetLaunchColonizeOccupied(ctx, planetsTable, coordinates)
+	if err != nil || occupied {
+		return fleetLaunchTarget{}, false, err
+	}
+	target, err := r.insertFleetLaunchPlanetTarget(ctx, planetsTable, "Planet", legacyPlanetTypeColony, coordinates, now)
+	if err != nil {
+		return fleetLaunchTarget{}, false, err
+	}
+	return target, true, nil
+}
+
+func (r FleetRepository) resolveFleetLaunchExpeditionTarget(ctx context.Context, planetsTable string, coordinates domaingame.Coordinates, targetType int, now int64) (fleetLaunchTarget, bool, error) {
+	if targetType != domaingame.GamePlanetTypePlanet || !coordinates.Valid() || coordinates.Position != domaingame.GalaxyFarSpace {
+		return fleetLaunchTarget{}, false, nil
+	}
+	target, found, err := r.loadFleetLaunchSpecialTarget(ctx, planetsTable, coordinates, legacyPlanetTypeFarSpace)
+	if err != nil || found {
+		return target, found, err
+	}
+	target, err = r.insertFleetLaunchPlanetTarget(ctx, planetsTable, "Far space", legacyPlanetTypeFarSpace, coordinates, now)
+	if err != nil {
+		return fleetLaunchTarget{}, false, err
+	}
+	return target, true, nil
 }
 
 func (r FleetRepository) RecallFleet(ctx context.Context, query appgame.FleetRecallQuery) error {
@@ -356,6 +399,102 @@ func (r FleetRepository) loadFleetLaunchTarget(ctx context.Context, planetsTable
 		return fleetLaunchTarget{}, false, err
 	}
 	return target, true, nil
+}
+
+func (r FleetRepository) loadFleetLaunchSpecialTarget(ctx context.Context, planetsTable string, coordinates domaingame.Coordinates, objectType int) (fleetLaunchTarget, bool, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT planet_id, owner_id, type FROM %s WHERE g = ? AND s = ? AND p = ? AND type = ? LIMIT 1", planetsTable),
+		coordinates.Galaxy,
+		coordinates.System,
+		coordinates.Position,
+		objectType,
+	)
+	if err != nil {
+		return fleetLaunchTarget{}, false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return fleetLaunchTarget{}, false, err
+		}
+		return fleetLaunchTarget{}, false, nil
+	}
+	var target fleetLaunchTarget
+	if err := rows.Scan(&target.ID, &target.OwnerID, &target.Type); err != nil {
+		return fleetLaunchTarget{}, false, err
+	}
+	if err := rows.Err(); err != nil {
+		return fleetLaunchTarget{}, false, err
+	}
+	return target, true, nil
+}
+
+func (r FleetRepository) fleetLaunchColonizeOccupied(ctx context.Context, planetsTable string, coordinates domaingame.Coordinates) (bool, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT planet_id FROM %s WHERE g = ? AND s = ? AND p = ? AND type IN (?, ?, ?) LIMIT 1", planetsTable),
+		coordinates.Galaxy,
+		coordinates.System,
+		coordinates.Position,
+		domaingame.PlanetTypePlanet,
+		domaingame.PlanetTypeDestroyedPlanet,
+		legacyPlanetTypeAbandoned,
+	)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	var id int
+	if err := rows.Scan(&id); err != nil {
+		return false, err
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return id > 0, nil
+}
+
+func (r FleetRepository) insertFleetLaunchPlanetTarget(ctx context.Context, planetsTable string, name string, objectType int, coordinates domaingame.Coordinates, now int64) (fleetLaunchTarget, error) {
+	result, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("INSERT INTO %s (name, type, g, s, p, owner_id, diameter, temp, fields, maxfields, date, `%d`, `%d`, `%d`, lastpeek, lastakt, gate_until, remove) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", planetsTable, resourceMetal, resourceCrystal, resourceDeuterium),
+		name,
+		objectType,
+		coordinates.Galaxy,
+		coordinates.System,
+		coordinates.Position,
+		userSpace,
+		0,
+		0,
+		0,
+		0,
+		now,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+	)
+	if err != nil {
+		return fleetLaunchTarget{}, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return fleetLaunchTarget{}, err
+	}
+	if id <= 0 {
+		return fleetLaunchTarget{}, errors.New("fleet launch target id unavailable")
+	}
+	return fleetLaunchTarget{ID: int(id), OwnerID: userSpace, Type: objectType}, nil
 }
 
 func (r FleetRepository) deleteOldFleetLogs(ctx context.Context, fleetLogsTable string, now int64) error {
