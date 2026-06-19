@@ -66,7 +66,22 @@ try {
   await page.goto(`${migratedBaseURL}/home`, { waitUntil: "networkidle", timeout: 15_000 });
   const loginFixture = await createLoginFixture();
   await assertLoginFormRedirectsToGame(page, loginFixture);
-  await record("game overview shell loads with session", async () => gameShellState(page, "login-form-submit", "Overview"));
+  await record("game overview shell loads with session", async () => {
+    const state = await gameShellState(page, "login-form-submit", "Overview");
+    return {
+      pass:
+        state.pass &&
+        typeof state.details.overviewPositionHref === "string" &&
+        state.details.overviewPositionHref.includes("/game/galaxy?") &&
+        state.details.overviewPositionHref.includes("galaxy=") &&
+        state.details.overviewPositionHref.includes("system=") &&
+        state.details.overviewPositionHref.includes("position=") &&
+        typeof state.details.overviewRankHref === "string" &&
+        state.details.overviewRankHref.includes("/game/statistics?") &&
+        state.details.overviewRankHref.includes("start="),
+      details: state.details
+    };
+  });
   await assertRenamePlanetFlow(page);
   await assertGameClientNavigation(page, "game buildings menu preserves CSR", "a[href^='/game/buildings']", "/game/buildings", "Buildings");
   await assertGameClientNavigation(page, "game resources menu preserves CSR", "a[href^='/game/resources']", "/game/resources", "Resources");
@@ -657,6 +672,8 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     legacyCssLinks: document.head.querySelectorAll("link[data-legacy-public-css]").length,
     legacyBody: document.body.classList.contains("legacy-public-body"),
     openOverviewLinks: Array.from(document.querySelectorAll("a")).filter((link) => link.textContent?.trim() === "Open overview").length,
+    overviewPositionHref: document.querySelector<HTMLAnchorElement>(".legacy-overview-position-link")?.href ?? "",
+    overviewRankHref: document.querySelector<HTMLAnchorElement>(".legacy-overview-rank-link")?.href ?? "",
     overviewErrorText:
       Array.from(document.querySelectorAll(".legacy-overview-table"))
         .find((table) => table.textContent?.includes("The password is wrong."))

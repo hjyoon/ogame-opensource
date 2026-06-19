@@ -4962,14 +4962,19 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
         <tr>
           <th>Position</th>
           <th colSpan={3}>
-            <a href="/game/overview">[{formatCoordinates(planet.coordinates)}]</a>
+            <a className="legacy-overview-position-link" href={galaxyHref(planet.coordinates)}>
+              [{formatCoordinates(planet.coordinates)}]
+            </a>
           </th>
         </tr>
         <tr>
           <th>Points</th>
           <th colSpan={3}>
             {formatLegacyNumber(overview.score.points)} (Rank{" "}
-            <a href="/game/overview">{formatLegacyNumber(overview.score.rank)}</a> of {formatLegacyNumber(overview.score.universePlayers)}
+            <a className="legacy-overview-rank-link" href={overviewRankHref(overview.score.rank)}>
+              {formatLegacyNumber(overview.score.rank)}
+            </a>{" "}
+            of {formatLegacyNumber(overview.score.universePlayers)}
             )
           </th>
         </tr>
@@ -5305,6 +5310,13 @@ function rowsOfTwo(items: GamePlanetSummary[]): GamePlanetSummary[][] {
 
 function planetHref(planetID: number): string {
   return gamePlanetSwitchURL(window.location.pathname, window.location.search, planetID);
+}
+
+function overviewRankHref(rank: number): string {
+  const search = new URLSearchParams(window.location.search);
+  const start = Math.floor(Math.max(0, rank) / 100) * 100 + 1;
+  search.set("start", String(start));
+  return gameRouteURL("/game/statistics", search.toString());
 }
 
 function galaxyHref(coordinates: Coordinates): string {
