@@ -60,6 +60,7 @@ type CaseResult = {
   legacy: PageCapture;
   migrated: PageCapture;
   diff: DiffResult;
+  diffPath: string;
   boxMaxDelta: number;
   diffEnforced: boolean;
   layoutEnforced: boolean;
@@ -84,6 +85,7 @@ const layoutEnforced = process.env.OGAME_AUTH_VISUAL_ENFORCE_LAYOUT === "1";
 const maxDiffRatio = numberEnv("OGAME_AUTH_VISUAL_MAX_DIFF_RATIO", 0);
 const maxBoxDelta = numberEnv("OGAME_AUTH_VISUAL_MAX_BOX_DELTA", 0);
 const colorDeltaThreshold = numberEnv("OGAME_AUTH_VISUAL_COLOR_DELTA", 0);
+const pageFilter = parsePageFilter(process.env.OGAME_AUTH_VISUAL_PAGE ?? process.env.OGAME_AUTH_VISUAL_PAGES ?? "");
 
 const viewports: ViewportSpec[] = [{ name: "desktop", width: 1024, height: 768 }];
 
@@ -247,6 +249,7 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["Create note", "Priority", "Important", "Normal", "Unimportant", "Subject", "Notice", "Back"]
   }
 ];
+const selectedPageSpecs = selectPageSpecs(pageSpecs, pageFilter);
 
 await mkdir(screenshotDir, { recursive: true });
 
@@ -262,20 +265,21 @@ try {
     const legacyContext = await newContext(browser, viewport);
     const legacySession = await loginLegacy(legacyContext);
     const legacyCaptures = new Map<string, PageCapture>();
-    for (const spec of pageSpecs) {
+    for (const spec of selectedPageSpecs) {
       legacyCaptures.set(spec.name, await capturePage(legacyContext, spec, "legacy", legacyURL(spec, legacySession), viewport));
     }
     await legacyContext.close();
 
     const migratedContext = await newContext(browser, viewport);
     const migratedSession = await loginMigrated(migratedContext);
-    for (const spec of pageSpecs) {
+    for (const spec of selectedPageSpecs) {
       const legacy = legacyCaptures.get(spec.name);
       if (!legacy) {
         throw new Error(`missing legacy capture for ${spec.name}`);
       }
       const migrated = await capturePage(migratedContext, spec, "migrated", migratedURL(spec, migratedSession), viewport);
-      const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath);
+      const diffPath = join(screenshotDir, `${spec.name}-${viewport.name}-diff.png`);
+      const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath, diffPath);
       const boxMaxDelta = maxPairBoxDelta(legacy.boxes, migrated.boxes, spec.requiredBoxes);
       const notes = caseNotes(legacy, migrated, diff, boxMaxDelta);
       const parityPass = diff.diffRatio <= maxDiffRatio && boxMaxDelta <= maxBoxDelta;
@@ -301,6 +305,7 @@ try {
         legacy,
         migrated,
         diff,
+        diffPath,
         boxMaxDelta,
         diffEnforced,
         layoutEnforced,
@@ -317,6 +322,7 @@ try {
     browserName,
     browserExecutable: browserExecutable ?? "playwright-default",
     loginUser,
+    pageFilter: pageFilter.length > 0 ? pageFilter.join(",") : "all",
     thresholds: {
       diffEnforced,
       maxDiffRatio,
@@ -336,6 +342,26 @@ try {
   }
 } finally {
   await browser.close();
+}
+
+function parsePageFilter(value: string): string[] {
+  return value
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+function selectPageSpecs(specs: AuthPageSpec[], filter: string[]): AuthPageSpec[] {
+  if (filter.length === 0) {
+    return specs;
+  }
+  const selected = specs.filter((spec) => filter.includes(spec.name));
+  const selectedNames = new Set(selected.map((spec) => spec.name));
+  const missing = filter.filter((name) => !selectedNames.has(name));
+  if (missing.length > 0) {
+    throw new Error(`unknown auth visual page filter: ${missing.join(", ")}`);
+  }
+  return selected;
 }
 
 function legacyURL(spec: AuthPageSpec, session: string): string {
@@ -425,7 +451,7 @@ async function capturePage(
   const response = await page.goto(url, { waitUntil: "networkidle", timeout: 15_000 });
   await page.locator(side === "legacy" ? spec.legacyReady : spec.migratedReady).first().waitFor({ timeout: 10_000 });
   await page.waitForTimeout(250);
-  await normalizeDynamicPageParts(page, side);
+  await normalizeDynamicPageParts(page, side, spec.name);
 
   const boxes = {
     header: await boxFor(page, side === "legacy" ? "#header_top" : ".legacy-header-top"),
@@ -450,8 +476,8 @@ async function capturePage(
   };
 }
 
-async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"): Promise<void> {
-  await page.evaluate((pageSide) => {
+async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated", pageName: string): Promise<void> {
+  await page.evaluate(({ pageSide, currentPageName }) => {
     const hide = (selector: string) => {
       for (const element of document.querySelectorAll(selector)) {
         if (element instanceof HTMLElement) {
@@ -462,7 +488,22 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
     if (pageSide === "legacy") {
       hide("#overDiv");
     }
-  }, side);
+    if (currentPageName === "game-overview") {
+      const resourceValues = Array.from(document.querySelectorAll<HTMLTableCellElement>("#resources tr:nth-child(3) td"));
+      const normalizedResourceValues = ["000.000", "000.000", "0.000", "0", "0/0"];
+      resourceValues.forEach((cell, index) => {
+        cell.textContent = normalizedResourceValues[index] ?? "0";
+      });
+      for (const headerCell of document.querySelectorAll<HTMLTableCellElement>(".legacy-overview-main-table th, #content table th")) {
+        if (headerCell.textContent?.trim() === "Server time") {
+          const timeCell = headerCell.nextElementSibling;
+          if (timeCell instanceof HTMLElement) {
+            timeCell.textContent = "Fri Jun 19 00:00:00";
+          }
+        }
+      }
+    }
+  }, { pageSide: side, currentPageName: pageName });
 }
 
 async function expectedTextChecks(page: Page, expectedTexts: string[]): Promise<Record<string, boolean>> {
@@ -481,7 +522,7 @@ async function boxFor(page: Page, selector: string): Promise<Box | null> {
   return box ? { x: box.x, y: box.y, width: box.width, height: box.height } : null;
 }
 
-async function compareScreenshots(browser: Browser, legacyPath: string, migratedPath: string): Promise<DiffResult> {
+async function compareScreenshots(browser: Browser, legacyPath: string, migratedPath: string, diffPath: string): Promise<DiffResult> {
   const page = await browser.newPage({ viewport: { width: 16, height: 16 } });
   const legacy = await Bun.file(legacyPath).arrayBuffer();
   const migrated = await Bun.file(migratedPath).arrayBuffer();
@@ -503,6 +544,7 @@ async function compareScreenshots(browser: Browser, legacyPath: string, migrated
       ctx.clearRect(0, 0, width, height);
       ctx.drawImage(rightImage, 0, 0);
       const rightPixels = ctx.getImageData(0, 0, width, height).data;
+      const diffImage = ctx.createImageData(width, height);
       let changedPixels = 0;
       let totalDelta = 0;
       for (let i = 0; i < leftPixels.length; i += 4) {
@@ -514,16 +556,32 @@ async function compareScreenshots(browser: Browser, legacyPath: string, migrated
         totalDelta += delta / 4;
         if (delta / 4 > threshold) {
           changedPixels += 1;
+          diffImage.data[i] = 255;
+          diffImage.data[i + 1] = 0;
+          diffImage.data[i + 2] = 0;
+          diffImage.data[i + 3] = 255;
+        } else {
+          const faded =
+            230 +
+            Math.round(
+              (0.2126 * leftPixels[i] + 0.7152 * leftPixels[i + 1] + 0.0722 * leftPixels[i + 2]) * 0.1
+            );
+          diffImage.data[i] = faded;
+          diffImage.data[i + 1] = faded;
+          diffImage.data[i + 2] = faded;
+          diffImage.data[i + 3] = 255;
         }
       }
       const totalPixels = width * height;
+      ctx.putImageData(diffImage, 0, 0);
       return {
         width,
         height,
         totalPixels,
         changedPixels,
         diffRatio: changedPixels / totalPixels,
-        averageDelta: totalDelta / totalPixels
+        averageDelta: totalDelta / totalPixels,
+        diffDataURL: canvas.toDataURL("image/png")
       };
 
       async function loadImage(dataUrl: string): Promise<HTMLImageElement> {
@@ -540,7 +598,16 @@ async function compareScreenshots(browser: Browser, legacyPath: string, migrated
     }
   );
   await page.close();
-  return result;
+  const base64 = result.diffDataURL.replace(/^data:image\/png;base64,/, "");
+  await Bun.write(diffPath, Uint8Array.from(atob(base64), (char) => char.charCodeAt(0)));
+  return {
+    width: result.width,
+    height: result.height,
+    totalPixels: result.totalPixels,
+    changedPixels: result.changedPixels,
+    diffRatio: result.diffRatio,
+    averageDelta: result.averageDelta
+  };
 }
 
 function boxesPresent(boxes: Record<string, Box | null>, requiredBoxes: LayoutBoxName[] = ["header", "menu", "content"]): boolean {
@@ -598,6 +665,7 @@ function renderMarkdown(report: {
   browserName: string;
   browserExecutable: string;
   loginUser: string;
+  pageFilter: string;
   thresholds: {
     diffEnforced: boolean;
     maxDiffRatio: number;
@@ -617,6 +685,7 @@ function renderMarkdown(report: {
     `- Migrated: ${report.migratedBaseURL}`,
     `- Browser: ${report.browserName} (${report.browserExecutable})`,
     `- Login User: ${report.loginUser}`,
+    `- Page Filter: ${report.pageFilter}`,
     `- Diff Enforced: ${report.thresholds.diffEnforced}`,
     `- Max Diff Ratio: ${formatNumber(report.thresholds.maxDiffRatio)}`,
     `- Layout Enforced: ${report.thresholds.layoutEnforced}`,
@@ -625,14 +694,14 @@ function renderMarkdown(report: {
     `- Result: ${report.allPass ? "PASS" : "FAIL"}`,
     `- Visual Parity: ${report.allParityPass ? "PASS" : "FAIL"}${report.thresholds.diffEnforced || report.thresholds.layoutEnforced ? "" : " (not enforced)"}`,
     "",
-    "| Page | Viewport | Contract | Parity | Diff Ratio | Box Max Delta | Notes |",
-    "| --- | --- | --- | --- | ---: | ---: | --- |"
+    "| Page | Viewport | Contract | Parity | Diff Ratio | Box Max Delta | Diff Image | Notes |",
+    "| --- | --- | --- | --- | ---: | ---: | --- | --- |"
   ];
   for (const result of report.results) {
     lines.push(
       `| ${result.page} | ${result.viewport} | ${result.pass ? "PASS" : "FAIL"} | ${result.parityPass ? "PASS" : "FAIL"} | ${formatNumber(
         result.diff.diffRatio
-      )} | ${formatNumber(result.boxMaxDelta)} | ${result.notes.join("<br>") || "-"} |`
+      )} | ${formatNumber(result.boxMaxDelta)} | ${result.diffPath} | ${result.notes.join("<br>") || "-"} |`
     );
   }
   lines.push("");
