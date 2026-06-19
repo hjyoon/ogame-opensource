@@ -780,6 +780,39 @@ func TestOverviewRepositoryDeleteErrors(t *testing.T) {
 	}
 }
 
+func TestOverviewRepositoryScoreRemovalAndQueueFlushHelpersPropagateErrors(t *testing.T) {
+	score := overviewPlanetScore{OwnerID: 42, Score: domaingame.PlanetScore{Points: 10, FleetPoints: 2}}
+	adjustErr := errors.New("adjust failed")
+	repository := OverviewRepository{execer: &fakeBuildingsRunner{execErr: adjustErr}}
+	if err := repository.applyPlanetScoreRemoval(context.Background(), "`ogame_users`", score); !errors.Is(err, adjustErr) {
+		t.Fatalf("expected adjust error, got %v", err)
+	}
+
+	recalcErr := errors.New("recalc failed")
+	repository = OverviewRepository{execer: &fakeBuildingsRunner{execErrs: []error{nil, recalcErr}}}
+	if err := repository.applyPlanetScoreRemoval(context.Background(), "`ogame_users`", score); !errors.Is(err, recalcErr) {
+		t.Fatalf("expected recalc error, got %v", err)
+	}
+
+	firstFlushErr := errors.New("shipyard queue flush failed")
+	repository = OverviewRepository{execer: &fakeBuildingsRunner{execErr: firstFlushErr}}
+	if err := repository.flushPlanetQueue(context.Background(), "`ogame_queue`", "`ogame_buildqueue`", 99); !errors.Is(err, firstFlushErr) {
+		t.Fatalf("expected first flush error, got %v", err)
+	}
+
+	secondFlushErr := errors.New("building queue flush failed")
+	repository = OverviewRepository{execer: &fakeBuildingsRunner{execErrs: []error{nil, secondFlushErr}}}
+	if err := repository.flushPlanetQueue(context.Background(), "`ogame_queue`", "`ogame_buildqueue`", 99); !errors.Is(err, secondFlushErr) {
+		t.Fatalf("expected second flush error, got %v", err)
+	}
+
+	thirdFlushErr := errors.New("buildqueue flush failed")
+	repository = OverviewRepository{execer: &fakeBuildingsRunner{execErrs: []error{nil, nil, thirdFlushErr}}}
+	if err := repository.flushPlanetQueue(context.Background(), "`ogame_queue`", "`ogame_buildqueue`", 99); !errors.Is(err, thirdFlushErr) {
+		t.Fatalf("expected third flush error, got %v", err)
+	}
+}
+
 func TestOverviewRepositoryDeletesMoon(t *testing.T) {
 	results := overviewResultsForPlanet(200, "Moon")
 	results = append(results,
@@ -1002,6 +1035,21 @@ func TestOverviewRepositoryReturnsActivePlanetUpdateError(t *testing.T) {
 	_, err := repository.GetOverview(context.Background(), overviewQuery(42, 100))
 	if err == nil || !strings.Contains(err.Error(), "active planet update failed") {
 		t.Fatalf("expected active planet update error, got %v", err)
+	}
+}
+
+func TestOverviewRepositoryReturnsResourceUpdateError(t *testing.T) {
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
+		{err: errors.New("resource update failed")},
+	}}}
+	repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+	repository.updateResources = true
+
+	_, err := repository.GetOverview(context.Background(), overviewQuery(42, 0))
+
+	if err == nil || !strings.Contains(err.Error(), "resource update failed") {
+		t.Fatalf("expected resource update error, got %v", err)
 	}
 }
 

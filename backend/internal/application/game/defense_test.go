@@ -57,6 +57,80 @@ func TestDefenseServiceReturnsSessionIssuesWithoutRepository(t *testing.T) {
 	}
 }
 
+func TestDefenseServiceMutatesAuthenticatedOrders(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}
+	issue := domaingame.BuildingActionIssue(domaingame.BuildingsIssueQueueFull)
+	repository := &fakeDefenseRepository{
+		result:          domaingame.Defense{Commander: "legor"},
+		mutationOutcome: DefenseMutationOutcome{ActionIssue: issue},
+	}
+	service := NewDefenseService(sessions, repository)
+
+	result, err := service.MutateDefense(context.Background(), DefenseMutationCommand{
+		PublicSession: "public",
+		PlanetID:      99,
+		Orders:        map[int]int{domaingame.DefenseRocketLauncher: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Authenticated || result.Defense.Commander != "legor" || result.ActionIssue != issue {
+		t.Fatalf("unexpected mutation result: %+v", result)
+	}
+	if repository.mutation.PlayerID != 42 || repository.mutation.PlanetID != 99 || repository.mutation.Orders[domaingame.DefenseRocketLauncher] != 4 {
+		t.Fatalf("unexpected mutation query: %+v", repository.mutation)
+	}
+	if !repository.called {
+		t.Fatal("expected read model refresh after mutation")
+	}
+}
+
+func TestDefenseServiceMutateHandlesSessionIssuesAndErrors(t *testing.T) {
+	if _, err := (DefenseService{}).MutateDefense(context.Background(), DefenseMutationCommand{}); err == nil {
+		t.Fatal("expected dependency error")
+	}
+
+	repository := &fakeDefenseRepository{}
+	service := NewDefenseService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: false,
+		Issues:        []domainpublicsite.SessionIssue{{Code: domainpublicsite.SessionIssuePrivateInvalid}},
+	}}, repository)
+	result, err := service.MutateDefense(context.Background(), DefenseMutationCommand{PublicSession: "public"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Authenticated || len(result.Issues) != 1 || repository.mutation.Orders != nil {
+		t.Fatalf("expected unauthenticated mutation without repository call, got %+v", result)
+	}
+
+	sessionErr := errors.New("session failed")
+	service = NewDefenseService(&fakeSessionLookup{err: sessionErr}, &fakeDefenseRepository{})
+	if _, err := service.MutateDefense(context.Background(), DefenseMutationCommand{}); !errors.Is(err, sessionErr) {
+		t.Fatalf("expected session error, got %v", err)
+	}
+
+	repoErr := errors.New("mutation failed")
+	service = NewDefenseService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}, &fakeDefenseRepository{mutationErr: repoErr})
+	if _, err := service.MutateDefense(context.Background(), DefenseMutationCommand{}); !errors.Is(err, repoErr) {
+		t.Fatalf("expected mutation error, got %v", err)
+	}
+
+	readErr := errors.New("refresh failed")
+	service = NewDefenseService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}, &fakeDefenseRepository{err: readErr})
+	if _, err := service.MutateDefense(context.Background(), DefenseMutationCommand{}); !errors.Is(err, readErr) {
+		t.Fatalf("expected refresh error, got %v", err)
+	}
+}
+
 func TestDefenseServicePropagatesErrors(t *testing.T) {
 	sessionErr := errors.New("session failed")
 	service := NewDefenseService(&fakeSessionLookup{err: sessionErr}, &fakeDefenseRepository{})
@@ -81,14 +155,22 @@ func TestDefenseServiceRequiresDependencies(t *testing.T) {
 }
 
 type fakeDefenseRepository struct {
-	result domaingame.Defense
-	err    error
-	query  DefenseQuery
-	called bool
+	result          domaingame.Defense
+	mutationOutcome DefenseMutationOutcome
+	err             error
+	mutationErr     error
+	query           DefenseQuery
+	mutation        DefenseMutationQuery
+	called          bool
 }
 
 func (f *fakeDefenseRepository) GetDefense(_ context.Context, query DefenseQuery) (domaingame.Defense, error) {
 	f.query = query
 	f.called = true
 	return f.result, f.err
+}
+
+func (f *fakeDefenseRepository) MutateDefense(_ context.Context, query DefenseMutationQuery) (DefenseMutationOutcome, error) {
+	f.mutation = query
+	return f.mutationOutcome, f.mutationErr
 }

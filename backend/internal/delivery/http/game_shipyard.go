@@ -2,6 +2,7 @@ package httpdelivery
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
@@ -11,6 +12,7 @@ import (
 type gameShipyardResponse struct {
 	Authenticated bool                       `json:"authenticated"`
 	Issues        []gameSessionIssueResponse `json:"issues"`
+	ActionIssue   *gameBuildingsActionIssue  `json:"actionIssue,omitempty"`
 	Shipyard      *gameShipyardSummary       `json:"shipyard,omitempty"`
 }
 
@@ -36,7 +38,23 @@ type gameShipyardItemResponse struct {
 	BlockedReason    string                   `json:"blockedReason"`
 }
 
+type gameShipyardMutationRequest struct {
+	Orders map[string]int `json:"orders"`
+}
+
 func (a app) handleGameShipyard(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		a.handleGameShipyardGet(w, r)
+	case http.MethodPost:
+		a.handleGameShipyardPost(w, r)
+	default:
+		w.Header().Set("Allow", "GET, HEAD, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (a app) handleGameShipyardGet(w http.ResponseWriter, r *http.Request) {
 	if a.deps.GameShipyard == nil {
 		http.Error(w, "game shipyard unavailable", http.StatusServiceUnavailable)
 		return
@@ -59,6 +77,43 @@ func (a app) handleGameShipyard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	writeGameShipyardResponse(w, result)
+}
+
+func (a app) handleGameShipyardPost(w http.ResponseWriter, r *http.Request) {
+	if a.deps.GameShipyard == nil {
+		http.Error(w, "game shipyard unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	planetID, err := selectedPlanetID(r)
+	if err != nil {
+		http.Error(w, "invalid selected planet", http.StatusBadRequest)
+		return
+	}
+
+	var mutation gameShipyardMutationRequest
+	if err := json.NewDecoder(r.Body).Decode(&mutation); err != nil {
+		http.Error(w, "invalid shipyard mutation", http.StatusBadRequest)
+		return
+	}
+
+	result, err := a.deps.GameShipyard.MutateShipyard(r.Context(), appgame.ShipyardMutationCommand{
+		PublicSession:   r.URL.Query().Get("session"),
+		PrivateSessions: cookieMap(r),
+		RemoteAddr:      remoteIP(r.RemoteAddr),
+		PlanetID:        planetID,
+		Orders:          parseIntegerOrderMap(mutation.Orders),
+	})
+	if err != nil {
+		http.Error(w, "game shipyard unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	writeGameShipyardResponse(w, result)
+}
+
+func writeGameShipyardResponse(w http.ResponseWriter, result appgame.ShipyardResult) {
 	status := http.StatusOK
 	var shipyard *gameShipyardSummary
 	if result.Authenticated {
@@ -73,8 +128,21 @@ func (a app) handleGameShipyard(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(gameShipyardResponse{
 		Authenticated: result.Authenticated,
 		Issues:        toGameSessionIssueResponses(result.Issues),
+		ActionIssue:   toGameBuildingsActionIssue(result.ActionIssue),
 		Shipyard:      shipyard,
 	})
+}
+
+func parseIntegerOrderMap(raw map[string]int) map[int]int {
+	orders := make(map[int]int, len(raw))
+	for key, amount := range raw {
+		var id int
+		if _, err := fmt.Sscanf(key, "%d", &id); err != nil || id <= 0 {
+			continue
+		}
+		orders[id] = amount
+	}
+	return orders
 }
 
 func toGameShipyardSummary(shipyard domaingame.Shipyard) gameShipyardSummary {

@@ -5,22 +5,38 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 )
 
 type DefenseRepository struct {
-	queryer Queryer
-	prefix  string
+	queryer         Queryer
+	execer          Execer
+	prefix          string
+	now             func() time.Time
+	updateResources bool
 }
 
 func NewDefenseRepository(db *sql.DB, prefix string) DefenseRepository {
-	return DefenseRepository{queryer: SQLQueryer{DB: db}, prefix: prefix}
+	runner := SQLQueryer{DB: db}
+	return DefenseRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, updateResources: true}
 }
 
 func NewDefenseRepositoryWithQueryer(queryer Queryer, prefix string) DefenseRepository {
-	return DefenseRepository{queryer: queryer, prefix: prefix}
+	var execer Execer
+	if runner, ok := queryer.(Execer); ok {
+		execer = runner
+	}
+	return NewDefenseRepositoryWithRunner(queryer, execer, prefix, time.Now)
+}
+
+func NewDefenseRepositoryWithRunner(queryer Queryer, execer Execer, prefix string, now func() time.Time) DefenseRepository {
+	if now == nil {
+		now = time.Now
+	}
+	return DefenseRepository{queryer: queryer, execer: execer, prefix: prefix, now: now}
 }
 
 func (r DefenseRepository) GetDefense(ctx context.Context, query appgame.DefenseQuery) (domaingame.Defense, error) {
@@ -36,8 +52,15 @@ func (r DefenseRepository) GetDefense(ctx context.Context, query appgame.Defense
 	if err != nil {
 		return domaingame.Defense{}, err
 	}
+	if r.execer != nil {
+		shipyard := ShipyardRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now, updateResources: r.updateResources}
+		if err := shipyard.FinishDueShipyardQueues(ctx, int(shipyard.currentTime().Unix())); err != nil {
+			return domaingame.Defense{}, err
+		}
+	}
 
-	overviewRepository := NewOverviewRepositoryWithQueryer(r.queryer, r.prefix)
+	overviewRepository := NewOverviewRepositoryWithRunner(r.queryer, r.execer, r.prefix)
+	overviewRepository.updateResources = r.updateResources
 	overview, err := overviewRepository.GetOverview(ctx, appgame.OverviewQuery{
 		PlayerID: query.PlayerID,
 		PlanetID: query.PlanetID,
@@ -59,7 +82,7 @@ func (r DefenseRepository) GetDefense(ctx context.Context, query appgame.Defense
 	if err != nil {
 		return domaingame.Defense{}, err
 	}
-	shipyard := ShipyardRepository{queryer: r.queryer, prefix: r.prefix}
+	shipyard := ShipyardRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now, updateResources: r.updateResources}
 	speed, orderCap, err := shipyard.loadShipyardUniverseConfig(ctx)
 	if err != nil {
 		return domaingame.Defense{}, err

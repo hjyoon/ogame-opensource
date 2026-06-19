@@ -108,6 +108,9 @@ func TestBuildingMutationHelpersFollowCatalog(t *testing.T) {
 	if BuildingDurationForCost(cost, 1, 0, 1) != 121 {
 		t.Fatalf("duration helper should reuse legacy formula")
 	}
+	if BuildingDurationForCost(BuildingCost{}, 0, 0, 1) != 1 {
+		t.Fatalf("duration helper should enforce the legacy minimum of one second")
+	}
 	if BuildingActionIssue(BuildingsIssueNoResources).Message == "" || BuildingActionIssue("unknown").Code != "unknown" {
 		t.Fatalf("expected building action issues to be populated")
 	}

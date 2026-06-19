@@ -74,6 +74,7 @@ type GameResearchUseCase interface {
 
 type GameShipyardUseCase interface {
 	GetShipyard(context.Context, appgame.ShipyardCommand) (appgame.ShipyardResult, error)
+	MutateShipyard(context.Context, appgame.ShipyardMutationCommand) (appgame.ShipyardResult, error)
 }
 
 type GameFleetUseCase interface {
@@ -86,6 +87,7 @@ type GameGalaxyUseCase interface {
 
 type GameDefenseUseCase interface {
 	GetDefense(context.Context, appgame.DefenseCommand) (appgame.DefenseResult, error)
+	MutateDefense(context.Context, appgame.DefenseMutationCommand) (appgame.DefenseResult, error)
 }
 
 type GameTechnologyUseCase interface {
@@ -161,10 +163,10 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/buildings", a.handleGameBuildings)
 	mux.HandleFunc("/api/game/resources", a.handleGameResources)
 	mux.HandleFunc("/api/game/research", a.handleGameResearch)
-	mux.HandleFunc("/api/game/shipyard", getOnly(a.handleGameShipyard))
+	mux.HandleFunc("/api/game/shipyard", a.handleGameShipyard)
 	mux.HandleFunc("/api/game/fleet", getOnly(a.handleGameFleet))
 	mux.HandleFunc("/api/game/galaxy", getOnly(a.handleGameGalaxy))
-	mux.HandleFunc("/api/game/defense", getOnly(a.handleGameDefense))
+	mux.HandleFunc("/api/game/defense", a.handleGameDefense)
 	mux.HandleFunc("/api/game/technology", getOnly(a.handleGameTechnology))
 	mux.HandleFunc("/api/game/statistics", getOnly(a.handleGameStatistics))
 	mux.HandleFunc("/api/game/search", getOnly(a.handleGameSearch))

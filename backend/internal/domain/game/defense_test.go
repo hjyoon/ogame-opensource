@@ -75,6 +75,21 @@ func TestBuildDefenseBlocksMissilesWhenSiloIsFull(t *testing.T) {
 	}
 }
 
+func TestMaxDefenseUnitsBlocksInterplanetaryMissileWhenOnlyOneSlotRemains(t *testing.T) {
+	got := maxDefenseUnits(
+		Resources{Metal: 100000, Crystal: 100000, Deuterium: 100000},
+		BuildingCost{Metal: 12500, Crystal: 2500, Deuterium: 10000},
+		BuildingLevels{BuildingMissileSilo: 1},
+		DefenseCounts{DefenseAntiBallisticMissile: 9},
+		DefenseInterplanetaryMissile,
+		1000,
+	)
+
+	if got != 0 {
+		t.Fatalf("expected one remaining silo slot to block two-slot IPM, got %d", got)
+	}
+}
+
 func TestBuildDefenseBusyBlocksConstruction(t *testing.T) {
 	overview := Overview{CurrentPlanet: PlanetOverview{Type: PlanetTypePlanet, Resources: Resources{Metal: 10000}}}
 	defense := BuildDefense(overview, BuildingLevels{BuildingShipyard: 1}, ResearchLevels{}, DefenseCounts{}, 1, true, 1000)

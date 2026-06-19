@@ -5,22 +5,38 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 )
 
 type ShipyardRepository struct {
-	queryer Queryer
-	prefix  string
+	queryer         Queryer
+	execer          Execer
+	prefix          string
+	now             func() time.Time
+	updateResources bool
 }
 
 func NewShipyardRepository(db *sql.DB, prefix string) ShipyardRepository {
-	return ShipyardRepository{queryer: SQLQueryer{DB: db}, prefix: prefix}
+	runner := SQLQueryer{DB: db}
+	return ShipyardRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, updateResources: true}
 }
 
 func NewShipyardRepositoryWithQueryer(queryer Queryer, prefix string) ShipyardRepository {
-	return ShipyardRepository{queryer: queryer, prefix: prefix}
+	var execer Execer
+	if runner, ok := queryer.(Execer); ok {
+		execer = runner
+	}
+	return NewShipyardRepositoryWithRunner(queryer, execer, prefix, time.Now)
+}
+
+func NewShipyardRepositoryWithRunner(queryer Queryer, execer Execer, prefix string, now func() time.Time) ShipyardRepository {
+	if now == nil {
+		now = time.Now
+	}
+	return ShipyardRepository{queryer: queryer, execer: execer, prefix: prefix, now: now}
 }
 
 func (r ShipyardRepository) GetShipyard(ctx context.Context, query appgame.ShipyardQuery) (domaingame.Shipyard, error) {
@@ -36,8 +52,14 @@ func (r ShipyardRepository) GetShipyard(ctx context.Context, query appgame.Shipy
 	if err != nil {
 		return domaingame.Shipyard{}, err
 	}
+	if r.execer != nil {
+		if err := r.FinishDueShipyardQueues(ctx, int(r.currentTime().Unix())); err != nil {
+			return domaingame.Shipyard{}, err
+		}
+	}
 
-	overviewRepository := NewOverviewRepositoryWithQueryer(r.queryer, r.prefix)
+	overviewRepository := NewOverviewRepositoryWithRunner(r.queryer, r.execer, r.prefix)
+	overviewRepository.updateResources = r.updateResources
 	overview, err := overviewRepository.GetOverview(ctx, appgame.OverviewQuery{
 		PlayerID: query.PlayerID,
 		PlanetID: query.PlanetID,

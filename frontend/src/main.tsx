@@ -217,12 +217,14 @@ function App() {
   const [gameResearchPending, setGameResearchPending] = useState(false);
   const [gameShipyard, setGameShipyard] = useState<GameShipyardStatus | null>(null);
   const [gameShipyardError, setGameShipyardError] = useState<string | null>(null);
+  const [gameShipyardPending, setGameShipyardPending] = useState(false);
   const [gameFleet, setGameFleet] = useState<GameFleetStatus | null>(null);
   const [gameFleetError, setGameFleetError] = useState<string | null>(null);
   const [gameGalaxy, setGameGalaxy] = useState<GameGalaxyStatus | null>(null);
   const [gameGalaxyError, setGameGalaxyError] = useState<string | null>(null);
   const [gameDefense, setGameDefense] = useState<GameDefenseStatus | null>(null);
   const [gameDefenseError, setGameDefenseError] = useState<string | null>(null);
+  const [gameDefensePending, setGameDefensePending] = useState(false);
   const [gameTechnology, setGameTechnology] = useState<GameTechnologyStatus | null>(null);
   const [gameTechnologyError, setGameTechnologyError] = useState<string | null>(null);
   const [gameStatistics, setGameStatistics] = useState<GameStatisticsStatus | null>(null);
@@ -627,6 +629,46 @@ function App() {
       .catch((err: unknown) => setGameShipyardError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
 
+  const submitGameShipyardOrders = (orders: Record<string, number>) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameShipyardError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const shipyardSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      shipyardSearch.set("cp", selectedPlanet);
+    }
+    setGameShipyardPending(true);
+    setGameShipyardError(null);
+    fetch(`/api/game/shipyard?${shipyardSearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ orders })
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameShipyardStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `shipyard returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("shipyard response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameShipyard(payload);
+        setGameShipyardError(payload.actionIssue?.message ?? null);
+        dispatchClientNavigation(`/game/shipyard?${shipyardSearch.toString()}`);
+      })
+      .catch((err: unknown) => setGameShipyardError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameShipyardPending(false));
+  };
+
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "fleet" || publicSession === "") {
@@ -694,6 +736,46 @@ function App() {
       })
       .catch((err: unknown) => setGameDefenseError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
+
+  const submitGameDefenseOrders = (orders: Record<string, number>) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameDefenseError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const defenseSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      defenseSearch.set("cp", selectedPlanet);
+    }
+    setGameDefensePending(true);
+    setGameDefenseError(null);
+    fetch(`/api/game/defense?${defenseSearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ orders })
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameDefenseStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `defense returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("defense response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameDefense(payload);
+        setGameDefenseError(payload.actionIssue?.message ?? null);
+        dispatchClientNavigation(`/game/defense?${defenseSearch.toString()}`);
+      })
+      .catch((err: unknown) => setGameDefenseError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameDefensePending(false));
+  };
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
@@ -1005,6 +1087,7 @@ function App() {
         buildingsPending={gameBuildingsPending}
         buildingsStatus={gameBuildings}
         defenseError={gameDefenseError}
+        defensePending={gameDefensePending}
         defenseStatus={gameDefense}
         error={gameOverviewError}
         fleetError={gameFleetError}
@@ -1022,6 +1105,7 @@ function App() {
         onBuddyAction={submitGameBuddyAction}
         onBuddyRequest={submitGameBuddyRequest}
         onBuildingAction={submitGameBuildingAction}
+        onDefenseSubmit={submitGameDefenseOrders}
         onPlanetDelete={submitGamePlanetDelete}
         onPlanetRename={submitGamePlanetRename}
         onResourcesSubmit={submitGameResources}
@@ -1035,7 +1119,9 @@ function App() {
         researchStatus={gameResearch}
         onResearchAction={submitGameResearchAction}
         shipyardError={gameShipyardError}
+        shipyardPending={gameShipyardPending}
         shipyardStatus={gameShipyard}
+        onShipyardSubmit={submitGameShipyardOrders}
         statisticsError={gameStatisticsError}
         statisticsStatus={gameStatistics}
         searchError={gameSearchError}

@@ -31,6 +31,7 @@ export type GameResearchStatus = {
 export type GameShipyardStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
+  actionIssue?: { code: string; message: string };
   shipyard?: GameShipyard;
 };
 
@@ -49,6 +50,7 @@ export type GameGalaxyStatus = {
 export type GameDefenseStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
+  actionIssue?: { code: string; message: string };
   defense?: GameDefense;
 };
 
@@ -547,12 +549,16 @@ type LegacyGameOverviewProps = {
   onResearchAction: (action: "start" | "cancel", techID: number) => void;
   shipyardStatus: GameShipyardStatus | null;
   shipyardError: string | null;
+  shipyardPending: boolean;
+  onShipyardSubmit: (orders: Record<string, number>) => void;
   fleetStatus: GameFleetStatus | null;
   fleetError: string | null;
   galaxyStatus: GameGalaxyStatus | null;
   galaxyError: string | null;
   defenseStatus: GameDefenseStatus | null;
   defenseError: string | null;
+  defensePending: boolean;
+  onDefenseSubmit: (orders: Record<string, number>) => void;
   technologyStatus: GameTechnologyStatus | null;
   technologyError: string | null;
   statisticsStatus: GameStatisticsStatus | null;
@@ -635,12 +641,16 @@ export function LegacyGameOverview({
   onResearchAction,
   shipyardStatus,
   shipyardError,
+  shipyardPending,
+  onShipyardSubmit,
   fleetStatus,
   fleetError,
   galaxyStatus,
   galaxyError,
   defenseStatus,
   defenseError,
+  defensePending,
+  onDefenseSubmit,
   technologyStatus,
   technologyError,
   statisticsStatus,
@@ -792,7 +802,9 @@ export function LegacyGameOverview({
         {overview && route.key === "shipyard" && !shipyard && !shipyardError && !shipyardIssue ? (
           <LegacyMessage tone="neutral" text="Loading shipyard..." />
         ) : null}
-        {shipyard && route.key === "shipyard" ? <ShipyardTable shipyard={shipyard} /> : null}
+        {shipyard && route.key === "shipyard" ? (
+          <ShipyardTable onSubmit={onShipyardSubmit} pending={shipyardPending} shipyard={shipyard} />
+        ) : null}
         {overview && route.key === "fleet" && !fleet && !fleetError && !fleetIssue ? (
           <LegacyMessage tone="neutral" text="Loading fleet..." />
         ) : null}
@@ -804,7 +816,9 @@ export function LegacyGameOverview({
         {overview && route.key === "defense" && !defense && !defenseError && !defenseIssue ? (
           <LegacyMessage tone="neutral" text="Loading defense..." />
         ) : null}
-        {defense && route.key === "defense" ? <DefenseTable defense={defense} /> : null}
+        {defense && route.key === "defense" ? (
+          <DefenseTable defense={defense} onSubmit={onDefenseSubmit} pending={defensePending} />
+        ) : null}
         {overview && route.key === "technology" && !technology && !technologyError && !technologyIssue ? (
           <LegacyMessage tone="neutral" text="Loading technology..." />
         ) : null}
@@ -1453,7 +1467,39 @@ function researchActionURL(action: "start" | "cancel", techID: number) {
   return gameRouteURL("/game/research", `?${query.toString()}`);
 }
 
-function ShipyardTable({ shipyard }: { shipyard: GameShipyard }) {
+function collectLegacyUnitOrders(form: HTMLFormElement): Record<string, number> {
+  const orders: Record<string, number> = {};
+  const formData = new FormData(form);
+  for (const [key, value] of formData.entries()) {
+    const match = /^fmenge\[(\d+)\]$/.exec(key);
+    if (!match || typeof value !== "string") {
+      continue;
+    }
+    const amount = Number.parseInt(value, 10);
+    if (Number.isFinite(amount) && amount > 0) {
+      orders[match[1]] = amount;
+    }
+  }
+  return orders;
+}
+
+function setLegacyUnitOrderMax(anchor: HTMLAnchorElement, itemID: number, maximum: number) {
+  const form = anchor.closest("form");
+  const input = form?.elements.namedItem(`fmenge[${itemID}]`);
+  if (input instanceof HTMLInputElement) {
+    input.value = String(maximum);
+  }
+}
+
+function ShipyardTable({
+  onSubmit,
+  pending,
+  shipyard
+}: {
+  onSubmit: (orders: Record<string, number>) => void;
+  pending: boolean;
+  shipyard: GameShipyard;
+}) {
   if (!shipyard.hasShipyard) {
     return (
       <table className="legacy-overview-table legacy-shipyard-table" width={530}>
@@ -1476,7 +1522,13 @@ function ShipyardTable({ shipyard }: { shipyard: GameShipyard }) {
     );
   }
   return (
-    <form className="legacy-shipyard-form" onSubmit={(event) => event.preventDefault()}>
+    <form
+      className="legacy-shipyard-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit(collectLegacyUnitOrders(event.currentTarget));
+      }}
+    >
       <table className="legacy-overview-table legacy-shipyard-table" width={530}>
         <tbody>
           <tr>
@@ -1515,11 +1567,25 @@ function ShipyardTable({ shipyard }: { shipyard: GameShipyard }) {
                 {!item.meetsRequirement ? <span className="legacy-build-blocked">impossibly</span> : null}
                 {item.meetsRequirement && item.canBuild ? (
                   <>
-                    <input aria-label={item.name} defaultValue={0} maxLength={6} name={`fmenge[${item.id}]`} size={6} type="text" />
+                    <input
+                      aria-label={item.name}
+                      defaultValue={0}
+                      disabled={pending}
+                      maxLength={6}
+                      name={`fmenge[${item.id}]`}
+                      size={6}
+                      type="text"
+                    />
                     {item.maxBuild > 0 ? (
                       <>
                         <br />
-                        <a href="#max" onClick={(event) => event.preventDefault()}>
+                        <a
+                          href="#max"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            setLegacyUnitOrderMax(event.currentTarget, item.id, item.maxBuild);
+                          }}
+                        >
                           (max. {item.maxBuild})
                         </a>
                       </>
@@ -1531,7 +1597,7 @@ function ShipyardTable({ shipyard }: { shipyard: GameShipyard }) {
           ))}
           <tr>
             <td className="legacy-c" colSpan={2}>
-              <input type="submit" value="Build" />
+              <input disabled={pending} type="submit" value="Build" />
             </td>
           </tr>
         </tbody>
@@ -1984,7 +2050,15 @@ function GalaxyActionIcons({ planet }: { planet: GameGalaxyPlanet }) {
   );
 }
 
-function DefenseTable({ defense }: { defense: GameDefense }) {
+function DefenseTable({
+  defense,
+  onSubmit,
+  pending
+}: {
+  defense: GameDefense;
+  onSubmit: (orders: Record<string, number>) => void;
+  pending: boolean;
+}) {
   if (!defense.hasShipyard) {
     return (
       <table className="legacy-overview-table legacy-defense-table" width={530}>
@@ -2007,7 +2081,13 @@ function DefenseTable({ defense }: { defense: GameDefense }) {
     );
   }
   return (
-    <form className="legacy-defense-form" onSubmit={(event) => event.preventDefault()}>
+    <form
+      className="legacy-defense-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit(collectLegacyUnitOrders(event.currentTarget));
+      }}
+    >
       <table className="legacy-overview-table legacy-defense-table" width={530}>
         <tbody>
           <tr>
@@ -2046,11 +2126,25 @@ function DefenseTable({ defense }: { defense: GameDefense }) {
                 {item.blockedReason ? <span className="legacy-build-blocked">{item.blockedReason}</span> : null}
                 {!item.blockedReason && item.canBuild ? (
                   <>
-                    <input aria-label={item.name} defaultValue={0} maxLength={6} name={`fmenge[${item.id}]`} size={6} type="text" />
+                    <input
+                      aria-label={item.name}
+                      defaultValue={0}
+                      disabled={pending}
+                      maxLength={6}
+                      name={`fmenge[${item.id}]`}
+                      size={6}
+                      type="text"
+                    />
                     {item.maxBuild > 0 ? (
                       <>
                         <br />
-                        <a href="#max" onClick={(event) => event.preventDefault()}>
+                        <a
+                          href="#max"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            setLegacyUnitOrderMax(event.currentTarget, item.id, item.maxBuild);
+                          }}
+                        >
                           (max. {item.maxBuild})
                         </a>
                       </>
@@ -2062,7 +2156,7 @@ function DefenseTable({ defense }: { defense: GameDefense }) {
           ))}
           <tr>
             <td className="legacy-c" colSpan={2}>
-              <input type="submit" value="Build" />
+              <input disabled={pending} type="submit" value="Build" />
             </td>
           </tr>
         </tbody>

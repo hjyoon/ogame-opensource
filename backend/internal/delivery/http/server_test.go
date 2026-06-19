@@ -739,6 +739,16 @@ func TestGameLogoutEndpointClearsSessionCookie(t *testing.T) {
 	}
 }
 
+func TestClearLoginSessionCookieIgnoresEmptyName(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	clearLoginSessionCookie(rec, "")
+
+	if rec.Header().Get("Set-Cookie") != "" {
+		t.Fatalf("empty cookie names should not emit Set-Cookie, got %q", rec.Header().Get("Set-Cookie"))
+	}
+}
+
 func TestGameLogoutEndpointIsIdempotentForMissingSession(t *testing.T) {
 	server := testServerWithLogout(t, &fakeLogout{result: apppublicsite.LogoutResult{Found: false}})
 	req := httptest.NewRequest(http.MethodPost, "/api/game/logout?session=missing", nil)
@@ -1604,6 +1614,75 @@ func TestGameShipyardEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) 
 	}
 }
 
+func TestGameShipyardEndpointMutatesOrders(t *testing.T) {
+	issue := domaingame.BuildingActionIssue(domaingame.BuildingsIssueNoResources)
+	shipyard := &fakeGameShipyard{result: appgame.ShipyardResult{
+		Authenticated: true,
+		ActionIssue:   issue,
+		Shipyard:      domaingame.Shipyard{Commander: "legor", HasShipyard: true},
+	}}
+	server := testServerWithGameShipyard(t, shipyard)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/shipyard?session=public&cp=99", strings.NewReader(`{"orders":{"bad":9,"204":3}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response gameShipyardResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.ActionIssue == nil || response.ActionIssue.Code != domaingame.BuildingsIssueNoResources || response.Shipyard == nil {
+		t.Fatalf("unexpected shipyard mutation response: %+v", response)
+	}
+	if shipyard.mutation.PublicSession != "public" || shipyard.mutation.PlanetID != 99 || shipyard.mutation.Orders[domaingame.FleetLightFighter] != 3 {
+		t.Fatalf("unexpected shipyard mutation command: %+v", shipyard.mutation)
+	}
+	if _, exists := shipyard.mutation.Orders[0]; exists || len(shipyard.mutation.Orders) != 1 {
+		t.Fatalf("expected non-integer order keys to be ignored, got %+v", shipyard.mutation.Orders)
+	}
+	if shipyard.mutation.PrivateSessions["prsess_42_1"] != "private" || shipyard.mutation.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("expected private session and remote address to be passed, got %+v", shipyard.mutation)
+	}
+}
+
+func TestGameShipyardEndpointPostErrors(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodPost, "/api/game/shipyard?session=public", strings.NewReader(`{"orders":{"204":1}}`))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing shipyard use case to return 503, got %d", rec.Code)
+	}
+
+	server = testServerWithGameShipyard(t, &fakeGameShipyard{})
+	req = httptest.NewRequest(http.MethodPost, "/api/game/shipyard?session=public&cp=abc", strings.NewReader(`{"orders":{"204":1}}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid cp to return 400, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/shipyard?session=public", strings.NewReader(`{bad`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid JSON to return 400, got %d", rec.Code)
+	}
+
+	server = testServerWithGameShipyard(t, &fakeGameShipyard{err: errors.New("shipyard failed")})
+	req = httptest.NewRequest(http.MethodPost, "/api/game/shipyard?session=public", strings.NewReader(`{"orders":{"204":1}}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected use case error to return 503, got %d", rec.Code)
+	}
+}
+
 func TestGameShipyardEndpointRejectsInvalidPlanetID(t *testing.T) {
 	server := testServerWithGameShipyard(t, &fakeGameShipyard{})
 	req := httptest.NewRequest(http.MethodGet, "/api/game/shipyard?session=public&cp=abc", nil)
@@ -2045,6 +2124,72 @@ func TestGameDefenseEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
 	}
 	if response.Authenticated || response.Defense != nil || len(response.Issues) != 1 {
 		t.Fatalf("expected invalid defense session response, got %+v", response)
+	}
+}
+
+func TestGameDefenseEndpointMutatesOrders(t *testing.T) {
+	issue := domaingame.BuildingActionIssue(domaingame.BuildingsIssueQueueFull)
+	defense := &fakeGameDefense{result: appgame.DefenseResult{
+		Authenticated: true,
+		ActionIssue:   issue,
+		Defense:       domaingame.Defense{Commander: "legor", HasShipyard: true},
+	}}
+	server := testServerWithGameDefense(t, defense)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/defense?session=public&cp=99", strings.NewReader(`{"orders":{"401":4}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response gameDefenseResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Authenticated || response.ActionIssue == nil || response.ActionIssue.Code != domaingame.BuildingsIssueQueueFull || response.Defense == nil {
+		t.Fatalf("unexpected defense mutation response: %+v", response)
+	}
+	if defense.mutation.PublicSession != "public" || defense.mutation.PlanetID != 99 || defense.mutation.Orders[domaingame.DefenseRocketLauncher] != 4 {
+		t.Fatalf("unexpected defense mutation command: %+v", defense.mutation)
+	}
+	if defense.mutation.PrivateSessions["prsess_42_1"] != "private" || defense.mutation.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("expected private session and remote address to be passed, got %+v", defense.mutation)
+	}
+}
+
+func TestGameDefenseEndpointPostErrors(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodPost, "/api/game/defense?session=public", strings.NewReader(`{"orders":{"401":1}}`))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing defense use case to return 503, got %d", rec.Code)
+	}
+
+	server = testServerWithGameDefense(t, &fakeGameDefense{})
+	req = httptest.NewRequest(http.MethodPost, "/api/game/defense?session=public&cp=abc", strings.NewReader(`{"orders":{"401":1}}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid cp to return 400, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/defense?session=public", strings.NewReader(`{bad`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid JSON to return 400, got %d", rec.Code)
+	}
+
+	server = testServerWithGameDefense(t, &fakeGameDefense{err: errors.New("defense failed")})
+	req = httptest.NewRequest(http.MethodPost, "/api/game/defense?session=public", strings.NewReader(`{"orders":{"401":1}}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected use case error to return 503, got %d", rec.Code)
 	}
 }
 
@@ -3457,11 +3602,11 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game research method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/game/shipyard", nil)
+	req = httptest.NewRequest(http.MethodPut, "/api/game/shipyard", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD, POST" {
 		t.Fatalf("expected game shipyard method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
@@ -3481,11 +3626,11 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game galaxy method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/game/defense", nil)
+	req = httptest.NewRequest(http.MethodPut, "/api/game/defense", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD, POST" {
 		t.Fatalf("expected game defense method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
@@ -4083,13 +4228,19 @@ func (f *fakeGameResearch) MutateResearch(_ context.Context, command appgame.Res
 }
 
 type fakeGameShipyard struct {
-	result  appgame.ShipyardResult
-	err     error
-	command appgame.ShipyardCommand
+	result   appgame.ShipyardResult
+	err      error
+	command  appgame.ShipyardCommand
+	mutation appgame.ShipyardMutationCommand
 }
 
 func (f *fakeGameShipyard) GetShipyard(_ context.Context, command appgame.ShipyardCommand) (appgame.ShipyardResult, error) {
 	f.command = command
+	return f.result, f.err
+}
+
+func (f *fakeGameShipyard) MutateShipyard(_ context.Context, command appgame.ShipyardMutationCommand) (appgame.ShipyardResult, error) {
+	f.mutation = command
 	return f.result, f.err
 }
 
@@ -4116,13 +4267,19 @@ func (f *fakeGameGalaxy) GetGalaxy(_ context.Context, command appgame.GalaxyComm
 }
 
 type fakeGameDefense struct {
-	result  appgame.DefenseResult
-	err     error
-	command appgame.DefenseCommand
+	result   appgame.DefenseResult
+	err      error
+	command  appgame.DefenseCommand
+	mutation appgame.DefenseMutationCommand
 }
 
 func (f *fakeGameDefense) GetDefense(_ context.Context, command appgame.DefenseCommand) (appgame.DefenseResult, error) {
 	f.command = command
+	return f.result, f.err
+}
+
+func (f *fakeGameDefense) MutateDefense(_ context.Context, command appgame.DefenseMutationCommand) (appgame.DefenseResult, error) {
+	f.mutation = command
 	return f.result, f.err
 }
 

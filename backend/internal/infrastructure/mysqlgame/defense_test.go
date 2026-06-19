@@ -46,6 +46,17 @@ func TestNewDefenseRepositoryKeepsSQLQueryer(t *testing.T) {
 	}
 }
 
+func TestDefenseRepositoryPropagatesDueQueueFinishErrors(t *testing.T) {
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("defense queue finish failed")}}}}
+	repository := NewDefenseRepositoryWithRunner(runner, runner, "ogame_", nil)
+
+	_, err := repository.GetDefense(context.Background(), appgame.DefenseQuery{PlayerID: 42})
+
+	if err == nil || !strings.Contains(err.Error(), "defense queue finish failed") {
+		t.Fatalf("expected due queue finish error, got %v", err)
+	}
+}
+
 func TestDefenseRepositoryLoadDefenseCountsErrors(t *testing.T) {
 	tests := []struct {
 		name string

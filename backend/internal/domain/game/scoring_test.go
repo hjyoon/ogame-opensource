@@ -43,3 +43,22 @@ func TestBuildingScoreForLevelUsesLegacyPricePoints(t *testing.T) {
 		t.Fatal("unknown building should not have score")
 	}
 }
+
+func TestUnitScoreForCountUsesLegacyUnitPricePoints(t *testing.T) {
+	points, fleetPoints, ok := UnitScoreForCount(FleetLightFighter, 2)
+	if !ok || points != 8000 || fleetPoints != 2 {
+		t.Fatalf("unexpected fleet score: points=%d fleet=%d ok=%v", points, fleetPoints, ok)
+	}
+
+	points, fleetPoints, ok = UnitScoreForCount(DefenseRocketLauncher, 3)
+	if !ok || points != 6000 || fleetPoints != 0 {
+		t.Fatalf("unexpected defense score: points=%d fleet=%d ok=%v", points, fleetPoints, ok)
+	}
+
+	if _, _, ok := UnitScoreForCount(FleetLightFighter, 0); ok {
+		t.Fatal("non-positive unit count should not have score")
+	}
+	if _, _, ok := UnitScoreForCount(9999, 1); ok {
+		t.Fatal("unknown unit should not have score")
+	}
+}

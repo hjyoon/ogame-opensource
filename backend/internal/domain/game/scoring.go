@@ -47,6 +47,23 @@ func ResearchScoreForLevel(id int, level int) (int64, bool) {
 	return scoreCost(cost), true
 }
 
+func UnitScoreForCount(id int, count int) (points int64, fleetPoints int64, ok bool) {
+	if count <= 0 {
+		return 0, 0, false
+	}
+	for _, spec := range fleetCatalog {
+		if spec.id == id {
+			return scoreCost(spec.price(1)) * int64(count), int64(count), true
+		}
+	}
+	for _, spec := range defenseCatalog {
+		if spec.id == id {
+			return scoreCost(spec.price(1)) * int64(count), 0, true
+		}
+	}
+	return 0, 0, false
+}
+
 func scoreCost(cost BuildingCost) int64 {
 	return int64(cost.Metal + cost.Crystal + cost.Deuterium)
 }

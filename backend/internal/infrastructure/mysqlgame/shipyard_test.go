@@ -46,6 +46,17 @@ func TestNewShipyardRepositoryKeepsSQLQueryer(t *testing.T) {
 	}
 }
 
+func TestShipyardRepositoryPropagatesDueQueueFinishErrors(t *testing.T) {
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("shipyard queue finish failed")}}}}
+	repository := NewShipyardRepositoryWithRunner(runner, runner, "ogame_", nil)
+
+	_, err := repository.GetShipyard(context.Background(), appgame.ShipyardQuery{PlayerID: 42})
+
+	if err == nil || !strings.Contains(err.Error(), "shipyard queue finish failed") {
+		t.Fatalf("expected due queue finish error, got %v", err)
+	}
+}
+
 func TestShipyardRepositoryLoadHelpersHandleFallbacks(t *testing.T) {
 	repository := NewShipyardRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "ogame_")
 
