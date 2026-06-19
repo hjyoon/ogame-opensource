@@ -940,6 +940,165 @@ func TestFleetRepositoryLaunchAllowsLegacyMissionTargetGuards(t *testing.T) {
 	}
 }
 
+func TestFleetRepositoryLaunchRejectsACSAttackUnionGuards(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	baseQuery := func(unionID int, duration int) appgame.FleetLaunchQuery {
+		return appgame.FleetLaunchQuery{
+			PlayerID: 42,
+			PlanetID: 99,
+			Draft: domaingame.FleetDispatchDraft{
+				Ships: []domaingame.FleetShipCount{{
+					ID:    domaingame.FleetLightFighter,
+					Count: 1,
+				}},
+				Ready:           true,
+				Mission:         domaingame.FleetMissionACSAttack,
+				Target:          domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+				TargetType:      domaingame.GamePlanetTypePlanet,
+				DurationSeconds: duration,
+			},
+			UnionID: unionID,
+		}
+	}
+	targetResult := func() fakeQueryResult {
+		return fakeQueryResult{rows: fakeRowsFromValues([]any{100, 43, domaingame.PlanetTypePlanet})}
+	}
+
+	tests := []struct {
+		name    string
+		query   appgame.FleetLaunchQuery
+		results []fakeQueryResult
+		code    string
+	}{
+		{
+			name: "missing union id",
+			query: func() appgame.FleetLaunchQuery {
+				return baseQuery(0, 200)
+			}(),
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				targetResult(),
+			},
+			code: domaingame.FleetIssueInvalidTarget,
+		},
+		{
+			name:  "acs disabled",
+			query: baseQuery(55, 200),
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				targetResult(),
+				{rows: fakeRowsFromValues([]any{0, "42,99", int64(1_300), 1})},
+			},
+			code: domaingame.FleetIssueInvalidTarget,
+		},
+		{
+			name:  "missing union",
+			query: baseQuery(55, 200),
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				targetResult(),
+				{rows: fakeRowsFromValues()},
+			},
+			code: domaingame.FleetIssueInvalidTarget,
+		},
+		{
+			name:  "not invited",
+			query: baseQuery(55, 200),
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				targetResult(),
+				{rows: fakeRowsFromValues([]any{2, "99", int64(1_300), 1})},
+			},
+			code: domaingame.FleetIssueInvalidTarget,
+		},
+		{
+			name:  "too slow",
+			query: baseQuery(55, 200),
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				targetResult(),
+				{rows: fakeRowsFromValues([]any{2, "42,99", int64(1_100), 1})},
+			},
+			code: domaingame.FleetIssueInvalidTarget,
+		},
+		{
+			name:  "fleet limit",
+			query: baseQuery(55, 200),
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				targetResult(),
+				{rows: fakeRowsFromValues([]any{1, "42,99", int64(1_300), 1})},
+			},
+			code: domaingame.FleetIssueMaxFleet,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: tt.results}}
+			repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+			issue, err := repository.LaunchFleetDispatch(context.Background(), tt.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if issue == nil || issue.Code != tt.code {
+				t.Fatalf("expected issue %s, got %+v", tt.code, issue)
+			}
+			if len(runner.execCalls) != 0 {
+				t.Fatalf("ACS guard failure must not write, got %+v", runner.execCalls)
+			}
+		})
+	}
+}
+
+func TestFleetRepositoryLaunchAllowsACSAttackAndSyncsUnionQueue(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues([]any{100, 43, domaingame.PlanetTypePlanet})},
+		{rows: fakeRowsFromValues([]any{2, "42,99", int64(1_300), 1})},
+		{rows: fakeRowsFromValues([]any{int64(1_300)})},
+	}}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	issue, err := repository.LaunchFleetDispatch(context.Background(), appgame.FleetLaunchQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Origin: domaingame.PlanetOverview{
+			Type:        domaingame.PlanetTypePlanet,
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Resources:   domaingame.Resources{Metal: 1000, Crystal: 1000, Deuterium: 1000},
+		},
+		Draft: domaingame.FleetDispatchDraft{
+			Ships: []domaingame.FleetShipCount{{
+				ID:    domaingame.FleetLightFighter,
+				Count: 1,
+			}},
+			Ready:           true,
+			Mission:         domaingame.FleetMissionACSAttack,
+			Target:          domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+			TargetType:      domaingame.GamePlanetTypePlanet,
+			DurationSeconds: 200,
+		},
+		UnionID: 55,
+	})
+	if err != nil || issue != nil {
+		t.Fatalf("expected ACS launch success, issue=%+v err=%v", issue, err)
+	}
+	if len(runner.execCalls) != 6 {
+		t.Fatalf("expected normal launch writes plus ACS queue sync, got %+v", runner.execCalls)
+	}
+	insertQueue := runner.execCalls[4]
+	if !strings.Contains(insertQueue.sql, "INSERT INTO `ogame_queue`") || insertQueue.args[6] != int64(1_200) {
+		t.Fatalf("expected initial ACS queue at requested flight end, got %+v", insertQueue)
+	}
+	syncQueue := runner.execCalls[5]
+	if !strings.Contains(syncQueue.sql, "UPDATE `ogame_queue` q JOIN `ogame_fleet` f") || syncQueue.args[0] != int64(1_300) || syncQueue.args[2] != 55 {
+		t.Fatalf("expected ACS queue sync to union arrival, got %+v", syncQueue)
+	}
+}
+
 func TestFleetRepositoryLaunchTargetHelpersHandleEdges(t *testing.T) {
 	now := time.Unix(1_000, 0)
 	coordinates := domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4}
@@ -1034,6 +1193,103 @@ func TestFleetRepositoryLaunchTargetHelpersHandleEdges(t *testing.T) {
 				t.Fatalf("expected %q, got %v", tt.want, err)
 			}
 		})
+	}
+}
+
+func TestFleetRepositoryLaunchACSHelpersHandleEdges(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func() error
+		want string
+	}{
+		{
+			name: "acs union query",
+			run: func() error {
+				repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("acs union failed")}}}, "ogame_", nil)
+				_, _, err := repository.loadFleetLaunchACSUnion(context.Background(), "`ogame_uni`", "`ogame_union`", "`ogame_fleet`", "`ogame_queue`", 55)
+				return err
+			},
+			want: "acs union failed",
+		},
+		{
+			name: "acs union rows",
+			run: func() error {
+				repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("acs union rows failed"))}}}, "ogame_", nil)
+				_, _, err := repository.loadFleetLaunchACSUnion(context.Background(), "`ogame_uni`", "`ogame_union`", "`ogame_fleet`", "`ogame_queue`", 55)
+				return err
+			},
+			want: "acs union rows failed",
+		},
+		{
+			name: "acs union scan",
+			run: func() error {
+				repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", "42", int64(1_300), 1})}}}, "ogame_", nil)
+				_, _, err := repository.loadFleetLaunchACSUnion(context.Background(), "`ogame_uni`", "`ogame_union`", "`ogame_fleet`", "`ogame_queue`", 55)
+				return err
+			},
+			want: "expected int",
+		},
+		{
+			name: "acs union trailing rows",
+			run: func() error {
+				repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("acs union trailing failed"), []any{2, "42", int64(1_300), 1})}}}, "ogame_", nil)
+				_, _, err := repository.loadFleetLaunchACSUnion(context.Background(), "`ogame_uni`", "`ogame_union`", "`ogame_fleet`", "`ogame_queue`", 55)
+				return err
+			},
+			want: "acs union trailing failed",
+		},
+		{
+			name: "acs sync query",
+			run: func() error {
+				runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("acs sync failed")}}}}
+				repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+				return repository.syncFleetLaunchACSQueue(context.Background(), "`ogame_queue`", "`ogame_fleet`", 55, 1_200)
+			},
+			want: "acs sync failed",
+		},
+		{
+			name: "acs sync scan",
+			run: func() error {
+				runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}}
+				repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+				return repository.syncFleetLaunchACSQueue(context.Background(), "`ogame_queue`", "`ogame_fleet`", 55, 1_200)
+			},
+			want: "expected int64",
+		},
+		{
+			name: "acs sync trailing rows",
+			run: func() error {
+				runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("acs sync trailing failed"), []any{int64(1_300)})}}}}
+				repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+				return repository.syncFleetLaunchACSQueue(context.Background(), "`ogame_queue`", "`ogame_fleet`", 55, 1_200)
+			},
+			want: "acs sync trailing failed",
+		},
+		{
+			name: "acs sync update",
+			run: func() error {
+				runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{int64(1_300)})}}}, execErr: errors.New("acs sync update failed")}
+				repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+				return repository.syncFleetLaunchACSQueue(context.Background(), "`ogame_queue`", "`ogame_fleet`", 55, 1_200)
+			},
+			want: "acs sync update failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run()
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q, got %v", tt.want, err)
+			}
+		})
+	}
+
+	if !fleetLaunchUnionContainsPlayer("7, 42, bad", 42) {
+		t.Fatal("expected ACS players parser to accept trimmed numeric ids")
+	}
+	if fleetLaunchUnionContainsPlayer("7,bad", 42) {
+		t.Fatal("malformed or absent ACS player id should not match")
 	}
 }
 

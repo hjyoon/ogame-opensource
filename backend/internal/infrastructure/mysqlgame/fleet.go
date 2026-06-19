@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,6 +47,13 @@ type fleetLaunchTarget struct {
 	ID      int
 	OwnerID int
 	Type    int
+}
+
+type fleetLaunchACSUnion struct {
+	ACSLimit   int
+	Players    string
+	ArrivalAt  int64
+	FleetCount int
 }
 
 type FleetRepository struct {
@@ -211,6 +219,10 @@ func (r FleetRepository) LaunchFleetDispatch(ctx context.Context, query appgame.
 	if err != nil {
 		return nil, err
 	}
+	unionTable, err := tableName(r.prefix, "union")
+	if err != nil {
+		return nil, err
+	}
 
 	frozen, err := r.loadUniverseFrozen(ctx, uniTable)
 	if err != nil {
@@ -237,6 +249,9 @@ func (r FleetRepository) LaunchFleetDispatch(ctx context.Context, query appgame.
 	if issue := validateFleetLaunchTarget(query, target); issue != nil {
 		return issue, nil
 	}
+	if issue, err := r.validateFleetLaunchACS(ctx, uniTable, unionTable, fleetTable, queueTable, query, now); err != nil || issue != nil {
+		return issue, err
+	}
 	if err := r.deleteOldFleetLogs(ctx, fleetLogsTable, now); err != nil {
 		return nil, err
 	}
@@ -257,6 +272,11 @@ func (r FleetRepository) LaunchFleetDispatch(ctx context.Context, query appgame.
 	}
 	if err := r.insertRecallQueue(ctx, queueTable, query.PlayerID, fleetID, query.Draft.Mission, now, int64(query.Draft.DurationSeconds)); err != nil {
 		return nil, err
+	}
+	if query.Draft.Mission == domaingame.FleetMissionACSAttack && query.UnionID > 0 {
+		if err := r.syncFleetLaunchACSQueue(ctx, queueTable, fleetTable, query.UnionID, now+int64(query.Draft.DurationSeconds)); err != nil {
+			return nil, err
+		}
 	}
 	return nil, nil
 }
@@ -349,6 +369,33 @@ func fleetLaunchHasMannedShips(ships domaingame.FleetCounts) bool {
 	return false
 }
 
+func (r FleetRepository) validateFleetLaunchACS(ctx context.Context, uniTable string, unionTable string, fleetTable string, queueTable string, query appgame.FleetLaunchQuery, now int64) (*domaingame.FleetActionIssue, error) {
+	if query.Draft.Mission != domaingame.FleetMissionACSAttack {
+		return nil, nil
+	}
+	if query.UnionID <= 0 {
+		return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget), nil
+	}
+	union, found, err := r.loadFleetLaunchACSUnion(ctx, uniTable, unionTable, fleetTable, queueTable, query.UnionID)
+	if err != nil || !found {
+		return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget), err
+	}
+	if union.ACSLimit <= 0 {
+		return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget), nil
+	}
+	if !fleetLaunchUnionContainsPlayer(union.Players, query.PlayerID) {
+		return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget), nil
+	}
+	remaining := union.ArrivalAt - now
+	if remaining <= 0 || int64(query.Draft.DurationSeconds)*10 > remaining*13 {
+		return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget), nil
+	}
+	if union.FleetCount >= union.ACSLimit*union.ACSLimit {
+		return domaingame.FleetActionIssueFor(domaingame.FleetIssueMaxFleet), nil
+	}
+	return nil, nil
+}
+
 func (r FleetRepository) resolveFleetLaunchColonizeTarget(ctx context.Context, planetsTable string, coordinates domaingame.Coordinates, targetType int, now int64) (fleetLaunchTarget, bool, error) {
 	if targetType != domaingame.GamePlanetTypePlanet || !coordinates.Valid() || coordinates.Position > domaingame.GalaxyPositions {
 		return fleetLaunchTarget{}, false, nil
@@ -377,6 +424,79 @@ func (r FleetRepository) resolveFleetLaunchExpeditionTarget(ctx context.Context,
 		return fleetLaunchTarget{}, false, err
 	}
 	return target, true, nil
+}
+
+func (r FleetRepository) loadFleetLaunchACSUnion(ctx context.Context, uniTable string, unionTable string, fleetTable string, queueTable string, unionID int) (fleetLaunchACSUnion, bool, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT uni.acs, u.players, q.end, (SELECT COUNT(*) FROM %s uf WHERE uf.union_id = u.union_id) FROM %s uni JOIN %s u ON u.union_id = ? JOIN %s f ON f.fleet_id = u.fleet_id AND f.union_id = u.union_id AND f.mission = ? JOIN %s q ON q.type = ? AND q.sub_id = u.fleet_id LIMIT 1", fleetTable, uniTable, unionTable, fleetTable, queueTable),
+		unionID,
+		domaingame.FleetMissionACSAttackHead,
+		queueTypeFleet,
+	)
+	if err != nil {
+		return fleetLaunchACSUnion{}, false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return fleetLaunchACSUnion{}, false, err
+		}
+		return fleetLaunchACSUnion{}, false, nil
+	}
+	var union fleetLaunchACSUnion
+	if err := rows.Scan(&union.ACSLimit, &union.Players, &union.ArrivalAt, &union.FleetCount); err != nil {
+		return fleetLaunchACSUnion{}, false, err
+	}
+	if err := rows.Err(); err != nil {
+		return fleetLaunchACSUnion{}, false, err
+	}
+	return union, true, nil
+}
+
+func (r FleetRepository) syncFleetLaunchACSQueue(ctx context.Context, queueTable string, fleetTable string, unionID int, requestedEnd int64) error {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT COALESCE(MAX(q.end), ?) FROM %s q JOIN %s f ON f.fleet_id = q.sub_id WHERE q.type = ? AND f.union_id = ?", queueTable, fleetTable),
+		requestedEnd,
+		queueTypeFleet,
+		unionID,
+	)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	unionEnd := requestedEnd
+	if rows.Next() {
+		var maxEnd int64
+		if err := rows.Scan(&maxEnd); err != nil {
+			return err
+		}
+		if maxEnd > unionEnd {
+			unionEnd = maxEnd
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s q JOIN %s f ON f.fleet_id = q.sub_id SET q.end = ? WHERE q.type = ? AND f.union_id = ?", queueTable, fleetTable),
+		unionEnd,
+		queueTypeFleet,
+		unionID,
+	)
+	return err
+}
+
+func fleetLaunchUnionContainsPlayer(players string, playerID int) bool {
+	for _, part := range strings.Split(players, ",") {
+		id, err := strconv.Atoi(strings.TrimSpace(part))
+		if err == nil && id == playerID {
+			return true
+		}
+	}
+	return false
 }
 
 func (r FleetRepository) RecallFleet(ctx context.Context, query appgame.FleetRecallQuery) error {

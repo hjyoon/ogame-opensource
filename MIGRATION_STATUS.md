@@ -24,7 +24,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep <4KB; split docs first.
 ## Latest Verified Implementation
 
 - Public parity, language flags, login/logout, legacy route aliases, and game read models are guarded.
-- Fleet covers summary, slots, expeditions, ships, cargo/speed, templates, recall, basic dispatch; ACS/restrictions pending.
+- Fleet covers summary, slots, exp, ships, cargo/speed, templates, recall, dispatch; deeper restrictions pending.
 - Galaxy covers clamp, rows, status, moon/debris/actions, slots, deut warning, quick links/prefill; instant sends pending.
 - Shipyard/defense cover display plus POST orders into legacy `Shipyard` queue.
 - Tech/stat/search/buddy/notes/messages/report/options follow legacy chrome; messages send/delete/report PMs; `bericht` owner/allied-spy access is ported.
@@ -32,7 +32,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep <4KB; split docs first.
 - Overview covers `cp`, `lgn`, notices, header/menu/table parity, rename/delete rules, blockers, destroy markers, queue flush, stats/ranks, and active restore.
 - Buildings/research/resources write legacy queues, resources, stats/ranks, caps, and active queue state.
 - Empire ports the Commander-gated `imperium` table, build queue markers, and legacy GET add/destroy/remove shortcuts.
-- Fleet dispatch launches drafts with resources, math, hold fuel/clamps, target guards, and colonize/exp targets/limits.
+- Fleet dispatch covers resources/math, hold fuel/clamps, target/ACS guards, ACS sync, and colonize/exp targets.
 - Options reads account/settings flags and saves language, skin path/toggle, IP check, sort, spy/fleet counts, and deletion queue toggle.
 
 ## Verified QA
@@ -51,6 +51,6 @@ Full legacy PHP E2E was not run for this step; keep PHP as oracle.
 
 - Close authenticated visual diff for statistics and remaining game-page nits before claiming parity.
 - Port remaining overview legacy actions.
-- Finish ACS/mission restrictions, galaxy instant actions, alliance/admin/recovery/bans/permissions, and deeper options mutations.
+- Finish mission restrictions, galaxy instant actions, alliance/admin/recovery/bans/permissions, and deeper options mutations.
 - Convert legacy E2E cases into Go compatibility checks per migrated flow.
 - Run full legacy PHP E2E before declaring any game-flow migration equivalent.
