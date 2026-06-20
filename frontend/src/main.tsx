@@ -513,7 +513,10 @@ function App() {
     loadGameBuildings();
   }, [gameRoute?.key, search]);
 
-  const submitGameBuildingsMutation = (body: { action: "add" | "destroy" | "remove"; techId: number; listId?: number }) => {
+  const submitGameBuildingsMutation = (
+    body: { action: "add" | "destroy" | "remove"; techId: number; listId?: number },
+    retrySameSecond = true
+  ) => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (publicSession === "") {
       setGameBuildingsError("Session is invalid.");
@@ -547,6 +550,11 @@ function App() {
       .then((payload) => {
         setGameBuildings(payload);
         syncGameOverviewFromBuildings(payload);
+        if (payload.actionIssue?.code === "same_second" && retrySameSecond && body.action !== "remove") {
+          setGameBuildingsError(null);
+          window.setTimeout(() => submitGameBuildingsMutation(body, false), 1100);
+          return;
+        }
         setGameBuildingsError(payload.actionIssue?.message ?? null);
         dispatchClientNavigation(`/game/buildings?${buildingsSearch.toString()}`);
         document.querySelector<HTMLElement>(".legacy-content")?.scrollTo(0, 0);

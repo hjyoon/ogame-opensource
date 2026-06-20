@@ -2002,7 +2002,7 @@ function buildingActionHTML(item: GameBuildingItem): string {
 
 function buildingEnqueueHTML(item: GameBuildingItem): string {
   const href = legacyHTMLAttribute(buildingActionURL("add", item.id));
-  return `<a href="${href}">enqueue</a>`;
+  return `<a href="${href}">In the queue for construction</a>`;
 }
 
 function legacyHTMLText(value: string): string {
