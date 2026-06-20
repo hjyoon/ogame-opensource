@@ -20,6 +20,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 - Overview covers `cp`, `lgn`, notices, unread/build/incoming/missile/fleet pseudo-events, rename/delete blockers, queue markers, stats/ranks, and active planet restore.
 - Buildings now ports legacy queue state, Commander queue rows, non-Commander countdowns, add/remove/demolish shortcuts, info-page demolish links, due-queue completion refresh, moon resource capacity behavior, and post-build resource header sync.
 - Buildings Build, Cancel refund, Commander multi-queue, info-page Demolish, and Demolish completion were compared against legacy: DB cost/refund, queue rows, level/fields/score, and displayed resources pass Chromium/Firefox.
+- Statistics/fleet authenticated visual contracts pass Chromium/Firefox; fleet is near-exact, while player statistics remains a tracked text-rendering diff.
 - Empire ports Commander-gated `imperium`, build queue markers, and legacy GET add/destroy/remove shortcuts.
 - Fleet dispatch covers resource math, cargo/speed, hold fuel/clamps, ACS guards/sync, colonize/exp targets, templates, and recall; deeper mission restrictions remain.
 - Galaxy covers clamp, rows, statuses, moon/debris/actions, slot/deut warnings, quick links, and target prefill; instant actions remain.
@@ -37,7 +38,7 @@ Full legacy PHP E2E was not rerun in this step; PHP remains the oracle.
 
 ## Remaining Work
 
-- Continue authenticated visual parity, starting with buildings post-action edge cases and then statistics/fleet high-diff pages.
+- Continue authenticated visual parity for remaining statistics text rendering and then other high-diff pages.
 - Add Go compatibility checks for migrated legacy E2E flows as they stabilize.
 - Finish galaxy instant actions, alliance/admin/recovery/bans/permissions, deeper options mutations, and remaining mission restrictions.
 - Run full legacy PHP E2E before declaring game-flow equivalence.

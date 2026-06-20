@@ -924,7 +924,7 @@ body.legacy-game-body {
 
 .legacy-game-shell .legacy-statistics-player-table td:nth-child(3),
 .legacy-game-shell .legacy-statistics-player-table th:nth-child(3) {
-  width: 41px;
+  width: 41.359375px;
 }
 
 .legacy-game-shell .legacy-statistics-head-table select,
