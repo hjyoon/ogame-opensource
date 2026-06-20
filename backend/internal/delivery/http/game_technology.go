@@ -45,13 +45,20 @@ type gameTechnologyRequirementResponse struct {
 }
 
 type gameTechnologyDetailsResponse struct {
-	Target gameTechnologyItemResponse           `json:"target"`
-	Levels []gameTechnologyDetailsLevelResponse `json:"levels"`
+	Target   gameTechnologyItemResponse           `json:"target"`
+	Levels   []gameTechnologyDetailsLevelResponse `json:"levels"`
+	Demolish *gameTechnologyDemolishResponse      `json:"demolish,omitempty"`
 }
 
 type gameTechnologyDetailsLevelResponse struct {
 	Step         int                                 `json:"step"`
 	Requirements []gameTechnologyRequirementResponse `json:"requirements"`
+}
+
+type gameTechnologyDemolishResponse struct {
+	Level           int                      `json:"level"`
+	Cost            gameBuildingCostResponse `json:"cost"`
+	DurationSeconds int                      `json:"durationSeconds"`
 }
 
 func (a app) handleGameTechnology(w http.ResponseWriter, r *http.Request) {
@@ -172,13 +179,28 @@ func toGameTechnologyDetailsResponse(details *domaingame.TechnologyDetails) *gam
 		})
 	}
 	return &gameTechnologyDetailsResponse{
-		Target: toGameTechnologyItemResponse(details.Target),
-		Levels: levels,
+		Target:   toGameTechnologyItemResponse(details.Target),
+		Levels:   levels,
+		Demolish: toGameTechnologyDemolishResponse(details.Demolish),
+	}
+}
+
+func toGameTechnologyDemolishResponse(demolish *domaingame.TechnologyDemolish) *gameTechnologyDemolishResponse {
+	if demolish == nil {
+		return nil
+	}
+	return &gameTechnologyDemolishResponse{
+		Level:           demolish.Level,
+		Cost:            toGameBuildingCostResponse(demolish.Cost),
+		DurationSeconds: demolish.DurationSeconds,
 	}
 }
 
 func selectedTechnologyID(r *http.Request) (int, error) {
 	raw := r.URL.Query().Get("tid")
+	if raw == "" {
+		raw = r.URL.Query().Get("gid")
+	}
 	if raw == "" {
 		return 0, nil
 	}

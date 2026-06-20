@@ -52,7 +52,11 @@ func (r TechnologyRepository) GetTechnology(ctx context.Context, query appgame.T
 
 	technology := domaingame.BuildTechnology(overview, levels, research)
 	if query.TechnologyID > 0 {
-		if details, ok := domaingame.BuildTechnologyDetails(query.TechnologyID, levels, research); ok {
+		speed, err := buildings.loadUniverseSpeed(ctx)
+		if err != nil {
+			return domaingame.Technology{}, err
+		}
+		if details, ok := domaingame.BuildTechnologyDetailsWithSpeed(query.TechnologyID, levels, research, speed); ok {
 			technology.Details = &details
 		}
 	}

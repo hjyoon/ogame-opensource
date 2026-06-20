@@ -32,13 +32,20 @@ type TechnologyRequirement struct {
 }
 
 type TechnologyDetails struct {
-	Target TechnologyItem
-	Levels []TechnologyDetailsLevel
+	Target   TechnologyItem
+	Levels   []TechnologyDetailsLevel
+	Demolish *TechnologyDemolish
 }
 
 type TechnologyDetailsLevel struct {
 	Step         int
 	Requirements []TechnologyRequirement
+}
+
+type TechnologyDemolish struct {
+	Level           int
+	Cost            BuildingCost
+	DurationSeconds int
 }
 
 var legacyTechnologyRequirementOrder = map[int][]int{
@@ -127,6 +134,10 @@ func BuildTechnology(overview Overview, levels BuildingLevels, research Research
 }
 
 func BuildTechnologyDetails(id int, levels BuildingLevels, research ResearchLevels) (TechnologyDetails, bool) {
+	return BuildTechnologyDetailsWithSpeed(id, levels, research, 1)
+}
+
+func BuildTechnologyDetailsWithSpeed(id int, levels BuildingLevels, research ResearchLevels, speed float64) (TechnologyDetails, bool) {
 	spec, ok := technologySpecByID(id)
 	if !ok {
 		return TechnologyDetails{}, false
@@ -155,8 +166,26 @@ func BuildTechnologyDetails(id int, levels BuildingLevels, research ResearchLeve
 			Requirements:     buildTechnologyRequirements(id, spec.requirements, levels, research),
 			DetailsAvailable: len(spec.requirements) > 0,
 		},
-		Levels: detailLevels,
+		Levels:   detailLevels,
+		Demolish: buildTechnologyDemolish(id, levels, speed),
 	}, true
+}
+
+func buildTechnologyDemolish(id int, levels BuildingLevels, speed float64) *TechnologyDemolish {
+	level := levels[id]
+	if level <= 0 || !isBuildingID(id) || !BuildingCanDemolish(id) {
+		return nil
+	}
+	cost, ok := BuildingCostForLevel(id, level-1)
+	if !ok {
+		return nil
+	}
+	duration := BuildingDurationForCost(cost, levels[BuildingRoboticsFactory], levels[BuildingNaniteFactory], speed)
+	return &TechnologyDemolish{
+		Level:           level,
+		Cost:            cost,
+		DurationSeconds: duration,
+	}
 }
 
 func buildTechnologyGroup(key string, name string, ids []int, levels BuildingLevels, research ResearchLevels) TechnologyGroup {
@@ -341,6 +370,15 @@ func technologyName(id int) string {
 func isResearchID(id int) bool {
 	for _, researchID := range ResearchIDs() {
 		if researchID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func isBuildingID(id int) bool {
+	for _, buildingID := range BuildingIDs() {
+		if buildingID == id {
 			return true
 		}
 	}

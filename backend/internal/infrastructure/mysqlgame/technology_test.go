@@ -100,6 +100,7 @@ func technologyReadResults(buildings map[int]int, research map[int]int) []fakeQu
 	return append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues(buildingLevelRow(buildings))},
 		fakeQueryResult{rows: fakeRowsFromValues(allResearchLevelRow(research))},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{float64(128)})},
 	)
 }
 

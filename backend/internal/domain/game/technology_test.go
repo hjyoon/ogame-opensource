@@ -109,6 +109,30 @@ func TestBuildTechnologyDetailsHandlesNoConditionsAndUnknownIDs(t *testing.T) {
 	}
 }
 
+func TestBuildTechnologyDetailsIncludesLegacyDemolishInfo(t *testing.T) {
+	details, ok := BuildTechnologyDetailsWithSpeed(BuildingMetalStorage, BuildingLevels{
+		BuildingMetalStorage:    2,
+		BuildingRoboticsFactory: 1,
+	}, ResearchLevels{}, 128)
+	if !ok {
+		t.Fatal("expected metal storage details")
+	}
+	if details.Demolish == nil {
+		t.Fatal("expected demolish details")
+	}
+	if details.Demolish.Level != 2 || details.Demolish.Cost.Metal != 2000 || details.Demolish.DurationSeconds <= 0 {
+		t.Fatalf("unexpected demolish details: %+v", details.Demolish)
+	}
+
+	details, ok = BuildTechnologyDetails(BuildingTerraformer, BuildingLevels{BuildingTerraformer: 1}, ResearchLevels{})
+	if !ok {
+		t.Fatal("expected terraformer details")
+	}
+	if details.Demolish != nil {
+		t.Fatalf("terraformer must not expose demolition: %+v", details.Demolish)
+	}
+}
+
 func TestLegacyTechnologyRequirementOrderingFallbacks(t *testing.T) {
 	requirements := map[int]int{ResearchLaser: 5, BuildingResearchLab: 4, ResearchEnergy: 4, 9999: 1}
 	assertIDs(t, legacyTechnologyRequirementIDs(ResearchIon, requirements), []int{BuildingResearchLab, ResearchLaser, ResearchEnergy, 9999})

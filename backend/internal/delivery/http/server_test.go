@@ -2750,6 +2750,11 @@ func TestGameTechnologyEndpointReturnsTechnology(t *testing.T) {
 					Name:             "Cruiser",
 					DetailsAvailable: true,
 				},
+				Demolish: &domaingame.TechnologyDemolish{
+					Level:           2,
+					Cost:            domaingame.BuildingCost{Metal: 2000},
+					DurationSeconds: 30,
+				},
 				Levels: []domaingame.TechnologyDetailsLevel{{
 					Step: 1,
 					Requirements: []domaingame.TechnologyRequirement{{
@@ -2787,6 +2792,10 @@ func TestGameTechnologyEndpointReturnsTechnology(t *testing.T) {
 	if response.Technology.Details == nil || response.Technology.Details.Target.ID != domaingame.FleetCruiser ||
 		response.Technology.Details.Levels[0].Requirements[0].ID != domaingame.ResearchImpulseDrive {
 		t.Fatalf("unexpected technology detail mapping: %+v", response.Technology.Details)
+	}
+	if response.Technology.Details.Demolish == nil || response.Technology.Details.Demolish.Level != 2 ||
+		response.Technology.Details.Demolish.Cost.Metal != 2000 || response.Technology.Details.Demolish.DurationSeconds != 30 {
+		t.Fatalf("unexpected technology demolish mapping: %+v", response.Technology.Details.Demolish)
 	}
 	if technology.command.PublicSession != "public" || technology.command.PlanetID != 99 ||
 		technology.command.TechnologyID != domaingame.FleetCruiser || technology.command.RemoteAddr != "203.0.113.10" {

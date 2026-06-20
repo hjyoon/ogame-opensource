@@ -1060,7 +1060,7 @@ function App() {
     if (selectedPlanet) {
       technologySearch.set("cp", selectedPlanet);
     }
-    const selectedTechnology = currentSearch.get("tid");
+    const selectedTechnology = currentSearch.get("tid") ?? currentSearch.get("gid");
     if (selectedTechnology) {
       technologySearch.set("tid", selectedTechnology);
     }

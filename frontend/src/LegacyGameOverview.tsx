@@ -780,11 +780,18 @@ type GameTechnologyRequirement = {
 type GameTechnologyDetails = {
   target: GameTechnologyItem;
   levels: GameTechnologyDetailsLevel[];
+  demolish?: GameTechnologyDemolish;
 };
 
 type GameTechnologyDetailsLevel = {
   step: number;
   requirements: GameTechnologyRequirement[];
+};
+
+type GameTechnologyDemolish = {
+  level: number;
+  cost: BuildingCost;
+  durationSeconds: number;
 };
 
 type GameBuildingItem = {
@@ -1290,7 +1297,7 @@ export function LegacyGameOverview({
         {overview && route.key === "technology" && !technology && !technologyError && !technologyIssue ? (
           <LegacyMessage tone="neutral" text="Loading technology..." />
         ) : null}
-        {technology && route.key === "technology" ? <TechnologyTable technology={technology} /> : null}
+        {technology && route.key === "technology" ? <TechnologyTable onBuildingAction={onBuildingAction} technology={technology} /> : null}
         {overview && route.key === "statistics" && !statistics && !statisticsError && !statisticsIssue ? (
           <LegacyMessage tone="neutral" text="Loading statistics..." />
         ) : null}
@@ -1969,12 +1976,12 @@ function buildingNextURL() {
 }
 
 function buildingImageHTML(item: GameBuildingItem): string {
-  const href = legacyHTMLAttribute(gameRouteURL("/game/technology", window.location.search));
+  const href = legacyHTMLAttribute(technologyInfoURL(item.id));
   return `<a href="${href}"><img border="0" src="${skinBase}/gebaeude/${item.id}.gif" align="top" width="120" height="120"></a>`;
 }
 
 function buildingDescriptionHTML(item: GameBuildingItem): string {
-  const href = legacyHTMLAttribute(gameRouteURL("/game/technology", window.location.search));
+  const href = legacyHTMLAttribute(technologyInfoURL(item.id));
   const level = item.level > 0 ? ` (level ${item.level})` : "";
   const costs = costParts(item.cost)
     .map((part) => ` ${legacyHTMLText(part.name)}: <b>${formatLegacyPlainNumber(part.value)}</b>`)
@@ -4574,9 +4581,15 @@ function gameSearchStatisticsHref(place: number): string {
   return gameRouteURL("/game/statistics", search.toString());
 }
 
-function TechnologyTable({ technology }: { technology: GameTechnology }) {
+function TechnologyTable({
+  onBuildingAction,
+  technology
+}: {
+  onBuildingAction: (action: "add" | "destroy" | "remove", techID: number, listID?: number) => void;
+  technology: GameTechnology;
+}) {
   if (technology.details) {
-    return <TechnologyDetailsTable details={technology.details} />;
+    return <TechnologyDetailsTable details={technology.details} onBuildingAction={onBuildingAction} />;
   }
   return (
     <div className="legacy-center">
@@ -4632,7 +4645,13 @@ function TechnologyTable({ technology }: { technology: GameTechnology }) {
   );
 }
 
-function TechnologyDetailsTable({ details }: { details: GameTechnologyDetails }) {
+function TechnologyDetailsTable({
+  details,
+  onBuildingAction
+}: {
+  details: GameTechnologyDetails;
+  onBuildingAction: (action: "add" | "destroy" | "remove", techID: number, listID?: number) => void;
+}) {
   return (
     <div className="legacy-center">
       <table className="legacy-overview-table legacy-technology-details-table" width={270}>
@@ -4684,6 +4703,43 @@ function TechnologyDetailsTable({ details }: { details: GameTechnologyDetails })
           )}
         </tbody>
       </table>
+      {details.demolish ? (
+        <table className="legacy-overview-table legacy-technology-demolish-table" width={519}>
+          <tbody>
+            <tr>
+              <td align="center" className="legacy-c c">
+                <a
+                  href={buildingActionURL("destroy", details.target.id)}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onBuildingAction("destroy", details.target.id);
+                  }}
+                >
+                  Demolish: {details.target.name} Level {details.demolish.level} destroy?
+                </a>
+              </td>
+            </tr>
+            <tr>
+              <th>
+                Demolition costs:
+                {costParts(details.demolish.cost).map((part) => (
+                  <React.Fragment key={part.name}>
+                    {" "}
+                    {part.name}: <b>{formatLegacyNumber(part.value)}</b>
+                  </React.Fragment>
+                ))}
+              </th>
+            </tr>
+            <tr>
+              <th>
+                <br />
+                Demolition duration {formatLegacyDuration(details.demolish.durationSeconds)}
+                <br />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      ) : null}
       <br />
       <br />
       <br />
