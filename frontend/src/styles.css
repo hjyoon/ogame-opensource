@@ -522,7 +522,6 @@ body.legacy-game-body {
 
 .legacy-page-messagebox {
   border: 1px solid #00ff00;
-  box-sizing: border-box;
   display: block;
   left: 190px;
   margin: 3px 0;
@@ -563,7 +562,6 @@ body.legacy-game-body {
   background-color: #344566;
   border: 1px #415680 solid;
   color: #e6ebfb;
-  min-height: 18px;
 }
 
 .legacy-resource-table {
