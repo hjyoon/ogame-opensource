@@ -568,12 +568,7 @@ body.legacy-game-body {
 
 .legacy-resource-table {
   border-spacing: 0;
-  table-layout: fixed;
   width: 40vw;
-}
-
-.legacy-resource-table td {
-  width: auto;
 }
 
 .legacy-resource-name {
