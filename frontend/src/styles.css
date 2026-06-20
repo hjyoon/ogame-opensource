@@ -591,6 +591,13 @@ body.legacy-game-body {
   width: auto;
 }
 
+@-moz-document url-prefix() {
+  /* Legacy PHP leaves officer icons on the browser baseline; Firefox renders that above middle alignment. */
+  .legacy-officer-table .legacy-header-cell img {
+    vertical-align: baseline;
+  }
+}
+
 .legacy-overview-table {
   margin: 0 auto;
 }

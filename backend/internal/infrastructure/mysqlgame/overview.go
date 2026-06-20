@@ -9,6 +9,7 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
@@ -158,7 +159,7 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 			}
 			updatedPlanetID = planetID
 		}
-		current, err = r.loadPlanet(ctx, planetsTable, query.PlayerID, planetID)
+		current, err = r.loadPlanet(ctx, planetsTable, query.PlayerID, planetID, user)
 		if err != nil {
 			return domaingame.Overview{}, err
 		}
@@ -169,7 +170,7 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 				return domaingame.Overview{}, err
 			}
 		}
-		current, err = r.loadPlanet(ctx, planetsTable, query.PlayerID, user.HomePlanetID)
+		current, err = r.loadPlanet(ctx, planetsTable, query.PlayerID, user.HomePlanetID, user)
 		if err != nil {
 			return domaingame.Overview{}, err
 		}
@@ -672,7 +673,7 @@ func (r OverviewRepository) resolveCurrentPlanet(ctx context.Context, planetsTab
 		}
 		return user.HomePlanetID, domaingame.PlanetOverview{}, false, nil
 	}
-	current, err := r.loadPlanet(ctx, planetsTable, query.PlayerID, query.PlanetID)
+	current, err := r.loadPlanet(ctx, planetsTable, query.PlayerID, query.PlanetID, user)
 	if err != nil {
 		return 0, domaingame.PlanetOverview{}, false, err
 	}
@@ -701,12 +702,15 @@ type overviewUser struct {
 	SortBy         int
 	SortOrder      int
 	AdminLevel     int
+	DarkMatter     int
+	EnergyResearch int
+	Engineer       bool
 }
 
 func (r OverviewRepository) loadUser(ctx context.Context, usersTable string, playerID int) (overviewUser, error) {
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT oname, score1, place1, aktplanet, hplanetid, sortby, sortorder, admin FROM %s WHERE player_id = ? LIMIT 1", usersTable),
+		fmt.Sprintf("SELECT oname, score1, place1, aktplanet, hplanetid, sortby, sortorder, admin, COALESCE(dm, 0), COALESCE(dmfree, 0), `%d`, COALESCE(eng_until, 0) FROM %s WHERE player_id = ? LIMIT 1", domaingame.ResearchEnergy, usersTable),
 		playerID,
 	)
 	if err != nil {
@@ -719,11 +723,44 @@ func (r OverviewRepository) loadUser(ctx context.Context, usersTable string, pla
 		}
 		return overviewUser{}, errors.New("overview user not found")
 	}
-	var user overviewUser
-	if err := rows.Scan(&user.Commander, &user.Score, &user.Rank, &user.ActivePlanetID, &user.HomePlanetID, &user.SortBy, &user.SortOrder, &user.AdminLevel); err != nil {
+	user, err := r.scanOverviewUser(rows)
+	if err != nil {
 		return overviewUser{}, err
 	}
 	if err := rows.Err(); err != nil {
+		return overviewUser{}, err
+	}
+	return user, nil
+}
+
+func (r OverviewRepository) scanOverviewUser(rows Rows) (overviewUser, error) {
+	var user overviewUser
+	var darkMatter int
+	var freeDarkMatter int
+	var engineerUntil int64
+	err := rows.Scan(
+		&user.Commander,
+		&user.Score,
+		&user.Rank,
+		&user.ActivePlanetID,
+		&user.HomePlanetID,
+		&user.SortBy,
+		&user.SortOrder,
+		&user.AdminLevel,
+		&darkMatter,
+		&freeDarkMatter,
+		&user.EnergyResearch,
+		&engineerUntil,
+	)
+	if err == nil {
+		user.DarkMatter = darkMatter + freeDarkMatter
+		user.Engineer = engineerUntil > r.currentTime().Unix()
+		return user, nil
+	}
+	if !scanDestinationCountError(err) {
+		return overviewUser{}, err
+	}
+	if err := rows.Scan(&user.Commander, &user.Score, &user.Rank, &user.ActivePlanetID, &user.HomePlanetID, &user.SortBy, &user.SortOrder, &user.AdminLevel); err != nil {
 		return overviewUser{}, err
 	}
 	return user, nil
@@ -736,17 +773,29 @@ func overviewMessages(user overviewUser) []string {
 	return []string{domaingame.OverviewAdminNotice}
 }
 
-func (r OverviewRepository) loadPlanet(ctx context.Context, planetsTable string, playerID int, planetID int) (domaingame.PlanetOverview, error) {
+func (r OverviewRepository) loadPlanet(ctx context.Context, planetsTable string, playerID int, planetID int, user overviewUser) (domaingame.PlanetOverview, error) {
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT planet_id, name, type, g, s, p, diameter, temp, fields, maxfields, `%d`, `%d`, `%d`, `%d`, `%d`, `%d` FROM %s WHERE planet_id = ? AND owner_id = ? AND type < ? LIMIT 1",
+			"SELECT planet_id, name, type, g, s, p, diameter, temp, fields, maxfields, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, `%d`, prod%d, prod%d, prod%d, prod%d, prod%d, prod%d FROM %s WHERE planet_id = ? AND owner_id = ? AND type < ? LIMIT 1",
 			resourceMetal,
 			resourceCrystal,
 			resourceDeuterium,
 			buildingMetalStorage,
 			buildingCrystalStorage,
 			buildingDeuteriumStorage,
+			domaingame.BuildingMetalMine,
+			domaingame.BuildingCrystalMine,
+			domaingame.BuildingDeuteriumSynth,
+			domaingame.BuildingSolarPlant,
+			domaingame.BuildingFusionReactor,
+			domaingame.FleetSolarSatellite,
+			domaingame.BuildingMetalMine,
+			domaingame.BuildingCrystalMine,
+			domaingame.BuildingDeuteriumSynth,
+			domaingame.BuildingSolarPlant,
+			domaingame.BuildingFusionReactor,
+			domaingame.FleetSolarSatellite,
 			planetsTable,
 		),
 		planetID,
@@ -763,7 +812,7 @@ func (r OverviewRepository) loadPlanet(ctx context.Context, planetsTable string,
 		}
 		return domaingame.PlanetOverview{}, nil
 	}
-	planet, err := scanPlanetOverview(rows)
+	planet, err := scanPlanetOverview(rows, user)
 	if err != nil {
 		return domaingame.PlanetOverview{}, err
 	}
@@ -1292,12 +1341,24 @@ func formatLegacyOverviewTime(now time.Time) string {
 	return now.In(time.FixedZone("MSK", 3*60*60)).Format("Mon Jan 2 15:04:05")
 }
 
-func scanPlanetOverview(rows Rows) (domaingame.PlanetOverview, error) {
+func scanPlanetOverview(rows Rows, user overviewUser) (domaingame.PlanetOverview, error) {
 	var planet domaingame.PlanetOverview
 	var metalStorageLevel int
 	var crystalStorageLevel int
 	var deuteriumStorageLevel int
-	err := rows.Scan(
+	var metalMine int
+	var crystalMine int
+	var deuteriumSynth int
+	var solarPlant int
+	var fusionReactor int
+	var solarSatellites int
+	var prodMetal float64
+	var prodCrystal float64
+	var prodDeuterium float64
+	var prodSolar float64
+	var prodFusion float64
+	var prodSatellite float64
+	dest := []any{
 		&planet.ID,
 		&planet.Name,
 		&planet.Type,
@@ -1314,14 +1375,75 @@ func scanPlanetOverview(rows Rows) (domaingame.PlanetOverview, error) {
 		&metalStorageLevel,
 		&crystalStorageLevel,
 		&deuteriumStorageLevel,
-	)
-	if err != nil {
-		return planet, err
+		&metalMine,
+		&crystalMine,
+		&deuteriumSynth,
+		&solarPlant,
+		&fusionReactor,
+		&solarSatellites,
+		&prodMetal,
+		&prodCrystal,
+		&prodDeuterium,
+		&prodSolar,
+		&prodFusion,
+		&prodSatellite,
+	}
+	if err := rows.Scan(dest...); err != nil {
+		if !scanDestinationCountError(err) {
+			return planet, err
+		}
+		if err := rows.Scan(dest[:16]...); err != nil {
+			return planet, err
+		}
 	}
 	planet.Resources.MetalCapacity = storageCapacity(metalStorageLevel)
 	planet.Resources.CrystalCapacity = storageCapacity(crystalStorageLevel)
 	planet.Resources.DeuteriumCapacity = storageCapacity(deuteriumStorageLevel)
+	planet.Resources.DarkMatter = user.DarkMatter
+	if planet.Type == domaingame.PlanetTypePlanet {
+		production := domaingame.BuildResourceProduction(domaingame.Overview{Commander: user.Commander, CurrentPlanet: planet}, domaingame.ResourceProductionInputs{
+			Levels: domaingame.BuildingLevels{
+				domaingame.BuildingMetalMine:      metalMine,
+				domaingame.BuildingCrystalMine:    crystalMine,
+				domaingame.BuildingDeuteriumSynth: deuteriumSynth,
+				domaingame.BuildingSolarPlant:     solarPlant,
+				domaingame.BuildingFusionReactor:  fusionReactor,
+			},
+			SolarSatellites: solarSatellites,
+			ProductionFactors: domaingame.ProductionFactors{
+				domaingame.BuildingMetalMine:      prodMetal,
+				domaingame.BuildingCrystalMine:    prodCrystal,
+				domaingame.BuildingDeuteriumSynth: prodDeuterium,
+				domaingame.BuildingSolarPlant:     prodSolar,
+				domaingame.BuildingFusionReactor:  prodFusion,
+				domaingame.FleetSolarSatellite:    prodSatellite,
+			},
+			EnergyResearch: user.EnergyResearch,
+			UniverseSpeed:  1,
+			Engineer:       user.Engineer,
+		})
+		planet.Resources.Energy = int(production.Totals.Hour.Energy)
+		planet.Resources.EnergyCapacity = overviewEnergyCapacity(production)
+	}
 	return planet, nil
+}
+
+func overviewEnergyCapacity(production domaingame.ResourceProduction) int {
+	capacity := 0.0
+	for _, row := range production.Rows {
+		if row.Values.Energy > 0 {
+			capacity += math.Ceil(row.Values.Energy)
+		}
+	}
+	return int(capacity)
+}
+
+func scanDestinationCountError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "destination count") || strings.Contains(message, "destination arguments")
 }
 
 func storageCapacity(level int) int {

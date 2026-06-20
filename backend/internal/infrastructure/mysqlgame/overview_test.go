@@ -17,8 +17,8 @@ import (
 
 func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	queryer := &fakeQueryer{results: []fakeQueryResult{
-		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 7, 99, 1, 0, 0, 0})},
-		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 12, 163, 1234.5, 234.5, 12.0, 0, 1, 2})},
+		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 7, 99, 1, 0, 0, 0, 30, 7, 3, int64(2000000000)})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 12, 163, 1234.5, 234.5, 12.0, 0, 1, 2, 1, 1, 0, 3, 0, 2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0})},
 		{rows: fakeRowsFromValues(
 			[]any{99, "Arakis", 1, 1, 2, 3},
 			[]any{100, "Colony", 1, 1, 2, 4},
@@ -59,6 +59,11 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	}
 	if overview.CurrentPlanet.Resources.Metal != 1234.5 || overview.CurrentPlanet.Resources.Crystal != 234.5 || overview.CurrentPlanet.Resources.Deuterium != 12 {
 		t.Fatalf("unexpected resources: %+v", overview.CurrentPlanet.Resources)
+	}
+	if overview.CurrentPlanet.Resources.DarkMatter != 37 ||
+		overview.CurrentPlanet.Resources.Energy != 140 ||
+		overview.CurrentPlanet.Resources.EnergyCapacity != 162 {
+		t.Fatalf("unexpected premium or energy resources: %+v", overview.CurrentPlanet.Resources)
 	}
 	if overview.CurrentPlanet.Resources.MetalCapacity != 100000 ||
 		overview.CurrentPlanet.Resources.CrystalCapacity != 150000 ||

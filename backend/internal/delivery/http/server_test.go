@@ -839,6 +839,9 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 					Metal:             1234.5,
 					Crystal:           234.5,
 					Deuterium:         12,
+					DarkMatter:        37,
+					Energy:            140,
+					EnergyCapacity:    162,
 					MetalCapacity:     100000,
 					CrystalCapacity:   150000,
 					DeuteriumCapacity: 200000,
@@ -892,6 +895,9 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	if response.Overview.Score.Points != 123 ||
 		response.Overview.CurrentPlanet.Coordinates.Position != 3 ||
 		response.Overview.CurrentPlanet.Resources.Metal != 1234.5 ||
+		response.Overview.CurrentPlanet.Resources.DarkMatter != 37 ||
+		response.Overview.CurrentPlanet.Resources.Energy != 140 ||
+		response.Overview.CurrentPlanet.Resources.EnergyCapacity != 162 ||
 		response.Overview.CurrentPlanet.Resources.CrystalCapacity != 150000 ||
 		response.Overview.CurrentPlanet.BuildQueue == nil ||
 		response.Overview.CurrentPlanet.BuildQueue.Name != "Metal Mine" ||

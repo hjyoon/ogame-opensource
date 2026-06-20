@@ -271,6 +271,9 @@ type Resources = {
   metal: number;
   crystal: number;
   deuterium: number;
+  darkMatter: number;
+  energy: number;
+  energyCapacity: number;
   metalCapacity: number;
   crystalCapacity: number;
   deuteriumCapacity: number;
@@ -1087,6 +1090,27 @@ export function LegacyGameOverview({
   const optionsActionIssue = optionsStatus?.authenticated ? optionsStatus.actionIssue : undefined;
   const hasHeader = route.key !== "notes" && route.key !== "galaxy" && route.key !== "report";
   const hasMenu = route.key !== "notes" && route.key !== "report";
+  const hasOverviewPageMessage =
+    hasHeader && Boolean(overview && route.key === "overview" && overview.messages && overview.messages.length > 0);
+  const pageMessageRef = React.useRef<HTMLDivElement | null>(null);
+  const [overviewContentLayout, setOverviewContentLayout] = React.useState<{ height: string; top: number } | null>(null);
+  React.useLayoutEffect(() => {
+    if (route.key !== "overview") {
+      setOverviewContentLayout(null);
+      return;
+    }
+    const updateOverviewContentLayout = () => {
+      const headerHeight = 81;
+      const messageHeight = pageMessageRef.current?.offsetHeight ?? 0;
+      const errorHeight = 0;
+      const top = headerHeight + errorHeight + messageHeight + 10;
+      const height = `${Math.max(0, window.innerHeight - messageHeight - errorHeight - headerHeight - 20)}px`;
+      setOverviewContentLayout((current) => (current?.top === top && current.height === height ? current : { height, top }));
+    };
+    updateOverviewContentLayout();
+    window.addEventListener("resize", updateOverviewContentLayout);
+    return () => window.removeEventListener("resize", updateOverviewContentLayout);
+  }, [hasOverviewPageMessage, route.key]);
   const contentClassName =
     route.key === "overview"
       ? "legacy-content legacy-content-overview"
@@ -1097,7 +1121,9 @@ export function LegacyGameOverview({
         : "legacy-content";
   const contentStyle: React.CSSProperties =
     route.key === "overview"
-      ? { height: "calc(100vh - 124px)" }
+      ? overviewContentLayout
+        ? { height: overviewContentLayout.height, top: `${overviewContentLayout.top}px` }
+        : { height: "calc(100vh - 124px)" }
       : route.key === "galaxy" || route.key === "notes" || route.key === "report"
         ? { height: "calc(100vh - 20px)" }
         : { height: "calc(100vh - 101px)" };
@@ -1119,8 +1145,8 @@ export function LegacyGameOverview({
         </div>
       ) : null}
       {hasMenu ? <LegacyLeftMenu activeRoute={route} /> : null}
-      {hasHeader && overview && route.key === "overview" && overview.messages && overview.messages.length > 0 ? (
-        <LegacyPageMessage messages={overview.messages} />
+      {hasOverviewPageMessage && overview?.messages ? (
+        <LegacyPageMessage ref={pageMessageRef} messages={overview.messages} />
       ) : null}
       <section className={contentClassName} id="content" style={contentStyle}>
         {error ? <LegacyMessage tone="error" text={error} /> : null}
@@ -1320,9 +1346,12 @@ export function LegacyGameOverview({
   );
 }
 
-function LegacyPageMessage({ messages }: { messages: string[] }) {
+const LegacyPageMessage = React.forwardRef<HTMLDivElement, { messages: string[] }>(function LegacyPageMessage(
+  { messages },
+  ref
+) {
   return (
-    <div className="legacy-page-messagebox" id="messagebox" style={{ display: "block" }}>
+    <div className="legacy-page-messagebox" id="messagebox" ref={ref} style={{ display: "block" }}>
       <center>
         {messages.map((message, index) => (
           <React.Fragment key={`${message}-${index}`}>
@@ -1333,7 +1362,7 @@ function LegacyPageMessage({ messages }: { messages: string[] }) {
       </center>
     </div>
   );
-}
+});
 
 function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
   const planet = overview.currentPlanet;
@@ -1346,10 +1375,23 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
       capacity: planet.resources.deuteriumCapacity,
       img: `${skinBase}/images/deuterium.gif`
     },
-    { name: "Dark Matter", value: 0, img: `${gameImageBase}/dm_klein_2.jpg` },
-    { name: "Energy", value: 0, secondary: 0, img: `${skinBase}/images/energie.gif` }
+    { name: "Dark Matter", value: planet.resources.darkMatter, img: `${gameImageBase}/dm_klein_2.jpg` },
+    {
+      name: "Energy",
+      value: planet.resources.energy,
+      secondary: planet.resources.energyCapacity,
+      color: planet.resources.energy < 0 ? "#ff0000" : undefined,
+      signed: true,
+      img: `${skinBase}/images/energie.gif`
+    }
   ];
-  const officers = ["commander", "admiral", "ingenieur", "geologe", "technokrat"];
+  const officers = [
+    { alt: "Commander", image: "commander" },
+    { alt: "Admiral", image: "admiral" },
+    { alt: "Engineer", image: "ingenieur" },
+    { alt: "Geologist", image: "geologe" },
+    { alt: "Technocrat", image: "technokrat" }
+  ];
 
   return (
     <table className="legacy-header-table header">
@@ -1413,8 +1455,8 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
                 <tr className="header">
                   {resources.map((resource) => (
                     <td align="center" className="legacy-header-cell header" key={resource.name} width={90}>
-                      <LegacyFont color={resource.capacity !== undefined && resource.value >= resource.capacity ? "#ff0000" : undefined}>
-                        {formatLegacyNumber(resource.value)}
+                      <LegacyFont color={resource.color ?? (resource.capacity !== undefined && resource.value >= resource.capacity ? "#ff0000" : undefined)}>
+                        {resource.signed ? formatLegacySignedNumber(resource.value) : formatLegacyNumber(resource.value)}
                       </LegacyFont>
                       {resource.secondary !== undefined ? `/${formatLegacyNumber(resource.secondary)}` : null}
                     </td>
@@ -1424,12 +1466,14 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
             </table>
           </td>
           <td className="legacy-header-cell header">
-            <table className="legacy-officer-table header">
+            <table align="left" className="legacy-officer-table header">
               <tbody>
                 <tr className="header">
                   {officers.map((officer) => (
-                    <td align="center" className="legacy-header-cell header" key={officer} width={35}>
-                      <img alt="" height={32} src={`${gameImageBase}/${officer}_ikon_un.gif`} width={32} />
+                    <td align="center" className="legacy-header-cell header" key={officer.image} width={35}>
+                      <a accessKey="i" href={gameRouteURL("/game/officers", window.location.search)}>
+                        <img alt={officer.alt} height={32} src={`${gameImageBase}/${officer.image}_ikon_un.gif`} width={32} />
+                      </a>
                     </td>
                   ))}
                   <td align="center" className="legacy-header-cell header" />

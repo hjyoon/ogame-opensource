@@ -77,6 +77,9 @@ type Resources struct {
 	Metal             float64
 	Crystal           float64
 	Deuterium         float64
+	DarkMatter        int
+	Energy            int
+	EnergyCapacity    int
 	MetalCapacity     int
 	CrystalCapacity   int
 	DeuteriumCapacity int
