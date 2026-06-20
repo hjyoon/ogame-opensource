@@ -4909,9 +4909,9 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
         <tr>
           <td className="legacy-c c" colSpan={4}>
             <a href={gameRouteURL("/game/rename-planet", window.location.search)} title="Planet menu">
-              Planet "{planet.name}"
-            </a>{" "}
-            ({overview.commander})
+              {`Planet "${planet.name}"`}
+            </a>
+            {`     (${overview.commander})`}
           </td>
         </tr>
         {overview.unreadMessages > 0 ? (
@@ -4984,14 +4984,17 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
         <tr>
           <th> Diameter</th>
           <th colSpan={3}>
-            {formatLegacyNumber(planet.diameter)} км {"     ("}
-            <a title="Developed fields">{planet.fields} </a> / <a title="max. developed fields">{planet.maxFields} </a> fields){"   "}
+            {`${formatLegacyNumber(planet.diameter)} км     (`}
+            <a title="Developed fields">{`${planet.fields} `}</a>
+            {" / "}
+            <a title="max. developed fields">{`${planet.maxFields} `}</a>
+            {" fields)   "}
           </th>
         </tr>
         <tr>
           <th> Temperature </th>
           <th colSpan={3}>
-            approx. {planet.temperature}°C to {planet.temperature + 40}°C
+            {`approx. ${planet.temperature}°C to ${planet.temperature + 40}°C`}
           </th>
         </tr>
         <tr>
