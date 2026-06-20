@@ -2,12 +2,12 @@
 
 Updated: 2026-06-20 KST, branch `hjyoon/golang`.
 
-React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep <4KB; split docs first.
+React 19/Bun 1.3 + Go 1.25 `net/http` tracker; keep <4KB.
 
 ## Current State
 
 - Clean Architecture baseline exists under `backend/internal/{domain,application,infrastructure,delivery}`.
-- Go serves `frontend/dist`, logs JSON, and runs from `compose.golang.yaml` on port `8890`.
+- Go serves `frontend/dist`, logs JSON, and runs from the current `compose.golang.yaml` `goapp` container only.
 - `/api/healthz` reports tool targets plus static/legacy asset readiness.
 - Natural routes, `.php` aliases, CSS bootstrap, smoke routes, visual specs, public routes, and aliases share manifests.
 - Legacy game `page=` aliases route to migrated screens or explicit pending screens instead of falling back to overview.
@@ -45,7 +45,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep <4KB; split docs first.
 - Go internal coverage gate: `97.0% >= 97%`.
 - Go smoke JSON: `all_pass: true`.
 
-Full legacy PHP E2E was not run for this step; keep PHP as oracle.
+Full legacy PHP E2E not run this step; PHP stays oracle.
 
 ## Remaining Work
 

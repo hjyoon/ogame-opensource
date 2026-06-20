@@ -8,7 +8,7 @@ This branch stages migration from legacy PHP to:
 - Backend: Go 1.25 `net/http`.
 - Oracle: Docker PHP app and `testing/e2e`.
 
-Do not remove or weaken legacy behavior while porting. Each migrated flow must be checked against the existing E2E coverage or a new compatibility case.
+Do not remove or weaken legacy behavior. Check each migrated flow against existing E2E or a new compatibility case.
 
 ## Migration Interpretation
 
@@ -54,6 +54,8 @@ Migration smoke:
 testing/e2e/run-golang-migration-qa.sh
 ```
 
+Keep PHP as oracle; keep one current Go `goapp` container only.
+
 During page migration, extend Playwright visual E2E before claiming parity. Public: `testing/e2e/run-playwright-visual-e2e.sh`; auth: `testing/e2e/run-playwright-auth-visual-e2e.sh`. State if auth diff/layout is enforced or audit-only.
 
 Set `OGAME_RUN_LEGACY_E2E=0` only for local frontend/backend smoke work, never final game-behavior validation. Port HTTP black-box checks to Go with the same JSON result shape.
@@ -82,7 +84,7 @@ backend/scripts/test-coverage.sh
 
 ## Markdown Limit
 
-Keep every Markdown file at or below 4KB. If a document needs more detail, split it by topic and link the parts from a short index.
+Keep each Markdown file <=4KB; split larger docs by topic and link them from a short index.
 
 ## Status Tracking
 

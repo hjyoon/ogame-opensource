@@ -7,7 +7,7 @@ This is revived OGame v 0.84 with old design.
 
 ## Go/React migration
 
-The `hjyoon/golang` branch starts a staged port to React 19 on Bun 1.3 and Go 1.25 with the native `net/http` module. The legacy PHP app remains the compatibility oracle until each flow is fully migrated.
+The `hjyoon/golang` branch starts a staged port to React 19 on Bun 1.3 and Go 1.25 with the native `net/http` module. PHP stays the oracle; keep only the latest Go `goapp` container.
 
 New migration code must follow Clean Architecture. Do not copy PHP file structure or `.php` routes one-for-one; implement natural internal React and Go modules. Visible page composition, skin, density, and assets must match legacy PHP screens unless a documented compatibility exception says otherwise. Game mechanics must remain strictly equivalent to the legacy engine. Go serves the React production build; Bun is only the frontend build tool.
 

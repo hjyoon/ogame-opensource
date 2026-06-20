@@ -40,7 +40,7 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
   if [ "${OGAME_KEEP_GO_DOCKER:-0}" != "1" ]; then
     trap 'docker compose -f "$ROOT_DIR/compose.golang.yaml" down >/dev/null 2>&1 || true' EXIT INT TERM
   fi
-  docker compose -f "$ROOT_DIR/compose.golang.yaml" up -d --build goapp
+  docker compose -f "$ROOT_DIR/compose.golang.yaml" up -d --build --force-recreate goapp
   wait_for_url "$GO_BASE_URL/api/healthz"
   wait_for_url "$GO_BASE_URL/"
   if command -v bun >/dev/null 2>&1; then
