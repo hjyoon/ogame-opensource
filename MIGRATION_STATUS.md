@@ -41,7 +41,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker; keep <4KB.
 - `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`: passing.
 - Go smoke covers health, routes, assets, MailHog, activation cleanup/reuse, auth/session expiry/security, reads/mutations, guards, and privacy.
 - Playwright visual/CSR E2E passes Chromium/Firefox; auth filters pages, normalizes dynamic chrome, and consumes `lgn` once.
-- Auth visual: overview 0%, stats 2.09%/0.29%, tech 8.20%/4.56%; high diffs remain resources/fleet.
+- Auth visual: overview 0%, stats 2.09/0.29%, tech 8.05/4.56%, res 4.15%; fleet high.
 - Go internal coverage gate: `97.0% >= 97%`.
 - Go smoke JSON: `all_pass: true`.
 

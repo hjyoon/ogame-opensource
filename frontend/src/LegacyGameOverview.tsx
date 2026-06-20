@@ -4386,6 +4386,7 @@ function TechnologyTable({ technology }: { technology: GameTechnology }) {
               {group.items.map((item) => (
                 <tr data-technology-row={item.id} key={item.id}>
                   <td className="legacy-l l">
+                    {" "}
                     <table border={0} cellPadding={0} cellSpacing={0} className="legacy-technology-name-table" width="100%">
                       <tbody>
                         <tr>
@@ -4393,6 +4394,7 @@ function TechnologyTable({ technology }: { technology: GameTechnology }) {
                             <a className="legacy-technology-name-link" href={technologyInfoURL(item.id)}>
                               {item.name}
                             </a>
+                            {" "}
                           </td>
                           <td align="right">
                             {item.detailsAvailable ? <a href={technologyDetailURL(item.id)}>[i]</a> : "\u00a0"}
@@ -4402,12 +4404,12 @@ function TechnologyTable({ technology }: { technology: GameTechnology }) {
                     </table>
                   </td>
                   <td className="legacy-l l">
+                    {" "}
                     {item.requirements.map((requirement) => (
                       <React.Fragment key={requirement.id}>
-                        <span style={{ color: requirement.met ? "#00ff00" : "#ff0000" }}>
-                          {requirement.name} (level {requirement.level})
-                        </span>
+                        {legacyFont(requirement.met ? "#00ff00" : "#ff0000", `${requirement.name} (level ${requirement.level})`)}
                         <br />
+                        {" "}
                       </React.Fragment>
                     ))}
                   </td>
@@ -4457,13 +4459,14 @@ function TechnologyDetailsTable({ details }: { details: GameTechnologyDetails })
                         <tbody>
                           <tr>
                             <td align="left">
-                              <span style={{ color: requirement.met ? "#00ff00" : "#ff0000" }}>
-                                {" "}
-                                {requirement.name} (level {requirement.level}){" "}
-                              </span>
+                              {" "}
+                              {legacyFont(requirement.met ? "#00ff00" : "#ff0000", ` ${requirement.name} (level ${requirement.level}) `)}
+                              {" "}
                             </td>
                             <td align="right">
+                              {" "}
                               <a href={technologyDetailURL(requirement.id)}>[i]</a>
+                              {" "}
                             </td>
                           </tr>
                         </tbody>
@@ -4482,6 +4485,10 @@ function TechnologyDetailsTable({ details }: { details: GameTechnologyDetails })
       <br />
     </div>
   );
+}
+
+function legacyFont(color: string, children: React.ReactNode): React.ReactElement {
+  return React.createElement("font", { color }, children);
 }
 
 const resourceColumns: { key: keyof Pick<ResourceProductionValues, "metal" | "crystal" | "deuterium" | "energy">; label: string }[] = [
@@ -4791,14 +4798,14 @@ function ResourcesTable({
               <th colSpan={2}>Basic Income</th>
               {resourceColumns.map((column) => (
                 <td className="legacy-k k" key={column.key}>
-                  {formatLegacyPlainNumber(resourceValue(resources.natural, column.key))}
+                  {formatLegacyRawInteger(resourceValue(resources.natural, column.key))}
                 </td>
               ))}
             </tr>
             {resources.rows.map((row) => (
               <tr data-resource-row={row.id} key={row.id}>
                 <th>
-                  {row.name} ({row.id === 212 ? "Amount" : "level"} {row.level})
+                  {row.name} ({row.id === 212 ? `${row.level} available` : `Level ${row.level}`})
                 </th>
                 <th>&nbsp;</th>
                 {resourceColumns.map((column) => (
@@ -4815,6 +4822,7 @@ function ResourcesTable({
                 </th>
               </tr>
             ))}
+            <tr></tr>
             <tr>
               <th colSpan={2}>Storage capacity</th>
               {resourceColumns.map((column) => (
@@ -4865,7 +4873,7 @@ function ResourceProductionCell({
   const value = resourceValue(values, column);
   const raw = column === "energy" ? values.energyRaw : value;
   const text =
-    column === "energy" && raw < 0
+    column === "energy" && raw <= 0
       ? `${formatLegacyPlainNumber(Math.abs(value))}/${formatLegacyPlainNumber(Math.abs(raw))}`
       : formatLegacySignedNumber(value);
   const color = raw > 0 || value > 0 ? "#00FF00" : raw < 0 || value < 0 ? "#FF0000" : "#FFFFFF";
@@ -5544,6 +5552,10 @@ function formatLegacyNumber(value: number): string {
 
 function formatLegacyPlainNumber(value: number): string {
   return Math.round(Math.max(0, value)).toLocaleString("de-DE");
+}
+
+function formatLegacyRawInteger(value: number): string {
+  return String(Math.round(Math.max(0, value)));
 }
 
 function formatLegacySignedNumber(value: number): string {

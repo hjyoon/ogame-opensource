@@ -939,6 +939,10 @@ body.legacy-game-body {
   font-weight: bold;
 }
 
+.legacy-game-shell .legacy-resources-table td.legacy-c {
+  text-align: start;
+}
+
 .legacy-options-table select,
 .legacy-options-table input,
 .legacy-resources-table select,
