@@ -19,7 +19,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 
 - Overview covers `cp`, `lgn`, notices, unread/build/incoming/missile/fleet pseudo-events, rename/delete blockers, queue markers, stats/ranks, and active planet restore.
 - Buildings now ports legacy queue state, Commander queue rows, non-Commander countdowns, add/remove/demolish shortcuts, info-page demolish links, due-queue completion refresh, moon resource capacity behavior, and post-build resource header sync.
-- Buildings Build, Cancel refund, and info-page Demolish were compared against legacy: DB cost/refund, buildqueue/global queue rows, and displayed resources pass Chromium/Firefox.
+- Buildings Build, Cancel refund, info-page Demolish, and Demolish completion were compared against legacy: DB cost/refund, queue rows, level/fields/score, and displayed resources pass Chromium/Firefox.
 - Empire ports Commander-gated `imperium`, build queue markers, and legacy GET add/destroy/remove shortcuts.
 - Fleet dispatch covers resource math, cargo/speed, hold fuel/clamps, ACS guards/sync, colonize/exp targets, templates, and recall; deeper mission restrictions remain.
 - Galaxy covers clamp, rows, statuses, moon/debris/actions, slot/deut warnings, quick links, and target prefill; instant actions remain.
