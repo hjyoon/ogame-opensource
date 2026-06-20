@@ -1396,10 +1396,16 @@ func scanPlanetOverview(rows Rows, user overviewUser) (domaingame.PlanetOverview
 			return planet, err
 		}
 	}
-	planet.Resources.MetalCapacity = storageCapacity(metalStorageLevel)
-	planet.Resources.CrystalCapacity = storageCapacity(crystalStorageLevel)
-	planet.Resources.DeuteriumCapacity = storageCapacity(deuteriumStorageLevel)
 	planet.Resources.DarkMatter = user.DarkMatter
+	if planet.Type == domaingame.PlanetTypeMoon {
+		planet.Resources.MetalCapacity = 0
+		planet.Resources.CrystalCapacity = 0
+		planet.Resources.DeuteriumCapacity = 0
+	} else {
+		planet.Resources.MetalCapacity = storageCapacity(metalStorageLevel)
+		planet.Resources.CrystalCapacity = storageCapacity(crystalStorageLevel)
+		planet.Resources.DeuteriumCapacity = storageCapacity(deuteriumStorageLevel)
+	}
 	if planet.Type == domaingame.PlanetTypePlanet {
 		production := domaingame.BuildResourceProduction(domaingame.Overview{Commander: user.Commander, CurrentPlanet: planet}, domaingame.ResourceProductionInputs{
 			Levels: domaingame.BuildingLevels{

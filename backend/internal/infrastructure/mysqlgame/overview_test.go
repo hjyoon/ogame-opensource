@@ -1108,6 +1108,11 @@ func TestOverviewRepositoryMatchesLegacyPlanetSelectionEdges(t *testing.T) {
 		if overview.CurrentPlanet.ID != 200 || overview.CurrentPlanet.Type != 0 || runner.execArgs[0] != 200 {
 			t.Fatalf("owned moon should become active, overview=%+v exec=%+v", overview.CurrentPlanet, runner.execArgs)
 		}
+		if overview.CurrentPlanet.Resources.MetalCapacity != 0 ||
+			overview.CurrentPlanet.Resources.CrystalCapacity != 0 ||
+			overview.CurrentPlanet.Resources.DeuteriumCapacity != 0 {
+			t.Fatalf("moon resource capacities should match legacy zero-capacity header colors, got %+v", overview.CurrentPlanet.Resources)
+		}
 	})
 }
 

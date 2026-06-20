@@ -51,8 +51,13 @@ func (r BuildingsRepository) GetBuildings(ctx context.Context, query appgame.Bui
 	if err != nil {
 		return domaingame.Buildings{}, err
 	}
+	buildQueueTable, err := tableName(r.prefix, "buildqueue")
+	if err != nil {
+		return domaingame.Buildings{}, err
+	}
+	now := int(r.now().Unix())
 	if r.execer != nil {
-		if err := r.FinishDueBuildingQueues(ctx, int(r.now().Unix())); err != nil {
+		if err := r.FinishDueBuildingQueues(ctx, now); err != nil {
 			return domaingame.Buildings{}, err
 		}
 	}
@@ -79,8 +84,16 @@ func (r BuildingsRepository) GetBuildings(ctx context.Context, query appgame.Bui
 	if err != nil {
 		return domaingame.Buildings{}, err
 	}
+	commanderActive, err := r.loadBuildingCommanderActive(ctx, usersTable, query.PlayerID, now)
+	if err != nil {
+		return domaingame.Buildings{}, err
+	}
+	queue, err := r.loadBuildingQueueEntries(ctx, buildQueueTable, overview.CurrentPlanet.ID, now)
+	if err != nil {
+		return domaingame.Buildings{}, err
+	}
 
-	return domaingame.BuildBuildings(overview, levels, research, speed), nil
+	return domaingame.BuildBuildingsWithQueue(overview, levels, research, speed, commanderActive, queue), nil
 }
 
 func (r BuildingsRepository) MutateBuildings(ctx context.Context, query appgame.BuildingsMutationQuery) (appgame.BuildingsMutationOutcome, error) {
@@ -187,6 +200,28 @@ func (r BuildingsRepository) loadResearchLevels(ctx context.Context, usersTable 
 	return levels, nil
 }
 
+func (r BuildingsRepository) loadBuildingCommanderActive(ctx context.Context, usersTable string, playerID int, now int) (bool, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COALESCE(com_until, 0) FROM %s WHERE player_id = ? LIMIT 1", usersTable), playerID)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
+		return false, errors.New("building commander state not found")
+	}
+	var commanderUntil int64
+	if err := rows.Scan(&commanderUntil); err != nil {
+		return false, err
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return commanderUntil > int64(now), nil
+}
+
 func (r BuildingsRepository) loadUniverseSpeed(ctx context.Context) (float64, error) {
 	uniTable, err := tableName(r.prefix, "uni")
 	if err != nil {
@@ -214,6 +249,35 @@ func (r BuildingsRepository) loadUniverseSpeed(ctx context.Context) (float64, er
 		return 1, nil
 	}
 	return speed, nil
+}
+
+func (r BuildingsRepository) loadBuildingQueueEntries(ctx context.Context, buildQueueTable string, planetID int, now int) ([]domaingame.BuildingQueueEntry, error) {
+	rows, err := r.loadBuildQueueRows(ctx, buildQueueTable, planetID)
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]domaingame.BuildingQueueEntry, 0, len(rows))
+	for _, row := range rows {
+		name, ok := domaingame.BuildingName(row.TechID)
+		if !ok {
+			continue
+		}
+		remaining := row.End - now
+		if remaining < 0 {
+			remaining = 0
+		}
+		entries = append(entries, domaingame.BuildingQueueEntry{
+			ListID:           row.ListID,
+			TechID:           row.TechID,
+			Name:             name,
+			Level:            row.Level,
+			Destroy:          row.Destroy != 0,
+			Start:            row.Start,
+			End:              row.End,
+			RemainingSeconds: remaining,
+		})
+	}
+	return entries, nil
 }
 
 func numericColumns(ids []int) string {

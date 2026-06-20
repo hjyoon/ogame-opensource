@@ -78,10 +78,12 @@ const (
 const buildingDurationFactor = 2500
 
 type Buildings struct {
-	Commander      string
-	CurrentPlanet  PlanetOverview
-	PlanetSwitcher []PlanetSummary
-	Items          []BuildingItem
+	Commander       string
+	CommanderActive bool
+	CurrentPlanet   PlanetOverview
+	PlanetSwitcher  []PlanetSummary
+	Queue           []BuildingQueueEntry
+	Items           []BuildingItem
 }
 
 type BuildingsActionIssue struct {
@@ -99,6 +101,17 @@ type BuildingItem struct {
 	DurationSeconds int
 	CanBuild        bool
 	Action          string
+}
+
+type BuildingQueueEntry struct {
+	ListID           int
+	TechID           int
+	Name             string
+	Level            int
+	Destroy          bool
+	Start            int
+	End              int
+	RemainingSeconds int
 }
 
 type BuildingCost struct {
@@ -192,6 +205,14 @@ func BuildingAllowedOnPlanet(id int, planetType int) bool {
 	return ok && spec.allowedPlanetTypes[planetType]
 }
 
+func BuildingName(id int) (string, bool) {
+	spec, ok := buildingSpecByID(id)
+	if !ok {
+		return "", false
+	}
+	return spec.name, true
+}
+
 func BuildingCanDemolish(id int) bool {
 	_, ok := buildingSpecByID(id)
 	if !ok {
@@ -281,6 +302,10 @@ func DefenseIDs() []int {
 }
 
 func BuildBuildings(overview Overview, levels BuildingLevels, research ResearchLevels, speed float64) Buildings {
+	return BuildBuildingsWithQueue(overview, levels, research, speed, false, nil)
+}
+
+func BuildBuildingsWithQueue(overview Overview, levels BuildingLevels, research ResearchLevels, speed float64, commanderActive bool, queue []BuildingQueueEntry) Buildings {
 	if speed <= 0 {
 		speed = 1
 	}
@@ -309,10 +334,12 @@ func BuildBuildings(overview Overview, levels BuildingLevels, research ResearchL
 		})
 	}
 	return Buildings{
-		Commander:      overview.Commander,
-		CurrentPlanet:  overview.CurrentPlanet,
-		PlanetSwitcher: overview.PlanetSwitcher,
-		Items:          items,
+		Commander:       overview.Commander,
+		CommanderActive: commanderActive,
+		CurrentPlanet:   overview.CurrentPlanet,
+		PlanetSwitcher:  overview.PlanetSwitcher,
+		Queue:           queue,
+		Items:           items,
 	}
 }
 

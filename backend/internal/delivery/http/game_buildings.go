@@ -27,10 +27,12 @@ type gameBuildingsMutationRequest struct {
 }
 
 type gameBuildingsSummary struct {
-	Commander      string                      `json:"commander"`
-	CurrentPlanet  gamePlanetOverviewResponse  `json:"currentPlanet"`
-	PlanetSwitcher []gamePlanetSummaryResponse `json:"planetSwitcher"`
-	Items          []gameBuildingItemResponse  `json:"items"`
+	Commander       string                      `json:"commander"`
+	CommanderActive bool                        `json:"commanderActive"`
+	CurrentPlanet   gamePlanetOverviewResponse  `json:"currentPlanet"`
+	PlanetSwitcher  []gamePlanetSummaryResponse `json:"planetSwitcher"`
+	Queue           []gameBuildingQueueResponse `json:"queue"`
+	Items           []gameBuildingItemResponse  `json:"items"`
 }
 
 type gameBuildingItemResponse struct {
@@ -50,6 +52,17 @@ type gameBuildingCostResponse struct {
 	Crystal   float64 `json:"crystal"`
 	Deuterium float64 `json:"deuterium"`
 	Energy    float64 `json:"energy"`
+}
+
+type gameBuildingQueueResponse struct {
+	ListID           int    `json:"listId"`
+	TechID           int    `json:"techId"`
+	Name             string `json:"name"`
+	Level            int    `json:"level"`
+	Destroy          bool   `json:"destroy"`
+	Start            int    `json:"start"`
+	End              int    `json:"end"`
+	RemainingSeconds int    `json:"remainingSeconds"`
 }
 
 func (a app) handleGameBuildings(w http.ResponseWriter, r *http.Request) {
@@ -153,11 +166,17 @@ func toGameBuildingsSummary(buildings domaingame.Buildings) gameBuildingsSummary
 	for _, item := range buildings.Items {
 		items = append(items, toGameBuildingItemResponse(item))
 	}
+	queue := make([]gameBuildingQueueResponse, 0, len(buildings.Queue))
+	for _, entry := range buildings.Queue {
+		queue = append(queue, toGameBuildingQueueResponse(entry))
+	}
 	return gameBuildingsSummary{
-		Commander:      buildings.Commander,
-		CurrentPlanet:  toGamePlanetOverviewResponse(buildings.CurrentPlanet),
-		PlanetSwitcher: planets,
-		Items:          items,
+		Commander:       buildings.Commander,
+		CommanderActive: buildings.CommanderActive,
+		CurrentPlanet:   toGamePlanetOverviewResponse(buildings.CurrentPlanet),
+		PlanetSwitcher:  planets,
+		Queue:           queue,
+		Items:           items,
 	}
 }
 
@@ -179,6 +198,19 @@ func toGameBuildingItemResponse(item domaingame.BuildingItem) gameBuildingItemRe
 		DurationSeconds: item.DurationSeconds,
 		CanBuild:        item.CanBuild,
 		Action:          item.Action,
+	}
+}
+
+func toGameBuildingQueueResponse(entry domaingame.BuildingQueueEntry) gameBuildingQueueResponse {
+	return gameBuildingQueueResponse{
+		ListID:           entry.ListID,
+		TechID:           entry.TechID,
+		Name:             entry.Name,
+		Level:            entry.Level,
+		Destroy:          entry.Destroy,
+		Start:            entry.Start,
+		End:              entry.End,
+		RemainingSeconds: entry.RemainingSeconds,
 	}
 }
 

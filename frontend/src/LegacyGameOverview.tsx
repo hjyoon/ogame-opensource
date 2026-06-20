@@ -281,9 +281,22 @@ type Resources = {
 
 type GameBuildings = {
   commander: string;
+  commanderActive: boolean;
   currentPlanet: GamePlanetOverview;
   planetSwitcher: GamePlanetSummary[];
+  queue: GameBuildingQueueEntry[];
   items: GameBuildingItem[];
+};
+
+type GameBuildingQueueEntry = {
+  listId: number;
+  techId: number;
+  name: string;
+  level: number;
+  destroy: boolean;
+  start: number;
+  end: number;
+  remainingSeconds: number;
 };
 
 type GameResearch = {
@@ -851,6 +864,7 @@ type LegacyGameOverviewProps = {
   buildingsError: string | null;
   buildingsPending: boolean;
   onBuildingAction: (action: "add" | "destroy" | "remove", techID: number, listID?: number) => void;
+  onBuildingsRefresh: () => void;
   empireStatus: GameEmpireStatus | null;
   empireError: string | null;
   resourcesStatus: GameResourcesStatus | null;
@@ -979,6 +993,7 @@ export function LegacyGameOverview({
   buildingsError,
   buildingsPending,
   onBuildingAction,
+  onBuildingsRefresh,
   empireStatus,
   empireError,
   resourcesStatus,
@@ -1226,7 +1241,7 @@ export function LegacyGameOverview({
           <LegacyMessage tone="neutral" text="Loading buildings..." />
         ) : null}
         {buildings && route.key === "buildings" ? (
-          <BuildingsTable buildings={buildings} onAction={onBuildingAction} pending={buildingsPending} />
+          <BuildingsTable buildings={buildings} onAction={onBuildingAction} onComplete={onBuildingsRefresh} pending={buildingsPending} />
         ) : null}
         {overview && route.key === "empire" && !empire && !empireError && !empireIssue && !empireActionIssue ? (
           <LegacyMessage tone="neutral" text="Loading empire..." />
@@ -1375,7 +1390,7 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
       capacity: planet.resources.deuteriumCapacity,
       img: `${skinBase}/images/deuterium.gif`
     },
-    { name: "Dark Matter", value: planet.resources.darkMatter, img: `${gameImageBase}/dm_klein_2.jpg` },
+    { name: "Dark Matter", value: planet.resources.darkMatter, color: "#FFFFFF", img: `${gameImageBase}/dm_klein_2.jpg` },
     {
       name: "Energy",
       value: planet.resources.energy,
@@ -1779,75 +1794,221 @@ function galaxyTargetSearch(coordinates: Coordinates): string {
 function BuildingsTable({
   buildings,
   onAction,
+  onComplete,
   pending
 }: {
   buildings: GameBuildings;
   onAction: (action: "add" | "destroy" | "remove", techID: number, listID?: number) => void;
+  onComplete: () => void;
   pending: boolean;
 }) {
+  const activeQueue = buildings.queue[0];
   return (
     <table className="legacy-overview-table legacy-buildings-table" width={530}>
       <tbody>
+        {buildings.commanderActive
+          ? buildings.queue.map((entry, index) => (
+              <tr key={`queue-${entry.listId}`}>
+                <td className="l" colSpan={2}>
+                  {index + 1}.: {entry.name}
+                  {entry.level > 0 ? ` , level ${entry.destroy ? entry.level + 1 : entry.level}` : ""}
+                  {entry.destroy ? " demolish" : ""}
+                </td>
+                <td className="k">
+                  {index === 0 ? (
+                    <BuildingQueueCountdown entry={entry} onComplete={onComplete} onRemove={onAction} pending={pending} />
+                  ) : (
+                    <a
+                      href={buildingActionURL("remove", entry.techId, entry.listId)}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        if (!pending) {
+                          onAction("remove", entry.techId, entry.listId);
+                        }
+                      }}
+                    >
+                      <span style={{ color: "red" }}>Cancel</span>
+                    </a>
+                  )}
+                </td>
+              </tr>
+            ))
+          : null}
         {buildings.items.map((item) => {
-          const actionContent = (
-            <>
-              {item.action}
-              {item.action === "Build level" ? (
-                <>
-                  <br />
-                  level {item.nextLevel}
-                </>
-              ) : null}
-            </>
-          );
+          const actionCell = buildingActionCell(buildings, item, activeQueue);
           return (
             <tr data-building-row={item.id} key={item.id}>
-              <td className="legacy-l l legacy-building-image">
-                <a href={gameRouteURL("/game/technology", window.location.search)}>
-                  <img alt="" height={120} src={`${skinBase}/gebaeude/${item.id}.gif`} width={120} />
-                </a>
-              </td>
-              <td className="legacy-l l legacy-building-description">
-                <a href={gameRouteURL("/game/technology", window.location.search)}>{item.name}</a>
-                {item.level > 0 ? <> (level {item.level})</> : null}
-                <br />
-                {item.description}
-                <br />
-                Cost:
-                {costParts(item.cost).map((part) => (
-                  <React.Fragment key={part.name}>
-                    {" "}
-                    {part.name}: <b>{formatLegacyNumber(part.value)}</b>
-                  </React.Fragment>
-                ))}
-                <br />
-                Duration: {formatLegacyDuration(item.durationSeconds)}
-                <br />
-              </td>
-              <td className="legacy-l l legacy-building-action">
-                {item.canBuild ? (
-                  <a
-                    className="legacy-build-ok"
-                    href={buildingActionURL("add", item.id)}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      if (!pending) {
-                        onAction("add", item.id);
-                      }
-                    }}
-                  >
-                    {actionContent}
-                  </a>
-                ) : (
-                  <span className="legacy-build-blocked">{actionContent}</span>
-                )}
-              </td>
+              <td className="l" dangerouslySetInnerHTML={{ __html: buildingImageHTML(item) }} />
+              <td className="l" dangerouslySetInnerHTML={{ __html: buildingDescriptionHTML(item) }} />
+              {actionCell.countdown ? (
+                <td className={actionCell.className}>
+                  <BuildingQueueCountdown
+                    entry={actionCell.countdown}
+                    onComplete={onComplete}
+                    onRemove={onAction}
+                    pending={pending}
+                  />
+                </td>
+              ) : (
+                <td
+                  className={actionCell.className}
+                  dangerouslySetInnerHTML={{ __html: actionCell.html }}
+                  onClick={(event) => {
+                    if (!actionCell.clickable || pending || !(event.target instanceof HTMLElement) || !event.target.closest("a")) {
+                      return;
+                    }
+                    event.preventDefault();
+                    onAction("add", item.id);
+                  }}
+                />
+              )}
             </tr>
           );
         })}
       </tbody>
     </table>
   );
+}
+
+function buildingActionCell(
+  buildings: GameBuildings,
+  item: GameBuildingItem,
+  activeQueue: GameBuildingQueueEntry | undefined
+): { className: string; html: string; clickable: boolean; countdown?: GameBuildingQueueEntry } {
+  if (buildings.queue.length > 0) {
+    if (buildings.commanderActive) {
+      if (buildings.queue.length >= 5) {
+        return { className: "k", html: "", clickable: false };
+      }
+      return { className: "k", html: buildingEnqueueHTML(item), clickable: true };
+    }
+    if (activeQueue?.techId === item.id) {
+      return { className: "k", html: "", clickable: false, countdown: activeQueue };
+    }
+    return { className: "k", html: "", clickable: false };
+  }
+  return { className: "l", html: buildingActionHTML(item), clickable: item.canBuild };
+}
+
+function BuildingQueueCountdown({
+  entry,
+  onComplete,
+  onRemove,
+  pending
+}: {
+  entry: GameBuildingQueueEntry;
+  onComplete: () => void;
+  onRemove: (action: "add" | "destroy" | "remove", techID: number, listID?: number) => void;
+  pending: boolean;
+}) {
+  const [now, setNow] = React.useState(() => Math.floor(Date.now() / 1000));
+  const [refreshQueued, setRefreshQueued] = React.useState(false);
+  React.useEffect(() => {
+    const id = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  React.useEffect(() => {
+    setRefreshQueued(false);
+  }, [entry.end, entry.listId, entry.techId]);
+  const remaining = Math.max(0, entry.end - now);
+  const completeBuildQueue = React.useCallback(() => {
+    setRefreshQueued(true);
+    onComplete();
+  }, [onComplete]);
+  React.useEffect(() => {
+    if (remaining > 0 || refreshQueued) {
+      return undefined;
+    }
+    const id = window.setTimeout(() => {
+      completeBuildQueue();
+    }, 2000);
+    return () => window.clearTimeout(id);
+  }, [completeBuildQueue, refreshQueued, remaining]);
+  if (remaining <= 0) {
+    return (
+      <div className="z" id="bxx" title="0">
+        Done
+        <br />
+        <a
+          href={buildingNextURL()}
+          onClick={(event) => {
+            event.preventDefault();
+            completeBuildQueue();
+          }}
+        >
+          Next
+        </a>
+      </div>
+    );
+  }
+  return (
+    <div className="z" id="bxx" title={String(remaining)}>
+      {formatLegacyCountdown(remaining)}
+      <br />
+      <a
+        href={buildingActionURL("remove", entry.techId, entry.listId)}
+        onClick={(event) => {
+          event.preventDefault();
+          if (!pending) {
+            onRemove("remove", entry.techId, entry.listId);
+          }
+        }}
+      >
+        Cancel
+      </a>
+    </div>
+  );
+}
+
+function buildingNextURL() {
+  const query = new URLSearchParams(window.location.search);
+  query.delete("modus");
+  query.delete("techid");
+  query.delete("listid");
+  return gameRouteURL("/game/buildings", `?${query.toString()}`);
+}
+
+function buildingImageHTML(item: GameBuildingItem): string {
+  const href = legacyHTMLAttribute(gameRouteURL("/game/technology", window.location.search));
+  return `<a href="${href}"><img border="0" src="${skinBase}/gebaeude/${item.id}.gif" align="top" width="120" height="120"></a>`;
+}
+
+function buildingDescriptionHTML(item: GameBuildingItem): string {
+  const href = legacyHTMLAttribute(gameRouteURL("/game/technology", window.location.search));
+  const level = item.level > 0 ? ` (level ${item.level})` : "";
+  const costs = costParts(item.cost)
+    .map((part) => ` ${legacyHTMLText(part.name)}: <b>${formatLegacyPlainNumber(part.value)}</b>`)
+    .join("");
+  return `<a href="${href}">${legacyHTMLText(item.name)}</a>${level}<br>${legacyHTMLText(item.description)}<br>Cost:${costs}<br>Duration: ${formatLegacyDuration(item.durationSeconds)}<br>`;
+}
+
+function buildingActionHTML(item: GameBuildingItem): string {
+  const action = item.action === "Build level" ? `Build <br> level ${item.nextLevel}` : legacyHTMLText(item.action);
+  const color = item.canBuild ? "#00FF00" : "#FF0000";
+  const content = `<font color="${color}">${action}</font>`;
+  if (!item.canBuild) {
+    return content;
+  }
+  const href = legacyHTMLAttribute(buildingActionURL("add", item.id));
+  return `<a href="${href}">${content}</a> `;
+}
+
+function buildingEnqueueHTML(item: GameBuildingItem): string {
+  const href = legacyHTMLAttribute(buildingActionURL("add", item.id));
+  return `<a href="${href}">enqueue</a>`;
+}
+
+function legacyHTMLText(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function legacyHTMLAttribute(value: string): string {
+  return legacyHTMLText(value);
 }
 
 function buildingActionURL(action: "add" | "destroy" | "remove", techID: number, listID?: number) {
@@ -4946,13 +5107,20 @@ function ResourceTotalRow({ label, values }: { label: string; values: ResourcePr
 
 function OverviewTable({ overview }: { overview: GameOverview }) {
   const planet = overview.currentPlanet;
-  const moon = overview.planetSwitcher.find(
-    (item) =>
-      item.type === 0 &&
-      item.coordinates.galaxy === planet.coordinates.galaxy &&
-      item.coordinates.system === planet.coordinates.system &&
-      item.coordinates.position === planet.coordinates.position
-  );
+  const planetTitle =
+    planet.type === 0
+      ? `Moon "${planet.name}" at orbit of [${formatCoordinates(planet.coordinates)}]`
+      : `Planet "${planet.name}"`;
+  const moon =
+    planet.type === 0
+      ? undefined
+      : overview.planetSwitcher.find(
+          (item) =>
+            item.type === 0 &&
+            item.coordinates.galaxy === planet.coordinates.galaxy &&
+            item.coordinates.system === planet.coordinates.system &&
+            item.coordinates.position === planet.coordinates.position
+        );
   const otherPlanets = overview.planetSwitcher.filter((item) => item.type !== 0 && item.id !== planet.id);
 
   return (
@@ -4961,7 +5129,7 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
         <tr>
           <td className="legacy-c c" colSpan={4}>
             <a href={gameRouteURL("/game/rename-planet", window.location.search)} title="Planet menu">
-              {`Planet "${planet.name}"`}
+              {planetTitle}
             </a>
             {`     (${overview.commander})`}
           </td>
@@ -5007,7 +5175,7 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
             <table className="legacy-planet-list s">
               <tbody>
                 {otherPlanets.length === 0
-                  ? <tr />
+                  ? null
                   : rowsOfTwo(otherPlanets).map((row, index) => (
                     <tr key={index}>
                       {row.map((item) => (
@@ -5029,6 +5197,7 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
                       ))}
                     </tr>
                   ))}
+                <tr />
               </tbody>
             </table>
           </th>
@@ -5555,6 +5724,14 @@ function formatLegacyDuration(totalSeconds: number): string {
     parts.push(`${seconds}s`);
   }
   return parts.join(" ");
+}
+
+function formatLegacyCountdown(totalSeconds: number): string {
+  const safe = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor(safe / 60) % 60;
+  const seconds = safe % 60;
+  return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 function formatLegacyDate(date: Date): string {

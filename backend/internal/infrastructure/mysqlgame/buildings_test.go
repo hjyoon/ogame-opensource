@@ -28,8 +28,19 @@ func TestBuildingsRepositoryReadsLegacyBuildings(t *testing.T) {
 			domaingame.ResearchEnergy:   3,
 		}))},
 		{rows: fakeRowsFromValues([]any{2.0})},
+		{rows: fakeRowsFromValues([]any{int64(3_000)})},
+		{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{
+			ID:       7,
+			OwnerID:  42,
+			PlanetID: 99,
+			ListID:   1,
+			TechID:   domaingame.BuildingMetalStorage,
+			Level:    2,
+			Start:    2_000,
+			End:      2_010,
+		}))},
 	}}
-	repository := NewBuildingsRepositoryWithQueryer(queryer, "ogame_")
+	repository := NewBuildingsRepositoryWithRunner(queryer, nil, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
 
 	buildings, err := repository.GetBuildings(context.Background(), appgame.BuildingsQuery{PlayerID: 42})
 	if err != nil {
@@ -38,6 +49,9 @@ func TestBuildingsRepositoryReadsLegacyBuildings(t *testing.T) {
 
 	if buildings.Commander != "legor" || buildings.CurrentPlanet.ID != 99 {
 		t.Fatalf("unexpected buildings summary: %+v", buildings)
+	}
+	if !buildings.CommanderActive || len(buildings.Queue) != 1 || buildings.Queue[0].Name != "Metal Storage" || buildings.Queue[0].RemainingSeconds != 10 {
+		t.Fatalf("expected active build queue mapping, got commander=%v queue=%+v", buildings.CommanderActive, buildings.Queue)
 	}
 	if !containsBuilding(buildings, domaingame.BuildingFusionReactor) || !containsBuilding(buildings, domaingame.BuildingNaniteFactory) {
 		t.Fatalf("expected gated buildings after matching levels: %+v", buildings.Items)
@@ -353,6 +367,8 @@ func TestBuildingsRepositoryGetBuildingsFinishesDueQueuesFirst(t *testing.T) {
 			fakeQueryResult{rows: fakeRowsFromValues(buildingLevelRow(map[int]int{}))},
 			fakeQueryResult{rows: fakeRowsFromValues(researchLevelRow(map[int]int{}))},
 			fakeQueryResult{rows: fakeRowsFromValues([]any{1.0})},
+			fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})},
+			fakeQueryResult{rows: fakeRowsFromValues()},
 		)...,
 	)}}
 	repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_006, 0) })
@@ -1584,6 +1600,23 @@ func TestBuildingsRepositoryReturnsErrors(t *testing.T) {
 			}},
 			want: "expected float64",
 		},
+		{
+			name:   "commander query",
+			prefix: "ogame_",
+			queryer: &fakeQueryer{results: append(buildingReadPrefixResults(),
+				fakeQueryResult{err: errors.New("commander query failed")},
+			)},
+			want: "commander query failed",
+		},
+		{
+			name:   "queue query",
+			prefix: "ogame_",
+			queryer: &fakeQueryer{results: append(buildingReadPrefixResults(),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})},
+				fakeQueryResult{err: errors.New("queue query failed")},
+			)},
+			want: "queue query failed",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1595,6 +1628,14 @@ func TestBuildingsRepositoryReturnsErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func buildingReadPrefixResults() []fakeQueryResult {
+	return append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(buildingLevelRow(nil))},
+		fakeQueryResult{rows: fakeRowsFromValues(researchLevelRow(nil))},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{1.0})},
+	)
 }
 
 func buildingLevelRow(values map[int]int) []any {

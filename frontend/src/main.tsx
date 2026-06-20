@@ -458,7 +458,27 @@ function App() {
       .finally(() => setGameOverviewPending(false));
   };
 
-  useEffect(() => {
+  const syncGameOverviewFromBuildings = (payload: GameBuildingsStatus) => {
+    if (!payload.authenticated || !payload.buildings) {
+      return;
+    }
+    const buildings = payload.buildings;
+    setGameOverview((current) => {
+      if (!current?.authenticated || !current.overview) {
+        return current;
+      }
+      return {
+        ...current,
+        overview: {
+          ...current.overview,
+          currentPlanet: buildings.currentPlanet,
+          planetSwitcher: buildings.planetSwitcher
+        }
+      };
+    });
+  };
+
+  const loadGameBuildings = (showPending = false) => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "buildings" || publicSession === "") {
       setGameBuildings(null);
@@ -471,13 +491,26 @@ function App() {
     if (selectedPlanet) {
       buildingsSearch.set("cp", selectedPlanet);
     }
+    if (showPending) {
+      setGameBuildingsPending(true);
+    }
     fetch(`/api/game/buildings?${buildingsSearch.toString()}`, { credentials: "same-origin" })
       .then((response) => response.json() as Promise<GameBuildingsStatus>)
       .then((payload) => {
         setGameBuildings(payload);
+        syncGameOverviewFromBuildings(payload);
         setGameBuildingsError(null);
       })
-      .catch((err: unknown) => setGameBuildingsError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) => setGameBuildingsError(err instanceof Error ? err.message : String(err)))
+      .finally(() => {
+        if (showPending) {
+          setGameBuildingsPending(false);
+        }
+      });
+  };
+
+  useEffect(() => {
+    loadGameBuildings();
   }, [gameRoute?.key, search]);
 
   const submitGameBuildingsMutation = (body: { action: "add" | "destroy" | "remove"; techId: number; listId?: number }) => {
@@ -513,8 +546,10 @@ function App() {
       })
       .then((payload) => {
         setGameBuildings(payload);
+        syncGameOverviewFromBuildings(payload);
         setGameBuildingsError(payload.actionIssue?.message ?? null);
         dispatchClientNavigation(`/game/buildings?${buildingsSearch.toString()}`);
+        document.querySelector<HTMLElement>(".legacy-content")?.scrollTo(0, 0);
       })
       .catch((err: unknown) => setGameBuildingsError(err instanceof Error ? err.message : String(err)))
       .finally(() => setGameBuildingsPending(false));
@@ -1489,6 +1524,7 @@ function App() {
         buildingsError={gameBuildingsError}
         buildingsPending={gameBuildingsPending}
         buildingsStatus={gameBuildings}
+        onBuildingsRefresh={() => loadGameBuildings(true)}
         defenseError={gameDefenseError}
         defensePending={gameDefensePending}
         defenseStatus={gameDefense}

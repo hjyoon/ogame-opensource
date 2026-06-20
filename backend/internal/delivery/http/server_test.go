@@ -1176,7 +1176,8 @@ func TestGameBuildingsEndpointReturnsBuildings(t *testing.T) {
 	buildings := &fakeGameBuildings{result: appgame.BuildingsResult{
 		Authenticated: true,
 		Buildings: domaingame.Buildings{
-			Commander: "legor",
+			Commander:       "legor",
+			CommanderActive: true,
 			CurrentPlanet: domaingame.PlanetOverview{
 				ID:   99,
 				Name: "Arakis",
@@ -1213,6 +1214,15 @@ func TestGameBuildingsEndpointReturnsBuildings(t *testing.T) {
 				CanBuild:        true,
 				Action:          "Build level",
 			}},
+			Queue: []domaingame.BuildingQueueEntry{{
+				ListID:           1,
+				TechID:           domaingame.BuildingMetalMine,
+				Name:             "Metal Mine",
+				Level:            3,
+				Start:            100,
+				End:              160,
+				RemainingSeconds: 60,
+			}},
 		},
 	}}
 	server := testServerWithGameBuildings(t, buildings)
@@ -1231,6 +1241,9 @@ func TestGameBuildingsEndpointReturnsBuildings(t *testing.T) {
 	}
 	if !response.Authenticated || response.Buildings == nil || response.Buildings.Commander != "legor" || len(response.Buildings.Items) != 1 {
 		t.Fatalf("expected authenticated buildings response, got %+v", response)
+	}
+	if !response.Buildings.CommanderActive || len(response.Buildings.Queue) != 1 || response.Buildings.Queue[0].Name != "Metal Mine" || response.Buildings.Queue[0].RemainingSeconds != 60 {
+		t.Fatalf("expected buildings queue mapping, got %+v", response.Buildings)
 	}
 	if len(response.Buildings.PlanetSwitcher) != 1 || response.Buildings.PlanetSwitcher[0].Name != "Moon" {
 		t.Fatalf("expected planet switcher mapping, got %+v", response.Buildings.PlanetSwitcher)
