@@ -892,23 +892,22 @@ body.legacy-game-body {
 
 .legacy-game-shell .legacy-statistics-player-table td:first-child,
 .legacy-game-shell .legacy-statistics-player-table th:first-child {
-  max-width: 36px;
+  max-width: 28px;
   white-space: normal;
-  width: 36px;
+  width: 28px;
 }
 
 .legacy-game-shell .legacy-statistics-player-table tr:nth-child(n + 11) th:first-child a {
   display: block;
 }
 
-.legacy-game-shell .legacy-statistics-player-table td:nth-child(3),
-.legacy-game-shell .legacy-statistics-player-table th:nth-child(3) {
-  width: 49px;
+.legacy-game-shell .legacy-statistics-player-table tr:nth-child(n + 2):nth-child(-n + 10) th {
+  line-height: 16px;
 }
 
-.legacy-game-shell .legacy-statistics-player-table td:nth-child(5),
-.legacy-game-shell .legacy-statistics-player-table th:nth-child(5) {
-  width: 76px;
+.legacy-game-shell .legacy-statistics-player-table td:nth-child(3),
+.legacy-game-shell .legacy-statistics-player-table th:nth-child(3) {
+  width: 41px;
 }
 
 .legacy-game-shell .legacy-statistics-head-table select,
