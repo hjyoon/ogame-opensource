@@ -774,6 +774,10 @@ body.legacy-game-body {
   text-align: left;
 }
 
+.legacy-game-shell .legacy-technology-table td.legacy-c {
+  text-align: start;
+}
+
 .legacy-game-shell .legacy-technology-name-table {
   border-collapse: separate;
   border-spacing: 0;
