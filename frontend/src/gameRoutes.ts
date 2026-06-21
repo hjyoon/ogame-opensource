@@ -109,7 +109,20 @@ export function normalizeGamePath(pathname: string, search = ""): string {
     return "/game/overview";
   }
   if (normalized === "/game/index.php") {
-    const page = new URLSearchParams(query).get("page") ?? "";
+    const params = new URLSearchParams(query);
+    const page = params.get("page") ?? "";
+    const mode = params.get("mode") ?? "";
+    if (page === "buildings") {
+      if (mode === "Forschung") {
+        return "/game/research";
+      }
+      if (mode === "Flotte") {
+        return "/game/shipyard";
+      }
+      if (mode === "Verteidigung") {
+        return "/game/defense";
+      }
+    }
     return legacyPageAliases.get(page) ?? "/game/overview";
   }
   return normalized;

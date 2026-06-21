@@ -17,10 +17,14 @@ func TestNormalizeSkinPathMatchesLegacyLoopbackRules(t *testing.T) {
 		{name: "empty defaults", want: "/evolution/"},
 		{name: "relative kept", path: "/download/use/lego/", want: "/download/use/lego/"},
 		{name: "loopback stripped", path: "http://127.0.0.1:8888/evolution/formate.css", want: "/evolution/formate.css/"},
+		{name: "loopback root stripped", path: "http://127.0.0.1", want: "/"},
 		{name: "same origin stripped", path: "http://10.8.0.2:8890/evolution", host: "10.8.0.2", port: 8890, want: "/evolution/"},
+		{name: "http default port same origin stripped", path: "http://example.test/skin", host: "example.test", port: 80, want: "/skin/"},
 		{name: "https default port same origin stripped", path: "https://example.test/skin", host: "example.test", port: 443, want: "/skin/"},
 		{name: "ipv6 loopback stripped", path: "http://[::1]/skin", want: "/skin/"},
 		{name: "non http scheme kept", path: "ftp://127.0.0.1/skin", want: "ftp://127.0.0.1/skin"},
+		{name: "malformed kept", path: "http://[::1", want: "http://[::1"},
+		{name: "no request host kept", path: "http://example.test/skin", want: "http://example.test/skin"},
 		{name: "external kept", path: "https://cdn.example.test/skin/", host: "10.8.0.2", port: 8890, want: "https://cdn.example.test/skin/"},
 	}
 	for _, tt := range tests {
@@ -29,6 +33,21 @@ func TestNormalizeSkinPathMatchesLegacyLoopbackRules(t *testing.T) {
 				t.Fatalf("NormalizeSkinPath(%q) = %q, want %q", tt.path, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNormalizeOptionsMutationHonorsForcedLanguageAndDeletionState(t *testing.T) {
+	current := NewOptions(Overview{}, OptionsUser{}, OptionsUniverse{Language: "de", ForceLanguage: true}, OptionsSettings{}, OptionsAccount{
+		DeletionQueued: true,
+	}, 0)
+
+	normalized := NormalizeOptionsMutation(OptionsMutation{
+		Language:      "en",
+		DeleteAccount: true,
+	}, current)
+
+	if normalized.Language != "de" || normalized.AccountDeletionChanged {
+		t.Fatalf("unexpected forced-language options normalization: %+v", normalized)
 	}
 }
 

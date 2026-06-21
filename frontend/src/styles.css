@@ -604,6 +604,12 @@ body.legacy-game-body {
   margin: 0 auto;
 }
 
+.legacy-game-shell .legacy-research-frame {
+  border-collapse: separate;
+  border-spacing: 2px;
+  margin: 0 auto;
+}
+
 .legacy-game-shell .legacy-overview-main-table,
 .legacy-game-shell .legacy-overview-main-table .legacy-planet-list {
   border-collapse: separate;
@@ -641,6 +647,15 @@ body.legacy-game-body {
   border-spacing: 2px;
   margin-bottom: 40px;
   margin-top: 3px;
+}
+
+.legacy-game-shell .legacy-shipyard-table {
+  margin-top: 3px;
+}
+
+.legacy-game-shell .legacy-shipyard-queue-panel {
+  position: relative;
+  top: -8px;
 }
 
 .legacy-game-shell .legacy-building-image {

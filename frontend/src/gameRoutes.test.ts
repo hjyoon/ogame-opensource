@@ -29,6 +29,9 @@ describe("game route model", () => {
     expect(normalizeGamePath("/game/overview/")).toBe("/game/overview");
     expect(normalizeGamePath("/game/resources?session=abc")).toBe("/game/resources");
     expect(normalizeGamePath("/game/index.php", "?page=b_building&session=abc")).toBe("/game/buildings");
+    expect(normalizeGamePath("/game/index.php", "?page=buildings&mode=Forschung&session=abc")).toBe("/game/research");
+    expect(normalizeGamePath("/game/index.php", "?page=buildings&mode=Flotte&session=abc")).toBe("/game/shipyard");
+    expect(normalizeGamePath("/game/index.php", "?page=buildings&mode=Verteidigung&session=abc")).toBe("/game/defense");
     expect(normalizeGamePath("/game/index.php", "?page=fleet_templates&session=abc")).toBe("/game/fleet-templates");
     expect(normalizeGamePath("/game/index.php", "?page=flottenversand&session=abc")).toBe("/game/fleet");
     expect(normalizeGamePath("/game/index.php?page=flotten1&session=abc")).toBe("/game/fleet");
@@ -45,6 +48,9 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/overview").migrated).toBe(true);
     expect(resolveGameRoute("/game/rename-planet")).toMatchObject({ key: "renamePlanet", migrated: true });
     expect(resolveGameRoute("/game/buildings")).toMatchObject({ key: "buildings", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=buildings&mode=Forschung")).toMatchObject({ key: "research", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=buildings&mode=Flotte")).toMatchObject({ key: "shipyard", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=buildings&mode=Verteidigung")).toMatchObject({ key: "defense", migrated: true });
     expect(resolveGameRoute("/game/resources")).toMatchObject({ key: "resources", migrated: true });
     expect(resolveGameRoute("/game/research")).toMatchObject({ key: "research", migrated: true });
     expect(resolveGameRoute("/game/shipyard")).toMatchObject({ key: "shipyard", migrated: true });

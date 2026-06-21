@@ -145,6 +145,62 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	}
 }
 
+func TestOverviewRepositoryFinishesDueBuildingQueuesBeforeRead(t *testing.T) {
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{128.0, 0})},
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3})},
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues([]any{1})},
+	}}}
+	repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+	repository.updateResources = false
+	repository.includeBuildQueue = true
+	repository.now = func() time.Time { return time.Unix(2000, 0) }
+
+	if _, err := repository.GetOverview(context.Background(), overviewQuery(42, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(runner.calls) < 2 ||
+		!strings.Contains(runner.calls[0].sql, "FROM `ogame_users`") ||
+		!strings.Contains(runner.calls[1].sql, "SELECT speed, freeze FROM `ogame_uni`") ||
+		!strings.Contains(runner.calls[2].sql, "WHERE end <= ?") ||
+		runner.calls[2].args[0] != 2000 {
+		t.Fatalf("expected due building queue flush before overview read, got %+v", runner.calls)
+	}
+}
+
+func TestOverviewRepositorySkipsDueBuildingQueuesForAdmins(t *testing.T) {
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 2})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3})},
+		{rows: fakeRowsFromValues([]any{99, domaingame.BuildingMetalMine, 1, 0, int64(1990)})},
+		{rows: fakeRowsFromValues([]any{1})},
+	}}}
+	repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+	repository.updateResources = false
+	repository.includeBuildQueue = true
+	repository.now = func() time.Time { return time.Unix(2000, 0) }
+
+	overview, err := repository.GetOverview(context.Background(), overviewQuery(42, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if overview.CurrentPlanet.BuildQueue == nil || overview.CurrentPlanet.BuildQueue.End != 1990 {
+		t.Fatalf("expected admin overview to keep stale build queue, got %+v", overview.CurrentPlanet.BuildQueue)
+	}
+	for _, call := range runner.calls {
+		if strings.Contains(call.sql, "SELECT speed, freeze FROM `ogame_uni`") || strings.Contains(call.sql, "WHERE end <= ?") {
+			t.Fatalf("admin overview should not finish due queues, got %+v", runner.calls)
+		}
+	}
+}
+
 func TestOverviewRepositoryAddsAdminNotice(t *testing.T) {
 	queryer := &fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 2})},

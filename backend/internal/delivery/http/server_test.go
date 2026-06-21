@@ -2703,6 +2703,13 @@ func TestGameDefenseEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 }
 
 func TestGameTechnologyEndpointReturnsTechnology(t *testing.T) {
+	if toGameTechnologyDetailsResponse(nil) != nil {
+		t.Fatal("expected nil technology details to map to nil")
+	}
+	if toGameTechnologyDemolishResponse(nil) != nil {
+		t.Fatal("expected nil technology demolish info to map to nil")
+	}
+
 	technology := &fakeGameTechnology{result: appgame.TechnologyResult{
 		Authenticated: true,
 		Technology: domaingame.Technology{
@@ -4211,18 +4218,34 @@ func TestGameResourcesEndpointReturnsResources(t *testing.T) {
 					DeuteriumCapacity: 200000,
 				},
 			},
+			PlanetSwitcher: []domaingame.PlanetSummary{{
+				ID:      99,
+				Name:    "Arakis",
+				Type:    domaingame.PlanetTypePlanet,
+				Current: true,
+			}},
 			Factor: 1,
 			Natural: domaingame.ResourceProductionValues{
 				Metal:   20,
 				Crystal: 10,
 			},
-			Rows: []domaingame.ResourceProductionRow{{
-				ID:      domaingame.BuildingMetalMine,
-				Name:    "Metal Mine",
-				Level:   2,
-				Percent: 100,
-				Values:  domaingame.ResourceProductionValues{Metal: 72, Energy: -25, EnergyRaw: -25},
-			}},
+			Rows: []domaingame.ResourceProductionRow{
+				{
+					ID:         domaingame.BuildingMetalMine,
+					Name:       "Metal Mine",
+					Level:      2,
+					Percent:    100,
+					Values:     domaingame.ResourceProductionValues{Metal: 72, Energy: -25, EnergyRaw: -25},
+					BonusIcons: []domaingame.ResourceProductionBonusIcon{{Image: "geologe_ikon.gif", Alt: "Geologist"}},
+				},
+				{
+					ID:      domaingame.BuildingCrystalMine,
+					Name:    "Crystal Mine",
+					Level:   1,
+					Percent: 0,
+					Values:  domaingame.ResourceProductionValues{},
+				},
+			},
 			Totals: domaingame.ResourceProductionTotals{
 				Hour: domaingame.ResourceProductionValues{Metal: 92, Crystal: 10, Energy: -25, EnergyRaw: -25},
 				Day:  domaingame.ResourceProductionValues{Metal: 2208, Crystal: 240, Energy: -25, EnergyRaw: -25},
@@ -4244,11 +4267,20 @@ func TestGameResourcesEndpointReturnsResources(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if !response.Authenticated || response.Resources == nil || response.Resources.Commander != "legor" || len(response.Resources.Rows) != 1 {
+	if !response.Authenticated || response.Resources == nil || response.Resources.Commander != "legor" || len(response.Resources.Rows) != 2 {
 		t.Fatalf("expected authenticated resources response, got %+v", response)
+	}
+	if len(response.Resources.PlanetSwitcher) != 1 || !response.Resources.PlanetSwitcher[0].Current {
+		t.Fatalf("expected planet switcher mapping, got %+v", response.Resources.PlanetSwitcher)
 	}
 	if response.Resources.Rows[0].Values.Metal != 72 || response.Resources.Totals.Day.Metal != 2208 {
 		t.Fatalf("unexpected resources mapping: %+v", response.Resources)
+	}
+	if len(response.Resources.Rows[0].BonusIcons) != 1 || response.Resources.Rows[0].BonusIcons[0].Image != "geologe_ikon.gif" {
+		t.Fatalf("expected resources bonus icon mapping, got %+v", response.Resources.Rows[0].BonusIcons)
+	}
+	if response.Resources.Rows[1].BonusIcons != nil {
+		t.Fatalf("expected empty resources bonus icon mapping to stay nil, got %+v", response.Resources.Rows[1].BonusIcons)
 	}
 	if resources.command.PublicSession != "public" || resources.command.PlanetID != 99 || resources.command.RemoteAddr != "203.0.113.10" {
 		t.Fatalf("unexpected resources command: %+v", resources.command)
@@ -4407,6 +4439,10 @@ func TestGameResourcesEndpointReturnsUnavailableForUpdateWithoutUseCase(t *testi
 }
 
 func TestDecodeResourceProductionUpdateUsesLegacyCoercion(t *testing.T) {
+	if legacyInt(nil) != 0 {
+		t.Fatal("expected empty legacy form values to coerce to 0")
+	}
+
 	req := httptest.NewRequest(http.MethodPost, "/api/game/resources", strings.NewReader(`{"production":{"last1":" 90 ","2":25.9,"bad":100,"last3":"bad","4":true}}`))
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 

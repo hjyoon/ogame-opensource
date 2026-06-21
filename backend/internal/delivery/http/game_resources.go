@@ -29,11 +29,17 @@ type gameResourceProductionSummary struct {
 }
 
 type gameResourceProductionRow struct {
-	ID      int                          `json:"id"`
-	Name    string                       `json:"name"`
-	Level   int                          `json:"level"`
-	Percent int                          `json:"percent"`
-	Values  gameResourceProductionValues `json:"values"`
+	ID         int                               `json:"id"`
+	Name       string                            `json:"name"`
+	Level      int                               `json:"level"`
+	Percent    int                               `json:"percent"`
+	Values     gameResourceProductionValues      `json:"values"`
+	BonusIcons []gameResourceProductionBonusIcon `json:"bonusIcons"`
+}
+
+type gameResourceProductionBonusIcon struct {
+	Image string `json:"image"`
+	Alt   string `json:"alt"`
 }
 
 type gameResourceProductionValues struct {
@@ -167,11 +173,12 @@ func toGameResourceProductionSummary(resources domaingame.ResourceProduction) ga
 	rows := make([]gameResourceProductionRow, 0, len(resources.Rows))
 	for _, row := range resources.Rows {
 		rows = append(rows, gameResourceProductionRow{
-			ID:      row.ID,
-			Name:    row.Name,
-			Level:   row.Level,
-			Percent: row.Percent,
-			Values:  toGameResourceProductionValues(row.Values),
+			ID:         row.ID,
+			Name:       row.Name,
+			Level:      row.Level,
+			Percent:    row.Percent,
+			Values:     toGameResourceProductionValues(row.Values),
+			BonusIcons: toGameResourceProductionBonusIcons(row.BonusIcons),
 		})
 	}
 	return gameResourceProductionSummary{
@@ -188,6 +195,20 @@ func toGameResourceProductionSummary(resources domaingame.ResourceProduction) ga
 			Week: toGameResourceProductionValues(resources.Totals.Week),
 		},
 	}
+}
+
+func toGameResourceProductionBonusIcons(icons []domaingame.ResourceProductionBonusIcon) []gameResourceProductionBonusIcon {
+	if len(icons) == 0 {
+		return nil
+	}
+	mapped := make([]gameResourceProductionBonusIcon, 0, len(icons))
+	for _, icon := range icons {
+		mapped = append(mapped, gameResourceProductionBonusIcon{
+			Image: icon.Image,
+			Alt:   icon.Alt,
+		})
+	}
+	return mapped
 }
 
 func decodeResourceProductionUpdate(r *http.Request) (domaingame.ProductionPercents, error) {

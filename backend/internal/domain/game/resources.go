@@ -21,11 +21,17 @@ type ResourceProduction struct {
 }
 
 type ResourceProductionRow struct {
-	ID      int
-	Name    string
-	Level   int
-	Percent int
-	Values  ResourceProductionValues
+	ID         int
+	Name       string
+	Level      int
+	Percent    int
+	Values     ResourceProductionValues
+	BonusIcons []ResourceProductionBonusIcon
+}
+
+type ResourceProductionBonusIcon struct {
+	Image string
+	Alt   string
 }
 
 type ResourceProductionValues struct {
@@ -159,11 +165,12 @@ func BuildResourceProduction(overview Overview, inputs ResourceProductionInputs)
 			rows[index].values.Energy *= production.Factor
 		}
 		production.Rows = append(production.Rows, ResourceProductionRow{
-			ID:      rows[index].id,
-			Name:    rows[index].name,
-			Level:   rows[index].level,
-			Percent: rows[index].percent,
-			Values:  rows[index].values,
+			ID:         rows[index].id,
+			Name:       rows[index].name,
+			Level:      rows[index].level,
+			Percent:    rows[index].percent,
+			Values:     rows[index].values,
+			BonusIcons: resourceBonusIcons(rows[index].id, inputs),
 		})
 	}
 
@@ -285,6 +292,16 @@ func resourceProducerOutputs(planet PlanetOverview, inputs ResourceProductionInp
 	}
 
 	return rows
+}
+
+func resourceBonusIcons(id int, inputs ResourceProductionInputs) []ResourceProductionBonusIcon {
+	if inputs.Geologist && (id == BuildingMetalMine || id == BuildingCrystalMine || id == BuildingDeuteriumSynth) {
+		return []ResourceProductionBonusIcon{{Image: "geologe_ikon.gif", Alt: "Geologist"}}
+	}
+	if inputs.Engineer && (id == BuildingSolarPlant || id == BuildingFusionReactor || id == FleetSolarSatellite) {
+		return []ResourceProductionBonusIcon{{Image: "ingenieur_ikon.gif", Alt: "Engineer"}}
+	}
+	return nil
 }
 
 func energyTotals(rows []producerOutput) (float64, float64) {

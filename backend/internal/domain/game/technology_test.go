@@ -131,9 +131,21 @@ func TestBuildTechnologyDetailsIncludesLegacyDemolishInfo(t *testing.T) {
 	if details.Demolish != nil {
 		t.Fatalf("terraformer must not expose demolition: %+v", details.Demolish)
 	}
+
+	details, ok = BuildTechnologyDetails(ResearchEnergy, BuildingLevels{ResearchEnergy: 1}, ResearchLevels{})
+	if !ok {
+		t.Fatal("expected energy technology details")
+	}
+	if details.Demolish != nil {
+		t.Fatalf("research entries must not expose demolition: %+v", details.Demolish)
+	}
 }
 
 func TestLegacyTechnologyRequirementOrderingFallbacks(t *testing.T) {
+	if ids := legacyTechnologyRequirementIDs(ResearchEnergy, nil); ids != nil {
+		t.Fatalf("expected empty requirements to keep nil order, got %v", ids)
+	}
+
 	requirements := map[int]int{ResearchLaser: 5, BuildingResearchLab: 4, ResearchEnergy: 4, 9999: 1}
 	assertIDs(t, legacyTechnologyRequirementIDs(ResearchIon, requirements), []int{BuildingResearchLab, ResearchLaser, ResearchEnergy, 9999})
 	assertIDs(t, legacyTechnologyRequirementIDs(9998, requirements), []int{BuildingResearchLab, ResearchEnergy, ResearchLaser, 9999})
@@ -145,6 +157,14 @@ func TestLegacyTechnologyRequirementOrderingFallbacks(t *testing.T) {
 	}
 	if name := technologyName(9999); name != "" {
 		t.Fatalf("expected unknown technology name to be empty, got %q", name)
+	}
+
+	group := buildTechnologyGroup("mixed", "Mixed", []int{9999, BuildingMetalMine}, BuildingLevels{}, ResearchLevels{})
+	if len(group.Items) != 1 || group.Items[0].ID != BuildingMetalMine {
+		t.Fatalf("expected unknown ids to be skipped in technology group, got %+v", group)
+	}
+	if isBuildingID(9999) {
+		t.Fatal("unknown technology id must not be treated as a building")
 	}
 }
 

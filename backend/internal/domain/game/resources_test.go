@@ -143,6 +143,15 @@ func TestBuildResourceProductionIncludesPremiumFusionAndSatelliteOutput(t *testi
 	deuteriumSynth := findResourceRow(t, production, BuildingDeuteriumSynth)
 	fusion := findResourceRow(t, production, BuildingFusionReactor)
 	satellite := findResourceRow(t, production, FleetSolarSatellite)
+	if len(deuteriumSynth.BonusIcons) != 1 || deuteriumSynth.BonusIcons[0].Image != "geologe_ikon.gif" {
+		t.Fatalf("expected geologist bonus icon on resource mines, got %+v", deuteriumSynth.BonusIcons)
+	}
+	if len(fusion.BonusIcons) != 1 || fusion.BonusIcons[0].Image != "ingenieur_ikon.gif" {
+		t.Fatalf("expected engineer bonus icon on energy producers, got %+v", fusion.BonusIcons)
+	}
+	if len(satellite.BonusIcons) != 1 || satellite.BonusIcons[0].Image != "ingenieur_ikon.gif" {
+		t.Fatalf("expected engineer bonus icon on solar satellites, got %+v", satellite.BonusIcons)
+	}
 	if !nearlyEqual(deuteriumSynth.Values.Deuterium, 28.1204, 0.0001) {
 		t.Fatalf("unexpected deuterium output with geologist and temperature: %+v", deuteriumSynth.Values)
 	}

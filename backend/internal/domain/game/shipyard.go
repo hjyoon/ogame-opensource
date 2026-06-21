@@ -3,12 +3,24 @@ package game
 const defaultShipyardOrderCap = 1000
 
 type Shipyard struct {
-	Commander      string
-	CurrentPlanet  PlanetOverview
-	PlanetSwitcher []PlanetSummary
-	HasShipyard    bool
-	Busy           bool
-	Items          []ShipyardItem
+	Commander       string
+	CommanderActive bool
+	CurrentPlanet   PlanetOverview
+	PlanetSwitcher  []PlanetSummary
+	HasShipyard     bool
+	Busy            bool
+	Queue           []ShipyardQueueEntry
+	Items           []ShipyardItem
+}
+
+type ShipyardQueueEntry struct {
+	TaskID           int
+	UnitID           int
+	Name             string
+	Count            int
+	Start            int
+	End              int
+	RemainingSeconds int
 }
 
 type ShipyardItem struct {
@@ -27,6 +39,10 @@ type ShipyardItem struct {
 type FleetCounts map[int]int
 
 func BuildShipyard(overview Overview, levels BuildingLevels, research ResearchLevels, fleet FleetCounts, speed float64, busy bool, orderCap int) Shipyard {
+	return BuildShipyardWithQueue(overview, levels, research, fleet, speed, busy, orderCap, false, nil)
+}
+
+func BuildShipyardWithQueue(overview Overview, levels BuildingLevels, research ResearchLevels, fleet FleetCounts, speed float64, busy bool, orderCap int, commanderActive bool, queue []ShipyardQueueEntry) Shipyard {
 	if speed <= 0 {
 		speed = 1
 	}
@@ -63,12 +79,14 @@ func BuildShipyard(overview Overview, levels BuildingLevels, research ResearchLe
 		}
 	}
 	return Shipyard{
-		Commander:      overview.Commander,
-		CurrentPlanet:  overview.CurrentPlanet,
-		PlanetSwitcher: overview.PlanetSwitcher,
-		HasShipyard:    hasShipyard,
-		Busy:           busy,
-		Items:          items,
+		Commander:       overview.Commander,
+		CommanderActive: commanderActive,
+		CurrentPlanet:   overview.CurrentPlanet,
+		PlanetSwitcher:  overview.PlanetSwitcher,
+		HasShipyard:     hasShipyard,
+		Busy:            busy,
+		Queue:           queue,
+		Items:           items,
 	}
 }
 

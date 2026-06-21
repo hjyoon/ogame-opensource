@@ -134,6 +134,12 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 	if err != nil {
 		return domaingame.Overview{}, err
 	}
+	if r.includeBuildQueue && r.execer != nil && user.AdminLevel == 0 {
+		buildings := BuildingsRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now, updateResources: r.updateResources}
+		if err := buildings.FinishDueBuildingQueues(ctx, int(r.currentTime().Unix())); err != nil {
+			return domaingame.Overview{}, err
+		}
+	}
 	updatedPlanetID := 0
 	if r.updateResources {
 		candidatePlanetID := query.PlanetID

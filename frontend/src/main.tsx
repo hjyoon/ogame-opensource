@@ -253,6 +253,7 @@ function App() {
   const [gameShipyard, setGameShipyard] = useState<GameShipyardStatus | null>(null);
   const [gameShipyardError, setGameShipyardError] = useState<string | null>(null);
   const [gameShipyardPending, setGameShipyardPending] = useState(false);
+  const [gameShipyardRefreshToken, setGameShipyardRefreshToken] = useState(0);
   const [gameFleet, setGameFleet] = useState<GameFleetStatus | null>(null);
   const [gameFleetError, setGameFleetError] = useState<string | null>(null);
   const [gameFleetPending, setGameFleetPending] = useState(false);
@@ -355,7 +356,7 @@ function App() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  useEffect(() => {
+  const loadGameOverview = (showPending = false) => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (!pathname.startsWith("/game") || gameRoute?.key === "logout" || gameRoute?.key === "report" || publicSession === "") {
       setGameOverview(null);
@@ -371,13 +372,25 @@ function App() {
     if (gameRoute?.key === "overview" && currentSearch.has("lgn")) {
       overviewSearch.set("lgn", currentSearch.get("lgn") ?? "1");
     }
+    if (showPending) {
+      setGameOverviewPending(true);
+    }
     fetch(`/api/game/overview?${overviewSearch.toString()}`, { credentials: "same-origin" })
       .then((response) => response.json() as Promise<GameOverviewStatus>)
       .then((payload) => {
         setGameOverview(payload);
         setGameOverviewError(null);
       })
-      .catch((err: unknown) => setGameOverviewError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) => setGameOverviewError(err instanceof Error ? err.message : String(err)))
+      .finally(() => {
+        if (showPending) {
+          setGameOverviewPending(false);
+        }
+      });
+  };
+
+  useEffect(() => {
+    loadGameOverview();
   }, [gameRoute?.key, pathname, search]);
 
   const submitGamePlanetRename = (name: string) => {
@@ -511,7 +524,7 @@ function App() {
 
   useEffect(() => {
     loadGameBuildings();
-  }, [gameRoute?.key, search]);
+  }, [gameRoute?.key, gameShipyardRefreshToken, search]);
 
   const submitGameBuildingsMutation = (
     body: { action: "add" | "destroy" | "remove"; techId: number; listId?: number },
@@ -565,6 +578,26 @@ function App() {
 
   const submitGameBuildingAction = (action: "add" | "destroy" | "remove", techId: number, listId?: number) => {
     submitGameBuildingsMutation({ action, techId, listId });
+  };
+
+  const syncGameOverviewFromResources = (payload: GameResourcesStatus) => {
+    if (!payload.authenticated || !payload.resources) {
+      return;
+    }
+    const resources = payload.resources;
+    setGameOverview((current) => {
+      if (!current?.authenticated || !current.overview) {
+        return current;
+      }
+      return {
+        ...current,
+        overview: {
+          ...current.overview,
+          currentPlanet: resources.currentPlanet,
+          planetSwitcher: resources.planetSwitcher
+        }
+      };
+    });
   };
 
   useEffect(() => {
@@ -624,6 +657,7 @@ function App() {
       })
       .then((payload) => {
         setGameResources(payload);
+        syncGameOverviewFromResources(payload);
         setGameResourcesError(null);
       })
       .catch((err: unknown) => setGameResourcesError(err instanceof Error ? err.message : String(err)))
@@ -647,6 +681,7 @@ function App() {
       .then((response) => response.json() as Promise<GameResourcesStatus>)
       .then((payload) => {
         setGameResources(payload);
+        syncGameOverviewFromResources(payload);
         setGameResourcesError(null);
       })
       .catch((err: unknown) => setGameResourcesError(err instanceof Error ? err.message : String(err)));
@@ -1555,6 +1590,7 @@ function App() {
         optionsError={gameOptionsError}
         optionsPending={gameOptionsPending}
         optionsStatus={gameOptions}
+        onOverviewRefresh={() => loadGameOverview(true)}
         onNotesCreate={submitGameNoteCreate}
         onNotesDelete={submitGameNoteDelete}
         onNotesUpdate={submitGameNoteUpdate}
@@ -1586,6 +1622,7 @@ function App() {
         shipyardError={gameShipyardError}
         shipyardPending={gameShipyardPending}
         shipyardStatus={gameShipyard}
+        onShipyardRefresh={() => setGameShipyardRefreshToken((value) => value + 1)}
         onShipyardSubmit={submitGameShipyardOrders}
         statisticsError={gameStatisticsError}
         statisticsStatus={gameStatistics}

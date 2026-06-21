@@ -15,6 +15,8 @@ func TestShipyardRepositoryReadsLegacyFleet(t *testing.T) {
 		fakeQueryResult{rows: fakeRowsFromValues(fleetCountRow(map[int]int{domaingame.FleetSmallCargo: 4}))},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{2.0, 999})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{domaingame.BuildingMetalMine})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})},
+		fakeQueryResult{rows: fakeRowsFromValues()},
 	)}
 	repository := NewShipyardRepositoryWithQueryer(queryer, "ogame_")
 
@@ -25,6 +27,9 @@ func TestShipyardRepositoryReadsLegacyFleet(t *testing.T) {
 
 	if shipyard.Commander != "legor" || !shipyard.HasShipyard || shipyard.Busy {
 		t.Fatalf("unexpected shipyard summary: %+v", shipyard)
+	}
+	if shipyard.CommanderActive || len(shipyard.Queue) != 0 {
+		t.Fatalf("unexpected shipyard commander/queue state: %+v", shipyard)
 	}
 	item := findShipyardItem(t, shipyard, domaingame.FleetSmallCargo)
 	if item.Count != 4 || item.DurationSeconds != 960 || item.MaxBuild != 5 {

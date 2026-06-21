@@ -90,6 +90,12 @@ func TestBuildingMutationHelpersFollowCatalog(t *testing.T) {
 	if _, ok := BuildingCostForLevel(9999, 1); ok {
 		t.Fatalf("unknown building should not have a cost")
 	}
+	if name, ok := BuildingName(BuildingMetalMine); !ok || name != "Metal Mine" {
+		t.Fatalf("expected known building name, name=%q ok=%v", name, ok)
+	}
+	if name, ok := BuildingName(9999); ok || name != "" {
+		t.Fatalf("unknown building should not have a name, name=%q ok=%v", name, ok)
+	}
 	if !BuildingAllowedOnPlanet(BuildingLunarBase, PlanetTypeMoon) || BuildingAllowedOnPlanet(BuildingMetalMine, PlanetTypeMoon) {
 		t.Fatalf("building planet type helper disagrees with catalog")
 	}

@@ -17,12 +17,24 @@ type gameShipyardResponse struct {
 }
 
 type gameShipyardSummary struct {
-	Commander      string                      `json:"commander"`
-	CurrentPlanet  gamePlanetOverviewResponse  `json:"currentPlanet"`
-	PlanetSwitcher []gamePlanetSummaryResponse `json:"planetSwitcher"`
-	HasShipyard    bool                        `json:"hasShipyard"`
-	Busy           bool                        `json:"busy"`
-	Items          []gameShipyardItemResponse  `json:"items"`
+	Commander       string                      `json:"commander"`
+	CommanderActive bool                        `json:"commanderActive"`
+	CurrentPlanet   gamePlanetOverviewResponse  `json:"currentPlanet"`
+	PlanetSwitcher  []gamePlanetSummaryResponse `json:"planetSwitcher"`
+	HasShipyard     bool                        `json:"hasShipyard"`
+	Busy            bool                        `json:"busy"`
+	Queue           []gameShipyardQueueResponse `json:"queue"`
+	Items           []gameShipyardItemResponse  `json:"items"`
+}
+
+type gameShipyardQueueResponse struct {
+	TaskID           int    `json:"taskId"`
+	UnitID           int    `json:"unitId"`
+	Name             string `json:"name"`
+	Count            int    `json:"count"`
+	Start            int    `json:"start"`
+	End              int    `json:"end"`
+	RemainingSeconds int    `json:"remainingSeconds"`
 }
 
 type gameShipyardItemResponse struct {
@@ -154,13 +166,31 @@ func toGameShipyardSummary(shipyard domaingame.Shipyard) gameShipyardSummary {
 	for _, item := range shipyard.Items {
 		items = append(items, toGameShipyardItemResponse(item))
 	}
+	queue := make([]gameShipyardQueueResponse, 0, len(shipyard.Queue))
+	for _, entry := range shipyard.Queue {
+		queue = append(queue, toGameShipyardQueueResponse(entry))
+	}
 	return gameShipyardSummary{
-		Commander:      shipyard.Commander,
-		CurrentPlanet:  toGamePlanetOverviewResponse(shipyard.CurrentPlanet),
-		PlanetSwitcher: planets,
-		HasShipyard:    shipyard.HasShipyard,
-		Busy:           shipyard.Busy,
-		Items:          items,
+		Commander:       shipyard.Commander,
+		CommanderActive: shipyard.CommanderActive,
+		CurrentPlanet:   toGamePlanetOverviewResponse(shipyard.CurrentPlanet),
+		PlanetSwitcher:  planets,
+		HasShipyard:     shipyard.HasShipyard,
+		Busy:            shipyard.Busy,
+		Queue:           queue,
+		Items:           items,
+	}
+}
+
+func toGameShipyardQueueResponse(entry domaingame.ShipyardQueueEntry) gameShipyardQueueResponse {
+	return gameShipyardQueueResponse{
+		TaskID:           entry.TaskID,
+		UnitID:           entry.UnitID,
+		Name:             entry.Name,
+		Count:            entry.Count,
+		Start:            entry.Start,
+		End:              entry.End,
+		RemainingSeconds: entry.RemainingSeconds,
 	}
 }
 

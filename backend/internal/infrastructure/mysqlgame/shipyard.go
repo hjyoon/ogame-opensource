@@ -52,8 +52,13 @@ func (r ShipyardRepository) GetShipyard(ctx context.Context, query appgame.Shipy
 	if err != nil {
 		return domaingame.Shipyard{}, err
 	}
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return domaingame.Shipyard{}, err
+	}
+	now := int(r.currentTime().Unix())
 	if r.execer != nil {
-		if err := r.FinishDueShipyardQueues(ctx, int(r.currentTime().Unix())); err != nil {
+		if err := r.FinishDueShipyardQueues(ctx, now); err != nil {
 			return domaingame.Shipyard{}, err
 		}
 	}
@@ -89,8 +94,16 @@ func (r ShipyardRepository) GetShipyard(ctx context.Context, query appgame.Shipy
 	if err != nil {
 		return domaingame.Shipyard{}, err
 	}
+	commanderActive, err := (BuildingsRepository{queryer: r.queryer}).loadBuildingCommanderActive(ctx, usersTable, query.PlayerID, now)
+	if err != nil {
+		return domaingame.Shipyard{}, err
+	}
+	queue, err := r.loadShipyardQueueEntries(ctx, queueTable, overview.CurrentPlanet.ID, now)
+	if err != nil {
+		return domaingame.Shipyard{}, err
+	}
 
-	return domaingame.BuildShipyard(overview, levels, research, fleet, speed, busy, orderCap), nil
+	return domaingame.BuildShipyardWithQueue(overview, levels, research, fleet, speed, busy, orderCap, commanderActive, queue), nil
 }
 
 func (r ShipyardRepository) loadFleetCounts(ctx context.Context, planetsTable string, playerID int, planetID int) (domaingame.FleetCounts, error) {
@@ -153,6 +166,34 @@ func (r ShipyardRepository) loadShipyardUniverseConfig(ctx context.Context) (flo
 		orderCap = 1000
 	}
 	return speed, orderCap, nil
+}
+
+func (r ShipyardRepository) loadShipyardQueueEntries(ctx context.Context, queueTable string, planetID int, now int) ([]domaingame.ShipyardQueueEntry, error) {
+	rows, err := r.loadShipyardQueueTasks(ctx, queueTable, planetID)
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]domaingame.ShipyardQueueEntry, 0, len(rows))
+	for _, row := range rows {
+		name := domaingame.TechnologyName(row.ObjID)
+		if name == "" {
+			continue
+		}
+		remaining := row.End - now
+		if remaining < 0 {
+			remaining = 0
+		}
+		entries = append(entries, domaingame.ShipyardQueueEntry{
+			TaskID:           row.TaskID,
+			UnitID:           row.ObjID,
+			Name:             name,
+			Count:            row.Level,
+			Start:            row.Start,
+			End:              row.End,
+			RemainingSeconds: remaining,
+		})
+	}
+	return entries, nil
 }
 
 func (r ShipyardRepository) loadShipyardBusy(ctx context.Context, buildQueueTable string, planetID int) (bool, error) {

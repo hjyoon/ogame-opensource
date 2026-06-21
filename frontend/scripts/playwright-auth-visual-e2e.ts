@@ -137,7 +137,7 @@ const pageSpecs: AuthPageSpec[] = [
     migratedPath: "/game/research",
     legacyReady: "#content table",
     migratedReady: ".legacy-research-table",
-    expectedTexts: ["Description", "Computer Technology", "Energy Technology", "Combustion Drive", "Research level"]
+    expectedTexts: ["Description", "Computer Technology", "Energy Technology", "Combustion Drive", "Duration:"]
   },
   {
     name: "game-shipyard",

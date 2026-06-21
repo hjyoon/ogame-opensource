@@ -321,11 +321,23 @@ type GameResearchQueue = {
 
 type GameShipyard = {
   commander: string;
+  commanderActive: boolean;
   currentPlanet: GamePlanetOverview;
   planetSwitcher: GamePlanetSummary[];
   hasShipyard: boolean;
   busy: boolean;
+  queue: GameShipyardQueueEntry[];
   items: GameShipyardItem[];
+};
+
+type GameShipyardQueueEntry = {
+  taskId: number;
+  unitId: number;
+  name: string;
+  count: number;
+  start: number;
+  end: number;
+  remainingSeconds: number;
 };
 
 type GameDefense = {
@@ -843,6 +855,12 @@ type ResourceProductionRow = {
   level: number;
   percent: number;
   values: ResourceProductionValues;
+  bonusIcons?: ResourceProductionBonusIcon[];
+};
+
+type ResourceProductionBonusIcon = {
+  image: string;
+  alt: string;
 };
 
 type ResourceProductionValues = {
@@ -865,6 +883,7 @@ type LegacyGameOverviewProps = {
   error: string | null;
   route: GameRoute;
   overviewPending: boolean;
+  onOverviewRefresh: () => void;
   onPlanetDelete: (password: string, deleteID: number) => void;
   onPlanetRename: (name: string) => void;
   buildingsStatus: GameBuildingsStatus | null;
@@ -886,6 +905,7 @@ type LegacyGameOverviewProps = {
   shipyardError: string | null;
   shipyardPending: boolean;
   onShipyardSubmit: (orders: Record<string, number>) => void;
+  onShipyardRefresh: () => void;
   fleetStatus: GameFleetStatus | null;
   fleetError: string | null;
   fleetPending: boolean;
@@ -994,6 +1014,7 @@ export function LegacyGameOverview({
   error,
   route,
   overviewPending,
+  onOverviewRefresh,
   onPlanetDelete,
   onPlanetRename,
   buildingsStatus,
@@ -1015,6 +1036,7 @@ export function LegacyGameOverview({
   shipyardError,
   shipyardPending,
   onShipyardSubmit,
+  onShipyardRefresh,
   fleetStatus,
   fleetError,
   fleetPending,
@@ -1240,7 +1262,7 @@ export function LegacyGameOverview({
           <LegacyMessage tone="error" text={optionsIssue} />
         ) : null}
         {report && route.key === "report" ? <ReportTable report={report} /> : null}
-        {overview && route.key === "overview" ? <OverviewTable overview={overview} /> : null}
+        {overview && route.key === "overview" ? <OverviewTable onBuildQueueComplete={onOverviewRefresh} overview={overview} /> : null}
         {overview && route.key === "renamePlanet" ? (
           <RenamePlanetTable onDelete={onPlanetDelete} onRename={onPlanetRename} overview={overview} pending={overviewPending} />
         ) : null}
@@ -1270,7 +1292,7 @@ export function LegacyGameOverview({
           <LegacyMessage tone="neutral" text="Loading shipyard..." />
         ) : null}
         {shipyard && route.key === "shipyard" ? (
-          <ShipyardTable onSubmit={onShipyardSubmit} pending={shipyardPending} shipyard={shipyard} />
+          <ShipyardTable onComplete={onShipyardRefresh} onSubmit={onShipyardSubmit} pending={shipyardPending} shipyard={shipyard} />
         ) : null}
         {overview && (route.key === "fleet" || route.key === "fleetTemplates") && !fleet && !fleetError && !fleetIssue ? (
           <LegacyMessage tone="neutral" text="Loading fleet..." />
@@ -1967,6 +1989,54 @@ function BuildingQueueCountdown({
   );
 }
 
+function OverviewBuildQueue({
+  queue,
+  includeLevel,
+  onComplete
+}: {
+  queue: GameOverviewBuildQueue | undefined;
+  includeLevel: boolean;
+  onComplete: () => void;
+}) {
+  if (!queue) {
+    return <>free</>;
+  }
+  return (
+    <>
+      {overviewBuildQueueText(queue, includeLevel)}
+      {includeLevel ? <OverviewBuildQueueCountdown onComplete={onComplete} queue={queue} /> : null}
+    </>
+  );
+}
+
+function OverviewBuildQueueCountdown({ queue, onComplete }: { queue: GameOverviewBuildQueue; onComplete: () => void }) {
+  const [now, setNow] = React.useState(() => Math.floor(Date.now() / 1000));
+  const [refreshQueued, setRefreshQueued] = React.useState(false);
+  React.useEffect(() => {
+    const id = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  React.useEffect(() => {
+    setRefreshQueued(false);
+  }, [queue.end, queue.techId]);
+  const remaining = Math.max(0, queue.end - now);
+  React.useEffect(() => {
+    if (remaining > 0 || refreshQueued) {
+      return undefined;
+    }
+    const id = window.setTimeout(() => {
+      setRefreshQueued(true);
+      onComplete();
+    }, 1500);
+    return () => window.clearTimeout(id);
+  }, [onComplete, refreshQueued, remaining]);
+  return (
+    <div className="z" id="bxx" title={String(queue.end)}>
+      {remaining <= 0 ? "--" : formatLegacyCountdown(remaining)}
+    </div>
+  );
+}
+
 function buildingNextURL() {
   const query = new URLSearchParams(window.location.search);
   query.delete("modus");
@@ -2041,108 +2111,183 @@ function ResearchTable({
 }) {
   if (!research.hasLab) {
     return (
-      <table className="legacy-overview-table legacy-research-table" width={530}>
-        <tbody>
-          <tr>
-            <td className="legacy-c c">Research</td>
-          </tr>
-          <tr>
-            <th>In order to do this, you need to build a research lab!</th>
-          </tr>
-        </tbody>
-      </table>
+      <ResearchFrame>
+        <table className="legacy-overview-table legacy-research-table" width={530}>
+          <tbody>
+            <tr>
+              <td className="legacy-l l" colSpan={2}>
+                Description
+              </td>
+              <td className="legacy-l l">
+                <b>Qty.</b>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <table>
+          <tbody>
+            <tr>
+              <td className="legacy-c c">In order to do this, you need to build a research lab!</td>
+            </tr>
+          </tbody>
+        </table>
+      </ResearchFrame>
     );
   }
   return (
-    <table className="legacy-overview-table legacy-research-table" width={530}>
+    <ResearchFrame>
+      <table className="legacy-overview-table legacy-research-table" width={530}>
+        <tbody>
+          <tr>
+            <td className="legacy-l l" colSpan={2}>
+              Description
+            </td>
+            <td className="legacy-l l">
+              <b>Qty.</b>
+            </td>
+          </tr>
+          {research.items.map((item) => {
+            const active = research.active?.techId === item.id ? research.active : undefined;
+            const action = item.action === "Cancel" ? "cancel" : "start";
+            return (
+              <tr data-research-row={item.id} key={item.id}>
+                <td className="legacy-l l legacy-building-image">
+                  <a href={technologyInfoURL(item.id)}>
+                    <img alt="" height={120} src={`${skinBase}/gebaeude/${item.id}.gif`} width={120} />
+                  </a>
+                </td>
+                <td
+                  className="legacy-l l legacy-building-description"
+                  dangerouslySetInnerHTML={{ __html: buildingDescriptionHTML(item) }}
+                />
+                <td className="legacy-k k legacy-building-action">
+                  {active ? (
+                    <ResearchQueueCountdown active={active} onCancel={onAction} pending={pending} />
+                  ) : item.action === "-" ? (
+                    <> - </>
+                  ) : item.canBuild ? (
+                    <a
+                      href={researchActionURL(action, item.id)}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        if (!pending) {
+                          onAction(action, item.id);
+                        }
+                      }}
+                    >
+                      <span style={{ color: "#00FF00" }}>
+                        <ResearchActionLabel item={item} />
+                      </span>
+                    </a>
+                  ) : (
+                    <span style={{ color: "#FF0000" }}>
+                      <ResearchActionLabel item={item} />
+                    </span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </ResearchFrame>
+  );
+}
+
+function ResearchFrame({ children }: { children: React.ReactNode }) {
+  return (
+    <table className="legacy-research-frame">
       <tbody>
         <tr>
-          <td className="legacy-l l" colSpan={2}>
-            Description
-          </td>
-          <td className="legacy-l l">
-            <b>Qty.</b>
-          </td>
+          <td style={{ backgroundColor: "transparent" }}>{children}</td>
         </tr>
-        {research.items.map((item) => {
-          const active = research.active?.techId === item.id ? research.active : undefined;
-          const actionContent =
-            item.action === "Cancel" && active ? (
-              <>
-                {formatLegacyDuration(active.remainingSeconds)}
-                <br />
-                Cancel
-              </>
-            ) : (
-              <>
-                {item.action}
-                {item.action === "Research level" ? (
-                  <>
-                    <br />
-                    level {item.nextLevel}
-                  </>
-                ) : null}
-              </>
-            );
-          const action = item.action === "Cancel" ? "cancel" : "start";
-          return (
-            <tr data-research-row={item.id} key={item.id}>
-              <td className="legacy-l l legacy-building-image">
-                <a href={gameRouteURL("/game/technology", window.location.search)}>
-                  <img alt="" height={120} src={`${skinBase}/gebaeude/${item.id}.gif`} width={120} />
-                </a>
-              </td>
-              <td className="legacy-l l legacy-building-description">
-                <a href={gameRouteURL("/game/technology", window.location.search)}>{item.name}</a>
-                {item.level > 0 ? <> (level {item.level})</> : null}
-                <br />
-                {item.description}
-                <br />
-                Cost:
-                {costParts(item.cost).map((part) => (
-                  <React.Fragment key={part.name}>
-                    {" "}
-                    {part.name}: <b>{formatLegacyNumber(part.value)}</b>
-                  </React.Fragment>
-                ))}
-                <br />
-                Duration: {formatLegacyDuration(item.durationSeconds)}
-                <br />
-              </td>
-              <td className="legacy-l l legacy-building-action">
-                {item.canBuild ? (
-                  <a
-                    className="legacy-build-ok"
-                    href={researchActionURL(action, item.id)}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      if (!pending) {
-                        onAction(action, item.id);
-                      }
-                    }}
-                  >
-                    {actionContent}
-                  </a>
-                ) : (
-                  <span className="legacy-build-blocked">{actionContent}</span>
-                )}
-              </td>
-            </tr>
-          );
-        })}
       </tbody>
     </table>
   );
 }
 
-function researchActionURL(action: "start" | "cancel", techID: number) {
+function ResearchQueueCountdown({
+  active,
+  onCancel,
+  pending
+}: {
+  active: GameResearchQueue;
+  onCancel: (action: "start" | "cancel", techID: number) => void;
+  pending: boolean;
+}) {
+  const [now, setNow] = React.useState(() => Math.floor(Date.now() / 1000));
+  React.useEffect(() => {
+    const id = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  const remaining = Math.max(0, active.end - now);
+  if (remaining <= 0) {
+    return (
+      <div className="z" id="bxx">
+        Done
+        <br />
+        <a href={researchNextURL(active.planetId)}>next</a>
+      </div>
+    );
+  }
+  return (
+    <div className="z" id="bxx">
+      {formatLegacyCountdown(remaining)}
+      <br />
+      {active.cancelable ? (
+        <a
+          href={researchActionURL("cancel", active.techId, active.planetId)}
+          onClick={(event) => {
+            event.preventDefault();
+            if (!pending) {
+              onCancel("cancel", active.techId);
+            }
+          }}
+        >
+          Cancel
+        </a>
+      ) : null}
+    </div>
+  );
+}
+
+function ResearchActionLabel({ item }: { item: GameBuildingItem }) {
+  if (item.action === "Research level") {
+    return (
+      <>
+        Research
+        <br />
+        level {item.nextLevel}
+      </>
+    );
+  }
+  if (item.action === "research") {
+    return <>Research</>;
+  }
+  return <>{item.action}</>;
+}
+
+function researchActionURL(action: "start" | "cancel", techID: number, planetID?: number) {
   const query = new URLSearchParams(window.location.search);
+  query.delete("bau");
+  query.delete("unbau");
   if (action === "start") {
     query.set("bau", String(techID));
   } else {
     query.set("unbau", String(techID));
+    if (planetID !== undefined) {
+      query.set("cp", String(planetID));
+    }
   }
   return gameRouteURL("/game/research", `?${query.toString()}`);
+}
+
+function researchNextURL(planetID: number) {
+  const query = new URLSearchParams(window.location.search);
+  query.delete("bau");
+  query.delete("unbau");
+  query.set("cp", String(planetID));
+  return gameRouteURL("/game/research", query.toString());
 }
 
 function collectLegacyUnitOrders(form: HTMLFormElement): Record<string, number> {
@@ -2170,10 +2315,12 @@ function setLegacyUnitOrderMax(anchor: HTMLAnchorElement, itemID: number, maximu
 }
 
 function ShipyardTable({
+  onComplete,
   onSubmit,
   pending,
   shipyard
 }: {
+  onComplete: () => void;
   onSubmit: (orders: Record<string, number>) => void;
   pending: boolean;
   shipyard: GameShipyard;
@@ -2200,6 +2347,7 @@ function ShipyardTable({
     );
   }
   return (
+    <>
     <form
       className="legacy-shipyard-form"
       onSubmit={(event) => {
@@ -2220,28 +2368,15 @@ function ShipyardTable({
           {shipyard.items.map((item) => (
             <tr data-shipyard-row={item.id} key={item.id}>
               <td className="legacy-l l legacy-building-image">
-                <a href={gameRouteURL("/game/technology", window.location.search)}>
+                <a href={technologyInfoURL(item.id)}>
                   <img alt="" height={120} src={`${skinBase}/gebaeude/${item.id}.gif`} width={120} />
                 </a>
               </td>
-              <td className="legacy-l l legacy-building-description">
-                <a href={gameRouteURL("/game/technology", window.location.search)}>{item.name}</a>
-                {item.count > 0 ? <> (in stock {item.count})</> : null}
-                <br />
-                {item.description}
-                <br />
-                Cost:
-                {costParts(item.cost).map((part) => (
-                  <React.Fragment key={part.name}>
-                    {" "}
-                    {part.name}: <b>{formatLegacyNumber(part.value)}</b>
-                  </React.Fragment>
-                ))}
-                <br />
-                Duration: {formatLegacyDuration(item.durationSeconds)}
-                <br />
-              </td>
-              <td className="legacy-l l legacy-building-action">
+              <td
+                className="legacy-l l legacy-building-description"
+                dangerouslySetInnerHTML={{ __html: shipyardDescriptionHTML(item) }}
+              />
+              <td className="legacy-k k legacy-building-action">
                 {!item.meetsRequirement ? <span className="legacy-build-blocked">impossibly</span> : null}
                 {item.meetsRequirement && item.canBuild ? (
                   <>
@@ -2254,7 +2389,7 @@ function ShipyardTable({
                       size={6}
                       type="text"
                     />
-                    {item.maxBuild > 0 ? (
+                    {shipyard.commanderActive && item.maxBuild > 0 ? (
                       <>
                         <br />
                         <a
@@ -2274,14 +2409,148 @@ function ShipyardTable({
             </tr>
           ))}
           <tr>
-            <td className="legacy-c c" colSpan={2}>
+            <td align="center" className="legacy-c c" colSpan={2}>
               <input disabled={pending} type="submit" value="Build" />
             </td>
           </tr>
         </tbody>
       </table>
     </form>
+    <ShipyardQueuePanel onComplete={onComplete} queue={shipyard.queue} />
+    </>
   );
+}
+
+function shipyardDescriptionHTML(item: GameShipyardItem): string {
+  const href = legacyHTMLAttribute(technologyInfoURL(item.id));
+  const stock = item.count > 0 ? ` (in stock ${formatLegacyRawInteger(item.count)})` : "";
+  const costs = costParts(item.cost)
+    .map((part) => ` ${legacyHTMLText(part.name)}: <b>${formatLegacyPlainNumber(part.value)}</b>`)
+    .join("");
+  return `<a href="${href}">${legacyHTMLText(item.name)}</a>${stock}<br>${legacyHTMLText(item.description)}<br>Cost:${costs}<br>Duration: ${formatLegacyDuration(item.durationSeconds)}<br>`;
+}
+
+type ShipyardQueueRuntime = {
+  activeIndex: number;
+  displayRemaining: number;
+  g: number;
+  timerStartMs: number;
+  entries: ShipyardQueueRuntimeEntry[];
+};
+
+type ShipyardQueueRuntimeEntry = GameShipyardQueueEntry & {
+  unitSeconds: number;
+};
+
+function ShipyardQueuePanel({ onComplete: _onComplete, queue }: { onComplete: () => void; queue: GameShipyardQueueEntry[] }) {
+  const queueKey = queue.map((entry) => `${entry.taskId}:${entry.end}:${entry.count}`).join("|");
+  const [runtime, setRuntime] = React.useState<ShipyardQueueRuntime>(() => createShipyardQueueRuntime(queue));
+  React.useEffect(() => {
+    setRuntime(createShipyardQueueRuntime(queue));
+  }, [queueKey]);
+  React.useEffect(() => {
+    const id = window.setInterval(() => setRuntime((current) => advanceShipyardQueueRuntime(current, Date.now())), 200);
+    return () => window.clearInterval(id);
+  }, []);
+  const active = runtime.entries[runtime.activeIndex];
+  if (queue.length === 0 || runtime.entries.length === 0) {
+    return null;
+  }
+  const totalRemaining = queue.reduce((sum, entry, index) => {
+    const unitSeconds = Math.max(0, entry.end - entry.start);
+    if (index === 0) {
+      return sum + Math.max(0, entry.remainingSeconds) + Math.max(0, entry.count - 1) * unitSeconds;
+    }
+    return sum + Math.max(0, entry.count) * unitSeconds;
+  }, 0);
+  const queueComplete = runtime.activeIndex >= runtime.entries.length;
+  return (
+    <center className="legacy-shipyard-queue-panel">
+      <br />
+      Now being produced:{" "}
+      <div
+        className="z"
+        dangerouslySetInnerHTML={{ __html: queueComplete || !active ? "Tasks completed" : shipyardQueueActiveHTML(active, runtime.displayRemaining) }}
+        id="bx"
+      />
+      <br />
+      <form action={gameRouteURL("/game/shipyard", window.location.search)} method="get" name="Atr">
+        <input name="session" type="hidden" value={new URLSearchParams(window.location.search).get("session") ?? ""} />
+        <input name="mode" type="hidden" value="Flotte" />
+        <table width={530}>
+          <tbody>
+            <tr>
+              <td className="c">Expected tasks</td>
+            </tr>
+            <tr>
+              <th>
+                <select name="auftr" size={10}>
+                  {queueComplete ? (
+                    <option>Tasks completed</option>
+                  ) : (
+                    runtime.entries.slice(runtime.activeIndex).map((entry, index) => (
+                      <option key={entry.taskId} value={runtime.activeIndex + index + 1}>
+                        {entry.count} "{entry.name}"{index === 0 ? " (produced)" : ""}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </th>
+            </tr>
+            <tr>
+              <td className="c" />
+            </tr>
+          </tbody>
+        </table>
+      </form>
+      The entire production will take {formatLegacyDuration(totalRemaining)}
+      <br />
+    </center>
+  );
+}
+
+function createShipyardQueueRuntime(queue: GameShipyardQueueEntry[]): ShipyardQueueRuntime {
+  const entries = queue.map((entry) => ({
+    ...entry,
+    count: Math.max(0, entry.count),
+    unitSeconds: Math.max(0, entry.end - entry.start)
+  }));
+  const active = entries[0];
+  const g = active ? Math.max(0, active.unitSeconds - active.remainingSeconds) : 0;
+  return {
+    activeIndex: 0,
+    displayRemaining: active ? Math.max(0, active.remainingSeconds) : 0,
+    entries,
+    g,
+    timerStartMs: Date.now() - 500
+  };
+}
+
+function advanceShipyardQueueRuntime(runtime: ShipyardQueueRuntime, nowMs: number): ShipyardQueueRuntime {
+  const active = runtime.entries[runtime.activeIndex];
+  if (!active) {
+    return runtime.displayRemaining === 0 ? runtime : { ...runtime, displayRemaining: 0 };
+  }
+  const elapsed = Math.round((nowMs - runtime.timerStartMs) / 1000);
+  const remaining = active.unitSeconds - runtime.g - elapsed;
+  if (remaining >= 0) {
+    return remaining === runtime.displayRemaining ? runtime : { ...runtime, displayRemaining: remaining };
+  }
+  const entries = runtime.entries.map((entry, index) =>
+    index === runtime.activeIndex ? { ...entry, count: Math.max(0, entry.count - 1) } : entry
+  );
+  const activeIndex = entries[runtime.activeIndex]?.count > 0 ? runtime.activeIndex : runtime.activeIndex + 1;
+  return {
+    activeIndex,
+    displayRemaining: 0,
+    entries,
+    g: 0,
+    timerStartMs: nowMs
+  };
+}
+
+function shipyardQueueActiveHTML(active: GameShipyardQueueEntry, remaining: number): string {
+  return `${legacyHTMLText(active.name)} ${formatLegacyCountdown(remaining)}`;
 }
 
 function FleetTable({
@@ -5022,7 +5291,6 @@ function formatEmpireAverage(value: number): string {
 
 function ResourcesTable({
   resources,
-  pending,
   onSubmit
 }: {
   resources: GameResourceProduction;
@@ -5031,78 +5299,25 @@ function ResourcesTable({
 }) {
   return (
     <form
+      action={gameRouteURL("/game/resources", window.location.search)}
       className="legacy-resources-form"
       id="ressourcen"
+      method="post"
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit(resourceProductionFormValues(event.currentTarget));
       }}
     >
+      <input id="screen" name="screen" type="hidden" />
       <div className="legacy-center">
         <br />
         <br />
         Production factor: {formatProductionFactor(resources.factor)}
-        <table className="legacy-overview-table legacy-resources-table" width={550}>
-          <tbody>
-            <tr>
-              <td className="legacy-c c" colSpan={6}>
-                Resource settings on planet &quot;{resources.currentPlanet.name}&quot;
-              </td>
-            </tr>
-            <tr>
-              <th colSpan={2}></th>
-              {resourceColumns.map((column) => (
-                <th key={column.key}>{column.label}</th>
-              ))}
-            </tr>
-            <tr>
-              <th colSpan={2}>Basic Income</th>
-              {resourceColumns.map((column) => (
-                <td className="legacy-k k" key={column.key}>
-                  {formatLegacyRawInteger(resourceValue(resources.natural, column.key))}
-                </td>
-              ))}
-            </tr>
-            {resources.rows.map((row) => (
-              <tr data-resource-row={row.id} key={row.id}>
-                <th>
-                  {row.name} ({row.id === 212 ? `${row.level} available` : `Level ${row.level}`})
-                </th>
-                <th>&nbsp;</th>
-                {resourceColumns.map((column) => (
-                  <ResourceProductionCell column={column.key} key={column.key} values={row.values} />
-                ))}
-                <th>
-                  <select aria-label={`${row.name} production`} defaultValue={row.percent} name={`last${row.id}`} size={1}>
-                    {productionPercentOptions().map((percent) => (
-                      <option key={percent} value={percent}>
-                        {percent}%
-                      </option>
-                    ))}
-                  </select>
-                </th>
-              </tr>
-            ))}
-            <tr></tr>
-            <tr>
-              <th colSpan={2}>Storage capacity</th>
-              {resourceColumns.map((column) => (
-                <td className="legacy-k k" key={column.key}>
-                  <span style={{ color: "#00ff00" }}>{formatStorageValue(resources.storage, column.key)}</span>
-                </td>
-              ))}
-              <td className="legacy-k k">
-                <input disabled={pending} name="action" type="submit" value="Recalculate" />
-              </td>
-            </tr>
-            <tr>
-              <th colSpan={6} style={{ height: 4 }}></th>
-            </tr>
-            <ResourceTotalRow label="Total per hour:" values={resources.totals.hour} />
-            <ResourceTotalRow label="Total per day:" values={resources.totals.day} />
-            <ResourceTotalRow label="Total per week:" values={resources.totals.week} />
-          </tbody>
-        </table>
+        <table
+          className="legacy-overview-table legacy-resources-table"
+          dangerouslySetInnerHTML={{ __html: legacyResourcesTableHTML(resources) }}
+          width={550}
+        />
         <br />
         <br />
         <br />
@@ -5110,6 +5325,124 @@ function ResourcesTable({
       </div>
     </form>
   );
+}
+
+function legacyResourcesTableHTML(resources: GameResourceProduction): string {
+  let html = "";
+  html += "  <tr> \n";
+  html += '    <td class="c" colspan="6"> \n';
+  html += `    Resource settings on planet &quot;${escapeLegacyHTML(resources.currentPlanet.name)}&quot;\n`;
+  html += "    </td> \n";
+  html += "  </tr>\n";
+
+  html += "  <tr> \n";
+  html += '   <th colspan="2"></th>';
+  for (const column of resourceColumns) {
+    html += `    <th>${escapeLegacyHTML(column.label)}</th>`;
+  }
+  html += "</th> \n";
+  html += "  </tr>\n";
+
+  html += "  <tr> \n";
+  html += '   <th colspan="2">Basic Income</th> \n';
+  for (const column of resourceColumns) {
+    html += `    <td class="k">${formatLegacyRawInteger(resourceValue(resources.natural, column.key))}</td>\n`;
+  }
+  html += "  </tr>\n";
+
+  for (const row of resources.rows) {
+    html += "  <tr> \n";
+    const label = row.id === 212 ? `${row.level} available` : `Level ${row.level}`;
+    html += `<th>${escapeLegacyHTML(row.name)} (${escapeLegacyHTML(label)})</th>`;
+    html += legacyResourceBonusCellHTML(row);
+    html += "\n";
+    for (const column of resourceColumns) {
+      html += legacyResourceProductionCellHTML(column.key, row.values);
+    }
+    html += " \n";
+    html += legacyProductionSelectHTML(row.id, row.percent);
+    html += "  </tr>\n";
+  }
+
+  html += "    <tr>   <tr> \n";
+  html += '    <th colspan="2">Storage capacity</th> \n';
+  for (const column of resourceColumns) {
+    html += `    <td class="k"><font color="#00ff00">${escapeLegacyHTML(formatStorageValue(resources.storage, column.key))}</font></td> \n`;
+  }
+  html += '    <td class="k"> \n';
+  html += '    <input type="submit" name="action" value="Recalculate"></td> \n';
+  html += "  </tr> \n";
+  html += '  <tr>     <th colspan="6" height="4"></th>   </tr> \n';
+  html += legacyResourceTotalRowHTML("Total per hour:", resources.totals.hour);
+  html += legacyResourceTotalRowHTML("Total per day:", resources.totals.day);
+  html += legacyResourceTotalRowHTML("Total per week:", resources.totals.week);
+  return html;
+}
+
+function legacyResourceBonusCellHTML(row: ResourceProductionRow): string {
+  const iconByImage = new Map((row.bonusIcons ?? []).map((icon) => [icon.image, icon]));
+  const slots: (ResourceProductionBonusIcon | undefined)[] =
+    row.id === 1 || row.id === 2 || row.id === 3
+      ? [iconByImage.get("geologe_ikon.gif"), undefined]
+      : row.id === 12
+        ? [undefined, iconByImage.get("ingenieur_ikon.gif")]
+        : row.id === 4 || row.id === 212
+          ? [iconByImage.get("ingenieur_ikon.gif")]
+          : [undefined];
+  return `<th>${slots.map((slot) => (slot ? legacyResourceBonusIconHTML(slot) : "&nbsp;")).join("")}</th>`;
+}
+
+function legacyResourceBonusIconHTML(icon: ResourceProductionBonusIcon): string {
+  return `<img border="0" src="${escapeLegacyAttribute(`${gameImageBase}/${icon.image}`)}" alt="${escapeLegacyAttribute(icon.alt)}" width="20" height="20">`;
+}
+
+function legacyResourceProductionCellHTML(
+  column: keyof Pick<ResourceProductionValues, "metal" | "crystal" | "deuterium" | "energy">,
+  values: ResourceProductionValues
+): string {
+  const value = resourceValue(values, column);
+  const raw = column === "energy" ? values.energyRaw : value;
+  const text =
+    column === "energy" && raw <= 0
+      ? `${formatLegacyPlainNumber(Math.abs(value))}/${formatLegacyPlainNumber(Math.abs(raw))}`
+      : formatLegacySignedNumber(value);
+  const color = raw > 0 || value > 0 ? "#00FF00" : raw < 0 || value < 0 ? "#FF0000" : "#FFFFFF";
+  return `   <th><font color="${color}">${escapeLegacyHTML(text)}</font></th>\n`;
+}
+
+function legacyProductionSelectHTML(rowID: number, selectedPercent: number): string {
+  let html = `  <th> <select name="last${rowID}" size="1">\n`;
+  for (const percent of productionPercentOptions()) {
+    html += `      <option value="${percent}" ${percent === selectedPercent ? "selected" : ""}>${percent}%</option>\n`;
+  }
+  html += "        </select>\n";
+  html += "   </th>\n";
+  return html;
+}
+
+function legacyResourceTotalRowHTML(label: string, values: ResourceProductionValues): string {
+  let html = "  <tr> \n";
+  html += `    <th colspan="2">${escapeLegacyHTML(label)}</th> \n`;
+  for (const column of resourceColumns) {
+    const value = resourceValue(values, column.key);
+    const color = value > 0 ? "#00ff00" : "#ff0000";
+    html += `    <td class="k"><font color="${color}">${escapeLegacyHTML(formatLegacySignedNumber(value))}</font></td> \n`;
+  }
+  html += "  </tr> \n";
+  return html;
+}
+
+function escapeLegacyHTML(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function escapeLegacyAttribute(value: string): string {
+  return escapeLegacyHTML(value);
 }
 
 function resourceProductionFormValues(form: HTMLFormElement): Record<string, string> {
@@ -5124,44 +5457,7 @@ function resourceProductionFormValues(form: HTMLFormElement): Record<string, str
   return production;
 }
 
-function ResourceProductionCell({
-  column,
-  values
-}: {
-  column: keyof Pick<ResourceProductionValues, "metal" | "crystal" | "deuterium" | "energy">;
-  values: ResourceProductionValues;
-}) {
-  const value = resourceValue(values, column);
-  const raw = column === "energy" ? values.energyRaw : value;
-  const text =
-    column === "energy" && raw <= 0
-      ? `${formatLegacyPlainNumber(Math.abs(value))}/${formatLegacyPlainNumber(Math.abs(raw))}`
-      : formatLegacySignedNumber(value);
-  const color = raw > 0 || value > 0 ? "#00FF00" : raw < 0 || value < 0 ? "#FF0000" : "#FFFFFF";
-  return (
-    <th>
-      <span style={{ color }}>{text}</span>
-    </th>
-  );
-}
-
-function ResourceTotalRow({ label, values }: { label: string; values: ResourceProductionValues }) {
-  return (
-    <tr>
-      <th colSpan={2}>{label}</th>
-      {resourceColumns.map((column) => {
-        const value = resourceValue(values, column.key);
-        return (
-          <td className="legacy-k k" key={column.key}>
-            <span style={{ color: value > 0 ? "#00ff00" : "#ff0000" }}>{formatLegacySignedNumber(value)}</span>
-          </td>
-        );
-      })}
-    </tr>
-  );
-}
-
-function OverviewTable({ overview }: { overview: GameOverview }) {
+function OverviewTable({ overview, onBuildQueueComplete }: { overview: GameOverview; onBuildQueueComplete: () => void }) {
   const planet = overview.currentPlanet;
   const planetTitle =
     planet.type === 0
@@ -5224,7 +5520,9 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
           <th colSpan={2}>
             <img alt="" height={200} src={planetImagePath(planet, false)} width={200} />
             <br />
-            <LegacyCenter>{overviewBuildQueueText(planet.buildQueue, true)}</LegacyCenter>
+            <LegacyCenter>
+              <OverviewBuildQueue includeLevel={true} onComplete={onBuildQueueComplete} queue={planet.buildQueue} />
+            </LegacyCenter>
             <br />
           </th>
           <th className="legacy-s s">
@@ -5248,7 +5546,9 @@ function OverviewTable({ overview }: { overview: GameOverview }) {
                             />
                           </a>
                           <br />
-                          <LegacyCenter>{overviewBuildQueueText(item.buildQueue, false)}</LegacyCenter>
+                          <LegacyCenter>
+                            <OverviewBuildQueue includeLevel={false} onComplete={onBuildQueueComplete} queue={item.buildQueue} />
+                          </LegacyCenter>
                         </th>
                       ))}
                     </tr>

@@ -24,6 +24,11 @@ func TestBuildDefenseUsesLegacyCostAndDuration(t *testing.T) {
 	if !launcher.CanBuild || launcher.MaxBuild != 5 {
 		t.Fatalf("expected affordable launcher, got %+v", launcher)
 	}
+
+	defaultSpeed := BuildDefense(overview, BuildingLevels{BuildingShipyard: 1}, ResearchLevels{}, DefenseCounts{}, 0, false, 1000)
+	if defenseItemByID(t, defaultSpeed, DefenseRocketLauncher).DurationSeconds != 1440 {
+		t.Fatalf("expected non-positive speed to default to one, got %+v", defaultSpeed)
+	}
 }
 
 func TestBuildDefenseKeepsOwnedUnavailableDefenseVisible(t *testing.T) {
@@ -46,6 +51,11 @@ func TestBuildDefenseBlocksExistingShieldDome(t *testing.T) {
 	dome := defenseItemByID(t, defense, DefenseSmallShieldDome)
 	if dome.CanBuild || dome.MaxBuild != 0 || dome.BlockedReason != "A shield dome can only be built 1 time." {
 		t.Fatalf("expected existing dome to block another dome, got %+v", dome)
+	}
+
+	empty := BuildDefense(overview, BuildingLevels{BuildingShipyard: 1}, ResearchLevels{ResearchShield: 2}, DefenseCounts{}, 1, false, 1000)
+	if dome := defenseItemByID(t, empty, DefenseSmallShieldDome); !dome.CanBuild || dome.MaxBuild != 1 {
+		t.Fatalf("expected empty dome slot to cap max build at one, got %+v", dome)
 	}
 }
 
