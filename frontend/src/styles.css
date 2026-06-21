@@ -649,7 +649,8 @@ body.legacy-game-body {
   margin-top: 3px;
 }
 
-.legacy-game-shell .legacy-shipyard-table {
+.legacy-game-shell .legacy-shipyard-table,
+.legacy-game-shell .legacy-defense-table {
   margin-top: 3px;
 }
 
@@ -681,11 +682,15 @@ body.legacy-game-body {
 .legacy-game-shell .legacy-galaxy-table {
   border-collapse: separate;
   border-spacing: 2px;
-  margin-top: 15px;
+  margin-top: 11px;
 }
 
 .legacy-game-shell .legacy-galaxy-table th {
   font-weight: bold;
+}
+
+.legacy-game-shell .legacy-galaxy-table img {
+  vertical-align: baseline;
 }
 
 .legacy-game-shell .legacy-galaxy-nav-table {
@@ -730,7 +735,7 @@ body.legacy-game-body {
 
 .legacy-game-shell .legacy-galaxy-nav-table input,
 .legacy-game-shell .legacy-galaxy-table input {
-  background-color: #1f2d45;
+  background-color: #344566;
   border: 1px #415680 solid;
   color: #e6ebfb;
   margin-left: 2px;
@@ -742,12 +747,6 @@ body.legacy-game-body {
 
 .legacy-galaxy-name {
   white-space: nowrap;
-}
-
-.legacy-galaxy-actions img {
-  height: 16px;
-  margin-left: 1px;
-  width: 16px;
 }
 
 .legacy-galaxy-destroyed-moon {

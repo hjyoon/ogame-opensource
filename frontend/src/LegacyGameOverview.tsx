@@ -342,10 +342,12 @@ type GameShipyardQueueEntry = {
 
 type GameDefense = {
   commander: string;
+  commanderActive: boolean;
   currentPlanet: GamePlanetOverview;
   planetSwitcher: GamePlanetSummary[];
   hasShipyard: boolean;
   busy: boolean;
+  queue: GameShipyardQueueEntry[];
   items: GameShipyardItem[];
 };
 
@@ -3285,6 +3287,7 @@ function GalaxyTable({ galaxy }: { galaxy: GameGalaxy }) {
       position: galaxy.coordinates.position
     });
   };
+  const hasGalaxyInfo = galaxy.extra.commander || galaxy.remoteSystemCostDue;
 
   return (
     <>
@@ -3400,13 +3403,13 @@ function GalaxyTable({ galaxy }: { galaxy: GameGalaxy }) {
       <table className="legacy-overview-table legacy-galaxy-table" width={569}>
         <tbody>
           <tr>
-            <td className="legacy-c c" colSpan={8}>
+            <td className="c" colSpan={8}>
               Solar system {galaxy.coordinates.galaxy}:{galaxy.coordinates.system}
             </td>
           </tr>
           <tr>
             {["Coord.", "Planet", "Title (activity)", "Moon", "Debris", "Player", "Alliance", "Actions"].map((label) => (
-              <td className="legacy-c c" key={label}>
+              <td className="c" key={label}>
                 {label}
               </td>
             ))}
@@ -3417,43 +3420,50 @@ function GalaxyTable({ galaxy }: { galaxy: GameGalaxy }) {
           <tr>
             <th style={{ height: 32 }}>16</th>
             <th colSpan={7}>
-              <a href={fleetTargetHref(galaxy.coordinates, 16, 15)}>Outer space</a>
+              <a href={fleetTargetHref(galaxy.coordinates, 16, 15)}>Far space</a>
             </th>
           </tr>
           <tr>
-            <td className="legacy-c c" colSpan={6}>
-              (Populated {galaxy.populated} planets)
-            </td>
-            <td className="legacy-c c" colSpan={2}>
+            <td className="c" colSpan={6} dangerouslySetInnerHTML={{ __html: `(Populated ${formatLegacyNumber(galaxy.populated)} planets)` }} />
+            <td className="c" colSpan={2}>
               <a href="#legend" onClick={(event) => event.preventDefault()}>
                 Legend
               </a>
             </td>
           </tr>
-        </tbody>
-      </table>
-      <table className="legacy-overview-table legacy-galaxy-info-table" width={569}>
-        <tbody>
-          <tr>
-            <td className="legacy-c c" colSpan={2}>
-              {galaxy.extra.commander ? (
-                <>
-                  Espionage Probes {formatLegacyNumber(galaxy.extra.spyProbes)} Recycler {formatLegacyNumber(galaxy.extra.recyclers)}{" "}
-                  Interplanetary Missiles {formatLegacyNumber(galaxy.extra.missiles)}
-                  <br />
-                  {galaxy.extra.slots.used} of {galaxy.extra.slots.max} slots are in use
-                </>
-              ) : null}
-              {galaxy.remoteSystemCostDue ? (
-                <>
-                  {galaxy.extra.commander ? <br /> : null}
-                  Deuterium: {GalaxyDeuteriumCostText}
-                </>
-              ) : null}
-            </td>
+          <tr id="fleetstatusrow" style={{ display: "none" }}>
+            <th colSpan={8}>
+              <table id="fleetstatustable" style={{ fontWeight: "bold" }} width="100%">
+                <tbody />
+              </table>
+            </th>
           </tr>
         </tbody>
       </table>
+      {hasGalaxyInfo ? (
+        <table className="legacy-overview-table legacy-galaxy-info-table" width={569}>
+          <tbody>
+            <tr>
+              <td className="c" colSpan={2}>
+                {galaxy.extra.commander ? (
+                  <>
+                    Espionage Probes {formatLegacyNumber(galaxy.extra.spyProbes)} Recycler {formatLegacyNumber(galaxy.extra.recyclers)}{" "}
+                    Interplanetary Missiles {formatLegacyNumber(galaxy.extra.missiles)}
+                    <br />
+                    {galaxy.extra.slots.used} of {galaxy.extra.slots.max} slots are in use
+                  </>
+                ) : null}
+                {galaxy.remoteSystemCostDue ? (
+                  <>
+                    {galaxy.extra.commander ? <br /> : null}
+                    Deuterium: {GalaxyDeuteriumCostText}
+                  </>
+                ) : null}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      ) : null}
       <br />
       <br />
     </>
@@ -3464,19 +3474,21 @@ function GalaxyTableRow({ row }: { row: GameGalaxyRow }) {
   const planet = row.planet;
   const player = planet?.player;
   const debrisCoordinates = row.planet?.coordinates ?? row.moon?.coordinates;
+  const cellWidth = (value: number) => ({ width: String(value) }) as unknown as React.ThHTMLAttributes<HTMLTableCellElement>;
+
   return (
     <tr data-galaxy-position={row.position}>
-      <th style={{ width: 30 }}>
+      <th {...cellWidth(30)}>
         <a href={`#position-${row.position}`}>{row.position}</a>
       </th>
-      <th style={{ width: 30 }}>
+      <th {...cellWidth(30)}>
         {planet && planet.type === 1 ? (
           <a href={fleetTargetHref(planet.coordinates, planet.coordinates.position, planet.own ? 4 : 1)}>
             <img alt="" height={30} src={galaxyPlanetImagePath(planet, true)} width={30} />
           </a>
         ) : null}
       </th>
-      <th className="legacy-galaxy-name" style={{ width: 130 }}>
+      <th className="legacy-galaxy-name" style={{ whiteSpace: "nowrap" }} {...cellWidth(130)}>
         {planet ? (
           <>
             <span className={planet.abandoned ? "longinactive" : planet.destroyed ? "banned" : undefined}>{planet.displayName}</span>
@@ -3484,45 +3496,39 @@ function GalaxyTableRow({ row }: { row: GameGalaxyRow }) {
           </>
         ) : null}
       </th>
-      <th style={{ width: 30 }}>
+      <th style={{ whiteSpace: "nowrap" }} {...cellWidth(30)}>
         {row.moon ? (
           <a className={row.moon.destroyed ? "legacy-galaxy-destroyed-moon" : undefined} href={fleetTargetHref(row.moon.coordinates, row.moon.coordinates.position, 3, 3)}>
             <img alt="" height={22} src={galaxyPlanetImagePath(row.moon, true)} width={22} />
           </a>
         ) : null}
       </th>
-      <th style={{ width: 30 }}>
+      <th {...cellWidth(30)}>
         {row.debris?.visible && debrisCoordinates ? (
           <a href={fleetTargetHref(debrisCoordinates, row.position, 8, 2)}>
             <img alt="" height={22} src={`${skinBase}/planeten/debris.jpg`} title={`${formatLegacyNumber(row.debris.metal)} / ${formatLegacyNumber(row.debris.crystal)}`} width={22} />
           </a>
         ) : null}
       </th>
-      <th style={{ width: 150 }}>
-        {player ? (
-          <>
-            <span className={player.statusClass}>{player.name}</span>
-            {player.suffixes.length > 0 ? (
-              <>
-                (
-                {player.suffixes.map((suffix, index) => (
-                  <React.Fragment key={`${suffix.class}-${suffix.text}`}>
-                    {index > 0 ? " " : null}
-                    <span className={suffix.class}>{suffix.text}</span>
-                  </React.Fragment>
-                ))}
-                )
-              </>
-            ) : null}
-          </>
-        ) : null}
-      </th>
-      <th style={{ width: 80 }}>{planet?.alliance ? <a href="#alliance">{planet.alliance.tag}</a> : null}</th>
-      <th className="legacy-galaxy-actions" style={{ whiteSpace: "nowrap", width: 125 }}>
+      {player ? <th {...cellWidth(150)} dangerouslySetInnerHTML={{ __html: galaxyPlayerCellHTML(player) }} /> : <th {...cellWidth(150)} />}
+      <th {...cellWidth(80)}>{planet?.alliance ? <a href="#alliance">{planet.alliance.tag}</a> : null}</th>
+      <th className="legacy-galaxy-actions" style={{ whiteSpace: "nowrap" }} {...cellWidth(125)}>
         {planet ? <GalaxyActionIcons planet={planet} /> : null}
       </th>
     </tr>
   );
+}
+
+function galaxyPlayerCellHTML(player: GameGalaxyPlayer): string {
+  let html = `\n<a style="cursor:pointer">\n<span class="${legacyHTMLAttribute(player.statusClass)}">${legacyHTMLText(player.name)}</span></a>\n`;
+  if (player.suffixes.length > 0) {
+    html += "(";
+    for (const [index, suffix] of player.suffixes.entries()) {
+      html += `${index > 0 ? " " : ""}<span class="${legacyHTMLAttribute(suffix.class)}">${legacyHTMLText(suffix.text)}</span>`;
+    }
+    html += ")\n";
+  }
+  return html;
 }
 
 function GalaxyActionIcons({ planet }: { planet: GameGalaxyPlanet }) {
@@ -3537,9 +3543,12 @@ function GalaxyActionIcons({ planet }: { planet: GameGalaxyPlanet }) {
     <>
       {actions.map((action) =>
         action.enabled ? (
-          <a data-galaxy-action={action.label} href={action.href} key={action.icon}>
-            <img alt={action.label} src={`${skinBase}/img/${action.icon}`} title={action.label} />
-          </a>
+          <React.Fragment key={action.icon}>
+            <a data-galaxy-action={action.label} href={action.href}>
+              <img alt={action.label} src={`${skinBase}/img/${action.icon}`} title={action.label} />
+            </a>
+            {"\n"}
+          </React.Fragment>
         ) : null
       )}
     </>
@@ -3577,6 +3586,7 @@ function DefenseTable({
     );
   }
   return (
+    <>
     <form
       className="legacy-defense-form"
       onSubmit={(event) => {
@@ -3597,28 +3607,15 @@ function DefenseTable({
           {defense.items.map((item) => (
             <tr data-defense-row={item.id} key={item.id}>
               <td className="legacy-l l legacy-building-image">
-                <a href={gameRouteURL("/game/technology", window.location.search)}>
+                <a href={technologyInfoURL(item.id)}>
                   <img alt="" height={120} src={`${skinBase}/gebaeude/${item.id}.gif`} width={120} />
                 </a>
               </td>
-              <td className="legacy-l l legacy-building-description">
-                <a href={gameRouteURL("/game/technology", window.location.search)}>{item.name}</a>
-                {item.count > 0 ? <> (in stock {item.count})</> : null}
-                <br />
-                {item.description}
-                <br />
-                Cost:
-                {costParts(item.cost).map((part) => (
-                  <React.Fragment key={part.name}>
-                    {" "}
-                    {part.name}: <b>{formatLegacyNumber(part.value)}</b>
-                  </React.Fragment>
-                ))}
-                <br />
-                Duration: {formatLegacyDuration(item.durationSeconds)}
-                <br />
-              </td>
-              <td className="legacy-l l legacy-building-action">
+              <td
+                className="legacy-l l legacy-building-description"
+                dangerouslySetInnerHTML={{ __html: shipyardDescriptionHTML(item) }}
+              />
+              <td className="legacy-k k legacy-building-action">
                 {item.blockedReason ? <span className="legacy-build-blocked">{item.blockedReason}</span> : null}
                 {!item.blockedReason && item.canBuild ? (
                   <>
@@ -3631,7 +3628,7 @@ function DefenseTable({
                       size={6}
                       type="text"
                     />
-                    {item.maxBuild > 0 ? (
+                    {defense.commanderActive && item.maxBuild > 0 && !isDefenseShieldDomeID(item.id) ? (
                       <>
                         <br />
                         <a
@@ -3651,14 +3648,20 @@ function DefenseTable({
             </tr>
           ))}
           <tr>
-            <td className="legacy-c c" colSpan={2}>
+            <td align="center" className="legacy-c c" colSpan={2}>
               <input disabled={pending} type="submit" value="Build" />
             </td>
           </tr>
         </tbody>
       </table>
     </form>
+    <ShipyardQueuePanel onComplete={() => undefined} queue={defense.queue} />
+    </>
   );
+}
+
+function isDefenseShieldDomeID(id: number): boolean {
+  return id === 407 || id === 408;
 }
 
 function SearchTable({ search }: { search: GameSearch }) {

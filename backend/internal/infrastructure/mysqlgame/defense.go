@@ -52,9 +52,14 @@ func (r DefenseRepository) GetDefense(ctx context.Context, query appgame.Defense
 	if err != nil {
 		return domaingame.Defense{}, err
 	}
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return domaingame.Defense{}, err
+	}
+	now := int(r.now().Unix())
 	if r.execer != nil {
 		shipyard := ShipyardRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now, updateResources: r.updateResources}
-		if err := shipyard.FinishDueShipyardQueues(ctx, int(shipyard.currentTime().Unix())); err != nil {
+		if err := shipyard.FinishDueShipyardQueues(ctx, now); err != nil {
 			return domaingame.Defense{}, err
 		}
 	}
@@ -91,8 +96,16 @@ func (r DefenseRepository) GetDefense(ctx context.Context, query appgame.Defense
 	if err != nil {
 		return domaingame.Defense{}, err
 	}
+	commanderActive, err := (BuildingsRepository{queryer: r.queryer}).loadBuildingCommanderActive(ctx, usersTable, query.PlayerID, now)
+	if err != nil {
+		return domaingame.Defense{}, err
+	}
+	queue, err := shipyard.loadShipyardQueueEntries(ctx, queueTable, overview.CurrentPlanet.ID, now)
+	if err != nil {
+		return domaingame.Defense{}, err
+	}
 
-	return domaingame.BuildDefense(overview, levels, research, defense, speed, busy, orderCap), nil
+	return domaingame.BuildDefenseWithQueue(overview, levels, research, defense, speed, busy, orderCap, commanderActive, queue), nil
 }
 
 func (r DefenseRepository) loadDefenseCounts(ctx context.Context, planetsTable string, playerID int, planetID int) (domaingame.DefenseCounts, error) {

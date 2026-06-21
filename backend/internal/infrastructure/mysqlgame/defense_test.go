@@ -15,6 +15,8 @@ func TestDefenseRepositoryReadsLegacyDefense(t *testing.T) {
 		fakeQueryResult{rows: fakeRowsFromValues(defenseCountRow(map[int]int{domaingame.DefenseRocketLauncher: 4}))},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{2.0, 999})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{domaingame.BuildingMetalMine})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})},
+		fakeQueryResult{rows: fakeRowsFromValues()},
 	)}
 	repository := NewDefenseRepositoryWithQueryer(queryer, "ogame_")
 
@@ -130,6 +132,18 @@ func TestDefenseRepositoryReturnsErrors(t *testing.T) {
 			prefix:  "ogame_",
 			queryer: &fakeQueryer{results: append(defenseReadPrefixResults(), fakeQueryResult{rows: fakeRowsFromValues(defenseCountRow(nil))}, fakeQueryResult{rows: fakeRowsFromValues([]any{1.0, 999})}, fakeQueryResult{err: errors.New("busy query failed")})},
 			want:    "busy query failed",
+		},
+		{
+			name:    "commander query",
+			prefix:  "ogame_",
+			queryer: &fakeQueryer{results: append(defenseReadPrefixResults(), fakeQueryResult{rows: fakeRowsFromValues(defenseCountRow(nil))}, fakeQueryResult{rows: fakeRowsFromValues([]any{1.0, 999})}, fakeQueryResult{rows: fakeRowsFromValues()}, fakeQueryResult{err: errors.New("commander query failed")})},
+			want:    "commander query failed",
+		},
+		{
+			name:    "queue query",
+			prefix:  "ogame_",
+			queryer: &fakeQueryer{results: append(defenseReadPrefixResults(), fakeQueryResult{rows: fakeRowsFromValues(defenseCountRow(nil))}, fakeQueryResult{rows: fakeRowsFromValues([]any{1.0, 999})}, fakeQueryResult{rows: fakeRowsFromValues()}, fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})}, fakeQueryResult{err: errors.New("queue query failed")})},
+			want:    "queue query failed",
 		},
 	}
 

@@ -16,12 +16,14 @@ type gameDefenseResponse struct {
 }
 
 type gameDefenseSummary struct {
-	Commander      string                      `json:"commander"`
-	CurrentPlanet  gamePlanetOverviewResponse  `json:"currentPlanet"`
-	PlanetSwitcher []gamePlanetSummaryResponse `json:"planetSwitcher"`
-	HasShipyard    bool                        `json:"hasShipyard"`
-	Busy           bool                        `json:"busy"`
-	Items          []gameShipyardItemResponse  `json:"items"`
+	Commander       string                      `json:"commander"`
+	CommanderActive bool                        `json:"commanderActive"`
+	CurrentPlanet   gamePlanetOverviewResponse  `json:"currentPlanet"`
+	PlanetSwitcher  []gamePlanetSummaryResponse `json:"planetSwitcher"`
+	HasShipyard     bool                        `json:"hasShipyard"`
+	Busy            bool                        `json:"busy"`
+	Queue           []gameShipyardQueueResponse `json:"queue"`
+	Items           []gameShipyardItemResponse  `json:"items"`
 }
 
 func (a app) handleGameDefense(w http.ResponseWriter, r *http.Request) {
@@ -124,12 +126,18 @@ func toGameDefenseSummary(defense domaingame.Defense) gameDefenseSummary {
 	for _, item := range defense.Items {
 		items = append(items, toGameShipyardItemResponse(item))
 	}
+	queue := make([]gameShipyardQueueResponse, 0, len(defense.Queue))
+	for _, entry := range defense.Queue {
+		queue = append(queue, toGameShipyardQueueResponse(entry))
+	}
 	return gameDefenseSummary{
-		Commander:      defense.Commander,
-		CurrentPlanet:  toGamePlanetOverviewResponse(defense.CurrentPlanet),
-		PlanetSwitcher: planets,
-		HasShipyard:    defense.HasShipyard,
-		Busy:           defense.Busy,
-		Items:          items,
+		Commander:       defense.Commander,
+		CommanderActive: defense.CommanderActive,
+		CurrentPlanet:   toGamePlanetOverviewResponse(defense.CurrentPlanet),
+		PlanetSwitcher:  planets,
+		HasShipyard:     defense.HasShipyard,
+		Busy:            defense.Busy,
+		Queue:           queue,
+		Items:           items,
 	}
 }

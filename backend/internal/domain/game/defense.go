@@ -1,17 +1,23 @@
 package game
 
 type Defense struct {
-	Commander      string
-	CurrentPlanet  PlanetOverview
-	PlanetSwitcher []PlanetSummary
-	HasShipyard    bool
-	Busy           bool
-	Items          []ShipyardItem
+	Commander       string
+	CommanderActive bool
+	CurrentPlanet   PlanetOverview
+	PlanetSwitcher  []PlanetSummary
+	HasShipyard     bool
+	Busy            bool
+	Queue           []ShipyardQueueEntry
+	Items           []ShipyardItem
 }
 
 type DefenseCounts map[int]int
 
 func BuildDefense(overview Overview, levels BuildingLevels, research ResearchLevels, defense DefenseCounts, speed float64, busy bool, orderCap int) Defense {
+	return BuildDefenseWithQueue(overview, levels, research, defense, speed, busy, orderCap, false, nil)
+}
+
+func BuildDefenseWithQueue(overview Overview, levels BuildingLevels, research ResearchLevels, defense DefenseCounts, speed float64, busy bool, orderCap int, commanderActive bool, queue []ShipyardQueueEntry) Defense {
 	if speed <= 0 {
 		speed = 1
 	}
@@ -44,12 +50,14 @@ func BuildDefense(overview Overview, levels BuildingLevels, research ResearchLev
 		}
 	}
 	return Defense{
-		Commander:      overview.Commander,
-		CurrentPlanet:  overview.CurrentPlanet,
-		PlanetSwitcher: overview.PlanetSwitcher,
-		HasShipyard:    hasShipyard,
-		Busy:           busy,
-		Items:          items,
+		Commander:       overview.Commander,
+		CommanderActive: commanderActive,
+		CurrentPlanet:   overview.CurrentPlanet,
+		PlanetSwitcher:  overview.PlanetSwitcher,
+		HasShipyard:     hasShipyard,
+		Busy:            busy,
+		Queue:           queue,
+		Items:           items,
 	}
 }
 

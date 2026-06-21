@@ -32,7 +32,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 
 - Latest focused checks: `bun run --cwd frontend check`, `bun run --cwd frontend test`, focused Go tests for `mysqlgame`, `delivery/http`, `domain/game`, and `application/game`, `git diff --check`, and `8895 /health`.
 - Playwright resources page actions passed Chromium/Firefox: percent save, DB `prod*`, selected values, totals, and visuals.
-- Research/shipyard actions pass Chromium/Firefox exact 0px; shipyard covers submit, partial Expected tasks, and complete DB.
+- Research/shipyard/defense actions and galaxy page pass Chromium/Firefox exact 0px; queues cover submit/partial/complete DB.
 - Prior migration QA passed with `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`.
 - Prior visual/CSR E2E passed Chromium/Firefox with known auth-page diff tracking.
 - Prior Go internal coverage gate: `97.0% >= 97%`.
