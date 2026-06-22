@@ -5207,7 +5207,7 @@ function MerchantTable({
             <tr>
               <th align="center" className="legacy-c c">
                 <br />
-                You want to sell{" "}
+                {"You want to sell "}
                 <select
                   name="offer_id"
                   onChange={(event) => setSelectedOfferID(Number.parseInt(event.currentTarget.value, 10) || 1)}
@@ -5220,7 +5220,7 @@ function MerchantTable({
                     </option>
                   ))}
                 </select>
-                !<br />
+                {" !"}<br />
                 <div id="darkmatter2">Summoning a merchant costs 2500 dark matter.</div>
                 <br />
                 <br />
