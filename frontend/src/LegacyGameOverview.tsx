@@ -4330,6 +4330,7 @@ function adminRakSimHTML(): string {
 }
 
 function AdminLocaTable() {
+  const locaDirectories = ["de_de", "en_en", "es_es", "fr_fr", "it_it", "jp_jp", "ru_ru"];
   return (
     <form action={adminModeActionHref("Loca", "search")} method="POST" onSubmit={(event) => event.preventDefault()}>
       <table className="legacy-admin-loca-table">
@@ -4342,20 +4343,25 @@ function AdminLocaTable() {
           <tr>
             <td>Source language:</td>
             <td>
-              <select name="loca_src">
-                <option value="es_es">es_es</option>
-                <option value="de_de">de_de</option>
-                <option value="fr_fr">fr_fr</option>
+              <select name="loca_src" defaultValue="de_de">
+                {locaDirectories.map((directory) => (
+                  <option key={directory} value={directory}>
+                    {directory}
+                  </option>
+                ))}
               </select>
             </td>
           </tr>
+          <tr />
           <tr>
             <td>Target language:</td>
             <td>
-              <select name="loca_dst">
-                <option value="de_de">de_de</option>
-                <option value="es_es">es_es</option>
-                <option value="fr_fr">fr_fr</option>
+              <select name="loca_dst" defaultValue="de_de">
+                {locaDirectories.map((directory) => (
+                  <option key={directory} value={directory}>
+                    {directory}
+                  </option>
+                ))}
               </select>
             </td>
           </tr>
