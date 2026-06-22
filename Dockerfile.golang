@@ -15,6 +15,7 @@ COPY wwwroot/evolution ../wwwroot/evolution
 COPY wwwroot/favicon.ico ../wwwroot/favicon.ico
 COPY game/css ../game/css
 COPY game/img ../game/img
+COPY game/js ../game/js
 COPY game/mods ../game/mods
 RUN bun run build
 

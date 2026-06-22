@@ -11,6 +11,7 @@ const legacyPublicCss = new URL("../wwwroot/css/", root);
 const legacyEvolution = new URL("../wwwroot/evolution/", root);
 const legacyGameCss = new URL("../game/css/", root);
 const legacyGameImages = new URL("../game/img/", root);
+const legacyGameJs = new URL("../game/js/", root);
 const legacyGameMods = new URL("../game/mods/", root);
 const legacyFavicon = new URL("../wwwroot/favicon.ico", root);
 
@@ -96,6 +97,12 @@ await cp(
 await cp(
   fileURLToPath(legacyGameImages),
   fileURLToPath(new URL("game-img/", publicAssets)),
+  { recursive: true }
+);
+
+await cp(
+  fileURLToPath(legacyGameJs),
+  fileURLToPath(new URL("game/js/", publicAssets)),
   { recursive: true }
 );
 

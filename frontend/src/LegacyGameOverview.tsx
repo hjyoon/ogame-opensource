@@ -1053,6 +1053,7 @@ type GameAdmin = {
   queueRows?: GameAdminQueueRow[];
   battleReports?: GameAdminBattleReportRow[];
   checksumGroups?: GameAdminChecksumGroup[];
+  botStrategies?: GameAdminBotStrategy[];
 };
 
 type GameAdminViewer = {
@@ -1176,6 +1177,11 @@ type GameAdminChecksumRow = {
   path: string;
   checksum: string;
   status: string;
+};
+
+type GameAdminBotStrategy = {
+  id: number;
+  name: string;
 };
 
 type ResourceProductionRow = {
@@ -4292,37 +4298,111 @@ function AdminBattleReportsTable({ rows }: { rows: GameAdminBattleReportRow[] })
 }
 
 function AdminBotEditTable({ admin }: { admin: GameAdmin }) {
+  React.useEffect(() => {
+    if (admin.viewer.level < 2) {
+      return;
+    }
+    let cancelled = false;
+    loadLegacyBotEditorScripts().then(() => {
+      if (!cancelled) {
+        const legacyWindow = window as Window & { init?: () => void; session?: string };
+        legacyWindow.session = new URLSearchParams(window.location.search).get("session") ?? "";
+        const strategySelect = document.getElementById("strategyId") as HTMLSelectElement | null;
+        const selectedStrategy = strategySelect?.value;
+        if (strategySelect) {
+          strategySelect.value = "";
+        }
+        legacyWindow.init?.();
+        if (strategySelect && selectedStrategy !== undefined) {
+          strategySelect.value = selectedStrategy;
+        }
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [admin.viewer.level]);
+
   if (admin.viewer.level < 2) {
     return <LegacyFont color="red">Access denied.</LegacyFont>;
   }
-  return (
-    <div className="legacy-admin-botedit-table" id="sample">
-      <div style={{ whiteSpace: "nowrap", width: "100%" }}>
-        <span style={{ display: "inline-block", padding: 5, verticalAlign: "top", width: 100 }}>
-          <div id="myPalette" style={{ backgroundColor: "#344566", border: "solid 1px black", height: 500 }} />
-        </span>
-        <span style={{ display: "inline-block", padding: 5, verticalAlign: "top", width: "88%" }}>
-          <div id="myDiagram" style={{ backgroundColor: "#344566", border: "solid 1px black", height: 500 }} />
-        </span>
-      </div>
-      <span style={{ float: "left" }}>
-        Name <input id="strategyName" size={50} type="text" /> <button>New</button> <button>Rename</button> <button>Show</button> <button>Export</button>
-      </span>
-      <span style={{ float: "right" }}>
-        <button>Save</button>
-        <select id="strategyId">
-          <option value="0">-- Choose a strategy --</option>
-        </select>
-        <button>Load</button>
-      </span>
-      <textarea id="mySavedModel" style={{ display: "none", height: 300, width: "100%" }} />
-      <form action={adminModeActionHref("BotEdit", "import")} encType="multipart/form-data" method="post" onSubmit={(event) => event.preventDefault()}>
-        <input id="strategyId_ForImport" name="strategyId_ForImport" type="hidden" value="0" />
-        <input id="fileToUpload" name="fileToUpload" type="file" /> <input type="submit" value="Import" />
-      </form>
-      <img alt="" id="preview_img" style={{ display: "none" }} />
-    </div>
-  );
+  return <div dangerouslySetInnerHTML={{ __html: adminBotEditHTML(admin) }} />;
+}
+
+const legacyBotEditorScripts = ["/public-assets/game/js/tw-sack.js", "/public-assets/game/js/go.js", "/public-assets/game/js/go-game.js"];
+const legacyScriptLoads = new Map<string, Promise<void>>();
+
+function loadLegacyBotEditorScripts(): Promise<void> {
+  return legacyBotEditorScripts.reduce((chain, src) => chain.then(() => loadLegacyScript(src)), Promise.resolve());
+}
+
+function loadLegacyScript(src: string): Promise<void> {
+  const existing = legacyScriptLoads.get(src);
+  if (existing) {
+    return existing;
+  }
+  const promise = new Promise<void>((resolve, reject) => {
+    const current = document.querySelector<HTMLScriptElement>(`script[data-ogame-legacy-src="${src}"]`);
+    if (current) {
+      resolve();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = src;
+    script.dataset.ogameLegacySrc = src;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`failed to load legacy script: ${src}`));
+    document.body.appendChild(script);
+  });
+  legacyScriptLoads.set(src, promise);
+  return promise;
+}
+
+function adminBotEditHTML(admin: GameAdmin): string {
+  const importAction = legacyHTMLAttribute(adminModeActionHref("BotEdit", "import"));
+  const strategyOptions = (admin.botStrategies ?? [])
+    .map((strategy) => `<option value="${strategy.id}">${legacyHTMLText(strategy.name)}</option>\n`)
+    .join("");
+  return `<div id="sample" class="legacy-admin-botedit-table">
+  <div style="width:100%; white-space:nowrap;">
+    <span style="display: inline-block; vertical-align: top; padding: 5px; width:100px">
+      <div id="myPalette" style="background-color: #344566; border: solid 1px black; height: 500px"></div>
+    </span>
+    <span style="display: inline-block; vertical-align: top; padding: 5px; width:88%">
+      <div id="myDiagram" style="background-color: #344566; border: solid 1px black; height: 500px"></div>
+    </span>
+  </div>
+
+<span style="float:left;">
+ Name of the edited strategy: <input type="text" size="50" id="strategyName">
+ <button onclick="newstrat()">New</button>
+ <button onclick="rename()">Rename</button>
+ <button onclick="showimg()">Show</button>
+ <button onclick="export_strat()">Export</button>
+</span>
+
+<span style="float:right;">
+  <button onclick="save()">Save</button>
+<select id="strategyId">
+<option value="0">-- Choose a strategy --</option>
+${strategyOptions}</select>
+  <button onclick="load()">Load</button>
+</span>
+  <textarea id="mySavedModel" style="width:100%;height:300px; display:none;">
+{ "class": "go.GraphLinksModel",
+  "linkFromPortIdProperty": "fromPort",
+  "linkToPortIdProperty": "toPort",
+  "nodeDataArray": [ ],
+  "linkDataArray": [ ]}
+  </textarea>
+</div>
+
+<form action="${importAction}" method="post" enctype="multipart/form-data">
+ <input type="hidden" id="strategyId_ForImport" name="strategyId_ForImport" value="0" >
+ <input type="file" name="fileToUpload" id="fileToUpload" /> <input type="submit" value="ADM_BOTEDIT_IMPORT" />
+</form>
+
+<img src="" id="preview_img" style="display:none;">`;
 }
 
 function AdminRakSimTable() {

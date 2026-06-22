@@ -139,6 +139,30 @@ func TestAdminRepositoryReadsExpeditionSettings(t *testing.T) {
 	}
 }
 
+func TestAdminRepositoryReadsBotStrategies(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		fakeQueryResult{rows: fakeRowsFromValues(
+			[]any{1, "backup"},
+			[]any{2, "raider"},
+		)},
+	)}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "BotEdit"})
+
+	if err != nil {
+		t.Fatalf("GetAdmin returned error: %v", err)
+	}
+	if len(admin.BotStrategies) != 2 || admin.BotStrategies[0].Name != "backup" || admin.BotStrategies[1].ID != 2 {
+		t.Fatalf("unexpected bot strategies: %+v", admin.BotStrategies)
+	}
+	lastSQL := queryer.calls[len(queryer.calls)-1].sql
+	if !strings.Contains(lastSQL, "`ogame_botstrat`") || !strings.Contains(lastSQL, "ORDER BY id ASC") {
+		t.Fatalf("expected bot strategy query, got %s", lastSQL)
+	}
+}
+
 func TestAdminRepositoryReadsUserLogRowsInLegacyDisplayOrder(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},

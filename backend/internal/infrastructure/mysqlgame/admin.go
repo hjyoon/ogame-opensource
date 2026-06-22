@@ -80,6 +80,8 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		admin.BattleReports, err = r.loadAdminBattleReports(ctx)
 	case "Checksum":
 		admin.ChecksumGroups, err = r.loadAdminChecksumGroups(ctx)
+	case "BotEdit":
+		admin.BotStrategies, err = r.loadAdminBotStrategies(ctx)
 	}
 	if err != nil {
 		return domaingame.Admin{}, err
@@ -112,6 +114,27 @@ func (r AdminRepository) loadAdminViewer(ctx context.Context, playerID int) (dom
 		return domaingame.AdminViewer{}, err
 	}
 	return viewer, rows.Err()
+}
+
+func (r AdminRepository) loadAdminBotStrategies(ctx context.Context) ([]domaingame.AdminBotStrategy, error) {
+	botstratTable, err := tableName(r.prefix, "botstrat")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT id, COALESCE(name, '') FROM %s ORDER BY id ASC", botstratTable))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []domaingame.AdminBotStrategy{}
+	for rows.Next() {
+		var row domaingame.AdminBotStrategy
+		if err := rows.Scan(&row.ID, &row.Name); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
 }
 
 func (r AdminRepository) loadAdminMessageRows(ctx context.Context, rawTable string, includeErrorIDOrder bool) ([]domaingame.AdminMessageRow, error) {

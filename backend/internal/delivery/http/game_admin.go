@@ -37,6 +37,7 @@ type gameAdminSummary struct {
 	QueueRows      []gameAdminQueueRow         `json:"queueRows,omitempty"`
 	BattleReports  []gameAdminBattleReportRow  `json:"battleReports,omitempty"`
 	ChecksumGroups []gameAdminChecksumGroup    `json:"checksumGroups,omitempty"`
+	BotStrategies  []gameAdminBotStrategy      `json:"botStrategies,omitempty"`
 }
 
 type gameAdminViewer struct {
@@ -160,6 +161,11 @@ type gameAdminChecksumRow struct {
 	Path     string `json:"path"`
 	Checksum string `json:"checksum"`
 	Status   string `json:"status"`
+}
+
+type gameAdminBotStrategy struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
 }
 
 func (a app) handleGameAdmin(w http.ResponseWriter, r *http.Request) {
@@ -288,6 +294,13 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			Rows:  rows,
 		})
 	}
+	botStrategies := make([]gameAdminBotStrategy, 0, len(admin.BotStrategies))
+	for _, strategy := range admin.BotStrategies {
+		botStrategies = append(botStrategies, gameAdminBotStrategy{
+			ID:   strategy.ID,
+			Name: strategy.Name,
+		})
+	}
 	return gameAdminSummary{
 		Commander:      admin.Commander,
 		CurrentPlanet:  toGamePlanetOverviewResponse(admin.CurrentPlanet),
@@ -309,6 +322,7 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		QueueRows:      queueRows,
 		BattleReports:  battleReports,
 		ChecksumGroups: checksumGroups,
+		BotStrategies:  botStrategies,
 	}
 }
 
