@@ -4087,172 +4087,110 @@ function AdminDatabaseTable() {
 }
 
 const adminSimFleetRows = [
-  "Light Fighter",
-  "Heavy Fighter",
-  "Cruiser",
-  "Battleship",
-  "Battlecruiser",
-  "Bomber",
-  "Destroyer",
-  "Deathstar",
-  "Small Cargo",
-  "Large Cargo",
-  "Recycler",
-  "Espionage Probe",
-  "Colony Ship",
-  "Solar Satellite"
+  { id: 202, name: "Small Cargo" },
+  { id: 203, name: "Large Cargo" },
+  { id: 204, name: "Light Fighter" },
+  { id: 205, name: "Heavy Fighter" },
+  { id: 206, name: "Cruiser" },
+  { id: 207, name: "Battleship" },
+  { id: 208, name: "Colony Ship" },
+  { id: 209, name: "Recycler" },
+  { id: 210, name: "Espionage Probe" },
+  { id: 211, name: "Bomber" },
+  { id: 212, name: "Solar Satellite" },
+  { id: 213, name: "Destroyer" },
+  { id: 214, name: "Deathstar" },
+  { id: 215, name: "Battlecruiser" }
 ];
 
 const adminSimDefenseRows = ["Rocket Launcher", "Light Laser", "Heavy Laser", "Gauss Cannon", "Ion Cannon", "Plasma Turret", "Small Shield Dome", "Large Shield Dome"];
+const adminBattleSimMaxSlot = 16;
 
 function AdminBattleSimTable() {
-  return (
-    <table cellPadding={0} cellSpacing={0} className="legacy-admin-battlesim-table">
-      <tbody>
-        <tr>
-          <td>
-            <form action={adminModeHref("BattleSim")} method="POST" name="simForm" onSubmit={(event) => event.preventDefault()}>
-              <input id="anum" name="anum" type="hidden" value="1" />
-              <input id="dnum" name="dnum" type="hidden" value="1" />
-              <table cellPadding={0} cellSpacing={0}>
-                <tbody>
-                  <tr>
-                    <td className="c">Attacker</td>
-                    <td className="c">Defender</td>
-                  </tr>
-                  <tr>
-                    <td>
-                      Weapons: <input id="a_weap" size={2} /> Shields: <input id="a_shld" size={2} /> Armor: <input id="a_armor" size={2} />
-                    </td>
-                    <td>
-                      Weapons: <input id="d_weap" size={2} /> Shields: <input id="d_shld" size={2} /> Armor: <input id="d_armor" size={2} />
-                    </td>
-                  </tr>
-                  <tr>
-                    <th style={{ verticalAlign: "top" }}>
-                      <AdminSimulationFleetSide prefix="a" />
-                      <table>
-                        <tbody>
-                          <tr>
-                            <td className="c" colSpan={2}>
-                              Settings
-                            </td>
-                          </tr>
-                          <tr>
-                            <td>Debug information</td>
-                            <td>
-                              <input name="debug" type="checkbox" />
-                            </td>
-                          </tr>
-                          <tr>
-                            <td>Rapidfire</td>
-                            <td>
-                              <input defaultChecked name="rapid" type="checkbox" />
-                            </td>
-                          </tr>
-                          <tr>
-                            <td>Fleet in debris</td>
-                            <td>
-                              <input defaultValue="30" name="fid" size={3} />
-                            </td>
-                          </tr>
-                          <tr>
-                            <td>Defense in debris</td>
-                            <td>
-                              <input defaultValue="0" name="did" size={3} />
-                            </td>
-                          </tr>
-                          <tr>
-                            <td>ADM_SIM_MAX_ROUND</td>
-                            <td>
-                              <input defaultValue="6" name="max_round" size={3} />
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </th>
-                    <th style={{ verticalAlign: "top" }}>
-                      <AdminSimulationFleetSide defender prefix="d" />
-                    </th>
-                  </tr>
-                  <tr>
-                    <td colSpan={2}>
-                      <table>
-                        <tbody>
-                          <tr>
-                            <td className="c" colSpan={2}>
-                              ADM_SIM_BATTLE_SOURCE
-                            </td>
-                          </tr>
-                          <tr>
-                            <td>
-                              <textarea id="battle_source" name="battle_source" />
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td colSpan={2}>
-                      <center>
-                        <input type="submit" value="Start the Battle" />
-                      </center>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </form>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  );
+  return <div dangerouslySetInnerHTML={{ __html: adminBattleSimHTML() }} />;
 }
 
-function AdminSimulationFleetSide({ defender = false, prefix }: { defender?: boolean; prefix: "a" | "d" }) {
-  return (
-    <table>
-      <tbody>
-        <tr>
-          <td className="c">
-            <b>Fleet</b>
-          </td>
-          <td>
-            Slot:{" "}
-            <select name={`${prefix}slot`}>
-              <option value="1">1</option>
-            </select>
-          </td>
-        </tr>
-        {adminSimFleetRows.map((name, index) => (
-          <tr key={`${prefix}-fleet-${name}`}>
-            <td>{name}</td>
-            <td>
-              <input id={`${prefix}_${202 + index}`} size={5} />
-            </td>
-          </tr>
-        ))}
-        {defender ? (
-          <>
-            <tr>
-              <td className="c">
-                <b>Defense</b>
-              </td>
-            </tr>
-            {adminSimDefenseRows.map((name, index) => (
-              <tr key={`${prefix}-defense-${name}`}>
-                <td>{name}</td>
-                <td>
-                  <input id={`${prefix}_${401 + index}`} size={5} />
-                </td>
-              </tr>
-            ))}
-          </>
-        ) : null}
-      </tbody>
-    </table>
-  );
+function adminBattleSimHTML(): string {
+  const action = legacyHTMLAttribute(adminModeHref("BattleSim"));
+  let html = "";
+  html += `<table class="legacy-admin-battlesim-table" cellpadding=0 cellspacing=0>\n`;
+  html += `<form name="simForm" action="${action}" method="POST" >\n\n`;
+  html += '<input type="hidden" id="anum" name="anum" value="1" />\n';
+  html += '<input type="hidden" id="dnum" name="dnum" value="1" />\n\n';
+  html += "<tr>        <td class=c>Attacker</td>                <td class=c>Defender</td>  </tr>\n\n";
+  html += "<tr> \n<td> \n";
+  html += '    Weapons: <input id="a_weap" size=2  onKeyUp="OnChangeTechValue(1);"  value="0" > \n';
+  html += '    Shields: <input id="a_shld" size=2  onKeyUp="OnChangeTechValue(1);"  value="0" > \n';
+  html += '    Armor: <input id="a_armor" size=2  onKeyUp="OnChangeTechValue(1);"  value="0" ></td> \n';
+  html += "<td> \n";
+  html += '    Weapons: <input id="d_weap" size=2  onKeyUp="OnChangeTechValue(0);"  value="0" > \n';
+  html += '    Shields: <input id="d_shld" size=2  onKeyUp="OnChangeTechValue(0);"  value="0" > \n';
+  html += '    Armor: <input id="d_armor" size=2  onKeyUp="OnChangeTechValue(0);"  value="0" ></td> \n';
+  html += "</tr>\n\n";
+  html += "        <tr> <th valign=top>\n        <table>\n";
+  html += adminBattleSimFleetSection("a");
+  html += "\n<tr><td colspan=2> \n<table>\n";
+  html += "<tr><td class=c colspan=2>Settings</td></tr>\n";
+  html += '<tr><td>Debug information</td><td><input type="checkbox" name="debug"  ></td></tr>\n';
+  html += '<tr><td>Rapidfire</td><td><input type="checkbox" name="rapid" checked ></td></tr>\n';
+  html += '<tr><td>Fleet in debris</td><td><input name="fid" size=3 value="30"> </td></tr>\n';
+  html += '<tr><td>Defense in debris</td><td><input name="did" size=3 value="0"></td></tr>\n';
+  html += '<tr><td>ADM_SIM_MAX_ROUND</td><td><input name="max_round" size=3 value="6"></td></tr>\n';
+  html += "</table>\n</td></tr>\n\n        </table>\n        </th>\n\n        <th valign=top>\n        <table>\n";
+  html += adminBattleSimFleetSection("d");
+  html += '<tr><td class=c><b>Defense</b></td></tr>\n';
+  html += adminSimDefenseRows
+    .map((name, index) => `           <tr><td> ${legacyHTMLText(name)} </td> <td> <input id="d_${401 + index}" size=5 onKeyUp="OnChangeValue(0, ${401 + index});" value="0" > </td> </tr>\n`)
+    .join("");
+  html += "        </table>\n        </th></tr>\n\n";
+  html += "<tr><td colspan=2> \n<table>\n";
+  html += "<tr><td class=c colspan=2>ADM_SIM_BATTLE_SOURCE</td></tr>\n";
+  html += '<tr><td><textarea id="battle_source" name="battle_source"></textarea></td></tr>\n';
+  html += "</table>\n</td></tr>\n\n";
+  html += '<tr><td colspan=2><center><input type="submit" value="Start the Battle"></center></td></tr>\n\n';
+  html += adminBattleSimHiddenInputs();
+  html += "\n</form>\n</table>\n";
+  return html;
+}
+
+function adminBattleSimFleetSection(prefix: "a" | "d"): string {
+  const slotHandler = prefix === "a" ? 1 : 0;
+  const valueHandler = prefix === "a" ? 1 : 0;
+  let html = `<tr><td class=c><b>Fleet</b></td> <td>Slot: <select name="${prefix}slot" onchange="OnChangeSlot(${slotHandler});">\n${adminBattleSimSlotOptions()}</select> </td>  </tr>\n`;
+  html += adminSimFleetRows
+    .map((row) => `           <tr><td> ${legacyHTMLText(row.name)} </td> <td> <input id="${prefix}_${row.id}" size=5  onKeyUp="OnChangeValue(${valueHandler}, ${row.id});" value="0" > </td> </tr>\n`)
+    .join("");
+  return html;
+}
+
+function adminBattleSimSlotOptions(): string {
+  let html = "";
+  for (let n = 1; n <= adminBattleSimMaxSlot; n++) {
+    html += `<option value="${n}">${n}</option>\n`;
+  }
+  return html;
+}
+
+function adminBattleSimHiddenInputs(): string {
+  const hidden: string[] = [];
+  for (let n = 0; n < adminBattleSimMaxSlot; n++) {
+    for (const row of adminSimFleetRows) {
+      hidden.push(`<input type="hidden" id="a${n}_${row.id}" name="a${n}_${row.id}" value="0"  /> `);
+    }
+    for (const row of adminSimFleetRows) {
+      hidden.push(`<input type="hidden" id="d${n}_${row.id}" name="d${n}_${row.id}" value="0"  /> `);
+    }
+    for (let index = 0; index < adminSimDefenseRows.length; index++) {
+      hidden.push(`<input type="hidden" id="d${n}_${401 + index}" name="d${n}_${401 + index}" value="0"  /> `);
+    }
+    hidden.push(`<input type="hidden" id="a${n}_weap" name="a${n}_weap" size=2 value="0"  /> `);
+    hidden.push(`<input type="hidden" id="a${n}_shld" name="a${n}_shld" size=2 value="0"  /> `);
+    hidden.push(`<input type="hidden" id="a${n}_armor" name="a${n}_armor" size=2 value="0"  /> \n`);
+    hidden.push(`<input type="hidden" id="d${n}_weap" name="d${n}_weap" size=2 value="0"  /> `);
+    hidden.push(`<input type="hidden" id="d${n}_shld" name="d${n}_shld" size=2 value="0"  /> `);
+    hidden.push(`<input type="hidden" id="d${n}_armor" name="d${n}_armor" size=2 value="0"  /> \n`);
+  }
+  return `${hidden.join("\n")}\n`;
 }
 
 function AdminExpeditionTable({ admin }: { admin: GameAdmin }) {
