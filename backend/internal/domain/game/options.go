@@ -108,7 +108,6 @@ type OptionsActionIssue struct {
 }
 
 func NewOptions(overview Overview, user OptionsUser, universe OptionsUniverse, settings OptionsSettings, account OptionsAccount, rawFlags int64) Options {
-	user.CommanderOn = overview.Commander != ""
 	settings.SkinPath = NormalizeSkinPath(settings.SkinPath, "", 0)
 	settings.SortBy = clampInt(settings.SortBy, 0, 2)
 	settings.SortOrder = clampInt(settings.SortOrder, 0, 1)

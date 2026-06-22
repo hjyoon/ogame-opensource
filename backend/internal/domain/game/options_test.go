@@ -81,7 +81,7 @@ func TestNormalizeOptionsMutationClampsLegacySettings(t *testing.T) {
 func TestNewOptionsForcesUniverseLanguageAndMapsFlags(t *testing.T) {
 	options := NewOptions(
 		Overview{Commander: "legor"},
-		OptionsUser{Name: "Legor"},
+		OptionsUser{Name: "Legor", CommanderOn: true},
 		OptionsUniverse{Language: "de", ForceLanguage: true},
 		OptionsSettings{Language: "en", SortBy: -1, SortOrder: 9, MaxSpy: 0, MaxFleetMessages: 100},
 		OptionsAccount{},
@@ -94,6 +94,21 @@ func TestNewOptionsForcesUniverseLanguageAndMapsFlags(t *testing.T) {
 	}
 	if !options.User.CommanderOn || !options.Flags.ShowEspionageButton || !options.Flags.FeedEnabled || !options.Flags.HideGOEmail {
 		t.Fatalf("unexpected flags/user: user=%+v flags=%+v", options.User, options.Flags)
+	}
+}
+
+func TestNewOptionsPreservesPremiumStatusFromUserData(t *testing.T) {
+	options := NewOptions(
+		Overview{Commander: "legor"},
+		OptionsUser{Name: "Legor", CommanderOn: false},
+		OptionsUniverse{Language: "en"},
+		OptionsSettings{},
+		OptionsAccount{},
+		0,
+	)
+
+	if options.User.CommanderOn {
+		t.Fatalf("commander status must come from premium user data, got %+v", options.User)
 	}
 }
 

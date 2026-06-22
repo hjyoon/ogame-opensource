@@ -1,6 +1,9 @@
 package game
 
-import "math"
+import (
+	"math"
+	"strconv"
+)
 
 const (
 	PlanetTypeDebris          = 10000
@@ -22,7 +25,25 @@ const (
 	GalaxyActionMissile  = 0x8
 	GalaxyActionReport   = 0x10
 	GalaxyNoobScoreLimit = 5000
+
+	GalaxyIssueRocketNoTarget      = "rocket_no_target"
+	GalaxyIssueRocketNoRockets     = "rocket_no_rockets"
+	GalaxyIssueRocketNotEnough     = "rocket_not_enough"
+	GalaxyIssueRocketWeakDrive     = "rocket_weak_drive"
+	GalaxyIssueRocketVacationSelf  = "rocket_vacation_self"
+	GalaxyIssueRocketVacationOther = "rocket_vacation_other"
+	GalaxyIssueRocketSelf          = "rocket_self"
+	GalaxyIssueRocketAdmin         = "rocket_admin"
+	GalaxyIssueRocketNoob          = "rocket_noob"
+	GalaxyIssueRocketFrozen        = "rocket_frozen"
+	GalaxyIssueRocketLaunchRace    = "rocket_launch_race"
+	GalaxyIssueRocketLaunched      = "rocket_launched"
 )
+
+type GalaxyActionIssue struct {
+	Code    string
+	Message string
+}
 
 type Galaxy struct {
 	Commander           string
@@ -385,14 +406,13 @@ func galaxyPlayerStatus(owner GalaxyObjectPlayer, viewer GalaxyViewer, now int64
 
 	week := now - 604800
 	week4 := now - 604800*4
-	activeForNoobCheck := owner.LastClick > week && !owner.Vacation && !owner.Banned
 	switch {
-	case activeForNoobCheck && owner.Score < viewer.Score && owner.Score < GalaxyNoobScoreLimit && viewer.Score > owner.Score*5:
+	case GalaxyPlayerProtectedFromMissiles(owner, viewer, now) && owner.Score < viewer.Score:
 		status.Status = "noob"
 		status.StatusClass = "noob"
 		status.Suffixes = []GalaxyStatusSuffix{{Text: "n", Class: "noob"}}
 		return status
-	case activeForNoobCheck && viewer.Score < owner.Score && viewer.Score < GalaxyNoobScoreLimit && owner.Score > viewer.Score*5:
+	case GalaxyPlayerProtectedFromMissiles(owner, viewer, now) && viewer.Score < owner.Score:
 		status.Status = "strong"
 		status.StatusClass = "strong"
 		status.Suffixes = []GalaxyStatusSuffix{{Text: "s", Class: "strong"}}
@@ -422,6 +442,63 @@ func galaxyPlayerStatus(owner GalaxyObjectPlayer, viewer GalaxyViewer, now int64
 		status.Suffixes = append(status.Suffixes, GalaxyStatusSuffix{Text: "V", Class: "vacation"})
 	}
 	return status
+}
+
+func GalaxyPlayerProtectedFromMissiles(owner GalaxyObjectPlayer, viewer GalaxyViewer, now int64) bool {
+	activeForNoobCheck := owner.LastClick > now-604800 && !owner.Vacation && !owner.Banned
+	return (activeForNoobCheck && owner.Score < viewer.Score && owner.Score < GalaxyNoobScoreLimit && viewer.Score > owner.Score*5) ||
+		(activeForNoobCheck && viewer.Score < owner.Score && viewer.Score < GalaxyNoobScoreLimit && owner.Score > viewer.Score*5)
+}
+
+func GalaxyMissileTargetAllowed(id int) bool {
+	switch id {
+	case 0,
+		DefenseRocketLauncher,
+		DefenseLightLaser,
+		DefenseHeavyLaser,
+		DefenseGaussCannon,
+		DefenseIonCannon,
+		DefensePlasmaTurret,
+		DefenseSmallShieldDome,
+		DefenseLargeShieldDome:
+		return true
+	default:
+		return false
+	}
+}
+
+func GalaxyActionIssueFor(code string) *GalaxyActionIssue {
+	message := map[string]string{
+		GalaxyIssueRocketNoTarget:      "There is no target",
+		GalaxyIssueRocketNoRockets:     "You didn't select the number of missiles",
+		GalaxyIssueRocketNotEnough:     "Not enough interplanetary rockets!",
+		GalaxyIssueRocketWeakDrive:     "The range (impulse engine research level) of your interplanetary rocket is too short!",
+		GalaxyIssueRocketVacationSelf:  "You can't launch rockets while in vacation mode!",
+		GalaxyIssueRocketVacationOther: "This player is in vacation mode!",
+		GalaxyIssueRocketSelf:          "It's impossible to attack your own planet!",
+		GalaxyIssueRocketAdmin:         "You cannot launch rockets at game operators or administrators!",
+		GalaxyIssueRocketNoob:          "The planet is under noob protection!",
+		GalaxyIssueRocketFrozen:        "Universe is frozen.",
+		GalaxyIssueRocketLaunchRace:    "Not enough interplanetary rockets!",
+		GalaxyIssueRocketLaunched:      "Start of rocket 1!",
+	}[code]
+	if message == "" {
+		message = "There was an error"
+	}
+	return &GalaxyActionIssue{Code: code, Message: message}
+}
+
+func GalaxyMissileLaunchedIssue(amount int) *GalaxyActionIssue {
+	if amount < 0 {
+		amount = -amount
+	}
+	if amount == 0 {
+		return GalaxyActionIssueFor(GalaxyIssueRocketNoRockets)
+	}
+	return &GalaxyActionIssue{
+		Code:    GalaxyIssueRocketLaunched,
+		Message: "Start of rocket " + strconv.Itoa(amount) + "!",
+	}
 }
 
 func galaxyActions(objectType int, own bool, viewer GalaxyViewer) GalaxyActions {

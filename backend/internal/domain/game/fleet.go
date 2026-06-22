@@ -544,7 +544,7 @@ func fleetFlightTime(distance int, slowestSpeed int, speed int, speedFactor int)
 	if speedFactor <= 0 {
 		speedFactor = 1
 	}
-	seconds := (35000/float64(speed*10)*math.Sqrt(float64(distance*10)/float64(slowestSpeed)) + 10) / float64(speedFactor)
+	seconds := (35000/float64(speed)*math.Sqrt(float64(distance*10)/float64(slowestSpeed)) + 10) / float64(speedFactor)
 	return int(math.Round(seconds))
 }
 

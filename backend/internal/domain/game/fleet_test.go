@@ -132,7 +132,7 @@ func TestBuildFleetDispatchDraftNormalizesLegacySelection(t *testing.T) {
 	if draft.Cargo != 4*fleetShipCargo(FleetSmallCargo) {
 		t.Fatalf("probe cargo and satellites should be excluded from legacy cargo summary, got %d", draft.Cargo)
 	}
-	if draft.Distance != 20000 || draft.MaxSpeed != 5500 || draft.DurationSeconds != 2121 || draft.FuelConsumption != 2765 || draft.SpeedFactor != 1 {
+	if draft.Distance != 20000 || draft.MaxSpeed != 5500 || draft.DurationSeconds != 21116 || draft.FuelConsumption != 92 || draft.SpeedFactor != 1 {
 		t.Fatalf("unexpected legacy flight math: %+v", draft)
 	}
 	if len(draft.MissionOptions) != 3 || !draft.MissionOptions[2].Selected || draft.MissionOptions[2].ID != FleetMissionSpy {
@@ -236,10 +236,10 @@ func TestBuildFleetDispatchValidationPlansLegacyResourceLoading(t *testing.T) {
 	if issue != nil || !draft.Ready {
 		t.Fatalf("expected dispatch validation to pass, issue=%+v draft=%+v", issue, draft)
 	}
-	if draft.FuelConsumption != 2765 || draft.RemainingCargo != 0 {
+	if draft.FuelConsumption != 92 || draft.RemainingCargo != 0 {
 		t.Fatalf("unexpected fuel or remaining cargo: %+v", draft)
 	}
-	if len(draft.Resources) != 3 || draft.Resources[0].Loaded != 15000 || draft.Resources[1].Loaded != 2236 || draft.Resources[2].Loaded != 0 {
+	if len(draft.Resources) != 3 || draft.Resources[0].Loaded != 15000 || draft.Resources[1].Loaded != 4909 || draft.Resources[2].Loaded != 0 {
 		t.Fatalf("unexpected capped resource loading plan: %+v", draft.Resources)
 	}
 }
@@ -410,10 +410,10 @@ func TestFleetDispatchFlightMathMatchesLegacyFormulas(t *testing.T) {
 	if got := fleetFlightDistance(origin, Coordinates{Galaxy: 2, System: 4, Position: 9}); got != 20000 {
 		t.Fatalf("unexpected cross galaxy distance: %d", got)
 	}
-	if got := fleetFlightTime(1010, 5500, 10, 1); got != 484 {
+	if got := fleetFlightTime(1010, 5500, 10, 1); got != 4753 {
 		t.Fatalf("unexpected legacy flight time: %d", got)
 	}
-	if got := fleetFlightTime(20000, 5500, 10, 128); got != 17 {
+	if got := fleetFlightTime(20000, 5500, 10, 128); got != 165 {
 		t.Fatalf("unexpected 128x legacy flight time: %d", got)
 	}
 	ships := []FleetShipSelection{
@@ -424,10 +424,10 @@ func TestFleetDispatchFlightMathMatchesLegacyFormulas(t *testing.T) {
 	if got := fleetDispatchMaxSpeed(ships, counts); got != 5500 {
 		t.Fatalf("unexpected slowest fleet speed: %d", got)
 	}
-	if got := fleetFlightConsumption(ships, counts, 20000, 2121, 1, 0); got != 2765 {
+	if got := fleetFlightConsumption(ships, counts, 20000, 21116, 1, 0); got != 92 {
 		t.Fatalf("unexpected legacy fuel consumption: %d", got)
 	}
-	if got := fleetFlightConsumption(ships, counts, 20000, 17, 128, 0); got != 2639 {
+	if got := fleetFlightConsumption(ships, counts, 20000, 165, 128, 0); got != 92 {
 		t.Fatalf("unexpected 128x legacy fuel consumption: %d", got)
 	}
 }
@@ -439,10 +439,10 @@ func TestFleetDispatchFlightMathDefensiveEdges(t *testing.T) {
 	if got := fleetFlightTime(0, 5500, 10, 1); got != 0 {
 		t.Fatalf("zero distance should not produce a duration: %d", got)
 	}
-	if got := fleetFlightTime(1010, 5500, -1, 0); got != 484 {
+	if got := fleetFlightTime(1010, 5500, -1, 0); got != 4753 {
 		t.Fatalf("invalid speed and speed factor should default to legacy values, got %d", got)
 	}
-	if got := fleetFlightTime(1010, 5500, 99, 1); got != 484 {
+	if got := fleetFlightTime(1010, 5500, 99, 1); got != 4753 {
 		t.Fatalf("oversized speed should clamp to 100%%, got %d", got)
 	}
 	if got := fleetFlightConsumption(nil, nil, 0, 10, 1, 0); got != 0 {

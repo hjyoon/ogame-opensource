@@ -9,8 +9,11 @@ import {
   type GameFleetDispatchLaunch,
   type GameFleetDispatchPrepare,
   type GameFleetStatus,
+  type GameGalaxyMissileLaunch,
   type GameGalaxyStatus,
   type GameLogoutStatus,
+  type GameMerchantStatus,
+  type GameMerchantTradeValues,
   type GameMessagesStatus,
   type GameNoteDraft,
   type GameNotesStatus,
@@ -247,6 +250,9 @@ function App() {
   const [gameResources, setGameResources] = useState<GameResourcesStatus | null>(null);
   const [gameResourcesError, setGameResourcesError] = useState<string | null>(null);
   const [gameResourcesPending, setGameResourcesPending] = useState(false);
+  const [gameMerchant, setGameMerchant] = useState<GameMerchantStatus | null>(null);
+  const [gameMerchantError, setGameMerchantError] = useState<string | null>(null);
+  const [gameMerchantPending, setGameMerchantPending] = useState(false);
   const [gameResearch, setGameResearch] = useState<GameResearchStatus | null>(null);
   const [gameResearchError, setGameResearchError] = useState<string | null>(null);
   const [gameResearchPending, setGameResearchPending] = useState(false);
@@ -259,6 +265,7 @@ function App() {
   const [gameFleetPending, setGameFleetPending] = useState(false);
   const [gameGalaxy, setGameGalaxy] = useState<GameGalaxyStatus | null>(null);
   const [gameGalaxyError, setGameGalaxyError] = useState<string | null>(null);
+  const [gameGalaxyPending, setGameGalaxyPending] = useState(false);
   const [gameDefense, setGameDefense] = useState<GameDefenseStatus | null>(null);
   const [gameDefenseError, setGameDefenseError] = useState<string | null>(null);
   const [gameDefensePending, setGameDefensePending] = useState(false);
@@ -687,6 +694,98 @@ function App() {
       .catch((err: unknown) => setGameResourcesError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
 
+  const syncGameOverviewFromMerchant = (payload: GameMerchantStatus) => {
+    if (!payload.authenticated || !payload.merchant) {
+      return;
+    }
+    const merchant = payload.merchant;
+    setGameOverview((current) => {
+      if (!current?.authenticated || !current.overview) {
+        return current;
+      }
+      return {
+        ...current,
+        overview: {
+          ...current.overview,
+          currentPlanet: merchant.currentPlanet,
+          planetSwitcher: merchant.planetSwitcher
+        }
+      };
+    });
+  };
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "merchant" || publicSession === "") {
+      setGameMerchant(null);
+      setGameMerchantError(null);
+      setGameMerchantPending(false);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const merchantSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      merchantSearch.set("cp", selectedPlanet);
+    }
+    fetch(`/api/game/merchant?${merchantSearch.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameMerchantStatus>)
+      .then((payload) => {
+        setGameMerchant(payload);
+        syncGameOverviewFromMerchant(payload);
+        setGameMerchantError(null);
+      })
+      .catch((err: unknown) => setGameMerchantError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
+  const submitGameMerchantMutation = (body: { action: "call"; offerId: number } | { action: "trade"; values: GameMerchantTradeValues }) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameMerchantError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const merchantSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      merchantSearch.set("cp", selectedPlanet);
+    }
+    setGameMerchantPending(true);
+    setGameMerchantError(null);
+    fetch(`/api/game/merchant?${merchantSearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(body)
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameMerchantStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `merchant returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("merchant response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameMerchant(payload);
+        syncGameOverviewFromMerchant(payload);
+        setGameMerchantError(payload.actionIssue?.message ?? null);
+      })
+      .catch((err: unknown) => setGameMerchantError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameMerchantPending(false));
+  };
+
+  const submitGameMerchantCall = (offerId: number) => {
+    submitGameMerchantMutation({ action: "call", offerId });
+  };
+
+  const submitGameMerchantTrade = (values: GameMerchantTradeValues) => {
+    submitGameMerchantMutation({ action: "trade", values });
+  };
+
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "research" || publicSession === "") {
@@ -918,7 +1017,6 @@ function App() {
       .then((payload) => {
         setGameFleet(payload);
         setGameFleetError(null);
-        dispatchClientNavigation(`/game/fleet?${fleetSearch.toString()}`);
       })
       .catch((err: unknown) => setGameFleetError(err instanceof Error ? err.message : String(err)))
       .finally(() => setGameFleetPending(false));
@@ -958,7 +1056,6 @@ function App() {
       .then((payload) => {
         setGameFleet(payload);
         setGameFleetError(null);
-        dispatchClientNavigation(`/game/fleet?${fleetSearch.toString()}`);
       })
       .catch((err: unknown) => setGameFleetError(err instanceof Error ? err.message : String(err)))
       .finally(() => setGameFleetPending(false));
@@ -1027,6 +1124,49 @@ function App() {
       })
       .catch((err: unknown) => setGameGalaxyError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
+
+  const submitGameGalaxyMissileLaunch = (draft: GameGalaxyMissileLaunch) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameGalaxyError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const galaxySearch = new URLSearchParams({ session: publicSession });
+    for (const key of ["cp", "galaxy", "system", "position", "p1", "p2", "p3", "pdd", "zp"]) {
+      const value = currentSearch.get(key);
+      if (value) {
+        galaxySearch.set(key, value);
+      }
+    }
+    const nextSearch = new URLSearchParams(galaxySearch);
+    setGameGalaxyPending(true);
+    setGameGalaxyError(null);
+    fetch(`/api/game/galaxy?${galaxySearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ action: "launch-missile", ...draft })
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameGalaxyStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `galaxy returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("galaxy response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameGalaxy(payload);
+        setGameGalaxyError(null);
+        dispatchClientNavigation(`/game/galaxy?${nextSearch.toString()}`);
+      })
+      .catch((err: unknown) => setGameGalaxyError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameGalaxyPending(false));
+  };
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
@@ -1125,7 +1265,7 @@ function App() {
     }
     const currentSearch = new URLSearchParams(search);
     const statisticsSearch = new URLSearchParams({ session: publicSession });
-    for (const key of ["cp", "who", "type", "start"]) {
+    for (const key of ["cp", "who", "type", "start", "sort_per_member"]) {
       const value = currentSearch.get(key);
       if (value) {
         statisticsSearch.set(key, value);
@@ -1578,9 +1718,13 @@ function App() {
         fleetPending={gameFleetPending}
         fleetStatus={gameFleet}
         galaxyError={gameGalaxyError}
+        galaxyPending={gameGalaxyPending}
         galaxyStatus={gameGalaxy}
         logoutError={gameLogoutError}
         logoutStatus={gameLogout}
+        merchantError={gameMerchantError}
+        merchantPending={gameMerchantPending}
+        merchantStatus={gameMerchant}
         messagesError={gameMessagesError}
         messagesPending={gameMessagesPending}
         messagesStatus={gameMessages}
@@ -1605,6 +1749,9 @@ function App() {
         onFleetPrepare={submitFleetPrepare}
         onFleetRecall={submitFleetRecall}
         onFleetTemplateAction={submitFleetTemplateAction}
+        onGalaxyMissileLaunch={submitGameGalaxyMissileLaunch}
+        onMerchantCall={submitGameMerchantCall}
+        onMerchantTrade={submitGameMerchantTrade}
         onPlanetDelete={submitGamePlanetDelete}
         onPlanetRename={submitGamePlanetRename}
         onResourcesSubmit={submitGameResources}

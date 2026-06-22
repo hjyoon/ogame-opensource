@@ -516,6 +516,13 @@ body.legacy-game-body {
   width: 100%;
 }
 
+#content.legacy-content-popup {
+  height: calc(100vh - 20px);
+  left: 0;
+  top: 10px;
+  width: 100%;
+}
+
 .legacy-report-table {
   margin: 0;
 }
@@ -528,6 +535,17 @@ body.legacy-game-body {
   padding: 4px 3px;
   position: absolute;
   top: 80px;
+  width: 78%;
+}
+
+.legacy-page-errorbox {
+  border: 3px solid #ff0000;
+  display: block;
+  left: 190px;
+  margin: 3px 0;
+  padding: 4px 3px;
+  position: absolute;
+  top: 86px;
   width: 78%;
 }
 
@@ -871,6 +889,16 @@ body.legacy-game-body {
 .legacy-game-shell .legacy-messages-compose-table {
   border-collapse: separate;
   border-spacing: 2px;
+}
+
+.legacy-game-shell .legacy-messages-table {
+  background-color: #344566;
+  margin-top: 3px;
+  outline: 1px solid #344566;
+}
+
+.legacy-game-shell .legacy-messages-table img {
+  vertical-align: baseline;
 }
 
 .legacy-game-shell .legacy-notes-table th,

@@ -3,6 +3,7 @@ import {
   gameBuddyRequestURL,
   gameFleetTargetPrefillFromSearch,
   gameFleetTargetURL,
+  gameGalaxyMissileURL,
   gameMessageComposeURL,
   gamePlanetSwitchURL,
   gameRouteURL,
@@ -52,6 +53,7 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/index.php", "?page=buildings&mode=Flotte")).toMatchObject({ key: "shipyard", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=buildings&mode=Verteidigung")).toMatchObject({ key: "defense", migrated: true });
     expect(resolveGameRoute("/game/resources")).toMatchObject({ key: "resources", migrated: true });
+    expect(resolveGameRoute("/game/merchant")).toMatchObject({ key: "merchant", migrated: true });
     expect(resolveGameRoute("/game/research")).toMatchObject({ key: "research", migrated: true });
     expect(resolveGameRoute("/game/shipyard")).toMatchObject({ key: "shipyard", migrated: true });
     expect(resolveGameRoute("/game/fleet")).toMatchObject({ key: "fleet", migrated: true });
@@ -79,7 +81,7 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/index.php", "?page=techtree")).toMatchObject({ key: "technology", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=allianzen")).toMatchObject({ key: "alliance", migrated: false });
     expect(resolveGameRoute("/game/index.php", "?page=imperium")).toMatchObject({ key: "empire", migrated: true });
-    expect(resolveGameRoute("/game/index.php", "?page=trader")).toMatchObject({ key: "merchant", migrated: false });
+    expect(resolveGameRoute("/game/index.php", "?page=trader")).toMatchObject({ key: "merchant", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=micropayment")).toMatchObject({ key: "officers", migrated: false });
     expect(resolveGameRoute("/game/index.php", "?page=admin")).toMatchObject({ key: "admin", migrated: false });
   });
@@ -108,6 +110,9 @@ describe("game route model", () => {
     expect(gameFleetTargetURL({ galaxy: 1, system: 2, position: 3, mission: 3, planetType: 3 }, "?session=abc")).toBe(
       "/game/fleet?session=abc&galaxy=1&system=2&position=3&planet=3&planettype=3&target_mission=3"
     );
+    expect(gameFleetTargetURL({ galaxy: 1, system: 2, position: 3, mission: 8, planetType: 2 }, "?session=abc")).toBe(
+      "/game/fleet?session=abc&galaxy=1&system=2&position=3&planet=3&planettype=2&target_mission=8"
+    );
     expect(gameFleetTargetURL({ galaxy: 1, system: 2, position: 16, mission: 15 }, "?session=abc&lgn=1")).toBe(
       "/game/fleet?session=abc&galaxy=1&system=2&position=16&planet=16&planettype=1&target_mission=15"
     );
@@ -134,5 +139,8 @@ describe("game route model", () => {
   test("builds migrated galaxy user action links", () => {
     expect(gameBuddyRequestURL(42, "?session=abc&cp=99&lgn=1")).toBe("/game/buddy?session=abc&cp=99&action=7&buddy_id=42");
     expect(gameMessageComposeURL(42, "?session=abc&cp=99")).toBe("/game/messages?session=abc&cp=99&messageziel=42");
+    expect(gameGalaxyMissileURL({ galaxy: 1, system: 2, position: 3 }, 77, 42, "?session=abc&cp=99")).toBe(
+      "/game/galaxy?session=abc&cp=99&mode=1&p1=1&p2=2&p3=3&pdd=77&zp=42&galaxy=1&system=2&position=3"
+    );
   });
 });

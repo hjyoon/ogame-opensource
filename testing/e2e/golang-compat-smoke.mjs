@@ -1137,6 +1137,24 @@ try {
     gameResourcesWithoutCookieBody = {};
   }
 
+  const gameMerchant = await request(`/api/game/merchant${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameMerchantBody = {};
+  try {
+    gameMerchantBody = JSON.parse(gameMerchant.body);
+  } catch {
+    gameMerchantBody = {};
+  }
+
+  const gameMerchantWithoutCookie = await request(`/api/game/merchant${sessionSearch}`);
+  let gameMerchantWithoutCookieBody = {};
+  try {
+    gameMerchantWithoutCookieBody = JSON.parse(gameMerchantWithoutCookie.body);
+  } catch {
+    gameMerchantWithoutCookieBody = {};
+  }
+
   const gameOptions = await request(`/api/game/options${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -1571,6 +1589,14 @@ try {
       check(!gameResourcesUpdate.body.includes(sessionCookiePair), "game resources production update response does not echo private cookie"),
       check(gameResourcesWithoutCookie.status === 401, "game resources rejects missing private cookie", { status: gameResourcesWithoutCookie.status }),
       check(gameResourcesWithoutCookieBody.authenticated === false, "game resources missing private cookie is unauthenticated", gameResourcesWithoutCookieBody),
+      check(gameMerchant.status === 200, "game merchant returns HTTP 200 with private cookie", { status: gameMerchant.status }),
+      check(gameMerchantBody.authenticated === true, "game merchant authenticates the login session", gameMerchantBody),
+      check(Number.isFinite(gameMerchantBody.merchant?.activeOfferId), "game merchant returns active offer state", gameMerchantBody),
+      check(Array.isArray(gameMerchantBody.merchant?.rows), "game merchant returns resource rows array", gameMerchantBody),
+      check(Array.isArray(gameMerchantBody.merchant?.planetSwitcher), "game merchant returns planet switcher", gameMerchantBody),
+      check(!gameMerchant.body.includes(sessionCookiePair), "game merchant response does not echo private cookie"),
+      check(gameMerchantWithoutCookie.status === 401, "game merchant rejects missing private cookie", { status: gameMerchantWithoutCookie.status }),
+      check(gameMerchantWithoutCookieBody.authenticated === false, "game merchant missing private cookie is unauthenticated", gameMerchantWithoutCookieBody),
       check(gameOptions.status === 200, "game options returns HTTP 200 with private cookie", { status: gameOptions.status }),
       check(gameOptionsBody.authenticated === true, "game options authenticates the login session", gameOptionsBody),
       check(typeof gameOptionsBody.options?.user?.name === "string" && gameOptionsBody.options.user.name.length > 0, "game options returns user data", gameOptionsBody),
@@ -1712,6 +1738,7 @@ try {
       check(js.body.includes("/api/game/empire"), "React bundle consumes game empire API"),
       check(js.body.includes("sandybrown") && js.body.includes("magenta"), "React bundle contains legacy empire queue marker colors"),
       check(js.body.includes("/api/game/resources"), "React bundle consumes game resources API"),
+      check(js.body.includes("/api/game/merchant"), "React bundle consumes game merchant API"),
       check(js.body.includes("/api/game/research"), "React bundle consumes game research API"),
       check(js.body.includes("/api/game/shipyard"), "React bundle consumes game shipyard API"),
       check(js.body.includes("/api/game/fleet"), "React bundle consumes game fleet API"),
@@ -1738,6 +1765,7 @@ try {
       check(js.body.includes("legacy-game-shell"), "React bundle contains legacy game overview layout"),
       check(js.body.includes("legacy-buildings-table"), "React bundle contains legacy game buildings layout"),
       check(js.body.includes("legacy-resources-table"), "React bundle contains legacy game resources layout"),
+      check(js.body.includes("legacy-merchant-call-table"), "React bundle contains legacy game merchant layout"),
       check(js.body.includes("legacy-buddy-table"), "React bundle contains legacy game buddy layout"),
       check(js.body.includes("legacy-research-table"), "React bundle contains legacy game research layout"),
       check(js.body.includes("legacy-shipyard-table"), "React bundle contains legacy game shipyard layout"),
@@ -1801,6 +1829,7 @@ try {
   const putGameMessages = await request("/api/game/messages", { method: "PUT" });
   const putGameReport = await request("/api/game/report", { method: "PUT" });
   const putGameOptions = await request("/api/game/options", { method: "PUT" });
+  const putGameMerchant = await request("/api/game/merchant", { method: "PUT" });
   const getGameLogout = await request("/api/game/logout");
   const putGameResources = await request("/api/game/resources", { method: "PUT" });
   cases.push(finalize({
@@ -1854,6 +1883,8 @@ try {
       check(hasHeader(putGameReport, "allow", "GET, HEAD"), "game report method rejection returns Allow header"),
       check(putGameOptions.status === 405, "PUT game options endpoint is rejected", { status: putGameOptions.status }),
       check(hasHeader(putGameOptions, "allow", "GET, HEAD, POST"), "game options method rejection returns Allow header"),
+      check(putGameMerchant.status === 405, "PUT game merchant endpoint is rejected", { status: putGameMerchant.status }),
+      check(hasHeader(putGameMerchant, "allow", "GET, HEAD, POST"), "game merchant method rejection returns Allow header"),
       check(getGameLogout.status === 405, "GET game logout endpoint is rejected", { status: getGameLogout.status }),
       check(hasHeader(getGameLogout, "allow", "POST"), "game logout method rejection returns Allow header"),
       check(putGameResources.status === 405, "PUT game resources endpoint is rejected", { status: putGameResources.status }),

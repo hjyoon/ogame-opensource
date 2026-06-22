@@ -62,6 +62,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	gameBuildings := gameBuildingsService(cfg, logger, gameSessions)
 	gameEmpire := gameEmpireService(cfg, logger, gameSessions)
 	gameResources := gameResourcesService(cfg, logger, gameSessions)
+	gameMerchant := gameMerchantService(cfg, logger, gameSessions)
 	gameResearch := gameResearchService(cfg, logger, gameSessions)
 	gameShipyard := gameShipyardService(cfg, logger, gameSessions)
 	gameFleet := gameFleetService(cfg, logger, gameSessions)
@@ -90,6 +91,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		GameBuildings:      gameBuildings,
 		GameEmpire:         gameEmpire,
 		GameResources:      gameResources,
+		GameMerchant:       gameMerchant,
 		GameResearch:       gameResearch,
 		GameShipyard:       gameShipyard,
 		GameFleet:          gameFleet,
@@ -417,6 +419,34 @@ func gameResourcesService(cfg config.Config, logger *slog.Logger, sessions apppu
 
 	logger.Info("universe DB game resources enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewResourcesService(sessions, mysqlgame.NewResourcesRepository(db, cfg.UniDBPrefix))
+}
+
+func gameMerchantService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.MerchantService {
+	if !cfg.UniDBEnabled {
+		return appgame.MerchantService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game merchant disabled", "error", err)
+		return appgame.MerchantService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game merchant disabled", "error", err)
+		_ = db.Close()
+		return appgame.MerchantService{}
+	}
+
+	logger.Info("universe DB game merchant enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
+	return appgame.NewMerchantService(sessions, mysqlgame.NewMerchantRepository(db, cfg.UniDBPrefix))
 }
 
 func gameResearchService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.ResearchService {

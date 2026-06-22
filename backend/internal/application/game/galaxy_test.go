@@ -38,6 +38,42 @@ func TestGalaxyServiceReturnsAuthenticatedGalaxy(t *testing.T) {
 	}
 }
 
+func TestGalaxyServiceLaunchesMissilesAndRefreshesGalaxy(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}
+	issue := domaingame.GalaxyMissileLaunchedIssue(2)
+	repository := &fakeGalaxyRepository{
+		result:      domaingame.Galaxy{Commander: "legor"},
+		actionIssue: issue,
+	}
+	service := NewGalaxyService(sessions, repository)
+
+	result, err := service.LaunchMissiles(context.Background(), GalaxyMissileLaunchCommand{
+		PublicSession:   "public",
+		PrivateSessions: map[string]string{"private": "secret"},
+		RemoteAddr:      "203.0.113.10",
+		PlanetID:        99,
+		Coordinates:     domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+		TargetPlanetID:  77,
+		Amount:          2,
+		TargetDefenseID: domaingame.DefenseRocketLauncher,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Authenticated || result.Galaxy.Commander != "legor" || result.ActionIssue != issue {
+		t.Fatalf("unexpected launch result: %+v", result)
+	}
+	if repository.launch.PlayerID != 42 || repository.launch.PlanetID != 99 || repository.launch.TargetPlanetID != 77 || repository.launch.TargetDefenseID != domaingame.DefenseRocketLauncher {
+		t.Fatalf("unexpected launch query: %+v", repository.launch)
+	}
+	if repository.query.PlayerID != 42 || repository.query.Coordinates.System != 2 {
+		t.Fatalf("expected refreshed galaxy query, got %+v", repository.query)
+	}
+}
+
 func TestGalaxyServiceReturnsSessionIssuesWithoutRepository(t *testing.T) {
 	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
 		Authenticated: false,
@@ -56,6 +92,14 @@ func TestGalaxyServiceReturnsSessionIssuesWithoutRepository(t *testing.T) {
 	if result.Authenticated || len(result.Issues) != 1 || repository.called {
 		t.Fatalf("expected unauthenticated result without repository call, got %+v", result)
 	}
+
+	result, err = service.LaunchMissiles(context.Background(), GalaxyMissileLaunchCommand{PublicSession: "public"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Authenticated || len(result.Issues) != 1 || repository.launchCalled {
+		t.Fatalf("expected unauthenticated launch result without repository call, got %+v", result)
+	}
 }
 
 func TestGalaxyServicePropagatesErrors(t *testing.T) {
@@ -73,23 +117,44 @@ func TestGalaxyServicePropagatesErrors(t *testing.T) {
 	if _, err := service.GetGalaxy(context.Background(), GalaxyCommand{}); !errors.Is(err, repoErr) {
 		t.Fatalf("expected repository error, got %v", err)
 	}
+
+	service = NewGalaxyService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}, &fakeGalaxyRepository{launchErr: repoErr})
+	if _, err := service.LaunchMissiles(context.Background(), GalaxyMissileLaunchCommand{}); !errors.Is(err, repoErr) {
+		t.Fatalf("expected launch error, got %v", err)
+	}
 }
 
 func TestGalaxyServiceRequiresDependencies(t *testing.T) {
 	if _, err := (GalaxyService{}).GetGalaxy(context.Background(), GalaxyCommand{}); err == nil {
 		t.Fatal("expected dependency error")
 	}
+	if _, err := (GalaxyService{}).LaunchMissiles(context.Background(), GalaxyMissileLaunchCommand{}); err == nil {
+		t.Fatal("expected dependency error")
+	}
 }
 
 type fakeGalaxyRepository struct {
-	result domaingame.Galaxy
-	err    error
-	query  GalaxyQuery
-	called bool
+	result       domaingame.Galaxy
+	err          error
+	launchErr    error
+	actionIssue  *domaingame.GalaxyActionIssue
+	query        GalaxyQuery
+	launch       GalaxyMissileLaunchQuery
+	called       bool
+	launchCalled bool
 }
 
 func (f *fakeGalaxyRepository) GetGalaxy(_ context.Context, query GalaxyQuery) (domaingame.Galaxy, error) {
 	f.query = query
 	f.called = true
 	return f.result, f.err
+}
+
+func (f *fakeGalaxyRepository) LaunchMissiles(_ context.Context, query GalaxyMissileLaunchQuery) (*domaingame.GalaxyActionIssue, error) {
+	f.launch = query
+	f.launchCalled = true
+	return f.actionIssue, f.launchErr
 }

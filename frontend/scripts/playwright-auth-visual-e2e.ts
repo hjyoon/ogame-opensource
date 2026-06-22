@@ -131,6 +131,14 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["Production factor:", "Resource settings on planet", "Basic Income", "Storage capacity", "Total per hour:"]
   },
   {
+    name: "game-merchant",
+    legacyPage: "trader",
+    migratedPath: "/game/merchant",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-merchant-call-table",
+    expectedTexts: ["Merchant", "You want to sell", "Summoning a merchant costs 2500 dark matter"]
+  },
+  {
     name: "game-research",
     legacyPage: "buildings",
     legacyQuery: { mode: "Forschung" },
@@ -221,12 +229,38 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["Search Universe", "Player Name", "Planet Name", "Alliance Tag", "Alliance Name", "search"]
   },
   {
+    name: "game-messages",
+    legacyPage: "messages",
+    migratedPath: "/game/messages",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-messages-table",
+    expectedTexts: ["Messages", "Action", "Date", "From", "Subject", "Operators"]
+  },
+  {
+    name: "game-messages-compose",
+    legacyPage: "writemessages",
+    legacyQuery: { messageziel: "100000" },
+    migratedPath: "/game/messages",
+    migratedQuery: { messageziel: "100000" },
+    legacyReady: "#content form",
+    migratedReady: ".legacy-messages-compose-table",
+    expectedTexts: ["Write message", "Recipient", "Subject", "Message(0 / 2000 characters)"]
+  },
+  {
     name: "game-buddy",
     legacyPage: "buddy",
     migratedPath: "/game/buddy",
     legacyReady: "#content table",
     migratedReady: ".legacy-buddy-table",
     expectedTexts: ["Buddylist", "Request", "Your requests", "Name", "Alliance", "Coords", "Status"]
+  },
+  {
+    name: "game-options",
+    legacyPage: "options",
+    migratedPath: "/game/options",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-options-table",
+    expectedTexts: ["User Data", "General Options", "Galaxy View Options", "Vacation mode / Delete account"]
   },
   {
     name: "game-notes",

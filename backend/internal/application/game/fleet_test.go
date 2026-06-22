@@ -259,6 +259,50 @@ func TestFleetServiceLaunchesReadyDispatchAndReloadsFleet(t *testing.T) {
 	}
 }
 
+func TestFleetServiceLaunchUsesCurrentPlanetWhenCommandPlanetMissing(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}
+	repository := &fakeFleetRepository{result: domaingame.Fleet{
+		CurrentPlanet: domaingame.PlanetOverview{
+			ID:          99,
+			Type:        domaingame.PlanetTypePlanet,
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Resources:   domaingame.Resources{Deuterium: 5000},
+		},
+		Slots: domaingame.FleetSlots{Used: 0, Max: 4},
+		Ships: []domaingame.FleetShipSelection{{
+			ID:          domaingame.FleetSmallCargo,
+			Name:        "Small Cargo",
+			Count:       2,
+			Speed:       5500,
+			Cargo:       5000,
+			Consumption: 10,
+			Selectable:  true,
+		}},
+	}}
+	service := NewFleetService(sessions, repository)
+
+	result, err := service.LaunchFleetDispatch(context.Background(), FleetDispatchLaunchCommand{
+		PublicSession: "public",
+		Ships:         map[int]int{domaingame.FleetSmallCargo: 1},
+		Target:        domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4},
+		TargetType:    domaingame.GamePlanetTypePlanet,
+		Mission:       domaingame.FleetMissionTransport,
+		Speed:         10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Authenticated || result.ActionIssue != nil || !repository.launched {
+		t.Fatalf("unexpected launch result: result=%+v launch=%+v", result, repository.launch)
+	}
+	if repository.launch.PlanetID != 99 || repository.launch.Origin.ID != 99 {
+		t.Fatalf("expected launch to use current planet id, got %+v", repository.launch)
+	}
+}
+
 func TestFleetServiceLaunchNormalizesExpeditionHoldSeconds(t *testing.T) {
 	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
 		Authenticated: true,

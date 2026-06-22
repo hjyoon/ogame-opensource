@@ -102,7 +102,7 @@ func TestSearchRepositoryHandlesValidationAndResultMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 	if search.Message != "Too few characters! Please enter at least 2 characters." || len(queryer.calls) != 4 {
-		t.Fatalf("expected short text message without search query, got search=%+v calls=%d", search, len(queryer.calls))
+		t.Fatalf("short text should render legacy page error without search query, got search=%+v calls=%d", search, len(queryer.calls))
 	}
 
 	queryer = &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{0})}, fakeQueryResult{rows: fakeRowsFromValues()})}
@@ -111,8 +111,8 @@ func TestSearchRepositoryHandlesValidationAndResultMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if search.Message != "no entries found" {
-		t.Fatalf("expected empty result message, got %+v", search)
+	if search.Message != "no entries found" || len(search.PlayerRows) != 0 {
+		t.Fatalf("empty result should render legacy no-result message, got %+v", search)
 	}
 
 	values := make([][]any, 0, domaingame.SearchLimit+1)
@@ -125,8 +125,8 @@ func TestSearchRepositoryHandlesValidationAndResultMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if search.Message != "more than 25 entries found" || len(search.AllianceRows) != domaingame.SearchLimit {
-		t.Fatalf("expected alliance over limit truncation, got message=%q rows=%d", search.Message, len(search.AllianceRows))
+	if search.Message != domaingame.SearchOverLimitMessage(domaingame.SearchTypeAllianceName) || len(search.AllianceRows) != domaingame.SearchLimit {
+		t.Fatalf("expected alliance over limit truncation message, got message=%q rows=%d", search.Message, len(search.AllianceRows))
 	}
 }
 
@@ -195,13 +195,13 @@ func TestSearchRepositoryLoaderScanEdges(t *testing.T) {
 
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{7, "TAG", "Alliance", "bad", int64(1), 0})}}}
 	repository = NewSearchRepositoryWithQueryer(queryer, "ogame_")
-	if _, _, err := repository.loadAllianceSearchRows(context.Background(), "ogame_ally", "ogame_users", 42, "TA", "tag"); err == nil || !strings.Contains(err.Error(), "expected int") {
+	if _, _, err := repository.loadAllianceSearchRows(context.Background(), "ogame_ally", "ogame_users", 42, "TA", "tag", domaingame.SearchTypeAllianceTag); err == nil || !strings.Contains(err.Error(), "expected int") {
 		t.Fatalf("expected alliance scan error, got %v", err)
 	}
 
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("ally rows failed"), []any{7, "TAG", "Alliance", 1, int64(1), 0})}}}
 	repository = NewSearchRepositoryWithQueryer(queryer, "ogame_")
-	if _, _, err := repository.loadAllianceSearchRows(context.Background(), "ogame_ally", "ogame_users", 42, "TA", "tag"); err == nil || !strings.Contains(err.Error(), "ally rows failed") {
+	if _, _, err := repository.loadAllianceSearchRows(context.Background(), "ogame_ally", "ogame_users", 42, "TA", "tag", domaingame.SearchTypeAllianceTag); err == nil || !strings.Contains(err.Error(), "ally rows failed") {
 		t.Fatalf("expected alliance rows error, got %v", err)
 	}
 }

@@ -345,9 +345,13 @@ func (s FleetService) LaunchFleetDispatch(ctx context.Context, command FleetDisp
 		}, nil
 	}
 
+	launchPlanetID := command.PlanetID
+	if launchPlanetID <= 0 {
+		launchPlanetID = fleet.CurrentPlanet.ID
+	}
 	issue, err = s.repository.LaunchFleetDispatch(ctx, FleetLaunchQuery{
 		PlayerID:    session.Session.PlayerID,
-		PlanetID:    command.PlanetID,
+		PlanetID:    launchPlanetID,
 		Origin:      fleet.CurrentPlanet,
 		Draft:       draft,
 		UnionID:     command.UnionID,

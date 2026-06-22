@@ -134,11 +134,11 @@ func NormalizeMessageDraft(targetPlayerID int, subject string, text string) Mess
 }
 
 func MessageMissingSubjectIssue() *MessageActionIssue {
-	return &MessageActionIssue{Code: MessageIssueMissingSubject, Message: "No subject."}
+	return &MessageActionIssue{Code: MessageIssueMissingSubject, Message: "Missing topic"}
 }
 
 func MessageMissingTextIssue() *MessageActionIssue {
-	return &MessageActionIssue{Code: MessageIssueMissingText, Message: "No text."}
+	return &MessageActionIssue{Code: MessageIssueMissingText, Message: "Where's the message?"}
 }
 
 func MessageNotActivatedIssue() *MessageActionIssue {
@@ -146,13 +146,13 @@ func MessageNotActivatedIssue() *MessageActionIssue {
 }
 
 func MessageSentIssue() *MessageActionIssue {
-	return &MessageActionIssue{Code: MessageIssueSent, Message: "Message sent."}
+	return &MessageActionIssue{Code: MessageIssueSent, Message: "Message sent"}
 }
 
 func MessageReportedIssue() *MessageActionIssue {
-	return &MessageActionIssue{Code: MessageIssueReported, Message: "Message reported."}
+	return &MessageActionIssue{Code: MessageIssueReported, Message: "Report sent!"}
 }
 
 func MessageReportExistsIssue() *MessageActionIssue {
-	return &MessageActionIssue{Code: MessageIssueReportExists, Message: "This message has already been reported."}
+	return &MessageActionIssue{Code: MessageIssueReportExists, Message: "The report has already been sent earlier!"}
 }

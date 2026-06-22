@@ -69,9 +69,9 @@ func (r SearchRepository) GetSearch(ctx context.Context, query appgame.SearchQue
 		}
 		search.PlayerRows, search.Message, err = r.loadPlanetNameSearchRows(ctx, usersTable, planetsTable, allyTable, query.PlayerID, ownAllianceID, text)
 	case domaingame.SearchTypeAllianceTag:
-		search.AllianceRows, search.Message, err = r.loadAllianceSearchRows(ctx, allyTable, usersTable, query.PlayerID, text, "tag")
+		search.AllianceRows, search.Message, err = r.loadAllianceSearchRows(ctx, allyTable, usersTable, query.PlayerID, text, "tag", searchType)
 	case domaingame.SearchTypeAllianceName:
-		search.AllianceRows, search.Message, err = r.loadAllianceSearchRows(ctx, allyTable, usersTable, query.PlayerID, text, "name")
+		search.AllianceRows, search.Message, err = r.loadAllianceSearchRows(ctx, allyTable, usersTable, query.PlayerID, text, "name", searchType)
 	default:
 		ownAllianceID, loadErr := r.loadViewerAllianceID(ctx, usersTable, query.PlayerID)
 		if loadErr != nil {
@@ -188,7 +188,7 @@ func scanSearchPlayerRows(rows Rows, playerID int, ownAllianceID int, searchType
 	return result, message, nil
 }
 
-func (r SearchRepository) loadAllianceSearchRows(ctx context.Context, allyTable string, usersTable string, playerID int, text string, column string) ([]domaingame.SearchAllianceRow, string, error) {
+func (r SearchRepository) loadAllianceSearchRows(ctx context.Context, allyTable string, usersTable string, playerID int, text string, column string, searchType string) ([]domaingame.SearchAllianceRow, string, error) {
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
@@ -219,7 +219,7 @@ func (r SearchRepository) loadAllianceSearchRows(ctx context.Context, allyTable 
 	if err := rows.Err(); err != nil {
 		return nil, "", err
 	}
-	message := searchResultMessage(len(result), domaingame.SearchTypeAllianceTag)
+	message := searchResultMessage(len(result), searchType)
 	if len(result) > domaingame.SearchLimit {
 		result = result[:domaingame.SearchLimit]
 	}

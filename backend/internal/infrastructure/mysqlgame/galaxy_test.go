@@ -2,6 +2,7 @@ package mysqlgame
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"testing"
@@ -60,10 +61,139 @@ func TestNewGalaxyRepositoryKeepsSQLQueryer(t *testing.T) {
 	if _, ok := repository.queryer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL queryer, got %T", repository.queryer)
 	}
+	if _, ok := repository.execer.(SQLQueryer); !ok {
+		t.Fatalf("expected SQL execer, got %T", repository.execer)
+	}
 
 	withDefaultClock := NewGalaxyRepositoryWithQueryer(&fakeQueryer{}, "ogame_", nil)
 	if withDefaultClock.now == nil {
 		t.Fatal("expected default clock")
+	}
+}
+
+func TestGalaxyRepositoryLaunchesMissiles(t *testing.T) {
+	now := time.Unix(10_000, 0)
+	runner := &fakeGalaxyRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{0})},
+			{rows: fakeRowsFromValues(galaxyMissileOriginRow(99, 42, 1, 2, 3, 5, int64(10000), 0, 0, 0, now.Unix(), 2))},
+			{rows: fakeRowsFromValues(galaxyMissileTargetRow(77, 7, 1, 4, 5, int64(10000), 0, 0, 0, now.Unix()))},
+		}},
+		execResults: []sql.Result{
+			galaxySQLResult{rows: 1},
+			galaxySQLResult{rows: 1},
+			galaxySQLResult{id: 123, rows: 1},
+			galaxySQLResult{rows: 1},
+			galaxySQLResult{rows: 1},
+		},
+	}
+	repository := NewGalaxyRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	issue, err := repository.LaunchMissiles(context.Background(), appgame.GalaxyMissileLaunchQuery{
+		PlayerID:        42,
+		PlanetID:        0,
+		TargetPlanetID:  77,
+		Amount:          2,
+		TargetDefenseID: domaingame.DefenseRocketLauncher,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue == nil || issue.Code != domaingame.GalaxyIssueRocketLaunched || issue.Message != "Start of rocket 2!" {
+		t.Fatalf("unexpected launch issue: %+v", issue)
+	}
+	if len(runner.execCalls) != 5 {
+		t.Fatalf("expected delete/update/fleet/log/queue execs, got %+v", runner.execCalls)
+	}
+	if !strings.Contains(runner.execCalls[1].sql, "`503` = `503` - ?") || runner.execCalls[1].args[0] != 2 || runner.execCalls[1].args[2] != 99 {
+		t.Fatalf("expected IPM reservation, got %+v", runner.execCalls[1])
+	}
+	if !strings.Contains(runner.execCalls[2].sql, "ipm_amount, ipm_target") || runner.execCalls[2].args[3] != domaingame.FleetMissionMissile {
+		t.Fatalf("expected missile fleet insert, got %+v", runner.execCalls[2])
+	}
+	if !strings.Contains(runner.execCalls[3].sql, "fleetlogs") || runner.execCalls[3].args[17] != 2 || runner.execCalls[3].args[18] != domaingame.DefenseRocketLauncher {
+		t.Fatalf("expected missile fleet log insert, got %+v", runner.execCalls[3])
+	}
+}
+
+func TestGalaxyRepositoryLaunchMissileValidationIssues(t *testing.T) {
+	now := time.Unix(10_000, 0)
+	tests := []struct {
+		name          string
+		amount        int
+		targetRows    *fakeRows
+		originRow     []any
+		targetDefense int
+		want          string
+	}{
+		{
+			name:       "missing target",
+			amount:     1,
+			targetRows: fakeRowsFromValues(),
+			originRow:  galaxyMissileOriginRow(99, 42, 1, 2, 3, 5, int64(10000), 0, 0, 0, now.Unix(), 2),
+			want:       domaingame.GalaxyIssueRocketNoTarget,
+		},
+		{
+			name:       "zero amount",
+			amount:     0,
+			targetRows: fakeRowsFromValues(galaxyMissileTargetRow(77, 7, 1, 4, 5, int64(10000), 0, 0, 0, now.Unix())),
+			originRow:  galaxyMissileOriginRow(99, 42, 1, 2, 3, 5, int64(10000), 0, 0, 0, now.Unix(), 2),
+			want:       domaingame.GalaxyIssueRocketNoRockets,
+		},
+		{
+			name:       "not enough",
+			amount:     6,
+			targetRows: fakeRowsFromValues(galaxyMissileTargetRow(77, 7, 1, 4, 5, int64(10000), 0, 0, 0, now.Unix())),
+			originRow:  galaxyMissileOriginRow(99, 42, 1, 2, 3, 5, int64(10000), 0, 0, 0, now.Unix(), 2),
+			want:       domaingame.GalaxyIssueRocketNotEnough,
+		},
+		{
+			name:       "weak drive",
+			amount:     1,
+			targetRows: fakeRowsFromValues(galaxyMissileTargetRow(77, 7, 1, 20, 5, int64(10000), 0, 0, 0, now.Unix())),
+			originRow:  galaxyMissileOriginRow(99, 42, 1, 2, 3, 5, int64(10000), 0, 0, 0, now.Unix(), 1),
+			want:       domaingame.GalaxyIssueRocketWeakDrive,
+		},
+		{
+			name:       "weak drive overrides not enough",
+			amount:     6,
+			targetRows: fakeRowsFromValues(galaxyMissileTargetRow(77, 7, 1, 20, 5, int64(10000), 0, 0, 0, now.Unix())),
+			originRow:  galaxyMissileOriginRow(99, 42, 1, 2, 3, 5, int64(10000), 0, 0, 0, now.Unix(), 1),
+			want:       domaingame.GalaxyIssueRocketWeakDrive,
+		},
+		{
+			name:       "self",
+			amount:     1,
+			targetRows: fakeRowsFromValues(galaxyMissileTargetRow(77, 42, 1, 4, 5, int64(10000), 0, 0, 0, now.Unix())),
+			originRow:  galaxyMissileOriginRow(99, 42, 1, 2, 3, 5, int64(10000), 0, 0, 0, now.Unix(), 2),
+			want:       domaingame.GalaxyIssueRocketSelf,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(tt.originRow)},
+				{rows: tt.targetRows},
+			}}}
+			repository := NewGalaxyRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+			issue, err := repository.LaunchMissiles(context.Background(), appgame.GalaxyMissileLaunchQuery{
+				PlayerID:        42,
+				PlanetID:        99,
+				TargetPlanetID:  77,
+				Amount:          tt.amount,
+				TargetDefenseID: tt.targetDefense,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if issue == nil || issue.Code != tt.want {
+				t.Fatalf("expected %s, got %+v", tt.want, issue)
+			}
+			if len(runner.execCalls) != 0 {
+				t.Fatalf("validation failure should not mutate, got %+v", runner.execCalls)
+			}
+		})
 	}
 }
 
@@ -296,4 +426,52 @@ func galaxyObjectRow(id int, name string, planetType int, position int, lastActi
 		rowAllyID,
 		tag,
 	}
+}
+
+func galaxyMissileOriginRow(id int, ownerID int, galaxy int, system int, position int, missiles int, score int64, admin int, vacation int, banned int, lastClick int64, impulseDrive int) []any {
+	return []any{id, ownerID, domaingame.PlanetTypePlanet, galaxy, system, position, missiles, score, admin, vacation, banned, lastClick, impulseDrive}
+}
+
+func galaxyMissileTargetRow(id int, ownerID int, galaxy int, system int, position int, score int64, admin int, vacation int, banned int, lastClick int64) []any {
+	return []any{id, ownerID, domaingame.PlanetTypePlanet, galaxy, system, position, score, admin, vacation, banned, lastClick}
+}
+
+type fakeGalaxyRunner struct {
+	fakeQueryer
+	execCalls   []fakeGalaxyExecCall
+	execErrs    []error
+	execResults []sql.Result
+}
+
+type fakeGalaxyExecCall struct {
+	sql  string
+	args []any
+}
+
+func (f *fakeGalaxyRunner) ExecContext(_ context.Context, sqlText string, args ...any) (sql.Result, error) {
+	f.execCalls = append(f.execCalls, fakeGalaxyExecCall{sql: sqlText, args: args})
+	result := sql.Result(galaxySQLResult{rows: 1})
+	if len(f.execResults) > 0 {
+		result = f.execResults[0]
+		f.execResults = f.execResults[1:]
+	}
+	var err error
+	if len(f.execErrs) > 0 {
+		err = f.execErrs[0]
+		f.execErrs = f.execErrs[1:]
+	}
+	return result, err
+}
+
+type galaxySQLResult struct {
+	id   int64
+	rows int64
+}
+
+func (r galaxySQLResult) LastInsertId() (int64, error) {
+	return r.id, nil
+}
+
+func (r galaxySQLResult) RowsAffected() (int64, error) {
+	return r.rows, nil
 }

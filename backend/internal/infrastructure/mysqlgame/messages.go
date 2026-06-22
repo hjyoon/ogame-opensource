@@ -463,7 +463,7 @@ func (r MessagesRepository) loadComposeTarget(ctx context.Context, usersTable st
 		return domaingame.MessageCompose{}, errors.New("message target not found")
 	}
 
-	compose := domaingame.MessageCompose{Subject: "no subject", MaxChars: domaingame.MessageComposeMaxChars}
+	compose := domaingame.MessageCompose{Subject: "No Subject", MaxChars: domaingame.MessageComposeMaxChars}
 	if err := rows.Scan(
 		&compose.Target.PlayerID,
 		&compose.Target.Name,

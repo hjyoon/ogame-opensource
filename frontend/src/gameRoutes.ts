@@ -38,7 +38,7 @@ export const gameRoutes: GameRoute[] = [
   { key: "empire", label: "Empire", path: "/game/empire", migrated: true },
   { key: "buildings", label: "Buildings", path: "/game/buildings", migrated: true },
   { key: "resources", label: "Resources", path: "/game/resources", migrated: true },
-  { key: "merchant", label: "Merchant", path: "/game/merchant", migrated: false },
+  { key: "merchant", label: "Merchant", path: "/game/merchant", migrated: true },
   { key: "research", label: "Research", path: "/game/research", migrated: true },
   { key: "shipyard", label: "Shipyard", path: "/game/shipyard", migrated: true },
   { key: "fleet", label: "Fleet", path: "/game/fleet", migrated: true },
@@ -198,6 +198,20 @@ export function gameMessageComposeURL(playerID: number, search: string): string 
   const query = new URLSearchParams(search);
   query.set("messageziel", String(playerID));
   return gameRouteURL("/game/messages", query.toString());
+}
+
+export function gameGalaxyMissileURL(coordinates: { galaxy: number; system: number; position: number }, planetID: number, playerID: number, search: string): string {
+  const query = new URLSearchParams(search);
+  query.set("mode", "1");
+  query.set("p1", String(coordinates.galaxy));
+  query.set("p2", String(coordinates.system));
+  query.set("p3", String(coordinates.position));
+  query.set("pdd", String(planetID));
+  query.set("zp", String(playerID));
+  query.set("galaxy", String(coordinates.galaxy));
+  query.set("system", String(coordinates.system));
+  query.set("position", String(coordinates.position));
+  return gameRouteURL("/game/galaxy", query.toString());
 }
 
 function parseLegacyFleetTargetInt(value: string | null): number | null {

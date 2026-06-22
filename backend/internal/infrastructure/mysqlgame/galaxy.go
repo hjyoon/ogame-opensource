@@ -13,19 +13,29 @@ import (
 
 type GalaxyRepository struct {
 	queryer Queryer
+	execer  Execer
 	prefix  string
 	now     func() time.Time
 }
 
 func NewGalaxyRepository(db *sql.DB, prefix string) GalaxyRepository {
-	return GalaxyRepository{queryer: SQLQueryer{DB: db}, prefix: prefix, now: time.Now}
+	runner := SQLQueryer{DB: db}
+	return GalaxyRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now}
 }
 
 func NewGalaxyRepositoryWithQueryer(queryer Queryer, prefix string, now func() time.Time) GalaxyRepository {
+	var execer Execer
+	if runner, ok := queryer.(Execer); ok {
+		execer = runner
+	}
+	return NewGalaxyRepositoryWithRunner(queryer, execer, prefix, now)
+}
+
+func NewGalaxyRepositoryWithRunner(queryer Queryer, execer Execer, prefix string, now func() time.Time) GalaxyRepository {
 	if now == nil {
 		now = time.Now
 	}
-	return GalaxyRepository{queryer: queryer, prefix: prefix, now: now}
+	return GalaxyRepository{queryer: queryer, execer: execer, prefix: prefix, now: now}
 }
 
 func (r GalaxyRepository) GetGalaxy(ctx context.Context, query appgame.GalaxyQuery) (domaingame.Galaxy, error) {
@@ -123,6 +133,141 @@ func (r GalaxyRepository) GetGalaxy(ctx context.Context, query appgame.GalaxyQue
 	}), nil
 }
 
+type galaxyMissilePlanet struct {
+	ID             int
+	OwnerID        int
+	Type           int
+	Coordinates    domaingame.Coordinates
+	Missiles       int
+	OwnerScore     int64
+	OwnerAdmin     int
+	OwnerVacation  bool
+	OwnerBanned    bool
+	OwnerLastClick int64
+	ImpulseDrive   int
+}
+
+func (r GalaxyRepository) LaunchMissiles(ctx context.Context, query appgame.GalaxyMissileLaunchQuery) (*domaingame.GalaxyActionIssue, error) {
+	if r.execer == nil {
+		return nil, errors.New("galaxy missile mutation unavailable")
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return nil, err
+	}
+	uniTable, err := tableName(r.prefix, "uni")
+	if err != nil {
+		return nil, err
+	}
+	fleetTable, err := tableName(r.prefix, "fleet")
+	if err != nil {
+		return nil, err
+	}
+	fleetLogsTable, err := tableName(r.prefix, "fleetlogs")
+	if err != nil {
+		return nil, err
+	}
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return nil, err
+	}
+
+	fleetRepository := FleetRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now}
+	frozen, err := fleetRepository.loadUniverseFrozen(ctx, uniTable)
+	if err != nil {
+		return nil, err
+	}
+	if frozen {
+		return domaingame.GalaxyActionIssueFor(domaingame.GalaxyIssueRocketFrozen), nil
+	}
+
+	origin, found, err := r.loadGalaxyMissileOrigin(ctx, planetsTable, usersTable, query.PlayerID, query.PlanetID)
+	if err != nil || !found {
+		return nil, err
+	}
+	target, found, err := r.loadGalaxyMissileTarget(ctx, planetsTable, usersTable, query.TargetPlanetID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return domaingame.GalaxyActionIssueFor(domaingame.GalaxyIssueRocketNoTarget), nil
+	}
+
+	amount := absInt(query.Amount)
+	targetDefenseID := absInt(query.TargetDefenseID)
+	if !domaingame.GalaxyMissileTargetAllowed(targetDefenseID) {
+		targetDefenseID = 0
+	}
+	distance := absInt(origin.Coordinates.System - target.Coordinates.System)
+	ipmRadius := max(0, 5*origin.ImpulseDrive-1)
+
+	var parameterIssue *domaingame.GalaxyActionIssue
+	if amount == 0 {
+		parameterIssue = domaingame.GalaxyActionIssueFor(domaingame.GalaxyIssueRocketNoRockets)
+	}
+	if amount > origin.Missiles {
+		parameterIssue = domaingame.GalaxyActionIssueFor(domaingame.GalaxyIssueRocketNotEnough)
+	}
+	if distance > ipmRadius {
+		parameterIssue = domaingame.GalaxyActionIssueFor(domaingame.GalaxyIssueRocketWeakDrive)
+	}
+	if parameterIssue != nil {
+		return parameterIssue, nil
+	}
+
+	if origin.OwnerVacation {
+		return domaingame.GalaxyActionIssueFor(domaingame.GalaxyIssueRocketVacationSelf), nil
+	}
+	if target.OwnerVacation {
+		return domaingame.GalaxyActionIssueFor(domaingame.GalaxyIssueRocketVacationOther), nil
+	}
+	if target.OwnerID == query.PlayerID {
+		return domaingame.GalaxyActionIssueFor(domaingame.GalaxyIssueRocketSelf), nil
+	}
+	if target.OwnerAdmin > 0 && target.OwnerID != userSpace {
+		return domaingame.GalaxyActionIssueFor(domaingame.GalaxyIssueRocketAdmin), nil
+	}
+	viewer := domaingame.GalaxyViewer{PlayerID: query.PlayerID, Score: origin.OwnerScore}
+	owner := domaingame.GalaxyObjectPlayer{
+		ID:        target.OwnerID,
+		Score:     target.OwnerScore,
+		LastClick: target.OwnerLastClick,
+		Vacation:  target.OwnerVacation,
+		Banned:    target.OwnerBanned,
+	}
+	if domaingame.GalaxyPlayerProtectedFromMissiles(owner, viewer, r.now().Unix()) {
+		return domaingame.GalaxyActionIssueFor(domaingame.GalaxyIssueRocketNoob), nil
+	}
+
+	now := r.now().Unix()
+	seconds := int64(30 + 60*distance)
+	if err := fleetRepository.deleteOldFleetLogs(ctx, fleetLogsTable, now); err != nil {
+		return nil, err
+	}
+	reserved, err := r.reserveGalaxyMissiles(ctx, planetsTable, query.PlayerID, origin.ID, amount, int(now))
+	if err != nil {
+		return nil, err
+	}
+	if !reserved {
+		return domaingame.GalaxyActionIssueFor(domaingame.GalaxyIssueRocketLaunchRace), nil
+	}
+	fleetID, err := r.insertGalaxyMissileFleet(ctx, fleetTable, origin, target, amount, targetDefenseID, int(seconds))
+	if err != nil {
+		return nil, err
+	}
+	if err := r.insertGalaxyMissileLog(ctx, fleetLogsTable, origin, target, amount, targetDefenseID, now, seconds); err != nil {
+		return nil, err
+	}
+	if err := fleetRepository.insertRecallQueue(ctx, queueTable, query.PlayerID, fleetID, domaingame.FleetMissionMissile, now, seconds); err != nil {
+		return nil, err
+	}
+	return domaingame.GalaxyMissileLaunchedIssue(amount), nil
+}
+
 func (r GalaxyRepository) loadGalaxyViewer(ctx context.Context, usersTable string, playerID int) (domaingame.GalaxyViewer, error) {
 	rows, err := r.queryer.QueryContext(
 		ctx,
@@ -178,6 +323,178 @@ func (r GalaxyRepository) loadGalaxyUnits(ctx context.Context, planetsTable stri
 		return 0, 0, 0, err
 	}
 	return spyProbes, recyclers, missiles, nil
+}
+
+func (r GalaxyRepository) loadGalaxyMissileOrigin(ctx context.Context, planetsTable string, usersTable string, playerID int, planetID int) (galaxyMissilePlanet, bool, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT p.planet_id, p.owner_id, p.type, p.g, p.s, p.p, p.`%d`, COALESCE(u.score1, 0), COALESCE(u.admin, 0), COALESCE(u.vacation, 0), COALESCE(u.banned, 0), COALESCE(u.lastclick, 0), COALESCE(u.`%d`, 0) FROM %s p JOIN %s u ON u.player_id = p.owner_id WHERE p.owner_id = ? AND (p.planet_id = ? OR (? = 0 AND p.planet_id = u.aktplanet)) LIMIT 1",
+			domaingame.DefenseInterplanetaryMissile,
+			domaingame.ResearchImpulseDrive,
+			planetsTable,
+			usersTable,
+		),
+		playerID,
+		planetID,
+		planetID,
+	)
+	if err != nil {
+		return galaxyMissilePlanet{}, false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return galaxyMissilePlanet{}, false, err
+		}
+		return galaxyMissilePlanet{}, false, nil
+	}
+	planet, err := scanGalaxyMissilePlanet(rows, true)
+	if err != nil {
+		return galaxyMissilePlanet{}, false, err
+	}
+	if err := rows.Err(); err != nil {
+		return galaxyMissilePlanet{}, false, err
+	}
+	return planet, true, nil
+}
+
+func (r GalaxyRepository) loadGalaxyMissileTarget(ctx context.Context, planetsTable string, usersTable string, planetID int) (galaxyMissilePlanet, bool, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT p.planet_id, p.owner_id, p.type, p.g, p.s, p.p, COALESCE(u.score1, 0), COALESCE(u.admin, 0), COALESCE(u.vacation, 0), COALESCE(u.banned, 0), COALESCE(u.lastclick, 0) FROM %s p LEFT JOIN %s u ON u.player_id = p.owner_id WHERE p.planet_id = ? LIMIT 1",
+			planetsTable,
+			usersTable,
+		),
+		planetID,
+	)
+	if err != nil {
+		return galaxyMissilePlanet{}, false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return galaxyMissilePlanet{}, false, err
+		}
+		return galaxyMissilePlanet{}, false, nil
+	}
+	planet, err := scanGalaxyMissilePlanet(rows, false)
+	if err != nil {
+		return galaxyMissilePlanet{}, false, err
+	}
+	if err := rows.Err(); err != nil {
+		return galaxyMissilePlanet{}, false, err
+	}
+	return planet, true, nil
+}
+
+func scanGalaxyMissilePlanet(rows Rows, includeOriginFields bool) (galaxyMissilePlanet, error) {
+	var planet galaxyMissilePlanet
+	var vacation int
+	var banned int
+	dest := []any{
+		&planet.ID,
+		&planet.OwnerID,
+		&planet.Type,
+		&planet.Coordinates.Galaxy,
+		&planet.Coordinates.System,
+		&planet.Coordinates.Position,
+	}
+	if includeOriginFields {
+		dest = append(dest, &planet.Missiles)
+	}
+	dest = append(dest,
+		&planet.OwnerScore,
+		&planet.OwnerAdmin,
+		&vacation,
+		&banned,
+		&planet.OwnerLastClick,
+	)
+	if includeOriginFields {
+		dest = append(dest, &planet.ImpulseDrive)
+	}
+	if err := rows.Scan(dest...); err != nil {
+		return galaxyMissilePlanet{}, err
+	}
+	planet.OwnerVacation = vacation != 0
+	planet.OwnerBanned = banned != 0
+	return planet, nil
+}
+
+func (r GalaxyRepository) reserveGalaxyMissiles(ctx context.Context, planetsTable string, playerID int, planetID int, amount int, now int) (bool, error) {
+	result, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET `%d` = `%d` - ?, lastpeek = ? WHERE planet_id = ? AND owner_id = ? AND `%d` >= ?", planetsTable, domaingame.DefenseInterplanetaryMissile, domaingame.DefenseInterplanetaryMissile, domaingame.DefenseInterplanetaryMissile),
+		amount,
+		now,
+		planetID,
+		playerID,
+		amount,
+	)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
+func (r GalaxyRepository) insertGalaxyMissileFleet(ctx context.Context, fleetTable string, origin galaxyMissilePlanet, target galaxyMissilePlanet, amount int, targetDefenseID int, seconds int) (int, error) {
+	result, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("INSERT INTO %s (owner_id, union_id, fuel, mission, start_planet, target_planet, flight_time, deploy_time, ipm_amount, ipm_target) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", fleetTable),
+		origin.OwnerID,
+		0,
+		0,
+		domaingame.FleetMissionMissile,
+		origin.ID,
+		target.ID,
+		seconds,
+		0,
+		amount,
+		targetDefenseID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if id <= 0 {
+		return 0, errors.New("galaxy missile fleet id unavailable")
+	}
+	return int(id), nil
+}
+
+func (r GalaxyRepository) insertGalaxyMissileLog(ctx context.Context, fleetLogsTable string, origin galaxyMissilePlanet, target galaxyMissilePlanet, amount int, targetDefenseID int, now int64, seconds int64) error {
+	_, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("INSERT INTO %s (owner_id, target_id, union_id, fuel, mission, flight_time, deploy_time, start, end, origin_g, origin_s, origin_p, origin_type, target_g, target_s, target_p, target_type, ipm_amount, ipm_target) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", fleetLogsTable),
+		origin.OwnerID,
+		target.OwnerID,
+		0,
+		0,
+		domaingame.FleetMissionMissile,
+		seconds,
+		0,
+		now,
+		now+seconds,
+		origin.Coordinates.Galaxy,
+		origin.Coordinates.System,
+		origin.Coordinates.Position,
+		origin.Type,
+		target.Coordinates.Galaxy,
+		target.Coordinates.System,
+		target.Coordinates.Position,
+		target.Type,
+		amount,
+		targetDefenseID,
+	)
+	return err
 }
 
 func (r GalaxyRepository) loadGalaxyBounds(ctx context.Context, uniTable string) (domaingame.GalaxyBounds, error) {
@@ -328,4 +645,11 @@ func clampCoordinatesForRepository(coordinates domaingame.Coordinates, bounds do
 		coordinates.System = bounds.Systems
 	}
 	return coordinates
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }

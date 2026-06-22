@@ -2454,6 +2454,59 @@ func TestGameGalaxyEndpointReturnsUnauthorizedForInvalidSession(t *testing.T) {
 	}
 }
 
+func TestGameGalaxyEndpointLaunchesMissiles(t *testing.T) {
+	galaxy := &fakeGameGalaxy{result: appgame.GalaxyResult{
+		Authenticated: true,
+		Galaxy: domaingame.Galaxy{
+			Commander:   "legor",
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Bounds:      domaingame.GalaxyBounds{Galaxies: 9, Systems: 499},
+		},
+		ActionIssue: domaingame.GalaxyMissileLaunchedIssue(1),
+	}}
+	server := testServerWithGameGalaxy(t, galaxy)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/game/galaxy?session=public&cp=99&p1=1&p2=2&p3=4",
+		strings.NewReader(`{"action":"launch-missile","targetPlanetId":77,"amount":1,"targetDefenseId":401}`),
+	)
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response gameGalaxyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.ActionIssue == nil || response.ActionIssue.Code != domaingame.GalaxyIssueRocketLaunched {
+		t.Fatalf("expected launch action issue, got %+v", response.ActionIssue)
+	}
+	if galaxy.missile.PlanetID != 99 || galaxy.missile.TargetPlanetID != 77 || galaxy.missile.Amount != 1 ||
+		galaxy.missile.TargetDefenseID != domaingame.DefenseRocketLauncher || galaxy.missile.Coordinates.Position != 4 {
+		t.Fatalf("unexpected missile command: %+v", galaxy.missile)
+	}
+	if galaxy.missile.PublicSession != "public" || galaxy.missile.PrivateSessions["prsess_42_1"] != "private" ||
+		galaxy.missile.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected missile session command: %+v", galaxy.missile)
+	}
+}
+
+func TestGameGalaxyEndpointRejectsBadMutationPayload(t *testing.T) {
+	server := testServerWithGameGalaxy(t, &fakeGameGalaxy{})
+	for _, body := range []string{`{`, `{"action":"unsupported"}`} {
+		req := httptest.NewRequest(http.MethodPost, "/api/game/galaxy?session=public", strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s: expected bad request, got %d", body, rec.Code)
+		}
+	}
+}
+
 func TestGameGalaxyEndpointRejectsInvalidInputs(t *testing.T) {
 	server := testServerWithGameGalaxy(t, &fakeGameGalaxy{})
 	for _, target := range []string{
@@ -4668,11 +4721,11 @@ func TestGetOnlyRejectsStateChangingMethods(t *testing.T) {
 		t.Fatalf("expected game fleet templates method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/game/galaxy", nil)
+	req = httptest.NewRequest(http.MethodPut, "/api/game/galaxy", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD, POST" {
 		t.Fatalf("expected game galaxy method rejection, got code=%d headers=%v", rec.Code, rec.Header())
 	}
 
@@ -5386,10 +5439,16 @@ type fakeGameGalaxy struct {
 	result  appgame.GalaxyResult
 	err     error
 	command appgame.GalaxyCommand
+	missile appgame.GalaxyMissileLaunchCommand
 }
 
 func (f *fakeGameGalaxy) GetGalaxy(_ context.Context, command appgame.GalaxyCommand) (appgame.GalaxyResult, error) {
 	f.command = command
+	return f.result, f.err
+}
+
+func (f *fakeGameGalaxy) LaunchMissiles(_ context.Context, command appgame.GalaxyMissileLaunchCommand) (appgame.GalaxyResult, error) {
+	f.missile = command
 	return f.result, f.err
 }
 

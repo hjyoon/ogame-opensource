@@ -95,6 +95,7 @@ try {
   await assertRenamePlanetFlow(page);
   await assertGameClientNavigation(page, "game buildings menu preserves CSR", "a[href^='/game/buildings']", "/game/buildings", "Buildings");
   await assertGameClientNavigation(page, "game resources menu preserves CSR", "a[href^='/game/resources']", "/game/resources", "Resources");
+  await assertGameClientNavigation(page, "game merchant menu preserves CSR", ".legacy-menu a[href^='/game/merchant']", "/game/merchant", "Merchant");
   await assertGameClientNavigation(page, "game research menu preserves CSR", "a[href^='/game/research']", "/game/research", "Research");
   await assertGameClientNavigation(page, "game shipyard menu preserves CSR", "a[href^='/game/shipyard']", "/game/shipyard", "Shipyard");
   await assertGameClientNavigation(page, "game defense menu preserves CSR", "a[href^='/game/defense']", "/game/defense", "Defense");
@@ -106,6 +107,9 @@ try {
   await assertStatisticsAllianceMode(page);
   await assertGameClientNavigation(page, "game search menu preserves CSR", "a[href^='/game/search']", "/game/search", "Search");
   await assertSearchForm(page, loginFixture.login);
+  await assertGameClientNavigation(page, "game buddy menu preserves CSR", "a[href^='/game/buddy']", "/game/buddy", "Buddylist");
+  await assertGameClientNavigation(page, "game options menu preserves CSR", "a[href^='/game/options']", "/game/options", "Options");
+  await assertOptionsMutationFlow(page);
   await assertGameClientNavigation(page, "game notes menu preserves CSR", "a[href^='/game/notes']", "/game/notes", "Notes");
   await assertNotesMutationFlow(page);
   await assertGameProgrammaticNavigation(page, "game overview popstate from notes preserves CSR", "/game/overview", "Overview");
@@ -264,6 +268,8 @@ async function assertGameClientNavigation(
     await page.locator("[data-building-row]").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Resources") {
     await page.locator(".legacy-resources-table").first().waitFor({ timeout: 10_000 });
+  } else if (expectedMenuLabel === "Merchant") {
+    await page.locator(".legacy-merchant-call-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Research") {
     await page.locator(".legacy-research-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Shipyard") {
@@ -280,6 +286,10 @@ async function assertGameClientNavigation(
     await page.locator(".legacy-statistics-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Search") {
     await page.locator(".legacy-search-head-table").first().waitFor({ timeout: 10_000 });
+  } else if (expectedMenuLabel === "Buddylist") {
+    await page.locator(".legacy-buddy-table").first().waitFor({ timeout: 10_000 });
+  } else if (expectedMenuLabel === "Options") {
+    await page.locator(".legacy-options-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Notes") {
     await page.locator(".legacy-notes-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Overview") {
@@ -296,43 +306,56 @@ async function assertGameClientNavigation(
         ? state.details.buildingRows > 0 && state.details.buildingNames.includes("Metal Mine") && state.details.pendingText === false
         : expectedMenuLabel === "Resources"
           ? state.details.resourcesTable === true && state.details.resourceSettingsText === true && state.details.pendingText === false
-          : expectedMenuLabel === "Research"
-            ? state.details.researchTable === true && state.details.researchRows >= 0 && state.details.pendingText === false
-            : expectedMenuLabel === "Shipyard"
-              ? state.details.shipyardTable === true && state.details.shipyardRows >= 0 && state.details.pendingText === false
-              : expectedMenuLabel === "Fleet"
-                ? state.details.fleetTable === true &&
-                  state.details.fleetSelectTable === true &&
-                  state.details.fleetHeaderText.includes("Fleets") &&
-                  state.details.pendingText === false
-                : expectedMenuLabel === "Galaxy"
-                  ? state.details.galaxyTable === true &&
-                    state.details.galaxyRows === 15 &&
-                    state.details.galaxyText.includes("Solar system") &&
+          : expectedMenuLabel === "Merchant"
+            ? state.details.merchantCallTable === true &&
+              state.details.merchantText.includes("You want to sell") &&
+              state.details.pendingText === false
+            : expectedMenuLabel === "Research"
+              ? state.details.researchTable === true && state.details.researchRows >= 0 && state.details.pendingText === false
+              : expectedMenuLabel === "Shipyard"
+                ? state.details.shipyardTable === true && state.details.shipyardRows >= 0 && state.details.pendingText === false
+                : expectedMenuLabel === "Fleet"
+                  ? state.details.fleetTable === true &&
+                    state.details.fleetSelectTable === true &&
+                    state.details.fleetHeaderText.includes("Fleets") &&
                     state.details.pendingText === false
-                  : expectedMenuLabel === "Defense"
-                    ? state.details.defenseTable === true && state.details.defenseRows >= 0 && state.details.pendingText === false
-                    : expectedMenuLabel === "Technology"
-                      ? state.details.technologyTable === true &&
-                        state.details.technologyRows > 0 &&
-                        state.details.technologyNames.includes("Metal Mine") &&
-                        state.details.pendingText === false
-                      : expectedMenuLabel === "Statistics"
-                        ? state.details.statisticsTable === true &&
-                          state.details.statisticsRows > 0 &&
-                          state.details.statisticsText.includes("Statistics") &&
+                  : expectedMenuLabel === "Galaxy"
+                    ? state.details.galaxyTable === true &&
+                      state.details.galaxyRows === 15 &&
+                      state.details.galaxyText.includes("Solar system") &&
+                      state.details.pendingText === false
+                    : expectedMenuLabel === "Defense"
+                      ? state.details.defenseTable === true && state.details.defenseRows >= 0 && state.details.pendingText === false
+                      : expectedMenuLabel === "Technology"
+                        ? state.details.technologyTable === true &&
+                          state.details.technologyRows > 0 &&
+                          state.details.technologyNames.includes("Metal Mine") &&
                           state.details.pendingText === false
-                        : expectedMenuLabel === "Search"
-                          ? state.details.searchHeadTable === true &&
-                            state.details.searchText.includes("Search Universe") &&
+                        : expectedMenuLabel === "Statistics"
+                          ? state.details.statisticsTable === true &&
+                            state.details.statisticsRows > 0 &&
+                            state.details.statisticsText.includes("Statistics") &&
                             state.details.pendingText === false
-                          : expectedMenuLabel === "Notes"
-                            ? state.details.notesTable === true &&
-                              state.details.notesText.includes("Create a new note") &&
+                          : expectedMenuLabel === "Search"
+                            ? state.details.searchHeadTable === true &&
+                              state.details.searchText.includes("Search Universe") &&
                               state.details.pendingText === false
-                          : expectedMenuLabel === "Overview"
-                            ? state.details.pendingText === false
-                            : state.details.pendingText === true;
+                            : expectedMenuLabel === "Buddylist"
+                              ? state.details.buddyTable === true &&
+                                state.details.buddyText.includes("Buddylist") &&
+                                state.details.pendingText === false
+                              : expectedMenuLabel === "Options"
+                                ? state.details.optionsTable === true &&
+                                  state.details.optionsText.includes("General Options") &&
+                                  state.details.optionsText.includes("Galaxy View Options") &&
+                                  state.details.pendingText === false
+                                : expectedMenuLabel === "Notes"
+                                  ? state.details.notesTable === true &&
+                                    state.details.notesText.includes("Create a new note") &&
+                                    state.details.pendingText === false
+                                  : expectedMenuLabel === "Overview"
+                                    ? state.details.pendingText === false
+                                    : state.details.pendingText === true;
     return {
       pass:
         state.details.pathname === expectedPathname &&
@@ -562,6 +585,43 @@ async function assertSearchForm(page: Page, login: string) {
   });
 }
 
+async function assertOptionsMutationFlow(page: Page) {
+  const marker = "probe-game-options-submit";
+  await page.evaluate((value) => {
+    window.__ogameCsrProbe = value;
+  }, marker);
+  await page.locator(".legacy-options-table").waitFor({ timeout: 10_000 });
+  await page.locator(".legacy-options-table select[name='settings_sort']").selectOption("1");
+  await page.locator(".legacy-options-table select[name='settings_order']").selectOption("1");
+  await page.locator(".legacy-options-table input[name='spio_anz']").fill("2");
+  await page.locator(".legacy-options-table input[name='settings_fleetactions']").fill("4");
+  await page.locator(".legacy-options-table input[type='submit']").click();
+  await page.waitForFunction(
+    () =>
+      document.querySelector<HTMLSelectElement>(".legacy-options-table select[name='settings_sort']")?.value === "1" &&
+      document.querySelector<HTMLSelectElement>(".legacy-options-table select[name='settings_order']")?.value === "1" &&
+      document.querySelector<HTMLInputElement>(".legacy-options-table input[name='spio_anz']")?.value === "2" &&
+      document.querySelector<HTMLInputElement>(".legacy-options-table input[name='settings_fleetactions']")?.value === "4",
+    undefined,
+    { timeout: 10_000 }
+  );
+  await record("game options mutation preserves CSR", async () => {
+    const state = await gameShellState(page, marker, "Options");
+    return {
+      pass:
+        state.pass &&
+        state.details.pathname === "/game/options" &&
+        state.details.optionsTable === true &&
+        state.details.optionsSortBy === "1" &&
+        state.details.optionsSortOrder === "1" &&
+        state.details.optionsMaxSpy === "2" &&
+        state.details.optionsMaxFleetMessages === "4" &&
+        state.details.pendingText === false,
+      details: state.details
+    };
+  });
+}
+
 async function assertNotesMutationFlow(page: Page) {
   const marker = "probe-game-notes-create";
   const subject = `CSR note ${Date.now()}`;
@@ -712,6 +772,9 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     resourceNames: Array.from(document.querySelectorAll("[data-resource-row] th:first-child")).map(
       (cell) => cell.textContent?.trim().replace(/\s+/g, " ") ?? ""
     ),
+    merchantCallTable: document.querySelector(".legacy-merchant-call-table") !== null,
+    merchantExchangeTable: document.querySelector(".legacy-merchant-exchange-table") !== null,
+    merchantText: document.querySelector(".legacy-merchant-call-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     researchRows: document.querySelectorAll("[data-research-row]").length,
     researchTable: document.querySelector(".legacy-research-table") !== null,
     researchNames: Array.from(document.querySelectorAll("[data-research-row] .legacy-building-description a")).map(
@@ -752,6 +815,16 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     searchRows: document.querySelectorAll("[data-search-row]").length,
     searchText: document.querySelector(".legacy-search-head-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     searchBodyText: document.querySelector(".legacy-search-results-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
+    buddyTable: document.querySelector(".legacy-buddy-table") !== null,
+    buddyRows: document.querySelectorAll("[data-buddy-row]").length,
+    buddyText: document.querySelector(".legacy-buddy-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
+    optionsTable: document.querySelector(".legacy-options-table") !== null,
+    optionsText: document.querySelector(".legacy-options-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
+    optionsSortBy: document.querySelector<HTMLSelectElement>(".legacy-options-table select[name='settings_sort']")?.value ?? "",
+    optionsSortOrder: document.querySelector<HTMLSelectElement>(".legacy-options-table select[name='settings_order']")?.value ?? "",
+    optionsMaxSpy: document.querySelector<HTMLInputElement>(".legacy-options-table input[name='spio_anz']")?.value ?? "",
+    optionsMaxFleetMessages:
+      document.querySelector<HTMLInputElement>(".legacy-options-table input[name='settings_fleetactions']")?.value ?? "",
     notesTable: document.querySelector(".legacy-notes-table") !== null,
     notesRows: document.querySelectorAll("[data-note-row]").length,
     notesText: document.querySelector(".legacy-notes-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",

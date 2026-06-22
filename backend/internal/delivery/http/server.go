@@ -72,6 +72,11 @@ type GameResourcesUseCase interface {
 	UpdateResources(context.Context, appgame.ResourcesUpdateCommand) (appgame.ResourcesResult, error)
 }
 
+type GameMerchantUseCase interface {
+	GetMerchant(context.Context, appgame.MerchantCommand) (appgame.MerchantResult, error)
+	MutateMerchant(context.Context, appgame.MerchantMutationCommand) (appgame.MerchantResult, error)
+}
+
 type GameResearchUseCase interface {
 	GetResearch(context.Context, appgame.ResearchCommand) (appgame.ResearchResult, error)
 	MutateResearch(context.Context, appgame.ResearchMutationCommand) (appgame.ResearchResult, error)
@@ -93,6 +98,7 @@ type GameFleetUseCase interface {
 
 type GameGalaxyUseCase interface {
 	GetGalaxy(context.Context, appgame.GalaxyCommand) (appgame.GalaxyResult, error)
+	LaunchMissiles(context.Context, appgame.GalaxyMissileLaunchCommand) (appgame.GalaxyResult, error)
 }
 
 type GameDefenseUseCase interface {
@@ -152,6 +158,7 @@ type Dependencies struct {
 	GameBuildings      GameBuildingsUseCase
 	GameEmpire         GameEmpireUseCase
 	GameResources      GameResourcesUseCase
+	GameMerchant       GameMerchantUseCase
 	GameResearch       GameResearchUseCase
 	GameShipyard       GameShipyardUseCase
 	GameFleet          GameFleetUseCase
@@ -191,11 +198,12 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/buildings", a.handleGameBuildings)
 	mux.HandleFunc("/api/game/empire", getOnly(a.handleGameEmpire))
 	mux.HandleFunc("/api/game/resources", a.handleGameResources)
+	mux.HandleFunc("/api/game/merchant", a.handleGameMerchant)
 	mux.HandleFunc("/api/game/research", a.handleGameResearch)
 	mux.HandleFunc("/api/game/shipyard", a.handleGameShipyard)
 	mux.HandleFunc("/api/game/fleet", a.handleGameFleet)
 	mux.HandleFunc("/api/game/fleet-templates", a.handleGameFleetTemplates)
-	mux.HandleFunc("/api/game/galaxy", getOnly(a.handleGameGalaxy))
+	mux.HandleFunc("/api/game/galaxy", a.handleGameGalaxy)
 	mux.HandleFunc("/api/game/defense", a.handleGameDefense)
 	mux.HandleFunc("/api/game/technology", getOnly(a.handleGameTechnology))
 	mux.HandleFunc("/api/game/statistics", getOnly(a.handleGameStatistics))

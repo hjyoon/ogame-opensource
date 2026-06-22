@@ -13,6 +13,19 @@ type gameGalaxyResponse struct {
 	Authenticated bool                       `json:"authenticated"`
 	Issues        []gameSessionIssueResponse `json:"issues"`
 	Galaxy        *gameGalaxySummary         `json:"galaxy,omitempty"`
+	ActionIssue   *gameGalaxyActionIssue     `json:"actionIssue,omitempty"`
+}
+
+type gameGalaxyActionIssue struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type gameGalaxyMutationRequest struct {
+	Action          string `json:"action"`
+	TargetPlanetID  int    `json:"targetPlanetId"`
+	Amount          int    `json:"amount"`
+	TargetDefenseID int    `json:"targetDefenseId"`
 }
 
 type gameGalaxySummary struct {
@@ -108,6 +121,18 @@ type gameGalaxyExtraResponse struct {
 }
 
 func (a app) handleGameGalaxy(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		a.handleGameGalaxyGet(w, r)
+	case http.MethodPost:
+		a.handleGameGalaxyPost(w, r)
+	default:
+		w.Header().Set("Allow", "GET, HEAD, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (a app) handleGameGalaxyGet(w http.ResponseWriter, r *http.Request) {
 	if a.deps.GameGalaxy == nil {
 		http.Error(w, "game galaxy unavailable", http.StatusServiceUnavailable)
 		return
@@ -136,6 +161,57 @@ func (a app) handleGameGalaxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	writeGameGalaxyResponse(w, result)
+}
+
+func (a app) handleGameGalaxyPost(w http.ResponseWriter, r *http.Request) {
+	if a.deps.GameGalaxy == nil {
+		http.Error(w, "game galaxy unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	planetID, err := selectedPlanetID(r)
+	if err != nil {
+		http.Error(w, "invalid selected planet", http.StatusBadRequest)
+		return
+	}
+	coordinates, err := selectedGalaxyCoordinates(r)
+	if err != nil {
+		http.Error(w, "invalid galaxy coordinates", http.StatusBadRequest)
+		return
+	}
+
+	var request gameGalaxyMutationRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "invalid galaxy request", http.StatusBadRequest)
+		return
+	}
+	switch request.Action {
+	case "launch-missile", "launch-missiles":
+	default:
+		http.Error(w, "unsupported galaxy action", http.StatusBadRequest)
+		return
+	}
+
+	result, err := a.deps.GameGalaxy.LaunchMissiles(r.Context(), appgame.GalaxyMissileLaunchCommand{
+		PublicSession:   r.URL.Query().Get("session"),
+		PrivateSessions: cookieMap(r),
+		RemoteAddr:      remoteIP(r.RemoteAddr),
+		PlanetID:        planetID,
+		Coordinates:     coordinates,
+		TargetPlanetID:  request.TargetPlanetID,
+		Amount:          request.Amount,
+		TargetDefenseID: request.TargetDefenseID,
+	})
+	if err != nil {
+		http.Error(w, "game galaxy unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	writeGameGalaxyResponse(w, result)
+}
+
+func writeGameGalaxyResponse(w http.ResponseWriter, result appgame.GalaxyResult) {
 	status := http.StatusOK
 	var galaxy *gameGalaxySummary
 	if result.Authenticated {
@@ -151,7 +227,15 @@ func (a app) handleGameGalaxy(w http.ResponseWriter, r *http.Request) {
 		Authenticated: result.Authenticated,
 		Issues:        toGameSessionIssueResponses(result.Issues),
 		Galaxy:        galaxy,
+		ActionIssue:   toGameGalaxyActionIssue(result.ActionIssue),
 	})
+}
+
+func toGameGalaxyActionIssue(issue *domaingame.GalaxyActionIssue) *gameGalaxyActionIssue {
+	if issue == nil {
+		return nil
+	}
+	return &gameGalaxyActionIssue{Code: issue.Code, Message: issue.Message}
 }
 
 func selectedGalaxyCoordinates(r *http.Request) (domaingame.Coordinates, error) {
