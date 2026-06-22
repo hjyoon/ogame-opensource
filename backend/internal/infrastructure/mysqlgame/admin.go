@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
@@ -73,6 +74,8 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		admin.PlanetRows, err = r.loadAdminPlanetRows(ctx)
 	case "Uni":
 		admin.Universe, err = r.loadAdminUniverse(ctx)
+	case "Expedition":
+		admin.Expedition, err = r.loadAdminExpeditionSettings(ctx)
 	case "BattleReport":
 		admin.BattleReports, err = r.loadAdminBattleReports(ctx)
 	case "Checksum":
@@ -390,6 +393,81 @@ func (r AdminRepository) loadAdminUniverse(ctx context.Context) (*domaingame.Adm
 	universe.PHPBattle = phpBattle != 0
 	universe.ForceLanguage = forceLang != 0
 	return &universe, rows.Err()
+}
+
+var adminExpeditionColumns = []string{
+	"dm_factor",
+	"chance_success",
+	"depleted_min",
+	"depleted_med",
+	"depleted_max",
+	"chance_depleted_min",
+	"chance_depleted_med",
+	"chance_depleted_max",
+	"chance_alien",
+	"chance_pirates",
+	"chance_dm",
+	"chance_lost",
+	"chance_delay",
+	"chance_accel",
+	"chance_res",
+	"chance_fleet",
+	"score_cap1",
+	"limit_cap1",
+	"score_cap2",
+	"limit_cap2",
+	"score_cap3",
+	"limit_cap3",
+	"score_cap4",
+	"limit_cap4",
+	"score_cap5",
+	"limit_cap5",
+	"score_cap6",
+	"limit_cap6",
+	"score_cap7",
+	"limit_cap7",
+	"score_cap8",
+	"limit_cap8",
+	"limit_max",
+}
+
+func numericColumnsByName(names []string) string {
+	columns := make([]string, 0, len(names))
+	for _, name := range names {
+		columns = append(columns, "`"+name+"`")
+	}
+	return strings.Join(columns, ", ")
+}
+
+func (r AdminRepository) loadAdminExpeditionSettings(ctx context.Context) (map[string]int, error) {
+	expeditionTable, err := tableName(r.prefix, "exptab")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT %s FROM %s LIMIT 1", numericColumnsByName(adminExpeditionColumns), expeditionTable))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return nil, errors.New("admin expedition settings not found")
+	}
+	values := make([]int, len(adminExpeditionColumns))
+	dest := make([]any, len(values))
+	for index := range values {
+		dest[index] = &values[index]
+	}
+	if err := rows.Scan(dest...); err != nil {
+		return nil, err
+	}
+	result := make(map[string]int, len(adminExpeditionColumns))
+	for index, column := range adminExpeditionColumns {
+		result[column] = values[index]
+	}
+	return result, rows.Err()
 }
 
 func (r AdminRepository) loadAdminQueueRows(ctx context.Context) ([]domaingame.AdminQueueRow, error) {

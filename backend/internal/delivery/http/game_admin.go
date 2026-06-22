@@ -33,6 +33,7 @@ type gameAdminSummary struct {
 	ActiveUsers    []gameAdminUserRow          `json:"activeUsers,omitempty"`
 	PlanetRows     []gameAdminPlanetRow        `json:"planetRows,omitempty"`
 	Universe       *gameAdminUniverseSettings  `json:"universe,omitempty"`
+	Expedition     map[string]int              `json:"expedition,omitempty"`
 	QueueRows      []gameAdminQueueRow         `json:"queueRows,omitempty"`
 	BattleReports  []gameAdminBattleReportRow  `json:"battleReports,omitempty"`
 	ChecksumGroups []gameAdminChecksumGroup    `json:"checksumGroups,omitempty"`
@@ -304,6 +305,7 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		ActiveUsers:    activeUsers,
 		PlanetRows:     planetRows,
 		Universe:       universe,
+		Expedition:     admin.Expedition,
 		QueueRows:      queueRows,
 		BattleReports:  battleReports,
 		ChecksumGroups: checksumGroups,

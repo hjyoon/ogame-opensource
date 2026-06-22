@@ -1049,6 +1049,7 @@ type GameAdmin = {
   activeUsers?: GameAdminUserRow[];
   planetRows?: GameAdminPlanetRow[];
   universe?: GameAdminUniverseSettings;
+  expedition?: Record<string, number>;
   queueRows?: GameAdminQueueRow[];
   battleReports?: GameAdminBattleReportRow[];
   checksumGroups?: GameAdminChecksumGroup[];
@@ -2966,7 +2967,7 @@ function AdminTable({ admin }: { admin: GameAdmin }) {
   if (admin.mode === "Expedition") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminExpeditionTable />
+        <AdminExpeditionTable admin={admin} />
       </AdminModeShell>
     );
   }
@@ -4254,104 +4255,75 @@ function AdminSimulationFleetSide({ defender = false, prefix }: { defender?: boo
   );
 }
 
-function AdminExpeditionTable() {
-  const chanceRows = [
-    ["Meeting aliens (if the die value >=)", "chance_alien", "90"],
-    ["Meet the pirates (otherwise if the die value is >=)", "chance_pirates", "80"],
-    ["Finding Dark Matter (otherwise if the die value is >=)", "chance_dm", "70"],
-    ["The loss of a fleet in a black hole (otherwise if the die value is >=)", "chance_lost", "60"],
-    ["Delayed return (otherwise if the die value is >=)", "chance_delay", "50"],
-    ["Faster return (otherwise if the die value is >=)", "chance_accel", "40"],
-    ["Finding resources (otherwise if the die value is >=)", "chance_res", "30"],
-    ["Finding the fleet (otherwise if the die value is >=)", "chance_fleet", "20"]
-  ] as const;
+function AdminExpeditionTable({ admin }: { admin: GameAdmin }) {
+  if (!admin.expedition) {
+    return null;
+  }
   return (
-    <>
-      <h2>Expedition Settings</h2>
-      <form action={adminModeActionHref("Expedition", "settings")} method="POST" onSubmit={(event) => event.preventDefault()}>
-        <table className="legacy-admin-expedition-table">
-          <tbody>
-            <tr>
-              <td className="d">The multiplier of Dark Matter found</td>
-              <td>
-                <input defaultValue="1" name="dm_factor" size={20} type="text" />
-              </td>
-            </tr>
-            <tr>
-              <td className="d">Chance of successful expedition (if &gt;= then success); Successful expedition if something happened.</td>
-              <td>
-                <input defaultValue="100" name="chance_success" size={20} type="text" />
-              </td>
-            </tr>
-            <tr>
-              <td className="c" colSpan={2}>
-                Expedition depletion settings
-              </td>
-            </tr>
-            {["depleted_min", "depleted_med", "depleted_max", "chance_depleted_min", "chance_depleted_med", "chance_depleted_max"].map((name) => (
-              <tr key={name}>
-                <td className="d">{name}</td>
-                <td>
-                  <input defaultValue="0" name={name} size={20} type="text" />
-                </td>
-              </tr>
-            ))}
-            <tr>
-              <td className="c" colSpan={2}>
-                The following checks are performed sequentially (type of successful expedition)
-              </td>
-            </tr>
-            {chanceRows.map(([label, name, value]) => (
-              <tr key={name}>
-                <td className="d">{label}</td>
-                <td>
-                  <input defaultValue={value} name={name} size={20} type="text" />
-                </td>
-              </tr>
-            ))}
-            <tr>
-              <td className="d">Otherwise, the Merchant will be found</td>
-              <td>&nbsp;</td>
-            </tr>
-            <tr>
-              <td className="c" colSpan={2}>
-                Settings for determining the upper limit of expedition points (affects the size of the find)
-              </td>
-            </tr>
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((index) => (
-              <tr key={`cap-${index}`}>
-                <td className="d">If top1 has less than ({index}) points, the expedition limit will be ({index})</td>
-                <td>
-                  <input defaultValue="0" name={`score_cap${index}`} size={20} type="text" />{" "}
-                  <input defaultValue="0" name={`limit_cap${index}`} size={20} type="text" />
-                </td>
-              </tr>
-            ))}
-            <tr>
-              <td className="d">Otherwise, the limit of the expedition will be maxed out</td>
-              <td>
-                <input defaultValue="0" name="limit_max" size={20} type="text" />
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </form>
-      For all expedition rolls a 100-sided die [0, 99] is thrown (including 0 and 99).
-      <h2>Expedition Simulator</h2>
-      <form action={adminModeActionHref("Expedition", "sim")} method="POST" onSubmit={(event) => event.preventDefault()}>
-        <table>
-          <tbody>
-            <tr>
-              <td className="d">Number of expeditions</td>
-              <td>
-                <input defaultValue="1000" name="expcount" size={20} type="text" />
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </form>
-    </>
+    <div
+      className="legacy-admin-expedition-table"
+      dangerouslySetInnerHTML={{ __html: adminExpeditionHTML(admin.expedition) }}
+      style={{ display: "contents" }}
+    />
   );
+}
+
+function adminExpeditionHTML(values: Record<string, number>): string {
+  let html = "";
+  html += "<h2>Expedition Settings</h2>\n";
+  html += `<form action="${legacyHTMLAttribute(adminModeActionHref("Expedition", "settings"))}" method="POST">\n`;
+  html += "<table>\n";
+  html += adminExpeditionInputRow("The multiplier of Dark Matter found", "dm_factor", values);
+  html += adminExpeditionInputRow("Chance of successful expedition (if >= then success); Successful expedition if something happened.", "chance_success", values);
+  html += '<tr><td class=c colspan=2>Expedition depletion settings</td></tr>\n';
+  html += adminExpeditionInputRow("Visit count without depletion (if <= there is no depletion)", "depleted_min", values);
+  html += adminExpeditionInputRow("Visit count for moderate depletion (if <= then moderate depletion)", "depleted_med", values);
+  html += adminExpeditionInputRow("Visit count for significant depletion (if <= then significantly depleted. A value higher is severe depletion)", "depleted_max", values);
+  html += adminExpeditionInputRow("Chance of failure for moderate depletion (>= expedition failure)", "chance_depleted_min", values);
+  html += adminExpeditionInputRow("Chance of failure for significant depletion (>= expedition failure)", "chance_depleted_med", values);
+  html += adminExpeditionInputRow("Chance of failure for severe depletion (>= expedition failure)", "chance_depleted_max", values);
+  html += '<tr><td class=c colspan=2>The following checks are performed sequentially (type of successful expedition)</td></tr>\n';
+  html += adminExpeditionInputRow("Meeting aliens (if the die value >=)", "chance_alien", values);
+  html += adminExpeditionInputRow("Meet the pirates (otherwise if the die value is >=)", "chance_pirates", values);
+  html += adminExpeditionInputRow("Finding Dark Matter (otherwise if the die value is >=)", "chance_dm", values);
+  html += adminExpeditionInputRow("The loss of a fleet in a black hole (otherwise if the die value is >=)", "chance_lost", values);
+  html += adminExpeditionInputRow("Delayed return (otherwise if the die value is >=)", "chance_delay", values);
+  html += adminExpeditionInputRow("Faster return (otherwise if the die value is >=)", "chance_accel", values);
+  html += adminExpeditionInputRow("Finding resources (otherwise if the die value is >=)", "chance_res", values);
+  html += adminExpeditionInputRow("Finding the fleet (otherwise if the die value is >=)", "chance_fleet", values);
+  html += "<tr><td class=d>Otherwise, the Merchant will be found</td> <td> &nbsp; </td></tr>\n\n";
+  html += '<tr><td class=c colspan=2>Settings for determining the upper limit of expedition points (affects the size of the find)</td></tr>\n';
+  for (let index = 1; index <= 8; index += 1) {
+    html += `<tr><td class=d>If top1 has less than (${index}) points, the expedition limit will be (${index})</td> <td> <input type=text size=20 name=score_cap${index} value="${adminExpeditionValue(
+      values,
+      `score_cap${index}`
+    )}">  <input type=text size=20 name=limit_cap${index} value="${adminExpeditionValue(values, `limit_cap${index}`)}"></td></tr>\n`;
+  }
+  html += `<tr><td class=d>Otherwise, the limit of the expedition will be maxed out</td> <td> <input type=text size=20 name=limit_max value="${adminExpeditionValue(
+    values,
+    "limit_max"
+  )}"> </td></tr>\n\n`;
+  html += '<tr><td colspan=2 class=d><center><input type="submit" value="Save"></center></td></tr>\n';
+  html += "</table>\n</form>\n\n";
+  html += "For all expedition rolls a 100-sided die [0, 99] is thrown (including 0 and 99). If some parameters seem unclear to you, you will have to examine the source code.\n\n\n\n\n";
+  html += "<h2>Expedition Simulator</h2>\n";
+  html += `<form action="${legacyHTMLAttribute(adminModeActionHref("Expedition", "sim"))}" method="POST">\n`;
+  html += "<table>\n";
+  html += '<tr><td class=d>Number of expeditions</td> <td> <input type=text size=20 name=expcount value="1000"></td></tr>\n';
+  html += '<tr><td colspan=2 class=d><center><input type="submit" value="Simulate"></center></td></tr>\n';
+  html += "</table>\n</form>\n\n";
+  return html;
+}
+
+function adminExpeditionInputRow(label: string, name: string, values: Record<string, number>): string {
+  return `<tr><td class=d>${legacyHTMLText(label)}</td> <td> <input type=text size=20 name=${legacyHTMLAttribute(name)} value="${adminExpeditionValue(
+    values,
+    name
+  )}"></td></tr>\n`;
+}
+
+function adminExpeditionValue(values: Record<string, number>, name: string): string {
+  return legacyHTMLAttribute(String(values[name] ?? 0));
 }
 
 function AdminBattleReportsTable({ rows }: { rows: GameAdminBattleReportRow[] }) {

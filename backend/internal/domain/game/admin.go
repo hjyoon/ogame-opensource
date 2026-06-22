@@ -23,6 +23,7 @@ type Admin struct {
 	ActiveUsers    []AdminUserRow
 	PlanetRows     []AdminPlanetRow
 	Universe       *AdminUniverseSettings
+	Expedition     map[string]int
 	QueueRows      []AdminQueueRow
 	BattleReports  []AdminBattleReportRow
 	ChecksumGroups []AdminChecksumGroup

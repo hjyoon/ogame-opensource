@@ -114,6 +114,31 @@ func TestAdminRepositoryReadsUniverseSettings(t *testing.T) {
 	}
 }
 
+func TestAdminRepositoryReadsExpeditionSettings(t *testing.T) {
+	values := make([]any, len(adminExpeditionColumns))
+	for index := range values {
+		values[index] = index + 1
+	}
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		fakeQueryResult{rows: fakeRowsFromValues(values)},
+	)}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "Expedition"})
+
+	if err != nil {
+		t.Fatalf("GetAdmin returned error: %v", err)
+	}
+	if admin.Expedition["dm_factor"] != 1 || admin.Expedition["limit_max"] != len(adminExpeditionColumns) {
+		t.Fatalf("unexpected expedition settings: %+v", admin.Expedition)
+	}
+	lastSQL := queryer.calls[len(queryer.calls)-1].sql
+	if !strings.Contains(lastSQL, "`ogame_exptab`") || !strings.Contains(lastSQL, "`dm_factor`") || !strings.Contains(lastSQL, "`limit_max`") {
+		t.Fatalf("expected expedition settings query, got %s", lastSQL)
+	}
+}
+
 func TestAdminRepositoryReadsUserLogRowsInLegacyDisplayOrder(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
