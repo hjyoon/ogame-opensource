@@ -4065,31 +4065,23 @@ function AdminChecksumTable({ groups }: { groups: GameAdminChecksumGroup[] }) {
 }
 
 function AdminDatabaseTable() {
-  return (
-    <>
-      <h2>Comparison of tables from install and real database</h2>
-      <LegacyFont color="green">No differences were found.</LegacyFont>
-      <br />
-      <h2>Comparison of real database and tables from install</h2>
-      <LegacyFont color="green">No differences were found.</LegacyFont>
-      <br />
-      <h2>Database Backup</h2>
-      Know what you're doing. Mindlessly pressing buttons can lead to unfortunate consequences!
-      <br />
-      <table className="legacy-admin-db-table">
-        <tbody>
-          <tr>
-            <td className="c">File name</td>
-            <td className="c">Operation</td>
-          </tr>
-        </tbody>
-      </table>
-      <br />
-      <form action={adminModeActionHref("DB", "create")} method="POST" onSubmit={(event) => event.preventDefault()}>
-        <input type="submit" value="Create a database backup" />
-      </form>
-    </>
-  );
+  return <div dangerouslySetInnerHTML={{ __html: adminDatabaseHTML() }} />;
+}
+
+function adminDatabaseHTML(): string {
+  let html = "";
+  html += "<h2>Database Backup</h2>\n";
+  html += "&#9888;&#65039; Know what you're doing. Mindlessly pressing buttons can lead to unfortunate consequences!<br/>";
+  html += '<table class="legacy-admin-db-table">\n';
+  html += "<tr><td class=c>File name</td><td class=c>Operation</td></tr>\n";
+  html += "</table>\n";
+  html += "<br/>\n";
+  html += `<form action="${legacyHTMLAttribute(adminModeActionHref("DB", "create"))}" method="POST"><input type=submit value="Create a database backup" /></form>`;
+  html += "<h2>Comparison of tables from install and real database</h2>";
+  html += "<font color=green>No differences were found.</font><br/>";
+  html += "<h2>Comparison of real database and tables from install</h2>";
+  html += "<font color=green>No differences were found.</font><br/>";
+  return html;
 }
 
 const adminSimFleetRows = [
