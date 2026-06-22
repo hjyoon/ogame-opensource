@@ -31,15 +31,13 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 
 ## Verified QA
 
-- Latest focused checks: frontend check, focused Go tests, route tests, Docker `goapp` on `8895`.
+- Latest full check: `OGAME_GO_PORT=8895 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run-golang-migration-qa.sh` passed.
+- This includes full Docker PHP E2E, frontend Bun build/check/test, all Go tests, 97% Go coverage, Docker `goapp`, and Go compatibility smoke with `all_pass=true`.
 - Playwright resources page actions passed Chromium/Firefox: percent save, DB `prod*`, selected values, totals, and visuals.
 - Research/shipyard/defense actions and galaxy page pass Chromium/Firefox exact 0px; queues cover submit/partial/complete DB.
-- Prior migration QA passed with `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`.
 - CSR E2E covers Buddy/Options, Options save, Notes create/edit/delete, and logout; Chromium passes.
 - Auth visual E2E passes Chromium/Firefox for Notes, Buddylist, Options at 0px; Merchant call/exchange has ~0.12% select diff.
-- Prior Go internal coverage gate: `97.0% >= 97%`.
-
-Full legacy PHP E2E was not rerun in this step; PHP remains the oracle.
+- Go internal coverage gate: `97.0% >= 97%`.
 
 ## Remaining Work
 
