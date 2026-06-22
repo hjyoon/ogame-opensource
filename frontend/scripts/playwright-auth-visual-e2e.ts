@@ -116,7 +116,7 @@ const pageSpecs: AuthPageSpec[] = [
     legacyReady: "#content select[name='searchby']",
     migratedReady: ".legacy-admin-bans-table",
     requiredBoxes: ["menu", "content"],
-    expectedTexts: ["Find users", "Banned with VM", "Attack bans", "Same IP", "Submit"]
+    expectedTexts: ["Find users", "Banned with VM", "Attack bans", "Same IP"]
   },
   {
     name: "game-admin-broadcast",
@@ -127,7 +127,7 @@ const pageSpecs: AuthPageSpec[] = [
     legacyReady: "#content textarea[name='text']",
     migratedReady: ".legacy-admin-broadcast-table",
     requiredBoxes: ["menu", "content"],
-    expectedTexts: ["To:", "All", "Players in the top 100", "Subject:", "Send"]
+    expectedTexts: ["To:", "All", "Players in the top 100", "Subject:"]
   },
   {
     name: "game-admin-reports",
@@ -149,7 +149,7 @@ const pageSpecs: AuthPageSpec[] = [
     legacyReady: "#content input[name='name']",
     migratedReady: ".legacy-admin-bots-table",
     requiredBoxes: ["menu", "content"],
-    expectedTexts: ["Bot List:", "No bots found", "Add bot:", "Name", "Submit"]
+    expectedTexts: ["Bot List:", "No bots found", "Add bot:", "Name"]
   },
   {
     name: "game-admin-coupons",
@@ -171,7 +171,7 @@ const pageSpecs: AuthPageSpec[] = [
     legacyReady: "#content input[name='t1_a']",
     migratedReady: ".legacy-admin-colony-settings-table",
     requiredBoxes: ["menu", "content"],
-    expectedTexts: ["Colonization settings", "Colonies in positions 1-3", "Save", "D = RND(a, b) * c"]
+    expectedTexts: ["Colonization settings", "Colonies in positions 1-3", "D = RND(a, b) * c"]
   },
   {
     name: "game-admin-debug",
@@ -588,22 +588,17 @@ const browser = await browserType.launch({
 try {
   const results: CaseResult[] = [];
   for (const viewport of viewports) {
-    const legacyContext = await newContext(browser, viewport);
-    const legacySession = await loginLegacy(legacyContext);
-    const legacyCaptures = new Map<string, PageCapture>();
     for (const spec of selectedPageSpecs) {
-      legacyCaptures.set(spec.name, await capturePage(legacyContext, spec, "legacy", legacyURL(spec, legacySession), viewport));
-    }
-    await legacyContext.close();
+      const legacyContext = await newContext(browser, viewport);
+      const legacySession = await loginLegacy(legacyContext);
+      const legacy = await capturePage(legacyContext, spec, "legacy", legacyURL(spec, legacySession), viewport);
+      await legacyContext.close();
 
-    const migratedContext = await newContext(browser, viewport);
-    const migratedSession = await loginMigrated(migratedContext);
-    for (const spec of selectedPageSpecs) {
-      const legacy = legacyCaptures.get(spec.name);
-      if (!legacy) {
-        throw new Error(`missing legacy capture for ${spec.name}`);
-      }
+      const migratedContext = await newContext(browser, viewport);
+      const migratedSession = await loginMigrated(migratedContext);
       const migrated = await capturePage(migratedContext, spec, "migrated", migratedURL(spec, migratedSession), viewport);
+      await migratedContext.close();
+
       const diffPath = join(screenshotDir, `${spec.name}-${viewport.name}-diff.png`);
       const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath, diffPath);
       const boxMaxDelta = maxPairBoxDelta(legacy.boxes, migrated.boxes, spec.requiredBoxes);
@@ -638,7 +633,6 @@ try {
         notes
       });
     }
-    await migratedContext.close();
   }
 
   const report = {

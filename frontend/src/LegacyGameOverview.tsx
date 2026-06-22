@@ -2587,23 +2587,25 @@ function OfficersTable({
                   <img height={120} src={`${gameImageBase}/${officer.image}`} style={{ border: 0, verticalAlign: "top" }} width={120} />
                 </td>
                 <td className="legacy-l l" rowSpan={2}>
-                  <b>{officer.name}</b>(<b>{officerStatus(officer)}</b>)<br />
-                  {officer.description}
-                  <br />
-                  <div style={{ margin: "4px 4px" }}>
-                    <table>
-                      <tbody>
-                        <tr>
-                          <td>
-                            <img alt={officer.name} height={32} src={`${gameImageBase}/${officer.icon}`} style={{ verticalAlign: "middle" }} width={32} />
-                          </td>
-                          <td style={{ backgroundColor: "transparent" }}>
-                            <strong style={{ color: "skyblue", verticalAlign: "middle" }}>{officer.note}</strong>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
+                  {officer.key === "admiral" ? (
+                    <>
+                      <b>{officer.name}</b>(
+                      <b>
+                        {officerStatus(officer)})
+                        <br />
+                        {officer.description}
+                        <br />
+                        <OfficerNoteTable officer={officer} />
+                      </b>
+                    </>
+                  ) : (
+                    <>
+                      <b>{officer.name}</b>(<b>{officerStatus(officer)}</b>)<br />
+                      {officer.description}
+                      <br />
+                      <OfficerNoteTable officer={officer} />
+                    </>
+                  )}
                 </td>
                 <td className="legacy-l l" style={{ textAlign: "center", verticalAlign: "middle", width: 90 }}>
                   <OfficerRecruitLink days={90} officer={officer} onRecruit={onRecruit} pending={pending} />
@@ -2629,6 +2631,25 @@ function OfficersTable({
       <br />
       <br />
     </LegacyCenter>
+  );
+}
+
+function OfficerNoteTable({ officer }: { officer: GameOfficerRow }) {
+  return (
+    <div style={{ margin: "4px 4px" }}>
+      <table>
+        <tbody>
+          <tr>
+            <td>
+              <img alt={officer.name} height={32} src={`${gameImageBase}/${officer.icon}`} style={{ verticalAlign: "middle" }} width={32} />
+            </td>
+            <td style={{ backgroundColor: "transparent" }}>
+              <strong style={{ color: "skyblue", verticalAlign: "middle" }}>{officer.note}</strong>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   );
 }
 
