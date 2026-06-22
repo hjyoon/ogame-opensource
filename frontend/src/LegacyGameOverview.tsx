@@ -2731,6 +2731,55 @@ function AdminTable({ admin }: { admin: GameAdmin }) {
       </AdminModeShell>
     );
   }
+  if (admin.mode === "Debug") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminMessagesTable className="legacy-admin-debug-table" mode="Debug" withFilter />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "Errors") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminMessagesTable className="legacy-admin-errors-table" mode="Errors" />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "Logins") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminLoginsTable />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "UserLogs") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminUserLogsTable />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "Browse") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminBrowseTable />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "Fleetlogs") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminFleetlogsTable />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "Queue") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminQueueTable />
+      </AdminModeShell>
+    );
+  }
   if (admin.mode !== "Home") {
     return (
       <AdminModeShell admin={admin}>
@@ -3099,6 +3148,249 @@ function AdminColonySettingsTable() {
       <br />
     </>
   );
+}
+
+function AdminMessagesTable({ className, mode, withFilter = false }: { className: string; mode: string; withFilter?: boolean }) {
+  return (
+    <table className="header legacy-admin-messages-outer">
+      <tbody>
+        <tr className="header">
+          <td>
+            <form action={adminModeHref(mode)} method="POST" onSubmit={(event) => event.preventDefault()}>
+              <table className={className} width={519}>
+                <tbody>
+                  <tr>
+                    <td className="c" colSpan={4}>
+                      Messages
+                    </td>
+                  </tr>
+                  <tr>
+                    <th>Action</th>
+                    <th>Date</th>
+                    <th>From</th>
+                    <th>Browser</th>
+                  </tr>
+                  <tr>
+                    <td className="b"> </td>
+                    <td className="b" colSpan={3} />
+                  </tr>
+                  <tr>
+                    <th colSpan={4} style={{ padding: "0px 105px" }} />
+                  </tr>
+                  <tr>
+                    <th colSpan={4}>
+                      <select name="deletemessages">
+                        <option value="deletemarked">Delete highlighted messages</option>
+                        {withFilter ? <option value="deleteshown">Delete all displayed messages </option> : null}
+                        <option value="deleteall">Delete all messages</option>
+                      </select>
+                      <input type="submit" value="ok" />
+                    </th>
+                  </tr>
+                  <tr>
+                    <td colSpan={4}>
+                      <center> </center>
+                    </td>
+                  </tr>
+                  {withFilter ? (
+                    <tr>
+                      <th colSpan={4}>
+                        Debug message filter: <input name="filter" type="text" />
+                        <input type="submit" value="Show" />
+                      </th>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </form>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function AdminLoginsTable() {
+  return (
+    <form action={adminModeHref("Logins")} method="POST" onSubmit={(event) => event.preventDefault()}>
+      <table className="legacy-admin-logins-table">
+        <tbody>
+          <tr>
+            <td className="d">By user name:</td>
+            <td>
+              <input name="name" size={20} type="text" />
+            </td>
+          </tr>
+          <tr>
+            <td className="d">By User ID:</td>
+            <td>
+              <input name="id" size={20} type="text" />
+            </td>
+          </tr>
+          <tr>
+            <td className="d">By IP address:</td>
+            <td>
+              <input name="ip" size={20} type="text" />
+            </td>
+          </tr>
+          <tr>
+            <td className="d" colSpan={2}>
+              <center>
+                <input type="submit" value="Search" />
+              </center>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  );
+}
+
+function AdminUserLogsTable() {
+  return (
+    <>
+      <h2>Recent actions of the players</h2>
+      <table className="legacy-admin-userlogs-table">
+        <tbody>
+          <tr>
+            <td className="c">Date</td>
+            <td className="c">Player</td>
+            <td className="c">Category</td>
+            <td className="c">Action</td>
+          </tr>
+        </tbody>
+      </table>
+      <h2>Action history</h2>
+      <table>
+        <tbody>
+          <tr>
+            <td>
+              <form action={adminModeHref("UserLogs")} method="POST" onSubmit={(event) => event.preventDefault()}>
+                <table className="legacy-admin-userlogs-filter-table">
+                  <tbody>
+                    <tr>
+                      <td>User name</td>
+                      <td>
+                        <input name="name" size={20} type="text" /> (can be approximate)
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Category</td>
+                      <td>
+                        <select name="type">
+                          <option value="ALL">All</option>
+                          <option value="BUILD">Buildings / Demolition</option>
+                          <option value="RESEARCH">Research</option>
+                          <option value="SHIPYARD">Fleet building</option>
+                          <option value="DEFENSE">Defense building</option>
+                          <option value="FLEET">Fleet dispatch</option>
+                          <option value="PLANET">Planet settings</option>
+                          <option value="SETTINGS">Account settings / VM</option>
+                          <option value="OPER">Operator actions</option>
+                        </select>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>For the period</td>
+                      <td>
+                        <input defaultValue="2" name="days" size={2} type="text" /> days{" "}
+                        <input name="hours" size={2} type="text" /> hr.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Starting from.</td>
+                      <td>
+                        <input defaultValue={legacyYesterday()} name="since" size={20} type="text" /> DD.MM.YYYY
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="c" colSpan={2}>
+                        <input type="submit" value="Submit" />
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </form>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+function AdminBrowseTable() {
+  return (
+    <>
+      <span className="legacy-admin-browse-title">Recent history of transitions (50 entries):</span>
+      <br />
+      <table className="legacy-admin-browse-table">
+        <tbody />
+      </table>
+    </>
+  );
+}
+
+function AdminFleetlogsTable() {
+  return (
+    <table className="legacy-admin-fleetlogs-table">
+      <tbody>
+        <tr>
+          <td className="c">N</td>
+          <td className="c">Timer</td>
+          <td className="c">Order</td>
+          <td className="c">Sent</td>
+          <td className="c">Arriving</td>
+          <td className="c">Flight time</td>
+          <td className="c">Start</td>
+          <td className="c">Target</td>
+          <td className="c">Fleet</td>
+          <td className="c">Cargo</td>
+          <td className="c">Fuel</td>
+          <td className="c">ACS</td>
+          <td className="c" colSpan={3}>
+            Command
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function AdminQueueTable() {
+  return (
+    <>
+      <table className="legacy-admin-queue-table">
+        <tbody>
+          <tr>
+            <td className="c">End time</td>
+            <td className="c">Player</td>
+            <td className="c">Task type</td>
+            <td className="c">Description</td>
+            <td className="c">Priority</td>
+            <td className="c">ID</td>
+            <td className="c">Control</td>
+          </tr>
+        </tbody>
+      </table>
+      <br />
+      <form action={adminModeHref("Queue")} method="POST" onSubmit={(event) => event.preventDefault()}>
+        Show player's tasks: <input name="player" size={15} />
+        <input type="submit" value="Send" />
+      </form>
+      <form action={adminModeHref("Queue")} method="POST" onSubmit={(event) => event.preventDefault()}>
+        <input name="order_cron" type="hidden" value="1" />
+        <input type="submit" value="ADM_QUEUE_CRON" />
+      </form>
+    </>
+  );
+}
+
+function legacyYesterday() {
+  const date = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${day}.${month}.${date.getFullYear()}`;
 }
 
 function adminModeHref(mode: string) {

@@ -174,6 +174,83 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["Colonization settings", "Colonies in positions 1-3", "Save", "D = RND(a, b) * c"]
   },
   {
+    name: "game-admin-debug",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Debug" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Debug" },
+    legacyReady: "#content input[name='filter']",
+    migratedReady: ".legacy-admin-debug-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Messages", "Action", "Date", "From", "Browser", "Debug message filter:"]
+  },
+  {
+    name: "game-admin-errors",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Errors" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Errors" },
+    legacyReady: "#content select[name='deletemessages']",
+    migratedReady: ".legacy-admin-errors-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Messages", "Action", "Date", "From", "Browser", "Delete highlighted messages"]
+  },
+  {
+    name: "game-admin-logins",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Logins" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Logins" },
+    legacyReady: "#content input[name='name']",
+    migratedReady: ".legacy-admin-logins-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["By user name:", "By User ID:", "By IP address:", "Search"]
+  },
+  {
+    name: "game-admin-userlogs",
+    legacyPage: "admin",
+    legacyQuery: { mode: "UserLogs" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "UserLogs" },
+    legacyReady: "#content select[name='type']",
+    migratedReady: ".legacy-admin-userlogs-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Recent actions of the players", "Date", "Player", "Category", "Action"]
+  },
+  {
+    name: "game-admin-browse",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Browse" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Browse" },
+    legacyReady: "#content",
+    migratedReady: ".legacy-admin-browse-title",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Recent history of transitions"]
+  },
+  {
+    name: "game-admin-fleetlogs",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Fleetlogs" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Fleetlogs" },
+    legacyReady: "#content",
+    migratedReady: ".legacy-admin-fleetlogs-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Timer", "Order", "Sent", "Arriving", "Flight time", "Start", "Target", "Fleet", "Cargo", "Fuel", "ACS", "Command"]
+  },
+  {
+    name: "game-admin-queue",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Queue" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Queue" },
+    legacyReady: "#content input[name='player']",
+    migratedReady: ".legacy-admin-queue-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["End time", "Player", "Task type", "Description", "Priority", "Control", "Show player's tasks:"]
+  },
+  {
     name: "game-rename-planet",
     legacyPage: "renameplanet",
     migratedPath: "/game/rename-planet",
