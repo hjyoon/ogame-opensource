@@ -52,6 +52,8 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		admin.MessageRows, err = r.loadAdminMessageRows(ctx, "debug", true)
 	case "Errors":
 		admin.MessageRows, err = r.loadAdminMessageRows(ctx, "errors", false)
+	case "Queue":
+		admin.QueueRows, err = r.loadAdminQueueRows(ctx)
 	case "UserLogs":
 		admin.UserLogRows, err = r.loadAdminUserLogRows(ctx)
 	}
@@ -158,4 +160,69 @@ func (r AdminRepository) loadAdminUserLogRows(ctx context.Context) ([]domaingame
 		result[left], result[right] = result[right], result[left]
 	}
 	return result, rows.Err()
+}
+
+func (r AdminRepository) loadAdminQueueRows(ctx context.Context) ([]domaingame.AdminQueueRow, error) {
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return nil, err
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT q.task_id, COALESCE(q.owner_id, 0), COALESCE(u.oname, ''), COALESCE(q.type, ''), COALESCE(q.sub_id, 0), COALESCE(q.obj_id, 0), COALESCE(q.level, 0), COALESCE(q.start, 0), COALESCE(q.end, 0), COALESCE(q.prio, 0), COALESCE(q.freeze, 0), COALESCE(q.frozen, 0) FROM %s q LEFT JOIN %s u ON u.player_id = q.owner_id WHERE q.type <> ? ORDER BY q.end ASC, q.prio DESC LIMIT 50",
+			queueTable,
+			usersTable,
+		),
+		"Fleet",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domaingame.AdminQueueRow, 0, 50)
+	for rows.Next() {
+		var row domaingame.AdminQueueRow
+		var subID, objID, level int
+		var freeze int
+		if err := rows.Scan(&row.ID, &row.OwnerID, &row.OwnerName, &row.Type, &subID, &objID, &level, &row.Start, &row.End, &row.Priority, &freeze, &row.Frozen); err != nil {
+			return nil, err
+		}
+		row.Freeze = freeze != 0
+		row.Description = legacyAdminQueueDescription(row.Type, subID, objID, level)
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+func legacyAdminQueueDescription(queueType string, subID int, objID int, level int) string {
+	switch queueType {
+	case "UpdateStats":
+		return "Save old statistics"
+	case "RecalcPoints":
+		return "Recalculate statistics"
+	case "RecalcAllyPoints":
+		return "Recalculate alliance statistics"
+	case "AllowName":
+		return "Allow name change"
+	case "ChangeEmail":
+		return "Update permanent mail address"
+	case "UnloadAll":
+		return "Unload all the players"
+	case "CleanDebris":
+		return "Cleaning virtual debris"
+	case "CleanPlanets":
+		return "Cleanup of destroyed planets"
+	case "CleanPlayers":
+		return "Deleting inactive players and players put up for deletion"
+	case "UnbanPlayer":
+		return "Unban a player"
+	case "AllowAttacks":
+		return "Allow attacks"
+	}
+	return fmt.Sprintf("Unknown task type (type=%s, sub_id=%d, obj_id=%d, level=%d)", queueType, subID, objID, level)
 }

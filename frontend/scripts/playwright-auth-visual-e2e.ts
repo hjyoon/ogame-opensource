@@ -823,6 +823,12 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
         }
       }
     }
+    if (currentPageName === "game-admin-queue") {
+      for (const countdown of document.querySelectorAll<HTMLElement>("[id^='bxx'], .legacy-admin-queue-countdown")) {
+        countdown.textContent = "0:00:00";
+        countdown.setAttribute("title", "0");
+      }
+    }
     if (currentPageName === "game-statistics" || currentPageName === "game-statistics-alliance") {
       for (const cell of document.querySelectorAll<HTMLTableCellElement>(".legacy-statistics-head-table td, #content table td")) {
         if (cell.textContent?.trim().startsWith("Statistics (as of:")) {

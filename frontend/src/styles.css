@@ -421,6 +421,31 @@ body.legacy-game-body {
   margin: 0.83em 0;
 }
 
+.legacy-game-shell .compact-buttons {
+  white-space: nowrap;
+}
+
+.legacy-game-shell .compact-buttons form,
+.legacy-game-shell .delete-form {
+  display: inline-block;
+}
+
+.legacy-game-shell .compact-buttons form {
+  margin: 0 1px;
+}
+
+.legacy-game-shell .btn-compact {
+  height: auto;
+  line-height: 1.2;
+  margin: 0;
+  padding: 2px 2px !important;
+  font-size: 12px !important;
+}
+
+.legacy-game-shell .btn-delete {
+  border: 1px solid red;
+}
+
 .legacy-header-top {
   height: 66px;
   left: 190px;

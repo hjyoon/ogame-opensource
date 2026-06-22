@@ -19,6 +19,7 @@ type Admin struct {
 	Menu           []AdminMenuItem
 	MessageRows    []AdminMessageRow
 	UserLogRows    []AdminUserLogRow
+	QueueRows      []AdminQueueRow
 }
 
 type AdminViewer struct {
@@ -55,6 +56,19 @@ type AdminUserLogRow struct {
 	Type      string
 	Text      string
 	Date      int64
+}
+
+type AdminQueueRow struct {
+	ID          int
+	OwnerID     int
+	OwnerName   string
+	Type        string
+	Description string
+	Priority    int
+	Start       int64
+	End         int64
+	Freeze      bool
+	Frozen      int64
 }
 
 var adminMenuItems = []AdminMenuItem{

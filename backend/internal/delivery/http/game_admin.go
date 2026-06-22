@@ -29,6 +29,7 @@ type gameAdminSummary struct {
 	Menu           []gameAdminMenuItem         `json:"menu"`
 	MessageRows    []gameAdminMessageRow       `json:"messageRows,omitempty"`
 	UserLogRows    []gameAdminUserLogRow       `json:"userLogRows,omitempty"`
+	QueueRows      []gameAdminQueueRow         `json:"queueRows,omitempty"`
 }
 
 type gameAdminViewer struct {
@@ -60,6 +61,19 @@ type gameAdminUserLogRow struct {
 	Type      string `json:"type"`
 	Text      string `json:"text"`
 	Date      int64  `json:"date"`
+}
+
+type gameAdminQueueRow struct {
+	ID          int    `json:"id"`
+	OwnerID     int    `json:"ownerId"`
+	OwnerName   string `json:"ownerName"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	Priority    int    `json:"priority"`
+	Start       int64  `json:"start"`
+	End         int64  `json:"end"`
+	Freeze      bool   `json:"freeze"`
+	Frozen      int64  `json:"frozen"`
 }
 
 func (a app) handleGameAdmin(w http.ResponseWriter, r *http.Request) {
@@ -137,6 +151,21 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			Date:      row.Date,
 		})
 	}
+	queueRows := make([]gameAdminQueueRow, 0, len(admin.QueueRows))
+	for _, row := range admin.QueueRows {
+		queueRows = append(queueRows, gameAdminQueueRow{
+			ID:          row.ID,
+			OwnerID:     row.OwnerID,
+			OwnerName:   row.OwnerName,
+			Type:        row.Type,
+			Description: row.Description,
+			Priority:    row.Priority,
+			Start:       row.Start,
+			End:         row.End,
+			Freeze:      row.Freeze,
+			Frozen:      row.Frozen,
+		})
+	}
 	return gameAdminSummary{
 		Commander:      admin.Commander,
 		CurrentPlanet:  toGamePlanetOverviewResponse(admin.CurrentPlanet),
@@ -150,6 +179,7 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		Menu:        menu,
 		MessageRows: messageRows,
 		UserLogRows: userLogRows,
+		QueueRows:   queueRows,
 	}
 }
 

@@ -1045,6 +1045,7 @@ type GameAdmin = {
   menu: GameAdminMenuItem[];
   messageRows?: GameAdminMessageRow[];
   userLogRows?: GameAdminUserLogRow[];
+  queueRows?: GameAdminQueueRow[];
 };
 
 type GameAdminViewer = {
@@ -1076,6 +1077,19 @@ type GameAdminUserLogRow = {
   type: string;
   text: string;
   date: number;
+};
+
+type GameAdminQueueRow = {
+  id: number;
+  ownerId: number;
+  ownerName: string;
+  type: string;
+  description: string;
+  priority: number;
+  start: number;
+  end: number;
+  freeze: boolean;
+  frozen: number;
 };
 
 type ResourceProductionRow = {
@@ -2818,7 +2832,7 @@ function AdminTable({ admin }: { admin: GameAdmin }) {
   if (admin.mode === "Queue") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminQueueTable />
+        <AdminQueueTable rows={admin.queueRows ?? []} />
       </AdminModeShell>
     );
   }
@@ -3536,7 +3550,39 @@ function AdminFleetlogsTable() {
   );
 }
 
-function AdminQueueTable() {
+const legacyAdminQueueCompactStyle = `
+.compact-buttons {
+    white-space: nowrap;
+}
+
+.compact-buttons form {
+    display: inline-block;
+    margin: 0 1px;
+}
+
+.btn-compact {
+    padding: 2px 2px !important;
+    font-size: 12px !important;
+    margin: 0;
+    line-height: 1.2;
+    height: auto;
+}
+
+.btn-delete {
+    border: 1px solid red;
+}
+
+.delete-form {
+    display: inline-block;
+}
+`;
+
+function AdminQueueTable({ rows }: { rows: GameAdminQueueRow[] }) {
+  const [now, setNow] = React.useState(() => Math.floor(Date.now() / 1000));
+  React.useEffect(() => {
+    const id = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => window.clearInterval(id);
+  }, []);
   return (
     <>
       <table className="legacy-admin-queue-table">
@@ -3550,12 +3596,73 @@ function AdminQueueTable() {
             <td className="c">ID</td>
             <td className="c">Control</td>
           </tr>
+          {rows.map((row, index) => {
+            const freezeSeconds = row.freeze ? Math.max(0, now - row.frozen) : 0;
+            const remaining = Math.max(0, row.end - now + freezeSeconds);
+            const freezeAction = row.freeze ? "unfreeze" : "freeze";
+            const freezeLabel = row.freeze ? "ADM_QUEUE_UNFREEZE" : "ADM_QUEUE_FREEZE";
+            return (
+              <tr key={row.id}>
+                <th>
+                  {" "}
+                  <table>
+                    <tbody>
+                      <tr>
+                        <th>
+                          <div
+                            className="legacy-admin-queue-countdown"
+                            id={`bxx${index + 1}`}
+                            title={String(remaining)}
+                            {...{ star: String(row.start) }}
+                          >
+                            {formatLegacyCountdown(remaining)}
+                          </div>
+                        </th>
+                      </tr>
+                      <tr>
+                        <th>{formatLegacyAdminQueueDate(row.end)}</th>
+                      </tr>
+                    </tbody>
+                  </table>
+                </th>
+                <th>
+                  <AdminUserLink ownerId={row.ownerId} ownerName={row.ownerName} />
+                </th>
+                <th>{row.type}</th>
+                <th>{row.description}{row.freeze ? ` (ADM_QUEUE_FROZEN ${freezeSeconds})` : ""}</th>
+                <th>{row.priority}</th>
+                <th>{row.id}</th>
+                <style>{legacyAdminQueueCompactStyle}</style>
+                <th className="compact-buttons">
+                  {" \n    "}
+                  <form action={adminModeHref("Queue")} method="POST" onSubmit={(event) => event.preventDefault()}>
+                    <input name="order_end" type="hidden" value={row.id} />
+                    <input className="btn-compact" type="submit" value="End" />
+                  </form>
+                  {"\n    "}
+                  <form action={adminModeHref("Queue")} method="POST" onSubmit={(event) => event.preventDefault()}>
+                    <input name={`order_${freezeAction}`} type="hidden" value={row.id} />
+                    <input className="btn-compact" type="submit" value={freezeLabel} />
+                  </form>
+                  {"\n    "}
+                  <form action={adminModeHref("Queue")} className="delete-form" method="POST" onSubmit={(event) => event.preventDefault()}>
+                    <input name="order_remove" type="hidden" value={row.id} />
+                    <input className="btn-compact btn-delete" type="submit" value="Delete" />
+                  </form>
+                  {"\n"}
+                </th>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
       <br />
       <form action={adminModeHref("Queue")} method="POST" onSubmit={(event) => event.preventDefault()}>
-        Show player's tasks: <input name="player" size={15} />
+        {"\n    Show player's tasks: "}
+        <input defaultValue="" name="player" size={15} />
+        {"\n    "}
         <input type="submit" value="Send" />
+        {"\n    "}
       </form>
       <form action={adminModeHref("Queue")} method="POST" onSubmit={(event) => event.preventDefault()}>
         <input name="order_cron" type="hidden" value="1" />
@@ -9824,6 +9931,13 @@ function formatLegacyAdminMessageDate(seconds: number): string {
 }
 
 function formatLegacyAdminUserLogDate(seconds: number): string {
+  const date = new Date((seconds + 3 * 60 * 60) * 1000);
+  return `${String(date.getUTCDate()).padStart(2, "0")}.${String(date.getUTCMonth() + 1).padStart(2, "0")}.${date.getUTCFullYear()} ${String(
+    date.getUTCHours()
+  ).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
+}
+
+function formatLegacyAdminQueueDate(seconds: number): string {
   const date = new Date((seconds + 3 * 60 * 60) * 1000);
   return `${String(date.getUTCDate()).padStart(2, "0")}.${String(date.getUTCMonth() + 1).padStart(2, "0")}.${date.getUTCFullYear()} ${String(
     date.getUTCHours()
