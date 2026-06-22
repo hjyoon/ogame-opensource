@@ -2879,11 +2879,7 @@ function AdminTable({ admin }: { admin: GameAdmin }) {
     );
   }
   if (admin.mode === "Mods") {
-    return (
-      <AdminModeShell admin={admin}>
-        <AdminModsTable />
-      </AdminModeShell>
-    );
+    return <AdminModsModeShell admin={admin} />;
   }
   if (admin.mode !== "Home") {
     return (
@@ -2936,16 +2932,34 @@ function AdminTable({ admin }: { admin: GameAdmin }) {
 
 function AdminModeShell({ admin, children }: { admin: GameAdmin; children: React.ReactNode }) {
   return (
-    <table border={0} cellPadding={0} cellSpacing={1} className="legacy-admin-mode-shell" width={750}>
-      <tbody>
-        <tr>
-          <td>
-            <AdminQuickPanel admin={admin} />
-            {children}
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <LegacyCenter>
+      <table border={0} cellPadding={0} cellSpacing={1} className="legacy-admin-mode-shell" width={750}>
+        <tbody>
+          <tr>
+            <td>
+              <AdminQuickPanel admin={admin} />
+              {children}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </LegacyCenter>
+  );
+}
+
+function AdminModsModeShell({ admin }: { admin: GameAdmin }) {
+  return (
+    <LegacyCenter>
+      <table border={0} cellPadding={0} cellSpacing={1} className="legacy-admin-mode-shell" width={750}>
+        <tbody />
+      </table>
+      <AdminQuickPanel admin={admin} />
+      <AdminModsTable />
+      <br />
+      <br />
+      <br />
+      <br />
+    </LegacyCenter>
   );
 }
 
@@ -2957,9 +2971,12 @@ function AdminQuickPanel({ admin }: { admin: GameAdmin }) {
           <tr>
             <td>
               {admin.menu.map((item) => (
-                <a href={adminModeHref(item.mode)} key={item.mode}>
-                  <img alt={item.label} height={32} src={item.image} title={item.label} width={32} />
-                </a>
+                <React.Fragment key={item.mode}>
+                  <a href={adminModeHref(item.mode)}>
+                    <img alt={item.label} height={32} src={item.image} title={item.label} width={32} />
+                  </a>
+                  {"\n\n"}
+                </React.Fragment>
               ))}
             </td>
           </tr>
@@ -4246,10 +4263,56 @@ function AdminLocaTable() {
   );
 }
 
+type AdminModInfo = {
+  folder: string;
+  name: string;
+  version: string;
+  author: string;
+  description: string;
+  website: string;
+};
+
+const adminAvailableMods: AdminModInfo[] = [
+  {
+    folder: "BogusMod",
+    name: "Bogus Modification",
+    version: "1.0.0",
+    author: "ogamespec",
+    description: "A simple modification to demonstrate the capabilities",
+    website: "https://github.com/ogamespec/ogame-opensource"
+  },
+  {
+    folder: "DeepSpaceHorror",
+    name: "Deep Space Horror",
+    version: "1.0.0",
+    author: "ogamespec",
+    description:
+      "Ancient cosmic horrors stir from the abyss, roaming the galaxy and leaving behind only fleet wreckage and bountiful rewards for the bold.",
+    website: "https://github.com/ogamespec/ogame-opensource"
+  },
+  {
+    folder: "GalaxyTool",
+    name: "GalaxyTool",
+    version: "1.0.0",
+    author: "ogamespec",
+    description: "Integrated Galaxytool",
+    website: "https://github.com/ogamespec/ogame-opensource"
+  },
+  {
+    folder: "SpaceStorm",
+    name: "Space Storm",
+    version: "1.0.0",
+    author: "ogamespec",
+    description:
+      "As a global event, the Space Storm can temporarily change the game mechanics themselves, creating unique tactical situations.",
+    website: "https://github.com/ogamespec/ogame-opensource"
+  }
+];
+
 function AdminModsTable() {
   return (
     <>
-      <h2>ADM_MODS_HEAD</h2>
+      <h2 className="legacy-admin-mods-heading">ADM_MODS_HEAD</h2>
       <div className="legacy-admin-mods-table mods-container">
         <div className="mod-column">
           <h3>ADM_MODS_HEAD_ACITVE</h3>
@@ -4257,14 +4320,42 @@ function AdminModsTable() {
         </div>
         <div className="mod-column">
           <h3>ADM_MODS_HEAD_AVAILABLE</h3>
-          <div className="empty-message">ADM_MODS_NO_AVAILABLE</div>
+          {adminAvailableMods.map((mod) => (
+            <AdminModPanel key={mod.folder} mod={mod} />
+          ))}
         </div>
       </div>
       <div style={{ color: "#E6EBFB", marginTop: 20, textAlign: "center" }}>
-        <p>ADM_MODS_TOT_ACTIVE: 0 | ADM_MODS_TOT_AVAILABLE: 0</p>
+        <p>ADM_MODS_TOT_ACTIVE: 0 | ADM_MODS_TOT_AVAILABLE: {adminAvailableMods.length}</p>
       </div>
     </>
   );
+}
+
+function AdminModPanel({ mod }: { mod: AdminModInfo }) {
+  return (
+    <div className="mod-item">
+      <span className="status-indicator status-inactive">ADM_MODS_STATE_AVAILABLE</span>
+      <img alt={mod.name} className="mod-background" src={`/public-assets/game/mods/${mod.folder}/img/bg.png`} />
+      <div className="mod-content">
+        <div className="mod-title">{mod.name}</div>
+        <div className="mod-description">{mod.description}</div>
+        <div className="mod-info" dangerouslySetInnerHTML={{ __html: adminModInfoHTML(mod) }} />
+        <div className="mod-actions">
+          <a className="mod-action-link" href={adminModeModActionHref("Mods", "install", mod.folder)}>
+            ADM_MODS_OP_INSTALL
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function adminModInfoHTML(mod: AdminModInfo) {
+  const version = escapeHTML(mod.version);
+  const author = escapeHTML(mod.author);
+  const website = escapeHTML(mod.website);
+  return `\n                    ADM_MODS_INFO_VERSION: ${version}<br>\n                    ADM_MODS_INFO_AUTHOR: ${author}<br>\n                    ADM_MODS_INFO_WEBSITE: <a href="${website}" style="color:#E6EBFB;" target=_blank>${website}</a>\n                `;
 }
 
 function legacyYesterday() {
@@ -4284,6 +4375,14 @@ function adminModeActionHref(mode: string, action: string) {
   const query = new URLSearchParams(window.location.search);
   query.set("mode", mode);
   query.set("action", action);
+  return gameRouteURL("/game/admin", `?${query.toString()}`);
+}
+
+function adminModeModActionHref(mode: string, action: string, modname: string) {
+  const query = new URLSearchParams(window.location.search);
+  query.set("mode", mode);
+  query.set("action", action);
+  query.set("modname", modname);
   return gameRouteURL("/game/admin", `?${query.toString()}`);
 }
 

@@ -978,6 +978,145 @@ body.legacy-game-body {
   font-size: 11px;
 }
 
+.legacy-game-shell .legacy-admin-mods-heading {
+  font-size: 1.5em;
+  margin: 0.83em 0;
+  text-align: center;
+}
+
+.legacy-game-shell .mods-container {
+  display: flex;
+  gap: 20px;
+  margin: 20px 0;
+}
+
+.legacy-game-shell .mod-column {
+  background-color: #344566;
+  border: 1px solid #415680;
+  border-radius: 3px;
+  flex: 1;
+  padding: 10px;
+}
+
+.legacy-game-shell .mod-column h3 {
+  color: #e6ebfb;
+  font-size: 1.17em;
+  margin: 1em 0;
+  text-align: center;
+}
+
+.legacy-game-shell .mod-item {
+  background-color: #2a3850;
+  border: 1px solid #415680;
+  border-radius: 3px;
+  margin-bottom: 15px;
+  min-height: 200px;
+  overflow: hidden;
+  position: relative;
+}
+
+.legacy-game-shell .mod-background {
+  height: 200px;
+  object-fit: cover;
+  opacity: 0.7;
+  width: 100%;
+}
+
+.legacy-game-shell .mod-content {
+  background-color: rgba(4, 14, 30, 0.8);
+  bottom: 0;
+  color: #e6ebfb;
+  left: 0;
+  padding: 15px;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.legacy-game-shell .mod-title {
+  color: lime;
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 10px;
+  text-align: left;
+}
+
+.legacy-game-shell .mod-description {
+  line-height: 1.4;
+  margin-bottom: 10px;
+  text-align: left;
+}
+
+.legacy-game-shell .mod-info {
+  color: #a0a0a0;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: left;
+}
+
+.legacy-game-shell .mod-actions {
+  bottom: 10px;
+  display: flex;
+  gap: 10px;
+  position: absolute;
+  right: 10px;
+}
+
+.legacy-game-shell .mod-action-link {
+  background-color: #344566;
+  border: 1px solid #415680;
+  border-radius: 3px;
+  color: #e6ebfb !important;
+  font-size: 12px;
+  padding: 5px 10px;
+  text-decoration: none !important;
+}
+
+.legacy-game-shell .mod-action-link:hover {
+  background-color: #415680;
+  color: #cdd7f8 !important;
+  text-decoration: none !important;
+}
+
+.legacy-game-shell .empty-message {
+  color: #999999;
+  font-style: italic;
+  padding: 20px;
+  text-align: center;
+}
+
+.legacy-game-shell .status-indicator {
+  background-color: #33ff33;
+  border: 1px solid #00ff00;
+  border-radius: 12px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+  color: #000000;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  padding: 4px 10px;
+  position: absolute;
+  right: 10px;
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.3);
+  text-transform: uppercase;
+  top: 10px;
+  z-index: 10;
+}
+
+.legacy-game-shell .status-inactive {
+  background-color: #ffaa00;
+  border: 1px solid #ff9900;
+  color: #000000;
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.3);
+}
+
+.legacy-game-shell .status-installed {
+  background-color: darkgrey;
+  border: 1px solid #ff9900;
+  color: #000000;
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.3);
+}
+
 .legacy-resources-form {
   margin: 0;
 }

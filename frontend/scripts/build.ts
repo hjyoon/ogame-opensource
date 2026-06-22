@@ -1,4 +1,4 @@
-import { copyFile, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { legacyPublicBootstrapPaths, legacyPublicCssHrefs } from "../src/routes";
 
@@ -11,6 +11,7 @@ const legacyPublicCss = new URL("../wwwroot/css/", root);
 const legacyEvolution = new URL("../wwwroot/evolution/", root);
 const legacyGameCss = new URL("../game/css/", root);
 const legacyGameImages = new URL("../game/img/", root);
+const legacyGameMods = new URL("../game/mods/", root);
 const legacyFavicon = new URL("../wwwroot/favicon.ico", root);
 
 await rm(fileURLToPath(dist), { force: true, recursive: true });
@@ -97,3 +98,19 @@ await cp(
   fileURLToPath(new URL("game-img/", publicAssets)),
   { recursive: true }
 );
+
+const modEntries = await readdir(fileURLToPath(legacyGameMods), { withFileTypes: true });
+for (const entry of modEntries) {
+  if (!entry.isDirectory()) {
+    continue;
+  }
+  const source = new URL(`${entry.name}/img/`, legacyGameMods);
+  const target = new URL(`game/mods/${entry.name}/img/`, publicAssets);
+  try {
+    await cp(fileURLToPath(source), fileURLToPath(target), { recursive: true });
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+      throw error;
+    }
+  }
+}
