@@ -1046,6 +1046,7 @@ type GameAdmin = {
   messageRows?: GameAdminMessageRow[];
   userLogRows?: GameAdminUserLogRow[];
   queueRows?: GameAdminQueueRow[];
+  battleReports?: GameAdminBattleReportRow[];
 };
 
 type GameAdminViewer = {
@@ -1090,6 +1091,12 @@ type GameAdminQueueRow = {
   end: number;
   freeze: boolean;
   frozen: number;
+};
+
+type GameAdminBattleReportRow = {
+  id: number;
+  date: number;
+  title: string;
 };
 
 type ResourceProductionRow = {
@@ -2888,7 +2895,7 @@ function AdminTable({ admin }: { admin: GameAdmin }) {
   if (admin.mode === "BattleReport") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminBattleReportsTable />
+        <AdminBattleReportsTable rows={admin.battleReports ?? []} />
       </AdminModeShell>
     );
   }
@@ -4251,14 +4258,16 @@ function AdminExpeditionTable() {
   );
 }
 
-function AdminBattleReportsTable() {
+function AdminBattleReportsTable({ rows }: { rows: GameAdminBattleReportRow[] }) {
   return (
     <table className="legacy-admin-battle-report-table">
       <tbody>
-        <tr>
-          <td className="c">Date</td>
-          <td className="c">Battle report</td>
-        </tr>
+        {rows.map((row) => (
+          <tr key={row.id}>
+            <td>{formatLegacyAdminBattleReportDate(row.date)}</td>
+            <td dangerouslySetInnerHTML={{ __html: sanitizeLegacyMessageHTML(legacyAdminHTMLWithSession(row.title)) }} />
+          </tr>
+        ))}
       </tbody>
     </table>
   );
@@ -8321,6 +8330,14 @@ function sanitizeLegacyMessageHTML(value: string): string {
   return doc.body.innerHTML;
 }
 
+function legacyAdminHTMLWithSession(value: string): string {
+  if (typeof window === "undefined") {
+    return value.replaceAll("{PUBLIC_SESSION}", "");
+  }
+  const session = new URLSearchParams(window.location.search).get("session") ?? "";
+  return value.replaceAll("{PUBLIC_SESSION}", session);
+}
+
 function escapeHTML(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -9940,6 +9957,13 @@ function formatLegacyAdminUserLogDate(seconds: number): string {
 function formatLegacyAdminQueueDate(seconds: number): string {
   const date = new Date((seconds + 3 * 60 * 60) * 1000);
   return `${String(date.getUTCDate()).padStart(2, "0")}.${String(date.getUTCMonth() + 1).padStart(2, "0")}.${date.getUTCFullYear()} ${String(
+    date.getUTCHours()
+  ).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
+}
+
+function formatLegacyAdminBattleReportDate(seconds: number): string {
+  const date = new Date((seconds + 3 * 60 * 60) * 1000);
+  return `${date.getUTCFullYear()}.${String(date.getUTCMonth() + 1).padStart(2, "0")}.${String(date.getUTCDate()).padStart(2, "0")} ${String(
     date.getUTCHours()
   ).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
 }

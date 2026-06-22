@@ -102,6 +102,30 @@ func TestAdminRepositoryReadsQueueRows(t *testing.T) {
 	}
 }
 
+func TestAdminRepositoryReadsBattleReportRows(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		fakeQueryResult{rows: fakeRowsFromValues(
+			[]any{1756, "source", "<a>Battle report</a>", "report", int64(1700003600)},
+			[]any{1755, "source", "<a>Older report</a>", "report", int64(1700000000)},
+		)},
+	)}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "BattleReport"})
+
+	if err != nil {
+		t.Fatalf("GetAdmin returned error: %v", err)
+	}
+	if len(admin.BattleReports) != 2 || admin.BattleReports[0].ID != 1756 || admin.BattleReports[0].Title != "<a>Battle report</a>" {
+		t.Fatalf("unexpected battle report rows: %+v", admin.BattleReports)
+	}
+	lastSQL := queryer.calls[len(queryer.calls)-1].sql
+	if !strings.Contains(lastSQL, "`ogame_battledata`") || !strings.Contains(lastSQL, "ORDER BY date DESC") {
+		t.Fatalf("expected battle reports query, got %s", lastSQL)
+	}
+}
+
 func TestAdminRepositoryErrors(t *testing.T) {
 	repository := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_")
 	if _, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {

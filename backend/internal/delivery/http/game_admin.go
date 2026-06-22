@@ -30,6 +30,7 @@ type gameAdminSummary struct {
 	MessageRows    []gameAdminMessageRow       `json:"messageRows,omitempty"`
 	UserLogRows    []gameAdminUserLogRow       `json:"userLogRows,omitempty"`
 	QueueRows      []gameAdminQueueRow         `json:"queueRows,omitempty"`
+	BattleReports  []gameAdminBattleReportRow  `json:"battleReports,omitempty"`
 }
 
 type gameAdminViewer struct {
@@ -74,6 +75,12 @@ type gameAdminQueueRow struct {
 	End         int64  `json:"end"`
 	Freeze      bool   `json:"freeze"`
 	Frozen      int64  `json:"frozen"`
+}
+
+type gameAdminBattleReportRow struct {
+	ID    int    `json:"id"`
+	Date  int64  `json:"date"`
+	Title string `json:"title"`
 }
 
 func (a app) handleGameAdmin(w http.ResponseWriter, r *http.Request) {
@@ -166,6 +173,14 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			Frozen:      row.Frozen,
 		})
 	}
+	battleReports := make([]gameAdminBattleReportRow, 0, len(admin.BattleReports))
+	for _, row := range admin.BattleReports {
+		battleReports = append(battleReports, gameAdminBattleReportRow{
+			ID:    row.ID,
+			Date:  row.Date,
+			Title: row.Title,
+		})
+	}
 	return gameAdminSummary{
 		Commander:      admin.Commander,
 		CurrentPlanet:  toGamePlanetOverviewResponse(admin.CurrentPlanet),
@@ -175,11 +190,12 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			Name:     admin.Viewer.Name,
 			Level:    admin.Viewer.Level,
 		},
-		Mode:        admin.Mode,
-		Menu:        menu,
-		MessageRows: messageRows,
-		UserLogRows: userLogRows,
-		QueueRows:   queueRows,
+		Mode:          admin.Mode,
+		Menu:          menu,
+		MessageRows:   messageRows,
+		UserLogRows:   userLogRows,
+		QueueRows:     queueRows,
+		BattleReports: battleReports,
 	}
 }
 

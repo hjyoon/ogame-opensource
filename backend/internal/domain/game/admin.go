@@ -20,6 +20,7 @@ type Admin struct {
 	MessageRows    []AdminMessageRow
 	UserLogRows    []AdminUserLogRow
 	QueueRows      []AdminQueueRow
+	BattleReports  []AdminBattleReportRow
 }
 
 type AdminViewer struct {
@@ -69,6 +70,12 @@ type AdminQueueRow struct {
 	End         int64
 	Freeze      bool
 	Frozen      int64
+}
+
+type AdminBattleReportRow struct {
+	ID    int
+	Date  int64
+	Title string
 }
 
 var adminMenuItems = []AdminMenuItem{

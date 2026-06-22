@@ -56,6 +56,8 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		admin.QueueRows, err = r.loadAdminQueueRows(ctx)
 	case "UserLogs":
 		admin.UserLogRows, err = r.loadAdminUserLogRows(ctx)
+	case "BattleReport":
+		admin.BattleReports, err = r.loadAdminBattleReports(ctx)
 	}
 	if err != nil {
 		return domaingame.Admin{}, err
@@ -225,4 +227,29 @@ func legacyAdminQueueDescription(queueType string, subID int, objID int, level i
 		return "Allow attacks"
 	}
 	return fmt.Sprintf("Unknown task type (type=%s, sub_id=%d, obj_id=%d, level=%d)", queueType, subID, objID, level)
+}
+
+func (r AdminRepository) loadAdminBattleReports(ctx context.Context) ([]domaingame.AdminBattleReportRow, error) {
+	battleTable, err := tableName(r.prefix, "battledata")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT battle_id, COALESCE(source, ''), COALESCE(title, ''), COALESCE(report, ''), COALESCE(date, 0) FROM %s ORDER BY date DESC", battleTable),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domaingame.AdminBattleReportRow, 0)
+	for rows.Next() {
+		var row domaingame.AdminBattleReportRow
+		var source, report string
+		if err := rows.Scan(&row.ID, &source, &row.Title, &report, &row.Date); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
 }
