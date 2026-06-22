@@ -3238,6 +3238,10 @@ function AdminCouponsTable() {
 }
 
 function AdminColonySettingsTable() {
+  return React.createElement("span", { dangerouslySetInnerHTML: { __html: adminColonySettingsHTML() } });
+}
+
+function adminColonySettingsHTML(): string {
   const rows = [
     ["Colonies in positions 1-3", ["50", "120", "72"], ["t1_a", "t1_b", "t1_c"]],
     ["Colonies in positions 4-6", ["50", "150", "120"], ["t2_a", "t2_b", "t2_c"]],
@@ -3245,42 +3249,18 @@ function AdminColonySettingsTable() {
     ["Colonies in positions 10-12", ["50", "120", "96"], ["t4_a", "t4_b", "t4_c"]],
     ["Colonies in positions 13-15 (and beyond)", ["50", "150", "96"], ["t5_a", "t5_b", "t5_c"]]
   ] as const;
-  return (
-    <>
-      <form action={adminModeHref("ColonySettings")} method="POST" onSubmit={(event) => event.preventDefault()}>
-        <table className="legacy-admin-colony-settings-table">
-          <tbody>
-            <tr>
-              <td className="c" colSpan={2}>
-                Colonization settings
-              </td>
-            </tr>
-            {rows.map(([label, values, names]) => (
-              <tr key={label}>
-                <th>{label}</th>
-                <th>
-                  {values.map((value, index) => (
-                    <React.Fragment key={names[index]}>
-                      <input defaultValue={value} maxLength={3} name={names[index]} size={3} type="text" />{" "}
-                    </React.Fragment>
-                  ))}
-                </th>
-              </tr>
-            ))}
-            <tr>
-              <th colSpan={2}>
-                <input type="submit" value="Save" />
-              </th>
-            </tr>
-          </tbody>
-        </table>
-      </form>
-      <br />
-      The diameter of a new colony is calculated by the formula: <pre>D = RND(a, b) * c</pre>
-      Each range has its own parameters (a, b, c)
-      <br />
-    </>
-  );
+  let html = `\n<table class="legacy-admin-colony-settings-table" >\n<form action="${legacyHTMLAttribute(
+    adminModeHref("ColonySettings")
+  )}" method="POST" >\n<tr><td class=c colspan=2>Colonization settings</td></tr>\n\n`;
+  for (const [label, values, names] of rows) {
+    html += `<tr><th>${legacyHTMLText(label)}</th><th>\n`;
+    values.forEach((value, index) => {
+      html += `    <input type="text" name="${names[index]}" maxlength="3" size="3" value="${value}" />\n`;
+    });
+    html += "</th></tr>\n\n";
+  }
+  html += `<tr><th colspan=2><input type="submit" value="Save" /></th></tr>\n\n</form>\n</table>\n\n<br/>\nThe diameter of a new colony is calculated by the formula: <pre>D = RND(a, b) * c</pre>\nEach range has its own parameters (a, b, c)<br/>\n`;
+  return html;
 }
 
 function AdminMessagesTable({
