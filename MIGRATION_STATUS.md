@@ -11,7 +11,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 - Natural routes and legacy `.php`/`page=` aliases share route manifests; visible chrome stays legacy-compatible.
 - Public assets, `evolution` skin, and game images are copied into `frontend/dist/public-assets`.
 - Registration, activation, login/logout, sessions, private cookies, IP/ban/session expiry, and `/game` redirects are ported.
-- `/api/game/*` covers overview, buildings, empire, resources, merchant/officers, alliance/admin home, research, shipyard, fleet/templates, galaxy, defense, technology, statistics, search, buddy, notes, messages, report, and options.
+- `/api/game/*` covers overview, buildings, empire, resources, merchant/officers, alliance/admin shell, research, shipyard, fleet/templates, galaxy, defense, technology, statistics, search, buddy, notes, messages, report, and options.
 - Mutations exist for overview, buildings, resources, merchant call/trade, officer recruit, research, shipyard/defense queues, fleet templates/dispatch/recall, buddy, notes, messages, and options.
 - Modernization candidates stay in [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
 
@@ -22,7 +22,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 - Statistics/fleet authenticated visual contracts pass Chromium/Firefox; player statistics keeps a tracked text-rendering diff.
 - Empire ports Commander-gated `imperium`, build queue markers, and legacy GET add/destroy/remove shortcuts.
 - Resources ports the legacy production-percent form, premium bonus icon column, DB normalization, and post-save resource header sync.
-- Merchant/officers/alliance/admin port DM spend/trade/timers, core alliance flows, admin menu, and admin access guard.
+- Merchant/officers/alliance/admin port DM spend/trade/timers, core alliance flows, 6 admin GET modes, and access guard.
 - Research/Shipyard port aliases, chrome, colors, queues, completion refresh, start/cancel/build, and resource math.
 - Fleet dispatch covers cargo/speed, fuel/clamps, ACS sync, colonize/exp targets, templates, and recall; deeper restrictions remain.
 - Galaxy covers clamp, rows, statuses, moon/debris/actions, slot/deut warnings, quick links, and target prefill; instant actions remain.

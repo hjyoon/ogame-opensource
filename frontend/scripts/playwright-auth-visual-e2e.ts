@@ -108,6 +108,72 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["Fleet Logs", "Browse History", "Users", "Universe Settings", "Expedition Settings", "Modifications"]
   },
   {
+    name: "game-admin-bans",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Bans" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Bans" },
+    legacyReady: "#content select[name='searchby']",
+    migratedReady: ".legacy-admin-bans-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Find users", "Banned with VM", "Attack bans", "Same IP", "Submit"]
+  },
+  {
+    name: "game-admin-broadcast",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Broadcast" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Broadcast" },
+    legacyReady: "#content textarea[name='text']",
+    migratedReady: ".legacy-admin-broadcast-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["To:", "All", "Players in the top 100", "Subject:", "Send"]
+  },
+  {
+    name: "game-admin-reports",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Reports" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Reports" },
+    legacyReady: "#content select[name='deletemessages']",
+    migratedReady: ".legacy-admin-reports-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Messages", "Action", "Date", "From", "Recipient", "Subject", "Delete highlighted messages"]
+  },
+  {
+    name: "game-admin-bots",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Bots" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Bots" },
+    legacyReady: "#content input[name='name']",
+    migratedReady: ".legacy-admin-bots-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Bot List:", "No bots found", "Add bot:", "Name", "Submit"]
+  },
+  {
+    name: "game-admin-coupons",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Coupons" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Coupons" },
+    legacyReady: "#content input[name='dm']",
+    migratedReady: ".legacy-admin-coupons-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Code", "Dark Matter", "Activated", "Add a single coupon", "Holiday coupons"]
+  },
+  {
+    name: "game-admin-colony-settings",
+    legacyPage: "admin",
+    legacyQuery: { mode: "ColonySettings" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "ColonySettings" },
+    legacyReady: "#content input[name='t1_a']",
+    migratedReady: ".legacy-admin-colony-settings-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Colonization settings", "Colonies in positions 1-3", "Save", "D = RND(a, b) * c"]
+  },
+  {
     name: "game-rename-planet",
     legacyPage: "renameplanet",
     migratedPath: "/game/rename-planet",

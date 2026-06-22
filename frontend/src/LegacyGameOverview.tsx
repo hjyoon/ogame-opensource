@@ -2689,10 +2689,52 @@ function officerRecruitHref(officerID: number, days: number) {
 }
 
 function AdminTable({ admin }: { admin: GameAdmin }) {
+  if (admin.mode === "Bans") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminBansTable />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "Broadcast") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminBroadcastTable />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "Reports") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminReportsTable />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "Bots") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminBotsTable admin={admin} />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "Coupons") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminCouponsTable />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "ColonySettings") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminColonySettingsTable />
+      </AdminModeShell>
+    );
+  }
   if (admin.mode !== "Home") {
     return (
-      <LegacyCenter>
-        <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table" width={750}>
+      <AdminModeShell admin={admin}>
+        <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table" width={519}>
           <tbody>
             <tr>
               <td className="legacy-c c">Admin Area</td>
@@ -2706,7 +2748,7 @@ function AdminTable({ admin }: { admin: GameAdmin }) {
             </tr>
           </tbody>
         </table>
-      </LegacyCenter>
+      </AdminModeShell>
     );
   }
   const rows: GameAdminMenuItem[][] = [];
@@ -2738,9 +2780,337 @@ function AdminTable({ admin }: { admin: GameAdmin }) {
   );
 }
 
+function AdminModeShell({ admin, children }: { admin: GameAdmin; children: React.ReactNode }) {
+  return (
+    <table border={0} cellPadding={0} cellSpacing={1} className="legacy-admin-mode-shell" width={750}>
+      <tbody>
+        <tr>
+          <td>
+            <AdminQuickPanel admin={admin} />
+            {children}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function AdminQuickPanel({ admin }: { admin: GameAdmin }) {
+  return (
+    <>
+      <table className="legacy-admin-quick-panel">
+        <tbody>
+          <tr>
+            <td>
+              {admin.menu.map((item) => (
+                <a href={adminModeHref(item.mode)} key={item.mode}>
+                  <img alt={item.label} height={32} src={item.image} title={item.label} width={32} />
+                </a>
+              ))}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <br />
+    </>
+  );
+}
+
+function AdminBansTable() {
+  return (
+    <form action={adminModeActionHref("Bans", "search")} method="POST" onSubmit={(event) => event.preventDefault()}>
+      <table className="legacy-admin-bans-table">
+        <tbody>
+          <tr>
+            <td className="c" colSpan={2}>
+              Find users
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <select name="searchby">
+                <option value="0">Banned with VM</option>
+                <option value="1">Banned without VM</option>
+                <option value="2">Attack bans</option>
+                <option value="3">Recently registered (days)</option>
+                <option value="4">User name (rough)</option>
+                <option value="5">Alliance Tag</option>
+                <option value="6">Same email address</option>
+                <option value="7">Same IP</option>
+              </select>
+            </td>
+            <td>
+              <input name="text" size={20} type="text" />
+            </td>
+          </tr>
+          <tr>
+            <td className="c" colSpan={2}>
+              <input type="submit" value="Submit" />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  );
+}
+
+function AdminBroadcastTable() {
+  return (
+    <form action={adminModeHref("Broadcast")} method="POST" onSubmit={(event) => event.preventDefault()}>
+      <table className="legacy-admin-broadcast-table">
+        <tbody>
+          <tr>
+            <td>
+              To:{" "}
+              <select name="cat">
+                <option value="0">All</option>
+                <option value="1">Beginners (less than 5.000 points)</option>
+                <option value="2">Players in the top 100</option>
+                <option value="3">Operators</option>
+              </select>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              Subject: <input name="subj" size={80} />
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <textarea cols={100} name="text" rows={20} />
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <center>
+                <input type="submit" value="Send" />
+              </center>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  );
+}
+
+function AdminReportsTable() {
+  return (
+    <table className="header legacy-admin-reports-outer">
+      <tbody>
+        <tr className="header">
+          <td>
+            <form action={adminModeHref("Reports")} method="POST" onSubmit={(event) => event.preventDefault()}>
+              <table className="legacy-admin-reports-table" width={519}>
+                <tbody>
+                  <tr>
+                    <td className="c" colSpan={5}>
+                      Messages
+                    </td>
+                  </tr>
+                  <tr>
+                    <th>Action</th>
+                    <th>Date</th>
+                    <th>From</th>
+                    <th>Recipient</th>
+                    <th>Subject</th>
+                  </tr>
+                  <tr>
+                    <td className="b"> </td>
+                    <td className="b" colSpan={4} />
+                  </tr>
+                  <tr>
+                    <th colSpan={5} style={{ padding: "0px 105px" }} />
+                  </tr>
+                  <tr>
+                    <th colSpan={5}>
+                      <select name="deletemessages">
+                        <option value="deletemarked">Delete highlighted messages</option>
+                        <option value="deleteall">Delete all messages</option>
+                      </select>
+                      <input type="submit" value="ok" />
+                    </th>
+                  </tr>
+                  <tr>
+                    <td colSpan={5}>
+                      <center> </center>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </form>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function AdminBotsTable({ admin }: { admin: GameAdmin }) {
+  if (admin.viewer.level < 2) {
+    return <LegacyFont color="red">Access denied.</LegacyFont>;
+  }
+  return (
+    <>
+      <center />
+      <h2>Bot List:</h2>
+      No bots found
+      <br />
+      <h2>Add bot:</h2>
+      <form action={adminModeHref("Bots")} method="POST" onSubmit={(event) => event.preventDefault()}>
+        <table className="legacy-admin-bots-table">
+          <tbody>
+            <tr>
+              <td>
+                Name <input name="name" size={10} type="text" /> <input type="submit" value="Submit" />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+    </>
+  );
+}
+
+function AdminCouponsTable() {
+  return (
+    <>
+      <table border={0} cellPadding={2} cellSpacing={1} className="legacy-admin-coupons-table">
+        <tbody>
+          <tr style={{ height: 20 }}>
+            <td className="c">Code</td>
+            <td className="c">Dark Matter</td>
+            <td className="c">Activated</td>
+            <td className="c">Universe</td>
+            <td className="c">Player</td>
+            <td className="c">Action</td>
+          </tr>
+          <tr>
+            <th colSpan={6} />
+          </tr>
+        </tbody>
+      </table>
+      <table>
+        <tbody>
+          <tr>
+            <td className="c">Add a single coupon</td>
+          </tr>
+          <tr>
+            <td>
+              <form action={adminModeActionHref("Coupons", "add_one")} method="POST" onSubmit={(event) => event.preventDefault()}>
+                Dark Matter <input name="dm" size={10} type="text" /> <input type="submit" />
+              </form>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <form action={adminModeActionHref("Coupons", "add_date")} method="POST" onSubmit={(event) => event.preventDefault()}>
+        <table>
+          <tbody>
+            <tr>
+              <td className="c" colSpan={2}>
+                Holiday coupons
+              </td>
+            </tr>
+            <tr>
+              <td>
+                Day in the format DD.MM <input name="ddmm" size={10} type="text" />
+              </td>
+              <td>
+                Time in HH:MM format <input defaultValue="10:00" name="hhmm" size={10} type="text" />
+              </td>
+            </tr>
+            <tr>
+              <td>Dark matter per coupon</td>
+              <td>
+                <input defaultValue="100000" name="darkmatter" size={10} type="text" />
+              </td>
+            </tr>
+            <tr>
+              <td>Send players who are inactive at least</td>
+              <td>
+                <input defaultValue="7" name="inactive_days" size={10} type="text" /> days
+              </td>
+            </tr>
+            <tr>
+              <td>Players must play at least</td>
+              <td>
+                <input defaultValue="365" name="ingame_days" size={10} type="text" /> days
+              </td>
+            </tr>
+            <tr>
+              <td>Periodicity of days (0-no periodicity)</td>
+              <td>
+                <input defaultValue="365" name="periodic" size={10} type="text" />
+              </td>
+            </tr>
+            <tr>
+              <td colSpan={2}>
+                <input type="submit" />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+    </>
+  );
+}
+
+function AdminColonySettingsTable() {
+  const rows = [
+    ["Colonies in positions 1-3", ["50", "120", "72"], ["t1_a", "t1_b", "t1_c"]],
+    ["Colonies in positions 4-6", ["50", "150", "120"], ["t2_a", "t2_b", "t2_c"]],
+    ["Colonies in positions 7-9", ["50", "120", "120"], ["t3_a", "t3_b", "t3_c"]],
+    ["Colonies in positions 10-12", ["50", "120", "96"], ["t4_a", "t4_b", "t4_c"]],
+    ["Colonies in positions 13-15 (and beyond)", ["50", "150", "96"], ["t5_a", "t5_b", "t5_c"]]
+  ] as const;
+  return (
+    <>
+      <form action={adminModeHref("ColonySettings")} method="POST" onSubmit={(event) => event.preventDefault()}>
+        <table className="legacy-admin-colony-settings-table">
+          <tbody>
+            <tr>
+              <td className="c" colSpan={2}>
+                Colonization settings
+              </td>
+            </tr>
+            {rows.map(([label, values, names]) => (
+              <tr key={label}>
+                <th>{label}</th>
+                <th>
+                  {values.map((value, index) => (
+                    <React.Fragment key={names[index]}>
+                      <input defaultValue={value} maxLength={3} name={names[index]} size={3} type="text" />{" "}
+                    </React.Fragment>
+                  ))}
+                </th>
+              </tr>
+            ))}
+            <tr>
+              <th colSpan={2}>
+                <input type="submit" value="Save" />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+      <br />
+      The diameter of a new colony is calculated by the formula: <pre>D = RND(a, b) * c</pre>
+      Each range has its own parameters (a, b, c)
+      <br />
+    </>
+  );
+}
+
 function adminModeHref(mode: string) {
   const query = new URLSearchParams(window.location.search);
   query.set("mode", mode);
+  return gameRouteURL("/game/admin", `?${query.toString()}`);
+}
+
+function adminModeActionHref(mode: string, action: string) {
+  const query = new URLSearchParams(window.location.search);
+  query.set("mode", mode);
+  query.set("action", action);
   return gameRouteURL("/game/admin", `?${query.toString()}`);
 }
 
