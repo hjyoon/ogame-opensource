@@ -71,6 +71,8 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		admin.UserRows, admin.ActiveUsers, err = r.loadAdminUsers(ctx)
 	case "Planets":
 		admin.PlanetRows, err = r.loadAdminPlanetRows(ctx)
+	case "Uni":
+		admin.Universe, err = r.loadAdminUniverse(ctx)
 	case "BattleReport":
 		admin.BattleReports, err = r.loadAdminBattleReports(ctx)
 	case "Checksum":
@@ -319,6 +321,75 @@ func (r AdminRepository) loadAdminPlanetRows(ctx context.Context) ([]domaingame.
 		result = append(result, row)
 	}
 	return result, rows.Err()
+}
+
+func (r AdminRepository) loadAdminUniverse(ctx context.Context) (*domaingame.AdminUniverseSettings, error) {
+	uniTable, err := tableName(r.prefix, "uni")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT COALESCE(num, 0), COALESCE(speed, 0), COALESCE(fspeed, 0), COALESCE(galaxies, 0), COALESCE(systems, 0), COALESCE(maxusers, 0), COALESCE(acs, 0), COALESCE(fid, 0), COALESCE(did, 0), COALESCE(rapid, 0), COALESCE(moons, 0), COALESCE(defrepair, 0), COALESCE(defrepair_delta, 0), COALESCE(usercount, 0), COALESCE(freeze, 0), COALESCE(news1, ''), COALESCE(news2, ''), COALESCE(news_until, 0), COALESCE(startdate, 0), COALESCE(battle_engine, ''), COALESCE(lang, ''), COALESCE(hacks, 0), COALESCE(ext_board, ''), COALESCE(ext_discord, ''), COALESCE(ext_tutorial, ''), COALESCE(ext_rules, ''), COALESCE(ext_impressum, ''), COALESCE(php_battle, 0), COALESCE(battle_max, 0), COALESCE(force_lang, 0), COALESCE(start_dm, 0), COALESCE(max_werf, 0), COALESCE(feedage, 0) FROM %s LIMIT 1",
+			uniTable,
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return nil, errors.New("admin universe settings not found")
+	}
+	var universe domaingame.AdminUniverseSettings
+	var rapid, moons, freeze, phpBattle, forceLang int
+	if err := rows.Scan(
+		&universe.Number,
+		&universe.Speed,
+		&universe.FleetSpeed,
+		&universe.Galaxies,
+		&universe.Systems,
+		&universe.MaxUsers,
+		&universe.ACS,
+		&universe.FleetDebris,
+		&universe.DefenseDebris,
+		&rapid,
+		&moons,
+		&universe.DefenseRepair,
+		&universe.DefenseDelta,
+		&universe.UserCount,
+		&freeze,
+		&universe.News1,
+		&universe.News2,
+		&universe.NewsUntil,
+		&universe.StartDate,
+		&universe.BattleEngine,
+		&universe.Language,
+		&universe.Hacks,
+		&universe.ExtBoard,
+		&universe.ExtDiscord,
+		&universe.ExtTutorial,
+		&universe.ExtRules,
+		&universe.ExtImpressum,
+		&phpBattle,
+		&universe.BattleMax,
+		&forceLang,
+		&universe.StartDarkMatter,
+		&universe.MaxShipyard,
+		&universe.FeedAge,
+	); err != nil {
+		return nil, err
+	}
+	universe.RapidFire = rapid != 0
+	universe.Moons = moons != 0
+	universe.Freeze = freeze != 0
+	universe.PHPBattle = phpBattle != 0
+	universe.ForceLanguage = forceLang != 0
+	return &universe, rows.Err()
 }
 
 func (r AdminRepository) loadAdminQueueRows(ctx context.Context) ([]domaingame.AdminQueueRow, error) {

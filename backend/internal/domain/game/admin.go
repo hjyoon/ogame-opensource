@@ -22,6 +22,7 @@ type Admin struct {
 	UserRows       []AdminUserRow
 	ActiveUsers    []AdminUserRow
 	PlanetRows     []AdminPlanetRow
+	Universe       *AdminUniverseSettings
 	QueueRows      []AdminQueueRow
 	BattleReports  []AdminBattleReportRow
 	ChecksumGroups []AdminChecksumGroup
@@ -87,6 +88,42 @@ type AdminPlanetRow struct {
 	Date        int64
 	Coordinates Coordinates
 	Owner       *AdminUserRow
+}
+
+type AdminUniverseSettings struct {
+	Number          int
+	Speed           float64
+	FleetSpeed      float64
+	Galaxies        int
+	Systems         int
+	MaxUsers        int
+	ACS             int
+	FleetDebris     int
+	DefenseDebris   int
+	RapidFire       bool
+	Moons           bool
+	DefenseRepair   int
+	DefenseDelta    int
+	UserCount       int
+	Freeze          bool
+	News1           string
+	News2           string
+	NewsUntil       int64
+	StartDate       int64
+	BattleEngine    string
+	Language        string
+	Hacks           int
+	ExtBoard        string
+	ExtDiscord      string
+	ExtTutorial     string
+	ExtRules        string
+	ExtImpressum    string
+	PHPBattle       bool
+	BattleMax       int
+	ForceLanguage   bool
+	StartDarkMatter int
+	MaxShipyard     int
+	FeedAge         int
 }
 
 type AdminQueueRow struct {

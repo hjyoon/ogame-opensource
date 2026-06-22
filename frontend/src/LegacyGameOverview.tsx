@@ -1048,6 +1048,7 @@ type GameAdmin = {
   userRows?: GameAdminUserRow[];
   activeUsers?: GameAdminUserRow[];
   planetRows?: GameAdminPlanetRow[];
+  universe?: GameAdminUniverseSettings;
   queueRows?: GameAdminQueueRow[];
   battleReports?: GameAdminBattleReportRow[];
   checksumGroups?: GameAdminChecksumGroup[];
@@ -1108,6 +1109,42 @@ type GameAdminPlanetRow = {
   date: number;
   coordinates: Coordinates;
   owner?: GameAdminUserRow;
+};
+
+type GameAdminUniverseSettings = {
+  number: number;
+  speed: number;
+  fleetSpeed: number;
+  galaxies: number;
+  systems: number;
+  maxUsers: number;
+  acs: number;
+  fleetDebris: number;
+  defenseDebris: number;
+  rapidFire: boolean;
+  moons: boolean;
+  defenseRepair: number;
+  defenseDelta: number;
+  userCount: number;
+  freeze: boolean;
+  news1: string;
+  news2: string;
+  newsUntil: number;
+  startDate: number;
+  battleEngine: string;
+  language: string;
+  hacks: number;
+  extBoard: string;
+  extDiscord: string;
+  extTutorial: string;
+  extRules: string;
+  extImpressum: string;
+  phpBattle: boolean;
+  battleMax: number;
+  forceLanguage: boolean;
+  startDarkMatter: number;
+  maxShipyard: number;
+  feedAge: number;
 };
 
 type GameAdminQueueRow = {
@@ -3862,161 +3899,126 @@ function adminPlanetCoordHTML(coordinates: Coordinates): string {
 }
 
 function AdminUniverseTable({ admin }: { admin: GameAdmin }) {
+  const universe = admin.universe;
+  if (!universe) {
+    return null;
+  }
   return (
-    <form action={adminModeHref("Uni")} method="POST" onSubmit={(event) => event.preventDefault()}>
-      <table className="legacy-admin-universe-table">
-        <tbody>
-          <tr>
-            <td className="c" colSpan={2}>
-              Universe 1 Settings
-            </td>
-          </tr>
-          <tr>
-            <th>Date of opening</th>
-            <th>{formatLegacyDateTime(Math.floor(Date.now() / 1000))}</th>
-          </tr>
-          <tr>
-            <th>
-              Hack attempt counter <a title="Any SQL injection attempts are logged for all players and the counter is incremented after each attempt.">[i]</a>
-            </th>
-            <th>
-              <a href={adminModeActionHref("Debug", "filter")}>0 (Check)</a>
-            </th>
-          </tr>
-          <tr>
-            <th>Number of players</th>
-            <th>1</th>
-          </tr>
-          <tr>
-            <th>Maximum number of players</th>
-            <th>
-              <input defaultValue="1000" maxLength={10} name="maxusers" size={10} type="text" />
-            </th>
-          </tr>
-          <tr>
-            <th>The amount of starting Dark Matter</th>
-            <th>
-              <input defaultValue={String(admin.currentPlanet.resources.darkMatter)} maxLength={10} name="start_dm" size={10} type="text" />
-            </th>
-          </tr>
-          <tr>
-            <th>Number of galaxies</th>
-            <th>
-              <input defaultValue="9" maxLength={3} name="galaxies" size={3} type="text" />
-            </th>
-          </tr>
-          <tr>
-            <th>Number of systems in the galaxy</th>
-            <th>
-              <input defaultValue="499" maxLength={3} name="systems" size={3} type="text" />
-            </th>
-          </tr>
-          <AdminUniverseSpeedRow label="Game speed" name="speed" />
-          <AdminUniverseSpeedRow label="Fleet speed" name="fspeed" />
-          <AdminUniversePercentRow label="Fleet into the debris" name="fid" />
-          <AdminUniversePercentRow label="Defense into the debris" name="did" />
-          <tr>
-            <th>Restoring Defense</th>
-            <th>
-              <input defaultValue="70" maxLength={3} name="defrepair" size={3} type="text" /> +/-
-              <input defaultValue="10" maxLength={3} name="defrepair_delta" size={3} type="text" /> %
-            </th>
-          </tr>
-          <tr>
-            <th>Invited players to the ACS</th>
-            <th>
-              <input defaultValue="5" maxLength={3} name="acs" size={3} type="text" /> (max 25 fleets)
-            </th>
-          </tr>
-          <tr>
-            <th>Rapidfire</th>
-            <th>
-              <input defaultChecked name="rapid" type="checkbox" />
-            </th>
-          </tr>
-          <tr>
-            <th>Moons and Death Stars</th>
-            <th>
-              <input defaultChecked name="moons" type="checkbox" />
-            </th>
-          </tr>
-          <tr>
-            <th>News 1</th>
-            <th>
-              <input defaultValue="" maxLength={99} name="news1" size={20} type="text" />
-            </th>
-          </tr>
-          <tr>
-            <th>News 2</th>
-            <th>
-              <input defaultValue="" maxLength={99} name="news2" size={20} type="text" />
-            </th>
-          </tr>
-          <tr>
-            <th>Prolong the news</th>
-            <th>
-              <input defaultValue="0" maxLength={3} name="news_upd" size={3} type="text" /> days
-            </th>
-          </tr>
-          <tr>
-            <th>Interface language</th>
-            <th>
-              <select name="lang">
-                <option value="es">English</option>
-                <option value="de">Deutsch</option>
-                <option value="fr">Francais</option>
-              </select>
-            </th>
-          </tr>
-          <tr>
-            <th>Forced to use the language of the universe</th>
-            <th>
-              <input name="force_lang" type="checkbox" />
-            </th>
-          </tr>
-          <tr>
-            <th>Pause the universe</th>
-            <th>
-              <input name="freeze" type="checkbox" />
-            </th>
-          </tr>
-          <tr>
-            <th colSpan={2}>
-              <input type="submit" value="Save" />
-            </th>
-          </tr>
-        </tbody>
-      </table>
-    </form>
+    <div
+      className="legacy-admin-universe-table"
+      dangerouslySetInnerHTML={{ __html: adminUniverseHTML(universe) }}
+      style={{ display: "contents" }}
+    />
   );
 }
 
-function AdminUniverseSpeedRow({ label, name }: { label: string; name: string }) {
-  return (
-    <tr>
-      <th>{label}</th>
-      <th>
-        <select name={name}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((value) => <option key={`${name}-${value}`} value={value}>{value}x</option>)}</select>
-      </th>
-    </tr>
-  );
+function adminUniverseHTML(universe: GameAdminUniverseSettings): string {
+  let html = "";
+  html += "<table >\n";
+  html += `<form action="${legacyHTMLAttribute(adminModeHref("Uni"))}" method="POST" >\n`;
+  html += `<tr><td class=c colspan=2>Universe ${universe.number} Settings</td></tr>\n`;
+  html += `<tr><th>Date of opening</th><th>${formatLegacyAdminDateTime(universe.startDate)}</th></tr>\n`;
+  html += `<tr><th>Hack attempt counter <a title="Any SQL injection attempts are logged for all players and the counter is incremented after each attempt. Cleared after relogin"><img src='/public-assets/game/img/r5.png' /></a></th><th><a href="${legacyHTMLAttribute(
+    adminHackCheckHref()
+  )}">${universe.hacks} (Check)</a></th></tr>\n`;
+  html += `<tr><th>Number of players</th><th>${universe.userCount}</th></tr>\n`;
+  html += adminTextInputRow("Maximum number of players", "maxusers", 10, 10, universe.maxUsers);
+  html += adminTextInputRow("The amount of starting Dark Matter", "start_dm", 10, 10, universe.startDarkMatter);
+  html += adminTextInputRow("Number of galaxies", "galaxies", 3, 3, universe.galaxies);
+  html += adminTextInputRow("Number of systems in the galaxy", "systems", 3, 3, universe.systems);
+  html += adminTextInputRow("Maximum number of units in a shipyard order", "max_werf", 9, 9, universe.maxShipyard);
+  html += adminTextInputRow("RSS/Atom refresh period in minutes for Commander", "feedage", 3, 3, universe.feedAge);
+  html += adminSpeedSelectRow("Game speed", "speed", universe.speed);
+  html += adminSpeedSelectRow("Fleet speed", "fspeed", universe.fleetSpeed);
+  html += adminPercentSelectRow("Fleet into the debris", "fid", universe.fleetDebris);
+  html += adminPercentSelectRow("Defense into the debris", "did", universe.defenseDebris);
+  html += `<tr><th>Restoring Defense</th><th>\n<input type="text" name="defrepair" maxlength="3" size="3" value="${legacyHTMLAttribute(
+    String(universe.defenseRepair)
+  )}" /> +/-\n<input type="text" name="defrepair_delta" maxlength="3" size="3" value="${legacyHTMLAttribute(
+    String(universe.defenseDelta)
+  )}" /> %\n</th></tr>\n`;
+  html += `<tr><th>Invited players to the ACS</th><th><input type="text" name="acs" maxlength="3" size="3" value="${legacyHTMLAttribute(
+    String(universe.acs)
+  )}" /> (max ${universe.acs * universe.acs} fleets)</th></tr>\n`;
+  html += adminCheckboxRow("Rapidfire", "rapid", universe.rapidFire);
+  html += adminCheckboxRow("Moons and Death Stars", "moons", universe.moons);
+  html += adminTextInputRow("News 1", "news1", 99, 20, universe.news1);
+  html += adminTextInputRow("News 2", "news2", 99, 20, universe.news2);
+  if (Math.floor(Date.now() / 1000) > universe.newsUntil) {
+    html += '<tr><th>Prolong the news</th><th><input type="text" name="news_upd" maxlength="3" size="3" value="0" /> days</th></tr>\n';
+  } else {
+    html += `<tr><th>Show the news until</th><th>${formatLegacyAdminDateTime(
+      universe.newsUntil
+    )} <input type="checkbox" name="news_off"  /> remove</th></tr>\n`;
+  }
+  html += '<tr><th>Interface language</th><th>\n   <select name="lang">\n';
+  for (const language of adminUniverseLanguages) {
+    html += `    <option value="${legacyHTMLAttribute(language.id)}" ${adminSelected(universe.language, language.id)} >${legacyHTMLText(
+      language.name
+    )}</option>\n`;
+  }
+  html += "   </select>\n</th></tr>\n";
+  html += adminCheckboxRow("Forced to use the language of the universe", "force_lang", universe.forceLanguage);
+  html += adminTextInputRow("Board", "ext_board", 99, 20, universe.extBoard);
+  html += adminTextInputRow("Discord", "ext_discord", 99, 20, universe.extDiscord);
+  html += adminTextInputRow("Help", "ext_tutorial", 99, 20, universe.extTutorial);
+  html += adminTextInputRow("Rules", "ext_rules", 99, 20, universe.extRules);
+  html += adminTextInputRow("Impressum", "ext_impressum", 99, 20, universe.extImpressum);
+  html += adminTextInputRow("Path to battle engine", "battle_engine", 99, 20, universe.battleEngine);
+  html += adminCheckboxRow("Use a PHP-based battle engine", "php_battle", universe.phpBattle);
+  html += adminTextInputRow("Maximum number of units on one side", "battle_max", 99, 20, universe.battleMax);
+  html += `<tr><th>Pause the universe <a title="When the universe is paused, no events will be triggered (the queue will be stopped). After the pause is removed, all completed events will be executed in the queue order. All active players are forced into vacation mode."><img src='/public-assets/game/img/r5.png' /></a>\n</th><th><input type="checkbox" name="freeze"  ${adminChecked(
+    universe.freeze
+  )} /></th></tr>\n`;
+  html += '<tr><th colspan=2><input type="submit" value="Save" /></th></tr>\n\n';
+  html += "</form>\n</table>\n";
+  return html;
 }
 
-function AdminUniversePercentRow({ label, name }: { label: string; name: string }) {
-  return (
-    <tr>
-      <th>{label}</th>
-      <th>
-        <select name={name}>
-          {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map((value) => (
-            <option key={`${name}-${value}`} value={value}>
-              {value}%
-            </option>
-          ))}
-        </select>
-      </th>
-    </tr>
-  );
+const adminUniverseLanguages = [
+  { id: "de", name: "Deutsch" },
+  { id: "en", name: "English" },
+  { id: "es", name: "Espa\u00f1ol" },
+  { id: "fr", name: "Fran\u00e7ais" },
+  { id: "it", name: "Italiano" },
+  { id: "jp", name: "\u65e5\u672c\u8a9e" },
+  { id: "ru", name: "\u0420\u0443\u0441\u0441\u043a\u0438\u0439" }
+];
+
+function adminTextInputRow(label: string, name: string, maxLength: number, size: number, value: string | number): string {
+  return `<tr><th>${legacyHTMLText(label)}</th><th><input type="text" name="${legacyHTMLAttribute(name)}" maxlength="${maxLength}" size="${size}" value="${legacyHTMLAttribute(
+    String(value)
+  )}" /></th></tr>\n`;
+}
+
+function adminCheckboxRow(label: string, name: string, checked: boolean): string {
+  return `<tr><th>${legacyHTMLText(label)}</th><th><input type="checkbox" name="${legacyHTMLAttribute(name)}"  ${adminChecked(checked)} /></th></tr>\n`;
+}
+
+function adminSpeedSelectRow(label: string, name: string, selected: number): string {
+  let html = `\n  <tr>\n   <th>${legacyHTMLText(label)}</th>\n   <th>\n   <select name="${legacyHTMLAttribute(name)}">\n`;
+  for (let value = 1; value <= 10; value += 1) {
+    html += `     <option value="${value}" ${adminSelected(selected, value)}>${value}x</option>\n`;
+  }
+  html += "   </select>\n   </th>\n </tr>\n\n";
+  return html;
+}
+
+function adminPercentSelectRow(label: string, name: string, selected: number): string {
+  let html = `\n  <tr>\n   <th>${legacyHTMLText(label)}</th>\n   <th>\n   <select name="${legacyHTMLAttribute(name)}">\n`;
+  for (let value = 0; value <= 100; value += 10) {
+    html += `     <option value="${value}" ${adminSelected(selected, value)}>${value}%</option>\n`;
+  }
+  html += "   </select>\n   </th>\n </tr>\n\n";
+  return html;
+}
+
+function adminSelected(option: string | number, value: string | number): string {
+  return String(option) === String(value) ? "selected" : "";
+}
+
+function adminChecked(checked: boolean): string {
+  return checked ? "checked" : "";
 }
 
 function AdminChecksumTable({ groups }: { groups: GameAdminChecksumGroup[] }) {
@@ -4664,6 +4666,13 @@ function adminGalaxyHref(coordinates: Coordinates) {
   query.set("galaxy", String(coordinates.galaxy));
   query.set("system", String(coordinates.system));
   return gameRouteURL("/game/galaxy", `?${query.toString()}`);
+}
+
+function adminHackCheckHref() {
+  const query = new URLSearchParams(window.location.search);
+  query.set("mode", "Debug");
+  query.set("filter", "HACKING");
+  return gameRouteURL("/game/admin", `?${query.toString()}`);
 }
 
 function adminModeModActionHref(mode: string, action: string, modname: string) {

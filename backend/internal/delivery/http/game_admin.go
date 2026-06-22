@@ -32,6 +32,7 @@ type gameAdminSummary struct {
 	UserRows       []gameAdminUserRow          `json:"userRows,omitempty"`
 	ActiveUsers    []gameAdminUserRow          `json:"activeUsers,omitempty"`
 	PlanetRows     []gameAdminPlanetRow        `json:"planetRows,omitempty"`
+	Universe       *gameAdminUniverseSettings  `json:"universe,omitempty"`
 	QueueRows      []gameAdminQueueRow         `json:"queueRows,omitempty"`
 	BattleReports  []gameAdminBattleReportRow  `json:"battleReports,omitempty"`
 	ChecksumGroups []gameAdminChecksumGroup    `json:"checksumGroups,omitempty"`
@@ -92,6 +93,42 @@ type gameAdminPlanetRow struct {
 	Date        int64                   `json:"date"`
 	Coordinates gameCoordinatesResponse `json:"coordinates"`
 	Owner       *gameAdminUserRow       `json:"owner,omitempty"`
+}
+
+type gameAdminUniverseSettings struct {
+	Number          int     `json:"number"`
+	Speed           float64 `json:"speed"`
+	FleetSpeed      float64 `json:"fleetSpeed"`
+	Galaxies        int     `json:"galaxies"`
+	Systems         int     `json:"systems"`
+	MaxUsers        int     `json:"maxUsers"`
+	ACS             int     `json:"acs"`
+	FleetDebris     int     `json:"fleetDebris"`
+	DefenseDebris   int     `json:"defenseDebris"`
+	RapidFire       bool    `json:"rapidFire"`
+	Moons           bool    `json:"moons"`
+	DefenseRepair   int     `json:"defenseRepair"`
+	DefenseDelta    int     `json:"defenseDelta"`
+	UserCount       int     `json:"userCount"`
+	Freeze          bool    `json:"freeze"`
+	News1           string  `json:"news1"`
+	News2           string  `json:"news2"`
+	NewsUntil       int64   `json:"newsUntil"`
+	StartDate       int64   `json:"startDate"`
+	BattleEngine    string  `json:"battleEngine"`
+	Language        string  `json:"language"`
+	Hacks           int     `json:"hacks"`
+	ExtBoard        string  `json:"extBoard"`
+	ExtDiscord      string  `json:"extDiscord"`
+	ExtTutorial     string  `json:"extTutorial"`
+	ExtRules        string  `json:"extRules"`
+	ExtImpressum    string  `json:"extImpressum"`
+	PHPBattle       bool    `json:"phpBattle"`
+	BattleMax       int     `json:"battleMax"`
+	ForceLanguage   bool    `json:"forceLanguage"`
+	StartDarkMatter int     `json:"startDarkMatter"`
+	MaxShipyard     int     `json:"maxShipyard"`
+	FeedAge         int     `json:"feedAge"`
 }
 
 type gameAdminQueueRow struct {
@@ -211,6 +248,7 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 	for _, row := range admin.PlanetRows {
 		planetRows = append(planetRows, toGameAdminPlanetRow(row))
 	}
+	universe := toGameAdminUniverseSettings(admin.Universe)
 	queueRows := make([]gameAdminQueueRow, 0, len(admin.QueueRows))
 	for _, row := range admin.QueueRows {
 		queueRows = append(queueRows, gameAdminQueueRow{
@@ -265,9 +303,51 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		UserRows:       userRows,
 		ActiveUsers:    activeUsers,
 		PlanetRows:     planetRows,
+		Universe:       universe,
 		QueueRows:      queueRows,
 		BattleReports:  battleReports,
 		ChecksumGroups: checksumGroups,
+	}
+}
+
+func toGameAdminUniverseSettings(universe *domaingame.AdminUniverseSettings) *gameAdminUniverseSettings {
+	if universe == nil {
+		return nil
+	}
+	return &gameAdminUniverseSettings{
+		Number:          universe.Number,
+		Speed:           universe.Speed,
+		FleetSpeed:      universe.FleetSpeed,
+		Galaxies:        universe.Galaxies,
+		Systems:         universe.Systems,
+		MaxUsers:        universe.MaxUsers,
+		ACS:             universe.ACS,
+		FleetDebris:     universe.FleetDebris,
+		DefenseDebris:   universe.DefenseDebris,
+		RapidFire:       universe.RapidFire,
+		Moons:           universe.Moons,
+		DefenseRepair:   universe.DefenseRepair,
+		DefenseDelta:    universe.DefenseDelta,
+		UserCount:       universe.UserCount,
+		Freeze:          universe.Freeze,
+		News1:           universe.News1,
+		News2:           universe.News2,
+		NewsUntil:       universe.NewsUntil,
+		StartDate:       universe.StartDate,
+		BattleEngine:    universe.BattleEngine,
+		Language:        universe.Language,
+		Hacks:           universe.Hacks,
+		ExtBoard:        universe.ExtBoard,
+		ExtDiscord:      universe.ExtDiscord,
+		ExtTutorial:     universe.ExtTutorial,
+		ExtRules:        universe.ExtRules,
+		ExtImpressum:    universe.ExtImpressum,
+		PHPBattle:       universe.PHPBattle,
+		BattleMax:       universe.BattleMax,
+		ForceLanguage:   universe.ForceLanguage,
+		StartDarkMatter: universe.StartDarkMatter,
+		MaxShipyard:     universe.MaxShipyard,
+		FeedAge:         universe.FeedAge,
 	}
 }
 

@@ -89,6 +89,31 @@ func TestAdminRepositoryReadsPlanetRows(t *testing.T) {
 	}
 }
 
+func TestAdminRepositoryReadsUniverseSettings(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{
+			1, float64(128), float64(2), 9, 499, 1000, 5, 30, 0, 1, 1, 70, 10, 42, 0,
+			"news one", "news two", int64(1700003600), int64(1700000000), "../cgi-bin/battle", "en", 3,
+			"https://board.example", "https://discord.example", "", "", "", 1, 1000000, 0, 1000, 999, 60,
+		})},
+	)}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "Uni"})
+
+	if err != nil {
+		t.Fatalf("GetAdmin returned error: %v", err)
+	}
+	if admin.Universe == nil || admin.Universe.Speed != 128 || !admin.Universe.RapidFire || !admin.Universe.PHPBattle || admin.Universe.ExtBoard != "https://board.example" {
+		t.Fatalf("unexpected universe settings: %+v", admin.Universe)
+	}
+	lastSQL := queryer.calls[len(queryer.calls)-1].sql
+	if !strings.Contains(lastSQL, "`ogame_uni`") || !strings.Contains(lastSQL, "COALESCE(start_dm, 0)") || !strings.Contains(lastSQL, "LIMIT 1") {
+		t.Fatalf("expected universe settings query, got %s", lastSQL)
+	}
+}
+
 func TestAdminRepositoryReadsUserLogRowsInLegacyDisplayOrder(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
