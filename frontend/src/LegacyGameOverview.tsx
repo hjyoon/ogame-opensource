@@ -8756,7 +8756,7 @@ function TechnologyTable({
   technology: GameTechnology;
 }) {
   if (technology.details) {
-    return <TechnologyDetailsTable details={technology.details} onBuildingAction={onBuildingAction} />;
+    return <TechnologyDetailsTable details={technology.details} />;
   }
   return <div dangerouslySetInnerHTML={{ __html: technologyTreeHTML(technology) }} />;
 }
@@ -8784,107 +8784,40 @@ function technologyTreeHTML(technology: GameTechnology): string {
   return `<center> \n<table class="legacy-technology-table" width=470> \n${rows}</table> \n<br><br><br><br>\n`;
 }
 
-function TechnologyDetailsTable({
-  details,
-  onBuildingAction
-}: {
-  details: GameTechnologyDetails;
-  onBuildingAction: (action: "add" | "destroy" | "remove", techID: number, listID?: number) => void;
-}) {
-  return (
-    <div className="legacy-center">
-      <table className="legacy-overview-table legacy-technology-details-table" width={270}>
-        <tbody>
-          <tr>
-            <td align="center" className="legacy-c c legacy-technology-details-title" style={{ whiteSpace: "nowrap" }}>
-              Building conditions for{" "}
-              <a className="legacy-technology-detail-target" href={technologyInfoURL(details.target.id)}>
-                &apos;{details.target.name}&apos;
-              </a>
-            </td>
-          </tr>
-          {details.levels.length === 0 ? (
-            <tr>
-              <td align="center" className="legacy-l l">
-                No conditions
-              </td>
-            </tr>
-          ) : (
-            details.levels.map((level) => (
-              <React.Fragment key={level.step}>
-                <tr>
-                  <td className="legacy-c c">{level.step}</td>
-                </tr>
-                {level.requirements.map((requirement) => (
-                  <tr data-technology-detail-row={requirement.id} key={`${level.step}-${requirement.id}`}>
-                    <td align="center" className="legacy-l l">
-                      <table border={0} className="legacy-technology-name-table" width="100%">
-                        <tbody>
-                          <tr>
-                            <td align="left">
-                              {" "}
-                              {legacyFont(requirement.met ? "#00ff00" : "#ff0000", ` ${requirement.name} (level ${requirement.level}) `)}
-                              {" "}
-                            </td>
-                            <td align="right">
-                              {" "}
-                              <a href={technologyDetailURL(requirement.id)}>[i]</a>
-                              {" "}
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </td>
-                  </tr>
-                ))}
-              </React.Fragment>
-            ))
-          )}
-        </tbody>
-      </table>
-      {details.demolish ? (
-        <table className="legacy-overview-table legacy-technology-demolish-table" width={519}>
-          <tbody>
-            <tr>
-              <td align="center" className="legacy-c c">
-                <a
-                  href={buildingActionURL("destroy", details.target.id)}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    onBuildingAction("destroy", details.target.id);
-                  }}
-                >
-                  Demolish: {details.target.name} Level {details.demolish.level} destroy?
-                </a>
-              </td>
-            </tr>
-            <tr>
-              <th>
-                Demolition costs:
-                {costParts(details.demolish.cost).map((part) => (
-                  <React.Fragment key={part.name}>
-                    {" "}
-                    {part.name}: <b>{formatLegacyNumber(part.value)}</b>
-                  </React.Fragment>
-                ))}
-              </th>
-            </tr>
-            <tr>
-              <th>
-                <br />
-                Demolition duration {formatLegacyDuration(details.demolish.durationSeconds)}
-                <br />
-              </th>
-            </tr>
-          </tbody>
-        </table>
-      ) : null}
-      <br />
-      <br />
-      <br />
-      <br />
-    </div>
-  );
+function TechnologyDetailsTable({ details }: { details: GameTechnologyDetails }) {
+  return <div dangerouslySetInnerHTML={{ __html: technologyDetailsHTML(details) }} />;
+}
+
+function technologyDetailsHTML(details: GameTechnologyDetails): string {
+  let html = "<center> \n";
+  html += '<table class="legacy-technology-details-table" width=270> \n';
+  html += "<tr> \n";
+  html += "<td class=c align=center nowrap> \n";
+  html += `Building conditions for <a href="${legacyHTMLAttribute(technologyInfoURL(details.target.id))}">'${legacyHTMLText(details.target.name)}'</a></td> \n`;
+  html += "</tr> \n";
+  if (details.levels.length === 0) {
+    html += "<tr><td class=l align=center>No conditions</td></tr> ";
+  }
+  for (const level of details.levels) {
+    html += `<tr><td class=c>${level.step}</td></tr>`;
+    for (const requirement of level.requirements) {
+      const color = requirement.met ? "#00ff00" : "#ff0000";
+      html += "<tr>\n";
+      html += "    <td class=l align=center> \n";
+      html += '    <table width="100%" border=0> \n';
+      html += "    <tr> \n";
+      html += `        <td align=left> <font color="${color}"> ${legacyHTMLText(requirement.name)} (level ${requirement.level}) </font> </td> \n`;
+      html += `        <td align=right> <a href="${legacyHTMLAttribute(technologyDetailURL(requirement.id))}">[i]</a> </td> \n`;
+      html += "    </tr> \n";
+      html += "    </td> \n";
+      html += "    </table> \n";
+      html += "</tr>";
+    }
+  }
+  html += "</table> \n";
+  html += "</center>";
+  html += "<br><br><br><br>\n";
+  return html;
 }
 
 function legacyFont(color: string, children: React.ReactNode): React.ReactElement {
