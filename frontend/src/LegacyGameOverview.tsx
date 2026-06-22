@@ -8781,58 +8781,30 @@ function TechnologyTable({
   if (technology.details) {
     return <TechnologyDetailsTable details={technology.details} onBuildingAction={onBuildingAction} />;
   }
-  return (
-    <div className="legacy-center">
-      <table className="legacy-overview-table legacy-technology-table" width={470}>
-        <tbody>
-          {technology.groups.map((group) => (
-            <React.Fragment key={group.key}>
-              <tr>
-                <td className="legacy-c c">{group.name}</td>
-                <td className="legacy-c c">Requirements</td>
-              </tr>
-              {group.items.map((item) => (
-                <tr data-technology-row={item.id} key={item.id}>
-                  <td className="legacy-l l">
-                    {" "}
-                    <table border={0} cellPadding={0} cellSpacing={0} className="legacy-technology-name-table" width="100%">
-                      <tbody>
-                        <tr>
-                          <td align="left">
-                            <a className="legacy-technology-name-link" href={technologyInfoURL(item.id)}>
-                              {item.name}
-                            </a>
-                            {" "}
-                          </td>
-                          <td align="right">
-                            {item.detailsAvailable ? <a href={technologyDetailURL(item.id)}>[i]</a> : "\u00a0"}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </td>
-                  <td className="legacy-l l">
-                    {" "}
-                    {item.requirements.map((requirement) => (
-                      <React.Fragment key={requirement.id}>
-                        {legacyFont(requirement.met ? "#00ff00" : "#ff0000", `${requirement.name} (level ${requirement.level})`)}
-                        <br />
-                        {" "}
-                      </React.Fragment>
-                    ))}
-                  </td>
-                </tr>
-              ))}
-            </React.Fragment>
-          ))}
-        </tbody>
-      </table>
-      <br />
-      <br />
-      <br />
-      <br />
-    </div>
-  );
+  return <div dangerouslySetInnerHTML={{ __html: technologyTreeHTML(technology) }} />;
+}
+
+function technologyTreeHTML(technology: GameTechnology): string {
+  const rows = technology.groups
+    .map((group) => {
+      const items = group.items
+        .map((item) => {
+          const details = item.detailsAvailable
+            ? `<a href="${legacyHTMLAttribute(technologyDetailURL(item.id))}">[i]</a>`
+            : "&nbsp;";
+          const requirements = item.requirements
+            .map((requirement) => {
+              const color = requirement.met ? "#00ff00" : "#ff0000";
+              return `<font color="${color}">${legacyHTMLText(requirement.name)} (level ${requirement.level})</font><br /> \n`;
+            })
+            .join("");
+          return `<tr> \n<td class=l> \n<table width="100%" border=0 cellspacing=0 cellpadding=0><tr><td align=left><a href="${legacyHTMLAttribute(technologyInfoURL(item.id))}">${legacyHTMLText(item.name)}</a> \n</td><td align=right>${details}</td></tr></table></td> \n<td class=l> \n${requirements}</td> \n`;
+        })
+        .join("");
+      return `<tr><td class=c>${legacyHTMLText(group.name)}</td><td class=c>Requirements</td></tr> \n${items}\n`;
+    })
+    .join("");
+  return `<center> \n<table class="legacy-technology-table" width=470> \n${rows}</table> \n<br><br><br><br>\n`;
 }
 
 function TechnologyDetailsTable({
