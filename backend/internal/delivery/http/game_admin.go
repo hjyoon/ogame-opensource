@@ -31,6 +31,7 @@ type gameAdminSummary struct {
 	UserLogRows    []gameAdminUserLogRow       `json:"userLogRows,omitempty"`
 	UserRows       []gameAdminUserRow          `json:"userRows,omitempty"`
 	ActiveUsers    []gameAdminUserRow          `json:"activeUsers,omitempty"`
+	PlanetRows     []gameAdminPlanetRow        `json:"planetRows,omitempty"`
 	QueueRows      []gameAdminQueueRow         `json:"queueRows,omitempty"`
 	BattleReports  []gameAdminBattleReportRow  `json:"battleReports,omitempty"`
 	ChecksumGroups []gameAdminChecksumGroup    `json:"checksumGroups,omitempty"`
@@ -83,6 +84,14 @@ type gameAdminUserPlanet struct {
 	ID          int                     `json:"id"`
 	Name        string                  `json:"name"`
 	Coordinates gameCoordinatesResponse `json:"coordinates"`
+}
+
+type gameAdminPlanetRow struct {
+	ID          int                     `json:"id"`
+	Name        string                  `json:"name"`
+	Date        int64                   `json:"date"`
+	Coordinates gameCoordinatesResponse `json:"coordinates"`
+	Owner       *gameAdminUserRow       `json:"owner,omitempty"`
 }
 
 type gameAdminQueueRow struct {
@@ -198,6 +207,10 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 	for _, row := range admin.ActiveUsers {
 		activeUsers = append(activeUsers, toGameAdminUserRow(row))
 	}
+	planetRows := make([]gameAdminPlanetRow, 0, len(admin.PlanetRows))
+	for _, row := range admin.PlanetRows {
+		planetRows = append(planetRows, toGameAdminPlanetRow(row))
+	}
 	queueRows := make([]gameAdminQueueRow, 0, len(admin.QueueRows))
 	for _, row := range admin.QueueRows {
 		queueRows = append(queueRows, gameAdminQueueRow{
@@ -251,9 +264,25 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		UserLogRows:    userLogRows,
 		UserRows:       userRows,
 		ActiveUsers:    activeUsers,
+		PlanetRows:     planetRows,
 		QueueRows:      queueRows,
 		BattleReports:  battleReports,
 		ChecksumGroups: checksumGroups,
+	}
+}
+
+func toGameAdminPlanetRow(row domaingame.AdminPlanetRow) gameAdminPlanetRow {
+	var owner *gameAdminUserRow
+	if row.Owner != nil {
+		mapped := toGameAdminUserRow(*row.Owner)
+		owner = &mapped
+	}
+	return gameAdminPlanetRow{
+		ID:          row.ID,
+		Name:        row.Name,
+		Date:        row.Date,
+		Coordinates: toGameCoordinatesResponse(row.Coordinates),
+		Owner:       owner,
 	}
 }
 

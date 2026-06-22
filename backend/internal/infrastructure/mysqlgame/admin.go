@@ -69,6 +69,8 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		admin.UserLogRows, err = r.loadAdminUserLogRows(ctx)
 	case "Users":
 		admin.UserRows, admin.ActiveUsers, err = r.loadAdminUsers(ctx)
+	case "Planets":
+		admin.PlanetRows, err = r.loadAdminPlanetRows(ctx)
 	case "BattleReport":
 		admin.BattleReports, err = r.loadAdminBattleReports(ctx)
 	case "Checksum":
@@ -257,6 +259,62 @@ func (r AdminRepository) queryAdminUsers(ctx context.Context, sql string, args .
 					Position: position,
 				},
 			}
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+func (r AdminRepository) loadAdminPlanetRows(ctx context.Context) ([]domaingame.AdminPlanetRow, error) {
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return nil, err
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT p.planet_id, COALESCE(p.name, ''), COALESCE(p.date, 0), COALESCE(p.g, 0), COALESCE(p.s, 0), COALESCE(p.p, 0), COALESCE(u.player_id, 0), COALESCE(u.oname, ''), COALESCE(u.regdate, 0), COALESCE(u.lastclick, 0), COALESCE(u.vacation, 0), COALESCE(u.banned, 0), COALESCE(u.noattack, 0), COALESCE(u.disable, 0) FROM %s p LEFT JOIN %s u ON u.player_id = p.owner_id ORDER BY p.date DESC LIMIT 25",
+			planetsTable,
+			usersTable,
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domaingame.AdminPlanetRow, 0, 25)
+	for rows.Next() {
+		var row domaingame.AdminPlanetRow
+		var owner domaingame.AdminUserRow
+		var vacation, banned, noattack, disable int
+		if err := rows.Scan(
+			&row.ID,
+			&row.Name,
+			&row.Date,
+			&row.Coordinates.Galaxy,
+			&row.Coordinates.System,
+			&row.Coordinates.Position,
+			&owner.PlayerID,
+			&owner.Name,
+			&owner.RegDate,
+			&owner.LastClick,
+			&vacation,
+			&banned,
+			&noattack,
+			&disable,
+		); err != nil {
+			return nil, err
+		}
+		if owner.PlayerID != 0 {
+			owner.Vacation = vacation != 0
+			owner.Banned = banned != 0
+			owner.NoAttack = noattack != 0
+			owner.Disable = disable != 0
+			row.Owner = &owner
 		}
 		result = append(result, row)
 	}

@@ -21,6 +21,7 @@ type Admin struct {
 	UserLogRows    []AdminUserLogRow
 	UserRows       []AdminUserRow
 	ActiveUsers    []AdminUserRow
+	PlanetRows     []AdminPlanetRow
 	QueueRows      []AdminQueueRow
 	BattleReports  []AdminBattleReportRow
 	ChecksumGroups []AdminChecksumGroup
@@ -78,6 +79,14 @@ type AdminUserPlanet struct {
 	ID          int
 	Name        string
 	Coordinates Coordinates
+}
+
+type AdminPlanetRow struct {
+	ID          int
+	Name        string
+	Date        int64
+	Coordinates Coordinates
+	Owner       *AdminUserRow
 }
 
 type AdminQueueRow struct {

@@ -1047,6 +1047,7 @@ type GameAdmin = {
   userLogRows?: GameAdminUserLogRow[];
   userRows?: GameAdminUserRow[];
   activeUsers?: GameAdminUserRow[];
+  planetRows?: GameAdminPlanetRow[];
   queueRows?: GameAdminQueueRow[];
   battleReports?: GameAdminBattleReportRow[];
   checksumGroups?: GameAdminChecksumGroup[];
@@ -1099,6 +1100,14 @@ type GameAdminUserPlanet = {
   id: number;
   name: string;
   coordinates: Coordinates;
+};
+
+type GameAdminPlanetRow = {
+  id: number;
+  name: string;
+  date: number;
+  coordinates: Coordinates;
+  owner?: GameAdminUserRow;
 };
 
 type GameAdminQueueRow = {
@@ -2885,7 +2894,7 @@ function AdminTable({ admin }: { admin: GameAdmin }) {
   if (admin.mode === "Planets") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminPlanetsTable />
+        <AdminPlanetsTable admin={admin} />
       </AdminModeShell>
     );
   }
@@ -3809,44 +3818,47 @@ function adminUserColor(user: GameAdminUserRow): string {
   return "";
 }
 
-function AdminPlanetsTable() {
+function AdminPlanetsTable({ admin }: { admin: GameAdmin }) {
   return (
-    <>
-      <span>New Planets:</span>
-      <br />
-      <table className="legacy-admin-planets-table">
-        <tbody>
-          <tr>
-            <td className="c">Creation date</td>
-            <td className="c">Coordinates</td>
-            <td className="c">Planet</td>
-            <td className="c">Player</td>
-          </tr>
-        </tbody>
-      </table>
-      Search:
-      <br />
-      <form action={adminModeActionHref("Planets", "search")} method="post" onSubmit={(event) => event.preventDefault()}>
-        <table className="legacy-admin-planets-search-table">
-          <tbody>
-            <tr>
-              <th>
-                <select name="type">
-                  <option value="playername">Player name</option>
-                  <option value="planetname">Planet name</option>
-                  <option value="allytag">Ally tag</option>
-                </select>
-                &nbsp;&nbsp;
-                <input name="searchtext" type="text" defaultValue="" />
-                &nbsp;&nbsp;
-                <input type="submit" value="Search" />
-              </th>
-            </tr>
-          </tbody>
-        </table>
-      </form>
-    </>
+    <div
+      className="legacy-admin-planets-table"
+      dangerouslySetInnerHTML={{ __html: adminPlanetsHTML(admin) }}
+      style={{ display: "contents" }}
+    />
   );
+}
+
+function adminPlanetsHTML(admin: GameAdmin): string {
+  const planets = admin.planetRows ?? [];
+  let html = "";
+  html += "New Planets:<br>\n";
+  html += "<table>\n";
+  html += '<tr><td class=c>Creation date</td><td class=c>Coordinates</td><td class=c>Planet</td><td class=c>Player</td></tr>\n';
+  for (const planet of planets) {
+    html += `<tr><th>${formatLegacyAdminDateTime(planet.date)}</th><th>${adminPlanetCoordHTML(planet.coordinates)}</th>`;
+    html += `<th><a href="${legacyHTMLAttribute(adminPlanetHref(planet.id))}">${legacyHTMLText(planet.name)}</a></th>`;
+    html += `<th>${planet.owner ? adminUserNameHTML(planet.owner) : ""}</th></tr>\n`;
+  }
+  html += "</table>\n";
+  html += "\n       </th> \n       </tr> \n    </table>\n";
+  html += "    Search:<br>\n";
+  html += ` <form action="${legacyHTMLAttribute(adminModeActionHref("Planets", "search"))}" method="post">\n`;
+  html += " <table>\n  <tr>\n   <th>\n";
+  html += '    <select name="type">\n';
+  html += '     <option value="playername">Player name</option>\n';
+  html += '     <option value="planetname" >Planet name</option>\n';
+  html += '     <option value="allytag" >Ally tag</option>\n';
+  html += "    </select>\n";
+  html += "    &nbsp;&nbsp;\n";
+  html += '    <input type="text" name="searchtext" value=""/>\n';
+  html += "    &nbsp;&nbsp;\n";
+  html += '    <input type="submit" value="Search" />\n';
+  html += "   </th>\n  </tr>\n </table>\n </form>\n";
+  return html;
+}
+
+function adminPlanetCoordHTML(coordinates: Coordinates): string {
+  return `[<a href="${legacyHTMLAttribute(adminGalaxyHref(coordinates))}">${coordinates.galaxy}:${coordinates.system}:${coordinates.position}</a>]`;
 }
 
 function AdminUniverseTable({ admin }: { admin: GameAdmin }) {
@@ -4645,6 +4657,13 @@ function adminPlanetHref(planetID: number) {
   query.set("mode", "Planets");
   query.set("cp", String(planetID));
   return gameRouteURL("/game/admin", `?${query.toString()}`);
+}
+
+function adminGalaxyHref(coordinates: Coordinates) {
+  const query = new URLSearchParams(window.location.search);
+  query.set("galaxy", String(coordinates.galaxy));
+  query.set("system", String(coordinates.system));
+  return gameRouteURL("/game/galaxy", `?${query.toString()}`);
 }
 
 function adminModeModActionHref(mode: string, action: string, modname: string) {
