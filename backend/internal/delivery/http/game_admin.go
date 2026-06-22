@@ -31,6 +31,7 @@ type gameAdminSummary struct {
 	UserLogRows    []gameAdminUserLogRow       `json:"userLogRows,omitempty"`
 	QueueRows      []gameAdminQueueRow         `json:"queueRows,omitempty"`
 	BattleReports  []gameAdminBattleReportRow  `json:"battleReports,omitempty"`
+	ChecksumGroups []gameAdminChecksumGroup    `json:"checksumGroups,omitempty"`
 }
 
 type gameAdminViewer struct {
@@ -81,6 +82,17 @@ type gameAdminBattleReportRow struct {
 	ID    int    `json:"id"`
 	Date  int64  `json:"date"`
 	Title string `json:"title"`
+}
+
+type gameAdminChecksumGroup struct {
+	Title string                 `json:"title"`
+	Rows  []gameAdminChecksumRow `json:"rows"`
+}
+
+type gameAdminChecksumRow struct {
+	Path     string `json:"path"`
+	Checksum string `json:"checksum"`
+	Status   string `json:"status"`
 }
 
 func (a app) handleGameAdmin(w http.ResponseWriter, r *http.Request) {
@@ -181,6 +193,21 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			Title: row.Title,
 		})
 	}
+	checksumGroups := make([]gameAdminChecksumGroup, 0, len(admin.ChecksumGroups))
+	for _, group := range admin.ChecksumGroups {
+		rows := make([]gameAdminChecksumRow, 0, len(group.Rows))
+		for _, row := range group.Rows {
+			rows = append(rows, gameAdminChecksumRow{
+				Path:     row.Path,
+				Checksum: row.Checksum,
+				Status:   row.Status,
+			})
+		}
+		checksumGroups = append(checksumGroups, gameAdminChecksumGroup{
+			Title: group.Title,
+			Rows:  rows,
+		})
+	}
 	return gameAdminSummary{
 		Commander:      admin.Commander,
 		CurrentPlanet:  toGamePlanetOverviewResponse(admin.CurrentPlanet),
@@ -190,12 +217,13 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			Name:     admin.Viewer.Name,
 			Level:    admin.Viewer.Level,
 		},
-		Mode:          admin.Mode,
-		Menu:          menu,
-		MessageRows:   messageRows,
-		UserLogRows:   userLogRows,
-		QueueRows:     queueRows,
-		BattleReports: battleReports,
+		Mode:           admin.Mode,
+		Menu:           menu,
+		MessageRows:    messageRows,
+		UserLogRows:    userLogRows,
+		QueueRows:      queueRows,
+		BattleReports:  battleReports,
+		ChecksumGroups: checksumGroups,
 	}
 }
 

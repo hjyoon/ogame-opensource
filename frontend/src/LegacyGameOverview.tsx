@@ -1047,6 +1047,7 @@ type GameAdmin = {
   userLogRows?: GameAdminUserLogRow[];
   queueRows?: GameAdminQueueRow[];
   battleReports?: GameAdminBattleReportRow[];
+  checksumGroups?: GameAdminChecksumGroup[];
 };
 
 type GameAdminViewer = {
@@ -1097,6 +1098,17 @@ type GameAdminBattleReportRow = {
   id: number;
   date: number;
   title: string;
+};
+
+type GameAdminChecksumGroup = {
+  title: string;
+  rows: GameAdminChecksumRow[];
+};
+
+type GameAdminChecksumRow = {
+  path: string;
+  checksum: string;
+  status: string;
 };
 
 type ResourceProductionRow = {
@@ -2867,7 +2879,7 @@ function AdminTable({ admin }: { admin: GameAdmin }) {
   if (admin.mode === "Checksum") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminChecksumTable />
+        <AdminChecksumTable groups={admin.checksumGroups ?? []} />
       </AdminModeShell>
     );
   }
@@ -3919,18 +3931,12 @@ function AdminUniversePercentRow({ label, name }: { label: string; name: string 
   );
 }
 
-function AdminChecksumTable() {
-  const groups = [
-    ["Engine", ["ainfo.php", "core/acs.php", "core/battle.php", "core/db.php", "index.php"]],
-    ["Admin Area", ["pages_admin/admin.php", "pages_admin/admin_users.php", "pages_admin/admin_planets.php"]],
-    ["Game Pages", ["pages/overview.php", "pages/resources.php", "pages/flotten1.php", "pages/galaxy.php"]],
-    ["Registration System", ["reg/login.php", "reg/login2.php", "reg/new.php"]]
-  ] as const;
+function AdminChecksumTable({ groups }: { groups: GameAdminChecksumGroup[] }) {
   return (
     <>
-      {groups.map(([title, files]) => (
-        <React.Fragment key={title}>
-          <h2>{title}</h2>
+      {groups.map((group) => (
+        <React.Fragment key={group.title}>
+          <h2>{group.title}</h2>
           <table className="legacy-admin-checksum-table" width={519}>
             <tbody>
               <tr>
@@ -3938,13 +3944,13 @@ function AdminChecksumTable() {
                 <td className="c">Checksum</td>
                 <td className="c">Status</td>
               </tr>
-              {files.map((file) => (
-                <tr key={file}>
-                  <td>{file}</td>
-                  <td>00000000000000000000000000000000</td>
+              {group.rows.map((row) => (
+                <tr key={`${group.title}-${row.path}`}>
+                  <td>{row.path}</td>
+                  <td>{row.checksum}</td>
                   <td>
-                    <LegacyFont color="lime">
-                      <b>OK</b>
+                    <LegacyFont color={row.status === "OK" ? "lime" : "red"}>
+                      <b>{row.status}</b>
                     </LegacyFont>
                   </td>
                 </tr>

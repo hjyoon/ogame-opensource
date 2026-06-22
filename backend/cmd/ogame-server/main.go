@@ -536,7 +536,8 @@ func gameAdminService(cfg config.Config, logger *slog.Logger, sessions apppublic
 	}
 
 	logger.Info("universe DB game admin enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
-	return appgame.NewAdminService(sessions, mysqlgame.NewAdminRepository(db, cfg.UniDBPrefix))
+	repository := mysqlgame.NewAdminRepository(db, cfg.UniDBPrefix).WithLegacyGameDir(cfg.LegacyGameDir)
+	return appgame.NewAdminService(sessions, repository)
 }
 
 func gameResearchService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.ResearchService {

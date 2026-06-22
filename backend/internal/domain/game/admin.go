@@ -21,6 +21,7 @@ type Admin struct {
 	UserLogRows    []AdminUserLogRow
 	QueueRows      []AdminQueueRow
 	BattleReports  []AdminBattleReportRow
+	ChecksumGroups []AdminChecksumGroup
 }
 
 type AdminViewer struct {
@@ -76,6 +77,17 @@ type AdminBattleReportRow struct {
 	ID    int
 	Date  int64
 	Title string
+}
+
+type AdminChecksumGroup struct {
+	Title string
+	Rows  []AdminChecksumRow
+}
+
+type AdminChecksumRow struct {
+	Path     string
+	Checksum string
+	Status   string
 }
 
 var adminMenuItems = []AdminMenuItem{

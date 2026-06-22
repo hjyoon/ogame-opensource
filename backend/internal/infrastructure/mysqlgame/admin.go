@@ -11,17 +11,19 @@ import (
 )
 
 type AdminRepository struct {
-	queryer  Queryer
-	overview OverviewRepository
-	prefix   string
+	queryer       Queryer
+	overview      OverviewRepository
+	prefix        string
+	legacyGameDir string
 }
 
 func NewAdminRepository(db *sql.DB, prefix string) AdminRepository {
 	runner := SQLQueryer{DB: db}
 	return AdminRepository{
-		queryer:  runner,
-		overview: NewOverviewRepository(db, prefix),
-		prefix:   prefix,
+		queryer:       runner,
+		overview:      NewOverviewRepository(db, prefix),
+		prefix:        prefix,
+		legacyGameDir: "game",
 	}
 }
 
@@ -31,10 +33,18 @@ func NewAdminRepositoryWithQueryer(queryer Queryer, prefix string) AdminReposito
 		execer = runner
 	}
 	return AdminRepository{
-		queryer:  queryer,
-		overview: NewOverviewRepositoryWithRunner(queryer, execer, prefix),
-		prefix:   prefix,
+		queryer:       queryer,
+		overview:      NewOverviewRepositoryWithRunner(queryer, execer, prefix),
+		prefix:        prefix,
+		legacyGameDir: "game",
 	}
+}
+
+func (r AdminRepository) WithLegacyGameDir(path string) AdminRepository {
+	if path != "" {
+		r.legacyGameDir = path
+	}
+	return r
 }
 
 func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery) (domaingame.Admin, error) {
@@ -58,6 +68,8 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		admin.UserLogRows, err = r.loadAdminUserLogRows(ctx)
 	case "BattleReport":
 		admin.BattleReports, err = r.loadAdminBattleReports(ctx)
+	case "Checksum":
+		admin.ChecksumGroups, err = r.loadAdminChecksumGroups(ctx)
 	}
 	if err != nil {
 		return domaingame.Admin{}, err

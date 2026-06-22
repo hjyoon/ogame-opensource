@@ -24,10 +24,12 @@ WORKDIR /srv/ogame
 COPY --from=backend-builder /out/ogame-server /usr/local/bin/ogame-server
 COPY --from=frontend-builder /src/frontend/dist /srv/ogame/frontend
 COPY download /srv/ogame/download
+COPY game /srv/ogame/game
 ENV OGAME_ENV=production
 ENV OGAME_HTTP_ADDR=:8080
 ENV OGAME_STATIC_DIR=/srv/ogame/frontend
 ENV OGAME_LEGACY_ASSET_DIR=/srv/ogame/download
+ENV OGAME_LEGACY_GAME_DIR=/srv/ogame/game
 EXPOSE 8080
 USER ogame
 ENTRYPOINT ["ogame-server"]

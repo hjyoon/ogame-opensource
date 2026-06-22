@@ -17,6 +17,7 @@ type Config struct {
 	LogLevel         string
 	StaticDir        string
 	LegacyAssetDir   string
+	LegacyGameDir    string
 	LegacyBaseURL    string
 	PublicBaseURL    string
 	PublicUniverses  string
@@ -46,6 +47,7 @@ func Load() Config {
 		LogLevel:         env("OGAME_LOG_LEVEL", "info"),
 		StaticDir:        env("OGAME_STATIC_DIR", "frontend/dist"),
 		LegacyAssetDir:   env("OGAME_LEGACY_ASSET_DIR", "download"),
+		LegacyGameDir:    env("OGAME_LEGACY_GAME_DIR", "game"),
 		LegacyBaseURL:    legacyBaseURL,
 		PublicBaseURL:    env("OGAME_PUBLIC_BASE_URL", legacyBaseURL),
 		PublicUniverses:  env("OGAME_PUBLIC_UNIVERSES", ""),
