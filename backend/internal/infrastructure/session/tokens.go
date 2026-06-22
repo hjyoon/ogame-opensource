@@ -3,6 +3,7 @@ package session
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"io"
 )
 
 type TokenGenerator struct{}
@@ -17,7 +18,7 @@ func (TokenGenerator) NewPrivateSession() (string, error) {
 
 func randomHex(byteLength int) (string, error) {
 	value := make([]byte, byteLength)
-	if _, err := rand.Read(value); err != nil {
+	if _, err := io.ReadFull(rand.Reader, value); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(value), nil

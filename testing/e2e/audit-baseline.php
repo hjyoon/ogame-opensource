@@ -34,6 +34,20 @@ function e2e_export(string $name, int $value): void
     echo 'export ' . $name . '=' . $value . PHP_EOL;
 }
 
+function e2e_cleanup_runtime_files(): void
+{
+    foreach (array('temp/fleetlock_*', 'battledata/battle_*.txt', 'battleresult/battle_*.txt') as $pattern) {
+        foreach (glob($pattern) ?: array() as $path) {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
+    }
+}
+
+e2e_cleanup_runtime_files();
+
+e2e_export('OGAME_E2E_AUDIT_BASE_USER_ID', e2e_max_id('users', 'player_id'));
 e2e_export('OGAME_E2E_AUDIT_BASE_MESSAGE_ID', e2e_max_id('messages', 'msg_id'));
 e2e_export('OGAME_E2E_AUDIT_BASE_NOTE_ID', e2e_max_id('notes', 'note_id'));
 e2e_export('OGAME_E2E_AUDIT_BASE_REPORT_ID', e2e_max_id('reports', 'id'));

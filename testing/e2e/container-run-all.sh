@@ -38,6 +38,14 @@ run_json_case() {
   fi
 }
 
+setup_fixtures() {
+  eval "$(php "$ROOT/setup-fixtures.php")"
+  export OGAME_E2E_ATTACKER_ID OGAME_E2E_ATTACKER_PLANET
+  export OGAME_E2E_DEFENDER_ID OGAME_E2E_DEFENDER_PLANET
+  export OGAME_E2E_ATTACKER_NAME OGAME_E2E_ATTACKER_PASSWORD
+  export OGAME_E2E_DEFENDER_NAME OGAME_E2E_DEFENDER_PASSWORD
+}
+
 cleanup() {
   php "$ROOT/teardown-fixtures.php" >/dev/null 2>&1 || true
 }
@@ -52,14 +60,11 @@ export OGAME_E2E_AUDIT_BASE_BOTVAR_ID
 export OGAME_E2E_AUDIT_BASE_ALLYAPP_ID
 export OGAME_E2E_AUDIT_BASE_UNION_ID
 export OGAME_E2E_AUDIT_BASE_BATTLE_ID
+export OGAME_E2E_AUDIT_BASE_USER_ID
 
 run_json_case http_flow "$ROOT/http_flow_e2e.php"
 
-eval "$(php "$ROOT/setup-fixtures.php")"
-export OGAME_E2E_ATTACKER_ID OGAME_E2E_ATTACKER_PLANET
-export OGAME_E2E_DEFENDER_ID OGAME_E2E_DEFENDER_PLANET
-export OGAME_E2E_ATTACKER_NAME OGAME_E2E_ATTACKER_PASSWORD
-export OGAME_E2E_DEFENDER_NAME OGAME_E2E_DEFENDER_PASSWORD
+setup_fixtures
 
 run_json_case route_matrix "$ROOT/http_route_matrix_e2e.php"
 run_json_case render_asset_smoke "$ROOT/http_render_asset_smoke_e2e.php"
@@ -89,6 +94,7 @@ run_json_case admin_audit_logs "$ROOT/http_admin_audit_logs_e2e.php"
 run_json_case admin_tools_smoke "$ROOT/http_admin_tools_smoke_e2e.php"
 run_json_case admin_operations "$ROOT/http_admin_operations_e2e.php"
 run_json_case admin_db_backup "$ROOT/http_admin_db_backup_e2e.php"
+setup_fixtures
 run_json_case admin_destructive "$ROOT/http_admin_destructive_e2e.php"
 run_json_case coupon_payment "$ROOT/http_coupon_payment_e2e.php"
 run_json_case queue_fleet "$ROOT/http_queue_fleet_e2e.php"

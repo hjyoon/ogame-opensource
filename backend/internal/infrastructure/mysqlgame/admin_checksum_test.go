@@ -79,6 +79,32 @@ func TestLoadPHPSerializedChecksumMap(t *testing.T) {
 	}
 }
 
+func TestAdminChecksumFileErrors(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing.md5")
+	if _, err := loadPHPSerializedChecksumMap(missing); err == nil {
+		t.Fatal("expected missing baseline file error")
+	}
+	if _, err := md5FileHex(missing); err == nil {
+		t.Fatal("expected missing source file error")
+	}
+
+	root := t.TempDir()
+	repository := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").WithLegacyGameDir(root)
+	if _, err := repository.loadAdminChecksumGroups(context.Background()); err == nil {
+		t.Fatal("expected missing checksum baseline to fail")
+	}
+
+	if err := os.MkdirAll(filepath.Join(root, "temp"), 0o755); err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "temp", adminChecksumGroups[0].baselineFile), []byte(testPHPSerializedChecksumMap(map[string]string{})), 0o644); err != nil {
+		t.Fatalf("write baseline: %v", err)
+	}
+	if _, err := repository.loadAdminChecksumGroups(context.Background()); err == nil {
+		t.Fatal("expected missing checksum source to fail")
+	}
+}
+
 func testPHPSerializedChecksumMap(values map[string]string) string {
 	var builder strings.Builder
 	_, _ = fmt.Fprintf(&builder, "a:%d:{", len(values))

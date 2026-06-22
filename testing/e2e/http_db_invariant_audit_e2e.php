@@ -115,6 +115,7 @@ try {
     $planetNegativeWhere = e2e_negative_conditions($planetNonNegativeCols) . " OR fields < 0 OR maxfields < 0";
     $userResearchNegativeWhere = e2e_negative_conditions($resmap);
     $fleetNegativeWhere = e2e_negative_conditions(array_merge($fleetmap, $transportableResources)) . " OR fuel < 0 OR ipm_amount < 0";
+    $userBaseline = e2e_baseline_id('OGAME_E2E_AUDIT_BASE_USER_ID');
 
     $cases[] = e2e_finalize_case(array(
         'case' => 'core_schema_migrations_and_hot_path_indexes_are_present',
@@ -164,14 +165,14 @@ try {
                 "SELECT p.planet_id, p.owner_id, p.type, p.g, p.s, p.p FROM {$db_prefix}planets p LEFT JOIN {$db_prefix}users u ON u.player_id=p.owner_id WHERE u.player_id IS NULL"
             ),
             e2e_violation_check(
-                'normal users reference an existing owned home planet',
-                "SELECT COUNT(*) AS cnt FROM {$db_prefix}users u LEFT JOIN {$db_prefix}planets p ON p.planet_id=u.hplanetid WHERE u.player_id<>" . USER_SPACE . " AND (p.planet_id IS NULL OR p.owner_id<>u.player_id)",
-                "SELECT u.player_id, u.name, u.hplanetid, p.owner_id AS planet_owner FROM {$db_prefix}users u LEFT JOIN {$db_prefix}planets p ON p.planet_id=u.hplanetid WHERE u.player_id<>" . USER_SPACE . " AND (p.planet_id IS NULL OR p.owner_id<>u.player_id)"
+                'new normal users reference an existing owned home planet',
+                "SELECT COUNT(*) AS cnt FROM {$db_prefix}users u LEFT JOIN {$db_prefix}planets p ON p.planet_id=u.hplanetid WHERE u.player_id>{$userBaseline} AND u.player_id<>" . USER_SPACE . " AND (p.planet_id IS NULL OR p.owner_id<>u.player_id)",
+                "SELECT u.player_id, u.name, u.hplanetid, p.owner_id AS planet_owner FROM {$db_prefix}users u LEFT JOIN {$db_prefix}planets p ON p.planet_id=u.hplanetid WHERE u.player_id>{$userBaseline} AND u.player_id<>" . USER_SPACE . " AND (p.planet_id IS NULL OR p.owner_id<>u.player_id)"
             ),
             e2e_violation_check(
-                'normal users reference an existing owned active planet',
-                "SELECT COUNT(*) AS cnt FROM {$db_prefix}users u LEFT JOIN {$db_prefix}planets p ON p.planet_id=u.aktplanet WHERE u.player_id<>" . USER_SPACE . " AND (p.planet_id IS NULL OR p.owner_id<>u.player_id)",
-                "SELECT u.player_id, u.name, u.aktplanet, p.owner_id AS planet_owner FROM {$db_prefix}users u LEFT JOIN {$db_prefix}planets p ON p.planet_id=u.aktplanet WHERE u.player_id<>" . USER_SPACE . " AND (p.planet_id IS NULL OR p.owner_id<>u.player_id)"
+                'new normal users reference an existing owned active planet',
+                "SELECT COUNT(*) AS cnt FROM {$db_prefix}users u LEFT JOIN {$db_prefix}planets p ON p.planet_id=u.aktplanet WHERE u.player_id>{$userBaseline} AND u.player_id<>" . USER_SPACE . " AND (p.planet_id IS NULL OR p.owner_id<>u.player_id)",
+                "SELECT u.player_id, u.name, u.aktplanet, p.owner_id AS planet_owner FROM {$db_prefix}users u LEFT JOIN {$db_prefix}planets p ON p.planet_id=u.aktplanet WHERE u.player_id>{$userBaseline} AND u.player_id<>" . USER_SPACE . " AND (p.planet_id IS NULL OR p.owner_id<>u.player_id)"
             ),
             e2e_violation_check(
                 'fleet rows reference existing owner, origin, and target records',

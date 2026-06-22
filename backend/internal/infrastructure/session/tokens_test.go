@@ -1,6 +1,11 @@
 package session
 
-import "testing"
+import (
+	cryptorand "crypto/rand"
+	"errors"
+	"strings"
+	"testing"
+)
 
 func TestTokenGeneratorCreatesLegacyLengthTokens(t *testing.T) {
 	generator := TokenGenerator{}
@@ -30,4 +35,21 @@ func TestRandomHexAllowsZeroByteLength(t *testing.T) {
 	if value != "" {
 		t.Fatalf("expected empty token for zero bytes, got %q", value)
 	}
+}
+
+func TestRandomHexPropagatesEntropyErrors(t *testing.T) {
+	original := cryptorand.Reader
+	cryptorand.Reader = failingEntropyReader{}
+	defer func() { cryptorand.Reader = original }()
+
+	value, err := randomHex(1)
+	if err == nil || !strings.Contains(err.Error(), "entropy failed") {
+		t.Fatalf("expected entropy error, got value=%q err=%v", value, err)
+	}
+}
+
+type failingEntropyReader struct{}
+
+func (failingEntropyReader) Read([]byte) (int, error) {
+	return 0, errors.New("entropy failed")
 }

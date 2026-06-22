@@ -577,6 +577,13 @@ function PostProcessBattleResult (array $a, array $d, array &$res) : void {
     ModsExecRef ('battle_post_process', $res);
 }
 
+function CleanupBattleEngineFiles ( int $battle_id ) : void
+{
+    foreach ( array ( "battledata/battle_".$battle_id.".txt", "battleresult/battle_".$battle_id.".txt" ) as $path ) {
+        if ( is_file ( $path ) ) unlink ( $path );
+    }
+}
+
 /**
  * @brief Executes a battle between two forces and processes the results.
  *
@@ -605,37 +612,42 @@ function PostProcessBattleResult (array $a, array $d, array &$res) : void {
  */
 function ExecuteBattle (array $unitab, int $battle_id, string $source, array $a, array $d) : array {
 
-    $bf = fopen ( "battledata/battle_".$battle_id.".txt", "w" );
-    fwrite ( $bf, $source );
-    fclose ( $bf );
-
-    // *** Transfer data to the battle engine
-
-    if ($unitab['php_battle']) {
-
-        $battle_source = file_get_contents ( "battledata/battle_".$battle_id.".txt" );
-        $res = BattleEngine ($battle_source);
-
-        $bf = fopen ( "battleresult/battle_".$battle_id.".txt", "w" );
-        fwrite ( $bf, serialize($res) );
+    try {
+        $bf = fopen ( "battledata/battle_".$battle_id.".txt", "w" );
+        fwrite ( $bf, $source );
         fclose ( $bf );
-    }
-    else {
 
-        $arg = "$battle_id 0";
-        system ( $unitab['battle_engine'] . " $arg", $retval );
-        if ($retval < 0) {
-            Error (va("An error occurred in the battle engine: #1 #2", $retval, $battle_id));
+        // *** Transfer data to the battle engine
+
+        if ($unitab['php_battle']) {
+
+            $battle_source = file_get_contents ( "battledata/battle_".$battle_id.".txt" );
+            $res = BattleEngine ($battle_source);
+
+            $bf = fopen ( "battleresult/battle_".$battle_id.".txt", "w" );
+            fwrite ( $bf, serialize($res) );
+            fclose ( $bf );
         }
+        else {
+
+            $arg = "$battle_id 0";
+            system ( $unitab['battle_engine'] . " $arg", $retval );
+            if ($retval < 0) {
+                Error (va("An error occurred in the battle engine: #1 #2", $retval, $battle_id));
+            }
+        }
+
+        // *** Process output data
+
+        $battleres = file_get_contents ( "battleresult/battle_".$battle_id.".txt" );
+        $res = unserialize($battleres);
+        PostProcessBattleResult ($a, $d, $res);
+
+        return $res;
     }
-
-    // *** Process output data
-
-    $battleres = file_get_contents ( "battleresult/battle_".$battle_id.".txt" );
-    $res = unserialize($battleres);
-    PostProcessBattleResult ($a, $d, $res);
-
-    return $res;
+    finally {
+        CleanupBattleEngineFiles ( $battle_id );
+    }
 }
 
 // Start a battle between attacking fleet_id and defending planet_id.
@@ -879,8 +891,7 @@ function StartBattle ( int $fleet_id, int $planet_id, int $when ) : int
     RecalcRanks ();
 
     // Cleaning up the battle engine's intermediate data
-    unlink ( "battledata/battle_".$battle_id.".txt" );
-    unlink ( "battleresult/battle_".$battle_id.".txt" );
+    CleanupBattleEngineFiles ( $battle_id );
 
     return $battle_result;
 }

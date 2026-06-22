@@ -168,6 +168,33 @@ func TestLegacyTechnologyRequirementOrderingFallbacks(t *testing.T) {
 	}
 }
 
+func TestTechnologyRequirementHelpersCoverSparseAndUnknownInputs(t *testing.T) {
+	if requirements := buildTechnologyRequirementsOrdered(nil, []int{ResearchEnergy}, BuildingLevels{}, ResearchLevels{}); requirements != nil {
+		t.Fatalf("expected nil requirements for empty map, got %+v", requirements)
+	}
+
+	requirements := buildTechnologyRequirementsOrdered(
+		map[int]int{ResearchLaser: 2, BuildingResearchLab: 1},
+		[]int{ResearchEnergy, ResearchLaser},
+		BuildingLevels{BuildingResearchLab: 1},
+		ResearchLevels{ResearchLaser: 1},
+	)
+	assertRequirementIDs(t, requirements, []int{ResearchLaser, BuildingResearchLab})
+	if requirements[0].Met || !requirements[1].Met {
+		t.Fatalf("unexpected sparse requirement status: %+v", requirements)
+	}
+
+	tree := newTechnologyRequirementsByDepth()
+	if depth := walkTechnologyRequirements(9999, map[int]int{9998: 3}, 0, tree); depth != 1 {
+		t.Fatalf("expected one-level unknown child depth, got %d", depth)
+	}
+	requirements = buildTechnologyRequirementsOrdered(tree.requirements[0], tree.order[0], BuildingLevels{}, ResearchLevels{})
+	assertRequirementIDs(t, requirements, []int{9998})
+	if requirements[0].Name != "" {
+		t.Fatalf("unexpected unknown child requirements: %+v", requirements)
+	}
+}
+
 func technologyItemByID(t *testing.T, technology Technology, id int) TechnologyItem {
 	t.Helper()
 	for _, group := range technology.Groups {

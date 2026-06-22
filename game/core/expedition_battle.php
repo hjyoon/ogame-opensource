@@ -243,8 +243,7 @@ function ExpeditionBattle ( int $fleet_id, bool $pirates, int $level, int $when 
     RecalcRanks ();
 
     // Cleaning up the battle engine's intermediate data
-    unlink ( "battledata/battle_".$battle_id.".txt" );
-    unlink ( "battleresult/battle_".$battle_id.".txt" );
+    CleanupBattleEngineFiles ( $battle_id );
 
     return $battle_result;
 }

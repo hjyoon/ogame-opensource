@@ -281,6 +281,182 @@ func TestGalaxyRepositoryLaunchMissileFrozenAndRaceIssues(t *testing.T) {
 	}
 }
 
+func TestGalaxyRepositoryLaunchMissilesHandlesLoadAndMutationErrors(t *testing.T) {
+	now := time.Unix(10_000, 0)
+	baseResults := func(results ...fakeQueryResult) []fakeQueryResult {
+		return append([]fakeQueryResult{{rows: fakeRowsFromValues([]any{0})}}, results...)
+	}
+	validOrigin := func() fakeQueryResult {
+		return fakeQueryResult{rows: fakeRowsFromValues(galaxyMissileOriginRow(99, 42, 1, 2, 3, 5, int64(10000), 0, 0, 0, now.Unix(), 2))}
+	}
+	validTarget := func() fakeQueryResult {
+		return fakeQueryResult{rows: fakeRowsFromValues(galaxyMissileTargetRow(77, 7, 1, 4, 5, int64(10000), 0, 0, 0, now.Unix()))}
+	}
+
+	loadTests := []struct {
+		name        string
+		results     []fakeQueryResult
+		wantErr     string
+		wantNilMiss bool
+	}{
+		{
+			name:        "origin missing",
+			results:     baseResults(fakeQueryResult{rows: fakeRowsFromValues()}),
+			wantNilMiss: true,
+		},
+		{
+			name:    "origin query fails",
+			results: baseResults(fakeQueryResult{err: errors.New("origin failed")}),
+			wantErr: "origin failed",
+		},
+		{
+			name:    "target query fails",
+			results: baseResults(validOrigin(), fakeQueryResult{err: errors.New("target failed")}),
+			wantErr: "target failed",
+		},
+	}
+	for _, tt := range loadTests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: tt.results}}
+			repository := NewGalaxyRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+			issue, err := repository.LaunchMissiles(context.Background(), appgame.GalaxyMissileLaunchQuery{
+				PlayerID:       42,
+				PlanetID:       99,
+				TargetPlanetID: 77,
+				Amount:         1,
+			})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected %q error, got %v", tt.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.wantNilMiss && issue != nil {
+				t.Fatalf("missing origin should not return a user-facing issue, got %+v", issue)
+			}
+			if len(runner.execCalls) != 0 {
+				t.Fatalf("load failure should not mutate, got %+v", runner.execCalls)
+			}
+		})
+	}
+
+	mutationTests := []struct {
+		name        string
+		execResults []sql.Result
+		execErrs    []error
+		wantErr     string
+		wantExecs   int
+	}{
+		{
+			name:      "old log delete fails",
+			execErrs:  []error{errors.New("delete logs failed")},
+			wantErr:   "delete logs failed",
+			wantExecs: 1,
+		},
+		{
+			name:      "reserve fails",
+			execErrs:  []error{nil, errors.New("reserve failed")},
+			wantErr:   "reserve failed",
+			wantExecs: 2,
+		},
+		{
+			name:      "fleet insert fails",
+			execErrs:  []error{nil, nil, errors.New("fleet insert failed")},
+			wantErr:   "fleet insert failed",
+			wantExecs: 3,
+		},
+		{
+			name: "log insert fails",
+			execResults: []sql.Result{
+				galaxySQLResult{rows: 1},
+				galaxySQLResult{rows: 1},
+				galaxySQLResult{id: 123, rows: 1},
+			},
+			execErrs:  []error{nil, nil, nil, errors.New("log insert failed")},
+			wantErr:   "log insert failed",
+			wantExecs: 4,
+		},
+		{
+			name: "queue insert fails",
+			execResults: []sql.Result{
+				galaxySQLResult{rows: 1},
+				galaxySQLResult{rows: 1},
+				galaxySQLResult{id: 123, rows: 1},
+				galaxySQLResult{rows: 1},
+			},
+			execErrs:  []error{nil, nil, nil, nil, errors.New("queue insert failed")},
+			wantErr:   "queue insert failed",
+			wantExecs: 5,
+		},
+	}
+	for _, tt := range mutationTests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeGalaxyRunner{
+				fakeQueryer: fakeQueryer{results: baseResults(validOrigin(), validTarget())},
+				execResults: tt.execResults,
+				execErrs:    tt.execErrs,
+			}
+			repository := NewGalaxyRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+			issue, err := repository.LaunchMissiles(context.Background(), appgame.GalaxyMissileLaunchQuery{
+				PlayerID:       42,
+				PlanetID:       99,
+				TargetPlanetID: 77,
+				Amount:         1,
+			})
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected %q error, got err=%v issue=%+v execs=%+v", tt.wantErr, err, issue, runner.execCalls)
+			}
+			if len(runner.execCalls) != tt.wantExecs {
+				t.Fatalf("expected %d execs, got %+v", tt.wantExecs, runner.execCalls)
+			}
+		})
+	}
+}
+
+func TestGalaxyRepositoryLaunchMissilesNormalizesUnsupportedDefenseTarget(t *testing.T) {
+	now := time.Unix(10_000, 0)
+	runner := &fakeGalaxyRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{0})},
+			{rows: fakeRowsFromValues(galaxyMissileOriginRow(99, 42, 1, 2, 3, 5, int64(10000), 0, 0, 0, now.Unix(), 2))},
+			{rows: fakeRowsFromValues(galaxyMissileTargetRow(77, 7, 1, 4, 5, int64(10000), 0, 0, 0, now.Unix()))},
+		}},
+		execResults: []sql.Result{
+			galaxySQLResult{rows: 1},
+			galaxySQLResult{rows: 1},
+			galaxySQLResult{id: 123, rows: 1},
+			galaxySQLResult{rows: 1},
+			galaxySQLResult{rows: 1},
+		},
+	}
+	repository := NewGalaxyRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	issue, err := repository.LaunchMissiles(context.Background(), appgame.GalaxyMissileLaunchQuery{
+		PlayerID:        42,
+		PlanetID:        99,
+		TargetPlanetID:  77,
+		Amount:          1,
+		TargetDefenseID: 999999,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue == nil || issue.Code != domaingame.GalaxyIssueRocketLaunched {
+		t.Fatalf("expected launch issue, got %+v", issue)
+	}
+	if runner.execCalls[2].args[9] != 0 {
+		t.Fatalf("unsupported fleet ipm target should be normalized to 0, got %+v", runner.execCalls[2])
+	}
+	if runner.execCalls[3].args[18] != 0 {
+		t.Fatalf("unsupported log ipm target should be normalized to 0, got %+v", runner.execCalls[3])
+	}
+}
+
 func TestGalaxyRepositoryReturnsErrors(t *testing.T) {
 	now := time.Unix(10_000, 0)
 	tests := []struct {

@@ -73,6 +73,170 @@ func TestGameAdminHandlerRejectsInvalidAndUnauthenticatedRequests(t *testing.T) 
 	}
 }
 
+func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
+	home := &domaingame.AdminUserPlanet{
+		ID:   301,
+		Name: "Homeworld",
+		Coordinates: domaingame.Coordinates{
+			Galaxy:   1,
+			System:   42,
+			Position: 7,
+		},
+	}
+	owner := domaingame.AdminUserRow{
+		PlayerID:   7,
+		Name:       "owner",
+		RegDate:    1000,
+		LastClick:  2000,
+		Vacation:   true,
+		Banned:     true,
+		NoAttack:   true,
+		Disable:    true,
+		HomePlanet: home,
+	}
+	admin := domaingame.NewAdmin(
+		domaingame.Overview{
+			Commander: "legor",
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:   99,
+				Name: "planet",
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   1,
+					System:   2,
+					Position: 3,
+				},
+			},
+			PlanetSwitcher: []domaingame.PlanetSummary{{
+				ID:      99,
+				Name:    "planet",
+				Current: true,
+			}},
+		},
+		domaingame.AdminViewer{PlayerID: 1, Name: "legor", Level: domaingame.AdminLevelAdmin},
+		"Queue",
+	)
+	admin.MessageRows = []domaingame.AdminMessageRow{{
+		ID:        10,
+		OwnerID:   7,
+		OwnerName: "owner",
+		IP:        "127.0.0.1",
+		Agent:     "e2e",
+		Text:      "message",
+		Date:      111,
+	}}
+	admin.UserLogRows = []domaingame.AdminUserLogRow{{
+		ID:        11,
+		OwnerID:   7,
+		OwnerName: "owner",
+		Type:      "ADMIN",
+		Text:      "log",
+		Date:      112,
+	}}
+	admin.UserRows = []domaingame.AdminUserRow{owner, {PlayerID: 8, Name: "plain"}}
+	admin.ActiveUsers = []domaingame.AdminUserRow{{PlayerID: 9, Name: "active", LastClick: 3000}}
+	admin.PlanetRows = []domaingame.AdminPlanetRow{{
+		ID:   401,
+		Name: "colony",
+		Date: 4000,
+		Coordinates: domaingame.Coordinates{
+			Galaxy:   2,
+			System:   3,
+			Position: 4,
+		},
+		Owner: &owner,
+	}, {
+		ID:   402,
+		Name: "unowned",
+	}}
+	admin.Universe = &domaingame.AdminUniverseSettings{
+		Number:          1,
+		Speed:           128,
+		FleetSpeed:      64,
+		Galaxies:        9,
+		Systems:         499,
+		MaxUsers:        1000,
+		ACS:             1,
+		FleetDebris:     30,
+		DefenseDebris:   0,
+		RapidFire:       true,
+		Moons:           true,
+		DefenseRepair:   70,
+		DefenseDelta:    10,
+		UserCount:       55,
+		Freeze:          true,
+		News1:           "news-one",
+		News2:           "news-two",
+		NewsUntil:       12345,
+		StartDate:       54321,
+		BattleEngine:    "/game/battle",
+		Language:        "en",
+		Hacks:           2,
+		ExtBoard:        "board",
+		ExtDiscord:      "discord",
+		ExtTutorial:     "tutorial",
+		ExtRules:        "rules",
+		ExtImpressum:    "imprint",
+		PHPBattle:       true,
+		BattleMax:       250000,
+		ForceLanguage:   true,
+		StartDarkMatter: 8000,
+		MaxShipyard:     5,
+		FeedAge:         30,
+	}
+	admin.Expedition = map[string]int{"maxDarkMatter": 100}
+	admin.QueueRows = []domaingame.AdminQueueRow{{
+		ID:          501,
+		OwnerID:     7,
+		OwnerName:   "owner",
+		Type:        "Build",
+		Description: "Metal Mine 2",
+		Priority:    10,
+		Start:       1,
+		End:         2,
+		Freeze:      true,
+		Frozen:      3,
+	}}
+	admin.BattleReports = []domaingame.AdminBattleReportRow{{ID: 601, Date: 6000, Title: "battle"}}
+	admin.ChecksumGroups = []domaingame.AdminChecksumGroup{{
+		Title: "core",
+		Rows:  []domaingame.AdminChecksumRow{{Path: "core.php", Checksum: "abc", Status: "ok"}},
+	}}
+	admin.BotStrategies = []domaingame.AdminBotStrategy{{ID: 701, Name: "bot"}}
+
+	payload := toGameAdminSummary(admin)
+
+	if payload.Mode != "Queue" || payload.Viewer.Name != "legor" || payload.Commander != "legor" {
+		t.Fatalf("unexpected admin identity mapping: %+v", payload)
+	}
+	if len(payload.MessageRows) != 1 || payload.MessageRows[0].Text != "message" ||
+		len(payload.UserLogRows) != 1 || payload.UserLogRows[0].Type != "ADMIN" {
+		t.Fatalf("expected message and user log rows to map: %+v", payload)
+	}
+	if len(payload.UserRows) != 2 || payload.UserRows[0].HomePlanet == nil ||
+		payload.UserRows[0].HomePlanet.Coordinates.System != 42 || payload.UserRows[1].HomePlanet != nil {
+		t.Fatalf("expected user rows and optional home planets to map: %+v", payload.UserRows)
+	}
+	if len(payload.ActiveUsers) != 1 || payload.ActiveUsers[0].Name != "active" {
+		t.Fatalf("expected active users to map: %+v", payload.ActiveUsers)
+	}
+	if len(payload.PlanetRows) != 2 || payload.PlanetRows[0].Owner == nil ||
+		payload.PlanetRows[0].Coordinates.Position != 4 || payload.PlanetRows[1].Owner != nil {
+		t.Fatalf("expected planet rows and optional owners to map: %+v", payload.PlanetRows)
+	}
+	if payload.Universe == nil || payload.Universe.Speed != 128 || !payload.Universe.PHPBattle ||
+		payload.Universe.ExtRules != "rules" || payload.Expedition["maxDarkMatter"] != 100 {
+		t.Fatalf("expected universe and expedition settings to map: %+v", payload)
+	}
+	if len(payload.QueueRows) != 1 || !payload.QueueRows[0].Freeze ||
+		len(payload.BattleReports) != 1 || len(payload.ChecksumGroups) != 1 ||
+		len(payload.BotStrategies) != 1 {
+		t.Fatalf("expected admin detail rows to map: %+v", payload)
+	}
+	if issue := toGameAdminActionIssue(&domaingame.AdminActionIssue{Code: "blocked", Message: "Blocked"}); issue == nil || issue.Code != "blocked" || issue.Message != "Blocked" {
+		t.Fatalf("expected non-nil action issue conversion, got %+v", issue)
+	}
+}
+
 type fakeGameAdminUseCase struct {
 	result  appgame.AdminResult
 	err     error

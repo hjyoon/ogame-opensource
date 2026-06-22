@@ -22,6 +22,8 @@ wait_for_url() {
 
 if [ "${OGAME_RUN_LEGACY_E2E:-1}" = "1" ]; then
   "$SCRIPT_DIR/run-docker-e2e.sh"
+  LEGACY_E2E_CONTAINER_DIR="${OGAME_E2E_CONTAINER_DIR:-/tmp/ogame-e2e}"
+  docker compose exec -T server php "$LEGACY_E2E_CONTAINER_DIR/prepare-golang-smoke-fixture.php" >/dev/null
 fi
 
 if command -v bun >/dev/null 2>&1; then

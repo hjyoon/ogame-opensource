@@ -45,6 +45,21 @@ func TestAdminRepositoryReadsAdminHome(t *testing.T) {
 	_ = NewAdminRepository(nil, "ogame_")
 }
 
+func TestNewAdminRepositoryWithQueryerKeepsMutationRunner(t *testing.T) {
+	runner := &fakeGalaxyRunner{}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+	if repository.queryer != runner {
+		t.Fatalf("expected queryer to be preserved")
+	}
+	if repository.overview.execer != runner {
+		t.Fatalf("expected overview execer to reuse runner")
+	}
+	if repository.legacyGameDir != "game" {
+		t.Fatalf("unexpected legacy game dir: %q", repository.legacyGameDir)
+	}
+}
+
 func TestAdminRepositoryReadsAdminDebugRows(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
@@ -63,6 +78,27 @@ func TestAdminRepositoryReadsAdminDebugRows(t *testing.T) {
 	lastSQL := queryer.calls[len(queryer.calls)-1].sql
 	if !strings.Contains(lastSQL, "`ogame_debug`") || !strings.Contains(lastSQL, "LEFT JOIN `ogame_users`") || !strings.Contains(lastSQL, "m.error_id DESC") {
 		t.Fatalf("expected debug rows query, got %s", lastSQL)
+	}
+}
+
+func TestAdminRepositoryReadsAdminErrorRows(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{20001, 0, "", "127.0.0.1", "Firefox", "Error text", int64(1700000001)})},
+	)}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "Errors"})
+
+	if err != nil {
+		t.Fatalf("GetAdmin returned error: %v", err)
+	}
+	if len(admin.MessageRows) != 1 || admin.MessageRows[0].ID != 20001 || admin.MessageRows[0].Text != "Error text" {
+		t.Fatalf("unexpected error rows: %+v", admin.MessageRows)
+	}
+	lastSQL := queryer.calls[len(queryer.calls)-1].sql
+	if !strings.Contains(lastSQL, "`ogame_errors`") || strings.Contains(lastSQL, "m.error_id DESC") {
+		t.Fatalf("expected errors query without error id ordering, got %s", lastSQL)
 	}
 }
 
@@ -86,6 +122,25 @@ func TestAdminRepositoryReadsPlanetRows(t *testing.T) {
 	lastSQL := queryer.calls[len(queryer.calls)-1].sql
 	if !strings.Contains(lastSQL, "`ogame_planets`") || !strings.Contains(lastSQL, "LEFT JOIN `ogame_users`") || !strings.Contains(lastSQL, "ORDER BY p.date DESC LIMIT 25") {
 		t.Fatalf("expected planet rows query, got %s", lastSQL)
+	}
+}
+
+func TestAdminRepositoryReadsPlanetRowsWithoutOwner(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		fakeQueryResult{rows: fakeRowsFromValues(
+			[]any{502, "Abandoned", int64(1700000001), 1, 56, 8, 0, "", int64(0), int64(0), 0, 0, 0, 0},
+		)},
+	)}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "Planets"})
+
+	if err != nil {
+		t.Fatalf("GetAdmin returned error: %v", err)
+	}
+	if len(admin.PlanetRows) != 1 || admin.PlanetRows[0].Owner != nil || admin.PlanetRows[0].Coordinates.System != 56 {
+		t.Fatalf("unexpected ownerless planet rows: %+v", admin.PlanetRows)
 	}
 }
 
@@ -214,6 +269,30 @@ func TestAdminRepositoryReadsQueueRows(t *testing.T) {
 	}
 }
 
+func TestLegacyAdminQueueDescriptionCoversKnownTypes(t *testing.T) {
+	cases := map[string]string{
+		"UpdateStats":      "Save old statistics",
+		"RecalcPoints":     "Recalculate statistics",
+		"RecalcAllyPoints": "Recalculate alliance statistics",
+		"AllowName":        "Allow name change",
+		"ChangeEmail":      "Update permanent mail address",
+		"UnloadAll":        "Unload all the players",
+		"CleanDebris":      "Cleaning virtual debris",
+		"CleanPlanets":     "Cleanup of destroyed planets",
+		"CleanPlayers":     "Deleting inactive players and players put up for deletion",
+		"UnbanPlayer":      "Unban a player",
+		"AllowAttacks":     "Allow attacks",
+	}
+	for queueType, want := range cases {
+		if got := legacyAdminQueueDescription(queueType, 0, 0, 0); got != want {
+			t.Fatalf("description for %s = %q, want %q", queueType, got, want)
+		}
+	}
+	if got := legacyAdminQueueDescription("Build", 12, 14, 3); got != "Unknown task type (type=Build, sub_id=12, obj_id=14, level=3)" {
+		t.Fatalf("unexpected unknown description: %q", got)
+	}
+}
+
 func TestAdminRepositoryReadsBattleReportRows(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
@@ -266,5 +345,198 @@ func TestAdminRepositoryErrors(t *testing.T) {
 	repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("viewer rows failed"))}}}, "ogame_")
 	if _, err := repository.loadAdminViewer(context.Background(), 42); err == nil || !strings.Contains(err.Error(), "viewer rows failed") {
 		t.Fatalf("expected viewer rows error, got %v", err)
+	}
+}
+
+func TestAdminRepositoryAdminLoaderEdgeCases(t *testing.T) {
+	repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{100, "nohome", int64(1), int64(2), 1, 1, 1, 1, 0, "", 0, 0, 0})},
+	}}, "ogame_")
+	users, err := repository.queryAdminUsers(context.Background(), "SELECT users")
+	if err != nil {
+		t.Fatalf("queryAdminUsers returned error: %v", err)
+	}
+	if len(users) != 1 || users[0].HomePlanet != nil || !users[0].Vacation || !users[0].Banned || !users[0].NoAttack || !users[0].Disable {
+		t.Fatalf("expected optional home planet and flags to map: %+v", users)
+	}
+
+	repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("new users failed")}}}, "ogame_")
+	if _, _, err := repository.loadAdminUsers(context.Background()); err == nil || !strings.Contains(err.Error(), "new users failed") {
+		t.Fatalf("expected new users query error, got %v", err)
+	}
+
+	repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues()},
+		{err: errors.New("active users failed")},
+	}}, "ogame_")
+	if _, _, err := repository.loadAdminUsers(context.Background()); err == nil || !strings.Contains(err.Error(), "active users failed") {
+		t.Fatalf("expected active users query error, got %v", err)
+	}
+
+	repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "ogame_")
+	if _, err := repository.loadAdminUniverse(context.Background()); err == nil || !strings.Contains(err.Error(), "admin universe settings not found") {
+		t.Fatalf("expected missing universe settings error, got %v", err)
+	}
+
+	repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "ogame_")
+	if _, err := repository.loadAdminExpeditionSettings(context.Background()); err == nil || !strings.Contains(err.Error(), "admin expedition settings not found") {
+		t.Fatalf("expected missing expedition settings error, got %v", err)
+	}
+
+	repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("universe rows failed"))}}}, "ogame_")
+	if _, err := repository.loadAdminUniverse(context.Background()); err == nil || !strings.Contains(err.Error(), "universe rows failed") {
+		t.Fatalf("expected universe rows error, got %v", err)
+	}
+
+	repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("expedition rows failed"))}}}, "ogame_")
+	if _, err := repository.loadAdminExpeditionSettings(context.Background()); err == nil || !strings.Contains(err.Error(), "expedition rows failed") {
+		t.Fatalf("expected expedition rows error, got %v", err)
+	}
+}
+
+func TestAdminRepositoryAdminRowsErrEdges(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(AdminRepository) error
+	}{
+		{
+			name: "bot strategies",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminBotStrategies(context.Background())
+				return err
+			},
+		},
+		{
+			name: "messages",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminMessageRows(context.Background(), "debug", true)
+				return err
+			},
+		},
+		{
+			name: "user logs",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminUserLogRows(context.Background())
+				return err
+			},
+		},
+		{
+			name: "planet rows",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminPlanetRows(context.Background())
+				return err
+			},
+		},
+		{
+			name: "queue rows",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminQueueRows(context.Background())
+				return err
+			},
+		},
+		{
+			name: "battle reports",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminBattleReports(context.Background())
+				return err
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New(tt.name + " rows failed"))}}}, "ogame_")
+			if err := tt.run(repository); err == nil || !strings.Contains(err.Error(), tt.name+" rows failed") {
+				t.Fatalf("expected rows error for %s, got %v", tt.name, err)
+			}
+		})
+	}
+}
+
+func TestAdminRepositoryAdminScanEdges(t *testing.T) {
+	tests := []struct {
+		name string
+		rows *fakeRows
+		run  func(AdminRepository) error
+	}{
+		{
+			name: "bot strategies",
+			rows: fakeRowsFromValues([]any{"bad"}),
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminBotStrategies(context.Background())
+				return err
+			},
+		},
+		{
+			name: "messages",
+			rows: fakeRowsFromValues([]any{"bad"}),
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminMessageRows(context.Background(), "debug", true)
+				return err
+			},
+		},
+		{
+			name: "user logs",
+			rows: fakeRowsFromValues([]any{"bad"}),
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminUserLogRows(context.Background())
+				return err
+			},
+		},
+		{
+			name: "users",
+			rows: fakeRowsFromValues([]any{"bad"}),
+			run: func(repository AdminRepository) error {
+				_, _, err := repository.loadAdminUsers(context.Background())
+				return err
+			},
+		},
+		{
+			name: "planet rows",
+			rows: fakeRowsFromValues([]any{"bad"}),
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminPlanetRows(context.Background())
+				return err
+			},
+		},
+		{
+			name: "universe",
+			rows: fakeRowsFromValues([]any{"bad"}),
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminUniverse(context.Background())
+				return err
+			},
+		},
+		{
+			name: "expedition",
+			rows: fakeRowsFromValues([]any{"bad"}),
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminExpeditionSettings(context.Background())
+				return err
+			},
+		},
+		{
+			name: "queue rows",
+			rows: fakeRowsFromValues([]any{"bad"}),
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminQueueRows(context.Background())
+				return err
+			},
+		},
+		{
+			name: "battle reports",
+			rows: fakeRowsFromValues([]any{"bad"}),
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminBattleReports(context.Background())
+				return err
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: tt.rows}}}, "ogame_")
+			if err := tt.run(repository); err == nil {
+				t.Fatalf("expected scan error for %s", tt.name)
+			}
+		})
 	}
 }
