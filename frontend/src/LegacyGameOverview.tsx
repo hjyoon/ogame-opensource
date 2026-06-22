@@ -3076,55 +3076,13 @@ function AdminBroadcastTable() {
 }
 
 function AdminReportsTable() {
-  return (
-    <table className="header legacy-admin-reports-outer">
-      <tbody>
-        <tr className="header">
-          <td>
-            <form action={adminModeHref("Reports")} method="POST" onSubmit={(event) => event.preventDefault()}>
-              <table className="legacy-admin-reports-table" width={519}>
-                <tbody>
-                  <tr>
-                    <td className="c" colSpan={5}>
-                      Messages
-                    </td>
-                  </tr>
-                  <tr>
-                    <th>Action</th>
-                    <th>Date</th>
-                    <th>From</th>
-                    <th>Recipient</th>
-                    <th>Subject</th>
-                  </tr>
-                  <tr>
-                    <td className="b"> </td>
-                    <td className="b" colSpan={4} />
-                  </tr>
-                  <tr>
-                    <th colSpan={5} style={{ padding: "0px 105px" }} />
-                  </tr>
-                  <tr>
-                    <th colSpan={5}>
-                      <select name="deletemessages">
-                        <option value="deletemarked">Delete highlighted messages</option>
-                        <option value="deleteall">Delete all messages</option>
-                      </select>
-                      <input type="submit" value="ok" />
-                    </th>
-                  </tr>
-                  <tr>
-                    <td colSpan={5}>
-                      <center> </center>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </form>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  );
+  return React.createElement("span", { dangerouslySetInnerHTML: { __html: adminReportsHTML() } });
+}
+
+function adminReportsHTML(): string {
+  return `<table class='header legacy-admin-reports-outer'><tr class='header'><td><table class="legacy-admin-reports-table" width="519">\n<form action="${legacyHTMLAttribute(
+    adminModeHref("Reports")
+  )}" method="POST">\n<tr><td colspan="5" class="c">Messages</td></tr>\n<tr><th>Action</th><th>Date</th><th>From</th><th>Recipient</th><th>Subject</th></tr>\n\n<tr><td class="b"> </td><td class="b" colspan="4"></td></tr>\n<tr><th colspan="5" style='padding:0px 105px;'></th></tr>\n<tr><th colspan="5">\n<select name="deletemessages">\n<option value="deletemarked">Delete highlighted messages</option> \n<option value="deleteall">Delete all messages</option> \n</select><input type="submit" value="ok" /></th></tr>\n<tr><td colspan="5"><center>     </center></td></tr>\n</form>\n</table>`;
 }
 
 function AdminBotsTable({ admin }: { admin: GameAdmin }) {
