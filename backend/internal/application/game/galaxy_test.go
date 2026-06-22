@@ -108,6 +108,9 @@ func TestGalaxyServicePropagatesErrors(t *testing.T) {
 	if _, err := service.GetGalaxy(context.Background(), GalaxyCommand{}); !errors.Is(err, sessionErr) {
 		t.Fatalf("expected session error, got %v", err)
 	}
+	if _, err := service.LaunchMissiles(context.Background(), GalaxyMissileLaunchCommand{}); !errors.Is(err, sessionErr) {
+		t.Fatalf("expected launch session error, got %v", err)
+	}
 
 	repoErr := errors.New("repository failed")
 	service = NewGalaxyService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
@@ -124,6 +127,14 @@ func TestGalaxyServicePropagatesErrors(t *testing.T) {
 	}}, &fakeGalaxyRepository{launchErr: repoErr})
 	if _, err := service.LaunchMissiles(context.Background(), GalaxyMissileLaunchCommand{}); !errors.Is(err, repoErr) {
 		t.Fatalf("expected launch error, got %v", err)
+	}
+
+	service = NewGalaxyService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}, &fakeGalaxyRepository{err: repoErr})
+	if _, err := service.LaunchMissiles(context.Background(), GalaxyMissileLaunchCommand{}); !errors.Is(err, repoErr) {
+		t.Fatalf("expected refresh error after launch, got %v", err)
 	}
 }
 

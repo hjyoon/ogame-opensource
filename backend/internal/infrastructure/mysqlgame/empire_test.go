@@ -183,6 +183,14 @@ func TestNewEmpireRepositoryKeepsSQLQueryer(t *testing.T) {
 	if repository.currentTime().IsZero() {
 		t.Fatal("expected default current time")
 	}
+	fixed := time.Unix(1234, 0)
+	repository = NewEmpireRepositoryWithRunner(&fakeQueryer{}, nil, "ogame_", func() time.Time { return fixed })
+	if !repository.currentTime().Equal(fixed) {
+		t.Fatalf("expected custom empire clock, got %v", repository.currentTime())
+	}
+	if (EmpireRepository{}).currentTime().IsZero() {
+		t.Fatal("expected empty empire repository to fall back to current time")
+	}
 	if _, _, err := NewEmpireRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_", time.Now).GetEmpire(context.Background(), appgame.EmpireQuery{}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
 		t.Fatalf("expected bad prefix error, got %v", err)
 	}
@@ -417,10 +425,20 @@ func TestEmpireRepositoryHelpersDefaultEmptyRows(t *testing.T) {
 	if err != nil || enabled {
 		t.Fatalf("expected empty moon config to be disabled, got enabled=%v err=%v", enabled, err)
 	}
+	repository = NewEmpireRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}, "ogame_", nil)
+	enabled, err = repository.loadMoonEnabled(context.Background())
+	if err != nil || !enabled {
+		t.Fatalf("expected positive moon config to be enabled, got enabled=%v err=%v", enabled, err)
+	}
 	repository = NewEmpireRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "ogame_", nil)
 	hasMoons, err := repository.loadHasMoons(context.Background(), "`ogame_planets`", 42)
 	if err != nil || hasMoons {
 		t.Fatalf("expected empty moon count to be false, got hasMoons=%v err=%v", hasMoons, err)
+	}
+	repository = NewEmpireRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{2})}}}, "ogame_", nil)
+	hasMoons, err = repository.loadHasMoons(context.Background(), "`ogame_planets`", 42)
+	if err != nil || !hasMoons {
+		t.Fatalf("expected positive moon count to be true, got hasMoons=%v err=%v", hasMoons, err)
 	}
 }
 

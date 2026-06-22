@@ -17,6 +17,7 @@ const (
 
 type Overview struct {
 	Commander      string
+	AdminLevel     int
 	ServerTime     string
 	Score          ScoreSummary
 	CurrentPlanet  PlanetOverview

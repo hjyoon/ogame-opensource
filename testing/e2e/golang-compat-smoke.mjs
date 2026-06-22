@@ -1155,6 +1155,54 @@ try {
     gameMerchantWithoutCookieBody = {};
   }
 
+  const gameOfficers = await request(`/api/game/officers${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameOfficersBody = {};
+  try {
+    gameOfficersBody = JSON.parse(gameOfficers.body);
+  } catch {
+    gameOfficersBody = {};
+  }
+
+  const gameOfficersInvalid = await request(`/api/game/officers${sessionSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: sessionCookiePair },
+    body: "type=99&days=7"
+  });
+  let gameOfficersInvalidBody = {};
+  try {
+    gameOfficersInvalidBody = JSON.parse(gameOfficersInvalid.body);
+  } catch {
+    gameOfficersInvalidBody = {};
+  }
+
+  const gameOfficersWithoutCookie = await request(`/api/game/officers${sessionSearch}`);
+  let gameOfficersWithoutCookieBody = {};
+  try {
+    gameOfficersWithoutCookieBody = JSON.parse(gameOfficersWithoutCookie.body);
+  } catch {
+    gameOfficersWithoutCookieBody = {};
+  }
+
+  const gameAdmin = await request(`/api/game/admin${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  let gameAdminBody = {};
+  try {
+    gameAdminBody = JSON.parse(gameAdmin.body);
+  } catch {
+    gameAdminBody = {};
+  }
+
+  const gameAdminWithoutCookie = await request(`/api/game/admin${sessionSearch}`);
+  let gameAdminWithoutCookieBody = {};
+  try {
+    gameAdminWithoutCookieBody = JSON.parse(gameAdminWithoutCookie.body);
+  } catch {
+    gameAdminWithoutCookieBody = {};
+  }
+
   const gameOptions = await request(`/api/game/options${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -1597,6 +1645,23 @@ try {
       check(!gameMerchant.body.includes(sessionCookiePair), "game merchant response does not echo private cookie"),
       check(gameMerchantWithoutCookie.status === 401, "game merchant rejects missing private cookie", { status: gameMerchantWithoutCookie.status }),
       check(gameMerchantWithoutCookieBody.authenticated === false, "game merchant missing private cookie is unauthenticated", gameMerchantWithoutCookieBody),
+      check(gameOfficers.status === 200, "game officers returns HTTP 200 with private cookie", { status: gameOfficers.status }),
+      check(gameOfficersBody.authenticated === true, "game officers authenticates the login session", gameOfficersBody),
+      check(Array.isArray(gameOfficersBody.officers?.rows), "game officers returns officer rows array", gameOfficersBody),
+      check(gameOfficersBody.officers?.rows?.some((row) => row.name === "Commander"), "game officers returns commander row", gameOfficersBody),
+      check(Array.isArray(gameOfficersBody.officers?.planetSwitcher), "game officers returns planet switcher", gameOfficersBody),
+      check(gameOfficersInvalid.status === 200, "game officers accepts legacy form POST", { status: gameOfficersInvalid.status }),
+      check(gameOfficersInvalidBody.authenticated === true, "game officers invalid legacy POST authenticates without mutating", gameOfficersInvalidBody),
+      check(!gameOfficers.body.includes(sessionCookiePair), "game officers response does not echo private cookie"),
+      check(gameOfficersWithoutCookie.status === 401, "game officers rejects missing private cookie", { status: gameOfficersWithoutCookie.status }),
+      check(gameOfficersWithoutCookieBody.authenticated === false, "game officers missing private cookie is unauthenticated", gameOfficersWithoutCookieBody),
+      check(gameAdmin.status === 200, "game admin returns HTTP 200 with private cookie", { status: gameAdmin.status }),
+      check(gameAdminBody.authenticated === true, "game admin authenticates the login session", gameAdminBody),
+      check(Array.isArray(gameAdminBody.admin?.menu), "game admin returns home menu items", gameAdminBody),
+      check(gameAdminBody.admin?.menu?.some((row) => row.label === "Fleet Logs"), "game admin menu includes Fleet Logs", gameAdminBody),
+      check(!gameAdmin.body.includes(sessionCookiePair), "game admin response does not echo private cookie"),
+      check(gameAdminWithoutCookie.status === 401, "game admin rejects missing private cookie", { status: gameAdminWithoutCookie.status }),
+      check(gameAdminWithoutCookieBody.authenticated === false, "game admin missing private cookie is unauthenticated", gameAdminWithoutCookieBody),
       check(gameOptions.status === 200, "game options returns HTTP 200 with private cookie", { status: gameOptions.status }),
       check(gameOptionsBody.authenticated === true, "game options authenticates the login session", gameOptionsBody),
       check(typeof gameOptionsBody.options?.user?.name === "string" && gameOptionsBody.options.user.name.length > 0, "game options returns user data", gameOptionsBody),
@@ -1739,6 +1804,8 @@ try {
       check(js.body.includes("sandybrown") && js.body.includes("magenta"), "React bundle contains legacy empire queue marker colors"),
       check(js.body.includes("/api/game/resources"), "React bundle consumes game resources API"),
       check(js.body.includes("/api/game/merchant"), "React bundle consumes game merchant API"),
+      check(js.body.includes("/api/game/officers"), "React bundle consumes game officers API"),
+      check(js.body.includes("/api/game/admin"), "React bundle consumes game admin API"),
       check(js.body.includes("/api/game/research"), "React bundle consumes game research API"),
       check(js.body.includes("/api/game/shipyard"), "React bundle consumes game shipyard API"),
       check(js.body.includes("/api/game/fleet"), "React bundle consumes game fleet API"),
@@ -1766,6 +1833,8 @@ try {
       check(js.body.includes("legacy-buildings-table"), "React bundle contains legacy game buildings layout"),
       check(js.body.includes("legacy-resources-table"), "React bundle contains legacy game resources layout"),
       check(js.body.includes("legacy-merchant-call-table"), "React bundle contains legacy game merchant layout"),
+      check(js.body.includes("legacy-officers-table"), "React bundle contains legacy game officers layout"),
+      check(js.body.includes("legacy-admin-home-table"), "React bundle contains legacy game admin layout"),
       check(js.body.includes("legacy-buddy-table"), "React bundle contains legacy game buddy layout"),
       check(js.body.includes("legacy-research-table"), "React bundle contains legacy game research layout"),
       check(js.body.includes("legacy-shipyard-table"), "React bundle contains legacy game shipyard layout"),
@@ -1819,7 +1888,7 @@ try {
   const putGameShipyard = await request("/api/game/shipyard", { method: "PUT" });
   const putGameFleet = await request("/api/game/fleet", { method: "PUT" });
   const putGameFleetTemplates = await request("/api/game/fleet-templates", { method: "PUT" });
-  const postGameGalaxy = await request("/api/game/galaxy", { method: "POST" });
+  const putGameGalaxy = await request("/api/game/galaxy", { method: "PUT" });
   const putGameDefense = await request("/api/game/defense", { method: "PUT" });
   const postGameTechnology = await request("/api/game/technology", { method: "POST" });
   const postGameStatistics = await request("/api/game/statistics", { method: "POST" });
@@ -1830,6 +1899,8 @@ try {
   const putGameReport = await request("/api/game/report", { method: "PUT" });
   const putGameOptions = await request("/api/game/options", { method: "PUT" });
   const putGameMerchant = await request("/api/game/merchant", { method: "PUT" });
+  const putGameOfficers = await request("/api/game/officers", { method: "PUT" });
+  const postGameAdmin = await request("/api/game/admin", { method: "POST" });
   const getGameLogout = await request("/api/game/logout");
   const putGameResources = await request("/api/game/resources", { method: "PUT" });
   cases.push(finalize({
@@ -1863,8 +1934,8 @@ try {
       check(hasHeader(putGameFleet, "allow", "GET, HEAD, POST"), "game fleet method rejection returns Allow header"),
       check(putGameFleetTemplates.status === 405, "PUT game fleet templates endpoint is rejected", { status: putGameFleetTemplates.status }),
       check(hasHeader(putGameFleetTemplates, "allow", "GET, HEAD, POST"), "game fleet templates method rejection returns Allow header"),
-      check(postGameGalaxy.status === 405, "POST game galaxy endpoint is rejected", { status: postGameGalaxy.status }),
-      check(hasHeader(postGameGalaxy, "allow", "GET, HEAD"), "game galaxy method rejection returns Allow header"),
+      check(putGameGalaxy.status === 405, "PUT game galaxy endpoint is rejected", { status: putGameGalaxy.status }),
+      check(hasHeader(putGameGalaxy, "allow", "GET, HEAD, POST"), "game galaxy method rejection returns Allow header"),
       check(putGameDefense.status === 405, "PUT game defense endpoint is rejected", { status: putGameDefense.status }),
       check(hasHeader(putGameDefense, "allow", "GET, HEAD, POST"), "game defense method rejection returns Allow header"),
       check(postGameTechnology.status === 405, "POST game technology endpoint is rejected", { status: postGameTechnology.status }),
@@ -1885,6 +1956,10 @@ try {
       check(hasHeader(putGameOptions, "allow", "GET, HEAD, POST"), "game options method rejection returns Allow header"),
       check(putGameMerchant.status === 405, "PUT game merchant endpoint is rejected", { status: putGameMerchant.status }),
       check(hasHeader(putGameMerchant, "allow", "GET, HEAD, POST"), "game merchant method rejection returns Allow header"),
+      check(putGameOfficers.status === 405, "PUT game officers endpoint is rejected", { status: putGameOfficers.status }),
+      check(hasHeader(putGameOfficers, "allow", "GET, HEAD, POST"), "game officers method rejection returns Allow header"),
+      check(postGameAdmin.status === 405, "POST game admin endpoint is rejected", { status: postGameAdmin.status }),
+      check(hasHeader(postGameAdmin, "allow", "GET, HEAD"), "game admin method rejection returns Allow header"),
       check(getGameLogout.status === 405, "GET game logout endpoint is rejected", { status: getGameLogout.status }),
       check(hasHeader(getGameLogout, "allow", "POST"), "game logout method rejection returns Allow header"),
       check(putGameResources.status === 405, "PUT game resources endpoint is rejected", { status: putGameResources.status }),

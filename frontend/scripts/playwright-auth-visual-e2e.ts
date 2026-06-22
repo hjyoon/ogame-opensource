@@ -99,6 +99,15 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["Arakis", "Legor", "Diameter", "Temperature", "[1:1:2]", "Points", "administrator mode"]
   },
   {
+    name: "game-admin",
+    legacyPage: "admin",
+    migratedPath: "/game/admin",
+    legacyReady: "#content table.s",
+    migratedReady: ".legacy-admin-home-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Fleet Logs", "Browse History", "Users", "Universe Settings", "Expedition Settings", "Modifications"]
+  },
+  {
     name: "game-rename-planet",
     legacyPage: "renameplanet",
     migratedPath: "/game/rename-planet",
@@ -137,6 +146,14 @@ const pageSpecs: AuthPageSpec[] = [
     legacyReady: "#content table",
     migratedReady: ".legacy-merchant-call-table",
     expectedTexts: ["Merchant", "You want to sell", "Summoning a merchant costs 2500 dark matter"]
+  },
+  {
+    name: "game-officers",
+    legacyPage: "micropayment",
+    migratedPath: "/game/officers",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-officers-table",
+    expectedTexts: ["To the wise lord", "Dark Matter", "Officers", "Commander", "Admiral", "1 week for"]
   },
   {
     name: "game-research",

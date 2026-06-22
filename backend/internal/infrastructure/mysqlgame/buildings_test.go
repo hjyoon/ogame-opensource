@@ -1435,6 +1435,85 @@ func TestBuildingsRepositoryLoadHelpersHandleFallbacks(t *testing.T) {
 	if speed != 1 {
 		t.Fatalf("expected non-positive speed to default to one, got %v", speed)
 	}
+
+	repository = NewBuildingsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{int64(2000)})},
+	}}, "ogame_")
+	active, err := repository.loadBuildingCommanderActive(context.Background(), "`ogame_users`", 42, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !active {
+		t.Fatal("expected future commander timer to be active")
+	}
+
+	repository = NewBuildingsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{int64(1000)})},
+	}}, "ogame_")
+	active, err = repository.loadBuildingCommanderActive(context.Background(), "`ogame_users`", 42, 2000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active {
+		t.Fatal("expected expired commander timer to be inactive")
+	}
+
+	repository = NewBuildingsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(
+			buildQueueRowValues(buildQueueRow{ID: 1, ListID: 1, TechID: domaingame.BuildingMetalMine, Level: 3, Start: 100, End: 160}),
+			buildQueueRowValues(buildQueueRow{ID: 2, ListID: 2, TechID: domaingame.BuildingCrystalMine, Level: 2, Destroy: 1, Start: 100, End: 90}),
+			buildQueueRowValues(buildQueueRow{ID: 3, ListID: 3, TechID: 999999, Level: 1, Start: 100, End: 200}),
+		)},
+	}}, "ogame_")
+	entries, err := repository.loadBuildingQueueEntries(context.Background(), "`ogame_buildqueue`", 99, 120)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 || entries[0].RemainingSeconds != 40 || entries[1].RemainingSeconds != 0 || !entries[1].Destroy {
+		t.Fatalf("unexpected building queue entries: %+v", entries)
+	}
+}
+
+func TestBuildingsRepositoryLoadCommanderActiveErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		queryer *fakeQueryer
+		want    string
+	}{
+		{
+			name:    "query",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{err: errors.New("commander query failed")}}},
+			want:    "commander query failed",
+		},
+		{
+			name:    "not found",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}},
+			want:    "commander state not found",
+		},
+		{
+			name:    "empty rows",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("empty commander rows failed"))}}},
+			want:    "empty commander rows failed",
+		},
+		{
+			name:    "scan",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}},
+			want:    "expected int64",
+		},
+		{
+			name:    "rows",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("commander rows failed"), []any{int64(2000)})}}},
+			want:    "commander rows failed",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewBuildingsRepositoryWithQueryer(tt.queryer, "ogame_")
+			if _, err := repository.loadBuildingCommanderActive(context.Background(), "`ogame_users`", 42, 1000); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
+	}
 }
 
 func TestBuildingsRepositoryReturnsErrors(t *testing.T) {

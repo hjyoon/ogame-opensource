@@ -110,6 +110,60 @@ func TestShipyardRepositoryLoadHelpersHandleFallbacks(t *testing.T) {
 	}
 }
 
+func TestShipyardRepositoryLoadQueueEntriesMapsKnownUnits(t *testing.T) {
+	repository := NewShipyardRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(
+		buildingQueueTaskValues(buildingQueueTask{
+			TaskID:  11,
+			OwnerID: 42,
+			Type:    queueTypeShipyard,
+			SubID:   99,
+			ObjID:   domaingame.FleetSmallCargo,
+			Level:   3,
+			Start:   100,
+			End:     220,
+		}),
+		buildingQueueTaskValues(buildingQueueTask{
+			TaskID:  12,
+			OwnerID: 42,
+			Type:    queueTypeShipyard,
+			SubID:   99,
+			ObjID:   999999,
+			Level:   1,
+			Start:   100,
+			End:     200,
+		}),
+		buildingQueueTaskValues(buildingQueueTask{
+			TaskID:  13,
+			OwnerID: 42,
+			Type:    queueTypeShipyard,
+			SubID:   99,
+			ObjID:   domaingame.FleetLightFighter,
+			Level:   1,
+			Start:   10,
+			End:     90,
+		}),
+	)}}}, "ogame_")
+
+	entries, err := repository.loadShipyardQueueEntries(context.Background(), "`ogame_queue`", 99, 120)
+	if err != nil {
+		t.Fatalf("loadShipyardQueueEntries returned error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected unknown unit to be skipped, got %+v", entries)
+	}
+	if entries[0].TaskID != 11 || entries[0].Name != "Small Cargo" || entries[0].RemainingSeconds != 100 {
+		t.Fatalf("unexpected first queue entry: %+v", entries[0])
+	}
+	if entries[1].TaskID != 13 || entries[1].RemainingSeconds != 0 {
+		t.Fatalf("expected overdue queue entry to clamp remaining time, got %+v", entries[1])
+	}
+
+	repository = NewShipyardRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("queue failed")}}}, "ogame_")
+	if _, err := repository.loadShipyardQueueEntries(context.Background(), "`ogame_queue`", 99, 120); err == nil || !strings.Contains(err.Error(), "queue failed") {
+		t.Fatalf("expected queue error, got %v", err)
+	}
+}
+
 func TestShipyardRepositoryLoadHelperErrors(t *testing.T) {
 	tests := []struct {
 		name string

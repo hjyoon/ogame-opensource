@@ -54,6 +54,7 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/index.php", "?page=buildings&mode=Verteidigung")).toMatchObject({ key: "defense", migrated: true });
     expect(resolveGameRoute("/game/resources")).toMatchObject({ key: "resources", migrated: true });
     expect(resolveGameRoute("/game/merchant")).toMatchObject({ key: "merchant", migrated: true });
+    expect(resolveGameRoute("/game/officers")).toMatchObject({ key: "officers", migrated: true });
     expect(resolveGameRoute("/game/research")).toMatchObject({ key: "research", migrated: true });
     expect(resolveGameRoute("/game/shipyard")).toMatchObject({ key: "shipyard", migrated: true });
     expect(resolveGameRoute("/game/fleet")).toMatchObject({ key: "fleet", migrated: true });
@@ -79,10 +80,10 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/index.php", "?page=options")).toMatchObject({ key: "options", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=suche")).toMatchObject({ key: "search", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=techtree")).toMatchObject({ key: "technology", migrated: true });
-    expect(resolveGameRoute("/game/index.php", "?page=allianzen")).toMatchObject({ key: "alliance", migrated: false });
+    expect(resolveGameRoute("/game/index.php", "?page=allianzen")).toMatchObject({ key: "alliance", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=imperium")).toMatchObject({ key: "empire", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=trader")).toMatchObject({ key: "merchant", migrated: true });
-    expect(resolveGameRoute("/game/index.php", "?page=micropayment")).toMatchObject({ key: "officers", migrated: false });
+    expect(resolveGameRoute("/game/index.php", "?page=micropayment")).toMatchObject({ key: "officers", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=admin")).toMatchObject({ key: "admin", migrated: false });
   });
 

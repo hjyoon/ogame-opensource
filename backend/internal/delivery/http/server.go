@@ -77,6 +77,20 @@ type GameMerchantUseCase interface {
 	MutateMerchant(context.Context, appgame.MerchantMutationCommand) (appgame.MerchantResult, error)
 }
 
+type GameOfficersUseCase interface {
+	GetOfficers(context.Context, appgame.OfficersCommand) (appgame.OfficersResult, error)
+	RecruitOfficer(context.Context, appgame.OfficersMutationCommand) (appgame.OfficersResult, error)
+}
+
+type GameAllianceUseCase interface {
+	GetAlliance(context.Context, appgame.AllianceCommand) (appgame.AllianceResult, error)
+	MutateAlliance(context.Context, appgame.AllianceMutationCommand) (appgame.AllianceResult, error)
+}
+
+type GameAdminUseCase interface {
+	GetAdmin(context.Context, appgame.AdminCommand) (appgame.AdminResult, error)
+}
+
 type GameResearchUseCase interface {
 	GetResearch(context.Context, appgame.ResearchCommand) (appgame.ResearchResult, error)
 	MutateResearch(context.Context, appgame.ResearchMutationCommand) (appgame.ResearchResult, error)
@@ -159,6 +173,9 @@ type Dependencies struct {
 	GameEmpire         GameEmpireUseCase
 	GameResources      GameResourcesUseCase
 	GameMerchant       GameMerchantUseCase
+	GameOfficers       GameOfficersUseCase
+	GameAlliance       GameAllianceUseCase
+	GameAdmin          GameAdminUseCase
 	GameResearch       GameResearchUseCase
 	GameShipyard       GameShipyardUseCase
 	GameFleet          GameFleetUseCase
@@ -199,6 +216,9 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/empire", getOnly(a.handleGameEmpire))
 	mux.HandleFunc("/api/game/resources", a.handleGameResources)
 	mux.HandleFunc("/api/game/merchant", a.handleGameMerchant)
+	mux.HandleFunc("/api/game/officers", a.handleGameOfficers)
+	mux.HandleFunc("/api/game/alliance", a.handleGameAlliance)
+	mux.HandleFunc("/api/game/admin", getOnly(a.handleGameAdmin))
 	mux.HandleFunc("/api/game/research", a.handleGameResearch)
 	mux.HandleFunc("/api/game/shipyard", a.handleGameShipyard)
 	mux.HandleFunc("/api/game/fleet", a.handleGameFleet)

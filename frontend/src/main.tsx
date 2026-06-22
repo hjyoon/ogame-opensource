@@ -2,6 +2,9 @@ import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   LegacyGameOverview,
+  type GameAdminStatus,
+  type GameAllianceAction,
+  type GameAllianceStatus,
   type GameBuddyStatus,
   type GameBuildingsStatus,
   type GameDefenseStatus,
@@ -15,6 +18,8 @@ import {
   type GameMerchantStatus,
   type GameMerchantTradeValues,
   type GameMessagesStatus,
+  type GameOfficerRecruitment,
+  type GameOfficersStatus,
   type GameNoteDraft,
   type GameNotesStatus,
   type GameOptionsStatus,
@@ -253,6 +258,14 @@ function App() {
   const [gameMerchant, setGameMerchant] = useState<GameMerchantStatus | null>(null);
   const [gameMerchantError, setGameMerchantError] = useState<string | null>(null);
   const [gameMerchantPending, setGameMerchantPending] = useState(false);
+  const [gameOfficers, setGameOfficers] = useState<GameOfficersStatus | null>(null);
+  const [gameOfficersError, setGameOfficersError] = useState<string | null>(null);
+  const [gameOfficersPending, setGameOfficersPending] = useState(false);
+  const [gameAlliance, setGameAlliance] = useState<GameAllianceStatus | null>(null);
+  const [gameAllianceError, setGameAllianceError] = useState<string | null>(null);
+  const [gameAlliancePending, setGameAlliancePending] = useState(false);
+  const [gameAdmin, setGameAdmin] = useState<GameAdminStatus | null>(null);
+  const [gameAdminError, setGameAdminError] = useState<string | null>(null);
   const [gameResearch, setGameResearch] = useState<GameResearchStatus | null>(null);
   const [gameResearchError, setGameResearchError] = useState<string | null>(null);
   const [gameResearchPending, setGameResearchPending] = useState(false);
@@ -785,6 +798,223 @@ function App() {
   const submitGameMerchantTrade = (values: GameMerchantTradeValues) => {
     submitGameMerchantMutation({ action: "trade", values });
   };
+
+  const syncGameOverviewFromOfficers = (payload: GameOfficersStatus) => {
+    if (!payload.authenticated || !payload.officers) {
+      return;
+    }
+    const officers = payload.officers;
+    setGameOverview((current) => {
+      if (!current?.authenticated || !current.overview) {
+        return current;
+      }
+      return {
+        ...current,
+        overview: {
+          ...current.overview,
+          currentPlanet: officers.currentPlanet,
+          planetSwitcher: officers.planetSwitcher
+        }
+      };
+    });
+  };
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "officers" || publicSession === "") {
+      setGameOfficers(null);
+      setGameOfficersError(null);
+      setGameOfficersPending(false);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const officersSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      officersSearch.set("cp", selectedPlanet);
+    }
+    fetch(`/api/game/officers?${officersSearch.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameOfficersStatus>)
+      .then((payload) => {
+        setGameOfficers(payload);
+        syncGameOverviewFromOfficers(payload);
+        setGameOfficersError(null);
+      })
+      .catch((err: unknown) => setGameOfficersError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
+  const submitGameOfficerRecruit = (draft: GameOfficerRecruitment) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameOfficersError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const officersSearch = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      officersSearch.set("cp", selectedPlanet);
+    }
+    setGameOfficersPending(true);
+    setGameOfficersError(null);
+    fetch(`/api/game/officers?${officersSearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(draft)
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameOfficersStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `officers returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("officers response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameOfficers(payload);
+        syncGameOverviewFromOfficers(payload);
+        setGameOfficersError(payload.actionIssue?.code === "not_enough_dark_matter" ? payload.actionIssue.message : null);
+      })
+      .catch((err: unknown) => setGameOfficersError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameOfficersPending(false));
+  };
+
+  const syncGameOverviewFromAlliance = (payload: GameAllianceStatus) => {
+    if (!payload.authenticated || !payload.alliance) {
+      return;
+    }
+    const alliance = payload.alliance;
+    setGameOverview((current) => {
+      if (!current?.authenticated || !current.overview) {
+        return current;
+      }
+      return {
+        ...current,
+        overview: {
+          ...current.overview,
+          currentPlanet: alliance.currentPlanet,
+          planetSwitcher: alliance.planetSwitcher
+        }
+      };
+    });
+  };
+
+  const allianceSearchParams = () => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    const currentSearch = new URLSearchParams(search);
+    const allianceSearch = new URLSearchParams({ session: publicSession });
+    for (const key of ["cp", "page", "a", "allyid", "show", "sort", "suchtext"]) {
+      const value = currentSearch.get(key);
+      if (value) {
+        allianceSearch.set(key, value);
+      }
+    }
+    return allianceSearch;
+  };
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "alliance" || publicSession === "") {
+      setGameAlliance(null);
+      setGameAllianceError(null);
+      setGameAlliancePending(false);
+      return;
+    }
+    const query = allianceSearchParams();
+    fetch(`/api/game/alliance?${query.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameAllianceStatus>)
+      .then((payload) => {
+        setGameAlliance(payload);
+        syncGameOverviewFromAlliance(payload);
+        setGameAllianceError(null);
+      })
+      .catch((err: unknown) => setGameAllianceError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
+  const submitGameAllianceAction = (action: GameAllianceAction) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameAllianceError("Session is invalid.");
+      return;
+    }
+    const query = allianceSearchParams();
+    if (action.action === "search") {
+      query.set("a", "2");
+      query.set("suchtext", action.text);
+    }
+    setGameAlliancePending(true);
+    setGameAllianceError(null);
+    fetch(`/api/game/alliance?${query.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(action)
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameAllianceStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `alliance returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("alliance response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameAlliance(payload);
+        syncGameOverviewFromAlliance(payload);
+        setGameAllianceError(null);
+        if (action.action === "search") {
+          dispatchClientNavigation(`/game/alliance?${query.toString()}`);
+          return;
+        }
+        const next = new URLSearchParams({ session: publicSession });
+        const selectedPlanet = new URLSearchParams(search).get("cp");
+        if (selectedPlanet) {
+          next.set("cp", selectedPlanet);
+        }
+        dispatchClientNavigation(`/game/alliance?${next.toString()}`);
+      })
+      .catch((err: unknown) => setGameAllianceError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameAlliancePending(false));
+  };
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "admin" || publicSession === "") {
+      setGameAdmin(null);
+      setGameAdminError(null);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const adminSearch = new URLSearchParams({ session: publicSession });
+    for (const key of ["cp", "mode"]) {
+      const value = currentSearch.get(key);
+      if (value) {
+        adminSearch.set(key, value);
+      }
+    }
+    fetch(`/api/game/admin?${adminSearch.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameAdminStatus>)
+      .then((payload) => {
+        setGameAdmin(payload);
+        setGameAdminError(null);
+        if (payload.actionIssue?.code === "access_denied") {
+          const next = new URLSearchParams({ session: publicSession });
+          const selectedPlanet = new URLSearchParams(search).get("cp");
+          if (selectedPlanet) {
+            next.set("cp", selectedPlanet);
+          }
+          dispatchClientNavigation(`/game/overview?${next.toString()}`);
+        }
+      })
+      .catch((err: unknown) => setGameAdminError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
@@ -1701,6 +1931,11 @@ function App() {
   if (pathname.startsWith("/game")) {
     return (
       <LegacyGameOverview
+        adminError={gameAdminError}
+        adminStatus={gameAdmin}
+        allianceError={gameAllianceError}
+        alliancePending={gameAlliancePending}
+        allianceStatus={gameAlliance}
         buddyError={gameBuddyError}
         buddyPending={gameBuddyPending}
         buddyStatus={gameBuddy}
@@ -1731,6 +1966,9 @@ function App() {
         notesError={gameNotesError}
         notesPending={gameNotesPending}
         notesStatus={gameNotes}
+        officersError={gameOfficersError}
+        officersPending={gameOfficersPending}
+        officersStatus={gameOfficers}
         optionsError={gameOptionsError}
         optionsPending={gameOptionsPending}
         optionsStatus={gameOptions}
@@ -1743,6 +1981,7 @@ function App() {
         onMessageSend={submitGameMessageSend}
         onBuddyAction={submitGameBuddyAction}
         onBuddyRequest={submitGameBuddyRequest}
+        onAllianceAction={submitGameAllianceAction}
         onBuildingAction={submitGameBuildingAction}
         onDefenseSubmit={submitGameDefenseOrders}
         onFleetLaunch={submitFleetLaunch}
@@ -1752,6 +1991,7 @@ function App() {
         onGalaxyMissileLaunch={submitGameGalaxyMissileLaunch}
         onMerchantCall={submitGameMerchantCall}
         onMerchantTrade={submitGameMerchantTrade}
+        onOfficerRecruit={submitGameOfficerRecruit}
         onPlanetDelete={submitGamePlanetDelete}
         onPlanetRename={submitGamePlanetRename}
         onResourcesSubmit={submitGameResources}

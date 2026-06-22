@@ -1633,6 +1633,15 @@ func TestGameShipyardEndpointReturnsShipyard(t *testing.T) {
 				Current: true,
 			}},
 			HasShipyard: true,
+			Queue: []domaingame.ShipyardQueueEntry{{
+				TaskID:           12,
+				UnitID:           domaingame.FleetSmallCargo,
+				Name:             "Small Cargo",
+				Count:            3,
+				Start:            100,
+				End:              220,
+				RemainingSeconds: 60,
+			}},
 			Items: []domaingame.ShipyardItem{{
 				ID:               domaingame.FleetSmallCargo,
 				Name:             "Small Cargo",
@@ -1665,6 +1674,9 @@ func TestGameShipyardEndpointReturnsShipyard(t *testing.T) {
 	}
 	if response.Shipyard.Items[0].Cost.Metal != 2000 || response.Shipyard.Items[0].DurationSeconds != 240 || response.Shipyard.Items[0].MaxBuild != 5 {
 		t.Fatalf("unexpected shipyard mapping: %+v", response.Shipyard.Items[0])
+	}
+	if len(response.Shipyard.Queue) != 1 || response.Shipyard.Queue[0].TaskID != 12 || response.Shipyard.Queue[0].RemainingSeconds != 60 {
+		t.Fatalf("unexpected shipyard queue mapping: %+v", response.Shipyard.Queue)
 	}
 	if shipyard.command.PublicSession != "public" || shipyard.command.PlanetID != 99 || shipyard.command.RemoteAddr != "203.0.113.10" {
 		t.Fatalf("unexpected shipyard command: %+v", shipyard.command)
@@ -2522,6 +2534,20 @@ func TestGameGalaxyEndpointRejectsInvalidInputs(t *testing.T) {
 			t.Fatalf("%s: expected bad request, got %d", target, rec.Code)
 		}
 	}
+
+	for _, target := range []string{
+		"/api/game/galaxy?session=public&cp=abc",
+		"/api/game/galaxy?session=public&p1=bad",
+		"/api/game/galaxy?session=public&p2=bad",
+		"/api/game/galaxy?session=public&p3=bad",
+	} {
+		req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(`{"action":"launch-missile"}`))
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s: expected post bad request, got %d", target, rec.Code)
+		}
+	}
 }
 
 func TestGameGalaxyMappingHandlesOptionalNilValues(t *testing.T) {
@@ -2547,6 +2573,14 @@ func TestGameGalaxyEndpointReturnsUnavailableWithoutUseCase(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected missing game galaxy use case to return 503, got %d", rec.Code)
 	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/galaxy?session=public", strings.NewReader(`{"action":"launch-missile"}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing game galaxy post use case to return 503, got %d", rec.Code)
+	}
 }
 
 func TestGameGalaxyEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
@@ -2557,6 +2591,14 @@ func TestGameGalaxyEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected game galaxy error to return 503, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/galaxy?session=public", strings.NewReader(`{"action":"launch-missile"}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game galaxy post error to return 503, got %d", rec.Code)
 	}
 }
 

@@ -1002,6 +1002,15 @@ func TestOverviewRepositoryDeleteHelpers(t *testing.T) {
 	if !emptyRepository.currentTime().After(time.Time{}) {
 		t.Fatal("expected nil clock to fall back to current time")
 	}
+	if scanDestinationCountError(nil) {
+		t.Fatal("nil scan error should not be a destination-count error")
+	}
+	if !scanDestinationCountError(errors.New("sql: expected 4 destination arguments in Scan, not 3")) {
+		t.Fatal("expected legacy destination arguments scan error to be detected")
+	}
+	if scanDestinationCountError(errors.New("expected int")) {
+		t.Fatal("plain scan type errors should not be destination-count errors")
+	}
 
 	queryer := &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("password rows failed"))}}}
 	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")

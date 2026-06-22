@@ -66,6 +66,10 @@ func TestBuildShipyardNormalizesSpeedAndAffordableCap(t *testing.T) {
 	if smallCargo.DurationSeconds != 1920 || smallCargo.MaxBuild != 0 || smallCargo.CanBuild {
 		t.Fatalf("expected normalized speed and non-negative affordable cap, got %+v", smallCargo)
 	}
+
+	if max := maxAffordableUnits(Resources{Metal: -5}, BuildingCost{Metal: 1}, 1000); max != 0 {
+		t.Fatalf("expected negative affordable amount to clamp to zero, got %d", max)
+	}
 }
 
 func shipyardItemByID(t *testing.T, shipyard Shipyard, id int) ShipyardItem {

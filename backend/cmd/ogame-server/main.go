@@ -63,6 +63,9 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	gameEmpire := gameEmpireService(cfg, logger, gameSessions)
 	gameResources := gameResourcesService(cfg, logger, gameSessions)
 	gameMerchant := gameMerchantService(cfg, logger, gameSessions)
+	gameOfficers := gameOfficersService(cfg, logger, gameSessions)
+	gameAlliance := gameAllianceService(cfg, logger, gameSessions)
+	gameAdmin := gameAdminService(cfg, logger, gameSessions)
 	gameResearch := gameResearchService(cfg, logger, gameSessions)
 	gameShipyard := gameShipyardService(cfg, logger, gameSessions)
 	gameFleet := gameFleetService(cfg, logger, gameSessions)
@@ -92,6 +95,9 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		GameEmpire:         gameEmpire,
 		GameResources:      gameResources,
 		GameMerchant:       gameMerchant,
+		GameOfficers:       gameOfficers,
+		GameAlliance:       gameAlliance,
+		GameAdmin:          gameAdmin,
 		GameResearch:       gameResearch,
 		GameShipyard:       gameShipyard,
 		GameFleet:          gameFleet,
@@ -447,6 +453,90 @@ func gameMerchantService(cfg config.Config, logger *slog.Logger, sessions apppub
 
 	logger.Info("universe DB game merchant enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewMerchantService(sessions, mysqlgame.NewMerchantRepository(db, cfg.UniDBPrefix))
+}
+
+func gameOfficersService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.OfficersService {
+	if !cfg.UniDBEnabled {
+		return appgame.OfficersService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game officers disabled", "error", err)
+		return appgame.OfficersService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game officers disabled", "error", err)
+		_ = db.Close()
+		return appgame.OfficersService{}
+	}
+
+	logger.Info("universe DB game officers enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
+	return appgame.NewOfficersService(sessions, mysqlgame.NewOfficersRepository(db, cfg.UniDBPrefix))
+}
+
+func gameAllianceService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.AllianceService {
+	if !cfg.UniDBEnabled {
+		return appgame.AllianceService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game alliance disabled", "error", err)
+		return appgame.AllianceService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game alliance disabled", "error", err)
+		_ = db.Close()
+		return appgame.AllianceService{}
+	}
+
+	logger.Info("universe DB game alliance enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
+	return appgame.NewAllianceService(sessions, mysqlgame.NewAllianceRepository(db, cfg.UniDBPrefix))
+}
+
+func gameAdminService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.AdminService {
+	if !cfg.UniDBEnabled {
+		return appgame.AdminService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game admin disabled", "error", err)
+		return appgame.AdminService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game admin disabled", "error", err)
+		_ = db.Close()
+		return appgame.AdminService{}
+	}
+
+	logger.Info("universe DB game admin enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
+	return appgame.NewAdminService(sessions, mysqlgame.NewAdminRepository(db, cfg.UniDBPrefix))
 }
 
 func gameResearchService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.ResearchService {

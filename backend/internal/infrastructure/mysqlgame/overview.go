@@ -226,6 +226,7 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 
 	return domaingame.Overview{
 		Commander:  user.Commander,
+		AdminLevel: user.AdminLevel,
 		ServerTime: formatLegacyOverviewTime(r.currentTime()),
 		Score: domaingame.ScoreSummary{
 			RawScore:        user.Score,

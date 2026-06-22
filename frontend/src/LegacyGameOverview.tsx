@@ -52,6 +52,41 @@ export type GameMerchantTradeValues = {
   deuterium: number;
 };
 
+export type GameOfficersStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  actionIssue?: { code: string; message: string };
+  officers?: GameOfficers;
+};
+
+export type GameOfficerRecruitment = {
+  officerId: number;
+  days: number;
+};
+
+export type GameAllianceStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  actionIssue?: { code: string; message: string };
+  alliance?: GameAlliance;
+};
+
+export type GameAdminStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  actionIssue?: { code: string; message: string };
+  admin?: GameAdmin;
+};
+
+export type GameAllianceAction =
+  | { action: "create"; tag: string; name: string }
+  | { action: "search"; text: string }
+  | { action: "apply"; allianceId: number; text: string }
+  | { action: "withdraw"; applicationId: number }
+  | { action: "accept"; applicationId: number }
+  | { action: "reject"; applicationId: number; text: string }
+  | { action: "leave" };
+
 export type GameResearchStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
@@ -166,6 +201,7 @@ export type GameLogoutStatus = {
 
 type GameOverview = {
   commander: string;
+  adminLevel: number;
   serverTime?: string;
   messages?: string[];
   unreadMessages: number;
@@ -898,6 +934,129 @@ type GameMerchantResourceRow = {
   rate: number;
 };
 
+type GameOfficers = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  user: {
+    paidDarkMatter: number;
+    freeDarkMatter: number;
+  };
+  rows: GameOfficerRow[];
+};
+
+type GameOfficerRow = {
+  id: number;
+  key: string;
+  name: string;
+  description: string;
+  note: string;
+  image: string;
+  icon: string;
+  active: boolean;
+  until: number;
+  daysLeft: number;
+  weekCost: number;
+  threeMonthCost: number;
+};
+
+type GameAlliance = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  view: string;
+  viewer: GameAllianceViewer;
+  own?: GameAllianceInfo;
+  target?: GameAllianceInfo;
+  pending?: GameAllianceApplication;
+  searchText: string;
+  searchResults: GameAllianceSearchResult[];
+  applications: GameAllianceApplication[];
+  selectedApp?: GameAllianceApplication;
+  members: GameAllianceMember[];
+};
+
+type GameAllianceViewer = {
+  playerId: number;
+  name: string;
+  validated: boolean;
+  allianceId: number;
+  rankId: number;
+  rankName: string;
+  rankRights: number;
+  founder: boolean;
+};
+
+type GameAllianceInfo = {
+  id: number;
+  tag: string;
+  name: string;
+  ownerId: number;
+  homepage: string;
+  imageLogo: string;
+  open: boolean;
+  insertApp: boolean;
+  externalText: string;
+  internalText: string;
+  applicationText: string;
+  oldTag: string;
+  oldName: string;
+  tagUntil: number;
+  nameUntil: number;
+  memberCount: number;
+  applicationCount: number;
+};
+
+type GameAllianceSearchResult = {
+  id: number;
+  tag: string;
+  name: string;
+  memberCount: number;
+};
+
+type GameAllianceApplication = {
+  id: number;
+  allianceId: number;
+  playerId: number;
+  playerName: string;
+  text: string;
+  date: number;
+};
+
+type GameAllianceMember = {
+  playerId: number;
+  name: string;
+  rankId: number;
+  rankName: string;
+  score: number;
+  joinedAt: number;
+  lastClick: number;
+  galaxy: number;
+  system: number;
+  position: number;
+};
+
+type GameAdmin = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  viewer: GameAdminViewer;
+  mode: string;
+  menu: GameAdminMenuItem[];
+};
+
+type GameAdminViewer = {
+  playerId: number;
+  name: string;
+  level: number;
+};
+
+type GameAdminMenuItem = {
+  mode: string;
+  label: string;
+  image: string;
+};
+
 type ResourceProductionRow = {
   id: number;
   name: string;
@@ -951,6 +1110,16 @@ type LegacyGameOverviewProps = {
   merchantPending: boolean;
   onMerchantCall: (offerID: number) => void;
   onMerchantTrade: (values: GameMerchantTradeValues) => void;
+  officersStatus: GameOfficersStatus | null;
+  officersError: string | null;
+  officersPending: boolean;
+  onOfficerRecruit: (draft: GameOfficerRecruitment) => void;
+  allianceStatus: GameAllianceStatus | null;
+  allianceError: string | null;
+  alliancePending: boolean;
+  onAllianceAction: (action: GameAllianceAction) => void;
+  adminStatus: GameAdminStatus | null;
+  adminError: string | null;
   researchStatus: GameResearchStatus | null;
   researchError: string | null;
   researchPending: boolean;
@@ -1089,6 +1258,16 @@ export function LegacyGameOverview({
   merchantPending,
   onMerchantCall,
   onMerchantTrade,
+  officersStatus,
+  officersError,
+  officersPending,
+  onOfficerRecruit,
+  allianceStatus,
+  allianceError,
+  alliancePending,
+  onAllianceAction,
+  adminStatus,
+  adminError,
   researchStatus,
   researchError,
   researchPending,
@@ -1160,6 +1339,23 @@ export function LegacyGameOverview({
   const merchantIssue =
     merchantStatus && !merchantStatus.authenticated ? merchantStatus.issues[0]?.message ?? "Session is invalid." : null;
   const merchantActionIssue = merchantStatus?.authenticated ? merchantStatus.actionIssue : undefined;
+  const officers = officersStatus?.authenticated ? officersStatus.officers : undefined;
+  const officersIssue =
+    officersStatus && !officersStatus.authenticated ? officersStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const officersActionIssue = officersStatus?.authenticated ? officersStatus.actionIssue : undefined;
+  const officersActionTone = officersActionIssue?.code === "recruited" ? "neutral" : "error";
+  const alliance = allianceStatus?.authenticated ? allianceStatus.alliance : undefined;
+  const allianceIssue =
+    allianceStatus && !allianceStatus.authenticated ? allianceStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const allianceActionIssue = allianceStatus?.authenticated ? allianceStatus.actionIssue : undefined;
+  const allianceActionTone =
+    allianceActionIssue &&
+    ["created", "applied", "withdrawn", "accepted", "rejected", "left"].includes(allianceActionIssue.code)
+      ? "neutral"
+      : "error";
+  const admin = adminStatus?.authenticated ? adminStatus.admin : undefined;
+  const adminIssue = adminStatus && !adminStatus.authenticated ? adminStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const adminActionIssue = adminStatus?.authenticated ? adminStatus.actionIssue : undefined;
   const research = researchStatus?.authenticated ? researchStatus.research : undefined;
   const researchIssue =
     researchStatus && !researchStatus.authenticated ? researchStatus.issues[0]?.message ?? "Session is invalid." : null;
@@ -1201,7 +1397,7 @@ export function LegacyGameOverview({
   const messagesActionTone =
     messagesActionIssue?.code === "sent" || messagesActionIssue?.code === "reported" ? "neutral" : "error";
   const optionsActionIssue = optionsStatus?.authenticated ? optionsStatus.actionIssue : undefined;
-  const hasHeader = route.key !== "notes" && route.key !== "galaxy" && route.key !== "report";
+  const hasHeader = route.key !== "notes" && route.key !== "galaxy" && route.key !== "report" && route.key !== "admin";
   const hasMenu = route.key !== "notes" && route.key !== "report";
   const hasOverviewPageMessage =
     hasHeader && Boolean(overview && route.key === "overview" && overview.messages && overview.messages.length > 0);
@@ -1257,7 +1453,7 @@ export function LegacyGameOverview({
   const contentClassName =
     route.key === "overview"
       ? "legacy-content legacy-content-overview"
-      : route.key === "galaxy"
+      : route.key === "galaxy" || route.key === "admin"
         ? "legacy-content legacy-content-noheader"
       : route.key === "notes" || route.key === "report"
         ? "legacy-content legacy-content-popup"
@@ -1271,7 +1467,7 @@ export function LegacyGameOverview({
         ? searchContentLayout
           ? { height: searchContentLayout.height, top: `${searchContentLayout.top}px` }
           : { height: "calc(100vh - 130px)", top: "120px" }
-      : route.key === "galaxy" || route.key === "notes" || route.key === "report"
+      : route.key === "galaxy" || route.key === "admin" || route.key === "notes" || route.key === "report"
         ? { height: "calc(100vh - 20px)" }
         : { height: "calc(100vh - 101px)" };
 
@@ -1291,7 +1487,7 @@ export function LegacyGameOverview({
           <LegacyCenter>{overview ? <LegacyResourceHeader overview={overview} /> : <div className="legacy-header-placeholder">OGame</div>}</LegacyCenter>
         </div>
       ) : null}
-      {hasMenu ? <LegacyLeftMenu activeRoute={route} /> : null}
+      {hasMenu ? <LegacyLeftMenu activeRoute={route} adminLevel={overview?.adminLevel ?? 0} /> : null}
       {hasOverviewPageMessage && overview?.messages ? (
         <LegacyPageMessage ref={pageMessageRef} messages={overview.messages} />
       ) : null}
@@ -1331,6 +1527,27 @@ export function LegacyGameOverview({
         ) : null}
         {route.key === "merchant" && !merchantError && !merchantActionIssue && merchantIssue ? (
           <LegacyMessage tone="error" text={merchantIssue} />
+        ) : null}
+        {route.key === "officers" && officersError ? <LegacyMessage tone="error" text={officersError} /> : null}
+        {route.key === "officers" && !officersError && officersActionIssue ? (
+          <LegacyMessage tone={officersActionTone} text={officersActionIssue.message} />
+        ) : null}
+        {route.key === "officers" && !officersError && !officersActionIssue && officersIssue ? (
+          <LegacyMessage tone="error" text={officersIssue} />
+        ) : null}
+        {route.key === "alliance" && allianceError ? <LegacyMessage tone="error" text={allianceError} /> : null}
+        {route.key === "alliance" && !allianceError && allianceActionIssue ? (
+          <LegacyMessage tone={allianceActionTone} text={allianceActionIssue.message} />
+        ) : null}
+        {route.key === "alliance" && !allianceError && !allianceActionIssue && allianceIssue ? (
+          <LegacyMessage tone="error" text={allianceIssue} />
+        ) : null}
+        {route.key === "admin" && adminError ? <LegacyMessage tone="error" text={adminError} /> : null}
+        {route.key === "admin" && !adminError && adminActionIssue ? (
+          <LegacyMessage tone="error" text={adminActionIssue.message} />
+        ) : null}
+        {route.key === "admin" && !adminError && !adminActionIssue && adminIssue ? (
+          <LegacyMessage tone="error" text={adminIssue} />
         ) : null}
         {route.key === "research" && researchError ? <LegacyMessage tone="error" text={researchError} /> : null}
         {route.key === "research" && !researchError && researchIssue ? (
@@ -1413,6 +1630,22 @@ export function LegacyGameOverview({
             pending={merchantPending}
           />
         ) : null}
+        {overview && route.key === "officers" && !officers && !officersError && !officersIssue && !officersActionIssue ? (
+          <LegacyMessage tone="neutral" text="Loading officers..." />
+        ) : null}
+        {officers && route.key === "officers" ? (
+          <OfficersTable officers={officers} onRecruit={onOfficerRecruit} pending={officersPending} />
+        ) : null}
+        {overview && route.key === "alliance" && !alliance && !allianceError && !allianceIssue && !allianceActionIssue ? (
+          <LegacyMessage tone="neutral" text="Loading alliance..." />
+        ) : null}
+        {alliance && route.key === "alliance" ? (
+          <AllianceTable alliance={alliance} onAction={onAllianceAction} pending={alliancePending} />
+        ) : null}
+        {overview && route.key === "admin" && !admin && !adminError && !adminIssue && !adminActionIssue ? (
+          <LegacyMessage tone="neutral" text="Loading admin..." />
+        ) : null}
+        {admin && route.key === "admin" && !adminActionIssue ? <AdminTable admin={admin} /> : null}
         {overview && route.key === "research" && !research && !researchError && !researchIssue ? (
           <LegacyMessage tone="neutral" text="Loading research..." />
         ) : null}
@@ -1504,6 +1737,9 @@ export function LegacyGameOverview({
         route.key !== "empire" &&
         route.key !== "resources" &&
         route.key !== "merchant" &&
+        route.key !== "officers" &&
+        route.key !== "alliance" &&
+        route.key !== "admin" &&
         route.key !== "research" &&
         route.key !== "shipyard" &&
         route.key !== "fleet" &&
@@ -1681,7 +1917,7 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
   );
 }
 
-function LegacyLeftMenu({ activeRoute }: { activeRoute: GameRoute }) {
+function LegacyLeftMenu({ activeRoute, adminLevel }: { activeRoute: GameRoute; adminLevel: number }) {
   return (
     <aside className="legacy-leftmenu" id="leftmenu">
       <div className="legacy-center">
@@ -1693,17 +1929,21 @@ function LegacyLeftMenu({ activeRoute }: { activeRoute: GameRoute }) {
           </p>
           <table cellPadding={0} cellSpacing={0} width={110}>
             <tbody>
-              {legacyMenuEntries.map((entry, index) =>
-                entry.type === "image" ? (
-                  <tr key={`${entry.src}-${index}`}>
-                    <td>
-                      <img alt="" height={entry.height} src={entry.src} width={entry.width} />
-                    </td>
-                  </tr>
-                ) : (
-                  <LegacyMenuRoute activeRoute={activeRoute} entry={entry} key={entry.key} />
-                )
-              )}
+              {legacyMenuEntries.map((entry, index) => {
+                if (entry.type === "image") {
+                  return (
+                    <tr key={`${entry.src}-${index}`}>
+                      <td>
+                        <img alt="" height={entry.height} src={entry.src} width={entry.width} />
+                      </td>
+                    </tr>
+                  );
+                }
+                if (entry.key === "admin" && adminLevel <= 0) {
+                  return null;
+                }
+                return <LegacyMenuRoute activeRoute={activeRoute} entry={entry} key={entry.key} />;
+              })}
             </tbody>
           </table>
         </div>
@@ -2251,6 +2491,949 @@ function buildingActionURL(action: "add" | "destroy" | "remove", techID: number,
     query.set("listid", String(listID));
   }
   return gameRouteURL("/game/buildings", `?${query.toString()}`);
+}
+
+function OfficersTable({
+  officers,
+  onRecruit,
+  pending
+}: {
+  officers: GameOfficers;
+  onRecruit: (draft: GameOfficerRecruitment) => void;
+  pending: boolean;
+}) {
+  return (
+    <LegacyCenter>
+      <div
+        id="header"
+        style={{
+          backgroundImage: `url('${gameImageBase}/kasino_600x120.jpg')`,
+          height: 120,
+          width: 600
+        }}
+      >
+        <div
+          id="headtext1"
+          style={{ color: "f3d2b1", fontSize: 18, fontWeight: "bold", left: -160, position: "relative", top: 25 }}
+        >
+          To the wise lord ...
+        </div>
+        <div
+          id="headtext2"
+          style={{ color: "#c2f1fd", float: "right", fontSize: 13, fontWeight: "bold", left: -240, position: "relative", top: 23 }}
+        >
+          ... need smarts{" "}
+          <b>
+            {React.createElement("font", { size: 4 }, "advisors.")}
+          </b>
+        </div>
+      </div>
+      <table className="legacy-officers-table" width={600}>
+        <tbody>
+          <tr>
+            <td className="legacy-c c" colSpan={3}>
+              Dark Matter
+            </td>
+          </tr>
+          <tr>
+            <td className="legacy-l l">
+              <img height={120} src={`${gameImageBase}/DMaterie.jpg`} style={{ border: 0, verticalAlign: "top" }} width={120} />
+            </td>
+            <td className="legacy-l l">
+              <strong>Dark Matter</strong>
+              <br />
+              Dark matter is a substance that can only be stored for a few standard years at great expense. It can be used to
+              extract incredible amounts of energy. The method of its extraction is very difficult and dangerous, so it is very
+              highly valued.
+              <div style={{ margin: "4px 4px" }}>
+                <table>
+                  <tbody>
+                    <tr>
+                      <td>
+                        <img height={32} src={`${gameImageBase}/dm_klein_1.jpg`} style={{ verticalAlign: "middle" }} width={32} />
+                      </td>
+                      <td style={{ backgroundColor: "transparent" }}>
+                        <strong style={{ color: "skyblue", verticalAlign: "middle" }}>
+                          With this substance, officers and commanders can be hired.
+                        </strong>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </td>
+            <td className="legacy-l l" style={{ textAlign: "center", verticalAlign: "middle", width: 90 }}>
+              <a
+                href={gameRouteURL("/game/officers", window.location.search)}
+                id="darkmatter2"
+                style={{ cursor: "pointer", height: 60, textAlign: "center", width: 100 }}
+              >
+                <br />
+                <b>
+                  <div id="darkmatter2">Get the dark matter</div>
+                </b>
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td className="legacy-c c" colSpan={3}>
+              Officers
+            </td>
+          </tr>
+          {officers.rows.map((officer) => (
+            <React.Fragment key={officer.id}>
+              <tr data-officer-row={officer.id}>
+                <td className="legacy-l l" rowSpan={2}>
+                  <img height={120} src={`${gameImageBase}/${officer.image}`} style={{ border: 0, verticalAlign: "top" }} width={120} />
+                </td>
+                <td className="legacy-l l" rowSpan={2}>
+                  <b>{officer.name}</b>(<b>{officerStatus(officer)}</b>)<br />
+                  {officer.description}
+                  <br />
+                  <div style={{ margin: "4px 4px" }}>
+                    <table>
+                      <tbody>
+                        <tr>
+                          <td>
+                            <img alt={officer.name} height={32} src={`${gameImageBase}/${officer.icon}`} style={{ verticalAlign: "middle" }} width={32} />
+                          </td>
+                          <td style={{ backgroundColor: "transparent" }}>
+                            <strong style={{ color: "skyblue", verticalAlign: "middle" }}>{officer.note}</strong>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </td>
+                <td className="legacy-l l" style={{ textAlign: "center", verticalAlign: "middle", width: 90 }}>
+                  <OfficerRecruitLink days={90} officer={officer} onRecruit={onRecruit} pending={pending} />
+                </td>
+              </tr>
+              <tr>
+                <td className="legacy-l l" style={{ textAlign: "center", verticalAlign: "middle", width: 90 }}>
+                  <OfficerRecruitLink days={7} officer={officer} onRecruit={onRecruit} pending={pending} />
+                </td>
+              </tr>
+              {officer.id !== officers.rows[officers.rows.length - 1]?.id ? (
+                <tr>
+                  <td className="legacy-c c" colSpan={3} style={{ height: 4 }} />
+                </tr>
+              ) : null}
+            </React.Fragment>
+          ))}
+        </tbody>
+      </table>
+      <br />
+      <br />
+      <br />
+      <br />
+      <br />
+    </LegacyCenter>
+  );
+}
+
+function OfficerRecruitLink({
+  days,
+  officer,
+  onRecruit,
+  pending
+}: {
+  days: 7 | 90;
+  officer: GameOfficerRow;
+  onRecruit: (draft: GameOfficerRecruitment) => void;
+  pending: boolean;
+}) {
+  const price = days === 90 ? officer.threeMonthCost : officer.weekCost;
+  return (
+    <a
+      href={officerRecruitHref(officer.id, days)}
+      onClick={(event) => {
+        event.preventDefault();
+        if (!pending) {
+          onRecruit({ officerId: officer.id, days });
+        }
+      }}
+    >
+      <b>
+        {days === 90 ? "3 months/months for" : "1 week for"}
+        <br />
+        {days === 90 ? (
+          <LegacyFont color="lime">total {formatLegacyNumber(price)}</LegacyFont>
+        ) : (
+          <LegacyFont color="lime">{formatLegacyNumber(price)}</LegacyFont>
+        )}
+        <br />
+        Dark Matter
+      </b>
+    </a>
+  );
+}
+
+function officerStatus(officer: GameOfficerRow) {
+  if (!officer.active) {
+    return <LegacyFont color="red">Inactive</LegacyFont>;
+  }
+  return (
+    <strong>
+      <LegacyFont color="lime">Active</LegacyFont> more {officer.daysLeft} days
+    </strong>
+  );
+}
+
+function officerRecruitHref(officerID: number, days: number) {
+  const query = new URLSearchParams(window.location.search);
+  query.set("buynow", "1");
+  query.set("type", String(officerID));
+  query.set("days", String(days));
+  return gameRouteURL("/game/officers", `?${query.toString()}`);
+}
+
+function AdminTable({ admin }: { admin: GameAdmin }) {
+  if (admin.mode !== "Home") {
+    return (
+      <LegacyCenter>
+        <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table" width={750}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c">Admin Area</td>
+            </tr>
+            <tr>
+              <th>
+                {admin.mode} migration is pending.
+                <br />
+                <a href={adminHomeHref()}>Back</a>
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </LegacyCenter>
+    );
+  }
+  const rows: GameAdminMenuItem[][] = [];
+  for (let index = 0; index < admin.menu.length; index += 5) {
+    rows.push(admin.menu.slice(index, index + 5));
+  }
+  return (
+    <>
+      <br />
+      <br />
+      <table border={0} cellPadding={0} cellSpacing={1} className="s legacy-admin-home-table" style={{ verticalAlign: "top" }} width="100%">
+        <tbody>
+          {rows.map((row, rowIndex) => (
+            <tr key={`admin-menu-row-${rowIndex}`}>
+              {row.map((item) => (
+                <th key={item.mode}>
+                  <a href={adminModeHref(item.mode)}>
+                    <img alt="" src={item.image} />
+                    <br />
+                    {item.label}
+                  </a>
+                </th>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+function adminModeHref(mode: string) {
+  const query = new URLSearchParams(window.location.search);
+  query.set("mode", mode);
+  return gameRouteURL("/game/admin", `?${query.toString()}`);
+}
+
+function adminHomeHref() {
+  const query = new URLSearchParams(window.location.search);
+  query.delete("mode");
+  return gameRouteURL("/game/admin", `?${query.toString()}`);
+}
+
+function AllianceTable({
+  alliance,
+  onAction,
+  pending
+}: {
+  alliance: GameAlliance;
+  onAction: (action: GameAllianceAction) => void;
+  pending: boolean;
+}) {
+  if (alliance.pending && alliance.target) {
+    return <AlliancePendingTable alliance={alliance} onAction={onAction} pending={pending} />;
+  }
+  if (alliance.view === "create") {
+    return <AllianceCreateTable onAction={onAction} pending={pending} />;
+  }
+  if (alliance.view === "search") {
+    return <AllianceSearchTable alliance={alliance} onAction={onAction} pending={pending} />;
+  }
+  if (alliance.view === "apply" && alliance.target) {
+    return <AllianceApplyTable alliance={alliance} onAction={onAction} pending={pending} />;
+  }
+  if (alliance.view === "applications" && alliance.own) {
+    return <AllianceApplicationsTable alliance={alliance} onAction={onAction} pending={pending} />;
+  }
+  if (alliance.view === "members" && alliance.own) {
+    return <AllianceMembersTable alliance={alliance} />;
+  }
+  if (alliance.own) {
+    return <AllianceHomeTable alliance={alliance} onAction={onAction} pending={pending} />;
+  }
+  return <AllianceNoAllianceTable />;
+}
+
+function AllianceNoAllianceTable() {
+  return (
+    <LegacyCenter>
+      <table width={519}>
+        <tbody>
+          <tr>
+            <td className="legacy-c c" colSpan={2}>
+              Alliance
+            </td>
+          </tr>
+          <tr>
+            <th>
+              <a href={allianceURL({ a: "1" })}>Start your own alliance</a>
+            </th>
+            <th>
+              <a href={allianceURL({ a: "2" })}>Search for alliances</a>
+            </th>
+          </tr>
+        </tbody>
+      </table>
+      <br />
+      <br />
+      <br />
+      <br />
+      <br />
+    </LegacyCenter>
+  );
+}
+
+function AllianceCreateTable({ onAction, pending }: { onAction: (action: GameAllianceAction) => void; pending: boolean }) {
+  return (
+    <LegacyCenter>
+      <form
+        action={allianceURL({ a: "1", weiter: "1" })}
+        method="post"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (pending) {
+            return;
+          }
+          const data = new FormData(event.currentTarget);
+          onAction({ action: "create", tag: String(data.get("tag") ?? ""), name: String(data.get("name") ?? "") });
+        }}
+      >
+        <table width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c" colSpan={2}>
+                Found an alliance
+              </td>
+            </tr>
+            <tr>
+              <th>Alliance abbreviation (3-8 characters)</th>
+              <th>
+                <input maxLength={8} name="tag" size={8} type="text" />
+              </th>
+            </tr>
+            <tr>
+              <th>Alliance name (3-30 characters)</th>
+              <th>
+                <input maxLength={30} name="name" size={20} type="text" />
+              </th>
+            </tr>
+            <tr>
+              <th colSpan={2}>
+                <input disabled={pending} type="submit" value="Found" />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+      <br />
+      <br />
+      <br />
+      <br />
+    </LegacyCenter>
+  );
+}
+
+function AllianceSearchTable({
+  alliance,
+  onAction,
+  pending
+}: {
+  alliance: GameAlliance;
+  onAction: (action: GameAllianceAction) => void;
+  pending: boolean;
+}) {
+  return (
+    <LegacyCenter>
+      <table width={519}>
+        <tbody>
+          <tr>
+            <td className="legacy-c c" colSpan={2}>
+              Looking for alliances.
+            </td>
+          </tr>
+          <tr>
+            <th>Seek</th>
+            <th>
+              <form
+                action={allianceURL({ a: "2" })}
+                method="post"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (pending) {
+                    return;
+                  }
+                  const data = new FormData(event.currentTarget);
+                  onAction({ action: "search", text: String(data.get("suchtext") ?? "") });
+                }}
+              >
+                <input defaultValue={alliance.searchText} name="suchtext" type="text" />
+                <input disabled={pending} type="submit" value="Search" />
+              </form>
+            </th>
+          </tr>
+        </tbody>
+      </table>
+      <br />
+      {alliance.searchResults.length > 0 ? (
+        <table width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c" colSpan={3}>
+                Alliance Search Results
+              </td>
+            </tr>
+            <tr>
+              <th>
+                <center>Alliance abbreviation</center>
+              </th>
+              <th>
+                <center>Alliance name</center>
+              </th>
+              <th>
+                <center>Number of members</center>
+              </th>
+            </tr>
+            {alliance.searchResults.map((row) => (
+              <tr key={row.id}>
+                <th>
+                  <center>
+                    [
+                    <a href={allianceURL({ page: "bewerben", allyid: String(row.id) })}>{row.tag}</a>
+                    ]
+                  </center>
+                </th>
+                <th>
+                  <center>{row.name}</center>
+                </th>
+                <th>
+                  <center>{row.memberCount}</center>
+                </th>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+      <br />
+      <br />
+      <br />
+    </LegacyCenter>
+  );
+}
+
+function AllianceApplyTable({
+  alliance,
+  onAction,
+  pending
+}: {
+  alliance: GameAlliance;
+  onAction: (action: GameAllianceAction) => void;
+  pending: boolean;
+}) {
+  const target = alliance.target;
+  if (!target) {
+    return null;
+  }
+  if (!target.open) {
+    return (
+      <LegacyCenter>
+        <h1>Register</h1>
+        <table width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c">It is not possible to apply to alliance [{target.tag}]</td>
+            </tr>
+            <tr>
+              <th>This alliance is not accepting new members at this time</th>
+            </tr>
+            <tr>
+              <th>
+                <a href={allianceURL()}>Back</a>
+              </th>
+            </tr>
+          </tbody>
+        </table>
+        <br />
+        <br />
+        <br />
+        <br />
+      </LegacyCenter>
+    );
+  }
+  return (
+    <LegacyCenter>
+      <h1>Register</h1>
+      <form
+        action={allianceURL({ page: "bewerben", allyid: String(target.id) })}
+        method="post"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (pending) {
+            return;
+          }
+          const data = new FormData(event.currentTarget);
+          onAction({ action: "apply", allianceId: target.id, text: String(data.get("text") ?? "") });
+        }}
+      >
+        <table width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c" colSpan={2}>
+                Alliance application [{target.tag}] write
+              </td>
+            </tr>
+            <tr>
+              <th>Message (0 / 6000 characters)</th>
+              <th>
+                <textarea cols={40} defaultValue={target.insertApp ? target.applicationText : ""} name="text" rows={10} />
+              </th>
+            </tr>
+            <tr>
+              <th>A little help</th>
+              <th>
+                <input type="submit" value="Sample" />
+              </th>
+            </tr>
+            <tr>
+              <th colSpan={2}>
+                <input disabled={pending} name="weiter" type="submit" value="Submit" />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+      <br />
+      <br />
+      <br />
+      <br />
+    </LegacyCenter>
+  );
+}
+
+function AlliancePendingTable({
+  alliance,
+  onAction,
+  pending
+}: {
+  alliance: GameAlliance;
+  onAction: (action: GameAllianceAction) => void;
+  pending: boolean;
+}) {
+  const pendingApp = alliance.pending;
+  const target = alliance.target;
+  if (!pendingApp || !target) {
+    return null;
+  }
+  return (
+    <LegacyCenter>
+      <form
+        action={allianceURL()}
+        method="post"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!pending) {
+            onAction({ action: "withdraw", applicationId: pendingApp.id });
+          }
+        }}
+      >
+        <table width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c" colSpan={2}>
+                Your statement
+              </td>
+            </tr>
+            <tr>
+              <th colSpan={2}>You have already applied to alliance [{target.tag}]. Wait for a response or withdraw your application.</th>
+            </tr>
+            <tr>
+              <th colSpan={2}>
+                <input disabled={pending} name="bcancel" type="submit" value="Withdraw application" />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+      <br />
+      <br />
+      <br />
+      <br />
+    </LegacyCenter>
+  );
+}
+
+function AllianceHomeTable({
+  alliance,
+  onAction,
+  pending
+}: {
+  alliance: GameAlliance;
+  onAction: (action: GameAllianceAction) => void;
+  pending: boolean;
+}) {
+  const own = alliance.own;
+  if (!own) {
+    return null;
+  }
+  return (
+    <LegacyCenter>
+      {own.imageLogo ? <img alt="" className="reloadimage" src="/game/img/preload.gif" title={`pic.php?url=${encodeURIComponent(own.imageLogo)}`} /> : null}
+      <table width={519}>
+        <tbody>
+          <tr>
+            <td className="legacy-c c" colSpan={2}>
+              Your alliance
+            </td>
+          </tr>
+          <tr>
+            <th>Abbreviation</th>
+            <th>
+              {own.tag}
+              {own.oldTag && own.tagUntil > Math.floor(Date.now() / 1000) ? ` (former ${own.oldTag})` : ""}
+            </th>
+          </tr>
+          <tr>
+            <th>Name</th>
+            <th>
+              {own.name}
+              {own.oldName && own.nameUntil > Math.floor(Date.now() / 1000) ? ` (former ${own.oldName})` : ""}
+            </th>
+          </tr>
+          <tr>
+            <th>Members</th>
+            <th>
+              {own.memberCount}
+              {alliance.viewer.rankRights & 0x008 || alliance.viewer.founder ? (
+                <>
+                  {" ("}
+                  <a href={allianceURL({ a: "4" })}>members list</a>
+                  {")"}
+                </>
+              ) : null}
+            </th>
+          </tr>
+          <tr>
+            <th>your rank</th>
+            <th>
+              {alliance.viewer.rankName}
+              {alliance.viewer.rankRights & 0x020 || alliance.viewer.founder ? (
+                <>
+                  {" ("}
+                  <a href={allianceURL({ a: "5" })}>alliance management</a>
+                  {")"}
+                </>
+              ) : null}
+            </th>
+          </tr>
+          {own.applicationCount > 0 ? (
+            <tr>
+              <th>Applications</th>
+              <th>
+                <a href={allianceURL({ page: "bewerbungen" })}>{own.applicationCount} Application(s)</a>
+              </th>
+            </tr>
+          ) : null}
+          {alliance.viewer.rankRights & 0x080 || alliance.viewer.founder ? (
+            <tr>
+              <th>General Message</th>
+              <th>
+                <a href={allianceURL({ a: "17" })}>Send General Message</a>
+              </th>
+            </tr>
+          ) : null}
+          <tr>
+            <th colSpan={2} style={{ height: 100 }}>
+              {own.externalText}
+            </th>
+          </tr>
+          <tr>
+            <th>Homepage</th>
+            <th>{own.homepage ? <a href={`redir.php?url=${encodeURIComponent(own.homepage)}`}>{own.homepage}</a> : ""}</th>
+          </tr>
+          <tr>
+            <td className="legacy-c c" colSpan={2}>
+              Internal Competency
+            </td>
+          </tr>
+          <tr>
+            <th colSpan={2} style={{ height: 100 }}>
+              {own.internalText}
+            </th>
+          </tr>
+        </tbody>
+      </table>
+      <br />
+      {!alliance.viewer.founder ? (
+        <form
+          action={allianceURL({ a: "3" })}
+          method="post"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!pending) {
+              onAction({ action: "leave" });
+            }
+          }}
+        >
+          <table width={519}>
+            <tbody>
+              <tr>
+                <td className="legacy-c c" colSpan={2}>
+                  Leave this alliance
+                </td>
+              </tr>
+              <tr>
+                <th colSpan={2}>
+                  <input disabled={pending} type="submit" value="Yes!" />
+                </th>
+              </tr>
+            </tbody>
+          </table>
+        </form>
+      ) : null}
+    </LegacyCenter>
+  );
+}
+
+function AllianceApplicationsTable({
+  alliance,
+  onAction,
+  pending
+}: {
+  alliance: GameAlliance;
+  onAction: (action: GameAllianceAction) => void;
+  pending: boolean;
+}) {
+  const own = alliance.own;
+  if (!own) {
+    return null;
+  }
+  if (alliance.applications.length === 0) {
+    return (
+      <LegacyCenter>
+        <table width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c" colSpan={2}>
+                Overview of enrollment in this alliance [{own.tag}].
+              </td>
+            </tr>
+            <tr>
+              <th colSpan={2}>No more applications.</th>
+            </tr>
+          </tbody>
+        </table>
+        <br />
+        <br />
+        <br />
+        <br />
+      </LegacyCenter>
+    );
+  }
+  return (
+    <LegacyCenter>
+      <table width={519}>
+        <tbody>
+          <tr>
+            <td className="legacy-c c" colSpan={2}>
+              Overview of enrollment in this alliance [{own.tag}].
+            </td>
+          </tr>
+          {alliance.selectedApp ? (
+            <>
+              <tr>
+                <th colSpan={2}>Statement from {alliance.selectedApp.playerName}</th>
+              </tr>
+              <tr>
+                <th colSpan={2}>{alliance.selectedApp.text}</th>
+              </tr>
+              <tr>
+                <td className="legacy-c c" colSpan={2}>
+                  Response to this statement
+                </td>
+              </tr>
+              <tr>
+                <th> </th>
+                <th>
+                  <button disabled={pending} onClick={() => onAction({ action: "accept", applicationId: alliance.selectedApp?.id ?? 0 })} type="button">
+                    Accept
+                  </button>
+                </th>
+              </tr>
+              <tr>
+                <th>Reason (optional) 0 / 2000 characters</th>
+                <th>
+                  <AllianceRejectForm application={alliance.selectedApp} onAction={onAction} pending={pending} />
+                </th>
+              </tr>
+              <tr>
+                <td> </td>
+              </tr>
+            </>
+          ) : null}
+          <tr>
+            <th colSpan={2}>Available {alliance.applications.length} statements. Click on the desired player's name to view their message.</th>
+          </tr>
+          <tr>
+            <td className="legacy-c c">
+              <center>
+                <a href={allianceURL({ page: "bewerbungen", sort: "1" })}>Applicant</a>
+              </center>
+            </td>
+            <td className="legacy-c c">
+              <center>
+                <a href={allianceURL({ page: "bewerbungen", sort: "0" })}>Application Date</a>
+              </center>
+            </td>
+          </tr>
+          {alliance.applications.map((app) => (
+            <tr key={app.id}>
+              <th>
+                <center>
+                  <a href={allianceURL({ page: "bewerbungen", show: String(app.id), sort: "1" })}>{app.playerName}</a>
+                </center>
+              </th>
+              <th>
+                <center>{formatLegacyDateTime(app.date)}</center>
+              </th>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <br />
+      <br />
+      <br />
+      <br />
+    </LegacyCenter>
+  );
+}
+
+function AllianceRejectForm({
+  application,
+  onAction,
+  pending
+}: {
+  application: GameAllianceApplication;
+  onAction: (action: GameAllianceAction) => void;
+  pending: boolean;
+}) {
+  return (
+    <form
+      action={allianceURL({ page: "bewerbungen", show: String(application.id), sort: "1" })}
+      method="post"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (pending) {
+          return;
+        }
+        const data = new FormData(event.currentTarget);
+        onAction({ action: "reject", applicationId: application.id, text: String(data.get("text") ?? "") });
+      }}
+    >
+      <textarea cols={40} name="text" rows={10} />
+      <br />
+      <input disabled={pending} name="aktion" type="submit" value="Reject" />
+    </form>
+  );
+}
+
+function AllianceMembersTable({ alliance }: { alliance: GameAlliance }) {
+  const own = alliance.own;
+  if (!own) {
+    return null;
+  }
+  if (!alliance.viewer.founder && (alliance.viewer.rankRights & 0x008) === 0) {
+    return (
+      <LegacyCenter>
+        <table width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c">View not possible</td>
+            </tr>
+            <tr>
+              <th>Not enough permissions to perform the operation</th>
+            </tr>
+          </tbody>
+        </table>
+      </LegacyCenter>
+    );
+  }
+  return (
+    <LegacyCenter>
+      <table width={519}>
+        <tbody>
+          <tr>
+            <td className="legacy-c c" colSpan={6}>
+              List of members (count: {own.memberCount})
+            </td>
+          </tr>
+          <tr>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Points</th>
+            <th>Coordinates</th>
+            <th>Entry</th>
+            <th>N</th>
+          </tr>
+          {alliance.members.map((member, index) => (
+            <tr key={member.playerId}>
+              <th>{member.name}</th>
+              <th>{member.rankName}</th>
+              <th>{formatLegacyPlainNumber(Math.floor(member.score / 1000))}</th>
+              <th>
+                [{member.galaxy}:{member.system}:{member.position}]
+              </th>
+              <th>{member.joinedAt > 0 ? formatLegacyDateTime(member.joinedAt) : "-"}</th>
+              <th>{index + 1}</th>
+            </tr>
+          ))}
+          <tr>
+            <th colSpan={6}>
+              <a href={allianceURL()}>Back to review</a>
+            </th>
+          </tr>
+        </tbody>
+      </table>
+    </LegacyCenter>
+  );
+}
+
+function allianceURL(params: Record<string, string> = {}) {
+  const query = new URLSearchParams(window.location.search);
+  for (const key of ["page", "a", "allyid", "show", "sort", "suchtext", "weiter"]) {
+    query.delete(key);
+  }
+  for (const [key, value] of Object.entries(params)) {
+    query.set(key, value);
+  }
+  return gameRouteURL("/game/alliance", `?${query.toString()}`);
 }
 
 function MerchantTable({

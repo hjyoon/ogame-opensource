@@ -97,6 +97,8 @@ try {
   await assertGameClientNavigation(page, "game resources menu preserves CSR", "a[href^='/game/resources']", "/game/resources", "Resources");
   await assertGameClientNavigation(page, "game merchant menu preserves CSR", ".legacy-menu a[href^='/game/merchant']", "/game/merchant", "Merchant");
   await assertMerchantInsufficientDarkMatter(page);
+  await assertGameClientNavigation(page, "game officers menu preserves CSR", ".legacy-menu a[href^='/game/officers']", "/game/officers", "Officers Recruitment");
+  await assertOfficerInsufficientDarkMatter(page);
   await assertGameClientNavigation(page, "game research menu preserves CSR", "a[href^='/game/research']", "/game/research", "Research");
   await assertGameClientNavigation(page, "game shipyard menu preserves CSR", "a[href^='/game/shipyard']", "/game/shipyard", "Shipyard");
   await assertGameClientNavigation(page, "game defense menu preserves CSR", "a[href^='/game/defense']", "/game/defense", "Defense");
@@ -271,6 +273,8 @@ async function assertGameClientNavigation(
     await page.locator(".legacy-resources-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Merchant") {
     await page.locator(".legacy-merchant-call-table").first().waitFor({ timeout: 10_000 });
+  } else if (expectedMenuLabel === "Officers Recruitment") {
+    await page.locator(".legacy-officers-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Research") {
     await page.locator(".legacy-research-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Shipyard") {
@@ -311,6 +315,11 @@ async function assertGameClientNavigation(
             ? state.details.merchantCallTable === true &&
               state.details.merchantText.includes("You want to sell") &&
               state.details.pendingText === false
+            : expectedMenuLabel === "Officers Recruitment"
+              ? state.details.officersTable === true &&
+                state.details.officersText.includes("Commander") &&
+                state.details.officersText.includes("1 week for") &&
+                state.details.pendingText === false
             : expectedMenuLabel === "Research"
               ? state.details.researchTable === true && state.details.researchRows >= 0 && state.details.pendingText === false
               : expectedMenuLabel === "Shipyard"
@@ -610,6 +619,31 @@ async function assertMerchantInsufficientDarkMatter(page: Page) {
   });
 }
 
+async function assertOfficerInsufficientDarkMatter(page: Page) {
+  const marker = "probe-game-officer-recruit";
+  await page.evaluate((value) => {
+    window.__ogameCsrProbe = value;
+  }, marker);
+  await page.locator(".legacy-officers-table").waitFor({ timeout: 10_000 });
+  await page.locator(".legacy-officers-table a[href*='type=1'][href*='days=7']").first().click();
+  await page.waitForFunction(() => document.body.textContent?.includes("Not enough dark matter!"), undefined, {
+    timeout: 10_000
+  });
+  await record("game officers insufficient dark matter preserves CSR", async () => {
+    const state = await gameShellState(page, marker, "Officers Recruitment");
+    return {
+      pass:
+        state.pass &&
+        state.details.pathname === "/game/officers" &&
+        state.details.officersTable === true &&
+        state.details.officersText.includes("Commander") &&
+        state.details.officersErrorText.includes("Not enough dark matter!") &&
+        state.details.pendingText === false,
+      details: state.details
+    };
+  });
+}
+
 async function assertOptionsMutationFlow(page: Page) {
   const marker = "probe-game-options-submit";
   await page.evaluate((value) => {
@@ -802,6 +836,13 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     merchantText: document.querySelector(".legacy-merchant-call-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     merchantErrorText:
       Array.from(document.querySelectorAll(".legacy-message-error, .legacy-overview-table"))
+        .find((element) => element.textContent?.includes("Not enough dark matter!"))
+        ?.textContent?.trim()
+        .replace(/\s+/g, " ") ?? "",
+    officersTable: document.querySelector(".legacy-officers-table") !== null,
+    officersText: document.querySelector(".legacy-officers-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
+    officersErrorText:
+      Array.from(document.querySelectorAll(".legacy-message-error, .legacy-message-neutral, .legacy-overview-table"))
         .find((element) => element.textContent?.includes("Not enough dark matter!"))
         ?.textContent?.trim()
         .replace(/\s+/g, " ") ?? "",

@@ -294,6 +294,35 @@ func TestBuildGalaxyKeepsStandaloneMoonDebrisAndSkipsInvalidObjects(t *testing.T
 	}
 }
 
+func TestGalaxyMissileHelpersCoverLegacyEdgeCases(t *testing.T) {
+	if !GalaxyMissileTargetAllowed(DefenseRocketLauncher) || !GalaxyMissileTargetAllowed(DefenseLargeShieldDome) || GalaxyMissileTargetAllowed(999999) {
+		t.Fatalf("unexpected missile target allow-list result")
+	}
+	if issue := GalaxyActionIssueFor("unknown"); issue.Code != "unknown" || issue.Message != "There was an error" {
+		t.Fatalf("unexpected fallback issue: %+v", issue)
+	}
+	if issue := GalaxyMissileLaunchedIssue(-3); issue.Code != GalaxyIssueRocketLaunched || issue.Message != "Start of rocket 3!" {
+		t.Fatalf("unexpected negative launch issue: %+v", issue)
+	}
+	if issue := GalaxyMissileLaunchedIssue(0); issue.Code != GalaxyIssueRocketNoRockets {
+		t.Fatalf("unexpected zero launch issue: %+v", issue)
+	}
+	if !GalaxyPlayerProtectedFromMissiles(
+		GalaxyObjectPlayer{Score: 1000, LastClick: 1000},
+		GalaxyViewer{Score: 100000},
+		1000,
+	) {
+		t.Fatal("expected active low-score target to be protected")
+	}
+	if GalaxyPlayerProtectedFromMissiles(
+		GalaxyObjectPlayer{Score: 1000, LastClick: 1000, Vacation: true},
+		GalaxyViewer{Score: 100000},
+		1000,
+	) {
+		t.Fatal("vacation target should not use noob protection calculation")
+	}
+}
+
 func galaxyOverview(score int64) Overview {
 	return Overview{
 		Commander: "legor",
