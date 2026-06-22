@@ -2780,6 +2780,41 @@ function AdminTable({ admin }: { admin: GameAdmin }) {
       </AdminModeShell>
     );
   }
+  if (admin.mode === "Users") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminUsersTable admin={admin} />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "Planets") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminPlanetsTable />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "Uni") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminUniverseTable admin={admin} />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "Checksum") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminChecksumTable />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "DB") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminDatabaseTable />
+      </AdminModeShell>
+    );
+  }
   if (admin.mode !== "Home") {
     return (
       <AdminModeShell admin={admin}>
@@ -3381,6 +3416,316 @@ function AdminQueueTable() {
       <form action={adminModeHref("Queue")} method="POST" onSubmit={(event) => event.preventDefault()}>
         <input name="order_cron" type="hidden" value="1" />
         <input type="submit" value="ADM_QUEUE_CRON" />
+      </form>
+    </>
+  );
+}
+
+function AdminUsersTable({ admin }: { admin: GameAdmin }) {
+  const planet = admin.currentPlanet;
+  return (
+    <>
+      <span>New users:</span>
+      <br />
+      <table className="legacy-admin-users-table">
+        <tbody>
+          <tr>
+            <td className="c">Date of registration</td>
+            <td className="c">Home Planet</td>
+            <td className="c">Player Name</td>
+          </tr>
+          <tr>
+            <th>{formatLegacyDateTime(Math.floor(Date.now() / 1000))}</th>
+            <th>
+              [{planet.coordinates.galaxy}:{planet.coordinates.system}:{planet.coordinates.position}]{" "}
+              <a href={adminModeHref("Planets")}>{planet.name}</a>
+            </th>
+            <th>
+              <a href={adminModeHref("Users")}>{admin.viewer.name}</a>
+            </th>
+          </tr>
+        </tbody>
+      </table>
+      <br />
+      <table>
+        <tbody>
+          <tr>
+            <td className="c">Active in the last 24 hours (1)</td>
+          </tr>
+          <tr>
+            <td>
+              <a href={adminModeHref("Users")}>{admin.viewer.name}</a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+function AdminPlanetsTable() {
+  return (
+    <>
+      <span>New Planets:</span>
+      <br />
+      <table className="legacy-admin-planets-table">
+        <tbody>
+          <tr>
+            <td className="c">Creation date</td>
+            <td className="c">Coordinates</td>
+            <td className="c">Planet</td>
+            <td className="c">Player</td>
+          </tr>
+        </tbody>
+      </table>
+      Search:
+      <br />
+      <form action={adminModeActionHref("Planets", "search")} method="post" onSubmit={(event) => event.preventDefault()}>
+        <table className="legacy-admin-planets-search-table">
+          <tbody>
+            <tr>
+              <th>
+                <select name="type">
+                  <option value="playername">Player name</option>
+                  <option value="planetname">Planet name</option>
+                  <option value="allytag">Ally tag</option>
+                </select>
+                &nbsp;&nbsp;
+                <input name="searchtext" type="text" defaultValue="" />
+                &nbsp;&nbsp;
+                <input type="submit" value="Search" />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+    </>
+  );
+}
+
+function AdminUniverseTable({ admin }: { admin: GameAdmin }) {
+  return (
+    <form action={adminModeHref("Uni")} method="POST" onSubmit={(event) => event.preventDefault()}>
+      <table className="legacy-admin-universe-table">
+        <tbody>
+          <tr>
+            <td className="c" colSpan={2}>
+              Universe 1 Settings
+            </td>
+          </tr>
+          <tr>
+            <th>Date of opening</th>
+            <th>{formatLegacyDateTime(Math.floor(Date.now() / 1000))}</th>
+          </tr>
+          <tr>
+            <th>
+              Hack attempt counter <a title="Any SQL injection attempts are logged for all players and the counter is incremented after each attempt.">[i]</a>
+            </th>
+            <th>
+              <a href={adminModeActionHref("Debug", "filter")}>0 (Check)</a>
+            </th>
+          </tr>
+          <tr>
+            <th>Number of players</th>
+            <th>1</th>
+          </tr>
+          <tr>
+            <th>Maximum number of players</th>
+            <th>
+              <input defaultValue="1000" maxLength={10} name="maxusers" size={10} type="text" />
+            </th>
+          </tr>
+          <tr>
+            <th>The amount of starting Dark Matter</th>
+            <th>
+              <input defaultValue={String(admin.currentPlanet.resources.darkMatter)} maxLength={10} name="start_dm" size={10} type="text" />
+            </th>
+          </tr>
+          <tr>
+            <th>Number of galaxies</th>
+            <th>
+              <input defaultValue="9" maxLength={3} name="galaxies" size={3} type="text" />
+            </th>
+          </tr>
+          <tr>
+            <th>Number of systems in the galaxy</th>
+            <th>
+              <input defaultValue="499" maxLength={3} name="systems" size={3} type="text" />
+            </th>
+          </tr>
+          <AdminUniverseSpeedRow label="Game speed" name="speed" />
+          <AdminUniverseSpeedRow label="Fleet speed" name="fspeed" />
+          <AdminUniversePercentRow label="Fleet into the debris" name="fid" />
+          <AdminUniversePercentRow label="Defense into the debris" name="did" />
+          <tr>
+            <th>Restoring Defense</th>
+            <th>
+              <input defaultValue="70" maxLength={3} name="defrepair" size={3} type="text" /> +/-
+              <input defaultValue="10" maxLength={3} name="defrepair_delta" size={3} type="text" /> %
+            </th>
+          </tr>
+          <tr>
+            <th>Invited players to the ACS</th>
+            <th>
+              <input defaultValue="5" maxLength={3} name="acs" size={3} type="text" /> (max 25 fleets)
+            </th>
+          </tr>
+          <tr>
+            <th>Rapidfire</th>
+            <th>
+              <input defaultChecked name="rapid" type="checkbox" />
+            </th>
+          </tr>
+          <tr>
+            <th>Moons and Death Stars</th>
+            <th>
+              <input defaultChecked name="moons" type="checkbox" />
+            </th>
+          </tr>
+          <tr>
+            <th>News 1</th>
+            <th>
+              <input defaultValue="" maxLength={99} name="news1" size={20} type="text" />
+            </th>
+          </tr>
+          <tr>
+            <th>News 2</th>
+            <th>
+              <input defaultValue="" maxLength={99} name="news2" size={20} type="text" />
+            </th>
+          </tr>
+          <tr>
+            <th>Prolong the news</th>
+            <th>
+              <input defaultValue="0" maxLength={3} name="news_upd" size={3} type="text" /> days
+            </th>
+          </tr>
+          <tr>
+            <th>Interface language</th>
+            <th>
+              <select name="lang">
+                <option value="es">English</option>
+                <option value="de">Deutsch</option>
+                <option value="fr">Francais</option>
+              </select>
+            </th>
+          </tr>
+          <tr>
+            <th>Forced to use the language of the universe</th>
+            <th>
+              <input name="force_lang" type="checkbox" />
+            </th>
+          </tr>
+          <tr>
+            <th>Pause the universe</th>
+            <th>
+              <input name="freeze" type="checkbox" />
+            </th>
+          </tr>
+          <tr>
+            <th colSpan={2}>
+              <input type="submit" value="Save" />
+            </th>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  );
+}
+
+function AdminUniverseSpeedRow({ label, name }: { label: string; name: string }) {
+  return (
+    <tr>
+      <th>{label}</th>
+      <th>
+        <select name={name}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((value) => <option key={`${name}-${value}`} value={value}>{value}x</option>)}</select>
+      </th>
+    </tr>
+  );
+}
+
+function AdminUniversePercentRow({ label, name }: { label: string; name: string }) {
+  return (
+    <tr>
+      <th>{label}</th>
+      <th>
+        <select name={name}>
+          {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map((value) => (
+            <option key={`${name}-${value}`} value={value}>
+              {value}%
+            </option>
+          ))}
+        </select>
+      </th>
+    </tr>
+  );
+}
+
+function AdminChecksumTable() {
+  const groups = [
+    ["Engine", ["ainfo.php", "core/acs.php", "core/battle.php", "core/db.php", "index.php"]],
+    ["Admin Area", ["pages_admin/admin.php", "pages_admin/admin_users.php", "pages_admin/admin_planets.php"]],
+    ["Game Pages", ["pages/overview.php", "pages/resources.php", "pages/flotten1.php", "pages/galaxy.php"]],
+    ["Registration System", ["reg/login.php", "reg/login2.php", "reg/new.php"]]
+  ] as const;
+  return (
+    <>
+      {groups.map(([title, files]) => (
+        <React.Fragment key={title}>
+          <h2>{title}</h2>
+          <table className="legacy-admin-checksum-table" width={519}>
+            <tbody>
+              <tr>
+                <td className="c">File path</td>
+                <td className="c">Checksum</td>
+                <td className="c">Status</td>
+              </tr>
+              {files.map((file) => (
+                <tr key={file}>
+                  <td>{file}</td>
+                  <td>00000000000000000000000000000000</td>
+                  <td>
+                    <LegacyFont color="lime">
+                      <b>OK</b>
+                    </LegacyFont>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </React.Fragment>
+      ))}
+      <br />
+      <form action={adminModeHref("Checksum")} method="POST" onSubmit={(event) => event.preventDefault()}>
+        <input type="submit" value="Fix Checksums" />
+      </form>
+    </>
+  );
+}
+
+function AdminDatabaseTable() {
+  return (
+    <>
+      <h2>Comparison of tables from install and real database</h2>
+      <LegacyFont color="green">No differences were found.</LegacyFont>
+      <br />
+      <h2>Comparison of real database and tables from install</h2>
+      <LegacyFont color="green">No differences were found.</LegacyFont>
+      <br />
+      <h2>Database Backup</h2>
+      Know what you're doing. Mindlessly pressing buttons can lead to unfortunate consequences!
+      <br />
+      <table className="legacy-admin-db-table">
+        <tbody>
+          <tr>
+            <td className="c">File name</td>
+            <td className="c">Operation</td>
+          </tr>
+        </tbody>
+      </table>
+      <br />
+      <form action={adminModeActionHref("DB", "create")} method="POST" onSubmit={(event) => event.preventDefault()}>
+        <input type="submit" value="Create a database backup" />
       </form>
     </>
   );

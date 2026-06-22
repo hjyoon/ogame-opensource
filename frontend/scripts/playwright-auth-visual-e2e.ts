@@ -251,6 +251,61 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["End time", "Player", "Task type", "Description", "Priority", "Control", "Show player's tasks:"]
   },
   {
+    name: "game-admin-users",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Users" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Users" },
+    legacyReady: "#content",
+    migratedReady: ".legacy-admin-users-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["New users:", "Date of registration", "Home Planet", "Player Name", "Active in the last 24 hours"]
+  },
+  {
+    name: "game-admin-planets",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Planets" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Planets" },
+    legacyReady: "#content input[name='searchtext']",
+    migratedReady: ".legacy-admin-planets-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["New Planets:", "Creation date", "Coordinates", "Planet", "Player", "Search", "Player name", "Planet name", "Ally tag"]
+  },
+  {
+    name: "game-admin-uni",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Uni" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Uni" },
+    legacyReady: "#content input[name='maxusers']",
+    migratedReady: ".legacy-admin-universe-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Universe 1 Settings", "Date of opening", "Hack attempt counter", "Number of players", "Maximum number of players", "Game speed", "Fleet speed"]
+  },
+  {
+    name: "game-admin-checksum",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Checksum" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Checksum" },
+    legacyReady: "#content",
+    migratedReady: ".legacy-admin-checksum-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Engine", "File path", "Checksum", "Status", "Admin Area", "Game Pages", "Registration System"]
+  },
+  {
+    name: "game-admin-db",
+    legacyPage: "admin",
+    legacyQuery: { mode: "DB" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "DB" },
+    legacyReady: "#content",
+    migratedReady: ".legacy-admin-db-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Comparison of tables from install and real database", "Comparison of real database and tables from install", "Database Backup", "File name", "Operation"]
+  },
+  {
     name: "game-rename-planet",
     legacyPage: "renameplanet",
     migratedPath: "/game/rename-planet",
