@@ -4105,6 +4105,18 @@ const adminSimFleetRows = [
 
 const adminSimDefenseRows = ["Rocket Launcher", "Light Laser", "Heavy Laser", "Gauss Cannon", "Ion Cannon", "Plasma Turret", "Small Shield Dome", "Large Shield Dome"];
 const adminBattleSimMaxSlot = 16;
+const adminRakSimDefenseRows = [
+  { id: 401, name: "Rocket Launcher", missileTarget: true },
+  { id: 402, name: "Light Laser", missileTarget: true },
+  { id: 403, name: "Heavy Laser", missileTarget: true },
+  { id: 404, name: "Gauss Cannon", missileTarget: true },
+  { id: 405, name: "Ion Cannon", missileTarget: true },
+  { id: 406, name: "Plasma Turret", missileTarget: true },
+  { id: 407, name: "Small Shield Dome", missileTarget: true },
+  { id: 408, name: "Large Shield Dome", missileTarget: true },
+  { id: 502, name: "Anti-Ballistic Missiles", missileTarget: false },
+  { id: 503, name: "Interplanetary Missiles", missileTarget: false }
+];
 
 function AdminBattleSimTable() {
   return <div dangerouslySetInnerHTML={{ __html: adminBattleSimHTML() }} />;
@@ -4314,91 +4326,38 @@ function AdminBotEditTable({ admin }: { admin: GameAdmin }) {
 }
 
 function AdminRakSimTable() {
-  return (
-    <table cellPadding={0} cellSpacing={0} className="legacy-admin-raksim-table">
-      <tbody>
-        <tr>
-          <td>
-            <form action={adminModeHref("RakSim")} method="POST" name="simForm" onSubmit={(event) => event.preventDefault()}>
-              <table cellPadding={0} cellSpacing={0}>
-                <tbody>
-                  <tr>
-                    <td className="c">Attacker</td>
-                    <td className="c">Defender</td>
-                  </tr>
-                  <tr>
-                    <td>
-                      Weapons: <input name="a_weap" size={2} type="text" />
-                    </td>
-                    <td>
-                      Armor: <input name="d_armor" size={2} type="text" />
-                    </td>
-                  </tr>
-                  <tr>
-                    <th style={{ verticalAlign: "top" }}>
-                      <table>
-                        <tbody>
-                          <tr>
-                            <td className="c" colSpan={2}>
-                              Settings
-                            </td>
-                          </tr>
-                          <tr>
-                            <td>
-                              Interplanetary Missile: <input maxLength={2} name="anz" size={2} type="text" />
-                            </td>
-                          </tr>
-                          <tr>
-                            <td>
-                              Target:{" "}
-                              <select name="pziel">
-                                <option value="0">All</option>
-                                {adminSimDefenseRows.map((name, index) => (
-                                  <option key={name} value={401 + index}>
-                                    {name}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </th>
-                    <th style={{ verticalAlign: "top" }}>
-                      <table>
-                        <tbody>
-                          <tr>
-                            <td className="c" colSpan={2}>
-                              <b>Defense</b>
-                            </td>
-                          </tr>
-                          {adminSimDefenseRows.map((name, index) => (
-                            <tr key={`rak-${name}`}>
-                              <td>{name}</td>
-                              <td>
-                                <input name={`d_${401 + index}`} size={5} />
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </th>
-                  </tr>
-                  <tr>
-                    <td colSpan={2}>
-                      <center>
-                        <input type="submit" value="Missile attack" />
-                      </center>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </form>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  );
+  return <div dangerouslySetInnerHTML={{ __html: adminRakSimHTML() }} />;
+}
+
+function adminRakSimHTML(): string {
+  const action = legacyHTMLAttribute(adminModeHref("RakSim"));
+  let html = "";
+  html += `<table class="legacy-admin-raksim-table" cellpadding=0 cellspacing=0>\n`;
+  html += `<form name="simForm" action="${action}" method="POST" >\n\n`;
+  html += "<tr>        <td class=c>Attacker</td>                <td class=c>Defender</td>  </tr>\n\n";
+  html += "<tr> \n<td> \n";
+  html += '    Weapons: <input type="text" name="a_weap" size=2 value="0"> \n';
+  html += "<td> \n";
+  html += '    Armor: <input type="text" name="d_armor" size=2 value="0"></td> \n';
+  html += "</tr>\n\n\n";
+  html += "        <tr> <th valign=top>\n        <table>\n\n<tr><td colspan=2> \n<table>\n";
+  html += "<tr><td class=c colspan=2>Settings</td></tr>\n\n";
+  html += '<tr><td>\nInterplanetary Missiles:     <input type="text" name="anz" size="2" maxlength="2" value="0"/></td></tr>\n\n';
+  html += '    <tr><td>\n    Target:\n     <select name="pziel">\n';
+  html += '      <option value="0" selected >Target all</option>\n';
+  for (const row of adminRakSimDefenseRows) {
+    if (!row.missileTarget) {
+      break;
+    }
+    html += `       <option value="${row.id}" >${legacyHTMLText(row.name)}</option>\n`;
+  }
+  html += "           </select>\n    </td></tr>\n\n</table>\n</td></tr>\n\n        </table>\n        </th>\n\n\n\n        <th valign=top>\n        <table>\n\n";
+  html += '<tr><td class=c colspan=2><b>Defense</b></td></tr>\n';
+  html += adminRakSimDefenseRows.map((row) => `           <tr><td> ${legacyHTMLText(row.name)} </td> <td> <input name="d_${row.id}" size=5 value=0> </td> </tr>\n`).join("");
+  html += "        </table>\n        </th></tr>            \n\n\n";
+  html += '<tr><td colspan=2><center><input type="submit" value="Missile attack"></center></td></tr>\n';
+  html += "</form>\n</table>\n";
+  return html;
 }
 
 function AdminLocaTable() {
