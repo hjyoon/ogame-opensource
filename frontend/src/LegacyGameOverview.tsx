@@ -2137,154 +2137,42 @@ function LogoutTable({ error, status }: { error: string | null; status: GameLogo
 }
 
 function StatisticsTable({ statistics }: { statistics: GameStatistics }) {
+  return React.createElement("center", { dangerouslySetInnerHTML: { __html: statisticsHTML(statistics) } });
+}
+
+function statisticsHTML(statistics: GameStatistics): string {
   const windows = statisticsWindows(statistics.total, statistics.start);
-  return (
-    <>
-      <form
-        className="legacy-statistics-form"
-        action={gameRouteURL("/game/statistics", window.location.search)}
-        method="get"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const form = new FormData(event.currentTarget);
-          const query = new URLSearchParams(window.location.search);
-          query.delete("tid");
-          query.set("who", String(form.get("who") ?? "player"));
-          query.set("type", String(form.get("type") ?? "ressources"));
-          query.set("start", String(form.get("start") ?? "-1"));
-          query.set("sort_per_member", String(form.get("sort_per_member") ?? "0"));
-          window.history.pushState({}, "", gameRouteURL("/game/statistics", query.toString()));
-          window.dispatchEvent(new PopStateEvent("popstate"));
-        }}
-      >
-        <table className="legacy-overview-table legacy-statistics-head-table" width={525}>
-          <tbody>
-            <tr>
-              <td className="legacy-c c">Statistics (as of: {formatLegacyStatisticsDateTime(statistics.generatedAt)})</td>
-            </tr>
-            <tr>
-              <th>
-                What kind of&nbsp;
-                <select name="who" defaultValue={statistics.who}>
-                  <option value="player">Player</option>
-                  <option value="ally">Alliance</option>
-                </select>
-                &nbsp;by&nbsp;
-                <select name="type" defaultValue={statistics.type}>
-                  <option value="ressources">Points</option>
-                  <option value="fleet">Fleets</option>
-                  <option value="research">Research</option>
-                </select>
-                &nbsp;in place&nbsp;
-                <select name="start" defaultValue={String(statistics.start)}>
-                  <option value="-1">[Own position]</option>
-                  {windows.map((start) => (
-                    <option key={start} value={start}>
-                      {start}-{start + 99}
-                    </option>
-                  ))}
-                </select>
-                &nbsp;
-                <input id="sort_per_member" name="sort_per_member" type="hidden" value={statisticsSortValue()} readOnly />
-                <input type="submit" value="Show" />
-              </th>
-            </tr>
-          </tbody>
-        </table>
-      </form>
-      {statistics.who === "ally" ? <AllianceStatisticsTable statistics={statistics} /> : <PlayerStatisticsTable statistics={statistics} />}
-    </>
-  );
+  const action = legacyHTMLAttribute(gameRouteURL("/game/statistics", window.location.search));
+  const who = statistics.who === "ally" ? "ally" : "player";
+  const type = statistics.type || "ressources";
+  let html = `<!-- begin header form --> \n<form method="get" action="${action}" > \n  \n  <!-- begin head table --> \n  <table class="legacy-statistics-head-table" width="525"> \n    <tr> \n      <td class="c">Statistics (as of: ${formatLegacyStatisticsDateTime(statistics.generatedAt)})</td> \n    </tr> \n    <tr> \n      <th> \n        \n \n        What kind of&nbsp;\n          \n        <select name="who"> \n          <option value="player" ${who === "player" ? "selected" : ""}>Player</option> \n          <option value="ally" ${who === "ally" ? "selected" : ""}>Alliance</option> \n        </select> \n          \n        &nbsp;by&nbsp;\n              \n        <select name="type"> \n          <option value="ressources" ${type === "ressources" ? "selected" : ""}>Points</option> \n          <option value="fleet" ${type === "fleet" ? "selected" : ""}>Fleets</option> \n          <option value="research" ${type === "research" ? "selected" : ""}>Research</option> \n        </select> \n          \n        &nbsp;in place        <select name="start"> \n          <option value="-1" ${statistics.start === -1 ? "selected" : ""}>[Own position]</option> \n`;
+  html += windows
+    .map((start) => `          <option value="${start}" ${statistics.start === start ? "selected" : ""}>${start}-${start + 99}</option> \n`)
+    .join("");
+  html += `        </select> \n          \n        <input type="hidden" id="sort_per_member" name="sort_per_member" value="${legacyHTMLAttribute(statisticsSortValue())}" /> \n        <input type=submit value="Show"> \n      </th> \n    </tr> \n  </table> \n  <!-- end head table --> \n    \n</form> \n<!-- end header form --> \n\n<!-- begin statistic data --> \n`;
+  html += who === "ally" ? allianceStatisticsHTML(statistics) : playerStatisticsHTML(statistics);
+  html += "\n<!-- end statistic data --><br><br><br><br>";
+  return html;
 }
 
-function PlayerStatisticsTable({ statistics }: { statistics: GameStatistics }) {
-  return (
-    <table className="legacy-overview-table legacy-statistics-table legacy-statistics-player-table" width={525}>
-      <tbody>
-        <tr>
-          <td className="legacy-c c" width={30}>
-            Place
-          </td>
-          <td className="legacy-c c">Player</td>
-          <td className="legacy-c c">&nbsp;</td>
-          <td className="legacy-c c">Alliance</td>
-          <td className="legacy-c c">Points</td>
-        </tr>
-        {statistics.rows.map((row) => (
-          <tr data-statistics-row key={`${row.player.id}-${row.place}`}>
-            <th>
-              {row.place}&nbsp;&nbsp;
-              <StatisticsDelta row={row} />
-            </th>
-            <th>
-              <a
-                href={row.own ? "#" : gameRouteURL("/game/galaxy", galaxyTargetSearch(row.coordinates))}
-                style={{ color: row.own ? "lime" : row.sameAlliance ? "#87CEEB" : "#FFFFFF" }}
-              >
-                {row.player.name}
-              </a>
-            </th>
-            <th>
-              {!row.own ? (
-                <a href={gameMessageComposeURL(row.player.id, window.location.search)}>
-                  <img alt="Write message" src={`${skinBase}/img/m.gif`} style={{ border: 0 }} />
-                </a>
-              ) : null}
-              &nbsp;
-            </th>
-            <th>
-              {row.alliance ? (
-                <a href={gameRouteURL("/game/alliance", window.location.search)}>{row.alliance.tag}</a>
-              ) : (
-                <a href={gameRouteURL("/game/alliance", window.location.search)}>&nbsp;</a>
-              )}
-            </th>
-            <th>{formatLegacyNumber(row.displayScore)}</th>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function AllianceStatisticsTable({ statistics }: { statistics: GameStatistics }) {
-  return (
-    <table className="legacy-overview-table legacy-statistics-table legacy-statistics-alliance-table" width={519}>
-      <tbody>
-        <tr>
-          <td className="legacy-c c" width={30}>
-            Place
-          </td>
-          <td className="legacy-c c">Alliance</td>
-          <td className="legacy-c c">&nbsp;</td>
-          <td className="legacy-c c">Num.</td>
-          <td className="legacy-c c">
-            <a href={statisticsSortURL(0)}>Thousand points</a>
-          </td>
-          <td className="legacy-c c">
-            <a href={statisticsSortURL(1)}>Per person</a>
-          </td>
-        </tr>
-        {statistics.rows.map((row) => (
-          <tr data-statistics-row key={`${row.alliance?.id ?? 0}-${row.place}`}>
-            <th>
-              {row.place}&nbsp;&nbsp;
-              <StatisticsDelta row={row} />
-            </th>
-            <th>
-              <a href={row.own ? "#" : gameRouteURL("/game/alliance", window.location.search)} style={{ color: row.own ? "lime" : "#FFFFFF" }}>
-                {row.alliance?.tag ?? ""}
-              </a>
-            </th>
-            <th>&nbsp;</th>
-            <th>{formatLegacyNumber(row.members)}</th>
-            <th>{formatLegacyNumber(row.displayScore)}</th>
-            <th>{formatLegacyNumber(row.perMember)}</th>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
+function playerStatisticsHTML(statistics: GameStatistics): string {
+  let html = `<!-- begin user --> \n<table class="legacy-statistics-table legacy-statistics-player-table" width="525"> \n  <tr> \n    <td class="c" width="30">Place</td> \n    <td class="c">Player</td> \n    <td class="c">&nbsp;</td> \n    <td class="c">Alliance</td> \n    <td class="c">Points</td> \n  </tr>\n`;
+  for (const row of statistics.rows) {
+    const playerColor = row.own ? "lime" : row.sameAlliance ? "87CEEB" : "FFFFFF";
+    const playerHref = row.own ? "#" : gameRouteURL("/game/galaxy", galaxyTargetSearch(row.coordinates));
+    const message = row.own
+      ? ""
+      : `      <a href="${legacyHTMLAttribute(gameMessageComposeURL(row.player.id, window.location.search))}"> \n        <img src="${skinBase}/img/m.gif" border="0" alt="Write message" /> \n      </a> \n`;
+    const alliance =
+      row.alliance && row.sameAlliance
+        ? ` \t  <a href="${legacyHTMLAttribute(gameRouteURL("/game/alliance", window.location.search))}">\n        ${legacyHTMLText(row.alliance.tag)}      </a>\n`
+        : row.alliance
+          ? `   \t  <a href="${legacyHTMLAttribute(allianceInfoURL(row.alliance.id))}" target="_ally">\n        ${legacyHTMLText(row.alliance.tag)}      </a>\n`
+          : `      <a href="${legacyHTMLAttribute(gameRouteURL("/game/alliance", window.location.search))}"> \n              </a> \n`;
+    html += `  <tr> \n    <!-- rank --> \n    <th> \n      ${row.place}&nbsp;&nbsp;\n\n      ${statisticsDeltaHTML(row)} \n    </th> \n\n    <!-- nick --> \n    <th> \n       <a href="${legacyHTMLAttribute(playerHref)}" style='color:${playerColor}' >      \n\n${legacyHTMLText(row.player.name)}</a> \n    </th> \n\n    <!--  message-icon --> \n    <th> \n${message}    &nbsp;\n    </th> \n\n    <!--  ally --> \n    <th> \n${alliance}    </th> \n\n    <!-- points --> \n    <th> \n      ${formatLegacyNumber(row.displayScore)}    </th> \n\n  </tr> \n`;
+  }
+  html += "</table>\n<!-- end user -->";
+  return html;
 }
 
 function statisticsSortURL(sortPerMember: number): string {
@@ -2297,27 +2185,36 @@ function statisticsSortValue(): string {
   return new URLSearchParams(window.location.search).get("sort_per_member") ?? "0";
 }
 
-function StatisticsDelta({ row }: { row: GameStatisticsRow }) {
+function allianceInfoURL(allianceID: number): string {
+  return allianceURL({ allyid: String(allianceID) });
+}
+
+function allianceStatisticsHTML(statistics: GameStatistics): string {
+  let html = `<!-- begin ally -->\n<table class="legacy-statistics-table legacy-statistics-alliance-table" width="519">\n  <tr>\n    <td class ="c" width="30">Place</td>\n    <td class ="c">Alliance</td>\n    <td class="c">&nbsp;</td>\n    <td class ="c">Num.</td>\n    <td class ="c"><a href="${legacyHTMLAttribute(statisticsSortURL(0))}">Thousand points</a></td>\n    <td class ="c"><a href="${legacyHTMLAttribute(statisticsSortURL(1))}">Per person</a></td>\n  </tr>\n`;
+  for (const row of statistics.rows) {
+    const tag = row.alliance?.tag ?? "";
+    const allyHref = row.own ? "#" : allianceInfoURL(row.alliance?.id ?? 0);
+    html += `  <tr>\n  \n    <!-- rank -->\n    <th>\n      ${row.place}&nbsp;&nbsp;\n\n      ${statisticsDeltaHTML(row)} \n    </th>\n    \n    <!--  name -->\n    <th>\n      <a href="${legacyHTMLAttribute(allyHref)}"${row.own ? " style='color:lime;'" : " target='_ally'"}>      \n \n      ${legacyHTMLText(tag)}    </a>\n    </th>\n    \n    <!-- bewerben -->\n    <th>\n      &nbsp;\n    </th>\n    \n    <!-- amount members -->\n    <th>\n      ${formatLegacyNumber(row.members)} </th>\n    \n    <!-- points -->\n    <th>\n      ${formatLegacyNumber(row.displayScore)}     \n      \n    </th>\n    \n    <!-- points per member -->\n    <th>\n      \n      ${formatLegacyNumber(row.perMember)}\n              \n    </th>\n    \n  </tr>\n  \n  <tr>\n`;
+  }
+  html += "</table>\n<!-- end ally -->";
+  return html;
+}
+
+function statisticsDeltaHTML(row: GameStatisticsRow): string {
   const title = `From ${formatLegacyDateTime(row.scoreDate)}`;
   if (row.delta < 0) {
-    return (
-      <a href="#" title={`+${Math.abs(row.delta)} ${title}`}>
-        <span style={{ color: "lime" }}>+</span>
-      </a>
-    );
+    return `<a href='#' onmouseover='return overlib("<font color=lime>+${Math.abs(row.delta)}</font><br/><font color=white>${legacyHTMLAttribute(
+      title
+    )}");' onmouseout='return nd();'><font color='lime'>+</font></a>`;
   }
   if (row.delta > 0) {
-    return (
-      <a href="#" title={`-${Math.abs(row.delta)} ${title}`}>
-        <span style={{ color: "red" }}>-</span>
-      </a>
-    );
+    return `<a href='#' onmouseover='return overlib("<font color=red>-${Math.abs(row.delta)}</font><br/><font color=white>${legacyHTMLAttribute(
+      title
+    )}");' onmouseout='return nd();'><font color='red'>-</font></a>`;
   }
-  return (
-    <a href="#" title={`* ${title}`}>
-      <span style={{ color: "#87CEEB" }}>*</span>
-    </a>
-  );
+  return `<a href='#' onmouseover='return overlib("<font color=87CEEB>*</font><br/><font color=white>${legacyHTMLAttribute(
+    title
+  )}");' onmouseout='return nd();'><font color='87CEEB'>*</font></a>`;
 }
 
 function statisticsWindows(total: number, selectedStart: number): number[] {

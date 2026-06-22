@@ -964,50 +964,6 @@ body.legacy-game-body {
   color: #ffffff;
 }
 
-.legacy-game-shell .legacy-statistics-head-table,
-.legacy-game-shell .legacy-statistics-table {
-  border-collapse: separate;
-  border-spacing: 2px;
-}
-
-.legacy-game-shell .legacy-statistics-form {
-  margin-bottom: 11px;
-}
-
-.legacy-game-shell .legacy-statistics-head-table th,
-.legacy-game-shell .legacy-statistics-table th {
-  font-weight: bold;
-}
-
-.legacy-game-shell .legacy-statistics-player-table td:first-child,
-.legacy-game-shell .legacy-statistics-player-table th:first-child {
-  max-width: 28px;
-  white-space: normal;
-  width: 28px;
-}
-
-.legacy-game-shell .legacy-statistics-player-table tr:nth-child(n + 11) th:first-child a {
-  display: block;
-}
-
-.legacy-game-shell .legacy-statistics-player-table tr:nth-child(n + 2):nth-child(-n + 10) th {
-  line-height: 16px;
-}
-
-.legacy-game-shell .legacy-statistics-player-table td:nth-child(3),
-.legacy-game-shell .legacy-statistics-player-table th:nth-child(3) {
-  width: 41.359375px;
-}
-
-.legacy-game-shell .legacy-statistics-head-table select,
-.legacy-game-shell .legacy-statistics-head-table input {
-  background-color: #344566;
-  border: 1px #415680 solid;
-  color: #e6ebfb;
-  font-family: Tahoma, sans-serif;
-  font-size: 11px;
-}
-
 .legacy-game-shell .legacy-admin-mods-heading {
   font-size: 1.5em;
   margin: 0.83em 0;
