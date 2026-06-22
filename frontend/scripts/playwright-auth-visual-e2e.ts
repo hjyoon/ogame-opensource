@@ -306,6 +306,83 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["Comparison of tables from install and real database", "Comparison of real database and tables from install", "Database Backup", "File name", "Operation"]
   },
   {
+    name: "game-admin-battlesim",
+    legacyPage: "admin",
+    legacyQuery: { mode: "BattleSim" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "BattleSim" },
+    legacyReady: "#content textarea[name='battle_source']",
+    migratedReady: ".legacy-admin-battlesim-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Attacker", "Defender", "Weapons:", "Shields:", "Armor:", "Fleet", "Settings", "Rapidfire", "ADM_SIM_BATTLE_SOURCE"]
+  },
+  {
+    name: "game-admin-expedition",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Expedition" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Expedition" },
+    legacyReady: "#content input[name='dm_factor']",
+    migratedReady: ".legacy-admin-expedition-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Expedition Settings", "The multiplier of Dark Matter found", "Expedition depletion settings", "Number of expeditions", "Expedition Simulator"]
+  },
+  {
+    name: "game-admin-battle-report",
+    legacyPage: "admin",
+    legacyQuery: { mode: "BattleReport" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "BattleReport" },
+    legacyReady: "#content",
+    migratedReady: ".legacy-admin-battle-report-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Battle report"]
+  },
+  {
+    name: "game-admin-botedit",
+    legacyPage: "admin",
+    legacyQuery: { mode: "BotEdit" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "BotEdit" },
+    legacyReady: "#content #strategyId",
+    migratedReady: ".legacy-admin-botedit-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Name", "New", "Rename", "Show", "Save", "-- Choose a strategy --", "Load"]
+  },
+  {
+    name: "game-admin-raksim",
+    legacyPage: "admin",
+    legacyQuery: { mode: "RakSim" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "RakSim" },
+    legacyReady: "#content input[name='a_weap']",
+    migratedReady: ".legacy-admin-raksim-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Attacker", "Defender", "Weapons:", "Armor:", "Settings", "Defense"]
+  },
+  {
+    name: "game-admin-loca",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Loca" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Loca" },
+    legacyReady: "#content select[name='loca_src']",
+    migratedReady: ".legacy-admin-loca-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Compare localization between the specified languages", "Source language:", "Target language:"]
+  },
+  {
+    name: "game-admin-mods",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Mods" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Mods" },
+    legacyReady: "#content .mods-container",
+    migratedReady: ".legacy-admin-mods-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["ADM_MODS_HEAD", "ADM_MODS_HEAD_ACITVE", "ADM_MODS_HEAD_AVAILABLE"]
+  },
+  {
     name: "game-rename-planet",
     legacyPage: "renameplanet",
     migratedPath: "/game/rename-planet",

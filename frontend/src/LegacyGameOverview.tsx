@@ -2815,6 +2815,55 @@ function AdminTable({ admin }: { admin: GameAdmin }) {
       </AdminModeShell>
     );
   }
+  if (admin.mode === "BattleSim") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminBattleSimTable />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "Expedition") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminExpeditionTable />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "BattleReport") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminBattleReportsTable />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "BotEdit") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminBotEditTable admin={admin} />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "RakSim") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminRakSimTable />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "Loca") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminLocaTable />
+      </AdminModeShell>
+    );
+  }
+  if (admin.mode === "Mods") {
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminModsTable />
+      </AdminModeShell>
+    );
+  }
   if (admin.mode !== "Home") {
     return (
       <AdminModeShell admin={admin}>
@@ -3727,6 +3776,472 @@ function AdminDatabaseTable() {
       <form action={adminModeActionHref("DB", "create")} method="POST" onSubmit={(event) => event.preventDefault()}>
         <input type="submit" value="Create a database backup" />
       </form>
+    </>
+  );
+}
+
+const adminSimFleetRows = [
+  "Light Fighter",
+  "Heavy Fighter",
+  "Cruiser",
+  "Battleship",
+  "Battlecruiser",
+  "Bomber",
+  "Destroyer",
+  "Deathstar",
+  "Small Cargo",
+  "Large Cargo",
+  "Recycler",
+  "Espionage Probe",
+  "Colony Ship",
+  "Solar Satellite"
+];
+
+const adminSimDefenseRows = ["Rocket Launcher", "Light Laser", "Heavy Laser", "Gauss Cannon", "Ion Cannon", "Plasma Turret", "Small Shield Dome", "Large Shield Dome"];
+
+function AdminBattleSimTable() {
+  return (
+    <table cellPadding={0} cellSpacing={0} className="legacy-admin-battlesim-table">
+      <tbody>
+        <tr>
+          <td>
+            <form action={adminModeHref("BattleSim")} method="POST" name="simForm" onSubmit={(event) => event.preventDefault()}>
+              <input id="anum" name="anum" type="hidden" value="1" />
+              <input id="dnum" name="dnum" type="hidden" value="1" />
+              <table cellPadding={0} cellSpacing={0}>
+                <tbody>
+                  <tr>
+                    <td className="c">Attacker</td>
+                    <td className="c">Defender</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      Weapons: <input id="a_weap" size={2} /> Shields: <input id="a_shld" size={2} /> Armor: <input id="a_armor" size={2} />
+                    </td>
+                    <td>
+                      Weapons: <input id="d_weap" size={2} /> Shields: <input id="d_shld" size={2} /> Armor: <input id="d_armor" size={2} />
+                    </td>
+                  </tr>
+                  <tr>
+                    <th style={{ verticalAlign: "top" }}>
+                      <AdminSimulationFleetSide prefix="a" />
+                      <table>
+                        <tbody>
+                          <tr>
+                            <td className="c" colSpan={2}>
+                              Settings
+                            </td>
+                          </tr>
+                          <tr>
+                            <td>Debug information</td>
+                            <td>
+                              <input name="debug" type="checkbox" />
+                            </td>
+                          </tr>
+                          <tr>
+                            <td>Rapidfire</td>
+                            <td>
+                              <input defaultChecked name="rapid" type="checkbox" />
+                            </td>
+                          </tr>
+                          <tr>
+                            <td>Fleet in debris</td>
+                            <td>
+                              <input defaultValue="30" name="fid" size={3} />
+                            </td>
+                          </tr>
+                          <tr>
+                            <td>Defense in debris</td>
+                            <td>
+                              <input defaultValue="0" name="did" size={3} />
+                            </td>
+                          </tr>
+                          <tr>
+                            <td>ADM_SIM_MAX_ROUND</td>
+                            <td>
+                              <input defaultValue="6" name="max_round" size={3} />
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </th>
+                    <th style={{ verticalAlign: "top" }}>
+                      <AdminSimulationFleetSide defender prefix="d" />
+                    </th>
+                  </tr>
+                  <tr>
+                    <td colSpan={2}>
+                      <table>
+                        <tbody>
+                          <tr>
+                            <td className="c" colSpan={2}>
+                              ADM_SIM_BATTLE_SOURCE
+                            </td>
+                          </tr>
+                          <tr>
+                            <td>
+                              <textarea id="battle_source" name="battle_source" />
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colSpan={2}>
+                      <center>
+                        <input type="submit" value="Start the Battle" />
+                      </center>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </form>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function AdminSimulationFleetSide({ defender = false, prefix }: { defender?: boolean; prefix: "a" | "d" }) {
+  return (
+    <table>
+      <tbody>
+        <tr>
+          <td className="c">
+            <b>Fleet</b>
+          </td>
+          <td>
+            Slot:{" "}
+            <select name={`${prefix}slot`}>
+              <option value="1">1</option>
+            </select>
+          </td>
+        </tr>
+        {adminSimFleetRows.map((name, index) => (
+          <tr key={`${prefix}-fleet-${name}`}>
+            <td>{name}</td>
+            <td>
+              <input id={`${prefix}_${202 + index}`} size={5} />
+            </td>
+          </tr>
+        ))}
+        {defender ? (
+          <>
+            <tr>
+              <td className="c">
+                <b>Defense</b>
+              </td>
+            </tr>
+            {adminSimDefenseRows.map((name, index) => (
+              <tr key={`${prefix}-defense-${name}`}>
+                <td>{name}</td>
+                <td>
+                  <input id={`${prefix}_${401 + index}`} size={5} />
+                </td>
+              </tr>
+            ))}
+          </>
+        ) : null}
+      </tbody>
+    </table>
+  );
+}
+
+function AdminExpeditionTable() {
+  const chanceRows = [
+    ["Meeting aliens (if the die value >=)", "chance_alien", "90"],
+    ["Meet the pirates (otherwise if the die value is >=)", "chance_pirates", "80"],
+    ["Finding Dark Matter (otherwise if the die value is >=)", "chance_dm", "70"],
+    ["The loss of a fleet in a black hole (otherwise if the die value is >=)", "chance_lost", "60"],
+    ["Delayed return (otherwise if the die value is >=)", "chance_delay", "50"],
+    ["Faster return (otherwise if the die value is >=)", "chance_accel", "40"],
+    ["Finding resources (otherwise if the die value is >=)", "chance_res", "30"],
+    ["Finding the fleet (otherwise if the die value is >=)", "chance_fleet", "20"]
+  ] as const;
+  return (
+    <>
+      <h2>Expedition Settings</h2>
+      <form action={adminModeActionHref("Expedition", "settings")} method="POST" onSubmit={(event) => event.preventDefault()}>
+        <table className="legacy-admin-expedition-table">
+          <tbody>
+            <tr>
+              <td className="d">The multiplier of Dark Matter found</td>
+              <td>
+                <input defaultValue="1" name="dm_factor" size={20} type="text" />
+              </td>
+            </tr>
+            <tr>
+              <td className="d">Chance of successful expedition (if &gt;= then success); Successful expedition if something happened.</td>
+              <td>
+                <input defaultValue="100" name="chance_success" size={20} type="text" />
+              </td>
+            </tr>
+            <tr>
+              <td className="c" colSpan={2}>
+                Expedition depletion settings
+              </td>
+            </tr>
+            {["depleted_min", "depleted_med", "depleted_max", "chance_depleted_min", "chance_depleted_med", "chance_depleted_max"].map((name) => (
+              <tr key={name}>
+                <td className="d">{name}</td>
+                <td>
+                  <input defaultValue="0" name={name} size={20} type="text" />
+                </td>
+              </tr>
+            ))}
+            <tr>
+              <td className="c" colSpan={2}>
+                The following checks are performed sequentially (type of successful expedition)
+              </td>
+            </tr>
+            {chanceRows.map(([label, name, value]) => (
+              <tr key={name}>
+                <td className="d">{label}</td>
+                <td>
+                  <input defaultValue={value} name={name} size={20} type="text" />
+                </td>
+              </tr>
+            ))}
+            <tr>
+              <td className="d">Otherwise, the Merchant will be found</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td className="c" colSpan={2}>
+                Settings for determining the upper limit of expedition points (affects the size of the find)
+              </td>
+            </tr>
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((index) => (
+              <tr key={`cap-${index}`}>
+                <td className="d">If top1 has less than ({index}) points, the expedition limit will be ({index})</td>
+                <td>
+                  <input defaultValue="0" name={`score_cap${index}`} size={20} type="text" />{" "}
+                  <input defaultValue="0" name={`limit_cap${index}`} size={20} type="text" />
+                </td>
+              </tr>
+            ))}
+            <tr>
+              <td className="d">Otherwise, the limit of the expedition will be maxed out</td>
+              <td>
+                <input defaultValue="0" name="limit_max" size={20} type="text" />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+      For all expedition rolls a 100-sided die [0, 99] is thrown (including 0 and 99).
+      <h2>Expedition Simulator</h2>
+      <form action={adminModeActionHref("Expedition", "sim")} method="POST" onSubmit={(event) => event.preventDefault()}>
+        <table>
+          <tbody>
+            <tr>
+              <td className="d">Number of expeditions</td>
+              <td>
+                <input defaultValue="1000" name="expcount" size={20} type="text" />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+    </>
+  );
+}
+
+function AdminBattleReportsTable() {
+  return (
+    <table className="legacy-admin-battle-report-table">
+      <tbody>
+        <tr>
+          <td className="c">Date</td>
+          <td className="c">Battle report</td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function AdminBotEditTable({ admin }: { admin: GameAdmin }) {
+  if (admin.viewer.level < 2) {
+    return <LegacyFont color="red">Access denied.</LegacyFont>;
+  }
+  return (
+    <div className="legacy-admin-botedit-table" id="sample">
+      <div style={{ whiteSpace: "nowrap", width: "100%" }}>
+        <span style={{ display: "inline-block", padding: 5, verticalAlign: "top", width: 100 }}>
+          <div id="myPalette" style={{ backgroundColor: "#344566", border: "solid 1px black", height: 500 }} />
+        </span>
+        <span style={{ display: "inline-block", padding: 5, verticalAlign: "top", width: "88%" }}>
+          <div id="myDiagram" style={{ backgroundColor: "#344566", border: "solid 1px black", height: 500 }} />
+        </span>
+      </div>
+      <span style={{ float: "left" }}>
+        Name <input id="strategyName" size={50} type="text" /> <button>New</button> <button>Rename</button> <button>Show</button> <button>Export</button>
+      </span>
+      <span style={{ float: "right" }}>
+        <button>Save</button>
+        <select id="strategyId">
+          <option value="0">-- Choose a strategy --</option>
+        </select>
+        <button>Load</button>
+      </span>
+      <textarea id="mySavedModel" style={{ display: "none", height: 300, width: "100%" }} />
+      <form action={adminModeActionHref("BotEdit", "import")} encType="multipart/form-data" method="post" onSubmit={(event) => event.preventDefault()}>
+        <input id="strategyId_ForImport" name="strategyId_ForImport" type="hidden" value="0" />
+        <input id="fileToUpload" name="fileToUpload" type="file" /> <input type="submit" value="Import" />
+      </form>
+      <img alt="" id="preview_img" style={{ display: "none" }} />
+    </div>
+  );
+}
+
+function AdminRakSimTable() {
+  return (
+    <table cellPadding={0} cellSpacing={0} className="legacy-admin-raksim-table">
+      <tbody>
+        <tr>
+          <td>
+            <form action={adminModeHref("RakSim")} method="POST" name="simForm" onSubmit={(event) => event.preventDefault()}>
+              <table cellPadding={0} cellSpacing={0}>
+                <tbody>
+                  <tr>
+                    <td className="c">Attacker</td>
+                    <td className="c">Defender</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      Weapons: <input name="a_weap" size={2} type="text" />
+                    </td>
+                    <td>
+                      Armor: <input name="d_armor" size={2} type="text" />
+                    </td>
+                  </tr>
+                  <tr>
+                    <th style={{ verticalAlign: "top" }}>
+                      <table>
+                        <tbody>
+                          <tr>
+                            <td className="c" colSpan={2}>
+                              Settings
+                            </td>
+                          </tr>
+                          <tr>
+                            <td>
+                              Interplanetary Missile: <input maxLength={2} name="anz" size={2} type="text" />
+                            </td>
+                          </tr>
+                          <tr>
+                            <td>
+                              Target:{" "}
+                              <select name="pziel">
+                                <option value="0">All</option>
+                                {adminSimDefenseRows.map((name, index) => (
+                                  <option key={name} value={401 + index}>
+                                    {name}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </th>
+                    <th style={{ verticalAlign: "top" }}>
+                      <table>
+                        <tbody>
+                          <tr>
+                            <td className="c" colSpan={2}>
+                              <b>Defense</b>
+                            </td>
+                          </tr>
+                          {adminSimDefenseRows.map((name, index) => (
+                            <tr key={`rak-${name}`}>
+                              <td>{name}</td>
+                              <td>
+                                <input name={`d_${401 + index}`} size={5} />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </th>
+                  </tr>
+                  <tr>
+                    <td colSpan={2}>
+                      <center>
+                        <input type="submit" value="Missile attack" />
+                      </center>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </form>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function AdminLocaTable() {
+  return (
+    <form action={adminModeActionHref("Loca", "search")} method="POST" onSubmit={(event) => event.preventDefault()}>
+      <table className="legacy-admin-loca-table">
+        <tbody>
+          <tr>
+            <td className="c" colSpan={2}>
+              Compare localization between the specified languages
+            </td>
+          </tr>
+          <tr>
+            <td>Source language:</td>
+            <td>
+              <select name="loca_src">
+                <option value="es_es">es_es</option>
+                <option value="de_de">de_de</option>
+                <option value="fr_fr">fr_fr</option>
+              </select>
+            </td>
+          </tr>
+          <tr>
+            <td>Target language:</td>
+            <td>
+              <select name="loca_dst">
+                <option value="de_de">de_de</option>
+                <option value="es_es">es_es</option>
+                <option value="fr_fr">fr_fr</option>
+              </select>
+            </td>
+          </tr>
+          <tr>
+            <td className="c" colSpan={2}>
+              <input type="submit" value="Compare" />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  );
+}
+
+function AdminModsTable() {
+  return (
+    <>
+      <h2>ADM_MODS_HEAD</h2>
+      <div className="legacy-admin-mods-table mods-container">
+        <div className="mod-column">
+          <h3>ADM_MODS_HEAD_ACITVE</h3>
+          <div className="empty-message">ADM_MODS_NO_ACTIVE</div>
+        </div>
+        <div className="mod-column">
+          <h3>ADM_MODS_HEAD_AVAILABLE</h3>
+          <div className="empty-message">ADM_MODS_NO_AVAILABLE</div>
+        </div>
+      </div>
+      <div style={{ color: "#E6EBFB", marginTop: 20, textAlign: "center" }}>
+        <p>ADM_MODS_TOT_ACTIVE: 0 | ADM_MODS_TOT_AVAILABLE: 0</p>
+      </div>
     </>
   );
 }
