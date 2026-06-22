@@ -46,7 +46,19 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 	if err != nil {
 		return domaingame.Admin{}, err
 	}
-	return domaingame.NewAdmin(overview, viewer, query.Mode), nil
+	admin := domaingame.NewAdmin(overview, viewer, query.Mode)
+	switch admin.Mode {
+	case "Debug":
+		admin.MessageRows, err = r.loadAdminMessageRows(ctx, "debug", true)
+	case "Errors":
+		admin.MessageRows, err = r.loadAdminMessageRows(ctx, "errors", false)
+	case "UserLogs":
+		admin.UserLogRows, err = r.loadAdminUserLogRows(ctx)
+	}
+	if err != nil {
+		return domaingame.Admin{}, err
+	}
+	return admin, nil
 }
 
 func (r AdminRepository) loadAdminViewer(ctx context.Context, playerID int) (domaingame.AdminViewer, error) {
@@ -74,4 +86,76 @@ func (r AdminRepository) loadAdminViewer(ctx context.Context, playerID int) (dom
 		return domaingame.AdminViewer{}, err
 	}
 	return viewer, rows.Err()
+}
+
+func (r AdminRepository) loadAdminMessageRows(ctx context.Context, rawTable string, includeErrorIDOrder bool) ([]domaingame.AdminMessageRow, error) {
+	messagesTable, err := tableName(r.prefix, rawTable)
+	if err != nil {
+		return nil, err
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	order := "m.date DESC"
+	if includeErrorIDOrder {
+		order += ", m.error_id DESC"
+	}
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT m.error_id, COALESCE(m.owner_id, 0), COALESCE(u.oname, ''), COALESCE(m.ip, ''), COALESCE(m.agent, ''), COALESCE(m.text, ''), COALESCE(m.date, 0) FROM %s m LEFT JOIN %s u ON u.player_id = m.owner_id ORDER BY %s LIMIT 50",
+			messagesTable,
+			usersTable,
+			order,
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domaingame.AdminMessageRow, 0, 50)
+	for rows.Next() {
+		var row domaingame.AdminMessageRow
+		if err := rows.Scan(&row.ID, &row.OwnerID, &row.OwnerName, &row.IP, &row.Agent, &row.Text, &row.Date); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+func (r AdminRepository) loadAdminUserLogRows(ctx context.Context) ([]domaingame.AdminUserLogRow, error) {
+	userLogsTable, err := tableName(r.prefix, "userlogs")
+	if err != nil {
+		return nil, err
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT l.id, COALESCE(l.owner_id, 0), COALESCE(u.oname, ''), COALESCE(l.date, 0), COALESCE(l.type, ''), COALESCE(l.text, '') FROM %s l LEFT JOIN %s u ON u.player_id = l.owner_id WHERE l.owner_id > 0 ORDER BY l.date DESC LIMIT 50",
+			userLogsTable,
+			usersTable,
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domaingame.AdminUserLogRow, 0, 50)
+	for rows.Next() {
+		var row domaingame.AdminUserLogRow
+		if err := rows.Scan(&row.ID, &row.OwnerID, &row.OwnerName, &row.Date, &row.Type, &row.Text); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	for left, right := 0, len(result)-1; left < right; left, right = left+1, right-1 {
+		result[left], result[right] = result[right], result[left]
+	}
+	return result, rows.Err()
 }

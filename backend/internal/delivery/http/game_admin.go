@@ -27,6 +27,8 @@ type gameAdminSummary struct {
 	Viewer         gameAdminViewer             `json:"viewer"`
 	Mode           string                      `json:"mode"`
 	Menu           []gameAdminMenuItem         `json:"menu"`
+	MessageRows    []gameAdminMessageRow       `json:"messageRows,omitempty"`
+	UserLogRows    []gameAdminUserLogRow       `json:"userLogRows,omitempty"`
 }
 
 type gameAdminViewer struct {
@@ -39,6 +41,25 @@ type gameAdminMenuItem struct {
 	Mode  string `json:"mode"`
 	Label string `json:"label"`
 	Image string `json:"image"`
+}
+
+type gameAdminMessageRow struct {
+	ID        int    `json:"id"`
+	OwnerID   int    `json:"ownerId"`
+	OwnerName string `json:"ownerName"`
+	IP        string `json:"ip"`
+	Agent     string `json:"agent"`
+	Text      string `json:"text"`
+	Date      int64  `json:"date"`
+}
+
+type gameAdminUserLogRow struct {
+	ID        int    `json:"id"`
+	OwnerID   int    `json:"ownerId"`
+	OwnerName string `json:"ownerName"`
+	Type      string `json:"type"`
+	Text      string `json:"text"`
+	Date      int64  `json:"date"`
 }
 
 func (a app) handleGameAdmin(w http.ResponseWriter, r *http.Request) {
@@ -93,6 +114,29 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 	for _, item := range admin.Menu {
 		menu = append(menu, gameAdminMenuItem{Mode: item.Mode, Label: item.Label, Image: item.Image})
 	}
+	messageRows := make([]gameAdminMessageRow, 0, len(admin.MessageRows))
+	for _, row := range admin.MessageRows {
+		messageRows = append(messageRows, gameAdminMessageRow{
+			ID:        row.ID,
+			OwnerID:   row.OwnerID,
+			OwnerName: row.OwnerName,
+			IP:        row.IP,
+			Agent:     row.Agent,
+			Text:      row.Text,
+			Date:      row.Date,
+		})
+	}
+	userLogRows := make([]gameAdminUserLogRow, 0, len(admin.UserLogRows))
+	for _, row := range admin.UserLogRows {
+		userLogRows = append(userLogRows, gameAdminUserLogRow{
+			ID:        row.ID,
+			OwnerID:   row.OwnerID,
+			OwnerName: row.OwnerName,
+			Type:      row.Type,
+			Text:      row.Text,
+			Date:      row.Date,
+		})
+	}
 	return gameAdminSummary{
 		Commander:      admin.Commander,
 		CurrentPlanet:  toGamePlanetOverviewResponse(admin.CurrentPlanet),
@@ -102,8 +146,10 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			Name:     admin.Viewer.Name,
 			Level:    admin.Viewer.Level,
 		},
-		Mode: admin.Mode,
-		Menu: menu,
+		Mode:        admin.Mode,
+		Menu:        menu,
+		MessageRows: messageRows,
+		UserLogRows: userLogRows,
 	}
 }
 

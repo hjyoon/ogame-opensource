@@ -1043,6 +1043,8 @@ type GameAdmin = {
   viewer: GameAdminViewer;
   mode: string;
   menu: GameAdminMenuItem[];
+  messageRows?: GameAdminMessageRow[];
+  userLogRows?: GameAdminUserLogRow[];
 };
 
 type GameAdminViewer = {
@@ -1055,6 +1057,25 @@ type GameAdminMenuItem = {
   mode: string;
   label: string;
   image: string;
+};
+
+type GameAdminMessageRow = {
+  id: number;
+  ownerId: number;
+  ownerName: string;
+  ip: string;
+  agent: string;
+  text: string;
+  date: number;
+};
+
+type GameAdminUserLogRow = {
+  id: number;
+  ownerId: number;
+  ownerName: string;
+  type: string;
+  text: string;
+  date: number;
 };
 
 type ResourceProductionRow = {
@@ -2755,14 +2776,14 @@ function AdminTable({ admin }: { admin: GameAdmin }) {
   if (admin.mode === "Debug") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminMessagesTable className="legacy-admin-debug-table" mode="Debug" withFilter />
+        <AdminMessagesTable className="legacy-admin-debug-table" mode="Debug" rows={admin.messageRows ?? []} withFilter />
       </AdminModeShell>
     );
   }
   if (admin.mode === "Errors") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminMessagesTable className="legacy-admin-errors-table" mode="Errors" />
+        <AdminMessagesTable className="legacy-admin-errors-table" mode="Errors" rows={admin.messageRows ?? []} />
       </AdminModeShell>
     );
   }
@@ -2776,7 +2797,7 @@ function AdminTable({ admin }: { admin: GameAdmin }) {
   if (admin.mode === "UserLogs") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminUserLogsTable />
+        <AdminUserLogsTable rows={admin.userLogRows ?? []} />
       </AdminModeShell>
     );
   }
@@ -2879,7 +2900,11 @@ function AdminTable({ admin }: { admin: GameAdmin }) {
     );
   }
   if (admin.mode === "Mods") {
-    return <AdminModsModeShell admin={admin} />;
+    return (
+      <AdminModeShell admin={admin}>
+        <AdminModsTable />
+      </AdminModeShell>
+    );
   }
   if (admin.mode !== "Home") {
     return (
@@ -2934,27 +2959,10 @@ function AdminModeShell({ admin, children }: { admin: GameAdmin; children: React
   return (
     <LegacyCenter>
       <table border={0} cellPadding={0} cellSpacing={1} className="legacy-admin-mode-shell" width={750}>
-        <tbody>
-          <tr>
-            <td>
-              <AdminQuickPanel admin={admin} />
-              {children}
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </LegacyCenter>
-  );
-}
-
-function AdminModsModeShell({ admin }: { admin: GameAdmin }) {
-  return (
-    <LegacyCenter>
-      <table border={0} cellPadding={0} cellSpacing={1} className="legacy-admin-mode-shell" width={750}>
         <tbody />
       </table>
       <AdminQuickPanel admin={admin} />
-      <AdminModsTable />
+      {children}
       <br />
       <br />
       <br />
@@ -3272,7 +3280,17 @@ function AdminColonySettingsTable() {
   );
 }
 
-function AdminMessagesTable({ className, mode, withFilter = false }: { className: string; mode: string; withFilter?: boolean }) {
+function AdminMessagesTable({
+  className,
+  mode,
+  rows,
+  withFilter = false
+}: {
+  className: string;
+  mode: string;
+  rows: GameAdminMessageRow[];
+  withFilter?: boolean;
+}) {
   return (
     <table className="header legacy-admin-messages-outer">
       <tbody>
@@ -3292,6 +3310,24 @@ function AdminMessagesTable({ className, mode, withFilter = false }: { className
                     <th>From</th>
                     <th>Browser</th>
                   </tr>
+                  {rows.map((row) => (
+                    <React.Fragment key={row.id}>
+                      <tr>
+                        <th>
+                          <input name={`delmes${row.id}`} type="checkbox" />
+                        </th>
+                        <th>{formatLegacyAdminMessageDate(row.date)}</th>
+                        <th>
+                          <AdminUserLink ownerId={row.ownerId} ownerName={row.ownerName} /> [{row.ip}]{" "}
+                        </th>
+                        <th>{row.agent} </th>
+                      </tr>
+                      <tr>
+                        <td className="b"> </td>
+                        <td className="b" colSpan={3} dangerouslySetInnerHTML={{ __html: sanitizeLegacyMessageHTML(row.text) }} />
+                      </tr>
+                    </React.Fragment>
+                  ))}
                   <tr>
                     <td className="b"> </td>
                     <td className="b" colSpan={3} />
@@ -3332,6 +3368,17 @@ function AdminMessagesTable({ className, mode, withFilter = false }: { className
   );
 }
 
+function AdminUserLink({ blankWhenMissing = false, ownerId, ownerName }: { blankWhenMissing?: boolean; ownerId: number; ownerName: string }) {
+  if (!ownerName && blankWhenMissing) {
+    return null;
+  }
+  const query = new URLSearchParams(window.location.search);
+  query.set("mode", "Users");
+  query.set("player_id", String(ownerId));
+  const label = ownerName || `Unknown UserID ${ownerId}`;
+  return <a href={gameRouteURL("/game/admin", `?${query.toString()}`)}>{label}</a>;
+}
+
 function AdminLoginsTable() {
   return (
     <form action={adminModeHref("Logins")} method="POST" onSubmit={(event) => event.preventDefault()}>
@@ -3368,7 +3415,7 @@ function AdminLoginsTable() {
   );
 }
 
-function AdminUserLogsTable() {
+function AdminUserLogsTable({ rows }: { rows: GameAdminUserLogRow[] }) {
   return (
     <>
       <h2>Recent actions of the players</h2>
@@ -3380,6 +3427,16 @@ function AdminUserLogsTable() {
             <td className="c">Category</td>
             <td className="c">Action</td>
           </tr>
+          {rows.map((row) => (
+            <tr key={row.id}>
+              <td>{formatLegacyAdminUserLogDate(row.date)}</td>
+              <td>
+                <AdminUserLink blankWhenMissing ownerId={row.ownerId} ownerName={row.ownerName} />
+              </td>
+              <td>{row.type}</td>
+              <td dangerouslySetInnerHTML={{ __html: sanitizeLegacyMessageHTML(row.text) }} />
+            </tr>
+          ))}
         </tbody>
       </table>
       <h2>Action history</h2>
@@ -9755,6 +9812,20 @@ function formatLegacyDateTime(seconds: number): string {
 function formatLegacyMessageDate(seconds: number): string {
   const date = new Date((seconds + 3 * 60 * 60) * 1000);
   return `${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")} ${String(
+    date.getUTCHours()
+  ).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
+}
+
+function formatLegacyAdminMessageDate(seconds: number): string {
+  const date = new Date((seconds + 3 * 60 * 60) * 1000);
+  return `${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")} ${String(
+    date.getUTCHours()
+  ).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
+}
+
+function formatLegacyAdminUserLogDate(seconds: number): string {
+  const date = new Date((seconds + 3 * 60 * 60) * 1000);
+  return `${String(date.getUTCDate()).padStart(2, "0")}.${String(date.getUTCMonth() + 1).padStart(2, "0")}.${date.getUTCFullYear()} ${String(
     date.getUTCHours()
   ).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
 }

@@ -17,6 +17,8 @@ type Admin struct {
 	Viewer         AdminViewer
 	Mode           string
 	Menu           []AdminMenuItem
+	MessageRows    []AdminMessageRow
+	UserLogRows    []AdminUserLogRow
 }
 
 type AdminViewer struct {
@@ -34,6 +36,25 @@ type AdminMenuItem struct {
 type AdminActionIssue struct {
 	Code    string
 	Message string
+}
+
+type AdminMessageRow struct {
+	ID        int
+	OwnerID   int
+	OwnerName string
+	IP        string
+	Agent     string
+	Text      string
+	Date      int64
+}
+
+type AdminUserLogRow struct {
+	ID        int
+	OwnerID   int
+	OwnerName string
+	Type      string
+	Text      string
+	Date      int64
 }
 
 var adminMenuItems = []AdminMenuItem{

@@ -416,6 +416,11 @@ body.legacy-game-body {
   width: 98%;
 }
 
+.legacy-game-shell h2 {
+  font-size: 1.5em;
+  margin: 0.83em 0;
+}
+
 .legacy-header-top {
   height: 66px;
   left: 190px;
