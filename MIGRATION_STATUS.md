@@ -36,7 +36,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 - Research/shipyard/defense actions and galaxy page pass Chromium/Firefox exact 0px; queues cover submit/partial/complete DB.
 - Prior migration QA passed with `OGAME_RUN_LEGACY_E2E=0 testing/e2e/run-golang-migration-qa.sh`.
 - CSR E2E covers Buddy/Options, Options save, Notes create/edit/delete, and logout; Chromium passes.
-- Focused auth visual E2E passes Chromium/Firefox for Notes, Buddylist, Options at 0px; Merchant contract passes with ~0.12% select diff.
+- Auth visual E2E passes Chromium/Firefox for Notes, Buddylist, Options at 0px; Merchant call/exchange passes with ~0.12% select diff.
 - Prior Go internal coverage gate: `97.0% >= 97%`.
 
 Full legacy PHP E2E was not rerun in this step; PHP remains the oracle.

@@ -96,6 +96,7 @@ try {
   await assertGameClientNavigation(page, "game buildings menu preserves CSR", "a[href^='/game/buildings']", "/game/buildings", "Buildings");
   await assertGameClientNavigation(page, "game resources menu preserves CSR", "a[href^='/game/resources']", "/game/resources", "Resources");
   await assertGameClientNavigation(page, "game merchant menu preserves CSR", ".legacy-menu a[href^='/game/merchant']", "/game/merchant", "Merchant");
+  await assertMerchantInsufficientDarkMatter(page);
   await assertGameClientNavigation(page, "game research menu preserves CSR", "a[href^='/game/research']", "/game/research", "Research");
   await assertGameClientNavigation(page, "game shipyard menu preserves CSR", "a[href^='/game/shipyard']", "/game/shipyard", "Shipyard");
   await assertGameClientNavigation(page, "game defense menu preserves CSR", "a[href^='/game/defense']", "/game/defense", "Defense");
@@ -585,6 +586,30 @@ async function assertSearchForm(page: Page, login: string) {
   });
 }
 
+async function assertMerchantInsufficientDarkMatter(page: Page) {
+  const marker = "probe-game-merchant-call";
+  await page.evaluate((value) => {
+    window.__ogameCsrProbe = value;
+  }, marker);
+  await page.locator(".legacy-merchant-call-table").waitFor({ timeout: 10_000 });
+  await page.locator(".legacy-merchant-call-table input[name='call_trader']").click();
+  await page.waitForFunction(() => document.body.textContent?.includes("Not enough dark matter!"), undefined, {
+    timeout: 10_000
+  });
+  await record("game merchant insufficient dark matter preserves CSR", async () => {
+    const state = await gameShellState(page, marker, "Merchant");
+    return {
+      pass:
+        state.pass &&
+        state.details.pathname === "/game/merchant" &&
+        state.details.merchantCallTable === true &&
+        state.details.merchantErrorText.includes("Not enough dark matter!") &&
+        state.details.pendingText === false,
+      details: state.details
+    };
+  });
+}
+
 async function assertOptionsMutationFlow(page: Page) {
   const marker = "probe-game-options-submit";
   await page.evaluate((value) => {
@@ -775,6 +800,11 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     merchantCallTable: document.querySelector(".legacy-merchant-call-table") !== null,
     merchantExchangeTable: document.querySelector(".legacy-merchant-exchange-table") !== null,
     merchantText: document.querySelector(".legacy-merchant-call-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
+    merchantErrorText:
+      Array.from(document.querySelectorAll(".legacy-message-error, .legacy-overview-table"))
+        .find((element) => element.textContent?.includes("Not enough dark matter!"))
+        ?.textContent?.trim()
+        .replace(/\s+/g, " ") ?? "",
     researchRows: document.querySelectorAll("[data-research-row]").length,
     researchTable: document.querySelector(".legacy-research-table") !== null,
     researchNames: Array.from(document.querySelectorAll("[data-research-row] .legacy-building-description a")).map(
