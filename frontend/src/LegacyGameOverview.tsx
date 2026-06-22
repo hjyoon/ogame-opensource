@@ -2615,6 +2615,7 @@ function OfficersTable({
                     <>
                       <b>{officer.name}</b>(
                       <b>
+                        {" "}
                         {officerStatus(officer)})
                         <br />
                         {officer.description}
@@ -2624,7 +2625,7 @@ function OfficersTable({
                     </>
                   ) : (
                     <>
-                      <b>{officer.name}</b>(<b>{officerStatus(officer)}</b>)<br />
+                      <b>{officer.name}</b>(<b> {officerStatus(officer)}</b>)<br />
                       {officer.description}
                       <br />
                       <OfficerNoteTable officer={officer} />
