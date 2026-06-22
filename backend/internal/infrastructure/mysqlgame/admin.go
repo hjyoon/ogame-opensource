@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
@@ -66,6 +67,8 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		admin.QueueRows, err = r.loadAdminQueueRows(ctx)
 	case "UserLogs":
 		admin.UserLogRows, err = r.loadAdminUserLogRows(ctx)
+	case "Users":
+		admin.UserRows, admin.ActiveUsers, err = r.loadAdminUsers(ctx)
 	case "BattleReport":
 		admin.BattleReports, err = r.loadAdminBattleReports(ctx)
 	case "Checksum":
@@ -172,6 +175,90 @@ func (r AdminRepository) loadAdminUserLogRows(ctx context.Context) ([]domaingame
 	}
 	for left, right := 0, len(result)-1; left < right; left, right = left+1, right-1 {
 		result[left], result[right] = result[right], result[left]
+	}
+	return result, rows.Err()
+}
+
+func (r AdminRepository) loadAdminUsers(ctx context.Context) ([]domaingame.AdminUserRow, []domaingame.AdminUserRow, error) {
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, nil, err
+	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return nil, nil, err
+	}
+	newUsers, err := r.queryAdminUsers(
+		ctx,
+		fmt.Sprintf(
+			"SELECT u.player_id, COALESCE(u.oname, ''), COALESCE(u.regdate, 0), COALESCE(u.lastclick, 0), COALESCE(u.vacation, 0), COALESCE(u.banned, 0), COALESCE(u.noattack, 0), COALESCE(u.disable, 0), COALESCE(p.planet_id, 0), COALESCE(p.name, ''), COALESCE(p.g, 0), COALESCE(p.s, 0), COALESCE(p.p, 0) FROM %s u LEFT JOIN %s p ON p.planet_id = u.hplanetid ORDER BY u.regdate DESC LIMIT 25",
+			usersTable,
+			planetsTable,
+		),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	activeUsers, err := r.queryAdminUsers(
+		ctx,
+		fmt.Sprintf(
+			"SELECT u.player_id, COALESCE(u.oname, ''), COALESCE(u.regdate, 0), COALESCE(u.lastclick, 0), COALESCE(u.vacation, 0), COALESCE(u.banned, 0), COALESCE(u.noattack, 0), COALESCE(u.disable, 0), COALESCE(p.planet_id, 0), COALESCE(p.name, ''), COALESCE(p.g, 0), COALESCE(p.s, 0), COALESCE(p.p, 0) FROM %s u LEFT JOIN %s p ON p.planet_id = u.hplanetid WHERE u.lastclick >= ? ORDER BY u.oname ASC",
+			usersTable,
+			planetsTable,
+		),
+		time.Now().Unix()-24*60*60,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	return newUsers, activeUsers, nil
+}
+
+func (r AdminRepository) queryAdminUsers(ctx context.Context, sql string, args ...any) ([]domaingame.AdminUserRow, error) {
+	rows, err := r.queryer.QueryContext(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domaingame.AdminUserRow, 0)
+	for rows.Next() {
+		var row domaingame.AdminUserRow
+		var vacation, banned, noattack, disable int
+		var planetID, galaxy, system, position int
+		var planetName string
+		if err := rows.Scan(
+			&row.PlayerID,
+			&row.Name,
+			&row.RegDate,
+			&row.LastClick,
+			&vacation,
+			&banned,
+			&noattack,
+			&disable,
+			&planetID,
+			&planetName,
+			&galaxy,
+			&system,
+			&position,
+		); err != nil {
+			return nil, err
+		}
+		row.Vacation = vacation != 0
+		row.Banned = banned != 0
+		row.NoAttack = noattack != 0
+		row.Disable = disable != 0
+		if planetID != 0 {
+			row.HomePlanet = &domaingame.AdminUserPlanet{
+				ID:   planetID,
+				Name: planetName,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   galaxy,
+					System:   system,
+					Position: position,
+				},
+			}
+		}
+		result = append(result, row)
 	}
 	return result, rows.Err()
 }

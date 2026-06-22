@@ -13,6 +13,12 @@ import (
 func TestAdminRepositoryReadsAdminHome(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		fakeQueryResult{rows: fakeRowsFromValues(
+			[]any{42, "legor", int64(1700000000), int64(1700003600), 0, 0, 0, 0, 99, "Homeworld", 1, 2, 3},
+		)},
+		fakeQueryResult{rows: fakeRowsFromValues(
+			[]any{42, "legor", int64(1700000000), int64(1700003600), 0, 0, 0, 0, 99, "Homeworld", 1, 2, 3},
+		)},
 	)}
 	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
 
@@ -24,8 +30,17 @@ func TestAdminRepositoryReadsAdminHome(t *testing.T) {
 	if admin.Commander != "legor" || admin.Viewer.Level != domaingame.AdminLevelAdmin || admin.Mode != "Users" || len(admin.Menu) != 25 {
 		t.Fatalf("unexpected admin: %+v", admin)
 	}
-	if !strings.Contains(queryer.calls[len(queryer.calls)-1].sql, "COALESCE(admin, 0)") {
-		t.Fatalf("expected admin viewer query, got %s", queryer.calls[len(queryer.calls)-1].sql)
+	if len(admin.UserRows) != 1 || admin.UserRows[0].HomePlanet == nil || admin.UserRows[0].HomePlanet.Name != "Homeworld" {
+		t.Fatalf("unexpected user rows: %+v", admin.UserRows)
+	}
+	if len(admin.ActiveUsers) != 1 || admin.ActiveUsers[0].Name != "legor" {
+		t.Fatalf("unexpected active users: %+v", admin.ActiveUsers)
+	}
+	if !strings.Contains(queryer.calls[len(queryer.calls)-2].sql, "ORDER BY u.regdate DESC LIMIT 25") {
+		t.Fatalf("expected new users query, got %s", queryer.calls[len(queryer.calls)-2].sql)
+	}
+	if !strings.Contains(queryer.calls[len(queryer.calls)-1].sql, "WHERE u.lastclick >= ? ORDER BY u.oname ASC") {
+		t.Fatalf("expected active users query, got %s", queryer.calls[len(queryer.calls)-1].sql)
 	}
 	_ = NewAdminRepository(nil, "ogame_")
 }

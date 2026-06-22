@@ -1045,6 +1045,8 @@ type GameAdmin = {
   menu: GameAdminMenuItem[];
   messageRows?: GameAdminMessageRow[];
   userLogRows?: GameAdminUserLogRow[];
+  userRows?: GameAdminUserRow[];
+  activeUsers?: GameAdminUserRow[];
   queueRows?: GameAdminQueueRow[];
   battleReports?: GameAdminBattleReportRow[];
   checksumGroups?: GameAdminChecksumGroup[];
@@ -1079,6 +1081,24 @@ type GameAdminUserLogRow = {
   type: string;
   text: string;
   date: number;
+};
+
+type GameAdminUserRow = {
+  playerId: number;
+  name: string;
+  regDate: number;
+  lastClick: number;
+  vacation: boolean;
+  banned: boolean;
+  noAttack: boolean;
+  disable: boolean;
+  homePlanet?: GameAdminUserPlanet;
+};
+
+type GameAdminUserPlanet = {
+  id: number;
+  name: string;
+  coordinates: Coordinates;
 };
 
 type GameAdminQueueRow = {
@@ -3692,45 +3712,101 @@ function AdminQueueTable({ rows }: { rows: GameAdminQueueRow[] }) {
 }
 
 function AdminUsersTable({ admin }: { admin: GameAdmin }) {
-  const planet = admin.currentPlanet;
   return (
-    <>
-      <span>New users:</span>
-      <br />
-      <table className="legacy-admin-users-table">
-        <tbody>
-          <tr>
-            <td className="c">Date of registration</td>
-            <td className="c">Home Planet</td>
-            <td className="c">Player Name</td>
-          </tr>
-          <tr>
-            <th>{formatLegacyDateTime(Math.floor(Date.now() / 1000))}</th>
-            <th>
-              [{planet.coordinates.galaxy}:{planet.coordinates.system}:{planet.coordinates.position}]{" "}
-              <a href={adminModeHref("Planets")}>{planet.name}</a>
-            </th>
-            <th>
-              <a href={adminModeHref("Users")}>{admin.viewer.name}</a>
-            </th>
-          </tr>
-        </tbody>
-      </table>
-      <br />
-      <table>
-        <tbody>
-          <tr>
-            <td className="c">Active in the last 24 hours (1)</td>
-          </tr>
-          <tr>
-            <td>
-              <a href={adminModeHref("Users")}>{admin.viewer.name}</a>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </>
+    <div
+      className="legacy-admin-users-table"
+      dangerouslySetInnerHTML={{ __html: adminUsersHTML(admin) }}
+      style={{ display: "contents" }}
+    />
   );
+}
+
+function adminUsersHTML(admin: GameAdmin): string {
+  const users = admin.userRows ?? [];
+  const activeUsers = admin.activeUsers ?? [];
+  let html = "";
+  html += "New users:<br>\n";
+  html += "<table>\n";
+  html += '<tr><td class=c>Date of registration</td><td class=c>Home Planet</td><td class=c>Player Name</td></tr>\n';
+  for (const user of users) {
+    html += `<tr><th>${formatLegacyAdminDateTime(user.regDate)}</th>`;
+    html += `<th>${user.homePlanet ? adminUserHomePlanetHTML(user.homePlanet) : "-"}</th>`;
+    html += `<th>${adminUserNameHTML(user)}</th></tr>\n`;
+  }
+  html += "</table>\n";
+  html += "\n    <br>\n    <table>\n";
+  html += `    <tr><td class=c>Active in the last 24 hours (${activeUsers.length})</td></tr>\n`;
+  html += "    <tr><td>\n";
+  html += activeUsers.map((user) => adminUserNameHTML(user)).join(", ");
+  html += "\n    </td></tr>\n    </table>\n";
+  return html;
+}
+
+function adminUserHomePlanetHTML(planet: GameAdminUserPlanet): string {
+  const coordinates = planet.coordinates;
+  return `[${coordinates.galaxy}:${coordinates.system}:${coordinates.position}] <a href="${legacyHTMLAttribute(
+    adminPlanetHref(planet.id)
+  )}">${legacyHTMLText(planet.name)}</a>`;
+}
+
+function adminUserNameHTML(user: GameAdminUserRow): string {
+  let name = legacyHTMLText(user.name);
+  const status = adminUserStatus(user);
+  if (status !== "") {
+    name += ` (${legacyHTMLText(status)})`;
+  }
+  const color = adminUserColor(user);
+  if (color !== "") {
+    name = `<font color=${legacyHTMLAttribute(color)}>${name}</font>`;
+  }
+  return `<a href="${legacyHTMLAttribute(adminUserHref(user.playerId))}">${name}</a>`;
+}
+
+function adminUserStatus(user: GameAdminUserRow): string {
+  const now = Math.floor(Date.now() / 1000);
+  let status = "";
+  if (user.lastClick <= now - 604800) {
+    status += "i";
+  }
+  if (user.lastClick <= now - 604800 * 4) {
+    status += "I";
+  }
+  if (user.vacation) {
+    status += "v";
+  }
+  if (user.banned) {
+    status += "b";
+  }
+  if (user.noAttack) {
+    status += "\u0410";
+  }
+  if (user.disable) {
+    status += "g";
+  }
+  return status;
+}
+
+function adminUserColor(user: GameAdminUserRow): string {
+  const now = Math.floor(Date.now() / 1000);
+  if (user.disable) {
+    return "orange";
+  }
+  if (user.banned) {
+    return "red";
+  }
+  if (user.noAttack) {
+    return "yellow";
+  }
+  if (user.vacation) {
+    return "skyBlue";
+  }
+  if (user.lastClick <= now - 604800 * 4) {
+    return "#999999";
+  }
+  if (user.lastClick <= now - 604800) {
+    return "#cccccc";
+  }
+  return "";
 }
 
 function AdminPlanetsTable() {
@@ -4554,6 +4630,20 @@ function adminModeActionHref(mode: string, action: string) {
   const query = new URLSearchParams(window.location.search);
   query.set("mode", mode);
   query.set("action", action);
+  return gameRouteURL("/game/admin", `?${query.toString()}`);
+}
+
+function adminUserHref(playerID: number) {
+  const query = new URLSearchParams(window.location.search);
+  query.set("mode", "Users");
+  query.set("player_id", String(playerID));
+  return gameRouteURL("/game/admin", `?${query.toString()}`);
+}
+
+function adminPlanetHref(planetID: number) {
+  const query = new URLSearchParams(window.location.search);
+  query.set("mode", "Planets");
+  query.set("cp", String(planetID));
   return gameRouteURL("/game/admin", `?${query.toString()}`);
 }
 
@@ -9937,6 +10027,10 @@ function formatLegacyDateTime(seconds: number): string {
     2,
     "0"
   )}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
+}
+
+function formatLegacyAdminDateTime(seconds: number): string {
+  return formatLegacyDateTime(seconds + 3 * 60 * 60);
 }
 
 function formatLegacyMessageDate(seconds: number): string {

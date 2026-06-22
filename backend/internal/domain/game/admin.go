@@ -19,6 +19,8 @@ type Admin struct {
 	Menu           []AdminMenuItem
 	MessageRows    []AdminMessageRow
 	UserLogRows    []AdminUserLogRow
+	UserRows       []AdminUserRow
+	ActiveUsers    []AdminUserRow
 	QueueRows      []AdminQueueRow
 	BattleReports  []AdminBattleReportRow
 	ChecksumGroups []AdminChecksumGroup
@@ -58,6 +60,24 @@ type AdminUserLogRow struct {
 	Type      string
 	Text      string
 	Date      int64
+}
+
+type AdminUserRow struct {
+	PlayerID   int
+	Name       string
+	RegDate    int64
+	LastClick  int64
+	Vacation   bool
+	Banned     bool
+	NoAttack   bool
+	Disable    bool
+	HomePlanet *AdminUserPlanet
+}
+
+type AdminUserPlanet struct {
+	ID          int
+	Name        string
+	Coordinates Coordinates
 }
 
 type AdminQueueRow struct {

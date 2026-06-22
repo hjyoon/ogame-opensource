@@ -29,6 +29,8 @@ type gameAdminSummary struct {
 	Menu           []gameAdminMenuItem         `json:"menu"`
 	MessageRows    []gameAdminMessageRow       `json:"messageRows,omitempty"`
 	UserLogRows    []gameAdminUserLogRow       `json:"userLogRows,omitempty"`
+	UserRows       []gameAdminUserRow          `json:"userRows,omitempty"`
+	ActiveUsers    []gameAdminUserRow          `json:"activeUsers,omitempty"`
 	QueueRows      []gameAdminQueueRow         `json:"queueRows,omitempty"`
 	BattleReports  []gameAdminBattleReportRow  `json:"battleReports,omitempty"`
 	ChecksumGroups []gameAdminChecksumGroup    `json:"checksumGroups,omitempty"`
@@ -63,6 +65,24 @@ type gameAdminUserLogRow struct {
 	Type      string `json:"type"`
 	Text      string `json:"text"`
 	Date      int64  `json:"date"`
+}
+
+type gameAdminUserRow struct {
+	PlayerID   int                  `json:"playerId"`
+	Name       string               `json:"name"`
+	RegDate    int64                `json:"regDate"`
+	LastClick  int64                `json:"lastClick"`
+	Vacation   bool                 `json:"vacation"`
+	Banned     bool                 `json:"banned"`
+	NoAttack   bool                 `json:"noAttack"`
+	Disable    bool                 `json:"disable"`
+	HomePlanet *gameAdminUserPlanet `json:"homePlanet,omitempty"`
+}
+
+type gameAdminUserPlanet struct {
+	ID          int                     `json:"id"`
+	Name        string                  `json:"name"`
+	Coordinates gameCoordinatesResponse `json:"coordinates"`
 }
 
 type gameAdminQueueRow struct {
@@ -170,6 +190,14 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			Date:      row.Date,
 		})
 	}
+	userRows := make([]gameAdminUserRow, 0, len(admin.UserRows))
+	for _, row := range admin.UserRows {
+		userRows = append(userRows, toGameAdminUserRow(row))
+	}
+	activeUsers := make([]gameAdminUserRow, 0, len(admin.ActiveUsers))
+	for _, row := range admin.ActiveUsers {
+		activeUsers = append(activeUsers, toGameAdminUserRow(row))
+	}
 	queueRows := make([]gameAdminQueueRow, 0, len(admin.QueueRows))
 	for _, row := range admin.QueueRows {
 		queueRows = append(queueRows, gameAdminQueueRow{
@@ -221,9 +249,33 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		Menu:           menu,
 		MessageRows:    messageRows,
 		UserLogRows:    userLogRows,
+		UserRows:       userRows,
+		ActiveUsers:    activeUsers,
 		QueueRows:      queueRows,
 		BattleReports:  battleReports,
 		ChecksumGroups: checksumGroups,
+	}
+}
+
+func toGameAdminUserRow(row domaingame.AdminUserRow) gameAdminUserRow {
+	var planet *gameAdminUserPlanet
+	if row.HomePlanet != nil {
+		planet = &gameAdminUserPlanet{
+			ID:          row.HomePlanet.ID,
+			Name:        row.HomePlanet.Name,
+			Coordinates: toGameCoordinatesResponse(row.HomePlanet.Coordinates),
+		}
+	}
+	return gameAdminUserRow{
+		PlayerID:   row.PlayerID,
+		Name:       row.Name,
+		RegDate:    row.RegDate,
+		LastClick:  row.LastClick,
+		Vacation:   row.Vacation,
+		Banned:     row.Banned,
+		NoAttack:   row.NoAttack,
+		Disable:    row.Disable,
+		HomePlanet: planet,
 	}
 }
 
