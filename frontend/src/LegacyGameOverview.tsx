@@ -9463,7 +9463,7 @@ function RenamePlanetTable({
     );
   }
   return (
-    <>
+    <LegacyCenter>
       <h1>Rename/leave the planet</h1>
       <form
         action={gameRouteURL("/game/rename-planet", window.location.search)}
@@ -9521,7 +9521,7 @@ function RenamePlanetTable({
       <br />
       <br />
       <br />
-    </>
+    </LegacyCenter>
   );
 }
 
@@ -9536,7 +9536,7 @@ function RenamePlanetDestroyMenu({
 }) {
   const planet = overview.currentPlanet;
   return (
-    <>
+    <LegacyCenter>
       <h1>Rename/leave the planet</h1>
       <form
         action={gameRouteURL("/game/rename-planet", window.location.search)}
@@ -9576,7 +9576,7 @@ function RenamePlanetDestroyMenu({
       <br />
       <br />
       <br />
-    </>
+    </LegacyCenter>
   );
 }
 
