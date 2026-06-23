@@ -49,6 +49,7 @@ type gameOptionsUniverse struct {
 	Language      string `json:"language"`
 	ForceLanguage bool   `json:"forceLanguage"`
 	FeedAge       int    `json:"feedAge"`
+	Speed         int    `json:"speed"`
 }
 
 type gameOptionsSettings struct {
@@ -90,6 +91,7 @@ type gameOptionsMutationRequest struct {
 	SortOrder        int    `json:"sortOrder"`
 	MaxSpy           int    `json:"maxSpy"`
 	MaxFleetMessages int    `json:"maxFleetMessages"`
+	VacationMode     *bool  `json:"vacationMode"`
 	DeleteAccount    bool   `json:"deleteAccount"`
 }
 
@@ -175,6 +177,8 @@ func decodeGameOptionsMutation(r *http.Request) (domaingame.OptionsMutation, err
 			SortOrder:        request.SortOrder,
 			MaxSpy:           request.MaxSpy,
 			MaxFleetMessages: request.MaxFleetMessages,
+			VacationMode:     request.VacationMode != nil && *request.VacationMode,
+			VacationModeSet:  request.VacationMode != nil,
 			DeleteAccount:    request.DeleteAccount,
 		}, nil
 	}
@@ -182,6 +186,7 @@ func decodeGameOptionsMutation(r *http.Request) (domaingame.OptionsMutation, err
 		return domaingame.OptionsMutation{}, err
 	}
 	host, port := requestHostPort(r)
+	vacationModeSet := r.PostForm.Has("urlaubs_modus") || r.PostForm.Has("urlaub_aus")
 	return domaingame.OptionsMutation{
 		Language:         formLast(r, "lang"),
 		SkinPath:         domaingame.NormalizeSkinPath(formLast(r, "dpath"), host, port),
@@ -191,6 +196,8 @@ func decodeGameOptionsMutation(r *http.Request) (domaingame.OptionsMutation, err
 		SortOrder:        legacyInt(r.PostForm["settings_order"]),
 		MaxSpy:           legacyInt(r.PostForm["spio_anz"]),
 		MaxFleetMessages: legacyInt(r.PostForm["settings_fleetactions"]),
+		VacationMode:     formChecked(r, "urlaubs_modus") && !formChecked(r, "urlaub_aus"),
+		VacationModeSet:  vacationModeSet,
 		DeleteAccount:    formChecked(r, "db_deaktjava"),
 	}, nil
 }
@@ -237,6 +244,7 @@ func toGameOptionsSummary(options domaingame.Options) gameOptionsSummary {
 			Language:      options.Universe.Language,
 			ForceLanguage: options.Universe.ForceLanguage,
 			FeedAge:       options.Universe.FeedAge,
+			Speed:         options.Universe.Speed,
 		},
 		Settings: gameOptionsSettings{
 			Language:         options.Settings.Language,

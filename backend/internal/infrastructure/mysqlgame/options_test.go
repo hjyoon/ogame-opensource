@@ -16,7 +16,7 @@ func TestOptionsRepositoryReadsLegacyOptions(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	queryer := &fakeQueryer{results: append(optionsOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues(optionsUserRow(now, 0, 0))},
-		fakeQueryResult{rows: fakeRowsFromValues([]any{"en", 0, 60})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"en", 0, 60, 128})},
 	)}
 	repository := NewOptionsRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
 
@@ -59,12 +59,13 @@ func TestOptionsRepositoryUpdatesLegacyOptionsAndQueuesDeletion(t *testing.T) {
 	if issue == nil || issue.Code != domaingame.OptionsIssueAccountDeletionQueued || !options.Account.DeletionQueued {
 		t.Fatalf("unexpected update result: options=%+v issue=%+v", options, issue)
 	}
-	if !strings.Contains(runner.execSQL, "UPDATE `ogame_users` SET skin = ?") || len(runner.execArgs) != 11 {
+	if !strings.Contains(runner.execSQL, "UPDATE `ogame_users` SET skin = ?") || len(runner.execArgs) != 13 {
 		t.Fatalf("unexpected update SQL: %s args=%+v", runner.execSQL, runner.execArgs)
 	}
 	if runner.execArgs[0] != "/evolution/" || runner.execArgs[3] != 2 || runner.execArgs[4] != 0 ||
 		runner.execArgs[5] != 1 || runner.execArgs[6] != 99 || runner.execArgs[7] != "fr" ||
-		runner.execArgs[8] != 1 || runner.execArgs[9] != now.Add(7*24*time.Hour).Unix() {
+		runner.execArgs[8] != 0 || runner.execArgs[9] != int64(0) ||
+		runner.execArgs[10] != 1 || runner.execArgs[11] != now.Add(7*24*time.Hour).Unix() {
 		t.Fatalf("unexpected update args: %+v", runner.execArgs)
 	}
 }
@@ -88,7 +89,7 @@ func TestOptionsRepositoryKeepsExistingDeletionDateAndClearsDeletion(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if issue == nil || issue.Code != domaingame.OptionsIssueSaved || runner.execArgs[9] != existingDeletion {
+	if issue == nil || issue.Code != domaingame.OptionsIssueSaved || runner.execArgs[11] != existingDeletion {
 		t.Fatalf("expected existing deletion date to be preserved, issue=%+v args=%+v", issue, runner.execArgs)
 	}
 
@@ -107,8 +108,212 @@ func TestOptionsRepositoryKeepsExistingDeletionDateAndClearsDeletion(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if issue == nil || issue.Code != domaingame.OptionsIssueAccountDeletionClear || runner.execArgs[8] != 0 || runner.execArgs[9] != int64(0) {
+	if issue == nil || issue.Code != domaingame.OptionsIssueAccountDeletionClear || runner.execArgs[10] != 0 || runner.execArgs[11] != int64(0) {
 		t.Fatalf("expected deletion clear update, issue=%+v args=%+v", issue, runner.execArgs)
+	}
+}
+
+func TestOptionsRepositoryEnablesVacationAndDisablesProduction(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	vacationUntil := now.Unix() + 12*60*60
+	results := append(optionsReadResults(now, 0, 0),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{0})},
+	)
+	results = append(results, optionsReadResultsWithVacation(now, 0, 0, 1, vacationUntil)...)
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewOptionsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	options, issue, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.OptionsMutation{
+			Language:         "en",
+			SkinPath:         "/evolution/",
+			MaxSpy:           5,
+			MaxFleetMessages: 8,
+			VacationMode:     true,
+			VacationModeSet:  true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue == nil || issue.Code != domaingame.OptionsIssueVacationEnabled || !options.Account.Vacation || options.Account.VacationUntil != vacationUntil {
+		t.Fatalf("unexpected vacation enable result: options=%+v issue=%+v", options, issue)
+	}
+	if len(runner.execs) != 2 || !strings.Contains(runner.execs[1].sql, "prod1 = 0") || runner.execs[1].args[0] != 42 {
+		t.Fatalf("expected vacation production reset after user update, execs=%+v", runner.execs)
+	}
+	if runner.execs[0].args[8] != 1 || runner.execs[0].args[9] != vacationUntil {
+		t.Fatalf("expected vacation user fields, args=%+v", runner.execs[0].args)
+	}
+}
+
+func TestOptionsRepositoryBlocksVacationWhenQueueActive(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	results := append(optionsReadResults(now, 0, 0),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{1})},
+	)
+	results = append(results, optionsReadResults(now, 0, 0)...)
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewOptionsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	options, issue, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.OptionsMutation{
+			Language:         "en",
+			SkinPath:         "/evolution/",
+			MaxSpy:           5,
+			MaxFleetMessages: 8,
+			VacationMode:     true,
+			VacationModeSet:  true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue == nil || issue.Code != domaingame.OptionsIssueVacationBlocked || options.Account.Vacation {
+		t.Fatalf("unexpected blocked vacation result: options=%+v issue=%+v", options, issue)
+	}
+	if len(runner.execs) != 1 || runner.execs[0].args[8] != 0 {
+		t.Fatalf("blocked vacation should only save non-vacation fields, execs=%+v", runner.execs)
+	}
+}
+
+func TestOptionsRepositoryDisablesVacationAfterMinimumAndLocksBeforeMinimum(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	expiredUntil := now.Add(-time.Minute).Unix()
+	results := append(optionsReadResultsWithVacation(now, 0, 0, 1, expiredUntil), optionsReadResults(now, 0, 0)...)
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewOptionsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	options, issue, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.OptionsMutation{
+			Language:         "en",
+			SkinPath:         "/evolution/",
+			MaxSpy:           5,
+			MaxFleetMessages: 8,
+			VacationMode:     false,
+			VacationModeSet:  true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue == nil || issue.Code != domaingame.OptionsIssueVacationDisabled || options.Account.Vacation {
+		t.Fatalf("unexpected vacation disable result: options=%+v issue=%+v", options, issue)
+	}
+	if runner.execs[0].args[8] != 0 || runner.execs[0].args[9] != int64(0) {
+		t.Fatalf("expected vacation user fields cleared, args=%+v", runner.execs[0].args)
+	}
+
+	lockedUntil := now.Add(time.Hour).Unix()
+	results = append(optionsReadResultsWithVacation(now, 0, 0, 1, lockedUntil), optionsReadResultsWithVacation(now, 0, 0, 1, lockedUntil)...)
+	runner = &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository = NewOptionsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	options, issue, err = repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.OptionsMutation{
+			Language:         "en",
+			SkinPath:         "/evolution/",
+			MaxSpy:           5,
+			MaxFleetMessages: 8,
+			VacationMode:     false,
+			VacationModeSet:  true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue == nil || issue.Code != domaingame.OptionsIssueVacationLocked || !options.Account.Vacation {
+		t.Fatalf("unexpected vacation locked result: options=%+v issue=%+v", options, issue)
+	}
+	if runner.execs[0].args[8] != 1 || runner.execs[0].args[9] != lockedUntil {
+		t.Fatalf("expected vacation user fields preserved, args=%+v", runner.execs[0].args)
+	}
+}
+
+func TestOptionsRepositoryVacationHelpers(t *testing.T) {
+	if vacationMinimumSeconds(0) != 2*24*60*60 {
+		t.Fatalf("speed zero should fall back to 2 days, got %d", vacationMinimumSeconds(0))
+	}
+	if vacationMinimumSeconds(128) != 12*60*60 {
+		t.Fatalf("high speed should keep 12h minimum, got %d", vacationMinimumSeconds(128))
+	}
+
+	repository := NewOptionsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("queue failed")}}}, "ogame_", nil)
+	if _, err := repository.canEnableVacation(context.Background(), "`ogame_queue`", 42); err == nil || !strings.Contains(err.Error(), "queue failed") {
+		t.Fatalf("expected queue query error, got %v", err)
+	}
+
+	repository = NewOptionsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "ogame_", nil)
+	if _, err := repository.canEnableVacation(context.Background(), "`ogame_queue`", 42); err == nil || !strings.Contains(err.Error(), "vacation queue state not found") {
+		t.Fatalf("expected missing queue state error, got %v", err)
+	}
+
+	repository = NewOptionsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{0})}}}, "ogame_", nil)
+	allowed, err := repository.canEnableVacation(context.Background(), "`ogame_queue`", 42)
+	if err != nil || !allowed {
+		t.Fatalf("expected vacation to be allowed with no queue rows, allowed=%v err=%v", allowed, err)
+	}
+
+	repository = NewOptionsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("queue rows failed"), []any{0})}}}, "ogame_", nil)
+	if _, err := repository.canEnableVacation(context.Background(), "`ogame_queue`", 42); err == nil || !strings.Contains(err.Error(), "queue rows failed") {
+		t.Fatalf("expected queue rows error, got %v", err)
+	}
+
+	repository = NewOptionsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}, "ogame_", nil)
+	if _, err := repository.canEnableVacation(context.Background(), "`ogame_queue`", 42); err == nil {
+		t.Fatal("expected queue count scan error")
+	}
+}
+
+func TestOptionsRepositoryReturnsVacationMutationErrors(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	results := append(optionsReadResults(now, 0, 0),
+		fakeQueryResult{err: errors.New("vacation queue failed")},
+	)
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewOptionsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	_, _, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.OptionsMutation{
+			Language:         "en",
+			SkinPath:         "/evolution/",
+			MaxSpy:           5,
+			MaxFleetMessages: 8,
+			VacationMode:     true,
+			VacationModeSet:  true,
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "vacation queue failed") {
+		t.Fatalf("expected vacation queue error, got %v", err)
+	}
+
+	results = append(optionsReadResults(now, 0, 0),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{0})},
+	)
+	runner = &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: results}, execErrs: []error{nil, errors.New("production reset failed")}}
+	repository = NewOptionsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	_, _, err = repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.OptionsMutation{
+			Language:         "en",
+			SkinPath:         "/evolution/",
+			MaxSpy:           5,
+			MaxFleetMessages: 8,
+			VacationMode:     true,
+			VacationModeSet:  true,
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "production reset failed") {
+		t.Fatalf("expected production reset error, got %v execs=%+v", err, runner.execs)
 	}
 }
 
@@ -164,7 +369,7 @@ func TestOptionsRepositoryLoadErrors(t *testing.T) {
 		},
 		{
 			name:    "universe rows",
-			results: append(optionsOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues(optionsUserRow(now, 0, 0))}, fakeQueryResult{rows: fakeRowsFromValuesWithErr(errors.New("uni rows failed"), []any{"en", 0, 60})}),
+			results: append(optionsOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues(optionsUserRow(now, 0, 0))}, fakeQueryResult{rows: fakeRowsFromValuesWithErr(errors.New("uni rows failed"), []any{"en", 0, 60, 128})}),
 			want:    "uni rows failed",
 		},
 	}
@@ -199,9 +404,13 @@ func TestNewOptionsRepositoryKeepsSQLQueryer(t *testing.T) {
 }
 
 func optionsReadResults(now time.Time, deletionQueued int, deletionAt int64) []fakeQueryResult {
+	return optionsReadResultsWithVacation(now, deletionQueued, deletionAt, 0, 0)
+}
+
+func optionsReadResultsWithVacation(now time.Time, deletionQueued int, deletionAt int64, vacation int, vacationUntil int64) []fakeQueryResult {
 	return append(optionsOverviewResults(),
-		fakeQueryResult{rows: fakeRowsFromValues(optionsUserRow(now, deletionQueued, deletionAt))},
-		fakeQueryResult{rows: fakeRowsFromValues([]any{"en", 0, 60})},
+		fakeQueryResult{rows: fakeRowsFromValues(optionsUserRowWithVacation(now, deletionQueued, deletionAt, vacation, vacationUntil))},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"en", 0, 60, 128})},
 	)
 }
 
@@ -215,21 +424,38 @@ func optionsOverviewResults() []fakeQueryResult {
 }
 
 func optionsUserRow(now time.Time, deletionQueued int, deletionAt int64) []any {
+	return optionsUserRowWithVacation(now, deletionQueued, deletionAt, 0, 0)
+}
+
+func optionsUserRowWithVacation(now time.Time, deletionQueued int, deletionAt int64, vacation int, vacationUntil int64) []any {
 	return []any{
 		"Legor", 0, "legor@example.test", "permanent@example.test", 1, "en", "/evolution/", 1, 0, 1, 1, 5, 8,
-		int64(0x1), 0, 0, int64(0), deletionQueued, deletionAt, now.Add(time.Hour).Unix(), "feedid",
+		int64(0x1), 0, vacation, vacationUntil, deletionQueued, deletionAt, now.Add(time.Hour).Unix(), "feedid",
 	}
+}
+
+type fakeOptionsExec struct {
+	sql  string
+	args []any
 }
 
 type fakeOptionsRunner struct {
 	fakeQueryer
 	execSQL  string
 	execArgs []any
+	execs    []fakeOptionsExec
 	execErr  error
+	execErrs []error
 }
 
 func (f *fakeOptionsRunner) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {
 	f.execSQL = query
 	f.execArgs = args
+	f.execs = append(f.execs, fakeOptionsExec{sql: query, args: append([]any(nil), args...)})
+	if len(f.execErrs) > 0 {
+		err := f.execErrs[0]
+		f.execErrs = f.execErrs[1:]
+		return fakeSQLResult(1), err
+	}
 	return fakeSQLResult(1), f.execErr
 }

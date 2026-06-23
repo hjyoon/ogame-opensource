@@ -90,6 +90,22 @@ try {
   const player = await login("player", universe);
   const playerSession = await authedJSON(player, "/api/game/session");
   const playerAdmin = await authedAdminJSON(player, "Users");
+  const playerOptions = await authedJSON(player, "/api/game/options");
+  const playerVacation = await authedJSON(player, "/api/game/options", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      lang: playerOptions.body.options?.settings?.language ?? "en",
+      dpath: playerOptions.body.options?.settings?.skinPath ?? "/evolution/",
+      design: "on",
+      noipcheck: "on",
+      settings_sort: String(playerOptions.body.options?.settings?.sortBy ?? 0),
+      settings_order: String(playerOptions.body.options?.settings?.sortOrder ?? 0),
+      spio_anz: String(playerOptions.body.options?.settings?.maxSpy ?? 1),
+      settings_fleetactions: String(playerOptions.body.options?.settings?.maxFleetMessages ?? 3),
+      urlaubs_modus: "on"
+    }).toString()
+  });
   cases.push(finalize({
     case: "regular_player_type",
     checks: [
@@ -99,7 +115,10 @@ try {
       check(playerAdmin.response.status === 200 && playerAdmin.body.authenticated === true, "regular player admin API request stays authenticated", playerAdmin.body),
       check(playerAdmin.body.admin?.viewer?.level === 0, "regular player keeps admin level 0", playerAdmin.body.admin?.viewer ?? {}),
       check(playerAdmin.body.actionIssue?.code === "access_denied", "regular player is denied admin mode access", playerAdmin.body.actionIssue ?? {}),
-      check(!Array.isArray(playerAdmin.body.admin?.userRows) || playerAdmin.body.admin.userRows.length === 0, "regular player does not receive admin user rows", playerAdmin.body.admin ?? {})
+      check(!Array.isArray(playerAdmin.body.admin?.userRows) || playerAdmin.body.admin.userRows.length === 0, "regular player does not receive admin user rows", playerAdmin.body.admin ?? {}),
+      check(playerVacation.response.status === 200 && playerVacation.body.authenticated === true, "regular player vacation options POST authenticates", playerVacation.body),
+      check(playerVacation.body.actionIssue?.code === "vacation_enabled", "regular player can enable vacation mode from options", playerVacation.body.actionIssue ?? {}),
+      check(playerVacation.body.options?.account?.vacation === true && playerVacation.body.options.account.vacationUntil > Math.floor(Date.now() / 1000), "vacation enable stores a future minimum vacation timestamp", playerVacation.body.options?.account ?? {})
     ]
   }));
 

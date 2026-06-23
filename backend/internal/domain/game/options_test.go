@@ -39,6 +39,7 @@ func TestNormalizeSkinPathMatchesLegacyLoopbackRules(t *testing.T) {
 func TestNormalizeOptionsMutationHonorsForcedLanguageAndDeletionState(t *testing.T) {
 	current := NewOptions(Overview{}, OptionsUser{}, OptionsUniverse{Language: "de", ForceLanguage: true}, OptionsSettings{}, OptionsAccount{
 		DeletionQueued: true,
+		Vacation:       true,
 	}, 0)
 
 	normalized := NormalizeOptionsMutation(OptionsMutation{
@@ -46,8 +47,22 @@ func TestNormalizeOptionsMutationHonorsForcedLanguageAndDeletionState(t *testing
 		DeleteAccount: true,
 	}, current)
 
-	if normalized.Language != "de" || normalized.AccountDeletionChanged {
+	if normalized.Language != "de" || normalized.AccountDeletionChanged || normalized.VacationChanged || !normalized.VacationMode {
 		t.Fatalf("unexpected forced-language options normalization: %+v", normalized)
+	}
+}
+
+func TestNormalizeOptionsMutationTracksExplicitVacationChange(t *testing.T) {
+	current := NewOptions(Overview{}, OptionsUser{}, OptionsUniverse{Language: "en"}, OptionsSettings{}, OptionsAccount{}, 0)
+	normalized := NormalizeOptionsMutation(OptionsMutation{VacationMode: true, VacationModeSet: true}, current)
+	if !normalized.VacationChanged || !normalized.VacationMode {
+		t.Fatalf("expected explicit vacation enable to be tracked, got %+v", normalized)
+	}
+
+	current = NewOptions(Overview{}, OptionsUser{}, OptionsUniverse{Language: "en"}, OptionsSettings{}, OptionsAccount{Vacation: true}, 0)
+	normalized = NormalizeOptionsMutation(OptionsMutation{VacationMode: false, VacationModeSet: true}, current)
+	if !normalized.VacationChanged || normalized.VacationMode {
+		t.Fatalf("expected explicit vacation disable to be tracked, got %+v", normalized)
 	}
 }
 
@@ -124,6 +139,21 @@ func TestOptionsActionIssues(t *testing.T) {
 	}
 	if issue := OptionsAccountDeletionClearedIssue(); issue.Code != OptionsIssueAccountDeletionClear || issue.Message == "" {
 		t.Fatalf("unexpected cleared issue: %+v", issue)
+	}
+	if issue := OptionsVacationEnabledIssue(testUnix(1_700_000_000)); issue.Code != OptionsIssueVacationEnabled || !contains(issue.Message, "Minimum until:") {
+		t.Fatalf("unexpected vacation enabled issue: %+v", issue)
+	}
+	if issue := OptionsVacationDisabledIssue("Legor"); issue.Code != OptionsIssueVacationDisabled || !contains(issue.Message, "Legor") {
+		t.Fatalf("unexpected vacation disabled issue: %+v", issue)
+	}
+	if issue := OptionsVacationDisabledIssue(""); issue.Code != OptionsIssueVacationDisabled || !contains(issue.Message, "Commander") {
+		t.Fatalf("unexpected default vacation disabled issue: %+v", issue)
+	}
+	if issue := OptionsVacationBlockedIssue(); issue.Code != OptionsIssueVacationBlocked || issue.Message == "" {
+		t.Fatalf("unexpected vacation blocked issue: %+v", issue)
+	}
+	if issue := OptionsVacationLockedIssue(testUnix(1_700_000_000)); issue.Code != OptionsIssueVacationLocked || !contains(issue.Message, "Minimum until:") {
+		t.Fatalf("unexpected vacation locked issue: %+v", issue)
 	}
 }
 

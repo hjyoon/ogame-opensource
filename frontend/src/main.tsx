@@ -1738,6 +1738,7 @@ function App() {
     sortOrder: number;
     maxSpy: number;
     maxFleetMessages: number;
+    vacationMode: boolean;
     deleteAccount: boolean;
   }) => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";

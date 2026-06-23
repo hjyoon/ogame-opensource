@@ -767,6 +767,7 @@ type GameOptionsUniverse = {
   language: string;
   forceLanguage: boolean;
   feedAge: number;
+  speed: number;
 };
 
 type GameOptionsSettings = {
@@ -1307,6 +1308,7 @@ type LegacyGameOverviewProps = {
     sortOrder: number;
     maxSpy: number;
     maxFleetMessages: number;
+    vacationMode: boolean;
     deleteAccount: boolean;
   }) => void;
   logoutStatus: GameLogoutStatus | null;
@@ -7916,6 +7918,7 @@ function OptionsTable({
     sortOrder: number;
     maxSpy: number;
     maxFleetMessages: number;
+    vacationMode: boolean;
     deleteAccount: boolean;
   }) => void;
   options: GameOptions;
@@ -7933,6 +7936,7 @@ function OptionsTable({
       sortOrder: legacyFormInt(form.get("settings_order"), 0),
       maxSpy: legacyFormInt(form.get("spio_anz"), 1),
       maxFleetMessages: legacyFormInt(form.get("settings_fleetactions"), 3),
+      vacationMode: form.get("urlaubs_modus") === "on",
       deleteAccount: form.get("db_deaktjava") === "on"
     });
   };

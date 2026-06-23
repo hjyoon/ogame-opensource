@@ -76,10 +76,44 @@ func (r OptionsRepository) UpdateOptions(ctx context.Context, query appgame.Opti
 	if err != nil {
 		return domaingame.Options{}, nil, err
 	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return domaingame.Options{}, nil, err
+	}
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return domaingame.Options{}, nil, err
+	}
 
 	disable := 0
 	disableUntil := int64(0)
+	vacation := boolInt(current.Account.Vacation)
+	vacationUntil := current.Account.VacationUntil
 	issue := domaingame.OptionsSavedIssue()
+	if normalized.VacationChanged {
+		switch {
+		case normalized.VacationMode:
+			allowed, err := r.canEnableVacation(ctx, queueTable, query.PlayerID)
+			if err != nil {
+				return domaingame.Options{}, nil, err
+			}
+			if allowed {
+				vacation = 1
+				vacationUntil = r.now().Unix() + vacationMinimumSeconds(current.Universe.Speed)
+				issue = domaingame.OptionsVacationEnabledIssue(time.Unix(vacationUntil, 0))
+			} else {
+				normalized.VacationMode = current.Account.Vacation
+				issue = domaingame.OptionsVacationBlockedIssue()
+			}
+		case r.now().Unix() >= current.Account.VacationUntil:
+			vacation = 0
+			vacationUntil = 0
+			issue = domaingame.OptionsVacationDisabledIssue(current.User.Name)
+		default:
+			normalized.VacationMode = current.Account.Vacation
+			issue = domaingame.OptionsVacationLockedIssue(time.Unix(current.Account.VacationUntil, 0))
+		}
+	}
 	if normalized.DeleteAccount {
 		disable = 1
 		if current.Account.DeletionQueued && current.Account.DeletionAt > 0 {
@@ -87,16 +121,16 @@ func (r OptionsRepository) UpdateOptions(ctx context.Context, query appgame.Opti
 		} else {
 			disableUntil = r.now().Add(7 * 24 * time.Hour).Unix()
 		}
-		if normalized.AccountDeletionChanged {
+		if normalized.AccountDeletionChanged && !normalized.VacationChanged {
 			issue = domaingame.OptionsAccountDeletionQueuedIssue(time.Unix(disableUntil, 0))
 		}
-	} else if normalized.AccountDeletionChanged {
+	} else if normalized.AccountDeletionChanged && !normalized.VacationChanged {
 		issue = domaingame.OptionsAccountDeletionClearedIssue()
 	}
 
 	if _, err := r.execer.ExecContext(
 		ctx,
-		fmt.Sprintf("UPDATE %s SET skin = ?, useskin = ?, deact_ip = ?, sortby = ?, sortorder = ?, maxspy = ?, maxfleetmsg = ?, lang = ?, disable = ?, disable_until = ? WHERE player_id = ? LIMIT 1", usersTable),
+		fmt.Sprintf("UPDATE %s SET skin = ?, useskin = ?, deact_ip = ?, sortby = ?, sortorder = ?, maxspy = ?, maxfleetmsg = ?, lang = ?, vacation = ?, vacation_until = ?, disable = ?, disable_until = ? WHERE player_id = ? LIMIT 1", usersTable),
 		normalized.SkinPath,
 		boolInt(normalized.UseSkin),
 		boolInt(normalized.DeactivateIP),
@@ -105,11 +139,18 @@ func (r OptionsRepository) UpdateOptions(ctx context.Context, query appgame.Opti
 		normalized.MaxSpy,
 		normalized.MaxFleetMessages,
 		normalized.Language,
+		vacation,
+		vacationUntil,
 		disable,
 		disableUntil,
 		query.PlayerID,
 	); err != nil {
 		return domaingame.Options{}, nil, err
+	}
+	if normalized.VacationChanged && normalized.VacationMode && vacation == 1 {
+		if err := r.disableProductionForVacation(ctx, planetsTable, query.PlayerID); err != nil {
+			return domaingame.Options{}, nil, err
+		}
 	}
 
 	updated, err := r.GetOptions(ctx, appgame.OptionsQuery{PlayerID: query.PlayerID, PlanetID: query.PlanetID})
@@ -195,7 +236,7 @@ func (r OptionsRepository) loadOptions(ctx context.Context, playerID int) (domai
 		return domaingame.OptionsUser{}, domaingame.OptionsUniverse{}, domaingame.OptionsSettings{}, domaingame.OptionsAccount{}, 0, err
 	}
 
-	uniRows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COALESCE(lang, ''), COALESCE(force_lang, 0), COALESCE(feedage, 0) FROM %s LIMIT 1", uniTable))
+	uniRows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COALESCE(lang, ''), COALESCE(force_lang, 0), COALESCE(feedage, 0), COALESCE(speed, 1) FROM %s LIMIT 1", uniTable))
 	if err != nil {
 		return domaingame.OptionsUser{}, domaingame.OptionsUniverse{}, domaingame.OptionsSettings{}, domaingame.OptionsAccount{}, 0, err
 	}
@@ -209,7 +250,8 @@ func (r OptionsRepository) loadOptions(ctx context.Context, playerID int) (domai
 	var universeLanguage string
 	var forceLanguage int
 	var feedAge int
-	if err := uniRows.Scan(&universeLanguage, &forceLanguage, &feedAge); err != nil {
+	var speed int
+	if err := uniRows.Scan(&universeLanguage, &forceLanguage, &feedAge, &speed); err != nil {
 		return domaingame.OptionsUser{}, domaingame.OptionsUniverse{}, domaingame.OptionsSettings{}, domaingame.OptionsAccount{}, 0, err
 	}
 	if err := uniRows.Err(); err != nil {
@@ -230,6 +272,7 @@ func (r OptionsRepository) loadOptions(ctx context.Context, playerID int) (domai
 			Language:      universeLanguage,
 			ForceLanguage: forceLanguage != 0,
 			FeedAge:       feedAge,
+			Speed:         speed,
 		},
 		domaingame.OptionsSettings{
 			Language:         language,
@@ -249,6 +292,57 @@ func (r OptionsRepository) loadOptions(ctx context.Context, playerID int) (domai
 		},
 		flags,
 		nil
+}
+
+func (r OptionsRepository) canEnableVacation(ctx context.Context, queueTable string, playerID int) (bool, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE owner_id = ? AND type IN (?, ?, ?, ?, ?)", queueTable),
+		playerID,
+		queueTypeBuild,
+		queueTypeDemolish,
+		queueTypeResearch,
+		queueTypeShipyard,
+		"Fleet",
+	)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
+		return false, errors.New("vacation queue state not found")
+	}
+	var count int
+	if err := rows.Scan(&count); err != nil {
+		return false, err
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return count == 0, nil
+}
+
+func (r OptionsRepository) disableProductionForVacation(ctx context.Context, planetsTable string, playerID int) error {
+	_, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET prod%d = 0, prod%d = 0, prod%d = 0, prod%d = 0, prod%d = 0, prod%d = 0 WHERE owner_id = ?", planetsTable, domaingame.BuildingMetalMine, domaingame.BuildingCrystalMine, domaingame.BuildingDeuteriumSynth, domaingame.BuildingSolarPlant, domaingame.BuildingFusionReactor, domaingame.FleetSolarSatellite),
+		playerID,
+	)
+	return err
+}
+
+func vacationMinimumSeconds(speed int) int64 {
+	if speed <= 0 {
+		speed = 1
+	}
+	seconds := int64((2 * 24 * 60 * 60) / speed)
+	if seconds < 12*60*60 {
+		return 12 * 60 * 60
+	}
+	return seconds
 }
 
 func boolInt(value bool) int {

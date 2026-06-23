@@ -12,6 +12,10 @@ const (
 	OptionsIssueSaved                 = "saved"
 	OptionsIssueAccountDeletionQueued = "account_deletion_queued"
 	OptionsIssueAccountDeletionClear  = "account_deletion_cleared"
+	OptionsIssueVacationEnabled       = "vacation_enabled"
+	OptionsIssueVacationDisabled      = "vacation_disabled"
+	OptionsIssueVacationBlocked       = "vacation_blocked"
+	OptionsIssueVacationLocked        = "vacation_locked"
 
 	UserTypePlayer = 0
 	UserTypeGO     = 1
@@ -53,6 +57,7 @@ type OptionsUniverse struct {
 	Language      string
 	ForceLanguage bool
 	FeedAge       int
+	Speed         int
 }
 
 type OptionsSettings struct {
@@ -94,12 +99,15 @@ type OptionsMutation struct {
 	SortOrder        int
 	MaxSpy           int
 	MaxFleetMessages int
+	VacationMode     bool
+	VacationModeSet  bool
 	DeleteAccount    bool
 }
 
 type NormalizedOptionsMutation struct {
 	OptionsMutation
 	AccountDeletionChanged bool
+	VacationChanged        bool
 }
 
 type OptionsActionIssue struct {
@@ -117,6 +125,9 @@ func NewOptions(overview Overview, user OptionsUser, universe OptionsUniverse, s
 		settings.Language = normalizeLanguage(universe.Language, universe.Language)
 	} else {
 		settings.Language = normalizeLanguage(settings.Language, universe.Language)
+	}
+	if universe.Speed <= 0 {
+		universe.Speed = 1
 	}
 	return Options{
 		Commander:      overview.Commander,
@@ -142,9 +153,16 @@ func NormalizeOptionsMutation(command OptionsMutation, current Options) Normaliz
 	} else {
 		normalized.Language = normalizeLanguage(command.Language, current.Universe.Language)
 	}
+	vacationChanged := false
+	if command.VacationModeSet {
+		vacationChanged = command.VacationMode != current.Account.Vacation
+	} else {
+		normalized.VacationMode = current.Account.Vacation
+	}
 	return NormalizedOptionsMutation{
 		OptionsMutation:        normalized,
 		AccountDeletionChanged: command.DeleteAccount != current.Account.DeletionQueued,
+		VacationChanged:        vacationChanged,
 	}
 }
 
@@ -200,6 +218,34 @@ func OptionsAccountDeletionQueuedIssue(until time.Time) *OptionsActionIssue {
 
 func OptionsAccountDeletionClearedIssue() *OptionsActionIssue {
 	return &OptionsActionIssue{Code: OptionsIssueAccountDeletionClear, Message: "Account deletion cancelled."}
+}
+
+func OptionsVacationEnabledIssue(until time.Time) *OptionsActionIssue {
+	message := "Vacation mode enabled."
+	if !until.IsZero() {
+		message += " Minimum until: " + until.Format("2006-01-02 15:04:05")
+	}
+	return &OptionsActionIssue{Code: OptionsIssueVacationEnabled, Message: message}
+}
+
+func OptionsVacationDisabledIssue(name string) *OptionsActionIssue {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "Commander"
+	}
+	return &OptionsActionIssue{Code: OptionsIssueVacationDisabled, Message: "Welcome back from vacation " + name + ". Don't forget to increase your resource production again. Have fun with OGame."}
+}
+
+func OptionsVacationBlockedIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssueVacationBlocked, Message: "You can't enter vacation mode while something is being built."}
+}
+
+func OptionsVacationLockedIssue(until time.Time) *OptionsActionIssue {
+	message := "Vacation mode cannot be disabled yet."
+	if !until.IsZero() {
+		message += " Minimum until: " + until.Format("2006-01-02 15:04:05")
+	}
+	return &OptionsActionIssue{Code: OptionsIssueVacationLocked, Message: message}
 }
 
 func normalizeLanguage(value string, fallback string) string {
