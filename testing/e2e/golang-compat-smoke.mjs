@@ -730,6 +730,43 @@ try {
   } catch {
     gameGalaxyBody = {};
   }
+  const galaxyCoordinates = gameGalaxyBody.galaxy?.coordinates ?? { galaxy: 1, system: 1, position: 1 };
+  const gameGalaxySpyDispatch = await request(`/api/game/galaxy${sessionSearch}`, {
+    method: "POST",
+    headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "dispatch-spy",
+      targetGalaxy: galaxyCoordinates.galaxy,
+      targetSystem: galaxyCoordinates.system,
+      targetPosition: Math.min(15, Number(galaxyCoordinates.position ?? 1) + 1),
+      targetType: 1,
+      amount: 0
+    })
+  });
+  let gameGalaxySpyDispatchBody = {};
+  try {
+    gameGalaxySpyDispatchBody = JSON.parse(gameGalaxySpyDispatch.body);
+  } catch {
+    gameGalaxySpyDispatchBody = {};
+  }
+  const gameGalaxyRecycleDispatch = await request(`/api/game/galaxy${sessionSearch}`, {
+    method: "POST",
+    headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "dispatch-recycle",
+      targetGalaxy: galaxyCoordinates.galaxy,
+      targetSystem: galaxyCoordinates.system,
+      targetPosition: Math.min(15, Number(galaxyCoordinates.position ?? 1) + 1),
+      targetType: 2,
+      amount: 0
+    })
+  });
+  let gameGalaxyRecycleDispatchBody = {};
+  try {
+    gameGalaxyRecycleDispatchBody = JSON.parse(gameGalaxyRecycleDispatch.body);
+  } catch {
+    gameGalaxyRecycleDispatchBody = {};
+  }
 
   const gameGalaxyWithoutCookie = await request(`/api/game/galaxy${sessionSearch}`);
   let gameGalaxyWithoutCookieBody = {};
@@ -1455,6 +1492,17 @@ try {
       check(Number.isFinite(gameGalaxyBody.galaxy?.coordinates?.system), "game galaxy returns selected system coordinate", gameGalaxyBody),
       check(Number.isFinite(gameGalaxyBody.galaxy?.slots?.max), "game galaxy returns fleet slot summary", gameGalaxyBody),
       check(typeof gameGalaxyBody.galaxy?.extra?.commander === "boolean", "game galaxy returns commander extra info state", gameGalaxyBody),
+      check(Number.isFinite(gameGalaxyBody.galaxy?.extra?.maxSpy), "game galaxy returns max spy shortcut setting", gameGalaxyBody),
+      check(gameGalaxySpyDispatch.status === 200, "game galaxy accepts instant spy dispatch action", {
+        status: gameGalaxySpyDispatch.status,
+        body: gameGalaxySpyDispatchBody
+      }),
+      check(gameGalaxySpyDispatchBody.actionIssue?.code === "fleet_no_ships", "game galaxy instant spy reaches fleet validation", gameGalaxySpyDispatchBody),
+      check(gameGalaxyRecycleDispatch.status === 200, "game galaxy accepts instant recycle dispatch action", {
+        status: gameGalaxyRecycleDispatch.status,
+        body: gameGalaxyRecycleDispatchBody
+      }),
+      check(gameGalaxyRecycleDispatchBody.actionIssue?.code === "fleet_no_ships", "game galaxy instant recycle reaches fleet validation", gameGalaxyRecycleDispatchBody),
       check(!gameGalaxy.body.includes(sessionCookiePair), "game galaxy response does not echo private cookie"),
       check(gameGalaxyWithoutCookie.status === 401, "game galaxy rejects missing private cookie", { status: gameGalaxyWithoutCookie.status }),
       check(gameGalaxyWithoutCookieBody.authenticated === false, "game galaxy missing private cookie is unauthenticated", gameGalaxyWithoutCookieBody),

@@ -12,6 +12,7 @@ import {
   type GameFleetDispatchLaunch,
   type GameFleetDispatchPrepare,
   type GameFleetStatus,
+  type GameGalaxyInstantDispatch,
   type GameGalaxyMissileLaunch,
   type GameGalaxyStatus,
   type GameLogoutStatus,
@@ -1402,6 +1403,54 @@ function App() {
       .finally(() => setGameGalaxyPending(false));
   };
 
+  const submitGameGalaxyInstantDispatch = (draft: GameGalaxyInstantDispatch) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameGalaxyError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const galaxySearch = new URLSearchParams({ session: publicSession });
+    for (const key of ["cp", "galaxy", "system", "position", "p1", "p2", "p3"]) {
+      const value = currentSearch.get(key);
+      if (value) {
+        galaxySearch.set(key, value);
+      }
+    }
+    setGameGalaxyPending(true);
+    setGameGalaxyError(null);
+    fetch(`/api/game/galaxy?${galaxySearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        action: draft.action,
+        targetGalaxy: draft.target.galaxy,
+        targetSystem: draft.target.system,
+        targetPosition: draft.target.position,
+        targetType: draft.targetType,
+        amount: draft.amount
+      })
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameGalaxyStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `galaxy returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("galaxy response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameGalaxy(payload);
+        setGameGalaxyError(null);
+      })
+      .catch((err: unknown) => setGameGalaxyError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameGalaxyPending(false));
+  };
+
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "defense" || publicSession === "") {
@@ -1997,6 +2046,7 @@ function App() {
         onFleetPrepare={submitFleetPrepare}
         onFleetRecall={submitFleetRecall}
         onFleetTemplateAction={submitFleetTemplateAction}
+        onGalaxyInstantDispatch={submitGameGalaxyInstantDispatch}
         onGalaxyMissileLaunch={submitGameGalaxyMissileLaunch}
         onMerchantCall={submitGameMerchantCall}
         onMerchantTrade={submitGameMerchantTrade}

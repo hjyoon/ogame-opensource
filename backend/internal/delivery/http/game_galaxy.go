@@ -24,6 +24,10 @@ type gameGalaxyActionIssue struct {
 type gameGalaxyMutationRequest struct {
 	Action          string `json:"action"`
 	TargetPlanetID  int    `json:"targetPlanetId"`
+	TargetGalaxy    int    `json:"targetGalaxy"`
+	TargetSystem    int    `json:"targetSystem"`
+	TargetPosition  int    `json:"targetPosition"`
+	TargetType      int    `json:"targetType"`
 	Amount          int    `json:"amount"`
 	TargetDefenseID int    `json:"targetDefenseId"`
 }
@@ -117,6 +121,7 @@ type gameGalaxyExtraResponse struct {
 	SpyProbes int                    `json:"spyProbes"`
 	Recyclers int                    `json:"recyclers"`
 	Missiles  int                    `json:"missiles"`
+	MaxSpy    int                    `json:"maxSpy"`
 	Slots     gameFleetSlotsResponse `json:"slots"`
 }
 
@@ -188,20 +193,54 @@ func (a app) handleGameGalaxyPost(w http.ResponseWriter, r *http.Request) {
 	}
 	switch request.Action {
 	case "launch-missile", "launch-missiles":
+		result, err := a.deps.GameGalaxy.LaunchMissiles(r.Context(), appgame.GalaxyMissileLaunchCommand{
+			PublicSession:   r.URL.Query().Get("session"),
+			PrivateSessions: cookieMap(r),
+			RemoteAddr:      remoteIP(r.RemoteAddr),
+			PlanetID:        planetID,
+			Coordinates:     coordinates,
+			TargetPlanetID:  request.TargetPlanetID,
+			Amount:          request.Amount,
+			TargetDefenseID: request.TargetDefenseID,
+		})
+		if err != nil {
+			http.Error(w, "game galaxy unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		writeGameGalaxyResponse(w, result)
+	case "dispatch-spy", "instant-spy", "spy":
+		a.handleGameGalaxyInstantDispatch(w, r, planetID, coordinates, request, domaingame.FleetMissionSpy)
+	case "dispatch-recycle", "instant-recycle", "recycle":
+		a.handleGameGalaxyInstantDispatch(w, r, planetID, coordinates, request, domaingame.FleetMissionRecycle)
 	default:
 		http.Error(w, "unsupported galaxy action", http.StatusBadRequest)
-		return
+	}
+}
+
+func (a app) handleGameGalaxyInstantDispatch(w http.ResponseWriter, r *http.Request, planetID int, coordinates domaingame.Coordinates, request gameGalaxyMutationRequest, mission int) {
+	targetType := request.TargetType
+	if targetType <= 0 {
+		targetType = domaingame.GamePlanetTypePlanet
+	}
+	if mission == domaingame.FleetMissionRecycle && request.TargetType <= 0 {
+		targetType = domaingame.GamePlanetTypeDebris
 	}
 
-	result, err := a.deps.GameGalaxy.LaunchMissiles(r.Context(), appgame.GalaxyMissileLaunchCommand{
+	result, err := a.deps.GameGalaxy.DispatchInstantFleet(r.Context(), appgame.GalaxyInstantDispatchCommand{
 		PublicSession:   r.URL.Query().Get("session"),
 		PrivateSessions: cookieMap(r),
 		RemoteAddr:      remoteIP(r.RemoteAddr),
 		PlanetID:        planetID,
 		Coordinates:     coordinates,
-		TargetPlanetID:  request.TargetPlanetID,
-		Amount:          request.Amount,
-		TargetDefenseID: request.TargetDefenseID,
+		Target: domaingame.Coordinates{
+			Galaxy:   request.TargetGalaxy,
+			System:   request.TargetSystem,
+			Position: request.TargetPosition,
+		},
+		TargetType: targetType,
+		Mission:    mission,
+		Amount:     request.Amount,
 	})
 	if err != nil {
 		http.Error(w, "game galaxy unavailable", http.StatusServiceUnavailable)
@@ -301,6 +340,7 @@ func toGameGalaxySummary(galaxy domaingame.Galaxy) gameGalaxySummary {
 			SpyProbes: galaxy.Extra.SpyProbes,
 			Recyclers: galaxy.Extra.Recyclers,
 			Missiles:  galaxy.Extra.Missiles,
+			MaxSpy:    galaxy.Extra.MaxSpy,
 			Slots: gameFleetSlotsResponse{
 				Used:    galaxy.Extra.Slots.Used,
 				Max:     galaxy.Extra.Slots.Max,

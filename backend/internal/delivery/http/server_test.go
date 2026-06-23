@@ -2507,6 +2507,75 @@ func TestGameGalaxyEndpointLaunchesMissiles(t *testing.T) {
 	}
 }
 
+func TestGameGalaxyEndpointDispatchesInstantFleet(t *testing.T) {
+	galaxy := &fakeGameGalaxy{result: appgame.GalaxyResult{
+		Authenticated: true,
+		Galaxy: domaingame.Galaxy{
+			Commander:   "legor",
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Bounds:      domaingame.GalaxyBounds{Galaxies: 9, Systems: 499},
+		},
+		ActionIssue: domaingame.GalaxyFleetDispatchedIssue(),
+	}}
+	server := testServerWithGameGalaxy(t, galaxy)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/game/galaxy?session=public&cp=99&p1=1&p2=2&p3=4",
+		strings.NewReader(`{"action":"dispatch-spy","targetGalaxy":1,"targetSystem":2,"targetPosition":5,"targetType":1,"amount":3}`),
+	)
+	req.RemoteAddr = "203.0.113.10:4321"
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response gameGalaxyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.ActionIssue == nil || response.ActionIssue.Code != domaingame.GalaxyIssueFleetDispatched {
+		t.Fatalf("expected dispatch action issue, got %+v", response.ActionIssue)
+	}
+	if galaxy.dispatch.PlanetID != 99 || galaxy.dispatch.Target.Position != 5 ||
+		galaxy.dispatch.TargetType != domaingame.GamePlanetTypePlanet || galaxy.dispatch.Mission != domaingame.FleetMissionSpy ||
+		galaxy.dispatch.Amount != 3 || galaxy.dispatch.Coordinates.Position != 4 {
+		t.Fatalf("unexpected dispatch command: %+v", galaxy.dispatch)
+	}
+	if galaxy.dispatch.PublicSession != "public" || galaxy.dispatch.PrivateSessions["prsess_42_1"] != "private" ||
+		galaxy.dispatch.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected dispatch session command: %+v", galaxy.dispatch)
+	}
+}
+
+func TestGameGalaxyEndpointDispatchesRecycleWithDefaultTargetType(t *testing.T) {
+	galaxy := &fakeGameGalaxy{result: appgame.GalaxyResult{
+		Authenticated: true,
+		Galaxy: domaingame.Galaxy{
+			Commander:   "legor",
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Bounds:      domaingame.GalaxyBounds{Galaxies: 9, Systems: 499},
+		},
+		ActionIssue: domaingame.GalaxyFleetDispatchedIssue(),
+	}}
+	server := testServerWithGameGalaxy(t, galaxy)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/game/galaxy?session=public&cp=99&p1=1&p2=2&p3=4",
+		strings.NewReader(`{"action":"dispatch-recycle","targetGalaxy":1,"targetSystem":2,"targetPosition":5,"amount":1}`),
+	)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if galaxy.dispatch.Mission != domaingame.FleetMissionRecycle || galaxy.dispatch.TargetType != domaingame.GamePlanetTypeDebris {
+		t.Fatalf("unexpected recycle dispatch command: %+v", galaxy.dispatch)
+	}
+}
+
 func TestGameGalaxyEndpointRejectsBadMutationPayload(t *testing.T) {
 	server := testServerWithGameGalaxy(t, &fakeGameGalaxy{})
 	for _, body := range []string{`{`, `{"action":"unsupported"}`} {
@@ -2599,6 +2668,14 @@ func TestGameGalaxyEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected game galaxy post error to return 503, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/game/galaxy?session=public", strings.NewReader(`{"action":"dispatch-spy","targetGalaxy":1,"targetSystem":2,"targetPosition":3,"amount":1}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected game galaxy dispatch error to return 503, got %d", rec.Code)
 	}
 }
 
@@ -5486,10 +5563,11 @@ func (f *fakeGameFleet) RecallFleet(_ context.Context, command appgame.FleetReca
 }
 
 type fakeGameGalaxy struct {
-	result  appgame.GalaxyResult
-	err     error
-	command appgame.GalaxyCommand
-	missile appgame.GalaxyMissileLaunchCommand
+	result   appgame.GalaxyResult
+	err      error
+	command  appgame.GalaxyCommand
+	missile  appgame.GalaxyMissileLaunchCommand
+	dispatch appgame.GalaxyInstantDispatchCommand
 }
 
 func (f *fakeGameGalaxy) GetGalaxy(_ context.Context, command appgame.GalaxyCommand) (appgame.GalaxyResult, error) {
@@ -5499,6 +5577,11 @@ func (f *fakeGameGalaxy) GetGalaxy(_ context.Context, command appgame.GalaxyComm
 
 func (f *fakeGameGalaxy) LaunchMissiles(_ context.Context, command appgame.GalaxyMissileLaunchCommand) (appgame.GalaxyResult, error) {
 	f.missile = command
+	return f.result, f.err
+}
+
+func (f *fakeGameGalaxy) DispatchInstantFleet(_ context.Context, command appgame.GalaxyInstantDispatchCommand) (appgame.GalaxyResult, error) {
+	f.dispatch = command
 	return f.result, f.err
 }
 

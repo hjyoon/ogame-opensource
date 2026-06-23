@@ -74,6 +74,44 @@ func TestGalaxyServiceLaunchesMissilesAndRefreshesGalaxy(t *testing.T) {
 	}
 }
 
+func TestGalaxyServiceDispatchesInstantFleetAndRefreshesGalaxy(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}
+	issue := domaingame.GalaxyFleetDispatchedIssue()
+	repository := &fakeGalaxyRepository{
+		result:        domaingame.Galaxy{Commander: "legor"},
+		dispatchIssue: issue,
+	}
+	service := NewGalaxyService(sessions, repository)
+
+	result, err := service.DispatchInstantFleet(context.Background(), GalaxyInstantDispatchCommand{
+		PublicSession:   "public",
+		PrivateSessions: map[string]string{"private": "secret"},
+		RemoteAddr:      "203.0.113.10",
+		PlanetID:        99,
+		Coordinates:     domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+		Target:          domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4},
+		TargetType:      domaingame.GamePlanetTypePlanet,
+		Mission:         domaingame.FleetMissionSpy,
+		Amount:          2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Authenticated || result.Galaxy.Commander != "legor" || result.ActionIssue != issue {
+		t.Fatalf("unexpected dispatch result: %+v", result)
+	}
+	if repository.dispatch.PlayerID != 42 || repository.dispatch.PlanetID != 99 || repository.dispatch.Target.Position != 4 ||
+		repository.dispatch.TargetType != domaingame.GamePlanetTypePlanet || repository.dispatch.Mission != domaingame.FleetMissionSpy || repository.dispatch.Amount != 2 {
+		t.Fatalf("unexpected dispatch query: %+v", repository.dispatch)
+	}
+	if repository.query.PlayerID != 42 || repository.query.Coordinates.System != 2 {
+		t.Fatalf("expected refreshed galaxy query, got %+v", repository.query)
+	}
+}
+
 func TestGalaxyServiceReturnsSessionIssuesWithoutRepository(t *testing.T) {
 	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
 		Authenticated: false,
@@ -100,6 +138,14 @@ func TestGalaxyServiceReturnsSessionIssuesWithoutRepository(t *testing.T) {
 	if result.Authenticated || len(result.Issues) != 1 || repository.launchCalled {
 		t.Fatalf("expected unauthenticated launch result without repository call, got %+v", result)
 	}
+
+	result, err = service.DispatchInstantFleet(context.Background(), GalaxyInstantDispatchCommand{PublicSession: "public"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Authenticated || len(result.Issues) != 1 || repository.dispatchCalled {
+		t.Fatalf("expected unauthenticated dispatch result without repository call, got %+v", result)
+	}
 }
 
 func TestGalaxyServicePropagatesErrors(t *testing.T) {
@@ -110,6 +156,9 @@ func TestGalaxyServicePropagatesErrors(t *testing.T) {
 	}
 	if _, err := service.LaunchMissiles(context.Background(), GalaxyMissileLaunchCommand{}); !errors.Is(err, sessionErr) {
 		t.Fatalf("expected launch session error, got %v", err)
+	}
+	if _, err := service.DispatchInstantFleet(context.Background(), GalaxyInstantDispatchCommand{}); !errors.Is(err, sessionErr) {
+		t.Fatalf("expected dispatch session error, got %v", err)
 	}
 
 	repoErr := errors.New("repository failed")
@@ -132,9 +181,25 @@ func TestGalaxyServicePropagatesErrors(t *testing.T) {
 	service = NewGalaxyService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
 		Authenticated: true,
 		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}, &fakeGalaxyRepository{dispatchErr: repoErr})
+	if _, err := service.DispatchInstantFleet(context.Background(), GalaxyInstantDispatchCommand{}); !errors.Is(err, repoErr) {
+		t.Fatalf("expected dispatch error, got %v", err)
+	}
+
+	service = NewGalaxyService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
 	}}, &fakeGalaxyRepository{err: repoErr})
 	if _, err := service.LaunchMissiles(context.Background(), GalaxyMissileLaunchCommand{}); !errors.Is(err, repoErr) {
 		t.Fatalf("expected refresh error after launch, got %v", err)
+	}
+
+	service = NewGalaxyService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}, &fakeGalaxyRepository{err: repoErr})
+	if _, err := service.DispatchInstantFleet(context.Background(), GalaxyInstantDispatchCommand{}); !errors.Is(err, repoErr) {
+		t.Fatalf("expected refresh error after dispatch, got %v", err)
 	}
 }
 
@@ -145,17 +210,24 @@ func TestGalaxyServiceRequiresDependencies(t *testing.T) {
 	if _, err := (GalaxyService{}).LaunchMissiles(context.Background(), GalaxyMissileLaunchCommand{}); err == nil {
 		t.Fatal("expected dependency error")
 	}
+	if _, err := (GalaxyService{}).DispatchInstantFleet(context.Background(), GalaxyInstantDispatchCommand{}); err == nil {
+		t.Fatal("expected dependency error")
+	}
 }
 
 type fakeGalaxyRepository struct {
-	result       domaingame.Galaxy
-	err          error
-	launchErr    error
-	actionIssue  *domaingame.GalaxyActionIssue
-	query        GalaxyQuery
-	launch       GalaxyMissileLaunchQuery
-	called       bool
-	launchCalled bool
+	result         domaingame.Galaxy
+	err            error
+	launchErr      error
+	dispatchErr    error
+	actionIssue    *domaingame.GalaxyActionIssue
+	dispatchIssue  *domaingame.GalaxyActionIssue
+	query          GalaxyQuery
+	launch         GalaxyMissileLaunchQuery
+	dispatch       GalaxyInstantDispatchQuery
+	called         bool
+	launchCalled   bool
+	dispatchCalled bool
 }
 
 func (f *fakeGalaxyRepository) GetGalaxy(_ context.Context, query GalaxyQuery) (domaingame.Galaxy, error) {
@@ -168,4 +240,10 @@ func (f *fakeGalaxyRepository) LaunchMissiles(_ context.Context, query GalaxyMis
 	f.launch = query
 	f.launchCalled = true
 	return f.actionIssue, f.launchErr
+}
+
+func (f *fakeGalaxyRepository) DispatchInstantFleet(_ context.Context, query GalaxyInstantDispatchQuery) (*domaingame.GalaxyActionIssue, error) {
+	f.dispatch = query
+	f.dispatchCalled = true
+	return f.dispatchIssue, f.dispatchErr
 }

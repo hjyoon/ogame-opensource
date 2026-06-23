@@ -38,6 +38,7 @@ const (
 	GalaxyIssueRocketFrozen        = "rocket_frozen"
 	GalaxyIssueRocketLaunchRace    = "rocket_launch_race"
 	GalaxyIssueRocketLaunched      = "rocket_launched"
+	GalaxyIssueFleetDispatched     = "fleet_dispatched"
 )
 
 type GalaxyActionIssue struct {
@@ -182,6 +183,7 @@ type GalaxyExtra struct {
 	SpyProbes int
 	Recyclers int
 	Missiles  int
+	MaxSpy    int
 	Slots     FleetSlots
 }
 
@@ -258,6 +260,7 @@ func BuildGalaxy(overview Overview, input GalaxyInput) Galaxy {
 			SpyProbes: input.Viewer.SpyProbes,
 			Recyclers: input.Viewer.Recyclers,
 			Missiles:  input.Viewer.Missiles,
+			MaxSpy:    input.Viewer.MaxSpy,
 			Slots:     input.FleetSlots,
 		},
 		NotEnoughDeuterium:  remoteSystem && input.Viewer.Admin == 0 && overview.CurrentPlanet.Resources.Deuterium < GalaxyDeuteriumCost,
@@ -481,11 +484,26 @@ func GalaxyActionIssueFor(code string) *GalaxyActionIssue {
 		GalaxyIssueRocketFrozen:        "Universe is frozen.",
 		GalaxyIssueRocketLaunchRace:    "Not enough interplanetary rockets!",
 		GalaxyIssueRocketLaunched:      "Start of rocket 1!",
+		GalaxyIssueFleetDispatched:     "done",
 	}[code]
 	if message == "" {
 		message = "There was an error"
 	}
 	return &GalaxyActionIssue{Code: code, Message: message}
+}
+
+func GalaxyFleetDispatchedIssue() *GalaxyActionIssue {
+	return GalaxyActionIssueFor(GalaxyIssueFleetDispatched)
+}
+
+func GalaxyActionIssueFromFleet(issue *FleetActionIssue) *GalaxyActionIssue {
+	if issue == nil {
+		return nil
+	}
+	return &GalaxyActionIssue{
+		Code:    "fleet_" + issue.Code,
+		Message: issue.Message,
+	}
 }
 
 func GalaxyMissileLaunchedIssue(amount int) *GalaxyActionIssue {

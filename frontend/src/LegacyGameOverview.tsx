@@ -136,6 +136,13 @@ export type GameGalaxyMissileLaunch = {
   targetDefenseId: number;
 };
 
+export type GameGalaxyInstantDispatch = {
+  action: "dispatch-spy" | "dispatch-recycle";
+  target: Coordinates;
+  targetType: number;
+  amount: number;
+};
+
 export type GameDefenseStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
@@ -513,6 +520,7 @@ type GameGalaxy = {
     spyProbes: number;
     recyclers: number;
     missiles: number;
+    maxSpy: number;
     slots: {
       used: number;
       max: number;
@@ -1268,6 +1276,7 @@ type LegacyGameOverviewProps = {
   galaxyError: string | null;
   galaxyPending: boolean;
   onGalaxyMissileLaunch: (draft: GameGalaxyMissileLaunch) => void;
+  onGalaxyInstantDispatch: (draft: GameGalaxyInstantDispatch) => void;
   defenseStatus: GameDefenseStatus | null;
   defenseError: string | null;
   defensePending: boolean;
@@ -1421,6 +1430,7 @@ export function LegacyGameOverview({
   galaxyError,
   galaxyPending,
   onGalaxyMissileLaunch,
+  onGalaxyInstantDispatch,
   defenseStatus,
   defenseError,
   defensePending,
@@ -1807,7 +1817,7 @@ export function LegacyGameOverview({
           <LegacyMessage tone="neutral" text="Loading galaxy..." />
         ) : null}
         {galaxy && route.key === "galaxy" ? (
-          <GalaxyTable galaxy={galaxy} onMissileLaunch={onGalaxyMissileLaunch} pending={galaxyPending} />
+          <GalaxyTable galaxy={galaxy} onInstantDispatch={onGalaxyInstantDispatch} onMissileLaunch={onGalaxyMissileLaunch} pending={galaxyPending} />
         ) : null}
         {overview && route.key === "defense" && !defense && !defenseError && !defenseIssue ? (
           <LegacyMessage tone="neutral" text="Loading defense..." />
@@ -6833,10 +6843,12 @@ function setLegacyFleetTemplateShips(template: GameFleetTemplate) {
 
 function GalaxyTable({
   galaxy,
+  onInstantDispatch,
   onMissileLaunch,
   pending
 }: {
   galaxy: GameGalaxy;
+  onInstantDispatch: (draft: GameGalaxyInstantDispatch) => void;
   onMissileLaunch: (draft: GameGalaxyMissileLaunch) => void;
   pending: boolean;
 }) {
@@ -6986,7 +6998,7 @@ function GalaxyTable({
             ))}
           </tr>
           {galaxy.rows.map((row) => (
-            <GalaxyTableRow key={row.position} row={row} />
+            <GalaxyTableRow galaxy={galaxy} key={row.position} onInstantDispatch={onInstantDispatch} pending={pending} row={row} />
           ))}
           <tr>
             <th style={{ height: 32 }}>16</th>
@@ -7131,7 +7143,17 @@ function GalaxyMissileForm({
   );
 }
 
-function GalaxyTableRow({ row }: { row: GameGalaxyRow }) {
+function GalaxyTableRow({
+  galaxy,
+  onInstantDispatch,
+  pending,
+  row
+}: {
+  galaxy: GameGalaxy;
+  onInstantDispatch: (draft: GameGalaxyInstantDispatch) => void;
+  pending: boolean;
+  row: GameGalaxyRow;
+}) {
   const planet = row.planet;
   const player = planet?.player;
   const debrisCoordinates = row.planet?.coordinates ?? row.moon?.coordinates;
@@ -7166,7 +7188,21 @@ function GalaxyTableRow({ row }: { row: GameGalaxyRow }) {
       </th>
       <th {...cellWidth(30)}>
         {row.debris?.visible && debrisCoordinates ? (
-          <a href={fleetTargetHref(debrisCoordinates, row.position, 8, 2)}>
+          <a
+            href={fleetTargetHref(debrisCoordinates, row.position, 8, 2)}
+            onClick={(event) => {
+              event.preventDefault();
+              if (pending) {
+                return;
+              }
+              onInstantDispatch({
+                action: "dispatch-recycle",
+                target: { galaxy: debrisCoordinates.galaxy, system: debrisCoordinates.system, position: row.position },
+                targetType: 2,
+                amount: Math.max(1, row.debris?.harvesters ?? 0)
+              });
+            }}
+          >
             <img alt="" height={22} src={`${skinBase}/planeten/debris.jpg`} title={`${formatLegacyNumber(row.debris.metal)} / ${formatLegacyNumber(row.debris.crystal)}`} width={22} />
           </a>
         ) : null}
@@ -7176,7 +7212,7 @@ function GalaxyTableRow({ row }: { row: GameGalaxyRow }) {
         {planet?.alliance ? <a href="#" onClick={(event) => event.preventDefault()}>{planet.alliance.tag}</a> : null}
       </th>
       <th className="legacy-galaxy-actions" style={{ whiteSpace: "nowrap" }} {...cellWidth(125)}>
-        {planet ? <GalaxyActionIcons planet={planet} /> : null}
+        {planet ? <GalaxyActionIcons galaxy={galaxy} onInstantDispatch={onInstantDispatch} pending={pending} planet={planet} /> : null}
       </th>
     </tr>
   );
@@ -7194,26 +7230,63 @@ function galaxyPlayerCellHTML(player: GameGalaxyPlayer): string {
   return html;
 }
 
-function GalaxyActionIcons({ planet }: { planet: GameGalaxyPlanet }) {
+function GalaxyActionIcons({
+  galaxy,
+  onInstantDispatch,
+  pending,
+  planet
+}: {
+  galaxy: GameGalaxy;
+  onInstantDispatch: (draft: GameGalaxyInstantDispatch) => void;
+  pending: boolean;
+  planet: GameGalaxyPlanet;
+}) {
   const playerID = planet.player?.id ?? 0;
-  const actions = [
-    { enabled: planet.actions.spy, href: fleetTargetHref(planet.coordinates, planet.coordinates.position, 6), icon: "e.gif", label: "Espionage" },
+  const spyAmount = Math.max(1, galaxy.extra.maxSpy || 0);
+  const actions: Array<{ enabled: boolean; href: string; icon: string; label: string; onClick?: () => void }> = [
+    {
+      enabled: planet.actions.spy,
+      href: fleetTargetHref(planet.coordinates, planet.coordinates.position, 6),
+      icon: "e.gif",
+      label: "Espionage",
+      onClick: () =>
+        onInstantDispatch({
+          action: "dispatch-spy",
+          target: planet.coordinates,
+          targetType: 1,
+          amount: spyAmount
+        })
+    },
     { enabled: planet.actions.message && playerID > 0, href: gameMessageComposeURL(playerID, window.location.search), icon: "m.gif", label: "Write message" },
     { enabled: planet.actions.buddy && playerID > 0, href: gameBuddyRequestURL(playerID, window.location.search), icon: "b.gif", label: "Buddy request" },
     { enabled: planet.actions.missile, href: gameGalaxyMissileURL(planet.coordinates, planet.id, playerID, window.location.search), icon: "r.gif", label: "Rocket attack" }
   ];
   return (
     <>
-      {actions.map((action) =>
-        action.enabled ? (
+      {actions.map((action) => {
+        const onClick = action.onClick;
+        return action.enabled ? (
           <React.Fragment key={action.icon}>
-            <a data-galaxy-action={action.label} href={action.href}>
+            <a
+              data-galaxy-action={action.label}
+              href={action.href}
+              onClick={
+                onClick
+                  ? (event) => {
+                      event.preventDefault();
+                      if (!pending) {
+                        onClick();
+                      }
+                    }
+                  : undefined
+              }
+            >
               <img alt={action.label} src={`${skinBase}/img/${action.icon}`} title={action.label} />
             </a>
             {"\n"}
           </React.Fragment>
-        ) : null
-      )}
+        ) : null;
+      })}
     </>
   );
 }

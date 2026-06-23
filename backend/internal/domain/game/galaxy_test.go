@@ -301,6 +301,12 @@ func TestGalaxyMissileHelpersCoverLegacyEdgeCases(t *testing.T) {
 	if issue := GalaxyActionIssueFor("unknown"); issue.Code != "unknown" || issue.Message != "There was an error" {
 		t.Fatalf("unexpected fallback issue: %+v", issue)
 	}
+	if issue := GalaxyActionIssueFromFleet(nil); issue != nil {
+		t.Fatalf("nil fleet issue should stay nil, got %+v", issue)
+	}
+	if issue := GalaxyActionIssueFromFleet(FleetActionIssueFor(FleetIssueNoShips)); issue == nil || issue.Code != "fleet_no_ships" {
+		t.Fatalf("unexpected fleet issue conversion: %+v", issue)
+	}
 	if issue := GalaxyMissileLaunchedIssue(-3); issue.Code != GalaxyIssueRocketLaunched || issue.Message != "Start of rocket 3!" {
 		t.Fatalf("unexpected negative launch issue: %+v", issue)
 	}

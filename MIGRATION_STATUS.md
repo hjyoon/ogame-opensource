@@ -25,7 +25,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 - Merchant/officers/alliance/admin port DM spend/trade/timers, core alliance flows, 25 admin GET modes, and access guard.
 - Research/Shipyard port aliases, chrome, colors, queues, completion refresh, start/cancel/build, and resource math.
 - Fleet dispatch covers cargo/speed, fuel/clamps, ACS sync, colonize/exp targets, templates, and recall; deeper restrictions remain.
-- Galaxy covers clamp, rows, statuses, moon/debris/actions, slot/deut warnings, quick links, and target prefill; instant actions remain.
+- Galaxy covers clamp, rows, statuses, moon/debris/actions, slot/deut warnings, quick links, target prefill, and instant spy/recycle dispatch.
 - Messages/report/notes/buddy/options follow legacy chrome; report access and options vacation/deletion/password/email mutations are enforced.
 - Notes, Buddylist, and Options visual parity pass Chromium/Firefox at 0px; Commander rows use `com_until` like PHP.
 
@@ -44,5 +44,5 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 
 - Continue authenticated visual parity for remaining non-statistics pages.
 - Add Go compatibility checks for migrated legacy E2E flows as they stabilize.
-- Finish galaxy instant actions, alliance deep management, admin submodes/recovery/bans/permissions, and mission restrictions.
+- Finish alliance deep management, admin submodes/recovery/bans/permissions, and mission restrictions.
 - Run full legacy PHP E2E before declaring game-flow equivalence.

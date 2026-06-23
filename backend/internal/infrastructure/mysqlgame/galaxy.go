@@ -133,6 +133,60 @@ func (r GalaxyRepository) GetGalaxy(ctx context.Context, query appgame.GalaxyQue
 	}), nil
 }
 
+func (r GalaxyRepository) DispatchInstantFleet(ctx context.Context, query appgame.GalaxyInstantDispatchQuery) (*domaingame.GalaxyActionIssue, error) {
+	if r.execer == nil {
+		return nil, errors.New("galaxy fleet mutation unavailable")
+	}
+	fleetRepository := FleetRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now}
+	fleet, err := fleetRepository.GetFleet(ctx, appgame.FleetQuery{
+		PlayerID: query.PlayerID,
+		PlanetID: query.PlanetID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	shipID := 0
+	switch query.Mission {
+	case domaingame.FleetMissionSpy:
+		shipID = domaingame.FleetEspionageProbe
+	case domaingame.FleetMissionRecycle:
+		shipID = domaingame.FleetRecycler
+	default:
+		return domaingame.GalaxyActionIssueFromFleet(domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidOrder)), nil
+	}
+
+	amount := absInt(query.Amount)
+	draft, issue := domaingame.BuildFleetDispatchValidation(fleet, domaingame.FleetDispatchValidationInput{
+		Ships:      map[int]int{shipID: amount},
+		Target:     query.Target,
+		TargetType: query.TargetType,
+		Mission:    query.Mission,
+		Speed:      10,
+	})
+	if issue != nil {
+		return domaingame.GalaxyActionIssueFromFleet(issue), nil
+	}
+
+	launchPlanetID := query.PlanetID
+	if launchPlanetID <= 0 {
+		launchPlanetID = fleet.CurrentPlanet.ID
+	}
+	issue, err = fleetRepository.LaunchFleetDispatch(ctx, appgame.FleetLaunchQuery{
+		PlayerID: query.PlayerID,
+		PlanetID: launchPlanetID,
+		Origin:   fleet.CurrentPlanet,
+		Draft:    draft,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if issue != nil {
+		return domaingame.GalaxyActionIssueFromFleet(issue), nil
+	}
+	return domaingame.GalaxyFleetDispatchedIssue(), nil
+}
+
 type galaxyMissilePlanet struct {
 	ID             int
 	OwnerID        int

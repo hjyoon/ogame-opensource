@@ -82,6 +82,151 @@ func TestGalaxyRepositoryLaunchMissilesRequiresExecer(t *testing.T) {
 	}
 }
 
+func TestGalaxyRepositoryDispatchInstantFleetRequiresExecer(t *testing.T) {
+	repository := NewGalaxyRepositoryWithRunner(&fakeQueryer{}, nil, "ogame_", nil)
+	if _, err := repository.DispatchInstantFleet(context.Background(), appgame.GalaxyInstantDispatchQuery{}); err == nil || !strings.Contains(err.Error(), "mutation unavailable") {
+		t.Fatalf("expected mutation unavailable error, got %v", err)
+	}
+}
+
+func TestGalaxyRepositoryDispatchInstantFleetMapsFleetValidationIssues(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	tests := []struct {
+		name    string
+		mission int
+		amount  int
+		want    string
+	}{
+		{name: "invalid mission", mission: domaingame.FleetMissionTransport, amount: 1, want: "fleet_" + domaingame.FleetIssueInvalidOrder},
+		{name: "spy without probes", mission: domaingame.FleetMissionSpy, amount: 1, want: "fleet_" + domaingame.FleetIssueNoShips},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: append(fleetReadPrefixResults(now),
+				fakeQueryResult{rows: fakeRowsFromValues()},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+			)}}
+			repository := NewGalaxyRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+			issue, err := repository.DispatchInstantFleet(context.Background(), appgame.GalaxyInstantDispatchQuery{
+				PlayerID:   42,
+				PlanetID:   99,
+				Target:     domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4},
+				TargetType: domaingame.GamePlanetTypePlanet,
+				Mission:    tt.mission,
+				Amount:     tt.amount,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if issue == nil || issue.Code != tt.want {
+				t.Fatalf("unexpected dispatch issue: %+v", issue)
+			}
+			if len(runner.execCalls) != 0 {
+				t.Fatalf("validation issue should not write fleet rows: %+v", runner.execCalls)
+			}
+		})
+	}
+}
+
+func TestGalaxyRepositoryDispatchInstantFleetLaunchesSpyFleet(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	results := append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(allResearchLevelRow(map[int]int{
+			domaingame.ResearchComputer:        3,
+			domaingame.ResearchCombustionDrive: 3,
+			domaingame.ResearchEspionage:       2,
+		}))},
+		fakeQueryResult{rows: fakeRowsFromValues(fleetCountRow(map[int]int{
+			domaingame.FleetEspionageProbe: 3,
+		}))},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{128})},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{100, 43, domaingame.PlanetTypePlanet})},
+	)
+	runner := &fakeGalaxyRunner{
+		fakeQueryer: fakeQueryer{results: results},
+		execResults: []sql.Result{
+			galaxySQLResult{rows: 1},
+			galaxySQLResult{rows: 1},
+			galaxySQLResult{id: 123, rows: 1},
+			galaxySQLResult{rows: 1},
+			galaxySQLResult{rows: 1},
+		},
+	}
+	repository := NewGalaxyRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	issue, err := repository.DispatchInstantFleet(context.Background(), appgame.GalaxyInstantDispatchQuery{
+		PlayerID:   42,
+		PlanetID:   0,
+		Target:     domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4},
+		TargetType: domaingame.GamePlanetTypePlanet,
+		Mission:    domaingame.FleetMissionSpy,
+		Amount:     2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue == nil || issue.Code != domaingame.GalaxyIssueFleetDispatched {
+		t.Fatalf("unexpected dispatch issue: %+v", issue)
+	}
+	if len(runner.execCalls) != 5 {
+		t.Fatalf("expected fleet cleanup/debit/insert/log/queue writes, got %+v", runner.execCalls)
+	}
+	if !strings.Contains(runner.execCalls[1].sql, "`210` = `210` - ?") || runner.execCalls[1].args[3] != 2 {
+		t.Fatalf("expected probe debit, got %+v", runner.execCalls[1])
+	}
+	if runner.execCalls[2].args[6] != domaingame.FleetMissionSpy || runner.execCalls[4].args[0] != 42 {
+		t.Fatalf("expected spy fleet and queue insert args, got fleet=%+v queue=%+v", runner.execCalls[2], runner.execCalls[4])
+	}
+}
+
+func TestGalaxyRepositoryDispatchInstantFleetMapsLaunchIssues(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	results := append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(allResearchLevelRow(map[int]int{
+			domaingame.ResearchComputer:        3,
+			domaingame.ResearchCombustionDrive: 3,
+			domaingame.ResearchEspionage:       2,
+		}))},
+		fakeQueryResult{rows: fakeRowsFromValues(fleetCountRow(map[int]int{
+			domaingame.FleetEspionageProbe: 3,
+		}))},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{128})},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{0})},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+	)
+	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewGalaxyRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	issue, err := repository.DispatchInstantFleet(context.Background(), appgame.GalaxyInstantDispatchQuery{
+		PlayerID:   42,
+		PlanetID:   99,
+		Target:     domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4},
+		TargetType: domaingame.GamePlanetTypePlanet,
+		Mission:    domaingame.FleetMissionSpy,
+		Amount:     2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue == nil || issue.Code != "fleet_"+domaingame.FleetIssueInvalidTarget {
+		t.Fatalf("unexpected launch issue: %+v", issue)
+	}
+	if len(runner.execCalls) != 0 {
+		t.Fatalf("target issue should not write fleet rows: %+v", runner.execCalls)
+	}
+}
+
 func TestGalaxyRepositoryLaunchesMissiles(t *testing.T) {
 	now := time.Unix(10_000, 0)
 	runner := &fakeGalaxyRunner{

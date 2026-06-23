@@ -12,6 +12,7 @@ import (
 type GalaxyRepository interface {
 	GetGalaxy(context.Context, GalaxyQuery) (domaingame.Galaxy, error)
 	LaunchMissiles(context.Context, GalaxyMissileLaunchQuery) (*domaingame.GalaxyActionIssue, error)
+	DispatchInstantFleet(context.Context, GalaxyInstantDispatchQuery) (*domaingame.GalaxyActionIssue, error)
 }
 
 type GalaxyQuery struct {
@@ -46,6 +47,28 @@ type GalaxyMissileLaunchCommand struct {
 	TargetPlanetID  int
 	Amount          int
 	TargetDefenseID int
+}
+
+type GalaxyInstantDispatchQuery struct {
+	PlayerID    int
+	PlanetID    int
+	Coordinates domaingame.Coordinates
+	Target      domaingame.Coordinates
+	TargetType  int
+	Mission     int
+	Amount      int
+}
+
+type GalaxyInstantDispatchCommand struct {
+	PublicSession   string
+	PrivateSessions map[string]string
+	RemoteAddr      string
+	PlanetID        int
+	Coordinates     domaingame.Coordinates
+	Target          domaingame.Coordinates
+	TargetType      int
+	Mission         int
+	Amount          int
 }
 
 type GalaxyResult struct {
@@ -95,6 +118,53 @@ func (s GalaxyService) GetGalaxy(ctx context.Context, command GalaxyCommand) (Ga
 	return GalaxyResult{
 		Authenticated: true,
 		Galaxy:        galaxy,
+	}, nil
+}
+
+func (s GalaxyService) DispatchInstantFleet(ctx context.Context, command GalaxyInstantDispatchCommand) (GalaxyResult, error) {
+	if s.sessions == nil || s.repository == nil {
+		return GalaxyResult{}, errors.New("galaxy dependencies unavailable")
+	}
+
+	session, err := s.sessions.GetGameSession(ctx, apppublicsite.GameSessionCommand{
+		PublicSession:   command.PublicSession,
+		PrivateSessions: command.PrivateSessions,
+		RemoteAddr:      command.RemoteAddr,
+	})
+	if err != nil {
+		return GalaxyResult{}, err
+	}
+	if !session.Authenticated {
+		return GalaxyResult{
+			Authenticated: false,
+			Issues:        session.Issues,
+		}, nil
+	}
+
+	issue, err := s.repository.DispatchInstantFleet(ctx, GalaxyInstantDispatchQuery{
+		PlayerID:    session.Session.PlayerID,
+		PlanetID:    command.PlanetID,
+		Coordinates: command.Coordinates,
+		Target:      command.Target,
+		TargetType:  command.TargetType,
+		Mission:     command.Mission,
+		Amount:      command.Amount,
+	})
+	if err != nil {
+		return GalaxyResult{}, err
+	}
+	galaxy, err := s.repository.GetGalaxy(ctx, GalaxyQuery{
+		PlayerID:    session.Session.PlayerID,
+		PlanetID:    command.PlanetID,
+		Coordinates: command.Coordinates,
+	})
+	if err != nil {
+		return GalaxyResult{}, err
+	}
+	return GalaxyResult{
+		Authenticated: true,
+		Galaxy:        galaxy,
+		ActionIssue:   issue,
 	}, nil
 }
 

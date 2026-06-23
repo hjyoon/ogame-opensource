@@ -113,6 +113,7 @@ type GameFleetUseCase interface {
 type GameGalaxyUseCase interface {
 	GetGalaxy(context.Context, appgame.GalaxyCommand) (appgame.GalaxyResult, error)
 	LaunchMissiles(context.Context, appgame.GalaxyMissileLaunchCommand) (appgame.GalaxyResult, error)
+	DispatchInstantFleet(context.Context, appgame.GalaxyInstantDispatchCommand) (appgame.GalaxyResult, error)
 }
 
 type GameDefenseUseCase interface {
