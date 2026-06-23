@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
@@ -52,6 +53,9 @@ func TestNewAdminRepositoryWithQueryerKeepsMutationRunner(t *testing.T) {
 	if repository.queryer != runner {
 		t.Fatalf("expected queryer to be preserved")
 	}
+	if repository.execer != runner {
+		t.Fatalf("expected execer to be preserved")
+	}
 	if repository.overview.execer != runner {
 		t.Fatalf("expected overview execer to reuse runner")
 	}
@@ -79,6 +83,334 @@ func TestAdminRepositorySkipsRestrictedOperatorModeData(t *testing.T) {
 	if len(queryer.calls) != len(shipyardOverviewResults())+1 {
 		t.Fatalf("restricted operator mode should not issue detail query, calls=%d", len(queryer.calls))
 	}
+}
+
+func TestAdminRepositoryMutatesBans(t *testing.T) {
+	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{42, "admin"})},
+		{rows: fakeRowsFromValues([]any{77, "target"})},
+	}}}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+	repository.now = func() time.Time { return time.Unix(1_000, 0) }
+
+	issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+		PlayerID:  42,
+		Mode:      "Bans",
+		Action:    "ban",
+		TargetIDs: []int{77, 77, 0},
+		BanMode:   1,
+		Hours:     2,
+		Reason:    `quote "tick'`,
+	})
+
+	if err != nil {
+		t.Fatalf("MutateAdmin returned error: %v", err)
+	}
+	if issue == nil || issue.Code != domaingame.AdminIssueActionSaved {
+		t.Fatalf("unexpected issue: %+v", issue)
+	}
+	if len(runner.execCalls) != 4 {
+		t.Fatalf("expected pranger/delete/queue/update execs, got %+v", runner.execCalls)
+	}
+	if !strings.Contains(runner.execCalls[0].sql, "ogame_pranger") || runner.execCalls[0].args[0] != "admin" || runner.execCalls[0].args[1] != "target" {
+		t.Fatalf("unexpected pranger insert: %+v", runner.execCalls[0])
+	}
+	if runner.execCalls[1].args[0] != "UnbanPlayer" || runner.execCalls[1].args[1] != 77 {
+		t.Fatalf("unexpected queue delete: %+v", runner.execCalls[1])
+	}
+	if runner.execCalls[2].args[0] != 77 || runner.execCalls[2].args[1] != "UnbanPlayer" || runner.execCalls[2].args[2] != 1_000 || runner.execCalls[2].args[3] != 9_200 {
+		t.Fatalf("unexpected queue insert: %+v", runner.execCalls[2])
+	}
+	if !strings.Contains(runner.execCalls[3].sql, "vacation = 1") || runner.execCalls[3].args[0] != 8_200 || runner.execCalls[3].args[2] != 77 {
+		t.Fatalf("unexpected ban update: %+v", runner.execCalls[3])
+	}
+}
+
+func TestAdminRepositoryMutatesBanWithoutVacation(t *testing.T) {
+	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{42, "admin"})},
+		{rows: fakeRowsFromValues([]any{77, "target"})},
+	}}}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+	repository.now = func() time.Time { return time.Unix(1_000, 0) }
+
+	_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+		PlayerID:  42,
+		Mode:      "Bans",
+		Action:    "ban",
+		TargetIDs: []int{77},
+		BanMode:   0,
+		Hours:     1,
+	})
+
+	if err != nil {
+		t.Fatalf("MutateAdmin returned error: %v", err)
+	}
+	if len(runner.execCalls) != 4 || strings.Contains(runner.execCalls[3].sql, "vacation = 1") || runner.execCalls[3].args[0] != 4_600 {
+		t.Fatalf("unexpected ban without vacation execs: %+v", runner.execCalls)
+	}
+}
+
+func TestAdminRepositoryMutatesAttackBans(t *testing.T) {
+	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{42, "admin"})},
+		{rows: fakeRowsFromValues([]any{77, "target"})},
+	}}}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+	repository.now = func() time.Time { return time.Unix(1_000, 0) }
+
+	_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+		PlayerID:  42,
+		Mode:      "Bans",
+		Action:    "ban",
+		TargetIDs: []int{77},
+		BanMode:   2,
+		Hours:     1,
+	})
+
+	if err != nil {
+		t.Fatalf("MutateAdmin returned error: %v", err)
+	}
+	if len(runner.execCalls) != 4 || runner.execCalls[1].args[0] != "AllowAttacks" || !strings.Contains(runner.execCalls[3].sql, "noattack = 1") {
+		t.Fatalf("unexpected attack ban execs: %+v", runner.execCalls)
+	}
+}
+
+func TestAdminRepositoryUnbansUsers(t *testing.T) {
+	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{42, "admin"})},
+		{rows: fakeRowsFromValues([]any{77, "target"})},
+	}}}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+	issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+		PlayerID:  42,
+		Mode:      "Bans",
+		Action:    "ban",
+		TargetIDs: []int{77},
+		BanMode:   3,
+	})
+
+	if err != nil {
+		t.Fatalf("MutateAdmin returned error: %v", err)
+	}
+	if issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 2 {
+		t.Fatalf("unexpected unban issue=%+v execs=%+v", issue, runner.execCalls)
+	}
+	if runner.execCalls[0].args[0] != "UnbanPlayer" || !strings.Contains(runner.execCalls[1].sql, "banned = 0") {
+		t.Fatalf("unexpected unban execs: %+v", runner.execCalls)
+	}
+}
+
+func TestAdminRepositoryAllowsAttacks(t *testing.T) {
+	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{42, "admin"})},
+		{rows: fakeRowsFromValues([]any{77, "target"})},
+	}}}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+	issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+		PlayerID:  42,
+		Mode:      "Bans",
+		Action:    "ban",
+		TargetIDs: []int{77},
+		BanMode:   4,
+	})
+
+	if err != nil {
+		t.Fatalf("MutateAdmin returned error: %v", err)
+	}
+	if issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 2 {
+		t.Fatalf("unexpected allow attacks issue=%+v execs=%+v", issue, runner.execCalls)
+	}
+	if runner.execCalls[0].args[0] != "AllowAttacks" || !strings.Contains(runner.execCalls[1].sql, "noattack = 0") {
+		t.Fatalf("unexpected allow attacks execs: %+v", runner.execCalls)
+	}
+}
+
+func TestAdminRepositoryMutationNoops(t *testing.T) {
+	runner := &fakeGalaxyRunner{}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+	issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Users", Action: "ban"})
+	if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 {
+		t.Fatalf("unexpected non-bans mutation result issue=%+v execs=%+v err=%v", issue, runner.execCalls, err)
+	}
+
+	issue, err = repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Bans", Action: "ban"})
+	if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 {
+		t.Fatalf("unexpected empty target mutation result issue=%+v execs=%+v err=%v", issue, runner.execCalls, err)
+	}
+}
+
+func TestAdminRepositoryMutationRequiresWriter(t *testing.T) {
+	repository := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_")
+	if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Bans", Action: "ban"}); err == nil || !strings.Contains(err.Error(), "mutation unavailable") {
+		t.Fatalf("expected mutation unavailable error, got %v", err)
+	}
+}
+
+func TestAdminRepositoryMutationEdges(t *testing.T) {
+	t.Run("invalid prefix", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "bad-prefix_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Bans", Action: "ban", TargetIDs: []int{77}}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+			t.Fatalf("expected prefix error, got %v", err)
+		}
+	})
+
+	t.Run("actor query error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("actor failed")}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{PlayerID: 42, Mode: "Bans", Action: "ban", TargetIDs: []int{77}}); err == nil || !strings.Contains(err.Error(), "actor failed") {
+			t.Fatalf("expected actor query error, got %v", err)
+		}
+		if len(runner.execCalls) != 0 {
+			t.Fatalf("query failure must not mutate, got %+v", runner.execCalls)
+		}
+	})
+
+	t.Run("actor rows error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("actor rows failed"))}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{PlayerID: 42, Mode: "Bans", Action: "ban", TargetIDs: []int{77}}); err == nil || !strings.Contains(err.Error(), "actor rows failed") {
+			t.Fatalf("expected actor rows error, got %v", err)
+		}
+	})
+
+	t.Run("missing target", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{42, "admin"})},
+			{rows: fakeRowsFromValues()},
+		}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{PlayerID: 42, Mode: "Bans", Action: "ban", TargetIDs: []int{77}})
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 {
+			t.Fatalf("expected missing target no-op, issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		}
+	})
+
+	t.Run("target scan error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{42, "admin"})},
+			{rows: fakeRowsFromValues([]any{77})},
+		}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{PlayerID: 42, Mode: "Bans", Action: "ban", TargetIDs: []int{77}}); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+			t.Fatalf("expected target scan error, got %v", err)
+		}
+	})
+
+	t.Run("pranger exec error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{42, "admin"})},
+				{rows: fakeRowsFromValues([]any{77, "target"})},
+			}},
+			execErrs: []error{errors.New("pranger failed")},
+		}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{PlayerID: 42, Mode: "Bans", Action: "ban", TargetIDs: []int{77}, BanMode: 1}); err == nil || !strings.Contains(err.Error(), "pranger failed") {
+			t.Fatalf("expected pranger exec error, got %v", err)
+		}
+	})
+
+	t.Run("queue insert exec error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{42, "admin"})},
+				{rows: fakeRowsFromValues([]any{77, "target"})},
+			}},
+			execErrs: []error{nil, nil, errors.New("queue insert failed")},
+		}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{PlayerID: 42, Mode: "Bans", Action: "ban", TargetIDs: []int{77}, BanMode: 2}); err == nil || !strings.Contains(err.Error(), "queue insert failed") {
+			t.Fatalf("expected queue insert error, got %v", err)
+		}
+	})
+
+	t.Run("update exec error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{42, "admin"})},
+				{rows: fakeRowsFromValues([]any{77, "target"})},
+			}},
+			execErrs: []error{nil, nil, nil, errors.New("update failed")},
+		}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{PlayerID: 42, Mode: "Bans", Action: "ban", TargetIDs: []int{77}, BanMode: 0}); err == nil || !strings.Contains(err.Error(), "update failed") {
+			t.Fatalf("expected update error, got %v", err)
+		}
+	})
+
+	t.Run("ban queue delete exec error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{42, "admin"})},
+				{rows: fakeRowsFromValues([]any{77, "target"})},
+			}},
+			execErrs: []error{nil, errors.New("delete failed")},
+		}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{PlayerID: 42, Mode: "Bans", Action: "ban", TargetIDs: []int{77}, BanMode: 0}); err == nil || !strings.Contains(err.Error(), "delete failed") {
+			t.Fatalf("expected queue delete error, got %v", err)
+		}
+	})
+
+	t.Run("ban queue insert exec error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{42, "admin"})},
+				{rows: fakeRowsFromValues([]any{77, "target"})},
+			}},
+			execErrs: []error{nil, nil, errors.New("ban queue insert failed")},
+		}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{PlayerID: 42, Mode: "Bans", Action: "ban", TargetIDs: []int{77}, BanMode: 0}); err == nil || !strings.Contains(err.Error(), "ban queue insert failed") {
+			t.Fatalf("expected ban queue insert error, got %v", err)
+		}
+	})
+
+	t.Run("attack queue delete exec error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{42, "admin"})},
+				{rows: fakeRowsFromValues([]any{77, "target"})},
+			}},
+			execErrs: []error{nil, errors.New("attack delete failed")},
+		}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{PlayerID: 42, Mode: "Bans", Action: "ban", TargetIDs: []int{77}, BanMode: 2}); err == nil || !strings.Contains(err.Error(), "attack delete failed") {
+			t.Fatalf("expected attack queue delete error, got %v", err)
+		}
+	})
+
+	t.Run("unban queue delete exec error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{42, "admin"})},
+				{rows: fakeRowsFromValues([]any{77, "target"})},
+			}},
+			execErrs: []error{errors.New("unban delete failed")},
+		}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{PlayerID: 42, Mode: "Bans", Action: "ban", TargetIDs: []int{77}, BanMode: 3}); err == nil || !strings.Contains(err.Error(), "unban delete failed") {
+			t.Fatalf("expected unban queue delete error, got %v", err)
+		}
+	})
+
+	t.Run("allow attacks queue delete exec error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{42, "admin"})},
+				{rows: fakeRowsFromValues([]any{77, "target"})},
+			}},
+			execErrs: []error{errors.New("allow attacks delete failed")},
+		}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{PlayerID: 42, Mode: "Bans", Action: "ban", TargetIDs: []int{77}, BanMode: 4}); err == nil || !strings.Contains(err.Error(), "allow attacks delete failed") {
+			t.Fatalf("expected allow attacks queue delete error, got %v", err)
+		}
+	})
 }
 
 func TestAdminRepositoryReadsAdminDebugRows(t *testing.T) {

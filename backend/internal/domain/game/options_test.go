@@ -124,6 +124,9 @@ func TestOptionsCredentialMutationValidation(t *testing.T) {
 	if issue := (OptionsMutation{NewPassword: "abc_1234", NewPasswordRepeat: "abc_1234"}).PasswordValidationIssue(); issue != nil {
 		t.Fatalf("expected valid legacy password, got %+v", issue)
 	}
+	if issue := (OptionsMutation{}).PasswordValidationIssue(); issue != nil {
+		t.Fatalf("empty password mutation should be ignored, got %+v", issue)
+	}
 }
 
 func TestOptionsEmailChangeForUnvalidatedAccountsUsesPendingEmail(t *testing.T) {

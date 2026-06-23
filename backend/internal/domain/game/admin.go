@@ -8,6 +8,7 @@ const (
 	AdminLevelAdmin    = 2
 
 	AdminIssueAccessDenied = "access_denied"
+	AdminIssueActionSaved  = "action_saved"
 )
 
 type Admin struct {
@@ -248,6 +249,8 @@ func AdminIssue(code string) *AdminActionIssue {
 	switch code {
 	case AdminIssueAccessDenied:
 		return &AdminActionIssue{Code: code, Message: "Access denied."}
+	case AdminIssueActionSaved:
+		return &AdminActionIssue{Code: code, Message: "Action saved."}
 	default:
 		return &AdminActionIssue{Code: code, Message: "Admin action could not be completed."}
 	}

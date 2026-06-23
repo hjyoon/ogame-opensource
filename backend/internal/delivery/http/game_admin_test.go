@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
@@ -42,11 +43,44 @@ func TestGameAdminHandlerReturnsAdminHome(t *testing.T) {
 	}
 }
 
+func TestGameAdminHandlerMutatesBans(t *testing.T) {
+	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{
+		Authenticated: true,
+		Admin: domaingame.NewAdmin(
+			domaingame.Overview{Commander: "legor", CurrentPlanet: domaingame.PlanetOverview{ID: 99}},
+			domaingame.AdminViewer{PlayerID: 42, Name: "legor", Level: domaingame.AdminLevelAdmin},
+			"Bans",
+		),
+		ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueActionSaved),
+	}}
+	request := httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=99&mode=Bans", strings.NewReader(`{"action":"ban","targetIds":[77],"banMode":1,"days":0,"hours":2,"reason":"test"}`))
+	request.RemoteAddr = "203.0.113.10:4321"
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	app{deps: Dependencies{GameAdmin: usecase}}.handleGameAdmin(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected response status=%d body=%s", response.Code, response.Body.String())
+	}
+	if usecase.mutation.PlanetID != 99 || usecase.mutation.Mode != "Bans" || usecase.mutation.Action != "ban" ||
+		len(usecase.mutation.TargetIDs) != 1 || usecase.mutation.TargetIDs[0] != 77 || usecase.mutation.BanMode != 1 ||
+		usecase.mutation.Hours != 2 || usecase.mutation.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected mutation command: %+v", usecase.mutation)
+	}
+}
+
 func TestGameAdminHandlerRejectsInvalidAndUnauthenticatedRequests(t *testing.T) {
 	response := httptest.NewRecorder()
 	app{}.handleGameAdmin(response, httptest.NewRequest(http.MethodGet, "/api/game/admin?session=pub", nil))
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected unavailable without dependency, got %d", response.Code)
+	}
+
+	response = httptest.NewRecorder()
+	app{}.handleGameAdmin(response, httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub", strings.NewReader(`{}`)))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected post unavailable without dependency, got %d", response.Code)
 	}
 
 	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{
@@ -70,6 +104,30 @@ func TestGameAdminHandlerRejectsInvalidAndUnauthenticatedRequests(t *testing.T) 
 	app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{}}}.handleGameAdmin(response, httptest.NewRequest(http.MethodGet, "/api/game/admin?session=pub&cp=bad", nil))
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("expected invalid cp bad request, got %d", response.Code)
+	}
+
+	response = httptest.NewRecorder()
+	app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{}}}.handleGameAdmin(response, httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=bad", strings.NewReader(`{}`)))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid post cp bad request, got %d", response.Code)
+	}
+
+	response = httptest.NewRecorder()
+	app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{}}}.handleGameAdmin(response, httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub", strings.NewReader(`{`)))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid post bad request, got %d", response.Code)
+	}
+
+	response = httptest.NewRecorder()
+	app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{err: context.Canceled}}}.handleGameAdmin(response, httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub", strings.NewReader(`{}`)))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected mutation error as unavailable, got %d", response.Code)
+	}
+
+	response = httptest.NewRecorder()
+	app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{}}}.handleGameAdmin(response, httptest.NewRequest(http.MethodPut, "/api/game/admin?session=pub", nil))
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected method not allowed, got %d", response.Code)
 	}
 }
 
@@ -238,12 +296,18 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 }
 
 type fakeGameAdminUseCase struct {
-	result  appgame.AdminResult
-	err     error
-	command appgame.AdminCommand
+	result   appgame.AdminResult
+	err      error
+	command  appgame.AdminCommand
+	mutation appgame.AdminMutationCommand
 }
 
 func (f *fakeGameAdminUseCase) GetAdmin(_ context.Context, command appgame.AdminCommand) (appgame.AdminResult, error) {
 	f.command = command
+	return f.result, f.err
+}
+
+func (f *fakeGameAdminUseCase) MutateAdmin(_ context.Context, command appgame.AdminMutationCommand) (appgame.AdminResult, error) {
+	f.mutation = command
 	return f.result, f.err
 }

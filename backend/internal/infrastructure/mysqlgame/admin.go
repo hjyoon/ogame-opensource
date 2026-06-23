@@ -14,18 +14,22 @@ import (
 
 type AdminRepository struct {
 	queryer       Queryer
+	execer        Execer
 	overview      OverviewRepository
 	prefix        string
 	legacyGameDir string
+	now           func() time.Time
 }
 
 func NewAdminRepository(db *sql.DB, prefix string) AdminRepository {
 	runner := SQLQueryer{DB: db}
 	return AdminRepository{
 		queryer:       runner,
+		execer:        runner,
 		overview:      NewOverviewRepository(db, prefix),
 		prefix:        prefix,
 		legacyGameDir: "game",
+		now:           time.Now,
 	}
 }
 
@@ -36,9 +40,11 @@ func NewAdminRepositoryWithQueryer(queryer Queryer, prefix string) AdminReposito
 	}
 	return AdminRepository{
 		queryer:       queryer,
+		execer:        execer,
 		overview:      NewOverviewRepositoryWithRunner(queryer, execer, prefix),
 		prefix:        prefix,
 		legacyGameDir: "game",
+		now:           time.Now,
 	}
 }
 
@@ -71,7 +77,7 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		admin.QueueRows, err = r.loadAdminQueueRows(ctx)
 	case "UserLogs":
 		admin.UserLogRows, err = r.loadAdminUserLogRows(ctx)
-	case "Users":
+	case "Users", "Bans":
 		admin.UserRows, admin.ActiveUsers, err = r.loadAdminUsers(ctx)
 	case "Planets":
 		admin.PlanetRows, err = r.loadAdminPlanetRows(ctx)
@@ -90,6 +96,212 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		return domaingame.Admin{}, err
 	}
 	return admin, nil
+}
+
+func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
+	if r.execer == nil {
+		return nil, errors.New("admin mutation unavailable")
+	}
+	if domaingame.NormalizeAdminMode(query.Mode) != "Bans" || query.Action != "ban" {
+		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return nil, err
+	}
+	prangerTable, err := tableName(r.prefix, "pranger")
+	if err != nil {
+		return nil, err
+	}
+	return r.mutateAdminBans(ctx, usersTable, queueTable, prangerTable, query)
+}
+
+type adminBanUser struct {
+	ID   int
+	Name string
+}
+
+func (r AdminRepository) mutateAdminBans(ctx context.Context, usersTable string, queueTable string, prangerTable string, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
+	targetIDs := uniquePositiveIDs(query.TargetIDs)
+	if len(targetIDs) == 0 {
+		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+	}
+	actor, _, err := r.loadAdminBanUser(ctx, usersTable, query.PlayerID)
+	if err != nil {
+		return nil, err
+	}
+	now := int(r.now().Unix())
+	seconds := max(0, query.Days)*24*60*60 + max(0, query.Hours)*60*60
+	until := now + seconds
+	reason := sanitizeAdminBanReason(query.Reason)
+
+	for _, targetID := range targetIDs {
+		target, found, err := r.loadAdminBanUser(ctx, usersTable, targetID)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			continue
+		}
+		switch query.BanMode {
+		case 0:
+			if err := r.insertAdminBanPranger(ctx, prangerTable, actor, target, now, until, reason); err != nil {
+				return nil, err
+			}
+			if err := r.banAdminUser(ctx, usersTable, queueTable, targetID, now, until, false); err != nil {
+				return nil, err
+			}
+		case 1:
+			if err := r.insertAdminBanPranger(ctx, prangerTable, actor, target, now, until, reason); err != nil {
+				return nil, err
+			}
+			if err := r.banAdminUser(ctx, usersTable, queueTable, targetID, now, until, true); err != nil {
+				return nil, err
+			}
+		case 2:
+			if err := r.insertAdminBanPranger(ctx, prangerTable, actor, target, now, until, reason); err != nil {
+				return nil, err
+			}
+			if err := r.banAdminUserAttacks(ctx, usersTable, queueTable, targetID, now, until); err != nil {
+				return nil, err
+			}
+		case 3:
+			if err := r.unbanAdminUser(ctx, usersTable, queueTable, targetID); err != nil {
+				return nil, err
+			}
+		case 4:
+			if err := r.unbanAdminUserAttacks(ctx, usersTable, queueTable, targetID); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+}
+
+func (r AdminRepository) loadAdminBanUser(ctx context.Context, usersTable string, playerID int) (adminBanUser, bool, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT player_id, COALESCE(oname, '') FROM %s WHERE player_id = ? LIMIT 1", usersTable), playerID)
+	if err != nil {
+		return adminBanUser{}, false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return adminBanUser{}, false, err
+		}
+		return adminBanUser{}, false, nil
+	}
+	var user adminBanUser
+	if err := rows.Scan(&user.ID, &user.Name); err != nil {
+		return adminBanUser{}, false, err
+	}
+	return user, true, rows.Err()
+}
+
+func (r AdminRepository) insertAdminBanPranger(ctx context.Context, prangerTable string, actor adminBanUser, target adminBanUser, now int, until int, reason string) error {
+	_, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("INSERT INTO %s (admin_name, user_name, admin_id, user_id, ban_when, ban_until, reason) VALUES (?, ?, ?, ?, ?, ?, ?)", prangerTable),
+		actor.Name,
+		target.Name,
+		actor.ID,
+		target.ID,
+		now,
+		until,
+		reason,
+	)
+	return err
+}
+
+func (r AdminRepository) banAdminUser(ctx context.Context, usersTable string, queueTable string, playerID int, now int, until int, vacation bool) error {
+	if err := r.deleteAdminQueue(ctx, queueTable, playerID, "UnbanPlayer"); err != nil {
+		return err
+	}
+	if err := r.insertAdminQueue(ctx, queueTable, playerID, "UnbanPlayer", now, now+until); err != nil {
+		return err
+	}
+	if vacation {
+		_, err := r.execer.ExecContext(
+			ctx,
+			fmt.Sprintf("UPDATE %s SET score1 = 0, score2 = 0, score3 = 0, banned = 1, banned_until = ?, vacation = 1, vacation_until = ? WHERE player_id = ?", usersTable),
+			until,
+			until,
+			playerID,
+		)
+		return err
+	}
+	_, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET score1 = 0, score2 = 0, score3 = 0, banned = 1, banned_until = ? WHERE player_id = ?", usersTable),
+		until,
+		playerID,
+	)
+	return err
+}
+
+func (r AdminRepository) banAdminUserAttacks(ctx context.Context, usersTable string, queueTable string, playerID int, now int, until int) error {
+	if err := r.deleteAdminQueue(ctx, queueTable, playerID, "AllowAttacks"); err != nil {
+		return err
+	}
+	if err := r.insertAdminQueue(ctx, queueTable, playerID, "AllowAttacks", now, now+until); err != nil {
+		return err
+	}
+	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET noattack = 1, noattack_until = ? WHERE player_id = ?", usersTable), until, playerID)
+	return err
+}
+
+func (r AdminRepository) unbanAdminUser(ctx context.Context, usersTable string, queueTable string, playerID int) error {
+	if err := r.deleteAdminQueue(ctx, queueTable, playerID, "UnbanPlayer"); err != nil {
+		return err
+	}
+	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET banned = 0, banned_until = 0 WHERE player_id = ?", usersTable), playerID)
+	return err
+}
+
+func (r AdminRepository) unbanAdminUserAttacks(ctx context.Context, usersTable string, queueTable string, playerID int) error {
+	if err := r.deleteAdminQueue(ctx, queueTable, playerID, "AllowAttacks"); err != nil {
+		return err
+	}
+	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET noattack = 0, noattack_until = 0 WHERE player_id = ?", usersTable), playerID)
+	return err
+}
+
+func (r AdminRepository) deleteAdminQueue(ctx context.Context, queueTable string, playerID int, queueType string) error {
+	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE type = ? AND owner_id = ?", queueTable), queueType, playerID)
+	return err
+}
+
+func (r AdminRepository) insertAdminQueue(ctx context.Context, queueTable string, playerID int, queueType string, start int, end int) error {
+	_, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("INSERT INTO %s (owner_id, type, sub_id, obj_id, level, start, end, prio) VALUES (?, ?, 0, 0, 0, ?, ?, 0)", queueTable),
+		playerID,
+		queueType,
+		start,
+		end,
+	)
+	return err
+}
+
+func uniquePositiveIDs(ids []int) []int {
+	seen := map[int]bool{}
+	result := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		result = append(result, id)
+	}
+	return result
+}
+
+func sanitizeAdminBanReason(reason string) string {
+	replacer := strings.NewReplacer(`\"`, "&quot;", `'`, "&rsquo;", "`", "&lsquo;")
+	return replacer.Replace(reason)
 }
 
 func (r AdminRepository) loadAdminViewer(ctx context.Context, playerID int) (domaingame.AdminViewer, error) {

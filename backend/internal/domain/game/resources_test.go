@@ -121,6 +121,30 @@ func TestBuildResourceProductionHandlesCrystalAndMissingFactors(t *testing.T) {
 	}
 }
 
+func TestBuildResourceProductionAppliesGeologistToMetalAndCrystal(t *testing.T) {
+	overview := resourceOverview(PlanetTypePlanet)
+	production := BuildResourceProduction(overview, ResourceProductionInputs{
+		Levels: BuildingLevels{
+			BuildingMetalMine:   2,
+			BuildingCrystalMine: 2,
+			BuildingSolarPlant:  20,
+		},
+		ProductionFactors: ProductionFactors{
+			BuildingMetalMine:   1,
+			BuildingCrystalMine: 1,
+			BuildingSolarPlant:  1,
+		},
+		UniverseSpeed: 1,
+		Geologist:     true,
+	})
+
+	metalMine := findResourceRow(t, production, BuildingMetalMine)
+	crystalMine := findResourceRow(t, production, BuildingCrystalMine)
+	if metalMine.Values.Metal <= 66 || crystalMine.Values.Crystal <= 42 {
+		t.Fatalf("expected geologist to boost metal and crystal rows, metal=%+v crystal=%+v", metalMine.Values, crystalMine.Values)
+	}
+}
+
 func TestBuildResourceProductionIncludesPremiumFusionAndSatelliteOutput(t *testing.T) {
 	overview := resourceOverview(PlanetTypePlanet)
 	production := BuildResourceProduction(overview, ResourceProductionInputs{

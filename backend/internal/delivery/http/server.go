@@ -89,6 +89,7 @@ type GameAllianceUseCase interface {
 
 type GameAdminUseCase interface {
 	GetAdmin(context.Context, appgame.AdminCommand) (appgame.AdminResult, error)
+	MutateAdmin(context.Context, appgame.AdminMutationCommand) (appgame.AdminResult, error)
 }
 
 type GameResearchUseCase interface {
@@ -219,7 +220,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/merchant", a.handleGameMerchant)
 	mux.HandleFunc("/api/game/officers", a.handleGameOfficers)
 	mux.HandleFunc("/api/game/alliance", a.handleGameAlliance)
-	mux.HandleFunc("/api/game/admin", getOnly(a.handleGameAdmin))
+	mux.HandleFunc("/api/game/admin", a.handleGameAdmin)
 	mux.HandleFunc("/api/game/research", a.handleGameResearch)
 	mux.HandleFunc("/api/game/shipyard", a.handleGameShipyard)
 	mux.HandleFunc("/api/game/fleet", a.handleGameFleet)

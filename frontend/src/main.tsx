@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   LegacyGameOverview,
+  type GameAdminAction,
   type GameAdminStatus,
   type GameAllianceAction,
   type GameAllianceStatus,
@@ -1020,6 +1021,44 @@ function App() {
       })
       .catch((err: unknown) => setGameAdminError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
+
+  const submitGameAdminAction = (action: GameAdminAction) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameAdminError("Session is invalid.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const adminSearch = new URLSearchParams({ session: publicSession });
+    for (const key of ["cp", "mode"]) {
+      const value = currentSearch.get(key);
+      if (value) {
+        adminSearch.set(key, value);
+      }
+    }
+    fetch(`/api/game/admin?${adminSearch.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(action)
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameAdminStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `admin returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("admin response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameAdmin(payload);
+        setGameAdminError(null);
+      })
+      .catch((err: unknown) => setGameAdminError(err instanceof Error ? err.message : String(err)));
+  };
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
@@ -2040,6 +2079,7 @@ function App() {
         onBuddyAction={submitGameBuddyAction}
         onBuddyRequest={submitGameBuddyRequest}
         onAllianceAction={submitGameAllianceAction}
+        onAdminAction={submitGameAdminAction}
         onBuildingAction={submitGameBuildingAction}
         onDefenseSubmit={submitGameDefenseOrders}
         onFleetLaunch={submitFleetLaunch}

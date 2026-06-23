@@ -11,6 +11,7 @@ import (
 
 type AdminRepository interface {
 	GetAdmin(context.Context, AdminQuery) (domaingame.Admin, error)
+	MutateAdmin(context.Context, AdminMutationQuery) (*domaingame.AdminActionIssue, error)
 }
 
 type AdminQuery struct {
@@ -25,6 +26,32 @@ type AdminCommand struct {
 	RemoteAddr      string
 	PlanetID        int
 	Mode            string
+}
+
+type AdminMutationQuery struct {
+	PlayerID  int
+	PlanetID  int
+	Mode      string
+	Action    string
+	TargetIDs []int
+	BanMode   int
+	Days      int
+	Hours     int
+	Reason    string
+}
+
+type AdminMutationCommand struct {
+	PublicSession   string
+	PrivateSessions map[string]string
+	RemoteAddr      string
+	PlanetID        int
+	Mode            string
+	Action          string
+	TargetIDs       []int
+	BanMode         int
+	Days            int
+	Hours           int
+	Reason          string
 }
 
 type AdminResult struct {
@@ -69,6 +96,57 @@ func (s AdminService) GetAdmin(ctx context.Context, command AdminCommand) (Admin
 	var issue *domaingame.AdminActionIssue
 	if !admin.CanAccessMode() {
 		issue = domaingame.AdminIssue(domaingame.AdminIssueAccessDenied)
+	}
+	return AdminResult{Authenticated: true, Admin: admin, ActionIssue: issue}, nil
+}
+
+func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationCommand) (AdminResult, error) {
+	if s.sessions == nil || s.repository == nil {
+		return AdminResult{}, errors.New("admin dependencies unavailable")
+	}
+	session, err := s.sessions.GetGameSession(ctx, apppublicsite.GameSessionCommand{
+		PublicSession:   command.PublicSession,
+		PrivateSessions: command.PrivateSessions,
+		RemoteAddr:      command.RemoteAddr,
+	})
+	if err != nil {
+		return AdminResult{}, err
+	}
+	if !session.Authenticated {
+		return AdminResult{Authenticated: false, Issues: session.Issues}, nil
+	}
+	admin, err := s.repository.GetAdmin(ctx, AdminQuery{
+		PlayerID: session.Session.PlayerID,
+		PlanetID: command.PlanetID,
+		Mode:     command.Mode,
+	})
+	if err != nil {
+		return AdminResult{}, err
+	}
+	if !admin.CanAccessMode() {
+		return AdminResult{Authenticated: true, Admin: admin, ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueAccessDenied)}, nil
+	}
+	issue, err := s.repository.MutateAdmin(ctx, AdminMutationQuery{
+		PlayerID:  session.Session.PlayerID,
+		PlanetID:  command.PlanetID,
+		Mode:      admin.Mode,
+		Action:    command.Action,
+		TargetIDs: command.TargetIDs,
+		BanMode:   command.BanMode,
+		Days:      command.Days,
+		Hours:     command.Hours,
+		Reason:    command.Reason,
+	})
+	if err != nil {
+		return AdminResult{}, err
+	}
+	admin, err = s.repository.GetAdmin(ctx, AdminQuery{
+		PlayerID: session.Session.PlayerID,
+		PlanetID: command.PlanetID,
+		Mode:     command.Mode,
+	})
+	if err != nil {
+		return AdminResult{}, err
 	}
 	return AdminResult{Authenticated: true, Admin: admin, ActionIssue: issue}, nil
 }

@@ -20,6 +20,15 @@ type gameAdminActionIssue struct {
 	Message string `json:"message"`
 }
 
+type gameAdminMutationRequest struct {
+	Action    string `json:"action"`
+	TargetIDs []int  `json:"targetIds"`
+	BanMode   int    `json:"banMode"`
+	Days      int    `json:"days"`
+	Hours     int    `json:"hours"`
+	Reason    string `json:"reason"`
+}
+
 type gameAdminSummary struct {
 	Commander      string                      `json:"commander"`
 	CurrentPlanet  gamePlanetOverviewResponse  `json:"currentPlanet"`
@@ -169,6 +178,18 @@ type gameAdminBotStrategy struct {
 }
 
 func (a app) handleGameAdmin(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		a.handleGameAdminGet(w, r)
+	case http.MethodPost:
+		a.handleGameAdminPost(w, r)
+	default:
+		w.Header().Set("Allow", "GET, HEAD, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (a app) handleGameAdminGet(w http.ResponseWriter, r *http.Request) {
 	if a.deps.GameAdmin == nil {
 		http.Error(w, "game admin unavailable", http.StatusServiceUnavailable)
 		return
@@ -184,6 +205,41 @@ func (a app) handleGameAdmin(w http.ResponseWriter, r *http.Request) {
 		RemoteAddr:      remoteIP(r.RemoteAddr),
 		PlanetID:        planetID,
 		Mode:            r.URL.Query().Get("mode"),
+	})
+	if err != nil {
+		http.Error(w, "game admin unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	writeGameAdminResponse(w, result)
+}
+
+func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
+	if a.deps.GameAdmin == nil {
+		http.Error(w, "game admin unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	planetID, err := selectedPlanetID(r)
+	if err != nil {
+		http.Error(w, "invalid selected planet", http.StatusBadRequest)
+		return
+	}
+	var request gameAdminMutationRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "invalid admin request", http.StatusBadRequest)
+		return
+	}
+	result, err := a.deps.GameAdmin.MutateAdmin(r.Context(), appgame.AdminMutationCommand{
+		PublicSession:   r.URL.Query().Get("session"),
+		PrivateSessions: cookieMap(r),
+		RemoteAddr:      remoteIP(r.RemoteAddr),
+		PlanetID:        planetID,
+		Mode:            r.URL.Query().Get("mode"),
+		Action:          request.Action,
+		TargetIDs:       request.TargetIDs,
+		BanMode:         request.BanMode,
+		Days:            request.Days,
+		Hours:           request.Hours,
+		Reason:          request.Reason,
 	})
 	if err != nil {
 		http.Error(w, "game admin unavailable", http.StatusServiceUnavailable)

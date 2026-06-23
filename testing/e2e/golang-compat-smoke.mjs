@@ -1973,7 +1973,7 @@ try {
   const putGameOptions = await request("/api/game/options", { method: "PUT" });
   const putGameMerchant = await request("/api/game/merchant", { method: "PUT" });
   const putGameOfficers = await request("/api/game/officers", { method: "PUT" });
-  const postGameAdmin = await request("/api/game/admin", { method: "POST" });
+  const putGameAdmin = await request("/api/game/admin", { method: "PUT" });
   const getGameLogout = await request("/api/game/logout");
   const putGameResources = await request("/api/game/resources", { method: "PUT" });
   cases.push(finalize({
@@ -2031,8 +2031,8 @@ try {
       check(hasHeader(putGameMerchant, "allow", "GET, HEAD, POST"), "game merchant method rejection returns Allow header"),
       check(putGameOfficers.status === 405, "PUT game officers endpoint is rejected", { status: putGameOfficers.status }),
       check(hasHeader(putGameOfficers, "allow", "GET, HEAD, POST"), "game officers method rejection returns Allow header"),
-      check(postGameAdmin.status === 405, "POST game admin endpoint is rejected", { status: postGameAdmin.status }),
-      check(hasHeader(postGameAdmin, "allow", "GET, HEAD"), "game admin method rejection returns Allow header"),
+      check(putGameAdmin.status === 405, "PUT game admin endpoint is rejected", { status: putGameAdmin.status }),
+      check(hasHeader(putGameAdmin, "allow", "GET, HEAD, POST"), "game admin method rejection returns Allow header"),
       check(getGameLogout.status === 405, "GET game logout endpoint is rejected", { status: getGameLogout.status }),
       check(hasHeader(getGameLogout, "allow", "POST"), "game logout method rejection returns Allow header"),
       check(putGameResources.status === 405, "PUT game resources endpoint is rejected", { status: putGameResources.status }),

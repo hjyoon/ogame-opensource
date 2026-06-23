@@ -78,6 +78,15 @@ export type GameAdminStatus = {
   admin?: GameAdmin;
 };
 
+export type GameAdminAction = {
+  action: "ban";
+  targetIds: number[];
+  banMode: number;
+  days: number;
+  hours: number;
+  reason: string;
+};
+
 export type GameAllianceAction =
   | { action: "create"; tag: string; name: string }
   | { action: "search"; text: string }
@@ -1256,6 +1265,7 @@ type LegacyGameOverviewProps = {
   onAllianceAction: (action: GameAllianceAction) => void;
   adminStatus: GameAdminStatus | null;
   adminError: string | null;
+  onAdminAction: (action: GameAdminAction) => void;
   researchStatus: GameResearchStatus | null;
   researchError: string | null;
   researchPending: boolean;
@@ -1410,6 +1420,7 @@ export function LegacyGameOverview({
   onAllianceAction,
   adminStatus,
   adminError,
+  onAdminAction,
   researchStatus,
   researchError,
   researchPending,
@@ -1499,6 +1510,7 @@ export function LegacyGameOverview({
   const admin = adminStatus?.authenticated ? adminStatus.admin : undefined;
   const adminIssue = adminStatus && !adminStatus.authenticated ? adminStatus.issues[0]?.message ?? "Session is invalid." : null;
   const adminActionIssue = adminStatus?.authenticated ? adminStatus.actionIssue : undefined;
+  const adminAccessDenied = adminActionIssue?.code === "access_denied";
   const research = researchStatus?.authenticated ? researchStatus.research : undefined;
   const researchIssue =
     researchStatus && !researchStatus.authenticated ? researchStatus.issues[0]?.message ?? "Session is invalid." : null;
@@ -1788,7 +1800,7 @@ export function LegacyGameOverview({
         {overview && route.key === "admin" && !admin && !adminError && !adminIssue && !adminActionIssue ? (
           <LegacyMessage tone="neutral" text="Loading admin..." />
         ) : null}
-        {admin && route.key === "admin" && !adminActionIssue ? <AdminTable admin={admin} /> : null}
+        {admin && route.key === "admin" && !adminAccessDenied ? <AdminTable admin={admin} onAdminAction={onAdminAction} /> : null}
         {overview && route.key === "research" && !research && !researchError && !researchIssue ? (
           <LegacyMessage tone="neutral" text="Loading research..." />
         ) : null}
@@ -2750,11 +2762,11 @@ function officerRecruitHref(officerID: number, days: number) {
   return gameRouteURL("/game/officers", `?${query.toString()}`);
 }
 
-function AdminTable({ admin }: { admin: GameAdmin }) {
+function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
   if (admin.mode === "Bans") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminBansTable />
+        <AdminBansTable admin={admin} onAdminAction={onAdminAction} />
       </AdminModeShell>
     );
   }
@@ -3015,42 +3027,132 @@ function AdminQuickPanel({ admin }: { admin: GameAdmin }) {
   );
 }
 
-function AdminBansTable() {
+function AdminBansTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
+  const users = uniqueAdminUsers([...(admin.userRows ?? []), ...(admin.activeUsers ?? [])]);
   return (
-    <form action={adminModeActionHref("Bans", "search")} method="POST" onSubmit={(event) => event.preventDefault()}>
-      <table className="legacy-admin-bans-table">
-        <tbody>
-          <tr>
-            <td className="c" colSpan={2}>
-              Find users
-            </td>
-          </tr>
-          <tr>
-            <td>
-              <select name="searchby">
-                <option value="0">Banned with VM</option>
-                <option value="1">Banned without VM</option>
-                <option value="2">Attack bans</option>
-                <option value="3">Recently registered (days)</option>
-                <option value="4">User name (rough)</option>
-                <option value="5">Alliance Tag</option>
-                <option value="6">Same email address</option>
-                <option value="7">Same IP</option>
-              </select>
-            </td>
-            <td>
-              <input name="text" size={20} type="text" />
-            </td>
-          </tr>
-          <tr>
-            <td className="c" colSpan={2}>
-              <input type="submit" value="Submit" />
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </form>
+    <>
+      <form action={adminModeActionHref("Bans", "search")} method="POST" onSubmit={(event) => event.preventDefault()}>
+        <table className="legacy-admin-bans-table">
+          <tbody>
+            <tr>
+              <td className="c" colSpan={2}>
+                Find users
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <select name="searchby">
+                  <option value="0">Banned with VM</option>
+                  <option value="1">Banned without VM</option>
+                  <option value="2">Attack bans</option>
+                  <option value="3">Recently registered (days)</option>
+                  <option value="4">User name (rough)</option>
+                  <option value="5">Alliance Tag</option>
+                  <option value="6">Same email address</option>
+                  <option value="7">Same IP</option>
+                </select>
+              </td>
+              <td>
+                <input name="text" size={20} type="text" />
+              </td>
+            </tr>
+            <tr>
+              <td className="c" colSpan={2}>
+                <input type="submit" value="Submit" />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+      <form
+        action={adminModeActionHref("Bans", "ban")}
+        id="banform"
+        method="POST"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const data = new FormData(event.currentTarget);
+          const targetIds = data
+            .getAll("id")
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value) && value > 0);
+          onAdminAction({
+            action: "ban",
+            targetIds,
+            banMode: Number(data.get("banmode")) || 0,
+            days: Math.max(0, Number(data.get("days")) || 0),
+            hours: Math.max(0, Number(data.get("hours")) || 0),
+            reason: String(data.get("reason") ?? "")
+          });
+        }}
+      >
+        <table className="legacy-admin-bans-table">
+          <tbody>
+            <tr>
+              <td className="c">ID</td>
+              <td className="c">Name</td>
+              <td className="c">Home Planet</td>
+              <td className="c">Status</td>
+            </tr>
+            {users.length === 0 ? (
+              <tr>
+                <td colSpan={4}>Not found</td>
+              </tr>
+            ) : (
+              users.map((user) => (
+                <tr key={user.playerId}>
+                  <th>
+                    <input className="ids" name="id" type="checkbox" value={user.playerId} />
+                    {user.playerId}
+                  </th>
+                  <th dangerouslySetInnerHTML={{ __html: adminUserNameHTML(user) }} />
+                  <th>{user.homePlanet ? `${formatCoordinates(user.homePlanet.coordinates)} ${user.homePlanet.name}` : ""}</th>
+                  <th>{adminUserStatus(user)}</th>
+                </tr>
+              ))
+            )}
+            <tr>
+              <td className="c" colSpan={4}>
+                Actions
+              </td>
+            </tr>
+            <tr>
+              <td colSpan={3}>
+                <label><input defaultChecked name="banmode" type="radio" value="1" /> <LegacyFont color="red"><b>Ban with vacation mode</b></LegacyFont></label>{" "}
+                <label><input name="banmode" type="radio" value="0" /> <LegacyFont color="firebrick"><b>Ban without vacation mode</b></LegacyFont></label>{" "}
+                <label><input name="banmode" type="radio" value="2" /> <LegacyFont color="yellow"><b>Attack ban</b></LegacyFont></label>{" "}
+                <label><input name="banmode" type="radio" value="3" /> <LegacyFont color="lime"><b>Unban</b></LegacyFont></label>{" "}
+                <label><input name="banmode" type="radio" value="4" /> <LegacyFont color="lime"><b>Allow attacks</b></LegacyFont></label>
+              </td>
+              <td>
+                <input name="days" size={5} type="text" /> days <input name="hours" size={3} type="text" /> hours
+              </td>
+            </tr>
+            <tr>
+              <th colSpan={3}>
+                Reason <textarea cols={40} name="reason" rows={4} />
+              </th>
+              <th>
+                <input type="submit" value="Submit" />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+    </>
   );
+}
+
+function uniqueAdminUsers(users: GameAdminUserRow[]): GameAdminUserRow[] {
+  const seen = new Set<number>();
+  const result: GameAdminUserRow[] = [];
+  for (const user of users) {
+    if (seen.has(user.playerId)) {
+      continue;
+    }
+    seen.add(user.playerId);
+    result.push(user);
+  }
+  return result;
 }
 
 function AdminBroadcastTable() {
