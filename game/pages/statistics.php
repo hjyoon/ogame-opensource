@@ -243,7 +243,12 @@ else {
                 $player_color = "87CEEB";
             }
 
-            echo "       <a href=\"index.php?page=galaxy&no_header=1&session=$session&p1=".$home['g']."&p2=".$home['s']."&p3=".$home['p']."\" style='color:".$player_color."' >      \n\n";
+            if ( $home !== null ) {
+                echo "       <a href=\"index.php?page=galaxy&no_header=1&session=$session&p1=".$home['g']."&p2=".$home['s']."&p3=".$home['p']."\" style='color:".$player_color."' >      \n\n";
+            }
+            else {
+                echo "       <a href=\"#\" style='color:".$player_color."' >      \n\n";
+            }
             echo $user['oname'] . "</a> \n";
         }
         echo "    </th> \n\n";
@@ -262,13 +267,17 @@ else {
         echo "    <th> \n";
         if ( $user['ally_id'] != 0 && $user['ally_id'] == $GlobalUser['ally_id'] ) {
             $ally = LoadAlly ( $user['ally_id'] );
-            echo " 	  <a href=\"index.php?page=allianzen&session=$session\">\n";
-            echo "        ".$ally['tag']."      </a>\n";
+            if ( $ally !== null ) {
+                echo " 	  <a href=\"index.php?page=allianzen&session=$session\">\n";
+                echo "        ".$ally['tag']."      </a>\n";
+            }
         }
         else if ( $user['ally_id'] ) {
             $ally = LoadAlly ( $user['ally_id'] );
-            echo "   	  <a href='ainfo.php?allyid=".$user['ally_id']."' target='_ally'>\n";
-            echo "        ".$ally['tag']."      </a>\n";
+            if ( $ally !== null ) {
+                echo "   	  <a href='ainfo.php?allyid=".$user['ally_id']."' target='_ally'>\n";
+                echo "        ".$ally['tag']."      </a>\n";
+            }
         }
         else {
             echo "      <a href=\"index.php?page=allianzen&session=$session\"> \n";
