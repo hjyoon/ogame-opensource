@@ -423,6 +423,34 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["Merchant", "You want to sell", "Summoning a merchant costs 2500 dark matter"]
   },
   {
+    name: "game-alliance",
+    legacyPage: "allianzen",
+    migratedPath: "/game/alliance",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-alliance-menu-table",
+    expectedTexts: ["Alliance", "Start your own alliance", "Search for alliances"]
+  },
+  {
+    name: "game-alliance-create",
+    legacyPage: "allianzen",
+    legacyQuery: { a: "1" },
+    migratedPath: "/game/alliance",
+    migratedQuery: { a: "1" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-alliance-create-table",
+    expectedTexts: ["Found an alliance", "Alliance abbreviation (3-8 characters)", "Alliance name (3-30 characters)"]
+  },
+  {
+    name: "game-alliance-search",
+    legacyPage: "allianzen",
+    legacyQuery: { a: "2" },
+    migratedPath: "/game/alliance",
+    migratedQuery: { a: "2" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-alliance-search-table",
+    expectedTexts: ["Looking for alliances.", "Seek", "Search"]
+  },
+  {
     name: "game-officers",
     legacyPage: "micropayment",
     migratedPath: "/game/officers",

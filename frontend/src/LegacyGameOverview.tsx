@@ -4508,7 +4508,7 @@ function AllianceTable({
 function AllianceNoAllianceTable() {
   return (
     <LegacyCenter>
-      <table width={519}>
+      <table className="legacy-alliance-menu-table" width={519}>
         <tbody>
           <tr>
             <td className="legacy-c c" colSpan={2}>
@@ -4549,7 +4549,7 @@ function AllianceCreateTable({ onAction, pending }: { onAction: (action: GameAll
           onAction({ action: "create", tag: String(data.get("tag") ?? ""), name: String(data.get("name") ?? "") });
         }}
       >
-        <table width={519}>
+        <table className="legacy-alliance-create-table" width={519}>
           <tbody>
             <tr>
               <td className="legacy-c c" colSpan={2}>
@@ -4595,7 +4595,7 @@ function AllianceSearchTable({
 }) {
   return (
     <LegacyCenter>
-      <table width={519}>
+      <table className="legacy-alliance-search-table" width={519}>
         <tbody>
           <tr>
             <td className="legacy-c c" colSpan={2}>
@@ -4626,7 +4626,7 @@ function AllianceSearchTable({
       </table>
       <br />
       {alliance.searchResults.length > 0 ? (
-        <table width={519}>
+        <table className="legacy-alliance-search-results-table" width={519}>
           <tbody>
             <tr>
               <td className="legacy-c c" colSpan={3}>
