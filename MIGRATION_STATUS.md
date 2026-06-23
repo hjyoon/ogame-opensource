@@ -11,8 +11,8 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 - Natural routes and legacy `.php`/`page=` aliases share route manifests; visible chrome stays legacy-compatible.
 - Public assets, `evolution` skin, and game images are copied into `frontend/dist/public-assets`.
 - Registration, activation, login/logout, sessions, private cookies, IP/ban/session expiry, and `/game` redirects are ported.
-- `/api/game/*` covers overview, buildings, empire, resources, merchant/officers, alliance/admin shell, research, shipyard, fleet/templates, galaxy, defense, technology, statistics, search, buddy, notes, messages, report, and options.
-- Mutations exist for overview, buildings, resources, merchant call/trade, officer recruit, research, shipyard/defense queues, fleet templates/dispatch/recall, buddy, notes, messages, and options.
+- `/api/game/*` covers all main game pages: overview through options, including alliance/admin, fleet, galaxy, notes, messages, and report.
+- Mutations exist for overview, buildings, resources, merchant/officers, alliance, research, shipyard/defense, fleet, buddy, notes, messages, and options.
 - Modernization candidates stay in [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
 
 ## Latest Implementation
@@ -31,8 +31,9 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 
 ## Verified QA
 
-- Latest full check: `OGAME_GO_PORT=8895 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run-golang-migration-qa.sh` passed.
-- This includes full Docker PHP E2E, frontend Bun build/check/test, all Go tests, 97% Go coverage, Docker `goapp`, and Go compatibility smoke with `all_pass=true`.
+- Latest local Go check: `OGAME_RUN_LEGACY_E2E=0 OGAME_GO_PORT=8895 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run-golang-migration-qa.sh` passed.
+- Wrapper covers Bun build/check/test, all Go tests, 97% coverage, Docker `goapp`, Go smoke, user-type API QA, and Chromium/Firefox user-type CSR QA.
+- User-type QA covers regular, operator, admin, unvalidated, vacation, banned, and deletion-queued accounts, including admin denial and vacation build blocking.
 - Playwright resources page actions passed Chromium/Firefox: percent save, DB `prod*`, selected values, totals, and visuals.
 - Research/shipyard/defense actions and galaxy page pass Chromium/Firefox exact 0px; queues cover submit/partial/complete DB.
 - CSR E2E covers Buddy/Options, Options save, Notes create/edit/delete, and logout; Chromium passes.
