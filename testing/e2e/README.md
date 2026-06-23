@@ -28,7 +28,7 @@ For the React/Go migration stack, run:
 OGAME_GO_PORT=8895 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run-golang-migration-qa.sh
 ```
 
-That wrapper reuses the legacy Docker E2E fixture flow, builds the React app, enforces backend coverage, starts the Go container, runs the Go compatibility smoke, and writes user-type QA results to `.tmp/golang-user-type-qa.json`.
+That wrapper reuses the legacy Docker E2E fixture flow, builds the React app, enforces backend coverage, starts the Go container, runs the Go compatibility smoke, writes user-type API QA results to `.tmp/golang-user-type-qa.json`, and runs Chromium/Firefox Playwright user-type CSR checks. Override the browser list with `OGAME_USER_TYPE_BROWSERS` when a local browser runtime is unavailable.
 
 ## Covered Areas
 
@@ -56,7 +56,7 @@ That wrapper reuses the legacy Docker E2E fixture flow, builds the React app, en
 - Input hardening sweeps for malformed numeric POST fields in resource settings, options, shipyard orders, missile demolition, fleet dispatch, and AJAX quick dispatch.
 - Alliance management flows for rank creation/rights/assignment/deletion, direct-URL permission denial, rank-scoped circular messages, and alliance text/settings updates.
 - Admin and account-state flows for admin-area access control, operator write restrictions, admin user updates, ban/unban login blocking, and vacation-mode action blocking.
-- Go migration user-type QA for regular player, operator, administrator, unvalidated, vacation, banned, and deletion-queued accounts.
+- Go migration user-type API and Chromium/Firefox Playwright CSR QA for regular player, operator, administrator, unvalidated, vacation, banned, and deletion-queued accounts.
 - Admin permission matrix edge flows for regular-user denial across admin modes and operator-vs-admin mutation boundaries for queue controls, universe settings, coupon creation, and planet actions.
 - Admin audit/log flows for UserLogs, Debug, Errors, Browse, Logins, Fleetlogs rendering, seeded audit marker visibility, regular-user denial, and operator delete-boundary checks.
 - Admin tool smoke flows for Bots, BotEdit, Mods, Checksum, and DB pages, including regular-user denial and checksum baseline rendering.

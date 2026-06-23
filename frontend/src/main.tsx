@@ -589,6 +589,10 @@ function App() {
           return;
         }
         setGameBuildingsError(payload.actionIssue?.message ?? null);
+        if (payload.actionIssue) {
+          document.querySelector<HTMLElement>(".legacy-content")?.scrollTo(0, 0);
+          return;
+        }
         dispatchClientNavigation(`/game/buildings?${buildingsSearch.toString()}`);
         document.querySelector<HTMLElement>(".legacy-content")?.scrollTo(0, 0);
       })
@@ -1004,7 +1008,7 @@ function App() {
       .then((payload) => {
         setGameAdmin(payload);
         setGameAdminError(null);
-        if (payload.actionIssue?.code === "access_denied") {
+        if (payload.actionIssue?.code === "access_denied" && (payload.admin?.viewer.level ?? 0) <= 0) {
           const next = new URLSearchParams({ session: publicSession });
           const selectedPlanet = new URLSearchParams(search).get("cp");
           if (selectedPlanet) {

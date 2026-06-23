@@ -53,5 +53,9 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     printf 'Go compatibility smoke: %s\n' "$ROOT_DIR/.tmp/golang-compat-smoke.json"
     OGAME_GO_BASE_URL="$GO_BASE_URL" OGAME_USER_TYPE_FIXTURE_FILE="$ROOT_DIR/.tmp/golang-user-type-fixture.json" bun "$SCRIPT_DIR/golang-user-type-qa.mjs" > "$ROOT_DIR/.tmp/golang-user-type-qa.json"
     printf 'Go user type QA: %s\n' "$ROOT_DIR/.tmp/golang-user-type-qa.json"
+    for browser in ${OGAME_USER_TYPE_BROWSERS:-chromium firefox}; do
+      printf 'Go user type Playwright QA (%s)\n' "$browser"
+      (cd "$ROOT_DIR/frontend" && OGAME_PLAYWRIGHT_BROWSER="$browser" OGAME_GO_BASE_URL="$GO_BASE_URL" OGAME_USER_TYPE_FIXTURE_FILE="$ROOT_DIR/.tmp/golang-user-type-fixture.json" bun run e2e:user-types)
+    done
   fi
 fi
