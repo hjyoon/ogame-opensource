@@ -1738,6 +1738,10 @@ function App() {
     sortOrder: number;
     maxSpy: number;
     maxFleetMessages: number;
+    oldPassword: string;
+    newPassword: string;
+    newPasswordRepeat: string;
+    email: string;
     vacationMode: boolean;
     deleteAccount: boolean;
   }) => {

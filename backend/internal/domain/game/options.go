@@ -2,6 +2,7 @@ package game
 
 import (
 	"net"
+	"net/mail"
 	"net/url"
 	"strconv"
 	"strings"
@@ -16,6 +17,15 @@ const (
 	OptionsIssueVacationDisabled      = "vacation_disabled"
 	OptionsIssueVacationBlocked       = "vacation_blocked"
 	OptionsIssueVacationLocked        = "vacation_locked"
+	OptionsIssuePasswordChanged       = "password_changed"
+	OptionsIssuePasswordMismatch      = "password_mismatch"
+	OptionsIssuePasswordSpecial       = "password_special"
+	OptionsIssuePasswordTooShort      = "password_too_short"
+	OptionsIssuePasswordWrongOld      = "password_wrong_old"
+	OptionsIssueEmailChanged          = "email_changed"
+	OptionsIssueEmailNeedPassword     = "email_need_password"
+	OptionsIssueEmailInvalid          = "email_invalid"
+	OptionsIssueEmailUsed             = "email_used"
 
 	UserTypePlayer = 0
 	UserTypeGO     = 1
@@ -43,14 +53,15 @@ type Options struct {
 }
 
 type OptionsUser struct {
-	Name        string
-	NameLocked  bool
-	Email       string
-	PlainEmail  string
-	Validated   bool
-	Admin       int
-	FeedID      string
-	CommanderOn bool
+	Name         string
+	NameLocked   bool
+	Email        string
+	PlainEmail   string
+	Validated    bool
+	Admin        int
+	FeedID       string
+	CommanderOn  bool
+	PasswordHash string
 }
 
 type OptionsUniverse struct {
@@ -91,17 +102,21 @@ type OptionsFlags struct {
 }
 
 type OptionsMutation struct {
-	Language         string
-	SkinPath         string
-	UseSkin          bool
-	DeactivateIP     bool
-	SortBy           int
-	SortOrder        int
-	MaxSpy           int
-	MaxFleetMessages int
-	VacationMode     bool
-	VacationModeSet  bool
-	DeleteAccount    bool
+	Language          string
+	SkinPath          string
+	UseSkin           bool
+	DeactivateIP      bool
+	SortBy            int
+	SortOrder         int
+	MaxSpy            int
+	MaxFleetMessages  int
+	OldPassword       string
+	NewPassword       string
+	NewPasswordRepeat string
+	Email             string
+	VacationMode      bool
+	VacationModeSet   bool
+	DeleteAccount     bool
 }
 
 type NormalizedOptionsMutation struct {
@@ -164,6 +179,62 @@ func NormalizeOptionsMutation(command OptionsMutation, current Options) Normaliz
 		AccountDeletionChanged: command.DeleteAccount != current.Account.DeletionQueued,
 		VacationChanged:        vacationChanged,
 	}
+}
+
+func (m OptionsMutation) PasswordChangeRequested() bool {
+	return m.NewPassword != ""
+}
+
+func (m OptionsMutation) EmailChangeRequested(current Options) bool {
+	email := strings.TrimSpace(m.Email)
+	if email == "" {
+		return false
+	}
+	if current.User.Validated {
+		return email != current.User.PlainEmail
+	}
+	return email != current.User.Email
+}
+
+func (m OptionsMutation) PasswordValidationIssue() *OptionsActionIssue {
+	if !m.PasswordChangeRequested() {
+		return nil
+	}
+	switch {
+	case m.NewPassword != m.NewPasswordRepeat:
+		return OptionsPasswordMismatchIssue()
+	case !legacyPasswordCharacters(m.NewPassword):
+		return OptionsPasswordSpecialIssue()
+	case len(m.NewPassword) < 8:
+		return OptionsPasswordTooShortIssue()
+	default:
+		return nil
+	}
+}
+
+func (m OptionsMutation) EmailValidationIssue(current Options) *OptionsActionIssue {
+	if !m.EmailChangeRequested(current) {
+		return nil
+	}
+	email := strings.TrimSpace(m.Email)
+	address, err := mail.ParseAddress(email)
+	if err != nil || address.Address != email || address.Name != "" {
+		return OptionsEmailInvalidIssue()
+	}
+	return nil
+}
+
+func legacyPasswordCharacters(password string) bool {
+	if password == "" {
+		return true
+	}
+	for _, ch := range password {
+		if ch == '_' || ch >= '0' && ch <= '9' || ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func OptionsFlagsFromLegacy(flags int64) OptionsFlags {
@@ -246,6 +317,42 @@ func OptionsVacationLockedIssue(until time.Time) *OptionsActionIssue {
 		message += " Minimum until: " + until.Format("2006-01-02 15:04:05")
 	}
 	return &OptionsActionIssue{Code: OptionsIssueVacationLocked, Message: message}
+}
+
+func OptionsPasswordChangedIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssuePasswordChanged, Message: "Password has been changed"}
+}
+
+func OptionsPasswordMismatchIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssuePasswordMismatch, Message: "The new passwords don't match"}
+}
+
+func OptionsPasswordSpecialIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssuePasswordSpecial, Message: "Invalid special characters in password."}
+}
+
+func OptionsPasswordTooShortIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssuePasswordTooShort, Message: "Password must contain at least eight characters"}
+}
+
+func OptionsPasswordWrongOldIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssuePasswordWrongOld, Message: "Incorrect old password"}
+}
+
+func OptionsEmailChangedIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssueEmailChanged, Message: "Your email address has been changed. This address will be permanent if no change is made in seven days."}
+}
+
+func OptionsEmailNeedPasswordIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssueEmailNeedPassword, Message: "You need to enter your password to change the accounts E-Mail address."}
+}
+
+func OptionsEmailInvalidIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssueEmailInvalid, Message: "No valid email address"}
+}
+
+func OptionsEmailUsedIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssueEmailUsed, Message: "This email address is already in use!"}
 }
 
 func normalizeLanguage(value string, fallback string) string {

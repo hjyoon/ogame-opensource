@@ -2,9 +2,11 @@ package mysqlgame
 
 import (
 	"context"
+	"crypto/md5"
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
@@ -16,16 +18,22 @@ type OptionsRepository struct {
 	execer   Execer
 	overview OverviewRepository
 	prefix   string
+	secret   string
 	now      func() time.Time
 }
 
 func NewOptionsRepository(db *sql.DB, prefix string) OptionsRepository {
+	return NewOptionsRepositoryWithSecret(db, prefix, "")
+}
+
+func NewOptionsRepositoryWithSecret(db *sql.DB, prefix string, secret string) OptionsRepository {
 	runner := SQLQueryer{DB: db}
 	return OptionsRepository{
 		queryer:  runner,
 		execer:   runner,
 		overview: NewOverviewRepository(db, prefix),
 		prefix:   prefix,
+		secret:   secret,
 		now:      time.Now,
 	}
 }
@@ -39,6 +47,10 @@ func NewOptionsRepositoryWithQueryer(queryer Queryer, prefix string, now func() 
 }
 
 func NewOptionsRepositoryWithRunner(queryer Queryer, execer Execer, prefix string, now func() time.Time) OptionsRepository {
+	return NewOptionsRepositoryWithRunnerAndSecret(queryer, execer, prefix, "", now)
+}
+
+func NewOptionsRepositoryWithRunnerAndSecret(queryer Queryer, execer Execer, prefix string, secret string, now func() time.Time) OptionsRepository {
 	if now == nil {
 		now = time.Now
 	}
@@ -47,6 +59,7 @@ func NewOptionsRepositoryWithRunner(queryer Queryer, execer Execer, prefix strin
 		execer:   execer,
 		overview: NewOverviewRepositoryWithRunner(queryer, execer, prefix),
 		prefix:   prefix,
+		secret:   secret,
 		now:      now,
 	}
 }
@@ -90,6 +103,11 @@ func (r OptionsRepository) UpdateOptions(ctx context.Context, query appgame.Opti
 	vacation := boolInt(current.Account.Vacation)
 	vacationUntil := current.Account.VacationUntil
 	issue := domaingame.OptionsSavedIssue()
+	if currentIssue, err := r.applyCredentialMutations(ctx, usersTable, queueTable, query.PlayerID, normalized.OptionsMutation, current); err != nil {
+		return domaingame.Options{}, nil, err
+	} else if currentIssue != nil {
+		issue = currentIssue
+	}
 	if normalized.VacationChanged {
 		switch {
 		case normalized.VacationMode:
@@ -172,7 +190,7 @@ func (r OptionsRepository) loadOptions(ctx context.Context, playerID int) (domai
 
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT oname, COALESCE(name_changed, 0), COALESCE(email, ''), COALESCE(pemail, ''), COALESCE(validated, 0), COALESCE(lang, ''), COALESCE(skin, ''), COALESCE(useskin, 0), COALESCE(deact_ip, 0), COALESCE(sortby, 0), COALESCE(sortorder, 0), COALESCE(maxspy, 1), COALESCE(maxfleetmsg, 3), COALESCE(flags, 0), COALESCE(admin, 0), COALESCE(vacation, 0), COALESCE(vacation_until, 0), COALESCE(disable, 0), COALESCE(disable_until, 0), COALESCE(com_until, 0), COALESCE(feedid, '') FROM %s WHERE player_id = ? LIMIT 1", usersTable),
+		fmt.Sprintf("SELECT oname, COALESCE(name_changed, 0), COALESCE(email, ''), COALESCE(pemail, ''), COALESCE(validated, 0), COALESCE(lang, ''), COALESCE(skin, ''), COALESCE(useskin, 0), COALESCE(deact_ip, 0), COALESCE(sortby, 0), COALESCE(sortorder, 0), COALESCE(maxspy, 1), COALESCE(maxfleetmsg, 3), COALESCE(flags, 0), COALESCE(admin, 0), COALESCE(vacation, 0), COALESCE(vacation_until, 0), COALESCE(disable, 0), COALESCE(disable_until, 0), COALESCE(com_until, 0), COALESCE(feedid, ''), COALESCE(password, '') FROM %s WHERE player_id = ? LIMIT 1", usersTable),
 		playerID,
 	)
 	if err != nil {
@@ -207,6 +225,7 @@ func (r OptionsRepository) loadOptions(ctx context.Context, playerID int) (domai
 	var disableUntil int64
 	var commanderUntil int64
 	var feedID string
+	var passwordHash string
 	if err := rows.Scan(
 		&name,
 		&nameChanged,
@@ -229,6 +248,7 @@ func (r OptionsRepository) loadOptions(ctx context.Context, playerID int) (domai
 		&disableUntil,
 		&commanderUntil,
 		&feedID,
+		&passwordHash,
 	); err != nil {
 		return domaingame.OptionsUser{}, domaingame.OptionsUniverse{}, domaingame.OptionsSettings{}, domaingame.OptionsAccount{}, 0, err
 	}
@@ -259,14 +279,15 @@ func (r OptionsRepository) loadOptions(ctx context.Context, playerID int) (domai
 	}
 
 	return domaingame.OptionsUser{
-			Name:        name,
-			NameLocked:  nameChanged != 0,
-			Email:       email,
-			PlainEmail:  plainEmail,
-			Validated:   validated != 0,
-			Admin:       admin,
-			FeedID:      feedID,
-			CommanderOn: commanderUntil > r.now().Unix(),
+			Name:         name,
+			NameLocked:   nameChanged != 0,
+			Email:        email,
+			PlainEmail:   plainEmail,
+			Validated:    validated != 0,
+			Admin:        admin,
+			FeedID:       feedID,
+			CommanderOn:  commanderUntil > r.now().Unix(),
+			PasswordHash: passwordHash,
 		},
 		domaingame.OptionsUniverse{
 			Language:      universeLanguage,
@@ -292,6 +313,105 @@ func (r OptionsRepository) loadOptions(ctx context.Context, playerID int) (domai
 		},
 		flags,
 		nil
+}
+
+func (r OptionsRepository) applyCredentialMutations(ctx context.Context, usersTable string, queueTable string, playerID int, mutation domaingame.OptionsMutation, current domaingame.Options) (*domaingame.OptionsActionIssue, error) {
+	if issue := mutation.PasswordValidationIssue(); issue != nil {
+		return issue, nil
+	}
+	if mutation.PasswordChangeRequested() {
+		if current.User.PasswordHash != legacyPasswordHash(mutation.OldPassword, r.secret) {
+			return domaingame.OptionsPasswordWrongOldIssue(), nil
+		}
+		if _, err := r.execer.ExecContext(
+			ctx,
+			fmt.Sprintf("UPDATE %s SET password = ?, session = '' WHERE player_id = ? LIMIT 1", usersTable),
+			legacyPasswordHash(mutation.NewPassword, r.secret),
+			playerID,
+		); err != nil {
+			return nil, err
+		}
+		return domaingame.OptionsPasswordChangedIssue(), nil
+	}
+
+	if issue := mutation.EmailValidationIssue(current); issue != nil {
+		return issue, nil
+	}
+	if !mutation.EmailChangeRequested(current) {
+		return nil, nil
+	}
+	if current.User.PasswordHash != legacyPasswordHash(mutation.OldPassword, r.secret) {
+		return domaingame.OptionsEmailNeedPasswordIssue(), nil
+	}
+	exists, err := r.emailExists(ctx, usersTable, mutation.Email)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return domaingame.OptionsEmailUsedIssue(), nil
+	}
+	now := r.now().Unix()
+	code := legacyPasswordHash(fmt.Sprintf("%d", now), r.secret)
+	if _, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET validated = 0, validatemd = ?, email = ? WHERE player_id = ? LIMIT 1", usersTable),
+		code,
+		strings.TrimSpace(mutation.Email),
+		playerID,
+	); err != nil {
+		return nil, err
+	}
+	if err := r.addChangeEmailEvent(ctx, queueTable, playerID, now); err != nil {
+		return nil, err
+	}
+	return domaingame.OptionsEmailChangedIssue(), nil
+}
+
+func (r OptionsRepository) emailExists(ctx context.Context, usersTable string, email string) (bool, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE LOWER(email) = LOWER(?) OR LOWER(pemail) = LOWER(?)", usersTable),
+		strings.TrimSpace(email),
+		strings.TrimSpace(email),
+	)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
+		return false, errors.New("options email state not found")
+	}
+	var count int
+	if err := rows.Scan(&count); err != nil {
+		return false, err
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (r OptionsRepository) addChangeEmailEvent(ctx context.Context, queueTable string, playerID int, now int64) error {
+	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE type = ? AND owner_id = ?", queueTable), "ChangeEmail", playerID); err != nil {
+		return err
+	}
+	legacyEnd := now + (now + 7*24*60*60)
+	_, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("INSERT INTO %s (owner_id, type, sub_id, obj_id, level, start, end, prio) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", queueTable),
+		playerID,
+		"ChangeEmail",
+		0,
+		0,
+		0,
+		now,
+		legacyEnd,
+		0,
+	)
+	return err
 }
 
 func (r OptionsRepository) canEnableVacation(ctx context.Context, queueTable string, playerID int) (bool, error) {
@@ -350,4 +470,9 @@ func boolInt(value bool) int {
 		return 1
 	}
 	return 0
+}
+
+func legacyPasswordHash(value string, secret string) string {
+	sum := md5.Sum([]byte(value + secret))
+	return fmt.Sprintf("%x", sum)
 }

@@ -901,7 +901,7 @@ func gameOptionsService(cfg config.Config, logger *slog.Logger, sessions apppubl
 	}
 
 	logger.Info("universe DB game options enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
-	return appgame.NewOptionsService(sessions, mysqlgame.NewOptionsRepository(db, cfg.UniDBPrefix))
+	return appgame.NewOptionsService(sessions, mysqlgame.NewOptionsRepositoryWithSecret(db, cfg.UniDBPrefix, cfg.UniDBSecret))
 }
 
 func registrationValidator(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationDraftValidator {

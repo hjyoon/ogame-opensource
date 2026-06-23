@@ -1308,6 +1308,10 @@ type LegacyGameOverviewProps = {
     sortOrder: number;
     maxSpy: number;
     maxFleetMessages: number;
+    oldPassword: string;
+    newPassword: string;
+    newPasswordRepeat: string;
+    email: string;
     vacationMode: boolean;
     deleteAccount: boolean;
   }) => void;
@@ -7918,6 +7922,10 @@ function OptionsTable({
     sortOrder: number;
     maxSpy: number;
     maxFleetMessages: number;
+    oldPassword: string;
+    newPassword: string;
+    newPasswordRepeat: string;
+    email: string;
     vacationMode: boolean;
     deleteAccount: boolean;
   }) => void;
@@ -7936,6 +7944,10 @@ function OptionsTable({
       sortOrder: legacyFormInt(form.get("settings_order"), 0),
       maxSpy: legacyFormInt(form.get("spio_anz"), 1),
       maxFleetMessages: legacyFormInt(form.get("settings_fleetactions"), 3),
+      oldPassword: String(form.get("db_password") ?? ""),
+      newPassword: String(form.get("newpass1") ?? ""),
+      newPasswordRepeat: String(form.get("newpass2") ?? ""),
+      email: String(form.get("db_email") ?? ""),
       vacationMode: form.get("urlaubs_modus") === "on",
       deleteAccount: form.get("db_deaktjava") === "on"
     });
@@ -7964,19 +7976,19 @@ function OptionsTable({
           <tr>
             <th>Old password</th>
             <th>
-              <input disabled name="db_password" size={20} type="password" />
+              <input name="db_password" size={20} type="password" />
             </th>
           </tr>
           <tr>
             <th>New password (min. 8 characters)</th>
             <th>
-              <input disabled maxLength={40} name="newpass1" size={20} type="password" />
+              <input maxLength={40} name="newpass1" size={20} type="password" />
             </th>
           </tr>
           <tr>
             <th>New password (repeat)</th>
             <th>
-              <input disabled maxLength={40} name="newpass2" size={20} type="password" />
+              <input maxLength={40} name="newpass2" size={20} type="password" />
             </th>
           </tr>
           <tr>
@@ -7986,7 +7998,7 @@ function OptionsTable({
               </a>
             </th>
             <th>
-              <input disabled maxLength={100} name="db_email" readOnly size={20} type="text" value={options.user.email} />
+              <input defaultValue={options.user.email} maxLength={100} name="db_email" size={20} type="text" />
             </th>
           </tr>
           <tr>

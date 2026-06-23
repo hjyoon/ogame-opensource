@@ -93,6 +93,54 @@ func TestNormalizeOptionsMutationClampsLegacySettings(t *testing.T) {
 	}
 }
 
+func TestOptionsCredentialMutationValidation(t *testing.T) {
+	current := NewOptions(Overview{}, OptionsUser{
+		Email:      "pending@example.test",
+		PlainEmail: "permanent@example.test",
+		Validated:  true,
+	}, OptionsUniverse{Language: "en"}, OptionsSettings{}, OptionsAccount{}, 0)
+
+	if (OptionsMutation{Email: "permanent@example.test"}).EmailChangeRequested(current) {
+		t.Fatal("permanent email should not request a change for validated accounts")
+	}
+	if !(OptionsMutation{Email: "new@example.test"}).EmailChangeRequested(current) {
+		t.Fatal("new email should request a change")
+	}
+	if issue := (OptionsMutation{Email: "bad address"}).EmailValidationIssue(current); issue == nil || issue.Code != OptionsIssueEmailInvalid {
+		t.Fatalf("expected invalid email issue, got %+v", issue)
+	}
+	if issue := (OptionsMutation{Email: "new@example.test"}).EmailValidationIssue(current); issue != nil {
+		t.Fatalf("expected valid email, got %+v", issue)
+	}
+	if issue := (OptionsMutation{NewPassword: "abcdef12", NewPasswordRepeat: "abcdef13"}).PasswordValidationIssue(); issue == nil || issue.Code != OptionsIssuePasswordMismatch {
+		t.Fatalf("expected mismatch issue, got %+v", issue)
+	}
+	if issue := (OptionsMutation{NewPassword: "abcdef!!", NewPasswordRepeat: "abcdef!!"}).PasswordValidationIssue(); issue == nil || issue.Code != OptionsIssuePasswordSpecial {
+		t.Fatalf("expected special-character issue, got %+v", issue)
+	}
+	if issue := (OptionsMutation{NewPassword: "abc123", NewPasswordRepeat: "abc123"}).PasswordValidationIssue(); issue == nil || issue.Code != OptionsIssuePasswordTooShort {
+		t.Fatalf("expected short-password issue, got %+v", issue)
+	}
+	if issue := (OptionsMutation{NewPassword: "abc_1234", NewPasswordRepeat: "abc_1234"}).PasswordValidationIssue(); issue != nil {
+		t.Fatalf("expected valid legacy password, got %+v", issue)
+	}
+}
+
+func TestOptionsEmailChangeForUnvalidatedAccountsUsesPendingEmail(t *testing.T) {
+	current := NewOptions(Overview{}, OptionsUser{
+		Email:      "pending@example.test",
+		PlainEmail: "permanent@example.test",
+		Validated:  false,
+	}, OptionsUniverse{Language: "en"}, OptionsSettings{}, OptionsAccount{}, 0)
+
+	if (OptionsMutation{Email: "pending@example.test"}).EmailChangeRequested(current) {
+		t.Fatal("pending email should not request a change for unvalidated accounts")
+	}
+	if !(OptionsMutation{Email: "permanent@example.test"}).EmailChangeRequested(current) {
+		t.Fatal("different email should request a change for unvalidated accounts")
+	}
+}
+
 func TestNewOptionsForcesUniverseLanguageAndMapsFlags(t *testing.T) {
 	options := NewOptions(
 		Overview{Commander: "legor"},
@@ -154,6 +202,21 @@ func TestOptionsActionIssues(t *testing.T) {
 	}
 	if issue := OptionsVacationLockedIssue(testUnix(1_700_000_000)); issue.Code != OptionsIssueVacationLocked || !contains(issue.Message, "Minimum until:") {
 		t.Fatalf("unexpected vacation locked issue: %+v", issue)
+	}
+	if issue := OptionsPasswordChangedIssue(); issue.Code != OptionsIssuePasswordChanged || issue.Message == "" {
+		t.Fatalf("unexpected password changed issue: %+v", issue)
+	}
+	if issue := OptionsPasswordWrongOldIssue(); issue.Code != OptionsIssuePasswordWrongOld || issue.Message == "" {
+		t.Fatalf("unexpected wrong old password issue: %+v", issue)
+	}
+	if issue := OptionsEmailChangedIssue(); issue.Code != OptionsIssueEmailChanged || issue.Message == "" {
+		t.Fatalf("unexpected email changed issue: %+v", issue)
+	}
+	if issue := OptionsEmailNeedPasswordIssue(); issue.Code != OptionsIssueEmailNeedPassword || issue.Message == "" {
+		t.Fatalf("unexpected email password issue: %+v", issue)
+	}
+	if issue := OptionsEmailUsedIssue(); issue.Code != OptionsIssueEmailUsed || issue.Message == "" {
+		t.Fatalf("unexpected email used issue: %+v", issue)
 	}
 }
 

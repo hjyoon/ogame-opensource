@@ -83,16 +83,20 @@ type gameOptionsFlags struct {
 }
 
 type gameOptionsMutationRequest struct {
-	Language         string `json:"language"`
-	SkinPath         string `json:"skinPath"`
-	UseSkin          bool   `json:"useSkin"`
-	DeactivateIP     bool   `json:"deactivateIp"`
-	SortBy           int    `json:"sortBy"`
-	SortOrder        int    `json:"sortOrder"`
-	MaxSpy           int    `json:"maxSpy"`
-	MaxFleetMessages int    `json:"maxFleetMessages"`
-	VacationMode     *bool  `json:"vacationMode"`
-	DeleteAccount    bool   `json:"deleteAccount"`
+	Language          string `json:"language"`
+	SkinPath          string `json:"skinPath"`
+	UseSkin           bool   `json:"useSkin"`
+	DeactivateIP      bool   `json:"deactivateIp"`
+	SortBy            int    `json:"sortBy"`
+	SortOrder         int    `json:"sortOrder"`
+	MaxSpy            int    `json:"maxSpy"`
+	MaxFleetMessages  int    `json:"maxFleetMessages"`
+	OldPassword       string `json:"oldPassword"`
+	NewPassword       string `json:"newPassword"`
+	NewPasswordRepeat string `json:"newPasswordRepeat"`
+	Email             string `json:"email"`
+	VacationMode      *bool  `json:"vacationMode"`
+	DeleteAccount     bool   `json:"deleteAccount"`
 }
 
 func (a app) handleGameOptions(w http.ResponseWriter, r *http.Request) {
@@ -169,17 +173,21 @@ func decodeGameOptionsMutation(r *http.Request) (domaingame.OptionsMutation, err
 		host, port := requestHostPort(r)
 		request.SkinPath = domaingame.NormalizeSkinPath(request.SkinPath, host, port)
 		return domaingame.OptionsMutation{
-			Language:         request.Language,
-			SkinPath:         request.SkinPath,
-			UseSkin:          request.UseSkin,
-			DeactivateIP:     request.DeactivateIP,
-			SortBy:           request.SortBy,
-			SortOrder:        request.SortOrder,
-			MaxSpy:           request.MaxSpy,
-			MaxFleetMessages: request.MaxFleetMessages,
-			VacationMode:     request.VacationMode != nil && *request.VacationMode,
-			VacationModeSet:  request.VacationMode != nil,
-			DeleteAccount:    request.DeleteAccount,
+			Language:          request.Language,
+			SkinPath:          request.SkinPath,
+			UseSkin:           request.UseSkin,
+			DeactivateIP:      request.DeactivateIP,
+			SortBy:            request.SortBy,
+			SortOrder:         request.SortOrder,
+			MaxSpy:            request.MaxSpy,
+			MaxFleetMessages:  request.MaxFleetMessages,
+			OldPassword:       request.OldPassword,
+			NewPassword:       request.NewPassword,
+			NewPasswordRepeat: request.NewPasswordRepeat,
+			Email:             request.Email,
+			VacationMode:      request.VacationMode != nil && *request.VacationMode,
+			VacationModeSet:   request.VacationMode != nil,
+			DeleteAccount:     request.DeleteAccount,
 		}, nil
 	}
 	if err := r.ParseForm(); err != nil {
@@ -188,17 +196,21 @@ func decodeGameOptionsMutation(r *http.Request) (domaingame.OptionsMutation, err
 	host, port := requestHostPort(r)
 	vacationModeSet := r.PostForm.Has("urlaubs_modus") || r.PostForm.Has("urlaub_aus")
 	return domaingame.OptionsMutation{
-		Language:         formLast(r, "lang"),
-		SkinPath:         domaingame.NormalizeSkinPath(formLast(r, "dpath"), host, port),
-		UseSkin:          formChecked(r, "design"),
-		DeactivateIP:     formChecked(r, "noipcheck"),
-		SortBy:           legacyInt(r.PostForm["settings_sort"]),
-		SortOrder:        legacyInt(r.PostForm["settings_order"]),
-		MaxSpy:           legacyInt(r.PostForm["spio_anz"]),
-		MaxFleetMessages: legacyInt(r.PostForm["settings_fleetactions"]),
-		VacationMode:     formChecked(r, "urlaubs_modus") && !formChecked(r, "urlaub_aus"),
-		VacationModeSet:  vacationModeSet,
-		DeleteAccount:    formChecked(r, "db_deaktjava"),
+		Language:          formLast(r, "lang"),
+		SkinPath:          domaingame.NormalizeSkinPath(formLast(r, "dpath"), host, port),
+		UseSkin:           formChecked(r, "design"),
+		DeactivateIP:      formChecked(r, "noipcheck"),
+		SortBy:            legacyInt(r.PostForm["settings_sort"]),
+		SortOrder:         legacyInt(r.PostForm["settings_order"]),
+		MaxSpy:            legacyInt(r.PostForm["spio_anz"]),
+		MaxFleetMessages:  legacyInt(r.PostForm["settings_fleetactions"]),
+		OldPassword:       formLast(r, "db_password"),
+		NewPassword:       formLast(r, "newpass1"),
+		NewPasswordRepeat: formLast(r, "newpass2"),
+		Email:             formLast(r, "db_email"),
+		VacationMode:      formChecked(r, "urlaubs_modus") && !formChecked(r, "urlaub_aus"),
+		VacationModeSet:   vacationModeSet,
+		DeleteAccount:     formChecked(r, "db_deaktjava"),
 	}, nil
 }
 

@@ -26,14 +26,14 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 - Research/Shipyard port aliases, chrome, colors, queues, completion refresh, start/cancel/build, and resource math.
 - Fleet dispatch covers cargo/speed, fuel/clamps, ACS sync, colonize/exp targets, templates, and recall; deeper restrictions remain.
 - Galaxy covers clamp, rows, statuses, moon/debris/actions, slot/deut warnings, quick links, and target prefill; instant actions remain.
-- Messages/report/notes/buddy/options follow legacy chrome; report access and options vacation/deletion mutations are enforced.
+- Messages/report/notes/buddy/options follow legacy chrome; report access and options vacation/deletion/password/email mutations are enforced.
 - Notes, Buddylist, and Options visual parity pass Chromium/Firefox at 0px; Commander rows use `com_until` like PHP.
 
 ## Verified QA
 
 - Latest local Go check: `OGAME_RUN_LEGACY_E2E=0 OGAME_GO_PORT=8895 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run-golang-migration-qa.sh` passed.
 - Wrapper covers Bun build/check/test, all Go tests, 97% coverage, Docker `goapp`, Go smoke, user-type API QA, and Chromium/Firefox user-type CSR QA.
-- User-type QA covers regular, operator, admin, unvalidated, vacation, banned, and deletion-queued accounts, including admin denial, vacation enable, and vacation build blocking.
+- User-type QA covers regular, operator, admin, unvalidated, vacation, banned, deletion-queued, and options vacation/password/email mutations.
 - Playwright resources page actions passed Chromium/Firefox: percent save, DB `prod*`, selected values, totals, and visuals.
 - Research/shipyard/defense actions and galaxy page pass Chromium/Firefox exact 0px; queues cover submit/partial/complete DB.
 - CSR E2E covers Buddy/Options, Options save, Notes create/edit/delete, and logout; Chromium passes.
@@ -44,5 +44,5 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 
 - Continue authenticated visual parity for remaining non-statistics pages.
 - Add Go compatibility checks for migrated legacy E2E flows as they stabilize.
-- Finish galaxy instant actions, alliance deep management, admin submodes/recovery/bans/permissions, password/email options, and mission restrictions.
+- Finish galaxy instant actions, alliance deep management, admin submodes/recovery/bans/permissions, and mission restrictions.
 - Run full legacy PHP E2E before declaring game-flow equivalence.

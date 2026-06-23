@@ -124,6 +124,7 @@ $users = array(
     'vacation' => user_type_prepare_account('qa_type_vacation', 'QA Type Vacation', $password, USER_TYPE_PLAYER, array('vacation' => 1)),
     'banned' => user_type_prepare_account('qa_type_banned', 'QA Type Banned', $password, USER_TYPE_PLAYER, array('banned' => 1)),
     'deletion_queued' => user_type_prepare_account('qa_type_delete', 'QA Type Delete', $password, USER_TYPE_PLAYER, array('disable' => 1)),
+    'credentials' => user_type_prepare_account('qa_type_credentials', 'QA Type Credentials', $password, USER_TYPE_PLAYER, array()),
 );
 
 echo json_encode(array(

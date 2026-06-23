@@ -157,12 +157,33 @@ try {
 
   const unvalidated = await login("unvalidated", universe);
   const unvalidatedOptions = await authedJSON(unvalidated, "/api/game/options");
+  const unvalidatedNewEmail = `qa-type-unvalidated-${Date.now()}@example.local`;
+  const unvalidatedEmailChange = await authedJSON(unvalidated, "/api/game/options", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      language: unvalidatedOptions.body.options?.settings?.language ?? "en",
+      skinPath: unvalidatedOptions.body.options?.settings?.skinPath ?? "/evolution/",
+      useSkin: unvalidatedOptions.body.options?.settings?.useSkin ?? true,
+      deactivateIp: true,
+      sortBy: unvalidatedOptions.body.options?.settings?.sortBy ?? 0,
+      sortOrder: unvalidatedOptions.body.options?.settings?.sortOrder ?? 0,
+      maxSpy: unvalidatedOptions.body.options?.settings?.maxSpy ?? 1,
+      maxFleetMessages: unvalidatedOptions.body.options?.settings?.maxFleetMessages ?? 3,
+      oldPassword: password,
+      email: unvalidatedNewEmail,
+      vacationMode: false,
+      deleteAccount: false
+    })
+  });
   cases.push(finalize({
     case: "unvalidated_user_type",
     checks: [
       check(unvalidated.response.status === 200 && unvalidated.body.valid === true, "unvalidated user can still log in like legacy", unvalidated.body),
       check(unvalidatedOptions.response.status === 200 && unvalidatedOptions.body.authenticated === true, "unvalidated user options request authenticates", unvalidatedOptions.body),
-      check(unvalidatedOptions.body.options?.user?.validated === false, "options exposes unvalidated account state", unvalidatedOptions.body.options?.user ?? {})
+      check(unvalidatedOptions.body.options?.user?.validated === false, "options exposes unvalidated account state", unvalidatedOptions.body.options?.user ?? {}),
+      check(unvalidatedEmailChange.body.actionIssue?.code === "email_changed", "unvalidated user can update pending email from options", unvalidatedEmailChange.body.actionIssue ?? {}),
+      check(unvalidatedEmailChange.body.options?.user?.email === unvalidatedNewEmail && unvalidatedEmailChange.body.options?.user?.validated === false, "pending email stays unvalidated after options email change", unvalidatedEmailChange.body.options?.user ?? {})
     ]
   }));
 
@@ -204,6 +225,48 @@ try {
       check(deletionQueued.response.status === 200 && deletionQueued.body.valid === true, "deletion-queued user can log in before cleanup", deletionQueued.body),
       check(deletionSession.body.session?.deletionQueued === true, "session exposes deletion queue state", deletionSession.body.session ?? {}),
       check(deletionOptions.body.options?.account?.deletionQueued === true, "options exposes deletion queue state", deletionOptions.body.options?.account ?? {})
+    ]
+  }));
+
+  const credentials = await login("credentials", universe);
+  const credentialsOptions = await authedJSON(credentials, "/api/game/options");
+  const credentialsNextPassword = "qatypepass2";
+  const credentialsPasswordChange = await authedJSON(credentials, "/api/game/options", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      language: credentialsOptions.body.options?.settings?.language ?? "en",
+      skinPath: credentialsOptions.body.options?.settings?.skinPath ?? "/evolution/",
+      useSkin: credentialsOptions.body.options?.settings?.useSkin ?? true,
+      deactivateIp: true,
+      sortBy: credentialsOptions.body.options?.settings?.sortBy ?? 0,
+      sortOrder: credentialsOptions.body.options?.settings?.sortOrder ?? 0,
+      maxSpy: credentialsOptions.body.options?.settings?.maxSpy ?? 1,
+      maxFleetMessages: credentialsOptions.body.options?.settings?.maxFleetMessages ?? 3,
+      oldPassword: password,
+      newPassword: credentialsNextPassword,
+      newPasswordRepeat: credentialsNextPassword,
+      email: credentialsOptions.body.options?.user?.plainEmail ?? "",
+      vacationMode: false,
+      deleteAccount: false
+    })
+  });
+  const credentialsNewLogin = await request("/api/public/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      login: credentials.user?.login ?? "",
+      pass: credentialsNextPassword,
+      universe
+    })
+  });
+  const credentialsNewLoginBody = parseJSON(credentialsNewLogin);
+  cases.push(finalize({
+    case: "options_credentials",
+    checks: [
+      check(credentials.response.status === 200 && credentials.body.valid === true, "credentials fixture user can log in", credentials.body),
+      check(credentialsPasswordChange.body.actionIssue?.code === "password_changed", "options password change succeeds with old password", credentialsPasswordChange.body.actionIssue ?? {}),
+      check(credentialsNewLoginBody.valid === true, "new password can authenticate after options password change", credentialsNewLoginBody)
     ]
   }));
 } catch (error) {

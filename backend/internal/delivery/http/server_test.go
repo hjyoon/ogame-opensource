@@ -3844,7 +3844,7 @@ func TestGameOptionsEndpointUpdatesOptionsFromJSON(t *testing.T) {
 		ActionIssue:   domaingame.OptionsSavedIssue(),
 	}}
 	server := testServerWithGameOptions(t, optionsUseCase)
-	body := strings.NewReader(`{"language":"fr","skinPath":"http://127.0.0.1:8890/evolution","useSkin":true,"deactivateIp":true,"sortBy":2,"sortOrder":1,"maxSpy":9,"maxFleetMessages":11,"vacationMode":true,"deleteAccount":true}`)
+	body := strings.NewReader(`{"language":"fr","skinPath":"http://127.0.0.1:8890/evolution","useSkin":true,"deactivateIp":true,"sortBy":2,"sortOrder":1,"maxSpy":9,"maxFleetMessages":11,"oldPassword":"oldpass123","newPassword":"newpass123","newPasswordRepeat":"newpass123","email":"new@example.test","vacationMode":true,"deleteAccount":true}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/game/options?session=public&cp=99", body)
 	req.Host = "10.8.0.2:8890"
 	req.Header.Set("Content-Type", "application/json")
@@ -3857,6 +3857,10 @@ func TestGameOptionsEndpointUpdatesOptionsFromJSON(t *testing.T) {
 	if optionsUseCase.updateCommand.Mutation.SkinPath != "/evolution/" ||
 		optionsUseCase.updateCommand.Mutation.SortBy != 2 ||
 		optionsUseCase.updateCommand.Mutation.MaxSpy != 9 ||
+		optionsUseCase.updateCommand.Mutation.OldPassword != "oldpass123" ||
+		optionsUseCase.updateCommand.Mutation.NewPassword != "newpass123" ||
+		optionsUseCase.updateCommand.Mutation.NewPasswordRepeat != "newpass123" ||
+		optionsUseCase.updateCommand.Mutation.Email != "new@example.test" ||
 		!optionsUseCase.updateCommand.Mutation.VacationMode ||
 		!optionsUseCase.updateCommand.Mutation.VacationModeSet ||
 		!optionsUseCase.updateCommand.Mutation.DeleteAccount {
@@ -3874,7 +3878,7 @@ func TestGameOptionsEndpointUpdatesOptionsFromJSON(t *testing.T) {
 func TestGameOptionsEndpointUpdatesOptionsFromLegacyForm(t *testing.T) {
 	optionsUseCase := &fakeGameOptions{updateResult: appgame.OptionsResult{Authenticated: true, Options: sampleGameOptions()}}
 	server := testServerWithGameOptions(t, optionsUseCase)
-	body := strings.NewReader("lang=english&dpath=http%3A%2F%2F10.8.0.2%3A8890%2Fevolution&design=on&noipcheck=on&settings_sort=9999&settings_order=-9999&spio_anz=-42&settings_fleetactions=99999&urlaubs_modus=on&db_deaktjava=on")
+	body := strings.NewReader("lang=english&dpath=http%3A%2F%2F10.8.0.2%3A8890%2Fevolution&design=on&noipcheck=on&settings_sort=9999&settings_order=-9999&spio_anz=-42&settings_fleetactions=99999&db_password=oldpass123&newpass1=newpass123&newpass2=newpass123&db_email=new%40example.test&urlaubs_modus=on&db_deaktjava=on")
 	req := httptest.NewRequest(http.MethodPost, "/api/game/options?session=public", body)
 	req.Host = "10.8.0.2:8890"
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -3888,6 +3892,8 @@ func TestGameOptionsEndpointUpdatesOptionsFromLegacyForm(t *testing.T) {
 	if mutation.Language != "english" || mutation.SkinPath != "/evolution/" ||
 		mutation.SortBy != 9999 || mutation.SortOrder != -9999 ||
 		mutation.MaxSpy != -42 || mutation.MaxFleetMessages != 99999 ||
+		mutation.OldPassword != "oldpass123" || mutation.NewPassword != "newpass123" ||
+		mutation.NewPasswordRepeat != "newpass123" || mutation.Email != "new@example.test" ||
 		!mutation.UseSkin || !mutation.DeactivateIP || !mutation.VacationMode || !mutation.VacationModeSet || !mutation.DeleteAccount {
 		t.Fatalf("unexpected form mutation before domain normalization: %+v", mutation)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -237,6 +238,223 @@ func TestOptionsRepositoryDisablesVacationAfterMinimumAndLocksBeforeMinimum(t *t
 	}
 }
 
+func TestOptionsRepositoryChangesPasswordAndLogsOutPublicSession(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	results := append(optionsReadResultsWithPassword(now, 0, 0, legacyPasswordHash("oldpass123", "secret")),
+		optionsReadResultsWithPassword(now, 0, 0, legacyPasswordHash("newpass123", "secret"))...,
+	)
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewOptionsRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret", func() time.Time { return now })
+
+	_, issue, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.OptionsMutation{
+			Language:          "en",
+			SkinPath:          "/evolution/",
+			MaxSpy:            5,
+			MaxFleetMessages:  8,
+			OldPassword:       "oldpass123",
+			NewPassword:       "newpass123",
+			NewPasswordRepeat: "newpass123",
+			Email:             "permanent@example.test",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue == nil || issue.Code != domaingame.OptionsIssuePasswordChanged {
+		t.Fatalf("expected password changed issue, got %+v", issue)
+	}
+	if len(runner.execs) < 2 || !strings.Contains(runner.execs[0].sql, "password = ?") || !strings.Contains(runner.execs[0].sql, "session = ''") {
+		t.Fatalf("expected password update before settings update, execs=%+v", runner.execs)
+	}
+	if runner.execs[0].args[0] != legacyPasswordHash("newpass123", "secret") || runner.execs[0].args[1] != 42 {
+		t.Fatalf("unexpected password update args: %+v", runner.execs[0].args)
+	}
+}
+
+func TestOptionsRepositoryRejectsPasswordAndEmailCredentialErrors(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	tests := []struct {
+		name     string
+		mutation domaingame.OptionsMutation
+		want     string
+	}{
+		{
+			name: "password mismatch",
+			mutation: domaingame.OptionsMutation{
+				NewPassword: "newpass123", NewPasswordRepeat: "different",
+			},
+			want: domaingame.OptionsIssuePasswordMismatch,
+		},
+		{
+			name: "wrong old password",
+			mutation: domaingame.OptionsMutation{
+				OldPassword: "badpass123", NewPassword: "newpass123", NewPasswordRepeat: "newpass123",
+			},
+			want: domaingame.OptionsIssuePasswordWrongOld,
+		},
+		{
+			name: "email needs password",
+			mutation: domaingame.OptionsMutation{
+				Email: "new@example.test",
+			},
+			want: domaingame.OptionsIssueEmailNeedPassword,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mutation := tt.mutation
+			mutation.Language = "en"
+			mutation.SkinPath = "/evolution/"
+			mutation.MaxSpy = 5
+			mutation.MaxFleetMessages = 8
+			results := append(optionsReadResultsWithPassword(now, 0, 0, legacyPasswordHash("oldpass123", "secret")),
+				optionsReadResultsWithPassword(now, 0, 0, legacyPasswordHash("oldpass123", "secret"))...,
+			)
+			runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: results}}
+			repository := NewOptionsRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret", func() time.Time { return now })
+			_, issue, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{PlayerID: 42, PlanetID: 99, Mutation: mutation})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if issue == nil || issue.Code != tt.want {
+				t.Fatalf("expected issue %q, got %+v", tt.want, issue)
+			}
+			if len(runner.execs) != 1 || !strings.Contains(runner.execs[0].sql, "UPDATE `ogame_users` SET skin = ?") {
+				t.Fatalf("credential rejection should only persist regular settings, execs=%+v", runner.execs)
+			}
+		})
+	}
+}
+
+func TestOptionsRepositoryChangesEmailAndQueuesPermanentUpdate(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	results := append(optionsReadResultsWithPassword(now, 0, 0, legacyPasswordHash("oldpass123", "secret")),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{0})},
+	)
+	results = append(results, optionsReadResultsWithPassword(now, 0, 0, legacyPasswordHash("oldpass123", "secret"))...)
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewOptionsRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret", func() time.Time { return now })
+
+	_, issue, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.OptionsMutation{
+			Language:         "en",
+			SkinPath:         "/evolution/",
+			MaxSpy:           5,
+			MaxFleetMessages: 8,
+			OldPassword:      "oldpass123",
+			Email:            "new@example.test",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue == nil || issue.Code != domaingame.OptionsIssueEmailChanged {
+		t.Fatalf("expected email changed issue, got %+v", issue)
+	}
+	if len(runner.execs) < 4 ||
+		!strings.Contains(runner.execs[0].sql, "validated = 0") ||
+		!strings.Contains(runner.execs[1].sql, "DELETE FROM `ogame_queue`") ||
+		!strings.Contains(runner.execs[2].sql, "INSERT INTO `ogame_queue`") {
+		t.Fatalf("expected email update, queue delete, queue insert before settings update, execs=%+v", runner.execs)
+	}
+	if runner.execs[0].args[0] != legacyPasswordHash(fmt.Sprintf("%d", now.Unix()), "secret") || runner.execs[0].args[1] != "new@example.test" {
+		t.Fatalf("unexpected email update args: %+v", runner.execs[0].args)
+	}
+	if runner.execs[2].args[0] != 42 || runner.execs[2].args[1] != "ChangeEmail" || runner.execs[2].args[6] != now.Unix()+(now.Unix()+7*24*60*60) {
+		t.Fatalf("unexpected change-email queue args: %+v", runner.execs[2].args)
+	}
+}
+
+func TestOptionsRepositoryCredentialMutationErrorBranches(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	current := domaingame.NewOptions(domaingame.Overview{}, domaingame.OptionsUser{
+		Email:        "legor@example.test",
+		PlainEmail:   "permanent@example.test",
+		Validated:    true,
+		PasswordHash: legacyPasswordHash("oldpass123", "secret"),
+	}, domaingame.OptionsUniverse{Language: "en"}, domaingame.OptionsSettings{}, domaingame.OptionsAccount{}, 0)
+
+	runner := &fakeOptionsRunner{execErr: errors.New("password update failed")}
+	repository := NewOptionsRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret", func() time.Time { return now })
+	_, err := repository.applyCredentialMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, domaingame.OptionsMutation{
+		OldPassword: "oldpass123", NewPassword: "newpass123", NewPasswordRepeat: "newpass123",
+	}, current)
+	if err == nil || !strings.Contains(err.Error(), "password update failed") {
+		t.Fatalf("expected password update error, got %v", err)
+	}
+
+	repository = NewOptionsRepositoryWithRunnerAndSecret(&fakeOptionsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}}, runner, "ogame_", "secret", func() time.Time { return now })
+	issue, err := repository.applyCredentialMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, domaingame.OptionsMutation{
+		OldPassword: "oldpass123", Email: "new@example.test",
+	}, current)
+	if err != nil || issue == nil || issue.Code != domaingame.OptionsIssueEmailUsed {
+		t.Fatalf("expected duplicate email issue, issue=%+v err=%v", issue, err)
+	}
+
+	runner = &fakeOptionsRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{0})}}},
+		execErr:     errors.New("email update failed"),
+	}
+	repository = NewOptionsRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret", func() time.Time { return now })
+	_, err = repository.applyCredentialMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, domaingame.OptionsMutation{
+		OldPassword: "oldpass123", Email: "new@example.test",
+	}, current)
+	if err == nil || !strings.Contains(err.Error(), "email update failed") {
+		t.Fatalf("expected email update error, got %v", err)
+	}
+
+	runner = &fakeOptionsRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{0})}}},
+		execErrs:    []error{nil, errors.New("queue delete failed")},
+	}
+	repository = NewOptionsRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret", func() time.Time { return now })
+	_, err = repository.applyCredentialMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, domaingame.OptionsMutation{
+		OldPassword: "oldpass123", Email: "new@example.test",
+	}, current)
+	if err == nil || !strings.Contains(err.Error(), "queue delete failed") {
+		t.Fatalf("expected queue delete error, got %v", err)
+	}
+}
+
+func TestOptionsRepositoryEmailAndQueueHelpers(t *testing.T) {
+	repository := NewOptionsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("email query failed")}}}, "ogame_", nil)
+	if _, err := repository.emailExists(context.Background(), "`ogame_users`", "new@example.test"); err == nil || !strings.Contains(err.Error(), "email query failed") {
+		t.Fatalf("expected email query error, got %v", err)
+	}
+
+	repository = NewOptionsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "ogame_", nil)
+	if _, err := repository.emailExists(context.Background(), "`ogame_users`", "new@example.test"); err == nil || !strings.Contains(err.Error(), "options email state not found") {
+		t.Fatalf("expected missing email state error, got %v", err)
+	}
+
+	repository = NewOptionsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("email rows failed"), []any{0})}}}, "ogame_", nil)
+	if _, err := repository.emailExists(context.Background(), "`ogame_users`", "new@example.test"); err == nil || !strings.Contains(err.Error(), "email rows failed") {
+		t.Fatalf("expected email rows error, got %v", err)
+	}
+
+	repository = NewOptionsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}, "ogame_", nil)
+	if _, err := repository.emailExists(context.Background(), "`ogame_users`", "new@example.test"); err == nil {
+		t.Fatal("expected email count scan error")
+	}
+
+	repository = NewOptionsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}, "ogame_", nil)
+	exists, err := repository.emailExists(context.Background(), "`ogame_users`", "new@example.test")
+	if err != nil || !exists {
+		t.Fatalf("expected duplicate email, exists=%v err=%v", exists, err)
+	}
+
+	runner := &fakeOptionsRunner{execErrs: []error{nil, errors.New("queue insert failed")}}
+	repository = NewOptionsRepositoryWithRunner(runner, runner, "ogame_", nil)
+	if err := repository.addChangeEmailEvent(context.Background(), "`ogame_queue`", 42, 1_700_000_000); err == nil || !strings.Contains(err.Error(), "queue insert failed") {
+		t.Fatalf("expected queue insert error, got %v", err)
+	}
+}
+
 func TestOptionsRepositoryVacationHelpers(t *testing.T) {
 	if vacationMinimumSeconds(0) != 2*24*60*60 {
 		t.Fatalf("speed zero should fall back to 2 days, got %d", vacationMinimumSeconds(0))
@@ -358,6 +576,14 @@ func TestOptionsRepositoryLoadErrors(t *testing.T) {
 			want:    "user rows failed",
 		},
 		{
+			name: "user scan",
+			results: append(optionsOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{
+				"Legor", "bad-name-changed", "legor@example.test", "permanent@example.test", 1, "en", "/evolution/", 1, 0, 1, 1, 5, 8,
+				int64(0x1), 0, 0, 0, 0, int64(0), now.Add(time.Hour).Unix(), "feedid", legacyPasswordHash("oldpass123", "secret"),
+			})}),
+			want: "expected int",
+		},
+		{
 			name:    "universe query",
 			results: append(optionsOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues(optionsUserRow(now, 0, 0))}, fakeQueryResult{err: errors.New("uni failed")}),
 			want:    "uni failed",
@@ -371,6 +597,11 @@ func TestOptionsRepositoryLoadErrors(t *testing.T) {
 			name:    "universe rows",
 			results: append(optionsOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues(optionsUserRow(now, 0, 0))}, fakeQueryResult{rows: fakeRowsFromValuesWithErr(errors.New("uni rows failed"), []any{"en", 0, 60, 128})}),
 			want:    "uni rows failed",
+		},
+		{
+			name:    "universe scan",
+			results: append(optionsOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues(optionsUserRow(now, 0, 0))}, fakeQueryResult{rows: fakeRowsFromValues([]any{"en", "bad-force", 60, 128})}),
+			want:    "expected int",
 		},
 	}
 	for _, tt := range tests {
@@ -404,12 +635,20 @@ func TestNewOptionsRepositoryKeepsSQLQueryer(t *testing.T) {
 }
 
 func optionsReadResults(now time.Time, deletionQueued int, deletionAt int64) []fakeQueryResult {
-	return optionsReadResultsWithVacation(now, deletionQueued, deletionAt, 0, 0)
+	return optionsReadResultsWithPassword(now, deletionQueued, deletionAt, legacyPasswordHash("oldpass123", "secret"))
 }
 
 func optionsReadResultsWithVacation(now time.Time, deletionQueued int, deletionAt int64, vacation int, vacationUntil int64) []fakeQueryResult {
+	return optionsReadResultsWithVacationAndPassword(now, deletionQueued, deletionAt, vacation, vacationUntil, legacyPasswordHash("oldpass123", "secret"))
+}
+
+func optionsReadResultsWithPassword(now time.Time, deletionQueued int, deletionAt int64, passwordHash string) []fakeQueryResult {
+	return optionsReadResultsWithVacationAndPassword(now, deletionQueued, deletionAt, 0, 0, passwordHash)
+}
+
+func optionsReadResultsWithVacationAndPassword(now time.Time, deletionQueued int, deletionAt int64, vacation int, vacationUntil int64, passwordHash string) []fakeQueryResult {
 	return append(optionsOverviewResults(),
-		fakeQueryResult{rows: fakeRowsFromValues(optionsUserRowWithVacation(now, deletionQueued, deletionAt, vacation, vacationUntil))},
+		fakeQueryResult{rows: fakeRowsFromValues(optionsUserRowWithVacationAndPassword(now, deletionQueued, deletionAt, vacation, vacationUntil, passwordHash))},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{"en", 0, 60, 128})},
 	)
 }
@@ -424,13 +663,17 @@ func optionsOverviewResults() []fakeQueryResult {
 }
 
 func optionsUserRow(now time.Time, deletionQueued int, deletionAt int64) []any {
-	return optionsUserRowWithVacation(now, deletionQueued, deletionAt, 0, 0)
+	return optionsUserRowWithVacationAndPassword(now, deletionQueued, deletionAt, 0, 0, legacyPasswordHash("oldpass123", "secret"))
 }
 
 func optionsUserRowWithVacation(now time.Time, deletionQueued int, deletionAt int64, vacation int, vacationUntil int64) []any {
+	return optionsUserRowWithVacationAndPassword(now, deletionQueued, deletionAt, vacation, vacationUntil, legacyPasswordHash("oldpass123", "secret"))
+}
+
+func optionsUserRowWithVacationAndPassword(now time.Time, deletionQueued int, deletionAt int64, vacation int, vacationUntil int64, passwordHash string) []any {
 	return []any{
 		"Legor", 0, "legor@example.test", "permanent@example.test", 1, "en", "/evolution/", 1, 0, 1, 1, 5, 8,
-		int64(0x1), 0, vacation, vacationUntil, deletionQueued, deletionAt, now.Add(time.Hour).Unix(), "feedid",
+		int64(0x1), 0, vacation, vacationUntil, deletionQueued, deletionAt, now.Add(time.Hour).Unix(), "feedid", passwordHash,
 	}
 }
 
