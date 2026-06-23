@@ -7319,6 +7319,36 @@ function GalaxyTableRow({
   const player = planet?.player;
   const debrisCoordinates = row.planet?.coordinates ?? row.moon?.coordinates;
   const cellWidth = (value: number) => ({ width: String(value) }) as unknown as React.ThHTMLAttributes<HTMLTableCellElement>;
+  const handleInstantMenuClick = React.useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[data-galaxy-instant]");
+      if (!anchor || !event.currentTarget.contains(anchor)) {
+        return;
+      }
+      event.preventDefault();
+      if (pending) {
+        return;
+      }
+      const action = anchor.dataset.galaxyInstant;
+      const target = {
+        galaxy: Number(anchor.dataset.galaxy),
+        system: Number(anchor.dataset.system),
+        position: Number(anchor.dataset.position)
+      };
+      const targetType = Number(anchor.dataset.targetType);
+      const amount = Number(anchor.dataset.amount);
+      if ((action !== "dispatch-spy" && action !== "dispatch-recycle") || !Number.isFinite(target.galaxy) || !Number.isFinite(target.system) || !Number.isFinite(target.position)) {
+        return;
+      }
+      onInstantDispatch({
+        action,
+        target,
+        targetType: Number.isFinite(targetType) ? targetType : 1,
+        amount: Number.isFinite(amount) ? amount : 1
+      });
+    },
+    [onInstantDispatch, pending]
+  );
 
   return (
     <tr data-galaxy-position={row.position}>
@@ -7327,9 +7357,11 @@ function GalaxyTableRow({
       </th>
       <th {...cellWidth(30)}>
         {planet && planet.type === 1 ? (
-          <a href={fleetTargetHref(planet.coordinates, planet.coordinates.position, planet.own ? 4 : 1)}>
-            <img alt="" height={30} src={galaxyPlanetImagePath(planet, true)} width={30} />
-          </a>
+          <GalaxyHoverMenu html={galaxyPlanetHoverHTML(planet, galaxy)} onClick={handleInstantMenuClick}>
+            <a href="#" onClick={(event) => event.preventDefault()}>
+              <img alt="" height={30} src={galaxyPlanetImagePath(planet, true)} width={30} />
+            </a>
+          </GalaxyHoverMenu>
         ) : null}
       </th>
       <th className="legacy-galaxy-name" style={{ whiteSpace: "nowrap" }} {...cellWidth(130)}>
@@ -7342,40 +7374,128 @@ function GalaxyTableRow({
       </th>
       <th style={{ whiteSpace: "nowrap" }} {...cellWidth(30)}>
         {row.moon ? (
-          <a className={row.moon.destroyed ? "legacy-galaxy-destroyed-moon" : undefined} href={fleetTargetHref(row.moon.coordinates, row.moon.coordinates.position, 6, 3)}>
-            <img alt="" height={22} src={galaxyPlanetImagePath(row.moon, true)} width={22} />
-          </a>
+          row.moon.destroyed ? (
+            <GalaxyHoverMenu html={`<font color=white><b>Moon destroyed</b></font>`} width={75}>
+              <span className="legacy-galaxy-destroyed-moon">
+                <img alt={`Moon (size: ${formatLegacyNumber(row.moon.diameter)})`} height={22} src={galaxyPlanetImagePath(row.moon, true)} width={22} />
+              </span>
+            </GalaxyHoverMenu>
+          ) : (
+            <GalaxyHoverMenu html={galaxyMoonHoverHTML(row.moon, galaxy)} onClick={handleInstantMenuClick} offsetY={-110}>
+              <a
+                href="#"
+                onClick={(event) => {
+                  event.preventDefault();
+                  if (!pending && row.moon) {
+                    onInstantDispatch({
+                      action: "dispatch-spy",
+                      target: row.moon.coordinates,
+                      targetType: 3,
+                      amount: Math.max(1, galaxy.extra.maxSpy || 0)
+                    });
+                  }
+                }}
+              >
+                <img alt={`Moon (size: ${formatLegacyNumber(row.moon.diameter)})`} height={22} src={galaxyPlanetImagePath(row.moon, true)} width={22} />
+              </a>
+            </GalaxyHoverMenu>
+          )
         ) : null}
       </th>
       <th {...cellWidth(30)}>
         {row.debris?.visible && debrisCoordinates ? (
-          <a
-            href={fleetTargetHref(debrisCoordinates, row.position, 8, 2)}
-            onClick={(event) => {
-              event.preventDefault();
-              if (pending) {
-                return;
-              }
-              onInstantDispatch({
-                action: "dispatch-recycle",
-                target: { galaxy: debrisCoordinates.galaxy, system: debrisCoordinates.system, position: row.position },
-                targetType: 2,
-                amount: Math.max(1, row.debris?.harvesters ?? 0)
-              });
-            }}
-          >
-            <img alt="" height={22} src={`${skinBase}/planeten/debris.jpg`} title={`${formatLegacyNumber(row.debris.metal)} / ${formatLegacyNumber(row.debris.crystal)}`} width={22} />
-          </a>
+          <GalaxyHoverMenu html={galaxyDebrisHoverHTML(row.debris, debrisCoordinates, row.position)} onClick={handleInstantMenuClick}>
+            <a
+              href="#"
+              onClick={(event) => {
+                event.preventDefault();
+                if (pending) {
+                  return;
+                }
+                onInstantDispatch({
+                  action: "dispatch-recycle",
+                  target: { galaxy: debrisCoordinates.galaxy, system: debrisCoordinates.system, position: row.position },
+                  targetType: 2,
+                  amount: Math.max(1, row.debris?.harvesters ?? 0)
+                });
+              }}
+            >
+              <img alt="" height={22} src={`${skinBase}/planeten/debris.jpg`} title={`${formatLegacyNumber(row.debris.metal)} / ${formatLegacyNumber(row.debris.crystal)}`} width={22} />
+            </a>
+          </GalaxyHoverMenu>
         ) : null}
       </th>
-      {player ? <th {...cellWidth(150)} dangerouslySetInnerHTML={{ __html: galaxyPlayerCellHTML(player) }} /> : <th {...cellWidth(150)} />}
+      {player ? (
+        <th {...cellWidth(150)}>
+          <GalaxyHoverMenu html={galaxyPlayerHoverHTML(player)} text>
+            <span dangerouslySetInnerHTML={{ __html: galaxyPlayerCellHTML(player) }} />
+          </GalaxyHoverMenu>
+        </th>
+      ) : (
+        <th {...cellWidth(150)} />
+      )}
       <th {...cellWidth(80)}>
-        {planet?.alliance ? <a href="#" onClick={(event) => event.preventDefault()}>{planet.alliance.tag}</a> : null}
+        {planet?.alliance ? (
+          <GalaxyHoverMenu html={galaxyAllianceHoverHTML(planet.alliance)} text offsetY={-50}>
+            <a href="#" onClick={(event) => event.preventDefault()}>
+              {planet.alliance.tag}
+            </a>
+          </GalaxyHoverMenu>
+        ) : null}
       </th>
       <th className="legacy-galaxy-actions" style={{ whiteSpace: "nowrap" }} {...cellWidth(125)}>
         {planet ? <GalaxyActionIcons galaxy={galaxy} onInstantDispatch={onInstantDispatch} pending={pending} planet={planet} /> : null}
       </th>
     </tr>
+  );
+}
+
+function GalaxyHoverMenu({
+  children,
+  html,
+  offsetY = -40,
+  onClick,
+  text = false,
+  width = 240
+}: {
+  children: React.ReactNode;
+  html: string;
+  offsetY?: number;
+  onClick?: React.MouseEventHandler<HTMLElement>;
+  text?: boolean;
+  width?: number;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const timerRef = React.useRef<number | null>(null);
+  const clearTimer = React.useCallback(() => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+  const show = React.useCallback(() => {
+    clearTimer();
+    timerRef.current = window.setTimeout(() => setOpen(true), 750);
+  }, [clearTimer]);
+  const hide = React.useCallback(() => {
+    clearTimer();
+    setOpen(false);
+  }, [clearTimer]);
+
+  React.useEffect(() => clearTimer, [clearTimer]);
+
+  return (
+    <span
+      className={`legacy-galaxy-hover${open ? " legacy-galaxy-hover-open" : ""}${text ? " legacy-galaxy-hover-text" : ""}`}
+      onBlur={hide}
+      onClick={onClick}
+      onFocus={show}
+      onMouseEnter={show}
+      onMouseLeave={hide}
+    >
+      {children}
+      <span className="legacy-galaxy-tooltip" style={{ top: offsetY, width }} dangerouslySetInnerHTML={{ __html: html }} />
+    </span>
   );
 }
 
@@ -7389,6 +7509,121 @@ function galaxyPlayerCellHTML(player: GameGalaxyPlayer): string {
     html += ")\n";
   }
   return html;
+}
+
+function galaxyPlanetHoverHTML(planet: GameGalaxyPlanet, galaxy: GameGalaxy): string {
+  const title = `Planet ${planet.name} [${formatCoordinates(planet.coordinates)}]`;
+  let actions = "";
+  if (planet.own) {
+    actions += galaxyFleetMenuLink(planet.coordinates, planet.coordinates.position, 4, 1, "Deploy");
+    actions += galaxyFleetMenuLink(planet.coordinates, planet.coordinates.position, 3, 1, "Transport");
+  } else {
+    if (planet.actions.spy) {
+      actions += galaxyInstantMenuLink("dispatch-spy", planet.coordinates, planet.coordinates.position, 1, Math.max(1, galaxy.extra.maxSpy || 0), "Espionage");
+      actions += "<br />";
+    }
+    if (planet.actions.missile) {
+      actions += galaxyAnchor(gameGalaxyMissileURL(planet.coordinates, planet.id, planet.player?.id ?? 0, window.location.search), "Rocket attack");
+    }
+    if (planet.actions.attack) {
+      actions += galaxyFleetMenuLink(planet.coordinates, planet.coordinates.position, 1, 1, "Attack");
+    }
+    if (planet.actions.defend) {
+      actions += galaxyFleetMenuLink(planet.coordinates, planet.coordinates.position, 5, 1, "Defend");
+    }
+    if (planet.actions.transport) {
+      actions += galaxyFleetMenuLink(planet.coordinates, planet.coordinates.position, 3, 1, "Transport");
+    }
+  }
+  return `<table width=240><tr><td class=c colspan=2>${legacyHTMLText(title)}</td></tr><tr><th width=80><img src="${legacyHTMLAttribute(
+    galaxyPlanetImagePath(planet, true)
+  )}" height=75 width=75 /></th><th align=left>${actions}</th></tr></table>`;
+}
+
+function galaxyMoonHoverHTML(moon: GameGalaxyPlanet, galaxy: GameGalaxy): string {
+  const title = `Moon ${moon.name} [${formatCoordinates(moon.coordinates)}]`;
+  let actions = "";
+  if (moon.own) {
+    actions += galaxyFleetMenuLink(moon.coordinates, moon.coordinates.position, 3, 3, "Transport");
+    actions += galaxyFleetMenuLink(moon.coordinates, moon.coordinates.position, 4, 3, "Deploy");
+  } else {
+    if (moon.actions.spy) {
+      actions += galaxyInstantMenuLink("dispatch-spy", moon.coordinates, moon.coordinates.position, 3, Math.max(1, galaxy.extra.maxSpy || 0), "Espionage");
+      actions += "<br />";
+    }
+    if (moon.actions.missile) {
+      actions += galaxyAnchor(gameGalaxyMissileURL(moon.coordinates, moon.id, moon.player?.id ?? 0, window.location.search), "Rocket attack");
+    }
+    if (moon.actions.transport) {
+      actions += galaxyFleetMenuLink(moon.coordinates, moon.coordinates.position, 3, 3, "Transport");
+    }
+    if (moon.actions.attack) {
+      actions += galaxyFleetMenuLink(moon.coordinates, moon.coordinates.position, 1, 3, "Attack");
+    }
+    if (moon.actions.defend) {
+      actions += galaxyFleetMenuLink(moon.coordinates, moon.coordinates.position, 5, 3, "Defend");
+    }
+    if (moon.actions.destroy) {
+      actions += galaxyFleetMenuLink(moon.coordinates, moon.coordinates.position, 9, 3, "Destroy");
+    }
+  }
+  return `<table width=240><tr><td class=c colspan=2>${legacyHTMLText(title)}</td></tr><tr><th width=80><img src="${legacyHTMLAttribute(galaxyPlanetImagePath(moon, true))}" height=75 width=75 alt="${legacyHTMLAttribute(
+    `Moon (size: ${formatLegacyNumber(moon.diameter)})`
+  )}" /></th><th><table width=120><tr><td colspan=2 class=c>Properties</td></tr><tr><th>Size:</th><th>${formatLegacyNumber(moon.diameter)}</th></tr><tr><th>Temperatur:</th><th>${formatLegacyNumber(
+    moon.temperature
+  )}</th></tr><tr><td colspan=2 class=c>Actions:</td></tr><tr><th align=left colspan=2>${actions}</th></tr></table></th></tr></table>`;
+}
+
+function galaxyDebrisHoverHTML(debris: GameGalaxyDebris, coordinates: Coordinates, position: number): string {
+  const recycle = galaxyInstantMenuLink("dispatch-recycle", coordinates, position, 2, Math.max(1, debris.harvesters), "Recycle");
+  return `<table width=240><tr><td class=c colspan=2></td></tr><tr><th width=80><img src="${skinBase}/planeten/debris.jpg" height=75 width=75 alt=T /></th><th><table><tr><td class=c colspan=2>Resources:</td></tr><tr><th>Metal:</th><th>${formatLegacyNumber(
+    debris.metal
+  )}</th></tr><tr><th>Crystal:</th><th>${formatLegacyNumber(debris.crystal)}</th></tr><tr><td class=c colspan=2>Actions:</td></tr><tr><th colspan=2 align=left>${recycle}</th></tr></table></th></tr></table>`;
+}
+
+function galaxyPlayerHoverHTML(player: GameGalaxyPlayer): string {
+  let rows = "";
+  if (!player.own) {
+    rows += `<tr><td>${galaxyAnchor(gameMessageComposeURL(player.id, window.location.search), "Write a message")}</td></tr>`;
+    rows += `<tr><td>${galaxyAnchor(gameBuddyRequestURL(player.id, window.location.search), "Invite to become friends")}</td></tr>`;
+  }
+  rows += `<tr><td>${galaxyAnchor(galaxyStatisticsURL(player.rank, "player"), "Statistics")}</td></tr>`;
+  return `<table width=240><tr><td class=c>Player ${legacyHTMLText(player.name)}. Place in the rating - ${formatLegacyNumber(player.rank)}</td></tr><th><table>${rows}</table></th></table>`;
+}
+
+function galaxyAllianceHoverHTML(alliance: { id: number; tag: string }): string {
+  const rows = [
+    `<tr><td><a href="${legacyHTMLAttribute(allianceInfoURL(alliance.id))}" target="_ally">Alliance introduction</a></td></tr>`,
+    `<tr><td>${galaxyAnchor(allianceURL({ page: "bewerben", allyid: String(alliance.id) }), "Apply")}</td></tr>`,
+    `<tr><td>${galaxyAnchor(galaxyStatisticsURL(1, "ally"), "Statistics")}</td></tr>`
+  ].join("");
+  return `<table width=240><tr><td class=c>Alliance ${legacyHTMLText(alliance.tag)}</td></tr><th><table>${rows}</table></th></table>`;
+}
+
+function galaxyFleetMenuLink(coordinates: Coordinates, position: number, mission: number, planetType: number, label: string): string {
+  return galaxyAnchor(fleetTargetHref(coordinates, position, mission, planetType), label);
+}
+
+function galaxyInstantMenuLink(action: GameGalaxyInstantDispatch["action"], coordinates: Coordinates, position: number, targetType: number, amount: number, label: string): string {
+  return `<a href="#" data-galaxy-instant="${action}" data-galaxy="${coordinates.galaxy}" data-system="${coordinates.system}" data-position="${position}" data-target-type="${targetType}" data-amount="${amount}">${legacyHTMLText(
+    label
+  )}</a><br />`;
+}
+
+function galaxyAnchor(href: string, label: string): string {
+  return `<a href="${legacyHTMLAttribute(href)}">${legacyHTMLText(label)}</a><br />`;
+}
+
+function galaxyStatisticsURL(place: number, who: "player" | "ally"): string {
+  const search = new URLSearchParams(window.location.search);
+  const safePlace = Math.max(0, Math.floor(place));
+  search.set("start", String(Math.floor(safePlace / 100) * 100 + 1));
+  if (who === "ally") {
+    search.set("who", "ally");
+  } else {
+    search.delete("who");
+  }
+  return gameRouteURL("/game/statistics", search.toString());
 }
 
 function GalaxyActionIcons({

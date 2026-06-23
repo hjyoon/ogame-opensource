@@ -283,6 +283,9 @@ async function assertGameClientNavigation(
     await page.locator(".legacy-fleet-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Galaxy") {
     await page.locator(".legacy-galaxy-table").first().waitFor({ timeout: 10_000 });
+    await page.locator(".legacy-galaxy-table .legacy-galaxy-hover").first().hover();
+    await page.waitForTimeout(850);
+    await page.locator(".legacy-galaxy-hover-open .legacy-galaxy-tooltip").first().waitFor({ timeout: 5_000 });
   } else if (expectedMenuLabel === "Defense") {
     await page.locator(".legacy-defense-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Technology") {
@@ -330,11 +333,14 @@ async function assertGameClientNavigation(
                     state.details.fleetHeaderText.includes("Fleets") &&
                     state.details.pendingText === false
                   : expectedMenuLabel === "Galaxy"
-                    ? state.details.galaxyTable === true &&
-                      state.details.galaxyRows === 15 &&
-                      state.details.galaxyText.includes("Solar system") &&
-                      state.details.pendingText === false
-                    : expectedMenuLabel === "Defense"
+                  ? state.details.galaxyTable === true &&
+                    state.details.galaxyRows === 15 &&
+                    state.details.galaxyText.includes("Solar system") &&
+                    state.details.galaxyHoverMenus > 0 &&
+                    state.details.galaxyOpenTooltipText.includes("Planet") &&
+                    galaxyHoverActionsMatch(state.details.galaxyOpenTooltipText) &&
+                    state.details.pendingText === false
+                  : expectedMenuLabel === "Defense"
                       ? state.details.defenseTable === true && state.details.defenseRows >= 0 && state.details.pendingText === false
                       : expectedMenuLabel === "Technology"
                         ? state.details.technologyTable === true &&
@@ -864,6 +870,8 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     galaxyTable: document.querySelector(".legacy-galaxy-table") !== null,
     galaxyRows: document.querySelectorAll("[data-galaxy-position]").length,
     galaxyText: document.querySelector(".legacy-galaxy-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
+    galaxyHoverMenus: document.querySelectorAll(".legacy-galaxy-tooltip").length,
+    galaxyOpenTooltipText: document.querySelector(".legacy-galaxy-hover-open .legacy-galaxy-tooltip")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     defenseRows: document.querySelectorAll("[data-defense-row]").length,
     defenseTable: document.querySelector(".legacy-defense-table") !== null,
     defenseNames: Array.from(document.querySelectorAll("[data-defense-row] .legacy-building-description a")).map(
@@ -929,6 +937,10 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
       !state.legacyBody,
     details: state
   };
+}
+
+function galaxyHoverActionsMatch(text: string): boolean {
+  return (text.includes("Deploy") && text.includes("Transport")) || (text.includes("Espionage") && text.includes("Attack") && text.includes("Defend") && text.includes("Transport"));
 }
 
 async function csrState(page: Page) {

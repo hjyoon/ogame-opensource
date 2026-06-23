@@ -803,6 +803,57 @@ body.legacy-game-body {
   line-height: 0;
 }
 
+.legacy-game-shell .legacy-galaxy-hover {
+  cursor: pointer;
+  display: inline-block;
+  line-height: 0;
+  position: relative;
+}
+
+.legacy-game-shell .legacy-galaxy-hover-text {
+  line-height: normal;
+}
+
+.legacy-game-shell .legacy-galaxy-tooltip {
+  display: none;
+  left: 50%;
+  line-height: normal;
+  position: absolute;
+  text-align: left;
+  transform: translateX(-50%);
+  z-index: 5000;
+}
+
+.legacy-game-shell .legacy-galaxy-hover-open > .legacy-galaxy-tooltip {
+  display: block;
+}
+
+.legacy-game-shell .legacy-galaxy-tooltip table {
+  border-collapse: separate;
+  border-spacing: 2px;
+}
+
+.legacy-game-shell .legacy-galaxy-tooltip th,
+.legacy-game-shell .legacy-galaxy-tooltip td.c {
+  background-color: #344566;
+  border: 1px #415680 solid;
+  color: #e6ebfb;
+  font-family: Tahoma, sans-serif;
+  font-size: 11px;
+  padding-left: 3px;
+  padding-right: 3px;
+  text-align: center;
+}
+
+.legacy-game-shell .legacy-galaxy-tooltip td.c {
+  background-image: var(--legacy-title-bg);
+  font-weight: bold;
+}
+
+.legacy-game-shell .legacy-galaxy-tooltip th[align="left"] {
+  text-align: left;
+}
+
 .noob {
   color: #a0ffa0;
 }
