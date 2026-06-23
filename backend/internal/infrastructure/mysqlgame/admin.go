@@ -102,7 +102,15 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 	if r.execer == nil {
 		return nil, errors.New("admin mutation unavailable")
 	}
-	if domaingame.NormalizeAdminMode(query.Mode) != "Bans" || query.Action != "ban" {
+	mode := domaingame.NormalizeAdminMode(query.Mode)
+	if mode == "Expedition" && query.Action == "settings" {
+		expeditionTable, err := tableName(r.prefix, "exptab")
+		if err != nil {
+			return nil, err
+		}
+		return r.mutateAdminExpeditionSettings(ctx, expeditionTable, query.Values)
+	}
+	if mode != "Bans" || query.Action != "ban" {
 		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
 	}
 	usersTable, err := tableName(r.prefix, "users")
@@ -118,6 +126,27 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 		return nil, err
 	}
 	return r.mutateAdminBans(ctx, usersTable, queueTable, prangerTable, query)
+}
+
+func (r AdminRepository) mutateAdminExpeditionSettings(ctx context.Context, expeditionTable string, values map[string]int) (*domaingame.AdminActionIssue, error) {
+	assignments := make([]string, 0, len(values))
+	args := make([]any, 0, len(values))
+	for _, column := range adminExpeditionColumns {
+		value, ok := values[column]
+		if !ok {
+			continue
+		}
+		assignments = append(assignments, "`"+column+"` = ?")
+		args = append(args, value)
+	}
+	if len(assignments) == 0 {
+		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+	}
+	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET %s", expeditionTable, strings.Join(assignments, ", ")), args...)
+	if err != nil {
+		return nil, err
+	}
+	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
 }
 
 type adminBanUser struct {

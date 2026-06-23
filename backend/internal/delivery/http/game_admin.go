@@ -21,12 +21,13 @@ type gameAdminActionIssue struct {
 }
 
 type gameAdminMutationRequest struct {
-	Action    string `json:"action"`
-	TargetIDs []int  `json:"targetIds"`
-	BanMode   int    `json:"banMode"`
-	Days      int    `json:"days"`
-	Hours     int    `json:"hours"`
-	Reason    string `json:"reason"`
+	Action    string         `json:"action"`
+	TargetIDs []int          `json:"targetIds"`
+	BanMode   int            `json:"banMode"`
+	Days      int            `json:"days"`
+	Hours     int            `json:"hours"`
+	Reason    string         `json:"reason"`
+	Values    map[string]int `json:"values"`
 }
 
 type gameAdminSummary struct {
@@ -240,6 +241,7 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		Days:            request.Days,
 		Hours:           request.Hours,
 		Reason:          request.Reason,
+		Values:          request.Values,
 	})
 	if err != nil {
 		http.Error(w, "game admin unavailable", http.StatusServiceUnavailable)

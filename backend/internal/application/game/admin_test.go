@@ -88,13 +88,14 @@ func TestAdminServiceMutatesAdminAndRefreshes(t *testing.T) {
 		BanMode:         1,
 		Hours:           2,
 		Reason:          "test",
+		Values:          map[string]int{"dm_factor": 9},
 	})
 
 	if err != nil {
 		t.Fatalf("MutateAdmin returned error: %v", err)
 	}
 	if !result.Authenticated || result.ActionIssue != issue || repository.mutation.PlayerID != 42 ||
-		repository.mutation.TargetIDs[0] != 77 || repository.mutation.BanMode != 1 || repository.query.Mode != "Bans" {
+		repository.mutation.TargetIDs[0] != 77 || repository.mutation.BanMode != 1 || repository.mutation.Values["dm_factor"] != 9 || repository.query.Mode != "Bans" {
 		t.Fatalf("unexpected result=%+v mutation=%+v query=%+v", result, repository.mutation, repository.query)
 	}
 }
@@ -142,6 +143,9 @@ func TestAdminServiceReturnsUnauthenticatedAndErrors(t *testing.T) {
 	if _, err := NewAdminService(authenticated, &fakeAdminRepository{admin: domaingame.Admin{Viewer: domaingame.AdminViewer{Level: domaingame.AdminLevelAdmin}}, mutationErr: errors.New("mutate failed")}).MutateAdmin(context.Background(), AdminMutationCommand{}); err == nil || !strings.Contains(err.Error(), "mutate failed") {
 		t.Fatalf("expected mutation error, got %v", err)
 	}
+	if _, err := NewAdminService(authenticated, &fakeAdminRepository{admin: domaingame.Admin{Viewer: domaingame.AdminViewer{Level: domaingame.AdminLevelAdmin}}, reloadErr: errors.New("reload failed")}).MutateAdmin(context.Background(), AdminMutationCommand{}); err == nil || !strings.Contains(err.Error(), "reload failed") {
+		t.Fatalf("expected mutation reload error, got %v", err)
+	}
 
 	service = NewAdminService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{Issues: []domainpublicsite.SessionIssue{issue}}}, &fakeAdminRepository{})
 	result, err = service.MutateAdmin(context.Background(), AdminMutationCommand{})
@@ -153,15 +157,21 @@ func TestAdminServiceReturnsUnauthenticatedAndErrors(t *testing.T) {
 type fakeAdminRepository struct {
 	admin       domaingame.Admin
 	err         error
+	reloadErr   error
 	mutationErr error
 	actionIssue *domaingame.AdminActionIssue
 	query       AdminQuery
 	mutation    AdminMutationQuery
 	mutated     bool
+	getCalls    int
 }
 
 func (f *fakeAdminRepository) GetAdmin(_ context.Context, query AdminQuery) (domaingame.Admin, error) {
 	f.query = query
+	f.getCalls++
+	if f.reloadErr != nil && f.getCalls > 1 {
+		return domaingame.Admin{}, f.reloadErr
+	}
 	return f.admin, f.err
 }
 

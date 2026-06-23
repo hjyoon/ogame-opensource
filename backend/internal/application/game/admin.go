@@ -38,6 +38,7 @@ type AdminMutationQuery struct {
 	Days      int
 	Hours     int
 	Reason    string
+	Values    map[string]int
 }
 
 type AdminMutationCommand struct {
@@ -52,6 +53,7 @@ type AdminMutationCommand struct {
 	Days            int
 	Hours           int
 	Reason          string
+	Values          map[string]int
 }
 
 type AdminResult struct {
@@ -136,6 +138,7 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		Days:      command.Days,
 		Hours:     command.Hours,
 		Reason:    command.Reason,
+		Values:    command.Values,
 	})
 	if err != nil {
 		return AdminResult{}, err

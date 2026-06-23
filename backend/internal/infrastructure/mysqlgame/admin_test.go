@@ -243,6 +243,59 @@ func TestAdminRepositoryMutationNoops(t *testing.T) {
 	}
 }
 
+func TestAdminRepositoryMutatesExpeditionSettings(t *testing.T) {
+	runner := &fakeGalaxyRunner{}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+	issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+		Mode:   "Expedition",
+		Action: "settings",
+		Values: map[string]int{
+			"chance_success": 77,
+			"ignored":        1,
+			"limit_max":      12345,
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("MutateAdmin returned error: %v", err)
+	}
+	if issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 1 {
+		t.Fatalf("unexpected expedition settings issue=%+v execs=%+v", issue, runner.execCalls)
+	}
+	if !strings.Contains(runner.execCalls[0].sql, "UPDATE `ogame_exptab` SET `chance_success` = ?, `limit_max` = ?") ||
+		len(runner.execCalls[0].args) != 2 || runner.execCalls[0].args[0] != 77 || runner.execCalls[0].args[1] != 12345 {
+		t.Fatalf("unexpected expedition settings update: %+v", runner.execCalls[0])
+	}
+}
+
+func TestAdminRepositoryExpeditionSettingsEdges(t *testing.T) {
+	t.Run("no allowed values", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:   "Expedition",
+			Action: "settings",
+			Values: map[string]int{"ignored": 1},
+		})
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 {
+			t.Fatalf("expected expedition settings no-op, issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		}
+	})
+
+	t.Run("exec error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{execErrs: []error{errors.New("expedition update failed")}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:   "Expedition",
+			Action: "settings",
+			Values: map[string]int{"dm_factor": 9},
+		}); err == nil || !strings.Contains(err.Error(), "expedition update failed") {
+			t.Fatalf("expected expedition update error, got %v", err)
+		}
+	})
+}
+
 func TestAdminRepositoryMutationRequiresWriter(t *testing.T) {
 	repository := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_")
 	if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Bans", Action: "ban"}); err == nil || !strings.Contains(err.Error(), "mutation unavailable") {
@@ -255,6 +308,13 @@ func TestAdminRepositoryMutationEdges(t *testing.T) {
 		repository := NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "bad-prefix_")
 		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Bans", Action: "ban", TargetIDs: []int{77}}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
 			t.Fatalf("expected prefix error, got %v", err)
+		}
+	})
+
+	t.Run("invalid expedition prefix", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "bad-prefix_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Expedition", Action: "settings", Values: map[string]int{"dm_factor": 9}}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+			t.Fatalf("expected expedition prefix error, got %v", err)
 		}
 	})
 

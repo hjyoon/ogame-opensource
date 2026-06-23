@@ -78,14 +78,19 @@ export type GameAdminStatus = {
   admin?: GameAdmin;
 };
 
-export type GameAdminAction = {
-  action: "ban";
-  targetIds: number[];
-  banMode: number;
-  days: number;
-  hours: number;
-  reason: string;
-};
+export type GameAdminAction =
+  | {
+      action: "ban";
+      targetIds: number[];
+      banMode: number;
+      days: number;
+      hours: number;
+      reason: string;
+    }
+  | {
+      action: "settings";
+      values: Record<string, number>;
+    };
 
 export type GameAllianceAction =
   | { action: "create"; tag: string; name: string }
@@ -2899,7 +2904,7 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "Expedition") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminExpeditionTable admin={admin} />
+        <AdminExpeditionTable admin={admin} onAdminAction={onAdminAction} />
       </AdminModeShell>
     );
   }
@@ -4157,18 +4162,72 @@ function adminBattleSimHiddenInputs(): string {
   return `${hidden.join("\n")}\n`;
 }
 
-function AdminExpeditionTable({ admin }: { admin: GameAdmin }) {
+function AdminExpeditionTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
   if (!admin.expedition) {
     return null;
   }
+  const handleSubmit = (event: React.FormEvent<HTMLDivElement>) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) {
+      return;
+    }
+    event.preventDefault();
+    const action = new URL(form.action, window.location.href).searchParams.get("action") ?? "";
+    if (action !== "settings") {
+      return;
+    }
+    const data = new FormData(form);
+    const values: Record<string, number> = {};
+    for (const name of adminExpeditionSettingNames) {
+      values[name] = Number(data.get(name)) || 0;
+    }
+    onAdminAction({ action: "settings", values });
+  };
   return (
     <div
       className="legacy-admin-expedition-table"
       dangerouslySetInnerHTML={{ __html: adminExpeditionHTML(admin.expedition) }}
+      onSubmit={handleSubmit}
       style={{ display: "contents" }}
     />
   );
 }
+
+const adminExpeditionSettingNames = [
+  "dm_factor",
+  "chance_success",
+  "depleted_min",
+  "depleted_med",
+  "depleted_max",
+  "chance_depleted_min",
+  "chance_depleted_med",
+  "chance_depleted_max",
+  "chance_alien",
+  "chance_pirates",
+  "chance_dm",
+  "chance_lost",
+  "chance_delay",
+  "chance_accel",
+  "chance_res",
+  "chance_fleet",
+  "score_cap1",
+  "limit_cap1",
+  "score_cap2",
+  "limit_cap2",
+  "score_cap3",
+  "limit_cap3",
+  "score_cap4",
+  "limit_cap4",
+  "score_cap5",
+  "limit_cap5",
+  "score_cap6",
+  "limit_cap6",
+  "score_cap7",
+  "limit_cap7",
+  "score_cap8",
+  "limit_cap8",
+  "limit_max"
+];
 
 function adminExpeditionHTML(values: Record<string, number>): string {
   let html = "";

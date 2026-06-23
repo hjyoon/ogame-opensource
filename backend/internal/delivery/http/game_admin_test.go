@@ -70,6 +70,31 @@ func TestGameAdminHandlerMutatesBans(t *testing.T) {
 	}
 }
 
+func TestGameAdminHandlerMutatesExpeditionSettings(t *testing.T) {
+	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{
+		Authenticated: true,
+		Admin: domaingame.NewAdmin(
+			domaingame.Overview{Commander: "legor", CurrentPlanet: domaingame.PlanetOverview{ID: 99}},
+			domaingame.AdminViewer{PlayerID: 42, Name: "legor", Level: domaingame.AdminLevelAdmin},
+			"Expedition",
+		),
+		ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueActionSaved),
+	}}
+	request := httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=99&mode=Expedition", strings.NewReader(`{"action":"settings","values":{"dm_factor":9,"chance_success":77}}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	app{deps: Dependencies{GameAdmin: usecase}}.handleGameAdmin(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected response status=%d body=%s", response.Code, response.Body.String())
+	}
+	if usecase.mutation.Mode != "Expedition" || usecase.mutation.Action != "settings" ||
+		usecase.mutation.Values["dm_factor"] != 9 || usecase.mutation.Values["chance_success"] != 77 {
+		t.Fatalf("unexpected mutation command: %+v", usecase.mutation)
+	}
+}
+
 func TestGameAdminHandlerRejectsInvalidAndUnauthenticatedRequests(t *testing.T) {
 	response := httptest.NewRecorder()
 	app{}.handleGameAdmin(response, httptest.NewRequest(http.MethodGet, "/api/game/admin?session=pub", nil))
