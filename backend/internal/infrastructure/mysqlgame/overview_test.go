@@ -1920,6 +1920,7 @@ func overviewEventRowWithMissileAndDeploy(id int, ownerID int, ownerName string,
 	for _, fleetID := range domaingame.FleetIDs() {
 		row = append(row, ships[fleetID])
 	}
+	row = append(row, 0, 0, 0)
 	row = append(row, "Origin", 1, 2, originPosition, "Target", 1, 2, targetPosition, domaingame.PlanetTypePlanet, "target")
 	return row
 }

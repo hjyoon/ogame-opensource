@@ -143,7 +143,7 @@ func TestBuildFleetDispatchDraftNormalizesLegacySelection(t *testing.T) {
 	}
 
 	empty := BuildFleetDispatchDraft(fleet, FleetDispatchDraftInput{Ships: map[int]int{}, Speed: -1})
-	if empty.HasSelection || empty.Speed != 10 || empty.Target != fleet.CurrentPlanet.Coordinates || empty.TargetType != GamePlanetTypePlanet || empty.Mission != FleetMissionTransport {
+	if empty.HasSelection || empty.Speed != 10 || empty.Target != fleet.CurrentPlanet.Coordinates || empty.TargetType != GamePlanetTypePlanet || empty.Mission != 0 {
 		t.Fatalf("unexpected empty dispatch draft defaults: %+v", empty)
 	}
 	if empty.Distance != 5 || empty.MaxSpeed != 0 || empty.DurationSeconds != 0 || empty.FuelConsumption != 0 {

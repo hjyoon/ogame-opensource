@@ -652,6 +652,12 @@ body.legacy-game-body {
   margin: 0 auto;
 }
 
+#combox_container {
+  margin-left: auto;
+  margin-right: auto;
+  width: 513px;
+}
+
 .legacy-game-shell .legacy-research-frame {
   border-collapse: separate;
   border-spacing: 2px;
@@ -671,7 +677,6 @@ body.legacy-game-body {
 .legacy-overview-table img,
 .legacy-planet-list img {
   border: 0;
-  vertical-align: middle;
 }
 
 .legacy-planet-list {
@@ -700,6 +705,11 @@ body.legacy-game-body {
 .legacy-game-shell .legacy-shipyard-table,
 .legacy-game-shell .legacy-defense-table {
   margin-top: 3px;
+}
+
+.legacy-game-shell .legacy-shipyard-required-notice {
+  margin: 0 auto;
+  width: 530px;
 }
 
 .legacy-game-shell .legacy-shipyard-queue-panel {
@@ -854,6 +864,35 @@ body.legacy-game-body {
   text-align: left;
 }
 
+.legacy-game-shell .legacy-statistics-delta {
+  cursor: pointer;
+  display: inline-block;
+  position: relative;
+}
+
+.legacy-game-shell .legacy-statistics-tooltip {
+  background-color: #344566;
+  border: 1px #415680 solid;
+  color: #e6ebfb;
+  display: none;
+  font-family: Tahoma, sans-serif;
+  font-size: 11px;
+  left: 50%;
+  min-width: 80px;
+  padding: 3px;
+  position: absolute;
+  text-align: center;
+  top: 14px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  z-index: 5000;
+}
+
+.legacy-game-shell .legacy-statistics-delta:hover .legacy-statistics-tooltip,
+.legacy-game-shell .legacy-statistics-delta:focus .legacy-statistics-tooltip {
+  display: block;
+}
+
 .noob {
   color: #a0ffa0;
 }
@@ -935,13 +974,31 @@ body.legacy-game-body {
   font-weight: bold;
 }
 
-.legacy-game-shell .legacy-fleet-table input,
-.legacy-game-shell .legacy-fleet-select-table input {
-  background-color: #344566;
-  border: 1px #415680 solid;
-  color: #e6ebfb;
-  font-family: Tahoma, sans-serif;
-  font-size: 11px;
+.legacy-game-shell .legacy-fleet-dispatch-table input[type="radio"] {
+  width: auto;
+}
+
+.legacy-game-shell .legacy-fleet-dispatch-table input[type="text"] {
+  width: 67px;
+}
+
+@-moz-document url-prefix() {
+  .legacy-game-shell .legacy-fleet-dispatch-table input[type="text"] {
+    width: auto;
+  }
+}
+
+.legacy-game-shell .legacy-fleet-union-view {
+  margin-top: 0;
+}
+
+.legacy-game-shell .legacy-content:has(.legacy-fleet-union-view) {
+  height: 100vh !important;
+  top: 1px !important;
+}
+
+.legacy-game-shell:has(.legacy-fleet-union-view) .legacy-header-top > center > .legacy-header-table {
+  width: 100%;
 }
 
 .legacy-game-shell .legacy-rename-planet-table,
@@ -1390,8 +1447,14 @@ body.legacy-game-body {
   text-align: center;
 }
 
-.legacy-screenshot-image {
-  padding-bottom: 10px;
+.legacy-public-page .legacy-screenshot-image {
+  padding-bottom: 13px;
+}
+
+@-moz-document url-prefix() {
+  .legacy-public-page .legacy-screenshot-image {
+    padding-bottom: 13.2px;
+  }
 }
 
 .legacy-screenshot-image a:hover img {
@@ -1690,6 +1753,7 @@ select.legacy-public-input {
 
 .legacy-legal-page * {
   box-sizing: content-box;
+  color: #b1daf2;
   font-family: Verdana, Arial, Helvetica, sans-serif;
   font-size: 12px;
   letter-spacing: 0;

@@ -109,16 +109,92 @@ try {
 
     await gotoGame(page, auth, "/game/admin", { mode: "BotEdit" });
     await page.locator(".legacy-admin-botedit-table").waitFor({ timeout: 10_000 });
+    const botEditHandlersReady = await page
+      .waitForFunction(
+        () => ["newstrat", "rename", "showimg", "export_strat", "save", "load"].every((name) => typeof (window as unknown as Record<string, unknown>)[name] === "function"),
+        undefined,
+        { timeout: 10_000 }
+      )
+      .then(() => true)
+      .catch(() => false);
     const botEditText = await page.locator("body").innerText();
     const botEditTables = await page.locator(".legacy-admin-botedit-table").count();
+
+    await gotoGame(page, auth, "/game/admin", { mode: "BattleSim" });
+    await page.locator(".legacy-admin-battlesim-table").waitFor({ timeout: 10_000 });
+    await page.locator("#a_202").fill("");
+    await page.locator("#a_202").type("7");
+    await page.locator("select[name='aslot']").selectOption("2");
+    const attackerSlotTwoStartsEmpty = (await page.locator("#a_202").inputValue()) === "";
+    await page.locator("#a_202").type("3");
+    await page.locator("#a_weap").fill("");
+    await page.locator("#a_weap").type("4");
+    await page.locator("select[name='aslot']").selectOption("1");
+    const attackerSlotOneRestored = (await page.locator("#a_202").inputValue()) === "7";
+    const attackerSlotOneHidden = (await page.locator("#a0_202").inputValue()) === "7";
+    const attackerSlotTwoHidden = (await page.locator("#a1_202").inputValue()) === "3";
+    const attackerSlotTwoTechHidden = (await page.locator("#a1_weap").inputValue()) === "4";
+    const attackerNum = await page.locator("#anum").inputValue();
+    await page.locator("#d_401").fill("");
+    await page.locator("#d_401").type("5");
+    await page.locator("select[name='dslot']").selectOption("2");
+    await page.locator("#d_401").type("6");
+    const defenderSlotOneHidden = (await page.locator("#d0_401").inputValue()) === "5";
+    const defenderSlotTwoHidden = (await page.locator("#d1_401").inputValue()) === "6";
+    const defenderNum = await page.locator("#dnum").inputValue();
+    const battleSimDebug = await page.evaluate(() => {
+      const value = (selector: string) => (document.querySelector<HTMLInputElement>(selector)?.value ?? null);
+      const legacyWindow = window as Window & { OnChangeSlot?: unknown; OnChangeValue?: unknown; OnChangeTechValue?: unknown };
+      return {
+        hasOnChangeSlot: typeof legacyWindow.OnChangeSlot === "function",
+        hasOnChangeValue: typeof legacyWindow.OnChangeValue === "function",
+        hasOnChangeTechValue: typeof legacyWindow.OnChangeTechValue === "function",
+        attackerSlotSelect: document.querySelector<HTMLSelectElement>("select[name='aslot']")?.value ?? null,
+        defenderSlotSelect: document.querySelector<HTMLSelectElement>("select[name='dslot']")?.value ?? null,
+        visibleAttackerCargo: value("#a_202"),
+        attackerSlotOneCargo: value("#a0_202"),
+        attackerSlotTwoCargo: value("#a1_202"),
+        attackerSlotTwoWeapon: value("#a1_weap"),
+        visibleDefenderRocket: value("#d_401"),
+        defenderSlotOneRocket: value("#d0_401"),
+        defenderSlotTwoRocket: value("#d1_401")
+      };
+    });
+    const battleSimSlotsPass =
+      attackerSlotTwoStartsEmpty &&
+      attackerSlotOneRestored &&
+      attackerSlotOneHidden &&
+      attackerSlotTwoHidden &&
+      attackerSlotTwoTechHidden &&
+      attackerNum === "2" &&
+      defenderSlotOneHidden &&
+      defenderSlotTwoHidden &&
+      defenderNum === "2";
     record("administrator admin-only screens render", {
       pass:
         uniText.includes("Universe 1 Settings") &&
         botEditTables === 1 &&
+        botEditHandlersReady &&
         botEditText.includes("Name of the edited strategy:") &&
+        battleSimSlotsPass &&
         !botEditText.includes("Access denied.") &&
         signalsClean(signals),
-      details: { botEditTables, signals }
+      details: {
+        botEditTables,
+        botEditHandlersReady,
+        battleSimSlotsPass,
+        attackerSlotTwoStartsEmpty,
+        attackerSlotOneRestored,
+        attackerSlotOneHidden,
+        attackerSlotTwoHidden,
+        attackerSlotTwoTechHidden,
+        attackerNum,
+        defenderSlotOneHidden,
+        defenderSlotTwoHidden,
+        defenderNum,
+        battleSimDebug,
+        signals
+      }
     });
   });
 

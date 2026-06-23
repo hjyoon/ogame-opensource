@@ -12,23 +12,24 @@ const (
 )
 
 type Admin struct {
-	Commander      string
-	CurrentPlanet  PlanetOverview
-	PlanetSwitcher []PlanetSummary
-	Viewer         AdminViewer
-	Mode           string
-	Menu           []AdminMenuItem
-	MessageRows    []AdminMessageRow
-	UserLogRows    []AdminUserLogRow
-	UserRows       []AdminUserRow
-	ActiveUsers    []AdminUserRow
-	PlanetRows     []AdminPlanetRow
-	Universe       *AdminUniverseSettings
-	Expedition     map[string]int
-	QueueRows      []AdminQueueRow
-	BattleReports  []AdminBattleReportRow
-	ChecksumGroups []AdminChecksumGroup
-	BotStrategies  []AdminBotStrategy
+	Commander       string
+	CurrentPlanet   PlanetOverview
+	PlanetSwitcher  []PlanetSummary
+	Viewer          AdminViewer
+	Mode            string
+	Menu            []AdminMenuItem
+	MessageRows     []AdminMessageRow
+	UserLogRows     []AdminUserLogRow
+	UserRows        []AdminUserRow
+	ActiveUsers     []AdminUserRow
+	PlanetRows      []AdminPlanetRow
+	Universe        *AdminUniverseSettings
+	Expedition      map[string]int
+	QueueRows       []AdminQueueRow
+	BattleReports   []AdminBattleReportRow
+	ChecksumGroups  []AdminChecksumGroup
+	DatabaseBackups []AdminDatabaseBackup
+	BotStrategies   []AdminBotStrategy
 }
 
 type AdminViewer struct {
@@ -157,6 +158,10 @@ type AdminChecksumRow struct {
 	Path     string
 	Checksum string
 	Status   string
+}
+
+type AdminDatabaseBackup struct {
+	FileName string
 }
 
 type AdminBotStrategy struct {

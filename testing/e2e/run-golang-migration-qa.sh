@@ -57,5 +57,20 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
       printf 'Go user type Playwright QA (%s)\n' "$browser"
       (cd "$ROOT_DIR/frontend" && OGAME_PLAYWRIGHT_BROWSER="$browser" OGAME_GO_BASE_URL="$GO_BASE_URL" OGAME_USER_TYPE_FIXTURE_FILE="$ROOT_DIR/.tmp/golang-user-type-fixture.json" bun run e2e:user-types)
     done
+    if [ "${OGAME_RUN_OVERVIEW_FLEET_VISUAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-overview-fleet-visual-e2e.sh"
+    fi
+	    if [ "${OGAME_RUN_OVERVIEW_FLEET_COUNTDOWN:-1}" = "1" ]; then
+	      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-overview-fleet-countdown-e2e.sh"
+	    fi
+	    if [ "${OGAME_RUN_OVERVIEW_ALL_CASES:-1}" = "1" ]; then
+	      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-overview-all-cases-e2e.sh"
+	    fi
+	    if [ "${OGAME_RUN_FLEET_CONTINUE_VISUAL:-1}" = "1" ]; then
+	      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-fleet-continue-visual-e2e.sh"
+	    fi
+	    if [ "${OGAME_RUN_FLEET_ALL_CASES:-1}" = "1" ]; then
+	      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-fleet-all-cases-e2e.sh"
+	    fi
   fi
 fi

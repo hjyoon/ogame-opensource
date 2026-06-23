@@ -25,12 +25,35 @@ type gameOverviewSummary struct {
 	Commander      string                      `json:"commander"`
 	AdminLevel     int                         `json:"adminLevel"`
 	ServerTime     string                      `json:"serverTime"`
+	Officers       gameOverviewOfficers        `json:"officers"`
 	Score          gameScoreResponse           `json:"score"`
 	CurrentPlanet  gamePlanetOverviewResponse  `json:"currentPlanet"`
 	PlanetSwitcher []gamePlanetSummaryResponse `json:"planetSwitcher"`
+	News           *gameOverviewNewsResponse   `json:"news,omitempty"`
+	MenuLinks      gameOverviewMenuLinks       `json:"menuLinks"`
 	Messages       []string                    `json:"messages,omitempty"`
+	Errors         []string                    `json:"errors,omitempty"`
 	UnreadMessages int                         `json:"unreadMessages"`
 	Events         []gameFleetMissionResponse  `json:"events"`
+}
+
+type gameOverviewOfficers struct {
+	Commander  bool `json:"commander"`
+	Admiral    bool `json:"admiral"`
+	Engineer   bool `json:"engineer"`
+	Geologist  bool `json:"geologist"`
+	Technocrat bool `json:"technocrat"`
+}
+
+type gameOverviewNewsResponse struct {
+	URL   string `json:"url"`
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
+
+type gameOverviewMenuLinks struct {
+	BoardURL   string `json:"boardUrl"`
+	DiscordURL string `json:"discordUrl"`
 }
 
 type gameScoreResponse struct {
@@ -251,6 +274,13 @@ func toGameOverviewSummary(overview domaingame.Overview) gameOverviewSummary {
 		Commander:  overview.Commander,
 		AdminLevel: overview.AdminLevel,
 		ServerTime: overview.ServerTime,
+		Officers: gameOverviewOfficers{
+			Commander:  overview.Officers.Commander,
+			Admiral:    overview.Officers.Admiral,
+			Engineer:   overview.Officers.Engineer,
+			Geologist:  overview.Officers.Geologist,
+			Technocrat: overview.Officers.Technocrat,
+		},
 		Score: gameScoreResponse{
 			Points:          overview.Score.DisplayPoints(),
 			RawScore:        overview.Score.RawScore,
@@ -259,9 +289,26 @@ func toGameOverviewSummary(overview domaingame.Overview) gameOverviewSummary {
 		},
 		CurrentPlanet:  toGamePlanetOverviewResponse(overview.CurrentPlanet),
 		PlanetSwitcher: planets,
+		News:           toGameOverviewNewsResponse(overview.News),
+		MenuLinks: gameOverviewMenuLinks{
+			BoardURL:   overview.MenuLinks.BoardURL,
+			DiscordURL: overview.MenuLinks.DiscordURL,
+		},
 		Messages:       overview.Messages,
+		Errors:         overview.Errors,
 		UnreadMessages: overview.UnreadMessages,
 		Events:         events,
+	}
+}
+
+func toGameOverviewNewsResponse(news *domaingame.OverviewNews) *gameOverviewNewsResponse {
+	if news == nil {
+		return nil
+	}
+	return &gameOverviewNewsResponse{
+		URL:   news.URL,
+		Start: news.Start,
+		End:   news.End,
 	}
 }
 

@@ -89,6 +89,8 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		admin.BattleReports, err = r.loadAdminBattleReports(ctx)
 	case "Checksum":
 		admin.ChecksumGroups, err = r.loadAdminChecksumGroups(ctx)
+	case "DB":
+		admin.DatabaseBackups, err = r.loadAdminDatabaseBackups(ctx)
 	case "BotEdit":
 		admin.BotStrategies, err = r.loadAdminBotStrategies(ctx)
 	}

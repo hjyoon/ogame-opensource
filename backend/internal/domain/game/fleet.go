@@ -59,10 +59,13 @@ type FleetMission struct {
 	StateShort      string
 	Ships           []FleetShipCount
 	TotalShips      int
+	LoadedResources map[int]int
 	MissileAmount   int
 	MissileTargetID int
 	MissileTarget   string
 	UnionID         int
+	UnionName       string
+	UnionPlayers    []FleetUnionPlayer
 	GroupMissions   []FleetMission
 	Origin          Coordinates
 	OriginName      string
@@ -74,6 +77,11 @@ type FleetMission struct {
 	ArrivalAt       int64
 	CanRecall       bool
 	CanCreateUnion  bool
+}
+
+type FleetUnionPlayer struct {
+	ID   int
+	Name string
 }
 
 type FleetShipCount struct {
@@ -281,9 +289,8 @@ func BuildFleetDispatchDraft(fleet Fleet, input FleetDispatchDraftInput) FleetDi
 	}
 	missions := fleetDispatchMissionOptions(fleet, selectedCounts, target, targetType, input.Mission)
 	selectedMission := input.Mission
-	if !missionOptionExists(missions, selectedMission) && len(missions) > 0 {
-		selectedMission = missions[0].ID
-		missions[0].Selected = true
+	if !missionOptionExists(missions, selectedMission) {
+		selectedMission = 0
 	}
 	distance := fleetFlightDistance(fleet.CurrentPlanet.Coordinates, target)
 	maxSpeed := fleetDispatchMaxSpeed(fleet.Ships, selectedCounts)
@@ -418,7 +425,7 @@ func fleetDispatchMissionOptions(fleet Fleet, counts FleetCounts, target Coordin
 		if counts[FleetRecycler] > 0 {
 			ids = append(ids, FleetMissionRecycle)
 		}
-	} else if target == fleet.CurrentPlanet.Coordinates && targetType == gamePlanetTypeFromPlanet(fleet.CurrentPlanet.Type) {
+	} else if fleetDispatchTargetIsOwn(fleet, target, targetType) {
 		ids = append(ids, FleetMissionTransport, FleetMissionDeploy)
 	} else {
 		ids = append(ids, FleetMissionTransport, FleetMissionAttack)
@@ -431,6 +438,9 @@ func fleetDispatchMissionOptions(fleet Fleet, counts FleetCounts, target Coordin
 		if counts[FleetEspionageProbe] > 0 {
 			ids = append(ids, FleetMissionSpy)
 		}
+		if fleetDispatchTargetHasUnion(fleet, target, targetType) {
+			ids = append(ids, FleetMissionACSAttack)
+		}
 	}
 
 	options := make([]FleetMissionOption, 0, len(ids))
@@ -438,7 +448,7 @@ func fleetDispatchMissionOptions(fleet Fleet, counts FleetCounts, target Coordin
 		option := FleetMissionOption{
 			ID:       id,
 			Name:     fleetMissionName(id),
-			Selected: id == requested,
+			Selected: id == requested || (requested == 0 && id == FleetMissionExpedition),
 		}
 		if id == FleetMissionExpedition {
 			option.Warning = "WARNING: Expedition is a very risky mission, not meant to be a save."
@@ -446,6 +456,40 @@ func fleetDispatchMissionOptions(fleet Fleet, counts FleetCounts, target Coordin
 		options = append(options, option)
 	}
 	return options
+}
+
+func fleetDispatchTargetIsOwn(fleet Fleet, target Coordinates, targetType int) bool {
+	if target == fleet.CurrentPlanet.Coordinates && targetType == gamePlanetTypeFromPlanet(fleet.CurrentPlanet.Type) {
+		return true
+	}
+	for _, planet := range fleet.PlanetSwitcher {
+		if target == planet.Coordinates && targetType == gamePlanetTypeFromPlanet(planet.Type) {
+			return true
+		}
+	}
+	return false
+}
+
+func fleetDispatchTargetHasUnion(fleet Fleet, target Coordinates, targetType int) bool {
+	for _, mission := range fleet.Missions {
+		if mission.UnionID <= 0 {
+			continue
+		}
+		if mission.Target == target && fleetMissionTargetGameType(mission.TargetType) == targetType {
+			return true
+		}
+	}
+	return false
+}
+
+func fleetMissionTargetGameType(targetType int) int {
+	if targetType == PlanetTypeMoon {
+		return GamePlanetTypeMoon
+	}
+	if targetType == PlanetTypeDebris {
+		return GamePlanetTypeDebris
+	}
+	return GamePlanetTypePlanet
 }
 
 func missionOptionExists(options []FleetMissionOption, mission int) bool {
@@ -747,22 +791,22 @@ func fleetShipSpeed(id int, research ResearchLevels) int {
 	switch id {
 	case FleetSmallCargo:
 		if research[ResearchImpulseDrive] >= 5 {
-			return int((base + 5000) * (1 + 0.2*impulse))
+			return int(math.Round((base + 5000) * (1 + 0.2*impulse)))
 		}
-		return int(base * (1 + 0.1*combustion))
+		return int(math.Round(base * (1 + 0.1*combustion)))
 	case FleetBomber:
 		if research[ResearchHyperspaceDrive] >= 8 {
-			return int((base + 1000) * (1 + 0.3*hyper))
+			return int(math.Round((base + 1000) * (1 + 0.3*hyper)))
 		}
-		return int(base * (1 + 0.2*impulse))
+		return int(math.Round(base * (1 + 0.2*impulse)))
 	case FleetLargeCargo, FleetLightFighter, FleetRecycler, FleetEspionageProbe, FleetSolarSatellite:
-		return int(base * (1 + 0.1*combustion))
+		return int(math.Round(base * (1 + 0.1*combustion)))
 	case FleetHeavyFighter, FleetCruiser, FleetColonyShip:
-		return int(base * (1 + 0.2*impulse))
+		return int(math.Round(base * (1 + 0.2*impulse)))
 	case FleetBattleship, FleetDestroyer, FleetDeathstar, FleetBattlecruiser:
-		return int(base * (1 + 0.3*hyper))
+		return int(math.Round(base * (1 + 0.3*hyper)))
 	default:
-		return int(base)
+		return int(math.Round(base))
 	}
 }
 

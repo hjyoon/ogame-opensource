@@ -292,6 +292,10 @@ async function assertGameClientNavigation(
     await page.locator(".legacy-technology-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Statistics") {
     await page.locator(".legacy-statistics-table").first().waitFor({ timeout: 10_000 });
+    const firstDelta = page.locator(".legacy-statistics-delta").first();
+    if ((await firstDelta.count()) > 0) {
+      await firstDelta.hover();
+    }
   } else if (expectedMenuLabel === "Search") {
     await page.locator(".legacy-search-head-table").first().waitFor({ timeout: 10_000 });
   } else if (expectedMenuLabel === "Buddylist") {
@@ -348,10 +352,12 @@ async function assertGameClientNavigation(
                           state.details.technologyNames.includes("Metal Mine") &&
                           state.details.pendingText === false
                         : expectedMenuLabel === "Statistics"
-                          ? state.details.statisticsTable === true &&
-                            state.details.statisticsRows > 0 &&
-                            state.details.statisticsText.includes("Statistics") &&
-                            state.details.pendingText === false
+                        ? state.details.statisticsTable === true &&
+                          state.details.statisticsRows > 0 &&
+                          state.details.statisticsText.includes("Statistics") &&
+                          state.details.statisticsDeltaTooltips > 0 &&
+                          state.details.statisticsDeltaTooltipText.includes("From") &&
+                          state.details.pendingText === false
                           : expectedMenuLabel === "Search"
                             ? state.details.searchHeadTable === true &&
                               state.details.searchText.includes("Search Universe") &&
@@ -889,6 +895,8 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     statisticsRows: document.querySelectorAll("[data-statistics-row]").length,
     statisticsText: document.querySelector(".legacy-statistics-head-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     statisticsBodyText: document.querySelector(".legacy-statistics-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
+    statisticsDeltaTooltips: document.querySelectorAll(".legacy-statistics-tooltip").length,
+    statisticsDeltaTooltipText: document.querySelector(".legacy-statistics-tooltip")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     searchHeadTable: document.querySelector(".legacy-search-head-table") !== null,
     searchResultsTable: document.querySelector(".legacy-search-results-table") !== null,
     searchRows: document.querySelectorAll("[data-search-row]").length,

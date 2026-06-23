@@ -224,7 +224,17 @@ type GameOverview = {
   commander: string;
   adminLevel: number;
   serverTime?: string;
+  officers?: {
+    commander: boolean;
+    admiral: boolean;
+    engineer: boolean;
+    geologist: boolean;
+    technocrat: boolean;
+  };
+  news?: GameOverviewNews;
+  menuLinks?: GameOverviewMenuLinks;
   messages?: string[];
+  errors?: string[];
   unreadMessages: number;
   score: {
     points: number;
@@ -235,6 +245,17 @@ type GameOverview = {
   currentPlanet: GamePlanetOverview;
   planetSwitcher: GamePlanetSummary[];
   events: GameFleetMission[];
+};
+
+type GameOverviewNews = {
+  url: string;
+  start: string;
+  end: string;
+};
+
+type GameOverviewMenuLinks = {
+  boardUrl?: string;
+  discordUrl?: string;
 };
 
 type GamePlanetOverview = {
@@ -612,10 +633,13 @@ type GameFleetMission = {
   stateShort: string;
   ships: { id: number; name: string; count: number }[];
   totalShips: number;
+  loadedResources?: Record<string, number>;
   missileAmount: number;
   missileTargetId: number;
   missileTarget: string;
   unionId: number;
+  unionName?: string;
+  unionPlayers?: { id: number; name: string }[];
   groupMissions: GameFleetMission[];
   origin: Coordinates;
   originName: string;
@@ -1076,6 +1100,7 @@ type GameAdmin = {
   queueRows?: GameAdminQueueRow[];
   battleReports?: GameAdminBattleReportRow[];
   checksumGroups?: GameAdminChecksumGroup[];
+  databaseBackups?: GameAdminDatabaseBackup[];
   botStrategies?: GameAdminBotStrategy[];
 };
 
@@ -1200,6 +1225,10 @@ type GameAdminChecksumRow = {
   path: string;
   checksum: string;
   status: string;
+};
+
+type GameAdminDatabaseBackup = {
+  fileName: string;
 };
 
 type GameAdminBotStrategy = {
@@ -1351,6 +1380,7 @@ export type GameNoteDraft = {
 
 type LegacyMenuEntry =
   | { type: "image"; height: number; src: string; width: number }
+  | { type: "external"; key: "board" | "discord"; label: string }
   | { type: "route"; color?: string; id?: string; key: GameRoute["key"] };
 
 const skinBase = "/public-assets/evolution";
@@ -1360,6 +1390,7 @@ const gameRouteByKey = new Map(gameRoutes.map((route) => [route.key, route]));
 const legacyMenuEntries: LegacyMenuEntry[] = [
   { type: "image", height: 40, src: `${skinBase}/gfx/ogame-produktion.jpg`, width: 110 },
   { type: "route", key: "overview" },
+  { type: "route", key: "empire" },
   { type: "route", key: "admin" },
   { type: "route", key: "buildings" },
   { type: "route", key: "resources" },
@@ -1372,6 +1403,8 @@ const legacyMenuEntries: LegacyMenuEntry[] = [
   { type: "route", key: "defense" },
   { type: "image", height: 19, src: `${skinBase}/gfx/info-help.jpg`, width: 110 },
   { type: "route", key: "alliance" },
+  { type: "external", key: "board", label: "Board" },
+  { type: "external", key: "discord", label: "Discord" },
   { type: "route", id: "darkmatter2", key: "officers" },
   { type: "route", key: "statistics" },
   { type: "route", key: "search" },
@@ -1484,6 +1517,19 @@ export function LegacyGameOverview({
 }: LegacyGameOverviewProps) {
   const overview = status?.authenticated ? status.overview : undefined;
   const issue = status && !status.authenticated ? status.issues[0]?.message ?? "Session is invalid." : null;
+  React.useEffect(() => {
+    const legacyWindow = window as Window & { showGalaxy?: (galaxy: number, system: number, planet: number) => void };
+    legacyWindow.showGalaxy = (galaxy: number, system: number, planet: number) => {
+      const search = overviewSessionSearch();
+      search.set("galaxy", String(galaxy));
+      search.set("system", String(system));
+      search.set("position", String(planet));
+      window.location.href = gameRouteURL("/game/galaxy", search.toString());
+    };
+    return () => {
+      delete legacyWindow.showGalaxy;
+    };
+  }, []);
   const buildings = buildingsStatus?.authenticated ? buildingsStatus.buildings : undefined;
   const buildingsIssue =
     buildingsStatus && !buildingsStatus.authenticated ? buildingsStatus.issues[0]?.message ?? "Session is invalid." : null;
@@ -1561,15 +1607,20 @@ export function LegacyGameOverview({
   const hasMenu = route.key !== "notes" && route.key !== "report";
   const hasOverviewPageMessage =
     hasHeader && Boolean(overview && route.key === "overview" && overview.messages && overview.messages.length > 0);
+  const hasOverviewPageError =
+    hasHeader && Boolean(overview && route.key === "overview" && overview.errors && overview.errors.length > 0);
   const searchPageMessage =
     route.key === "search" && search?.message && !isSearchPageErrorMessage(search.message) ? search.message : "";
   const searchPageError =
     route.key === "search" && search?.message && isSearchPageErrorMessage(search.message) ? search.message : "";
   const hasSearchPageFooter = Boolean(searchPageMessage || searchPageError);
   const pageMessageRef = React.useRef<HTMLDivElement | null>(null);
+  const pageErrorRef = React.useRef<HTMLDivElement | null>(null);
   const searchMessageRef = React.useRef<HTMLDivElement | null>(null);
   const searchErrorRef = React.useRef<HTMLDivElement | null>(null);
-  const [overviewContentLayout, setOverviewContentLayout] = React.useState<{ height: string; top: number } | null>(null);
+  const [overviewContentLayout, setOverviewContentLayout] = React.useState<{ height: string; top: number; errorTop: number } | null>(
+    null
+  );
   const [searchContentLayout, setSearchContentLayout] = React.useState<{ height: string; top: number; errorTop: number } | null>(
     null
   );
@@ -1581,15 +1632,18 @@ export function LegacyGameOverview({
     const updateOverviewContentLayout = () => {
       const headerHeight = 81;
       const messageHeight = pageMessageRef.current?.offsetHeight ?? 0;
-      const errorHeight = 0;
+      const errorHeight = pageErrorRef.current?.offsetHeight ?? 0;
+      const errorTop = headerHeight + messageHeight + 5;
       const top = headerHeight + errorHeight + messageHeight + 10;
       const height = `${Math.max(0, window.innerHeight - messageHeight - errorHeight - headerHeight - 20)}px`;
-      setOverviewContentLayout((current) => (current?.top === top && current.height === height ? current : { height, top }));
+      setOverviewContentLayout((current) =>
+        current?.top === top && current.height === height && current.errorTop === errorTop ? current : { height, top, errorTop }
+      );
     };
     updateOverviewContentLayout();
     window.addEventListener("resize", updateOverviewContentLayout);
     return () => window.removeEventListener("resize", updateOverviewContentLayout);
-  }, [hasOverviewPageMessage, route.key]);
+  }, [hasOverviewPageError, hasOverviewPageMessage, route.key]);
   React.useLayoutEffect(() => {
     if (route.key !== "search" || !hasSearchPageFooter) {
       setSearchContentLayout(null);
@@ -1647,16 +1701,23 @@ export function LegacyGameOverview({
           <LegacyCenter>{overview ? <LegacyResourceHeader overview={overview} /> : <div className="legacy-header-placeholder">OGame</div>}</LegacyCenter>
         </div>
       ) : null}
-      {hasMenu ? <LegacyLeftMenu activeRoute={route} adminLevel={overview?.adminLevel ?? 0} /> : null}
+      {hasMenu ? <LegacyLeftMenu activeRoute={route} adminLevel={overview?.adminLevel ?? 0} menuLinks={overview?.menuLinks} /> : null}
       {hasOverviewPageMessage && overview?.messages ? (
         <LegacyPageMessage ref={pageMessageRef} messages={overview.messages} />
+      ) : null}
+      {hasOverviewPageError && overview?.errors ? (
+        <LegacyPageError
+          ref={pageErrorRef}
+          messages={overview.errors}
+          style={{ top: overviewContentLayout && hasOverviewPageMessage ? `${overviewContentLayout.errorTop}px` : "86px" }}
+        />
       ) : null}
       {searchPageMessage ? <LegacyPageMessage ref={searchMessageRef} messages={[searchPageMessage]} /> : null}
       {searchPageError ? (
         <LegacyPageError
           ref={searchErrorRef}
+          messages={[searchPageError]}
           style={{ top: searchContentLayout && searchPageMessage ? `${searchContentLayout.errorTop}px` : "86px" }}
-          text={searchPageError}
         />
       ) : null}
       <section className={contentClassName} id="content" style={contentStyle}>
@@ -1759,7 +1820,7 @@ export function LegacyGameOverview({
           <LegacyMessage tone="error" text={optionsIssue} />
         ) : null}
         {report && route.key === "report" ? <ReportTable report={report} /> : null}
-        {overview && route.key === "overview" ? <OverviewTable onBuildQueueComplete={onOverviewRefresh} overview={overview} /> : null}
+        {overview && route.key === "overview" ? <OverviewPage onBuildQueueComplete={onOverviewRefresh} overview={overview} /> : null}
         {overview && route.key === "renamePlanet" ? (
           <RenamePlanetTable onDelete={onPlanetDelete} onRename={onPlanetRename} overview={overview} pending={overviewPending} />
         ) : null}
@@ -1932,6 +1993,7 @@ const LegacyPageMessage = React.forwardRef<HTMLDivElement, { messages: string[] 
           <React.Fragment key={`${message}-${index}`}>
             {message}
             <br />
+            {"\n"}
           </React.Fragment>
         ))}
       </center>
@@ -1939,13 +2001,21 @@ const LegacyPageMessage = React.forwardRef<HTMLDivElement, { messages: string[] 
   );
 });
 
-const LegacyPageError = React.forwardRef<HTMLDivElement, { style?: React.CSSProperties; text: string }>(function LegacyPageError(
-  { style, text },
+const LegacyPageError = React.forwardRef<HTMLDivElement, { messages: string[]; style?: React.CSSProperties }>(function LegacyPageError(
+  { messages, style },
   ref
 ) {
   return (
     <div className="legacy-page-errorbox" id="errorbox" ref={ref} style={{ display: "block", ...style }}>
-      <center>{text}</center>
+      <center>
+        {messages.map((message, index) => (
+          <React.Fragment key={`${message}-${index}`}>
+            {message}
+            <br />
+            {"\n"}
+          </React.Fragment>
+        ))}
+      </center>
     </div>
   );
 });
@@ -1976,11 +2046,11 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
     }
   ];
   const officers = [
-    { alt: "Commander", image: "commander" },
-    { alt: "Admiral", image: "admiral" },
-    { alt: "Engineer", image: "ingenieur" },
-    { alt: "Geologist", image: "geologe" },
-    { alt: "Technocrat", image: "technokrat" }
+    { active: overview.officers?.commander ?? false, alt: "Commander", image: "commander" },
+    { active: overview.officers?.admiral ?? false, alt: "Admiral", image: "admiral" },
+    { active: overview.officers?.engineer ?? false, alt: "Engineer", image: "ingenieur" },
+    { active: overview.officers?.geologist ?? false, alt: "Geologist", image: "geologe" },
+    { active: overview.officers?.technocrat ?? false, alt: "Technocrat", image: "technokrat" }
   ];
 
   return (
@@ -2062,7 +2132,12 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
                   {officers.map((officer) => (
                     <td align="center" className="legacy-header-cell header" key={officer.image} width={35}>
                       <a accessKey="i" href={gameRouteURL("/game/officers", window.location.search)}>
-                        <img alt={officer.alt} height={32} src={`${gameImageBase}/${officer.image}_ikon_un.gif`} width={32} />
+                        <img
+                          alt={officer.alt}
+                          height={32}
+                          src={`${gameImageBase}/${officer.image}_ikon${officer.active ? "" : "_un"}.gif`}
+                          width={32}
+                        />
                       </a>
                     </td>
                   ))}
@@ -2077,7 +2152,15 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
   );
 }
 
-function LegacyLeftMenu({ activeRoute, adminLevel }: { activeRoute: GameRoute; adminLevel: number }) {
+function LegacyLeftMenu({
+  activeRoute,
+  adminLevel,
+  menuLinks
+}: {
+  activeRoute: GameRoute;
+  adminLevel: number;
+  menuLinks?: GameOverviewMenuLinks;
+}) {
   return (
     <aside className="legacy-leftmenu" id="leftmenu">
       <div className="legacy-center">
@@ -2102,6 +2185,9 @@ function LegacyLeftMenu({ activeRoute, adminLevel }: { activeRoute: GameRoute; a
                 if (entry.key === "admin" && adminLevel <= 0) {
                   return null;
                 }
+                if (entry.type === "external") {
+                  return <LegacyMenuExternal entry={entry} key={entry.key} menuLinks={menuLinks} />;
+                }
                 return <LegacyMenuRoute activeRoute={activeRoute} entry={entry} key={entry.key} />;
               })}
             </tbody>
@@ -2109,6 +2195,24 @@ function LegacyLeftMenu({ activeRoute, adminLevel }: { activeRoute: GameRoute; a
         </div>
       </div>
     </aside>
+  );
+}
+
+function LegacyMenuExternal({ entry, menuLinks }: { entry: Extract<LegacyMenuEntry, { type: "external" }>; menuLinks?: GameOverviewMenuLinks }) {
+  const url = entry.key === "board" ? menuLinks?.boardUrl : menuLinks?.discordUrl;
+  if (!url) {
+    return null;
+  }
+  return (
+    <tr>
+      <td>
+        <div className="legacy-center">
+          <a href={url} target="_blank">
+            {entry.label}
+          </a>
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -2258,19 +2362,21 @@ function allianceStatisticsHTML(statistics: GameStatistics): string {
 
 function statisticsDeltaHTML(row: GameStatisticsRow): string {
   const title = `From ${formatLegacyDateTime(row.scoreDate)}`;
+  let color = "87CEEB";
+  let marker = "*";
+  let tooltip = "*";
   if (row.delta < 0) {
-    return `<a href='#' onmouseover='return overlib("<font color=lime>+${Math.abs(row.delta)}</font><br/><font color=white>${legacyHTMLAttribute(
-      title
-    )}");' onmouseout='return nd();'><font color='lime'>+</font></a>`;
+    color = "lime";
+    marker = "+";
+    tooltip = `+${Math.abs(row.delta)}`;
+  } else if (row.delta > 0) {
+    color = "red";
+    marker = "-";
+    tooltip = `-${Math.abs(row.delta)}`;
   }
-  if (row.delta > 0) {
-    return `<a href='#' onmouseover='return overlib("<font color=red>-${Math.abs(row.delta)}</font><br/><font color=white>${legacyHTMLAttribute(
-      title
-    )}");' onmouseout='return nd();'><font color='red'>-</font></a>`;
-  }
-  return `<a href='#' onmouseover='return overlib("<font color=87CEEB>*</font><br/><font color=white>${legacyHTMLAttribute(
-    title
-  )}");' onmouseout='return nd();'><font color='87CEEB'>*</font></a>`;
+  return `<span class="legacy-statistics-delta" tabindex="0"><font color="${color}">${marker}</font><span class="legacy-statistics-tooltip"><font color="${color}">${legacyHTMLText(
+    tooltip
+  )}</font><br/><font color="white">${legacyHTMLText(title)}</font></span></span>`;
 }
 
 function statisticsWindows(total: number, selectedStart: number): number[] {
@@ -2913,7 +3019,7 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "DB") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminDatabaseTable />
+        <AdminDatabaseTable backups={admin.databaseBackups ?? []} />
       </AdminModeShell>
     );
   }
@@ -3056,10 +3162,18 @@ function AdminQuickPanel({ admin }: { admin: GameAdmin }) {
 }
 
 function AdminBansTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
-  const users = uniqueAdminUsers([...(admin.userRows ?? []), ...(admin.activeUsers ?? [])]);
+  const [searched, setSearched] = React.useState(false);
+  const users = searched ? uniqueAdminUsers([...(admin.userRows ?? []), ...(admin.activeUsers ?? [])]) : [];
   return (
     <>
-      <form action={adminModeActionHref("Bans", "search")} method="POST" onSubmit={(event) => event.preventDefault()}>
+      <form
+        action={adminModeActionHref("Bans", "search")}
+        method="POST"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setSearched(true);
+        }}
+      >
         <table className="legacy-admin-bans-table">
           <tbody>
             <tr>
@@ -3092,80 +3206,82 @@ function AdminBansTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAct
           </tbody>
         </table>
       </form>
-      <form
-        action={adminModeActionHref("Bans", "ban")}
-        id="banform"
-        method="POST"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const data = new FormData(event.currentTarget);
-          const targetIds = data
-            .getAll("id")
-            .map((value) => Number(value))
-            .filter((value) => Number.isFinite(value) && value > 0);
-          onAdminAction({
-            action: "ban",
-            targetIds,
-            banMode: Number(data.get("banmode")) || 0,
-            days: Math.max(0, Number(data.get("days")) || 0),
-            hours: Math.max(0, Number(data.get("hours")) || 0),
-            reason: String(data.get("reason") ?? "")
-          });
-        }}
-      >
-        <table className="legacy-admin-bans-table">
-          <tbody>
-            <tr>
-              <td className="c">ID</td>
-              <td className="c">Name</td>
-              <td className="c">Home Planet</td>
-              <td className="c">Status</td>
-            </tr>
-            {users.length === 0 ? (
+      {searched ? (
+        <form
+          action={adminModeActionHref("Bans", "ban")}
+          id="banform"
+          method="POST"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            const targetIds = data
+              .getAll("id")
+              .map((value) => Number(value))
+              .filter((value) => Number.isFinite(value) && value > 0);
+            onAdminAction({
+              action: "ban",
+              targetIds,
+              banMode: Number(data.get("banmode")) || 0,
+              days: Math.max(0, Number(data.get("days")) || 0),
+              hours: Math.max(0, Number(data.get("hours")) || 0),
+              reason: String(data.get("reason") ?? "")
+            });
+          }}
+        >
+          <table className="legacy-admin-bans-table">
+            <tbody>
               <tr>
-                <td colSpan={4}>Not found</td>
+                <td className="c">ID</td>
+                <td className="c">Name</td>
+                <td className="c">Home Planet</td>
+                <td className="c">Status</td>
               </tr>
-            ) : (
-              users.map((user) => (
-                <tr key={user.playerId}>
-                  <th>
-                    <input className="ids" name="id" type="checkbox" value={user.playerId} />
-                    {user.playerId}
-                  </th>
-                  <th dangerouslySetInnerHTML={{ __html: adminUserNameHTML(user) }} />
-                  <th>{user.homePlanet ? `${formatCoordinates(user.homePlanet.coordinates)} ${user.homePlanet.name}` : ""}</th>
-                  <th>{adminUserStatus(user)}</th>
+              {users.length === 0 ? (
+                <tr>
+                  <td colSpan={4}>Not found</td>
                 </tr>
-              ))
-            )}
-            <tr>
-              <td className="c" colSpan={4}>
-                Actions
-              </td>
-            </tr>
-            <tr>
-              <td colSpan={3}>
-                <label><input defaultChecked name="banmode" type="radio" value="1" /> <LegacyFont color="red"><b>Ban with vacation mode</b></LegacyFont></label>{" "}
-                <label><input name="banmode" type="radio" value="0" /> <LegacyFont color="firebrick"><b>Ban without vacation mode</b></LegacyFont></label>{" "}
-                <label><input name="banmode" type="radio" value="2" /> <LegacyFont color="yellow"><b>Attack ban</b></LegacyFont></label>{" "}
-                <label><input name="banmode" type="radio" value="3" /> <LegacyFont color="lime"><b>Unban</b></LegacyFont></label>{" "}
-                <label><input name="banmode" type="radio" value="4" /> <LegacyFont color="lime"><b>Allow attacks</b></LegacyFont></label>
-              </td>
-              <td>
-                <input name="days" size={5} type="text" /> days <input name="hours" size={3} type="text" /> hours
-              </td>
-            </tr>
-            <tr>
-              <th colSpan={3}>
-                Reason <textarea cols={40} name="reason" rows={4} />
-              </th>
-              <th>
-                <input type="submit" value="Submit" />
-              </th>
-            </tr>
-          </tbody>
-        </table>
-      </form>
+              ) : (
+                users.map((user) => (
+                  <tr key={user.playerId}>
+                    <th>
+                      <input className="ids" name="id" type="checkbox" value={user.playerId} />
+                      {user.playerId}
+                    </th>
+                    <th dangerouslySetInnerHTML={{ __html: adminUserNameHTML(user) }} />
+                    <th>{user.homePlanet ? `${formatCoordinates(user.homePlanet.coordinates)} ${user.homePlanet.name}` : ""}</th>
+                    <th>{adminUserStatus(user)}</th>
+                  </tr>
+                ))
+              )}
+              <tr>
+                <td className="c" colSpan={4}>
+                  Actions
+                </td>
+              </tr>
+              <tr>
+                <td colSpan={3}>
+                  <label><input defaultChecked name="banmode" type="radio" value="1" /> <LegacyFont color="red"><b>Ban with vacation mode</b></LegacyFont></label>{" "}
+                  <label><input name="banmode" type="radio" value="0" /> <LegacyFont color="firebrick"><b>Ban without vacation mode</b></LegacyFont></label>{" "}
+                  <label><input name="banmode" type="radio" value="2" /> <LegacyFont color="yellow"><b>Attack ban</b></LegacyFont></label>{" "}
+                  <label><input name="banmode" type="radio" value="3" /> <LegacyFont color="lime"><b>Unban</b></LegacyFont></label>{" "}
+                  <label><input name="banmode" type="radio" value="4" /> <LegacyFont color="lime"><b>Allow attacks</b></LegacyFont></label>
+                </td>
+                <td>
+                  <input name="days" size={5} type="text" /> days <input name="hours" size={3} type="text" /> hours
+                </td>
+              </tr>
+              <tr>
+                <th colSpan={3}>
+                  Reason <textarea cols={40} name="reason" rows={4} />
+                </th>
+                <th>
+                  <input type="submit" value="Submit" />
+                </th>
+              </tr>
+            </tbody>
+          </table>
+        </form>
+      ) : null}
     </>
   );
 }
@@ -3406,9 +3522,10 @@ function AdminMessagesTable({
                         </th>
                         <th>{formatLegacyAdminMessageDate(row.date)}</th>
                         <th>
-                          <AdminUserLink ownerId={row.ownerId} ownerName={row.ownerName} /> [{row.ip}]{" "}
+                          <AdminUserLink ownerId={row.ownerId} ownerName={row.ownerName} />
+                          {` [${row.ip}] `}
                         </th>
-                        <th>{row.agent} </th>
+                        <th>{`${row.agent} `}</th>
                       </tr>
                       <tr>
                         <td className="b"> </td>
@@ -4046,16 +4163,22 @@ function AdminChecksumTable({ groups }: { groups: GameAdminChecksumGroup[] }) {
   );
 }
 
-function AdminDatabaseTable() {
-  return <div dangerouslySetInnerHTML={{ __html: adminDatabaseHTML() }} />;
+function AdminDatabaseTable({ backups }: { backups: GameAdminDatabaseBackup[] }) {
+  return <div dangerouslySetInnerHTML={{ __html: adminDatabaseHTML(backups) }} />;
 }
 
-function adminDatabaseHTML(): string {
+function adminDatabaseHTML(backups: GameAdminDatabaseBackup[]): string {
   let html = "";
   html += "<h2>Database Backup</h2>\n";
   html += "&#9888;&#65039; Know what you're doing. Mindlessly pressing buttons can lead to unfortunate consequences!<br/>";
   html += '<table class="legacy-admin-db-table">\n';
   html += "<tr><td class=c>File name</td><td class=c>Operation</td></tr>\n";
+  for (const backup of backups) {
+    const fileName = legacyHTMLText(backup.fileName);
+    const restoreHref = legacyHTMLAttribute(adminModeFileActionHref("DB", "restore", backup.fileName));
+    const deleteHref = legacyHTMLAttribute(adminModeFileActionHref("DB", "delete", backup.fileName));
+    html += `<tr><td>${fileName}<br/></td><td><a href="${restoreHref}">Restore</a> <a href="${deleteHref}">Delete</a></td></tr>\n`;
+  }
   html += "</table>\n";
   html += "<br/>\n";
   html += `<form action="${legacyHTMLAttribute(adminModeActionHref("DB", "create"))}" method="POST"><input type=submit value="Create a database backup" /></form>`;
@@ -4099,7 +4222,41 @@ const adminRakSimDefenseRows = [
 ];
 
 function AdminBattleSimTable() {
-  return <div dangerouslySetInnerHTML={{ __html: adminBattleSimHTML() }} />;
+  const handleBattleSimEvent = (event: React.SyntheticEvent<HTMLDivElement>) => {
+    adminBattleSimHandleEventTarget(event.target);
+  };
+  React.useEffect(() => {
+    const legacyWindow = window as Window & {
+      OnChangeSlot?: (attacker: number) => void;
+      OnChangeValue?: (attacker: number, id: number) => void;
+      OnChangeTechValue?: (attacker: number) => void;
+      RecalcAttackersDefendersNum?: () => void;
+      toint?: (value: unknown) => number;
+    };
+    const previous = {
+      OnChangeSlot: legacyWindow.OnChangeSlot,
+      OnChangeValue: legacyWindow.OnChangeValue,
+      OnChangeTechValue: legacyWindow.OnChangeTechValue,
+      RecalcAttackersDefendersNum: legacyWindow.RecalcAttackersDefendersNum,
+      toint: legacyWindow.toint
+    };
+    legacyWindow.toint = adminBattleSimToInt;
+    legacyWindow.RecalcAttackersDefendersNum = adminBattleSimRecalcAttackersDefendersNum;
+    legacyWindow.OnChangeSlot = adminBattleSimOnChangeSlot;
+    legacyWindow.OnChangeValue = adminBattleSimOnChangeValue;
+    legacyWindow.OnChangeTechValue = adminBattleSimOnChangeTechValue;
+    const cleanupListeners = adminBattleSimAttachEventHandlers();
+    adminBattleSimRecalcAttackersDefendersNum();
+    return () => {
+      cleanupListeners();
+      legacyWindow.OnChangeSlot = previous.OnChangeSlot;
+      legacyWindow.OnChangeValue = previous.OnChangeValue;
+      legacyWindow.OnChangeTechValue = previous.OnChangeTechValue;
+      legacyWindow.RecalcAttackersDefendersNum = previous.RecalcAttackersDefendersNum;
+      legacyWindow.toint = previous.toint;
+    };
+  }, []);
+  return <div dangerouslySetInnerHTML={{ __html: adminBattleSimHTML() }} onChange={handleBattleSimEvent} onInput={handleBattleSimEvent} onKeyUp={handleBattleSimEvent} />;
 }
 
 function adminBattleSimHTML(): string {
@@ -4183,6 +4340,157 @@ function adminBattleSimHiddenInputs(): string {
     hidden.push(`<input type="hidden" id="d${n}_armor" name="d${n}_armor" size=2 value="0"  /> \n`);
   }
   return `${hidden.join("\n")}\n`;
+}
+
+function adminBattleSimToInt(value: unknown): number {
+  const parsed = Number.parseInt(String(value ?? "0"), 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function adminBattleSimInput(id: string): HTMLInputElement | null {
+  const element = document.getElementById(id);
+  return element instanceof HTMLInputElement ? element : null;
+}
+
+function adminBattleSimInputValue(id: string): string {
+  return adminBattleSimInput(id)?.value ?? "";
+}
+
+function adminBattleSimSetInputValue(id: string, value: string): void {
+  const input = adminBattleSimInput(id);
+  if (input) {
+    input.value = value;
+  }
+}
+
+function adminBattleSimSetVisibleValue(id: string, value: string): void {
+  adminBattleSimSetInputValue(id, adminBattleSimToInt(value) > 0 ? value : "");
+}
+
+function adminBattleSimSelectedSlot(prefix: "a" | "d"): number {
+  const slot = document.querySelector<HTMLSelectElement>(`select[name="${prefix}slot"]`);
+  if (slot instanceof HTMLSelectElement) {
+    return Math.max(0, adminBattleSimToInt(slot.value) - 1);
+  }
+  return 0;
+}
+
+function adminBattleSimHandleEventTarget(target: EventTarget | null): void {
+  if (target instanceof HTMLSelectElement) {
+    if (target.name === "aslot") {
+      adminBattleSimOnChangeSlot(1);
+    } else if (target.name === "dslot") {
+      adminBattleSimOnChangeSlot(0);
+    }
+    return;
+  }
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+  const valueMatch = /^([ad])_(\d+)$/.exec(target.id);
+  if (valueMatch) {
+    adminBattleSimOnChangeValue(valueMatch[1] === "a" ? 1 : 0, Number(valueMatch[2]));
+    return;
+  }
+  const techMatch = /^([ad])_(weap|shld|armor)$/.exec(target.id);
+  if (techMatch) {
+    adminBattleSimOnChangeTechValue(techMatch[1] === "a" ? 1 : 0);
+  }
+}
+
+function adminBattleSimAttachEventHandlers(): () => void {
+  const cleanups: Array<() => void> = [];
+  const addInputListener = (id: string, listener: EventListener) => {
+    const input = adminBattleSimInput(id);
+    if (!input) {
+      return;
+    }
+    input.addEventListener("input", listener);
+    input.addEventListener("keyup", listener);
+    cleanups.push(() => {
+      input.removeEventListener("input", listener);
+      input.removeEventListener("keyup", listener);
+    });
+  };
+  const addSelectListener = (name: string, listener: EventListener) => {
+    const select = document.querySelector<HTMLSelectElement>(`select[name="${name}"]`);
+    if (!(select instanceof HTMLSelectElement)) {
+      return;
+    }
+    select.addEventListener("change", listener);
+    cleanups.push(() => select.removeEventListener("change", listener));
+  };
+  addSelectListener("aslot", () => adminBattleSimOnChangeSlot(1));
+  addSelectListener("dslot", () => adminBattleSimOnChangeSlot(0));
+  for (const row of adminSimFleetRows) {
+    addInputListener(`a_${row.id}`, () => adminBattleSimOnChangeValue(1, row.id));
+    addInputListener(`d_${row.id}`, () => adminBattleSimOnChangeValue(0, row.id));
+  }
+  for (let index = 0; index < adminSimDefenseRows.length; index += 1) {
+    const id = 401 + index;
+    addInputListener(`d_${id}`, () => adminBattleSimOnChangeValue(0, id));
+  }
+  for (const tech of ["weap", "shld", "armor"]) {
+    addInputListener(`a_${tech}`, () => adminBattleSimOnChangeTechValue(1));
+    addInputListener(`d_${tech}`, () => adminBattleSimOnChangeTechValue(0));
+  }
+  return () => {
+    for (const cleanup of cleanups) {
+      cleanup();
+    }
+  };
+}
+
+function adminBattleSimRecalcAttackersDefendersNum(): void {
+  let attackers = 1;
+  let defenders = 1;
+  for (let slot = 0; slot < adminBattleSimMaxSlot; slot += 1) {
+    const attackerShips = adminSimFleetRows.reduce((sum, row) => sum + adminBattleSimToInt(adminBattleSimInputValue(`a${slot}_${row.id}`)), 0);
+    if (attackerShips > 0) {
+      attackers = slot + 1;
+    }
+    const defenderShips = adminSimFleetRows.reduce((sum, row) => sum + adminBattleSimToInt(adminBattleSimInputValue(`d${slot}_${row.id}`)), 0);
+    const defenderDefense = adminSimDefenseRows.reduce((sum, _row, index) => sum + adminBattleSimToInt(adminBattleSimInputValue(`d${slot}_${401 + index}`)), 0);
+    if (defenderShips + defenderDefense > 0) {
+      defenders = slot + 1;
+    }
+  }
+  adminBattleSimSetInputValue("anum", String(attackers));
+  adminBattleSimSetInputValue("dnum", String(defenders));
+}
+
+function adminBattleSimOnChangeSlot(attackerValue: number): void {
+  const attacker = adminBattleSimToInt(attackerValue) > 0;
+  const prefix = attacker ? "a" : "d";
+  const slot = adminBattleSimSelectedSlot(prefix);
+  for (const row of adminSimFleetRows) {
+    adminBattleSimSetVisibleValue(`${prefix}_${row.id}`, adminBattleSimInputValue(`${prefix}${slot}_${row.id}`));
+  }
+  if (!attacker) {
+    for (let index = 0; index < adminSimDefenseRows.length; index += 1) {
+      const id = 401 + index;
+      adminBattleSimSetVisibleValue(`d_${id}`, adminBattleSimInputValue(`d${slot}_${id}`));
+    }
+  }
+  for (const tech of ["weap", "shld", "armor"]) {
+    adminBattleSimSetVisibleValue(`${prefix}_${tech}`, adminBattleSimInputValue(`${prefix}${slot}_${tech}`));
+  }
+  adminBattleSimRecalcAttackersDefendersNum();
+}
+
+function adminBattleSimOnChangeValue(attackerValue: number, id: number): void {
+  const prefix = adminBattleSimToInt(attackerValue) > 0 ? "a" : "d";
+  const slot = adminBattleSimSelectedSlot(prefix);
+  adminBattleSimSetInputValue(`${prefix}${slot}_${id}`, adminBattleSimInputValue(`${prefix}_${id}`));
+  adminBattleSimRecalcAttackersDefendersNum();
+}
+
+function adminBattleSimOnChangeTechValue(attackerValue: number): void {
+  const prefix = adminBattleSimToInt(attackerValue) > 0 ? "a" : "d";
+  const slot = adminBattleSimSelectedSlot(prefix);
+  for (const tech of ["weap", "shld", "armor"]) {
+    adminBattleSimSetInputValue(`${prefix}${slot}_${tech}`, adminBattleSimInputValue(`${prefix}_${tech}`));
+  }
 }
 
 function AdminExpeditionTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
@@ -4627,6 +4935,14 @@ function adminModeActionHref(mode: string, action: string) {
   const query = new URLSearchParams(window.location.search);
   query.set("mode", mode);
   query.set("action", action);
+  return gameRouteURL("/game/admin", `?${query.toString()}`);
+}
+
+function adminModeFileActionHref(mode: string, action: string, fileName: string) {
+  const query = new URLSearchParams(window.location.search);
+  query.set("mode", mode);
+  query.set("action", action);
+  query.set("fname", fileName);
   return gameRouteURL("/game/admin", `?${query.toString()}`);
 }
 
@@ -5823,23 +6139,29 @@ function ShipyardTable({
 }) {
   if (!shipyard.hasShipyard) {
     return (
-      <table className="legacy-overview-table legacy-shipyard-table" width={530}>
-        <tbody>
-          <tr>
-            <td className="legacy-l l" colSpan={2}>
-              Description
-            </td>
-            <td className="legacy-l l">
-              <b>Qty.</b>
-            </td>
-          </tr>
-          <tr>
-            <td className="legacy-c c" colSpan={3}>
-              In order to do that, you need to build a shipyard!
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <>
+        <table className="legacy-overview-table legacy-shipyard-table" width={530}>
+          <tbody>
+            <tr>
+              <td className="legacy-l l" colSpan={2}>
+                Description
+              </td>
+              <td className="legacy-l l">
+                <b>Qty.</b>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div className="legacy-shipyard-required-notice">
+          <table>
+            <tbody>
+              <tr>
+                <td className="legacy-c c">In order to do that, you need to build a shipyard!</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </>
     );
   }
   return (
@@ -6063,6 +6385,8 @@ function FleetTable({
   pending: boolean;
 }) {
   const [dispatchStage, setDispatchStage] = React.useState<"ships" | "target" | "mission">("ships");
+  const [unionMission, setUnionMission] = React.useState<GameFleetMission | null>(null);
+  const [pendingMissionDraftKey, setPendingMissionDraftKey] = React.useState<string | null>(null);
   const targetPrefill = gameFleetTargetPrefillFromSearch(window.location.search);
   const dispatchTarget = targetPrefill
     ? {
@@ -6085,7 +6409,46 @@ function FleetTable({
     });
   };
   const dispatchDraft = fleet.dispatchDraft?.hasSelection ? fleet.dispatchDraft : null;
-  return (
+  React.useEffect(() => {
+    if (!pendingMissionDraftKey || !dispatchDraft) {
+      return;
+    }
+    if (fleetDispatchPrepareKey(dispatchDraft) === pendingMissionDraftKey) {
+      setPendingMissionDraftKey(null);
+      setDispatchStage("mission");
+    }
+  }, [dispatchDraft, pendingMissionDraftKey]);
+  if (dispatchDraft && dispatchStage === "target") {
+    return (
+      <>
+        <FleetTargetStepTable
+          draft={dispatchDraft}
+          fleet={fleet}
+          onPrepare={(draft) => {
+            setPendingMissionDraftKey(fleetDispatchPrepareKey(draft));
+            onPrepare(draft);
+          }}
+          pending={pending}
+        />
+        <br />
+        <br />
+        <br />
+        <br />
+      </>
+    );
+  }
+  if (dispatchDraft && dispatchStage === "mission") {
+    return (
+      <>
+        <FleetDispatchPreviewTable draft={dispatchDraft} fleet={fleet} onLaunch={onLaunch} pending={pending} />
+        <br />
+        <br />
+        <br />
+        <br />
+      </>
+    );
+  }
+  const content = (
     <>
       <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-table" width={519}>
         <tbody>
@@ -6095,10 +6458,23 @@ function FleetTable({
                 <tbody>
                   <tr>
                     <td style={{ backgroundColor: "transparent" }}>
-                      {`Fleets ${fleet.slots.used} / ${fleet.slots.baseMax} `}
                       {fleet.slots.admiral ? (
-                        <span style={{ color: "lime" }}> +2</span>
-                      ) : null}
+                        <div style={{ marginBottom: 2, marginTop: 2 }}>
+                          {`Fleets ${fleet.slots.used} / ${fleet.slots.baseMax}`}
+                          <b>
+                            <span style={{ color: "lime" }}>+2</span>
+                          </b>{" "}
+                          <img
+                            alt="Fleet Admiral"
+                            height={20}
+                            src={`${gameImageBase}/admiral_ikon.gif`}
+                            style={{ verticalAlign: "middle" }}
+                            width={20}
+                          />
+                        </div>
+                      ) : (
+                        `Fleets ${fleet.slots.used} / ${fleet.slots.baseMax}`
+                      )}
                     </td>
                     <td align="right" style={{ backgroundColor: "transparent" }}>
                       {`${fleet.expeditions.used}/${fleet.expeditions.max} Expeditions    `}
@@ -6124,11 +6500,14 @@ function FleetTable({
               <tr data-fleet-mission-row={mission.id} key={mission.id} style={{ height: 20 }}>
                 <th>{index + 1}</th>
                 <th>
+                  {"      "}
                   <a title="">{mission.missionName}</a>
-                  <br />
+                  {"\n"}
                   <a title={mission.stateTitle}>{mission.stateShort}</a>
+                  {"\n"}
                 </th>
                 <th>
+                  {" "}
                   <a title={mission.ships.map((ship) => `${ship.name}: ${formatLegacyNumber(ship.count)}`).join("\n")}>
                     {formatLegacyNumber(mission.totalShips)}
                   </a>
@@ -6139,17 +6518,24 @@ function FleetTable({
                 <th>{formatFleetTimestamp(mission.departureAt)}</th>
                 <th>
                   <a href={galaxyHref(mission.target)}>[{formatCoordinates(mission.target)}]</a>
-                  {mission.targetOwnerName && mission.targetOwnerName !== "space" && mission.targetType <= 1 ? (
+                  {fleetMissionShowsTargetOwner(mission) ? (
                     <>
+                      {"   "}
                       <br />
                       {mission.targetOwnerName}
                     </>
                   ) : null}
+                  {"    "}
                 </th>
                 <th>{formatFleetTimestamp(mission.arrivalAt)}</th>
                 <th>
                   {mission.canCreateUnion ? (
-                    <form onSubmit={(event) => event.preventDefault()}>
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        setUnionMission(mission);
+                      }}
+                    >
                       <input name="order_union" type="hidden" value={mission.id} />
                       <input type="submit" value="Union" />
                     </form>
@@ -6172,145 +6558,212 @@ function FleetTable({
         </tbody>
       </table>
 
-      <form className="legacy-fleet-form" onSubmit={submitDispatchDraft}>
-        {targetPrefill ? <FleetTargetPrefillInputs prefill={targetPrefill} /> : null}
-        <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-select-table" width={519}>
-          <tbody>
-            {fleet.slots.used >= fleet.slots.max ? (
-              <tr style={{ height: 20 }}>
-                <th colSpan={4}>
-                  <span style={{ color: "red" }}>Maximum fleet size has been reached!</span>
-                </th>
-              </tr>
-            ) : null}
-            {fleet.templates.commanderActive ? (
+      {unionMission ? (
+        <FleetUnionManagementTable fleet={fleet} mission={unionMission} />
+      ) : (
+        <form className="legacy-fleet-form" onSubmit={submitDispatchDraft}>
+          {targetPrefill ? <FleetTargetPrefillInputs prefill={targetPrefill} /> : null}
+          <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-select-table" width={519}>
+            <tbody>
+              {fleet.slots.used >= fleet.slots.max ? (
+                <tr style={{ height: 20 }}>
+                  <th colSpan={4}>
+                    <span style={{ color: "red" }}>Maximum fleet size has been reached!</span>
+                  </th>
+                </tr>
+              ) : null}
               <tr style={{ height: 20 }}>
                 <td className="legacy-c c" colSpan={4}>
-                  <a href={gameRouteURL("/game/fleet-templates", window.location.search)}>Standard fleets</a>
-                  {fleet.templates.items.length > 0 ? (
-                    <>
-                      {" "}
-                      {fleet.templates.items.map((template) => (
-                        <React.Fragment key={template.id}>
-                          <a
-                            href={fleetTemplateJavascriptHref(template)}
-                            onClick={(event) => {
-                              event.preventDefault();
-                              setLegacyFleetTemplateShips(template);
-                            }}
-                          >
-                            {template.name}
-                          </a>{" "}
-                        </React.Fragment>
-                      ))}
-                    </>
-                  ) : null}
+                  Please select your ships for this mission:
                 </td>
               </tr>
-            ) : null}
-            <tr style={{ height: 20 }}>
-              <td className="legacy-c c" colSpan={4}>
-                Please select your ships for this mission:
-              </td>
-            </tr>
-            <tr style={{ height: 20 }}>
-              <th>Ship Type</th>
-              <th>Available</th>
-              <th>-</th>
-              <th>-</th>
-            </tr>
-            {fleet.ships.map((ship) => (
-              <tr data-fleet-ship-row={ship.id} key={ship.id} style={{ height: 20 }}>
-                <th>
-                  <a title={`Speed: ${formatLegacyNumber(ship.speed)}`}>{ship.name}</a>
-                </th>
-                <th>
-                  {formatLegacyNumber(ship.count)}
-                  <input name={`maxship${ship.id}`} type="hidden" value={ship.count} />
-                  <input name={`consumption${ship.id}`} type="hidden" value={ship.consumption} />
-                  <input name={`speed${ship.id}`} type="hidden" value={ship.speed} />
-                  <input name={`capacity${ship.id}`} type="hidden" value={ship.cargo} />
-                </th>
-                {ship.selectable ? (
-                  <>
-                    <th>
-                      <a
-                        href="#max-ship"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          setLegacyFleetShipAmount(event.currentTarget, ship.id, ship.count);
-                        }}
-                      >
-                        FLEET1_ALL
-                      </a>
-                    </th>
-                    <th>
-                      <input aria-label={ship.name} defaultValue={0} name={`ship${ship.id}`} size={10} />
-                    </th>
-                  </>
-                ) : (
-                  <>
-                    <th></th>
-                    <th></th>
-                  </>
-                )}
+              <tr style={{ height: 20 }}>
+                <th>Ship Type</th>
+                <th>Available</th>
+                <th>-</th>
+                <th>-</th>
               </tr>
-            ))}
-            <tr style={{ height: 20 }}>
-              <th colSpan={2}>
-                <a
-                  href="#clear-ships"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    setLegacyFleetShips(event.currentTarget, fleet.ships, "none");
-                  }}
-                >
-                  no ships
-                </a>
-              </th>
-              <th colSpan={2}>
-                <a
-                  href="#all-ships"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    setLegacyFleetShips(event.currentTarget, fleet.ships, "all");
-                  }}
-                >
-                  all ships
-                </a>
-              </th>
-            </tr>
-            <tr style={{ height: 20 }}>
-              <th colSpan={4}>
-                <input type="submit" value="continue" />
-              </th>
-            </tr>
-            <tr>
-              <th colSpan={4}></th>
-            </tr>
-          </tbody>
-        </table>
-      </form>
-      {dispatchDraft && dispatchStage === "target" ? (
-        <FleetTargetStepTable
-          draft={dispatchDraft}
-          fleet={fleet}
-          onPrepare={(draft) => {
-            setDispatchStage("mission");
-            onPrepare(draft);
-          }}
-          pending={pending}
-        />
-      ) : null}
-      {dispatchDraft && dispatchStage === "mission" ? (
-        <FleetDispatchPreviewTable draft={dispatchDraft} fleet={fleet} onLaunch={onLaunch} pending={pending} />
-      ) : null}
+              {fleet.ships.map((ship) => (
+                <tr data-fleet-ship-row={ship.id} key={ship.id} style={{ height: 20 }}>
+                  <th>
+                    <a title={`Speed: ${Math.floor(Math.max(0, ship.speed))}`}>{ship.name}</a>
+                  </th>
+                  <th>
+                    {formatLegacyNumber(ship.count)}
+                    <input name={`maxship${ship.id}`} type="hidden" value={ship.count} />
+                    <input name={`consumption${ship.id}`} type="hidden" value={ship.consumption} />
+                    <input name={`speed${ship.id}`} type="hidden" value={ship.speed} />
+                    <input name={`capacity${ship.id}`} type="hidden" value={ship.cargo} />
+                  </th>
+                  {ship.selectable ? (
+                    <>
+                      <th>
+                        <a
+                          href="#max-ship"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            setLegacyFleetShipAmount(event.currentTarget, ship.id, ship.count);
+                          }}
+                        >
+                          FLEET1_ALL
+                        </a>
+                      </th>
+                      <th>
+                        <input aria-label={ship.name} defaultValue={0} name={`ship${ship.id}`} size={10} />
+                      </th>
+                    </>
+                  ) : (
+                    <>
+                      <th></th>
+                      <th></th>
+                    </>
+                  )}
+                </tr>
+              ))}
+              <tr style={{ height: 20 }}>
+                <th colSpan={2}>
+                  <a
+                    href="#clear-ships"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setLegacyFleetShips(event.currentTarget, fleet.ships, "none");
+                    }}
+                  >
+                    no ships
+                  </a>
+                </th>
+                <th colSpan={2}>
+                  <a
+                    href="#all-ships"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setLegacyFleetShips(event.currentTarget, fleet.ships, "all");
+                    }}
+                  >
+                    all ships
+                  </a>
+                </th>
+              </tr>
+              {fleet.templates.commanderActive ? (
+                <>
+                  <tr style={{ height: 20 }}>
+                    <td className="legacy-c c" colSpan={4}>
+                      <u>
+                        <a href={gameRouteURL("/game/fleet-templates", window.location.search)}>Standard fleets</a>
+                      </u>
+                    </td>
+                  </tr>
+                  {fleet.templates.items.reduce<React.ReactNode[]>((rows, template, index) => {
+                    if (index % 2 !== 0) {
+                      return rows;
+                    }
+                    const second = fleet.templates.items[index + 1];
+                    const pair: GameFleetTemplate[] = second ? [template, second] : [template];
+                    rows.push(
+                      <tr key={template.id} style={{ height: 20 }}>
+                        {pair.map((item) => (
+                          <th colSpan={2} key={item.id}>
+                            <a
+                              href={fleetTemplateJavascriptHref(item)}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                setLegacyFleetTemplateShips(item);
+                              }}
+                            >
+                              {item.name}
+                            </a>
+                          </th>
+                        ))}
+                        {second ? null : <th colSpan={2}></th>}
+                      </tr>
+                    );
+                    return rows;
+                  }, [])}
+                </>
+              ) : null}
+              <tr style={{ height: 20 }}>
+                <th colSpan={4}>
+                  <input type="submit" value="continue" />
+                </th>
+              </tr>
+              <tr>
+                <th colSpan={4}></th>
+              </tr>
+            </tbody>
+          </table>
+        </form>
+      )}
       <br />
       <br />
       <br />
       <br />
     </>
   );
+  return unionMission ? (
+    <div className="legacy-fleet-union-view">
+      {content}
+    </div>
+  ) : (
+    content
+  );
+}
+
+function FleetUnionManagementTable({ fleet, mission }: { fleet: GameFleet; mission: GameFleetMission }) {
+  const unionName = (mission.unionName ?? "").trim() || `KV${mission.id}`;
+  const players =
+    mission.unionPlayers && mission.unionPlayers.length > 0
+      ? mission.unionPlayers
+      : [{ id: mission.ownerId, name: mission.ownerName || fleet.commander }];
+  return (
+    <form
+      className="legacy-fleet-union-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+      }}
+    >
+      <input name="flotten" type="hidden" value={mission.id} />
+      <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-union-table" width={519}>
+        <tbody>
+          <tr>
+            <td className="legacy-c c" colSpan={2}>
+              Union of Fleets {unionName}
+            </td>
+          </tr>
+          <tr>
+            <td className="legacy-c c" colSpan={2}>
+              Change the name of the union
+            </td>
+          </tr>
+          <tr>
+            <th colSpan={2}>
+              <input defaultValue={unionName} name="union_name" type="text" /> <br />
+              <input type="submit" value="OK" />
+            </th>
+          </tr>
+          <tr>
+            <td className="legacy-c c">Invited participants</td>
+            <td className="legacy-c c">Invite a participant</td>
+          </tr>
+          <tr>
+            <th style={{ width: "50%" }}>
+              <select size={5}>
+                {players.map((player, index) => (
+                  <option key={`${player.id}-${index}`}>{player.name}</option>
+                ))}
+              </select>
+            </th>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  );
+}
+
+function fleetMissionShowsTargetOwner(mission: GameFleetMission): boolean {
+  if (!mission.targetOwnerName) {
+    return false;
+  }
+  return ![10002, 10004, 20000].includes(mission.targetType);
 }
 
 function FleetTargetStepTable({
@@ -6327,6 +6780,7 @@ function FleetTargetStepTable({
   const targetPlanets = fleet.planetSwitcher.filter(
     (planet) => planet.id !== fleet.currentPlanet.id && planet.type !== 2
   );
+  const battleUnions = fleetBattleUnions(fleet);
   const metrics = legacyFleetTargetMetrics(draft, fleet.ships);
   const capacityColor = metrics.storage >= 0 ? "lime" : "red";
   const selectTarget = (form: HTMLFormElement | null, target: GamePlanetSummary) => {
@@ -6337,6 +6791,16 @@ function FleetTargetStepTable({
     setLegacyFormInputValue(form, "system", target.coordinates.system);
     setLegacyFormInputValue(form, "planet", target.coordinates.position);
     setLegacyFormInputValue(form, "planettype", target.type);
+  };
+  const selectUnionTarget = (form: HTMLFormElement | null, mission: GameFleetMission) => {
+    if (!form) {
+      return;
+    }
+    setLegacyFormInputValue(form, "galaxy", mission.target.galaxy);
+    setLegacyFormInputValue(form, "system", mission.target.system);
+    setLegacyFormInputValue(form, "planet", mission.target.position);
+    setLegacyFormInputValue(form, "planettype", mission.targetType);
+    setLegacyFormInputValue(form, "union2", mission.unionId);
   };
   const submitTarget = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -6355,6 +6819,7 @@ function FleetTargetStepTable({
   };
   return (
     <form className="legacy-fleet-target-form" data-dispatch-action="prepare-target" onSubmit={submitTarget}>
+      {battleUnions.length > 0 ? <input name="union2" type="hidden" value={0} /> : null}
       <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-target-table" width={519}>
         <tbody>
           <tr style={{ height: 20 }}>
@@ -6365,9 +6830,9 @@ function FleetTargetStepTable({
           <tr style={{ height: 20 }}>
             <th style={{ width: "50%" }}>Target coordinates</th>
             <th>
-              <input defaultValue={draft.target.galaxy} maxLength={2} name="galaxy" size={3} />
-              <input defaultValue={draft.target.system} maxLength={3} name="system" size={3} />
-              <input defaultValue={draft.target.position} maxLength={2} name="planet" size={3} />
+              <input defaultValue={draft.target.galaxy} maxLength={2} name="galaxy" size={3} />{" "}
+              <input defaultValue={draft.target.system} maxLength={3} name="system" size={3} />{" "}
+              <input defaultValue={draft.target.position} maxLength={2} name="planet" size={3} />{" "}
               <select defaultValue={draft.targetType} name="planettype">
                 <option value={1}>planet </option>
                 <option value={2}>debris field </option>
@@ -6427,12 +6892,9 @@ function FleetTargetStepTable({
               Planet
             </td>
           </tr>
-          {targetPlanets.length === 0 ? (
-            <tr style={{ height: 20 }}>
-              <th colSpan={2}>-</th>
-            </tr>
-          ) : (
-            targetPlanets.reduce<React.ReactNode[]>((rows, planet, index) => {
+          {targetPlanets.length === 0
+            ? null
+            : targetPlanets.reduce<React.ReactNode[]>((rows, planet, index) => {
               if (index % 2 === 0) {
                 rows.push(
                   <tr key={planet.id} style={{ height: 20 }}>
@@ -6466,16 +6928,43 @@ function FleetTargetStepTable({
                 );
               }
               return rows;
-            }, [])
-          )}
+            }, [])}
           <tr style={{ height: 20 }}>
             <td className="legacy-c c" colSpan={2}>
               Battle unions
             </td>
           </tr>
-          <tr style={{ height: 20 }}>
-            <th colSpan={2}>-</th>
-          </tr>
+          {battleUnions.length > 0 ? (
+            <>
+              {battleUnions.map((mission, index) => {
+                const remaining = Math.max(0, mission.arrivalAt - Math.floor(Date.now() / 1000));
+                return (
+                  <tr key={mission.unionId} style={{ height: 20 }}>
+                    <th>
+                      <div data-star={mission.arrivalAt} id={`bxx${index + 1}`} title={String(remaining)}>
+                        {formatLegacyDuration(remaining)}
+                      </div>
+                    </th>
+                    <th>
+                      <a
+                        href="#set-union-target"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          selectUnionTarget(event.currentTarget.closest("form"), mission);
+                        }}
+                      >
+                        {(mission.unionName ?? "").trim() || `KV${mission.id}`} [{formatCoordinates(mission.target)}]
+                      </a>
+                    </th>
+                  </tr>
+                );
+              })}
+            </>
+          ) : (
+            <tr style={{ height: 20 }}>
+              <th colSpan={2}>-</th>
+            </tr>
+          )}
           <tr style={{ height: 20 }}>
             <th colSpan={2}>
               <input disabled={pending} type="submit" value="Next" />
@@ -6485,6 +6974,17 @@ function FleetTargetStepTable({
       </table>
     </form>
   );
+}
+
+function fleetBattleUnions(fleet: GameFleet): GameFleetMission[] {
+  const seen = new Set<number>();
+  return fleet.missions.filter((mission) => {
+    if (mission.unionId <= 0 || seen.has(mission.unionId)) {
+      return false;
+    }
+    seen.add(mission.unionId);
+    return true;
+  });
 }
 
 function FleetDispatchPreviewTable({
@@ -6498,6 +6998,9 @@ function FleetDispatchPreviewTable({
   onLaunch: (draft: GameFleetDispatchLaunch) => void;
   pending: boolean;
 }) {
+  const titleRowAttrs = { align: "left", height: 20 } as React.HTMLAttributes<HTMLTableRowElement>;
+  const bodyRowAttrs = { align: "left", valign: "top" } as React.HTMLAttributes<HTMLTableRowElement>;
+  const heightRowAttrs = { height: 20 } as React.HTMLAttributes<HTMLTableRowElement>;
   const submitLaunch = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -6510,19 +7013,24 @@ function FleetDispatchPreviewTable({
       speed: draft.speed,
       holdHours: legacyFormInt(form.get("holdingtime"), 0),
       expeditionHours: legacyFormInt(form.get("expeditiontime"), 0),
-      unionId: 0
+      unionId: legacyFormInt(form.get("union2"), 0)
     });
   };
   return (
-    <form className="legacy-fleet-dispatch-form" data-dispatch-action="launch-dispatch" onSubmit={submitLaunch}>
+    <form
+      className="legacy-fleet-dispatch-form"
+      data-dispatch-action="launch-dispatch"
+      onSubmit={submitLaunch}
+    >
+      <FleetDispatchHiddenInputs draft={draft} fleet={fleet} />
       <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-dispatch-table" width={519}>
         <tbody>
-          <tr style={{ height: 20, textAlign: "left" }}>
-            <td className="legacy-c c" colSpan={2}>
-              {formatCoordinates(draft.target)} - {fleetPlanetTypeName(draft.targetType)}
+          <tr {...titleRowAttrs}>
+            <td className="c" colSpan={2}>
+              {`${formatCoordinates(draft.target)} - ${fleetPlanetTypeName(draft.targetType)}`}
             </td>
           </tr>
-          <tr style={{ textAlign: "left", verticalAlign: "top" }}>
+          <tr {...bodyRowAttrs}>
             <th style={{ width: "50%" }}>
               <FleetDispatchMissionTable draft={draft} />
             </th>
@@ -6530,7 +7038,7 @@ function FleetDispatchPreviewTable({
               <FleetDispatchResourcesTable draft={draft} fleet={fleet} />
             </th>
           </tr>
-          <tr style={{ height: 20 }}>
+          <tr {...heightRowAttrs}>
             <th colSpan={2}>
               <input disabled={pending} type="submit" value="Next" />
             </th>
@@ -6541,31 +7049,66 @@ function FleetDispatchPreviewTable({
   );
 }
 
+function FleetDispatchHiddenInputs({ draft, fleet }: { draft: GameFleetDispatchDraft; fleet: GameFleet }) {
+  const selectedCounts = new Map(draft.ships.map((ship) => [ship.id, ship.count]));
+  return (
+    <>
+      <input name="thisgalaxy" type="hidden" value={fleet.currentPlanet.coordinates.galaxy} />
+      <input name="thissystem" type="hidden" value={fleet.currentPlanet.coordinates.system} />
+      <input name="thisplanet" type="hidden" value={fleet.currentPlanet.coordinates.position} />
+      <input name="thisplanettype" type="hidden" value={fleet.currentPlanet.type === 2 ? 3 : 1} />
+      <input name="speedfactor" type="hidden" value={draft.speedFactor} />
+      {draft.resources.map((resource, index) => (
+        <input key={resource.id} name={`thisresource${index + 1}`} type="hidden" value={Math.floor(resource.available)} />
+      ))}
+      <input name="galaxy" type="hidden" value={draft.target.galaxy} />
+      <input name="system" type="hidden" value={draft.target.system} />
+      <input name="planet" type="hidden" value={draft.target.position} />
+      <input name="planettype" type="hidden" value={draft.targetType} />
+      {fleet.ships.map((ship) => {
+        const count = selectedCounts.get(ship.id) ?? 0;
+        if (count <= 0 || ship.id === 212 || !ship.selectable) {
+          return null;
+        }
+        return (
+          <React.Fragment key={ship.id}>
+            <input name={`ship${ship.id}`} type="hidden" value={count} />
+            <input name={`consumption${ship.id}`} type="hidden" value={ship.consumption} />
+            <input name={`speed${ship.id}`} type="hidden" value={ship.speed} />
+            <input name={`capacity${ship.id}`} type="hidden" value={ship.cargo} />
+          </React.Fragment>
+        );
+      })}
+      <input name="speed" type="hidden" value={draft.speed} />
+    </>
+  );
+}
+
 function FleetDispatchMissionTable({ draft }: { draft: GameFleetDispatchDraft }) {
+  const heightRowAttrs = { height: 20 } as React.HTMLAttributes<HTMLTableRowElement>;
   return (
     <table border={0} cellPadding={0} cellSpacing={0} width={259}>
       <tbody>
-        <tr style={{ height: 20 }}>
-          <td className="legacy-c c" colSpan={2}>
+        <tr {...heightRowAttrs}>
+          <td className="c" colSpan={2}>
             Mission
           </td>
         </tr>
         {draft.missionOptions.length === 0 ? (
-          <tr style={{ height: 20 }}>
+          <tr {...heightRowAttrs}>
             <th>
               <span style={{ color: "red" }}>No suitable missions</span>
             </th>
           </tr>
         ) : (
           draft.missionOptions.map((mission) => (
-            <tr key={mission.id} style={{ height: 20 }}>
+            <tr key={mission.id} {...heightRowAttrs}>
               <th>
                 <input defaultChecked={mission.selected} name="order" type="radio" value={mission.id} />
                 {mission.name}
                 <br />
                 {mission.warning ? (
                   <>
-                    <br />
                     <br />
                     <span style={{ color: "red" }}>{mission.warning}</span>
                   </>
@@ -6580,24 +7123,27 @@ function FleetDispatchMissionTable({ draft }: { draft: GameFleetDispatchDraft })
 }
 
 function FleetDispatchResourcesTable({ draft, fleet }: { draft: GameFleetDispatchDraft; fleet: GameFleet }) {
+  const heightRowAttrs = { height: 20 } as React.HTMLAttributes<HTMLTableRowElement>;
   const expeditionSelected = draft.missionOptions.some((mission) => mission.id === 15);
+  const acsSelected = draft.missionOptions.some((mission) => mission.id === 2);
+  const battleUnions = fleetBattleUnions(fleet);
   return (
     <table border={0} cellPadding={0} cellSpacing={0} width={259}>
       <tbody>
-        <tr style={{ height: 20 }}>
-          <td className="legacy-c c" colSpan={3}>
+        <tr {...heightRowAttrs}>
+          <td className="c" colSpan={3}>
             Resources
           </td>
         </tr>
         {draft.resources.map((resource, index) => (
-          <tr key={resource.id} style={{ height: 20 }}>
+          <tr key={resource.id} {...heightRowAttrs}>
             <th>{resource.name}</th>
             <th>
               <a
                 href="#max-resource"
                 onClick={(event) => {
                   event.preventDefault();
-                  setLegacyFleetResourceAmount(event.currentTarget, index + 1, resource.available);
+                  setLegacyFleetResourceAmount(event.currentTarget, index + 1);
                 }}
               >
                 max
@@ -6607,7 +7153,6 @@ function FleetDispatchResourcesTable({ draft, fleet }: { draft: GameFleetDispatc
               <input
                 aria-label={resource.name}
                 data-resource-id={resource.id}
-                defaultValue={0}
                 name={`resource${index + 1}`}
                 size={10}
                 title={`${resource.name} ${formatLegacyNumber(resource.available)}`}
@@ -6616,36 +7161,59 @@ function FleetDispatchResourcesTable({ draft, fleet }: { draft: GameFleetDispatc
             </th>
           </tr>
         ))}
-        <tr style={{ height: 20 }}>
+        <tr {...heightRowAttrs}>
           <th>Residue</th>
           <th colSpan={2}>
             <div id="remainingresources">-</div>
           </th>
         </tr>
-        <tr style={{ height: 20 }}>
+        <tr {...heightRowAttrs}>
           <th colSpan={3}>
             <a
               href="#max-resources"
               onClick={(event) => {
                 event.preventDefault();
-                setLegacyFleetAllResources(event.currentTarget, draft.resources);
+                setLegacyFleetAllResources(event.currentTarget);
               }}
             >
               All resources
             </a>
           </th>
         </tr>
-        <tr style={{ height: 20 }}>
+        <tr {...heightRowAttrs}>
           <th>&nbsp; </th>
         </tr>
+        {acsSelected && battleUnions.length > 0 ? (
+          <>
+            <tr {...heightRowAttrs}>
+              <td className="c" colSpan={3}>
+                Battle unions
+              </td>
+            </tr>
+            <tr {...heightRowAttrs}>
+              <th colSpan={3}>
+                <select name="union2">
+                  {battleUnions.map((mission) => (
+                    <option key={mission.unionId} value={mission.unionId}>
+                      {(mission.unionName ?? "").trim() || `KV${mission.id}`}
+                    </option>
+                  ))}
+                </select>
+              </th>
+            </tr>
+            <tr {...heightRowAttrs}>
+              <th>&nbsp; </th>
+            </tr>
+          </>
+        ) : null}
         {draft.holdHours && draft.holdHours.length > 0 ? (
           <>
-            <tr style={{ height: 20 }}>
-              <td className="legacy-c c" colSpan={3}>
+            <tr {...heightRowAttrs}>
+              <td className="c" colSpan={3}>
                 Hold time
               </td>
             </tr>
-            <tr style={{ height: 20 }}>
+            <tr {...heightRowAttrs}>
               <th colSpan={3}>
                 <select name="holdingtime" defaultValue={1}>
                   {draft.holdHours.map((hour) => (
@@ -6653,20 +7221,20 @@ function FleetDispatchResourcesTable({ draft, fleet }: { draft: GameFleetDispatc
                       {hour}
                     </option>
                   ))}
-                </select>{" "}
-                Time in hours
+                </select>
+                {" \n      Time in hours   "}
               </th>
             </tr>
           </>
         ) : null}
         {expeditionSelected && draft.expeditionHours && draft.expeditionHours.length > 0 ? (
           <>
-            <tr style={{ height: 20 }}>
-              <td className="legacy-c c" colSpan={3}>
+            <tr {...heightRowAttrs}>
+              <td className="c" colSpan={3}>
                 Hold time
               </td>
             </tr>
-            <tr style={{ height: 20 }}>
+            <tr {...heightRowAttrs}>
               <th colSpan={3}>
                 <select name="expeditiontime">
                   {draft.expeditionHours.map((hour) => (
@@ -6674,26 +7242,12 @@ function FleetDispatchResourcesTable({ draft, fleet }: { draft: GameFleetDispatc
                       {hour}
                     </option>
                   ))}
-                </select>{" "}
-                Time in hours
+                </select>
+                {" \n      Time in hours   "}
               </th>
             </tr>
           </>
         ) : null}
-        <tr style={{ height: 20 }}>
-          <th colSpan={3}>
-            {draft.ships.map((ship) => `${ship.name}: ${formatLegacyNumber(ship.count)}`).join(", ")}
-            {draft.ships.length > 0 ? <br /> : null}
-            {formatLegacyNumber(draft.totalShips)} ships, {formatLegacyNumber(draft.cargo)} capacity from {fleet.currentPlanet.name}
-            <br />
-            <span className="legacy-fleet-flight-math">
-              Distance: <span id="distance">{formatLegacyNumber(draft.distance)}</span>, Duration:{" "}
-              <span id="duration">{formatLegacyDuration(draft.durationSeconds)}</span>, Fuel consumption:{" "}
-              <span id="consumption">{formatLegacyNumber(draft.fuelConsumption)}</span>, Max speed:{" "}
-              <span id="maxspeed">{formatLegacyNumber(draft.maxSpeed)}</span>
-            </span>
-          </th>
-        </tr>
       </tbody>
     </table>
   );
@@ -6802,25 +7356,183 @@ function fleetDraftShipsPayload(draft: GameFleetDispatchDraft): Record<string, n
   return ships;
 }
 
-function setLegacyFleetResourceAmount(anchor: HTMLAnchorElement, resourceIndex: number, amount: number) {
+function fleetDispatchPrepareKey(draft: GameFleetDispatchPrepare | GameFleetDispatchDraft): string {
+  const entries = Array.isArray(draft.ships)
+    ? draft.ships.map((ship) => [String(ship.id), ship.count] as const)
+    : Object.entries(draft.ships);
+  const ships = entries
+    .map(([id, count]) => `${id}:${count}`)
+    .sort()
+    .join(",");
+  return [
+    ships,
+    draft.target.galaxy,
+    draft.target.system,
+    draft.target.position,
+    draft.targetType,
+    draft.mission,
+    draft.speed
+  ].join("|");
+}
+
+function setLegacyFleetResourceAmount(anchor: HTMLAnchorElement, resourceIndex: number) {
   const form = anchor.closest("form");
   const input = form?.elements.namedItem(`resource${resourceIndex}`);
   if (input instanceof HTMLInputElement) {
-    input.value = String(amount);
+    const resource = legacyFleetInputInt(form, `thisresource${resourceIndex}`, 0);
+    const chosen = legacyFleetInputInt(form, `resource${resourceIndex}`, 0);
+    const available = resourceIndex === 3 ? resource - legacyFleetFormConsumption(form) : resource;
+    const freeCapacity = Math.max(legacyFleetFormStorage(form) - legacyFleetLoadedResources(form, 0), 0);
+    input.value = String(Math.min(freeCapacity + chosen, available));
+    legacyFleetUpdateTransportCapacity(form);
   }
 }
 
-function setLegacyFleetAllResources(anchor: HTMLAnchorElement, resources: GameFleetResourceLoad[]) {
+function setLegacyFleetAllResources(anchor: HTMLAnchorElement) {
   const form = anchor.closest("form");
   if (!form) {
     return;
   }
-  resources.forEach((resource, index) => {
+  const storCap = legacyFleetFormStorage(form);
+  let metal = legacyFleetInputInt(form, "thisresource1", 0);
+  let crystal = legacyFleetInputInt(form, "thisresource2", 0);
+  let deuterium = legacyFleetInputInt(form, "thisresource3", 0) - legacyFleetFormConsumption(form);
+  const freeCapacity = storCap - metal - crystal - deuterium;
+  if (freeCapacity < 0) {
+    metal = Math.min(metal, storCap);
+    crystal = Math.min(crystal, storCap - metal);
+    deuterium = Math.min(deuterium, storCap - metal - crystal);
+  }
+  [metal, crystal, deuterium].forEach((amount, index) => {
     const input = form.elements.namedItem(`resource${index + 1}`);
     if (input instanceof HTMLInputElement) {
-      input.value = String(resource.available);
+      input.value = String(Math.max(amount, 0));
     }
   });
+  legacyFleetUpdateTransportCapacity(form);
+}
+
+function legacyFleetFormStorage(form: HTMLFormElement | null): number {
+  if (!form) {
+    return 0;
+  }
+  let storage = 0;
+  for (let id = 200; id < 300; id += 1) {
+    const amount = legacyFleetInputInt(form, `ship${id}`, 0);
+    if (amount >= 1) {
+      storage += amount * legacyFleetInputInt(form, `capacity${id}`, 0);
+    }
+  }
+  storage -= legacyFleetFormConsumption(form);
+  if (form.elements.namedItem("ship210")) {
+    storage -= legacyFleetUnusedProbeStorage(form);
+  }
+  return storage;
+}
+
+function legacyFleetUnusedProbeStorage(form: HTMLFormElement): number {
+  const storage = legacyFleetInputInt(form, "capacity210", 0) * legacyFleetInputInt(form, "ship210", 0);
+  const remaining = storage - legacyFleetFormConsumption(form, (id) => id === 210);
+  return remaining > 0 ? remaining : 0;
+}
+
+function legacyFleetFormConsumption(form: HTMLFormElement | null, includeShip: (id: number) => boolean = () => true): number {
+  if (!form) {
+    return 0;
+  }
+  const distance = legacyFleetFormDistance(form);
+  const duration = legacyFleetFormDuration(form);
+  const speedFactor = legacyFleetInputInt(form, "speedfactor", 1);
+  const denominator = duration * speedFactor - 10;
+  if (distance <= 0 || duration <= 0 || denominator <= 0) {
+    return 0;
+  }
+  let consumption = 0;
+  for (let id = 200; id < 220; id += 1) {
+    const amount = legacyFleetInputInt(form, `ship${id}`, 0);
+    const shipSpeed = legacyFleetInputInt(form, `speed${id}`, 0);
+    const shipConsumption = legacyFleetInputInt(form, `consumption${id}`, 0);
+    if (amount <= 0 || shipSpeed <= 0 || shipConsumption <= 0 || !includeShip(id)) {
+      continue;
+    }
+    const fleetSpeed = 35000 / denominator * Math.sqrt((distance * 10) / shipSpeed);
+    consumption += shipConsumption * amount * distance / 35000 * Math.pow(fleetSpeed / 10 + 1, 2);
+  }
+  return Math.round(consumption) + 1;
+}
+
+function legacyFleetFormDuration(form: HTMLFormElement): number {
+  const speedFactor = legacyFleetInputInt(form, "speedfactor", 1);
+  const maxSpeed = legacyFleetFormMaxSpeed(form);
+  const speed = legacyFleetInputInt(form, "speed", 10);
+  const distance = legacyFleetFormDistance(form);
+  if (maxSpeed <= 0 || distance <= 0) {
+    return 0;
+  }
+  return Math.round((35000 / speed * Math.sqrt((distance * 10) / maxSpeed) + 10) / speedFactor);
+}
+
+function legacyFleetFormMaxSpeed(form: HTMLFormElement): number {
+  let maxSpeed = 1000000000;
+  for (let id = 200; id < 220; id += 1) {
+    const amount = legacyFleetInputInt(form, `ship${id}`, 0);
+    const speed = legacyFleetInputInt(form, `speed${id}`, 0);
+    if (speed >= 1 && amount >= 1) {
+      maxSpeed = Math.min(maxSpeed, speed);
+    }
+  }
+  return maxSpeed;
+}
+
+function legacyFleetFormDistance(form: HTMLFormElement): number {
+  const thisGalaxy = legacyFleetInputInt(form, "thisgalaxy", 0);
+  const thisSystem = legacyFleetInputInt(form, "thissystem", 0);
+  const thisPlanet = legacyFleetInputInt(form, "thisplanet", 0);
+  const targetGalaxy = legacyFleetInputInt(form, "galaxy", 0);
+  const targetSystem = legacyFleetInputInt(form, "system", 0);
+  const targetPlanet = legacyFleetInputInt(form, "planet", 0);
+  if (targetGalaxy - thisGalaxy !== 0) {
+    return Math.abs(targetGalaxy - thisGalaxy) * 20000;
+  }
+  if (targetSystem - thisSystem !== 0) {
+    return Math.abs(targetSystem - thisSystem) * 5 * 19 + 2700;
+  }
+  if (targetPlanet - thisPlanet !== 0) {
+    return Math.abs(targetPlanet - thisPlanet) * 5 + 1000;
+  }
+  return 5;
+}
+
+function legacyFleetInputInt(form: HTMLFormElement | null, name: string, fallback: number): number {
+  const input = form?.elements.namedItem(name);
+  const value = input instanceof HTMLInputElement || input instanceof HTMLSelectElement ? Number.parseInt(input.value, 10) : Number.NaN;
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function legacyFleetUpdateTransportCapacity(form: HTMLFormElement | null) {
+  if (!form) {
+    return;
+  }
+  const residue = legacyFleetFormStorage(form) - Math.abs(legacyFleetInputInt(form, "resource1", 0)) - Math.abs(legacyFleetInputInt(form, "resource2", 0)) - Math.abs(legacyFleetInputInt(form, "resource3", 0));
+  const target = form.querySelector<HTMLElement>("#remainingresources");
+  if (target) {
+    target.innerHTML = `<font color=${residue < 0 ? "red" : "lime"}>${residue}</font>`;
+  }
+}
+
+function legacyFleetLoadedResources(form: HTMLFormElement | null, excludingIndex: number): number {
+  if (!form) {
+    return 0;
+  }
+  let loaded = 0;
+  for (let index = 1; index <= 3; index += 1) {
+    if (excludingIndex > 0 && index === excludingIndex) {
+      continue;
+    }
+    const input = form.elements.namedItem(`resource${index}`);
+    loaded += legacyFormInt(input instanceof HTMLInputElement ? input.value : "", 0);
+  }
+  return loaded;
 }
 
 function setLegacyFormInputValue(form: HTMLFormElement, name: string, value: number) {
@@ -7721,23 +8433,29 @@ function DefenseTable({
 }) {
   if (!defense.hasShipyard) {
     return (
-      <table className="legacy-overview-table legacy-defense-table" width={530}>
-        <tbody>
-          <tr>
-            <td className="legacy-l l" colSpan={2}>
-              Description
-            </td>
-            <td className="legacy-l l">
-              <b>Qty.</b>
-            </td>
-          </tr>
-          <tr>
-            <td className="legacy-c c" colSpan={3}>
-              In order to do that, you need to build a shipyard!
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <>
+        <table className="legacy-overview-table legacy-defense-table" width={530}>
+          <tbody>
+            <tr>
+              <td className="legacy-l l" colSpan={2}>
+                Description
+              </td>
+              <td className="legacy-l l">
+                <b>Qty.</b>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div className="legacy-shipyard-required-notice">
+          <table>
+            <tbody>
+              <tr>
+                <td className="legacy-c c">In order to do that, you need to build a shipyard!</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </>
     );
   }
   return (
@@ -8846,7 +9564,7 @@ function NotesTable({
                 <th style={{ width: 20 }}>
                   <input disabled={pending} name={`delmes[${note.id}]`} type="checkbox" value="y" />
                 </th>
-                <th style={{ width: 150 }}>{formatLegacyDateTime(note.date)}</th>
+                <th style={{ width: 150 }}>{formatLegacyAdminDateTime(note.date)}</th>
                 <th>
                   <a href={noteURL({ action: 2, noteID: note.id })}>
                     <span style={{ color: note.priorityColor }}>{note.subject}</span>
@@ -9138,13 +9856,13 @@ function technologyDetailsHTML(details: GameTechnologyDetails): string {
   html += `Building conditions for <a href="${legacyHTMLAttribute(technologyInfoURL(details.target.id))}">'${legacyHTMLText(details.target.name)}'</a></td> \n`;
   html += "</tr> \n";
   if (details.levels.length === 0) {
-    html += "<tr><td class=l align=center>No conditions</td></tr> ";
+    html += '<tr data-technology-detail-row="none"><td class=l align=center>No conditions</td></tr> ';
   }
   for (const level of details.levels) {
     html += `<tr><td class=c>${level.step}</td></tr>`;
     for (const requirement of level.requirements) {
       const color = requirement.met ? "#00ff00" : "#ff0000";
-      html += "<tr>\n";
+      html += `<tr data-technology-detail-row="${requirement.id}">\n`;
       html += "    <td class=l align=center> \n";
       html += '    <table width="100%" border=0> \n';
       html += "    <tr> \n";
@@ -9602,6 +10320,26 @@ function resourceProductionFormValues(form: HTMLFormElement): Record<string, str
   return production;
 }
 
+function OverviewPage({ overview, onBuildQueueComplete }: { overview: GameOverview; onBuildQueueComplete: () => void }) {
+  return (
+    <>
+      {overview.news ? <OverviewNewsBox news={overview.news} /> : null}
+      <OverviewTable onBuildQueueComplete={onBuildQueueComplete} overview={overview} />
+    </>
+  );
+}
+
+function OverviewNewsBox({ news }: { news: GameOverviewNews }) {
+  return (
+    <div id="combox_container">
+      <a href={news.url} id="combox" target="_blank" rel="noreferrer">
+        <div id="anfang">{news.start}</div>
+        <div id="ende">{news.end}</div>
+      </a>
+    </div>
+  );
+}
+
 function OverviewTable({ overview, onBuildQueueComplete }: { overview: GameOverview; onBuildQueueComplete: () => void }) {
   const planet = overview.currentPlanet;
   const planetTitle =
@@ -9625,7 +10363,7 @@ function OverviewTable({ overview, onBuildQueueComplete }: { overview: GameOverv
       <tbody>
         <tr>
           <td className="legacy-c c" colSpan={4}>
-            <a href={gameRouteURL("/game/rename-planet", window.location.search)} title="Planet menu">
+            <a href={overviewRenameHref(planet.id)} title="Planet menu">
               {planetTitle}
             </a>
             {`     (${overview.commander})`}
@@ -9634,7 +10372,7 @@ function OverviewTable({ overview, onBuildQueueComplete }: { overview: GameOverv
         {overview.unreadMessages > 0 ? (
           <tr>
             <th colSpan={4}>
-              <a href={gameRouteURL("/game/messages", window.location.search)}>
+              <a href={overviewMessagesHref()}>
                 {overviewUnreadMessageText(overview.unreadMessages)}
               </a>
             </th>
@@ -9659,6 +10397,7 @@ function OverviewTable({ overview, onBuildQueueComplete }: { overview: GameOverv
                 <a href={planetHref(moon.id)}>
                   <img alt="Moon" height={50} src={planetImagePath(moon, true)} width={50} />
                 </a>
+                {"\n"}
               </>
             ) : null}
           </th>
@@ -9681,6 +10420,7 @@ function OverviewTable({ overview, onBuildQueueComplete }: { overview: GameOverv
                         <th key={item.id}>
                           {item.name}
                           <br />
+                          {" "}
                           <a href={planetHref(item.id)} title={`${item.name} [${formatCoordinates(item.coordinates)}]`}>
                             <img
                               alt=""
@@ -9691,6 +10431,7 @@ function OverviewTable({ overview, onBuildQueueComplete }: { overview: GameOverv
                             />
                           </a>
                           <br />
+                          {" "}
                           <LegacyCenter>
                             <OverviewBuildQueue includeLevel={false} onComplete={onBuildQueueComplete} queue={item.buildQueue} />
                           </LegacyCenter>
@@ -9722,7 +10463,7 @@ function OverviewTable({ overview, onBuildQueueComplete }: { overview: GameOverv
         <tr>
           <th> Position</th>
           <th colSpan={3}>
-            <a className="legacy-overview-position-link" href={galaxyHref(planet.coordinates)}>
+            <a className="legacy-overview-position-link" href={overviewGalaxyHref(planet.coordinates)}>
               [{formatCoordinates(planet.coordinates)}]
             </a>
           </th>
@@ -9747,11 +10488,20 @@ function OverviewEventRows({ events }: { events: GameFleetMission[] }) {
   if (events.length === 0) {
     return null;
   }
-  const now = Math.floor(Date.now() / 1000);
+  const [now, setNow] = React.useState(() => Math.floor(Date.now() / 1000));
+  React.useEffect(() => {
+    const update = () => setNow(Math.floor(Date.now() / 1000));
+    const id = window.setInterval(update, 1000);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, []);
   return (
     <>
       {events.map((event, index) => {
-        const remaining = Math.max(0, event.arrivalAt - now);
+        const remaining = event.arrivalAt - now;
         const groupMissions = overviewEventGroupMissions(event);
         return (
           <tr className={overviewEventRowClass(event)} key={event.id}>
@@ -9760,10 +10510,11 @@ function OverviewEventRows({ events }: { events: GameFleetMission[] }) {
                 className="legacy-overview-event-timer"
                 data-time={String(event.arrivalAt)}
                 id={`bxx${index + 1}`}
-                title={String(remaining)}
+                title={String(Math.max(0, remaining))}
               >
-                {formatLegacyDuration(remaining)}
+                {remaining < 0 ? "-" : formatLegacyCountdown(remaining)}
               </div>
+              {"\n"}
             </th>
             <th colSpan={3}>
               {groupMissions.map((groupEvent, index) => (
@@ -9774,9 +10525,10 @@ function OverviewEventRows({ events }: { events: GameFleetMission[] }) {
                       <br />
                     </>
                   ) : null}
-                  <span className={overviewEventSpanClass(groupEvent)}>
-                    <OverviewEventBody event={groupEvent} />
-                  </span>
+                  <span
+                    className={overviewEventSpanClass(groupEvent)}
+                    dangerouslySetInnerHTML={{ __html: legacyOverviewEventInnerHTML(groupEvent) }}
+                  />
                 </React.Fragment>
               ))}
             </th>
@@ -9792,58 +10544,45 @@ function overviewEventGroupMissions(event: GameFleetMission): GameFleetMission[]
 }
 
 function overviewEventSpanClass(event: GameFleetMission): string {
-  return [overviewEventDirectionClass(event), overviewEventMissionClass(event)].filter(Boolean).join(" ");
-}
-
-function overviewEventDirectionClass(event: GameFleetMission): string {
   const baseMission = overviewEventBaseMission(event.mission);
-  if (baseMission === 20) {
-    return "";
+  const returning = event.mission >= 100 && event.mission < 200;
+  const holding = event.mission >= 200;
+  const own = event.own !== false;
+  switch (baseMission) {
+    case 1:
+      if (returning) return "return ownattack";
+      return own ? "flight ownattack" : "attack";
+    case 2:
+      if (returning) return "return ownfederation";
+      if (!own && event.unionId > 0) return "ownfederation";
+      return "federation";
+    case 3:
+      return `${returning ? "return" : "flight"} ${own ? "owntransport" : "transport"}`;
+    case 4:
+      return `${returning ? "return" : "flight"} owndeploy`;
+    case 5:
+      if (holding) return `holding ${own ? "ownhold" : "hold"}`;
+      if (returning) return "return ownhold";
+      return `flight ${own ? "ownhold" : "hold"}`;
+    case 6:
+      return `${returning ? "return" : "flight"} ${own ? "ownespionage" : "espionage"}`;
+    case 7:
+      return `${returning ? "return" : "flight"} owncolony`;
+    case 8:
+      return `${returning ? "return" : "flight"} ownharvest`;
+    case 9:
+      return `${returning ? "return" : "flight"} ${own ? "owndestroy" : "destroy"}`;
+    case 15:
+      return `${holding ? "holding" : returning ? "return" : "flight"} owntransport`;
+    case 20:
+      return own ? "ownmissile" : "missile";
+    case 21:
+      if (returning) return "return ownattack";
+      if (!own && event.unionId > 0) return "ownattack";
+      return "attack";
+    default:
+      return `${holding ? "holding" : returning ? "return" : "flight"} ${own ? "owntransport" : "transport"}`;
   }
-  if (event.mission >= 200) {
-    return "holding";
-  }
-  if (event.mission >= 100) {
-    return "return";
-  }
-  if (event.own === false && (baseMission === 1 || baseMission === 2 || baseMission === 21)) {
-    return "";
-  }
-  return "flight";
-}
-
-function OverviewEventBody({ event }: { event: GameFleetMission }) {
-  if (overviewEventBaseMission(event.mission) === 20) {
-    return <OverviewMissileEventBody event={event} />;
-  }
-  return (
-    <>
-      <a title={overviewEventShipTitle(event)}>{overviewEventFleetLabel(event)}</a> {overviewEventDirectionText(event)}{" "}
-      <OverviewEventEndpoint coordinates={event.origin} name={event.originName} /> {overviewEventTargetText(event)}{" "}
-      <OverviewEventEndpoint coordinates={event.target} name={event.targetName} />. Mission: {event.missionName}
-    </>
-  );
-}
-
-function OverviewMissileEventBody({ event }: { event: GameFleetMission }) {
-  return (
-    <>
-      Rocket Attack ({formatLegacyNumber(event.missileAmount)}) from{" "}
-      <OverviewEventEndpoint coordinates={event.origin} name={event.originName} /> to{" "}
-      <OverviewEventEndpoint coordinates={event.target} name={event.targetName} />
-      {event.missileTargetId > 0 ? ` Main target ${event.missileTarget || `NAME_${event.missileTargetId}`}` : ""}
-    </>
-  );
-}
-
-function OverviewEventEndpoint({ coordinates, name }: { coordinates: Coordinates; name: string }) {
-  const label = overviewEventEndpointName(name);
-  return (
-    <>
-      {label ? `${label} ` : ""}
-      <a href={galaxyHref(coordinates)}>[{formatCoordinates(coordinates)}]</a>
-    </>
-  );
 }
 
 function overviewEventEndpointName(name: string): string {
@@ -9884,6 +10623,8 @@ function overviewEventMissionClass(event: GameFleetMission): string {
       return own ? "ownharvest" : "harvest";
     case 9:
       return own ? "owndestroy" : "destroy";
+    case 15:
+      return "ownexpedition";
     case 20:
       return own ? "ownmissile" : "missile";
     default:
@@ -9921,17 +10662,380 @@ function overviewEventTargetText(event: GameFleetMission): string {
   return "sent to";
 }
 
-function overviewEventFleetLabel(event: GameFleetMission): string {
-  const count = formatLegacyNumber(event.totalShips);
-  if (event.own !== false) {
-    return `Your ${count} fleet`;
-  }
-  const owner = event.ownerName.trim() || "Enemy";
-  return `${owner}'s ${count} fleet`;
+function overviewEventShipTitle(event: GameFleetMission): string {
+  return event.ships.map((ship) => `${ship.name} ${formatLegacyNumber(ship.count)}`).join(" ");
 }
 
-function overviewEventShipTitle(event: GameFleetMission): string {
-  return event.ships.map((ship) => `${ship.name}: ${formatLegacyNumber(ship.count)}`).join("\n");
+function legacyOverviewEventInnerHTML(event: GameFleetMission): string {
+  const baseMission = overviewEventBaseMission(event.mission);
+  const missionClass = overviewEventMissionClass(event);
+  const shipAnchor = legacyOverviewFleetAnchor(event, event.own === false ? 1 : 0, missionClass);
+  const shipTitle = legacyOverviewFleetTitle(event, event.own === false ? 1 : 0);
+  const returnMission = event.mission >= 100 && event.mission < 200;
+  const originType = returnMission ? event.targetType : 1;
+  const targetType = returnMission ? 1 : event.targetType;
+  const originFrom = legacyOverviewPlanetFrom(event.origin, event.originName, missionClass, originType);
+  const targetTo = legacyOverviewPlanetTo(event.target, event.targetName, missionClass, targetType);
+  const targetFrom = legacyOverviewPlanetFrom(event.target, event.targetName, missionClass, targetType);
+  const missionText = legacyOverviewMissionText(baseMission);
+
+  if (baseMission === 1 || baseMission === 21) {
+    if (event.mission >= 100 && event.mission < 200) {
+      return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewFromReturnTo(
+        originFrom,
+        targetTo
+      )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+    }
+    if (event.own === false) {
+      return `Battle ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewPlayerFromTo(
+        legacyOverviewPlayerDetails(event),
+        originFrom,
+        targetTo
+      )}. Mission: ${missionText}`;
+    }
+    return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewFromTo(
+      originFrom,
+      targetTo
+    )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+  }
+
+  if (baseMission === 2) {
+    if (event.mission >= 100 && event.mission < 200) {
+      return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewFromReturnTo(
+        originFrom,
+        targetTo
+      )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+    }
+    if (event.own === false) {
+      return `Alliance ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewPlayerFromTo(
+        legacyOverviewPlayerDetails(event),
+        originFrom,
+        targetTo
+      )}. Mission: ${missionText}`;
+    }
+    return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewFromTo(
+      originFrom,
+      targetTo
+    )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+  }
+
+  if (baseMission === 3) {
+    if (event.mission >= 100 && event.mission < 200) {
+      return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewFromReturnTo(
+        originFrom,
+        targetTo
+      )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+    }
+    if (event.own === false) {
+      return `Peaceful ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewPlayerFromTo(
+        legacyOverviewPlayerDetails(event),
+        originFrom,
+        targetTo
+      )}. Mission: ${missionText}`;
+    }
+    return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewFromTo(
+      originFrom,
+      targetTo
+    )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+  }
+
+  if (baseMission === 4) {
+    if (event.mission >= 100 && event.mission < 200) {
+      return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewFromTo(
+        originFrom,
+        targetTo
+      )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+    }
+    return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewFromTo(
+      originFrom,
+      targetTo
+    )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+  }
+
+  if (baseMission === 5) {
+    if (event.mission >= 200) {
+      if (event.own === false) {
+        return `${legacyOverviewPlayerDetails(event)} holds the alliance's ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(
+          shipTitle
+        )}"></a>${legacyOverviewFromToOrbit(originFrom, targetFrom)}. Mission: ${missionText}`;
+      }
+      return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewHoldFromOnto(
+        originFrom,
+        targetFrom
+      )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+    }
+    if (event.mission >= 100 && event.mission < 200) {
+      return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewFromReturnTo(
+        originFrom,
+        targetTo
+      )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+    }
+    if (event.own === false) {
+      return `Peaceful ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewPlayerFromTo(
+        legacyOverviewPlayerDetails(event),
+        originFrom,
+        targetTo
+      )}. Mission: <span class='ownclass'>${missionText}</span>`;
+    }
+    return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewFromTo(
+      originFrom,
+      targetTo
+    )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+  }
+
+  if (baseMission === 6) {
+    if (event.mission >= 100 && event.mission < 200) {
+      return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewFromReturnTo(
+        originFrom,
+        targetTo
+      )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+    }
+    if (event.own === false) {
+      return `Battle ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewPlayerFromTo(
+        legacyOverviewPlayerDetails(event),
+        originFrom,
+        targetTo
+      )}. Mission: ${missionText}`;
+    }
+    return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewFromTo(
+      originFrom,
+      targetTo
+    )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+  }
+
+  if (baseMission === 7) {
+    if (event.mission >= 100 && event.mission < 200) {
+      return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewColonyReturn(
+        originFrom,
+        targetTo
+      )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+    }
+    return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewColonyFromTo(
+      originFrom,
+      targetTo
+    )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+  }
+
+  if (baseMission === 8) {
+    if (event.mission >= 100 && event.mission < 200) {
+      return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewFromTo(
+        originFrom,
+        targetTo
+      )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+    }
+    return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewFromTo(
+      originFrom,
+      targetTo
+    )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+  }
+
+  if (baseMission === 9) {
+    if (event.mission >= 100 && event.mission < 200) {
+      return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewFromReturnTo(
+        originFrom,
+        targetTo
+      )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+    }
+    if (event.own === false) {
+      return `Battle ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewPlayerFromTo(
+        legacyOverviewPlayerDetails(event),
+        originFrom,
+        targetTo
+      )}. Mission: ${missionText}`;
+    }
+    return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewFromTo(
+      originFrom,
+      targetTo
+    )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+  }
+
+  if (baseMission === 15) {
+    if (event.mission >= 200) {
+      return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewExpeditionHolding(
+        originFrom,
+        targetFrom
+      )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+    }
+    if (event.mission >= 100 && event.mission < 200) {
+      return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewExpeditionReturn(
+        targetTo,
+        legacyOverviewCargoHTML(event, missionClass, missionText)
+      )}`;
+    }
+    return `Your ${shipAnchor}fleet</a><a href="#" title="${escapeLegacyAttribute(shipTitle)}"></a>${legacyOverviewExpeditionFromTo(
+      originFrom,
+      targetTo
+    )}. Mission: ${legacyOverviewCargoHTML(event, missionClass, missionText)}`;
+  }
+
+  if (baseMission === 20) {
+    const origin = legacyOverviewPlanetFrom(event.origin, event.originName, "", 1);
+    const target = legacyOverviewPlanetTo(event.target, event.targetName, event.own === false ? "" : "own", event.targetType);
+    const targetText =
+      event.missileTargetId > 0
+        ? ` Main target ${escapeLegacyHTML(event.missileTarget || `NAME_${event.missileTargetId}`)}`
+        : "";
+    return `Rocket Attack (${formatLegacyNumber(event.missileAmount)}) from ${origin} to ${target} ${targetText}`.trim();
+  }
+
+  return `Mission Type:${event.mission}, Fleet: ${escapeLegacyAttribute(shipTitle)}, from ${originFrom} to ${targetTo}, ${legacyOverviewCargoHTML(
+    event,
+    missionClass,
+    "Cargo"
+  )}`;
+}
+
+function legacyOverviewFleetAnchor(event: GameFleetMission, summary: 0 | 1, className: string): string {
+  void event;
+  void summary;
+  return `<a href="#" class="${escapeLegacyAttribute(className)}">`;
+}
+
+function legacyOverviewFleetTitle(event: GameFleetMission, summary: 0 | 1): string {
+  const parts: string[] = [];
+  if (summary) {
+    parts.push(`Number of ships: ${formatLegacyNumber(event.totalShips)}`);
+  }
+  const shipTitle = overviewEventShipTitle(event);
+  if (shipTitle) {
+    parts.push(shipTitle);
+  }
+  return parts.join(" ");
+}
+
+function legacyOverviewPlayerDetails(event: GameFleetMission): string {
+  const owner = event.ownerName.trim() || event.targetOwnerName.trim() || "Enemy";
+  const writeTitle = "Write message";
+  return `${escapeLegacyHTML(owner)} <a href="#" onclick="showMessageMenu(${event.ownerId})"><img src="${skinBase}/img/m.gif" title="${writeTitle}" alt="${writeTitle}"></a>`;
+}
+
+function legacyOverviewFromTo(origin: string, target: string): string {
+  return ` from ${origin} sent to ${target}`;
+}
+
+function legacyOverviewFromReturnTo(origin: string, target: string): string {
+  return `, sent from ${origin} is returned to ${target}`;
+}
+
+function legacyOverviewPlayerFromTo(player: string, origin: string, target: string): string {
+  return ` player ${player} from ${origin} has been sent to ${target}`;
+}
+
+function legacyOverviewHoldFromOnto(origin: string, target: string): string {
+  return `, sent from ${origin} is in orbit ${target}.`;
+}
+
+function legacyOverviewFromToOrbit(origin: string, target: string): string {
+  return ` from the ${origin} in orbit ${target}`;
+}
+
+function legacyOverviewColonyFromTo(origin: string, target: string): string {
+  return ` from ${origin} sent to position ${target}`;
+}
+
+function legacyOverviewColonyReturn(origin: string, target: string): string {
+  return `, sent from position ${origin} is returned to ${target}`;
+}
+
+function legacyOverviewExpeditionFromTo(origin: string, target: string): string {
+  return ` sent from ${origin} reaches position ${target}`;
+}
+
+function legacyOverviewExpeditionReturn(target: string, cargo: string): string {
+  return ` returns to ${target} after order ${cargo}`;
+}
+
+function legacyOverviewExpeditionHolding(origin: string, target: string): string {
+  return `, sent from ${origin} is investigating position ${target}`;
+}
+
+function legacyOverviewMissionText(baseMission: number): string {
+  switch (baseMission) {
+    case 1:
+    case 21:
+      return "Attack";
+    case 2:
+      return "ACS Attack";
+    case 3:
+      return "Transport";
+    case 4:
+      return "Deploy";
+    case 5:
+      return "ACS Hold";
+    case 6:
+      return "Espionage";
+    case 7:
+      return "Colonize";
+    case 8:
+      return "Recycle";
+    case 9:
+      return "Destroy";
+    case 15:
+      return "Expedition";
+    case 20:
+      return "Missile Attack";
+    default:
+      return "Custom task";
+  }
+}
+
+function legacyOverviewPlanetFrom(coordinates: Coordinates, name: string, missionClass: string, planetType = 1): string {
+  const label = overviewEventEndpointName(name);
+  if (legacyOverviewSpecialTargetType(planetType)) {
+    return ` <a href="javascript:showGalaxy(${coordinates.galaxy},${coordinates.system},${coordinates.position})" ${escapeLegacyAttribute(
+      missionClass
+    )}>[${formatCoordinates(coordinates)}]</a>`;
+  }
+  const prefix = legacyOverviewGamePlanetType(planetType) ? "planets " : "";
+  return `${label ? `${prefix}${escapeLegacyHTML(label)} ` : ""}<a href="javascript:showGalaxy(${coordinates.galaxy},${coordinates.system},${coordinates.position})" ${escapeLegacyAttribute(
+    missionClass
+  )}>[${formatCoordinates(coordinates)}]</a>`;
+}
+
+function legacyOverviewPlanetTo(coordinates: Coordinates, name: string, missionClass: string, planetType = 1): string {
+  const label = overviewEventEndpointName(name);
+  if (legacyOverviewSpecialTargetType(planetType)) {
+    return ` <a href="javascript:showGalaxy(${coordinates.galaxy},${coordinates.system},${coordinates.position})" ${escapeLegacyAttribute(
+      missionClass
+    )}>[${formatCoordinates(coordinates)}]</a>`;
+  }
+  const prefix = legacyOverviewGamePlanetType(planetType) ? "planet " : "";
+  return `${label ? `${prefix}${escapeLegacyHTML(label)} ` : ""}<a href="javascript:showGalaxy(${coordinates.galaxy},${coordinates.system},${coordinates.position})" ${escapeLegacyAttribute(
+    missionClass
+  )}>[${formatCoordinates(coordinates)}]</a>`;
+}
+
+function legacyOverviewSpecialTargetType(planetType: number): boolean {
+  return planetType === 10002 || planetType === 20000;
+}
+
+function legacyOverviewGamePlanetType(planetType: number): boolean {
+  return planetType > 0 && planetType !== 10000;
+}
+
+function legacyOverviewEndpointHTML(coordinates: Coordinates, name: string): string {
+  const label = overviewEventEndpointName(name);
+  return `${label ? `${escapeLegacyHTML(label)} ` : ""}<a href="${escapeLegacyAttribute(galaxyHref(coordinates))}">[${formatCoordinates(coordinates)}]</a>`;
+}
+
+function legacyOverviewCargoHTML(event: GameFleetMission, missionClass: string, text: string): string {
+  const escapedText = escapeLegacyHTML(text);
+  const resources = [
+    { id: 700, name: "Metal" },
+    { id: 701, name: "Crystal" },
+    { id: 702, name: "Deuterium" }
+  ].map((resource) => ({
+    ...resource,
+    amount: Math.max(0, Math.trunc(Number(event.loadedResources?.[String(resource.id)] ?? 0)))
+  }));
+  const total = resources.reduce((sum, resource) => sum + resource.amount, 0);
+  if (total <= 0) {
+    return `<span class='class'>${escapedText}</span>`;
+  }
+  const title = `Transport:${resources.map((resource) => ` ${resource.name}: ${formatLegacyNumber(resource.amount)}`).join("")}`;
+  return `<a href="#" class="${escapeLegacyAttribute(missionClass)}">${escapedText}</a><a href="#" title="${escapeLegacyAttribute(
+    title
+  )}"></a>`;
 }
 
 function overviewBuildQueueText(queue: GameOverviewBuildQueue | undefined, includeLevel: boolean): string {
@@ -10115,11 +11219,41 @@ function planetHref(planetID: number): string {
   return gamePlanetSwitchURL(window.location.pathname, window.location.search, planetID);
 }
 
+function overviewSessionSearch(): URLSearchParams {
+  const current = new URLSearchParams(window.location.search);
+  const search = new URLSearchParams();
+  const session = current.get("session");
+  if (session) {
+    search.set("session", session);
+  }
+  return search;
+}
+
+function overviewRenameHref(planetID: number): string {
+  const search = overviewSessionSearch();
+  search.set("pl", String(planetID));
+  return gameRouteURL("/game/rename-planet", search.toString());
+}
+
+function overviewMessagesHref(): string {
+  const search = overviewSessionSearch();
+  search.set("dsp", "1");
+  return gameRouteURL("/game/messages", search.toString());
+}
+
 function overviewRankHref(rank: number): string {
-  const search = new URLSearchParams(window.location.search);
+  const search = overviewSessionSearch();
   const start = Math.floor(Math.max(0, rank) / 100) * 100 + 1;
   search.set("start", String(start));
   return gameRouteURL("/game/statistics", search.toString());
+}
+
+function overviewGalaxyHref(coordinates: Coordinates): string {
+  const search = overviewSessionSearch();
+  search.set("galaxy", String(coordinates.galaxy));
+  search.set("system", String(coordinates.system));
+  search.set("position", String(coordinates.position));
+  return gameRouteURL("/game/galaxy", search.toString());
 }
 
 function galaxyHref(coordinates: Coordinates): string {
@@ -10297,7 +11431,12 @@ function formatLegacyStatisticsDateTime(seconds: number): string {
 }
 
 function formatFleetTimestamp(seconds: number): string {
-  return formatLegacyDate(new Date(seconds * 1000));
+  const date = new Date((seconds + 3 * 60 * 60) * 1000);
+  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${weekdays[date.getUTCDay()]} ${months[date.getUTCMonth()]} ${date.getUTCDate()} ${date.getUTCHours()}:${String(
+    date.getUTCMinutes()
+  ).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
 }
 
 function formatLegacyNumber(value: number): string {

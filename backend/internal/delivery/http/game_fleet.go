@@ -57,10 +57,13 @@ type gameFleetMissionResponse struct {
 	StateShort      string                       `json:"stateShort"`
 	Ships           []gameFleetShipCountResponse `json:"ships"`
 	TotalShips      int                          `json:"totalShips"`
+	LoadedResources map[string]int               `json:"loadedResources"`
 	MissileAmount   int                          `json:"missileAmount"`
 	MissileTargetID int                          `json:"missileTargetId"`
 	MissileTarget   string                       `json:"missileTarget"`
 	UnionID         int                          `json:"unionId"`
+	UnionName       string                       `json:"unionName"`
+	UnionPlayers    []gameFleetUnionPlayer       `json:"unionPlayers"`
 	GroupMissions   []gameFleetMissionResponse   `json:"groupMissions"`
 	Origin          gameCoordinatesResponse      `json:"origin"`
 	OriginName      string                       `json:"originName"`
@@ -72,6 +75,11 @@ type gameFleetMissionResponse struct {
 	ArrivalAt       int64                        `json:"arrivalAt"`
 	CanRecall       bool                         `json:"canRecall"`
 	CanCreateUnion  bool                         `json:"canCreateUnion"`
+}
+
+type gameFleetUnionPlayer struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
 }
 
 type gameFleetShipCountResponse struct {
@@ -442,9 +450,23 @@ func toGameFleetMissionResponse(mission domaingame.FleetMission) gameFleetMissio
 			Count: ship.Count,
 		})
 	}
+	loadedResources := make(map[string]int, len(mission.LoadedResources))
+	for id, amount := range mission.LoadedResources {
+		if amount <= 0 {
+			continue
+		}
+		loadedResources[strconv.Itoa(id)] = amount
+	}
 	groupMissions := make([]gameFleetMissionResponse, 0, len(mission.GroupMissions))
 	for _, groupMission := range mission.GroupMissions {
 		groupMissions = append(groupMissions, toGameFleetMissionResponse(groupMission))
+	}
+	unionPlayers := make([]gameFleetUnionPlayer, 0, len(mission.UnionPlayers))
+	for _, player := range mission.UnionPlayers {
+		unionPlayers = append(unionPlayers, gameFleetUnionPlayer{
+			ID:   player.ID,
+			Name: player.Name,
+		})
 	}
 	return gameFleetMissionResponse{
 		ID:              mission.ID,
@@ -457,10 +479,13 @@ func toGameFleetMissionResponse(mission domaingame.FleetMission) gameFleetMissio
 		StateShort:      mission.StateShort,
 		Ships:           ships,
 		TotalShips:      mission.TotalShips,
+		LoadedResources: loadedResources,
 		MissileAmount:   mission.MissileAmount,
 		MissileTargetID: mission.MissileTargetID,
 		MissileTarget:   mission.MissileTarget,
 		UnionID:         mission.UnionID,
+		UnionName:       mission.UnionName,
+		UnionPlayers:    unionPlayers,
 		GroupMissions:   groupMissions,
 		Origin:          toGameCoordinatesResponse(mission.Origin),
 		OriginName:      mission.OriginName,

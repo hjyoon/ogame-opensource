@@ -13,18 +13,43 @@ const (
 	OverviewIssueFleetIncoming   = "fleet_incoming"
 	OverviewIssueFleetOutgoing   = "fleet_outgoing"
 	OverviewAdminNotice          = "In the administrator mode Overview and Admin do not update event queue."
+	OverviewVacationNotice       = "vacation mode"
+	OverviewUniverseFreezeNotice = "The universe has been put on pause."
 )
 
 type Overview struct {
 	Commander      string
 	AdminLevel     int
 	ServerTime     string
+	Officers       OverviewOfficers
 	Score          ScoreSummary
 	CurrentPlanet  PlanetOverview
 	PlanetSwitcher []PlanetSummary
+	News           *OverviewNews
+	MenuLinks      OverviewMenuLinks
 	Messages       []string
+	Errors         []string
 	UnreadMessages int
 	Events         []FleetMission
+}
+
+type OverviewOfficers struct {
+	Commander  bool
+	Admiral    bool
+	Engineer   bool
+	Geologist  bool
+	Technocrat bool
+}
+
+type OverviewNews struct {
+	URL   string
+	Start string
+	End   string
+}
+
+type OverviewMenuLinks struct {
+	BoardURL   string
+	DiscordURL string
 }
 
 type OverviewActionIssue struct {

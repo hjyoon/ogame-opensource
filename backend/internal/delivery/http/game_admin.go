@@ -31,23 +31,24 @@ type gameAdminMutationRequest struct {
 }
 
 type gameAdminSummary struct {
-	Commander      string                      `json:"commander"`
-	CurrentPlanet  gamePlanetOverviewResponse  `json:"currentPlanet"`
-	PlanetSwitcher []gamePlanetSummaryResponse `json:"planetSwitcher"`
-	Viewer         gameAdminViewer             `json:"viewer"`
-	Mode           string                      `json:"mode"`
-	Menu           []gameAdminMenuItem         `json:"menu"`
-	MessageRows    []gameAdminMessageRow       `json:"messageRows,omitempty"`
-	UserLogRows    []gameAdminUserLogRow       `json:"userLogRows,omitempty"`
-	UserRows       []gameAdminUserRow          `json:"userRows,omitempty"`
-	ActiveUsers    []gameAdminUserRow          `json:"activeUsers,omitempty"`
-	PlanetRows     []gameAdminPlanetRow        `json:"planetRows,omitempty"`
-	Universe       *gameAdminUniverseSettings  `json:"universe,omitempty"`
-	Expedition     map[string]int              `json:"expedition,omitempty"`
-	QueueRows      []gameAdminQueueRow         `json:"queueRows,omitempty"`
-	BattleReports  []gameAdminBattleReportRow  `json:"battleReports,omitempty"`
-	ChecksumGroups []gameAdminChecksumGroup    `json:"checksumGroups,omitempty"`
-	BotStrategies  []gameAdminBotStrategy      `json:"botStrategies,omitempty"`
+	Commander       string                      `json:"commander"`
+	CurrentPlanet   gamePlanetOverviewResponse  `json:"currentPlanet"`
+	PlanetSwitcher  []gamePlanetSummaryResponse `json:"planetSwitcher"`
+	Viewer          gameAdminViewer             `json:"viewer"`
+	Mode            string                      `json:"mode"`
+	Menu            []gameAdminMenuItem         `json:"menu"`
+	MessageRows     []gameAdminMessageRow       `json:"messageRows,omitempty"`
+	UserLogRows     []gameAdminUserLogRow       `json:"userLogRows,omitempty"`
+	UserRows        []gameAdminUserRow          `json:"userRows,omitempty"`
+	ActiveUsers     []gameAdminUserRow          `json:"activeUsers,omitempty"`
+	PlanetRows      []gameAdminPlanetRow        `json:"planetRows,omitempty"`
+	Universe        *gameAdminUniverseSettings  `json:"universe,omitempty"`
+	Expedition      map[string]int              `json:"expedition,omitempty"`
+	QueueRows       []gameAdminQueueRow         `json:"queueRows,omitempty"`
+	BattleReports   []gameAdminBattleReportRow  `json:"battleReports,omitempty"`
+	ChecksumGroups  []gameAdminChecksumGroup    `json:"checksumGroups,omitempty"`
+	DatabaseBackups []gameAdminDatabaseBackup   `json:"databaseBackups,omitempty"`
+	BotStrategies   []gameAdminBotStrategy      `json:"botStrategies,omitempty"`
 }
 
 type gameAdminViewer struct {
@@ -171,6 +172,10 @@ type gameAdminChecksumRow struct {
 	Path     string `json:"path"`
 	Checksum string `json:"checksum"`
 	Status   string `json:"status"`
+}
+
+type gameAdminDatabaseBackup struct {
+	FileName string `json:"fileName"`
 }
 
 type gameAdminBotStrategy struct {
@@ -352,6 +357,10 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			Rows:  rows,
 		})
 	}
+	databaseBackups := make([]gameAdminDatabaseBackup, 0, len(admin.DatabaseBackups))
+	for _, backup := range admin.DatabaseBackups {
+		databaseBackups = append(databaseBackups, gameAdminDatabaseBackup{FileName: backup.FileName})
+	}
 	botStrategies := make([]gameAdminBotStrategy, 0, len(admin.BotStrategies))
 	for _, strategy := range admin.BotStrategies {
 		botStrategies = append(botStrategies, gameAdminBotStrategy{
@@ -368,19 +377,20 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			Name:     admin.Viewer.Name,
 			Level:    admin.Viewer.Level,
 		},
-		Mode:           admin.Mode,
-		Menu:           menu,
-		MessageRows:    messageRows,
-		UserLogRows:    userLogRows,
-		UserRows:       userRows,
-		ActiveUsers:    activeUsers,
-		PlanetRows:     planetRows,
-		Universe:       universe,
-		Expedition:     admin.Expedition,
-		QueueRows:      queueRows,
-		BattleReports:  battleReports,
-		ChecksumGroups: checksumGroups,
-		BotStrategies:  botStrategies,
+		Mode:            admin.Mode,
+		Menu:            menu,
+		MessageRows:     messageRows,
+		UserLogRows:     userLogRows,
+		UserRows:        userRows,
+		ActiveUsers:     activeUsers,
+		PlanetRows:      planetRows,
+		Universe:        universe,
+		Expedition:      admin.Expedition,
+		QueueRows:       queueRows,
+		BattleReports:   battleReports,
+		ChecksumGroups:  checksumGroups,
+		DatabaseBackups: databaseBackups,
+		BotStrategies:   botStrategies,
 	}
 }
 

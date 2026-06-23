@@ -328,6 +328,8 @@ async function capturePage(
   });
 
   const response = await page.goto(url, { waitUntil: "networkidle", timeout: 15_000 });
+  await waitForImages(page);
+  await waitForStablePaint(page);
   await page.waitForTimeout(250);
   await page.keyboard.press("Escape").catch(() => undefined);
   await page.waitForTimeout(50);
@@ -351,6 +353,41 @@ async function capturePage(
     contracts,
     screenshotPath
   };
+}
+
+async function waitForImages(page: Page): Promise<void> {
+  await page
+    .evaluate(async () => {
+      const images = Array.from(document.images);
+      await Promise.all(
+        images.map(async (image) => {
+          if (image.complete && image.naturalWidth > 0) {
+            return;
+          }
+          await image.decode().catch(
+            () =>
+              new Promise<void>((resolve) => {
+                image.addEventListener("load", () => resolve(), { once: true });
+                image.addEventListener("error", () => resolve(), { once: true });
+              })
+          );
+        })
+      );
+    })
+    .catch(() => undefined);
+}
+
+async function waitForStablePaint(page: Page): Promise<void> {
+  await page
+    .evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => resolve());
+          });
+        })
+    )
+    .catch(() => undefined);
 }
 
 async function boxFor(page: Page, selector: string): Promise<Box | null> {
@@ -417,6 +454,11 @@ async function domContractFor(page: Page, contract: DomContractSpec): Promise<Do
         }))
       }))
     };
+    for (const link of snapshot.links) {
+      if (link.text === "" && link.images.length === 1) {
+        link.rect = link.images[0].rect;
+      }
+    }
     if (contract.includeInnerHTML) {
       snapshot.innerHTML = root.innerHTML;
     }

@@ -238,13 +238,13 @@ func TestFleetRepositoryLoadersHandleOptionalAndScanEdges(t *testing.T) {
 
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("mission rows failed"))}}}
 	repository = NewFleetRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
-	if _, err := repository.loadActiveMissions(context.Background(), "ogame_queue", "ogame_fleet", "ogame_planets", "ogame_users", 42); err == nil || !strings.Contains(err.Error(), "mission rows failed") {
+	if _, err := repository.loadActiveMissions(context.Background(), "ogame_queue", "ogame_fleet", "ogame_planets", "ogame_users", "ogame_union", 42); err == nil || !strings.Contains(err.Error(), "mission rows failed") {
 		t.Fatalf("expected mission rows error, got %v", err)
 	}
 
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}
 	repository = NewFleetRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
-	if _, err := repository.loadActiveMissions(context.Background(), "ogame_queue", "ogame_fleet", "ogame_planets", "ogame_users", 42); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+	if _, err := repository.loadActiveMissions(context.Background(), "ogame_queue", "ogame_fleet", "ogame_planets", "ogame_users", "ogame_union", 42); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
 		t.Fatalf("expected mission scan error, got %v", err)
 	}
 }
@@ -2017,11 +2017,11 @@ func fleetReadPrefixResults(now time.Time) []fakeQueryResult {
 }
 
 func fleetMissionRow(mission int, ships map[int]int, start int64, end int64) []any {
-	row := []any{11, start, end, mission, 99, 100}
+	row := []any{11, start, end, mission, 42, "legor", 0, 99, 100}
 	for _, id := range domaingame.FleetIDs() {
 		row = append(row, ships[id])
 	}
-	row = append(row, 1, 2, 3, 1, 2, 4, domaingame.PlanetTypePlanet, "target")
+	row = append(row, "Arakis", 1, 2, 3, "Target", 1, 2, 4, domaingame.PlanetTypePlanet, "target")
 	return row
 }
 

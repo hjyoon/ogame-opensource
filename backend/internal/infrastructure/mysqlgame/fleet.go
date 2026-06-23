@@ -108,6 +108,10 @@ func (r FleetRepository) GetFleet(ctx context.Context, query appgame.FleetQuery)
 	if err != nil {
 		return domaingame.Fleet{}, err
 	}
+	unionTable, err := tableName(r.prefix, "union")
+	if err != nil {
+		return domaingame.Fleet{}, err
+	}
 
 	overviewRepository := NewOverviewRepositoryWithQueryer(r.queryer, r.prefix)
 	overview, err := overviewRepository.GetOverview(ctx, appgame.OverviewQuery{
@@ -142,7 +146,7 @@ func (r FleetRepository) GetFleet(ctx context.Context, query appgame.FleetQuery)
 	if err != nil {
 		return domaingame.Fleet{}, err
 	}
-	missions, err := r.loadActiveMissions(ctx, queueTable, fleetTable, planetsTable, usersTable, query.PlayerID)
+	missions, err := r.loadActiveMissions(ctx, queueTable, fleetTable, planetsTable, usersTable, unionTable, query.PlayerID)
 	if err != nil {
 		return domaingame.Fleet{}, err
 	}
@@ -1296,15 +1300,16 @@ func (r FleetRepository) loadFleetSpeedFactor(ctx context.Context, uniTable stri
 	return speedFactor, nil
 }
 
-func (r FleetRepository) loadActiveMissions(ctx context.Context, queueTable string, fleetTable string, planetsTable string, usersTable string, playerID int) ([]domaingame.FleetMission, error) {
+func (r FleetRepository) loadActiveMissions(ctx context.Context, queueTable string, fleetTable string, planetsTable string, usersTable string, unionTable string, playerID int) ([]domaingame.FleetMission, error) {
 	fleetIDs := domaingame.FleetIDs()
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT q.sub_id, q.start, q.end, f.mission, f.start_planet, f.target_planet, %s, COALESCE(o.g, 0), COALESCE(o.s, 0), COALESCE(o.p, 0), COALESCE(t.g, 0), COALESCE(t.s, 0), COALESCE(t.p, 0), COALESCE(t.type, ?), COALESCE(u.oname, 'space') FROM %s q JOIN %s f ON f.fleet_id = q.sub_id LEFT JOIN %s o ON o.planet_id = f.start_planet LEFT JOIN %s t ON t.planet_id = f.target_planet LEFT JOIN %s u ON u.player_id = t.owner_id WHERE q.type = ? AND f.mission <> ? AND f.owner_id = ? ORDER BY q.end ASC, q.prio DESC",
+			"SELECT q.sub_id, q.start, q.end, f.mission, f.owner_id, COALESCE(ou.oname, ''), COALESCE(f.union_id, 0), f.start_planet, f.target_planet, %s, COALESCE(o.name, ''), COALESCE(o.g, 0), COALESCE(o.s, 0), COALESCE(o.p, 0), COALESCE(t.name, ''), COALESCE(t.g, 0), COALESCE(t.s, 0), COALESCE(t.p, 0), COALESCE(t.type, ?), COALESCE(u.oname, 'space') FROM %s q JOIN %s f ON f.fleet_id = q.sub_id LEFT JOIN %s ou ON ou.player_id = f.owner_id LEFT JOIN %s o ON o.planet_id = f.start_planet LEFT JOIN %s t ON t.planet_id = f.target_planet LEFT JOIN %s u ON u.player_id = t.owner_id WHERE q.type = ? AND f.mission <> ? AND f.owner_id = ? ORDER BY q.end ASC, q.prio DESC",
 			prefixedNumericColumns("f", fleetIDs),
 			queueTable,
 			fleetTable,
+			usersTable,
 			planetsTable,
 			planetsTable,
 			usersTable,
@@ -1320,10 +1325,23 @@ func (r FleetRepository) loadActiveMissions(ctx context.Context, queueTable stri
 	defer rows.Close()
 
 	missions := make([]domaingame.FleetMission, 0)
+	unionCache := make(map[int]fleetMissionUnionDetails)
 	for rows.Next() {
 		mission, err := scanFleetMissionRow(rows, fleetIDs)
 		if err != nil {
 			return nil, err
+		}
+		if mission.UnionID > 0 {
+			details, ok := unionCache[mission.UnionID]
+			if !ok {
+				details, err = r.loadFleetMissionUnionDetails(ctx, unionTable, usersTable, mission.UnionID)
+				if err != nil {
+					return nil, err
+				}
+				unionCache[mission.UnionID] = details
+			}
+			mission.UnionName = details.Name
+			mission.UnionPlayers = details.Players
 		}
 		missions = append(missions, mission)
 	}
@@ -1338,22 +1356,29 @@ func scanFleetMissionRow(rows Rows, fleetIDs []int) (domaingame.FleetMission, er
 	var departureAt int64
 	var arrivalAt int64
 	var mission int
+	var ownerID int
+	var ownerName string
+	var unionID int
 	var startPlanetID int
 	var targetPlanetID int
 	shipValues := make([]int, len(fleetIDs))
 	var origin domaingame.Coordinates
+	var originName string
 	var target domaingame.Coordinates
+	var targetName string
 	var targetType int
 	var targetOwner string
 
-	dest := []any{&id, &departureAt, &arrivalAt, &mission, &startPlanetID, &targetPlanetID}
+	dest := []any{&id, &departureAt, &arrivalAt, &mission, &ownerID, &ownerName, &unionID, &startPlanetID, &targetPlanetID}
 	for index := range shipValues {
 		dest = append(dest, &shipValues[index])
 	}
 	dest = append(dest,
+		&originName,
 		&origin.Galaxy,
 		&origin.System,
 		&origin.Position,
+		&targetName,
 		&target.Galaxy,
 		&target.System,
 		&target.Position,
@@ -1368,7 +1393,105 @@ func scanFleetMissionRow(rows Rows, fleetIDs []int) (domaingame.FleetMission, er
 	for index, fleetID := range fleetIDs {
 		ships[fleetID] = shipValues[index]
 	}
-	return domaingame.BuildFleetMission(id, mission, ships, origin, target, targetType, targetOwner, departureAt, arrivalAt), nil
+	row := domaingame.BuildFleetMission(id, mission, ships, origin, target, targetType, targetOwner, departureAt, arrivalAt)
+	row.OwnerID = ownerID
+	row.OwnerName = ownerName
+	row.UnionID = unionID
+	row.OriginName = originName
+	row.TargetName = targetName
+	return row, nil
+}
+
+type fleetMissionUnionDetails struct {
+	Name    string
+	Players []domaingame.FleetUnionPlayer
+}
+
+func (r FleetRepository) loadFleetMissionUnionDetails(ctx context.Context, unionTable string, usersTable string, unionID int) (fleetMissionUnionDetails, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COALESCE(name, ''), COALESCE(players, '') FROM %s WHERE union_id = ? LIMIT 1", unionTable), unionID)
+	if err != nil {
+		return fleetMissionUnionDetails{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return fleetMissionUnionDetails{}, err
+		}
+		return fleetMissionUnionDetails{}, nil
+	}
+	var name string
+	var players string
+	if err := rows.Scan(&name, &players); err != nil {
+		return fleetMissionUnionDetails{}, err
+	}
+	if err := rows.Err(); err != nil {
+		return fleetMissionUnionDetails{}, err
+	}
+	unionPlayers, err := r.loadFleetMissionUnionPlayers(ctx, usersTable, parseFleetMissionUnionPlayerIDs(players))
+	if err != nil {
+		return fleetMissionUnionDetails{}, err
+	}
+	return fleetMissionUnionDetails{Name: name, Players: unionPlayers}, nil
+}
+
+func (r FleetRepository) loadFleetMissionUnionPlayers(ctx context.Context, usersTable string, playerIDs []int) ([]domaingame.FleetUnionPlayer, error) {
+	if len(playerIDs) == 0 {
+		return nil, nil
+	}
+	args := make([]any, 0, len(playerIDs))
+	order := make(map[int]int, len(playerIDs))
+	for index, playerID := range playerIDs {
+		args = append(args, playerID)
+		order[playerID] = index
+	}
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT player_id, oname FROM %s WHERE player_id IN (%s)", usersTable, placeholders(len(playerIDs))),
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	byID := make(map[int]domaingame.FleetUnionPlayer, len(playerIDs))
+	for rows.Next() {
+		var player domaingame.FleetUnionPlayer
+		if err := rows.Scan(&player.ID, &player.Name); err != nil {
+			return nil, err
+		}
+		byID[player.ID] = player
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	players := make([]domaingame.FleetUnionPlayer, 0, len(playerIDs))
+	for _, playerID := range playerIDs {
+		player, ok := byID[playerID]
+		if !ok {
+			continue
+		}
+		if _, known := order[player.ID]; known {
+			players = append(players, player)
+		}
+	}
+	return players, nil
+}
+
+func parseFleetMissionUnionPlayerIDs(raw string) []int {
+	parts := strings.Split(raw, ",")
+	ids := make([]int, 0, len(parts))
+	seen := make(map[int]bool, len(parts))
+	for _, part := range parts {
+		id, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || id <= 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 func prefixedNumericColumns(prefix string, ids []int) string {

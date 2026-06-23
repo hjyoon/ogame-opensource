@@ -1926,6 +1926,7 @@ try {
       check(js.body.includes("legacy-technology-table"), "React bundle contains legacy game technology layout"),
       check(js.body.includes("legacy-technology-details-table"), "React bundle contains legacy game technology details layout"),
       check(js.body.includes("legacy-statistics-table"), "React bundle contains legacy game statistics layout"),
+      check(js.body.includes("legacy-statistics-tooltip") && !js.body.includes("overlib("), "React bundle replaces legacy global overlib hover handlers"),
       check(js.body.includes("legacy-search-results-table"), "React bundle contains legacy game search layout"),
       check(js.body.includes("legacy-messages-table"), "React bundle contains legacy game messages layout"),
       check(js.body.includes("legacy-messages-compose-table"), "React bundle contains legacy game message compose layout"),
