@@ -23,6 +23,21 @@ func TestNewAdminNormalizesModeAndCopiesMenu(t *testing.T) {
 	if NewAdmin(Overview{}, AdminViewer{Level: AdminLevelPlayer}, "Home").CanAccess() {
 		t.Fatal("regular players must not access admin")
 	}
+	if NewAdmin(Overview{}, AdminViewer{Level: AdminLevelPlayer}, "Users").CanAccessMode() {
+		t.Fatal("regular players must not access admin modes")
+	}
+	if !NewAdmin(Overview{}, AdminViewer{Level: AdminLevelOperator}, "Users").CanAccessMode() {
+		t.Fatal("operators should access standard admin modes")
+	}
+	if NewAdmin(Overview{}, AdminViewer{Level: AdminLevelOperator}, "BotEdit").CanAccessMode() {
+		t.Fatal("operators must not access admin-only bot editor data")
+	}
+	if !NewAdmin(Overview{}, AdminViewer{Level: AdminLevelAdmin}, "BotEdit").CanAccessMode() {
+		t.Fatal("admins should access admin-only bot editor data")
+	}
+	if !AdminModeRequiresAdmin("Bots") || AdminModeRequiresAdmin("Users") {
+		t.Fatal("admin-only mode classification mismatch")
+	}
 	if issue := AdminIssue(AdminIssueAccessDenied); issue == nil || issue.Message != "Access denied." {
 		t.Fatalf("unexpected admin issue: %+v", issue)
 	}

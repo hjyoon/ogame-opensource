@@ -225,6 +225,25 @@ func (a Admin) CanAccess() bool {
 	return a.Viewer.Level > AdminLevelPlayer
 }
 
+func (a Admin) CanAccessMode() bool {
+	if !a.CanAccess() {
+		return false
+	}
+	if a.Viewer.Level >= AdminLevelAdmin {
+		return true
+	}
+	return !AdminModeRequiresAdmin(a.Mode)
+}
+
+func AdminModeRequiresAdmin(mode string) bool {
+	switch NormalizeAdminMode(mode) {
+	case "Bots", "BotEdit":
+		return true
+	default:
+		return false
+	}
+}
+
 func AdminIssue(code string) *AdminActionIssue {
 	switch code {
 	case AdminIssueAccessDenied:

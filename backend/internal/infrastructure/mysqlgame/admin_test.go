@@ -60,6 +60,27 @@ func TestNewAdminRepositoryWithQueryerKeepsMutationRunner(t *testing.T) {
 	}
 }
 
+func TestAdminRepositorySkipsRestrictedOperatorModeData(t *testing.T) {
+	results := append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "operator", domaingame.AdminLevelOperator})},
+		fakeQueryResult{err: errors.New("bot strategies should not load")},
+	)
+	queryer := &fakeQueryer{results: results}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "BotEdit"})
+
+	if err != nil {
+		t.Fatalf("GetAdmin returned error: %v", err)
+	}
+	if admin.Mode != "BotEdit" || admin.CanAccessMode() || len(admin.BotStrategies) != 0 {
+		t.Fatalf("unexpected restricted operator admin payload: %+v", admin)
+	}
+	if len(queryer.calls) != len(shipyardOverviewResults())+1 {
+		t.Fatalf("restricted operator mode should not issue detail query, calls=%d", len(queryer.calls))
+	}
+}
+
 func TestAdminRepositoryReadsAdminDebugRows(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},

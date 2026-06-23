@@ -52,6 +52,19 @@ func TestAdminServiceReturnsAccessDeniedForRegularUser(t *testing.T) {
 	}
 }
 
+func TestAdminServiceReturnsAccessDeniedForRestrictedOperatorMode(t *testing.T) {
+	service := NewAdminService(
+		&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{Authenticated: true, Session: domainpublicsite.GameSession{PlayerID: 42}}},
+		&fakeAdminRepository{admin: domaingame.Admin{Mode: "BotEdit", Viewer: domaingame.AdminViewer{PlayerID: 42, Level: domaingame.AdminLevelOperator}}},
+	)
+
+	result, err := service.GetAdmin(context.Background(), AdminCommand{})
+
+	if err != nil || !result.Authenticated || result.ActionIssue == nil || result.ActionIssue.Code != domaingame.AdminIssueAccessDenied {
+		t.Fatalf("expected restricted operator access denied, result=%+v err=%v", result, err)
+	}
+}
+
 func TestAdminServiceReturnsUnauthenticatedAndErrors(t *testing.T) {
 	issue := domainpublicsite.SessionIssue{Code: "missing", Message: "Session is invalid."}
 	service := NewAdminService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{Issues: []domainpublicsite.SessionIssue{issue}}}, &fakeAdminRepository{})

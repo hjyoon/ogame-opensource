@@ -59,6 +59,9 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		return domaingame.Admin{}, err
 	}
 	admin := domaingame.NewAdmin(overview, viewer, query.Mode)
+	if !admin.CanAccessMode() {
+		return admin, nil
+	}
 	switch admin.Mode {
 	case "Debug":
 		admin.MessageRows, err = r.loadAdminMessageRows(ctx, "debug", true)

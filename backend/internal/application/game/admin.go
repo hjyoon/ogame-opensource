@@ -67,7 +67,7 @@ func (s AdminService) GetAdmin(ctx context.Context, command AdminCommand) (Admin
 		return AdminResult{}, err
 	}
 	var issue *domaingame.AdminActionIssue
-	if !admin.CanAccess() {
+	if !admin.CanAccessMode() {
 		issue = domaingame.AdminIssue(domaingame.AdminIssueAccessDenied)
 	}
 	return AdminResult{Authenticated: true, Admin: admin, ActionIssue: issue}, nil
