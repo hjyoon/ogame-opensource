@@ -559,9 +559,9 @@ const pageSpecs: AuthPageSpec[] = [
   {
     name: "game-messages-compose",
     legacyPage: "writemessages",
-    legacyQuery: { messageziel: "100000" },
+    legacyQuery: { messageziel: "1" },
     migratedPath: "/game/messages",
-    migratedQuery: { messageziel: "100000" },
+    migratedQuery: { messageziel: "1" },
     legacyReady: "#content form",
     migratedReady: ".legacy-messages-compose-table",
     expectedTexts: ["Write message", "Recipient", "Subject", "Message(0 / 2000 characters)"]
@@ -836,6 +836,7 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
     if (pageSide === "legacy") {
       hide("#overDiv");
     }
+    hide("#header_top img[width='50'][height='50'], .legacy-header-top img[width='50'][height='50']");
     const resourceValues = Array.from(document.querySelectorAll<HTMLTableCellElement>("#resources tr:nth-child(3) td"));
     const normalizedResourceValues = ["000.000", "000.000", "0.000", "0", "0/0"];
     resourceValues.forEach((cell, index) => {

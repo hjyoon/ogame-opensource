@@ -36,7 +36,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 - Playwright resources page actions passed Chromium/Firefox: percent save, DB `prod*`, selected values, totals, and visuals.
 - Research/shipyard/defense actions and galaxy page pass Chromium/Firefox exact 0px; queues cover submit/partial/complete DB.
 - CSR E2E covers Buddy/Options, Options save, Notes create/edit/delete, and logout; Chromium passes.
-- Auth visual E2E passes Chromium/Firefox at 0px for Notes, Buddylist, Options, Merchant, Statistics, and Alliance no-member/create/search.
+- Auth visual E2E passes Chromium/Firefox strict 0px for Notes, Buddylist, Options, Merchant, Statistics, Alliance basics, Officers, Technology, Search, and Messages.
 - Go internal coverage gate: `97.0% >= 97%`.
 
 ## Remaining Work
