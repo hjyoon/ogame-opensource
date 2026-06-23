@@ -1,6 +1,6 @@
 # Migration Status
 
-Updated: 2026-06-22 KST, branch `hjyoon/golang`.
+Updated: 2026-06-23 KST, branch `hjyoon/golang`.
 
 React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split details into another `.md` when needed.
 
@@ -19,7 +19,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 
 - Overview covers `cp`, `lgn`, notices, unread/build/incoming/missile/fleet pseudo-events, rename/delete blockers, queue markers, stats/ranks, and active planet restore.
 - Buildings ports queue state, Commander rows, countdowns, shortcuts, due refresh, moon capacity, post-build header sync, and Chromium/Firefox parity for cost/refund/queue/timer states.
-- Statistics/fleet authenticated visuals pass Chromium/Firefox at 0px for player statistics.
+- Statistics/fleet authenticated visuals pass Chromium/Firefox at 0px for player/alliance statistics.
 - Empire ports Commander-gated `imperium`, build queue markers, and legacy GET add/destroy/remove shortcuts.
 - Resources ports the legacy production-percent form, premium bonus icon column, DB normalization, and post-save resource header sync.
 - Merchant/officers/alliance/admin port DM spend/trade/timers, core alliance flows, 25 admin GET modes, and access guard.
@@ -36,12 +36,12 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 - Playwright resources page actions passed Chromium/Firefox: percent save, DB `prod*`, selected values, totals, and visuals.
 - Research/shipyard/defense actions and galaxy page pass Chromium/Firefox exact 0px; queues cover submit/partial/complete DB.
 - CSR E2E covers Buddy/Options, Options save, Notes create/edit/delete, and logout; Chromium passes.
-- Auth visual E2E passes Chromium/Firefox for Notes, Buddylist, Options at 0px; Merchant call/exchange has ~0.12% select diff.
+- Auth visual E2E passes Chromium/Firefox for Notes, Buddylist, Options, Merchant, and Statistics at 0px.
 - Go internal coverage gate: `97.0% >= 97%`.
 
 ## Remaining Work
 
 - Continue authenticated visual parity for remaining non-statistics pages.
 - Add Go compatibility checks for migrated legacy E2E flows as they stabilize.
-- Finish merchant edge visuals, galaxy instant actions, alliance deep management, admin submodes/recovery/bans/permissions, options mutations, and mission restrictions.
+- Finish galaxy instant actions, alliance deep management, admin submodes/recovery/bans/permissions, options mutations, and mission restrictions.
 - Run full legacy PHP E2E before declaring game-flow equivalence.
