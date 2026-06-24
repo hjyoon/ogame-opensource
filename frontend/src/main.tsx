@@ -924,7 +924,7 @@ function App() {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     const currentSearch = new URLSearchParams(search);
     const allianceSearch = new URLSearchParams({ session: publicSession });
-    for (const key of ["cp", "page", "a", "allyid", "show", "sort", "suchtext"]) {
+    for (const key of ["cp", "page", "a", "allyid", "show", "sort", "suchtext", "d", "t", "u", "sort1", "sort2"]) {
       const value = currentSearch.get(key);
       if (value) {
         allianceSearch.set(key, value);
@@ -988,6 +988,18 @@ function App() {
         setGameAllianceError(null);
         if (action.action === "search") {
           dispatchClientNavigation(`/game/alliance?${query.toString()}`);
+          return;
+        }
+        if (action.action === "save_text" || action.action === "save_settings") {
+          const next = new URLSearchParams({ session: publicSession, a: "5" });
+          const selectedPlanet = new URLSearchParams(search).get("cp");
+          if (selectedPlanet) {
+            next.set("cp", selectedPlanet);
+          }
+          if (action.action === "save_text") {
+            next.set("t", String(action.textKind));
+          }
+          dispatchClientNavigation(`/game/alliance?${next.toString()}`);
           return;
         }
         const next = new URLSearchParams({ session: publicSession });

@@ -472,6 +472,26 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["Looking for alliances.", "Seek", "Search"]
   },
   {
+    name: "game-alliance-owned-home",
+    defaultEnabled: false,
+    legacyPage: "allianzen",
+    migratedPath: "/game/alliance",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-alliance-owned-table",
+    expectedTexts: ["Your alliance", "Abbreviation", "Members", "your rank", "Internal Competency"]
+  },
+  {
+    name: "game-alliance-management",
+    defaultEnabled: false,
+    legacyPage: "allianzen",
+    legacyQuery: { a: "5" },
+    migratedPath: "/game/alliance",
+    migratedQuery: { a: "5" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-alliance-management-table",
+    expectedTexts: ["alliance management", "set ranks", "Alliance Members", "Edit text", "Settings"]
+  },
+  {
     name: "game-officers",
     legacyPage: "micropayment",
     migratedPath: "/game/officers",

@@ -57,6 +57,7 @@ func (r StatisticsRepository) GetStatistics(ctx context.Context, query appgame.S
 	statType := domaingame.NormalizeStatisticsType(query.Type)
 	total := 0
 	start := 1
+	viewerAllianceID := 0
 	rows := []domaingame.StatisticsRow{}
 	if who == domaingame.StatisticsWhoAlly {
 		total, err = r.loadAllianceStatisticsTotal(ctx, allyTable)
@@ -67,6 +68,7 @@ func (r StatisticsRepository) GetStatistics(ctx context.Context, query appgame.S
 		if err != nil {
 			return domaingame.Statistics{}, err
 		}
+		viewerAllianceID = ownAllianceID
 		start = domaingame.NormalizeStatisticsStart(query.Start, ownPlace)
 		rows, err = r.loadAllianceStatisticsRows(ctx, allyTable, usersTable, ownAllianceID, statType, start)
 		if err != nil {
@@ -81,6 +83,7 @@ func (r StatisticsRepository) GetStatistics(ctx context.Context, query appgame.S
 		if err != nil {
 			return domaingame.Statistics{}, err
 		}
+		viewerAllianceID = ownAllianceID
 		start = domaingame.NormalizeStatisticsStart(query.Start, ownPlace)
 		rows, err = r.loadPlayerStatisticsRows(ctx, usersTable, planetsTable, allyTable, query.PlayerID, ownAllianceID, statType, start)
 		if err != nil {
@@ -89,15 +92,16 @@ func (r StatisticsRepository) GetStatistics(ctx context.Context, query appgame.S
 	}
 
 	return domaingame.Statistics{
-		Commander:      overview.Commander,
-		CurrentPlanet:  overview.CurrentPlanet,
-		PlanetSwitcher: overview.PlanetSwitcher,
-		Who:            who,
-		Type:           statType,
-		Start:          start,
-		Total:          total,
-		GeneratedAt:    r.now().Unix(),
-		Rows:           rows,
+		Commander:        overview.Commander,
+		CurrentPlanet:    overview.CurrentPlanet,
+		PlanetSwitcher:   overview.PlanetSwitcher,
+		ViewerAllianceID: viewerAllianceID,
+		Who:              who,
+		Type:             statType,
+		Start:            start,
+		Total:            total,
+		GeneratedAt:      r.now().Unix(),
+		Rows:             rows,
 	}, nil
 }
 

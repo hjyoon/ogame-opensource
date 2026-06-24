@@ -149,6 +149,8 @@ func TestSelectedAllianceQueryAndLegacyMutationParsing(t *testing.T) {
 		{"/api/game/alliance?a=1", domaingame.AllianceViewCreate},
 		{"/api/game/alliance?a=2&suchtext=TAG", domaingame.AllianceViewSearch},
 		{"/api/game/alliance?a=4", domaingame.AllianceViewMembers},
+		{"/api/game/alliance?a=5&t=3", domaingame.AllianceViewManagement},
+		{"/api/game/alliance?a=11&d=2", domaingame.AllianceViewManagement},
 		{"/api/game/alliance", domaingame.AllianceViewHome},
 	}
 	for _, tt := range tests {
@@ -172,6 +174,8 @@ func TestSelectedAllianceQueryAndLegacyMutationParsing(t *testing.T) {
 		{"/api/game/alliance?page=bewerbungen&show=9", "aktion=Reject&text=no", "reject"},
 		{"/api/game/alliance?a=1&weiter=1", "tag=TAG&name=Alliance", "create"},
 		{"/api/game/alliance?a=3", "", "leave"},
+		{"/api/game/alliance?a=11&d=1&t=3", "text=hello&bewforce=1", "save_text"},
+		{"/api/game/alliance?a=11&d=2", "hp=https%3A%2F%2Fexample.com&logo=&bew=1&fname=Right+Hand", "save_settings"},
 		{"/api/game/alliance", "bcancel=Withdraw+application", "withdraw"},
 		{"/api/game/alliance?a=15", "newrangname=Bad", "15"},
 	} {
@@ -181,6 +185,16 @@ func TestSelectedAllianceQueryAndLegacyMutationParsing(t *testing.T) {
 		if err != nil || mutation.Action != tt.want {
 			t.Fatalf("expected %q mutation for %s, got %+v err=%v", tt.want, tt.url, mutation, err)
 		}
+	}
+	saveTextRequest := httptest.NewRequest(http.MethodPost, "/api/game/alliance?a=11&d=1&t=3", strings.NewReader("text=hello&bewforce=1"))
+	saveTextRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if mutation, err := decodeGameAllianceMutation(saveTextRequest); err != nil || mutation.TextKind != 3 || !mutation.InsertApp {
+		t.Fatalf("unexpected save text mutation=%+v err=%v", mutation, err)
+	}
+	saveSettingsRequest := httptest.NewRequest(http.MethodPost, "/api/game/alliance?a=11&d=2", strings.NewReader("hp=https%3A%2F%2Fexample.com&logo=https%3A%2F%2Fexample.com%2Flogo.png&bew=1&fname=Right+Hand"))
+	saveSettingsRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if mutation, err := decodeGameAllianceMutation(saveSettingsRequest); err != nil || mutation.Open || mutation.Homepage != "https://example.com" || mutation.FounderRankName != "Right Hand" {
+		t.Fatalf("unexpected save settings mutation=%+v err=%v", mutation, err)
 	}
 	if legacyAllianceInt("-12") != 12 || legacyAllianceInt("bad") != 0 {
 		t.Fatal("legacy int parser mismatch")
@@ -206,6 +220,7 @@ func allianceHandlerFixture() domaingame.Alliance {
 		Applications:   []domaingame.AllianceApplication{app},
 		SelectedApp:    &app,
 		Members:        []domaingame.AllianceMember{{PlayerID: 42, Name: "legor", RankName: "Founder", Score: 1000, Galaxy: 1, System: 2, Position: 3}},
+		Ranks:          []domaingame.AllianceRank{{ID: 0, Name: "Founder", Rights: domaingame.AllianceFounderRights}},
 	}
 }
 

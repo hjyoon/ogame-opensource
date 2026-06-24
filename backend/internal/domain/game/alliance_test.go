@@ -1,6 +1,7 @@
 package game
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -25,16 +26,42 @@ func TestAllianceDomainNormalizesAndValidatesCreation(t *testing.T) {
 
 func TestAllianceViewerRightsMatchLegacyMasks(t *testing.T) {
 	founder := AllianceViewer{AllianceID: 7, RankID: AllianceRankFounder, Founder: true}
-	if !founder.CanReadMembers() || !founder.CanWriteApplications() || founder.CanLeaveAlliance() {
+	if !founder.CanReadMembers() || !founder.CanWriteApplications() || !founder.CanManageAlliance() || founder.CanLeaveAlliance() {
 		t.Fatalf("unexpected founder permissions: %+v", founder)
 	}
-	member := AllianceViewer{AllianceID: 7, RankID: AllianceRankNewcomer, RankRights: AllianceRightMembers | AllianceRightWriteApps}
-	if !member.CanReadMembers() || !member.CanWriteApplications() || !member.CanLeaveAlliance() {
+	member := AllianceViewer{AllianceID: 7, RankID: AllianceRankNewcomer, RankRights: AllianceRightMembers | AllianceRightWriteApps | AllianceRightManage}
+	if !member.CanReadMembers() || !member.CanWriteApplications() || !member.CanManageAlliance() || !member.CanLeaveAlliance() {
 		t.Fatalf("unexpected member permissions: %+v", member)
 	}
 	outsider := AllianceViewer{}
-	if outsider.CanReadMembers() || outsider.CanWriteApplications() || outsider.CanLeaveAlliance() {
+	if outsider.CanReadMembers() || outsider.CanWriteApplications() || outsider.CanManageAlliance() || outsider.CanLeaveAlliance() {
 		t.Fatalf("unexpected outsider permissions: %+v", outsider)
+	}
+}
+
+func TestAllianceDomainNormalizesManagementInputs(t *testing.T) {
+	if NormalizeAllianceTextKind(0) != 1 || NormalizeAllianceTextKind(4) != 1 || NormalizeAllianceTextKind(3) != 3 {
+		t.Fatal("unexpected text kind normalization")
+	}
+	if got := NormalizeAllianceURL(" https://example.com/a "); got != "https://example.com/a" {
+		t.Fatalf("unexpected url normalization: %q", got)
+	}
+	if got := NormalizeAllianceURL("   "); got != "" {
+		t.Fatalf("expected blank url to stay blank, got %q", got)
+	}
+	for _, raw := range []string{"javascript:alert(1)", "https://", "http://user:pass@example.com", "https://example.com/a\nb"} {
+		if got := NormalizeAllianceURL(raw); got != "" {
+			t.Fatalf("expected unsafe url %q to be stripped, got %q", raw, got)
+		}
+	}
+	if issue := ValidateAllianceRankName("Right Hand_1"); issue != nil {
+		t.Fatalf("expected valid rank name, got %+v", issue)
+	}
+	if issue := ValidateAllianceRankName("bad/rank"); issue == nil || issue.Code != AllianceIssueInvalidRankName {
+		t.Fatalf("expected invalid rank issue, got %+v", issue)
+	}
+	if text := NormalizeAllianceText(strings.Repeat("a", 5001)); len(text) != 5000 {
+		t.Fatalf("expected text truncation, got %d", len(text))
 	}
 }
 
@@ -58,8 +85,10 @@ func TestAllianceIssueMessages(t *testing.T) {
 		AllianceIssueAccepted,
 		AllianceIssueRejected,
 		AllianceIssueLeft,
+		AllianceIssueSaved,
 		AllianceIssueInvalidTag,
 		AllianceIssueInvalidName,
+		AllianceIssueInvalidRankName,
 		AllianceIssueTagExists,
 		AllianceIssueAllianceNotFound,
 		AllianceIssueApplicationsClosed,

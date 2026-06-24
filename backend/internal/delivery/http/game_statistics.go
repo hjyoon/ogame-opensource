@@ -16,15 +16,16 @@ type gameStatisticsResponse struct {
 }
 
 type gameStatisticsSummary struct {
-	Commander      string                      `json:"commander"`
-	CurrentPlanet  gamePlanetOverviewResponse  `json:"currentPlanet"`
-	PlanetSwitcher []gamePlanetSummaryResponse `json:"planetSwitcher"`
-	Who            string                      `json:"who"`
-	Type           string                      `json:"type"`
-	Start          int                         `json:"start"`
-	Total          int                         `json:"total"`
-	GeneratedAt    int64                       `json:"generatedAt"`
-	Rows           []gameStatisticsRowResponse `json:"rows"`
+	Commander        string                      `json:"commander"`
+	CurrentPlanet    gamePlanetOverviewResponse  `json:"currentPlanet"`
+	PlanetSwitcher   []gamePlanetSummaryResponse `json:"planetSwitcher"`
+	ViewerAllianceID int                         `json:"viewerAllianceId"`
+	Who              string                      `json:"who"`
+	Type             string                      `json:"type"`
+	Start            int                         `json:"start"`
+	Total            int                         `json:"total"`
+	GeneratedAt      int64                       `json:"generatedAt"`
+	Rows             []gameStatisticsRowResponse `json:"rows"`
 }
 
 type gameStatisticsRowResponse struct {
@@ -112,15 +113,16 @@ func toGameStatisticsSummary(statistics domaingame.Statistics) gameStatisticsSum
 		rows = append(rows, toGameStatisticsRowResponse(row, statistics.Type))
 	}
 	return gameStatisticsSummary{
-		Commander:      statistics.Commander,
-		CurrentPlanet:  toGamePlanetOverviewResponse(statistics.CurrentPlanet),
-		PlanetSwitcher: planets,
-		Who:            statistics.Who,
-		Type:           statistics.Type,
-		Start:          statistics.Start,
-		Total:          statistics.Total,
-		GeneratedAt:    statistics.GeneratedAt,
-		Rows:           rows,
+		Commander:        statistics.Commander,
+		CurrentPlanet:    toGamePlanetOverviewResponse(statistics.CurrentPlanet),
+		PlanetSwitcher:   planets,
+		ViewerAllianceID: statistics.ViewerAllianceID,
+		Who:              statistics.Who,
+		Type:             statistics.Type,
+		Start:            statistics.Start,
+		Total:            statistics.Total,
+		GeneratedAt:      statistics.GeneratedAt,
+		Rows:             rows,
 	}
 }
 

@@ -32,10 +32,12 @@ type gameAllianceSummary struct {
 	Target         *gameAllianceInfo           `json:"target,omitempty"`
 	Pending        *gameAllianceApplication    `json:"pending,omitempty"`
 	SearchText     string                      `json:"searchText"`
+	TextKind       int                         `json:"textKind"`
 	SearchResults  []gameAllianceSearchResult  `json:"searchResults"`
 	Applications   []gameAllianceApplication   `json:"applications"`
 	SelectedApp    *gameAllianceApplication    `json:"selectedApp,omitempty"`
 	Members        []gameAllianceMember        `json:"members"`
+	Ranks          []gameAllianceRank          `json:"ranks"`
 }
 
 type gameAllianceViewer struct {
@@ -98,13 +100,25 @@ type gameAllianceMember struct {
 	Position  int    `json:"position"`
 }
 
+type gameAllianceRank struct {
+	ID     int    `json:"id"`
+	Name   string `json:"name"`
+	Rights int    `json:"rights"`
+}
+
 type gameAllianceMutationRequest struct {
-	Action        string `json:"action"`
-	Tag           string `json:"tag"`
-	Name          string `json:"name"`
-	Text          string `json:"text"`
-	AllianceID    int    `json:"allianceId"`
-	ApplicationID int    `json:"applicationId"`
+	Action          string `json:"action"`
+	Tag             string `json:"tag"`
+	Name            string `json:"name"`
+	Text            string `json:"text"`
+	TextKind        int    `json:"textKind"`
+	Homepage        string `json:"homepage"`
+	ImageLogo       string `json:"imageLogo"`
+	Open            bool   `json:"open"`
+	InsertApp       bool   `json:"insertApp"`
+	FounderRankName string `json:"founderRankName"`
+	AllianceID      int    `json:"allianceId"`
+	ApplicationID   int    `json:"applicationId"`
 }
 
 func (a app) handleGameAlliance(w http.ResponseWriter, r *http.Request) {
@@ -137,6 +151,7 @@ func (a app) handleGameAllianceGet(w http.ResponseWriter, r *http.Request) {
 		PlanetID:        planetID,
 		View:            query.View,
 		SearchText:      query.SearchText,
+		TextKind:        query.TextKind,
 		AllianceID:      query.AllianceID,
 		ApplicationID:   query.ApplicationID,
 	})
@@ -194,12 +209,15 @@ func selectedAllianceQuery(r *http.Request) appgame.AllianceQuery {
 		view = domaingame.AllianceViewSearch
 	case action == "4":
 		view = domaingame.AllianceViewMembers
+	case action == "5", action == "11":
+		view = domaingame.AllianceViewManagement
 	default:
 		view = domaingame.AllianceViewHome
 	}
 	return appgame.AllianceQuery{
 		View:          view,
 		SearchText:    strings.TrimSpace(query.Get("suchtext")),
+		TextKind:      domaingame.NormalizeAllianceTextKind(legacyAllianceInt(query.Get("t"))),
 		AllianceID:    legacyAllianceInt(query.Get("allyid")),
 		ApplicationID: legacyAllianceInt(query.Get("show")),
 	}
@@ -213,12 +231,18 @@ func decodeGameAllianceMutation(r *http.Request) (domaingame.AllianceMutation, e
 			return domaingame.AllianceMutation{}, err
 		}
 		return domaingame.AllianceMutation{
-			Action:        strings.TrimSpace(request.Action),
-			Tag:           request.Tag,
-			Name:          request.Name,
-			Text:          request.Text,
-			AllianceID:    request.AllianceID,
-			ApplicationID: request.ApplicationID,
+			Action:          strings.TrimSpace(request.Action),
+			Tag:             request.Tag,
+			Name:            request.Name,
+			Text:            request.Text,
+			TextKind:        domaingame.NormalizeAllianceTextKind(request.TextKind),
+			Homepage:        request.Homepage,
+			ImageLogo:       request.ImageLogo,
+			Open:            request.Open,
+			InsertApp:       request.InsertApp,
+			FounderRankName: request.FounderRankName,
+			AllianceID:      request.AllianceID,
+			ApplicationID:   request.ApplicationID,
 		}, nil
 	}
 	if err := r.ParseForm(); err != nil {
@@ -227,11 +251,17 @@ func decodeGameAllianceMutation(r *http.Request) (domaingame.AllianceMutation, e
 	page := r.URL.Query().Get("page")
 	action := r.URL.Query().Get("a")
 	mutation := domaingame.AllianceMutation{
-		Tag:           formLast(r, "tag"),
-		Name:          formLast(r, "name"),
-		Text:          formLast(r, "text"),
-		AllianceID:    legacyAllianceInt(r.URL.Query().Get("allyid")),
-		ApplicationID: legacyAllianceInt(r.URL.Query().Get("show")),
+		Tag:             formLast(r, "tag"),
+		Name:            formLast(r, "name"),
+		Text:            formLast(r, "text"),
+		TextKind:        domaingame.NormalizeAllianceTextKind(legacyAllianceInt(r.URL.Query().Get("t"))),
+		Homepage:        formLast(r, "hp"),
+		ImageLogo:       formLast(r, "logo"),
+		Open:            formLast(r, "bew") != "1",
+		InsertApp:       formLast(r, "bewforce") == "1",
+		FounderRankName: formLast(r, "fname"),
+		AllianceID:      legacyAllianceInt(r.URL.Query().Get("allyid")),
+		ApplicationID:   legacyAllianceInt(r.URL.Query().Get("show")),
 	}
 	switch {
 	case page == "bewerben" || formLast(r, "weiter") == "Submit":
@@ -244,6 +274,10 @@ func decodeGameAllianceMutation(r *http.Request) (domaingame.AllianceMutation, e
 		mutation.Action = "create"
 	case action == "3":
 		mutation.Action = "leave"
+	case action == "11" && r.URL.Query().Get("d") == "1":
+		mutation.Action = "save_text"
+	case action == "11" && r.URL.Query().Get("d") == "2":
+		mutation.Action = "save_settings"
 	case formLast(r, "bcancel") != "":
 		mutation.Action = "withdraw"
 	default:
@@ -299,6 +333,10 @@ func toGameAllianceSummary(alliance domaingame.Alliance) gameAllianceSummary {
 			Position:  member.Position,
 		})
 	}
+	ranks := make([]gameAllianceRank, 0, len(alliance.Ranks))
+	for _, rank := range alliance.Ranks {
+		ranks = append(ranks, gameAllianceRank{ID: rank.ID, Name: rank.Name, Rights: rank.Rights})
+	}
 	return gameAllianceSummary{
 		Commander:      alliance.Commander,
 		CurrentPlanet:  toGamePlanetOverviewResponse(alliance.CurrentPlanet),
@@ -318,10 +356,12 @@ func toGameAllianceSummary(alliance domaingame.Alliance) gameAllianceSummary {
 		Target:        toGameAllianceInfo(alliance.Target),
 		Pending:       toGameAllianceApplicationPtr(alliance.Pending),
 		SearchText:    alliance.SearchText,
+		TextKind:      alliance.TextKind,
 		SearchResults: results,
 		Applications:  applications,
 		SelectedApp:   toGameAllianceApplicationPtr(alliance.SelectedApp),
 		Members:       members,
+		Ranks:         ranks,
 	}
 }
 

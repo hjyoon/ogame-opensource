@@ -99,7 +99,9 @@ export type GameAllianceAction =
   | { action: "withdraw"; applicationId: number }
   | { action: "accept"; applicationId: number }
   | { action: "reject"; applicationId: number; text: string }
-  | { action: "leave" };
+  | { action: "leave" }
+  | { action: "save_text"; textKind: number; text: string; insertApp: boolean }
+  | { action: "save_settings"; homepage: string; imageLogo: string; open: boolean; founderRankName: string };
 
 export type GameResearchStatus = {
   authenticated: boolean;
@@ -657,6 +659,7 @@ type GameStatistics = {
   commander: string;
   currentPlanet: GamePlanetOverview;
   planetSwitcher: GamePlanetSummary[];
+  viewerAllianceId: number;
   who: string;
   type: string;
   start: number;
@@ -1017,10 +1020,12 @@ type GameAlliance = {
   target?: GameAllianceInfo;
   pending?: GameAllianceApplication;
   searchText: string;
+  textKind: number;
   searchResults: GameAllianceSearchResult[];
   applications: GameAllianceApplication[];
   selectedApp?: GameAllianceApplication;
   members: GameAllianceMember[];
+  ranks: GameAllianceRank[];
 };
 
 type GameAllianceViewer = {
@@ -1081,6 +1086,12 @@ type GameAllianceMember = {
   galaxy: number;
   system: number;
   position: number;
+};
+
+type GameAllianceRank = {
+  id: number;
+  name: string;
+  rights: number;
 };
 
 type GameAdmin = {
@@ -2392,7 +2403,12 @@ function allianceStatisticsHTML(statistics: GameStatistics): string {
   for (const row of statistics.rows) {
     const tag = row.alliance?.tag ?? "";
     const allyHref = row.own ? "#" : allianceInfoURL(row.alliance?.id ?? 0);
-    html += `  <tr data-statistics-row="${row.place}">\n  \n    <!-- rank -->\n    <th>\n      ${row.place}&nbsp;&nbsp;\n\n      ${statisticsDeltaHTML(row)} \n    </th>\n    \n    <!--  name -->\n    <th>\n      <a href="${legacyHTMLAttribute(allyHref)}"${row.own ? " style='color:lime;'" : " target='_ally'"}>      \n \n      ${legacyHTMLText(tag)}    </a>\n    </th>\n    \n    <!-- bewerben -->\n    <th>\n      &nbsp;\n    </th>\n    \n    <!-- amount members -->\n    <th>\n      ${formatLegacyNumber(row.members)} </th>\n    \n    <!-- points -->\n    <th>\n      ${formatLegacyNumber(row.displayScore)}     \n      \n    </th>\n    \n    <!-- points per member -->\n    <th>\n      \n      ${formatLegacyNumber(row.perMember)}\n              \n    </th>\n    \n  </tr>\n  \n  <tr>\n`;
+    const applyHref = allianceURL({ a: "2", allyid: String(row.alliance?.id ?? 0) });
+    const applicationIcon =
+      statistics.viewerAllianceId === 0
+        ? `      <a href="${legacyHTMLAttribute(applyHref)}">\n        <img src="${skinBase}/img/m.gif" border="0" alt="Write message" />\n      </a>\n`
+        : "";
+    html += `  <tr data-statistics-row="${row.place}">\n  \n    <!-- rank -->\n    <th>\n      ${row.place}&nbsp;&nbsp;\n\n      ${statisticsDeltaHTML(row)} \n    </th>\n    \n    <!--  name -->\n    <th>\n      <a href="${legacyHTMLAttribute(allyHref)}"${row.own ? " style='color:lime;'" : " target='_ally'"}>      \n \n      ${legacyHTMLText(tag)}    </a>\n    </th>\n    \n    <!-- bewerben -->\n    <th>\n${applicationIcon}      &nbsp;\n    </th>\n    \n    <!-- amount members -->\n    <th>\n      ${formatLegacyNumber(row.members)} </th>\n    \n    <!-- points -->\n    <th>\n      ${formatLegacyNumber(row.displayScore)}     \n      \n    </th>\n    \n    <!-- points per member -->\n    <th>\n      \n      ${formatLegacyNumber(row.perMember)}\n              \n    </th>\n    \n  </tr>\n  \n  <tr>\n`;
   }
   html += "</table>\n<!-- end ally -->";
   return html;
@@ -5159,6 +5175,9 @@ function AllianceTable({
   if (alliance.view === "members" && alliance.own) {
     return <AllianceMembersTable alliance={alliance} />;
   }
+  if (alliance.view === "management" && alliance.own) {
+    return <AllianceManagementTable alliance={alliance} onAction={onAction} pending={pending} />;
+  }
   if (alliance.own) {
     return <AllianceHomeTable alliance={alliance} onAction={onAction} pending={pending} />;
   }
@@ -5488,7 +5507,7 @@ function AllianceHomeTable({
   return (
     <LegacyCenter>
       {own.imageLogo ? <img alt="" className="reloadimage" src="/game/img/preload.gif" title={`pic.php?url=${encodeURIComponent(own.imageLogo)}`} /> : null}
-      <table width={519}>
+      <table className="legacy-alliance-owned-table" width={519}>
         <tbody>
           <tr>
             <td className="legacy-c c" colSpan={2}>
@@ -5600,6 +5619,240 @@ function AllianceHomeTable({
           </table>
         </form>
       ) : null}
+    </LegacyCenter>
+  );
+}
+
+function AllianceManagementTable({
+  alliance,
+  onAction,
+  pending
+}: {
+  alliance: GameAlliance;
+  onAction: (action: GameAllianceAction) => void;
+  pending: boolean;
+}) {
+  const own = alliance.own;
+  if (!own) {
+    return null;
+  }
+  if (!alliance.viewer.founder && (alliance.viewer.rankRights & 0x020) === 0) {
+    return (
+      <LegacyCenter>
+        <table width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c">View not possible</td>
+            </tr>
+            <tr>
+              <th>Not enough permissions to perform the operation</th>
+            </tr>
+          </tbody>
+        </table>
+      </LegacyCenter>
+    );
+  }
+  const textKind = alliance.textKind >= 1 && alliance.textKind <= 3 ? alliance.textKind : 1;
+  const textValue = textKind === 2 ? own.internalText : textKind === 3 ? own.applicationText : own.externalText;
+  const textDescription =
+    textKind === 2
+      ? "Internal alliance text"
+      : textKind === 3
+        ? "Sample application text"
+        : "External alliance text";
+  const founderRank = alliance.ranks.find((rank) => rank.id === 0)?.name ?? alliance.viewer.rankName;
+  const founderRankValue = founderRank === "Founder" ? "" : founderRank;
+  return (
+    <LegacyCenter>
+      <script src="/public-assets/game/js/cntchar.js" type="text/javascript" />
+      <script src="/public-assets/game/js/win.js" type="text/javascript" />
+      <table className="legacy-alliance-management-table" width={519}>
+        <tbody>
+          <tr>
+            <td className="legacy-c c" colSpan={2}>
+              alliance management
+            </td>
+          </tr>
+          <tr>
+            <th colSpan={2}>
+              <a href={allianceURL({ a: "6" })}>set ranks</a>
+            </th>
+          </tr>
+          <tr>
+            <th colSpan={2}>
+              <a href={allianceURL({ a: "7" })}>Alliance Members</a>
+            </th>
+          </tr>
+          <tr>
+            <th
+              colSpan={2}
+              dangerouslySetInnerHTML={{
+                __html: `<a href="${legacyHTMLAttribute(allianceURL({ a: "9" }))}"><img src="${skinBase}/pic/appwiz.gif" border=0 alt="Change alliance abbreviation (1 time per week only)"></a>&nbsp;
+<a href="${legacyHTMLAttribute(allianceURL({ a: "10" }))}"><img src="${skinBase}/pic/appwiz.gif" border=0 alt="Change alliance name (1 time per week only)"></a>`
+              }}
+            />
+          </tr>
+        </tbody>
+      </table>
+      <br />
+      <form
+        action={allianceURL({ a: "11", d: "1", t: String(textKind) })}
+        method="post"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (pending) {
+            return;
+          }
+          const data = new FormData(event.currentTarget);
+          onAction({
+            action: "save_text",
+            textKind,
+            text: String(data.get("text") ?? ""),
+            insertApp: String(data.get("bewforce") ?? "0") === "1"
+          });
+        }}
+      >
+        <table width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c" colSpan={3}>
+                Edit text
+              </td>
+            </tr>
+            <tr>
+              <th>
+                <a href={allianceURL({ a: "5", t: "1" })}>External text</a>
+              </th>
+              <th>
+                <a href={allianceURL({ a: "5", t: "2" })}>Internal text</a>
+              </th>
+              <th>
+                <a href={allianceURL({ a: "5", t: "3" })}>Application Text</a>
+              </th>
+            </tr>
+            <tr>
+              <td
+                className="legacy-c c"
+                colSpan={3}
+                dangerouslySetInnerHTML={{
+                  __html: `${legacyHTMLText(textDescription)} (<span id="cntChars">
+${textValue.length}</span> / 5000 characters)`
+                }}
+              />
+            </tr>
+            <tr>
+              <th colSpan={3}>
+                <textarea cols={70} defaultValue={textValue} name="text" rows={15} />
+              </th>
+            </tr>
+            {textKind === 3 ? (
+              <tr>
+                <th colSpan={3}>
+                  Sample application{" "}
+                  <select defaultValue={own.insertApp ? "1" : "0"} name="bewforce">
+                    <option value="0">do not show automatically</option>
+                    <option value="1">show automatically</option>
+                  </select>
+                </th>
+              </tr>
+            ) : null}
+            <tr>
+              <th colSpan={3}>
+                <input type="reset" value="Delete" /> <input disabled={pending} type="submit" value="Save" />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+      <br />
+      <form
+        action={allianceURL({ a: "11", d: "2" })}
+        method="post"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (pending) {
+            return;
+          }
+          const data = new FormData(event.currentTarget);
+          onAction({
+            action: "save_settings",
+            homepage: String(data.get("hp") ?? ""),
+            imageLogo: String(data.get("logo") ?? ""),
+            open: String(data.get("bew") ?? "0") !== "1",
+            founderRankName: String(data.get("fname") ?? "")
+          });
+        }}
+      >
+        <table width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c" colSpan={2}>
+                Settings
+              </td>
+            </tr>
+            <tr>
+              <th>Homepage</th>
+              <th>
+                <input defaultValue={own.homepage} name="hp" size={70} type="text" />
+              </th>
+            </tr>
+            <tr>
+              <th>Alliance Logo</th>
+              <th>
+                <input defaultValue={own.imageLogo} name="logo" size={70} type="text" />
+              </th>
+            </tr>
+            <tr>
+              <th>Applications</th>
+              <th>
+                <select defaultValue={own.open ? "0" : "1"} name="bew">
+                  <option value="0">Possible (alliance open)</option>
+                  <option value="1">Impossible (alliance closed)</option>
+                </select>
+              </th>
+            </tr>
+            <tr>
+              <th>Chapter Name</th>
+              <th>
+                <input defaultValue={founderRankValue} name="fname" size={30} type="text" />
+              </th>
+            </tr>
+            <tr>
+              <th colSpan={2}>
+                <input disabled={pending} type="submit" value="Save" />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+      <form action={allianceURL({ a: "12" })} method="post">
+        <table width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c">Dissolve alliance</td>
+            </tr>
+            <tr>
+              <th>
+                <input type="submit" value="Next" />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+      <form action={allianceURL({ a: "18" })} method="post">
+        <table width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c">Leave/Replace this alliance</td>
+            </tr>
+            <tr>
+              <th>
+                <input type="submit" value="Next" />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
     </LegacyCenter>
   );
 }
@@ -5809,7 +6062,7 @@ function AllianceMembersTable({ alliance }: { alliance: GameAlliance }) {
 
 function allianceURL(params: Record<string, string> = {}) {
   const query = new URLSearchParams(window.location.search);
-  for (const key of ["page", "a", "allyid", "show", "sort", "suchtext", "weiter"]) {
+  for (const key of ["page", "a", "allyid", "show", "sort", "suchtext", "weiter", "d", "t", "u", "sort1", "sort2"]) {
     query.delete(key);
   }
   for (const [key, value] of Object.entries(params)) {

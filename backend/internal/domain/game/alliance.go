@@ -1,6 +1,8 @@
 package game
 
 import (
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -27,8 +29,10 @@ const (
 	AllianceIssueAccepted            = "accepted"
 	AllianceIssueRejected            = "rejected"
 	AllianceIssueLeft                = "left"
+	AllianceIssueSaved               = "saved"
 	AllianceIssueInvalidTag          = "invalid_tag"
 	AllianceIssueInvalidName         = "invalid_name"
+	AllianceIssueInvalidRankName     = "invalid_rank_name"
 	AllianceIssueTagExists           = "tag_exists"
 	AllianceIssueAllianceNotFound    = "alliance_not_found"
 	AllianceIssueApplicationsClosed  = "applications_closed"
@@ -49,6 +53,7 @@ const (
 	AllianceViewApply        AllianceView = "apply"
 	AllianceViewApplications AllianceView = "applications"
 	AllianceViewMembers      AllianceView = "members"
+	AllianceViewManagement   AllianceView = "management"
 )
 
 type Alliance struct {
@@ -61,10 +66,12 @@ type Alliance struct {
 	Target         *AllianceInfo
 	Pending        *AllianceApplication
 	SearchText     string
+	TextKind       int
 	SearchResults  []AllianceSearchResult
 	Applications   []AllianceApplication
 	SelectedApp    *AllianceApplication
 	Members        []AllianceMember
+	Ranks          []AllianceRank
 }
 
 type AllianceViewer struct {
@@ -127,13 +134,25 @@ type AllianceMember struct {
 	Position  int
 }
 
+type AllianceRank struct {
+	ID     int
+	Name   string
+	Rights int
+}
+
 type AllianceMutation struct {
-	Action        string
-	Tag           string
-	Name          string
-	Text          string
-	AllianceID    int
-	ApplicationID int
+	Action          string
+	Tag             string
+	Name            string
+	Text            string
+	TextKind        int
+	Homepage        string
+	ImageLogo       string
+	Open            bool
+	InsertApp       bool
+	FounderRankName string
+	AllianceID      int
+	ApplicationID   int
 }
 
 type AllianceActionIssue struct {
@@ -187,8 +206,51 @@ func (v AllianceViewer) CanWriteApplications() bool {
 	return v.Founder || v.RankRights&AllianceRightWriteApps != 0
 }
 
+func (v AllianceViewer) CanManageAlliance() bool {
+	return v.Founder || v.RankRights&AllianceRightManage != 0
+}
+
 func (v AllianceViewer) CanLeaveAlliance() bool {
 	return v.AllianceID > 0 && !v.Founder
+}
+
+func NormalizeAllianceTextKind(kind int) int {
+	if kind < 1 || kind > 3 {
+		return 1
+	}
+	return kind
+}
+
+func NormalizeAllianceText(text string) string {
+	return truncateRunes(text, 5000)
+}
+
+func NormalizeAllianceURL(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" || strings.ContainsAny(value, "\x00\x01\x02\x03\x04\x05\x06\x07\b\t\n\v\f\r\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f") {
+		return ""
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil {
+		return ""
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return ""
+	}
+	return value
+}
+
+var allianceRankNamePattern = regexp.MustCompile(`^[a-zA-Z0-9._\- ]+$`)
+
+func ValidateAllianceRankName(name string) *AllianceActionIssue {
+	if name == "" {
+		return nil
+	}
+	if !allianceRankNamePattern.MatchString(name) {
+		return AllianceIssue(AllianceIssueInvalidRankName)
+	}
+	return nil
 }
 
 func AllianceIssue(code string) *AllianceActionIssue {
@@ -205,10 +267,14 @@ func AllianceIssue(code string) *AllianceActionIssue {
 		return &AllianceActionIssue{Code: code, Message: "Application rejected."}
 	case AllianceIssueLeft:
 		return &AllianceActionIssue{Code: code, Message: "You have left the alliance."}
+	case AllianceIssueSaved:
+		return &AllianceActionIssue{Code: code, Message: "Changes saved."}
 	case AllianceIssueInvalidTag:
 		return &AllianceActionIssue{Code: code, Message: "Alliance abbreviation is too short"}
 	case AllianceIssueInvalidName:
 		return &AllianceActionIssue{Code: code, Message: "Alliance name is too short"}
+	case AllianceIssueInvalidRankName:
+		return &AllianceActionIssue{Code: code, Message: "The rank name contains illegal characters."}
 	case AllianceIssueTagExists:
 		return &AllianceActionIssue{Code: code, Message: "Alliance unfortunately already exists!"}
 	case AllianceIssueAllianceNotFound:

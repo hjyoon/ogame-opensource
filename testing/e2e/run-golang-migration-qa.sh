@@ -72,6 +72,18 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     if [ "${OGAME_RUN_EMPIRE_VISUAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-empire-visual-e2e.sh"
     fi
+    if [ "${OGAME_RUN_ALLIANCE_VISUAL:-1}" = "1" ]; then
+      for browser in ${OGAME_ALLIANCE_VISUAL_BROWSERS:-chromium firefox}; do
+        printf 'Alliance visual E2E (%s)\n' "$browser"
+        OGAME_PLAYWRIGHT_BROWSER="$browser" \
+        OGAME_GO_BASE_URL="$GO_BASE_URL" \
+        OGAME_AUTH_VISUAL_ENFORCE_DIFF="${OGAME_AUTH_VISUAL_ENFORCE_DIFF:-1}" \
+        OGAME_AUTH_VISUAL_ENFORCE_LAYOUT="${OGAME_AUTH_VISUAL_ENFORCE_LAYOUT:-1}" \
+        OGAME_AUTH_VISUAL_MAX_DIFF_RATIO="${OGAME_AUTH_VISUAL_MAX_DIFF_RATIO:-0}" \
+        OGAME_AUTH_VISUAL_MAX_BOX_DELTA="${OGAME_AUTH_VISUAL_MAX_BOX_DELTA:-0}" \
+        "$SCRIPT_DIR/run-playwright-alliance-visual-e2e.sh"
+      done
+    fi
     if [ "${OGAME_RUN_OVERVIEW_FLEET_VISUAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-overview-fleet-visual-e2e.sh"
     fi

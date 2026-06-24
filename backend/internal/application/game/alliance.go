@@ -19,6 +19,7 @@ type AllianceQuery struct {
 	PlanetID      int
 	View          domaingame.AllianceView
 	SearchText    string
+	TextKind      int
 	AllianceID    int
 	ApplicationID int
 }
@@ -30,6 +31,7 @@ type AllianceCommand struct {
 	PlanetID        int
 	View            domaingame.AllianceView
 	SearchText      string
+	TextKind        int
 	AllianceID      int
 	ApplicationID   int
 }
@@ -86,6 +88,7 @@ func (s AllianceService) GetAlliance(ctx context.Context, command AllianceComman
 		PlanetID:      command.PlanetID,
 		View:          command.View,
 		SearchText:    command.SearchText,
+		TextKind:      command.TextKind,
 		AllianceID:    command.AllianceID,
 		ApplicationID: command.ApplicationID,
 	})

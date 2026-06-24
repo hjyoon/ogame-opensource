@@ -10,15 +10,16 @@ const (
 )
 
 type Statistics struct {
-	Commander      string
-	CurrentPlanet  PlanetOverview
-	PlanetSwitcher []PlanetSummary
-	Who            string
-	Type           string
-	Start          int
-	Total          int
-	GeneratedAt    int64
-	Rows           []StatisticsRow
+	Commander        string
+	CurrentPlanet    PlanetOverview
+	PlanetSwitcher   []PlanetSummary
+	ViewerAllianceID int
+	Who              string
+	Type             string
+	Start            int
+	Total            int
+	GeneratedAt      int64
+	Rows             []StatisticsRow
 }
 
 type StatisticsRow struct {

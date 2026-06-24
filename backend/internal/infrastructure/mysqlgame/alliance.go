@@ -121,6 +121,29 @@ func (r AllianceRepository) MutateAlliance(ctx context.Context, query appgame.Al
 			return domaingame.Alliance{}, nil, err
 		}
 		return alliance, issue, loadErr
+	case "save_text":
+		issue, err := r.saveAllianceText(ctx, viewer, mutation)
+		alliance, loadErr := r.GetAlliance(ctx, appgame.AllianceQuery{
+			PlayerID: query.PlayerID,
+			PlanetID: query.PlanetID,
+			View:     domaingame.AllianceViewManagement,
+			TextKind: domaingame.NormalizeAllianceTextKind(mutation.TextKind),
+		})
+		if err != nil {
+			return domaingame.Alliance{}, nil, err
+		}
+		return alliance, issue, loadErr
+	case "save_settings":
+		issue, err := r.saveAllianceSettings(ctx, viewer, mutation)
+		alliance, loadErr := r.GetAlliance(ctx, appgame.AllianceQuery{
+			PlayerID: query.PlayerID,
+			PlanetID: query.PlanetID,
+			View:     domaingame.AllianceViewManagement,
+		})
+		if err != nil {
+			return domaingame.Alliance{}, nil, err
+		}
+		return alliance, issue, loadErr
 	case "", "search":
 		alliance, err := r.GetAlliance(ctx, query.Query)
 		return alliance, nil, err
@@ -177,6 +200,7 @@ func (r AllianceRepository) populateOwnAlliance(ctx context.Context, alliance do
 		return domaingame.Alliance{}, err
 	}
 	alliance.Own = own
+	alliance.TextKind = domaingame.NormalizeAllianceTextKind(query.TextKind)
 	switch query.View {
 	case domaingame.AllianceViewApplications:
 		alliance.View = domaingame.AllianceViewApplications
@@ -204,6 +228,16 @@ func (r AllianceRepository) populateOwnAlliance(ctx context.Context, alliance do
 			return domaingame.Alliance{}, err
 		}
 		alliance.Members = members
+	case domaingame.AllianceViewManagement:
+		alliance.View = domaingame.AllianceViewManagement
+		if !alliance.Viewer.CanManageAlliance() {
+			return alliance, nil
+		}
+		ranks, err := r.loadAllianceRanks(ctx, alliance.Viewer.AllianceID)
+		if err != nil {
+			return domaingame.Alliance{}, err
+		}
+		alliance.Ranks = ranks
 	default:
 		alliance.View = domaingame.AllianceViewHome
 	}
@@ -322,6 +356,76 @@ func (r AllianceRepository) leaveAlliance(ctx context.Context, viewer domaingame
 		return nil, err
 	}
 	return domaingame.AllianceIssue(domaingame.AllianceIssueLeft), nil
+}
+
+func (r AllianceRepository) saveAllianceText(ctx context.Context, viewer domaingame.AllianceViewer, mutation domaingame.AllianceMutation) (*domaingame.AllianceActionIssue, error) {
+	if viewer.AllianceID <= 0 || !viewer.CanManageAlliance() {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueNoPermission), nil
+	}
+	allyTable, err := tableName(r.prefix, "ally")
+	if err != nil {
+		return nil, err
+	}
+	text := domaingame.NormalizeAllianceText(mutation.Text)
+	switch domaingame.NormalizeAllianceTextKind(mutation.TextKind) {
+	case 2:
+		_, err = r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET inttext = ? WHERE ally_id = ? LIMIT 1", allyTable), text, viewer.AllianceID)
+	case 3:
+		insertApp := 0
+		if mutation.InsertApp {
+			insertApp = 1
+		}
+		_, err = r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET apptext = ?, insertapp = ? WHERE ally_id = ? LIMIT 1", allyTable), text, insertApp, viewer.AllianceID)
+	default:
+		_, err = r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET exttext = ? WHERE ally_id = ? LIMIT 1", allyTable), text, viewer.AllianceID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return domaingame.AllianceIssue(domaingame.AllianceIssueSaved), nil
+}
+
+func (r AllianceRepository) saveAllianceSettings(ctx context.Context, viewer domaingame.AllianceViewer, mutation domaingame.AllianceMutation) (*domaingame.AllianceActionIssue, error) {
+	if viewer.AllianceID <= 0 || !viewer.CanManageAlliance() {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueNoPermission), nil
+	}
+	if issue := domaingame.ValidateAllianceRankName(mutation.FounderRankName); issue != nil {
+		return issue, nil
+	}
+	allyTable, err := tableName(r.prefix, "ally")
+	if err != nil {
+		return nil, err
+	}
+	ranksTable, err := tableName(r.prefix, "allyranks")
+	if err != nil {
+		return nil, err
+	}
+	open := 0
+	if mutation.Open {
+		open = 1
+	}
+	if _, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET open = ?, homepage = ?, imglogo = ? WHERE ally_id = ? LIMIT 1", allyTable),
+		open,
+		domaingame.NormalizeAllianceURL(mutation.Homepage),
+		domaingame.NormalizeAllianceURL(mutation.ImageLogo),
+		viewer.AllianceID,
+	); err != nil {
+		return nil, err
+	}
+	if mutation.FounderRankName != "" {
+		if _, err := r.execer.ExecContext(
+			ctx,
+			fmt.Sprintf("UPDATE %s SET name = ? WHERE ally_id = ? AND rank_id = ? LIMIT 1", ranksTable),
+			mutation.FounderRankName,
+			viewer.AllianceID,
+			domaingame.AllianceRankFounder,
+		); err != nil {
+			return nil, err
+		}
+	}
+	return domaingame.AllianceIssue(domaingame.AllianceIssueSaved), nil
 }
 
 func (r AllianceRepository) loadAllianceViewer(ctx context.Context, playerID int) (domaingame.AllianceViewer, error) {
@@ -584,6 +688,30 @@ func (r AllianceRepository) loadAllianceMembers(ctx context.Context, allianceID 
 		return nil, err
 	}
 	return members, nil
+}
+
+func (r AllianceRepository) loadAllianceRanks(ctx context.Context, allianceID int) ([]domaingame.AllianceRank, error) {
+	ranksTable, err := tableName(r.prefix, "allyranks")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT rank_id, COALESCE(name, ''), COALESCE(rights, 0) FROM %s WHERE ally_id = ? ORDER BY rank_id ASC", ranksTable), allianceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ranks := []domaingame.AllianceRank{}
+	for rows.Next() {
+		var rank domaingame.AllianceRank
+		if err := rows.Scan(&rank.ID, &rank.Name, &rank.Rights); err != nil {
+			return nil, err
+		}
+		ranks = append(ranks, rank)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return ranks, nil
 }
 
 func scanOneAllianceApplication(rows Rows) (*domaingame.AllianceApplication, error) {

@@ -93,6 +93,25 @@ func TestAllianceRepositoryReadsOwnApplicationsAndMembers(t *testing.T) {
 	if alliance.View != domaingame.AllianceViewMembers || len(alliance.Members) != 1 || alliance.Members[0].Galaxy != 1 {
 		t.Fatalf("unexpected members view: %+v", alliance)
 	}
+
+	queryer = &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(42, "legor", 1, 7, 0, "Founder", domaingame.AllianceFounderRights))},
+		fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 2, 0))},
+		fakeQueryResult{rows: fakeRowsFromValues(allianceRankRow(0, "Founder", domaingame.AllianceFounderRights), allianceRankRow(1, "Newcomer", 0))},
+	)}
+	repository = NewAllianceRepositoryWithQueryer(queryer, "ogame_", time.Now)
+	alliance, err = repository.GetAlliance(context.Background(), appgame.AllianceQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		View:     domaingame.AllianceViewManagement,
+		TextKind: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alliance.View != domaingame.AllianceViewManagement || alliance.TextKind != 3 || len(alliance.Ranks) != 2 || alliance.Ranks[0].Name != "Founder" {
+		t.Fatalf("unexpected management view: %+v", alliance)
+	}
 }
 
 func TestAllianceRepositoryCreatesAllianceWithDefaultRanks(t *testing.T) {
@@ -300,6 +319,29 @@ func TestAllianceRepositoryReadsHomeCreateAndDeniedMemberViews(t *testing.T) {
 	if alliance.View != domaingame.AllianceViewMembers || len(alliance.Members) != 0 {
 		t.Fatalf("expected denied member list without rows, got %+v", alliance)
 	}
+
+	queryer = &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(43, "member", 1, 7, 1, "Newcomer", 0))},
+		fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 2, 0))},
+	)}
+	repository = NewAllianceRepositoryWithQueryer(queryer, "ogame_", time.Now)
+	alliance, err = repository.GetAlliance(context.Background(), appgame.AllianceQuery{PlayerID: 43, PlanetID: 99, View: domaingame.AllianceViewManagement})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alliance.View != domaingame.AllianceViewManagement || len(alliance.Ranks) != 0 {
+		t.Fatalf("expected denied management without rank rows, got %+v", alliance)
+	}
+
+	queryer = &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(42, "legor", 1, 7, 0, "Founder", domaingame.AllianceFounderRights))},
+		fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 2, 0))},
+		fakeQueryResult{err: errors.New("rank load failed")},
+	)}
+	repository = NewAllianceRepositoryWithQueryer(queryer, "ogame_", time.Now)
+	if _, err := repository.GetAlliance(context.Background(), appgame.AllianceQuery{PlayerID: 42, PlanetID: 99, View: domaingame.AllianceViewManagement}); err == nil || !strings.Contains(err.Error(), "rank load failed") {
+		t.Fatalf("expected management rank load error, got %v", err)
+	}
 }
 
 func TestAllianceRepositoryGetAlliancePropagatesLoaderErrors(t *testing.T) {
@@ -501,6 +543,187 @@ func TestAllianceRepositoryMutatesSearchAndUnknownActions(t *testing.T) {
 	repository = NewAllianceRepositoryWithQueryer(&fakeQueryer{}, "ogame_", time.Now)
 	if _, _, err := repository.MutateAlliance(context.Background(), appgame.AllianceMutationQuery{}); err == nil || !strings.Contains(err.Error(), "updater unavailable") {
 		t.Fatalf("expected updater unavailable, got %v", err)
+	}
+}
+
+func TestAllianceRepositorySavesManagementSettings(t *testing.T) {
+	founder := allianceViewerRow(42, "legor", 1, 7, 0, "Founder", domaingame.AllianceFounderRights)
+	runner := &fakeAllianceRunner{fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
+		{rows: fakeRowsFromValues(founder)},
+	}, append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(founder)},
+		fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 1, 0))},
+		fakeQueryResult{rows: fakeRowsFromValues(allianceRankRow(0, "Founder", domaingame.AllianceFounderRights))},
+	)...)}}
+	repository := NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	alliance, issue, err := repository.MutateAlliance(context.Background(), appgame.AllianceMutationQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Query:    appgame.AllianceQuery{PlayerID: 42, PlanetID: 99},
+		Mutation: domaingame.AllianceMutation{Action: "save_text", TextKind: 3, Text: "Application text", InsertApp: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue == nil || issue.Code != domaingame.AllianceIssueSaved || alliance.View != domaingame.AllianceViewManagement ||
+		len(runner.execCalls) != 1 || !strings.Contains(runner.execCalls[0].sql, "SET apptext = ?") ||
+		runner.execCalls[0].args[1] != 1 {
+		t.Fatalf("unexpected save text result alliance=%+v issue=%+v exec=%+v", alliance, issue, runner.execCalls)
+	}
+
+	runner = &fakeAllianceRunner{fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
+		{rows: fakeRowsFromValues(founder)},
+	}, append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(founder)},
+		fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 0, 0))},
+		fakeQueryResult{rows: fakeRowsFromValues(allianceRankRow(0, "Right Hand", domaingame.AllianceFounderRights))},
+	)...)}}
+	repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	_, issue, err = repository.MutateAlliance(context.Background(), appgame.AllianceMutationQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Query:    appgame.AllianceQuery{PlayerID: 42, PlanetID: 99},
+		Mutation: domaingame.AllianceMutation{
+			Action:          "save_settings",
+			Homepage:        "https://example.com/alliance",
+			ImageLogo:       "javascript:alert(1)",
+			Open:            false,
+			FounderRankName: "Right Hand",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue == nil || issue.Code != domaingame.AllianceIssueSaved || len(runner.execCalls) != 2 ||
+		!strings.Contains(runner.execCalls[0].sql, "SET open = ?") || runner.execCalls[0].args[0] != 0 ||
+		runner.execCalls[0].args[1] != "https://example.com/alliance" || runner.execCalls[0].args[2] != "" ||
+		!strings.Contains(runner.execCalls[1].sql, "rank_id = ?") {
+		t.Fatalf("unexpected save settings issue=%+v exec=%+v", issue, runner.execCalls)
+	}
+}
+
+func TestAllianceRepositoryManagementMutationErrorsReload(t *testing.T) {
+	founder := allianceViewerRow(42, "legor", 1, 7, 0, "Founder", domaingame.AllianceFounderRights)
+	runner := &fakeAllianceRunner{
+		fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
+			{rows: fakeRowsFromValues(founder)},
+		}, append(shipyardOverviewResults(),
+			fakeQueryResult{rows: fakeRowsFromValues(founder)},
+			fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 1, 0))},
+			fakeQueryResult{rows: fakeRowsFromValues(allianceRankRow(0, "Founder", domaingame.AllianceFounderRights))},
+		)...)},
+		execErr: errors.New("save text failed"),
+	}
+	repository := NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, issue, err := repository.MutateAlliance(context.Background(), appgame.AllianceMutationQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Query:    appgame.AllianceQuery{PlayerID: 42, PlanetID: 99},
+		Mutation: domaingame.AllianceMutation{Action: "save_text", TextKind: 1, Text: "Updated"},
+	}); err == nil || !strings.Contains(err.Error(), "save text failed") || issue != nil {
+		t.Fatalf("expected save text mutation error, issue=%+v err=%v", issue, err)
+	}
+
+	runner = &fakeAllianceRunner{
+		fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
+			{rows: fakeRowsFromValues(founder)},
+		}, append(shipyardOverviewResults(),
+			fakeQueryResult{rows: fakeRowsFromValues(founder)},
+			fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 1, 0))},
+			fakeQueryResult{rows: fakeRowsFromValues(allianceRankRow(0, "Founder", domaingame.AllianceFounderRights))},
+		)...)},
+		execErr: errors.New("save settings failed"),
+	}
+	repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, issue, err := repository.MutateAlliance(context.Background(), appgame.AllianceMutationQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Query:    appgame.AllianceQuery{PlayerID: 42, PlanetID: 99},
+		Mutation: domaingame.AllianceMutation{Action: "save_settings", Open: true},
+	}); err == nil || !strings.Contains(err.Error(), "save settings failed") || issue != nil {
+		t.Fatalf("expected save settings mutation error, issue=%+v err=%v", issue, err)
+	}
+}
+
+func TestAllianceRepositoryManagementHelperEdges(t *testing.T) {
+	ctx := context.Background()
+	founder := domaingame.AllianceViewer{PlayerID: 42, AllianceID: 7, Founder: true}
+	member := domaingame.AllianceViewer{PlayerID: 43, AllianceID: 7}
+
+	repository := NewAllianceRepositoryWithRunner(&fakeAllianceRunner{}, &fakeAllianceRunner{}, "ogame_", time.Now)
+	if issue, err := repository.saveAllianceText(ctx, member, domaingame.AllianceMutation{Action: "save_text"}); err != nil || issue.Code != domaingame.AllianceIssueNoPermission {
+		t.Fatalf("expected text permission issue, got issue=%+v err=%v", issue, err)
+	}
+	if issue, err := repository.saveAllianceSettings(ctx, member, domaingame.AllianceMutation{Action: "save_settings"}); err != nil || issue.Code != domaingame.AllianceIssueNoPermission {
+		t.Fatalf("expected settings permission issue, got issue=%+v err=%v", issue, err)
+	}
+	if issue, err := repository.saveAllianceSettings(ctx, founder, domaingame.AllianceMutation{Action: "save_settings", FounderRankName: "bad/rank"}); err != nil || issue.Code != domaingame.AllianceIssueInvalidRankName {
+		t.Fatalf("expected invalid rank issue, got issue=%+v err=%v", issue, err)
+	}
+
+	for _, tt := range []struct {
+		kind int
+		sql  string
+	}{
+		{kind: 1, sql: "SET exttext = ?"},
+		{kind: 2, sql: "SET inttext = ?"},
+	} {
+		runner := &fakeAllianceRunner{}
+		repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+		issue, err := repository.saveAllianceText(ctx, founder, domaingame.AllianceMutation{TextKind: tt.kind, Text: "Updated"})
+		if err != nil || issue.Code != domaingame.AllianceIssueSaved || len(runner.execCalls) != 1 || !strings.Contains(runner.execCalls[0].sql, tt.sql) {
+			t.Fatalf("unexpected text helper kind=%d issue=%+v err=%v exec=%+v", tt.kind, issue, err, runner.execCalls)
+		}
+	}
+
+	runner := &fakeAllianceRunner{execErr: errors.New("text exec failed")}
+	repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, err := repository.saveAllianceText(ctx, founder, domaingame.AllianceMutation{TextKind: 1, Text: "Updated"}); err == nil || !strings.Contains(err.Error(), "text exec failed") {
+		t.Fatalf("expected text exec error, got %v", err)
+	}
+	repository = NewAllianceRepositoryWithRunner(&fakeAllianceRunner{}, &fakeAllianceRunner{}, "bad-prefix_", time.Now)
+	if _, err := repository.saveAllianceText(ctx, founder, domaingame.AllianceMutation{}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected text prefix error, got %v", err)
+	}
+
+	runner = &fakeAllianceRunner{}
+	repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	issue, err := repository.saveAllianceSettings(ctx, founder, domaingame.AllianceMutation{Homepage: "https://example.com", Open: true})
+	if err != nil || issue.Code != domaingame.AllianceIssueSaved || len(runner.execCalls) != 1 || runner.execCalls[0].args[0] != 1 {
+		t.Fatalf("unexpected settings without founder rank issue=%+v err=%v exec=%+v", issue, err, runner.execCalls)
+	}
+
+	runner = &fakeAllianceRunner{execErr: errors.New("settings exec failed")}
+	repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, err := repository.saveAllianceSettings(ctx, founder, domaingame.AllianceMutation{Open: true}); err == nil || !strings.Contains(err.Error(), "settings exec failed") {
+		t.Fatalf("expected settings exec error, got %v", err)
+	}
+	runner = &fakeAllianceRunner{execErr: errors.New("rank exec failed"), execErrAt: 2}
+	repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, err := repository.saveAllianceSettings(ctx, founder, domaingame.AllianceMutation{Open: true, FounderRankName: "Right Hand"}); err == nil || !strings.Contains(err.Error(), "rank exec failed") {
+		t.Fatalf("expected rank exec error, got %v", err)
+	}
+	repository = NewAllianceRepositoryWithRunner(&fakeAllianceRunner{}, &fakeAllianceRunner{}, "bad-prefix_", time.Now)
+	if _, err := repository.saveAllianceSettings(ctx, founder, domaingame.AllianceMutation{}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected settings prefix error, got %v", err)
+	}
+}
+
+func TestAllianceRepositoryLoadAllianceRanksErrors(t *testing.T) {
+	if _, err := NewAllianceRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_", time.Now).loadAllianceRanks(context.Background(), 7); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected rank prefix error, got %v", err)
+	}
+	repository := NewAllianceRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("rank query failed")}}}, "ogame_", time.Now)
+	if _, err := repository.loadAllianceRanks(context.Background(), 7); err == nil || !strings.Contains(err.Error(), "rank query failed") {
+		t.Fatalf("expected rank query error, got %v", err)
+	}
+	repository = NewAllianceRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", "Founder", 511})}}}, "ogame_", time.Now)
+	if _, err := repository.loadAllianceRanks(context.Background(), 7); err == nil || !strings.Contains(err.Error(), "expected int") {
+		t.Fatalf("expected rank scan error, got %v", err)
+	}
+	repository = NewAllianceRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("rank rows failed"), allianceRankRow(0, "Founder", 511))}}}, "ogame_", time.Now)
+	if _, err := repository.loadAllianceRanks(context.Background(), 7); err == nil || !strings.Contains(err.Error(), "rank rows failed") {
+		t.Fatalf("expected rank rows error, got %v", err)
 	}
 }
 
@@ -968,6 +1191,10 @@ func allianceInfoRow(id int, tag string, name string, open int, applications int
 
 func allianceApplicationRow(id int, allianceID int, playerID int, playerName string, text string, date int64) []any {
 	return []any{id, allianceID, playerID, playerName, text, date}
+}
+
+func allianceRankRow(id int, name string, rights int) []any {
+	return []any{id, name, rights}
 }
 
 type fakeAllianceRunner struct {
