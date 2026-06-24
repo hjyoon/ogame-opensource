@@ -54,6 +54,7 @@ const (
 	AllianceViewApplications AllianceView = "applications"
 	AllianceViewMembers      AllianceView = "members"
 	AllianceViewManagement   AllianceView = "management"
+	AllianceViewRanks        AllianceView = "ranks"
 )
 
 type Alliance struct {

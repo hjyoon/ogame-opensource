@@ -492,6 +492,17 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["alliance management", "set ranks", "Alliance Members", "Edit text", "Settings"]
   },
   {
+    name: "game-alliance-ranks",
+    defaultEnabled: false,
+    legacyPage: "allianzen",
+    legacyQuery: { a: "6" },
+    migratedPath: "/game/alliance",
+    migratedQuery: { a: "6" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-alliance-ranks-table",
+    expectedTexts: ["Form rights", "Rank name", "Assign new rank", "Explanation of Rights"]
+  },
+  {
     name: "game-officers",
     legacyPage: "micropayment",
     migratedPath: "/game/officers",

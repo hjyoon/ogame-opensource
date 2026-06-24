@@ -5175,6 +5175,9 @@ function AllianceTable({
   if (alliance.view === "members" && alliance.own) {
     return <AllianceMembersTable alliance={alliance} />;
   }
+  if (alliance.view === "ranks" && alliance.own) {
+    return <AllianceRanksTable alliance={alliance} />;
+  }
   if (alliance.view === "management" && alliance.own) {
     return <AllianceManagementTable alliance={alliance} onAction={onAction} pending={pending} />;
   }
@@ -5621,6 +5624,86 @@ function AllianceHomeTable({
       ) : null}
     </LegacyCenter>
   );
+}
+
+function AllianceRanksTable({ alliance }: { alliance: GameAlliance }) {
+  if (!alliance.own) {
+    return null;
+  }
+  if (!alliance.viewer.founder && (alliance.viewer.rankRights & 0x020) === 0) {
+    return (
+      <LegacyCenter>
+        <table width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c">View not possible</td>
+            </tr>
+            <tr>
+              <th>Not enough permissions to perform the operation</th>
+            </tr>
+          </tbody>
+        </table>
+      </LegacyCenter>
+    );
+  }
+  return React.createElement("center", { dangerouslySetInnerHTML: { __html: allianceRanksHTML(alliance) } });
+}
+
+function allianceRanksHTML(alliance: GameAlliance): string {
+  const rights = [
+    "Dissolve alliance",
+    "Expel player",
+    "View statements",
+    "View member list",
+    "Edit statements",
+    "Manage Alliance",
+    'View status "online" in the member list',
+    "Compose a general message",
+    "'Right Hand' (required to transfer founder status)"
+  ];
+  const rightImages = Array.from({ length: 9 }, (_, index) => `<th>\n   <img src=/public-assets/game/img/r${index + 1}.png>\n  </th>`).join("\n  ");
+  const rows = alliance.ranks
+    .filter((rank) => rank.id !== 0 && rank.id !== 1)
+    .map((rank) => {
+      const boxes = Array.from({ length: 9 }, (_, index) => {
+        const checked = rank.rights & (1 << index) ? " checked" : "";
+        return `<th><input type=checkbox name="u${rank.id}r${index}"${checked}></th>`;
+      }).join("");
+      return ` <tr>\n  <th><a href="${legacyHTMLAttribute(allianceURL({ a: "15", d: String(rank.id) }))}"><img src="${skinBase}/pic/abort.gif" alt="Delete rank" border="0"></a></th>\n  <th>&nbsp;${legacyHTMLText(rank.name)}&nbsp;</th>\n${boxes}\n </tr>\n`;
+    })
+    .join("");
+  const infoRows = rights
+    .map((text, index) => `<tr><th><img src=/public-assets/game/img/r${index + 1}.png></th><th>${legacyHTMLText(text)}</th></tr>`)
+    .join("\n");
+  return `<script src="/public-assets/game/js/cntchar.js" type="text/javascript"></script><script src="/public-assets/game/js/win.js" type="text/javascript"></script><br />
+<a href="${legacyHTMLAttribute(allianceURL({ a: "5" }))}">Back to review</a>
+<table class="legacy-alliance-ranks-table" width="519">
+ <tr>
+  <td class="c" colspan="11">Form rights</td>
+ </tr>
+ <form action="${legacyHTMLAttribute(allianceURL({ a: "15" }))}" method="POST">
+ <tr>
+  <th></th>
+  <th>Rank name</th>
+  ${rightImages}
+ </tr>
+${rows} <tr>
+  <th colspan="11"><input type="submit" value="Save"></th>
+ </tr>
+</form>
+</table>
+<br /><form action="${legacyHTMLAttribute(allianceURL({ a: "15" }))}" method=POST>
+<table width=519>
+<tr><td class=c colspan=2>Assign new rank</td></tr>
+<tr><th>Rank name</th><th><input type=text name="newrangname" size=20 maxlength=30></th></tr>
+<tr><th colspan=2><input type=submit value="Assign"></th></tr>
+</form></table>
+
+<br/><form action="${legacyHTMLAttribute(allianceURL({ a: "15" }))}" method=POST>
+<table width=519>
+<tr><td class=c colspan=2>Explanation of Rights</td></tr>
+${infoRows}
+</form></table>`;
 }
 
 function AllianceManagementTable({

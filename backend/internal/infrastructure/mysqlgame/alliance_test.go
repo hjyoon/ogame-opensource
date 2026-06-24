@@ -112,6 +112,24 @@ func TestAllianceRepositoryReadsOwnApplicationsAndMembers(t *testing.T) {
 	if alliance.View != domaingame.AllianceViewManagement || alliance.TextKind != 3 || len(alliance.Ranks) != 2 || alliance.Ranks[0].Name != "Founder" {
 		t.Fatalf("unexpected management view: %+v", alliance)
 	}
+
+	queryer = &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(42, "legor", 1, 7, 0, "Founder", domaingame.AllianceFounderRights))},
+		fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 2, 0))},
+		fakeQueryResult{rows: fakeRowsFromValues(allianceRankRow(0, "Founder", domaingame.AllianceFounderRights), allianceRankRow(1, "Newcomer", 0))},
+	)}
+	repository = NewAllianceRepositoryWithQueryer(queryer, "ogame_", time.Now)
+	alliance, err = repository.GetAlliance(context.Background(), appgame.AllianceQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		View:     domaingame.AllianceViewRanks,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alliance.View != domaingame.AllianceViewRanks || len(alliance.Ranks) != 2 || alliance.Ranks[1].Name != "Newcomer" {
+		t.Fatalf("unexpected ranks view: %+v", alliance)
+	}
 }
 
 func TestAllianceRepositoryCreatesAllianceWithDefaultRanks(t *testing.T) {

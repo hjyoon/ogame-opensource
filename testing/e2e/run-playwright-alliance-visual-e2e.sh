@@ -47,5 +47,5 @@ OGAME_LEGACY_BASE_URL="$LEGACY_BASE_URL" \
   OGAME_GO_BASE_URL="$GO_BASE_URL" \
   OGAME_AUTH_VISUAL_USER="$LOGIN" \
   OGAME_AUTH_VISUAL_PASS="$PASSWORD" \
-  OGAME_AUTH_VISUAL_PAGE="${OGAME_AUTH_VISUAL_PAGE:-game-alliance-owned-home,game-alliance-management}" \
+  OGAME_AUTH_VISUAL_PAGE="${OGAME_AUTH_VISUAL_PAGE:-game-alliance-owned-home,game-alliance-management,game-alliance-ranks}" \
   bun run e2e:visual:auth
