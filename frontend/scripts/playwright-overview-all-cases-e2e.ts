@@ -303,6 +303,17 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
       timer.setAttribute("data-time", "0");
       timer.setAttribute("star", "0");
     }
+    if (pageSide === "legacy") {
+      const eventRows = Array.from(
+        document.querySelectorAll<HTMLTableRowElement>("#content tr.flight, #content tr.return, #content tr.holding")
+      ).filter((row) => /Mission:|Rocket Attack|after order/.test((row.textContent ?? "").replace(/\s+/g, " ")));
+      for (const row of eventRows) {
+        const timerCell = row.querySelector<HTMLElement>("th, td");
+        if (timerCell) {
+          timerCell.textContent = "0:00:00";
+        }
+      }
+    }
   }, side);
 }
 

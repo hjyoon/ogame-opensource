@@ -57,20 +57,35 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
       printf 'Go user type Playwright QA (%s)\n' "$browser"
       (cd "$ROOT_DIR/frontend" && OGAME_PLAYWRIGHT_BROWSER="$browser" OGAME_GO_BASE_URL="$GO_BASE_URL" OGAME_USER_TYPE_FIXTURE_FILE="$ROOT_DIR/.tmp/golang-user-type-fixture.json" bun run e2e:user-types)
     done
+    if [ "${OGAME_RUN_AUTH_VISUAL:-1}" = "1" ]; then
+      for browser in ${OGAME_AUTH_VISUAL_BROWSERS:-chromium firefox}; do
+        printf 'Authenticated visual E2E (%s)\n' "$browser"
+        OGAME_PLAYWRIGHT_BROWSER="$browser" \
+        OGAME_GO_BASE_URL="$GO_BASE_URL" \
+        OGAME_AUTH_VISUAL_ENFORCE_DIFF="${OGAME_AUTH_VISUAL_ENFORCE_DIFF:-1}" \
+        OGAME_AUTH_VISUAL_ENFORCE_LAYOUT="${OGAME_AUTH_VISUAL_ENFORCE_LAYOUT:-1}" \
+        OGAME_AUTH_VISUAL_MAX_DIFF_RATIO="${OGAME_AUTH_VISUAL_MAX_DIFF_RATIO:-0}" \
+        OGAME_AUTH_VISUAL_MAX_BOX_DELTA="${OGAME_AUTH_VISUAL_MAX_BOX_DELTA:-0}" \
+        "$SCRIPT_DIR/run-playwright-auth-visual-e2e.sh"
+      done
+    fi
+    if [ "${OGAME_RUN_EMPIRE_VISUAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-empire-visual-e2e.sh"
+    fi
     if [ "${OGAME_RUN_OVERVIEW_FLEET_VISUAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-overview-fleet-visual-e2e.sh"
     fi
-	    if [ "${OGAME_RUN_OVERVIEW_FLEET_COUNTDOWN:-1}" = "1" ]; then
-	      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-overview-fleet-countdown-e2e.sh"
-	    fi
-	    if [ "${OGAME_RUN_OVERVIEW_ALL_CASES:-1}" = "1" ]; then
-	      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-overview-all-cases-e2e.sh"
-	    fi
-	    if [ "${OGAME_RUN_FLEET_CONTINUE_VISUAL:-1}" = "1" ]; then
-	      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-fleet-continue-visual-e2e.sh"
-	    fi
-	    if [ "${OGAME_RUN_FLEET_ALL_CASES:-1}" = "1" ]; then
-	      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-fleet-all-cases-e2e.sh"
-	    fi
+    if [ "${OGAME_RUN_OVERVIEW_FLEET_COUNTDOWN:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-overview-fleet-countdown-e2e.sh"
+    fi
+    if [ "${OGAME_RUN_OVERVIEW_ALL_CASES:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-overview-all-cases-e2e.sh"
+    fi
+    if [ "${OGAME_RUN_FLEET_CONTINUE_VISUAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-fleet-continue-visual-e2e.sh"
+    fi
+    if [ "${OGAME_RUN_FLEET_ALL_CASES:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-fleet-all-cases-e2e.sh"
+    fi
   fi
 fi

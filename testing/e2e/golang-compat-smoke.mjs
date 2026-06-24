@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { publicRouteAliases, publicRoutes } from "../../frontend/src/routes.ts";
 
 const baseUrl = (process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890").replace(/\/+$/, "");
@@ -1833,6 +1835,8 @@ try {
 
   const js = await request("/assets/main.js");
   const css = await request("/assets/main.css");
+  const legacyGameOverviewSource = await readFile(new URL("../../frontend/src/LegacyGameOverview.tsx", import.meta.url), "utf8");
+  const statisticsTooltipSource = legacyGameOverviewSource.match(/legacy-statistics-tooltip[\s\S]{0,500}/)?.[0] ?? "";
   cases.push(finalize({
     case: "go_react_assets",
     checks: [
@@ -1915,7 +1919,7 @@ try {
       check(js.body.includes("legacy-fleet-select-table"), "React bundle contains legacy game fleet ship selection layout"),
       check(js.body.includes("legacy-fleet-dispatch-table"), "React bundle contains legacy game fleet dispatch preview layout"),
       check(js.body.includes("legacy-fleet-dispatch-form") && js.body.includes("remainingresources"), "React bundle contains legacy fleet mission/resource draft layout"),
-      check(js.body.includes("legacy-fleet-flight-math"), "React bundle contains legacy fleet flight math draft layout"),
+      check(legacyGameOverviewSource.includes("legacyFleetFlightTime(") && legacyGameOverviewSource.includes("legacyFleetDisplayConsumption("), "React source contains legacy fleet flight math draft layout"),
       check(js.body.includes("launch-dispatch"), "React bundle contains legacy fleet final launch action"),
       check(js.body.includes("legacy-fleet-templates-table"), "React bundle contains legacy game standard fleets layout"),
       check(js.body.includes("legacy-galaxy-table"), "React bundle contains legacy game galaxy layout"),
@@ -1926,7 +1930,7 @@ try {
       check(js.body.includes("legacy-technology-table"), "React bundle contains legacy game technology layout"),
       check(js.body.includes("legacy-technology-details-table"), "React bundle contains legacy game technology details layout"),
       check(js.body.includes("legacy-statistics-table"), "React bundle contains legacy game statistics layout"),
-      check(js.body.includes("legacy-statistics-tooltip") && !js.body.includes("overlib("), "React bundle replaces legacy global overlib hover handlers"),
+      check(statisticsTooltipSource.includes("legacy-statistics-tooltip") && !statisticsTooltipSource.includes("overlib("), "React source scopes statistics tooltip without global overlib handlers"),
       check(js.body.includes("legacy-search-results-table"), "React bundle contains legacy game search layout"),
       check(js.body.includes("legacy-messages-table"), "React bundle contains legacy game messages layout"),
       check(js.body.includes("legacy-messages-compose-table"), "React bundle contains legacy game message compose layout"),

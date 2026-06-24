@@ -44,6 +44,7 @@ type gameAdminSummary struct {
 	PlanetRows      []gameAdminPlanetRow        `json:"planetRows,omitempty"`
 	Universe        *gameAdminUniverseSettings  `json:"universe,omitempty"`
 	Expedition      map[string]int              `json:"expedition,omitempty"`
+	FleetLogRows    []gameAdminFleetLogRow      `json:"fleetLogRows,omitempty"`
 	QueueRows       []gameAdminQueueRow         `json:"queueRows,omitempty"`
 	BattleReports   []gameAdminBattleReportRow  `json:"battleReports,omitempty"`
 	ChecksumGroups  []gameAdminChecksumGroup    `json:"checksumGroups,omitempty"`
@@ -106,6 +107,30 @@ type gameAdminPlanetRow struct {
 	Date        int64                   `json:"date"`
 	Coordinates gameCoordinatesResponse `json:"coordinates"`
 	Owner       *gameAdminUserRow       `json:"owner,omitempty"`
+}
+
+type gameAdminFleetLogRow struct {
+	TaskID     int                          `json:"taskId"`
+	Number     int                          `json:"number"`
+	Mission    int                          `json:"mission"`
+	Start      int64                        `json:"start"`
+	End        int64                        `json:"end"`
+	FlightTime int                          `json:"flightTime"`
+	Fuel       int                          `json:"fuel"`
+	UnionID    int                          `json:"unionId"`
+	Origin     gameAdminFleetLogPlanet      `json:"origin"`
+	Target     gameAdminFleetLogPlanet      `json:"target"`
+	Ships      []gameFleetShipCountResponse `json:"ships"`
+	Cargo      []gameFleetResourceLoad      `json:"cargo"`
+}
+
+type gameAdminFleetLogPlanet struct {
+	ID          int                     `json:"id"`
+	Name        string                  `json:"name"`
+	OwnerID     int                     `json:"ownerId"`
+	OwnerName   string                  `json:"ownerName"`
+	Coordinates gameCoordinatesResponse `json:"coordinates"`
+	Type        int                     `json:"type"`
 }
 
 type gameAdminUniverseSettings struct {
@@ -319,6 +344,10 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		planetRows = append(planetRows, toGameAdminPlanetRow(row))
 	}
 	universe := toGameAdminUniverseSettings(admin.Universe)
+	fleetLogRows := make([]gameAdminFleetLogRow, 0, len(admin.FleetLogRows))
+	for _, row := range admin.FleetLogRows {
+		fleetLogRows = append(fleetLogRows, toGameAdminFleetLogRow(row))
+	}
 	queueRows := make([]gameAdminQueueRow, 0, len(admin.QueueRows))
 	for _, row := range admin.QueueRows {
 		queueRows = append(queueRows, gameAdminQueueRow{
@@ -386,6 +415,7 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		PlanetRows:      planetRows,
 		Universe:        universe,
 		Expedition:      admin.Expedition,
+		FleetLogRows:    fleetLogRows,
 		QueueRows:       queueRows,
 		BattleReports:   battleReports,
 		ChecksumGroups:  checksumGroups,
@@ -432,6 +462,46 @@ func toGameAdminUniverseSettings(universe *domaingame.AdminUniverseSettings) *ga
 		StartDarkMatter: universe.StartDarkMatter,
 		MaxShipyard:     universe.MaxShipyard,
 		FeedAge:         universe.FeedAge,
+	}
+}
+
+func toGameAdminFleetLogRow(row domaingame.AdminFleetLogRow) gameAdminFleetLogRow {
+	ships := make([]gameFleetShipCountResponse, 0, len(row.Ships))
+	for _, ship := range row.Ships {
+		ships = append(ships, gameFleetShipCountResponse{ID: ship.ID, Name: ship.Name, Count: ship.Count})
+	}
+	cargo := make([]gameFleetResourceLoad, 0, len(row.Cargo))
+	for _, resource := range row.Cargo {
+		cargo = append(cargo, gameFleetResourceLoad{
+			ID:     resource.ID,
+			Name:   resource.Name,
+			Loaded: resource.Loaded,
+		})
+	}
+	return gameAdminFleetLogRow{
+		TaskID:     row.TaskID,
+		Number:     row.Number,
+		Mission:    row.Mission,
+		Start:      row.Start,
+		End:        row.End,
+		FlightTime: row.FlightTime,
+		Fuel:       row.Fuel,
+		UnionID:    row.UnionID,
+		Origin:     toGameAdminFleetLogPlanet(row.Origin),
+		Target:     toGameAdminFleetLogPlanet(row.Target),
+		Ships:      ships,
+		Cargo:      cargo,
+	}
+}
+
+func toGameAdminFleetLogPlanet(planet domaingame.AdminFleetLogPlanet) gameAdminFleetLogPlanet {
+	return gameAdminFleetLogPlanet{
+		ID:          planet.ID,
+		Name:        planet.Name,
+		OwnerID:     planet.OwnerID,
+		OwnerName:   planet.OwnerName,
+		Coordinates: toGameCoordinatesResponse(planet.Coordinates),
+		Type:        planet.Type,
 	}
 }
 

@@ -249,6 +249,126 @@ func TestFleetRepositoryLoadersHandleOptionalAndScanEdges(t *testing.T) {
 	}
 }
 
+func TestFleetRepositoryLoadsFleetMissionUnionDetails(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"Alpha Wing", "7, bad, 11, 7, -4, 9"})},
+		{rows: fakeRowsFromValues([]any{11, "eleven"}, []any{7, "seven"})},
+	}}
+	repository := NewFleetRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+
+	details, err := repository.loadFleetMissionUnionDetails(context.Background(), "ogame_union", "ogame_users", 44)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if details.Name != "Alpha Wing" || len(details.Players) != 2 {
+		t.Fatalf("unexpected union details: %+v", details)
+	}
+	if details.Players[0].ID != 7 || details.Players[0].Name != "seven" || details.Players[1].ID != 11 || details.Players[1].Name != "eleven" {
+		t.Fatalf("players should follow parsed legacy order and skip missing IDs: %+v", details.Players)
+	}
+	if !fleetCallContains(queryer.calls, "player_id IN (?, ?, ?)") {
+		t.Fatalf("expected parsed player ids to drive placeholder count, got %+v", queryer.calls)
+	}
+
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"Solo", "bad, 0, -1"})}}}
+	repository = NewFleetRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+	details, err = repository.loadFleetMissionUnionDetails(context.Background(), "ogame_union", "ogame_users", 44)
+	if err != nil || details.Name != "Solo" || len(details.Players) != 0 {
+		t.Fatalf("invalid player list should keep union name without players, details=%+v err=%v", details, err)
+	}
+
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}
+	repository = NewFleetRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+	details, err = repository.loadFleetMissionUnionDetails(context.Background(), "ogame_union", "ogame_users", 44)
+	if err != nil || details.Name != "" || len(details.Players) != 0 {
+		t.Fatalf("missing union row should return empty details, details=%+v err=%v", details, err)
+	}
+}
+
+func TestFleetRepositoryLoadsActiveMissionsWithACSUnionDetails(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	unionMission := fleetMissionRow(domaingame.FleetMissionACSAttackHead, map[int]int{domaingame.FleetCruiser: 2}, 100, 200)
+	unionMission[6] = 55
+	transportMission := fleetMissionRow(domaingame.FleetMissionTransport, map[int]int{domaingame.FleetSmallCargo: 3}, 110, 210)
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(unionMission, transportMission)},
+		{rows: fakeRowsFromValues([]any{"Alpha Wing", "42, 77"})},
+		{rows: fakeRowsFromValues([]any{77, "ally"}, []any{42, "legor"})},
+	}}
+	repository := NewFleetRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+
+	missions, err := repository.loadActiveMissions(context.Background(), "ogame_queue", "ogame_fleet", "ogame_planets", "ogame_users", "ogame_union", 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(missions) != 2 {
+		t.Fatalf("expected two active missions, got %+v", missions)
+	}
+	if missions[0].UnionID != 55 || missions[0].UnionName != "Alpha Wing" || len(missions[0].UnionPlayers) != 2 || missions[0].UnionPlayers[0].ID != 42 {
+		t.Fatalf("expected ACS union details on first mission, got %+v", missions[0])
+	}
+	if len(missions[0].Ships) != 1 || missions[0].Ships[0].ID != domaingame.FleetCruiser || missions[0].Ships[0].Count != 2 ||
+		len(missions[1].Ships) != 1 || missions[1].Ships[0].ID != domaingame.FleetSmallCargo || missions[1].Ships[0].Count != 3 ||
+		missions[1].UnionID != 0 {
+		t.Fatalf("unexpected mission ship or union data: %+v", missions)
+	}
+	if len(queryer.calls) != 3 || !fleetCallContains(queryer.calls, "FROM ogame_union") || !fleetCallContains(queryer.calls, "player_id IN (?, ?)") {
+		t.Fatalf("expected mission query plus one union/player lookup, got %+v", queryer.calls)
+	}
+}
+
+func TestFleetRepositoryFleetMissionUnionDetailsHandleErrors(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	tests := []struct {
+		name    string
+		queryer *fakeQueryer
+		want    string
+	}{
+		{
+			name:    "union query",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{err: errors.New("union query failed")}}},
+			want:    "union query failed",
+		},
+		{
+			name:    "union rows",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("union rows failed"))}}},
+			want:    "union rows failed",
+		},
+		{
+			name:    "union scan",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"only-name"})}}},
+			want:    "unexpected scan destination count",
+		},
+		{
+			name:    "players query",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"Alpha Wing", "7"})}, {err: errors.New("players query failed")}}},
+			want:    "players query failed",
+		},
+		{
+			name:    "players scan",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"Alpha Wing", "7"})}, {rows: fakeRowsFromValues([]any{"bad", "seven"})}}},
+			want:    "expected int",
+		},
+		{
+			name:    "players rows",
+			queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"Alpha Wing", "7"})}, {rows: fakeRowsFromValuesWithErr(errors.New("players rows failed"), []any{7, "seven"})}}},
+			want:    "players rows failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewFleetRepositoryWithQueryer(tt.queryer, "ogame_", func() time.Time { return now })
+			_, err := repository.loadFleetMissionUnionDetails(context.Background(), "ogame_union", "ogame_users", 44)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
 func TestFleetRepositoryMutatesFleetTemplatesWithLegacyOwnershipRules(t *testing.T) {
 	now := time.Unix(1_000, 0)
 	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{

@@ -224,6 +224,124 @@ func TestOverviewRepositoryAddsAdminNotice(t *testing.T) {
 	}
 }
 
+func TestOverviewRepositoryReadsUniverseNewsAndOfficerState(t *testing.T) {
+	now := time.Unix(2_000, 0)
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 7, 99, 1, 0, 0, 0, 1, 7, 3, 5, int64(3000), int64(3001), int64(3002), int64(3003), int64(3004)})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 12, 163, 1234.5, 234.5, 12.0, 0, 1, 2, 1, 1, 0, 3, 0, 2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3})},
+		{rows: fakeRowsFromValues([]any{9, 1, "Legacy news", "Read more", int64(3000), "https://board.example.test/news", "https://discord.example.test"})},
+	}}
+	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	repository.updateResources = false
+	repository.includeUnread = false
+	repository.includeBuildQueue = false
+	repository.includeEvents = false
+	repository.now = func() time.Time { return now }
+
+	overview, err := repository.GetOverview(context.Background(), overviewQuery(42, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if overview.Score.UniversePlayers != 9 || overview.CurrentPlanet.Resources.DarkMatter != 10 {
+		t.Fatalf("expected universe users and dark matter totals, got score=%+v resources=%+v", overview.Score, overview.CurrentPlanet.Resources)
+	}
+	if !overview.Officers.Commander || !overview.Officers.Admiral || !overview.Officers.Engineer || !overview.Officers.Geologist || !overview.Officers.Technocrat {
+		t.Fatalf("expected active officer state from full user row, got %+v", overview.Officers)
+	}
+	if len(overview.Errors) != 2 ||
+		overview.Errors[0] != domaingame.OverviewVacationNotice ||
+		overview.Errors[1] != domaingame.OverviewUniverseFreezeNotice {
+		t.Fatalf("expected vacation and freeze notices, got %+v", overview.Errors)
+	}
+	if overview.News == nil ||
+		overview.News.URL != "https://board.example.test/news" ||
+		overview.News.Start != "Legacy news" ||
+		overview.News.End != "Read more" {
+		t.Fatalf("expected active overview news, got %+v", overview.News)
+	}
+	if overview.MenuLinks.BoardURL != "https://board.example.test/news" || overview.MenuLinks.DiscordURL != "https://discord.example.test" {
+		t.Fatalf("expected external menu links from universe row, got %+v", overview.MenuLinks)
+	}
+}
+
+func TestOverviewUniverseNewsUsesDiscordFallbackAndExpiry(t *testing.T) {
+	active := overviewNews(overviewUniverse{
+		NewsStart:  "Start",
+		NewsEnd:    "End",
+		NewsUntil:  3000,
+		DiscordURL: "https://discord.example.test",
+	}, 2000)
+	if active == nil || active.URL != "https://discord.example.test" || active.Start != "Start" || active.End != "End" {
+		t.Fatalf("expected discord fallback news, got %+v", active)
+	}
+	if expired := overviewNews(overviewUniverse{NewsUntil: 2000, BoardURL: "https://board.example.test"}, 2000); expired != nil {
+		t.Fatalf("expired news should be hidden, got %+v", expired)
+	}
+}
+
+func TestOverviewRepositoryUniverseLoaderHandlesLegacyEdges(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{3})}}}
+	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	universe, err := repository.loadOverviewUniverse(context.Background())
+	if err != nil || universe.UserCount != 3 || universe.Frozen || universe.NewsUntil != 0 {
+		t.Fatalf("expected legacy one-column universe fallback, universe=%+v err=%v", universe, err)
+	}
+
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}
+	repository = NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	universe, err = repository.loadOverviewUniverse(context.Background())
+	if err != nil || universe.UserCount != 0 {
+		t.Fatalf("missing universe row should return defaults, universe=%+v err=%v", universe, err)
+	}
+
+	tests := []struct {
+		name       string
+		repository OverviewRepository
+		want       string
+	}{
+		{
+			name:       "unsafe prefix",
+			repository: NewOverviewRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_"),
+			want:       "invalid database table prefix",
+		},
+		{
+			name:       "query",
+			repository: NewOverviewRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("uni query failed")}}}, "ogame_"),
+			want:       "uni query failed",
+		},
+		{
+			name:       "rows",
+			repository: NewOverviewRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("uni rows failed"))}}}, "ogame_"),
+			want:       "uni rows failed",
+		},
+		{
+			name:       "scan",
+			repository: NewOverviewRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", 0, "", "", int64(0), "", ""})}}}, "ogame_"),
+			want:       "expected int",
+		},
+		{
+			name:       "fallback scan",
+			repository: NewOverviewRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}, "ogame_"),
+			want:       "expected int",
+		},
+		{
+			name:       "fallback rows",
+			repository: NewOverviewRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("uni fallback rows failed"), []any{3})}}}, "ogame_"),
+			want:       "uni fallback rows failed",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := tt.repository.loadOverviewUniverse(context.Background())
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
 func TestNewOverviewRepositoryKeepsSQLQueryer(t *testing.T) {
 	repository := NewOverviewRepository(nil, "ogame_")
 

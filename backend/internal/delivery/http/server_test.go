@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -817,6 +818,11 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 			ServerTime:     "Fri Jun 19 18:23:07",
 			Messages:       []string{domaingame.OverviewAdminNotice},
 			UnreadMessages: 4,
+			News: &domaingame.OverviewNews{
+				URL:   "https://board.example.test/news",
+				Start: "Legacy news",
+				End:   "Read more",
+			},
 			Score: domaingame.ScoreSummary{
 				RawScore:        123456,
 				Rank:            7,
@@ -933,6 +939,12 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	if response.Overview.UnreadMessages != 4 {
 		t.Fatalf("expected unread messages to be mapped, got %d", response.Overview.UnreadMessages)
 	}
+	if response.Overview.News == nil ||
+		response.Overview.News.URL != "https://board.example.test/news" ||
+		response.Overview.News.Start != "Legacy news" ||
+		response.Overview.News.End != "Read more" {
+		t.Fatalf("expected overview news mapping, got %+v", response.Overview.News)
+	}
 	if overview.command.PublicSession != "public" || overview.command.PlanetID != 99 || overview.command.RemoteAddr != "203.0.113.10" ||
 		!overview.command.Login {
 		t.Fatalf("unexpected overview command: %+v", overview.command)
@@ -942,6 +954,46 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	}
 	if bytes.Contains(rec.Body.Bytes(), []byte("private")) {
 		t.Fatalf("game overview response must not echo private session: %s", rec.Body.String())
+	}
+}
+
+func TestGameFleetMissionResponseMapsUnionGroupsAndLoadedResources(t *testing.T) {
+	mission := domaingame.BuildFleetMission(
+		7,
+		domaingame.FleetMissionACSAttackHead,
+		domaingame.FleetCounts{domaingame.FleetCruiser: 2},
+		domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+		domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4},
+		domaingame.PlanetTypePlanet,
+		"target",
+		100,
+		200,
+	)
+	mission.OwnerID = 42
+	mission.OwnerName = "legor"
+	mission.MissionName = "Joint attack"
+	mission.TotalShips = 2
+	mission.UnionID = 9
+	mission.UnionName = "Alpha Wing"
+	mission.UnionPlayers = []domaingame.FleetUnionPlayer{{ID: 42, Name: "legor"}, {ID: 77, Name: "ally"}}
+	mission.LoadedResources = map[int]int{domaingame.ResourceMetal: 123, domaingame.ResourceCrystal: 0, domaingame.ResourceDeuterium: -5}
+	groupMission := domaingame.BuildFleetMission(8, domaingame.FleetMissionACSAttack, domaingame.FleetCounts{domaingame.FleetLightFighter: 5}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 5}, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 4}, domaingame.PlanetTypePlanet, "target", 110, 210)
+	groupMission.MissionName = "ACS Attack"
+	mission.GroupMissions = []domaingame.FleetMission{groupMission}
+
+	response := toGameFleetMissionResponse(mission)
+
+	if response.ID != 7 || response.MissionName != "Joint attack" || response.TotalShips != 2 || response.LoadedResources[strconv.Itoa(domaingame.ResourceMetal)] != 123 {
+		t.Fatalf("unexpected mission response: %+v", response)
+	}
+	if _, ok := response.LoadedResources[strconv.Itoa(domaingame.ResourceCrystal)]; ok {
+		t.Fatalf("zero resources must not be exposed: %+v", response.LoadedResources)
+	}
+	if response.UnionID != 9 || response.UnionName != "Alpha Wing" || len(response.UnionPlayers) != 2 || response.UnionPlayers[1].Name != "ally" {
+		t.Fatalf("unexpected union mapping: %+v", response)
+	}
+	if len(response.GroupMissions) != 1 || response.GroupMissions[0].ID != 8 || response.GroupMissions[0].MissionName != "ACS Attack" {
+		t.Fatalf("unexpected group mission mapping: %+v", response.GroupMissions)
 	}
 }
 

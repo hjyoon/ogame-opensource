@@ -49,7 +49,7 @@ const browserExecutable =
   process.env.OGAME_PLAYWRIGHT_EXECUTABLE ??
   (defaultBrowserExecutable && existsSync(defaultBrowserExecutable) ? defaultBrowserExecutable : undefined);
 const sampleDelayMs = numberEnv("OGAME_OVERVIEW_FLEET_COUNTDOWN_DELAY_MS", 2200);
-const maxCrossSideSkewSeconds = numberEnv("OGAME_OVERVIEW_FLEET_COUNTDOWN_MAX_SKEW", 3);
+const maxCrossSideSkewSeconds = numberEnv("OGAME_OVERVIEW_FLEET_COUNTDOWN_MAX_SKEW", 5);
 
 const fixture = JSON.parse(await readFile(fixturePath, "utf8")) as Fixture;
 

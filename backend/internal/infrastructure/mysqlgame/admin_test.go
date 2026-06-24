@@ -85,6 +85,74 @@ func TestAdminRepositorySkipsRestrictedOperatorModeData(t *testing.T) {
 	}
 }
 
+func TestAdminRepositoryReadsFleetLogRows(t *testing.T) {
+	fleetIDs := domaingame.FleetIDs()
+	shipValues := make([]any, len(fleetIDs))
+	shipValues[0] = 2
+	for index := 1; index < len(shipValues); index++ {
+		shipValues[index] = 0
+	}
+	rowValues := []any{
+		1001, int64(1700000000), int64(1700007200), 3, 7200, 5, 6, 501, 502,
+		"Fleet Home", 1, 470, 4, 1, 42, "legor",
+		"Fleet Target", 1, 470, 5, 1, 77, "target",
+		123, 0, 45,
+	}
+	rowValues = append(rowValues, shipValues...)
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		fakeQueryResult{rows: fakeRowsFromValues(rowValues)},
+	)}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "Fleetlogs"})
+
+	if err != nil {
+		t.Fatalf("GetAdmin returned error: %v", err)
+	}
+	if len(admin.FleetLogRows) != 1 {
+		t.Fatalf("expected one fleet log row, got %+v", admin.FleetLogRows)
+	}
+	row := admin.FleetLogRows[0]
+	if row.Number != 1 || row.TaskID != 1001 || row.Mission != 3 || row.UnionID != 6 ||
+		row.Origin.OwnerID != 42 || row.Target.OwnerName != "target" || row.Target.Coordinates.Position != 5 {
+		t.Fatalf("unexpected fleet log row: %+v", row)
+	}
+	if len(row.Cargo) != 2 || row.Cargo[0].Name != "Metal" || row.Cargo[0].Loaded != 123 || row.Cargo[1].Name != "Deuterium" {
+		t.Fatalf("unexpected cargo rows: %+v", row.Cargo)
+	}
+	if len(row.Ships) != 1 || row.Ships[0].ID != fleetIDs[0] || row.Ships[0].Count != 2 {
+		t.Fatalf("unexpected ship rows: %+v", row.Ships)
+	}
+	lastCall := queryer.calls[len(queryer.calls)-1]
+	if !strings.Contains(lastCall.sql, "`ogame_queue` q JOIN `ogame_fleet` f") || lastCall.args[0] != queueTypeFleet {
+		t.Fatalf("expected fleetlogs queue/fleet query, got %+v", lastCall)
+	}
+}
+
+func TestAdminRepositoryFleetLogRowEdges(t *testing.T) {
+	t.Run("invalid prefix", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_")
+		if _, err := repository.loadAdminFleetLogRows(context.Background()); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+			t.Fatalf("expected prefix error, got %v", err)
+		}
+	})
+
+	t.Run("query error", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("fleetlogs query failed")}}}, "ogame_")
+		if _, err := repository.loadAdminFleetLogRows(context.Background()); err == nil || !strings.Contains(err.Error(), "fleetlogs query failed") {
+			t.Fatalf("expected query error, got %v", err)
+		}
+	})
+
+	t.Run("scan error", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1001})}}}, "ogame_")
+		if _, err := repository.loadAdminFleetLogRows(context.Background()); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+			t.Fatalf("expected scan error, got %v", err)
+		}
+	})
+}
+
 func TestAdminRepositoryMutatesBans(t *testing.T) {
 	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{42, "admin"})},
@@ -659,8 +727,9 @@ func TestAdminRepositoryReadsQueueRows(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
 		fakeQueryResult{rows: fakeRowsFromValues(
-			[]any{21997, 99999, "space", "UpdateStats", 0, 0, 0, int64(1700000000), int64(1700003600), 510, 0, int64(0)},
-			[]any{21994, 1, "Legor", "RecalcPoints", 0, 0, 0, int64(1700000000), int64(1700007200), 500, 1, int64(1700000100)},
+			[]any{21997, 99999, "space", "UpdateStats", 0, 0, 0, int64(1700000000), int64(1700003600), 510, 0, int64(0), ""},
+			[]any{21994, 1, "Legor", "RecalcPoints", 0, 0, 0, int64(1700000000), int64(1700007200), 500, 1, int64(1700000100), ""},
+			[]any{22001, 1, "Legor", "Build", 635, domaingame.BuildingMetalMine, 13, int64(1700000000), int64(1700007300), 20, 0, int64(0), "Overview Home"},
 		)},
 	)}
 	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
@@ -670,15 +739,46 @@ func TestAdminRepositoryReadsQueueRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAdmin returned error: %v", err)
 	}
-	if len(admin.QueueRows) != 2 || admin.QueueRows[0].Description != "Save old statistics" || admin.QueueRows[1].Description != "Recalculate statistics" {
+	if len(admin.QueueRows) != 3 || admin.QueueRows[0].Description != "Save old statistics" || admin.QueueRows[1].Description != "Recalculate statistics" {
 		t.Fatalf("unexpected queue rows: %+v", admin.QueueRows)
 	}
 	if !admin.QueueRows[1].Freeze {
 		t.Fatalf("expected frozen queue row: %+v", admin.QueueRows[1])
 	}
+	if admin.QueueRows[2].Description != "Building 'Metal Mine' (13) on planet <a>Overview Home</a>" {
+		t.Fatalf("expected build queue description, got %+v", admin.QueueRows)
+	}
 	lastSQL := queryer.calls[len(queryer.calls)-1].sql
-	if !strings.Contains(lastSQL, "`ogame_queue`") || !strings.Contains(lastSQL, "LEFT JOIN `ogame_users`") || !strings.Contains(lastSQL, "q.type <> ?") {
+	if !strings.Contains(lastSQL, "`ogame_queue`") || !strings.Contains(lastSQL, "LEFT JOIN `ogame_users`") || !strings.Contains(lastSQL, "LEFT JOIN `ogame_buildqueue`") || !strings.Contains(lastSQL, "LEFT JOIN `ogame_planets`") || !strings.Contains(lastSQL, "q.type <> ?") {
 		t.Fatalf("expected queue rows query, got %s", lastSQL)
+	}
+}
+
+func TestAdminRepositoryQueueRowsErrors(t *testing.T) {
+	validRow := []any{21997, 99999, "space", "UpdateStats", 0, 0, 0, int64(1700000000), int64(1700003600), 510, 0, int64(0), ""}
+	cases := []struct {
+		name string
+		row  fakeQueryResult
+		want string
+	}{
+		{name: "query", row: fakeQueryResult{err: errors.New("queue query failed")}, want: "queue query failed"},
+		{name: "scan", row: fakeQueryResult{rows: fakeRowsFromValues([]any{21997})}, want: "unexpected scan destination count"},
+		{name: "rows", row: fakeQueryResult{rows: fakeRowsFromValuesWithErr(errors.New("queue rows failed"), validRow)}, want: "queue rows failed"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+				tt.row,
+			)}
+			repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
+
+			_, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "Queue"})
+
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q, got %v", tt.want, err)
+			}
+		})
 	}
 }
 
@@ -697,12 +797,33 @@ func TestLegacyAdminQueueDescriptionCoversKnownTypes(t *testing.T) {
 		"AllowAttacks":     "Allow attacks",
 	}
 	for queueType, want := range cases {
-		if got := legacyAdminQueueDescription(queueType, 0, 0, 0); got != want {
+		if got := legacyAdminQueueDescription(queueType, 0, 0, 0, ""); got != want {
 			t.Fatalf("description for %s = %q, want %q", queueType, got, want)
 		}
 	}
-	if got := legacyAdminQueueDescription("Build", 12, 14, 3); got != "Unknown task type (type=Build, sub_id=12, obj_id=14, level=3)" {
+	typeCases := map[string]string{
+		queueTypeBuild:    "Building 'Metal Mine' (3) on planet <a>Home</a>",
+		queueTypeDemolish: "Demolition of 'Metal Mine' (3) on planet <a>Home</a>",
+		queueTypeShipyard: "Shipyard assignment: 'Small Cargo' (3) on planet <a>Home</a>",
+		queueTypeResearch: "Research is underway 'Energy Technology' (3) from planet <a>Home</a>",
+	}
+	for queueType, want := range typeCases {
+		objID := domaingame.BuildingMetalMine
+		if queueType == queueTypeShipyard {
+			objID = domaingame.FleetSmallCargo
+		}
+		if queueType == queueTypeResearch {
+			objID = domaingame.ResearchEnergy
+		}
+		if got := legacyAdminQueueDescription(queueType, 12, objID, 3, "Home"); got != want {
+			t.Fatalf("description for %s = %q, want %q", queueType, got, want)
+		}
+	}
+	if got := legacyAdminQueueDescription("Custom", 12, 14, 3, ""); got != "Unknown task type (type=Custom, sub_id=12, obj_id=14, level=3)" {
 		t.Fatalf("unexpected unknown description: %q", got)
+	}
+	if got := legacyAdminQueuePlanetLinkHTML(`A&B "Home"`); got != "<a>A&amp;B &#34;Home&#34;</a>" {
+		t.Fatalf("unexpected escaped planet link: %q", got)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"html"
 	"strings"
 	"time"
 
@@ -69,6 +70,8 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		return admin, nil
 	}
 	switch admin.Mode {
+	case "Fleetlogs":
+		admin.FleetLogRows, err = r.loadAdminFleetLogRows(ctx)
 	case "Debug":
 		admin.MessageRows, err = r.loadAdminMessageRows(ctx, "debug", true)
 	case "Errors":
@@ -149,6 +152,124 @@ func (r AdminRepository) mutateAdminExpeditionSettings(ctx context.Context, expe
 		return nil, err
 	}
 	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+}
+
+func (r AdminRepository) loadAdminFleetLogRows(ctx context.Context) ([]domaingame.AdminFleetLogRow, error) {
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return nil, err
+	}
+	fleetTable, err := tableName(r.prefix, "fleet")
+	if err != nil {
+		return nil, err
+	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return nil, err
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	fleetIDs := domaingame.FleetIDs()
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT q.task_id, q.start, q.end, f.mission, f.flight_time, f.fuel, COALESCE(f.union_id, 0), f.start_planet, f.target_planet, COALESCE(o.name, ''), COALESCE(o.g, 0), COALESCE(o.s, 0), COALESCE(o.p, 0), COALESCE(o.type, 0), COALESCE(o.owner_id, 0), COALESCE(ou.oname, 'space'), COALESCE(t.name, ''), COALESCE(t.g, 0), COALESCE(t.s, 0), COALESCE(t.p, 0), COALESCE(t.type, 0), COALESCE(t.owner_id, 0), COALESCE(tu.oname, 'space'), f.`%d`, f.`%d`, f.`%d`, %s FROM %s q JOIN %s f ON f.fleet_id = q.sub_id LEFT JOIN %s o ON o.planet_id = f.start_planet LEFT JOIN %s ou ON ou.player_id = o.owner_id LEFT JOIN %s t ON t.planet_id = f.target_planet LEFT JOIN %s tu ON tu.player_id = t.owner_id WHERE q.type = ? ORDER BY q.end ASC, q.prio DESC LIMIT 50",
+			resourceMetal,
+			resourceCrystal,
+			resourceDeuterium,
+			prefixedNumericColumns("f", fleetIDs),
+			queueTable,
+			fleetTable,
+			planetsTable,
+			usersTable,
+			planetsTable,
+			usersTable,
+		),
+		queueTypeFleet,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domaingame.AdminFleetLogRow, 0, 50)
+	for rows.Next() {
+		row, err := scanAdminFleetLogRow(rows, fleetIDs)
+		if err != nil {
+			return nil, err
+		}
+		row.Number = len(result) + 1
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+func scanAdminFleetLogRow(rows Rows, fleetIDs []int) (domaingame.AdminFleetLogRow, error) {
+	var row domaingame.AdminFleetLogRow
+	var cargoMetal, cargoCrystal, cargoDeuterium int
+	shipValues := make([]int, len(fleetIDs))
+	dest := []any{
+		&row.TaskID,
+		&row.Start,
+		&row.End,
+		&row.Mission,
+		&row.FlightTime,
+		&row.Fuel,
+		&row.UnionID,
+		&row.Origin.ID,
+		&row.Target.ID,
+		&row.Origin.Name,
+		&row.Origin.Coordinates.Galaxy,
+		&row.Origin.Coordinates.System,
+		&row.Origin.Coordinates.Position,
+		&row.Origin.Type,
+		&row.Origin.OwnerID,
+		&row.Origin.OwnerName,
+		&row.Target.Name,
+		&row.Target.Coordinates.Galaxy,
+		&row.Target.Coordinates.System,
+		&row.Target.Coordinates.Position,
+		&row.Target.Type,
+		&row.Target.OwnerID,
+		&row.Target.OwnerName,
+		&cargoMetal,
+		&cargoCrystal,
+		&cargoDeuterium,
+	}
+	dest = appendIntDest(dest, shipValues)
+	if err := rows.Scan(dest...); err != nil {
+		return domaingame.AdminFleetLogRow{}, err
+	}
+	row.Cargo = adminFleetLogCargoRows(cargoMetal, cargoCrystal, cargoDeuterium)
+	row.Ships = adminFleetLogShipRows(fleetIDs, shipValues)
+	return row, nil
+}
+
+func adminFleetLogCargoRows(metal int, crystal int, deuterium int) []domaingame.FleetResourceLoad {
+	values := []domaingame.FleetResourceLoad{
+		{ID: domaingame.ResourceMetal, Name: "Metal", Loaded: metal},
+		{ID: domaingame.ResourceCrystal, Name: "Crystal", Loaded: crystal},
+		{ID: domaingame.ResourceDeuterium, Name: "Deuterium", Loaded: deuterium},
+	}
+	rows := make([]domaingame.FleetResourceLoad, 0, len(values))
+	for _, value := range values {
+		if value.Loaded > 0 {
+			rows = append(rows, value)
+		}
+	}
+	return rows
+}
+
+func adminFleetLogShipRows(ids []int, values []int) []domaingame.FleetShipCount {
+	ships := make([]domaingame.FleetShipCount, 0, len(ids))
+	for index, id := range ids {
+		count := values[index]
+		if count > 0 {
+			ships = append(ships, domaingame.FleetShipCount{ID: id, Name: domaingame.TechnologyName(id), Count: count})
+		}
+	}
+	return ships
 }
 
 type adminBanUser struct {
@@ -748,13 +869,27 @@ func (r AdminRepository) loadAdminQueueRows(ctx context.Context) ([]domaingame.A
 	if err != nil {
 		return nil, err
 	}
+	buildQueueTable, err := tableName(r.prefix, "buildqueue")
+	if err != nil {
+		return nil, err
+	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return nil, err
+	}
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT q.task_id, COALESCE(q.owner_id, 0), COALESCE(u.oname, ''), COALESCE(q.type, ''), COALESCE(q.sub_id, 0), COALESCE(q.obj_id, 0), COALESCE(q.level, 0), COALESCE(q.start, 0), COALESCE(q.end, 0), COALESCE(q.prio, 0), COALESCE(q.freeze, 0), COALESCE(q.frozen, 0) FROM %s q LEFT JOIN %s u ON u.player_id = q.owner_id WHERE q.type <> ? ORDER BY q.end ASC, q.prio DESC LIMIT 50",
+			"SELECT q.task_id, COALESCE(q.owner_id, 0), COALESCE(u.oname, ''), COALESCE(q.type, ''), COALESCE(q.sub_id, 0), COALESCE(q.obj_id, 0), COALESCE(q.level, 0), COALESCE(q.start, 0), COALESCE(q.end, 0), COALESCE(q.prio, 0), COALESCE(q.freeze, 0), COALESCE(q.frozen, 0), COALESCE(p.name, '') FROM %s q LEFT JOIN %s u ON u.player_id = q.owner_id LEFT JOIN %s bq ON bq.id = q.sub_id LEFT JOIN %s p ON p.planet_id = CASE WHEN q.type IN (?, ?) THEN bq.planet_id WHEN q.type IN (?, ?) THEN q.sub_id ELSE NULL END WHERE q.type <> ? ORDER BY q.end ASC, q.prio DESC LIMIT 50",
 			queueTable,
 			usersTable,
+			buildQueueTable,
+			planetsTable,
 		),
+		queueTypeBuild,
+		queueTypeDemolish,
+		queueTypeShipyard,
+		queueTypeResearch,
 		"Fleet",
 	)
 	if err != nil {
@@ -766,17 +901,30 @@ func (r AdminRepository) loadAdminQueueRows(ctx context.Context) ([]domaingame.A
 		var row domaingame.AdminQueueRow
 		var subID, objID, level int
 		var freeze int
-		if err := rows.Scan(&row.ID, &row.OwnerID, &row.OwnerName, &row.Type, &subID, &objID, &level, &row.Start, &row.End, &row.Priority, &freeze, &row.Frozen); err != nil {
+		var planetName string
+		if err := rows.Scan(&row.ID, &row.OwnerID, &row.OwnerName, &row.Type, &subID, &objID, &level, &row.Start, &row.End, &row.Priority, &freeze, &row.Frozen, &planetName); err != nil {
 			return nil, err
 		}
 		row.Freeze = freeze != 0
-		row.Description = legacyAdminQueueDescription(row.Type, subID, objID, level)
+		row.Description = legacyAdminQueueDescription(row.Type, subID, objID, level, planetName)
 		result = append(result, row)
 	}
 	return result, rows.Err()
 }
 
-func legacyAdminQueueDescription(queueType string, subID int, objID int, level int) string {
+func legacyAdminQueueDescription(queueType string, subID int, objID int, level int, planetName string) string {
+	technologyName := domaingame.TechnologyName(objID)
+	planetLink := legacyAdminQueuePlanetLinkHTML(planetName)
+	switch queueType {
+	case queueTypeBuild:
+		return fmt.Sprintf("Building '%s' (%d) on planet %s", technologyName, level, planetLink)
+	case queueTypeDemolish:
+		return fmt.Sprintf("Demolition of '%s' (%d) on planet %s", technologyName, level, planetLink)
+	case queueTypeShipyard:
+		return fmt.Sprintf("Shipyard assignment: '%s' (%d) on planet %s", technologyName, level, planetLink)
+	case queueTypeResearch:
+		return fmt.Sprintf("Research is underway '%s' (%d) from planet %s", technologyName, level, planetLink)
+	}
 	switch queueType {
 	case "UpdateStats":
 		return "Save old statistics"
@@ -802,6 +950,13 @@ func legacyAdminQueueDescription(queueType string, subID int, objID int, level i
 		return "Allow attacks"
 	}
 	return fmt.Sprintf("Unknown task type (type=%s, sub_id=%d, obj_id=%d, level=%d)", queueType, subID, objID, level)
+}
+
+func legacyAdminQueuePlanetLinkHTML(planetName string) string {
+	if planetName == "" {
+		return ""
+	}
+	return "<a>" + html.EscapeString(planetName) + "</a>"
 }
 
 func (r AdminRepository) loadAdminBattleReports(ctx context.Context) ([]domaingame.AdminBattleReportRow, error) {

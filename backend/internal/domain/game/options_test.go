@@ -129,6 +129,15 @@ func TestOptionsCredentialMutationValidation(t *testing.T) {
 	}
 }
 
+func TestLegacyPasswordCharactersMatchAllowedLegacySet(t *testing.T) {
+	if !legacyPasswordCharacters("") || !legacyPasswordCharacters("AZaz09_") {
+		t.Fatal("empty and alphanumeric underscore passwords should be accepted")
+	}
+	if legacyPasswordCharacters("abc-123") || legacyPasswordCharacters("abc\u00e9123") {
+		t.Fatal("legacy password characters must reject punctuation and non-ASCII letters")
+	}
+}
+
 func TestOptionsEmailChangeForUnvalidatedAccountsUsesPendingEmail(t *testing.T) {
 	current := NewOptions(Overview{}, OptionsUser{
 		Email:      "pending@example.test",

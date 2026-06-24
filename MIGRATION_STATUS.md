@@ -31,19 +31,19 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 
 ## Verified QA
 
-- Latest local Go check: `OGAME_RUN_LEGACY_E2E=0 OGAME_GO_PORT=8895 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run-golang-migration-qa.sh` passed.
-- Wrapper covers Bun build/check/test, all Go tests, 97% coverage, Docker `goapp`, Go smoke, user-type API QA, and Chromium/Firefox user-type CSR QA.
+- Latest local Go check on port 8895 passed.
+- Wrapper covers Bun build/check/test, Go tests, 97% coverage, Docker smoke, user-type QA, full auth visuals, Empire visuals, and overview/fleet deep visuals.
 - User-type QA covers regular, operator, admin, unvalidated, vacation, banned, deletion-queued, and options vacation/password/email mutations.
-- Playwright resources page actions passed Chromium/Firefox: percent save, DB `prod*`, selected values, totals, and visuals.
-- Research/shipyard/defense actions and galaxy pass Chromium/Firefox exact 0px; queues cover submit/partial/complete DB.
+- Resources actions pass Chromium/Firefox: percent save, DB `prod*`, selected values, totals, and visuals.
+- Research/shipyard/defense, galaxy, admin pages, and Empire Commander/redirect pass Chromium/Firefox exact 0px; queues cover submit/partial/complete DB.
 - Fleet all-cases passes Chrome/Firefox 0px for initial, union, target, and dispatch previews.
 - CSR E2E covers Buddy/Options, Options save, Notes create/edit/delete, and logout; Chromium passes.
-- Auth visual E2E passes Chromium/Firefox 0px for Notes, Buddylist, Options, Merchant, Statistics, Alliance basics, Officers, Technology, Search, and Messages.
+- Auth visual E2E passes Chromium/Firefox 0px for all default page specs.
 - Go internal coverage gate: `97.0% >= 97%`.
 
 ## Remaining Work
 
-- Continue authenticated visual parity for remaining non-statistics pages.
+- Extend deep-state visuals for pages whose base views already pass.
 - Add Go compatibility checks for migrated legacy E2E flows as they stabilize.
 - Finish alliance deep management, admin recovery/permissions/submodes, and mission restrictions.
 - Run full legacy PHP E2E before declaring game-flow equivalence.

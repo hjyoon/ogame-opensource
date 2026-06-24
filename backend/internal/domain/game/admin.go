@@ -25,6 +25,7 @@ type Admin struct {
 	PlanetRows      []AdminPlanetRow
 	Universe        *AdminUniverseSettings
 	Expedition      map[string]int
+	FleetLogRows    []AdminFleetLogRow
 	QueueRows       []AdminQueueRow
 	BattleReports   []AdminBattleReportRow
 	ChecksumGroups  []AdminChecksumGroup
@@ -92,6 +93,30 @@ type AdminPlanetRow struct {
 	Date        int64
 	Coordinates Coordinates
 	Owner       *AdminUserRow
+}
+
+type AdminFleetLogRow struct {
+	TaskID     int
+	Number     int
+	Mission    int
+	Start      int64
+	End        int64
+	FlightTime int
+	Fuel       int
+	UnionID    int
+	Origin     AdminFleetLogPlanet
+	Target     AdminFleetLogPlanet
+	Ships      []FleetShipCount
+	Cargo      []FleetResourceLoad
+}
+
+type AdminFleetLogPlanet struct {
+	ID          int
+	Name        string
+	OwnerID     int
+	OwnerName   string
+	Coordinates Coordinates
+	Type        int
 }
 
 type AdminUniverseSettings struct {

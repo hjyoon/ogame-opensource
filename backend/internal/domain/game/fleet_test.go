@@ -206,6 +206,57 @@ func TestBuildFleetDispatchDraftMissionOptionsMatchLegacyEdges(t *testing.T) {
 	}
 }
 
+func TestFleetDispatchTargetHasUnionMatchesLegacyTargetTypes(t *testing.T) {
+	target := Coordinates{Galaxy: 2, System: 3, Position: 4}
+	fleet := Fleet{Missions: []FleetMission{
+		{UnionID: 0, Target: target, TargetType: PlanetTypePlanet},
+		{UnionID: 9, Target: target, TargetType: PlanetTypeMoon},
+		{UnionID: 10, Target: Coordinates{Galaxy: 2, System: 3, Position: 5}, TargetType: PlanetTypeDebris},
+	}}
+
+	if !fleetDispatchTargetHasUnion(fleet, target, GamePlanetTypeMoon) {
+		t.Fatalf("expected moon target to find ACS union: %+v", fleet.Missions)
+	}
+	if fleetDispatchTargetHasUnion(fleet, target, GamePlanetTypeDebris) {
+		t.Fatalf("non-matching debris target must not find ACS union: %+v", fleet.Missions)
+	}
+	if got := fleetMissionTargetGameType(PlanetTypeMoon); got != GamePlanetTypeMoon {
+		t.Fatalf("unexpected moon game type: %d", got)
+	}
+	if got := fleetMissionTargetGameType(PlanetTypeDebris); got != GamePlanetTypeDebris {
+		t.Fatalf("unexpected debris game type: %d", got)
+	}
+	if got := fleetMissionTargetGameType(PlanetTypePlanet); got != GamePlanetTypePlanet {
+		t.Fatalf("unexpected planet game type: %d", got)
+	}
+}
+
+func TestFleetDispatchTargetIsOwnChecksCurrentAndSwitcherPlanets(t *testing.T) {
+	fleet := Fleet{
+		CurrentPlanet: PlanetOverview{
+			Type:        PlanetTypePlanet,
+			Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 3},
+		},
+		PlanetSwitcher: []PlanetSummary{{
+			Type:        PlanetTypeMoon,
+			Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 4},
+		}},
+	}
+
+	if !fleetDispatchTargetIsOwn(fleet, Coordinates{Galaxy: 1, System: 2, Position: 3}, GamePlanetTypePlanet) {
+		t.Fatal("current planet should be treated as own target")
+	}
+	if !fleetDispatchTargetIsOwn(fleet, Coordinates{Galaxy: 1, System: 2, Position: 4}, GamePlanetTypeMoon) {
+		t.Fatal("moon in planet switcher should be treated as own target")
+	}
+	if fleetDispatchTargetIsOwn(fleet, Coordinates{Galaxy: 1, System: 2, Position: 4}, GamePlanetTypePlanet) {
+		t.Fatal("same coordinates with different game type must not be own target")
+	}
+	if fleetDispatchTargetIsOwn(fleet, Coordinates{Galaxy: 1, System: 2, Position: 5}, GamePlanetTypePlanet) {
+		t.Fatal("unknown coordinates must not be own target")
+	}
+}
+
 func TestBuildFleetDispatchValidationPlansLegacyResourceLoading(t *testing.T) {
 	fleet := BuildFleet(Overview{
 		CurrentPlanet: PlanetOverview{

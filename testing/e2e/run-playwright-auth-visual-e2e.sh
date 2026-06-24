@@ -11,13 +11,13 @@ wait_for_url() {
   attempts="${2:-30}"
   i=1
   while [ "$i" -le "$attempts" ]; do
-    if curl -I --fail "$url" >/dev/null 2>&1; then
+    if curl --fail --silent --output /dev/null "$url"; then
       return 0
     fi
     sleep 1
     i=$((i + 1))
   done
-  curl -I --fail "$url" >/dev/null
+  curl --fail --silent --output /dev/null "$url"
 }
 
 wait_for_url "$LEGACY_BASE_URL/home.php"

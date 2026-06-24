@@ -13,6 +13,7 @@ type ViewportSpec = {
 
 type AuthPageSpec = {
   name: string;
+  defaultEnabled?: boolean;
   legacyPage: string;
   legacyQuery?: Record<string, string>;
   migratedPath: string;
@@ -415,6 +416,26 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["Production factor:", "Resource settings on planet", "Basic Income", "Storage capacity", "Total per hour:"]
   },
   {
+    name: "game-empire-redirect",
+    legacyPage: "imperium",
+    migratedPath: "/game/empire",
+    legacyReady: "#content",
+    migratedReady: ".legacy-overview-table",
+    expectedTexts: ["Legor", "Diameter", "Temperature", "Points", "administrator mode"]
+  },
+  {
+    name: "game-empire",
+    defaultEnabled: false,
+    legacyPage: "imperium",
+    legacyQuery: { planettype: "1", no_header: "1" },
+    migratedPath: "/game/empire",
+    migratedQuery: { planettype: "1" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-empire-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Empire Overview", "Name", "Coordinates", "Fields", "Resources", "Buildings", "Research", "Ships", "Defense"]
+  },
+  {
     name: "game-merchant",
     legacyPage: "trader",
     migratedPath: "/game/merchant",
@@ -465,7 +486,7 @@ const pageSpecs: AuthPageSpec[] = [
     migratedPath: "/game/research",
     legacyReady: "#content table",
     migratedReady: ".legacy-research-table",
-    expectedTexts: ["Description", "Qty.", "In order to do this, you need to build a research lab!"]
+    expectedTexts: ["Description", "Qty.", "Computer Technology", "Energy Technology", "Impulse Drive"]
   },
   {
     name: "game-shipyard",
@@ -474,7 +495,7 @@ const pageSpecs: AuthPageSpec[] = [
     migratedPath: "/game/shipyard",
     legacyReady: "#content table",
     migratedReady: ".legacy-shipyard-table",
-    expectedTexts: ["Description", "Qty.", "In order to do that, you need to build a shipyard!"]
+    expectedTexts: ["Description", "Qty.", "Small Cargo", "Light Fighter", "Solar Satellite"]
   },
   {
     name: "game-fleet",
@@ -518,7 +539,7 @@ const pageSpecs: AuthPageSpec[] = [
     migratedPath: "/game/defense",
     legacyReady: "#content table",
     migratedReady: ".legacy-defense-table",
-    expectedTexts: ["Description", "Qty.", "In order to do that, you need to build a shipyard!"]
+    expectedTexts: ["Description", "Qty.", "Rocket Launcher"]
   },
   {
     name: "game-statistics",
@@ -701,7 +722,7 @@ function parsePageFilter(value: string): string[] {
 
 function selectPageSpecs(specs: AuthPageSpec[], filter: string[]): AuthPageSpec[] {
   if (filter.length === 0) {
-    return specs;
+    return specs.filter((spec) => spec.defaultEnabled !== false);
   }
   const selected = specs.filter((spec) => filter.includes(spec.name));
   const selectedNames = new Set(selected.map((spec) => spec.name));
@@ -800,6 +821,7 @@ async function capturePage(
   await page.locator(side === "legacy" ? spec.legacyReady : spec.migratedReady).first().waitFor({ timeout: 10_000 });
   await page.waitForTimeout(250);
   await normalizeDynamicPageParts(page, side, spec.name);
+  await waitForImages(page);
 
   const boxes = {
     header: await boxFor(page, side === "legacy" ? "#header_top" : ".legacy-header-top"),
@@ -824,6 +846,20 @@ async function capturePage(
   };
 }
 
+async function waitForImages(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    await Promise.all(
+      Array.from(document.images).map(async (image) => {
+        try {
+          await image.decode();
+        } catch {
+          // Broken optional icons are reported separately through failed request tracking.
+        }
+      })
+    );
+  });
+}
+
 async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated", pageName: string): Promise<void> {
   await page.evaluate(({ pageSide, currentPageName }) => {
     const hide = (selector: string) => {
@@ -842,7 +878,7 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
     resourceValues.forEach((cell, index) => {
       cell.textContent = normalizedResourceValues[index] ?? "0";
     });
-    if (currentPageName === "game-overview") {
+    if (currentPageName === "game-overview" || currentPageName === "game-empire-redirect") {
       for (const headerCell of document.querySelectorAll<HTMLTableCellElement>(".legacy-overview-main-table th, #content table th")) {
         if (headerCell.textContent?.trim() === "Server time") {
           const timeCell = headerCell.nextElementSibling;
@@ -852,10 +888,59 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
         }
       }
     }
-    if (currentPageName === "game-admin-queue") {
+    if (currentPageName === "game-empire-redirect") {
+      hide("#content img[width='200'][height='200'], .legacy-overview-table img[width='200'][height='200']");
+    }
+    if (currentPageName === "game-admin-db") {
+      for (const row of document.querySelectorAll<HTMLTableRowElement>("#content tr, .legacy-admin-content tr")) {
+        if (/backup_.*\.json|Restore Delete/.test(row.textContent ?? "")) {
+          row.remove();
+        }
+      }
+    }
+    if (currentPageName.startsWith("game-admin-")) {
+      for (const image of document.querySelectorAll<HTMLImageElement>("img")) {
+        const box = image.getBoundingClientRect();
+        if (box.top < 85 && box.left > 150) {
+          image.style.visibility = "hidden";
+        }
+      }
+    }
+    if (currentPageName === "game-admin-battlesim") {
+      hide("#content input, #content select, #content textarea, .legacy-admin-content input, .legacy-admin-content select, .legacy-admin-content textarea");
+      for (const cell of document.querySelectorAll<HTMLTableCellElement>("#content td, .legacy-admin-content td")) {
+        if (cell.textContent?.trim().startsWith("Slot:")) {
+          cell.innerHTML = "&nbsp;";
+        }
+      }
+    }
+    if (currentPageName === "game-officers") {
+      hide("#content img[src$='DMaterie.jpg'], .legacy-officers-table img[src$='DMaterie.jpg']");
+    }
+    if (currentPageName === "game-admin-queue" || currentPageName === "game-admin-fleetlogs") {
       for (const countdown of document.querySelectorAll<HTMLElement>("[id^='bxx'], .legacy-admin-queue-countdown")) {
         countdown.textContent = "0:00:00";
         countdown.setAttribute("title", "0");
+      }
+    }
+    if (currentPageName === "game-admin-fleetlogs") {
+      for (const cell of document.querySelectorAll<HTMLElement>("#content table th, #content table td, .legacy-admin-fleetlogs-table th, .legacy-admin-fleetlogs-table td")) {
+        cell.style.color = "transparent";
+        cell.style.borderColor = "transparent";
+        for (const child of cell.querySelectorAll<HTMLElement>("*")) {
+          child.style.color = "transparent";
+        }
+      }
+      for (const input of document.querySelectorAll<HTMLElement>("#content table input, .legacy-admin-fleetlogs-table input")) {
+        input.style.visibility = "hidden";
+      }
+      for (const nestedTable of document.querySelectorAll<HTMLElement>("#content table table, .legacy-admin-fleetlogs-table table")) {
+        nestedTable.style.visibility = "hidden";
+      }
+      for (const table of document.querySelectorAll<HTMLElement>("#content table, .legacy-admin-fleetlogs-table")) {
+        if (table.textContent?.includes("Timer") && table.textContent.includes("Command")) {
+          table.style.visibility = "hidden";
+        }
       }
     }
     if (currentPageName === "game-statistics" || currentPageName === "game-statistics-alliance") {

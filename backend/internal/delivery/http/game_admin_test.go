@@ -279,6 +279,42 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 		Freeze:      true,
 		Frozen:      3,
 	}}
+	admin.FleetLogRows = []domaingame.AdminFleetLogRow{{
+		TaskID:     502,
+		Number:     1,
+		Mission:    3,
+		Start:      10,
+		End:        20,
+		FlightTime: 7200,
+		Fuel:       5,
+		UnionID:    6,
+		Origin: domaingame.AdminFleetLogPlanet{
+			ID:        601,
+			Name:      "origin",
+			OwnerID:   7,
+			OwnerName: "owner",
+			Coordinates: domaingame.Coordinates{
+				Galaxy:   1,
+				System:   470,
+				Position: 4,
+			},
+			Type: 1,
+		},
+		Target: domaingame.AdminFleetLogPlanet{
+			ID:        602,
+			Name:      "target",
+			OwnerID:   8,
+			OwnerName: "target-owner",
+			Coordinates: domaingame.Coordinates{
+				Galaxy:   1,
+				System:   470,
+				Position: 5,
+			},
+			Type: 1,
+		},
+		Ships: []domaingame.FleetShipCount{{ID: 202, Name: "Small Cargo", Count: 2}},
+		Cargo: []domaingame.FleetResourceLoad{{ID: 901, Name: "Metal", Loaded: 123}},
+	}}
 	admin.BattleReports = []domaingame.AdminBattleReportRow{{ID: 601, Date: 6000, Title: "battle"}}
 	admin.ChecksumGroups = []domaingame.AdminChecksumGroup{{
 		Title: "core",
@@ -311,6 +347,7 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 		t.Fatalf("expected universe and expedition settings to map: %+v", payload)
 	}
 	if len(payload.QueueRows) != 1 || !payload.QueueRows[0].Freeze ||
+		len(payload.FleetLogRows) != 1 || payload.FleetLogRows[0].Origin.OwnerID != 7 || payload.FleetLogRows[0].Cargo[0].Loaded != 123 ||
 		len(payload.BattleReports) != 1 || len(payload.ChecksumGroups) != 1 ||
 		len(payload.BotStrategies) != 1 {
 		t.Fatalf("expected admin detail rows to map: %+v", payload)

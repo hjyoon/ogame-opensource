@@ -42,7 +42,7 @@ import { LegacyPublicRules } from "./LegacyPublicRules";
 import { LegacyPublicScreenshots } from "./LegacyPublicScreenshots";
 import { LegacyPublicStory } from "./LegacyPublicStory";
 import { LegacyPublicUniverses } from "./LegacyPublicUniverses";
-import { resolveGameRoute } from "./gameRoutes";
+import { gameRouteURL, resolveGameRoute } from "./gameRoutes";
 import { legacyPublicCssHrefs, legacyPublicRouteKeys, publicRoutes, resolvePublicRoute } from "./routes";
 import "./styles.css";
 
@@ -644,6 +644,17 @@ function App() {
     fetch(`/api/game/empire?${empireSearch.toString()}`, { credentials: "same-origin" })
       .then((response) => response.json() as Promise<GameEmpireStatus>)
       .then((payload) => {
+        if (payload.actionIssue?.code === "commander_required") {
+          const overviewSearch = new URLSearchParams({ session: publicSession });
+          const selectedPlanet = currentSearch.get("cp");
+          if (selectedPlanet) {
+            overviewSearch.set("cp", selectedPlanet);
+          }
+          setGameEmpire(null);
+          setGameEmpireError(null);
+          dispatchClientNavigation(gameRouteURL("/game/overview", overviewSearch.toString()));
+          return;
+        }
         setGameEmpire(payload);
         setGameEmpireError(null);
       })
