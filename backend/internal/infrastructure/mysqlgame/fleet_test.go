@@ -37,7 +37,7 @@ func TestFleetRepositoryReadsLegacyFleetScreen(t *testing.T) {
 	if fleet.Slots.Used != 1 || fleet.Slots.BaseMax != 4 || fleet.Slots.Max != 6 || !fleet.Slots.Admiral {
 		t.Fatalf("unexpected fleet slots: %+v", fleet.Slots)
 	}
-	if fleet.Missions[0].MissionName != "Transport" || fleet.Missions[0].TotalShips != 2 || fleet.Missions[0].Origin.Galaxy != 1 || fleet.Missions[0].TargetOwnerName != "target" {
+	if fleet.Missions[0].MissionName != "Transport" || fleet.Missions[0].TotalShips != 2 || fleet.Missions[0].Origin.Galaxy != 1 || fleet.Missions[0].TargetOwnerName != "target" || fleet.Missions[0].LoadedResources[domaingame.ResourceMetal] != 30 {
 		t.Fatalf("unexpected mission row: %+v", fleet.Missions[0])
 	}
 	if fleet.Ships[0].ID != domaingame.FleetSmallCargo || fleet.Ships[0].Count != 4 || fleet.Ships[0].Speed != 20000 {
@@ -311,7 +311,7 @@ func TestFleetRepositoryLoadsActiveMissionsWithACSUnionDetails(t *testing.T) {
 	}
 	if len(missions[0].Ships) != 1 || missions[0].Ships[0].ID != domaingame.FleetCruiser || missions[0].Ships[0].Count != 2 ||
 		len(missions[1].Ships) != 1 || missions[1].Ships[0].ID != domaingame.FleetSmallCargo || missions[1].Ships[0].Count != 3 ||
-		missions[1].UnionID != 0 {
+		missions[1].UnionID != 0 || missions[1].LoadedResources[domaingame.ResourceCrystal] != 20 {
 		t.Fatalf("unexpected mission ship or union data: %+v", missions)
 	}
 	if len(queryer.calls) != 3 || !fleetCallContains(queryer.calls, "FROM ogame_union") || !fleetCallContains(queryer.calls, "player_id IN (?, ?)") {
@@ -2476,6 +2476,7 @@ func fleetMissionRow(mission int, ships map[int]int, start int64, end int64) []a
 	for _, id := range domaingame.FleetIDs() {
 		row = append(row, ships[id])
 	}
+	row = append(row, 30, 20, 10)
 	row = append(row, "Arakis", 1, 2, 3, "Target", 1, 2, 4, domaingame.PlanetTypePlanet, "target")
 	return row
 }

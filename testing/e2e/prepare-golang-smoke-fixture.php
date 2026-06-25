@@ -130,6 +130,13 @@ function smoke_fleet_queue_task_id(int $fleetId): int
 	return $row === null ? 0 : (int)$row['task_id'];
 }
 
+function smoke_age_fleet_queue(int $fleetId, int $elapsedSeconds): void
+{
+    global $db_prefix;
+    $start = time() - $elapsedSeconds;
+    dbquery("UPDATE {$db_prefix}queue SET start={$start} WHERE type='" . QTYP_FLEET . "' AND sub_id={$fleetId}");
+}
+
 function smoke_cleanup_alliances(array $userIds): void
 {
     global $db_prefix;
@@ -1358,6 +1365,88 @@ function smoke_prepare_input_hardening_fixture(string $password, array $near): a
     );
 }
 
+function smoke_prepare_fleet_recall_fixture(string $password, array $near): array
+{
+    global $db_prefix, $fleetmap, $transportableResources, $resmap;
+
+    $attacker = smoke_prepare_user('gorecallatt', $password, 'gorecallatt@example.local', USER_TYPE_PLAYER);
+    $defender = smoke_prepare_user('gorecalldef', $password, 'gorecalldef@example.local', USER_TYPE_PLAYER);
+    $users = array($attacker, $defender);
+    $userIds = array_map(fn($user) => (int)$user['player_id'], $users);
+    $planetIds = array_map(fn($user) => (int)$user['home_planet_id'], $users);
+
+    smoke_cleanup_alliances($userIds);
+    smoke_cleanup_fleets($userIds, $planetIds);
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id IN (" . implode(',', $userIds) . ") AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "','" . QTYP_RESEARCH . "','" . QTYP_SHIPYARD . "','" . QTYP_FLEET . "')");
+    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id IN (" . implode(',', $userIds) . ") OR planet_id IN (" . implode(',', $planetIds) . ")");
+
+    $positions = smoke_find_empty_positions($near, count($users));
+    foreach ($users as $index => $user) {
+        smoke_prepare_planet((int)$user['home_planet_id'], (int)$user['player_id'], 'GoRecall' . $index, $positions[$index]);
+    }
+
+    $research = array();
+    foreach ($resmap as $gid) {
+        $research[] = "`{$gid}`=10";
+    }
+    $now = time();
+    dbquery(
+        "UPDATE {$db_prefix}users SET " . implode(',', $research) . ", admin=0, validated=1, deact_ip=1, " .
+        "vacation=0, vacation_until=0, banned=0, banned_until=0, noattack=0, noattack_until=0, " .
+        "disable=0, disable_until=0, lang='en', skin='/evolution/', useskin=1, score1=10000, score2=0, score3=0, " .
+        "place1=1, place2=1, place3=1, lastclick={$now} WHERE player_id IN (" . implode(',', $userIds) . ")"
+    );
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_F_SC . "`=10, `" . GID_F_LF . "`=10, `" . GID_F_PROBE . "`=10, " .
+        "`" . GID_RC_METAL . "`=1000000, `" . GID_RC_CRYSTAL . "`=1000000, `" . GID_RC_DEUTERIUM . "`=1000000, " .
+        "lastpeek={$now}, lastakt={$now} WHERE planet_id IN (" . implode(',', $planetIds) . ")"
+    );
+
+    $fleet = array();
+    foreach ($fleetmap as $gid) {
+        $fleet[$gid] = $gid === GID_F_SC ? 1 : 0;
+    }
+    $ownResources = array();
+    $foreignResources = array();
+    foreach ($transportableResources as $gid) {
+        $ownResources[$gid] = $gid === GID_RC_METAL ? 77 : 0;
+        $foreignResources[$gid] = $gid === GID_RC_METAL ? 17 : 0;
+    }
+
+    $attackerPlanet = LoadPlanetById((int)$attacker['home_planet_id']);
+    $defenderPlanet = LoadPlanetById((int)$defender['home_planet_id']);
+    if ($attackerPlanet === null || $defenderPlanet === null) {
+        throw new RuntimeException('Go fleet recall fixture planets are missing.');
+    }
+    AdjustShips($fleet, (int)$attacker['home_planet_id'], '-');
+    AdjustResources($ownResources, (int)$attacker['home_planet_id'], '-');
+    $ownFleetId = DispatchFleet($fleet, $attackerPlanet, $defenderPlanet, FTYP_TRANSPORT, 3600, $ownResources, 0, time());
+    smoke_age_fleet_queue($ownFleetId, 120);
+
+    AdjustShips($fleet, (int)$defender['home_planet_id'], '-');
+    AdjustResources($foreignResources, (int)$defender['home_planet_id'], '-');
+    $foreignFleetId = DispatchFleet($fleet, $defenderPlanet, $attackerPlanet, FTYP_TRANSPORT, 3600, $foreignResources, 0, time());
+    smoke_age_fleet_queue($foreignFleetId, 120);
+    InvalidateUserCache();
+
+    return array(
+        'attacker' => array(
+            'login' => mb_strtolower($attacker['name'], 'UTF-8'),
+            'player_id' => (int)$attacker['player_id'],
+            'home_planet_id' => (int)$attacker['home_planet_id'],
+        ),
+        'defender' => array(
+            'login' => mb_strtolower($defender['name'], 'UTF-8'),
+            'player_id' => (int)$defender['player_id'],
+            'home_planet_id' => (int)$defender['home_planet_id'],
+        ),
+        'own_fleet_id' => $ownFleetId,
+        'foreign_fleet_id' => $foreignFleetId,
+        'own_cargo_metal' => 77,
+        'foreign_cargo_metal' => 17,
+    );
+}
+
 $name = getenv('OGAME_GO_LOGIN_SMOKE_USER') ?: 'legor';
 $password = getenv('OGAME_GO_LOGIN_SMOKE_PASS') ?: 'admin';
 $email = getenv('OGAME_GO_LOGIN_SMOKE_EMAIL') ?: ($name . '@example.local');
@@ -1407,6 +1496,7 @@ $messageNonmarkedDeleteFixture = smoke_prepare_message_nonmarked_delete_fixture(
 $messageSendFixture = smoke_prepare_message_send_fixture($password, $home);
 $resourceScopeFixture = smoke_prepare_resource_scope_fixture($password, $home);
 $inputHardeningFixture = smoke_prepare_input_hardening_fixture($password, $home);
+$fleetRecallFixture = smoke_prepare_fleet_recall_fixture($password, $home);
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
 echo json_encode(array(
@@ -1459,4 +1549,5 @@ echo json_encode(array(
 		'message_send' => $messageSendFixture,
 		'resource_scope' => $resourceScopeFixture,
 		'input_hardening' => $inputHardeningFixture,
+		'fleet_recall' => $fleetRecallFixture,
 	), JSON_UNESCAPED_SLASHES) . PHP_EOL;

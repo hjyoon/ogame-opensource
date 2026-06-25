@@ -1491,11 +1491,13 @@ func (r FleetRepository) loadFleetSpeedFactor(ctx context.Context, uniTable stri
 
 func (r FleetRepository) loadActiveMissions(ctx context.Context, queueTable string, fleetTable string, planetsTable string, usersTable string, unionTable string, playerID int) ([]domaingame.FleetMission, error) {
 	fleetIDs := domaingame.FleetIDs()
+	resourceIDs := []int{resourceMetal, resourceCrystal, resourceDeuterium}
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT q.sub_id, q.start, q.end, f.mission, f.owner_id, COALESCE(ou.oname, ''), COALESCE(f.union_id, 0), f.start_planet, f.target_planet, %s, COALESCE(o.name, ''), COALESCE(o.g, 0), COALESCE(o.s, 0), COALESCE(o.p, 0), COALESCE(t.name, ''), COALESCE(t.g, 0), COALESCE(t.s, 0), COALESCE(t.p, 0), COALESCE(t.type, ?), COALESCE(u.oname, 'space') FROM %s q JOIN %s f ON f.fleet_id = q.sub_id LEFT JOIN %s ou ON ou.player_id = f.owner_id LEFT JOIN %s o ON o.planet_id = f.start_planet LEFT JOIN %s t ON t.planet_id = f.target_planet LEFT JOIN %s u ON u.player_id = t.owner_id WHERE q.type = ? AND f.mission <> ? AND f.owner_id = ? ORDER BY q.end ASC, q.prio DESC",
+			"SELECT q.sub_id, q.start, q.end, f.mission, f.owner_id, COALESCE(ou.oname, ''), COALESCE(f.union_id, 0), f.start_planet, f.target_planet, %s, %s, COALESCE(o.name, ''), COALESCE(o.g, 0), COALESCE(o.s, 0), COALESCE(o.p, 0), COALESCE(t.name, ''), COALESCE(t.g, 0), COALESCE(t.s, 0), COALESCE(t.p, 0), COALESCE(t.type, ?), COALESCE(u.oname, 'space') FROM %s q JOIN %s f ON f.fleet_id = q.sub_id LEFT JOIN %s ou ON ou.player_id = f.owner_id LEFT JOIN %s o ON o.planet_id = f.start_planet LEFT JOIN %s t ON t.planet_id = f.target_planet LEFT JOIN %s u ON u.player_id = t.owner_id WHERE q.type = ? AND f.mission <> ? AND f.owner_id = ? ORDER BY q.end ASC, q.prio DESC",
 			prefixedNumericColumns("f", fleetIDs),
+			prefixedNumericColumns("f", resourceIDs),
 			queueTable,
 			fleetTable,
 			usersTable,
@@ -1516,7 +1518,7 @@ func (r FleetRepository) loadActiveMissions(ctx context.Context, queueTable stri
 	missions := make([]domaingame.FleetMission, 0)
 	unionCache := make(map[int]fleetMissionUnionDetails)
 	for rows.Next() {
-		mission, err := scanFleetMissionRow(rows, fleetIDs)
+		mission, err := scanFleetMissionRow(rows, fleetIDs, resourceIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -1540,7 +1542,7 @@ func (r FleetRepository) loadActiveMissions(ctx context.Context, queueTable stri
 	return missions, nil
 }
 
-func scanFleetMissionRow(rows Rows, fleetIDs []int) (domaingame.FleetMission, error) {
+func scanFleetMissionRow(rows Rows, fleetIDs []int, resourceIDs []int) (domaingame.FleetMission, error) {
 	var id int
 	var departureAt int64
 	var arrivalAt int64
@@ -1562,6 +1564,10 @@ func scanFleetMissionRow(rows Rows, fleetIDs []int) (domaingame.FleetMission, er
 	for index := range shipValues {
 		dest = append(dest, &shipValues[index])
 	}
+	resourceValues := make([]int, len(resourceIDs))
+	for index := range resourceValues {
+		dest = append(dest, &resourceValues[index])
+	}
 	dest = append(dest,
 		&originName,
 		&origin.Galaxy,
@@ -1582,7 +1588,12 @@ func scanFleetMissionRow(rows Rows, fleetIDs []int) (domaingame.FleetMission, er
 	for index, fleetID := range fleetIDs {
 		ships[fleetID] = shipValues[index]
 	}
+	loadedResources := make(map[int]int, len(resourceIDs))
+	for index, resourceID := range resourceIDs {
+		loadedResources[resourceID] = resourceValues[index]
+	}
 	row := domaingame.BuildFleetMission(id, mission, ships, origin, target, targetType, targetOwner, departureAt, arrivalAt)
+	row.LoadedResources = loadedResources
 	row.OwnerID = ownerID
 	row.OwnerName = ownerName
 	row.UnionID = unionID

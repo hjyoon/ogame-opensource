@@ -151,6 +151,24 @@ function fleetResourceLoadByID(draft, resourceID) {
     : undefined;
 }
 
+function fleetMissionByID(body, fleetID) {
+  return Array.isArray(body.fleet?.missions)
+    ? body.fleet.missions.find((row) => Number(row.id ?? 0) === Number(fleetID))
+    : undefined;
+}
+
+function fleetMissionByMission(body, mission) {
+  return Array.isArray(body.fleet?.missions)
+    ? body.fleet.missions.find((row) => Number(row.mission ?? 0) === Number(mission) && row.own === true)
+    : undefined;
+}
+
+function fleetMissionCountByMission(body, mission) {
+  return Array.isArray(body.fleet?.missions)
+    ? body.fleet.missions.filter((row) => Number(row.mission ?? 0) === Number(mission) && row.own === true).length
+    : 0;
+}
+
 async function readOptionalJSON(path) {
   if (!path) {
     return {};
@@ -523,6 +541,17 @@ try {
     Number(fleetTemplatesFixture.non_commander?.home_planet_id ?? 0) > 0 &&
     Number(fleetTemplatesFixture.foreign?.home_planet_id ?? 0) > 0 &&
     Number(fleetTemplatesFixture.expected_max ?? 0) > 0
+  );
+  const fleetRecallFixture = smokeFixture?.fleet_recall ?? {};
+  const fleetRecallOwnFleetID = Number(fleetRecallFixture.own_fleet_id ?? 0);
+  const fleetRecallForeignFleetID = Number(fleetRecallFixture.foreign_fleet_id ?? 0);
+  const fleetRecallCargoMetal = Number(fleetRecallFixture.own_cargo_metal ?? 0);
+  const fleetRecallReady = Boolean(
+    typeof fleetRecallFixture.attacker?.login === "string" &&
+    Number(fleetRecallFixture.attacker?.home_planet_id ?? 0) > 0 &&
+    fleetRecallOwnFleetID > 0 &&
+    fleetRecallForeignFleetID > 0 &&
+    fleetRecallCargoMetal > 0
   );
   const galaxyRemoteFixture = smokeFixture?.galaxy_remote ?? {};
   const galaxyRemoteReady = Boolean(
@@ -1976,6 +2005,51 @@ try {
   const fleetRestrictionAttackerAfterBody = fleetRestrictionAttackerAfter ? parseJSON(fleetRestrictionAttackerAfter) : {};
   const fleetRestrictionBlockedAfterBody = fleetRestrictionBlockedAfter ? parseJSON(fleetRestrictionBlockedAfter) : {};
   const fleetRestrictionWeakAfterBody = fleetRestrictionWeakAfter ? parseJSON(fleetRestrictionWeakAfter) : {};
+
+  const fleetRecallLogin = fleetRecallReady
+    ? await loginGameUser(fleetRecallFixture.attacker.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const fleetRecallSearch = fleetRecallReady
+    ? withQueryParam(fleetRecallLogin?.search ?? "?session=", "cp", Number(fleetRecallFixture.attacker.home_planet_id))
+    : "?session=";
+  const fleetRecallCookie = fleetRecallLogin?.cookiePair ?? "";
+  const fleetRecallInitial = fleetRecallReady
+    ? await request(`/api/game/fleet${fleetRecallSearch}`, {
+        headers: { Cookie: fleetRecallCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const fleetRecallInitialBody = parseJSON(fleetRecallInitial);
+  async function recallFleetEdge(fleetID) {
+    if (!fleetRecallReady) {
+      return { status: 0, headers: {}, body: "{}" };
+    }
+    return request(`/api/game/fleet${fleetRecallSearch}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: fleetRecallCookie },
+      body: JSON.stringify({
+        action: "recall",
+        fleetId: fleetID
+      })
+    });
+  }
+  const fleetRecallMissing = await recallFleetEdge(987654321);
+  const fleetRecallMissingBody = parseJSON(fleetRecallMissing);
+  const fleetRecallForeign = await recallFleetEdge(fleetRecallForeignFleetID);
+  const fleetRecallForeignBody = parseJSON(fleetRecallForeign);
+  const fleetRecallOwn = await recallFleetEdge(fleetRecallOwnFleetID);
+  const fleetRecallOwnBody = parseJSON(fleetRecallOwn);
+  const fleetRecallReturnMissionCode = 103;
+  const fleetRecallReturnMission = fleetMissionByMission(fleetRecallOwnBody, fleetRecallReturnMissionCode);
+  const fleetRecallReturnFleetID = Number(fleetRecallReturnMission?.id ?? 0);
+  const fleetRecallReturnAgain = fleetRecallReturnFleetID > 0
+    ? await recallFleetEdge(fleetRecallReturnFleetID)
+    : { status: 0, headers: {}, body: "{}" };
+  const fleetRecallReturnAgainBody = parseJSON(fleetRecallReturnAgain);
+  const fleetRecallInitialCount = fleetRecallInitialBody.fleet?.missions?.length ?? -1;
+  const fleetRecallMissingCount = fleetRecallMissingBody.fleet?.missions?.length ?? -1;
+  const fleetRecallForeignCount = fleetRecallForeignBody.fleet?.missions?.length ?? -1;
+  const fleetRecallReturnAgainCount = fleetRecallReturnAgainBody.fleet?.missions?.length ?? -1;
+  const fleetRecallReturnLoadedMetal = Number(fleetRecallReturnMission?.loadedResources?.["700"] ?? 0);
 
   const gameFleetWithoutCookie = await request(`/api/game/fleet${sessionSearch}`);
   let gameFleetWithoutCookieBody = {};
@@ -5799,6 +5873,54 @@ try {
       ),
       check(!fleetRestrictionsReady || !fleetRestrictionNoobAttack.body.includes(fleetRestrictionAttackerLogin?.cookiePair ?? "missing-cookie"), "fleet restriction response does not echo attacker cookie"),
       check(!fleetRestrictionsReady || !fleetRestrictionAttackBan.body.includes(fleetRestrictionBlockedLogin?.cookiePair ?? "missing-cookie"), "fleet restriction response does not echo noattack attacker cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_fleet_recall_edges_api",
+    checks: [
+      check(!smokeFixtureFile || fleetRecallReady, "go smoke fixture exposes fleet recall users", { fleetRecallFixture }),
+      check(!fleetRecallReady || fleetRecallLogin?.response.status === 200, "fleet recall attacker can log in", {
+        status: fleetRecallLogin?.response.status
+      }),
+      check(!fleetRecallReady || fleetRecallInitial.status === 200, "fleet recall initial fleet screen loads", {
+        status: fleetRecallInitial.status
+      }),
+      check(!fleetRecallReady || fleetMissionByID(fleetRecallInitialBody, fleetRecallOwnFleetID) !== undefined, "fleet recall fixture exposes own outbound fleet", fleetRecallInitialBody.fleet?.missions ?? []),
+      check(!fleetRecallReady || fleetRecallMissing.status === 200, "missing fleet recall returns HTTP 200", {
+        status: fleetRecallMissing.status
+      }),
+      check(!fleetRecallReady || fleetRecallMissingCount === fleetRecallInitialCount, "missing fleet recall does not create or remove fleet rows", {
+        before: fleetRecallInitialCount,
+        after: fleetRecallMissingCount
+      }),
+      check(!fleetRecallReady || fleetRecallForeign.status === 200, "foreign fleet recall returns HTTP 200", {
+        status: fleetRecallForeign.status
+      }),
+      check(!fleetRecallReady || fleetRecallForeignCount === fleetRecallMissingCount, "foreign fleet recall does not mutate visible fleet rows", {
+        before: fleetRecallMissingCount,
+        after: fleetRecallForeignCount
+      }),
+      check(!fleetRecallReady || fleetRecallOwn.status === 200, "own fleet recall returns HTTP 200", {
+        status: fleetRecallOwn.status
+      }),
+      check(!fleetRecallReady || fleetMissionByID(fleetRecallOwnBody, fleetRecallOwnFleetID) === undefined, "own fleet recall removes original outbound fleet", fleetRecallOwnBody.fleet?.missions ?? []),
+      check(!fleetRecallReady || Number(fleetRecallReturnMission?.mission ?? 0) === fleetRecallReturnMissionCode, "own fleet recall creates transport return mission", fleetRecallReturnMission ?? {}),
+      check(!fleetRecallReady || fleetRecallReturnLoadedMetal === fleetRecallCargoMetal, "own fleet recall preserves loaded metal on return mission", {
+        expected: fleetRecallCargoMetal,
+        actual: fleetRecallReturnLoadedMetal,
+        mission: fleetRecallReturnMission ?? {}
+      }),
+      check(!fleetRecallReady || fleetRecallReturnAgain.status === 200, "recalling an already returning fleet returns HTTP 200", {
+        status: fleetRecallReturnAgain.status
+      }),
+      check(!fleetRecallReady || fleetMissionByID(fleetRecallReturnAgainBody, fleetRecallReturnFleetID) !== undefined, "second recall keeps the return fleet row", fleetRecallReturnAgainBody.fleet?.missions ?? []),
+      check(!fleetRecallReady || fleetMissionCountByMission(fleetRecallReturnAgainBody, fleetRecallReturnMissionCode) === 1, "second recall does not duplicate return fleets", fleetRecallReturnAgainBody.fleet?.missions ?? []),
+      check(!fleetRecallReady || fleetRecallReturnAgainCount === fleetRecallForeignCount, "second recall keeps the visible fleet row count stable", {
+        before: fleetRecallForeignCount,
+        after: fleetRecallReturnAgainCount
+      }),
+      check(!fleetRecallReady || !fleetRecallOwn.body.includes(fleetRecallCookie), "fleet recall response does not echo private cookie")
     ]
   }));
 
