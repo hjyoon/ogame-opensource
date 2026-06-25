@@ -12049,7 +12049,8 @@ function legacyOverviewFleetTitle(event: GameFleetMission, summary: 0 | 1): stri
 function legacyOverviewPlayerDetails(event: GameFleetMission): string {
   const owner = event.ownerName.trim() || event.targetOwnerName.trim() || "Enemy";
   const writeTitle = "Write message";
-  return `${escapeLegacyHTML(owner)} <a href="#" onclick="showMessageMenu(${event.ownerId})"><img src="${skinBase}/img/m.gif" title="${writeTitle}" alt="${writeTitle}"></a>`;
+  const messageHref = event.ownerId > 0 ? gameMessageComposeURL(event.ownerId, window.location.search) : "#";
+  return `${escapeLegacyHTML(owner)} <a href="${legacyHTMLAttribute(messageHref)}"><img src="${skinBase}/img/m.gif" title="${writeTitle}" alt="${writeTitle}"></a>`;
 }
 
 function legacyOverviewFromTo(origin: string, target: string): string {

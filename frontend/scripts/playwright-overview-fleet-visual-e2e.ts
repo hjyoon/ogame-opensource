@@ -11,6 +11,7 @@ type Fixture = {
   password: string;
   player_id: number;
   planet_id: number;
+  target_player_id: number;
   target_planet_id: number;
   own_fleet_id: number;
   enemy_fleet_id: number;
@@ -60,6 +61,18 @@ type PageCapture = {
   screenshotPath: string;
 };
 
+type WriteMessageNavigation = {
+  status: number | null;
+  initialURL: string;
+  linkHref: string;
+  finalURL: string;
+  targetPlayerID: number;
+  composeReady: boolean;
+  consoleErrors: string[];
+  failedRequests: string[];
+  badResponses: string[];
+};
+
 const rootDir = resolve(import.meta.dir, "../..");
 const browserName = browserEnv("OGAME_PLAYWRIGHT_BROWSER", "chromium");
 const outputDir = resolve(rootDir, ".tmp/playwright-overview-fleet-visual", browserName);
@@ -96,6 +109,13 @@ try {
     "#content tr.flight, #content tr.return, #content tr.holding",
     viewport
   );
+  const legacyWriteMessage = await checkWriteMessageNavigation(
+    legacyContext,
+    "legacy",
+    legacyOverviewURL(fixture),
+    "#content tr.flight, #content tr.return, #content tr.holding",
+    fixture
+  );
   await legacyContext.close();
 
   const migratedContext = await newContext(browser, viewport, migratedBaseURL, fixture);
@@ -106,11 +126,27 @@ try {
     ".legacy-overview-event-timer",
     viewport
   );
+  const migratedWriteMessage = await checkWriteMessageNavigation(
+    migratedContext,
+    "migrated",
+    migratedOverviewURL(fixture),
+    ".legacy-overview-event-timer",
+    fixture
+  );
   await migratedContext.close();
 
   const diffPath = join(screenshotDir, `overview-fleet-${viewport.name}-diff.png`);
   const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath, diffPath);
   const eventContractPass = JSON.stringify(visibleEventContract(legacy.eventRows)) === JSON.stringify(visibleEventContract(migrated.eventRows));
+  const writeMessagePass =
+    legacyWriteMessage.composeReady &&
+    migratedWriteMessage.composeReady &&
+    legacyWriteMessage.failedRequests.length === 0 &&
+    migratedWriteMessage.failedRequests.length === 0 &&
+    legacyWriteMessage.badResponses.length === 0 &&
+    migratedWriteMessage.badResponses.length === 0 &&
+    legacyWriteMessage.consoleErrors.length === 0 &&
+    migratedWriteMessage.consoleErrors.length === 0;
   const pass =
     legacy.status === 200 &&
     migrated.status === 200 &&
@@ -123,6 +159,7 @@ try {
     legacy.eventRows.length >= 3 &&
     migrated.eventRows.length >= 3 &&
     eventContractPass &&
+    writeMessagePass &&
     (!enforceDiff || diff.diffRatio <= maxDiffRatio);
 
   const report = {
@@ -135,6 +172,7 @@ try {
       user: fixture.user,
       playerID: fixture.player_id,
       planetID: fixture.planet_id,
+      targetPlayerID: fixture.target_player_id,
       targetPlanetID: fixture.target_planet_id,
       ownFleetID: fixture.own_fleet_id,
       enemyFleetID: fixture.enemy_fleet_id
@@ -142,14 +180,17 @@ try {
     thresholds: { enforceDiff, maxDiffRatio, colorDeltaThreshold },
     pass,
     eventContractPass,
+    writeMessagePass,
     legacy,
     migrated,
+    legacyWriteMessage,
+    migratedWriteMessage,
     diff,
     diffPath
   };
   await writeFile(join(outputDir, "report.json"), JSON.stringify(report, null, 2));
   await writeFile(join(outputDir, "report.md"), renderMarkdown(report));
-  process.stdout.write(JSON.stringify({ pass, diffRatio: diff.diffRatio, changedPixels: diff.changedPixels, report: join(outputDir, "report.json") }, null, 2) + "\n");
+  process.stdout.write(JSON.stringify({ pass, diffRatio: diff.diffRatio, changedPixels: diff.changedPixels, writeMessagePass, report: join(outputDir, "report.json") }, null, 2) + "\n");
   if (!pass) {
     process.exitCode = 1;
   }
@@ -238,6 +279,89 @@ async function capturePage(
     eventRows,
     screenshotPath
   };
+}
+
+async function checkWriteMessageNavigation(
+  context: BrowserContext,
+  side: "legacy" | "migrated",
+  url: string,
+  readySelector: string,
+  fixtureData: Fixture
+): Promise<WriteMessageNavigation> {
+  const page = await context.newPage();
+  const consoleErrors: string[] = [];
+  const failedRequests: string[] = [];
+  const badResponses: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      consoleErrors.push(message.text());
+    }
+  });
+  page.on("requestfailed", (request) => {
+    failedRequests.push(`${request.method()} ${request.url()} ${request.failure()?.errorText ?? ""}`.trim());
+  });
+  page.on("response", (response) => {
+    const status = response.status();
+    if (status >= 400 && !response.url().endsWith("/favicon.ico")) {
+      badResponses.push(`${status} ${response.url()}`);
+    }
+  });
+
+  const response = await page.goto(url, { waitUntil: "networkidle", timeout: 15_000 });
+  await page.locator(readySelector).first().waitFor({ timeout: 10_000 });
+  await waitForImages(page);
+  const link = page.locator('img[title="Write message"], img[alt="Write message"]').first().locator("xpath=ancestor::a[1]");
+  await link.waitFor({ timeout: 10_000 });
+  const linkHref = await link.getAttribute("href") ?? "";
+  await link.click();
+  const composeReady =
+    side === "legacy"
+      ? await waitForLegacyMessageCompose(page, fixtureData.target_player_id)
+      : await waitForMigratedMessageCompose(page, fixtureData.target_player_id);
+  const finalURL = page.url();
+  await page.close();
+
+  return {
+    status: response?.status() ?? null,
+    initialURL: url,
+    linkHref,
+    finalURL,
+    targetPlayerID: fixtureData.target_player_id,
+    composeReady,
+    consoleErrors,
+    failedRequests,
+    badResponses
+  };
+}
+
+async function waitForLegacyMessageCompose(page: Page, targetPlayerID: number): Promise<boolean> {
+  try {
+    await page.waitForURL((url) =>
+      url.searchParams.get("page") === "writemessages" &&
+      url.searchParams.get("messageziel") === String(targetPlayerID),
+      { timeout: 10_000 }
+    );
+    await page.locator('form input[name="messageziel"], form textarea[name="text"]').first().waitFor({ timeout: 10_000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForMigratedMessageCompose(page: Page, targetPlayerID: number): Promise<boolean> {
+  try {
+    await page.waitForURL((url) =>
+      url.pathname === "/game/messages" &&
+      url.searchParams.get("messageziel") === String(targetPlayerID),
+      { timeout: 10_000 }
+    );
+    await page.locator(".legacy-messages-compose-table").waitFor({ timeout: 10_000 });
+    return await page.locator('input[name="messageziel"]').evaluate((input, expected) => {
+      return input instanceof HTMLInputElement && input.value === String(expected);
+    }, targetPlayerID);
+  } catch {
+    return false;
+  }
 }
 
 async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"): Promise<void> {
@@ -470,10 +594,13 @@ function renderMarkdown(report: {
   migratedBaseURL: string;
   pass: boolean;
   eventContractPass: boolean;
+  writeMessagePass: boolean;
   diff: DiffResult;
   diffPath: string;
   legacy: PageCapture;
   migrated: PageCapture;
+  legacyWriteMessage: WriteMessageNavigation;
+  migratedWriteMessage: WriteMessageNavigation;
   thresholds: { enforceDiff: boolean; maxDiffRatio: number; colorDeltaThreshold: number };
 }): string {
   const lines: string[] = [];
@@ -484,6 +611,7 @@ function renderMarkdown(report: {
   lines.push(`Migrated: ${report.migratedBaseURL}`);
   lines.push(`Pass: ${report.pass ? "yes" : "no"}`);
   lines.push(`Event contract pass: ${report.eventContractPass ? "yes" : "no"}`);
+  lines.push(`Write message navigation pass: ${report.writeMessagePass ? "yes" : "no"}`);
   lines.push(`Exact diff ratio: ${formatNumber(report.diff.diffRatio)} (${report.diff.changedPixels}/${report.diff.totalPixels})`);
   lines.push(`Diff path: ${report.diffPath}`);
   lines.push(`Threshold: ${report.thresholds.enforceDiff ? formatNumber(report.thresholds.maxDiffRatio) : "not enforced"}`);
@@ -499,6 +627,11 @@ function renderMarkdown(report: {
   for (const row of report.migrated.eventRows) {
     lines.push(`- ${row.className || "(none)"}: ${row.text}`);
   }
+  lines.push("");
+  lines.push("## Write Message Navigation");
+  lines.push("");
+  lines.push(`- Legacy: ${report.legacyWriteMessage.composeReady ? "ok" : "failed"} ${report.legacyWriteMessage.finalURL}`);
+  lines.push(`- Migrated: ${report.migratedWriteMessage.composeReady ? "ok" : "failed"} ${report.migratedWriteMessage.finalURL}`);
   return `${lines.join("\n")}\n`;
 }
 
