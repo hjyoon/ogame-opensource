@@ -673,6 +673,54 @@ function smoke_prepare_vacation_freeze_fixture(string $password, array $near): a
     );
 }
 
+function smoke_prepare_merchant_fixture(string $password, array $near): array
+{
+    global $db_prefix;
+
+    $specs = array(
+        'insufficient' => array('name' => 'gomerchantlow', 'email' => 'gomerchantlow@example.local', 'dm' => 0, 'dmfree' => 0, 'trader' => 0, 'metal' => 100000, 'crystal' => 100000, 'deuterium' => 100000),
+        'call' => array('name' => 'gomerchantcall', 'email' => 'gomerchantcall@example.local', 'dm' => 1000, 'dmfree' => 2000, 'trader' => 0, 'metal' => 100000, 'crystal' => 100000, 'deuterium' => 100000),
+        'trade' => array('name' => 'gomerchanttrade', 'email' => 'gomerchanttrade@example.local', 'dm' => 0, 'dmfree' => 0, 'trader' => 1, 'metal' => 1000000, 'crystal' => 100000, 'deuterium' => 100000),
+        'reject' => array('name' => 'gomerchantreject', 'email' => 'gomerchantreject@example.local', 'dm' => 0, 'dmfree' => 0, 'trader' => 1, 'metal' => 1000, 'crystal' => 100000, 'deuterium' => 100000),
+    );
+    $users = array();
+    foreach ($specs as $key => $spec) {
+        $users[$key] = smoke_prepare_user($spec['name'], $password, $spec['email'], USER_TYPE_PLAYER);
+    }
+    $userIds = array_map(fn($user) => (int)$user['player_id'], $users);
+    $planetIds = array_map(fn($user) => (int)$user['home_planet_id'], $users);
+    smoke_cleanup_alliances($userIds);
+    smoke_cleanup_fleets($userIds, $planetIds);
+    $positions = smoke_find_empty_positions($near, count($users));
+
+    $fixture = array();
+    $index = 0;
+    foreach ($specs as $key => $spec) {
+        $user = $users[$key];
+        $playerId = (int)$user['player_id'];
+        $planetId = (int)$user['home_planet_id'];
+        smoke_prepare_planet($planetId, $playerId, 'GoMerchant' . $index, $positions[$index]);
+        dbquery(
+            "UPDATE {$db_prefix}users SET admin=0, validated=1, deact_ip=1, vacation=0, vacation_until=0, " .
+            "dm=" . (int)$spec['dm'] . ", dmfree=" . (int)$spec['dmfree'] . ", trader=" . (int)$spec['trader'] . ", " .
+            "rate_m=3, rate_k=2, rate_d=1, lastclick=" . time() . " WHERE player_id={$playerId}"
+        );
+        dbquery(
+            "UPDATE {$db_prefix}planets SET `" . GID_B_METAL_STOR . "`=10, `" . GID_B_CRYS_STOR . "`=10, `" . GID_B_DEUT_STOR . "`=10, " .
+            "`" . GID_RC_METAL . "`=" . (int)$spec['metal'] . ", `" . GID_RC_CRYSTAL . "`=" . (int)$spec['crystal'] . ", `" . GID_RC_DEUTERIUM . "`=" . (int)$spec['deuterium'] . ", " .
+            "prod1=0, prod2=0, prod3=0, prod4=0, prod12=0, prod212=0, lastpeek=" . time() . " WHERE planet_id={$planetId}"
+        );
+        $fixture[$key] = array(
+            'login' => mb_strtolower($user['name'], 'UTF-8'),
+            'player_id' => $playerId,
+            'home_planet_id' => $planetId,
+        );
+        $index++;
+    }
+    InvalidateUserCache();
+    return $fixture;
+}
+
 $name = getenv('OGAME_GO_LOGIN_SMOKE_USER') ?: 'legor';
 $password = getenv('OGAME_GO_LOGIN_SMOKE_PASS') ?: 'admin';
 $email = getenv('OGAME_GO_LOGIN_SMOKE_EMAIL') ?: ($name . '@example.local');
@@ -693,6 +741,7 @@ smoke_prepare_planet((int)$target['home_planet_id'], (int)$target['player_id'], 
 smoke_prepare_planet((int)$freezeVictim['home_planet_id'], (int)$freezeVictim['player_id'], 'Go Freeze', smoke_find_empty_position($home));
 $premiumDmFixture = smoke_prepare_premium_dm_fixture($password, $home);
 $vacationFreezeFixture = smoke_prepare_vacation_freeze_fixture($password, $home);
+$merchantFixture = smoke_prepare_merchant_fixture($password, $home);
 $moonId = smoke_prepare_moon((int)$login['home_planet_id'], (int)$login['player_id']);
 $fleetId = smoke_dispatch_phalanx_fleet((int)$target['player_id'], (int)$target['home_planet_id'], (int)$login['home_planet_id']);
 $recallFleetId = smoke_dispatch_phalanx_fleet((int)$target['player_id'], (int)$target['home_planet_id'], (int)$login['home_planet_id']);
@@ -741,5 +790,6 @@ echo json_encode(array(
     ),
     'premium_dm' => $premiumDmFixture,
     'vacation_freeze' => $vacationFreezeFixture,
+    'merchant' => $merchantFixture,
     'fleet_restrictions' => $fleetRestrictionFixture,
 ), JSON_UNESCAPED_SLASHES) . PHP_EOL;

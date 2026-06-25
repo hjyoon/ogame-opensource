@@ -79,6 +79,12 @@ function officerRow(body, id) {
     : undefined;
 }
 
+function merchantRow(body, id) {
+  return Array.isArray(body.merchant?.rows)
+    ? body.merchant.rows.find((row) => Number(row.id) === Number(id))
+    : undefined;
+}
+
 async function readOptionalJSON(path) {
   if (!path) {
     return {};
@@ -313,6 +319,10 @@ try {
     typeof vacationFreezeFixture.mutation?.login === "string" &&
     Number(vacationFreezeFixture.build?.queue_task_id ?? 0) > 0 &&
     Number(vacationFreezeFixture.fleet?.fleet_id ?? 0) > 0;
+  const merchantFixture = smokeFixture?.merchant ?? {};
+  const merchantReady = ["insufficient", "call", "trade", "reject"].every(
+    (key) => typeof merchantFixture[key]?.login === "string" && merchantFixture[key].login.length > 0
+  );
   const feedFixture = smokeFixture?.feed ?? {};
   const feedFixtureReady =
     typeof feedFixture.rss_feed_id === "string" &&
@@ -2461,6 +2471,58 @@ try {
     ? vacationBlockedShipyardBody.shipyard.items.find((row) => Number(row.id) === 202)
     : undefined;
 
+  const merchantUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const merchantInsufficientLogin = merchantReady
+    ? await loginGameUser(merchantFixture.insufficient.login, loginSmokePassword, merchantUniverse)
+    : null;
+  const merchantCallLogin = merchantReady
+    ? await loginGameUser(merchantFixture.call.login, loginSmokePassword, merchantUniverse)
+    : null;
+  const merchantTradeLogin = merchantReady
+    ? await loginGameUser(merchantFixture.trade.login, loginSmokePassword, merchantUniverse)
+    : null;
+  const merchantRejectLogin = merchantReady
+    ? await loginGameUser(merchantFixture.reject.login, loginSmokePassword, merchantUniverse)
+    : null;
+  const merchantInsufficient = merchantReady
+    ? await request(`/api/game/merchant${merchantInsufficientLogin.search}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: merchantInsufficientLogin.cookiePair },
+        body: JSON.stringify({ action: "call", offerId: 1 })
+      })
+    : null;
+  const merchantInsufficientBody = merchantInsufficient ? parseJSON(merchantInsufficient) : {};
+  const merchantCall = merchantReady
+    ? await request(`/api/game/merchant${merchantCallLogin.search}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: merchantCallLogin.cookiePair },
+        body: JSON.stringify({ action: "call", offerId: 1 })
+      })
+    : null;
+  const merchantCallBody = merchantCall ? parseJSON(merchantCall) : {};
+  const merchantTrade = merchantReady
+    ? await request(`/api/game/merchant${merchantTradeLogin.search}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: merchantTradeLogin.cookiePair },
+        body: JSON.stringify({ action: "trade", values: { metal: 0, crystal: 2000, deuterium: 1000 } })
+      })
+    : null;
+  const merchantTradeBody = merchantTrade ? parseJSON(merchantTrade) : {};
+  const merchantTradeMetal = merchantRow(merchantTradeBody, 1);
+  const merchantTradeCrystal = merchantRow(merchantTradeBody, 2);
+  const merchantTradeDeuterium = merchantRow(merchantTradeBody, 3);
+  const merchantReject = merchantReady
+    ? await request(`/api/game/merchant${merchantRejectLogin.search}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: merchantRejectLogin.cookiePair },
+        body: JSON.stringify({ action: "trade", values: { metal: 0, crystal: 2000, deuterium: 1000 } })
+      })
+    : null;
+  const merchantRejectBody = merchantReject ? parseJSON(merchantReject) : {};
+  const merchantRejectMetal = merchantRow(merchantRejectBody, 1);
+  const merchantRejectCrystal = merchantRow(merchantRejectBody, 2);
+  const merchantRejectDeuterium = merchantRow(merchantRejectBody, 3);
+
   const gameAdmin = await request(`/api/game/admin${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -3606,6 +3668,58 @@ try {
       check(!vacationFreezeReady || vacationBlockedShipyardBody.actionIssue?.code === "vacation", "vacation mode blocks shipyard mutation", vacationBlockedShipyardBody.actionIssue ?? {}),
       check(!vacationFreezeReady || Array.isArray(vacationBlockedShipyardBody.shipyard?.queue) && vacationBlockedShipyardBody.shipyard.queue.length === 0, "vacation shipyard mutation does not enqueue work", vacationBlockedShipyardBody.shipyard?.queue ?? {}),
       check(!vacationFreezeReady || Number(vacationBlockedSmallCargo?.count ?? -1) === 3, "vacation shipyard mutation leaves small cargo count unchanged", vacationBlockedSmallCargo ?? {})
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_merchant_trader_edges_api",
+    checks: [
+      check(!smokeFixtureFile || merchantReady, "go smoke fixture exposes merchant edge users", { merchantFixture }),
+      check(!merchantReady || merchantInsufficientLogin?.response.status === 200, "merchant insufficient user can log in", {
+        status: merchantInsufficientLogin?.response.status
+      }),
+      check(!merchantReady || merchantCallLogin?.response.status === 200, "merchant call user can log in", {
+        status: merchantCallLogin?.response.status
+      }),
+      check(!merchantReady || merchantTradeLogin?.response.status === 200, "merchant trade user can log in", {
+        status: merchantTradeLogin?.response.status
+      }),
+      check(!merchantReady || merchantRejectLogin?.response.status === 200, "merchant reject user can log in", {
+        status: merchantRejectLogin?.response.status
+      }),
+      check(!merchantReady || merchantInsufficient?.status === 200, "insufficient merchant call returns HTTP 200", {
+        status: merchantInsufficient?.status
+      }),
+      check(!merchantReady || merchantInsufficientBody.actionIssue?.code === "not_enough_dark_matter", "insufficient merchant call returns legacy not-enough-DM issue", merchantInsufficientBody.actionIssue ?? {}),
+      check(!merchantReady || merchantInsufficientBody.merchant?.activeOfferId === 0, "insufficient merchant call does not assign trader", merchantInsufficientBody.merchant ?? {}),
+      check(!merchantReady || merchantInsufficientBody.merchant?.user?.paidDarkMatter === 0 && merchantInsufficientBody.merchant?.user?.freeDarkMatter === 0, "insufficient merchant call does not spend DM", merchantInsufficientBody.merchant?.user ?? {}),
+      check(!merchantReady || merchantCall?.status === 200, "paid/free merchant call returns HTTP 200", {
+        status: merchantCall?.status
+      }),
+      check(!merchantReady || merchantCallBody.actionIssue === undefined, "paid/free merchant call has no error issue", merchantCallBody.actionIssue ?? {}),
+      check(!merchantReady || merchantCallBody.merchant?.activeOfferId === 1, "paid/free merchant call assigns metal trader", merchantCallBody.merchant ?? {}),
+      check(!merchantReady || merchantCallBody.merchant?.user?.paidDarkMatter === 0 && merchantCallBody.merchant?.user?.freeDarkMatter === 500, "merchant call spends paid DM before free DM", merchantCallBody.merchant?.user ?? {}),
+      check(!merchantReady || Number(merchantCallBody.merchant?.rates?.metal ?? 0) > 0 && Number(merchantCallBody.merchant?.rates?.crystal ?? 0) > 0 && Number(merchantCallBody.merchant?.rates?.deuterium ?? 0) > 0, "merchant call stores non-zero exchange rates", merchantCallBody.merchant?.rates ?? {}),
+      check(!merchantReady || merchantTrade?.status === 200, "merchant exchange returns HTTP 200", {
+        status: merchantTrade?.status
+      }),
+      check(!merchantReady || merchantTradeBody.actionIssue === undefined, "merchant exchange has no error issue", merchantTradeBody.actionIssue ?? {}),
+      check(!merchantReady || merchantTradeBody.merchant?.activeOfferId === 0, "successful merchant exchange consumes active offer", merchantTradeBody.merchant ?? {}),
+      check(!merchantReady || Number(merchantTradeMetal?.value ?? -1) >= 994000 && Number(merchantTradeMetal?.value ?? -1) < 994100, "merchant exchange subtracts calculated metal cost", merchantTradeMetal ?? {}),
+      check(!merchantReady || Number(merchantTradeCrystal?.value ?? -1) >= 102000 && Number(merchantTradeCrystal?.value ?? -1) < 102100 && Number(merchantTradeDeuterium?.value ?? -1) >= 101000 && Number(merchantTradeDeuterium?.value ?? -1) < 101100, "merchant exchange adds requested crystal and deuterium", {
+        crystal: merchantTradeCrystal,
+        deuterium: merchantTradeDeuterium
+      }),
+      check(!merchantReady || merchantReject?.status === 200, "insufficient-resource merchant exchange returns HTTP 200", {
+        status: merchantReject?.status
+      }),
+      check(!merchantReady || merchantRejectBody.actionIssue?.code === "not_enough_resource", "insufficient-resource merchant exchange returns legacy issue", merchantRejectBody.actionIssue ?? {}),
+      check(!merchantReady || merchantRejectBody.merchant?.activeOfferId === 1, "failed merchant exchange keeps active offer", merchantRejectBody.merchant ?? {}),
+      check(!merchantReady || Number(merchantRejectMetal?.value ?? -1) >= 1000 && Number(merchantRejectMetal?.value ?? -1) < 6000 && Number(merchantRejectCrystal?.value ?? -1) >= 100000 && Number(merchantRejectCrystal?.value ?? -1) < 102000 && Number(merchantRejectDeuterium?.value ?? -1) >= 100000 && Number(merchantRejectDeuterium?.value ?? -1) < 101000, "failed merchant exchange leaves resources within production drift", {
+        metal: merchantRejectMetal,
+        crystal: merchantRejectCrystal,
+        deuterium: merchantRejectDeuterium
+      })
     ]
   }));
 
