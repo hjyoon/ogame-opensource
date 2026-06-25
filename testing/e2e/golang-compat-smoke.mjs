@@ -127,6 +127,30 @@ function resourceRowByID(body, resourceID) {
     : undefined;
 }
 
+function shipyardItemByID(body, itemID) {
+  return Array.isArray(body.shipyard?.items)
+    ? body.shipyard.items.find((row) => Number(row.id ?? 0) === Number(itemID))
+    : undefined;
+}
+
+function shipyardQueueByID(body, itemID) {
+  return Array.isArray(body.shipyard?.queue)
+    ? body.shipyard.queue.find((row) => Number(row.unitId ?? 0) === Number(itemID))
+    : undefined;
+}
+
+function defenseItemByID(body, itemID) {
+  return Array.isArray(body.defense?.items)
+    ? body.defense.items.find((row) => Number(row.id ?? 0) === Number(itemID))
+    : undefined;
+}
+
+function fleetResourceLoadByID(draft, resourceID) {
+  return Array.isArray(draft?.resources)
+    ? draft.resources.find((row) => Number(row.id ?? 0) === Number(resourceID))
+    : undefined;
+}
+
 async function readOptionalJSON(path) {
   if (!path) {
     return {};
@@ -456,6 +480,17 @@ try {
     Number(resourceScopeFixture.foreign?.home_planet_id ?? 0) > 0 &&
     Number(resourceScopeFixture.foreign_initial_metal_percent ?? 0) >= 0 &&
     Number(resourceScopeFixture.foreign_initial_crystal_percent ?? 0) >= 0
+  );
+  const inputHardeningFixture = smokeFixture?.input_hardening ?? {};
+  const inputHardeningMaxShipyard = Number(inputHardeningFixture.max_shipyard ?? 0);
+  const inputHardeningReady = Boolean(
+    typeof inputHardeningFixture.attacker?.login === "string" &&
+    Number(inputHardeningFixture.attacker?.home_planet_id ?? 0) > 0 &&
+    Number(inputHardeningFixture.defender?.home_planet_id ?? 0) > 0 &&
+    Number(inputHardeningFixture.defender?.coordinates?.galaxy ?? 0) > 0 &&
+    Number(inputHardeningFixture.defender?.coordinates?.system ?? 0) > 0 &&
+    Number(inputHardeningFixture.defender?.coordinates?.position ?? 0) > 0 &&
+    inputHardeningMaxShipyard > 0
   );
   const passwordRecoveryFixture = smokeFixture?.password_recovery ?? {};
   const passwordRecoveryFixtureReady =
@@ -3196,6 +3231,142 @@ try {
   const hardeningResourceCrystal = resourceRowByID(hardeningResourcesUpdateBody, 2);
   const hardeningResourceDeuterium = resourceRowByID(hardeningResourcesUpdateBody, 3);
   const hardeningResourceSolar = resourceRowByID(hardeningResourcesUpdateBody, 4);
+  const inputHardeningSmallCargo = 202;
+  const inputHardeningLightFighter = 204;
+  const inputHardeningABM = 502;
+  const inputHardeningIPM = 503;
+  const inputHardeningLogin = inputHardeningReady
+    ? await loginGameUser(inputHardeningFixture.attacker.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const inputHardeningSearch = inputHardeningReady
+    ? withQueryParam(inputHardeningLogin?.search ?? "?session=", "cp", Number(inputHardeningFixture.attacker.home_planet_id))
+    : "?session=";
+  const inputHardeningCookie = inputHardeningLogin?.cookiePair ?? "";
+  const inputHardeningTarget = inputHardeningFixture.defender?.coordinates ?? { galaxy: 1, system: 1, position: 1 };
+  const inputFleetInitial = inputHardeningReady
+    ? await request(`/api/game/fleet${inputHardeningSearch}`, {
+        headers: { Cookie: inputHardeningCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const inputFleetInitialBody = parseJSON(inputFleetInitial);
+  const inputFleetNegativeResourceValidate = inputHardeningReady
+    ? await request(`/api/game/fleet${inputHardeningSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: inputHardeningCookie },
+        body: JSON.stringify({
+          action: "validate-dispatch",
+          ships: { [String(inputHardeningSmallCargo)]: 1 },
+          resources: { 700: -500, 701: -7, 702: -1 },
+          target: inputHardeningTarget,
+          targetType: 1,
+          mission: 3,
+          speed: 10
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const inputFleetNegativeResourceValidateBody = parseJSON(inputFleetNegativeResourceValidate);
+  const inputFleetNegativeResourceLaunch = inputHardeningReady
+    ? await request(`/api/game/fleet${inputHardeningSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: inputHardeningCookie },
+        body: JSON.stringify({
+          action: "launch-dispatch",
+          ships: { [String(inputHardeningSmallCargo)]: 1 },
+          resources: { 700: -500, 701: -7, 702: -1 },
+          target: inputHardeningTarget,
+          targetType: 1,
+          mission: 3,
+          speed: 10
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const inputFleetNegativeResourceLaunchBody = parseJSON(inputFleetNegativeResourceLaunch);
+  const inputFleetNegativeShips = inputHardeningReady
+    ? await request(`/api/game/fleet${inputHardeningSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: inputHardeningCookie },
+        body: JSON.stringify({
+          action: "launch-dispatch",
+          ships: { [String(inputHardeningSmallCargo)]: -3 },
+          resources: { 700: 100 },
+          target: inputHardeningTarget,
+          targetType: 1,
+          mission: 3,
+          speed: 10
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const inputFleetNegativeShipsBody = parseJSON(inputFleetNegativeShips);
+  const inputFleetNonNumericShips = inputHardeningReady
+    ? await request(`/api/game/fleet${inputHardeningSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: inputHardeningCookie },
+        body: `{"action":"launch-dispatch","ships":{"${inputHardeningSmallCargo}":"not-a-number"},"resources":{},"target":{"galaxy":${Number(inputHardeningTarget.galaxy)},"system":${Number(inputHardeningTarget.system)},"position":${Number(inputHardeningTarget.position)}},"targetType":1,"mission":3,"speed":10}`
+      })
+    : { status: 0, headers: {}, body: "" };
+  const inputShipyardInitial = inputHardeningReady
+    ? await request(`/api/game/shipyard${inputHardeningSearch}`, {
+        headers: { Cookie: inputHardeningCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const inputShipyardInitialBody = parseJSON(inputShipyardInitial);
+  const inputShipyardMissingOrders = inputHardeningReady
+    ? await request(`/api/game/shipyard${inputHardeningSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: inputHardeningCookie },
+        body: JSON.stringify({})
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const inputShipyardMissingOrdersBody = parseJSON(inputShipyardMissingOrders);
+  const inputShipyardNegativeOrders = inputHardeningReady
+    ? await request(`/api/game/shipyard${inputHardeningSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: inputHardeningCookie },
+        body: JSON.stringify({ orders: { [String(inputHardeningSmallCargo)]: -999, [String(inputHardeningLightFighter)]: -1 } })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const inputShipyardNegativeOrdersBody = parseJSON(inputShipyardNegativeOrders);
+  const inputShipyardNonNumericOrders = inputHardeningReady
+    ? await request(`/api/game/shipyard${inputHardeningSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: inputHardeningCookie },
+        body: `{"orders":{"${inputHardeningSmallCargo}":"not-a-number"}}`
+      })
+    : { status: 0, headers: {}, body: "" };
+  const inputDefenseInitial = inputHardeningReady
+    ? await request(`/api/game/defense${inputHardeningSearch}`, {
+        headers: { Cookie: inputHardeningCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const inputDefenseInitialBody = parseJSON(inputDefenseInitial);
+  const inputDefenseNegativeOrders = inputHardeningReady
+    ? await request(`/api/game/defense${inputHardeningSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: inputHardeningCookie },
+        body: JSON.stringify({ orders: { [String(inputHardeningABM)]: -99, [String(inputHardeningIPM)]: -1 } })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const inputDefenseNegativeOrdersBody = parseJSON(inputDefenseNegativeOrders);
+  const inputDefenseNonNumericOrders = inputHardeningReady
+    ? await request(`/api/game/defense${inputHardeningSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: inputHardeningCookie },
+        body: `{"orders":{"${inputHardeningIPM}":"not-a-number"}}`
+      })
+    : { status: 0, headers: {}, body: "" };
+  const inputShipyardOversizedOrder = inputHardeningReady
+    ? await request(`/api/game/shipyard${inputHardeningSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: inputHardeningCookie },
+        body: JSON.stringify({ orders: { [String(inputHardeningSmallCargo)]: 999999999 } })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const inputShipyardOversizedOrderBody = parseJSON(inputShipyardOversizedOrder);
+  const inputShipyardOversizedQueue = shipyardQueueByID(inputShipyardOversizedOrderBody, inputHardeningSmallCargo);
+  const inputFleetNegativeResourceDraft = inputFleetNegativeResourceValidateBody.fleet?.dispatchDraft;
+  const inputFleetNegativeResourceMission = Array.isArray(inputFleetNegativeResourceLaunchBody.fleet?.missions)
+    ? inputFleetNegativeResourceLaunchBody.fleet.missions.find((row) => Number(row.mission) === 3 && row.own === true)
+    : undefined;
 
   const gameMerchant = await request(`/api/game/merchant${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -5722,6 +5893,124 @@ try {
       check(gameOptionsUpdateBody.options?.settings?.sortOrder === 0, "options hardening clamps negative sort order", gameOptionsUpdateBody.options?.settings ?? {}),
       check(gameOptionsUpdateBody.options?.settings?.maxSpy === 1, "options hardening clamps negative spy count", gameOptionsUpdateBody.options?.settings ?? {}),
       check(gameOptionsUpdateBody.options?.settings?.maxFleetMessages === 99, "options hardening caps oversized fleet message count", gameOptionsUpdateBody.options?.settings ?? {}),
+      check(!smokeFixtureFile || inputHardeningReady, "go smoke fixture exposes input hardening users", { inputHardeningFixture }),
+      check(!inputHardeningReady || inputHardeningLogin?.response.status === 200, "input hardening user can log in", {
+        status: inputHardeningLogin?.response.status
+      }),
+      check(!inputHardeningReady || inputFleetInitial.status === 200, "input hardening fleet screen loads", { status: inputFleetInitial.status }),
+      check(!inputHardeningReady || inputFleetNegativeResourceValidate.status === 200, "negative-resource fleet validation returns HTTP 200", {
+        status: inputFleetNegativeResourceValidate.status
+      }),
+      check(
+        !inputHardeningReady ||
+          fleetResourceLoadByID(inputFleetNegativeResourceDraft, 700)?.requested === 0 &&
+            fleetResourceLoadByID(inputFleetNegativeResourceDraft, 700)?.loaded === 0 &&
+            fleetResourceLoadByID(inputFleetNegativeResourceDraft, 701)?.requested === 0 &&
+            fleetResourceLoadByID(inputFleetNegativeResourceDraft, 701)?.loaded === 0 &&
+            fleetResourceLoadByID(inputFleetNegativeResourceDraft, 702)?.requested === 0 &&
+            fleetResourceLoadByID(inputFleetNegativeResourceDraft, 702)?.loaded === 0,
+        "negative fleet resource payloads clamp to zero instead of abs-loaded",
+        inputFleetNegativeResourceDraft ?? {}
+      ),
+      check(!inputHardeningReady || inputFleetNegativeResourceLaunch.status === 200, "negative-resource fleet launch returns HTTP 200", {
+        status: inputFleetNegativeResourceLaunch.status
+      }),
+      check(!inputHardeningReady || inputFleetNegativeResourceLaunchBody.actionIssue === undefined, "negative-resource fleet launch still sends a valid fleet", inputFleetNegativeResourceLaunchBody.actionIssue ?? {}),
+      check(
+        !inputHardeningReady ||
+          (inputFleetNegativeResourceLaunchBody.fleet?.missions?.length ?? -1) ===
+            (inputFleetInitialBody.fleet?.missions?.length ?? 0) + 1,
+        "negative-resource fleet launch creates exactly one fleet row",
+        {
+          before: inputFleetInitialBody.fleet?.missions?.length,
+          after: inputFleetNegativeResourceLaunchBody.fleet?.missions?.length
+        }
+      ),
+      check(
+        !inputHardeningReady || Object.keys(inputFleetNegativeResourceMission?.loadedResources ?? {}).length === 0,
+        "negative-resource fleet launch stores no loaded resources",
+        inputFleetNegativeResourceMission ?? {}
+      ),
+      check(!inputHardeningReady || inputFleetNegativeShips.status === 200, "negative-ship fleet launch returns HTTP 200", {
+        status: inputFleetNegativeShips.status
+      }),
+      check(!inputHardeningReady || inputFleetNegativeShipsBody.actionIssue?.code === "no_ships", "negative ship counts keep legacy no_ships issue", inputFleetNegativeShipsBody.actionIssue ?? {}),
+      check(
+        !inputHardeningReady ||
+          (inputFleetNegativeShipsBody.fleet?.missions?.length ?? -1) ===
+            (inputFleetNegativeResourceLaunchBody.fleet?.missions?.length ?? -2),
+        "negative ship counts do not create a second fleet row",
+        {
+          before: inputFleetNegativeResourceLaunchBody.fleet?.missions?.length,
+          after: inputFleetNegativeShipsBody.fleet?.missions?.length
+        }
+      ),
+      check(!inputHardeningReady || inputFleetNonNumericShips.status === 400, "non-numeric fleet shipcount JSON is rejected", {
+        status: inputFleetNonNumericShips.status,
+        body: inputFleetNonNumericShips.body
+      }),
+      check(!inputHardeningReady || inputFleetNonNumericShips.body.includes("invalid fleet payload"), "non-numeric fleet shipcount response is explicit", { body: inputFleetNonNumericShips.body }),
+      check(!inputHardeningReady || inputShipyardInitial.status === 200, "input hardening shipyard screen loads", { status: inputShipyardInitial.status }),
+      check(!inputHardeningReady || inputShipyardInitialBody.shipyard?.hasShipyard === true, "input hardening shipyard fixture has a shipyard", inputShipyardInitialBody.shipyard ?? {}),
+      check(!inputHardeningReady || inputShipyardMissingOrders.status === 200, "missing shipyard orders return HTTP 200", { status: inputShipyardMissingOrders.status }),
+      check(!inputHardeningReady || inputShipyardMissingOrdersBody.actionIssue?.code === "invalid_building", "missing shipyard orders are a no-op invalid action", inputShipyardMissingOrdersBody.actionIssue ?? {}),
+      check(
+        !inputHardeningReady ||
+          (inputShipyardMissingOrdersBody.shipyard?.queue?.length ?? -1) === (inputShipyardInitialBody.shipyard?.queue?.length ?? 0),
+        "missing shipyard orders do not create queue tasks",
+        {
+          before: inputShipyardInitialBody.shipyard?.queue?.length,
+          after: inputShipyardMissingOrdersBody.shipyard?.queue?.length
+        }
+      ),
+      check(!inputHardeningReady || inputShipyardNegativeOrders.status === 200, "negative shipyard orders return HTTP 200", { status: inputShipyardNegativeOrders.status }),
+      check(!inputHardeningReady || inputShipyardNegativeOrdersBody.actionIssue?.code === "invalid_building", "negative shipyard orders are a no-op invalid action", inputShipyardNegativeOrdersBody.actionIssue ?? {}),
+      check(
+        !inputHardeningReady ||
+          (inputShipyardNegativeOrdersBody.shipyard?.queue?.length ?? -1) === (inputShipyardInitialBody.shipyard?.queue?.length ?? 0),
+        "negative shipyard orders do not create queue tasks",
+        {
+          before: inputShipyardInitialBody.shipyard?.queue?.length,
+          after: inputShipyardNegativeOrdersBody.shipyard?.queue?.length
+        }
+      ),
+      check(!inputHardeningReady || inputShipyardNonNumericOrders.status === 400, "non-numeric shipyard order JSON is rejected", {
+        status: inputShipyardNonNumericOrders.status,
+        body: inputShipyardNonNumericOrders.body
+      }),
+      check(!inputHardeningReady || inputShipyardNonNumericOrders.body.includes("invalid shipyard mutation"), "non-numeric shipyard order response is explicit", { body: inputShipyardNonNumericOrders.body }),
+      check(!inputHardeningReady || inputDefenseInitial.status === 200, "input hardening defense screen loads", { status: inputDefenseInitial.status }),
+      check(!inputHardeningReady || inputDefenseNegativeOrders.status === 200, "negative missile defense orders return HTTP 200", { status: inputDefenseNegativeOrders.status }),
+      check(!inputHardeningReady || inputDefenseNegativeOrdersBody.actionIssue?.code === "invalid_building", "negative missile defense orders are a no-op invalid action", inputDefenseNegativeOrdersBody.actionIssue ?? {}),
+      check(
+        !inputHardeningReady ||
+          defenseItemByID(inputDefenseNegativeOrdersBody, inputHardeningABM)?.count === defenseItemByID(inputDefenseInitialBody, inputHardeningABM)?.count &&
+            defenseItemByID(inputDefenseNegativeOrdersBody, inputHardeningIPM)?.count === defenseItemByID(inputDefenseInitialBody, inputHardeningIPM)?.count,
+        "negative missile defense orders leave ABM and IPM counts unchanged",
+        {
+          beforeABM: defenseItemByID(inputDefenseInitialBody, inputHardeningABM),
+          afterABM: defenseItemByID(inputDefenseNegativeOrdersBody, inputHardeningABM),
+          beforeIPM: defenseItemByID(inputDefenseInitialBody, inputHardeningIPM),
+          afterIPM: defenseItemByID(inputDefenseNegativeOrdersBody, inputHardeningIPM)
+        }
+      ),
+      check(!inputHardeningReady || inputDefenseNonNumericOrders.status === 400, "non-numeric missile defense order JSON is rejected", {
+        status: inputDefenseNonNumericOrders.status,
+        body: inputDefenseNonNumericOrders.body
+      }),
+      check(!inputHardeningReady || inputDefenseNonNumericOrders.body.includes("invalid defense mutation"), "non-numeric missile defense response is explicit", { body: inputDefenseNonNumericOrders.body }),
+      check(!inputHardeningReady || inputShipyardOversizedOrder.status === 200, "oversized shipyard order returns HTTP 200", { status: inputShipyardOversizedOrder.status }),
+      check(
+        !inputHardeningReady ||
+          Number(inputShipyardOversizedQueue?.count ?? 0) === inputHardeningMaxShipyard &&
+            Number(inputShipyardOversizedQueue?.unitId ?? 0) === inputHardeningSmallCargo,
+        "oversized shipyard order is capped by max shipyard size",
+        {
+          maxShipyard: inputHardeningMaxShipyard,
+          queue: inputShipyardOversizedQueue,
+          smallCargo: shipyardItemByID(inputShipyardOversizedOrderBody, inputHardeningSmallCargo)
+        }
+      ),
       check(hardeningMalformedResources.status === 400, "resources rejects malformed JSON payload", { status: hardeningMalformedResources.status, body: hardeningMalformedResources.body }),
       check(hardeningMalformedResources.body.includes("invalid resource production request"), "resources malformed payload response is explicit", { body: hardeningMalformedResources.body }),
       check(hardeningMalformedOptions.status === 400, "options rejects malformed JSON payload", { status: hardeningMalformedOptions.status, body: hardeningMalformedOptions.body }),
