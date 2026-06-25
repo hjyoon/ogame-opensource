@@ -422,6 +422,14 @@ try {
     Number(messageBulkDeleteFixture.visible_limit ?? 0) > 0 &&
     Array.isArray(messageBulkDeleteFixture.expected_remaining_subjects)
   );
+  const messageNonmarkedDeleteFixture = smokeFixture?.message_nonmarked_delete ?? {};
+  const messageNonmarkedDeleteReady = Boolean(
+    typeof messageNonmarkedDeleteFixture.user?.login === "string" &&
+    Number(messageNonmarkedDeleteFixture.user?.home_planet_id ?? 0) > 0 &&
+    Number(messageNonmarkedDeleteFixture.selected_id ?? 0) > 0 &&
+    Number(messageNonmarkedDeleteFixture.unselected_a_id ?? 0) > 0 &&
+    Number(messageNonmarkedDeleteFixture.unselected_b_id ?? 0) > 0
+  );
   const resourceScopeFixture = smokeFixture?.resource_scope ?? {};
   const resourceScopeReady = Boolean(
     typeof resourceScopeFixture.owner?.login === "string" &&
@@ -2812,6 +2820,32 @@ try {
     .filter((subject) => subject.startsWith(String(messageBulkDeleteFixture.prefix ?? "")))
     .sort();
 
+  const messageNonmarkedDeleteUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const messageNonmarkedDeleteLogin = messageNonmarkedDeleteReady
+    ? await loginGameUser(messageNonmarkedDeleteFixture.user.login, loginSmokePassword, messageNonmarkedDeleteUniverse)
+    : null;
+  const messageNonmarkedDeleteSearch = messageNonmarkedDeleteReady
+    ? withQueryParam(messageNonmarkedDeleteLogin?.search ?? "?session=", "cp", Number(messageNonmarkedDeleteFixture.user.home_planet_id))
+    : "";
+  const messageNonmarkedDeleteInitial = messageNonmarkedDeleteReady
+    ? await request(`/api/game/messages${messageNonmarkedDeleteSearch}`, {
+        headers: { Cookie: messageNonmarkedDeleteLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageNonmarkedDeleteInitialBody = parseJSON(messageNonmarkedDeleteInitial);
+  const messageNonmarkedDeletePost = messageNonmarkedDeleteReady
+    ? await request(`/api/game/messages${messageNonmarkedDeleteSearch}`, {
+        method: "POST",
+        headers: { Cookie: messageNonmarkedDeleteLogin?.cookiePair ?? "", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete",
+          deleteMode: "deletenonmarked",
+          messageIds: [Number(messageNonmarkedDeleteFixture.selected_id)]
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageNonmarkedDeletePostBody = parseJSON(messageNonmarkedDeletePost);
+
   const gameNotes = await request(`/api/game/notes${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -4603,6 +4637,44 @@ try {
         }
       ),
       check(!messageBulkDeleteReady || !messageBulkDeleteShown.body.includes(messageBulkDeleteLogin?.cookiePair ?? "missing-cookie"), "message bulk-delete response does not echo private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_message_delete_nonmarked_edges_api",
+    checks: [
+      check(!smokeFixtureFile || messageNonmarkedDeleteReady, "go smoke fixture exposes message nonmarked-delete user and message ids", { messageNonmarkedDeleteFixture }),
+      check(!messageNonmarkedDeleteReady || messageNonmarkedDeleteLogin?.response.status === 200, "message nonmarked-delete user can log in", {
+        status: messageNonmarkedDeleteLogin?.response.status
+      }),
+      check(!messageNonmarkedDeleteReady || messageNonmarkedDeleteInitial.status === 200, "message nonmarked-delete initial inbox returns HTTP 200", {
+        status: messageNonmarkedDeleteInitial.status
+      }),
+      check(
+        !messageNonmarkedDeleteReady ||
+          messageRowByID(messageNonmarkedDeleteInitialBody, Number(messageNonmarkedDeleteFixture.selected_id)) !== undefined &&
+          messageRowByID(messageNonmarkedDeleteInitialBody, Number(messageNonmarkedDeleteFixture.unselected_a_id)) !== undefined &&
+          messageRowByID(messageNonmarkedDeleteInitialBody, Number(messageNonmarkedDeleteFixture.unselected_b_id)) !== undefined,
+        "message nonmarked-delete initial inbox contains selected and unselected messages",
+        messageNonmarkedDeleteInitialBody.messages?.rows ?? []
+      ),
+      check(!messageNonmarkedDeleteReady || messageNonmarkedDeletePost.status === 200, "message deletenonmarked returns HTTP 200", {
+        status: messageNonmarkedDeletePost.status
+      }),
+      check(
+        !messageNonmarkedDeleteReady ||
+          messageRowByID(messageNonmarkedDeletePostBody, Number(messageNonmarkedDeleteFixture.selected_id)) !== undefined,
+        "message deletenonmarked preserves the selected message",
+        messageNonmarkedDeletePostBody.messages?.rows ?? []
+      ),
+      check(
+        !messageNonmarkedDeleteReady ||
+          messageRowByID(messageNonmarkedDeletePostBody, Number(messageNonmarkedDeleteFixture.unselected_a_id)) === undefined &&
+          messageRowByID(messageNonmarkedDeletePostBody, Number(messageNonmarkedDeleteFixture.unselected_b_id)) === undefined,
+        "message deletenonmarked deletes unselected visible messages",
+        messageNonmarkedDeletePostBody.messages?.rows ?? []
+      ),
+      check(!messageNonmarkedDeleteReady || !messageNonmarkedDeletePost.body.includes(messageNonmarkedDeleteLogin?.cookiePair ?? "missing-cookie"), "message nonmarked-delete response does not echo private cookie")
     ]
   }));
 

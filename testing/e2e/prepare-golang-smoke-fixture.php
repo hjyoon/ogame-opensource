@@ -1181,6 +1181,34 @@ function smoke_prepare_message_bulk_delete_fixture(string $password, array $near
     );
 }
 
+function smoke_prepare_message_nonmarked_delete_fixture(string $password, array $near): array
+{
+    global $db_prefix;
+
+    $user = smoke_prepare_user('gomsgnon', $password, 'gomsgnon@example.local', USER_TYPE_PLAYER);
+    $playerId = (int)$user['player_id'];
+    $planetId = (int)$user['home_planet_id'];
+
+    smoke_cleanup_alliances(array($playerId));
+    smoke_cleanup_fleets(array($playerId), array($planetId));
+    dbquery("DELETE FROM {$db_prefix}messages WHERE owner_id={$playerId}");
+    dbquery("UPDATE {$db_prefix}users SET com_until=0 WHERE player_id={$playerId}");
+    smoke_set_fleet_restriction_user_state($user, 10000);
+    smoke_prepare_planet($planetId, $playerId, 'GoMsgNon', smoke_find_empty_position($near));
+
+    $now = time();
+    return array(
+        'user' => array(
+            'login' => mb_strtolower($user['name'], 'UTF-8'),
+            'player_id' => $playerId,
+            'home_planet_id' => $planetId,
+        ),
+        'selected_id' => SendMessage($playerId, 'Go Msg Nonmarked', 'GoMsgNon selected', 'selected body', MTYP_MISC, $now + 3),
+        'unselected_a_id' => SendMessage($playerId, 'Go Msg Nonmarked', 'GoMsgNon unselected A', 'unselected a body', MTYP_MISC, $now + 2),
+        'unselected_b_id' => SendMessage($playerId, 'Go Msg Nonmarked', 'GoMsgNon unselected B', 'unselected b body', MTYP_MISC, $now + 1),
+    );
+}
+
 function smoke_prepare_resource_scope_fixture(string $password, array $near): array
 {
     global $db_prefix;
@@ -1267,6 +1295,7 @@ $buddyLifecycleFixture = smoke_prepare_buddy_lifecycle_fixture($password, $home)
 $messageScopeFixture = smoke_prepare_message_scope_fixture($password, $home);
 $messageRetentionFixture = smoke_prepare_message_retention_fixture($password, $home);
 $messageBulkDeleteFixture = smoke_prepare_message_bulk_delete_fixture($password, $home);
+$messageNonmarkedDeleteFixture = smoke_prepare_message_nonmarked_delete_fixture($password, $home);
 $resourceScopeFixture = smoke_prepare_resource_scope_fixture($password, $home);
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
@@ -1316,5 +1345,6 @@ echo json_encode(array(
 		'message_scope' => $messageScopeFixture,
 		'message_retention' => $messageRetentionFixture,
 		'message_bulk_delete' => $messageBulkDeleteFixture,
+		'message_nonmarked_delete' => $messageNonmarkedDeleteFixture,
 		'resource_scope' => $resourceScopeFixture,
 	), JSON_UNESCAPED_SLASHES) . PHP_EOL;
