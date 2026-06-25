@@ -101,6 +101,12 @@ function galaxyPlanetRow(body, planetID) {
     : undefined;
 }
 
+function buddyRowForPlayer(body, playerID) {
+  return Array.isArray(body.buddy?.rows)
+    ? body.buddy.rows.find((row) => Number(row.player?.playerId ?? 0) === Number(playerID))
+    : undefined;
+}
+
 async function readOptionalJSON(path) {
   if (!path) {
     return {};
@@ -363,6 +369,15 @@ try {
     Number(feedFixture.owner_message_id ?? 0) > 0 &&
     Number(feedFixture.foreign_message_id ?? 0) > 0 &&
     String(feedFixture.owner_secret ?? "") !== "";
+  const buddyLifecycleFixture = smokeFixture?.buddy_lifecycle ?? {};
+  const buddyLifecycleReady = Boolean(
+    typeof buddyLifecycleFixture.requester?.login === "string" &&
+    typeof buddyLifecycleFixture.recipient?.login === "string" &&
+    Number(buddyLifecycleFixture.requester?.player_id ?? 0) > 0 &&
+    Number(buddyLifecycleFixture.recipient?.player_id ?? 0) > 0 &&
+    Number(buddyLifecycleFixture.requester?.home_planet_id ?? 0) > 0 &&
+    Number(buddyLifecycleFixture.recipient?.home_planet_id ?? 0) > 0
+  );
   const passwordRecoveryFixture = smokeFixture?.password_recovery ?? {};
   const passwordRecoveryFixtureReady =
     typeof passwordRecoveryFixture.password === "string" &&
@@ -2337,6 +2352,124 @@ try {
     gameBuddyWithoutCookieBody = {};
   }
 
+  const buddyLifecycleUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const buddyLifecycleRequesterLogin = buddyLifecycleReady
+    ? await loginGameUser(buddyLifecycleFixture.requester.login, loginSmokePassword, buddyLifecycleUniverse)
+    : null;
+  const buddyLifecycleRecipientLogin = buddyLifecycleReady
+    ? await loginGameUser(buddyLifecycleFixture.recipient.login, loginSmokePassword, buddyLifecycleUniverse)
+    : null;
+  const buddyLifecycleRequesterSearch = buddyLifecycleReady
+    ? withQueryParam(buddyLifecycleRequesterLogin?.search ?? "?session=", "cp", Number(buddyLifecycleFixture.requester.home_planet_id))
+    : "";
+  const buddyLifecycleRecipientSearch = buddyLifecycleReady
+    ? withQueryParam(buddyLifecycleRecipientLogin?.search ?? "?session=", "cp", Number(buddyLifecycleFixture.recipient.home_planet_id))
+    : "";
+  const buddyLifecyclePost = async (login, search, payload) => request(`/api/game/buddy${search}`, {
+    method: "POST",
+    headers: { Cookie: login?.cookiePair ?? "", "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const buddyLifecycleRequestForm = buddyLifecycleReady
+    ? await request(`/api/game/buddy${withQueryParams(buddyLifecycleRequesterSearch, { action: 7, buddy_id: Number(buddyLifecycleFixture.recipient.player_id) })}`, {
+        headers: { Cookie: buddyLifecycleRequesterLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const buddyLifecycleRequestFormBody = parseJSON(buddyLifecycleRequestForm);
+  const buddyLifecycleText = `Go buddy ${runId}`;
+  const buddyLifecycleAdd = buddyLifecycleReady
+    ? await buddyLifecyclePost(buddyLifecycleRequesterLogin, buddyLifecycleRequesterSearch, {
+        action: 1,
+        buddyId: Number(buddyLifecycleFixture.recipient.player_id),
+        text: `${buddyLifecycleText} reject`
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const buddyLifecycleAddBody = parseJSON(buddyLifecycleAdd);
+  const buddyLifecycleDuplicateAdd = buddyLifecycleReady
+    ? await buddyLifecyclePost(buddyLifecycleRequesterLogin, buddyLifecycleRequesterSearch, {
+        action: 1,
+        buddyId: Number(buddyLifecycleFixture.recipient.player_id),
+        text: `${buddyLifecycleText} duplicate`
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const buddyLifecycleDuplicateAddBody = parseJSON(buddyLifecycleDuplicateAdd);
+  const buddyLifecycleOutgoingBeforeReject = buddyLifecycleReady
+    ? await request(`/api/game/buddy${withQueryParam(buddyLifecycleRequesterSearch, "action", 6)}`, {
+        headers: { Cookie: buddyLifecycleRequesterLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const buddyLifecycleOutgoingBeforeRejectBody = parseJSON(buddyLifecycleOutgoingBeforeReject);
+  const buddyLifecycleOutgoingRejectRow = buddyRowForPlayer(buddyLifecycleOutgoingBeforeRejectBody, Number(buddyLifecycleFixture.recipient?.player_id ?? 0));
+  const buddyLifecycleSelfAccept = buddyLifecycleReady && Number(buddyLifecycleOutgoingRejectRow?.buddyId ?? 0) > 0
+    ? await buddyLifecyclePost(buddyLifecycleRequesterLogin, buddyLifecycleRequesterSearch, {
+        action: 2,
+        buddyId: Number(buddyLifecycleOutgoingRejectRow.buddyId)
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const buddyLifecycleSelfAcceptBody = parseJSON(buddyLifecycleSelfAccept);
+  const buddyLifecycleIncomingBeforeReject = buddyLifecycleReady
+    ? await request(`/api/game/buddy${withQueryParam(buddyLifecycleRecipientSearch, "action", 5)}`, {
+        headers: { Cookie: buddyLifecycleRecipientLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const buddyLifecycleIncomingBeforeRejectBody = parseJSON(buddyLifecycleIncomingBeforeReject);
+  const buddyLifecycleIncomingRejectRow = buddyRowForPlayer(buddyLifecycleIncomingBeforeRejectBody, Number(buddyLifecycleFixture.requester?.player_id ?? 0));
+  const buddyLifecycleDecline = buddyLifecycleReady && Number(buddyLifecycleIncomingRejectRow?.buddyId ?? 0) > 0
+    ? await buddyLifecyclePost(buddyLifecycleRecipientLogin, buddyLifecycleRecipientSearch, {
+        action: 3,
+        buddyId: Number(buddyLifecycleIncomingRejectRow.buddyId)
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const buddyLifecycleDeclineBody = parseJSON(buddyLifecycleDecline);
+  const buddyLifecycleIncomingAfterDecline = buddyLifecycleReady
+    ? await request(`/api/game/buddy${withQueryParam(buddyLifecycleRecipientSearch, "action", 5)}`, {
+        headers: { Cookie: buddyLifecycleRecipientLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const buddyLifecycleIncomingAfterDeclineBody = parseJSON(buddyLifecycleIncomingAfterDecline);
+  const buddyLifecycleAddAccepted = buddyLifecycleReady
+    ? await buddyLifecyclePost(buddyLifecycleRequesterLogin, buddyLifecycleRequesterSearch, {
+        action: 1,
+        buddyId: Number(buddyLifecycleFixture.recipient.player_id),
+        text: `${buddyLifecycleText} accept`
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const buddyLifecycleAddAcceptedBody = parseJSON(buddyLifecycleAddAccepted);
+  const buddyLifecycleIncomingBeforeAccept = buddyLifecycleReady
+    ? await request(`/api/game/buddy${withQueryParam(buddyLifecycleRecipientSearch, "action", 5)}`, {
+        headers: { Cookie: buddyLifecycleRecipientLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const buddyLifecycleIncomingBeforeAcceptBody = parseJSON(buddyLifecycleIncomingBeforeAccept);
+  const buddyLifecycleIncomingAcceptRow = buddyRowForPlayer(buddyLifecycleIncomingBeforeAcceptBody, Number(buddyLifecycleFixture.requester?.player_id ?? 0));
+  const buddyLifecycleAccept = buddyLifecycleReady && Number(buddyLifecycleIncomingAcceptRow?.buddyId ?? 0) > 0
+    ? await buddyLifecyclePost(buddyLifecycleRecipientLogin, buddyLifecycleRecipientSearch, {
+        action: 2,
+        buddyId: Number(buddyLifecycleIncomingAcceptRow.buddyId)
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const buddyLifecycleAcceptBody = parseJSON(buddyLifecycleAccept);
+  const buddyLifecycleRequesterHome = buddyLifecycleReady
+    ? await request(`/api/game/buddy${buddyLifecycleRequesterSearch}`, {
+        headers: { Cookie: buddyLifecycleRequesterLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const buddyLifecycleRequesterHomeBody = parseJSON(buddyLifecycleRequesterHome);
+  const buddyLifecycleAcceptedRow = buddyRowForPlayer(buddyLifecycleRequesterHomeBody, Number(buddyLifecycleFixture.recipient?.player_id ?? 0));
+  const buddyLifecycleDelete = buddyLifecycleReady && Number(buddyLifecycleAcceptedRow?.buddyId ?? 0) > 0
+    ? await buddyLifecyclePost(buddyLifecycleRequesterLogin, buddyLifecycleRequesterSearch, {
+        action: 8,
+        buddyId: Number(buddyLifecycleAcceptedRow.buddyId)
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const buddyLifecycleDeleteBody = parseJSON(buddyLifecycleDelete);
+  const buddyLifecycleRequesterAfterDelete = buddyLifecycleReady
+    ? await request(`/api/game/buddy${buddyLifecycleRequesterSearch}`, {
+        headers: { Cookie: buddyLifecycleRequesterLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const buddyLifecycleRequesterAfterDeleteBody = parseJSON(buddyLifecycleRequesterAfterDelete);
+
   const targetLogin = await loginGameUser("gophalaxtarget", loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888");
 
   const gameMessages = await request(`/api/game/messages${sessionSearch}`, {
@@ -3896,6 +4029,107 @@ try {
       check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "password_required" && issue.legacyErrorCode === 2), "missing password maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "universe_required"), "missing universe is reported for multi-universe entry", invalidLoginBody)
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_buddy_lifecycle_edges_api",
+    checks: [
+      check(!smokeFixtureFile || buddyLifecycleReady, "go smoke fixture exposes buddy lifecycle users", { buddyLifecycleFixture }),
+      check(!buddyLifecycleReady || buddyLifecycleRequesterLogin?.response.status === 200, "buddy requester can log in", {
+        status: buddyLifecycleRequesterLogin?.response.status
+      }),
+      check(!buddyLifecycleReady || buddyLifecycleRecipientLogin?.response.status === 200, "buddy recipient can log in", {
+        status: buddyLifecycleRecipientLogin?.response.status
+      }),
+      check(!buddyLifecycleReady || buddyLifecycleRequestForm.status === 200, "buddy request form returns HTTP 200", {
+        status: buddyLifecycleRequestForm.status
+      }),
+      check(!buddyLifecycleReady || buddyLifecycleRequestFormBody.buddy?.action === 7, "buddy request form keeps legacy action 7", buddyLifecycleRequestFormBody.buddy ?? {}),
+      check(
+        !buddyLifecycleReady ||
+          buddyLifecycleRequestFormBody.buddy?.target?.playerId === Number(buddyLifecycleFixture.recipient?.player_id),
+        "buddy request form resolves the requested target player",
+        buddyLifecycleRequestFormBody.buddy?.target ?? {}
+      ),
+      check(!buddyLifecycleReady || buddyLifecycleAdd.status === 200, "buddy add request returns HTTP 200", {
+        status: buddyLifecycleAdd.status
+      }),
+      check(!buddyLifecycleReady || buddyLifecycleAddBody.buddy?.action === 0, "buddy add returns the legacy home action", buddyLifecycleAddBody.buddy ?? {}),
+      check(!buddyLifecycleReady || buddyLifecycleDuplicateAdd.status === 200, "buddy duplicate request returns HTTP 200", {
+        status: buddyLifecycleDuplicateAdd.status
+      }),
+      check(
+        !buddyLifecycleReady || buddyLifecycleDuplicateAddBody.actionIssue?.code === "already_sent",
+        "buddy duplicate request returns the legacy already-sent issue",
+        buddyLifecycleDuplicateAddBody.actionIssue ?? {}
+      ),
+      check(!buddyLifecycleReady || buddyLifecycleOutgoingBeforeReject.status === 200, "buddy outgoing list returns HTTP 200 before reject", {
+        status: buddyLifecycleOutgoingBeforeReject.status
+      }),
+      check(
+        !buddyLifecycleReady ||
+          Number(buddyLifecycleOutgoingRejectRow?.player?.playerId ?? 0) === Number(buddyLifecycleFixture.recipient?.player_id) &&
+          String(buddyLifecycleOutgoingRejectRow?.text ?? "").includes("reject"),
+        "buddy outgoing list contains the pending request text",
+        buddyLifecycleOutgoingRejectRow ?? {}
+      ),
+      check(!buddyLifecycleReady || buddyLifecycleSelfAccept.status === 200, "buddy sender self-accept guard returns HTTP 200", {
+        status: buddyLifecycleSelfAccept.status
+      }),
+      check(!buddyLifecycleReady || buddyLifecycleSelfAcceptBody.buddy?.action === 5, "buddy sender self-accept is a no-op with incoming screen", buddyLifecycleSelfAcceptBody.buddy ?? {}),
+      check(!buddyLifecycleReady || buddyLifecycleIncomingBeforeReject.status === 200, "buddy incoming list returns HTTP 200 before reject", {
+        status: buddyLifecycleIncomingBeforeReject.status
+      }),
+      check(
+        !buddyLifecycleReady || Number(buddyLifecycleIncomingRejectRow?.player?.playerId ?? 0) === Number(buddyLifecycleFixture.requester?.player_id),
+        "buddy incoming list exposes the requester pending row",
+        buddyLifecycleIncomingRejectRow ?? {}
+      ),
+      check(!buddyLifecycleReady || buddyLifecycleDecline.status === 200, "buddy recipient decline returns HTTP 200", {
+        status: buddyLifecycleDecline.status
+      }),
+      check(!buddyLifecycleReady || buddyLifecycleDeclineBody.buddy?.action === 5, "buddy decline returns the incoming screen", buddyLifecycleDeclineBody.buddy ?? {}),
+      check(
+        !buddyLifecycleReady ||
+          buddyRowForPlayer(buddyLifecycleIncomingAfterDeclineBody, Number(buddyLifecycleFixture.requester?.player_id)) === undefined,
+        "buddy declined request is removed from incoming list",
+        buddyLifecycleIncomingAfterDeclineBody.buddy?.rows ?? []
+      ),
+      check(!buddyLifecycleReady || buddyLifecycleAddAccepted.status === 200, "buddy second add request returns HTTP 200", {
+        status: buddyLifecycleAddAccepted.status
+      }),
+      check(!buddyLifecycleReady || buddyLifecycleAddAcceptedBody.actionIssue === undefined, "buddy second add is accepted as a new pending request", buddyLifecycleAddAcceptedBody.actionIssue ?? {}),
+      check(
+        !buddyLifecycleReady || Number(buddyLifecycleIncomingAcceptRow?.player?.playerId ?? 0) === Number(buddyLifecycleFixture.requester?.player_id),
+        "buddy incoming list exposes the second pending row",
+        buddyLifecycleIncomingAcceptRow ?? {}
+      ),
+      check(!buddyLifecycleReady || buddyLifecycleAccept.status === 200, "buddy recipient accept returns HTTP 200", {
+        status: buddyLifecycleAccept.status
+      }),
+      check(!buddyLifecycleReady || buddyLifecycleAcceptBody.buddy?.action === 5, "buddy accept returns the incoming screen", buddyLifecycleAcceptBody.buddy ?? {}),
+      check(!buddyLifecycleReady || buddyLifecycleRequesterHome.status === 200, "buddy requester home reload returns HTTP 200", {
+        status: buddyLifecycleRequesterHome.status
+      }),
+      check(
+        !buddyLifecycleReady ||
+          Number(buddyLifecycleAcceptedRow?.player?.playerId ?? 0) === Number(buddyLifecycleFixture.recipient?.player_id) &&
+          String(buddyLifecycleAcceptedRow?.text ?? "").includes("accept"),
+        "buddy accepted relation appears on requester home",
+        buddyLifecycleAcceptedRow ?? {}
+      ),
+      check(!buddyLifecycleReady || buddyLifecycleDelete.status === 200, "buddy requester delete returns HTTP 200", {
+        status: buddyLifecycleDelete.status
+      }),
+      check(!buddyLifecycleReady || buddyLifecycleDeleteBody.buddy?.action === 0, "buddy delete returns the home screen", buddyLifecycleDeleteBody.buddy ?? {}),
+      check(
+        !buddyLifecycleReady ||
+          buddyRowForPlayer(buddyLifecycleRequesterAfterDeleteBody, Number(buddyLifecycleFixture.recipient?.player_id)) === undefined,
+        "buddy delete removes the accepted relation from requester home",
+        buddyLifecycleRequesterAfterDeleteBody.buddy?.rows ?? []
+      ),
+      check(!buddyLifecycleReady || !buddyLifecycleDelete.body.includes(buddyLifecycleRequesterLogin?.cookiePair ?? "missing-cookie"), "buddy lifecycle response does not echo requester private cookie")
     ]
   }));
 

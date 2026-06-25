@@ -1023,6 +1023,42 @@ function smoke_prepare_galaxy_missile_fixture(string $password, array $near): ar
     );
 }
 
+function smoke_prepare_buddy_lifecycle_fixture(string $password, array $near): array
+{
+    global $db_prefix;
+
+    $requester = smoke_prepare_user('gobuddya', $password, 'gobuddya@example.local', USER_TYPE_PLAYER);
+    $recipient = smoke_prepare_user('gobuddyb', $password, 'gobuddyb@example.local', USER_TYPE_PLAYER);
+    $users = array($requester, $recipient);
+    $userIds = array_map(fn($user) => (int)$user['player_id'], $users);
+    $planetIds = array_map(fn($user) => (int)$user['home_planet_id'], $users);
+    $userList = implode(',', $userIds);
+
+    smoke_cleanup_alliances($userIds);
+    smoke_cleanup_fleets($userIds, $planetIds);
+    dbquery("DELETE FROM {$db_prefix}buddy WHERE request_from IN ({$userList}) OR request_to IN ({$userList})");
+    dbquery("DELETE FROM {$db_prefix}messages WHERE owner_id IN ({$userList}) AND subj IN ('Buddy request', 'confirm')");
+
+    $positions = smoke_find_empty_positions($near, count($users));
+    foreach ($users as $index => $user) {
+        smoke_set_fleet_restriction_user_state($user, 10000);
+        smoke_prepare_planet((int)$user['home_planet_id'], (int)$user['player_id'], 'GoBuddy' . $index, $positions[$index]);
+    }
+
+    return array(
+        'requester' => array(
+            'login' => mb_strtolower($requester['name'], 'UTF-8'),
+            'player_id' => (int)$requester['player_id'],
+            'home_planet_id' => (int)$requester['home_planet_id'],
+        ),
+        'recipient' => array(
+            'login' => mb_strtolower($recipient['name'], 'UTF-8'),
+            'player_id' => (int)$recipient['player_id'],
+            'home_planet_id' => (int)$recipient['home_planet_id'],
+        ),
+    );
+}
+
 $name = getenv('OGAME_GO_LOGIN_SMOKE_USER') ?: 'legor';
 $password = getenv('OGAME_GO_LOGIN_SMOKE_PASS') ?: 'admin';
 $email = getenv('OGAME_GO_LOGIN_SMOKE_EMAIL') ?: ($name . '@example.local');
@@ -1064,6 +1100,7 @@ $fleetRestrictionFixture = smoke_prepare_fleet_restriction_fixture($password, $h
 $fleetTemplateFixture = smoke_prepare_fleet_template_fixture($password, $home);
 $galaxyRemoteFixture = smoke_prepare_galaxy_remote_fixture($password, $home);
 $galaxyMissileFixture = smoke_prepare_galaxy_missile_fixture($password, $home);
+$buddyLifecycleFixture = smoke_prepare_buddy_lifecycle_fixture($password, $home);
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
 echo json_encode(array(
@@ -1108,4 +1145,5 @@ echo json_encode(array(
 		'fleet_templates' => $fleetTemplateFixture,
 		'galaxy_remote' => $galaxyRemoteFixture,
 		'galaxy_missile' => $galaxyMissileFixture,
+		'buddy_lifecycle' => $buddyLifecycleFixture,
 	), JSON_UNESCAPED_SLASHES) . PHP_EOL;
