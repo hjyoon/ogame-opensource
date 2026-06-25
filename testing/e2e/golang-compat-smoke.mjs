@@ -3086,7 +3086,8 @@ try {
     : { status: 0, headers: {}, body: "{}" };
   const socialAccessForeignBuildingsCPBody = parseJSON(socialAccessForeignBuildingsCP);
 
-  const gameResources = await request(`/api/game/resources${sessionSearch}`, {
+  const resourcesSearch = basePlanetID ? withQueryParam(sessionSearch, "cp", basePlanetID) : sessionSearch;
+  const gameResources = await request(`/api/game/resources${resourcesSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
   let gameResourcesBody = {};
@@ -3096,7 +3097,7 @@ try {
     gameResourcesBody = {};
   }
 
-  const gameResourcesUpdate = await request(`/api/game/resources${sessionSearch}`, {
+  const gameResourcesUpdate = await request(`/api/game/resources${resourcesSearch}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
     body: JSON.stringify({
@@ -3117,7 +3118,7 @@ try {
     gameResourcesUpdateBody = {};
   }
 
-  const gameResourcesWithoutCookie = await request(`/api/game/resources${sessionSearch}`);
+  const gameResourcesWithoutCookie = await request(`/api/game/resources${resourcesSearch}`);
   let gameResourcesWithoutCookieBody = {};
   try {
     gameResourcesWithoutCookieBody = JSON.parse(gameResourcesWithoutCookie.body);
@@ -3176,6 +3177,25 @@ try {
       })
     : { status: 0, headers: {}, body: "{}" };
   const resourceScopeForeignAfterUpdateBody = parseJSON(resourceScopeForeignAfterUpdate);
+  const hardeningResourcesSearch = resourceScopeReady ? resourceScopeOwnerSearch : resourcesSearch;
+  const hardeningResourcesCookie = resourceScopeReady ? resourceScopeOwnerLogin?.cookiePair ?? "" : sessionCookiePair;
+  const hardeningResourcesUpdate = await request(`/api/game/resources${hardeningResourcesSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: hardeningResourcesCookie },
+    body: JSON.stringify({
+      production: {
+        1: -250,
+        2: "not-a-number",
+        3: 35,
+        4: 100
+      }
+    })
+  });
+  const hardeningResourcesUpdateBody = parseJSON(hardeningResourcesUpdate);
+  const hardeningResourceMetal = resourceRowByID(hardeningResourcesUpdateBody, 1);
+  const hardeningResourceCrystal = resourceRowByID(hardeningResourcesUpdateBody, 2);
+  const hardeningResourceDeuterium = resourceRowByID(hardeningResourcesUpdateBody, 3);
+  const hardeningResourceSolar = resourceRowByID(hardeningResourcesUpdateBody, 4);
 
   const gameMerchant = await request(`/api/game/merchant${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -3923,9 +3943,14 @@ try {
   const hardeningInvalidMessageTarget = await request(`/api/game/messages${sessionSearch}&messageziel=abc`, {
     headers: { Cookie: sessionCookiePair }
   });
-  const hardeningMalformedResources = await request(`/api/game/resources${sessionSearch}`, {
+  const hardeningResourcesTooHigh = await request(`/api/game/resources${hardeningResourcesSearch}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+    headers: { "Content-Type": "application/json", Cookie: hardeningResourcesCookie },
+    body: JSON.stringify({ production: { 1: 101 } })
+  });
+  const hardeningMalformedResources = await request(`/api/game/resources${hardeningResourcesSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: hardeningResourcesCookie },
     body: "{"
   });
   const hardeningMalformedOptions = await request(`/api/game/options${sessionSearch}`, {
@@ -5677,6 +5702,26 @@ try {
       check(hardeningInvalidReportID.body.includes("invalid report id"), "report invalid id response is explicit", { body: hardeningInvalidReportID.body }),
       check(hardeningInvalidMessageTarget.status === 400, "messages rejects non-numeric compose target", { status: hardeningInvalidMessageTarget.status, body: hardeningInvalidMessageTarget.body }),
       check(hardeningInvalidMessageTarget.body.includes("invalid message target"), "message target response is explicit", { body: hardeningInvalidMessageTarget.body }),
+      check(hardeningResourcesUpdate.status === 200, "resource hardening update returns HTTP 200", { status: hardeningResourcesUpdate.status }),
+      check(
+        hardeningResourceMetal?.percent === 0 &&
+          hardeningResourceCrystal?.percent === 0 &&
+          hardeningResourceDeuterium?.percent === 40 &&
+          hardeningResourceSolar?.percent === 100,
+        "resource production percents are clamped, parsed, and rounded like legacy",
+        {
+          metal: hardeningResourceMetal,
+          crystal: hardeningResourceCrystal,
+          deuterium: hardeningResourceDeuterium,
+          solar: hardeningResourceSolar
+        }
+      ),
+      check(hardeningResourcesTooHigh.status === 400, "resources reject production percent above 100", { status: hardeningResourcesTooHigh.status, body: hardeningResourcesTooHigh.body }),
+      check(hardeningResourcesTooHigh.body.includes("invalid resource production request"), "resources above-100 response is explicit", { body: hardeningResourcesTooHigh.body }),
+      check(gameOptionsUpdateBody.options?.settings?.sortBy === 2, "options hardening caps sort field", gameOptionsUpdateBody.options?.settings ?? {}),
+      check(gameOptionsUpdateBody.options?.settings?.sortOrder === 0, "options hardening clamps negative sort order", gameOptionsUpdateBody.options?.settings ?? {}),
+      check(gameOptionsUpdateBody.options?.settings?.maxSpy === 1, "options hardening clamps negative spy count", gameOptionsUpdateBody.options?.settings ?? {}),
+      check(gameOptionsUpdateBody.options?.settings?.maxFleetMessages === 99, "options hardening caps oversized fleet message count", gameOptionsUpdateBody.options?.settings ?? {}),
       check(hardeningMalformedResources.status === 400, "resources rejects malformed JSON payload", { status: hardeningMalformedResources.status, body: hardeningMalformedResources.body }),
       check(hardeningMalformedResources.body.includes("invalid resource production request"), "resources malformed payload response is explicit", { body: hardeningMalformedResources.body }),
       check(hardeningMalformedOptions.status === 400, "options rejects malformed JSON payload", { status: hardeningMalformedOptions.status, body: hardeningMalformedOptions.body }),
