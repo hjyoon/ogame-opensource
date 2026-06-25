@@ -287,6 +287,7 @@ try {
   const runId = Date.now().toString(36);
   const smokeFixture = await readOptionalJSON(smokeFixtureFile);
   const phalanxFixture = smokeFixture?.phalanx ?? {};
+  const phalanxEdgesFixture = smokeFixture?.phalanx_edges ?? {};
   const adminQueueFixture = smokeFixture?.admin_queue ?? {};
   const adminQueueTaskId = Number(adminQueueFixture.task_id ?? 0);
   const adminQueueFixtureReady = adminQueueTaskId > 0;
@@ -330,6 +331,15 @@ try {
     Number(moonBuildFixture.moon_id ?? 0) > 0 &&
     Number(moonBuildFixture.queue_task_id ?? 0) > 0 &&
     String(moonBuildFixture.build_error ?? "") === "";
+  const phalanxLowDeutMoonID = Number(phalanxEdgesFixture.low_deut_moon_id ?? 0);
+  const phalanxLowDeutTargetPlanetID = Number(phalanxEdgesFixture.low_deut_target_planet_id ?? 0);
+  const phalanxLowDeuterium = Number(phalanxEdgesFixture.low_deuterium ?? 0);
+  const phalanxEdgesReady =
+    typeof phalanxEdgesFixture.low_login === "string" &&
+    phalanxEdgesFixture.low_login.length > 0 &&
+    phalanxLowDeutMoonID > 0 &&
+    phalanxLowDeutTargetPlanetID > 0 &&
+    phalanxLowDeuterium > 0;
   const feedFixture = smokeFixture?.feed ?? {};
   const feedFixtureReady =
     typeof feedFixture.rss_feed_id === "string" &&
@@ -3034,12 +3044,32 @@ try {
   const phalanxSearch = phalanxSourceMoonID > 0 && phalanxTargetPlanetID > 0
     ? withQueryParams(sessionSearch, { cp: phalanxSourceMoonID, spid: phalanxTargetPlanetID })
     : "";
+  const phalanxOwnTargetPlanetID = Number(phalanxEdgesFixture.own_target_planet_id ?? basePlanetID ?? 0);
+  const phalanxOwnTargetReady = phalanxSourceMoonID > 0 && phalanxOwnTargetPlanetID > 0;
   const gamePhalanxMissingSensor = phalanxTargetPlanetID > 0 && basePlanetID > 0
     ? await request(`/api/game/phalanx${withQueryParams(sessionSearch, { cp: basePlanetID, spid: phalanxTargetPlanetID })}`, {
         headers: { Cookie: sessionCookiePair }
       })
     : { status: 0, headers: {}, body: "{}" };
   const gamePhalanxMissingSensorBody = parseJSON(gamePhalanxMissingSensor);
+  const gamePhalanxOwnTarget = phalanxOwnTargetReady
+    ? await request(`/api/game/phalanx${withQueryParams(sessionSearch, { cp: phalanxSourceMoonID, spid: phalanxOwnTargetPlanetID })}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const gamePhalanxOwnTargetBody = parseJSON(gamePhalanxOwnTarget);
+  const phalanxLowDeutLogin = phalanxEdgesReady
+    ? await loginGameUser(phalanxEdgesFixture.low_login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const phalanxLowDeutSearch = phalanxEdgesReady
+    ? withQueryParams(phalanxLowDeutLogin?.search ?? "?session=", { cp: phalanxLowDeutMoonID, spid: phalanxLowDeutTargetPlanetID })
+    : "";
+  const gamePhalanxLowDeut = phalanxEdgesReady
+    ? await request(`/api/game/phalanx${phalanxLowDeutSearch}`, {
+        headers: { Cookie: phalanxLowDeutLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const gamePhalanxLowDeutBody = parseJSON(gamePhalanxLowDeut);
   const gamePhalanx = phalanxSearch
     ? await request(`/api/game/phalanx${phalanxSearch}`, {
         headers: { Cookie: sessionCookiePair }
@@ -3605,6 +3635,46 @@ try {
       check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "password_required" && issue.legacyErrorCode === 2), "missing password maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "universe_required"), "missing universe is reported for multi-universe entry", invalidLoginBody)
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_phalanx_edge_guards_api",
+    checks: [
+      check(!smokeFixtureFile || phalanxFixtureReady && phalanxOwnTargetReady && phalanxEdgesReady, "go smoke fixture exposes phalanx edge guard ids", {
+        phalanxFixture,
+        phalanxEdgesFixture
+      }),
+      check(!phalanxOwnTargetReady || gamePhalanxOwnTarget.status === 200, "game phalanx own-target guard returns HTTP 200", {
+        status: gamePhalanxOwnTarget.status
+      }),
+      check(
+        !phalanxOwnTargetReady || gamePhalanxOwnTargetBody.phalanx?.actionIssue?.code === "forbidden",
+        "game phalanx own-target scan keeps legacy forbidden issue",
+        gamePhalanxOwnTargetBody.phalanx?.actionIssue ?? {}
+      ),
+      check(
+        !phalanxOwnTargetReady || gamePhalanxOwnTargetBody.phalanx?.remainingDeuterium === Number(phalanxFixture.initial_deuterium ?? 0),
+        "game phalanx forbidden scan does not spend deuterium",
+        gamePhalanxOwnTargetBody.phalanx ?? {}
+      ),
+      check(!phalanxEdgesReady || phalanxLowDeutLogin?.response.status === 200, "phalanx low-deuterium user can log in", {
+        status: phalanxLowDeutLogin?.response.status
+      }),
+      check(!phalanxEdgesReady || gamePhalanxLowDeut.status === 200, "game phalanx low-deuterium guard returns HTTP 200", {
+        status: gamePhalanxLowDeut.status
+      }),
+      check(
+        !phalanxEdgesReady || gamePhalanxLowDeutBody.phalanx?.actionIssue?.code === "insufficient_deuterium",
+        "game phalanx low-deuterium scan keeps legacy insufficient-deuterium issue",
+        gamePhalanxLowDeutBody.phalanx?.actionIssue ?? {}
+      ),
+      check(
+        !phalanxEdgesReady || gamePhalanxLowDeutBody.phalanx?.remainingDeuterium === phalanxLowDeuterium,
+        "game phalanx low-deuterium scan does not spend deuterium",
+        gamePhalanxLowDeutBody.phalanx ?? {}
+      ),
+      check(!phalanxEdgesReady || !gamePhalanxLowDeut.body.includes(phalanxLowDeutLogin?.cookiePair ?? "missing-cookie"), "game phalanx edge response does not echo private cookie")
     ]
   }));
 

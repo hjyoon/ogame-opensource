@@ -260,6 +260,68 @@ function smoke_prepare_moon(int $homePlanetId, int $ownerId): int
     return $moonId;
 }
 
+function smoke_prepare_phalanx_edge_fixture(string $password, array $near, int $targetPlanetId, int $ownTargetPlanetId): array
+{
+    global $db_prefix, $buildmap, $fleetmap;
+
+    $user = smoke_prepare_user('gophalanxlow', $password, 'gophalanxlow@example.local', USER_TYPE_PLAYER);
+    $playerId = (int)$user['player_id'];
+    $homePlanetId = (int)$user['home_planet_id'];
+    smoke_cleanup_alliances(array($playerId));
+
+    $existingMoon = smoke_one_row("SELECT planet_id FROM {$db_prefix}planets WHERE owner_id={$playerId} AND type=" . PTYP_MOON . " AND name='GoPhalanxLowMoon' LIMIT 1");
+    $moonId = $existingMoon === null ? 0 : (int)$existingMoon['planet_id'];
+    smoke_cleanup_fleets(array($playerId), array($homePlanetId, $moonId));
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id={$playerId} AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "','" . QTYP_SHIPYARD . "','" . QTYP_FLEET . "')");
+    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id={$playerId} OR planet_id IN ({$homePlanetId}," . max(0, $moonId) . ")");
+
+    $coords = smoke_find_empty_position($near);
+    smoke_prepare_planet($homePlanetId, $playerId, 'GoPhalanxLow', $coords);
+    $home = LoadPlanetById($homePlanetId);
+    if ($home === null) {
+        throw new RuntimeException('Go phalanx edge home planet is missing.');
+    }
+
+    if ($moonId <= 0) {
+        $moonId = CreatePlanet((int)$home['g'], (int)$home['s'], (int)$home['p'], $playerId, 1, 1, 20, time());
+    }
+    if ($moonId <= 0) {
+        throw new RuntimeException('Failed to prepare Go phalanx edge fixture moon.');
+    }
+
+    $buildings = array();
+    foreach ($buildmap as $gid) {
+        $level = 0;
+        if ($gid === GID_B_LUNAR_BASE) {
+            $level = 1;
+        } elseif ($gid === GID_B_PHALANX) {
+            $level = 2;
+        }
+        $buildings[] = "`{$gid}`={$level}";
+    }
+    $ships = array();
+    foreach ($fleetmap as $gid) {
+        $ships[] = "`{$gid}`=0";
+    }
+    dbquery(
+        "UPDATE {$db_prefix}planets SET " .
+        "name='GoPhalanxLowMoon', g=" . (int)$home['g'] . ", s=" . (int)$home['s'] . ", p=" . (int)$home['p'] . ", type=" . PTYP_MOON . ", owner_id={$playerId}, " .
+        "`" . GID_RC_METAL . "`=1000000, `" . GID_RC_CRYSTAL . "`=1000000, `" . GID_RC_DEUTERIUM . "`=4000, " .
+        implode(',', $buildings) . ", " . implode(',', $ships) . ", " .
+        "prod1=0, prod2=0, prod3=0, prod4=0, prod12=0, prod212=0, fields=2, maxfields=4, lastpeek=" . time() . " " .
+        "WHERE planet_id={$moonId}"
+    );
+    InvalidateUserCache();
+
+    return array(
+        'low_login' => mb_strtolower($user['name'], 'UTF-8'),
+        'low_deut_moon_id' => $moonId,
+        'low_deut_target_planet_id' => $targetPlanetId,
+        'low_deuterium' => 4000,
+        'own_target_planet_id' => $ownTargetPlanetId,
+    );
+}
+
 function smoke_dispatch_phalanx_fleet(int $ownerId, int $originPlanetId, int $targetPlanetId): int
 {
     global $fleetmap, $transportableResources;
@@ -807,6 +869,11 @@ $vacationFreezeFixture = smoke_prepare_vacation_freeze_fixture($password, $home)
 $merchantFixture = smoke_prepare_merchant_fixture($password, $home);
 $moonBuildFixture = smoke_prepare_moon_build_fixture($password, $home);
 $moonId = smoke_prepare_moon((int)$login['home_planet_id'], (int)$login['player_id']);
+$targetHome = LoadPlanetById((int)$target['home_planet_id']);
+if ($targetHome === null) {
+    throw new RuntimeException('Go smoke target planet is missing.');
+}
+$phalanxEdgeFixture = smoke_prepare_phalanx_edge_fixture($password, $targetHome, (int)$target['home_planet_id'], (int)$login['home_planet_id']);
 $fleetId = smoke_dispatch_phalanx_fleet((int)$target['player_id'], (int)$target['home_planet_id'], (int)$login['home_planet_id']);
 $recallFleetId = smoke_dispatch_phalanx_fleet((int)$target['player_id'], (int)$target['home_planet_id'], (int)$login['home_planet_id']);
 $queueTaskId = smoke_prepare_admin_queue_task((int)$login['player_id']);
@@ -839,12 +906,13 @@ echo json_encode(array(
 	'phalanx' => array(
 		'source_moon_id' => $moonId,
 		'target_planet_id' => (int)$target['home_planet_id'],
-        'target_player_id' => (int)$target['player_id'],
-        'fleet_id' => $fleetId,
-        'initial_deuterium' => 20000,
-        'cost' => 5000,
-    ),
-    'feed' => $feedFixture,
+	        'target_player_id' => (int)$target['player_id'],
+	        'fleet_id' => $fleetId,
+	        'initial_deuterium' => 20000,
+	        'cost' => 5000,
+	    ),
+	    'phalanx_edges' => $phalanxEdgeFixture,
+	    'feed' => $feedFixture,
     'password_recovery' => $passwordRecoveryFixture,
     'admin_operations' => $adminOperationsFixture,
     'admin_audit' => $adminAuditFixture,
