@@ -107,6 +107,12 @@ function buddyRowForPlayer(body, playerID) {
     : undefined;
 }
 
+function messageRowByID(body, messageID) {
+  return Array.isArray(body.messages?.rows)
+    ? body.messages.rows.find((row) => Number(row.id ?? 0) === Number(messageID))
+    : undefined;
+}
+
 async function readOptionalJSON(path) {
   if (!path) {
     return {};
@@ -377,6 +383,17 @@ try {
     Number(buddyLifecycleFixture.recipient?.player_id ?? 0) > 0 &&
     Number(buddyLifecycleFixture.requester?.home_planet_id ?? 0) > 0 &&
     Number(buddyLifecycleFixture.recipient?.home_planet_id ?? 0) > 0
+  );
+  const messageScopeFixture = smokeFixture?.message_scope ?? {};
+  const messageScopeReady = Boolean(
+    typeof messageScopeFixture.owner?.login === "string" &&
+    typeof messageScopeFixture.foreign?.login === "string" &&
+    Number(messageScopeFixture.owner?.home_planet_id ?? 0) > 0 &&
+    Number(messageScopeFixture.foreign?.home_planet_id ?? 0) > 0 &&
+    Number(messageScopeFixture.owner_selected_id ?? 0) > 0 &&
+    Number(messageScopeFixture.owner_bulk_id ?? 0) > 0 &&
+    Number(messageScopeFixture.foreign_selected_id ?? 0) > 0 &&
+    Number(messageScopeFixture.foreign_bulk_id ?? 0) > 0
   );
   const passwordRecoveryFixture = smokeFixture?.password_recovery ?? {};
   const passwordRecoveryFixtureReady =
@@ -2590,6 +2607,70 @@ try {
     gameMessagesWithoutCookieBody = {};
   }
 
+  const messageScopeUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const messageScopeOwnerLogin = messageScopeReady
+    ? await loginGameUser(messageScopeFixture.owner.login, loginSmokePassword, messageScopeUniverse)
+    : null;
+  const messageScopeForeignLogin = messageScopeReady
+    ? await loginGameUser(messageScopeFixture.foreign.login, loginSmokePassword, messageScopeUniverse)
+    : null;
+  const messageScopeOwnerSearch = messageScopeReady
+    ? withQueryParam(messageScopeOwnerLogin?.search ?? "?session=", "cp", Number(messageScopeFixture.owner.home_planet_id))
+    : "";
+  const messageScopeForeignSearch = messageScopeReady
+    ? withQueryParam(messageScopeForeignLogin?.search ?? "?session=", "cp", Number(messageScopeFixture.foreign.home_planet_id))
+    : "";
+  const messageScopeOwnerInitial = messageScopeReady
+    ? await request(`/api/game/messages${messageScopeOwnerSearch}`, {
+        headers: { Cookie: messageScopeOwnerLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageScopeOwnerInitialBody = parseJSON(messageScopeOwnerInitial);
+  const messageScopeForeignInitial = messageScopeReady
+    ? await request(`/api/game/messages${messageScopeForeignSearch}`, {
+        headers: { Cookie: messageScopeForeignLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageScopeForeignInitialBody = parseJSON(messageScopeForeignInitial);
+  const messageScopeMarkedDelete = messageScopeReady
+    ? await request(`/api/game/messages${messageScopeOwnerSearch}`, {
+        method: "POST",
+        headers: { Cookie: messageScopeOwnerLogin?.cookiePair ?? "", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete",
+          deleteMode: "deletemarked",
+          messageIds: [
+            Number(messageScopeFixture.owner_selected_id),
+            Number(messageScopeFixture.foreign_selected_id)
+          ]
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageScopeMarkedDeleteBody = parseJSON(messageScopeMarkedDelete);
+  const messageScopeForeignAfterMarkedDelete = messageScopeReady
+    ? await request(`/api/game/messages${messageScopeForeignSearch}`, {
+        headers: { Cookie: messageScopeForeignLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageScopeForeignAfterMarkedDeleteBody = parseJSON(messageScopeForeignAfterMarkedDelete);
+  const messageScopeBulkDelete = messageScopeReady
+    ? await request(`/api/game/messages${messageScopeOwnerSearch}`, {
+        method: "POST",
+        headers: { Cookie: messageScopeOwnerLogin?.cookiePair ?? "", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete",
+          deleteMode: "deleteall"
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageScopeBulkDeleteBody = parseJSON(messageScopeBulkDelete);
+  const messageScopeForeignAfterBulkDelete = messageScopeReady
+    ? await request(`/api/game/messages${messageScopeForeignSearch}`, {
+        headers: { Cookie: messageScopeForeignLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageScopeForeignAfterBulkDeleteBody = parseJSON(messageScopeForeignAfterBulkDelete);
+
   const gameNotes = await request(`/api/game/notes${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -4130,6 +4211,77 @@ try {
         buddyLifecycleRequesterAfterDeleteBody.buddy?.rows ?? []
       ),
       check(!buddyLifecycleReady || !buddyLifecycleDelete.body.includes(buddyLifecycleRequesterLogin?.cookiePair ?? "missing-cookie"), "buddy lifecycle response does not echo requester private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_message_delete_scope_edges_api",
+    checks: [
+      check(!smokeFixtureFile || messageScopeReady, "go smoke fixture exposes message scope users and message ids", { messageScopeFixture }),
+      check(!messageScopeReady || messageScopeOwnerLogin?.response.status === 200, "message scope owner can log in", {
+        status: messageScopeOwnerLogin?.response.status
+      }),
+      check(!messageScopeReady || messageScopeForeignLogin?.response.status === 200, "message scope foreign user can log in", {
+        status: messageScopeForeignLogin?.response.status
+      }),
+      check(!messageScopeReady || messageScopeOwnerInitial.status === 200, "message scope owner inbox returns HTTP 200", {
+        status: messageScopeOwnerInitial.status
+      }),
+      check(!messageScopeReady || messageScopeForeignInitial.status === 200, "message scope foreign inbox returns HTTP 200", {
+        status: messageScopeForeignInitial.status
+      }),
+      check(
+        !messageScopeReady || messageRowByID(messageScopeOwnerInitialBody, Number(messageScopeFixture.owner_selected_id)) !== undefined,
+        "message scope owner inbox initially contains selected message",
+        messageScopeOwnerInitialBody.messages?.rows ?? []
+      ),
+      check(
+        !messageScopeReady || messageRowByID(messageScopeOwnerInitialBody, Number(messageScopeFixture.owner_bulk_id)) !== undefined,
+        "message scope owner inbox initially contains bulk message",
+        messageScopeOwnerInitialBody.messages?.rows ?? []
+      ),
+      check(
+        !messageScopeReady || messageRowByID(messageScopeForeignInitialBody, Number(messageScopeFixture.foreign_selected_id)) !== undefined,
+        "message scope foreign inbox initially contains selected message",
+        messageScopeForeignInitialBody.messages?.rows ?? []
+      ),
+      check(
+        !messageScopeReady || messageRowByID(messageScopeForeignInitialBody, Number(messageScopeFixture.foreign_bulk_id)) !== undefined,
+        "message scope foreign inbox initially contains bulk message",
+        messageScopeForeignInitialBody.messages?.rows ?? []
+      ),
+      check(!messageScopeReady || messageScopeMarkedDelete.status === 200, "message selected delete returns HTTP 200", {
+        status: messageScopeMarkedDelete.status
+      }),
+      check(
+        !messageScopeReady || messageRowByID(messageScopeMarkedDeleteBody, Number(messageScopeFixture.owner_selected_id)) === undefined,
+        "message selected delete removes the current owner's selected message",
+        messageScopeMarkedDeleteBody.messages?.rows ?? []
+      ),
+      check(
+        !messageScopeReady || messageRowByID(messageScopeMarkedDeleteBody, Number(messageScopeFixture.owner_bulk_id)) !== undefined,
+        "message selected delete preserves the current owner's unselected message",
+        messageScopeMarkedDeleteBody.messages?.rows ?? []
+      ),
+      check(
+        !messageScopeReady || messageRowByID(messageScopeForeignAfterMarkedDeleteBody, Number(messageScopeFixture.foreign_selected_id)) !== undefined,
+        "message selected delete does not delete the same id request from a foreign inbox",
+        messageScopeForeignAfterMarkedDeleteBody.messages?.rows ?? []
+      ),
+      check(!messageScopeReady || messageScopeBulkDelete.status === 200, "message deleteall returns HTTP 200", {
+        status: messageScopeBulkDelete.status
+      }),
+      check(
+        !messageScopeReady || messageRowByID(messageScopeBulkDeleteBody, Number(messageScopeFixture.owner_bulk_id)) === undefined,
+        "message deleteall removes the current owner's remaining inbox messages",
+        messageScopeBulkDeleteBody.messages?.rows ?? []
+      ),
+      check(
+        !messageScopeReady || messageRowByID(messageScopeForeignAfterBulkDeleteBody, Number(messageScopeFixture.foreign_bulk_id)) !== undefined,
+        "message deleteall does not remove foreign user's inbox messages",
+        messageScopeForeignAfterBulkDeleteBody.messages?.rows ?? []
+      ),
+      check(!messageScopeReady || !messageScopeBulkDelete.body.includes(messageScopeOwnerLogin?.cookiePair ?? "missing-cookie"), "message scope response does not echo owner private cookie")
     ]
   }));
 
