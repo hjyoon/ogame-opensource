@@ -1753,6 +1753,9 @@ func TestOverviewRepositoryLoadsACSOverviewEvents(t *testing.T) {
 	if !strings.Contains(queryer.calls[1].sql, "FROM `ogame_union`") || !strings.Contains(queryer.calls[2].sql, "f.union_id = ?") {
 		t.Fatalf("expected ACS union queries, got %+v", queryer.calls)
 	}
+	if !strings.Contains(queryer.calls[0].sql, "q.end > ?") || !strings.Contains(queryer.calls[2].sql, "q.end > ?") {
+		t.Fatalf("expected overview event queries to skip expired fleet queues, got %+v", queryer.calls)
+	}
 	if events[1].UnionID != 7 ||
 		events[1].Mission != domaingame.FleetMissionACSAttackHead+domaingame.FleetMissionReturnOffset ||
 		events[1].ArrivalAt != 500 ||
@@ -1776,6 +1779,7 @@ func TestOverviewRepositoryLoadsNonACSOverviewPseudoEvents(t *testing.T) {
 		{rows: fakeRowsFromValues()},
 	}}
 	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
+	repository.now = func() time.Time { return time.Unix(99, 0) }
 
 	events, err := repository.loadOverviewEvents(context.Background(), "`ogame_queue`", "`ogame_fleet`", "`ogame_planets`", "`ogame_users`", "`ogame_union`", 42)
 	if err != nil {
@@ -1784,6 +1788,9 @@ func TestOverviewRepositoryLoadsNonACSOverviewPseudoEvents(t *testing.T) {
 
 	if len(events) != 6 {
 		t.Fatalf("expected actual plus pseudo events, got %+v", events)
+	}
+	if !strings.Contains(queryer.calls[0].sql, "q.end > ?") || queryer.calls[0].args[2] != int64(99) {
+		t.Fatalf("expected non-ACS event query to filter expired fleet queues, got %+v", queryer.calls[0])
 	}
 	if events[2].Mission != domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset ||
 		events[2].Origin.Position != 6 ||

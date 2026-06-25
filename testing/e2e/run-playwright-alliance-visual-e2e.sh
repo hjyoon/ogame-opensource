@@ -34,9 +34,17 @@ mkdir -p "$ROOT_DIR/.tmp"
 wait_for_url "$LEGACY_BASE_URL/home.php"
 wait_for_url "$GO_BASE_URL/api/healthz"
 
+cleanup_fixture() {
+  if [ "${OGAME_CLEAN_MIGRATION_FIXTURES:-1}" = "1" ]; then
+    docker compose exec -T server php "$CONTAINER_DIR/cleanup-golang-migration-fixtures.php" >/dev/null 2>&1 || true
+  fi
+}
+
 cd "$ROOT_DIR"
 docker compose exec -T server mkdir -p "$CONTAINER_DIR" >/dev/null
+docker compose cp "$SCRIPT_DIR/cleanup-golang-migration-fixtures.php" "server:$CONTAINER_DIR/cleanup-golang-migration-fixtures.php" >/dev/null
 docker compose cp "$SCRIPT_DIR/prepare-alliance-visual-fixture.php" "server:$CONTAINER_DIR/prepare-alliance-visual-fixture.php" >/dev/null
+trap cleanup_fixture EXIT INT TERM
 docker compose exec -T server php "$CONTAINER_DIR/prepare-alliance-visual-fixture.php" > "$FIXTURE_FILE"
 
 LOGIN="$(jq -r '.login' "$FIXTURE_FILE")"
@@ -47,5 +55,5 @@ OGAME_LEGACY_BASE_URL="$LEGACY_BASE_URL" \
   OGAME_GO_BASE_URL="$GO_BASE_URL" \
   OGAME_AUTH_VISUAL_USER="$LOGIN" \
   OGAME_AUTH_VISUAL_PASS="$PASSWORD" \
-  OGAME_AUTH_VISUAL_PAGE="${OGAME_AUTH_VISUAL_PAGE:-game-alliance-owned-home,game-alliance-management,game-alliance-ranks}" \
+  OGAME_AUTH_VISUAL_PAGE="${OGAME_AUTH_VISUAL_PAGE:-game-alliance-owned-home,game-alliance-management,game-alliance-members,game-alliance-applications,game-alliance-circular,game-alliance-application-text,game-alliance-settings,game-alliance-ranks}" \
   bun run e2e:visual:auth

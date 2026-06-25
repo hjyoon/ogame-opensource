@@ -507,7 +507,36 @@ func scanMessageRow(rows Rows) (domaingame.Message, error) {
 	if err := rows.Scan(&message.ID, &message.Type, &message.From, &message.Subject, &message.Text, &shown, &message.Date); err != nil {
 		return domaingame.Message{}, err
 	}
+	message.From = legacyStripSlashes(message.From)
+	message.Subject = legacyStripSlashes(message.Subject)
+	message.Text = legacyStripSlashes(message.Text)
 	message.Unread = shown == 0
 	message.Reportable = message.Type == domaingame.MessageTypePM
 	return message, nil
+}
+
+func legacyStripSlashes(value string) string {
+	if !strings.Contains(value, `\`) {
+		return value
+	}
+	var builder strings.Builder
+	builder.Grow(len(value))
+	for index := 0; index < len(value); index++ {
+		if value[index] != '\\' || index+1 >= len(value) {
+			builder.WriteByte(value[index])
+			continue
+		}
+		next := value[index+1]
+		switch next {
+		case '\\', '\'', '"':
+			builder.WriteByte(next)
+			index++
+		case '0':
+			builder.WriteByte(0)
+			index++
+		default:
+			builder.WriteByte(value[index])
+		}
+	}
+	return builder.String()
 }

@@ -155,6 +155,10 @@ type GameReportUseCase interface {
 	GetReport(context.Context, appgame.ReportCommand) (appgame.ReportResult, error)
 }
 
+type GamePhalanxUseCase interface {
+	GetPhalanx(context.Context, appgame.PhalanxCommand) (appgame.PhalanxResult, error)
+}
+
 type GameOptionsUseCase interface {
 	GetOptions(context.Context, appgame.OptionsCommand) (appgame.OptionsResult, error)
 	UpdateOptions(context.Context, appgame.OptionsUpdateCommand) (appgame.OptionsResult, error)
@@ -190,6 +194,7 @@ type Dependencies struct {
 	GameNotes          GameNotesUseCase
 	GameMessages       GameMessagesUseCase
 	GameReport         GameReportUseCase
+	GamePhalanx        GamePhalanxUseCase
 	GameOptions        GameOptionsUseCase
 	Frontend           FrontendAssets
 	LegacyAssets       http.FileSystem
@@ -234,6 +239,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/notes", a.handleGameNotes)
 	mux.HandleFunc("/api/game/messages", a.handleGameMessages)
 	mux.HandleFunc("/api/game/report", getOnly(a.handleGameReport))
+	mux.HandleFunc("/api/game/phalanx", getOnly(a.handleGamePhalanx))
 	mux.HandleFunc("/api/game/options", a.handleGameOptions)
 	mux.Handle("/legacy-assets/", http.StripPrefix("/legacy-assets/", http.FileServer(deps.LegacyAssets)))
 	mux.HandleFunc("/", getOnly(a.handleFrontend))

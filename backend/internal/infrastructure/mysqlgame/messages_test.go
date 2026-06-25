@@ -17,7 +17,7 @@ func TestMessagesRepositoryReadsLegacyInbox(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix()})},
 		fakeQueryResult{rows: fakeRowsFromValues(
-			[]any{11, domaingame.MessageTypePM, "Sender", "Subject", "Body", 0, int64(1700000000)},
+			[]any{11, domaingame.MessageTypePM, `Sender\\Name`, `Subject\"Line`, `Player Gophalaxtarget\'s fleet`, 0, int64(1700000000)},
 			[]any{10, domaingame.MessageTypeSpyReport, "Spy", "<a>Report</a>", "<table></table>", 1, int64(1699999900)},
 		)},
 	)}
@@ -32,6 +32,9 @@ func TestMessagesRepositoryReadsLegacyInbox(t *testing.T) {
 	}
 	if !messages.Rows[0].Unread || !messages.Rows[0].Reportable || messages.Rows[1].Reportable {
 		t.Fatalf("unexpected message flags: %+v", messages.Rows)
+	}
+	if messages.Rows[0].From != `Sender\Name` || messages.Rows[0].Subject != `Subject"Line` || messages.Rows[0].Text != "Player Gophalaxtarget's fleet" {
+		t.Fatalf("expected legacy escaped message fields to be unescaped, got %+v", messages.Rows[0])
 	}
 	if !strings.Contains(queryer.calls[5].sql, "pm <> ? ORDER BY date DESC, msg_id DESC LIMIT ?") ||
 		queryer.calls[5].args[1] != domaingame.MessageTypeBattleReportText ||

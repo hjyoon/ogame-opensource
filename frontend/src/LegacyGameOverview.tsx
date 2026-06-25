@@ -210,6 +210,12 @@ export type GameReportStatus = {
   report?: GameReport;
 };
 
+export type GamePhalanxStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  phalanx?: GamePhalanx;
+};
+
 export type GameOptionsStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
@@ -653,6 +659,30 @@ type GameFleetMission = {
   arrivalAt: number;
   canRecall: boolean;
   canCreateUnion: boolean;
+};
+
+type GamePhalanx = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  source: GamePhalanxPlanet;
+  target: GamePhalanxPlanet;
+  events: GameFleetMission[];
+  actionIssue?: { code: string; message: string };
+  cost: number;
+  remainingDeuterium: number;
+  reportHeading: string;
+  eventsHeading: string;
+};
+
+type GamePhalanxPlanet = {
+  id: number;
+  ownerId: number;
+  name: string;
+  type: number;
+  coordinates: Coordinates;
+  phalanxLevel: number;
+  deuterium: number;
 };
 
 type GameStatistics = {
@@ -1385,6 +1415,8 @@ type LegacyGameOverviewProps = {
   onMessageSend: (targetPlayerID: number, subject: string, text: string) => void;
   reportStatus: GameReportStatus | null;
   reportError: string | null;
+  phalanxStatus: GamePhalanxStatus | null;
+  phalanxError: string | null;
   optionsStatus: GameOptionsStatus | null;
   optionsError: string | null;
   optionsPending: boolean;
@@ -1544,6 +1576,8 @@ export function LegacyGameOverview({
   onMessageSend,
   reportStatus,
   reportError,
+  phalanxStatus,
+  phalanxError,
   optionsStatus,
   optionsError,
   optionsPending,
@@ -1632,6 +1666,10 @@ export function LegacyGameOverview({
     messagesStatus && !messagesStatus.authenticated ? messagesStatus.issues[0]?.message ?? "Session is invalid." : null;
   const report = reportStatus?.authenticated ? reportStatus.report : undefined;
   const reportIssue = reportStatus && !reportStatus.authenticated ? reportStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const phalanx = phalanxStatus?.authenticated ? phalanxStatus.phalanx : undefined;
+  const phalanxIssue =
+    phalanxStatus && !phalanxStatus.authenticated ? phalanxStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const phalanxActionIssue = phalanx?.actionIssue;
   const options = optionsStatus?.authenticated ? optionsStatus.options : undefined;
   const optionsIssue =
     optionsStatus && !optionsStatus.authenticated ? optionsStatus.issues[0]?.message ?? "Session is invalid." : null;
@@ -1640,8 +1678,13 @@ export function LegacyGameOverview({
     messagesActionIssue?.code === "sent" || messagesActionIssue?.code === "reported" ? "neutral" : "error";
   const optionsActionIssue = optionsStatus?.authenticated ? optionsStatus.actionIssue : undefined;
   const hasHeader =
-    route.key !== "notes" && route.key !== "galaxy" && route.key !== "report" && route.key !== "admin" && route.key !== "empire";
-  const hasMenu = route.key !== "notes" && route.key !== "report";
+    route.key !== "notes" &&
+    route.key !== "galaxy" &&
+    route.key !== "report" &&
+    route.key !== "phalanx" &&
+    route.key !== "admin" &&
+    route.key !== "empire";
+  const hasMenu = route.key !== "notes" && route.key !== "report" && route.key !== "phalanx";
   const hasOverviewPageMessage =
     hasHeader && Boolean(overview && route.key === "overview" && overview.messages && overview.messages.length > 0);
   const hasOverviewPageError =
@@ -1706,7 +1749,7 @@ export function LegacyGameOverview({
       ? "legacy-content legacy-content-overview"
       : route.key === "galaxy" || route.key === "admin" || route.key === "empire"
         ? "legacy-content legacy-content-noheader"
-      : route.key === "notes" || route.key === "report"
+      : route.key === "notes" || route.key === "report" || route.key === "phalanx"
         ? "legacy-content legacy-content-popup"
         : "legacy-content";
   const contentStyle: React.CSSProperties =
@@ -1718,7 +1761,12 @@ export function LegacyGameOverview({
         ? searchContentLayout
           ? { height: searchContentLayout.height, top: `${searchContentLayout.top}px` }
           : { height: "calc(100vh - 130px)", top: "120px" }
-      : route.key === "galaxy" || route.key === "admin" || route.key === "empire" || route.key === "notes" || route.key === "report"
+      : route.key === "galaxy" ||
+          route.key === "admin" ||
+          route.key === "empire" ||
+          route.key === "notes" ||
+          route.key === "report" ||
+          route.key === "phalanx"
         ? { height: "calc(100vh - 20px)" }
         : { height: "calc(100vh - 101px)" };
 
@@ -1856,6 +1904,10 @@ export function LegacyGameOverview({
         {route.key === "report" && !report && !reportError && !reportIssue ? (
           <LegacyMessage tone="neutral" text="Loading report..." />
         ) : null}
+        {route.key === "phalanx" && phalanxError ? <LegacyMessage tone="error" text={phalanxError} /> : null}
+        {route.key === "phalanx" && !phalanxError && phalanxIssue ? (
+          <LegacyMessage tone="error" text={phalanxIssue} />
+        ) : null}
         {route.key === "options" && optionsError ? <LegacyMessage tone="error" text={optionsError} /> : null}
         {route.key === "options" && !optionsError && optionsActionIssue ? (
           <LegacyMessage tone="neutral" text={optionsActionIssue.message} />
@@ -1864,6 +1916,10 @@ export function LegacyGameOverview({
           <LegacyMessage tone="error" text={optionsIssue} />
         ) : null}
         {report && route.key === "report" ? <ReportTable report={report} /> : null}
+        {overview && route.key === "phalanx" && !phalanx && !phalanxError && !phalanxIssue ? (
+          <LegacyMessage tone="neutral" text="Loading phalanx..." />
+        ) : null}
+        {phalanx && route.key === "phalanx" ? <PhalanxTable phalanx={phalanx} /> : null}
         {overview && route.key === "overview" ? <OverviewPage onBuildQueueComplete={onOverviewRefresh} overview={overview} /> : null}
         {overview && route.key === "renamePlanet" ? (
           <RenamePlanetTable onDelete={onPlanetDelete} onRename={onPlanetRename} overview={overview} pending={overviewPending} />
@@ -2016,6 +2072,7 @@ export function LegacyGameOverview({
         route.key !== "buddy" &&
         route.key !== "messages" &&
         route.key !== "report" &&
+        route.key !== "phalanx" &&
         route.key !== "notes" &&
         route.key !== "options" &&
         route.key !== "logout" ? (
@@ -5175,6 +5232,9 @@ function AllianceTable({
   if (alliance.view === "members" && alliance.own) {
     return <AllianceMembersTable alliance={alliance} />;
   }
+  if (alliance.view === "circular" && alliance.own) {
+    return <AllianceCircularTable alliance={alliance} />;
+  }
   if (alliance.view === "ranks" && alliance.own) {
     return <AllianceRanksTable alliance={alliance} />;
   }
@@ -5558,12 +5618,11 @@ function AllianceHomeTable({
             </th>
           </tr>
           {own.applicationCount > 0 ? (
-            <tr>
-              <th>Applications</th>
-              <th>
-                <a href={allianceURL({ page: "bewerbungen" })}>{own.applicationCount} Application(s)</a>
-              </th>
-            </tr>
+            <tr
+              dangerouslySetInnerHTML={{
+                __html: `<th>Applications</th><th><a href="${legacyHTMLAttribute(allianceURL({ page: "bewerbungen" }))}">${own.applicationCount} Application(s)</a></th>`
+              }}
+            />
           ) : null}
           {alliance.viewer.rankRights & 0x080 || alliance.viewer.founder ? (
             <tr>
@@ -5624,6 +5683,32 @@ function AllianceHomeTable({
       ) : null}
     </LegacyCenter>
   );
+}
+
+function AllianceCircularTable({ alliance }: { alliance: GameAlliance }) {
+  if (!alliance.own) {
+    return null;
+  }
+  const rankOptions = alliance.ranks
+    .filter((rank) => rank.id !== 0 && rank.id !== 1)
+    .map((rank) => `    <option value=${rank.id}>Only to a specific rank: ${legacyHTMLText(rank.name)}</option>`)
+    .join("\n");
+  const options = `    <option value=0>All players</option>${rankOptions ? `\n${rankOptions}` : ""}`;
+  const action = allianceURL({ a: "17", sendmail: "1" });
+  return React.createElement("center", {
+    dangerouslySetInnerHTML: {
+      __html: `<script src="/public-assets/game/js/cntchar.js" type="text/javascript"></script><script src="/public-assets/game/js/win.js" type="text/javascript"></script>
+<table class="legacy-alliance-circular-table" width=519>
+<form action="${legacyHTMLAttribute(action)}" method=POST>
+<tr><td class=c colspan=2>Send general message</td></tr>
+<tr><th>Recipient</th><th>
+<select name=r>
+${options}
+</select></th></tr>
+<tr><th>Message text (<span id="cntChars">0</span> / 2000 Simv.)</th><th><textarea name=text cols=60 rows=10 onkeyup="javascript:cntchar(2000)"></textarea></th></tr>
+<tr><th colspan=2><input type=submit value="Submit"></th></tr></table></form>`
+    }
+  });
 }
 
 function AllianceRanksTable({ alliance }: { alliance: GameAlliance }) {
@@ -5829,15 +5914,15 @@ ${textValue.length}</span> / 5000 characters)`
               </th>
             </tr>
             {textKind === 3 ? (
-              <tr>
-                <th colSpan={3}>
-                  Sample application{" "}
-                  <select defaultValue={own.insertApp ? "1" : "0"} name="bewforce">
-                    <option value="0">do not show automatically</option>
-                    <option value="1">show automatically</option>
-                  </select>
-                </th>
-              </tr>
+              <tr
+                dangerouslySetInnerHTML={{
+                  __html: `<th colspan=3>Sample application <select name=bewforce><option value=0${
+                    own.insertApp ? "" : " SELECTED"
+                  }>do not show automatically</option><option value=1${
+                    own.insertApp ? " SELECTED" : ""
+                  }>show automatically</option></select></th>`
+                }}
+              />
             ) : null}
             <tr>
               <th colSpan={3}>
@@ -5954,30 +6039,22 @@ function AllianceApplicationsTable({
     return null;
   }
   if (alliance.applications.length === 0) {
-    return (
-      <LegacyCenter>
-        <table width={519}>
-          <tbody>
-            <tr>
-              <td className="legacy-c c" colSpan={2}>
-                Overview of enrollment in this alliance [{own.tag}].
-              </td>
-            </tr>
-            <tr>
-              <th colSpan={2}>No more applications.</th>
-            </tr>
-          </tbody>
-        </table>
-        <br />
-        <br />
-        <br />
-        <br />
-      </LegacyCenter>
-    );
+    return React.createElement("center", {
+      dangerouslySetInnerHTML: {
+        __html: allianceApplicationsHTML(alliance)
+      }
+    });
+  }
+  if (!alliance.selectedApp) {
+    return React.createElement("center", {
+      dangerouslySetInnerHTML: {
+        __html: allianceApplicationsHTML(alliance)
+      }
+    });
   }
   return (
     <LegacyCenter>
-      <table width={519}>
+      <table className="legacy-alliance-applications-table" width={519}>
         <tbody>
           <tr>
             <td className="legacy-c c" colSpan={2}>
@@ -6039,7 +6116,7 @@ function AllianceApplicationsTable({
                 </center>
               </th>
               <th>
-                <center>{formatLegacyDateTime(app.date)}</center>
+                <center>{formatLegacyServerDateTime(app.date)}</center>
               </th>
             </tr>
           ))}
@@ -6051,6 +6128,33 @@ function AllianceApplicationsTable({
       <br />
     </LegacyCenter>
   );
+}
+
+function allianceApplicationsHTML(alliance: GameAlliance): string {
+  const own = alliance.own;
+  if (!own) {
+    return "";
+  }
+  if (alliance.applications.length === 0) {
+    return `<table class="legacy-alliance-applications-table" width=519><tr><td class=c colspan=2>Overview of enrollment in this alliance [${legacyHTMLText(own.tag)}].</td></tr><tr><th colspan=2>No more applications.</th></tr></table><br><br><br><br>`;
+  }
+  const rows = alliance.applications
+    .map(
+      (app) => `    <th><center><a href="${legacyHTMLAttribute(
+        allianceURL({ page: "bewerbungen", show: String(app.id), sort: "1" })
+      )}">${legacyHTMLText(app.playerName)}</a></center></th>
+    <th><center>${formatLegacyServerDateTime(app.date)}</center></th></tr>
+`
+    )
+    .join("");
+  return `<table class="legacy-alliance-applications-table" width=519>
+<tr><td class=c colspan=2>Overview of enrollment in this alliance [${legacyHTMLText(own.tag)}].</td></tr>
+<tr><th colspan=2>Available ${alliance.applications.length} statements. Click on the desired player's name to view their message.</th></tr>
+<tr>
+    <td class=c><center><a href="${legacyHTMLAttribute(allianceURL({ page: "bewerbungen", show: "0", sort: "1" }))}">Applicant</a></center></td>
+    <td class=c><center><a href="${legacyHTMLAttribute(allianceURL({ page: "bewerbungen", show: "0", sort: "0" }))}">Application Date</a></center></th></tr>
+<tr>
+${rows}</table><br><br><br><br>`;
 }
 
 function AllianceRejectForm({
@@ -6103,44 +6207,70 @@ function AllianceMembersTable({ alliance }: { alliance: GameAlliance }) {
       </LegacyCenter>
     );
   }
-  return (
-    <LegacyCenter>
-      <table width={519}>
-        <tbody>
-          <tr>
-            <td className="legacy-c c" colSpan={6}>
-              List of members (count: {own.memberCount})
-            </td>
-          </tr>
-          <tr>
-            <th>Name</th>
-            <th>Status</th>
-            <th>Points</th>
-            <th>Coordinates</th>
-            <th>Entry</th>
-            <th>N</th>
-          </tr>
-          {alliance.members.map((member, index) => (
-            <tr key={member.playerId}>
-              <th>{member.name}</th>
-              <th>{member.rankName}</th>
-              <th>{formatLegacyPlainNumber(Math.floor(member.score / 1000))}</th>
-              <th>
-                [{member.galaxy}:{member.system}:{member.position}]
-              </th>
-              <th>{member.joinedAt > 0 ? formatLegacyDateTime(member.joinedAt) : "-"}</th>
-              <th>{index + 1}</th>
-            </tr>
-          ))}
-          <tr>
-            <th colSpan={6}>
-              <a href={allianceURL()}>Back to review</a>
-            </th>
-          </tr>
-        </tbody>
-      </table>
-    </LegacyCenter>
-  );
+  return React.createElement("center", {
+    dangerouslySetInnerHTML: {
+      __html: allianceMembersHTML(alliance)
+    }
+  });
+}
+
+function allianceMembersHTML(alliance: GameAlliance): string {
+  const own = alliance.own;
+  if (!own) {
+    return "";
+  }
+  const sort2 = new URLSearchParams(window.location.search).get("sort2") === "0" ? "0" : "1";
+  const nextSort2 = sort2 === "1" ? "0" : "1";
+  const showOnline = alliance.viewer.founder || (alliance.viewer.rankRights & 0x040) !== 0;
+  const now = Math.floor(Date.now() / 1000);
+  const headerOnline = showOnline
+    ? `    <th><a href="${legacyHTMLAttribute(allianceURL({ a: "4", sort1: "5", sort2: nextSort2 }))}">Online</a></th></tr>\n`
+    : "";
+  const rows = alliance.members
+    .map((member, index) => {
+      const message =
+        alliance.viewer.playerId === member.playerId
+          ? "    <th></th>\n"
+          : `    <th><a href="${legacyHTMLAttribute(gameMessageComposeURL(member.playerId, window.location.search))}"><img src="${skinBase}/img/m.gif" border=0 alt="Write message"></a></th>\n`;
+      const coordQuery = new URLSearchParams(window.location.search);
+      coordQuery.set("galaxy", String(member.galaxy));
+      coordQuery.set("system", String(member.system));
+      coordQuery.set("position", String(member.position));
+      const coordURL = gameRouteURL("/game/galaxy", coordQuery.toString());
+      const online = showOnline ? `    <th>${allianceMemberOnlineHTML(member.lastClick, now)}</th>` : "";
+      return `<tr>
+    <th>${index + 1}</th>
+    <th>${legacyHTMLText(member.name)}</th>
+${message}    <th>${legacyHTMLText(member.rankName)}</th>
+    <th>${formatLegacyPlainNumber(Math.floor(member.score / 1000))}</th>
+    <th><a href="${legacyHTMLAttribute(coordURL)}" >[${member.galaxy}:${member.system}:${member.position}]</a></th>
+    <th>${member.joinedAt > 0 ? formatLegacyServerDateTime(member.joinedAt) : "-"}</th>
+${online}</tr>
+`;
+    })
+    .join("");
+  return `<script src="/public-assets/game/js/cntchar.js" type="text/javascript"></script><script src="/public-assets/game/js/win.js" type="text/javascript"></script>
+<table class="legacy-alliance-members-table" width=519>
+<tr><td class='c' colspan='10'>List of members (count: ${own.memberCount})</td></tr>
+<tr>
+    <th>N</th>
+    <th><a href="${legacyHTMLAttribute(allianceURL({ a: "4", sort1: "1", sort2: nextSort2 }))}">Name</a></th>
+    <th> </th><th><a href="${legacyHTMLAttribute(allianceURL({ a: "4", sort1: "2", sort2: nextSort2 }))}">Status</a></th>
+    <th><a href="${legacyHTMLAttribute(allianceURL({ a: "4", sort1: "3", sort2: nextSort2 }))}">Points</a></th>
+    <th><a href="${legacyHTMLAttribute(allianceURL({ a: "4", sort1: "0", sort2: nextSort2 }))}">Coordinates</a></th>
+    <th><a href="${legacyHTMLAttribute(allianceURL({ a: "4", sort1: "4", sort2: nextSort2 }))}">Entry</a></th>
+${headerOnline}${rows}</table>`;
+}
+
+function allianceMemberOnlineHTML(lastClick: number, now: number): string {
+  const minutes = Math.floor((now - lastClick) / 60);
+  if (minutes < 15) {
+    return "<font color=lime>Yes</font>";
+  }
+  if (minutes < 60) {
+    return `<font color=yellow>${minutes} min</font>`;
+  }
+  return "<font color=red>No</font>";
 }
 
 function allianceURL(params: Record<string, string> = {}) {
@@ -9616,6 +9746,88 @@ function ReportTable({ report }: { report: GameReport }) {
   );
 }
 
+function PhalanxTable({ phalanx }: { phalanx: GamePhalanx }) {
+  const source = phalanx.source;
+  return (
+    <>
+      <br />
+      <table className="legacy-phalanx-table" width={519}>
+        <tbody>
+          <tr>
+            <td className="c" colSpan={4}>
+              {phalanx.reportHeading}{" "}
+              <a href={overviewGalaxyHref(source.coordinates)}>[{formatCoordinates(source.coordinates)}]</a> ({phalanx.commander})
+            </td>
+          </tr>
+          <tr>
+            <td className="c" colSpan={4}>
+              {phalanx.eventsHeading}
+            </td>
+          </tr>
+          {phalanx.actionIssue ? (
+            <tr>
+              <th colSpan={4}>
+                <LegacyFont color="#FF0000">{phalanx.actionIssue.message}</LegacyFont>
+              </th>
+            </tr>
+          ) : (
+            <PhalanxEventRows events={phalanx.events} />
+          )}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+function PhalanxEventRows({ events }: { events: GameFleetMission[] }) {
+  const [now, setNow] = React.useState(() => Math.floor(Date.now() / 1000));
+  React.useEffect(() => {
+    const update = () => setNow(Math.floor(Date.now() / 1000));
+    const id = window.setInterval(update, 1000);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, []);
+  if (events.length === 0) {
+    return null;
+  }
+  return (
+    <>
+      {events.map((event, index) => {
+        const remaining = event.arrivalAt - now;
+        const groupMissions = overviewEventGroupMissions(event);
+        return (
+          <tr className={overviewEventRowClass(event)} key={event.id}>
+            <th>
+              <div id={`bxx${index + 1}`} title={String(Math.max(0, remaining))}>
+                {remaining < 0 ? "-" : formatLegacyCountdown(remaining)}
+              </div>
+            </th>
+            <th colSpan={3}>
+              {groupMissions.map((groupEvent, groupIndex) => (
+                <React.Fragment key={groupEvent.id}>
+                  {groupIndex > 0 ? (
+                    <>
+                      <br />
+                      <br />
+                    </>
+                  ) : null}
+                  <span
+                    className={`${overviewEventSpanClass(groupEvent)} phalanx_fleet`}
+                    dangerouslySetInnerHTML={{ __html: legacyOverviewEventInnerHTML(groupEvent) }}
+                  />
+                </React.Fragment>
+              ))}
+            </th>
+          </tr>
+        );
+      })}
+    </>
+  );
+}
+
 function OptionsTable({
   onSubmit,
   options,
@@ -11939,8 +12151,12 @@ function formatLegacyDateTime(seconds: number): string {
   )}:${String(date.getUTCSeconds()).padStart(2, "0")}`;
 }
 
-function formatLegacyAdminDateTime(seconds: number): string {
+function formatLegacyServerDateTime(seconds: number): string {
   return formatLegacyDateTime(seconds + 3 * 60 * 60);
+}
+
+function formatLegacyAdminDateTime(seconds: number): string {
+  return formatLegacyServerDateTime(seconds);
 }
 
 function formatLegacyAdminFleetLogDateParts(seconds: number): { date: string; time: string } {

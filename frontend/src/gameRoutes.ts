@@ -19,6 +19,7 @@ export type GameRouteKey =
   | "search"
   | "messages"
   | "report"
+  | "phalanx"
   | "notes"
   | "buddy"
   | "options"
@@ -52,6 +53,7 @@ export const gameRoutes: GameRoute[] = [
   { key: "search", label: "Search", path: "/game/search", migrated: true },
   { key: "messages", label: "Messages", path: "/game/messages", migrated: true },
   { key: "report", label: "Report", path: "/game/report", migrated: true },
+  { key: "phalanx", label: "Sensor Phalanx", path: "/game/phalanx", migrated: true },
   { key: "notes", label: "Notes", path: "/game/notes", migrated: true },
   { key: "buddy", label: "Buddylist", path: "/game/buddy", migrated: true },
   { key: "options", label: "Options", path: "/game/options", migrated: true },
@@ -94,6 +96,7 @@ const legacyPageAliases = new Map<string, string>([
   ["writemessages", "/game/messages"],
   ["messages", "/game/messages"],
   ["bericht", "/game/report"],
+  ["phalanx", "/game/phalanx"],
   ["notes", "/game/notes"],
   ["notizen", "/game/notes"],
   ["buddy", "/game/buddy"],

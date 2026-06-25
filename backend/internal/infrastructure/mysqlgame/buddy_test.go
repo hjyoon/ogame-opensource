@@ -92,6 +92,19 @@ func TestBuddyRepositoryReadsRequestTarget(t *testing.T) {
 	}
 }
 
+func TestBuddyRepositoryReadsRequestActionWithoutTarget(t *testing.T) {
+	queryer := &fakeQueryer{results: shipyardOverviewResults()}
+	repository := NewBuddyRepositoryWithQueryer(queryer, "ogame_")
+
+	buddy, err := repository.GetBuddy(context.Background(), appgame.BuddyQuery{PlayerID: 42, Action: domaingame.BuddyActionRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if buddy.Action != domaingame.BuddyActionRequest || buddy.Target != nil || len(queryer.calls) != len(shipyardOverviewResults()) {
+		t.Fatalf("expected request form without target lookup, buddy=%+v calls=%d", buddy, len(queryer.calls))
+	}
+}
+
 func TestBuddyRepositoryAddsBuddyRequest(t *testing.T) {
 	runner := &fakeBuddyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{"legor"})},

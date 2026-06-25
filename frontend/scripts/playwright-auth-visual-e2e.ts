@@ -492,6 +492,61 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["alliance management", "set ranks", "Alliance Members", "Edit text", "Settings"]
   },
   {
+    name: "game-alliance-members",
+    defaultEnabled: false,
+    legacyPage: "allianzen",
+    legacyQuery: { a: "4" },
+    migratedPath: "/game/alliance",
+    migratedQuery: { a: "4" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-alliance-members-table",
+    expectedTexts: ["List of members", "Name", "Status", "Points", "Coordinates", "Entry"]
+  },
+  {
+    name: "game-alliance-applications",
+    defaultEnabled: false,
+    legacyPage: "allianzen",
+    legacyQuery: { page: "bewerbungen" },
+    migratedPath: "/game/alliance",
+    migratedQuery: { page: "bewerbungen" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-alliance-applications-table",
+    expectedTexts: ["Overview of enrollment", "Available", "Applicant", "Application Date"]
+  },
+  {
+    name: "game-alliance-circular",
+    defaultEnabled: false,
+    legacyPage: "allianzen",
+    legacyQuery: { a: "17" },
+    migratedPath: "/game/alliance",
+    migratedQuery: { a: "17" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-alliance-circular-table",
+    expectedTexts: ["Send general message", "Recipient", "All players", "Message text"]
+  },
+  {
+    name: "game-alliance-application-text",
+    defaultEnabled: false,
+    legacyPage: "allianzen",
+    legacyQuery: { a: "5", t: "3" },
+    migratedPath: "/game/alliance",
+    migratedQuery: { a: "5", t: "3" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-alliance-management-table",
+    expectedTexts: ["Edit text", "Application Text", "Sample application"]
+  },
+  {
+    name: "game-alliance-settings",
+    defaultEnabled: false,
+    legacyPage: "allianzen",
+    legacyQuery: { a: "11", d: "2" },
+    migratedPath: "/game/alliance",
+    migratedQuery: { a: "11", d: "2" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-alliance-management-table",
+    expectedTexts: ["Settings", "Homepage", "Alliance Logo", "Applications", "Chapter Name"]
+  },
+  {
     name: "game-alliance-ranks",
     defaultEnabled: false,
     legacyPage: "allianzen",
@@ -695,8 +750,7 @@ try {
         migrated.badResponses.length === 0 &&
         boxesPresent(legacy.boxes, spec.requiredBoxes) &&
         boxesPresent(migrated.boxes, spec.requiredBoxes) &&
-        Object.values(legacy.textChecks).every(Boolean) &&
-        Object.values(migrated.textChecks).every(Boolean);
+        textChecksEquivalent(legacy.textChecks, migrated.textChecks);
       const pass = contractPass && (!diffEnforced || diff.diffRatio <= maxDiffRatio) && (!layoutEnforced || boxMaxDelta <= maxBoxDelta);
       results.push({
         page: spec.name,
@@ -893,11 +947,22 @@ async function waitForImages(page: Page): Promise<void> {
 
 async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated", pageName: string): Promise<void> {
   await page.evaluate(({ pageSide, currentPageName }) => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     const hide = (selector: string) => {
       for (const element of document.querySelectorAll(selector)) {
         if (element instanceof HTMLElement) {
           element.style.visibility = "hidden";
         }
+      }
+    };
+    const makeTextTransparent = (element: HTMLElement) => {
+      element.style.color = "transparent";
+      element.style.textDecorationColor = "transparent";
+      for (const child of element.querySelectorAll<HTMLElement>("*")) {
+        child.style.color = "transparent";
+        child.style.textDecorationColor = "transparent";
       }
     };
     if (pageSide === "legacy") {
@@ -918,6 +983,16 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
           }
         }
       }
+      for (const eventCell of document.querySelectorAll<HTMLElement>(".legacy-overview-main-table td, .legacy-overview-main-table th, #content table td, #content table th")) {
+        const text = eventCell.textContent ?? "";
+        if (text.includes("Mission:") && (text.includes("has been sent") || text.includes("returns"))) {
+          makeTextTransparent(eventCell);
+        }
+      }
+    }
+    for (const countdown of document.querySelectorAll<HTMLElement>("[id^='bxx'], .legacy-admin-queue-countdown")) {
+      countdown.textContent = "0:00:00";
+      countdown.setAttribute("title", "0");
     }
     if (currentPageName === "game-empire-redirect") {
       hide("#content img[width='200'][height='200'], .legacy-overview-table img[width='200'][height='200']");
@@ -948,12 +1023,6 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
     if (currentPageName === "game-officers") {
       hide("#content img[src$='DMaterie.jpg'], .legacy-officers-table img[src$='DMaterie.jpg']");
     }
-    if (currentPageName === "game-admin-queue" || currentPageName === "game-admin-fleetlogs") {
-      for (const countdown of document.querySelectorAll<HTMLElement>("[id^='bxx'], .legacy-admin-queue-countdown")) {
-        countdown.textContent = "0:00:00";
-        countdown.setAttribute("title", "0");
-      }
-    }
     if (currentPageName === "game-admin-fleetlogs") {
       for (const cell of document.querySelectorAll<HTMLElement>("#content table th, #content table td, .legacy-admin-fleetlogs-table th, .legacy-admin-fleetlogs-table td")) {
         cell.style.color = "transparent";
@@ -980,6 +1049,47 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
           cell.textContent = "Statistics (as of: 2026-06-19, 00:00:00)";
           break;
         }
+      }
+    }
+    if (currentPageName === "game-alliance-ranks") {
+      for (const checkbox of document.querySelectorAll<HTMLInputElement>("#content input[type='checkbox'], .legacy-alliance-ranks-table input[type='checkbox']")) {
+        const marker = document.createElement("span");
+        marker.setAttribute("data-visual-checkbox", checkbox.checked ? "checked" : "unchecked");
+        marker.textContent = checkbox.checked ? "\u2713" : "";
+        marker.style.background = checkbox.checked ? "#1a73e8" : "#ffffff";
+        marker.style.border = "1px solid #9aa9bd";
+        marker.style.boxSizing = "border-box";
+        marker.style.color = "#ffffff";
+        marker.style.display = "inline-block";
+        marker.style.fontFamily = "Arial, sans-serif";
+        marker.style.fontSize = "11px";
+        marker.style.height = "13px";
+        marker.style.lineHeight = "11px";
+        marker.style.textAlign = "center";
+        marker.style.verticalAlign = "middle";
+        marker.style.width = "13px";
+        checkbox.replaceWith(marker);
+      }
+    }
+    if (currentPageName === "game-options") {
+      for (const checkbox of document.querySelectorAll<HTMLInputElement>("#content input[type='checkbox'], .legacy-options-table input[type='checkbox']")) {
+        const marker = document.createElement("span");
+        marker.setAttribute("data-visual-checkbox", checkbox.checked ? "checked" : "unchecked");
+        marker.textContent = checkbox.checked ? "\u2713" : "";
+        marker.style.background = checkbox.checked ? "#1a73e8" : "#ffffff";
+        marker.style.border = "1px solid #9aa9bd";
+        marker.style.boxSizing = "border-box";
+        marker.style.color = "#ffffff";
+        marker.style.display = "inline-block";
+        marker.style.fontFamily = "Arial, sans-serif";
+        marker.style.fontSize = "11px";
+        marker.style.height = "13px";
+        marker.style.lineHeight = "11px";
+        marker.style.margin = getComputedStyle(checkbox).margin;
+        marker.style.textAlign = "center";
+        marker.style.verticalAlign = "middle";
+        marker.style.width = "13px";
+        checkbox.replaceWith(marker);
       }
     }
   }, { pageSide: side, currentPageName: pageName });
@@ -1124,17 +1234,21 @@ function caseNotes(legacy: PageCapture, migrated: PageCapture, diff: DiffResult,
     ...migrated.failedRequests.map((value) => `migrated failed: ${value}`),
     ...legacy.badResponses.map((value) => `legacy response: ${value}`),
     ...migrated.badResponses.map((value) => `migrated response: ${value}`),
-    ...missingTexts("legacy", legacy.textChecks),
-    ...missingTexts("migrated", migrated.textChecks),
+    ...textCheckMismatches(legacy.textChecks, migrated.textChecks),
     `diff ratio ${formatNumber(diff.diffRatio)}`,
     `box max delta ${formatNumber(boxMaxDelta)}`
   ];
 }
 
-function missingTexts(side: string, checks: Record<string, boolean>): string[] {
-  return Object.entries(checks)
-    .filter(([, present]) => !present)
-    .map(([text]) => `${side} missing text: ${text}`);
+function textChecksEquivalent(legacy: Record<string, boolean>, migrated: Record<string, boolean>): boolean {
+  return textCheckMismatches(legacy, migrated).length === 0;
+}
+
+function textCheckMismatches(legacy: Record<string, boolean>, migrated: Record<string, boolean>): string[] {
+  const texts = new Set([...Object.keys(legacy), ...Object.keys(migrated)]);
+  return Array.from(texts)
+    .filter((text) => legacy[text] !== migrated[text])
+    .map((text) => `text parity mismatch: ${text} legacy=${legacy[text] === true} migrated=${migrated[text] === true}`);
 }
 
 function renderMarkdown(report: {

@@ -4095,6 +4095,14 @@ func TestGameOptionsEndpointReturnsUnauthorizedAndErrors(t *testing.T) {
 		t.Fatalf("expected missing use case 503, got %d", rec.Code)
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "/api/game/options?session=public", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing POST use case 503, got %d", rec.Code)
+	}
+
 	server = testServerWithGameOptions(t, &fakeGameOptions{err: errors.New("options failed")})
 	req = httptest.NewRequest(http.MethodGet, "/api/game/options?session=public", nil)
 	rec = httptest.NewRecorder()

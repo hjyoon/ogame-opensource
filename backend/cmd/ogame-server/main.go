@@ -78,6 +78,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	gameNotes := gameNotesService(cfg, logger, gameSessions)
 	gameMessages := gameMessagesService(cfg, logger, gameSessions)
 	gameReport := gameReportService(cfg, logger, gameSessions)
+	gamePhalanx := gamePhalanxService(cfg, logger, gameSessions)
 	gameOptions := gameOptionsService(cfg, logger, gameSessions)
 
 	return httpdelivery.New(httpdelivery.Dependencies{
@@ -110,6 +111,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		GameNotes:          gameNotes,
 		GameMessages:       gameMessages,
 		GameReport:         gameReport,
+		GamePhalanx:        gamePhalanx,
 		GameOptions:        gameOptions,
 		Frontend:           filesystem.StaticDir{Root: cfg.StaticDir},
 		LegacyAssets:       filesystem.NewNoListingFS(cfg.LegacyAssetDir),
@@ -874,6 +876,34 @@ func gameReportService(cfg config.Config, logger *slog.Logger, sessions apppubli
 
 	logger.Info("universe DB game report enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewReportService(sessions, mysqlgame.NewReportRepository(db, cfg.UniDBPrefix))
+}
+
+func gamePhalanxService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.PhalanxService {
+	if !cfg.UniDBEnabled {
+		return appgame.PhalanxService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game phalanx disabled", "error", err)
+		return appgame.PhalanxService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game phalanx disabled", "error", err)
+		_ = db.Close()
+		return appgame.PhalanxService{}
+	}
+
+	logger.Info("universe DB game phalanx enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
+	return appgame.NewPhalanxService(sessions, mysqlgame.NewPhalanxRepository(db, cfg.UniDBPrefix))
 }
 
 func gameOptionsService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.OptionsService {

@@ -2,10 +2,15 @@ import { readFile } from "node:fs/promises";
 
 import { publicRouteAliases, publicRoutes } from "../../frontend/src/routes.ts";
 
-const baseUrl = (process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890").replace(/\/+$/, "");
-const mailhogBaseUrl = (process.env.OGAME_MAILHOG_BASE_URL ?? "http://127.0.0.1:8026").replace(/\/+$/, "");
+function envURL(value, fallback) {
+  return Array.from(String(value ?? fallback)).join("").replace(/\/+$/, "");
+}
+
+const baseUrl = envURL(process.env.OGAME_GO_BASE_URL, "http://127.0.0.1:8890");
+const mailhogBaseUrl = envURL(process.env.OGAME_MAILHOG_BASE_URL, "http://127.0.0.1:8026");
 const loginSmokeUser = process.env.OGAME_GO_LOGIN_SMOKE_USER ?? "legor";
 const loginSmokePassword = process.env.OGAME_GO_LOGIN_SMOKE_PASS ?? "admin";
+const smokeFixtureFile = process.env.OGAME_GO_SMOKE_FIXTURE_FILE ?? "";
 
 function check(pass, message, context = {}) {
   return { pass, message, context };
@@ -17,13 +22,37 @@ function finalize(testCase) {
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(`${baseUrl}${path}`, {
-    redirect: "manual",
-    ...options
-  });
+  let response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      redirect: "manual",
+      ...options
+    });
+  } catch (error) {
+    throw new Error(`request failed for ${path}: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const headers = Object.fromEntries(response.headers.entries());
   const body = await response.text();
   return { status: response.status, headers, body };
+}
+
+function parseJSON(response) {
+  try {
+    return JSON.parse(response.body);
+  } catch {
+    return {};
+  }
+}
+
+async function readOptionalJSON(path) {
+  if (!path) {
+    return {};
+  }
+  try {
+    return JSON.parse(await readFile(path, "utf8"));
+  } catch {
+    return {};
+  }
 }
 
 function pathFromURL(value) {
@@ -43,6 +72,14 @@ function hasHeader(response, name, expected) {
 function withQueryParam(search, key, value) {
   const query = new URLSearchParams(search);
   query.set(key, String(value));
+  return `?${query.toString()}`;
+}
+
+function withQueryParams(search, params) {
+  const query = new URLSearchParams(search);
+  for (const [key, value] of Object.entries(params)) {
+    query.set(key, String(value));
+  }
   return `?${query.toString()}`;
 }
 
@@ -125,6 +162,8 @@ const cases = [];
 
 try {
   const runId = Date.now().toString(36);
+  const smokeFixture = await readOptionalJSON(smokeFixtureFile);
+  const phalanxFixture = smokeFixture?.phalanx ?? {};
   const health = await request("/api/healthz");
   let healthBody = {};
   try {
@@ -696,6 +735,64 @@ try {
   } catch {
     gameFleetLaunchBody = {};
   }
+  const alternateFleetTarget = {
+    galaxy: fleetTarget.galaxy ?? 1,
+    system: fleetTarget.system ?? 1,
+    position: Number(fleetTarget.position ?? 1) >= 15 ? 14 : Number(fleetTarget.position ?? 1) + 1
+  };
+  const gameFleetNoShips = selectableFleetShip
+    ? await request(`/api/game/fleet${sessionSearch}`, {
+        method: "POST",
+        headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "validate-dispatch",
+          ships: {},
+          resources: {},
+          target: alternateFleetTarget,
+          targetType: 1,
+          mission: 3,
+          speed: 9
+        })
+      })
+    : { status: 0, body: "", headers: {} };
+  const gameFleetNoShipsBody = parseJSON(gameFleetNoShips);
+  const gameFleetInvalidOrder = selectableFleetShip
+    ? await request(`/api/game/fleet${sessionSearch}`, {
+        method: "POST",
+        headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "validate-dispatch",
+          ships: { [String(selectableFleetShip.id)]: 1 },
+          resources: {},
+          target: alternateFleetTarget,
+          targetType: 1,
+          mission: 999,
+          speed: 9
+        })
+      })
+    : { status: 0, body: "", headers: {} };
+  const gameFleetInvalidOrderBody = parseJSON(gameFleetInvalidOrder);
+  const gameFleetInvalidExpeditionTarget = selectableFleetShip
+    ? await request(`/api/game/fleet${sessionSearch}`, {
+        method: "POST",
+        headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "validate-dispatch",
+          ships: { [String(selectableFleetShip.id)]: 1 },
+          resources: {},
+          target: {
+            galaxy: fleetTarget.galaxy ?? 1,
+            system: fleetTarget.system ?? 1,
+            position: 16
+          },
+          targetType: 2,
+          mission: 15,
+          speed: 9,
+          expeditionHours: 1
+        })
+      })
+    : { status: 0, body: "", headers: {} };
+  const gameFleetInvalidExpeditionTargetBody = parseJSON(gameFleetInvalidExpeditionTarget);
 
   const gameFleetWithoutCookie = await request(`/api/game/fleet${sessionSearch}`);
   let gameFleetWithoutCookieBody = {};
@@ -1241,6 +1338,48 @@ try {
   } catch {
     gameAdminWithoutCookieBody = {};
   }
+  const adminSubmodeSpecs = [
+    { name: "Users", mode: "Users", arrayKey: "userRows" },
+    { name: "Planets", mode: "Planets", arrayKey: "planetRows" },
+    { name: "Queue", mode: "Queue", arrayKey: "queueRows" },
+    { name: "Fleetlogs", mode: "Fleetlogs", arrayKey: "fleetLogRows" },
+    { name: "BattleReport", mode: "BattleReport", arrayKey: "battleReports" },
+    { name: "Checksum", mode: "Checksum", arrayKey: "checksumGroups" },
+    { name: "DB", mode: "DB", arrayKey: "databaseBackups" },
+    { name: "BotEdit", mode: "BotEdit", arrayKey: "botStrategies" },
+    { name: "Uni", mode: "Uni", objectKey: "universe" },
+    { name: "Expedition", mode: "Expedition", objectKey: "expedition" },
+    { name: "Unknown", mode: "DefinitelyNotALegacyMode", expectedMode: "Home" }
+  ];
+  const gameAdminSubmodes = await Promise.all(adminSubmodeSpecs.map(async (spec) => {
+    const search = withQueryParam(sessionSearch, "mode", spec.mode);
+    const response = await request(`/api/game/admin${search}`, {
+      headers: { Cookie: sessionCookiePair }
+    });
+    return { ...spec, response, body: parseJSON(response) };
+  }));
+
+  const allianceRouteSpecs = [
+    { name: "home", query: {}, allowedViews: ["home", "no_alliance"] },
+    { name: "members", query: { a: "4" }, allowedViews: ["members", "no_alliance"] },
+    { name: "management", query: { a: "5" }, allowedViews: ["management", "no_alliance"] },
+    { name: "ranks", query: { a: "6" }, allowedViews: ["ranks", "no_alliance"] },
+    { name: "applications", query: { page: "bewerbungen" }, allowedViews: ["applications", "no_alliance"] },
+    { name: "text", query: { a: "11", d: "1", t: "3" }, allowedViews: ["management", "no_alliance"] },
+    { name: "settings", query: { a: "11", d: "2" }, allowedViews: ["management", "no_alliance"] },
+    { name: "circular", query: { a: "17" }, allowedViews: ["circular", "no_alliance"] },
+    { name: "search", query: { a: "2", suchtext: "AV" }, allowedViews: ["search", "home", "no_alliance"] },
+    { name: "create", query: { a: "1" }, allowedViews: ["create", "home", "no_alliance"] }
+  ];
+  const gameAllianceRoutes = await Promise.all(allianceRouteSpecs.map(async (spec) => {
+    const search = withQueryParams(sessionSearch, spec.query);
+    const response = await request(`/api/game/alliance${search}`, {
+      headers: { Cookie: sessionCookiePair }
+    });
+    return { ...spec, response, body: parseJSON(response) };
+  }));
+  const gameAllianceWithoutCookie = await request(`/api/game/alliance${sessionSearch}`);
+  const gameAllianceWithoutCookieBody = parseJSON(gameAllianceWithoutCookie);
 
   const gameOptions = await request(`/api/game/options${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -1271,6 +1410,29 @@ try {
   } catch {
     gameOptionsWithoutCookieBody = {};
   }
+
+  const phalanxSourceMoonID = Number(phalanxFixture.source_moon_id ?? 0);
+  const phalanxTargetPlanetID = Number(phalanxFixture.target_planet_id ?? 0);
+  const phalanxFixtureReady = phalanxSourceMoonID > 0 && phalanxTargetPlanetID > 0;
+  const phalanxSearch = phalanxSourceMoonID > 0 && phalanxTargetPlanetID > 0
+    ? withQueryParams(sessionSearch, { cp: phalanxSourceMoonID, spid: phalanxTargetPlanetID })
+    : "";
+  const gamePhalanxMissingSensor = phalanxTargetPlanetID > 0 && basePlanetID > 0
+    ? await request(`/api/game/phalanx${withQueryParams(sessionSearch, { cp: basePlanetID, spid: phalanxTargetPlanetID })}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const gamePhalanxMissingSensorBody = parseJSON(gamePhalanxMissingSensor);
+  const gamePhalanx = phalanxSearch
+    ? await request(`/api/game/phalanx${phalanxSearch}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const gamePhalanxBody = parseJSON(gamePhalanx);
+  const gamePhalanxWithoutCookie = phalanxSearch
+    ? await request(`/api/game/phalanx${phalanxSearch}`)
+    : { status: 0, headers: {}, body: "{}" };
+  const gamePhalanxWithoutCookieBody = parseJSON(gamePhalanxWithoutCookie);
 
   const gameLogout = await request(`/api/game/logout${sessionSearch}`, {
     method: "POST",
@@ -1476,6 +1638,33 @@ try {
         !selectableFleetShip || gameFleetLaunchBody.actionIssue?.code === "same_planet",
         "game fleet launch action reuses final dispatch validation issues",
         gameFleetLaunchBody.actionIssue ?? {}
+      ),
+      check(!selectableFleetShip || gameFleetNoShips.status === 200, "game fleet no-ships validation returns HTTP 200", {
+        status: gameFleetNoShips.status,
+        selectableFleetShip
+      }),
+      check(
+        !selectableFleetShip || gameFleetNoShipsBody.actionIssue?.code === "no_ships",
+        "game fleet no-ships validation keeps legacy no_ships issue",
+        gameFleetNoShipsBody.actionIssue ?? {}
+      ),
+      check(!selectableFleetShip || gameFleetInvalidOrder.status === 200, "game fleet invalid mission validation returns HTTP 200", {
+        status: gameFleetInvalidOrder.status,
+        selectableFleetShip
+      }),
+      check(
+        !selectableFleetShip || gameFleetInvalidOrderBody.actionIssue?.code === "invalid_order",
+        "game fleet invalid mission validation keeps legacy invalid_order issue",
+        gameFleetInvalidOrderBody.actionIssue ?? {}
+      ),
+      check(!selectableFleetShip || gameFleetInvalidExpeditionTarget.status === 200, "game fleet invalid expedition target validation returns HTTP 200", {
+        status: gameFleetInvalidExpeditionTarget.status,
+        selectableFleetShip
+      }),
+      check(
+        !selectableFleetShip || gameFleetInvalidExpeditionTargetBody.actionIssue?.code === "invalid_target",
+        "game fleet invalid expedition target validation keeps legacy invalid_target issue",
+        gameFleetInvalidExpeditionTargetBody.actionIssue ?? {}
       ),
       check(!gameFleet.body.includes(sessionCookiePair), "game fleet response does not echo private cookie"),
       check(gameFleetWithoutCookie.status === 401, "game fleet rejects missing private cookie", { status: gameFleetWithoutCookie.status }),
@@ -1727,6 +1916,38 @@ try {
       check(!gameOptions.body.includes(sessionCookiePair), "game options response does not echo private cookie"),
       check(gameOptionsWithoutCookie.status === 401, "game options rejects missing private cookie", { status: gameOptionsWithoutCookie.status }),
       check(gameOptionsWithoutCookieBody.authenticated === false, "game options missing private cookie is unauthenticated", gameOptionsWithoutCookieBody),
+      check(!smokeFixtureFile || phalanxFixtureReady, "go smoke fixture exposes phalanx moon and target ids", {
+        smokeFixtureFile,
+        phalanxFixture
+      }),
+      check(!phalanxFixtureReady || gamePhalanxMissingSensor.status === 200, "game phalanx missing-sensor scan returns HTTP 200", {
+        status: gamePhalanxMissingSensor.status
+      }),
+      check(
+        !phalanxFixtureReady || gamePhalanxMissingSensorBody.phalanx?.actionIssue?.code === "missing_sensor",
+        "game phalanx keeps legacy missing-sensor rejection",
+        gamePhalanxMissingSensorBody.phalanx?.actionIssue ?? {}
+      ),
+      check(!phalanxFixtureReady || gamePhalanx.status === 200, "game phalanx success scan returns HTTP 200", {
+        status: gamePhalanx.status
+      }),
+      check(!phalanxFixtureReady || gamePhalanxBody.authenticated === true, "game phalanx authenticates the login session", gamePhalanxBody),
+      check(!phalanxFixtureReady || gamePhalanxBody.phalanx?.source?.id === phalanxSourceMoonID, "game phalanx uses selected source moon", gamePhalanxBody.phalanx?.source ?? {}),
+      check(!phalanxFixtureReady || gamePhalanxBody.phalanx?.target?.id === phalanxTargetPlanetID, "game phalanx scans selected target planet", gamePhalanxBody.phalanx?.target ?? {}),
+      check(!phalanxFixtureReady || gamePhalanxBody.phalanx?.actionIssue === undefined, "game phalanx success scan has no action issue", gamePhalanxBody.phalanx ?? {}),
+      check(
+        !phalanxFixtureReady || gamePhalanxBody.phalanx?.remainingDeuterium === Number(phalanxFixture.initial_deuterium ?? 0) - Number(phalanxFixture.cost ?? 0),
+        "game phalanx success scan spends exactly the legacy deuterium cost",
+        gamePhalanxBody.phalanx ?? {}
+      ),
+      check(
+        !phalanxFixtureReady || Array.isArray(gamePhalanxBody.phalanx?.events) && gamePhalanxBody.phalanx.events.some((event) => Number(event.id) === Number(phalanxFixture.fleet_id ?? 0) || Number(event.mission) === 3),
+        "game phalanx success scan returns the visible fixture fleet event",
+        gamePhalanxBody.phalanx?.events ?? []
+      ),
+      check(!phalanxFixtureReady || !gamePhalanx.body.includes(sessionCookiePair), "game phalanx response does not echo private cookie"),
+      check(!phalanxFixtureReady || gamePhalanxWithoutCookie.status === 401, "game phalanx rejects missing private cookie", { status: gamePhalanxWithoutCookie.status }),
+      check(!phalanxFixtureReady || gamePhalanxWithoutCookieBody.authenticated === false, "game phalanx missing private cookie is unauthenticated", gamePhalanxWithoutCookieBody),
       check(gameLogout.status === 200, "game logout returns HTTP 200 with private cookie", { status: gameLogout.status }),
       check(gameLogoutBody.loggedOut === true, "game logout clears the active legacy session", gameLogoutBody),
       check(gameLogoutBody.redirectTo === "/home", "game logout redirects to public home", gameLogoutBody),
@@ -1744,6 +1965,52 @@ try {
       check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "password_required" && issue.legacyErrorCode === 2), "missing password maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "universe_required"), "missing universe is reported for multi-universe entry", invalidLoginBody)
+    ]
+  }));
+
+  const adminSubmodeChecks = gameAdminSubmodes.flatMap((item) => {
+    const expectedMode = item.expectedMode ?? item.mode;
+    const payloadCheck = item.arrayKey
+      ? check(
+          item.body.admin?.[item.arrayKey] === undefined || Array.isArray(item.body.admin?.[item.arrayKey]),
+          `admin ${item.name} returns ${item.arrayKey} array or omits an empty payload`,
+          item.body.admin ?? {}
+        )
+      : item.objectKey
+        ? check(item.body.admin?.[item.objectKey] !== undefined && item.body.admin?.[item.objectKey] !== null, `admin ${item.name} returns ${item.objectKey} payload`, item.body.admin ?? {})
+        : check(Array.isArray(item.body.admin?.menu), `admin ${item.name} returns menu payload`, item.body.admin ?? {});
+    return [
+      check(item.response.status === 200, `admin ${item.name} returns HTTP 200`, { status: item.response.status }),
+      check(item.body.authenticated === true, `admin ${item.name} authenticates`, item.body),
+      check(item.body.admin?.mode === expectedMode, `admin ${item.name} resolves legacy mode`, item.body.admin ?? {}),
+      check(item.body.actionIssue === undefined, `admin ${item.name} is not permission-denied for admin smoke user`, item.body.actionIssue ?? {}),
+      payloadCheck
+    ];
+  });
+  cases.push(finalize({
+    case: "go_admin_submode_matrix_api",
+    checks: adminSubmodeChecks
+  }));
+
+  const allianceRouteChecks = gameAllianceRoutes.flatMap((item) => [
+    check(item.response.status === 200, `alliance ${item.name} returns HTTP 200`, { status: item.response.status }),
+    check(item.body.authenticated === true, `alliance ${item.name} authenticates`, item.body),
+    check(item.allowedViews.includes(item.body.alliance?.view), `alliance ${item.name} resolves an expected legacy view`, {
+      expected: item.allowedViews,
+      actual: item.body.alliance?.view,
+      body: item.body
+    }),
+    check(Array.isArray(item.body.alliance?.members), `alliance ${item.name} returns members array`, item.body.alliance ?? {}),
+    check(Array.isArray(item.body.alliance?.applications), `alliance ${item.name} returns applications array`, item.body.alliance ?? {}),
+    check(Array.isArray(item.body.alliance?.ranks), `alliance ${item.name} returns ranks array`, item.body.alliance ?? {})
+  ]);
+  cases.push(finalize({
+    case: "go_alliance_deep_state_routes_api",
+    checks: [
+      ...allianceRouteChecks,
+      check(!gameAllianceRoutes.some((item) => item.response.body.includes(sessionCookiePair)), "alliance route matrix does not echo private cookie"),
+      check(gameAllianceWithoutCookie.status === 401, "alliance route rejects missing private cookie", { status: gameAllianceWithoutCookie.status }),
+      check(gameAllianceWithoutCookieBody.authenticated === false, "alliance route missing private cookie is unauthenticated", gameAllianceWithoutCookieBody)
     ]
   }));
 
@@ -2062,7 +2329,8 @@ try {
     case: "go_compat_smoke_runtime",
     checks: [
       check(false, "Go compatibility smoke did not complete", {
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
       })
     ]
   }));
@@ -2075,7 +2343,21 @@ const result = {
   all_pass: cases.every((item) => item.pass === true)
 };
 
-process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+const output = process.env.OGAME_SMOKE_COMPACT === "1"
+  ? {
+      case_group: result.case_group,
+      base_url: result.base_url,
+      all_pass: result.all_pass,
+      failed: result.cases
+        .filter((testCase) => testCase.pass !== true)
+        .map((testCase) => ({
+          case: testCase.case,
+          checks: testCase.checks.filter((item) => item.pass !== true)
+        }))
+    }
+  : result;
+
+process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
 if (!result.all_pass) {
   process.exitCode = 1;
 }

@@ -213,6 +213,8 @@ func selectedAllianceQuery(r *http.Request) appgame.AllianceQuery {
 		view = domaingame.AllianceViewManagement
 	case action == "6", action == "15":
 		view = domaingame.AllianceViewRanks
+	case action == "17":
+		view = domaingame.AllianceViewCircular
 	default:
 		view = domaingame.AllianceViewHome
 	}

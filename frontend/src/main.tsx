@@ -26,6 +26,7 @@ import {
   type GameNotesStatus,
   type GameOptionsStatus,
   type GameOverviewStatus,
+  type GamePhalanxStatus,
   type GameReportStatus,
   type GameResearchStatus,
   type GameResourcesStatus,
@@ -301,6 +302,8 @@ function App() {
   const [gameMessagesPending, setGameMessagesPending] = useState(false);
   const [gameReport, setGameReport] = useState<GameReportStatus | null>(null);
   const [gameReportError, setGameReportError] = useState<string | null>(null);
+  const [gamePhalanx, setGamePhalanx] = useState<GamePhalanxStatus | null>(null);
+  const [gamePhalanxError, setGamePhalanxError] = useState<string | null>(null);
   const [gameOptions, setGameOptions] = useState<GameOptionsStatus | null>(null);
   const [gameOptionsError, setGameOptionsError] = useState<string | null>(null);
   const [gameOptionsPending, setGameOptionsPending] = useState(false);
@@ -1603,6 +1606,32 @@ function App() {
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "phalanx" || publicSession === "") {
+      setGamePhalanx(null);
+      setGamePhalanxError(null);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const phalanxRequest = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    const targetPlanet = currentSearch.get("spid") ?? currentSearch.get("targetPlanetId");
+    if (selectedPlanet) {
+      phalanxRequest.set("cp", selectedPlanet);
+    }
+    if (targetPlanet) {
+      phalanxRequest.set("spid", targetPlanet);
+    }
+    fetch(`/api/game/phalanx?${phalanxRequest.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GamePhalanxStatus>)
+      .then((payload) => {
+        setGamePhalanx(payload);
+        setGamePhalanxError(null);
+      })
+      .catch((err: unknown) => setGamePhalanxError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "statistics" || publicSession === "") {
       setGameStatistics(null);
       setGameStatisticsError(null);
@@ -2124,6 +2153,8 @@ function App() {
         resourcesStatus={gameResources}
         reportError={gameReportError}
         reportStatus={gameReport}
+        phalanxError={gamePhalanxError}
+        phalanxStatus={gamePhalanx}
         researchError={gameResearchError}
         researchPending={gameResearchPending}
         researchStatus={gameResearch}

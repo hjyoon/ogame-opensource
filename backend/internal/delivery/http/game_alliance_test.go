@@ -153,6 +153,7 @@ func TestSelectedAllianceQueryAndLegacyMutationParsing(t *testing.T) {
 		{"/api/game/alliance?a=6", domaingame.AllianceViewRanks},
 		{"/api/game/alliance?a=11&d=2", domaingame.AllianceViewManagement},
 		{"/api/game/alliance?a=15", domaingame.AllianceViewRanks},
+		{"/api/game/alliance?a=17", domaingame.AllianceViewCircular},
 		{"/api/game/alliance", domaingame.AllianceViewHome},
 	}
 	for _, tt := range tests {

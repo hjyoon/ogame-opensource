@@ -101,9 +101,11 @@ function alliance_visual_reset_alliance(string $tag): void
 $password = 'alliancevisual';
 $fixture = alliance_visual_prepare_user('alliancevisual', 'Alliance Visual', $password, 'alliancevisual@example.local');
 $playerId = (int)$fixture['player_id'];
+$applicant = alliance_visual_prepare_user('allianceapplicant', 'Alliance Applicant', $password, 'allianceapplicant@example.local');
+$applicantId = (int)$applicant['player_id'];
 
 alliance_visual_reset_alliance('AVQA');
-dbquery("UPDATE {$db_prefix}users SET ally_id=0, allyrank=0, joindate=0 WHERE player_id={$playerId}");
+dbquery("UPDATE {$db_prefix}users SET ally_id=0, allyrank=0, joindate=0 WHERE player_id IN ({$playerId},{$applicantId})");
 $allyId = CreateAlly($playerId, 'AVQA', 'Alliance Visual QA');
 dbquery(
     "UPDATE {$db_prefix}ally SET " .
@@ -113,6 +115,9 @@ dbquery(
 );
 dbquery("UPDATE {$db_prefix}allyranks SET name='Founder' WHERE ally_id={$allyId} AND rank_id=0");
 dbquery("UPDATE {$db_prefix}allyranks SET name='Newcomer' WHERE ally_id={$allyId} AND rank_id=1");
+$officerRank = AddRank($allyId, 'Officer');
+SetRank($allyId, $officerRank, ARANK_R_MEMBERS | ARANK_CIRCULAR);
+AddApplication($allyId, $applicantId, 'I would like to join the alliance visual QA fixture.');
 InvalidateUserCache();
 
 header('Content-Type: application/json');
@@ -122,4 +127,5 @@ echo json_encode(array(
     'user_id' => $playerId,
     'home_planet_id' => (int)$fixture['planet_id'],
     'alliance_id' => $allyId,
+    'applicant_user_id' => $applicantId,
 ), JSON_PRETTY_PRINT) . "\n";

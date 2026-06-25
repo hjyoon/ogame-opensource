@@ -248,6 +248,13 @@ func (r AllianceRepository) populateOwnAlliance(ctx context.Context, alliance do
 			return domaingame.Alliance{}, err
 		}
 		alliance.Ranks = ranks
+	case domaingame.AllianceViewCircular:
+		alliance.View = domaingame.AllianceViewCircular
+		ranks, err := r.loadAllianceRanks(ctx, alliance.Viewer.AllianceID)
+		if err != nil {
+			return domaingame.Alliance{}, err
+		}
+		alliance.Ranks = ranks
 	default:
 		alliance.View = domaingame.AllianceViewHome
 	}

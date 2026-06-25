@@ -14,13 +14,13 @@ Do not remove or weaken legacy behavior. Check each migrated flow against existi
 
 Do not translate PHP files one-for-one. Reinterpret APIs, state, and modules naturally for React and Go. New routes do not need `.php` suffixes. Preserve legacy URLs only as compatibility entry points.
 
-Visible page composition is not free-form: every migrated public, game, and admin page must match the corresponding legacy PHP screen layout, skin, table density, labels, and assets unless a documented compatibility exception exists. If legacy code is inefficient or dated, preserve parity first and record modernization options for later cleanup after compatibility tests exist.
+Visible pages must match the corresponding legacy PHP layout, skin, density, labels, and assets unless a documented compatibility exception exists. Preserve parity first; record modernization options for later cleanup after tests exist.
 
 Game mechanics are different: resource math, timings, combat, queues, economy, targeting, reports, and permissions must behave exactly like the legacy game. Prove equivalence with focused unit tests plus E2E checks against the PHP oracle.
 
 ## Architecture Rule
 
-New migrated code must follow Clean Architecture. Mandatory.
+Follow Clean Architecture.
 
 - Domain rules must not depend on HTTP, SQL, React, files, clocks, or external services.
 - Application/use-case code coordinates domain rules through explicit interfaces.
@@ -48,17 +48,17 @@ Legacy PHP E2E is the baseline:
 testing/e2e/run-docker-e2e.sh
 ```
 
-Migration smoke:
+Final migration QA:
 
 ```sh
-testing/e2e/run-golang-migration-qa.sh
+OGAME_RUN_LEGACY_E2E=1 OGAME_GO_PORT=8895 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run-golang-migration-qa.sh
 ```
 
 Keep PHP as oracle; keep one current Go `goapp` container only.
 
 During page migration, extend Playwright visual E2E before claiming parity. Public: `testing/e2e/run-playwright-visual-e2e.sh`; auth: `testing/e2e/run-playwright-auth-visual-e2e.sh`. State if auth diff/layout is enforced or audit-only.
 
-Set `OGAME_RUN_LEGACY_E2E=0` only for local frontend/backend smoke work, never final game-behavior validation. Port HTTP black-box checks to Go with the same JSON result shape.
+Set `OGAME_RUN_LEGACY_E2E=0` only for local smoke work. `run-docker-e2e.sh` cleans stale migration fixtures by default; set `OGAME_CLEAN_MIGRATION_FIXTURES=0` only to debug fixtures. Port HTTP black-box checks to Go with the same JSON shape.
 
 Go internal package coverage must stay at or above 97%:
 

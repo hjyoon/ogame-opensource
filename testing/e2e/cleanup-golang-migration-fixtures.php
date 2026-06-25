@@ -71,7 +71,13 @@ function cleanup_go_fixture_names(): array
         getenv('OGAME_FLEET_ALL_SUPPORT_USER') ?: 'fleetallsupport',
         'empirevisual',
         'alliancevisual',
+        'allianceapplicant',
     );
+}
+
+function cleanup_go_fixture_alliance_tags(): array
+{
+    return array('AVQA');
 }
 
 function cleanup_go_reset_home_planets(array $userIds): void
@@ -92,6 +98,9 @@ $names = array_map(fn($name) => mb_strtolower($name, 'UTF-8'), cleanup_go_fixtur
 $nameList = cleanup_go_quoted_list($names);
 $userIds = cleanup_go_ids("SELECT player_id FROM {$db_prefix}users WHERE name IN ({$nameList})", 'player_id');
 $userList = cleanup_go_int_list($userIds);
+$allianceTagList = cleanup_go_quoted_list(cleanup_go_fixture_alliance_tags());
+$allianceIds = cleanup_go_ids("SELECT ally_id FROM {$db_prefix}ally WHERE tag IN ({$allianceTagList}) OR owner_id IN ({$userList})", 'ally_id');
+$allianceList = cleanup_go_int_list($allianceIds);
 $planetIds = cleanup_go_ids("SELECT planet_id FROM {$db_prefix}planets WHERE owner_id IN ({$userList})", 'planet_id');
 $planetList = cleanup_go_int_list($planetIds);
 
@@ -119,6 +128,13 @@ if (!empty($userIds)) {
     cleanup_go_reset_home_planets($userIds);
 }
 
+if (!empty($allianceIds)) {
+    dbquery("UPDATE {$db_prefix}users SET ally_id=0, allyrank=0, joindate=0 WHERE ally_id IN ({$allianceList}) OR player_id IN ({$userList})");
+    dbquery("DELETE FROM {$db_prefix}allyapps WHERE ally_id IN ({$allianceList}) OR player_id IN ({$userList})");
+    dbquery("DELETE FROM {$db_prefix}allyranks WHERE ally_id IN ({$allianceList})");
+    dbquery("DELETE FROM {$db_prefix}ally WHERE ally_id IN ({$allianceList})");
+}
+
 if (!empty($fleetIds)) {
     dbquery("DELETE FROM {$db_prefix}queue WHERE type='" . QTYP_FLEET . "' AND (owner_id IN ({$userList}) OR sub_id IN ({$fleetList}))");
     dbquery("DELETE FROM {$db_prefix}fleet WHERE fleet_id IN ({$fleetList})");
@@ -136,6 +152,7 @@ InvalidateUserCache();
 echo json_encode(array(
     'cleaned' => true,
     'users' => count($userIds),
+    'alliances' => count($allianceIds),
     'fleets' => count($fleetIds),
     'targets' => count($fleetTargetIds),
 ), JSON_UNESCAPED_SLASHES) . PHP_EOL;

@@ -22,8 +22,11 @@ wait_for_url() {
   curl --fail --silent "$url" >/dev/null
 }
 
-reset_fixture() {
+cleanup_fixture() {
   docker compose exec -T server php "$CONTAINER_DIR/reset-overview-all-cases-fixture.php" >/dev/null 2>&1 || true
+  if [ "${OGAME_CLEAN_MIGRATION_FIXTURES:-1}" = "1" ]; then
+    docker compose exec -T server php "$CONTAINER_DIR/cleanup-golang-migration-fixtures.php" >/dev/null 2>&1 || true
+  fi
 }
 
 mkdir -p "$ROOT_DIR/.tmp"
@@ -31,9 +34,10 @@ wait_for_url "$LEGACY_BASE_URL/home.php"
 wait_for_url "$GO_BASE_URL/api/healthz"
 
 docker compose exec -T server mkdir -p "$CONTAINER_DIR"
+docker compose cp "$SCRIPT_DIR/cleanup-golang-migration-fixtures.php" "server:$CONTAINER_DIR/cleanup-golang-migration-fixtures.php" >/dev/null
 docker compose cp "$SCRIPT_DIR/prepare-overview-all-cases-fixture.php" "server:$CONTAINER_DIR/prepare-overview-all-cases-fixture.php" >/dev/null
 docker compose cp "$SCRIPT_DIR/reset-overview-all-cases-fixture.php" "server:$CONTAINER_DIR/reset-overview-all-cases-fixture.php" >/dev/null
-trap reset_fixture EXIT INT TERM
+trap cleanup_fixture EXIT INT TERM
 docker compose exec -T server php "$CONTAINER_DIR/prepare-overview-all-cases-fixture.php" > "$FIXTURE_FILE"
 
 cd "$ROOT_DIR/frontend"
