@@ -721,6 +721,69 @@ function smoke_prepare_merchant_fixture(string $password, array $near): array
     return $fixture;
 }
 
+function smoke_prepare_moon_build_fixture(string $password, array $near): array
+{
+    global $db_prefix, $buildmap, $fleetmap;
+
+    $user = smoke_prepare_user('gomoonbuilder', $password, 'gomoonbuilder@example.local', USER_TYPE_PLAYER);
+    $playerId = (int)$user['player_id'];
+    $homePlanetId = (int)$user['home_planet_id'];
+    smoke_cleanup_alliances(array($playerId));
+    smoke_cleanup_fleets(array($playerId), array($homePlanetId));
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id={$playerId} AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "','" . QTYP_SHIPYARD . "','" . QTYP_FLEET . "')");
+    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id={$playerId} OR planet_id={$homePlanetId}");
+
+    $coords = smoke_find_empty_position($near);
+    smoke_prepare_planet($homePlanetId, $playerId, 'GoMoonHome', $coords);
+    $home = LoadPlanetById($homePlanetId);
+    if ($home === null) {
+        throw new RuntimeException('Go moon build home planet is missing.');
+    }
+
+    $moon = smoke_one_row("SELECT planet_id FROM {$db_prefix}planets WHERE owner_id={$playerId} AND type=" . PTYP_MOON . " AND name='GoMoonBuild' LIMIT 1");
+    $moonId = $moon === null ? 0 : (int)$moon['planet_id'];
+    if ($moonId <= 0) {
+        $moonId = CreatePlanet((int)$home['g'], (int)$home['s'], (int)$home['p'], $playerId, 1, 1, 20, time());
+    }
+    if ($moonId <= 0) {
+        throw new RuntimeException('Failed to prepare Go moon build fixture moon.');
+    }
+
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id={$playerId} AND sub_id IN (SELECT id FROM {$db_prefix}buildqueue WHERE planet_id={$moonId})");
+    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id={$playerId} OR planet_id={$moonId}");
+    $buildings = array();
+    foreach ($buildmap as $gid) {
+        $buildings[] = "`{$gid}`=0";
+    }
+    $ships = array();
+    foreach ($fleetmap as $gid) {
+        $ships[] = "`{$gid}`=0";
+    }
+    dbquery(
+        "UPDATE {$db_prefix}planets SET name='GoMoonBuild', g=" . (int)$home['g'] . ", s=" . (int)$home['s'] . ", p=" . (int)$home['p'] . ", type=" . PTYP_MOON . ", owner_id={$playerId}, " .
+        "`" . GID_RC_METAL . "`=1000000, `" . GID_RC_CRYSTAL . "`=1000000, `" . GID_RC_DEUTERIUM . "`=1000000, " .
+        implode(',', $buildings) . ", " . implode(',', $ships) . ", " .
+        "prod1=0, prod2=0, prod3=0, prod4=0, prod12=0, prod212=0, fields=0, maxfields=1, lastpeek=" . time() . " WHERE planet_id={$moonId}"
+    );
+
+    $buildError = BuildEnque(LoadUser($playerId), $moonId, GID_B_LUNAR_BASE, 0, time() - 120);
+    $queue = smoke_one_row("SELECT task_id, sub_id FROM {$db_prefix}queue WHERE owner_id={$playerId} AND type='" . QTYP_BUILD . "' AND obj_id=" . GID_B_LUNAR_BASE . " ORDER BY task_id DESC LIMIT 1");
+    if ($queue !== null) {
+        dbquery("UPDATE {$db_prefix}queue SET start=" . (time() - 120) . ", end=" . (time() - 30) . ", freeze=0, frozen=0 WHERE task_id=" . (int)$queue['task_id']);
+        dbquery("UPDATE {$db_prefix}buildqueue SET start=" . (time() - 120) . ", end=" . (time() - 30) . " WHERE id=" . (int)$queue['sub_id']);
+    }
+    InvalidateUserCache();
+
+    return array(
+        'login' => mb_strtolower($user['name'], 'UTF-8'),
+        'player_id' => $playerId,
+        'home_planet_id' => $homePlanetId,
+        'moon_id' => $moonId,
+        'queue_task_id' => $queue === null ? 0 : (int)$queue['task_id'],
+        'build_error' => $buildError,
+    );
+}
+
 $name = getenv('OGAME_GO_LOGIN_SMOKE_USER') ?: 'legor';
 $password = getenv('OGAME_GO_LOGIN_SMOKE_PASS') ?: 'admin';
 $email = getenv('OGAME_GO_LOGIN_SMOKE_EMAIL') ?: ($name . '@example.local');
@@ -742,6 +805,7 @@ smoke_prepare_planet((int)$freezeVictim['home_planet_id'], (int)$freezeVictim['p
 $premiumDmFixture = smoke_prepare_premium_dm_fixture($password, $home);
 $vacationFreezeFixture = smoke_prepare_vacation_freeze_fixture($password, $home);
 $merchantFixture = smoke_prepare_merchant_fixture($password, $home);
+$moonBuildFixture = smoke_prepare_moon_build_fixture($password, $home);
 $moonId = smoke_prepare_moon((int)$login['home_planet_id'], (int)$login['player_id']);
 $fleetId = smoke_dispatch_phalanx_fleet((int)$target['player_id'], (int)$target['home_planet_id'], (int)$login['home_planet_id']);
 $recallFleetId = smoke_dispatch_phalanx_fleet((int)$target['player_id'], (int)$target['home_planet_id'], (int)$login['home_planet_id']);
@@ -791,5 +855,6 @@ echo json_encode(array(
     'premium_dm' => $premiumDmFixture,
     'vacation_freeze' => $vacationFreezeFixture,
     'merchant' => $merchantFixture,
+    'moon_build' => $moonBuildFixture,
     'fleet_restrictions' => $fleetRestrictionFixture,
 ), JSON_UNESCAPED_SLASHES) . PHP_EOL;

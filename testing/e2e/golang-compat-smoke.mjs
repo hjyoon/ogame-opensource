@@ -323,6 +323,13 @@ try {
   const merchantReady = ["insufficient", "call", "trade", "reject"].every(
     (key) => typeof merchantFixture[key]?.login === "string" && merchantFixture[key].login.length > 0
   );
+  const moonBuildFixture = smokeFixture?.moon_build ?? {};
+  const moonBuildReady =
+    typeof moonBuildFixture.login === "string" &&
+    Number(moonBuildFixture.home_planet_id ?? 0) > 0 &&
+    Number(moonBuildFixture.moon_id ?? 0) > 0 &&
+    Number(moonBuildFixture.queue_task_id ?? 0) > 0 &&
+    String(moonBuildFixture.build_error ?? "") === "";
   const feedFixture = smokeFixture?.feed ?? {};
   const feedFixtureReady =
     typeof feedFixture.rss_feed_id === "string" &&
@@ -2523,6 +2530,35 @@ try {
   const merchantRejectCrystal = merchantRow(merchantRejectBody, 2);
   const merchantRejectDeuterium = merchantRow(merchantRejectBody, 3);
 
+  const moonBuildUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const moonBuildLogin = moonBuildReady
+    ? await loginGameUser(moonBuildFixture.login, loginSmokePassword, moonBuildUniverse)
+    : null;
+  const moonBuildSearch = moonBuildLogin?.search ?? "?session=";
+  const moonBuildCookie = moonBuildLogin?.cookiePair ?? "";
+  const moonBuildID = Number(moonBuildFixture.moon_id ?? 0);
+  const moonBuildHomeID = Number(moonBuildFixture.home_planet_id ?? 0);
+  const moonBuildingsAfterDue = moonBuildReady
+    ? await request(`/api/game/buildings${withQueryParam(moonBuildSearch, "cp", moonBuildID)}`, {
+        headers: { Cookie: moonBuildCookie }
+      })
+    : null;
+  const moonBuildingsAfterDueBody = moonBuildingsAfterDue ? parseJSON(moonBuildingsAfterDue) : {};
+  const moonLunarBaseAfterDue = Array.isArray(moonBuildingsAfterDueBody.buildings?.items)
+    ? moonBuildingsAfterDueBody.buildings.items.find((row) => Number(row.id) === 41)
+    : undefined;
+  const planetLunarReject = moonBuildReady
+    ? await request(`/api/game/buildings${withQueryParam(moonBuildSearch, "cp", moonBuildHomeID)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: moonBuildCookie },
+        body: JSON.stringify({ action: "add", techId: 41 })
+      })
+    : null;
+  const planetLunarRejectBody = planetLunarReject ? parseJSON(planetLunarReject) : {};
+  const planetLunarBaseAfterReject = Array.isArray(planetLunarRejectBody.buildings?.items)
+    ? planetLunarRejectBody.buildings.items.find((row) => Number(row.id) === 41)
+    : undefined;
+
   const gameAdmin = await request(`/api/game/admin${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -3720,6 +3756,30 @@ try {
         crystal: merchantRejectCrystal,
         deuterium: merchantRejectDeuterium
       })
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_moon_lunar_building_edges_api",
+    checks: [
+      check(!smokeFixtureFile || moonBuildReady, "go smoke fixture exposes moon lunar building queue", { moonBuildFixture }),
+      check(!moonBuildReady || moonBuildLogin?.response.status === 200, "moon builder user can log in", {
+        status: moonBuildLogin?.response.status
+      }),
+      check(!moonBuildReady || moonBuildingsAfterDue?.status === 200, "moon buildings page returns HTTP 200 after due queue", {
+        status: moonBuildingsAfterDue?.status
+      }),
+      check(!moonBuildReady || moonBuildingsAfterDueBody.authenticated === true, "moon buildings page authenticates", moonBuildingsAfterDueBody),
+      check(!moonBuildReady || moonBuildingsAfterDueBody.buildings?.currentPlanet?.id === moonBuildID, "moon buildings page selects the fixture moon", moonBuildingsAfterDueBody.buildings?.currentPlanet ?? {}),
+      check(!moonBuildReady || Number(moonLunarBaseAfterDue?.level ?? -1) === 1, "due Lunar Base queue completes to level 1", moonLunarBaseAfterDue ?? {}),
+      check(!moonBuildReady || Number(moonBuildingsAfterDueBody.buildings?.currentPlanet?.fields ?? -1) === 1, "Lunar Base completion increments used moon fields", moonBuildingsAfterDueBody.buildings?.currentPlanet ?? {}),
+      check(!moonBuildReady || Number(moonBuildingsAfterDueBody.buildings?.currentPlanet?.maxFields ?? -1) === 4, "Lunar Base completion expands moon max fields by 3", moonBuildingsAfterDueBody.buildings?.currentPlanet ?? {}),
+      check(!moonBuildReady || Array.isArray(moonBuildingsAfterDueBody.buildings?.queue) && moonBuildingsAfterDueBody.buildings.queue.length === 0, "due Lunar Base queue is removed after completion", moonBuildingsAfterDueBody.buildings?.queue ?? {}),
+      check(!moonBuildReady || planetLunarReject?.status === 200, "planet Lunar Base mutation returns HTTP 200", {
+        status: planetLunarReject?.status
+      }),
+      check(!moonBuildReady || planetLunarRejectBody.actionIssue?.code === "invalid_building", "planet rejects Lunar Base as an invalid building", planetLunarRejectBody.actionIssue ?? {}),
+      check(!moonBuildReady || planetLunarBaseAfterReject === undefined, "planet buildings response does not expose Lunar Base as buildable", planetLunarBaseAfterReject ?? {})
     ]
   }));
 
