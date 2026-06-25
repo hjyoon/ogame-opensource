@@ -118,7 +118,7 @@ func (r GalaxyRepository) GetGalaxy(ctx context.Context, query appgame.GalaxyQue
 		maxFleet += 2
 	}
 
-	return domaingame.BuildGalaxy(overview, domaingame.GalaxyInput{
+	galaxy := domaingame.BuildGalaxy(overview, domaingame.GalaxyInput{
 		Coordinates: coordinates,
 		Bounds:      bounds,
 		Viewer:      viewer,
@@ -130,7 +130,43 @@ func (r GalaxyRepository) GetGalaxy(ctx context.Context, query appgame.GalaxyQue
 		},
 		Objects: objects,
 		Now:     r.now().Unix(),
-	}), nil
+	})
+	if err := r.chargeGalaxyRemoteSystemCost(ctx, planetsTable, query.PlayerID, &galaxy); err != nil {
+		return domaingame.Galaxy{}, err
+	}
+	return galaxy, nil
+}
+
+func (r GalaxyRepository) chargeGalaxyRemoteSystemCost(ctx context.Context, planetsTable string, playerID int, galaxy *domaingame.Galaxy) error {
+	if galaxy == nil || r.execer == nil || !galaxy.RemoteSystemCostDue || galaxy.NotEnoughDeuterium {
+		return nil
+	}
+	result, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET `%d` = `%d` - ?, lastpeek = ? WHERE planet_id = ? AND owner_id = ? AND `%d` >= ? LIMIT 1", planetsTable, resourceDeuterium, resourceDeuterium, resourceDeuterium),
+		domaingame.GalaxyDeuteriumCost,
+		r.now().Unix(),
+		galaxy.CurrentPlanet.ID,
+		playerID,
+		domaingame.GalaxyDeuteriumCost,
+	)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		galaxy.NotEnoughDeuterium = true
+		return nil
+	}
+	remaining := galaxy.CurrentPlanet.Resources.Deuterium - domaingame.GalaxyDeuteriumCost
+	if remaining < 0 {
+		remaining = 0
+	}
+	galaxy.CurrentPlanet.Resources.Deuterium = remaining
+	return nil
 }
 
 func (r GalaxyRepository) DispatchInstantFleet(ctx context.Context, query appgame.GalaxyInstantDispatchQuery) (*domaingame.GalaxyActionIssue, error) {

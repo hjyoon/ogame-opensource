@@ -389,6 +389,18 @@ try {
     Number(fleetTemplatesFixture.foreign?.home_planet_id ?? 0) > 0 &&
     Number(fleetTemplatesFixture.expected_max ?? 0) > 0
   );
+  const galaxyRemoteFixture = smokeFixture?.galaxy_remote ?? {};
+  const galaxyRemoteReady = Boolean(
+    typeof galaxyRemoteFixture.enough?.login === "string" &&
+    typeof galaxyRemoteFixture.low?.login === "string" &&
+    Number(galaxyRemoteFixture.enough?.home_planet_id ?? 0) > 0 &&
+    Number(galaxyRemoteFixture.low?.home_planet_id ?? 0) > 0 &&
+    Number(galaxyRemoteFixture.enough?.remote_galaxy ?? 0) > 0 &&
+    Number(galaxyRemoteFixture.enough?.remote_system ?? 0) > 0 &&
+    Number(galaxyRemoteFixture.low?.remote_galaxy ?? 0) > 0 &&
+    Number(galaxyRemoteFixture.low?.remote_system ?? 0) > 0 &&
+    Number(galaxyRemoteFixture.cost ?? 0) > 0
+  );
   const legacyTransportReturnMission = 103;
   const health = await request("/api/healthz");
   let healthBody = {};
@@ -2024,6 +2036,30 @@ try {
   } catch {
     gameGalaxyWithoutCookieBody = {};
   }
+
+  const galaxyRemoteEnoughLogin = galaxyRemoteReady
+    ? await loginGameUser(galaxyRemoteFixture.enough.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const galaxyRemoteLowLogin = galaxyRemoteReady
+    ? await loginGameUser(galaxyRemoteFixture.low.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const galaxyRemoteSearch = (login, fixture) => withQueryParams(login?.search ?? "?session=", {
+    cp: Number(fixture?.home_planet_id ?? 0),
+    galaxy: Number(fixture?.remote_galaxy ?? 1),
+    system: Number(fixture?.remote_system ?? 1)
+  });
+  const galaxyRemoteEnough = galaxyRemoteReady
+    ? await request(`/api/game/galaxy${galaxyRemoteSearch(galaxyRemoteEnoughLogin, galaxyRemoteFixture.enough)}`, {
+        headers: { Cookie: galaxyRemoteEnoughLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const galaxyRemoteEnoughBody = parseJSON(galaxyRemoteEnough);
+  const galaxyRemoteLow = galaxyRemoteReady
+    ? await request(`/api/game/galaxy${galaxyRemoteSearch(galaxyRemoteLowLogin, galaxyRemoteFixture.low)}`, {
+        headers: { Cookie: galaxyRemoteLowLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const galaxyRemoteLowBody = parseJSON(galaxyRemoteLow);
 
   const gameDefense = await request(`/api/game/defense${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -3885,6 +3921,42 @@ try {
         fleetTemplateOwnerDeleteBody.fleet?.templates ?? {}
       ),
       check(!fleetTemplatesReady || !fleetTemplateOwnerDelete.body.includes(fleetTemplateCommanderLogin?.cookiePair ?? "missing-cookie"), "fleet template mutation response does not echo commander cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_galaxy_remote_deuterium_edges_api",
+    checks: [
+      check(!smokeFixtureFile || galaxyRemoteReady, "go smoke fixture exposes remote galaxy users", { galaxyRemoteFixture }),
+      check(!galaxyRemoteReady || galaxyRemoteEnoughLogin?.response.status === 200, "remote galaxy enough-deuterium user can log in", {
+        status: galaxyRemoteEnoughLogin?.response.status
+      }),
+      check(!galaxyRemoteReady || galaxyRemoteLowLogin?.response.status === 200, "remote galaxy low-deuterium user can log in", {
+        status: galaxyRemoteLowLogin?.response.status
+      }),
+      check(!galaxyRemoteReady || galaxyRemoteEnough.status === 200, "remote galaxy enough-deuterium request returns HTTP 200", {
+        status: galaxyRemoteEnough.status
+      }),
+      check(!galaxyRemoteReady || galaxyRemoteEnoughBody.galaxy?.remoteSystemCostDue === true, "remote galaxy marks the legacy system-view cost as due", galaxyRemoteEnoughBody.galaxy ?? {}),
+      check(!galaxyRemoteReady || galaxyRemoteEnoughBody.galaxy?.notEnoughDeuterium === false, "remote galaxy enough-deuterium request has no deuterium warning", galaxyRemoteEnoughBody.galaxy ?? {}),
+      check(
+        !galaxyRemoteReady ||
+          galaxyRemoteEnoughBody.galaxy?.currentPlanet?.resources?.deuterium === Number(galaxyRemoteFixture.enough.initial_deuterium ?? 0) - Number(galaxyRemoteFixture.cost ?? 0),
+        "remote galaxy enough-deuterium request spends exactly the legacy cost",
+        galaxyRemoteEnoughBody.galaxy?.currentPlanet?.resources ?? {}
+      ),
+      check(!galaxyRemoteReady || galaxyRemoteLow.status === 200, "remote galaxy low-deuterium request returns HTTP 200", {
+        status: galaxyRemoteLow.status
+      }),
+      check(!galaxyRemoteReady || galaxyRemoteLowBody.galaxy?.remoteSystemCostDue === true, "remote galaxy low-deuterium request still marks cost as due", galaxyRemoteLowBody.galaxy ?? {}),
+      check(!galaxyRemoteReady || galaxyRemoteLowBody.galaxy?.notEnoughDeuterium === true, "remote galaxy low-deuterium request returns the legacy deuterium warning", galaxyRemoteLowBody.galaxy ?? {}),
+      check(
+        !galaxyRemoteReady ||
+          galaxyRemoteLowBody.galaxy?.currentPlanet?.resources?.deuterium === Number(galaxyRemoteFixture.low.initial_deuterium ?? -1),
+        "remote galaxy low-deuterium request does not spend deuterium",
+        galaxyRemoteLowBody.galaxy?.currentPlanet?.resources ?? {}
+      ),
+      check(!galaxyRemoteReady || !galaxyRemoteEnough.body.includes(galaxyRemoteEnoughLogin?.cookiePair ?? "missing-cookie"), "remote galaxy response does not echo private cookie")
     ]
   }));
 

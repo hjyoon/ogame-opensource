@@ -903,6 +903,63 @@ function smoke_prepare_fleet_template_fixture(string $password, array $near): ar
     );
 }
 
+function smoke_prepare_galaxy_remote_fixture(string $password, array $near): array
+{
+    global $db_prefix, $GlobalUni;
+
+    $enough = smoke_prepare_user('gogalaxyremote', $password, 'gogalaxyremote@example.local', USER_TYPE_PLAYER);
+    $low = smoke_prepare_user('gogalaxynodeut', $password, 'gogalaxynodeut@example.local', USER_TYPE_PLAYER);
+    $users = array($enough, $low);
+    $userIds = array_map(fn($user) => (int)$user['player_id'], $users);
+    $planetIds = array_map(fn($user) => (int)$user['home_planet_id'], $users);
+
+    smoke_cleanup_alliances($userIds);
+    smoke_cleanup_fleets($userIds, $planetIds);
+    $positions = smoke_find_empty_positions($near, count($users));
+    foreach ($users as $index => $user) {
+        smoke_prepare_planet((int)$user['home_planet_id'], (int)$user['player_id'], 'GoGalaxy' . $index, $positions[$index]);
+    }
+
+    $now = time();
+    $systems = max(1, (int)$GlobalUni['systems']);
+    $enoughHome = LoadPlanetById((int)$enough['home_planet_id']);
+    $lowHome = LoadPlanetById((int)$low['home_planet_id']);
+    if ($enoughHome === null || $lowHome === null) {
+        throw new RuntimeException('Go galaxy remote home planet is missing.');
+    }
+    $remoteSystemFor = function (array $home) use ($systems): int {
+        return (int)$home['s'] < $systems ? (int)$home['s'] + 1 : max(1, (int)$home['s'] - 1);
+    };
+    dbquery(
+        "UPDATE {$db_prefix}users SET admin=0, validated=1, deact_ip=1, vacation=0, vacation_until=0, " .
+        "banned=0, banned_until=0, noattack=0, noattack_until=0, disable=0, disable_until=0, lastclick={$now} " .
+        "WHERE player_id IN (" . implode(',', $userIds) . ")"
+    );
+    dbquery("UPDATE {$db_prefix}planets SET `" . GID_RC_DEUTERIUM . "`=25, lastpeek={$now} WHERE planet_id=" . (int)$enough['home_planet_id']);
+    dbquery("UPDATE {$db_prefix}planets SET `" . GID_RC_DEUTERIUM . "`=0, lastpeek={$now} WHERE planet_id=" . (int)$low['home_planet_id']);
+    InvalidateUserCache();
+
+    return array(
+        'enough' => array(
+            'login' => mb_strtolower($enough['name'], 'UTF-8'),
+            'player_id' => (int)$enough['player_id'],
+            'home_planet_id' => (int)$enough['home_planet_id'],
+            'initial_deuterium' => 25,
+            'remote_galaxy' => (int)$enoughHome['g'],
+            'remote_system' => $remoteSystemFor($enoughHome),
+        ),
+        'low' => array(
+            'login' => mb_strtolower($low['name'], 'UTF-8'),
+            'player_id' => (int)$low['player_id'],
+            'home_planet_id' => (int)$low['home_planet_id'],
+            'initial_deuterium' => 0,
+            'remote_galaxy' => (int)$lowHome['g'],
+            'remote_system' => $remoteSystemFor($lowHome),
+        ),
+        'cost' => GALAXY_DEUTERIUM_CONS,
+    );
+}
+
 $name = getenv('OGAME_GO_LOGIN_SMOKE_USER') ?: 'legor';
 $password = getenv('OGAME_GO_LOGIN_SMOKE_PASS') ?: 'admin';
 $email = getenv('OGAME_GO_LOGIN_SMOKE_EMAIL') ?: ($name . '@example.local');
@@ -942,6 +999,7 @@ $adminOperationsFixture = smoke_prepare_admin_operations_fixture($operator, $tar
 $adminAuditFixture = smoke_prepare_admin_audit_fixture($target);
 $fleetRestrictionFixture = smoke_prepare_fleet_restriction_fixture($password, $home);
 $fleetTemplateFixture = smoke_prepare_fleet_template_fixture($password, $home);
+$galaxyRemoteFixture = smoke_prepare_galaxy_remote_fixture($password, $home);
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
 echo json_encode(array(
@@ -984,4 +1042,5 @@ echo json_encode(array(
 	'moon_build' => $moonBuildFixture,
 	'fleet_restrictions' => $fleetRestrictionFixture,
 	'fleet_templates' => $fleetTemplateFixture,
+	'galaxy_remote' => $galaxyRemoteFixture,
 ), JSON_UNESCAPED_SLASHES) . PHP_EOL;

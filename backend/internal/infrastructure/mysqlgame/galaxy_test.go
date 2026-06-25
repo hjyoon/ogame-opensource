@@ -52,6 +52,39 @@ func TestGalaxyRepositoryReadsLegacyGalaxyScreen(t *testing.T) {
 	}
 }
 
+func TestGalaxyRepositoryChargesRemoteSystemDeuterium(t *testing.T) {
+	now := time.Unix(10_000, 0)
+	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: append(galaxyReadPrefixResults(now),
+		fakeQueryResult{rows: fakeRowsFromValues()},
+	)}}
+	repository := NewGalaxyRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	galaxy, err := repository.GetGalaxy(context.Background(), appgame.GalaxyQuery{
+		PlayerID:    42,
+		Coordinates: domaingame.Coordinates{Galaxy: 1, System: 3},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !galaxy.RemoteSystemCostDue || galaxy.NotEnoughDeuterium {
+		t.Fatalf("expected payable remote system cost, got due=%v not_enough=%v", galaxy.RemoteSystemCostDue, galaxy.NotEnoughDeuterium)
+	}
+	if galaxy.CurrentPlanet.Resources.Deuterium != 9990 {
+		t.Fatalf("expected response deuterium to be charged, got %+v", galaxy.CurrentPlanet.Resources)
+	}
+	if len(runner.execCalls) != 1 {
+		t.Fatalf("expected one deuterium charge update, got %+v", runner.execCalls)
+	}
+	call := runner.execCalls[0]
+	if !strings.Contains(call.sql, "UPDATE `ogame_planets` SET `702` = `702` - ?") || !strings.Contains(call.sql, "owner_id = ?") {
+		t.Fatalf("unexpected deuterium update SQL: %s", call.sql)
+	}
+	if len(call.args) != 5 || call.args[0] != domaingame.GalaxyDeuteriumCost || call.args[2] != 99 || call.args[3] != 42 || call.args[4] != domaingame.GalaxyDeuteriumCost {
+		t.Fatalf("unexpected deuterium update args: %+v", call.args)
+	}
+}
+
 func TestNewGalaxyRepositoryKeepsSQLQueryer(t *testing.T) {
 	repository := NewGalaxyRepository(nil, "ogame_")
 
