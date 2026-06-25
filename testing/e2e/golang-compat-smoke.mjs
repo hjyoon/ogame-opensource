@@ -306,6 +306,13 @@ try {
   const premiumDMReady = ["insufficient", "mixed", "extend", "invalid"].every(
     (key) => typeof premiumDMFixture[key]?.login === "string" && premiumDMFixture[key].login.length > 0
   ) && Number(premiumDMFixture.extend?.old_geologist_until ?? 0) > 0;
+  const vacationFreezeFixture = smokeFixture?.vacation_freeze ?? {};
+  const vacationFreezeReady =
+    typeof vacationFreezeFixture.build?.login === "string" &&
+    typeof vacationFreezeFixture.fleet?.login === "string" &&
+    typeof vacationFreezeFixture.mutation?.login === "string" &&
+    Number(vacationFreezeFixture.build?.queue_task_id ?? 0) > 0 &&
+    Number(vacationFreezeFixture.fleet?.fleet_id ?? 0) > 0;
   const feedFixture = smokeFixture?.feed ?? {};
   const feedFixtureReady =
     typeof feedFixture.rss_feed_id === "string" &&
@@ -2405,6 +2412,55 @@ try {
     ? premiumInvalidAfterBody.officers.rows.filter((row) => row.active)
     : [];
 
+  const vacationUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const vacationBuildLogin = vacationFreezeReady
+    ? await loginGameUser(vacationFreezeFixture.build.login, loginSmokePassword, vacationUniverse)
+    : null;
+  const vacationFleetLogin = vacationFreezeReady
+    ? await loginGameUser(vacationFreezeFixture.fleet.login, loginSmokePassword, vacationUniverse)
+    : null;
+  const vacationMutationLogin = vacationFreezeReady
+    ? await loginGameUser(vacationFreezeFixture.mutation.login, loginSmokePassword, vacationUniverse)
+    : null;
+  const vacationBuildEnable = vacationFreezeReady
+    ? await request(`/api/game/options${vacationBuildLogin.search}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: vacationBuildLogin.cookiePair },
+        body: legacyOptionsForm({ urlaubs_modus: "on" })
+      })
+    : null;
+  const vacationBuildEnableBody = vacationBuildEnable ? parseJSON(vacationBuildEnable) : {};
+  const vacationFleetEnable = vacationFreezeReady
+    ? await request(`/api/game/options${vacationFleetLogin.search}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: vacationFleetLogin.cookiePair },
+        body: legacyOptionsForm({ urlaubs_modus: "on" })
+      })
+    : null;
+  const vacationFleetEnableBody = vacationFleetEnable ? parseJSON(vacationFleetEnable) : {};
+  const vacationBlockedBuild = vacationFreezeReady
+    ? await request(`/api/game/buildings${vacationMutationLogin.search}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: vacationMutationLogin.cookiePair },
+        body: JSON.stringify({ action: "add", techId: 1 })
+      })
+    : null;
+  const vacationBlockedBuildBody = vacationBlockedBuild ? parseJSON(vacationBlockedBuild) : {};
+  const vacationBlockedMetalMine = Array.isArray(vacationBlockedBuildBody.buildings?.items)
+    ? vacationBlockedBuildBody.buildings.items.find((row) => Number(row.id) === 1)
+    : undefined;
+  const vacationBlockedShipyard = vacationFreezeReady
+    ? await request(`/api/game/shipyard${vacationMutationLogin.search}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: vacationMutationLogin.cookiePair },
+        body: JSON.stringify({ orders: { "202": 3 } })
+      })
+    : null;
+  const vacationBlockedShipyardBody = vacationBlockedShipyard ? parseJSON(vacationBlockedShipyard) : {};
+  const vacationBlockedSmallCargo = Array.isArray(vacationBlockedShipyardBody.shipyard?.items)
+    ? vacationBlockedShipyardBody.shipyard.items.find((row) => Number(row.id) === 202)
+    : undefined;
+
   const gameAdmin = await request(`/api/game/admin${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -3512,6 +3568,44 @@ try {
       }),
       check(!premiumDMReady || premiumInvalidAfterBody.officers?.user?.paidDarkMatter === 50000 && premiumInvalidAfterBody.officers?.user?.freeDarkMatter === 500, "invalid premium purchase parameters do not spend DM", premiumInvalidAfterBody.officers?.user ?? {}),
       check(!premiumDMReady || premiumInvalidActiveRows.length === 0, "invalid premium purchase parameters do not activate any officer", premiumInvalidActiveRows)
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_vacation_freeze_edges_api",
+    checks: [
+      check(!smokeFixtureFile || vacationFreezeReady, "go smoke fixture exposes vacation/freeze edge users", { vacationFreezeFixture }),
+      check(!vacationFreezeReady || vacationBuildLogin?.response.status === 200, "vacation build-queue user can log in", {
+        status: vacationBuildLogin?.response.status
+      }),
+      check(!vacationFreezeReady || vacationFleetLogin?.response.status === 200, "vacation fleet-queue user can log in", {
+        status: vacationFleetLogin?.response.status
+      }),
+      check(!vacationFreezeReady || vacationMutationLogin?.response.status === 200, "vacation mutation-block user can log in", {
+        status: vacationMutationLogin?.response.status
+      }),
+      check(!vacationFreezeReady || vacationBuildEnable?.status === 200, "build-queue vacation enable request returns HTTP 200", {
+        status: vacationBuildEnable?.status
+      }),
+      check(!vacationFreezeReady || vacationBuildEnableBody.actionIssue?.code === "vacation_blocked", "active build queue rejects vacation enable", vacationBuildEnableBody.actionIssue ?? {}),
+      check(!vacationFreezeReady || vacationBuildEnableBody.options?.account?.vacation === false, "build-queue user remains out of vacation mode", vacationBuildEnableBody.options?.account ?? {}),
+      check(!vacationFreezeReady || vacationFleetEnable?.status === 200, "fleet-queue vacation enable request returns HTTP 200", {
+        status: vacationFleetEnable?.status
+      }),
+      check(!vacationFreezeReady || vacationFleetEnableBody.actionIssue?.code === "vacation_blocked", "active fleet queue rejects vacation enable", vacationFleetEnableBody.actionIssue ?? {}),
+      check(!vacationFreezeReady || vacationFleetEnableBody.options?.account?.vacation === false, "fleet-queue user remains out of vacation mode", vacationFleetEnableBody.options?.account ?? {}),
+      check(!vacationFreezeReady || vacationBlockedBuild?.status === 200, "vacation building mutation returns HTTP 200", {
+        status: vacationBlockedBuild?.status
+      }),
+      check(!vacationFreezeReady || vacationBlockedBuildBody.actionIssue?.code === "vacation", "vacation mode blocks building mutation", vacationBlockedBuildBody.actionIssue ?? {}),
+      check(!vacationFreezeReady || Array.isArray(vacationBlockedBuildBody.buildings?.queue) && vacationBlockedBuildBody.buildings.queue.length === 0, "vacation building mutation does not enqueue work", vacationBlockedBuildBody.buildings?.queue ?? {}),
+      check(!vacationFreezeReady || Number(vacationBlockedMetalMine?.level ?? -1) === 0, "vacation building mutation leaves metal mine level unchanged", vacationBlockedMetalMine ?? {}),
+      check(!vacationFreezeReady || vacationBlockedShipyard?.status === 200, "vacation shipyard mutation returns HTTP 200", {
+        status: vacationBlockedShipyard?.status
+      }),
+      check(!vacationFreezeReady || vacationBlockedShipyardBody.actionIssue?.code === "vacation", "vacation mode blocks shipyard mutation", vacationBlockedShipyardBody.actionIssue ?? {}),
+      check(!vacationFreezeReady || Array.isArray(vacationBlockedShipyardBody.shipyard?.queue) && vacationBlockedShipyardBody.shipyard.queue.length === 0, "vacation shipyard mutation does not enqueue work", vacationBlockedShipyardBody.shipyard?.queue ?? {}),
+      check(!vacationFreezeReady || Number(vacationBlockedSmallCargo?.count ?? -1) === 3, "vacation shipyard mutation leaves small cargo count unchanged", vacationBlockedSmallCargo ?? {})
     ]
   }));
 
