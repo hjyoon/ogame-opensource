@@ -529,6 +529,57 @@ function smoke_prepare_fleet_restriction_fixture(string $password, array $near):
     return $fixture;
 }
 
+function smoke_prepare_premium_dm_fixture(string $password, array $near): array
+{
+    global $db_prefix;
+
+    $oldGeologistUntil = time() + 3 * 24 * 60 * 60;
+    $specs = array(
+        'insufficient' => array('name' => 'gopremiumlow', 'email' => 'gopremiumlow@example.local', 'dm' => 9999, 'dmfree' => 0, 'geo_until' => 0),
+        'mixed' => array('name' => 'gopremiummixed', 'email' => 'gopremiummixed@example.local', 'dm' => 4000, 'dmfree' => 7000, 'geo_until' => 0),
+        'extend' => array('name' => 'gopremiumextend', 'email' => 'gopremiumextend@example.local', 'dm' => 20000, 'dmfree' => 0, 'geo_until' => $oldGeologistUntil),
+        'invalid' => array('name' => 'gopremiuminvalid', 'email' => 'gopremiuminvalid@example.local', 'dm' => 50000, 'dmfree' => 500, 'geo_until' => 0),
+    );
+
+    $users = array();
+    foreach ($specs as $key => $spec) {
+        $users[$key] = smoke_prepare_user($spec['name'], $password, $spec['email'], USER_TYPE_PLAYER);
+    }
+    smoke_cleanup_alliances(array_map(fn($user) => (int)$user['player_id'], $users));
+    smoke_cleanup_fleets(
+        array_map(fn($user) => (int)$user['player_id'], $users),
+        array_map(fn($user) => (int)$user['home_planet_id'], $users)
+    );
+
+    $positions = smoke_find_empty_positions($near, count($users));
+    $fixture = array();
+    $index = 0;
+    foreach ($specs as $key => $spec) {
+        $user = $users[$key];
+        $playerId = (int)$user['player_id'];
+        $planetId = (int)$user['home_planet_id'];
+        smoke_prepare_planet($planetId, $playerId, 'GoPremium' . $index, $positions[$index]);
+        dbquery(
+            "UPDATE {$db_prefix}users SET admin=0, validated=1, deact_ip=1, vacation=0, vacation_until=0, " .
+            "banned=0, banned_until=0, noattack=0, noattack_until=0, disable=0, disable_until=0, " .
+            "dm=" . (int)$spec['dm'] . ", dmfree=" . (int)$spec['dmfree'] . ", " .
+            "com_until=0, adm_until=0, eng_until=0, geo_until=" . (int)$spec['geo_until'] . ", tec_until=0, " .
+            "hplanetid={$planetId}, aktplanet={$planetId}, lastclick=" . time() . " WHERE player_id={$playerId}"
+        );
+        $fixture[$key] = array(
+            'player_id' => $playerId,
+            'login' => mb_strtolower($user['name'], 'UTF-8'),
+            'home_planet_id' => $planetId,
+        );
+        if ($key === 'extend') {
+            $fixture[$key]['old_geologist_until'] = $oldGeologistUntil;
+        }
+        $index++;
+    }
+    InvalidateUserCache();
+    return $fixture;
+}
+
 $name = getenv('OGAME_GO_LOGIN_SMOKE_USER') ?: 'legor';
 $password = getenv('OGAME_GO_LOGIN_SMOKE_PASS') ?: 'admin';
 $email = getenv('OGAME_GO_LOGIN_SMOKE_EMAIL') ?: ($name . '@example.local');
@@ -547,6 +598,7 @@ smoke_cleanup_fleets(array((int)$login['player_id'], (int)$operator['player_id']
 smoke_prepare_planet((int)$login['home_planet_id'], (int)$login['player_id'], 'Go Smoke Home', array((int)$home['g'], (int)$home['s'], (int)$home['p']));
 smoke_prepare_planet((int)$target['home_planet_id'], (int)$target['player_id'], 'Go Smoke Target', $targetCoords);
 smoke_prepare_planet((int)$freezeVictim['home_planet_id'], (int)$freezeVictim['player_id'], 'Go Freeze', smoke_find_empty_position($home));
+$premiumDmFixture = smoke_prepare_premium_dm_fixture($password, $home);
 $moonId = smoke_prepare_moon((int)$login['home_planet_id'], (int)$login['player_id']);
 $fleetId = smoke_dispatch_phalanx_fleet((int)$target['player_id'], (int)$target['home_planet_id'], (int)$login['home_planet_id']);
 $recallFleetId = smoke_dispatch_phalanx_fleet((int)$target['player_id'], (int)$target['home_planet_id'], (int)$login['home_planet_id']);
@@ -593,5 +645,6 @@ echo json_encode(array(
         'freeze_victim_player_id' => (int)$freezeVictim['player_id'],
         'freeze_victim_name' => $freezeVictim['name'],
     ),
+    'premium_dm' => $premiumDmFixture,
     'fleet_restrictions' => $fleetRestrictionFixture,
 ), JSON_UNESCAPED_SLASHES) . PHP_EOL;

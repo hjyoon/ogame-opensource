@@ -73,6 +73,12 @@ function parseJSON(response) {
   }
 }
 
+function officerRow(body, id) {
+  return Array.isArray(body.officers?.rows)
+    ? body.officers.rows.find((row) => Number(row.id) === Number(id))
+    : undefined;
+}
+
 async function readOptionalJSON(path) {
   if (!path) {
     return {};
@@ -296,6 +302,10 @@ try {
   const adminUniverseFixture = smokeFixture?.admin_universe ?? {};
   const adminUniverseFreezeVictimID = Number(adminUniverseFixture.freeze_victim_player_id ?? 0);
   const adminUniverseReady = adminUniverseFreezeVictimID > 0;
+  const premiumDMFixture = smokeFixture?.premium_dm ?? {};
+  const premiumDMReady = ["insufficient", "mixed", "extend", "invalid"].every(
+    (key) => typeof premiumDMFixture[key]?.login === "string" && premiumDMFixture[key].login.length > 0
+  ) && Number(premiumDMFixture.extend?.old_geologist_until ?? 0) > 0;
   const feedFixture = smokeFixture?.feed ?? {};
   const feedFixtureReady =
     typeof feedFixture.rss_feed_id === "string" &&
@@ -2315,6 +2325,86 @@ try {
     gameOfficersWithoutCookieBody = {};
   }
 
+  const premiumUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const premiumInsufficientLogin = premiumDMReady
+    ? await loginGameUser(premiumDMFixture.insufficient.login, loginSmokePassword, premiumUniverse)
+    : null;
+  const premiumMixedLogin = premiumDMReady
+    ? await loginGameUser(premiumDMFixture.mixed.login, loginSmokePassword, premiumUniverse)
+    : null;
+  const premiumExtendLogin = premiumDMReady
+    ? await loginGameUser(premiumDMFixture.extend.login, loginSmokePassword, premiumUniverse)
+    : null;
+  const premiumInvalidLogin = premiumDMReady
+    ? await loginGameUser(premiumDMFixture.invalid.login, loginSmokePassword, premiumUniverse)
+    : null;
+
+  const premiumInsufficient = premiumDMReady
+    ? await request(`/api/game/officers${premiumInsufficientLogin.search}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: premiumInsufficientLogin.cookiePair },
+        body: JSON.stringify({ officerId: 2, days: 7 })
+      })
+    : null;
+  const premiumInsufficientBody = premiumInsufficient ? parseJSON(premiumInsufficient) : {};
+  const premiumInsufficientAdmiral = officerRow(premiumInsufficientBody, 2);
+
+  const premiumMixedStartedAt = Math.floor(Date.now() / 1000);
+  const premiumMixed = premiumDMReady
+    ? await request(`/api/game/officers${premiumMixedLogin.search}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: premiumMixedLogin.cookiePair },
+        body: JSON.stringify({ officerId: 3, days: 7 })
+      })
+    : null;
+  const premiumMixedBody = premiumMixed ? parseJSON(premiumMixed) : {};
+  const premiumMixedEngineer = officerRow(premiumMixedBody, 3);
+
+  const premiumExtend = premiumDMReady
+    ? await request(`/api/game/officers${premiumExtendLogin.search}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: premiumExtendLogin.cookiePair },
+        body: JSON.stringify({ officerId: 4, days: 7 })
+      })
+    : null;
+  const premiumExtendBody = premiumExtend ? parseJSON(premiumExtend) : {};
+  const premiumExtendGeologist = officerRow(premiumExtendBody, 4);
+  const premiumExpectedGeologistUntil = Number(premiumDMFixture.extend?.old_geologist_until ?? 0) + 7 * 24 * 60 * 60;
+
+  const premiumInvalidType = premiumDMReady
+    ? await request(`/api/game/officers${premiumInvalidLogin.search}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: premiumInvalidLogin.cookiePair },
+        body: "type=99&days=7"
+      })
+    : null;
+  const premiumMissingType = premiumDMReady
+    ? await request(`/api/game/officers${premiumInvalidLogin.search}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: premiumInvalidLogin.cookiePair },
+        body: "days=7"
+      })
+    : null;
+  const premiumMissingDays = premiumDMReady
+    ? await request(`/api/game/officers${premiumInvalidLogin.search}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: premiumInvalidLogin.cookiePair },
+        body: "type=1"
+      })
+    : null;
+  const premiumInvalidAfter = premiumDMReady
+    ? await request(`/api/game/officers${premiumInvalidLogin.search}`, {
+        headers: { Cookie: premiumInvalidLogin.cookiePair }
+      })
+    : null;
+  const premiumInvalidTypeBody = premiumInvalidType ? parseJSON(premiumInvalidType) : {};
+  const premiumMissingTypeBody = premiumMissingType ? parseJSON(premiumMissingType) : {};
+  const premiumMissingDaysBody = premiumMissingDays ? parseJSON(premiumMissingDays) : {};
+  const premiumInvalidAfterBody = premiumInvalidAfter ? parseJSON(premiumInvalidAfter) : {};
+  const premiumInvalidActiveRows = Array.isArray(premiumInvalidAfterBody.officers?.rows)
+    ? premiumInvalidAfterBody.officers.rows.filter((row) => row.active)
+    : [];
+
   const gameAdmin = await request(`/api/game/admin${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -3361,6 +3451,67 @@ try {
       check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "password_required" && issue.legacyErrorCode === 2), "missing password maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "universe_required"), "missing universe is reported for multi-universe entry", invalidLoginBody)
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_premium_dm_edges_api",
+    checks: [
+      check(!smokeFixtureFile || premiumDMReady, "go smoke fixture exposes premium DM edge users", { premiumDMFixture }),
+      check(!premiumDMReady || premiumInsufficientLogin?.response.status === 200, "premium insufficient user can log in", {
+        status: premiumInsufficientLogin?.response.status
+      }),
+      check(!premiumDMReady || premiumMixedLogin?.response.status === 200, "premium mixed DM user can log in", {
+        status: premiumMixedLogin?.response.status
+      }),
+      check(!premiumDMReady || premiumExtendLogin?.response.status === 200, "premium timer extension user can log in", {
+        status: premiumExtendLogin?.response.status
+      }),
+      check(!premiumDMReady || premiumInvalidLogin?.response.status === 200, "premium invalid parameter user can log in", {
+        status: premiumInvalidLogin?.response.status
+      }),
+      check(!premiumDMReady || premiumInsufficient?.status === 200, "insufficient officer purchase returns HTTP 200", {
+        status: premiumInsufficient?.status
+      }),
+      check(!premiumDMReady || premiumInsufficientBody.actionIssue?.code === "not_enough_dark_matter", "insufficient officer purchase returns legacy not-enough-DM issue", premiumInsufficientBody.actionIssue ?? {}),
+      check(!premiumDMReady || premiumInsufficientBody.officers?.user?.paidDarkMatter === 9999, "insufficient officer purchase does not spend paid DM", premiumInsufficientBody.officers?.user ?? {}),
+      check(!premiumDMReady || premiumInsufficientBody.officers?.user?.freeDarkMatter === 0, "insufficient officer purchase does not spend free DM", premiumInsufficientBody.officers?.user ?? {}),
+      check(!premiumDMReady || premiumInsufficientAdmiral?.active === false && Number(premiumInsufficientAdmiral?.until ?? 0) === 0, "insufficient officer purchase does not activate admiral", premiumInsufficientAdmiral ?? {}),
+      check(!premiumDMReady || premiumMixed?.status === 200, "mixed paid/free officer purchase returns HTTP 200", {
+        status: premiumMixed?.status
+      }),
+      check(!premiumDMReady || premiumMixedBody.actionIssue?.code === "recruited", "mixed paid/free officer purchase returns recruited issue", premiumMixedBody.actionIssue ?? {}),
+      check(!premiumDMReady || premiumMixedBody.officers?.user?.paidDarkMatter === 0, "mixed paid/free purchase spends all paid DM first", premiumMixedBody.officers?.user ?? {}),
+      check(!premiumDMReady || premiumMixedBody.officers?.user?.freeDarkMatter === 1000, "mixed paid/free purchase spends the free-DM remainder", premiumMixedBody.officers?.user ?? {}),
+      check(!premiumDMReady || premiumMixedEngineer?.active === true && Number(premiumMixedEngineer?.until ?? 0) >= premiumMixedStartedAt + 6 * 24 * 60 * 60, "mixed paid/free purchase activates engineer timer", premiumMixedEngineer ?? {}),
+      check(!premiumDMReady || premiumExtend?.status === 200, "officer repurchase returns HTTP 200", {
+        status: premiumExtend?.status
+      }),
+      check(!premiumDMReady || premiumExtendBody.actionIssue?.code === "recruited", "officer repurchase returns recruited issue", premiumExtendBody.actionIssue ?? {}),
+      check(!premiumDMReady || premiumExtendBody.officers?.user?.paidDarkMatter === 10000 && premiumExtendBody.officers?.user?.freeDarkMatter === 0, "officer repurchase spends one seven-day paid-DM cost", premiumExtendBody.officers?.user ?? {}),
+      check(!premiumDMReady || Number(premiumExtendGeologist?.until ?? 0) === premiumExpectedGeologistUntil, "officer repurchase extends active timer from old until", {
+        expected: premiumExpectedGeologistUntil,
+        row: premiumExtendGeologist
+      }),
+      check(!premiumDMReady || premiumInvalidType?.status === 200, "invalid officer type request returns HTTP 200", {
+        status: premiumInvalidType?.status
+      }),
+      check(!premiumDMReady || premiumMissingType?.status === 200, "missing officer type request returns HTTP 200", {
+        status: premiumMissingType?.status
+      }),
+      check(!premiumDMReady || premiumMissingDays?.status === 200, "missing officer days request returns HTTP 200", {
+        status: premiumMissingDays?.status
+      }),
+      check(!premiumDMReady || premiumInvalidTypeBody.actionIssue === undefined && premiumMissingTypeBody.actionIssue === undefined && premiumMissingDaysBody.actionIssue === undefined, "invalid premium purchase parameters are no-op issues", {
+        invalidType: premiumInvalidTypeBody.actionIssue,
+        missingType: premiumMissingTypeBody.actionIssue,
+        missingDays: premiumMissingDaysBody.actionIssue
+      }),
+      check(!premiumDMReady || premiumInvalidAfter?.status === 200, "premium invalid parameter user reloads after no-op requests", {
+        status: premiumInvalidAfter?.status
+      }),
+      check(!premiumDMReady || premiumInvalidAfterBody.officers?.user?.paidDarkMatter === 50000 && premiumInvalidAfterBody.officers?.user?.freeDarkMatter === 500, "invalid premium purchase parameters do not spend DM", premiumInvalidAfterBody.officers?.user ?? {}),
+      check(!premiumDMReady || premiumInvalidActiveRows.length === 0, "invalid premium purchase parameters do not activate any officer", premiumInvalidActiveRows)
     ]
   }));
 
