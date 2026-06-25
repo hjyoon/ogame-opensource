@@ -181,6 +181,9 @@ try {
   const runId = Date.now().toString(36);
   const smokeFixture = await readOptionalJSON(smokeFixtureFile);
   const phalanxFixture = smokeFixture?.phalanx ?? {};
+  const adminQueueFixture = smokeFixture?.admin_queue ?? {};
+  const adminQueueTaskId = Number(adminQueueFixture.task_id ?? 0);
+  const adminQueueFixtureReady = adminQueueTaskId > 0;
   const health = await request("/api/healthz");
   let healthBody = {};
   try {
@@ -1355,6 +1358,31 @@ try {
   } catch {
     gameAdminWithoutCookieBody = {};
   }
+  const operatorLogin = adminQueueFixtureReady
+    ? await loginGameUser("gooperator", loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const operatorQueueFreeze = adminQueueFixtureReady && operatorLogin
+    ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "Queue")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: operatorLogin.cookiePair },
+        body: JSON.stringify({ action: "queue_freeze", taskId: adminQueueTaskId })
+      })
+    : null;
+  const operatorQueueFreezeBody = operatorQueueFreeze ? parseJSON(operatorQueueFreeze) : {};
+  const adminQueueFreeze = adminQueueFixtureReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Queue")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({ action: "queue_freeze", taskId: adminQueueTaskId })
+      })
+    : null;
+  const adminQueueFreezeBody = adminQueueFreeze ? parseJSON(adminQueueFreeze) : {};
+  const adminQueueAfterFreeze = adminQueueFixtureReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Queue")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminQueueAfterFreezeBody = adminQueueAfterFreeze ? parseJSON(adminQueueAfterFreeze) : {};
   const adminSubmodeSpecs = [
     { name: "Users", mode: "Users", arrayKey: "userRows" },
     { name: "Planets", mode: "Planets", arrayKey: "planetRows" },
@@ -2076,6 +2104,46 @@ try {
   cases.push(finalize({
     case: "go_admin_submode_matrix_api",
     checks: adminSubmodeChecks
+  }));
+
+  const frozenQueueRow = Array.isArray(adminQueueAfterFreezeBody.admin?.queueRows)
+    ? adminQueueAfterFreezeBody.admin.queueRows.find((row) => Number(row.id) === adminQueueTaskId)
+    : undefined;
+  cases.push(finalize({
+    case: "go_admin_queue_permission_mutation_api",
+    checks: [
+      check(!smokeFixtureFile || adminQueueFixtureReady, "go smoke fixture exposes admin queue task id", {
+        smokeFixtureFile,
+        adminQueueFixture
+      }),
+      check(!adminQueueFixtureReady || operatorLogin?.response.status === 200, "operator smoke user can log in for admin permission check", {
+        status: operatorLogin?.response.status
+      }),
+      check(!adminQueueFixtureReady || operatorQueueFreeze?.status === 200, "operator queue mutation returns HTTP 200", {
+        status: operatorQueueFreeze?.status
+      }),
+      check(
+        !adminQueueFixtureReady || operatorQueueFreezeBody.actionIssue?.code === "access_denied",
+        "operator queue mutation is denied like legacy",
+        operatorQueueFreezeBody
+      ),
+      check(!adminQueueFixtureReady || adminQueueFreeze?.status === 200, "admin queue mutation returns HTTP 200", {
+        status: adminQueueFreeze?.status
+      }),
+      check(
+        !adminQueueFixtureReady || adminQueueFreezeBody.actionIssue?.code === "action_saved",
+        "admin queue mutation saves like legacy",
+        adminQueueFreezeBody.actionIssue ?? {}
+      ),
+      check(!adminQueueFixtureReady || adminQueueAfterFreeze?.status === 200, "admin queue reload returns HTTP 200", {
+        status: adminQueueAfterFreeze?.status
+      }),
+      check(
+        !adminQueueFixtureReady || frozenQueueRow?.freeze === true,
+        "admin queue freeze actually updates the target task",
+        { taskId: adminQueueTaskId, frozenQueueRow }
+      )
+    ]
   }));
 
   const allianceRouteChecks = gameAllianceRoutes.flatMap((item) => [

@@ -115,6 +115,13 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 		}
 		return r.mutateAdminExpeditionSettings(ctx, expeditionTable, query.Values)
 	}
+	if mode == "Queue" {
+		queueTable, err := tableName(r.prefix, "queue")
+		if err != nil {
+			return nil, err
+		}
+		return r.mutateAdminQueue(ctx, queueTable, query)
+	}
 	if mode != "Bans" || query.Action != "ban" {
 		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
 	}
@@ -131,6 +138,55 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 		return nil, err
 	}
 	return r.mutateAdminBans(ctx, usersTable, queueTable, prangerTable, query)
+}
+
+func (r AdminRepository) mutateAdminQueue(ctx context.Context, queueTable string, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
+	if query.TaskID <= 0 {
+		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+	}
+	now := int(r.now().Unix())
+	var err error
+	switch query.Action {
+	case domaingame.AdminActionQueueEnd:
+		_, err = r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET end = ? WHERE task_id = ?", queueTable), now, query.TaskID)
+	case domaingame.AdminActionQueueRemove:
+		_, err = r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE task_id = ?", queueTable), query.TaskID)
+	case domaingame.AdminActionQueueFreeze:
+		_, err = r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET freeze = 1, frozen = ? WHERE task_id = ? AND freeze = 0", queueTable), now, query.TaskID)
+	case domaingame.AdminActionQueueUnfreeze:
+		err = r.unfreezeAdminQueue(ctx, queueTable, query.TaskID, now)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+}
+
+func (r AdminRepository) unfreezeAdminQueue(ctx context.Context, queueTable string, taskID int, now int) error {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT freeze, frozen, end FROM %s WHERE task_id = ? LIMIT 1", queueTable), taskID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return rows.Err()
+	}
+	var freeze, frozen, end int
+	if err := rows.Scan(&freeze, &frozen, &end); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if freeze == 0 {
+		return nil
+	}
+	frozenSeconds := now - frozen
+	if frozenSeconds > 0 {
+		end += frozenSeconds
+	}
+	_, err = r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET freeze = 0, frozen = 0, end = ? WHERE task_id = ?", queueTable), end, taskID)
+	return err
 }
 
 func (r AdminRepository) mutateAdminExpeditionSettings(ctx context.Context, expeditionTable string, values map[string]int) (*domaingame.AdminActionIssue, error) {

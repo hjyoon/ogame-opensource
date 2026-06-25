@@ -84,6 +84,7 @@ func TestAdminServiceMutatesAdminAndRefreshes(t *testing.T) {
 		PlanetID:        99,
 		Mode:            "Bans",
 		Action:          "ban",
+		TaskID:          1001,
 		TargetIDs:       []int{77},
 		BanMode:         1,
 		Hours:           2,
@@ -95,7 +96,8 @@ func TestAdminServiceMutatesAdminAndRefreshes(t *testing.T) {
 		t.Fatalf("MutateAdmin returned error: %v", err)
 	}
 	if !result.Authenticated || result.ActionIssue != issue || repository.mutation.PlayerID != 42 ||
-		repository.mutation.TargetIDs[0] != 77 || repository.mutation.BanMode != 1 || repository.mutation.Values["dm_factor"] != 9 || repository.query.Mode != "Bans" {
+		repository.mutation.TaskID != 1001 || repository.mutation.TargetIDs[0] != 77 || repository.mutation.BanMode != 1 ||
+		repository.mutation.Values["dm_factor"] != 9 || repository.query.Mode != "Bans" {
 		t.Fatalf("unexpected result=%+v mutation=%+v query=%+v", result, repository.mutation, repository.query)
 	}
 }
@@ -111,6 +113,20 @@ func TestAdminServiceMutationReturnsAccessDeniedWithoutMutating(t *testing.T) {
 	repository := service.repository.(*fakeAdminRepository)
 	if err != nil || !result.Authenticated || result.ActionIssue == nil || result.ActionIssue.Code != domaingame.AdminIssueAccessDenied || repository.mutated {
 		t.Fatalf("expected access denied without mutation, result=%+v mutated=%v err=%v", result, repository.mutated, err)
+	}
+}
+
+func TestAdminServiceMutationReturnsAccessDeniedForOperatorAction(t *testing.T) {
+	service := NewAdminService(
+		&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{Authenticated: true, Session: domainpublicsite.GameSession{PlayerID: 42}}},
+		&fakeAdminRepository{admin: domaingame.Admin{Mode: "Queue", Viewer: domaingame.AdminViewer{PlayerID: 42, Level: domaingame.AdminLevelOperator}}},
+	)
+
+	result, err := service.MutateAdmin(context.Background(), AdminMutationCommand{Mode: "Queue", Action: domaingame.AdminActionQueueFreeze, TaskID: 1001})
+
+	repository := service.repository.(*fakeAdminRepository)
+	if err != nil || !result.Authenticated || result.ActionIssue == nil || result.ActionIssue.Code != domaingame.AdminIssueAccessDenied || repository.mutated {
+		t.Fatalf("expected operator action access denied without mutation, result=%+v mutated=%v err=%v", result, repository.mutated, err)
 	}
 }
 

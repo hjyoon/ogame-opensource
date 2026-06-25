@@ -90,6 +90,10 @@ export type GameAdminAction =
   | {
       action: "settings";
       values: Record<string, number>;
+    }
+  | {
+      action: "queue_end" | "queue_remove" | "queue_freeze" | "queue_unfreeze";
+      taskId: number;
     };
 
 export type GameAllianceAction =
@@ -3102,7 +3106,7 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "Queue") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminQueueTable rows={admin.queueRows ?? []} />
+        <AdminQueueTable rows={admin.queueRows ?? []} onAdminAction={onAdminAction} />
       </AdminModeShell>
     );
   }
@@ -3988,7 +3992,7 @@ const legacyAdminQueueCompactStyle = `
 }
 `;
 
-function AdminQueueTable({ rows }: { rows: GameAdminQueueRow[] }) {
+function AdminQueueTable({ onAdminAction, rows }: { onAdminAction: (action: GameAdminAction) => void; rows: GameAdminQueueRow[] }) {
   const [now, setNow] = React.useState(() => Math.floor(Date.now() / 1000));
   React.useEffect(() => {
     const id = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
@@ -4050,17 +4054,39 @@ function AdminQueueTable({ rows }: { rows: GameAdminQueueRow[] }) {
                 <style>{legacyAdminQueueCompactStyle}</style>
                 <th className="compact-buttons">
                   {" \n    "}
-                  <form action={adminModeHref("Queue")} method="POST" onSubmit={(event) => event.preventDefault()}>
+                  <form
+                    action={adminModeHref("Queue")}
+                    method="POST"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      onAdminAction({ action: "queue_end", taskId: row.id });
+                    }}
+                  >
                     <input name="order_end" type="hidden" value={row.id} />
                     <input className="btn-compact" type="submit" value="End" />
                   </form>
                   {"\n    "}
-                  <form action={adminModeHref("Queue")} method="POST" onSubmit={(event) => event.preventDefault()}>
+                  <form
+                    action={adminModeHref("Queue")}
+                    method="POST"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      onAdminAction({ action: row.freeze ? "queue_unfreeze" : "queue_freeze", taskId: row.id });
+                    }}
+                  >
                     <input name={`order_${freezeAction}`} type="hidden" value={row.id} />
                     <input className="btn-compact" type="submit" value={freezeLabel} />
                   </form>
                   {"\n    "}
-                  <form action={adminModeHref("Queue")} className="delete-form" method="POST" onSubmit={(event) => event.preventDefault()}>
+                  <form
+                    action={adminModeHref("Queue")}
+                    className="delete-form"
+                    method="POST"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      onAdminAction({ action: "queue_remove", taskId: row.id });
+                    }}
+                  >
                     <input name="order_remove" type="hidden" value={row.id} />
                     <input className="btn-compact btn-delete" type="submit" value="Delete" />
                   </form>

@@ -311,6 +311,169 @@ func TestAdminRepositoryMutationNoops(t *testing.T) {
 	}
 }
 
+func TestAdminRepositoryMutatesQueueControls(t *testing.T) {
+	t.Run("end", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		repository.now = func() time.Time { return time.Unix(1_000, 0) }
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:   "Queue",
+			Action: domaingame.AdminActionQueueEnd,
+			TaskID: 1001,
+		})
+
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 1 {
+			t.Fatalf("unexpected queue end issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		}
+		if !strings.Contains(runner.execCalls[0].sql, "UPDATE `ogame_queue` SET end = ?") ||
+			runner.execCalls[0].args[0] != 1_000 || runner.execCalls[0].args[1] != 1001 {
+			t.Fatalf("unexpected queue end exec: %+v", runner.execCalls[0])
+		}
+	})
+
+	t.Run("freeze", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		repository.now = func() time.Time { return time.Unix(2_000, 0) }
+
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:   "Queue",
+			Action: domaingame.AdminActionQueueFreeze,
+			TaskID: 1002,
+		})
+
+		if err != nil || len(runner.execCalls) != 1 || !strings.Contains(runner.execCalls[0].sql, "freeze = 1, frozen = ?") ||
+			runner.execCalls[0].args[0] != 2_000 || runner.execCalls[0].args[1] != 1002 {
+			t.Fatalf("unexpected queue freeze err=%v execs=%+v", err, runner.execCalls)
+		}
+	})
+
+	t.Run("unfreeze extends end", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{1, 2_000, 5_000})},
+		}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		repository.now = func() time.Time { return time.Unix(2_300, 0) }
+
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:   "Queue",
+			Action: domaingame.AdminActionQueueUnfreeze,
+			TaskID: 1003,
+		})
+
+		if err != nil || len(runner.execCalls) != 1 || !strings.Contains(runner.execCalls[0].sql, "SET freeze = 0, frozen = 0, end = ?") ||
+			runner.execCalls[0].args[0] != 5_300 || runner.execCalls[0].args[1] != 1003 {
+			t.Fatalf("unexpected queue unfreeze err=%v execs=%+v", err, runner.execCalls)
+		}
+	})
+
+	t.Run("remove", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:   "Queue",
+			Action: domaingame.AdminActionQueueRemove,
+			TaskID: 1004,
+		})
+
+		if err != nil || len(runner.execCalls) != 1 || !strings.Contains(runner.execCalls[0].sql, "DELETE FROM `ogame_queue` WHERE task_id = ?") ||
+			runner.execCalls[0].args[0] != 1004 {
+			t.Fatalf("unexpected queue remove err=%v execs=%+v", err, runner.execCalls)
+		}
+	})
+
+	t.Run("missing task noops", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Queue", Action: domaingame.AdminActionQueueFreeze})
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 {
+			t.Fatalf("expected missing queue task no-op, issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		}
+	})
+}
+
+func TestAdminRepositoryQueueMutationEdges(t *testing.T) {
+	t.Run("invalid prefix", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "bad-prefix_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Queue", Action: domaingame.AdminActionQueueEnd, TaskID: 1001}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+			t.Fatalf("expected queue prefix error, got %v", err)
+		}
+	})
+
+	t.Run("exec error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{execErrs: []error{errors.New("queue exec failed")}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Queue", Action: domaingame.AdminActionQueueEnd, TaskID: 1001}); err == nil || !strings.Contains(err.Error(), "queue exec failed") {
+			t.Fatalf("expected queue exec error, got %v", err)
+		}
+	})
+
+	t.Run("unknown action noops", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Queue", Action: "unknown", TaskID: 1001})
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 {
+			t.Fatalf("expected unknown queue action no-op, issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		}
+	})
+
+	t.Run("unfreeze query error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("unfreeze query failed")}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Queue", Action: domaingame.AdminActionQueueUnfreeze, TaskID: 1001}); err == nil || !strings.Contains(err.Error(), "unfreeze query failed") {
+			t.Fatalf("expected unfreeze query error, got %v", err)
+		}
+	})
+
+	t.Run("unfreeze missing row noops", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Queue", Action: domaingame.AdminActionQueueUnfreeze, TaskID: 1001})
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 {
+			t.Fatalf("expected missing unfreeze row no-op, issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		}
+	})
+
+	t.Run("unfreeze rows error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("unfreeze rows failed"))}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Queue", Action: domaingame.AdminActionQueueUnfreeze, TaskID: 1001}); err == nil || !strings.Contains(err.Error(), "unfreeze rows failed") {
+			t.Fatalf("expected unfreeze rows error, got %v", err)
+		}
+	})
+
+	t.Run("unfreeze scan error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Queue", Action: domaingame.AdminActionQueueUnfreeze, TaskID: 1001}); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+			t.Fatalf("expected unfreeze scan error, got %v", err)
+		}
+	})
+
+	t.Run("unfreeze not frozen noops", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{0, 0, 5_000})}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Queue", Action: domaingame.AdminActionQueueUnfreeze, TaskID: 1001})
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 {
+			t.Fatalf("expected not frozen unfreeze no-op, issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		}
+	})
+
+	t.Run("unfreeze exec error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1, 2_000, 5_000})}}},
+			execErrs:    []error{errors.New("unfreeze update failed")},
+		}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		repository.now = func() time.Time { return time.Unix(2_300, 0) }
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Queue", Action: domaingame.AdminActionQueueUnfreeze, TaskID: 1001}); err == nil || !strings.Contains(err.Error(), "unfreeze update failed") {
+			t.Fatalf("expected unfreeze update error, got %v", err)
+		}
+	})
+}
+
 func TestAdminRepositoryMutatesExpeditionSettings(t *testing.T) {
 	runner := &fakeGalaxyRunner{}
 	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")

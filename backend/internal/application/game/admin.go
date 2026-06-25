@@ -33,6 +33,7 @@ type AdminMutationQuery struct {
 	PlanetID  int
 	Mode      string
 	Action    string
+	TaskID    int
 	TargetIDs []int
 	BanMode   int
 	Days      int
@@ -48,6 +49,7 @@ type AdminMutationCommand struct {
 	PlanetID        int
 	Mode            string
 	Action          string
+	TaskID          int
 	TargetIDs       []int
 	BanMode         int
 	Days            int
@@ -128,11 +130,15 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 	if !admin.CanAccessMode() {
 		return AdminResult{Authenticated: true, Admin: admin, ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueAccessDenied)}, nil
 	}
+	if !admin.CanMutate(command.Action) {
+		return AdminResult{Authenticated: true, Admin: admin, ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueAccessDenied)}, nil
+	}
 	issue, err := s.repository.MutateAdmin(ctx, AdminMutationQuery{
 		PlayerID:  session.Session.PlayerID,
 		PlanetID:  command.PlanetID,
 		Mode:      admin.Mode,
 		Action:    command.Action,
+		TaskID:    command.TaskID,
 		TargetIDs: command.TargetIDs,
 		BanMode:   command.BanMode,
 		Days:      command.Days,

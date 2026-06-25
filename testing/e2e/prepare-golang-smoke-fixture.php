@@ -112,7 +112,15 @@ function smoke_cleanup_fleets(array $userIds, array $planetIds): void
         dbquery("DELETE FROM {$db_prefix}queue WHERE type='" . QTYP_FLEET . "' AND (owner_id IN ({$userList}) OR sub_id IN ({$fleetList}))");
         dbquery("DELETE FROM {$db_prefix}fleet WHERE fleet_id IN ({$fleetList})");
     }
-    dbquery("DELETE FROM {$db_prefix}queue WHERE type='" . QTYP_FLEET . "' AND owner_id IN ({$userList})");
+	dbquery("DELETE FROM {$db_prefix}queue WHERE type='" . QTYP_FLEET . "' AND owner_id IN ({$userList})");
+}
+
+function smoke_prepare_admin_queue_task(int $ownerId): int
+{
+	global $db_prefix;
+
+	dbquery("DELETE FROM {$db_prefix}queue WHERE type='" . QTYP_DEBUG . "' AND owner_id={$ownerId}");
+	return AddQueue($ownerId, QTYP_DEBUG, 0, 0, 0, time(), 3600, QUEUE_PRIO_DEBUG);
 }
 
 function smoke_cleanup_alliances(array $userIds): void
@@ -246,27 +254,37 @@ $password = getenv('OGAME_GO_LOGIN_SMOKE_PASS') ?: 'admin';
 $email = getenv('OGAME_GO_LOGIN_SMOKE_EMAIL') ?: ($name . '@example.local');
 
 $login = smoke_prepare_user($name, $password, $email, USER_TYPE_ADMIN);
+$operator = smoke_prepare_user('gooperator', $password, 'gooperator@example.local', USER_TYPE_GO);
 $target = smoke_prepare_user('gophalaxtarget', $password, 'gophalaxtarget@example.local', 0);
-smoke_cleanup_alliances(array((int)$login['player_id'], (int)$target['player_id']));
+smoke_cleanup_alliances(array((int)$login['player_id'], (int)$operator['player_id'], (int)$target['player_id']));
 $home = LoadPlanetById((int)$login['home_planet_id']);
 if ($home === null) {
-    throw new RuntimeException('Go smoke home planet is missing.');
+	throw new RuntimeException('Go smoke home planet is missing.');
 }
 $targetCoords = smoke_find_empty_position($home);
-smoke_cleanup_fleets(array((int)$login['player_id'], (int)$target['player_id']), array((int)$login['home_planet_id'], (int)$target['home_planet_id']));
+smoke_cleanup_fleets(array((int)$login['player_id'], (int)$operator['player_id'], (int)$target['player_id']), array((int)$login['home_planet_id'], (int)$operator['home_planet_id'], (int)$target['home_planet_id']));
 smoke_prepare_planet((int)$login['home_planet_id'], (int)$login['player_id'], 'Go Smoke Home', array((int)$home['g'], (int)$home['s'], (int)$home['p']));
 smoke_prepare_planet((int)$target['home_planet_id'], (int)$target['player_id'], 'Go Smoke Target', $targetCoords);
 $moonId = smoke_prepare_moon((int)$login['home_planet_id'], (int)$login['player_id']);
 $fleetId = smoke_dispatch_phalanx_fleet((int)$target['player_id'], (int)$target['home_planet_id'], (int)$login['home_planet_id']);
+$queueTaskId = smoke_prepare_admin_queue_task((int)$login['player_id']);
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
 echo json_encode(array(
-    'player_id' => (int)$login['player_id'],
-    'name' => $login['name'],
-    'home_planet_id' => (int)$login['home_planet_id'],
-    'phalanx' => array(
-        'source_moon_id' => $moonId,
-        'target_planet_id' => (int)$target['home_planet_id'],
+	'player_id' => (int)$login['player_id'],
+	'name' => $login['name'],
+	'home_planet_id' => (int)$login['home_planet_id'],
+	'operator' => array(
+		'player_id' => (int)$operator['player_id'],
+		'name' => $operator['name'],
+		'home_planet_id' => (int)$operator['home_planet_id'],
+	),
+	'admin_queue' => array(
+		'task_id' => $queueTaskId,
+	),
+	'phalanx' => array(
+		'source_moon_id' => $moonId,
+		'target_planet_id' => (int)$target['home_planet_id'],
         'target_player_id' => (int)$target['player_id'],
         'fleet_id' => $fleetId,
         'initial_deuterium' => 20000,

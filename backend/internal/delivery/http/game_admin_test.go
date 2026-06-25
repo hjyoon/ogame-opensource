@@ -53,7 +53,7 @@ func TestGameAdminHandlerMutatesBans(t *testing.T) {
 		),
 		ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueActionSaved),
 	}}
-	request := httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=99&mode=Bans", strings.NewReader(`{"action":"ban","targetIds":[77],"banMode":1,"days":0,"hours":2,"reason":"test"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=99&mode=Bans", strings.NewReader(`{"action":"ban","taskId":1001,"targetIds":[77],"banMode":1,"days":0,"hours":2,"reason":"test"}`))
 	request.RemoteAddr = "203.0.113.10:4321"
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
@@ -64,7 +64,7 @@ func TestGameAdminHandlerMutatesBans(t *testing.T) {
 		t.Fatalf("unexpected response status=%d body=%s", response.Code, response.Body.String())
 	}
 	if usecase.mutation.PlanetID != 99 || usecase.mutation.Mode != "Bans" || usecase.mutation.Action != "ban" ||
-		len(usecase.mutation.TargetIDs) != 1 || usecase.mutation.TargetIDs[0] != 77 || usecase.mutation.BanMode != 1 ||
+		usecase.mutation.TaskID != 1001 || len(usecase.mutation.TargetIDs) != 1 || usecase.mutation.TargetIDs[0] != 77 || usecase.mutation.BanMode != 1 ||
 		usecase.mutation.Hours != 2 || usecase.mutation.RemoteAddr != "203.0.113.10" {
 		t.Fatalf("unexpected mutation command: %+v", usecase.mutation)
 	}

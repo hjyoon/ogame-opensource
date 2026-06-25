@@ -11,6 +11,13 @@ const (
 	AdminIssueActionSaved  = "action_saved"
 )
 
+const (
+	AdminActionQueueEnd      = "queue_end"
+	AdminActionQueueRemove   = "queue_remove"
+	AdminActionQueueFreeze   = "queue_freeze"
+	AdminActionQueueUnfreeze = "queue_unfreeze"
+)
+
 type Admin struct {
 	Commander       string
 	CurrentPlanet   PlanetOverview
@@ -266,12 +273,35 @@ func (a Admin) CanAccessMode() bool {
 	return !AdminModeRequiresAdmin(a.Mode)
 }
 
+func (a Admin) CanMutate(action string) bool {
+	if !a.CanAccessMode() {
+		return false
+	}
+	if a.Viewer.Level >= AdminLevelAdmin {
+		return true
+	}
+	return !AdminMutationRequiresAdmin(a.Mode, action)
+}
+
 func AdminModeRequiresAdmin(mode string) bool {
 	switch NormalizeAdminMode(mode) {
 	case "Bots", "BotEdit":
 		return true
 	default:
 		return false
+	}
+}
+
+func AdminMutationRequiresAdmin(mode string, action string) bool {
+	switch NormalizeAdminMode(mode) {
+	case "Bans", "Reports", "Broadcast", "BattleSim", "RakSim", "UserLogs":
+		return false
+	case "Expedition":
+		return action == "settings"
+	case "Queue", "Uni", "Coupons", "Planets", "Users", "Debug", "Errors", "Bots", "BotEdit", "DB", "ColonySettings", "Loca", "Mods":
+		return true
+	default:
+		return true
 	}
 }
 

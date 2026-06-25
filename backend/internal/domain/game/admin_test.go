@@ -38,6 +38,27 @@ func TestNewAdminNormalizesModeAndCopiesMenu(t *testing.T) {
 	if !AdminModeRequiresAdmin("Bots") || AdminModeRequiresAdmin("Users") {
 		t.Fatal("admin-only mode classification mismatch")
 	}
+	if NewAdmin(Overview{}, AdminViewer{Level: AdminLevelOperator}, "Queue").CanMutate(AdminActionQueueFreeze) {
+		t.Fatal("operators must not mutate admin-only queue controls")
+	}
+	if !NewAdmin(Overview{}, AdminViewer{Level: AdminLevelAdmin}, "Queue").CanMutate(AdminActionQueueFreeze) {
+		t.Fatal("admins should mutate queue controls")
+	}
+	if !NewAdmin(Overview{}, AdminViewer{Level: AdminLevelOperator}, "Bans").CanMutate("ban") {
+		t.Fatal("operators should keep legacy ban mutation access")
+	}
+	if NewAdmin(Overview{}, AdminViewer{Level: AdminLevelOperator}, "Expedition").CanMutate("settings") {
+		t.Fatal("operators must not mutate expedition settings")
+	}
+	if !NewAdmin(Overview{}, AdminViewer{Level: AdminLevelOperator}, "Expedition").CanMutate("sim") {
+		t.Fatal("operators should mutate expedition simulator actions")
+	}
+	if NewAdmin(Overview{}, AdminViewer{Level: AdminLevelPlayer}, "Bans").CanMutate("ban") {
+		t.Fatal("regular players must not mutate admin actions")
+	}
+	if !AdminMutationRequiresAdmin("Unknown", "anything") {
+		t.Fatal("unknown admin mutations should default to admin-only")
+	}
 	if issue := AdminIssue(AdminIssueAccessDenied); issue == nil || issue.Message != "Access denied." {
 		t.Fatalf("unexpected admin issue: %+v", issue)
 	}

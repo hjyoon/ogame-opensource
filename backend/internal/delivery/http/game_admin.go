@@ -22,6 +22,7 @@ type gameAdminActionIssue struct {
 
 type gameAdminMutationRequest struct {
 	Action    string         `json:"action"`
+	TaskID    int            `json:"taskId"`
 	TargetIDs []int          `json:"targetIds"`
 	BanMode   int            `json:"banMode"`
 	Days      int            `json:"days"`
@@ -266,6 +267,7 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		PlanetID:        planetID,
 		Mode:            r.URL.Query().Get("mode"),
 		Action:          request.Action,
+		TaskID:          request.TaskID,
 		TargetIDs:       request.TargetIDs,
 		BanMode:         request.BanMode,
 		Days:            request.Days,
