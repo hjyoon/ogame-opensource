@@ -134,6 +134,48 @@ function noLoopbackAsset(body) {
   return !/(?:src|href|background)=["']https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\//i.test(body);
 }
 
+function sameOriginAssetPath(documentPath, assetURL) {
+  const raw = String(assetURL ?? "").trim();
+  if (
+    raw === "" ||
+    raw.startsWith("#") ||
+    /^(?:javascript|data|mailto):/i.test(raw)
+  ) {
+    return "";
+  }
+  try {
+    const resolved = new URL(raw, new URL(documentPath, baseUrl));
+    if (resolved.origin !== new URL(baseUrl).origin) {
+      return "";
+    }
+    return `${resolved.pathname}${resolved.search}`;
+  } catch {
+    return "";
+  }
+}
+
+function extractSameOriginAssets(documentPath, body) {
+  const assets = new Set();
+  const attrPattern = /\b(?:src|href)=["']([^"']+)["']/gi;
+  const cssURLPattern = /url\(["']?([^)"']+)["']?\)/gi;
+  for (const pattern of [attrPattern, cssURLPattern]) {
+    let match;
+    while ((match = pattern.exec(body)) !== null) {
+      const path = sameOriginAssetPath(documentPath, match[1]);
+      if (path) {
+        assets.add(path);
+      }
+    }
+  }
+  return Array.from(assets).sort();
+}
+
+function looksLikeHTML(response) {
+  const contentType = String(response.headers["content-type"] ?? "").toLowerCase();
+  const bodyStart = response.body.trimStart().slice(0, 128).toLowerCase();
+  return contentType.includes("text/html") || bodyStart.startsWith("<!doctype") || bodyStart.startsWith("<html");
+}
+
 async function mailhogRequest(path, options = {}) {
   try {
     const response = await fetch(`${mailhogBaseUrl}${path}`, options);
@@ -3242,6 +3284,61 @@ try {
   cases.push(finalize({
     case: "go_legacy_game_route_matrix",
     checks: legacyGameRouteChecks
+  }));
+
+  const renderAssetDocuments = [
+    { path: "/", response: root },
+    { path: "/home", response: await request("/home") },
+    { path: "/home.php", response: await request("/home.php") },
+    { path: "/game/overview", response: fallback },
+    {
+      path: `/game/index.php?page=overview${sessionSearch.replace("?", "&")}`,
+      response: await request(`/game/index.php?page=overview${sessionSearch.replace("?", "&")}`)
+    }
+  ];
+  const renderAssetPaths = new Set();
+  const renderAssetDocumentChecks = [];
+  for (const { path, response } of renderAssetDocuments) {
+    const assets = extractSameOriginAssets(path, response.body);
+    for (const assetPath of assets) {
+      renderAssetPaths.add(assetPath);
+    }
+    renderAssetDocumentChecks.push(
+      check(response.status === 200, `${path} render asset source returns HTTP 200`, { status: response.status }),
+      check(response.body.includes('<div id="root">'), `${path} render asset source is a React document`),
+      check(!response.body.includes("Master Database Settings"), `${path} render asset source skips installer`),
+      check(noLoopbackAsset(response.body), `${path} render asset source has no loopback absolute asset URLs`),
+      check(assets.length > 0, `${path} exposes at least one same-origin asset`, { assets })
+    );
+  }
+  const renderAssetChecks = [
+    ...renderAssetDocumentChecks,
+    check(renderAssetPaths.size > 0, "rendered shell documents expose same-origin assets", {
+      assetCount: renderAssetPaths.size
+    })
+  ];
+  for (const assetPath of Array.from(renderAssetPaths).slice(0, 80)) {
+    const assetResponse = await request(assetPath);
+    renderAssetChecks.push(
+      check(assetResponse.status === 200, "referenced render asset returns HTTP 200", {
+        assetPath,
+        status: assetResponse.status,
+        contentType: assetResponse.headers["content-type"]
+      }),
+      check(assetResponse.body.length > 0, "referenced render asset is non-empty", {
+        assetPath,
+        size: assetResponse.body.length
+      }),
+      check(!looksLikeHTML(assetResponse), "referenced render asset is not an HTML fallback", {
+        assetPath,
+        contentType: assetResponse.headers["content-type"],
+        bodyStart: assetResponse.body.slice(0, 80)
+      })
+    );
+  }
+  cases.push(finalize({
+    case: "go_render_asset_smoke",
+    checks: renderAssetChecks
   }));
 
   const js = await request("/assets/main.js");
