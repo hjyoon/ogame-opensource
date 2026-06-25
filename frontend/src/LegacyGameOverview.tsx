@@ -94,6 +94,10 @@ export type GameAdminAction =
   | {
       action: "queue_end" | "queue_remove" | "queue_freeze" | "queue_unfreeze";
       taskId: number;
+    }
+  | {
+      action: "fleetlogs_2min" | "fleetlogs_end" | "fleetlogs_return";
+      taskId: number;
     };
 
 export type GameAllianceAction =
@@ -3099,7 +3103,7 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "Fleetlogs") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminFleetlogsTable rows={admin.fleetLogRows ?? []} />
+        <AdminFleetlogsTable rows={admin.fleetLogRows ?? []} onAdminAction={onAdminAction} />
       </AdminModeShell>
     );
   }
@@ -3837,9 +3841,28 @@ function AdminBrowseTable() {
   );
 }
 
-function AdminFleetlogsTable({ rows }: { rows: GameAdminFleetLogRow[] }) {
+function AdminFleetlogsTable({ onAdminAction, rows }: { onAdminAction: (action: GameAdminAction) => void; rows: GameAdminFleetLogRow[] }) {
+  const handleSubmit = (event: React.FormEvent<HTMLDivElement>) => {
+    const form = (event.target as HTMLElement | null)?.closest("form");
+    if (!(form instanceof HTMLFormElement)) {
+      return;
+    }
+    const input = Array.from(form.elements).find((element) => element instanceof HTMLInputElement && element.name.startsWith("order_"));
+    if (!(input instanceof HTMLInputElement)) {
+      return;
+    }
+    event.preventDefault();
+    const taskId = Number(input.value);
+    const action = input.name === "order_2min"
+      ? "fleetlogs_2min"
+      : input.name === "order_end"
+        ? "fleetlogs_end"
+        : "fleetlogs_return";
+    onAdminAction({ action, taskId });
+  };
   return (
     <div
+      onSubmit={handleSubmit}
       dangerouslySetInnerHTML={{
         __html: adminFleetlogsHTML(rows)
       }}

@@ -16,6 +16,10 @@ const (
 	AdminActionQueueRemove   = "queue_remove"
 	AdminActionQueueFreeze   = "queue_freeze"
 	AdminActionQueueUnfreeze = "queue_unfreeze"
+
+	AdminActionFleetlogsTwoMinutes = "fleetlogs_2min"
+	AdminActionFleetlogsEnd        = "fleetlogs_end"
+	AdminActionFleetlogsReturn     = "fleetlogs_return"
 )
 
 type Admin struct {

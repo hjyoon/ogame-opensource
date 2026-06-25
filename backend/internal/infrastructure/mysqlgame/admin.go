@@ -122,6 +122,17 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 		}
 		return r.mutateAdminQueue(ctx, queueTable, query)
 	}
+	if mode == "Fleetlogs" {
+		queueTable, err := tableName(r.prefix, "queue")
+		if err != nil {
+			return nil, err
+		}
+		fleetTable, err := tableName(r.prefix, "fleet")
+		if err != nil {
+			return nil, err
+		}
+		return r.mutateAdminFleetlogs(ctx, queueTable, fleetTable, query)
+	}
 	if mode != "Bans" || query.Action != "ban" {
 		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
 	}
@@ -160,6 +171,69 @@ func (r AdminRepository) mutateAdminQueue(ctx context.Context, queueTable string
 		return nil, err
 	}
 	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+}
+
+func (r AdminRepository) mutateAdminFleetlogs(ctx context.Context, queueTable string, fleetTable string, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
+	if query.TaskID <= 0 {
+		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+	}
+	now := int(r.now().Unix())
+	switch query.Action {
+	case domaingame.AdminActionFleetlogsTwoMinutes:
+		if err := r.updateAdminFleetlogTaskEnd(ctx, queueTable, fleetTable, query.TaskID, now+2*60); err != nil {
+			return nil, err
+		}
+	case domaingame.AdminActionFleetlogsEnd:
+		if err := r.updateAdminFleetlogTaskEnd(ctx, queueTable, fleetTable, query.TaskID, now); err != nil {
+			return nil, err
+		}
+	case domaingame.AdminActionFleetlogsReturn:
+		// Full recall parity needs the legacy RecallFleet path; keep this action explicit and non-mutating for now.
+	}
+	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+}
+
+func (r AdminRepository) updateAdminFleetlogTaskEnd(ctx context.Context, queueTable string, fleetTable string, taskID int, end int) error {
+	unionID, found, err := r.loadAdminFleetlogUnionID(ctx, queueTable, fleetTable, taskID)
+	if err != nil || !found {
+		return err
+	}
+	if unionID > 0 {
+		_, err = r.execer.ExecContext(
+			ctx,
+			fmt.Sprintf("UPDATE %s q JOIN %s f ON f.fleet_id = q.sub_id SET q.end = ? WHERE q.type = ? AND f.union_id = ?", queueTable, fleetTable),
+			end,
+			queueTypeFleet,
+			unionID,
+		)
+		return err
+	}
+	_, err = r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET end = ? WHERE task_id = ? AND type = ?", queueTable), end, taskID, queueTypeFleet)
+	return err
+}
+
+func (r AdminRepository) loadAdminFleetlogUnionID(ctx context.Context, queueTable string, fleetTable string, taskID int) (int, bool, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT COALESCE(f.union_id, 0) FROM %s q JOIN %s f ON f.fleet_id = q.sub_id WHERE q.task_id = ? AND q.type = ? LIMIT 1", queueTable, fleetTable),
+		taskID,
+		queueTypeFleet,
+	)
+	if err != nil {
+		return 0, false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return 0, false, err
+		}
+		return 0, false, nil
+	}
+	var unionID int
+	if err := rows.Scan(&unionID); err != nil {
+		return 0, false, err
+	}
+	return unionID, true, rows.Err()
 }
 
 func (r AdminRepository) unfreezeAdminQueue(ctx context.Context, queueTable string, taskID int, now int) error {

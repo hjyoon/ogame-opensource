@@ -123,6 +123,13 @@ function smoke_prepare_admin_queue_task(int $ownerId): int
 	return AddQueue($ownerId, QTYP_DEBUG, 0, 0, 0, time(), 3600, QUEUE_PRIO_DEBUG);
 }
 
+function smoke_fleet_queue_task_id(int $fleetId): int
+{
+	global $db_prefix;
+	$row = smoke_one_row("SELECT task_id FROM {$db_prefix}queue WHERE type='" . QTYP_FLEET . "' AND sub_id={$fleetId} LIMIT 1");
+	return $row === null ? 0 : (int)$row['task_id'];
+}
+
 function smoke_cleanup_alliances(array $userIds): void
 {
     global $db_prefix;
@@ -268,6 +275,7 @@ smoke_prepare_planet((int)$target['home_planet_id'], (int)$target['player_id'], 
 $moonId = smoke_prepare_moon((int)$login['home_planet_id'], (int)$login['player_id']);
 $fleetId = smoke_dispatch_phalanx_fleet((int)$target['player_id'], (int)$target['home_planet_id'], (int)$login['home_planet_id']);
 $queueTaskId = smoke_prepare_admin_queue_task((int)$login['player_id']);
+$fleetQueueTaskId = smoke_fleet_queue_task_id($fleetId);
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
 echo json_encode(array(
@@ -281,6 +289,9 @@ echo json_encode(array(
 	),
 	'admin_queue' => array(
 		'task_id' => $queueTaskId,
+	),
+	'admin_fleetlogs' => array(
+		'task_id' => $fleetQueueTaskId,
 	),
 	'phalanx' => array(
 		'source_moon_id' => $moonId,

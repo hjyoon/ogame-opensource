@@ -184,6 +184,9 @@ try {
   const adminQueueFixture = smokeFixture?.admin_queue ?? {};
   const adminQueueTaskId = Number(adminQueueFixture.task_id ?? 0);
   const adminQueueFixtureReady = adminQueueTaskId > 0;
+  const adminFleetlogsFixture = smokeFixture?.admin_fleetlogs ?? {};
+  const adminFleetlogsTaskId = Number(adminFleetlogsFixture.task_id ?? 0);
+  const adminFleetlogsFixtureReady = adminFleetlogsTaskId > 0;
   const health = await request("/api/healthz");
   let healthBody = {};
   try {
@@ -1383,6 +1386,29 @@ try {
       })
     : null;
   const adminQueueAfterFreezeBody = adminQueueAfterFreeze ? parseJSON(adminQueueAfterFreeze) : {};
+  const operatorFleetlogsTwoMinute = adminFleetlogsFixtureReady && operatorLogin
+    ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "Fleetlogs")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: operatorLogin.cookiePair },
+        body: JSON.stringify({ action: "fleetlogs_2min", taskId: adminFleetlogsTaskId })
+      })
+    : null;
+  const operatorFleetlogsTwoMinuteBody = operatorFleetlogsTwoMinute ? parseJSON(operatorFleetlogsTwoMinute) : {};
+  const adminFleetlogsTwoMinuteStartedAt = Math.floor(Date.now() / 1000);
+  const adminFleetlogsTwoMinute = adminFleetlogsFixtureReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Fleetlogs")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({ action: "fleetlogs_2min", taskId: adminFleetlogsTaskId })
+      })
+    : null;
+  const adminFleetlogsTwoMinuteBody = adminFleetlogsTwoMinute ? parseJSON(adminFleetlogsTwoMinute) : {};
+  const adminFleetlogsAfterTwoMinute = adminFleetlogsFixtureReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Fleetlogs")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminFleetlogsAfterTwoMinuteBody = adminFleetlogsAfterTwoMinute ? parseJSON(adminFleetlogsAfterTwoMinute) : {};
   const adminSubmodeSpecs = [
     { name: "Users", mode: "Users", arrayKey: "userRows" },
     { name: "Planets", mode: "Planets", arrayKey: "planetRows" },
@@ -2142,6 +2168,48 @@ try {
         !adminQueueFixtureReady || frozenQueueRow?.freeze === true,
         "admin queue freeze actually updates the target task",
         { taskId: adminQueueTaskId, frozenQueueRow }
+      )
+    ]
+  }));
+
+  const fleetlogControlRow = Array.isArray(adminFleetlogsAfterTwoMinuteBody.admin?.fleetLogRows)
+    ? adminFleetlogsAfterTwoMinuteBody.admin.fleetLogRows.find((row) => Number(row.taskId) === adminFleetlogsTaskId)
+    : undefined;
+  cases.push(finalize({
+    case: "go_admin_fleetlogs_permission_mutation_api",
+    checks: [
+      check(!smokeFixtureFile || adminFleetlogsFixtureReady, "go smoke fixture exposes admin fleetlogs task id", {
+        smokeFixtureFile,
+        adminFleetlogsFixture
+      }),
+      check(!adminFleetlogsFixtureReady || operatorLogin?.response.status === 200, "operator smoke user is available for fleetlogs permission check", {
+        status: operatorLogin?.response.status
+      }),
+      check(!adminFleetlogsFixtureReady || operatorFleetlogsTwoMinute?.status === 200, "operator fleetlogs mutation returns HTTP 200", {
+        status: operatorFleetlogsTwoMinute?.status
+      }),
+      check(
+        !adminFleetlogsFixtureReady || operatorFleetlogsTwoMinuteBody.actionIssue?.code === "access_denied",
+        "operator fleetlogs mutation is denied like legacy",
+        operatorFleetlogsTwoMinuteBody
+      ),
+      check(!adminFleetlogsFixtureReady || adminFleetlogsTwoMinute?.status === 200, "admin fleetlogs mutation returns HTTP 200", {
+        status: adminFleetlogsTwoMinute?.status
+      }),
+      check(
+        !adminFleetlogsFixtureReady || adminFleetlogsTwoMinuteBody.actionIssue?.code === "action_saved",
+        "admin fleetlogs mutation saves like legacy",
+        adminFleetlogsTwoMinuteBody.actionIssue ?? {}
+      ),
+      check(!adminFleetlogsFixtureReady || adminFleetlogsAfterTwoMinute?.status === 200, "admin fleetlogs reload returns HTTP 200", {
+        status: adminFleetlogsAfterTwoMinute?.status
+      }),
+      check(
+        !adminFleetlogsFixtureReady ||
+          (Number(fleetlogControlRow?.end ?? 0) >= adminFleetlogsTwoMinuteStartedAt + 110 &&
+            Number(fleetlogControlRow?.end ?? 0) <= adminFleetlogsTwoMinuteStartedAt + 180),
+        "admin fleetlogs 2m action updates the target task end time",
+        { taskId: adminFleetlogsTaskId, startedAt: adminFleetlogsTwoMinuteStartedAt, fleetlogControlRow }
       )
     ]
   }));
