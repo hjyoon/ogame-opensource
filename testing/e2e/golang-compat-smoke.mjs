@@ -2328,6 +2328,67 @@ try {
   const operatorLogin = adminQueueFixtureReady || adminFleetlogsFixtureReady || adminOperationsReady
     ? await loginGameUser("gooperator", loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
     : null;
+  const adminExpeditionBeforeSettings = operatorLogin
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Expedition")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminExpeditionBeforeSettingsBody = adminExpeditionBeforeSettings ? parseJSON(adminExpeditionBeforeSettings) : {};
+  const originalExpeditionChance = Number(adminExpeditionBeforeSettingsBody.admin?.expedition?.chance_success ?? Number.NaN);
+  const adminExpeditionSettingsReady = Number.isFinite(originalExpeditionChance);
+  const operatorExpeditionChance = originalExpeditionChance === 99 ? 98 : originalExpeditionChance + 1;
+  const adminExpeditionChance = operatorExpeditionChance === 99 ? 97 : operatorExpeditionChance + 1;
+  const operatorExpeditionSettings = adminExpeditionSettingsReady && operatorLogin
+    ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "Expedition")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: operatorLogin.cookiePair },
+        body: JSON.stringify({
+          action: "settings",
+          values: { chance_success: operatorExpeditionChance }
+        })
+      })
+    : null;
+  const operatorExpeditionSettingsBody = operatorExpeditionSettings ? parseJSON(operatorExpeditionSettings) : {};
+  const adminExpeditionAfterOperatorSettings = adminExpeditionSettingsReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Expedition")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminExpeditionAfterOperatorSettingsBody = adminExpeditionAfterOperatorSettings ? parseJSON(adminExpeditionAfterOperatorSettings) : {};
+  const adminExpeditionSettings = adminExpeditionSettingsReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Expedition")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({
+          action: "settings",
+          values: { chance_success: adminExpeditionChance }
+        })
+      })
+    : null;
+  const adminExpeditionSettingsBody = adminExpeditionSettings ? parseJSON(adminExpeditionSettings) : {};
+  const adminExpeditionAfterAdminSettings = adminExpeditionSettingsReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Expedition")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminExpeditionAfterAdminSettingsBody = adminExpeditionAfterAdminSettings ? parseJSON(adminExpeditionAfterAdminSettings) : {};
+  const adminExpeditionRestore = adminExpeditionSettingsReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Expedition")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({
+          action: "settings",
+          values: { chance_success: originalExpeditionChance }
+        })
+      })
+    : null;
+  const adminExpeditionRestoreBody = adminExpeditionRestore ? parseJSON(adminExpeditionRestore) : {};
+  const adminExpeditionAfterRestore = adminExpeditionSettingsReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Expedition")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminExpeditionAfterRestoreBody = adminExpeditionAfterRestore ? parseJSON(adminExpeditionAfterRestore) : {};
   const adminReportsBeforeDelete = adminOperationsReady
     ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Reports")}`, {
         headers: { Cookie: sessionCookiePair }
@@ -3435,6 +3496,74 @@ try {
         operatorBroadcastMessage
       }),
       check(!adminOperationsReady || !String(operatorMessagesAfterBroadcast?.body ?? "").includes(operatorLogin?.cookiePair ?? "missing-cookie"), "admin operations responses do not echo private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_admin_expedition_settings_permission_api",
+    checks: [
+      check(!smokeFixtureFile || operatorLogin?.response.status === 200, "operator smoke user can log in for expedition settings permission check", {
+        status: operatorLogin?.response.status
+      }),
+      check(!smokeFixtureFile || adminExpeditionBeforeSettings?.status === 200, "admin Expedition settings GET returns HTTP 200", {
+        status: adminExpeditionBeforeSettings?.status
+      }),
+      check(!smokeFixtureFile || adminExpeditionSettingsReady, "admin Expedition settings expose chance_success", {
+        expedition: adminExpeditionBeforeSettingsBody.admin?.expedition
+      }),
+      check(
+        !smokeFixtureFile || !adminExpeditionSettingsReady || operatorExpeditionSettings?.status === 200,
+        "operator Expedition settings mutation returns HTTP 200",
+        { status: operatorExpeditionSettings?.status }
+      ),
+      check(
+        !smokeFixtureFile || !adminExpeditionSettingsReady || operatorExpeditionSettingsBody.actionIssue?.code === "access_denied",
+        "operator Expedition settings mutation is denied like legacy",
+        operatorExpeditionSettingsBody.actionIssue ?? {}
+      ),
+      check(
+        !smokeFixtureFile ||
+          !adminExpeditionSettingsReady ||
+          Number(adminExpeditionAfterOperatorSettingsBody.admin?.expedition?.chance_success) === originalExpeditionChance,
+        "operator Expedition settings mutation does not alter chance_success",
+        {
+          originalExpeditionChance,
+          afterOperator: adminExpeditionAfterOperatorSettingsBody.admin?.expedition?.chance_success
+        }
+      ),
+      check(!smokeFixtureFile || !adminExpeditionSettingsReady || adminExpeditionSettings?.status === 200, "admin Expedition settings mutation returns HTTP 200", {
+        status: adminExpeditionSettings?.status
+      }),
+      check(
+        !smokeFixtureFile || !adminExpeditionSettingsReady || adminExpeditionSettingsBody.actionIssue?.code === "action_saved",
+        "admin Expedition settings mutation saves like legacy",
+        adminExpeditionSettingsBody.actionIssue ?? {}
+      ),
+      check(
+        !smokeFixtureFile ||
+          !adminExpeditionSettingsReady ||
+          Number(adminExpeditionAfterAdminSettingsBody.admin?.expedition?.chance_success) === adminExpeditionChance,
+        "admin Expedition settings mutation updates chance_success",
+        {
+          adminExpeditionChance,
+          afterAdmin: adminExpeditionAfterAdminSettingsBody.admin?.expedition?.chance_success
+        }
+      ),
+      check(
+        !smokeFixtureFile || !adminExpeditionSettingsReady || adminExpeditionRestoreBody.actionIssue?.code === "action_saved",
+        "admin Expedition settings restore saves the original value",
+        adminExpeditionRestoreBody.actionIssue ?? {}
+      ),
+      check(
+        !smokeFixtureFile ||
+          !adminExpeditionSettingsReady ||
+          Number(adminExpeditionAfterRestoreBody.admin?.expedition?.chance_success) === originalExpeditionChance,
+        "admin Expedition settings restore returns chance_success to the original value",
+        {
+          originalExpeditionChance,
+          afterRestore: adminExpeditionAfterRestoreBody.admin?.expedition?.chance_success
+        }
+      )
     ]
   }));
 
