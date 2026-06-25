@@ -2285,6 +2285,30 @@ try {
     gameOptionsWithoutCookieBody = {};
   }
 
+  const hardeningInvalidOverviewCP = await request(`/api/game/overview${withQueryParam(sessionSearch, "cp", "abc")}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const hardeningInvalidOptionsCP = await request(`/api/game/options${withQueryParam(sessionSearch, "cp", "abc")}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const hardeningInvalidReportID = await request(`/api/game/report${sessionSearch}&bericht=abc`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const hardeningInvalidMessageTarget = await request(`/api/game/messages${sessionSearch}&messageziel=abc`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const hardeningMalformedResources = await request(`/api/game/resources${sessionSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+    body: "{"
+  });
+  const hardeningMalformedOptions = await request(`/api/game/options${sessionSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+    body: "{"
+  });
+  const hardeningUnknownAPI = await request("/api/does-not-exist");
+
   const phalanxSourceMoonID = Number(phalanxFixture.source_moon_id ?? 0);
   const phalanxTargetPlanetID = Number(phalanxFixture.target_planet_id ?? 0);
   const phalanxFixtureReady = phalanxSourceMoonID > 0 && phalanxTargetPlanetID > 0;
@@ -2862,6 +2886,26 @@ try {
       check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "password_required" && issue.legacyErrorCode === 2), "missing password maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "universe_required"), "missing universe is reported for multi-universe entry", invalidLoginBody)
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_input_hardening_api",
+    checks: [
+      check(hardeningInvalidOverviewCP.status === 400, "overview rejects non-numeric selected planet", { status: hardeningInvalidOverviewCP.status, body: hardeningInvalidOverviewCP.body }),
+      check(hardeningInvalidOverviewCP.body.includes("invalid selected planet"), "overview invalid planet response is explicit", { body: hardeningInvalidOverviewCP.body }),
+      check(hardeningInvalidOptionsCP.status === 400, "options rejects non-numeric selected planet", { status: hardeningInvalidOptionsCP.status, body: hardeningInvalidOptionsCP.body }),
+      check(hardeningInvalidOptionsCP.body.includes("invalid selected planet"), "options invalid planet response is explicit", { body: hardeningInvalidOptionsCP.body }),
+      check(hardeningInvalidReportID.status === 400, "report rejects non-numeric report id", { status: hardeningInvalidReportID.status, body: hardeningInvalidReportID.body }),
+      check(hardeningInvalidReportID.body.includes("invalid report id"), "report invalid id response is explicit", { body: hardeningInvalidReportID.body }),
+      check(hardeningInvalidMessageTarget.status === 400, "messages rejects non-numeric compose target", { status: hardeningInvalidMessageTarget.status, body: hardeningInvalidMessageTarget.body }),
+      check(hardeningInvalidMessageTarget.body.includes("invalid message target"), "message target response is explicit", { body: hardeningInvalidMessageTarget.body }),
+      check(hardeningMalformedResources.status === 400, "resources rejects malformed JSON payload", { status: hardeningMalformedResources.status, body: hardeningMalformedResources.body }),
+      check(hardeningMalformedResources.body.includes("invalid resource production request"), "resources malformed payload response is explicit", { body: hardeningMalformedResources.body }),
+      check(hardeningMalformedOptions.status === 400, "options rejects malformed JSON payload", { status: hardeningMalformedOptions.status, body: hardeningMalformedOptions.body }),
+      check(hardeningMalformedOptions.body.includes("invalid options request"), "options malformed payload response is explicit", { body: hardeningMalformedOptions.body }),
+      check(hardeningUnknownAPI.status === 404, "unknown API route returns HTTP 404", { status: hardeningUnknownAPI.status }),
+      check(!hardeningUnknownAPI.body.includes('id="root"'), "unknown API route is not swallowed by the React shell", { body: hardeningUnknownAPI.body })
     ]
   }));
 
