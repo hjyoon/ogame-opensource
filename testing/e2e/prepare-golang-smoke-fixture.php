@@ -1101,6 +1101,47 @@ function smoke_prepare_message_scope_fixture(string $password, array $near): arr
     );
 }
 
+function smoke_prepare_message_retention_fixture(string $password, array $near): array
+{
+    global $db_prefix;
+
+    $regular = smoke_prepare_user('gomsgret', $password, 'gomsgret@example.local', USER_TYPE_PLAYER);
+    $operator = smoke_prepare_user('gomsgadm', $password, 'gomsgadm@example.local', USER_TYPE_GO);
+    $users = array($regular, $operator);
+    $userIds = array_map(fn($user) => (int)$user['player_id'], $users);
+    $planetIds = array_map(fn($user) => (int)$user['home_planet_id'], $users);
+    $userList = implode(',', $userIds);
+
+    smoke_cleanup_alliances($userIds);
+    smoke_cleanup_fleets($userIds, $planetIds);
+    dbquery("DELETE FROM {$db_prefix}messages WHERE owner_id IN ({$userList})");
+    dbquery("UPDATE {$db_prefix}users SET com_until=0 WHERE player_id IN ({$userList})");
+
+    $positions = smoke_find_empty_positions($near, count($users));
+    foreach ($users as $index => $user) {
+        $options = $index === 1 ? array('admin' => USER_TYPE_GO) : array();
+        smoke_set_fleet_restriction_user_state($user, 10000, $options);
+        smoke_prepare_planet((int)$user['home_planet_id'], (int)$user['player_id'], 'GoMsgRet' . $index, $positions[$index]);
+    }
+
+    $now = time();
+    return array(
+        'regular' => array(
+            'login' => mb_strtolower($regular['name'], 'UTF-8'),
+            'player_id' => (int)$regular['player_id'],
+            'home_planet_id' => (int)$regular['home_planet_id'],
+        ),
+        'operator' => array(
+            'login' => mb_strtolower($operator['name'], 'UTF-8'),
+            'player_id' => (int)$operator['player_id'],
+            'home_planet_id' => (int)$operator['home_planet_id'],
+        ),
+        'regular_old_id' => SendMessage((int)$regular['player_id'], 'Go Msg Retention', 'GoMsgRetention old regular', 'old regular body', MTYP_MISC, $now - 3 * 24 * 60 * 60),
+        'regular_fresh_id' => SendMessage((int)$regular['player_id'], 'Go Msg Retention', 'GoMsgRetention fresh regular', 'fresh regular body', MTYP_MISC, $now + 1),
+        'operator_old_id' => SendMessage((int)$operator['player_id'], 'Go Msg Retention', 'GoMsgRetention old operator', 'old operator body', MTYP_MISC, $now - 3 * 24 * 60 * 60),
+    );
+}
+
 function smoke_prepare_resource_scope_fixture(string $password, array $near): array
 {
     global $db_prefix;
@@ -1185,6 +1226,7 @@ $galaxyRemoteFixture = smoke_prepare_galaxy_remote_fixture($password, $home);
 $galaxyMissileFixture = smoke_prepare_galaxy_missile_fixture($password, $home);
 $buddyLifecycleFixture = smoke_prepare_buddy_lifecycle_fixture($password, $home);
 $messageScopeFixture = smoke_prepare_message_scope_fixture($password, $home);
+$messageRetentionFixture = smoke_prepare_message_retention_fixture($password, $home);
 $resourceScopeFixture = smoke_prepare_resource_scope_fixture($password, $home);
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
@@ -1232,5 +1274,6 @@ echo json_encode(array(
 		'galaxy_missile' => $galaxyMissileFixture,
 		'buddy_lifecycle' => $buddyLifecycleFixture,
 		'message_scope' => $messageScopeFixture,
+		'message_retention' => $messageRetentionFixture,
 		'resource_scope' => $resourceScopeFixture,
 	), JSON_UNESCAPED_SLASHES) . PHP_EOL;

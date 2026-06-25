@@ -78,11 +78,14 @@ func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.Messa
 		return messages, nil
 	}
 
-	commanderActive, err := r.loadCommanderActive(ctx, usersTable, query.PlayerID)
+	retention, err := r.loadMessageRetentionState(ctx, usersTable, query.PlayerID)
 	if err != nil {
 		return domaingame.Messages{}, err
 	}
-	rows, err := r.loadInboxRows(ctx, messagesTable, query.PlayerID, domaingame.NormalizeMessagesLimit(commanderActive))
+	if err := r.deleteExpiredInboxMessages(ctx, messagesTable, query.PlayerID, retention); err != nil {
+		return domaingame.Messages{}, err
+	}
+	rows, err := r.loadInboxRows(ctx, messagesTable, query.PlayerID, domaingame.NormalizeMessagesLimit(retention.CommanderActive))
 	if err != nil {
 		return domaingame.Messages{}, err
 	}
@@ -499,6 +502,50 @@ func (r MessagesRepository) loadCommanderActive(ctx context.Context, usersTable 
 		return false, err
 	}
 	return commanderUntil > r.now().Unix(), nil
+}
+
+type messageRetentionState struct {
+	CommanderActive bool
+	Admin           bool
+}
+
+func (r MessagesRepository) loadMessageRetentionState(ctx context.Context, usersTable string, playerID int) (messageRetentionState, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT com_until, admin FROM %s WHERE player_id = ? LIMIT 1", usersTable), playerID)
+	if err != nil {
+		return messageRetentionState{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return messageRetentionState{}, err
+		}
+		return messageRetentionState{}, errors.New("message retention state not found")
+	}
+	var commanderUntil int64
+	var adminLevel int
+	if err := rows.Scan(&commanderUntil, &adminLevel); err != nil {
+		return messageRetentionState{}, err
+	}
+	if err := rows.Err(); err != nil {
+		return messageRetentionState{}, err
+	}
+	return messageRetentionState{
+		CommanderActive: commanderUntil > r.now().Unix(),
+		Admin:           adminLevel > domaingame.AdminLevelPlayer,
+	}, nil
+}
+
+func (r MessagesRepository) deleteExpiredInboxMessages(ctx context.Context, messagesTable string, playerID int, state messageRetentionState) error {
+	if r.execer == nil || state.Admin {
+		return nil
+	}
+	retentionDays := 1
+	if state.CommanderActive {
+		retentionDays = 7
+	}
+	expiredBefore := r.now().Unix() - int64(retentionDays*24*60*60)
+	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE owner_id = ? AND date <= ?", messagesTable), playerID, expiredBefore)
+	return err
 }
 
 func scanMessageRow(rows Rows) (domaingame.Message, error) {

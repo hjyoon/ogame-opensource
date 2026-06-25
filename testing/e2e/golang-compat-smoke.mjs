@@ -403,6 +403,16 @@ try {
     Number(messageScopeFixture.owner_report_id ?? 0) > 0 &&
     Number(messageScopeFixture.foreign_report_id ?? 0) > 0
   );
+  const messageRetentionFixture = smokeFixture?.message_retention ?? {};
+  const messageRetentionReady = Boolean(
+    typeof messageRetentionFixture.regular?.login === "string" &&
+    typeof messageRetentionFixture.operator?.login === "string" &&
+    Number(messageRetentionFixture.regular?.home_planet_id ?? 0) > 0 &&
+    Number(messageRetentionFixture.operator?.home_planet_id ?? 0) > 0 &&
+    Number(messageRetentionFixture.regular_old_id ?? 0) > 0 &&
+    Number(messageRetentionFixture.regular_fresh_id ?? 0) > 0 &&
+    Number(messageRetentionFixture.operator_old_id ?? 0) > 0
+  );
   const resourceScopeFixture = smokeFixture?.resource_scope ?? {};
   const resourceScopeReady = Boolean(
     typeof resourceScopeFixture.owner?.login === "string" &&
@@ -2732,6 +2742,32 @@ try {
     : { status: 0, headers: {}, body: "{}" };
   const messageScopeForeignAfterBulkDeleteBody = parseJSON(messageScopeForeignAfterBulkDelete);
 
+  const messageRetentionUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const messageRetentionRegularLogin = messageRetentionReady
+    ? await loginGameUser(messageRetentionFixture.regular.login, loginSmokePassword, messageRetentionUniverse)
+    : null;
+  const messageRetentionOperatorLogin = messageRetentionReady
+    ? await loginGameUser(messageRetentionFixture.operator.login, loginSmokePassword, messageRetentionUniverse)
+    : null;
+  const messageRetentionRegularSearch = messageRetentionReady
+    ? withQueryParam(messageRetentionRegularLogin?.search ?? "?session=", "cp", Number(messageRetentionFixture.regular.home_planet_id))
+    : "";
+  const messageRetentionOperatorSearch = messageRetentionReady
+    ? withQueryParam(messageRetentionOperatorLogin?.search ?? "?session=", "cp", Number(messageRetentionFixture.operator.home_planet_id))
+    : "";
+  const messageRetentionRegularInbox = messageRetentionReady
+    ? await request(`/api/game/messages${messageRetentionRegularSearch}`, {
+        headers: { Cookie: messageRetentionRegularLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageRetentionRegularInboxBody = parseJSON(messageRetentionRegularInbox);
+  const messageRetentionOperatorInbox = messageRetentionReady
+    ? await request(`/api/game/messages${messageRetentionOperatorSearch}`, {
+        headers: { Cookie: messageRetentionOperatorLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageRetentionOperatorInboxBody = parseJSON(messageRetentionOperatorInbox);
+
   const gameNotes = await request(`/api/game/notes${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -4437,6 +4473,45 @@ try {
         messageScopeForeignAfterBulkDeleteBody.messages?.rows ?? []
       ),
       check(!messageScopeReady || !messageScopeBulkDelete.body.includes(messageScopeOwnerLogin?.cookiePair ?? "missing-cookie"), "message scope response does not echo owner private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_message_retention_edges_api",
+    checks: [
+      check(!smokeFixtureFile || messageRetentionReady, "go smoke fixture exposes message retention users and message ids", { messageRetentionFixture }),
+      check(!messageRetentionReady || messageRetentionRegularLogin?.response.status === 200, "message retention regular user can log in", {
+        status: messageRetentionRegularLogin?.response.status
+      }),
+      check(!messageRetentionReady || messageRetentionOperatorLogin?.response.status === 200, "message retention operator can log in", {
+        status: messageRetentionOperatorLogin?.response.status
+      }),
+      check(!messageRetentionReady || messageRetentionRegularInbox.status === 200, "message retention regular inbox returns HTTP 200", {
+        status: messageRetentionRegularInbox.status
+      }),
+      check(
+        !messageRetentionReady ||
+          messageRowByID(messageRetentionRegularInboxBody, Number(messageRetentionFixture.regular_old_id)) === undefined,
+        "message retention removes regular user's expired inbox message",
+        messageRetentionRegularInboxBody.messages?.rows ?? []
+      ),
+      check(
+        !messageRetentionReady ||
+          messageRowByID(messageRetentionRegularInboxBody, Number(messageRetentionFixture.regular_fresh_id)) !== undefined,
+        "message retention preserves regular user's fresh inbox message",
+        messageRetentionRegularInboxBody.messages?.rows ?? []
+      ),
+      check(!messageRetentionReady || messageRetentionOperatorInbox.status === 200, "message retention operator inbox returns HTTP 200", {
+        status: messageRetentionOperatorInbox.status
+      }),
+      check(
+        !messageRetentionReady ||
+          messageRowByID(messageRetentionOperatorInboxBody, Number(messageRetentionFixture.operator_old_id)) !== undefined,
+        "message retention skips expired cleanup for operator/admin inboxes",
+        messageRetentionOperatorInboxBody.messages?.rows ?? []
+      ),
+      check(!messageRetentionReady || !messageRetentionRegularInbox.body.includes(messageRetentionRegularLogin?.cookiePair ?? "missing-cookie"), "message retention regular response does not echo private cookie"),
+      check(!messageRetentionReady || !messageRetentionOperatorInbox.body.includes(messageRetentionOperatorLogin?.cookiePair ?? "missing-cookie"), "message retention operator response does not echo private cookie")
     ]
   }));
 

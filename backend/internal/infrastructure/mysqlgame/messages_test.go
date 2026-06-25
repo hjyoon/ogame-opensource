@@ -15,7 +15,7 @@ import (
 func TestMessagesRepositoryReadsLegacyInbox(t *testing.T) {
 	now := time.Unix(1700000000, 0)
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
-		fakeQueryResult{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix()})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix(), domaingame.AdminLevelPlayer})},
 		fakeQueryResult{rows: fakeRowsFromValues(
 			[]any{11, domaingame.MessageTypePM, `Sender\\Name`, `Subject\"Line`, `Player Gophalaxtarget\'s fleet`, 0, int64(1700000000)},
 			[]any{10, domaingame.MessageTypeSpyReport, "Spy", "<a>Report</a>", "<table></table>", 1, int64(1699999900)},
@@ -40,6 +40,57 @@ func TestMessagesRepositoryReadsLegacyInbox(t *testing.T) {
 		queryer.calls[5].args[1] != domaingame.MessageTypeBattleReportText ||
 		queryer.calls[5].args[2] != domaingame.MessagesLimitCommander {
 		t.Fatalf("expected legacy messages query, got %+v", queryer.calls[5])
+	}
+}
+
+func TestMessagesRepositoryDeletesExpiredInboxMessagesOnRead(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	tests := []struct {
+		name           string
+		commanderUntil int64
+		adminLevel     int
+		wantDelete     bool
+		wantThreshold  int64
+	}{
+		{
+			name:          "regular",
+			wantDelete:    true,
+			wantThreshold: now.Add(-24 * time.Hour).Unix(),
+		},
+		{
+			name:           "commander",
+			commanderUntil: now.Add(time.Hour).Unix(),
+			wantDelete:     true,
+			wantThreshold:  now.Add(-7 * 24 * time.Hour).Unix(),
+		},
+		{
+			name:       "admin",
+			adminLevel: domaingame.AdminLevelOperator,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
+				fakeQueryResult{rows: fakeRowsFromValues([]any{tt.commanderUntil, tt.adminLevel})},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+			)}}
+			repository := NewMessagesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+			if _, err := repository.GetMessages(context.Background(), appgame.MessagesQuery{PlayerID: 42, PlanetID: 99}); err != nil {
+				t.Fatal(err)
+			}
+			if !tt.wantDelete {
+				if len(runner.execs) != 0 {
+					t.Fatalf("expected no expiry cleanup, got %+v", runner.execs)
+				}
+				return
+			}
+			if len(runner.execs) != 1 ||
+				!strings.Contains(runner.execs[0].sql, "DELETE FROM `ogame_messages` WHERE owner_id = ? AND date <= ?") ||
+				runner.execs[0].args[0] != 42 ||
+				runner.execs[0].args[1] != tt.wantThreshold {
+				t.Fatalf("unexpected expiry cleanup execs: %+v", runner.execs)
+			}
+		})
 	}
 }
 
@@ -452,7 +503,7 @@ func TestMessagesRepositoryReturnsErrors(t *testing.T) {
 		{name: "unsafe prefix", prefix: "bad-prefix_", queryer: &fakeQueryer{}, want: "invalid database table prefix"},
 		{name: "overview", prefix: "ogame_", queryer: &fakeQueryer{results: []fakeQueryResult{{err: errors.New("overview failed")}}}, want: "overview failed"},
 		{name: "commander query", prefix: "ogame_", queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{err: errors.New("commander failed")})}, want: "commander failed"},
-		{name: "inbox query", prefix: "ogame_", queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})}, fakeQueryResult{err: errors.New("inbox failed")})}, want: "inbox failed"},
+		{name: "inbox query", prefix: "ogame_", queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer})}, fakeQueryResult{err: errors.New("inbox failed")})}, want: "inbox failed"},
 		{name: "compose query", prefix: "ogame_", queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{err: errors.New("compose failed")})}, query: appgame.MessagesQuery{TargetPlayerID: 77}, want: "compose failed"},
 		{name: "missing compose target", prefix: "ogame_", queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues()})}, query: appgame.MessagesQuery{TargetPlayerID: 77}, want: "message target not found"},
 	}
