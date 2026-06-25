@@ -3877,6 +3877,24 @@ try {
   } catch {
     gameOptionsUpdateBody = {};
   }
+  const gameOptionsLanguageGerman = await request(`/api/game/options${sessionSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: sessionCookiePair },
+    body: legacyOptionsForm({ lang: "de" })
+  });
+  const gameOptionsLanguageGermanBody = parseJSON(gameOptionsLanguageGerman);
+  const gameOptionsLanguageInvalid = await request(`/api/game/options${sessionSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: sessionCookiePair },
+    body: legacyOptionsForm({ lang: "zz" })
+  });
+  const gameOptionsLanguageInvalidBody = parseJSON(gameOptionsLanguageInvalid);
+  const gameOptionsLanguageRestored = await request(`/api/game/options${sessionSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: sessionCookiePair },
+    body: legacyOptionsForm({ lang: "en" })
+  });
+  const gameOptionsLanguageRestoredBody = parseJSON(gameOptionsLanguageRestored);
 
   const gameOptionsWithoutCookie = await request(`/api/game/options${sessionSearch}`);
   let gameOptionsWithoutCookieBody = {};
@@ -4514,6 +4532,38 @@ try {
       check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "password_required" && issue.legacyErrorCode === 2), "missing password maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "universe_required"), "missing universe is reported for multi-universe entry", invalidLoginBody)
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_localization_options_edges_api",
+    checks: [
+      check(gameOptionsLanguageGerman.status === 200, "options language change returns HTTP 200", {
+        status: gameOptionsLanguageGerman.status
+      }),
+      check(gameOptionsLanguageGermanBody.authenticated === true, "options language change authenticates", gameOptionsLanguageGermanBody),
+      check(gameOptionsLanguageGermanBody.options?.settings?.language === "de", "supported user language is persisted", {
+        settings: gameOptionsLanguageGermanBody.options?.settings
+      }),
+      check(gameOptionsLanguageInvalid.status === 200, "invalid options language change returns HTTP 200", {
+        status: gameOptionsLanguageInvalid.status
+      }),
+      check(gameOptionsLanguageInvalidBody.authenticated === true, "invalid options language change authenticates", gameOptionsLanguageInvalidBody),
+      check(
+        gameOptionsLanguageInvalidBody.options?.settings?.language === gameOptionsLanguageInvalidBody.options?.universe?.language &&
+          gameOptionsLanguageInvalidBody.options?.settings?.language !== "zz",
+        "unsupported user language falls back to the universe language",
+        {
+          settings: gameOptionsLanguageInvalidBody.options?.settings,
+          universe: gameOptionsLanguageInvalidBody.options?.universe
+        }
+      ),
+      check(gameOptionsLanguageRestored.status === 200, "options language restore returns HTTP 200", {
+        status: gameOptionsLanguageRestored.status
+      }),
+      check(gameOptionsLanguageRestoredBody.options?.settings?.language === "en", "options language can be restored to English", {
+        settings: gameOptionsLanguageRestoredBody.options?.settings
+      })
     ]
   }));
 

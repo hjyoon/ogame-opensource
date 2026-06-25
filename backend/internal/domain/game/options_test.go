@@ -93,6 +93,25 @@ func TestNormalizeOptionsMutationClampsLegacySettings(t *testing.T) {
 	}
 }
 
+func TestNormalizeOptionsMutationFallsBackForUnsupportedLanguage(t *testing.T) {
+	current := NewOptions(Overview{}, OptionsUser{}, OptionsUniverse{Language: "en"}, OptionsSettings{
+		Language: "zz",
+	}, OptionsAccount{}, 0)
+	if current.Settings.Language != "en" {
+		t.Fatalf("unsupported stored language should fall back to universe language, got %+v", current.Settings)
+	}
+
+	normalized := NormalizeOptionsMutation(OptionsMutation{Language: "zz"}, current)
+	if normalized.Language != "en" {
+		t.Fatalf("unsupported mutation language should fall back to universe language, got %+v", normalized)
+	}
+
+	current = NewOptions(Overview{}, OptionsUser{}, OptionsUniverse{Language: "zz"}, OptionsSettings{}, OptionsAccount{}, 0)
+	if current.Settings.Language != "en" {
+		t.Fatalf("unsupported universe language should fall back to English, got %+v", current.Settings)
+	}
+}
+
 func TestOptionsCredentialMutationValidation(t *testing.T) {
 	current := NewOptions(Overview{}, OptionsUser{
 		Email:      "pending@example.test",

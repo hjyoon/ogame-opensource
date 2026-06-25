@@ -363,7 +363,25 @@ func normalizeLanguage(value string, fallback string) string {
 	if len(value) > 2 {
 		value = value[:2]
 	}
+	if !supportedLegacyLanguage(value) {
+		value = strings.TrimSpace(fallback)
+		if len(value) > 2 {
+			value = value[:2]
+		}
+		if !supportedLegacyLanguage(value) {
+			value = "en"
+		}
+	}
 	return value
+}
+
+func supportedLegacyLanguage(value string) bool {
+	switch value {
+	case "de", "en", "es", "fr", "it", "jp", "ru":
+		return true
+	default:
+		return false
+	}
 }
 
 func clampInt(value int, minValue int, maxValue int) int {
