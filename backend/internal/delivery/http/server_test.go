@@ -89,6 +89,24 @@ func TestFrontendServesIndexAndSpaFallback(t *testing.T) {
 	}
 }
 
+func TestLegacyCronScriptIsForbidden(t *testing.T) {
+	staticDir := t.TempDir()
+	writeFile(t, filepath.Join(staticDir, "index.html"), "ogame react shell")
+	server := testServer(config.Config{StaticDir: staticDir, LegacyAssetDir: t.TempDir()})
+
+	req := httptest.NewRequest(http.MethodGet, "/game/cron.php", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "<?php") || strings.Contains(body, "ogame react shell") {
+		t.Fatalf("cron response leaked source or SPA shell: %q", body)
+	}
+}
+
 func TestUniversesEndpointReturnsCatalog(t *testing.T) {
 	server := testServer(config.Config{
 		StaticDir:       t.TempDir(),

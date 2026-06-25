@@ -692,6 +692,7 @@ try {
     });
   }
   const safeRedirect = await request(`/game/redir.php?url=${encodeURIComponent("https://example.com/ogame")}`);
+  const legacyCron = await request("/game/cron.php");
   cases.push(finalize({
     case: "go_legacy_direct_entry_url_proxy_security",
     checks: [
@@ -707,6 +708,14 @@ try {
       ]),
       check(safeRedirect.status === 200, "legacy redir accepts a safe public HTTP URL", { status: safeRedirect.status }),
       check(safeRedirect.body.includes("Page has moved") && safeRedirect.body.includes("https://example.com/ogame"), "legacy redir renders the meta refresh shell for safe URLs", { body: safeRedirect.body })
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_legacy_cron_not_browser_accessible",
+    checks: [
+      check(legacyCron.status === 403, "legacy cron.php browser request returns HTTP 403", { status: legacyCron.status }),
+      check(!legacyCron.body.includes("<?php") && !legacyCron.body.includes('<div id="root">'), "legacy cron.php response does not expose source or React shell", { body: legacyCron.body })
     ]
   }));
 

@@ -224,6 +224,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/activation", getOnly(a.handleRegistrationActivation))
 	mux.HandleFunc("/game/redir.php", getOnly(a.handleLegacyRedirect))
 	mux.HandleFunc("/game/pic.php", getOnly(a.handleLegacyImageProxy))
+	mux.HandleFunc("/game/cron.php", handleLegacyForbiddenScript)
 	mux.HandleFunc("/api/public/password-recovery", postOnly(a.handlePasswordRecovery))
 	mux.HandleFunc("/game/reg/mail.php", getOnly(a.handleLegacyPasswordRecoveryForm))
 	mux.HandleFunc("/game/reg/fa_pass.php", postOnly(a.handleLegacyPasswordRecovery))
@@ -285,4 +286,8 @@ func postOnly(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+func handleLegacyForbiddenScript(w http.ResponseWriter, _ *http.Request) {
+	http.Error(w, "forbidden", http.StatusForbidden)
 }
