@@ -85,6 +85,16 @@ function merchantRow(body, id) {
     : undefined;
 }
 
+function fleetTemplateNamed(body, name) {
+  return Array.isArray(body.fleet?.templates?.items)
+    ? body.fleet.templates.items.find((item) => item.name === name)
+    : undefined;
+}
+
+function fleetTemplateShipCount(template, shipID) {
+  return Number(template?.ships?.find((ship) => Number(ship.id) === Number(shipID))?.count ?? 0);
+}
+
 async function readOptionalJSON(path) {
   if (!path) {
     return {};
@@ -368,6 +378,16 @@ try {
     fleetRestrictionsFixture.vacation?.coordinates &&
     fleetRestrictionsFixture.operator?.coordinates &&
     fleetRestrictionsFixture.comparable?.coordinates
+  );
+  const fleetTemplatesFixture = smokeFixture?.fleet_templates ?? {};
+  const fleetTemplatesReady = Boolean(
+    typeof fleetTemplatesFixture.commander?.login === "string" &&
+    typeof fleetTemplatesFixture.non_commander?.login === "string" &&
+    typeof fleetTemplatesFixture.foreign?.login === "string" &&
+    Number(fleetTemplatesFixture.commander?.home_planet_id ?? 0) > 0 &&
+    Number(fleetTemplatesFixture.non_commander?.home_planet_id ?? 0) > 0 &&
+    Number(fleetTemplatesFixture.foreign?.home_planet_id ?? 0) > 0 &&
+    Number(fleetTemplatesFixture.expected_max ?? 0) > 0
   );
   const legacyTransportReturnMission = 103;
   const health = await request("/api/healthz");
@@ -1820,6 +1840,135 @@ try {
   } catch {
     gameFleetTemplatesWithoutCookieBody = {};
   }
+
+  const fleetTemplateSmallCargo = 202;
+  const fleetTemplateLargeCargo = 203;
+  const fleetTemplateRecycler = 209;
+  const fleetTemplateProbe = 210;
+  const fleetTemplateCommanderLogin = fleetTemplatesReady
+    ? await loginGameUser(fleetTemplatesFixture.commander.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const fleetTemplateNonCommanderLogin = fleetTemplatesReady
+    ? await loginGameUser(fleetTemplatesFixture.non_commander.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const fleetTemplateForeignLogin = fleetTemplatesReady
+    ? await loginGameUser(fleetTemplatesFixture.foreign.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const fleetTemplateSearch = (login, homePlanetID) => withQueryParam(login?.search ?? "?session=", "cp", homePlanetID);
+  const fleetTemplateCommanderSearch = fleetTemplatesReady
+    ? fleetTemplateSearch(fleetTemplateCommanderLogin, Number(fleetTemplatesFixture.commander.home_planet_id))
+    : "";
+  const fleetTemplateNonCommanderSearch = fleetTemplatesReady
+    ? fleetTemplateSearch(fleetTemplateNonCommanderLogin, Number(fleetTemplatesFixture.non_commander.home_planet_id))
+    : "";
+  const fleetTemplateForeignSearch = fleetTemplatesReady
+    ? fleetTemplateSearch(fleetTemplateForeignLogin, Number(fleetTemplatesFixture.foreign.home_planet_id))
+    : "";
+  const fleetTemplatePost = async (login, search, payload) => request(`/api/game/fleet-templates${search}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: login?.cookiePair ?? "" },
+    body: JSON.stringify(payload)
+  });
+  const fleetTemplateNonCommanderInitial = fleetTemplatesReady
+    ? await request(`/api/game/fleet-templates${fleetTemplateNonCommanderSearch}`, {
+        headers: { Cookie: fleetTemplateNonCommanderLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const fleetTemplateNonCommanderInitialBody = parseJSON(fleetTemplateNonCommanderInitial);
+  const fleetTemplateNonCommanderSave = fleetTemplatesReady
+    ? await fleetTemplatePost(fleetTemplateNonCommanderLogin, fleetTemplateNonCommanderSearch, {
+        action: "save",
+        templateId: 0,
+        name: "Go Smoke NonCommander",
+        ships: { [String(fleetTemplateSmallCargo)]: 1 }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const fleetTemplateNonCommanderSaveBody = parseJSON(fleetTemplateNonCommanderSave);
+  const fleetTemplateCommanderInitial = fleetTemplatesReady
+    ? await request(`/api/game/fleet-templates${fleetTemplateCommanderSearch}`, {
+        headers: { Cookie: fleetTemplateCommanderLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const fleetTemplateCommanderInitialBody = parseJSON(fleetTemplateCommanderInitial);
+  const fleetTemplateCreateScout = fleetTemplatesReady
+    ? await fleetTemplatePost(fleetTemplateCommanderLogin, fleetTemplateCommanderSearch, {
+        action: "save",
+        templateId: 0,
+        name: "Go Smoke Scout",
+        ships: {
+          [String(fleetTemplateSmallCargo)]: 2,
+          [String(fleetTemplateProbe)]: 4,
+          [String(fleetTemplateRecycler)]: 1
+        }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const fleetTemplateCreateScoutBody = parseJSON(fleetTemplateCreateScout);
+  const fleetTemplateScout = fleetTemplateNamed(fleetTemplateCreateScoutBody, "Go Smoke Scout");
+  const fleetTemplateScoutID = Number(fleetTemplateScout?.id ?? 0);
+  const fleetTemplateCreateCargo = fleetTemplatesReady
+    ? await fleetTemplatePost(fleetTemplateCommanderLogin, fleetTemplateCommanderSearch, {
+        action: "save",
+        templateId: 0,
+        name: "Go Smoke Cargo",
+        ships: {
+          [String(fleetTemplateLargeCargo)]: 1,
+          [String(fleetTemplateSmallCargo)]: 3
+        }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const fleetTemplateCreateCargoBody = parseJSON(fleetTemplateCreateCargo);
+  const fleetTemplateOverflow = fleetTemplatesReady
+    ? await fleetTemplatePost(fleetTemplateCommanderLogin, fleetTemplateCommanderSearch, {
+        action: "save",
+        templateId: 0,
+        name: "Go Smoke Overflow",
+        ships: { "204": 9 }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const fleetTemplateOverflowBody = parseJSON(fleetTemplateOverflow);
+  const fleetTemplateUpdate = fleetTemplatesReady && fleetTemplateScoutID > 0
+    ? await fleetTemplatePost(fleetTemplateCommanderLogin, fleetTemplateCommanderSearch, {
+        action: "save",
+        templateId: fleetTemplateScoutID,
+        name: "Go Smoke Updated",
+        ships: {
+          [String(fleetTemplateSmallCargo)]: 5,
+          [String(fleetTemplateProbe)]: 1
+        }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const fleetTemplateUpdateBody = parseJSON(fleetTemplateUpdate);
+  const fleetTemplateUpdated = fleetTemplateNamed(fleetTemplateUpdateBody, "Go Smoke Updated");
+  const fleetTemplateForeignDelete = fleetTemplatesReady && fleetTemplateScoutID > 0
+    ? await fleetTemplatePost(fleetTemplateForeignLogin, fleetTemplateForeignSearch, {
+        action: "delete",
+        templateId: fleetTemplateScoutID,
+        name: "",
+        ships: {}
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const fleetTemplateForeignDeleteBody = parseJSON(fleetTemplateForeignDelete);
+  const fleetTemplateOwnerAfterForeignDelete = fleetTemplatesReady
+    ? await request(`/api/game/fleet-templates${fleetTemplateCommanderSearch}`, {
+        headers: { Cookie: fleetTemplateCommanderLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const fleetTemplateOwnerAfterForeignDeleteBody = parseJSON(fleetTemplateOwnerAfterForeignDelete);
+  const fleetTemplateFleetView = fleetTemplatesReady
+    ? await request(`/api/game/fleet${fleetTemplateCommanderSearch}`, {
+        headers: { Cookie: fleetTemplateCommanderLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const fleetTemplateFleetViewBody = parseJSON(fleetTemplateFleetView);
+  const fleetTemplateOwnerDelete = fleetTemplatesReady && fleetTemplateScoutID > 0
+    ? await fleetTemplatePost(fleetTemplateCommanderLogin, fleetTemplateCommanderSearch, {
+        action: "delete",
+        templateId: fleetTemplateScoutID,
+        name: "",
+        ships: {}
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const fleetTemplateOwnerDeleteBody = parseJSON(fleetTemplateOwnerDelete);
 
   const gameGalaxy = await request(`/api/game/galaxy${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -3635,6 +3784,107 @@ try {
       check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "password_required" && issue.legacyErrorCode === 2), "missing password maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "universe_required"), "missing universe is reported for multi-universe entry", invalidLoginBody)
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_fleet_template_crud_edges_api",
+    checks: [
+      check(!smokeFixtureFile || fleetTemplatesReady, "go smoke fixture exposes fleet template edge users", { fleetTemplatesFixture }),
+      check(!fleetTemplatesReady || fleetTemplateCommanderLogin?.response.status === 200, "fleet template commander user can log in", {
+        status: fleetTemplateCommanderLogin?.response.status
+      }),
+      check(!fleetTemplatesReady || fleetTemplateNonCommanderLogin?.response.status === 200, "fleet template non-commander user can log in", {
+        status: fleetTemplateNonCommanderLogin?.response.status
+      }),
+      check(!fleetTemplatesReady || fleetTemplateForeignLogin?.response.status === 200, "fleet template foreign user can log in", {
+        status: fleetTemplateForeignLogin?.response.status
+      }),
+      check(!fleetTemplatesReady || fleetTemplateNonCommanderInitial.status === 200, "non-Commander fleet template screen returns HTTP 200", {
+        status: fleetTemplateNonCommanderInitial.status
+      }),
+      check(!fleetTemplatesReady || fleetTemplateNonCommanderInitialBody.fleet?.templates?.commanderActive === false, "non-Commander fleet template screen is gated", fleetTemplateNonCommanderInitialBody.fleet?.templates ?? {}),
+      check(!fleetTemplatesReady || fleetTemplateNonCommanderSave.status === 200, "non-Commander fleet template save returns HTTP 200 as a no-op", {
+        status: fleetTemplateNonCommanderSave.status
+      }),
+      check(
+        !fleetTemplatesReady || (fleetTemplateNonCommanderSaveBody.fleet?.templates?.items?.length ?? -1) === 0,
+        "non-Commander fleet template save does not create templates",
+        fleetTemplateNonCommanderSaveBody.fleet?.templates ?? {}
+      ),
+      check(!fleetTemplatesReady || fleetTemplateCommanderInitial.status === 200, "Commander fleet template screen returns HTTP 200", {
+        status: fleetTemplateCommanderInitial.status
+      }),
+      check(!fleetTemplatesReady || fleetTemplateCommanderInitialBody.fleet?.templates?.commanderActive === true, "Commander fleet template screen is writable", fleetTemplateCommanderInitialBody.fleet?.templates ?? {}),
+      check(!fleetTemplatesReady || fleetTemplateCommanderInitialBody.fleet?.templates?.max === Number(fleetTemplatesFixture.expected_max), "fleet template max follows computer technology plus one", fleetTemplateCommanderInitialBody.fleet?.templates ?? {}),
+      check(!fleetTemplatesReady || fleetTemplateCreateScout.status === 200, "Commander can create the first fleet template", {
+        status: fleetTemplateCreateScout.status
+      }),
+      check(
+        !fleetTemplatesReady ||
+          fleetTemplateScoutID > 0 &&
+          fleetTemplateShipCount(fleetTemplateScout, fleetTemplateSmallCargo) === 2 &&
+          fleetTemplateShipCount(fleetTemplateScout, fleetTemplateProbe) === 4 &&
+          fleetTemplateShipCount(fleetTemplateScout, fleetTemplateRecycler) === 1,
+        "created fleet template stores selected ship counts",
+        fleetTemplateScout ?? {}
+      ),
+      check(!fleetTemplatesReady || fleetTemplateCreateCargo.status === 200, "Commander can create the second fleet template", {
+        status: fleetTemplateCreateCargo.status
+      }),
+      check(
+        !fleetTemplatesReady || (fleetTemplateCreateCargoBody.fleet?.templates?.items?.length ?? -1) === Number(fleetTemplatesFixture.expected_max),
+        "fleet template list reaches the expected max after two creates",
+        fleetTemplateCreateCargoBody.fleet?.templates ?? {}
+      ),
+      check(!fleetTemplatesReady || fleetTemplateOverflow.status === 200, "fleet template overflow save returns HTTP 200", {
+        status: fleetTemplateOverflow.status
+      }),
+      check(
+        !fleetTemplatesReady ||
+          (fleetTemplateOverflowBody.fleet?.templates?.items?.length ?? -1) === Number(fleetTemplatesFixture.expected_max) &&
+          !fleetTemplateNamed(fleetTemplateOverflowBody, "Go Smoke Overflow"),
+        "fleet template overflow is capped by computer technology plus one",
+        fleetTemplateOverflowBody.fleet?.templates ?? {}
+      ),
+      check(!fleetTemplatesReady || fleetTemplateUpdate.status === 200, "Commander can update an existing fleet template", {
+        status: fleetTemplateUpdate.status
+      }),
+      check(
+        !fleetTemplatesReady ||
+          fleetTemplateUpdated?.id === fleetTemplateScoutID &&
+          fleetTemplateShipCount(fleetTemplateUpdated, fleetTemplateSmallCargo) === 5 &&
+          fleetTemplateShipCount(fleetTemplateUpdated, fleetTemplateProbe) === 1 &&
+          fleetTemplateShipCount(fleetTemplateUpdated, fleetTemplateRecycler) === 0,
+        "fleet template update renames, rewrites ships, and clears omitted ships",
+        fleetTemplateUpdated ?? {}
+      ),
+      check(!fleetTemplatesReady || fleetTemplateForeignDelete.status === 200, "foreign fleet template delete attempt returns HTTP 200", {
+        status: fleetTemplateForeignDelete.status,
+        body: fleetTemplateForeignDeleteBody
+      }),
+      check(
+        !fleetTemplatesReady || fleetTemplateNamed(fleetTemplateOwnerAfterForeignDeleteBody, "Go Smoke Updated")?.id === fleetTemplateScoutID,
+        "foreign fleet template delete cannot remove the owner template",
+        fleetTemplateOwnerAfterForeignDeleteBody.fleet?.templates ?? {}
+      ),
+      check(!fleetTemplatesReady || fleetTemplateFleetView.status === 200, "fleet screen reloads after fleet template mutation", {
+        status: fleetTemplateFleetView.status
+      }),
+      check(
+        !fleetTemplatesReady || fleetTemplateNamed(fleetTemplateFleetViewBody, "Go Smoke Updated")?.id === fleetTemplateScoutID,
+        "fleet screen exposes saved Commander templates for dispatch integration",
+        fleetTemplateFleetViewBody.fleet?.templates ?? {}
+      ),
+      check(!fleetTemplatesReady || fleetTemplateOwnerDelete.status === 200, "owner can delete the selected fleet template", {
+        status: fleetTemplateOwnerDelete.status
+      }),
+      check(
+        !fleetTemplatesReady || !fleetTemplateNamed(fleetTemplateOwnerDeleteBody, "Go Smoke Updated"),
+        "owner fleet template delete removes the selected template",
+        fleetTemplateOwnerDeleteBody.fleet?.templates ?? {}
+      ),
+      check(!fleetTemplatesReady || !fleetTemplateOwnerDelete.body.includes(fleetTemplateCommanderLogin?.cookiePair ?? "missing-cookie"), "fleet template mutation response does not echo commander cookie")
     ]
   }));
 

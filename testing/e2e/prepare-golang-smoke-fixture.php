@@ -846,6 +846,63 @@ function smoke_prepare_moon_build_fixture(string $password, array $near): array
     );
 }
 
+function smoke_prepare_fleet_template_fixture(string $password, array $near): array
+{
+    global $db_prefix;
+
+    $commander = smoke_prepare_user('gotemplatecommander', $password, 'gotemplatecommander@example.local', USER_TYPE_PLAYER);
+    $nonCommander = smoke_prepare_user('gotemplatenocom', $password, 'gotemplatenocom@example.local', USER_TYPE_PLAYER);
+    $foreign = smoke_prepare_user('gotemplateforeign', $password, 'gotemplateforeign@example.local', USER_TYPE_PLAYER);
+    $users = array($commander, $nonCommander, $foreign);
+    $userIds = array_map(fn($user) => (int)$user['player_id'], $users);
+    $planetIds = array_map(fn($user) => (int)$user['home_planet_id'], $users);
+
+    smoke_cleanup_alliances($userIds);
+    smoke_cleanup_fleets($userIds, $planetIds);
+    dbquery("DELETE FROM {$db_prefix}template WHERE owner_id IN (" . implode(',', $userIds) . ")");
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id IN (" . implode(',', $userIds) . ") AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "','" . QTYP_RESEARCH . "','" . QTYP_SHIPYARD . "','" . QTYP_FLEET . "')");
+
+    $positions = smoke_find_empty_positions($near, count($users));
+    foreach ($users as $index => $user) {
+        smoke_prepare_planet((int)$user['home_planet_id'], (int)$user['player_id'], 'GoTemplate' . $index, $positions[$index]);
+    }
+
+    $now = time();
+    $commanderUntil = $now + 7 * 24 * 60 * 60;
+    dbquery(
+        "UPDATE {$db_prefix}users SET admin=0, validated=1, deact_ip=1, vacation=0, vacation_until=0, " .
+        "banned=0, banned_until=0, noattack=0, noattack_until=0, disable=0, disable_until=0, " .
+        "`" . GID_R_COMPUTER . "`=1, com_until={$commanderUntil}, lastclick={$now} " .
+        "WHERE player_id IN (" . (int)$commander['player_id'] . "," . (int)$foreign['player_id'] . ")"
+    );
+    dbquery(
+        "UPDATE {$db_prefix}users SET admin=0, validated=1, deact_ip=1, vacation=0, vacation_until=0, " .
+        "banned=0, banned_until=0, noattack=0, noattack_until=0, disable=0, disable_until=0, " .
+        "`" . GID_R_COMPUTER . "`=1, com_until=0, lastclick={$now} " .
+        "WHERE player_id=" . (int)$nonCommander['player_id']
+    );
+    InvalidateUserCache();
+
+    return array(
+        'commander' => array(
+            'login' => mb_strtolower($commander['name'], 'UTF-8'),
+            'player_id' => (int)$commander['player_id'],
+            'home_planet_id' => (int)$commander['home_planet_id'],
+        ),
+        'non_commander' => array(
+            'login' => mb_strtolower($nonCommander['name'], 'UTF-8'),
+            'player_id' => (int)$nonCommander['player_id'],
+            'home_planet_id' => (int)$nonCommander['home_planet_id'],
+        ),
+        'foreign' => array(
+            'login' => mb_strtolower($foreign['name'], 'UTF-8'),
+            'player_id' => (int)$foreign['player_id'],
+            'home_planet_id' => (int)$foreign['home_planet_id'],
+        ),
+        'expected_max' => 2,
+    );
+}
+
 $name = getenv('OGAME_GO_LOGIN_SMOKE_USER') ?: 'legor';
 $password = getenv('OGAME_GO_LOGIN_SMOKE_PASS') ?: 'admin';
 $email = getenv('OGAME_GO_LOGIN_SMOKE_EMAIL') ?: ($name . '@example.local');
@@ -884,6 +941,7 @@ $passwordRecoveryFixture = smoke_prepare_password_recovery_fixture('E2E_reset123
 $adminOperationsFixture = smoke_prepare_admin_operations_fixture($operator, $target);
 $adminAuditFixture = smoke_prepare_admin_audit_fixture($target);
 $fleetRestrictionFixture = smoke_prepare_fleet_restriction_fixture($password, $home);
+$fleetTemplateFixture = smoke_prepare_fleet_template_fixture($password, $home);
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
 echo json_encode(array(
@@ -906,23 +964,24 @@ echo json_encode(array(
 	'phalanx' => array(
 		'source_moon_id' => $moonId,
 		'target_planet_id' => (int)$target['home_planet_id'],
-	        'target_player_id' => (int)$target['player_id'],
-	        'fleet_id' => $fleetId,
-	        'initial_deuterium' => 20000,
-	        'cost' => 5000,
-	    ),
-	    'phalanx_edges' => $phalanxEdgeFixture,
-	    'feed' => $feedFixture,
-    'password_recovery' => $passwordRecoveryFixture,
-    'admin_operations' => $adminOperationsFixture,
-    'admin_audit' => $adminAuditFixture,
-    'admin_universe' => array(
-        'freeze_victim_player_id' => (int)$freezeVictim['player_id'],
-        'freeze_victim_name' => $freezeVictim['name'],
-    ),
-    'premium_dm' => $premiumDmFixture,
-    'vacation_freeze' => $vacationFreezeFixture,
-    'merchant' => $merchantFixture,
-    'moon_build' => $moonBuildFixture,
-    'fleet_restrictions' => $fleetRestrictionFixture,
+		'target_player_id' => (int)$target['player_id'],
+		'fleet_id' => $fleetId,
+		'initial_deuterium' => 20000,
+		'cost' => 5000,
+	),
+	'phalanx_edges' => $phalanxEdgeFixture,
+	'feed' => $feedFixture,
+	'password_recovery' => $passwordRecoveryFixture,
+	'admin_operations' => $adminOperationsFixture,
+	'admin_audit' => $adminAuditFixture,
+	'admin_universe' => array(
+		'freeze_victim_player_id' => (int)$freezeVictim['player_id'],
+		'freeze_victim_name' => $freezeVictim['name'],
+	),
+	'premium_dm' => $premiumDmFixture,
+	'vacation_freeze' => $vacationFreezeFixture,
+	'merchant' => $merchantFixture,
+	'moon_build' => $moonBuildFixture,
+	'fleet_restrictions' => $fleetRestrictionFixture,
+	'fleet_templates' => $fleetTemplateFixture,
 ), JSON_UNESCAPED_SLASHES) . PHP_EOL;
