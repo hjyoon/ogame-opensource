@@ -128,7 +128,7 @@ func TestGameAdminHandlerMutatesBroadcastAndReports(t *testing.T) {
 		),
 		ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueActionSaved),
 	}}
-	request = httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=99&mode=Reports", strings.NewReader(`{"action":"reports_delete","reportIds":[701,702],"deleteMode":"deletemarked"}`))
+	request = httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=99&mode=Reports", strings.NewReader(`{"action":"reports_delete","reportIds":[701,702],"deleteMode":"deletemarked","fileName":"backup_test.json"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 
@@ -138,7 +138,8 @@ func TestGameAdminHandlerMutatesBroadcastAndReports(t *testing.T) {
 		t.Fatalf("unexpected reports response status=%d body=%s", response.Code, response.Body.String())
 	}
 	if usecase.mutation.Action != "reports_delete" || len(usecase.mutation.ReportIDs) != 2 ||
-		usecase.mutation.ReportIDs[0] != 701 || usecase.mutation.DeleteMode != "deletemarked" {
+		usecase.mutation.ReportIDs[0] != 701 || usecase.mutation.DeleteMode != "deletemarked" ||
+		usecase.mutation.FileName != "backup_test.json" {
 		t.Fatalf("unexpected reports mutation command: %+v", usecase.mutation)
 	}
 }

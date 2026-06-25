@@ -3867,6 +3867,7 @@ try {
     { mode: "Coupons", action: "add_one" },
     { mode: "Coupons", action: "add_date" },
     { mode: "Planets", action: "create_debris" },
+    { mode: "DB", action: "create" },
     { mode: "DB", action: "delete" }
   ];
   const operatorAdminOnlyMutations = operatorLogin
@@ -7382,6 +7383,121 @@ try {
       }),
       check(!adminUniverseReady || adminUniverseRestoreBody.actionIssue?.code === "action_saved", "admin universe restore mutation saves like legacy", adminUniverseRestoreBody.actionIssue ?? {}),
       check(!adminUniverseReady || adminUniverseRestoreBody.admin?.universe?.freeze === false, "admin universe restore reloads unfrozen universe settings", adminUniverseRestoreBody.admin?.universe ?? {})
+    ]
+  }));
+
+  const adminDbLogin = await loginGameUser(loginSmokeUser, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888");
+  const adminDbSearch = adminDbLogin.search;
+  const adminDbCookie = adminDbLogin.cookiePair;
+  const adminDbBeforeCreate = await request(`/api/game/admin${withQueryParam(adminDbSearch, "mode", "DB")}`, {
+    headers: { Cookie: adminDbCookie }
+  });
+  const adminDbBeforeCreateBody = parseJSON(adminDbBeforeCreate);
+  const adminDbBeforeNames = new Set((adminDbBeforeCreateBody.admin?.databaseBackups ?? []).map((row) => String(row.fileName ?? "")));
+  const adminDbCreate = await request(`/api/game/admin${withQueryParam(adminDbSearch, "mode", "DB")}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: adminDbCookie },
+    body: JSON.stringify({ action: "create" })
+  });
+  const adminDbCreateBody = parseJSON(adminDbCreate);
+  const adminDbSavedPath = /temp\/(backup_[A-Za-z0-9_.-]+\.json)/.exec(String(adminDbCreateBody.actionIssue?.message ?? ""))?.[1] ?? "";
+  const adminDbCreatedFile = adminDbSavedPath || (adminDbCreateBody.admin?.databaseBackups ?? [])
+    .map((row) => String(row.fileName ?? ""))
+    .find((name) => name && !adminDbBeforeNames.has(name)) || "";
+  const adminDbCreatedListed = (adminDbCreateBody.admin?.databaseBackups ?? []).some((row) => String(row.fileName ?? "") === adminDbCreatedFile);
+  const adminDbMarkerSubject = `Go DB restore marker ${runId}`;
+  const adminDbRecipientPlayerID = Number(targetLogin.playerId ?? 0);
+  const adminDbMarkerSend = adminDbCreatedFile && adminDbRecipientPlayerID > 0
+    ? await request(`/api/game/messages${adminDbSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: adminDbCookie },
+        body: JSON.stringify({
+          action: "send",
+          targetPlayerId: adminDbRecipientPlayerID,
+          subject: adminDbMarkerSubject,
+          text: "Go admin DB backup restore smoke"
+        })
+      })
+    : null;
+  const adminDbMarkerSendBody = adminDbMarkerSend ? parseJSON(adminDbMarkerSend) : {};
+  const adminDbInboxAfterMarker = adminDbCreatedFile
+    ? await request(`/api/game/messages${targetLogin.search}`, { headers: { Cookie: targetLogin.cookiePair } })
+    : null;
+  const adminDbInboxAfterMarkerBody = adminDbInboxAfterMarker ? parseJSON(adminDbInboxAfterMarker) : {};
+  const adminDbMarkerBeforeRestore = (adminDbInboxAfterMarkerBody.messages?.rows ?? []).find((row) =>
+    String(row.subject ?? "").includes(adminDbMarkerSubject) || String(row.text ?? "").includes(adminDbMarkerSubject)
+  );
+  const adminDbRestore = adminDbCreatedFile
+    ? await request(`/api/game/admin${withQueryParam(adminDbSearch, "mode", "DB")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: adminDbCookie },
+        body: JSON.stringify({ action: "restore", fileName: adminDbCreatedFile })
+      })
+    : null;
+  const adminDbRestoreBody = adminDbRestore ? parseJSON(adminDbRestore) : {};
+  const adminDbInboxAfterRestore = adminDbCreatedFile
+    ? await request(`/api/game/messages${targetLogin.search}`, { headers: { Cookie: targetLogin.cookiePair } })
+    : null;
+  const adminDbInboxAfterRestoreBody = adminDbInboxAfterRestore ? parseJSON(adminDbInboxAfterRestore) : {};
+  const adminDbMarkerAfterRestore = (adminDbInboxAfterRestoreBody.messages?.rows ?? []).find((row) =>
+    String(row.subject ?? "").includes(adminDbMarkerSubject) || String(row.text ?? "").includes(adminDbMarkerSubject)
+  );
+  const adminDbDelete = adminDbCreatedFile
+    ? await request(`/api/game/admin${withQueryParam(adminDbSearch, "mode", "DB")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: adminDbCookie },
+        body: JSON.stringify({ action: "delete", fileName: adminDbCreatedFile })
+      })
+    : null;
+  const adminDbDeleteBody = adminDbDelete ? parseJSON(adminDbDelete) : {};
+  cases.push(finalize({
+    case: "go_admin_database_backup_restore_api",
+    checks: [
+      check(adminDbBeforeCreate.status === 200, "admin DB backup list returns HTTP 200 before create", {
+        status: adminDbBeforeCreate.status
+      }),
+      check(adminDbLogin.response.status === 200, "admin DB backup smoke creates an independent admin session", {
+        status: adminDbLogin.response.status
+      }),
+      check(adminDbCreate.status === 200, "admin DB backup create mutation returns HTTP 200", {
+        status: adminDbCreate.status
+      }),
+      check(adminDbCreateBody.actionIssue?.code === "action_saved", "admin DB backup create returns saved issue", adminDbCreateBody.actionIssue ?? {}),
+      check(String(adminDbCreateBody.actionIssue?.message ?? "").includes("The backup is saved to file"), "admin DB backup create reports the saved file", adminDbCreateBody.actionIssue ?? {}),
+      check(/^backup_[A-Za-z0-9_.-]+\.json$/.test(adminDbCreatedFile), "admin DB backup create exposes a safe backup filename", {
+        adminDbCreatedFile
+      }),
+      check(adminDbCreatedListed, "admin DB backup create reload lists the new backup file", {
+        adminDbCreatedFile,
+        backups: adminDbCreateBody.admin?.databaseBackups ?? []
+      }),
+      check(!adminDbCreatedFile || adminDbMarkerSend?.status === 200, "admin DB marker PM send returns HTTP 200", {
+        status: adminDbMarkerSend?.status
+      }),
+      check(!adminDbCreatedFile || adminDbMarkerSendBody.actionIssue?.code === "sent", "admin DB marker PM send succeeds before restore", adminDbMarkerSendBody.actionIssue ?? {}),
+      check(!adminDbCreatedFile || adminDbMarkerBeforeRestore !== undefined, "admin DB marker PM exists after backup creation", {
+        adminDbMarkerBeforeRestore
+      }),
+      check(!adminDbCreatedFile || adminDbRestore?.status === 200, "admin DB backup restore mutation returns HTTP 200", {
+        status: adminDbRestore?.status
+      }),
+      check(!adminDbCreatedFile || adminDbRestoreBody.actionIssue?.code === "action_saved", "admin DB backup restore returns saved issue", adminDbRestoreBody.actionIssue ?? {}),
+      check(!adminDbCreatedFile || String(adminDbRestoreBody.actionIssue?.message ?? "").includes("Backup restored from file"), "admin DB backup restore reports restored backup", adminDbRestoreBody.actionIssue ?? {}),
+      check(!adminDbCreatedFile || adminDbInboxAfterRestore?.status === 200, "admin DB inbox reload after restore returns HTTP 200", {
+        status: adminDbInboxAfterRestore?.status
+      }),
+      check(!adminDbCreatedFile || adminDbMarkerAfterRestore === undefined, "admin DB backup restore removes rows created after backup creation", {
+        adminDbMarkerAfterRestore
+      }),
+      check(!adminDbCreatedFile || adminDbDelete?.status === 200, "admin DB backup delete mutation returns HTTP 200", {
+        status: adminDbDelete?.status
+      }),
+      check(!adminDbCreatedFile || adminDbDeleteBody.actionIssue?.code === "action_saved", "admin DB backup delete returns saved issue", adminDbDeleteBody.actionIssue ?? {}),
+      check(!adminDbCreatedFile || String(adminDbDeleteBody.actionIssue?.message ?? "").includes("Backup deleted"), "admin DB backup delete reports deleted backup", adminDbDeleteBody.actionIssue ?? {}),
+      check(!adminDbCreatedFile || !(adminDbDeleteBody.admin?.databaseBackups ?? []).some((row) => String(row.fileName ?? "") === adminDbCreatedFile), "admin DB backup delete reload removes the backup file", {
+        adminDbCreatedFile,
+        backups: adminDbDeleteBody.admin?.databaseBackups ?? []
+      })
     ]
   }));
 } catch (error) {

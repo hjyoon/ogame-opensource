@@ -161,6 +161,9 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 		}
 		return r.mutateAdminFleetlogs(ctx, queueTable, fleetTable, query)
 	}
+	if mode == "DB" {
+		return r.mutateAdminDatabase(ctx, query)
+	}
 	if mode != "Bans" || query.Action != "ban" {
 		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
 	}

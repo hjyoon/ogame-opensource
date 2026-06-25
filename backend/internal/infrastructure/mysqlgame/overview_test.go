@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -2239,6 +2240,21 @@ func assign(dest any, value any) error {
 			return errors.New("expected string")
 		}
 		*target = v
+	case *sql.NullString:
+		if value == nil {
+			*target = sql.NullString{}
+			return nil
+		}
+		switch v := value.(type) {
+		case string:
+			*target = sql.NullString{String: v, Valid: true}
+		case int:
+			*target = sql.NullString{String: strconv.Itoa(v), Valid: true}
+		case int64:
+			*target = sql.NullString{String: strconv.FormatInt(v, 10), Valid: true}
+		default:
+			return errors.New("expected nullable string")
+		}
 	case *int:
 		switch v := value.(type) {
 		case int:
@@ -2256,6 +2272,19 @@ func assign(dest any, value any) error {
 			*target = v
 		default:
 			return errors.New("expected int64")
+		}
+	case *sql.NullInt64:
+		if value == nil {
+			*target = sql.NullInt64{}
+			return nil
+		}
+		switch v := value.(type) {
+		case int:
+			*target = sql.NullInt64{Int64: int64(v), Valid: true}
+		case int64:
+			*target = sql.NullInt64{Int64: v, Valid: true}
+		default:
+			return errors.New("expected nullable int64")
 		}
 	case *float64:
 		switch v := value.(type) {

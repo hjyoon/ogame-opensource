@@ -29,6 +29,10 @@ const (
 	AdminActionExpeditionSim = "sim"
 
 	AdminActionSettings = "settings"
+
+	AdminActionDatabaseCreate  = "create"
+	AdminActionDatabaseRestore = "restore"
+	AdminActionDatabaseDelete  = "delete"
 )
 
 type Admin struct {

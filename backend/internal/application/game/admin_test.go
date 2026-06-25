@@ -95,6 +95,7 @@ func TestAdminServiceMutatesAdminAndRefreshes(t *testing.T) {
 		Text:            "text",
 		ReportIDs:       []int{701},
 		DeleteMode:      "deletemarked",
+		FileName:        "backup_test.json",
 	})
 
 	if err != nil {
@@ -105,6 +106,7 @@ func TestAdminServiceMutatesAdminAndRefreshes(t *testing.T) {
 		repository.mutation.Values["dm_factor"] != 9 || repository.mutation.Category != 3 ||
 		repository.mutation.Subject != "subject" || repository.mutation.Text != "text" ||
 		repository.mutation.ReportIDs[0] != 701 || repository.mutation.DeleteMode != "deletemarked" ||
+		repository.mutation.FileName != "backup_test.json" ||
 		repository.query.Mode != "Bans" {
 		t.Fatalf("unexpected result=%+v mutation=%+v query=%+v", result, repository.mutation, repository.query)
 	}

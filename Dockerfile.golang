@@ -26,6 +26,7 @@ COPY --from=backend-builder /out/ogame-server /usr/local/bin/ogame-server
 COPY --from=frontend-builder /src/frontend/dist /srv/ogame/frontend
 COPY download /srv/ogame/download
 COPY game /srv/ogame/game
+RUN mkdir -p /srv/ogame/game/temp && chown -R ogame:ogame /srv/ogame/game/temp
 ENV OGAME_ENV=production
 ENV OGAME_HTTP_ADDR=:8080
 ENV OGAME_STATIC_DIR=/srv/ogame/frontend

@@ -2,6 +2,7 @@ package httpdelivery
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
@@ -34,6 +35,7 @@ type gameAdminMutationRequest struct {
 	Text       string         `json:"text"`
 	ReportIDs  []int          `json:"reportIds"`
 	DeleteMode string         `json:"deleteMode"`
+	FileName   string         `json:"fileName"`
 }
 
 type gameAdminSummary struct {
@@ -256,6 +258,7 @@ func (a app) handleGameAdminGet(w http.ResponseWriter, r *http.Request) {
 		Mode:            r.URL.Query().Get("mode"),
 	})
 	if err != nil {
+		logGameAdminError(a.deps.Logger, r, "game admin get failed", err)
 		http.Error(w, "game admin unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -296,12 +299,21 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		Text:            request.Text,
 		ReportIDs:       request.ReportIDs,
 		DeleteMode:      request.DeleteMode,
+		FileName:        request.FileName,
 	})
 	if err != nil {
+		logGameAdminError(a.deps.Logger, r, "game admin mutation failed", err)
 		http.Error(w, "game admin unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	writeGameAdminResponse(w, result)
+}
+
+func logGameAdminError(logger *slog.Logger, r *http.Request, message string, err error) {
+	if logger == nil || err == nil {
+		return
+	}
+	logger.Error(message, "error", err, "method", r.Method, "path", r.URL.Path, "mode", r.URL.Query().Get("mode"))
 }
 
 func writeGameAdminResponse(w http.ResponseWriter, result appgame.AdminResult) {

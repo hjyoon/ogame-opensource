@@ -45,6 +45,7 @@ type AdminMutationQuery struct {
 	Text       string
 	ReportIDs  []int
 	DeleteMode string
+	FileName   string
 }
 
 type AdminMutationCommand struct {
@@ -66,6 +67,7 @@ type AdminMutationCommand struct {
 	Text            string
 	ReportIDs       []int
 	DeleteMode      string
+	FileName        string
 }
 
 type AdminResult struct {
@@ -160,6 +162,7 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		Text:       command.Text,
 		ReportIDs:  command.ReportIDs,
 		DeleteMode: command.DeleteMode,
+		FileName:   command.FileName,
 	})
 	if err != nil {
 		return AdminResult{}, err
