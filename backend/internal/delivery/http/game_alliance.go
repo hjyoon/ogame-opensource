@@ -38,6 +38,7 @@ type gameAllianceSummary struct {
 	SelectedApp    *gameAllianceApplication    `json:"selectedApp,omitempty"`
 	Members        []gameAllianceMember        `json:"members"`
 	Ranks          []gameAllianceRank          `json:"ranks"`
+	CircularResult *gameAllianceCircularResult `json:"circularResult,omitempty"`
 }
 
 type gameAllianceViewer struct {
@@ -106,6 +107,10 @@ type gameAllianceRank struct {
 	Rights int    `json:"rights"`
 }
 
+type gameAllianceCircularResult struct {
+	Recipients []string `json:"recipients"`
+}
+
 type gameAllianceMutationRequest struct {
 	Action          string `json:"action"`
 	Tag             string `json:"tag"`
@@ -119,6 +124,15 @@ type gameAllianceMutationRequest struct {
 	FounderRankName string `json:"founderRankName"`
 	AllianceID      int    `json:"allianceId"`
 	ApplicationID   int    `json:"applicationId"`
+	RankID          int    `json:"rankId"`
+	RankName        string `json:"rankName"`
+	RankRights      []struct {
+		ID     int `json:"id"`
+		Rights int `json:"rights"`
+	} `json:"rankRights"`
+	TargetPlayerID int `json:"targetPlayerId"`
+	TargetRankID   int `json:"targetRankId"`
+	CircularRankID int `json:"circularRankId"`
 }
 
 func (a app) handleGameAlliance(w http.ResponseWriter, r *http.Request) {
@@ -209,6 +223,8 @@ func selectedAllianceQuery(r *http.Request) appgame.AllianceQuery {
 		view = domaingame.AllianceViewSearch
 	case action == "4":
 		view = domaingame.AllianceViewMembers
+	case action == "7":
+		view = domaingame.AllianceViewMembers
 	case action == "5", action == "11":
 		view = domaingame.AllianceViewManagement
 	case action == "6", action == "15":
@@ -218,12 +234,16 @@ func selectedAllianceQuery(r *http.Request) appgame.AllianceQuery {
 	default:
 		view = domaingame.AllianceViewHome
 	}
+	applicationID := legacyAllianceInt(query.Get("show"))
+	if applicationID == 0 {
+		applicationID = legacyAllianceInt(query.Get("u"))
+	}
 	return appgame.AllianceQuery{
 		View:          view,
 		SearchText:    strings.TrimSpace(query.Get("suchtext")),
 		TextKind:      domaingame.NormalizeAllianceTextKind(legacyAllianceInt(query.Get("t"))),
 		AllianceID:    legacyAllianceInt(query.Get("allyid")),
-		ApplicationID: legacyAllianceInt(query.Get("show")),
+		ApplicationID: applicationID,
 	}
 }
 
@@ -233,6 +253,10 @@ func decodeGameAllianceMutation(r *http.Request) (domaingame.AllianceMutation, e
 		var request gameAllianceMutationRequest
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			return domaingame.AllianceMutation{}, err
+		}
+		rankRights := make([]domaingame.AllianceRank, 0, len(request.RankRights))
+		for _, rank := range request.RankRights {
+			rankRights = append(rankRights, domaingame.AllianceRank{ID: rank.ID, Rights: rank.Rights})
 		}
 		return domaingame.AllianceMutation{
 			Action:          strings.TrimSpace(request.Action),
@@ -247,6 +271,12 @@ func decodeGameAllianceMutation(r *http.Request) (domaingame.AllianceMutation, e
 			FounderRankName: request.FounderRankName,
 			AllianceID:      request.AllianceID,
 			ApplicationID:   request.ApplicationID,
+			RankID:          request.RankID,
+			RankName:        request.RankName,
+			RankRights:      rankRights,
+			TargetPlayerID:  request.TargetPlayerID,
+			TargetRankID:    request.TargetRankID,
+			CircularRankID:  request.CircularRankID,
 		}, nil
 	}
 	if err := r.ParseForm(); err != nil {
@@ -266,6 +296,12 @@ func decodeGameAllianceMutation(r *http.Request) (domaingame.AllianceMutation, e
 		FounderRankName: formLast(r, "fname"),
 		AllianceID:      legacyAllianceInt(r.URL.Query().Get("allyid")),
 		ApplicationID:   legacyAllianceInt(r.URL.Query().Get("show")),
+		RankID:          legacyAllianceInt(r.URL.Query().Get("d")),
+		RankName:        formLast(r, "newrangname"),
+		RankRights:      formAllianceRankRights(r),
+		TargetPlayerID:  legacyAllianceInt(r.URL.Query().Get("u")),
+		TargetRankID:    legacyAllianceInt(formLast(r, "newrang")),
+		CircularRankID:  legacyAllianceInt(formLast(r, "r")),
 	}
 	switch {
 	case page == "bewerben" || formLast(r, "weiter") == "Submit":
@@ -278,6 +314,16 @@ func decodeGameAllianceMutation(r *http.Request) (domaingame.AllianceMutation, e
 		mutation.Action = "create"
 	case action == "3":
 		mutation.Action = "leave"
+	case action == "15" && formLast(r, "newrangname") != "":
+		mutation.Action = "add_rank"
+	case action == "15" && r.URL.Query().Get("d") != "":
+		mutation.Action = "delete_rank"
+	case action == "15":
+		mutation.Action = "save_ranks"
+	case action == "16":
+		mutation.Action = "assign_rank"
+	case action == "17" && r.URL.Query().Get("sendmail") == "1":
+		mutation.Action = "send_circular"
 	case action == "11" && r.URL.Query().Get("d") == "1":
 		mutation.Action = "save_text"
 	case action == "11" && r.URL.Query().Get("d") == "2":
@@ -288,6 +334,30 @@ func decodeGameAllianceMutation(r *http.Request) (domaingame.AllianceMutation, e
 		mutation.Action = action
 	}
 	return mutation, nil
+}
+
+func formAllianceRankRights(r *http.Request) []domaingame.AllianceRank {
+	rights := map[int]int{}
+	for key := range r.PostForm {
+		if !strings.HasPrefix(key, "u") {
+			continue
+		}
+		parts := strings.SplitN(strings.TrimPrefix(key, "u"), "r", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		rankID := legacyAllianceInt(parts[0])
+		rightBit := legacyAllianceInt(parts[1])
+		if rankID <= 1 || rightBit < 0 || rightBit > 8 || formLast(r, key) != "on" {
+			continue
+		}
+		rights[rankID] |= 1 << rightBit
+	}
+	result := make([]domaingame.AllianceRank, 0, len(rights))
+	for rankID, mask := range rights {
+		result = append(result, domaingame.AllianceRank{ID: rankID, Rights: mask})
+	}
+	return result
 }
 
 func writeGameAllianceResponse(w http.ResponseWriter, result appgame.AllianceResult) {
@@ -356,17 +426,25 @@ func toGameAllianceSummary(alliance domaingame.Alliance) gameAllianceSummary {
 			RankRights: alliance.Viewer.RankRights,
 			Founder:    alliance.Viewer.Founder,
 		},
-		Own:           toGameAllianceInfo(alliance.Own),
-		Target:        toGameAllianceInfo(alliance.Target),
-		Pending:       toGameAllianceApplicationPtr(alliance.Pending),
-		SearchText:    alliance.SearchText,
-		TextKind:      alliance.TextKind,
-		SearchResults: results,
-		Applications:  applications,
-		SelectedApp:   toGameAllianceApplicationPtr(alliance.SelectedApp),
-		Members:       members,
-		Ranks:         ranks,
+		Own:            toGameAllianceInfo(alliance.Own),
+		Target:         toGameAllianceInfo(alliance.Target),
+		Pending:        toGameAllianceApplicationPtr(alliance.Pending),
+		SearchText:     alliance.SearchText,
+		TextKind:       alliance.TextKind,
+		SearchResults:  results,
+		Applications:   applications,
+		SelectedApp:    toGameAllianceApplicationPtr(alliance.SelectedApp),
+		Members:        members,
+		Ranks:          ranks,
+		CircularResult: toGameAllianceCircularResult(alliance.CircularResult),
 	}
+}
+
+func toGameAllianceCircularResult(result *domaingame.AllianceCircularResult) *gameAllianceCircularResult {
+	if result == nil {
+		return nil
+	}
+	return &gameAllianceCircularResult{Recipients: append([]string{}, result.Recipients...)}
 }
 
 func toGameAllianceInfo(info *domaingame.AllianceInfo) *gameAllianceInfo {

@@ -22,7 +22,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 - Statistics/fleet authenticated visuals pass Chromium/Firefox at 0px for player/alliance statistics.
 - Empire ports Commander-gated `imperium`, build queue markers, and legacy GET add/destroy/remove shortcuts.
 - Resources ports the legacy production-percent form, premium bonus icon column, DB normalization, and post-save resource header sync.
-- Merchant/officers/alliance/admin port DM spend/trade/timers, alliance home/apply/management/ranks, admin modes, Bans/Expedition mutations, and access guard.
+- Merchant/officers/alliance/admin port DM spend/trade/timers, alliance home/apply/management/ranks/members/circular, admin modes, Bans/Expedition mutations, and guards.
 - Research/Shipyard port aliases, chrome, colors, queues, completion refresh, start/cancel/build, and resource math.
 - Fleet dispatch covers cargo/speed, fuel/clamps, ACS sync, colonize/exp targets, templates, and recall.
 - Galaxy covers clamp, rows, statuses, moon/debris/actions, slot/deut warnings, quick links, target prefill, and instant spy/recycle dispatch.
@@ -46,4 +46,4 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 
 - Extend deep-state visuals for pages whose base views already pass.
 - Add Go compatibility checks for migrated legacy E2E flows as they stabilize.
-- Finish alliance rank mutations, deep members/circular management, admin recovery/permissions/submodes, and mission restrictions.
+- Finish admin recovery/permissions/submodes and mission restrictions.

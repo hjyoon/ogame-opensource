@@ -149,6 +149,7 @@ func TestSelectedAllianceQueryAndLegacyMutationParsing(t *testing.T) {
 		{"/api/game/alliance?a=1", domaingame.AllianceViewCreate},
 		{"/api/game/alliance?a=2&suchtext=TAG", domaingame.AllianceViewSearch},
 		{"/api/game/alliance?a=4", domaingame.AllianceViewMembers},
+		{"/api/game/alliance?a=7&u=43", domaingame.AllianceViewMembers},
 		{"/api/game/alliance?a=5&t=3", domaingame.AllianceViewManagement},
 		{"/api/game/alliance?a=6", domaingame.AllianceViewRanks},
 		{"/api/game/alliance?a=11&d=2", domaingame.AllianceViewManagement},
@@ -179,8 +180,12 @@ func TestSelectedAllianceQueryAndLegacyMutationParsing(t *testing.T) {
 		{"/api/game/alliance?a=3", "", "leave"},
 		{"/api/game/alliance?a=11&d=1&t=3", "text=hello&bewforce=1", "save_text"},
 		{"/api/game/alliance?a=11&d=2", "hp=https%3A%2F%2Fexample.com&logo=&bew=1&fname=Right+Hand", "save_settings"},
+		{"/api/game/alliance?a=15", "newrangname=Officer", "add_rank"},
+		{"/api/game/alliance?a=15", "u2r3=on&u2r7=on", "save_ranks"},
+		{"/api/game/alliance?a=15&d=2", "", "delete_rank"},
+		{"/api/game/alliance?a=16&u=43", "newrang=2", "assign_rank"},
+		{"/api/game/alliance?a=17&sendmail=1", "r=2&text=hello", "send_circular"},
 		{"/api/game/alliance", "bcancel=Withdraw+application", "withdraw"},
-		{"/api/game/alliance?a=15", "newrangname=Bad", "15"},
 	} {
 		request := httptest.NewRequest(http.MethodPost, tt.url, strings.NewReader(tt.form))
 		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -199,10 +204,24 @@ func TestSelectedAllianceQueryAndLegacyMutationParsing(t *testing.T) {
 	if mutation, err := decodeGameAllianceMutation(saveSettingsRequest); err != nil || mutation.Open || mutation.Homepage != "https://example.com" || mutation.FounderRankName != "Right Hand" {
 		t.Fatalf("unexpected save settings mutation=%+v err=%v", mutation, err)
 	}
+	saveRanksRequest := httptest.NewRequest(http.MethodPost, "/api/game/alliance?a=15", strings.NewReader("u2r3=on&u2r7=on&u1r8=on&u3r9=on"))
+	saveRanksRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if mutation, err := decodeGameAllianceMutation(saveRanksRequest); err != nil || mutation.Action != "save_ranks" || len(mutation.RankRights) != 1 || mutation.RankRights[0].ID != 2 || mutation.RankRights[0].Rights != 0x088 {
+		t.Fatalf("unexpected rank rights mutation=%+v err=%v", mutation, err)
+	}
+	assignRankRequest := httptest.NewRequest(http.MethodPost, "/api/game/alliance?a=16&u=43", strings.NewReader("newrang=2"))
+	assignRankRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if mutation, err := decodeGameAllianceMutation(assignRankRequest); err != nil || mutation.TargetPlayerID != 43 || mutation.TargetRankID != 2 {
+		t.Fatalf("unexpected assign rank mutation=%+v err=%v", mutation, err)
+	}
 	if legacyAllianceInt("-12") != 12 || legacyAllianceInt("bad") != 0 {
 		t.Fatal("legacy int parser mismatch")
 	}
-	if toGameAllianceInfo(nil) != nil || toGameAllianceApplicationPtr(nil) != nil || toGameAllianceActionIssue(nil) != nil {
+	circular := toGameAllianceCircularResult(&domaingame.AllianceCircularResult{Recipients: []string{"legor"}})
+	if circular == nil || len(circular.Recipients) != 1 || circular.Recipients[0] != "legor" {
+		t.Fatalf("unexpected circular conversion: %+v", circular)
+	}
+	if toGameAllianceInfo(nil) != nil || toGameAllianceApplicationPtr(nil) != nil || toGameAllianceActionIssue(nil) != nil || toGameAllianceCircularResult(nil) != nil {
 		t.Fatal("expected nil conversion helpers")
 	}
 }

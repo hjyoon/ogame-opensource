@@ -115,6 +115,32 @@ function smoke_cleanup_fleets(array $userIds, array $planetIds): void
     dbquery("DELETE FROM {$db_prefix}queue WHERE type='" . QTYP_FLEET . "' AND owner_id IN ({$userList})");
 }
 
+function smoke_cleanup_alliances(array $userIds): void
+{
+    global $db_prefix;
+
+    $userList = implode(',', array_map('intval', array_filter($userIds, fn($id) => $id > 0)));
+    if ($userList === '') {
+        return;
+    }
+
+    $allyIds = array();
+    $res = dbquery("SELECT DISTINCT ally_id FROM {$db_prefix}users WHERE player_id IN ({$userList}) AND ally_id > 0");
+    while ($row = dbarray($res)) {
+        $allyIds[] = (int)$row['ally_id'];
+    }
+    $res = dbquery("SELECT ally_id FROM {$db_prefix}ally WHERE tag LIKE 'GOSM%' OR name LIKE 'Go smoke alliance%'");
+    while ($row = dbarray($res)) {
+        $allyIds[] = (int)$row['ally_id'];
+    }
+    foreach (array_unique($allyIds) as $allyId) {
+        DismissAlly($allyId);
+    }
+
+    dbquery("DELETE FROM {$db_prefix}allyapps WHERE player_id IN ({$userList})");
+    dbquery("UPDATE {$db_prefix}users SET ally_id=0, allyrank=0, joindate=0 WHERE player_id IN ({$userList})");
+}
+
 function smoke_find_empty_position(array $near): array
 {
     $g = (int)$near['g'];
@@ -221,6 +247,7 @@ $email = getenv('OGAME_GO_LOGIN_SMOKE_EMAIL') ?: ($name . '@example.local');
 
 $login = smoke_prepare_user($name, $password, $email, USER_TYPE_ADMIN);
 $target = smoke_prepare_user('gophalaxtarget', $password, 'gophalaxtarget@example.local', 0);
+smoke_cleanup_alliances(array((int)$login['player_id'], (int)$target['player_id']));
 $home = LoadPlanetById((int)$login['home_planet_id']);
 if ($home === null) {
     throw new RuntimeException('Go smoke home planet is missing.');

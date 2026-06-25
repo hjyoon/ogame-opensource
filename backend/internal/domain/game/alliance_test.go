@@ -26,15 +26,15 @@ func TestAllianceDomainNormalizesAndValidatesCreation(t *testing.T) {
 
 func TestAllianceViewerRightsMatchLegacyMasks(t *testing.T) {
 	founder := AllianceViewer{AllianceID: 7, RankID: AllianceRankFounder, Founder: true}
-	if !founder.CanReadMembers() || !founder.CanWriteApplications() || !founder.CanManageAlliance() || founder.CanLeaveAlliance() {
+	if !founder.CanReadMembers() || !founder.CanWriteApplications() || !founder.CanManageAlliance() || !founder.CanKickMembers() || !founder.CanSendCircular() || founder.CanLeaveAlliance() {
 		t.Fatalf("unexpected founder permissions: %+v", founder)
 	}
-	member := AllianceViewer{AllianceID: 7, RankID: AllianceRankNewcomer, RankRights: AllianceRightMembers | AllianceRightWriteApps | AllianceRightManage}
-	if !member.CanReadMembers() || !member.CanWriteApplications() || !member.CanManageAlliance() || !member.CanLeaveAlliance() {
+	member := AllianceViewer{AllianceID: 7, RankID: AllianceRankNewcomer, RankRights: AllianceRightMembers | AllianceRightWriteApps | AllianceRightManage | AllianceRightKick | AllianceRightCircular}
+	if !member.CanReadMembers() || !member.CanWriteApplications() || !member.CanManageAlliance() || !member.CanKickMembers() || !member.CanSendCircular() || !member.CanLeaveAlliance() {
 		t.Fatalf("unexpected member permissions: %+v", member)
 	}
 	outsider := AllianceViewer{}
-	if outsider.CanReadMembers() || outsider.CanWriteApplications() || outsider.CanManageAlliance() || outsider.CanLeaveAlliance() {
+	if outsider.CanReadMembers() || outsider.CanWriteApplications() || outsider.CanManageAlliance() || outsider.CanKickMembers() || outsider.CanSendCircular() || outsider.CanLeaveAlliance() {
 		t.Fatalf("unexpected outsider permissions: %+v", outsider)
 	}
 }
@@ -57,11 +57,20 @@ func TestAllianceDomainNormalizesManagementInputs(t *testing.T) {
 	if issue := ValidateAllianceRankName("Right Hand_1"); issue != nil {
 		t.Fatalf("expected valid rank name, got %+v", issue)
 	}
+	if NormalizeAllianceRankName(" Long rank name that should be trimmed after thirty chars ") != "Long rank name that should be " {
+		t.Fatal("unexpected rank name normalization")
+	}
+	if issue := ValidateAllianceNewRankName(""); issue == nil || issue.Code != AllianceIssueInvalidRankName {
+		t.Fatalf("expected empty new rank issue, got %+v", issue)
+	}
 	if issue := ValidateAllianceRankName("bad/rank"); issue == nil || issue.Code != AllianceIssueInvalidRankName {
 		t.Fatalf("expected invalid rank issue, got %+v", issue)
 	}
 	if text := NormalizeAllianceText(strings.Repeat("a", 5001)); len(text) != 5000 {
 		t.Fatalf("expected text truncation, got %d", len(text))
+	}
+	if text := NormalizeAllianceCircularText(strings.Repeat("a", 2001)); len(text) != 2000 {
+		t.Fatalf("expected circular text truncation, got %d", len(text))
 	}
 }
 
@@ -86,6 +95,7 @@ func TestAllianceIssueMessages(t *testing.T) {
 		AllianceIssueRejected,
 		AllianceIssueLeft,
 		AllianceIssueSaved,
+		AllianceIssueSent,
 		AllianceIssueInvalidTag,
 		AllianceIssueInvalidName,
 		AllianceIssueInvalidRankName,

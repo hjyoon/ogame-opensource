@@ -1005,6 +1005,16 @@ function App() {
           dispatchClientNavigation(`/game/alliance?${next.toString()}`);
           return;
         }
+        if (
+          action.action === "add_rank" ||
+          action.action === "save_ranks" ||
+          action.action === "delete_rank" ||
+          action.action === "assign_rank" ||
+          action.action === "kick_member" ||
+          action.action === "send_circular"
+        ) {
+          return;
+        }
         const next = new URLSearchParams({ session: publicSession });
         const selectedPlanet = new URLSearchParams(search).get("cp");
         if (selectedPlanet) {

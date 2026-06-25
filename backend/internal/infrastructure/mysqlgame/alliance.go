@@ -121,6 +121,51 @@ func (r AllianceRepository) MutateAlliance(ctx context.Context, query appgame.Al
 			return domaingame.Alliance{}, nil, err
 		}
 		return alliance, issue, loadErr
+	case "add_rank", "save_ranks", "delete_rank":
+		issue, err := r.mutateAllianceRanks(ctx, viewer, mutation)
+		alliance, loadErr := r.GetAlliance(ctx, appgame.AllianceQuery{
+			PlayerID: query.PlayerID,
+			PlanetID: query.PlanetID,
+			View:     domaingame.AllianceViewRanks,
+		})
+		if err != nil {
+			return domaingame.Alliance{}, nil, err
+		}
+		return alliance, issue, loadErr
+	case "assign_rank":
+		issue, err := r.assignMemberRank(ctx, viewer, mutation)
+		alliance, loadErr := r.GetAlliance(ctx, appgame.AllianceQuery{
+			PlayerID: query.PlayerID,
+			PlanetID: query.PlanetID,
+			View:     domaingame.AllianceViewMembers,
+		})
+		if err != nil {
+			return domaingame.Alliance{}, nil, err
+		}
+		return alliance, issue, loadErr
+	case "kick_member":
+		issue, err := r.kickAllianceMember(ctx, viewer, mutation)
+		alliance, loadErr := r.GetAlliance(ctx, appgame.AllianceQuery{
+			PlayerID: query.PlayerID,
+			PlanetID: query.PlanetID,
+			View:     domaingame.AllianceViewMembers,
+		})
+		if err != nil {
+			return domaingame.Alliance{}, nil, err
+		}
+		return alliance, issue, loadErr
+	case "send_circular":
+		issue, circular, err := r.sendCircularMessage(ctx, viewer, mutation)
+		alliance, loadErr := r.GetAlliance(ctx, appgame.AllianceQuery{
+			PlayerID: query.PlayerID,
+			PlanetID: query.PlanetID,
+			View:     domaingame.AllianceViewCircular,
+		})
+		alliance.CircularResult = circular
+		if err != nil {
+			return domaingame.Alliance{}, nil, err
+		}
+		return alliance, issue, loadErr
 	case "save_text":
 		issue, err := r.saveAllianceText(ctx, viewer, mutation)
 		alliance, loadErr := r.GetAlliance(ctx, appgame.AllianceQuery{
@@ -443,6 +488,107 @@ func (r AllianceRepository) saveAllianceSettings(ctx context.Context, viewer dom
 		}
 	}
 	return domaingame.AllianceIssue(domaingame.AllianceIssueSaved), nil
+}
+
+func (r AllianceRepository) mutateAllianceRanks(ctx context.Context, viewer domaingame.AllianceViewer, mutation domaingame.AllianceMutation) (*domaingame.AllianceActionIssue, error) {
+	if viewer.AllianceID <= 0 || !viewer.CanManageAlliance() {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueNoPermission), nil
+	}
+	switch mutation.Action {
+	case "add_rank":
+		name := domaingame.NormalizeAllianceRankName(mutation.RankName)
+		if issue := domaingame.ValidateAllianceNewRankName(name); issue != nil {
+			return issue, nil
+		}
+		return r.addAllianceRank(ctx, viewer.AllianceID, name)
+	case "delete_rank":
+		if mutation.RankID <= domaingame.AllianceRankNewcomer {
+			return domaingame.AllianceIssue(domaingame.AllianceIssueSaved), nil
+		}
+		return r.deleteAllianceRank(ctx, viewer.AllianceID, mutation.RankID)
+	case "save_ranks":
+		return r.saveAllianceRankRights(ctx, viewer.AllianceID, mutation.RankRights)
+	default:
+		return domaingame.AllianceIssue(domaingame.AllianceIssueNoPermission), nil
+	}
+}
+
+func (r AllianceRepository) assignMemberRank(ctx context.Context, viewer domaingame.AllianceViewer, mutation domaingame.AllianceMutation) (*domaingame.AllianceActionIssue, error) {
+	if viewer.AllianceID <= 0 || !viewer.CanManageAlliance() || mutation.TargetPlayerID <= 0 || mutation.TargetRankID <= 0 {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueNoPermission), nil
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	_, err = r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET allyrank = ? WHERE player_id = ? AND ally_id = ? AND allyrank <> ? LIMIT 1", usersTable),
+		mutation.TargetRankID,
+		mutation.TargetPlayerID,
+		viewer.AllianceID,
+		domaingame.AllianceRankFounder,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return domaingame.AllianceIssue(domaingame.AllianceIssueSaved), nil
+}
+
+func (r AllianceRepository) kickAllianceMember(ctx context.Context, viewer domaingame.AllianceViewer, mutation domaingame.AllianceMutation) (*domaingame.AllianceActionIssue, error) {
+	if viewer.AllianceID <= 0 || !viewer.CanKickMembers() || mutation.TargetPlayerID <= 0 {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueNoPermission), nil
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	_, err = r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET ally_id = 0 WHERE player_id = ? AND ally_id = ? AND allyrank <> ? LIMIT 1", usersTable),
+		mutation.TargetPlayerID,
+		viewer.AllianceID,
+		domaingame.AllianceRankFounder,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return domaingame.AllianceIssue(domaingame.AllianceIssueSaved), nil
+}
+
+func (r AllianceRepository) sendCircularMessage(ctx context.Context, viewer domaingame.AllianceViewer, mutation domaingame.AllianceMutation) (*domaingame.AllianceActionIssue, *domaingame.AllianceCircularResult, error) {
+	if viewer.AllianceID <= 0 || !viewer.CanSendCircular() {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueNoPermission), nil, nil
+	}
+	own, err := r.loadAllianceInfo(ctx, viewer.AllianceID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if own == nil {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueAllianceNotFound), nil, nil
+	}
+	recipients, err := r.loadCircularRecipients(ctx, viewer.AllianceID, mutation.CircularRankID)
+	if err != nil {
+		return nil, nil, err
+	}
+	result := &domaingame.AllianceCircularResult{Recipients: make([]string, 0, len(recipients))}
+	if len(recipients) == 0 {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueSent), result, nil
+	}
+	messagesTable, err := tableName(r.prefix, "messages")
+	if err != nil {
+		return nil, nil, err
+	}
+	text := fmt.Sprintf(" Player %s informs you of the following:<br>%s", viewer.Name, allianceCircularText(mutation.Text))
+	from := fmt.Sprintf(" Alliance [%s]", own.Tag)
+	subject := fmt.Sprintf("General message to your alliance [%s]", own.Tag)
+	for _, recipient := range recipients {
+		if err := r.insertAllianceMessage(ctx, messagesTable, recipient.PlayerID, from, subject, text); err != nil {
+			return nil, nil, err
+		}
+		result.Recipients = append(result.Recipients, recipient.Name)
+	}
+	return domaingame.AllianceIssue(domaingame.AllianceIssueSent), result, nil
 }
 
 func (r AllianceRepository) loadAllianceViewer(ctx context.Context, playerID int) (domaingame.AllianceViewer, error) {
@@ -814,4 +960,190 @@ func (r AllianceRepository) deleteApplication(ctx context.Context, applicationID
 	}
 	_, err = r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE app_id = ? LIMIT 1", appsTable), applicationID)
 	return err
+}
+
+func (r AllianceRepository) addAllianceRank(ctx context.Context, allianceID int, name string) (*domaingame.AllianceActionIssue, error) {
+	allyTable, err := tableName(r.prefix, "ally")
+	if err != nil {
+		return nil, err
+	}
+	ranksTable, err := tableName(r.prefix, "allyranks")
+	if err != nil {
+		return nil, err
+	}
+	rankID, err := r.loadNextAllianceRankID(ctx, allyTable, allianceID)
+	if err != nil {
+		return nil, err
+	}
+	if rankID <= domaingame.AllianceRankNewcomer {
+		rankID = domaingame.AllianceRankNewcomer + 1
+	}
+	if _, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("INSERT INTO %s (rank_id, ally_id, name, rights) VALUES (?, ?, ?, 0)", ranksTable),
+		rankID,
+		allianceID,
+		name,
+	); err != nil {
+		return nil, err
+	}
+	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET nextrank = nextrank + 1 WHERE ally_id = ? LIMIT 1", allyTable), allianceID); err != nil {
+		return nil, err
+	}
+	return domaingame.AllianceIssue(domaingame.AllianceIssueSaved), nil
+}
+
+func (r AllianceRepository) deleteAllianceRank(ctx context.Context, allianceID int, rankID int) (*domaingame.AllianceActionIssue, error) {
+	ranksTable, err := tableName(r.prefix, "allyranks")
+	if err != nil {
+		return nil, err
+	}
+	_, err = r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE ally_id = ? AND rank_id = ? LIMIT 1", ranksTable), allianceID, rankID)
+	if err != nil {
+		return nil, err
+	}
+	return domaingame.AllianceIssue(domaingame.AllianceIssueSaved), nil
+}
+
+func (r AllianceRepository) saveAllianceRankRights(ctx context.Context, allianceID int, selected []domaingame.AllianceRank) (*domaingame.AllianceActionIssue, error) {
+	ranks, err := r.loadAllianceRanks(ctx, allianceID)
+	if err != nil {
+		return nil, err
+	}
+	ranksTable, err := tableName(r.prefix, "allyranks")
+	if err != nil {
+		return nil, err
+	}
+	rightsByRank := map[int]int{}
+	for _, rank := range selected {
+		if rank.ID > domaingame.AllianceRankNewcomer {
+			rightsByRank[rank.ID] = rank.Rights & domaingame.AllianceFounderRights
+		}
+	}
+	for _, rank := range ranks {
+		if rank.ID <= domaingame.AllianceRankNewcomer {
+			continue
+		}
+		if _, err := r.execer.ExecContext(
+			ctx,
+			fmt.Sprintf("UPDATE %s SET rights = ? WHERE ally_id = ? AND rank_id = ? LIMIT 1", ranksTable),
+			rightsByRank[rank.ID],
+			allianceID,
+			rank.ID,
+		); err != nil {
+			return nil, err
+		}
+	}
+	return domaingame.AllianceIssue(domaingame.AllianceIssueSaved), nil
+}
+
+func (r AllianceRepository) loadNextAllianceRankID(ctx context.Context, allyTable string, allianceID int) (int, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COALESCE(nextrank, 2) FROM %s WHERE ally_id = ? LIMIT 1", allyTable), allianceID)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return 0, err
+		}
+		return 0, errors.New("alliance rank sequence not found")
+	}
+	var rankID int
+	if err := rows.Scan(&rankID); err != nil {
+		return 0, err
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	return rankID, nil
+}
+
+type allianceCircularRecipient struct {
+	PlayerID int
+	Name     string
+}
+
+func (r AllianceRepository) loadCircularRecipients(ctx context.Context, allianceID int, rankID int) ([]allianceCircularRecipient, error) {
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	query := fmt.Sprintf("SELECT player_id, COALESCE(oname, '') FROM %s WHERE ally_id = ?", usersTable)
+	args := []any{allianceID}
+	if rankID > 0 {
+		query += " AND allyrank = ?"
+		args = append(args, rankID)
+	}
+	query += " ORDER BY player_id ASC"
+	rows, err := r.queryer.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	recipients := []allianceCircularRecipient{}
+	for rows.Next() {
+		var recipient allianceCircularRecipient
+		if err := rows.Scan(&recipient.PlayerID, &recipient.Name); err != nil {
+			return nil, err
+		}
+		recipients = append(recipients, recipient)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return recipients, nil
+}
+
+func (r AllianceRepository) insertAllianceMessage(ctx context.Context, messagesTable string, ownerID int, from string, subject string, text string) error {
+	count, err := r.countAllianceMessages(ctx, messagesTable, ownerID)
+	if err != nil {
+		return err
+	}
+	if count >= 127 {
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE owner_id = ? ORDER BY date ASC LIMIT 1", messagesTable), ownerID); err != nil {
+			return err
+		}
+	}
+	_, err = r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("INSERT INTO %s (owner_id, pm, msgfrom, subj, text, shown, date, planet_id) VALUES (?, ?, ?, ?, ?, 0, ?, 0)", messagesTable),
+		ownerID,
+		domaingame.MessageTypeAlliance,
+		from,
+		subject,
+		text,
+		r.now().Unix(),
+	)
+	return err
+}
+
+func (r AllianceRepository) countAllianceMessages(ctx context.Context, messagesTable string, ownerID int) (int, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE owner_id = ?", messagesTable), ownerID)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return 0, err
+		}
+		return 0, errors.New("alliance message count not found")
+	}
+	var count int
+	if err := rows.Scan(&count); err != nil {
+		return 0, err
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func allianceCircularText(text string) string {
+	text = domaingame.NormalizeAllianceCircularText(text)
+	text = strings.ReplaceAll(text, `"`, "&quot;")
+	text = strings.ReplaceAll(text, "'", "&rsquo;")
+	text = strings.ReplaceAll(text, "`", "&lsquo;")
+	return text
 }

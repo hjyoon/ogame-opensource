@@ -158,6 +158,23 @@ async function waitForMailhogMessage(email, needle) {
   return { ...last, message: null };
 }
 
+async function loginGameUser(login, pass, universe) {
+  const response = await request("/api/public/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ login, pass, universe })
+  });
+  const body = parseJSON(response);
+  const cookie = response.headers["set-cookie"] ?? "";
+  const cookiePair = cookie.split(";")[0] ?? "";
+  const cookieName = cookiePair.split("=")[0] ?? "";
+  const playerId = Number(/^prsess_(\d+)_/.exec(cookieName)?.[1] ?? 0);
+  const search = typeof body.session?.redirectTo === "string"
+    ? new URL(body.session.redirectTo, baseUrl).search
+    : "?session=";
+  return { response, body, cookie, cookiePair, playerId, search };
+}
+
 const cases = [];
 
 try {
@@ -1380,6 +1397,75 @@ try {
   }));
   const gameAllianceWithoutCookie = await request(`/api/game/alliance${sessionSearch}`);
   const gameAllianceWithoutCookieBody = parseJSON(gameAllianceWithoutCookie);
+  const targetLogin = await loginGameUser("gophalaxtarget", loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888");
+  const allianceTag = `GOSM${runId}`.replace(/[^A-Za-z0-9]/g, "").slice(0, 8);
+  const allianceName = `Go smoke alliance ${runId}`.slice(0, 30);
+  const allianceCreate = await request(`/api/game/alliance${withQueryParams(sessionSearch, { a: "1", weiter: "1" })}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+    body: JSON.stringify({ action: "create", tag: allianceTag, name: allianceName })
+  });
+  const allianceCreateBody = parseJSON(allianceCreate);
+  const createdAllianceId = Number(allianceCreateBody.alliance?.own?.id ?? 0);
+  const allianceApply = createdAllianceId > 0
+    ? await request(`/api/game/alliance${withQueryParams(targetLogin.search, { page: "bewerben", allyid: createdAllianceId })}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: targetLogin.cookiePair },
+        body: JSON.stringify({ action: "apply", allianceId: createdAllianceId, text: `Go smoke application ${runId}` })
+      })
+    : { status: 0, body: "", headers: {} };
+  const allianceApplyBody = parseJSON(allianceApply);
+  const applicationId = Number(allianceApplyBody.alliance?.pending?.id ?? 0);
+  const allianceAccept = applicationId > 0
+    ? await request(`/api/game/alliance${withQueryParams(sessionSearch, { page: "bewerbungen", show: applicationId, sort: "1" })}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({ action: "accept", applicationId })
+      })
+    : { status: 0, body: "", headers: {} };
+  const allianceAcceptBody = parseJSON(allianceAccept);
+  const rankName = `GoSmoke${runId}`.replace(/[^A-Za-z0-9._ -]/g, "").slice(0, 30);
+  const allianceRankCreate = createdAllianceId > 0
+    ? await request(`/api/game/alliance${withQueryParams(sessionSearch, { a: "15" })}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({ action: "add_rank", rankName })
+      })
+    : { status: 0, body: "", headers: {} };
+  const allianceRankCreateBody = parseJSON(allianceRankCreate);
+  const createdRankId = Number((allianceRankCreateBody.alliance?.ranks ?? []).find((rank) => rank.name === rankName)?.id ?? 0);
+  const rankRights = 0x008 | 0x020 | 0x080;
+  const allianceRankRights = createdRankId > 0
+    ? await request(`/api/game/alliance${withQueryParams(sessionSearch, { a: "15" })}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({ action: "save_ranks", rankRights: [{ id: createdRankId, rights: rankRights }] })
+      })
+    : { status: 0, body: "", headers: {} };
+  const allianceRankRightsBody = parseJSON(allianceRankRights);
+  const rankAfterRights = (allianceRankRightsBody.alliance?.ranks ?? []).find((rank) => rank.id === createdRankId);
+  const allianceAssignRank = createdRankId > 0 && targetLogin.playerId > 0
+    ? await request(`/api/game/alliance${withQueryParams(sessionSearch, { a: "16", u: targetLogin.playerId })}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({ action: "assign_rank", targetPlayerId: targetLogin.playerId, targetRankId: createdRankId })
+      })
+    : { status: 0, body: "", headers: {} };
+  const allianceAssignRankBody = parseJSON(allianceAssignRank);
+  const assignedMember = (allianceAssignRankBody.alliance?.members ?? []).find((member) => member.playerId === targetLogin.playerId);
+  const circularText = `Go smoke circular ${runId}`;
+  const allianceCircular = createdRankId > 0
+    ? await request(`/api/game/alliance${withQueryParams(targetLogin.search, { a: "17", sendmail: "1" })}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: targetLogin.cookiePair },
+        body: JSON.stringify({ action: "send_circular", circularRankId: createdRankId, text: circularText })
+      })
+    : { status: 0, body: "", headers: {} };
+  const allianceCircularBody = parseJSON(allianceCircular);
+  const targetMessagesAfterCircular = await request(`/api/game/messages${targetLogin.search}`, {
+    headers: { Cookie: targetLogin.cookiePair }
+  });
+  const targetMessagesAfterCircularBody = parseJSON(targetMessagesAfterCircular);
 
   const gameOptions = await request(`/api/game/options${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -2011,6 +2097,45 @@ try {
       check(!gameAllianceRoutes.some((item) => item.response.body.includes(sessionCookiePair)), "alliance route matrix does not echo private cookie"),
       check(gameAllianceWithoutCookie.status === 401, "alliance route rejects missing private cookie", { status: gameAllianceWithoutCookie.status }),
       check(gameAllianceWithoutCookieBody.authenticated === false, "alliance route missing private cookie is unauthenticated", gameAllianceWithoutCookieBody)
+    ]
+  }));
+  cases.push(finalize({
+    case: "go_alliance_management_lifecycle_api",
+    checks: [
+      check(targetLogin.response.status === 200, "target smoke user can log in for alliance lifecycle", { status: targetLogin.response.status }),
+      check(targetLogin.playerId > 0, "target smoke login exposes a player id", { playerId: targetLogin.playerId }),
+      check(allianceCreate.status === 200, "founder creates an alliance through Go API", { status: allianceCreate.status }),
+      check(allianceCreateBody.actionIssue?.code === "created", "alliance create returns created issue", allianceCreateBody),
+      check(createdAllianceId > 0 && allianceCreateBody.alliance?.own?.tag === allianceTag, "created alliance is returned with the requested tag", allianceCreateBody.alliance?.own ?? {}),
+      check(allianceApply.status === 200, "target applies to created alliance through Go API", { status: allianceApply.status }),
+      check(allianceApplyBody.actionIssue?.code === "applied", "alliance application returns applied issue", allianceApplyBody),
+      check(applicationId > 0, "alliance application exposes pending application id", allianceApplyBody.alliance?.pending ?? {}),
+      check(allianceAccept.status === 200, "founder accepts target application through Go API", { status: allianceAccept.status }),
+      check(allianceAcceptBody.actionIssue?.code === "accepted", "alliance accept returns accepted issue", allianceAcceptBody),
+      check(allianceRankCreate.status === 200, "founder creates a custom rank through Go API", { status: allianceRankCreate.status }),
+      check(createdRankId > 1, "custom rank is returned after creation", allianceRankCreateBody.alliance?.ranks ?? []),
+      check(allianceRankRights.status === 200, "founder saves custom rank rights through Go API", { status: allianceRankRights.status }),
+      check(rankAfterRights?.rights === rankRights, "custom rank receives member list, management, and circular rights", {
+        expected: rankRights,
+        actual: rankAfterRights
+      }),
+      check(allianceAssignRank.status === 200, "founder assigns custom rank to target member through Go API", { status: allianceAssignRank.status }),
+      check(assignedMember?.rankId === createdRankId, "assigned member reloads with the custom rank", assignedMember ?? {}),
+      check(allianceCircular.status === 200, "ranked member sends a rank-scoped circular message through Go API", { status: allianceCircular.status }),
+      check(allianceCircularBody.actionIssue?.code === "sent", "circular send returns sent issue", allianceCircularBody),
+      check(
+        Array.isArray(allianceCircularBody.alliance?.circularResult?.recipients) &&
+          allianceCircularBody.alliance.circularResult.recipients.length === 1,
+        "rank-scoped circular lists exactly the selected-rank recipient",
+        allianceCircularBody.alliance?.circularResult ?? {}
+      ),
+      check(targetMessagesAfterCircular.status === 200, "target messages reload after circular send", { status: targetMessagesAfterCircular.status }),
+      check(
+        (targetMessagesAfterCircularBody.messages?.rows ?? []).some((row) => String(row.text ?? "").includes(circularText)),
+        "target inbox contains the circular alliance message",
+        targetMessagesAfterCircularBody.messages?.rows ?? []
+      ),
+      check(!allianceCircular.body.includes(targetLogin.cookiePair), "alliance circular response does not echo target private cookie")
     ]
   }));
 

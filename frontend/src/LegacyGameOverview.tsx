@@ -101,7 +101,13 @@ export type GameAllianceAction =
   | { action: "reject"; applicationId: number; text: string }
   | { action: "leave" }
   | { action: "save_text"; textKind: number; text: string; insertApp: boolean }
-  | { action: "save_settings"; homepage: string; imageLogo: string; open: boolean; founderRankName: string };
+  | { action: "save_settings"; homepage: string; imageLogo: string; open: boolean; founderRankName: string }
+  | { action: "add_rank"; rankName: string }
+  | { action: "save_ranks"; rankRights: { id: number; rights: number }[] }
+  | { action: "delete_rank"; rankId: number }
+  | { action: "assign_rank"; targetPlayerId: number; targetRankId: number }
+  | { action: "kick_member"; targetPlayerId: number }
+  | { action: "send_circular"; circularRankId: number; text: string };
 
 export type GameResearchStatus = {
   authenticated: boolean;
@@ -1056,6 +1062,7 @@ type GameAlliance = {
   selectedApp?: GameAllianceApplication;
   members: GameAllianceMember[];
   ranks: GameAllianceRank[];
+  circularResult?: { recipients: string[] };
 };
 
 type GameAllianceViewer = {
@@ -5230,13 +5237,13 @@ function AllianceTable({
     return <AllianceApplicationsTable alliance={alliance} onAction={onAction} pending={pending} />;
   }
   if (alliance.view === "members" && alliance.own) {
-    return <AllianceMembersTable alliance={alliance} />;
+    return <AllianceMembersTable alliance={alliance} onAction={onAction} pending={pending} />;
   }
   if (alliance.view === "circular" && alliance.own) {
-    return <AllianceCircularTable alliance={alliance} />;
+    return <AllianceCircularTable alliance={alliance} onAction={onAction} pending={pending} />;
   }
   if (alliance.view === "ranks" && alliance.own) {
-    return <AllianceRanksTable alliance={alliance} />;
+    return <AllianceRanksTable alliance={alliance} onAction={onAction} pending={pending} />;
   }
   if (alliance.view === "management" && alliance.own) {
     return <AllianceManagementTable alliance={alliance} onAction={onAction} pending={pending} />;
@@ -5685,9 +5692,36 @@ function AllianceHomeTable({
   );
 }
 
-function AllianceCircularTable({ alliance }: { alliance: GameAlliance }) {
+function AllianceCircularTable({
+  alliance,
+  onAction,
+  pending
+}: {
+  alliance: GameAlliance;
+  onAction: (action: GameAllianceAction) => void;
+  pending: boolean;
+}) {
   if (!alliance.own) {
     return null;
+  }
+  if (alliance.circularResult) {
+    const recipients = alliance.circularResult.recipients;
+    const resultAction = recipients.length > 0 ? allianceURL() : allianceURL({ a: "17" });
+    const body =
+      recipients.length > 0
+        ? `<tr><td class=c>The following players have received your general message</td></tr><tr><th>\n${recipients
+            .map((name) => `${legacyHTMLText(name)}<br>`)
+            .join("\n")}</th></tr><tr><th><input type=submit value="Ok"></th></tr>`
+        : `<tr><td class=c>Error</td></tr><tr><th>Sorry, no recipients were found.</th></tr><tr><th><input type=submit value="Back"></th></tr>`;
+    return React.createElement("center", {
+      dangerouslySetInnerHTML: {
+        __html: `<script src="/public-assets/game/js/cntchar.js" type="text/javascript"></script><script src="/public-assets/game/js/win.js" type="text/javascript"></script>
+<table class="legacy-alliance-circular-table" width=519>
+<form action="${legacyHTMLAttribute(resultAction)}" method=POST>
+${body}
+</table></center></form>`
+      }
+    });
   }
   const rankOptions = alliance.ranks
     .filter((rank) => rank.id !== 0 && rank.id !== 1)
@@ -5699,7 +5733,7 @@ function AllianceCircularTable({ alliance }: { alliance: GameAlliance }) {
     dangerouslySetInnerHTML: {
       __html: `<script src="/public-assets/game/js/cntchar.js" type="text/javascript"></script><script src="/public-assets/game/js/win.js" type="text/javascript"></script>
 <table class="legacy-alliance-circular-table" width=519>
-<form action="${legacyHTMLAttribute(action)}" method=POST>
+<form action="${legacyHTMLAttribute(action)}" method=POST data-alliance-action="send_circular">
 <tr><td class=c colspan=2>Send general message</td></tr>
 <tr><th>Recipient</th><th>
 <select name=r>
@@ -5707,11 +5741,35 @@ ${options}
 </select></th></tr>
 <tr><th>Message text (<span id="cntChars">0</span> / 2000 Simv.)</th><th><textarea name=text cols=60 rows=10 onkeyup="javascript:cntchar(2000)"></textarea></th></tr>
 <tr><th colspan=2><input type=submit value="Submit"></th></tr></table></form>`
+    },
+    onSubmit: (event: React.FormEvent<HTMLElement>) => {
+      const form = event.target instanceof HTMLFormElement ? event.target : null;
+      if (!form || form.dataset.allianceAction !== "send_circular") {
+        return;
+      }
+      event.preventDefault();
+      if (pending) {
+        return;
+      }
+      const data = new FormData(form);
+      onAction({
+        action: "send_circular",
+        circularRankId: Number(data.get("r") ?? 0) || 0,
+        text: String(data.get("text") ?? "")
+      });
     }
   });
 }
 
-function AllianceRanksTable({ alliance }: { alliance: GameAlliance }) {
+function AllianceRanksTable({
+  alliance,
+  onAction,
+  pending
+}: {
+  alliance: GameAlliance;
+  onAction: (action: GameAllianceAction) => void;
+  pending: boolean;
+}) {
   if (!alliance.own) {
     return null;
   }
@@ -5731,7 +5789,39 @@ function AllianceRanksTable({ alliance }: { alliance: GameAlliance }) {
       </LegacyCenter>
     );
   }
-  return React.createElement("center", { dangerouslySetInnerHTML: { __html: allianceRanksHTML(alliance) } });
+  return React.createElement("center", {
+    dangerouslySetInnerHTML: { __html: allianceRanksHTML(alliance) },
+    onSubmit: (event: React.FormEvent<HTMLElement>) => {
+      const form = event.target instanceof HTMLFormElement ? event.target : null;
+      const action = form?.dataset.allianceAction ?? "";
+      if (!form || action === "") {
+        return;
+      }
+      event.preventDefault();
+      if (pending) {
+        return;
+      }
+      const data = new FormData(form);
+      if (action === "add_rank") {
+        onAction({ action: "add_rank", rankName: String(data.get("newrangname") ?? "") });
+        return;
+      }
+      if (action === "save_ranks") {
+        onAction({ action: "save_ranks", rankRights: allianceRankRightsFromForm(alliance.ranks, data) });
+      }
+    },
+    onClick: (event: React.MouseEvent<HTMLElement>) => {
+      const link = (event.target as HTMLElement).closest("a[data-alliance-action='delete_rank']");
+      if (!link || !(link instanceof HTMLAnchorElement)) {
+        return;
+      }
+      event.preventDefault();
+      if (pending) {
+        return;
+      }
+      onAction({ action: "delete_rank", rankId: Number(link.dataset.rankId ?? 0) || 0 });
+    }
+  });
 }
 
 function allianceRanksHTML(alliance: GameAlliance): string {
@@ -5754,7 +5844,7 @@ function allianceRanksHTML(alliance: GameAlliance): string {
         const checked = rank.rights & (1 << index) ? " checked" : "";
         return `<th><input type=checkbox name="u${rank.id}r${index}"${checked}></th>`;
       }).join("");
-      return ` <tr>\n  <th><a href="${legacyHTMLAttribute(allianceURL({ a: "15", d: String(rank.id) }))}"><img src="${skinBase}/pic/abort.gif" alt="Delete rank" border="0"></a></th>\n  <th>&nbsp;${legacyHTMLText(rank.name)}&nbsp;</th>\n${boxes}\n </tr>\n`;
+      return ` <tr>\n  <th><a href="${legacyHTMLAttribute(allianceURL({ a: "15", d: String(rank.id) }))}" data-alliance-action="delete_rank" data-rank-id="${rank.id}"><img src="${skinBase}/pic/abort.gif" alt="Delete rank" border="0"></a></th>\n  <th>&nbsp;${legacyHTMLText(rank.name)}&nbsp;</th>\n${boxes}\n </tr>\n`;
     })
     .join("");
   const infoRows = rights
@@ -5766,7 +5856,7 @@ function allianceRanksHTML(alliance: GameAlliance): string {
  <tr>
   <td class="c" colspan="11">Form rights</td>
  </tr>
- <form action="${legacyHTMLAttribute(allianceURL({ a: "15" }))}" method="POST">
+ <form action="${legacyHTMLAttribute(allianceURL({ a: "15" }))}" method="POST" data-alliance-action="save_ranks">
  <tr>
   <th></th>
   <th>Rank name</th>
@@ -5777,7 +5867,7 @@ ${rows} <tr>
  </tr>
 </form>
 </table>
-<br /><form action="${legacyHTMLAttribute(allianceURL({ a: "15" }))}" method=POST>
+<br /><form action="${legacyHTMLAttribute(allianceURL({ a: "15" }))}" method=POST data-alliance-action="add_rank">
 <table width=519>
 <tr><td class=c colspan=2>Assign new rank</td></tr>
 <tr><th>Rank name</th><th><input type=text name="newrangname" size=20 maxlength=30></th></tr>
@@ -5789,6 +5879,20 @@ ${rows} <tr>
 <tr><td class=c colspan=2>Explanation of Rights</td></tr>
 ${infoRows}
 </form></table>`;
+}
+
+function allianceRankRightsFromForm(ranks: GameAllianceRank[], data: FormData) {
+  return ranks
+    .filter((rank) => rank.id !== 0 && rank.id !== 1)
+    .map((rank) => {
+      let rights = 0;
+      for (let index = 0; index < 9; index += 1) {
+        if (data.get(`u${rank.id}r${index}`) === "on") {
+          rights |= 1 << index;
+        }
+      }
+      return { id: rank.id, rights };
+    });
 }
 
 function AllianceManagementTable({
@@ -6186,10 +6290,73 @@ function AllianceRejectForm({
   );
 }
 
-function AllianceMembersTable({ alliance }: { alliance: GameAlliance }) {
+function AllianceMembersTable({
+  alliance,
+  onAction,
+  pending
+}: {
+  alliance: GameAlliance;
+  onAction: (action: GameAllianceAction) => void;
+  pending: boolean;
+}) {
   const own = alliance.own;
   if (!own) {
     return null;
+  }
+  const action = new URLSearchParams(window.location.search).get("a") ?? "4";
+  if (action === "7") {
+    if (!alliance.viewer.founder && (alliance.viewer.rankRights & 0x020) === 0) {
+      return (
+        <LegacyCenter>
+          <table width={519}>
+            <tbody>
+              <tr>
+                <td className="legacy-c c">View not possible</td>
+              </tr>
+              <tr>
+                <th>Not enough permissions to perform the operation</th>
+              </tr>
+            </tbody>
+          </table>
+        </LegacyCenter>
+      );
+    }
+    return React.createElement("center", {
+      dangerouslySetInnerHTML: {
+        __html: allianceMemberSettingsHTML(alliance)
+      },
+      onSubmit: (event: React.FormEvent<HTMLElement>) => {
+        const form = event.target instanceof HTMLFormElement ? event.target : null;
+        if (!form || form.dataset.allianceAction !== "assign_rank") {
+          return;
+        }
+        event.preventDefault();
+        if (pending) {
+          return;
+        }
+        const data = new FormData(form);
+        onAction({
+          action: "assign_rank",
+          targetPlayerId: Number(form.dataset.targetPlayerId ?? 0) || 0,
+          targetRankId: Number(data.get("newrang") ?? 0) || 0
+        });
+      },
+      onClick: (event: React.MouseEvent<HTMLElement>) => {
+        const link = (event.target as HTMLElement).closest("a[data-alliance-action='kick_member']");
+        if (!link || !(link instanceof HTMLAnchorElement)) {
+          return;
+        }
+        event.preventDefault();
+        if (pending) {
+          return;
+        }
+        const name = link.dataset.playerName ?? "";
+        if (name && !window.confirm(`Are you sure that player ${name} should leave the alliance?`)) {
+          return;
+        }
+        onAction({ action: "kick_member", targetPlayerId: Number(link.dataset.targetPlayerId ?? 0) || 0 });
+      }
+    });
   }
   if (!alliance.viewer.founder && (alliance.viewer.rankRights & 0x008) === 0) {
     return (
@@ -6212,6 +6379,66 @@ function AllianceMembersTable({ alliance }: { alliance: GameAlliance }) {
       __html: allianceMembersHTML(alliance)
     }
   });
+}
+
+function allianceMemberSettingsHTML(alliance: GameAlliance): string {
+  const own = alliance.own;
+  if (!own) {
+    return "";
+  }
+  const selectedUser = Number(new URLSearchParams(window.location.search).get("u") ?? 0) || 0;
+  const sort2 = new URLSearchParams(window.location.search).get("sort2") === "0" ? "0" : "1";
+  const nextSort2 = sort2 === "1" ? "0" : "1";
+  const now = Math.floor(Date.now() / 1000);
+  const rankOptions = (selectedRankID: number) =>
+    alliance.ranks
+      .filter((rank) => rank.id !== 0)
+      .map((rank) => `<option value="${rank.id}"${rank.id === selectedRankID ? " SELECTED" : ""}>${legacyHTMLText(rank.name)}`)
+      .join("");
+  const rows = alliance.members
+    .map((member, index) => {
+      const message =
+        alliance.viewer.playerId === member.playerId
+          ? "<th></th>"
+          : `<th><a href="${legacyHTMLAttribute(gameMessageComposeURL(member.playerId, window.location.search))}"><img src="${skinBase}/img/m.gif" border=0 alt="Write message"></a></th>`;
+      const coordQuery = new URLSearchParams(window.location.search);
+      coordQuery.set("galaxy", String(member.galaxy));
+      coordQuery.set("system", String(member.system));
+      coordQuery.set("position", String(member.position));
+      const coordURL = gameRouteURL("/game/galaxy", coordQuery.toString());
+      const days = Math.floor(Math.max(0, now - member.lastClick) / (60 * 60 * 24));
+      const actions =
+        member.rankId > 0
+          ? `<th><a data-alliance-action="kick_member" data-target-player-id="${member.playerId}" data-player-name="${legacyHTMLAttribute(member.name)}" onmouseover='return overlib("<font color=white>Kick player</font>", WIDTH, 100);' onmouseout='return nd();' alt='Kick player' href="${legacyHTMLAttribute(allianceURL({ a: "13", u: String(member.playerId) }))}"><img src='${skinBase}/pic/abort.gif' alt='Kick player' border='0' ></a><a onmouseover="return overlib('<font color=white>Assign rank</font>', WIDTH, 100);" onmouseout='return nd();' alt='Assign rank' href="${legacyHTMLAttribute(allianceURL({ a: "7", u: String(member.playerId) }))}"><img src="${skinBase}/pic/key.gif" alt='Assign rank' border=0></a>&nbsp;&nbsp;&nbsp;&nbsp;</th>`
+          : "<th>&nbsp;</th>";
+      const assignment =
+        member.playerId === selectedUser && member.rankId > 0
+          ? `<form action="${legacyHTMLAttribute(allianceURL({ a: "16", u: String(selectedUser) }))}" method=POST data-alliance-action="assign_rank" data-target-player-id="${selectedUser}"><tr><th colspan=3>Assign rank to ${legacyHTMLText(member.name)}</th><th><select name="newrang">${rankOptions(
+              member.rankId
+            )}</th><th colspan=5><input type=submit value="Save"></th></tr></form>\n`
+          : "";
+      return `<tr><th>${index + 1}</th><th>${legacyHTMLText(member.name)}</th>${message}<th>${legacyHTMLText(
+        member.rankName
+      )}</th><th>${formatLegacyPlainNumber(Math.floor(member.score / 1000))}</th><th><a href="${legacyHTMLAttribute(coordURL)}" >[${member.galaxy}:${
+        member.system
+      }:${member.position}]</a></th><th>${member.joinedAt > 0 ? formatLegacyServerDateTime(member.joinedAt) : "-"}</th><th>${days}d</th>${actions}</tr>\n${assignment}`;
+    })
+    .join("");
+  return `<script src="/public-assets/game/js/cntchar.js" type="text/javascript"></script><script src="/public-assets/game/js/win.js" type="text/javascript"></script><br>
+<a href="${legacyHTMLAttribute(allianceURL({ a: "5" }))}">Back to review</a>
+<table class="legacy-alliance-member-settings-table" width=519>
+<tr><td class='c' colspan='10'>List of members (count: ${own.memberCount})</td></tr>
+<tr>
+    <th>N</th>
+    <th><a href="${legacyHTMLAttribute(allianceURL({ a: "7", sort1: "1", sort2: nextSort2 }))}">Name</a></th>
+    <th> </th>
+    <th><a href="${legacyHTMLAttribute(allianceURL({ a: "7", sort1: "2", sort2: nextSort2 }))}">Status</a></th>
+    <th><a href="${legacyHTMLAttribute(allianceURL({ a: "7", sort1: "3", sort2: nextSort2 }))}">Points</a></th>
+    <th><a href="${legacyHTMLAttribute(allianceURL({ a: "7", sort1: "0", sort2: nextSort2 }))}">Coordinates</a></th>
+    <th><a href="${legacyHTMLAttribute(allianceURL({ a: "7", sort1: "4", sort2: nextSort2 }))}">Entry</a></th>
+    <th><a href="${legacyHTMLAttribute(allianceURL({ a: "7", sort1: "5", sort2: nextSort2 }))}">Inactive days</a></th>
+    <th>Action</th></tr>
+${rows}</table>`;
 }
 
 function allianceMembersHTML(alliance: GameAlliance): string {
@@ -6275,7 +6502,7 @@ function allianceMemberOnlineHTML(lastClick: number, now: number): string {
 
 function allianceURL(params: Record<string, string> = {}) {
   const query = new URLSearchParams(window.location.search);
-  for (const key of ["page", "a", "allyid", "show", "sort", "suchtext", "weiter", "d", "t", "u", "sort1", "sort2"]) {
+  for (const key of ["page", "a", "allyid", "show", "sort", "suchtext", "weiter", "sendmail", "d", "t", "u", "sort1", "sort2"]) {
     query.delete(key);
   }
   for (const [key, value] of Object.entries(params)) {

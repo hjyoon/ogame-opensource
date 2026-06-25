@@ -30,6 +30,7 @@ const (
 	AllianceIssueRejected            = "rejected"
 	AllianceIssueLeft                = "left"
 	AllianceIssueSaved               = "saved"
+	AllianceIssueSent                = "sent"
 	AllianceIssueInvalidTag          = "invalid_tag"
 	AllianceIssueInvalidName         = "invalid_name"
 	AllianceIssueInvalidRankName     = "invalid_rank_name"
@@ -74,6 +75,7 @@ type Alliance struct {
 	SelectedApp    *AllianceApplication
 	Members        []AllianceMember
 	Ranks          []AllianceRank
+	CircularResult *AllianceCircularResult
 }
 
 type AllianceViewer struct {
@@ -142,6 +144,10 @@ type AllianceRank struct {
 	Rights int
 }
 
+type AllianceCircularResult struct {
+	Recipients []string
+}
+
 type AllianceMutation struct {
 	Action          string
 	Tag             string
@@ -155,6 +161,12 @@ type AllianceMutation struct {
 	FounderRankName string
 	AllianceID      int
 	ApplicationID   int
+	RankID          int
+	RankName        string
+	RankRights      []AllianceRank
+	TargetPlayerID  int
+	TargetRankID    int
+	CircularRankID  int
 }
 
 type AllianceActionIssue struct {
@@ -212,6 +224,14 @@ func (v AllianceViewer) CanManageAlliance() bool {
 	return v.Founder || v.RankRights&AllianceRightManage != 0
 }
 
+func (v AllianceViewer) CanKickMembers() bool {
+	return v.Founder || v.RankRights&AllianceRightKick != 0
+}
+
+func (v AllianceViewer) CanSendCircular() bool {
+	return v.Founder || v.RankRights&AllianceRightCircular != 0
+}
+
 func (v AllianceViewer) CanLeaveAlliance() bool {
 	return v.AllianceID > 0 && !v.Founder
 }
@@ -225,6 +245,10 @@ func NormalizeAllianceTextKind(kind int) int {
 
 func NormalizeAllianceText(text string) string {
 	return truncateRunes(text, 5000)
+}
+
+func NormalizeAllianceCircularText(text string) string {
+	return truncateRunes(text, 2000)
 }
 
 func NormalizeAllianceURL(raw string) string {
@@ -245,6 +269,10 @@ func NormalizeAllianceURL(raw string) string {
 
 var allianceRankNamePattern = regexp.MustCompile(`^[a-zA-Z0-9._\- ]+$`)
 
+func NormalizeAllianceRankName(name string) string {
+	return truncateRunes(strings.TrimSpace(name), 30)
+}
+
 func ValidateAllianceRankName(name string) *AllianceActionIssue {
 	if name == "" {
 		return nil
@@ -253,6 +281,13 @@ func ValidateAllianceRankName(name string) *AllianceActionIssue {
 		return AllianceIssue(AllianceIssueInvalidRankName)
 	}
 	return nil
+}
+
+func ValidateAllianceNewRankName(name string) *AllianceActionIssue {
+	if name == "" {
+		return AllianceIssue(AllianceIssueInvalidRankName)
+	}
+	return ValidateAllianceRankName(name)
 }
 
 func AllianceIssue(code string) *AllianceActionIssue {
@@ -271,6 +306,8 @@ func AllianceIssue(code string) *AllianceActionIssue {
 		return &AllianceActionIssue{Code: code, Message: "You have left the alliance."}
 	case AllianceIssueSaved:
 		return &AllianceActionIssue{Code: code, Message: "Changes saved."}
+	case AllianceIssueSent:
+		return &AllianceActionIssue{Code: code, Message: "General message sent."}
 	case AllianceIssueInvalidTag:
 		return &AllianceActionIssue{Code: code, Message: "Alliance abbreviation is too short"}
 	case AllianceIssueInvalidName:
