@@ -95,6 +95,12 @@ function fleetTemplateShipCount(template, shipID) {
   return Number(template?.ships?.find((ship) => Number(ship.id) === Number(shipID))?.count ?? 0);
 }
 
+function galaxyPlanetRow(body, planetID) {
+  return Array.isArray(body.galaxy?.rows)
+    ? body.galaxy.rows.find((row) => Number(row.planet?.id ?? 0) === Number(planetID))
+    : undefined;
+}
+
 async function readOptionalJSON(path) {
   if (!path) {
     return {};
@@ -400,6 +406,21 @@ try {
     Number(galaxyRemoteFixture.low?.remote_galaxy ?? 0) > 0 &&
     Number(galaxyRemoteFixture.low?.remote_system ?? 0) > 0 &&
     Number(galaxyRemoteFixture.cost ?? 0) > 0
+  );
+  const galaxyMissileFixture = smokeFixture?.galaxy_missile ?? {};
+  const galaxyMissileInitialMissiles = Number(galaxyMissileFixture.attacker?.initial_missiles ?? 0);
+  const galaxyMissileLaunchAmount = Number(galaxyMissileFixture.launch_amount ?? 0);
+  const galaxyMissileTargetPlanetID = Number(galaxyMissileFixture.target?.home_planet_id ?? 0);
+  const galaxyMissileTargetDefenseID = Number(galaxyMissileFixture.target_defense_id ?? 0);
+  const galaxyMissileReady = Boolean(
+    typeof galaxyMissileFixture.attacker?.login === "string" &&
+    Number(galaxyMissileFixture.attacker?.home_planet_id ?? 0) > 0 &&
+    galaxyMissileInitialMissiles > galaxyMissileLaunchAmount &&
+    galaxyMissileLaunchAmount > 0 &&
+    galaxyMissileTargetPlanetID > 0 &&
+    galaxyMissileTargetDefenseID > 0 &&
+    Number(galaxyMissileFixture.target?.coordinates?.galaxy ?? 0) > 0 &&
+    Number(galaxyMissileFixture.target?.coordinates?.system ?? 0) > 0
   );
   const legacyTransportReturnMission = 103;
   const health = await request("/api/healthz");
@@ -2060,6 +2081,61 @@ try {
       })
     : { status: 0, headers: {}, body: "{}" };
   const galaxyRemoteLowBody = parseJSON(galaxyRemoteLow);
+
+  const galaxyMissileLogin = galaxyMissileReady
+    ? await loginGameUser(galaxyMissileFixture.attacker.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const galaxyMissileSearch = galaxyMissileReady
+    ? withQueryParams(galaxyMissileLogin?.search ?? "?session=", {
+        cp: Number(galaxyMissileFixture.attacker.home_planet_id),
+        galaxy: Number(galaxyMissileFixture.target.coordinates.galaxy),
+        system: Number(galaxyMissileFixture.target.coordinates.system)
+      })
+    : "";
+  const galaxyMissilePost = async (payload) => request(`/api/game/galaxy${galaxyMissileSearch}`, {
+    method: "POST",
+    headers: { Cookie: galaxyMissileLogin?.cookiePair ?? "", "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "launch-missile", ...payload })
+  });
+  const galaxyMissileInitial = galaxyMissileReady
+    ? await request(`/api/game/galaxy${galaxyMissileSearch}`, {
+        headers: { Cookie: galaxyMissileLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const galaxyMissileInitialBody = parseJSON(galaxyMissileInitial);
+  const galaxyMissileInitialTargetRow = galaxyPlanetRow(galaxyMissileInitialBody, galaxyMissileTargetPlanetID);
+  const galaxyMissileNoTarget = galaxyMissileReady
+    ? await galaxyMissilePost({
+        targetPlanetId: 0,
+        amount: 1,
+        targetDefenseId: galaxyMissileTargetDefenseID
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const galaxyMissileNoTargetBody = parseJSON(galaxyMissileNoTarget);
+  const galaxyMissileNoRockets = galaxyMissileReady
+    ? await galaxyMissilePost({
+        targetPlanetId: galaxyMissileTargetPlanetID,
+        amount: 0,
+        targetDefenseId: galaxyMissileTargetDefenseID
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const galaxyMissileNoRocketsBody = parseJSON(galaxyMissileNoRockets);
+  const galaxyMissileNotEnough = galaxyMissileReady
+    ? await galaxyMissilePost({
+        targetPlanetId: galaxyMissileTargetPlanetID,
+        amount: galaxyMissileInitialMissiles + 1,
+        targetDefenseId: galaxyMissileTargetDefenseID
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const galaxyMissileNotEnoughBody = parseJSON(galaxyMissileNotEnough);
+  const galaxyMissileLaunch = galaxyMissileReady
+    ? await galaxyMissilePost({
+        targetPlanetId: galaxyMissileTargetPlanetID,
+        amount: galaxyMissileLaunchAmount,
+        targetDefenseId: galaxyMissileTargetDefenseID
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const galaxyMissileLaunchBody = parseJSON(galaxyMissileLaunch);
 
   const gameDefense = await request(`/api/game/defense${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -3957,6 +4033,73 @@ try {
         galaxyRemoteLowBody.galaxy?.currentPlanet?.resources ?? {}
       ),
       check(!galaxyRemoteReady || !galaxyRemoteEnough.body.includes(galaxyRemoteEnoughLogin?.cookiePair ?? "missing-cookie"), "remote galaxy response does not echo private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_galaxy_missile_launch_edges_api",
+    checks: [
+      check(!smokeFixtureFile || galaxyMissileReady, "go smoke fixture exposes galaxy missile edge users", { galaxyMissileFixture }),
+      check(!galaxyMissileReady || galaxyMissileLogin?.response.status === 200, "galaxy missile attacker can log in", {
+        status: galaxyMissileLogin?.response.status
+      }),
+      check(!galaxyMissileReady || galaxyMissileInitial.status === 200, "galaxy missile system view returns HTTP 200", {
+        status: galaxyMissileInitial.status
+      }),
+      check(
+        !galaxyMissileReady || galaxyMissileInitialBody.galaxy?.extra?.missiles === galaxyMissileInitialMissiles,
+        "galaxy missile system view exposes current IPM count",
+        galaxyMissileInitialBody.galaxy?.extra ?? {}
+      ),
+      check(
+        !galaxyMissileReady || galaxyMissileInitialTargetRow?.planet?.actions?.missile === true,
+        "galaxy missile target row exposes the missile action like legacy galaxy",
+        galaxyMissileInitialTargetRow ?? {}
+      ),
+      check(!galaxyMissileReady || galaxyMissileNoTarget.status === 200, "galaxy missile missing target returns HTTP 200", {
+        status: galaxyMissileNoTarget.status
+      }),
+      check(
+        !galaxyMissileReady || galaxyMissileNoTargetBody.actionIssue?.code === "rocket_no_target",
+        "galaxy missile missing target keeps legacy issue code",
+        galaxyMissileNoTargetBody.actionIssue ?? {}
+      ),
+      check(!galaxyMissileReady || galaxyMissileNoRockets.status === 200, "galaxy missile zero amount returns HTTP 200", {
+        status: galaxyMissileNoRockets.status
+      }),
+      check(
+        !galaxyMissileReady || galaxyMissileNoRocketsBody.actionIssue?.code === "rocket_no_rockets",
+        "galaxy missile zero amount keeps legacy issue code",
+        galaxyMissileNoRocketsBody.actionIssue ?? {}
+      ),
+      check(!galaxyMissileReady || galaxyMissileNotEnough.status === 200, "galaxy missile over-request returns HTTP 200", {
+        status: galaxyMissileNotEnough.status
+      }),
+      check(
+        !galaxyMissileReady || galaxyMissileNotEnoughBody.actionIssue?.code === "rocket_not_enough",
+        "galaxy missile over-request keeps legacy issue code",
+        galaxyMissileNotEnoughBody.actionIssue ?? {}
+      ),
+      check(!galaxyMissileReady || galaxyMissileLaunch.status === 200, "galaxy missile launch returns HTTP 200", {
+        status: galaxyMissileLaunch.status
+      }),
+      check(
+        !galaxyMissileReady || galaxyMissileLaunchBody.actionIssue?.code === "rocket_launched",
+        "galaxy missile launch returns the legacy success issue code",
+        galaxyMissileLaunchBody.actionIssue ?? {}
+      ),
+      check(
+        !galaxyMissileReady || galaxyMissileLaunchBody.actionIssue?.message === `Start of rocket ${galaxyMissileLaunchAmount}!`,
+        "galaxy missile launch returns the legacy amount-specific message",
+        galaxyMissileLaunchBody.actionIssue ?? {}
+      ),
+      check(
+        !galaxyMissileReady ||
+          galaxyMissileLaunchBody.galaxy?.extra?.missiles === galaxyMissileInitialMissiles - galaxyMissileLaunchAmount,
+        "galaxy missile launch decrements available IPMs in the refreshed galaxy summary",
+        galaxyMissileLaunchBody.galaxy?.extra ?? {}
+      ),
+      check(!galaxyMissileReady || !galaxyMissileLaunch.body.includes(galaxyMissileLogin?.cookiePair ?? "missing-cookie"), "galaxy missile response does not echo private cookie")
     ]
   }));
 

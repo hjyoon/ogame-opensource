@@ -960,6 +960,69 @@ function smoke_prepare_galaxy_remote_fixture(string $password, array $near): arr
     );
 }
 
+function smoke_prepare_galaxy_missile_fixture(string $password, array $near): array
+{
+    global $db_prefix, $defmap;
+
+    $attacker = smoke_prepare_user('gogmissile', $password, 'gogmissile@example.local', USER_TYPE_PLAYER);
+    $target = smoke_prepare_user('gogmissilet', $password, 'gogmissilet@example.local', USER_TYPE_PLAYER);
+    $users = array($attacker, $target);
+    $userIds = array_map(fn($user) => (int)$user['player_id'], $users);
+    $planetIds = array_map(fn($user) => (int)$user['home_planet_id'], $users);
+
+    smoke_cleanup_alliances($userIds);
+    smoke_cleanup_fleets($userIds, $planetIds);
+    $positions = smoke_find_empty_positions($near, count($users));
+
+    $defenseZero = array();
+    foreach ($defmap as $gid) {
+        $defenseZero[] = "`{$gid}`=0";
+    }
+    $now = time();
+
+    smoke_set_fleet_restriction_user_state($attacker, 10000);
+    smoke_set_fleet_restriction_user_state($target, 10000);
+    smoke_prepare_planet((int)$attacker['home_planet_id'], (int)$attacker['player_id'], 'GoGalaxyMissileA', $positions[0]);
+    smoke_prepare_planet((int)$target['home_planet_id'], (int)$target['player_id'], 'GoGalaxyMissileT', $positions[1]);
+
+    dbquery(
+        "UPDATE {$db_prefix}planets SET " . implode(',', $defenseZero) . ", " .
+        "`" . GID_B_MISS_SILO . "`=6, `" . GID_D_IPM . "`=3, `" . GID_RC_DEUTERIUM . "`=1000000, lastpeek={$now} " .
+        "WHERE planet_id=" . (int)$attacker['home_planet_id']
+    );
+    dbquery(
+        "UPDATE {$db_prefix}planets SET " . implode(',', $defenseZero) . ", " .
+        "`" . GID_D_RL . "`=20, `" . GID_D_LL . "`=5, `" . GID_D_ABM . "`=0, lastpeek={$now} " .
+        "WHERE planet_id=" . (int)$target['home_planet_id']
+    );
+    InvalidateUserCache();
+
+    return array(
+        'attacker' => array(
+            'login' => mb_strtolower($attacker['name'], 'UTF-8'),
+            'player_id' => (int)$attacker['player_id'],
+            'home_planet_id' => (int)$attacker['home_planet_id'],
+            'initial_missiles' => 3,
+            'coordinates' => array(
+                'galaxy' => (int)$positions[0][0],
+                'system' => (int)$positions[0][1],
+                'position' => (int)$positions[0][2],
+            ),
+        ),
+        'target' => array(
+            'player_id' => (int)$target['player_id'],
+            'home_planet_id' => (int)$target['home_planet_id'],
+            'coordinates' => array(
+                'galaxy' => (int)$positions[1][0],
+                'system' => (int)$positions[1][1],
+                'position' => (int)$positions[1][2],
+            ),
+        ),
+        'launch_amount' => 2,
+        'target_defense_id' => GID_D_RL,
+    );
+}
+
 $name = getenv('OGAME_GO_LOGIN_SMOKE_USER') ?: 'legor';
 $password = getenv('OGAME_GO_LOGIN_SMOKE_PASS') ?: 'admin';
 $email = getenv('OGAME_GO_LOGIN_SMOKE_EMAIL') ?: ($name . '@example.local');
@@ -1000,6 +1063,7 @@ $adminAuditFixture = smoke_prepare_admin_audit_fixture($target);
 $fleetRestrictionFixture = smoke_prepare_fleet_restriction_fixture($password, $home);
 $fleetTemplateFixture = smoke_prepare_fleet_template_fixture($password, $home);
 $galaxyRemoteFixture = smoke_prepare_galaxy_remote_fixture($password, $home);
+$galaxyMissileFixture = smoke_prepare_galaxy_missile_fixture($password, $home);
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
 echo json_encode(array(
@@ -1040,7 +1104,8 @@ echo json_encode(array(
 	'vacation_freeze' => $vacationFreezeFixture,
 	'merchant' => $merchantFixture,
 	'moon_build' => $moonBuildFixture,
-	'fleet_restrictions' => $fleetRestrictionFixture,
-	'fleet_templates' => $fleetTemplateFixture,
-	'galaxy_remote' => $galaxyRemoteFixture,
-), JSON_UNESCAPED_SLASHES) . PHP_EOL;
+		'fleet_restrictions' => $fleetRestrictionFixture,
+		'fleet_templates' => $fleetTemplateFixture,
+		'galaxy_remote' => $galaxyRemoteFixture,
+		'galaxy_missile' => $galaxyMissileFixture,
+	), JSON_UNESCAPED_SLASHES) . PHP_EOL;
