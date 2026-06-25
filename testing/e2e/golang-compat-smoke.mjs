@@ -2325,6 +2325,13 @@ try {
   } catch {
     gameAdminWithoutCookieBody = {};
   }
+  const regularAdminOperationModes = ["Broadcast", "Reports", "BattleSim", "RakSim", "Expedition"];
+  const regularAdminOperationDenials = await Promise.all(regularAdminOperationModes.map(async (mode) => {
+    const response = await request(`/api/game/admin${withQueryParam(targetLogin.search, "mode", mode)}`, {
+      headers: { Cookie: targetLogin.cookiePair }
+    });
+    return { mode, response, body: parseJSON(response) };
+  }));
   const operatorLogin = adminQueueFixtureReady || adminFleetlogsFixtureReady || adminOperationsReady
     ? await loginGameUser("gooperator", loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
     : null;
@@ -3497,6 +3504,18 @@ try {
       }),
       check(!adminOperationsReady || !String(operatorMessagesAfterBroadcast?.body ?? "").includes(operatorLogin?.cookiePair ?? "missing-cookie"), "admin operations responses do not echo private cookie")
     ]
+  }));
+
+  cases.push(finalize({
+    case: "go_admin_operations_regular_denial_api",
+    checks: regularAdminOperationDenials.flatMap((item) => [
+      check(item.response.status === 200, `regular user ${item.mode} admin request returns HTTP 200`, {
+        status: item.response.status
+      }),
+      check(item.body.authenticated === true, `regular user ${item.mode} admin request authenticates session`, item.body),
+      check(item.body.admin?.mode === item.mode, `regular user ${item.mode} admin request resolves legacy mode`, item.body.admin ?? {}),
+      check(item.body.actionIssue?.code === "access_denied", `regular user ${item.mode} admin request is denied like legacy`, item.body.actionIssue ?? {})
+    ])
   }));
 
   cases.push(finalize({

@@ -38,7 +38,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 - Fleet all-cases passes Chrome/Firefox 0px for initial, union, target, dispatch previews.
 - CSR E2E covers Buddy/Options, Options save, Notes create/edit/delete, and logout; Chromium passes.
 - Auth visual E2E passes Chromium/Firefox 0px for all default page specs.
-- Go smoke covers routes/assets, headers/cookies, GET no-op, reg dup, admin Broadcast/Reports/Expedition/Fleetlogs, sessions, report IDOR, input, URL/pic, feed, recovery, fleet guards, and `newredirect.php` (35 cases/1246 checks).
+- Go smoke covers routes/assets, headers/cookies, GET no-op, reg dup, admin denial/Broadcast/Reports/Expedition/Fleetlogs, sessions, report IDOR, input, URL/pic, feed, recovery, fleet guards, and `newredirect.php` (36 cases/1266 checks).
 - Legacy PHP E2E latest summary: 59 result files, 340 cases, 2428 checks, failed groups 0.
 - Go internal coverage gate: `97.1% >= 97%`.
 
