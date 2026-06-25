@@ -22,7 +22,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 - Statistics/fleet authenticated visuals pass Chromium/Firefox at 0px for player/alliance statistics.
 - Empire ports Commander-gated `imperium`, build queue markers, and legacy GET add/destroy/remove shortcuts.
 - Resources ports the legacy production-percent form, premium bonus icon column, DB normalization, and post-save resource header sync.
-- Merchant/officers/alliance/admin port DM spend/trade/timers, alliance home/apply/management/ranks/members/circular, admin modes, Bans/Expedition/Queue/Fleetlogs mutations, Fleetlogs return recall, and guards.
+- Merchant/officers/alliance/admin port DM spend/trade/timers, alliance home/apply/management/ranks/members/circular, admin modes, Broadcast, Reports, Bans/Expedition/Queue/Fleetlogs mutations, Fleetlogs return recall, and guards.
 - Research/Shipyard port aliases, chrome, colors, queues, completion refresh, start/cancel/build, and resource math.
 - Fleet dispatch covers cargo/speed, fuel/clamps, ACS sync, colonize/exp targets, templates, and recall.
 - Galaxy covers clamp, rows, statuses, moon/debris/actions, slot/deut warnings, quick links, target prefill, and instant spy/recycle dispatch.
@@ -31,19 +31,19 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 
 ## Verified QA
 
-- Full migration QA wrapper on 8890 passed: 20 passed, 0 failed; includes PHP E2E, Bun, Go, coverage, smoke, user-type, and visuals.
+- Full migration QA wrapper on 8890 passed: 20 passed, 0 failed; includes PHP E2E, Bun, Go, coverage, smoke, user-type, visuals.
 - User-type QA covers regular, operator, admin, unvalidated, vacation, banned, deletion-queued, and options vacation/password/email mutations.
 - Resources actions pass Chromium/Firefox: percent save, DB `prod*`, selected values, totals, and visuals.
-- Research/shipyard/defense, galaxy, admin pages, and Empire Commander/redirect pass Chromium/Firefox exact 0px; queues cover submit/partial/complete DB.
-- Fleet all-cases passes Chrome/Firefox 0px for initial, union, target, and dispatch previews.
+- Research/shipyard/defense, galaxy, admin pages, and Empire Commander/redirect pass Chromium/Firefox 0px; queues cover submit/partial/complete DB.
+- Fleet all-cases passes Chrome/Firefox 0px for initial, union, target, dispatch previews.
 - CSR E2E covers Buddy/Options, Options save, Notes create/edit/delete, and logout; Chromium passes.
 - Auth visual E2E passes Chromium/Firefox 0px for all default page specs.
-- Go smoke covers routes/assets, headers/cookies, GET no-op, reg dup, Fleetlogs, session/acct, uni cookies, report IDOR, input, URL/pic, feed, recovery, fleet target guards, and `newredirect.php` (33 cases/1217 checks).
+- Go smoke covers routes/assets, headers/cookies, GET no-op, reg dup, admin Broadcast/Reports, Fleetlogs, sessions, report IDOR, input, URL/pic, feed, recovery, fleet guards, and `newredirect.php` (34 cases/1235 checks).
 - Legacy PHP E2E latest summary: 59 result files, 340 cases, 2428 checks, failed groups 0.
-- Go internal coverage gate: `97.0% >= 97%`.
+- Go internal coverage gate: `97.1% >= 97%`.
 
 ## Remaining Work
 
 - Extend deep-state visuals for pages whose base views already pass.
 - Add Go compatibility checks for migrated legacy E2E flows as they stabilize.
-- Finish admin recovery/deeper submodes and remaining mission edges.
+- Finish admin simulator/deeper submodes and remaining mission edges.

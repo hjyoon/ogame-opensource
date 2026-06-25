@@ -29,17 +29,22 @@ type AdminCommand struct {
 }
 
 type AdminMutationQuery struct {
-	PlayerID  int
-	PlanetID  int
-	Mode      string
-	Action    string
-	TaskID    int
-	TargetIDs []int
-	BanMode   int
-	Days      int
-	Hours     int
-	Reason    string
-	Values    map[string]int
+	PlayerID   int
+	PlanetID   int
+	Mode       string
+	Action     string
+	TaskID     int
+	TargetIDs  []int
+	BanMode    int
+	Days       int
+	Hours      int
+	Reason     string
+	Values     map[string]int
+	Category   int
+	Subject    string
+	Text       string
+	ReportIDs  []int
+	DeleteMode string
 }
 
 type AdminMutationCommand struct {
@@ -56,6 +61,11 @@ type AdminMutationCommand struct {
 	Hours           int
 	Reason          string
 	Values          map[string]int
+	Category        int
+	Subject         string
+	Text            string
+	ReportIDs       []int
+	DeleteMode      string
 }
 
 type AdminResult struct {
@@ -134,17 +144,22 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		return AdminResult{Authenticated: true, Admin: admin, ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueAccessDenied)}, nil
 	}
 	issue, err := s.repository.MutateAdmin(ctx, AdminMutationQuery{
-		PlayerID:  session.Session.PlayerID,
-		PlanetID:  command.PlanetID,
-		Mode:      admin.Mode,
-		Action:    command.Action,
-		TaskID:    command.TaskID,
-		TargetIDs: command.TargetIDs,
-		BanMode:   command.BanMode,
-		Days:      command.Days,
-		Hours:     command.Hours,
-		Reason:    command.Reason,
-		Values:    command.Values,
+		PlayerID:   session.Session.PlayerID,
+		PlanetID:   command.PlanetID,
+		Mode:       admin.Mode,
+		Action:     command.Action,
+		TaskID:     command.TaskID,
+		TargetIDs:  command.TargetIDs,
+		BanMode:    command.BanMode,
+		Days:       command.Days,
+		Hours:      command.Hours,
+		Reason:     command.Reason,
+		Values:     command.Values,
+		Category:   command.Category,
+		Subject:    command.Subject,
+		Text:       command.Text,
+		ReportIDs:  command.ReportIDs,
+		DeleteMode: command.DeleteMode,
 	})
 	if err != nil {
 		return AdminResult{}, err

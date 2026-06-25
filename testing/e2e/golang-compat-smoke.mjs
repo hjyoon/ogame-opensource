@@ -284,6 +284,11 @@ try {
   const adminFleetlogsRecallTaskId = Number(adminFleetlogsFixture.recall_task_id ?? 0);
   const adminFleetlogsRecallFleetId = Number(adminFleetlogsFixture.recall_fleet_id ?? 0);
   const adminFleetlogsRecallFixtureReady = adminFleetlogsRecallTaskId > 0 && adminFleetlogsRecallFleetId > 0;
+  const adminOperationsFixture = smokeFixture?.admin_operations ?? {};
+  const adminOperationsReady =
+    Number(adminOperationsFixture.report_id ?? 0) > 0 &&
+    String(adminOperationsFixture.token ?? "") !== "" &&
+    Number(adminOperationsFixture.operator_player_id ?? 0) > 0;
   const feedFixture = smokeFixture?.feed ?? {};
   const feedFixtureReady =
     typeof feedFixture.rss_feed_id === "string" &&
@@ -2320,9 +2325,58 @@ try {
   } catch {
     gameAdminWithoutCookieBody = {};
   }
-  const operatorLogin = adminQueueFixtureReady
+  const operatorLogin = adminQueueFixtureReady || adminFleetlogsFixtureReady || adminOperationsReady
     ? await loginGameUser("gooperator", loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
     : null;
+  const adminReportsBeforeDelete = adminOperationsReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Reports")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminReportsBeforeDeleteBody = adminReportsBeforeDelete ? parseJSON(adminReportsBeforeDelete) : {};
+  const adminReportSeedRow = Array.isArray(adminReportsBeforeDeleteBody.admin?.reportRows)
+    ? adminReportsBeforeDeleteBody.admin.reportRows.find((row) => Number(row.id) === Number(adminOperationsFixture.report_id))
+    : undefined;
+  const operatorReportsDelete = adminOperationsReady && operatorLogin
+    ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "Reports")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: operatorLogin.cookiePair },
+        body: JSON.stringify({
+          action: "reports_delete",
+          reportIds: [Number(adminOperationsFixture.report_id)],
+          deleteMode: "deletemarked"
+        })
+      })
+    : null;
+  const operatorReportsDeleteBody = operatorReportsDelete ? parseJSON(operatorReportsDelete) : {};
+  const adminReportsAfterDelete = adminOperationsReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Reports")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminReportsAfterDeleteBody = adminReportsAfterDelete ? parseJSON(adminReportsAfterDelete) : {};
+  const adminReportDeletedRow = Array.isArray(adminReportsAfterDeleteBody.admin?.reportRows)
+    ? adminReportsAfterDeleteBody.admin.reportRows.find((row) => Number(row.id) === Number(adminOperationsFixture.report_id))
+    : undefined;
+  const adminBroadcast = adminOperationsReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Broadcast")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({
+          action: "broadcast_send",
+          category: 3,
+          subject: `${adminOperationsFixture.token} broadcast subject`,
+          text: `${adminOperationsFixture.token} broadcast body`
+        })
+      })
+    : null;
+  const adminBroadcastBody = adminBroadcast ? parseJSON(adminBroadcast) : {};
+  const operatorMessagesAfterBroadcast = adminOperationsReady && operatorLogin
+    ? await request(`/api/game/messages${operatorLogin.search}`, {
+        headers: { Cookie: operatorLogin.cookiePair }
+      })
+    : null;
+  const operatorMessagesAfterBroadcastBody = operatorMessagesAfterBroadcast ? parseJSON(operatorMessagesAfterBroadcast) : {};
   const operatorQueueFreeze = adminQueueFixtureReady && operatorLogin
     ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "Queue")}`, {
         method: "POST",
@@ -2385,6 +2439,7 @@ try {
   const adminSubmodeSpecs = [
     { name: "Users", mode: "Users", arrayKey: "userRows" },
     { name: "Planets", mode: "Planets", arrayKey: "planetRows" },
+    { name: "Reports", mode: "Reports", arrayKey: "reportRows" },
     { name: "Queue", mode: "Queue", arrayKey: "queueRows" },
     { name: "Fleetlogs", mode: "Fleetlogs", arrayKey: "fleetLogRows" },
     { name: "BattleReport", mode: "BattleReport", arrayKey: "battleReports" },
@@ -3323,6 +3378,64 @@ try {
   cases.push(finalize({
     case: "go_admin_submode_matrix_api",
     checks: adminSubmodeChecks
+  }));
+
+  const operatorBroadcastMessage = Array.isArray(operatorMessagesAfterBroadcastBody.messages?.rows)
+    ? operatorMessagesAfterBroadcastBody.messages.rows.find((row) =>
+        String(row.subject ?? "").includes(String(adminOperationsFixture.token ?? "")) ||
+        String(row.text ?? "").includes(String(adminOperationsFixture.token ?? ""))
+      )
+    : undefined;
+  cases.push(finalize({
+    case: "go_admin_operations_broadcast_reports_api",
+    checks: [
+      check(!smokeFixtureFile || adminOperationsReady, "go smoke fixture exposes admin operations report and token", {
+        smokeFixtureFile,
+        adminOperationsFixture
+      }),
+      check(!adminOperationsReady || operatorLogin?.response.status === 200, "operator smoke user can log in for admin operation checks", {
+        status: operatorLogin?.response.status
+      }),
+      check(!adminOperationsReady || adminReportsBeforeDelete?.status === 200, "admin Reports GET returns HTTP 200", {
+        status: adminReportsBeforeDelete?.status
+      }),
+      check(
+        !adminOperationsReady ||
+          adminReportSeedRow?.subject?.includes(String(adminOperationsFixture.token)) ||
+          adminReportSeedRow?.text?.includes(String(adminOperationsFixture.token)),
+        "admin Reports GET renders the seeded report marker",
+        { adminReportSeedRow }
+      ),
+      check(!adminOperationsReady || operatorReportsDelete?.status === 200, "operator Reports delete mutation returns HTTP 200", {
+        status: operatorReportsDelete?.status
+      }),
+      check(
+        !adminOperationsReady || operatorReportsDeleteBody.actionIssue?.code === "action_saved",
+        "operator Reports delete mutation saves like legacy",
+        operatorReportsDeleteBody.actionIssue ?? {}
+      ),
+      check(!adminOperationsReady || adminReportsAfterDelete?.status === 200, "admin Reports reload after delete returns HTTP 200", {
+        status: adminReportsAfterDelete?.status
+      }),
+      check(!adminOperationsReady || adminReportDeletedRow === undefined, "operator Reports delete removes the seeded report", {
+        adminReportDeletedRow
+      }),
+      check(!adminOperationsReady || adminBroadcast?.status === 200, "admin Broadcast mutation returns HTTP 200", {
+        status: adminBroadcast?.status
+      }),
+      check(
+        !adminOperationsReady || adminBroadcastBody.actionIssue?.code === "action_saved",
+        "admin Broadcast mutation saves like legacy",
+        adminBroadcastBody.actionIssue ?? {}
+      ),
+      check(!adminOperationsReady || operatorMessagesAfterBroadcast?.status === 200, "operator inbox reload after broadcast returns HTTP 200", {
+        status: operatorMessagesAfterBroadcast?.status
+      }),
+      check(!adminOperationsReady || operatorBroadcastMessage !== undefined, "operator category broadcast creates a marker message for the operator", {
+        operatorBroadcastMessage
+      }),
+      check(!adminOperationsReady || !String(operatorMessagesAfterBroadcast?.body ?? "").includes(operatorLogin?.cookiePair ?? "missing-cookie"), "admin operations responses do not echo private cookie")
+    ]
   }));
 
   const frozenQueueRow = Array.isArray(adminQueueAfterFreezeBody.admin?.queueRows)

@@ -84,6 +84,8 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		admin.UserRows, admin.ActiveUsers, err = r.loadAdminUsers(ctx)
 	case "Planets":
 		admin.PlanetRows, err = r.loadAdminPlanetRows(ctx)
+	case "Reports":
+		admin.ReportRows, err = r.loadAdminReportRows(ctx)
 	case "Uni":
 		admin.Universe, err = r.loadAdminUniverse(ctx)
 	case "Expedition":
@@ -114,6 +116,12 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 			return nil, err
 		}
 		return r.mutateAdminExpeditionSettings(ctx, expeditionTable, query.Values)
+	}
+	if mode == "Broadcast" && query.Action == domaingame.AdminActionBroadcastSend {
+		return r.mutateAdminBroadcast(ctx, query)
+	}
+	if mode == "Reports" && query.Action == domaingame.AdminActionReportsDelete {
+		return r.mutateAdminReports(ctx, query)
 	}
 	if mode == "Queue" {
 		queueTable, err := tableName(r.prefix, "queue")
@@ -149,6 +157,181 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 		return nil, err
 	}
 	return r.mutateAdminBans(ctx, usersTable, queueTable, prangerTable, query)
+}
+
+func (r AdminRepository) mutateAdminBroadcast(ctx context.Context, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
+	subject := strings.TrimSpace(query.Subject)
+	text := strings.TrimSpace(query.Text)
+	if subject == "" || text == "" {
+		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return nil, err
+	}
+	messagesTable, err := tableName(r.prefix, "messages")
+	if err != nil {
+		return nil, err
+	}
+	actor, err := r.loadAdminBroadcastActor(ctx, usersTable, planetsTable, query.PlayerID)
+	if err != nil {
+		return nil, err
+	}
+	recipients, err := r.loadAdminBroadcastRecipients(ctx, usersTable, query.Category)
+	if err != nil {
+		return nil, err
+	}
+	from := fmt.Sprintf(
+		"%s <a href=\"index.php?page=galaxy&galaxy=%d&system=%d&position=%d&session={PUBLIC_SESSION}\">[%d:%d:%d]</a>\n",
+		actor.Name,
+		actor.Galaxy,
+		actor.System,
+		actor.Position,
+		actor.Galaxy,
+		actor.System,
+		actor.Position,
+	)
+	messageSubject := fmt.Sprintf(
+		"%s <a href=\"index.php?page=writemessages&session={PUBLIC_SESSION}&messageziel=%d&re=1&betreff=Re:%s\">\n</a>\n",
+		subject,
+		query.PlayerID,
+		subject,
+	)
+	messageText := sanitizeAdminBroadcastText(text)
+	now := int(r.now().Unix())
+	for _, recipientID := range recipients {
+		if err := r.insertAdminBroadcastMessage(ctx, messagesTable, recipientID, from, messageSubject, messageText, now); err != nil {
+			return nil, err
+		}
+	}
+	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+}
+
+func (r AdminRepository) mutateAdminReports(ctx context.Context, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
+	reportsTable, err := tableName(r.prefix, "reports")
+	if err != nil {
+		return nil, err
+	}
+	if query.DeleteMode == "deleteall" {
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s ORDER BY date DESC LIMIT 50", reportsTable)); err != nil {
+			return nil, err
+		}
+		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+	}
+	for _, reportID := range uniquePositiveIDs(query.ReportIDs) {
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE id = ?", reportsTable), reportID); err != nil {
+			return nil, err
+		}
+	}
+	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+}
+
+type adminBroadcastActor struct {
+	Name     string
+	Galaxy   int
+	System   int
+	Position int
+}
+
+func (r AdminRepository) loadAdminBroadcastActor(ctx context.Context, usersTable string, planetsTable string, playerID int) (adminBroadcastActor, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT COALESCE(u.oname, ''), COALESCE(p.g, 0), COALESCE(p.s, 0), COALESCE(p.p, 0) FROM %s u LEFT JOIN %s p ON p.planet_id = u.hplanetid WHERE u.player_id = ? LIMIT 1", usersTable, planetsTable),
+		playerID,
+	)
+	if err != nil {
+		return adminBroadcastActor{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return adminBroadcastActor{}, err
+		}
+		return adminBroadcastActor{}, errors.New("admin broadcast actor not found")
+	}
+	var actor adminBroadcastActor
+	if err := rows.Scan(&actor.Name, &actor.Galaxy, &actor.System, &actor.Position); err != nil {
+		return adminBroadcastActor{}, err
+	}
+	return actor, rows.Err()
+}
+
+func (r AdminRepository) loadAdminBroadcastRecipients(ctx context.Context, usersTable string, category int) ([]int, error) {
+	query := fmt.Sprintf("SELECT player_id FROM %s", usersTable)
+	args := []any{}
+	switch category {
+	case 1:
+		query += " WHERE score1 < ?"
+		args = append(args, domaingame.GalaxyNoobScoreLimit)
+	case 2:
+		query += " WHERE place1 < ?"
+		args = append(args, 100)
+	case 3:
+		query += " WHERE admin = ?"
+		args = append(args, domaingame.AdminLevelOperator)
+	}
+	rows, err := r.queryer.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	recipients := []int{}
+	for rows.Next() {
+		var recipientID int
+		if err := rows.Scan(&recipientID); err != nil {
+			return nil, err
+		}
+		recipients = append(recipients, recipientID)
+	}
+	return recipients, rows.Err()
+}
+
+func (r AdminRepository) insertAdminBroadcastMessage(ctx context.Context, messagesTable string, ownerID int, from string, subject string, text string, now int) error {
+	count, err := r.countAdminMessages(ctx, messagesTable, ownerID)
+	if err != nil {
+		return err
+	}
+	if count >= 127 {
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE owner_id = ? ORDER BY date ASC, msg_id ASC LIMIT 1", messagesTable), ownerID); err != nil {
+			return err
+		}
+	}
+	_, err = r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("INSERT INTO %s (owner_id, pm, msgfrom, subj, text, shown, date, planet_id) VALUES (?, ?, ?, ?, ?, 0, ?, 0)", messagesTable),
+		ownerID,
+		domaingame.MessageTypeMisc,
+		from,
+		subject,
+		text,
+		now,
+	)
+	return err
+}
+
+func (r AdminRepository) countAdminMessages(ctx context.Context, messagesTable string, ownerID int) (int, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE owner_id = ?", messagesTable), ownerID)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return 0, rows.Err()
+	}
+	var count int
+	if err := rows.Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, rows.Err()
+}
+
+func sanitizeAdminBroadcastText(text string) string {
+	replacer := strings.NewReplacer(`\"`, "&quot;", `'`, "&rsquo;", "`", "&lsquo;")
+	return replacer.Replace(text)
 }
 
 func (r AdminRepository) mutateAdminQueue(ctx context.Context, queueTable string, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
@@ -1141,6 +1324,34 @@ func (r AdminRepository) loadAdminBattleReports(ctx context.Context) ([]domainga
 		var row domaingame.AdminBattleReportRow
 		var source, report string
 		if err := rows.Scan(&row.ID, &source, &row.Title, &report, &row.Date); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+func (r AdminRepository) loadAdminReportRows(ctx context.Context) ([]domaingame.AdminReportRow, error) {
+	reportsTable, err := tableName(r.prefix, "reports")
+	if err != nil {
+		return nil, err
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT r.id, COALESCE(r.owner_id, 0), COALESCE(u.oname, ''), COALESCE(r.msg_id, 0), COALESCE(r.msgfrom, ''), COALESCE(r.subj, ''), COALESCE(r.text, ''), COALESCE(r.date, 0) FROM %s r LEFT JOIN %s u ON u.player_id = r.owner_id ORDER BY r.date DESC LIMIT 50", reportsTable, usersTable),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domaingame.AdminReportRow, 0, 50)
+	for rows.Next() {
+		var row domaingame.AdminReportRow
+		if err := rows.Scan(&row.ID, &row.OwnerID, &row.OwnerName, &row.MessageID, &row.From, &row.Subject, &row.Text, &row.Date); err != nil {
 			return nil, err
 		}
 		result = append(result, row)

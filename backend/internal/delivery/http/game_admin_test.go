@@ -95,6 +95,54 @@ func TestGameAdminHandlerMutatesExpeditionSettings(t *testing.T) {
 	}
 }
 
+func TestGameAdminHandlerMutatesBroadcastAndReports(t *testing.T) {
+	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{
+		Authenticated: true,
+		Admin: domaingame.NewAdmin(
+			domaingame.Overview{Commander: "legor", CurrentPlanet: domaingame.PlanetOverview{ID: 99}},
+			domaingame.AdminViewer{PlayerID: 42, Name: "legor", Level: domaingame.AdminLevelOperator},
+			"Broadcast",
+		),
+		ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueActionSaved),
+	}}
+	request := httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=99&mode=Broadcast", strings.NewReader(`{"action":"broadcast_send","category":3,"subject":"subject","text":"text"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	app{deps: Dependencies{GameAdmin: usecase}}.handleGameAdmin(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected broadcast response status=%d body=%s", response.Code, response.Body.String())
+	}
+	if usecase.mutation.Action != "broadcast_send" || usecase.mutation.Category != 3 ||
+		usecase.mutation.Subject != "subject" || usecase.mutation.Text != "text" {
+		t.Fatalf("unexpected broadcast mutation command: %+v", usecase.mutation)
+	}
+
+	usecase = &fakeGameAdminUseCase{result: appgame.AdminResult{
+		Authenticated: true,
+		Admin: domaingame.NewAdmin(
+			domaingame.Overview{Commander: "legor", CurrentPlanet: domaingame.PlanetOverview{ID: 99}},
+			domaingame.AdminViewer{PlayerID: 42, Name: "legor", Level: domaingame.AdminLevelOperator},
+			"Reports",
+		),
+		ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueActionSaved),
+	}}
+	request = httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=99&mode=Reports", strings.NewReader(`{"action":"reports_delete","reportIds":[701,702],"deleteMode":"deletemarked"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+
+	app{deps: Dependencies{GameAdmin: usecase}}.handleGameAdmin(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected reports response status=%d body=%s", response.Code, response.Body.String())
+	}
+	if usecase.mutation.Action != "reports_delete" || len(usecase.mutation.ReportIDs) != 2 ||
+		usecase.mutation.ReportIDs[0] != 701 || usecase.mutation.DeleteMode != "deletemarked" {
+		t.Fatalf("unexpected reports mutation command: %+v", usecase.mutation)
+	}
+}
+
 func TestGameAdminHandlerRejectsInvalidAndUnauthenticatedRequests(t *testing.T) {
 	response := httptest.NewRecorder()
 	app{}.handleGameAdmin(response, httptest.NewRequest(http.MethodGet, "/api/game/admin?session=pub", nil))
@@ -231,6 +279,16 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 		ID:   402,
 		Name: "unowned",
 	}}
+	admin.ReportRows = []domaingame.AdminReportRow{{
+		ID:        451,
+		OwnerID:   7,
+		OwnerName: "owner",
+		MessageID: 12,
+		From:      "reporter",
+		Subject:   "subject",
+		Text:      "body",
+		Date:      4500,
+	}}
 	admin.Universe = &domaingame.AdminUniverseSettings{
 		Number:          1,
 		Speed:           128,
@@ -341,6 +399,9 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 	if len(payload.PlanetRows) != 2 || payload.PlanetRows[0].Owner == nil ||
 		payload.PlanetRows[0].Coordinates.Position != 4 || payload.PlanetRows[1].Owner != nil {
 		t.Fatalf("expected planet rows and optional owners to map: %+v", payload.PlanetRows)
+	}
+	if len(payload.ReportRows) != 1 || payload.ReportRows[0].ID != 451 || payload.ReportRows[0].Subject != "subject" {
+		t.Fatalf("expected report rows to map: %+v", payload.ReportRows)
 	}
 	if payload.Universe == nil || payload.Universe.Speed != 128 || !payload.Universe.PHPBattle ||
 		payload.Universe.ExtRules != "rules" || payload.Expedition["maxDarkMatter"] != 100 {

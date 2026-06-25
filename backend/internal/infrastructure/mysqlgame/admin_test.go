@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -295,6 +297,323 @@ func TestAdminRepositoryAllowsAttacks(t *testing.T) {
 	if runner.execCalls[0].args[0] != "AllowAttacks" || !strings.Contains(runner.execCalls[1].sql, "noattack = 0") {
 		t.Fatalf("unexpected allow attacks execs: %+v", runner.execCalls)
 	}
+}
+
+func TestAdminRepositoryReadsReportsRows(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelOperator})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{701, 77, "target", 11, "Reporter", "Subject", "Text", int64(1700000000)})},
+	)}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "Reports"})
+
+	if err != nil {
+		t.Fatalf("GetAdmin returned error: %v", err)
+	}
+	if len(admin.ReportRows) != 1 || admin.ReportRows[0].ID != 701 || admin.ReportRows[0].OwnerName != "target" ||
+		admin.ReportRows[0].Subject != "Subject" {
+		t.Fatalf("unexpected report rows: %+v", admin.ReportRows)
+	}
+	lastCall := queryer.calls[len(queryer.calls)-1]
+	if !strings.Contains(lastCall.sql, "`ogame_reports` r LEFT JOIN `ogame_users` u") ||
+		!strings.Contains(lastCall.sql, "ORDER BY r.date DESC LIMIT 50") {
+		t.Fatalf("expected reports query, got %s", lastCall.sql)
+	}
+}
+
+func TestAdminRepositoryBroadcastsToSelectedCategory(t *testing.T) {
+	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"Admin", 1, 2, 3})},
+		{rows: fakeRowsFromValues([]any{77}, []any{88})},
+		{rows: fakeRowsFromValues([]any{126})},
+		{rows: fakeRowsFromValues([]any{127})},
+	}}}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+	repository.now = func() time.Time { return time.Unix(1_000, 0) }
+
+	issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+		PlayerID: 42,
+		Mode:     "Broadcast",
+		Action:   domaingame.AdminActionBroadcastSend,
+		Category: 3,
+		Subject:  "Go subject",
+		Text:     `Body 'tick`,
+	})
+
+	if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved {
+		t.Fatalf("unexpected broadcast issue=%+v err=%v", issue, err)
+	}
+	if len(runner.fakeQueryer.calls) != 4 || !strings.Contains(runner.fakeQueryer.calls[1].sql, "WHERE admin = ?") ||
+		runner.fakeQueryer.calls[1].args[0] != domaingame.AdminLevelOperator {
+		t.Fatalf("unexpected broadcast queries: %+v", runner.fakeQueryer.calls)
+	}
+	if len(runner.execCalls) != 3 {
+		t.Fatalf("expected two inserts and one oldest delete, got %+v", runner.execCalls)
+	}
+	if !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `ogame_messages`") ||
+		runner.execCalls[0].args[0] != 77 ||
+		runner.execCalls[0].args[1] != domaingame.MessageTypeMisc ||
+		!strings.Contains(runner.execCalls[0].args[2].(string), "[1:2:3]") ||
+		!strings.Contains(runner.execCalls[0].args[3].(string), "messageziel=42") ||
+		runner.execCalls[0].args[4] != "Body &rsquo;tick" ||
+		runner.execCalls[0].args[5] != 1_000 {
+		t.Fatalf("unexpected first broadcast insert: %+v", runner.execCalls[0])
+	}
+	if !strings.Contains(runner.execCalls[1].sql, "DELETE FROM `ogame_messages` WHERE owner_id = ? ORDER BY date ASC") ||
+		runner.execCalls[1].args[0] != 88 ||
+		runner.execCalls[2].args[0] != 88 {
+		t.Fatalf("expected oldest delete before second insert, got %+v", runner.execCalls)
+	}
+}
+
+func TestAdminRepositoryMutatesReports(t *testing.T) {
+	t.Run("delete marked", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:      "Reports",
+			Action:    domaingame.AdminActionReportsDelete,
+			ReportIDs: []int{701, 0, 701, 702},
+		})
+
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 2 {
+			t.Fatalf("unexpected reports delete issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		}
+		if !strings.Contains(runner.execCalls[0].sql, "DELETE FROM `ogame_reports` WHERE id = ?") ||
+			runner.execCalls[0].args[0] != 701 || runner.execCalls[1].args[0] != 702 {
+			t.Fatalf("unexpected reports delete execs: %+v", runner.execCalls)
+		}
+	})
+
+	t.Run("delete all", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:       "Reports",
+			Action:     domaingame.AdminActionReportsDelete,
+			DeleteMode: "deleteall",
+		})
+
+		if err != nil || len(runner.execCalls) != 1 || runner.execCalls[0].sql != "DELETE FROM `ogame_reports` ORDER BY date DESC LIMIT 50" {
+			t.Fatalf("unexpected reports delete all err=%v execs=%+v", err, runner.execCalls)
+		}
+	})
+}
+
+func TestAdminRepositoryAdminOperationEdges(t *testing.T) {
+	t.Run("broadcast empty payload noops", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:   "Broadcast",
+			Action: domaingame.AdminActionBroadcastSend,
+			Text:   "body",
+		})
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.fakeQueryer.calls) != 0 || len(runner.execCalls) != 0 {
+			t.Fatalf("expected empty broadcast no-op, issue=%+v err=%v calls=%+v execs=%+v", issue, err, runner.fakeQueryer.calls, runner.execCalls)
+		}
+	})
+
+	t.Run("broadcast category filters", func(t *testing.T) {
+		for _, tt := range []struct {
+			category int
+			wantSQL  string
+			wantArg  any
+		}{
+			{category: 0, wantSQL: "SELECT player_id FROM `ogame_users`", wantArg: nil},
+			{category: 1, wantSQL: "score1 < ?", wantArg: domaingame.GalaxyNoobScoreLimit},
+			{category: 2, wantSQL: "place1 < ?", wantArg: 100},
+		} {
+			runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{"Admin", 1, 2, 3})},
+				{rows: fakeRowsFromValues()},
+			}}}
+			repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+			_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+				PlayerID: 42,
+				Mode:     "Broadcast",
+				Action:   domaingame.AdminActionBroadcastSend,
+				Category: tt.category,
+				Subject:  "subject",
+				Text:     "body",
+			})
+			if err != nil {
+				t.Fatalf("broadcast category %d returned error: %v", tt.category, err)
+			}
+			call := runner.fakeQueryer.calls[1]
+			if !strings.Contains(call.sql, tt.wantSQL) {
+				t.Fatalf("category %d query %q does not contain %q", tt.category, call.sql, tt.wantSQL)
+			}
+			if tt.wantArg == nil {
+				if len(call.args) != 0 {
+					t.Fatalf("category %d should not pass args, got %+v", tt.category, call.args)
+				}
+			} else if len(call.args) != 1 || call.args[0] != tt.wantArg {
+				t.Fatalf("category %d args=%+v want %v", tt.category, call.args, tt.wantArg)
+			}
+		}
+	})
+
+	t.Run("broadcast prefix and actor errors", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "bad-prefix_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Broadcast", Action: domaingame.AdminActionBroadcastSend, Subject: "s", Text: "t"}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+			t.Fatalf("expected broadcast prefix error, got %v", err)
+		}
+
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Broadcast", Action: domaingame.AdminActionBroadcastSend, Subject: "s", Text: "t"}); err == nil || !strings.Contains(err.Error(), "actor not found") {
+			t.Fatalf("expected missing actor error, got %v", err)
+		}
+
+		runner = &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("actor rows failed"))}}}}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Broadcast", Action: domaingame.AdminActionBroadcastSend, Subject: "s", Text: "t"}); err == nil || !strings.Contains(err.Error(), "actor rows failed") {
+			t.Fatalf("expected actor rows error, got %v", err)
+		}
+
+		runner = &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"Admin"})}}}}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Broadcast", Action: domaingame.AdminActionBroadcastSend, Subject: "s", Text: "t"}); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+			t.Fatalf("expected actor scan error, got %v", err)
+		}
+
+		runner = &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("actor query failed")}}}}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Broadcast", Action: domaingame.AdminActionBroadcastSend, Subject: "s", Text: "t"}); err == nil || !strings.Contains(err.Error(), "actor query failed") {
+			t.Fatalf("expected actor query error, got %v", err)
+		}
+	})
+
+	t.Run("broadcast recipient and insert errors", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{"Admin", 1, 2, 3})},
+			{err: errors.New("recipient query failed")},
+		}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Broadcast", Action: domaingame.AdminActionBroadcastSend, Subject: "s", Text: "t"}); err == nil || !strings.Contains(err.Error(), "recipient query failed") {
+			t.Fatalf("expected recipient query error, got %v", err)
+		}
+
+		runner = &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{"Admin", 1, 2, 3})},
+			{rows: fakeRowsFromValues([]any{"bad"})},
+		}}}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Broadcast", Action: domaingame.AdminActionBroadcastSend, Subject: "s", Text: "t"}); err == nil || !strings.Contains(err.Error(), "expected int") {
+			t.Fatalf("expected recipient scan error, got %v", err)
+		}
+
+		runner = &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{"Admin", 1, 2, 3})},
+			{rows: fakeRowsFromValues([]any{77})},
+			{err: errors.New("count failed")},
+		}}}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Broadcast", Action: domaingame.AdminActionBroadcastSend, Subject: "s", Text: "t"}); err == nil || !strings.Contains(err.Error(), "count failed") {
+			t.Fatalf("expected count error, got %v", err)
+		}
+
+		runner = &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{"Admin", 1, 2, 3})},
+			{rows: fakeRowsFromValues([]any{77})},
+			{rows: fakeRowsFromValues()},
+		}}}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Broadcast", Action: domaingame.AdminActionBroadcastSend, Subject: "s", Text: "t"}); err != nil {
+			t.Fatalf("missing message count should no-op into insert path, got %v", err)
+		}
+		if len(runner.execCalls) != 1 || !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `ogame_messages`") {
+			t.Fatalf("expected insert after missing count row, got %+v", runner.execCalls)
+		}
+
+		runner = &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{"Admin", 1, 2, 3})},
+			{rows: fakeRowsFromValues([]any{77})},
+			{rows: fakeRowsFromValues([]any{"bad"})},
+		}}}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Broadcast", Action: domaingame.AdminActionBroadcastSend, Subject: "s", Text: "t"}); err == nil || !strings.Contains(err.Error(), "expected int") {
+			t.Fatalf("expected count scan error, got %v", err)
+		}
+
+		runner = &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{"Admin", 1, 2, 3})},
+				{rows: fakeRowsFromValues([]any{77})},
+				{rows: fakeRowsFromValues([]any{127})},
+			}},
+			execErrs: []error{errors.New("delete oldest failed")},
+		}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Broadcast", Action: domaingame.AdminActionBroadcastSend, Subject: "s", Text: "t"}); err == nil || !strings.Contains(err.Error(), "delete oldest failed") {
+			t.Fatalf("expected delete oldest error, got %v", err)
+		}
+
+		runner = &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{"Admin", 1, 2, 3})},
+				{rows: fakeRowsFromValues([]any{77})},
+				{rows: fakeRowsFromValues([]any{0})},
+			}},
+			execErrs: []error{errors.New("insert message failed")},
+		}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Broadcast", Action: domaingame.AdminActionBroadcastSend, Subject: "s", Text: "t"}); err == nil || !strings.Contains(err.Error(), "insert message failed") {
+			t.Fatalf("expected insert message error, got %v", err)
+		}
+	})
+
+	t.Run("reports edges", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "bad-prefix_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Reports", Action: domaingame.AdminActionReportsDelete, ReportIDs: []int{1}}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+			t.Fatalf("expected reports prefix error, got %v", err)
+		}
+
+		runner := &fakeGalaxyRunner{execErrs: []error{errors.New("reports delete failed")}}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Reports", Action: domaingame.AdminActionReportsDelete, ReportIDs: []int{1}}); err == nil || !strings.Contains(err.Error(), "reports delete failed") {
+			t.Fatalf("expected reports delete error, got %v", err)
+		}
+
+		runner = &fakeGalaxyRunner{execErrs: []error{errors.New("reports delete all failed")}}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Reports", Action: domaingame.AdminActionReportsDelete, DeleteMode: "deleteall"}); err == nil || !strings.Contains(err.Error(), "reports delete all failed") {
+			t.Fatalf("expected reports delete all error, got %v", err)
+		}
+
+		runner = &fakeGalaxyRunner{}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Reports", Action: domaingame.AdminActionReportsDelete})
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 {
+			t.Fatalf("expected empty reports delete no-op, issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		}
+	})
+
+	t.Run("load report row edges", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_")
+		if _, err := repository.loadAdminReportRows(context.Background()); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+			t.Fatalf("expected reports load prefix error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("reports query failed")}}}, "ogame_")
+		if _, err := repository.loadAdminReportRows(context.Background()); err == nil || !strings.Contains(err.Error(), "reports query failed") {
+			t.Fatalf("expected reports query error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("reports rows failed"))}}}, "ogame_")
+		if _, err := repository.loadAdminReportRows(context.Background()); err == nil || !strings.Contains(err.Error(), "reports rows failed") {
+			t.Fatalf("expected reports rows error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}, "ogame_")
+		if _, err := repository.loadAdminReportRows(context.Background()); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+			t.Fatalf("expected reports scan error, got %v", err)
+		}
+	})
 }
 
 func TestAdminRepositoryMutationNoops(t *testing.T) {
@@ -1206,6 +1525,71 @@ func TestAdminRepositoryReadsBattleReportRows(t *testing.T) {
 	}
 }
 
+func TestAdminRepositoryGetAdminLoadsFileBackedAdminModes(t *testing.T) {
+	t.Run("checksum", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "temp"), 0o755); err != nil {
+			t.Fatalf("mkdir temp: %v", err)
+		}
+		for _, group := range adminChecksumGroups {
+			baseline := make(map[string]string, len(group.files))
+			for _, name := range group.files {
+				fullPath := filepath.Join(root, name)
+				if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+					t.Fatalf("create checksum source dir: %v", err)
+				}
+				if err := os.WriteFile(fullPath, []byte("legacy "+name), 0o644); err != nil {
+					t.Fatalf("write checksum source: %v", err)
+				}
+				checksum, err := md5FileHex(fullPath)
+				if err != nil {
+					t.Fatalf("calculate checksum: %v", err)
+				}
+				baseline[name] = checksum
+			}
+			if err := os.WriteFile(filepath.Join(root, "temp", group.baselineFile), []byte(testPHPSerializedChecksumMap(baseline)), 0o644); err != nil {
+				t.Fatalf("write checksum file: %v", err)
+			}
+		}
+		queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+			fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		)}
+		repository := NewAdminRepositoryWithQueryer(queryer, "ogame_").WithLegacyGameDir(root)
+
+		admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "Checksum"})
+
+		if err != nil {
+			t.Fatalf("GetAdmin checksum returned error: %v", err)
+		}
+		if len(admin.ChecksumGroups) != len(adminChecksumGroups) {
+			t.Fatalf("unexpected checksum groups: %+v", admin.ChecksumGroups)
+		}
+	})
+
+	t.Run("database backups", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "temp"), 0o755); err != nil {
+			t.Fatalf("mkdir temp: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "temp", "backup_1.json"), []byte("backup"), 0o644); err != nil {
+			t.Fatalf("write backup: %v", err)
+		}
+		queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+			fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		)}
+		repository := NewAdminRepositoryWithQueryer(queryer, "ogame_").WithLegacyGameDir(root)
+
+		admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "DB"})
+
+		if err != nil {
+			t.Fatalf("GetAdmin DB returned error: %v", err)
+		}
+		if len(admin.DatabaseBackups) != 1 || admin.DatabaseBackups[0].FileName != "backup_1.json" {
+			t.Fatalf("unexpected database backups: %+v", admin.DatabaseBackups)
+		}
+	})
+}
+
 func TestAdminRepositoryErrors(t *testing.T) {
 	repository := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_")
 	if _, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
@@ -1234,6 +1618,157 @@ func TestAdminRepositoryErrors(t *testing.T) {
 	repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("viewer rows failed"))}}}, "ogame_")
 	if _, err := repository.loadAdminViewer(context.Background(), 42); err == nil || !strings.Contains(err.Error(), "viewer rows failed") {
 		t.Fatalf("expected viewer rows error, got %v", err)
+	}
+}
+
+func TestAdminRepositoryAdminLoaderPrefixErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(AdminRepository) error
+	}{
+		{
+			name: "viewer",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminViewer(context.Background(), 42)
+				return err
+			},
+		},
+		{
+			name: "bot strategies",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminBotStrategies(context.Background())
+				return err
+			},
+		},
+		{
+			name: "messages",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminMessageRows(context.Background(), "debug", true)
+				return err
+			},
+		},
+		{
+			name: "user logs",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminUserLogRows(context.Background())
+				return err
+			},
+		},
+		{
+			name: "users",
+			run: func(repository AdminRepository) error {
+				_, _, err := repository.loadAdminUsers(context.Background())
+				return err
+			},
+		},
+		{
+			name: "planet rows",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminPlanetRows(context.Background())
+				return err
+			},
+		},
+		{
+			name: "universe",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminUniverse(context.Background())
+				return err
+			},
+		},
+		{
+			name: "expedition",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminExpeditionSettings(context.Background())
+				return err
+			},
+		},
+		{
+			name: "queue rows",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminQueueRows(context.Background())
+				return err
+			},
+		},
+		{
+			name: "battle reports",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminBattleReports(context.Background())
+				return err
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_")
+			if err := tt.run(repository); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+				t.Fatalf("expected prefix error for %s, got %v", tt.name, err)
+			}
+		})
+	}
+}
+
+func TestAdminRepositoryAdminLoaderQueryErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(AdminRepository) error
+	}{
+		{
+			name: "bot strategies",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminBotStrategies(context.Background())
+				return err
+			},
+		},
+		{
+			name: "messages",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminMessageRows(context.Background(), "debug", true)
+				return err
+			},
+		},
+		{
+			name: "user logs",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminUserLogRows(context.Background())
+				return err
+			},
+		},
+		{
+			name: "planet rows",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminPlanetRows(context.Background())
+				return err
+			},
+		},
+		{
+			name: "universe",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminUniverse(context.Background())
+				return err
+			},
+		},
+		{
+			name: "expedition",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminExpeditionSettings(context.Background())
+				return err
+			},
+		},
+		{
+			name: "battle reports",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminBattleReports(context.Background())
+				return err
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New(tt.name + " query failed")}}}, "ogame_")
+			if err := tt.run(repository); err == nil || !strings.Contains(err.Error(), tt.name+" query failed") {
+				t.Fatalf("expected query error for %s, got %v", tt.name, err)
+			}
+		})
 	}
 }
 

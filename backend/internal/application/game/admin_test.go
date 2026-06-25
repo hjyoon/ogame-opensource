@@ -90,6 +90,11 @@ func TestAdminServiceMutatesAdminAndRefreshes(t *testing.T) {
 		Hours:           2,
 		Reason:          "test",
 		Values:          map[string]int{"dm_factor": 9},
+		Category:        3,
+		Subject:         "subject",
+		Text:            "text",
+		ReportIDs:       []int{701},
+		DeleteMode:      "deletemarked",
 	})
 
 	if err != nil {
@@ -97,7 +102,10 @@ func TestAdminServiceMutatesAdminAndRefreshes(t *testing.T) {
 	}
 	if !result.Authenticated || result.ActionIssue != issue || repository.mutation.PlayerID != 42 ||
 		repository.mutation.TaskID != 1001 || repository.mutation.TargetIDs[0] != 77 || repository.mutation.BanMode != 1 ||
-		repository.mutation.Values["dm_factor"] != 9 || repository.query.Mode != "Bans" {
+		repository.mutation.Values["dm_factor"] != 9 || repository.mutation.Category != 3 ||
+		repository.mutation.Subject != "subject" || repository.mutation.Text != "text" ||
+		repository.mutation.ReportIDs[0] != 701 || repository.mutation.DeleteMode != "deletemarked" ||
+		repository.query.Mode != "Bans" {
 		t.Fatalf("unexpected result=%+v mutation=%+v query=%+v", result, repository.mutation, repository.query)
 	}
 }

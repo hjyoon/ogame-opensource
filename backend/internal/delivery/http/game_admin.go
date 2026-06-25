@@ -21,14 +21,19 @@ type gameAdminActionIssue struct {
 }
 
 type gameAdminMutationRequest struct {
-	Action    string         `json:"action"`
-	TaskID    int            `json:"taskId"`
-	TargetIDs []int          `json:"targetIds"`
-	BanMode   int            `json:"banMode"`
-	Days      int            `json:"days"`
-	Hours     int            `json:"hours"`
-	Reason    string         `json:"reason"`
-	Values    map[string]int `json:"values"`
+	Action     string         `json:"action"`
+	TaskID     int            `json:"taskId"`
+	TargetIDs  []int          `json:"targetIds"`
+	BanMode    int            `json:"banMode"`
+	Days       int            `json:"days"`
+	Hours      int            `json:"hours"`
+	Reason     string         `json:"reason"`
+	Values     map[string]int `json:"values"`
+	Category   int            `json:"category"`
+	Subject    string         `json:"subject"`
+	Text       string         `json:"text"`
+	ReportIDs  []int          `json:"reportIds"`
+	DeleteMode string         `json:"deleteMode"`
 }
 
 type gameAdminSummary struct {
@@ -43,6 +48,7 @@ type gameAdminSummary struct {
 	UserRows        []gameAdminUserRow          `json:"userRows,omitempty"`
 	ActiveUsers     []gameAdminUserRow          `json:"activeUsers,omitempty"`
 	PlanetRows      []gameAdminPlanetRow        `json:"planetRows,omitempty"`
+	ReportRows      []gameAdminReportRow        `json:"reportRows,omitempty"`
 	Universe        *gameAdminUniverseSettings  `json:"universe,omitempty"`
 	Expedition      map[string]int              `json:"expedition,omitempty"`
 	FleetLogRows    []gameAdminFleetLogRow      `json:"fleetLogRows,omitempty"`
@@ -108,6 +114,17 @@ type gameAdminPlanetRow struct {
 	Date        int64                   `json:"date"`
 	Coordinates gameCoordinatesResponse `json:"coordinates"`
 	Owner       *gameAdminUserRow       `json:"owner,omitempty"`
+}
+
+type gameAdminReportRow struct {
+	ID        int    `json:"id"`
+	OwnerID   int    `json:"ownerId"`
+	OwnerName string `json:"ownerName"`
+	MessageID int    `json:"messageId"`
+	From      string `json:"from"`
+	Subject   string `json:"subject"`
+	Text      string `json:"text"`
+	Date      int64  `json:"date"`
 }
 
 type gameAdminFleetLogRow struct {
@@ -274,6 +291,11 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		Hours:           request.Hours,
 		Reason:          request.Reason,
 		Values:          request.Values,
+		Category:        request.Category,
+		Subject:         request.Subject,
+		Text:            request.Text,
+		ReportIDs:       request.ReportIDs,
+		DeleteMode:      request.DeleteMode,
 	})
 	if err != nil {
 		http.Error(w, "game admin unavailable", http.StatusServiceUnavailable)
@@ -345,6 +367,19 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 	for _, row := range admin.PlanetRows {
 		planetRows = append(planetRows, toGameAdminPlanetRow(row))
 	}
+	reportRows := make([]gameAdminReportRow, 0, len(admin.ReportRows))
+	for _, row := range admin.ReportRows {
+		reportRows = append(reportRows, gameAdminReportRow{
+			ID:        row.ID,
+			OwnerID:   row.OwnerID,
+			OwnerName: row.OwnerName,
+			MessageID: row.MessageID,
+			From:      row.From,
+			Subject:   row.Subject,
+			Text:      row.Text,
+			Date:      row.Date,
+		})
+	}
 	universe := toGameAdminUniverseSettings(admin.Universe)
 	fleetLogRows := make([]gameAdminFleetLogRow, 0, len(admin.FleetLogRows))
 	for _, row := range admin.FleetLogRows {
@@ -415,6 +450,7 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		UserRows:        userRows,
 		ActiveUsers:     activeUsers,
 		PlanetRows:      planetRows,
+		ReportRows:      reportRows,
 		Universe:        universe,
 		Expedition:      admin.Expedition,
 		FleetLogRows:    fleetLogRows,

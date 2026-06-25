@@ -92,6 +92,17 @@ export type GameAdminAction =
       values: Record<string, number>;
     }
   | {
+      action: "broadcast_send";
+      category: number;
+      subject: string;
+      text: string;
+    }
+  | {
+      action: "reports_delete";
+      reportIds: number[];
+      deleteMode: string;
+    }
+  | {
       action: "queue_end" | "queue_remove" | "queue_freeze" | "queue_unfreeze";
       taskId: number;
     }
@@ -1151,6 +1162,7 @@ type GameAdmin = {
   userRows?: GameAdminUserRow[];
   activeUsers?: GameAdminUserRow[];
   planetRows?: GameAdminPlanetRow[];
+  reportRows?: GameAdminReportRow[];
   universe?: GameAdminUniverseSettings;
   expedition?: Record<string, number>;
   fleetLogRows?: GameAdminFleetLogRow[];
@@ -1216,6 +1228,17 @@ type GameAdminPlanetRow = {
   date: number;
   coordinates: Coordinates;
   owner?: GameAdminUserRow;
+};
+
+type GameAdminReportRow = {
+  id: number;
+  ownerId: number;
+  ownerName: string;
+  messageId: number;
+  from: string;
+  subject: string;
+  text: string;
+  date: number;
 };
 
 type GameAdminFleetLogRow = {
@@ -3033,14 +3056,14 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "Broadcast") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminBroadcastTable />
+        <AdminBroadcastTable onAdminAction={onAdminAction} />
       </AdminModeShell>
     );
   }
   if (admin.mode === "Reports") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminReportsTable />
+        <AdminReportsTable onAdminAction={onAdminAction} rows={admin.reportRows ?? []} />
       </AdminModeShell>
     );
   }
@@ -3425,9 +3448,20 @@ function uniqueAdminUsers(users: GameAdminUserRow[]): GameAdminUserRow[] {
   return result;
 }
 
-function AdminBroadcastTable() {
+function AdminBroadcastTable({ onAdminAction }: { onAdminAction: (action: GameAdminAction) => void }) {
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    onAdminAction({
+      action: "broadcast_send",
+      category: Number(data.get("cat") ?? 0),
+      subject: String(data.get("subj") ?? ""),
+      text: String(data.get("text") ?? "")
+    });
+  };
   return (
-    <form action={adminModeHref("Broadcast")} method="POST" onSubmit={(event) => event.preventDefault()}>
+    <form action={adminModeHref("Broadcast")} method="POST" onSubmit={handleSubmit}>
       <table className="legacy-admin-broadcast-table">
         <tbody>
           <tr>
@@ -3464,14 +3498,83 @@ function AdminBroadcastTable() {
   );
 }
 
-function AdminReportsTable() {
-  return React.createElement("span", { dangerouslySetInnerHTML: { __html: adminReportsHTML() } });
-}
-
-function adminReportsHTML(): string {
-  return `<table class='header legacy-admin-reports-outer'><tr class='header'><td><table class="legacy-admin-reports-table" width="519">\n<form action="${legacyHTMLAttribute(
-    adminModeHref("Reports")
-  )}" method="POST">\n<tr><td colspan="5" class="c">Messages</td></tr>\n<tr><th>Action</th><th>Date</th><th>From</th><th>Recipient</th><th>Subject</th></tr>\n\n<tr><td class="b"> </td><td class="b" colspan="4"></td></tr>\n<tr><th colspan="5" style='padding:0px 105px;'></th></tr>\n<tr><th colspan="5">\n<select name="deletemessages">\n<option value="deletemarked">Delete highlighted messages</option> \n<option value="deleteall">Delete all messages</option> \n</select><input type="submit" value="ok" /></th></tr>\n<tr><td colspan="5"><center>     </center></td></tr>\n</form>\n</table>`;
+function AdminReportsTable({ onAdminAction, rows }: { onAdminAction: (action: GameAdminAction) => void; rows: GameAdminReportRow[] }) {
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const deleteMode = String(data.get("deletemessages") ?? "deletemarked");
+    const reportIds = rows.filter((row) => data.get(`delmes${row.id}`) === "on").map((row) => row.id);
+    onAdminAction({ action: "reports_delete", reportIds, deleteMode });
+  };
+  return (
+    <table className="header legacy-admin-reports-outer">
+      <tbody>
+        <tr className="header">
+          <td>
+            <form action={adminModeHref("Reports")} method="POST" onSubmit={handleSubmit}>
+              <table className="legacy-admin-reports-table" width={519}>
+                <tbody>
+                  <tr>
+                    <td className="c" colSpan={5}>
+                      Messages
+                    </td>
+                  </tr>
+                  <tr>
+                    <th>Action</th>
+                    <th>Date</th>
+                    <th>From</th>
+                    <th>Recipient</th>
+                    <th>Subject</th>
+                  </tr>
+                  {rows.map((row) => (
+                    <React.Fragment key={row.id}>
+                      <tr>
+                        <th>
+                          <input name={`delmes${row.id}`} type="checkbox" />
+                        </th>
+                        <th>{formatLegacyAdminMessageDate(row.date)}</th>
+                        <th dangerouslySetInnerHTML={{ __html: `${sanitizeLegacyMessageHTML(legacyAdminHTMLWithSession(row.from))} ` }} />
+                        <th>
+                          <AdminUserLink ownerId={row.ownerId} ownerName={row.ownerName} />{" "}
+                        </th>
+                        <th dangerouslySetInnerHTML={{ __html: `${sanitizeLegacyMessageHTML(legacyAdminHTMLWithSession(row.subject))} ` }} />
+                      </tr>
+                      <tr>
+                        <td className="b"> </td>
+                        <td className="b" colSpan={4} dangerouslySetInnerHTML={{ __html: sanitizeLegacyMessageHTML(legacyAdminHTMLWithSession(row.text)) }} />
+                      </tr>
+                    </React.Fragment>
+                  ))}
+                  <tr>
+                    <td className="b"> </td>
+                    <td className="b" colSpan={4} />
+                  </tr>
+                  <tr>
+                    <th colSpan={5} style={{ padding: "0px 105px" }} />
+                  </tr>
+                  <tr>
+                    <th colSpan={5}>
+                      <select name="deletemessages">
+                        <option value="deletemarked">Delete highlighted messages</option>
+                        <option value="deleteall">Delete all messages</option>
+                      </select>
+                      <input type="submit" value="ok" />
+                    </th>
+                  </tr>
+                  <tr>
+                    <td colSpan={5}>
+                      <center>     </center>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </form>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
 }
 
 function AdminBotsTable({ admin }: { admin: GameAdmin }) {

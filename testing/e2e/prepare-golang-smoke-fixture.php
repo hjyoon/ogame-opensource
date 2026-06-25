@@ -382,6 +382,38 @@ function smoke_prepare_password_recovery_fixture(string $password): array
     );
 }
 
+function smoke_prepare_admin_operations_fixture(array $operator, array $target): array
+{
+    global $db_prefix;
+
+    $operatorId = (int)$operator['player_id'];
+    $targetId = (int)$target['player_id'];
+    $token = 'Go smoke admin ops ' . substr(hash('sha256', (string)microtime(true)), 0, 10);
+    dbquery(
+        "DELETE FROM {$db_prefix}messages WHERE owner_id IN ({$operatorId},{$targetId}) AND " .
+        "(msgfrom LIKE 'Go smoke admin ops%' OR subj LIKE 'Go smoke admin ops%' OR text LIKE 'Go smoke admin ops%')"
+    );
+    dbquery(
+        "DELETE FROM {$db_prefix}reports WHERE " .
+        "msgfrom LIKE 'Go smoke admin ops%' OR subj LIKE 'Go smoke admin ops%' OR text LIKE 'Go smoke admin ops%'"
+    );
+    $reportId = AddDBRow(array(
+        'owner_id' => $targetId,
+        'msg_id' => 0,
+        'msgfrom' => $token . ' reporter',
+        'subj' => $token . ' report subject',
+        'text' => $token . ' report text',
+        'date' => time(),
+    ), 'reports');
+
+    return array(
+        'token' => $token,
+        'report_id' => (int)$reportId,
+        'operator_player_id' => $operatorId,
+        'target_player_id' => $targetId,
+    );
+}
+
 function smoke_set_fleet_restriction_user_state(array $user, int $score, array $options = array()): void
 {
     global $db_prefix, $resmap;
@@ -486,6 +518,7 @@ $fleetQueueTaskId = smoke_fleet_queue_task_id($fleetId);
 $recallFleetQueueTaskId = smoke_fleet_queue_task_id($recallFleetId);
 $feedFixture = smoke_prepare_feed_fixture($login, $operator, $target);
 $passwordRecoveryFixture = smoke_prepare_password_recovery_fixture('E2E_reset123');
+$adminOperationsFixture = smoke_prepare_admin_operations_fixture($operator, $target);
 $fleetRestrictionFixture = smoke_prepare_fleet_restriction_fixture($password, $home);
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
@@ -516,5 +549,6 @@ echo json_encode(array(
     ),
     'feed' => $feedFixture,
     'password_recovery' => $passwordRecoveryFixture,
+    'admin_operations' => $adminOperationsFixture,
     'fleet_restrictions' => $fleetRestrictionFixture,
 ), JSON_UNESCAPED_SLASHES) . PHP_EOL;

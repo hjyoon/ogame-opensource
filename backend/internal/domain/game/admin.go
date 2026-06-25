@@ -20,6 +20,9 @@ const (
 	AdminActionFleetlogsTwoMinutes = "fleetlogs_2min"
 	AdminActionFleetlogsEnd        = "fleetlogs_end"
 	AdminActionFleetlogsReturn     = "fleetlogs_return"
+
+	AdminActionBroadcastSend = "broadcast_send"
+	AdminActionReportsDelete = "reports_delete"
 )
 
 type Admin struct {
@@ -34,6 +37,7 @@ type Admin struct {
 	UserRows        []AdminUserRow
 	ActiveUsers     []AdminUserRow
 	PlanetRows      []AdminPlanetRow
+	ReportRows      []AdminReportRow
 	Universe        *AdminUniverseSettings
 	Expedition      map[string]int
 	FleetLogRows    []AdminFleetLogRow
@@ -104,6 +108,17 @@ type AdminPlanetRow struct {
 	Date        int64
 	Coordinates Coordinates
 	Owner       *AdminUserRow
+}
+
+type AdminReportRow struct {
+	ID        int
+	OwnerID   int
+	OwnerName string
+	MessageID int
+	From      string
+	Subject   string
+	Text      string
+	Date      int64
 }
 
 type AdminFleetLogRow struct {
