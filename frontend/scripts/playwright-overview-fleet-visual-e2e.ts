@@ -266,12 +266,32 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
         }
       }
     }
-    for (const timer of document.querySelectorAll<HTMLElement>("#content div[id^='bxx'], .legacy-overview-event-timer")) {
-      timer.textContent = "0:00:00";
-      timer.setAttribute("title", "0");
-      timer.setAttribute("data-time", "0");
-      timer.setAttribute("star", "0");
-    }
+    const freezeFleetTimers = () => {
+      for (const timer of document.querySelectorAll<HTMLElement>("#content div[id^='bxx'], .legacy-overview-event-timer")) {
+        if (timer.textContent !== "0:00:00") {
+          timer.textContent = "0:00:00";
+        }
+        if (timer.getAttribute("title") !== "0") {
+          timer.setAttribute("title", "0");
+        }
+        if (timer.getAttribute("data-time") !== "0") {
+          timer.setAttribute("data-time", "0");
+        }
+        if (timer.getAttribute("star") !== "0") {
+          timer.setAttribute("star", "0");
+        }
+      }
+    };
+    freezeFleetTimers();
+    const windowWithFreeze = window as Window & { __ogameOverviewFleetVisualTimerFreeze?: MutationObserver };
+    windowWithFreeze.__ogameOverviewFleetVisualTimerFreeze?.disconnect();
+    windowWithFreeze.__ogameOverviewFleetVisualTimerFreeze = new MutationObserver(freezeFleetTimers);
+    windowWithFreeze.__ogameOverviewFleetVisualTimerFreeze.observe(document.body, {
+      attributes: true,
+      childList: true,
+      characterData: true,
+      subtree: true
+    });
   }, side);
 }
 

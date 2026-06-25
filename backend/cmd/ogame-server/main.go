@@ -16,6 +16,7 @@ import (
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/catalogrepo"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/configcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/filesystem"
+	infrahttpclient "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/httpclient"
 	inframail "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mail"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlgame"
@@ -54,6 +55,8 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	registrationDrafts := registrationValidator(cfg, logger)
 	registration := registrationRegistrar(cfg, logger)
 	activation := registrationActivation(cfg, logger)
+	directEntry := apppublicsite.NewDirectEntryService(infrahttpclient.NewExternalImageFetcher())
+	passwordRecovery := passwordRecoveryService(cfg, logger)
 	loginDrafts := loginValidator(cfg, logger)
 	login := loginAuthenticator(cfg, logger)
 	gameSessions := gameSessionLookup(cfg, logger)
@@ -79,6 +82,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	gameMessages := gameMessagesService(cfg, logger, gameSessions)
 	gameReport := gameReportService(cfg, logger, gameSessions)
 	gamePhalanx := gamePhalanxService(cfg, logger, gameSessions)
+	gameFeed := gameFeedService(cfg, logger)
 	gameOptions := gameOptionsService(cfg, logger, gameSessions)
 
 	return httpdelivery.New(httpdelivery.Dependencies{
@@ -87,6 +91,8 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		RegistrationDrafts: registrationDrafts,
 		Registration:       registration,
 		Activation:         activation,
+		DirectEntry:        directEntry,
+		PasswordRecovery:   passwordRecovery,
 		LoginDrafts:        loginDrafts,
 		Login:              login,
 		GameSessions:       gameSessions,
@@ -112,6 +118,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		GameMessages:       gameMessages,
 		GameReport:         gameReport,
 		GamePhalanx:        gamePhalanx,
+		GameFeed:           gameFeed,
 		GameOptions:        gameOptions,
 		Frontend:           filesystem.StaticDir{Root: cfg.StaticDir},
 		LegacyAssets:       filesystem.NewNoListingFS(cfg.LegacyAssetDir),
@@ -193,6 +200,51 @@ func registrationWelcomeMailer(cfg config.Config, logger *slog.Logger) apppublic
 	}
 	logger.Info("registration welcome SMTP enabled", "addr", cfg.SMTPAddr, "publicBaseURL", cfg.PublicBaseURL)
 	return inframail.NewRegistrationWelcomeMailer(inframail.SMTPConfig{
+		Addr:          cfg.SMTPAddr,
+		From:          cfg.SMTPFrom,
+		PublicBaseURL: cfg.PublicBaseURL,
+	})
+}
+
+func passwordRecoveryService(cfg config.Config, logger *slog.Logger) apppublicsite.PasswordRecoveryService {
+	if !cfg.UniDBEnabled {
+		return apppublicsite.PasswordRecoveryService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB password recovery disabled", "error", err)
+		return apppublicsite.PasswordRecoveryService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB password recovery disabled", "error", err)
+		_ = db.Close()
+		return apppublicsite.PasswordRecoveryService{}
+	}
+
+	logger.Info("universe DB password recovery enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
+	return apppublicsite.NewPasswordRecoveryService(
+		mysqlregistration.NewPasswordRecoveryRepository(db, cfg.UniDBPrefix, cfg.UniDBSecret),
+		passwordRecoveryMailer(cfg, logger),
+		cfg.UniNumber,
+		cfg.PublicBaseURL,
+	)
+}
+
+func passwordRecoveryMailer(cfg config.Config, logger *slog.Logger) apppublicsite.PasswordRecoveryMailer {
+	if !cfg.SMTPEnabled {
+		return nil
+	}
+	logger.Info("password recovery SMTP enabled", "addr", cfg.SMTPAddr, "publicBaseURL", cfg.PublicBaseURL)
+	return inframail.NewPasswordRecoveryMailer(inframail.SMTPConfig{
 		Addr:          cfg.SMTPAddr,
 		From:          cfg.SMTPFrom,
 		PublicBaseURL: cfg.PublicBaseURL,
@@ -904,6 +956,34 @@ func gamePhalanxService(cfg config.Config, logger *slog.Logger, sessions apppubl
 
 	logger.Info("universe DB game phalanx enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewPhalanxService(sessions, mysqlgame.NewPhalanxRepository(db, cfg.UniDBPrefix))
+}
+
+func gameFeedService(cfg config.Config, logger *slog.Logger) appgame.FeedService {
+	if !cfg.UniDBEnabled {
+		return appgame.FeedService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game feed disabled", "error", err)
+		return appgame.FeedService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game feed disabled", "error", err)
+		_ = db.Close()
+		return appgame.FeedService{}
+	}
+
+	logger.Info("universe DB game feed enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
+	return appgame.NewFeedService(mysqlgame.NewFeedRepository(db, cfg.UniDBPrefix))
 }
 
 func gameOptionsService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.OptionsService {

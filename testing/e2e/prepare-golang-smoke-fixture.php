@@ -256,6 +256,107 @@ function smoke_dispatch_phalanx_fleet(int $ownerId, int $originPlanetId, int $ta
     return DispatchFleet($fleet, $origin, $target, FTYP_TRANSPORT, 3600, $resources, 0, time());
 }
 
+function smoke_prepare_feed_fixture(array $login, array $operator, array $target): array
+{
+    global $db_prefix;
+
+    $loginId = (int)$login['player_id'];
+    $operatorId = (int)$operator['player_id'];
+    $targetId = (int)$target['player_id'];
+    $now = time();
+    $lastfeed = $now + 300;
+    $rssFeed = substr(hash('sha256', 'go-smoke-rss-' . $targetId), 0, 32);
+    $atomFeed = substr(hash('sha256', 'go-smoke-atom-' . $operatorId), 0, 32);
+    $ownerSecret = 'GO_FEED_OWNER_' . $now;
+    $foreignSecret = 'GO_FEED_FOREIGN_' . $now;
+    $atomSecret = 'GO_FEED_ATOM_' . $now;
+
+    dbquery("UPDATE {$db_prefix}uni SET feedage=5");
+    dbquery("DELETE FROM {$db_prefix}messages WHERE msgfrom='Go Smoke Feed' AND owner_id IN ({$loginId},{$operatorId},{$targetId})");
+    dbquery(
+        "UPDATE {$db_prefix}users SET flags=((flags | " . USER_FLAG_FEED_ENABLE . ") & ~" . USER_FLAG_FEED_ATOM . "), " .
+        "feedid='" . smoke_sql_escape($rssFeed) . "', lastfeed={$lastfeed} WHERE player_id={$targetId}"
+    );
+    dbquery(
+        "UPDATE {$db_prefix}users SET flags=(flags | " . USER_FLAG_FEED_ENABLE . " | " . USER_FLAG_FEED_ATOM . "), " .
+        "feedid='" . smoke_sql_escape($atomFeed) . "', lastfeed={$lastfeed} WHERE player_id={$operatorId}"
+    );
+
+    $ownerMessageId = SendMessage(
+        $targetId,
+        'Go Smoke Feed',
+        $ownerSecret . ' <script>alert("subject")</script>',
+        $ownerSecret . ' <img src=x onerror=alert("body")> </textarea><script>unsafe</script>',
+        MTYP_MISC,
+        $now
+    );
+    $foreignMessageId = SendMessage(
+        $loginId,
+        'Go Smoke Feed',
+        $foreignSecret,
+        $foreignSecret . ' foreign body',
+        MTYP_MISC,
+        $now
+    );
+    $atomMessageId = SendMessage(
+        $operatorId,
+        'Go Smoke Feed',
+        $atomSecret,
+        $atomSecret . ' atom body',
+        MTYP_MISC,
+        $now
+    );
+
+    return array(
+        'rss_feed_id' => $rssFeed,
+        'atom_feed_id' => $atomFeed,
+        'owner_message_id' => $ownerMessageId,
+        'foreign_message_id' => $foreignMessageId,
+        'atom_message_id' => $atomMessageId,
+        'owner_secret' => $ownerSecret,
+        'foreign_secret' => $foreignSecret,
+        'atom_secret' => $atomSecret,
+    );
+}
+
+function smoke_prepare_password_recovery_fixture(string $password): array
+{
+    global $db_prefix, $db_secret;
+
+    $permanent = smoke_prepare_user('gorecovery', $password, 'gorecovery@example.local', 0);
+    $temporary = smoke_prepare_user('gorecoverytemp', $password, 'gorecoverytemp@example.local', 0);
+    $temporaryEmail = 'gorecoverytemp.pending@example.local';
+    $passwordHash = md5($password . $db_secret);
+
+    dbquery(
+        "UPDATE {$db_prefix}users SET password='" . smoke_sql_escape($passwordHash) . "', session='', private_session='', " .
+        "pemail='gorecovery@example.local', email='gorecovery@example.local', validated=1, validatemd='' " .
+        "WHERE player_id=" . (int)$permanent['player_id']
+    );
+    dbquery(
+        "UPDATE {$db_prefix}users SET password='" . smoke_sql_escape($passwordHash) . "', session='', private_session='', " .
+        "pemail='gorecoverytemp@example.local', email='" . smoke_sql_escape($temporaryEmail) . "', validated=0, " .
+        "validatemd='" . smoke_sql_escape(md5('go-recovery-temp')) . "' " .
+        "WHERE player_id=" . (int)$temporary['player_id']
+    );
+    InvalidateUserCache();
+
+    return array(
+        'password' => $password,
+        'permanent' => array(
+            'player_id' => (int)$permanent['player_id'],
+            'name' => $permanent['name'],
+            'email' => 'gorecovery@example.local',
+        ),
+        'temporary' => array(
+            'player_id' => (int)$temporary['player_id'],
+            'name' => $temporary['name'],
+            'email' => 'gorecoverytemp@example.local',
+            'temporary_email' => $temporaryEmail,
+        ),
+    );
+}
+
 $name = getenv('OGAME_GO_LOGIN_SMOKE_USER') ?: 'legor';
 $password = getenv('OGAME_GO_LOGIN_SMOKE_PASS') ?: 'admin';
 $email = getenv('OGAME_GO_LOGIN_SMOKE_EMAIL') ?: ($name . '@example.local');
@@ -278,6 +379,8 @@ $recallFleetId = smoke_dispatch_phalanx_fleet((int)$target['player_id'], (int)$t
 $queueTaskId = smoke_prepare_admin_queue_task((int)$login['player_id']);
 $fleetQueueTaskId = smoke_fleet_queue_task_id($fleetId);
 $recallFleetQueueTaskId = smoke_fleet_queue_task_id($recallFleetId);
+$feedFixture = smoke_prepare_feed_fixture($login, $operator, $target);
+$passwordRecoveryFixture = smoke_prepare_password_recovery_fixture('E2E_reset123');
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
 echo json_encode(array(
@@ -305,4 +408,6 @@ echo json_encode(array(
         'initial_deuterium' => 20000,
         'cost' => 5000,
     ),
+    'feed' => $feedFixture,
+    'password_recovery' => $passwordRecoveryFixture,
 ), JSON_UNESCAPED_SLASHES) . PHP_EOL;

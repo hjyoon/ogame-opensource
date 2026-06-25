@@ -328,7 +328,7 @@ export function LoginStrip({
       </div>
       <div className="legacy-public-login-links" id="login_text_2">
         <div className="legacy-public-remind">
-          <a href="#">Forgot your password?</a>
+          <a href="/game/reg/mail.php">Forgot your password?</a>
         </div>
         <div className="legacy-public-login-confirm">
           By logging in, I accept the <a href="#" target="_blank">T&amp;C&apos;s</a>.

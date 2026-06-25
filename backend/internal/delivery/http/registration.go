@@ -3,6 +3,8 @@ package httpdelivery
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"strconv"
 
 	apppublicsite "github.com/hjyoon/ogame-opensource/backend/internal/application/publicsite"
 	domain "github.com/hjyoon/ogame-opensource/backend/internal/domain/publicsite"
@@ -142,6 +144,48 @@ func (a app) handleRegistration(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a app) handleLegacyRegistrationRedirect(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeLegacyRegistrationMetaRefresh(w, "new.php")
+		return
+	case http.MethodPost:
+	default:
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if a.deps.Registration == nil {
+		http.Error(w, "registration unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid registration request", http.StatusBadRequest)
+		return
+	}
+
+	termsAccepted := r.FormValue("agb") == "on"
+	result, err := a.deps.Registration.RegisterAccount(r.Context(), apppublicsite.RegistrationCommand{
+		Character:     r.FormValue("character"),
+		Password:      r.FormValue("password"),
+		Email:         r.FormValue("email"),
+		Universe:      r.FormValue("universe"),
+		TermsAccepted: termsAccepted,
+		RemoteAddr:    remoteIP(r.RemoteAddr),
+	})
+	if err != nil {
+		http.Error(w, "registration unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if result.Valid {
+		setLoginSessionCookie(w, result.Session)
+		http.Redirect(w, r, result.Session.RedirectTarget(), http.StatusFound)
+		return
+	}
+
+	writeLegacyRegistrationMetaRefresh(w, legacyRegistrationErrorTarget(r, termsAccepted, result.Issues))
+}
+
 func toRegistrationIssueResponses(issues []domain.RegistrationIssue) []registrationIssueResponse {
 	responses := make([]registrationIssueResponse, 0, len(issues))
 	for _, issue := range issues {
@@ -153,4 +197,32 @@ func toRegistrationIssueResponses(issues []domain.RegistrationIssue) []registrat
 		})
 	}
 	return responses
+}
+
+func legacyRegistrationErrorTarget(r *http.Request, termsAccepted bool, issues []domain.RegistrationIssue) string {
+	errorCode := domain.LegacyRegistrationErrorNoEquivalent
+	for _, issue := range issues {
+		if issue.Code == domain.RegistrationIssueTermsRequired {
+			continue
+		}
+		errorCode = issue.LegacyErrorCode
+		break
+	}
+
+	values := url.Values{}
+	values.Set("errorCode", strconv.Itoa(errorCode))
+	if termsAccepted {
+		values.Set("agb", "1")
+	} else {
+		values.Set("agb", "0")
+	}
+	values.Set("character", r.FormValue("character"))
+	values.Set("email", r.FormValue("email"))
+	values.Set("universe", r.FormValue("universe"))
+	return "/register.php?" + values.Encode()
+}
+
+func writeLegacyRegistrationMetaRefresh(w http.ResponseWriter, target string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte("<html><head><meta http-equiv='refresh' content='0;url=" + target + "' /></head><body></body></html>"))
 }

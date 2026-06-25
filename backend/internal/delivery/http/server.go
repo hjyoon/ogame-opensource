@@ -35,6 +35,10 @@ type RegistrationActivationUseCase interface {
 	ActivateAccount(context.Context, apppublicsite.RegistrationActivationCommand) (domainpublicsite.RegistrationActivation, error)
 }
 
+type PasswordRecoveryUseCase interface {
+	RecoverPassword(context.Context, domainpublicsite.PasswordRecoveryCommand) (domainpublicsite.PasswordRecoveryResult, error)
+}
+
 type LoginDraftUseCase interface {
 	ValidateLoginDraft(context.Context, apppublicsite.LoginDraftCommand) (domainpublicsite.LoginValidation, error)
 }
@@ -170,6 +174,8 @@ type Dependencies struct {
 	RegistrationDrafts RegistrationDraftUseCase
 	Registration       RegistrationUseCase
 	Activation         RegistrationActivationUseCase
+	DirectEntry        DirectEntryUseCase
+	PasswordRecovery   PasswordRecoveryUseCase
 	LoginDrafts        LoginDraftUseCase
 	Login              LoginUseCase
 	GameSessions       GameSessionUseCase
@@ -195,6 +201,7 @@ type Dependencies struct {
 	GameMessages       GameMessagesUseCase
 	GameReport         GameReportUseCase
 	GamePhalanx        GamePhalanxUseCase
+	GameFeed           GameFeedUseCase
 	GameOptions        GameOptionsUseCase
 	Frontend           FrontendAssets
 	LegacyAssets       http.FileSystem
@@ -212,8 +219,14 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/public/universes", getOnly(a.handleUniverses))
 	mux.HandleFunc("/api/public/registration/validate", postOnly(a.handleRegistrationValidation))
 	mux.HandleFunc("/api/public/registration", postOnly(a.handleRegistration))
+	mux.HandleFunc("/game/reg/newredirect.php", a.handleLegacyRegistrationRedirect)
 	mux.HandleFunc("/game/validate.php", getOnly(a.handleRegistrationActivation))
 	mux.HandleFunc("/activation", getOnly(a.handleRegistrationActivation))
+	mux.HandleFunc("/game/redir.php", getOnly(a.handleLegacyRedirect))
+	mux.HandleFunc("/game/pic.php", getOnly(a.handleLegacyImageProxy))
+	mux.HandleFunc("/api/public/password-recovery", postOnly(a.handlePasswordRecovery))
+	mux.HandleFunc("/game/reg/mail.php", getOnly(a.handleLegacyPasswordRecoveryForm))
+	mux.HandleFunc("/game/reg/fa_pass.php", postOnly(a.handleLegacyPasswordRecovery))
 	mux.HandleFunc("/api/public/login/validate", postOnly(a.handleLoginValidation))
 	mux.HandleFunc("/api/public/login", postOnly(a.handleLogin))
 	mux.HandleFunc("/api/game/session", getOnly(a.handleGameSession))
@@ -241,6 +254,8 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/report", getOnly(a.handleGameReport))
 	mux.HandleFunc("/api/game/phalanx", getOnly(a.handleGamePhalanx))
 	mux.HandleFunc("/api/game/options", a.handleGameOptions)
+	mux.HandleFunc("/game/feed/show.php", getOnly(a.handleGameFeedShow))
+	mux.HandleFunc("/game/feed/viewitem.php", getOnly(a.handleGameFeedItem))
 	mux.Handle("/legacy-assets/", http.StripPrefix("/legacy-assets/", http.FileServer(deps.LegacyAssets)))
 	mux.HandleFunc("/", getOnly(a.handleFrontend))
 	handler := securityHeaders(mux)

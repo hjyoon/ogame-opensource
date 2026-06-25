@@ -31,14 +31,14 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 
 ## Verified QA
 
-- Full migration QA wrapper on 8895 passed: 20 passed, 0 failed; includes PHP E2E, Bun, Go, coverage, smoke, user-type, and visuals.
+- Full migration QA wrapper on 8890 passed: 20 passed, 0 failed; includes PHP E2E, Bun, Go, coverage, smoke, user-type, and visuals.
 - User-type QA covers regular, operator, admin, unvalidated, vacation, banned, deletion-queued, and options vacation/password/email mutations.
 - Resources actions pass Chromium/Firefox: percent save, DB `prod*`, selected values, totals, and visuals.
 - Research/shipyard/defense, galaxy, admin pages, and Empire Commander/redirect pass Chromium/Firefox exact 0px; queues cover submit/partial/complete DB.
 - Fleet all-cases passes Chrome/Firefox 0px for initial, union, target, and dispatch previews.
 - CSR E2E covers Buddy/Options, Options save, Notes create/edit/delete, and logout; Chromium passes.
 - Auth visual E2E passes Chromium/Firefox 0px for all default page specs.
-- Go compatibility smoke covers admin Fleetlogs 2m and return recall against the Docker Go app.
+- Go smoke covers Fleetlogs, session rotation, account security, cross-universe cookies, report IDOR, URL/pic, feed, password recovery, and `newredirect.php` (26 cases/955 checks).
 - Legacy PHP E2E latest summary: 59 result files, 340 cases, 2428 checks, failed groups 0.
 - Go internal coverage gate: `97.0% >= 97%`.
 

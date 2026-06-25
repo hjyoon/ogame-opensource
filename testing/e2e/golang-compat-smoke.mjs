@@ -1,16 +1,45 @@
-import { readFile } from "node:fs/promises";
-
-import { publicRouteAliases, publicRoutes } from "../../frontend/src/routes.ts";
-
 function envURL(value, fallback) {
-  return Array.from(String(value ?? fallback)).join("").replace(/\/+$/, "");
+  return String(value ?? fallback).replace(/\/+$/, "");
 }
 
-const baseUrl = envURL(process.env.OGAME_GO_BASE_URL, "http://127.0.0.1:8890");
-const mailhogBaseUrl = envURL(process.env.OGAME_MAILHOG_BASE_URL, "http://127.0.0.1:8026");
-const loginSmokeUser = process.env.OGAME_GO_LOGIN_SMOKE_USER ?? "legor";
-const loginSmokePassword = process.env.OGAME_GO_LOGIN_SMOKE_PASS ?? "admin";
-const smokeFixtureFile = process.env.OGAME_GO_SMOKE_FIXTURE_FILE ?? "";
+function argValue(name, fallback) {
+  const index = Bun.argv.indexOf(name);
+  if (index === -1 || index + 1 >= Bun.argv.length) {
+    return fallback;
+  }
+  return Bun.argv[index + 1];
+}
+
+const publicRoutes = [
+  { path: "/home" },
+  { path: "/register" },
+  { path: "/universes" },
+  { path: "/about" },
+  { path: "/story" },
+  { path: "/screenshots" },
+  { path: "/rules" },
+  { path: "/legal" },
+  { path: "/migration" }
+];
+
+const publicRouteAliases = new Map([
+  ["/home.php", "/home"],
+  ["/index.php", "/home"],
+  ["/install.php", "/home"],
+  ["/register.php", "/register"],
+  ["/unis.php", "/universes"],
+  ["/about.php", "/about"],
+  ["/story.php", "/story"],
+  ["/screenshots.php", "/screenshots"],
+  ["/regeln.php", "/rules"],
+  ["/impressum.php", "/legal"]
+]);
+
+const baseUrl = envURL(argValue("--go-base-url", process.env.OGAME_GO_BASE_URL), "http://127.0.0.1:8890");
+const mailhogBaseUrl = envURL(argValue("--mailhog-base-url", process.env.OGAME_MAILHOG_BASE_URL), "http://127.0.0.1:8026");
+const loginSmokeUser = argValue("--login-user", process.env.OGAME_GO_LOGIN_SMOKE_USER ?? "legor");
+const loginSmokePassword = argValue("--login-pass", process.env.OGAME_GO_LOGIN_SMOKE_PASS ?? "admin");
+const smokeFixtureFile = argValue("--fixture", process.env.OGAME_GO_SMOKE_FIXTURE_FILE ?? "");
 
 function check(pass, message, context = {}) {
   return { pass, message, context };
@@ -49,7 +78,7 @@ async function readOptionalJSON(path) {
     return {};
   }
   try {
-    return JSON.parse(await readFile(path, "utf8"));
+    return JSON.parse(await Bun.file(path).text());
   } catch {
     return {};
   }
@@ -81,6 +110,24 @@ function withQueryParams(search, params) {
     query.set(key, String(value));
   }
   return `?${query.toString()}`;
+}
+
+function legacyOptionsForm(values = {}) {
+  const form = new URLSearchParams({
+    lang: "en",
+    dpath: "/evolution/",
+    design: "on",
+    settings_sort: "0",
+    settings_order: "0",
+    spio_anz: "1",
+    settings_fleetactions: "3"
+  });
+  for (const [key, value] of Object.entries(values)) {
+    if (value !== undefined && value !== null) {
+      form.set(key, String(value));
+    }
+  }
+  return form.toString();
 }
 
 function noLoopbackAsset(body) {
@@ -141,6 +188,11 @@ function mailhogBody(message) {
   return String(message?.Content?.Body ?? "");
 }
 
+function extractRecoveryPassword(body) {
+  const match = /your password for .*? is:\s+([a-z0-9]+)\s+You may log in/is.exec(String(body ?? ""));
+  return match?.[1] ?? "";
+}
+
 async function waitForMailhogMessage(email, needle) {
   let last = { response: { ok: false, status: 0, body: "" }, messages: [] };
   for (let index = 0; index < 20; index += 1) {
@@ -190,6 +242,21 @@ try {
   const adminFleetlogsRecallTaskId = Number(adminFleetlogsFixture.recall_task_id ?? 0);
   const adminFleetlogsRecallFleetId = Number(adminFleetlogsFixture.recall_fleet_id ?? 0);
   const adminFleetlogsRecallFixtureReady = adminFleetlogsRecallTaskId > 0 && adminFleetlogsRecallFleetId > 0;
+  const feedFixture = smokeFixture?.feed ?? {};
+  const feedFixtureReady =
+    typeof feedFixture.rss_feed_id === "string" &&
+    typeof feedFixture.atom_feed_id === "string" &&
+    Number(feedFixture.owner_message_id ?? 0) > 0 &&
+    Number(feedFixture.foreign_message_id ?? 0) > 0 &&
+    String(feedFixture.owner_secret ?? "") !== "";
+  const passwordRecoveryFixture = smokeFixture?.password_recovery ?? {};
+  const passwordRecoveryFixtureReady =
+    typeof passwordRecoveryFixture.password === "string" &&
+    typeof passwordRecoveryFixture.permanent?.name === "string" &&
+    typeof passwordRecoveryFixture.permanent?.email === "string" &&
+    typeof passwordRecoveryFixture.temporary?.name === "string" &&
+    typeof passwordRecoveryFixture.temporary?.email === "string" &&
+    typeof passwordRecoveryFixture.temporary?.temporary_email === "string";
   const legacyTransportReturnMission = 103;
   const health = await request("/api/healthz");
   let healthBody = {};
@@ -231,6 +298,200 @@ try {
       check(universes[0]?.number === 1, "default universe keeps legacy universe number", universes[0] ?? {}),
       check(typeof universes[0]?.baseUrl === "string" && universes[0].baseUrl.length > 0, "universe exposes a base URL", universes[0] ?? {}),
       check(universes[0]?.open === true, "default universe is open", universes[0] ?? {})
+    ]
+  }));
+
+  const unsafeDirectURLs = [
+    "javascript:alert(1)",
+    "data:text/html,<script>go-direct</script>",
+    "file:///etc/passwd",
+    "http://127.0.0.1:8888/game/index.php",
+    "http://localhost:8888/game/index.php",
+    "http://[::1]/game/index.php",
+    "http://[::ffff:127.0.0.1]/game/index.php",
+    "http://169.254.169.254/latest/meta-data/",
+    "http://example.com@127.0.0.1/image.png"
+  ];
+  const unsafeRedirectResponses = [];
+  for (const unsafeURL of unsafeDirectURLs) {
+    unsafeRedirectResponses.push({
+      unsafeURL,
+      response: await request(`/game/redir.php?url=${encodeURIComponent(unsafeURL)}`)
+    });
+  }
+  const unsafeImageURLs = [
+    "file:///etc/passwd",
+    "javascript:alert(1)",
+    "http://127.0.0.1:8888/game/img/preload.gif",
+    "http://[::1]/game/img/preload.gif",
+    "http://[::ffff:127.0.0.1]/game/img/preload.gif",
+    "http://169.254.169.254/latest/meta-data/iam/security-credentials.png",
+    "http://example.com/image.svg"
+  ];
+  const unsafeImageResponses = [];
+  for (const unsafeURL of unsafeImageURLs) {
+    unsafeImageResponses.push({
+      unsafeURL,
+      response: await request(`/game/pic.php?url=${encodeURIComponent(unsafeURL)}`)
+    });
+  }
+  const safeRedirect = await request(`/game/redir.php?url=${encodeURIComponent("https://example.com/ogame")}`);
+  cases.push(finalize({
+    case: "go_legacy_direct_entry_url_proxy_security",
+    checks: [
+      ...unsafeRedirectResponses.flatMap(({ unsafeURL, response }) => [
+        check(response.status === 400, "legacy redir rejects unsafe direct URL with HTTP 400", { unsafeURL, status: response.status }),
+        check(!hasHeader(response, "location"), "legacy redir does not issue a Location header for unsafe direct URL", { unsafeURL, location: response.headers.location }),
+        check(!response.body.includes(unsafeURL), "legacy redir does not echo unsafe direct URL", { unsafeURL, body: response.body })
+      ]),
+      ...unsafeImageResponses.flatMap(({ unsafeURL, response }) => [
+        check(response.status === 200, "legacy pic returns a legacy unavailable page for unsafe direct URL", { unsafeURL, status: response.status }),
+        check(!String(response.headers["content-type"] ?? "").toLowerCase().startsWith("image/"), "legacy pic does not return image content for unsafe direct URL", { unsafeURL, contentType: response.headers["content-type"] }),
+        check(response.body.includes("Графика недоступна"), "legacy pic renders the unavailable image text for unsafe direct URL", { unsafeURL, body: response.body })
+      ]),
+      check(safeRedirect.status === 200, "legacy redir accepts a safe public HTTP URL", { status: safeRedirect.status }),
+      check(safeRedirect.body.includes("Page has moved") && safeRedirect.body.includes("https://example.com/ogame"), "legacy redir renders the meta refresh shell for safe URLs", { body: safeRedirect.body })
+    ]
+  }));
+
+  const feedRSS = feedFixtureReady
+    ? await request(`/game/feed/show.php?feedid=${encodeURIComponent(feedFixture.rss_feed_id)}`)
+    : null;
+  const feedAtom = feedFixtureReady
+    ? await request(`/game/feed/show.php?feedid=${encodeURIComponent(feedFixture.atom_feed_id)}`)
+    : null;
+  const feedItem = feedFixtureReady
+    ? await request(`/game/feed/viewitem.php?feedid=${encodeURIComponent(feedFixture.rss_feed_id)}&mid=${Number(feedFixture.owner_message_id)}&type=i`)
+    : null;
+  const feedForeignItem = feedFixtureReady
+    ? await request(`/game/feed/viewitem.php?feedid=${encodeURIComponent(feedFixture.rss_feed_id)}&mid=${Number(feedFixture.foreign_message_id)}&type=i`)
+    : null;
+  const feedBadID = feedFixtureReady
+    ? await request(`/game/feed/show.php?feedid=${encodeURIComponent(`${feedFixture.rss_feed_id}x<script>`)}`)
+    : null;
+  const feedBadMID = feedFixtureReady
+    ? await request(`/game/feed/viewitem.php?feedid=${encodeURIComponent(feedFixture.rss_feed_id)}&mid=abc`)
+    : null;
+  const feedMissingID = await request("/game/feed/show.php");
+  const unsafeFeedMarkup = /<script|<img|<\/textarea/i;
+  cases.push(finalize({
+    case: "go_legacy_feed_direct_entry_security",
+    checks: [
+      check(!smokeFixtureFile || feedFixtureReady, "go smoke fixture exposes feed tokens and message ids", { feedFixture }),
+      check(!feedFixtureReady || feedRSS?.status === 200, "RSS feed returns HTTP 200", { status: feedRSS?.status }),
+      check(!feedFixtureReady || hasHeader(feedRSS, "content-type", "xml"), "RSS feed returns XML content type", feedRSS?.headers ?? {}),
+      check(!feedFixtureReady || feedRSS.body.includes("<rss version=\"2.0\">"), "RSS feed uses RSS envelope", { body: feedRSS?.body.slice(0, 120) }),
+      check(!feedFixtureReady || feedRSS.body.includes(String(feedFixture.owner_secret)), "RSS feed includes owner message", { ownerSecret: feedFixture.owner_secret }),
+      check(!feedFixtureReady || !feedRSS.body.includes(String(feedFixture.foreign_secret)), "RSS feed does not include foreign owner message"),
+      check(!feedFixtureReady || !unsafeFeedMarkup.test(feedRSS.body), "RSS feed strips unsafe raw markup"),
+      check(!feedFixtureReady || feedAtom?.status === 200, "Atom feed returns HTTP 200", { status: feedAtom?.status }),
+      check(!feedFixtureReady || feedAtom.body.includes("<feed xmlns=\"http://www.w3.org/2005/Atom\">"), "Atom feed uses Atom envelope"),
+      check(!feedFixtureReady || feedAtom.body.includes(String(feedFixture.atom_secret)), "Atom feed includes atom owner message", { atomSecret: feedFixture.atom_secret }),
+      check(!feedFixtureReady || !unsafeFeedMarkup.test(feedAtom.body), "Atom feed strips unsafe raw markup"),
+      check(!feedFixtureReady || feedItem?.status === 200, "feed item returns HTTP 200", { status: feedItem?.status }),
+      check(!feedFixtureReady || feedItem.body.includes(String(feedFixture.owner_secret)), "feed item includes owner message"),
+      check(!feedFixtureReady || !unsafeFeedMarkup.test(feedItem.body), "feed item strips unsafe raw markup"),
+      check(!feedFixtureReady || feedForeignItem?.status === 200, "foreign feed item request returns HTTP 200", { status: feedForeignItem?.status }),
+      check(!feedFixtureReady || !feedForeignItem.body.includes(String(feedFixture.foreign_secret)), "foreign feed item does not leak another user's message"),
+      check(!feedFixtureReady || feedBadID?.body.includes("Error validating request parameters: feedid"), "invalid feedid returns legacy validation text", { body: feedBadID?.body }),
+      check(!feedFixtureReady || !feedBadID.body.includes(String(feedFixture.owner_secret)), "invalid feedid does not leak owner feed"),
+      check(!feedFixtureReady || feedBadMID?.body.includes("Error validating request parameters: mid"), "invalid message id returns legacy validation text", { body: feedBadMID?.body }),
+      check(feedMissingID.body === "No feed specified", "missing feed id returns legacy text", { body: feedMissingID.body })
+    ]
+  }));
+
+  const recoveryForm = await request("/game/reg/mail.php");
+  const recoveryMissingMailClear = await clearMailhog();
+  const recoveryMissing = await request("/game/reg/fa_pass.php", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: ""
+  });
+  const recoveryMissingMessages = await readMailhogMessages();
+  const recoveryUnknownMailClear = await clearMailhog();
+  const recoveryUnknown = await request("/api/public/password-recovery", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: `missing-${runId}@example.local` })
+  });
+  const recoveryUnknownBody = parseJSON(recoveryUnknown);
+  const recoveryUnknownMessages = await readMailhogMessages();
+  const recoveryPermanentMailClear = await clearMailhog();
+  const recoveryPermanent = passwordRecoveryFixtureReady
+    ? await request("/game/reg/fa_pass.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ email: passwordRecoveryFixture.permanent.email }).toString()
+      })
+    : null;
+  const recoveryPermanentMail = passwordRecoveryFixtureReady
+    ? await waitForMailhogMessage(passwordRecoveryFixture.permanent.email, "your password for")
+    : { message: null };
+  const recoveryPermanentMailBody = mailhogBody(recoveryPermanentMail.message);
+  const recoveryPermanentPassword = extractRecoveryPassword(recoveryPermanentMailBody);
+  const recoveryUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const recoveryPermanentOldLogin = passwordRecoveryFixtureReady
+    ? await loginGameUser(passwordRecoveryFixture.permanent.name, passwordRecoveryFixture.password, recoveryUniverse)
+    : null;
+  const recoveryPermanentNewLogin = passwordRecoveryFixtureReady && recoveryPermanentPassword
+    ? await loginGameUser(passwordRecoveryFixture.permanent.name, recoveryPermanentPassword, recoveryUniverse)
+    : null;
+  const recoveryTemporaryMailClear = await clearMailhog();
+  const recoveryTemporary = passwordRecoveryFixtureReady
+    ? await request("/game/reg/fa_pass.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ email: passwordRecoveryFixture.temporary.temporary_email }).toString()
+      })
+    : null;
+  const recoveryTemporaryMail = passwordRecoveryFixtureReady
+    ? await waitForMailhogMessage(passwordRecoveryFixture.temporary.email, "your password for")
+    : { message: null };
+  const recoveryTemporaryMailBody = mailhogBody(recoveryTemporaryMail.message);
+  const recoveryTemporaryPassword = extractRecoveryPassword(recoveryTemporaryMailBody);
+  const recoveryTemporaryNewLogin = passwordRecoveryFixtureReady && recoveryTemporaryPassword
+    ? await loginGameUser(passwordRecoveryFixture.temporary.name, recoveryTemporaryPassword, recoveryUniverse)
+    : null;
+  cases.push(finalize({
+    case: "go_legacy_password_recovery_flow",
+    checks: [
+      check(!smokeFixtureFile || passwordRecoveryFixtureReady, "go smoke fixture exposes password recovery users", { passwordRecoveryFixture }),
+      check(recoveryForm.status === 200, "legacy password recovery form returns HTTP 200", { status: recoveryForm.status }),
+      check(recoveryForm.body.includes("Send Password") && recoveryForm.body.includes('name="email"') && recoveryForm.body.includes("fa_pass.php"), "legacy password recovery form keeps title, email field, and post target"),
+      check(recoveryMissingMailClear.ok, "MailHog can be cleared before missing-email recovery", recoveryMissingMailClear),
+      check(recoveryMissing.status === 200, "missing-email recovery POST returns HTTP 200", { status: recoveryMissing.status }),
+      check(recoveryMissing.body.includes("doesn't exist"), "missing-email recovery renders legacy generic error"),
+      check(recoveryMissingMessages.messages.length === 0, "missing-email recovery sends no mail", { count: recoveryMissingMessages.messages.length }),
+      check(recoveryUnknownMailClear.ok, "MailHog can be cleared before unknown-email API recovery", recoveryUnknownMailClear),
+      check(recoveryUnknown.status === 200, "unknown-email natural recovery API returns HTTP 200", { status: recoveryUnknown.status }),
+      check(recoveryUnknownBody.submitted === true && recoveryUnknownBody.sent === false, "unknown-email natural recovery API is a silent no-op", recoveryUnknownBody),
+      check(recoveryUnknownMessages.messages.length === 0, "unknown-email natural recovery API sends no mail", { count: recoveryUnknownMessages.messages.length }),
+      check(!passwordRecoveryFixtureReady || recoveryPermanentMailClear.ok, "MailHog can be cleared before permanent-email recovery", recoveryPermanentMailClear),
+      check(!passwordRecoveryFixtureReady || recoveryPermanent?.status === 200, "permanent-email legacy recovery returns HTTP 200", { status: recoveryPermanent?.status }),
+      check(!passwordRecoveryFixtureReady || recoveryPermanent.body.includes(`Your password has been sent to ${passwordRecoveryFixture.permanent.name}`), "permanent-email recovery renders legacy success message", { body: recoveryPermanent?.body }),
+      check(!passwordRecoveryFixtureReady || !recoveryPermanent.body.includes(recoveryPermanentPassword), "permanent-email recovery response does not expose the new password"),
+      check(!passwordRecoveryFixtureReady || recoveryPermanentMail.message !== null, "permanent-email recovery sends mail to permanent address", {
+        recipients: recoveryPermanentMail.message ? mailhogRecipients(recoveryPermanentMail.message) : []
+      }),
+      check(!passwordRecoveryFixtureReady || recoveryPermanentMailBody.includes(String(passwordRecoveryFixture.permanent.name)) && recoveryPermanentMailBody.includes("Universe 1"), "permanent recovery email includes player and universe", {
+        body: recoveryPermanentMailBody.slice(0, 200)
+      }),
+      check(!passwordRecoveryFixtureReady || /^[a-z0-9]{8}$/.test(recoveryPermanentPassword), "permanent recovery email contains an 8-character generated password", { recoveryPermanentPassword }),
+      check(!passwordRecoveryFixtureReady || recoveryPermanentOldLogin?.body.valid === false, "old password is rejected after permanent recovery", recoveryPermanentOldLogin?.body ?? {}),
+      check(!passwordRecoveryFixtureReady || recoveryPermanentNewLogin?.response.status === 200, "new permanent recovery password login returns HTTP 200", { status: recoveryPermanentNewLogin?.response.status }),
+      check(!passwordRecoveryFixtureReady || typeof recoveryPermanentNewLogin?.body.session?.redirectTo === "string" && recoveryPermanentNewLogin.body.session.redirectTo.includes("/game/overview"), "new permanent recovery password logs into overview", recoveryPermanentNewLogin?.body ?? {}),
+      check(!passwordRecoveryFixtureReady || recoveryTemporaryMailClear.ok, "MailHog can be cleared before temporary-email recovery", recoveryTemporaryMailClear),
+      check(!passwordRecoveryFixtureReady || recoveryTemporary?.status === 200, "temporary-email legacy recovery returns HTTP 200", { status: recoveryTemporary?.status }),
+      check(!passwordRecoveryFixtureReady || recoveryTemporaryMail.message !== null, "temporary-email recovery sends mail to permanent address", {
+        requested: passwordRecoveryFixture.temporary.temporary_email,
+        recipients: recoveryTemporaryMail.message ? mailhogRecipients(recoveryTemporaryMail.message) : []
+      }),
+      check(!passwordRecoveryFixtureReady || mailhogRecipients(recoveryTemporaryMail.message).some((recipient) => recipient.includes(passwordRecoveryFixture.temporary.email)), "temporary-email recovery targets the permanent email only", {
+        recipients: recoveryTemporaryMail.message ? mailhogRecipients(recoveryTemporaryMail.message) : []
+      }),
+      check(!passwordRecoveryFixtureReady || /^[a-z0-9]{8}$/.test(recoveryTemporaryPassword), "temporary recovery email contains an 8-character generated password", { recoveryTemporaryPassword }),
+      check(!passwordRecoveryFixtureReady || recoveryTemporaryNewLogin?.response.status === 200, "temporary recovery password login returns HTTP 200", { status: recoveryTemporaryNewLogin?.response.status }),
+      check(!passwordRecoveryFixtureReady || typeof recoveryTemporaryNewLogin?.body.session?.redirectTo === "string" && recoveryTemporaryNewLogin.body.session.redirectTo.includes("/game/overview"), "temporary recovery password logs into overview", recoveryTemporaryNewLogin?.body ?? {})
     ]
   }));
 
@@ -287,13 +548,14 @@ try {
   }));
 
   const registrationPassword = "E2E_http123";
+  const registrationCharacter = `NewPilot${runId}`;
   const registrationEmail = `new-pilot-${runId}@example.local`;
   const mailhogClear = await clearMailhog();
   const createdRegistration = await request("/api/public/registration", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      character: `NewPilot${runId}`,
+      character: registrationCharacter,
       password: registrationPassword,
       email: registrationEmail,
       universe: universes[0]?.baseUrl ?? "http://localhost:8888",
@@ -407,6 +669,419 @@ try {
     ]
   }));
 
+  const rotationUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const rotationCharacter = `RotatePilot${runId}`;
+  const rotationPassword = "E2E_http123";
+  const rotationEmail = `rotate-pilot-${runId}@example.local`;
+  const rotationMailClear = await clearMailhog();
+  const rotationRegistration = await request("/api/public/registration", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      character: rotationCharacter,
+      password: rotationPassword,
+      email: rotationEmail,
+      universe: rotationUniverse,
+      agb: true
+    })
+  });
+  const rotationRegistrationBody = parseJSON(rotationRegistration);
+  const rotationWelcomeMail = await waitForMailhogMessage(rotationEmail, "activate your account");
+  const rotationActivationLink = mailhogBody(rotationWelcomeMail.message).match(activationLinkPattern)?.[0] ?? "";
+  const rotationActivationPath = pathFromURL(rotationActivationLink);
+  const rotationActivation = rotationActivationPath
+    ? await request(rotationActivationPath)
+    : { status: 0, headers: {}, body: "" };
+  const rotationFirstLogin = await loginGameUser(rotationCharacter, rotationPassword, rotationUniverse);
+  const rotationFirstSession = await request(`/api/game/session${rotationFirstLogin.search}`, {
+    headers: { Cookie: rotationFirstLogin.cookiePair }
+  });
+  const rotationSecondLogin = await loginGameUser(rotationCharacter, rotationPassword, rotationUniverse);
+  const rotationOldPublicCurrentCookie = await request(`/api/game/session${rotationFirstLogin.search}`, {
+    headers: { Cookie: rotationSecondLogin.cookiePair }
+  });
+  const rotationNewPublicOldCookie = await request(`/api/game/session${rotationSecondLogin.search}`, {
+    headers: { Cookie: rotationFirstLogin.cookiePair }
+  });
+  const rotationSecondSession = await request(`/api/game/session${rotationSecondLogin.search}`, {
+    headers: { Cookie: rotationSecondLogin.cookiePair }
+  });
+  const rotationFirstSessionBody = parseJSON(rotationFirstSession);
+  const rotationOldPublicCurrentCookieBody = parseJSON(rotationOldPublicCurrentCookie);
+  const rotationNewPublicOldCookieBody = parseJSON(rotationNewPublicOldCookie);
+  const rotationSecondSessionBody = parseJSON(rotationSecondSession);
+  cases.push(finalize({
+    case: "go_session_rotation_security_api",
+    checks: [
+      check(rotationMailClear.ok, "MailHog can be cleared before session rotation registration", rotationMailClear),
+      check(rotationRegistration.status === 200, "session rotation fixture registration returns HTTP 200", { status: rotationRegistration.status }),
+      check(rotationRegistrationBody.valid === true && rotationRegistrationBody.created === true, "session rotation fixture account is created", rotationRegistrationBody),
+      check(rotationWelcomeMail.message !== null, "session rotation fixture receives activation mail", {
+        recipients: rotationWelcomeMail.message ? mailhogRecipients(rotationWelcomeMail.message) : []
+      }),
+      check(rotationActivation.status === 302, "session rotation fixture activation redirects after activation", {
+        status: rotationActivation.status,
+        location: rotationActivation.headers.location ?? ""
+      }),
+      check(rotationFirstLogin.response.status === 200, "first login for rotation fixture returns HTTP 200", { status: rotationFirstLogin.response.status }),
+      check(rotationFirstLogin.body.valid === true, "first login for rotation fixture creates a session", rotationFirstLogin.body),
+      check(rotationFirstSession.status === 200, "first session is valid before rotation", { status: rotationFirstSession.status }),
+      check(rotationFirstSessionBody.authenticated === true, "first session authenticates before rotation", rotationFirstSessionBody),
+      check(rotationSecondLogin.response.status === 200, "second login for rotation fixture returns HTTP 200", { status: rotationSecondLogin.response.status }),
+      check(rotationSecondLogin.body.valid === true, "second login for rotation fixture creates a session", rotationSecondLogin.body),
+      check(rotationFirstLogin.search !== rotationSecondLogin.search, "second login rotates the public session token", {
+        first: rotationFirstLogin.search,
+        second: rotationSecondLogin.search
+      }),
+      check(rotationFirstLogin.cookiePair !== rotationSecondLogin.cookiePair, "second login rotates the private session cookie", {
+        firstCookie: rotationFirstLogin.cookiePair,
+        secondCookie: rotationSecondLogin.cookiePair
+      }),
+      check(rotationOldPublicCurrentCookie.status === 401, "old public session is rejected with the current private cookie", {
+        status: rotationOldPublicCurrentCookie.status,
+        body: rotationOldPublicCurrentCookieBody
+      }),
+      check(rotationOldPublicCurrentCookieBody.authenticated === false, "old public/current private pairing is unauthenticated", rotationOldPublicCurrentCookieBody),
+      check(rotationNewPublicOldCookie.status === 401, "new public session is rejected with the old private cookie", {
+        status: rotationNewPublicOldCookie.status,
+        body: rotationNewPublicOldCookieBody
+      }),
+      check(rotationNewPublicOldCookieBody.authenticated === false, "new public/old private pairing is unauthenticated", rotationNewPublicOldCookieBody),
+      check(rotationSecondSession.status === 200, "new public and private session pair remains valid", { status: rotationSecondSession.status }),
+      check(rotationSecondSessionBody.authenticated === true, "new public/private pair authenticates after rotation", rotationSecondSessionBody),
+      check(!rotationSecondSession.body.includes(rotationSecondLogin.cookiePair), "rotated session lookup does not echo the private cookie")
+    ]
+  }));
+
+  const accountSecurityUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const accountSecurityCharacter = `Sec${runId}`;
+  const accountSecurityPassword = "E2E_http123";
+  const accountSecurityNewPassword = "Changed_123";
+  const accountSecurityEmail = `security-pilot-${runId}@example.local`;
+  const accountSecurityNewEmail = `security-pilot-updated-${runId}@example.local`;
+  const accountSecurityMailClear = await clearMailhog();
+  const accountSecurityRegistration = await request("/api/public/registration", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      character: accountSecurityCharacter,
+      password: accountSecurityPassword,
+      email: accountSecurityEmail,
+      universe: accountSecurityUniverse,
+      agb: true
+    })
+  });
+  const accountSecurityRegistrationBody = parseJSON(accountSecurityRegistration);
+  const accountSecurityWelcomeMail = await waitForMailhogMessage(accountSecurityEmail, "activate your account");
+  const accountSecurityActivationLink = mailhogBody(accountSecurityWelcomeMail.message).match(activationLinkPattern)?.[0] ?? "";
+  const accountSecurityActivationPath = pathFromURL(accountSecurityActivationLink);
+  const accountSecurityActivation = accountSecurityActivationPath
+    ? await request(accountSecurityActivationPath)
+    : { status: 0, headers: {}, body: "" };
+  const accountSecurityLogin = await loginGameUser(accountSecurityCharacter, accountSecurityPassword, accountSecurityUniverse);
+  const accountSecurityReady = accountSecurityLogin.body.valid === true && accountSecurityLogin.cookiePair !== "";
+  const accountSecurityHeaders = {
+    "Content-Type": "application/x-www-form-urlencoded",
+    Cookie: accountSecurityLogin.cookiePair
+  };
+  const accountSecurityOptions = accountSecurityReady
+    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
+        headers: { Cookie: accountSecurityLogin.cookiePair }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const accountSecurityOptionsBody = parseJSON(accountSecurityOptions);
+  const accountDeletionQueued = accountSecurityReady
+    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
+        method: "POST",
+        headers: accountSecurityHeaders,
+        body: legacyOptionsForm({
+          db_deaktjava: "on"
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const accountDeletionQueuedBody = parseJSON(accountDeletionQueued);
+  const accountDeletionCleared = accountSecurityReady
+    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
+        method: "POST",
+        headers: accountSecurityHeaders,
+        body: legacyOptionsForm()
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const accountDeletionClearedBody = parseJSON(accountDeletionCleared);
+  const accountVacationEnabled = accountSecurityReady
+    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
+        method: "POST",
+        headers: accountSecurityHeaders,
+        body: legacyOptionsForm({
+          urlaubs_modus: "on"
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const accountVacationEnabledBody = parseJSON(accountVacationEnabled);
+  const accountVacationLocked = accountSecurityReady
+    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
+        method: "POST",
+        headers: accountSecurityHeaders,
+        body: legacyOptionsForm({
+          urlaub_aus: "on"
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const accountVacationLockedBody = parseJSON(accountVacationLocked);
+  const accountPasswordMismatch = accountSecurityReady
+    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
+        method: "POST",
+        headers: accountSecurityHeaders,
+        body: legacyOptionsForm({
+          db_password: accountSecurityPassword,
+          newpass1: "Mismatch_123",
+          newpass2: "Mismatch_124"
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const accountPasswordMismatchBody = parseJSON(accountPasswordMismatch);
+  const accountPasswordSpecial = accountSecurityReady
+    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
+        method: "POST",
+        headers: accountSecurityHeaders,
+        body: legacyOptionsForm({
+          db_password: accountSecurityPassword,
+          newpass1: "invalid!!",
+          newpass2: "invalid!!"
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const accountPasswordSpecialBody = parseJSON(accountPasswordSpecial);
+  const accountPasswordShort = accountSecurityReady
+    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
+        method: "POST",
+        headers: accountSecurityHeaders,
+        body: legacyOptionsForm({
+          db_password: accountSecurityPassword,
+          newpass1: "short7",
+          newpass2: "short7"
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const accountPasswordShortBody = parseJSON(accountPasswordShort);
+  const accountPasswordWrongOld = accountSecurityReady
+    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
+        method: "POST",
+        headers: accountSecurityHeaders,
+        body: legacyOptionsForm({
+          db_password: "wrongpass",
+          newpass1: accountSecurityNewPassword,
+          newpass2: accountSecurityNewPassword
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const accountPasswordWrongOldBody = parseJSON(accountPasswordWrongOld);
+  const accountEmailMissingPassword = accountSecurityReady
+    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
+        method: "POST",
+        headers: accountSecurityHeaders,
+        body: legacyOptionsForm({
+          db_email: accountSecurityNewEmail
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const accountEmailMissingPasswordBody = parseJSON(accountEmailMissingPassword);
+  const accountEmailInvalid = accountSecurityReady
+    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
+        method: "POST",
+        headers: accountSecurityHeaders,
+        body: legacyOptionsForm({
+          db_password: accountSecurityPassword,
+          db_email: "bad address"
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const accountEmailInvalidBody = parseJSON(accountEmailInvalid);
+  const accountEmailUsed = accountSecurityReady
+    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
+        method: "POST",
+        headers: accountSecurityHeaders,
+        body: legacyOptionsForm({
+          db_password: accountSecurityPassword,
+          db_email: registrationEmail
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const accountEmailUsedBody = parseJSON(accountEmailUsed);
+  const accountEmailChanged = accountSecurityReady
+    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
+        method: "POST",
+        headers: accountSecurityHeaders,
+        body: legacyOptionsForm({
+          db_password: accountSecurityPassword,
+          db_email: accountSecurityNewEmail
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const accountEmailChangedBody = parseJSON(accountEmailChanged);
+  const accountPasswordChanged = accountSecurityReady
+    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
+        method: "POST",
+        headers: accountSecurityHeaders,
+        body: legacyOptionsForm({
+          db_password: accountSecurityPassword,
+          newpass1: accountSecurityNewPassword,
+          newpass2: accountSecurityNewPassword
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const accountPasswordChangedBody = parseJSON(accountPasswordChanged);
+  const accountOldSessionAfterPasswordChange = accountSecurityReady
+    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
+        headers: { Cookie: accountSecurityLogin.cookiePair }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const accountOldSessionAfterPasswordChangeBody = parseJSON(accountOldSessionAfterPasswordChange);
+  const accountOldPasswordLogin = accountSecurityReady
+    ? await loginGameUser(accountSecurityCharacter, accountSecurityPassword, accountSecurityUniverse)
+    : { response: { status: 0 }, body: {}, cookiePair: "", search: "" };
+  const accountNewPasswordLogin = accountSecurityReady
+    ? await loginGameUser(accountSecurityCharacter, accountSecurityNewPassword, accountSecurityUniverse)
+    : { response: { status: 0 }, body: {}, cookiePair: "", search: "" };
+  cases.push(finalize({
+    case: "go_account_security_options_legacy_form",
+    checks: [
+      check(accountSecurityMailClear.ok, "MailHog can be cleared before account-security registration", accountSecurityMailClear),
+      check(accountSecurityRegistration.status === 200, "account-security fixture registration returns HTTP 200", { status: accountSecurityRegistration.status }),
+      check(accountSecurityRegistrationBody.valid === true && accountSecurityRegistrationBody.created === true, "account-security fixture account is created", accountSecurityRegistrationBody),
+      check(accountSecurityWelcomeMail.message !== null, "account-security fixture receives activation mail", {
+        recipients: accountSecurityWelcomeMail.message ? mailhogRecipients(accountSecurityWelcomeMail.message) : []
+      }),
+      check(accountSecurityActivation.status === 302, "account-security fixture activation redirects after activation", {
+        status: accountSecurityActivation.status,
+        location: accountSecurityActivation.headers.location ?? ""
+      }),
+      check(accountSecurityLogin.response.status === 200, "account-security login returns HTTP 200", { status: accountSecurityLogin.response.status }),
+      check(accountSecurityLogin.body.valid === true, "account-security login creates a session", accountSecurityLogin.body),
+      check(accountSecurityOptions.status === 200, "account-security options page returns HTTP 200", { status: accountSecurityOptions.status }),
+      check(accountSecurityOptionsBody.authenticated === true, "account-security options page authenticates", accountSecurityOptionsBody),
+      check(accountDeletionQueuedBody.actionIssue?.code === "account_deletion_queued", "legacy options account deletion can be queued", accountDeletionQueuedBody.actionIssue ?? {}),
+      check(accountDeletionQueuedBody.options?.account?.deletionQueued === true && Number(accountDeletionQueuedBody.options?.account?.deletionAt ?? 0) > 0, "legacy options account deletion stores a future deadline", accountDeletionQueuedBody.options?.account ?? {}),
+      check(accountDeletionClearedBody.actionIssue?.code === "account_deletion_cleared", "legacy options account deletion can be cancelled", accountDeletionClearedBody.actionIssue ?? {}),
+      check(accountDeletionClearedBody.options?.account?.deletionQueued === false, "legacy options account deletion cancel clears the flag", accountDeletionClearedBody.options?.account ?? {}),
+      check(accountVacationEnabledBody.actionIssue?.code === "vacation_enabled", "legacy options vacation mode can be enabled", accountVacationEnabledBody.actionIssue ?? {}),
+      check(accountVacationEnabledBody.options?.account?.vacation === true && Number(accountVacationEnabledBody.options?.account?.vacationUntil ?? 0) > 0, "legacy options vacation mode stores a minimum deadline", accountVacationEnabledBody.options?.account ?? {}),
+      check(accountVacationLockedBody.actionIssue?.code === "vacation_locked", "legacy options vacation mode cannot be disabled before the minimum", accountVacationLockedBody.actionIssue ?? {}),
+      check(accountVacationLockedBody.options?.account?.vacation === true, "legacy options locked vacation mode remains active", accountVacationLockedBody.options?.account ?? {}),
+      check(accountPasswordMismatchBody.actionIssue?.code === "password_mismatch", "legacy options password mismatch is rejected", accountPasswordMismatchBody.actionIssue ?? {}),
+      check(accountPasswordSpecialBody.actionIssue?.code === "password_special", "legacy options password special characters are rejected", accountPasswordSpecialBody.actionIssue ?? {}),
+      check(accountPasswordShortBody.actionIssue?.code === "password_too_short", "legacy options short password is rejected", accountPasswordShortBody.actionIssue ?? {}),
+      check(accountPasswordWrongOldBody.actionIssue?.code === "password_wrong_old", "legacy options wrong old password is rejected", accountPasswordWrongOldBody.actionIssue ?? {}),
+      check(accountEmailMissingPasswordBody.actionIssue?.code === "email_need_password", "legacy options email change requires the current password", accountEmailMissingPasswordBody.actionIssue ?? {}),
+      check(accountEmailInvalidBody.actionIssue?.code === "email_invalid", "legacy options invalid email is rejected", accountEmailInvalidBody.actionIssue ?? {}),
+      check(accountEmailUsedBody.actionIssue?.code === "email_used", "legacy options duplicate email is rejected", accountEmailUsedBody.actionIssue ?? {}),
+      check(accountEmailChangedBody.actionIssue?.code === "email_changed", "legacy options email change queues the email update", accountEmailChangedBody.actionIssue ?? {}),
+      check(accountEmailChangedBody.options?.user?.email === accountSecurityNewEmail, "legacy options email change stores the pending email", accountEmailChangedBody.options?.user ?? {}),
+      check(accountEmailChangedBody.options?.user?.validated === false, "legacy options email change marks the account unvalidated", accountEmailChangedBody.options?.user ?? {}),
+      check(accountPasswordChangedBody.actionIssue?.code === "password_changed", "legacy options valid password change succeeds", accountPasswordChangedBody.actionIssue ?? {}),
+      check(accountOldSessionAfterPasswordChange.status === 401, "legacy options password change invalidates the old session", {
+        status: accountOldSessionAfterPasswordChange.status,
+        body: accountOldSessionAfterPasswordChangeBody
+      }),
+      check(accountOldPasswordLogin.body.valid === false, "old account-security password cannot log in after change", accountOldPasswordLogin.body),
+      check(accountNewPasswordLogin.response.status === 200, "new account-security password login returns HTTP 200", { status: accountNewPasswordLogin.response.status }),
+      check(accountNewPasswordLogin.body.valid === true, "new account-security password can log in after change", accountNewPasswordLogin.body),
+      check(!accountPasswordChanged.body.includes(accountSecurityNewPassword), "account-security options response does not echo the new password"),
+      check(!accountNewPasswordLogin.body?.session?.redirectTo?.includes(accountNewPasswordLogin.cookiePair), "account-security login redirect does not echo the private cookie")
+    ]
+  }));
+
+  const legacyRegistrationUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const legacyRegistrationGet = await request("/game/reg/newredirect.php");
+  const legacyRegistrationMissingPassword = await request("/game/reg/newredirect.php", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      character: `LegacyBad${runId}`,
+      email: `legacy-bad-${runId}@example.local`,
+      universe: legacyRegistrationUniverse,
+      agb: "on"
+    }).toString()
+  });
+  const legacyRegistrationTermsOnly = await request("/game/reg/newredirect.php", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      character: `LegacyTerms${runId}`,
+      password: "E2E_http123",
+      email: `legacy-terms-${runId}@example.local`,
+      universe: legacyRegistrationUniverse
+    }).toString()
+  });
+  const legacyRegistrationPassword = "E2E_http123";
+  const legacyRegistrationEmail = `legacy-form-${runId}@example.local`;
+  const legacyRegistrationMailClear = await clearMailhog();
+  const legacyRegistrationCreate = await request("/game/reg/newredirect.php", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      character: `LegacyForm${runId}`,
+      password: legacyRegistrationPassword,
+      email: legacyRegistrationEmail,
+      universe: legacyRegistrationUniverse,
+      agb: "on"
+    }).toString()
+  });
+  const legacyRegistrationCookie = legacyRegistrationCreate.headers["set-cookie"] ?? "";
+  const legacyRegistrationCookiePair = legacyRegistrationCookie.split(";")[0] ?? "";
+  let legacyRegistrationSession = "";
+  try {
+    legacyRegistrationSession = new URL(legacyRegistrationCreate.headers.location ?? "", baseUrl).searchParams.get("session") ?? "";
+  } catch {
+    legacyRegistrationSession = "";
+  }
+  const legacyRegistrationOverview = legacyRegistrationSession
+    ? await request(`/api/game/overview?session=${encodeURIComponent(legacyRegistrationSession)}`, {
+        headers: { Cookie: legacyRegistrationCookiePair }
+      })
+    : { status: 0, headers: {}, body: "" };
+  const legacyRegistrationOverviewBody = parseJSON(legacyRegistrationOverview);
+  const legacyRegistrationWelcomeMail = await waitForMailhogMessage(legacyRegistrationEmail, "activate your account");
+  const legacyRegistrationWelcomeBody = mailhogBody(legacyRegistrationWelcomeMail.message);
+  cases.push(finalize({
+    case: "go_legacy_registration_newredirect_route",
+    checks: [
+      check(legacyRegistrationGet.status === 200, "legacy newredirect GET returns HTTP 200", { status: legacyRegistrationGet.status }),
+      check(legacyRegistrationGet.body.includes("url=new.php"), "legacy newredirect GET opens the legacy registration form"),
+      check(legacyRegistrationMissingPassword.status === 200, "legacy newredirect missing password returns HTTP 200", { status: legacyRegistrationMissingPassword.status }),
+      check(legacyRegistrationMissingPassword.body.includes("register.php?") && legacyRegistrationMissingPassword.body.includes("errorCode=107"), "legacy newredirect missing password maps to error 107", {
+        body: legacyRegistrationMissingPassword.body
+      }),
+      check(legacyRegistrationMissingPassword.body.includes("agb=1"), "legacy newredirect preserves accepted terms on validation redirect", {
+        body: legacyRegistrationMissingPassword.body
+      }),
+      check(legacyRegistrationTermsOnly.status === 200, "legacy newredirect missing terms returns HTTP 200", { status: legacyRegistrationTermsOnly.status }),
+      check(legacyRegistrationTermsOnly.body.includes("errorCode=0") && legacyRegistrationTermsOnly.body.includes("agb=0"), "legacy newredirect preserves PHP terms-only redirect semantics", {
+        body: legacyRegistrationTermsOnly.body
+      }),
+      check(legacyRegistrationMailClear.ok, "MailHog can be cleared before legacy newredirect registration", legacyRegistrationMailClear),
+      check(legacyRegistrationCreate.status === 302, "legacy newredirect valid registration redirects after login", {
+        status: legacyRegistrationCreate.status,
+        location: legacyRegistrationCreate.headers.location ?? ""
+      }),
+      check(typeof legacyRegistrationCreate.headers.location === "string" && legacyRegistrationCreate.headers.location.includes("/game/overview?"), "legacy newredirect registration redirects to overview", {
+        location: legacyRegistrationCreate.headers.location ?? ""
+      }),
+      check(/^prsess_\d+_1=/.test(legacyRegistrationCookiePair), "legacy newredirect registration sets a private session cookie", {
+        cookie: legacyRegistrationCookiePair
+      }),
+      check(!legacyRegistrationCreate.body.includes(legacyRegistrationPassword), "legacy newredirect registration response does not echo password"),
+      check(legacyRegistrationOverview.status === 200, "legacy newredirect registration session can read game overview", {
+        status: legacyRegistrationOverview.status
+      }),
+      check(legacyRegistrationOverviewBody.authenticated === true, "legacy newredirect registration overview is authenticated", legacyRegistrationOverviewBody),
+      check(legacyRegistrationWelcomeMail.message !== null, "legacy newredirect registration sends welcome mail", {
+        recipients: legacyRegistrationWelcomeMail.message ? mailhogRecipients(legacyRegistrationWelcomeMail.message) : []
+      }),
+      check(legacyRegistrationWelcomeBody.includes(`Password: ${legacyRegistrationPassword}`), "legacy newredirect welcome mail keeps the legacy password line")
+    ]
+  }));
+
   const validLogin = await request("/api/public/login/validate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -478,6 +1153,16 @@ try {
   } catch {
     gameSessionWithoutCookieBody = {};
   }
+  const sessionCookiePrivateValue = sessionCookiePair.includes("=")
+    ? sessionCookiePair.slice(sessionCookiePair.indexOf("=") + 1)
+    : "";
+  const fakeUniverseCookiePair = loginPlayerId > 0
+    ? `prsess_${loginPlayerId}_9901=${sessionCookiePrivateValue}`
+    : sessionCookiePair;
+  const gameSessionFakeUniverseCookie = await request(`/api/game/session${sessionSearch}`, {
+    headers: { Cookie: fakeUniverseCookiePair }
+  });
+  const gameSessionFakeUniverseCookieBody = parseJSON(gameSessionFakeUniverseCookie);
 
   const gameOverview = await request(`/api/game/overview${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -1102,6 +1787,8 @@ try {
     gameBuddyWithoutCookieBody = {};
   }
 
+  const targetLogin = await loginGameUser("gophalaxtarget", loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888");
+
   const gameMessages = await request(`/api/game/messages${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -1176,6 +1863,30 @@ try {
   } catch {
     gameReportWithoutCookieBody = {};
   }
+  const gameReportForeignAccess = sentReportID > 0 && targetLogin.cookiePair
+    ? await request(`/api/game/report${targetLogin.search}&bericht=${sentReportID}`, {
+        headers: { Cookie: targetLogin.cookiePair }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const gameReportForeignAccessBody = parseJSON(gameReportForeignAccess);
+  const gameMessagesForeignDelete = sentReportID > 0 && targetLogin.cookiePair
+    ? await request(`/api/game/messages${targetLogin.search}`, {
+        method: "POST",
+        headers: { Cookie: targetLogin.cookiePair, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete",
+          deleteMode: "deletemarked",
+          messageIds: [sentReportID]
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const gameMessagesForeignDeleteBody = parseJSON(gameMessagesForeignDelete);
+  const gameReportAfterForeignDelete = sentReportID > 0
+    ? await request(`/api/game/report${sessionSearch}&bericht=${sentReportID}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const gameReportAfterForeignDeleteBody = parseJSON(gameReportAfterForeignDelete);
 
   const gameMessagesWithoutCookie = await request(`/api/game/messages${sessionSearch}`);
   let gameMessagesWithoutCookieBody = {};
@@ -1469,7 +2180,6 @@ try {
   }));
   const gameAllianceWithoutCookie = await request(`/api/game/alliance${sessionSearch}`);
   const gameAllianceWithoutCookieBody = parseJSON(gameAllianceWithoutCookie);
-  const targetLogin = await loginGameUser("gophalaxtarget", loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888");
   const allianceFounderLogin = operatorLogin ?? {
     response: sessionLogin,
     search: sessionSearch,
@@ -1659,6 +2369,13 @@ try {
       check(!gameSession.body.includes(sessionCookiePair), "game session lookup response does not echo private cookie"),
       check(gameSessionWithoutCookie.status === 401, "game session lookup rejects missing private cookie", { status: gameSessionWithoutCookie.status }),
       check(gameSessionWithoutCookieBody.authenticated === false, "missing private cookie is unauthenticated", gameSessionWithoutCookieBody),
+      check(gameSessionFakeUniverseCookie.status === 401, "game session lookup rejects a private cookie from another universe suffix", {
+        status: gameSessionFakeUniverseCookie.status,
+        cookie: fakeUniverseCookiePair,
+        body: gameSessionFakeUniverseCookieBody
+      }),
+      check(gameSessionFakeUniverseCookieBody.authenticated === false, "fake-universe private cookie is unauthenticated", gameSessionFakeUniverseCookieBody),
+      check(gameSessionFakeUniverseCookieBody.issues?.some((issue) => issue.code === "private_session_invalid"), "fake-universe private cookie reports a private session issue", gameSessionFakeUniverseCookieBody),
       check(gameOverview.status === 200, "game overview returns HTTP 200 with private cookie", { status: gameOverview.status }),
       check(gameOverviewBody.authenticated === true, "game overview authenticates the login session", gameOverviewBody),
       check(
@@ -1998,6 +2715,22 @@ try {
         status: gameReportWithoutCookie.status
       }),
       check(gameReportWithoutCookieBody.authenticated === false, "game report missing private cookie is unauthenticated", gameReportWithoutCookieBody),
+      check(gameReportForeignAccess.status === 200, "foreign user report lookup returns HTTP 200 without leaking content", {
+        status: gameReportForeignAccess.status
+      }),
+      check(gameReportForeignAccessBody.authenticated === true, "foreign report lookup still authenticates the requester", gameReportForeignAccessBody),
+      check(gameReportForeignAccessBody.report?.id === sentReportID, "foreign report lookup maps the requested bericht id", gameReportForeignAccessBody),
+      check(gameReportForeignAccessBody.report?.allowed === false, "foreign user cannot access another player's report body", gameReportForeignAccessBody.report ?? {}),
+      check(String(gameReportForeignAccessBody.report?.text ?? "") === "", "foreign report lookup strips protected text", gameReportForeignAccessBody.report ?? {}),
+      check(gameMessagesForeignDelete.status === 200, "foreign message delete attempt returns HTTP 200 as a scoped no-op", {
+        status: gameMessagesForeignDelete.status
+      }),
+      check(gameMessagesForeignDeleteBody.authenticated === true, "foreign message delete attempt authenticates only the requester", gameMessagesForeignDeleteBody),
+      check(gameReportAfterForeignDelete.status === 200, "owner can reload report after foreign delete attempt", {
+        status: gameReportAfterForeignDelete.status
+      }),
+      check(gameReportAfterForeignDeleteBody.report?.allowed === true, "foreign delete attempt does not remove owner report access", gameReportAfterForeignDeleteBody.report ?? {}),
+      check(String(gameReportAfterForeignDeleteBody.report?.text ?? "").includes("Go migration message smoke"), "foreign delete attempt does not delete owner message text", gameReportAfterForeignDeleteBody.report ?? {}),
       check(!gameMessages.body.includes(sessionCookiePair), "game messages response does not echo private cookie"),
       check(gameMessagesWithoutCookie.status === 401, "game messages rejects missing private cookie", { status: gameMessagesWithoutCookie.status }),
       check(gameMessagesWithoutCookieBody.authenticated === false, "game messages missing private cookie is unauthenticated", gameMessagesWithoutCookieBody),
@@ -2424,7 +3157,7 @@ try {
 
   const js = await request("/assets/main.js");
   const css = await request("/assets/main.css");
-  const legacyGameOverviewSource = await readFile(new URL("../../frontend/src/LegacyGameOverview.tsx", import.meta.url), "utf8");
+  const legacyGameOverviewSource = await Bun.file(new URL("../../frontend/src/LegacyGameOverview.tsx", import.meta.url)).text();
   const statisticsTooltipSource = legacyGameOverviewSource.match(/legacy-statistics-tooltip[\s\S]{0,500}/)?.[0] ?? "";
   cases.push(finalize({
     case: "go_react_assets",
