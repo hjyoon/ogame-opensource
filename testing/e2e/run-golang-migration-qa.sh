@@ -62,6 +62,7 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
         printf 'Authenticated visual E2E (%s)\n' "$browser"
         OGAME_PLAYWRIGHT_BROWSER="$browser" \
         OGAME_GO_BASE_URL="$GO_BASE_URL" \
+        OGAME_AUTH_VISUAL_OUTPUT_DIR="$ROOT_DIR/.tmp/playwright-auth-visual/auth/$browser" \
         OGAME_AUTH_VISUAL_ENFORCE_DIFF="${OGAME_AUTH_VISUAL_ENFORCE_DIFF:-1}" \
         OGAME_AUTH_VISUAL_ENFORCE_LAYOUT="${OGAME_AUTH_VISUAL_ENFORCE_LAYOUT:-1}" \
         OGAME_AUTH_VISUAL_MAX_DIFF_RATIO="${OGAME_AUTH_VISUAL_MAX_DIFF_RATIO:-0}" \
@@ -77,6 +78,7 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
         printf 'Alliance visual E2E (%s)\n' "$browser"
         OGAME_PLAYWRIGHT_BROWSER="$browser" \
         OGAME_GO_BASE_URL="$GO_BASE_URL" \
+        OGAME_AUTH_VISUAL_OUTPUT_DIR="$ROOT_DIR/.tmp/playwright-auth-visual/alliance/$browser" \
         OGAME_AUTH_VISUAL_ENFORCE_DIFF="${OGAME_AUTH_VISUAL_ENFORCE_DIFF:-1}" \
         OGAME_AUTH_VISUAL_ENFORCE_LAYOUT="${OGAME_AUTH_VISUAL_ENFORCE_LAYOUT:-1}" \
         OGAME_AUTH_VISUAL_MAX_DIFF_RATIO="${OGAME_AUTH_VISUAL_MAX_DIFF_RATIO:-0}" \
@@ -100,4 +102,8 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-fleet-all-cases-e2e.sh"
     fi
   fi
+fi
+
+if command -v bun >/dev/null 2>&1; then
+  OGAME_GO_BASE_URL="$GO_BASE_URL" bun "$SCRIPT_DIR/golang-migration-qa-summary.mjs"
 fi

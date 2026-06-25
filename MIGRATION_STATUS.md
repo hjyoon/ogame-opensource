@@ -1,6 +1,6 @@
 # Migration Status
 
-Updated: 2026-06-24 KST, branch `hjyoon/golang`.
+Updated: 2026-06-25 KST, branch `hjyoon/golang`.
 
 React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split details when needed.
 
@@ -32,7 +32,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 ## Verified QA
 
 - Final equivalence on port 8895 passed with PHP E2E included.
-- Wrapper covers legacy Docker E2E, Bun build/check/test, Go tests, 97% coverage, Docker smoke, user-type QA, auth/Alliance/Empire visuals, and overview/fleet visuals.
+- Wrapper covers legacy Docker E2E, Bun build/check/test, Go tests, 97% coverage, Docker smoke, user-type QA, visuals, and final summary.
 - User-type QA covers regular, operator, admin, unvalidated, vacation, banned, deletion-queued, and options vacation/password/email mutations.
 - Resources actions pass Chromium/Firefox: percent save, DB `prod*`, selected values, totals, and visuals.
 - Research/shipyard/defense, galaxy, admin pages, and Empire Commander/redirect pass Chromium/Firefox exact 0px; queues cover submit/partial/complete DB.
@@ -47,4 +47,3 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 - Extend deep-state visuals for pages whose base views already pass.
 - Add Go compatibility checks for migrated legacy E2E flows as they stabilize.
 - Finish alliance rank mutations, deep members/circular management, admin recovery/permissions/submodes, and mission restrictions.
-- Add final QA report aggregator for Go/Playwright artifacts to match legacy `summary.md/json`.

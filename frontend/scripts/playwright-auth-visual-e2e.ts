@@ -70,7 +70,7 @@ type CaseResult = {
 
 const rootDir = resolve(import.meta.dir, "../..");
 const browserName = browserEnv("OGAME_PLAYWRIGHT_BROWSER", "chromium");
-const outputDir = resolve(rootDir, ".tmp/playwright-auth-visual", browserName);
+const outputDir = authVisualOutputDir(process.env.OGAME_AUTH_VISUAL_OUTPUT_DIR, browserName);
 const screenshotDir = join(outputDir, "screenshots");
 const legacyBaseURL = trimTrailingSlash(process.env.OGAME_LEGACY_BASE_URL ?? "http://127.0.0.1:8888");
 const migratedBaseURL = trimTrailingSlash(process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890");
@@ -803,6 +803,13 @@ function parsePageFilter(value: string): string[] {
     .split(",")
     .map((name) => name.trim())
     .filter(Boolean);
+}
+
+function authVisualOutputDir(value: string | undefined, browser: string): string {
+  if (!value) {
+    return resolve(rootDir, ".tmp/playwright-auth-visual", browser);
+  }
+  return resolve(rootDir, value);
 }
 
 function selectPageSpecs(specs: AuthPageSpec[], filter: string[]): AuthPageSpec[] {

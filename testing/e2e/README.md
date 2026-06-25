@@ -47,6 +47,7 @@ This wrapper runs:
 - Go compatibility smoke and user-type API QA
 - Chromium/Firefox Playwright CSR and visual equivalence checks
 - overview/fleet deep visual and click-contract checks
+- final `.tmp/golang-migration-qa-summary.{json,md}` aggregation
 
 Do not set `OGAME_RUN_LEGACY_E2E=0` for final validation. It is only for local smoke work while iterating on frontend/backend code.
 
@@ -60,7 +61,7 @@ Default final visual checks enforce exact parity where the scripts support it:
 - overview all-cases event surface and clicks
 - fleet continue and fleet all-cases dispatch previews
 
-Reports are written under `.tmp/playwright-*`. Treat old `.tmp` reports as stale unless they were produced by the current run.
+Reports are written under `.tmp/playwright-*`, plus `.tmp/golang-migration-qa-summary.{json,md}`. Treat old `.tmp` reports as stale unless produced by the current run.
 
 ## Coverage Index
 
