@@ -289,6 +289,10 @@ try {
     Number(adminOperationsFixture.report_id ?? 0) > 0 &&
     String(adminOperationsFixture.token ?? "") !== "" &&
     Number(adminOperationsFixture.operator_player_id ?? 0) > 0;
+  const adminAuditFixture = smokeFixture?.admin_audit ?? {};
+  const adminAuditReady =
+    String(adminAuditFixture.token ?? "") !== "" &&
+    Number(adminAuditFixture.target_player_id ?? 0) > 0;
   const feedFixture = smokeFixture?.feed ?? {};
   const feedFixtureReady =
     typeof feedFixture.rss_feed_id === "string" &&
@@ -2332,6 +2336,37 @@ try {
     });
     return { mode, response, body: parseJSON(response) };
   }));
+  const adminAuditToolModes = ["UserLogs", "Debug", "Errors", "Browse", "Logins", "Fleetlogs", "Bots", "BotEdit", "Mods", "Checksum", "DB"];
+  const regularAdminAuditToolDenials = await Promise.all(adminAuditToolModes.map(async (mode) => {
+    const response = await request(`/api/game/admin${withQueryParam(targetLogin.search, "mode", mode)}`, {
+      headers: { Cookie: targetLogin.cookiePair }
+    });
+    return { mode, response, body: parseJSON(response) };
+  }));
+  const adminAuditUserLogs = adminAuditReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "UserLogs")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminAuditUserLogsBody = adminAuditUserLogs ? parseJSON(adminAuditUserLogs) : {};
+  const adminAuditDebug = adminAuditReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Debug")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminAuditDebugBody = adminAuditDebug ? parseJSON(adminAuditDebug) : {};
+  const adminAuditErrors = adminAuditReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Errors")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminAuditErrorsBody = adminAuditErrors ? parseJSON(adminAuditErrors) : {};
+  const adminToolModeResponses = await Promise.all(["Bots", "BotEdit", "Mods", "Checksum", "DB"].map(async (mode) => {
+    const response = await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", mode)}`, {
+      headers: { Cookie: sessionCookiePair }
+    });
+    return { mode, response, body: parseJSON(response) };
+  }));
   const operatorLogin = adminQueueFixtureReady || adminFleetlogsFixtureReady || adminOperationsReady
     ? await loginGameUser("gooperator", loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
     : null;
@@ -3478,6 +3513,15 @@ try {
         String(row.text ?? "").includes(String(adminOperationsFixture.token ?? ""))
       )
     : undefined;
+  const adminAuditUserLogMarker = Array.isArray(adminAuditUserLogsBody.admin?.userLogRows)
+    ? adminAuditUserLogsBody.admin.userLogRows.find((row) => String(row.text ?? "").includes(String(adminAuditFixture.token ?? "")))
+    : undefined;
+  const adminAuditDebugMarker = Array.isArray(adminAuditDebugBody.admin?.messageRows)
+    ? adminAuditDebugBody.admin.messageRows.find((row) => String(row.text ?? "").includes(String(adminAuditFixture.token ?? "")))
+    : undefined;
+  const adminAuditErrorMarker = Array.isArray(adminAuditErrorsBody.admin?.messageRows)
+    ? adminAuditErrorsBody.admin.messageRows.find((row) => String(row.text ?? "").includes(String(adminAuditFixture.token ?? "")))
+    : undefined;
   cases.push(finalize({
     case: "go_admin_operations_broadcast_reports_api",
     checks: [
@@ -3540,6 +3584,49 @@ try {
       check(item.body.admin?.mode === item.mode, `regular user ${item.mode} admin request resolves legacy mode`, item.body.admin ?? {}),
       check(item.body.actionIssue?.code === "access_denied", `regular user ${item.mode} admin request is denied like legacy`, item.body.actionIssue ?? {})
     ])
+  }));
+
+  cases.push(finalize({
+    case: "go_admin_audit_tool_modes_api",
+    checks: [
+      check(!smokeFixtureFile || adminAuditReady, "go smoke fixture exposes admin audit markers", {
+        smokeFixtureFile,
+        adminAuditFixture
+      }),
+      ...regularAdminAuditToolDenials.flatMap((item) => [
+        check(item.response.status === 200, `regular user ${item.mode} audit/tool request returns HTTP 200`, {
+          status: item.response.status
+        }),
+        check(item.body.actionIssue?.code === "access_denied", `regular user ${item.mode} audit/tool request is denied like legacy`, item.body.actionIssue ?? {})
+      ]),
+      check(!adminAuditReady || adminAuditUserLogs?.status === 200, "admin UserLogs GET returns HTTP 200", {
+        status: adminAuditUserLogs?.status
+      }),
+      check(!adminAuditReady || adminAuditUserLogsBody.admin?.mode === "UserLogs", "admin UserLogs resolves legacy mode", adminAuditUserLogsBody.admin ?? {}),
+      check(!adminAuditReady || adminAuditUserLogMarker !== undefined, "admin UserLogs renders the seeded audit marker", {
+        adminAuditUserLogMarker
+      }),
+      check(!adminAuditReady || adminAuditDebug?.status === 200, "admin Debug GET returns HTTP 200", {
+        status: adminAuditDebug?.status
+      }),
+      check(!adminAuditReady || adminAuditDebugMarker !== undefined, "admin Debug renders the seeded debug marker", {
+        adminAuditDebugMarker
+      }),
+      check(!adminAuditReady || adminAuditErrors?.status === 200, "admin Errors GET returns HTTP 200", {
+        status: adminAuditErrors?.status
+      }),
+      check(!adminAuditReady || adminAuditErrorMarker !== undefined, "admin Errors renders the seeded error marker", {
+        adminAuditErrorMarker
+      }),
+      ...adminToolModeResponses.flatMap((item) => [
+        check(item.response.status === 200, `admin ${item.mode} tool request returns HTTP 200`, {
+          status: item.response.status
+        }),
+        check(item.body.authenticated === true, `admin ${item.mode} tool request authenticates`, item.body),
+        check(item.body.admin?.mode === item.mode, `admin ${item.mode} tool request resolves legacy mode`, item.body.admin ?? {}),
+        check(item.body.actionIssue === undefined, `admin ${item.mode} tool request is not denied`, item.body.actionIssue ?? {})
+      ])
+    ]
   }));
 
   cases.push(finalize({

@@ -414,6 +414,41 @@ function smoke_prepare_admin_operations_fixture(array $operator, array $target):
     );
 }
 
+function smoke_prepare_admin_audit_fixture(array $target): array
+{
+    global $db_prefix;
+
+    $targetId = (int)$target['player_id'];
+    $token = 'Go smoke admin audit ' . substr(hash('sha256', (string)microtime(true)), 0, 10);
+    dbquery("DELETE FROM {$db_prefix}userlogs WHERE owner_id={$targetId} AND (type='GO_SMOKE_AUDIT' OR text LIKE 'Go smoke admin audit%')");
+    dbquery("DELETE FROM {$db_prefix}debug WHERE text LIKE 'Go smoke admin audit%' OR url LIKE '/go-smoke/audit/%'");
+    dbquery("DELETE FROM {$db_prefix}errors WHERE text LIKE 'Go smoke admin audit%' OR url LIKE '/go-smoke/audit/%'");
+
+    $now = time();
+    UserLog($targetId, 'GO_SMOKE_AUDIT', $token . ' user log marker', $now);
+    AddDBRow(array(
+        'owner_id' => $targetId,
+        'ip' => '127.0.0.1',
+        'agent' => 'go-smoke',
+        'url' => '/go-smoke/audit/' . $token,
+        'text' => $token . ' debug marker',
+        'date' => $now,
+    ), 'debug');
+    AddDBRow(array(
+        'owner_id' => $targetId,
+        'ip' => '127.0.0.1',
+        'agent' => 'go-smoke',
+        'url' => '/go-smoke/audit/' . $token,
+        'text' => $token . ' error marker',
+        'date' => $now,
+    ), 'errors');
+
+    return array(
+        'token' => $token,
+        'target_player_id' => $targetId,
+    );
+}
+
 function smoke_set_fleet_restriction_user_state(array $user, int $score, array $options = array()): void
 {
     global $db_prefix, $resmap;
@@ -519,6 +554,7 @@ $recallFleetQueueTaskId = smoke_fleet_queue_task_id($recallFleetId);
 $feedFixture = smoke_prepare_feed_fixture($login, $operator, $target);
 $passwordRecoveryFixture = smoke_prepare_password_recovery_fixture('E2E_reset123');
 $adminOperationsFixture = smoke_prepare_admin_operations_fixture($operator, $target);
+$adminAuditFixture = smoke_prepare_admin_audit_fixture($target);
 $fleetRestrictionFixture = smoke_prepare_fleet_restriction_fixture($password, $home);
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
@@ -550,5 +586,6 @@ echo json_encode(array(
     'feed' => $feedFixture,
     'password_recovery' => $passwordRecoveryFixture,
     'admin_operations' => $adminOperationsFixture,
+    'admin_audit' => $adminAuditFixture,
     'fleet_restrictions' => $fleetRestrictionFixture,
 ), JSON_UNESCAPED_SLASHES) . PHP_EOL;
