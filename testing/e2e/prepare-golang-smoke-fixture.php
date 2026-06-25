@@ -158,17 +158,42 @@ function smoke_cleanup_alliances(array $userIds): void
 
 function smoke_find_empty_position(array $near): array
 {
+    $positions = smoke_find_empty_positions($near, 1);
+    return $positions[0];
+}
+
+function smoke_find_empty_positions(array $near, int $count): array
+{
     $g = (int)$near['g'];
     $system = (int)$near['s'];
+    $positions = array();
     for ($p = 1; $p <= 15; $p++) {
         if ($p === (int)$near['p']) {
             continue;
         }
         if (!HasPlanet($g, $system, $p)) {
-            return array($g, $system, $p);
+            $positions[] = array($g, $system, $p);
+            if (count($positions) >= $count) {
+                return $positions;
+            }
         }
     }
-    throw new RuntimeException('No empty same-system phalanx fixture position found.');
+    for ($scanG = 1; $scanG <= (int)$GLOBALS['GlobalUni']['galaxies']; $scanG++) {
+        for ($scanS = 1; $scanS <= (int)$GLOBALS['GlobalUni']['systems']; $scanS++) {
+            if ($scanG === $g && $scanS === $system) {
+                continue;
+            }
+            for ($p = 1; $p <= 15; $p++) {
+                if (!HasPlanet($scanG, $scanS, $p)) {
+                    $positions[] = array($scanG, $scanS, $p);
+                    if (count($positions) >= $count) {
+                        return $positions;
+                    }
+                }
+            }
+        }
+    }
+    throw new RuntimeException('Not enough empty planet positions found for Go smoke fixtures.');
 }
 
 function smoke_prepare_planet(int $planetId, int $ownerId, string $name, array $coords): void
@@ -357,6 +382,86 @@ function smoke_prepare_password_recovery_fixture(string $password): array
     );
 }
 
+function smoke_set_fleet_restriction_user_state(array $user, int $score, array $options = array()): void
+{
+    global $db_prefix, $resmap;
+
+    $playerId = (int)$user['player_id'];
+    $research = array();
+    foreach ($resmap as $gid) {
+        $research[] = "`{$gid}`=10";
+    }
+    $now = time();
+    $admin = (int)($options['admin'] ?? USER_TYPE_PLAYER);
+    $vacation = (int)($options['vacation'] ?? 0);
+    $banned = (int)($options['banned'] ?? 0);
+    $noattack = (int)($options['noattack'] ?? 0);
+    $vacationUntil = $vacation ? $now + 3600 : 0;
+    $bannedUntil = $banned ? $now + 3600 : 0;
+    $noattackUntil = $noattack ? $now + 3600 : 0;
+    dbquery(
+        "UPDATE {$db_prefix}users SET " . implode(',', $research) . ", admin={$admin}, ally_id=0, allyrank=0, " .
+        "validated=1, validatemd='', deact_ip=1, vacation={$vacation}, vacation_until={$vacationUntil}, " .
+        "banned={$banned}, banned_until={$bannedUntil}, noattack={$noattack}, noattack_until={$noattackUntil}, " .
+        "disable=0, disable_until=0, lang='en', skin='/evolution/', useskin=1, score1={$score}, score2=0, score3=0, " .
+        "place1=1, place2=1, place3=1, flags=" . USER_FLAG_DEFAULT . ", lastclick={$now} WHERE player_id={$playerId}"
+    );
+    InvalidateUserCache();
+}
+
+function smoke_prepare_fleet_restriction_fixture(string $password, array $near): array
+{
+    global $db_prefix;
+
+    $attacker = smoke_prepare_user('gofleetattacker', $password, 'gofleetattacker@example.local', USER_TYPE_PLAYER);
+    $weak = smoke_prepare_user('gofleetweak', $password, 'gofleetweak@example.local', USER_TYPE_PLAYER);
+    $blocked = smoke_prepare_user('gofleetblocked', $password, 'gofleetblocked@example.local', USER_TYPE_PLAYER);
+    $noob = smoke_prepare_user('gofleetnoob', $password, 'gofleetnoob@example.local', USER_TYPE_PLAYER);
+    $strong = smoke_prepare_user('gofleetstrong', $password, 'gofleetstrong@example.local', USER_TYPE_PLAYER);
+    $vacation = smoke_prepare_user('gofleetvacation', $password, 'gofleetvacation@example.local', USER_TYPE_PLAYER);
+    $operator = smoke_prepare_user('gofleetoperator', $password, 'gofleetoperator@example.local', USER_TYPE_GO);
+    $comparable = smoke_prepare_user('gofleetcomparable', $password, 'gofleetcomparable@example.local', USER_TYPE_PLAYER);
+    $users = array($attacker, $weak, $blocked, $noob, $strong, $vacation, $operator, $comparable);
+    $planetIds = array_map(fn($user) => (int)$user['home_planet_id'], $users);
+    smoke_cleanup_fleets(array_map(fn($user) => (int)$user['player_id'], $users), $planetIds);
+    $positions = smoke_find_empty_positions($near, count($users));
+
+    $specs = array(
+        array('key' => 'attacker', 'user' => $attacker, 'score' => 100000, 'options' => array()),
+        array('key' => 'weak_attacker', 'user' => $weak, 'score' => 1000, 'options' => array()),
+        array('key' => 'blocked_attacker', 'user' => $blocked, 'score' => 10000, 'options' => array('noattack' => 1)),
+        array('key' => 'noob', 'user' => $noob, 'score' => 1000, 'options' => array()),
+        array('key' => 'strong', 'user' => $strong, 'score' => 100000, 'options' => array()),
+        array('key' => 'vacation', 'user' => $vacation, 'score' => 10000, 'options' => array('vacation' => 1)),
+        array('key' => 'operator', 'user' => $operator, 'score' => 10000, 'options' => array('admin' => USER_TYPE_GO)),
+        array('key' => 'comparable', 'user' => $comparable, 'score' => 10000, 'options' => array()),
+    );
+
+    $fixture = array();
+    foreach ($specs as $index => $spec) {
+        $user = $spec['user'];
+        $planetId = (int)$user['home_planet_id'];
+        $coords = $positions[$index];
+        smoke_set_fleet_restriction_user_state($user, (int)$spec['score'], $spec['options']);
+        smoke_prepare_planet($planetId, (int)$user['player_id'], 'GoFleet' . $index, $coords);
+        dbquery(
+            "UPDATE {$db_prefix}planets SET `" . GID_F_SC . "`=10, `" . GID_F_LF . "`=10, `" . GID_F_PROBE . "`=10, " .
+            "`" . GID_RC_DEUTERIUM . "`=1000000 WHERE planet_id={$planetId}"
+        );
+        $fixture[$spec['key']] = array(
+            'player_id' => (int)$user['player_id'],
+            'login' => mb_strtolower($user['name'], 'UTF-8'),
+            'home_planet_id' => $planetId,
+            'coordinates' => array(
+                'galaxy' => (int)$coords[0],
+                'system' => (int)$coords[1],
+                'position' => (int)$coords[2],
+            ),
+        );
+    }
+    return $fixture;
+}
+
 $name = getenv('OGAME_GO_LOGIN_SMOKE_USER') ?: 'legor';
 $password = getenv('OGAME_GO_LOGIN_SMOKE_PASS') ?: 'admin';
 $email = getenv('OGAME_GO_LOGIN_SMOKE_EMAIL') ?: ($name . '@example.local');
@@ -381,6 +486,7 @@ $fleetQueueTaskId = smoke_fleet_queue_task_id($fleetId);
 $recallFleetQueueTaskId = smoke_fleet_queue_task_id($recallFleetId);
 $feedFixture = smoke_prepare_feed_fixture($login, $operator, $target);
 $passwordRecoveryFixture = smoke_prepare_password_recovery_fixture('E2E_reset123');
+$fleetRestrictionFixture = smoke_prepare_fleet_restriction_fixture($password, $home);
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
 echo json_encode(array(
@@ -410,4 +516,5 @@ echo json_encode(array(
     ),
     'feed' => $feedFixture,
     'password_recovery' => $passwordRecoveryFixture,
+    'fleet_restrictions' => $fleetRestrictionFixture,
 ), JSON_UNESCAPED_SLASHES) . PHP_EOL;

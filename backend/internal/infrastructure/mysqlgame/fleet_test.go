@@ -567,6 +567,8 @@ func TestFleetRepositoryLaunchesLegacyDispatchWithFleetQueue(t *testing.T) {
 	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{0})},
 		{rows: fakeRowsFromValues([]any{100, 43, domaingame.PlanetTypePlanet})},
+		{rows: fakeRowsFromValues(fleetLaunchUserStateRow(42, 10_000, 0, 0, 0, 0, now.Unix()))},
+		{rows: fakeRowsFromValues(fleetLaunchUserStateRow(43, 10_000, 0, 0, 0, 0, now.Unix()))},
 	}}}
 	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
 
@@ -1018,16 +1020,25 @@ func TestFleetRepositoryLaunchAllowsLegacyMissionTargetGuards(t *testing.T) {
 		name   string
 		query  appgame.FleetLaunchQuery
 		target []any
+		users  []fakeQueryResult
 	}{
 		{
 			name:   "deploy own planet",
 			query:  baseQuery(domaingame.FleetMissionDeploy, domaingame.GamePlanetTypePlanet, []domaingame.FleetShipCount{{ID: domaingame.FleetSmallCargo, Count: 1}}),
 			target: []any{100, 42, domaingame.PlanetTypePlanet},
+			users: []fakeQueryResult{
+				{rows: fakeRowsFromValues(fleetLaunchUserStateRow(42, 10_000, 0, 0, 0, 0, now.Unix()))},
+				{rows: fakeRowsFromValues(fleetLaunchUserStateRow(42, 10_000, 0, 0, 0, 0, now.Unix()))},
+			},
 		},
 		{
 			name:   "spy foreign planet",
 			query:  baseQuery(domaingame.FleetMissionSpy, domaingame.GamePlanetTypePlanet, []domaingame.FleetShipCount{{ID: domaingame.FleetEspionageProbe, Count: 1}}),
 			target: []any{100, 43, domaingame.PlanetTypePlanet},
+			users: []fakeQueryResult{
+				{rows: fakeRowsFromValues(fleetLaunchUserStateRow(42, 10_000, 0, 0, 0, 0, now.Unix()))},
+				{rows: fakeRowsFromValues(fleetLaunchUserStateRow(43, 10_000, 0, 0, 0, 0, now.Unix()))},
+			},
 		},
 		{
 			name:   "recycle debris",
@@ -1038,15 +1049,21 @@ func TestFleetRepositoryLaunchAllowsLegacyMissionTargetGuards(t *testing.T) {
 			name:   "destroy foreign moon",
 			query:  baseQuery(domaingame.FleetMissionDestroy, domaingame.GamePlanetTypeMoon, []domaingame.FleetShipCount{{ID: domaingame.FleetDeathstar, Count: 1}}),
 			target: []any{100, 43, domaingame.PlanetTypeMoon},
+			users: []fakeQueryResult{
+				{rows: fakeRowsFromValues(fleetLaunchUserStateRow(42, 10_000, 0, 0, 0, 0, now.Unix()))},
+				{rows: fakeRowsFromValues(fleetLaunchUserStateRow(43, 10_000, 0, 0, 0, 0, now.Unix()))},
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			results := []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{0})},
 				{rows: fakeRowsFromValues(tt.target)},
-			}}}
+			}
+			results = append(results, tt.users...)
+			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: results}}
 			repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
 
 			issue, err := repository.LaunchFleetDispatch(context.Background(), tt.query)
@@ -1055,6 +1072,295 @@ func TestFleetRepositoryLaunchAllowsLegacyMissionTargetGuards(t *testing.T) {
 			}
 			if len(runner.execCalls) != 5 {
 				t.Fatalf("expected normal launch writes, got %+v", runner.execCalls)
+			}
+		})
+	}
+}
+
+func TestFleetRepositoryLaunchRejectsLegacyTargetProtectionBeforeWrites(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	baseQuery := func(mission int, ships []domaingame.FleetShipCount) appgame.FleetLaunchQuery {
+		return appgame.FleetLaunchQuery{
+			PlayerID: 42,
+			PlanetID: 99,
+			Draft: domaingame.FleetDispatchDraft{
+				Ships:      ships,
+				Ready:      true,
+				Mission:    mission,
+				Target:     domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+				TargetType: domaingame.GamePlanetTypePlanet,
+			},
+		}
+	}
+
+	tests := []struct {
+		name   string
+		query  appgame.FleetLaunchQuery
+		origin []any
+		target []any
+		code   string
+	}{
+		{
+			name:   "origin vacation blocks fleet dispatch",
+			query:  baseQuery(domaingame.FleetMissionAttack, []domaingame.FleetShipCount{{ID: domaingame.FleetSmallCargo, Count: 1}}),
+			origin: fleetLaunchUserStateRow(42, 10_000, 0, 1, 0, 0, now.Unix()),
+			target: fleetLaunchUserStateRow(43, 10_000, 0, 0, 0, 0, now.Unix()),
+			code:   domaingame.FleetIssueVacationSelf,
+		},
+		{
+			name:   "target vacation blocks hostile dispatch",
+			query:  baseQuery(domaingame.FleetMissionAttack, []domaingame.FleetShipCount{{ID: domaingame.FleetSmallCargo, Count: 1}}),
+			origin: fleetLaunchUserStateRow(42, 10_000, 0, 0, 0, 0, now.Unix()),
+			target: fleetLaunchUserStateRow(43, 10_000, 0, 1, 0, 0, now.Unix()),
+			code:   domaingame.FleetIssueVacationOther,
+		},
+		{
+			name:   "operator target blocks spy dispatch",
+			query:  baseQuery(domaingame.FleetMissionSpy, []domaingame.FleetShipCount{{ID: domaingame.FleetEspionageProbe, Count: 1}}),
+			origin: fleetLaunchUserStateRow(42, 10_000, 0, 0, 0, 0, now.Unix()),
+			target: fleetLaunchUserStateRow(43, 10_000, domaingame.AdminLevelOperator, 0, 0, 0, now.Unix()),
+			code:   domaingame.FleetIssueTargetAdmin,
+		},
+		{
+			name:   "newbie target blocks attack dispatch",
+			query:  baseQuery(domaingame.FleetMissionAttack, []domaingame.FleetShipCount{{ID: domaingame.FleetSmallCargo, Count: 1}}),
+			origin: fleetLaunchUserStateRow(42, 100_000, 0, 0, 0, 0, now.Unix()),
+			target: fleetLaunchUserStateRow(43, 1_000, 0, 0, 0, 0, now.Unix()),
+			code:   domaingame.FleetIssueTargetNoob,
+		},
+		{
+			name:   "strong target blocks attack dispatch",
+			query:  baseQuery(domaingame.FleetMissionAttack, []domaingame.FleetShipCount{{ID: domaingame.FleetSmallCargo, Count: 1}}),
+			origin: fleetLaunchUserStateRow(42, 1_000, 0, 0, 0, 0, now.Unix()),
+			target: fleetLaunchUserStateRow(43, 100_000, 0, 0, 0, 0, now.Unix()),
+			code:   domaingame.FleetIssueTargetNoob,
+		},
+		{
+			name:   "origin attack ban blocks hostile dispatch",
+			query:  baseQuery(domaingame.FleetMissionAttack, []domaingame.FleetShipCount{{ID: domaingame.FleetSmallCargo, Count: 1}}),
+			origin: fleetLaunchUserStateRow(42, 10_000, 0, 0, 0, 1, now.Unix()),
+			target: fleetLaunchUserStateRow(43, 10_000, 0, 0, 0, 0, now.Unix()),
+			code:   domaingame.FleetIssueAttackBan,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues([]any{100, 43, domaingame.PlanetTypePlanet})},
+				{rows: fakeRowsFromValues(tt.origin)},
+				{rows: fakeRowsFromValues(tt.target)},
+			}}}
+			repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+			issue, err := repository.LaunchFleetDispatch(context.Background(), tt.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if issue == nil || issue.Code != tt.code {
+				t.Fatalf("expected issue %s, got %+v", tt.code, issue)
+			}
+			if len(runner.execCalls) != 0 {
+				t.Fatalf("target protection failure must not write, got %+v", runner.execCalls)
+			}
+		})
+	}
+}
+
+func TestFleetLaunchProtectionHelpersCoverLegacyBranches(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	origin := fleetLaunchUserState{ID: 42, Score: 10_000, LastClick: now.Unix()}
+	target := fleetLaunchUserState{ID: 43, Score: 10_000, LastClick: now.Unix()}
+
+	if !fleetLaunchNeedsUserState(domaingame.FleetMissionTransport, 43) {
+		t.Fatal("transport to a player target should load user state for vacation guards")
+	}
+	if fleetLaunchNeedsUserState(domaingame.FleetMissionRecycle, 43) ||
+		fleetLaunchNeedsUserState(domaingame.FleetMissionExpedition, userSpace) ||
+		fleetLaunchNeedsUserState(999, 43) {
+		t.Fatal("recycle, space, and unknown missions should not load player target state")
+	}
+
+	tests := []struct {
+		name    string
+		mission int
+		origin  fleetLaunchUserState
+		target  fleetLaunchUserState
+		code    string
+	}{
+		{
+			name:    "origin vacation",
+			mission: domaingame.FleetMissionTransport,
+			origin:  fleetLaunchUserState{ID: 42, Vacation: true},
+			target:  target,
+			code:    domaingame.FleetIssueVacationSelf,
+		},
+		{
+			name:    "target vacation",
+			mission: domaingame.FleetMissionTransport,
+			origin:  origin,
+			target:  fleetLaunchUserState{ID: 43, Vacation: true},
+			code:    domaingame.FleetIssueVacationOther,
+		},
+		{
+			name:    "acs hold noob",
+			mission: domaingame.FleetMissionACSHold,
+			origin:  fleetLaunchUserState{ID: 42, Score: 100_000, LastClick: now.Unix()},
+			target:  fleetLaunchUserState{ID: 43, Score: 1_000, LastClick: now.Unix()},
+			code:    domaingame.FleetIssueTargetNoob,
+		},
+		{
+			name:    "destroy admin",
+			mission: domaingame.FleetMissionDestroy,
+			origin:  origin,
+			target:  fleetLaunchUserState{ID: 43, Admin: domaingame.AdminLevelAdmin, LastClick: now.Unix()},
+			code:    domaingame.FleetIssueTargetAdmin,
+		},
+		{
+			name:    "destroy attack ban",
+			mission: domaingame.FleetMissionDestroy,
+			origin:  fleetLaunchUserState{ID: 42, Score: 10_000, NoAttack: true, LastClick: now.Unix()},
+			target:  target,
+			code:    domaingame.FleetIssueAttackBan,
+		},
+		{
+			name:    "normal transport",
+			mission: domaingame.FleetMissionTransport,
+			origin:  origin,
+			target:  target,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			issue := validateFleetLaunchProtection(tt.mission, tt.origin, tt.target, now.Unix())
+			if tt.code == "" {
+				if issue != nil {
+					t.Fatalf("expected no issue, got %+v", issue)
+				}
+				return
+			}
+			if issue == nil || issue.Code != tt.code {
+				t.Fatalf("expected issue %s, got %+v", tt.code, issue)
+			}
+		})
+	}
+}
+
+func TestFleetRepositoryLaunchUserStateLoaderEdges(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	row := fleetLaunchUserStateRow(42, 12_345, domaingame.AdminLevelOperator, 1, 1, 1, now.Unix())
+	repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(row)}}}, "ogame_", func() time.Time { return now })
+	state, found, err := repository.loadFleetLaunchUserState(context.Background(), "`ogame_users`", 42)
+	if err != nil || !found {
+		t.Fatalf("expected user state, found=%v err=%v", found, err)
+	}
+	if state.ID != 42 || state.Score != 12_345 || state.Admin != domaingame.AdminLevelOperator || !state.Vacation || !state.Banned || !state.NoAttack || state.LastClick != now.Unix() {
+		t.Fatalf("unexpected user state: %+v", state)
+	}
+
+	tests := []struct {
+		name    string
+		results []fakeQueryResult
+		wantErr string
+		found   bool
+	}{
+		{
+			name:    "missing",
+			results: []fakeQueryResult{{rows: fakeRowsFromValues()}},
+		},
+		{
+			name:    "query error",
+			results: []fakeQueryResult{{err: errors.New("user state query failed")}},
+			wantErr: "user state query failed",
+		},
+		{
+			name:    "rows error",
+			results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("user state rows failed"))}},
+			wantErr: "user state rows failed",
+		},
+		{
+			name:    "scan error",
+			results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", int64(0), 0, 0, 0, 0, int64(0), int64(0)})}},
+			wantErr: "expected int",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: tt.results}, "ogame_", func() time.Time { return now })
+			_, found, err := repository.loadFleetLaunchUserState(context.Background(), "`ogame_users`", 42)
+			if tt.wantErr == "" {
+				if err != nil || found != tt.found {
+					t.Fatalf("unexpected found=%v err=%v", found, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected %q, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestFleetRepositoryValidateFleetLaunchUserStateEdges(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	query := appgame.FleetLaunchQuery{
+		PlayerID: 42,
+		Draft: domaingame.FleetDispatchDraft{
+			Mission: domaingame.FleetMissionAttack,
+		},
+	}
+	target := fleetLaunchTarget{ID: 100, OwnerID: 43, Type: domaingame.PlanetTypePlanet}
+	originRow := fleetLaunchUserStateRow(42, 10_000, 0, 0, 0, 0, now.Unix())
+
+	repository := NewFleetRepositoryWithQueryer(&fakeQueryer{}, "ogame_", func() time.Time { return now })
+	issue, err := repository.validateFleetLaunchUserState(context.Background(), "`ogame_users`", appgame.FleetLaunchQuery{
+		PlayerID: 42,
+		Draft: domaingame.FleetDispatchDraft{
+			Mission: domaingame.FleetMissionRecycle,
+		},
+	}, target, now.Unix())
+	if err != nil || issue != nil {
+		t.Fatalf("recycle should skip user state, issue=%+v err=%v", issue, err)
+	}
+
+	tests := []struct {
+		name    string
+		results []fakeQueryResult
+		wantErr string
+	}{
+		{
+			name:    "missing origin",
+			results: []fakeQueryResult{{rows: fakeRowsFromValues()}},
+		},
+		{
+			name: "target query error",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues(originRow)},
+				{err: errors.New("target state failed")},
+			},
+			wantErr: "target state failed",
+		},
+		{
+			name: "missing target",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues(originRow)},
+				{rows: fakeRowsFromValues()},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: tt.results}, "ogame_", func() time.Time { return now })
+			issue, err := repository.validateFleetLaunchUserState(context.Background(), "`ogame_users`", query, target, now.Unix())
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) || issue == nil || issue.Code != domaingame.FleetIssueInvalidTarget {
+					t.Fatalf("expected invalid target with %q, issue=%+v err=%v", tt.wantErr, issue, err)
+				}
+				return
+			}
+			if err != nil || issue == nil || issue.Code != domaingame.FleetIssueInvalidTarget {
+				t.Fatalf("expected invalid target issue without error, issue=%+v err=%v", issue, err)
 			}
 		})
 	}
@@ -1178,6 +1484,8 @@ func TestFleetRepositoryLaunchAllowsACSAttackAndSyncsUnionQueue(t *testing.T) {
 		{rows: fakeRowsFromValues([]any{0})},
 		{rows: fakeRowsFromValues([]any{100, 43, domaingame.PlanetTypePlanet})},
 		{rows: fakeRowsFromValues([]any{2, "42,99", int64(1_300), 1})},
+		{rows: fakeRowsFromValues(fleetLaunchUserStateRow(42, 10_000, 0, 0, 0, 0, now.Unix()))},
+		{rows: fakeRowsFromValues(fleetLaunchUserStateRow(43, 10_000, 0, 0, 0, 0, now.Unix()))},
 		{rows: fakeRowsFromValues([]any{int64(1_300)})},
 	}}}
 	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
@@ -1519,6 +1827,8 @@ func TestFleetRepositoryLaunchPropagatesPipelineErrors(t *testing.T) {
 		return []fakeQueryResult{
 			{rows: fakeRowsFromValues([]any{0})},
 			{rows: fakeRowsFromValues([]any{100, 43, domaingame.PlanetTypeMoon})},
+			{rows: fakeRowsFromValues(fleetLaunchUserStateRow(42, 10_000, 0, 0, 0, 0, now.Unix()))},
+			{rows: fakeRowsFromValues(fleetLaunchUserStateRow(43, 10_000, 0, 0, 0, 0, now.Unix()))},
 		}
 	}
 	tests := []struct {
@@ -2176,6 +2486,10 @@ func templateRow(id int, name string, updatedAt int64, ships map[int]int) []any 
 		row = append(row, ships[shipID])
 	}
 	return row
+}
+
+func fleetLaunchUserStateRow(id int, score int64, admin int, vacation int, banned int, noAttack int, lastClick int64) []any {
+	return []any{id, score, admin, vacation, banned, noAttack, int64(0), lastClick}
 }
 
 func recallFleetTestRow(mission int, unionID int, ships map[int]int) []any {

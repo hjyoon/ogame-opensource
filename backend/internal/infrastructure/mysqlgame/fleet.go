@@ -51,6 +51,17 @@ type fleetLaunchTarget struct {
 	Type    int
 }
 
+type fleetLaunchUserState struct {
+	ID            int
+	Score         int64
+	Admin         int
+	Vacation      bool
+	Banned        bool
+	NoAttack      bool
+	NoAttackUntil int64
+	LastClick     int64
+}
+
 type fleetLaunchACSUnion struct {
 	ACSLimit   int
 	Players    string
@@ -221,6 +232,10 @@ func (r FleetRepository) LaunchFleetDispatch(ctx context.Context, query appgame.
 	if err != nil {
 		return nil, err
 	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
 	uniTable, err := tableName(r.prefix, "uni")
 	if err != nil {
 		return nil, err
@@ -256,6 +271,9 @@ func (r FleetRepository) LaunchFleetDispatch(ctx context.Context, query appgame.
 		return issue, nil
 	}
 	if issue, err := r.validateFleetLaunchACS(ctx, uniTable, unionTable, fleetTable, queueTable, query, now); err != nil || issue != nil {
+		return issue, err
+	}
+	if issue, err := r.validateFleetLaunchUserState(ctx, usersTable, query, target, now); err != nil || issue != nil {
 		return issue, err
 	}
 	if err := r.deleteOldFleetLogs(ctx, fleetLogsTable, now); err != nil {
@@ -360,6 +378,96 @@ func validateFleetLaunchTarget(query appgame.FleetLaunchQuery, target fleetLaunc
 		}
 	}
 	return nil
+}
+
+func (r FleetRepository) validateFleetLaunchUserState(ctx context.Context, usersTable string, query appgame.FleetLaunchQuery, target fleetLaunchTarget, now int64) (*domaingame.FleetActionIssue, error) {
+	if !fleetLaunchNeedsUserState(query.Draft.Mission, target.OwnerID) {
+		return nil, nil
+	}
+	origin, found, err := r.loadFleetLaunchUserState(ctx, usersTable, query.PlayerID)
+	if err != nil || !found {
+		return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget), err
+	}
+	targetUser, found, err := r.loadFleetLaunchUserState(ctx, usersTable, target.OwnerID)
+	if err != nil || !found {
+		return domaingame.FleetActionIssueFor(domaingame.FleetIssueInvalidTarget), err
+	}
+	return validateFleetLaunchProtection(query.Draft.Mission, origin, targetUser, now), nil
+}
+
+func fleetLaunchNeedsUserState(mission int, ownerID int) bool {
+	if ownerID <= 0 || ownerID == userSpace {
+		return false
+	}
+	switch mission {
+	case domaingame.FleetMissionAttack,
+		domaingame.FleetMissionACSAttack,
+		domaingame.FleetMissionACSAttackHead,
+		domaingame.FleetMissionTransport,
+		domaingame.FleetMissionDeploy,
+		domaingame.FleetMissionACSHold,
+		domaingame.FleetMissionSpy,
+		domaingame.FleetMissionDestroy:
+		return true
+	case domaingame.FleetMissionRecycle, domaingame.FleetMissionColonize, domaingame.FleetMissionExpedition:
+		return false
+	default:
+		return false
+	}
+}
+
+func validateFleetLaunchProtection(mission int, origin fleetLaunchUserState, target fleetLaunchUserState, now int64) *domaingame.FleetActionIssue {
+	if origin.Vacation {
+		return domaingame.FleetActionIssueFor(domaingame.FleetIssueVacationSelf)
+	}
+	if target.Vacation && mission != domaingame.FleetMissionRecycle {
+		return domaingame.FleetActionIssueFor(domaingame.FleetIssueVacationOther)
+	}
+
+	switch mission {
+	case domaingame.FleetMissionAttack, domaingame.FleetMissionACSAttack, domaingame.FleetMissionACSAttackHead:
+		if fleetLaunchAdminProtected(target) {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueTargetAdmin)
+		}
+		if fleetLaunchNoobProtected(origin, target, now) {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueTargetNoob)
+		}
+		if origin.NoAttack {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueAttackBan)
+		}
+	case domaingame.FleetMissionSpy:
+		if fleetLaunchAdminProtected(target) {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueTargetAdmin)
+		}
+		if fleetLaunchNoobProtected(origin, target, now) {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueTargetNoob)
+		}
+		if origin.NoAttack {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueAttackBan)
+		}
+	case domaingame.FleetMissionACSHold:
+		if fleetLaunchNoobProtected(origin, target, now) {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueTargetNoob)
+		}
+	case domaingame.FleetMissionDestroy:
+		if fleetLaunchAdminProtected(target) {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueTargetAdmin)
+		}
+		if origin.NoAttack {
+			return domaingame.FleetActionIssueFor(domaingame.FleetIssueAttackBan)
+		}
+	}
+	return nil
+}
+
+func fleetLaunchAdminProtected(target fleetLaunchUserState) bool {
+	return target.Admin > domaingame.AdminLevelPlayer && target.ID != userSpace
+}
+
+func fleetLaunchNoobProtected(origin fleetLaunchUserState, target fleetLaunchUserState, now int64) bool {
+	active := target.LastClick > now-604800 && !target.Vacation && !target.Banned
+	return (active && target.Score < origin.Score && target.Score < domaingame.GalaxyNoobScoreLimit && origin.Score > target.Score*5) ||
+		(active && origin.Score < target.Score && origin.Score < domaingame.GalaxyNoobScoreLimit && target.Score > origin.Score*5)
 }
 
 func fleetLaunchTargetIsPlanetOrMoon(targetType int) bool {
@@ -630,6 +738,36 @@ func (r FleetRepository) loadFleetLaunchTarget(ctx context.Context, planetsTable
 		return fleetLaunchTarget{}, false, err
 	}
 	return target, true, nil
+}
+
+func (r FleetRepository) loadFleetLaunchUserState(ctx context.Context, usersTable string, playerID int) (fleetLaunchUserState, bool, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT player_id, COALESCE(score1, 0), COALESCE(admin, 0), COALESCE(vacation, 0), COALESCE(banned, 0), COALESCE(noattack, 0), COALESCE(noattack_until, 0), COALESCE(lastclick, 0) FROM %s WHERE player_id = ? LIMIT 1", usersTable),
+		playerID,
+	)
+	if err != nil {
+		return fleetLaunchUserState{}, false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return fleetLaunchUserState{}, false, err
+		}
+		return fleetLaunchUserState{}, false, nil
+	}
+	var state fleetLaunchUserState
+	var vacation, banned, noAttack int
+	if err := rows.Scan(&state.ID, &state.Score, &state.Admin, &vacation, &banned, &noAttack, &state.NoAttackUntil, &state.LastClick); err != nil {
+		return fleetLaunchUserState{}, false, err
+	}
+	if err := rows.Err(); err != nil {
+		return fleetLaunchUserState{}, false, err
+	}
+	state.Vacation = vacation != 0
+	state.Banned = banned != 0
+	state.NoAttack = noAttack != 0
+	return state, true, nil
 }
 
 func (r FleetRepository) loadFleetLaunchSpecialTarget(ctx context.Context, planetsTable string, coordinates domaingame.Coordinates, objectType int) (fleetLaunchTarget, bool, error) {

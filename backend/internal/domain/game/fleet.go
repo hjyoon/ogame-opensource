@@ -174,6 +174,11 @@ const (
 	FleetIssueExpRequired   = "expedition_required"
 	FleetIssueFrozen        = "frozen"
 	FleetIssueLaunchRace    = "launch_race"
+	FleetIssueVacationSelf  = "vacation_self"
+	FleetIssueVacationOther = "vacation_other"
+	FleetIssueTargetAdmin   = "target_admin"
+	FleetIssueTargetNoob    = "target_noob"
+	FleetIssueAttackBan     = "attack_ban"
 )
 
 func BuildFleet(overview Overview, counts FleetCounts, research ResearchLevels, missions []FleetMission, admiral bool, acsEnabled bool) Fleet {
@@ -385,6 +390,11 @@ func FleetActionIssueFor(code string) *FleetActionIssue {
 		FleetIssueExpRequired:   "An expedition needs at least one crewed ship.",
 		FleetIssueFrozen:        "The universe is currently frozen.",
 		FleetIssueLaunchRace:    "Selected ships or resources are no longer available.",
+		FleetIssueVacationSelf:  "While in vacation mode you can't send a fleet!",
+		FleetIssueVacationOther: "This player is in vacation mode!",
+		FleetIssueTargetAdmin:   "You cannot send hostile fleets to game operators or administrators!",
+		FleetIssueTargetNoob:    "The planet is protected for newbies!",
+		FleetIssueAttackBan:     "Ban attacks to target",
 	}[code]
 	if message == "" {
 		message = "Fleet dispatch failed."

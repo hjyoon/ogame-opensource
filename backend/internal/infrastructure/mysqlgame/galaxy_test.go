@@ -148,6 +148,8 @@ func TestGalaxyRepositoryDispatchInstantFleetLaunchesSpyFleet(t *testing.T) {
 		fakeQueryResult{rows: fakeRowsFromValues()},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{0})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{100, 43, domaingame.PlanetTypePlanet})},
+		fakeQueryResult{rows: fakeRowsFromValues(fleetLaunchUserStateRow(42, 10_000, 0, 0, 0, 0, now.Unix()))},
+		fakeQueryResult{rows: fakeRowsFromValues(fleetLaunchUserStateRow(43, 10_000, 0, 0, 0, 0, now.Unix()))},
 	)
 	runner := &fakeGalaxyRunner{
 		fakeQueryer: fakeQueryer{results: results},

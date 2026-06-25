@@ -299,6 +299,20 @@ try {
     typeof passwordRecoveryFixture.temporary?.name === "string" &&
     typeof passwordRecoveryFixture.temporary?.email === "string" &&
     typeof passwordRecoveryFixture.temporary?.temporary_email === "string";
+  const fleetRestrictionsFixture = smokeFixture?.fleet_restrictions ?? {};
+  const fleetRestrictionsReady = Boolean(
+    typeof fleetRestrictionsFixture.attacker?.login === "string" &&
+    typeof fleetRestrictionsFixture.weak_attacker?.login === "string" &&
+    typeof fleetRestrictionsFixture.blocked_attacker?.login === "string" &&
+    Number(fleetRestrictionsFixture.attacker?.home_planet_id ?? 0) > 0 &&
+    Number(fleetRestrictionsFixture.weak_attacker?.home_planet_id ?? 0) > 0 &&
+    Number(fleetRestrictionsFixture.blocked_attacker?.home_planet_id ?? 0) > 0 &&
+    fleetRestrictionsFixture.noob?.coordinates &&
+    fleetRestrictionsFixture.strong?.coordinates &&
+    fleetRestrictionsFixture.vacation?.coordinates &&
+    fleetRestrictionsFixture.operator?.coordinates &&
+    fleetRestrictionsFixture.comparable?.coordinates
+  );
   const legacyTransportReturnMission = 103;
   const health = await request("/api/healthz");
   let healthBody = {};
@@ -1606,6 +1620,124 @@ try {
       })
     : { status: 0, body: "", headers: {} };
   const gameFleetInvalidExpeditionTargetBody = parseJSON(gameFleetInvalidExpeditionTarget);
+
+  const fleetRestrictionSmallCargo = 202;
+  const fleetRestrictionProbe = 210;
+  const fleetRestrictionAttackerLogin = fleetRestrictionsReady
+    ? await loginGameUser(fleetRestrictionsFixture.attacker.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const fleetRestrictionWeakLogin = fleetRestrictionsReady
+    ? await loginGameUser(fleetRestrictionsFixture.weak_attacker.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const fleetRestrictionBlockedLogin = fleetRestrictionsReady
+    ? await loginGameUser(fleetRestrictionsFixture.blocked_attacker.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const fleetRestrictionSearch = (login, actor) => withQueryParams(login?.search ?? "?session=", {
+    cp: Number(actor?.home_planet_id ?? 0)
+  });
+  const fleetRestrictionAttackerSearch = fleetRestrictionsReady
+    ? fleetRestrictionSearch(fleetRestrictionAttackerLogin, fleetRestrictionsFixture.attacker)
+    : "?session=";
+  const fleetRestrictionWeakSearch = fleetRestrictionsReady
+    ? fleetRestrictionSearch(fleetRestrictionWeakLogin, fleetRestrictionsFixture.weak_attacker)
+    : "?session=";
+  const fleetRestrictionBlockedSearch = fleetRestrictionsReady
+    ? fleetRestrictionSearch(fleetRestrictionBlockedLogin, fleetRestrictionsFixture.blocked_attacker)
+    : "?session=";
+  const fleetRestrictionAttackerBefore = fleetRestrictionsReady
+    ? await request(`/api/game/fleet${fleetRestrictionAttackerSearch}`, {
+        headers: { Cookie: fleetRestrictionAttackerLogin?.cookiePair ?? "" }
+      })
+    : null;
+  const fleetRestrictionBlockedBefore = fleetRestrictionsReady
+    ? await request(`/api/game/fleet${fleetRestrictionBlockedSearch}`, {
+        headers: { Cookie: fleetRestrictionBlockedLogin?.cookiePair ?? "" }
+      })
+    : null;
+  const fleetRestrictionWeakBefore = fleetRestrictionsReady
+    ? await request(`/api/game/fleet${fleetRestrictionWeakSearch}`, {
+        headers: { Cookie: fleetRestrictionWeakLogin?.cookiePair ?? "" }
+      })
+    : null;
+  const fleetRestrictionAttackerBeforeBody = fleetRestrictionAttackerBefore ? parseJSON(fleetRestrictionAttackerBefore) : {};
+  const fleetRestrictionBlockedBeforeBody = fleetRestrictionBlockedBefore ? parseJSON(fleetRestrictionBlockedBefore) : {};
+  const fleetRestrictionWeakBeforeBody = fleetRestrictionWeakBefore ? parseJSON(fleetRestrictionWeakBefore) : {};
+  async function launchFleetRestriction(login, search, target, mission, ships) {
+    if (!fleetRestrictionsReady) {
+      return { status: 0, body: "", headers: {} };
+    }
+    return request(`/api/game/fleet${search}`, {
+      method: "POST",
+      headers: { Cookie: login?.cookiePair ?? "", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "launch-dispatch",
+        ships,
+        resources: {},
+        target: target.coordinates,
+        targetType: 1,
+        mission,
+        speed: 10
+      })
+    });
+  }
+  const fleetRestrictionNoobAttack = await launchFleetRestriction(
+    fleetRestrictionAttackerLogin,
+    fleetRestrictionAttackerSearch,
+    fleetRestrictionsFixture.noob,
+    1,
+    { [String(fleetRestrictionSmallCargo)]: 1 }
+  );
+  const fleetRestrictionStrongAttack = await launchFleetRestriction(
+    fleetRestrictionWeakLogin,
+    fleetRestrictionWeakSearch,
+    fleetRestrictionsFixture.strong,
+    1,
+    { [String(fleetRestrictionSmallCargo)]: 1 }
+  );
+  const fleetRestrictionVacationAttack = await launchFleetRestriction(
+    fleetRestrictionAttackerLogin,
+    fleetRestrictionAttackerSearch,
+    fleetRestrictionsFixture.vacation,
+    1,
+    { [String(fleetRestrictionSmallCargo)]: 1 }
+  );
+  const fleetRestrictionOperatorSpy = await launchFleetRestriction(
+    fleetRestrictionAttackerLogin,
+    fleetRestrictionAttackerSearch,
+    fleetRestrictionsFixture.operator,
+    6,
+    { [String(fleetRestrictionProbe)]: 1 }
+  );
+  const fleetRestrictionAttackBan = await launchFleetRestriction(
+    fleetRestrictionBlockedLogin,
+    fleetRestrictionBlockedSearch,
+    fleetRestrictionsFixture.comparable,
+    1,
+    { [String(fleetRestrictionSmallCargo)]: 1 }
+  );
+  const fleetRestrictionNoobAttackBody = parseJSON(fleetRestrictionNoobAttack);
+  const fleetRestrictionStrongAttackBody = parseJSON(fleetRestrictionStrongAttack);
+  const fleetRestrictionVacationAttackBody = parseJSON(fleetRestrictionVacationAttack);
+  const fleetRestrictionOperatorSpyBody = parseJSON(fleetRestrictionOperatorSpy);
+  const fleetRestrictionAttackBanBody = parseJSON(fleetRestrictionAttackBan);
+  const fleetRestrictionAttackerAfter = fleetRestrictionsReady
+    ? await request(`/api/game/fleet${fleetRestrictionAttackerSearch}`, {
+        headers: { Cookie: fleetRestrictionAttackerLogin?.cookiePair ?? "" }
+      })
+    : null;
+  const fleetRestrictionBlockedAfter = fleetRestrictionsReady
+    ? await request(`/api/game/fleet${fleetRestrictionBlockedSearch}`, {
+        headers: { Cookie: fleetRestrictionBlockedLogin?.cookiePair ?? "" }
+      })
+    : null;
+  const fleetRestrictionWeakAfter = fleetRestrictionsReady
+    ? await request(`/api/game/fleet${fleetRestrictionWeakSearch}`, {
+        headers: { Cookie: fleetRestrictionWeakLogin?.cookiePair ?? "" }
+      })
+    : null;
+  const fleetRestrictionAttackerAfterBody = fleetRestrictionAttackerAfter ? parseJSON(fleetRestrictionAttackerAfter) : {};
+  const fleetRestrictionBlockedAfterBody = fleetRestrictionBlockedAfter ? parseJSON(fleetRestrictionBlockedAfter) : {};
+  const fleetRestrictionWeakAfterBody = fleetRestrictionWeakAfter ? parseJSON(fleetRestrictionWeakAfter) : {};
 
   const gameFleetWithoutCookie = await request(`/api/game/fleet${sessionSearch}`);
   let gameFleetWithoutCookieBody = {};
@@ -3022,6 +3154,70 @@ try {
       check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "password_required" && issue.legacyErrorCode === 2), "missing password maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "universe_required"), "missing universe is reported for multi-universe entry", invalidLoginBody)
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_fleet_target_restrictions_api",
+    checks: [
+      check(!smokeFixtureFile || fleetRestrictionsReady, "go smoke fixture exposes fleet target restriction users", { fleetRestrictionsFixture }),
+      check(!fleetRestrictionsReady || fleetRestrictionAttackerLogin?.response.status === 200, "fleet restriction attacker can log in", {
+        status: fleetRestrictionAttackerLogin?.response.status
+      }),
+      check(!fleetRestrictionsReady || fleetRestrictionWeakLogin?.response.status === 200, "fleet restriction weak attacker can log in", {
+        status: fleetRestrictionWeakLogin?.response.status
+      }),
+      check(!fleetRestrictionsReady || fleetRestrictionBlockedLogin?.response.status === 200, "fleet restriction noattack attacker can log in", {
+        status: fleetRestrictionBlockedLogin?.response.status
+      }),
+      check(!fleetRestrictionsReady || fleetRestrictionAttackerBefore?.status === 200, "fleet restriction attacker fleet screen loads before blocked launches", {
+        status: fleetRestrictionAttackerBefore?.status
+      }),
+      check(!fleetRestrictionsReady || fleetRestrictionBlockedBefore?.status === 200, "fleet restriction blocked attacker fleet screen loads before blocked launches", {
+        status: fleetRestrictionBlockedBefore?.status
+      }),
+      check(!fleetRestrictionsReady || fleetRestrictionWeakBefore?.status === 200, "fleet restriction weak attacker fleet screen loads before blocked launches", {
+        status: fleetRestrictionWeakBefore?.status
+      }),
+      check(!fleetRestrictionsReady || fleetRestrictionNoobAttack.status === 200, "newbie-protected target launch returns HTTP 200", { status: fleetRestrictionNoobAttack.status }),
+      check(!fleetRestrictionsReady || fleetRestrictionNoobAttackBody.actionIssue?.code === "target_noob", "newbie-protected target returns legacy noob issue", fleetRestrictionNoobAttackBody.actionIssue ?? {}),
+      check(!fleetRestrictionsReady || fleetRestrictionStrongAttack.status === 200, "strong-protected target launch returns HTTP 200", { status: fleetRestrictionStrongAttack.status }),
+      check(!fleetRestrictionsReady || fleetRestrictionStrongAttackBody.actionIssue?.code === "target_noob", "strong-protected target shares the legacy noob issue", fleetRestrictionStrongAttackBody.actionIssue ?? {}),
+      check(!fleetRestrictionsReady || fleetRestrictionVacationAttack.status === 200, "vacation target launch returns HTTP 200", { status: fleetRestrictionVacationAttack.status }),
+      check(!fleetRestrictionsReady || fleetRestrictionVacationAttackBody.actionIssue?.code === "vacation_other", "vacation target returns legacy vacation issue", fleetRestrictionVacationAttackBody.actionIssue ?? {}),
+      check(!fleetRestrictionsReady || fleetRestrictionOperatorSpy.status === 200, "operator target spy launch returns HTTP 200", { status: fleetRestrictionOperatorSpy.status }),
+      check(!fleetRestrictionsReady || fleetRestrictionOperatorSpyBody.actionIssue?.code === "target_admin", "operator target returns legacy admin issue", fleetRestrictionOperatorSpyBody.actionIssue ?? {}),
+      check(!fleetRestrictionsReady || fleetRestrictionAttackBan.status === 200, "noattack player launch returns HTTP 200", { status: fleetRestrictionAttackBan.status }),
+      check(!fleetRestrictionsReady || fleetRestrictionAttackBanBody.actionIssue?.code === "attack_ban", "noattack player returns legacy attack-ban issue", fleetRestrictionAttackBanBody.actionIssue ?? {}),
+      check(
+        !fleetRestrictionsReady ||
+          (fleetRestrictionAttackerAfterBody.fleet?.missions?.length ?? -1) === (fleetRestrictionAttackerBeforeBody.fleet?.missions?.length ?? -2),
+        "blocked target restriction launches do not create attacker fleet rows",
+        {
+          before: fleetRestrictionAttackerBeforeBody.fleet?.missions?.length,
+          after: fleetRestrictionAttackerAfterBody.fleet?.missions?.length
+        }
+      ),
+      check(
+        !fleetRestrictionsReady ||
+          (fleetRestrictionBlockedAfterBody.fleet?.missions?.length ?? -1) === (fleetRestrictionBlockedBeforeBody.fleet?.missions?.length ?? -2),
+        "blocked attack-ban launch does not create noattack player fleet rows",
+        {
+          before: fleetRestrictionBlockedBeforeBody.fleet?.missions?.length,
+          after: fleetRestrictionBlockedAfterBody.fleet?.missions?.length
+        }
+      ),
+      check(
+        !fleetRestrictionsReady ||
+          (fleetRestrictionWeakAfterBody.fleet?.missions?.length ?? -1) === (fleetRestrictionWeakBeforeBody.fleet?.missions?.length ?? -2),
+        "blocked strong-target launch does not create weak attacker fleet rows",
+        {
+          before: fleetRestrictionWeakBeforeBody.fleet?.missions?.length,
+          after: fleetRestrictionWeakAfterBody.fleet?.missions?.length
+        }
+      ),
+      check(!fleetRestrictionsReady || !fleetRestrictionNoobAttack.body.includes(fleetRestrictionAttackerLogin?.cookiePair ?? "missing-cookie"), "fleet restriction response does not echo attacker cookie"),
+      check(!fleetRestrictionsReady || !fleetRestrictionAttackBan.body.includes(fleetRestrictionBlockedLogin?.cookiePair ?? "missing-cookie"), "fleet restriction response does not echo noattack attacker cookie")
     ]
   }));
 
