@@ -3856,7 +3856,8 @@ try {
   const operatorAdminOnlyMutationSpecs = [
     { mode: "Uni", action: "settings" },
     { mode: "Coupons", action: "add_one" },
-    { mode: "Planets", action: "create_debris" }
+    { mode: "Planets", action: "create_debris" },
+    { mode: "DB", action: "delete" }
   ];
   const operatorAdminOnlyMutations = operatorLogin
     ? await Promise.all(operatorAdminOnlyMutationSpecs.map(async (spec) => {
