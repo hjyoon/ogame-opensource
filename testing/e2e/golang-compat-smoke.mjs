@@ -1178,6 +1178,10 @@ try {
   const sessionSearch = typeof sessionLoginBody.session?.redirectTo === "string"
     ? new URL(sessionLoginBody.session.redirectTo, baseUrl).search
     : "?session=";
+  const securityPublicHome = await request("/home.php");
+  const securityHTTPSHome = await request("/home.php", {
+    headers: { "X-Forwarded-Proto": "https" }
+  });
   const gameSession = await request(`/api/game/session${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -2928,6 +2932,27 @@ try {
       check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "password_required" && issue.legacyErrorCode === 2), "missing password maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "universe_required"), "missing universe is reported for multi-universe entry", invalidLoginBody)
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_security_headers_cookie_flags",
+    checks: [
+      check(securityPublicHome.status === 200, "public home returns HTTP 200 for security header checks", { status: securityPublicHome.status }),
+      check(!/Fatal error|Parse error|Warning:\s+(Undefined|Trying to access|Attempt to read)|Notice:\s+Undefined/i.test(securityPublicHome.body), "public home has no runtime error marker"),
+      check(hasHeader(securityPublicHome, "x-frame-options", "SAMEORIGIN"), "public home sends SAMEORIGIN frame protection", securityPublicHome.headers),
+      check(hasHeader(securityPublicHome, "x-content-type-options", "nosniff"), "public home sends nosniff header", securityPublicHome.headers),
+      check(hasHeader(securityPublicHome, "referrer-policy", "same-origin"), "public home sends same-origin referrer policy", securityPublicHome.headers),
+      check(hasHeader(securityPublicHome, "content-security-policy", "frame-ancestors 'self'"), "public home sends frame-ancestor CSP", securityPublicHome.headers),
+      check(hasHeader(sessionLogin, "x-frame-options", "SAMEORIGIN"), "login response sends SAMEORIGIN frame protection", sessionLogin.headers),
+      check(hasHeader(sessionLogin, "x-content-type-options", "nosniff"), "login response sends nosniff header", sessionLogin.headers),
+      check(hasHeader(sessionLogin, "referrer-policy", "same-origin"), "login response sends same-origin referrer policy", sessionLogin.headers),
+      check(hasHeader(sessionLogin, "content-security-policy", "frame-ancestors 'self'"), "login response sends frame-ancestor CSP", sessionLogin.headers),
+      check(hasHeader(securityHTTPSHome, "strict-transport-security", "max-age=31536000"), "HTTPS-forwarded home sends HSTS", securityHTTPSHome.headers),
+      check(/^prsess_\d+_1=/.test(sessionCookie), "login response names the private session cookie by player and universe", { setCookie: sessionCookie }),
+      check(sessionCookie.includes("HttpOnly"), "private session cookie is HttpOnly", { setCookie: sessionCookie }),
+      check(sessionCookie.includes("SameSite=Lax"), "private session cookie uses SameSite=Lax", { setCookie: sessionCookie }),
+      check(sessionCookie.includes("Max-Age=86400"), "private session cookie keeps the 24h legacy lifetime", { setCookie: sessionCookie })
     ]
   }));
 
