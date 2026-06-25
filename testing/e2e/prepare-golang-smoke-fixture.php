@@ -1096,6 +1096,8 @@ function smoke_prepare_message_scope_fixture(string $password, array $near): arr
         'owner_bulk_id' => SendMessage((int)$owner['player_id'], 'Go Msg Scope', 'GoMsgScope owner bulk', 'owner bulk body', MTYP_MISC, $now + 3),
         'foreign_selected_id' => SendMessage((int)$foreign['player_id'], 'Go Msg Scope', 'GoMsgScope foreign selected', 'foreign selected body', MTYP_MISC, $now + 2),
         'foreign_bulk_id' => SendMessage((int)$foreign['player_id'], 'Go Msg Scope', 'GoMsgScope foreign bulk', 'foreign bulk body', MTYP_MISC, $now + 1),
+        'owner_report_id' => SendMessage((int)$owner['player_id'], 'Go Msg Scope', 'GoMsgScope owner report', 'owner report body', MTYP_PM, $now + 6),
+        'foreign_report_id' => SendMessage((int)$foreign['player_id'], 'Go Msg Scope', 'GoMsgScope foreign report', 'foreign report body', MTYP_PM, $now + 5),
     );
 }
 

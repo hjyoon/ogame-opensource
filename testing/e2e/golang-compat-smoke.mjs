@@ -393,7 +393,9 @@ try {
     Number(messageScopeFixture.owner_selected_id ?? 0) > 0 &&
     Number(messageScopeFixture.owner_bulk_id ?? 0) > 0 &&
     Number(messageScopeFixture.foreign_selected_id ?? 0) > 0 &&
-    Number(messageScopeFixture.foreign_bulk_id ?? 0) > 0
+    Number(messageScopeFixture.foreign_bulk_id ?? 0) > 0 &&
+    Number(messageScopeFixture.owner_report_id ?? 0) > 0 &&
+    Number(messageScopeFixture.foreign_report_id ?? 0) > 0
   );
   const passwordRecoveryFixture = smokeFixture?.password_recovery ?? {};
   const passwordRecoveryFixtureReady =
@@ -2632,6 +2634,50 @@ try {
       })
     : { status: 0, headers: {}, body: "{}" };
   const messageScopeForeignInitialBody = parseJSON(messageScopeForeignInitial);
+  const messageScopeOwnerReport = messageScopeReady
+    ? await request(`/api/game/messages${messageScopeOwnerSearch}`, {
+        method: "POST",
+        headers: { Cookie: messageScopeOwnerLogin?.cookiePair ?? "", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete",
+          reportIds: [Number(messageScopeFixture.owner_report_id)]
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageScopeOwnerReportBody = parseJSON(messageScopeOwnerReport);
+  const messageScopeOwnerDuplicateReport = messageScopeReady
+    ? await request(`/api/game/messages${messageScopeOwnerSearch}`, {
+        method: "POST",
+        headers: { Cookie: messageScopeOwnerLogin?.cookiePair ?? "", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete",
+          reportIds: [Number(messageScopeFixture.owner_report_id)]
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageScopeOwnerDuplicateReportBody = parseJSON(messageScopeOwnerDuplicateReport);
+  const messageScopeOwnerForeignReportAttempt = messageScopeReady
+    ? await request(`/api/game/messages${messageScopeOwnerSearch}`, {
+        method: "POST",
+        headers: { Cookie: messageScopeOwnerLogin?.cookiePair ?? "", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete",
+          reportIds: [Number(messageScopeFixture.foreign_report_id)]
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageScopeOwnerForeignReportAttemptBody = parseJSON(messageScopeOwnerForeignReportAttempt);
+  const messageScopeForeignOwnReport = messageScopeReady
+    ? await request(`/api/game/messages${messageScopeForeignSearch}`, {
+        method: "POST",
+        headers: { Cookie: messageScopeForeignLogin?.cookiePair ?? "", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete",
+          reportIds: [Number(messageScopeFixture.foreign_report_id)]
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageScopeForeignOwnReportBody = parseJSON(messageScopeForeignOwnReport);
   const messageScopeMarkedDelete = messageScopeReady
     ? await request(`/api/game/messages${messageScopeOwnerSearch}`, {
         method: "POST",
@@ -4249,6 +4295,48 @@ try {
         !messageScopeReady || messageRowByID(messageScopeForeignInitialBody, Number(messageScopeFixture.foreign_bulk_id)) !== undefined,
         "message scope foreign inbox initially contains bulk message",
         messageScopeForeignInitialBody.messages?.rows ?? []
+      ),
+      check(
+        !messageScopeReady || messageRowByID(messageScopeOwnerInitialBody, Number(messageScopeFixture.owner_report_id))?.reportable === true,
+        "message scope owner inbox initially contains a reportable PM",
+        messageScopeOwnerInitialBody.messages?.rows ?? []
+      ),
+      check(
+        !messageScopeReady || messageRowByID(messageScopeForeignInitialBody, Number(messageScopeFixture.foreign_report_id))?.reportable === true,
+        "message scope foreign inbox initially contains a reportable PM",
+        messageScopeForeignInitialBody.messages?.rows ?? []
+      ),
+      check(!messageScopeReady || messageScopeOwnerReport.status === 200, "message owner report returns HTTP 200", {
+        status: messageScopeOwnerReport.status
+      }),
+      check(
+        !messageScopeReady || messageScopeOwnerReportBody.actionIssue?.code === "reported",
+        "message owner can report an owned PM",
+        messageScopeOwnerReportBody.actionIssue ?? {}
+      ),
+      check(!messageScopeReady || messageScopeOwnerDuplicateReport.status === 200, "message duplicate report returns HTTP 200", {
+        status: messageScopeOwnerDuplicateReport.status
+      }),
+      check(
+        !messageScopeReady || messageScopeOwnerDuplicateReportBody.actionIssue?.code === "report_exists",
+        "message duplicate report keeps the legacy report-exists issue",
+        messageScopeOwnerDuplicateReportBody.actionIssue ?? {}
+      ),
+      check(!messageScopeReady || messageScopeOwnerForeignReportAttempt.status === 200, "message foreign report attempt returns HTTP 200", {
+        status: messageScopeOwnerForeignReportAttempt.status
+      }),
+      check(
+        !messageScopeReady || messageScopeOwnerForeignReportAttemptBody.actionIssue === undefined,
+        "message owner cannot report a PM from a foreign inbox",
+        messageScopeOwnerForeignReportAttemptBody.actionIssue ?? {}
+      ),
+      check(!messageScopeReady || messageScopeForeignOwnReport.status === 200, "message foreign user's own report returns HTTP 200", {
+        status: messageScopeForeignOwnReport.status
+      }),
+      check(
+        !messageScopeReady || messageScopeForeignOwnReportBody.actionIssue?.code === "reported",
+        "message foreign user can still report the PM after the owner foreign-id attempt",
+        messageScopeForeignOwnReportBody.actionIssue ?? {}
       ),
       check(!messageScopeReady || messageScopeMarkedDelete.status === 200, "message selected delete returns HTTP 200", {
         status: messageScopeMarkedDelete.status
