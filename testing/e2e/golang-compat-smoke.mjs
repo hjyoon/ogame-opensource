@@ -3865,6 +3865,7 @@ try {
   const operatorAdminOnlyMutationSpecs = [
     { mode: "Uni", action: "settings" },
     { mode: "Coupons", action: "add_one" },
+    { mode: "Coupons", action: "add_date" },
     { mode: "Planets", action: "create_debris" },
     { mode: "DB", action: "delete" }
   ];
@@ -4093,6 +4094,7 @@ try {
     { name: "BattleReport", mode: "BattleReport", arrayKey: "battleReports" },
     { name: "Checksum", mode: "Checksum", arrayKey: "checksumGroups" },
     { name: "DB", mode: "DB", arrayKey: "databaseBackups" },
+    { name: "Coupons", mode: "Coupons" },
     { name: "BotEdit", mode: "BotEdit", arrayKey: "botStrategies" },
     { name: "Uni", mode: "Uni", objectKey: "universe" },
     { name: "Expedition", mode: "Expedition", objectKey: "expedition" },
@@ -6949,6 +6951,7 @@ try {
     `/game/index.php?page=imperium${sessionSearch.replace("?", "&")}`,
     `/game/index.php?page=trader${sessionSearch.replace("?", "&")}`,
     `/game/index.php?page=micropayment${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=payment${sessionSearch.replace("?", "&")}`,
     `/game/index.php?page=allianzen${sessionSearch.replace("?", "&")}`,
     `/game/index.php?page=admin${sessionSearch.replace("?", "&")}`,
     `/game/index.php?page=flotten1${sessionSearch.replace("?", "&")}`,
