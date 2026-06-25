@@ -23,6 +23,10 @@ const (
 
 	AdminActionBroadcastSend = "broadcast_send"
 	AdminActionReportsDelete = "reports_delete"
+
+	AdminActionBattleSimRun  = "battle_sim"
+	AdminActionRakSimRun     = "rak_sim"
+	AdminActionExpeditionSim = "sim"
 )
 
 type Admin struct {
@@ -333,4 +337,11 @@ func AdminIssue(code string) *AdminActionIssue {
 	default:
 		return &AdminActionIssue{Code: code, Message: "Admin action could not be completed."}
 	}
+}
+
+func AdminIssueWithMessage(code string, message string) *AdminActionIssue {
+	if strings.TrimSpace(message) == "" {
+		return AdminIssue(code)
+	}
+	return &AdminActionIssue{Code: code, Message: message}
 }

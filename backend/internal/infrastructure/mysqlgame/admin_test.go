@@ -403,6 +403,60 @@ func TestAdminRepositoryMutatesReports(t *testing.T) {
 	})
 }
 
+func TestAdminRepositoryMutatesAdminSimulators(t *testing.T) {
+	t.Run("battle simulator creates report message", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		repository.now = func() time.Time { return time.Unix(2_000, 0) }
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			PlayerID: 42,
+			PlanetID: 99,
+			Mode:     "BattleSim",
+			Action:   domaingame.AdminActionBattleSimRun,
+		})
+
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || !strings.Contains(issue.Message, "Battle report") {
+			t.Fatalf("unexpected battle simulator issue=%+v err=%v", issue, err)
+		}
+		if len(runner.execCalls) != 1 || !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `ogame_messages`") ||
+			runner.execCalls[0].args[0] != 42 ||
+			runner.execCalls[0].args[1] != domaingame.MessageTypeBattleReportText ||
+			runner.execCalls[0].args[2] != "Battle simulator" ||
+			runner.execCalls[0].args[3] != "Battle report" ||
+			!strings.Contains(runner.execCalls[0].args[4].(string), "Battle report") ||
+			runner.execCalls[0].args[5] != int64(2_000) ||
+			runner.execCalls[0].args[6] != 99 {
+			t.Fatalf("unexpected battle simulator insert: %+v", runner.execCalls)
+		}
+	})
+
+	t.Run("rak and expedition simulators render legacy result markers", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		rakIssue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:   "RakSim",
+			Action: domaingame.AdminActionRakSimRun,
+		})
+		if err != nil || rakIssue == nil || !strings.Contains(rakIssue.Message, "Missile attack") || !strings.Contains(rakIssue.Message, "Defense") {
+			t.Fatalf("unexpected rak simulator issue=%+v err=%v", rakIssue, err)
+		}
+
+		expeditionIssue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:   "Expedition",
+			Action: domaingame.AdminActionExpeditionSim,
+		})
+		if err != nil || expeditionIssue == nil || !strings.Contains(expeditionIssue.Message, "Expedition simulation result") || !strings.Contains(expeditionIssue.Message, "myChart") {
+			t.Fatalf("unexpected expedition simulator issue=%+v err=%v", expeditionIssue, err)
+		}
+
+		if len(runner.execCalls) != 0 {
+			t.Fatalf("rak and expedition simulator markers should not write, got %+v", runner.execCalls)
+		}
+	})
+}
+
 func TestAdminRepositoryAdminOperationEdges(t *testing.T) {
 	t.Run("broadcast empty payload noops", func(t *testing.T) {
 		runner := &fakeGalaxyRunner{}

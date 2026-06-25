@@ -65,6 +65,12 @@ func TestNewAdminNormalizesModeAndCopiesMenu(t *testing.T) {
 	if issue := AdminIssue(AdminIssueAccessDenied); issue == nil || issue.Message != "Access denied." {
 		t.Fatalf("unexpected admin issue: %+v", issue)
 	}
+	if issue := AdminIssueWithMessage(AdminIssueActionSaved, "Battle report simulator completed."); issue == nil || issue.Message != "Battle report simulator completed." {
+		t.Fatalf("unexpected custom admin issue: %+v", issue)
+	}
+	if issue := AdminIssueWithMessage(AdminIssueActionSaved, ""); issue == nil || issue.Message != "Action saved." {
+		t.Fatalf("unexpected empty custom admin issue: %+v", issue)
+	}
 	if issue := AdminIssue("unknown"); issue == nil || issue.Code != "unknown" {
 		t.Fatalf("unexpected unknown admin issue: %+v", issue)
 	}

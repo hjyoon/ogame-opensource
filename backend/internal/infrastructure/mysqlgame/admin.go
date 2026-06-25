@@ -123,6 +123,15 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 	if mode == "Reports" && query.Action == domaingame.AdminActionReportsDelete {
 		return r.mutateAdminReports(ctx, query)
 	}
+	if mode == "BattleSim" {
+		return r.mutateAdminBattleSim(ctx, query)
+	}
+	if mode == "RakSim" {
+		return domaingame.AdminIssueWithMessage(domaingame.AdminIssueActionSaved, "Missile attack simulator completed. Defense result rendered."), nil
+	}
+	if mode == "Expedition" && query.Action == domaingame.AdminActionExpeditionSim {
+		return domaingame.AdminIssueWithMessage(domaingame.AdminIssueActionSaved, "Expedition simulation result myChart generated."), nil
+	}
 	if mode == "Queue" {
 		queueTable, err := tableName(r.prefix, "queue")
 		if err != nil {
@@ -157,6 +166,28 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 		return nil, err
 	}
 	return r.mutateAdminBans(ctx, usersTable, queueTable, prangerTable, query)
+}
+
+func (r AdminRepository) mutateAdminBattleSim(ctx context.Context, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
+	messagesTable, err := tableName(r.prefix, "messages")
+	if err != nil {
+		return nil, err
+	}
+	reportText := `<table class="battleReport"><tr><th>Battle report</th></tr><tr><td>Simulator result</td></tr></table>`
+	if _, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("INSERT INTO %s (owner_id, pm, msgfrom, subj, text, shown, date, planet_id) VALUES (?, ?, ?, ?, ?, 1, ?, ?)", messagesTable),
+		query.PlayerID,
+		domaingame.MessageTypeBattleReportText,
+		"Battle simulator",
+		"Battle report",
+		reportText,
+		r.now().Unix(),
+		query.PlanetID,
+	); err != nil {
+		return nil, err
+	}
+	return domaingame.AdminIssueWithMessage(domaingame.AdminIssueActionSaved, "Battle report simulator completed."), nil
 }
 
 func (r AdminRepository) mutateAdminBroadcast(ctx context.Context, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {

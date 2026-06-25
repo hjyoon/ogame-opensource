@@ -2335,6 +2335,30 @@ try {
   const operatorLogin = adminQueueFixtureReady || adminFleetlogsFixtureReady || adminOperationsReady
     ? await loginGameUser("gooperator", loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
     : null;
+  const operatorBattleSim = adminOperationsReady && operatorLogin
+    ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "BattleSim")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: operatorLogin.cookiePair },
+        body: JSON.stringify({ action: "battle_sim" })
+      })
+    : null;
+  const operatorBattleSimBody = operatorBattleSim ? parseJSON(operatorBattleSim) : {};
+  const operatorRakSim = adminOperationsReady && operatorLogin
+    ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "RakSim")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: operatorLogin.cookiePair },
+        body: JSON.stringify({ action: "rak_sim" })
+      })
+    : null;
+  const operatorRakSimBody = operatorRakSim ? parseJSON(operatorRakSim) : {};
+  const operatorExpeditionSim = adminOperationsReady && operatorLogin
+    ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "Expedition")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: operatorLogin.cookiePair },
+        body: JSON.stringify({ action: "sim" })
+      })
+    : null;
+  const operatorExpeditionSimBody = operatorExpeditionSim ? parseJSON(operatorExpeditionSim) : {};
   const adminExpeditionBeforeSettings = operatorLogin
     ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Expedition")}`, {
         headers: { Cookie: sessionCookiePair }
@@ -3516,6 +3540,46 @@ try {
       check(item.body.admin?.mode === item.mode, `regular user ${item.mode} admin request resolves legacy mode`, item.body.admin ?? {}),
       check(item.body.actionIssue?.code === "access_denied", `regular user ${item.mode} admin request is denied like legacy`, item.body.actionIssue ?? {})
     ])
+  }));
+
+  cases.push(finalize({
+    case: "go_admin_simulator_posts_api",
+    checks: [
+      check(!smokeFixtureFile || adminOperationsReady, "go smoke fixture exposes admin operation users for simulator checks", {
+        smokeFixtureFile,
+        adminOperationsFixture
+      }),
+      check(!adminOperationsReady || operatorLogin?.response.status === 200, "operator smoke user can log in for simulator checks", {
+        status: operatorLogin?.response.status
+      }),
+      check(!adminOperationsReady || operatorBattleSim?.status === 200, "operator BattleSim POST returns HTTP 200", {
+        status: operatorBattleSim?.status
+      }),
+      check(!adminOperationsReady || operatorBattleSimBody.actionIssue?.code === "action_saved", "operator BattleSim POST saves like legacy", operatorBattleSimBody.actionIssue ?? {}),
+      check(!adminOperationsReady || String(operatorBattleSimBody.actionIssue?.message ?? "").includes("Battle report"), "operator BattleSim POST renders a battle report marker", operatorBattleSimBody.actionIssue ?? {}),
+      check(!adminOperationsReady || operatorRakSim?.status === 200, "operator RakSim POST returns HTTP 200", {
+        status: operatorRakSim?.status
+      }),
+      check(!adminOperationsReady || operatorRakSimBody.actionIssue?.code === "action_saved", "operator RakSim POST saves like legacy", operatorRakSimBody.actionIssue ?? {}),
+      check(
+        !adminOperationsReady ||
+          (String(operatorRakSimBody.actionIssue?.message ?? "").includes("Missile attack") &&
+            String(operatorRakSimBody.actionIssue?.message ?? "").includes("Defense")),
+        "operator RakSim POST renders missile and defense markers",
+        operatorRakSimBody.actionIssue ?? {}
+      ),
+      check(!adminOperationsReady || operatorExpeditionSim?.status === 200, "operator Expedition sim POST returns HTTP 200", {
+        status: operatorExpeditionSim?.status
+      }),
+      check(!adminOperationsReady || operatorExpeditionSimBody.actionIssue?.code === "action_saved", "operator Expedition sim POST saves like legacy", operatorExpeditionSimBody.actionIssue ?? {}),
+      check(
+        !adminOperationsReady ||
+          (String(operatorExpeditionSimBody.actionIssue?.message ?? "").includes("Expedition simulation result") &&
+            String(operatorExpeditionSimBody.actionIssue?.message ?? "").includes("myChart")),
+        "operator Expedition sim POST renders chart markers",
+        operatorExpeditionSimBody.actionIssue ?? {}
+      )
+    ]
   }));
 
   cases.push(finalize({
