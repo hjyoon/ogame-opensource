@@ -169,6 +169,12 @@ function fleetMissionCountByMission(body, mission) {
     : 0;
 }
 
+function statisticsRowByPlayerID(body, playerID) {
+  return Array.isArray(body.statistics?.rows)
+    ? body.statistics.rows.find((row) => Number(row.player?.id ?? 0) === Number(playerID))
+    : undefined;
+}
+
 async function readOptionalJSON(path) {
   if (!path) {
     return {};
@@ -552,6 +558,15 @@ try {
     fleetRecallOwnFleetID > 0 &&
     fleetRecallForeignFleetID > 0 &&
     fleetRecallCargoMetal > 0
+  );
+  const statisticsRankingFixture = smokeFixture?.statistics_ranking ?? {};
+  const statisticsRankingReady = Boolean(
+    typeof statisticsRankingFixture.leader?.login === "string" &&
+    Number(statisticsRankingFixture.leader?.player_id ?? 0) > 0 &&
+    Number(statisticsRankingFixture.leader?.home_planet_id ?? 0) > 0 &&
+    Number(statisticsRankingFixture.challenger?.player_id ?? 0) > 0 &&
+    Number(statisticsRankingFixture.leader?.score1 ?? 0) > 0 &&
+    Number(statisticsRankingFixture.challenger?.score1 ?? 0) > 0
   );
   const galaxyRemoteFixture = smokeFixture?.galaxy_remote ?? {};
   const galaxyRemoteReady = Boolean(
@@ -2471,6 +2486,38 @@ try {
   } catch {
     gameStatisticsWithoutCookieBody = {};
   }
+
+  const statisticsRankingLogin = statisticsRankingReady
+    ? await loginGameUser(statisticsRankingFixture.leader.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const statisticsRankingSearch = statisticsRankingReady
+    ? withQueryParam(statisticsRankingLogin?.search ?? "?session=", "cp", Number(statisticsRankingFixture.leader.home_planet_id))
+    : "?session=";
+  const statisticsRankingCookie = statisticsRankingLogin?.cookiePair ?? "";
+  const statisticsRankingPoints = statisticsRankingReady
+    ? await request(`/api/game/statistics${statisticsRankingSearch}&type=ressources&start=1`, {
+        headers: { Cookie: statisticsRankingCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const statisticsRankingPointsBody = parseJSON(statisticsRankingPoints);
+  const statisticsRankingFleet = statisticsRankingReady
+    ? await request(`/api/game/statistics${statisticsRankingSearch}&type=fleet&start=1`, {
+        headers: { Cookie: statisticsRankingCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const statisticsRankingFleetBody = parseJSON(statisticsRankingFleet);
+  const statisticsRankingResearch = statisticsRankingReady
+    ? await request(`/api/game/statistics${statisticsRankingSearch}&type=research&start=1`, {
+        headers: { Cookie: statisticsRankingCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const statisticsRankingResearchBody = parseJSON(statisticsRankingResearch);
+  const statisticsLeaderPointsRow = statisticsRowByPlayerID(statisticsRankingPointsBody, Number(statisticsRankingFixture.leader?.player_id ?? 0));
+  const statisticsChallengerPointsRow = statisticsRowByPlayerID(statisticsRankingPointsBody, Number(statisticsRankingFixture.challenger?.player_id ?? 0));
+  const statisticsLeaderFleetRow = statisticsRowByPlayerID(statisticsRankingFleetBody, Number(statisticsRankingFixture.leader?.player_id ?? 0));
+  const statisticsChallengerFleetRow = statisticsRowByPlayerID(statisticsRankingFleetBody, Number(statisticsRankingFixture.challenger?.player_id ?? 0));
+  const statisticsLeaderResearchRow = statisticsRowByPlayerID(statisticsRankingResearchBody, Number(statisticsRankingFixture.leader?.player_id ?? 0));
+  const statisticsChallengerResearchRow = statisticsRowByPlayerID(statisticsRankingResearchBody, Number(statisticsRankingFixture.challenger?.player_id ?? 0));
 
   const gameSearch = await request(`/api/game/search${sessionSearch}&type=playername&searchtext=leg`, {
     headers: { Cookie: sessionCookiePair }
@@ -4802,6 +4849,45 @@ try {
       check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "password_required" && issue.legacyErrorCode === 2), "missing password maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "universe_required"), "missing universe is reported for multi-universe entry", invalidLoginBody)
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_statistics_ranking_fixture_api",
+    checks: [
+      check(!smokeFixtureFile || statisticsRankingReady, "go smoke fixture exposes statistics ranking users", {
+        statisticsRankingFixture
+      }),
+      check(!statisticsRankingReady || statisticsRankingLogin?.response.status === 200, "statistics ranking user can log in", {
+        status: statisticsRankingLogin?.response.status
+      }),
+      check(!statisticsRankingReady || statisticsRankingPoints.status === 200, "statistics points ranking returns HTTP 200", {
+        status: statisticsRankingPoints.status
+      }),
+      check(!statisticsRankingReady || statisticsRankingFleet.status === 200, "statistics fleet ranking returns HTTP 200", {
+        status: statisticsRankingFleet.status
+      }),
+      check(!statisticsRankingReady || statisticsRankingResearch.status === 200, "statistics research ranking returns HTTP 200", {
+        status: statisticsRankingResearch.status
+      }),
+      check(!statisticsRankingReady || statisticsRankingPointsBody.statistics?.type === "ressources", "statistics points ranking keeps legacy ressources type", statisticsRankingPointsBody.statistics ?? {}),
+      check(!statisticsRankingReady || statisticsRankingFleetBody.statistics?.type === "fleet", "statistics fleet ranking keeps fleet type", statisticsRankingFleetBody.statistics ?? {}),
+      check(!statisticsRankingReady || statisticsRankingResearchBody.statistics?.type === "research", "statistics research ranking keeps research type", statisticsRankingResearchBody.statistics ?? {}),
+      check(!statisticsRankingReady || statisticsLeaderPointsRow?.player?.name === statisticsRankingFixture.leader.name, "statistics points include leader fixture user", statisticsLeaderPointsRow ?? {}),
+      check(!statisticsRankingReady || statisticsChallengerPointsRow?.player?.name === statisticsRankingFixture.challenger.name, "statistics points include challenger fixture user", statisticsChallengerPointsRow ?? {}),
+      check(!statisticsRankingReady || Number(statisticsLeaderPointsRow?.score ?? 0) === Number(statisticsRankingFixture.leader.score1), "statistics points preserve leader raw score", statisticsLeaderPointsRow ?? {}),
+      check(!statisticsRankingReady || Number(statisticsChallengerPointsRow?.score ?? 0) === Number(statisticsRankingFixture.challenger.score1), "statistics points preserve challenger raw score", statisticsChallengerPointsRow ?? {}),
+      check(!statisticsRankingReady || Number(statisticsLeaderPointsRow?.displayScore ?? 0) === Number(statisticsRankingFixture.leader.display_score1), "statistics points display leader score in legacy thousands", statisticsLeaderPointsRow ?? {}),
+      check(!statisticsRankingReady || Number(statisticsChallengerPointsRow?.displayScore ?? 0) === Number(statisticsRankingFixture.challenger.display_score1), "statistics points display challenger score in legacy thousands", statisticsChallengerPointsRow ?? {}),
+      check(!statisticsRankingReady || Number(statisticsLeaderPointsRow?.place ?? 0) === Number(statisticsRankingFixture.leader.place), "statistics points preserve leader place", statisticsLeaderPointsRow ?? {}),
+      check(!statisticsRankingReady || Number(statisticsChallengerPointsRow?.place ?? 0) === Number(statisticsRankingFixture.challenger.place), "statistics points preserve challenger place", statisticsChallengerPointsRow ?? {}),
+      check(!statisticsRankingReady || statisticsLeaderPointsRow?.own === true, "statistics marks logged-in fixture user as own", statisticsLeaderPointsRow ?? {}),
+      check(!statisticsRankingReady || statisticsChallengerPointsRow?.own === false, "statistics does not mark the other fixture user as own", statisticsChallengerPointsRow ?? {}),
+      check(!statisticsRankingReady || Number(statisticsLeaderFleetRow?.score ?? 0) === Number(statisticsRankingFixture.leader.score2), "statistics fleet preserves leader fleet score", statisticsLeaderFleetRow ?? {}),
+      check(!statisticsRankingReady || Number(statisticsChallengerFleetRow?.score ?? 0) === Number(statisticsRankingFixture.challenger.score2), "statistics fleet preserves challenger fleet score", statisticsChallengerFleetRow ?? {}),
+      check(!statisticsRankingReady || Number(statisticsLeaderResearchRow?.score ?? 0) === Number(statisticsRankingFixture.leader.score3), "statistics research preserves leader research score", statisticsLeaderResearchRow ?? {}),
+      check(!statisticsRankingReady || Number(statisticsChallengerResearchRow?.score ?? 0) === Number(statisticsRankingFixture.challenger.score3), "statistics research preserves challenger research score", statisticsChallengerResearchRow ?? {}),
+      check(!statisticsRankingReady || !statisticsRankingPoints.body.includes(statisticsRankingCookie), "statistics ranking response does not echo private cookie")
     ]
   }));
 

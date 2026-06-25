@@ -1447,6 +1447,74 @@ function smoke_prepare_fleet_recall_fixture(string $password, array $near): arra
     );
 }
 
+function smoke_prepare_statistics_ranking_fixture(string $password, array $near): array
+{
+    global $db_prefix;
+
+    $leader = smoke_prepare_user('gostatslead', $password, 'gostatslead@example.local', USER_TYPE_PLAYER);
+    $challenger = smoke_prepare_user('gostatschamp', $password, 'gostatschamp@example.local', USER_TYPE_PLAYER);
+    $users = array($leader, $challenger);
+    $userIds = array_map(fn($user) => (int)$user['player_id'], $users);
+    $planetIds = array_map(fn($user) => (int)$user['home_planet_id'], $users);
+
+    smoke_cleanup_alliances($userIds);
+    smoke_cleanup_fleets($userIds, $planetIds);
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id IN (" . implode(',', $userIds) . ")");
+    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id IN (" . implode(',', $userIds) . ") OR planet_id IN (" . implode(',', $planetIds) . ")");
+
+    $positions = smoke_find_empty_positions($near, count($users));
+    foreach ($users as $index => $user) {
+        smoke_prepare_planet((int)$user['home_planet_id'], (int)$user['player_id'], 'GoStats' . $index, $positions[$index]);
+    }
+
+    $now = time();
+    $leaderId = (int)$leader['player_id'];
+    $challengerId = (int)$challenger['player_id'];
+    dbquery(
+        "UPDATE {$db_prefix}users SET admin=0, validated=1, deact_ip=1, " .
+        "vacation=0, vacation_until=0, banned=0, banned_until=0, noattack=0, noattack_until=0, " .
+        "disable=0, disable_until=0, lang='en', skin='/evolution/', useskin=1, ally_id=0, allyrank=0, " .
+        "score1=900000000, score2=200, score3=40, oldscore1=800000000, oldscore2=100, oldscore3=30, " .
+        "place1=2, place2=2, place3=2, oldplace1=3, oldplace2=3, oldplace3=3, scoredate={$now} " .
+        "WHERE player_id={$leaderId}"
+    );
+    dbquery(
+        "UPDATE {$db_prefix}users SET admin=0, validated=1, deact_ip=1, " .
+        "vacation=0, vacation_until=0, banned=0, banned_until=0, noattack=0, noattack_until=0, " .
+        "disable=0, disable_until=0, lang='en', skin='/evolution/', useskin=1, ally_id=0, allyrank=0, " .
+        "score1=950000000, score2=300, score3=50, oldscore1=700000000, oldscore2=100, oldscore3=20, " .
+        "place1=1, place2=1, place3=1, oldplace1=2, oldplace2=2, oldplace3=2, scoredate={$now} " .
+        "WHERE player_id={$challengerId}"
+    );
+    dbquery("UPDATE {$db_prefix}planets SET lastpeek={$now}, lastakt={$now} WHERE planet_id IN (" . implode(',', $planetIds) . ")");
+    InvalidateUserCache();
+
+    return array(
+        'leader' => array(
+            'login' => mb_strtolower($leader['name'], 'UTF-8'),
+            'name' => $leader['name'],
+            'player_id' => $leaderId,
+            'home_planet_id' => (int)$leader['home_planet_id'],
+            'score1' => 900000000,
+            'score2' => 200,
+            'score3' => 40,
+            'display_score1' => 900000,
+            'place' => 2,
+        ),
+        'challenger' => array(
+            'login' => mb_strtolower($challenger['name'], 'UTF-8'),
+            'name' => $challenger['name'],
+            'player_id' => $challengerId,
+            'home_planet_id' => (int)$challenger['home_planet_id'],
+            'score1' => 950000000,
+            'score2' => 300,
+            'score3' => 50,
+            'display_score1' => 950000,
+            'place' => 1,
+        ),
+    );
+}
+
 $name = getenv('OGAME_GO_LOGIN_SMOKE_USER') ?: 'legor';
 $password = getenv('OGAME_GO_LOGIN_SMOKE_PASS') ?: 'admin';
 $email = getenv('OGAME_GO_LOGIN_SMOKE_EMAIL') ?: ($name . '@example.local');
@@ -1497,6 +1565,7 @@ $messageSendFixture = smoke_prepare_message_send_fixture($password, $home);
 $resourceScopeFixture = smoke_prepare_resource_scope_fixture($password, $home);
 $inputHardeningFixture = smoke_prepare_input_hardening_fixture($password, $home);
 $fleetRecallFixture = smoke_prepare_fleet_recall_fixture($password, $home);
+$statisticsRankingFixture = smoke_prepare_statistics_ranking_fixture($password, $home);
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
 echo json_encode(array(
@@ -1550,4 +1619,5 @@ echo json_encode(array(
 		'resource_scope' => $resourceScopeFixture,
 		'input_hardening' => $inputHardeningFixture,
 		'fleet_recall' => $fleetRecallFixture,
+		'statistics_ranking' => $statisticsRankingFixture,
 	), JSON_UNESCAPED_SLASHES) . PHP_EOL;
