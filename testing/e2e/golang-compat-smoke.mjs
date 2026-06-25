@@ -236,6 +236,23 @@ function noLoopbackAsset(body) {
   return !/(?:src|href|background)=["']https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\//i.test(body);
 }
 
+function hasRawExecutablePayload(value, token) {
+  const body = String(value ?? "").toLowerCase();
+  const marker = String(token ?? "").toLowerCase();
+  if (!marker) {
+    return false;
+  }
+  return [
+    `${marker} "><script`,
+    `${marker} body <img`,
+    `</textarea><script>${marker}`,
+    `${marker}</textarea><script`,
+    `javascript:alert("${marker}")`,
+    "href=\"redir.php?url=javascript:",
+    "pic.php?url=javascript:"
+  ].some((needle) => body.includes(needle));
+}
+
 function sameOriginAssetPath(documentPath, assetURL) {
   const raw = String(assetURL ?? "").trim();
   if (
@@ -658,6 +675,7 @@ try {
     });
   }
   const unsafeImageURLs = [
+    `${baseUrl}/game/img/preload.gif`,
     "file:///etc/passwd",
     "javascript:alert(1)",
     "http://127.0.0.1:8888/game/img/preload.gif",
@@ -3110,6 +3128,29 @@ try {
   const messageSendRecipientInboxBody = parseJSON(messageSendRecipientInbox);
   const messageSendRecipientRow = messageRowContaining(messageSendRecipientInboxBody, messageSendSubject);
   const messageSendSenderRow = messageRowContaining(messageSendPostBody, messageSendSubject);
+  const messageHardeningToken = `GoHardening${runId}`.replace(/[^A-Za-z0-9]/g, "");
+  const messageHardeningSubject = `${messageHardeningToken} "><script>alert("pm-subject")</script>`;
+  const messageHardeningText = `${messageHardeningToken} body <img src=x onerror=alert("pm-body")> </textarea><script>${messageHardeningToken}</script>`;
+  const messageHardeningPost = messageSendReady
+    ? await request(`/api/game/messages${messageSendSenderSearch}`, {
+        method: "POST",
+        headers: { Cookie: messageSendSenderLogin?.cookiePair ?? "", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "send",
+          targetPlayerId: Number(messageSendFixture.recipient.player_id),
+          subject: messageHardeningSubject,
+          text: messageHardeningText
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageHardeningPostBody = parseJSON(messageHardeningPost);
+  const messageHardeningRecipientInbox = messageSendReady
+    ? await request(`/api/game/messages${messageSendRecipientSearch}`, {
+        headers: { Cookie: messageSendRecipientLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageHardeningRecipientInboxBody = parseJSON(messageHardeningRecipientInbox);
+  const messageHardeningRecipientRow = messageRowContaining(messageHardeningRecipientInboxBody, messageHardeningToken);
 
   const gameNotes = await request(`/api/game/notes${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -4167,6 +4208,48 @@ try {
       })
     : { status: 0, headers: {}, body: "{}" };
   const allianceSettingsAfterLegacyGetBody = parseJSON(allianceSettingsAfterLegacyGet);
+  const allianceHardeningToken = `GoAllyHardening${runId}`.replace(/[^A-Za-z0-9]/g, "");
+  const allianceHardeningPayload = `${allianceHardeningToken}</textarea><script>alert("ally-text")</script><img src=x onerror=alert("ally-img")>`;
+  const allianceHardeningBadURL = `javascript:alert("${allianceHardeningToken}")`;
+  const allianceHardeningTextPost = createdAllianceId > 0
+    ? await request(`/api/game/alliance${withQueryParams(allianceFounderLogin.search, { a: "11", d: "1", t: "1" })}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: allianceFounderLogin.cookiePair },
+        body: JSON.stringify({ action: "save_text", textKind: 1, text: allianceHardeningPayload, insertApp: false })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const allianceHardeningTextPostBody = parseJSON(allianceHardeningTextPost);
+  const allianceHardeningSettingsPost = createdAllianceId > 0
+    ? await request(`/api/game/alliance${withQueryParams(allianceFounderLogin.search, { a: "11", d: "2" })}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: allianceFounderLogin.cookiePair },
+        body: JSON.stringify({
+          action: "save_settings",
+          homepage: allianceHardeningBadURL,
+          imageLogo: allianceHardeningBadURL,
+          open: true,
+          founderRankName: ""
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const allianceHardeningSettingsPostBody = parseJSON(allianceHardeningSettingsPost);
+  const allianceHardeningHome = createdAllianceId > 0
+    ? await request(`/api/game/alliance${allianceFounderLogin.search}`, {
+        headers: { Cookie: allianceFounderLogin.cookiePair }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const allianceHardeningHomeBody = parseJSON(allianceHardeningHome);
+  const allianceHardeningManagement = createdAllianceId > 0
+    ? await request(`/api/game/alliance${withQueryParams(allianceFounderLogin.search, { a: "5", t: "1" })}`, {
+        headers: { Cookie: allianceFounderLogin.cookiePair }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const allianceHardeningManagementBody = parseJSON(allianceHardeningManagement);
+  const allianceHardeningOwn =
+    allianceHardeningHomeBody.alliance?.own ??
+    allianceHardeningManagementBody.alliance?.own ??
+    allianceHardeningSettingsPostBody.alliance?.own ??
+    {};
 
   const gameOptions = await request(`/api/game/options${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -5409,6 +5492,45 @@ try {
       ),
       check(!messageSendReady || !messageSendPost.body.includes(messageSendSenderLogin?.cookiePair ?? "missing-cookie"), "message send response does not echo sender private cookie"),
       check(!messageSendReady || !messageSendRecipientInbox.body.includes(messageSendRecipientLogin?.cookiePair ?? "missing-cookie"), "message recipient response does not echo recipient private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_security_hardening_message_html_escape_api",
+    checks: [
+      check(!smokeFixtureFile || messageSendReady, "go smoke fixture exposes message hardening sender and recipient users", { messageSendFixture }),
+      check(!messageSendReady || messageSendSenderLogin?.response.status === 200, "message hardening sender can log in", {
+        status: messageSendSenderLogin?.response.status
+      }),
+      check(!messageSendReady || messageSendRecipientLogin?.response.status === 200, "message hardening recipient can log in", {
+        status: messageSendRecipientLogin?.response.status
+      }),
+      check(!messageSendReady || messageHardeningPost.status === 200, "message hardening payload send returns HTTP 200", {
+        status: messageHardeningPost.status
+      }),
+      check(!messageSendReady || messageHardeningPostBody.actionIssue?.code === "sent", "message hardening payload send returns sent issue", messageHardeningPostBody.actionIssue ?? {}),
+      check(!messageSendReady || messageHardeningRecipientInbox.status === 200, "message hardening recipient inbox returns HTTP 200", {
+        status: messageHardeningRecipientInbox.status
+      }),
+      check(!messageSendReady || messageHardeningRecipientRow !== undefined, "message hardening recipient inbox contains the payload marker", messageHardeningRecipientInboxBody.messages?.rows ?? []),
+      check(!messageSendReady || !hasRawExecutablePayload(messageHardeningRecipientInbox.body, messageHardeningToken), "message hardening recipient API body does not expose raw executable payload HTML"),
+      check(
+        !messageSendReady ||
+          String(messageHardeningRecipientRow?.subject ?? "").includes("&lt;script") &&
+            !String(messageHardeningRecipientRow?.subject ?? "").includes("<script"),
+        "message hardening subject is stored as escaped text",
+        messageHardeningRecipientRow ?? {}
+      ),
+      check(
+        !messageSendReady ||
+          String(messageHardeningRecipientRow?.text ?? "").includes("&lt;img") &&
+            String(messageHardeningRecipientRow?.text ?? "").includes("&lt;/textarea&gt;") &&
+            !String(messageHardeningRecipientRow?.text ?? "").includes("<img") &&
+            !String(messageHardeningRecipientRow?.text ?? "").includes("<script"),
+        "message hardening body is stored as escaped text",
+        messageHardeningRecipientRow ?? {}
+      ),
+      check(!messageSendReady || !messageHardeningPost.body.includes(messageSendSenderLogin?.cookiePair ?? "missing-cookie"), "message hardening send response does not echo sender private cookie")
     ]
   }));
 
@@ -6680,6 +6802,42 @@ try {
         targetMessagesAfterCircularBody.messages?.rows ?? []
       ),
       check(!allianceCircular.body.includes(targetLogin.cookiePair), "alliance circular response does not echo target private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_security_hardening_alliance_text_url_escape_api",
+    checks: [
+      check(createdAllianceId > 0, "alliance hardening fixture creates an alliance", { createdAllianceId }),
+      check(!createdAllianceId || allianceHardeningTextPost.status === 200, "alliance hardening text save returns HTTP 200", { status: allianceHardeningTextPost.status }),
+      check(!createdAllianceId || allianceHardeningTextPostBody.actionIssue?.code === "saved", "alliance hardening text save returns saved issue", allianceHardeningTextPostBody.actionIssue ?? {}),
+      check(!createdAllianceId || allianceHardeningSettingsPost.status === 200, "alliance hardening URL settings save returns HTTP 200", { status: allianceHardeningSettingsPost.status }),
+      check(!createdAllianceId || allianceHardeningSettingsPostBody.actionIssue?.code === "saved", "alliance hardening URL settings save returns saved issue", allianceHardeningSettingsPostBody.actionIssue ?? {}),
+      check(!createdAllianceId || allianceHardeningHome.status === 200, "alliance hardening home reload returns HTTP 200", { status: allianceHardeningHome.status }),
+      check(!createdAllianceId || allianceHardeningManagement.status === 200, "alliance hardening management reload returns HTTP 200", { status: allianceHardeningManagement.status }),
+      check(!createdAllianceId || String(allianceHardeningOwn.homepage ?? "") === "", "alliance hardening rejects script-scheme homepage at save time", allianceHardeningOwn),
+      check(!createdAllianceId || String(allianceHardeningOwn.imageLogo ?? "") === "", "alliance hardening rejects script-scheme logo URL at save time", allianceHardeningOwn),
+      check(!createdAllianceId || String(allianceHardeningOwn.externalText ?? "").includes(allianceHardeningToken), "alliance hardening payload text is stored for render verification", allianceHardeningOwn),
+      check(
+        !createdAllianceId ||
+          ![
+            allianceHardeningTextPost.body,
+            allianceHardeningSettingsPost.body,
+            allianceHardeningHome.body,
+            allianceHardeningManagement.body
+          ].some((body) => hasRawExecutablePayload(body, allianceHardeningToken)),
+        "alliance hardening API bodies do not expose raw executable payload HTML"
+      ),
+      check(
+        !createdAllianceId ||
+          ![
+            allianceHardeningSettingsPost.body,
+            allianceHardeningHome.body,
+            allianceHardeningManagement.body
+          ].some((body) => /(?:redir\.php|pic\.php)\?url=javascript:/i.test(body)),
+        "alliance hardening API bodies do not render script-scheme URL proxy attributes"
+      ),
+      check(!createdAllianceId || !allianceHardeningSettingsPost.body.includes(allianceFounderLogin.cookiePair), "alliance hardening response does not echo founder private cookie")
     ]
   }));
 
