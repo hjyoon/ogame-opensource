@@ -3859,7 +3859,7 @@ try {
     });
     return { mode, response, body: parseJSON(response) };
   }));
-  const operatorLogin = adminQueueFixtureReady || adminFleetlogsFixtureReady || adminOperationsReady
+  const operatorLogin = adminQueueFixtureReady || adminFleetlogsFixtureReady || adminOperationsReady || adminAuditReady
     ? await loginGameUser("gooperator", loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
     : null;
   const operatorAdminOnlyMutationSpecs = [
@@ -3879,6 +3879,28 @@ try {
         return { ...spec, response, body: parseJSON(response) };
       }))
     : [];
+  const operatorUserLogs = adminAuditReady && operatorLogin
+    ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "UserLogs")}`, {
+        headers: { Cookie: operatorLogin.cookiePair }
+      })
+    : null;
+  const operatorUserLogsBody = operatorUserLogs ? parseJSON(operatorUserLogs) : {};
+  const operatorDebugDelete = adminAuditReady && operatorLogin
+    ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "Debug")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: operatorLogin.cookiePair },
+        body: JSON.stringify({ action: "deleteall" })
+      })
+    : null;
+  const operatorDebugDeleteBody = operatorDebugDelete ? parseJSON(operatorDebugDelete) : {};
+  const operatorErrorsDelete = adminAuditReady && operatorLogin
+    ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "Errors")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: operatorLogin.cookiePair },
+        body: JSON.stringify({ action: "deleteall" })
+      })
+    : null;
+  const operatorErrorsDeleteBody = operatorErrorsDelete ? parseJSON(operatorErrorsDelete) : {};
   const operatorBattleSim = adminOperationsReady && operatorLogin
     ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "BattleSim")}`, {
         method: "POST",
@@ -6395,6 +6417,9 @@ try {
   const adminAuditUserLogMarker = Array.isArray(adminAuditUserLogsBody.admin?.userLogRows)
     ? adminAuditUserLogsBody.admin.userLogRows.find((row) => String(row.text ?? "").includes(String(adminAuditFixture.token ?? "")))
     : undefined;
+  const operatorUserLogMarker = Array.isArray(operatorUserLogsBody.admin?.userLogRows)
+    ? operatorUserLogsBody.admin.userLogRows.find((row) => String(row.text ?? "").includes(String(adminAuditFixture.token ?? "")))
+    : undefined;
   const adminAuditDebugMarker = Array.isArray(adminAuditDebugBody.admin?.messageRows)
     ? adminAuditDebugBody.admin.messageRows.find((row) => String(row.text ?? "").includes(String(adminAuditFixture.token ?? "")))
     : undefined;
@@ -6497,6 +6522,24 @@ try {
       check(!adminAuditReady || adminAuditErrorMarker !== undefined, "admin Errors renders the seeded error marker", {
         adminAuditErrorMarker
       }),
+      check(!adminAuditReady || operatorLogin?.response.status === 200, "operator smoke user can log in for admin audit checks", {
+        status: operatorLogin?.response.status
+      }),
+      check(!adminAuditReady || operatorUserLogs?.status === 200, "operator UserLogs GET returns HTTP 200", {
+        status: operatorUserLogs?.status
+      }),
+      check(!adminAuditReady || operatorUserLogsBody.admin?.mode === "UserLogs", "operator UserLogs resolves legacy mode", operatorUserLogsBody.admin ?? {}),
+      check(!adminAuditReady || operatorUserLogMarker !== undefined, "operator UserLogs can read the seeded audit marker", {
+        operatorUserLogMarker
+      }),
+      check(!adminAuditReady || operatorDebugDelete?.status === 200, "operator Debug delete-all mutation returns HTTP 200", {
+        status: operatorDebugDelete?.status
+      }),
+      check(!adminAuditReady || operatorDebugDeleteBody.actionIssue?.code === "access_denied", "operator Debug delete-all mutation is denied like legacy", operatorDebugDeleteBody.actionIssue ?? {}),
+      check(!adminAuditReady || operatorErrorsDelete?.status === 200, "operator Errors delete-all mutation returns HTTP 200", {
+        status: operatorErrorsDelete?.status
+      }),
+      check(!adminAuditReady || operatorErrorsDeleteBody.actionIssue?.code === "access_denied", "operator Errors delete-all mutation is denied like legacy", operatorErrorsDeleteBody.actionIssue ?? {}),
       ...adminToolModeResponses.flatMap((item) => [
         check(item.response.status === 200, `admin ${item.mode} tool request returns HTTP 200`, {
           status: item.response.status
