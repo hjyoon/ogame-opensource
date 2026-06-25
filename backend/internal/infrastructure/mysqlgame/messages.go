@@ -89,6 +89,9 @@ func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.Messa
 	if err != nil {
 		return domaingame.Messages{}, err
 	}
+	if err := r.markInboxRowsRead(ctx, messagesTable, query.PlayerID, rows); err != nil {
+		return domaingame.Messages{}, err
+	}
 	messages.Rows = rows
 	return messages, nil
 }
@@ -545,6 +548,19 @@ func (r MessagesRepository) deleteExpiredInboxMessages(ctx context.Context, mess
 	}
 	expiredBefore := r.now().Unix() - int64(retentionDays*24*60*60)
 	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE owner_id = ? AND date <= ?", messagesTable), playerID, expiredBefore)
+	return err
+}
+
+func (r MessagesRepository) markInboxRowsRead(ctx context.Context, messagesTable string, playerID int, rows []domaingame.Message) error {
+	if r.execer == nil || len(rows) == 0 {
+		return nil
+	}
+	args := make([]any, 0, len(rows)+1)
+	args = append(args, playerID)
+	for _, row := range rows {
+		args = append(args, row.ID)
+	}
+	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET shown = 1 WHERE owner_id = ? AND msg_id IN (%s)", messagesTable, placeholders(len(rows))), args...)
 	return err
 }
 

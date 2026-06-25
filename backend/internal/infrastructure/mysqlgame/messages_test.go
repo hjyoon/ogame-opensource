@@ -94,6 +94,33 @@ func TestMessagesRepositoryDeletesExpiredInboxMessagesOnRead(t *testing.T) {
 	}
 }
 
+func TestMessagesRepositoryMarksVisibleInboxMessagesReadOnRead(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer})},
+		fakeQueryResult{rows: fakeRowsFromValues(
+			[]any{11, domaingame.MessageTypePM, "Sender", "Subject", "Body", 0, int64(1)},
+			[]any{12, domaingame.MessageTypeMisc, "System", "Notice", "Text", 1, int64(2)},
+		)},
+	)}}
+	repository := NewMessagesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	messages, err := repository.GetMessages(context.Background(), appgame.MessagesQuery{PlayerID: 42, PlanetID: 99})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages.Rows) != 2 || !messages.Rows[0].Unread || messages.Rows[1].Unread {
+		t.Fatalf("expected response to keep pre-mark unread flags, got %+v", messages.Rows)
+	}
+	if len(runner.execs) != 2 ||
+		!strings.Contains(runner.execs[0].sql, "DELETE FROM `ogame_messages` WHERE owner_id = ? AND date <= ?") ||
+		!strings.Contains(runner.execs[1].sql, "UPDATE `ogame_messages` SET shown = 1 WHERE owner_id = ? AND msg_id IN (?, ?)") ||
+		runner.execs[1].args[0] != 42 ||
+		runner.execs[1].args[1] != 11 ||
+		runner.execs[1].args[2] != 12 {
+		t.Fatalf("unexpected mark-read execs: %+v", runner.execs)
+	}
+}
+
 func TestMessagesRepositoryReadsComposeTarget(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{77, "Target", 2, 3, 4})},

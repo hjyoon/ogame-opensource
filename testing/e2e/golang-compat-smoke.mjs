@@ -2761,6 +2761,12 @@ try {
       })
     : { status: 0, headers: {}, body: "{}" };
   const messageRetentionRegularInboxBody = parseJSON(messageRetentionRegularInbox);
+  const messageRetentionRegularInboxAfterRead = messageRetentionReady
+    ? await request(`/api/game/messages${messageRetentionRegularSearch}`, {
+        headers: { Cookie: messageRetentionRegularLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageRetentionRegularInboxAfterReadBody = parseJSON(messageRetentionRegularInboxAfterRead);
   const messageRetentionOperatorInbox = messageRetentionReady
     ? await request(`/api/game/messages${messageRetentionOperatorSearch}`, {
         headers: { Cookie: messageRetentionOperatorLogin?.cookiePair ?? "" }
@@ -4500,6 +4506,15 @@ try {
           messageRowByID(messageRetentionRegularInboxBody, Number(messageRetentionFixture.regular_fresh_id)) !== undefined,
         "message retention preserves regular user's fresh inbox message",
         messageRetentionRegularInboxBody.messages?.rows ?? []
+      ),
+      check(!messageRetentionReady || messageRetentionRegularInboxAfterRead.status === 200, "message retention regular second inbox read returns HTTP 200", {
+        status: messageRetentionRegularInboxAfterRead.status
+      }),
+      check(
+        !messageRetentionReady ||
+          messageRowByID(messageRetentionRegularInboxAfterReadBody, Number(messageRetentionFixture.regular_fresh_id))?.unread === false,
+        "message retention marks displayed regular inbox messages read after opening",
+        messageRetentionRegularInboxAfterReadBody.messages?.rows ?? []
       ),
       check(!messageRetentionReady || messageRetentionOperatorInbox.status === 200, "message retention operator inbox returns HTTP 200", {
         status: messageRetentionOperatorInbox.status
