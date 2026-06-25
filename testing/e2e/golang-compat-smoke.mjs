@@ -3618,9 +3618,16 @@ try {
   const postHealth = await request("/api/healthz", { method: "POST" });
   const getRegistrationValidation = await request("/api/public/registration/validate");
   const getRegistration = await request("/api/public/registration");
+  const putLegacyRegistration = await request("/game/reg/newredirect.php", { method: "PUT" });
   const postActivation = await request("/game/validate.php?ack=missing", { method: "POST" });
   const getLoginValidation = await request("/api/public/login/validate");
   const getLoginSubmit = await request("/api/public/login");
+  const postLegacyPasswordForm = await request("/game/reg/mail.php", { method: "POST" });
+  const getLegacyPasswordSubmit = await request("/game/reg/fa_pass.php");
+  const postLegacyRedirect = await request("/game/redir.php", { method: "POST" });
+  const postLegacyPic = await request("/game/pic.php", { method: "POST" });
+  const postFeedShow = await request("/game/feed/show.php", { method: "POST" });
+  const postFeedItem = await request("/game/feed/viewitem.php", { method: "POST" });
   const postGameSession = await request("/api/game/session", { method: "POST" });
   const putGameOverview = await request("/api/game/overview", { method: "PUT" });
   const putGameBuildings = await request("/api/game/buildings", { method: "PUT" });
@@ -3653,12 +3660,26 @@ try {
       check(hasHeader(getRegistrationValidation, "allow", "POST"), "registration validation method rejection returns Allow header"),
       check(getRegistration.status === 405, "GET registration creation endpoint is rejected", { status: getRegistration.status }),
       check(hasHeader(getRegistration, "allow", "POST"), "registration creation method rejection returns Allow header"),
+      check(putLegacyRegistration.status === 405, "PUT legacy registration redirect endpoint is rejected", { status: putLegacyRegistration.status }),
+      check(hasHeader(putLegacyRegistration, "allow", "GET, POST"), "legacy registration redirect method rejection returns Allow header"),
       check(postActivation.status === 405, "POST registration activation endpoint is rejected", { status: postActivation.status }),
       check(hasHeader(postActivation, "allow", "GET, HEAD"), "registration activation method rejection returns Allow header"),
       check(getLoginValidation.status === 405, "GET login validation endpoint is rejected", { status: getLoginValidation.status }),
       check(hasHeader(getLoginValidation, "allow", "POST"), "login validation method rejection returns Allow header"),
       check(getLoginSubmit.status === 405, "GET login submit endpoint is rejected", { status: getLoginSubmit.status }),
       check(hasHeader(getLoginSubmit, "allow", "POST"), "login submit method rejection returns Allow header"),
+      check(postLegacyPasswordForm.status === 405, "POST legacy password recovery form endpoint is rejected", { status: postLegacyPasswordForm.status }),
+      check(hasHeader(postLegacyPasswordForm, "allow", "GET, HEAD"), "legacy password recovery form method rejection returns Allow header"),
+      check(getLegacyPasswordSubmit.status === 405, "GET legacy password recovery submit endpoint is rejected", { status: getLegacyPasswordSubmit.status }),
+      check(hasHeader(getLegacyPasswordSubmit, "allow", "POST"), "legacy password recovery submit method rejection returns Allow header"),
+      check(postLegacyRedirect.status === 405, "POST legacy redirect endpoint is rejected", { status: postLegacyRedirect.status }),
+      check(hasHeader(postLegacyRedirect, "allow", "GET, HEAD"), "legacy redirect method rejection returns Allow header"),
+      check(postLegacyPic.status === 405, "POST legacy image proxy endpoint is rejected", { status: postLegacyPic.status }),
+      check(hasHeader(postLegacyPic, "allow", "GET, HEAD"), "legacy image proxy method rejection returns Allow header"),
+      check(postFeedShow.status === 405, "POST legacy feed endpoint is rejected", { status: postFeedShow.status }),
+      check(hasHeader(postFeedShow, "allow", "GET, HEAD"), "legacy feed method rejection returns Allow header"),
+      check(postFeedItem.status === 405, "POST legacy feed item endpoint is rejected", { status: postFeedItem.status }),
+      check(hasHeader(postFeedItem, "allow", "GET, HEAD"), "legacy feed item method rejection returns Allow header"),
       check(postGameSession.status === 405, "POST game session endpoint is rejected", { status: postGameSession.status }),
       check(hasHeader(postGameSession, "allow", "GET, HEAD"), "game session method rejection returns Allow header"),
       check(putGameOverview.status === 405, "PUT game overview endpoint is rejected", { status: putGameOverview.status }),
