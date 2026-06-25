@@ -1933,6 +1933,17 @@ try {
       })
     : { status: 0, headers: {}, body: "{}" };
   const gameReportAfterForeignDeleteBody = parseJSON(gameReportAfterForeignDelete);
+  const legacyGetMessageDelete = sentReportID > 0
+    ? await request(`/game/index.php?page=messages${sessionSearch.replace("?", "&")}&messages=1&deletemessages=deleteall&delmes${sentReportID}=on`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : { status: 0, headers: {}, body: "" };
+  const gameReportAfterLegacyGetDelete = sentReportID > 0
+    ? await request(`/api/game/report${sessionSearch}&bericht=${sentReportID}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const gameReportAfterLegacyGetDeleteBody = parseJSON(gameReportAfterLegacyGetDelete);
 
   const gameMessagesWithoutCookie = await request(`/api/game/messages${sessionSearch}`);
   let gameMessagesWithoutCookieBody = {};
@@ -2300,6 +2311,23 @@ try {
     headers: { Cookie: targetLogin.cookiePair }
   });
   const targetMessagesAfterCircularBody = parseJSON(targetMessagesAfterCircular);
+  const allianceSettingsBeforeLegacyGet = createdAllianceId > 0
+    ? await request(`/api/game/alliance${withQueryParams(allianceFounderLogin.search, { a: "11", d: "2" })}`, {
+        headers: { Cookie: allianceFounderLogin.cookiePair }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const allianceSettingsBeforeLegacyGetBody = parseJSON(allianceSettingsBeforeLegacyGet);
+  const legacyGetAllianceSettings = createdAllianceId > 0
+    ? await request(`/game/index.php?page=allianzen${allianceFounderLogin.search.replace("?", "&")}&a=11&d=2&hp=${encodeURIComponent(`https://example.com/${runId}`)}&logo=${encodeURIComponent(`https://example.com/${runId}.png`)}&bew=0&fname=${encodeURIComponent(`Founder ${runId}`)}`, {
+        headers: { Cookie: allianceFounderLogin.cookiePair }
+      })
+    : { status: 0, headers: {}, body: "" };
+  const allianceSettingsAfterLegacyGet = createdAllianceId > 0
+    ? await request(`/api/game/alliance${withQueryParams(allianceFounderLogin.search, { a: "11", d: "2" })}`, {
+        headers: { Cookie: allianceFounderLogin.cookiePair }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const allianceSettingsAfterLegacyGetBody = parseJSON(allianceSettingsAfterLegacyGet);
 
   const gameOptions = await request(`/api/game/options${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -2330,6 +2358,13 @@ try {
   } catch {
     gameOptionsWithoutCookieBody = {};
   }
+  const legacyGetOptionsDeletion = await request(`/game/index.php?page=options${sessionSearch.replace("?", "&")}&mode=change&db_deaktjava=on`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const gameOptionsAfterLegacyGet = await request(`/api/game/options${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const gameOptionsAfterLegacyGetBody = parseJSON(gameOptionsAfterLegacyGet);
 
   const hardeningInvalidOverviewCP = await request(`/api/game/overview${withQueryParam(sessionSearch, "cp", "abc")}`, {
     headers: { Cookie: sessionCookiePair }
@@ -2953,6 +2988,45 @@ try {
       check(sessionCookie.includes("HttpOnly"), "private session cookie is HttpOnly", { setCookie: sessionCookie }),
       check(sessionCookie.includes("SameSite=Lax"), "private session cookie uses SameSite=Lax", { setCookie: sessionCookie }),
       check(sessionCookie.includes("Max-Age=86400"), "private session cookie keeps the 24h legacy lifetime", { setCookie: sessionCookie })
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_legacy_get_mutation_noop",
+    checks: [
+      check(sentReportID > 0, "message no-op fixture exposes a report id", { sentReportID }),
+      check(legacyGetMessageDelete.status === 200, "legacy GET message delete URL returns HTTP 200", { status: legacyGetMessageDelete.status }),
+      check(legacyGetMessageDelete.body.includes('<div id="root">'), "legacy GET message delete URL is served by the React shell"),
+      check(gameReportAfterLegacyGetDelete.status === 200, "owner can reload report after legacy GET delete URL", { status: gameReportAfterLegacyGetDelete.status }),
+      check(gameReportAfterLegacyGetDeleteBody.report?.allowed === true, "legacy GET message delete URL does not remove owner report access", gameReportAfterLegacyGetDeleteBody.report ?? {}),
+      check(String(gameReportAfterLegacyGetDeleteBody.report?.text ?? "").includes("Go migration message smoke"), "legacy GET message delete URL keeps message text", gameReportAfterLegacyGetDeleteBody.report ?? {}),
+      check(legacyGetOptionsDeletion.status === 200, "legacy GET account deletion URL returns HTTP 200", { status: legacyGetOptionsDeletion.status }),
+      check(legacyGetOptionsDeletion.body.includes('<div id="root">'), "legacy GET account deletion URL is served by the React shell"),
+      check(gameOptionsAfterLegacyGet.status === 200, "options reloads after legacy GET account deletion URL", { status: gameOptionsAfterLegacyGet.status }),
+      check(
+        gameOptionsAfterLegacyGetBody.options?.account?.deletionQueued === gameOptionsBody.options?.account?.deletionQueued,
+        "legacy GET account deletion URL does not change deletion state",
+        {
+          before: gameOptionsBody.options?.account ?? {},
+          after: gameOptionsAfterLegacyGetBody.options?.account ?? {}
+        }
+      ),
+      check(!createdAllianceId || legacyGetAllianceSettings.status === 200, "legacy GET alliance settings URL returns HTTP 200", { status: legacyGetAllianceSettings.status }),
+      check(!createdAllianceId || legacyGetAllianceSettings.body.includes('<div id="root">'), "legacy GET alliance settings URL is served by the React shell"),
+      check(!createdAllianceId || allianceSettingsAfterLegacyGet.status === 200, "alliance settings reloads after legacy GET settings URL", { status: allianceSettingsAfterLegacyGet.status }),
+      check(
+        !createdAllianceId ||
+          (
+            allianceSettingsBeforeLegacyGetBody.alliance?.own?.homepage === allianceSettingsAfterLegacyGetBody.alliance?.own?.homepage &&
+            allianceSettingsBeforeLegacyGetBody.alliance?.own?.imageLogo === allianceSettingsAfterLegacyGetBody.alliance?.own?.imageLogo &&
+            allianceSettingsBeforeLegacyGetBody.alliance?.own?.open === allianceSettingsAfterLegacyGetBody.alliance?.own?.open
+          ),
+        "legacy GET alliance settings URL does not update persisted settings",
+        {
+          before: allianceSettingsBeforeLegacyGetBody.alliance?.own ?? {},
+          after: allianceSettingsAfterLegacyGetBody.alliance?.own ?? {}
+        }
+      )
     ]
   }));
 
