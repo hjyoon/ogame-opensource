@@ -455,6 +455,22 @@ func TestAdminRepositoryMutatesAdminSimulators(t *testing.T) {
 			t.Fatalf("rak and expedition simulator markers should not write, got %+v", runner.execCalls)
 		}
 	})
+
+	t.Run("battle simulator propagates insert errors", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{execErrs: []error{errors.New("battle insert failed")}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			PlayerID: 42,
+			PlanetID: 99,
+			Mode:     "BattleSim",
+			Action:   domaingame.AdminActionBattleSimRun,
+		})
+
+		if err == nil || !strings.Contains(err.Error(), "battle insert failed") {
+			t.Fatalf("expected battle simulator insert error, got %v", err)
+		}
+	})
 }
 
 func TestAdminRepositoryMutatesUniverseSettings(t *testing.T) {
@@ -497,6 +513,21 @@ func TestAdminRepositoryMutatesUniverseSettings(t *testing.T) {
 		}
 		if len(runner.execCalls) != 1 || runner.execCalls[0].sql != "UPDATE `ogame_uni` SET freeze = ?" || runner.execCalls[0].args[0] != 0 {
 			t.Fatalf("unexpected universe unfreeze execs: %+v", runner.execCalls)
+		}
+	})
+
+	t.Run("freeze propagates vacation update errors", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{execErrs: []error{nil, errors.New("vacation update failed")}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:   "Uni",
+			Action: domaingame.AdminActionSettings,
+			Values: map[string]int{"freeze": 1},
+		})
+
+		if err == nil || !strings.Contains(err.Error(), "vacation update failed") {
+			t.Fatalf("expected vacation update error, got %v", err)
 		}
 	})
 }
@@ -810,6 +841,376 @@ func TestAdminRepositoryMutatesQueueControls(t *testing.T) {
 			t.Fatalf("expected missing queue task no-op, issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
 		}
 	})
+}
+
+func TestAdminRepositoryMutatesUsersDeletion(t *testing.T) {
+	t.Run("schedule", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		repository.now = func() time.Time { return time.Unix(1_000, 0) }
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:      "Users",
+			Action:    domaingame.AdminActionUsersUpdate,
+			TargetIDs: []int{77},
+			Values:    map[string]int{"deaktjava": 1},
+		})
+
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 1 {
+			t.Fatalf("unexpected users update issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		}
+		if !strings.Contains(runner.execCalls[0].sql, "UPDATE `ogame_users` SET disable = ?") ||
+			runner.execCalls[0].args[0] != 1 || runner.execCalls[0].args[1] != 605_800 || runner.execCalls[0].args[2] != 77 {
+			t.Fatalf("unexpected schedule update: %+v", runner.execCalls[0])
+		}
+	})
+
+	t.Run("cancel", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:      "Users",
+			Action:    domaingame.AdminActionUsersUpdate,
+			TargetIDs: []int{77},
+		})
+
+		if err != nil || len(runner.execCalls) != 1 ||
+			runner.execCalls[0].args[0] != 0 || runner.execCalls[0].args[1] != 0 || runner.execCalls[0].args[2] != 77 {
+			t.Fatalf("unexpected cancel update err=%v execs=%+v", err, runner.execCalls)
+		}
+	})
+}
+
+func TestAdminRepositoryMutatesUsersCreatePlanet(t *testing.T) {
+	t.Run("inserts empty slot", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues()},
+			}},
+			execResults: []sql.Result{galaxySQLResult{id: 555, rows: 1}},
+		}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		repository.now = func() time.Time { return time.Unix(2_000, 0) }
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:      "Users",
+			Action:    domaingame.AdminActionUsersCreatePlanet,
+			TargetIDs: []int{77},
+			Values:    map[string]int{"g": 2, "s": 33, "p": 8},
+		})
+
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 1 {
+			t.Fatalf("unexpected create planet issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		}
+		if !strings.Contains(runner.calls[0].sql, "type IN (?, ?, ?)") || runner.calls[0].args[0] != 2 || runner.calls[0].args[1] != 33 || runner.calls[0].args[2] != 8 {
+			t.Fatalf("unexpected slot query: %+v", runner.calls[0])
+		}
+		if !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `ogame_planets`") ||
+			runner.execCalls[0].args[0] != "Colony" || runner.execCalls[0].args[5] != 77 ||
+			runner.execCalls[0].args[10] != int64(2_000) || runner.execCalls[0].args[11] != int64(2_000) {
+			t.Fatalf("unexpected planet insert: %+v", runner.execCalls[0])
+		}
+	})
+
+	t.Run("occupied slot noops", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{99})},
+		}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:      "Users",
+			Action:    domaingame.AdminActionUsersCreatePlanet,
+			TargetIDs: []int{77},
+			Values:    map[string]int{"g": 2, "s": 33, "p": 8},
+		})
+
+		if err != nil || len(runner.execCalls) != 0 {
+			t.Fatalf("expected occupied slot no-op, err=%v execs=%+v", err, runner.execCalls)
+		}
+	})
+}
+
+func TestAdminRepositoryMutatesUsersRecalcStats(t *testing.T) {
+	planetScoreRow := append([]any{}, buildingLevelRow(map[int]int{domaingame.BuildingMetalMine: 1})...)
+	planetScoreRow = append(planetScoreRow, fleetCountRow(map[int]int{domaingame.FleetSmallCargo: 2})...)
+	planetScoreRow = append(planetScoreRow, defenseCountRow(map[int]int{domaingame.DefenseInterplanetaryMissile: 1})...)
+	flyingFleetRow := append([]any{}, fleetCountRow(map[int]int{domaingame.FleetSmallCargo: 1})...)
+	flyingFleetRow = append(flyingFleetRow, 1)
+	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(planetScoreRow)},
+		{rows: fakeRowsFromValues(allResearchLevelRow(map[int]int{domaingame.ResearchComputer: 1}))},
+		{rows: fakeRowsFromValues(flyingFleetRow)},
+	}}}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+	issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+		Mode:      "Users",
+		Action:    domaingame.AdminActionUsersRecalcStats,
+		TargetIDs: []int{77},
+	})
+
+	if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved {
+		t.Fatalf("unexpected recalc issue=%+v err=%v", issue, err)
+	}
+	if len(runner.execCalls) != 9 {
+		t.Fatalf("expected score update plus rank recalcs, got %+v", runner.execCalls)
+	}
+	scoreUpdate := runner.execCalls[0]
+	if !strings.Contains(scoreUpdate.sql, "UPDATE `ogame_users` SET score1 = ?") || scoreUpdate.args[3] != 77 {
+		t.Fatalf("unexpected score update: %+v", scoreUpdate)
+	}
+	if scoreUpdate.args[0].(int64) <= 0 || scoreUpdate.args[1].(int64) <= 0 || scoreUpdate.args[2].(int64) != 1 {
+		t.Fatalf("unexpected recalculated scores: %+v", scoreUpdate.args)
+	}
+	if !strings.Contains(runner.execCalls[1].sql, "score1 = -1") || !strings.Contains(runner.execCalls[8].sql, "place1 = 0") {
+		t.Fatalf("expected rank recalculation statements, got %+v", runner.execCalls)
+	}
+}
+
+func TestAdminRepositoryUsersMutationEdges(t *testing.T) {
+	t.Run("missing target noops", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Users", Action: domaingame.AdminActionUsersUpdate})
+
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 || len(runner.calls) != 0 {
+			t.Fatalf("expected missing target no-op issue=%+v err=%v queries=%+v execs=%+v", issue, err, runner.calls, runner.execCalls)
+		}
+	})
+
+	t.Run("unknown action noops", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Users", Action: "unknown", TargetIDs: []int{77}})
+
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 || len(runner.calls) != 0 {
+			t.Fatalf("expected unknown action no-op issue=%+v err=%v queries=%+v execs=%+v", issue, err, runner.calls, runner.execCalls)
+		}
+	})
+
+	t.Run("create slot query error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("slot query failed")}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Users", Action: domaingame.AdminActionUsersCreatePlanet, TargetIDs: []int{77}})
+
+		if err == nil || !strings.Contains(err.Error(), "slot query failed") {
+			t.Fatalf("expected slot query error, got %v", err)
+		}
+	})
+
+	t.Run("create slot scan error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Users", Action: domaingame.AdminActionUsersCreatePlanet, TargetIDs: []int{77}})
+
+		if err == nil || !strings.Contains(err.Error(), "expected int") {
+			t.Fatalf("expected slot scan error, got %v", err)
+		}
+	})
+
+	t.Run("create exec error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}},
+			execErrs:    []error{errors.New("insert planet failed")},
+		}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Users", Action: domaingame.AdminActionUsersCreatePlanet, TargetIDs: []int{77}})
+
+		if err == nil || !strings.Contains(err.Error(), "insert planet failed") {
+			t.Fatalf("expected create exec error, got %v", err)
+		}
+	})
+
+	t.Run("create missing insert id", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}},
+			execResults: []sql.Result{galaxySQLResult{id: 0, rows: 1}},
+		}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Users", Action: domaingame.AdminActionUsersCreatePlanet, TargetIDs: []int{77}})
+
+		if err == nil || !strings.Contains(err.Error(), "planet id unavailable") {
+			t.Fatalf("expected missing id error, got %v", err)
+		}
+	})
+
+	t.Run("recalc planet query error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("planet score failed")}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Users", Action: domaingame.AdminActionUsersRecalcStats, TargetIDs: []int{77}})
+
+		if err == nil || !strings.Contains(err.Error(), "planet score failed") {
+			t.Fatalf("expected planet score error, got %v", err)
+		}
+	})
+
+	t.Run("recalc research query error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues()},
+			{err: errors.New("research failed")},
+		}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Users", Action: domaingame.AdminActionUsersRecalcStats, TargetIDs: []int{77}})
+
+		if err == nil || !strings.Contains(err.Error(), "research failed") {
+			t.Fatalf("expected research error, got %v", err)
+		}
+	})
+
+	t.Run("recalc fleet query error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues()},
+			{rows: fakeRowsFromValues(allResearchLevelRow(nil))},
+			{err: errors.New("fleet score failed")},
+		}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Users", Action: domaingame.AdminActionUsersRecalcStats, TargetIDs: []int{77}})
+
+		if err == nil || !strings.Contains(err.Error(), "fleet score failed") {
+			t.Fatalf("expected fleet score error, got %v", err)
+		}
+	})
+
+	t.Run("recalc update error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues()},
+				{rows: fakeRowsFromValues(allResearchLevelRow(nil))},
+				{rows: fakeRowsFromValues()},
+			}},
+			execErrs: []error{errors.New("score update failed")},
+		}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Users", Action: domaingame.AdminActionUsersRecalcStats, TargetIDs: []int{77}})
+
+		if err == nil || !strings.Contains(err.Error(), "score update failed") {
+			t.Fatalf("expected score update error, got %v", err)
+		}
+	})
+}
+
+func TestAdminRepositoryUsersScoringAndCreateEdges(t *testing.T) {
+	t.Run("slot rows error", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValuesWithErr(errors.New("slot rows failed"), []any{99})},
+		}}, "ogame_")
+
+		_, err := repository.adminPlanetSlotOccupied(context.Background(), "`ogame_planets`", domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3})
+
+		if err == nil || !strings.Contains(err.Error(), "slot rows failed") {
+			t.Fatalf("expected slot rows error, got %v", err)
+		}
+	})
+
+	t.Run("insert id error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{execResults: []sql.Result{adminSQLResultWithLastInsertErr{err: errors.New("last id failed")}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		_, err := repository.createAdminUserPlanet(context.Background(), "`ogame_planets`", 77, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3})
+
+		if err == nil || !strings.Contains(err.Error(), "last id failed") {
+			t.Fatalf("expected last id error, got %v", err)
+		}
+	})
+
+	t.Run("planet score rows error", func(t *testing.T) {
+		row := append([]any{}, buildingLevelRow(nil)...)
+		row = append(row, fleetCountRow(nil)...)
+		row = append(row, defenseCountRow(nil)...)
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValuesWithErr(errors.New("planet rows failed"), row)},
+		}}, "ogame_")
+
+		_, err := repository.sumAdminUserPlanetScore(context.Background(), "`ogame_planets`", 77)
+
+		if err == nil || !strings.Contains(err.Error(), "planet rows failed") {
+			t.Fatalf("expected planet rows error, got %v", err)
+		}
+	})
+
+	t.Run("planet score scan error", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{1})},
+		}}, "ogame_")
+
+		_, err := repository.sumAdminUserPlanetScore(context.Background(), "`ogame_planets`", 77)
+
+		if err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+			t.Fatalf("expected planet scan error, got %v", err)
+		}
+	})
+
+	t.Run("flying fleet rows error", func(t *testing.T) {
+		row := append([]any{}, fleetCountRow(nil)...)
+		row = append(row, 0)
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValuesWithErr(errors.New("fleet rows failed"), row)},
+		}}, "ogame_")
+
+		_, _, err := repository.sumAdminUserFlyingFleetScore(context.Background(), "`ogame_fleet`", 77)
+
+		if err == nil || !strings.Contains(err.Error(), "fleet rows failed") {
+			t.Fatalf("expected fleet rows error, got %v", err)
+		}
+	})
+
+	t.Run("flying fleet scan error", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{1})},
+		}}, "ogame_")
+
+		_, _, err := repository.sumAdminUserFlyingFleetScore(context.Background(), "`ogame_fleet`", 77)
+
+		if err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+			t.Fatalf("expected fleet scan error, got %v", err)
+		}
+	})
+}
+
+func TestAdminUserColonyDerivedValues(t *testing.T) {
+	cases := []struct {
+		position int
+		diameter int
+		temp     int
+	}{
+		{position: 1, diameter: 6400, temp: 78},
+		{position: 4, diameter: 9000, temp: 22},
+		{position: 7, diameter: 12800, temp: -4},
+		{position: 10, diameter: 14400, temp: -30},
+		{position: 13, diameter: 15600, temp: -86},
+	}
+	for _, tc := range cases {
+		if got := adminColonyDiameter(tc.position); got != tc.diameter {
+			t.Fatalf("diameter position %d = %d, want %d", tc.position, got, tc.diameter)
+		}
+		if got := adminColonyTemperature(tc.position); got != tc.temp {
+			t.Fatalf("temperature position %d = %d, want %d", tc.position, got, tc.temp)
+		}
+	}
+}
+
+type adminSQLResultWithLastInsertErr struct {
+	err error
+}
+
+func (r adminSQLResultWithLastInsertErr) LastInsertId() (int64, error) {
+	return 0, r.err
+}
+
+func (r adminSQLResultWithLastInsertErr) RowsAffected() (int64, error) {
+	return 0, nil
 }
 
 func TestAdminRepositoryQueueMutationEdges(t *testing.T) {

@@ -1,8 +1,11 @@
 package httpdelivery
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -416,6 +419,23 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 	}
 	if issue := toGameAdminActionIssue(&domaingame.AdminActionIssue{Code: "blocked", Message: "Blocked"}); issue == nil || issue.Code != "blocked" || issue.Message != "Blocked" {
 		t.Fatalf("expected non-nil action issue conversion, got %+v", issue)
+	}
+}
+
+func TestLogGameAdminError(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/api/game/admin?mode=Users", nil)
+	logGameAdminError(nil, request, "ignored", errors.New("ignored"))
+	logGameAdminError(slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)), request, "ignored", nil)
+
+	var buffer bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buffer, nil))
+	logGameAdminError(logger, request, "game admin mutation failed", errors.New("boom"))
+
+	output := buffer.String()
+	if !strings.Contains(output, "game admin mutation failed") ||
+		!strings.Contains(output, `"mode":"Users"`) ||
+		!strings.Contains(output, `"path":"/api/game/admin"`) {
+		t.Fatalf("expected structured admin error log, got %s", output)
 	}
 }
 

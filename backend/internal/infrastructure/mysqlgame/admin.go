@@ -164,6 +164,21 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 	if mode == "DB" {
 		return r.mutateAdminDatabase(ctx, query)
 	}
+	if mode == "Users" {
+		usersTable, err := tableName(r.prefix, "users")
+		if err != nil {
+			return nil, err
+		}
+		planetsTable, err := tableName(r.prefix, "planets")
+		if err != nil {
+			return nil, err
+		}
+		fleetTable, err := tableName(r.prefix, "fleet")
+		if err != nil {
+			return nil, err
+		}
+		return r.mutateAdminUsers(ctx, usersTable, planetsTable, fleetTable, query)
+	}
 	if mode != "Bans" || query.Action != "ban" {
 		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
 	}

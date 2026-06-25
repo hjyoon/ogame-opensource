@@ -413,6 +413,14 @@ try {
   const adminAuditReady =
     String(adminAuditFixture.token ?? "") !== "" &&
     Number(adminAuditFixture.target_player_id ?? 0) > 0;
+  const adminDestructiveFixture = smokeFixture?.admin_destructive ?? {};
+  const adminDestructiveTargetID = Number(adminDestructiveFixture.target_player_id ?? 0);
+  const adminDestructiveReady =
+    adminDestructiveTargetID > 0 &&
+    Number(adminDestructiveFixture.target_home_planet_id ?? 0) > 0 &&
+    Number(adminDestructiveFixture.create_galaxy ?? 0) > 0 &&
+    Number(adminDestructiveFixture.create_system ?? 0) > 0 &&
+    Number(adminDestructiveFixture.create_position ?? 0) > 0;
   const adminUniverseFixture = smokeFixture?.admin_universe ?? {};
   const adminUniverseFreezeVictimID = Number(adminUniverseFixture.freeze_victim_player_id ?? 0);
   const adminUniverseReady = adminUniverseFreezeVictimID > 0;
@@ -3859,7 +3867,7 @@ try {
     });
     return { mode, response, body: parseJSON(response) };
   }));
-  const operatorLogin = adminQueueFixtureReady || adminFleetlogsFixtureReady || adminOperationsReady || adminAuditReady
+  const operatorLogin = adminQueueFixtureReady || adminFleetlogsFixtureReady || adminOperationsReady || adminAuditReady || adminDestructiveReady
     ? await loginGameUser("gooperator", loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
     : null;
   const operatorAdminOnlyMutationSpecs = [
@@ -3867,6 +3875,8 @@ try {
     { mode: "Coupons", action: "add_one" },
     { mode: "Coupons", action: "add_date" },
     { mode: "Planets", action: "create_debris" },
+    { mode: "Users", action: "update" },
+    { mode: "Users", action: "create_planet" },
     { mode: "DB", action: "create" },
     { mode: "DB", action: "delete" }
   ];
@@ -4071,6 +4081,81 @@ try {
       })
     : null;
   const adminQueueAfterFreezeBody = adminQueueAfterFreeze ? parseJSON(adminQueueAfterFreeze) : {};
+  const operatorUsersUpdate = adminDestructiveReady && operatorLogin
+    ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "Users")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: operatorLogin.cookiePair },
+        body: JSON.stringify({
+          action: "update",
+          targetIds: [adminDestructiveTargetID],
+          values: { deaktjava: 1 }
+        })
+      })
+    : null;
+  const operatorUsersUpdateBody = operatorUsersUpdate ? parseJSON(operatorUsersUpdate) : {};
+  const adminUsersScheduleDelete = adminDestructiveReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Users")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({
+          action: "update",
+          targetIds: [adminDestructiveTargetID],
+          values: { deaktjava: 1 }
+        })
+      })
+    : null;
+  const adminUsersScheduleDeleteBody = adminUsersScheduleDelete ? parseJSON(adminUsersScheduleDelete) : {};
+  const adminUsersCancelDelete = adminDestructiveReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Users")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({
+          action: "update",
+          targetIds: [adminDestructiveTargetID],
+          values: { deaktjava: 0 }
+        })
+      })
+    : null;
+  const adminUsersCancelDeleteBody = adminUsersCancelDelete ? parseJSON(adminUsersCancelDelete) : {};
+  const adminUsersRecalcStats = adminDestructiveReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Users")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({
+          action: "recalc_stats",
+          targetIds: [adminDestructiveTargetID]
+        })
+      })
+    : null;
+  const adminUsersRecalcStatsBody = adminUsersRecalcStats ? parseJSON(adminUsersRecalcStats) : {};
+  const adminTargetOverviewAfterRecalc = adminDestructiveReady
+    ? await request(`/api/game/overview${targetLogin.search}`, {
+        headers: { Cookie: targetLogin.cookiePair }
+      })
+    : null;
+  const adminTargetOverviewAfterRecalcBody = adminTargetOverviewAfterRecalc ? parseJSON(adminTargetOverviewAfterRecalc) : {};
+  const adminUsersCreatePlanet = adminDestructiveReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Users")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({
+          action: "create_planet",
+          targetIds: [adminDestructiveTargetID],
+          values: {
+            g: Number(adminDestructiveFixture.create_galaxy),
+            s: Number(adminDestructiveFixture.create_system),
+            p: Number(adminDestructiveFixture.create_position)
+          }
+        })
+      })
+    : null;
+  const adminUsersCreatePlanetBody = adminUsersCreatePlanet ? parseJSON(adminUsersCreatePlanet) : {};
+  const adminPlanetsAfterCreate = adminDestructiveReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Planets")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminPlanetsAfterCreateBody = adminPlanetsAfterCreate ? parseJSON(adminPlanetsAfterCreate) : {};
   const operatorFleetlogsTwoMinute = adminFleetlogsFixtureReady && operatorLogin
     ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "Fleetlogs")}`, {
         method: "POST",
@@ -6684,6 +6769,23 @@ try {
   const frozenQueueRow = Array.isArray(adminQueueAfterFreezeBody.admin?.queueRows)
     ? adminQueueAfterFreezeBody.admin.queueRows.find((row) => Number(row.id) === adminQueueTaskId)
     : undefined;
+  const findAdminUserRow = (body, playerId) => {
+    const rows = [
+      ...(Array.isArray(body.admin?.userRows) ? body.admin.userRows : []),
+      ...(Array.isArray(body.admin?.activeUsers) ? body.admin.activeUsers : [])
+    ];
+    return rows.find((row) => Number(row.playerId) === Number(playerId));
+  };
+  const adminUserAfterSchedule = findAdminUserRow(adminUsersScheduleDeleteBody, adminDestructiveTargetID);
+  const adminUserAfterCancel = findAdminUserRow(adminUsersCancelDeleteBody, adminDestructiveTargetID);
+  const adminCreatedPlanet = Array.isArray(adminPlanetsAfterCreateBody.admin?.planetRows)
+    ? adminPlanetsAfterCreateBody.admin.planetRows.find((row) =>
+        Number(row.owner?.playerId ?? 0) === adminDestructiveTargetID &&
+        Number(row.coordinates?.galaxy ?? 0) === Number(adminDestructiveFixture.create_galaxy ?? 0) &&
+        Number(row.coordinates?.system ?? 0) === Number(adminDestructiveFixture.create_system ?? 0) &&
+        Number(row.coordinates?.position ?? 0) === Number(adminDestructiveFixture.create_position ?? 0)
+      )
+    : undefined;
   cases.push(finalize({
     case: "go_admin_queue_permission_mutation_api",
     checks: [
@@ -6718,6 +6820,60 @@ try {
         "admin queue freeze actually updates the target task",
         { taskId: adminQueueTaskId, frozenQueueRow }
       )
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_admin_users_destructive_api",
+    checks: [
+      check(!smokeFixtureFile || adminDestructiveReady, "go smoke fixture exposes admin destructive target and empty coordinates", {
+        smokeFixtureFile,
+        adminDestructiveFixture
+      }),
+      check(!adminDestructiveReady || operatorLogin?.response.status === 200, "operator smoke user can log in for Users denial check", {
+        status: operatorLogin?.response.status
+      }),
+      check(!adminDestructiveReady || operatorUsersUpdate?.status === 200, "operator Users update mutation returns HTTP 200", {
+        status: operatorUsersUpdate?.status
+      }),
+      check(!adminDestructiveReady || operatorUsersUpdateBody.actionIssue?.code === "access_denied", "operator Users update mutation is denied like legacy", operatorUsersUpdateBody.actionIssue ?? {}),
+      check(!adminDestructiveReady || adminUsersScheduleDelete?.status === 200, "admin Users deletion schedule returns HTTP 200", {
+        status: adminUsersScheduleDelete?.status
+      }),
+      check(!adminDestructiveReady || adminUsersScheduleDeleteBody.actionIssue?.code === "action_saved", "admin Users deletion schedule saves like legacy", adminUsersScheduleDeleteBody.actionIssue ?? {}),
+      check(!adminDestructiveReady || adminUserAfterSchedule?.disable === true, "admin Users deletion schedule marks target disabled", {
+        adminUserAfterSchedule
+      }),
+      check(!adminDestructiveReady || adminUsersCancelDelete?.status === 200, "admin Users deletion cancel returns HTTP 200", {
+        status: adminUsersCancelDelete?.status
+      }),
+      check(!adminDestructiveReady || adminUsersCancelDeleteBody.actionIssue?.code === "action_saved", "admin Users deletion cancel saves like legacy", adminUsersCancelDeleteBody.actionIssue ?? {}),
+      check(!adminDestructiveReady || adminUserAfterCancel?.disable === false, "admin Users deletion cancel clears disabled flag", {
+        adminUserAfterCancel
+      }),
+      check(!adminDestructiveReady || adminUsersRecalcStats?.status === 200, "admin Users recalc_stats returns HTTP 200", {
+        status: adminUsersRecalcStats?.status
+      }),
+      check(!adminDestructiveReady || adminUsersRecalcStatsBody.actionIssue?.code === "action_saved", "admin Users recalc_stats saves like legacy", adminUsersRecalcStatsBody.actionIssue ?? {}),
+      check(!adminDestructiveReady || adminTargetOverviewAfterRecalc?.status === 200, "target overview reload after recalc returns HTTP 200", {
+        status: adminTargetOverviewAfterRecalc?.status
+      }),
+      check(
+        !adminDestructiveReady || Number(adminTargetOverviewAfterRecalcBody.overview?.score?.rawScore ?? 0) > 0,
+        "admin Users recalc_stats recalculates target raw score",
+        adminTargetOverviewAfterRecalcBody.overview?.score ?? {}
+      ),
+      check(!adminDestructiveReady || adminUsersCreatePlanet?.status === 200, "admin Users create_planet returns HTTP 200", {
+        status: adminUsersCreatePlanet?.status
+      }),
+      check(!adminDestructiveReady || adminUsersCreatePlanetBody.actionIssue?.code === "action_saved", "admin Users create_planet saves like legacy", adminUsersCreatePlanetBody.actionIssue ?? {}),
+      check(!adminDestructiveReady || adminPlanetsAfterCreate?.status === 200, "admin Planets reload after create_planet returns HTTP 200", {
+        status: adminPlanetsAfterCreate?.status
+      }),
+      check(!adminDestructiveReady || adminCreatedPlanet !== undefined, "admin Users create_planet creates target planet at the requested coordinates", {
+        adminCreatedPlanet,
+        expected: adminDestructiveFixture
+      })
     ]
   }));
 

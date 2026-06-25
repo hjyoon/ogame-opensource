@@ -33,6 +33,10 @@ const (
 	AdminActionDatabaseCreate  = "create"
 	AdminActionDatabaseRestore = "restore"
 	AdminActionDatabaseDelete  = "delete"
+
+	AdminActionUsersRecalcStats  = "recalc_stats"
+	AdminActionUsersUpdate       = "update"
+	AdminActionUsersCreatePlanet = "create_planet"
 )
 
 type Admin struct {

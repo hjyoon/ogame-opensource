@@ -518,6 +518,34 @@ function smoke_prepare_admin_audit_fixture(array $target): array
     );
 }
 
+function smoke_prepare_admin_destructive_fixture(array $target, array $near): array
+{
+    global $db_prefix;
+
+    $targetId = (int)$target['player_id'];
+    $homePlanetId = (int)$target['home_planet_id'];
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id={$targetId} AND type IN ('" . QTYP_RECALC_POINTS . "','" . QTYP_ALLOW_NAME . "','" . QTYP_DEBUG . "')");
+    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id={$targetId} AND planet_id <> {$homePlanetId}");
+    dbquery("DELETE FROM {$db_prefix}planets WHERE owner_id={$targetId} AND type=" . PTYP_PLANET . " AND planet_id <> {$homePlanetId} AND name IN ('Colony','Go Admin Created')");
+    dbquery(
+        "UPDATE {$db_prefix}users SET score1=0, score2=0, score3=0, disable=0, disable_until=0, admin=0, " .
+        "vacation=0, vacation_until=0, banned=0, banned_until=0, noattack=0, noattack_until=0, lastclick=" . time() .
+        " WHERE player_id={$targetId}"
+    );
+    dbquery("UPDATE {$db_prefix}planets SET `" . GID_F_SC . "`=3, prod1=0, prod2=0, prod3=0 WHERE planet_id={$homePlanetId}");
+    InvalidateUserCache();
+
+    [$g, $s, $p] = smoke_find_empty_position($near);
+    return array(
+        'target_player_id' => $targetId,
+        'target_login' => mb_strtolower($target['name'], 'UTF-8'),
+        'target_home_planet_id' => $homePlanetId,
+        'create_galaxy' => $g,
+        'create_system' => $s,
+        'create_position' => $p,
+    );
+}
+
 function smoke_set_fleet_restriction_user_state(array $user, int $score, array $options = array()): void
 {
     global $db_prefix, $resmap;
@@ -1566,6 +1594,7 @@ $resourceScopeFixture = smoke_prepare_resource_scope_fixture($password, $home);
 $inputHardeningFixture = smoke_prepare_input_hardening_fixture($password, $home);
 $fleetRecallFixture = smoke_prepare_fleet_recall_fixture($password, $home);
 $statisticsRankingFixture = smoke_prepare_statistics_ranking_fixture($password, $home);
+$adminDestructiveFixture = smoke_prepare_admin_destructive_fixture($target, $home);
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
 echo json_encode(array(
@@ -1598,6 +1627,7 @@ echo json_encode(array(
 	'password_recovery' => $passwordRecoveryFixture,
 	'admin_operations' => $adminOperationsFixture,
 	'admin_audit' => $adminAuditFixture,
+	'admin_destructive' => $adminDestructiveFixture,
 	'admin_universe' => array(
 		'freeze_victim_player_id' => (int)$freezeVictim['player_id'],
 		'freeze_victim_name' => $freezeVictim['name'],
