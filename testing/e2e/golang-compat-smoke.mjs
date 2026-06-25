@@ -413,6 +413,15 @@ try {
     Number(messageRetentionFixture.regular_fresh_id ?? 0) > 0 &&
     Number(messageRetentionFixture.operator_old_id ?? 0) > 0
   );
+  const messageBulkDeleteFixture = smokeFixture?.message_bulk_delete ?? {};
+  const messageBulkDeleteReady = Boolean(
+    typeof messageBulkDeleteFixture.user?.login === "string" &&
+    Number(messageBulkDeleteFixture.user?.home_planet_id ?? 0) > 0 &&
+    typeof messageBulkDeleteFixture.prefix === "string" &&
+    Number(messageBulkDeleteFixture.total_messages ?? 0) > 0 &&
+    Number(messageBulkDeleteFixture.visible_limit ?? 0) > 0 &&
+    Array.isArray(messageBulkDeleteFixture.expected_remaining_subjects)
+  );
   const resourceScopeFixture = smokeFixture?.resource_scope ?? {};
   const resourceScopeReady = Boolean(
     typeof resourceScopeFixture.owner?.login === "string" &&
@@ -2774,6 +2783,35 @@ try {
     : { status: 0, headers: {}, body: "{}" };
   const messageRetentionOperatorInboxBody = parseJSON(messageRetentionOperatorInbox);
 
+  const messageBulkDeleteUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const messageBulkDeleteLogin = messageBulkDeleteReady
+    ? await loginGameUser(messageBulkDeleteFixture.user.login, loginSmokePassword, messageBulkDeleteUniverse)
+    : null;
+  const messageBulkDeleteSearch = messageBulkDeleteReady
+    ? withQueryParam(messageBulkDeleteLogin?.search ?? "?session=", "cp", Number(messageBulkDeleteFixture.user.home_planet_id))
+    : "";
+  const messageBulkDeleteInitial = messageBulkDeleteReady
+    ? await request(`/api/game/messages${messageBulkDeleteSearch}`, {
+        headers: { Cookie: messageBulkDeleteLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageBulkDeleteInitialBody = parseJSON(messageBulkDeleteInitial);
+  const messageBulkDeleteShown = messageBulkDeleteReady
+    ? await request(`/api/game/messages${messageBulkDeleteSearch}`, {
+        method: "POST",
+        headers: { Cookie: messageBulkDeleteLogin?.cookiePair ?? "", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete",
+          deleteMode: "deleteallshown"
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageBulkDeleteShownBody = parseJSON(messageBulkDeleteShown);
+  const messageBulkDeleteRemainingSubjects = (messageBulkDeleteShownBody.messages?.rows ?? [])
+    .map((row) => String(row.subject ?? ""))
+    .filter((subject) => subject.startsWith(String(messageBulkDeleteFixture.prefix ?? "")))
+    .sort();
+
   const gameNotes = await request(`/api/game/notes${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -4527,6 +4565,44 @@ try {
       ),
       check(!messageRetentionReady || !messageRetentionRegularInbox.body.includes(messageRetentionRegularLogin?.cookiePair ?? "missing-cookie"), "message retention regular response does not echo private cookie"),
       check(!messageRetentionReady || !messageRetentionOperatorInbox.body.includes(messageRetentionOperatorLogin?.cookiePair ?? "missing-cookie"), "message retention operator response does not echo private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_message_bulk_delete_visible_limit_api",
+    checks: [
+      check(!smokeFixtureFile || messageBulkDeleteReady, "go smoke fixture exposes message bulk-delete user and subjects", { messageBulkDeleteFixture }),
+      check(!messageBulkDeleteReady || messageBulkDeleteLogin?.response.status === 200, "message bulk-delete user can log in", {
+        status: messageBulkDeleteLogin?.response.status
+      }),
+      check(!messageBulkDeleteReady || messageBulkDeleteInitial.status === 200, "message bulk-delete initial inbox returns HTTP 200", {
+        status: messageBulkDeleteInitial.status
+      }),
+      check(
+        !messageBulkDeleteReady ||
+          (messageBulkDeleteInitialBody.messages?.rows ?? []).filter((row) => String(row.subject ?? "").startsWith(String(messageBulkDeleteFixture.prefix))).length === Number(messageBulkDeleteFixture.visible_limit),
+        "message bulk-delete initial inbox is capped to the legacy visible page size",
+        messageBulkDeleteInitialBody.messages?.rows ?? []
+      ),
+      check(!messageBulkDeleteReady || messageBulkDeleteShown.status === 200, "message deleteallshown returns HTTP 200", {
+        status: messageBulkDeleteShown.status
+      }),
+      check(
+        !messageBulkDeleteReady ||
+          messageBulkDeleteRemainingSubjects.length === Number(messageBulkDeleteFixture.total_messages) - Number(messageBulkDeleteFixture.visible_limit),
+        "message deleteallshown removes only the visible page",
+        { remainingSubjects: messageBulkDeleteRemainingSubjects }
+      ),
+      check(
+        !messageBulkDeleteReady ||
+          JSON.stringify(messageBulkDeleteRemainingSubjects) === JSON.stringify(messageBulkDeleteFixture.expected_remaining_subjects),
+        "message deleteallshown preserves the oldest hidden messages",
+        {
+          actual: messageBulkDeleteRemainingSubjects,
+          expected: messageBulkDeleteFixture.expected_remaining_subjects
+        }
+      ),
+      check(!messageBulkDeleteReady || !messageBulkDeleteShown.body.includes(messageBulkDeleteLogin?.cookiePair ?? "missing-cookie"), "message bulk-delete response does not echo private cookie")
     ]
   }));
 
