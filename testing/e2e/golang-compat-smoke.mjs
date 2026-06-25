@@ -2343,6 +2343,13 @@ try {
     });
     return { mode, response, body: parseJSON(response) };
   }));
+  const regularAdminOnlyModes = ["Queue", "Uni", "Coupons", "Planets"];
+  const regularAdminOnlyDenials = await Promise.all(regularAdminOnlyModes.map(async (mode) => {
+    const response = await request(`/api/game/admin${withQueryParam(targetLogin.search, "mode", mode)}`, {
+      headers: { Cookie: targetLogin.cookiePair }
+    });
+    return { mode, response, body: parseJSON(response) };
+  }));
   const adminAuditUserLogs = adminAuditReady
     ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "UserLogs")}`, {
         headers: { Cookie: sessionCookiePair }
@@ -2370,6 +2377,21 @@ try {
   const operatorLogin = adminQueueFixtureReady || adminFleetlogsFixtureReady || adminOperationsReady
     ? await loginGameUser("gooperator", loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
     : null;
+  const operatorAdminOnlyMutationSpecs = [
+    { mode: "Uni", action: "settings" },
+    { mode: "Coupons", action: "add_one" },
+    { mode: "Planets", action: "create_debris" }
+  ];
+  const operatorAdminOnlyMutations = operatorLogin
+    ? await Promise.all(operatorAdminOnlyMutationSpecs.map(async (spec) => {
+        const response = await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", spec.mode)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Cookie: operatorLogin.cookiePair },
+          body: JSON.stringify({ action: spec.action })
+        });
+        return { ...spec, response, body: parseJSON(response) };
+      }))
+    : [];
   const operatorBattleSim = adminOperationsReady && operatorLogin
     ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "BattleSim")}`, {
         method: "POST",
@@ -3625,6 +3647,27 @@ try {
         check(item.body.authenticated === true, `admin ${item.mode} tool request authenticates`, item.body),
         check(item.body.admin?.mode === item.mode, `admin ${item.mode} tool request resolves legacy mode`, item.body.admin ?? {}),
         check(item.body.actionIssue === undefined, `admin ${item.mode} tool request is not denied`, item.body.actionIssue ?? {})
+      ])
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_admin_permission_matrix_api",
+    checks: [
+      ...regularAdminOnlyDenials.flatMap((item) => [
+        check(item.response.status === 200, `regular user ${item.mode} admin-only request returns HTTP 200`, {
+          status: item.response.status
+        }),
+        check(item.body.actionIssue?.code === "access_denied", `regular user ${item.mode} admin-only request is denied like legacy`, item.body.actionIssue ?? {})
+      ]),
+      check(!smokeFixtureFile || operatorLogin?.response.status === 200, "operator smoke user can log in for admin-only mutation checks", {
+        status: operatorLogin?.response.status
+      }),
+      ...operatorAdminOnlyMutations.flatMap((item) => [
+        check(item.response.status === 200, `operator ${item.mode} admin-only mutation returns HTTP 200`, {
+          status: item.response.status
+        }),
+        check(item.body.actionIssue?.code === "access_denied", `operator ${item.mode} ${item.action} mutation is denied like legacy`, item.body.actionIssue ?? {})
       ])
     ]
   }));
