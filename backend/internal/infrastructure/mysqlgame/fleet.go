@@ -43,6 +43,8 @@ type recallQueueRow struct {
 	End    int64
 }
 
+type recallFleetLoader func(context.Context, string, int) (recallFleetRow, bool, error)
+
 type fleetLaunchTarget struct {
 	ID      int
 	OwnerID int
@@ -510,6 +512,22 @@ func (r FleetRepository) RecallFleet(ctx context.Context, query appgame.FleetRec
 	if query.FleetID <= 0 {
 		return nil
 	}
+	return r.recallFleet(ctx, query.FleetID, func(ctx context.Context, fleetTable string, fleetID int) (recallFleetRow, bool, error) {
+		return r.loadRecallFleet(ctx, fleetTable, query.PlayerID, fleetID)
+	}, query.PlayerID)
+}
+
+func (r FleetRepository) RecallFleetAnyOwner(ctx context.Context, fleetID int) error {
+	if r.execer == nil {
+		return errors.New("fleet writer unavailable")
+	}
+	if fleetID <= 0 {
+		return nil
+	}
+	return r.recallFleet(ctx, fleetID, r.loadRecallFleetAnyOwner, 0)
+}
+
+func (r FleetRepository) recallFleet(ctx context.Context, fleetID int, loader recallFleetLoader, deleteOwnerID int) error {
 	fleetTable, err := tableName(r.prefix, "fleet")
 	if err != nil {
 		return err
@@ -539,7 +557,7 @@ func (r FleetRepository) RecallFleet(ctx context.Context, query appgame.FleetRec
 		return nil
 	}
 
-	fleet, found, err := r.loadRecallFleet(ctx, fleetTable, query.PlayerID, query.FleetID)
+	fleet, found, err := loader(ctx, fleetTable, fleetID)
 	if err != nil || !found {
 		return err
 	}
@@ -567,8 +585,14 @@ func (r FleetRepository) RecallFleet(ctx context.Context, query appgame.FleetRec
 	if err := r.insertRecallQueue(ctx, queueTable, originOwner, newFleetID, newMission, now, seconds); err != nil {
 		return err
 	}
-	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE fleet_id = ? AND owner_id = ? LIMIT 1", fleetTable), fleet.ID, query.PlayerID); err != nil {
-		return err
+	if deleteOwnerID > 0 {
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE fleet_id = ? AND owner_id = ? LIMIT 1", fleetTable), fleet.ID, deleteOwnerID); err != nil {
+			return err
+		}
+	} else {
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE fleet_id = ? LIMIT 1", fleetTable), fleet.ID); err != nil {
+			return err
+		}
 	}
 	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE task_id = ? AND type = ? LIMIT 1", queueTable), queue.TaskID, queueTypeFleet); err != nil {
 		return err
@@ -850,6 +874,33 @@ func (r FleetRepository) loadRecallFleet(ctx context.Context, fleetTable string,
 		fmt.Sprintf("SELECT fleet_id, owner_id, union_id, `%d`, `%d`, `%d`, fuel, mission, start_planet, target_planet, flight_time, deploy_time, %s FROM %s WHERE fleet_id = ? AND owner_id = ? LIMIT 1", resourceMetal, resourceCrystal, resourceDeuterium, numericColumns(ids), fleetTable),
 		fleetID,
 		playerID,
+	)
+	if err != nil {
+		return recallFleetRow{}, false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return recallFleetRow{}, false, err
+		}
+		return recallFleetRow{}, false, nil
+	}
+	fleet, err := scanRecallFleetRow(rows, ids)
+	if err != nil {
+		return recallFleetRow{}, false, err
+	}
+	if err := rows.Err(); err != nil {
+		return recallFleetRow{}, false, err
+	}
+	return fleet, true, nil
+}
+
+func (r FleetRepository) loadRecallFleetAnyOwner(ctx context.Context, fleetTable string, fleetID int) (recallFleetRow, bool, error) {
+	ids := domaingame.FleetIDs()
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT fleet_id, owner_id, union_id, `%d`, `%d`, `%d`, fuel, mission, start_planet, target_planet, flight_time, deploy_time, %s FROM %s WHERE fleet_id = ? LIMIT 1", resourceMetal, resourceCrystal, resourceDeuterium, numericColumns(ids), fleetTable),
+		fleetID,
 	)
 	if err != nil {
 		return recallFleetRow{}, false, err

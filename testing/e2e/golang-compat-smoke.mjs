@@ -187,6 +187,10 @@ try {
   const adminFleetlogsFixture = smokeFixture?.admin_fleetlogs ?? {};
   const adminFleetlogsTaskId = Number(adminFleetlogsFixture.task_id ?? 0);
   const adminFleetlogsFixtureReady = adminFleetlogsTaskId > 0;
+  const adminFleetlogsRecallTaskId = Number(adminFleetlogsFixture.recall_task_id ?? 0);
+  const adminFleetlogsRecallFleetId = Number(adminFleetlogsFixture.recall_fleet_id ?? 0);
+  const adminFleetlogsRecallFixtureReady = adminFleetlogsRecallTaskId > 0 && adminFleetlogsRecallFleetId > 0;
+  const legacyTransportReturnMission = 103;
   const health = await request("/api/healthz");
   let healthBody = {};
   try {
@@ -1409,6 +1413,20 @@ try {
       })
     : null;
   const adminFleetlogsAfterTwoMinuteBody = adminFleetlogsAfterTwoMinute ? parseJSON(adminFleetlogsAfterTwoMinute) : {};
+  const adminFleetlogsReturn = adminFleetlogsRecallFixtureReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Fleetlogs")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({ action: "fleetlogs_return", taskId: adminFleetlogsRecallTaskId })
+      })
+    : null;
+  const adminFleetlogsReturnBody = adminFleetlogsReturn ? parseJSON(adminFleetlogsReturn) : {};
+  const adminFleetlogsAfterReturn = adminFleetlogsRecallFixtureReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Fleetlogs")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminFleetlogsAfterReturnBody = adminFleetlogsAfterReturn ? parseJSON(adminFleetlogsAfterReturn) : {};
   const adminSubmodeSpecs = [
     { name: "Users", mode: "Users", arrayKey: "userRows" },
     { name: "Planets", mode: "Planets", arrayKey: "planetRows" },
@@ -1452,11 +1470,17 @@ try {
   const gameAllianceWithoutCookie = await request(`/api/game/alliance${sessionSearch}`);
   const gameAllianceWithoutCookieBody = parseJSON(gameAllianceWithoutCookie);
   const targetLogin = await loginGameUser("gophalaxtarget", loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888");
+  const allianceFounderLogin = operatorLogin ?? {
+    response: sessionLogin,
+    search: sessionSearch,
+    cookiePair: sessionCookiePair,
+    playerId: loginPlayerId
+  };
   const allianceTag = `GOSM${runId}`.replace(/[^A-Za-z0-9]/g, "").slice(0, 8);
   const allianceName = `Go smoke alliance ${runId}`.slice(0, 30);
-  const allianceCreate = await request(`/api/game/alliance${withQueryParams(sessionSearch, { a: "1", weiter: "1" })}`, {
+  const allianceCreate = await request(`/api/game/alliance${withQueryParams(allianceFounderLogin.search, { a: "1", weiter: "1" })}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+    headers: { "Content-Type": "application/json", Cookie: allianceFounderLogin.cookiePair },
     body: JSON.stringify({ action: "create", tag: allianceTag, name: allianceName })
   });
   const allianceCreateBody = parseJSON(allianceCreate);
@@ -1471,18 +1495,18 @@ try {
   const allianceApplyBody = parseJSON(allianceApply);
   const applicationId = Number(allianceApplyBody.alliance?.pending?.id ?? 0);
   const allianceAccept = applicationId > 0
-    ? await request(`/api/game/alliance${withQueryParams(sessionSearch, { page: "bewerbungen", show: applicationId, sort: "1" })}`, {
+    ? await request(`/api/game/alliance${withQueryParams(allianceFounderLogin.search, { page: "bewerbungen", show: applicationId, sort: "1" })}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        headers: { "Content-Type": "application/json", Cookie: allianceFounderLogin.cookiePair },
         body: JSON.stringify({ action: "accept", applicationId })
       })
     : { status: 0, body: "", headers: {} };
   const allianceAcceptBody = parseJSON(allianceAccept);
   const rankName = `GoSmoke${runId}`.replace(/[^A-Za-z0-9._ -]/g, "").slice(0, 30);
   const allianceRankCreate = createdAllianceId > 0
-    ? await request(`/api/game/alliance${withQueryParams(sessionSearch, { a: "15" })}`, {
+    ? await request(`/api/game/alliance${withQueryParams(allianceFounderLogin.search, { a: "15" })}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        headers: { "Content-Type": "application/json", Cookie: allianceFounderLogin.cookiePair },
         body: JSON.stringify({ action: "add_rank", rankName })
       })
     : { status: 0, body: "", headers: {} };
@@ -1490,18 +1514,18 @@ try {
   const createdRankId = Number((allianceRankCreateBody.alliance?.ranks ?? []).find((rank) => rank.name === rankName)?.id ?? 0);
   const rankRights = 0x008 | 0x020 | 0x080;
   const allianceRankRights = createdRankId > 0
-    ? await request(`/api/game/alliance${withQueryParams(sessionSearch, { a: "15" })}`, {
+    ? await request(`/api/game/alliance${withQueryParams(allianceFounderLogin.search, { a: "15" })}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        headers: { "Content-Type": "application/json", Cookie: allianceFounderLogin.cookiePair },
         body: JSON.stringify({ action: "save_ranks", rankRights: [{ id: createdRankId, rights: rankRights }] })
       })
     : { status: 0, body: "", headers: {} };
   const allianceRankRightsBody = parseJSON(allianceRankRights);
   const rankAfterRights = (allianceRankRightsBody.alliance?.ranks ?? []).find((rank) => rank.id === createdRankId);
   const allianceAssignRank = createdRankId > 0 && targetLogin.playerId > 0
-    ? await request(`/api/game/alliance${withQueryParams(sessionSearch, { a: "16", u: targetLogin.playerId })}`, {
+    ? await request(`/api/game/alliance${withQueryParams(allianceFounderLogin.search, { a: "16", u: targetLogin.playerId })}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        headers: { "Content-Type": "application/json", Cookie: allianceFounderLogin.cookiePair },
         body: JSON.stringify({ action: "assign_rank", targetPlayerId: targetLogin.playerId, targetRankId: createdRankId })
       })
     : { status: 0, body: "", headers: {} };
@@ -2175,6 +2199,11 @@ try {
   const fleetlogControlRow = Array.isArray(adminFleetlogsAfterTwoMinuteBody.admin?.fleetLogRows)
     ? adminFleetlogsAfterTwoMinuteBody.admin.fleetLogRows.find((row) => Number(row.taskId) === adminFleetlogsTaskId)
     : undefined;
+  const fleetlogRowsAfterReturn = Array.isArray(adminFleetlogsAfterReturnBody.admin?.fleetLogRows)
+    ? adminFleetlogsAfterReturnBody.admin.fleetLogRows
+    : [];
+  const recalledFleetlogTaskRow = fleetlogRowsAfterReturn.find((row) => Number(row.taskId) === adminFleetlogsRecallTaskId);
+  const returnFleetlogRow = fleetlogRowsAfterReturn.find((row) => Number(row.mission) === legacyTransportReturnMission && Number(row.origin?.ownerId ?? 0) === Number(smokeFixture?.phalanx?.target_player_id ?? 0));
   cases.push(finalize({
     case: "go_admin_fleetlogs_permission_mutation_api",
     checks: [
@@ -2214,6 +2243,37 @@ try {
     ]
   }));
 
+  cases.push(finalize({
+    case: "go_admin_fleetlogs_return_api",
+    checks: [
+      check(!smokeFixtureFile || adminFleetlogsRecallFixtureReady, "go smoke fixture exposes admin fleetlogs recall task id", {
+        smokeFixtureFile,
+        adminFleetlogsFixture
+      }),
+      check(!adminFleetlogsRecallFixtureReady || adminFleetlogsReturn?.status === 200, "admin fleetlogs return mutation returns HTTP 200", {
+        status: adminFleetlogsReturn?.status
+      }),
+      check(
+        !adminFleetlogsRecallFixtureReady || adminFleetlogsReturnBody.actionIssue?.code === "action_saved",
+        "admin fleetlogs return mutation saves like legacy",
+        adminFleetlogsReturnBody.actionIssue ?? {}
+      ),
+      check(!adminFleetlogsRecallFixtureReady || adminFleetlogsAfterReturn?.status === 200, "admin fleetlogs return reload returns HTTP 200", {
+        status: adminFleetlogsAfterReturn?.status
+      }),
+      check(
+        !adminFleetlogsRecallFixtureReady || recalledFleetlogTaskRow === undefined,
+        "admin fleetlogs return removes the original fleet queue task",
+        { taskId: adminFleetlogsRecallTaskId, recalledFleetlogTaskRow }
+      ),
+      check(
+        !adminFleetlogsRecallFixtureReady || returnFleetlogRow !== undefined,
+        "admin fleetlogs return creates a legacy transport return fleet row",
+        { mission: legacyTransportReturnMission, returnFleetlogRow }
+      )
+    ]
+  }));
+
   const allianceRouteChecks = gameAllianceRoutes.flatMap((item) => [
     check(item.response.status === 200, `alliance ${item.name} returns HTTP 200`, { status: item.response.status }),
     check(item.body.authenticated === true, `alliance ${item.name} authenticates`, item.body),
@@ -2238,6 +2298,7 @@ try {
   cases.push(finalize({
     case: "go_alliance_management_lifecycle_api",
     checks: [
+      check(allianceFounderLogin.response.status === 200, "founder smoke user can log in for alliance lifecycle", { status: allianceFounderLogin.response.status }),
       check(targetLogin.response.status === 200, "target smoke user can log in for alliance lifecycle", { status: targetLogin.response.status }),
       check(targetLogin.playerId > 0, "target smoke login exposes a player id", { playerId: targetLogin.playerId }),
       check(allianceCreate.status === 200, "founder creates an alliance through Go API", { status: allianceCreate.status }),

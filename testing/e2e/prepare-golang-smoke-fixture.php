@@ -274,8 +274,10 @@ smoke_prepare_planet((int)$login['home_planet_id'], (int)$login['player_id'], 'G
 smoke_prepare_planet((int)$target['home_planet_id'], (int)$target['player_id'], 'Go Smoke Target', $targetCoords);
 $moonId = smoke_prepare_moon((int)$login['home_planet_id'], (int)$login['player_id']);
 $fleetId = smoke_dispatch_phalanx_fleet((int)$target['player_id'], (int)$target['home_planet_id'], (int)$login['home_planet_id']);
+$recallFleetId = smoke_dispatch_phalanx_fleet((int)$target['player_id'], (int)$target['home_planet_id'], (int)$login['home_planet_id']);
 $queueTaskId = smoke_prepare_admin_queue_task((int)$login['player_id']);
 $fleetQueueTaskId = smoke_fleet_queue_task_id($fleetId);
+$recallFleetQueueTaskId = smoke_fleet_queue_task_id($recallFleetId);
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
 echo json_encode(array(
@@ -292,6 +294,8 @@ echo json_encode(array(
 	),
 	'admin_fleetlogs' => array(
 		'task_id' => $fleetQueueTaskId,
+		'recall_task_id' => $recallFleetQueueTaskId,
+		'recall_fleet_id' => $recallFleetId,
 	),
 	'phalanx' => array(
 		'source_moon_id' => $moonId,

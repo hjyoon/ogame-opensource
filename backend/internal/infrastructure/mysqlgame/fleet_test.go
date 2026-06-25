@@ -1807,15 +1807,24 @@ func TestFleetRepositoryRecallErrorsAndHelpers(t *testing.T) {
 	if err := repository.RecallFleet(context.Background(), appgame.FleetRecallQuery{PlayerID: 42, FleetID: 123}); err == nil || !strings.Contains(err.Error(), "writer unavailable") {
 		t.Fatalf("expected missing writer error, got %v", err)
 	}
+	if err := repository.RecallFleetAnyOwner(context.Background(), 123); err == nil || !strings.Contains(err.Error(), "fleet writer unavailable") {
+		t.Fatalf("expected missing writer error for admin recall, got %v", err)
+	}
 
 	runner := &fakeFleetRunner{}
 	repository = NewFleetRepositoryWithRunner(runner, runner, "bad-prefix_", func() time.Time { return now })
 	if err := repository.RecallFleet(context.Background(), appgame.FleetRecallQuery{PlayerID: 42, FleetID: 123}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
 		t.Fatalf("expected unsafe prefix error, got %v", err)
 	}
+	if err := repository.RecallFleetAnyOwner(context.Background(), 123); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected unsafe prefix error for admin recall, got %v", err)
+	}
 
 	if err := repository.RecallFleet(context.Background(), appgame.FleetRecallQuery{PlayerID: 42}); err != nil {
 		t.Fatalf("zero fleet id should be no-op, got %v", err)
+	}
+	if err := repository.RecallFleetAnyOwner(context.Background(), 0); err != nil {
+		t.Fatalf("zero admin fleet id should be no-op, got %v", err)
 	}
 	if !fleetRecallable(domaingame.FleetMissionTransport) || fleetRecallable(domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset) {
 		t.Fatal("unexpected recallability")
@@ -2049,6 +2058,22 @@ func TestFleetRepositoryRecallLoaderEdges(t *testing.T) {
 	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("fleet row trailer failed"), recallFleetTestRow(domaingame.FleetMissionTransport, 0, nil))}}}, "ogame_", func() time.Time { return now })
 	if _, _, err := repository.loadRecallFleet(context.Background(), "ogame_fleet", 42, 123); err == nil || !strings.Contains(err.Error(), "fleet row trailer failed") {
 		t.Fatalf("expected fleet trailing rows error, got %v", err)
+	}
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "ogame_", func() time.Time { return now })
+	if _, found, err := repository.loadRecallFleetAnyOwner(context.Background(), "ogame_fleet", 123); err != nil || found {
+		t.Fatalf("expected missing admin recall fleet to no-op, found=%v err=%v", found, err)
+	}
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("fleet any rows failed"))}}}, "ogame_", func() time.Time { return now })
+	if _, _, err := repository.loadRecallFleetAnyOwner(context.Background(), "ogame_fleet", 123); err == nil || !strings.Contains(err.Error(), "fleet any rows failed") {
+		t.Fatalf("expected admin recall fleet rows error, got %v", err)
+	}
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}, "ogame_", func() time.Time { return now })
+	if _, _, err := repository.loadRecallFleetAnyOwner(context.Background(), "ogame_fleet", 123); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+		t.Fatalf("expected admin recall fleet scan error, got %v", err)
+	}
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("fleet any trailer failed"), recallFleetTestRow(domaingame.FleetMissionTransport, 0, nil))}}}, "ogame_", func() time.Time { return now })
+	if _, _, err := repository.loadRecallFleetAnyOwner(context.Background(), "ogame_fleet", 123); err == nil || !strings.Contains(err.Error(), "fleet any trailer failed") {
+		t.Fatalf("expected admin recall fleet trailing rows error, got %v", err)
 	}
 
 	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("queue rows failed"))}}}, "ogame_", func() time.Time { return now })

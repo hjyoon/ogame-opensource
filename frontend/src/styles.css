@@ -815,8 +815,8 @@ body.legacy-game-body {
 
 .legacy-game-shell .legacy-galaxy-hover {
   cursor: pointer;
-  display: inline-block;
-  line-height: 0;
+  display: inline;
+  line-height: normal;
   position: relative;
 }
 

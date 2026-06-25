@@ -1050,6 +1050,25 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
         }
       }
     }
+    if (currentPageName === "game-galaxy") {
+      const galaxyTables = Array.from(document.querySelectorAll<HTMLElement>("#content table, .legacy-galaxy-table")).filter((table) => {
+        const text = table.textContent ?? "";
+        return text.includes("Solar system") && text.includes("Far space") && text.includes("Legend");
+      });
+      for (const table of galaxyTables) {
+        for (const cell of table.querySelectorAll<HTMLElement>("th, td")) {
+          makeTextTransparent(cell);
+        }
+      }
+    }
+    if (currentPageName === "game-admin-queue") {
+      for (const cell of document.querySelectorAll<HTMLElement>("#content table th, #content table td, .legacy-admin-queue-table th, .legacy-admin-queue-table td")) {
+        const text = cell.textContent ?? "";
+        if (text.includes("ADM_QUEUE_FROZEN")) {
+          cell.textContent = text.replace(/ADM_QUEUE_FROZEN\s+\d+/g, "ADM_QUEUE_FROZEN 000");
+        }
+      }
+    }
     if (currentPageName === "game-statistics" || currentPageName === "game-statistics-alliance") {
       for (const cell of document.querySelectorAll<HTMLTableCellElement>(".legacy-statistics-head-table td, #content table td")) {
         if (cell.textContent?.trim().startsWith("Statistics (as of:")) {

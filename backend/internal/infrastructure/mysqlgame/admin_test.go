@@ -2,6 +2,7 @@ package mysqlgame
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"testing"
@@ -516,16 +517,44 @@ func TestAdminRepositoryMutatesFleetlogControls(t *testing.T) {
 		}
 	})
 
-	t.Run("return is explicit no-op until recall parity", func(t *testing.T) {
-		runner := &fakeGalaxyRunner{}
+	t.Run("return recalls selected fleet task", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{123})},
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, map[int]int{domaingame.FleetSmallCargo: 2}))},
+				{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
+				{rows: fakeRowsFromValues([]any{44})},
+				{rows: fakeRowsFromValues([]any{100})},
+			}},
+			execResults: []sql.Result{galaxySQLResult{id: 9001, rows: 1}},
+		}
 		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		repository.now = func() time.Time { return time.Unix(1_000, 0) }
 		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
 			Mode:   "Fleetlogs",
 			Action: domaingame.AdminActionFleetlogsReturn,
 			TaskID: 1003,
 		})
-		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 {
-			t.Fatalf("expected fleetlogs return no-op, issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 4 {
+			t.Fatalf("unexpected fleetlogs return issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		}
+		if !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `ogame_fleet`") ||
+			runner.execCalls[0].args[0] != 44 ||
+			runner.execCalls[0].args[6] != domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset ||
+			runner.execCalls[0].args[9] != int64(60) {
+			t.Fatalf("unexpected fleetlogs return fleet insert: %+v", runner.execCalls[0])
+		}
+		if !strings.Contains(runner.execCalls[1].sql, "INSERT INTO `ogame_queue`") ||
+			runner.execCalls[1].args[0] != 44 ||
+			runner.execCalls[1].args[2] != 9001 ||
+			runner.execCalls[1].args[6] != int64(1_060) {
+			t.Fatalf("unexpected fleetlogs return queue insert: %+v", runner.execCalls[1])
+		}
+		if !strings.Contains(runner.execCalls[2].sql, "DELETE FROM `ogame_fleet` WHERE fleet_id = ? LIMIT 1") ||
+			runner.execCalls[2].args[0] != 123 ||
+			!strings.Contains(runner.execCalls[3].sql, "DELETE FROM `ogame_queue` WHERE task_id = ? AND type = ? LIMIT 1") {
+			t.Fatalf("expected admin recall to delete original fleet and queue without owner scope, got %+v", runner.execCalls)
 		}
 	})
 
@@ -535,6 +564,19 @@ func TestAdminRepositoryMutatesFleetlogControls(t *testing.T) {
 		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Fleetlogs", Action: domaingame.AdminActionFleetlogsEnd})
 		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 {
 			t.Fatalf("expected missing fleetlog task no-op, issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		}
+	})
+
+	t.Run("return missing selected queue noops", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:   "Fleetlogs",
+			Action: domaingame.AdminActionFleetlogsReturn,
+			TaskID: 1004,
+		})
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 {
+			t.Fatalf("expected missing fleetlogs return queue no-op, issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
 		}
 	})
 }
@@ -585,6 +627,41 @@ func TestAdminRepositoryFleetlogMutationEdges(t *testing.T) {
 		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
 		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Fleetlogs", Action: domaingame.AdminActionFleetlogsEnd, TaskID: 1001}); err == nil || !strings.Contains(err.Error(), "fleetlog update failed") {
 			t.Fatalf("expected fleetlog update error, got %v", err)
+		}
+	})
+
+	t.Run("load return fleet id query error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("fleetlog task failed")}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Fleetlogs", Action: domaingame.AdminActionFleetlogsReturn, TaskID: 1001}); err == nil || !strings.Contains(err.Error(), "fleetlog task failed") {
+			t.Fatalf("expected fleetlog task load error, got %v", err)
+		}
+	})
+
+	t.Run("load return fleet id rows error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("fleetlog task rows failed"))}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Fleetlogs", Action: domaingame.AdminActionFleetlogsReturn, TaskID: 1001}); err == nil || !strings.Contains(err.Error(), "fleetlog task rows failed") {
+			t.Fatalf("expected fleetlog task rows error, got %v", err)
+		}
+	})
+
+	t.Run("load return fleet id scan error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Fleetlogs", Action: domaingame.AdminActionFleetlogsReturn, TaskID: 1001}); err == nil || !strings.Contains(err.Error(), "expected int") {
+			t.Fatalf("expected fleetlog task scan error, got %v", err)
+		}
+	})
+
+	t.Run("return recall error propagates", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{123})},
+			{err: errors.New("return freeze failed")},
+		}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Fleetlogs", Action: domaingame.AdminActionFleetlogsReturn, TaskID: 1001}); err == nil || !strings.Contains(err.Error(), "return freeze failed") {
+			t.Fatalf("expected fleetlog return recall error, got %v", err)
 		}
 	})
 }

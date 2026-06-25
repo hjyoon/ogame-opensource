@@ -188,7 +188,17 @@ func (r AdminRepository) mutateAdminFleetlogs(ctx context.Context, queueTable st
 			return nil, err
 		}
 	case domaingame.AdminActionFleetlogsReturn:
-		// Full recall parity needs the legacy RecallFleet path; keep this action explicit and non-mutating for now.
+		fleetID, found, err := r.loadAdminFleetlogFleetID(ctx, queueTable, query.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			break
+		}
+		fleetRepository := NewFleetRepositoryWithRunner(r.queryer, r.execer, r.prefix, r.now)
+		if err := fleetRepository.RecallFleetAnyOwner(ctx, fleetID); err != nil {
+			return nil, err
+		}
 	}
 	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
 }
@@ -234,6 +244,30 @@ func (r AdminRepository) loadAdminFleetlogUnionID(ctx context.Context, queueTabl
 		return 0, false, err
 	}
 	return unionID, true, rows.Err()
+}
+
+func (r AdminRepository) loadAdminFleetlogFleetID(ctx context.Context, queueTable string, taskID int) (int, bool, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT sub_id FROM %s WHERE task_id = ? AND type = ? LIMIT 1", queueTable),
+		taskID,
+		queueTypeFleet,
+	)
+	if err != nil {
+		return 0, false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return 0, false, err
+		}
+		return 0, false, nil
+	}
+	var fleetID int
+	if err := rows.Scan(&fleetID); err != nil {
+		return 0, false, err
+	}
+	return fleetID, true, rows.Err()
 }
 
 func (r AdminRepository) unfreezeAdminQueue(ctx context.Context, queueTable string, taskID int, now int) error {
