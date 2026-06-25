@@ -3155,6 +3155,51 @@ try {
     checks: legacyPublicChecks
   }));
 
+  const legacyGamePagePaths = [
+    "/game",
+    `/game/index.php?page=overview${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=renameplanet${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=b_building${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=buildings&mode=Forschung${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=buildings&mode=Flotte${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=buildings&mode=Verteidigung${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=resources${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=imperium${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=trader${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=micropayment${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=allianzen${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=admin${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=flotten1${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=fleet_templates${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=galaxy&galaxy=1&system=1${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=techtree${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=infos&gid=1${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=statistics${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=suche${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=buddy${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=messages${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=writemessages&messageziel=${loginPlayerId}${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=bericht&bericht=${sentReportID || 1}${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=notizen${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=options${sessionSearch.replace("?", "&")}`,
+    `/game/index.php?page=phalanx&spid=${phalanxTargetPlanetID || basePlanetID || 1}${sessionSearch.replace("?", "&")}`
+  ];
+  const legacyGameRouteChecks = [];
+  for (const path of legacyGamePagePaths) {
+    const response = await request(path);
+    legacyGameRouteChecks.push(
+      check(response.status === 200, `${path} returns React shell`, { status: response.status }),
+      check(response.body.includes('<div id="root">'), `${path} renders React mount node`),
+      check(!/Fatal error|Parse error|Error-ID:|Warning:\s+(Undefined|Trying to access|Attempt to read)|Notice:\s+Undefined/i.test(response.body), `${path} has no legacy runtime error marker`),
+      check(!response.body.includes("Master Database Settings"), `${path} does not render installer form`),
+      check(noLoopbackAsset(response.body), `${path} does not emit localhost/127.0.0.1 absolute asset URLs`)
+    );
+  }
+  cases.push(finalize({
+    case: "go_legacy_game_route_matrix",
+    checks: legacyGameRouteChecks
+  }));
+
   const js = await request("/assets/main.js");
   const css = await request("/assets/main.css");
   const legacyGameOverviewSource = await Bun.file(new URL("../../frontend/src/LegacyGameOverview.tsx", import.meta.url)).text();

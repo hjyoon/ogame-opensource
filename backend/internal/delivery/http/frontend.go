@@ -21,7 +21,7 @@ func (a app) handleFrontend(w http.ResponseWriter, r *http.Request) {
 	if a.deps.Frontend.Serve(w, r, rel) {
 		return
 	}
-	if isLegacyPublicHTMLPath(cleanPath) {
+	if isLegacyPublicHTMLPath(cleanPath) || isLegacyGameHTMLPath(cleanPath) {
 		if !a.deps.Frontend.Serve(w, r, "index.html") {
 			http.Error(w, "frontend build is missing", http.StatusServiceUnavailable)
 		}
@@ -34,4 +34,8 @@ func (a app) handleFrontend(w http.ResponseWriter, r *http.Request) {
 	if !a.deps.Frontend.Serve(w, r, "index.html") {
 		http.Error(w, "frontend build is missing", http.StatusServiceUnavailable)
 	}
+}
+
+func isLegacyGameHTMLPath(cleanPath string) bool {
+	return cleanPath == "/game/index.php"
 }

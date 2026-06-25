@@ -4801,6 +4801,22 @@ func TestLegacyPublicHTMLRoutesServeReactShell(t *testing.T) {
 	}
 }
 
+func TestLegacyGameIndexRouteServesReactShell(t *testing.T) {
+	staticDir := t.TempDir()
+	writeFile(t, filepath.Join(staticDir, "index.html"), "ogame react shell")
+	server := testServer(config.Config{StaticDir: staticDir, LegacyAssetDir: t.TempDir()})
+
+	req := httptest.NewRequest(http.MethodGet, "/game/index.php?page=overview&session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if rec.Body.String() != "ogame react shell" {
+		t.Fatalf("unexpected body %q", rec.Body.String())
+	}
+}
+
 func TestFrontendReturnsUnavailableWhenBuildMissing(t *testing.T) {
 	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
 
