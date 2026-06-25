@@ -113,6 +113,14 @@ function messageRowByID(body, messageID) {
     : undefined;
 }
 
+function messageRowContaining(body, needle) {
+  return Array.isArray(body.messages?.rows)
+    ? body.messages.rows.find((row) =>
+        String(row.subject ?? "").includes(needle) || String(row.text ?? "").includes(needle)
+      )
+    : undefined;
+}
+
 function resourceRowByID(body, resourceID) {
   return Array.isArray(body.resources?.rows)
     ? body.resources.rows.find((row) => Number(row.id ?? 0) === Number(resourceID))
@@ -429,6 +437,16 @@ try {
     Number(messageNonmarkedDeleteFixture.selected_id ?? 0) > 0 &&
     Number(messageNonmarkedDeleteFixture.unselected_a_id ?? 0) > 0 &&
     Number(messageNonmarkedDeleteFixture.unselected_b_id ?? 0) > 0
+  );
+  const messageSendFixture = smokeFixture?.message_send ?? {};
+  const messageSendReady = Boolean(
+    typeof messageSendFixture.sender?.login === "string" &&
+    typeof messageSendFixture.recipient?.login === "string" &&
+    Number(messageSendFixture.sender?.home_planet_id ?? 0) > 0 &&
+    Number(messageSendFixture.recipient?.home_planet_id ?? 0) > 0 &&
+    Number(messageSendFixture.recipient?.player_id ?? 0) > 0 &&
+    String(messageSendFixture.subject ?? "") !== "" &&
+    String(messageSendFixture.text ?? "") !== ""
   );
   const resourceScopeFixture = smokeFixture?.resource_scope ?? {};
   const resourceScopeReady = Boolean(
@@ -2846,6 +2864,49 @@ try {
     : { status: 0, headers: {}, body: "{}" };
   const messageNonmarkedDeletePostBody = parseJSON(messageNonmarkedDeletePost);
 
+  const messageSendUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const messageSendSenderLogin = messageSendReady
+    ? await loginGameUser(messageSendFixture.sender.login, loginSmokePassword, messageSendUniverse)
+    : null;
+  const messageSendRecipientLogin = messageSendReady
+    ? await loginGameUser(messageSendFixture.recipient.login, loginSmokePassword, messageSendUniverse)
+    : null;
+  const messageSendSenderSearch = messageSendReady
+    ? withQueryParam(messageSendSenderLogin?.search ?? "?session=", "cp", Number(messageSendFixture.sender.home_planet_id))
+    : "";
+  const messageSendRecipientSearch = messageSendReady
+    ? withQueryParam(messageSendRecipientLogin?.search ?? "?session=", "cp", Number(messageSendFixture.recipient.home_planet_id))
+    : "";
+  const messageSendSubject = `${String(messageSendFixture.subject ?? "GoMsgSend subject")} ${runId}`;
+  const messageSendText = `${String(messageSendFixture.text ?? "GoMsgSend body")} ${runId}`;
+  const messageSendCompose = messageSendReady
+    ? await request(`/api/game/messages${withQueryParam(messageSendSenderSearch, "messageziel", Number(messageSendFixture.recipient.player_id))}`, {
+        headers: { Cookie: messageSendSenderLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageSendComposeBody = parseJSON(messageSendCompose);
+  const messageSendPost = messageSendReady
+    ? await request(`/api/game/messages${messageSendSenderSearch}`, {
+        method: "POST",
+        headers: { Cookie: messageSendSenderLogin?.cookiePair ?? "", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "send",
+          targetPlayerId: Number(messageSendFixture.recipient.player_id),
+          subject: messageSendSubject,
+          text: messageSendText
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageSendPostBody = parseJSON(messageSendPost);
+  const messageSendRecipientInbox = messageSendReady
+    ? await request(`/api/game/messages${messageSendRecipientSearch}`, {
+        headers: { Cookie: messageSendRecipientLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const messageSendRecipientInboxBody = parseJSON(messageSendRecipientInbox);
+  const messageSendRecipientRow = messageRowContaining(messageSendRecipientInboxBody, messageSendSubject);
+  const messageSendSenderRow = messageRowContaining(messageSendPostBody, messageSendSubject);
+
   const gameNotes = await request(`/api/game/notes${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -4675,6 +4736,66 @@ try {
         messageNonmarkedDeletePostBody.messages?.rows ?? []
       ),
       check(!messageNonmarkedDeleteReady || !messageNonmarkedDeletePost.body.includes(messageNonmarkedDeleteLogin?.cookiePair ?? "missing-cookie"), "message nonmarked-delete response does not echo private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_message_send_recipient_api",
+    checks: [
+      check(!smokeFixtureFile || messageSendReady, "go smoke fixture exposes message sender and recipient users", { messageSendFixture }),
+      check(!messageSendReady || messageSendSenderLogin?.response.status === 200, "message sender can log in", {
+        status: messageSendSenderLogin?.response.status
+      }),
+      check(!messageSendReady || messageSendRecipientLogin?.response.status === 200, "message recipient can log in", {
+        status: messageSendRecipientLogin?.response.status
+      }),
+      check(!messageSendReady || messageSendCompose.status === 200, "message compose view returns HTTP 200", {
+        status: messageSendCompose.status
+      }),
+      check(
+        !messageSendReady ||
+          messageSendComposeBody.messages?.compose?.target?.playerId === Number(messageSendFixture.recipient.player_id),
+        "message compose targets the requested recipient",
+        messageSendComposeBody.messages?.compose ?? {}
+      ),
+      check(!messageSendReady || messageSendPost.status === 200, "message send mutation returns HTTP 200", {
+        status: messageSendPost.status
+      }),
+      check(
+        !messageSendReady || messageSendPostBody.actionIssue?.code === "sent",
+        "message send mutation returns the legacy sent issue",
+        messageSendPostBody.actionIssue ?? {}
+      ),
+      check(!messageSendReady || messageSendRecipientInbox.status === 200, "message recipient inbox returns HTTP 200", {
+        status: messageSendRecipientInbox.status
+      }),
+      check(
+        !messageSendReady || messageSendRecipientRow !== undefined,
+        "message recipient inbox contains the sent private message",
+        messageSendRecipientInboxBody.messages?.rows ?? []
+      ),
+      check(
+        !messageSendReady || String(messageSendRecipientRow?.text ?? "").includes(messageSendText),
+        "message recipient inbox renders the sent message body",
+        messageSendRecipientRow ?? {}
+      ),
+      check(
+        !messageSendReady || messageSendRecipientRow?.unread === true,
+        "message recipient sees the new PM as unread before the inbox read side effect",
+        messageSendRecipientRow ?? {}
+      ),
+      check(
+        !messageSendReady || messageSendRecipientRow?.reportable === true,
+        "message recipient can report the delivered PM",
+        messageSendRecipientRow ?? {}
+      ),
+      check(
+        !messageSendReady || messageSendSenderRow === undefined,
+        "message sender response does not mirror the sent PM into sender inbox",
+        messageSendPostBody.messages?.rows ?? []
+      ),
+      check(!messageSendReady || !messageSendPost.body.includes(messageSendSenderLogin?.cookiePair ?? "missing-cookie"), "message send response does not echo sender private cookie"),
+      check(!messageSendReady || !messageSendRecipientInbox.body.includes(messageSendRecipientLogin?.cookiePair ?? "missing-cookie"), "message recipient response does not echo recipient private cookie")
     ]
   }));
 
