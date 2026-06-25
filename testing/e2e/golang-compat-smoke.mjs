@@ -2661,6 +2661,54 @@ try {
     : { status: 0, headers: {}, body: "{}" };
   const gameReportAfterLegacyGetDeleteBody = parseJSON(gameReportAfterLegacyGetDelete);
 
+  const reportRetentionSubject = `Go report retention PM ${runId}`;
+  const reportRetentionText = `Go report retention source delete ${runId}`;
+  const reportRetentionSend = loginPlayerId > 0
+    ? await request(`/api/game/messages${sessionSearch}`, {
+        method: "POST",
+        headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "send",
+          targetPlayerId: loginPlayerId,
+          subject: reportRetentionSubject,
+          text: reportRetentionText
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const reportRetentionSendBody = parseJSON(reportRetentionSend);
+  const reportRetentionInbox = await request(`/api/game/messages${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const reportRetentionInboxBody = parseJSON(reportRetentionInbox);
+  const reportRetentionRow = messageRowContaining(reportRetentionInboxBody, reportRetentionSubject);
+  const reportRetentionMessageID = Number(reportRetentionRow?.id ?? 0);
+  const reportRetentionReport = reportRetentionMessageID > 0
+    ? await request(`/api/game/messages${sessionSearch}`, {
+        method: "POST",
+        headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete",
+          reportIds: [reportRetentionMessageID]
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const reportRetentionReportBody = parseJSON(reportRetentionReport);
+  const reportRetentionDeleteSource = reportRetentionMessageID > 0
+    ? await request(`/api/game/messages${sessionSearch}`, {
+        method: "POST",
+        headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete",
+          deleteMode: "deletemarked",
+          messageIds: [reportRetentionMessageID]
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const reportRetentionDeleteSourceBody = parseJSON(reportRetentionDeleteSource);
+  const reportRetentionSourceAfterDelete = Array.isArray(reportRetentionDeleteSourceBody.messages?.rows)
+    ? reportRetentionDeleteSourceBody.messages.rows.find((row) => Number(row.id) === reportRetentionMessageID)
+    : undefined;
+
   const gameMessagesWithoutCookie = await request(`/api/game/messages${sessionSearch}`);
   let gameMessagesWithoutCookieBody = {};
   try {
@@ -3526,6 +3574,19 @@ try {
   const adminReportsAfterDeleteBody = adminReportsAfterDelete ? parseJSON(adminReportsAfterDelete) : {};
   const adminReportDeletedRow = Array.isArray(adminReportsAfterDeleteBody.admin?.reportRows)
     ? adminReportsAfterDeleteBody.admin.reportRows.find((row) => Number(row.id) === Number(adminOperationsFixture.report_id))
+    : undefined;
+  const adminReportsAfterSourceMessageDelete = reportRetentionMessageID > 0
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Reports")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminReportsAfterSourceMessageDeleteBody = adminReportsAfterSourceMessageDelete ? parseJSON(adminReportsAfterSourceMessageDelete) : {};
+  const reportRetentionAdminRow = Array.isArray(adminReportsAfterSourceMessageDeleteBody.admin?.reportRows)
+    ? adminReportsAfterSourceMessageDeleteBody.admin.reportRows.find((row) =>
+        Number(row.messageId) === reportRetentionMessageID ||
+        String(row.subject ?? "") === reportRetentionSubject ||
+        String(row.text ?? "").includes(reportRetentionText)
+      )
     : undefined;
   const adminBroadcast = adminOperationsReady
     ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Broadcast")}`, {
@@ -4499,6 +4560,41 @@ try {
         buddyLifecycleRequesterAfterDeleteBody.buddy?.rows ?? []
       ),
       check(!buddyLifecycleReady || !buddyLifecycleDelete.body.includes(buddyLifecycleRequesterLogin?.cookiePair ?? "missing-cookie"), "buddy lifecycle response does not echo requester private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_report_retention_source_delete_api",
+    checks: [
+      check(reportRetentionSend.status === 200, "report retention PM send returns HTTP 200", {
+        status: reportRetentionSend.status
+      }),
+      check(reportRetentionSendBody.actionIssue?.code === "sent", "report retention PM send creates a private message", reportRetentionSendBody.actionIssue ?? {}),
+      check(reportRetentionInbox.status === 200, "report retention inbox reload returns HTTP 200", {
+        status: reportRetentionInbox.status
+      }),
+      check(reportRetentionMessageID > 0, "report retention inbox exposes the source PM id", {
+        reportRetentionRow
+      }),
+      check(reportRetentionReport.status === 200, "report retention report mutation returns HTTP 200", {
+        status: reportRetentionReport.status
+      }),
+      check(reportRetentionReportBody.actionIssue?.code === "reported", "report retention report mutation creates an operator report", reportRetentionReportBody.actionIssue ?? {}),
+      check(reportRetentionDeleteSource.status === 200, "report retention source delete returns HTTP 200", {
+        status: reportRetentionDeleteSource.status
+      }),
+      check(reportRetentionSourceAfterDelete === undefined, "report retention source PM is removed from the inbox after delete", {
+        reportRetentionSourceAfterDelete
+      }),
+      check(adminReportsAfterSourceMessageDelete?.status === 200, "admin Reports reloads after source PM delete", {
+        status: adminReportsAfterSourceMessageDelete?.status
+      }),
+      check(reportRetentionAdminRow !== undefined, "operator report row survives source PM deletion", {
+        reportRetentionAdminRow,
+        reportRetentionMessageID,
+        reportRetentionSubject
+      }),
+      check(!String(reportRetentionDeleteSource.body ?? "").includes(sessionCookiePair), "report retention responses do not echo private cookie")
     ]
   }));
 
