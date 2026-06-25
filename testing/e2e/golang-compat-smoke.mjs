@@ -665,6 +665,45 @@ try {
   const repeatedWelcomeActivation = welcomeActivationPath
     ? await request(welcomeActivationPath)
     : { status: 0, headers: {}, body: "" };
+  const duplicateNameValidation = await request("/api/public/registration/validate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      character: registrationCharacter,
+      password: registrationPassword,
+      email: `dup-name-${runId}@example.local`,
+      universe: universes[0]?.baseUrl ?? "http://localhost:8888",
+      agb: true
+    })
+  });
+  const duplicateNameValidationBody = parseJSON(duplicateNameValidation);
+  const duplicateNameIssues = Array.isArray(duplicateNameValidationBody.issues) ? duplicateNameValidationBody.issues : [];
+  const duplicateEmailValidation = await request("/api/public/registration/validate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      character: `DupEmail${runId}`.slice(0, 20),
+      password: registrationPassword,
+      email: registrationEmail,
+      universe: universes[0]?.baseUrl ?? "http://localhost:8888",
+      agb: true
+    })
+  });
+  const duplicateEmailValidationBody = parseJSON(duplicateEmailValidation);
+  const duplicateEmailIssues = Array.isArray(duplicateEmailValidationBody.issues) ? duplicateEmailValidationBody.issues : [];
+  const duplicateNameCreation = await request("/api/public/registration", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      character: registrationCharacter,
+      password: registrationPassword,
+      email: `dup-create-${runId}@example.local`,
+      universe: universes[0]?.baseUrl ?? "http://localhost:8888",
+      agb: true
+    })
+  });
+  const duplicateNameCreationBody = parseJSON(duplicateNameCreation);
+  const duplicateNameCreationIssues = Array.isArray(duplicateNameCreationBody.issues) ? duplicateNameCreationBody.issues : [];
   cases.push(finalize({
     case: "go_registration_creation_api",
     checks: [
@@ -708,6 +747,22 @@ try {
         status: repeatedWelcomeActivation.status,
         location: repeatedWelcomeActivation.headers.location ?? ""
       })
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_registration_duplicate_edges_api",
+    checks: [
+      check(duplicateNameValidation.status === 200, "duplicate-name registration validation returns HTTP 200", { status: duplicateNameValidation.status }),
+      check(duplicateNameValidationBody.valid === false, "duplicate-name registration validation is rejected", duplicateNameValidationBody),
+      check(duplicateNameIssues.some((issue) => issue.code === "character_exists" && issue.legacyErrorCode === 101), "duplicate username maps to legacy error 101", duplicateNameValidationBody),
+      check(duplicateEmailValidation.status === 200, "duplicate-email registration validation returns HTTP 200", { status: duplicateEmailValidation.status }),
+      check(duplicateEmailValidationBody.valid === false, "duplicate-email registration validation is rejected", duplicateEmailValidationBody),
+      check(duplicateEmailIssues.some((issue) => issue.code === "email_exists" && issue.legacyErrorCode === 102), "duplicate email maps to legacy error 102", duplicateEmailValidationBody),
+      check(duplicateNameCreation.status === 200, "duplicate-name registration creation returns HTTP 200", { status: duplicateNameCreation.status }),
+      check(duplicateNameCreationBody.valid === false && duplicateNameCreationBody.created !== true, "duplicate-name creation does not create another account", duplicateNameCreationBody),
+      check(duplicateNameCreationIssues.some((issue) => issue.code === "character_exists" && issue.legacyErrorCode === 101), "duplicate-name creation returns the legacy duplicate issue", duplicateNameCreationBody),
+      check(!hasHeader(duplicateNameCreation, "set-cookie", "prsess_"), "duplicate-name creation does not set a private session cookie", duplicateNameCreation.headers)
     ]
   }));
 
