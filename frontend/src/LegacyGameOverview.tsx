@@ -12125,28 +12125,22 @@ function legacyOverviewMissionText(baseMission: number): string {
 
 function legacyOverviewPlanetFrom(coordinates: Coordinates, name: string, missionClass: string, planetType = 1): string {
   const label = overviewEventEndpointName(name);
+  const href = legacyHTMLAttribute(overviewGalaxyHref(coordinates));
   if (legacyOverviewSpecialTargetType(planetType)) {
-    return ` <a href="javascript:showGalaxy(${coordinates.galaxy},${coordinates.system},${coordinates.position})" ${escapeLegacyAttribute(
-      missionClass
-    )}>[${formatCoordinates(coordinates)}]</a>`;
+    return ` <a href="${href}" ${escapeLegacyAttribute(missionClass)}>[${formatCoordinates(coordinates)}]</a>`;
   }
   const prefix = legacyOverviewGamePlanetType(planetType) ? "planets " : "";
-  return `${label ? `${prefix}${escapeLegacyHTML(label)} ` : ""}<a href="javascript:showGalaxy(${coordinates.galaxy},${coordinates.system},${coordinates.position})" ${escapeLegacyAttribute(
-    missionClass
-  )}>[${formatCoordinates(coordinates)}]</a>`;
+  return `${label ? `${prefix}${escapeLegacyHTML(label)} ` : ""}<a href="${href}" ${escapeLegacyAttribute(missionClass)}>[${formatCoordinates(coordinates)}]</a>`;
 }
 
 function legacyOverviewPlanetTo(coordinates: Coordinates, name: string, missionClass: string, planetType = 1): string {
   const label = overviewEventEndpointName(name);
+  const href = legacyHTMLAttribute(overviewGalaxyHref(coordinates));
   if (legacyOverviewSpecialTargetType(planetType)) {
-    return ` <a href="javascript:showGalaxy(${coordinates.galaxy},${coordinates.system},${coordinates.position})" ${escapeLegacyAttribute(
-      missionClass
-    )}>[${formatCoordinates(coordinates)}]</a>`;
+    return ` <a href="${href}" ${escapeLegacyAttribute(missionClass)}>[${formatCoordinates(coordinates)}]</a>`;
   }
   const prefix = legacyOverviewGamePlanetType(planetType) ? "planet " : "";
-  return `${label ? `${prefix}${escapeLegacyHTML(label)} ` : ""}<a href="javascript:showGalaxy(${coordinates.galaxy},${coordinates.system},${coordinates.position})" ${escapeLegacyAttribute(
-    missionClass
-  )}>[${formatCoordinates(coordinates)}]</a>`;
+  return `${label ? `${prefix}${escapeLegacyHTML(label)} ` : ""}<a href="${href}" ${escapeLegacyAttribute(missionClass)}>[${formatCoordinates(coordinates)}]</a>`;
 }
 
 function legacyOverviewSpecialTargetType(planetType: number): boolean {

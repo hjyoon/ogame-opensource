@@ -321,6 +321,11 @@ async function surfaceContract(page: Page, side: "legacy" | "migrated"): Promise
   return await page.evaluate((pageSide) => {
     const compact = (value: string | null | undefined): string => (value ?? "").replace(/\s+/g, " ").trim();
     const normalizeHref = (href: string): string => {
+      const legacyGalaxy = href.match(/^javascript:showGalaxy\((\d+),\s*(\d+),\s*(\d+)\)$/);
+      if (legacyGalaxy) {
+        const [, galaxy, system, position] = legacyGalaxy;
+        return `/game/galaxy?galaxy=${galaxy}&position=${position}&system=${system}`;
+      }
       if (!href || href.startsWith("javascript:") || href === "#") {
         return href;
       }
@@ -381,11 +386,13 @@ async function surfaceContract(page: Page, side: "legacy" | "migrated"): Promise
       mainTable?.querySelectorAll<HTMLAnchorElement>(
         "a[href*='page=renameplanet'], a[href*='/game/rename-planet'], a[href*='page=messages'], a[href*='/game/messages'], a[href*='page=galaxy'], a[href*='/game/galaxy'], a[href*='page=statistics'], a[href*='/game/statistics']"
       ) ?? []
-    ).map((link) => ({
-      key: compact(link.textContent) || link.getAttribute("title") || "link",
-      text: compact(link.textContent),
-      href: normalizeHref(link.getAttribute("href") ?? "")
-    }));
+    )
+      .filter((link) => !isOverviewEventLink(link))
+      .map((link) => ({
+        key: compact(link.textContent) || link.getAttribute("title") || "link",
+        text: compact(link.textContent),
+        href: normalizeHref(link.getAttribute("href") ?? "")
+      }));
     const rows = Array.from(mainTable?.querySelectorAll<HTMLTableRowElement>(":scope > tbody > tr, :scope > tr") ?? []);
     const infoRows = rows
       .map((row) => compact(row.textContent))
@@ -432,6 +439,20 @@ async function surfaceContract(page: Page, side: "legacy" | "migrated"): Promise
         .forEach(([key, value]) => sorted.append(key, value));
       return sorted.toString();
     }
+
+    function isOverviewEventLink(link: HTMLAnchorElement): boolean {
+      const row = link.closest("tr");
+      if (!row) {
+        return false;
+      }
+      return (
+        row.classList.contains("flight") ||
+        row.classList.contains("return") ||
+        row.classList.contains("holding") ||
+        Boolean(row.querySelector(".legacy-overview-event-timer")) ||
+        /Mission:|Rocket Attack|after order/.test(compact(row.textContent))
+      );
+    }
   }, side);
 }
 
@@ -460,12 +481,57 @@ async function eventContract(page: Page, side: "legacy" | "migrated"): Promise<E
       links: Array.from(row.querySelectorAll("a")).map((link) => ({
         text: compact(link.textContent),
         title: link.getAttribute("title") ?? "",
-        href: normalizeEventHref(link.getAttribute("href") ?? "")
+        href: normalizeEventHref(link.getAttribute("href") ?? "", link.getAttribute("onclick") ?? "")
       }))
     }));
 
-    function normalizeEventHref(href: string): string {
-      return href.replace(/session=[^&"']+/g, "session=");
+    function normalizeEventHref(href: string, onclick: string): string {
+      const legacyMessage = onclick.match(/showMessageMenu\((\d+)\)/);
+      if (legacyMessage) {
+        return `/game/messages?messageziel=${legacyMessage[1]}`;
+      }
+      const legacyGalaxy = href.match(/^javascript:showGalaxy\((\d+),\s*(\d+),\s*(\d+)\)$/);
+      if (legacyGalaxy) {
+        const [, galaxy, system, position] = legacyGalaxy;
+        return `/game/galaxy?galaxy=${galaxy}&position=${position}&system=${system}`;
+      }
+      if (!href || href === "#" || href.startsWith("javascript:")) {
+        return href;
+      }
+      try {
+        const url = new URL(href, window.location.href);
+        const page = url.searchParams.get("page");
+        const query = new URLSearchParams(url.search);
+        query.delete("session");
+        query.delete("no_header");
+        if (query.has("planet") && !query.has("position")) {
+          query.set("position", query.get("planet") ?? "");
+          query.delete("planet");
+        }
+        if (page) {
+          query.delete("page");
+        }
+        const route =
+          page === "writemessages" || url.pathname.endsWith("/messages")
+            ? "/game/messages"
+            : page === "galaxy" || url.pathname.endsWith("/galaxy")
+              ? "/game/galaxy"
+              : url.pathname;
+        if (route === "/game/messages") {
+          query.delete("cp");
+        }
+        return `${route}?${sortQuery(query)}`.replace(/\?$/, "");
+      } catch {
+        return href.replace(/session=[^&"']+/g, "session=");
+      }
+    }
+
+    function sortQuery(query: URLSearchParams): string {
+      const sorted = new URLSearchParams();
+      Array.from(query.entries())
+        .sort(([left], [right]) => left.localeCompare(right))
+        .forEach(([key, value]) => sorted.append(key, value));
+      return sorted.toString();
     }
   }, side);
 }
@@ -501,7 +567,13 @@ async function clickContract(context: BrowserContext, side: "legacy" | "migrated
           ? "#content table[width='519'] a[href*='page=statistics'][href*='start=']"
           : ".legacy-overview-main-table a[href*='/game/statistics'][href*='start=']"
     },
-    { name: "event-galaxy", selector: "#content tr.flight a[href^='javascript:showGalaxy'], .legacy-overview-main-table tr.flight a[href^='javascript:showGalaxy']" },
+    {
+      name: "event-galaxy",
+      selector:
+        side === "legacy"
+          ? "#content tr.flight a[href^='javascript:showGalaxy']"
+          : ".legacy-overview-main-table tr.flight a[href*='/game/galaxy'][href*='galaxy='][href*='system=']"
+    },
     { name: "board", readHref: true, selector: "#menu a:has-text('Board')" },
     { name: "discord", readHref: true, selector: "#menu a:has-text('Discord')" }
   ];

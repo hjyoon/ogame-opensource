@@ -73,6 +73,18 @@ type WriteMessageNavigation = {
   badResponses: string[];
 };
 
+type GalaxyNavigation = {
+  status: number | null;
+  initialURL: string;
+  linkHref: string;
+  linkText: string;
+  finalURL: string;
+  galaxyReady: boolean;
+  consoleErrors: string[];
+  failedRequests: string[];
+  badResponses: string[];
+};
+
 const rootDir = resolve(import.meta.dir, "../..");
 const browserName = browserEnv("OGAME_PLAYWRIGHT_BROWSER", "chromium");
 const outputDir = resolve(rootDir, ".tmp/playwright-overview-fleet-visual", browserName);
@@ -116,6 +128,12 @@ try {
     "#content tr.flight, #content tr.return, #content tr.holding",
     fixture
   );
+  const legacyGalaxyNavigation = await checkEventGalaxyNavigation(
+    legacyContext,
+    "legacy",
+    legacyOverviewURL(fixture),
+    "#content tr.flight, #content tr.return, #content tr.holding"
+  );
   await legacyContext.close();
 
   const migratedContext = await newContext(browser, viewport, migratedBaseURL, fixture);
@@ -133,6 +151,12 @@ try {
     ".legacy-overview-event-timer",
     fixture
   );
+  const migratedGalaxyNavigation = await checkEventGalaxyNavigation(
+    migratedContext,
+    "migrated",
+    migratedOverviewURL(fixture),
+    ".legacy-overview-event-timer"
+  );
   await migratedContext.close();
 
   const diffPath = join(screenshotDir, `overview-fleet-${viewport.name}-diff.png`);
@@ -147,6 +171,15 @@ try {
     migratedWriteMessage.badResponses.length === 0 &&
     legacyWriteMessage.consoleErrors.length === 0 &&
     migratedWriteMessage.consoleErrors.length === 0;
+  const galaxyNavigationPass =
+    legacyGalaxyNavigation.galaxyReady &&
+    migratedGalaxyNavigation.galaxyReady &&
+    legacyGalaxyNavigation.failedRequests.length === 0 &&
+    migratedGalaxyNavigation.failedRequests.length === 0 &&
+    legacyGalaxyNavigation.badResponses.length === 0 &&
+    migratedGalaxyNavigation.badResponses.length === 0 &&
+    legacyGalaxyNavigation.consoleErrors.length === 0 &&
+    migratedGalaxyNavigation.consoleErrors.length === 0;
   const pass =
     legacy.status === 200 &&
     migrated.status === 200 &&
@@ -160,6 +193,7 @@ try {
     migrated.eventRows.length >= 3 &&
     eventContractPass &&
     writeMessagePass &&
+    galaxyNavigationPass &&
     (!enforceDiff || diff.diffRatio <= maxDiffRatio);
 
   const report = {
@@ -181,16 +215,19 @@ try {
     pass,
     eventContractPass,
     writeMessagePass,
+    galaxyNavigationPass,
     legacy,
     migrated,
     legacyWriteMessage,
     migratedWriteMessage,
+    legacyGalaxyNavigation,
+    migratedGalaxyNavigation,
     diff,
     diffPath
   };
   await writeFile(join(outputDir, "report.json"), JSON.stringify(report, null, 2));
   await writeFile(join(outputDir, "report.md"), renderMarkdown(report));
-  process.stdout.write(JSON.stringify({ pass, diffRatio: diff.diffRatio, changedPixels: diff.changedPixels, writeMessagePass, report: join(outputDir, "report.json") }, null, 2) + "\n");
+  process.stdout.write(JSON.stringify({ pass, diffRatio: diff.diffRatio, changedPixels: diff.changedPixels, writeMessagePass, galaxyNavigationPass, report: join(outputDir, "report.json") }, null, 2) + "\n");
   if (!pass) {
     process.exitCode = 1;
   }
@@ -334,6 +371,60 @@ async function checkWriteMessageNavigation(
   };
 }
 
+async function checkEventGalaxyNavigation(
+  context: BrowserContext,
+  side: "legacy" | "migrated",
+  url: string,
+  readySelector: string
+): Promise<GalaxyNavigation> {
+  const page = await context.newPage();
+  const consoleErrors: string[] = [];
+  const failedRequests: string[] = [];
+  const badResponses: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      consoleErrors.push(message.text());
+    }
+  });
+  page.on("requestfailed", (request) => {
+    failedRequests.push(`${request.method()} ${request.url()} ${request.failure()?.errorText ?? ""}`.trim());
+  });
+  page.on("response", (response) => {
+    const status = response.status();
+    if (status >= 400 && !response.url().endsWith("/favicon.ico")) {
+      badResponses.push(`${status} ${response.url()}`);
+    }
+  });
+
+  const response = await page.goto(url, { waitUntil: "networkidle", timeout: 15_000 });
+  await page.locator(readySelector).first().waitFor({ timeout: 10_000 });
+  await waitForImages(page);
+  const link = (
+    side === "legacy"
+      ? page.locator('#content tr.flight a:text-matches("^\\\\[\\\\d+:\\\\d+:\\\\d+\\\\]$"), #content tr.return a:text-matches("^\\\\[\\\\d+:\\\\d+:\\\\d+\\\\]$"), #content tr.holding a:text-matches("^\\\\[\\\\d+:\\\\d+:\\\\d+\\\\]$")')
+      : page.locator('.legacy-overview-main-table tr:has(.legacy-overview-event-timer) a:text-matches("^\\\\[\\\\d+:\\\\d+:\\\\d+\\\\]$")')
+  ).first();
+  await link.waitFor({ timeout: 10_000 });
+  const linkHref = await link.getAttribute("href") ?? "";
+  const linkText = await link.textContent() ?? "";
+  await link.click();
+  const galaxyReady = side === "legacy" ? await waitForLegacyGalaxy(page) : await waitForMigratedGalaxy(page);
+  const finalURL = page.url();
+  await page.close();
+
+  return {
+    status: response?.status() ?? null,
+    initialURL: url,
+    linkHref,
+    linkText,
+    finalURL,
+    galaxyReady,
+    consoleErrors,
+    failedRequests,
+    badResponses
+  };
+}
+
 async function waitForLegacyMessageCompose(page: Page, targetPlayerID: number): Promise<boolean> {
   try {
     await page.waitForURL((url) =>
@@ -342,6 +433,29 @@ async function waitForLegacyMessageCompose(page: Page, targetPlayerID: number): 
       { timeout: 10_000 }
     );
     await page.locator('form input[name="messageziel"], form textarea[name="text"]').first().waitFor({ timeout: 10_000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForLegacyGalaxy(page: Page): Promise<boolean> {
+  try {
+    await page.waitForURL((url) => url.searchParams.get("page") === "galaxy", { timeout: 10_000 });
+    await page.waitForLoadState("networkidle", { timeout: 10_000 });
+    return await page.locator("body").evaluate((body) => {
+      const text = body.textContent ?? "";
+      return !/Error-ID|The session is invalid|Fatal error|Parse error/i.test(text);
+    });
+  } catch {
+    return false;
+  }
+}
+
+async function waitForMigratedGalaxy(page: Page): Promise<boolean> {
+  try {
+    await page.waitForURL((url) => url.pathname === "/game/galaxy", { timeout: 10_000 });
+    await page.locator(".legacy-galaxy-table").waitFor({ timeout: 10_000 });
     return true;
   } catch {
     return false;
@@ -595,12 +709,15 @@ function renderMarkdown(report: {
   pass: boolean;
   eventContractPass: boolean;
   writeMessagePass: boolean;
+  galaxyNavigationPass: boolean;
   diff: DiffResult;
   diffPath: string;
   legacy: PageCapture;
   migrated: PageCapture;
   legacyWriteMessage: WriteMessageNavigation;
   migratedWriteMessage: WriteMessageNavigation;
+  legacyGalaxyNavigation: GalaxyNavigation;
+  migratedGalaxyNavigation: GalaxyNavigation;
   thresholds: { enforceDiff: boolean; maxDiffRatio: number; colorDeltaThreshold: number };
 }): string {
   const lines: string[] = [];
@@ -612,6 +729,7 @@ function renderMarkdown(report: {
   lines.push(`Pass: ${report.pass ? "yes" : "no"}`);
   lines.push(`Event contract pass: ${report.eventContractPass ? "yes" : "no"}`);
   lines.push(`Write message navigation pass: ${report.writeMessagePass ? "yes" : "no"}`);
+  lines.push(`Galaxy coordinate navigation pass: ${report.galaxyNavigationPass ? "yes" : "no"}`);
   lines.push(`Exact diff ratio: ${formatNumber(report.diff.diffRatio)} (${report.diff.changedPixels}/${report.diff.totalPixels})`);
   lines.push(`Diff path: ${report.diffPath}`);
   lines.push(`Threshold: ${report.thresholds.enforceDiff ? formatNumber(report.thresholds.maxDiffRatio) : "not enforced"}`);
@@ -632,6 +750,11 @@ function renderMarkdown(report: {
   lines.push("");
   lines.push(`- Legacy: ${report.legacyWriteMessage.composeReady ? "ok" : "failed"} ${report.legacyWriteMessage.finalURL}`);
   lines.push(`- Migrated: ${report.migratedWriteMessage.composeReady ? "ok" : "failed"} ${report.migratedWriteMessage.finalURL}`);
+  lines.push("");
+  lines.push("## Galaxy Coordinate Navigation");
+  lines.push("");
+  lines.push(`- Legacy: ${report.legacyGalaxyNavigation.galaxyReady ? "ok" : "failed"} ${report.legacyGalaxyNavigation.finalURL}`);
+  lines.push(`- Migrated: ${report.migratedGalaxyNavigation.galaxyReady ? "ok" : "failed"} ${report.migratedGalaxyNavigation.finalURL}`);
   return `${lines.join("\n")}\n`;
 }
 
