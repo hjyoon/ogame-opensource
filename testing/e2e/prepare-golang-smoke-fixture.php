@@ -1101,6 +1101,47 @@ function smoke_prepare_message_scope_fixture(string $password, array $near): arr
     );
 }
 
+function smoke_prepare_resource_scope_fixture(string $password, array $near): array
+{
+    global $db_prefix;
+
+    $owner = smoke_prepare_user('goresown', $password, 'goresown@example.local', USER_TYPE_PLAYER);
+    $foreign = smoke_prepare_user('goresfor', $password, 'goresfor@example.local', USER_TYPE_PLAYER);
+    $users = array($owner, $foreign);
+    $userIds = array_map(fn($user) => (int)$user['player_id'], $users);
+    $planetIds = array_map(fn($user) => (int)$user['home_planet_id'], $users);
+
+    smoke_cleanup_alliances($userIds);
+    smoke_cleanup_fleets($userIds, $planetIds);
+    $positions = smoke_find_empty_positions($near, count($users));
+    foreach ($users as $index => $user) {
+        smoke_set_fleet_restriction_user_state($user, 10000);
+        smoke_prepare_planet((int)$user['home_planet_id'], (int)$user['player_id'], 'GoResScope' . $index, $positions[$index]);
+    }
+
+    $resourceSetup =
+        "`" . GID_B_METAL_MINE . "`=10, `" . GID_B_CRYS_MINE . "`=10, `" . GID_B_DEUT_SYNTH . "`=10, " .
+        "`" . GID_B_SOLAR . "`=12, `" . GID_B_FUSION . "`=0, `" . GID_F_SAT . "`=0";
+    dbquery("UPDATE {$db_prefix}planets SET {$resourceSetup}, prod1=1, prod2=1, prod3=1, prod4=1, prod12=0, prod212=0 WHERE planet_id=" . (int)$owner['home_planet_id']);
+    dbquery("UPDATE {$db_prefix}planets SET {$resourceSetup}, prod1=0.8, prod2=0.7, prod3=1, prod4=1, prod12=0, prod212=0 WHERE planet_id=" . (int)$foreign['home_planet_id']);
+    InvalidateUserCache();
+
+    return array(
+        'owner' => array(
+            'login' => mb_strtolower($owner['name'], 'UTF-8'),
+            'player_id' => (int)$owner['player_id'],
+            'home_planet_id' => (int)$owner['home_planet_id'],
+        ),
+        'foreign' => array(
+            'login' => mb_strtolower($foreign['name'], 'UTF-8'),
+            'player_id' => (int)$foreign['player_id'],
+            'home_planet_id' => (int)$foreign['home_planet_id'],
+        ),
+        'foreign_initial_metal_percent' => 80,
+        'foreign_initial_crystal_percent' => 70,
+    );
+}
+
 $name = getenv('OGAME_GO_LOGIN_SMOKE_USER') ?: 'legor';
 $password = getenv('OGAME_GO_LOGIN_SMOKE_PASS') ?: 'admin';
 $email = getenv('OGAME_GO_LOGIN_SMOKE_EMAIL') ?: ($name . '@example.local');
@@ -1144,6 +1185,7 @@ $galaxyRemoteFixture = smoke_prepare_galaxy_remote_fixture($password, $home);
 $galaxyMissileFixture = smoke_prepare_galaxy_missile_fixture($password, $home);
 $buddyLifecycleFixture = smoke_prepare_buddy_lifecycle_fixture($password, $home);
 $messageScopeFixture = smoke_prepare_message_scope_fixture($password, $home);
+$resourceScopeFixture = smoke_prepare_resource_scope_fixture($password, $home);
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
 echo json_encode(array(
@@ -1190,4 +1232,5 @@ echo json_encode(array(
 		'galaxy_missile' => $galaxyMissileFixture,
 		'buddy_lifecycle' => $buddyLifecycleFixture,
 		'message_scope' => $messageScopeFixture,
+		'resource_scope' => $resourceScopeFixture,
 	), JSON_UNESCAPED_SLASHES) . PHP_EOL;

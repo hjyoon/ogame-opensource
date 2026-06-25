@@ -113,6 +113,12 @@ function messageRowByID(body, messageID) {
     : undefined;
 }
 
+function resourceRowByID(body, resourceID) {
+  return Array.isArray(body.resources?.rows)
+    ? body.resources.rows.find((row) => Number(row.id ?? 0) === Number(resourceID))
+    : undefined;
+}
+
 async function readOptionalJSON(path) {
   if (!path) {
     return {};
@@ -396,6 +402,15 @@ try {
     Number(messageScopeFixture.foreign_bulk_id ?? 0) > 0 &&
     Number(messageScopeFixture.owner_report_id ?? 0) > 0 &&
     Number(messageScopeFixture.foreign_report_id ?? 0) > 0
+  );
+  const resourceScopeFixture = smokeFixture?.resource_scope ?? {};
+  const resourceScopeReady = Boolean(
+    typeof resourceScopeFixture.owner?.login === "string" &&
+    typeof resourceScopeFixture.foreign?.login === "string" &&
+    Number(resourceScopeFixture.owner?.home_planet_id ?? 0) > 0 &&
+    Number(resourceScopeFixture.foreign?.home_planet_id ?? 0) > 0 &&
+    Number(resourceScopeFixture.foreign_initial_metal_percent ?? 0) >= 0 &&
+    Number(resourceScopeFixture.foreign_initial_crystal_percent ?? 0) >= 0
   );
   const passwordRecoveryFixture = smokeFixture?.password_recovery ?? {};
   const passwordRecoveryFixtureReady =
@@ -2832,6 +2847,58 @@ try {
     gameResourcesWithoutCookieBody = {};
   }
 
+  const resourceScopeUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const resourceScopeOwnerLogin = resourceScopeReady
+    ? await loginGameUser(resourceScopeFixture.owner.login, loginSmokePassword, resourceScopeUniverse)
+    : null;
+  const resourceScopeForeignLogin = resourceScopeReady
+    ? await loginGameUser(resourceScopeFixture.foreign.login, loginSmokePassword, resourceScopeUniverse)
+    : null;
+  const resourceScopeOwnerSearch = resourceScopeReady
+    ? withQueryParam(resourceScopeOwnerLogin?.search ?? "?session=", "cp", Number(resourceScopeFixture.owner.home_planet_id))
+    : "";
+  const resourceScopeOwnerForeignCPSearch = resourceScopeReady
+    ? withQueryParam(resourceScopeOwnerLogin?.search ?? "?session=", "cp", Number(resourceScopeFixture.foreign.home_planet_id))
+    : "";
+  const resourceScopeForeignSearch = resourceScopeReady
+    ? withQueryParam(resourceScopeForeignLogin?.search ?? "?session=", "cp", Number(resourceScopeFixture.foreign.home_planet_id))
+    : "";
+  const resourceScopeOwnerInitial = resourceScopeReady
+    ? await request(`/api/game/resources${resourceScopeOwnerSearch}`, {
+        headers: { Cookie: resourceScopeOwnerLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const resourceScopeOwnerInitialBody = parseJSON(resourceScopeOwnerInitial);
+  const resourceScopeForeignInitial = resourceScopeReady
+    ? await request(`/api/game/resources${resourceScopeForeignSearch}`, {
+        headers: { Cookie: resourceScopeForeignLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const resourceScopeForeignInitialBody = parseJSON(resourceScopeForeignInitial);
+  const resourceScopeForeignCPUpdate = resourceScopeReady
+    ? await request(`/api/game/resources${resourceScopeOwnerForeignCPSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: resourceScopeOwnerLogin?.cookiePair ?? "" },
+        body: JSON.stringify({
+          production: {
+            1: 10,
+            2: 20,
+            3: 30,
+            4: 40,
+            12: 50,
+            212: 60
+          }
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const resourceScopeForeignCPUpdateBody = parseJSON(resourceScopeForeignCPUpdate);
+  const resourceScopeForeignAfterUpdate = resourceScopeReady
+    ? await request(`/api/game/resources${resourceScopeForeignSearch}`, {
+        headers: { Cookie: resourceScopeForeignLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const resourceScopeForeignAfterUpdateBody = parseJSON(resourceScopeForeignAfterUpdate);
+
   const gameMerchant = await request(`/api/game/merchant${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -4370,6 +4437,73 @@ try {
         messageScopeForeignAfterBulkDeleteBody.messages?.rows ?? []
       ),
       check(!messageScopeReady || !messageScopeBulkDelete.body.includes(messageScopeOwnerLogin?.cookiePair ?? "missing-cookie"), "message scope response does not echo owner private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_resources_foreign_cp_scope_api",
+    checks: [
+      check(!smokeFixtureFile || resourceScopeReady, "go smoke fixture exposes resource scope users", { resourceScopeFixture }),
+      check(!resourceScopeReady || resourceScopeOwnerLogin?.response.status === 200, "resource scope owner can log in", {
+        status: resourceScopeOwnerLogin?.response.status
+      }),
+      check(!resourceScopeReady || resourceScopeForeignLogin?.response.status === 200, "resource scope foreign user can log in", {
+        status: resourceScopeForeignLogin?.response.status
+      }),
+      check(!resourceScopeReady || resourceScopeOwnerInitial.status === 200, "resource scope owner initial view returns HTTP 200", {
+        status: resourceScopeOwnerInitial.status
+      }),
+      check(!resourceScopeReady || resourceScopeOwnerInitialBody.resources?.currentPlanet?.id === Number(resourceScopeFixture.owner?.home_planet_id), "resource scope owner starts on owned planet", resourceScopeOwnerInitialBody.resources?.currentPlanet ?? {}),
+      check(!resourceScopeReady || resourceScopeForeignInitial.status === 200, "resource scope foreign initial view returns HTTP 200", {
+        status: resourceScopeForeignInitial.status
+      }),
+      check(!resourceScopeReady || resourceScopeForeignInitialBody.resources?.currentPlanet?.id === Number(resourceScopeFixture.foreign?.home_planet_id), "resource scope foreign starts on own planet", resourceScopeForeignInitialBody.resources?.currentPlanet ?? {}),
+      check(
+        !resourceScopeReady ||
+          resourceRowByID(resourceScopeForeignInitialBody, 1)?.percent === Number(resourceScopeFixture.foreign_initial_metal_percent),
+        "resource scope foreign metal percent starts at the fixture value",
+        resourceRowByID(resourceScopeForeignInitialBody, 1) ?? {}
+      ),
+      check(
+        !resourceScopeReady ||
+          resourceRowByID(resourceScopeForeignInitialBody, 2)?.percent === Number(resourceScopeFixture.foreign_initial_crystal_percent),
+        "resource scope foreign crystal percent starts at the fixture value",
+        resourceRowByID(resourceScopeForeignInitialBody, 2) ?? {}
+      ),
+      check(!resourceScopeReady || resourceScopeForeignCPUpdate.status === 200, "resource scope owner POST with foreign cp returns HTTP 200", {
+        status: resourceScopeForeignCPUpdate.status
+      }),
+      check(
+        !resourceScopeReady || resourceScopeForeignCPUpdateBody.resources?.currentPlanet?.id === Number(resourceScopeFixture.owner?.home_planet_id),
+        "resource scope foreign cp POST falls back to the current owned planet",
+        resourceScopeForeignCPUpdateBody.resources?.currentPlanet ?? {}
+      ),
+      check(
+        !resourceScopeReady || resourceRowByID(resourceScopeForeignCPUpdateBody, 1)?.percent === 10,
+        "resource scope foreign cp POST applies metal percent to the owned planet",
+        resourceRowByID(resourceScopeForeignCPUpdateBody, 1) ?? {}
+      ),
+      check(
+        !resourceScopeReady || resourceRowByID(resourceScopeForeignCPUpdateBody, 2)?.percent === 20,
+        "resource scope foreign cp POST applies crystal percent to the owned planet",
+        resourceRowByID(resourceScopeForeignCPUpdateBody, 2) ?? {}
+      ),
+      check(!resourceScopeReady || resourceScopeForeignAfterUpdate.status === 200, "resource scope foreign reload after owner POST returns HTTP 200", {
+        status: resourceScopeForeignAfterUpdate.status
+      }),
+      check(
+        !resourceScopeReady ||
+          resourceRowByID(resourceScopeForeignAfterUpdateBody, 1)?.percent === Number(resourceScopeFixture.foreign_initial_metal_percent),
+        "resource scope owner POST does not mutate foreign metal percent",
+        resourceRowByID(resourceScopeForeignAfterUpdateBody, 1) ?? {}
+      ),
+      check(
+        !resourceScopeReady ||
+          resourceRowByID(resourceScopeForeignAfterUpdateBody, 2)?.percent === Number(resourceScopeFixture.foreign_initial_crystal_percent),
+        "resource scope owner POST does not mutate foreign crystal percent",
+        resourceRowByID(resourceScopeForeignAfterUpdateBody, 2) ?? {}
+      ),
+      check(!resourceScopeReady || !resourceScopeForeignCPUpdate.body.includes(resourceScopeOwnerLogin?.cookiePair ?? "missing-cookie"), "resource scope response does not echo owner private cookie")
     ]
   }));
 
