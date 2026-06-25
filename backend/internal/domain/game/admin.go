@@ -27,6 +27,8 @@ const (
 	AdminActionBattleSimRun  = "battle_sim"
 	AdminActionRakSimRun     = "rak_sim"
 	AdminActionExpeditionSim = "sim"
+
+	AdminActionSettings = "settings"
 )
 
 type Admin struct {

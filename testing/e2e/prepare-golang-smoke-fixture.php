@@ -536,15 +536,17 @@ $email = getenv('OGAME_GO_LOGIN_SMOKE_EMAIL') ?: ($name . '@example.local');
 $login = smoke_prepare_user($name, $password, $email, USER_TYPE_ADMIN);
 $operator = smoke_prepare_user('gooperator', $password, 'gooperator@example.local', USER_TYPE_GO);
 $target = smoke_prepare_user('gophalaxtarget', $password, 'gophalaxtarget@example.local', 0);
-smoke_cleanup_alliances(array((int)$login['player_id'], (int)$operator['player_id'], (int)$target['player_id']));
+$freezeVictim = smoke_prepare_user('gofreezevictim', $password, 'gofreezevictim@example.local', 0);
+smoke_cleanup_alliances(array((int)$login['player_id'], (int)$operator['player_id'], (int)$target['player_id'], (int)$freezeVictim['player_id']));
 $home = LoadPlanetById((int)$login['home_planet_id']);
 if ($home === null) {
 	throw new RuntimeException('Go smoke home planet is missing.');
 }
 $targetCoords = smoke_find_empty_position($home);
-smoke_cleanup_fleets(array((int)$login['player_id'], (int)$operator['player_id'], (int)$target['player_id']), array((int)$login['home_planet_id'], (int)$operator['home_planet_id'], (int)$target['home_planet_id']));
+smoke_cleanup_fleets(array((int)$login['player_id'], (int)$operator['player_id'], (int)$target['player_id'], (int)$freezeVictim['player_id']), array((int)$login['home_planet_id'], (int)$operator['home_planet_id'], (int)$target['home_planet_id'], (int)$freezeVictim['home_planet_id']));
 smoke_prepare_planet((int)$login['home_planet_id'], (int)$login['player_id'], 'Go Smoke Home', array((int)$home['g'], (int)$home['s'], (int)$home['p']));
 smoke_prepare_planet((int)$target['home_planet_id'], (int)$target['player_id'], 'Go Smoke Target', $targetCoords);
+smoke_prepare_planet((int)$freezeVictim['home_planet_id'], (int)$freezeVictim['player_id'], 'Go Freeze', smoke_find_empty_position($home));
 $moonId = smoke_prepare_moon((int)$login['home_planet_id'], (int)$login['player_id']);
 $fleetId = smoke_dispatch_phalanx_fleet((int)$target['player_id'], (int)$target['home_planet_id'], (int)$login['home_planet_id']);
 $recallFleetId = smoke_dispatch_phalanx_fleet((int)$target['player_id'], (int)$target['home_planet_id'], (int)$login['home_planet_id']);
@@ -587,5 +589,9 @@ echo json_encode(array(
     'password_recovery' => $passwordRecoveryFixture,
     'admin_operations' => $adminOperationsFixture,
     'admin_audit' => $adminAuditFixture,
+    'admin_universe' => array(
+        'freeze_victim_player_id' => (int)$freezeVictim['player_id'],
+        'freeze_victim_name' => $freezeVictim['name'],
+    ),
     'fleet_restrictions' => $fleetRestrictionFixture,
 ), JSON_UNESCAPED_SLASHES) . PHP_EOL;

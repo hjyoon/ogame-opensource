@@ -457,6 +457,50 @@ func TestAdminRepositoryMutatesAdminSimulators(t *testing.T) {
 	})
 }
 
+func TestAdminRepositoryMutatesUniverseSettings(t *testing.T) {
+	t.Run("freeze forces active regular users into vacation", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		repository.now = func() time.Time { return time.Unix(2_000_000, 0) }
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:   "Uni",
+			Action: domaingame.AdminActionSettings,
+			Values: map[string]int{"freeze": 1},
+		})
+
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved {
+			t.Fatalf("unexpected universe freeze issue=%+v err=%v", issue, err)
+		}
+		if len(runner.execCalls) != 2 ||
+			runner.execCalls[0].sql != "UPDATE `ogame_uni` SET freeze = ?" ||
+			runner.execCalls[0].args[0] != 1 ||
+			!strings.Contains(runner.execCalls[1].sql, "UPDATE `ogame_users` SET vacation = 1, vacation_until = ? WHERE lastclick >= ? AND admin = 0") ||
+			runner.execCalls[1].args[0] != 2_000_000 ||
+			runner.execCalls[1].args[1] != 2_000_000-7*24*60*60 {
+			t.Fatalf("unexpected universe freeze execs: %+v", runner.execCalls)
+		}
+	})
+
+	t.Run("unfreeze only toggles universe flag", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:   "Uni",
+			Action: domaingame.AdminActionSettings,
+			Values: map[string]int{"freeze": 0},
+		})
+
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved {
+			t.Fatalf("unexpected universe unfreeze issue=%+v err=%v", issue, err)
+		}
+		if len(runner.execCalls) != 1 || runner.execCalls[0].sql != "UPDATE `ogame_uni` SET freeze = ?" || runner.execCalls[0].args[0] != 0 {
+			t.Fatalf("unexpected universe unfreeze execs: %+v", runner.execCalls)
+		}
+	})
+}
+
 func TestAdminRepositoryAdminOperationEdges(t *testing.T) {
 	t.Run("broadcast empty payload noops", func(t *testing.T) {
 		runner := &fakeGalaxyRunner{}

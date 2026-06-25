@@ -110,12 +110,23 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 		return nil, errors.New("admin mutation unavailable")
 	}
 	mode := domaingame.NormalizeAdminMode(query.Mode)
-	if mode == "Expedition" && query.Action == "settings" {
+	if mode == "Expedition" && query.Action == domaingame.AdminActionSettings {
 		expeditionTable, err := tableName(r.prefix, "exptab")
 		if err != nil {
 			return nil, err
 		}
 		return r.mutateAdminExpeditionSettings(ctx, expeditionTable, query.Values)
+	}
+	if mode == "Uni" && query.Action == domaingame.AdminActionSettings {
+		uniTable, err := tableName(r.prefix, "uni")
+		if err != nil {
+			return nil, err
+		}
+		usersTable, err := tableName(r.prefix, "users")
+		if err != nil {
+			return nil, err
+		}
+		return r.mutateAdminUniverseSettings(ctx, uniTable, usersTable, query.Values)
 	}
 	if mode == "Broadcast" && query.Action == domaingame.AdminActionBroadcastSend {
 		return r.mutateAdminBroadcast(ctx, query)
@@ -188,6 +199,24 @@ func (r AdminRepository) mutateAdminBattleSim(ctx context.Context, query appgame
 		return nil, err
 	}
 	return domaingame.AdminIssueWithMessage(domaingame.AdminIssueActionSaved, "Battle report simulator completed."), nil
+}
+
+func (r AdminRepository) mutateAdminUniverseSettings(ctx context.Context, uniTable string, usersTable string, values map[string]int) (*domaingame.AdminActionIssue, error) {
+	freeze := 0
+	if values["freeze"] != 0 {
+		freeze = 1
+	}
+	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET freeze = ?", uniTable), freeze); err != nil {
+		return nil, err
+	}
+	if freeze != 0 {
+		now := int(r.now().Unix())
+		activeSince := now - 7*24*60*60
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET vacation = 1, vacation_until = ? WHERE lastclick >= ? AND admin = 0", usersTable), now, activeSince); err != nil {
+			return nil, err
+		}
+	}
+	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
 }
 
 func (r AdminRepository) mutateAdminBroadcast(ctx context.Context, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {

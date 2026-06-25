@@ -293,6 +293,9 @@ try {
   const adminAuditReady =
     String(adminAuditFixture.token ?? "") !== "" &&
     Number(adminAuditFixture.target_player_id ?? 0) > 0;
+  const adminUniverseFixture = smokeFixture?.admin_universe ?? {};
+  const adminUniverseFreezeVictimID = Number(adminUniverseFixture.freeze_victim_player_id ?? 0);
+  const adminUniverseReady = adminUniverseFreezeVictimID > 0;
   const feedFixture = smokeFixture?.feed ?? {};
   const feedFixtureReady =
     typeof feedFixture.rss_feed_id === "string" &&
@@ -4389,6 +4392,62 @@ try {
       check(missingActivation.headers.location === "/home", "legacy activation without ack returns home location", { location: missingActivation.headers.location }),
       check(naturalMissingActivation.status === 302, "natural activation with missing ack redirects", { status: naturalMissingActivation.status }),
       check(naturalMissingActivation.headers.location === "/home", "natural activation missing account returns home location", { location: naturalMissingActivation.headers.location })
+    ]
+  }));
+
+  const adminUniverseLogin = adminUniverseReady
+    ? await loginGameUser(loginSmokeUser, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const adminUniverseSearch = adminUniverseLogin?.search ?? sessionSearch;
+  const adminUniverseCookie = adminUniverseLogin?.cookiePair ?? sessionCookiePair;
+  const adminUniverseFreeze = adminUniverseReady
+    ? await request(`/api/game/admin${withQueryParam(adminUniverseSearch, "mode", "Uni")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: adminUniverseCookie },
+        body: JSON.stringify({ action: "settings", values: { freeze: 1 } })
+      })
+    : null;
+  const adminUniverseFreezeBody = adminUniverseFreeze ? parseJSON(adminUniverseFreeze) : {};
+  const adminUsersAfterUniverseFreeze = adminUniverseReady
+    ? await request(`/api/game/admin${withQueryParam(adminUniverseSearch, "mode", "Users")}`, {
+        headers: { Cookie: adminUniverseCookie }
+      })
+    : null;
+  const adminUsersAfterUniverseFreezeBody = adminUsersAfterUniverseFreeze ? parseJSON(adminUsersAfterUniverseFreeze) : {};
+  const adminUniverseFreezeVictim = Array.isArray(adminUsersAfterUniverseFreezeBody.admin?.activeUsers)
+    ? adminUsersAfterUniverseFreezeBody.admin.activeUsers.find((row) => Number(row.playerId) === adminUniverseFreezeVictimID)
+    : undefined;
+  const adminUniverseRestore = adminUniverseReady
+    ? await request(`/api/game/admin${withQueryParam(adminUniverseSearch, "mode", "Uni")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: adminUniverseCookie },
+        body: JSON.stringify({ action: "settings", values: { freeze: 0 } })
+      })
+    : null;
+  const adminUniverseRestoreBody = adminUniverseRestore ? parseJSON(adminUniverseRestore) : {};
+  cases.push(finalize({
+    case: "go_admin_universe_freeze_api",
+    checks: [
+      check(!smokeFixtureFile || adminUniverseReady, "go smoke fixture exposes admin universe freeze victim", { adminUniverseFixture }),
+      check(!adminUniverseReady || adminUniverseLogin?.response.status === 200, "admin universe smoke creates an independent admin session", {
+        status: adminUniverseLogin?.response.status
+      }),
+      check(!adminUniverseReady || adminUniverseFreeze?.status === 200, "admin universe freeze mutation returns HTTP 200", {
+        status: adminUniverseFreeze?.status
+      }),
+      check(!adminUniverseReady || adminUniverseFreezeBody.actionIssue?.code === "action_saved", "admin universe freeze mutation saves like legacy", adminUniverseFreezeBody.actionIssue ?? {}),
+      check(!adminUniverseReady || adminUniverseFreezeBody.admin?.universe?.freeze === true, "admin universe freeze mutation reloads frozen universe settings", adminUniverseFreezeBody.admin?.universe ?? {}),
+      check(!adminUniverseReady || adminUsersAfterUniverseFreeze?.status === 200, "admin Users reload after universe freeze returns HTTP 200", {
+        status: adminUsersAfterUniverseFreeze?.status
+      }),
+      check(!adminUniverseReady || adminUniverseFreezeVictim?.vacation === true, "universe freeze moves an active regular user into vacation mode", {
+        adminUniverseFreezeVictim
+      }),
+      check(!adminUniverseReady || adminUniverseRestore?.status === 200, "admin universe restore mutation returns HTTP 200", {
+        status: adminUniverseRestore?.status
+      }),
+      check(!adminUniverseReady || adminUniverseRestoreBody.actionIssue?.code === "action_saved", "admin universe restore mutation saves like legacy", adminUniverseRestoreBody.actionIssue ?? {}),
+      check(!adminUniverseReady || adminUniverseRestoreBody.admin?.universe?.freeze === false, "admin universe restore reloads unfrozen universe settings", adminUniverseRestoreBody.admin?.universe ?? {})
     ]
   }));
 } catch (error) {
