@@ -3031,6 +3031,61 @@ try {
     gameNotesDeletePostBody = {};
   }
 
+  const socialAccessNoteSubject = `social-access-note-${runId}`;
+  const socialAccessNoteText = `social access original body ${runId}`;
+  const socialAccessTamperedSubject = `${socialAccessNoteSubject}-stolen`;
+  const socialAccessTamperedText = `social access tampered body ${runId}`;
+  const socialAccessNoteCreate = await request(`/api/game/notes${sessionSearch}`, {
+    method: "POST",
+    headers: { Cookie: sessionCookiePair, "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "create", subject: socialAccessNoteSubject, text: socialAccessNoteText, priority: 1 })
+  });
+  const socialAccessNoteCreateBody = parseJSON(socialAccessNoteCreate);
+  const socialAccessOwnerNote = Array.isArray(socialAccessNoteCreateBody.notes?.rows)
+    ? socialAccessNoteCreateBody.notes.rows.find((row) => row.subject === socialAccessNoteSubject)
+    : undefined;
+  const socialAccessNoteID = Number(socialAccessOwnerNote?.id ?? 0);
+  const socialAccessForeignNoteUpdate = socialAccessNoteID > 0 && targetLogin.cookiePair
+    ? await request(`/api/game/notes${targetLogin.search}`, {
+        method: "POST",
+        headers: { Cookie: targetLogin.cookiePair, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update",
+          noteId: socialAccessNoteID,
+          subject: socialAccessTamperedSubject,
+          text: socialAccessTamperedText,
+          priority: 0
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const socialAccessForeignNoteUpdateBody = parseJSON(socialAccessForeignNoteUpdate);
+  const socialAccessOwnerNotesAfterForeignUpdate = socialAccessNoteID > 0
+    ? await request(`/api/game/notes${sessionSearch}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const socialAccessOwnerNotesAfterForeignUpdateBody = parseJSON(socialAccessOwnerNotesAfterForeignUpdate);
+  const socialAccessOwnerNoteAfterForeignUpdate = messageRowByID(
+    { messages: socialAccessOwnerNotesAfterForeignUpdateBody.notes },
+    socialAccessNoteID
+  );
+  const socialAccessForeignNoteAfterUpdate = messageRowByID(
+    { messages: socialAccessForeignNoteUpdateBody.notes },
+    socialAccessNoteID
+  );
+  const socialAccessForeignOverviewCP = basePlanetID > 0 && targetLogin.cookiePair
+    ? await request(`/api/game/overview${withQueryParam(targetLogin.search, "cp", basePlanetID)}`, {
+        headers: { Cookie: targetLogin.cookiePair }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const socialAccessForeignOverviewCPBody = parseJSON(socialAccessForeignOverviewCP);
+  const socialAccessForeignBuildingsCP = basePlanetID > 0 && targetLogin.cookiePair
+    ? await request(`/api/game/buildings${withQueryParam(targetLogin.search, "cp", basePlanetID)}`, {
+        headers: { Cookie: targetLogin.cookiePair }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const socialAccessForeignBuildingsCPBody = parseJSON(socialAccessForeignBuildingsCP);
+
   const gameResources = await request(`/api/game/resources${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -4560,6 +4615,62 @@ try {
         buddyLifecycleRequesterAfterDeleteBody.buddy?.rows ?? []
       ),
       check(!buddyLifecycleReady || !buddyLifecycleDelete.body.includes(buddyLifecycleRequesterLogin?.cookiePair ?? "missing-cookie"), "buddy lifecycle response does not echo requester private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_social_access_owner_scope_api",
+    checks: [
+      check(socialAccessNoteCreate.status === 200, "social access owner note create returns HTTP 200", {
+        status: socialAccessNoteCreate.status
+      }),
+      check(socialAccessNoteID > 0, "social access owner note fixture is created", {
+        socialAccessOwnerNote
+      }),
+      check(socialAccessForeignNoteUpdate.status === 200, "social access foreign note update attempt returns HTTP 200", {
+        status: socialAccessForeignNoteUpdate.status
+      }),
+      check(socialAccessForeignNoteAfterUpdate === undefined, "foreign user does not receive the owner note after crafted update", {
+        socialAccessForeignNoteAfterUpdate
+      }),
+      check(socialAccessOwnerNotesAfterForeignUpdate.status === 200, "owner notes reload after foreign update attempt returns HTTP 200", {
+        status: socialAccessOwnerNotesAfterForeignUpdate.status
+      }),
+      check(
+        socialAccessOwnerNoteAfterForeignUpdate?.subject === socialAccessNoteSubject &&
+          socialAccessOwnerNoteAfterForeignUpdate?.text === socialAccessNoteText,
+        "foreign user cannot modify another user's note",
+        {
+          socialAccessOwnerNoteAfterForeignUpdate,
+          socialAccessTamperedSubject,
+          socialAccessTamperedText
+        }
+      ),
+      check(socialAccessForeignOverviewCP.status === 200, "foreign overview cp request returns HTTP 200", {
+        status: socialAccessForeignOverviewCP.status
+      }),
+      check(socialAccessForeignOverviewCPBody.authenticated === true, "foreign overview cp request authenticates only the requester", socialAccessForeignOverviewCPBody),
+      check(
+        socialAccessForeignOverviewCPBody.overview?.currentPlanet?.id !== basePlanetID,
+        "foreign overview cp request does not select another user's planet",
+        {
+          requestedPlanetID: basePlanetID,
+          currentPlanet: socialAccessForeignOverviewCPBody.overview?.currentPlanet ?? {}
+        }
+      ),
+      check(socialAccessForeignBuildingsCP.status === 200, "foreign buildings cp request returns HTTP 200", {
+        status: socialAccessForeignBuildingsCP.status
+      }),
+      check(socialAccessForeignBuildingsCPBody.authenticated === true, "foreign buildings cp request authenticates only the requester", socialAccessForeignBuildingsCPBody),
+      check(
+        socialAccessForeignBuildingsCPBody.buildings?.currentPlanet?.id !== basePlanetID,
+        "foreign buildings cp request does not expose another user's planet context",
+        {
+          requestedPlanetID: basePlanetID,
+          currentPlanet: socialAccessForeignBuildingsCPBody.buildings?.currentPlanet ?? {}
+        }
+      ),
+      check(!String(socialAccessForeignNoteUpdate.body ?? "").includes(targetLogin.cookiePair ?? "missing-cookie"), "social access response does not echo foreign private cookie")
     ]
   }));
 
