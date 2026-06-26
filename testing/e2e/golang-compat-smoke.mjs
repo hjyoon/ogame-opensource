@@ -748,6 +748,22 @@ try {
     fleetLifecycleShipID > 0 &&
     fleetLifecycleReturnMission > 0
   );
+  const expeditionFixture = smokeFixture?.expedition ?? {};
+  const expeditionSmallCargoID = Number(expeditionFixture.small_cargo_id ?? 202);
+  const expeditionProbeID = Number(expeditionFixture.probe_id ?? 210);
+  const expeditionReady = Boolean(
+    typeof expeditionFixture.login === "string" &&
+    Number(expeditionFixture.home_planet_id ?? 0) > 0 &&
+    Number(expeditionFixture.target_planet_id ?? 0) > 0 &&
+    Number(expeditionFixture.target?.galaxy ?? 0) > 0 &&
+    Number(expeditionFixture.target?.system ?? 0) > 0 &&
+    Number(expeditionFixture.target?.position ?? 0) === 16 &&
+    Number(expeditionFixture.expected_max ?? 0) > 0 &&
+    Number(expeditionFixture.expected_used ?? 0) > 0 &&
+    Number(expeditionFixture.expected_used_after_launch ?? 0) > 0 &&
+    Array.isArray(expeditionFixture.fleet_ids) &&
+    expeditionFixture.fleet_ids.length >= Number(expeditionFixture.expected_used ?? 0)
+  );
   const statisticsRankingFixture = smokeFixture?.statistics_ranking ?? {};
   const statisticsRankingReady = Boolean(
     typeof statisticsRankingFixture.leader?.login === "string" &&
@@ -2057,6 +2073,103 @@ try {
   const fleetLifecycleReturnMissionAfterReturn = fleetMissionByMission(fleetLifecycleAfterReturnBody, fleetLifecycleReturnMission);
   const fleetLifecycleOriginShipAfterReturn = fleetShipCountByID(fleetLifecycleAfterReturnBody, fleetLifecycleShipID);
   const fleetLifecycleDeployShipAfter = fleetShipCountByID(fleetLifecycleDeployFleetBody, fleetLifecycleShipID);
+
+  const expeditionLogin = expeditionReady
+    ? await loginGameUser(expeditionFixture.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const expeditionSearch = expeditionReady
+    ? withQueryParam(expeditionLogin?.search ?? "?session=", "cp", Number(expeditionFixture.home_planet_id))
+    : "?session=";
+  const expeditionCookie = expeditionLogin?.cookiePair ?? "";
+  const expeditionTarget = {
+    galaxy: Number(expeditionFixture.target?.galaxy ?? 0),
+    system: Number(expeditionFixture.target?.system ?? 0),
+    position: Number(expeditionFixture.target?.position ?? 0)
+  };
+  const expeditionInitial = expeditionReady
+    ? await request(`/api/game/fleet${expeditionSearch}`, {
+        headers: { Cookie: expeditionCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const expeditionInitialBody = parseJSON(expeditionInitial);
+  const expeditionInitialRows = Array.isArray(expeditionInitialBody.fleet?.missions)
+    ? expeditionInitialBody.fleet.missions.filter((row) => row.own === true && row.missionName === "Expedition")
+    : [];
+  const expeditionInitialStates = new Set(expeditionInitialRows.map((row) => row.stateShort));
+  const expeditionProbeOnly = expeditionReady
+    ? await request(`/api/game/fleet${expeditionSearch}`, {
+        method: "POST",
+        headers: { Cookie: expeditionCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "validate-dispatch",
+          ships: { [String(expeditionProbeID)]: 1 },
+          resources: {},
+          target: expeditionTarget,
+          targetType: 1,
+          mission: 15,
+          speed: 10,
+          expeditionHours: 1
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const expeditionProbeOnlyBody = parseJSON(expeditionProbeOnly);
+  const expeditionInvalidTarget = expeditionReady
+    ? await request(`/api/game/fleet${expeditionSearch}`, {
+        method: "POST",
+        headers: { Cookie: expeditionCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "validate-dispatch",
+          ships: { [String(expeditionSmallCargoID)]: 1, [String(expeditionProbeID)]: 1 },
+          resources: {},
+          target: {
+            ...expeditionTarget,
+            position: Number(expeditionFixture.invalid_position ?? 15)
+          },
+          targetType: 1,
+          mission: 15,
+          speed: 10,
+          expeditionHours: 1
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const expeditionInvalidTargetBody = parseJSON(expeditionInvalidTarget);
+  const expeditionLaunch = expeditionReady
+    ? await request(`/api/game/fleet${expeditionSearch}`, {
+        method: "POST",
+        headers: { Cookie: expeditionCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "launch-dispatch",
+          ships: { [String(expeditionSmallCargoID)]: 1, [String(expeditionProbeID)]: 1 },
+          resources: {},
+          target: expeditionTarget,
+          targetType: 1,
+          mission: 15,
+          speed: 10,
+          expeditionHours: 1
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const expeditionLaunchBody = parseJSON(expeditionLaunch);
+  const expeditionAfterLaunchRows = Array.isArray(expeditionLaunchBody.fleet?.missions)
+    ? expeditionLaunchBody.fleet.missions.filter((row) => row.own === true && row.missionName === "Expedition")
+    : [];
+  const expeditionLimit = expeditionReady
+    ? await request(`/api/game/fleet${expeditionSearch}`, {
+        method: "POST",
+        headers: { Cookie: expeditionCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "validate-dispatch",
+          ships: { [String(expeditionSmallCargoID)]: 1, [String(expeditionProbeID)]: 1 },
+          resources: {},
+          target: expeditionTarget,
+          targetType: 1,
+          mission: 15,
+          speed: 10,
+          expeditionHours: 1
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const expeditionLimitBody = parseJSON(expeditionLimit);
 
   const gameFleet = await request(`/api/game/fleet${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -8197,6 +8310,81 @@ try {
         fleetLifecycleDeployFleetBody.fleet?.currentPlanet?.resources ?? {}
       ),
       check(!fleetLifecycleReady || !fleetLifecycleAfterReturn.body.includes(fleetLifecycleCookie), "fleet lifecycle response does not echo private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_expedition_limit_dispatch_api",
+    checks: [
+      check(!smokeFixtureFile || expeditionReady, "go smoke fixture exposes expedition limit state", { expeditionFixture }),
+      check(!expeditionReady || expeditionLogin?.response.status === 200, "expedition smoke user can log in", {
+        status: expeditionLogin?.response.status
+      }),
+      check(!expeditionReady || expeditionInitial.status === 200, "expedition fleet page loads seeded mixed states", {
+        status: expeditionInitial.status
+      }),
+      check(
+        !expeditionReady ||
+          Number(expeditionInitialBody.fleet?.expeditions?.max ?? -1) === Number(expeditionFixture.expected_max ?? -1),
+        "expedition technology 16 allows four concurrent expeditions",
+        expeditionInitialBody.fleet?.expeditions ?? {}
+      ),
+      check(
+        !expeditionReady ||
+          Number(expeditionInitialBody.fleet?.expeditions?.used ?? -1) === Number(expeditionFixture.expected_used ?? -1),
+        "departing, orbiting, and returning expedition states all consume slots",
+        expeditionInitialBody.fleet?.expeditions ?? {}
+      ),
+      check(
+        !expeditionReady ||
+          expeditionInitialRows.length === Number(expeditionFixture.expected_used ?? -1) &&
+            expeditionInitialStates.has("(G)") &&
+            expeditionInitialStates.has("(H)") &&
+            expeditionInitialStates.has("(F)"),
+        "seeded expedition missions expose legacy going, holding, and returning states",
+        expeditionInitialRows
+      ),
+      check(!expeditionReady || expeditionProbeOnly.status === 200, "probe-only expedition validation returns HTTP 200", {
+        status: expeditionProbeOnly.status
+      }),
+      check(
+        !expeditionReady || expeditionProbeOnlyBody.actionIssue?.code === "expedition_required",
+        "probe-only expedition is rejected as unmanned like legacy",
+        expeditionProbeOnlyBody.actionIssue ?? {}
+      ),
+      check(!expeditionReady || expeditionInvalidTarget.status === 200, "non-farspace expedition validation returns HTTP 200", {
+        status: expeditionInvalidTarget.status
+      }),
+      check(
+        !expeditionReady || ["invalid_target", "invalid_order"].includes(expeditionInvalidTargetBody.actionIssue?.code),
+        "non-16 expedition dispatch is rejected before launch",
+        expeditionInvalidTargetBody.actionIssue ?? {}
+      ),
+      check(!expeditionReady || expeditionLaunch.status === 200, "legal mixed cargo/probe expedition launch returns HTTP 200", {
+        status: expeditionLaunch.status
+      }),
+      check(!expeditionReady || expeditionLaunchBody.actionIssue === undefined, "legal expedition launch has no action issue", expeditionLaunchBody.actionIssue ?? {}),
+      check(
+        !expeditionReady ||
+          Number(expeditionLaunchBody.fleet?.expeditions?.used ?? -1) === Number(expeditionFixture.expected_used_after_launch ?? -1),
+        "legal expedition launch consumes the final expedition slot",
+        expeditionLaunchBody.fleet?.expeditions ?? {}
+      ),
+      check(
+        !expeditionReady ||
+          expeditionAfterLaunchRows.length === Number(expeditionFixture.expected_used_after_launch ?? -1),
+        "launched expedition appears beside the seeded expedition rows",
+        expeditionAfterLaunchRows
+      ),
+      check(!expeditionReady || expeditionLimit.status === 200, "at-limit expedition validation returns HTTP 200", {
+        status: expeditionLimit.status
+      }),
+      check(
+        !expeditionReady || expeditionLimitBody.actionIssue?.code === "expedition_limit",
+        "fifth expedition attempt is blocked by the migrated slot limit",
+        expeditionLimitBody.actionIssue ?? {}
+      ),
+      check(!expeditionReady || !expeditionLaunch.body.includes(expeditionCookie), "expedition response does not echo private cookie")
     ]
   }));
 

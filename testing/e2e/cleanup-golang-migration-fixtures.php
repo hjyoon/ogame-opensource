@@ -98,6 +98,7 @@ function cleanup_go_fixture_names(): array
         'goconcmissile',
         'goconcfleet',
         'goconcfleettarget',
+        'goexpedition',
         'gofleetlife',
         'gofleetlifetarget',
         'goacshold',
