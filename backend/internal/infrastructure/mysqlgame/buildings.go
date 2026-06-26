@@ -128,6 +128,11 @@ func (r BuildingsRepository) MutateBuildings(ctx context.Context, query appgame.
 	}
 	planetID := overview.CurrentPlanet.ID
 	now := r.now().Unix()
+	unlock, err := r.acquireBuildingMutationLock(ctx, query.PlayerID, planetID)
+	if err != nil {
+		return appgame.BuildingsMutationOutcome{}, err
+	}
+	defer unlock()
 
 	switch domaingame.NormalizeBuildingsMutationAction(query.Action) {
 	case domaingame.BuildingsMutationAdd:
@@ -142,6 +147,36 @@ func (r BuildingsRepository) MutateBuildings(ctx context.Context, query appgame.
 		}
 	}
 	return appgame.BuildingsMutationOutcome{}, nil
+}
+
+func (r BuildingsRepository) acquireBuildingMutationLock(ctx context.Context, playerID int, planetID int) (func(), error) {
+	db := r.sqlDB()
+	if db == nil || planetID <= 0 {
+		return func() {}, nil
+	}
+	lockName := fmt.Sprintf("%sbuilding:%d:%d", r.prefix, playerID, planetID)
+	var locked sql.NullInt64
+	if err := db.QueryRowContext(ctx, "SELECT GET_LOCK(?, 5)", lockName).Scan(&locked); err != nil {
+		return nil, err
+	}
+	if !locked.Valid || locked.Int64 != 1 {
+		return nil, errors.New("building mutation lock timeout")
+	}
+	return func() {
+		var released sql.NullInt64
+		_ = db.QueryRowContext(context.Background(), "SELECT RELEASE_LOCK(?)", lockName).Scan(&released)
+	}, nil
+}
+
+func (r BuildingsRepository) sqlDB() *sql.DB {
+	switch queryer := r.queryer.(type) {
+	case SQLQueryer:
+		return queryer.DB
+	case *SQLQueryer:
+		return queryer.DB
+	default:
+		return nil
+	}
 }
 
 func (r BuildingsRepository) loadBuildingLevels(ctx context.Context, planetsTable string, playerID int, planetID int) (domaingame.BuildingLevels, error) {

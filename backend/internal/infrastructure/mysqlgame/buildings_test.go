@@ -3,14 +3,74 @@ package mysqlgame
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 )
+
+var buildingLockDriverOnce sync.Once
+var buildingLockDriverState = struct {
+	sync.Mutex
+	value int64
+	err   error
+}{value: 1}
+
+type buildingLockTestDriver struct{}
+type buildingLockTestConn struct{}
+type buildingLockTestRows struct {
+	value int64
+	read  bool
+}
+
+func (buildingLockTestDriver) Open(string) (driver.Conn, error) { return buildingLockTestConn{}, nil }
+func (buildingLockTestConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("prepare is not implemented")
+}
+func (buildingLockTestConn) Close() error { return nil }
+func (buildingLockTestConn) Begin() (driver.Tx, error) {
+	return nil, errors.New("transactions are not implemented")
+}
+func (buildingLockTestConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	buildingLockDriverState.Lock()
+	defer buildingLockDriverState.Unlock()
+	if buildingLockDriverState.err != nil {
+		return nil, buildingLockDriverState.err
+	}
+	return &buildingLockTestRows{value: buildingLockDriverState.value}, nil
+}
+func (*buildingLockTestRows) Columns() []string { return []string{"lock_result"} }
+func (*buildingLockTestRows) Close() error      { return nil }
+func (r *buildingLockTestRows) Next(dest []driver.Value) error {
+	if r.read {
+		return io.EOF
+	}
+	r.read = true
+	dest[0] = r.value
+	return nil
+}
+
+func openBuildingLockTestDB(t *testing.T, value int64, err error) *sql.DB {
+	t.Helper()
+	buildingLockDriverOnce.Do(func() {
+		sql.Register("mysqlgame_building_lock_test", buildingLockTestDriver{})
+	})
+	buildingLockDriverState.Lock()
+	buildingLockDriverState.value = value
+	buildingLockDriverState.err = err
+	buildingLockDriverState.Unlock()
+	db, openErr := sql.Open("mysqlgame_building_lock_test", "")
+	if openErr != nil {
+		t.Fatal(openErr)
+	}
+	return db
+}
 
 func TestBuildingsRepositoryReadsLegacyBuildings(t *testing.T) {
 	queryer := &fakeQueryer{results: []fakeQueryResult{
@@ -84,6 +144,58 @@ func TestNewBuildingsRepositoryKeepsSQLQueryer(t *testing.T) {
 	repository = NewBuildingsRepositoryWithRunner(&fakeQueryer{}, nil, "ogame_", nil)
 	if repository.now == nil {
 		t.Fatalf("expected nil clock to default")
+	}
+}
+
+func TestBuildingsRepositoryMutationLockNoopsWithoutSQLDB(t *testing.T) {
+	repository := NewBuildingsRepositoryWithRunner(&fakeQueryer{}, nil, "ogame_", time.Now)
+	unlock, err := repository.acquireBuildingMutationLock(context.Background(), 42, 99)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+	if repository.sqlDB() != nil {
+		t.Fatalf("fake queryer must not expose a SQL DB")
+	}
+
+	repository = BuildingsRepository{queryer: SQLQueryer{}}
+	if repository.sqlDB() != nil {
+		t.Fatalf("empty SQL queryer must expose a nil DB")
+	}
+	unlock, err = repository.acquireBuildingMutationLock(context.Background(), 42, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+
+	repository = BuildingsRepository{queryer: &SQLQueryer{}}
+	if repository.sqlDB() != nil {
+		t.Fatalf("empty SQL queryer pointer must expose a nil DB")
+	}
+}
+
+func TestBuildingsRepositoryMutationLockUsesSQLDB(t *testing.T) {
+	db := openBuildingLockTestDB(t, 1, nil)
+	defer db.Close()
+	repository := BuildingsRepository{queryer: SQLQueryer{DB: db}, prefix: "ogame_"}
+	unlock, err := repository.acquireBuildingMutationLock(context.Background(), 42, 99)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+
+	timeoutDB := openBuildingLockTestDB(t, 0, nil)
+	defer timeoutDB.Close()
+	repository = BuildingsRepository{queryer: SQLQueryer{DB: timeoutDB}, prefix: "ogame_"}
+	if _, err := repository.acquireBuildingMutationLock(context.Background(), 42, 99); err == nil || !strings.Contains(err.Error(), "building mutation lock timeout") {
+		t.Fatalf("expected lock timeout, got %v", err)
+	}
+
+	queryErrDB := openBuildingLockTestDB(t, 1, errors.New("lock query failed"))
+	defer queryErrDB.Close()
+	repository = BuildingsRepository{queryer: SQLQueryer{DB: queryErrDB}, prefix: "ogame_"}
+	if _, err := repository.acquireBuildingMutationLock(context.Background(), 42, 99); err == nil || !strings.Contains(err.Error(), "lock query failed") {
+		t.Fatalf("expected lock query error, got %v", err)
 	}
 }
 

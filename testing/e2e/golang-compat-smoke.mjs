@@ -4317,15 +4317,24 @@ try {
     ? await request(`/api/game/buildings${queueCancelBuildSearch}`, { headers: { Cookie: queueCancelBuildLogin.cookiePair } })
     : null;
   const queueCancelBuildBeforeBody = queueCancelBuildBefore ? parseJSON(queueCancelBuildBefore) : {};
-  const queueCancelBuildStart = queueCancelReady
-    ? await request(`/api/game/buildings${queueCancelBuildSearch}`, {
+  const queueCancelBuildStartResponses = queueCancelReady
+    ? await Promise.all(Array.from({ length: 4 }, () => request(`/api/game/buildings${queueCancelBuildSearch}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: queueCancelBuildLogin.cookiePair },
         body: JSON.stringify({ action: "add", techId: queueCancelBuildingID })
-      })
+      })))
+    : [];
+  const queueCancelBuildStartBodies = queueCancelBuildStartResponses.map((response) => parseJSON(response));
+  const queueCancelBuildAfterParallel = queueCancelReady
+    ? await request(`/api/game/buildings${queueCancelBuildSearch}`, { headers: { Cookie: queueCancelBuildLogin.cookiePair } })
     : null;
+  const queueCancelBuildAfterParallelBody = queueCancelBuildAfterParallel ? parseJSON(queueCancelBuildAfterParallel) : {};
+  const queueCancelBuildStart = queueCancelBuildAfterParallel ?? queueCancelBuildStartResponses[0] ?? null;
   const queueCancelBuildStartBody = queueCancelBuildStart ? parseJSON(queueCancelBuildStart) : {};
-  const queueCancelBuildListID = Number(queueCancelBuildStartBody.buildings?.queue?.[0]?.listId ?? 0);
+  const queueCancelBuildQueueRows = Array.isArray(queueCancelBuildStartBody.buildings?.queue)
+    ? queueCancelBuildStartBody.buildings.queue.filter((row) => Number(row.techId ?? 0) === queueCancelBuildingID)
+    : [];
+  const queueCancelBuildListID = Number(queueCancelBuildQueueRows[0]?.listId ?? 0);
   const queueCancelBuildCancel = queueCancelReady
     ? await request(`/api/game/buildings${queueCancelBuildSearch}`, {
         method: "POST",
@@ -7269,6 +7278,61 @@ try {
       ),
       check(!queueIdempotencyReady || queueShipyardPointScoreOK, "shipyard completion adds produced ship cost to total score", queueShipyardPointScoreContext),
       check(!queueIdempotencyReady || queueShipyardFleetScoreOK, "shipyard completion increments fleet score by produced ship count", queueShipyardFleetScoreContext)
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_concurrency_build_enqueue_api",
+    checks: [
+      check(!smokeFixtureFile || queueCancelReady, "go smoke fixture exposes build concurrency user", {
+        queueCancelFixture
+      }),
+      check(!queueCancelReady || queueCancelBuildLogin?.response.status === 200, "build concurrency user can log in", {
+        status: queueCancelBuildLogin?.response.status
+      }),
+      check(
+        !queueCancelReady ||
+          queueCancelBuildStartResponses.length === 4 &&
+            queueCancelBuildStartResponses.every((response) => response.status === 200),
+        "parallel build enqueue requests all return HTTP 200",
+        queueCancelBuildStartResponses.map((response) => ({
+          status: response.status,
+          elapsedMs: response.elapsedMs
+        }))
+      ),
+      check(
+        !queueCancelReady ||
+          queueCancelBuildStartBodies.every((body) => body.authenticated === true),
+        "parallel build enqueue responses authenticate the same user",
+        queueCancelBuildStartBodies.map((body) => ({
+          authenticated: body.authenticated,
+          issue: body.actionIssue?.code
+        }))
+      ),
+      check(!queueCancelReady || queueCancelBuildAfterParallel?.status === 200, "build concurrency final reload returns HTTP 200", {
+        status: queueCancelBuildAfterParallel?.status
+      }),
+      check(
+        !queueCancelReady || queueCancelBuildQueueRows.length === 1,
+        "parallel build enqueue leaves exactly one active build queue row",
+        queueCancelBuildStartBody.buildings?.queue ?? []
+      ),
+      check(
+        !queueCancelReady ||
+          Number(queueCancelBuildQueueRows[0]?.techId ?? 0) === queueCancelBuildingID &&
+            Number(queueCancelBuildQueueRows[0]?.level ?? 0) === 1,
+        "parallel build enqueue keeps the expected building and level",
+        queueCancelBuildQueueRows[0] ?? {}
+      ),
+      check(
+        !queueCancelReady ||
+          Number(queueCancelBuildStartBody.buildings?.currentPlanet?.resources?.metal ?? 0) >= 0 &&
+            Number(queueCancelBuildStartBody.buildings?.currentPlanet?.resources?.crystal ?? 0) >= 0 &&
+            Number(queueCancelBuildStartBody.buildings?.currentPlanet?.resources?.deuterium ?? 0) >= 0,
+        "parallel build enqueue does not overspend resources below zero",
+        queueCancelBuildStartBody.buildings?.currentPlanet?.resources ?? {}
+      ),
+      check(!queueCancelReady || !queueCancelBuildStart.body.includes(queueCancelBuildLogin?.cookiePair ?? "missing-cookie"), "build concurrency response does not echo private cookie")
     ]
   }));
 
