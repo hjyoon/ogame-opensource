@@ -1036,6 +1036,65 @@ function smoke_prepare_queue_freeze_drain_fixture(string $password, array $near)
     );
 }
 
+function smoke_prepare_queue_cancel_fixture(string $password, array $near): array
+{
+    global $db_prefix, $resmap;
+
+    $build = smoke_prepare_user('goqbuildcancel', $password, 'goqbuildcancel@example.local', USER_TYPE_PLAYER);
+    $research = smoke_prepare_user('goqrescancel', $password, 'goqrescancel@example.local', USER_TYPE_PLAYER);
+    $users = array($build, $research);
+    $userIds = array_map(fn($user) => (int)$user['player_id'], $users);
+    $planetIds = array_map(fn($user) => (int)$user['home_planet_id'], $users);
+
+    smoke_cleanup_alliances($userIds);
+    smoke_cleanup_fleets($userIds, $planetIds);
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id IN (" . implode(',', $userIds) . ") AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "','" . QTYP_RESEARCH . "','" . QTYP_SHIPYARD . "','" . QTYP_FLEET . "')");
+    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id IN (" . implode(',', $userIds) . ") OR planet_id IN (" . implode(',', $planetIds) . ")");
+
+    $positions = smoke_find_empty_positions($near, count($users));
+    foreach ($users as $index => $user) {
+        smoke_prepare_planet((int)$user['home_planet_id'], (int)$user['player_id'], 'GoQueueCancel' . $index, $positions[$index]);
+    }
+
+    $researchColumns = array();
+    foreach ($resmap as $gid) {
+        $researchColumns[] = "`{$gid}`=10";
+    }
+    $now = time();
+    dbquery(
+        "UPDATE {$db_prefix}users SET " . implode(',', $researchColumns) . ", admin=0, validated=1, deact_ip=1, " .
+        "vacation=0, vacation_until=0, banned=0, banned_until=0, noattack=0, noattack_until=0, " .
+        "disable=0, disable_until=0, lang='en', skin='/evolution/', useskin=1, lastclick={$now} " .
+        "WHERE player_id IN (" . implode(',', $userIds) . ")"
+    );
+    dbquery("UPDATE {$db_prefix}users SET `" . GID_R_ESPIONAGE . "`=0 WHERE player_id=" . (int)$research['player_id']);
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_RC_METAL . "`=10000000, `" . GID_RC_CRYSTAL . "`=10000000, `" . GID_RC_DEUTERIUM . "`=10000000, " .
+        "`" . GID_B_METAL_MINE . "`=0, `" . GID_B_ROBOTS . "`=10, `" . GID_B_RES_LAB . "`=10, " .
+        "prod1=0, prod2=0, prod3=0, prod4=0, fields=0, maxfields=200, type=" . PTYP_PLANET . " " .
+        "WHERE planet_id IN (" . implode(',', $planetIds) . ")"
+    );
+    foreach ($users as $user) {
+        dbquery("UPDATE {$db_prefix}users SET hplanetid=" . (int)$user['home_planet_id'] . ", aktplanet=" . (int)$user['home_planet_id'] . " WHERE player_id=" . (int)$user['player_id']);
+    }
+    InvalidateUserCache();
+
+    return array(
+        'build' => array(
+            'login' => mb_strtolower($build['name'], 'UTF-8'),
+            'player_id' => (int)$build['player_id'],
+            'home_planet_id' => (int)$build['home_planet_id'],
+            'building_id' => GID_B_METAL_MINE,
+        ),
+        'research' => array(
+            'login' => mb_strtolower($research['name'], 'UTF-8'),
+            'player_id' => (int)$research['player_id'],
+            'home_planet_id' => (int)$research['home_planet_id'],
+            'tech_id' => GID_R_ESPIONAGE,
+        ),
+    );
+}
+
 function smoke_prepare_merchant_fixture(string $password, array $near): array
 {
     global $db_prefix;
@@ -1938,6 +1997,7 @@ $premiumDmFixture = smoke_prepare_premium_dm_fixture($password, $home);
 $vacationFreezeFixture = smoke_prepare_vacation_freeze_fixture($password, $home);
 $queueIdempotencyFixture = smoke_prepare_queue_idempotency_fixture($password, $home);
 $queueFreezeDrainFixture = smoke_prepare_queue_freeze_drain_fixture($password, $home);
+$queueCancelFixture = smoke_prepare_queue_cancel_fixture($password, $home);
 $merchantFixture = smoke_prepare_merchant_fixture($password, $home);
 $moonBuildFixture = smoke_prepare_moon_build_fixture($password, $home);
 $moonId = smoke_prepare_moon((int)$login['home_planet_id'], (int)$login['player_id']);
@@ -2013,6 +2073,7 @@ echo json_encode(array(
 	'vacation_freeze' => $vacationFreezeFixture,
 	'queue_idempotency' => $queueIdempotencyFixture,
 	'queue_freeze_drain' => $queueFreezeDrainFixture,
+	'queue_cancel' => $queueCancelFixture,
 	'merchant' => $merchantFixture,
 	'moon_build' => $moonBuildFixture,
 	'fleet_restrictions' => $fleetRestrictionFixture,

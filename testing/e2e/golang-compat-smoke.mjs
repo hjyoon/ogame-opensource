@@ -482,6 +482,15 @@ try {
     Number(queueFreezeDrainFixture.home_planet_id ?? 0) > 0 &&
     Number(queueFreezeDrainFixture.building_id ?? 0) > 0
   );
+  const queueCancelFixture = smokeFixture?.queue_cancel ?? {};
+  const queueCancelReady = Boolean(
+    typeof queueCancelFixture.build?.login === "string" &&
+    typeof queueCancelFixture.research?.login === "string" &&
+    Number(queueCancelFixture.build?.home_planet_id ?? 0) > 0 &&
+    Number(queueCancelFixture.research?.home_planet_id ?? 0) > 0 &&
+    Number(queueCancelFixture.build?.building_id ?? 0) > 0 &&
+    Number(queueCancelFixture.research?.tech_id ?? 0) > 0
+  );
   const merchantFixture = smokeFixture?.merchant ?? {};
   const merchantReady = ["insufficient", "call", "trade", "reject"].every(
     (key) => typeof merchantFixture[key]?.login === "string" && merchantFixture[key].login.length > 0
@@ -4103,6 +4112,59 @@ try {
   const queueShipyardFirstItem = shipyardItemByID(queueShipyardFirstBody, queueShipyardID);
   const queueShipyardSecondItem = shipyardItemByID(queueShipyardSecondBody, queueShipyardID);
 
+  const queueCancelUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const queueCancelBuildLogin = queueCancelReady
+    ? await loginGameUser(queueCancelFixture.build.login, loginSmokePassword, queueCancelUniverse)
+    : null;
+  const queueCancelResearchLogin = queueCancelReady
+    ? await loginGameUser(queueCancelFixture.research.login, loginSmokePassword, queueCancelUniverse)
+    : null;
+  const queueCancelBuildSearch = withQueryParam(queueCancelBuildLogin?.search ?? "?session=", "cp", Number(queueCancelFixture.build?.home_planet_id ?? 0));
+  const queueCancelResearchSearch = withQueryParam(queueCancelResearchLogin?.search ?? "?session=", "cp", Number(queueCancelFixture.research?.home_planet_id ?? 0));
+  const queueCancelBuildingID = Number(queueCancelFixture.build?.building_id ?? 1);
+  const queueCancelResearchID = Number(queueCancelFixture.research?.tech_id ?? 106);
+  const queueCancelBuildBefore = queueCancelReady
+    ? await request(`/api/game/buildings${queueCancelBuildSearch}`, { headers: { Cookie: queueCancelBuildLogin.cookiePair } })
+    : null;
+  const queueCancelBuildBeforeBody = queueCancelBuildBefore ? parseJSON(queueCancelBuildBefore) : {};
+  const queueCancelBuildStart = queueCancelReady
+    ? await request(`/api/game/buildings${queueCancelBuildSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: queueCancelBuildLogin.cookiePair },
+        body: JSON.stringify({ action: "add", techId: queueCancelBuildingID })
+      })
+    : null;
+  const queueCancelBuildStartBody = queueCancelBuildStart ? parseJSON(queueCancelBuildStart) : {};
+  const queueCancelBuildListID = Number(queueCancelBuildStartBody.buildings?.queue?.[0]?.listId ?? 0);
+  const queueCancelBuildCancel = queueCancelReady
+    ? await request(`/api/game/buildings${queueCancelBuildSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: queueCancelBuildLogin.cookiePair },
+        body: JSON.stringify({ action: "remove", listId: queueCancelBuildListID })
+      })
+    : null;
+  const queueCancelBuildCancelBody = queueCancelBuildCancel ? parseJSON(queueCancelBuildCancel) : {};
+  const queueCancelResearchBefore = queueCancelReady
+    ? await request(`/api/game/research${queueCancelResearchSearch}`, { headers: { Cookie: queueCancelResearchLogin.cookiePair } })
+    : null;
+  const queueCancelResearchBeforeBody = queueCancelResearchBefore ? parseJSON(queueCancelResearchBefore) : {};
+  const queueCancelResearchStart = queueCancelReady
+    ? await request(`/api/game/research${queueCancelResearchSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: queueCancelResearchLogin.cookiePair },
+        body: JSON.stringify({ action: "start", techId: queueCancelResearchID })
+      })
+    : null;
+  const queueCancelResearchStartBody = queueCancelResearchStart ? parseJSON(queueCancelResearchStart) : {};
+  const queueCancelResearchCancel = queueCancelReady
+    ? await request(`/api/game/research${queueCancelResearchSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: queueCancelResearchLogin.cookiePair },
+        body: JSON.stringify({ action: "cancel", techId: queueCancelResearchID })
+      })
+    : null;
+  const queueCancelResearchCancelBody = queueCancelResearchCancel ? parseJSON(queueCancelResearchCancel) : {};
+
   const gameAdmin = await request(`/api/game/admin${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -6634,6 +6696,55 @@ try {
         first: queueShipyardFirstBody.shipyard?.queue,
         second: queueShipyardSecondBody.shipyard?.queue
       })
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_queue_cancel_refund_api",
+    checks: [
+      check(!smokeFixtureFile || queueCancelReady, "go smoke fixture exposes queue cancel users", { queueCancelFixture }),
+      check(!queueCancelReady || queueCancelBuildLogin?.response.status === 200, "queue build-cancel user can log in", {
+        status: queueCancelBuildLogin?.response.status
+      }),
+      check(!queueCancelReady || queueCancelResearchLogin?.response.status === 200, "queue research-cancel user can log in", {
+        status: queueCancelResearchLogin?.response.status
+      }),
+      check(!queueCancelReady || queueCancelBuildStart?.status === 200, "building enqueue returns HTTP 200", {
+        status: queueCancelBuildStart?.status
+      }),
+      check(!queueCancelReady || queueCancelBuildListID > 0 && (queueCancelBuildStartBody.buildings?.queue?.length ?? 0) === 1, "building enqueue creates one queue row", queueCancelBuildStartBody.buildings?.queue ?? []),
+      check(!queueCancelReady || queueCancelBuildCancel?.status === 200, "building cancel returns HTTP 200", {
+        status: queueCancelBuildCancel?.status
+      }),
+      check(!queueCancelReady || (queueCancelBuildCancelBody.buildings?.queue?.length ?? -1) === 0, "building cancel removes the queue row", queueCancelBuildCancelBody.buildings?.queue ?? []),
+      check(
+        !queueCancelReady ||
+          Number(queueCancelBuildCancelBody.buildings?.currentPlanet?.resources?.metal ?? -1) >= Number(queueCancelBuildBeforeBody.buildings?.currentPlanet?.resources?.metal ?? 0) &&
+            Number(queueCancelBuildCancelBody.buildings?.currentPlanet?.resources?.crystal ?? -1) >= Number(queueCancelBuildBeforeBody.buildings?.currentPlanet?.resources?.crystal ?? 0),
+        "building cancel refunds construction resources",
+        {
+          before: queueCancelBuildBeforeBody.buildings?.currentPlanet?.resources,
+          after: queueCancelBuildCancelBody.buildings?.currentPlanet?.resources
+        }
+      ),
+      check(!queueCancelReady || queueCancelResearchStart?.status === 200, "research enqueue returns HTTP 200", {
+        status: queueCancelResearchStart?.status
+      }),
+      check(!queueCancelReady || Number(queueCancelResearchStartBody.research?.active?.techId ?? 0) === queueCancelResearchID, "research enqueue creates active queue row", queueCancelResearchStartBody.research?.active ?? {}),
+      check(!queueCancelReady || queueCancelResearchCancel?.status === 200, "research cancel returns HTTP 200", {
+        status: queueCancelResearchCancel?.status
+      }),
+      check(!queueCancelReady || queueCancelResearchCancelBody.research?.active === undefined, "research cancel removes active queue row", queueCancelResearchCancelBody.research?.active ?? {}),
+      check(
+        !queueCancelReady ||
+          Number(queueCancelResearchCancelBody.research?.currentPlanet?.resources?.crystal ?? -1) >= Number(queueCancelResearchBeforeBody.research?.currentPlanet?.resources?.crystal ?? 0) &&
+            Number(queueCancelResearchCancelBody.research?.currentPlanet?.resources?.deuterium ?? -1) >= Number(queueCancelResearchBeforeBody.research?.currentPlanet?.resources?.deuterium ?? 0),
+        "research cancel refunds research resources",
+        {
+          before: queueCancelResearchBeforeBody.research?.currentPlanet?.resources,
+          after: queueCancelResearchCancelBody.research?.currentPlanet?.resources
+        }
+      )
     ]
   }));
 
