@@ -4347,13 +4347,18 @@ try {
     ? await request(`/api/game/research${queueCancelResearchSearch}`, { headers: { Cookie: queueCancelResearchLogin.cookiePair } })
     : null;
   const queueCancelResearchBeforeBody = queueCancelResearchBefore ? parseJSON(queueCancelResearchBefore) : {};
-  const queueCancelResearchStart = queueCancelReady
-    ? await request(`/api/game/research${queueCancelResearchSearch}`, {
+  const queueCancelResearchStartResponses = queueCancelReady
+    ? await Promise.all(Array.from({ length: 4 }, () => request(`/api/game/research${queueCancelResearchSearch}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: queueCancelResearchLogin.cookiePair },
         body: JSON.stringify({ action: "start", techId: queueCancelResearchID })
-      })
+      })))
+    : [];
+  const queueCancelResearchStartBodies = queueCancelResearchStartResponses.map((response) => parseJSON(response));
+  const queueCancelResearchAfterParallel = queueCancelReady
+    ? await request(`/api/game/research${queueCancelResearchSearch}`, { headers: { Cookie: queueCancelResearchLogin.cookiePair } })
     : null;
+  const queueCancelResearchStart = queueCancelResearchAfterParallel ?? queueCancelResearchStartResponses[0] ?? null;
   const queueCancelResearchStartBody = queueCancelResearchStart ? parseJSON(queueCancelResearchStart) : {};
   const queueCancelResearchCancel = queueCancelReady
     ? await request(`/api/game/research${queueCancelResearchSearch}`, {
@@ -7333,6 +7338,59 @@ try {
         queueCancelBuildStartBody.buildings?.currentPlanet?.resources ?? {}
       ),
       check(!queueCancelReady || !queueCancelBuildStart.body.includes(queueCancelBuildLogin?.cookiePair ?? "missing-cookie"), "build concurrency response does not echo private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_concurrency_research_enqueue_api",
+    checks: [
+      check(!smokeFixtureFile || queueCancelReady, "go smoke fixture exposes research concurrency user", {
+        queueCancelFixture
+      }),
+      check(!queueCancelReady || queueCancelResearchLogin?.response.status === 200, "research concurrency user can log in", {
+        status: queueCancelResearchLogin?.response.status
+      }),
+      check(
+        !queueCancelReady ||
+          queueCancelResearchStartResponses.length === 4 &&
+            queueCancelResearchStartResponses.every((response) => response.status === 200),
+        "parallel research enqueue requests all return HTTP 200",
+        queueCancelResearchStartResponses.map((response) => ({
+          status: response.status,
+          elapsedMs: response.elapsedMs
+        }))
+      ),
+      check(
+        !queueCancelReady ||
+          queueCancelResearchStartBodies.every((body) => body.authenticated === true),
+        "parallel research enqueue responses authenticate the same user",
+        queueCancelResearchStartBodies.map((body) => ({
+          authenticated: body.authenticated,
+          issue: body.actionIssue?.code
+        }))
+      ),
+      check(!queueCancelReady || queueCancelResearchAfterParallel?.status === 200, "research concurrency final reload returns HTTP 200", {
+        status: queueCancelResearchAfterParallel?.status
+      }),
+      check(
+        !queueCancelReady || Number(queueCancelResearchStartBody.research?.active?.techId ?? 0) === queueCancelResearchID,
+        "parallel research enqueue leaves the expected active research queue row",
+        queueCancelResearchStartBody.research?.active ?? {}
+      ),
+      check(
+        !queueCancelReady || Number(queueCancelResearchStartBody.research?.active?.level ?? 0) === 1,
+        "parallel research enqueue keeps the expected research level",
+        queueCancelResearchStartBody.research?.active ?? {}
+      ),
+      check(
+        !queueCancelReady ||
+          Number(queueCancelResearchStartBody.research?.currentPlanet?.resources?.metal ?? 0) >= 0 &&
+            Number(queueCancelResearchStartBody.research?.currentPlanet?.resources?.crystal ?? 0) >= 0 &&
+            Number(queueCancelResearchStartBody.research?.currentPlanet?.resources?.deuterium ?? 0) >= 0,
+        "parallel research enqueue does not overspend resources below zero",
+        queueCancelResearchStartBody.research?.currentPlanet?.resources ?? {}
+      ),
+      check(!queueCancelReady || !queueCancelResearchStart.body.includes(queueCancelResearchLogin?.cookiePair ?? "missing-cookie"), "research concurrency response does not echo private cookie")
     ]
   }));
 

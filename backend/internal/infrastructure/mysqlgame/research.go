@@ -129,6 +129,12 @@ func (r ResearchRepository) MutateResearch(ctx context.Context, query appgame.Re
 		return appgame.ResearchMutationOutcome{}, err
 	}
 
+	unlock, err := r.acquireResearchMutationLock(ctx, query.PlayerID)
+	if err != nil {
+		return appgame.ResearchMutationOutcome{}, err
+	}
+	defer unlock()
+
 	switch query.Action {
 	case "start":
 		issue, err := r.startResearch(ctx, usersTable, planetsTable, queueTable, query.PlayerID, overview.CurrentPlanet.ID, query.TechID, now)
@@ -139,6 +145,15 @@ func (r ResearchRepository) MutateResearch(ctx context.Context, query appgame.Re
 	default:
 		return appgame.ResearchMutationOutcome{ActionIssue: domaingame.BuildingActionIssue(domaingame.BuildingsIssueInvalid)}, nil
 	}
+}
+
+func (r ResearchRepository) acquireResearchMutationLock(ctx context.Context, playerID int) (func(), error) {
+	db := (BuildingsRepository{queryer: r.queryer}).sqlDB()
+	if db == nil || playerID <= 0 {
+		return func() {}, nil
+	}
+	lockName := fmt.Sprintf("%sresearch:%d", r.prefix, playerID)
+	return acquireMySQLNamedLock(ctx, db, lockName, "research mutation lock timeout")
 }
 
 type researchMutationUser struct {

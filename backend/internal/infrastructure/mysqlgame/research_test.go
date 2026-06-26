@@ -142,6 +142,54 @@ func TestNewResearchRepositoryKeepsSQLQueryer(t *testing.T) {
 	}
 }
 
+func TestResearchRepositoryMutationLockNoopsWithoutSQLDB(t *testing.T) {
+	repository := NewResearchRepositoryWithRunner(&fakeQueryer{}, nil, "ogame_", time.Now)
+	unlock, err := repository.acquireResearchMutationLock(context.Background(), 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+
+	repository = ResearchRepository{queryer: SQLQueryer{}}
+	unlock, err = repository.acquireResearchMutationLock(context.Background(), 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+
+	repository = ResearchRepository{queryer: &SQLQueryer{}}
+	unlock, err = repository.acquireResearchMutationLock(context.Background(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+}
+
+func TestResearchRepositoryMutationLockUsesSQLDB(t *testing.T) {
+	db := openBuildingLockTestDB(t, 1, nil)
+	defer db.Close()
+	repository := ResearchRepository{queryer: SQLQueryer{DB: db}, prefix: "ogame_"}
+	unlock, err := repository.acquireResearchMutationLock(context.Background(), 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+
+	timeoutDB := openBuildingLockTestDB(t, 0, nil)
+	defer timeoutDB.Close()
+	repository = ResearchRepository{queryer: SQLQueryer{DB: timeoutDB}, prefix: "ogame_"}
+	if _, err := repository.acquireResearchMutationLock(context.Background(), 42); err == nil || !strings.Contains(err.Error(), "research mutation lock timeout") {
+		t.Fatalf("expected lock timeout, got %v", err)
+	}
+
+	queryErrDB := openBuildingLockTestDB(t, 1, errors.New("lock query failed"))
+	defer queryErrDB.Close()
+	repository = ResearchRepository{queryer: SQLQueryer{DB: queryErrDB}, prefix: "ogame_"}
+	if _, err := repository.acquireResearchMutationLock(context.Background(), 42); err == nil || !strings.Contains(err.Error(), "lock query failed") {
+		t.Fatalf("expected lock query error, got %v", err)
+	}
+}
+
 func TestResearchRepositoryStartsResearch(t *testing.T) {
 	now := time.Unix(2_000, 0)
 	runner := &fakeBuildingsRunner{

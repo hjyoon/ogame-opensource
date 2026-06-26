@@ -199,6 +199,22 @@ func TestBuildingsRepositoryMutationLockUsesSQLDB(t *testing.T) {
 	}
 }
 
+func TestMySQLNamedLockHelperBranches(t *testing.T) {
+	unlock, err := acquireMySQLNamedLock(context.Background(), nil, "", "lock timeout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+
+	db := openBuildingLockTestDB(t, 1, nil)
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := acquireMySQLNamedLock(context.Background(), db, "ogame_test", "lock timeout"); err == nil {
+		t.Fatal("expected closed DB lock error")
+	}
+}
+
 func TestBuildingsRepositoryEnqueuesBuilding(t *testing.T) {
 	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues(buildingMutationUserRow(0, 9_999, nil))},

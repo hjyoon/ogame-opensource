@@ -155,16 +155,30 @@ func (r BuildingsRepository) acquireBuildingMutationLock(ctx context.Context, pl
 		return func() {}, nil
 	}
 	lockName := fmt.Sprintf("%sbuilding:%d:%d", r.prefix, playerID, planetID)
+	return acquireMySQLNamedLock(ctx, db, lockName, "building mutation lock timeout")
+}
+
+func acquireMySQLNamedLock(ctx context.Context, db *sql.DB, lockName string, timeoutMessage string) (func(), error) {
+	if db == nil || lockName == "" {
+		return func() {}, nil
+	}
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var locked sql.NullInt64
-	if err := db.QueryRowContext(ctx, "SELECT GET_LOCK(?, 5)", lockName).Scan(&locked); err != nil {
+	if err := conn.QueryRowContext(ctx, "SELECT GET_LOCK(?, 5)", lockName).Scan(&locked); err != nil {
+		_ = conn.Close()
 		return nil, err
 	}
 	if !locked.Valid || locked.Int64 != 1 {
-		return nil, errors.New("building mutation lock timeout")
+		_ = conn.Close()
+		return nil, errors.New(timeoutMessage)
 	}
 	return func() {
 		var released sql.NullInt64
-		_ = db.QueryRowContext(context.Background(), "SELECT RELEASE_LOCK(?)", lockName).Scan(&released)
+		_ = conn.QueryRowContext(context.Background(), "SELECT RELEASE_LOCK(?)", lockName).Scan(&released)
+		_ = conn.Close()
 	}, nil
 }
 
