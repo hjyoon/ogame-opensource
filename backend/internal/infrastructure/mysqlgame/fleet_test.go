@@ -83,6 +83,9 @@ func TestNewFleetRepositoryKeepsSQLQueryer(t *testing.T) {
 	if _, ok := repository.execer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL execer, got %T", repository.execer)
 	}
+	if !repository.finishDueQueues {
+		t.Fatal("production fleet repository should drain due fleet queues")
+	}
 	withDefaultClock := NewFleetRepositoryWithQueryer(nil, "ogame_", nil)
 	if withDefaultClock.now == nil {
 		t.Fatal("expected nil clock to default")
@@ -2358,6 +2361,290 @@ func TestFleetRepositoryRecallErrorsAndHelpers(t *testing.T) {
 	values := fleetCountValues(domaingame.FleetIDs(), map[int]int{domaingame.FleetSmallCargo: -3, domaingame.FleetSolarSatellite: 2})
 	if values[0] != 0 || values[10] != 2 {
 		t.Fatalf("fleet count values should clamp negatives while preserving satellites, got %+v", values)
+	}
+}
+
+func TestFleetRepositoryFinishDueTransportCreatesReturnFleet(t *testing.T) {
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues([]any{55, 42, 123, int64(2_000)})},
+		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, map[int]int{domaingame.FleetSmallCargo: 1}))},
+	}}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+
+	if err := repository.FinishDueFleetQueues(context.Background(), 2_000); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execCalls) != 5 {
+		t.Fatalf("expected transport resource, return fleet, return queue, and cleanup writes, got %+v", runner.execCalls)
+	}
+	if !strings.Contains(runner.execCalls[0].sql, "UPDATE `ogame_planets`") || runner.execCalls[0].args[0] != float64(100) || runner.execCalls[0].args[4] != 100 {
+		t.Fatalf("expected resources delivered to target planet, got %+v", runner.execCalls[0])
+	}
+	insertFleet := runner.execCalls[1]
+	if !strings.Contains(insertFleet.sql, "INSERT INTO `ogame_fleet`") || insertFleet.args[2] != float64(0) || insertFleet.args[3] != float64(0) || insertFleet.args[4] != float64(0) || insertFleet.args[6] != domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset {
+		t.Fatalf("expected zero-cargo transport return fleet, got %+v", insertFleet)
+	}
+	insertQueue := runner.execCalls[2]
+	if !strings.Contains(insertQueue.sql, "INSERT INTO `ogame_queue`") || insertQueue.args[5] != int64(2_000) || insertQueue.args[6] != int64(2_300) {
+		t.Fatalf("expected return queue to start at arrival and reuse flight time, got %+v", insertQueue)
+	}
+}
+
+func TestFleetRepositoryFinishDueDeployKeepsShipsOnTarget(t *testing.T) {
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues([]any{56, 42, 124, int64(2_100)})},
+		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionDeploy, 0, map[int]int{domaingame.FleetSmallCargo: 2}))},
+	}}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_100, 0) })
+
+	if err := repository.FinishDueFleetQueues(context.Background(), 2_100); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execCalls) != 4 {
+		t.Fatalf("expected deploy resource, ship, and cleanup writes, got %+v", runner.execCalls)
+	}
+	if runner.execCalls[0].args[2] != float64(325) || runner.execCalls[0].args[4] != 100 {
+		t.Fatalf("expected deploy to unload resources plus half fuel on target, got %+v", runner.execCalls[0])
+	}
+	if !strings.Contains(runner.execCalls[1].sql, "`202` = `202` + ?") || runner.execCalls[1].args[0] != 2 || runner.execCalls[1].args[2] != 100 {
+		t.Fatalf("expected deploy ships to remain on target, got %+v", runner.execCalls[1])
+	}
+}
+
+func TestFleetRepositoryFinishDueReturnRestoresOrigin(t *testing.T) {
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues([]any{57, 42, 125, int64(2_200)})},
+		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset, 0, map[int]int{domaingame.FleetSmallCargo: 1}))},
+	}}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_200, 0) })
+
+	if err := repository.FinishDueFleetQueues(context.Background(), 2_200); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execCalls) != 4 {
+		t.Fatalf("expected return resource, ship, and cleanup writes, got %+v", runner.execCalls)
+	}
+	if runner.execCalls[0].args[4] != 99 {
+		t.Fatalf("expected return resources to go to origin planet, got %+v", runner.execCalls[0])
+	}
+	if !strings.Contains(runner.execCalls[1].sql, "`202` = `202` + ?") || runner.execCalls[1].args[2] != 99 {
+		t.Fatalf("expected return ships to go to origin planet, got %+v", runner.execCalls[1])
+	}
+}
+
+func TestFleetRepositoryFinishDueFleetQueuesSkipsFrozenAndRejectsInvalidSetup(t *testing.T) {
+	repository := NewFleetRepositoryWithQueryer(&fakeQueryer{}, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+	if err := repository.FinishDueFleetQueues(context.Background(), 2_000); err == nil || !strings.Contains(err.Error(), "fleet queue updater unavailable") {
+		t.Fatalf("expected missing writer error, got %v", err)
+	}
+
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{1})},
+	}}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+	if err := repository.FinishDueFleetQueues(context.Background(), 2_000); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execCalls) != 0 || len(runner.calls) != 1 {
+		t.Fatalf("frozen universe should only read freeze state, calls=%+v execs=%+v", runner.calls, runner.execCalls)
+	}
+
+	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{err: errors.New("freeze failed")},
+	}}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+	if err := repository.FinishDueFleetQueues(context.Background(), 2_000); err == nil || !strings.Contains(err.Error(), "freeze failed") {
+		t.Fatalf("expected freeze query error, got %v", err)
+	}
+
+	repository = NewFleetRepositoryWithRunner(runner, runner, "bad-prefix_", func() time.Time { return time.Unix(2_000, 0) })
+	if err := repository.FinishDueFleetQueues(context.Background(), 2_000); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected unsafe prefix error, got %v", err)
+	}
+}
+
+func TestFleetRepositoryFinishDueFleetQueueEdges(t *testing.T) {
+	tests := []struct {
+		name       string
+		results    []fakeQueryResult
+		want       string
+		wantExecs  int
+		wantNoErr  bool
+		wantDelete bool
+	}{
+		{
+			name: "due queue query",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{err: errors.New("due failed")},
+			},
+			want: "due failed",
+		},
+		{
+			name: "due queue scan",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues([]any{55})},
+			},
+			want: "unexpected scan destination count",
+		},
+		{
+			name: "due queue rows",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValuesWithErr(errors.New("due rows failed"), []any{55, 42, 123, int64(2_000)})},
+			},
+			want: "due rows failed",
+		},
+		{
+			name: "fleet query",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues([]any{55, 42, 123, int64(2_000)})},
+				{err: errors.New("fleet any failed")},
+			},
+			want: "fleet any failed",
+		},
+		{
+			name: "missing fleet",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues([]any{55, 42, 123, int64(2_000)})},
+				{rows: fakeRowsFromValues()},
+			},
+			wantNoErr:  true,
+			wantExecs:  1,
+			wantDelete: true,
+		},
+		{
+			name: "unsupported mission",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues([]any{55, 42, 123, int64(2_000)})},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionSpy, 0, nil))},
+			},
+			wantNoErr: true,
+		},
+		{
+			name: "empty queue",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues()},
+			},
+			wantNoErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: tt.results}}
+			repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+			err := repository.FinishDueFleetQueues(context.Background(), 2_000)
+			if tt.wantNoErr {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+			if len(runner.execCalls) != tt.wantExecs {
+				t.Fatalf("unexpected exec count: got %+v", runner.execCalls)
+			}
+			if tt.wantDelete && !strings.Contains(runner.execCalls[0].sql, "DELETE FROM `ogame_queue`") {
+				t.Fatalf("expected orphan queue delete, got %+v", runner.execCalls[0])
+			}
+		})
+	}
+}
+
+func TestFleetRepositoryFinishDueFleetQueueWriteErrors(t *testing.T) {
+	tests := []struct {
+		name     string
+		mission  int
+		execErrs []error
+		want     string
+	}{
+		{
+			name:     "transport resource update",
+			mission:  domaingame.FleetMissionTransport,
+			execErrs: []error{errors.New("resource update failed")},
+			want:     "resource update failed",
+		},
+		{
+			name:     "transport return fleet insert",
+			mission:  domaingame.FleetMissionTransport,
+			execErrs: []error{nil, errors.New("return fleet failed")},
+			want:     "return fleet failed",
+		},
+		{
+			name:     "transport return queue insert",
+			mission:  domaingame.FleetMissionTransport,
+			execErrs: []error{nil, nil, errors.New("return queue failed")},
+			want:     "return queue failed",
+		},
+		{
+			name:     "deploy ship update",
+			mission:  domaingame.FleetMissionDeploy,
+			execErrs: []error{nil, errors.New("ship update failed")},
+			want:     "ship update failed",
+		},
+		{
+			name:     "deploy resource update",
+			mission:  domaingame.FleetMissionDeploy,
+			execErrs: []error{errors.New("deploy resource failed")},
+			want:     "deploy resource failed",
+		},
+		{
+			name:     "deploy cleanup fleet delete",
+			mission:  domaingame.FleetMissionDeploy,
+			execErrs: []error{nil, nil, errors.New("fleet cleanup failed")},
+			want:     "fleet cleanup failed",
+		},
+		{
+			name:     "return resource update",
+			mission:  domaingame.FleetMissionTransport + domaingame.FleetMissionReturnOffset,
+			execErrs: []error{errors.New("return resource failed")},
+			want:     "return resource failed",
+		},
+		{
+			name:     "return ship update",
+			mission:  domaingame.FleetMissionTransport + domaingame.FleetMissionReturnOffset,
+			execErrs: []error{nil, errors.New("return ship failed")},
+			want:     "return ship failed",
+		},
+		{
+			name:     "return cleanup queue delete",
+			mission:  domaingame.FleetMissionTransport + domaingame.FleetMissionReturnOffset,
+			execErrs: []error{nil, nil, nil, errors.New("queue cleanup failed")},
+			want:     "queue cleanup failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeFleetRunner{
+				fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+					{rows: fakeRowsFromValues([]any{0})},
+					{rows: fakeRowsFromValues([]any{55, 42, 123, int64(2_000)})},
+					{rows: fakeRowsFromValues(recallFleetTestRow(tt.mission, 0, map[int]int{domaingame.FleetSmallCargo: 1}))},
+				}},
+				execErrs: append([]error(nil), tt.execErrs...),
+			}
+			repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+			err := repository.FinishDueFleetQueues(context.Background(), 2_000)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestFleetRepositoryFinishDueFleetQueueHelpers(t *testing.T) {
+	if maxFloat(3, 1) != 3 || maxFloat(1, 3) != 3 {
+		t.Fatal("maxFloat should return the larger value")
 	}
 }
 

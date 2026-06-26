@@ -70,15 +70,16 @@ type fleetLaunchACSUnion struct {
 }
 
 type FleetRepository struct {
-	queryer Queryer
-	execer  Execer
-	prefix  string
-	now     func() time.Time
+	queryer         Queryer
+	execer          Execer
+	prefix          string
+	now             func() time.Time
+	finishDueQueues bool
 }
 
 func NewFleetRepository(db *sql.DB, prefix string) FleetRepository {
 	runner := SQLQueryer{DB: db}
-	return FleetRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now}
+	return FleetRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, finishDueQueues: true}
 }
 
 func NewFleetRepositoryWithQueryer(queryer Queryer, prefix string, now func() time.Time) FleetRepository {
@@ -97,6 +98,11 @@ func NewFleetRepositoryWithRunner(queryer Queryer, execer Execer, prefix string,
 }
 
 func (r FleetRepository) GetFleet(ctx context.Context, query appgame.FleetQuery) (domaingame.Fleet, error) {
+	if r.finishDueQueues && r.execer != nil {
+		if err := r.FinishDueFleetQueues(ctx, int(r.now().Unix())); err != nil {
+			return domaingame.Fleet{}, err
+		}
+	}
 	usersTable, err := tableName(r.prefix, "users")
 	if err != nil {
 		return domaingame.Fleet{}, err

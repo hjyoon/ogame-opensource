@@ -85,6 +85,75 @@ func TestGalaxyRepositoryChargesRemoteSystemDeuterium(t *testing.T) {
 	}
 }
 
+func TestGalaxyRepositoryRemoteSystemChargeEdges(t *testing.T) {
+	now := time.Unix(10_000, 0)
+	baseGalaxy := func() domaingame.Galaxy {
+		return domaingame.Galaxy{
+			RemoteSystemCostDue: true,
+			CurrentPlanet: domaingame.PlanetOverview{
+				ID:        99,
+				Resources: domaingame.Resources{Deuterium: 5},
+			},
+		}
+	}
+
+	runner := &fakeGalaxyRunner{}
+	repository := GalaxyRepository{execer: runner, now: func() time.Time { return now }}
+	if err := repository.chargeGalaxyRemoteSystemCost(context.Background(), "`ogame_planets`", 42, nil); err != nil {
+		t.Fatal(err)
+	}
+	galaxy := baseGalaxy()
+	galaxy.RemoteSystemCostDue = false
+	if err := repository.chargeGalaxyRemoteSystemCost(context.Background(), "`ogame_planets`", 42, &galaxy); err != nil {
+		t.Fatal(err)
+	}
+	galaxy = baseGalaxy()
+	galaxy.NotEnoughDeuterium = true
+	if err := repository.chargeGalaxyRemoteSystemCost(context.Background(), "`ogame_planets`", 42, &galaxy); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execCalls) != 0 {
+		t.Fatalf("no-op remote charge edges should not write, got %+v", runner.execCalls)
+	}
+
+	repository = GalaxyRepository{now: func() time.Time { return now }}
+	galaxy = baseGalaxy()
+	if err := repository.chargeGalaxyRemoteSystemCost(context.Background(), "`ogame_planets`", 42, &galaxy); err != nil {
+		t.Fatal(err)
+	}
+
+	runner = &fakeGalaxyRunner{execErrs: []error{errors.New("charge failed")}}
+	repository = GalaxyRepository{execer: runner, now: func() time.Time { return now }}
+	galaxy = baseGalaxy()
+	if err := repository.chargeGalaxyRemoteSystemCost(context.Background(), "`ogame_planets`", 42, &galaxy); err == nil || !strings.Contains(err.Error(), "charge failed") {
+		t.Fatalf("expected charge update error, got %v", err)
+	}
+
+	runner = &fakeGalaxyRunner{execResults: []sql.Result{galaxySQLResultWithRowsErr{err: errors.New("rows failed")}}}
+	repository = GalaxyRepository{execer: runner, now: func() time.Time { return now }}
+	galaxy = baseGalaxy()
+	if err := repository.chargeGalaxyRemoteSystemCost(context.Background(), "`ogame_planets`", 42, &galaxy); err == nil || !strings.Contains(err.Error(), "rows failed") {
+		t.Fatalf("expected rows affected error, got %v", err)
+	}
+
+	runner = &fakeGalaxyRunner{execResults: []sql.Result{galaxySQLResult{rows: 0}}}
+	repository = GalaxyRepository{execer: runner, now: func() time.Time { return now }}
+	galaxy = baseGalaxy()
+	if err := repository.chargeGalaxyRemoteSystemCost(context.Background(), "`ogame_planets`", 42, &galaxy); err != nil || !galaxy.NotEnoughDeuterium {
+		t.Fatalf("expected zero rows to mark not enough deuterium, galaxy=%+v err=%v", galaxy, err)
+	}
+
+	runner = &fakeGalaxyRunner{}
+	repository = GalaxyRepository{execer: runner, now: func() time.Time { return now }}
+	galaxy = baseGalaxy()
+	if err := repository.chargeGalaxyRemoteSystemCost(context.Background(), "`ogame_planets`", 42, &galaxy); err != nil {
+		t.Fatal(err)
+	}
+	if galaxy.CurrentPlanet.Resources.Deuterium != 0 {
+		t.Fatalf("remaining deuterium should clamp to zero, got %+v", galaxy.CurrentPlanet.Resources)
+	}
+}
+
 func TestNewGalaxyRepositoryKeepsSQLQueryer(t *testing.T) {
 	repository := NewGalaxyRepository(nil, "ogame_")
 

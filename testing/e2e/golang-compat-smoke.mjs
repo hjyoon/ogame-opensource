@@ -731,6 +731,23 @@ try {
     fleetRecallForeignFleetID > 0 &&
     fleetRecallCargoMetal > 0
   );
+  const fleetLifecycleFixture = smokeFixture?.fleet_lifecycle ?? {};
+  const fleetLifecycleTransportFleetID = Number(fleetLifecycleFixture.transport_fleet_id ?? 0);
+  const fleetLifecycleDeployFleetID = Number(fleetLifecycleFixture.deploy_fleet_id ?? 0);
+  const fleetLifecycleDeployPlanetID = Number(fleetLifecycleFixture.deploy_planet_id ?? 0);
+  const fleetLifecycleShipID = Number(fleetLifecycleFixture.ship_id ?? 0);
+  const fleetLifecycleReturnMission = Number(fleetLifecycleFixture.transport_return_mission ?? 0);
+  const fleetLifecycleReady = Boolean(
+    typeof fleetLifecycleFixture.attacker?.login === "string" &&
+    typeof fleetLifecycleFixture.target?.login === "string" &&
+    Number(fleetLifecycleFixture.attacker?.home_planet_id ?? 0) > 0 &&
+    Number(fleetLifecycleFixture.target?.home_planet_id ?? 0) > 0 &&
+    fleetLifecycleTransportFleetID > 0 &&
+    fleetLifecycleDeployFleetID > 0 &&
+    fleetLifecycleDeployPlanetID > 0 &&
+    fleetLifecycleShipID > 0 &&
+    fleetLifecycleReturnMission > 0
+  );
   const statisticsRankingFixture = smokeFixture?.statistics_ranking ?? {};
   const statisticsRankingReady = Boolean(
     typeof statisticsRankingFixture.leader?.login === "string" &&
@@ -1993,6 +2010,53 @@ try {
   } catch {
     gameShipyardWithoutCookieBody = {};
   }
+
+  const fleetLifecycleLogin = fleetLifecycleReady
+    ? await loginGameUser(fleetLifecycleFixture.attacker.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const fleetLifecycleSearch = fleetLifecycleReady
+    ? withQueryParam(fleetLifecycleLogin?.search ?? "?session=", "cp", Number(fleetLifecycleFixture.attacker.home_planet_id))
+    : "?session=";
+  const fleetLifecycleCookie = fleetLifecycleLogin?.cookiePair ?? "";
+  const fleetLifecycleAfterArrival = fleetLifecycleReady
+    ? await request(`/api/game/fleet${fleetLifecycleSearch}`, {
+        headers: { Cookie: fleetLifecycleCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const fleetLifecycleAfterArrivalBody = parseJSON(fleetLifecycleAfterArrival);
+  const fleetLifecycleReturnFleet = fleetMissionByMission(fleetLifecycleAfterArrivalBody, fleetLifecycleReturnMission);
+  const fleetLifecycleAfterReturn = fleetLifecycleReady
+    ? await request(`/api/game/fleet${fleetLifecycleSearch}`, {
+        headers: { Cookie: fleetLifecycleCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const fleetLifecycleAfterReturnBody = parseJSON(fleetLifecycleAfterReturn);
+  const fleetLifecycleTargetLogin = fleetLifecycleReady
+    ? await loginGameUser(fleetLifecycleFixture.target.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const fleetLifecycleTargetSearch = fleetLifecycleReady
+    ? withQueryParam(fleetLifecycleTargetLogin?.search ?? "?session=", "cp", Number(fleetLifecycleFixture.target.home_planet_id))
+    : "?session=";
+  const fleetLifecycleTargetOverview = fleetLifecycleReady
+    ? await request(`/api/game/overview${fleetLifecycleTargetSearch}`, {
+        headers: { Cookie: fleetLifecycleTargetLogin?.cookiePair ?? "" }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const fleetLifecycleTargetOverviewBody = parseJSON(fleetLifecycleTargetOverview);
+  const fleetLifecycleDeploySearch = fleetLifecycleReady
+    ? withQueryParam(fleetLifecycleLogin?.search ?? "?session=", "cp", fleetLifecycleDeployPlanetID)
+    : "?session=";
+  const fleetLifecycleDeployFleet = fleetLifecycleReady
+    ? await request(`/api/game/fleet${fleetLifecycleDeploySearch}`, {
+        headers: { Cookie: fleetLifecycleCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const fleetLifecycleDeployFleetBody = parseJSON(fleetLifecycleDeployFleet);
+  const fleetLifecycleTransportMissionAfterArrival = fleetMissionByID(fleetLifecycleAfterArrivalBody, fleetLifecycleTransportFleetID);
+  const fleetLifecycleDeployMissionAfterArrival = fleetMissionByID(fleetLifecycleAfterArrivalBody, fleetLifecycleDeployFleetID);
+  const fleetLifecycleReturnMissionAfterReturn = fleetMissionByMission(fleetLifecycleAfterReturnBody, fleetLifecycleReturnMission);
+  const fleetLifecycleOriginShipAfterReturn = fleetShipCountByID(fleetLifecycleAfterReturnBody, fleetLifecycleShipID);
+  const fleetLifecycleDeployShipAfter = fleetShipCountByID(fleetLifecycleDeployFleetBody, fleetLifecycleShipID);
 
   const gameFleet = await request(`/api/game/fleet${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -8066,6 +8130,73 @@ try {
         after: fleetRecallReturnAgainCount
       }),
       check(!fleetRecallReady || !fleetRecallOwn.body.includes(fleetRecallCookie), "fleet recall response does not echo private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_fleet_lifecycle_due_queue_api",
+    checks: [
+      check(!smokeFixtureFile || fleetLifecycleReady, "go smoke fixture exposes fleet lifecycle users", { fleetLifecycleFixture }),
+      check(!fleetLifecycleReady || fleetLifecycleLogin?.response.status === 200, "fleet lifecycle attacker can log in", {
+        status: fleetLifecycleLogin?.response.status
+      }),
+      check(!fleetLifecycleReady || fleetLifecycleAfterArrival.status === 200, "first fleet reload drains due transport and deploy arrivals", {
+        status: fleetLifecycleAfterArrival.status
+      }),
+      check(!fleetLifecycleReady || fleetLifecycleTransportMissionAfterArrival === undefined, "transport arrival removes the outbound transport row", {
+        fleetID: fleetLifecycleTransportFleetID,
+        missions: fleetLifecycleAfterArrivalBody.fleet?.missions ?? []
+      }),
+      check(!fleetLifecycleReady || fleetLifecycleDeployMissionAfterArrival === undefined, "deploy arrival removes the outbound deploy row", {
+        fleetID: fleetLifecycleDeployFleetID,
+        missions: fleetLifecycleAfterArrivalBody.fleet?.missions ?? []
+      }),
+      check(!fleetLifecycleReady || Number(fleetLifecycleReturnFleet?.mission ?? 0) === fleetLifecycleReturnMission, "transport arrival creates a return fleet", fleetLifecycleReturnFleet ?? {}),
+      check(!fleetLifecycleReady || fleetLifecycleAfterReturn.status === 200, "second fleet reload drains due transport return", {
+        status: fleetLifecycleAfterReturn.status
+      }),
+      check(!fleetLifecycleReady || fleetLifecycleReturnMissionAfterReturn === undefined, "transport return removes the return fleet row", {
+        missions: fleetLifecycleAfterReturnBody.fleet?.missions ?? []
+      }),
+      check(
+        !fleetLifecycleReady ||
+          fleetLifecycleOriginShipAfterReturn === Number(fleetLifecycleFixture.expected_origin_small_cargo_after_return ?? -1),
+        "transport return restores the ship while deployed ships stay away from origin",
+        {
+          expected: Number(fleetLifecycleFixture.expected_origin_small_cargo_after_return ?? -1),
+          actual: fleetLifecycleOriginShipAfterReturn
+        }
+      ),
+      check(!fleetLifecycleReady || fleetLifecycleTargetOverview.status === 200, "transport target overview loads after arrival", {
+        status: fleetLifecycleTargetOverview.status
+      }),
+      check(
+        !fleetLifecycleReady ||
+          Number(fleetLifecycleTargetOverviewBody.overview?.currentPlanet?.resources?.metal ?? 0) >= Number(fleetLifecycleFixture.expected_target_metal ?? 0) &&
+            Number(fleetLifecycleTargetOverviewBody.overview?.currentPlanet?.resources?.crystal ?? 0) >= Number(fleetLifecycleFixture.expected_target_crystal ?? 0),
+        "transported resources are delivered to the target planet",
+        fleetLifecycleTargetOverviewBody.overview?.currentPlanet?.resources ?? {}
+      ),
+      check(!fleetLifecycleReady || fleetLifecycleDeployFleet.status === 200, "deploy target fleet page loads after deploy arrival", {
+        status: fleetLifecycleDeployFleet.status
+      }),
+      check(
+        !fleetLifecycleReady || fleetLifecycleDeployShipAfter === Number(fleetLifecycleFixture.expected_deploy_small_cargo ?? -1),
+        "deployed ships remain on the owned target planet",
+        {
+          expected: Number(fleetLifecycleFixture.expected_deploy_small_cargo ?? -1),
+          actual: fleetLifecycleDeployShipAfter
+        }
+      ),
+      check(
+        !fleetLifecycleReady ||
+          Number(fleetLifecycleDeployFleetBody.fleet?.currentPlanet?.resources?.metal ?? 0) >= Number(fleetLifecycleFixture.expected_deploy_metal ?? 0) &&
+            Number(fleetLifecycleDeployFleetBody.fleet?.currentPlanet?.resources?.crystal ?? 0) >= Number(fleetLifecycleFixture.expected_deploy_crystal ?? 0) &&
+            Number(fleetLifecycleDeployFleetBody.fleet?.currentPlanet?.resources?.deuterium ?? 0) >= Number(fleetLifecycleFixture.expected_deploy_deuterium_min ?? 0),
+        "deployed resources unload on the owned target planet",
+        fleetLifecycleDeployFleetBody.fleet?.currentPlanet?.resources ?? {}
+      ),
+      check(!fleetLifecycleReady || !fleetLifecycleAfterReturn.body.includes(fleetLifecycleCookie), "fleet lifecycle response does not echo private cookie")
     ]
   }));
 

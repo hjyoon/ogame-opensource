@@ -504,6 +504,12 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
         }
       }
     }
+    for (const row of document.querySelectorAll<HTMLTableRowElement>(".legacy-overview-main-table tr, #content table tr")) {
+      const cells = Array.from(row.querySelectorAll<HTMLElement>("th, td"));
+      if (cells[0]?.textContent?.trim() === "Points" && cells[1]) {
+        cells[1].textContent = "0 (Rank 0 of 1.066)";
+      }
+    }
     const freezeFleetTimers = () => {
       for (const timer of document.querySelectorAll<HTMLElement>("#content div[id^='bxx'], .legacy-overview-event-timer")) {
         if (timer.textContent !== "0:00:00") {

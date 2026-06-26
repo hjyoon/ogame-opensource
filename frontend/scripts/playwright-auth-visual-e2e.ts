@@ -1001,6 +1001,9 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
         if (cells[0]?.textContent?.trim() === "Position" && cells[1]) {
           cells[1].textContent = "[0:0:0]";
         }
+        if (cells[0]?.textContent?.trim() === "Points" && cells[1]) {
+          cells[1].textContent = "0 (Rank 0 of 1.066)";
+        }
       }
     }
     for (const countdown of document.querySelectorAll<HTMLElement>("[id^='bxx'], .legacy-admin-queue-countdown")) {
