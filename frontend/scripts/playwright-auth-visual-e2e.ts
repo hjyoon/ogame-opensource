@@ -1069,6 +1069,7 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
           makeTextTransparent(cell);
         }
       }
+      hide("#content img[src$='b.gif'], .legacy-galaxy-table img[src$='b.gif']");
     }
     if (currentPageName === "game-admin-queue") {
       for (const cell of document.querySelectorAll<HTMLElement>("#content table th, #content table td, .legacy-admin-queue-table th, .legacy-admin-queue-table td")) {

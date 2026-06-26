@@ -605,3 +605,45 @@ func TestMessagesRepositoryScanEdges(t *testing.T) {
 		t.Fatalf("expected compose post scan error, got %v", err)
 	}
 }
+
+func TestMessagesRepositoryRetentionAndLegacySlashEdges(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	tests := []struct {
+		name  string
+		rows  *fakeRows
+		err   error
+		want  messageRetentionState
+		match string
+	}{
+		{name: "query error", err: errors.New("retention query failed"), match: "retention query failed"},
+		{name: "missing row", rows: fakeRowsFromValues(), match: "message retention state not found"},
+		{name: "rows error", rows: fakeRowsError(errors.New("retention rows failed")), match: "retention rows failed"},
+		{name: "scan error", rows: fakeRowsFromValues([]any{"bad", domaingame.AdminLevelPlayer}), match: "expected int64"},
+		{name: "player", rows: fakeRowsFromValues([]any{now.Add(-time.Hour).Unix(), domaingame.AdminLevelPlayer}), want: messageRetentionState{}},
+		{name: "commander admin", rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix(), domaingame.AdminLevelOperator}), want: messageRetentionState{CommanderActive: true, Admin: true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			queryer := &fakeQueryer{results: []fakeQueryResult{{rows: tt.rows, err: tt.err}}}
+			repository := NewMessagesRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+			got, err := repository.loadMessageRetentionState(context.Background(), "ogame_users", 42)
+			if tt.match != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.match) {
+					t.Fatalf("expected %q error, got state=%+v err=%v", tt.match, got, err)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("unexpected retention state=%+v err=%v", got, err)
+			}
+		})
+	}
+
+	slashed := legacyStripSlashes(`a\\b\'c\"d\0e\q\`)
+	if slashed != "a\\b'c\"d\x00e\\q\\" {
+		t.Fatalf("unexpected stripped slash value %q", slashed)
+	}
+	if legacyStripSlashes("plain") != "plain" {
+		t.Fatal("plain value should not be rewritten")
+	}
+}

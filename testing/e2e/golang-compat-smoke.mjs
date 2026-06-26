@@ -1189,6 +1189,47 @@ try {
   const createdRegistrationSearch = createdRegistrationSession
     ? `?session=${encodeURIComponent(createdRegistrationSession)}`
     : "";
+  const expeditionLifecycleAdminLogin = expeditionLifecycleReady
+    ? await loginGameUser(loginSmokeUser, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const expeditionLifecycleAdminSearch = expeditionLifecycleAdminLogin?.search ?? "?session=";
+  const expeditionLifecycleAdminCookie = expeditionLifecycleAdminLogin?.cookiePair ?? "";
+  const expeditionLifecycleSettingsBefore = expeditionLifecycleReady
+    ? await request(`/api/game/admin${withQueryParam(expeditionLifecycleAdminSearch, "mode", "Expedition")}`, {
+        headers: { Cookie: expeditionLifecycleAdminCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const expeditionLifecycleSettingsBeforeBody = parseJSON(expeditionLifecycleSettingsBefore);
+  const expeditionLifecycleOriginalSettings = expeditionLifecycleSettingsBeforeBody.admin?.expedition ?? {};
+  const expeditionLifecycleSettingsReady = Number.isFinite(Number(expeditionLifecycleOriginalSettings.chance_success));
+  const expeditionLifecycleForcedSettings = expeditionLifecycleSettingsReady
+    ? {
+        chance_success: 100,
+        depleted_min: 999,
+        depleted_med: 1000,
+        depleted_max: 1001,
+        chance_depleted_min: 0,
+        chance_depleted_med: 0,
+        chance_depleted_max: 0,
+        chance_alien: 100,
+        chance_pirates: 100,
+        chance_dm: 0,
+        chance_lost: 100,
+        chance_delay: 100,
+        chance_accel: 100,
+        chance_res: 100,
+        chance_fleet: 100,
+        dm_factor: Math.max(1, Number(expeditionLifecycleOriginalSettings.dm_factor ?? 1))
+      }
+    : {};
+  const expeditionLifecycleForceSettings = expeditionLifecycleSettingsReady
+    ? await request(`/api/game/admin${withQueryParam(expeditionLifecycleAdminSearch, "mode", "Expedition")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: expeditionLifecycleAdminCookie },
+        body: JSON.stringify({ action: "settings", values: expeditionLifecycleForcedSettings })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const expeditionLifecycleForceSettingsBody = parseJSON(expeditionLifecycleForceSettings);
   const createdOverview = createdRegistrationSession
     ? await request(`/api/game/overview${createdRegistrationSearch}`, {
       headers: { Cookie: createdRegistrationCookiePair }
@@ -2218,6 +2259,7 @@ try {
     : { status: 0, headers: {}, body: "{}" };
   const expeditionLifecycleMessagesBody = parseJSON(expeditionLifecycleMessages);
   const expeditionLifecycleMessage = messageRowContaining(expeditionLifecycleMessagesBody, "Expedition report");
+  const expeditionLifecycleDarkMatterMessage = messageRowContaining(expeditionLifecycleMessagesBody, "Dark Matter");
   const expeditionLifecycleAfterReturn = expeditionLifecycleReady
     ? await request(`/api/game/fleet${expeditionLifecycleSearch}`, {
         headers: { Cookie: expeditionLifecycleCookie }
@@ -2229,6 +2271,14 @@ try {
     : [];
   const expeditionLifecycleFinalSmallCargo = fleetShipCountByID(expeditionLifecycleAfterReturnBody, expeditionLifecycleSmallCargoID);
   const expeditionLifecycleFinalProbe = fleetShipCountByID(expeditionLifecycleAfterReturnBody, expeditionLifecycleProbeID);
+  const expeditionLifecycleRestoreSettings = expeditionLifecycleSettingsReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Expedition")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({ action: "settings", values: expeditionLifecycleOriginalSettings })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const expeditionLifecycleRestoreSettingsBody = parseJSON(expeditionLifecycleRestoreSettings);
 
   const gameFleet = await request(`/api/game/fleet${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -8467,6 +8517,22 @@ try {
         "observable expedition hold row keeps the legacy orbiting state",
         expeditionLifecycleOrbiting ?? {}
       ),
+      check(!expeditionLifecycleReady || expeditionLifecycleSettingsBefore.status === 200, "expedition lifecycle can read admin expedition settings", {
+        status: expeditionLifecycleSettingsBefore.status
+      }),
+      check(!expeditionLifecycleReady || expeditionLifecycleSettingsReady, "expedition lifecycle exposes numeric expedition settings", {
+        expedition: expeditionLifecycleOriginalSettings
+      }),
+      check(!expeditionLifecycleReady || !expeditionLifecycleSettingsReady || expeditionLifecycleForceSettings.status === 200, "expedition lifecycle forced dark matter settings save returns HTTP 200", {
+        status: expeditionLifecycleForceSettings.status
+      }),
+      check(
+        !expeditionLifecycleReady ||
+          !expeditionLifecycleSettingsReady ||
+          expeditionLifecycleForceSettingsBody.actionIssue?.code === "action_saved",
+        "expedition lifecycle forced dark matter settings save like legacy",
+        expeditionLifecycleForceSettingsBody.actionIssue ?? {}
+      ),
       check(!expeditionLifecycleReady || expeditionLifecycleAfterHold.status === 200, "due expedition hold reload returns HTTP 200", {
         status: expeditionLifecycleAfterHold.status
       }),
@@ -8486,6 +8552,11 @@ try {
         "expedition hold creates an expedition report message",
         expeditionLifecycleMessagesBody.messages?.rows ?? []
       ),
+      check(
+        !expeditionLifecycleReady || !expeditionLifecycleSettingsReady || expeditionLifecycleDarkMatterMessage !== undefined,
+        "forced dark matter expedition creates the legacy dark matter message marker",
+        expeditionLifecycleMessagesBody.messages?.rows ?? []
+      ),
       check(!expeditionLifecycleReady || expeditionLifecycleAfterReturn.status === 200, "due expedition return reload returns HTTP 200", {
         status: expeditionLifecycleAfterReturn.status
       }),
@@ -8503,6 +8574,16 @@ try {
           smallCargo: expeditionLifecycleFinalSmallCargo,
           probe: expeditionLifecycleFinalProbe
         }
+      ),
+      check(!expeditionLifecycleReady || !expeditionLifecycleSettingsReady || expeditionLifecycleRestoreSettings.status === 200, "expedition lifecycle restores admin expedition settings", {
+        status: expeditionLifecycleRestoreSettings.status
+      }),
+      check(
+        !expeditionLifecycleReady ||
+          !expeditionLifecycleSettingsReady ||
+          expeditionLifecycleRestoreSettingsBody.actionIssue?.code === "action_saved",
+        "expedition lifecycle restore saves like legacy",
+        expeditionLifecycleRestoreSettingsBody.actionIssue ?? {}
       ),
       check(!expeditionLifecycleReady || !expeditionLifecycleAfterReturn.body.includes(expeditionLifecycleCookie), "expedition lifecycle response does not echo private cookie")
     ]
@@ -9952,12 +10033,21 @@ try {
       })
     : null;
   const adminUniverseRestoreBody = adminUniverseRestore ? parseJSON(adminUniverseRestore) : {};
-  const queueDrainAfterRestore = queueDrainFlowReady
-    ? await request(`/api/game/buildings${queueDrainSearch}`, {
+  let queueDrainAfterRestore = null;
+  let queueDrainAfterRestoreBody = {};
+  if (queueDrainFlowReady) {
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      queueDrainAfterRestore = await request(`/api/game/buildings${queueDrainSearch}`, {
         headers: { Cookie: queueDrainLogin.cookiePair }
-      })
-    : null;
-  const queueDrainAfterRestoreBody = queueDrainAfterRestore ? parseJSON(queueDrainAfterRestore) : {};
+      });
+      queueDrainAfterRestoreBody = parseJSON(queueDrainAfterRestore);
+      const restoredItem = buildingItemByID(queueDrainAfterRestoreBody, queueDrainBuildingID);
+      if (Number(restoredItem?.level ?? -1) === 1 && (queueDrainAfterRestoreBody.buildings?.queue?.length ?? -1) === 0) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
   const queueDrainStartItem = buildingItemByID(queueDrainStartBody, queueDrainBuildingID);
   const queueDrainFrozenItem = buildingItemByID(queueDrainWhileFrozenBody, queueDrainBuildingID);
   const queueDrainRestoredItem = buildingItemByID(queueDrainAfterRestoreBody, queueDrainBuildingID);

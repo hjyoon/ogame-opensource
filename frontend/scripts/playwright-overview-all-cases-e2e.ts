@@ -251,6 +251,7 @@ async function capturePage(
   await page.waitForTimeout(300);
   await normalizeDynamicPageParts(page, side);
   await waitForStablePaint(page);
+  await normalizeDynamicPageParts(page, side);
 
   const surface = await surfaceContract(page, side);
   const events = await eventContract(page, side);
