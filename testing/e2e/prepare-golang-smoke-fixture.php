@@ -1109,6 +1109,56 @@ function smoke_prepare_queue_cancel_fixture(string $password, array $near): arra
     );
 }
 
+function smoke_prepare_concurrency_race_fixture(string $password, array $near): array
+{
+    global $db_prefix, $resmap;
+
+    $shipyard = smoke_prepare_user('goconcshipyard', $password, 'goconcshipyard@example.local', USER_TYPE_PLAYER);
+    $playerId = (int)$shipyard['player_id'];
+    $planetId = (int)$shipyard['home_planet_id'];
+
+    smoke_cleanup_alliances(array($playerId));
+    smoke_cleanup_fleets(array($playerId), array($planetId));
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id={$playerId} AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "','" . QTYP_RESEARCH . "','" . QTYP_SHIPYARD . "','" . QTYP_FLEET . "')");
+    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id={$playerId} OR planet_id={$planetId}");
+    smoke_prepare_planet($planetId, $playerId, 'GoConcShipyard', smoke_find_empty_position($near));
+
+    $researchColumns = array();
+    foreach ($resmap as $gid) {
+        $researchColumns[] = "`{$gid}`=10";
+    }
+    $now = time();
+    dbquery(
+        "UPDATE {$db_prefix}users SET " . implode(',', $researchColumns) . ", admin=0, validated=1, deact_ip=1, " .
+        "vacation=0, vacation_until=0, banned=0, banned_until=0, noattack=0, noattack_until=0, " .
+        "disable=0, disable_until=0, lang='en', skin='/evolution/', useskin=1, hplanetid={$planetId}, aktplanet={$planetId}, lastclick={$now} " .
+        "WHERE player_id={$playerId}"
+    );
+
+    $shipId = GID_F_SC;
+    $shipCount = 3;
+    $shipCost = TechPrice($shipId, 1);
+    $metal = (int)($shipCost[GID_RC_METAL] ?? 0) * $shipCount;
+    $crystal = (int)($shipCost[GID_RC_CRYSTAL] ?? 0) * $shipCount;
+    $deuterium = (int)($shipCost[GID_RC_DEUTERIUM] ?? 0) * $shipCount;
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_F_SC . "`=0, `" . GID_RC_METAL . "`={$metal}, `" .
+        GID_RC_CRYSTAL . "`={$crystal}, `" . GID_RC_DEUTERIUM . "`={$deuterium}, `" .
+        GID_B_SHIPYARD . "`=10, fields=0, maxfields=200, type=" . PTYP_PLANET . " WHERE planet_id={$planetId}"
+    );
+    InvalidateUserCache();
+
+    return array(
+        'shipyard' => array(
+            'login' => mb_strtolower($shipyard['name'], 'UTF-8'),
+            'player_id' => $playerId,
+            'home_planet_id' => $planetId,
+            'ship_id' => $shipId,
+            'expected_count' => $shipCount,
+        ),
+    );
+}
+
 function smoke_prepare_merchant_fixture(string $password, array $near): array
 {
     global $db_prefix;
@@ -2186,6 +2236,7 @@ $vacationFreezeFixture = smoke_prepare_vacation_freeze_fixture($password, $home)
 $queueIdempotencyFixture = smoke_prepare_queue_idempotency_fixture($password, $home);
 $queueFreezeDrainFixture = smoke_prepare_queue_freeze_drain_fixture($password, $home);
 $queueCancelFixture = smoke_prepare_queue_cancel_fixture($password, $home);
+$concurrencyRaceFixture = smoke_prepare_concurrency_race_fixture($password, $home);
 $merchantFixture = smoke_prepare_merchant_fixture($password, $home);
 $moonBuildFixture = smoke_prepare_moon_build_fixture($password, $home);
 $moonId = smoke_prepare_moon((int)$login['home_planet_id'], (int)$login['player_id']);
@@ -2263,6 +2314,7 @@ echo json_encode(array(
 	'queue_idempotency' => $queueIdempotencyFixture,
 	'queue_freeze_drain' => $queueFreezeDrainFixture,
 	'queue_cancel' => $queueCancelFixture,
+	'concurrency_race' => $concurrencyRaceFixture,
 	'merchant' => $merchantFixture,
 	'moon_build' => $moonBuildFixture,
 	'fleet_restrictions' => $fleetRestrictionFixture,

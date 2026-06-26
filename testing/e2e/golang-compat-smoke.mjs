@@ -496,6 +496,13 @@ try {
     Number(queueCancelFixture.build?.building_id ?? 0) > 0 &&
     Number(queueCancelFixture.research?.tech_id ?? 0) > 0
   );
+  const concurrencyRaceFixture = smokeFixture?.concurrency_race ?? {};
+  const concurrencyRaceReady = Boolean(
+    typeof concurrencyRaceFixture.shipyard?.login === "string" &&
+    Number(concurrencyRaceFixture.shipyard?.home_planet_id ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.shipyard?.ship_id ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.shipyard?.expected_count ?? 0) > 0
+  );
   const merchantFixture = smokeFixture?.merchant ?? {};
   const merchantReady = ["insufficient", "call", "trade", "reject"].every(
     (key) => typeof merchantFixture[key]?.login === "string" && merchantFixture[key].login.length > 0
@@ -4369,6 +4376,31 @@ try {
     : null;
   const queueCancelResearchCancelBody = queueCancelResearchCancel ? parseJSON(queueCancelResearchCancel) : {};
 
+  const concurrencyUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const concurrencyShipyardLogin = concurrencyRaceReady
+    ? await loginGameUser(concurrencyRaceFixture.shipyard.login, loginSmokePassword, concurrencyUniverse)
+    : null;
+  const concurrencyShipyardSearch = withQueryParam(concurrencyShipyardLogin?.search ?? "?session=", "cp", Number(concurrencyRaceFixture.shipyard?.home_planet_id ?? 0));
+  const concurrencyShipyardID = Number(concurrencyRaceFixture.shipyard?.ship_id ?? 202);
+  const concurrencyShipyardExpectedCount = Number(concurrencyRaceFixture.shipyard?.expected_count ?? 3);
+  const concurrencyShipyardResponses = concurrencyRaceReady
+    ? await Promise.all(Array.from({ length: 4 }, () => request(`/api/game/shipyard${concurrencyShipyardSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: concurrencyShipyardLogin.cookiePair },
+        body: JSON.stringify({ orders: { [String(concurrencyShipyardID)]: concurrencyShipyardExpectedCount } })
+      })))
+    : [];
+  const concurrencyShipyardBodies = concurrencyShipyardResponses.map((response) => parseJSON(response));
+  const concurrencyShipyardAfter = concurrencyRaceReady
+    ? await request(`/api/game/shipyard${concurrencyShipyardSearch}`, { headers: { Cookie: concurrencyShipyardLogin.cookiePair } })
+    : null;
+  const concurrencyShipyardAfterBody = concurrencyShipyardAfter ? parseJSON(concurrencyShipyardAfter) : {};
+  const concurrencyShipyardQueueRows = Array.isArray(concurrencyShipyardAfterBody.shipyard?.queue)
+    ? concurrencyShipyardAfterBody.shipyard.queue.filter((row) => Number(row.unitId ?? 0) === concurrencyShipyardID)
+    : [];
+  const concurrencyShipyardQueuedCount = concurrencyShipyardQueueRows.reduce((sum, row) => sum + Number(row.count ?? 0), 0);
+  const concurrencyShipyardItem = shipyardItemByID(concurrencyShipyardAfterBody, concurrencyShipyardID);
+
   const gameAdmin = await request(`/api/game/admin${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -7391,6 +7423,68 @@ try {
         queueCancelResearchStartBody.research?.currentPlanet?.resources ?? {}
       ),
       check(!queueCancelReady || !queueCancelResearchStart.body.includes(queueCancelResearchLogin?.cookiePair ?? "missing-cookie"), "research concurrency response does not echo private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_concurrency_shipyard_orders_api",
+    checks: [
+      check(!smokeFixtureFile || concurrencyRaceReady, "go smoke fixture exposes shipyard concurrency user", {
+        concurrencyRaceFixture
+      }),
+      check(!concurrencyRaceReady || concurrencyShipyardLogin?.response.status === 200, "shipyard concurrency user can log in", {
+        status: concurrencyShipyardLogin?.response.status
+      }),
+      check(
+        !concurrencyRaceReady ||
+          concurrencyShipyardResponses.length === 4 &&
+            concurrencyShipyardResponses.every((response) => response.status === 200),
+        "parallel shipyard order requests all return HTTP 200",
+        concurrencyShipyardResponses.map((response) => ({
+          status: response.status,
+          elapsedMs: response.elapsedMs
+        }))
+      ),
+      check(
+        !concurrencyRaceReady ||
+          concurrencyShipyardBodies.every((body) => body.authenticated === true),
+        "parallel shipyard order responses authenticate the same user",
+        concurrencyShipyardBodies.map((body) => ({
+          authenticated: body.authenticated,
+          issue: body.actionIssue?.code
+        }))
+      ),
+      check(!concurrencyRaceReady || concurrencyShipyardAfter?.status === 200, "shipyard concurrency final reload returns HTTP 200", {
+        status: concurrencyShipyardAfter?.status
+      }),
+      check(
+        !concurrencyRaceReady || concurrencyShipyardQueueRows.length <= 1,
+        "parallel shipyard order leaves at most one small-cargo queue row",
+        concurrencyShipyardAfterBody.shipyard?.queue ?? []
+      ),
+      check(
+        !concurrencyRaceReady || concurrencyShipyardQueuedCount <= concurrencyShipyardExpectedCount,
+        "parallel shipyard order does not queue more ships than resources allow",
+        {
+          queued: concurrencyShipyardQueuedCount,
+          expectedMax: concurrencyShipyardExpectedCount,
+          rows: concurrencyShipyardQueueRows
+        }
+      ),
+      check(
+        !concurrencyRaceReady || Number(concurrencyShipyardItem?.count ?? 0) === 0,
+        "parallel shipyard order does not prematurely complete ships",
+        concurrencyShipyardItem ?? {}
+      ),
+      check(
+        !concurrencyRaceReady ||
+          Number(concurrencyShipyardAfterBody.shipyard?.currentPlanet?.resources?.metal ?? 0) >= 0 &&
+            Number(concurrencyShipyardAfterBody.shipyard?.currentPlanet?.resources?.crystal ?? 0) >= 0 &&
+            Number(concurrencyShipyardAfterBody.shipyard?.currentPlanet?.resources?.deuterium ?? 0) >= 0,
+        "parallel shipyard order does not overspend resources below zero",
+        concurrencyShipyardAfterBody.shipyard?.currentPlanet?.resources ?? {}
+      ),
+      check(!concurrencyRaceReady || !concurrencyShipyardAfter.body.includes(concurrencyShipyardLogin?.cookiePair ?? "missing-cookie"), "shipyard concurrency response does not echo private cookie")
     ]
   }));
 

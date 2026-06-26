@@ -92,6 +92,7 @@ function cleanup_go_fixture_names(): array
         'goqbuildcancel',
         'goqrescancel',
         'goqueuebuildcancel',
+        'goconcshipyard',
         'goacshold',
         'goacsholdbuddy',
         'goacsholdstranger',
