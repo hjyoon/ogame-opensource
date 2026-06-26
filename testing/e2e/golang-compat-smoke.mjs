@@ -461,6 +461,21 @@ try {
     typeof vacationFreezeFixture.mutation?.login === "string" &&
     Number(vacationFreezeFixture.build?.queue_task_id ?? 0) > 0 &&
     Number(vacationFreezeFixture.fleet?.fleet_id ?? 0) > 0;
+  const queueIdempotencyFixture = smokeFixture?.queue_idempotency ?? {};
+  const queueIdempotencyReady = Boolean(
+    typeof queueIdempotencyFixture.build?.login === "string" &&
+    typeof queueIdempotencyFixture.research?.login === "string" &&
+    typeof queueIdempotencyFixture.shipyard?.login === "string" &&
+    Number(queueIdempotencyFixture.build?.home_planet_id ?? 0) > 0 &&
+    Number(queueIdempotencyFixture.research?.home_planet_id ?? 0) > 0 &&
+    Number(queueIdempotencyFixture.shipyard?.home_planet_id ?? 0) > 0 &&
+    Number(queueIdempotencyFixture.build?.task_id ?? 0) > 0 &&
+    Number(queueIdempotencyFixture.research?.task_id ?? 0) > 0 &&
+    Number(queueIdempotencyFixture.shipyard?.task_id ?? 0) > 0 &&
+    String(queueIdempotencyFixture.build?.build_error ?? "") === "" &&
+    String(queueIdempotencyFixture.research?.research_error ?? "") === "" &&
+    queueIdempotencyFixture.shipyard?.shipyard_ok === true
+  );
   const merchantFixture = smokeFixture?.merchant ?? {};
   const merchantReady = ["insufficient", "call", "trade", "reject"].every(
     (key) => typeof merchantFixture[key]?.login === "string" && merchantFixture[key].login.length > 0
@@ -4034,6 +4049,54 @@ try {
     ? planetLunarRejectBody.buildings.items.find((row) => Number(row.id) === 41)
     : undefined;
 
+  const queueUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const queueBuildLogin = queueIdempotencyReady
+    ? await loginGameUser(queueIdempotencyFixture.build.login, loginSmokePassword, queueUniverse)
+    : null;
+  const queueResearchLogin = queueIdempotencyReady
+    ? await loginGameUser(queueIdempotencyFixture.research.login, loginSmokePassword, queueUniverse)
+    : null;
+  const queueShipyardLogin = queueIdempotencyReady
+    ? await loginGameUser(queueIdempotencyFixture.shipyard.login, loginSmokePassword, queueUniverse)
+    : null;
+  const queueBuildSearch = withQueryParam(queueBuildLogin?.search ?? "?session=", "cp", Number(queueIdempotencyFixture.build?.home_planet_id ?? 0));
+  const queueResearchSearch = withQueryParam(queueResearchLogin?.search ?? "?session=", "cp", Number(queueIdempotencyFixture.research?.home_planet_id ?? 0));
+  const queueShipyardSearch = withQueryParam(queueShipyardLogin?.search ?? "?session=", "cp", Number(queueIdempotencyFixture.shipyard?.home_planet_id ?? 0));
+  const queueBuildFirst = queueIdempotencyReady
+    ? await request(`/api/game/buildings${queueBuildSearch}`, { headers: { Cookie: queueBuildLogin.cookiePair } })
+    : null;
+  const queueBuildSecond = queueIdempotencyReady
+    ? await request(`/api/game/buildings${queueBuildSearch}`, { headers: { Cookie: queueBuildLogin.cookiePair } })
+    : null;
+  const queueResearchFirst = queueIdempotencyReady
+    ? await request(`/api/game/research${queueResearchSearch}`, { headers: { Cookie: queueResearchLogin.cookiePair } })
+    : null;
+  const queueResearchSecond = queueIdempotencyReady
+    ? await request(`/api/game/research${queueResearchSearch}`, { headers: { Cookie: queueResearchLogin.cookiePair } })
+    : null;
+  const queueShipyardFirst = queueIdempotencyReady
+    ? await request(`/api/game/shipyard${queueShipyardSearch}`, { headers: { Cookie: queueShipyardLogin.cookiePair } })
+    : null;
+  const queueShipyardSecond = queueIdempotencyReady
+    ? await request(`/api/game/shipyard${queueShipyardSearch}`, { headers: { Cookie: queueShipyardLogin.cookiePair } })
+    : null;
+  const queueBuildFirstBody = queueBuildFirst ? parseJSON(queueBuildFirst) : {};
+  const queueBuildSecondBody = queueBuildSecond ? parseJSON(queueBuildSecond) : {};
+  const queueResearchFirstBody = queueResearchFirst ? parseJSON(queueResearchFirst) : {};
+  const queueResearchSecondBody = queueResearchSecond ? parseJSON(queueResearchSecond) : {};
+  const queueShipyardFirstBody = queueShipyardFirst ? parseJSON(queueShipyardFirst) : {};
+  const queueShipyardSecondBody = queueShipyardSecond ? parseJSON(queueShipyardSecond) : {};
+  const queueBuildID = Number(queueIdempotencyFixture.build?.building_id ?? 1);
+  const queueResearchID = Number(queueIdempotencyFixture.research?.tech_id ?? 106);
+  const queueShipyardID = Number(queueIdempotencyFixture.shipyard?.ship_id ?? 202);
+  const queueExpectedShipyardCount = Number(queueIdempotencyFixture.shipyard?.expected_count ?? 3);
+  const queueBuildFirstItem = buildingItemByID(queueBuildFirstBody, queueBuildID);
+  const queueBuildSecondItem = buildingItemByID(queueBuildSecondBody, queueBuildID);
+  const queueResearchFirstItem = researchItemByID(queueResearchFirstBody, queueResearchID);
+  const queueResearchSecondItem = researchItemByID(queueResearchSecondBody, queueResearchID);
+  const queueShipyardFirstItem = shipyardItemByID(queueShipyardFirstBody, queueShipyardID);
+  const queueShipyardSecondItem = shipyardItemByID(queueShipyardSecondBody, queueShipyardID);
+
   const gameAdmin = await request(`/api/game/admin${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
   });
@@ -6514,6 +6577,57 @@ try {
       }),
       check(!moonBuildReady || planetLunarRejectBody.actionIssue?.code === "invalid_building", "planet rejects Lunar Base as an invalid building", planetLunarRejectBody.actionIssue ?? {}),
       check(!moonBuildReady || planetLunarBaseAfterReject === undefined, "planet buildings response does not expose Lunar Base as buildable", planetLunarBaseAfterReject ?? {})
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_queue_completion_idempotency_api",
+    checks: [
+      check(!smokeFixtureFile || queueIdempotencyReady, "go smoke fixture exposes due build/research/shipyard queues", { queueIdempotencyFixture }),
+      check(!queueIdempotencyReady || queueBuildLogin?.response.status === 200, "queue build user can log in", { status: queueBuildLogin?.response.status }),
+      check(!queueIdempotencyReady || queueResearchLogin?.response.status === 200, "queue research user can log in", { status: queueResearchLogin?.response.status }),
+      check(!queueIdempotencyReady || queueShipyardLogin?.response.status === 200, "queue shipyard user can log in", { status: queueShipyardLogin?.response.status }),
+      check(!queueIdempotencyReady || queueBuildFirst?.status === 200 && queueBuildSecond?.status === 200, "building due queue can be loaded twice", {
+        first: queueBuildFirst?.status,
+        second: queueBuildSecond?.status
+      }),
+      check(!queueIdempotencyReady || Number(queueBuildFirstItem?.level ?? -1) === 1 && Number(queueBuildSecondItem?.level ?? -1) === 1, "due building queue completes exactly once across repeated loads", {
+        first: queueBuildFirstItem,
+        second: queueBuildSecondItem
+      }),
+      check(!queueIdempotencyReady || Number(queueBuildFirstBody.buildings?.currentPlanet?.fields ?? -1) === 1 && Number(queueBuildSecondBody.buildings?.currentPlanet?.fields ?? -1) === 1, "due building queue increments used fields exactly once", {
+        first: queueBuildFirstBody.buildings?.currentPlanet,
+        second: queueBuildSecondBody.buildings?.currentPlanet
+      }),
+      check(!queueIdempotencyReady || (queueBuildFirstBody.buildings?.queue?.length ?? -1) === 0 && (queueBuildSecondBody.buildings?.queue?.length ?? -1) === 0, "due building queue is removed after first completion", {
+        first: queueBuildFirstBody.buildings?.queue,
+        second: queueBuildSecondBody.buildings?.queue
+      }),
+      check(!queueIdempotencyReady || queueResearchFirst?.status === 200 && queueResearchSecond?.status === 200, "research due queue can be loaded twice", {
+        first: queueResearchFirst?.status,
+        second: queueResearchSecond?.status
+      }),
+      check(!queueIdempotencyReady || Number(queueResearchFirstItem?.level ?? -1) === 1 && Number(queueResearchSecondItem?.level ?? -1) === 1, "due research queue completes exactly once across repeated loads", {
+        first: queueResearchFirstItem,
+        second: queueResearchSecondItem
+      }),
+      check(!queueIdempotencyReady || queueResearchFirstBody.research?.active === undefined && queueResearchSecondBody.research?.active === undefined, "due research queue is removed after first completion", {
+        first: queueResearchFirstBody.research?.active,
+        second: queueResearchSecondBody.research?.active
+      }),
+      check(!queueIdempotencyReady || queueShipyardFirst?.status === 200 && queueShipyardSecond?.status === 200, "shipyard due queue can be loaded twice", {
+        first: queueShipyardFirst?.status,
+        second: queueShipyardSecond?.status
+      }),
+      check(!queueIdempotencyReady || Number(queueShipyardFirstItem?.count ?? -1) === queueExpectedShipyardCount && Number(queueShipyardSecondItem?.count ?? -1) === queueExpectedShipyardCount, "due shipyard queue completes exactly once across repeated loads", {
+        expected: queueExpectedShipyardCount,
+        first: queueShipyardFirstItem,
+        second: queueShipyardSecondItem
+      }),
+      check(!queueIdempotencyReady || (queueShipyardFirstBody.shipyard?.queue?.length ?? -1) === 0 && (queueShipyardSecondBody.shipyard?.queue?.length ?? -1) === 0, "due shipyard queue is removed after first completion", {
+        first: queueShipyardFirstBody.shipyard?.queue,
+        second: queueShipyardSecondBody.shipyard?.queue
+      })
     ]
   }));
 

@@ -195,6 +195,23 @@ function smoke_age_fleet_queue(int $fleetId, int $elapsedSeconds): void
     dbquery("UPDATE {$db_prefix}queue SET start={$start} WHERE type='" . QTYP_FLEET . "' AND sub_id={$fleetId}");
 }
 
+function smoke_force_queue_due(int $taskId, int $now): void
+{
+    global $db_prefix;
+
+    $queue = LoadQueue($taskId);
+    if ($queue === null || $queue === false) {
+        return;
+    }
+
+    $start = $now - 30;
+    $end = $now - 29;
+    dbquery("UPDATE {$db_prefix}queue SET start={$start}, end={$end}, freeze=0, frozen=0 WHERE task_id={$taskId}");
+    if ($queue['type'] === QTYP_BUILD || $queue['type'] === QTYP_DEMOLISH) {
+        dbquery("UPDATE {$db_prefix}buildqueue SET start={$start}, end={$end} WHERE id=" . (int)$queue['sub_id']);
+    }
+}
+
 function smoke_cleanup_alliances(array $userIds): void
 {
     global $db_prefix;
@@ -884,6 +901,102 @@ function smoke_prepare_vacation_freeze_fixture(string $password, array $near): a
             'login' => mb_strtolower($mutationUser['name'], 'UTF-8'),
             'player_id' => (int)$mutationUser['player_id'],
             'home_planet_id' => (int)$mutationUser['home_planet_id'],
+        ),
+    );
+}
+
+function smoke_prepare_queue_idempotency_fixture(string $password, array $near): array
+{
+    global $db_prefix, $resmap;
+
+    $build = smoke_prepare_user('goqueuebuild', $password, 'goqueuebuild@example.local', USER_TYPE_PLAYER);
+    $research = smoke_prepare_user('goqueueresearch', $password, 'goqueueresearch@example.local', USER_TYPE_PLAYER);
+    $shipyard = smoke_prepare_user('goqueueshipyard', $password, 'goqueueshipyard@example.local', USER_TYPE_PLAYER);
+    $users = array($build, $research, $shipyard);
+    $userIds = array_map(fn($user) => (int)$user['player_id'], $users);
+    $planetIds = array_map(fn($user) => (int)$user['home_planet_id'], $users);
+
+    smoke_cleanup_alliances($userIds);
+    smoke_cleanup_fleets($userIds, $planetIds);
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id IN (" . implode(',', $userIds) . ") AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "','" . QTYP_RESEARCH . "','" . QTYP_SHIPYARD . "','" . QTYP_FLEET . "')");
+    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id IN (" . implode(',', $userIds) . ") OR planet_id IN (" . implode(',', $planetIds) . ")");
+
+    $positions = smoke_find_empty_positions($near, count($users));
+    foreach ($users as $index => $user) {
+        smoke_prepare_planet((int)$user['home_planet_id'], (int)$user['player_id'], 'GoQueue' . $index, $positions[$index]);
+    }
+
+    $researchColumns = array();
+    foreach ($resmap as $gid) {
+        $researchColumns[] = "`{$gid}`=10";
+    }
+    $now = time();
+    dbquery(
+        "UPDATE {$db_prefix}users SET " . implode(',', $researchColumns) . ", admin=0, validated=1, deact_ip=1, " .
+        "vacation=0, vacation_until=0, banned=0, banned_until=0, noattack=0, noattack_until=0, " .
+        "disable=0, disable_until=0, lang='en', skin='/evolution/', useskin=1, lastclick={$now} " .
+        "WHERE player_id IN (" . implode(',', $userIds) . ")"
+    );
+    dbquery("UPDATE {$db_prefix}users SET `" . GID_R_ESPIONAGE . "`=0 WHERE player_id=" . (int)$research['player_id']);
+    dbquery(
+        "UPDATE {$db_prefix}planets SET " .
+        "`" . GID_RC_METAL . "`=10000000, `" . GID_RC_CRYSTAL . "`=10000000, `" . GID_RC_DEUTERIUM . "`=10000000, " .
+        "`" . GID_B_METAL_MINE . "`=0, `" . GID_B_CRYS_MINE . "`=0, `" . GID_B_DEUT_SYNTH . "`=0, `" . GID_B_SOLAR . "`=10, " .
+        "`" . GID_B_ROBOTS . "`=10, `" . GID_B_SHIPYARD . "`=10, `" . GID_B_RES_LAB . "`=10, `" . GID_B_NANITES . "`=0, " .
+        "`" . GID_F_SC . "`=0, prod1=0, prod2=0, prod3=0, prod4=0, prod12=0, prod212=0, fields=0, maxfields=200, type=" . PTYP_PLANET . " " .
+        "WHERE planet_id IN (" . implode(',', $planetIds) . ")"
+    );
+    foreach ($users as $user) {
+        $playerId = (int)$user['player_id'];
+        $planetId = (int)$user['home_planet_id'];
+        dbquery("UPDATE {$db_prefix}users SET hplanetid={$planetId}, aktplanet={$planetId} WHERE player_id={$playerId}");
+    }
+    InvalidateUserCache();
+
+    $buildError = BuildEnque(LoadUser((int)$build['player_id']), (int)$build['home_planet_id'], GID_B_METAL_MINE, 0, $now);
+    $buildTask = smoke_one_row("SELECT task_id, sub_id FROM {$db_prefix}queue WHERE owner_id=" . (int)$build['player_id'] . " AND type='" . QTYP_BUILD . "' ORDER BY task_id DESC LIMIT 1");
+    if ($buildTask !== null) {
+        smoke_force_queue_due((int)$buildTask['task_id'], $now);
+    }
+
+    $researchError = StartResearch((int)$research['player_id'], (int)$research['home_planet_id'], GID_R_ESPIONAGE, $now + 1);
+    $researchTask = smoke_one_row("SELECT task_id FROM {$db_prefix}queue WHERE owner_id=" . (int)$research['player_id'] . " AND type='" . QTYP_RESEARCH . "' ORDER BY task_id DESC LIMIT 1");
+    if ($researchTask !== null) {
+        smoke_force_queue_due((int)$researchTask['task_id'], $now);
+    }
+
+    $shipyardOk = AddShipyard((int)$shipyard['player_id'], (int)$shipyard['home_planet_id'], GID_F_SC, 3, $now + 2);
+    $shipyardTask = smoke_one_row("SELECT task_id, level FROM {$db_prefix}queue WHERE owner_id=" . (int)$shipyard['player_id'] . " AND type='" . QTYP_SHIPYARD . "' ORDER BY task_id DESC LIMIT 1");
+    if ($shipyardTask !== null) {
+        smoke_force_queue_due((int)$shipyardTask['task_id'], $now);
+    }
+    InvalidateUserCache();
+
+    return array(
+        'build' => array(
+            'login' => mb_strtolower($build['name'], 'UTF-8'),
+            'player_id' => (int)$build['player_id'],
+            'home_planet_id' => (int)$build['home_planet_id'],
+            'task_id' => $buildTask === null ? 0 : (int)$buildTask['task_id'],
+            'build_error' => $buildError,
+            'building_id' => GID_B_METAL_MINE,
+        ),
+        'research' => array(
+            'login' => mb_strtolower($research['name'], 'UTF-8'),
+            'player_id' => (int)$research['player_id'],
+            'home_planet_id' => (int)$research['home_planet_id'],
+            'task_id' => $researchTask === null ? 0 : (int)$researchTask['task_id'],
+            'research_error' => $researchError,
+            'tech_id' => GID_R_ESPIONAGE,
+        ),
+        'shipyard' => array(
+            'login' => mb_strtolower($shipyard['name'], 'UTF-8'),
+            'player_id' => (int)$shipyard['player_id'],
+            'home_planet_id' => (int)$shipyard['home_planet_id'],
+            'task_id' => $shipyardTask === null ? 0 : (int)$shipyardTask['task_id'],
+            'shipyard_ok' => $shipyardOk,
+            'ship_id' => GID_F_SC,
+            'expected_count' => 3,
         ),
     );
 }
@@ -1788,6 +1901,7 @@ smoke_prepare_planet((int)$target['home_planet_id'], (int)$target['player_id'], 
 smoke_prepare_planet((int)$freezeVictim['home_planet_id'], (int)$freezeVictim['player_id'], 'Go Freeze', smoke_find_empty_position($home));
 $premiumDmFixture = smoke_prepare_premium_dm_fixture($password, $home);
 $vacationFreezeFixture = smoke_prepare_vacation_freeze_fixture($password, $home);
+$queueIdempotencyFixture = smoke_prepare_queue_idempotency_fixture($password, $home);
 $merchantFixture = smoke_prepare_merchant_fixture($password, $home);
 $moonBuildFixture = smoke_prepare_moon_build_fixture($password, $home);
 $moonId = smoke_prepare_moon((int)$login['home_planet_id'], (int)$login['player_id']);
@@ -1861,6 +1975,7 @@ echo json_encode(array(
 	),
 	'premium_dm' => $premiumDmFixture,
 	'vacation_freeze' => $vacationFreezeFixture,
+	'queue_idempotency' => $queueIdempotencyFixture,
 	'merchant' => $merchantFixture,
 	'moon_build' => $moonBuildFixture,
 	'fleet_restrictions' => $fleetRestrictionFixture,
