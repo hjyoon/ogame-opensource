@@ -24,7 +24,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep <4KB; split details when nee
 - Resources ports the legacy production-percent form, premium bonus icon column, DB normalization, and post-save resource header sync.
 - Merchant/officers/alliance/admin port DM/trade/timers, alliance lifecycle, admin modes, Broadcast, Reports, Bans/Expedition/Queue/Fleetlogs/Users/DB mutations, recall, and guards.
 - Research/Shipyard port aliases, chrome, colors, queues, completion refresh, start/cancel/build, and resource math.
-- Fleet dispatch covers cargo/speed, fuel/clamps, ACS sync, colonize/exp targets, templates, and recall.
+- Fleet dispatch covers cargo/speed, fuel/clamps, ACS sync/Hold guards, colonize/exp targets, templates, and recall.
 - Galaxy covers clamp, rows, statuses, moon/debris/actions, slot/deut warnings, quick links, target prefill, and instant spy/recycle dispatch.
 - Messages/report/notes/buddy/options follow legacy chrome; escaped legacy message text, report access, and options mutations are enforced.
 - Notes, Buddylist, and Options visual parity pass Chromium/Firefox at 0px; Commander rows use `com_until` like PHP.
@@ -38,7 +38,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep <4KB; split details when nee
 - Fleet all-cases passes Chrome/Firefox 0px for initial, union, target, dispatch previews.
 - CSR E2E covers Buddy/Options, Options save, Notes create/edit/delete, and logout; Chromium passes.
 - Auth visual E2E passes Chromium/Firefox 0px for all default page specs.
-- Go smoke covers routes/assets, auth, reg/recovery, acct/options/localization, admin Queue/Fleetlogs/Users/DB/CleanPlayers, tech/economy, premium, fleet, galaxy/IPM, social, report/msg/resources/input/feed, aliases (67 cases/1863 checks).
+- Go smoke covers routes/assets, auth, reg/recovery, acct/options/localization, admin Queue/Fleetlogs/Users/DB/CleanPlayers, tech/economy, premium, fleet/ACS Hold, galaxy/IPM, social, report/msg/resources/input/feed, aliases (68 cases/1875 checks).
 - Legacy PHP E2E latest summary: 59 result files, 340 cases, 2428 checks, failed groups 0.
 - Go internal coverage gate: `97.0% >= 97%`.
 

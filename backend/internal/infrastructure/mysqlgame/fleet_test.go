@@ -1168,6 +1168,208 @@ func TestFleetRepositoryLaunchRejectsLegacyTargetProtectionBeforeWrites(t *testi
 	}
 }
 
+func TestFleetRepositoryLaunchRejectsACSHoldWithoutBuddyOrAlliance(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues([]any{100, 43, domaingame.PlanetTypePlanet})},
+		{rows: fakeRowsFromValues(fleetLaunchUserStateRow(42, 10_000, 0, 0, 0, 0, now.Unix()))},
+		{rows: fakeRowsFromValues(fleetLaunchUserStateRow(43, 10_000, 0, 0, 0, 0, now.Unix()))},
+		{rows: fakeRowsFromValues([]any{42, 0}, []any{43, 0})},
+		{rows: fakeRowsFromValues([]any{0})},
+	}}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	issue, err := repository.LaunchFleetDispatch(context.Background(), appgame.FleetLaunchQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Draft: domaingame.FleetDispatchDraft{
+			Ships:           []domaingame.FleetShipCount{{ID: domaingame.FleetLightFighter, Count: 1}},
+			Ready:           true,
+			Mission:         domaingame.FleetMissionACSHold,
+			Target:          domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+			TargetType:      domaingame.GamePlanetTypePlanet,
+			DurationSeconds: 42,
+		},
+		HoldSeconds: 3600,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue == nil || issue.Code != domaingame.FleetIssueHoldAlliance {
+		t.Fatalf("expected hold alliance issue, got %+v", issue)
+	}
+	if len(runner.execCalls) != 0 {
+		t.Fatalf("ACS hold relation guard failure must not write, got %+v", runner.execCalls)
+	}
+}
+
+func TestFleetRepositoryACSHoldRelationAllowsAllianceOrBuddy(t *testing.T) {
+	tests := []struct {
+		name    string
+		results []fakeQueryResult
+	}{
+		{
+			name: "same alliance",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{42, 7}, []any{43, 7})},
+			},
+		},
+		{
+			name: "accepted buddy",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{42, 0}, []any{43, 0})},
+				{rows: fakeRowsFromValues([]any{1})},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: tt.results}}
+			repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+
+			issue, err := repository.validateFleetLaunchACSHoldRelation(
+				context.Background(),
+				"`ogame_users`",
+				"`ogame_buddy`",
+				appgame.FleetLaunchQuery{
+					PlayerID: 42,
+					Draft:    domaingame.FleetDispatchDraft{Mission: domaingame.FleetMissionACSHold},
+				},
+				fleetLaunchTarget{OwnerID: 43},
+			)
+			if err != nil || issue != nil {
+				t.Fatalf("expected relation to allow ACS hold, issue=%+v err=%v", issue, err)
+			}
+		})
+	}
+}
+
+func TestFleetRepositoryACSHoldRelationHandlesEdges(t *testing.T) {
+	repository := NewFleetRepositoryWithRunner(&fakeFleetRunner{}, nil, "ogame_", time.Now)
+	issue, err := repository.validateFleetLaunchACSHoldRelation(
+		context.Background(),
+		"`ogame_users`",
+		"`ogame_buddy`",
+		appgame.FleetLaunchQuery{PlayerID: 42, Draft: domaingame.FleetDispatchDraft{Mission: domaingame.FleetMissionTransport}},
+		fleetLaunchTarget{OwnerID: 43},
+	)
+	if err != nil || issue != nil {
+		t.Fatalf("non ACS hold mission should bypass relation guard, issue=%+v err=%v", issue, err)
+	}
+
+	issue, err = repository.validateFleetLaunchACSHoldRelation(
+		context.Background(),
+		"`ogame_users`",
+		"`ogame_buddy`",
+		appgame.FleetLaunchQuery{PlayerID: 42, Draft: domaingame.FleetDispatchDraft{Mission: domaingame.FleetMissionACSHold}},
+		fleetLaunchTarget{OwnerID: 0},
+	)
+	if err != nil || issue == nil || issue.Code != domaingame.FleetIssueHoldAlliance {
+		t.Fatalf("space target should be rejected as hold alliance, issue=%+v err=%v", issue, err)
+	}
+	issue, err = repository.validateFleetLaunchACSHoldRelation(
+		context.Background(),
+		"`ogame_users`",
+		"`ogame_buddy`",
+		appgame.FleetLaunchQuery{PlayerID: 42, Draft: domaingame.FleetDispatchDraft{Mission: domaingame.FleetMissionACSHold}},
+		fleetLaunchTarget{OwnerID: userSpace},
+	)
+	if err != nil || issue == nil || issue.Code != domaingame.FleetIssueHoldAlliance {
+		t.Fatalf("user-space target should be rejected as hold alliance, issue=%+v err=%v", issue, err)
+	}
+
+	if related, err := repository.fleetLaunchUsersCanHold(context.Background(), "`ogame_users`", "`ogame_buddy`", 0, 43); err != nil || related {
+		t.Fatalf("zero origin should not be related, related=%v err=%v", related, err)
+	}
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("relation lookup failed")}}}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	issue, err = repository.validateFleetLaunchACSHoldRelation(
+		context.Background(),
+		"`ogame_users`",
+		"`ogame_buddy`",
+		appgame.FleetLaunchQuery{PlayerID: 42, Draft: domaingame.FleetDispatchDraft{Mission: domaingame.FleetMissionACSHold}},
+		fleetLaunchTarget{OwnerID: 43},
+	)
+	if err == nil || !strings.Contains(err.Error(), "relation lookup failed") || issue != nil {
+		t.Fatalf("expected relation lookup error without issue, issue=%+v err=%v", issue, err)
+	}
+
+	tests := []struct {
+		name    string
+		results []fakeQueryResult
+		wantErr string
+	}{
+		{
+			name:    "user query",
+			results: []fakeQueryResult{{err: errors.New("user relation failed")}},
+			wantErr: "user relation failed",
+		},
+		{
+			name:    "user scan",
+			results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}},
+			wantErr: "unexpected scan destination count",
+		},
+		{
+			name:    "user rows",
+			results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("user rows failed"), []any{42, 0})}},
+			wantErr: "user rows failed",
+		},
+		{
+			name: "buddy query",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{42, 0}, []any{43, 0})},
+				{err: errors.New("buddy query failed")},
+			},
+			wantErr: "buddy query failed",
+		},
+		{
+			name: "buddy scan",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{42, 0}, []any{43, 0})},
+				{rows: fakeRowsFromValues([]any{"bad"})},
+			},
+			wantErr: "expected int",
+		},
+		{
+			name: "buddy rows",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{42, 0}, []any{43, 0})},
+				{rows: fakeRowsFromValuesWithErr(errors.New("buddy rows failed"), []any{0})},
+			},
+			wantErr: "buddy rows failed",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: tt.results}}
+			repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+
+			_, err := repository.fleetLaunchUsersCanHold(context.Background(), "`ogame_users`", "`ogame_buddy`", 42, 43)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected %q error, got %v", tt.wantErr, err)
+			}
+		})
+	}
+
+	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{42, 0}, []any{43, 0})},
+		{rows: fakeRowsFromValues()},
+	}}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if related, err := repository.fleetLaunchUsersCanHold(context.Background(), "`ogame_users`", "`ogame_buddy`", 42, 43); err != nil || related {
+		t.Fatalf("empty buddy rows should not be related, related=%v err=%v", related, err)
+	}
+	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{42, 0}, []any{43, 0})},
+		{rows: fakeRowsError(errors.New("empty buddy rows failed"))},
+	}}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, err := repository.fleetLaunchUsersCanHold(context.Background(), "`ogame_users`", "`ogame_buddy`", 42, 43); err == nil || !strings.Contains(err.Error(), "empty buddy rows failed") {
+		t.Fatalf("expected empty buddy rows error, got %v", err)
+	}
+}
+
 func TestFleetLaunchProtectionHelpersCoverLegacyBranches(t *testing.T) {
 	now := time.Unix(1_000, 0)
 	origin := fleetLaunchUserState{ID: 42, Score: 10_000, LastClick: now.Unix()}

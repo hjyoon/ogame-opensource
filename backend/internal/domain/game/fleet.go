@@ -179,6 +179,7 @@ const (
 	FleetIssueTargetAdmin   = "target_admin"
 	FleetIssueTargetNoob    = "target_noob"
 	FleetIssueAttackBan     = "attack_ban"
+	FleetIssueHoldAlliance  = "hold_alliance"
 )
 
 func BuildFleet(overview Overview, counts FleetCounts, research ResearchLevels, missions []FleetMission, admiral bool, acsEnabled bool) Fleet {
@@ -335,6 +336,9 @@ func BuildFleetDispatchValidation(fleet Fleet, input FleetDispatchValidationInpu
 		Mission:    input.Mission,
 		Speed:      input.Speed,
 	})
+	if input.Mission == FleetMissionACSHold && draft.Mission == 0 {
+		draft.Mission = FleetMissionACSHold
+	}
 	selectedCounts := fleetCountsFromShipCounts(draft.Ships)
 	holdHours := NormalizeFleetHoldHours(input.Mission, input.HoldHours, input.ExpeditionHours, fleet.ExpeditionLevel)
 	fleetFuel, probeFuel := fleetFlightConsumptionParts(fleet.Ships, selectedCounts, draft.Distance, draft.DurationSeconds, draft.SpeedFactor, holdHours)
@@ -353,7 +357,7 @@ func BuildFleetDispatchValidation(fleet Fleet, input FleetDispatchValidationInpu
 	if fleet.Slots.Max > 0 && fleet.Slots.Used >= fleet.Slots.Max {
 		return draft, FleetActionIssueFor(FleetIssueMaxFleet)
 	}
-	if input.Mission <= 0 || !missionOptionExists(draft.MissionOptions, input.Mission) {
+	if input.Mission <= 0 || (!missionOptionExists(draft.MissionOptions, input.Mission) && input.Mission != FleetMissionACSHold) {
 		return draft, FleetActionIssueFor(FleetIssueInvalidOrder)
 	}
 	if input.Mission == FleetMissionExpedition {
@@ -395,6 +399,7 @@ func FleetActionIssueFor(code string) *FleetActionIssue {
 		FleetIssueTargetAdmin:   "You cannot send hostile fleets to game operators or administrators!",
 		FleetIssueTargetNoob:    "The planet is protected for newbies!",
 		FleetIssueAttackBan:     "Ban attacks to target",
+		FleetIssueHoldAlliance:  "You can only hold out for friends and fellow alliance members!",
 	}[code]
 	if message == "" {
 		message = "Fleet dispatch failed."

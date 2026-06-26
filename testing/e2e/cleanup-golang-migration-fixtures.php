@@ -80,6 +80,9 @@ function cleanup_go_fixture_names(): array
         'gotecshipopen',
         'gotecdeflock',
         'gotecdefopen',
+        'goacshold',
+        'goacsholdbuddy',
+        'goacsholdstranger',
     );
 }
 
@@ -129,6 +132,7 @@ if (!empty($userIds)) {
     }
     dbquery("DELETE FROM {$db_prefix}union WHERE target_player IN ({$userList}) OR " . implode(' OR ', $orPlayers));
     dbquery("DELETE FROM {$db_prefix}messages WHERE owner_id IN ({$userList})");
+    dbquery("DELETE FROM {$db_prefix}buddy WHERE request_from IN ({$userList}) OR request_to IN ({$userList})");
     dbquery("DELETE FROM {$db_prefix}userlogs WHERE owner_id IN ({$userList})");
     dbquery("DELETE FROM {$db_prefix}template WHERE owner_id IN ({$userList})");
     dbquery("DELETE FROM {$db_prefix}queue WHERE type='" . QTYP_CLEAN_PLAYERS . "' AND sub_id IN ({$userList})");

@@ -442,6 +442,17 @@ func TestBuildFleetDispatchValidationReturnsLegacyCommonIssues(t *testing.T) {
 			}
 		})
 	}
+	holdDraft, holdIssue := BuildFleetDispatchValidation(base, FleetDispatchValidationInput{
+		Ships:      map[int]int{FleetSmallCargo: 1},
+		Target:     Coordinates{Galaxy: 1, System: 2, Position: 4},
+		TargetType: GamePlanetTypePlanet,
+		Mission:    FleetMissionACSHold,
+		Speed:      10,
+		HoldHours:  1,
+	})
+	if holdIssue != nil || holdDraft.Mission != FleetMissionACSHold || !holdDraft.Ready {
+		t.Fatalf("direct legacy ACS hold POST should pass domain validation for repository guards: draft=%+v issue=%+v", holdDraft, holdIssue)
+	}
 	if issue := FleetActionIssueFor("unknown"); issue.Code != "unknown" || issue.Message == "" {
 		t.Fatalf("unknown fleet issue should keep code with fallback message: %+v", issue)
 	}

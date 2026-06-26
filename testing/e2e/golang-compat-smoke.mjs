@@ -603,6 +603,16 @@ try {
     fleetRestrictionsFixture.operator?.coordinates &&
     fleetRestrictionsFixture.comparable?.coordinates
   );
+  const acsHoldFixture = smokeFixture?.acs_hold ?? {};
+  const acsHoldReady = Boolean(
+    typeof acsHoldFixture.holder?.login === "string" &&
+    Number(acsHoldFixture.holder?.home_planet_id ?? 0) > 0 &&
+    Number(acsHoldFixture.buddy?.home_planet_id ?? 0) > 0 &&
+    Number(acsHoldFixture.stranger?.home_planet_id ?? 0) > 0 &&
+    acsHoldFixture.buddy?.coordinates &&
+    acsHoldFixture.stranger?.coordinates &&
+    Number(acsHoldFixture.buddy_id ?? 0) > 0
+  );
   const fleetTemplatesFixture = smokeFixture?.fleet_templates ?? {};
   const fleetTemplatesReady = Boolean(
     typeof fleetTemplatesFixture.commander?.login === "string" &&
@@ -2095,6 +2105,55 @@ try {
   const fleetRestrictionAttackerAfterBody = fleetRestrictionAttackerAfter ? parseJSON(fleetRestrictionAttackerAfter) : {};
   const fleetRestrictionBlockedAfterBody = fleetRestrictionBlockedAfter ? parseJSON(fleetRestrictionBlockedAfter) : {};
   const fleetRestrictionWeakAfterBody = fleetRestrictionWeakAfter ? parseJSON(fleetRestrictionWeakAfter) : {};
+
+  const acsHoldSmallCargo = 202;
+  const acsHoldMission = 5;
+  const acsHoldLogin = acsHoldReady
+    ? await loginGameUser(acsHoldFixture.holder.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const acsHoldSearch = acsHoldReady
+    ? withQueryParam(acsHoldLogin?.search ?? "?session=", "cp", Number(acsHoldFixture.holder.home_planet_id))
+    : "?session=";
+  const acsHoldCookie = acsHoldLogin?.cookiePair ?? "";
+  const acsHoldBefore = acsHoldReady
+    ? await request(`/api/game/fleet${acsHoldSearch}`, {
+        headers: { Cookie: acsHoldCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const acsHoldBeforeBody = parseJSON(acsHoldBefore);
+  async function launchACSHold(target) {
+    if (!acsHoldReady) {
+      return { status: 0, headers: {}, body: "{}" };
+    }
+    return request(`/api/game/fleet${acsHoldSearch}`, {
+      method: "POST",
+      headers: { Cookie: acsHoldCookie, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "launch-dispatch",
+        ships: { [String(acsHoldSmallCargo)]: 1 },
+        resources: {},
+        target: target.coordinates,
+        targetType: 1,
+        mission: acsHoldMission,
+        speed: 10,
+        holdHours: 1
+      })
+    });
+  }
+  const acsHoldStrangerLaunch = await launchACSHold(acsHoldFixture.stranger ?? {});
+  const acsHoldStrangerBody = parseJSON(acsHoldStrangerLaunch);
+  const acsHoldAfterStranger = acsHoldReady
+    ? await request(`/api/game/fleet${acsHoldSearch}`, {
+        headers: { Cookie: acsHoldCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const acsHoldAfterStrangerBody = parseJSON(acsHoldAfterStranger);
+  const acsHoldBuddyLaunch = await launchACSHold(acsHoldFixture.buddy ?? {});
+  const acsHoldBuddyBody = parseJSON(acsHoldBuddyLaunch);
+  const acsHoldBeforeCount = fleetMissionCountByMission(acsHoldBeforeBody, acsHoldMission);
+  const acsHoldAfterStrangerCount = fleetMissionCountByMission(acsHoldAfterStrangerBody, acsHoldMission);
+  const acsHoldAfterBuddyCount = fleetMissionCountByMission(acsHoldBuddyBody, acsHoldMission);
+  const acsHoldBuddyMission = fleetMissionByMission(acsHoldBuddyBody, acsHoldMission);
 
   const fleetRecallLogin = fleetRecallReady
     ? await loginGameUser(fleetRecallFixture.attacker.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
@@ -6474,6 +6533,41 @@ try {
       ),
       check(!fleetRestrictionsReady || !fleetRestrictionNoobAttack.body.includes(fleetRestrictionAttackerLogin?.cookiePair ?? "missing-cookie"), "fleet restriction response does not echo attacker cookie"),
       check(!fleetRestrictionsReady || !fleetRestrictionAttackBan.body.includes(fleetRestrictionBlockedLogin?.cookiePair ?? "missing-cookie"), "fleet restriction response does not echo noattack attacker cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_acs_hold_relation_edges_api",
+    checks: [
+      check(!smokeFixtureFile || acsHoldReady, "go smoke fixture exposes ACS hold users", { acsHoldFixture }),
+      check(!acsHoldReady || acsHoldLogin?.response.status === 200, "ACS hold actor can log in", {
+        status: acsHoldLogin?.response.status
+      }),
+      check(!acsHoldReady || acsHoldBefore.status === 200, "ACS hold initial fleet screen loads", {
+        status: acsHoldBefore.status
+      }),
+      check(!acsHoldReady || acsHoldStrangerLaunch.status === 200, "ACS hold stranger launch returns HTTP 200", {
+        status: acsHoldStrangerLaunch.status
+      }),
+      check(!acsHoldReady || acsHoldStrangerBody.actionIssue?.code === "hold_alliance", "ACS hold stranger launch returns the legacy buddy/alliance issue", acsHoldStrangerBody.actionIssue ?? {}),
+      check(!acsHoldReady || acsHoldAfterStrangerCount === acsHoldBeforeCount, "rejected ACS hold does not create a fleet row", {
+        before: acsHoldBeforeCount,
+        after: acsHoldAfterStrangerCount
+      }),
+      check(!acsHoldReady || acsHoldBuddyLaunch.status === 200, "ACS hold buddy launch returns HTTP 200", {
+        status: acsHoldBuddyLaunch.status
+      }),
+      check(!acsHoldReady || acsHoldBuddyBody.actionIssue === undefined, "ACS hold buddy launch has no action issue", acsHoldBuddyBody.actionIssue ?? {}),
+      check(!acsHoldReady || acsHoldAfterBuddyCount === acsHoldBeforeCount + 1, "accepted buddy ACS hold creates one outbound hold mission", {
+        before: acsHoldBeforeCount,
+        after: acsHoldAfterBuddyCount
+      }),
+      check(!acsHoldReady || Number(acsHoldBuddyMission?.mission ?? 0) === acsHoldMission, "accepted buddy mission keeps legacy ACS hold mission code", acsHoldBuddyMission ?? {}),
+      check(!acsHoldReady || Number(acsHoldBuddyMission?.target?.galaxy ?? 0) === Number(acsHoldFixture.buddy?.coordinates?.galaxy ?? -1), "accepted buddy hold targets the buddy planet", {
+        mission: acsHoldBuddyMission ?? {},
+        target: acsHoldFixture.buddy ?? {}
+      }),
+      check(!acsHoldReady || !acsHoldBuddyLaunch.body.includes(acsHoldLogin?.cookiePair ?? "missing-cookie"), "ACS hold response does not echo private cookie")
     ]
   }));
 

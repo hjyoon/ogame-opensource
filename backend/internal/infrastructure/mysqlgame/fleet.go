@@ -244,6 +244,10 @@ func (r FleetRepository) LaunchFleetDispatch(ctx context.Context, query appgame.
 	if err != nil {
 		return nil, err
 	}
+	buddyTable, err := tableName(r.prefix, "buddy")
+	if err != nil {
+		return nil, err
+	}
 
 	frozen, err := r.loadUniverseFrozen(ctx, uniTable)
 	if err != nil {
@@ -274,6 +278,9 @@ func (r FleetRepository) LaunchFleetDispatch(ctx context.Context, query appgame.
 		return issue, err
 	}
 	if issue, err := r.validateFleetLaunchUserState(ctx, usersTable, query, target, now); err != nil || issue != nil {
+		return issue, err
+	}
+	if issue, err := r.validateFleetLaunchACSHoldRelation(ctx, usersTable, buddyTable, query, target); err != nil || issue != nil {
 		return issue, err
 	}
 	if err := r.deleteOldFleetLogs(ctx, fleetLogsTable, now); err != nil {
@@ -508,6 +515,82 @@ func (r FleetRepository) validateFleetLaunchACS(ctx context.Context, uniTable st
 		return domaingame.FleetActionIssueFor(domaingame.FleetIssueMaxFleet), nil
 	}
 	return nil, nil
+}
+
+func (r FleetRepository) validateFleetLaunchACSHoldRelation(ctx context.Context, usersTable string, buddyTable string, query appgame.FleetLaunchQuery, target fleetLaunchTarget) (*domaingame.FleetActionIssue, error) {
+	if query.Draft.Mission != domaingame.FleetMissionACSHold {
+		return nil, nil
+	}
+	if target.OwnerID <= 0 || target.OwnerID == userSpace {
+		return domaingame.FleetActionIssueFor(domaingame.FleetIssueHoldAlliance), nil
+	}
+	related, err := r.fleetLaunchUsersCanHold(ctx, usersTable, buddyTable, query.PlayerID, target.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+	if !related {
+		return domaingame.FleetActionIssueFor(domaingame.FleetIssueHoldAlliance), nil
+	}
+	return nil, nil
+}
+
+func (r FleetRepository) fleetLaunchUsersCanHold(ctx context.Context, usersTable string, buddyTable string, originID int, targetID int) (bool, error) {
+	if originID <= 0 || targetID <= 0 {
+		return false, nil
+	}
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT player_id, COALESCE(ally_id, 0) FROM %s WHERE player_id IN (?, ?)", usersTable),
+		originID,
+		targetID,
+	)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	allianceIDs := make(map[int]int, 2)
+	for rows.Next() {
+		var playerID int
+		var allianceID int
+		if err := rows.Scan(&playerID, &allianceID); err != nil {
+			return false, err
+		}
+		allianceIDs[playerID] = allianceID
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	if allianceIDs[originID] > 0 && allianceIDs[originID] == allianceIDs[targetID] {
+		return true, nil
+	}
+
+	buddyRows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE ((request_from = ? AND request_to = ?) OR (request_from = ? AND request_to = ?)) AND accepted = 1", buddyTable),
+		originID,
+		targetID,
+		targetID,
+		originID,
+	)
+	if err != nil {
+		return false, err
+	}
+	defer buddyRows.Close()
+	if !buddyRows.Next() {
+		if err := buddyRows.Err(); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	var count int
+	if err := buddyRows.Scan(&count); err != nil {
+		return false, err
+	}
+	if err := buddyRows.Err(); err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (r FleetRepository) resolveFleetLaunchColonizeTarget(ctx context.Context, planetsTable string, coordinates domaingame.Coordinates, targetType int, now int64) (fleetLaunchTarget, bool, error) {

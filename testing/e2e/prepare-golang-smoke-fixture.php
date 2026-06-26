@@ -639,6 +639,66 @@ function smoke_prepare_fleet_restriction_fixture(string $password, array $near):
     return $fixture;
 }
 
+function smoke_prepare_acs_hold_fixture(string $password, array $near): array
+{
+    global $db_prefix;
+
+    $holder = smoke_prepare_user('goacshold', $password, 'goacshold@example.local', USER_TYPE_PLAYER);
+    $buddy = smoke_prepare_user('goacsholdbuddy', $password, 'goacsholdbuddy@example.local', USER_TYPE_PLAYER);
+    $stranger = smoke_prepare_user('goacsholdstranger', $password, 'goacsholdstranger@example.local', USER_TYPE_PLAYER);
+    $users = array($holder, $buddy, $stranger);
+    $userIds = array_map(fn($user) => (int)$user['player_id'], $users);
+    $planetIds = array_map(fn($user) => (int)$user['home_planet_id'], $users);
+    $userList = implode(',', $userIds);
+
+    smoke_cleanup_alliances($userIds);
+    smoke_cleanup_fleets($userIds, $planetIds);
+    dbquery("DELETE FROM {$db_prefix}buddy WHERE request_from IN ({$userList}) OR request_to IN ({$userList})");
+    dbquery("UPDATE {$db_prefix}uni SET acs=3, battle_max=1000000");
+
+    $positions = smoke_find_empty_positions($near, count($users));
+    foreach ($users as $index => $user) {
+        smoke_set_fleet_restriction_user_state($user, 10000);
+        smoke_prepare_planet((int)$user['home_planet_id'], (int)$user['player_id'], 'GoACSHold' . $index, $positions[$index]);
+        dbquery(
+            "UPDATE {$db_prefix}planets SET `" . GID_F_SC . "`=3, `" . GID_RC_DEUTERIUM . "`=1000000 " .
+            "WHERE planet_id=" . (int)$user['home_planet_id']
+        );
+    }
+
+    $buddyId = AddBuddy((int)$holder['player_id'], (int)$buddy['player_id'], 'Go ACS hold relation');
+    if ($buddyId > 0) {
+        AcceptBuddy($buddyId);
+    }
+
+    return array(
+        'holder' => array(
+            'login' => mb_strtolower($holder['name'], 'UTF-8'),
+            'player_id' => (int)$holder['player_id'],
+            'home_planet_id' => (int)$holder['home_planet_id'],
+        ),
+        'buddy' => array(
+            'player_id' => (int)$buddy['player_id'],
+            'home_planet_id' => (int)$buddy['home_planet_id'],
+            'coordinates' => array(
+                'galaxy' => (int)$positions[1][0],
+                'system' => (int)$positions[1][1],
+                'position' => (int)$positions[1][2],
+            ),
+        ),
+        'stranger' => array(
+            'player_id' => (int)$stranger['player_id'],
+            'home_planet_id' => (int)$stranger['home_planet_id'],
+            'coordinates' => array(
+                'galaxy' => (int)$positions[2][0],
+                'system' => (int)$positions[2][1],
+                'position' => (int)$positions[2][2],
+            ),
+        ),
+        'buddy_id' => $buddyId,
+    );
+}
+
 function smoke_prepare_premium_dm_fixture(string $password, array $near): array
 {
     global $db_prefix;
@@ -1700,6 +1760,7 @@ $passwordRecoveryFixture = smoke_prepare_password_recovery_fixture('E2E_reset123
 $adminOperationsFixture = smoke_prepare_admin_operations_fixture($operator, $target);
 $adminAuditFixture = smoke_prepare_admin_audit_fixture($target);
 $fleetRestrictionFixture = smoke_prepare_fleet_restriction_fixture($password, $home);
+$acsHoldFixture = smoke_prepare_acs_hold_fixture($password, $home);
 $fleetTemplateFixture = smoke_prepare_fleet_template_fixture($password, $home);
 $galaxyRemoteFixture = smoke_prepare_galaxy_remote_fixture($password, $home);
 $galaxyMissileFixture = smoke_prepare_galaxy_missile_fixture($password, $home);
@@ -1755,19 +1816,20 @@ echo json_encode(array(
 	'vacation_freeze' => $vacationFreezeFixture,
 	'merchant' => $merchantFixture,
 	'moon_build' => $moonBuildFixture,
-		'fleet_restrictions' => $fleetRestrictionFixture,
-		'fleet_templates' => $fleetTemplateFixture,
-		'galaxy_remote' => $galaxyRemoteFixture,
-		'galaxy_missile' => $galaxyMissileFixture,
-		'buddy_lifecycle' => $buddyLifecycleFixture,
-		'message_scope' => $messageScopeFixture,
-		'message_retention' => $messageRetentionFixture,
-		'message_bulk_delete' => $messageBulkDeleteFixture,
-		'message_nonmarked_delete' => $messageNonmarkedDeleteFixture,
-		'message_send' => $messageSendFixture,
-		'resource_scope' => $resourceScopeFixture,
-		'input_hardening' => $inputHardeningFixture,
-		'tech_economy' => $techEconomyFixture,
-		'fleet_recall' => $fleetRecallFixture,
-		'statistics_ranking' => $statisticsRankingFixture,
+	'fleet_restrictions' => $fleetRestrictionFixture,
+	'acs_hold' => $acsHoldFixture,
+	'fleet_templates' => $fleetTemplateFixture,
+	'galaxy_remote' => $galaxyRemoteFixture,
+	'galaxy_missile' => $galaxyMissileFixture,
+	'buddy_lifecycle' => $buddyLifecycleFixture,
+	'message_scope' => $messageScopeFixture,
+	'message_retention' => $messageRetentionFixture,
+	'message_bulk_delete' => $messageBulkDeleteFixture,
+	'message_nonmarked_delete' => $messageNonmarkedDeleteFixture,
+	'message_send' => $messageSendFixture,
+	'resource_scope' => $resourceScopeFixture,
+	'input_hardening' => $inputHardeningFixture,
+	'tech_economy' => $techEconomyFixture,
+	'fleet_recall' => $fleetRecallFixture,
+	'statistics_ranking' => $statisticsRankingFixture,
 	), JSON_UNESCAPED_SLASHES) . PHP_EOL;
