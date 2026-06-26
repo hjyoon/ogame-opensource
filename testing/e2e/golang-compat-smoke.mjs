@@ -52,6 +52,7 @@ function finalize(testCase) {
 
 async function request(path, options = {}) {
   let response;
+  const started = performance.now();
   try {
     response = await fetch(`${baseUrl}${path}`, {
       redirect: "manual",
@@ -62,7 +63,8 @@ async function request(path, options = {}) {
   }
   const headers = Object.fromEntries(response.headers.entries());
   const body = await response.text();
-  return { status: response.status, headers, body };
+  const elapsedMs = Math.round(performance.now() - started);
+  return { status: response.status, headers, body, elapsedMs };
 }
 
 function parseJSON(response) {
@@ -4855,6 +4857,66 @@ try {
     return { ...spec, response, body: parseJSON(response) };
   }));
 
+  const performancePageThresholdMs = Number(process.env.OGAME_GO_PERF_PAGE_MS ?? 5000);
+  const performanceAdminThresholdMs = Number(process.env.OGAME_GO_PERF_ADMIN_MS ?? 8000);
+  const performanceTotalThresholdMs = Number(process.env.OGAME_GO_PERF_TOTAL_MS ?? 15000);
+  const performanceCoreRequests = [
+    {
+      label: "overview",
+      key: "overview",
+      thresholdMs: performancePageThresholdMs,
+      response: await request(`/api/game/overview${sessionSearch}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    },
+    {
+      label: "resources",
+      key: "resources",
+      thresholdMs: performancePageThresholdMs,
+      response: await request(`/api/game/resources${sessionSearch}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    },
+    {
+      label: "galaxy",
+      key: "galaxy",
+      thresholdMs: performancePageThresholdMs,
+      response: await request(`/api/game/galaxy${sessionSearch}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    },
+    {
+      label: "statistics",
+      key: "statistics",
+      thresholdMs: performancePageThresholdMs,
+      response: await request(`/api/game/statistics${sessionSearch}&type=ressources&start=1`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    },
+    {
+      label: "messages",
+      key: "messages",
+      thresholdMs: performancePageThresholdMs,
+      response: await request(`/api/game/messages${sessionSearch}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    },
+    {
+      label: "admin_queue",
+      key: "admin",
+      thresholdMs: performanceAdminThresholdMs,
+      response: await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Queue")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    }
+  ];
+  const performanceCoreResults = performanceCoreRequests.map((item) => ({
+    ...item,
+    body: parseJSON(item.response),
+    bytes: item.response.body.length
+  }));
+  const performanceTotalMs = performanceCoreResults.reduce((sum, item) => sum + Number(item.response.elapsedMs ?? 0), 0);
+
   const allianceRouteSpecs = [
     { name: "home", query: {}, allowedViews: ["home", "no_alliance"] },
     { name: "members", query: { a: "4" }, allowedViews: ["members", "no_alliance"] },
@@ -8229,6 +8291,37 @@ try {
       ),
       check(!createdAllianceId || !allianceHardeningSettingsPost.body.includes(allianceFounderLogin.cookiePair), "alliance hardening response does not echo founder private cookie")
     ]
+  }));
+
+  const performanceChecks = performanceCoreResults.flatMap((item) => [
+    check(item.response.status === 200, `${item.label} performance request returns HTTP 200`, {
+      status: item.response.status,
+      elapsedMs: item.response.elapsedMs
+    }),
+    check(hasHeader(item.response, "content-type", "application/json"), `${item.label} performance request returns JSON`),
+    check(item.bytes > 80, `${item.label} performance payload is non-empty`, {
+      bytes: item.bytes
+    }),
+    check(item.body.authenticated === true, `${item.label} performance request authenticates`, item.body),
+    check(item.body[item.key] !== undefined, `${item.label} performance response exposes ${item.key} payload`, item.body),
+    check(item.response.elapsedMs <= item.thresholdMs, `${item.label} stays within the Go performance baseline`, {
+      elapsedMs: item.response.elapsedMs,
+      thresholdMs: item.thresholdMs
+    }),
+    check(!item.response.body.includes(sessionCookiePair), `${item.label} performance response does not echo private cookie`)
+  ]);
+  performanceChecks.push(check(performanceTotalMs <= performanceTotalThresholdMs, "tracked Go core pages stay within the aggregate performance baseline", {
+    totalMs: performanceTotalMs,
+    thresholdMs: performanceTotalThresholdMs,
+    pages: performanceCoreResults.map((item) => ({
+      label: item.label,
+      elapsedMs: item.response.elapsedMs,
+      bytes: item.bytes
+    }))
+  }));
+  cases.push(finalize({
+    case: "go_core_pages_performance_baseline",
+    checks: performanceChecks
   }));
 
   const root = await request("/");
