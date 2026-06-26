@@ -499,9 +499,13 @@ try {
   const concurrencyRaceFixture = smokeFixture?.concurrency_race ?? {};
   const concurrencyRaceReady = Boolean(
     typeof concurrencyRaceFixture.shipyard?.login === "string" &&
+    typeof concurrencyRaceFixture.defense?.login === "string" &&
     Number(concurrencyRaceFixture.shipyard?.home_planet_id ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.defense?.home_planet_id ?? 0) > 0 &&
     Number(concurrencyRaceFixture.shipyard?.ship_id ?? 0) > 0 &&
-    Number(concurrencyRaceFixture.shipyard?.expected_count ?? 0) > 0
+    Number(concurrencyRaceFixture.defense?.defense_id ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.shipyard?.expected_count ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.defense?.expected_count ?? 0) > 0
   );
   const merchantFixture = smokeFixture?.merchant ?? {};
   const merchantReady = ["insufficient", "call", "trade", "reject"].every(
@@ -4400,6 +4404,29 @@ try {
     : [];
   const concurrencyShipyardQueuedCount = concurrencyShipyardQueueRows.reduce((sum, row) => sum + Number(row.count ?? 0), 0);
   const concurrencyShipyardItem = shipyardItemByID(concurrencyShipyardAfterBody, concurrencyShipyardID);
+  const concurrencyDefenseLogin = concurrencyRaceReady
+    ? await loginGameUser(concurrencyRaceFixture.defense.login, loginSmokePassword, concurrencyUniverse)
+    : null;
+  const concurrencyDefenseSearch = withQueryParam(concurrencyDefenseLogin?.search ?? "?session=", "cp", Number(concurrencyRaceFixture.defense?.home_planet_id ?? 0));
+  const concurrencyDefenseID = Number(concurrencyRaceFixture.defense?.defense_id ?? 401);
+  const concurrencyDefenseExpectedCount = Number(concurrencyRaceFixture.defense?.expected_count ?? 3);
+  const concurrencyDefenseResponses = concurrencyRaceReady
+    ? await Promise.all(Array.from({ length: 4 }, () => request(`/api/game/defense${concurrencyDefenseSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: concurrencyDefenseLogin.cookiePair },
+        body: JSON.stringify({ orders: { [String(concurrencyDefenseID)]: concurrencyDefenseExpectedCount } })
+      })))
+    : [];
+  const concurrencyDefenseBodies = concurrencyDefenseResponses.map((response) => parseJSON(response));
+  const concurrencyDefenseAfter = concurrencyRaceReady
+    ? await request(`/api/game/defense${concurrencyDefenseSearch}`, { headers: { Cookie: concurrencyDefenseLogin.cookiePair } })
+    : null;
+  const concurrencyDefenseAfterBody = concurrencyDefenseAfter ? parseJSON(concurrencyDefenseAfter) : {};
+  const concurrencyDefenseQueueRows = Array.isArray(concurrencyDefenseAfterBody.defense?.queue)
+    ? concurrencyDefenseAfterBody.defense.queue.filter((row) => Number(row.unitId ?? 0) === concurrencyDefenseID)
+    : [];
+  const concurrencyDefenseQueuedCount = concurrencyDefenseQueueRows.reduce((sum, row) => sum + Number(row.count ?? 0), 0);
+  const concurrencyDefenseItem = defenseItemByID(concurrencyDefenseAfterBody, concurrencyDefenseID);
 
   const gameAdmin = await request(`/api/game/admin${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -7485,6 +7512,68 @@ try {
         concurrencyShipyardAfterBody.shipyard?.currentPlanet?.resources ?? {}
       ),
       check(!concurrencyRaceReady || !concurrencyShipyardAfter.body.includes(concurrencyShipyardLogin?.cookiePair ?? "missing-cookie"), "shipyard concurrency response does not echo private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_concurrency_defense_orders_api",
+    checks: [
+      check(!smokeFixtureFile || concurrencyRaceReady, "go smoke fixture exposes defense concurrency user", {
+        concurrencyRaceFixture
+      }),
+      check(!concurrencyRaceReady || concurrencyDefenseLogin?.response.status === 200, "defense concurrency user can log in", {
+        status: concurrencyDefenseLogin?.response.status
+      }),
+      check(
+        !concurrencyRaceReady ||
+          concurrencyDefenseResponses.length === 4 &&
+            concurrencyDefenseResponses.every((response) => response.status === 200),
+        "parallel defense order requests all return HTTP 200",
+        concurrencyDefenseResponses.map((response) => ({
+          status: response.status,
+          elapsedMs: response.elapsedMs
+        }))
+      ),
+      check(
+        !concurrencyRaceReady ||
+          concurrencyDefenseBodies.every((body) => body.authenticated === true),
+        "parallel defense order responses authenticate the same user",
+        concurrencyDefenseBodies.map((body) => ({
+          authenticated: body.authenticated,
+          issue: body.actionIssue?.code
+        }))
+      ),
+      check(!concurrencyRaceReady || concurrencyDefenseAfter?.status === 200, "defense concurrency final reload returns HTTP 200", {
+        status: concurrencyDefenseAfter?.status
+      }),
+      check(
+        !concurrencyRaceReady || concurrencyDefenseQueueRows.length <= 1,
+        "parallel defense order leaves at most one rocket-launcher queue row",
+        concurrencyDefenseAfterBody.defense?.queue ?? []
+      ),
+      check(
+        !concurrencyRaceReady || concurrencyDefenseQueuedCount <= concurrencyDefenseExpectedCount,
+        "parallel defense order does not queue more defenses than resources allow",
+        {
+          queued: concurrencyDefenseQueuedCount,
+          expectedMax: concurrencyDefenseExpectedCount,
+          rows: concurrencyDefenseQueueRows
+        }
+      ),
+      check(
+        !concurrencyRaceReady || Number(concurrencyDefenseItem?.count ?? 0) === 0,
+        "parallel defense order does not prematurely complete defenses",
+        concurrencyDefenseItem ?? {}
+      ),
+      check(
+        !concurrencyRaceReady ||
+          Number(concurrencyDefenseAfterBody.defense?.currentPlanet?.resources?.metal ?? 0) >= 0 &&
+            Number(concurrencyDefenseAfterBody.defense?.currentPlanet?.resources?.crystal ?? 0) >= 0 &&
+            Number(concurrencyDefenseAfterBody.defense?.currentPlanet?.resources?.deuterium ?? 0) >= 0,
+        "parallel defense order does not overspend resources below zero",
+        concurrencyDefenseAfterBody.defense?.currentPlanet?.resources ?? {}
+      ),
+      check(!concurrencyRaceReady || !concurrencyDefenseAfter.body.includes(concurrencyDefenseLogin?.cookiePair ?? "missing-cookie"), "defense concurrency response does not echo private cookie")
     ]
   }));
 

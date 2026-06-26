@@ -1114,14 +1114,19 @@ function smoke_prepare_concurrency_race_fixture(string $password, array $near): 
     global $db_prefix, $resmap;
 
     $shipyard = smoke_prepare_user('goconcshipyard', $password, 'goconcshipyard@example.local', USER_TYPE_PLAYER);
-    $playerId = (int)$shipyard['player_id'];
-    $planetId = (int)$shipyard['home_planet_id'];
+    $defense = smoke_prepare_user('goconcdefense', $password, 'goconcdefense@example.local', USER_TYPE_PLAYER);
+    $users = array($shipyard, $defense);
+    $userIds = array_map(fn($user) => (int)$user['player_id'], $users);
+    $planetIds = array_map(fn($user) => (int)$user['home_planet_id'], $users);
 
-    smoke_cleanup_alliances(array($playerId));
-    smoke_cleanup_fleets(array($playerId), array($planetId));
-    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id={$playerId} AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "','" . QTYP_RESEARCH . "','" . QTYP_SHIPYARD . "','" . QTYP_FLEET . "')");
-    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id={$playerId} OR planet_id={$planetId}");
-    smoke_prepare_planet($planetId, $playerId, 'GoConcShipyard', smoke_find_empty_position($near));
+    smoke_cleanup_alliances($userIds);
+    smoke_cleanup_fleets($userIds, $planetIds);
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id IN (" . implode(',', $userIds) . ") AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "','" . QTYP_RESEARCH . "','" . QTYP_SHIPYARD . "','" . QTYP_FLEET . "')");
+    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id IN (" . implode(',', $userIds) . ") OR planet_id IN (" . implode(',', $planetIds) . ")");
+    $positions = smoke_find_empty_positions($near, count($users));
+    foreach ($users as $index => $user) {
+        smoke_prepare_planet((int)$user['home_planet_id'], (int)$user['player_id'], 'GoConc' . $index, $positions[$index]);
+    }
 
     $researchColumns = array();
     foreach ($resmap as $gid) {
@@ -1131,8 +1136,8 @@ function smoke_prepare_concurrency_race_fixture(string $password, array $near): 
     dbquery(
         "UPDATE {$db_prefix}users SET " . implode(',', $researchColumns) . ", admin=0, validated=1, deact_ip=1, " .
         "vacation=0, vacation_until=0, banned=0, banned_until=0, noattack=0, noattack_until=0, " .
-        "disable=0, disable_until=0, lang='en', skin='/evolution/', useskin=1, hplanetid={$planetId}, aktplanet={$planetId}, lastclick={$now} " .
-        "WHERE player_id={$playerId}"
+        "disable=0, disable_until=0, lang='en', skin='/evolution/', useskin=1, lastclick={$now} " .
+        "WHERE player_id IN (" . implode(',', $userIds) . ")"
     );
 
     $shipId = GID_F_SC;
@@ -1144,17 +1149,39 @@ function smoke_prepare_concurrency_race_fixture(string $password, array $near): 
     dbquery(
         "UPDATE {$db_prefix}planets SET `" . GID_F_SC . "`=0, `" . GID_RC_METAL . "`={$metal}, `" .
         GID_RC_CRYSTAL . "`={$crystal}, `" . GID_RC_DEUTERIUM . "`={$deuterium}, `" .
-        GID_B_SHIPYARD . "`=10, fields=0, maxfields=200, type=" . PTYP_PLANET . " WHERE planet_id={$planetId}"
+        GID_B_SHIPYARD . "`=10, fields=0, maxfields=200, type=" . PTYP_PLANET . " WHERE planet_id=" . (int)$shipyard['home_planet_id']
     );
+
+    $defenseId = GID_D_RL;
+    $defenseCount = 3;
+    $defenseCost = TechPrice($defenseId, 1);
+    $defenseMetal = (int)($defenseCost[GID_RC_METAL] ?? 0) * $defenseCount;
+    $defenseCrystal = (int)($defenseCost[GID_RC_CRYSTAL] ?? 0) * $defenseCount;
+    $defenseDeuterium = (int)($defenseCost[GID_RC_DEUTERIUM] ?? 0) * $defenseCount;
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_D_RL . "`=0, `" . GID_RC_METAL . "`={$defenseMetal}, `" .
+        GID_RC_CRYSTAL . "`={$defenseCrystal}, `" . GID_RC_DEUTERIUM . "`={$defenseDeuterium}, `" .
+        GID_B_SHIPYARD . "`=10, fields=0, maxfields=200, type=" . PTYP_PLANET . " WHERE planet_id=" . (int)$defense['home_planet_id']
+    );
+    foreach ($users as $user) {
+        dbquery("UPDATE {$db_prefix}users SET hplanetid=" . (int)$user['home_planet_id'] . ", aktplanet=" . (int)$user['home_planet_id'] . " WHERE player_id=" . (int)$user['player_id']);
+    }
     InvalidateUserCache();
 
     return array(
         'shipyard' => array(
             'login' => mb_strtolower($shipyard['name'], 'UTF-8'),
-            'player_id' => $playerId,
-            'home_planet_id' => $planetId,
+            'player_id' => (int)$shipyard['player_id'],
+            'home_planet_id' => (int)$shipyard['home_planet_id'],
             'ship_id' => $shipId,
             'expected_count' => $shipCount,
+        ),
+        'defense' => array(
+            'login' => mb_strtolower($defense['name'], 'UTF-8'),
+            'player_id' => (int)$defense['player_id'],
+            'home_planet_id' => (int)$defense['home_planet_id'],
+            'defense_id' => $defenseId,
+            'expected_count' => $defenseCount,
         ),
     );
 }
