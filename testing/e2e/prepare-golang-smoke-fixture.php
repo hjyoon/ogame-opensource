@@ -1001,6 +1001,41 @@ function smoke_prepare_queue_idempotency_fixture(string $password, array $near):
     );
 }
 
+function smoke_prepare_queue_freeze_drain_fixture(string $password, array $near): array
+{
+    global $db_prefix;
+
+    $user = smoke_prepare_user('goqueuedrain', $password, 'goqueuedrain@example.local', USER_TYPE_PLAYER);
+    $playerId = (int)$user['player_id'];
+    $planetId = (int)$user['home_planet_id'];
+    smoke_cleanup_alliances(array($playerId));
+    smoke_cleanup_fleets(array($playerId), array($planetId));
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id={$playerId} AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "','" . QTYP_RESEARCH . "','" . QTYP_SHIPYARD . "','" . QTYP_FLEET . "')");
+    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id={$playerId} OR planet_id={$planetId}");
+
+    smoke_prepare_planet($planetId, $playerId, 'GoQueueDrain', smoke_find_empty_position($near));
+    $now = time();
+    dbquery(
+        "UPDATE {$db_prefix}users SET admin=0, validated=1, deact_ip=1, vacation=0, vacation_until=0, " .
+        "banned=0, banned_until=0, noattack=0, noattack_until=0, disable=0, disable_until=0, " .
+        "lang='en', skin='/evolution/', useskin=1, hplanetid={$planetId}, aktplanet={$planetId}, lastclick={$now} " .
+        "WHERE player_id={$playerId}"
+    );
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_RC_METAL . "`=10000000, `" . GID_RC_CRYSTAL . "`=10000000, `" . GID_RC_DEUTERIUM . "`=10000000, " .
+        "`" . GID_B_METAL_MINE . "`=0, `" . GID_B_ROBOTS . "`=10, fields=0, maxfields=200, type=" . PTYP_PLANET . " " .
+        "WHERE planet_id={$planetId}"
+    );
+    InvalidateUserCache();
+
+    return array(
+        'login' => mb_strtolower($user['name'], 'UTF-8'),
+        'player_id' => $playerId,
+        'home_planet_id' => $planetId,
+        'building_id' => GID_B_METAL_MINE,
+    );
+}
+
 function smoke_prepare_merchant_fixture(string $password, array $near): array
 {
     global $db_prefix;
@@ -1902,6 +1937,7 @@ smoke_prepare_planet((int)$freezeVictim['home_planet_id'], (int)$freezeVictim['p
 $premiumDmFixture = smoke_prepare_premium_dm_fixture($password, $home);
 $vacationFreezeFixture = smoke_prepare_vacation_freeze_fixture($password, $home);
 $queueIdempotencyFixture = smoke_prepare_queue_idempotency_fixture($password, $home);
+$queueFreezeDrainFixture = smoke_prepare_queue_freeze_drain_fixture($password, $home);
 $merchantFixture = smoke_prepare_merchant_fixture($password, $home);
 $moonBuildFixture = smoke_prepare_moon_build_fixture($password, $home);
 $moonId = smoke_prepare_moon((int)$login['home_planet_id'], (int)$login['player_id']);
@@ -1976,6 +2012,7 @@ echo json_encode(array(
 	'premium_dm' => $premiumDmFixture,
 	'vacation_freeze' => $vacationFreezeFixture,
 	'queue_idempotency' => $queueIdempotencyFixture,
+	'queue_freeze_drain' => $queueFreezeDrainFixture,
 	'merchant' => $merchantFixture,
 	'moon_build' => $moonBuildFixture,
 	'fleet_restrictions' => $fleetRestrictionFixture,

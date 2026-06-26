@@ -83,6 +83,7 @@ function cleanup_go_fixture_names(): array
         'goqueuebuild',
         'goqueueresearch',
         'goqueueshipyard',
+        'goqueuedrain',
         'goacshold',
         'goacsholdbuddy',
         'goacsholdstranger',

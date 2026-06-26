@@ -476,6 +476,12 @@ try {
     String(queueIdempotencyFixture.research?.research_error ?? "") === "" &&
     queueIdempotencyFixture.shipyard?.shipyard_ok === true
   );
+  const queueFreezeDrainFixture = smokeFixture?.queue_freeze_drain ?? {};
+  const queueFreezeDrainReady = Boolean(
+    typeof queueFreezeDrainFixture.login === "string" &&
+    Number(queueFreezeDrainFixture.home_planet_id ?? 0) > 0 &&
+    Number(queueFreezeDrainFixture.building_id ?? 0) > 0
+  );
   const merchantFixture = smokeFixture?.merchant ?? {};
   const merchantReady = ["insufficient", "call", "trade", "reject"].every(
     (key) => typeof merchantFixture[key]?.login === "string" && merchantFixture[key].login.length > 0
@@ -8136,6 +8142,30 @@ try {
     : null;
   const adminUniverseSearch = adminUniverseLogin?.search ?? sessionSearch;
   const adminUniverseCookie = adminUniverseLogin?.cookiePair ?? sessionCookiePair;
+  const queueDrainFlowReady = adminUniverseReady && queueFreezeDrainReady;
+  const queueDrainLogin = queueDrainFlowReady
+    ? await loginGameUser(queueFreezeDrainFixture.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const queueDrainSearch = withQueryParam(queueDrainLogin?.search ?? "?session=", "cp", Number(queueFreezeDrainFixture.home_planet_id ?? 0));
+  const queueDrainBuildingID = Number(queueFreezeDrainFixture.building_id ?? 1);
+  const queueDrainPreRestore = queueDrainFlowReady
+    ? await request(`/api/game/admin${withQueryParam(adminUniverseSearch, "mode", "Uni")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: adminUniverseCookie },
+        body: JSON.stringify({ action: "settings", values: { freeze: 0 } })
+      })
+    : null;
+  const queueDrainStart = queueDrainFlowReady
+    ? await request(`/api/game/buildings${queueDrainSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: queueDrainLogin.cookiePair },
+        body: JSON.stringify({ action: "add", techId: queueDrainBuildingID })
+      })
+    : null;
+  const queueDrainStartBody = queueDrainStart ? parseJSON(queueDrainStart) : {};
+  if (queueDrainFlowReady) {
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+  }
   const adminUniverseFreeze = adminUniverseReady
     ? await request(`/api/game/admin${withQueryParam(adminUniverseSearch, "mode", "Uni")}`, {
         method: "POST",
@@ -8144,6 +8174,12 @@ try {
       })
     : null;
   const adminUniverseFreezeBody = adminUniverseFreeze ? parseJSON(adminUniverseFreeze) : {};
+  const queueDrainWhileFrozen = queueDrainFlowReady
+    ? await request(`/api/game/buildings${queueDrainSearch}`, {
+        headers: { Cookie: queueDrainLogin.cookiePair }
+      })
+    : null;
+  const queueDrainWhileFrozenBody = queueDrainWhileFrozen ? parseJSON(queueDrainWhileFrozen) : {};
   const adminUsersAfterUniverseFreeze = adminUniverseReady
     ? await request(`/api/game/admin${withQueryParam(adminUniverseSearch, "mode", "Users")}`, {
         headers: { Cookie: adminUniverseCookie }
@@ -8161,6 +8197,15 @@ try {
       })
     : null;
   const adminUniverseRestoreBody = adminUniverseRestore ? parseJSON(adminUniverseRestore) : {};
+  const queueDrainAfterRestore = queueDrainFlowReady
+    ? await request(`/api/game/buildings${queueDrainSearch}`, {
+        headers: { Cookie: queueDrainLogin.cookiePair }
+      })
+    : null;
+  const queueDrainAfterRestoreBody = queueDrainAfterRestore ? parseJSON(queueDrainAfterRestore) : {};
+  const queueDrainStartItem = buildingItemByID(queueDrainStartBody, queueDrainBuildingID);
+  const queueDrainFrozenItem = buildingItemByID(queueDrainWhileFrozenBody, queueDrainBuildingID);
+  const queueDrainRestoredItem = buildingItemByID(queueDrainAfterRestoreBody, queueDrainBuildingID);
   cases.push(finalize({
     case: "go_admin_universe_freeze_api",
     checks: [
@@ -8184,6 +8229,51 @@ try {
       }),
       check(!adminUniverseReady || adminUniverseRestoreBody.actionIssue?.code === "action_saved", "admin universe restore mutation saves like legacy", adminUniverseRestoreBody.actionIssue ?? {}),
       check(!adminUniverseReady || adminUniverseRestoreBody.admin?.universe?.freeze === false, "admin universe restore reloads unfrozen universe settings", adminUniverseRestoreBody.admin?.universe ?? {})
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_queue_universe_freeze_drain_api",
+    checks: [
+      check(!smokeFixtureFile || queueDrainFlowReady, "go smoke fixture exposes queue freeze/drain user and admin universe control", {
+        queueFreezeDrainFixture,
+        adminUniverseFixture
+      }),
+      check(!queueDrainFlowReady || queueDrainLogin?.response.status === 200, "queue freeze/drain user can log in", {
+        status: queueDrainLogin?.response.status
+      }),
+      check(!queueDrainFlowReady || queueDrainPreRestore?.status === 200, "queue freeze/drain pre-restore unfreezes the universe", {
+        status: queueDrainPreRestore?.status
+      }),
+      check(!queueDrainFlowReady || queueDrainStart?.status === 200, "queue freeze/drain build mutation returns HTTP 200", {
+        status: queueDrainStart?.status
+      }),
+      check(!queueDrainFlowReady || Number(queueDrainStartItem?.level ?? -1) === 0 && (queueDrainStartBody.buildings?.queue?.length ?? 0) === 1, "queue freeze/drain build starts one pending queue", {
+        item: queueDrainStartItem,
+        queue: queueDrainStartBody.buildings?.queue
+      }),
+      check(!queueDrainFlowReady || adminUniverseFreeze?.status === 200 && adminUniverseFreezeBody.admin?.universe?.freeze === true, "queue freeze/drain freezes universe before due load", {
+        status: adminUniverseFreeze?.status,
+        universe: adminUniverseFreezeBody.admin?.universe
+      }),
+      check(!queueDrainFlowReady || queueDrainWhileFrozen?.status === 200, "queue freeze/drain frozen buildings load returns HTTP 200", {
+        status: queueDrainWhileFrozen?.status
+      }),
+      check(!queueDrainFlowReady || Number(queueDrainFrozenItem?.level ?? -1) === 0 && (queueDrainWhileFrozenBody.buildings?.queue?.length ?? 0) === 1, "due build queue remains queued while universe is frozen", {
+        item: queueDrainFrozenItem,
+        queue: queueDrainWhileFrozenBody.buildings?.queue
+      }),
+      check(!queueDrainFlowReady || adminUniverseRestore?.status === 200 && adminUniverseRestoreBody.admin?.universe?.freeze === false, "queue freeze/drain restores universe before due load", {
+        status: adminUniverseRestore?.status,
+        universe: adminUniverseRestoreBody.admin?.universe
+      }),
+      check(!queueDrainFlowReady || queueDrainAfterRestore?.status === 200, "queue freeze/drain restored buildings load returns HTTP 200", {
+        status: queueDrainAfterRestore?.status
+      }),
+      check(!queueDrainFlowReady || Number(queueDrainRestoredItem?.level ?? -1) === 1 && (queueDrainAfterRestoreBody.buildings?.queue?.length ?? -1) === 0, "due build queue drains after universe is unfrozen", {
+        item: queueDrainRestoredItem,
+        queue: queueDrainAfterRestoreBody.buildings?.queue
+      })
     ]
   }));
 
