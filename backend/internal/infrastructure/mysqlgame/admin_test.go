@@ -1876,8 +1876,8 @@ func TestAdminRepositoryReadsUserLogRowsInLegacyDisplayOrder(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
 		fakeQueryResult{rows: fakeRowsFromValues(
-			[]any{2, 43, "later", int64(1700000100), "BUILD", "Later action"},
-			[]any{1, 42, "earlier", int64(1700000000), "FLEET", "Earlier action"},
+			[]any{2, 43, "later", int64(1700000001), 1, 0, 0, 0, int64(1700000100), "BUILD", "Later action"},
+			[]any{1, 42, "earlier", int64(1700000000), 0, 0, 0, 0, int64(1700000000), "FLEET", "Earlier action"},
 		)},
 	)}
 	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
@@ -1890,8 +1890,11 @@ func TestAdminRepositoryReadsUserLogRowsInLegacyDisplayOrder(t *testing.T) {
 	if len(admin.UserLogRows) != 2 || admin.UserLogRows[0].ID != 1 || admin.UserLogRows[1].ID != 2 {
 		t.Fatalf("expected reversed user log display order, got %+v", admin.UserLogRows)
 	}
+	if admin.UserLogRows[1].LastClick != 1700000001 || !admin.UserLogRows[1].Vacation {
+		t.Fatalf("expected legacy user status fields, got %+v", admin.UserLogRows[1])
+	}
 	lastSQL := queryer.calls[len(queryer.calls)-1].sql
-	if !strings.Contains(lastSQL, "`ogame_userlogs`") || !strings.Contains(lastSQL, "ORDER BY l.date DESC") {
+	if !strings.Contains(lastSQL, "`ogame_userlogs`") || !strings.Contains(lastSQL, "COALESCE(u.vacation, 0)") || !strings.Contains(lastSQL, "ORDER BY l.date DESC") {
 		t.Fatalf("expected userlogs query, got %s", lastSQL)
 	}
 }

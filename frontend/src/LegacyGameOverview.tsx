@@ -1199,6 +1199,11 @@ type GameAdminUserLogRow = {
   id: number;
   ownerId: number;
   ownerName: string;
+  lastClick: number;
+  vacation: boolean;
+  banned: boolean;
+  noAttack: boolean;
+  disable: boolean;
   type: string;
   text: string;
   date: number;
@@ -3865,7 +3870,7 @@ function AdminUserLogsTable({ rows }: { rows: GameAdminUserLogRow[] }) {
             <tr key={row.id}>
               <td>{formatLegacyAdminUserLogDate(row.date)}</td>
               <td>
-                <AdminUserLink blankWhenMissing ownerId={row.ownerId} ownerName={row.ownerName} />
+                <span dangerouslySetInnerHTML={{ __html: adminUserLogNameHTML(row) }} />
               </td>
               <td>{row.type}</td>
               <td dangerouslySetInnerHTML={{ __html: sanitizeLegacyMessageHTML(row.text) }} />
@@ -4288,6 +4293,22 @@ function adminUserNameHTML(user: GameAdminUserRow): string {
     name = `<font color=${legacyHTMLAttribute(color)}>${name}</font>`;
   }
   return `<a href="${legacyHTMLAttribute(adminUserHref(user.playerId))}">${name}</a>`;
+}
+
+function adminUserLogNameHTML(row: GameAdminUserLogRow): string {
+  if (!row.ownerName) {
+    return "";
+  }
+  return adminUserNameHTML({
+    playerId: row.ownerId,
+    name: row.ownerName,
+    regDate: 0,
+    lastClick: row.lastClick,
+    vacation: row.vacation,
+    banned: row.banned,
+    noAttack: row.noAttack,
+    disable: row.disable,
+  });
 }
 
 function adminUserStatus(user: GameAdminUserRow): string {

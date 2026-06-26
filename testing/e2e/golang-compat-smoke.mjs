@@ -396,8 +396,11 @@ try {
   const phalanxFixture = smokeFixture?.phalanx ?? {};
   const phalanxEdgesFixture = smokeFixture?.phalanx_edges ?? {};
   const adminQueueFixture = smokeFixture?.admin_queue ?? {};
-  const adminQueueTaskId = Number(adminQueueFixture.task_id ?? 0);
-  const adminQueueFixtureReady = adminQueueTaskId > 0;
+  const adminQueueFreezeTaskId = Number(adminQueueFixture.freeze_task_id ?? adminQueueFixture.task_id ?? 0);
+  const adminQueueRemoveTaskId = Number(adminQueueFixture.remove_task_id ?? 0);
+  const adminQueueEndTaskId = Number(adminQueueFixture.end_task_id ?? 0);
+  const adminQueueFixtureReady = adminQueueFreezeTaskId > 0;
+  const adminQueueControlsReady = adminQueueFreezeTaskId > 0 && adminQueueRemoveTaskId > 0 && adminQueueEndTaskId > 0;
   const adminFleetlogsFixture = smokeFixture?.admin_fleetlogs ?? {};
   const adminFleetlogsTaskId = Number(adminFleetlogsFixture.task_id ?? 0);
   const adminFleetlogsFixtureReady = adminFleetlogsTaskId > 0;
@@ -4063,15 +4066,23 @@ try {
     ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "Queue")}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: operatorLogin.cookiePair },
-        body: JSON.stringify({ action: "queue_freeze", taskId: adminQueueTaskId })
+        body: JSON.stringify({ action: "queue_freeze", taskId: adminQueueFreezeTaskId })
       })
     : null;
   const operatorQueueFreezeBody = operatorQueueFreeze ? parseJSON(operatorQueueFreeze) : {};
+  const operatorQueueRemove = adminQueueControlsReady && operatorLogin
+    ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "Queue")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: operatorLogin.cookiePair },
+        body: JSON.stringify({ action: "queue_remove", taskId: adminQueueRemoveTaskId })
+      })
+    : null;
+  const operatorQueueRemoveBody = operatorQueueRemove ? parseJSON(operatorQueueRemove) : {};
   const adminQueueFreeze = adminQueueFixtureReady
     ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Queue")}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
-        body: JSON.stringify({ action: "queue_freeze", taskId: adminQueueTaskId })
+        body: JSON.stringify({ action: "queue_freeze", taskId: adminQueueFreezeTaskId })
       })
     : null;
   const adminQueueFreezeBody = adminQueueFreeze ? parseJSON(adminQueueFreeze) : {};
@@ -4081,6 +4092,54 @@ try {
       })
     : null;
   const adminQueueAfterFreezeBody = adminQueueAfterFreeze ? parseJSON(adminQueueAfterFreeze) : {};
+  const adminQueueUnfreeze = adminQueueFixtureReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Queue")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({ action: "queue_unfreeze", taskId: adminQueueFreezeTaskId })
+      })
+    : null;
+  const adminQueueUnfreezeBody = adminQueueUnfreeze ? parseJSON(adminQueueUnfreeze) : {};
+  const adminQueueAfterUnfreeze = adminQueueFixtureReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Queue")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminQueueAfterUnfreezeBody = adminQueueAfterUnfreeze ? parseJSON(adminQueueAfterUnfreeze) : {};
+  const adminQueueRemove = adminQueueControlsReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Queue")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({ action: "queue_remove", taskId: adminQueueRemoveTaskId })
+      })
+    : null;
+  const adminQueueRemoveBody = adminQueueRemove ? parseJSON(adminQueueRemove) : {};
+  const adminQueueAfterRemove = adminQueueControlsReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Queue")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminQueueAfterRemoveBody = adminQueueAfterRemove ? parseJSON(adminQueueAfterRemove) : {};
+  const adminQueueEnd = adminQueueControlsReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Queue")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({ action: "queue_end", taskId: adminQueueEndTaskId })
+      })
+    : null;
+  const adminQueueEndBody = adminQueueEnd ? parseJSON(adminQueueEnd) : {};
+  const adminQueueTargetOverviewAfterEnd = adminQueueControlsReady && targetLogin
+    ? await request(`/api/game/overview${targetLogin.search}`, {
+        headers: { Cookie: targetLogin.cookiePair }
+      })
+    : null;
+  const adminQueueTargetOverviewAfterEndBody = adminQueueTargetOverviewAfterEnd ? parseJSON(adminQueueTargetOverviewAfterEnd) : {};
+  const adminQueueAfterEnd = adminQueueControlsReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Queue")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminQueueAfterEndBody = adminQueueAfterEnd ? parseJSON(adminQueueAfterEnd) : {};
   const operatorUsersUpdate = adminDestructiveReady && operatorLogin
     ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "Users")}`, {
         method: "POST",
@@ -6767,7 +6826,19 @@ try {
   }));
 
   const frozenQueueRow = Array.isArray(adminQueueAfterFreezeBody.admin?.queueRows)
-    ? adminQueueAfterFreezeBody.admin.queueRows.find((row) => Number(row.id) === adminQueueTaskId)
+    ? adminQueueAfterFreezeBody.admin.queueRows.find((row) => Number(row.id) === adminQueueFreezeTaskId)
+    : undefined;
+  const unfrozenQueueRow = Array.isArray(adminQueueAfterUnfreezeBody.admin?.queueRows)
+    ? adminQueueAfterUnfreezeBody.admin.queueRows.find((row) => Number(row.id) === adminQueueFreezeTaskId)
+    : undefined;
+  const removeQueueRowAfterOperator = Array.isArray(adminQueueAfterFreezeBody.admin?.queueRows)
+    ? adminQueueAfterFreezeBody.admin.queueRows.find((row) => Number(row.id) === adminQueueRemoveTaskId)
+    : undefined;
+  const removedQueueRow = Array.isArray(adminQueueAfterRemoveBody.admin?.queueRows)
+    ? adminQueueAfterRemoveBody.admin.queueRows.find((row) => Number(row.id) === adminQueueRemoveTaskId)
+    : undefined;
+  const endedQueueRow = Array.isArray(adminQueueAfterEndBody.admin?.queueRows)
+    ? adminQueueAfterEndBody.admin.queueRows.find((row) => Number(row.id) === adminQueueEndTaskId)
     : undefined;
   const findAdminUserRow = (body, playerId) => {
     const rows = [
@@ -6804,6 +6875,14 @@ try {
         "operator queue mutation is denied like legacy",
         operatorQueueFreezeBody
       ),
+      check(!adminQueueControlsReady || operatorQueueRemove?.status === 200, "operator queue remove mutation returns HTTP 200", {
+        status: operatorQueueRemove?.status
+      }),
+      check(
+        !adminQueueControlsReady || operatorQueueRemoveBody.actionIssue?.code === "access_denied",
+        "operator queue remove mutation is denied like legacy",
+        operatorQueueRemoveBody
+      ),
       check(!adminQueueFixtureReady || adminQueueFreeze?.status === 200, "admin queue mutation returns HTTP 200", {
         status: adminQueueFreeze?.status
       }),
@@ -6818,7 +6897,59 @@ try {
       check(
         !adminQueueFixtureReady || frozenQueueRow?.freeze === true,
         "admin queue freeze actually updates the target task",
-        { taskId: adminQueueTaskId, frozenQueueRow }
+        { taskId: adminQueueFreezeTaskId, frozenQueueRow }
+      ),
+      check(
+        !adminQueueControlsReady || removeQueueRowAfterOperator !== undefined,
+        "operator-denied queue remove keeps target task visible",
+        { taskId: adminQueueRemoveTaskId, removeQueueRowAfterOperator }
+      ),
+      check(!adminQueueFixtureReady || adminQueueUnfreeze?.status === 200, "admin queue unfreeze mutation returns HTTP 200", {
+        status: adminQueueUnfreeze?.status
+      }),
+      check(
+        !adminQueueFixtureReady || adminQueueUnfreezeBody.actionIssue?.code === "action_saved",
+        "admin queue unfreeze saves like legacy",
+        adminQueueUnfreezeBody.actionIssue ?? {}
+      ),
+      check(
+        !adminQueueFixtureReady || unfrozenQueueRow?.freeze === false,
+        "admin queue unfreeze actually clears the target task freeze flag",
+        { taskId: adminQueueFreezeTaskId, unfrozenQueueRow }
+      ),
+      check(!adminQueueControlsReady || adminQueueRemove?.status === 200, "admin queue remove mutation returns HTTP 200", {
+        status: adminQueueRemove?.status
+      }),
+      check(
+        !adminQueueControlsReady || adminQueueRemoveBody.actionIssue?.code === "action_saved",
+        "admin queue remove saves like legacy",
+        adminQueueRemoveBody.actionIssue ?? {}
+      ),
+      check(
+        !adminQueueControlsReady || removedQueueRow === undefined,
+        "admin queue remove actually removes the target task",
+        { taskId: adminQueueRemoveTaskId, removedQueueRow }
+      ),
+      check(!adminQueueControlsReady || adminQueueEnd?.status === 200, "admin queue end mutation returns HTTP 200", {
+        status: adminQueueEnd?.status
+      }),
+      check(
+        !adminQueueControlsReady || adminQueueEndBody.actionIssue?.code === "action_saved",
+        "admin queue end saves like legacy",
+        adminQueueEndBody.actionIssue ?? {}
+      ),
+      check(!adminQueueControlsReady || adminQueueTargetOverviewAfterEnd?.status === 200, "target overview after queue end returns HTTP 200", {
+        status: adminQueueTargetOverviewAfterEnd?.status
+      }),
+      check(
+        !adminQueueControlsReady || Number(adminQueueTargetOverviewAfterEndBody.overview?.score?.rawScore ?? 0) > 0,
+        "due RecalcPoints queue recomputes target score on overview like legacy",
+        adminQueueTargetOverviewAfterEndBody.overview?.score ?? {}
+      ),
+      check(
+        !adminQueueControlsReady || endedQueueRow === undefined,
+        "due RecalcPoints queue task is removed after overview completion",
+        { taskId: adminQueueEndTaskId, endedQueueRow }
       )
     ]
   }));

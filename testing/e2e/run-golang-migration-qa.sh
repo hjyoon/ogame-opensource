@@ -51,10 +51,10 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
   wait_for_url "$GO_BASE_URL/api/healthz"
   wait_for_url "$GO_BASE_URL/"
   if command -v bun >/dev/null 2>&1; then
-    docker compose cp "$SCRIPT_DIR/prepare-golang-user-type-fixture.php" "server:$LEGACY_E2E_CONTAINER_DIR/prepare-golang-user-type-fixture.php" >/dev/null
-    docker compose exec -T server php "$LEGACY_E2E_CONTAINER_DIR/prepare-golang-user-type-fixture.php" > "$ROOT_DIR/.tmp/golang-user-type-fixture.json"
     bun "$SCRIPT_DIR/golang-compat-smoke.mjs" --go-base-url "$GO_BASE_URL" --mailhog-base-url "$MAILHOG_BASE_URL" --fixture "$ROOT_DIR/.tmp/golang-smoke-fixture.json" > "$ROOT_DIR/.tmp/golang-compat-smoke.json"
     printf 'Go compatibility smoke: %s\n' "$ROOT_DIR/.tmp/golang-compat-smoke.json"
+    docker compose cp "$SCRIPT_DIR/prepare-golang-user-type-fixture.php" "server:$LEGACY_E2E_CONTAINER_DIR/prepare-golang-user-type-fixture.php" >/dev/null
+    docker compose exec -T server php "$LEGACY_E2E_CONTAINER_DIR/prepare-golang-user-type-fixture.php" > "$ROOT_DIR/.tmp/golang-user-type-fixture.json"
     OGAME_GO_BASE_URL="$GO_BASE_URL" OGAME_USER_TYPE_FIXTURE_FILE="$ROOT_DIR/.tmp/golang-user-type-fixture.json" bun "$SCRIPT_DIR/golang-user-type-qa.mjs" > "$ROOT_DIR/.tmp/golang-user-type-qa.json"
     printf 'Go user type QA: %s\n' "$ROOT_DIR/.tmp/golang-user-type-qa.json"
     for browser in ${OGAME_USER_TYPE_BROWSERS:-chromium firefox}; do

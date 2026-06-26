@@ -115,12 +115,22 @@ function smoke_cleanup_fleets(array $userIds, array $planetIds): void
 	dbquery("DELETE FROM {$db_prefix}queue WHERE type='" . QTYP_FLEET . "' AND owner_id IN ({$userList})");
 }
 
-function smoke_prepare_admin_queue_task(int $ownerId): int
+function smoke_prepare_admin_queue_fixture(int $adminOwnerId, int $targetOwnerId): array
 {
 	global $db_prefix;
 
-	dbquery("DELETE FROM {$db_prefix}queue WHERE type='" . QTYP_DEBUG . "' AND owner_id={$ownerId}");
-	return AddQueue($ownerId, QTYP_DEBUG, 0, 0, 0, time(), 3600, QUEUE_PRIO_DEBUG);
+	$ownerList = implode(',', array($adminOwnerId, $targetOwnerId));
+	dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id IN ({$ownerList}) AND type IN ('" . QTYP_DEBUG . "','" . QTYP_ALLOW_NAME . "','" . QTYP_RECALC_POINTS . "')");
+	$now = time();
+	$freezeTaskId = AddQueue($adminOwnerId, QTYP_DEBUG, 0, 0, 0, $now, 3600, QUEUE_PRIO_DEBUG);
+	$removeTaskId = AddQueue($targetOwnerId, QTYP_ALLOW_NAME, 0, 0, 0, $now, 3600, QUEUE_PRIO_LOWEST);
+	$endTaskId = AddQueue($targetOwnerId, QTYP_RECALC_POINTS, 0, 0, 0, $now, 3600, QUEUE_PRIO_RECALC_POINTS);
+	return array(
+		'task_id' => $freezeTaskId,
+		'freeze_task_id' => $freezeTaskId,
+		'remove_task_id' => $removeTaskId,
+		'end_task_id' => $endTaskId,
+	);
 }
 
 function smoke_fleet_queue_task_id(int $fleetId): int
@@ -1573,7 +1583,6 @@ if ($targetHome === null) {
 $phalanxEdgeFixture = smoke_prepare_phalanx_edge_fixture($password, $targetHome, (int)$target['home_planet_id'], (int)$login['home_planet_id']);
 $fleetId = smoke_dispatch_phalanx_fleet((int)$target['player_id'], (int)$target['home_planet_id'], (int)$login['home_planet_id']);
 $recallFleetId = smoke_dispatch_phalanx_fleet((int)$target['player_id'], (int)$target['home_planet_id'], (int)$login['home_planet_id']);
-$queueTaskId = smoke_prepare_admin_queue_task((int)$login['player_id']);
 $fleetQueueTaskId = smoke_fleet_queue_task_id($fleetId);
 $recallFleetQueueTaskId = smoke_fleet_queue_task_id($recallFleetId);
 $feedFixture = smoke_prepare_feed_fixture($login, $operator, $target);
@@ -1595,6 +1604,7 @@ $inputHardeningFixture = smoke_prepare_input_hardening_fixture($password, $home)
 $fleetRecallFixture = smoke_prepare_fleet_recall_fixture($password, $home);
 $statisticsRankingFixture = smoke_prepare_statistics_ranking_fixture($password, $home);
 $adminDestructiveFixture = smoke_prepare_admin_destructive_fixture($target, $home);
+$adminQueueFixture = smoke_prepare_admin_queue_fixture((int)$login['player_id'], (int)$target['player_id']);
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
 echo json_encode(array(
@@ -1606,9 +1616,7 @@ echo json_encode(array(
 		'name' => $operator['name'],
 		'home_planet_id' => (int)$operator['home_planet_id'],
 	),
-	'admin_queue' => array(
-		'task_id' => $queueTaskId,
-	),
+	'admin_queue' => $adminQueueFixture,
 	'admin_fleetlogs' => array(
 		'task_id' => $fleetQueueTaskId,
 		'recall_task_id' => $recallFleetQueueTaskId,

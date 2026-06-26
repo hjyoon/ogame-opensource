@@ -93,6 +93,11 @@ type AdminUserLogRow struct {
 	ID        int
 	OwnerID   int
 	OwnerName string
+	LastClick int64
+	Vacation  bool
+	Banned    bool
+	NoAttack  bool
+	Disable   bool
 	Type      string
 	Text      string
 	Date      int64

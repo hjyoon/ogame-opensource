@@ -15,8 +15,8 @@ import (
 func TestNotesRepositoryReadsLegacyList(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues(
-			[]any{11, "Important", "Remember this", 13, 2, int64(1700000000)},
-			[]any{10, "Normal", "Older note", 10, 1, int64(1699999900)},
+			[]any{11, "Important", "Remember this", 13, 2, int64(1700000000), 0},
+			[]any{10, "Normal", "Older note", 10, 1, int64(1699999900), 0},
 		)},
 	)}
 	repository := NewNotesRepositoryWithQueryer(queryer, "ogame_")
@@ -31,9 +31,37 @@ func TestNotesRepositoryReadsLegacyList(t *testing.T) {
 	if notes.Rows[0].ID != 11 || notes.Rows[0].Subject != "Important" || notes.Rows[0].PriorityColor() != "red" {
 		t.Fatalf("unexpected first note: %+v", notes.Rows[0])
 	}
-	if !strings.Contains(queryer.calls[4].sql, "WHERE owner_id = ? ORDER BY date DESC LIMIT ?") ||
-		queryer.calls[4].args[0] != 42 || queryer.calls[4].args[1] != domaingame.NotesLimit {
+	if !strings.Contains(queryer.calls[4].sql, "LEFT JOIN `ogame_users`") ||
+		!strings.Contains(queryer.calls[4].sql, "WHERE n.owner_id = ? ORDER BY n.date DESC LIMIT ?") ||
+		queryer.calls[4].args[0] != 42 || queryer.calls[4].args[1] != domaingame.AdminNotesLimit {
 		t.Fatalf("expected legacy notes list query, got %+v", queryer.calls[4])
+	}
+}
+
+func TestNotesRepositoryAppliesLegacyNoteLimitsByUserType(t *testing.T) {
+	rows := make([][]any, 0, domaingame.NotesLimit+1)
+	for i := 0; i <= domaingame.NotesLimit; i++ {
+		rows = append(rows, []any{100 + i, "Subject", "Body", 4, 0, int64(1700000000 + i), domaingame.AdminLevelPlayer})
+	}
+	queryer := &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(rows...)}}}
+	repository := NewNotesRepositoryWithQueryer(queryer, "ogame_")
+	notes, err := repository.loadNotes(context.Background(), "`ogame_notes`", 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != domaingame.NotesLimit {
+		t.Fatalf("expected player notes to be trimmed to %d, got %d", domaingame.NotesLimit, len(notes))
+	}
+
+	rows[len(rows)-1][6] = domaingame.AdminLevelAdmin
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(rows...)}}}
+	repository = NewNotesRepositoryWithQueryer(queryer, "ogame_")
+	notes, err = repository.loadNotes(context.Background(), "`ogame_notes`", 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != domaingame.NotesLimit+1 {
+		t.Fatalf("expected admin notes to keep rows up to admin limit, got %d", len(notes))
 	}
 }
 
@@ -93,7 +121,7 @@ func TestNewNotesRepositoryKeepsSQLQueryer(t *testing.T) {
 func TestNotesRepositoryMutationsWriteLegacyRowsAndReturnList(t *testing.T) {
 	now := time.Unix(1700000000, 0)
 	runner := &fakeNotesRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
-		fakeQueryResult{rows: fakeRowsFromValues([]any{11, "Subject", "Body", 4, 1, now.Unix()})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{11, "Subject", "Body", 4, 1, now.Unix(), 0})},
 	)}}
 	repository := NewNotesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
 
@@ -179,13 +207,13 @@ func TestNotesRepositoryReturnsErrors(t *testing.T) {
 }
 
 func TestNotesRepositoryScanEdges(t *testing.T) {
-	queryer := &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", "Subject", "Body", 4, 0, int64(1700000000)})}}}
+	queryer := &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", "Subject", "Body", 4, 0, int64(1700000000), 0})}}}
 	repository := NewNotesRepositoryWithQueryer(queryer, "ogame_")
 	if _, err := repository.loadNotes(context.Background(), "ogame_notes", 42); err == nil || !strings.Contains(err.Error(), "expected int") {
 		t.Fatalf("expected note scan error, got %v", err)
 	}
 
-	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("notes rows failed"), []any{11, "Subject", "Body", 4, 0, int64(1700000000)})}}}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("notes rows failed"), []any{11, "Subject", "Body", 4, 0, int64(1700000000), 0})}}}
 	repository = NewNotesRepositoryWithQueryer(queryer, "ogame_")
 	if _, err := repository.loadNotes(context.Background(), "ogame_notes", 42); err == nil || !strings.Contains(err.Error(), "notes rows failed") {
 		t.Fatalf("expected note rows error, got %v", err)

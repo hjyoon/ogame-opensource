@@ -31,6 +31,7 @@ const (
 	queueTypeDemolish        = "Demolish"
 	queueTypeResearch        = "Research"
 	queueTypeShipyard        = "Shipyard"
+	queueTypeRecalcPoints    = "RecalcPoints"
 )
 
 type Queryer interface {
@@ -138,6 +139,16 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 		buildings := BuildingsRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now, updateResources: r.updateResources}
 		if err := buildings.FinishDueBuildingQueues(ctx, int(r.currentTime().Unix())); err != nil {
 			return domaingame.Overview{}, err
+		}
+		recalculated, err := r.finishDueRecalcPointQueues(ctx, int(r.currentTime().Unix()))
+		if err != nil {
+			return domaingame.Overview{}, err
+		}
+		if recalculated {
+			user, err = r.loadUser(ctx, usersTable, query.PlayerID)
+			if err != nil {
+				return domaingame.Overview{}, err
+			}
 		}
 	}
 	updatedPlanetID := 0
@@ -636,6 +647,94 @@ func (r OverviewRepository) recalcRanks(ctx context.Context, usersTable string) 
 		}
 	}
 	return nil
+}
+
+type recalcPointQueueTask struct {
+	TaskID  int
+	OwnerID int
+}
+
+func (r OverviewRepository) FinishDueRecalcPointQueues(ctx context.Context, until int) error {
+	_, err := r.finishDueRecalcPointQueues(ctx, until)
+	return err
+}
+
+func (r OverviewRepository) finishDueRecalcPointQueues(ctx context.Context, until int) (bool, error) {
+	if r.execer == nil {
+		return false, errors.New("recalc queue updater unavailable")
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return false, err
+	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return false, err
+	}
+	fleetTable, err := tableName(r.prefix, "fleet")
+	if err != nil {
+		return false, err
+	}
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return false, err
+	}
+	config, err := (BuildingsRepository{queryer: r.queryer, prefix: r.prefix}).loadBuildingUniverseConfig(ctx)
+	if err != nil {
+		return false, err
+	}
+	if config.Frozen {
+		return false, nil
+	}
+	tasks, err := r.loadDueRecalcPointQueueTasks(ctx, queueTable, until, buildQueueBatch)
+	if err != nil {
+		return false, err
+	}
+	admin := AdminRepository{
+		queryer:  r.queryer,
+		execer:   r.execer,
+		overview: r,
+		prefix:   r.prefix,
+		now:      r.currentTime,
+	}
+	for _, task := range tasks {
+		if err := admin.recalcAdminUserStats(ctx, usersTable, planetsTable, fleetTable, task.OwnerID); err != nil {
+			return false, err
+		}
+		if err := (BuildingsRepository{execer: r.execer}).removeGlobalQueue(ctx, queueTable, task.TaskID); err != nil {
+			return false, err
+		}
+	}
+	return len(tasks) > 0, nil
+}
+
+func (r OverviewRepository) loadDueRecalcPointQueueTasks(ctx context.Context, queueTable string, until int, limit int) ([]recalcPointQueueTask, error) {
+	if limit <= 0 {
+		limit = buildQueueBatch
+	}
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT task_id, owner_id FROM %s WHERE type = ? AND end <= ? AND freeze = 0 ORDER BY end ASC, prio DESC LIMIT ?", queueTable),
+		queueTypeRecalcPoints,
+		until,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	tasks := []recalcPointQueueTask{}
+	for rows.Next() {
+		var task recalcPointQueueTask
+		if err := rows.Scan(&task.TaskID, &task.OwnerID); err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return tasks, nil
 }
 
 func (r OverviewRepository) flushPlanetQueue(ctx context.Context, queueTable string, buildQueueTable string, planetID int) error {

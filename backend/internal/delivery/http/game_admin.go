@@ -87,6 +87,11 @@ type gameAdminUserLogRow struct {
 	ID        int    `json:"id"`
 	OwnerID   int    `json:"ownerId"`
 	OwnerName string `json:"ownerName"`
+	LastClick int64  `json:"lastClick"`
+	Vacation  bool   `json:"vacation"`
+	Banned    bool   `json:"banned"`
+	NoAttack  bool   `json:"noAttack"`
+	Disable   bool   `json:"disable"`
 	Type      string `json:"type"`
 	Text      string `json:"text"`
 	Date      int64  `json:"date"`
@@ -362,6 +367,11 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			ID:        row.ID,
 			OwnerID:   row.OwnerID,
 			OwnerName: row.OwnerName,
+			LastClick: row.LastClick,
+			Vacation:  row.Vacation,
+			Banned:    row.Banned,
+			NoAttack:  row.NoAttack,
+			Disable:   row.Disable,
 			Type:      row.Type,
 			Text:      row.Text,
 			Date:      row.Date,

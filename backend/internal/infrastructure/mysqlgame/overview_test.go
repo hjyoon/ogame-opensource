@@ -151,6 +151,8 @@ func TestOverviewRepositoryFinishesDueBuildingQueuesBeforeRead(t *testing.T) {
 		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{128.0, 0})},
 		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues([]any{128.0, 0})},
+		{rows: fakeRowsFromValues()},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3})},
 		{rows: fakeRowsFromValues()},
@@ -169,8 +171,183 @@ func TestOverviewRepositoryFinishesDueBuildingQueuesBeforeRead(t *testing.T) {
 		!strings.Contains(runner.calls[0].sql, "FROM `ogame_users`") ||
 		!strings.Contains(runner.calls[1].sql, "SELECT speed, freeze FROM `ogame_uni`") ||
 		!strings.Contains(runner.calls[2].sql, "WHERE end <= ?") ||
-		runner.calls[2].args[0] != 2000 {
-		t.Fatalf("expected due building queue flush before overview read, got %+v", runner.calls)
+		runner.calls[2].args[0] != 2000 ||
+		!strings.Contains(runner.calls[4].sql, "type = ? AND end <= ?") ||
+		runner.calls[4].args[0] != queueTypeRecalcPoints ||
+		runner.calls[4].args[1] != 2000 {
+		t.Fatalf("expected due queue flushes before overview read, got %+v", runner.calls)
+	}
+}
+
+func TestOverviewRepositoryFinishesDueRecalcPointQueues(t *testing.T) {
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{1.0, 0})},
+		{rows: fakeRowsFromValues([]any{9101, 77})},
+		{rows: fakeRowsFromValues(recalcPlanetScoreRow(
+			map[int]int{domaingame.BuildingMetalMine: 2},
+			map[int]int{domaingame.FleetSmallCargo: 3},
+			map[int]int{domaingame.DefenseRocketLauncher: 4},
+		))},
+		{rows: fakeRowsFromValues(allResearchLevelRow(map[int]int{domaingame.ResearchComputer: 1}))},
+		{rows: fakeRowsFromValues(recalcFlyingFleetScoreRow(map[int]int{domaingame.FleetLightFighter: 5}, 2))},
+	}}}
+	repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+
+	if err := repository.FinishDueRecalcPointQueues(context.Background(), 2000); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(runner.calls) != 5 ||
+		!strings.Contains(runner.calls[1].sql, "FROM `ogame_queue`") ||
+		runner.calls[1].args[0] != queueTypeRecalcPoints ||
+		runner.calls[1].args[1] != 2000 {
+		t.Fatalf("expected due RecalcPoints query after universe config, got %+v", runner.calls)
+	}
+	if len(runner.execCalls) != 10 ||
+		!strings.Contains(runner.execCalls[0].sql, "UPDATE `ogame_users` SET score1") ||
+		runner.execCalls[0].args[3] != 77 ||
+		!strings.Contains(runner.execCalls[9].sql, "DELETE FROM `ogame_queue` WHERE task_id = ?") ||
+		runner.execCalls[9].args[0] != 9101 {
+		t.Fatalf("expected score recalculation and queue removal, got %+v", runner.execCalls)
+	}
+	if score, ok := runner.execCalls[0].args[0].(int64); !ok || score <= 0 {
+		t.Fatalf("expected non-zero recalculated score, got %+v", runner.execCalls[0].args)
+	}
+}
+
+func TestOverviewRepositoryReloadsUserAfterDueRecalcPointQueue(t *testing.T) {
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{128.0, 0})},
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues([]any{128.0, 0})},
+		{rows: fakeRowsFromValues([]any{9101, 42})},
+		{rows: fakeRowsFromValues(recalcPlanetScoreRow(
+			map[int]int{domaingame.BuildingMetalMine: 2},
+			map[int]int{domaingame.FleetSmallCargo: 3},
+			map[int]int{domaingame.DefenseRocketLauncher: 4},
+		))},
+		{rows: fakeRowsFromValues(allResearchLevelRow(map[int]int{domaingame.ResearchComputer: 1}))},
+		{rows: fakeRowsFromValues(recalcFlyingFleetScoreRow(map[int]int{domaingame.FleetLightFighter: 5}, 2))},
+		{rows: fakeRowsFromValues([]any{"legor", int64(999), 7, 99, 1, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3})},
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues([]any{1})},
+	}}}
+	repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+	repository.updateResources = false
+	repository.includeBuildQueue = true
+	repository.now = func() time.Time { return time.Unix(2000, 0) }
+
+	overview, err := repository.GetOverview(context.Background(), overviewQuery(42, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if overview.Score.RawScore != 999 || overview.Score.Rank != 7 {
+		t.Fatalf("expected overview to use reloaded score after RecalcPoints, got %+v", overview.Score)
+	}
+	if len(runner.execCalls) == 0 || !strings.Contains(runner.execCalls[len(runner.execCalls)-1].sql, "DELETE FROM `ogame_queue` WHERE task_id = ?") {
+		t.Fatalf("expected due RecalcPoints queue deletion, got %+v", runner.execCalls)
+	}
+}
+
+func TestOverviewRepositoryFinishDueRecalcPointQueuesBranches(t *testing.T) {
+	if err := NewOverviewRepositoryWithRunner(&fakeQueryer{}, nil, "ogame_").FinishDueRecalcPointQueues(context.Background(), 1); err == nil || !strings.Contains(err.Error(), "updater unavailable") {
+		t.Fatalf("expected missing updater error, got %v", err)
+	}
+	if err := NewOverviewRepositoryWithRunner(&fakeOverviewRunner{}, &fakeOverviewRunner{}, "bad-prefix_").FinishDueRecalcPointQueues(context.Background(), 1); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected unsafe prefix error, got %v", err)
+	}
+
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{1.0, 1})},
+	}}}
+	if err := NewOverviewRepositoryWithRunner(runner, runner, "ogame_").FinishDueRecalcPointQueues(context.Background(), 2000); err != nil {
+		t.Fatalf("expected frozen universe to skip RecalcPoints queues, got %v", err)
+	}
+	if len(runner.calls) != 1 || len(runner.execCalls) != 0 {
+		t.Fatalf("expected frozen universe to stop after config, got calls=%+v execs=%+v", runner.calls, runner.execCalls)
+	}
+
+	queryer := &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{9102, 78})}}}
+	tasks, err := NewOverviewRepositoryWithQueryer(queryer, "ogame_").loadDueRecalcPointQueueTasks(context.Background(), "`ogame_queue`", 2100, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 1 || tasks[0].TaskID != 9102 || queryer.calls[0].args[2] != buildQueueBatch {
+		t.Fatalf("expected default RecalcPoints batch size, got tasks=%+v calls=%+v", tasks, queryer.calls)
+	}
+
+	for _, tt := range []struct {
+		name      string
+		results   []fakeQueryResult
+		execErr   error
+		execErrAt int
+		want      string
+	}{
+		{
+			name: "config query",
+			results: []fakeQueryResult{
+				{err: errors.New("config failed")},
+			},
+			want: "config failed",
+		},
+		{
+			name: "due query",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{1.0, 0})},
+				{err: errors.New("due failed")},
+			},
+			want: "due failed",
+		},
+		{
+			name: "due scan",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{1.0, 0})},
+				{rows: fakeRowsFromValues([]any{"bad", 77})},
+			},
+			want: "expected int",
+		},
+		{
+			name: "due rows",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{1.0, 0})},
+				{rows: fakeRowsFromValuesWithErr(errors.New("due rows failed"), []any{9101, 77})},
+			},
+			want: "due rows failed",
+		},
+		{
+			name: "recalc query",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{1.0, 0})},
+				{rows: fakeRowsFromValues([]any{9101, 77})},
+				{err: errors.New("planet score failed")},
+			},
+			want: "planet score failed",
+		},
+		{
+			name: "delete queue",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{1.0, 0})},
+				{rows: fakeRowsFromValues([]any{9101, 77})},
+				{rows: fakeRowsFromValues(recalcPlanetScoreRow(map[int]int{domaingame.BuildingMetalMine: 2}, nil, nil))},
+				{rows: fakeRowsFromValues(allResearchLevelRow(nil))},
+				{rows: fakeRowsFromValues()},
+			},
+			execErr:   errors.New("queue delete failed"),
+			execErrAt: 10,
+			want:      "queue delete failed",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: tt.results}, execErr: tt.execErr, execErrAt: tt.execErrAt}
+			err := NewOverviewRepositoryWithRunner(runner, runner, "ogame_").FinishDueRecalcPointQueues(context.Background(), 2000)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
 	}
 }
 
@@ -2069,10 +2246,10 @@ func (f *fakeOverviewRunner) ExecContext(_ context.Context, query string, args .
 	f.execSQL = query
 	f.execArgs = args
 	f.execCalls = append(f.execCalls, fakeExecCall{sql: query, args: args})
-	if f.execErrAt > 0 && len(f.execCalls) == f.execErrAt {
+	if f.execErr != nil && (f.execErrAt == 0 || len(f.execCalls) == f.execErrAt) {
 		return fakeSQLResult(0), f.execErr
 	}
-	return fakeSQLResult(1), f.execErr
+	return fakeSQLResult(1), nil
 }
 
 var registerOverviewTestDriver sync.Once
@@ -2198,6 +2375,18 @@ func fakeRowsFromValues(values ...[]any) *fakeRows {
 
 func fakeRowsFromValuesWithErr(err error, values ...[]any) *fakeRows {
 	return &fakeRows{values: values, index: -1, err: err}
+}
+
+func recalcPlanetScoreRow(buildings map[int]int, fleet map[int]int, defense map[int]int) []any {
+	row := buildingLevelRow(buildings)
+	row = append(row, fleetCountRow(fleet)...)
+	row = append(row, defenseCountRow(defense)...)
+	return row
+}
+
+func recalcFlyingFleetScoreRow(fleet map[int]int, missiles int) []any {
+	row := fleetCountRow(fleet)
+	return append(row, missiles)
 }
 
 func fakeRowsError(err error) *fakeRows {

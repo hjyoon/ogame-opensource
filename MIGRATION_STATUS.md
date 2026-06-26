@@ -2,14 +2,14 @@
 
 Updated: 2026-06-26 KST, branch `hjyoon/golang`.
 
-React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split details when needed.
+React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep <4KB; split details when needed.
 
 ## Current State
 
 - Clean Architecture baseline is under `backend/internal/{domain,application,infrastructure,delivery}`.
 - Go serves the React production build, emits JSON logs, and runs from the current `compose.golang.yaml` `goapp` container.
 - Natural routes and legacy `.php`/`page=` aliases share manifests.
-- Public assets, `evolution` skin, and game images are copied into `frontend/dist/public-assets`.
+- Public assets, `evolution` skin, and game images ship in `frontend/dist/public-assets`.
 - Registration, activation, login/logout, sessions, private cookies, IP/ban/session expiry, and `/game` redirects are ported.
 - `/api/game/*` covers main game pages: overview through options, plus alliance/admin, fleet, galaxy, notes, messages, report, and phalanx.
 - Mutations exist for overview, buildings, resources, merchant/officers, alliance, research, shipyard/defense, fleet, buddy, notes, messages, and options.
@@ -38,7 +38,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep this file <4KB; split detail
 - Fleet all-cases passes Chrome/Firefox 0px for initial, union, target, dispatch previews.
 - CSR E2E covers Buddy/Options, Options save, Notes create/edit/delete, and logout; Chromium passes.
 - Auth visual E2E passes Chromium/Firefox 0px for all default page specs.
-- Go smoke covers routes/assets, auth, reg/recovery, acct/options/localization, admin/Fleetlogs/Users/DB, premium/merchant/vacation/moon/phalanx, fleet, galaxy/IPM, buddy/social, report/msg lifecycle/resources/input/feed, aliases (65 cases/1817 checks).
+- Go smoke covers routes/assets, auth, reg/recovery, acct/options/localization, admin Queue/Fleetlogs/Users/DB, premium, fleet, galaxy/IPM, social, report/msg/resources/input/feed, aliases (65 cases/1831 checks).
 - Legacy PHP E2E latest summary: 59 result files, 340 cases, 2428 checks, failed groups 0.
 - Go internal coverage gate: `97.0% >= 97%`.
 

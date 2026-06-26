@@ -94,6 +94,21 @@ function e2e_due_queue_count(int $until): int
     return e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}queue WHERE end <= {$until} AND freeze=0");
 }
 
+function e2e_due_queue_count_for_users(int $until, array $userIds, array $types): int
+{
+    global $db_prefix;
+
+    $userList = implode(',', array_map('intval', array_filter($userIds, fn($id) => $id > 0)));
+    if ($userList === '' || empty($types)) {
+        return 0;
+    }
+    $quoted = array();
+    foreach ($types as $type) {
+        $quoted[] = "'" . e2e_sql_escape($type) . "'";
+    }
+    return e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}queue WHERE owner_id IN ({$userList}) AND type IN (" . implode(',', $quoted) . ") AND end <= {$until} AND freeze=0");
+}
+
 function e2e_clear_queues(array $types, int $ownerId = -1): void
 {
     global $db_prefix;
@@ -138,6 +153,27 @@ function e2e_update_queue_until_idle(int $until, int $maxRuns = 20): array
     return array(
         'runs' => $runs,
         'remaining_due' => e2e_due_queue_count($until),
+        'max_runs' => $maxRuns,
+    );
+}
+
+function e2e_update_queue_until_users_idle(int $until, array $userIds, array $types, int $maxRuns = 20): array
+{
+    $runs = array();
+    for ($i = 0; $i < $maxRuns; $i++) {
+        $before = e2e_due_queue_count_for_users($until, $userIds, $types);
+        if ($before === 0) {
+            break;
+        }
+
+        UpdateQueue($until);
+        $after = e2e_due_queue_count_for_users($until, $userIds, $types);
+        $runs[] = array('run' => $i + 1, 'before_due' => $before, 'after_due' => $after);
+    }
+
+    return array(
+        'runs' => $runs,
+        'remaining_due' => e2e_due_queue_count_for_users($until, $userIds, $types),
         'max_runs' => $maxRuns,
     );
 }
@@ -576,9 +612,9 @@ try {
     AdjustResources($cargo, $attackerPlanet, '-');
     $fleetId = DispatchFleet($fleet, LoadPlanetById($attackerPlanet), LoadPlanetById($defenderPlanet), FTYP_TRANSPORT, 300, $cargo, 0, $now);
     $fleetQueue = $fleetId > 0 ? GetFleetQueue($fleetId) : null;
-    $fleetDrain = e2e_update_queue_until_idle($now + 700, 10);
+    $fleetDrain = e2e_update_queue_until_users_idle($now + 700, array($attackerId, $defenderId), array(QTYP_FLEET), 10);
     $fleetRecalcTask = e2e_add_due_queue($attackerId, QTYP_RECALC_POINTS, QUEUE_PRIO_RECALC_POINTS, $now);
-    $postFleetRecalcDrain = e2e_update_queue_until_idle($now, 5);
+    $postFleetRecalcDrain = e2e_update_queue_until_users_idle($now, array($attackerId), array(QTYP_RECALC_POINTS), 5);
     $fleetOriginAfter = e2e_planet_snapshot($attackerPlanet);
     $fleetTargetAfter = e2e_planet_snapshot($defenderPlanet);
     $fleetUserAfter = e2e_user_snapshot($attackerId);

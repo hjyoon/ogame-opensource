@@ -150,11 +150,15 @@ func (r NotesRepository) DeleteNotes(ctx context.Context, query appgame.NotesDel
 }
 
 func (r NotesRepository) loadNotes(ctx context.Context, notesTable string, playerID int) ([]domaingame.Note, error) {
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT note_id, subj, text, textsize, prio, date FROM %s WHERE owner_id = ? ORDER BY date DESC LIMIT ?", notesTable),
+		fmt.Sprintf("SELECT n.note_id, n.subj, n.text, n.textsize, n.prio, n.date, COALESCE(u.admin, 0) FROM %s n LEFT JOIN %s u ON u.player_id = n.owner_id WHERE n.owner_id = ? ORDER BY n.date DESC LIMIT ?", notesTable, usersTable),
 		playerID,
-		domaingame.NotesLimit,
+		domaingame.AdminNotesLimit,
 	)
 	if err != nil {
 		return nil, err
@@ -162,15 +166,20 @@ func (r NotesRepository) loadNotes(ctx context.Context, notesTable string, playe
 	defer rows.Close()
 
 	notes := []domaingame.Note{}
+	adminLevel := domaingame.AdminLevelPlayer
 	for rows.Next() {
-		note, err := scanNote(rows)
+		note, level, err := scanListedNote(rows)
 		if err != nil {
 			return nil, err
 		}
+		adminLevel = level
 		notes = append(notes, note)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	if adminLevel <= domaingame.AdminLevelPlayer && len(notes) > domaingame.NotesLimit {
+		notes = notes[:domaingame.NotesLimit]
 	}
 	return notes, nil
 }
@@ -208,4 +217,13 @@ func scanNote(rows Rows) (domaingame.Note, error) {
 		return domaingame.Note{}, err
 	}
 	return note, nil
+}
+
+func scanListedNote(rows Rows) (domaingame.Note, int, error) {
+	var note domaingame.Note
+	adminLevel := domaingame.AdminLevelPlayer
+	if err := rows.Scan(&note.ID, &note.Subject, &note.Text, &note.TextSize, &note.Priority, &note.Date, &adminLevel); err != nil {
+		return domaingame.Note{}, domaingame.AdminLevelPlayer, err
+	}
+	return note, adminLevel, nil
 }

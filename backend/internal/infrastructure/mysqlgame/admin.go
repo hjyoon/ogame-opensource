@@ -978,7 +978,7 @@ func (r AdminRepository) loadAdminUserLogRows(ctx context.Context) ([]domaingame
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT l.id, COALESCE(l.owner_id, 0), COALESCE(u.oname, ''), COALESCE(l.date, 0), COALESCE(l.type, ''), COALESCE(l.text, '') FROM %s l LEFT JOIN %s u ON u.player_id = l.owner_id WHERE l.owner_id > 0 ORDER BY l.date DESC LIMIT 50",
+			"SELECT l.id, COALESCE(l.owner_id, 0), COALESCE(u.oname, ''), COALESCE(u.lastclick, 0), COALESCE(u.vacation, 0), COALESCE(u.banned, 0), COALESCE(u.noattack, 0), COALESCE(u.disable, 0), COALESCE(l.date, 0), COALESCE(l.type, ''), COALESCE(l.text, '') FROM %s l LEFT JOIN %s u ON u.player_id = l.owner_id WHERE l.owner_id > 0 ORDER BY l.date DESC LIMIT 50",
 			userLogsTable,
 			usersTable,
 		),
@@ -990,9 +990,14 @@ func (r AdminRepository) loadAdminUserLogRows(ctx context.Context) ([]domaingame
 	result := make([]domaingame.AdminUserLogRow, 0, 50)
 	for rows.Next() {
 		var row domaingame.AdminUserLogRow
-		if err := rows.Scan(&row.ID, &row.OwnerID, &row.OwnerName, &row.Date, &row.Type, &row.Text); err != nil {
+		var vacation, banned, noattack, disable int
+		if err := rows.Scan(&row.ID, &row.OwnerID, &row.OwnerName, &row.LastClick, &vacation, &banned, &noattack, &disable, &row.Date, &row.Type, &row.Text); err != nil {
 			return nil, err
 		}
+		row.Vacation = vacation != 0
+		row.Banned = banned != 0
+		row.NoAttack = noattack != 0
+		row.Disable = disable != 0
 		result = append(result, row)
 	}
 	for left, right := 0, len(result)-1; left < right; left, right = left+1, right-1 {

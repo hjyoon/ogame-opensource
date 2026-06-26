@@ -5,7 +5,8 @@ const (
 	NotesActionCreate = "create"
 	NotesActionEdit   = "edit"
 
-	NotesLimit = 20
+	NotesLimit      = 20
+	AdminNotesLimit = 150
 )
 
 type Notes struct {

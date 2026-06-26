@@ -263,6 +263,8 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 		ID:        11,
 		OwnerID:   7,
 		OwnerName: "owner",
+		LastClick: 99,
+		Vacation:  true,
 		Type:      "ADMIN",
 		Text:      "log",
 		Date:      112,
@@ -390,7 +392,8 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 		t.Fatalf("unexpected admin identity mapping: %+v", payload)
 	}
 	if len(payload.MessageRows) != 1 || payload.MessageRows[0].Text != "message" ||
-		len(payload.UserLogRows) != 1 || payload.UserLogRows[0].Type != "ADMIN" {
+		len(payload.UserLogRows) != 1 || payload.UserLogRows[0].Type != "ADMIN" ||
+		payload.UserLogRows[0].LastClick != 99 || !payload.UserLogRows[0].Vacation {
 		t.Fatalf("expected message and user log rows to map: %+v", payload)
 	}
 	if len(payload.UserRows) != 2 || payload.UserRows[0].HomePlanet == nil ||
