@@ -474,7 +474,10 @@ try {
     Number(queueIdempotencyFixture.shipyard?.task_id ?? 0) > 0 &&
     String(queueIdempotencyFixture.build?.build_error ?? "") === "" &&
     String(queueIdempotencyFixture.research?.research_error ?? "") === "" &&
-    queueIdempotencyFixture.shipyard?.shipyard_ok === true
+    queueIdempotencyFixture.shipyard?.shipyard_ok === true &&
+    Number(queueIdempotencyFixture.build?.expected_score1 ?? 0) > 0 &&
+    Number(queueIdempotencyFixture.research?.expected_score1 ?? 0) > 0 &&
+    Number(queueIdempotencyFixture.shipyard?.expected_score1 ?? 0) > 0
   );
   const queueFreezeDrainFixture = smokeFixture?.queue_freeze_drain ?? {};
   const queueFreezeDrainReady = Boolean(
@@ -4121,12 +4124,32 @@ try {
   const queueShipyardSecond = queueIdempotencyReady
     ? await request(`/api/game/shipyard${queueShipyardSearch}`, { headers: { Cookie: queueShipyardLogin.cookiePair } })
     : null;
+  const queueBuildStats = queueIdempotencyReady
+    ? await request(`/api/game/statistics${queueBuildSearch}&type=ressources`, { headers: { Cookie: queueBuildLogin.cookiePair } })
+    : null;
+  const queueResearchPointStats = queueIdempotencyReady
+    ? await request(`/api/game/statistics${queueResearchSearch}&type=ressources`, { headers: { Cookie: queueResearchLogin.cookiePair } })
+    : null;
+  const queueResearchLevelStats = queueIdempotencyReady
+    ? await request(`/api/game/statistics${queueResearchSearch}&type=research`, { headers: { Cookie: queueResearchLogin.cookiePair } })
+    : null;
+  const queueShipyardPointStats = queueIdempotencyReady
+    ? await request(`/api/game/statistics${queueShipyardSearch}&type=ressources`, { headers: { Cookie: queueShipyardLogin.cookiePair } })
+    : null;
+  const queueShipyardFleetStats = queueIdempotencyReady
+    ? await request(`/api/game/statistics${queueShipyardSearch}&type=fleet`, { headers: { Cookie: queueShipyardLogin.cookiePair } })
+    : null;
   const queueBuildFirstBody = queueBuildFirst ? parseJSON(queueBuildFirst) : {};
   const queueBuildSecondBody = queueBuildSecond ? parseJSON(queueBuildSecond) : {};
   const queueResearchFirstBody = queueResearchFirst ? parseJSON(queueResearchFirst) : {};
   const queueResearchSecondBody = queueResearchSecond ? parseJSON(queueResearchSecond) : {};
   const queueShipyardFirstBody = queueShipyardFirst ? parseJSON(queueShipyardFirst) : {};
   const queueShipyardSecondBody = queueShipyardSecond ? parseJSON(queueShipyardSecond) : {};
+  const queueBuildStatsBody = queueBuildStats ? parseJSON(queueBuildStats) : {};
+  const queueResearchPointStatsBody = queueResearchPointStats ? parseJSON(queueResearchPointStats) : {};
+  const queueResearchLevelStatsBody = queueResearchLevelStats ? parseJSON(queueResearchLevelStats) : {};
+  const queueShipyardPointStatsBody = queueShipyardPointStats ? parseJSON(queueShipyardPointStats) : {};
+  const queueShipyardFleetStatsBody = queueShipyardFleetStats ? parseJSON(queueShipyardFleetStats) : {};
   const queueBuildID = Number(queueIdempotencyFixture.build?.building_id ?? 1);
   const queueResearchID = Number(queueIdempotencyFixture.research?.tech_id ?? 106);
   const queueShipyardID = Number(queueIdempotencyFixture.shipyard?.ship_id ?? 202);
@@ -4137,6 +4160,30 @@ try {
   const queueResearchSecondItem = researchItemByID(queueResearchSecondBody, queueResearchID);
   const queueShipyardFirstItem = shipyardItemByID(queueShipyardFirstBody, queueShipyardID);
   const queueShipyardSecondItem = shipyardItemByID(queueShipyardSecondBody, queueShipyardID);
+  const queueBuildStatsRow = statisticsRowByPlayerID(queueBuildStatsBody, Number(queueIdempotencyFixture.build?.player_id ?? 0));
+  const queueResearchPointStatsRow = statisticsRowByPlayerID(queueResearchPointStatsBody, Number(queueIdempotencyFixture.research?.player_id ?? 0));
+  const queueResearchLevelStatsRow = statisticsRowByPlayerID(queueResearchLevelStatsBody, Number(queueIdempotencyFixture.research?.player_id ?? 0));
+  const queueShipyardPointStatsRow = statisticsRowByPlayerID(queueShipyardPointStatsBody, Number(queueIdempotencyFixture.shipyard?.player_id ?? 0));
+  const queueShipyardFleetStatsRow = statisticsRowByPlayerID(queueShipyardFleetStatsBody, Number(queueIdempotencyFixture.shipyard?.player_id ?? 0));
+  const queueStatsLookupsOK =
+    queueBuildStats?.status === 200 &&
+    queueResearchPointStats?.status === 200 &&
+    queueResearchLevelStats?.status === 200 &&
+    queueShipyardPointStats?.status === 200 &&
+    queueShipyardFleetStats?.status === 200;
+  const queueBuildScoreOK = Number(queueBuildStatsRow?.score ?? -1) === Number(queueIdempotencyFixture.build?.expected_score1 ?? 0);
+  const queueResearchPointScoreOK = Number(queueResearchPointStatsRow?.score ?? -1) === Number(queueIdempotencyFixture.research?.expected_score1 ?? 0);
+  const queueResearchLevelScoreOK = Number(queueResearchLevelStatsRow?.score ?? -1) === Number(queueIdempotencyFixture.research?.expected_score3 ?? 0);
+  const queueShipyardPointScoreOK = Number(queueShipyardPointStatsRow?.score ?? -1) === Number(queueIdempotencyFixture.shipyard?.expected_score1 ?? 0);
+  const queueShipyardFleetScoreOK = Number(queueShipyardFleetStatsRow?.score ?? -1) === Number(queueIdempotencyFixture.shipyard?.expected_score2 ?? 0);
+  const queueShipyardPointScoreContext = {
+    row: queueShipyardPointStatsRow,
+    expected: queueIdempotencyFixture.shipyard?.expected_score1
+  };
+  const queueShipyardFleetScoreContext = {
+    row: queueShipyardFleetStatsRow,
+    expected: queueIdempotencyFixture.shipyard?.expected_score2
+  };
 
   const queueCancelUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
   const queueCancelBuildLogin = queueCancelReady
@@ -6822,7 +6869,35 @@ try {
       check(!queueIdempotencyReady || (queueShipyardFirstBody.shipyard?.queue?.length ?? -1) === 0 && (queueShipyardSecondBody.shipyard?.queue?.length ?? -1) === 0, "due shipyard queue is removed after first completion", {
         first: queueShipyardFirstBody.shipyard?.queue,
         second: queueShipyardSecondBody.shipyard?.queue
-      })
+      }),
+      check(
+        !queueIdempotencyReady || queueStatsLookupsOK,
+        "queue completion statistics lookups return HTTP 200",
+        {
+          build: queueBuildStats?.status,
+          researchPoints: queueResearchPointStats?.status,
+          researchLevels: queueResearchLevelStats?.status,
+          shipyardPoints: queueShipyardPointStats?.status,
+          shipyardFleet: queueShipyardFleetStats?.status
+        }
+      ),
+      check(
+        !queueIdempotencyReady || queueBuildScoreOK,
+        "building completion adds construction cost to total score",
+        { row: queueBuildStatsRow, expected: queueIdempotencyFixture.build?.expected_score1 }
+      ),
+      check(
+        !queueIdempotencyReady || queueResearchPointScoreOK,
+        "research completion adds research cost to total score",
+        { row: queueResearchPointStatsRow, expected: queueIdempotencyFixture.research?.expected_score1 }
+      ),
+      check(
+        !queueIdempotencyReady || queueResearchLevelScoreOK,
+        "research completion increments research score by one level",
+        { row: queueResearchLevelStatsRow, expected: queueIdempotencyFixture.research?.expected_score3 }
+      ),
+      check(!queueIdempotencyReady || queueShipyardPointScoreOK, "shipyard completion adds produced ship cost to total score", queueShipyardPointScoreContext),
+      check(!queueIdempotencyReady || queueShipyardFleetScoreOK, "shipyard completion increments fleet score by produced ship count", queueShipyardFleetScoreContext)
     ]
   }));
 

@@ -934,7 +934,9 @@ function smoke_prepare_queue_idempotency_fixture(string $password, array $near):
     dbquery(
         "UPDATE {$db_prefix}users SET " . implode(',', $researchColumns) . ", admin=0, validated=1, deact_ip=1, " .
         "vacation=0, vacation_until=0, banned=0, banned_until=0, noattack=0, noattack_until=0, " .
-        "disable=0, disable_until=0, lang='en', skin='/evolution/', useskin=1, lastclick={$now} " .
+        "disable=0, disable_until=0, lang='en', skin='/evolution/', useskin=1, " .
+        "score1=0, score2=0, score3=0, oldscore1=0, oldscore2=0, oldscore3=0, " .
+        "place1=1, place2=1, place3=1, oldplace1=0, oldplace2=0, oldplace3=0, scoredate={$now}, lastclick={$now} " .
         "WHERE player_id IN (" . implode(',', $userIds) . ")"
     );
     dbquery("UPDATE {$db_prefix}users SET `" . GID_R_ESPIONAGE . "`=0 WHERE player_id=" . (int)$research['player_id']);
@@ -958,18 +960,21 @@ function smoke_prepare_queue_idempotency_fixture(string $password, array $near):
     if ($buildTask !== null) {
         smoke_force_queue_due((int)$buildTask['task_id'], $now);
     }
+    $buildScore = TechPriceInPoints(TechPrice(GID_B_METAL_MINE, 1));
 
     $researchError = StartResearch((int)$research['player_id'], (int)$research['home_planet_id'], GID_R_ESPIONAGE, $now + 1);
     $researchTask = smoke_one_row("SELECT task_id FROM {$db_prefix}queue WHERE owner_id=" . (int)$research['player_id'] . " AND type='" . QTYP_RESEARCH . "' ORDER BY task_id DESC LIMIT 1");
     if ($researchTask !== null) {
         smoke_force_queue_due((int)$researchTask['task_id'], $now);
     }
+    $researchScore = TechPriceInPoints(TechPrice(GID_R_ESPIONAGE, 1));
 
     $shipyardOk = AddShipyard((int)$shipyard['player_id'], (int)$shipyard['home_planet_id'], GID_F_SC, 3, $now + 2);
     $shipyardTask = smoke_one_row("SELECT task_id, level FROM {$db_prefix}queue WHERE owner_id=" . (int)$shipyard['player_id'] . " AND type='" . QTYP_SHIPYARD . "' ORDER BY task_id DESC LIMIT 1");
     if ($shipyardTask !== null) {
         smoke_force_queue_due((int)$shipyardTask['task_id'], $now);
     }
+    $shipyardScore = TechPriceInPoints(TechPrice(GID_F_SC, 1)) * 3;
     InvalidateUserCache();
 
     return array(
@@ -980,6 +985,9 @@ function smoke_prepare_queue_idempotency_fixture(string $password, array $near):
             'task_id' => $buildTask === null ? 0 : (int)$buildTask['task_id'],
             'build_error' => $buildError,
             'building_id' => GID_B_METAL_MINE,
+            'expected_score1' => $buildScore,
+            'expected_score2' => 0,
+            'expected_score3' => 0,
         ),
         'research' => array(
             'login' => mb_strtolower($research['name'], 'UTF-8'),
@@ -988,6 +996,9 @@ function smoke_prepare_queue_idempotency_fixture(string $password, array $near):
             'task_id' => $researchTask === null ? 0 : (int)$researchTask['task_id'],
             'research_error' => $researchError,
             'tech_id' => GID_R_ESPIONAGE,
+            'expected_score1' => $researchScore,
+            'expected_score2' => 0,
+            'expected_score3' => 1,
         ),
         'shipyard' => array(
             'login' => mb_strtolower($shipyard['name'], 'UTF-8'),
@@ -997,6 +1008,9 @@ function smoke_prepare_queue_idempotency_fixture(string $password, array $near):
             'shipyard_ok' => $shipyardOk,
             'ship_id' => GID_F_SC,
             'expected_count' => 3,
+            'expected_score1' => $shipyardScore,
+            'expected_score2' => 3,
+            'expected_score3' => 0,
         ),
     );
 }
