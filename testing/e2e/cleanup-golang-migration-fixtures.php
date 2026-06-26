@@ -95,6 +95,8 @@ function cleanup_go_fixture_names(): array
         'goacshold',
         'goacsholdbuddy',
         'goacsholdstranger',
+        'gopctxown',
+        'gopctxfor',
     );
 }
 

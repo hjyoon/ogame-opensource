@@ -1661,6 +1661,118 @@ function smoke_prepare_resource_scope_fixture(string $password, array $near): ar
     );
 }
 
+function smoke_prepare_planet_context_fixture(string $password, array $near): array
+{
+    global $db_prefix, $buildmap, $fleetmap, $resmap;
+
+    $owner = smoke_prepare_user('gopctxown', $password, 'gopctxown@example.local', USER_TYPE_PLAYER);
+    $foreign = smoke_prepare_user('gopctxfor', $password, 'gopctxfor@example.local', USER_TYPE_PLAYER);
+    $ownerId = (int)$owner['player_id'];
+    $foreignId = (int)$foreign['player_id'];
+    $homePlanetId = (int)$owner['home_planet_id'];
+    $foreignPlanetId = (int)$foreign['home_planet_id'];
+
+    $colony = smoke_one_row(
+        "SELECT planet_id FROM {$db_prefix}planets WHERE name='GoCtxColony' " .
+        "AND (owner_id={$ownerId} OR owner_id=" . USER_SPACE . ") ORDER BY owner_id={$ownerId} DESC, planet_id ASC LIMIT 1"
+    );
+    $moon = smoke_one_row(
+        "SELECT planet_id FROM {$db_prefix}planets WHERE name='GoCtxMoon' " .
+        "AND (owner_id={$ownerId} OR owner_id=" . USER_SPACE . ") ORDER BY owner_id={$ownerId} DESC, planet_id ASC LIMIT 1"
+    );
+    $colonyId = $colony === null ? 0 : (int)$colony['planet_id'];
+    $moonId = $moon === null ? 0 : (int)$moon['planet_id'];
+    $planetIds = array_values(array_filter(array($homePlanetId, $foreignPlanetId, $colonyId, $moonId), fn($id) => $id > 0));
+    $userIds = array($ownerId, $foreignId);
+    $userList = implode(',', $userIds);
+    $planetList = implode(',', $planetIds);
+
+    smoke_cleanup_alliances($userIds);
+    smoke_cleanup_fleets($userIds, $planetIds);
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id IN ({$userList}) AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "','" . QTYP_RESEARCH . "','" . QTYP_SHIPYARD . "','" . QTYP_FLEET . "')");
+    if ($planetList !== '') {
+        dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id IN ({$userList}) OR planet_id IN ({$planetList})");
+    } else {
+        dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id IN ({$userList})");
+    }
+
+    $positions = smoke_find_empty_positions($near, 3);
+    smoke_set_fleet_restriction_user_state($owner, 10000);
+    smoke_set_fleet_restriction_user_state($foreign, 10000);
+    smoke_prepare_planet($homePlanetId, $ownerId, 'GoCtxHome', $positions[0]);
+    smoke_prepare_planet($foreignPlanetId, $foreignId, 'GoCtxForeign', $positions[1]);
+
+    if ($colonyId <= 0) {
+        $colonyId = CreatePlanet($positions[2][0], $positions[2][1], $positions[2][2], $ownerId, 1, 0, 0, time());
+    }
+    if ($colonyId <= 0) {
+        throw new RuntimeException('Failed to prepare Go planet context colony.');
+    }
+    smoke_prepare_planet($colonyId, $ownerId, 'GoCtxColony', $positions[2]);
+
+    $home = LoadPlanetById($homePlanetId);
+    if ($home === null) {
+        throw new RuntimeException('Go planet context home planet is missing.');
+    }
+    if ($moonId <= 0) {
+        $moonId = CreatePlanet((int)$home['g'], (int)$home['s'], (int)$home['p'], $ownerId, 1, 1, 20, time());
+    }
+    if ($moonId <= 0) {
+        throw new RuntimeException('Failed to prepare Go planet context moon.');
+    }
+
+    $buildings = array();
+    foreach ($buildmap as $gid) {
+        $buildings[] = "`{$gid}`=0";
+    }
+    $ships = array();
+    foreach ($fleetmap as $gid) {
+        $ships[] = "`{$gid}`=" . ($gid === GID_F_SC ? 3 : 0);
+    }
+    dbquery(
+        "UPDATE {$db_prefix}planets SET name='GoCtxMoon', g=" . (int)$home['g'] . ", s=" . (int)$home['s'] . ", p=" . (int)$home['p'] . ", " .
+        "type=" . PTYP_MOON . ", owner_id={$ownerId}, `" . GID_RC_METAL . "`=1000000, `" . GID_RC_CRYSTAL . "`=1000000, `" . GID_RC_DEUTERIUM . "`=1000000, " .
+        implode(',', $buildings) . ", " . implode(',', $ships) . ", " .
+        "prod1=0, prod2=0, prod3=0, prod4=0, prod12=0, prod212=0, fields=0, maxfields=1, lastpeek=" . time() . " WHERE planet_id={$moonId}"
+    );
+
+    $research = array();
+    foreach ($resmap as $gid) {
+        $research[] = "`{$gid}`=10";
+    }
+    dbquery("UPDATE {$db_prefix}users SET " . implode(',', $research) . ", hplanetid={$homePlanetId}, aktplanet={$homePlanetId}, score1=10000, place1=1 WHERE player_id={$ownerId}");
+    dbquery("UPDATE {$db_prefix}users SET " . implode(',', $research) . ", hplanetid={$foreignPlanetId}, aktplanet={$foreignPlanetId}, score1=10000, place1=2 WHERE player_id={$foreignId}");
+
+    $resourceSetup =
+        "`" . GID_B_METAL_MINE . "`=10, `" . GID_B_CRYS_MINE . "`=10, `" . GID_B_DEUT_SYNTH . "`=10, " .
+        "`" . GID_B_SOLAR . "`=12, `" . GID_B_FUSION . "`=0, `" . GID_F_SAT . "`=0";
+    dbquery("UPDATE {$db_prefix}planets SET {$resourceSetup}, prod1=1, prod2=1, prod3=1, prod4=1, prod12=0, prod212=0 WHERE planet_id={$homePlanetId}");
+    dbquery("UPDATE {$db_prefix}planets SET {$resourceSetup}, prod1=0.6, prod2=0.5, prod3=1, prod4=1, prod12=0, prod212=0 WHERE planet_id={$colonyId}");
+    dbquery("UPDATE {$db_prefix}planets SET {$resourceSetup}, prod1=1, prod2=1, prod3=1, prod4=1, prod12=0, prod212=0 WHERE planet_id={$foreignPlanetId}");
+    InvalidateUserCache();
+
+    return array(
+        'owner' => array(
+            'login' => mb_strtolower($owner['name'], 'UTF-8'),
+            'player_id' => $ownerId,
+            'home_planet_id' => $homePlanetId,
+            'colony_planet_id' => $colonyId,
+            'moon_id' => $moonId,
+        ),
+        'foreign' => array(
+            'login' => mb_strtolower($foreign['name'], 'UTF-8'),
+            'player_id' => $foreignId,
+            'home_planet_id' => $foreignPlanetId,
+        ),
+        'home_initial_metal_percent' => 100,
+        'home_initial_crystal_percent' => 100,
+        'colony_initial_metal_percent' => 60,
+        'colony_initial_crystal_percent' => 50,
+        'colony_updated_metal_percent' => 80,
+        'colony_updated_crystal_percent' => 70,
+    );
+}
+
 function smoke_prepare_input_hardening_fixture(string $password, array $near): array
 {
     global $db_prefix, $fleetmap, $resmap, $GlobalUni;
@@ -2103,6 +2215,7 @@ $messageBulkDeleteFixture = smoke_prepare_message_bulk_delete_fixture($password,
 $messageNonmarkedDeleteFixture = smoke_prepare_message_nonmarked_delete_fixture($password, $home);
 $messageSendFixture = smoke_prepare_message_send_fixture($password, $home);
 $resourceScopeFixture = smoke_prepare_resource_scope_fixture($password, $home);
+$planetContextFixture = smoke_prepare_planet_context_fixture($password, $home);
 $inputHardeningFixture = smoke_prepare_input_hardening_fixture($password, $home);
 $techEconomyFixture = smoke_prepare_tech_economy_fixture($password, $home);
 $fleetRecallFixture = smoke_prepare_fleet_recall_fixture($password, $home);
@@ -2164,6 +2277,7 @@ echo json_encode(array(
 	'message_nonmarked_delete' => $messageNonmarkedDeleteFixture,
 	'message_send' => $messageSendFixture,
 	'resource_scope' => $resourceScopeFixture,
+	'planet_context' => $planetContextFixture,
 	'input_hardening' => $inputHardeningFixture,
 	'tech_economy' => $techEconomyFixture,
 	'fleet_recall' => $fleetRecallFixture,

@@ -589,6 +589,18 @@ try {
     Number(resourceScopeFixture.foreign_initial_metal_percent ?? 0) >= 0 &&
     Number(resourceScopeFixture.foreign_initial_crystal_percent ?? 0) >= 0
   );
+  const planetContextFixture = smokeFixture?.planet_context ?? {};
+  const planetContextReady = Boolean(
+    typeof planetContextFixture.owner?.login === "string" &&
+    typeof planetContextFixture.foreign?.login === "string" &&
+    Number(planetContextFixture.owner?.home_planet_id ?? 0) > 0 &&
+    Number(planetContextFixture.owner?.colony_planet_id ?? 0) > 0 &&
+    Number(planetContextFixture.owner?.moon_id ?? 0) > 0 &&
+    Number(planetContextFixture.foreign?.home_planet_id ?? 0) > 0 &&
+    Number(planetContextFixture.home_initial_metal_percent ?? -1) >= 0 &&
+    Number(planetContextFixture.colony_initial_metal_percent ?? -1) >= 0 &&
+    Number(planetContextFixture.colony_updated_metal_percent ?? -1) >= 0
+  );
   const inputHardeningFixture = smokeFixture?.input_hardening ?? {};
   const inputHardeningMaxShipyard = Number(inputHardeningFixture.max_shipyard ?? 0);
   const inputHardeningReady = Boolean(
@@ -3679,6 +3691,110 @@ try {
       })
     : { status: 0, headers: {}, body: "{}" };
   const resourceScopeForeignAfterUpdateBody = parseJSON(resourceScopeForeignAfterUpdate);
+  const planetContextUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const planetContextOwnerLogin = planetContextReady
+    ? await loginGameUser(planetContextFixture.owner.login, loginSmokePassword, planetContextUniverse)
+    : null;
+  const planetContextForeignLogin = planetContextReady
+    ? await loginGameUser(planetContextFixture.foreign.login, loginSmokePassword, planetContextUniverse)
+    : null;
+  const planetContextOwnerSearch = planetContextOwnerLogin?.search ?? "?session=";
+  const planetContextOwnerCookie = planetContextOwnerLogin?.cookiePair ?? "";
+  const planetContextHomeID = Number(planetContextFixture.owner?.home_planet_id ?? 0);
+  const planetContextColonyID = Number(planetContextFixture.owner?.colony_planet_id ?? 0);
+  const planetContextMoonID = Number(planetContextFixture.owner?.moon_id ?? 0);
+  const planetContextForeignID = Number(planetContextFixture.foreign?.home_planet_id ?? 0);
+  const planetContextHomeSearch = withQueryParam(planetContextOwnerSearch, "cp", planetContextHomeID);
+  const planetContextColonySearch = withQueryParam(planetContextOwnerSearch, "cp", planetContextColonyID);
+  const planetContextMoonSearch = withQueryParam(planetContextOwnerSearch, "cp", planetContextMoonID);
+  const planetContextForeignCPSearch = withQueryParam(planetContextOwnerSearch, "cp", planetContextForeignID);
+  const planetContextMissingSearch = withQueryParam(planetContextOwnerSearch, "cp", 987654321);
+  const planetContextHomeOverview = planetContextReady
+    ? await request(`/api/game/overview${planetContextHomeSearch}`, {
+        headers: { Cookie: planetContextOwnerCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const planetContextHomeOverviewBody = parseJSON(planetContextHomeOverview);
+  const planetContextColonyOverview = planetContextReady
+    ? await request(`/api/game/overview${planetContextColonySearch}`, {
+        headers: { Cookie: planetContextOwnerCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const planetContextColonyOverviewBody = parseJSON(planetContextColonyOverview);
+  const planetContextAfterColony = planetContextReady
+    ? await request(`/api/game/overview${planetContextOwnerSearch}`, {
+        headers: { Cookie: planetContextOwnerCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const planetContextAfterColonyBody = parseJSON(planetContextAfterColony);
+  const planetContextForeignCPOverview = planetContextReady
+    ? await request(`/api/game/overview${planetContextForeignCPSearch}`, {
+        headers: { Cookie: planetContextOwnerCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const planetContextForeignCPOverviewBody = parseJSON(planetContextForeignCPOverview);
+  const planetContextMissingOverview = planetContextReady
+    ? await request(`/api/game/overview${planetContextMissingSearch}`, {
+        headers: { Cookie: planetContextOwnerCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const planetContextMissingOverviewBody = parseJSON(planetContextMissingOverview);
+  const planetContextAfterMissing = planetContextReady
+    ? await request(`/api/game/overview${planetContextOwnerSearch}`, {
+        headers: { Cookie: planetContextOwnerCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const planetContextAfterMissingBody = parseJSON(planetContextAfterMissing);
+  const planetContextMoonOverview = planetContextReady
+    ? await request(`/api/game/overview${planetContextMoonSearch}`, {
+        headers: { Cookie: planetContextOwnerCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const planetContextMoonOverviewBody = parseJSON(planetContextMoonOverview);
+  const planetContextSwitcher = Array.isArray(planetContextMoonOverviewBody.overview?.planetSwitcher)
+    ? planetContextMoonOverviewBody.overview.planetSwitcher
+    : [];
+  const planetContextHomeResourcesInitial = planetContextReady
+    ? await request(`/api/game/resources${planetContextHomeSearch}`, {
+        headers: { Cookie: planetContextOwnerCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const planetContextHomeResourcesInitialBody = parseJSON(planetContextHomeResourcesInitial);
+  const planetContextColonyResourcesInitial = planetContextReady
+    ? await request(`/api/game/resources${planetContextColonySearch}`, {
+        headers: { Cookie: planetContextOwnerCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const planetContextColonyResourcesInitialBody = parseJSON(planetContextColonyResourcesInitial);
+  const planetContextColonyResourcesUpdate = planetContextReady
+    ? await request(`/api/game/resources${planetContextColonySearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: planetContextOwnerCookie },
+        body: JSON.stringify({
+          production: {
+            1: Number(planetContextFixture.colony_updated_metal_percent),
+            2: Number(planetContextFixture.colony_updated_crystal_percent),
+            3: 60,
+            4: 100,
+            12: 0,
+            212: 0
+          }
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const planetContextColonyResourcesUpdateBody = parseJSON(planetContextColonyResourcesUpdate);
+  const planetContextHomeResourcesAfter = planetContextReady
+    ? await request(`/api/game/resources${planetContextHomeSearch}`, {
+        headers: { Cookie: planetContextOwnerCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const planetContextHomeResourcesAfterBody = parseJSON(planetContextHomeResourcesAfter);
+  const planetContextColonyFleet = planetContextReady
+    ? await request(`/api/game/fleet${planetContextColonySearch}`, {
+        headers: { Cookie: planetContextOwnerCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const planetContextColonyFleetBody = parseJSON(planetContextColonyFleet);
   const hardeningResourcesSearch = resourceScopeReady ? resourceScopeOwnerSearch : resourcesSearch;
   const hardeningResourcesCookie = resourceScopeReady ? resourceScopeOwnerLogin?.cookiePair ?? "" : sessionCookiePair;
   const hardeningResourcesUpdate = await request(`/api/game/resources${hardeningResourcesSearch}`, {
@@ -6400,6 +6516,104 @@ try {
         resourceRowByID(resourceScopeForeignAfterUpdateBody, 2) ?? {}
       ),
       check(!resourceScopeReady || !resourceScopeForeignCPUpdate.body.includes(resourceScopeOwnerLogin?.cookiePair ?? "missing-cookie"), "resource scope response does not echo owner private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_planet_context_cp_scope_api",
+    checks: [
+      check(!smokeFixtureFile || planetContextReady, "go smoke fixture exposes planet context owner, colony, moon, and foreign planet", { planetContextFixture }),
+      check(!planetContextReady || planetContextOwnerLogin?.response.status === 200, "planet context owner can log in", {
+        status: planetContextOwnerLogin?.response.status
+      }),
+      check(!planetContextReady || planetContextForeignLogin?.response.status === 200, "planet context foreign user can log in", {
+        status: planetContextForeignLogin?.response.status
+      }),
+      check(!planetContextReady || planetContextHomeOverview.status === 200, "planet context home overview returns HTTP 200", {
+        status: planetContextHomeOverview.status
+      }),
+      check(!planetContextReady || planetContextHomeOverviewBody.overview?.currentPlanet?.id === planetContextHomeID, "home cp selects the owner home planet", planetContextHomeOverviewBody.overview?.currentPlanet ?? {}),
+      check(!planetContextReady || planetContextColonyOverview.status === 200, "planet context colony overview returns HTTP 200", {
+        status: planetContextColonyOverview.status
+      }),
+      check(!planetContextReady || planetContextColonyOverviewBody.overview?.currentPlanet?.id === planetContextColonyID, "owned colony cp becomes the current planet", planetContextColonyOverviewBody.overview?.currentPlanet ?? {}),
+      check(!planetContextReady || planetContextAfterColonyBody.overview?.currentPlanet?.id === planetContextColonyID, "owned colony cp persists as active planet", planetContextAfterColonyBody.overview?.currentPlanet ?? {}),
+      check(!planetContextReady || planetContextForeignCPOverview.status === 200, "planet context foreign cp overview returns HTTP 200", {
+        status: planetContextForeignCPOverview.status
+      }),
+      check(
+        !planetContextReady ||
+          planetContextForeignCPOverviewBody.overview?.currentPlanet?.id === planetContextColonyID &&
+            planetContextForeignCPOverviewBody.overview?.currentPlanet?.id !== planetContextForeignID,
+        "foreign cp keeps the previous owned active planet",
+        planetContextForeignCPOverviewBody.overview?.currentPlanet ?? {}
+      ),
+      check(!planetContextReady || planetContextMissingOverview.status === 200, "planet context missing cp overview returns HTTP 200", {
+        status: planetContextMissingOverview.status
+      }),
+      check(!planetContextReady || planetContextMissingOverviewBody.overview?.currentPlanet?.id === planetContextHomeID, "missing cp falls back to the home planet", planetContextMissingOverviewBody.overview?.currentPlanet ?? {}),
+      check(!planetContextReady || planetContextAfterMissingBody.overview?.currentPlanet?.id === planetContextHomeID, "missing cp fallback persists the home planet", planetContextAfterMissingBody.overview?.currentPlanet ?? {}),
+      check(!planetContextReady || planetContextMoonOverview.status === 200, "planet context moon overview returns HTTP 200", {
+        status: planetContextMoonOverview.status
+      }),
+      check(
+        !planetContextReady ||
+          planetContextMoonOverviewBody.overview?.currentPlanet?.id === planetContextMoonID &&
+            planetContextMoonOverviewBody.overview?.currentPlanet?.type === 0,
+        "owned moon cp can be selected independently",
+        planetContextMoonOverviewBody.overview?.currentPlanet ?? {}
+      ),
+      check(
+        !planetContextReady ||
+          [planetContextHomeID, planetContextColonyID, planetContextMoonID].every((planetID) =>
+            planetContextSwitcher.some((planet) => Number(planet.id) === planetID)
+          ),
+        "planet switcher exposes home, colony, and moon contexts",
+        planetContextSwitcher
+      ),
+      check(!planetContextReady || planetContextHomeResourcesInitial.status === 200, "planet context home resources return HTTP 200", {
+        status: planetContextHomeResourcesInitial.status
+      }),
+      check(!planetContextReady || planetContextColonyResourcesInitial.status === 200, "planet context colony resources return HTTP 200", {
+        status: planetContextColonyResourcesInitial.status
+      }),
+      check(
+        !planetContextReady ||
+          resourceRowByID(planetContextHomeResourcesInitialBody, 1)?.percent === Number(planetContextFixture.home_initial_metal_percent) &&
+            resourceRowByID(planetContextHomeResourcesInitialBody, 2)?.percent === Number(planetContextFixture.home_initial_crystal_percent),
+        "home production percents start at the fixture values",
+        planetContextHomeResourcesInitialBody.resources?.rows ?? []
+      ),
+      check(
+        !planetContextReady ||
+          resourceRowByID(planetContextColonyResourcesInitialBody, 1)?.percent === Number(planetContextFixture.colony_initial_metal_percent) &&
+            resourceRowByID(planetContextColonyResourcesInitialBody, 2)?.percent === Number(planetContextFixture.colony_initial_crystal_percent),
+        "colony production percents start at the fixture values",
+        planetContextColonyResourcesInitialBody.resources?.rows ?? []
+      ),
+      check(!planetContextReady || planetContextColonyResourcesUpdate.status === 200, "planet context colony resource update returns HTTP 200", {
+        status: planetContextColonyResourcesUpdate.status
+      }),
+      check(!planetContextReady || planetContextColonyResourcesUpdateBody.resources?.currentPlanet?.id === planetContextColonyID, "colony resource update remains scoped to the selected colony", planetContextColonyResourcesUpdateBody.resources?.currentPlanet ?? {}),
+      check(
+        !planetContextReady ||
+          resourceRowByID(planetContextColonyResourcesUpdateBody, 1)?.percent === Number(planetContextFixture.colony_updated_metal_percent) &&
+            resourceRowByID(planetContextColonyResourcesUpdateBody, 2)?.percent === Number(planetContextFixture.colony_updated_crystal_percent),
+        "selected colony production percents are updated",
+        planetContextColonyResourcesUpdateBody.resources?.rows ?? []
+      ),
+      check(
+        !planetContextReady ||
+          resourceRowByID(planetContextHomeResourcesAfterBody, 1)?.percent === Number(planetContextFixture.home_initial_metal_percent) &&
+            resourceRowByID(planetContextHomeResourcesAfterBody, 2)?.percent === Number(planetContextFixture.home_initial_crystal_percent),
+        "colony resource update does not mutate home production percents",
+        planetContextHomeResourcesAfterBody.resources?.rows ?? []
+      ),
+      check(!planetContextReady || planetContextColonyFleet.status === 200, "planet context colony fleet page returns HTTP 200", {
+        status: planetContextColonyFleet.status
+      }),
+      check(!planetContextReady || planetContextColonyFleetBody.fleet?.currentPlanet?.id === planetContextColonyID, "fleet page uses the selected colony as origin context", planetContextColonyFleetBody.fleet?.currentPlanet ?? {}),
+      check(!planetContextReady || !planetContextColonyResourcesUpdate.body.includes(planetContextOwnerLogin?.cookiePair ?? "missing-cookie"), "planet context response does not echo owner private cookie")
     ]
   }));
 
