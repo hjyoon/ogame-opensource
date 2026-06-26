@@ -1117,7 +1117,9 @@ function smoke_prepare_concurrency_race_fixture(string $password, array $near): 
     $defense = smoke_prepare_user('goconcdefense', $password, 'goconcdefense@example.local', USER_TYPE_PLAYER);
     $dome = smoke_prepare_user('goconcdome', $password, 'goconcdome@example.local', USER_TYPE_PLAYER);
     $missile = smoke_prepare_user('goconcmissile', $password, 'goconcmissile@example.local', USER_TYPE_PLAYER);
-    $users = array($shipyard, $defense, $dome, $missile);
+    $fleetOrigin = smoke_prepare_user('goconcfleet', $password, 'goconcfleet@example.local', USER_TYPE_PLAYER);
+    $fleetTarget = smoke_prepare_user('goconcfleettarget', $password, 'goconcfleettarget@example.local', USER_TYPE_PLAYER);
+    $users = array($shipyard, $defense, $dome, $missile, $fleetOrigin, $fleetTarget);
     $userIds = array_map(fn($user) => (int)$user['player_id'], $users);
     $planetIds = array_map(fn($user) => (int)$user['home_planet_id'], $users);
 
@@ -1189,6 +1191,12 @@ function smoke_prepare_concurrency_race_fixture(string $password, array $near): 
         GID_B_SHIPYARD . "`=10, fields=0, maxfields=200, type=" . PTYP_PLANET . " WHERE planet_id=" . (int)$missile['home_planet_id']
     );
 
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_F_SC . "`=1, `" . GID_RC_METAL . "`=1000000, `" .
+        GID_RC_CRYSTAL . "`=1000000, `" . GID_RC_DEUTERIUM . "`=1000000, " .
+        "`" . GID_B_SHIPYARD . "`=10, fields=0, maxfields=200, type=" . PTYP_PLANET . " WHERE planet_id=" . (int)$fleetOrigin['home_planet_id']
+    );
+
     foreach ($users as $user) {
         dbquery("UPDATE {$db_prefix}users SET hplanetid=" . (int)$user['home_planet_id'] . ", aktplanet=" . (int)$user['home_planet_id'] . " WHERE player_id=" . (int)$user['player_id']);
     }
@@ -1224,6 +1232,22 @@ function smoke_prepare_concurrency_race_fixture(string $password, array $near): 
             'defense_id' => $missileId,
             'request_count' => 99,
             'expected_count' => $missileCapacity,
+        ),
+        'fleet' => array(
+            'login' => mb_strtolower($fleetOrigin['name'], 'UTF-8'),
+            'player_id' => (int)$fleetOrigin['player_id'],
+            'home_planet_id' => (int)$fleetOrigin['home_planet_id'],
+            'target_player_id' => (int)$fleetTarget['player_id'],
+            'target_planet_id' => (int)$fleetTarget['home_planet_id'],
+            'ship_id' => GID_F_SC,
+            'mission' => FTYP_TRANSPORT,
+            'target_type' => PTYP_PLANET,
+            'expected_fleet_count' => 1,
+            'target' => array(
+                'galaxy' => (int)$positions[5][0],
+                'system' => (int)$positions[5][1],
+                'position' => (int)$positions[5][2],
+            ),
         ),
     );
 }

@@ -183,6 +183,17 @@ function fleetMissionCountByMission(body, mission) {
     : 0;
 }
 
+function fleetShipByID(body, shipID) {
+  return Array.isArray(body.fleet?.ships)
+    ? body.fleet.ships.find((row) => Number(row.id ?? 0) === Number(shipID))
+    : undefined;
+}
+
+function fleetShipCountByID(body, shipID) {
+  const ship = fleetShipByID(body, shipID);
+  return ship === undefined ? 0 : Number(ship.count ?? 0);
+}
+
 function statisticsRowByPlayerID(body, playerID) {
   return Array.isArray(body.statistics?.rows)
     ? body.statistics.rows.find((row) => Number(row.player?.id ?? 0) === Number(playerID))
@@ -502,18 +513,26 @@ try {
     typeof concurrencyRaceFixture.defense?.login === "string" &&
     typeof concurrencyRaceFixture.dome?.login === "string" &&
     typeof concurrencyRaceFixture.missile?.login === "string" &&
+    typeof concurrencyRaceFixture.fleet?.login === "string" &&
     Number(concurrencyRaceFixture.shipyard?.home_planet_id ?? 0) > 0 &&
     Number(concurrencyRaceFixture.defense?.home_planet_id ?? 0) > 0 &&
     Number(concurrencyRaceFixture.dome?.home_planet_id ?? 0) > 0 &&
     Number(concurrencyRaceFixture.missile?.home_planet_id ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.fleet?.home_planet_id ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.fleet?.target_planet_id ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.fleet?.target?.galaxy ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.fleet?.target?.system ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.fleet?.target?.position ?? 0) > 0 &&
     Number(concurrencyRaceFixture.shipyard?.ship_id ?? 0) > 0 &&
     Number(concurrencyRaceFixture.defense?.defense_id ?? 0) > 0 &&
     Number(concurrencyRaceFixture.dome?.defense_id ?? 0) > 0 &&
     Number(concurrencyRaceFixture.missile?.defense_id ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.fleet?.ship_id ?? 0) > 0 &&
     Number(concurrencyRaceFixture.shipyard?.expected_count ?? 0) > 0 &&
     Number(concurrencyRaceFixture.defense?.expected_count ?? 0) > 0 &&
     Number(concurrencyRaceFixture.dome?.expected_count ?? 0) > 0 &&
-    Number(concurrencyRaceFixture.missile?.expected_count ?? 0) > 0
+    Number(concurrencyRaceFixture.missile?.expected_count ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.fleet?.expected_fleet_count ?? 0) > 0
   );
   const merchantFixture = smokeFixture?.merchant ?? {};
   const merchantReady = ["insufficient", "call", "trade", "reject"].every(
@@ -4483,6 +4502,43 @@ try {
     : [];
   const concurrencyMissileQueuedCount = concurrencyMissileQueueRows.reduce((sum, row) => sum + Number(row.count ?? 0), 0);
   const concurrencyMissileItem = defenseItemByID(concurrencyMissileAfterBody, concurrencyMissileID);
+  const concurrencyFleetLogin = concurrencyRaceReady
+    ? await loginGameUser(concurrencyRaceFixture.fleet.login, loginSmokePassword, concurrencyUniverse)
+    : null;
+  const concurrencyFleetSearch = withQueryParam(concurrencyFleetLogin?.search ?? "?session=", "cp", Number(concurrencyRaceFixture.fleet?.home_planet_id ?? 0));
+  const concurrencyFleetShipID = Number(concurrencyRaceFixture.fleet?.ship_id ?? 202);
+  const concurrencyFleetMission = Number(concurrencyRaceFixture.fleet?.mission ?? 3);
+  const concurrencyFleetTargetType = Number(concurrencyRaceFixture.fleet?.target_type ?? 1);
+  const concurrencyFleetExpectedCount = Number(concurrencyRaceFixture.fleet?.expected_fleet_count ?? 1);
+  const concurrencyFleetTarget = concurrencyRaceFixture.fleet?.target ?? {};
+  const concurrencyFleetLaunchBody = {
+    action: "launch-dispatch",
+    ships: { [String(concurrencyFleetShipID)]: 1 },
+    resources: {},
+    target: {
+      galaxy: Number(concurrencyFleetTarget.galaxy ?? 0),
+      system: Number(concurrencyFleetTarget.system ?? 0),
+      position: Number(concurrencyFleetTarget.position ?? 0)
+    },
+    targetType: concurrencyFleetTargetType,
+    mission: concurrencyFleetMission,
+    speed: 10
+  };
+  const concurrencyFleetResponses = concurrencyRaceReady
+    ? await Promise.all(Array.from({ length: 4 }, () => request(`/api/game/fleet${concurrencyFleetSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: concurrencyFleetLogin.cookiePair },
+        body: JSON.stringify(concurrencyFleetLaunchBody)
+      })))
+    : [];
+  const concurrencyFleetBodies = concurrencyFleetResponses.map((response) => parseJSON(response));
+  const concurrencyFleetAfter = concurrencyRaceReady
+    ? await request(`/api/game/fleet${concurrencyFleetSearch}`, { headers: { Cookie: concurrencyFleetLogin.cookiePair } })
+    : null;
+  const concurrencyFleetAfterBody = concurrencyFleetAfter ? parseJSON(concurrencyFleetAfter) : {};
+  const concurrencyFleetMissionCount = fleetMissionCountByMission(concurrencyFleetAfterBody, concurrencyFleetMission);
+  const concurrencyFleetShip = fleetShipByID(concurrencyFleetAfterBody, concurrencyFleetShipID);
+  const concurrencyFleetShipCount = fleetShipCountByID(concurrencyFleetAfterBody, concurrencyFleetShipID);
 
   const gameAdmin = await request(`/api/game/admin${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -7754,6 +7810,66 @@ try {
         concurrencyMissileAfterBody.defense?.currentPlanet?.resources ?? {}
       ),
       check(!concurrencyRaceReady || !concurrencyMissileAfter.body.includes(concurrencyMissileLogin?.cookiePair ?? "missing-cookie"), "missile concurrency response does not echo private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_concurrency_fleet_dispatch_api",
+    checks: [
+      check(!smokeFixtureFile || concurrencyRaceReady, "go smoke fixture exposes fleet dispatch concurrency user", {
+        concurrencyRaceFixture
+      }),
+      check(!concurrencyRaceReady || concurrencyFleetLogin?.response.status === 200, "fleet dispatch concurrency user can log in", {
+        status: concurrencyFleetLogin?.response.status
+      }),
+      check(
+        !concurrencyRaceReady ||
+          concurrencyFleetResponses.length === 4 &&
+            concurrencyFleetResponses.every((response) => response.status === 200),
+        "parallel fleet dispatch requests all return HTTP 200",
+        concurrencyFleetResponses.map((response) => ({
+          status: response.status,
+          elapsedMs: response.elapsedMs
+        }))
+      ),
+      check(
+        !concurrencyRaceReady ||
+          concurrencyFleetBodies.every((body) => body.authenticated === true),
+        "parallel fleet dispatch responses authenticate the same user",
+        concurrencyFleetBodies.map((body) => ({
+          authenticated: body.authenticated,
+          issue: body.actionIssue?.code
+        }))
+      ),
+      check(!concurrencyRaceReady || concurrencyFleetAfter?.status === 200, "fleet dispatch concurrency final reload returns HTTP 200", {
+        status: concurrencyFleetAfter?.status
+      }),
+      check(
+        !concurrencyRaceReady || concurrencyFleetMissionCount === concurrencyFleetExpectedCount,
+        "parallel fleet dispatch leaves exactly one active outgoing transport mission",
+        {
+          expected: concurrencyFleetExpectedCount,
+          actual: concurrencyFleetMissionCount,
+          missions: concurrencyFleetAfterBody.fleet?.missions ?? []
+        }
+      ),
+      check(
+        !concurrencyRaceReady || concurrencyFleetShipCount === 0,
+        "parallel fleet dispatch debits the single available small cargo exactly once",
+        {
+          ship: concurrencyFleetShip ?? null,
+          count: concurrencyFleetShipCount
+        }
+      ),
+      check(
+        !concurrencyRaceReady ||
+          Number(concurrencyFleetAfterBody.fleet?.currentPlanet?.resources?.metal ?? 0) >= 0 &&
+            Number(concurrencyFleetAfterBody.fleet?.currentPlanet?.resources?.crystal ?? 0) >= 0 &&
+            Number(concurrencyFleetAfterBody.fleet?.currentPlanet?.resources?.deuterium ?? 0) >= 0,
+        "parallel fleet dispatch does not overspend resources below zero",
+        concurrencyFleetAfterBody.fleet?.currentPlanet?.resources ?? {}
+      ),
+      check(!concurrencyRaceReady || !concurrencyFleetAfter.body.includes(concurrencyFleetLogin?.cookiePair ?? "missing-cookie"), "fleet dispatch concurrency response does not echo private cookie")
     ]
   }));
 
