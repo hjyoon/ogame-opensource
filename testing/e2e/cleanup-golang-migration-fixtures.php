@@ -99,6 +99,7 @@ function cleanup_go_fixture_names(): array
         'goconcfleet',
         'goconcfleettarget',
         'goexpedition',
+        'goexpedcycle',
         'gofleetlife',
         'gofleetlifetarget',
         'goacshold',

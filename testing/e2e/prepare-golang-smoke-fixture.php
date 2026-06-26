@@ -2253,13 +2253,97 @@ function smoke_prepare_expedition_fixture(string $password, array $near): array
             'system' => $targetCoords[1],
             'position' => $targetCoords[2],
         ),
-        'invalid_position' => 15,
+        'invalid_position' => (int)$coords[2] === 15 ? 14 : 15,
         'small_cargo_id' => GID_F_SC,
         'probe_id' => GID_F_PROBE,
         'fleet_ids' => $fleetIds,
         'expected_max' => 4,
         'expected_used' => 3,
         'expected_used_after_launch' => 4,
+    );
+}
+
+function smoke_prepare_expedition_lifecycle_fixture(string $password, array $near): array
+{
+    global $db_prefix, $fleetmap, $resmap, $transportableResources;
+
+    $user = smoke_prepare_user('goexpedcycle', $password, 'goexpedcycle@example.local', USER_TYPE_PLAYER);
+    $playerId = (int)$user['player_id'];
+    $homePlanetId = (int)$user['home_planet_id'];
+
+    smoke_cleanup_alliances(array($playerId));
+    smoke_cleanup_fleets(array($playerId), array($homePlanetId));
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id={$playerId} AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "','" . QTYP_RESEARCH . "','" . QTYP_SHIPYARD . "','" . QTYP_FLEET . "')");
+    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id={$playerId} OR planet_id={$homePlanetId}");
+    dbquery("DELETE FROM {$db_prefix}messages WHERE owner_id={$playerId}");
+
+    $coords = smoke_find_empty_position($near);
+    smoke_prepare_planet($homePlanetId, $playerId, 'GoExpCycle', $coords);
+    $targetCoords = array((int)$coords[0], (int)$coords[1], 16);
+    $targetPlanetId = CreateOuterSpace($targetCoords[0], $targetCoords[1], $targetCoords[2]);
+    if ($targetPlanetId <= 0) {
+        throw new RuntimeException('Failed to prepare Go expedition lifecycle farspace target.');
+    }
+    dbquery("UPDATE {$db_prefix}planets SET `" . GID_RC_METAL . "`=0 WHERE planet_id={$targetPlanetId}");
+
+    $research = array();
+    foreach ($resmap as $gid) {
+        $research[] = "`{$gid}`=" . ($gid === GID_R_EXPEDITION ? 16 : 10);
+    }
+    $fleetColumns = array();
+    foreach ($fleetmap as $gid) {
+        $count = 0;
+        if ($gid === GID_F_SC || $gid === GID_F_PROBE) {
+            $count = 3;
+        }
+        $fleetColumns[] = "`{$gid}`={$count}";
+    }
+    $now = time();
+    dbquery(
+        "UPDATE {$db_prefix}users SET " . implode(',', $research) . ", adm_until=0, admin=0, validated=1, deact_ip=1, " .
+        "vacation=0, vacation_until=0, banned=0, banned_until=0, noattack=0, noattack_until=0, " .
+        "disable=0, disable_until=0, lang='en', skin='/evolution/', useskin=1, score1=10000, score2=0, score3=0, " .
+        "place1=1, place2=1, place3=1, hplanetid={$homePlanetId}, aktplanet={$homePlanetId}, lastclick={$now} " .
+        "WHERE player_id={$playerId}"
+    );
+    dbquery(
+        "UPDATE {$db_prefix}planets SET " . implode(',', $fleetColumns) . ", `" . GID_RC_METAL . "`=10000000, " .
+        "`" . GID_RC_CRYSTAL . "`=10000000, `" . GID_RC_DEUTERIUM . "`=10000000, lastpeek={$now}, lastakt={$now} " .
+        "WHERE planet_id={$homePlanetId}"
+    );
+
+    $fleet = array();
+    foreach ($fleetmap as $gid) {
+        $fleet[$gid] = ($gid === GID_F_SC || $gid === GID_F_PROBE) ? 1 : 0;
+    }
+    $resources = array();
+    foreach ($transportableResources as $gid) {
+        $resources[$gid] = 0;
+    }
+    $origin = LoadPlanetById($homePlanetId);
+    $target = LoadPlanetById($targetPlanetId);
+    if ($origin === null || $target === null) {
+        throw new RuntimeException('Go expedition lifecycle fixture planets are missing.');
+    }
+    AdjustShips($fleet, $homePlanetId, '-');
+    $fleetId = DispatchFleet($fleet, $origin, $target, FTYP_EXPEDITION, 60, $resources, 0, $now - 7200, 0, 1);
+    smoke_force_fleet_queue_window($fleetId, $now - 7200, $now - 7140);
+    InvalidateUserCache();
+
+    return array(
+        'login' => mb_strtolower($user['name'], 'UTF-8'),
+        'player_id' => $playerId,
+        'home_planet_id' => $homePlanetId,
+        'target_planet_id' => $targetPlanetId,
+        'fleet_id' => $fleetId,
+        'small_cargo_id' => GID_F_SC,
+        'probe_id' => GID_F_PROBE,
+        'expedition_mission' => FTYP_EXPEDITION,
+        'orbiting_mission' => FTYP_EXPEDITION + FTYP_ORBITING,
+        'return_mission' => FTYP_EXPEDITION + FTYP_RETURN,
+        'expected_final_small_cargo' => 3,
+        'expected_final_probe' => 3,
+        'expected_visit_counter' => 1,
     );
 }
 
@@ -2593,6 +2677,7 @@ $planetContextFixture = smoke_prepare_planet_context_fixture($password, $home);
 $inputHardeningFixture = smoke_prepare_input_hardening_fixture($password, $home);
 $techEconomyFixture = smoke_prepare_tech_economy_fixture($password, $home);
 $expeditionFixture = smoke_prepare_expedition_fixture($password, $home);
+$expeditionLifecycleFixture = smoke_prepare_expedition_lifecycle_fixture($password, $home);
 $fleetLifecycleFixture = smoke_prepare_fleet_lifecycle_fixture($password, $home);
 $fleetRecallFixture = smoke_prepare_fleet_recall_fixture($password, $home);
 $statisticsRankingFixture = smoke_prepare_statistics_ranking_fixture($password, $home);
@@ -2658,6 +2743,7 @@ echo json_encode(array(
 	'input_hardening' => $inputHardeningFixture,
 	'tech_economy' => $techEconomyFixture,
 	'expedition' => $expeditionFixture,
+	'expedition_lifecycle' => $expeditionLifecycleFixture,
 	'fleet_lifecycle' => $fleetLifecycleFixture,
 	'fleet_recall' => $fleetRecallFixture,
 	'statistics_ranking' => $statisticsRankingFixture,

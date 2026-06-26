@@ -36,6 +36,10 @@ func (r FleetRepository) FinishDueFleetQueues(ctx context.Context, until int) er
 	if err != nil {
 		return err
 	}
+	messagesTable, err := tableName(r.prefix, "messages")
+	if err != nil {
+		return err
+	}
 
 	frozen, err := r.loadUniverseFrozen(ctx, uniTable)
 	if err != nil {
@@ -50,7 +54,7 @@ func (r FleetRepository) FinishDueFleetQueues(ctx context.Context, until int) er
 		return err
 	}
 	for _, task := range tasks {
-		if err := r.finishFleetQueueTask(ctx, fleetTable, queueTable, planetsTable, task); err != nil {
+		if err := r.finishFleetQueueTask(ctx, fleetTable, queueTable, planetsTable, messagesTable, task); err != nil {
 			return err
 		}
 	}
@@ -86,7 +90,7 @@ func (r FleetRepository) loadDueFleetQueueTasks(ctx context.Context, queueTable 
 	return tasks, nil
 }
 
-func (r FleetRepository) finishFleetQueueTask(ctx context.Context, fleetTable string, queueTable string, planetsTable string, task fleetQueueTask) error {
+func (r FleetRepository) finishFleetQueueTask(ctx context.Context, fleetTable string, queueTable string, planetsTable string, messagesTable string, task fleetQueueTask) error {
 	fleet, found, err := r.loadRecallFleetAnyOwner(ctx, fleetTable, task.FleetID)
 	if err != nil {
 		return err
@@ -100,6 +104,10 @@ func (r FleetRepository) finishFleetQueueTask(ctx context.Context, fleetTable st
 		return r.finishTransportFleetArrival(ctx, fleetTable, queueTable, planetsTable, task, fleet)
 	case domaingame.FleetMissionDeploy:
 		return r.finishDeployFleetArrival(ctx, fleetTable, queueTable, planetsTable, task, fleet)
+	case domaingame.FleetMissionExpedition:
+		return r.finishExpeditionArrival(ctx, fleetTable, queueTable, task, fleet)
+	case domaingame.FleetMissionExpedition + domaingame.FleetMissionOrbitingOffset:
+		return r.finishExpeditionHold(ctx, fleetTable, queueTable, planetsTable, messagesTable, task, fleet)
 	default:
 		if fleet.Mission >= domaingame.FleetMissionReturnOffset && fleet.Mission < domaingame.FleetMissionOrbitingOffset {
 			return r.finishReturningFleetArrival(ctx, fleetTable, queueTable, planetsTable, task, fleet)
@@ -131,6 +139,34 @@ func (r FleetRepository) finishDeployFleetArrival(ctx context.Context, fleetTabl
 		return err
 	}
 	if err := r.addFleetShipsToPlanet(ctx, planetsTable, fleet.TargetPlanetID, fleet.Ships, task.End); err != nil {
+		return err
+	}
+	return r.removeCompletedFleetTask(ctx, fleetTable, queueTable, fleet.ID, task.TaskID)
+}
+
+func (r FleetRepository) finishExpeditionArrival(ctx context.Context, fleetTable string, queueTable string, task fleetQueueTask, fleet recallFleetRow) error {
+	holdFleetID, err := r.insertFleetTransition(ctx, fleetTable, fleet.OwnerID, fleet, fleet.Mission+domaingame.FleetMissionOrbitingOffset, int64(fleet.DeployTime), int64(fleet.FlightTime))
+	if err != nil {
+		return err
+	}
+	if err := r.insertRecallQueue(ctx, queueTable, fleet.OwnerID, holdFleetID, fleet.Mission+domaingame.FleetMissionOrbitingOffset, task.End, int64(fleet.DeployTime)); err != nil {
+		return err
+	}
+	return r.removeCompletedFleetTask(ctx, fleetTable, queueTable, fleet.ID, task.TaskID)
+}
+
+func (r FleetRepository) finishExpeditionHold(ctx context.Context, fleetTable string, queueTable string, planetsTable string, messagesTable string, task fleetQueueTask, fleet recallFleetRow) error {
+	returnFleetID, err := r.insertFleetTransition(ctx, fleetTable, fleet.OwnerID, fleet, domaingame.FleetMissionExpedition+domaingame.FleetMissionReturnOffset, int64(fleet.DeployTime), 0)
+	if err != nil {
+		return err
+	}
+	if err := r.insertRecallQueue(ctx, queueTable, fleet.OwnerID, returnFleetID, domaingame.FleetMissionExpedition+domaingame.FleetMissionReturnOffset, task.End, int64(fleet.DeployTime)); err != nil {
+		return err
+	}
+	if err := r.addFleetResourcesToPlanet(ctx, planetsTable, fleet.TargetPlanetID, 1, 0, 0, task.End); err != nil {
+		return err
+	}
+	if err := r.insertExpeditionMessage(ctx, messagesTable, fleet.OwnerID, task.End); err != nil {
 		return err
 	}
 	return r.removeCompletedFleetTask(ctx, fleetTable, queueTable, fleet.ID, task.TaskID)
@@ -185,6 +221,20 @@ func (r FleetRepository) removeCompletedFleetTask(ctx context.Context, fleetTabl
 		return err
 	}
 	return (BuildingsRepository{execer: r.execer}).removeGlobalQueue(ctx, queueTable, taskID)
+}
+
+func (r FleetRepository) insertExpeditionMessage(ctx context.Context, messagesTable string, ownerID int, at int64) error {
+	_, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("INSERT INTO %s (owner_id, pm, msgfrom, subj, text, shown, date, planet_id) VALUES (?, ?, ?, ?, ?, 0, ?, 0)", messagesTable),
+		ownerID,
+		domaingame.MessageTypeExpedition,
+		"Fleet command",
+		"Expedition report",
+		"Nothing happened.",
+		at,
+	)
+	return err
 }
 
 func maxFloat(left float64, right float64) float64 {

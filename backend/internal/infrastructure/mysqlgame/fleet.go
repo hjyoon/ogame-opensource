@@ -1245,6 +1245,10 @@ func (r FleetRepository) recallPlanetExists(ctx context.Context, planetsTable st
 }
 
 func (r FleetRepository) insertRecallFleet(ctx context.Context, fleetTable string, ownerID int, fleet recallFleetRow, mission int, seconds int64) (int, error) {
+	return r.insertFleetTransition(ctx, fleetTable, ownerID, fleet, mission, seconds, 0)
+}
+
+func (r FleetRepository) insertFleetTransition(ctx context.Context, fleetTable string, ownerID int, fleet recallFleetRow, mission int, seconds int64, deploySeconds int64) (int, error) {
 	ids := domaingame.FleetIDs()
 	args := []any{
 		ownerID,
@@ -1257,7 +1261,7 @@ func (r FleetRepository) insertRecallFleet(ctx context.Context, fleetTable strin
 		fleet.StartPlanetID,
 		fleet.TargetPlanetID,
 		seconds,
-		0,
+		deploySeconds,
 	}
 	args = append(args, fleetCountValues(ids, fleet.Ships)...)
 	result, err := r.execer.ExecContext(

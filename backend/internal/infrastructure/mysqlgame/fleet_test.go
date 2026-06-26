@@ -2435,6 +2435,65 @@ func TestFleetRepositoryFinishDueReturnRestoresOrigin(t *testing.T) {
 	}
 }
 
+func TestFleetRepositoryFinishDueExpeditionCreatesHoldAndReturn(t *testing.T) {
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues([]any{58, 42, 126, int64(2_300)})},
+		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionExpedition, 0, map[int]int{domaingame.FleetSmallCargo: 1, domaingame.FleetEspionageProbe: 1}))},
+	}}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_300, 0) })
+
+	if err := repository.FinishDueFleetQueues(context.Background(), 2_300); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execCalls) != 4 {
+		t.Fatalf("expected expedition hold fleet, hold queue, and cleanup writes, got %+v", runner.execCalls)
+	}
+	holdFleet := runner.execCalls[0]
+	if !strings.Contains(holdFleet.sql, "INSERT INTO `ogame_fleet`") ||
+		holdFleet.args[6] != domaingame.FleetMissionExpedition+domaingame.FleetMissionOrbitingOffset ||
+		holdFleet.args[9] != int64(600) ||
+		holdFleet.args[10] != int64(300) {
+		t.Fatalf("expected expedition arrival to preserve hold and return timings, got %+v", holdFleet)
+	}
+	holdQueue := runner.execCalls[1]
+	if !strings.Contains(holdQueue.sql, "INSERT INTO `ogame_queue`") || holdQueue.args[5] != int64(2_300) || holdQueue.args[6] != int64(2_900) {
+		t.Fatalf("expected expedition hold queue to use deploy time, got %+v", holdQueue)
+	}
+
+	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues([]any{59, 42, 127, int64(2_900)})},
+		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionExpedition+domaingame.FleetMissionOrbitingOffset, 0, map[int]int{domaingame.FleetSmallCargo: 1, domaingame.FleetEspionageProbe: 1}))},
+	}}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_900, 0) })
+
+	if err := repository.FinishDueFleetQueues(context.Background(), 2_900); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execCalls) != 6 {
+		t.Fatalf("expected expedition return, visit counter, message, and cleanup writes, got %+v", runner.execCalls)
+	}
+	returnFleet := runner.execCalls[0]
+	if !strings.Contains(returnFleet.sql, "INSERT INTO `ogame_fleet`") ||
+		returnFleet.args[6] != domaingame.FleetMissionExpedition+domaingame.FleetMissionReturnOffset ||
+		returnFleet.args[9] != int64(600) ||
+		returnFleet.args[10] != int64(0) {
+		t.Fatalf("expected expedition hold to create return fleet with original flight time, got %+v", returnFleet)
+	}
+	visitCounter := runner.execCalls[2]
+	if !strings.Contains(visitCounter.sql, "UPDATE `ogame_planets`") || visitCounter.args[0] != float64(1) || visitCounter.args[4] != 100 {
+		t.Fatalf("expected expedition hold to increment farspace visit counter, got %+v", visitCounter)
+	}
+	message := runner.execCalls[3]
+	if !strings.Contains(message.sql, "INSERT INTO `ogame_messages`") ||
+		message.args[0] != 42 ||
+		message.args[1] != domaingame.MessageTypeExpedition ||
+		message.args[5] != int64(2_900) {
+		t.Fatalf("expected expedition result message, got %+v", message)
+	}
+}
+
 func TestFleetRepositoryFinishDueFleetQueuesSkipsFrozenAndRejectsInvalidSetup(t *testing.T) {
 	repository := NewFleetRepositoryWithQueryer(&fakeQueryer{}, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
 	if err := repository.FinishDueFleetQueues(context.Background(), 2_000); err == nil || !strings.Contains(err.Error(), "fleet queue updater unavailable") {
@@ -2620,6 +2679,42 @@ func TestFleetRepositoryFinishDueFleetQueueWriteErrors(t *testing.T) {
 			mission:  domaingame.FleetMissionTransport + domaingame.FleetMissionReturnOffset,
 			execErrs: []error{nil, nil, nil, errors.New("queue cleanup failed")},
 			want:     "queue cleanup failed",
+		},
+		{
+			name:     "expedition hold fleet insert",
+			mission:  domaingame.FleetMissionExpedition,
+			execErrs: []error{errors.New("expedition hold fleet failed")},
+			want:     "expedition hold fleet failed",
+		},
+		{
+			name:     "expedition hold queue insert",
+			mission:  domaingame.FleetMissionExpedition,
+			execErrs: []error{nil, errors.New("expedition hold queue failed")},
+			want:     "expedition hold queue failed",
+		},
+		{
+			name:     "expedition return fleet insert",
+			mission:  domaingame.FleetMissionExpedition + domaingame.FleetMissionOrbitingOffset,
+			execErrs: []error{errors.New("expedition return fleet failed")},
+			want:     "expedition return fleet failed",
+		},
+		{
+			name:     "expedition return queue insert",
+			mission:  domaingame.FleetMissionExpedition + domaingame.FleetMissionOrbitingOffset,
+			execErrs: []error{nil, errors.New("expedition return queue failed")},
+			want:     "expedition return queue failed",
+		},
+		{
+			name:     "expedition visit counter update",
+			mission:  domaingame.FleetMissionExpedition + domaingame.FleetMissionOrbitingOffset,
+			execErrs: []error{nil, nil, errors.New("expedition visit failed")},
+			want:     "expedition visit failed",
+		},
+		{
+			name:     "expedition message insert",
+			mission:  domaingame.FleetMissionExpedition + domaingame.FleetMissionOrbitingOffset,
+			execErrs: []error{nil, nil, nil, errors.New("expedition message failed")},
+			want:     "expedition message failed",
 		},
 	}
 

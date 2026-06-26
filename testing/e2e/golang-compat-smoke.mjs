@@ -764,6 +764,19 @@ try {
     Array.isArray(expeditionFixture.fleet_ids) &&
     expeditionFixture.fleet_ids.length >= Number(expeditionFixture.expected_used ?? 0)
   );
+  const expeditionLifecycleFixture = smokeFixture?.expedition_lifecycle ?? {};
+  const expeditionLifecycleSmallCargoID = Number(expeditionLifecycleFixture.small_cargo_id ?? 202);
+  const expeditionLifecycleProbeID = Number(expeditionLifecycleFixture.probe_id ?? 210);
+  const expeditionLifecycleReady = Boolean(
+    typeof expeditionLifecycleFixture.login === "string" &&
+    Number(expeditionLifecycleFixture.home_planet_id ?? 0) > 0 &&
+    Number(expeditionLifecycleFixture.target_planet_id ?? 0) > 0 &&
+    Number(expeditionLifecycleFixture.fleet_id ?? 0) > 0 &&
+    Number(expeditionLifecycleFixture.orbiting_mission ?? 0) > 0 &&
+    Number(expeditionLifecycleFixture.return_mission ?? 0) > 0 &&
+    Number(expeditionLifecycleFixture.expected_final_small_cargo ?? 0) > 0 &&
+    Number(expeditionLifecycleFixture.expected_final_probe ?? 0) > 0
+  );
   const statisticsRankingFixture = smokeFixture?.statistics_ranking ?? {};
   const statisticsRankingReady = Boolean(
     typeof statisticsRankingFixture.leader?.login === "string" &&
@@ -2170,6 +2183,52 @@ try {
       })
     : { status: 0, headers: {}, body: "{}" };
   const expeditionLimitBody = parseJSON(expeditionLimit);
+
+  const expeditionLifecycleLogin = expeditionLifecycleReady
+    ? await loginGameUser(expeditionLifecycleFixture.login, loginSmokePassword, universes[0]?.baseUrl ?? "http://localhost:8888")
+    : null;
+  const expeditionLifecycleSearch = expeditionLifecycleReady
+    ? withQueryParam(expeditionLifecycleLogin?.search ?? "?session=", "cp", Number(expeditionLifecycleFixture.home_planet_id))
+    : "?session=";
+  const expeditionLifecycleCookie = expeditionLifecycleLogin?.cookiePair ?? "";
+  const expeditionLifecycleAfterArrival = expeditionLifecycleReady
+    ? await request(`/api/game/fleet${expeditionLifecycleSearch}`, {
+        headers: { Cookie: expeditionLifecycleCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const expeditionLifecycleAfterArrivalBody = parseJSON(expeditionLifecycleAfterArrival);
+  const expeditionLifecycleOrbiting = fleetMissionByMission(
+    expeditionLifecycleAfterArrivalBody,
+    Number(expeditionLifecycleFixture.orbiting_mission ?? 215)
+  );
+  const expeditionLifecycleAfterHold = expeditionLifecycleReady
+    ? await request(`/api/game/fleet${expeditionLifecycleSearch}`, {
+        headers: { Cookie: expeditionLifecycleCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const expeditionLifecycleAfterHoldBody = parseJSON(expeditionLifecycleAfterHold);
+  const expeditionLifecycleReturning = fleetMissionByMission(
+    expeditionLifecycleAfterHoldBody,
+    Number(expeditionLifecycleFixture.return_mission ?? 115)
+  );
+  const expeditionLifecycleMessages = expeditionLifecycleReady
+    ? await request(`/api/game/messages${expeditionLifecycleSearch}`, {
+        headers: { Cookie: expeditionLifecycleCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const expeditionLifecycleMessagesBody = parseJSON(expeditionLifecycleMessages);
+  const expeditionLifecycleMessage = messageRowContaining(expeditionLifecycleMessagesBody, "Expedition report");
+  const expeditionLifecycleAfterReturn = expeditionLifecycleReady
+    ? await request(`/api/game/fleet${expeditionLifecycleSearch}`, {
+        headers: { Cookie: expeditionLifecycleCookie }
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const expeditionLifecycleAfterReturnBody = parseJSON(expeditionLifecycleAfterReturn);
+  const expeditionLifecycleFinalRows = Array.isArray(expeditionLifecycleAfterReturnBody.fleet?.missions)
+    ? expeditionLifecycleAfterReturnBody.fleet.missions.filter((row) => row.own === true && row.missionName === "Expedition")
+    : [];
+  const expeditionLifecycleFinalSmallCargo = fleetShipCountByID(expeditionLifecycleAfterReturnBody, expeditionLifecycleSmallCargoID);
+  const expeditionLifecycleFinalProbe = fleetShipCountByID(expeditionLifecycleAfterReturnBody, expeditionLifecycleProbeID);
 
   const gameFleet = await request(`/api/game/fleet${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -8385,6 +8444,67 @@ try {
         expeditionLimitBody.actionIssue ?? {}
       ),
       check(!expeditionReady || !expeditionLaunch.body.includes(expeditionCookie), "expedition response does not echo private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_expedition_due_queue_lifecycle_api",
+    checks: [
+      check(!smokeFixtureFile || expeditionLifecycleReady, "go smoke fixture exposes expedition due queue lifecycle state", {
+        expeditionLifecycleFixture
+      }),
+      check(!expeditionLifecycleReady || expeditionLifecycleLogin?.response.status === 200, "expedition lifecycle user can log in", {
+        status: expeditionLifecycleLogin?.response.status
+      }),
+      check(!expeditionLifecycleReady || expeditionLifecycleAfterArrival.status === 200, "due expedition arrival reload returns HTTP 200", {
+        status: expeditionLifecycleAfterArrival.status
+      }),
+      check(
+        !expeditionLifecycleReady ||
+          expeditionLifecycleOrbiting === undefined ||
+          (expeditionLifecycleOrbiting.mission === Number(expeditionLifecycleFixture.orbiting_mission ?? 215) &&
+            expeditionLifecycleOrbiting.stateShort === "(H)"),
+        "observable expedition hold row keeps the legacy orbiting state",
+        expeditionLifecycleOrbiting ?? {}
+      ),
+      check(!expeditionLifecycleReady || expeditionLifecycleAfterHold.status === 200, "due expedition hold reload returns HTTP 200", {
+        status: expeditionLifecycleAfterHold.status
+      }),
+      check(
+        !expeditionLifecycleReady ||
+          expeditionLifecycleReturning === undefined ||
+          (expeditionLifecycleReturning.mission === Number(expeditionLifecycleFixture.return_mission ?? 115) &&
+            expeditionLifecycleReturning.stateShort === "(F)"),
+        "observable expedition return row keeps the legacy returning state",
+        expeditionLifecycleReturning ?? {}
+      ),
+      check(!expeditionLifecycleReady || expeditionLifecycleMessages.status === 200, "expedition result messages reload returns HTTP 200", {
+        status: expeditionLifecycleMessages.status
+      }),
+      check(
+        !expeditionLifecycleReady || expeditionLifecycleMessage !== undefined,
+        "expedition hold creates an expedition report message",
+        expeditionLifecycleMessagesBody.messages?.rows ?? []
+      ),
+      check(!expeditionLifecycleReady || expeditionLifecycleAfterReturn.status === 200, "due expedition return reload returns HTTP 200", {
+        status: expeditionLifecycleAfterReturn.status
+      }),
+      check(
+        !expeditionLifecycleReady || expeditionLifecycleFinalRows.length === 0,
+        "due expedition return removes active expedition rows",
+        expeditionLifecycleFinalRows
+      ),
+      check(
+        !expeditionLifecycleReady ||
+          expeditionLifecycleFinalSmallCargo === Number(expeditionLifecycleFixture.expected_final_small_cargo ?? -1) &&
+            expeditionLifecycleFinalProbe === Number(expeditionLifecycleFixture.expected_final_probe ?? -1),
+        "due expedition return restores fleet ships to the origin planet",
+        {
+          smallCargo: expeditionLifecycleFinalSmallCargo,
+          probe: expeditionLifecycleFinalProbe
+        }
+      ),
+      check(!expeditionLifecycleReady || !expeditionLifecycleAfterReturn.body.includes(expeditionLifecycleCookie), "expedition lifecycle response does not echo private cookie")
     ]
   }));
 
