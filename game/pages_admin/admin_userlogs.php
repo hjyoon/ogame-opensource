@@ -52,7 +52,7 @@ class Admin_Userlogs extends Page {
         global $session;
 
         if ( method () === "GET" ) {
-            $query = "SELECT * FROM ".$db_prefix."userlogs WHERE owner_id > 0 ORDER BY date DESC LIMIT 50";
+            $query = "SELECT * FROM ".$db_prefix."userlogs WHERE owner_id > 0 ORDER BY date DESC, id DESC LIMIT 50";
             $result = dbquery ($query );
             echo "<h2>".loca("ADM_USERLOG_LAST_ACTIONS")."</h2>\n";
             echo "<table><tr><td class=\"c\">".loca("ADM_USERLOG_DATE")."</td><td class=\"c\">".loca("ADM_USERLOG_USER")."</td><td class=\"c\">".loca("ADM_USERLOG_CATEGORY")."</td><td class=\"c\">".loca("ADM_USERLOG_ACTION")."</td></tr>\n";

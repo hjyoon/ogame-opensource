@@ -72,6 +72,14 @@ function cleanup_go_fixture_names(): array
         'empirevisual',
         'alliancevisual',
         'allianceapplicant',
+        'gotecnanlock',
+        'gotecnanopen',
+        'gotecreslock',
+        'gotecresopen',
+        'gotecshiplock',
+        'gotecshipopen',
+        'gotecdeflock',
+        'gotecdefopen',
     );
 }
 
@@ -121,6 +129,7 @@ if (!empty($userIds)) {
     }
     dbquery("DELETE FROM {$db_prefix}union WHERE target_player IN ({$userList}) OR " . implode(' OR ', $orPlayers));
     dbquery("DELETE FROM {$db_prefix}messages WHERE owner_id IN ({$userList})");
+    dbquery("DELETE FROM {$db_prefix}userlogs WHERE owner_id IN ({$userList})");
     dbquery("DELETE FROM {$db_prefix}template WHERE owner_id IN ({$userList})");
     dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id IN ({$userList}) AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "','" . QTYP_RESEARCH . "','" . QTYP_SHIPYARD . "','" . QTYP_FLEET . "')");
     dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id IN ({$userList}) OR planet_id IN ({$planetList})");

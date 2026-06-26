@@ -978,7 +978,7 @@ func (r AdminRepository) loadAdminUserLogRows(ctx context.Context) ([]domaingame
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT l.id, COALESCE(l.owner_id, 0), COALESCE(u.oname, ''), COALESCE(u.lastclick, 0), COALESCE(u.vacation, 0), COALESCE(u.banned, 0), COALESCE(u.noattack, 0), COALESCE(u.disable, 0), COALESCE(l.date, 0), COALESCE(l.type, ''), COALESCE(l.text, '') FROM %s l LEFT JOIN %s u ON u.player_id = l.owner_id WHERE l.owner_id > 0 ORDER BY l.date DESC LIMIT 50",
+			"SELECT l.id, COALESCE(l.owner_id, 0), COALESCE(u.oname, ''), COALESCE(u.lastclick, 0), COALESCE(u.vacation, 0), COALESCE(u.banned, 0), COALESCE(u.noattack, 0), COALESCE(u.disable, 0), COALESCE(l.date, 0), COALESCE(l.type, ''), COALESCE(l.text, '') FROM %s l LEFT JOIN %s u ON u.player_id = l.owner_id WHERE l.owner_id > 0 ORDER BY l.date DESC, l.id DESC LIMIT 50",
 			userLogsTable,
 			usersTable,
 		),
@@ -1310,7 +1310,7 @@ func (r AdminRepository) loadAdminQueueRows(ctx context.Context) ([]domaingame.A
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT q.task_id, COALESCE(q.owner_id, 0), COALESCE(u.oname, ''), COALESCE(q.type, ''), COALESCE(q.sub_id, 0), COALESCE(q.obj_id, 0), COALESCE(q.level, 0), COALESCE(q.start, 0), COALESCE(q.end, 0), COALESCE(q.prio, 0), COALESCE(q.freeze, 0), COALESCE(q.frozen, 0), COALESCE(p.name, '') FROM %s q LEFT JOIN %s u ON u.player_id = q.owner_id LEFT JOIN %s bq ON bq.id = q.sub_id LEFT JOIN %s p ON p.planet_id = CASE WHEN q.type IN (?, ?) THEN bq.planet_id WHEN q.type IN (?, ?) THEN q.sub_id ELSE NULL END WHERE q.type <> ? ORDER BY q.end ASC, q.prio DESC LIMIT 50",
+			"SELECT q.task_id, COALESCE(q.owner_id, 0), COALESCE(u.oname, ''), COALESCE(q.type, ''), COALESCE(q.sub_id, 0), COALESCE(q.obj_id, 0), COALESCE(q.level, 0), COALESCE(q.start, 0), COALESCE(q.end, 0), COALESCE(q.prio, 0), COALESCE(q.freeze, 0), COALESCE(q.frozen, 0), COALESCE(p.name, '') FROM %s q LEFT JOIN %s u ON u.player_id = q.owner_id LEFT JOIN %s bq ON bq.id = q.sub_id LEFT JOIN %s p ON p.planet_id = CASE WHEN q.type IN (?, ?) THEN bq.planet_id WHEN q.type IN (?, ?) THEN q.sub_id ELSE NULL END WHERE q.type <> ? ORDER BY q.end ASC, q.prio DESC, q.task_id ASC LIMIT 50",
 			queueTable,
 			usersTable,
 			buildQueueTable,

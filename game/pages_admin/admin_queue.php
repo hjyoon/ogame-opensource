@@ -50,8 +50,8 @@ class Admin_Queue extends Page {
             }
         }
 
-        if ( $this->player_id > 0 ) $query = "SELECT * FROM ".$db_prefix."queue WHERE (type <> '".QTYP_FLEET."') AND owner_id=$this->player_id ORDER BY end ASC, prio DESC";
-        else $query = "SELECT * FROM ".$db_prefix."queue WHERE (type <> '".QTYP_FLEET."') ORDER BY end ASC, prio DESC LIMIT 50";
+        if ( $this->player_id > 0 ) $query = "SELECT * FROM ".$db_prefix."queue WHERE (type <> '".QTYP_FLEET."') AND owner_id=$this->player_id ORDER BY end ASC, prio DESC, task_id ASC";
+        else $query = "SELECT * FROM ".$db_prefix."queue WHERE (type <> '".QTYP_FLEET."') ORDER BY end ASC, prio DESC, task_id ASC LIMIT 50";
         $this->result = dbquery ($query);
 
         return true;

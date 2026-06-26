@@ -127,6 +127,18 @@ function resourceRowByID(body, resourceID) {
     : undefined;
 }
 
+function buildingItemByID(body, itemID) {
+  return Array.isArray(body.buildings?.items)
+    ? body.buildings.items.find((row) => Number(row.id ?? 0) === Number(itemID))
+    : undefined;
+}
+
+function researchItemByID(body, itemID) {
+  return Array.isArray(body.research?.items)
+    ? body.research.items.find((row) => Number(row.id ?? 0) === Number(itemID))
+    : undefined;
+}
+
 function shipyardItemByID(body, itemID) {
   return Array.isArray(body.shipyard?.items)
     ? body.shipyard.items.find((row) => Number(row.id ?? 0) === Number(itemID))
@@ -388,6 +400,14 @@ async function loginGameUser(login, pass, universe) {
   return { response, body, cookie, cookiePair, playerId, search };
 }
 
+async function gameFixtureRequest(fixture, route, universe, options = {}) {
+  const login = await loginGameUser(fixture.login, loginSmokePassword, universe);
+  const search = withQueryParam(login.search, "cp", Number(fixture.home_planet_id ?? 0));
+  const headers = { ...(options.headers ?? {}), Cookie: login.cookiePair };
+  const response = await request(`/api/game/${route}${search}`, { ...options, headers });
+  return { login, response, body: parseJSON(response) };
+}
+
 const cases = [];
 
 try {
@@ -543,6 +563,21 @@ try {
     Number(inputHardeningFixture.defender?.coordinates?.system ?? 0) > 0 &&
     Number(inputHardeningFixture.defender?.coordinates?.position ?? 0) > 0 &&
     inputHardeningMaxShipyard > 0
+  );
+  const techEconomyFixture = smokeFixture?.tech_economy ?? {};
+  const techEconomyKeys = [
+    "nanite_locked",
+    "nanite_unlocked",
+    "research_locked",
+    "research_unlocked",
+    "shipyard_locked",
+    "shipyard_unlocked",
+    "defense_locked",
+    "defense_unlocked"
+  ];
+  const techEconomyReady = techEconomyKeys.every((key) =>
+    typeof techEconomyFixture[key]?.login === "string" &&
+    Number(techEconomyFixture[key]?.home_planet_id ?? 0) > 0
   );
   const passwordRecoveryFixture = smokeFixture?.password_recovery ?? {};
   const passwordRecoveryFixtureReady =
@@ -2410,6 +2445,91 @@ try {
   } catch {
     gameDefenseWithoutCookieBody = {};
   }
+
+  const techEconomyUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const techEconomyNaniteLockedGet = techEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.nanite_locked, "buildings", techEconomyUniverse)
+    : { response: { status: 0 }, body: {} };
+  const techEconomyNaniteLockedPost = techEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.nanite_locked, "buildings", techEconomyUniverse, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "add", techId: 15 })
+      })
+    : { response: { status: 0 }, body: {} };
+  const techEconomyNaniteUnlockedGet = techEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.nanite_unlocked, "buildings", techEconomyUniverse)
+    : { response: { status: 0 }, body: {} };
+  const techEconomyNaniteUnlockedPost = techEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.nanite_unlocked, "buildings", techEconomyUniverse, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "add", techId: 15 })
+      })
+    : { response: { status: 0 }, body: {} };
+
+  const techEconomyResearchLockedGet = techEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.research_locked, "research", techEconomyUniverse)
+    : { response: { status: 0 }, body: {} };
+  const techEconomyResearchLockedPost = techEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.research_locked, "research", techEconomyUniverse, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "start", techId: 110 })
+      })
+    : { response: { status: 0 }, body: {} };
+  const techEconomyResearchUnlockedGet = techEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.research_unlocked, "research", techEconomyUniverse)
+    : { response: { status: 0 }, body: {} };
+  const techEconomyResearchUnlockedPost = techEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.research_unlocked, "research", techEconomyUniverse, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "start", techId: 110 })
+      })
+    : { response: { status: 0 }, body: {} };
+
+  const techEconomyShipLockedGet = techEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.shipyard_locked, "shipyard", techEconomyUniverse)
+    : { response: { status: 0 }, body: {} };
+  const techEconomyShipLockedPost = techEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.shipyard_locked, "shipyard", techEconomyUniverse, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orders: { 206: 1 } })
+      })
+    : { response: { status: 0 }, body: {} };
+  const techEconomyShipUnlockedGet = techEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.shipyard_unlocked, "shipyard", techEconomyUniverse)
+    : { response: { status: 0 }, body: {} };
+  const techEconomyShipUnlockedPost = techEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.shipyard_unlocked, "shipyard", techEconomyUniverse, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orders: { 206: 1 } })
+      })
+    : { response: { status: 0 }, body: {} };
+
+  const techEconomyDefenseLockedGet = techEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.defense_locked, "defense", techEconomyUniverse)
+    : { response: { status: 0 }, body: {} };
+  const techEconomyDefenseLockedPost = techEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.defense_locked, "defense", techEconomyUniverse, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orders: { 406: 1 } })
+      })
+    : { response: { status: 0 }, body: {} };
+  const techEconomyDefenseUnlockedGet = techEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.defense_unlocked, "defense", techEconomyUniverse)
+    : { response: { status: 0 }, body: {} };
+  const techEconomyDefenseUnlockedPost = techEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.defense_unlocked, "defense", techEconomyUniverse, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orders: { 406: 1 } })
+      })
+    : { response: { status: 0 }, body: {} };
 
   const gameEmpire = await request(`/api/game/empire${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -5111,6 +5231,64 @@ try {
       check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "password_required" && issue.legacyErrorCode === 2), "missing password maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "universe_required"), "missing universe is reported for multi-universe entry", invalidLoginBody)
+    ]
+  }));
+
+  const techEconomyNaniteLockedItem = buildingItemByID(techEconomyNaniteLockedGet.body, 15);
+  const techEconomyNaniteUnlockedItem = buildingItemByID(techEconomyNaniteUnlockedGet.body, 15);
+  const techEconomyNaniteQueue = Array.isArray(techEconomyNaniteUnlockedPost.body.buildings?.queue)
+    ? techEconomyNaniteUnlockedPost.body.buildings.queue.find((row) => Number(row.techId ?? 0) === 15)
+    : undefined;
+  const techEconomyShieldLockedItem = researchItemByID(techEconomyResearchLockedGet.body, 110);
+  const techEconomyShieldUnlockedItem = researchItemByID(techEconomyResearchUnlockedGet.body, 110);
+  const techEconomyCruiserLockedItem = shipyardItemByID(techEconomyShipLockedGet.body, 206);
+  const techEconomyCruiserUnlockedItem = shipyardItemByID(techEconomyShipUnlockedGet.body, 206);
+  const techEconomyCruiserQueue = shipyardQueueByID(techEconomyShipUnlockedPost.body, 206);
+  const techEconomyPlasmaLockedItem = defenseItemByID(techEconomyDefenseLockedGet.body, 406);
+  const techEconomyPlasmaUnlockedItem = defenseItemByID(techEconomyDefenseUnlockedGet.body, 406);
+  const techEconomyPlasmaQueue = Array.isArray(techEconomyDefenseUnlockedPost.body.defense?.queue)
+    ? techEconomyDefenseUnlockedPost.body.defense.queue.find((row) => Number(row.unitId ?? 0) === 406)
+    : undefined;
+  cases.push(finalize({
+    case: "go_tech_economy_requirement_edges_api",
+    checks: [
+      check(!smokeFixtureFile || techEconomyReady, "go smoke fixture exposes tech economy requirement users", { techEconomyFixture }),
+      check(!techEconomyReady || techEconomyNaniteLockedGet.response.status === 200, "locked nanite buildings page returns HTTP 200", {
+        status: techEconomyNaniteLockedGet.response.status
+      }),
+      check(!techEconomyReady || techEconomyNaniteLockedItem === undefined, "nanite factory stays hidden below robotics requirement", techEconomyNaniteLockedGet.body.buildings?.items ?? []),
+      check(!techEconomyReady || techEconomyNaniteLockedPost.body.actionIssue?.code === "requirements", "locked nanite factory mutation is rejected by requirements", techEconomyNaniteLockedPost.body.actionIssue ?? {}),
+      check(!techEconomyReady || techEconomyNaniteUnlockedGet.response.status === 200, "unlocked nanite buildings page returns HTTP 200", {
+        status: techEconomyNaniteUnlockedGet.response.status
+      }),
+      check(!techEconomyReady || techEconomyNaniteUnlockedItem?.canBuild === true, "nanite factory unlocks when robotics and computer requirements are met", techEconomyNaniteUnlockedItem ?? {}),
+      check(!techEconomyReady || techEconomyNaniteUnlockedPost.body.actionIssue === undefined, "unlocked nanite factory queues without action issue", techEconomyNaniteUnlockedPost.body.actionIssue ?? {}),
+      check(!techEconomyReady || Number(techEconomyNaniteQueue?.level ?? 0) === 1, "nanite build queue task is created at level 1", techEconomyNaniteQueue ?? {}),
+
+      check(!techEconomyReady || techEconomyShieldLockedItem === undefined, "shielding technology stays hidden below energy requirement", techEconomyResearchLockedGet.body.research?.items ?? []),
+      check(!techEconomyReady || techEconomyResearchLockedPost.body.actionIssue?.code === "requirements", "locked shielding technology mutation is rejected by requirements", techEconomyResearchLockedPost.body.actionIssue ?? {}),
+      check(!techEconomyReady || techEconomyShieldUnlockedItem?.canBuild === true, "shielding technology unlocks when lab and energy requirements are met", techEconomyShieldUnlockedItem ?? {}),
+      check(!techEconomyReady || Number(techEconomyResearchUnlockedPost.body.research?.active?.techId ?? 0) === 110, "shield research queue task is created", techEconomyResearchUnlockedPost.body.research?.active ?? {}),
+
+      check(!techEconomyReady || techEconomyCruiserLockedItem === undefined, "cruiser stays hidden below ion technology requirement", techEconomyShipLockedGet.body.shipyard?.items ?? []),
+      check(
+        !techEconomyReady || ["requirements", "invalid_building"].includes(String(techEconomyShipLockedPost.body.actionIssue?.code ?? "")),
+        "locked cruiser mutation is rejected without creating a queue task",
+        techEconomyShipLockedPost.body.actionIssue ?? {}
+      ),
+      check(!techEconomyReady || (techEconomyShipLockedPost.body.shipyard?.queue?.length ?? 0) === 0, "locked cruiser mutation leaves shipyard queue empty", techEconomyShipLockedPost.body.shipyard?.queue ?? []),
+      check(!techEconomyReady || techEconomyCruiserUnlockedItem?.meetsRequirement === true && techEconomyCruiserUnlockedItem?.maxBuild > 0, "cruiser unlocks when shipyard and research requirements are met", techEconomyCruiserUnlockedItem ?? {}),
+      check(!techEconomyReady || Number(techEconomyCruiserQueue?.count ?? 0) === 1, "cruiser shipyard queue task is created", techEconomyCruiserQueue ?? {}),
+
+      check(!techEconomyReady || techEconomyPlasmaLockedItem === undefined, "plasma turret stays hidden below plasma technology requirement", techEconomyDefenseLockedGet.body.defense?.items ?? []),
+      check(
+        !techEconomyReady || ["requirements", "invalid_building"].includes(String(techEconomyDefenseLockedPost.body.actionIssue?.code ?? "")),
+        "locked plasma turret mutation is rejected without creating a queue task",
+        techEconomyDefenseLockedPost.body.actionIssue ?? {}
+      ),
+      check(!techEconomyReady || (techEconomyDefenseLockedPost.body.defense?.queue?.length ?? 0) === 0, "locked plasma turret mutation leaves defense queue empty", techEconomyDefenseLockedPost.body.defense?.queue ?? []),
+      check(!techEconomyReady || techEconomyPlasmaUnlockedItem?.meetsRequirement === true && techEconomyPlasmaUnlockedItem?.maxBuild > 0, "plasma turret unlocks when shipyard and research requirements are met", techEconomyPlasmaUnlockedItem ?? {}),
+      check(!techEconomyReady || Number(techEconomyPlasmaQueue?.count ?? 0) === 1, "plasma turret shipyard queue task is created", techEconomyPlasmaQueue ?? {})
     ]
   }));
 

@@ -1403,6 +1403,113 @@ function smoke_prepare_input_hardening_fixture(string $password, array $near): a
     );
 }
 
+function smoke_prepare_tech_economy_fixture(string $password, array $near): array
+{
+    global $db_prefix, $buildmap, $fleetmap, $resmap;
+
+    $specs = array(
+        'nanite_locked' => array(
+            'name' => 'gotecnanlock',
+            'buildings' => array(GID_B_ROBOTS => 9),
+            'research' => array(GID_R_COMPUTER => 10),
+        ),
+        'nanite_unlocked' => array(
+            'name' => 'gotecnanopen',
+            'buildings' => array(GID_B_ROBOTS => 10),
+            'research' => array(GID_R_COMPUTER => 10),
+        ),
+        'research_locked' => array(
+            'name' => 'gotecreslock',
+            'buildings' => array(GID_B_RES_LAB => 6),
+            'research' => array(GID_R_ENERGY => 2),
+        ),
+        'research_unlocked' => array(
+            'name' => 'gotecresopen',
+            'buildings' => array(GID_B_RES_LAB => 6),
+            'research' => array(GID_R_ENERGY => 3),
+        ),
+        'shipyard_locked' => array(
+            'name' => 'gotecshiplock',
+            'buildings' => array(GID_B_SHIPYARD => 5),
+            'research' => array(GID_R_IMPULSE_DRIVE => 4, GID_R_ION_TECH => 1),
+        ),
+        'shipyard_unlocked' => array(
+            'name' => 'gotecshipopen',
+            'buildings' => array(GID_B_SHIPYARD => 5),
+            'research' => array(GID_R_IMPULSE_DRIVE => 4, GID_R_ION_TECH => 2),
+        ),
+        'defense_locked' => array(
+            'name' => 'gotecdeflock',
+            'buildings' => array(GID_B_SHIPYARD => 8),
+            'research' => array(GID_R_PLASMA_TECH => 6),
+        ),
+        'defense_unlocked' => array(
+            'name' => 'gotecdefopen',
+            'buildings' => array(GID_B_SHIPYARD => 8),
+            'research' => array(GID_R_PLASMA_TECH => 7),
+        ),
+    );
+
+    $users = array();
+    foreach ($specs as $key => $spec) {
+        $users[$key] = smoke_prepare_user($spec['name'], $password, $spec['name'] . '@example.local', USER_TYPE_PLAYER);
+    }
+    $userIds = array_map(fn($user) => (int)$user['player_id'], $users);
+    $planetIds = array_map(fn($user) => (int)$user['home_planet_id'], $users);
+
+    smoke_cleanup_alliances($userIds);
+    smoke_cleanup_fleets($userIds, $planetIds);
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id IN (" . implode(',', $userIds) . ") AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "','" . QTYP_RESEARCH . "','" . QTYP_SHIPYARD . "','" . QTYP_FLEET . "')");
+    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id IN (" . implode(',', $userIds) . ") OR planet_id IN (" . implode(',', $planetIds) . ")");
+
+    $positions = smoke_find_empty_positions($near, count($users));
+    $now = time();
+    $result = array();
+    $index = 0;
+    foreach ($specs as $key => $spec) {
+        $user = $users[$key];
+        $playerId = (int)$user['player_id'];
+        $planetId = (int)$user['home_planet_id'];
+        smoke_prepare_planet($planetId, $playerId, 'GoTech' . $index, $positions[$index]);
+
+        $researchColumns = array();
+        foreach ($resmap as $gid) {
+            $researchColumns[] = "`{$gid}`=" . (int)($spec['research'][$gid] ?? 0);
+        }
+        dbquery(
+            "UPDATE {$db_prefix}users SET " . implode(',', $researchColumns) . ", admin=0, validated=1, deact_ip=1, " .
+            "vacation=0, vacation_until=0, banned=0, banned_until=0, noattack=0, noattack_until=0, " .
+            "disable=0, disable_until=0, lang='en', skin='/evolution/', useskin=1, score1=10000, score2=0, score3=0, " .
+            "place1=1, place2=1, place3=1, lastclick={$now} WHERE player_id={$playerId}"
+        );
+
+        $buildingColumns = array();
+        foreach ($buildmap as $gid) {
+            $buildingColumns[] = "`{$gid}`=" . (int)($spec['buildings'][$gid] ?? 0);
+        }
+        $fleetColumns = array();
+        foreach ($fleetmap as $gid) {
+            $fleetColumns[] = "`{$gid}`=0";
+        }
+        dbquery(
+            "UPDATE {$db_prefix}planets SET " . implode(',', $buildingColumns) . ", " . implode(',', $fleetColumns) . ", " .
+            "`" . GID_RC_METAL . "`=10000000, `" . GID_RC_CRYSTAL . "`=10000000, `" . GID_RC_DEUTERIUM . "`=10000000, " .
+            "prod1=1, prod2=1, prod3=1, prod4=1, prod12=0, prod212=0, fields=0, maxfields=200, lastpeek={$now}, lastakt={$now} " .
+            "WHERE planet_id={$planetId}"
+        );
+
+        $result[$key] = array(
+            'login' => mb_strtolower($user['name'], 'UTF-8'),
+            'player_id' => $playerId,
+            'home_planet_id' => $planetId,
+        );
+        $index++;
+    }
+
+    InvalidateUserCache();
+    return $result;
+}
+
 function smoke_prepare_fleet_recall_fixture(string $password, array $near): array
 {
     global $db_prefix, $fleetmap, $transportableResources, $resmap;
@@ -1601,6 +1708,7 @@ $messageNonmarkedDeleteFixture = smoke_prepare_message_nonmarked_delete_fixture(
 $messageSendFixture = smoke_prepare_message_send_fixture($password, $home);
 $resourceScopeFixture = smoke_prepare_resource_scope_fixture($password, $home);
 $inputHardeningFixture = smoke_prepare_input_hardening_fixture($password, $home);
+$techEconomyFixture = smoke_prepare_tech_economy_fixture($password, $home);
 $fleetRecallFixture = smoke_prepare_fleet_recall_fixture($password, $home);
 $statisticsRankingFixture = smoke_prepare_statistics_ranking_fixture($password, $home);
 $adminDestructiveFixture = smoke_prepare_admin_destructive_fixture($target, $home);
@@ -1656,6 +1764,7 @@ echo json_encode(array(
 		'message_send' => $messageSendFixture,
 		'resource_scope' => $resourceScopeFixture,
 		'input_hardening' => $inputHardeningFixture,
+		'tech_economy' => $techEconomyFixture,
 		'fleet_recall' => $fleetRecallFixture,
 		'statistics_ranking' => $statisticsRankingFixture,
 	), JSON_UNESCAPED_SLASHES) . PHP_EOL;
