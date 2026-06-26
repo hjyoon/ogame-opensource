@@ -3633,7 +3633,6 @@ try {
   } catch {
     gameResourcesUpdateBody = {};
   }
-
   const gameResourcesWithoutCookie = await request(`/api/game/resources${resourcesSearch}`);
   let gameResourcesWithoutCookieBody = {};
   try {
@@ -5111,6 +5110,18 @@ try {
     body: legacyOptionsForm({ lang: "en" })
   });
   const gameOptionsLanguageRestoredBody = parseJSON(gameOptionsLanguageRestored);
+  const accountActionsOptionsUpdate = await request(`/api/game/options${sessionSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: sessionCookiePair },
+    body: legacyOptionsForm({
+      noipcheck: "on",
+      settings_sort: 1,
+      settings_order: 1,
+      spio_anz: 7,
+      settings_fleetactions: 8
+    })
+  });
+  const accountActionsOptionsUpdateBody = parseJSON(accountActionsOptionsUpdate);
 
   const gameOptionsWithoutCookie = await request(`/api/game/options${sessionSearch}`);
   let gameOptionsWithoutCookieBody = {};
@@ -5753,6 +5764,90 @@ try {
       check(invalidLoginIssues.some((issue) => issue.code === "login_required" && issue.legacyErrorCode === 2), "missing login maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "password_required" && issue.legacyErrorCode === 2), "missing password maps to legacy error 2", invalidLoginBody),
       check(invalidLoginIssues.some((issue) => issue.code === "universe_required"), "missing universe is reported for multi-universe entry", invalidLoginBody)
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_account_actions_legacy_flow_api",
+    checks: [
+      check(gameNotesCreatePost.status === 200, "account actions note creation returns HTTP 200", {
+        status: gameNotesCreatePost.status
+      }),
+      check(
+        createdNote?.subject === noteSubject &&
+          createdNote?.priority === 2 &&
+          String(createdNote?.text ?? "").includes("smoke body"),
+        "account actions note creation persists subject, body, and priority",
+        createdNote ?? {}
+      ),
+      check(gameMessagesSend.status === 200, "account actions private message send returns HTTP 200", {
+        status: gameMessagesSend.status
+      }),
+      check(
+        gameMessagesSendBody.actionIssue?.code === "sent" &&
+          sentReportID > 0 &&
+          String(sentMessageRow?.text ?? "").includes("Go migration message smoke"),
+        "account actions private message persists an unread report row",
+        { actionIssue: gameMessagesSendBody.actionIssue ?? {}, sentReportID, sentMessageRow }
+      ),
+      check(gameOverviewRenamed.status === 200, "account actions planet rename returns HTTP 200", {
+        status: gameOverviewRenamed.status
+      }),
+      check(
+        gameOverviewRenamedBody.overview?.currentPlanet?.name === renamedPlanetName,
+        "account actions planet rename persists the requested name before restore",
+        gameOverviewRenamedBody.overview?.currentPlanet ?? {}
+      ),
+      check(accountActionsOptionsUpdate.status === 200, "account actions options save returns HTTP 200", {
+        status: accountActionsOptionsUpdate.status
+      }),
+      check(
+        accountActionsOptionsUpdateBody.options?.settings?.sortBy === 1 &&
+          accountActionsOptionsUpdateBody.options?.settings?.sortOrder === 1 &&
+          accountActionsOptionsUpdateBody.options?.settings?.maxSpy === 7 &&
+          accountActionsOptionsUpdateBody.options?.settings?.maxFleetMessages === 8 &&
+          accountActionsOptionsUpdateBody.options?.settings?.deactivateIp === true,
+        "account actions options save persists sort, spy, fleet message, and IP-check settings",
+        accountActionsOptionsUpdateBody.options?.settings ?? {}
+      ),
+      check(!smokeFixtureFile || planetContextReady, "account actions resource settings fixture is available", {
+        planetContextFixture
+      }),
+      check(!planetContextReady || planetContextColonyResourcesUpdate.status === 200, "account actions resource settings save returns HTTP 200", {
+        status: planetContextColonyResourcesUpdate.status
+      }),
+      check(
+        !planetContextReady ||
+          resourceRowByID(planetContextColonyResourcesUpdateBody, 1)?.percent === Number(planetContextFixture.colony_updated_metal_percent) &&
+            resourceRowByID(planetContextColonyResourcesUpdateBody, 2)?.percent === Number(planetContextFixture.colony_updated_crystal_percent) &&
+            resourceRowByID(planetContextColonyResourcesUpdateBody, 3)?.percent === 60 &&
+            resourceRowByID(planetContextColonyResourcesUpdateBody, 4)?.percent === 100,
+        "account actions resource settings persist exact producer percentages",
+        {
+          metal: resourceRowByID(planetContextColonyResourcesUpdateBody, 1),
+          crystal: resourceRowByID(planetContextColonyResourcesUpdateBody, 2),
+          deuterium: resourceRowByID(planetContextColonyResourcesUpdateBody, 3),
+          solarPlant: resourceRowByID(planetContextColonyResourcesUpdateBody, 4)
+        }
+      ),
+      check(!smokeFixtureFile || queueCancelReady, "account actions building queue fixture is available", {
+        queueCancelFixture
+      }),
+      check(!queueCancelReady || queueCancelBuildStart?.status === 200, "account actions building enqueue returns HTTP 200", {
+        status: queueCancelBuildStart?.status
+      }),
+      check(
+        !queueCancelReady ||
+          queueCancelBuildListID > 0 &&
+            queueCancelBuildStartBody.buildings?.queue?.some((row) =>
+              Number(row.listId ?? 0) === queueCancelBuildListID &&
+              Number(row.techId ?? 0) === queueCancelBuildingID
+            ),
+        "account actions building enqueue creates the expected build queue row",
+        queueCancelBuildStartBody.buildings?.queue ?? []
+      ),
+      check(!accountActionsOptionsUpdate.body.includes(sessionCookiePair), "account actions options response does not echo private cookie"),
+      check(!planetContextReady || !planetContextColonyResourcesUpdate.body.includes(planetContextOwnerCookie), "account actions resources response does not echo private cookie")
     ]
   }));
 
