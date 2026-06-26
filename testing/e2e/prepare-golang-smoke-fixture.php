@@ -1720,7 +1720,7 @@ function smoke_prepare_input_hardening_fixture(string $password, array $near): a
 
 function smoke_prepare_tech_economy_fixture(string $password, array $near): array
 {
-    global $db_prefix, $buildmap, $fleetmap, $resmap;
+    global $db_prefix, $buildmap, $fleetmap, $resmap, $GlobalUni;
 
     $specs = array(
         'nanite_locked' => array(
@@ -1762,6 +1762,49 @@ function smoke_prepare_tech_economy_fixture(string $password, array $near): arra
             'name' => 'gotecdefopen',
             'buildings' => array(GID_B_SHIPYARD => 8),
             'research' => array(GID_R_PLASMA_TECH => 7),
+        ),
+        'economy_shortage' => array(
+            'name' => 'gotececoshort',
+            'buildings' => array(GID_B_METAL_MINE => 10),
+            'research' => array(),
+            'resources' => array(GID_RC_METAL => 0, GID_RC_CRYSTAL => 0, GID_RC_DEUTERIUM => 0),
+            'production' => array(GID_B_METAL_MINE => 1, GID_B_CRYS_MINE => 0, GID_B_DEUT_SYNTH => 0, GID_B_SOLAR => 1, GID_B_FUSION => 0, GID_F_SAT => 0),
+            'lastpeek_offset' => 3600,
+            'expected' => array('natural_metal_hourly' => 20 * (float)$GlobalUni['speed']),
+        ),
+        'economy_powered' => array(
+            'name' => 'gotececopower',
+            'buildings' => array(GID_B_METAL_MINE => 10, GID_B_SOLAR => 20),
+            'research' => array(),
+            'resources' => array(GID_RC_METAL => 0, GID_RC_CRYSTAL => 0, GID_RC_DEUTERIUM => 0),
+            'production' => array(GID_B_METAL_MINE => 1, GID_B_CRYS_MINE => 0, GID_B_DEUT_SYNTH => 0, GID_B_SOLAR => 1, GID_B_FUSION => 0, GID_F_SAT => 0),
+            'lastpeek_offset' => 3600,
+        ),
+        'economy_storage_cap' => array(
+            'name' => 'gotececocap',
+            'buildings' => array(GID_B_METAL_MINE => 20, GID_B_SOLAR => 30, GID_B_METAL_STOR => 0),
+            'research' => array(),
+            'resources' => array(GID_RC_METAL => 99990, GID_RC_CRYSTAL => 0, GID_RC_DEUTERIUM => 0),
+            'production' => array(GID_B_METAL_MINE => 1, GID_B_CRYS_MINE => 0, GID_B_DEUT_SYNTH => 0, GID_B_SOLAR => 1, GID_B_FUSION => 0, GID_F_SAT => 0),
+            'lastpeek_offset' => 3600,
+            'expected' => array('metal_capacity' => store_capacity(0)),
+        ),
+        'economy_full_production' => array(
+            'name' => 'gotececofull',
+            'buildings' => array(GID_B_METAL_MINE => 10, GID_B_SOLAR => 20),
+            'research' => array(),
+            'resources' => array(GID_RC_METAL => 0, GID_RC_CRYSTAL => 0, GID_RC_DEUTERIUM => 0),
+            'production' => array(GID_B_METAL_MINE => 1, GID_B_CRYS_MINE => 0, GID_B_DEUT_SYNTH => 0, GID_B_SOLAR => 1, GID_B_FUSION => 0, GID_F_SAT => 0),
+            'lastpeek_offset' => 3600,
+        ),
+        'economy_zero_production' => array(
+            'name' => 'gotececozero',
+            'buildings' => array(GID_B_METAL_MINE => 10, GID_B_SOLAR => 20),
+            'research' => array(),
+            'resources' => array(GID_RC_METAL => 0, GID_RC_CRYSTAL => 0, GID_RC_DEUTERIUM => 0),
+            'production' => array(GID_B_METAL_MINE => 0, GID_B_CRYS_MINE => 0, GID_B_DEUT_SYNTH => 0, GID_B_SOLAR => 1, GID_B_FUSION => 0, GID_F_SAT => 0),
+            'lastpeek_offset' => 3600,
+            'expected' => array('natural_metal_hourly' => 20 * (float)$GlobalUni['speed']),
         ),
     );
 
@@ -1806,10 +1849,26 @@ function smoke_prepare_tech_economy_fixture(string $password, array $near): arra
         foreach ($fleetmap as $gid) {
             $fleetColumns[] = "`{$gid}`=0";
         }
+        $resources = array(
+            GID_RC_METAL => (float)($spec['resources'][GID_RC_METAL] ?? 10000000),
+            GID_RC_CRYSTAL => (float)($spec['resources'][GID_RC_CRYSTAL] ?? 10000000),
+            GID_RC_DEUTERIUM => (float)($spec['resources'][GID_RC_DEUTERIUM] ?? 10000000),
+        );
+        $production = array(
+            GID_B_METAL_MINE => (float)($spec['production'][GID_B_METAL_MINE] ?? 1),
+            GID_B_CRYS_MINE => (float)($spec['production'][GID_B_CRYS_MINE] ?? 1),
+            GID_B_DEUT_SYNTH => (float)($spec['production'][GID_B_DEUT_SYNTH] ?? 1),
+            GID_B_SOLAR => (float)($spec['production'][GID_B_SOLAR] ?? 1),
+            GID_B_FUSION => (float)($spec['production'][GID_B_FUSION] ?? 0),
+            GID_F_SAT => (float)($spec['production'][GID_F_SAT] ?? 0),
+        );
+        $lastPeek = $now - (int)($spec['lastpeek_offset'] ?? 0);
         dbquery(
             "UPDATE {$db_prefix}planets SET " . implode(',', $buildingColumns) . ", " . implode(',', $fleetColumns) . ", " .
-            "`" . GID_RC_METAL . "`=10000000, `" . GID_RC_CRYSTAL . "`=10000000, `" . GID_RC_DEUTERIUM . "`=10000000, " .
-            "prod1=1, prod2=1, prod3=1, prod4=1, prod12=0, prod212=0, fields=0, maxfields=200, lastpeek={$now}, lastakt={$now} " .
+            "`" . GID_RC_METAL . "`=" . $resources[GID_RC_METAL] . ", `" . GID_RC_CRYSTAL . "`=" . $resources[GID_RC_CRYSTAL] . ", `" . GID_RC_DEUTERIUM . "`=" . $resources[GID_RC_DEUTERIUM] . ", " .
+            "prod1=" . $production[GID_B_METAL_MINE] . ", prod2=" . $production[GID_B_CRYS_MINE] . ", prod3=" . $production[GID_B_DEUT_SYNTH] . ", " .
+            "prod4=" . $production[GID_B_SOLAR] . ", prod12=" . $production[GID_B_FUSION] . ", prod212=" . $production[GID_F_SAT] . ", " .
+            "fields=0, maxfields=200, lastpeek={$lastPeek}, lastakt={$lastPeek} " .
             "WHERE planet_id={$planetId}"
         );
 
@@ -1818,6 +1877,9 @@ function smoke_prepare_tech_economy_fixture(string $password, array $near): arra
             'player_id' => $playerId,
             'home_planet_id' => $planetId,
         );
+        if (isset($spec['expected'])) {
+            $result[$key]['expected'] = $spec['expected'];
+        }
         $index++;
     }
 

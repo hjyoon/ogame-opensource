@@ -612,6 +612,17 @@ try {
     typeof techEconomyFixture[key]?.login === "string" &&
     Number(techEconomyFixture[key]?.home_planet_id ?? 0) > 0
   );
+  const techEconomyEconomyKeys = [
+    "economy_shortage",
+    "economy_powered",
+    "economy_storage_cap",
+    "economy_full_production",
+    "economy_zero_production"
+  ];
+  const techEconomyEconomyReady = techEconomyEconomyKeys.every((key) =>
+    typeof techEconomyFixture[key]?.login === "string" &&
+    Number(techEconomyFixture[key]?.home_planet_id ?? 0) > 0
+  );
   const passwordRecoveryFixture = smokeFixture?.password_recovery ?? {};
   const passwordRecoveryFixtureReady =
     typeof passwordRecoveryFixture.password === "string" &&
@@ -2665,6 +2676,21 @@ try {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orders: { 406: 1 } })
       })
+    : { response: { status: 0 }, body: {} };
+  const techEconomyShortageResources = techEconomyEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.economy_shortage, "resources", techEconomyUniverse)
+    : { response: { status: 0 }, body: {} };
+  const techEconomyPoweredResources = techEconomyEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.economy_powered, "resources", techEconomyUniverse)
+    : { response: { status: 0 }, body: {} };
+  const techEconomyStorageCapResources = techEconomyEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.economy_storage_cap, "resources", techEconomyUniverse)
+    : { response: { status: 0 }, body: {} };
+  const techEconomyFullProductionResources = techEconomyEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.economy_full_production, "resources", techEconomyUniverse)
+    : { response: { status: 0 }, body: {} };
+  const techEconomyZeroProductionResources = techEconomyEconomyReady
+    ? await gameFixtureRequest(techEconomyFixture.economy_zero_production, "resources", techEconomyUniverse)
     : { response: { status: 0 }, body: {} };
 
   const gameEmpire = await request(`/api/game/empire${sessionSearch}`, {
@@ -5520,6 +5546,18 @@ try {
   const techEconomyPlasmaQueue = Array.isArray(techEconomyDefenseUnlockedPost.body.defense?.queue)
     ? techEconomyDefenseUnlockedPost.body.defense.queue.find((row) => Number(row.unitId ?? 0) === 406)
     : undefined;
+  const techEconomyShortageMetal = Number(techEconomyShortageResources.body.resources?.currentPlanet?.resources?.metal ?? NaN);
+  const techEconomyPoweredMetal = Number(techEconomyPoweredResources.body.resources?.currentPlanet?.resources?.metal ?? NaN);
+  const techEconomyStorageCapMetal = Number(techEconomyStorageCapResources.body.resources?.currentPlanet?.resources?.metal ?? NaN);
+  const techEconomyStorageCapLimit = Number(techEconomyStorageCapResources.body.resources?.currentPlanet?.resources?.metalCapacity ?? NaN);
+  const techEconomyExpectedStorageCap = Number(techEconomyFixture.economy_storage_cap?.expected?.metal_capacity ?? NaN);
+  const techEconomyFullMetal = Number(techEconomyFullProductionResources.body.resources?.currentPlanet?.resources?.metal ?? NaN);
+  const techEconomyZeroMetal = Number(techEconomyZeroProductionResources.body.resources?.currentPlanet?.resources?.metal ?? NaN);
+  const techEconomyNaturalMetal = Number(techEconomyFixture.economy_shortage?.expected?.natural_metal_hourly ?? NaN);
+  const techEconomyNaturalTolerance = Number.isFinite(techEconomyNaturalMetal) ? Math.max(10, techEconomyNaturalMetal * 0.05) : 0;
+  const techEconomyShortageMetalRow = resourceRowByID(techEconomyShortageResources.body, 1);
+  const techEconomyFullMetalRow = resourceRowByID(techEconomyFullProductionResources.body, 1);
+  const techEconomyZeroMetalRow = resourceRowByID(techEconomyZeroProductionResources.body, 1);
   cases.push(finalize({
     case: "go_tech_economy_requirement_edges_api",
     checks: [
@@ -5560,6 +5598,95 @@ try {
       check(!techEconomyReady || (techEconomyDefenseLockedPost.body.defense?.queue?.length ?? 0) === 0, "locked plasma turret mutation leaves defense queue empty", techEconomyDefenseLockedPost.body.defense?.queue ?? []),
       check(!techEconomyReady || techEconomyPlasmaUnlockedItem?.meetsRequirement === true && techEconomyPlasmaUnlockedItem?.maxBuild > 0, "plasma turret unlocks when shipyard and research requirements are met", techEconomyPlasmaUnlockedItem ?? {}),
       check(!techEconomyReady || Number(techEconomyPlasmaQueue?.count ?? 0) === 1, "plasma turret shipyard queue task is created", techEconomyPlasmaQueue ?? {})
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_tech_economy_resource_tick_api",
+    checks: [
+      check(!smokeFixtureFile || techEconomyEconomyReady, "go smoke fixture exposes tech economy resource tick users", { techEconomyFixture }),
+      check(!techEconomyEconomyReady || techEconomyShortageResources.response.status === 200, "energy shortage resources page returns HTTP 200", {
+        status: techEconomyShortageResources.response.status
+      }),
+      check(!techEconomyEconomyReady || techEconomyPoweredResources.response.status === 200, "powered resources page returns HTTP 200", {
+        status: techEconomyPoweredResources.response.status
+      }),
+      check(!techEconomyEconomyReady || techEconomyStorageCapResources.response.status === 200, "storage-cap resources page returns HTTP 200", {
+        status: techEconomyStorageCapResources.response.status
+      }),
+      check(!techEconomyEconomyReady || techEconomyShortageResources.body.authenticated === true, "energy shortage resource user authenticates", techEconomyShortageResources.body),
+      check(!techEconomyEconomyReady || techEconomyShortageResources.body.resources?.factor < 0.01, "energy shortage drops mine production factor to zero", techEconomyShortageResources.body.resources ?? {}),
+      check(
+        !techEconomyEconomyReady ||
+          Number.isFinite(techEconomyShortageMetal) &&
+            techEconomyShortageMetal > 0 &&
+            techEconomyShortageMetal <= techEconomyNaturalMetal + techEconomyNaturalTolerance,
+        "energy-starved planet accrues only natural metal production",
+        {
+          metal: techEconomyShortageMetal,
+          naturalMetal: techEconomyNaturalMetal,
+          tolerance: techEconomyNaturalTolerance
+        }
+      ),
+      check(!techEconomyEconomyReady || techEconomyShortageMetalRow?.percent === 100, "energy shortage keeps the mine production setting at 100 percent", techEconomyShortageMetalRow ?? {}),
+      check(!techEconomyEconomyReady || techEconomyPoweredResources.body.resources?.factor >= 0.99, "powered planet keeps full production factor", techEconomyPoweredResources.body.resources ?? {}),
+      check(
+        !techEconomyEconomyReady ||
+          Number.isFinite(techEconomyPoweredMetal) &&
+            Number.isFinite(techEconomyShortageMetal) &&
+            techEconomyPoweredMetal > techEconomyShortageMetal * 2,
+        "powered mines accrue materially more metal than energy-starved mines",
+        { poweredMetal: techEconomyPoweredMetal, shortageMetal: techEconomyShortageMetal }
+      ),
+      check(
+        !techEconomyEconomyReady ||
+          techEconomyStorageCapLimit === techEconomyExpectedStorageCap &&
+            techEconomyStorageCapLimit > 0,
+        "metal storage capacity is calculated for storage level zero",
+        { capacity: techEconomyStorageCapLimit, expected: techEconomyExpectedStorageCap }
+      ),
+      check(
+        !techEconomyEconomyReady ||
+          Number.isFinite(techEconomyStorageCapMetal) &&
+            techEconomyStorageCapMetal <= techEconomyStorageCapLimit &&
+            Math.abs(techEconomyStorageCapMetal - techEconomyStorageCapLimit) < 0.001,
+        "metal production fills exactly to the storage cap",
+        { metal: techEconomyStorageCapMetal, capacity: techEconomyStorageCapLimit }
+      ),
+      check(!techEconomyEconomyReady || techEconomyFullProductionResources.response.status === 200, "full-production resources page returns HTTP 200", {
+        status: techEconomyFullProductionResources.response.status
+      }),
+      check(!techEconomyEconomyReady || techEconomyZeroProductionResources.response.status === 200, "zero-production resources page returns HTTP 200", {
+        status: techEconomyZeroProductionResources.response.status
+      }),
+      check(!techEconomyEconomyReady || techEconomyFullMetalRow?.percent === 100, "full-production fixture keeps metal mine at 100 percent", techEconomyFullMetalRow ?? {}),
+      check(!techEconomyEconomyReady || techEconomyZeroMetalRow?.percent === 0, "zero-production fixture keeps metal mine at zero percent", techEconomyZeroMetalRow ?? {}),
+      check(
+        !techEconomyEconomyReady ||
+          Number.isFinite(techEconomyZeroMetal) &&
+            techEconomyZeroMetal > 0 &&
+            techEconomyZeroMetal <= techEconomyNaturalMetal + techEconomyNaturalTolerance,
+        "zero-percent metal mine accrues only natural metal production",
+        { metal: techEconomyZeroMetal, naturalMetal: techEconomyNaturalMetal, tolerance: techEconomyNaturalTolerance }
+      ),
+      check(
+        !techEconomyEconomyReady ||
+          Number.isFinite(techEconomyFullMetal) &&
+            Number.isFinite(techEconomyZeroMetal) &&
+            techEconomyFullMetal > techEconomyZeroMetal * 2,
+        "one-hundred-percent metal mine accrues more than zero-percent setting",
+        { fullMetal: techEconomyFullMetal, zeroMetal: techEconomyZeroMetal }
+      ),
+      check(
+        !techEconomyEconomyReady ||
+          techEconomyFullProductionResources.body.resources?.factor >= 0.99 &&
+            techEconomyZeroProductionResources.body.resources?.factor >= 0.99,
+        "production ratio comparison is not caused by energy shortage",
+        {
+          fullFactor: techEconomyFullProductionResources.body.resources?.factor,
+          zeroFactor: techEconomyZeroProductionResources.body.resources?.factor
+        }
+      )
     ]
   }));
 
