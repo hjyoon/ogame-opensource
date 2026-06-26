@@ -105,6 +105,10 @@ function cleanup_go_reset_home_planets(array $userIds): void
 
 global $db_prefix;
 
+if (MDBConnect()) {
+    MDBQuery("DELETE FROM unis WHERE num IN (9901,9902)");
+}
+
 $names = array_map(fn($name) => mb_strtolower($name, 'UTF-8'), cleanup_go_fixture_names());
 $nameList = cleanup_go_quoted_list($names);
 $userIds = cleanup_go_ids("SELECT player_id FROM {$db_prefix}users WHERE name IN ({$nameList})", 'player_id');

@@ -438,6 +438,7 @@ try {
   const adminAuditReady =
     String(adminAuditFixture.token ?? "") !== "" &&
     Number(adminAuditFixture.target_player_id ?? 0) > 0;
+  const multiUniverseFixture = smokeFixture?.multi_universe ?? {};
   const adminDestructiveFixture = smokeFixture?.admin_destructive ?? {};
   const adminDestructiveTargetID = Number(adminDestructiveFixture.target_player_id ?? 0);
   const adminDestructiveReady =
@@ -711,6 +712,50 @@ try {
       check(universes[0]?.number === 1, "default universe keeps legacy universe number", universes[0] ?? {}),
       check(typeof universes[0]?.baseUrl === "string" && universes[0].baseUrl.length > 0, "universe exposes a base URL", universes[0] ?? {}),
       check(universes[0]?.open === true, "default universe is open", universes[0] ?? {})
+    ]
+  }));
+
+  const multiUniverseReady = multiUniverseFixture.available === true;
+  const multiUniverseSameHostNumber = Number(multiUniverseFixture.same_host_number ?? 0);
+  const multiUniverseRemoteNumber = Number(multiUniverseFixture.remote_number ?? 0);
+  const multiUniverseSameHost = universes.find((universe) => Number(universe.number) === multiUniverseSameHostNumber);
+  const multiUniverseRemote = universes.find((universe) => Number(universe.number) === multiUniverseRemoteNumber);
+  const multiUniverseLoginValidation = multiUniverseReady
+    ? await request("/api/public/login/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          login: loginSmokeUser,
+          pass: `${loginSmokePassword}-wrong`,
+          universe: multiUniverseFixture.same_host_url
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const multiUniverseLoginValidationBody = parseJSON(multiUniverseLoginValidation);
+  const multiUniverseLoginIssues = Array.isArray(multiUniverseLoginValidationBody.issues)
+    ? multiUniverseLoginValidationBody.issues
+    : [];
+  cases.push(finalize({
+    case: "go_multi_universe_master_catalog_api",
+    checks: [
+      check(!smokeFixtureFile || multiUniverseReady, "go smoke fixture exposes master multi-universe rows", multiUniverseFixture),
+      check(!multiUniverseReady || Array.isArray(multiUniverseFixture.rows) && multiUniverseFixture.rows.length === 2, "fixture inserted two temporary master universe rows", multiUniverseFixture),
+      check(!multiUniverseReady || multiUniverseSameHost?.baseUrl === multiUniverseFixture.same_host_url, "catalog normalizes same-host legacy universe URL", {
+        expected: multiUniverseFixture.same_host_url,
+        actual: multiUniverseSameHost
+      }),
+      check(!multiUniverseReady || multiUniverseRemote?.baseUrl === multiUniverseFixture.remote_url, "catalog preserves absolute remote universe URL", {
+        expected: multiUniverseFixture.remote_url,
+        actual: multiUniverseRemote
+      }),
+      check(!multiUniverseReady || universes.findIndex((universe) => Number(universe.number) === multiUniverseSameHostNumber) < universes.findIndex((universe) => Number(universe.number) === multiUniverseRemoteNumber), "temporary universes remain sorted by universe number", {
+        numbers: universes.map((universe) => universe.number)
+      }),
+      check(!multiUniverseReady || multiUniverseLoginValidation.status === 200, "login validation accepts a catalog universe URL field", {
+        status: multiUniverseLoginValidation.status
+      }),
+      check(!multiUniverseReady || multiUniverseLoginValidationBody.draft?.universe === multiUniverseFixture.same_host_url, "login validation response preserves the selected universe URL", multiUniverseLoginValidationBody.draft ?? {}),
+      check(!multiUniverseReady || !multiUniverseLoginIssues.some((issue) => issue.code === "universe_required"), "catalog universe URL is not treated as missing", multiUniverseLoginValidationBody)
     ]
   }));
 

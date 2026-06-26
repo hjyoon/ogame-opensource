@@ -35,6 +35,51 @@ function smoke_one_row(string $sql): ?array
     return $row === false ? null : $row;
 }
 
+function smoke_mdb_escape(string $value): string
+{
+    global $MDB_link;
+    return mysqli_real_escape_string($MDB_link, $value);
+}
+
+function smoke_mdb_rows(string $sql): array
+{
+    $rows = array();
+    $res = MDBQuery($sql);
+    if ($res === null || $res === false) {
+        return $rows;
+    }
+    while ($row = MDBArray($res)) {
+        $rows[] = $row;
+    }
+    return $rows;
+}
+
+function smoke_prepare_multi_universe_fixture(): array
+{
+    $numbers = array(9901, 9902);
+    if (!MDBConnect()) {
+        return array('available' => false, 'numbers' => $numbers, 'rows' => array());
+    }
+
+    MDBQuery("DELETE FROM unis WHERE num IN (" . implode(',', $numbers) . ")");
+    $sameHostUniverse = 'localhost:8888/u9901';
+    $remoteUniverse = 'https://uni9902.example.test';
+    MDBQuery(
+        "INSERT INTO unis (num, dbhost, dbuser, dbpass, dbname, uniurl) VALUES " .
+        "(9901, 'mysql', 'root', '', 'uni9901', '" . smoke_mdb_escape($sameHostUniverse) . "')," .
+        "(9902, 'mysql', 'root', '', 'uni9902', '" . smoke_mdb_escape($remoteUniverse) . "')"
+    );
+
+    return array(
+        'available' => true,
+        'same_host_number' => 9901,
+        'remote_number' => 9902,
+        'same_host_url' => 'http://' . $sameHostUniverse,
+        'remote_url' => $remoteUniverse,
+        'rows' => smoke_mdb_rows("SELECT num, uniurl FROM unis WHERE num IN (" . implode(',', $numbers) . ") ORDER BY num ASC"),
+    );
+}
+
 function smoke_user_by_name(string $name): ?array
 {
     global $db_prefix;
@@ -1759,6 +1804,7 @@ $feedFixture = smoke_prepare_feed_fixture($login, $operator, $target);
 $passwordRecoveryFixture = smoke_prepare_password_recovery_fixture('E2E_reset123');
 $adminOperationsFixture = smoke_prepare_admin_operations_fixture($operator, $target);
 $adminAuditFixture = smoke_prepare_admin_audit_fixture($target);
+$multiUniverseFixture = smoke_prepare_multi_universe_fixture();
 $fleetRestrictionFixture = smoke_prepare_fleet_restriction_fixture($password, $home);
 $acsHoldFixture = smoke_prepare_acs_hold_fixture($password, $home);
 $fleetTemplateFixture = smoke_prepare_fleet_template_fixture($password, $home);
@@ -1807,6 +1853,7 @@ echo json_encode(array(
 	'password_recovery' => $passwordRecoveryFixture,
 	'admin_operations' => $adminOperationsFixture,
 	'admin_audit' => $adminAuditFixture,
+	'multi_universe' => $multiUniverseFixture,
 	'admin_destructive' => $adminDestructiveFixture,
 	'admin_universe' => array(
 		'freeze_victim_player_id' => (int)$freezeVictim['player_id'],
