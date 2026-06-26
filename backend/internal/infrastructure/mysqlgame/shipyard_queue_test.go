@@ -671,6 +671,63 @@ func TestShipyardQueueDefenseAmountClampsQueuedMissilesAndDomes(t *testing.T) {
 	}
 }
 
+func TestShipyardRepositoryMutationLockNoopsWithoutSQLDB(t *testing.T) {
+	repository := NewShipyardRepositoryWithRunner(&fakeQueryer{}, nil, "ogame_", time.Now)
+	unlock, err := repository.acquireShipyardMutationLock(context.Background(), 42, 99)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+
+	repository = ShipyardRepository{queryer: SQLQueryer{}}
+	unlock, err = repository.acquireShipyardMutationLock(context.Background(), 42, 99)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+
+	repository = ShipyardRepository{queryer: &SQLQueryer{}}
+	unlock, err = repository.acquireShipyardMutationLock(context.Background(), 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+}
+
+func TestShipyardRepositoryMutationLockUsesSQLDB(t *testing.T) {
+	db := openBuildingLockTestDB(t, 1, nil)
+	defer db.Close()
+	repository := ShipyardRepository{queryer: SQLQueryer{DB: db}, prefix: "ogame_"}
+	unlock, err := repository.acquireShipyardMutationLock(context.Background(), 42, 99)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+
+	planetlessDB := openBuildingLockTestDB(t, 1, nil)
+	defer planetlessDB.Close()
+	repository = ShipyardRepository{queryer: SQLQueryer{DB: planetlessDB}, prefix: "ogame_"}
+	unlock, err = repository.acquireShipyardMutationLock(context.Background(), 42, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+
+	timeoutDB := openBuildingLockTestDB(t, 0, nil)
+	defer timeoutDB.Close()
+	repository = ShipyardRepository{queryer: SQLQueryer{DB: timeoutDB}, prefix: "ogame_"}
+	if _, err := repository.acquireShipyardMutationLock(context.Background(), 42, 99); err == nil || !strings.Contains(err.Error(), "shipyard mutation lock timeout") {
+		t.Fatalf("expected lock timeout, got %v", err)
+	}
+
+	queryErrDB := openBuildingLockTestDB(t, 1, errors.New("lock query failed"))
+	defer queryErrDB.Close()
+	repository = ShipyardRepository{queryer: SQLQueryer{DB: queryErrDB}, prefix: "ogame_"}
+	if _, err := repository.acquireShipyardMutationLock(context.Background(), 42, 99); err == nil || !strings.Contains(err.Error(), "lock query failed") {
+		t.Fatalf("expected lock query error, got %v", err)
+	}
+}
+
 func goodShipyardQueueItem(id int) domaingame.ShipyardItem {
 	return domaingame.ShipyardItem{
 		ID:               id,

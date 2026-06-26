@@ -500,12 +500,20 @@ try {
   const concurrencyRaceReady = Boolean(
     typeof concurrencyRaceFixture.shipyard?.login === "string" &&
     typeof concurrencyRaceFixture.defense?.login === "string" &&
+    typeof concurrencyRaceFixture.dome?.login === "string" &&
+    typeof concurrencyRaceFixture.missile?.login === "string" &&
     Number(concurrencyRaceFixture.shipyard?.home_planet_id ?? 0) > 0 &&
     Number(concurrencyRaceFixture.defense?.home_planet_id ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.dome?.home_planet_id ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.missile?.home_planet_id ?? 0) > 0 &&
     Number(concurrencyRaceFixture.shipyard?.ship_id ?? 0) > 0 &&
     Number(concurrencyRaceFixture.defense?.defense_id ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.dome?.defense_id ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.missile?.defense_id ?? 0) > 0 &&
     Number(concurrencyRaceFixture.shipyard?.expected_count ?? 0) > 0 &&
-    Number(concurrencyRaceFixture.defense?.expected_count ?? 0) > 0
+    Number(concurrencyRaceFixture.defense?.expected_count ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.dome?.expected_count ?? 0) > 0 &&
+    Number(concurrencyRaceFixture.missile?.expected_count ?? 0) > 0
   );
   const merchantFixture = smokeFixture?.merchant ?? {};
   const merchantReady = ["insufficient", "call", "trade", "reject"].every(
@@ -4427,6 +4435,54 @@ try {
     : [];
   const concurrencyDefenseQueuedCount = concurrencyDefenseQueueRows.reduce((sum, row) => sum + Number(row.count ?? 0), 0);
   const concurrencyDefenseItem = defenseItemByID(concurrencyDefenseAfterBody, concurrencyDefenseID);
+  const concurrencyDomeLogin = concurrencyRaceReady
+    ? await loginGameUser(concurrencyRaceFixture.dome.login, loginSmokePassword, concurrencyUniverse)
+    : null;
+  const concurrencyDomeSearch = withQueryParam(concurrencyDomeLogin?.search ?? "?session=", "cp", Number(concurrencyRaceFixture.dome?.home_planet_id ?? 0));
+  const concurrencyDomeID = Number(concurrencyRaceFixture.dome?.defense_id ?? 407);
+  const concurrencyDomeRequestCount = Number(concurrencyRaceFixture.dome?.request_count ?? 1);
+  const concurrencyDomeExpectedCount = Number(concurrencyRaceFixture.dome?.expected_count ?? 1);
+  const concurrencyDomeResponses = concurrencyRaceReady
+    ? await Promise.all(Array.from({ length: 4 }, () => request(`/api/game/defense${concurrencyDomeSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: concurrencyDomeLogin.cookiePair },
+        body: JSON.stringify({ orders: { [String(concurrencyDomeID)]: concurrencyDomeRequestCount } })
+      })))
+    : [];
+  const concurrencyDomeBodies = concurrencyDomeResponses.map((response) => parseJSON(response));
+  const concurrencyDomeAfter = concurrencyRaceReady
+    ? await request(`/api/game/defense${concurrencyDomeSearch}`, { headers: { Cookie: concurrencyDomeLogin.cookiePair } })
+    : null;
+  const concurrencyDomeAfterBody = concurrencyDomeAfter ? parseJSON(concurrencyDomeAfter) : {};
+  const concurrencyDomeQueueRows = Array.isArray(concurrencyDomeAfterBody.defense?.queue)
+    ? concurrencyDomeAfterBody.defense.queue.filter((row) => Number(row.unitId ?? 0) === concurrencyDomeID)
+    : [];
+  const concurrencyDomeQueuedCount = concurrencyDomeQueueRows.reduce((sum, row) => sum + Number(row.count ?? 0), 0);
+  const concurrencyDomeItem = defenseItemByID(concurrencyDomeAfterBody, concurrencyDomeID);
+  const concurrencyMissileLogin = concurrencyRaceReady
+    ? await loginGameUser(concurrencyRaceFixture.missile.login, loginSmokePassword, concurrencyUniverse)
+    : null;
+  const concurrencyMissileSearch = withQueryParam(concurrencyMissileLogin?.search ?? "?session=", "cp", Number(concurrencyRaceFixture.missile?.home_planet_id ?? 0));
+  const concurrencyMissileID = Number(concurrencyRaceFixture.missile?.defense_id ?? 502);
+  const concurrencyMissileRequestCount = Number(concurrencyRaceFixture.missile?.request_count ?? 99);
+  const concurrencyMissileExpectedCount = Number(concurrencyRaceFixture.missile?.expected_count ?? 20);
+  const concurrencyMissileResponses = concurrencyRaceReady
+    ? await Promise.all(Array.from({ length: 4 }, () => request(`/api/game/defense${concurrencyMissileSearch}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: concurrencyMissileLogin.cookiePair },
+        body: JSON.stringify({ orders: { [String(concurrencyMissileID)]: concurrencyMissileRequestCount } })
+      })))
+    : [];
+  const concurrencyMissileBodies = concurrencyMissileResponses.map((response) => parseJSON(response));
+  const concurrencyMissileAfter = concurrencyRaceReady
+    ? await request(`/api/game/defense${concurrencyMissileSearch}`, { headers: { Cookie: concurrencyMissileLogin.cookiePair } })
+    : null;
+  const concurrencyMissileAfterBody = concurrencyMissileAfter ? parseJSON(concurrencyMissileAfter) : {};
+  const concurrencyMissileQueueRows = Array.isArray(concurrencyMissileAfterBody.defense?.queue)
+    ? concurrencyMissileAfterBody.defense.queue.filter((row) => Number(row.unitId ?? 0) === concurrencyMissileID)
+    : [];
+  const concurrencyMissileQueuedCount = concurrencyMissileQueueRows.reduce((sum, row) => sum + Number(row.count ?? 0), 0);
+  const concurrencyMissileItem = defenseItemByID(concurrencyMissileAfterBody, concurrencyMissileID);
 
   const gameAdmin = await request(`/api/game/admin${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
@@ -7574,6 +7630,130 @@ try {
         concurrencyDefenseAfterBody.defense?.currentPlanet?.resources ?? {}
       ),
       check(!concurrencyRaceReady || !concurrencyDefenseAfter.body.includes(concurrencyDefenseLogin?.cookiePair ?? "missing-cookie"), "defense concurrency response does not echo private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_concurrency_shield_dome_orders_api",
+    checks: [
+      check(!smokeFixtureFile || concurrencyRaceReady, "go smoke fixture exposes shield dome concurrency user", {
+        concurrencyRaceFixture
+      }),
+      check(!concurrencyRaceReady || concurrencyDomeLogin?.response.status === 200, "shield dome concurrency user can log in", {
+        status: concurrencyDomeLogin?.response.status
+      }),
+      check(
+        !concurrencyRaceReady ||
+          concurrencyDomeResponses.length === 4 &&
+            concurrencyDomeResponses.every((response) => response.status === 200),
+        "parallel shield dome order requests all return HTTP 200",
+        concurrencyDomeResponses.map((response) => ({
+          status: response.status,
+          elapsedMs: response.elapsedMs
+        }))
+      ),
+      check(
+        !concurrencyRaceReady ||
+          concurrencyDomeBodies.every((body) => body.authenticated === true),
+        "parallel shield dome order responses authenticate the same user",
+        concurrencyDomeBodies.map((body) => ({
+          authenticated: body.authenticated,
+          issue: body.actionIssue?.code
+        }))
+      ),
+      check(!concurrencyRaceReady || concurrencyDomeAfter?.status === 200, "shield dome concurrency final reload returns HTTP 200", {
+        status: concurrencyDomeAfter?.status
+      }),
+      check(
+        !concurrencyRaceReady || concurrencyDomeQueueRows.length <= 1,
+        "parallel shield dome order leaves at most one dome queue row",
+        concurrencyDomeAfterBody.defense?.queue ?? []
+      ),
+      check(
+        !concurrencyRaceReady || concurrencyDomeQueuedCount <= concurrencyDomeExpectedCount,
+        "parallel shield dome order does not queue more domes than the legacy cap",
+        {
+          queued: concurrencyDomeQueuedCount,
+          expectedMax: concurrencyDomeExpectedCount,
+          rows: concurrencyDomeQueueRows
+        }
+      ),
+      check(
+        !concurrencyRaceReady || Number(concurrencyDomeItem?.count ?? 0) === 0,
+        "parallel shield dome order does not prematurely complete the dome",
+        concurrencyDomeItem ?? {}
+      ),
+      check(
+        !concurrencyRaceReady ||
+          Number(concurrencyDomeAfterBody.defense?.currentPlanet?.resources?.metal ?? 0) >= 0 &&
+            Number(concurrencyDomeAfterBody.defense?.currentPlanet?.resources?.crystal ?? 0) >= 0 &&
+            Number(concurrencyDomeAfterBody.defense?.currentPlanet?.resources?.deuterium ?? 0) >= 0,
+        "parallel shield dome order does not overspend resources below zero",
+        concurrencyDomeAfterBody.defense?.currentPlanet?.resources ?? {}
+      ),
+      check(!concurrencyRaceReady || !concurrencyDomeAfter.body.includes(concurrencyDomeLogin?.cookiePair ?? "missing-cookie"), "shield dome concurrency response does not echo private cookie")
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_concurrency_missile_orders_api",
+    checks: [
+      check(!smokeFixtureFile || concurrencyRaceReady, "go smoke fixture exposes missile concurrency user", {
+        concurrencyRaceFixture
+      }),
+      check(!concurrencyRaceReady || concurrencyMissileLogin?.response.status === 200, "missile concurrency user can log in", {
+        status: concurrencyMissileLogin?.response.status
+      }),
+      check(
+        !concurrencyRaceReady ||
+          concurrencyMissileResponses.length === 4 &&
+            concurrencyMissileResponses.every((response) => response.status === 200),
+        "parallel missile order requests all return HTTP 200",
+        concurrencyMissileResponses.map((response) => ({
+          status: response.status,
+          elapsedMs: response.elapsedMs
+        }))
+      ),
+      check(
+        !concurrencyRaceReady ||
+          concurrencyMissileBodies.every((body) => body.authenticated === true),
+        "parallel missile order responses authenticate the same user",
+        concurrencyMissileBodies.map((body) => ({
+          authenticated: body.authenticated,
+          issue: body.actionIssue?.code
+        }))
+      ),
+      check(!concurrencyRaceReady || concurrencyMissileAfter?.status === 200, "missile concurrency final reload returns HTTP 200", {
+        status: concurrencyMissileAfter?.status
+      }),
+      check(
+        !concurrencyRaceReady || concurrencyMissileQueueRows.length <= 1,
+        "parallel missile order leaves at most one ABM queue row",
+        concurrencyMissileAfterBody.defense?.queue ?? []
+      ),
+      check(
+        !concurrencyRaceReady || concurrencyMissileQueuedCount <= concurrencyMissileExpectedCount,
+        "parallel missile order does not queue more ABMs than silo capacity allows",
+        {
+          queued: concurrencyMissileQueuedCount,
+          expectedMax: concurrencyMissileExpectedCount,
+          rows: concurrencyMissileQueueRows
+        }
+      ),
+      check(
+        !concurrencyRaceReady || Number(concurrencyMissileItem?.count ?? 0) === 0,
+        "parallel missile order does not prematurely complete ABMs",
+        concurrencyMissileItem ?? {}
+      ),
+      check(
+        !concurrencyRaceReady ||
+          Number(concurrencyMissileAfterBody.defense?.currentPlanet?.resources?.metal ?? 0) >= 0 &&
+            Number(concurrencyMissileAfterBody.defense?.currentPlanet?.resources?.crystal ?? 0) >= 0 &&
+            Number(concurrencyMissileAfterBody.defense?.currentPlanet?.resources?.deuterium ?? 0) >= 0,
+        "parallel missile order does not overspend resources below zero",
+        concurrencyMissileAfterBody.defense?.currentPlanet?.resources ?? {}
+      ),
+      check(!concurrencyRaceReady || !concurrencyMissileAfter.body.includes(concurrencyMissileLogin?.cookiePair ?? "missing-cookie"), "missile concurrency response does not echo private cookie")
     ]
   }));
 

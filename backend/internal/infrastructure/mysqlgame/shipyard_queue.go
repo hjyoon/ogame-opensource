@@ -90,9 +90,6 @@ func (r ShipyardRepository) mutateShipyardOrders(ctx context.Context, playerID i
 		return domaingame.BuildingActionIssue(domaingame.BuildingsIssueInvalid), nil
 	}
 	now := int(r.currentTime().Unix())
-	if err := r.FinishDueShipyardQueues(ctx, now); err != nil {
-		return nil, err
-	}
 
 	pending := map[int]int{}
 	for id, amount := range orders {
@@ -102,6 +99,16 @@ func (r ShipyardRepository) mutateShipyardOrders(ctx context.Context, playerID i
 	}
 	if len(pending) == 0 {
 		return domaingame.BuildingActionIssue(domaingame.BuildingsIssueInvalid), nil
+	}
+
+	unlock, err := r.acquireShipyardMutationLock(ctx, playerID, planetID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
+	if err := r.FinishDueShipyardQueues(ctx, now); err != nil {
+		return nil, err
 	}
 
 	enqueued := 0
@@ -141,6 +148,18 @@ func (r ShipyardRepository) mutateShipyardOrders(ctx context.Context, playerID i
 		return nil, nil
 	}
 	return firstIssue, nil
+}
+
+func (r ShipyardRepository) acquireShipyardMutationLock(ctx context.Context, playerID int, planetID int) (func(), error) {
+	db := (BuildingsRepository{queryer: r.queryer}).sqlDB()
+	if db == nil || playerID <= 0 {
+		return func() {}, nil
+	}
+	lockName := fmt.Sprintf("%sshipyard:%d:%d", r.prefix, playerID, planetID)
+	if planetID <= 0 {
+		lockName = fmt.Sprintf("%sshipyard:%d", r.prefix, playerID)
+	}
+	return acquireMySQLNamedLock(ctx, db, lockName, "shipyard mutation lock timeout")
 }
 
 func (r ShipyardRepository) enqueueShipyardItem(ctx context.Context, state shipyardMutationState, item domaingame.ShipyardItem, requested int, now int) (*domaingame.BuildingsActionIssue, bool, error) {

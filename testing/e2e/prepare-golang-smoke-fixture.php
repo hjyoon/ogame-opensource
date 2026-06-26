@@ -1115,7 +1115,9 @@ function smoke_prepare_concurrency_race_fixture(string $password, array $near): 
 
     $shipyard = smoke_prepare_user('goconcshipyard', $password, 'goconcshipyard@example.local', USER_TYPE_PLAYER);
     $defense = smoke_prepare_user('goconcdefense', $password, 'goconcdefense@example.local', USER_TYPE_PLAYER);
-    $users = array($shipyard, $defense);
+    $dome = smoke_prepare_user('goconcdome', $password, 'goconcdome@example.local', USER_TYPE_PLAYER);
+    $missile = smoke_prepare_user('goconcmissile', $password, 'goconcmissile@example.local', USER_TYPE_PLAYER);
+    $users = array($shipyard, $defense, $dome, $missile);
     $userIds = array_map(fn($user) => (int)$user['player_id'], $users);
     $planetIds = array_map(fn($user) => (int)$user['home_planet_id'], $users);
 
@@ -1163,6 +1165,30 @@ function smoke_prepare_concurrency_race_fixture(string $password, array $near): 
         GID_RC_CRYSTAL . "`={$defenseCrystal}, `" . GID_RC_DEUTERIUM . "`={$defenseDeuterium}, `" .
         GID_B_SHIPYARD . "`=10, fields=0, maxfields=200, type=" . PTYP_PLANET . " WHERE planet_id=" . (int)$defense['home_planet_id']
     );
+
+    $domeId = GID_D_SDOME;
+    $domeCost = TechPrice($domeId, 1);
+    $domeMetal = (int)($domeCost[GID_RC_METAL] ?? 0) * 4;
+    $domeCrystal = (int)($domeCost[GID_RC_CRYSTAL] ?? 0) * 4;
+    $domeDeuterium = (int)($domeCost[GID_RC_DEUTERIUM] ?? 0) * 4;
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_D_SDOME . "`=0, `" . GID_RC_METAL . "`={$domeMetal}, `" .
+        GID_RC_CRYSTAL . "`={$domeCrystal}, `" . GID_RC_DEUTERIUM . "`={$domeDeuterium}, `" .
+        GID_B_SHIPYARD . "`=10, fields=0, maxfields=200, type=" . PTYP_PLANET . " WHERE planet_id=" . (int)$dome['home_planet_id']
+    );
+
+    $missileId = GID_D_ABM;
+    $missileCapacity = 20;
+    $missileCost = TechPrice($missileId, 1);
+    $missileMetal = (int)($missileCost[GID_RC_METAL] ?? 0) * $missileCapacity;
+    $missileCrystal = (int)($missileCost[GID_RC_CRYSTAL] ?? 0) * $missileCapacity;
+    $missileDeuterium = (int)($missileCost[GID_RC_DEUTERIUM] ?? 0) * $missileCapacity;
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_B_MISS_SILO . "`=2, `" . GID_D_ABM . "`=0, `" . GID_D_IPM . "`=0, `" .
+        GID_RC_METAL . "`={$missileMetal}, `" . GID_RC_CRYSTAL . "`={$missileCrystal}, `" . GID_RC_DEUTERIUM . "`={$missileDeuterium}, `" .
+        GID_B_SHIPYARD . "`=10, fields=0, maxfields=200, type=" . PTYP_PLANET . " WHERE planet_id=" . (int)$missile['home_planet_id']
+    );
+
     foreach ($users as $user) {
         dbquery("UPDATE {$db_prefix}users SET hplanetid=" . (int)$user['home_planet_id'] . ", aktplanet=" . (int)$user['home_planet_id'] . " WHERE player_id=" . (int)$user['player_id']);
     }
@@ -1182,6 +1208,22 @@ function smoke_prepare_concurrency_race_fixture(string $password, array $near): 
             'home_planet_id' => (int)$defense['home_planet_id'],
             'defense_id' => $defenseId,
             'expected_count' => $defenseCount,
+        ),
+        'dome' => array(
+            'login' => mb_strtolower($dome['name'], 'UTF-8'),
+            'player_id' => (int)$dome['player_id'],
+            'home_planet_id' => (int)$dome['home_planet_id'],
+            'defense_id' => $domeId,
+            'request_count' => 1,
+            'expected_count' => 1,
+        ),
+        'missile' => array(
+            'login' => mb_strtolower($missile['name'], 'UTF-8'),
+            'player_id' => (int)$missile['player_id'],
+            'home_planet_id' => (int)$missile['home_planet_id'],
+            'defense_id' => $missileId,
+            'request_count' => 99,
+            'expected_count' => $missileCapacity,
         ),
     );
 }
