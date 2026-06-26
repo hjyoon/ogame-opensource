@@ -121,15 +121,18 @@ function smoke_prepare_admin_queue_fixture(int $adminOwnerId, int $targetOwnerId
 
 	$ownerList = implode(',', array($adminOwnerId, $targetOwnerId));
 	dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id IN ({$ownerList}) AND type IN ('" . QTYP_DEBUG . "','" . QTYP_ALLOW_NAME . "','" . QTYP_RECALC_POINTS . "')");
+	dbquery("DELETE FROM {$db_prefix}queue WHERE type='" . QTYP_CLEAN_PLAYERS . "' AND sub_id={$targetOwnerId}");
 	$now = time();
 	$freezeTaskId = AddQueue($adminOwnerId, QTYP_DEBUG, 0, 0, 0, $now, 3600, QUEUE_PRIO_DEBUG);
 	$removeTaskId = AddQueue($targetOwnerId, QTYP_ALLOW_NAME, 0, 0, 0, $now, 3600, QUEUE_PRIO_LOWEST);
 	$endTaskId = AddQueue($targetOwnerId, QTYP_RECALC_POINTS, 0, 0, 0, $now, 3600, QUEUE_PRIO_RECALC_POINTS);
+	$cleanPlayersTaskId = AddQueue(USER_SPACE, QTYP_CLEAN_PLAYERS, $targetOwnerId, 0, 0, $now, 3590, QUEUE_PRIO_CLEAN_PLAYERS);
 	return array(
 		'task_id' => $freezeTaskId,
 		'freeze_task_id' => $freezeTaskId,
 		'remove_task_id' => $removeTaskId,
 		'end_task_id' => $endTaskId,
+		'clean_players_task_id' => $cleanPlayersTaskId,
 	);
 }
 

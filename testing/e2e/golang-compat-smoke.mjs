@@ -419,8 +419,10 @@ try {
   const adminQueueFreezeTaskId = Number(adminQueueFixture.freeze_task_id ?? adminQueueFixture.task_id ?? 0);
   const adminQueueRemoveTaskId = Number(adminQueueFixture.remove_task_id ?? 0);
   const adminQueueEndTaskId = Number(adminQueueFixture.end_task_id ?? 0);
+  const adminQueueCleanPlayersTaskId = Number(adminQueueFixture.clean_players_task_id ?? 0);
   const adminQueueFixtureReady = adminQueueFreezeTaskId > 0;
   const adminQueueControlsReady = adminQueueFreezeTaskId > 0 && adminQueueRemoveTaskId > 0 && adminQueueEndTaskId > 0;
+  const adminQueueCleanPlayersReady = adminQueueFixtureReady && adminQueueCleanPlayersTaskId > 0;
   const adminFleetlogsFixture = smokeFixture?.admin_fleetlogs ?? {};
   const adminFleetlogsTaskId = Number(adminFleetlogsFixture.task_id ?? 0);
   const adminFleetlogsFixtureReady = adminFleetlogsTaskId > 0;
@@ -4260,6 +4262,40 @@ try {
       })
     : null;
   const adminQueueAfterEndBody = adminQueueAfterEnd ? parseJSON(adminQueueAfterEnd) : {};
+  const adminCleanPlayersInitial = adminQueueCleanPlayersReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Queue")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminCleanPlayersInitialBody = adminCleanPlayersInitial ? parseJSON(adminCleanPlayersInitial) : {};
+  const operatorCleanPlayersRemove = adminQueueCleanPlayersReady && operatorLogin
+    ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "Queue")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: operatorLogin.cookiePair },
+        body: JSON.stringify({ action: "queue_remove", taskId: adminQueueCleanPlayersTaskId })
+      })
+    : null;
+  const operatorCleanPlayersRemoveBody = operatorCleanPlayersRemove ? parseJSON(operatorCleanPlayersRemove) : {};
+  const adminCleanPlayersAfterOperator = adminQueueCleanPlayersReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Queue")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminCleanPlayersAfterOperatorBody = adminCleanPlayersAfterOperator ? parseJSON(adminCleanPlayersAfterOperator) : {};
+  const adminCleanPlayersRemove = adminQueueCleanPlayersReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Queue")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+        body: JSON.stringify({ action: "queue_remove", taskId: adminQueueCleanPlayersTaskId })
+      })
+    : null;
+  const adminCleanPlayersRemoveBody = adminCleanPlayersRemove ? parseJSON(adminCleanPlayersRemove) : {};
+  const adminCleanPlayersAfterRemove = adminQueueCleanPlayersReady
+    ? await request(`/api/game/admin${withQueryParam(sessionSearch, "mode", "Queue")}`, {
+        headers: { Cookie: sessionCookiePair }
+      })
+    : null;
+  const adminCleanPlayersAfterRemoveBody = adminCleanPlayersAfterRemove ? parseJSON(adminCleanPlayersAfterRemove) : {};
   const operatorUsersUpdate = adminDestructiveReady && operatorLogin
     ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "Users")}`, {
         method: "POST",
@@ -7003,21 +7039,18 @@ try {
     ]
   }));
 
-  const frozenQueueRow = Array.isArray(adminQueueAfterFreezeBody.admin?.queueRows)
-    ? adminQueueAfterFreezeBody.admin.queueRows.find((row) => Number(row.id) === adminQueueFreezeTaskId)
-    : undefined;
-  const unfrozenQueueRow = Array.isArray(adminQueueAfterUnfreezeBody.admin?.queueRows)
-    ? adminQueueAfterUnfreezeBody.admin.queueRows.find((row) => Number(row.id) === adminQueueFreezeTaskId)
-    : undefined;
-  const removeQueueRowAfterOperator = Array.isArray(adminQueueAfterFreezeBody.admin?.queueRows)
-    ? adminQueueAfterFreezeBody.admin.queueRows.find((row) => Number(row.id) === adminQueueRemoveTaskId)
-    : undefined;
-  const removedQueueRow = Array.isArray(adminQueueAfterRemoveBody.admin?.queueRows)
-    ? adminQueueAfterRemoveBody.admin.queueRows.find((row) => Number(row.id) === adminQueueRemoveTaskId)
-    : undefined;
-  const endedQueueRow = Array.isArray(adminQueueAfterEndBody.admin?.queueRows)
-    ? adminQueueAfterEndBody.admin.queueRows.find((row) => Number(row.id) === adminQueueEndTaskId)
-    : undefined;
+  const queueRowByTaskID = (body, taskID) =>
+    Array.isArray(body.admin?.queueRows)
+      ? body.admin.queueRows.find((row) => Number(row.id) === Number(taskID))
+      : undefined;
+  const frozenQueueRow = queueRowByTaskID(adminQueueAfterFreezeBody, adminQueueFreezeTaskId);
+  const unfrozenQueueRow = queueRowByTaskID(adminQueueAfterUnfreezeBody, adminQueueFreezeTaskId);
+  const removeQueueRowAfterOperator = queueRowByTaskID(adminQueueAfterFreezeBody, adminQueueRemoveTaskId);
+  const removedQueueRow = queueRowByTaskID(adminQueueAfterRemoveBody, adminQueueRemoveTaskId);
+  const endedQueueRow = queueRowByTaskID(adminQueueAfterEndBody, adminQueueEndTaskId);
+  const cleanPlayersInitialRow = queueRowByTaskID(adminCleanPlayersInitialBody, adminQueueCleanPlayersTaskId);
+  const cleanPlayersAfterOperatorRow = queueRowByTaskID(adminCleanPlayersAfterOperatorBody, adminQueueCleanPlayersTaskId);
+  const cleanPlayersRemovedRow = queueRowByTaskID(adminCleanPlayersAfterRemoveBody, adminQueueCleanPlayersTaskId);
   const findAdminUserRow = (body, playerId) => {
     const rows = [
       ...(Array.isArray(body.admin?.userRows) ? body.admin.userRows : []),
@@ -7128,6 +7161,56 @@ try {
         !adminQueueControlsReady || endedQueueRow === undefined,
         "due RecalcPoints queue task is removed after overview completion",
         { taskId: adminQueueEndTaskId, endedQueueRow }
+      )
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_account_deletion_cleanup_queue_surface_api",
+    checks: [
+      check(!smokeFixtureFile || adminQueueCleanPlayersReady, "go smoke fixture exposes CleanPlayers deletion cleanup queue task", {
+        smokeFixtureFile,
+        adminQueueFixture
+      }),
+      check(!adminQueueCleanPlayersReady || adminCleanPlayersInitial?.status === 200, "admin Queue reload for CleanPlayers returns HTTP 200", {
+        status: adminCleanPlayersInitial?.status
+      }),
+      check(
+        !adminQueueCleanPlayersReady || cleanPlayersInitialRow?.type === "CleanPlayers",
+        "CleanPlayers queue row is visible in Go admin Queue",
+        { taskId: adminQueueCleanPlayersTaskId, cleanPlayersInitialRow }
+      ),
+      check(
+        !adminQueueCleanPlayersReady ||
+          String(cleanPlayersInitialRow?.description ?? "") === "Deleting inactive players and players put up for deletion",
+        "CleanPlayers queue row uses the legacy deletion cleanup description",
+        cleanPlayersInitialRow ?? {}
+      ),
+      check(!adminQueueCleanPlayersReady || operatorCleanPlayersRemove?.status === 200, "operator CleanPlayers remove mutation returns HTTP 200", {
+        status: operatorCleanPlayersRemove?.status
+      }),
+      check(
+        !adminQueueCleanPlayersReady || operatorCleanPlayersRemoveBody.actionIssue?.code === "access_denied",
+        "operator CleanPlayers remove mutation is denied like legacy",
+        operatorCleanPlayersRemoveBody.actionIssue ?? {}
+      ),
+      check(
+        !adminQueueCleanPlayersReady || cleanPlayersAfterOperatorRow !== undefined,
+        "operator-denied CleanPlayers remove keeps cleanup task visible",
+        { taskId: adminQueueCleanPlayersTaskId, cleanPlayersAfterOperatorRow }
+      ),
+      check(!adminQueueCleanPlayersReady || adminCleanPlayersRemove?.status === 200, "admin CleanPlayers remove mutation returns HTTP 200", {
+        status: adminCleanPlayersRemove?.status
+      }),
+      check(
+        !adminQueueCleanPlayersReady || adminCleanPlayersRemoveBody.actionIssue?.code === "action_saved",
+        "admin CleanPlayers remove mutation saves like legacy",
+        adminCleanPlayersRemoveBody.actionIssue ?? {}
+      ),
+      check(
+        !adminQueueCleanPlayersReady || cleanPlayersRemovedRow === undefined,
+        "admin CleanPlayers remove clears the fixture cleanup task",
+        { taskId: adminQueueCleanPlayersTaskId, cleanPlayersRemovedRow }
       )
     ]
   }));

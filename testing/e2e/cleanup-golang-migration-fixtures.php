@@ -131,6 +131,7 @@ if (!empty($userIds)) {
     dbquery("DELETE FROM {$db_prefix}messages WHERE owner_id IN ({$userList})");
     dbquery("DELETE FROM {$db_prefix}userlogs WHERE owner_id IN ({$userList})");
     dbquery("DELETE FROM {$db_prefix}template WHERE owner_id IN ({$userList})");
+    dbquery("DELETE FROM {$db_prefix}queue WHERE type='" . QTYP_CLEAN_PLAYERS . "' AND sub_id IN ({$userList})");
     dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id IN ({$userList}) AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "','" . QTYP_RESEARCH . "','" . QTYP_SHIPYARD . "','" . QTYP_FLEET . "')");
     dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id IN ({$userList}) OR planet_id IN ({$planetList})");
     dbquery("UPDATE {$db_prefix}users SET admin=" . USER_TYPE_PLAYER . ", vacation=0, vacation_until=0, banned=0, banned_until=0, noattack=0, noattack_until=0, disable=0, disable_until=0 WHERE player_id IN ({$userList})");

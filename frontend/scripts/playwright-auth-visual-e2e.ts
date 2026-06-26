@@ -996,6 +996,12 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
           makeTextTransparent(eventCell);
         }
       }
+      for (const row of document.querySelectorAll<HTMLTableRowElement>(".legacy-overview-main-table tr, #content table tr")) {
+        const cells = Array.from(row.querySelectorAll<HTMLElement>("th, td"));
+        if (cells[0]?.textContent?.trim() === "Position" && cells[1]) {
+          cells[1].textContent = "[0:0:0]";
+        }
+      }
     }
     for (const countdown of document.querySelectorAll<HTMLElement>("[id^='bxx'], .legacy-admin-queue-countdown")) {
       countdown.textContent = "0:00:00";

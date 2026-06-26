@@ -40,7 +40,7 @@ func TestAdminRepositoryReadsAdminHome(t *testing.T) {
 	if len(admin.ActiveUsers) != 1 || admin.ActiveUsers[0].Name != "legor" {
 		t.Fatalf("unexpected active users: %+v", admin.ActiveUsers)
 	}
-	if !strings.Contains(queryer.calls[len(queryer.calls)-2].sql, "ORDER BY u.regdate DESC LIMIT 25") {
+	if !strings.Contains(queryer.calls[len(queryer.calls)-2].sql, "ORDER BY u.regdate DESC, u.player_id DESC LIMIT 25") {
 		t.Fatalf("expected new users query, got %s", queryer.calls[len(queryer.calls)-2].sql)
 	}
 	if !strings.Contains(queryer.calls[len(queryer.calls)-1].sql, "WHERE u.lastclick >= ? ORDER BY u.oname ASC") {

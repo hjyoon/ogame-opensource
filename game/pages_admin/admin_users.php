@@ -506,7 +506,7 @@ class Admin_Users extends Page {
 <?php
     }
     else {
-        $query = "SELECT * FROM ".$db_prefix."users ORDER BY regdate DESC LIMIT 25";
+        $query = "SELECT * FROM ".$db_prefix."users ORDER BY regdate DESC, player_id DESC LIMIT 25";
         $result = dbquery ($query);
 
         echo "    </th> \n";
