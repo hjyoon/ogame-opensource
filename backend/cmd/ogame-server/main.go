@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"net/http"
 	"os"
@@ -84,6 +85,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	gamePhalanx := gamePhalanxService(cfg, logger, gameSessions)
 	gameFeed := gameFeedService(cfg, logger)
 	gameOptions := gameOptionsService(cfg, logger, gameSessions)
+	gamePayment := gamePaymentService(cfg, logger, gameSessions)
 
 	return httpdelivery.New(httpdelivery.Dependencies{
 		Health:             health,
@@ -120,6 +122,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		GamePhalanx:        gamePhalanx,
 		GameFeed:           gameFeed,
 		GameOptions:        gameOptions,
+		GamePayment:        gamePayment,
 		Frontend:           filesystem.StaticDir{Root: cfg.StaticDir},
 		LegacyAssets:       filesystem.NewNoListingFS(cfg.LegacyAssetDir),
 		Logger:             logger,
@@ -591,7 +594,44 @@ func gameAdminService(cfg config.Config, logger *slog.Logger, sessions apppublic
 
 	logger.Info("universe DB game admin enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	repository := mysqlgame.NewAdminRepository(db, cfg.UniDBPrefix).WithLegacyGameDir(cfg.LegacyGameDir)
+	if masterDB := openMasterDBForGame(cfg, logger, "admin coupons"); masterDB != nil {
+		masterRunner := mysqlgame.SQLQueryer{DB: masterDB}
+		repository = repository.WithMasterRunner(masterRunner, masterRunner).WithUniverseNumber(cfg.UniNumber)
+	}
 	return appgame.NewAdminService(sessions, repository)
+}
+
+func gamePaymentService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.PaymentService {
+	if !cfg.UniDBEnabled || !cfg.MasterDBEnabled {
+		return appgame.PaymentService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game payment disabled", "error", err)
+		return appgame.PaymentService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game payment disabled", "error", err)
+		_ = db.Close()
+		return appgame.PaymentService{}
+	}
+	masterDB := openMasterDBForGame(cfg, logger, "payment coupons")
+	if masterDB == nil {
+		_ = db.Close()
+		return appgame.PaymentService{}
+	}
+
+	logger.Info("universe DB game payment enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
+	return appgame.NewPaymentService(sessions, mysqlgame.NewPaymentRepository(db, masterDB, cfg.UniDBPrefix, cfg.UniNumber))
 }
 
 func gameResearchService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.ResearchService {
@@ -1068,6 +1108,31 @@ func universeRepository(cfg config.Config, logger *slog.Logger) apppublicsite.Un
 		Primary:  mysqlcatalog.NewMasterUniverseCatalog(db),
 		Fallback: fallback,
 	}
+}
+
+func openMasterDBForGame(cfg config.Config, logger *slog.Logger, label string) *sql.DB {
+	if !cfg.MasterDBEnabled {
+		return nil
+	}
+	db, err := mysqlcatalog.Open(mysqlcatalog.MasterDBConfig{
+		Host:     cfg.MasterDBHost,
+		User:     cfg.MasterDBUser,
+		Password: cfg.MasterDBPassword,
+		Name:     cfg.MasterDBName,
+	})
+	if err != nil {
+		logger.Warn("master DB "+label+" disabled", "error", err)
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("master DB "+label+" disabled", "error", err)
+		_ = db.Close()
+		return nil
+	}
+	logger.Info("master DB "+label+" enabled", "host", cfg.MasterDBHost, "database", cfg.MasterDBName)
+	return db
 }
 
 func newLogger(levelName string) *slog.Logger {

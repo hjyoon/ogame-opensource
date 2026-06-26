@@ -37,6 +37,11 @@ const (
 	AdminActionUsersRecalcStats  = "recalc_stats"
 	AdminActionUsersUpdate       = "update"
 	AdminActionUsersCreatePlanet = "create_planet"
+
+	AdminActionCouponAddOne     = "add_one"
+	AdminActionCouponRemoveOne  = "remove_one"
+	AdminActionCouponAddDate    = "add_date"
+	AdminActionCouponRemoveDate = "remove_date"
 )
 
 type Admin struct {
@@ -60,6 +65,8 @@ type Admin struct {
 	ChecksumGroups  []AdminChecksumGroup
 	DatabaseBackups []AdminDatabaseBackup
 	BotStrategies   []AdminBotStrategy
+	CouponRows      []AdminCouponRow
+	CouponQueueRows []AdminCouponQueueRow
 }
 
 type AdminViewer struct {
@@ -237,6 +244,27 @@ type AdminDatabaseBackup struct {
 type AdminBotStrategy struct {
 	ID   int
 	Name string
+}
+
+type AdminCouponRow struct {
+	ID           int
+	Code         string
+	Amount       int
+	Used         bool
+	UserUniverse int
+	UserID       int
+	UserName     string
+}
+
+type AdminCouponQueueRow struct {
+	ID           int
+	Amount       int
+	InactiveDays int
+	IngameDays   int
+	PeriodicDays int
+	Start        int64
+	End          int64
+	Priority     int
 }
 
 var adminMenuItems = []AdminMenuItem{

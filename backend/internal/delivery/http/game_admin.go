@@ -22,20 +22,27 @@ type gameAdminActionIssue struct {
 }
 
 type gameAdminMutationRequest struct {
-	Action     string         `json:"action"`
-	TaskID     int            `json:"taskId"`
-	TargetIDs  []int          `json:"targetIds"`
-	BanMode    int            `json:"banMode"`
-	Days       int            `json:"days"`
-	Hours      int            `json:"hours"`
-	Reason     string         `json:"reason"`
-	Values     map[string]int `json:"values"`
-	Category   int            `json:"category"`
-	Subject    string         `json:"subject"`
-	Text       string         `json:"text"`
-	ReportIDs  []int          `json:"reportIds"`
-	DeleteMode string         `json:"deleteMode"`
-	FileName   string         `json:"fileName"`
+	Action       string         `json:"action"`
+	TaskID       int            `json:"taskId"`
+	TargetIDs    []int          `json:"targetIds"`
+	BanMode      int            `json:"banMode"`
+	Days         int            `json:"days"`
+	Hours        int            `json:"hours"`
+	Reason       string         `json:"reason"`
+	Values       map[string]int `json:"values"`
+	Category     int            `json:"category"`
+	Subject      string         `json:"subject"`
+	Text         string         `json:"text"`
+	ReportIDs    []int          `json:"reportIds"`
+	DeleteMode   string         `json:"deleteMode"`
+	FileName     string         `json:"fileName"`
+	Amount       int            `json:"amount"`
+	ItemID       int            `json:"itemId"`
+	DayMonth     string         `json:"dayMonth"`
+	HourMinute   string         `json:"hourMinute"`
+	InactiveDays int            `json:"inactiveDays"`
+	IngameDays   int            `json:"ingameDays"`
+	PeriodicDays int            `json:"periodicDays"`
 }
 
 type gameAdminSummary struct {
@@ -59,6 +66,8 @@ type gameAdminSummary struct {
 	ChecksumGroups  []gameAdminChecksumGroup    `json:"checksumGroups,omitempty"`
 	DatabaseBackups []gameAdminDatabaseBackup   `json:"databaseBackups,omitempty"`
 	BotStrategies   []gameAdminBotStrategy      `json:"botStrategies,omitempty"`
+	CouponRows      []gameAdminCouponRow        `json:"couponRows,omitempty"`
+	CouponQueueRows []gameAdminCouponQueueRow   `json:"couponQueueRows,omitempty"`
 }
 
 type gameAdminViewer struct {
@@ -233,6 +242,27 @@ type gameAdminBotStrategy struct {
 	Name string `json:"name"`
 }
 
+type gameAdminCouponRow struct {
+	ID           int    `json:"id"`
+	Code         string `json:"code"`
+	Amount       int    `json:"amount"`
+	Used         bool   `json:"used"`
+	UserUniverse int    `json:"userUniverse"`
+	UserID       int    `json:"userId"`
+	UserName     string `json:"userName"`
+}
+
+type gameAdminCouponQueueRow struct {
+	ID           int   `json:"id"`
+	Amount       int   `json:"amount"`
+	InactiveDays int   `json:"inactiveDays"`
+	IngameDays   int   `json:"ingameDays"`
+	PeriodicDays int   `json:"periodicDays"`
+	Start        int64 `json:"start"`
+	End          int64 `json:"end"`
+	Priority     int   `json:"priority"`
+}
+
 func (a app) handleGameAdmin(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
@@ -305,6 +335,13 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		ReportIDs:       request.ReportIDs,
 		DeleteMode:      request.DeleteMode,
 		FileName:        request.FileName,
+		Amount:          request.Amount,
+		ItemID:          request.ItemID,
+		DayMonth:        request.DayMonth,
+		HourMinute:      request.HourMinute,
+		InactiveDays:    request.InactiveDays,
+		IngameDays:      request.IngameDays,
+		PeriodicDays:    request.PeriodicDays,
 	})
 	if err != nil {
 		logGameAdminError(a.deps.Logger, r, "game admin mutation failed", err)
@@ -456,6 +493,31 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			Name: strategy.Name,
 		})
 	}
+	couponRows := make([]gameAdminCouponRow, 0, len(admin.CouponRows))
+	for _, row := range admin.CouponRows {
+		couponRows = append(couponRows, gameAdminCouponRow{
+			ID:           row.ID,
+			Code:         row.Code,
+			Amount:       row.Amount,
+			Used:         row.Used,
+			UserUniverse: row.UserUniverse,
+			UserID:       row.UserID,
+			UserName:     row.UserName,
+		})
+	}
+	couponQueueRows := make([]gameAdminCouponQueueRow, 0, len(admin.CouponQueueRows))
+	for _, row := range admin.CouponQueueRows {
+		couponQueueRows = append(couponQueueRows, gameAdminCouponQueueRow{
+			ID:           row.ID,
+			Amount:       row.Amount,
+			InactiveDays: row.InactiveDays,
+			IngameDays:   row.IngameDays,
+			PeriodicDays: row.PeriodicDays,
+			Start:        row.Start,
+			End:          row.End,
+			Priority:     row.Priority,
+		})
+	}
 	return gameAdminSummary{
 		Commander:      admin.Commander,
 		CurrentPlanet:  toGamePlanetOverviewResponse(admin.CurrentPlanet),
@@ -481,6 +543,8 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		ChecksumGroups:  checksumGroups,
 		DatabaseBackups: databaseBackups,
 		BotStrategies:   botStrategies,
+		CouponRows:      couponRows,
+		CouponQueueRows: couponQueueRows,
 	}
 }
 

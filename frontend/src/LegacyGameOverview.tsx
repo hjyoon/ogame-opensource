@@ -109,6 +109,23 @@ export type GameAdminAction =
   | {
       action: "fleetlogs_2min" | "fleetlogs_end" | "fleetlogs_return";
       taskId: number;
+    }
+  | {
+      action: "add_one";
+      amount: number;
+    }
+  | {
+      action: "remove_one" | "remove_date";
+      itemId: number;
+    }
+  | {
+      action: "add_date";
+      amount: number;
+      dayMonth: string;
+      hourMinute: string;
+      inactiveDays: number;
+      ingameDays: number;
+      periodicDays: number;
     };
 
 export type GameAllianceAction =
@@ -1171,6 +1188,8 @@ type GameAdmin = {
   checksumGroups?: GameAdminChecksumGroup[];
   databaseBackups?: GameAdminDatabaseBackup[];
   botStrategies?: GameAdminBotStrategy[];
+  couponRows?: GameAdminCouponRow[];
+  couponQueueRows?: GameAdminCouponQueueRow[];
 };
 
 type GameAdminViewer = {
@@ -1343,6 +1362,27 @@ type GameAdminDatabaseBackup = {
 type GameAdminBotStrategy = {
   id: number;
   name: string;
+};
+
+type GameAdminCouponRow = {
+  id: number;
+  code: string;
+  amount: number;
+  used: boolean;
+  userUniverse: number;
+  userId: number;
+  userName: string;
+};
+
+type GameAdminCouponQueueRow = {
+  id: number;
+  amount: number;
+  inactiveDays: number;
+  ingameDays: number;
+  periodicDays: number;
+  start: number;
+  end: number;
+  priority: number;
 };
 
 type ResourceProductionRow = {
@@ -3082,7 +3122,7 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "Coupons") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminCouponsTable />
+        <AdminCouponsTable admin={admin} onAdminAction={onAdminAction} />
       </AdminModeShell>
     );
   }
@@ -3608,7 +3648,25 @@ function AdminBotsTable({ admin }: { admin: GameAdmin }) {
   );
 }
 
-function AdminCouponsTable() {
+function AdminCouponsTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
+  const handleAddOne = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    onAdminAction({ action: "add_one", amount: Math.max(0, Number(data.get("dm")) || 0) });
+  };
+  const handleAddDate = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    onAdminAction({
+      action: "add_date",
+      amount: Math.max(0, Number(data.get("darkmatter")) || 0),
+      dayMonth: String(data.get("ddmm") ?? ""),
+      hourMinute: String(data.get("hhmm") ?? ""),
+      inactiveDays: Math.max(0, Number(data.get("inactive_days")) || 0),
+      ingameDays: Math.max(0, Number(data.get("ingame_days")) || 0),
+      periodicDays: Math.max(0, Number(data.get("periodic")) || 0)
+    });
+  };
   return (
     <>
       <table border={0} cellPadding={2} cellSpacing={1} className="legacy-admin-coupons-table">
@@ -3621,6 +3679,28 @@ function AdminCouponsTable() {
             <td className="c">Player</td>
             <td className="c">Action</td>
           </tr>
+          {(admin.couponRows ?? []).map((row) => (
+            <tr key={row.id} style={{ height: 20 }}>
+              <th>{row.code}</th>
+              <th>{formatLegacyNumber(row.amount)}</th>
+              <th>
+                <LegacyFont color={row.used ? "red" : "lime"}>{row.used ? "Yes" : "No"}</LegacyFont>
+              </th>
+              <th>{row.used ? row.userUniverse : "-"}</th>
+              <th>{row.userName}</th>
+              <th>
+                <a
+                  href={`${adminModeActionHref("Coupons", "remove_one")}&item_id=${row.id}`}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onAdminAction({ action: "remove_one", itemId: row.id });
+                  }}
+                >
+                  Delete
+                </a>
+              </th>
+            </tr>
+          ))}
           <tr>
             <th colSpan={6} />
           </tr>
@@ -3633,14 +3713,20 @@ function AdminCouponsTable() {
           </tr>
           <tr>
             <td>
-              <form action={adminModeActionHref("Coupons", "add_one")} method="POST" onSubmit={(event) => event.preventDefault()}>
+              <form action={adminModeActionHref("Coupons", "add_one")} method="POST" onSubmit={handleAddOne}>
                 Dark Matter <input name="dm" size={10} type="text" /> <input type="submit" />
               </form>
             </td>
           </tr>
         </tbody>
       </table>
-      <form action={adminModeActionHref("Coupons", "add_date")} method="POST" onSubmit={(event) => event.preventDefault()}>
+      {(admin.couponQueueRows ?? []).map((row) => (
+        <React.Fragment key={row.id}>
+          {adminCouponQueuePrintR(row)}
+          <br />
+        </React.Fragment>
+      ))}
+      <form action={adminModeActionHref("Coupons", "add_date")} method="POST" onSubmit={handleAddDate}>
         <table>
           <tbody>
             <tr>
@@ -3690,6 +3776,11 @@ function AdminCouponsTable() {
       </form>
     </>
   );
+}
+
+function adminCouponQueuePrintR(row: GameAdminCouponQueueRow) {
+  const packedCriteria = ((row.inactiveDays & 0xffff) << 16) | (row.ingameDays & 0xffff);
+  return `Array ( [task_id] => ${row.id} [owner_id] => 99999 [type] => Coupon [sub_id] => ${row.amount} [obj_id] => ${packedCriteria} [level] => ${row.periodicDays} [start] => ${row.start} [end] => ${row.end} [prio] => ${row.priority} )`;
 }
 
 function AdminColonySettingsTable() {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -65,6 +66,273 @@ func TestNewAdminRepositoryWithQueryerKeepsMutationRunner(t *testing.T) {
 	if repository.legacyGameDir != "game" {
 		t.Fatalf("unexpected legacy game dir: %q", repository.legacyGameDir)
 	}
+}
+
+func TestAdminRepositoryReadsCouponRows(t *testing.T) {
+	uni := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{701, 9000, (7 << 16) | 3, 14, int64(1700000000), int64(1700604800), 520})},
+	)}
+	master := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{7, "ABCD-EFGH-IJKL-MNOP-QRST", 5000, 0, 0, 0, ""})},
+	}}
+	repository := NewAdminRepositoryWithQueryer(uni, "ogame_").WithMasterRunner(master, nil)
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "Coupons"})
+
+	if err != nil {
+		t.Fatalf("GetAdmin returned error: %v", err)
+	}
+	if len(admin.CouponRows) != 1 || admin.CouponRows[0].Code != "ABCD-EFGH-IJKL-MNOP-QRST" || admin.CouponRows[0].Amount != 5000 {
+		t.Fatalf("unexpected coupon rows: %+v", admin.CouponRows)
+	}
+	if len(admin.CouponQueueRows) != 1 || admin.CouponQueueRows[0].InactiveDays != 7 ||
+		admin.CouponQueueRows[0].IngameDays != 3 || admin.CouponQueueRows[0].PeriodicDays != 14 {
+		t.Fatalf("unexpected coupon queue rows: %+v", admin.CouponQueueRows)
+	}
+	if !strings.Contains(uni.calls[len(uni.calls)-1].sql, "WHERE type = ?") || uni.calls[len(uni.calls)-1].args[0] != "Coupon" {
+		t.Fatalf("expected coupon queue query, got %+v", uni.calls[len(uni.calls)-1])
+	}
+}
+
+func TestAdminRepositoryMutatesCoupons(t *testing.T) {
+	t.Run("add one", func(t *testing.T) {
+		uni := &fakeGalaxyRunner{}
+		master := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}}
+		repository := NewAdminRepositoryWithQueryer(uni, "ogame_").WithMasterRunner(master, master)
+		repository.couponCode = func() (string, error) { return "ABCD-EFGH-IJKL-MNOP-QRST", nil }
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:   "Coupons",
+			Action: domaingame.AdminActionCouponAddOne,
+			Amount: 5000,
+		})
+
+		if err != nil {
+			t.Fatalf("MutateAdmin returned error: %v", err)
+		}
+		if issue == nil || issue.Code != domaingame.AdminIssueActionSaved || !strings.Contains(issue.Message, "ABCD-EFGH-IJKL-MNOP-QRST") {
+			t.Fatalf("unexpected issue: %+v", issue)
+		}
+		if len(master.execCalls) != 1 || !strings.Contains(master.execCalls[0].sql, "INSERT INTO coupons") ||
+			master.execCalls[0].args[0] != "ABCD-EFGH-IJKL-MNOP-QRST" || master.execCalls[0].args[1] != 5000 {
+			t.Fatalf("unexpected coupon insert: %+v", master.execCalls)
+		}
+	})
+
+	t.Run("remove one", func(t *testing.T) {
+		master := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "ogame_").WithMasterRunner(master, master)
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:   "Coupons",
+			Action: domaingame.AdminActionCouponRemoveOne,
+			ItemID: 7,
+		})
+
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved {
+			t.Fatalf("unexpected remove issue=%+v err=%v", issue, err)
+		}
+		if len(master.execCalls) != 1 || !strings.Contains(master.execCalls[0].sql, "DELETE FROM coupons") || master.execCalls[0].args[0] != 7 {
+			t.Fatalf("unexpected coupon delete: %+v", master.execCalls)
+		}
+	})
+
+	t.Run("add and remove periodic queue", func(t *testing.T) {
+		now := time.Date(2026, time.June, 26, 12, 30, 0, 0, time.UTC)
+		uni := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(uni, "ogame_")
+		repository.now = func() time.Time { return now }
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:         "Coupons",
+			Action:       domaingame.AdminActionCouponAddDate,
+			Amount:       9000,
+			DayMonth:     "31.12",
+			HourMinute:   "23:59",
+			InactiveDays: 7,
+			IngameDays:   3,
+			PeriodicDays: 14,
+		})
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved {
+			t.Fatalf("unexpected add date issue=%+v err=%v", issue, err)
+		}
+		if len(uni.execCalls) != 1 || !strings.Contains(uni.execCalls[0].sql, "INSERT INTO `ogame_queue`") ||
+			uni.execCalls[0].args[0] != adminCouponQueueOwnerID || uni.execCalls[0].args[1] != "Coupon" ||
+			uni.execCalls[0].args[2] != 9000 || uni.execCalls[0].args[3] != (7<<16)|3 ||
+			uni.execCalls[0].args[4] != 14 || uni.execCalls[0].args[7] != adminCouponQueuePriority {
+			t.Fatalf("unexpected coupon queue insert: %+v", uni.execCalls)
+		}
+		expectedEnd := int(time.Date(2026, time.December, 31, 23, 59, 0, 0, time.UTC).Unix())
+		if uni.execCalls[0].args[6] != expectedEnd {
+			t.Fatalf("unexpected queue end arg: %+v want %d", uni.execCalls[0].args[6], expectedEnd)
+		}
+
+		issue, err = repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:   "Coupons",
+			Action: domaingame.AdminActionCouponRemoveDate,
+			ItemID: 701,
+		})
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved {
+			t.Fatalf("unexpected remove date issue=%+v err=%v", issue, err)
+		}
+		if len(uni.execCalls) != 2 || !strings.Contains(uni.execCalls[1].sql, "DELETE FROM `ogame_queue`") ||
+			uni.execCalls[1].args[0] != 701 || uni.execCalls[1].args[1] != "Coupon" {
+			t.Fatalf("unexpected coupon queue delete: %+v", uni.execCalls)
+		}
+	})
+}
+
+func TestAdminRepositoryCouponEdgeCases(t *testing.T) {
+	t.Run("universe number and random code", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "ogame_")
+		if got := repository.WithUniverseNumber(4).uniNumber; got != 4 {
+			t.Fatalf("expected positive universe override, got %d", got)
+		}
+		if got := repository.WithUniverseNumber(0).uniNumber; got != 1 {
+			t.Fatalf("expected non-positive universe to keep default, got %d", got)
+		}
+		code, err := randomCouponCode()
+		if err != nil {
+			t.Fatalf("randomCouponCode returned error: %v", err)
+		}
+		if !regexp.MustCompile(`^[0-9A-Z]{4}(?:-[0-9A-Z]{4}){4}$`).MatchString(code) {
+			t.Fatalf("unexpected coupon code format: %q", code)
+		}
+	})
+
+	t.Run("load row errors", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_")
+		rows, err := repository.loadAdminCouponRows(context.Background())
+		if err != nil || len(rows) != 0 {
+			t.Fatalf("nil master should return empty rows, got rows=%+v err=%v", rows, err)
+		}
+
+		repository = repository.WithMasterRunner(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("coupons failed")}}}, nil)
+		if _, err := repository.loadAdminCouponRows(context.Background()); err == nil || !strings.Contains(err.Error(), "coupons failed") {
+			t.Fatalf("expected coupon query error, got %v", err)
+		}
+
+		repository = repository.WithMasterRunner(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}, nil)
+		if _, err := repository.loadAdminCouponRows(context.Background()); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+			t.Fatalf("expected coupon scan error, got %v", err)
+		}
+
+		repository = repository.WithMasterRunner(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("coupon rows failed"))}}}, nil)
+		if _, err := repository.loadAdminCouponRows(context.Background()); err == nil || !strings.Contains(err.Error(), "coupon rows failed") {
+			t.Fatalf("expected coupon rows error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_")
+		if _, err := repository.loadAdminCouponQueueRows(context.Background()); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+			t.Fatalf("expected queue prefix error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("queue failed")}}}, "ogame_")
+		if _, err := repository.loadAdminCouponQueueRows(context.Background()); err == nil || !strings.Contains(err.Error(), "queue failed") {
+			t.Fatalf("expected queue query error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}, "ogame_")
+		if _, err := repository.loadAdminCouponQueueRows(context.Background()); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+			t.Fatalf("expected queue scan error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("queue rows failed"))}}}, "ogame_")
+		if _, err := repository.loadAdminCouponQueueRows(context.Background()); err == nil || !strings.Contains(err.Error(), "queue rows failed") {
+			t.Fatalf("expected queue rows error, got %v", err)
+		}
+	})
+
+	t.Run("mutation errors and noops", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Coupons", Action: domaingame.AdminActionCouponAddOne}); err == nil || !strings.Contains(err.Error(), "master DB unavailable") {
+			t.Fatalf("expected missing master error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "ogame_").WithMasterRunner(&fakeGalaxyRunner{}, &fakeGalaxyRunner{})
+		repository.couponCode = func() (string, error) { return "", errors.New("code failed") }
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Coupons", Action: domaingame.AdminActionCouponAddOne}); err == nil || !strings.Contains(err.Error(), "code failed") {
+			t.Fatalf("expected generator error, got %v", err)
+		}
+
+		master := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("exists failed")}}}}
+		repository = NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "ogame_").WithMasterRunner(master, master)
+		repository.couponCode = func() (string, error) { return "ABCD-EFGH-IJKL-MNOP-QRST", nil }
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Coupons", Action: domaingame.AdminActionCouponAddOne}); err == nil || !strings.Contains(err.Error(), "exists failed") {
+			t.Fatalf("expected exists query error, got %v", err)
+		}
+
+		collisions := make([]fakeQueryResult, 0, 10)
+		for i := 0; i < 10; i++ {
+			collisions = append(collisions, fakeQueryResult{rows: fakeRowsFromValues([]any{i + 1})})
+		}
+		master = &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: collisions}}
+		repository = NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "ogame_").WithMasterRunner(master, master)
+		repository.couponCode = func() (string, error) { return "ABCD-EFGH-IJKL-MNOP-QRST", nil }
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Coupons", Action: domaingame.AdminActionCouponAddOne}); err == nil || !strings.Contains(err.Error(), "generation exhausted") {
+			t.Fatalf("expected generation exhaustion, got %v", err)
+		}
+
+		master = &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}},
+			execErrs:    []error{errors.New("insert failed")},
+		}
+		repository = NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "ogame_").WithMasterRunner(master, master)
+		repository.couponCode = func() (string, error) { return "ABCD-EFGH-IJKL-MNOP-QRST", nil }
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Coupons", Action: domaingame.AdminActionCouponAddOne}); err == nil || !strings.Contains(err.Error(), "insert failed") {
+			t.Fatalf("expected insert error, got %v", err)
+		}
+
+		master = &fakeGalaxyRunner{}
+		repository = NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "ogame_").WithMasterRunner(master, master)
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Coupons", Action: domaingame.AdminActionCouponRemoveOne})
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(master.execCalls) != 0 {
+			t.Fatalf("expected remove no-op for empty id, issue=%+v err=%v exec=%+v", issue, err, master.execCalls)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "ogame_")
+		issue, err = repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Coupons", Action: "unknown"})
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved {
+			t.Fatalf("expected default saved issue, issue=%+v err=%v", issue, err)
+		}
+	})
+
+	t.Run("queue edge cases", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "bad-prefix_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Coupons", Action: domaingame.AdminActionCouponAddDate}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+			t.Fatalf("expected add date prefix error, got %v", err)
+		}
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Coupons", Action: domaingame.AdminActionCouponRemoveDate, ItemID: 1}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+			t.Fatalf("expected remove date prefix error, got %v", err)
+		}
+
+		runner := &fakeGalaxyRunner{execErrs: []error{errors.New("queue insert failed")}}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Coupons", Action: domaingame.AdminActionCouponAddDate}); err == nil || !strings.Contains(err.Error(), "queue insert failed") {
+			t.Fatalf("expected queue insert error, got %v", err)
+		}
+
+		runner = &fakeGalaxyRunner{execErrs: []error{errors.New("queue delete failed")}}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Coupons", Action: domaingame.AdminActionCouponRemoveDate, ItemID: 1}); err == nil || !strings.Contains(err.Error(), "queue delete failed") {
+			t.Fatalf("expected queue delete error, got %v", err)
+		}
+
+		runner = &fakeGalaxyRunner{}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Coupons", Action: domaingame.AdminActionCouponRemoveDate})
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 {
+			t.Fatalf("expected remove date no-op for empty id, issue=%+v err=%v exec=%+v", issue, err, runner.execCalls)
+		}
+
+		now := time.Date(2026, time.June, 26, 12, 0, 0, 0, time.UTC)
+		got := parseAdminCouponQueueEnd("0.99", "25:88", now)
+		want := int(time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC).Unix())
+		if got != want {
+			t.Fatalf("unexpected clamped queue end %d want %d", got, want)
+		}
+	})
 }
 
 func TestAdminRepositorySkipsRestrictedOperatorModeData(t *testing.T) {

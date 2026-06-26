@@ -2,10 +2,12 @@ package mysqlgame
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"errors"
 	"fmt"
 	"html"
+	"math/big"
 	"strings"
 	"time"
 
@@ -16,10 +18,14 @@ import (
 type AdminRepository struct {
 	queryer       Queryer
 	execer        Execer
+	masterQueryer Queryer
+	masterExecer  Execer
 	overview      OverviewRepository
 	prefix        string
 	legacyGameDir string
+	uniNumber     int
 	now           func() time.Time
+	couponCode    func() (string, error)
 }
 
 func NewAdminRepository(db *sql.DB, prefix string) AdminRepository {
@@ -30,7 +36,9 @@ func NewAdminRepository(db *sql.DB, prefix string) AdminRepository {
 		overview:      NewOverviewRepository(db, prefix),
 		prefix:        prefix,
 		legacyGameDir: "game",
+		uniNumber:     1,
 		now:           time.Now,
+		couponCode:    randomCouponCode,
 	}
 }
 
@@ -45,8 +53,23 @@ func NewAdminRepositoryWithQueryer(queryer Queryer, prefix string) AdminReposito
 		overview:      NewOverviewRepositoryWithRunner(queryer, execer, prefix),
 		prefix:        prefix,
 		legacyGameDir: "game",
+		uniNumber:     1,
 		now:           time.Now,
+		couponCode:    randomCouponCode,
 	}
+}
+
+func (r AdminRepository) WithMasterRunner(queryer Queryer, execer Execer) AdminRepository {
+	r.masterQueryer = queryer
+	r.masterExecer = execer
+	return r
+}
+
+func (r AdminRepository) WithUniverseNumber(number int) AdminRepository {
+	if number > 0 {
+		r.uniNumber = number
+	}
+	return r
 }
 
 func (r AdminRepository) WithLegacyGameDir(path string) AdminRepository {
@@ -98,6 +121,11 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		admin.DatabaseBackups, err = r.loadAdminDatabaseBackups(ctx)
 	case "BotEdit":
 		admin.BotStrategies, err = r.loadAdminBotStrategies(ctx)
+	case "Coupons":
+		admin.CouponRows, err = r.loadAdminCouponRows(ctx)
+		if err == nil {
+			admin.CouponQueueRows, err = r.loadAdminCouponQueueRows(ctx)
+		}
 	}
 	if err != nil {
 		return domaingame.Admin{}, err
@@ -163,6 +191,9 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 	}
 	if mode == "DB" {
 		return r.mutateAdminDatabase(ctx, query)
+	}
+	if mode == "Coupons" {
+		return r.mutateAdminCoupons(ctx, query)
 	}
 	if mode == "Users" {
 		usersTable, err := tableName(r.prefix, "users")
@@ -861,6 +892,211 @@ func (r AdminRepository) insertAdminQueue(ctx context.Context, queueTable string
 		end,
 	)
 	return err
+}
+
+const (
+	adminCouponQueueType     = "Coupon"
+	adminCouponQueueOwnerID  = 99999
+	adminCouponQueuePriority = 520
+)
+
+func (r AdminRepository) loadAdminCouponRows(ctx context.Context) ([]domaingame.AdminCouponRow, error) {
+	if r.masterQueryer == nil {
+		return []domaingame.AdminCouponRow{}, nil
+	}
+	rows, err := r.masterQueryer.QueryContext(ctx, "SELECT id, COALESCE(code, ''), COALESCE(amount, 0), COALESCE(used, 0), COALESCE(user_uni, 0), COALESCE(user_id, 0), COALESCE(user_name, '') FROM coupons ORDER BY id DESC LIMIT 15")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domaingame.AdminCouponRow, 0, 15)
+	for rows.Next() {
+		var row domaingame.AdminCouponRow
+		var used int
+		if err := rows.Scan(&row.ID, &row.Code, &row.Amount, &used, &row.UserUniverse, &row.UserID, &row.UserName); err != nil {
+			return nil, err
+		}
+		row.Used = used != 0
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+func (r AdminRepository) loadAdminCouponQueueRows(ctx context.Context) ([]domaingame.AdminCouponQueueRow, error) {
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT task_id, COALESCE(sub_id, 0), COALESCE(obj_id, 0), COALESCE(level, 0), COALESCE(start, 0), COALESCE(end, 0), COALESCE(prio, 0) FROM %s WHERE type = ? ORDER BY end ASC, task_id ASC", queueTable),
+		adminCouponQueueType,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domaingame.AdminCouponQueueRow, 0)
+	for rows.Next() {
+		var row domaingame.AdminCouponQueueRow
+		var packed int
+		if err := rows.Scan(&row.ID, &row.Amount, &packed, &row.PeriodicDays, &row.Start, &row.End, &row.Priority); err != nil {
+			return nil, err
+		}
+		row.InactiveDays = (packed >> 16) & 0xffff
+		row.IngameDays = packed & 0xffff
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+func (r AdminRepository) mutateAdminCoupons(ctx context.Context, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
+	switch query.Action {
+	case domaingame.AdminActionCouponAddOne:
+		code, err := r.insertAdminCoupon(ctx, query.Amount)
+		if err != nil {
+			return nil, err
+		}
+		return domaingame.AdminIssueWithMessage(domaingame.AdminIssueActionSaved, "Coupon added: "+code), nil
+	case domaingame.AdminActionCouponRemoveOne:
+		return r.deleteAdminCoupon(ctx, query.ItemID)
+	case domaingame.AdminActionCouponAddDate:
+		return r.insertAdminCouponQueue(ctx, query)
+	case domaingame.AdminActionCouponRemoveDate:
+		return r.deleteAdminCouponQueue(ctx, query.ItemID)
+	default:
+		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+	}
+}
+
+func (r AdminRepository) insertAdminCoupon(ctx context.Context, amount int) (string, error) {
+	if r.masterQueryer == nil || r.masterExecer == nil {
+		return "", errors.New("admin coupons master DB unavailable")
+	}
+	if amount < 0 {
+		amount = 0
+	}
+	generator := r.couponCode
+	if generator == nil {
+		generator = randomCouponCode
+	}
+	for attempts := 0; attempts < 10; attempts++ {
+		code, err := generator()
+		if err != nil {
+			return "", err
+		}
+		exists, err := r.adminCouponCodeExists(ctx, code)
+		if err != nil {
+			return "", err
+		}
+		if exists {
+			continue
+		}
+		if _, err := r.masterExecer.ExecContext(ctx, "INSERT INTO coupons (code, amount, used, user_uni, user_id, user_name) VALUES (?, ?, 0, 0, 0, '')", code, amount); err != nil {
+			return "", err
+		}
+		return code, nil
+	}
+	return "", errors.New("admin coupon code generation exhausted")
+}
+
+func (r AdminRepository) adminCouponCodeExists(ctx context.Context, code string) (bool, error) {
+	rows, err := r.masterQueryer.QueryContext(ctx, "SELECT id FROM coupons WHERE code = ? LIMIT 1", code)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	if rows.Next() {
+		return true, rows.Err()
+	}
+	return false, rows.Err()
+}
+
+func (r AdminRepository) deleteAdminCoupon(ctx context.Context, itemID int) (*domaingame.AdminActionIssue, error) {
+	if r.masterExecer == nil {
+		return nil, errors.New("admin coupons master DB unavailable")
+	}
+	if itemID <= 0 {
+		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+	}
+	if _, err := r.masterExecer.ExecContext(ctx, "DELETE FROM coupons WHERE id = ?", itemID); err != nil {
+		return nil, err
+	}
+	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+}
+
+func (r AdminRepository) insertAdminCouponQueue(ctx context.Context, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return nil, err
+	}
+	end := parseAdminCouponQueueEnd(query.DayMonth, query.HourMinute, r.now())
+	packedCriteria := ((query.InactiveDays & 0xffff) << 16) | (query.IngameDays & 0xffff)
+	_, err = r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("INSERT INTO %s (owner_id, type, sub_id, obj_id, level, start, end, prio) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", queueTable),
+		adminCouponQueueOwnerID,
+		adminCouponQueueType,
+		maxInt(query.Amount, 0),
+		packedCriteria,
+		maxInt(query.PeriodicDays, 0),
+		int(r.now().Unix()),
+		end,
+		adminCouponQueuePriority,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+}
+
+func (r AdminRepository) deleteAdminCouponQueue(ctx context.Context, itemID int) (*domaingame.AdminActionIssue, error) {
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return nil, err
+	}
+	if itemID <= 0 {
+		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+	}
+	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE task_id = ? AND type = ?", queueTable), itemID, adminCouponQueueType); err != nil {
+		return nil, err
+	}
+	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+}
+
+func parseAdminCouponQueueEnd(dayMonth string, hourMinute string, now time.Time) int {
+	day := 1
+	month := int(now.Month())
+	hour := 0
+	minute := 0
+	_, _ = fmt.Sscanf(dayMonth, "%d.%d", &day, &month)
+	_, _ = fmt.Sscanf(hourMinute, "%d:%d", &hour, &minute)
+	if day < 1 {
+		day = 1
+	}
+	if month < 1 || month > 12 {
+		month = int(now.Month())
+	}
+	if hour < 0 || hour > 23 {
+		hour = 0
+	}
+	if minute < 0 || minute > 59 {
+		minute = 0
+	}
+	return int(time.Date(now.Year(), time.Month(month), day, hour, minute, 0, 0, now.Location()).Unix())
+}
+
+func randomCouponCode() (string, error) {
+	const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	bytes := make([]byte, 20)
+	for index := range bytes {
+		value, err := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
+		if err != nil {
+			return "", err
+		}
+		bytes[index] = alphabet[value.Int64()]
+	}
+	return fmt.Sprintf("%s-%s-%s-%s-%s", bytes[0:4], bytes[4:8], bytes[8:12], bytes[12:16], bytes[16:20]), nil
 }
 
 func uniquePositiveIDs(ids []int) []int {

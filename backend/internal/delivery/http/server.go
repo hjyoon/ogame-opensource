@@ -168,6 +168,11 @@ type GameOptionsUseCase interface {
 	UpdateOptions(context.Context, appgame.OptionsUpdateCommand) (appgame.OptionsResult, error)
 }
 
+type GamePaymentUseCase interface {
+	GetPayment(context.Context, appgame.PaymentCommand) (appgame.PaymentResult, error)
+	MutatePayment(context.Context, appgame.PaymentMutationCommand) (appgame.PaymentResult, error)
+}
+
 type Dependencies struct {
 	Health             HealthUseCase
 	Universes          UniverseCatalogUseCase
@@ -203,6 +208,7 @@ type Dependencies struct {
 	GamePhalanx        GamePhalanxUseCase
 	GameFeed           GameFeedUseCase
 	GameOptions        GameOptionsUseCase
+	GamePayment        GamePaymentUseCase
 	Frontend           FrontendAssets
 	LegacyAssets       http.FileSystem
 	Logger             *slog.Logger
@@ -255,6 +261,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/report", getOnly(a.handleGameReport))
 	mux.HandleFunc("/api/game/phalanx", getOnly(a.handleGamePhalanx))
 	mux.HandleFunc("/api/game/options", a.handleGameOptions)
+	mux.HandleFunc("/api/game/payment", a.handleGamePayment)
 	mux.HandleFunc("/game/feed/show.php", getOnly(a.handleGameFeedShow))
 	mux.HandleFunc("/game/feed/viewitem.php", getOnly(a.handleGameFeedItem))
 	mux.Handle("/legacy-assets/", http.StripPrefix("/legacy-assets/", http.FileServer(deps.LegacyAssets)))

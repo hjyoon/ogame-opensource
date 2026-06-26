@@ -81,6 +81,22 @@ function officerRow(body, id) {
     : undefined;
 }
 
+function couponRowByCode(body, code) {
+  return Array.isArray(body.admin?.couponRows)
+    ? body.admin.couponRows.find((row) => String(row.code ?? "") === String(code ?? ""))
+    : undefined;
+}
+
+function couponQueueRowByAmount(body, amount) {
+  return Array.isArray(body.admin?.couponQueueRows)
+    ? body.admin.couponQueueRows.find((row) => Number(row.amount ?? 0) === Number(amount))
+    : undefined;
+}
+
+function extractCouponCode(message) {
+  return /[A-Z0-9]{4}(?:-[A-Z0-9]{4}){4}/.exec(String(message ?? ""))?.[0] ?? "";
+}
+
 function merchantRow(body, id) {
   return Array.isArray(body.merchant?.rows)
     ? body.merchant.rows.find((row) => Number(row.id) === Number(id))
@@ -4911,6 +4927,137 @@ try {
         return { ...spec, response, body: parseJSON(response) };
       }))
     : [];
+  const couponPaymentAmount = 7000 + (parseInt(runId.slice(-4), 36) % 1000);
+  const couponDeleteAmount = couponPaymentAmount + 1;
+  const couponQueueAmount = couponPaymentAmount + 2;
+  const couponAdminSearch = withQueryParam(sessionSearch, "mode", "Coupons");
+  const adminCouponsBefore = await request(`/api/game/admin${couponAdminSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const adminCouponsBeforeBody = parseJSON(adminCouponsBefore);
+  const regularCouponAdd = await request(`/api/game/admin${withQueryParam(targetLogin.search, "mode", "Coupons")}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: targetLogin.cookiePair },
+    body: JSON.stringify({ action: "add_one", amount: couponPaymentAmount })
+  });
+  const regularCouponAddBody = parseJSON(regularCouponAdd);
+  const targetPaymentBefore = await request(`/api/game/officers${targetLogin.search}`, {
+    headers: { Cookie: targetLogin.cookiePair }
+  });
+  const targetPaymentBeforeBody = parseJSON(targetPaymentBefore);
+  const targetPaymentInitialPaidDM = Number(targetPaymentBeforeBody.officers?.user?.paidDarkMatter ?? 0);
+  const invalidCouponCheck = await request(`/api/game/payment${targetLogin.search}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: targetLogin.cookiePair },
+    body: JSON.stringify({ action: "check", couponCode: `MISSING-${runId}` })
+  });
+  const invalidCouponCheckBody = parseJSON(invalidCouponCheck);
+  const adminCouponCreate = await request(`/api/game/admin${couponAdminSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+    body: JSON.stringify({ action: "add_one", amount: couponPaymentAmount })
+  });
+  const adminCouponCreateBody = parseJSON(adminCouponCreate);
+  const createdCouponCode = extractCouponCode(adminCouponCreateBody.actionIssue?.message);
+  const adminCouponsAfterCreate = await request(`/api/game/admin${couponAdminSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const adminCouponsAfterCreateBody = parseJSON(adminCouponsAfterCreate);
+  const createdCouponRow = couponRowByCode(adminCouponsAfterCreateBody, createdCouponCode);
+  const validCouponCheck = await request(`/api/game/payment${targetLogin.search}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: targetLogin.cookiePair },
+    body: JSON.stringify({ action: "check", couponCode: createdCouponCode.toLowerCase() })
+  });
+  const validCouponCheckBody = parseJSON(validCouponCheck);
+  const targetPaymentAfterCheck = await request(`/api/game/officers${targetLogin.search}`, {
+    headers: { Cookie: targetLogin.cookiePair }
+  });
+  const targetPaymentAfterCheckBody = parseJSON(targetPaymentAfterCheck);
+  const couponActivate = await request(`/api/game/payment${targetLogin.search}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: targetLogin.cookiePair },
+    body: JSON.stringify({ action: "activate", couponCode: createdCouponCode })
+  });
+  const couponActivateBody = parseJSON(couponActivate);
+  const targetPaymentAfterActivate = await request(`/api/game/officers${targetLogin.search}`, {
+    headers: { Cookie: targetLogin.cookiePair }
+  });
+  const targetPaymentAfterActivateBody = parseJSON(targetPaymentAfterActivate);
+  const adminCouponsAfterActivate = await request(`/api/game/admin${couponAdminSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const adminCouponsAfterActivateBody = parseJSON(adminCouponsAfterActivate);
+  const activatedCouponRow = couponRowByCode(adminCouponsAfterActivateBody, createdCouponCode);
+  const duplicateCouponActivate = await request(`/api/game/payment${targetLogin.search}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: targetLogin.cookiePair },
+    body: JSON.stringify({ action: "activate", couponCode: createdCouponCode })
+  });
+  const duplicateCouponActivateBody = parseJSON(duplicateCouponActivate);
+  const usedCouponCheck = await request(`/api/game/payment${targetLogin.search}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: targetLogin.cookiePair },
+    body: JSON.stringify({ action: "check", couponCode: createdCouponCode })
+  });
+  const usedCouponCheckBody = parseJSON(usedCouponCheck);
+  const targetPaymentAfterDuplicate = await request(`/api/game/officers${targetLogin.search}`, {
+    headers: { Cookie: targetLogin.cookiePair }
+  });
+  const targetPaymentAfterDuplicateBody = parseJSON(targetPaymentAfterDuplicate);
+  const adminCouponDeleteCreate = await request(`/api/game/admin${couponAdminSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+    body: JSON.stringify({ action: "add_one", amount: couponDeleteAmount })
+  });
+  const adminCouponDeleteCreateBody = parseJSON(adminCouponDeleteCreate);
+  const deleteCouponCode = extractCouponCode(adminCouponDeleteCreateBody.actionIssue?.message);
+  const adminCouponsBeforeDelete = await request(`/api/game/admin${couponAdminSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const adminCouponsBeforeDeleteBody = parseJSON(adminCouponsBeforeDelete);
+  const deleteCouponRow = couponRowByCode(adminCouponsBeforeDeleteBody, deleteCouponCode);
+  const adminCouponDelete = await request(`/api/game/admin${couponAdminSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+    body: JSON.stringify({ action: "remove_one", itemId: Number(deleteCouponRow?.id ?? 0) })
+  });
+  const adminCouponDeleteBody = parseJSON(adminCouponDelete);
+  const adminCouponsAfterDelete = await request(`/api/game/admin${couponAdminSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const adminCouponsAfterDeleteBody = parseJSON(adminCouponsAfterDelete);
+  const deletedCouponRow = couponRowByCode(adminCouponsAfterDeleteBody, deleteCouponCode);
+  const adminCouponQueueCreate = await request(`/api/game/admin${couponAdminSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+    body: JSON.stringify({
+      action: "add_date",
+      amount: couponQueueAmount,
+      dayMonth: "31.12",
+      hourMinute: "23:59",
+      inactiveDays: 7,
+      ingameDays: 3,
+      periodicDays: 14
+    })
+  });
+  const adminCouponQueueCreateBody = parseJSON(adminCouponQueueCreate);
+  const adminCouponsAfterQueueCreate = await request(`/api/game/admin${couponAdminSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const adminCouponsAfterQueueCreateBody = parseJSON(adminCouponsAfterQueueCreate);
+  const createdCouponQueueRow = couponQueueRowByAmount(adminCouponsAfterQueueCreateBody, couponQueueAmount);
+  const adminCouponQueueDelete = await request(`/api/game/admin${couponAdminSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+    body: JSON.stringify({ action: "remove_date", itemId: Number(createdCouponQueueRow?.id ?? 0) })
+  });
+  const adminCouponQueueDeleteBody = parseJSON(adminCouponQueueDelete);
+  const adminCouponsAfterQueueDelete = await request(`/api/game/admin${couponAdminSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const adminCouponsAfterQueueDeleteBody = parseJSON(adminCouponsAfterQueueDelete);
+  const deletedCouponQueueRow = couponQueueRowByAmount(adminCouponsAfterQueueDeleteBody, couponQueueAmount);
   const operatorUserLogs = adminAuditReady && operatorLogin
     ? await request(`/api/game/admin${withQueryParam(operatorLogin.search, "mode", "UserLogs")}`, {
         headers: { Cookie: operatorLogin.cookiePair }
@@ -7547,6 +7694,64 @@ try {
       }),
       check(!premiumDMReady || premiumInvalidAfterBody.officers?.user?.paidDarkMatter === 50000 && premiumInvalidAfterBody.officers?.user?.freeDarkMatter === 500, "invalid premium purchase parameters do not spend DM", premiumInvalidAfterBody.officers?.user ?? {}),
       check(!premiumDMReady || premiumInvalidActiveRows.length === 0, "invalid premium purchase parameters do not activate any officer", premiumInvalidActiveRows)
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_coupon_payment_legacy_flow_api",
+    checks: [
+      check(adminCouponsBefore.status === 200, "admin Coupons screen returns HTTP 200", { status: adminCouponsBefore.status }),
+      check(adminCouponsBeforeBody.admin?.mode === "Coupons", "admin Coupons screen resolves the Coupons mode", adminCouponsBeforeBody.admin ?? {}),
+      check(regularCouponAdd.status === 200, "regular user coupon creation mutation returns HTTP 200", { status: regularCouponAdd.status }),
+      check(regularCouponAddBody.actionIssue?.code === "access_denied", "regular user cannot create coupon like legacy", regularCouponAddBody.actionIssue ?? {}),
+      check(targetPaymentBefore.status === 200, "target user payment DM baseline returns HTTP 200", { status: targetPaymentBefore.status }),
+      check(Number.isFinite(targetPaymentInitialPaidDM), "target user exposes paid Dark Matter baseline", targetPaymentBeforeBody.officers?.user ?? {}),
+      check(invalidCouponCheck.status === 200, "unknown coupon check returns HTTP 200", { status: invalidCouponCheck.status }),
+      check(invalidCouponCheckBody.actionIssue?.code === "invalid_coupon", "unknown coupon check returns legacy invalid coupon issue", invalidCouponCheckBody.actionIssue ?? {}),
+      check(adminCouponCreate.status === 200, "admin coupon create returns HTTP 200", { status: adminCouponCreate.status }),
+      check(adminCouponCreateBody.actionIssue?.code === "action_saved", "admin coupon create saves like legacy", adminCouponCreateBody.actionIssue ?? {}),
+      check(createdCouponCode.length > 0, "admin coupon create returns a generated coupon code", adminCouponCreateBody.actionIssue ?? {}),
+      check(createdCouponRow !== undefined, "admin Coupons list contains the generated coupon", { createdCouponCode, createdCouponRow }),
+      check(Number(createdCouponRow?.amount ?? 0) === couponPaymentAmount && createdCouponRow?.used === false, "generated coupon row has the requested amount and starts unused", {
+        expectedAmount: couponPaymentAmount,
+        createdCouponRow
+      }),
+      check(validCouponCheck.status === 200, "valid coupon check returns HTTP 200", { status: validCouponCheck.status }),
+      check(validCouponCheckBody.actionIssue?.code === "coupon_valid", "valid coupon check returns legacy valid issue", validCouponCheckBody.actionIssue ?? {}),
+      check(validCouponCheckBody.payment?.coupon?.code === createdCouponCode && Number(validCouponCheckBody.payment?.coupon?.amount ?? 0) === couponPaymentAmount, "valid coupon check returns coupon summary without redeeming", validCouponCheckBody.payment ?? {}),
+      check(Number(targetPaymentAfterCheckBody.officers?.user?.paidDarkMatter ?? -1) === targetPaymentInitialPaidDM, "coupon check does not credit paid Dark Matter", {
+        before: targetPaymentInitialPaidDM,
+        after: targetPaymentAfterCheckBody.officers?.user
+      }),
+      check(couponActivate.status === 200, "coupon activation returns HTTP 200", { status: couponActivate.status }),
+      check(couponActivateBody.actionIssue?.code === "coupon_activated", "coupon activation returns legacy activated issue", couponActivateBody.actionIssue ?? {}),
+      check(couponActivateBody.payment?.coupon?.used === true && Number(couponActivateBody.payment?.coupon?.userId ?? 0) === targetLogin.playerId, "coupon activation marks coupon used by the target player", couponActivateBody.payment ?? {}),
+      check(Number(targetPaymentAfterActivateBody.officers?.user?.paidDarkMatter ?? -1) === targetPaymentInitialPaidDM + couponPaymentAmount, "coupon activation credits paid Dark Matter exactly once", {
+        before: targetPaymentInitialPaidDM,
+        amount: couponPaymentAmount,
+        after: targetPaymentAfterActivateBody.officers?.user
+      }),
+      check(activatedCouponRow?.used === true && Number(activatedCouponRow?.userId ?? 0) === targetLogin.playerId, "admin Coupons list shows redeemed coupon owner", {
+        targetPlayerId: targetLogin.playerId,
+        activatedCouponRow
+      }),
+      check(duplicateCouponActivate.status === 200, "duplicate coupon activation returns HTTP 200", { status: duplicateCouponActivate.status }),
+      check(duplicateCouponActivateBody.actionIssue?.code === "invalid_coupon", "duplicate coupon activation is rejected like legacy", duplicateCouponActivateBody.actionIssue ?? {}),
+      check(usedCouponCheck.status === 200, "used coupon check returns HTTP 200", { status: usedCouponCheck.status }),
+      check(usedCouponCheckBody.actionIssue?.code === "invalid_coupon", "used coupon check is rejected like legacy", usedCouponCheckBody.actionIssue ?? {}),
+      check(Number(targetPaymentAfterDuplicateBody.officers?.user?.paidDarkMatter ?? -1) === targetPaymentInitialPaidDM + couponPaymentAmount, "duplicate coupon use does not credit additional paid Dark Matter", {
+        expected: targetPaymentInitialPaidDM + couponPaymentAmount,
+        after: targetPaymentAfterDuplicateBody.officers?.user
+      }),
+      check(adminCouponDeleteCreate.status === 200 && adminCouponDeleteCreateBody.actionIssue?.code === "action_saved", "admin creates a second coupon for deletion", adminCouponDeleteCreateBody.actionIssue ?? {}),
+      check(deleteCouponRow !== undefined && Number(deleteCouponRow?.amount ?? 0) === couponDeleteAmount, "admin Coupons list contains the second unused coupon", { deleteCouponCode, deleteCouponRow }),
+      check(adminCouponDelete.status === 200 && adminCouponDeleteBody.actionIssue?.code === "action_saved", "admin coupon delete saves like legacy", adminCouponDeleteBody.actionIssue ?? {}),
+      check(deletedCouponRow === undefined, "admin coupon delete removes the unused coupon row", { deleteCouponCode, deletedCouponRow }),
+      check(adminCouponQueueCreate.status === 200 && adminCouponQueueCreateBody.actionIssue?.code === "action_saved", "admin periodic coupon queue create saves like legacy", adminCouponQueueCreateBody.actionIssue ?? {}),
+      check(createdCouponQueueRow !== undefined, "admin Coupons list contains the periodic coupon queue row", { couponQueueAmount, createdCouponQueueRow }),
+      check(Number(createdCouponQueueRow?.inactiveDays ?? 0) === 7 && Number(createdCouponQueueRow?.ingameDays ?? 0) === 3 && Number(createdCouponQueueRow?.periodicDays ?? 0) === 14 && Number(createdCouponQueueRow?.priority ?? 0) === 520, "periodic coupon queue row stores criteria and priority like legacy", createdCouponQueueRow ?? {}),
+      check(adminCouponQueueDelete.status === 200 && adminCouponQueueDeleteBody.actionIssue?.code === "action_saved", "admin periodic coupon queue delete saves like legacy", adminCouponQueueDeleteBody.actionIssue ?? {}),
+      check(deletedCouponQueueRow === undefined, "admin periodic coupon queue delete removes the row", { couponQueueAmount, deletedCouponQueueRow })
     ]
   }));
 

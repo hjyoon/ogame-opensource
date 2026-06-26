@@ -29,23 +29,30 @@ type AdminCommand struct {
 }
 
 type AdminMutationQuery struct {
-	PlayerID   int
-	PlanetID   int
-	Mode       string
-	Action     string
-	TaskID     int
-	TargetIDs  []int
-	BanMode    int
-	Days       int
-	Hours      int
-	Reason     string
-	Values     map[string]int
-	Category   int
-	Subject    string
-	Text       string
-	ReportIDs  []int
-	DeleteMode string
-	FileName   string
+	PlayerID     int
+	PlanetID     int
+	Mode         string
+	Action       string
+	TaskID       int
+	TargetIDs    []int
+	BanMode      int
+	Days         int
+	Hours        int
+	Reason       string
+	Values       map[string]int
+	Category     int
+	Subject      string
+	Text         string
+	ReportIDs    []int
+	DeleteMode   string
+	FileName     string
+	Amount       int
+	ItemID       int
+	DayMonth     string
+	HourMinute   string
+	InactiveDays int
+	IngameDays   int
+	PeriodicDays int
 }
 
 type AdminMutationCommand struct {
@@ -68,6 +75,13 @@ type AdminMutationCommand struct {
 	ReportIDs       []int
 	DeleteMode      string
 	FileName        string
+	Amount          int
+	ItemID          int
+	DayMonth        string
+	HourMinute      string
+	InactiveDays    int
+	IngameDays      int
+	PeriodicDays    int
 }
 
 type AdminResult struct {
@@ -146,23 +160,30 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		return AdminResult{Authenticated: true, Admin: admin, ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueAccessDenied)}, nil
 	}
 	issue, err := s.repository.MutateAdmin(ctx, AdminMutationQuery{
-		PlayerID:   session.Session.PlayerID,
-		PlanetID:   command.PlanetID,
-		Mode:       admin.Mode,
-		Action:     command.Action,
-		TaskID:     command.TaskID,
-		TargetIDs:  command.TargetIDs,
-		BanMode:    command.BanMode,
-		Days:       command.Days,
-		Hours:      command.Hours,
-		Reason:     command.Reason,
-		Values:     command.Values,
-		Category:   command.Category,
-		Subject:    command.Subject,
-		Text:       command.Text,
-		ReportIDs:  command.ReportIDs,
-		DeleteMode: command.DeleteMode,
-		FileName:   command.FileName,
+		PlayerID:     session.Session.PlayerID,
+		PlanetID:     command.PlanetID,
+		Mode:         admin.Mode,
+		Action:       command.Action,
+		TaskID:       command.TaskID,
+		TargetIDs:    command.TargetIDs,
+		BanMode:      command.BanMode,
+		Days:         command.Days,
+		Hours:        command.Hours,
+		Reason:       command.Reason,
+		Values:       command.Values,
+		Category:     command.Category,
+		Subject:      command.Subject,
+		Text:         command.Text,
+		ReportIDs:    command.ReportIDs,
+		DeleteMode:   command.DeleteMode,
+		FileName:     command.FileName,
+		Amount:       command.Amount,
+		ItemID:       command.ItemID,
+		DayMonth:     command.DayMonth,
+		HourMinute:   command.HourMinute,
+		InactiveDays: command.InactiveDays,
+		IngameDays:   command.IngameDays,
+		PeriodicDays: command.PeriodicDays,
 	})
 	if err != nil {
 		return AdminResult{}, err

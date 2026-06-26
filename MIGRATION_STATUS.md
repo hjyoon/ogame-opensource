@@ -22,7 +22,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep <4KB; split details when nee
 - Statistics/fleet authenticated visuals pass Chromium/Firefox at 0px for player/alliance statistics.
 - Empire ports Commander-gated `imperium`, build queue markers, and legacy GET add/destroy/remove shortcuts.
 - Resources ports the legacy production-percent form, premium bonus icon column, DB normalization, and post-save resource header sync.
-- Merchant/officers/alliance/admin port DM/trade/timers, alliance lifecycle, admin modes, Broadcast, Reports, Bans/Expedition/Queue/Fleetlogs/Users/DB mutations, recall, and guards.
+- Merchant/officers/alliance/admin port DM/trade/timers, alliance lifecycle, Coupons, Broadcast, Reports, Bans/Expedition/Queue/Fleetlogs/Users/DB mutations, recall, and guards.
 - Research/Shipyard port aliases, chrome, colors, queues, completion refresh, start/cancel/build, and resource math.
 - Fleet dispatch covers cargo/speed, fuel/clamps, ACS sync/Hold guards, colonize/exp targets, templates, and recall.
 - Galaxy covers clamp, rows, statuses, moon/debris/actions, slot/deut warnings, quick links, target prefill, and instant spy/recycle dispatch.
@@ -38,7 +38,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` tracker. Keep <4KB; split details when nee
 - Fleet all-cases passes Chrome/Firefox 0px for initial, union, target, dispatch previews.
 - CSR E2E covers Buddy/Options, Options save, Notes create/edit/delete, and logout; Chromium passes.
 - Auth visual E2E passes Chromium/Firefox 0px for all default page specs.
-- Go smoke covers routes/assets, auth, reg/recovery, acct-actions/opts/i18n, multi-uni, admin, tech/econ, premium, fleet/exp/ACS, galaxy/IPM, social, planet ctx, perf/concurrency, queue idem/score/cancel/freeze, report/msg/resources/input/feed, aliases (86 cases/2150 checks).
+- Go smoke covers routes/assets, auth, reg/recovery, acct-actions/opts/i18n, multi-uni, admin, tech/econ, premium/coupons, fleet/exp/ACS, galaxy/IPM, social, planet ctx, perf/concurrency, queue idem/score/cancel/freeze, report/msg/resources/input/feed, aliases (87 cases/2186 checks).
 - Legacy PHP E2E latest summary: 59 result files, 340 cases, 2428 checks, failed groups 0.
 - Full Go migration QA: 20/20 passed; coverage `97.0% >= 97%`.
 
