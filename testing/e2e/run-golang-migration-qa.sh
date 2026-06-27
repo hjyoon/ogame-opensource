@@ -106,6 +106,9 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     if [ "${OGAME_RUN_FLEET_ALL_CASES:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-fleet-all-cases-e2e.sh"
     fi
+    if [ "${OGAME_RUN_NAVIGATION_VISUAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-navigation-visual-e2e.sh"
+    fi
   fi
 fi
 

@@ -89,6 +89,36 @@ func TestFrontendServesIndexAndSpaFallback(t *testing.T) {
 	}
 }
 
+func TestLegacyAssetAliasesServeStaticFiles(t *testing.T) {
+	staticDir := t.TempDir()
+	legacyDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(staticDir, "public-assets", "evolution"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(staticDir, "public-assets", "game", "css"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(staticDir, "index.html"), "ogame react shell")
+	writeFile(t, filepath.Join(staticDir, "public-assets", "evolution", "formate.css"), "body{background:#000}")
+	writeFile(t, filepath.Join(staticDir, "public-assets", "game", "css", "default.css"), "th{color:#fff}")
+	server := testServer(config.Config{StaticDir: staticDir, LegacyAssetDir: legacyDir})
+
+	for _, target := range []string{"/evolution/formate.css", "/game/css/default.css"} {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: expected 200, got %d", target, rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), "ogame react shell") {
+			t.Fatalf("%s: legacy asset alias fell through to SPA shell", target)
+		}
+		if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "text/css") {
+			t.Fatalf("%s: expected css content type, got %q", target, contentType)
+		}
+	}
+}
+
 func TestLegacyCronScriptIsForbidden(t *testing.T) {
 	staticDir := t.TempDir()
 	writeFile(t, filepath.Join(staticDir, "index.html"), "ogame react shell")
@@ -3666,7 +3696,7 @@ func TestGameMessagesEndpointReturnsInbox(t *testing.T) {
 		},
 	}}
 	server := testServerWithGameMessages(t, messages)
-	req := httptest.NewRequest(http.MethodGet, "/api/game/messages?session=public&cp=99&messageziel=77", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/messages?session=public&cp=99&messageziel=77&betreff=Re%3ASubject", nil)
 	req.RemoteAddr = "203.0.113.10:4321"
 	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
 	rec := httptest.NewRecorder()
@@ -3686,7 +3716,8 @@ func TestGameMessagesEndpointReturnsInbox(t *testing.T) {
 	if row.Subject != "Subject" || row.Text != "<b>Body</b>" || !row.Reportable {
 		t.Fatalf("unexpected message row mapping: %+v", row)
 	}
-	if messages.command.PublicSession != "public" || messages.command.PlanetID != 99 || messages.command.TargetPlayerID != 77 || messages.command.RemoteAddr != "203.0.113.10" {
+	if messages.command.PublicSession != "public" || messages.command.PlanetID != 99 || messages.command.TargetPlayerID != 77 ||
+		messages.command.Subject != "Re:Subject" || messages.command.RemoteAddr != "203.0.113.10" {
 		t.Fatalf("unexpected messages command: %+v", messages.command)
 	}
 	if messages.command.PrivateSessions["prsess_42_1"] != "private" {

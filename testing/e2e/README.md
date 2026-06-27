@@ -47,6 +47,7 @@ This wrapper runs:
 - Go compatibility smoke and user-type API QA
 - Chromium/Firefox Playwright CSR and visual equivalence checks
 - overview/fleet deep visual and click-contract checks
+- navigation visual discovery for all migrated public/game `GET` paths
 - final `.tmp/golang-migration-qa-summary.{json,md}` aggregation
 
 Do not set `OGAME_RUN_LEGACY_E2E=0` for final validation. It is only for local smoke work while iterating on frontend/backend code.
@@ -60,6 +61,7 @@ Default final visual checks enforce exact parity where the scripts support it:
 - overview fleet view and countdown behavior
 - overview all-cases event surface and clicks
 - fleet continue and fleet all-cases dispatch previews
+- navigation path discovery and exact diff reports
 
 Reports are written under `.tmp/playwright-*`, plus `.tmp/golang-migration-qa-summary.{json,md}`. Treat old `.tmp` reports as stale unless produced by the current run.
 
@@ -70,7 +72,10 @@ Detailed coverage is split by topic:
 - [Account, Security, and Admin](./COVERAGE-account-admin.md)
 - [Gameplay and Economy](./COVERAGE-gameplay.md)
 - [Migration Visual Equivalence](./COVERAGE-migration.md)
+- [Navigation Visual Coverage](./COVERAGE-navigation-visual.md)
 - [Infrastructure and Invariants](./COVERAGE-infra.md)
+
+`run-playwright-navigation-visual-e2e.sh` scans every currently seeded public/game/admin screen for internal navigation edges and compares target screenshots in Chromium and Firefox at an exact `0` threshold. The wrapper continues across browsers even when one browser has nonzero visual diffs, then writes the combined summary to `COVERAGE-navigation-visual.md`.
 
 ## Notes
 

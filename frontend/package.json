@@ -13,6 +13,7 @@
     "e2e:visual:fleet-continue": "bun run scripts/playwright-fleet-continue-visual-e2e.ts",
     "e2e:galaxy-hover": "bun run scripts/playwright-galaxy-hover-e2e.ts",
     "e2e:user-types": "bun run scripts/playwright-user-type-e2e.ts",
+    "e2e:visual:navigation": "bun run scripts/playwright-navigation-visual-e2e.ts",
     "e2e:visual:auth": "bun run scripts/playwright-auth-visual-e2e.ts",
     "e2e:visual:overview-fleet": "bun run scripts/playwright-overview-fleet-visual-e2e.ts",
     "e2e:visual": "bun run scripts/playwright-visual-e2e.ts",

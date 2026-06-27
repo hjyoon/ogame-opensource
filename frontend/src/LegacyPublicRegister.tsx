@@ -192,7 +192,7 @@ function RegisterContent({
                       style={{ width: 122 }}
                       value={registrationDraft.universe}
                     >
-                      <option value="">Choose a universe...</option>
+                      <option value=""></option>
                       {universes.map((universe) => (
                         <UniverseOption key={universe.number} universe={universe} />
                       ))}

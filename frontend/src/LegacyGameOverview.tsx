@@ -4,6 +4,7 @@ import {
   gameFleetTargetPrefillFromSearch,
   gameFleetTargetURL,
   gameGalaxyMissileURL,
+  gameMenuRouteURL,
   gameMessageComposeURL,
   gamePlanetSwitchURL,
   gameRouteURL,
@@ -1827,6 +1828,14 @@ export function LegacyGameOverview({
     window.addEventListener("resize", updateSearchContentLayout);
     return () => window.removeEventListener("resize", updateSearchContentLayout);
   }, [hasSearchPageFooter, route.key, searchPageError, searchPageMessage]);
+  React.useEffect(() => {
+    if (route.key !== "fleetTemplates" || !fleet || fleet.templates.commanderActive) {
+      return;
+    }
+    const search = overviewSessionSearch();
+    window.history.replaceState({}, "", gameRouteURL("/game/overview", search.toString()));
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, [fleet, route.key]);
   const contentClassName =
     route.key === "overview"
       ? "legacy-content legacy-content-overview"
@@ -2078,7 +2087,13 @@ export function LegacyGameOverview({
           <LegacyMessage tone="neutral" text="Loading galaxy..." />
         ) : null}
         {galaxy && route.key === "galaxy" ? (
-          <GalaxyTable galaxy={galaxy} onInstantDispatch={onGalaxyInstantDispatch} onMissileLaunch={onGalaxyMissileLaunch} pending={galaxyPending} />
+          <GalaxyTable
+            adminLevel={overview?.adminLevel ?? 0}
+            galaxy={galaxy}
+            onInstantDispatch={onGalaxyInstantDispatch}
+            onMissileLaunch={onGalaxyMissileLaunch}
+            pending={galaxyPending}
+          />
         ) : null}
         {overview && route.key === "defense" && !defense && !defenseError && !defenseIssue ? (
           <LegacyMessage tone="neutral" text="Loading defense..." />
@@ -2236,6 +2251,7 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
     { active: overview.officers?.geologist ?? false, alt: "Geologist", image: "geologe" },
     { active: overview.officers?.technocrat ?? false, alt: "Technocrat", image: "technokrat" }
   ];
+  const selectedPlanetHref = planetHref(planet.id);
 
   return (
     <table className="legacy-header-table header">
@@ -2253,13 +2269,13 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
                       aria-label="Planet selector"
                       size={1}
                       onChange={(event) => {
-                        window.history.pushState({}, "", planetHref(Number(event.currentTarget.value)));
+                        window.history.pushState({}, "", event.currentTarget.value);
                         window.dispatchEvent(new PopStateEvent("popstate"));
                       }}
-                      value={planet.id}
+                      value={selectedPlanetHref}
                     >
                       {overview.planetSwitcher.map((item) => (
-                        <option key={item.id} value={item.id}>
+                        <option key={item.id} value={planetHref(item.id)}>
                           {item.name}  [{formatCoordinates(item.coordinates)}]
                         </option>
                       ))}
@@ -2276,7 +2292,7 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
                   {resources.map((resource) => (
                     <td align="center" className="legacy-header-cell header" key={resource.name} width={85}>
                       {resource.name === "Dark Matter" ? (
-                        <a href={gameRouteURL("/game/merchant", window.location.search)}>
+                        <a href={gameMenuRouteURL("/game/merchant", window.location.search)}>
                           <img alt="" height={22} src={resource.img} title="Dark Matter" width={42} />
                         </a>
                       ) : (
@@ -2315,7 +2331,7 @@ function LegacyResourceHeader({ overview }: { overview: GameOverview }) {
                 <tr className="header">
                   {officers.map((officer) => (
                     <td align="center" className="legacy-header-cell header" key={officer.image} width={35}>
-                      <a accessKey="i" href={gameRouteURL("/game/officers", window.location.search)}>
+                      <a accessKey="i" href={gameMenuRouteURL("/game/officers", window.location.search)}>
                         <img
                           alt={officer.alt}
                           height={32}
@@ -2416,7 +2432,7 @@ function LegacyMenuRoute({ activeRoute, entry }: { activeRoute: GameRoute; entry
         <div className="legacy-center">
           <a
             aria-current={route.key === activeRoute.key ? "page" : undefined}
-            href={gameRouteURL(route.path, window.location.search)}
+            href={gameMenuRouteURL(route.path, window.location.search)}
             id={entry.id}
             style={entry.id === "darkmatter2" ? { cursor: "pointer", width: 110 } : undefined}
           >
@@ -2463,12 +2479,7 @@ function LogoutTable({ error, status }: { error: string | null; status: GameLogo
 }
 
 function StatisticsTable({ statistics }: { statistics: GameStatistics }) {
-  const submitStatistics = React.useCallback((event: React.FormEvent<HTMLElement>) => {
-    const form = event.target as HTMLFormElement;
-    if (!(form instanceof HTMLFormElement) || !form.classList.contains("legacy-statistics-form")) {
-      return;
-    }
-    event.preventDefault();
+  const navigateStatisticsForm = React.useCallback((form: HTMLFormElement) => {
     const query = new URLSearchParams();
     for (const [key, value] of new FormData(form).entries()) {
       query.set(key, String(value));
@@ -2476,7 +2487,42 @@ function StatisticsTable({ statistics }: { statistics: GameStatistics }) {
     window.history.pushState({}, "", gameRouteURL("/game/statistics", query.toString()));
     window.dispatchEvent(new PopStateEvent("popstate"));
   }, []);
-  return React.createElement("center", { dangerouslySetInnerHTML: { __html: statisticsHTML(statistics) }, onSubmit: submitStatistics });
+  const submitStatistics = React.useCallback(
+    (event: React.FormEvent<HTMLElement>) => {
+      const form = event.target as HTMLFormElement;
+      if (!(form instanceof HTMLFormElement) || !form.classList.contains("legacy-statistics-form")) {
+        return;
+      }
+      event.preventDefault();
+      navigateStatisticsForm(form);
+    },
+    [navigateStatisticsForm]
+  );
+  const clickStatistics = React.useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      if (!(event.target instanceof Element)) {
+        return;
+      }
+      const sortLink = event.target.closest<HTMLElement>("[data-statistics-sort]");
+      if (!sortLink) {
+        return;
+      }
+      event.preventDefault();
+      const form = sortLink.closest("center")?.querySelector<HTMLFormElement>("form.legacy-statistics-form");
+      const sortInput = form?.querySelector<HTMLInputElement>("#sort_per_member");
+      const sort = sortLink.dataset.statisticsSort ?? "0";
+      if (form && sortInput) {
+        sortInput.value = sort;
+        navigateStatisticsForm(form);
+      }
+    },
+    [navigateStatisticsForm]
+  );
+  return React.createElement("center", {
+    dangerouslySetInnerHTML: { __html: statisticsHTML(statistics) },
+    onClick: clickStatistics,
+    onSubmit: submitStatistics
+  });
 }
 
 function statisticsHTML(statistics: GameStatistics): string {
@@ -2484,7 +2530,11 @@ function statisticsHTML(statistics: GameStatistics): string {
   const action = legacyHTMLAttribute(gameRouteURL("/game/statistics", window.location.search));
   const who = statistics.who === "ally" ? "ally" : "player";
   const type = statistics.type || "ressources";
-  let html = `<!-- begin header form --> \n<form class="legacy-statistics-form" method="get" action="${action}" > \n  \n  <!-- begin head table --> \n  <table class="legacy-statistics-head-table" width="525"> \n    <tr> \n      <td class="c">Statistics (as of: ${formatLegacyStatisticsDateTime(statistics.generatedAt)})</td> \n    </tr> \n    <tr> \n      <th> \n        \n \n        What kind of&nbsp;\n          \n        <select name="who"> \n          <option value="player" ${who === "player" ? "selected" : ""}>Player</option> \n          <option value="ally" ${who === "ally" ? "selected" : ""}>Alliance</option> \n        </select> \n          \n        &nbsp;by&nbsp;\n              \n        <select name="type"> \n          <option value="ressources" ${type === "ressources" ? "selected" : ""}>Points</option> \n          <option value="fleet" ${type === "fleet" ? "selected" : ""}>Fleets</option> \n          <option value="research" ${type === "research" ? "selected" : ""}>Research</option> \n        </select> \n          \n        &nbsp;in place        <select name="start"> \n          <option value="-1" ${statistics.start === -1 ? "selected" : ""}>[Own position]</option> \n`;
+  const displayStart = new URLSearchParams(window.location.search).has("start") ? statistics.start : -1;
+  if (displayStart !== statistics.start) {
+    statistics = { ...statistics, start: displayStart };
+  }
+  let html = `<!-- begin header form --> \n<form class="legacy-statistics-form" method="post" action="${action}" > \n  \n  <!-- begin head table --> \n  <table class="legacy-statistics-head-table" width="525"> \n    <tr> \n      <td class="c">Statistics (as of: ${formatLegacyStatisticsDateTime(statistics.generatedAt)})</td> \n    </tr> \n    <tr> \n      <th> \n        \n \n        What kind of&nbsp;\n          \n        <select name="who"> \n          <option value="player" ${who === "player" ? "selected" : ""}>Player</option> \n          <option value="ally" ${who === "ally" ? "selected" : ""}>Alliance</option> \n        </select> \n          \n        &nbsp;by&nbsp;\n              \n        <select name="type"> \n          <option value="ressources" ${type === "ressources" ? "selected" : ""}>Points</option> \n          <option value="fleet" ${type === "fleet" ? "selected" : ""}>Fleets</option> \n          <option value="research" ${type === "research" ? "selected" : ""}>Research</option> \n        </select> \n          \n        &nbsp;in place        <select name="start"> \n          <option value="-1" ${statistics.start === -1 ? "selected" : ""}>[Own position]</option> \n`;
   html += windows
     .map((start) => `          <option value="${start}" ${statistics.start === start ? "selected" : ""}>${start}-${start + 99}</option> \n`)
     .join("");
@@ -2498,7 +2548,7 @@ function playerStatisticsHTML(statistics: GameStatistics): string {
   let html = `<!-- begin user --> \n<table class="legacy-statistics-table legacy-statistics-player-table" width="525"> \n  <tr> \n    <td class="c" width="30">Place</td> \n    <td class="c">Player</td> \n    <td class="c">&nbsp;</td> \n    <td class="c">Alliance</td> \n    <td class="c">Points</td> \n  </tr>\n`;
   for (const row of statistics.rows) {
     const playerColor = row.own ? "lime" : row.sameAlliance ? "87CEEB" : "FFFFFF";
-    const playerHref = row.own ? "#" : gameRouteURL("/game/galaxy", galaxyTargetSearch(row.coordinates));
+    const playerHref = row.own || !isNavigableCoordinates(row.coordinates) ? "#" : gameRouteURL("/game/galaxy", galaxyTargetSearch(row.coordinates));
     const message = row.own
       ? ""
       : `      <a href="${legacyHTMLAttribute(gameMessageComposeURL(row.player.id, window.location.search))}"> \n        <img src="${skinBase}/img/m.gif" border="0" alt="Write message" /> \n      </a> \n`;
@@ -2512,12 +2562,6 @@ function playerStatisticsHTML(statistics: GameStatistics): string {
   }
   html += "</table>\n<!-- end user -->";
   return html;
-}
-
-function statisticsSortURL(sortPerMember: number): string {
-  const search = new URLSearchParams(window.location.search);
-  search.set("sort_per_member", String(sortPerMember));
-  return gameRouteURL("/game/statistics", search.toString());
 }
 
 function statisticsSortValue(): string {
@@ -2539,7 +2583,7 @@ function allianceInfoURL(allianceID: number): string {
 }
 
 function allianceStatisticsHTML(statistics: GameStatistics): string {
-  let html = `<!-- begin ally -->\n<table class="legacy-statistics-table legacy-statistics-alliance-table" width="519">\n  <tr>\n    <td class ="c" width="30">Place</td>\n    <td class ="c">Alliance</td>\n    <td class="c">&nbsp;</td>\n    <td class ="c">Num.</td>\n    <td class ="c"><a href="${legacyHTMLAttribute(statisticsSortURL(0))}">Thousand points</a></td>\n    <td class ="c"><a href="${legacyHTMLAttribute(statisticsSortURL(1))}">Per person</a></td>\n  </tr>\n`;
+  let html = `<!-- begin ally -->\n<table class="legacy-statistics-table legacy-statistics-alliance-table" width="519">\n  <tr>\n    <td class ="c" width="30">Place</td>\n    <td class ="c">Alliance</td>\n    <td class="c">&nbsp;</td>\n    <td class ="c">Num.</td>\n    <td class ="c"><a href="#" data-statistics-sort="0">Thousand points</a></td>\n    <td class ="c"><a href="#" data-statistics-sort="1">Per person</a></td>\n  </tr>\n`;
   for (const row of statistics.rows) {
     const tag = row.alliance?.tag ?? "";
     const allyHref = row.own ? "#" : allianceInfoURL(row.alliance?.id ?? 0);
@@ -2588,6 +2632,10 @@ function galaxyTargetSearch(coordinates: Coordinates): string {
   query.set("system", String(coordinates.system));
   query.set("position", String(coordinates.position));
   return query.toString();
+}
+
+function isNavigableCoordinates(coordinates: Coordinates): boolean {
+  return coordinates.galaxy > 0 && coordinates.system > 0 && coordinates.position > 0;
 }
 
 function BuildingsTable({
@@ -8857,11 +8905,13 @@ function setLegacyFleetTemplateShips(template: GameFleetTemplate) {
 }
 
 function GalaxyTable({
+  adminLevel,
   galaxy,
   onInstantDispatch,
   onMissileLaunch,
   pending
 }: {
+  adminLevel: number;
   galaxy: GameGalaxy;
   onInstantDispatch: (draft: GameGalaxyInstantDispatch) => void;
   onMissileLaunch: (draft: GameGalaxyMissileLaunch) => void;
@@ -9013,7 +9063,7 @@ function GalaxyTable({
             ))}
           </tr>
           {galaxy.rows.map((row) => (
-            <GalaxyTableRow galaxy={galaxy} key={row.position} onInstantDispatch={onInstantDispatch} pending={pending} row={row} />
+            <GalaxyTableRow adminLevel={adminLevel} galaxy={galaxy} key={row.position} onInstantDispatch={onInstantDispatch} pending={pending} row={row} />
           ))}
           <tr>
             <th style={{ height: 32 }}>16</th>
@@ -9159,11 +9209,13 @@ function GalaxyMissileForm({
 }
 
 function GalaxyTableRow({
+  adminLevel,
   galaxy,
   onInstantDispatch,
   pending,
   row
 }: {
+  adminLevel: number;
   galaxy: GameGalaxy;
   onInstantDispatch: (draft: GameGalaxyInstantDispatch) => void;
   pending: boolean;
@@ -9211,7 +9263,7 @@ function GalaxyTableRow({
       </th>
       <th {...cellWidth(30)}>
         {planet && planet.type === 1 ? (
-          <GalaxyHoverMenu html={galaxyPlanetHoverHTML(planet, galaxy)} onClick={handleInstantMenuClick}>
+          <GalaxyHoverMenu html={galaxyPlanetHoverHTML(planet, galaxy, adminLevel)} onClick={handleInstantMenuClick}>
             <a href="#" onClick={(event) => event.preventDefault()}>
               <img alt="" height={30} src={galaxyPlanetImagePath(planet, true)} width={30} />
             </a>
@@ -9235,7 +9287,7 @@ function GalaxyTableRow({
               </span>
             </GalaxyHoverMenu>
           ) : (
-            <GalaxyHoverMenu html={galaxyMoonHoverHTML(row.moon, galaxy)} onClick={handleInstantMenuClick} offsetY={-110}>
+            <GalaxyHoverMenu html={galaxyMoonHoverHTML(row.moon, galaxy, adminLevel)} onClick={handleInstantMenuClick} offsetY={-110}>
               <a
                 href="#"
                 onClick={(event) => {
@@ -9281,7 +9333,7 @@ function GalaxyTableRow({
       </th>
       {player ? (
         <th {...cellWidth(150)}>
-          <GalaxyHoverMenu html={galaxyPlayerHoverHTML(player)} text>
+          <GalaxyHoverMenu html={galaxyPlayerHoverHTML(player, adminLevel)} text>
             <span dangerouslySetInnerHTML={{ __html: galaxyPlayerCellHTML(player) }} />
           </GalaxyHoverMenu>
         </th>
@@ -9365,7 +9417,7 @@ function galaxyPlayerCellHTML(player: GameGalaxyPlayer): string {
   return html;
 }
 
-function galaxyPlanetHoverHTML(planet: GameGalaxyPlanet, galaxy: GameGalaxy): string {
+function galaxyPlanetHoverHTML(planet: GameGalaxyPlanet, galaxy: GameGalaxy, adminLevel: number): string {
   const title = `Planet ${planet.name} [${formatCoordinates(planet.coordinates)}]`;
   let actions = "";
   if (planet.own) {
@@ -9389,12 +9441,15 @@ function galaxyPlanetHoverHTML(planet: GameGalaxyPlanet, galaxy: GameGalaxy): st
       actions += galaxyFleetMenuLink(planet.coordinates, planet.coordinates.position, 3, 1, "Transport");
     }
   }
+  if (adminLevel >= 1) {
+    actions += galaxyAnchor(adminPlanetHref(planet.id), "Admin");
+  }
   return `<table width=240><tr><td class=c colspan=2>${legacyHTMLText(title)}</td></tr><tr><th width=80><img src="${legacyHTMLAttribute(
     galaxyPlanetImagePath(planet, true)
   )}" height=75 width=75 /></th><th align=left>${actions}</th></tr></table>`;
 }
 
-function galaxyMoonHoverHTML(moon: GameGalaxyPlanet, galaxy: GameGalaxy): string {
+function galaxyMoonHoverHTML(moon: GameGalaxyPlanet, galaxy: GameGalaxy, adminLevel: number): string {
   const title = `Moon ${moon.name} [${formatCoordinates(moon.coordinates)}]`;
   let actions = "";
   if (moon.own) {
@@ -9421,6 +9476,9 @@ function galaxyMoonHoverHTML(moon: GameGalaxyPlanet, galaxy: GameGalaxy): string
       actions += galaxyFleetMenuLink(moon.coordinates, moon.coordinates.position, 9, 3, "Destroy");
     }
   }
+  if (adminLevel >= 1) {
+    actions += galaxyAnchor(adminPlanetHref(moon.id), "Admin");
+  }
   return `<table width=240><tr><td class=c colspan=2>${legacyHTMLText(title)}</td></tr><tr><th width=80><img src="${legacyHTMLAttribute(galaxyPlanetImagePath(moon, true))}" height=75 width=75 alt="${legacyHTMLAttribute(
     `Moon (size: ${formatLegacyNumber(moon.diameter)})`
   )}" /></th><th><table width=120><tr><td colspan=2 class=c>Properties</td></tr><tr><th>Size:</th><th>${formatLegacyNumber(moon.diameter)}</th></tr><tr><th>Temperatur:</th><th>${formatLegacyNumber(
@@ -9435,20 +9493,23 @@ function galaxyDebrisHoverHTML(debris: GameGalaxyDebris, coordinates: Coordinate
   )}</th></tr><tr><th>Crystal:</th><th>${formatLegacyNumber(debris.crystal)}</th></tr><tr><td class=c colspan=2>Actions:</td></tr><tr><th colspan=2 align=left>${recycle}</th></tr></table></th></tr></table>`;
 }
 
-function galaxyPlayerHoverHTML(player: GameGalaxyPlayer): string {
+function galaxyPlayerHoverHTML(player: GameGalaxyPlayer, adminLevel: number): string {
   let rows = "";
   if (!player.own) {
     rows += `<tr><td>${galaxyAnchor(gameMessageComposeURL(player.id, window.location.search), "Write a message")}</td></tr>`;
     rows += `<tr><td>${galaxyAnchor(gameBuddyRequestURL(player.id, window.location.search), "Invite to become friends")}</td></tr>`;
   }
   rows += `<tr><td>${galaxyAnchor(galaxyStatisticsURL(player.rank, "player"), "Statistics")}</td></tr>`;
+  if (adminLevel >= 1) {
+    rows += `<tr><td>${galaxyAnchor(adminUserHref(player.id), "Admin")}</td></tr>`;
+  }
   return `<table width=240><tr><td class=c>Player ${legacyHTMLText(player.name)}. Place in the rating - ${formatLegacyNumber(player.rank)}</td></tr><th><table>${rows}</table></th></table>`;
 }
 
 function galaxyAllianceHoverHTML(alliance: { id: number; tag: string }): string {
   const rows = [
     `<tr><td><a href="${legacyHTMLAttribute(allianceInfoURL(alliance.id))}" target="_ally">Alliance introduction</a></td></tr>`,
-    `<tr><td>${galaxyAnchor(allianceURL({ page: "bewerben", allyid: String(alliance.id) }), "Apply")}</td></tr>`,
+    `<tr><td>${galaxyAnchor(allianceURL({ a: "2", allyid: String(alliance.id) }), "Apply")}</td></tr>`,
     `<tr><td>${galaxyAnchor(galaxyStatisticsURL(1, "ally"), "Statistics")}</td></tr>`
   ].join("");
   return `<table width=240><tr><td class=c>Alliance ${legacyHTMLText(alliance.tag)}</td></tr><th><table>${rows}</table></th></table>`;

@@ -98,6 +98,7 @@ func (a app) handleGameMessagesGet(w http.ResponseWriter, r *http.Request) {
 		RemoteAddr:      remoteIP(r.RemoteAddr),
 		PlanetID:        planetID,
 		TargetPlayerID:  targetPlayerID,
+		Subject:         r.URL.Query().Get("betreff"),
 	})
 	if err != nil {
 		http.Error(w, "game messages unavailable", http.StatusServiceUnavailable)

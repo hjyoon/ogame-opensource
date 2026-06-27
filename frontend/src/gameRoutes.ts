@@ -136,14 +136,85 @@ export function resolveGameRoute(pathname: string, search = ""): GameRoute {
 }
 
 export function gameRouteURL(path: string, search: string): string {
-  const query = new URLSearchParams(search);
-  query.delete("lgn");
+  const query = filteredGameRouteQuery(path, search);
   const encoded = query.toString();
   return encoded ? `${path}?${encoded}` : path;
 }
 
+export function gameMenuRouteURL(path: string, search: string): string {
+  const source = new URLSearchParams(search);
+  const query = new URLSearchParams();
+  copyQueryValue(source, query, "session");
+  copyQueryValue(source, query, "cp");
+  const encoded = query.toString();
+  return encoded ? `${path}?${encoded}` : path;
+}
+
+const globalGameRouteQueryKeys = new Set(["session", "cp"]);
+const gameRouteQueryKeys = new Map<string, Set<string>>([
+  ["/game/rename-planet", new Set(["pl"])],
+  ["/game/empire", new Set(["planettype", "planet", "modus", "listid"])],
+  ["/game/buildings", new Set(["modus", "techid", "listid"])],
+  ["/game/research", new Set(["bau", "unbau"])],
+  ["/game/shipyard", new Set(["mode", "auftr"])],
+  ["/game/fleet", new Set(["galaxy", "system", "position", "planet", "planettype", "target_mission"])],
+  ["/game/fleet-templates", new Set(["mode", "id"])],
+  ["/game/technology", new Set(["gid", "tid"])],
+  ["/game/galaxy", new Set(["galaxy", "system", "position", "mode", "p1", "p2", "p3", "pdd", "zp"])],
+  ["/game/alliance", new Set(["a", "t", "d", "allyid", "u", "sort2"])],
+  ["/game/officers", new Set(["buynow", "type", "days"])],
+  ["/game/statistics", new Set(["who", "type", "start", "sort_per_member"])],
+  ["/game/search", new Set(["searchtext", "type"])],
+  ["/game/messages", new Set(["messageziel", "re", "betreff", "dsp"])],
+  ["/game/report", new Set(["bericht"])],
+  ["/game/phalanx", new Set(["galaxy", "system", "planet", "planettype"])],
+  ["/game/notes", new Set(["a", "n"])],
+  ["/game/buddy", new Set(["action", "buddy_id"])],
+  ["/game/admin", new Set(["mode", "action", "fname", "player_id", "galaxy", "system", "filter", "modname"])]
+]);
+
+function filteredGameRouteQuery(path: string, search: string): URLSearchParams {
+  const source = new URLSearchParams(search);
+  const targetPath = normalizeGamePath(path);
+  const routeKeys = gameRouteQueryKeys.get(targetPath) ?? new Set<string>();
+  const query = new URLSearchParams();
+  for (const [key, value] of source.entries()) {
+    if (key === "lgn" || key === "page" || value === "") {
+      continue;
+    }
+    if ((globalGameRouteQueryKeys.has(key) || routeKeys.has(key)) && shouldKeepGameRouteQueryParam(targetPath, key, value, source)) {
+      query.append(key, value);
+    }
+  }
+  return query;
+}
+
+function shouldKeepGameRouteQueryParam(targetPath: string, key: string, value: string, source: URLSearchParams): boolean {
+  if (targetPath !== "/game/galaxy") {
+    return true;
+  }
+  if (key === "mode") {
+    return value === "1";
+  }
+  if (key === "p1" || key === "p2" || key === "p3" || key === "pdd" || key === "zp") {
+    return source.get("mode") === "1";
+  }
+  return true;
+}
+
+function copyQueryValue(source: URLSearchParams, target: URLSearchParams, key: string): void {
+  const value = source.get(key);
+  if (value) {
+    target.set(key, value);
+  }
+}
+
 export function gamePlanetSwitchURL(pathname: string, search: string, planetID: number | string): string {
-  const query = new URLSearchParams(search);
+  const source = new URLSearchParams(search);
+  const query = new URLSearchParams();
+  for (const key of ["session", "gid", "tid", "mode"]) {
+    copyQueryValue(source, query, key);
+  }
   query.set("cp", String(planetID));
   return gameRouteURL(resolveGameRoute(pathname, search).path, query.toString());
 }

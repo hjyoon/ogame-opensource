@@ -74,6 +74,9 @@ func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.Messa
 		if err != nil {
 			return domaingame.Messages{}, err
 		}
+		if query.Subject != "" {
+			compose.Subject = query.Subject
+		}
 		messages.Compose = &compose
 		return messages, nil
 	}

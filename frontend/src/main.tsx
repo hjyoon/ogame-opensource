@@ -365,12 +365,17 @@ function App() {
 
   useEffect(() => {
     if (registrationDraft.universe === "" && universes.length > 0) {
-      const recommended = universes.find((universe) => universe.number === 3 && universe.baseUrl) ?? universes[0];
+      const linkUniverse = Number(new URLSearchParams(search).get("linkuni") ?? "");
+      const linked = Number.isFinite(linkUniverse) ? universes.find((universe) => universe.number === linkUniverse && universe.baseUrl) : undefined;
+      if (linkUniverse && !linked) {
+        return;
+      }
+      const recommended = linked ?? universes.find((universe) => universe.number === 3 && universe.baseUrl) ?? universes[0];
       if (recommended?.baseUrl) {
         setRegistrationDraft((current) => ({ ...current, universe: recommended.baseUrl }));
       }
     }
-  }, [registrationDraft.universe, universes]);
+  }, [registrationDraft.universe, search, universes]);
 
   useEffect(() => {
     const onPopState = () => {
@@ -1655,6 +1660,9 @@ function App() {
         statisticsSearch.set(key, value);
       }
     }
+    if (!statisticsSearch.has("start")) {
+      statisticsSearch.set("start", "-1");
+    }
     fetch(`/api/game/statistics?${statisticsSearch.toString()}`, { credentials: "same-origin" })
       .then((response) => response.json() as Promise<GameStatisticsStatus>)
       .then((payload) => {
@@ -1769,7 +1777,7 @@ function App() {
     }
     const currentSearch = new URLSearchParams(search);
     const messagesRequest = new URLSearchParams({ session: publicSession });
-    for (const key of ["cp", "messageziel"]) {
+    for (const key of ["cp", "messageziel", "re", "betreff"]) {
       const value = currentSearch.get(key);
       if (value) {
         messagesRequest.set(key, value);

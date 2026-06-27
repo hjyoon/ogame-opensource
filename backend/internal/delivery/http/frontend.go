@@ -36,6 +36,32 @@ func (a app) handleFrontend(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (a app) handleLegacyEvolutionAsset(w http.ResponseWriter, r *http.Request) {
+	cleanPath := path.Clean("/" + r.URL.Path)
+	if !strings.HasPrefix(cleanPath, "/evolution/") {
+		http.NotFound(w, r)
+		return
+	}
+	rel := "public-assets" + cleanPath
+	if a.deps.Frontend.Serve(w, r, rel) {
+		return
+	}
+	http.NotFound(w, r)
+}
+
+func (a app) handleLegacyGameStaticAsset(w http.ResponseWriter, r *http.Request) {
+	cleanPath := path.Clean("/" + r.URL.Path)
+	if !strings.HasPrefix(cleanPath, "/game/css/") && !strings.HasPrefix(cleanPath, "/game/img/") {
+		http.NotFound(w, r)
+		return
+	}
+	rel := "public-assets" + cleanPath
+	if a.deps.Frontend.Serve(w, r, rel) {
+		return
+	}
+	http.NotFound(w, r)
+}
+
 func isLegacyGameHTMLPath(cleanPath string) bool {
 	return cleanPath == "/game/index.php"
 }
