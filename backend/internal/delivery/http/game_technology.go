@@ -21,6 +21,7 @@ type gameTechnologySummary struct {
 	PlanetSwitcher []gamePlanetSummaryResponse    `json:"planetSwitcher"`
 	Groups         []gameTechnologyGroupResponse  `json:"groups"`
 	Details        *gameTechnologyDetailsResponse `json:"details,omitempty"`
+	Info           *gameTechnologyInfoResponse    `json:"info,omitempty"`
 }
 
 type gameTechnologyGroupResponse struct {
@@ -61,6 +62,28 @@ type gameTechnologyDemolishResponse struct {
 	DurationSeconds int                      `json:"durationSeconds"`
 }
 
+type gameTechnologyInfoResponse struct {
+	ID          int                         `json:"id"`
+	Name        string                      `json:"name"`
+	Description string                      `json:"description"`
+	Level       int                         `json:"level"`
+	Kind        string                      `json:"kind"`
+	Rows        []gameTechnologyInfoRowItem `json:"rows"`
+}
+
+type gameTechnologyInfoRowItem struct {
+	Level                int  `json:"level"`
+	Current              bool `json:"current"`
+	Production           int  `json:"production"`
+	ProductionDifference int  `json:"productionDifference"`
+	Energy               int  `json:"energy"`
+	EnergyDifference     int  `json:"energyDifference"`
+	Storage              int  `json:"storage"`
+	StorageDifference    int  `json:"storageDifference"`
+	DeuteriumConsumption int  `json:"deuteriumConsumption"`
+	DeuteriumDifference  int  `json:"deuteriumDifference"`
+}
+
 func (a app) handleGameTechnology(w http.ResponseWriter, r *http.Request) {
 	if a.deps.GameTechnology == nil {
 		http.Error(w, "game technology unavailable", http.StatusServiceUnavailable)
@@ -72,18 +95,24 @@ func (a app) handleGameTechnology(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid selected planet", http.StatusBadRequest)
 		return
 	}
-	technologyID, err := selectedTechnologyID(r)
+	technologyDetailsID, err := selectedTechnologyDetailsID(r)
+	if err != nil {
+		http.Error(w, "invalid selected technology", http.StatusBadRequest)
+		return
+	}
+	technologyInfoID, err := selectedTechnologyInfoID(r)
 	if err != nil {
 		http.Error(w, "invalid selected technology", http.StatusBadRequest)
 		return
 	}
 
 	result, err := a.deps.GameTechnology.GetTechnology(r.Context(), appgame.TechnologyCommand{
-		PublicSession:   r.URL.Query().Get("session"),
-		PrivateSessions: cookieMap(r),
-		RemoteAddr:      remoteIP(r.RemoteAddr),
-		PlanetID:        planetID,
-		TechnologyID:    technologyID,
+		PublicSession:       r.URL.Query().Get("session"),
+		PrivateSessions:     cookieMap(r),
+		RemoteAddr:          remoteIP(r.RemoteAddr),
+		PlanetID:            planetID,
+		TechnologyDetailsID: technologyDetailsID,
+		TechnologyInfoID:    technologyInfoID,
 	})
 	if err != nil {
 		http.Error(w, "game technology unavailable", http.StatusServiceUnavailable)
@@ -123,6 +152,7 @@ func toGameTechnologySummary(technology domaingame.Technology) gameTechnologySum
 		PlanetSwitcher: planets,
 		Groups:         groups,
 		Details:        toGameTechnologyDetailsResponse(technology.Details),
+		Info:           toGameTechnologyInfoResponse(technology.Info),
 	}
 }
 
@@ -196,11 +226,45 @@ func toGameTechnologyDemolishResponse(demolish *domaingame.TechnologyDemolish) *
 	}
 }
 
-func selectedTechnologyID(r *http.Request) (int, error) {
-	raw := r.URL.Query().Get("tid")
-	if raw == "" {
-		raw = r.URL.Query().Get("gid")
+func toGameTechnologyInfoResponse(info *domaingame.TechnologyInfo) *gameTechnologyInfoResponse {
+	if info == nil {
+		return nil
 	}
+	rows := make([]gameTechnologyInfoRowItem, 0, len(info.Rows))
+	for _, row := range info.Rows {
+		rows = append(rows, gameTechnologyInfoRowItem{
+			Level:                row.Level,
+			Current:              row.Current,
+			Production:           row.Production,
+			ProductionDifference: row.ProductionDifference,
+			Energy:               row.Energy,
+			EnergyDifference:     row.EnergyDifference,
+			Storage:              row.Storage,
+			StorageDifference:    row.StorageDifference,
+			DeuteriumConsumption: row.DeuteriumConsumption,
+			DeuteriumDifference:  row.DeuteriumDifference,
+		})
+	}
+	return &gameTechnologyInfoResponse{
+		ID:          info.ID,
+		Name:        info.Name,
+		Description: info.Description,
+		Level:       info.Level,
+		Kind:        info.Kind,
+		Rows:        rows,
+	}
+}
+
+func selectedTechnologyDetailsID(r *http.Request) (int, error) {
+	return selectedTechnologyQueryID(r, "tid")
+}
+
+func selectedTechnologyInfoID(r *http.Request) (int, error) {
+	return selectedTechnologyQueryID(r, "gid")
+}
+
+func selectedTechnologyQueryID(r *http.Request, key string) (int, error) {
+	raw := r.URL.Query().Get(key)
 	if raw == "" {
 		return 0, nil
 	}

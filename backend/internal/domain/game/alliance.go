@@ -51,6 +51,7 @@ const (
 	AllianceViewNoAlliance   AllianceView = "no_alliance"
 	AllianceViewCreate       AllianceView = "create"
 	AllianceViewSearch       AllianceView = "search"
+	AllianceViewInfo         AllianceView = "info"
 	AllianceViewApply        AllianceView = "apply"
 	AllianceViewApplications AllianceView = "applications"
 	AllianceViewMembers      AllianceView = "members"

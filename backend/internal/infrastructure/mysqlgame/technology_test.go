@@ -19,8 +19,9 @@ func TestTechnologyRepositoryReadsLegacyTechnology(t *testing.T) {
 	repository := NewTechnologyRepositoryWithQueryer(queryer, "ogame_")
 
 	technology, err := repository.GetTechnology(context.Background(), appgame.TechnologyQuery{
-		PlayerID:     42,
-		TechnologyID: domaingame.FleetCruiser,
+		PlayerID:            42,
+		TechnologyDetailsID: domaingame.FleetCruiser,
+		TechnologyInfoID:    domaingame.BuildingMetalMine,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -38,6 +39,9 @@ func TestTechnologyRepositoryReadsLegacyTechnology(t *testing.T) {
 	}
 	if technology.Details == nil || technology.Details.Target.ID != domaingame.FleetCruiser || len(technology.Details.Levels) == 0 {
 		t.Fatalf("expected cruiser detail tree, got %+v", technology.Details)
+	}
+	if technology.Info == nil || technology.Info.ID != domaingame.BuildingMetalMine || len(technology.Info.Rows) != 15 {
+		t.Fatalf("expected metal mine info rows, got %+v", technology.Info)
 	}
 }
 

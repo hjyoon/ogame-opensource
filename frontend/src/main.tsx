@@ -1040,7 +1040,7 @@ function App() {
     }
     const currentSearch = new URLSearchParams(search);
     const adminSearch = new URLSearchParams({ session: publicSession });
-    for (const key of ["cp", "mode"]) {
+    for (const key of ["cp", "mode", "action", "fname", "player_id", "galaxy", "system", "filter", "modname"]) {
       const value = currentSearch.get(key);
       if (value) {
         adminSearch.set(key, value);
@@ -1071,7 +1071,7 @@ function App() {
     }
     const currentSearch = new URLSearchParams(search);
     const adminSearch = new URLSearchParams({ session: publicSession });
-    for (const key of ["cp", "mode"]) {
+    for (const key of ["cp", "mode", "action", "fname", "player_id", "galaxy", "system", "filter", "modname"]) {
       const value = currentSearch.get(key);
       if (value) {
         adminSearch.set(key, value);
@@ -1606,9 +1606,12 @@ function App() {
     if (selectedPlanet) {
       technologySearch.set("cp", selectedPlanet);
     }
-    const selectedTechnology = currentSearch.get("tid") ?? currentSearch.get("gid");
-    if (selectedTechnology) {
-      technologySearch.set("tid", selectedTechnology);
+    const selectedInfo = currentSearch.get("gid");
+    const selectedDetails = currentSearch.get("tid");
+    if (selectedInfo) {
+      technologySearch.set("gid", selectedInfo);
+    } else if (selectedDetails) {
+      technologySearch.set("tid", selectedDetails);
     }
     fetch(`/api/game/technology?${technologySearch.toString()}`, { credentials: "same-origin" })
       .then((response) => response.json() as Promise<GameTechnologyStatus>)

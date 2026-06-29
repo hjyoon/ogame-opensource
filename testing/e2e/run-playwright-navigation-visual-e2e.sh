@@ -25,6 +25,39 @@ wait_for_url() {
 wait_for_url "$LEGACY_BASE_URL/home.php"
 wait_for_url "$GO_BASE_URL/api/healthz"
 
+sync_docker_visual_fixtures() {
+  if [ "${OGAME_NAV_VISUAL_SYNC_DOCKER_FIXTURES:-1}" = "0" ]; then
+    return 0
+  fi
+  if ! command -v docker >/dev/null 2>&1; then
+    return 0
+  fi
+
+  legacy_container="${OGAME_LEGACY_DOCKER_CONTAINER:-ogame-opensource-server-1}"
+  go_container="${OGAME_GO_DOCKER_CONTAINER:-ogame-opensource-goapp-1}"
+  legacy_temp="${OGAME_LEGACY_DOCKER_GAME_TEMP:-/var/www/html/game/temp}"
+  go_temp="${OGAME_GO_DOCKER_GAME_TEMP:-/srv/ogame/game/temp}"
+  fixture_dir="$ROOT_DIR/.tmp/navigation-visual-db-backups"
+
+  if ! docker inspect "$legacy_container" >/dev/null 2>&1 || ! docker inspect "$go_container" >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! docker exec "$legacy_container" sh -lc "test -d '$legacy_temp'" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  rm -rf "$fixture_dir"
+  mkdir -p "$fixture_dir"
+  docker exec "$go_container" sh -lc "mkdir -p '$go_temp' && find '$go_temp' -maxdepth 1 -type f -name 'backup_*.json' -delete"
+  docker exec "$legacy_container" sh -lc "cd '$legacy_temp' && ls backup_*.json 2>/dev/null || true" | while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    docker cp "$legacy_container:$legacy_temp/$name" "$fixture_dir/$name"
+    docker cp "$fixture_dir/$name" "$go_container:$go_temp/$name"
+  done
+}
+
+sync_docker_visual_fixtures
+
 cd "$ROOT_DIR/frontend"
 status=0
 for browser in ${OGAME_NAV_VISUAL_BROWSERS:-chromium firefox}; do

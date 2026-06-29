@@ -67,28 +67,31 @@ func (a app) handleLegacyPasswordRecovery(w http.ResponseWriter, r *http.Request
 const legacyPasswordRecoveryError = "This email-address doesn't exist as a permanent or variable address"
 
 func legacyPasswordRecoveryForm() string {
-	return `<!doctype html>
-<html>
+	return `<html>
 <head>
 <title>Overview</title>
 <link rel="stylesheet" type="text/css" href="/evolution/formate.css">
-<link rel="stylesheet" type="text/css" href="/game/css/default.css">
-<link rel="stylesheet" type="text/css" href="/game/css/formate.css">
-<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <link rel='stylesheet' type='text/css' href='/game/css/default.css' />
+  <link rel='stylesheet' type='text/css' href='/game/css/formate.css' />
+<meta http-equiv="content" type="text/html; charset=UTF-8" />
 </head>
 <body>
 <div id="overDiv" style="position:absolute; visibility:hidden; z-index:1000;"></div>
 <div class="mybody">
 <form action="fa_pass.php" method="post">
 <div align="center">
-<h2>Send Password</h2>
-Please enter your email-address<table align="center">
-<tr><td>E-Mail:</td><td><input type="text" name="email"></td></tr>
-<tr><td></td><td><input type="submit" name="send_pass" value="send login data"></td></tr>
+  <h2>Send Password</h2>
+  Please enter your email-address<table align="center">
+<tr>
+        <td>E-Mail:</td>
+        <td><input type="text" name="email"></td>
+</tr>
+<tr>
+        <td></td>
+        <td><input type="submit" name="send_pass" value="send login data"></td>
+</tr>
 </table>
-</div>
 </form>
-</div>
 </body>
 </html>`
 }

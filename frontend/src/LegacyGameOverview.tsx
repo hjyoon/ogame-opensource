@@ -12,6 +12,7 @@ import {
   type GameFleetTargetPrefill,
   type GameRoute
 } from "./gameRoutes";
+import { legacyChangelogRows } from "./legacyChangelogData";
 
 export type GameOverviewStatus = {
   authenticated: boolean;
@@ -948,6 +949,7 @@ type GameTechnology = {
   planetSwitcher: GamePlanetSummary[];
   groups: GameTechnologyGroup[];
   details?: GameTechnologyDetails;
+  info?: GameTechnologyInfo;
 };
 
 type GameTechnologyGroup = {
@@ -986,6 +988,28 @@ type GameTechnologyDemolish = {
   level: number;
   cost: BuildingCost;
   durationSeconds: number;
+};
+
+type GameTechnologyInfo = {
+  id: number;
+  name: string;
+  description: string;
+  level: number;
+  kind: "mine" | "solar" | "fusion" | "storage" | "description";
+  rows: GameTechnologyInfoRow[];
+};
+
+type GameTechnologyInfoRow = {
+  level: number;
+  current: boolean;
+  production: number;
+  productionDifference: number;
+  energy: number;
+  energyDifference: number;
+  storage: number;
+  storageDifference: number;
+  deuteriumConsumption: number;
+  deuteriumDifference: number;
 };
 
 type GameBuildingItem = {
@@ -1179,7 +1203,9 @@ type GameAdmin = {
   userLogRows?: GameAdminUserLogRow[];
   userRows?: GameAdminUserRow[];
   activeUsers?: GameAdminUserRow[];
+  selectedUser?: GameAdminUserDetail;
   planetRows?: GameAdminPlanetRow[];
+  selectedPlanet?: GameAdminPlanetDetail;
   reportRows?: GameAdminReportRow[];
   universe?: GameAdminUniverseSettings;
   expedition?: Record<string, number>;
@@ -1247,12 +1273,88 @@ type GameAdminUserPlanet = {
   coordinates: Coordinates;
 };
 
+type GameAdminUserDetail = GameAdminUserRow & {
+  permanentEmail: string;
+  email: string;
+  alliance: string;
+  joinDate: number;
+  disableUntil: number;
+  vacationUntil: number;
+  bannedUntil: number;
+  noAttackUntil: number;
+  lastLogin: number;
+  ipAddress: string;
+  validated: boolean;
+  adminLevel: number;
+  sniff: boolean;
+  debug: boolean;
+  sortBy: number;
+  sortOrder: number;
+  skin: string;
+  useSkin: boolean;
+  deactivateIP: boolean;
+  maxSpy: number;
+  maxFleetMsg: number;
+  oldScore1: number;
+  oldPlace1: number;
+  oldScore2: number;
+  oldPlace2: number;
+  oldScore3: number;
+  oldPlace3: number;
+  score1: number;
+  place1: number;
+  score2: number;
+  place2: number;
+  score3: number;
+  place3: number;
+  scoreDate: number;
+  darkMatterFree: number;
+  darkMatter: number;
+  research: Record<string, number>;
+  activePlanet?: GameAdminUserPlanet;
+  planets: GameAdminPlanetRow[];
+};
+
 type GameAdminPlanetRow = {
   id: number;
   name: string;
   date: number;
   coordinates: Coordinates;
   owner?: GameAdminUserRow;
+};
+
+type GameAdminTechnologyValue = {
+  id: number;
+  name: string;
+  value: number;
+  percent: number;
+};
+
+type GameAdminPlanetDetail = GameAdminPlanetRow & {
+  type: number;
+  diameter: number;
+  temperature: number;
+  fields: number;
+  maxFields: number;
+  removeDate: number;
+  lastActivity: number;
+  lastUpdate: number;
+  gateUntil: number;
+  score: {
+    points: number;
+    fleetPoints: number;
+    defensePoints: number;
+  };
+  resources: Resources;
+  energyBalance: number;
+  energyCapacity: number;
+  productionFactor: number;
+  buildings: GameAdminTechnologyValue[];
+  fleet: GameAdminTechnologyValue[];
+  defense: GameAdminTechnologyValue[];
+  buildQueue: GameOverviewBuildQueue[];
+  moon?: GameAdminPlanetRow;
+  debris?: GameAdminPlanetRow;
 };
 
 type GameAdminReportRow = {
@@ -1712,6 +1814,7 @@ export function LegacyGameOverview({
     ["created", "applied", "withdrawn", "accepted", "rejected", "left"].includes(allianceActionIssue.code)
       ? "neutral"
       : "error";
+  const isAllianceInfoPopup = route.key === "alliance" && alliance?.view === "info";
   const admin = adminStatus?.authenticated ? adminStatus.admin : undefined;
   const adminIssue = adminStatus && !adminStatus.authenticated ? adminStatus.issues[0]?.message ?? "Session is invalid." : null;
   const adminActionIssue = adminStatus?.authenticated ? adminStatus.actionIssue : undefined;
@@ -1762,13 +1865,14 @@ export function LegacyGameOverview({
     messagesActionIssue?.code === "sent" || messagesActionIssue?.code === "reported" ? "neutral" : "error";
   const optionsActionIssue = optionsStatus?.authenticated ? optionsStatus.actionIssue : undefined;
   const hasHeader =
+    !isAllianceInfoPopup &&
     route.key !== "notes" &&
     route.key !== "galaxy" &&
     route.key !== "report" &&
     route.key !== "phalanx" &&
     route.key !== "admin" &&
     route.key !== "empire";
-  const hasMenu = route.key !== "notes" && route.key !== "report" && route.key !== "phalanx";
+  const hasMenu = !isAllianceInfoPopup && route.key !== "notes" && route.key !== "report" && route.key !== "phalanx";
   const hasOverviewPageMessage =
     hasHeader && Boolean(overview && route.key === "overview" && overview.messages && overview.messages.length > 0);
   const hasOverviewPageError =
@@ -1841,7 +1945,7 @@ export function LegacyGameOverview({
       ? "legacy-content legacy-content-overview"
       : route.key === "galaxy" || route.key === "admin" || route.key === "empire"
         ? "legacy-content legacy-content-noheader"
-      : route.key === "notes" || route.key === "report" || route.key === "phalanx"
+      : route.key === "notes" || route.key === "report" || route.key === "phalanx" || isAllianceInfoPopup
         ? "legacy-content legacy-content-popup"
         : "legacy-content";
   const contentStyle: React.CSSProperties =
@@ -1858,7 +1962,8 @@ export function LegacyGameOverview({
           route.key === "empire" ||
           route.key === "notes" ||
           route.key === "report" ||
-          route.key === "phalanx"
+          route.key === "phalanx" ||
+          isAllianceInfoPopup
         ? { height: "calc(100vh - 20px)" }
         : { height: "calc(100vh - 101px)" };
 
@@ -2105,6 +2210,7 @@ export function LegacyGameOverview({
           <LegacyMessage tone="neutral" text="Loading technology..." />
         ) : null}
         {technology && route.key === "technology" ? <TechnologyTable onBuildingAction={onBuildingAction} technology={technology} /> : null}
+        {overview && route.key === "changelog" ? <ChangelogTable /> : null}
         {overview && route.key === "statistics" && !statistics && !statisticsError && !statisticsIssue ? (
           <LegacyMessage tone="neutral" text="Loading statistics..." />
         ) : null}
@@ -2165,6 +2271,7 @@ export function LegacyGameOverview({
         route.key !== "galaxy" &&
         route.key !== "defense" &&
         route.key !== "technology" &&
+        route.key !== "changelog" &&
         route.key !== "statistics" &&
         route.key !== "search" &&
         route.key !== "buddy" &&
@@ -4120,8 +4227,6 @@ function AdminFleetlogsTable({ onAdminAction, rows }: { onAdminAction: (action: 
 function adminFleetlogsHTML(rows: GameAdminFleetLogRow[]) {
   let html = "<table class=\"legacy-admin-fleetlogs-table\">\n";
   html +=
-    '<colgroup><col style="width:9px"><col style="width:90px"><col style="width:65px"><col style="width:66px"><col style="width:65px"><col style="width:52px"><col style="width:78px"><col style="width:78px"><col style="width:63px"><col style="width:53px"><col style="width:23px"><col style="width:23px"><col style="width:34px"><col style="width:20px"><col style="width:20px"></colgroup>\n';
-  html +=
     "<tr><td class=c>N</td> <td class=c>Timer</td> <td class=c>Order</td> <td class=c>Sent</td> <td class=c>Arriving</td><td class=c>Flight time</td> <td class=c>Start</td> <td class=c>Target</td> <td class=c>Fleet</td> <td class=c>Cargo</td> <td class=c>Fuel</td> <td class=c>ACS</td> <td class=c colspan=3>Command</td> </tr>\n";
   for (const row of rows) {
     const start = formatLegacyAdminFleetLogDateParts(row.start);
@@ -4384,6 +4489,15 @@ function AdminQueueTable({ onAdminAction, rows }: { onAdminAction: (action: Game
 }
 
 function AdminUsersTable({ admin }: { admin: GameAdmin }) {
+  if (admin.selectedUser) {
+    return (
+      <div
+        className="legacy-admin-users-detail"
+        dangerouslySetInnerHTML={{ __html: adminUserDetailHTML(admin.selectedUser) }}
+        style={{ display: "contents" }}
+      />
+    );
+  }
   return (
     <div
       className="legacy-admin-users-table"
@@ -4391,6 +4505,180 @@ function AdminUsersTable({ admin }: { admin: GameAdmin }) {
       style={{ display: "contents" }}
     />
   );
+}
+
+const adminResearchRows = [
+  { id: 106, name: "Espionage Technology" },
+  { id: 108, name: "Computer Technology" },
+  { id: 109, name: "Weapons Technology" },
+  { id: 110, name: "Shielding Technology" },
+  { id: 111, name: "Armour Technology" },
+  { id: 113, name: "Energy Technology" },
+  { id: 114, name: "Hyperspace Technology" },
+  { id: 115, name: "Combustion Drive" },
+  { id: 117, name: "Impulse Drive" },
+  { id: 118, name: "Hyperspace Drive" },
+  { id: 120, name: "Laser Technology" },
+  { id: 121, name: "Ion Technology" },
+  { id: 122, name: "Plasma Technology" },
+  { id: 123, name: "Intergalactic Research Network" },
+  { id: 124, name: "Expedition Technology" },
+  { id: 199, name: "Graviton Technology" }
+];
+
+function adminUserDetailHTML(user: GameAdminUserDetail): string {
+  let html = "";
+  html += "<table>\n";
+  html += `<form action="${legacyHTMLAttribute(adminModeActionHref("Users", "update"))}" method="POST" >\n`;
+  html += `<tr><td class=c>${adminUserNameHTML(user)}</td><td class=c>Settings</td><td class=c>Research</td></tr>\n`;
+  html += '<th class="legacy-admin-users-left" valign=top style="width:244.71px"><table style="width:100%">\n';
+  html += `<tr><th>ID</th><th>${user.playerId}</th></tr>\n`;
+  html += `<tr><th>Date of registration</th><th>${formatLegacyAdminDateTime(user.regDate)}</th></tr>\n`;
+  html += `<tr><th>Alliance</th><th>${legacyHTMLText(user.alliance)}</th></tr>\n`;
+  html += `<tr><th>Join Date</th><th>${user.joinDate ? formatLegacyAdminDateTime(user.joinDate) : ""}</th></tr>\n`;
+  html += adminTextInputRow("Permanent address", "pemail", 100, 20, user.permanentEmail);
+  html += adminTextInputRow("Temporary address", "email", 100, 20, user.email);
+  html += adminUserCheckboxDateRow("Delete player", "deaktjava", user.disable, user.disableUntil);
+  html += adminUserCheckboxDateRow("Vacation mode", "vacation", user.vacation, user.vacationUntil);
+  html += adminUserCheckboxDateRow("Blocked", "banned", user.banned, user.bannedUntil);
+  html += adminUserCheckboxDateRow("Attack ban", "noattack", user.noAttack, user.noAttackUntil);
+  html += `<tr><th>Last login</th><th>${formatLegacyAdminDateTime(user.lastLogin)}</th></tr>\n`;
+  html += `<tr><th>Activity</th><th>${formatLegacyAdminDateTime(user.lastClick)}</th></tr>\n`;
+  html += `<tr><th>IP address</th><th><a href="http://nic.ru/whois/?query=${legacyHTMLAttribute(user.ipAddress)}" target=_blank>${legacyHTMLText(
+    user.ipAddress
+  )}</a></th></tr>\n`;
+  html += `<tr><th>Activated</th><th><input type="checkbox" name="validated" ${adminChecked(
+    user.validated
+  )} /> <a href="${legacyHTMLAttribute(adminModeActionHref("Users", "reactivate"))}">send password</a></th></tr>\n`;
+  html += `<tr><th>Home Planet</th><th>${user.homePlanet ? adminUserPlanetRefHTML(user.homePlanet) : ""}</th></tr>\n`;
+  html += `<tr><th>Current planet</th><th>${user.activePlanet ? adminUserPlanetRefHTML(user.activePlanet) : "[0:0:0] <a href=\"\"></a>"}</th></tr>\n`;
+  html += `<tr><th>Rights</th><th>${adminUserLevelSelectHTML(user.adminLevel)}</th></tr>\n`;
+  html += adminCheckboxRow("Enable tracking", "sniff", user.sniff);
+  html += adminCheckboxRow("Debug information", "debug", user.debug);
+  html += `<tr><th colspan=2><a href="${legacyHTMLAttribute(adminModeActionHref("Users", "bot_start"))}" >[Start bot]</a></th></tr>\n`;
+  html += "</table></th>\n";
+
+  html += '<th class="legacy-admin-users-center" valign=top style="width:391.2px"><table style="width:100%">\n';
+  html += '<colgroup><col style="width:130.1px"><col></colgroup>\n';
+  html += `<tr><th>Planet sorting</th><th>${adminUserSortSelectHTML("settings_sort", user.sortBy, ["colonization order", "coordinates", "alphabetically"])}</th></tr>\n`;
+  html += `<tr><th>Sorting order</th><th>${adminUserSortSelectHTML("settings_order", user.sortOrder, ["ascending", "descending"])}</th></tr>\n`;
+  html += adminTextInputRow("Skin", "dpath", 80, 40, user.skin);
+  html += adminCheckboxRow("Use skin", "design", user.useSkin);
+  html += adminCheckboxRow("Deactivate the IP check", "deact_ip", user.deactivateIP);
+  html += adminTextInputRow("Number of probes", "spio_anz", 2, 2, user.maxSpy);
+  html += adminTextInputRow("Number of fleet messages", "settings_fleetactions", 2, 2, user.maxFleetMsg);
+  html += "<tr><th colspan=2>&nbsp</th></tr>\n";
+  html += "<tr><td class=c colspan=2>Statistics</td></tr>\n";
+  html += `<tr><th>Points (old)</th><th>${formatLegacyNumber(Math.floor(user.oldScore1 / 1000))} / ${formatLegacyNumber(user.oldPlace1)}</th></tr>\n`;
+  html += `<tr><th>Fleet (old)</th><th>${formatLegacyNumber(user.oldScore2)} / ${formatLegacyNumber(user.oldPlace2)}</th></tr>\n`;
+  html += `<tr><th>Research (old)</th><th>${formatLegacyNumber(user.oldScore3)} / ${formatLegacyNumber(user.oldPlace3)}</th></tr>\n`;
+  html += `<tr><th>Points</th><th>${formatLegacyNumber(Math.floor(user.score1 / 1000))} / ${formatLegacyNumber(user.place1)}</th></tr>\n`;
+  html += `<tr><th>Fleet</th><th>${formatLegacyNumber(user.score2)} / ${formatLegacyNumber(user.place2)}</th></tr>\n`;
+  html += `<tr><th>Research</th><th>${formatLegacyNumber(user.score3)} / ${formatLegacyNumber(user.place3)}</th></tr>\n`;
+  html += `<tr><th>Date of old statistic</th><th>${formatLegacyAdminDateTime(user.scoreDate)}</th></tr>\n`;
+  html += `<tr><th colspan=2><a href="${legacyHTMLAttribute(adminModeActionHref("Users", "recalc_stats"))}" >[Recalculate stats]</a></th></tr>\n`;
+  html += "<tr><th colspan=2>&nbsp</th></tr>\n";
+  html += "<tr><td class=c colspan=2>Officers</td></tr>\n";
+  html += `<tr><th colspan=2><table><tr>${["commander", "admiral", "ingenieur", "geologe", "technokrat"]
+    .map((name, index) => `<td align="center" width="35" class="header"><img border="0" src="/public-assets/game/img/${name}_ikon_un.gif" width="32" height="32"></td><td><input type="text" name="pr_${index + 1}" size="3" /></td>`)
+    .join("")}</tr></table></th></tr>\n`;
+  html += "<tr><th colspan=2><i>To extend an officer, specify the required number of days in the<br>input fields.<br>To delete, specify a value less than zero.</i></th></tr>\n";
+  html += "</table></th>\n";
+
+  html += '<th class="legacy-admin-users-right" valign=top style="width:182px"><table style="width:100%">\n';
+  for (const row of adminResearchRows) {
+    html += `<tr><th>${legacyHTMLText(row.name)}</th><th><input type="text" size=3 name="r${row.id}" value="${
+      user.research[String(row.id)] ?? 0
+    }" /></th></tr>\n`;
+  }
+  html += `<tr><td colspan=2>&nbsp;</td></tr>\n`;
+  html += `<tr><th>Found Dark Matter</th><th><input type="text" size=5 name="dmfree" value="${user.darkMatterFree}" /></th></tr>\n`;
+  html += `<tr><th>Purchased Dark Matter</th><th><input type="text" size=5 name="dm" value="${user.darkMatter}" /></th></tr>\n`;
+  html += "</table></th>\n";
+  html += `<tr><th colspan=3><input type="submit" value="Save" /></th></tr>\n`;
+  html += "</form>\n</table>\n";
+  html += adminUserPlanetListHTML(user);
+  html += adminUserFleetLogLinksHTML(user);
+  return html;
+}
+
+function adminUserCheckboxDateRow(label: string, name: string, checked: boolean, date: number): string {
+  return `<tr><th>${legacyHTMLText(label)}</th><th><input type="checkbox" name="${legacyHTMLAttribute(name)}"  ${adminChecked(
+    checked
+  )}/>${checked && date ? ` ${formatLegacyAdminDateTime(date)}` : ""}</th></tr>\n`;
+}
+
+function adminUserPlanetRefHTML(planet: GameAdminUserPlanet): string {
+  const coordinates = planet.coordinates;
+  return `[${coordinates.galaxy}:${coordinates.system}:${coordinates.position}] <a href="${legacyHTMLAttribute(
+    adminPlanetHref(planet.id)
+  )}">${legacyHTMLText(planet.name)}</a>`;
+}
+
+function adminUserLevelSelectHTML(selected: number): string {
+  const options = [
+    [0, "User"],
+    [1, "Operator"],
+    [2, "Administrator"]
+  ] as const;
+  return `<select name="admin">${options
+    .map(([value, label]) => `<option value="${value}" ${adminSelected(selected, value)}>${legacyHTMLText(label)}</option>`)
+    .join("")}</select>`;
+}
+
+function adminUserSortSelectHTML(name: string, selected: number, labels: string[]): string {
+  return `<select name="${legacyHTMLAttribute(name)}">${labels
+    .map((label, index) => `<option value="${index}" ${adminSelected(selected, index)}>${legacyHTMLText(label)}</option>`)
+    .join("")}</select>`;
+}
+
+function adminUserPlanetListHTML(user: GameAdminUserDetail): string {
+  let html = "<br>\n<table>\n";
+  html += `<form action="${legacyHTMLAttribute(adminModeActionHref("Users", "create_planet"))}" method="POST" >\n`;
+  html += '<tr><td class=c colspan=20>Planet list</td></tr>\n<tr>\n';
+  user.planets.forEach((planet, index) => {
+    const coordinates = planet.coordinates;
+    const planetType = /moon/i.test(planet.name) ? 0 : 1;
+    html += `<td> <img src="${legacyHTMLAttribute(planetImagePath({ id: planet.id, type: planetType, coordinates }, true))}" width="32px" height="32px"></td>\n`;
+    html += `<td> <a href="${legacyHTMLAttribute(adminPlanetHref(planet.id))}"> ${legacyHTMLText(planet.name)} </a> [<a href="${legacyHTMLAttribute(
+      adminGalaxyHref(coordinates)
+    )}">${coordinates.galaxy}:${coordinates.system}:${coordinates.position}</a>] </td>\n`;
+    if ((index + 1) % 10 === 0) {
+      html += "</tr>\n<tr>\n";
+    }
+  });
+  html += "</tr>\n";
+  html += '<tr><td colspan=20> Coordinates: <input name="g" size=2> <input name="s" size=2> <input name="p" size=2> <input type="submit" value="Create planet"></td></tr>\n';
+  html += "</form>\n</table>\n";
+  return html;
+}
+
+function adminUserFleetLogLinksHTML(user: GameAdminUserDetail): string {
+  const orders = [
+    "All",
+    "Attack",
+    "ACS attack",
+    "Transport",
+    "Deployment",
+    "ACS hold",
+    "Espionage",
+    "Colonisation",
+    "Recycle debris field",
+    "Moon destruction",
+    "Expedition",
+    "Missile attack",
+    "ACS head"
+  ];
+  let html = "<br>\n<table>\n";
+  html += '<tr><td class=c colspan=3>Fleet logs</td></tr>\n';
+  html += `<tr><td>Order</td><td>From ${legacyHTMLText(user.name)}</td><td>To ${legacyHTMLText(user.name)}</td></tr>\n`;
+  orders.forEach((label, index) => {
+    html += `<tr><td>${legacyHTMLText(label)}</td><td><a href="${legacyHTMLAttribute(adminModeActionHref("Users", "fleetlogs"))}&from=1&mission=${index}">Show</a></td><td><a href="${legacyHTMLAttribute(
+      adminModeActionHref("Users", "fleetlogs")
+    )}&from=0&mission=${index}">Show</a></td></tr>\n`;
+  });
+  html += "</table>\n";
+  return html;
 }
 
 function adminUsersHTML(admin: GameAdmin): string {
@@ -4498,6 +4786,15 @@ function adminUserColor(user: GameAdminUserRow): string {
 }
 
 function AdminPlanetsTable({ admin }: { admin: GameAdmin }) {
+  if (admin.selectedPlanet) {
+    return (
+      <div
+        className="legacy-admin-planets-detail"
+        dangerouslySetInnerHTML={{ __html: adminPlanetDetailHTML(admin.selectedPlanet) }}
+        style={{ display: "contents" }}
+      />
+    );
+  }
   return (
     <div
       className="legacy-admin-planets-table"
@@ -4505,6 +4802,117 @@ function AdminPlanetsTable({ admin }: { admin: GameAdmin }) {
       style={{ display: "contents" }}
     />
   );
+}
+
+function adminPlanetDetailHTML(planet: GameAdminPlanetDetail): string {
+  const owner = planet.owner;
+  let html = "<table>\n";
+  html += `<form action="${legacyHTMLAttribute(adminModeActionHref("Planets", "update"))}" method="POST" >\n`;
+  html += `<tr><td class=c colspan=2>Planet "${legacyHTMLText(planet.name)}" (${
+    owner ? `<a href="${legacyHTMLAttribute(adminUserHref(owner.playerId))}">${legacyHTMLText(owner.name)}</a>` : ""
+  })</td><td class=c>Buildings</td> <td class=c>Fleet</td> <td class=c>Defense</td> </tr>\n`;
+  html += "<tr>";
+  html += `<th><img src="${legacyHTMLAttribute(planetImagePath(planet, false))}"> <br>Type: ${planet.type}`;
+  html += `<br>Points: ${formatLegacyNumber(Math.floor(planet.score.points / 1000))}`;
+  html += `<br>Buildings: ${formatLegacyNumber(Math.floor((planet.score.points - (planet.score.fleetPoints + planet.score.defensePoints)) / 1000))}`;
+  html += `<br>Fleet: ${formatLegacyNumber(Math.floor(planet.score.fleetPoints / 1000))}`;
+  html += `<br>Defense: ${formatLegacyNumber(Math.floor(planet.score.defensePoints / 1000))}</th>`;
+  html += "<th>";
+  if (planet.type === 1) {
+    if (planet.moon) {
+      html += `<a href="${legacyHTMLAttribute(adminPlanetHref(planet.moon.id))}"><img src="${legacyHTMLAttribute(
+        planetImagePath({ id: planet.moon.id, type: 0, coordinates: planet.moon.coordinates }, true)
+      )}"><br>\n${legacyHTMLText(planet.moon.name)}</a>`;
+    } else {
+      html += `<a href="${legacyHTMLAttribute(adminModeActionHref("Planets", "create_moon"))}" >Create moon</a>\n`;
+    }
+    html += "<br/><br/>\n";
+    if (planet.debris) {
+      html += `<a href="${legacyHTMLAttribute(adminPlanetHref(planet.debris.id))}"><img src="${skinBase}/planeten/debris.jpg"><br>\n${legacyHTMLText(
+        planet.debris.name
+      )}</a>`;
+    } else {
+      html += `<a href="${legacyHTMLAttribute(adminModeActionHref("Planets", "create_debris"))}" >Create debris field</a>\n`;
+    }
+    html += "<br/><br/>\n";
+  }
+  html += '<br><br><textarea rows=10 cols=10 id="spiotext"></textarea>';
+  html += '<a href="#">Parse espionage report</a> <br><a href="#">Reset</a>';
+  html += "</th>";
+  html += `<th valign=top>${adminTechnologyValueTableHTML(planet.buildings, true)}</th>\n`;
+  html += `<th valign=top>${adminTechnologyValueTableHTML(planet.fleet, true)}</th>\n`;
+  html += `<th valign=top>${adminTechnologyValueTableHTML(planet.defense, false)}</th>\n`;
+  html += "</tr>\n";
+  html += `<tr><th>Creation date</th><th>${formatLegacyAdminDateTime(planet.date)}</th> <td colspan=10 class=c>Build Queue</td></tr>`;
+  html += `<tr><th>Date of removal</th><th>${formatLegacyAdminDateTime(planet.removeDate)}</th> <th colspan=3 rowspan=12 valign=top style='text-align: left;'>${adminPlanetBuildQueueHTML(
+    planet
+  )}</th></tr>`;
+  html += `<tr><th>Last activity</th><th>${formatLegacyAdminDateTime(planet.lastActivity)}</th><input type="hidden" name="type" value="${planet.type}" ></tr>\n`;
+  html += `<tr><th>Last state update</th><th>${formatLegacyAdminDateTime(planet.lastUpdate)}</th></tr>\n`;
+  html += `<tr><th>Diameter <br><a href="${legacyHTMLAttribute(adminModeActionHref("Planets", "random_diam"))}" >new diameter</a>  </th><th><input size=5 type="text" name="diameter" value="${
+    planet.diameter
+  }" /> km (${planet.fields} / ${planet.maxFields} fields) <a href="${legacyHTMLAttribute(
+    adminModeActionHref("Planets", "recalc_fields")
+  )}" >recalc fields</a> </th></tr>\n`;
+  html += `<tr><th>Temperature</th><th> <input size=5 type="text" name="temp" value="${planet.temperature}" />°C  -  ${
+    planet.temperature + 40
+  }°C</th></tr>\n`;
+  html += `<tr><th>Coordinates</th><th>[<input type="text" name="g" value="${planet.coordinates.galaxy}" size=1 />:<input type="text" name="s" value="${
+    planet.coordinates.system
+  }" size=2 />:<input type="text" name="p" value="${planet.coordinates.position}" size=1 />]</th></tr>\n`;
+  html += '<tr><td class=c colspan=2>Resources</td></tr>\n';
+  html += `<tr><th>Metal</th><th><input id="obj700" type="text" name="700" value="${Math.ceil(planet.resources.metal)}" /></th></tr>\n`;
+  html += `<tr><th>Crystal</th><th><input id="obj701" type="text" name="701" value="${Math.ceil(planet.resources.crystal)}" /></th></tr>\n`;
+  html += `<tr><th>Deuterium</th><th><input id="obj702" type="text" name="702" value="${Math.ceil(planet.resources.deuterium)}" /></th></tr>\n`;
+  html += `<tr><th>Energy</th><th>${planet.energyBalance} / ${planet.energyCapacity}</th></tr>\n`;
+  html += `<tr><th>Factor</th><th>${formatProductionFactor(planet.productionFactor)}</th></tr>\n`;
+  html += '<tr><th colspan=8><input type="submit" value="Save" />  <input type="submit" name="delete_planet" value="Remove" /> </th></tr>\n';
+  html += "</form>\n</table>\n";
+  return html;
+}
+
+function adminTechnologyValueTableHTML(rows: GameAdminTechnologyValue[], withProduction: boolean): string {
+  let html = "<table>\n";
+  for (const row of rows) {
+    html += `<tr><th>${legacyHTMLText(row.name)}`;
+    if (row.id === 43) {
+      html += " ";
+    }
+    html += `</th><th><nobr><input id="obj${row.id}" type="text" size=${row.id < 200 ? 3 : 6} name="${row.id}" value="${row.value}" />`;
+    if (withProduction && row.percent >= 0 && adminHasProductionSelect(row.id)) {
+      html += adminPlanetProductionSelectHTML(row.id, row.percent);
+    }
+    html += "</nobr></th></tr>\n";
+  }
+  html += "</table>";
+  return html;
+}
+
+function adminHasProductionSelect(id: number): boolean {
+  return [1, 2, 3, 4, 12, 212].includes(id);
+}
+
+function adminPlanetProductionSelectHTML(id: number, percent: number): string {
+  const name = id === 212 ? "prod212" : `prod${id}`;
+  let html = `<select name='${name}'>\n`;
+  for (let value = 0; value <= 100; value += 10) {
+    const raw = value / 100;
+    html += `<option value='${raw}' ${adminSelected(percent, value)}>${value}</option>\n`;
+  }
+  html += "</select>\n";
+  return html;
+}
+
+function adminPlanetBuildQueueHTML(planet: GameAdminPlanetDetail): string {
+  let html = "<table>";
+  planet.buildQueue.forEach((entry, index) => {
+    html += `<tr><td> <table><tr><th><div id='bxx${index + 1}' title='0' star='0'></th>`;
+    html += `<tr><th>${formatLegacyAdminDateTime(entry.end)}</th></tr></table></td>`;
+    html += `<td><img width='32px' src='${skinBase}/gebaeude/${entry.techId}.gif'></td>`;
+    html += `<td><b>${legacyHTMLText(entry.name)}</b><br>level ${entry.level}</td></tr>`;
+  });
+  html += "</table>";
+  return html;
 }
 
 function adminPlanetsHTML(admin: GameAdmin): string {
@@ -4743,7 +5151,7 @@ const adminSimFleetRows = [
 ];
 
 const adminSimDefenseRows = ["Rocket Launcher", "Light Laser", "Heavy Laser", "Gauss Cannon", "Ion Cannon", "Plasma Turret", "Small Shield Dome", "Large Shield Dome"];
-const adminBattleSimMaxSlot = 16;
+const adminBattleSimMaxSlot = 9;
 const adminRakSimDefenseRows = [
   { id: 401, name: "Rocket Launcher", missileTarget: true },
   { id: 402, name: "Light Laser", missileTarget: true },
@@ -5533,6 +5941,9 @@ function AllianceTable({
   onAction: (action: GameAllianceAction) => void;
   pending: boolean;
 }) {
+  if (alliance.view === "info" && alliance.target) {
+    return <AllianceInfoTable alliance={alliance} />;
+  }
   if (alliance.pending && alliance.target) {
     return <AlliancePendingTable alliance={alliance} onAction={onAction} pending={pending} />;
   }
@@ -5564,6 +5975,48 @@ function AllianceTable({
     return <AllianceHomeTable alliance={alliance} onAction={onAction} pending={pending} />;
   }
   return <AllianceNoAllianceTable />;
+}
+
+function AllianceInfoTable({ alliance }: { alliance: GameAlliance }) {
+  const target = alliance.target;
+  if (!target) {
+    return null;
+  }
+  return (
+    <LegacyCenter>
+      {target.imageLogo ? <img alt="" className="reloadimage" src="/game/img/preload.gif" title={`pic.php?url=${encodeURIComponent(target.imageLogo)}`} /> : null}
+      <table width={519}>
+        <tbody>
+          <tr>
+            <td className="legacy-c c" colSpan={2}>
+              Alliance Information
+            </td>
+          </tr>
+          <tr>
+            <th>Tag</th>
+            <th>{target.tag}</th>
+          </tr>
+          <tr>
+            <th>Name</th>
+            <th>{target.name}</th>
+          </tr>
+          <tr>
+            <th>Member</th>
+            <th>{target.memberCount}</th>
+          </tr>
+          <tr>
+            <th colSpan={2} style={{ height: 100 }}>
+              {target.externalText}
+            </th>
+          </tr>
+          <tr>
+            <th>Homepage</th>
+            <th>{target.homepage ? <a href={`redir.php?url=${encodeURIComponent(target.homepage)}`}>{target.homepage}</a> : ""}</th>
+          </tr>
+        </tbody>
+      </table>
+    </LegacyCenter>
+  );
 }
 
 function AllianceNoAllianceTable() {
@@ -5794,7 +6247,9 @@ function AllianceApplyTable({
               </td>
             </tr>
             <tr>
-              <th>Message (0 / 6000 characters)</th>
+              <th>
+                Message (<span id="cntChars">0</span> / 6000 characters)
+              </th>
               <th>
                 <textarea cols={40} defaultValue={target.insertApp ? target.applicationText : ""} name="text" rows={10} />
               </th>
@@ -11077,10 +11532,35 @@ function TechnologyTable({
   onBuildingAction: (action: "add" | "destroy" | "remove", techID: number, listID?: number) => void;
   technology: GameTechnology;
 }) {
+  if (technology.info) {
+    return <TechnologyInfoTable info={technology.info} />;
+  }
   if (technology.details) {
     return <TechnologyDetailsTable details={technology.details} />;
   }
   return <div dangerouslySetInnerHTML={{ __html: technologyTreeHTML(technology) }} />;
+}
+
+function ChangelogTable() {
+  return <div dangerouslySetInnerHTML={{ __html: changelogHTML() }} />;
+}
+
+function changelogHTML(): string {
+  let html = "<center>\n";
+  html += '  <table width="668">\n';
+  html += "   <tr>\n\n";
+  html += '    <td class="c">Version</td>\n';
+  html += '    <td class="c">Description</td>\n';
+  html += "   </tr>\n\n";
+  for (const row of legacyChangelogRows) {
+    html += "<tr>\n";
+    html += `<th>${legacyHTMLText(row.version)}</th>\n`;
+    html += `<th style="text-align:left">${row.description}</th>\n`;
+    html += "</tr>\n";
+  }
+  html += "\n</table><br><br><br><br>\n\n";
+  html += "</center>";
+  return html;
 }
 
 function technologyTreeHTML(technology: GameTechnology): string {
@@ -11108,6 +11588,100 @@ function technologyTreeHTML(technology: GameTechnology): string {
 
 function TechnologyDetailsTable({ details }: { details: GameTechnologyDetails }) {
   return <div dangerouslySetInnerHTML={{ __html: technologyDetailsHTML(details) }} />;
+}
+
+function TechnologyInfoTable({ info }: { info: GameTechnologyInfo }) {
+  return <div dangerouslySetInnerHTML={{ __html: technologyInfoHTML(info) }} />;
+}
+
+function technologyInfoHTML(info: GameTechnologyInfo): string {
+  let html = "<center>\n";
+  html += '<table width="519">\n';
+  html += `<tr><td class="c">${legacyHTMLText(info.name)}</td></tr>\n`;
+  html += "<tr><th><table>\n";
+  html += `<tr><td><img border='0' src="${skinBase}/gebaeude/${info.id}.gif" align='top' width='120' height='120'></td>\n`;
+  html += `<td>${info.description}</td></tr>\n`;
+  html += "</table></th></tr>\n";
+  html += technologyInfoRowsHTML(info);
+  html += "</table>\n";
+  html += "<br><br><br><br>\n";
+  html += "</center>";
+  return html;
+}
+
+function technologyInfoRowsHTML(info: GameTechnologyInfo): string {
+  if (info.rows.length === 0) {
+    return "";
+  }
+  if (info.kind === "mine") {
+    let html =
+      "<tr><th><p><center><table border=1 ><tr><td class='c'>Level</td><td class='c'>Production per hour</td><td class='c'>Difference</td><td class='c'>Energy balance</td><td class='c'>Difference</td> \n";
+    for (const row of info.rows) {
+      html += `<tr> <th> ${technologyInfoLevelHTML(row)}</th> `;
+      html += `<th> ${formatLegacySignedNumber(row.production)}</th> `;
+      html += `<th> ${technologyInfoDeltaHTML(row.productionDifference)}</th> `;
+      html += `<th> ${formatLegacySignedNumber(row.energy)}</th> `;
+      html += `<th> ${technologyInfoDeltaHTML(row.energyDifference)} </th> </tr> \n`;
+    }
+    html += "</table></center></tr></th>";
+    return html;
+  }
+  if (info.kind === "solar") {
+    let html =
+      "<tr><th><p><center><table border=1 ><tr><td class='c'>Level</td><td class='c'>Energy balance</td><td class='c'>Difference</td>\n";
+    for (const row of info.rows) {
+      html += `<tr> <th> ${technologyInfoLevelHTML(row)}</th> `;
+      html += `<th> ${formatLegacySignedNumber(row.energy)}</th> `;
+      html += `<th> ${technologyInfoDeltaHTML(row.energyDifference)}</th> </tr> \n`;
+    }
+    html += "</table></center></tr></th>";
+    return html;
+  }
+  if (info.kind === "fusion") {
+    let html =
+      "<tr><th><p><center><table border=1 ><tr><td class='c'>Level</td><td class='c'>Energy balance</td><td class='c'>Difference</td><td class='c'>Deuterium consumption</td><td class='c'>Difference</td>\n";
+    for (const row of info.rows) {
+      html += `<tr> <th> ${technologyInfoLevelHTML(row)}</th> `;
+      html += `<th> ${formatLegacySignedNumber(row.energy)}</th> `;
+      html += `<th> ${technologyInfoDeltaHTML(row.energyDifference)}</th> \n`;
+      html += `<th> ${formatLegacySignedNumber(row.deuteriumConsumption)}</th> `;
+      html += `<th> ${technologyInfoDeltaHTML(row.deuteriumDifference)}</th> </tr> \n`;
+    }
+    html += "</table></center></tr></th>";
+    return html;
+  }
+  if (info.kind === "storage") {
+    let html =
+      "<tr><th><p><center><table border=1 ><tr><td class='c'>Level</td><td class='c'>Capacity</td><td class='c'>Difference</td></tr>\n";
+    for (const row of info.rows) {
+      const diff =
+        row.storageDifference === 0
+          ? "0"
+          : `<font color="#00FF00">${formatLegacySignedNumber(row.storageDifference)} k</font>`;
+      html += `<tr> <th> ${technologyInfoLevelHTML(row)}</th> <th>${formatLegacySignedNumber(row.storage)} k</th> <th>${diff}</th> </tr>\n`;
+    }
+    html += "</table>";
+    return html;
+  }
+  return "";
+}
+
+function technologyInfoLevelHTML(row: GameTechnologyInfoRow): string {
+  if (!row.current) {
+    return String(row.level);
+  }
+  return `<font color=#FF0000>${row.level}</font>`;
+}
+
+function technologyInfoDeltaHTML(value: number): string {
+  const text = formatLegacySignedNumber(value);
+  if (value < 0) {
+    return `<font color="#FF0000">${text}</font>`;
+  }
+  if (value > 0) {
+    return `<font color="#00FF00">${text}</font>`;
+  }
+  return text;
 }
 
 function technologyDetailsHTML(details: GameTechnologyDetails): string {

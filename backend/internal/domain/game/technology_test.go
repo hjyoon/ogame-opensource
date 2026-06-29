@@ -141,6 +141,31 @@ func TestBuildTechnologyDetailsIncludesLegacyDemolishInfo(t *testing.T) {
 	}
 }
 
+func TestBuildTechnologyInfoUsesLegacyInfosPreview(t *testing.T) {
+	info, ok := BuildTechnologyInfoWithSpeed(BuildingMetalMine, PlanetOverview{}, BuildingLevels{}, ResearchLevels{}, 128)
+	if !ok {
+		t.Fatal("expected metal mine info")
+	}
+	if info.Name != "Metal Mine" || info.Kind != "mine" || len(info.Rows) != 15 {
+		t.Fatalf("unexpected info summary: %+v", info)
+	}
+	first := info.Rows[0]
+	if first.Level != 1 || first.Production != 4224 || first.ProductionDifference != 4224 || first.Energy != -11 || first.EnergyDifference != -11 {
+		t.Fatalf("unexpected metal mine first row: %+v", first)
+	}
+	if info.Rows[0].Current {
+		t.Fatalf("level zero mine should not mark preview row current: %+v", info.Rows[0])
+	}
+
+	storage, ok := BuildTechnologyInfoWithSpeed(BuildingMetalStorage, PlanetOverview{}, BuildingLevels{BuildingMetalStorage: 1}, ResearchLevels{}, 128)
+	if !ok {
+		t.Fatal("expected metal storage info")
+	}
+	if storage.Kind != "storage" || storage.Rows[0].Level != 1 || !storage.Rows[0].Current || storage.Rows[0].Storage <= 0 {
+		t.Fatalf("unexpected storage info: %+v", storage)
+	}
+}
+
 func TestLegacyTechnologyRequirementOrderingFallbacks(t *testing.T) {
 	if ids := legacyTechnologyRequirementIDs(ResearchEnergy, nil); ids != nil {
 		t.Fatalf("expected empty requirements to keep nil order, got %v", ids)

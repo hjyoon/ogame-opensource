@@ -63,6 +63,7 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/galaxy")).toMatchObject({ key: "galaxy", migrated: true });
     expect(resolveGameRoute("/game/defense")).toMatchObject({ key: "defense", migrated: true });
     expect(resolveGameRoute("/game/technology")).toMatchObject({ key: "technology", migrated: true });
+    expect(resolveGameRoute("/game/changelog")).toMatchObject({ key: "changelog", migrated: true });
     expect(resolveGameRoute("/game/statistics")).toMatchObject({ key: "statistics", migrated: true });
     expect(resolveGameRoute("/game/search")).toMatchObject({ key: "search", migrated: true });
     expect(resolveGameRoute("/game/buddy")).toMatchObject({ key: "buddy", migrated: true });
@@ -80,6 +81,7 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/index.php", "?page=options")).toMatchObject({ key: "options", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=suche")).toMatchObject({ key: "search", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=techtree")).toMatchObject({ key: "technology", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=changelog")).toMatchObject({ key: "changelog", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=allianzen")).toMatchObject({ key: "alliance", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=imperium")).toMatchObject({ key: "empire", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=trader")).toMatchObject({ key: "merchant", migrated: true });

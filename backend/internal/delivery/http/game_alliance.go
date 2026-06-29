@@ -211,12 +211,19 @@ func selectedAllianceQuery(r *http.Request) appgame.AllianceQuery {
 	query := r.URL.Query()
 	page := query.Get("page")
 	action := query.Get("a")
+	allianceID := legacyAllianceInt(query.Get("allyid"))
 	view := domaingame.AllianceViewHome
 	switch {
 	case page == "bewerben":
 		view = domaingame.AllianceViewApply
 	case page == "bewerbungen":
 		view = domaingame.AllianceViewApplications
+	case page == "ainfo":
+		view = domaingame.AllianceViewInfo
+	case page == "" && action == "" && allianceID > 0:
+		view = domaingame.AllianceViewInfo
+	case action == "2" && allianceID > 0:
+		view = domaingame.AllianceViewApply
 	case action == "1":
 		view = domaingame.AllianceViewCreate
 	case action == "2":
@@ -242,7 +249,7 @@ func selectedAllianceQuery(r *http.Request) appgame.AllianceQuery {
 		View:          view,
 		SearchText:    strings.TrimSpace(query.Get("suchtext")),
 		TextKind:      domaingame.NormalizeAllianceTextKind(legacyAllianceInt(query.Get("t"))),
-		AllianceID:    legacyAllianceInt(query.Get("allyid")),
+		AllianceID:    allianceID,
 		ApplicationID: applicationID,
 	}
 }

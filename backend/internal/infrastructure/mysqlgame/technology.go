@@ -51,13 +51,20 @@ func (r TechnologyRepository) GetTechnology(ctx context.Context, query appgame.T
 	}
 
 	technology := domaingame.BuildTechnology(overview, levels, research)
-	if query.TechnologyID > 0 {
+	if query.TechnologyDetailsID > 0 || query.TechnologyInfoID > 0 {
 		speed, err := buildings.loadUniverseSpeed(ctx)
 		if err != nil {
 			return domaingame.Technology{}, err
 		}
-		if details, ok := domaingame.BuildTechnologyDetailsWithSpeed(query.TechnologyID, levels, research, speed); ok {
-			technology.Details = &details
+		if query.TechnologyDetailsID > 0 {
+			if details, ok := domaingame.BuildTechnologyDetailsWithSpeed(query.TechnologyDetailsID, levels, research, speed); ok {
+				technology.Details = &details
+			}
+		}
+		if query.TechnologyInfoID > 0 {
+			if info, ok := domaingame.BuildTechnologyInfoWithSpeed(query.TechnologyInfoID, overview.CurrentPlanet, levels, research, speed); ok {
+				technology.Info = &info
+			}
 		}
 	}
 	return technology, nil

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
@@ -56,7 +57,9 @@ type gameAdminSummary struct {
 	UserLogRows     []gameAdminUserLogRow       `json:"userLogRows,omitempty"`
 	UserRows        []gameAdminUserRow          `json:"userRows,omitempty"`
 	ActiveUsers     []gameAdminUserRow          `json:"activeUsers,omitempty"`
+	SelectedUser    *gameAdminUserDetail        `json:"selectedUser,omitempty"`
 	PlanetRows      []gameAdminPlanetRow        `json:"planetRows,omitempty"`
+	SelectedPlanet  *gameAdminPlanetDetail      `json:"selectedPlanet,omitempty"`
 	ReportRows      []gameAdminReportRow        `json:"reportRows,omitempty"`
 	Universe        *gameAdminUniverseSettings  `json:"universe,omitempty"`
 	Expedition      map[string]int              `json:"expedition,omitempty"`
@@ -124,12 +127,92 @@ type gameAdminUserPlanet struct {
 	Coordinates gameCoordinatesResponse `json:"coordinates"`
 }
 
+type gameAdminUserDetail struct {
+	gameAdminUserRow
+	PermanentEmail string               `json:"permanentEmail"`
+	Email          string               `json:"email"`
+	Alliance       string               `json:"alliance"`
+	JoinDate       int64                `json:"joinDate"`
+	DisableUntil   int64                `json:"disableUntil"`
+	VacationUntil  int64                `json:"vacationUntil"`
+	BannedUntil    int64                `json:"bannedUntil"`
+	NoAttackUntil  int64                `json:"noAttackUntil"`
+	LastLogin      int64                `json:"lastLogin"`
+	IPAddress      string               `json:"ipAddress"`
+	Validated      bool                 `json:"validated"`
+	AdminLevel     int                  `json:"adminLevel"`
+	Sniff          bool                 `json:"sniff"`
+	Debug          bool                 `json:"debug"`
+	SortBy         int                  `json:"sortBy"`
+	SortOrder      int                  `json:"sortOrder"`
+	Skin           string               `json:"skin"`
+	UseSkin        bool                 `json:"useSkin"`
+	DeactivateIP   bool                 `json:"deactivateIP"`
+	MaxSpy         int                  `json:"maxSpy"`
+	MaxFleetMsg    int                  `json:"maxFleetMsg"`
+	OldScore1      int64                `json:"oldScore1"`
+	OldPlace1      int                  `json:"oldPlace1"`
+	OldScore2      int64                `json:"oldScore2"`
+	OldPlace2      int                  `json:"oldPlace2"`
+	OldScore3      int64                `json:"oldScore3"`
+	OldPlace3      int                  `json:"oldPlace3"`
+	Score1         int64                `json:"score1"`
+	Place1         int                  `json:"place1"`
+	Score2         int64                `json:"score2"`
+	Place2         int                  `json:"place2"`
+	Score3         int64                `json:"score3"`
+	Place3         int                  `json:"place3"`
+	ScoreDate      int64                `json:"scoreDate"`
+	DarkMatterFree int                  `json:"darkMatterFree"`
+	DarkMatter     int                  `json:"darkMatter"`
+	Research       map[int]int          `json:"research"`
+	ActivePlanet   *gameAdminUserPlanet `json:"activePlanet,omitempty"`
+	Planets        []gameAdminPlanetRow `json:"planets"`
+}
+
 type gameAdminPlanetRow struct {
 	ID          int                     `json:"id"`
 	Name        string                  `json:"name"`
 	Date        int64                   `json:"date"`
 	Coordinates gameCoordinatesResponse `json:"coordinates"`
 	Owner       *gameAdminUserRow       `json:"owner,omitempty"`
+}
+
+type gameAdminTechnologyValue struct {
+	ID      int    `json:"id"`
+	Name    string `json:"name"`
+	Value   int    `json:"value"`
+	Percent int    `json:"percent"`
+}
+
+type gameAdminPlanetDetail struct {
+	gameAdminPlanetRow
+	Type             int                        `json:"type"`
+	Diameter         int                        `json:"diameter"`
+	Temperature      int                        `json:"temperature"`
+	Fields           int                        `json:"fields"`
+	MaxFields        int                        `json:"maxFields"`
+	RemoveDate       int64                      `json:"removeDate"`
+	LastActivity     int64                      `json:"lastActivity"`
+	LastUpdate       int64                      `json:"lastUpdate"`
+	GateUntil        int64                      `json:"gateUntil"`
+	Score            gamePlanetScoreResponse    `json:"score"`
+	Resources        gameResourcesResponse      `json:"resources"`
+	EnergyBalance    int                        `json:"energyBalance"`
+	EnergyCapacity   int                        `json:"energyCapacity"`
+	ProductionFactor float64                    `json:"productionFactor"`
+	Buildings        []gameAdminTechnologyValue `json:"buildings"`
+	Fleet            []gameAdminTechnologyValue `json:"fleet"`
+	Defense          []gameAdminTechnologyValue `json:"defense"`
+	BuildQueue       []gameBuildQueueResponse   `json:"buildQueue"`
+	Moon             *gameAdminPlanetRow        `json:"moon,omitempty"`
+	Debris           *gameAdminPlanetRow        `json:"debris,omitempty"`
+}
+
+type gamePlanetScoreResponse struct {
+	Points        int64 `json:"points"`
+	FleetPoints   int64 `json:"fleetPoints"`
+	DefensePoints int64 `json:"defensePoints"`
 }
 
 type gameAdminReportRow struct {
@@ -285,12 +368,20 @@ func (a app) handleGameAdminGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid selected planet", http.StatusBadRequest)
 		return
 	}
+	targetPlayerID, err := selectedAdminPlayerID(r)
+	if err != nil {
+		http.Error(w, "invalid selected player", http.StatusBadRequest)
+		return
+	}
 	result, err := a.deps.GameAdmin.GetAdmin(r.Context(), appgame.AdminCommand{
 		PublicSession:   r.URL.Query().Get("session"),
 		PrivateSessions: cookieMap(r),
 		RemoteAddr:      remoteIP(r.RemoteAddr),
 		PlanetID:        planetID,
 		Mode:            r.URL.Query().Get("mode"),
+		TargetPlayerID:  targetPlayerID,
+		TargetPlanetID:  planetID,
+		Filter:          r.URL.Query().Get("filter"),
 	})
 	if err != nil {
 		logGameAdminError(a.deps.Logger, r, "game admin get failed", err)
@@ -310,6 +401,11 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid selected planet", http.StatusBadRequest)
 		return
 	}
+	targetPlayerID, err := selectedAdminPlayerID(r)
+	if err != nil {
+		http.Error(w, "invalid selected player", http.StatusBadRequest)
+		return
+	}
 	var request gameAdminMutationRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		http.Error(w, "invalid admin request", http.StatusBadRequest)
@@ -321,6 +417,9 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		RemoteAddr:      remoteIP(r.RemoteAddr),
 		PlanetID:        planetID,
 		Mode:            r.URL.Query().Get("mode"),
+		TargetPlayerID:  targetPlayerID,
+		TargetPlanetID:  planetID,
+		Filter:          r.URL.Query().Get("filter"),
 		Action:          request.Action,
 		TaskID:          request.TaskID,
 		TargetIDs:       request.TargetIDs,
@@ -349,6 +448,18 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeGameAdminResponse(w, result)
+}
+
+func selectedAdminPlayerID(r *http.Request) (int, error) {
+	raw := r.URL.Query().Get("player_id")
+	if raw == "" {
+		return 0, nil
+	}
+	playerID, err := strconv.Atoi(raw)
+	if err != nil || playerID < 0 {
+		return 0, strconv.ErrSyntax
+	}
+	return playerID, nil
 }
 
 func logGameAdminError(logger *slog.Logger, r *http.Request, message string, err error) {
@@ -422,10 +533,12 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 	for _, row := range admin.ActiveUsers {
 		activeUsers = append(activeUsers, toGameAdminUserRow(row))
 	}
+	selectedUser := toGameAdminUserDetail(admin.SelectedUser)
 	planetRows := make([]gameAdminPlanetRow, 0, len(admin.PlanetRows))
 	for _, row := range admin.PlanetRows {
 		planetRows = append(planetRows, toGameAdminPlanetRow(row))
 	}
+	selectedPlanet := toGameAdminPlanetDetail(admin.SelectedPlanet)
 	reportRows := make([]gameAdminReportRow, 0, len(admin.ReportRows))
 	for _, row := range admin.ReportRows {
 		reportRows = append(reportRows, gameAdminReportRow{
@@ -533,7 +646,9 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		UserLogRows:     userLogRows,
 		UserRows:        userRows,
 		ActiveUsers:     activeUsers,
+		SelectedUser:    selectedUser,
 		PlanetRows:      planetRows,
+		SelectedPlanet:  selectedPlanet,
 		ReportRows:      reportRows,
 		Universe:        universe,
 		Expedition:      admin.Expedition,
@@ -644,6 +759,78 @@ func toGameAdminPlanetRow(row domaingame.AdminPlanetRow) gameAdminPlanetRow {
 	}
 }
 
+func toGameAdminPlanetRowPointer(row *domaingame.AdminPlanetRow) *gameAdminPlanetRow {
+	if row == nil {
+		return nil
+	}
+	mapped := toGameAdminPlanetRow(*row)
+	return &mapped
+}
+
+func toGameAdminPlanetDetail(detail *domaingame.AdminPlanetDetail) *gameAdminPlanetDetail {
+	if detail == nil {
+		return nil
+	}
+	buildings := make([]gameAdminTechnologyValue, 0, len(detail.Buildings))
+	for _, row := range detail.Buildings {
+		buildings = append(buildings, toGameAdminTechnologyValue(row))
+	}
+	fleet := make([]gameAdminTechnologyValue, 0, len(detail.Fleet))
+	for _, row := range detail.Fleet {
+		fleet = append(fleet, toGameAdminTechnologyValue(row))
+	}
+	defense := make([]gameAdminTechnologyValue, 0, len(detail.Defense))
+	for _, row := range detail.Defense {
+		defense = append(defense, toGameAdminTechnologyValue(row))
+	}
+	buildQueue := make([]gameBuildQueueResponse, 0, len(detail.BuildQueue))
+	for _, entry := range detail.BuildQueue {
+		buildQueue = append(buildQueue, gameBuildQueueResponse{
+			TechID:  entry.TechID,
+			Name:    entry.Name,
+			Level:   entry.Level,
+			Destroy: entry.Destroy,
+			End:     int64(entry.End),
+		})
+	}
+	return &gameAdminPlanetDetail{
+		gameAdminPlanetRow: toGameAdminPlanetRow(detail.AdminPlanetRow),
+		Type:               detail.Type,
+		Diameter:           detail.Diameter,
+		Temperature:        detail.Temperature,
+		Fields:             detail.Fields,
+		MaxFields:          detail.MaxFields,
+		RemoveDate:         detail.RemoveDate,
+		LastActivity:       detail.LastActivity,
+		LastUpdate:         detail.LastUpdate,
+		GateUntil:          detail.GateUntil,
+		Score: gamePlanetScoreResponse{
+			Points:        detail.Score.Points,
+			FleetPoints:   detail.Score.FleetPoints,
+			DefensePoints: detail.Score.DefensePoints,
+		},
+		Resources: gameResourcesResponse{
+			Metal:      detail.Resources.Metal,
+			Crystal:    detail.Resources.Crystal,
+			Deuterium:  detail.Resources.Deuterium,
+			DarkMatter: detail.Resources.DarkMatter,
+		},
+		EnergyBalance:    detail.EnergyBalance,
+		EnergyCapacity:   detail.EnergyCapacity,
+		ProductionFactor: detail.ProductionFactor,
+		Buildings:        buildings,
+		Fleet:            fleet,
+		Defense:          defense,
+		BuildQueue:       buildQueue,
+		Moon:             toGameAdminPlanetRowPointer(detail.Moon),
+		Debris:           toGameAdminPlanetRowPointer(detail.Debris),
+	}
+}
+
+func toGameAdminTechnologyValue(row domaingame.AdminTechnologyValue) gameAdminTechnologyValue {
+	return gameAdminTechnologyValue{ID: row.ID, Name: row.Name, Value: row.Value, Percent: row.Percent}
+}
+
 func toGameAdminUserRow(row domaingame.AdminUserRow) gameAdminUserRow {
 	var planet *gameAdminUserPlanet
 	if row.HomePlanet != nil {
@@ -663,6 +850,69 @@ func toGameAdminUserRow(row domaingame.AdminUserRow) gameAdminUserRow {
 		NoAttack:   row.NoAttack,
 		Disable:    row.Disable,
 		HomePlanet: planet,
+	}
+}
+
+func toGameAdminUserPlanetPointer(planet *domaingame.AdminUserPlanet) *gameAdminUserPlanet {
+	if planet == nil {
+		return nil
+	}
+	return &gameAdminUserPlanet{
+		ID:          planet.ID,
+		Name:        planet.Name,
+		Coordinates: toGameCoordinatesResponse(planet.Coordinates),
+	}
+}
+
+func toGameAdminUserDetail(detail *domaingame.AdminUserDetail) *gameAdminUserDetail {
+	if detail == nil {
+		return nil
+	}
+	planets := make([]gameAdminPlanetRow, 0, len(detail.Planets))
+	for _, row := range detail.Planets {
+		planets = append(planets, toGameAdminPlanetRow(row))
+	}
+	return &gameAdminUserDetail{
+		gameAdminUserRow: toGameAdminUserRow(detail.AdminUserRow),
+		PermanentEmail:   detail.PermanentEmail,
+		Email:            detail.Email,
+		Alliance:         detail.Alliance,
+		JoinDate:         detail.JoinDate,
+		DisableUntil:     detail.DisableUntil,
+		VacationUntil:    detail.VacationUntil,
+		BannedUntil:      detail.BannedUntil,
+		NoAttackUntil:    detail.NoAttackUntil,
+		LastLogin:        detail.LastLogin,
+		IPAddress:        detail.IPAddress,
+		Validated:        detail.Validated,
+		AdminLevel:       detail.AdminLevel,
+		Sniff:            detail.Sniff,
+		Debug:            detail.Debug,
+		SortBy:           detail.SortBy,
+		SortOrder:        detail.SortOrder,
+		Skin:             detail.Skin,
+		UseSkin:          detail.UseSkin,
+		DeactivateIP:     detail.DeactivateIP,
+		MaxSpy:           detail.MaxSpy,
+		MaxFleetMsg:      detail.MaxFleetMsg,
+		OldScore1:        detail.OldScore1,
+		OldPlace1:        detail.OldPlace1,
+		OldScore2:        detail.OldScore2,
+		OldPlace2:        detail.OldPlace2,
+		OldScore3:        detail.OldScore3,
+		OldPlace3:        detail.OldPlace3,
+		Score1:           detail.Score1,
+		Place1:           detail.Place1,
+		Score2:           detail.Score2,
+		Place2:           detail.Place2,
+		Score3:           detail.Score3,
+		Place3:           detail.Place3,
+		ScoreDate:        detail.ScoreDate,
+		DarkMatterFree:   detail.DarkMatterFree,
+		DarkMatter:       detail.DarkMatter,
+		Research:         map[int]int(detail.Research),
+		ActivePlanet:     toGameAdminUserPlanetPointer(detail.ActivePlanet),
+		Planets:          planets,
 	}
 }
 

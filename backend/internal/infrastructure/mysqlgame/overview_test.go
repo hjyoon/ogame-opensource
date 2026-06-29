@@ -801,7 +801,7 @@ func TestOverviewRepositoryDeletesColonyAndMoon(t *testing.T) {
 		t.Fatalf("unexpected planet destroy exec: %+v", planetDestroy)
 	}
 	planetStats := runner.execCalls[17]
-	if !strings.Contains(planetStats.sql, "score1 = score1 - ?") || planetStats.args[0] != int64(20187) || planetStats.args[1] != int64(3) || planetStats.args[3] != 42 {
+	if !strings.Contains(planetStats.sql, "score1 = score1 - ?") || planetStats.args[0] != int64(20187) || planetStats.args[1] != int64(12000) || planetStats.args[3] != 42 {
 		t.Fatalf("unexpected planet stats adjustment: %+v", planetStats)
 	}
 	last := runner.execCalls[len(runner.execCalls)-1]

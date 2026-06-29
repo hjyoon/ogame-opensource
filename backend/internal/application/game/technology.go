@@ -14,17 +14,19 @@ type TechnologyRepository interface {
 }
 
 type TechnologyQuery struct {
-	PlayerID     int
-	PlanetID     int
-	TechnologyID int
+	PlayerID            int
+	PlanetID            int
+	TechnologyDetailsID int
+	TechnologyInfoID    int
 }
 
 type TechnologyCommand struct {
-	PublicSession   string
-	PrivateSessions map[string]string
-	RemoteAddr      string
-	PlanetID        int
-	TechnologyID    int
+	PublicSession       string
+	PrivateSessions     map[string]string
+	RemoteAddr          string
+	PlanetID            int
+	TechnologyDetailsID int
+	TechnologyInfoID    int
 }
 
 type TechnologyResult struct {
@@ -63,9 +65,10 @@ func (s TechnologyService) GetTechnology(ctx context.Context, command Technology
 	}
 
 	technology, err := s.repository.GetTechnology(ctx, TechnologyQuery{
-		PlayerID:     session.Session.PlayerID,
-		PlanetID:     command.PlanetID,
-		TechnologyID: command.TechnologyID,
+		PlayerID:            session.Session.PlayerID,
+		PlanetID:            command.PlanetID,
+		TechnologyDetailsID: command.TechnologyDetailsID,
+		TechnologyInfoID:    command.TechnologyInfoID,
 	})
 	if err != nil {
 		return TechnologyResult{}, err

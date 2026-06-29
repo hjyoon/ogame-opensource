@@ -1,8 +1,9 @@
 package game
 
 type PlanetScore struct {
-	Points      int64
-	FleetPoints int64
+	Points        int64
+	FleetPoints   int64
+	DefensePoints int64
 }
 
 func CalculatePlanetScore(buildings BuildingLevels, fleet FleetCounts, defense DefenseCounts) PlanetScore {
@@ -18,15 +19,18 @@ func CalculatePlanetScore(buildings BuildingLevels, fleet FleetCounts, defense D
 		if count <= 0 {
 			continue
 		}
-		score.Points += scoreCost(spec.price(1)) * int64(count)
-		score.FleetPoints += int64(count)
+		points := scoreCost(spec.price(1)) * int64(count)
+		score.Points += points
+		score.FleetPoints += points
 	}
 	for _, spec := range defenseCatalog {
 		count := defense[spec.id]
 		if count <= 0 {
 			continue
 		}
-		score.Points += scoreCost(spec.price(1)) * int64(count)
+		points := scoreCost(spec.price(1)) * int64(count)
+		score.Points += points
+		score.DefensePoints += points
 	}
 	return score
 }
@@ -53,7 +57,8 @@ func UnitScoreForCount(id int, count int) (points int64, fleetPoints int64, ok b
 	}
 	for _, spec := range fleetCatalog {
 		if spec.id == id {
-			return scoreCost(spec.price(1)) * int64(count), int64(count), true
+			points := scoreCost(spec.price(1)) * int64(count)
+			return points, points, true
 		}
 	}
 	for _, spec := range defenseCatalog {

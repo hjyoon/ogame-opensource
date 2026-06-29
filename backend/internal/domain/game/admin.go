@@ -55,7 +55,9 @@ type Admin struct {
 	UserLogRows     []AdminUserLogRow
 	UserRows        []AdminUserRow
 	ActiveUsers     []AdminUserRow
+	SelectedUser    *AdminUserDetail
 	PlanetRows      []AdminPlanetRow
+	SelectedPlanet  *AdminPlanetDetail
 	ReportRows      []AdminReportRow
 	Universe        *AdminUniverseSettings
 	Expedition      map[string]int
@@ -128,12 +130,86 @@ type AdminUserPlanet struct {
 	Coordinates Coordinates
 }
 
+type AdminUserDetail struct {
+	AdminUserRow
+	PermanentEmail string
+	Email          string
+	Alliance       string
+	JoinDate       int64
+	DisableUntil   int64
+	VacationUntil  int64
+	BannedUntil    int64
+	NoAttackUntil  int64
+	LastLogin      int64
+	IPAddress      string
+	Validated      bool
+	AdminLevel     int
+	Sniff          bool
+	Debug          bool
+	SortBy         int
+	SortOrder      int
+	Skin           string
+	UseSkin        bool
+	DeactivateIP   bool
+	MaxSpy         int
+	MaxFleetMsg    int
+	OldScore1      int64
+	OldPlace1      int
+	OldScore2      int64
+	OldPlace2      int
+	OldScore3      int64
+	OldPlace3      int
+	Score1         int64
+	Place1         int
+	Score2         int64
+	Place2         int
+	Score3         int64
+	Place3         int
+	ScoreDate      int64
+	DarkMatterFree int
+	DarkMatter     int
+	Research       ResearchLevels
+	ActivePlanet   *AdminUserPlanet
+	Planets        []AdminPlanetRow
+}
+
 type AdminPlanetRow struct {
 	ID          int
 	Name        string
 	Date        int64
 	Coordinates Coordinates
 	Owner       *AdminUserRow
+}
+
+type AdminTechnologyValue struct {
+	ID      int
+	Name    string
+	Value   int
+	Percent int
+}
+
+type AdminPlanetDetail struct {
+	AdminPlanetRow
+	Type             int
+	Diameter         int
+	Temperature      int
+	Fields           int
+	MaxFields        int
+	RemoveDate       int64
+	LastActivity     int64
+	LastUpdate       int64
+	GateUntil        int64
+	Score            PlanetScore
+	Resources        Resources
+	EnergyBalance    int
+	EnergyCapacity   int
+	ProductionFactor float64
+	Buildings        []AdminTechnologyValue
+	Fleet            []AdminTechnologyValue
+	Defense          []AdminTechnologyValue
+	BuildQueue       []BuildingQueueEntry
+	Moon             *AdminPlanetRow
+	Debris           *AdminPlanetRow
 }
 
 type AdminReportRow struct {

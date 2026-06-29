@@ -2413,7 +2413,7 @@ func TestAdminRepositoryAdminLoaderPrefixErrors(t *testing.T) {
 		{
 			name: "messages",
 			run: func(repository AdminRepository) error {
-				_, err := repository.loadAdminMessageRows(context.Background(), "debug", true)
+				_, err := repository.loadAdminMessageRows(context.Background(), "debug", true, "")
 				return err
 			},
 		},
@@ -2492,7 +2492,7 @@ func TestAdminRepositoryAdminLoaderQueryErrors(t *testing.T) {
 		{
 			name: "messages",
 			run: func(repository AdminRepository) error {
-				_, err := repository.loadAdminMessageRows(context.Background(), "debug", true)
+				_, err := repository.loadAdminMessageRows(context.Background(), "debug", true, "")
 				return err
 			},
 		},
@@ -2603,7 +2603,7 @@ func TestAdminRepositoryAdminRowsErrEdges(t *testing.T) {
 		{
 			name: "messages",
 			run: func(repository AdminRepository) error {
-				_, err := repository.loadAdminMessageRows(context.Background(), "debug", true)
+				_, err := repository.loadAdminMessageRows(context.Background(), "debug", true, "")
 				return err
 			},
 		},
@@ -2664,7 +2664,7 @@ func TestAdminRepositoryAdminScanEdges(t *testing.T) {
 			name: "messages",
 			rows: fakeRowsFromValues([]any{"bad"}),
 			run: func(repository AdminRepository) error {
-				_, err := repository.loadAdminMessageRows(context.Background(), "debug", true)
+				_, err := repository.loadAdminMessageRows(context.Background(), "debug", true, "")
 				return err
 			},
 		},

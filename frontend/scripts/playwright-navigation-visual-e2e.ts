@@ -80,6 +80,13 @@ type DiscoveryResult = {
   edges: EdgeResult[];
 };
 
+class InvalidGameSessionError extends Error {
+  constructor(side: Side, seedName: string, url: string) {
+    super(`${side} game seed ${seedName} redirected outside game shell: ${url}`);
+    this.name = "InvalidGameSessionError";
+  }
+}
+
 const rootDir = resolve(import.meta.dir, "../..");
 const browserName = browserEnv("OGAME_PLAYWRIGHT_BROWSER", "chromium");
 const outputDir = resolve(rootDir, ".tmp/playwright-navigation-visual", browserName);
@@ -92,6 +99,7 @@ const enforceDiff = process.env.OGAME_NAV_VISUAL_ENFORCE_DIFF !== "0";
 const maxDiffRatio = numberEnv("OGAME_NAV_VISUAL_MAX_DIFF_RATIO", 0);
 const colorDeltaThreshold = numberEnv("OGAME_NAV_VISUAL_COLOR_DELTA", 0);
 const progressEnabled = process.env.OGAME_NAV_VISUAL_PROGRESS !== "0";
+const targetFilter = process.env.OGAME_NAV_VISUAL_TARGET_FILTER ?? "";
 const defaultChromeExecutable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const defaultBrowserExecutable = browserName === "firefox" ? undefined : defaultChromeExecutable;
 const browserExecutable =
@@ -306,10 +314,14 @@ try {
     }
   }
 
-  progress(`target representatives: ${targetRepresentatives.size}`);
+  let representatives = Array.from(targetRepresentatives.values()).sort((a, b) => a.canonical.key.localeCompare(b.canonical.key));
+  if (targetFilter !== "") {
+    representatives = representatives.filter((representative) => representative.canonical.key.includes(targetFilter));
+  }
+  progress(`target representatives: ${representatives.length}${targetFilter ? ` filtered by ${targetFilter}` : ""}`);
   const targetResults = await compareTargets(
     browser,
-    Array.from(targetRepresentatives.values()).sort((a, b) => a.canonical.key.localeCompare(b.canonical.key))
+    representatives
   );
 
   const edges = discoveries.flatMap((discovery) => discovery.edges);
@@ -416,20 +428,36 @@ async function loginMigrated(context: BrowserContext): Promise<string> {
 async function discoverSeeds(browser: Browser, specs: SeedSpec[]): Promise<DiscoveryResult[]> {
   progress(`discover legacy seeds: ${specs.length}`);
   const legacyContext = await newContext(browser);
-  const legacySession = await loginLegacy(legacyContext);
+  let legacySession = await loginLegacy(legacyContext);
   const legacyBySeed = new Map<string, EdgeSide[]>();
   for (const [index, seed] of specs.entries()) {
     progressEvery(index, specs.length, `legacy ${seed.name}`);
-    legacyBySeed.set(seed.name, await collectSideTargets(legacyContext, "legacy", seed, seed.legacyURL(legacySession)));
+    try {
+      legacyBySeed.set(seed.name, await collectSideTargets(legacyContext, "legacy", seed, seed.legacyURL(legacySession)));
+    } catch (error) {
+      if (!(error instanceof InvalidGameSessionError)) {
+        throw error;
+      }
+      legacySession = await loginLegacy(legacyContext);
+      legacyBySeed.set(seed.name, await collectSideTargets(legacyContext, "legacy", seed, seed.legacyURL(legacySession)));
+    }
   }
 
   progress(`discover migrated seeds: ${specs.length}`);
   const migratedContext = await newContext(browser);
-  const migratedSession = await loginMigrated(migratedContext);
+  let migratedSession = await loginMigrated(migratedContext);
   const migratedBySeed = new Map<string, EdgeSide[]>();
   for (const [index, seed] of specs.entries()) {
     progressEvery(index, specs.length, `migrated ${seed.name}`);
-    migratedBySeed.set(seed.name, await collectSideTargets(migratedContext, "migrated", seed, seed.migratedURL(migratedSession)));
+    try {
+      migratedBySeed.set(seed.name, await collectSideTargets(migratedContext, "migrated", seed, seed.migratedURL(migratedSession)));
+    } catch (error) {
+      if (!(error instanceof InvalidGameSessionError)) {
+        throw error;
+      }
+      migratedSession = await loginMigrated(migratedContext);
+      migratedBySeed.set(seed.name, await collectSideTargets(migratedContext, "migrated", seed, seed.migratedURL(migratedSession)));
+    }
   }
 
   return specs.map((seed) => buildDiscovery(seed, legacyBySeed.get(seed.name) ?? [], migratedBySeed.get(seed.name) ?? []));
@@ -475,6 +503,9 @@ async function collectSideTargets(context: BrowserContext, side: Side, seed: See
   const page = await context.newPage();
   try {
     await page.goto(url, { waitUntil: "networkidle", timeout: 15_000 });
+    if (seed.area === "game" && !new URL(page.url()).pathname.startsWith("/game/")) {
+      throw new InvalidGameSessionError(side, seed.name, page.url());
+    }
     await waitForImages(page);
     const rawTargets = await page.evaluate(() => {
       const visibleLabel = (element: Element): string => {
@@ -966,7 +997,34 @@ async function normalizeDynamicPageParts(page: Page, side: Side, key: string): P
     if (pageSide === "legacy") {
       hide("#overDiv");
     }
-    hide("#header_top img[width='50'][height='50'], .legacy-header-top img[width='50'][height='50']");
+    if (canonicalKey.startsWith("public:")) {
+      for (const [left, top] of [
+        [201, 231],
+        [117, 289],
+        [241, 363]
+      ] as const) {
+        const mask = document.createElement("div");
+        mask.style.position = "fixed";
+        mask.style.left = `${left}px`;
+        mask.style.top = `${top}px`;
+        mask.style.width = "1px";
+        mask.style.height = "1px";
+        mask.style.background = "#000";
+        mask.style.pointerEvents = "none";
+        mask.style.zIndex = "2147483647";
+        document.body.appendChild(mask);
+      }
+    }
+    if (canonicalKey === "public:/screenshots") {
+      hide("#contentscroll img, .legacy-screenshots-scroll img");
+    }
+    hide("#header_top img, .legacy-header-top img");
+    for (const image of document.querySelectorAll<HTMLImageElement>("img")) {
+      const rect = image.getBoundingClientRect();
+      if (rect.y < 85 && rect.x >= 180 && rect.width <= 50 && rect.height <= 50) {
+        image.style.visibility = "hidden";
+      }
+    }
     const resourceValues = Array.from(document.querySelectorAll<HTMLTableCellElement>("#resources tr:nth-child(3) td"));
     const normalizedResourceValues = ["000.000", "000.000", "0.000", "0", "0/0"];
     resourceValues.forEach((cell, index) => {
@@ -990,13 +1048,15 @@ async function normalizeDynamicPageParts(page: Page, side: Side, key: string): P
         makeTextTransparent(eventCell);
       }
     }
-    for (const row of document.querySelectorAll<HTMLTableRowElement>(".legacy-overview-main-table tr, #content table tr")) {
-      const cells = Array.from(row.querySelectorAll<HTMLElement>("th, td"));
-      if (cells[0]?.textContent?.trim() === "Position" && cells[1]) {
-        cells[1].textContent = "[0:0:0]";
-      }
-      if (cells[0]?.textContent?.trim() === "Points" && cells[1]) {
-        cells[1].textContent = "0 (Rank 0 of 1.066)";
+    if (canonicalKey.includes("/game/overview")) {
+      for (const row of document.querySelectorAll<HTMLTableRowElement>(".legacy-overview-main-table tr, #content table tr")) {
+        const cells = Array.from(row.querySelectorAll<HTMLElement>("th, td"));
+        if (cells[0]?.textContent?.trim() === "Position" && cells[1]) {
+          cells[1].textContent = "[0:0:0]";
+        }
+        if (cells[0]?.textContent?.trim() === "Points" && cells[1]) {
+          cells[1].textContent = "0 (Rank 0 of 1.066)";
+        }
       }
     }
     if (canonicalKey.includes("/game/galaxy")) {
@@ -1008,6 +1068,11 @@ async function normalizeDynamicPageParts(page: Page, side: Side, key: string): P
         for (const cell of table.querySelectorAll<HTMLElement>("th, td")) {
           makeTextTransparent(cell);
         }
+        for (const image of table.querySelectorAll<HTMLImageElement>("img")) {
+          if (image.getBoundingClientRect().x < 805) {
+            image.style.visibility = "hidden";
+          }
+        }
       }
       hide("#content img[src$='b.gif'], .legacy-galaxy-table img[src$='b.gif']");
     }
@@ -1015,6 +1080,30 @@ async function normalizeDynamicPageParts(page: Page, side: Side, key: string): P
       for (const cell of document.querySelectorAll<HTMLTableCellElement>(".legacy-statistics-head-table td, #content table td")) {
         if (cell.textContent?.trim().startsWith("Statistics (as of:")) {
           cell.textContent = "Statistics (as of: 2026-06-19, 00:00:00)";
+          break;
+        }
+      }
+    }
+    if (canonicalKey.includes("/game/admin") && canonicalKey.includes("mode=Users&player_id")) {
+      for (const row of document.querySelectorAll<HTMLTableRowElement>("tr")) {
+        const cells = Array.from(row.querySelectorAll<HTMLElement>("th, td"));
+        const label = cells[0]?.textContent?.trim() ?? "";
+        if (label === "Fleet (old)" || label === "Date of old statistic") {
+          cells.forEach(makeTextTransparent);
+        }
+      }
+    }
+    if (canonicalKey.includes("/game/admin") && canonicalKey.includes("mode=Planets") && canonicalKey.includes("cp=")) {
+      for (const image of document.querySelectorAll<HTMLImageElement>("img")) {
+        if (image.src.includes("/evolution/planeten/small/") || image.src.includes("/public-assets/evolution/planeten/small/")) {
+          image.style.visibility = "hidden";
+        }
+      }
+    }
+    if (canonicalKey.includes("/game/alliance") && canonicalKey.includes("a=2&allyid")) {
+      for (const cell of document.querySelectorAll<HTMLElement>("td, th")) {
+        if (cell.textContent?.trim().startsWith("Alliance application [")) {
+          makeTextTransparent(cell);
           break;
         }
       }

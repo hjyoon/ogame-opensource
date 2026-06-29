@@ -15,9 +15,12 @@ type AdminRepository interface {
 }
 
 type AdminQuery struct {
-	PlayerID int
-	PlanetID int
-	Mode     string
+	PlayerID       int
+	PlanetID       int
+	Mode           string
+	TargetPlayerID int
+	TargetPlanetID int
+	Filter         string
 }
 
 type AdminCommand struct {
@@ -26,6 +29,9 @@ type AdminCommand struct {
 	RemoteAddr      string
 	PlanetID        int
 	Mode            string
+	TargetPlayerID  int
+	TargetPlanetID  int
+	Filter          string
 }
 
 type AdminMutationQuery struct {
@@ -61,6 +67,9 @@ type AdminMutationCommand struct {
 	RemoteAddr      string
 	PlanetID        int
 	Mode            string
+	TargetPlayerID  int
+	TargetPlanetID  int
+	Filter          string
 	Action          string
 	TaskID          int
 	TargetIDs       []int
@@ -116,9 +125,12 @@ func (s AdminService) GetAdmin(ctx context.Context, command AdminCommand) (Admin
 		return AdminResult{Authenticated: false, Issues: session.Issues}, nil
 	}
 	admin, err := s.repository.GetAdmin(ctx, AdminQuery{
-		PlayerID: session.Session.PlayerID,
-		PlanetID: command.PlanetID,
-		Mode:     command.Mode,
+		PlayerID:       session.Session.PlayerID,
+		PlanetID:       command.PlanetID,
+		Mode:           command.Mode,
+		TargetPlayerID: command.TargetPlayerID,
+		TargetPlanetID: command.TargetPlanetID,
+		Filter:         command.Filter,
 	})
 	if err != nil {
 		return AdminResult{}, err
@@ -146,9 +158,12 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		return AdminResult{Authenticated: false, Issues: session.Issues}, nil
 	}
 	admin, err := s.repository.GetAdmin(ctx, AdminQuery{
-		PlayerID: session.Session.PlayerID,
-		PlanetID: command.PlanetID,
-		Mode:     command.Mode,
+		PlayerID:       session.Session.PlayerID,
+		PlanetID:       command.PlanetID,
+		Mode:           command.Mode,
+		TargetPlayerID: command.TargetPlayerID,
+		TargetPlanetID: command.TargetPlanetID,
+		Filter:         command.Filter,
 	})
 	if err != nil {
 		return AdminResult{}, err
@@ -189,9 +204,12 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		return AdminResult{}, err
 	}
 	admin, err = s.repository.GetAdmin(ctx, AdminQuery{
-		PlayerID: session.Session.PlayerID,
-		PlanetID: command.PlanetID,
-		Mode:     command.Mode,
+		PlayerID:       session.Session.PlayerID,
+		PlanetID:       command.PlanetID,
+		Mode:           command.Mode,
+		TargetPlayerID: command.TargetPlayerID,
+		TargetPlanetID: command.TargetPlanetID,
+		Filter:         command.Filter,
 	})
 	if err != nil {
 		return AdminResult{}, err

@@ -96,17 +96,25 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 	case "Fleetlogs":
 		admin.FleetLogRows, err = r.loadAdminFleetLogRows(ctx)
 	case "Debug":
-		admin.MessageRows, err = r.loadAdminMessageRows(ctx, "debug", true)
+		admin.MessageRows, err = r.loadAdminMessageRows(ctx, "debug", true, query.Filter)
 	case "Errors":
-		admin.MessageRows, err = r.loadAdminMessageRows(ctx, "errors", false)
+		admin.MessageRows, err = r.loadAdminMessageRows(ctx, "errors", false, "")
 	case "Queue":
 		admin.QueueRows, err = r.loadAdminQueueRows(ctx)
 	case "UserLogs":
 		admin.UserLogRows, err = r.loadAdminUserLogRows(ctx)
 	case "Users", "Bans":
-		admin.UserRows, admin.ActiveUsers, err = r.loadAdminUsers(ctx)
+		if admin.Mode == "Users" && query.TargetPlayerID > 0 {
+			admin.SelectedUser, err = r.loadAdminUserDetail(ctx, query.TargetPlayerID)
+		} else {
+			admin.UserRows, admin.ActiveUsers, err = r.loadAdminUsers(ctx)
+		}
 	case "Planets":
-		admin.PlanetRows, err = r.loadAdminPlanetRows(ctx)
+		if query.TargetPlanetID > 0 {
+			admin.SelectedPlanet, err = r.loadAdminPlanetDetail(ctx, query.TargetPlanetID)
+		} else {
+			admin.PlanetRows, err = r.loadAdminPlanetRows(ctx)
+		}
 	case "Reports":
 		admin.ReportRows, err = r.loadAdminReportRows(ctx)
 	case "Uni":
@@ -1165,7 +1173,7 @@ func (r AdminRepository) loadAdminBotStrategies(ctx context.Context) ([]domainga
 	return result, rows.Err()
 }
 
-func (r AdminRepository) loadAdminMessageRows(ctx context.Context, rawTable string, includeErrorIDOrder bool) ([]domaingame.AdminMessageRow, error) {
+func (r AdminRepository) loadAdminMessageRows(ctx context.Context, rawTable string, includeErrorIDOrder bool, filter string) ([]domaingame.AdminMessageRow, error) {
 	messagesTable, err := tableName(r.prefix, rawTable)
 	if err != nil {
 		return nil, err
@@ -1178,14 +1186,22 @@ func (r AdminRepository) loadAdminMessageRows(ctx context.Context, rawTable stri
 	if includeErrorIDOrder {
 		order += ", m.error_id DESC"
 	}
+	where := ""
+	args := []any{}
+	if filter != "" {
+		where = " WHERE m.text LIKE ?"
+		args = append(args, "%"+filter+"%")
+	}
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT m.error_id, COALESCE(m.owner_id, 0), COALESCE(u.oname, ''), COALESCE(m.ip, ''), COALESCE(m.agent, ''), COALESCE(m.text, ''), COALESCE(m.date, 0) FROM %s m LEFT JOIN %s u ON u.player_id = m.owner_id ORDER BY %s LIMIT 50",
+			"SELECT m.error_id, COALESCE(m.owner_id, 0), COALESCE(u.oname, ''), COALESCE(m.ip, ''), COALESCE(m.agent, ''), COALESCE(m.text, ''), COALESCE(m.date, 0) FROM %s m LEFT JOIN %s u ON u.player_id = m.owner_id%s ORDER BY %s LIMIT 50",
 			messagesTable,
 			usersTable,
+			where,
 			order,
 		),
+		args...,
 	)
 	if err != nil {
 		return nil, err
@@ -1326,6 +1342,167 @@ func (r AdminRepository) queryAdminUsers(ctx context.Context, sql string, args .
 	return result, rows.Err()
 }
 
+func (r AdminRepository) loadAdminUserDetail(ctx context.Context, targetID int) (*domaingame.AdminUserDetail, error) {
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return nil, err
+	}
+	allyTable, err := tableName(r.prefix, "ally")
+	if err != nil {
+		return nil, err
+	}
+	researchIDs := domaingame.ResearchIDs()
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT u.player_id, COALESCE(u.oname, ''), COALESCE(u.regdate, 0), COALESCE(u.lastclick, 0), COALESCE(u.vacation, 0), COALESCE(u.banned, 0), COALESCE(u.noattack, 0), COALESCE(u.disable, 0), COALESCE(u.pemail, ''), COALESCE(u.email, ''), COALESCE(u.joindate, 0), COALESCE(u.disable_until, 0), COALESCE(u.vacation_until, 0), COALESCE(u.banned_until, 0), COALESCE(u.noattack_until, 0), COALESCE(u.lastlogin, 0), COALESCE(u.ip_addr, ''), COALESCE(u.validated, 0), COALESCE(u.admin, 0), COALESCE(u.sniff, 0), COALESCE(u.debug, 0), COALESCE(u.sortby, 0), COALESCE(u.sortorder, 0), COALESCE(u.skin, ''), COALESCE(u.useskin, 0), COALESCE(u.deact_ip, 0), COALESCE(u.maxspy, 0), COALESCE(u.maxfleetmsg, 0), COALESCE(u.oldscore1, 0), COALESCE(u.oldplace1, 0), COALESCE(u.oldscore2, 0), COALESCE(u.oldplace2, 0), COALESCE(u.oldscore3, 0), COALESCE(u.oldplace3, 0), COALESCE(u.score1, 0), COALESCE(u.place1, 0), COALESCE(u.score2, 0), COALESCE(u.place2, 0), COALESCE(u.score3, 0), COALESCE(u.place3, 0), COALESCE(u.scoredate, 0), COALESCE(u.dmfree, 0), COALESCE(u.dm, 0), COALESCE(a.tag, ''), COALESCE(a.name, ''), COALESCE(h.planet_id, 0), COALESCE(h.name, ''), COALESCE(h.g, 0), COALESCE(h.s, 0), COALESCE(h.p, 0), COALESCE(ap.planet_id, 0), COALESCE(ap.name, ''), COALESCE(ap.g, 0), COALESCE(ap.s, 0), COALESCE(ap.p, 0), %s FROM %s u LEFT JOIN %s a ON a.ally_id = u.ally_id LEFT JOIN %s h ON h.planet_id = u.hplanetid LEFT JOIN %s ap ON ap.planet_id = u.aktplanet WHERE u.player_id = ? LIMIT 1",
+			adminNumericColumns("u", researchIDs),
+			usersTable,
+			allyTable,
+			planetsTable,
+			planetsTable,
+		),
+		targetID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	var detail domaingame.AdminUserDetail
+	var vacation, banned, noattack, disable, validated, adminLevel, sniff, debug, useSkin, deactivateIP int
+	var allyTag, allyName string
+	var homeID, homeGalaxy, homeSystem, homePosition int
+	var homeName string
+	var activeID, activeGalaxy, activeSystem, activePosition int
+	var activeName string
+	researchValues := make([]int, len(researchIDs))
+	dest := []any{
+		&detail.PlayerID,
+		&detail.Name,
+		&detail.RegDate,
+		&detail.LastClick,
+		&vacation,
+		&banned,
+		&noattack,
+		&disable,
+		&detail.PermanentEmail,
+		&detail.Email,
+		&detail.JoinDate,
+		&detail.DisableUntil,
+		&detail.VacationUntil,
+		&detail.BannedUntil,
+		&detail.NoAttackUntil,
+		&detail.LastLogin,
+		&detail.IPAddress,
+		&validated,
+		&adminLevel,
+		&sniff,
+		&debug,
+		&detail.SortBy,
+		&detail.SortOrder,
+		&detail.Skin,
+		&useSkin,
+		&deactivateIP,
+		&detail.MaxSpy,
+		&detail.MaxFleetMsg,
+		&detail.OldScore1,
+		&detail.OldPlace1,
+		&detail.OldScore2,
+		&detail.OldPlace2,
+		&detail.OldScore3,
+		&detail.OldPlace3,
+		&detail.Score1,
+		&detail.Place1,
+		&detail.Score2,
+		&detail.Place2,
+		&detail.Score3,
+		&detail.Place3,
+		&detail.ScoreDate,
+		&detail.DarkMatterFree,
+		&detail.DarkMatter,
+		&allyTag,
+		&allyName,
+		&homeID,
+		&homeName,
+		&homeGalaxy,
+		&homeSystem,
+		&homePosition,
+		&activeID,
+		&activeName,
+		&activeGalaxy,
+		&activeSystem,
+		&activePosition,
+	}
+	dest = appendIntDest(dest, researchValues)
+	if err := rows.Scan(dest...); err != nil {
+		return nil, err
+	}
+	detail.Vacation = vacation != 0
+	detail.Banned = banned != 0
+	detail.NoAttack = noattack != 0
+	detail.Disable = disable != 0
+	detail.Validated = validated != 0
+	detail.AdminLevel = adminLevel
+	detail.Sniff = sniff != 0
+	detail.Debug = debug != 0
+	detail.UseSkin = useSkin != 0
+	detail.DeactivateIP = deactivateIP != 0
+	if allyTag != "" || allyName != "" {
+		detail.Alliance = fmt.Sprintf("[%s] %s", allyTag, allyName)
+	}
+	if homeID != 0 {
+		detail.HomePlanet = &domaingame.AdminUserPlanet{ID: homeID, Name: homeName, Coordinates: domaingame.Coordinates{Galaxy: homeGalaxy, System: homeSystem, Position: homePosition}}
+	}
+	if activeID != 0 {
+		detail.ActivePlanet = &domaingame.AdminUserPlanet{ID: activeID, Name: activeName, Coordinates: domaingame.Coordinates{Galaxy: activeGalaxy, System: activeSystem, Position: activePosition}}
+	}
+	detail.Research = make(domaingame.ResearchLevels, len(researchIDs))
+	for index, id := range researchIDs {
+		detail.Research[id] = researchValues[index]
+	}
+	detail.Planets, err = r.loadAdminUserPlanetRows(ctx, planetsTable, targetID)
+	if err != nil {
+		return nil, err
+	}
+	return &detail, rows.Err()
+}
+
+func (r AdminRepository) loadAdminUserPlanetRows(ctx context.Context, planetsTable string, targetID int) ([]domaingame.AdminPlanetRow, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT planet_id, COALESCE(name, ''), COALESCE(date, 0), COALESCE(g, 0), COALESCE(s, 0), COALESCE(p, 0) FROM %s WHERE owner_id = ? ORDER BY g ASC, s ASC, p ASC, type DESC", planetsTable),
+		targetID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domaingame.AdminPlanetRow, 0)
+	for rows.Next() {
+		var row domaingame.AdminPlanetRow
+		if err := rows.Scan(&row.ID, &row.Name, &row.Date, &row.Coordinates.Galaxy, &row.Coordinates.System, &row.Coordinates.Position); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+func adminNumericColumns(alias string, ids []int) string {
+	columns := make([]string, 0, len(ids))
+	for _, id := range ids {
+		columns = append(columns, fmt.Sprintf("%s.`%d`", alias, id))
+	}
+	return strings.Join(columns, ", ")
+}
+
 func (r AdminRepository) loadAdminPlanetRows(ctx context.Context) ([]domaingame.AdminPlanetRow, error) {
 	planetsTable, err := tableName(r.prefix, "planets")
 	if err != nil {
@@ -1380,6 +1557,208 @@ func (r AdminRepository) loadAdminPlanetRows(ctx context.Context) ([]domaingame.
 		result = append(result, row)
 	}
 	return result, rows.Err()
+}
+
+func (r AdminRepository) loadAdminPlanetDetail(ctx context.Context, planetID int) (*domaingame.AdminPlanetDetail, error) {
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return nil, err
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	buildQueueTable, err := tableName(r.prefix, "buildqueue")
+	if err != nil {
+		return nil, err
+	}
+	buildingIDs := domaingame.BuildingIDs()
+	fleetIDs := domaingame.FleetIDs()
+	defenseIDs := domaingame.DefenseIDs()
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT p.planet_id, COALESCE(p.name, ''), COALESCE(p.date, 0), COALESCE(p.g, 0), COALESCE(p.s, 0), COALESCE(p.p, 0), COALESCE(u.player_id, 0), COALESCE(u.oname, ''), COALESCE(u.regdate, 0), COALESCE(u.lastclick, 0), COALESCE(u.vacation, 0), COALESCE(u.banned, 0), COALESCE(u.noattack, 0), COALESCE(u.disable, 0), COALESCE(p.type, 1), COALESCE(p.diameter, 0), COALESCE(p.temp, 0), COALESCE(p.fields, 0), COALESCE(p.maxfields, 0), COALESCE(p.`remove`, 0), COALESCE(p.lastakt, 0), COALESCE(p.lastpeek, 0), COALESCE(p.gate_until, 0), COALESCE(p.`%d`, 0), COALESCE(p.`%d`, 0), COALESCE(p.`%d`, 0), COALESCE(p.prod1, 0), COALESCE(p.prod2, 0), COALESCE(p.prod3, 0), COALESCE(p.prod4, 0), COALESCE(p.prod12, 0), COALESCE(p.prod212, 0), %s, %s, %s FROM %s p LEFT JOIN %s u ON u.player_id = p.owner_id WHERE p.planet_id = ? LIMIT 1",
+			domaingame.ResourceMetal,
+			domaingame.ResourceCrystal,
+			domaingame.ResourceDeuterium,
+			adminNumericColumns("p", buildingIDs),
+			adminNumericColumns("p", fleetIDs),
+			adminNumericColumns("p", defenseIDs),
+			planetsTable,
+			usersTable,
+		),
+		planetID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	var detail domaingame.AdminPlanetDetail
+	var owner domaingame.AdminUserRow
+	var vacation, banned, noattack, disable int
+	var prod1, prod2, prod3, prod4, prod12, prod212 float64
+	buildingValues := make([]int, len(buildingIDs))
+	fleetValues := make([]int, len(fleetIDs))
+	defenseValues := make([]int, len(defenseIDs))
+	dest := []any{
+		&detail.ID,
+		&detail.Name,
+		&detail.Date,
+		&detail.Coordinates.Galaxy,
+		&detail.Coordinates.System,
+		&detail.Coordinates.Position,
+		&owner.PlayerID,
+		&owner.Name,
+		&owner.RegDate,
+		&owner.LastClick,
+		&vacation,
+		&banned,
+		&noattack,
+		&disable,
+		&detail.Type,
+		&detail.Diameter,
+		&detail.Temperature,
+		&detail.Fields,
+		&detail.MaxFields,
+		&detail.RemoveDate,
+		&detail.LastActivity,
+		&detail.LastUpdate,
+		&detail.GateUntil,
+		&detail.Resources.Metal,
+		&detail.Resources.Crystal,
+		&detail.Resources.Deuterium,
+		&prod1,
+		&prod2,
+		&prod3,
+		&prod4,
+		&prod12,
+		&prod212,
+	}
+	dest = appendIntDest(dest, buildingValues)
+	dest = appendIntDest(dest, fleetValues)
+	dest = appendIntDest(dest, defenseValues)
+	if err := rows.Scan(dest...); err != nil {
+		return nil, err
+	}
+	if owner.PlayerID != 0 {
+		owner.Vacation = vacation != 0
+		owner.Banned = banned != 0
+		owner.NoAttack = noattack != 0
+		owner.Disable = disable != 0
+		detail.Owner = &owner
+	}
+	buildings := make(domaingame.BuildingLevels, len(buildingIDs))
+	for index, id := range buildingIDs {
+		buildings[id] = buildingValues[index]
+	}
+	fleet := make(domaingame.FleetCounts, len(fleetIDs))
+	for index, id := range fleetIDs {
+		fleet[id] = fleetValues[index]
+	}
+	defense := make(domaingame.DefenseCounts, len(defenseIDs))
+	for index, id := range defenseIDs {
+		defense[id] = defenseValues[index]
+	}
+	percents := map[int]int{
+		domaingame.BuildingMetalMine:      adminProductionPercent(prod1),
+		domaingame.BuildingCrystalMine:    adminProductionPercent(prod2),
+		domaingame.BuildingDeuteriumSynth: adminProductionPercent(prod3),
+		domaingame.BuildingSolarPlant:     adminProductionPercent(prod4),
+		domaingame.BuildingFusionReactor:  adminProductionPercent(prod12),
+		domaingame.FleetSolarSatellite:    adminProductionPercent(prod212),
+	}
+	detail.Score = domaingame.CalculatePlanetScore(buildings, fleet, defense)
+	detail.Buildings = adminTechnologyValues(buildingIDs, buildingValues, percents)
+	detail.Fleet = adminTechnologyValues(fleetIDs, fleetValues, percents)
+	detail.Defense = adminTechnologyValues(defenseIDs, defenseValues, nil)
+	production := domaingame.BuildResourceProduction(
+		domaingame.Overview{CurrentPlanet: domaingame.PlanetOverview{
+			ID:          detail.ID,
+			Name:        detail.Name,
+			Type:        detail.Type,
+			Coordinates: detail.Coordinates,
+			Fields:      detail.Fields,
+			MaxFields:   detail.MaxFields,
+			Resources:   detail.Resources,
+		}},
+		domaingame.ResourceProductionInputs{
+			Levels:            buildings,
+			SolarSatellites:   fleet[domaingame.FleetSolarSatellite],
+			ProductionFactors: adminProductionFactors(percents),
+			UniverseSpeed:     1,
+		},
+	)
+	detail.EnergyBalance = int(production.Totals.Hour.EnergyRaw)
+	detail.EnergyCapacity = int(production.Totals.Hour.Energy)
+	detail.ProductionFactor = production.Factor
+	detail.Moon, err = r.loadAdminRelatedPlanet(ctx, planetsTable, detail.Coordinates, domaingame.PlanetTypeMoon)
+	if err != nil {
+		return nil, err
+	}
+	detail.Debris, err = r.loadAdminRelatedPlanet(ctx, planetsTable, detail.Coordinates, domaingame.PlanetTypeDebris)
+	if err != nil {
+		return nil, err
+	}
+	detail.BuildQueue, err = (BuildingsRepository{queryer: r.queryer}).loadBuildingQueueEntries(ctx, buildQueueTable, planetID, int(r.now().Unix()))
+	if err != nil {
+		return nil, err
+	}
+	return &detail, rows.Err()
+}
+
+func (r AdminRepository) loadAdminRelatedPlanet(ctx context.Context, planetsTable string, coordinates domaingame.Coordinates, planetType int) (*domaingame.AdminPlanetRow, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT planet_id, COALESCE(name, ''), COALESCE(date, 0), COALESCE(g, 0), COALESCE(s, 0), COALESCE(p, 0) FROM %s WHERE g = ? AND s = ? AND p = ? AND type = ? LIMIT 1", planetsTable),
+		coordinates.Galaxy,
+		coordinates.System,
+		coordinates.Position,
+		planetType,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	var row domaingame.AdminPlanetRow
+	if err := rows.Scan(&row.ID, &row.Name, &row.Date, &row.Coordinates.Galaxy, &row.Coordinates.System, &row.Coordinates.Position); err != nil {
+		return nil, err
+	}
+	return &row, rows.Err()
+}
+
+func adminTechnologyValues(ids []int, values []int, percents map[int]int) []domaingame.AdminTechnologyValue {
+	result := make([]domaingame.AdminTechnologyValue, 0, len(ids))
+	for index, id := range ids {
+		result = append(result, domaingame.AdminTechnologyValue{
+			ID:      id,
+			Name:    domaingame.TechnologyName(id),
+			Value:   values[index],
+			Percent: percents[id],
+		})
+	}
+	return result
+}
+
+func adminProductionPercent(value float64) int {
+	if value <= 0 {
+		return 0
+	}
+	return int(value*100 + 0.5)
+}
+
+func adminProductionFactors(percents map[int]int) domaingame.ProductionFactors {
+	factors := make(domaingame.ProductionFactors, len(percents))
+	for id, percent := range percents {
+		factors[id] = float64(percent) / 100
+	}
+	return factors
 }
 
 func (r AdminRepository) loadAdminUniverse(ctx context.Context) (*domaingame.AdminUniverseSettings, error) {

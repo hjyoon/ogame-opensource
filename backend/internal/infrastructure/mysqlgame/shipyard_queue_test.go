@@ -90,7 +90,7 @@ func TestShipyardRepositoryFinishDueShipyardQueuePartiallyCompletesUnits(t *test
 	if runner.execs[0].args[0] != 2 || runner.execs[0].args[1] != 99 || runner.execs[0].args[2] != 42 {
 		t.Fatalf("unexpected planet completion args: %+v", runner.execs[0].args)
 	}
-	if runner.execs[1].args[0] != int64(8000) || runner.execs[1].args[1] != int64(2) || runner.execs[1].args[3] != 42 {
+	if runner.execs[1].args[0] != int64(8000) || runner.execs[1].args[1] != int64(8000) || runner.execs[1].args[3] != 42 {
 		t.Fatalf("unexpected stats args: %+v", runner.execs[1].args)
 	}
 	if runner.execs[2].args[0] != 120 || runner.execs[2].args[1] != 130 || runner.execs[2].args[2] != 2 || runner.execs[2].args[3] != 8 {

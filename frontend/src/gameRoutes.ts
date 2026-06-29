@@ -11,6 +11,7 @@ export type GameRouteKey =
   | "fleet"
   | "fleetTemplates"
   | "technology"
+  | "changelog"
   | "galaxy"
   | "defense"
   | "alliance"
@@ -45,6 +46,7 @@ export const gameRoutes: GameRoute[] = [
   { key: "fleet", label: "Fleet", path: "/game/fleet", migrated: true },
   { key: "fleetTemplates", label: "Standard fleets", path: "/game/fleet-templates", migrated: true },
   { key: "technology", label: "Technology", path: "/game/technology", migrated: true },
+  { key: "changelog", label: "Changelog", path: "/game/changelog", migrated: true },
   { key: "galaxy", label: "Galaxy", path: "/game/galaxy", migrated: true },
   { key: "defense", label: "Defense", path: "/game/defense", migrated: true },
   { key: "alliance", label: "Alliance", path: "/game/alliance", migrated: true },
@@ -82,6 +84,7 @@ const legacyPageAliases = new Map<string, string>([
   ["technology", "/game/technology"],
   ["techtree", "/game/technology"],
   ["infos", "/game/technology"],
+  ["changelog", "/game/changelog"],
   ["galaxy", "/game/galaxy"],
   ["defense", "/game/defense"],
   ["allianzen", "/game/alliance"],

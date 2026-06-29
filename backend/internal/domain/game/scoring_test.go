@@ -17,7 +17,7 @@ func TestCalculatePlanetScoreMatchesLegacyPlanetPrice(t *testing.T) {
 		},
 	)
 
-	if score.Points != 35407 || score.FleetPoints != 4 {
+	if score.Points != 35407 || score.FleetPoints != 14500 || score.DefensePoints != 20000 {
 		t.Fatalf("unexpected score: %+v", score)
 	}
 }
@@ -29,7 +29,7 @@ func TestCalculatePlanetScoreIgnoresMissingAndNegativeUnits(t *testing.T) {
 		DefenseCounts{DefenseRocketLauncher: -2},
 	)
 
-	if score.Points != 0 || score.FleetPoints != 0 {
+	if score.Points != 0 || score.FleetPoints != 0 || score.DefensePoints != 0 {
 		t.Fatalf("expected zero score, got %+v", score)
 	}
 }
@@ -46,7 +46,7 @@ func TestBuildingScoreForLevelUsesLegacyPricePoints(t *testing.T) {
 
 func TestUnitScoreForCountUsesLegacyUnitPricePoints(t *testing.T) {
 	points, fleetPoints, ok := UnitScoreForCount(FleetLightFighter, 2)
-	if !ok || points != 8000 || fleetPoints != 2 {
+	if !ok || points != 8000 || fleetPoints != 8000 {
 		t.Fatalf("unexpected fleet score: points=%d fleet=%d ok=%v", points, fleetPoints, ok)
 	}
 

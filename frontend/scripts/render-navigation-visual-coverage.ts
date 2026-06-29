@@ -79,8 +79,8 @@ const lines = [
   "## Status Notes",
   "",
   "- Route discovery is complete for the current seed set: both browsers matched every discovered edge.",
-  "- This pass fixed Firefox legacy host/session drift, wrapper continuation across browsers, register `linkuni` blank select, statistics default `[Own position]`, and message reply subject prefill.",
-  "- Remaining gaps are real visual parity work, concentrated in admin detail pages, alliance detail/application pages, changelog, password recovery, and technology info.",
+  "- This pass keeps discovery stable at 1910/1910 matched edges and syncs Docker DB-backup fixtures before comparison.",
+  "- Remaining gaps are concentrated in admin detail/tool pages, plus a small alliance application text-rendering delta in Chromium.",
   "- Do not claim full navigation visual parity until both browser rows report `Exact Fail` as 0."
 ];
 

@@ -62,6 +62,15 @@ func (r AllianceRepository) GetAlliance(ctx context.Context, query appgame.Allia
 		return domaingame.Alliance{}, err
 	}
 	alliance := domaingame.NewAlliance(overview, viewer, r.now()).WithView(query.View)
+	if query.View == domaingame.AllianceViewInfo && query.AllianceID > 0 {
+		target, err := r.loadAllianceInfo(ctx, query.AllianceID)
+		if err != nil {
+			return domaingame.Alliance{}, err
+		}
+		alliance.Target = target
+		alliance.View = domaingame.AllianceViewInfo
+		return alliance, nil
+	}
 	if viewer.AllianceID <= 0 {
 		return r.populateNoAlliance(ctx, alliance, query)
 	}

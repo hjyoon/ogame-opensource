@@ -2981,6 +2981,9 @@ func TestGameTechnologyEndpointReturnsTechnology(t *testing.T) {
 	if toGameTechnologyDemolishResponse(nil) != nil {
 		t.Fatal("expected nil technology demolish info to map to nil")
 	}
+	if toGameTechnologyInfoResponse(nil) != nil {
+		t.Fatal("expected nil technology info to map to nil")
+	}
 
 	technology := &fakeGameTechnology{result: appgame.TechnologyResult{
 		Authenticated: true,
@@ -3045,10 +3048,24 @@ func TestGameTechnologyEndpointReturnsTechnology(t *testing.T) {
 					}},
 				}},
 			},
+			Info: &domaingame.TechnologyInfo{
+				ID:          domaingame.BuildingMetalMine,
+				Name:        "Metal Mine",
+				Description: "Metal mine detail",
+				Level:       3,
+				Kind:        "mine",
+				Rows: []domaingame.TechnologyInfoRow{{
+					Level:                1,
+					Production:           4224,
+					ProductionDifference: 100,
+					Energy:               -11,
+					EnergyDifference:     -2,
+				}},
+			},
 		},
 	}}
 	server := testServerWithGameTechnology(t, technology)
-	req := httptest.NewRequest(http.MethodGet, "/api/game/technology?session=public&cp=99&tid=206", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/technology?session=public&cp=99&tid=206&gid=1", nil)
 	req.RemoteAddr = "203.0.113.10:4321"
 	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
 	rec := httptest.NewRecorder()
@@ -3076,8 +3093,14 @@ func TestGameTechnologyEndpointReturnsTechnology(t *testing.T) {
 		response.Technology.Details.Demolish.Cost.Metal != 2000 || response.Technology.Details.Demolish.DurationSeconds != 30 {
 		t.Fatalf("unexpected technology demolish mapping: %+v", response.Technology.Details.Demolish)
 	}
+	if response.Technology.Info == nil || response.Technology.Info.ID != domaingame.BuildingMetalMine ||
+		response.Technology.Info.Rows[0].Production != 4224 || response.Technology.Info.Rows[0].Energy != -11 {
+		t.Fatalf("unexpected technology info mapping: %+v", response.Technology.Info)
+	}
 	if technology.command.PublicSession != "public" || technology.command.PlanetID != 99 ||
-		technology.command.TechnologyID != domaingame.FleetCruiser || technology.command.RemoteAddr != "203.0.113.10" {
+		technology.command.TechnologyDetailsID != domaingame.FleetCruiser ||
+		technology.command.TechnologyInfoID != domaingame.BuildingMetalMine ||
+		technology.command.RemoteAddr != "203.0.113.10" {
 		t.Fatalf("unexpected technology command: %+v", technology.command)
 	}
 	if technology.command.PrivateSessions["prsess_42_1"] != "private" {
@@ -3132,6 +3155,14 @@ func TestGameTechnologyEndpointRejectsInvalidTechnologyID(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected invalid selected technology to return 400, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/game/technology?session=public&gid=abc", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid selected technology info to return 400, got %d", rec.Code)
 	}
 }
 
