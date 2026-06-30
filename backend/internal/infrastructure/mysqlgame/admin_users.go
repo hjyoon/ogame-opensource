@@ -225,6 +225,7 @@ func (r AdminRepository) sumAdminUserPlanetScore(ctx context.Context, planetsTab
 		}
 		total.Points += score.Points
 		total.FleetPoints += score.FleetPoints
+		total.FleetCostPoints += score.FleetCostPoints
 		total.DefensePoints += score.DefensePoints
 	}
 	return total, rows.Err()

@@ -346,6 +346,33 @@ func TestFeedRepositoryGetFeedItemErrorBranches(t *testing.T) {
 	}
 }
 
+func TestFeedRepositoryPostRowErrorBranches(t *testing.T) {
+	repository := NewFeedRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("feedage rows failed"))}}}, "ogame_", time.Now)
+	if _, err := repository.loadFeedAge(context.Background(), "`ogame_uni`"); err == nil || !strings.Contains(err.Error(), "feedage rows failed") {
+		t.Fatalf("expected feedage rows error, got %v", err)
+	}
+
+	repository = NewFeedRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("feed user rows failed"))}}}, "ogame_", time.Now)
+	if _, _, err := repository.loadFeedUser(context.Background(), "`ogame_users`", "abcdef"); err == nil || !strings.Contains(err.Error(), "feed user rows failed") {
+		t.Fatalf("expected feed user rows error, got %v", err)
+	}
+
+	repository = NewFeedRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("feed messages rows failed"), []any{11, "Subject", "Text", int64(900)})}}}, "ogame_", time.Now)
+	if _, err := repository.loadFeedMessages(context.Background(), "`ogame_messages`", 42, 1_000); err == nil || !strings.Contains(err.Error(), "feed messages rows failed") {
+		t.Fatalf("expected feed messages rows error, got %v", err)
+	}
+
+	repository = NewFeedRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("feed item rows failed"))}}}, "ogame_", time.Now)
+	if _, _, err := repository.loadFeedItem(context.Background(), "`ogame_messages`", 11); err == nil || !strings.Contains(err.Error(), "feed item rows failed") {
+		t.Fatalf("expected feed item rows error, got %v", err)
+	}
+
+	repository = NewFeedRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("feed item post rows failed"), []any{42, "Subject", "Text", int64(900)})}}}, "ogame_", time.Now)
+	if _, _, err := repository.loadFeedItem(context.Background(), "`ogame_messages`", 11); err == nil || !strings.Contains(err.Error(), "feed item post rows failed") {
+		t.Fatalf("expected feed item post rows error, got %v", err)
+	}
+}
+
 type fakeFeedExec struct {
 	sql  string
 	args []any

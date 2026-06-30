@@ -1812,6 +1812,40 @@ func TestAdminRepositoryMutationRequiresWriter(t *testing.T) {
 	}
 }
 
+func TestAdminRepositoryMutationDispatchEdges(t *testing.T) {
+	t.Run("unknown mode saves without writing", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "unknown", Action: "noop"})
+
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 {
+			t.Fatalf("expected saved no-op, issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		}
+	})
+
+	t.Run("database mode dispatches to backup mutator", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_").WithLegacyGameDir(t.TempDir())
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "DB", Action: "noop"})
+
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 {
+			t.Fatalf("expected database no-op, issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		}
+	})
+
+	t.Run("battle simulator validates message table prefix", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "bad-prefix_")
+
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "BattleSim"})
+
+		if err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+			t.Fatalf("expected battle simulator prefix error, got %v", err)
+		}
+	})
+}
+
 func TestAdminRepositoryMutationEdges(t *testing.T) {
 	t.Run("invalid prefix", func(t *testing.T) {
 		repository := NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "bad-prefix_")
@@ -2066,6 +2100,94 @@ func TestAdminRepositoryReadsPlanetRowsWithoutOwner(t *testing.T) {
 	}
 }
 
+func TestAdminRepositoryReadsSelectedUserDetail(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		fakeQueryResult{rows: fakeRowsFromValues(adminUserDetailRow(map[int]int{domaingame.ResearchEnergy: 7}))},
+		fakeQueryResult{rows: fakeRowsFromValues(
+			[]any{701, "Homeworld", int64(1700000100), 1, 55, 7},
+			[]any{702, "Moon", int64(1700000200), 1, 55, 7},
+		)},
+	)}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "Users", TargetPlayerID: 77})
+
+	if err != nil {
+		t.Fatalf("GetAdmin returned error: %v", err)
+	}
+	if admin.SelectedUser == nil || admin.SelectedUser.PlayerID != 77 || admin.SelectedUser.Name != "target" ||
+		!admin.SelectedUser.Vacation || !admin.SelectedUser.Banned || !admin.SelectedUser.NoAttack || !admin.SelectedUser.Disable ||
+		admin.SelectedUser.Alliance != "[TAG] Test Alliance" || admin.SelectedUser.HomePlanet == nil ||
+		admin.SelectedUser.ActivePlanet == nil || admin.SelectedUser.Research[domaingame.ResearchEnergy] != 7 ||
+		len(admin.SelectedUser.Planets) != 2 {
+		t.Fatalf("unexpected selected user detail: %+v", admin.SelectedUser)
+	}
+	if len(admin.UserRows) != 0 || len(admin.ActiveUsers) != 0 {
+		t.Fatalf("selected user detail should not load user lists: rows=%+v active=%+v", admin.UserRows, admin.ActiveUsers)
+	}
+	detailSQL := queryer.calls[len(queryer.calls)-2].sql
+	if !strings.Contains(detailSQL, "`ogame_users`") || !strings.Contains(detailSQL, "LEFT JOIN `ogame_ally`") ||
+		!strings.Contains(detailSQL, "WHERE u.player_id = ? LIMIT 1") {
+		t.Fatalf("expected selected user detail query, got %s", detailSQL)
+	}
+}
+
+func TestAdminRepositoryReadsSelectedPlanetDetail(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		fakeQueryResult{rows: fakeRowsFromValues(adminPlanetDetailRow(
+			map[int]int{
+				domaingame.BuildingMetalMine:       12,
+				domaingame.BuildingSolarPlant:      8,
+				domaingame.BuildingRoboticsFactory: 2,
+			},
+			map[int]int{domaingame.FleetSmallCargo: 4, domaingame.FleetSolarSatellite: 3},
+			map[int]int{domaingame.DefenseRocketLauncher: 5},
+		))},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{801, "Moon", int64(1700000200), 1, 55, 7})},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+		fakeQueryResult{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{
+			ID:       901,
+			OwnerID:  77,
+			PlanetID: 701,
+			ListID:   1,
+			TechID:   domaingame.BuildingMetalMine,
+			Level:    13,
+			Start:    2_000,
+			End:      2_120,
+		}))},
+	)}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
+	repository.now = func() time.Time { return time.Unix(2_000, 0) }
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "Planets", TargetPlanetID: 701})
+
+	if err != nil {
+		t.Fatalf("GetAdmin returned error: %v", err)
+	}
+	if admin.SelectedPlanet == nil || admin.SelectedPlanet.ID != 701 || admin.SelectedPlanet.Owner == nil ||
+		admin.SelectedPlanet.Owner.Name != "owner" || admin.SelectedPlanet.Resources.Metal != 10000 ||
+		admin.SelectedPlanet.Moon == nil || admin.SelectedPlanet.Moon.Name != "Moon" ||
+		admin.SelectedPlanet.Debris != nil || len(admin.SelectedPlanet.BuildQueue) != 1 ||
+		admin.SelectedPlanet.BuildQueue[0].RemainingSeconds != 120 {
+		t.Fatalf("unexpected selected planet detail: %+v", admin.SelectedPlanet)
+	}
+	if len(admin.SelectedPlanet.Buildings) != len(domaingame.BuildingIDs()) ||
+		admin.SelectedPlanet.Buildings[0].Name == "" || len(admin.SelectedPlanet.Fleet) != len(domaingame.FleetIDs()) ||
+		len(admin.SelectedPlanet.Defense) != len(domaingame.DefenseIDs()) {
+		t.Fatalf("expected technology value lists to map: buildings=%d fleet=%d defense=%d", len(admin.SelectedPlanet.Buildings), len(admin.SelectedPlanet.Fleet), len(admin.SelectedPlanet.Defense))
+	}
+	if admin.SelectedPlanet.EnergyCapacity == 0 || admin.SelectedPlanet.ProductionFactor <= 0 {
+		t.Fatalf("expected production fields to be calculated: %+v", admin.SelectedPlanet)
+	}
+	detailSQL := queryer.calls[len(queryer.calls)-4].sql
+	if !strings.Contains(detailSQL, "`ogame_planets`") || !strings.Contains(detailSQL, "LEFT JOIN `ogame_users`") ||
+		!strings.Contains(detailSQL, "WHERE p.planet_id = ? LIMIT 1") {
+		t.Fatalf("expected selected planet detail query, got %s", detailSQL)
+	}
+}
+
 func TestAdminRepositoryReadsUniverseSettings(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
@@ -2089,6 +2211,38 @@ func TestAdminRepositoryReadsUniverseSettings(t *testing.T) {
 	if !strings.Contains(lastSQL, "`ogame_uni`") || !strings.Contains(lastSQL, "COALESCE(start_dm, 0)") || !strings.Contains(lastSQL, "LIMIT 1") {
 		t.Fatalf("expected universe settings query, got %s", lastSQL)
 	}
+}
+
+func adminUserDetailRow(research map[int]int) []any {
+	row := []any{
+		77, "target", int64(1700000000), int64(1700003600), 1, 1, 1, 1,
+		"permanent@example.test", "active@example.test",
+		int64(1700000100), int64(1700000200), int64(1700000300), int64(1700000400), int64(1700000500), int64(1700000600),
+		"203.0.113.77", 1, domaingame.AdminLevelOperator, 1, 1, 2, 1, "legacy", 1, 1,
+		9, 10,
+		int64(100), 11, int64(200), 22, int64(300), 33,
+		int64(400), 44, int64(500), 55, int64(600), 66, int64(1700000700),
+		7000, 8000,
+		"TAG", "Test Alliance",
+		701, "Homeworld", 1, 55, 7,
+		702, "Active", 1, 55, 8,
+	}
+	return append(row, allResearchLevelRow(research)...)
+}
+
+func adminPlanetDetailRow(buildings map[int]int, fleet map[int]int, defense map[int]int) []any {
+	row := []any{
+		701, "Homeworld", int64(1700000100), 1, 55, 7,
+		77, "owner", int64(1700000000), int64(1700003600), 1, 1, 1, 1,
+		domaingame.PlanetTypePlanet, 12800, 40, 20, 180,
+		int64(0), int64(1700000300), int64(1700000400), int64(1700000500),
+		10000.0, 9000.0, 8000.0,
+		1.0, 0.75, 0.5, 0.0, 0.25, 0.1,
+	}
+	row = append(row, buildingLevelRow(buildings)...)
+	row = append(row, fleetCountRow(fleet)...)
+	row = append(row, defenseCountRow(defense)...)
+	return row
 }
 
 func TestAdminRepositoryReadsExpeditionSettings(t *testing.T) {

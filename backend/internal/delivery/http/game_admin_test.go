@@ -208,6 +208,29 @@ func TestGameAdminHandlerRejectsInvalidAndUnauthenticatedRequests(t *testing.T) 
 	}
 }
 
+func TestSelectedAdminPlayerIDHandlesLegacyQuery(t *testing.T) {
+	playerID, err := selectedAdminPlayerID(httptest.NewRequest(http.MethodGet, "/api/game/admin?player_id=77", nil))
+	if err != nil || playerID != 77 {
+		t.Fatalf("expected player id 77, got id=%d err=%v", playerID, err)
+	}
+	playerID, err = selectedAdminPlayerID(httptest.NewRequest(http.MethodGet, "/api/game/admin", nil))
+	if err != nil || playerID != 0 {
+		t.Fatalf("expected missing player id to be zero, got id=%d err=%v", playerID, err)
+	}
+	if _, err := selectedAdminPlayerID(httptest.NewRequest(http.MethodGet, "/api/game/admin?player_id=bad", nil)); err == nil {
+		t.Fatal("expected invalid player id to fail")
+	}
+	if _, err := selectedAdminPlayerID(httptest.NewRequest(http.MethodGet, "/api/game/admin?player_id=-1", nil)); err == nil {
+		t.Fatal("expected negative player id to fail")
+	}
+	if toGameAdminPlanetRowPointer(nil) != nil {
+		t.Fatal("expected nil planet row pointer conversion")
+	}
+	if toGameAdminUserPlanetPointer(nil) != nil {
+		t.Fatal("expected nil user planet pointer conversion")
+	}
+}
+
 func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 	home := &domaingame.AdminUserPlanet{
 		ID:   301,
@@ -285,6 +308,84 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 		ID:   402,
 		Name: "unowned",
 	}}
+	admin.SelectedUser = &domaingame.AdminUserDetail{
+		AdminUserRow:   owner,
+		PermanentEmail: "permanent@example.test",
+		Email:          "active@example.test",
+		Alliance:       "[TAG] Test Alliance",
+		JoinDate:       4100,
+		DisableUntil:   4200,
+		VacationUntil:  4300,
+		BannedUntil:    4400,
+		NoAttackUntil:  4500,
+		LastLogin:      4600,
+		IPAddress:      "203.0.113.77",
+		Validated:      true,
+		AdminLevel:     domaingame.AdminLevelOperator,
+		Sniff:          true,
+		Debug:          true,
+		SortBy:         1,
+		SortOrder:      2,
+		Skin:           "legacy",
+		UseSkin:        true,
+		DeactivateIP:   true,
+		MaxSpy:         7,
+		MaxFleetMsg:    8,
+		OldScore1:      100,
+		OldPlace1:      10,
+		OldScore2:      200,
+		OldPlace2:      20,
+		OldScore3:      300,
+		OldPlace3:      30,
+		Score1:         400,
+		Place1:         40,
+		Score2:         500,
+		Place2:         50,
+		Score3:         600,
+		Place3:         60,
+		ScoreDate:      4700,
+		DarkMatterFree: 900,
+		DarkMatter:     1000,
+		Research:       domaingame.ResearchLevels{domaingame.ResearchEnergy: 3},
+		ActivePlanet: &domaingame.AdminUserPlanet{
+			ID:   403,
+			Name: "active planet",
+			Coordinates: domaingame.Coordinates{
+				Galaxy:   3,
+				System:   4,
+				Position: 5,
+			},
+		},
+		Planets: []domaingame.AdminPlanetRow{{ID: 404, Name: "detail colony"}},
+	}
+	admin.SelectedPlanet = &domaingame.AdminPlanetDetail{
+		AdminPlanetRow: domaingame.AdminPlanetRow{
+			ID:    405,
+			Name:  "detail planet",
+			Date:  4800,
+			Owner: &owner,
+		},
+		Type:             domaingame.PlanetTypePlanet,
+		Diameter:         12800,
+		Temperature:      40,
+		Fields:           20,
+		MaxFields:        180,
+		RemoveDate:       4900,
+		LastActivity:     5000,
+		LastUpdate:       5100,
+		GateUntil:        5200,
+		Score:            domaingame.PlanetScore{Points: 11, FleetPoints: 22, DefensePoints: 33},
+		Resources:        domaingame.Resources{Metal: 100, Crystal: 200, Deuterium: 300, DarkMatter: 400},
+		EnergyBalance:    50,
+		EnergyCapacity:   60,
+		ProductionFactor: 0.75,
+		Buildings:        []domaingame.AdminTechnologyValue{{ID: domaingame.BuildingMetalMine, Name: "Metal Mine", Value: 12, Percent: 100}},
+		Fleet:            []domaingame.AdminTechnologyValue{{ID: domaingame.FleetSmallCargo, Name: "Small Cargo", Value: 3}},
+		Defense:          []domaingame.AdminTechnologyValue{{ID: domaingame.DefenseRocketLauncher, Name: "Rocket Launcher", Value: 4}},
+		BuildQueue:       []domaingame.BuildingQueueEntry{{TechID: domaingame.BuildingMetalMine, Name: "Metal Mine", Level: 13, Destroy: true, End: 5300}},
+		Moon:             &domaingame.AdminPlanetRow{ID: 406, Name: "detail moon"},
+		Debris:           &domaingame.AdminPlanetRow{ID: 407, Name: "detail debris"},
+	}
 	admin.ReportRows = []domaingame.AdminReportRow{{
 		ID:        451,
 		OwnerID:   7,
@@ -406,6 +507,20 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 	if len(payload.PlanetRows) != 2 || payload.PlanetRows[0].Owner == nil ||
 		payload.PlanetRows[0].Coordinates.Position != 4 || payload.PlanetRows[1].Owner != nil {
 		t.Fatalf("expected planet rows and optional owners to map: %+v", payload.PlanetRows)
+	}
+	if payload.SelectedUser == nil || payload.SelectedUser.PermanentEmail != "permanent@example.test" ||
+		payload.SelectedUser.ActivePlanet == nil || payload.SelectedUser.ActivePlanet.Coordinates.System != 4 ||
+		payload.SelectedUser.Research[domaingame.ResearchEnergy] != 3 || len(payload.SelectedUser.Planets) != 1 {
+		t.Fatalf("expected selected user detail to map: %+v", payload.SelectedUser)
+	}
+	if payload.SelectedPlanet == nil || payload.SelectedPlanet.Owner == nil || payload.SelectedPlanet.Owner.Name != "owner" ||
+		payload.SelectedPlanet.Resources.DarkMatter != 400 || payload.SelectedPlanet.Score.DefensePoints != 33 ||
+		len(payload.SelectedPlanet.Buildings) != 1 || payload.SelectedPlanet.Buildings[0].Percent != 100 ||
+		len(payload.SelectedPlanet.Fleet) != 1 || len(payload.SelectedPlanet.Defense) != 1 ||
+		len(payload.SelectedPlanet.BuildQueue) != 1 || !payload.SelectedPlanet.BuildQueue[0].Destroy ||
+		payload.SelectedPlanet.Moon == nil || payload.SelectedPlanet.Moon.Name != "detail moon" ||
+		payload.SelectedPlanet.Debris == nil || payload.SelectedPlanet.Debris.Name != "detail debris" {
+		t.Fatalf("expected selected planet detail to map: %+v", payload.SelectedPlanet)
 	}
 	if len(payload.ReportRows) != 1 || payload.ReportRows[0].ID != 451 || payload.ReportRows[0].Subject != "subject" {
 		t.Fatalf("expected report rows to map: %+v", payload.ReportRows)

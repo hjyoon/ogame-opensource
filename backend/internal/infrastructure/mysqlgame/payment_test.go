@@ -125,6 +125,30 @@ func TestPaymentRepositoryActivationErrors(t *testing.T) {
 		}
 	})
 
+	t.Run("master update error", func(t *testing.T) {
+		uni := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{42, "legor"})}}}}
+		master := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{7, "CODE", 5000, 0, 0, 0, ""})}}},
+			execErrs:    []error{errors.New("coupon update failed")},
+		}
+		repository := NewPaymentRepositoryWithRunners(uni, uni, master, master, "ogame_", 1)
+		if _, _, err := repository.ActivateCoupon(context.Background(), appgame.PaymentMutationQuery{PlayerID: 42, CouponCode: "CODE"}); err == nil || !strings.Contains(err.Error(), "coupon update failed") {
+			t.Fatalf("expected coupon update error, got %v", err)
+		}
+	})
+
+	t.Run("master rows affected error", func(t *testing.T) {
+		uni := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{42, "legor"})}}}}
+		master := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{7, "CODE", 5000, 0, 0, 0, ""})}}},
+			execResults: []sql.Result{fakeFleetSQLErrorResult{rowsErr: errors.New("rows affected failed")}},
+		}
+		repository := NewPaymentRepositoryWithRunners(uni, uni, master, master, "ogame_", 1)
+		if _, _, err := repository.ActivateCoupon(context.Background(), appgame.PaymentMutationQuery{PlayerID: 42, CouponCode: "CODE"}); err == nil || !strings.Contains(err.Error(), "rows affected failed") {
+			t.Fatalf("expected rows affected error, got %v", err)
+		}
+	})
+
 	t.Run("paid dm update error", func(t *testing.T) {
 		uni := &fakeGalaxyRunner{
 			fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{42, "legor"})}}},

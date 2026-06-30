@@ -210,9 +210,10 @@ type gameAdminPlanetDetail struct {
 }
 
 type gamePlanetScoreResponse struct {
-	Points        int64 `json:"points"`
-	FleetPoints   int64 `json:"fleetPoints"`
-	DefensePoints int64 `json:"defensePoints"`
+	Points          int64 `json:"points"`
+	FleetPoints     int64 `json:"fleetPoints"`
+	FleetCostPoints int64 `json:"fleetCostPoints"`
+	DefensePoints   int64 `json:"defensePoints"`
 }
 
 type gameAdminReportRow struct {
@@ -805,9 +806,10 @@ func toGameAdminPlanetDetail(detail *domaingame.AdminPlanetDetail) *gameAdminPla
 		LastUpdate:         detail.LastUpdate,
 		GateUntil:          detail.GateUntil,
 		Score: gamePlanetScoreResponse{
-			Points:        detail.Score.Points,
-			FleetPoints:   detail.Score.FleetPoints,
-			DefensePoints: detail.Score.DefensePoints,
+			Points:          detail.Score.Points,
+			FleetPoints:     detail.Score.FleetPoints,
+			FleetCostPoints: detail.Score.FleetCostPoints,
+			DefensePoints:   detail.Score.DefensePoints,
 		},
 		Resources: gameResourcesResponse{
 			Metal:      detail.Resources.Metal,

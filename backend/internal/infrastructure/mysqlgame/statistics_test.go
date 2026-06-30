@@ -226,6 +226,12 @@ func TestStatisticsRepositoryLoadersHandleRowsAndScanEdges(t *testing.T) {
 		t.Fatalf("empty total should return zero, got total=%d err=%v", total, err)
 	}
 
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("total empty rows failed"))}}}
+	repository = NewStatisticsRepositoryWithQueryer(queryer, "ogame_", time.Now)
+	if _, err := repository.loadStatisticsTotal(context.Background(), "ogame_uni"); err == nil || !strings.Contains(err.Error(), "total empty rows failed") {
+		t.Fatalf("expected empty total rows error, got %v", err)
+	}
+
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}
 	repository = NewStatisticsRepositoryWithQueryer(queryer, "ogame_", time.Now)
 	if _, err := repository.loadStatisticsTotal(context.Background(), "ogame_uni"); err == nil || !strings.Contains(err.Error(), "expected int") {
@@ -247,6 +253,12 @@ func TestStatisticsRepositoryLoadersHandleRowsAndScanEdges(t *testing.T) {
 	repository = NewStatisticsRepositoryWithQueryer(queryer, "ogame_", time.Now)
 	if total, err := repository.loadAllianceStatisticsTotal(context.Background(), "ogame_ally"); err != nil || total != 0 {
 		t.Fatalf("empty alliance total should return zero, got total=%d err=%v", total, err)
+	}
+
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("alliance total empty rows failed"))}}}
+	repository = NewStatisticsRepositoryWithQueryer(queryer, "ogame_", time.Now)
+	if _, err := repository.loadAllianceStatisticsTotal(context.Background(), "ogame_ally"); err == nil || !strings.Contains(err.Error(), "alliance total empty rows failed") {
+		t.Fatalf("expected empty alliance total rows error, got %v", err)
 	}
 
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}
@@ -273,6 +285,12 @@ func TestStatisticsRepositoryLoadersHandleRowsAndScanEdges(t *testing.T) {
 		t.Fatalf("empty own place should return zero, got place=%d err=%v", place, err)
 	}
 
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("place empty rows failed"))}}}
+	repository = NewStatisticsRepositoryWithQueryer(queryer, "ogame_", time.Now)
+	if _, err := repository.loadOwnStatisticsPlace(context.Background(), "ogame_users", 42, domaingame.StatisticsTypeResources); err == nil || !strings.Contains(err.Error(), "place empty rows failed") {
+		t.Fatalf("expected empty place rows error, got %v", err)
+	}
+
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("place rows failed"), []any{0, 1})}}}
 	repository = NewStatisticsRepositoryWithQueryer(queryer, "ogame_", time.Now)
 	if _, err := repository.loadOwnStatisticsPlace(context.Background(), "ogame_users", 42, domaingame.StatisticsTypeResources); err == nil || !strings.Contains(err.Error(), "place rows failed") {
@@ -283,6 +301,12 @@ func TestStatisticsRepositoryLoadersHandleRowsAndScanEdges(t *testing.T) {
 	repository = NewStatisticsRepositoryWithQueryer(queryer, "ogame_", time.Now)
 	if allyID, place, err := repository.loadOwnAllianceStatistics(context.Background(), "ogame_users", "ogame_ally", 42, domaingame.StatisticsTypeResources); err != nil || allyID != 0 || place != 0 {
 		t.Fatalf("empty own alliance should return zeroes, got ally=%d place=%d err=%v", allyID, place, err)
+	}
+
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("own alliance empty rows failed"))}}}
+	repository = NewStatisticsRepositoryWithQueryer(queryer, "ogame_", time.Now)
+	if _, _, err := repository.loadOwnAllianceStatistics(context.Background(), "ogame_users", "ogame_ally", 42, domaingame.StatisticsTypeResources); err == nil || !strings.Contains(err.Error(), "own alliance empty rows failed") {
+		t.Fatalf("expected empty own alliance rows error, got %v", err)
 	}
 
 	repository = NewStatisticsRepositoryWithQueryer(&fakeQueryer{}, "ogame_", time.Now)

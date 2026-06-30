@@ -180,6 +180,21 @@ func TestMerchantRepositoryMutationNoopsAndErrors(t *testing.T) {
 	}
 
 	runner = &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: append(optionsOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{5000, 0, 0, 0.0, 0.0, 0.0})},
+	)}}
+	repository = NewMerchantRepositoryWithRunner(runner, runner, "ogame_", sequenceMerchantInt(5, 180, 90))
+	_, _, err = repository.MutateMerchant(context.Background(), appgame.MerchantMutationQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.MerchantMutation{
+			OfferID: domaingame.MerchantResourceMetal,
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "unexpected query") {
+		t.Fatalf("expected blank action to default to call and return reload error, got %v", err)
+	}
+
+	runner = &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: append(optionsOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{0, 0, 0, 0.0, 0.0, 0.0})},
 	)}}
 	repository = NewMerchantRepositoryWithRunner(runner, runner, "ogame_", nil)
@@ -228,6 +243,41 @@ func TestMerchantRepositoryMutationNoopsAndErrors(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "trade update failed") {
 		t.Fatalf("expected trade update error, got %v", err)
+	}
+
+	runner = &fakeOptionsRunner{
+		fakeQueryer: fakeQueryer{results: append(optionsOverviewResults(),
+			fakeQueryResult{rows: fakeRowsFromValues([]any{0, 0, 1, 3.0, 2.0, 1.0})},
+		)},
+		execErrs: []error{nil, errors.New("planet trade update failed")},
+	}
+	repository = NewMerchantRepositoryWithRunner(runner, runner, "ogame_", nil)
+	_, _, err = repository.MutateMerchant(context.Background(), appgame.MerchantMutationQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.MerchantMutation{
+			Action: "trade",
+			Values: domaingame.MerchantTradeValues{Crystal: 100},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "planet trade update failed") {
+		t.Fatalf("expected planet trade update error, got %v", err)
+	}
+
+	runner = &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: append(optionsOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{0, 0, 1, 3.0, 2.0, 1.0})},
+	)}}
+	repository = NewMerchantRepositoryWithRunner(runner, runner, "ogame_", nil)
+	_, _, err = repository.MutateMerchant(context.Background(), appgame.MerchantMutationQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.MerchantMutation{
+			Action: "trade",
+			Values: domaingame.MerchantTradeValues{Crystal: 100},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "unexpected query") {
+		t.Fatalf("expected reload error after trade update, got %v", err)
 	}
 
 	runner = &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: append(optionsOverviewResults(),

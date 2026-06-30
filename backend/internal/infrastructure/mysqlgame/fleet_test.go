@@ -72,6 +72,39 @@ func TestFleetRepositorySkipsTemplatesForNonCommanderFleetScreen(t *testing.T) {
 	}
 }
 
+func TestFleetRepositoryDrainsDueQueuesBeforeReadingFleetScreen(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{1})},
+	}, append(fleetReadPrefixResults(now),
+		fakeQueryResult{rows: fakeRowsFromValues()},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+	)...)}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	repository.finishDueQueues = true
+
+	fleet, err := repository.GetFleet(context.Background(), appgame.FleetQuery{PlayerID: 42})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fleet.Commander != "legor" || !fleet.CommanderActive || len(fleet.Templates) != 0 {
+		t.Fatalf("unexpected fleet after frozen due queue drain: %+v", fleet)
+	}
+	if len(runner.execCalls) != 0 {
+		t.Fatalf("frozen universe should not execute due fleet queue writes: %+v", runner.execCalls)
+	}
+	if len(runner.calls) == 0 || !strings.Contains(runner.calls[0].sql, "SELECT freeze FROM `ogame_uni`") {
+		t.Fatalf("expected frozen check before fleet screen reads, got %+v", runner.calls)
+	}
+
+	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("freeze failed")}}}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	repository.finishDueQueues = true
+	if _, err := repository.GetFleet(context.Background(), appgame.FleetQuery{PlayerID: 42}); err == nil || !strings.Contains(err.Error(), "freeze failed") {
+		t.Fatalf("expected frozen check error before fleet read, got %v", err)
+	}
+}
+
 func TestNewFleetRepositoryKeepsSQLQueryer(t *testing.T) {
 	repository := NewFleetRepository(nil, "ogame_")
 
@@ -2786,6 +2819,28 @@ func TestFleetRepositoryFinishDueFleetQueuesSkipsFrozenAndRejectsInvalidSetup(t 
 	repository = NewFleetRepositoryWithRunner(runner, runner, "bad-prefix_", func() time.Time { return time.Unix(2_000, 0) })
 	if err := repository.FinishDueFleetQueues(context.Background(), 2_000); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
 		t.Fatalf("expected unsafe prefix error, got %v", err)
+	}
+}
+
+func TestFleetRepositoryQueueHelperEdges(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}
+	repository := NewFleetRepositoryWithQueryer(queryer, "ogame_", time.Now)
+	tasks, err := repository.loadDueFleetQueueTasks(context.Background(), "`ogame_queue`", 2_000, 0)
+	if err != nil || len(tasks) != 0 {
+		t.Fatalf("expected empty due queue with default limit, tasks=%+v err=%v", tasks, err)
+	}
+	if len(queryer.calls) != 1 || queryer.calls[0].args[2] != buildQueueBatch {
+		t.Fatalf("expected default batch limit, calls=%+v", queryer.calls)
+	}
+
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("settings empty rows failed"))}}}, "ogame_", time.Now)
+	if _, err := repository.loadExpeditionSettings(context.Background(), "`ogame_exptab`"); err == nil || !strings.Contains(err.Error(), "settings empty rows failed") {
+		t.Fatalf("expected settings rows error, got %v", err)
+	}
+
+	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("target empty rows failed"))}}}, "ogame_", time.Now)
+	if _, err := repository.loadExpeditionTargetState(context.Background(), "`ogame_planets`", 99); err == nil || !strings.Contains(err.Error(), "target empty rows failed") {
+		t.Fatalf("expected target rows error, got %v", err)
 	}
 }
 

@@ -164,6 +164,53 @@ func TestBuildTechnologyInfoUsesLegacyInfosPreview(t *testing.T) {
 	if storage.Kind != "storage" || storage.Rows[0].Level != 1 || !storage.Rows[0].Current || storage.Rows[0].Storage <= 0 {
 		t.Fatalf("unexpected storage info: %+v", storage)
 	}
+
+	crystal, ok := BuildTechnologyInfoWithSpeed(BuildingCrystalMine, PlanetOverview{}, BuildingLevels{BuildingCrystalMine: 3}, ResearchLevels{}, 0)
+	if !ok {
+		t.Fatal("expected crystal mine info")
+	}
+	if crystal.Kind != "mine" || len(crystal.Rows) != 15 || !crystal.Rows[2].Current || crystal.Rows[2].Production <= 0 || crystal.Rows[2].Energy >= 0 {
+		t.Fatalf("unexpected crystal mine info: %+v", crystal)
+	}
+
+	deuterium, ok := BuildTechnologyInfoWithSpeed(BuildingDeuteriumSynth, PlanetOverview{Temperature: 15}, BuildingLevels{BuildingDeuteriumSynth: 4}, ResearchLevels{}, 64)
+	if !ok {
+		t.Fatal("expected deuterium synthesizer info")
+	}
+	if deuterium.Kind != "mine" || !deuterium.Rows[2].Current || deuterium.Rows[2].Production <= 0 || deuterium.Rows[2].Energy >= 0 {
+		t.Fatalf("unexpected deuterium synthesizer info: %+v", deuterium)
+	}
+
+	solar, ok := BuildTechnologyInfoWithSpeed(BuildingSolarPlant, PlanetOverview{}, BuildingLevels{BuildingSolarPlant: 2}, ResearchLevels{}, 128)
+	if !ok {
+		t.Fatal("expected solar plant info")
+	}
+	if solar.Kind != "solar" || !solar.Rows[1].Current || solar.Rows[1].Energy <= 0 || solar.Rows[1].Production != 0 {
+		t.Fatalf("unexpected solar plant info: %+v", solar)
+	}
+
+	fusion, ok := BuildTechnologyInfoWithSpeed(BuildingFusionReactor, PlanetOverview{}, BuildingLevels{BuildingFusionReactor: 3}, ResearchLevels{ResearchEnergy: 5}, 128)
+	if !ok {
+		t.Fatal("expected fusion reactor info")
+	}
+	if fusion.Kind != "fusion" || !fusion.Rows[2].Current || fusion.Rows[2].Energy <= 0 || fusion.Rows[2].DeuteriumConsumption <= 0 {
+		t.Fatalf("unexpected fusion reactor info: %+v", fusion)
+	}
+
+	description, ok := BuildTechnologyInfoWithSpeed(FleetSmallCargo, PlanetOverview{}, BuildingLevels{}, ResearchLevels{}, 128)
+	if !ok {
+		t.Fatal("expected ship info")
+	}
+	if description.Kind != "description" || len(description.Rows) != 0 || description.Description == "" {
+		t.Fatalf("unexpected description-only info: %+v", description)
+	}
+
+	if _, ok := BuildTechnologyInfoWithSpeed(9999, PlanetOverview{}, BuildingLevels{}, ResearchLevels{}, 128); ok {
+		t.Fatal("expected unknown technology info id to be rejected")
+	}
+	if production, energy, deuterium := technologyInfoProduction(9999, 0, PlanetOverview{}, ResearchLevels{}, 128); production != 0 || energy != 0 || deuterium != 0 {
+		t.Fatalf("expected empty production for invalid level, got production=%d energy=%d deuterium=%d", production, energy, deuterium)
+	}
 }
 
 func TestLegacyTechnologyRequirementOrderingFallbacks(t *testing.T) {

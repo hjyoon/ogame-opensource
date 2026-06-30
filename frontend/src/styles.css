@@ -1775,17 +1775,3 @@ select.legacy-public-input {
   color: #fff;
   text-decoration: underline;
 }
-
-@-moz-document url-prefix() {
-  .legacy-admin-users-left {
-    width: 248.54px !important;
-  }
-
-  .legacy-admin-users-center {
-    width: 398.875px !important;
-  }
-
-  .legacy-admin-users-center > table > tbody > tr > th:nth-child(2):not([colspan]) {
-    width: 256.78px !important;
-  }
-}

@@ -130,11 +130,12 @@ func TestMessagesRepositoryReadsComposeTarget(t *testing.T) {
 	)}
 	repository := NewMessagesRepositoryWithQueryer(queryer, "ogame_", time.Now)
 
-	messages, err := repository.GetMessages(context.Background(), appgame.MessagesQuery{PlayerID: 42, TargetPlayerID: 77})
+	messages, err := repository.GetMessages(context.Background(), appgame.MessagesQuery{PlayerID: 42, TargetPlayerID: 77, Subject: "Re: Target"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if messages.Action != domaingame.MessagesActionCompose || messages.Compose == nil || messages.Compose.Target.Name != "Target" {
+	if messages.Action != domaingame.MessagesActionCompose || messages.Compose == nil ||
+		messages.Compose.Target.Name != "Target" || messages.Compose.Subject != "Re: Target" {
 		t.Fatalf("unexpected compose messages: %+v", messages)
 	}
 	if !strings.Contains(queryer.calls[4].sql, "LEFT JOIN") || queryer.calls[4].args[0] != 77 {
@@ -486,6 +487,36 @@ func TestMessagesRepositoryMessageRowEdges(t *testing.T) {
 	}
 }
 
+func TestMessagesRepositoryMutationReachableErrorEdges(t *testing.T) {
+	runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{int64(0)})},
+		{rows: fakeRowsFromValues([]any{11, domaingame.MessageTypePM, "Sender", "Subject", "Body", 0, int64(1)})},
+		{err: errors.New("owned reload failed")},
+	}}}
+	repository := NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, err := repository.MutateMessages(context.Background(), appgame.MessagesMutationQuery{
+		PlayerID:  42,
+		ReportIDs: []int{11},
+	}); err == nil || !strings.Contains(err.Error(), "owned reload failed") {
+		t.Fatalf("expected report reload error, got %v", err)
+	}
+
+	runner = &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{42, "Sender", 1, 0, "", 1, 2, 3})},
+		{err: errors.New("recipient lookup failed")},
+	}}}
+	repository = NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, err := repository.MutateMessages(context.Background(), appgame.MessagesMutationQuery{
+		PlayerID:       42,
+		Action:         domaingame.MessagesMutationActionSend,
+		TargetPlayerID: 77,
+		Subject:        "Hi",
+		Text:           "body",
+	}); err == nil || !strings.Contains(err.Error(), "recipient lookup failed") {
+		t.Fatalf("expected recipient lookup error, got %v", err)
+	}
+}
+
 func TestMessagesRepositoryReportCountAndInsertNoOps(t *testing.T) {
 	runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{11, domaingame.MessageTypeSpyReport, "Spy", "Subject", "Body", 0, int64(1)})},
@@ -522,6 +553,23 @@ func TestMessagesRepositoryReportCountAndInsertNoOps(t *testing.T) {
 	}
 }
 
+func TestMessagesRepositoryPostRowErrorEdges(t *testing.T) {
+	repository := NewMessagesRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("count empty rows failed"))}}}, "ogame_", time.Now)
+	if _, err := repository.countMessages(context.Background(), "`ogame_messages`", 42); err == nil || !strings.Contains(err.Error(), "count empty rows failed") {
+		t.Fatalf("expected empty count rows error, got %v", err)
+	}
+
+	repository = NewMessagesRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("commander post rows failed"), []any{int64(1700000000)})}}}, "ogame_", time.Now)
+	if _, err := repository.loadCommanderActive(context.Background(), "`ogame_users`", 42); err == nil || !strings.Contains(err.Error(), "commander post rows failed") {
+		t.Fatalf("expected commander post rows error, got %v", err)
+	}
+
+	repository = NewMessagesRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("retention post rows failed"), []any{int64(1700000000), domaingame.AdminLevelPlayer})}}}, "ogame_", time.Now)
+	if _, err := repository.loadMessageRetentionState(context.Background(), "`ogame_users`", 42); err == nil || !strings.Contains(err.Error(), "retention post rows failed") {
+		t.Fatalf("expected retention post rows error, got %v", err)
+	}
+}
+
 func TestMessagesRepositoryReturnsErrors(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -534,6 +582,7 @@ func TestMessagesRepositoryReturnsErrors(t *testing.T) {
 		{name: "overview", prefix: "ogame_", queryer: &fakeQueryer{results: []fakeQueryResult{{err: errors.New("overview failed")}}}, want: "overview failed"},
 		{name: "commander query", prefix: "ogame_", queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{err: errors.New("commander failed")})}, want: "commander failed"},
 		{name: "inbox query", prefix: "ogame_", queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer})}, fakeQueryResult{err: errors.New("inbox failed")})}, want: "inbox failed"},
+		{name: "operators query", prefix: "ogame_", queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer})}, fakeQueryResult{rows: fakeRowsFromValues()}, fakeQueryResult{err: errors.New("operator subject failed")})}, want: "operator subject failed"},
 		{name: "compose query", prefix: "ogame_", queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{err: errors.New("compose failed")})}, query: appgame.MessagesQuery{TargetPlayerID: 77}, want: "compose failed"},
 		{name: "missing compose target", prefix: "ogame_", queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues()})}, query: appgame.MessagesQuery{TargetPlayerID: 77}, want: "message target not found"},
 	}
@@ -548,6 +597,160 @@ func TestMessagesRepositoryReturnsErrors(t *testing.T) {
 	}
 }
 
+func TestMessagesRepositoryGetMessagesWriteErrorEdges(t *testing.T) {
+	runner := &fakeMessagesRunner{
+		fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
+			fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer})},
+		)},
+		execErr: errors.New("delete expired failed"),
+	}
+	repository := NewMessagesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(1700000000, 0) })
+	if _, err := repository.GetMessages(context.Background(), appgame.MessagesQuery{PlayerID: 42}); err == nil || !strings.Contains(err.Error(), "delete expired failed") {
+		t.Fatalf("expected delete expired error, got %v", err)
+	}
+
+	runner = &fakeMessagesRunner{
+		fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
+			fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer})},
+			fakeQueryResult{rows: fakeRowsFromValues([]any{11, domaingame.MessageTypePM, "Sender", "Subject", "Body", 0, int64(1)})},
+		)},
+		execErrs: []error{nil, errors.New("mark read failed")},
+	}
+	repository = NewMessagesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(1700000000, 0) })
+	if _, err := repository.GetMessages(context.Background(), appgame.MessagesQuery{PlayerID: 42}); err == nil || !strings.Contains(err.Error(), "mark read failed") {
+		t.Fatalf("expected mark read error, got %v", err)
+	}
+}
+
+func TestMessagesRepositoryOperatorSubjectAndRowsEdges(t *testing.T) {
+	repository := NewMessagesRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues()},
+	}}, "ogame_", time.Now)
+	subject, err := repository.loadOperatorSubject(context.Background(), "`ogame_users`", "`ogame_uni`", 42)
+	if err != nil || subject != "Question from  of the 1 universe" {
+		t.Fatalf("expected fallback operator subject, got subject=%q err=%v", subject, err)
+	}
+
+	cases := []struct {
+		name    string
+		results []fakeQueryResult
+		run     func(MessagesRepository) error
+		want    string
+	}{
+		{
+			name:    "subject user query",
+			results: []fakeQueryResult{{err: errors.New("user subject failed")}},
+			run: func(repository MessagesRepository) error {
+				_, err := repository.loadOperatorSubject(context.Background(), "`ogame_users`", "`ogame_uni`", 42)
+				return err
+			},
+			want: "user subject failed",
+		},
+		{
+			name:    "subject user scan",
+			results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}},
+			run: func(repository MessagesRepository) error {
+				_, err := repository.loadOperatorSubject(context.Background(), "`ogame_users`", "`ogame_uni`", 42)
+				return err
+			},
+			want: "expected string",
+		},
+		{
+			name:    "subject user rows",
+			results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("user rows failed"))}},
+			run: func(repository MessagesRepository) error {
+				_, err := repository.loadOperatorSubject(context.Background(), "`ogame_users`", "`ogame_uni`", 42)
+				return err
+			},
+			want: "user rows failed",
+		},
+		{
+			name: "subject universe query",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{"Legor"})},
+				{err: errors.New("uni subject failed")},
+			},
+			run: func(repository MessagesRepository) error {
+				_, err := repository.loadOperatorSubject(context.Background(), "`ogame_users`", "`ogame_uni`", 42)
+				return err
+			},
+			want: "uni subject failed",
+		},
+		{
+			name: "subject universe scan",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{"Legor"})},
+				{rows: fakeRowsFromValues([]any{"bad"})},
+			},
+			run: func(repository MessagesRepository) error {
+				_, err := repository.loadOperatorSubject(context.Background(), "`ogame_users`", "`ogame_uni`", 42)
+				return err
+			},
+			want: "expected int",
+		},
+		{
+			name: "subject universe rows",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{"Legor"})},
+				{rows: fakeRowsFromValuesWithErr(errors.New("uni rows failed"))},
+			},
+			run: func(repository MessagesRepository) error {
+				_, err := repository.loadOperatorSubject(context.Background(), "`ogame_users`", "`ogame_uni`", 42)
+				return err
+			},
+			want: "uni rows failed",
+		},
+		{
+			name: "operators query",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{"Legor"})},
+				{rows: fakeRowsFromValues([]any{1})},
+				{err: errors.New("operators failed")},
+			},
+			run: func(repository MessagesRepository) error {
+				_, err := repository.loadOperators(context.Background(), "`ogame_users`", "`ogame_uni`", 42)
+				return err
+			},
+			want: "operators failed",
+		},
+		{
+			name: "operators scan",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{"Legor"})},
+				{rows: fakeRowsFromValues([]any{1})},
+				{rows: fakeRowsFromValues([]any{101})},
+			},
+			run: func(repository MessagesRepository) error {
+				_, err := repository.loadOperators(context.Background(), "`ogame_users`", "`ogame_uni`", 42)
+				return err
+			},
+			want: "unexpected scan destination count",
+		},
+		{
+			name: "operators rows",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{"Legor"})},
+				{rows: fakeRowsFromValues([]any{1})},
+				{rows: fakeRowsFromValuesWithErr(errors.New("operators rows failed"), []any{101, "operator", "email", int64(0)})},
+			},
+			run: func(repository MessagesRepository) error {
+				_, err := repository.loadOperators(context.Background(), "`ogame_users`", "`ogame_uni`", 42)
+				return err
+			},
+			want: "operators rows failed",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewMessagesRepositoryWithQueryer(&fakeQueryer{results: tt.results}, "ogame_", time.Now)
+			if err := tt.run(repository); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
 type fakeMessagesExec struct {
 	sql  string
 	args []any
@@ -555,8 +758,9 @@ type fakeMessagesExec struct {
 
 type fakeMessagesRunner struct {
 	fakeQueryer
-	execs   []fakeMessagesExec
-	execErr error
+	execs    []fakeMessagesExec
+	execErr  error
+	execErrs []error
 }
 
 func messageInboxResults(results ...fakeQueryResult) []fakeQueryResult {
@@ -574,6 +778,14 @@ func messageOperatorResults() []fakeQueryResult {
 
 func (f *fakeMessagesRunner) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {
 	f.execs = append(f.execs, fakeMessagesExec{sql: query, args: args})
+	if len(f.execErrs) > 0 {
+		err := f.execErrs[0]
+		f.execErrs = f.execErrs[1:]
+		if err != nil {
+			return nil, err
+		}
+		return fakeSQLResult(1), nil
+	}
 	if f.execErr != nil {
 		return nil, f.execErr
 	}

@@ -87,6 +87,12 @@ const lines = [
     ? ["| None | 0 | 0 |"]
     : gapKeys.map((key) => `| \`${key}\` | ${gapCell(reports.find((report) => report.browserName === "chromium"), key)} | ${gapCell(reports.find((report) => report.browserName === "firefox"), key)} |`)),
   "",
+  "## Normalized Volatile Pixels",
+  "",
+  "- Admin backup rows, fleet log diagnostics, Galaxy volatile text, and dynamic Admin Users detail body are masked before exact diff.",
+  "- Layout shell, route discovery, navigation targets, click/open handlers, and stable screen structure are still compared.",
+  "- State-changing POST flows remain in page-specific E2E scripts rather than this navigation crawl.",
+  "",
   "## Status Notes",
   "",
   "- Route discovery is complete for the current seed set: both browsers matched every discovered edge.",

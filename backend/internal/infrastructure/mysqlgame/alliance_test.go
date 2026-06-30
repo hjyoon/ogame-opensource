@@ -344,6 +344,35 @@ func TestAllianceRepositoryReadsHomeCreateAndDeniedMemberViews(t *testing.T) {
 	}
 
 	queryer = &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(43, "newcomer", 1, 0, 0, "", 0))},
+		fakeQueryResult{rows: fakeRowsFromValues(allianceApplicationRow(11, 7, 43, "newcomer", "pending", 1234))},
+		fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 2, 1))},
+	)}
+	repository = NewAllianceRepositoryWithQueryer(queryer, "ogame_", time.Now)
+	alliance, err = repository.GetAlliance(context.Background(), appgame.AllianceQuery{PlayerID: 43, PlanetID: 99, View: domaingame.AllianceViewSearch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alliance.View != domaingame.AllianceViewNoAlliance || alliance.Pending == nil ||
+		alliance.Pending.Text != "pending" || alliance.Target == nil || alliance.Target.Tag != "TAG" {
+		t.Fatalf("unexpected pending no-alliance view: %+v", alliance)
+	}
+
+	queryer = &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(43, "viewer", 1, 0, 0, "", 0))},
+		fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(8, "PUB", "Public Alliance", 3, 0))},
+	)}
+	repository = NewAllianceRepositoryWithQueryer(queryer, "ogame_", time.Now)
+	alliance, err = repository.GetAlliance(context.Background(), appgame.AllianceQuery{PlayerID: 43, PlanetID: 99, View: domaingame.AllianceViewInfo, AllianceID: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alliance.View != domaingame.AllianceViewInfo || alliance.Target == nil || alliance.Target.ID != 8 ||
+		alliance.Target.MemberCount != 2 || !alliance.Target.Open {
+		t.Fatalf("unexpected public info view: %+v", alliance)
+	}
+
+	queryer = &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(43, "member", 1, 7, 1, "Newcomer", 0))},
 		fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 2, 0))},
 	)}

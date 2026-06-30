@@ -98,12 +98,16 @@ func TestLegacyAssetAliasesServeStaticFiles(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(staticDir, "public-assets", "game", "css"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(staticDir, "public-assets", "game", "img"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	writeFile(t, filepath.Join(staticDir, "index.html"), "ogame react shell")
 	writeFile(t, filepath.Join(staticDir, "public-assets", "evolution", "formate.css"), "body{background:#000}")
 	writeFile(t, filepath.Join(staticDir, "public-assets", "game", "css", "default.css"), "th{color:#fff}")
+	writeFile(t, filepath.Join(staticDir, "public-assets", "game", "img", "planet.gif"), "GIF89a")
 	server := testServer(config.Config{StaticDir: staticDir, LegacyAssetDir: legacyDir})
 
-	for _, target := range []string{"/evolution/formate.css", "/game/css/default.css"} {
+	for _, target := range []string{"/evolution/formate.css", "/game/css/default.css", "/game/img/planet.gif"} {
 		req := httptest.NewRequest(http.MethodGet, target, nil)
 		rec := httptest.NewRecorder()
 		server.ServeHTTP(rec, req)
@@ -114,7 +118,17 @@ func TestLegacyAssetAliasesServeStaticFiles(t *testing.T) {
 			t.Fatalf("%s: legacy asset alias fell through to SPA shell", target)
 		}
 		if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "text/css") {
-			t.Fatalf("%s: expected css content type, got %q", target, contentType)
+			if target != "/game/img/planet.gif" {
+				t.Fatalf("%s: expected css content type, got %q", target, contentType)
+			}
+		}
+	}
+	for _, target := range []string{"/evolution/missing.css", "/game/js/app.js"} {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s: expected 404, got %d", target, rec.Code)
 		}
 	}
 }

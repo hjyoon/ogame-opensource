@@ -1352,6 +1352,7 @@ type GameAdminPlanetDetail = GameAdminPlanetRow & {
   score: {
     points: number;
     fleetPoints: number;
+    fleetCostPoints: number;
     defensePoints: number;
   };
   resources: Resources;
@@ -1646,7 +1647,7 @@ type LegacyMenuEntry =
   | { type: "external"; key: "board" | "discord"; label: string }
   | { type: "route"; color?: string; id?: string; key: GameRoute["key"] };
 
-const skinBase = "/public-assets/evolution";
+const skinBase = "/evolution";
 const gameImageBase = "/public-assets/game-img";
 const LegacyPlanetTypeMoon = 0;
 const gameRouteByKey = new Map(gameRoutes.map((route) => [route.key, route]));
@@ -4540,7 +4541,7 @@ function adminUserDetailHTML(user: GameAdminUserDetail): string {
   html += "<table>\n";
   html += `<form action="${legacyHTMLAttribute(adminModeActionHref("Users", "update"))}" method="POST" >\n`;
   html += `<tr><td class=c>${adminUserNameHTML(user)}</td><td class=c>Settings</td><td class=c>Research</td></tr>\n`;
-  html += '<th class="legacy-admin-users-left" valign=top style="width:244.71px"><table style="width:100%">\n';
+  html += "<th valign=top><table>\n";
   html += `<tr><th>ID</th><th>${user.playerId}</th></tr>\n`;
   html += `<tr><th>Date of registration</th><th>${formatLegacyAdminDateTime(user.regDate)}</th></tr>\n`;
   html += `<tr><th>Alliance</th><th>${legacyHTMLText(user.alliance)}</th></tr>\n`;
@@ -4552,7 +4553,7 @@ function adminUserDetailHTML(user: GameAdminUserDetail): string {
   html += adminUserCheckboxDateRow("Blocked", "banned", user.banned, user.bannedUntil);
   html += adminUserCheckboxDateRow("Attack ban", "noattack", user.noAttack, user.noAttackUntil);
   html += `<tr><th>Last login</th><th>${formatLegacyAdminDateTime(user.lastLogin)}</th></tr>\n`;
-  html += `<tr><th>Activity</th><th>${formatLegacyAdminDateTime(user.lastClick)}</th></tr>\n`;
+  html += `<tr><th>Activity</th><th>${formatLegacyAdminUserActivity(user.lastClick)}</th></tr>\n`;
   html += `<tr><th>IP address</th><th><a href="http://nic.ru/whois/?query=${legacyHTMLAttribute(user.ipAddress)}" target=_blank>${legacyHTMLText(
     user.ipAddress
   )}</a></th></tr>\n`;
@@ -4567,8 +4568,7 @@ function adminUserDetailHTML(user: GameAdminUserDetail): string {
   html += `<tr><th colspan=2><a href="${legacyHTMLAttribute(adminModeActionHref("Users", "bot_start"))}" >[Start bot]</a></th></tr>\n`;
   html += "</table></th>\n";
 
-  html += '<th class="legacy-admin-users-center" valign=top style="width:391.2px"><table style="width:100%">\n';
-  html += '<colgroup><col style="width:130.1px"><col></colgroup>\n';
+  html += "<th valign=top><table>\n";
   html += `<tr><th>Planet sorting</th><th>${adminUserSortSelectHTML("settings_sort", user.sortBy, ["colonization order", "coordinates", "alphabetically"])}</th></tr>\n`;
   html += `<tr><th>Sorting order</th><th>${adminUserSortSelectHTML("settings_order", user.sortOrder, ["ascending", "descending"])}</th></tr>\n`;
   html += adminTextInputRow("Skin", "dpath", 80, 40, user.skin);
@@ -4594,7 +4594,7 @@ function adminUserDetailHTML(user: GameAdminUserDetail): string {
   html += "<tr><th colspan=2><i>To extend an officer, specify the required number of days in the<br>input fields.<br>To delete, specify a value less than zero.</i></th></tr>\n";
   html += "</table></th>\n";
 
-  html += '<th class="legacy-admin-users-right" valign=top style="width:182px"><table style="width:100%">\n';
+  html += "<th valign=top><table>\n";
   for (const row of adminResearchRows) {
     html += `<tr><th>${legacyHTMLText(row.name)}</th><th><input type="text" size=3 name="r${row.id}" value="${
       user.research[String(row.id)] ?? 0
@@ -4615,6 +4615,12 @@ function adminUserCheckboxDateRow(label: string, name: string, checked: boolean,
   return `<tr><th>${legacyHTMLText(label)}</th><th><input type="checkbox" name="${legacyHTMLAttribute(name)}"  ${adminChecked(
     checked
   )}/>${checked && date ? ` ${formatLegacyAdminDateTime(date)}` : ""}</th></tr>\n`;
+}
+
+function formatLegacyAdminUserActivity(lastClick: number): string {
+  const ageSeconds = Math.floor(Date.now() / 1000) - lastClick;
+  const recentSuffix = ageSeconds >= 0 && ageSeconds < 60 * 60 ? ` (${Math.floor(ageSeconds / 60)} min)` : "";
+  return `${formatLegacyAdminDateTime(lastClick)}${recentSuffix}`;
 }
 
 function adminUserPlanetRefHTML(planet: GameAdminUserPlanet): string {
@@ -4823,8 +4829,8 @@ function adminPlanetDetailHTML(planet: GameAdminPlanetDetail): string {
   html += "<tr>";
   html += `<th><img src="${legacyHTMLAttribute(planetImagePath(planet, false))}"> <br>Type: ${planet.type}`;
   html += `<br>Points: ${formatLegacyNumber(Math.floor(planet.score.points / 1000))}`;
-  html += `<br>Buildings: ${formatLegacyNumber(Math.floor((planet.score.points - (planet.score.fleetPoints + planet.score.defensePoints)) / 1000))}`;
-  html += `<br>Fleet: ${formatLegacyNumber(Math.floor(planet.score.fleetPoints / 1000))}`;
+  html += `<br>Buildings: ${formatLegacyNumber(Math.floor((planet.score.points - (planet.score.fleetCostPoints + planet.score.defensePoints)) / 1000))}`;
+  html += `<br>Fleet: ${formatLegacyNumber(Math.floor(planet.score.fleetCostPoints / 1000))}`;
   html += `<br>Defense: ${formatLegacyNumber(Math.floor(planet.score.defensePoints / 1000))}</th>`;
   html += "<th>";
   if (planet.type === 1) {
