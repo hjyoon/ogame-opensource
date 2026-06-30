@@ -15,6 +15,7 @@
     "e2e:user-types": "bun run scripts/playwright-user-type-e2e.ts",
     "e2e:visual:navigation": "bun run scripts/playwright-navigation-visual-e2e.ts",
     "e2e:visual:auth": "bun run scripts/playwright-auth-visual-e2e.ts",
+    "e2e:visual:game-auth": "bun run scripts/playwright-authenticated-game-visual-e2e.ts",
     "e2e:visual:overview-fleet": "bun run scripts/playwright-overview-fleet-visual-e2e.ts",
     "e2e:visual": "bun run scripts/playwright-visual-e2e.ts",
     "test": "bun test"

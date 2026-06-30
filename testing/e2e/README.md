@@ -62,8 +62,15 @@ Default final visual checks enforce exact parity where the scripts support it:
 - overview all-cases event surface and clicks
 - fleet continue and fleet all-cases dispatch previews
 - navigation path discovery and exact diff reports
+- authenticated game visual registry with fixed clock/CSS/masks
 
 Reports are written under `.tmp/playwright-*`, plus `.tmp/golang-migration-qa-summary.{json,md}`. Treat old `.tmp` reports as stale unless produced by the current run.
+
+Direct registry run:
+
+```sh
+testing/e2e/run-playwright-authenticated-game-visual-e2e.sh
+```
 
 ## Coverage Index
 
@@ -73,6 +80,7 @@ Detailed coverage is split by topic:
 - [Gameplay and Economy](./COVERAGE-gameplay.md)
 - [Migration Visual Equivalence](./COVERAGE-migration.md)
 - [Navigation Visual Coverage](./COVERAGE-navigation-visual.md)
+- [Authenticated Game Visual Coverage](./COVERAGE-authenticated-game-visual.md)
 - [Infrastructure and Invariants](./COVERAGE-infra.md)
 
 `run-playwright-navigation-visual-e2e.sh` scans every currently seeded public/game/admin screen for internal navigation edges and compares target screenshots in Chromium and Firefox at an exact `0` threshold. The wrapper continues across browsers even when one browser has nonzero visual diffs, then writes the combined summary to `COVERAGE-navigation-visual.md`.

@@ -75,6 +75,9 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
         "$SCRIPT_DIR/run-playwright-auth-visual-e2e.sh"
       done
     fi
+    if [ "${OGAME_RUN_AUTH_GAME_VISUAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-authenticated-game-visual-e2e.sh"
+    fi
     if [ "${OGAME_RUN_EMPIRE_VISUAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-empire-visual-e2e.sh"
     fi
