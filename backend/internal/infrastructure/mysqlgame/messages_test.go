@@ -14,7 +14,7 @@ import (
 
 func TestMessagesRepositoryReadsLegacyInbox(t *testing.T) {
 	now := time.Unix(1700000000, 0)
-	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+	queryer := &fakeQueryer{results: messageInboxResults(
 		fakeQueryResult{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix(), domaingame.AdminLevelPlayer})},
 		fakeQueryResult{rows: fakeRowsFromValues(
 			[]any{11, domaingame.MessageTypePM, `Sender\\Name`, `Subject\"Line`, `Player Gophalaxtarget\'s fleet`, 0, int64(1700000000)},
@@ -29,6 +29,9 @@ func TestMessagesRepositoryReadsLegacyInbox(t *testing.T) {
 	}
 	if messages.Commander != "legor" || messages.Action != domaingame.MessagesActionInbox || len(messages.Rows) != 2 {
 		t.Fatalf("unexpected messages summary: %+v", messages)
+	}
+	if len(messages.Operators) != 1 || messages.Operators[0].Name != "QA Type Operator" || messages.Operators[0].Subject != "Question from Legor of the 1 universe" {
+		t.Fatalf("unexpected operators: %+v", messages.Operators)
 	}
 	if !messages.Rows[0].Unread || !messages.Rows[0].Reportable || messages.Rows[1].Reportable {
 		t.Fatalf("unexpected message flags: %+v", messages.Rows)
@@ -70,7 +73,7 @@ func TestMessagesRepositoryDeletesExpiredInboxMessagesOnRead(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
+			runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: messageInboxResults(
 				fakeQueryResult{rows: fakeRowsFromValues([]any{tt.commanderUntil, tt.adminLevel})},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 			)}}
@@ -96,7 +99,7 @@ func TestMessagesRepositoryDeletesExpiredInboxMessagesOnRead(t *testing.T) {
 
 func TestMessagesRepositoryMarksVisibleInboxMessagesReadOnRead(t *testing.T) {
 	now := time.Unix(1700000000, 0)
-	runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
+	runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: messageInboxResults(
 		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer})},
 		fakeQueryResult{rows: fakeRowsFromValues(
 			[]any{11, domaingame.MessageTypePM, "Sender", "Subject", "Body", 0, int64(1)},
@@ -554,6 +557,19 @@ type fakeMessagesRunner struct {
 	fakeQueryer
 	execs   []fakeMessagesExec
 	execErr error
+}
+
+func messageInboxResults(results ...fakeQueryResult) []fakeQueryResult {
+	all := append(shipyardOverviewResults(), results...)
+	return append(all, messageOperatorResults()...)
+}
+
+func messageOperatorResults() []fakeQueryResult {
+	return []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"Legor"})},
+		{rows: fakeRowsFromValues([]any{1})},
+		{rows: fakeRowsFromValues([]any{101, "QA Type Operator", "operator@example.local", int64(domaingame.UserFlagHideGOEmail)})},
+	}
 }
 
 func (f *fakeMessagesRunner) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {

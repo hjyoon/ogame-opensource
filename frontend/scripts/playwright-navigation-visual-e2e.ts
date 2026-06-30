@@ -100,6 +100,7 @@ const maxDiffRatio = numberEnv("OGAME_NAV_VISUAL_MAX_DIFF_RATIO", 0);
 const colorDeltaThreshold = numberEnv("OGAME_NAV_VISUAL_COLOR_DELTA", 0);
 const progressEnabled = process.env.OGAME_NAV_VISUAL_PROGRESS !== "0";
 const targetFilter = process.env.OGAME_NAV_VISUAL_TARGET_FILTER ?? "";
+const includeAdminSeeds = process.env.OGAME_NAV_VISUAL_INCLUDE_ADMIN_SEEDS !== "0";
 const defaultChromeExecutable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const defaultBrowserExecutable = browserName === "firefox" ? undefined : defaultChromeExecutable;
 const browserExecutable =
@@ -187,6 +188,8 @@ const adminModes = [
   "Mods"
 ];
 
+const adminSeeds: SeedSpec[] = adminModes.map((mode) => gameSeed(`game-admin-${kebab(mode)}`, "admin", "/game/admin", { mode }, { mode }));
+
 const authSeeds: SeedSpec[] = [
   gameSeed("game-overview", "overview", "/game/overview"),
   gameSeed("game-rename-planet", "renameplanet", "/game/rename-planet"),
@@ -222,8 +225,7 @@ const authSeeds: SeedSpec[] = [
   gameSeed("game-buddy", "buddy", "/game/buddy"),
   gameSeed("game-options", "options", "/game/options"),
   gameSeed("game-notes", "notizen", "/game/notes"),
-  gameSeed("game-notes-create", "notizen", "/game/notes", { a: "1" }, { a: "1" }),
-  ...adminModes.map((mode) => gameSeed(`game-admin-${kebab(mode)}`, "admin", "/game/admin", { mode }, { mode }))
+  gameSeed("game-notes-create", "notizen", "/game/notes", { a: "1" }, { a: "1" })
 ];
 
 const publicSeeds: SeedSpec[] = publicRouteManifest
@@ -235,7 +237,7 @@ const publicSeeds: SeedSpec[] = publicRouteManifest
     migratedURL: () => `${migratedBaseURL}${route.path}`
   }));
 
-const seeds = [...publicSeeds, ...authSeeds];
+const seeds = [...publicSeeds, ...authSeeds, ...(includeAdminSeeds ? adminSeeds : [])];
 const knownGamePaths = new Set([...gameRoutes.map((route) => route.path), "/game/changelog", "/game/reg/mail.php"]);
 const dynamicQueryKeys = new Set([
   "allyid",
@@ -332,6 +334,7 @@ try {
     browserName,
     browserExecutable: browserExecutable ?? "playwright-default",
     loginUser,
+    seedOptions: { includeAdminSeeds },
     thresholds: { enforceDiff, maxDiffRatio, colorDeltaThreshold },
     allPass: edges.every((edge) => edge.pass) && targetResults.every((target) => target.pass),
     summary: {
@@ -1214,6 +1217,7 @@ function renderReport(report: {
   browserName: string;
   browserExecutable: string;
   loginUser: string;
+  seedOptions: { includeAdminSeeds: boolean };
   thresholds: { enforceDiff: boolean; maxDiffRatio: number; colorDeltaThreshold: number };
   allPass: boolean;
   summary: { screens: number; edges: number; matchedEdges: number; targetScreens: number; exactDiffPass: number; exactDiffFail: number };
@@ -1228,6 +1232,7 @@ function renderReport(report: {
     `- Migrated: ${report.migratedBaseURL}`,
     `- Browser: ${report.browserName} (${report.browserExecutable})`,
     `- Login User: ${report.loginUser}`,
+    `- Admin Seeds: ${report.seedOptions.includeAdminSeeds ? "included" : "excluded"}`,
     `- Diff Enforced: ${report.thresholds.enforceDiff}`,
     `- Max Diff Ratio: ${formatNumber(report.thresholds.maxDiffRatio)}`,
     `- Color Delta Threshold: ${formatNumber(report.thresholds.colorDeltaThreshold)}`,
@@ -1269,6 +1274,8 @@ function renderCoverage(report: {
   legacyBaseURL: string;
   migratedBaseURL: string;
   browserName: string;
+  loginUser: string;
+  seedOptions: { includeAdminSeeds: boolean };
   thresholds: { enforceDiff: boolean; maxDiffRatio: number; colorDeltaThreshold: number };
   allPass: boolean;
   summary: { screens: number; edges: number; matchedEdges: number; targetScreens: number; exactDiffPass: number; exactDiffFail: number };
@@ -1289,6 +1296,8 @@ function renderCoverage(report: {
     `- Legacy: ${report.legacyBaseURL}`,
     `- Migrated: ${report.migratedBaseURL}`,
     `- Browser: ${report.browserName}`,
+    `- Login User: ${report.loginUser}`,
+    `- Admin Seeds: ${report.seedOptions.includeAdminSeeds ? "included" : "excluded"}`,
     `- Exact diff threshold: ${formatNumber(report.thresholds.maxDiffRatio)}`,
     `- Result: ${report.allPass ? "PASS" : "FAIL"}`,
     `- Screens scanned: ${report.summary.screens}`,
@@ -1300,7 +1309,7 @@ function renderCoverage(report: {
     "## Scope",
     "",
     "- Public routes from `publicRouteManifest` with legacy visual aliases.",
-    "- Authenticated game screens, admin modes, alliance subpages, statistics variants, messages, notes, report, phalanx, fleet templates.",
+    `- Authenticated game screens${report.seedOptions.includeAdminSeeds ? ", admin modes" : ""}, alliance subpages, statistics variants, messages, notes, report, phalanx, fleet templates.`,
     "- Internal `GET` anchors, `document.location` handlers, popup/open handlers, hover tooltip hrefs, select option URLs, and `GET` forms.",
     "- State-changing `POST` forms stay in flow-specific E2E cases.",
     "",

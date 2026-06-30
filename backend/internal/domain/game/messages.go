@@ -40,6 +40,7 @@ type Messages struct {
 	PlanetSwitcher []PlanetSummary
 	Action         string
 	Rows           []Message
+	Operators      []MessageOperator
 	Compose        *MessageCompose
 }
 
@@ -58,6 +59,14 @@ type MessageCompose struct {
 	Target   MessageTarget
 	Subject  string
 	MaxChars int
+}
+
+type MessageOperator struct {
+	PlayerID  int
+	Name      string
+	Email     string
+	HideEmail bool
+	Subject   string
 }
 
 type MessageTarget struct {

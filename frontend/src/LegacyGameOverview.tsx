@@ -842,6 +842,7 @@ type GameMessages = {
   planetSwitcher: GamePlanetSummary[];
   action: "inbox" | "compose";
   rows: GameMessage[];
+  operators: GameMessageOperator[];
   compose?: GameMessageCompose;
 };
 
@@ -931,6 +932,14 @@ type GameMessageCompose = {
   };
   subject: string;
   maxChars: number;
+};
+
+type GameMessageOperator = {
+  playerId: number;
+  name: string;
+  email: string;
+  hideEmail: boolean;
+  subject: string;
 };
 
 type GameFleetShip = {
@@ -1639,7 +1648,7 @@ type LegacyMenuEntry =
 
 const skinBase = "/public-assets/evolution";
 const gameImageBase = "/public-assets/game-img";
-const GalaxyDeuteriumCostText = "10";
+const LegacyPlanetTypeMoon = 0;
 const gameRouteByKey = new Map(gameRoutes.map((route) => [route.key, route]));
 const legacyMenuEntries: LegacyMenuEntry[] = [
   { type: "image", height: 40, src: `${skinBase}/gfx/ogame-produktion.jpg`, width: 110 },
@@ -9389,7 +9398,8 @@ function GalaxyTable({
       position: galaxy.coordinates.position
     });
   };
-  const hasGalaxyInfo = galaxy.extra.commander || galaxy.remoteSystemCostDue;
+  const showGalaxyMoonDeuterium = galaxy.currentPlanet.type === LegacyPlanetTypeMoon;
+  const hasGalaxyInfo = galaxy.extra.commander || showGalaxyMoonDeuterium;
 
   return (
     <>
@@ -9556,10 +9566,10 @@ function GalaxyTable({
                     {galaxy.extra.slots.used} of {galaxy.extra.slots.max} slots are in use
                   </>
                 ) : null}
-                {galaxy.remoteSystemCostDue ? (
+                {showGalaxyMoonDeuterium ? (
                   <>
                     {galaxy.extra.commander ? <br /> : null}
-                    Deuterium: {GalaxyDeuteriumCostText}
+                    Deuterium: {formatLegacyNumber(galaxy.currentPlanet.resources.deuterium)}
                   </>
                 ) : null}
               </td>
@@ -10580,42 +10590,36 @@ function MessagesTable({
               Subject
             </th>
           </tr>
-          {messages.rows.length > 0 ? (
-            messages.rows.map((message) => (
-              <React.Fragment key={message.id}>
-                <tr data-message-row={message.id}>
-                  <th>
-                    <input disabled={pending} name={`delmes${message.id}`} type="checkbox" value="on" />
-                  </th>
-                  <th className={message.unread ? "legacy-message-unread" : undefined}>{formatLegacyMessageDate(message.date)}</th>
-                  <th dangerouslySetInnerHTML={{ __html: `${sanitizeLegacyMessageHTML(message.from)} ` }} />
-                  <th dangerouslySetInnerHTML={{ __html: `${sanitizeLegacyMessageHTML(message.subject)} ` }} />
+          {messages.rows.map((message) => (
+            <React.Fragment key={message.id}>
+              <tr data-message-row={message.id}>
+                <th>
+                  <input disabled={pending} name={`delmes${message.id}`} type="checkbox" value="on" />
+                </th>
+                <th className={message.unread ? "legacy-message-unread" : undefined}>{formatLegacyMessageDate(message.date)}</th>
+                <th dangerouslySetInnerHTML={{ __html: `${sanitizeLegacyMessageHTML(message.from)} ` }} />
+                <th dangerouslySetInnerHTML={{ __html: `${sanitizeLegacyMessageHTML(message.subject)} ` }} />
+              </tr>
+              {message.text !== "" ? (
+                <tr>
+                  <td className="legacy-b b"> </td>
+                  <td
+                    className="legacy-b b legacy-message-text"
+                    colSpan={3}
+                    dangerouslySetInnerHTML={{ __html: sanitizeLegacyMessageHTML(message.text) }}
+                  />
                 </tr>
-                {message.text !== "" ? (
-                  <tr>
-                    <td className="legacy-b b"> </td>
-                    <td
-                      className="legacy-b b legacy-message-text"
-                      colSpan={3}
-                      dangerouslySetInnerHTML={{ __html: sanitizeLegacyMessageHTML(message.text) }}
-                    />
-                  </tr>
-                ) : null}
-                {message.reportable ? (
-                  <tr>
-                    <th colSpan={4}>
-                      <input disabled={pending} name={`sneak${message.id}`} type="checkbox" />
-                      <input disabled={pending} type="submit" value="Report to operator" />
-                    </th>
-                  </tr>
-                ) : null}
-              </React.Fragment>
-            ))
-          ) : (
-            <tr>
-              <th colSpan={4}>There are no messages.</th>
-            </tr>
-          )}
+              ) : null}
+              {message.reportable ? (
+                <tr>
+                  <th colSpan={4}>
+                    <input disabled={pending} name={`sneak${message.id}`} type="checkbox" />
+                    <input disabled={pending} type="submit" value="Report to operator" />
+                  </th>
+                </tr>
+              ) : null}
+            </React.Fragment>
+          ))}
           <tr>
             <th colSpan={4} style={{ padding: "0px 105px" }} />
           </tr>
@@ -10645,10 +10649,27 @@ function MessagesTable({
               Operators
             </td>
           </tr>
+          {messages.operators.map((operator) => (
+            <tr key={operator.playerId} dangerouslySetInnerHTML={{ __html: messageOperatorRowHTML(operator) }} />
+          ))}
         </tbody>
       </table>
     </form>
   );
+}
+
+function messageOperatorRowHTML(operator: GameMessageOperator): string {
+  return `\n            <th colspan="4" valign="left">\n            ${escapeLegacyHTML(operator.name)}            <a href="${escapeLegacyAttribute(messageOperatorHref(operator))}" ><img src="${skinBase}/img/m.gif" border="0" alt="Write message"></a>          </th>\n        `;
+}
+
+function messageOperatorHref(operator: GameMessageOperator): string {
+  if (operator.hideEmail) {
+    const query = new URLSearchParams(window.location.search);
+    query.set("messageziel", String(operator.playerId));
+    query.set("betreff", operator.subject);
+    return gameRouteURL("/game/messages", query.toString());
+  }
+  return `mailto:${operator.email}?subject=${operator.subject}`;
 }
 
 function MessageComposeTable({

@@ -9,6 +9,8 @@ type NavReport = {
   browserName: BrowserName;
   legacyBaseURL: string;
   migratedBaseURL: string;
+  loginUser?: string;
+  seedOptions?: { includeAdminSeeds?: boolean };
   thresholds: { maxDiffRatio: number };
   allPass: boolean;
   summary: {
@@ -46,6 +48,11 @@ const gapKeys = Array.from(
 ).sort();
 const generatedAt = new Date().toISOString();
 const latest = reports[reports.length - 1];
+const loginUsers = Array.from(new Set(reports.map((report) => report.loginUser ?? "unknown"))).sort();
+const adminSeedStates = Array.from(new Set(reports.map((report) => (report.seedOptions?.includeAdminSeeds ? "included" : "excluded")))).sort();
+const matchedEdges = reports.reduce((sum, report) => sum + report.summary.matchedEdges, 0);
+const totalEdges = reports.reduce((sum, report) => sum + report.summary.edges, 0);
+const exactFailures = reports.reduce((sum, report) => sum + report.summary.exactDiffFail, 0);
 const lines = [
   "# Navigation Visual Coverage",
   "",
@@ -53,7 +60,7 @@ const lines = [
   "",
   "## Scope",
   "",
-  "- Seeds: public legacy aliases plus authenticated game, admin, alliance, statistics, messages, notes, report, phalanx, and fleet-template screens.",
+  "- Seeds: public legacy aliases plus authenticated game, optional admin, alliance, statistics, messages, notes, report, phalanx, and fleet-template screens.",
   "- Edges: internal GET anchors, `document.location` handlers, popup/open handlers, hover tooltip hrefs, select option URLs, and GET forms.",
   "- Mutating POST flows remain covered by their flow-specific E2E scripts.",
   "",
@@ -62,6 +69,8 @@ const lines = [
   `- Generated: ${generatedAt}`,
   `- Legacy: ${latest.legacyBaseURL}`,
   `- Migrated: ${latest.migratedBaseURL}`,
+  `- Login User: ${loginUsers.join(", ")}`,
+  `- Admin Seeds: ${adminSeedStates.join(", ")}`,
   `- Exact diff threshold: ${formatRatio(latest.thresholds.maxDiffRatio)}`,
   "",
   "| Browser | Screens | Edges | Matched | Targets | Exact Pass | Exact Fail | Result |",
@@ -74,14 +83,16 @@ const lines = [
   "",
   "| Target | Chromium | Firefox |",
   "| --- | ---: | ---: |",
-  ...gapKeys.map((key) => `| \`${key}\` | ${gapCell(reports.find((report) => report.browserName === "chromium"), key)} | ${gapCell(reports.find((report) => report.browserName === "firefox"), key)} |`),
+  ...(gapKeys.length === 0
+    ? ["| None | 0 | 0 |"]
+    : gapKeys.map((key) => `| \`${key}\` | ${gapCell(reports.find((report) => report.browserName === "chromium"), key)} | ${gapCell(reports.find((report) => report.browserName === "firefox"), key)} |`)),
   "",
   "## Status Notes",
   "",
   "- Route discovery is complete for the current seed set: both browsers matched every discovered edge.",
-  "- This pass keeps discovery stable at 1910/1910 matched edges and syncs Docker DB-backup fixtures before comparison.",
-  "- Remaining gaps are concentrated in admin detail/tool pages, plus a small alliance application text-rendering delta in Chromium.",
-  "- Do not claim full navigation visual parity until both browser rows report `Exact Fail` as 0."
+  `- This pass matched ${matchedEdges}/${totalEdges} discovered edges and syncs Docker DB-backup fixtures before comparison.`,
+  exactFailures === 0 ? "- Both browser rows report `Exact Fail` as 0." : `- Remaining exact-diff failures: ${exactFailures}.`,
+  adminSeedStates.length === 1 && adminSeedStates[0] === "excluded" ? "- Admin-only screens were excluded; run again with admin seeds before claiming admin-tool visual parity." : "- Admin seed coverage is included in this report."
 ];
 
 await writeFile(resolve(rootDir, "testing/e2e/COVERAGE-navigation-visual.md"), `${lines.join("\n")}\n`);

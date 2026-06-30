@@ -54,6 +54,10 @@ func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.Messa
 	if err != nil {
 		return domaingame.Messages{}, err
 	}
+	uniTable, err := tableName(r.prefix, "uni")
+	if err != nil {
+		return domaingame.Messages{}, err
+	}
 
 	overview, err := NewOverviewRepositoryWithQueryer(r.queryer, r.prefix).GetOverview(ctx, appgame.OverviewQuery{
 		PlayerID: query.PlayerID,
@@ -96,7 +100,81 @@ func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.Messa
 		return domaingame.Messages{}, err
 	}
 	messages.Rows = rows
+	operators, err := r.loadOperators(ctx, usersTable, uniTable, query.PlayerID)
+	if err != nil {
+		return domaingame.Messages{}, err
+	}
+	messages.Operators = operators
 	return messages, nil
+}
+
+func (r MessagesRepository) loadOperators(ctx context.Context, usersTable string, uniTable string, playerID int) ([]domaingame.MessageOperator, error) {
+	subject, err := r.loadOperatorSubject(ctx, usersTable, uniTable, playerID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT player_id, COALESCE(oname, ''), COALESCE(email, ''), COALESCE(flags, 0) FROM %s WHERE admin = 1 ORDER BY player_id ASC", usersTable),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	operators := []domaingame.MessageOperator{}
+	for rows.Next() {
+		var operator domaingame.MessageOperator
+		var flags int64
+		if err := rows.Scan(&operator.PlayerID, &operator.Name, &operator.Email, &flags); err != nil {
+			return nil, err
+		}
+		operator.HideEmail = flags&domaingame.UserFlagHideGOEmail != 0
+		operator.Subject = subject
+		operators = append(operators, operator)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return operators, nil
+}
+
+func (r MessagesRepository) loadOperatorSubject(ctx context.Context, usersTable string, uniTable string, playerID int) (string, error) {
+	userName := ""
+	userRows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COALESCE(oname, '') FROM %s WHERE player_id = ? LIMIT 1", usersTable), playerID)
+	if err != nil {
+		return "", err
+	}
+	if userRows.Next() {
+		if err := userRows.Scan(&userName); err != nil {
+			userRows.Close()
+			return "", err
+		}
+	}
+	if err := userRows.Err(); err != nil {
+		userRows.Close()
+		return "", err
+	}
+	userRows.Close()
+
+	universeNumber := 1
+	uniRows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COALESCE(num, 1) FROM %s LIMIT 1", uniTable))
+	if err != nil {
+		return "", err
+	}
+	if uniRows.Next() {
+		if err := uniRows.Scan(&universeNumber); err != nil {
+			uniRows.Close()
+			return "", err
+		}
+	}
+	if err := uniRows.Err(); err != nil {
+		uniRows.Close()
+		return "", err
+	}
+	uniRows.Close()
+
+	return fmt.Sprintf("Question from %s of the %d universe", userName, universeNumber), nil
 }
 
 func (r MessagesRepository) MutateMessages(ctx context.Context, query appgame.MessagesMutationQuery) (appgame.MessagesMutationOutcome, error) {

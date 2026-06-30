@@ -22,6 +22,7 @@ type gameMessagesSummary struct {
 	PlanetSwitcher []gamePlanetSummaryResponse `json:"planetSwitcher"`
 	Action         string                      `json:"action"`
 	Rows           []gameMessageResponse       `json:"rows"`
+	Operators      []gameMessageOperator       `json:"operators"`
 	Compose        *gameMessageComposeResponse `json:"compose,omitempty"`
 }
 
@@ -40,6 +41,14 @@ type gameMessageComposeResponse struct {
 	Target   gameMessageTargetResponse `json:"target"`
 	Subject  string                    `json:"subject"`
 	MaxChars int                       `json:"maxChars"`
+}
+
+type gameMessageOperator struct {
+	PlayerID  int    `json:"playerId"`
+	Name      string `json:"name"`
+	Email     string `json:"email"`
+	HideEmail bool   `json:"hideEmail"`
+	Subject   string `json:"subject"`
 }
 
 type gameMessageTargetResponse struct {
@@ -184,6 +193,10 @@ func toGameMessagesSummary(messages domaingame.Messages) gameMessagesSummary {
 	for _, row := range messages.Rows {
 		rows = append(rows, toGameMessageResponse(row))
 	}
+	operators := make([]gameMessageOperator, 0, len(messages.Operators))
+	for _, operator := range messages.Operators {
+		operators = append(operators, toGameMessageOperator(operator))
+	}
 	var compose *gameMessageComposeResponse
 	if messages.Compose != nil {
 		mapped := toGameMessageComposeResponse(*messages.Compose)
@@ -195,6 +208,7 @@ func toGameMessagesSummary(messages domaingame.Messages) gameMessagesSummary {
 		PlanetSwitcher: planets,
 		Action:         messages.Action,
 		Rows:           rows,
+		Operators:      operators,
 		Compose:        compose,
 	}
 }
@@ -225,6 +239,16 @@ func toGameMessageComposeResponse(compose domaingame.MessageCompose) gameMessage
 		},
 		Subject:  compose.Subject,
 		MaxChars: compose.MaxChars,
+	}
+}
+
+func toGameMessageOperator(operator domaingame.MessageOperator) gameMessageOperator {
+	return gameMessageOperator{
+		PlayerID:  operator.PlayerID,
+		Name:      operator.Name,
+		Email:     operator.Email,
+		HideEmail: operator.HideEmail,
+		Subject:   operator.Subject,
 	}
 }
 
