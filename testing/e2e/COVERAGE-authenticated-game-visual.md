@@ -33,7 +33,7 @@ Default-enabled screenshots cover the normal authenticated navigation surface:
 
 - overview, rename planet, buildings, resources, merchant
 - research, shipyard, fleet, technology, technology detail
-- galaxy, galaxy hover tooltip, defense, alliance menu/create/search
+- galaxy + planet/moon/debris/player/alliance hovers, defense, alliance menu/create/search
 - officers, statistics player/alliance
 - search, messages, compose message
 - buddy, options, notes, create note

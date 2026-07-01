@@ -303,12 +303,88 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     actions: [
       {
         type: "hover",
-        legacySelector: "#content img[src*='/planeten/'], #content a[onmouseover]",
-        migratedSelector: ".legacy-galaxy-hover",
+        legacySelector: "#content a[onmouseover*='Planet Visual Hover Planet']",
+        migratedSelector: ".legacy-galaxy-hover[data-galaxy-hover='planet'] a",
         waitMs: 850
       }
     ],
-    notes: ["Explicit galaxy overlib tooltip capture."]
+    notes: ["Explicit galaxy planet overlib tooltip capture."]
+  },
+  {
+    name: "game-galaxy-hover-moon",
+    area: "hover",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Galaxy", "Moon", "Properties", "Actions"],
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='Moon Visual Hover Moon']",
+        migratedSelector: ".legacy-galaxy-hover[data-galaxy-hover='moon'] a",
+        waitMs: 850
+      }
+    ],
+    notes: ["Explicit galaxy moon overlib tooltip capture."]
+  },
+  {
+    name: "game-galaxy-hover-debris",
+    area: "hover",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Galaxy", "Resources:", "Recycle"],
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='Resources:'][onmouseover*='Recycle']",
+        migratedSelector: ".legacy-galaxy-hover[data-galaxy-hover='debris'] a",
+        waitMs: 850
+      }
+    ],
+    notes: ["Explicit galaxy debris overlib tooltip capture."]
+  },
+  {
+    name: "game-galaxy-hover-player",
+    area: "hover",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Galaxy", "Player Visualhover", "Write a message", "Statistics"],
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='Player Visualhover']",
+        migratedSelector: ".legacy-galaxy-hover[data-galaxy-hover='player'] a",
+        waitMs: 850
+      }
+    ],
+    notes: ["Explicit galaxy player overlib tooltip capture."]
+  },
+  {
+    name: "game-galaxy-hover-alliance",
+    area: "hover",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Galaxy", "Alliance VGHT", "Alliance introduction", "Statistics"],
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='Alliance VGHT']",
+        migratedSelector: ".legacy-galaxy-hover[data-galaxy-hover='alliance'] a",
+        waitMs: 850
+      }
+    ],
+    notes: ["Explicit galaxy alliance overlib tooltip capture."]
   },
   {
     name: "game-defense",

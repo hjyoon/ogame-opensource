@@ -93,6 +93,108 @@ function auth_visual_prepare_user(string $name, string $password, int $adminLeve
     return array('player_id' => $playerId, 'name' => $displayName, 'home_planet_id' => $homePlanetId);
 }
 
+function auth_visual_position_is_clear(int $g, int $s, int $p): bool
+{
+    if (HasPlanet($g, $s, $p)) {
+        return false;
+    }
+    $moon = LoadPlanet($g, $s, $p, 3);
+    $debris = LoadPlanet($g, $s, $p, 2);
+    return ($moon === null || $moon === false) && ($debris === null || $debris === false);
+}
+
+function auth_visual_find_empty_hover_system(): array
+{
+    global $GlobalUni;
+
+    for ($g = 1; $g <= (int)$GlobalUni['galaxies']; $g++) {
+        for ($s = 1; $s <= (int)$GlobalUni['systems']; $s++) {
+            if (auth_visual_position_is_clear($g, $s, 1) && auth_visual_position_is_clear($g, $s, 2)) {
+                return array($g, $s);
+            }
+        }
+    }
+    throw new RuntimeException('failed to find an empty visual hover galaxy system');
+}
+
+function auth_visual_place_planet(int $planetId, int $ownerId, string $name, int $g, int $s, int $p): void
+{
+    global $db_prefix;
+
+    $now = time();
+    dbquery(
+        "UPDATE {$db_prefix}planets SET " .
+        "name='" . auth_visual_sql_escape($name) . "', g={$g}, s={$s}, p={$p}, type=" . PTYP_PLANET . ", owner_id={$ownerId}, " .
+        "`" . GID_RC_METAL . "`=1000000, `" . GID_RC_CRYSTAL . "`=1000000, `" . GID_RC_DEUTERIUM . "`=1000000, " .
+        "fields=0, maxfields=200, prod1=1, prod2=1, prod3=1, prod4=1, prod12=1, prod212=1, lastpeek={$now}, lastakt={$now} " .
+        "WHERE planet_id={$planetId}"
+    );
+}
+
+function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password): array
+{
+    global $db_prefix;
+
+    $target = auth_visual_prepare_user('visualhover', $password, USER_TYPE_PLAYER);
+    $viewerId = (int)$user['player_id'];
+    $viewerPlanetId = (int)$user['home_planet_id'];
+    $targetId = (int)$target['player_id'];
+    $targetPlanetId = (int)$target['home_planet_id'];
+    [$g, $s] = auth_visual_find_empty_hover_system();
+    $now = time();
+
+    auth_visual_place_planet($targetPlanetId, $targetId, 'Visual Hover Planet', $g, $s, 1);
+    auth_visual_place_planet($viewerPlanetId, $viewerId, 'Visual Home', $g, $s, 2);
+    dbquery("UPDATE {$db_prefix}users SET hplanetid={$viewerPlanetId}, aktplanet={$viewerPlanetId}, lastclick={$now} WHERE player_id={$viewerId}");
+    dbquery("UPDATE {$db_prefix}users SET hplanetid={$targetPlanetId}, aktplanet={$targetPlanetId}, lastclick={$now}, score1=1, score2=0, score3=0, place1=1, place2=1, place3=1 WHERE player_id={$targetId}");
+
+    $moonId = PlanetHasMoon($targetPlanetId);
+    if ($moonId <= 0) {
+        $moonId = CreatePlanet($g, $s, 1, $targetId, 1, 1, 20, $now);
+    }
+    if ($moonId <= 0) {
+        throw new RuntimeException('failed to create visual hover moon');
+    }
+    dbquery(
+        "UPDATE {$db_prefix}planets SET " .
+        "name='Visual Hover Moon', g={$g}, s={$s}, p=1, type=" . PTYP_MOON . ", owner_id={$targetId}, " .
+        "`" . GID_RC_METAL . "`=100000, `" . GID_RC_CRYSTAL . "`=100000, `" . GID_RC_DEUTERIUM . "`=20000, " .
+        "diameter=8888, temp=-42, fields=2, maxfields=4, lastpeek={$now}, lastakt={$now} WHERE planet_id={$moonId}"
+    );
+
+    $debrisId = CreateDebris($g, $s, 1, USER_SPACE);
+    if ($debrisId <= 0) {
+        throw new RuntimeException('failed to create visual hover debris');
+    }
+    dbquery(
+        "UPDATE {$db_prefix}planets SET " .
+        "name='Debris', g={$g}, s={$s}, p=1, type=" . PTYP_DF . ", owner_id=" . USER_SPACE . ", " .
+        "`" . GID_RC_METAL . "`=120000, `" . GID_RC_CRYSTAL . "`=80000, `" . GID_RC_DEUTERIUM . "`=0, " .
+        "lastpeek={$now}, lastakt={$now} WHERE planet_id={$debrisId}"
+    );
+
+    $existingAlly = auth_visual_one_row("SELECT ally_id FROM {$db_prefix}ally WHERE tag='VGHT' LIMIT 1");
+    if ($existingAlly !== null) {
+        DismissAlly((int)$existingAlly['ally_id']);
+    }
+    $allyId = CreateAlly($targetId, 'VGHT', 'Visual Hover Alliance');
+    dbquery("UPDATE {$db_prefix}ally SET place1=1, place2=1, place3=1, score1=1, score2=0, score3=0 WHERE ally_id={$allyId}");
+    InvalidateUserCache();
+    SelectPlanet($viewerId, $viewerPlanetId);
+
+    return array(
+        'galaxy' => $g,
+        'system' => $s,
+        'target_position' => 1,
+        'viewer_position' => 2,
+        'target_player_id' => $targetId,
+        'target_planet_id' => $targetPlanetId,
+        'moon_id' => $moonId,
+        'debris_id' => $debrisId,
+        'ally_id' => $allyId,
+    );
+}
+
 function auth_visual_prepare_session(int $playerId): array
 {
     global $db_prefix, $GlobalUni;
@@ -117,11 +219,13 @@ try {
     $password = getenv('OGAME_GAME_VISUAL_PASS') ?: 'admin';
     $adminLevel = intval(getenv('OGAME_GAME_VISUAL_ADMIN') ?: USER_TYPE_ADMIN);
     $user = auth_visual_prepare_user($name, $password, $adminLevel);
+    $galaxyHover = auth_visual_prepare_galaxy_hover_fixture($user, $password);
     $auth = auth_visual_prepare_session((int)$user['player_id']);
     echo json_encode(array(
         'login_user' => $user['name'],
         'player_id' => (int)$user['player_id'],
         'home_planet_id' => (int)$user['home_planet_id'],
+        'galaxy_hover' => $galaxyHover,
         'session' => $auth['session'],
         'private_session' => $auth['private_session'],
         'cookies' => $auth['cookies'],

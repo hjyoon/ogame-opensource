@@ -618,6 +618,7 @@ type GameGalaxy = {
   };
   notEnoughDeuterium: boolean;
   remoteSystemCostDue: boolean;
+  viewerAllianceId: number;
 };
 
 type GameGalaxyRow = {
@@ -640,7 +641,7 @@ type GameGalaxyPlanet = {
   abandoned: boolean;
   own: boolean;
   player?: GameGalaxyPlayer;
-  alliance?: { id: number; tag: string };
+  alliance?: { id: number; tag: string; rank: number; members: number };
   actions: GameGalaxyActions;
 };
 
@@ -9736,7 +9737,7 @@ function GalaxyTableRow({
       </th>
       <th {...cellWidth(30)}>
         {planet && planet.type === 1 ? (
-          <GalaxyHoverMenu html={galaxyPlanetHoverHTML(planet, galaxy, adminLevel)} offsetX={-40} onClick={handleInstantMenuClick}>
+          <GalaxyHoverMenu hoverKind="planet" html={galaxyPlanetHoverHTML(planet, galaxy, adminLevel)} offsetX={-40} onClick={handleInstantMenuClick}>
             <a href="#" onClick={(event) => event.preventDefault()}>
               <img alt="" height={30} src={galaxyPlanetImagePath(planet, true)} width={30} />
             </a>
@@ -9754,13 +9755,13 @@ function GalaxyTableRow({
       <th style={{ whiteSpace: "nowrap" }} {...cellWidth(30)}>
         {row.moon ? (
           row.moon.destroyed ? (
-            <GalaxyHoverMenu html={`<font color=white><b>Moon destroyed</b></font>`} width={75}>
+            <GalaxyHoverMenu hoverKind="moon" html={`<font color=white><b>Moon destroyed</b></font>`} width={75}>
               <span className="legacy-galaxy-destroyed-moon">
                 <img alt={`Moon (size: ${formatLegacyNumber(row.moon.diameter)})`} height={22} src={galaxyPlanetImagePath(row.moon, true)} width={22} />
               </span>
             </GalaxyHoverMenu>
           ) : (
-            <GalaxyHoverMenu html={galaxyMoonHoverHTML(row.moon, galaxy, adminLevel)} offsetX={-40} offsetY={-110} onClick={handleInstantMenuClick}>
+            <GalaxyHoverMenu hoverKind="moon" html={galaxyMoonHoverHTML(row.moon, galaxy, adminLevel)} offsetX={-40} offsetY={-110} onClick={handleInstantMenuClick}>
               <a
                 href="#"
                 onClick={(event) => {
@@ -9783,7 +9784,7 @@ function GalaxyTableRow({
       </th>
       <th {...cellWidth(30)}>
         {row.debris?.visible && debrisCoordinates ? (
-          <GalaxyHoverMenu html={galaxyDebrisHoverHTML(row.debris, debrisCoordinates, row.position)} offsetX={-40} onClick={handleInstantMenuClick}>
+          <GalaxyHoverMenu hoverKind="debris" html={galaxyDebrisHoverHTML(row.debris, debrisCoordinates, row.position)} offsetX={-40} onClick={handleInstantMenuClick}>
             <a
               href="#"
               onClick={(event) => {
@@ -9806,7 +9807,7 @@ function GalaxyTableRow({
       </th>
       {player ? (
         <th {...cellWidth(150)}>
-          <GalaxyHoverMenu html={galaxyPlayerHoverHTML(player, adminLevel)} text>
+          <GalaxyHoverMenu hoverKind="player" html={galaxyPlayerHoverHTML(player, adminLevel)} offsetX={10} text>
             <span dangerouslySetInnerHTML={{ __html: galaxyPlayerCellHTML(player) }} />
           </GalaxyHoverMenu>
         </th>
@@ -9815,7 +9816,7 @@ function GalaxyTableRow({
       )}
       <th {...cellWidth(80)}>
         {planet?.alliance ? (
-          <GalaxyHoverMenu html={galaxyAllianceHoverHTML(planet.alliance)} text offsetY={-50}>
+          <GalaxyHoverMenu hoverKind="alliance" html={galaxyAllianceHoverHTML(planet.alliance, galaxy.viewerAllianceId)} offsetX={10} offsetY={-50} text>
             <a href="#" onClick={(event) => event.preventDefault()}>
               {planet.alliance.tag}
             </a>
@@ -9831,6 +9832,7 @@ function GalaxyTableRow({
 
 function GalaxyHoverMenu({
   children,
+  hoverKind,
   html,
   offsetX = 0,
   offsetY = -40,
@@ -9840,6 +9842,7 @@ function GalaxyHoverMenu({
   width = 240
 }: {
   children: React.ReactNode;
+  hoverKind: "planet" | "moon" | "debris" | "player" | "alliance";
   html: string;
   offsetX?: number;
   offsetY?: number;
@@ -9928,6 +9931,7 @@ function GalaxyHoverMenu({
   return (
     <span
       className={`legacy-galaxy-hover${open ? " legacy-galaxy-hover-open" : ""}${text ? " legacy-galaxy-hover-text" : ""}`}
+      data-galaxy-hover={hoverKind}
       onBlur={hide}
       onClick={onClick}
       onFocus={showFromFocus}
@@ -10022,7 +10026,7 @@ function galaxyMoonHoverHTML(moon: GameGalaxyPlanet, galaxy: GameGalaxy, adminLe
   }
   return `<table width=240><tr><td class=c colspan=2>${legacyHTMLText(title)}</td></tr><tr><th width=80><img src="${legacyHTMLAttribute(galaxyPlanetImagePath(moon, true))}" height=75 width=75 alt="${legacyHTMLAttribute(
     `Moon (size: ${formatLegacyNumber(moon.diameter)})`
-  )}" /></th><th><table width=120><tr><td colspan=2 class=c>Properties</td></tr><tr><th>Size:</th><th>${formatLegacyNumber(moon.diameter)}</th></tr><tr><th>Temperatur:</th><th>${formatLegacyNumber(
+  )}" /></th><th><table width=120><tr><td colspan=2 class=c>Properties</td></tr><tr><th>Size:</th><th>${formatLegacyNumber(moon.diameter)}</th></tr><tr><th>Temperatur:</th><th>${formatLegacySignedNumber(
     moon.temperature
   )}</th></tr><tr><td colspan=2 class=c>Actions:</td></tr><tr><th align=left colspan=2>${actions}</th></tr></table></th></tr></table>`;
 }
@@ -10037,23 +10041,27 @@ function galaxyDebrisHoverHTML(debris: GameGalaxyDebris, coordinates: Coordinate
 function galaxyPlayerHoverHTML(player: GameGalaxyPlayer, adminLevel: number): string {
   let rows = "";
   if (!player.own) {
-    rows += `<tr><td>${galaxyAnchor(gameMessageComposeURL(player.id, window.location.search), "Write a message")}</td></tr>`;
-    rows += `<tr><td>${galaxyAnchor(gameBuddyRequestURL(player.id, window.location.search), "Invite to become friends")}</td></tr>`;
+    rows += `<tr><td>${galaxyMenuAnchor(gameMessageComposeURL(player.id, window.location.search), "Write a message")}</td></tr>`;
+    rows += `<tr><td>${galaxyMenuAnchor(gameBuddyRequestURL(player.id, window.location.search), "Invite to become friends")}</td></tr>`;
   }
-  rows += `<tr><td>${galaxyAnchor(galaxyStatisticsURL(player.rank, "player"), "Statistics")}</td></tr>`;
+  rows += `<tr><td>${galaxyMenuAnchor(galaxyStatisticsURL(player.rank, "player"), "Statistics")}</td></tr>`;
   if (adminLevel >= 1) {
-    rows += `<tr><td>${galaxyAnchor(adminUserHref(player.id), "Admin")}</td></tr>`;
+    rows += `<tr><td>${galaxyMenuAnchor(adminUserHref(player.id), "User management")}</td></tr>`;
   }
   return `<table width=240><tr><td class=c>Player ${legacyHTMLText(player.name)}. Place in the rating - ${formatLegacyNumber(player.rank)}</td></tr><th><table>${rows}</table></th></table>`;
 }
 
-function galaxyAllianceHoverHTML(alliance: { id: number; tag: string }): string {
+function galaxyAllianceHoverHTML(alliance: { id: number; tag: string; rank: number; members: number }, viewerAllianceId: number): string {
   const rows = [
-    `<tr><td><a href="${legacyHTMLAttribute(allianceInfoURL(alliance.id))}" target="_ally">Alliance introduction</a></td></tr>`,
-    `<tr><td>${galaxyAnchor(allianceURL({ a: "2", allyid: String(alliance.id) }), "Apply")}</td></tr>`,
-    `<tr><td>${galaxyAnchor(galaxyStatisticsURL(1, "ally"), "Statistics")}</td></tr>`
-  ].join("");
-  return `<table width=240><tr><td class=c>Alliance ${legacyHTMLText(alliance.tag)}</td></tr><th><table>${rows}</table></th></table>`;
+    `<tr><td><a href="${legacyHTMLAttribute(allianceInfoURL(alliance.id))}" target="_ally">Alliance introduction</a></td></tr>`
+  ];
+  if (viewerAllianceId !== alliance.id) {
+    rows.push(`<tr><td>${galaxyMenuAnchor(allianceURL({ a: "2", allyid: String(alliance.id) }), "Apply")}</td></tr>`);
+  }
+  rows.push(`<tr><td>${galaxyMenuAnchor(galaxyStatisticsURL(alliance.rank, "ally"), "Statistics")}</td></tr>`);
+  return `<table width=240><tr><td class=c>Alliance ${legacyHTMLText(alliance.tag)}. Place in the rating - ${formatLegacyNumber(alliance.rank)}, number of people - ${formatLegacyNumber(
+    alliance.members
+  )}.</td></tr><th><table>${rows.join("")}</table></th></table>`;
 }
 
 function galaxyFleetMenuLink(coordinates: Coordinates, position: number, mission: number, planetType: number, label: string): string {
@@ -10068,6 +10076,10 @@ function galaxyInstantMenuLink(action: GameGalaxyInstantDispatch["action"], coor
 
 function galaxyAnchor(href: string, label: string): string {
   return `<a href="${legacyHTMLAttribute(href)}">${legacyHTMLText(label)}</a><br />`;
+}
+
+function galaxyMenuAnchor(href: string, label: string): string {
+  return `<a href="${legacyHTMLAttribute(href)}">${legacyHTMLText(label)}</a>`;
 }
 
 function galaxyStatisticsURL(place: number, who: "player" | "ally"): string {

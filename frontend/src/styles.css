@@ -856,6 +856,9 @@ body.legacy-game-body {
   font-family: Tahoma, sans-serif;
   font-size: 11px;
   padding-left: 3px;
+}
+
+.legacy-game-shell .legacy-galaxy-tooltip th {
   padding-right: 3px;
 }
 

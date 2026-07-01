@@ -44,6 +44,7 @@ type gameGalaxySummary struct {
 	Extra               gameGalaxyExtraResponse     `json:"extra"`
 	NotEnoughDeuterium  bool                        `json:"notEnoughDeuterium"`
 	RemoteSystemCostDue bool                        `json:"remoteSystemCostDue"`
+	ViewerAllianceID    int                         `json:"viewerAllianceId"`
 }
 
 type gameGalaxyBoundsResponse struct {
@@ -91,8 +92,10 @@ type gameGalaxyStatusSuffix struct {
 }
 
 type gameGalaxyAllianceResponse struct {
-	ID  int    `json:"id"`
-	Tag string `json:"tag"`
+	ID      int    `json:"id"`
+	Tag     string `json:"tag"`
+	Rank    int    `json:"rank"`
+	Members int    `json:"members"`
 }
 
 type gameGalaxyDebris struct {
@@ -350,6 +353,7 @@ func toGameGalaxySummary(galaxy domaingame.Galaxy) gameGalaxySummary {
 		},
 		NotEnoughDeuterium:  galaxy.NotEnoughDeuterium,
 		RemoteSystemCostDue: galaxy.RemoteSystemCostDue,
+		ViewerAllianceID:    galaxy.ViewerAllianceID,
 	}
 }
 
@@ -420,7 +424,7 @@ func toGameGalaxyAlliance(alliance *domaingame.GalaxyAlliance) *gameGalaxyAllian
 	if alliance == nil {
 		return nil
 	}
-	return &gameGalaxyAllianceResponse{ID: alliance.ID, Tag: alliance.Tag}
+	return &gameGalaxyAllianceResponse{ID: alliance.ID, Tag: alliance.Tag, Rank: alliance.Rank, Members: alliance.Members}
 }
 
 func toGameGalaxyDebris(debris *domaingame.GalaxyDebris) *gameGalaxyDebris {

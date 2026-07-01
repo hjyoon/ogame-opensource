@@ -58,6 +58,7 @@ type Galaxy struct {
 	Extra               GalaxyExtra
 	NotEnoughDeuterium  bool
 	RemoteSystemCostDue bool
+	ViewerAllianceID    int
 }
 
 type GalaxyBounds struct {
@@ -75,15 +76,16 @@ type GalaxyInput struct {
 }
 
 type GalaxyViewer struct {
-	PlayerID  int
-	Score     int64
-	Admin     int
-	Flags     int
-	MaxSpy    int
-	Commander bool
-	SpyProbes int
-	Recyclers int
-	Missiles  int
+	PlayerID   int
+	Score      int64
+	AllianceID int
+	Admin      int
+	Flags      int
+	MaxSpy     int
+	Commander  bool
+	SpyProbes  int
+	Recyclers  int
+	Missiles   int
 }
 
 type GalaxyObject struct {
@@ -113,8 +115,10 @@ type GalaxyObjectPlayer struct {
 }
 
 type GalaxyAlliance struct {
-	ID  int
-	Tag string
+	ID      int
+	Tag     string
+	Rank    int
+	Members int
 }
 
 type GalaxyRow struct {
@@ -265,6 +269,7 @@ func BuildGalaxy(overview Overview, input GalaxyInput) Galaxy {
 		},
 		NotEnoughDeuterium:  remoteSystem && input.Viewer.Admin == 0 && overview.CurrentPlanet.Resources.Deuterium < GalaxyDeuteriumCost,
 		RemoteSystemCostDue: remoteSystem && input.Viewer.Admin == 0,
+		ViewerAllianceID:    input.Viewer.AllianceID,
 	}
 }
 

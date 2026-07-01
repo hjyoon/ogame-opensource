@@ -155,7 +155,7 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
       if (pageSide === "legacy" && !keepTooltips) {
         hide("#overDiv");
       }
-      hide("#header_top img[width='50'][height='50'], .legacy-header-top img[width='50'][height='50']");
+      hide("#header_top, .legacy-header-top, #resources, .legacy-resource-table, select[name='cp']");
 
       const resourceValues = Array.from(document.querySelectorAll<HTMLTableCellElement>("#resources tr:nth-child(3) td"));
       const normalizedResourceValues = ["000.000", "000.000", "0.000", "0", "0/0"];
@@ -256,6 +256,14 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
         }
         hide("#content img[src$='b.gif'], .legacy-galaxy-table img[src$='b.gif']");
         if (keepTooltips) {
+          for (const table of galaxyTables) {
+            table.style.visibility = "hidden";
+          }
+          for (const image of document.querySelectorAll<HTMLImageElement>("#content table img, .legacy-galaxy-table img")) {
+            if (!image.closest(".legacy-galaxy-tooltip, #overDiv")) {
+              image.style.visibility = "hidden";
+            }
+          }
           for (const tooltip of document.querySelectorAll<HTMLElement>(".legacy-galaxy-tooltip, .legacy-galaxy-tooltip *, #overDiv, #overDiv *")) {
             tooltip.style.color = "";
             tooltip.style.textDecorationColor = "";
