@@ -74,7 +74,7 @@ function auth_visual_prepare_user(string $name, string $password, int $adminLeve
         "email='" . auth_visual_sql_escape($lower . '@visual.local') . "', validated=1, validatemd='', deact_ip=1, " .
         "admin={$adminLevel}, vacation=0, vacation_until=0, banned=0, banned_until=0, disable=0, disable_until=0, " .
         "ally_id=0, allyrank=0, joindate=0, com_until=0, adm_until=0, eng_until=0, geo_until=0, tec_until=0, dm=0, dmfree=5000, trader=1, rate_m=3, rate_k=2, rate_d=1, " .
-        "`" . GID_R_COMPUTER . "`=3, `" . GID_R_COMBUST_DRIVE . "`=2, " .
+        "`" . GID_R_COMPUTER . "`=3, `" . GID_R_COMBUST_DRIVE . "`=2, `" . GID_R_EXPEDITION . "`=3, " .
         "score1=10000, score2=0, score3=0, place1=1, place2=1, place3=1, " .
         "noattack=0, noattack_until=0, lang='en', skin='/evolution/', useskin=1, " .
         "hplanetid={$homePlanetId}, aktplanet={$homePlanetId}, lastclick={$now} WHERE player_id={$playerId}"
@@ -83,6 +83,7 @@ function auth_visual_prepare_user(string $name, string $password, int $adminLeve
     dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id={$playerId} AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "','" . QTYP_SHIPYARD . "','" . QTYP_FLEET . "')");
     dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id={$playerId} OR planet_id={$homePlanetId}");
     dbquery("DELETE FROM {$db_prefix}fleet WHERE owner_id={$playerId} OR start_planet={$homePlanetId} OR target_planet={$homePlanetId}");
+    dbquery("DELETE FROM {$db_prefix}union WHERE target_player={$playerId} OR players REGEXP '(^|,){$playerId}(,|$)'");
     dbquery(
         "UPDATE {$db_prefix}planets SET " .
         "`" . GID_RC_METAL . "`=1000000, `" . GID_RC_CRYSTAL . "`=1000000, `" . GID_RC_DEUTERIUM . "`=1000000, " .
@@ -669,6 +670,59 @@ function auth_visual_prepare_session(int $playerId): array
     );
 }
 
+function auth_visual_prepare_acs_fixture(array $user, array $galaxyHover): array
+{
+    global $db_prefix;
+
+    $playerId = (int)$user['player_id'];
+    $viewerPlanetId = (int)$user['home_planet_id'];
+    $targetPlanetId = (int)$galaxyHover['target_planet_id'];
+    $now = time();
+
+    dbquery(
+        "DELETE q FROM {$db_prefix}queue q JOIN {$db_prefix}fleet f ON q.sub_id=f.fleet_id " .
+        "WHERE q.type='" . QTYP_FLEET . "' AND (f.owner_id={$playerId} OR f.start_planet={$viewerPlanetId} OR f.target_planet={$targetPlanetId})"
+    );
+    dbquery("DELETE FROM {$db_prefix}fleet WHERE owner_id={$playerId} OR start_planet={$viewerPlanetId} OR target_planet={$targetPlanetId}");
+    dbquery("DELETE FROM {$db_prefix}union WHERE target_player=" . (int)$galaxyHover['target_player_id'] . " OR players REGEXP '(^|,){$playerId}(,|$)'");
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_RC_DEUTERIUM . "`=1000000, `" . GID_F_SC . "`=3 " .
+        "WHERE planet_id={$viewerPlanetId} AND owner_id={$playerId}"
+    );
+
+    $origin = LoadPlanetById($viewerPlanetId);
+    $target = LoadPlanetById($targetPlanetId);
+    if ($origin === null || $target === null) {
+        throw new RuntimeException('failed to load visual ACS fleet planets');
+    }
+    $fleet = array();
+    foreach ($GLOBALS['fleetmap'] as $gid) {
+        $fleet[$gid] = 0;
+    }
+    $fleet[GID_F_SC] = 1;
+    $resources = array();
+    foreach ($GLOBALS['transportableResources'] as $rc) {
+        $resources[$rc] = 0;
+    }
+    $fleetId = DispatchFleet($fleet, $origin, $target, FTYP_ATTACK, 3600, $resources, 0, $now - 60);
+    if ($fleetId <= 0) {
+        throw new RuntimeException('failed to dispatch visual ACS head fleet');
+    }
+    $unionId = CreateUnion($fleetId, 'Visual ACS');
+    if ($unionId <= 0) {
+        throw new RuntimeException('failed to create visual ACS union');
+    }
+    RenameUnion($unionId, 'Visual ACS');
+    SelectPlanet($playerId, $viewerPlanetId);
+
+    return array(
+        'fleet_id' => $fleetId,
+        'union_id' => $unionId,
+        'target_planet_id' => $targetPlanetId,
+        'target_position' => (int)$galaxyHover['target_position'],
+    );
+}
+
 try {
     $name = getenv('OGAME_GAME_VISUAL_USER') ?: 'legor';
     $password = getenv('OGAME_GAME_VISUAL_PASS') ?: 'admin';
@@ -677,6 +731,7 @@ try {
     $useAlliance = getenv('OGAME_GAME_VISUAL_ALLIANCE_FIXTURE') === '1';
     $useReport = getenv('OGAME_GAME_VISUAL_REPORT_FIXTURE') === '1';
     $usePhalanx = getenv('OGAME_GAME_VISUAL_PHALANX_FIXTURE') === '1';
+    $useAcs = getenv('OGAME_GAME_VISUAL_ACS_FIXTURE') === '1';
     $user = auth_visual_prepare_user($name, $password, $adminLevel);
     $adminUser = auth_visual_prepare_user('visualadmin', $password, USER_TYPE_ADMIN);
     $galaxyHover = auth_visual_prepare_galaxy_hover_fixture($user, $password);
@@ -695,6 +750,7 @@ try {
     $alliance = null;
     $report = null;
     $phalanx = null;
+    $acs = null;
     if ($useCommander) {
         auth_visual_prepare_commander_fixture($user);
     }
@@ -706,6 +762,9 @@ try {
     }
     if ($usePhalanx) {
         $phalanx = auth_visual_prepare_phalanx_fixture($user, $galaxyHover);
+    }
+    if ($useAcs) {
+        $acs = auth_visual_prepare_acs_fixture($user, $galaxyHover);
     }
     $adminAuth = auth_visual_prepare_session((int)$adminUser['player_id']);
     $auth = auth_visual_prepare_session((int)$user['player_id']);
@@ -733,11 +792,13 @@ try {
         'alliance' => $alliance,
         'report' => $report,
         'phalanx' => $phalanx,
+        'acs' => $acs,
         'features' => array(
             'commander' => $useCommander,
             'alliance' => $useAlliance,
             'report' => $useReport,
             'phalanx' => $usePhalanx,
+            'acs' => $useAcs,
         ),
         'session' => $auth['session'],
         'private_session' => $auth['private_session'],

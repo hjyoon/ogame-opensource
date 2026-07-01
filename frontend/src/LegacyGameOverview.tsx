@@ -13418,7 +13418,7 @@ function legacyOverviewMissionText(baseMission: number): string {
     case 21:
       return "Attack";
     case 2:
-      return "ACS Attack";
+      return "Joint attack";
     case 3:
       return "Transport";
     case 4:

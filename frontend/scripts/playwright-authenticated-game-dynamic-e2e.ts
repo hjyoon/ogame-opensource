@@ -29,7 +29,7 @@ type AuthFixture = {
   queue_short?: AuthProfile;
   research_short?: AuthProfile;
   shipyard_short?: AuthProfile;
-  features?: Partial<Record<"alliance" | "commander" | "phalanx" | "report", boolean>>;
+  features?: Partial<Record<"acs" | "alliance" | "commander" | "phalanx" | "report", boolean>>;
 };
 
 type AuthProfile = {
@@ -224,6 +224,8 @@ async function refreshAuthFixture(): Promise<AuthFixture> {
       `OGAME_GAME_VISUAL_REPORT_FIXTURE=${process.env.OGAME_GAME_VISUAL_REPORT_FIXTURE ?? "0"}`,
       "-e",
       `OGAME_GAME_VISUAL_PHALANX_FIXTURE=${process.env.OGAME_GAME_VISUAL_PHALANX_FIXTURE ?? "0"}`,
+      "-e",
+      `OGAME_GAME_VISUAL_ACS_FIXTURE=${process.env.OGAME_GAME_VISUAL_ACS_FIXTURE ?? "0"}`,
       "-e",
       `OGAME_GAME_VISUAL_USER=${process.env.OGAME_GAME_VISUAL_USER ?? ""}`,
       "-e",
