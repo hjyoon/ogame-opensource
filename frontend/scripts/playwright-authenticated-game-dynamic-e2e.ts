@@ -19,7 +19,15 @@ type AuthFixture = {
   home_planet_id?: number;
   login_user?: string;
   cookies?: Record<string, string>;
+  max_fleet?: AuthProfile;
   features?: Partial<Record<"alliance" | "commander" | "phalanx" | "report", boolean>>;
+};
+
+type AuthProfile = {
+  session: string;
+  home_planet_id?: number;
+  login_user?: string;
+  cookies?: Record<string, string>;
 };
 
 type SideResult = {
@@ -69,11 +77,11 @@ const browser = await browserType.launch({
 try {
   const results: CaseResult[] = [];
   for (const spec of selectedSpecs) {
-    const legacyContext = await newContext(browser, legacyBaseURL);
+    const legacyContext = await newContext(browser, legacyBaseURL, spec);
     const legacy = await runSide(legacyContext, "legacy", spec, legacyURL(spec));
     await legacyContext.close();
 
-    const migratedContext = await newContext(browser, migratedBaseURL);
+    const migratedContext = await newContext(browser, migratedBaseURL, spec);
     const migrated = await runSide(migratedContext, "migrated", spec, migratedURL(spec));
     await migratedContext.close();
 
@@ -143,7 +151,7 @@ async function loadAuthFixture(path: string | undefined): Promise<AuthFixture> {
   return parsed;
 }
 
-async function newContext(browserInstance: Browser, baseURL: string): Promise<BrowserContext> {
+async function newContext(browserInstance: Browser, baseURL: string, spec: GameDynamicBehaviorSpec): Promise<BrowserContext> {
   const context = await browserInstance.newContext({
     viewport: { width: 1024, height: 768 },
     deviceScaleFactor: 1,
@@ -173,8 +181,9 @@ async function newContext(browserInstance: Browser, baseURL: string): Promise<Br
     Math.random = () => 0.42;
   }, fixedNowMs);
   await context.addCookies([{ name: "ogamelang", value: "en", url: baseURL }]);
-  if (fixture.cookies) {
-    await context.addCookies(Object.entries(fixture.cookies).map(([name, value]) => ({ name, value, url: baseURL })));
+  const profile = fixtureProfile(spec);
+  if (profile.cookies) {
+    await context.addCookies(Object.entries(profile.cookies).map(([name, value]) => ({ name, value, url: baseURL })));
   }
   return context;
 }
@@ -374,9 +383,10 @@ function compareAssertions(spec: GameDynamicBehaviorSpec, legacy: SideResult, mi
 }
 
 function legacyURL(spec: GameDynamicBehaviorSpec): string {
-  const query = new URLSearchParams({ page: spec.legacyPage, session: fixture.session });
-  if (fixture.home_planet_id && !spec.legacyQuery?.cp) {
-    query.set("cp", String(fixture.home_planet_id));
+  const profile = fixtureProfile(spec);
+  const query = new URLSearchParams({ page: spec.legacyPage, session: profile.session });
+  if (profile.home_planet_id && !spec.legacyQuery?.cp) {
+    query.set("cp", String(profile.home_planet_id));
   }
   for (const [key, value] of Object.entries(spec.legacyQuery ?? {})) {
     query.set(key, resolveFixtureQueryValue(value));
@@ -385,14 +395,25 @@ function legacyURL(spec: GameDynamicBehaviorSpec): string {
 }
 
 function migratedURL(spec: GameDynamicBehaviorSpec): string {
-  const query = new URLSearchParams({ session: fixture.session });
-  if (fixture.home_planet_id && !spec.migratedQuery?.cp) {
-    query.set("cp", String(fixture.home_planet_id));
+  const profile = fixtureProfile(spec);
+  const query = new URLSearchParams({ session: profile.session });
+  if (profile.home_planet_id && !spec.migratedQuery?.cp) {
+    query.set("cp", String(profile.home_planet_id));
   }
   for (const [key, value] of Object.entries(spec.migratedQuery ?? {})) {
     query.set(key, resolveFixtureQueryValue(value));
   }
   return `${migratedBaseURL}${spec.migratedPath}?${query.toString()}`;
+}
+
+function fixtureProfile(spec: GameDynamicBehaviorSpec): AuthProfile {
+  if (spec.fixtureProfile === "max_fleet") {
+    if (!fixture.max_fleet?.session) {
+      throw new Error("authenticated game fixture is missing max_fleet profile");
+    }
+    return fixture.max_fleet;
+  }
+  return fixture;
 }
 
 function resolveFixtureQueryValue(value: string): string {

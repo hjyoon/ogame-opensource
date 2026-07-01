@@ -26,6 +26,7 @@ export type GameDynamicAssertion = {
 
 export type GameDynamicBehaviorSpec = {
   name: string;
+  fixtureProfile?: "max_fleet";
   legacyPage: string;
   legacyQuery?: Record<string, string>;
   migratedPath: string;
@@ -198,6 +199,52 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers legacy document.onkeyup galaxyLeft behavior."]
   },
   {
+    name: "galaxy-instant-spy-noob-failure",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content tr:has-text('Visual Noob Planet') a[onclick*='doit(6']",
+        migratedSelector: "tr[data-galaxy-position='3'] .legacy-galaxy-actions a[data-galaxy-action='Espionage']",
+        waitForSelector: "#fleetstatustable tr"
+      }
+    ],
+    assertions: [
+      { name: "status-row", type: "text", selector: "#fleetstatustable tr:first-child", compareSides: true },
+      {
+        name: "status-result",
+        type: "text",
+        selector: "#fleetstatustable tr:first-child td:nth-child(2)",
+        expected: "Error! It is impossible to fly to the player, because he is under noob protection!"
+      }
+    ],
+    notes: ["Covers legacy galaxy doit(6) noob-protection failure row parity."]
+  },
+  {
+    name: "galaxy-instant-spy-vacation-failure",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content tr:has-text('Visual Vacation') a[onclick*='doit(6']",
+        migratedSelector: "tr[data-galaxy-position='4'] .legacy-galaxy-actions a[data-galaxy-action='Espionage']",
+        waitForSelector: "#fleetstatustable tr"
+      }
+    ],
+    assertions: [
+      { name: "status-row", type: "text", selector: "#fleetstatustable tr:first-child", compareSides: true },
+      { name: "status-result", type: "text", selector: "#fleetstatustable tr:first-child td:nth-child(2)", expected: "Impossible, the player is in vacation mode" },
+      { name: "status-result-html", type: "html", selector: "#fleetstatustable tr:first-child td:nth-child(2)", compareSides: true }
+    ],
+    notes: ["Covers legacy galaxy doit(6) vacation failure message and class parity."]
+  },
+  {
     name: "galaxy-instant-spy-dispatch-success",
     legacyPage: "galaxy",
     migratedPath: "/game/galaxy",
@@ -236,6 +283,27 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "status-result", type: "text", selector: "#fleetstatustable tr:first-child td:nth-child(2)", expected: "done" }
     ],
     notes: ["Covers successful legacy galaxy doit(8) recycle dispatch status row parity."]
+  },
+  {
+    name: "galaxy-instant-spy-max-fleet-failure",
+    fixtureProfile: "max_fleet",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content tr:has-text('Visual Max Target') a[onclick*='doit(6']",
+        migratedSelector: "tr[data-galaxy-position='5'] .legacy-galaxy-actions a[data-galaxy-action='Espionage']",
+        waitForSelector: "#fleetstatustable tr"
+      }
+    ],
+    assertions: [
+      { name: "status-row", type: "text", selector: "#fleetstatustable tr:first-child", compareSides: true },
+      { name: "status-result", type: "text", selector: "#fleetstatustable tr:first-child td:nth-child(2)", expected: "Not enough room for a fleet" }
+    ],
+    notes: ["Covers legacy galaxy doit(6) max-fleet failure after slot exhaustion."]
   },
   {
     name: "alliance-circular-text-counter",

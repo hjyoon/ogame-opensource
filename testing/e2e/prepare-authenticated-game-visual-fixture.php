@@ -73,7 +73,7 @@ function auth_visual_prepare_user(string $name, string $password, int $adminLeve
         "password='" . auth_visual_sql_escape($passwordHash) . "', pemail='" . auth_visual_sql_escape($lower . '@visual.local') . "', " .
         "email='" . auth_visual_sql_escape($lower . '@visual.local') . "', validated=1, validatemd='', deact_ip=1, " .
         "admin={$adminLevel}, vacation=0, vacation_until=0, banned=0, banned_until=0, disable=0, disable_until=0, " .
-        "ally_id=0, allyrank=0, joindate=0, com_until=0, dm=0, dmfree=5000, trader=1, rate_m=3, rate_k=2, rate_d=1, " .
+        "ally_id=0, allyrank=0, joindate=0, com_until=0, adm_until=0, eng_until=0, geo_until=0, tec_until=0, dm=0, dmfree=5000, trader=1, rate_m=3, rate_k=2, rate_d=1, " .
         "`" . GID_R_COMPUTER . "`=3, `" . GID_R_COMBUST_DRIVE . "`=2, " .
         "score1=10000, score2=0, score3=0, place1=1, place2=1, place3=1, " .
         "noattack=0, noattack_until=0, lang='en', skin='/evolution/', useskin=1, " .
@@ -114,7 +114,7 @@ function auth_visual_find_empty_hover_system(): array
 
     for ($g = 1; $g <= (int)$GlobalUni['galaxies']; $g++) {
         for ($s = 1; $s <= (int)$GlobalUni['systems']; $s++) {
-            if (auth_visual_position_is_clear($g, $s, 1) && auth_visual_position_is_clear($g, $s, 2)) {
+            if (auth_visual_position_is_clear($g, $s, 1) && auth_visual_position_is_clear($g, $s, 2) && auth_visual_position_is_clear($g, $s, 3) && auth_visual_position_is_clear($g, $s, 4) && auth_visual_position_is_clear($g, $s, 5) && auth_visual_position_is_clear($g, $s, 6)) {
                 return array($g, $s);
             }
         }
@@ -141,17 +141,52 @@ function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password)
     global $db_prefix;
 
     $target = auth_visual_prepare_user('visualhover', $password, USER_TYPE_PLAYER);
+    $noobTarget = auth_visual_prepare_user('visualnoob', $password, USER_TYPE_PLAYER);
+    $vacationTarget = auth_visual_prepare_user('visualvacation', $password, USER_TYPE_PLAYER);
+    $maxFleetUser = auth_visual_prepare_user('visualmax', $password, USER_TYPE_PLAYER);
+    $maxFleetTarget = auth_visual_prepare_user('visualmaxtarget', $password, USER_TYPE_PLAYER);
     $viewerId = (int)$user['player_id'];
     $viewerPlanetId = (int)$user['home_planet_id'];
     $targetId = (int)$target['player_id'];
     $targetPlanetId = (int)$target['home_planet_id'];
+    $noobTargetId = (int)$noobTarget['player_id'];
+    $noobTargetPlanetId = (int)$noobTarget['home_planet_id'];
+    $vacationTargetId = (int)$vacationTarget['player_id'];
+    $vacationTargetPlanetId = (int)$vacationTarget['home_planet_id'];
+    $maxFleetUserId = (int)$maxFleetUser['player_id'];
+    $maxFleetPlanetId = (int)$maxFleetUser['home_planet_id'];
+    $maxFleetTargetId = (int)$maxFleetTarget['player_id'];
+    $maxFleetTargetPlanetId = (int)$maxFleetTarget['home_planet_id'];
     [$g, $s] = auth_visual_find_empty_hover_system();
     $now = time();
 
     auth_visual_place_planet($targetPlanetId, $targetId, 'Visual Hover Planet', $g, $s, 1);
     auth_visual_place_planet($viewerPlanetId, $viewerId, 'Visual Home', $g, $s, 2);
+    auth_visual_place_planet($noobTargetPlanetId, $noobTargetId, 'Visual Noob Planet', $g, $s, 3);
+    auth_visual_place_planet($vacationTargetPlanetId, $vacationTargetId, 'Visual Vacation', $g, $s, 4);
+    auth_visual_place_planet($maxFleetTargetPlanetId, $maxFleetTargetId, 'Visual Max Target', $g, $s, 5);
+    auth_visual_place_planet($maxFleetPlanetId, $maxFleetUserId, 'Visual Max Home', $g, $s, 6);
     dbquery("UPDATE {$db_prefix}users SET hplanetid={$viewerPlanetId}, aktplanet={$viewerPlanetId}, lastclick={$now} WHERE player_id={$viewerId}");
     dbquery("UPDATE {$db_prefix}users SET hplanetid={$targetPlanetId}, aktplanet={$targetPlanetId}, lastclick={$now}, score1=10000, score2=0, score3=0, place1=1, place2=1, place3=1 WHERE player_id={$targetId}");
+    dbquery("UPDATE {$db_prefix}users SET hplanetid={$noobTargetPlanetId}, aktplanet={$noobTargetPlanetId}, lastclick={$now}, score1=1, score2=0, score3=0, place1=1, place2=1, place3=1 WHERE player_id={$noobTargetId}");
+    dbquery("UPDATE {$db_prefix}users SET hplanetid={$vacationTargetPlanetId}, aktplanet={$vacationTargetPlanetId}, lastclick={$now}, score1=10000, score2=0, score3=0, place1=1, place2=1, place3=1, vacation=1, vacation_until=" . ($now + 86400) . " WHERE player_id={$vacationTargetId}");
+    dbquery("UPDATE {$db_prefix}users SET hplanetid={$maxFleetPlanetId}, aktplanet={$maxFleetPlanetId}, lastclick={$now}, score1=10000, score2=0, score3=0, place1=1, place2=1, place3=1, `" . GID_R_COMPUTER . "`=1 WHERE player_id={$maxFleetUserId}");
+    dbquery("UPDATE {$db_prefix}users SET hplanetid={$maxFleetTargetPlanetId}, aktplanet={$maxFleetTargetPlanetId}, lastclick={$now}, score1=10000, score2=0, score3=0, place1=1, place2=1, place3=1 WHERE player_id={$maxFleetTargetId}");
+
+    $maxOrigin = LoadPlanetById($maxFleetPlanetId);
+    $maxTarget = LoadPlanetById($maxFleetTargetPlanetId);
+    $maxResources = array();
+    foreach ($GLOBALS['transportableResources'] as $rc) {
+        $maxResources[$rc] = 0;
+    }
+    $maxFleet = array();
+    foreach ($GLOBALS['fleetmap'] as $gid) {
+        $maxFleet[$gid] = 0;
+    }
+    $maxFleet[GID_F_PROBE] = 1;
+    DispatchFleet($maxFleet, $maxOrigin, $maxTarget, FTYP_SPY, 3600, $maxResources, 0, $now - 120);
+    DispatchFleet($maxFleet, $maxOrigin, $maxTarget, FTYP_SPY, 3600, $maxResources, 0, $now - 60);
+    $maxFleetAuth = auth_visual_prepare_session($maxFleetUserId);
 
     $moonId = PlanetHasMoon($targetPlanetId);
     if ($moonId <= 0) {
@@ -194,9 +229,28 @@ function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password)
         'viewer_position' => 2,
         'target_player_id' => $targetId,
         'target_planet_id' => $targetPlanetId,
+        'noob_target_position' => 3,
+        'noob_target_player_id' => $noobTargetId,
+        'noob_target_planet_id' => $noobTargetPlanetId,
+        'vacation_target_position' => 4,
+        'vacation_target_player_id' => $vacationTargetId,
+        'vacation_target_planet_id' => $vacationTargetPlanetId,
+        'max_fleet_target_position' => 5,
+        'max_fleet_player_id' => $maxFleetUserId,
+        'max_fleet_planet_id' => $maxFleetPlanetId,
+        'max_fleet_target_player_id' => $maxFleetTargetId,
+        'max_fleet_target_planet_id' => $maxFleetTargetPlanetId,
         'moon_id' => $moonId,
         'debris_id' => $debrisId,
         'ally_id' => $allyId,
+        'max_fleet' => array(
+            'login_user' => $maxFleetUser['name'],
+            'player_id' => $maxFleetUserId,
+            'home_planet_id' => $maxFleetPlanetId,
+            'session' => $maxFleetAuth['session'],
+            'private_session' => $maxFleetAuth['private_session'],
+            'cookies' => $maxFleetAuth['cookies'],
+        ),
     );
 }
 
@@ -337,6 +391,8 @@ try {
     $usePhalanx = getenv('OGAME_GAME_VISUAL_PHALANX_FIXTURE') === '1';
     $user = auth_visual_prepare_user($name, $password, $adminLevel);
     $galaxyHover = auth_visual_prepare_galaxy_hover_fixture($user, $password);
+    $maxFleet = $galaxyHover['max_fleet'] ?? null;
+    unset($galaxyHover['max_fleet']);
     $alliance = null;
     $report = null;
     $phalanx = null;
@@ -358,6 +414,7 @@ try {
         'player_id' => (int)$user['player_id'],
         'home_planet_id' => (int)$user['home_planet_id'],
         'galaxy_hover' => $galaxyHover,
+        'max_fleet' => $maxFleet,
         'alliance' => $alliance,
         'report' => $report,
         'phalanx' => $phalanx,

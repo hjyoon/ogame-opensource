@@ -9818,6 +9818,9 @@ function legacyGalaxyInstantMessage(issue: GameGalaxyActionIssue, draft: GameGal
 }
 
 function legacyGalaxyInstantClass(issue: GameGalaxyActionIssue): string {
+  if (issue.code === "fleet_vacation_other") {
+    return "vacation";
+  }
   return issue.code === "fleet_dispatched" ? "success" : "error";
 }
 
