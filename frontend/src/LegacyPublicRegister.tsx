@@ -42,6 +42,13 @@ type LegacyPublicRegisterProps = LegacyPublicLoginProps & {
   onRegistrationSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 };
 
+type RegisterHelpCode = "201" | "202" | "204" | "205";
+
+type RegisterStatus = {
+  className: "fine" | "warning";
+  text: string;
+};
+
 export function LegacyPublicRegister({
   universes,
   loginDraft,
@@ -109,8 +116,25 @@ function RegisterContent({
 >) {
   const characterRef = React.useRef<HTMLInputElement>(null);
   const formRef = React.useRef<HTMLFormElement>(null);
+  const [helpCode, setHelpCode] = React.useState<RegisterHelpCode>("201");
+  const [pollingUsername, setPollingUsername] = React.useState(false);
+  const [registerStatus, setRegisterStatus] = React.useState<RegisterStatus | null>(null);
 
   useLegacyPublicAutoFocus(characterRef);
+  React.useEffect(() => {
+    if (!pollingUsername) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      const username = registrationDraft.character;
+      if (username.length > 2 && username.length < 20) {
+        setRegisterStatus({ className: "fine", text: "OK" });
+      } else {
+        setRegisterStatus({ className: "warning", text: "The name must be between 3 and 20 characters long!" });
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [pollingUsername, registrationDraft.character]);
 
   const submitRegistration = () => {
     if (!registrationPending) {
@@ -148,6 +172,12 @@ function RegisterContent({
                       className="eingabe legacy-public-input legacy-register-field"
                       name="character"
                       onChange={(event) => onRegistrationChange("character", event.currentTarget.value)}
+                      onBlur={() => setPollingUsername(false)}
+                      onFocus={() => {
+                        setHelpCode("201");
+                        setRegisterStatus(null);
+                        setPollingUsername(true);
+                      }}
                       ref={characterRef}
                       size={20}
                       type="text"
@@ -162,6 +192,10 @@ function RegisterContent({
                       className="eingabe legacy-public-input legacy-register-field"
                       name="email"
                       onChange={(event) => onRegistrationChange("email", event.currentTarget.value)}
+                      onFocus={() => {
+                        setHelpCode("202");
+                        setRegisterStatus(null);
+                      }}
                       size={20}
                       type="text"
                       value={registrationDraft.email}
@@ -175,6 +209,10 @@ function RegisterContent({
                       className="eingabe legacy-public-input legacy-register-field"
                       name="password"
                       onChange={(event) => onRegistrationChange("password", event.currentTarget.value)}
+                      onFocus={() => {
+                        setHelpCode("205");
+                        setRegisterStatus(null);
+                      }}
                       size={20}
                       type="password"
                       value={registrationDraft.password}
@@ -209,6 +247,10 @@ function RegisterContent({
                       checked={registrationDraft.agb}
                       name="agb"
                       onChange={(event) => onRegistrationChange("agb", event.currentTarget.checked)}
+                      onFocus={() => {
+                        setHelpCode("204");
+                        setRegisterStatus(null);
+                      }}
                       type="checkbox"
                     />{" "}
                     I accept the{" "}
@@ -227,7 +269,7 @@ function RegisterContent({
             <input name="errorCodeOn" type="hidden" value="1" />
           </form>
         </div>
-        <RegistrationFeedback error={registrationError} result={registrationResult} />
+        <RegistrationFeedback error={registrationError} helpCode={helpCode} result={registrationResult} status={registerStatus} />
         <div
           aria-disabled={registrationPending}
           id="register_submit"
@@ -250,10 +292,14 @@ function UniverseOption({ universe }: { universe: PublicUniverse }) {
 
 function RegistrationFeedback({
   error,
-  result
+  helpCode,
+  result,
+  status
 }: {
   error: string | null;
+  helpCode: RegisterHelpCode;
   result: PublicRegistrationResult | null;
+  status: RegisterStatus | null;
 }) {
   if (error) {
     return <div id="statustext"><span className="warning">{error}</span></div>;
@@ -261,11 +307,8 @@ function RegistrationFeedback({
   if (!result) {
     return (
       <>
-        <div id="infotext">
-        Name in the game: <br />
-        This is the name you use in the game. It is unique throughout the universe.
-        </div>
-        <div id="statustext" />
+        <div id="infotext" dangerouslySetInnerHTML={{ __html: registerHelpHTML(helpCode) }} />
+        <div id="statustext">{status ? <span className={status.className}>{status.text}</span> : null}</div>
       </>
     );
   }
@@ -289,4 +332,18 @@ function RegistrationFeedback({
       <span className="warning">{result.issues.map((issue) => issue.message).join(" ")}</span>
     </div>
   );
+}
+
+function registerHelpHTML(code: RegisterHelpCode): string {
+  switch (code) {
+    case "202":
+      return "E-Mail-Address: <br />Enter a valid E-Mail address to activate your account. You have 3 days to activate your account during those 3 days you are already able to play.";
+    case "204":
+      return "T&amp;C:<br /> Accept the T&amp;C (Terms and Conditions) to be able to play OGame.";
+    case "205":
+      return "Password:<br/>Your password works as a safety meassure when login in to your account. Do not give your password to anyone!";
+    case "201":
+    default:
+      return "Name in the game: <br />This is the name you use in the game. It is unique throughout the universe.";
+  }
 }

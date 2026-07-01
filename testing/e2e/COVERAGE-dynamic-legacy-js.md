@@ -1,8 +1,7 @@
 # Dynamic Legacy JS Coverage
 
-This tracks legacy PHP/JS dynamic behavior in the Go+Bun React frontend. Exact
-screenshots prove pixels only for registry states; masked regions also need
-behavior tests.
+Tracks legacy PHP/JS dynamic behavior in the Go+Bun React frontend. Exact
+screenshots prove pixels; masked regions need behavior tests too.
 
 ## Status Map
 
@@ -16,34 +15,28 @@ behavior tests.
 | Character counters | messages, notes, buddy, alliance textareas `cntChars` | Mostly migrated | compose/notes/buddy/alliance/application counter checks | remaining counters should be added when found |
 | Statistics/empire hovers | `statistics.php`, `imperium.php` overLib averages/deltas | Mostly migrated | player/alliance delta and empire average tooltip text checks | add more row variants only if bugs appear |
 | Admin tools | `pages_admin/*` simulators, filters, bot editor JS | Mostly migrated | admin visual/HTTP, BattleSim slot-sync, BotEdit init/palette checks | BotEdit SACK load/new/rename/save remains isolated follow-up |
-| Public auth/register | `wwwroot/*`, `registration.js` flags and polling validation | Partially migrated | auth visual/CSR cases, registration HTTP tests | username/email polling parity is not an exact visual guarantee |
+| Public auth/register | `wwwroot/*`, `registration.js` flags and polling validation | Mostly migrated | auth visual/CSR, registration HTTP, public registration dynamic checks | submit-error visual states remain separate |
 
 ## Masked Or Normalized Dynamic Regions
 
 `frontend/scripts/visual/game-visual-utils.ts` normalizes server time,
-countdowns, moving fleet timers, volatile resource values, dynamic image URLs,
-statistics/galaxy tooltip placement, and selected admin tables. These masks are
-intentional for stable screenshots, but they mean screenshot success alone does
-not prove timer, hover, or calculation logic.
+countdowns, moving fleet timers, volatile resources, image URLs, tooltip
+placement, and selected admin tables. Masked pixels need DOM/text assertions.
 
 ## Behavior Runner
 
 `run-playwright-authenticated-game-dynamic-e2e.sh` runs 36 shared-fixture cases:
 message/notes/buddy/alliance/application counters, galaxy tooltip/action
 navigation/keyboard/instant dispatch, fleet all-ships, target metrics, cargo/mission controls,
-merchant clamps/tooltips/submit, statistics/empire tooltips, BattleSim slot sync, and BotEdit init. Merchant text allows
-+/-1 for live production drift; action results are still compared numerically.
+merchant clamps/tooltips/submit, statistics/empire tooltips, BattleSim slot sync, and BotEdit init.
+`run-playwright-public-registration-dynamic-e2e.sh` separately compares public
+register focus help and username polling states.
 
 ## Required Follow-up
 
-1. Expand `game-dynamic-behavior-registry.ts` for dynamic actions that should
-   not be judged by pixels: fleet `shortInfo`, merchant calculator, text
-   counters, galaxy instant actions, and admin simulators.
-2. For every masked selector, keep at least one DOM/text assertion that proves
-   the underlying dynamic value is updated.
-3. Run the behavior suite against both legacy PHP and Go+Bun where possible,
-   then document unsupported legacy-only cases here instead of hiding them in
-   visual masks.
+1. Keep DOM/text assertions for every masked selector.
+2. Add isolated cases for unsupported legacy-only mutating JS.
+3. Run both legacy PHP and Go+Bun where possible.
 
 Current conclusion: core visible dynamics are substantially migrated. Remaining
 work is fine-grained client behavior, not static page layout.

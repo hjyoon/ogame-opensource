@@ -18,6 +18,7 @@
     "e2e:visual:game-auth": "bun run scripts/playwright-authenticated-game-visual-e2e.ts",
     "e2e:dynamic:game-auth": "bun run scripts/playwright-authenticated-game-dynamic-e2e.ts",
     "e2e:visual:overview-fleet": "bun run scripts/playwright-overview-fleet-visual-e2e.ts",
+    "e2e:dynamic:public-registration": "bun run scripts/playwright-public-registration-dynamic-e2e.ts",
     "e2e:visual": "bun run scripts/playwright-visual-e2e.ts",
     "test": "bun test"
   },
