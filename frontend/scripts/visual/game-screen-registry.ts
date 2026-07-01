@@ -12,10 +12,11 @@ export type GameVisualArea =
   | "permission";
 
 export type GameVisualAction = {
-  type: "hover" | "focus" | "click";
+  type: "hover" | "focus" | "click" | "fill" | "select" | "check" | "uncheck" | "keyboard";
   selector?: string;
   legacySelector?: string;
   migratedSelector?: string;
+  value?: string;
   waitForSelector?: string;
   waitMs?: number;
 };
@@ -133,6 +134,21 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     expectedTexts: ["Production factor:", "Resource settings on planet", "Basic Income", "Storage capacity", "Total per hour:"]
   },
   {
+    name: "game-resources-production-edited",
+    area: "state",
+    legacyPage: "resources",
+    migratedPath: "/game/resources",
+    legacyReady: "#content form#ressourcen",
+    migratedReady: ".legacy-resources-table",
+    expectedTexts: ["Production factor:", "Resource settings on planet", "Basic Income", "Storage capacity", "Total per hour:"],
+    actions: [
+      { type: "select", selector: "select[name='last1']", value: "0" },
+      { type: "select", selector: "select[name='last2']", value: "50" },
+      { type: "select", selector: "select[name='last3']", value: "100" }
+    ],
+    notes: ["Same-route draft state for edited production percentages without submitting."]
+  },
+  {
     name: "game-empire-redirect",
     area: "state",
     legacyPage: "imperium",
@@ -188,6 +204,19 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     dynamicSelectors: ["#bxx", "[id^='bxx']"]
   },
   {
+    name: "game-shipyard-qty-draft",
+    area: "state",
+    legacyPage: "buildings",
+    legacyQuery: { mode: "Flotte" },
+    migratedPath: "/game/shipyard",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-shipyard-table",
+    expectedTexts: ["Description", "Qty.", "Small Cargo", "Build"],
+    actions: [{ type: "fill", selector: "input[name='fmenge[202]']", value: "3" }],
+    dynamicSelectors: ["#bxx", "[id^='bxx']"],
+    notes: ["Same-route shipyard quantity draft without submitting the build form."]
+  },
+  {
     name: "game-fleet",
     area: "core",
     legacyPage: "flotten1",
@@ -195,6 +224,17 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     legacyReady: "#content table",
     migratedReady: ".legacy-fleet-table",
     expectedTexts: ["Fleets", "Expeditions", "Mission", "Ships (total)", "Please select your ships for this mission:", "Ship Type", "Available"]
+  },
+  {
+    name: "game-fleet-ship-selection-draft",
+    area: "state",
+    legacyPage: "flotten1",
+    migratedPath: "/game/fleet",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-fleet-table",
+    expectedTexts: ["Fleets", "Expeditions", "Please select your ships for this mission:", "Ship Type", "Available", "continue"],
+    actions: [{ type: "fill", selector: "input[name='ship202']", value: "1" }],
+    notes: ["Same-route fleet ship selection draft before continue."]
   },
   {
     name: "game-fleet-templates",
@@ -268,7 +308,7 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
         waitMs: 850
       }
     ],
-    notes: ["Explicit tooltip/popover state; disabled by default because target occupancy is fixture-dependent."]
+    notes: ["Explicit tooltip/popover state. Non-default until the legacy overlib and React tooltip visuals are equivalent."]
   },
   {
     name: "game-defense",
@@ -280,6 +320,19 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     migratedReady: ".legacy-defense-table",
     expectedTexts: ["Description", "Qty.", "Rocket Launcher"],
     dynamicSelectors: ["#bxx", "[id^='bxx']"]
+  },
+  {
+    name: "game-defense-qty-draft",
+    area: "state",
+    legacyPage: "buildings",
+    legacyQuery: { mode: "Verteidigung" },
+    migratedPath: "/game/defense",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-defense-table",
+    expectedTexts: ["Description", "Qty.", "Rocket Launcher", "Build"],
+    actions: [{ type: "fill", selector: "input[name='fmenge[401]']", value: "5" }],
+    dynamicSelectors: ["#bxx", "[id^='bxx']"],
+    notes: ["Same-route defense quantity draft without submitting the build form."]
   },
   {
     name: "game-alliance",
@@ -302,6 +355,22 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     expectedTexts: ["Found an alliance", "Alliance abbreviation (3-8 characters)", "Alliance name (3-30 characters)"]
   },
   {
+    name: "game-alliance-create-draft",
+    area: "state",
+    legacyPage: "allianzen",
+    legacyQuery: { a: "1" },
+    migratedPath: "/game/alliance",
+    migratedQuery: { a: "1" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-alliance-create-table",
+    expectedTexts: ["Found an alliance", "Alliance abbreviation (3-8 characters)", "Alliance name (3-30 characters)"],
+    actions: [
+      { type: "fill", selector: "input[name='tag']", value: "VIS" },
+      { type: "fill", selector: "input[name='name']", value: "Visual State Alliance" }
+    ],
+    notes: ["Same-route alliance creation draft without submitting."]
+  },
+  {
     name: "game-alliance-search",
     area: "alliance",
     legacyPage: "allianzen",
@@ -311,6 +380,19 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     legacyReady: "#content table",
     migratedReady: ".legacy-alliance-search-table",
     expectedTexts: ["Looking for alliances.", "Seek", "Search"]
+  },
+  {
+    name: "game-alliance-search-draft",
+    area: "state",
+    legacyPage: "allianzen",
+    legacyQuery: { a: "2" },
+    migratedPath: "/game/alliance",
+    migratedQuery: { a: "2" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-alliance-search-table",
+    expectedTexts: ["Looking for alliances.", "Seek", "Search"],
+    actions: [{ type: "fill", selector: "input[name='suchtext']", value: "VIS" }],
+    notes: ["Same-route alliance search draft without submitting."]
   },
   {
     name: "game-alliance-owned-home",
@@ -457,6 +539,20 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     expectedTexts: ["Search Universe", "Player Name", "Planet Name", "Alliance Tag", "Alliance Name", "search"]
   },
   {
+    name: "game-search-form-draft",
+    area: "state",
+    legacyPage: "suche",
+    migratedPath: "/game/search",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-search-head-table",
+    expectedTexts: ["Search Universe", "Player Name", "Planet Name", "Alliance Tag", "Alliance Name", "search"],
+    actions: [
+      { type: "select", selector: "select[name='type']", value: "playername" },
+      { type: "fill", selector: "input[name='searchtext']", value: "Legor" }
+    ],
+    notes: ["Same-route search form draft without submitting."]
+  },
+  {
     name: "game-messages",
     area: "core",
     legacyPage: "messages",
@@ -475,6 +571,22 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     legacyReady: "#content form",
     migratedReady: ".legacy-messages-compose-table",
     expectedTexts: ["Write message", "Recipient", "Subject", "Message(0 / 2000 characters)"]
+  },
+  {
+    name: "game-messages-compose-draft",
+    area: "state",
+    legacyPage: "writemessages",
+    legacyQuery: { messageziel: "1" },
+    migratedPath: "/game/messages",
+    migratedQuery: { messageziel: "1" },
+    legacyReady: "#content form",
+    migratedReady: ".legacy-messages-compose-table",
+    expectedTexts: ["Write message", "Recipient", "Subject", "Message(0 / 2000 characters)"],
+    actions: [
+      { type: "fill", selector: "input[name='betreff']", value: "Visual draft" },
+      { type: "fill", selector: "textarea[name='text']", value: "Visual regression draft body" }
+    ],
+    notes: ["Same-route message compose draft without sending."]
   },
   {
     name: "game-report",
@@ -520,6 +632,21 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     expectedTexts: ["User Data", "General Options", "Galaxy View Options", "Vacation mode / Delete account"]
   },
   {
+    name: "game-options-edited-draft",
+    area: "state",
+    legacyPage: "options",
+    migratedPath: "/game/options",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-options-table",
+    expectedTexts: ["User Data", "General Options", "Galaxy View Options", "Vacation mode / Delete account"],
+    actions: [
+      { type: "select", selector: "select[name='settings_sort']", value: "1" },
+      { type: "select", selector: "select[name='settings_order']", value: "1" },
+      { type: "fill", selector: "input[name='spio_anz']", value: "6" }
+    ],
+    notes: ["Same-route options draft without submitting account changes."]
+  },
+  {
     name: "game-notes",
     area: "core",
     legacyPage: "notizen",
@@ -542,6 +669,24 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     expectedTexts: ["Create note", "Priority", "Important", "Normal", "Unimportant", "Subject", "Notice", "Back"]
   },
   {
+    name: "game-notes-create-draft",
+    area: "state",
+    legacyPage: "notizen",
+    legacyQuery: { a: "1" },
+    migratedPath: "/game/notes",
+    migratedQuery: { a: "1" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-notes-form-table",
+    requiredBoxes: ["content"],
+    expectedTexts: ["Create note", "Priority", "Important", "Normal", "Unimportant", "Subject", "Notice", "Back"],
+    actions: [
+      { type: "select", selector: "select[name='u']", value: "0" },
+      { type: "fill", selector: "input[name='betreff']", value: "Visual note" },
+      { type: "fill", selector: "textarea[name='text']", value: "Visual note draft body" }
+    ],
+    notes: ["Same-route note draft without saving."]
+  },
+  {
     name: "game-admin",
     area: "admin",
     legacyPage: "admin",
@@ -550,6 +695,58 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     migratedReady: ".legacy-admin-home-table",
     requiredBoxes: ["menu", "content"],
     expectedTexts: ["Fleet Logs", "Browse History", "Users", "Universe Settings", "Expedition Settings", "Modifications"]
+  },
+  {
+    name: "game-admin-bans-filter-draft",
+    area: "state",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Bans" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Bans" },
+    legacyReady: "#content select[name='searchby']",
+    migratedReady: ".legacy-admin-bans-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["Find users", "Banned with VM", "Attack bans", "Same IP"],
+    actions: [
+      { type: "select", selector: "select[name='searchby']", value: "4" },
+      { type: "fill", selector: "input[name='text']", value: "Legor" },
+      { type: "fill", selector: "input[name='days']", value: "1" },
+      { type: "fill", selector: "input[name='hours']", value: "2" },
+      { type: "fill", selector: "textarea[name='reason']", value: "Visual draft reason" }
+    ],
+    notes: ["Same-route admin bans form draft without submitting."]
+  },
+  {
+    name: "game-admin-broadcast-draft",
+    area: "state",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Broadcast" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Broadcast" },
+    legacyReady: "#content textarea[name='text']",
+    migratedReady: ".legacy-admin-broadcast-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["To:", "All", "Players in the top 100", "Subject:"],
+    actions: [
+      { type: "select", selector: "select[name='cat']", value: "1" },
+      { type: "fill", selector: "input[name='subj']", value: "Visual broadcast" },
+      { type: "fill", selector: "textarea[name='text']", value: "Visual broadcast draft body" }
+    ],
+    notes: ["Same-route admin broadcast draft without sending."]
+  },
+  {
+    name: "game-admin-queue-filter-draft",
+    area: "state",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Queue" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Queue" },
+    legacyReady: "#content input[name='player']",
+    migratedReady: ".legacy-admin-queue-table",
+    requiredBoxes: ["menu", "content"],
+    expectedTexts: ["End time", "Player", "Task type", "Description", "Priority", "Control", "Show player's tasks:"],
+    actions: [{ type: "fill", selector: "input[name='player']", value: "Legor" }],
+    notes: ["Same-route admin queue filter draft without submitting."]
   },
   ...adminModeSpecs.map((spec): GameVisualScreenSpec => ({
     name: `game-admin-${kebab(spec.mode)}`,

@@ -39,6 +39,14 @@ Default-enabled screenshots cover the normal authenticated navigation surface:
 - buddy, options, notes, create note
 - admin home plus admin modes
 
+Default-enabled state snapshots also cover same-route UI changes without POST/GET mutations:
+
+- resource production select edits
+- shipyard, defense, and fleet quantity drafts
+- alliance create/search drafts
+- search, message, options, and notes form drafts
+- admin bans, broadcast, and queue filter drafts
+
 The registry also records fixture-gated screens that are disabled by default:
 
 - Commander-only empire and fleet templates

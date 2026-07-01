@@ -77,8 +77,18 @@ export async function performVisualActions(page: Page, side: SideName, actions: 
       await locator.hover({ timeout: 5_000 });
     } else if (action.type === "focus") {
       await locator.focus({ timeout: 5_000 });
-    } else {
+    } else if (action.type === "click") {
       await locator.click({ timeout: 5_000 });
+    } else if (action.type === "fill") {
+      await locator.fill(action.value ?? "", { timeout: 5_000 });
+    } else if (action.type === "select") {
+      await locator.selectOption(action.value ?? "", { timeout: 5_000 });
+    } else if (action.type === "check") {
+      await locator.check({ timeout: 5_000 });
+    } else if (action.type === "uncheck") {
+      await locator.uncheck({ timeout: 5_000 });
+    } else {
+      await locator.press(action.value ?? "Tab", { timeout: 5_000 });
     }
     if (action.waitForSelector) {
       await page.locator(action.waitForSelector).first().waitFor({ timeout: 5_000 });
@@ -107,6 +117,9 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
         element.style.color = "transparent";
         element.style.textDecorationColor = "transparent";
         for (const child of element.querySelectorAll<HTMLElement>("*")) {
+          if (keepTooltips && child.closest(".legacy-galaxy-tooltip, #overDiv")) {
+            continue;
+          }
           child.style.color = "transparent";
           child.style.textDecorationColor = "transparent";
         }
@@ -150,7 +163,7 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
         cell.textContent = normalizedResourceValues[index] ?? "0";
       });
 
-      if (currentPageName === "game-overview" || currentPageName === "game-empire-redirect") {
+      if (currentPageName.startsWith("game-overview") || currentPageName === "game-empire-redirect") {
         hide("#content img[width='50'][height='50'], .legacy-overview-main-table img[width='50'][height='50']");
         for (const headerCell of document.querySelectorAll<HTMLTableCellElement>(".legacy-overview-main-table th, #content table th")) {
           if (headerCell.textContent?.trim() === "Server time") {
@@ -231,7 +244,7 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
           }
         }
       }
-      if (currentPageName === "game-galaxy") {
+      if (currentPageName.startsWith("game-galaxy")) {
         const galaxyTables = Array.from(document.querySelectorAll<HTMLElement>("#content table, .legacy-galaxy-table")).filter((table) => {
           const text = table.textContent ?? "";
           return text.includes("Solar system") && text.includes("Far space") && text.includes("Legend");
@@ -242,6 +255,13 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
           }
         }
         hide("#content img[src$='b.gif'], .legacy-galaxy-table img[src$='b.gif']");
+        if (keepTooltips) {
+          for (const tooltip of document.querySelectorAll<HTMLElement>(".legacy-galaxy-tooltip, .legacy-galaxy-tooltip *, #overDiv, #overDiv *")) {
+            tooltip.style.color = "";
+            tooltip.style.textDecorationColor = "";
+            tooltip.style.visibility = "visible";
+          }
+        }
       }
       if (currentPageName === "game-admin-queue") {
         for (const cell of document.querySelectorAll<HTMLElement>("#content table th, #content table td, .legacy-admin-queue-table th, .legacy-admin-queue-table td")) {
@@ -260,7 +280,7 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
           }
         }
       }
-      if (currentPageName === "game-statistics" || currentPageName === "game-statistics-alliance") {
+      if (currentPageName.startsWith("game-statistics")) {
         for (const cell of document.querySelectorAll<HTMLTableCellElement>(".legacy-statistics-head-table td, #content table td")) {
           if (cell.textContent?.trim().startsWith("Statistics (as of:")) {
             cell.textContent = "Statistics (as of: 2026-06-19, 00:00:00)";
@@ -271,7 +291,7 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
       if (currentPageName === "game-alliance-ranks") {
         replaceNativeCheckboxes("#content input[type='checkbox'], .legacy-alliance-ranks-table input[type='checkbox']");
       }
-      if (currentPageName === "game-options") {
+      if (currentPageName.startsWith("game-options")) {
         replaceNativeCheckboxes("#content input[type='checkbox'], .legacy-options-table input[type='checkbox']");
       }
     },
