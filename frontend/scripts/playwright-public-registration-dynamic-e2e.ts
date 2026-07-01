@@ -126,6 +126,14 @@ async function runSide(context: BrowserContext, side: SideName): Promise<Registe
   await page.waitForTimeout(100);
   states.emailHelp = await readRegisterState(page);
 
+  await page.locator("input[name='email']").fill(`dyn-${username.toLowerCase()}@example.local`);
+  await page.waitForTimeout(2200);
+  states.emailValidInputNoPoll = await readRegisterState(page);
+
+  await page.locator("input[name='email']").fill("invalid-email");
+  await page.waitForTimeout(2200);
+  states.emailInvalidInputNoPoll = await readRegisterState(page);
+
   await page.locator("input[name='password']").focus();
   await page.waitForTimeout(100);
   states.passwordHelp = await readRegisterState(page);
@@ -141,6 +149,15 @@ async function runSide(context: BrowserContext, side: SideName): Promise<Registe
     email: "dyn-error@example.local",
     universe: selectedUniverse
   });
+  for (const errorCode of ["101", "102", "103", "104", "108", "109"]) {
+    states[`directError${errorCode}`] = await captureURLState(page, side, {
+      errorCode,
+      agb: "1",
+      character: `DynDirect${errorCode}`,
+      email: `dyn-direct-${errorCode}@example.local`,
+      universe: selectedUniverse
+    });
+  }
   states.termsOnlyDirect = await captureURLState(page, side, {
     errorCode: "0",
     agb: "0",
@@ -168,7 +185,10 @@ async function captureURLState(page: Page, side: SideName, params: Record<string
   if (params.errorCode === "0" && params.agb === "0") {
     await page.locator("#infotext").filter({ hasText: "T&C" }).waitFor({ timeout: 10_000 });
   } else {
-    await page.locator("#statustext").filter({ hasText: "Password must be at least 8 characters long!" }).waitFor({ timeout: 10_000 });
+    const expected = legacyRegistrationMessage(params.errorCode ?? "");
+    if (expected) {
+      await page.locator("#statustext").filter({ hasText: expected }).waitFor({ timeout: 10_000 });
+    }
   }
   return readRegisterState(page);
 }
@@ -240,6 +260,27 @@ function compareStates(legacy: RegisterState, migrated: RegisterState): string[]
 
 function compact(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function legacyRegistrationMessage(errorCode: string): string | null {
+  switch (errorCode) {
+    case "101":
+      return "Player's name is already taken!";
+    case "102":
+      return "E-Mail-Address is already in use!";
+    case "103":
+      return "The name must be between 3 and 20 characters long!";
+    case "104":
+      return "You need to enter a valid e-mail-address!";
+    case "107":
+      return "Password must be at least 8 characters long!";
+    case "108":
+      return "Cannot register from same IP in next 10 minutes!";
+    case "109":
+      return "The maximum number of players has been reached!";
+    default:
+      return null;
+  }
 }
 
 function renderMarkdown(report: {

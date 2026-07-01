@@ -15,7 +15,7 @@ screenshots prove pixels; masked regions need behavior tests too.
 | Character counters | messages, notes, buddy, alliance textareas `cntChars` | Mostly migrated | compose/notes/buddy/alliance/application counter checks | remaining counters should be added when found |
 | Statistics/empire hovers | `statistics.php`, `imperium.php` overLib averages/deltas | Mostly migrated | player/alliance delta and empire average tooltip text checks | add more row variants only if bugs appear |
 | Admin tools | `pages_admin/*` simulators, filters, bot editor JS | Mostly migrated | admin visual/HTTP, BattleSim slot-sync, BotEdit init/load/save/rename/new/preview/export checks | add more simulator variants only if bugs appear |
-| Public auth/register | `wwwroot/*`, `registration.js` flags and polling validation | Mostly migrated | auth visual/CSR, registration HTTP, public registration focus/polling/submit-error checks | add exotic registration availability errors if bugs appear |
+| Public auth/register | `wwwroot/*`, `registration.js` flags and polling validation | Mostly migrated | auth visual/CSR, registration HTTP, public registration focus/email non-poll/direct errors/submit-error checks | add exotic registration variants only if bugs appear |
 
 ## Masked Or Normalized Dynamic Regions
 
