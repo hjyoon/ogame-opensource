@@ -1173,6 +1173,81 @@ func (r AdminRepository) loadAdminBotStrategies(ctx context.Context) ([]domainga
 	return result, rows.Err()
 }
 
+func (r AdminRepository) MutateAdminBotEdit(ctx context.Context, query appgame.AdminBotEditMutationQuery) (appgame.AdminBotEditMutationResult, error) {
+	if r.execer == nil {
+		return appgame.AdminBotEditMutationResult{}, errors.New("admin botedit mutation unavailable")
+	}
+	botstratTable, err := tableName(r.prefix, "botstrat")
+	if err != nil {
+		return appgame.AdminBotEditMutationResult{}, err
+	}
+	switch query.Action {
+	case domaingame.AdminActionBotEditLoad:
+		source, err := r.loadAdminBotStrategySource(ctx, botstratTable, query.StrategyID)
+		if err != nil {
+			return appgame.AdminBotEditMutationResult{}, err
+		}
+		return appgame.AdminBotEditMutationResult{Source: source, SelectedStrategyID: query.StrategyID}, nil
+	case domaingame.AdminActionBotEditSave:
+		if query.StrategyID > 1 {
+			source, err := r.loadAdminBotStrategySource(ctx, botstratTable, query.StrategyID)
+			if err != nil {
+				return appgame.AdminBotEditMutationResult{}, err
+			}
+			if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET source = ? WHERE id = 1", botstratTable), source); err != nil {
+				return appgame.AdminBotEditMutationResult{}, err
+			}
+			if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET source = ? WHERE id = ?", botstratTable), query.Source, query.StrategyID); err != nil {
+				return appgame.AdminBotEditMutationResult{}, err
+			}
+		}
+		return appgame.AdminBotEditMutationResult{SelectedStrategyID: query.StrategyID}, nil
+	case domaingame.AdminActionBotEditNew:
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (name, source) VALUES (?, ?)", botstratTable), query.Name, defaultAdminBotStrategySource()); err != nil {
+			return appgame.AdminBotEditMutationResult{}, err
+		}
+		return appgame.AdminBotEditMutationResult{}, nil
+	case domaingame.AdminActionBotEditRename:
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET name = ? WHERE id = ?", botstratTable), query.Name, query.StrategyID); err != nil {
+			return appgame.AdminBotEditMutationResult{}, err
+		}
+		strategies, err := r.loadAdminBotStrategies(ctx)
+		if err != nil {
+			return appgame.AdminBotEditMutationResult{}, err
+		}
+		return appgame.AdminBotEditMutationResult{Strategies: strategies, SelectedStrategyID: query.StrategyID}, nil
+	default:
+		return appgame.AdminBotEditMutationResult{}, nil
+	}
+}
+
+func (r AdminRepository) loadAdminBotStrategySource(ctx context.Context, botstratTable string, strategyID int) (string, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COALESCE(source, '') FROM %s WHERE id = ? LIMIT 1", botstratTable), strategyID)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return "", err
+		}
+		return "", nil
+	}
+	var source string
+	if err := rows.Scan(&source); err != nil {
+		return "", err
+	}
+	return source, rows.Err()
+}
+
+func defaultAdminBotStrategySource() string {
+	return `{ "class": "go.GraphLinksModel",
+                             "linkFromPortIdProperty": "fromPort",
+                             "linkToPortIdProperty": "toPort",
+                             "nodeDataArray": [ ],
+                             "linkDataArray": [ ]}`
+}
+
 func (r AdminRepository) loadAdminMessageRows(ctx context.Context, rawTable string, includeErrorIDOrder bool, filter string) ([]domaingame.AdminMessageRow, error) {
 	messagesTable, err := tableName(r.prefix, rawTable)
 	if err != nil {

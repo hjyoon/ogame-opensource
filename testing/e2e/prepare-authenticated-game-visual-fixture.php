@@ -534,6 +534,28 @@ function auth_visual_prepare_short_shipyard_fixture(string $password): array
     );
 }
 
+function auth_visual_prepare_botedit_fixture(): array
+{
+    global $db_prefix;
+
+    $name = 'Visual BotEdit';
+    $source = '{ "class": "go.GraphLinksModel", "linkFromPortIdProperty": "fromPort", "linkToPortIdProperty": "toPort", "nodeDataArray": [ { "key": 1, "category": "Start", "text": "Visual Start", "loc": "0 0" } ], "linkDataArray": [ ]}';
+    $escapedName = auth_visual_sql_escape($name);
+    $escapedSource = auth_visual_sql_escape($source);
+    dbquery("DELETE FROM {$db_prefix}botstrat WHERE name='Visual BotEdit New'");
+    $existing = auth_visual_one_row("SELECT id FROM {$db_prefix}botstrat WHERE name='{$escapedName}' LIMIT 1");
+    if ($existing === null) {
+        $strategyId = AddDBRow(array('name' => $name, 'source' => $source), 'botstrat');
+    } else {
+        $strategyId = (int)$existing['id'];
+        dbquery("UPDATE {$db_prefix}botstrat SET source='{$escapedSource}' WHERE id={$strategyId}");
+    }
+    if ($strategyId <= 1) {
+        throw new RuntimeException('failed to create visual botedit strategy');
+    }
+    return array('strategy_id' => $strategyId, 'strategy_name' => $name);
+}
+
 function auth_visual_prepare_report_fixture(array $user): array
 {
     global $db_prefix;
@@ -603,6 +625,7 @@ try {
     $queueShort = auth_visual_prepare_short_queue_fixture($password);
     $researchShort = auth_visual_prepare_short_research_fixture($password);
     $shipyardShort = auth_visual_prepare_short_shipyard_fixture($password);
+    $botedit = auth_visual_prepare_botedit_fixture();
     unset($galaxyHover['max_fleet']);
     unset($galaxyHover['no_ships']);
     unset($galaxyHover['low_fuel']);
@@ -644,6 +667,7 @@ try {
         'queue_short' => $queueShort,
         'research_short' => $researchShort,
         'shipyard_short' => $shipyardShort,
+        'botedit' => $botedit,
         'alliance' => $alliance,
         'report' => $report,
         'phalanx' => $phalanx,

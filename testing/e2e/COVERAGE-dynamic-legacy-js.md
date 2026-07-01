@@ -14,7 +14,7 @@ screenshots prove pixels; masked regions need behavior tests too.
 | Merchant calculator | `trader.php` `checkValue`, `setMaxValue`, exchange hovers | Mostly migrated | max/negative/rate-tooltip/submit checks plus HTTP edges | more offer-ID variants can be added if bugs appear |
 | Character counters | messages, notes, buddy, alliance textareas `cntChars` | Mostly migrated | compose/notes/buddy/alliance/application counter checks | remaining counters should be added when found |
 | Statistics/empire hovers | `statistics.php`, `imperium.php` overLib averages/deltas | Mostly migrated | player/alliance delta and empire average tooltip text checks | add more row variants only if bugs appear |
-| Admin tools | `pages_admin/*` simulators, filters, bot editor JS | Mostly migrated | admin visual/HTTP, BattleSim slot-sync, BotEdit init/palette checks | BotEdit SACK load/new/rename/save remains isolated follow-up |
+| Admin tools | `pages_admin/*` simulators, filters, bot editor JS | Mostly migrated | admin visual/HTTP, BattleSim slot-sync, BotEdit init/load/save/rename/new checks | BotEdit preview/export popup coverage can be added if needed |
 | Public auth/register | `wwwroot/*`, `registration.js` flags and polling validation | Mostly migrated | auth visual/CSR, registration HTTP, public registration focus/polling/submit-error checks | add exotic registration availability errors if bugs appear |
 
 ## Masked Or Normalized Dynamic Regions
@@ -25,11 +25,11 @@ placement, and selected admin tables. Masked pixels need DOM/text assertions.
 
 ## Behavior Runner
 
-`run-playwright-authenticated-game-dynamic-e2e.sh` runs 42 shared-fixture cases:
+`run-playwright-authenticated-game-dynamic-e2e.sh` runs 46 shared-fixture cases:
 message/notes/buddy/alliance/application counters, galaxy tooltip/action
 navigation/keyboard/instant dispatch, fleet all-ships, target metrics, cargo/mission controls,
 launch-submit success/errors, merchant clamps/tooltips/submit, statistics/empire tooltips,
-building/research/shipyard queue completion, BattleSim slot sync, and BotEdit init.
+building/research/shipyard queue completion, BattleSim slot sync, and BotEdit init/load/save/rename/new.
 `run-playwright-public-registration-dynamic-e2e.sh` separately compares public
 register focus help, username polling, direct error URLs, and submit errors.
 

@@ -228,6 +228,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/game/reg/newredirect.php", a.handleLegacyRegistrationRedirect)
 	mux.HandleFunc("/game/validate.php", getOnly(a.handleRegistrationActivation))
 	mux.HandleFunc("/activation", getOnly(a.handleRegistrationActivation))
+	mux.HandleFunc("/game/index.php", a.handleLegacyGameIndex)
 	mux.HandleFunc("/game/redir.php", getOnly(a.handleLegacyRedirect))
 	mux.HandleFunc("/game/pic.php", getOnly(a.handleLegacyImageProxy))
 	mux.HandleFunc("/game/cron.php", handleLegacyForbiddenScript)

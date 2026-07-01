@@ -42,6 +42,11 @@ const (
 	AdminActionCouponRemoveOne  = "remove_one"
 	AdminActionCouponAddDate    = "add_date"
 	AdminActionCouponRemoveDate = "remove_date"
+
+	AdminActionBotEditLoad   = "load"
+	AdminActionBotEditSave   = "save"
+	AdminActionBotEditNew    = "new"
+	AdminActionBotEditRename = "rename"
 )
 
 type Admin struct {

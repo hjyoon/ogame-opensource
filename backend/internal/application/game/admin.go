@@ -14,6 +14,10 @@ type AdminRepository interface {
 	MutateAdmin(context.Context, AdminMutationQuery) (*domaingame.AdminActionIssue, error)
 }
 
+type AdminBotEditRepository interface {
+	MutateAdminBotEdit(context.Context, AdminBotEditMutationQuery) (AdminBotEditMutationResult, error)
+}
+
 type AdminQuery struct {
 	PlayerID       int
 	PlanetID       int
@@ -91,6 +95,34 @@ type AdminMutationCommand struct {
 	InactiveDays    int
 	IngameDays      int
 	PeriodicDays    int
+}
+
+type AdminBotEditMutationQuery struct {
+	PlayerID   int
+	Action     string
+	StrategyID int
+	Name       string
+	Source     string
+}
+
+type AdminBotEditMutationCommand struct {
+	PublicSession   string
+	PrivateSessions map[string]string
+	RemoteAddr      string
+	PlanetID        int
+	Action          string
+	StrategyID      int
+	Name            string
+	Source          string
+}
+
+type AdminBotEditMutationResult struct {
+	Authenticated      bool
+	Issues             []domainpublicsite.SessionIssue
+	ActionIssue        *domaingame.AdminActionIssue
+	Source             string
+	Strategies         []domaingame.AdminBotStrategy
+	SelectedStrategyID int
 }
 
 type AdminResult struct {
@@ -215,4 +247,48 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		return AdminResult{}, err
 	}
 	return AdminResult{Authenticated: true, Admin: admin, ActionIssue: issue}, nil
+}
+
+func (s AdminService) MutateAdminBotEdit(ctx context.Context, command AdminBotEditMutationCommand) (AdminBotEditMutationResult, error) {
+	if s.sessions == nil || s.repository == nil {
+		return AdminBotEditMutationResult{}, errors.New("admin dependencies unavailable")
+	}
+	session, err := s.sessions.GetGameSession(ctx, apppublicsite.GameSessionCommand{
+		PublicSession:   command.PublicSession,
+		PrivateSessions: command.PrivateSessions,
+		RemoteAddr:      command.RemoteAddr,
+	})
+	if err != nil {
+		return AdminBotEditMutationResult{}, err
+	}
+	if !session.Authenticated {
+		return AdminBotEditMutationResult{Authenticated: false, Issues: session.Issues}, nil
+	}
+	admin, err := s.repository.GetAdmin(ctx, AdminQuery{
+		PlayerID: session.Session.PlayerID,
+		PlanetID: command.PlanetID,
+		Mode:     "BotEdit",
+	})
+	if err != nil {
+		return AdminBotEditMutationResult{}, err
+	}
+	if !admin.CanAccessMode() || !admin.CanMutate(command.Action) {
+		return AdminBotEditMutationResult{Authenticated: true, ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueAccessDenied)}, nil
+	}
+	repository, ok := s.repository.(AdminBotEditRepository)
+	if !ok {
+		return AdminBotEditMutationResult{}, errors.New("admin botedit mutation unavailable")
+	}
+	result, err := repository.MutateAdminBotEdit(ctx, AdminBotEditMutationQuery{
+		PlayerID:   session.Session.PlayerID,
+		Action:     command.Action,
+		StrategyID: command.StrategyID,
+		Name:       command.Name,
+		Source:     command.Source,
+	})
+	if err != nil {
+		return AdminBotEditMutationResult{}, err
+	}
+	result.Authenticated = true
+	return result, nil
 }

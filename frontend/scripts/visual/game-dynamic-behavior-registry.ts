@@ -534,6 +534,100 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers BotEdit GoJS init and palette model state; legacy load() uses a flaky SACK race in headless browsers."]
   },
   {
+    name: "admin-botedit-load-strategy",
+    fixtureProfile: "admin",
+    legacyPage: "admin",
+    legacyQuery: { mode: "BotEdit" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "BotEdit" },
+    legacyReady: "#strategyId",
+    migratedReady: ".legacy-admin-botedit-table #strategyId",
+    actions: [
+      { type: "select", selector: "#strategyId", value: "$fixture.botedit.strategy_id" },
+      { type: "click", selector: "button:has-text('Load')", waitMs: 900 }
+    ],
+    assertions: [
+      { name: "strategy-name", type: "value", selector: "#strategyName", compareSides: true, expected: "Visual BotEdit" },
+      { name: "import-strategy-id", type: "value", selector: "#strategyId_ForImport", compareSides: true }
+    ],
+    notes: ["Covers BotEdit legacy SACK load action and strategy name/import id DOM updates."]
+  },
+  {
+    name: "admin-botedit-save-strategy",
+    fixtureProfile: "admin",
+    isolateSides: true,
+    legacyPage: "admin",
+    legacyQuery: { mode: "BotEdit" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "BotEdit" },
+    legacyReady: "#strategyId",
+    migratedReady: ".legacy-admin-botedit-table #strategyId",
+    actions: [
+      { type: "select", selector: "#strategyId", value: "$fixture.botedit.strategy_id" },
+      { type: "click", selector: "button:has-text('Load')", waitMs: 900 },
+      { type: "click", selector: "button:has-text('Save')", waitMs: 700 }
+    ],
+    assertions: [
+      { name: "saved-model", type: "value", selector: "#mySavedModel", compareSides: true, contains: "Visual Start" }
+    ],
+    notes: ["Covers BotEdit legacy SACK save action and mySavedModel refresh from the GoJS model."]
+  },
+  {
+    name: "admin-botedit-rename-strategy",
+    fixtureProfile: "admin",
+    isolateSides: true,
+    legacyPage: "admin",
+    legacyQuery: { mode: "BotEdit" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "BotEdit" },
+    legacyReady: "#strategyId",
+    migratedReady: ".legacy-admin-botedit-table #strategyId",
+    actions: [
+      { type: "select", selector: "#strategyId", value: "$fixture.botedit.strategy_id" },
+      { type: "fill", selector: "#strategyName", value: "Visual BotEdit Renamed" },
+      { type: "click", selector: "button:has-text('Rename')", waitMs: 700 }
+    ],
+    assertions: [
+      {
+        name: "renamed-option",
+        type: "text",
+        selector: "#strategyId option:checked",
+        compareSides: true,
+        expected: "Visual BotEdit Renamed"
+      }
+    ],
+    notes: ["Covers BotEdit legacy SACK rename action and returned option list replacement."]
+  },
+  {
+    name: "admin-botedit-new-strategy",
+    fixtureProfile: "admin",
+    isolateSides: true,
+    legacyPage: "admin",
+    legacyQuery: { mode: "BotEdit" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "BotEdit" },
+    legacyReady: "#strategyId",
+    migratedReady: ".legacy-admin-botedit-table #strategyId",
+    actions: [
+      { type: "fill", selector: "#strategyName", value: "Visual BotEdit New" },
+      {
+        type: "click",
+        selector: "button:has-text('New')",
+        waitMs: 1500
+      }
+    ],
+    assertions: [
+      {
+        name: "new-option-count",
+        type: "count",
+        selector: "#strategyId option:has-text('Visual BotEdit New')",
+        compareSides: true,
+        expected: "1"
+      }
+    ],
+    notes: ["Covers BotEdit legacy SACK new action and reload with the inserted strategy option."]
+  },
+  {
     name: "fleet-select-all-ships",
     legacyPage: "flotten1",
     migratedPath: "/game/fleet",
