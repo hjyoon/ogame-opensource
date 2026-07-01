@@ -73,6 +73,7 @@ function auth_visual_prepare_user(string $name, string $password, int $adminLeve
         "password='" . auth_visual_sql_escape($passwordHash) . "', pemail='" . auth_visual_sql_escape($lower . '@visual.local') . "', " .
         "email='" . auth_visual_sql_escape($lower . '@visual.local') . "', validated=1, validatemd='', deact_ip=1, " .
         "admin={$adminLevel}, vacation=0, vacation_until=0, banned=0, banned_until=0, disable=0, disable_until=0, " .
+        "ally_id=0, allyrank=0, joindate=0, com_until=0, `" . GID_R_COMPUTER . "`=0, " .
         "noattack=0, noattack_until=0, lang='en', skin='/evolution/', useskin=1, " .
         "hplanetid={$homePlanetId}, aktplanet={$homePlanetId}, lastclick={$now} WHERE player_id={$playerId}"
     );
@@ -195,6 +196,114 @@ function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password)
     );
 }
 
+function auth_visual_prepare_commander_fixture(array $user): void
+{
+    global $db_prefix;
+
+    $playerId = (int)$user['player_id'];
+    $now = time();
+    $commanderUntil = $now + 60 * 60 * 24 * 30;
+
+    dbquery("UPDATE {$db_prefix}users SET com_until={$commanderUntil}, `" . GID_R_COMPUTER . "`=3 WHERE player_id={$playerId}");
+    dbquery("DELETE FROM {$db_prefix}template WHERE owner_id={$playerId}");
+    AddDBRow(
+        array(
+            'owner_id' => $playerId,
+            'name' => 'Visual Template',
+            'date' => $now,
+            GID_F_SC => 3,
+            GID_F_LC => 1,
+            GID_F_LF => 0,
+            GID_F_HF => 0,
+            GID_F_CRUISER => 0,
+            GID_F_BATTLESHIP => 0,
+            GID_F_COLON => 0,
+            GID_F_RECYCLER => 2,
+            GID_F_PROBE => 4,
+            GID_F_BOMBER => 0,
+            GID_F_SAT => 0,
+            GID_F_DESTRO => 0,
+            GID_F_DEATHSTAR => 0,
+            GID_F_BATTLECRUISER => 0,
+        ),
+        'template'
+    );
+}
+
+function auth_visual_prepare_alliance_fixture(array $user, string $password): array
+{
+    global $db_prefix;
+
+    $viewerId = (int)$user['player_id'];
+    $now = time();
+
+    $existingAlly = auth_visual_one_row("SELECT ally_id FROM {$db_prefix}ally WHERE tag='VQA' LIMIT 1");
+    if ($existingAlly !== null) {
+        DismissAlly((int)$existingAlly['ally_id']);
+    }
+    dbquery("UPDATE {$db_prefix}users SET ally_id=0, allyrank=0, joindate=0 WHERE player_id={$viewerId}");
+
+    $allyId = CreateAlly($viewerId, 'VQA', 'Visual QA Alliance');
+    dbquery(
+        "UPDATE {$db_prefix}ally SET " .
+        "homepage='https://visual.example.local', imglogo='', open=1, insertapp=1, " .
+        "exttext='Welcome to the visual QA alliance.', inttext='Internal visual QA notice.', apptext='Sample application text', " .
+        "place1=1, place2=1, place3=1, score1=1000, score2=0, score3=0 WHERE ally_id={$allyId}"
+    );
+
+    $member = auth_visual_prepare_user('visualmember', $password, USER_TYPE_PLAYER);
+    $memberId = (int)$member['player_id'];
+    dbquery("UPDATE {$db_prefix}users SET ally_id={$allyId}, allyrank=1, joindate={$now}, score1=2000, place1=2 WHERE player_id={$memberId}");
+
+    $applicant = auth_visual_prepare_user('visualapp', $password, USER_TYPE_PLAYER);
+    $applicantId = (int)$applicant['player_id'];
+    dbquery("UPDATE {$db_prefix}users SET ally_id=0, allyrank=0, joindate=0, score1=500, place1=3 WHERE player_id={$applicantId}");
+    dbquery("DELETE FROM {$db_prefix}allyapps WHERE ally_id={$allyId} OR player_id={$applicantId}");
+    $applicationId = AddApplication($allyId, $applicantId, "Visual application statement");
+
+    InvalidateUserCache();
+    SelectPlanet($viewerId, (int)$user['home_planet_id']);
+
+    return array(
+        'ally_id' => $allyId,
+        'member_player_id' => $memberId,
+        'applicant_player_id' => $applicantId,
+        'application_id' => $applicationId,
+    );
+}
+
+function auth_visual_prepare_report_fixture(array $user): array
+{
+    global $db_prefix;
+
+    $playerId = (int)$user['player_id'];
+    $homePlanetId = (int)$user['home_planet_id'];
+    dbquery(
+        "DELETE FROM {$db_prefix}messages WHERE owner_id={$playerId} AND subj='Visual Spy Report' " .
+        "AND msgfrom='Visual Control'"
+    );
+
+    $text =
+        "Visual Spy Report<br>" .
+        "<table>" .
+        "<tr><th>Metal</th><th>1.000.000</th></tr>" .
+        "<tr><th>Crystal</th><th>1.000.000</th></tr>" .
+        "<tr><th>Deuterium</th><th>1.000.000</th></tr>" .
+        "</table>";
+    $messageId = SendMessage($playerId, 'Visual Control', 'Visual Spy Report', $text, MTYP_SPY_REPORT, time(), $homePlanetId);
+    dbquery("UPDATE {$db_prefix}messages SET shown=1 WHERE msg_id={$messageId}");
+
+    return array('report_id' => $messageId);
+}
+
+function auth_visual_prepare_phalanx_fixture(array $galaxyHover): array
+{
+    return array(
+        'target_planet_id' => (int)$galaxyHover['target_planet_id'],
+        'state' => 'missing_sensor',
+    );
+}
+
 function auth_visual_prepare_session(int $playerId): array
 {
     global $db_prefix, $GlobalUni;
@@ -218,14 +327,42 @@ try {
     $name = getenv('OGAME_GAME_VISUAL_USER') ?: 'legor';
     $password = getenv('OGAME_GAME_VISUAL_PASS') ?: 'admin';
     $adminLevel = intval(getenv('OGAME_GAME_VISUAL_ADMIN') ?: USER_TYPE_ADMIN);
+    $useCommander = getenv('OGAME_GAME_VISUAL_COMMANDER_FIXTURE') === '1';
+    $useAlliance = getenv('OGAME_GAME_VISUAL_ALLIANCE_FIXTURE') === '1';
+    $useReport = getenv('OGAME_GAME_VISUAL_REPORT_FIXTURE') === '1';
+    $usePhalanx = getenv('OGAME_GAME_VISUAL_PHALANX_FIXTURE') === '1';
     $user = auth_visual_prepare_user($name, $password, $adminLevel);
     $galaxyHover = auth_visual_prepare_galaxy_hover_fixture($user, $password);
+    $alliance = null;
+    $report = null;
+    $phalanx = null;
+    if ($useCommander) {
+        auth_visual_prepare_commander_fixture($user);
+    }
+    if ($useAlliance) {
+        $alliance = auth_visual_prepare_alliance_fixture($user, $password);
+    }
+    if ($useReport) {
+        $report = auth_visual_prepare_report_fixture($user);
+    }
+    if ($usePhalanx) {
+        $phalanx = auth_visual_prepare_phalanx_fixture($galaxyHover);
+    }
     $auth = auth_visual_prepare_session((int)$user['player_id']);
     echo json_encode(array(
         'login_user' => $user['name'],
         'player_id' => (int)$user['player_id'],
         'home_planet_id' => (int)$user['home_planet_id'],
         'galaxy_hover' => $galaxyHover,
+        'alliance' => $alliance,
+        'report' => $report,
+        'phalanx' => $phalanx,
+        'features' => array(
+            'commander' => $useCommander,
+            'alliance' => $useAlliance,
+            'report' => $useReport,
+            'phalanx' => $usePhalanx,
+        ),
         'session' => $auth['session'],
         'private_session' => $auth['private_session'],
         'cookies' => $auth['cookies'],

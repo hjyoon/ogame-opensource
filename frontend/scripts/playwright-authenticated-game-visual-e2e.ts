@@ -40,6 +40,16 @@ type AuthFixture = {
   home_planet_id?: number;
   private_session?: string;
   cookies?: Record<string, string>;
+  report?: {
+    report_id?: number;
+  } | null;
+  phalanx?: {
+    target_planet_id?: number;
+    source_moon_id?: number;
+    state?: string;
+  } | null;
+  alliance?: Record<string, unknown> | null;
+  features?: Record<string, boolean>;
 };
 
 type PageCapture = {
@@ -384,7 +394,7 @@ function legacyURL(spec: GameVisualScreenSpec, session: string, authFixture: Aut
     query.set("cp", String(homePlanetId));
   }
   for (const [key, value] of Object.entries(spec.legacyQuery ?? {})) {
-    query.set(key, value);
+    query.set(key, resolveFixtureQueryValue(value, authFixture));
   }
   return `${legacyBaseURL}/game/index.php?${query.toString()}`;
 }
@@ -396,9 +406,31 @@ function migratedURL(spec: GameVisualScreenSpec, session: string, authFixture: A
     query.set("cp", String(homePlanetId));
   }
   for (const [key, value] of Object.entries(spec.migratedQuery ?? {})) {
-    query.set(key, value);
+    query.set(key, resolveFixtureQueryValue(value, authFixture));
   }
   return `${migratedBaseURL}${spec.migratedPath}?${query.toString()}`;
+}
+
+function resolveFixtureQueryValue(value: string, authFixture: AuthFixture | undefined): string {
+  const prefix = "$fixture.";
+  if (!value.startsWith(prefix)) {
+    return value;
+  }
+  if (!authFixture) {
+    throw new Error(`visual query value ${value} requires an authenticated fixture`);
+  }
+  const path = value.slice(prefix.length).split(".").filter(Boolean);
+  let current: unknown = authFixture;
+  for (const key of path) {
+    if (typeof current !== "object" || current === null || !(key in current)) {
+      throw new Error(`visual query value ${value} is missing from authenticated fixture`);
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  if (current === null || current === undefined || typeof current === "object") {
+    throw new Error(`visual query value ${value} resolved to a non-scalar fixture value`);
+  }
+  return String(current);
 }
 
 function renderMarkdown(report: {

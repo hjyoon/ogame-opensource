@@ -29,44 +29,20 @@ The fixture JSON is written to `.tmp/authenticated-game-visual-fixture.json` and
 
 ## Default Screens
 
-Default-enabled screenshots cover the normal authenticated navigation surface:
+Default-enabled screenshots cover the normal authenticated navigation surface: overview, rename planet, buildings, resources, merchant, research, shipyard, fleet, technology/detail, galaxy hovers, defense, alliance menu/create/search, officers, statistics, search, messages/compose, buddy, options, notes/create, admin home, and admin modes.
 
-- overview, rename planet, buildings, resources, merchant
-- research, shipyard, fleet, technology, technology detail
-- galaxy + planet/moon/debris/player/alliance hovers, defense, alliance menu/create/search
-- officers, statistics player/alliance
-- search, messages, compose message
-- buddy, options, notes, create note
-- admin home plus admin modes
+Default state snapshots cover non-mutating draft UI: resource production edits, shipyard/defense/fleet quantities, alliance create/search, search/message/options/notes forms, and admin bans/broadcast/queue filters.
 
-Default-enabled state snapshots also cover same-route UI changes without POST/GET mutations:
+Fixture-gated screens stay disabled by default because they need mutually exclusive account state:
 
-- resource production select edits
-- shipyard, defense, and fleet quantity drafts
-- alliance create/search drafts
-- search, message, options, and notes form drafts
-- admin bans, broadcast, and queue filter drafts
-
-The registry also records fixture-gated screens that are disabled by default:
-
-- Commander-only empire and fleet templates
-- owned alliance management/member/rank/circular/application states
-- report popup
-- phalanx popup
-- changelog direct screen
+- `OGAME_GAME_VISUAL_COMMANDER_FIXTURE=1`: empire, fleet templates, changelog
+- `OGAME_GAME_VISUAL_ALLIANCE_FIXTURE=1`: owned alliance management/member/rank/circular/application states
+- `OGAME_GAME_VISUAL_REPORT_FIXTURE=1`: seeded report popup
+- `OGAME_GAME_VISUAL_PHALANX_FIXTURE=1`: seeded missing-sensor phalanx popup
 
 ## Determinism
 
-The runner stabilizes screenshots by:
-
-- using fixed viewport, device scale factor, locale, timezone, and reduced motion
-- installing a fixed `Date.now()` and deterministic `Math.random()`
-- disabling animation, transition, smooth scroll, and caret rendering through screenshot CSS
-- blurring focused elements and moving the mouse away before capture
-- normalizing server time, queue countdowns, resource header values, rank/position text, and statistics timestamps
-- masking known dynamic hover/tooltips unless a hover-state screen explicitly asks to capture them
-- normalizing native checkbox rendering for Firefox/Chromium parity
-- waiting for image decode, fonts, and stable paint before screenshot
+The runner fixes viewport, scale, locale, timezone, `Date.now()`, and `Math.random()`. It disables animation/caret rendering, blurs focus, moves the mouse away, normalizes clocks/countdowns/ranks/resource headers/stat timestamps, masks known dynamic hover UI, normalizes checkbox rendering, and waits for images/fonts/stable paint.
 
 ## Commands
 
@@ -88,6 +64,13 @@ Run an area:
 OGAME_GAME_VISUAL_AREA=admin testing/e2e/run-playwright-authenticated-game-visual-e2e.sh
 ```
 
+Run fixture-gated state examples:
+
+```sh
+OGAME_GAME_VISUAL_COMMANDER_FIXTURE=1 OGAME_GAME_VISUAL_SCREENS=game-empire,game-fleet-templates testing/e2e/run-playwright-authenticated-game-visual-e2e.sh
+OGAME_GAME_VISUAL_REPORT_FIXTURE=1 OGAME_GAME_VISUAL_PHALANX_FIXTURE=1 OGAME_GAME_VISUAL_SCREENS=game-report,game-phalanx testing/e2e/run-playwright-authenticated-game-visual-e2e.sh
+```
+
 Update legacy-oracle baselines:
 
 ```sh
@@ -96,11 +79,6 @@ OGAME_GAME_VISUAL_UPDATE_BASELINES=1 testing/e2e/run-playwright-authenticated-ga
 
 ## Reports
 
-Reports are written per browser under:
-
-- `.tmp/playwright-authenticated-game-visual/chromium/report.json`
-- `.tmp/playwright-authenticated-game-visual/chromium/report.md`
-- `.tmp/playwright-authenticated-game-visual/firefox/report.json`
-- `.tmp/playwright-authenticated-game-visual/firefox/report.md`
+Reports are written per browser under `.tmp/playwright-authenticated-game-visual/<browser>/report.{json,md}`.
 
 The final QA wrapper runs this suite when `OGAME_RUN_AUTH_GAME_VISUAL=1`, which is the default.

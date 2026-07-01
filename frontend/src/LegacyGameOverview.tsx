@@ -1656,8 +1656,8 @@ const gameRouteByKey = new Map(gameRoutes.map((route) => [route.key, route]));
 const legacyMenuEntries: LegacyMenuEntry[] = [
   { type: "image", height: 40, src: `${skinBase}/gfx/ogame-produktion.jpg`, width: 110 },
   { type: "route", key: "overview" },
-  { type: "route", key: "empire" },
   { type: "route", key: "admin" },
+  { type: "route", key: "empire" },
   { type: "route", key: "buildings" },
   { type: "route", key: "resources" },
   { type: "route", color: "#FF8900", key: "merchant" },
@@ -1979,6 +1979,30 @@ export function LegacyGameOverview({
         ? { height: "calc(100vh - 20px)" }
         : { height: "calc(100vh - 101px)" };
 
+  if (route.key === "report") {
+    return (
+      <main className="legacy-standalone-popup">
+        {reportError ? <LegacyMessage tone="error" text={reportError} /> : null}
+        {!reportError && reportIssue ? <LegacyMessage tone="error" text={reportIssue} /> : null}
+        {!report && !reportError && !reportIssue ? <LegacyMessage tone="neutral" text="Loading report..." /> : null}
+        {report ? <ReportTable report={report} /> : null}
+        <div id="overDiv" style={{ left: -10000, position: "absolute", top: -10000, visibility: "hidden", zIndex: 1000 }} />
+      </main>
+    );
+  }
+
+  if (route.key === "phalanx") {
+    return (
+      <main className="legacy-standalone-popup">
+        {phalanxError ? <LegacyMessage tone="error" text={phalanxError} /> : null}
+        {!phalanxError && phalanxIssue ? <LegacyMessage tone="error" text={phalanxIssue} /> : null}
+        {!phalanx && !phalanxError && !phalanxIssue ? <LegacyMessage tone="neutral" text="Loading phalanx..." /> : null}
+        {phalanx ? <PhalanxTable phalanx={phalanx} /> : null}
+        <div id="overDiv" style={{ left: -10000, position: "absolute", top: -10000, visibility: "hidden", zIndex: 1000 }} />
+      </main>
+    );
+  }
+
   return (
     <main
       className="legacy-game-shell"
@@ -2024,7 +2048,7 @@ export function LegacyGameOverview({
       <section className={contentClassName} id="content" style={contentStyle}>
         {error ? <LegacyMessage tone="error" text={error} /> : null}
         {!error && issue ? <LegacyMessage tone="error" text={issue} /> : null}
-        {!error && !issue && !overview && route.key !== "logout" && route.key !== "report" ? (
+        {!error && !issue && !overview && route.key !== "logout" ? (
           <LegacyMessage tone="neutral" text="Loading overview..." />
         ) : null}
         {route.key === "logout" ? <LogoutTable error={logoutError} status={logoutStatus} /> : null}
@@ -2108,15 +2132,6 @@ export function LegacyGameOverview({
         ) : null}
         {route.key === "notes" && notesError ? <LegacyMessage tone="error" text={notesError} /> : null}
         {route.key === "notes" && !notesError && notesIssue ? <LegacyMessage tone="error" text={notesIssue} /> : null}
-        {route.key === "report" && reportError ? <LegacyMessage tone="error" text={reportError} /> : null}
-        {route.key === "report" && !reportError && reportIssue ? <LegacyMessage tone="error" text={reportIssue} /> : null}
-        {route.key === "report" && !report && !reportError && !reportIssue ? (
-          <LegacyMessage tone="neutral" text="Loading report..." />
-        ) : null}
-        {route.key === "phalanx" && phalanxError ? <LegacyMessage tone="error" text={phalanxError} /> : null}
-        {route.key === "phalanx" && !phalanxError && phalanxIssue ? (
-          <LegacyMessage tone="error" text={phalanxIssue} />
-        ) : null}
         {route.key === "options" && optionsError ? <LegacyMessage tone="error" text={optionsError} /> : null}
         {route.key === "options" && !optionsError && optionsActionIssue ? (
           <LegacyMessage tone="neutral" text={optionsActionIssue.message} />
@@ -2124,11 +2139,6 @@ export function LegacyGameOverview({
         {route.key === "options" && !optionsError && !optionsActionIssue && optionsIssue ? (
           <LegacyMessage tone="error" text={optionsIssue} />
         ) : null}
-        {report && route.key === "report" ? <ReportTable report={report} /> : null}
-        {overview && route.key === "phalanx" && !phalanx && !phalanxError && !phalanxIssue ? (
-          <LegacyMessage tone="neutral" text="Loading phalanx..." />
-        ) : null}
-        {phalanx && route.key === "phalanx" ? <PhalanxTable phalanx={phalanx} /> : null}
         {overview && route.key === "overview" ? <OverviewPage onBuildQueueComplete={onOverviewRefresh} overview={overview} /> : null}
         {overview && route.key === "renamePlanet" ? (
           <RenamePlanetTable onDelete={onPlanetDelete} onRename={onPlanetRename} overview={overview} pending={overviewPending} />
@@ -2280,6 +2290,7 @@ export function LegacyGameOverview({
         route.key !== "research" &&
         route.key !== "shipyard" &&
         route.key !== "fleet" &&
+        route.key !== "fleetTemplates" &&
         route.key !== "galaxy" &&
         route.key !== "defense" &&
         route.key !== "technology" &&
@@ -2288,8 +2299,6 @@ export function LegacyGameOverview({
         route.key !== "search" &&
         route.key !== "buddy" &&
         route.key !== "messages" &&
-        route.key !== "report" &&
-        route.key !== "phalanx" &&
         route.key !== "notes" &&
         route.key !== "options" &&
         route.key !== "logout" ? (
@@ -9243,6 +9252,7 @@ function FleetTemplatesTable({
   const [templateID, setTemplateID] = React.useState(0);
   const [name, setName] = React.useState("");
   const [ships, setShips] = React.useState<Record<string, number>>(emptyDraft);
+  const [inputVisible, setInputVisible] = React.useState(false);
 
   const editTemplate = (template: GameFleetTemplate) => {
     const next = { ...emptyDraft };
@@ -9252,10 +9262,80 @@ function FleetTemplatesTable({
     setTemplateID(template.id);
     setName(template.name);
     setShips(next);
+    setInputVisible(true);
+  };
+
+  const createTemplate = () => {
+    setTemplateID(0);
+    setName("");
+    setShips(emptyDraft);
+    setInputVisible(true);
   };
 
   return (
-    <>
+    <LegacyCenter>
+      <table border={0} className="legacy-fleet-templates-table">
+        <tbody>
+          <tr>
+            <td className="legacy-c c" colSpan={4} width={517}>
+              Standard Fleets (max {fleet.templates.max})
+            </td>
+          </tr>
+          <tr>
+            <th style={{ width: 60 }}>#</th>
+            <th style={{ width: 267 }}>Title</th>
+            <th>Process</th>
+            <th>Delete</th>
+          </tr>
+          {fleet.templates.items.map((template, index) => (
+            <tr data-fleet-template-row={template.id} key={template.id}>
+              <th>{index + 1}</th>
+              <th style={{ width: 160 }}>
+                <a
+                  href="#"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    editTemplate(template);
+                  }}
+                >
+                  {template.name}
+                </a>
+              </th>
+              <th style={{ width: 80 }}>
+                <a
+                  href="#"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    editTemplate(template);
+                  }}
+                >
+                  O
+                </a>
+              </th>
+              <th style={{ width: 80 }}>
+                <a
+                  href={gameRouteURL("/game/fleet-templates", `${window.location.search}&mode=delete&id=${template.id}`)}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    if (!pending) {
+                      onAction("delete", template.id, template.name, {});
+                    }
+                  }}
+                >
+                  X
+                </a>
+              </th>
+            </tr>
+          ))}
+          <tr>
+            <th align="center" colSpan={4}>
+              <input name="send" onClick={createTemplate} type="button" value="Create a new standard fleet" />
+            </th>
+          </tr>
+        </tbody>
+      </table>
+      <br />
+      <div id="input_field" style={{ visibility: inputVisible ? "visible" : "hidden" }}>
       <form
         action={gameRouteURL("/game/fleet-templates", window.location.search)}
         method="post"
@@ -9264,102 +9344,50 @@ function FleetTemplatesTable({
           onAction("save", templateID, name, ships);
         }}
       >
-        <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-templates-table" width={519}>
+        <input name="mode" type="hidden" value="save" />
+        <table border={0}>
           <tbody>
-            <tr style={{ height: 20 }}>
-              <td className="legacy-c c" colSpan={4}>
-                Standard fleets {fleet.templates.items.length} / {fleet.templates.max}
+            <tr>
+              <td className="legacy-c c" colSpan={2} width={517}>
+                Create a new standard fleet
               </td>
             </tr>
-            {!fleet.templates.commanderActive ? (
-              <tr style={{ height: 20 }}>
-                <th colSpan={4}>Commander is required</th>
-              </tr>
-            ) : null}
-            {fleet.templates.items.map((template) => (
-              <tr data-fleet-template-row={template.id} key={template.id} style={{ height: 20 }}>
-                <th>{template.name}</th>
-                <th>{template.ships.map((ship) => `${ship.name}: ${formatLegacyNumber(ship.count)}`).join(", ") || "-"}</th>
-                <th>
-                  <a
-                    href="#edit-template"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      editTemplate(template);
-                    }}
-                  >
-                    O
-                  </a>
-                </th>
-                <th>
-                  <button
-                    disabled={pending}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      onAction("delete", template.id, template.name, {});
-                    }}
-                    type="button"
-                  >
-                    X
-                  </button>
-                </th>
-              </tr>
-            ))}
-            <tr style={{ height: 20 }}>
-              <td className="legacy-c c" colSpan={4}>
-                {templateID > 0 ? "Edit standard fleet" : "Create standard fleet"}
-              </td>
-            </tr>
-            <tr style={{ height: 20 }}>
+            <tr>
               <th>Name</th>
-              <th colSpan={3}>
-                <input name="template_id" type="hidden" value={templateID} />
-                <input maxLength={20} name="template_name" onChange={(event) => setName(event.target.value)} size={30} type="text" value={name} />
+              <th>
+                <input name="template_name" onChange={(event) => setName(event.target.value)} size={20} type="text" value={name} />
+                <input name="template_id" size={6} type="hidden" value={templateID} />
               </th>
             </tr>
             {selectableShips.map((ship) => (
-              <tr data-fleet-template-ship-row={ship.id} key={ship.id} style={{ height: 20 }}>
+              <tr data-fleet-template-ship-row={ship.id} key={ship.id}>
                 <th>{ship.name}</th>
-                <th>{formatLegacyNumber(ship.count)}</th>
-                <th colSpan={2}>
+                <th>
                   <input
                     aria-label={ship.name}
-                    max={ship.count}
-                    min={0}
                     name={`ship[${ship.id}]`}
                     onChange={(event) => setShips((current) => ({ ...current, [String(ship.id)]: Number(event.target.value || 0) }))}
-                    size={10}
-                    type="number"
+                    size={3}
+                    type="text"
                     value={ships[String(ship.id)] ?? 0}
                   />
                 </th>
               </tr>
             ))}
-            <tr style={{ height: 20 }}>
-              <th colSpan={2}>
+            <tr>
+              <th align="center" colSpan={4}>
                 <input disabled={pending || !fleet.templates.commanderActive} type="submit" value="Save" />
-              </th>
-              <th colSpan={2}>
-                <input
-                  disabled={pending}
-                  onClick={() => {
-                    setTemplateID(0);
-                    setName("");
-                    setShips(emptyDraft);
-                  }}
-                  type="button"
-                  value="Clear"
-                />
               </th>
             </tr>
           </tbody>
         </table>
       </form>
+      </div>
       <br />
       <br />
       <br />
       <br />
-    </>
+    </LegacyCenter>
   );
 }
 
@@ -10851,9 +10879,10 @@ function ReportTable({ report }: { report: GameReport }) {
       <table className="legacy-report-table" width="99%">
         <tbody>
           <tr>
-            <td>
-              {report.allowed && report.text !== "" ? <LegacyReportHTML html={report.text} /> : null}
-            </td>
+            <td
+              style={{ background: "transparent", fontSize: 16 }}
+              dangerouslySetInnerHTML={{ __html: report.allowed && report.text !== "" ? sanitizeLegacyMessageHTML(report.text) : "" }}
+            />
           </tr>
         </tbody>
       </table>
@@ -10866,32 +10895,29 @@ function PhalanxTable({ phalanx }: { phalanx: GamePhalanx }) {
   return (
     <>
       <br />
+      {phalanx.actionIssue ? <LegacyFont color="#FF0000">{phalanx.actionIssue.message}</LegacyFont> : null}
       <table className="legacy-phalanx-table" width={519}>
         <tbody>
           <tr>
-            <td className="c" colSpan={4}>
-              {phalanx.reportHeading}{" "}
-              <a href={overviewGalaxyHref(source.coordinates)}>[{formatCoordinates(source.coordinates)}]</a> ({phalanx.commander})
-            </td>
+            <td className="c" colSpan={4} dangerouslySetInnerHTML={{ __html: phalanxHeadingHTML(phalanx) }} />
           </tr>
           <tr>
             <td className="c" colSpan={4}>
               {phalanx.eventsHeading}
             </td>
           </tr>
-          {phalanx.actionIssue ? (
-            <tr>
-              <th colSpan={4}>
-                <LegacyFont color="#FF0000">{phalanx.actionIssue.message}</LegacyFont>
-              </th>
-            </tr>
-          ) : (
-            <PhalanxEventRows events={phalanx.events} />
-          )}
+          {phalanx.actionIssue ? null : <PhalanxEventRows events={phalanx.events} />}
         </tbody>
       </table>
     </>
   );
+}
+
+function phalanxHeadingHTML(phalanx: GamePhalanx): string {
+  const coordinates = phalanx.source.coordinates;
+  return `${escapeHTML(phalanx.reportHeading)} <a href="javascript:showGalaxy(${coordinates.galaxy},${coordinates.system},${coordinates.position})" >[${formatCoordinates(
+    coordinates
+  )}]</a> (${escapeHTML(phalanx.commander)})  `;
 }
 
 function PhalanxEventRows({ events }: { events: GameFleetMission[] }) {
@@ -11655,7 +11681,7 @@ function ChangelogTable() {
 
 function changelogHTML(): string {
   let html = "<center>\n";
-  html += '  <table width="668">\n';
+  html += '  <table class="legacy-changelog-table" width="668">\n';
   html += "   <tr>\n\n";
   html += '    <td class="c">Version</td>\n';
   html += '    <td class="c">Description</td>\n';

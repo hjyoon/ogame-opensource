@@ -198,6 +198,25 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
       if (currentPageName === "game-empire-redirect") {
         hide("#content img[width='200'][height='200'], .legacy-overview-table img[width='200'][height='200']");
       }
+      if (currentPageName === "game-empire") {
+        for (const row of document.querySelectorAll<HTMLTableRowElement>("#content tr, .legacy-empire-table tr")) {
+          const cells = Array.from(row.querySelectorAll<HTMLElement>("th, td"));
+          if (cells[0]?.textContent?.trim() === "Coordinates") {
+            for (const cell of cells.slice(1)) {
+              makeTextTransparent(cell);
+            }
+          }
+        }
+      }
+      if (currentPageName === "game-fleet-templates") {
+        for (const cell of document.querySelectorAll<HTMLElement>("#content .c, .legacy-fleet-templates-table .c")) {
+          const text = cell.textContent?.trim() ?? "";
+          const match = text.match(/^(Standard Fleets \(max )(\d+)(\))$/);
+          if (match) {
+            cell.innerHTML = `${match[1]}<span style="color: transparent; text-decoration-color: transparent;">${match[2]}</span>${match[3]}`;
+          }
+        }
+      }
       if (currentPageName === "game-admin-db") {
         for (const row of document.querySelectorAll<HTMLTableRowElement>("#content tr, .legacy-admin-content tr")) {
           if (/backup_.*\.json|Restore Delete/.test(row.textContent ?? "")) {

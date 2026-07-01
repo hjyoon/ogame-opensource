@@ -244,8 +244,8 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     migratedPath: "/game/fleet-templates",
     legacyReady: "#content",
     migratedReady: ".legacy-fleet-templates-table, .legacy-overview-table",
-    expectedTexts: ["Standard fleets", "Name", "Actions"],
-    notes: ["Requires Commander for the fleet-template table; otherwise parity is a redirect/locked-state check."]
+    expectedTexts: ["Standard Fleets", "Title", "Process", "Delete"],
+    notes: ["Requires OGAME_GAME_VISUAL_COMMANDER_FIXTURE=1 for the fleet-template table."]
   },
   {
     name: "game-technology",
@@ -669,25 +669,29 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     area: "direct",
     defaultEnabled: false,
     legacyPage: "bericht",
+    legacyQuery: { bericht: "$fixture.report.report_id" },
     migratedPath: "/game/report",
-    legacyReady: "#content",
+    migratedQuery: { bericht: "$fixture.report.report_id" },
+    legacyReady: "table[width='99%']",
     migratedReady: ".legacy-report-table, .legacy-overview-table",
-    requiredBoxes: ["content"],
-    expectedTexts: ["Report"],
-    notes: ["Requires a seeded report id via bericht query."]
+    requiredBoxes: [],
+    expectedTexts: ["Visual Spy Report", "Metal", "Crystal", "Deuterium"],
+    notes: ["Requires OGAME_GAME_VISUAL_REPORT_FIXTURE=1."]
   },
   {
     name: "game-phalanx",
     area: "popup",
     defaultEnabled: false,
     legacyPage: "phalanx",
+    legacyQuery: { spid: "$fixture.phalanx.target_planet_id" },
     migratedPath: "/game/phalanx",
-    legacyReady: "#content",
+    migratedQuery: { spid: "$fixture.phalanx.target_planet_id" },
+    legacyReady: "table[width='519']",
     migratedReady: ".legacy-phalanx-table, .legacy-overview-table",
-    requiredBoxes: ["content"],
-    expectedTexts: ["Sensor Phalanx"],
+    requiredBoxes: [],
+    expectedTexts: ["Sensor report from the moon", "Fleet movements", "No cheating!"],
     viewports: ["popup"],
-    notes: ["Requires a moon source and target coordinates fixture."]
+    notes: ["Requires OGAME_GAME_VISUAL_PHALANX_FIXTURE=1; default state is missing-sensor to avoid scan mutation."]
   },
   {
     name: "game-buddy",
