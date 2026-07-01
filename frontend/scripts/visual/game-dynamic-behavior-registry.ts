@@ -26,7 +26,7 @@ export type GameDynamicAssertion = {
 
 export type GameDynamicBehaviorSpec = {
   name: string;
-  fixtureProfile?: "max_fleet";
+  fixtureProfile?: "max_fleet" | "no_ships" | "low_fuel";
   legacyPage: string;
   legacyQuery?: Record<string, string>;
   migratedPath: string;
@@ -304,6 +304,48 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "status-result", type: "text", selector: "#fleetstatustable tr:first-child td:nth-child(2)", expected: "Not enough room for a fleet" }
     ],
     notes: ["Covers legacy galaxy doit(6) max-fleet failure after slot exhaustion."]
+  },
+  {
+    name: "galaxy-instant-spy-no-ships-failure",
+    fixtureProfile: "no_ships",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content tr:has-text('Visual Empty Target') a[onclick*='doit(6']",
+        migratedSelector: "tr[data-galaxy-position='7'] .legacy-galaxy-actions a[data-galaxy-action='Espionage']",
+        waitForSelector: "#fleetstatustable tr"
+      }
+    ],
+    assertions: [
+      { name: "status-row", type: "text", selector: "#fleetstatustable tr:first-child", compareSides: true },
+      { name: "status-result", type: "text", selector: "#fleetstatustable tr:first-child td:nth-child(2)", expected: "Error! No ships to send" }
+    ],
+    notes: ["Covers legacy galaxy doit(6) no-probe failure row parity."]
+  },
+  {
+    name: "galaxy-instant-recycle-no-fuel-failure",
+    fixtureProfile: "low_fuel",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[onclick*='doit(8']",
+        migratedSelector: ".legacy-galaxy-hover[data-galaxy-hover='debris'] > a",
+        waitForSelector: "#fleetstatustable tr"
+      }
+    ],
+    assertions: [
+      { name: "status-row", type: "text", selector: "#fleetstatustable tr:first-child", compareSides: true },
+      { name: "status-result", type: "text", selector: "#fleetstatustable tr:first-child td:nth-child(2)", expected: "You don't have enough deuterium" }
+    ],
+    notes: ["Covers legacy galaxy doit(8) no-deuterium failure row parity."]
   },
   {
     name: "alliance-circular-text-counter",

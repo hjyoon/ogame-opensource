@@ -10,7 +10,7 @@ behavior tests.
 | --- | --- | --- | --- | --- |
 | Game shell navigation/popups | `game/core/page.php` `showGalaxy`, `fenster`, planet selector, officer hovers | Mostly migrated | relative game routes, report/phalanx pages, shell visual cases | popup window sizing and every selector action need behavior coverage |
 | Queue countdowns | `overview.php`, `buildings.php`, `b_building.php`, `phalanx_events.php` `bxx`, `setTimeout` | Migrated and normalized for screenshots | overview/building/research/shipyard/defense visual cases; queue HTTP tests | every queue completion transition is not covered by one visual suite |
-| Galaxy hover/actions | `galaxy.php`, `galaxy_js.php` overLib menus, `doit`, cursor keys | Partially migrated | hover, action nav, keyboard, instant success/failures, galaxy HTTP tests | no-ship/fuel failure variants need behavior assertions |
+| Galaxy hover/actions | `galaxy.php`, `galaxy_js.php` overLib menus, `doit`, cursor keys | Partially migrated | hover, action nav, keyboard, instant success/failures, galaxy HTTP tests | cargo failure variant needs behavior assertion |
 | Fleet selection/targeting | `flotten1.php`, `flotten2.php`, `flotten3.php` max links, `shortInfo`, `remainingresources` | Partially migrated | fleet visual cases; dynamic all-ships, `shortInfo`, residue and overcapacity checks | all mission/cargo combinations need deterministic behavior tests |
 | Merchant calculator | `trader.php` `checkValue`, `setMaxValue`, exchange hovers | Partially migrated | merchant visual, HTTP, dynamic max/negative-clamp checks | trade submit and rate variants need more behavior tests |
 | Character counters | messages, notes, buddy, alliance textareas `cntChars` | Mostly migrated | compose/notes/buddy/alliance/application counter checks | remaining counters should be added when found |
@@ -28,7 +28,7 @@ not prove timer, hover, or calculation logic.
 
 ## Behavior Runner
 
-`run-playwright-authenticated-game-dynamic-e2e.sh` runs 24 shared-fixture cases:
+`run-playwright-authenticated-game-dynamic-e2e.sh` runs 26 shared-fixture cases:
 message/notes/buddy/alliance/application counters, galaxy tooltip/action
 navigation/keyboard/instant dispatch, fleet all-ships, `shortInfo`, residue/overcapacity,
 merchant max/negative clamps, and BattleSim slot sync. Merchant text allows

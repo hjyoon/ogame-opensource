@@ -114,7 +114,14 @@ function auth_visual_find_empty_hover_system(): array
 
     for ($g = 1; $g <= (int)$GlobalUni['galaxies']; $g++) {
         for ($s = 1; $s <= (int)$GlobalUni['systems']; $s++) {
-            if (auth_visual_position_is_clear($g, $s, 1) && auth_visual_position_is_clear($g, $s, 2) && auth_visual_position_is_clear($g, $s, 3) && auth_visual_position_is_clear($g, $s, 4) && auth_visual_position_is_clear($g, $s, 5) && auth_visual_position_is_clear($g, $s, 6)) {
+            $clear = true;
+            for ($p = 1; $p <= 10; $p++) {
+                if (!auth_visual_position_is_clear($g, $s, $p)) {
+                    $clear = false;
+                    break;
+                }
+            }
+            if ($clear) {
                 return array($g, $s);
             }
         }
@@ -145,6 +152,9 @@ function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password)
     $vacationTarget = auth_visual_prepare_user('visualvacation', $password, USER_TYPE_PLAYER);
     $maxFleetUser = auth_visual_prepare_user('visualmax', $password, USER_TYPE_PLAYER);
     $maxFleetTarget = auth_visual_prepare_user('visualmaxtarget', $password, USER_TYPE_PLAYER);
+    $noShipsUser = auth_visual_prepare_user('visualnoships', $password, USER_TYPE_PLAYER);
+    $noShipsTarget = auth_visual_prepare_user('visualemptytarget', $password, USER_TYPE_PLAYER);
+    $lowFuelUser = auth_visual_prepare_user('visuallowfuel', $password, USER_TYPE_PLAYER);
     $viewerId = (int)$user['player_id'];
     $viewerPlanetId = (int)$user['home_planet_id'];
     $targetId = (int)$target['player_id'];
@@ -157,6 +167,12 @@ function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password)
     $maxFleetPlanetId = (int)$maxFleetUser['home_planet_id'];
     $maxFleetTargetId = (int)$maxFleetTarget['player_id'];
     $maxFleetTargetPlanetId = (int)$maxFleetTarget['home_planet_id'];
+    $noShipsUserId = (int)$noShipsUser['player_id'];
+    $noShipsPlanetId = (int)$noShipsUser['home_planet_id'];
+    $noShipsTargetId = (int)$noShipsTarget['player_id'];
+    $noShipsTargetPlanetId = (int)$noShipsTarget['home_planet_id'];
+    $lowFuelUserId = (int)$lowFuelUser['player_id'];
+    $lowFuelPlanetId = (int)$lowFuelUser['home_planet_id'];
     [$g, $s] = auth_visual_find_empty_hover_system();
     $now = time();
 
@@ -166,12 +182,20 @@ function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password)
     auth_visual_place_planet($vacationTargetPlanetId, $vacationTargetId, 'Visual Vacation', $g, $s, 4);
     auth_visual_place_planet($maxFleetTargetPlanetId, $maxFleetTargetId, 'Visual Max Target', $g, $s, 5);
     auth_visual_place_planet($maxFleetPlanetId, $maxFleetUserId, 'Visual Max Home', $g, $s, 6);
+    auth_visual_place_planet($noShipsTargetPlanetId, $noShipsTargetId, 'Visual Empty Target', $g, $s, 7);
+    auth_visual_place_planet($noShipsPlanetId, $noShipsUserId, 'Visual Empty Home', $g, $s, 8);
+    auth_visual_place_planet($lowFuelPlanetId, $lowFuelUserId, 'Visual Low Fuel', $g, $s, 10);
     dbquery("UPDATE {$db_prefix}users SET hplanetid={$viewerPlanetId}, aktplanet={$viewerPlanetId}, lastclick={$now} WHERE player_id={$viewerId}");
     dbquery("UPDATE {$db_prefix}users SET hplanetid={$targetPlanetId}, aktplanet={$targetPlanetId}, lastclick={$now}, score1=10000, score2=0, score3=0, place1=1, place2=1, place3=1 WHERE player_id={$targetId}");
     dbquery("UPDATE {$db_prefix}users SET hplanetid={$noobTargetPlanetId}, aktplanet={$noobTargetPlanetId}, lastclick={$now}, score1=1, score2=0, score3=0, place1=1, place2=1, place3=1 WHERE player_id={$noobTargetId}");
     dbquery("UPDATE {$db_prefix}users SET hplanetid={$vacationTargetPlanetId}, aktplanet={$vacationTargetPlanetId}, lastclick={$now}, score1=10000, score2=0, score3=0, place1=1, place2=1, place3=1, vacation=1, vacation_until=" . ($now + 86400) . " WHERE player_id={$vacationTargetId}");
     dbquery("UPDATE {$db_prefix}users SET hplanetid={$maxFleetPlanetId}, aktplanet={$maxFleetPlanetId}, lastclick={$now}, score1=10000, score2=0, score3=0, place1=1, place2=1, place3=1, `" . GID_R_COMPUTER . "`=1 WHERE player_id={$maxFleetUserId}");
     dbquery("UPDATE {$db_prefix}users SET hplanetid={$maxFleetTargetPlanetId}, aktplanet={$maxFleetTargetPlanetId}, lastclick={$now}, score1=10000, score2=0, score3=0, place1=1, place2=1, place3=1 WHERE player_id={$maxFleetTargetId}");
+    dbquery("UPDATE {$db_prefix}users SET hplanetid={$noShipsPlanetId}, aktplanet={$noShipsPlanetId}, lastclick={$now}, score1=10000, score2=0, score3=0, place1=1, place2=1, place3=1 WHERE player_id={$noShipsUserId}");
+    dbquery("UPDATE {$db_prefix}users SET hplanetid={$noShipsTargetPlanetId}, aktplanet={$noShipsTargetPlanetId}, lastclick={$now}, score1=10000, score2=0, score3=0, place1=1, place2=1, place3=1 WHERE player_id={$noShipsTargetId}");
+    dbquery("UPDATE {$db_prefix}users SET hplanetid={$lowFuelPlanetId}, aktplanet={$lowFuelPlanetId}, lastclick={$now}, score1=10000, score2=0, score3=0, place1=1, place2=1, place3=1 WHERE player_id={$lowFuelUserId}");
+    dbquery("UPDATE {$db_prefix}planets SET `" . GID_F_PROBE . "`=0, `" . GID_F_RECYCLER . "`=0 WHERE planet_id={$noShipsPlanetId} AND owner_id={$noShipsUserId}");
+    dbquery("UPDATE {$db_prefix}planets SET `" . GID_RC_DEUTERIUM . "`=0, `" . GID_F_RECYCLER . "`=25 WHERE planet_id={$lowFuelPlanetId} AND owner_id={$lowFuelUserId}");
 
     $maxOrigin = LoadPlanetById($maxFleetPlanetId);
     $maxTarget = LoadPlanetById($maxFleetTargetPlanetId);
@@ -187,6 +211,8 @@ function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password)
     DispatchFleet($maxFleet, $maxOrigin, $maxTarget, FTYP_SPY, 3600, $maxResources, 0, $now - 120);
     DispatchFleet($maxFleet, $maxOrigin, $maxTarget, FTYP_SPY, 3600, $maxResources, 0, $now - 60);
     $maxFleetAuth = auth_visual_prepare_session($maxFleetUserId);
+    $noShipsAuth = auth_visual_prepare_session($noShipsUserId);
+    $lowFuelAuth = auth_visual_prepare_session($lowFuelUserId);
 
     $moonId = PlanetHasMoon($targetPlanetId);
     if ($moonId <= 0) {
@@ -240,6 +266,12 @@ function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password)
         'max_fleet_planet_id' => $maxFleetPlanetId,
         'max_fleet_target_player_id' => $maxFleetTargetId,
         'max_fleet_target_planet_id' => $maxFleetTargetPlanetId,
+        'no_ships_player_id' => $noShipsUserId,
+        'no_ships_planet_id' => $noShipsPlanetId,
+        'no_ships_target_player_id' => $noShipsTargetId,
+        'no_ships_target_planet_id' => $noShipsTargetPlanetId,
+        'low_fuel_player_id' => $lowFuelUserId,
+        'low_fuel_planet_id' => $lowFuelPlanetId,
         'moon_id' => $moonId,
         'debris_id' => $debrisId,
         'ally_id' => $allyId,
@@ -250,6 +282,22 @@ function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password)
             'session' => $maxFleetAuth['session'],
             'private_session' => $maxFleetAuth['private_session'],
             'cookies' => $maxFleetAuth['cookies'],
+        ),
+        'no_ships' => array(
+            'login_user' => $noShipsUser['name'],
+            'player_id' => $noShipsUserId,
+            'home_planet_id' => $noShipsPlanetId,
+            'session' => $noShipsAuth['session'],
+            'private_session' => $noShipsAuth['private_session'],
+            'cookies' => $noShipsAuth['cookies'],
+        ),
+        'low_fuel' => array(
+            'login_user' => $lowFuelUser['name'],
+            'player_id' => $lowFuelUserId,
+            'home_planet_id' => $lowFuelPlanetId,
+            'session' => $lowFuelAuth['session'],
+            'private_session' => $lowFuelAuth['private_session'],
+            'cookies' => $lowFuelAuth['cookies'],
         ),
     );
 }
@@ -392,7 +440,11 @@ try {
     $user = auth_visual_prepare_user($name, $password, $adminLevel);
     $galaxyHover = auth_visual_prepare_galaxy_hover_fixture($user, $password);
     $maxFleet = $galaxyHover['max_fleet'] ?? null;
+    $noShips = $galaxyHover['no_ships'] ?? null;
+    $lowFuel = $galaxyHover['low_fuel'] ?? null;
     unset($galaxyHover['max_fleet']);
+    unset($galaxyHover['no_ships']);
+    unset($galaxyHover['low_fuel']);
     $alliance = null;
     $report = null;
     $phalanx = null;
@@ -415,6 +467,8 @@ try {
         'home_planet_id' => (int)$user['home_planet_id'],
         'galaxy_hover' => $galaxyHover,
         'max_fleet' => $maxFleet,
+        'no_ships' => $noShips,
+        'low_fuel' => $lowFuel,
         'alliance' => $alliance,
         'report' => $report,
         'phalanx' => $phalanx,

@@ -20,6 +20,8 @@ type AuthFixture = {
   login_user?: string;
   cookies?: Record<string, string>;
   max_fleet?: AuthProfile;
+  no_ships?: AuthProfile;
+  low_fuel?: AuthProfile;
   features?: Partial<Record<"alliance" | "commander" | "phalanx" | "report", boolean>>;
 };
 
@@ -407,11 +409,12 @@ function migratedURL(spec: GameDynamicBehaviorSpec): string {
 }
 
 function fixtureProfile(spec: GameDynamicBehaviorSpec): AuthProfile {
-  if (spec.fixtureProfile === "max_fleet") {
-    if (!fixture.max_fleet?.session) {
-      throw new Error("authenticated game fixture is missing max_fleet profile");
+  if (spec.fixtureProfile) {
+    const profile = fixture[spec.fixtureProfile];
+    if (!profile?.session) {
+      throw new Error(`authenticated game fixture is missing ${spec.fixtureProfile} profile`);
     }
-    return fixture.max_fleet;
+    return profile;
   }
   return fixture;
 }
