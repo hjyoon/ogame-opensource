@@ -37,6 +37,7 @@ export type GameDynamicBehaviorSpec = {
   legacyApplicabilitySelector?: string;
   migratedApplicabilitySelector?: string;
   requiredFixtureFeatures?: Array<"alliance" | "commander" | "phalanx" | "report">;
+  isolateSides?: boolean;
   actions: GameDynamicAction[];
   assertions: GameDynamicAssertion[];
   notes?: string[];
@@ -582,6 +583,27 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers red residue output when flotten3 cargo input exceeds available capacity."]
   },
   {
+    name: "merchant-exchange-rate-tooltip",
+    legacyPage: "trader",
+    migratedPath: "/game/merchant",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-merchant-call-table",
+    applicabilitySelector: "input[name='2_value']",
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='One Metal gives'][onmouseover*='Crystal']",
+        migratedSelector: ".legacy-merchant-exchange-table a[data-merchant-rate-id='2']",
+        waitForSelector: "#overDiv"
+      }
+    ],
+    assertions: [
+      { name: "tooltip", type: "text", selector: "#overDiv", compareSides: true, contains: "One Metal gives" },
+      { name: "tooltip-html", type: "html", selector: "#overDiv", compareSides: true }
+    ],
+    notes: ["Covers trader.php exchange-rate overlib tooltip text and frame parity."]
+  },
+  {
     name: "merchant-exchange-max-clamp",
     legacyPage: "trader",
     migratedPath: "/game/merchant",
@@ -614,6 +636,31 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "crystal-storage", type: "text", selector: "[id='2_storage']", compareSides: true, tolerance: 1 }
     ],
     notes: ["Covers trader checkValue negative-input normalization."]
+  },
+  {
+    name: "merchant-exchange-submit-success",
+    isolateSides: true,
+    legacyPage: "trader",
+    migratedPath: "/game/merchant",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-merchant-call-table",
+    applicabilitySelector: "input[name='2_value']",
+    actions: [
+      { type: "fill", selector: "input[name='2_value']", value: "1000" },
+      { type: "fill", selector: "input[name='3_value']", value: "500" },
+      {
+        type: "click",
+        legacySelector: "#content input[name='trade']",
+        migratedSelector: ".legacy-merchant-exchange-table input[name='trade']",
+        legacyWaitForSelector: "#content form[name='TraderForm']",
+        migratedWaitForSelector: ".legacy-merchant-call-table"
+      }
+    ],
+    assertions: [
+      { name: "merchant-not-found", type: "text", legacySelector: "#content form[name='TraderForm']", migratedSelector: ".legacy-merchant-call-table", contains: "Merchant not found!" },
+      { name: "trade-button-count", type: "count", legacySelector: "#content input[name='trade']", migratedSelector: ".legacy-merchant-exchange-table input[name='trade']", expected: "0" }
+    ],
+    notes: ["Covers successful trader exchange submission consuming the active merchant offer."]
   }
 ];
 

@@ -1,7 +1,9 @@
 import { chromium, firefox, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import {
   gameDynamicBehaviorSpecs,
   selectGameDynamicBehaviorSpecs,
@@ -55,11 +57,13 @@ type CaseResult = {
 };
 
 const rootDir = resolve(import.meta.dir, "../..");
+const execFileAsync = promisify(execFile);
 const browserName = browserEnv("OGAME_PLAYWRIGHT_BROWSER", "chromium");
 const outputDir = resolve(rootDir, process.env.OGAME_GAME_DYNAMIC_OUTPUT_DIR ?? `.tmp/playwright-authenticated-game-dynamic/${browserName}`);
 const legacyBaseURL = trimTrailingSlash(process.env.OGAME_LEGACY_BASE_URL ?? "http://127.0.0.1:8888");
 const migratedBaseURL = trimTrailingSlash(process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890");
-const fixture = await loadAuthFixture(process.env.OGAME_GAME_VISUAL_FIXTURE_FILE);
+const fixtureFile = process.env.OGAME_GAME_VISUAL_FIXTURE_FILE;
+let fixture = await loadAuthFixture(fixtureFile);
 const selectedSpecs = selectGameDynamicBehaviorSpecs(process.env.OGAME_GAME_DYNAMIC_CASES ?? "");
 const fixedNowMs = numberEnv("OGAME_GAME_DYNAMIC_FIXED_NOW_MS", 1_765_584_000_000);
 const defaultChromeExecutable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -79,10 +83,16 @@ const browser = await browserType.launch({
 try {
   const results: CaseResult[] = [];
   for (const spec of selectedSpecs) {
+    if (spec.isolateSides) {
+      fixture = await refreshAuthFixture();
+    }
     const legacyContext = await newContext(browser, legacyBaseURL, spec);
     const legacy = await runSide(legacyContext, "legacy", spec, legacyURL(spec));
     await legacyContext.close();
 
+    if (spec.isolateSides) {
+      fixture = await refreshAuthFixture();
+    }
     const migratedContext = await newContext(browser, migratedBaseURL, spec);
     const migrated = await runSide(migratedContext, "migrated", spec, migratedURL(spec));
     await migratedContext.close();
@@ -146,11 +156,56 @@ async function loadAuthFixture(path: string | undefined): Promise<AuthFixture> {
   if (!existsSync(resolved)) {
     throw new Error(`authenticated game fixture file does not exist: ${resolved}`);
   }
-  const parsed = JSON.parse(await readFile(resolved, "utf8")) as AuthFixture;
+  const parsed = parseAuthFixture(await readFile(resolved, "utf8"), resolved);
+  return parsed;
+}
+
+function parseAuthFixture(raw: string, label: string): AuthFixture {
+  const parsed = JSON.parse(raw) as AuthFixture;
   if (!parsed.session) {
-    throw new Error(`authenticated game fixture is missing session: ${resolved}`);
+    throw new Error(`authenticated game fixture is missing session: ${label}`);
   }
   return parsed;
+}
+
+async function refreshAuthFixture(): Promise<AuthFixture> {
+  if (process.env.OGAME_GAME_DYNAMIC_PREPARE_FIXTURE === "0") {
+    return loadAuthFixture(fixtureFile);
+  }
+  const containerDir = process.env.OGAME_E2E_CONTAINER_DIR ?? "/tmp/ogame-e2e";
+  const fixtureScript = join(rootDir, "testing/e2e/prepare-authenticated-game-visual-fixture.php");
+  const containerScript = `${containerDir}/prepare-authenticated-game-visual-fixture.php`;
+  await execFileAsync("docker", ["compose", "cp", fixtureScript, `server:${containerScript}`], { cwd: rootDir });
+  const { stdout } = await execFileAsync(
+    "docker",
+    [
+      "compose",
+      "exec",
+      "-T",
+      "-e",
+      `OGAME_GAME_VISUAL_COMMANDER_FIXTURE=${process.env.OGAME_GAME_VISUAL_COMMANDER_FIXTURE ?? "1"}`,
+      "-e",
+      `OGAME_GAME_VISUAL_ALLIANCE_FIXTURE=${process.env.OGAME_GAME_VISUAL_ALLIANCE_FIXTURE ?? "1"}`,
+      "-e",
+      `OGAME_GAME_VISUAL_REPORT_FIXTURE=${process.env.OGAME_GAME_VISUAL_REPORT_FIXTURE ?? "0"}`,
+      "-e",
+      `OGAME_GAME_VISUAL_PHALANX_FIXTURE=${process.env.OGAME_GAME_VISUAL_PHALANX_FIXTURE ?? "0"}`,
+      "-e",
+      `OGAME_GAME_VISUAL_USER=${process.env.OGAME_GAME_VISUAL_USER ?? ""}`,
+      "-e",
+      `OGAME_GAME_VISUAL_PASS=${process.env.OGAME_GAME_VISUAL_PASS ?? ""}`,
+      "-e",
+      `OGAME_GAME_VISUAL_ADMIN=${process.env.OGAME_GAME_VISUAL_ADMIN ?? ""}`,
+      "server",
+      "php",
+      containerScript
+    ],
+    { cwd: rootDir, maxBuffer: 1024 * 1024 }
+  );
+  if (fixtureFile) {
+    await writeFile(resolve(rootDir, fixtureFile), stdout);
+  }
+  return parseAuthFixture(stdout, "refreshed authenticated game fixture");
 }
 
 async function newContext(browserInstance: Browser, baseURL: string, spec: GameDynamicBehaviorSpec): Promise<BrowserContext> {
@@ -343,6 +398,9 @@ async function readAssertion(page: Page, side: SideName, assertion: GameDynamicA
   if (!selector) {
     return null;
   }
+  if (assertion.type === "count") {
+    return await page.locator(selector).count();
+  }
   const locator = page.locator(selector).first();
   if ((await locator.count()) === 0) {
     return null;
@@ -352,9 +410,6 @@ async function readAssertion(page: Page, side: SideName, assertion: GameDynamicA
   }
   if (assertion.type === "visible") {
     return await locator.isVisible({ timeout: 5_000 });
-  }
-  if (assertion.type === "count") {
-    return await page.locator(selector).count();
   }
   if (assertion.type === "html") {
     return compactHTML(await locator.evaluate((element) => element.innerHTML));

@@ -7574,7 +7574,13 @@ function MerchantTable({
                     {row.offered ? (
                       <MerchantRateText rate={row.rate} />
                     ) : (
-                      <a href="#" title={merchantExchangeTitle(merchant, activeOfferID, row)}>
+                      <a
+                        data-merchant-rate-id={row.id}
+                        href="#"
+                        onMouseOut={() => hideLegacyInlineOverlib()}
+                        onMouseOver={() => showLegacyInlineOverlib(`<font color=white>${legacyHTMLText(merchantExchangeTitle(merchant, activeOfferID, row))}</font>`)}
+                        title={merchantExchangeTitle(merchant, activeOfferID, row)}
+                      >
                         <MerchantRateText rate={row.rate} />
                       </a>
                     )}
@@ -7672,6 +7678,16 @@ function merchantExchangeTitle(merchant: GameMerchant, activeOfferID: number, ro
   }
   const ratio = merchantRate(merchant, row.id) / Math.max(merchantRate(merchant, activeOfferID), 0.000001);
   return `One ${activeRow.name} gives ${formatMerchantRate(Math.round(ratio * 100) / 100)} ${row.name}`;
+}
+
+function showLegacyInlineOverlib(html: string): true {
+  const legacyWindow = window as Window & { overlib?: (html: string) => true };
+  return legacyWindow.overlib?.(html) ?? true;
+}
+
+function hideLegacyInlineOverlib(): true {
+  const legacyWindow = window as Window & { nd?: () => true };
+  return legacyWindow.nd?.() ?? true;
 }
 
 function formatMerchantRate(value: number): string {
