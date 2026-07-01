@@ -27,11 +27,16 @@ statistics/galaxy tooltip placement, and selected admin tables. These masks are
 intentional for stable screenshots, but they mean screenshot success alone does
 not prove timer, hover, or calculation logic.
 
+## Behavior Runner
+
+`run-playwright-authenticated-game-dynamic-e2e.sh` runs the first dynamic
+registry against legacy PHP and Go+Bun with the shared authenticated fixture.
+
 ## Required Follow-up
 
-1. Add a behavior registry beside `game-screen-registry.ts` for dynamic actions
-   that should not be judged by pixels: fleet `shortInfo`, merchant calculator,
-   text counters, galaxy instant actions, and admin simulators.
+1. Expand `game-dynamic-behavior-registry.ts` for dynamic actions that should
+   not be judged by pixels: fleet `shortInfo`, merchant calculator, text
+   counters, galaxy instant actions, and admin simulators.
 2. For every masked selector, keep at least one DOM/text assertion that proves
    the underlying dynamic value is updated.
 3. Run the behavior suite against both legacy PHP and Go+Bun where possible,

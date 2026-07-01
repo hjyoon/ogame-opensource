@@ -1690,6 +1690,66 @@ function LegacyFont({ children, color }: { children: React.ReactNode; color?: st
   return React.createElement("font", color ? ({ color } as React.HTMLAttributes<HTMLElement> & { color: string }) : null, children);
 }
 
+function useLegacyTextCounterCompatibility() {
+  React.useEffect(() => {
+    type CounterWindow = Window & { cntchar?: (maxChars: number | string) => void };
+    const counterWindow = window as CounterWindow;
+    const lastValidValues = new WeakMap<HTMLTextAreaElement, string>();
+    let activeTextarea: HTMLTextAreaElement | null = null;
+
+    const counterFor = (textarea: HTMLTextAreaElement): HTMLElement | null =>
+      textarea.closest("tr")?.querySelector<HTMLElement>("#cntChars") ?? document.getElementById("cntChars");
+
+    const maxFor = (textarea: HTMLTextAreaElement, fallback: number | string): number => {
+      if (textarea.maxLength > 0 && textarea.maxLength < 1000000) {
+        return textarea.maxLength;
+      }
+      const label = textarea.closest("tr")?.textContent ?? document.body.textContent ?? "";
+      const match = label.match(/\/\s*([0-9]+)/);
+      const parsed = Number.parseInt(String(fallback || match?.[1] || "0"), 10);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 5000;
+    };
+
+    const updateCounter = (maxChars: number | string, textarea = activeTextarea) => {
+      const target =
+        textarea ??
+        (document.forms[0]?.elements.namedItem("text") instanceof HTMLTextAreaElement
+          ? (document.forms[0].elements.namedItem("text") as HTMLTextAreaElement)
+          : document.querySelector<HTMLTextAreaElement>("textarea[name='text']"));
+      if (!target) {
+        return;
+      }
+      activeTextarea = target;
+      const max = maxFor(target, maxChars);
+      if (target.value.length > max) {
+        target.value = lastValidValues.get(target) ?? target.value.slice(0, max);
+      } else {
+        lastValidValues.set(target, target.value);
+      }
+      const counter = counterFor(target);
+      if (counter) {
+        counter.textContent = String(target.value.length);
+      }
+    };
+
+    counterWindow.cntchar = updateCounter;
+    const onTextChange = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLTextAreaElement) || target.name !== "text" || target.hasAttribute("onkeyup")) {
+        return;
+      }
+      updateCounter(maxFor(target, 0), target);
+    };
+    document.addEventListener("input", onTextChange, true);
+    document.addEventListener("keyup", onTextChange, true);
+    return () => {
+      document.removeEventListener("input", onTextChange, true);
+      document.removeEventListener("keyup", onTextChange, true);
+      delete counterWindow.cntchar;
+    };
+  }, []);
+}
+
 export function LegacyGameOverview({
   status,
   error,
@@ -1785,6 +1845,7 @@ export function LegacyGameOverview({
 }: LegacyGameOverviewProps) {
   const overview = status?.authenticated ? status.overview : undefined;
   const issue = status && !status.authenticated ? status.issues[0]?.message ?? "Session is invalid." : null;
+  useLegacyTextCounterCompatibility();
   React.useEffect(() => {
     const legacyWindow = window as Window & { showGalaxy?: (galaxy: number, system: number, planet: number) => void };
     legacyWindow.showGalaxy = (galaxy: number, system: number, planet: number) => {
