@@ -742,6 +742,102 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers flotten3 mission radio availability and selected-state parity for enemy planet dispatch."]
   },
   {
+    name: "fleet-attack-launch-noob-protection-error",
+    isolateSides: true,
+    legacyPage: "flotten1",
+    migratedPath: "/game/fleet",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-fleet-table",
+    applicabilitySelector: "input[name='ship202']",
+    actions: [
+      { type: "fill", selector: "input[name='ship202']", value: "1" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='continue']",
+        migratedSelector: ".legacy-fleet-select-table input[type='submit'][value='continue']",
+        legacyWaitForSelector: "#content input[name='galaxy']",
+        migratedWaitForSelector: ".legacy-fleet-target-table input[name='galaxy']"
+      },
+      { type: "type", selector: "input[name='galaxy']", value: "$fixture.galaxy_hover.galaxy" },
+      { type: "type", selector: "input[name='system']", value: "$fixture.galaxy_hover.system" },
+      { type: "type", selector: "input[name='planet']", value: "$fixture.galaxy_hover.noob_target_position" },
+      { type: "select", selector: "select[name='planettype']", value: "1" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='Next']",
+        migratedSelector: ".legacy-fleet-target-table input[type='submit'][value='Next']",
+        legacyWaitForSelector: "#content input[name='order'][value='1']",
+        migratedWaitForSelector: ".legacy-fleet-dispatch-table input[name='order'][value='1']"
+      },
+      { type: "click", selector: "input[name='order'][value='1']" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='Next']",
+        migratedSelector: ".legacy-fleet-dispatch-table input[type='submit'][value='Next']",
+        legacyWaitForSelector: "#content span.error:has-text('The planet is protected for newbies!')",
+        migratedWaitForSelector: ".legacy-overview-table:has-text('The planet is protected for newbies!')"
+      }
+    ],
+    assertions: [
+      {
+        name: "launch-error",
+        type: "text",
+        legacySelector: "#content span.error:has-text('The planet is protected for newbies!')",
+        migratedSelector: ".legacy-overview-table:has-text('The planet is protected for newbies!')",
+        contains: "The planet is protected for newbies!"
+      }
+    ],
+    notes: ["Covers final flottenversand/fleet launch-submit noob-protection parity."]
+  },
+  {
+    name: "fleet-attack-launch-vacation-error",
+    isolateSides: true,
+    legacyPage: "flotten1",
+    migratedPath: "/game/fleet",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-fleet-table",
+    applicabilitySelector: "input[name='ship202']",
+    actions: [
+      { type: "fill", selector: "input[name='ship202']", value: "1" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='continue']",
+        migratedSelector: ".legacy-fleet-select-table input[type='submit'][value='continue']",
+        legacyWaitForSelector: "#content input[name='galaxy']",
+        migratedWaitForSelector: ".legacy-fleet-target-table input[name='galaxy']"
+      },
+      { type: "type", selector: "input[name='galaxy']", value: "$fixture.galaxy_hover.galaxy" },
+      { type: "type", selector: "input[name='system']", value: "$fixture.galaxy_hover.system" },
+      { type: "type", selector: "input[name='planet']", value: "$fixture.galaxy_hover.vacation_target_position" },
+      { type: "select", selector: "select[name='planettype']", value: "1" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='Next']",
+        migratedSelector: ".legacy-fleet-target-table input[type='submit'][value='Next']",
+        legacyWaitForSelector: "#content input[name='order'][value='1']",
+        migratedWaitForSelector: ".legacy-fleet-dispatch-table input[name='order'][value='1']"
+      },
+      { type: "click", selector: "input[name='order'][value='1']" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='Next']",
+        migratedSelector: ".legacy-fleet-dispatch-table input[type='submit'][value='Next']",
+        legacyWaitForSelector: "#content span.error:has-text('This player is in vacation mode!')",
+        migratedWaitForSelector: ".legacy-overview-table:has-text('This player is in vacation mode!')"
+      }
+    ],
+    assertions: [
+      {
+        name: "launch-error",
+        type: "text",
+        legacySelector: "#content span.error:has-text('This player is in vacation mode!')",
+        migratedSelector: ".legacy-overview-table:has-text('This player is in vacation mode!')",
+        contains: "This player is in vacation mode!"
+      }
+    ],
+    notes: ["Covers final flottenversand/fleet launch-submit vacation target parity."]
+  },
+  {
     name: "merchant-exchange-rate-tooltip",
     legacyPage: "trader",
     migratedPath: "/game/merchant",
