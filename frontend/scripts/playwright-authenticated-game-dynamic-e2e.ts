@@ -25,6 +25,7 @@ type AuthFixture = {
   no_ships?: AuthProfile;
   low_fuel?: AuthProfile;
   no_cargo?: AuthProfile;
+  queue_short?: AuthProfile;
   features?: Partial<Record<"alliance" | "commander" | "phalanx" | "report", boolean>>;
 };
 
@@ -217,27 +218,33 @@ async function newContext(browserInstance: Browser, baseURL: string, spec: GameD
     reducedMotion: "reduce",
     timezoneId: "UTC"
   });
-  await context.addInitScript((now) => {
-    const RealDate = Date;
-    class FixedDate extends RealDate {
-      constructor(...args: unknown[]) {
-        if (args.length === 0) {
-          super(now);
-        } else if (args.length === 1) {
-          super(args[0] as string | number | Date);
-        } else {
-          const dateArgs = args as [number, number, number?, number?, number?, number?, number?];
-          super(dateArgs[0], dateArgs[1], dateArgs[2] ?? 1, dateArgs[3] ?? 0, dateArgs[4] ?? 0, dateArgs[5] ?? 0, dateArgs[6] ?? 0);
+  if (spec.fixedClock !== false) {
+    await context.addInitScript((now) => {
+      const RealDate = Date;
+      class FixedDate extends RealDate {
+        constructor(...args: unknown[]) {
+          if (args.length === 0) {
+            super(now);
+          } else if (args.length === 1) {
+            super(args[0] as string | number | Date);
+          } else {
+            const dateArgs = args as [number, number, number?, number?, number?, number?, number?];
+            super(dateArgs[0], dateArgs[1], dateArgs[2] ?? 1, dateArgs[3] ?? 0, dateArgs[4] ?? 0, dateArgs[5] ?? 0, dateArgs[6] ?? 0);
+          }
+        }
+        static now() {
+          return now;
         }
       }
-      static now() {
-        return now;
-      }
-    }
-    Object.setPrototypeOf(FixedDate, RealDate);
-    Date = FixedDate as DateConstructor;
-    Math.random = () => 0.42;
-  }, fixedNowMs);
+      Object.setPrototypeOf(FixedDate, RealDate);
+      Date = FixedDate as DateConstructor;
+      Math.random = () => 0.42;
+    }, fixedNowMs);
+  } else {
+    await context.addInitScript(() => {
+      Math.random = () => 0.42;
+    });
+  }
   await context.addCookies([{ name: "ogamelang", value: "en", url: baseURL }]);
   const profile = fixtureProfile(spec);
   if (profile.cookies) {

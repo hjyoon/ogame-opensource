@@ -420,6 +420,53 @@ function auth_visual_prepare_alliance_fixture(array $user, string $password): ar
     );
 }
 
+function auth_visual_prepare_short_queue_fixture(string $password): array
+{
+    global $db_prefix;
+
+    $user = auth_visual_prepare_user('visualqueue', $password, USER_TYPE_PLAYER);
+    $playerId = (int)$user['player_id'];
+    $planetId = (int)$user['home_planet_id'];
+    $now = time();
+    $start = $now;
+    $duration = 16;
+    $level = 1;
+
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_B_METAL_MINE . "`=0, `" . GID_RC_METAL . "`=1000000, " .
+        "`" . GID_RC_CRYSTAL . "`=1000000, `" . GID_RC_DEUTERIUM . "`=1000000, lastpeek={$now} " .
+        "WHERE planet_id={$planetId} AND owner_id={$playerId}"
+    );
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id={$playerId} AND type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "')");
+    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id={$playerId} OR planet_id={$planetId}");
+
+    $buildQueueId = AddDBRow(
+        array(
+            'owner_id' => $playerId,
+            'planet_id' => $planetId,
+            'list_id' => 1,
+            'tech_id' => GID_B_METAL_MINE,
+            'level' => $level,
+            'destroy' => 0,
+            'start' => $start,
+            'end' => $start + $duration,
+        ),
+        'buildqueue'
+    );
+    AddQueue($playerId, QTYP_BUILD, $buildQueueId, GID_B_METAL_MINE, $level, $start, $duration, QUEUE_PRIO_BUILD);
+    $auth = auth_visual_prepare_session($playerId);
+    SelectPlanet($playerId, $planetId);
+
+    return array(
+        'login_user' => $user['name'],
+        'player_id' => $playerId,
+        'home_planet_id' => $planetId,
+        'session' => $auth['session'],
+        'private_session' => $auth['private_session'],
+        'cookies' => $auth['cookies'],
+    );
+}
+
 function auth_visual_prepare_report_fixture(array $user): array
 {
     global $db_prefix;
@@ -485,6 +532,7 @@ try {
     $noShips = $galaxyHover['no_ships'] ?? null;
     $lowFuel = $galaxyHover['low_fuel'] ?? null;
     $noCargo = $galaxyHover['no_cargo'] ?? null;
+    $queueShort = auth_visual_prepare_short_queue_fixture($password);
     unset($galaxyHover['max_fleet']);
     unset($galaxyHover['no_ships']);
     unset($galaxyHover['low_fuel']);
@@ -514,6 +562,7 @@ try {
         'no_ships' => $noShips,
         'low_fuel' => $lowFuel,
         'no_cargo' => $noCargo,
+        'queue_short' => $queueShort,
         'alliance' => $alliance,
         'report' => $report,
         'phalanx' => $phalanx,

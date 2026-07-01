@@ -27,7 +27,8 @@ export type GameDynamicAssertion = {
 
 export type GameDynamicBehaviorSpec = {
   name: string;
-  fixtureProfile?: "max_fleet" | "no_ships" | "low_fuel" | "no_cargo";
+  fixtureProfile?: "max_fleet" | "no_ships" | "low_fuel" | "no_cargo" | "queue_short";
+  fixedClock?: boolean;
   legacyPage: string;
   legacyQuery?: Record<string, string>;
   migratedPath: string;
@@ -836,6 +837,28 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       }
     ],
     notes: ["Covers final flottenversand/fleet launch-submit vacation target parity."]
+  },
+  {
+    name: "buildings-short-queue-completion-refresh",
+    fixtureProfile: "queue_short",
+    isolateSides: true,
+    fixedClock: false,
+    legacyPage: "b_building",
+    migratedPath: "/game/buildings",
+    legacyReady: "#bxx",
+    migratedReady: "#bxx",
+    actions: [{ type: "wait", waitMs: 23000 }],
+    assertions: [
+      { name: "queue-countdown-gone", type: "count", selector: "#bxx", compareSides: true, expected: "0" },
+      {
+        name: "buildings-ready-after-refresh",
+        type: "evaluate",
+        expression: "Boolean(document.body.textContent && document.body.textContent.includes('Metal Mine') && !document.querySelector('#bxx'))",
+        compareSides: true,
+        expected: "true"
+      }
+    ],
+    notes: ["Covers short building countdown completion, automatic refresh, and queue removal without freezing Date."]
   },
   {
     name: "merchant-exchange-rate-tooltip",
