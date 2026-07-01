@@ -159,6 +159,42 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers cntchar-style keyup behavior on the alliance circular message form."]
   },
   {
+    name: "alliance-application-reject-text-counter",
+    legacyPage: "bewerbungen",
+    legacyQuery: { show: "$fixture.alliance.application_id", sort: "1" },
+    migratedPath: "/game/alliance",
+    migratedQuery: { page: "bewerbungen", show: "$fixture.alliance.application_id", sort: "1" },
+    legacyReady: "#content textarea[name='text']",
+    migratedReady: ".legacy-alliance-applications-table textarea[name='text']",
+    requiredFixtureFeatures: ["alliance"],
+    actions: [{ type: "type", selector: "textarea[name='text']", value: "reject" }],
+    assertions: [{ name: "counter", type: "text", selector: "#cntChars", expected: "6" }],
+    notes: ["Covers cntchar-style keyup behavior on the alliance application rejection reason form."]
+  },
+  {
+    name: "admin-battlesim-slot-sync",
+    legacyPage: "admin",
+    legacyQuery: { mode: "BattleSim" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "BattleSim" },
+    legacyReady: "#battle_source",
+    migratedReady: ".legacy-admin-battlesim-table #battle_source",
+    actions: [
+      { type: "type", selector: "#a_202", value: "3" },
+      { type: "type", selector: "#a_weap", value: "5" },
+      { type: "select", selector: "select[name='dslot']", value: "2" },
+      { type: "type", selector: "#d_401", value: "7" }
+    ],
+    assertions: [
+      { name: "attacker-small-cargo-hidden", type: "value", selector: "#a0_202", compareSides: true },
+      { name: "attacker-weapons-hidden", type: "value", selector: "#a0_weap", compareSides: true },
+      { name: "defender-slot2-rocket-hidden", type: "value", selector: "#d1_401", compareSides: true },
+      { name: "attacker-slot-count", type: "value", selector: "#anum", expected: "1" },
+      { name: "defender-slot-count", type: "value", selector: "#dnum", expected: "2" }
+    ],
+    notes: ["Covers BattleSim visible inputs, hidden slot state, tech state, and attacker/defender counters."]
+  },
+  {
     name: "fleet-select-all-ships",
     legacyPage: "flotten1",
     migratedPath: "/game/fleet",

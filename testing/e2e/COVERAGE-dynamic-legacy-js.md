@@ -1,8 +1,8 @@
 # Dynamic Legacy JS Coverage
 
-This audit tracks legacy PHP/JS dynamic behavior in the Go+Bun React frontend.
-Exact screenshots prove pixels only for states in the registry; masked regions
-also need behavior tests.
+This tracks legacy PHP/JS dynamic behavior in the Go+Bun React frontend. Exact
+screenshots prove pixels only for registry states; masked regions also need
+behavior tests.
 
 ## Status Map
 
@@ -13,9 +13,9 @@ also need behavior tests.
 | Galaxy hover/actions | `galaxy.php`, `galaxy_js.php` overLib menus, `doit`, cursor keys | Partially migrated | hover visual cases; message/buddy action navigation; galaxy HTTP tests | keyboard navigation and mutating instant dispatch need behavior assertions |
 | Fleet selection/targeting | `flotten1.php`, `flotten2.php`, `flotten3.php` max links, `shortInfo`, `remainingresources` | Partially migrated | fleet visual cases; dynamic all-ships, `shortInfo`, residue and overcapacity checks | all mission/cargo combinations need deterministic behavior tests |
 | Merchant calculator | `trader.php` `checkValue`, `setMaxValue`, exchange hovers | Partially migrated | merchant visual, HTTP, dynamic max/negative-clamp checks | trade submit and rate variants need more behavior tests |
-| Character counters | messages, notes, buddy, alliance textareas `cntChars` | Mostly migrated | compose/notes/buddy/alliance dynamic counter checks | application review counters still need coverage |
+| Character counters | messages, notes, buddy, alliance textareas `cntChars` | Mostly migrated | compose/notes/buddy/alliance/application counter checks | remaining counters should be added when found |
 | Statistics/empire hovers | `statistics.php`, `imperium.php` overLib averages/deltas | Partially migrated | statistics tooltip and empire visual cases | tooltip text parity should be asserted for representative rows |
-| Admin tools | `pages_admin/*` simulators, filters, bot editor JS | Partially migrated | admin visual draft cases, admin HTTP tests | battle sim/bot editor dynamic JS remains highest-risk behavior gap |
+| Admin tools | `pages_admin/*` simulators, filters, bot editor JS | Partially migrated | admin visual/HTTP plus BattleSim slot-sync checks | bot editor dynamic JS remains highest-risk behavior gap |
 | Public auth/register | `wwwroot/*`, `registration.js` flags and polling validation | Partially migrated | auth visual/CSR cases, registration HTTP tests | username/email polling parity is not an exact visual guarantee |
 
 ## Masked Or Normalized Dynamic Regions
@@ -28,11 +28,11 @@ not prove timer, hover, or calculation logic.
 
 ## Behavior Runner
 
-`run-playwright-authenticated-game-dynamic-e2e.sh` runs 13 shared-fixture cases:
-message/notes/buddy/alliance counters, galaxy tooltip/action navigation, fleet
-all-ships, `shortInfo`, residue/overcapacity, and merchant max/negative clamps.
-Merchant text allows +/-1 for live production tick drift; action results are
-still compared numerically.
+`run-playwright-authenticated-game-dynamic-e2e.sh` runs 15 shared-fixture cases:
+message/notes/buddy/alliance/application counters, galaxy tooltip/action
+navigation, fleet all-ships, `shortInfo`, residue/overcapacity, merchant
+max/negative clamps, and BattleSim slot sync. Merchant text allows +/-1 for
+live production drift; action results are still compared numerically.
 
 ## Required Follow-up
 

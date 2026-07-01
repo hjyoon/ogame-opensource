@@ -7042,7 +7042,9 @@ function AllianceApplicationsTable({
                 </th>
               </tr>
               <tr>
-                <th>Reason (optional) 0 / 2000 characters</th>
+                <th>
+                  Reason (optional) <span id="cntChars">0</span> / 2000 characters
+                </th>
                 <th>
                   <AllianceRejectForm application={alliance.selectedApp} onAction={onAction} pending={pending} />
                 </th>
