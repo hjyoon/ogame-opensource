@@ -467,6 +467,73 @@ function auth_visual_prepare_short_queue_fixture(string $password): array
     );
 }
 
+function auth_visual_prepare_short_research_fixture(string $password): array
+{
+    global $db_prefix;
+
+    $user = auth_visual_prepare_user('visualresearch', $password, USER_TYPE_PLAYER);
+    $playerId = (int)$user['player_id'];
+    $planetId = (int)$user['home_planet_id'];
+    $now = time();
+    $start = $now;
+    $duration = 16;
+    $level = 1;
+
+    dbquery(
+        "UPDATE {$db_prefix}users SET `" . GID_R_ENERGY . "`=0 WHERE player_id={$playerId}"
+    );
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_B_RES_LAB . "`=1, `" . GID_RC_METAL . "`=1000000, " .
+        "`" . GID_RC_CRYSTAL . "`=1000000, `" . GID_RC_DEUTERIUM . "`=1000000, lastpeek={$now} " .
+        "WHERE planet_id={$planetId} AND owner_id={$playerId}"
+    );
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id={$playerId} AND type='" . QTYP_RESEARCH . "'");
+    AddQueue($playerId, QTYP_RESEARCH, $planetId, GID_R_ENERGY, $level, $start, $duration);
+    $auth = auth_visual_prepare_session($playerId);
+    SelectPlanet($playerId, $planetId);
+
+    return array(
+        'login_user' => $user['name'],
+        'player_id' => $playerId,
+        'home_planet_id' => $planetId,
+        'session' => $auth['session'],
+        'private_session' => $auth['private_session'],
+        'cookies' => $auth['cookies'],
+    );
+}
+
+function auth_visual_prepare_short_shipyard_fixture(string $password): array
+{
+    global $db_prefix;
+
+    $user = auth_visual_prepare_user('visualshipyard', $password, USER_TYPE_PLAYER);
+    $playerId = (int)$user['player_id'];
+    $planetId = (int)$user['home_planet_id'];
+    $now = time();
+    $start = $now;
+    $duration = 16;
+    $count = 1;
+
+    dbquery(
+        "UPDATE {$db_prefix}planets SET `" . GID_B_SHIPYARD . "`=2, `" . GID_F_SC . "`=0, " .
+        "`" . GID_RC_METAL . "`=1000000, `" . GID_RC_CRYSTAL . "`=1000000, `" . GID_RC_DEUTERIUM . "`=1000000, lastpeek={$now} " .
+        "WHERE planet_id={$planetId} AND owner_id={$playerId}"
+    );
+    dbquery("DELETE FROM {$db_prefix}queue WHERE owner_id={$playerId} AND type='" . QTYP_SHIPYARD . "'");
+    AddQueue($playerId, QTYP_SHIPYARD, $planetId, GID_F_SC, $count, $start, $duration);
+    $auth = auth_visual_prepare_session($playerId);
+    SelectPlanet($playerId, $planetId);
+
+    return array(
+        'login_user' => $user['name'],
+        'player_id' => $playerId,
+        'home_planet_id' => $planetId,
+        'session' => $auth['session'],
+        'private_session' => $auth['private_session'],
+        'cookies' => $auth['cookies'],
+    );
+}
+
 function auth_visual_prepare_report_fixture(array $user): array
 {
     global $db_prefix;
@@ -521,18 +588,21 @@ function auth_visual_prepare_session(int $playerId): array
 try {
     $name = getenv('OGAME_GAME_VISUAL_USER') ?: 'legor';
     $password = getenv('OGAME_GAME_VISUAL_PASS') ?: 'admin';
-    $adminLevel = intval(getenv('OGAME_GAME_VISUAL_ADMIN') ?: USER_TYPE_ADMIN);
+    $adminLevel = intval(getenv('OGAME_GAME_VISUAL_ADMIN') ?: USER_TYPE_PLAYER);
     $useCommander = getenv('OGAME_GAME_VISUAL_COMMANDER_FIXTURE') === '1';
     $useAlliance = getenv('OGAME_GAME_VISUAL_ALLIANCE_FIXTURE') === '1';
     $useReport = getenv('OGAME_GAME_VISUAL_REPORT_FIXTURE') === '1';
     $usePhalanx = getenv('OGAME_GAME_VISUAL_PHALANX_FIXTURE') === '1';
     $user = auth_visual_prepare_user($name, $password, $adminLevel);
+    $adminUser = auth_visual_prepare_user('visualadmin', $password, USER_TYPE_ADMIN);
     $galaxyHover = auth_visual_prepare_galaxy_hover_fixture($user, $password);
     $maxFleet = $galaxyHover['max_fleet'] ?? null;
     $noShips = $galaxyHover['no_ships'] ?? null;
     $lowFuel = $galaxyHover['low_fuel'] ?? null;
     $noCargo = $galaxyHover['no_cargo'] ?? null;
     $queueShort = auth_visual_prepare_short_queue_fixture($password);
+    $researchShort = auth_visual_prepare_short_research_fixture($password);
+    $shipyardShort = auth_visual_prepare_short_shipyard_fixture($password);
     unset($galaxyHover['max_fleet']);
     unset($galaxyHover['no_ships']);
     unset($galaxyHover['low_fuel']);
@@ -552,17 +622,28 @@ try {
     if ($usePhalanx) {
         $phalanx = auth_visual_prepare_phalanx_fixture($galaxyHover);
     }
+    $adminAuth = auth_visual_prepare_session((int)$adminUser['player_id']);
     $auth = auth_visual_prepare_session((int)$user['player_id']);
     echo json_encode(array(
         'login_user' => $user['name'],
         'player_id' => (int)$user['player_id'],
         'home_planet_id' => (int)$user['home_planet_id'],
+        'admin' => array(
+            'login_user' => $adminUser['name'],
+            'player_id' => (int)$adminUser['player_id'],
+            'home_planet_id' => (int)$adminUser['home_planet_id'],
+            'session' => $adminAuth['session'],
+            'private_session' => $adminAuth['private_session'],
+            'cookies' => $adminAuth['cookies'],
+        ),
         'galaxy_hover' => $galaxyHover,
         'max_fleet' => $maxFleet,
         'no_ships' => $noShips,
         'low_fuel' => $lowFuel,
         'no_cargo' => $noCargo,
         'queue_short' => $queueShort,
+        'research_short' => $researchShort,
+        'shipyard_short' => $shipyardShort,
         'alliance' => $alliance,
         'report' => $report,
         'phalanx' => $phalanx,

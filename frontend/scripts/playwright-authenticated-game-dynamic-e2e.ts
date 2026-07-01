@@ -21,11 +21,14 @@ type AuthFixture = {
   home_planet_id?: number;
   login_user?: string;
   cookies?: Record<string, string>;
+  admin?: AuthProfile;
   max_fleet?: AuthProfile;
   no_ships?: AuthProfile;
   low_fuel?: AuthProfile;
   no_cargo?: AuthProfile;
   queue_short?: AuthProfile;
+  research_short?: AuthProfile;
+  shipyard_short?: AuthProfile;
   features?: Partial<Record<"alliance" | "commander" | "phalanx" | "report", boolean>>;
 };
 

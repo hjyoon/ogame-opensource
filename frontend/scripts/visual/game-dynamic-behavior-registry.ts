@@ -27,7 +27,7 @@ export type GameDynamicAssertion = {
 
 export type GameDynamicBehaviorSpec = {
   name: string;
-  fixtureProfile?: "max_fleet" | "no_ships" | "low_fuel" | "no_cargo" | "queue_short";
+  fixtureProfile?: "admin" | "max_fleet" | "no_ships" | "low_fuel" | "no_cargo" | "queue_short" | "research_short" | "shipyard_short";
   fixedClock?: boolean;
   legacyPage: string;
   legacyQuery?: Record<string, string>;
@@ -256,8 +256,8 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     actions: [
       {
         type: "click",
-        legacySelector: "#content a[onclick*='doit(6']",
-        migratedSelector: ".legacy-galaxy-actions a[data-galaxy-action='Espionage']",
+        legacySelector: "#content tr:has-text('Visual Hover Planet') a[onclick*='doit(6']",
+        migratedSelector: "tr[data-galaxy-position='1'] .legacy-galaxy-actions a[data-galaxy-action='Espionage']",
         waitForSelector: "#fleetstatustable tr"
       }
     ],
@@ -482,6 +482,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
   },
   {
     name: "admin-battlesim-slot-sync",
+    fixtureProfile: "admin",
     legacyPage: "admin",
     legacyQuery: { mode: "BattleSim" },
     migratedPath: "/game/admin",
@@ -505,6 +506,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
   },
   {
     name: "admin-botedit-init-palette",
+    fixtureProfile: "admin",
     legacyPage: "admin",
     legacyQuery: { mode: "BotEdit" },
     migratedPath: "/game/admin",
@@ -859,6 +861,52 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       }
     ],
     notes: ["Covers short building countdown completion, automatic refresh, and queue removal without freezing Date."]
+  },
+  {
+    name: "research-short-queue-completion-done",
+    fixtureProfile: "research_short",
+    isolateSides: true,
+    fixedClock: false,
+    legacyPage: "buildings",
+    legacyQuery: { mode: "Forschung" },
+    migratedPath: "/game/research",
+    legacyReady: "#bxx",
+    migratedReady: "#bxx",
+    actions: [{ type: "wait", waitMs: 19000 }],
+    assertions: [
+      { name: "research-countdown", type: "text", selector: "#bxx", compareSides: true, contains: "Done" },
+      {
+        name: "research-next-link",
+        type: "count",
+        selector: "#bxx a",
+        compareSides: true,
+        expected: "1"
+      }
+    ],
+    notes: ["Covers short research countdown completion and Done/next state without freezing Date."]
+  },
+  {
+    name: "shipyard-short-queue-completion-tasks-completed",
+    fixtureProfile: "shipyard_short",
+    isolateSides: true,
+    fixedClock: false,
+    legacyPage: "buildings",
+    legacyQuery: { mode: "Flotte" },
+    migratedPath: "/game/shipyard",
+    legacyReady: "#bx",
+    migratedReady: "#bx",
+    actions: [{ type: "wait", waitMs: 19000 }],
+    assertions: [
+      { name: "shipyard-countdown", type: "text", selector: "#bx", compareSides: true, contains: "Tasks completed" },
+      {
+        name: "shipyard-completed-option",
+        type: "text",
+        selector: "select[name='auftr'] option",
+        compareSides: true,
+        contains: "Tasks completed"
+      }
+    ],
+    notes: ["Covers short shipyard countdown completion and Expected tasks completed state without freezing Date."]
   },
   {
     name: "merchant-exchange-rate-tooltip",
