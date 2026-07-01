@@ -408,6 +408,14 @@ func TestBuildFleetDispatchValidationReturnsLegacyCommonIssues(t *testing.T) {
 			want:  FleetIssueNoCargo,
 		},
 		{
+			name: "probe no cargo",
+			fleet: BuildFleet(Overview{
+				CurrentPlanet: PlanetOverview{Type: PlanetTypePlanet, Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 3}, Resources: Resources{Deuterium: 100000}},
+			}, FleetCounts{FleetEspionageProbe: 1}, ResearchLevels{}, nil, false, false),
+			input: FleetDispatchValidationInput{Ships: map[int]int{FleetEspionageProbe: 1}, Target: Coordinates{Galaxy: 9, System: 2, Position: 4}, TargetType: GamePlanetTypePlanet, Mission: FleetMissionSpy, Speed: 10},
+			want:  FleetIssueNoCargo,
+		},
+		{
 			name: "expedition limit",
 			fleet: BuildFleet(Overview{
 				CurrentPlanet: PlanetOverview{Type: PlanetTypePlanet, Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 3}, Resources: Resources{Deuterium: 100000}},

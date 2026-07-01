@@ -26,7 +26,7 @@ export type GameDynamicAssertion = {
 
 export type GameDynamicBehaviorSpec = {
   name: string;
-  fixtureProfile?: "max_fleet" | "no_ships" | "low_fuel";
+  fixtureProfile?: "max_fleet" | "no_ships" | "low_fuel" | "no_cargo";
   legacyPage: string;
   legacyQuery?: Record<string, string>;
   migratedPath: string;
@@ -347,6 +347,29 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "status-result", type: "text", selector: "#fleetstatustable tr:first-child td:nth-child(2)", expected: "You don't have enough deuterium" }
     ],
     notes: ["Covers legacy galaxy doit(8) no-deuterium failure row parity."]
+  },
+  {
+    name: "galaxy-instant-spy-no-cargo-failure",
+    fixtureProfile: "no_cargo",
+    legacyPage: "galaxy",
+    legacyQuery: { galaxy: "$fixture.galaxy_hover.galaxy", system: "$fixture.galaxy_hover.system" },
+    migratedPath: "/game/galaxy",
+    migratedQuery: { galaxy: "$fixture.galaxy_hover.galaxy", system: "$fixture.galaxy_hover.system" },
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content tr:has-text('Visual Hover Planet') a[onclick*='doit(6']",
+        migratedSelector: "tr[data-galaxy-position='1'] .legacy-galaxy-actions a[data-galaxy-action='Espionage']",
+        waitForSelector: "#fleetstatustable tr"
+      }
+    ],
+    assertions: [
+      { name: "status-row", type: "text", selector: "#fleetstatustable tr:first-child", compareSides: true },
+      { name: "status-result", type: "text", selector: "#fleetstatustable tr:first-child td:nth-child(2)", expected: "Error! Insufficient carrying capacity!" }
+    ],
+    notes: ["Covers legacy galaxy doit(6) probe fuel cargo-capacity failure row parity."]
   },
   {
     name: "alliance-circular-text-counter",

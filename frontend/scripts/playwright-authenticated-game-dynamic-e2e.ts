@@ -24,6 +24,7 @@ type AuthFixture = {
   max_fleet?: AuthProfile;
   no_ships?: AuthProfile;
   low_fuel?: AuthProfile;
+  no_cargo?: AuthProfile;
   features?: Partial<Record<"alliance" | "commander" | "phalanx" | "report", boolean>>;
 };
 

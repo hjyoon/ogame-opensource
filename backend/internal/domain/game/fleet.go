@@ -344,6 +344,7 @@ func BuildFleetDispatchValidation(fleet Fleet, input FleetDispatchValidationInpu
 	fleetFuel, probeFuel := fleetFlightConsumptionParts(fleet.Ships, selectedCounts, draft.Distance, draft.DurationSeconds, draft.SpeedFactor, holdHours)
 	draft.FuelConsumption = fleetFuel + probeFuel
 	cargoSpace := draft.Cargo - fleetFuel
+	fuelCargoCapacity := draft.Cargo + fleetProbeCargo(fleet.Ships, selectedCounts)
 	resourceRows, remainingCargo := fleetDispatchResourcePlan(fleet.CurrentPlanet.Resources, input.Resources, cargoSpace)
 	draft.Resources = resourceRows
 	draft.RemainingCargo = remainingCargo
@@ -374,11 +375,20 @@ func BuildFleetDispatchValidation(fleet Fleet, input FleetDispatchValidationInpu
 	if int(fleet.CurrentPlanet.Resources.Deuterium) < draft.FuelConsumption {
 		return draft, FleetActionIssueFor(FleetIssueNoFuel)
 	}
-	if cargoSpace < 0 {
+	if fuelCargoCapacity < draft.FuelConsumption {
 		return draft, FleetActionIssueFor(FleetIssueNoCargo)
 	}
 	draft.Ready = true
 	return draft, nil
+}
+
+func fleetProbeCargo(ships []FleetShipSelection, counts FleetCounts) int {
+	for _, ship := range ships {
+		if ship.ID == FleetEspionageProbe {
+			return ship.Cargo * max(0, counts[FleetEspionageProbe])
+		}
+	}
+	return 0
 }
 
 func FleetActionIssueFor(code string) *FleetActionIssue {
