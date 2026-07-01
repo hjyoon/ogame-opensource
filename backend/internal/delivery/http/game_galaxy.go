@@ -67,6 +67,7 @@ type gameGalaxyPlanet struct {
 	Coordinates  gameCoordinatesResponse     `json:"coordinates"`
 	Diameter     int                         `json:"diameter"`
 	Temperature  int                         `json:"temperature"`
+	ReportID     int                         `json:"reportId"`
 	ActivityText string                      `json:"activityText"`
 	Destroyed    bool                        `json:"destroyed"`
 	Abandoned    bool                        `json:"abandoned"`
@@ -107,16 +108,17 @@ type gameGalaxyDebris struct {
 }
 
 type gameGalaxyActionsResponse struct {
-	Deploy    bool `json:"deploy"`
-	Transport bool `json:"transport"`
-	Spy       bool `json:"spy"`
-	Message   bool `json:"message"`
-	Buddy     bool `json:"buddy"`
-	Missile   bool `json:"missile"`
-	Attack    bool `json:"attack"`
-	Defend    bool `json:"defend"`
-	Destroy   bool `json:"destroy"`
-	Recycle   bool `json:"recycle"`
+	Deploy     bool `json:"deploy"`
+	Transport  bool `json:"transport"`
+	Spy        bool `json:"spy"`
+	Message    bool `json:"message"`
+	Buddy      bool `json:"buddy"`
+	ViewReport bool `json:"viewReport"`
+	Missile    bool `json:"missile"`
+	Attack     bool `json:"attack"`
+	Defend     bool `json:"defend"`
+	Destroy    bool `json:"destroy"`
+	Recycle    bool `json:"recycle"`
 }
 
 type gameGalaxyExtraResponse struct {
@@ -380,6 +382,7 @@ func toGameGalaxyPlanet(planet *domaingame.GalaxyPlanet) *gameGalaxyPlanet {
 		Coordinates:  toGameCoordinatesResponse(planet.Coordinates),
 		Diameter:     planet.Diameter,
 		Temperature:  planet.Temperature,
+		ReportID:     planet.ReportID,
 		ActivityText: planet.ActivityText,
 		Destroyed:    planet.Destroyed,
 		Abandoned:    planet.Abandoned,
@@ -387,16 +390,17 @@ func toGameGalaxyPlanet(planet *domaingame.GalaxyPlanet) *gameGalaxyPlanet {
 		Player:       status,
 		Alliance:     alliance,
 		Actions: gameGalaxyActionsResponse{
-			Deploy:    planet.Actions.Deploy,
-			Transport: planet.Actions.Transport,
-			Spy:       planet.Actions.Spy,
-			Message:   planet.Actions.Message,
-			Buddy:     planet.Actions.Buddy,
-			Missile:   planet.Actions.Missile,
-			Attack:    planet.Actions.Attack,
-			Defend:    planet.Actions.Defend,
-			Destroy:   planet.Actions.Destroy,
-			Recycle:   planet.Actions.Recycle,
+			Deploy:     planet.Actions.Deploy,
+			Transport:  planet.Actions.Transport,
+			Spy:        planet.Actions.Spy,
+			Message:    planet.Actions.Message,
+			Buddy:      planet.Actions.Buddy,
+			ViewReport: planet.Actions.ViewReport,
+			Missile:    planet.Actions.Missile,
+			Attack:     planet.Actions.Attack,
+			Defend:     planet.Actions.Defend,
+			Destroy:    planet.Actions.Destroy,
+			Recycle:    planet.Actions.Recycle,
 		},
 	}
 }

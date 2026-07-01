@@ -16,9 +16,9 @@ func TestGalaxyRepositoryReadsLegacyGalaxyScreen(t *testing.T) {
 	now := time.Unix(10_000, 0)
 	queryer := &fakeQueryer{results: append(galaxyReadPrefixResults(now),
 		fakeQueryResult{rows: fakeRowsFromValues(
-			galaxyObjectRow(200, "Target", domaingame.PlanetTypePlanet, 4, now.Unix()-60, 0, 0, 7, "enemy", 1000, 12, 5, now.Unix(), 0, 0, 5, "TAG", 3, 2),
-			galaxyObjectRow(201, "Moon", domaingame.PlanetTypeMoon, 4, now.Unix()-30, 0, 0, 7, "enemy", 1000, 12, 5, now.Unix(), 0, 0, 5, "TAG", 3, 2),
-			galaxyObjectRow(202, "", domaingame.PlanetTypeDebris, 4, 0, 200, 100, 0, "", 0, 0, 0, 0, 0, 0, 0, "", 0, 0),
+			galaxyObjectRow(200, "Target", domaingame.PlanetTypePlanet, 4, now.Unix()-60, 0, 0, 7, "enemy", 1000, 12, 5, now.Unix(), 0, 0, 5, "TAG", 3, 2, 901),
+			galaxyObjectRow(201, "Moon", domaingame.PlanetTypeMoon, 4, now.Unix()-30, 0, 0, 7, "enemy", 1000, 12, 5, now.Unix(), 0, 0, 5, "TAG", 3, 2, 902),
+			galaxyObjectRow(202, "", domaingame.PlanetTypeDebris, 4, 0, 200, 100, 0, "", 0, 0, 0, 0, 0, 0, 0, "", 0, 0, 0),
 		)},
 	)}
 	repository := NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
@@ -34,10 +34,11 @@ func TestGalaxyRepositoryReadsLegacyGalaxyScreen(t *testing.T) {
 		t.Fatalf("unexpected galaxy summary: %+v", galaxy)
 	}
 	row := galaxy.Rows[3]
-	if row.Planet == nil || row.Planet.Player == nil || row.Planet.Player.Name != "enemy" || row.Planet.ActivityText != "(*)" {
+	if row.Planet == nil || row.Planet.Player == nil || row.Planet.Player.Name != "enemy" || row.Planet.ActivityText != "(*)" ||
+		row.Planet.ReportID != 901 || !row.Planet.Actions.ViewReport {
 		t.Fatalf("unexpected galaxy planet row: %+v", row.Planet)
 	}
-	if row.Moon == nil || row.Debris == nil || !row.Debris.Visible || row.Debris.Harvesters != 1 {
+	if row.Moon == nil || row.Moon.ReportID != 902 || !row.Moon.Actions.ViewReport || row.Debris == nil || !row.Debris.Visible || row.Debris.Harvesters != 1 {
 		t.Fatalf("unexpected moon/debris rows: %+v", row)
 	}
 	if !galaxy.Extra.Commander || galaxy.Extra.SpyProbes != 4 || galaxy.Extra.Recyclers != 3 || galaxy.Extra.Missiles != 2 {
@@ -47,7 +48,8 @@ func TestGalaxyRepositoryReadsLegacyGalaxyScreen(t *testing.T) {
 		t.Fatalf("unexpected fleet slots: %+v", galaxy.Slots)
 	}
 	if !strings.Contains(queryer.calls[5].sql, "`210`, `209`, `503`") ||
-		!strings.Contains(queryer.calls[10].sql, "p.`700`, p.`701`") {
+		!strings.Contains(queryer.calls[10].sql, "p.`700`, p.`701`") ||
+		!strings.Contains(queryer.calls[10].sql, "SELECT m.msg_id") {
 		t.Fatalf("expected legacy numeric columns, got %+v", queryer.calls)
 	}
 }
@@ -869,13 +871,13 @@ func TestGalaxyRepositoryLoadersHandleRowsAndScanEdges(t *testing.T) {
 
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}
 	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
-	if _, err := repository.loadGalaxyObjects(context.Background(), "ogame_planets", "ogame_users", "ogame_ally", domaingame.Coordinates{Galaxy: 1, System: 2}); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+	if _, err := repository.loadGalaxyObjects(context.Background(), "ogame_planets", "ogame_users", "ogame_ally", "ogame_messages", domaingame.Coordinates{Galaxy: 1, System: 2}, domaingame.GalaxyViewer{PlayerID: 42}); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
 		t.Fatalf("expected object scan error, got %v", err)
 	}
 
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("object rows failed"))}}}
 	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
-	if _, err := repository.loadGalaxyObjects(context.Background(), "ogame_planets", "ogame_users", "ogame_ally", domaingame.Coordinates{Galaxy: 1, System: 2}); err == nil || !strings.Contains(err.Error(), "object rows failed") {
+	if _, err := repository.loadGalaxyObjects(context.Background(), "ogame_planets", "ogame_users", "ogame_ally", "ogame_messages", domaingame.Coordinates{Galaxy: 1, System: 2}, domaingame.GalaxyViewer{PlayerID: 42}); err == nil || !strings.Contains(err.Error(), "object rows failed") {
 		t.Fatalf("expected object rows error, got %v", err)
 	}
 
@@ -958,7 +960,7 @@ func TestGalaxyRepositoryMissileLoadersAndMutatorsHandleEdges(t *testing.T) {
 
 func galaxyViewerPrefixResults(now time.Time) []fakeQueryResult {
 	return append(shipyardOverviewResults(),
-		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(10000), 0, 0, domaingame.GalaxyActionSpy | domaingame.GalaxyActionMessage | domaingame.GalaxyActionBuddy | domaingame.GalaxyActionMissile, 4, now.Add(time.Hour).Unix()})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(10000), 0, 0, domaingame.GalaxyActionSpy | domaingame.GalaxyActionMessage | domaingame.GalaxyActionBuddy | domaingame.GalaxyActionMissile | domaingame.GalaxyActionReport, 4, now.Add(time.Hour).Unix()})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{4, 3, 2})},
 	)
 }
@@ -977,7 +979,7 @@ func galaxyReadPrefixResults(now time.Time) []fakeQueryResult {
 	)
 }
 
-func galaxyObjectRow(id int, name string, planetType int, position int, lastActivity int64, metal float64, crystal float64, ownerID int, ownerName string, ownerScore int64, ownerRank int, allyID int, lastClick int64, vacation int, banned int, rowAllyID int, tag string, rowAllyRank int, rowAllyMembers int) []any {
+func galaxyObjectRow(id int, name string, planetType int, position int, lastActivity int64, metal float64, crystal float64, ownerID int, ownerName string, ownerScore int64, ownerRank int, allyID int, lastClick int64, vacation int, banned int, rowAllyID int, tag string, rowAllyRank int, rowAllyMembers int, reportID int) []any {
 	return []any{
 		id,
 		name,
@@ -1003,6 +1005,7 @@ func galaxyObjectRow(id int, name string, planetType int, position int, lastActi
 		tag,
 		rowAllyRank,
 		rowAllyMembers,
+		reportID,
 	}
 }
 

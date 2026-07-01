@@ -63,6 +63,10 @@ func (r GalaxyRepository) GetGalaxy(ctx context.Context, query appgame.GalaxyQue
 	if err != nil {
 		return domaingame.Galaxy{}, err
 	}
+	messagesTable, err := tableName(r.prefix, "messages")
+	if err != nil {
+		return domaingame.Galaxy{}, err
+	}
 
 	overview, err := NewOverviewRepositoryWithQueryer(r.queryer, r.prefix).GetOverview(ctx, appgame.OverviewQuery{
 		PlayerID: query.PlayerID,
@@ -107,7 +111,7 @@ func (r GalaxyRepository) GetGalaxy(ctx context.Context, query appgame.GalaxyQue
 		coordinates.System = overview.CurrentPlanet.Coordinates.System
 	}
 	coordinates = clampCoordinatesForRepository(coordinates, bounds)
-	objects, err := r.loadGalaxyObjects(ctx, planetsTable, usersTable, allyTable, coordinates)
+	objects, err := r.loadGalaxyObjects(ctx, planetsTable, usersTable, allyTable, messagesTable, coordinates, viewer)
 	if err != nil {
 		return domaingame.Galaxy{}, err
 	}
@@ -643,18 +647,25 @@ func (r GalaxyRepository) loadActiveFleetCount(ctx context.Context, queueTable s
 	return count, nil
 }
 
-func (r GalaxyRepository) loadGalaxyObjects(ctx context.Context, planetsTable string, usersTable string, allyTable string, coordinates domaingame.Coordinates) ([]domaingame.GalaxyObject, error) {
+func (r GalaxyRepository) loadGalaxyObjects(ctx context.Context, planetsTable string, usersTable string, allyTable string, messagesTable string, coordinates domaingame.Coordinates, viewer domaingame.GalaxyViewer) ([]domaingame.GalaxyObject, error) {
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT p.planet_id, p.name, p.type, p.g, p.s, p.p, p.diameter, p.temp, p.lastakt, p.`%d`, p.`%d`, p.owner_id, COALESCE(u.oname, ''), COALESCE(u.score1, 0), COALESCE(u.place1, 0), COALESCE(u.ally_id, 0), COALESCE(u.lastclick, 0), COALESCE(u.vacation, 0), COALESCE(u.banned, 0), COALESCE(u.admin, 0), COALESCE(a.ally_id, 0), COALESCE(a.tag, ''), COALESCE(a.place1, 0), COALESCE((SELECT COUNT(*) FROM %s au WHERE au.ally_id = a.ally_id), 0) FROM %s p LEFT JOIN %s u ON u.player_id = p.owner_id LEFT JOIN %s a ON a.ally_id = u.ally_id WHERE p.g = ? AND p.s = ? AND p.p BETWEEN 1 AND ? AND p.type IN (?, ?, ?, ?, ?, ?) ORDER BY p.p ASC, p.type ASC",
+			"SELECT p.planet_id, p.name, p.type, p.g, p.s, p.p, p.diameter, p.temp, p.lastakt, p.`%d`, p.`%d`, p.owner_id, COALESCE(u.oname, ''), COALESCE(u.score1, 0), COALESCE(u.place1, 0), COALESCE(u.ally_id, 0), COALESCE(u.lastclick, 0), COALESCE(u.vacation, 0), COALESCE(u.banned, 0), COALESCE(u.admin, 0), COALESCE(a.ally_id, 0), COALESCE(a.tag, ''), COALESCE(a.place1, 0), COALESCE((SELECT COUNT(*) FROM %s au WHERE au.ally_id = a.ally_id), 0), COALESCE((SELECT m.msg_id FROM %s m WHERE m.pm = ? AND m.planet_id = p.planet_id AND ((? <> 0 AND m.owner_id IN (SELECT su.player_id FROM %s su WHERE su.ally_id = ?)) OR (? = 0 AND m.owner_id = ?)) ORDER BY m.date DESC LIMIT 1), 0) FROM %s p LEFT JOIN %s u ON u.player_id = p.owner_id LEFT JOIN %s a ON a.ally_id = u.ally_id WHERE p.g = ? AND p.s = ? AND p.p BETWEEN 1 AND ? AND p.type IN (?, ?, ?, ?, ?, ?) ORDER BY p.p ASC, p.type ASC",
 			domaingame.ResourceMetal,
 			domaingame.ResourceCrystal,
+			usersTable,
+			messagesTable,
 			usersTable,
 			planetsTable,
 			usersTable,
 			allyTable,
 		),
+		domaingame.MessageTypeSpyReport,
+		viewer.AllianceID,
+		viewer.AllianceID,
+		viewer.AllianceID,
+		viewer.PlayerID,
 		coordinates.Galaxy,
 		coordinates.System,
 		domaingame.GalaxyPositions,
@@ -714,6 +725,7 @@ func scanGalaxyObject(rows Rows) (domaingame.GalaxyObject, error) {
 		&object.Alliance.Tag,
 		&object.Alliance.Rank,
 		&object.Alliance.Members,
+		&object.ReportID,
 	)
 	if err != nil {
 		return domaingame.GalaxyObject{}, err

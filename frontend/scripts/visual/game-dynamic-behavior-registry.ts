@@ -1,7 +1,7 @@
 export type SideName = "legacy" | "migrated";
 
 export type GameDynamicAction = {
-  type: "click" | "fill" | "type" | "select" | "hover" | "press" | "wait";
+  type: "click" | "fill" | "type" | "select" | "hover" | "press" | "wait" | "popup";
   selector?: string;
   legacySelector?: string;
   migratedSelector?: string;
@@ -9,6 +9,9 @@ export type GameDynamicAction = {
   waitForSelector?: string;
   legacyWaitForSelector?: string;
   migratedWaitForSelector?: string;
+  popupWaitForSelector?: string;
+  legacyPopupWaitForSelector?: string;
+  migratedPopupWaitForSelector?: string;
   waitMs?: number;
 };
 
@@ -148,6 +151,116 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "counter", type: "text", selector: "#cntChars", expected: "0" }
     ],
     notes: ["Covers a galaxy action icon navigating to the buddy request screen without DB mutation."]
+  },
+  {
+    name: "galaxy-report-planet-popup-window",
+    legacyPage: "galaxy",
+    legacyQuery: { galaxy: "$fixture.galaxy_hover.galaxy", system: "$fixture.galaxy_hover.system" },
+    migratedPath: "/game/galaxy",
+    migratedQuery: { galaxy: "$fixture.galaxy_hover.galaxy", system: "$fixture.galaxy_hover.system" },
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    requiredFixtureFeatures: ["report"],
+    actions: [
+      {
+        type: "popup",
+        legacySelector: "#content a[onclick*='page=bericht']",
+        migratedSelector: ".legacy-galaxy-actions a[data-galaxy-action='Spy Report']",
+        legacyPopupWaitForSelector: "body",
+        migratedPopupWaitForSelector: ".legacy-report-table"
+      }
+    ],
+    assertions: [
+      {
+        name: "report-buttons",
+        type: "count",
+        legacySelector: "#content a[onclick*='page=bericht']",
+        migratedSelector: ".legacy-galaxy-actions a[data-galaxy-action='Spy Report']",
+        expected: "2"
+      },
+      {
+        name: "popup-body",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.bodyText ?? ''",
+        contains: "Visual Spy Report"
+      },
+      {
+        name: "popup-width",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.innerWidth ?? 0",
+        compareSides: true,
+        tolerance: 4
+      },
+      {
+        name: "popup-height",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.innerHeight ?? 0",
+        compareSides: true,
+        tolerance: 4
+      },
+      {
+        name: "popup-report-param",
+        type: "evaluate",
+        expression: "/bericht=\\d+/.test(window.__ogameDynamicPopup?.url ?? '')",
+        expected: "true"
+      }
+    ],
+    notes: ["Covers legacy fenster(..., Bericht_Spionage) behavior for the planet spy-report action icon."]
+  },
+  {
+    name: "galaxy-report-moon-popup-window",
+    legacyPage: "galaxy",
+    legacyQuery: { galaxy: "$fixture.galaxy_hover.galaxy", system: "$fixture.galaxy_hover.system" },
+    migratedPath: "/game/galaxy",
+    migratedQuery: { galaxy: "$fixture.galaxy_hover.galaxy", system: "$fixture.galaxy_hover.system" },
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    requiredFixtureFeatures: ["report"],
+    actions: [
+      {
+        type: "popup",
+        legacySelector: ":nth-match(#content a[onclick*='page=bericht'], 2)",
+        migratedSelector: ":nth-match(.legacy-galaxy-actions a[data-galaxy-action='Spy Report'], 2)",
+        legacyPopupWaitForSelector: "body",
+        migratedPopupWaitForSelector: ".legacy-report-table"
+      }
+    ],
+    assertions: [
+      {
+        name: "report-buttons",
+        type: "count",
+        legacySelector: "#content a[onclick*='page=bericht']",
+        migratedSelector: ".legacy-galaxy-actions a[data-galaxy-action='Spy Report']",
+        expected: "2"
+      },
+      {
+        name: "popup-body",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.bodyText ?? ''",
+        contains: "Visual Spy Report"
+      },
+      {
+        name: "popup-width",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.innerWidth ?? 0",
+        compareSides: true,
+        tolerance: 4
+      },
+      {
+        name: "popup-height",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.innerHeight ?? 0",
+        compareSides: true,
+        tolerance: 4
+      },
+      {
+        name: "popup-report-param",
+        type: "evaluate",
+        expression: "/bericht=\\d+/.test(window.__ogameDynamicPopup?.url ?? '')",
+        expected: "true"
+      }
+    ],
+    notes: ["Covers the second legacy spy-report popup button when both planet and moon reports are shared."]
   },
   {
     name: "galaxy-keyboard-system-left",

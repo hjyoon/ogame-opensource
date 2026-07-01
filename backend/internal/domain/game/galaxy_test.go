@@ -114,7 +114,7 @@ func TestBuildGalaxyDebrisMoonActivityAndActions(t *testing.T) {
 		Viewer: GalaxyViewer{
 			PlayerID:  42,
 			Score:     10000,
-			Flags:     GalaxyActionSpy | GalaxyActionMessage | GalaxyActionBuddy | GalaxyActionMissile,
+			Flags:     GalaxyActionSpy | GalaxyActionMessage | GalaxyActionBuddy | GalaxyActionMissile | GalaxyActionReport,
 			SpyProbes: 4,
 			Recyclers: 3,
 			Missiles:  2,
@@ -129,6 +129,7 @@ func TestBuildGalaxyDebrisMoonActivityAndActions(t *testing.T) {
 				Coordinates:  Coordinates{Galaxy: 1, System: 2, Position: 3},
 				LastActivity: now - 50*60,
 				Owner:        GalaxyObjectPlayer{ID: 7, Name: "enemy", Score: 8000, LastClick: now},
+				ReportID:     901,
 			},
 			{
 				ID:           201,
@@ -137,6 +138,7 @@ func TestBuildGalaxyDebrisMoonActivityAndActions(t *testing.T) {
 				Coordinates:  Coordinates{Galaxy: 1, System: 2, Position: 3},
 				LastActivity: now - 60,
 				Owner:        GalaxyObjectPlayer{ID: 7, Name: "enemy", Score: 8000, LastClick: now},
+				ReportID:     902,
 			},
 			{
 				ID:            202,
@@ -150,10 +152,10 @@ func TestBuildGalaxyDebrisMoonActivityAndActions(t *testing.T) {
 	})
 
 	row := galaxy.Rows[2]
-	if row.Planet == nil || row.Planet.ActivityText != "(*)" || !row.Planet.Actions.Spy || !row.Planet.Actions.Missile {
+	if row.Planet == nil || row.Planet.ActivityText != "(*)" || !row.Planet.Actions.Spy || !row.Planet.Actions.Missile || !row.Planet.Actions.ViewReport || row.Planet.ReportID != 901 {
 		t.Fatalf("unexpected planet row: %+v", row.Planet)
 	}
-	if row.Moon == nil || !row.Moon.Actions.Destroy {
+	if row.Moon == nil || !row.Moon.Actions.Destroy || !row.Moon.Actions.ViewReport || row.Moon.ReportID != 902 {
 		t.Fatalf("expected moon destroy action, got %+v", row.Moon)
 	}
 	if row.Debris == nil || !row.Debris.Visible || row.Debris.Harvesters != 1 {

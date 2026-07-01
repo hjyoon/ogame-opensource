@@ -645,6 +645,7 @@ type GameGalaxyPlanet = {
   coordinates: Coordinates;
   diameter: number;
   temperature: number;
+  reportId: number;
   activityText: string;
   destroyed: boolean;
   abandoned: boolean;
@@ -678,6 +679,7 @@ type GameGalaxyActions = {
   spy: boolean;
   message: boolean;
   buddy: boolean;
+  viewReport: boolean;
   missile: boolean;
   attack: boolean;
   defend: boolean;
@@ -10286,7 +10288,7 @@ function GalaxyTableRow({
         ) : null}
       </th>
       <th className="legacy-galaxy-actions" style={{ whiteSpace: "nowrap" }} {...cellWidth(125)}>
-        {planet ? <GalaxyActionIcons galaxy={galaxy} onInstantDispatch={onInstantDispatch} pending={pending} planet={planet} /> : null}
+        {planet ? <GalaxyActionIcons galaxy={galaxy} moon={row.moon} onInstantDispatch={onInstantDispatch} pending={pending} planet={planet} /> : null}
       </th>
     </tr>
   );
@@ -10546,6 +10548,19 @@ function galaxyMenuAnchor(href: string, label: string): string {
   return `<a href="${legacyHTMLAttribute(href)}">${legacyHTMLText(label)}</a>`;
 }
 
+function openLegacyPopup(href: string, windowName: string) {
+  const popup = window.open(href, windowName, "scrollbars=yes,menubar=no,top=0,left=0,toolbar=no,width=550,height=280,resizable=yes");
+  if (popup) {
+    popup.focus();
+  }
+}
+
+function gameReportURL(reportID: number, searchInput: string): string {
+  const query = new URLSearchParams(searchInput);
+  query.set("bericht", String(reportID));
+  return gameRouteURL("/game/report", query.toString());
+}
+
 function galaxyStatisticsURL(place: number, who: "player" | "ally"): string {
   const search = new URLSearchParams(window.location.search);
   const safePlace = Math.max(0, Math.floor(place));
@@ -10560,22 +10575,36 @@ function galaxyStatisticsURL(place: number, who: "player" | "ally"): string {
 
 function GalaxyActionIcons({
   galaxy,
+  moon,
   onInstantDispatch,
   pending,
   planet
 }: {
   galaxy: GameGalaxy;
+  moon?: GameGalaxyPlanet;
   onInstantDispatch: (draft: GameGalaxyInstantDispatch) => void;
   pending: boolean;
   planet: GameGalaxyPlanet;
 }) {
   const playerID = planet.player?.id ?? 0;
   const spyAmount = Math.max(1, galaxy.extra.maxSpy || 0);
-  const actions: Array<{ enabled: boolean; href: string; icon: string; label: string; onClick?: () => void }> = [
+  const reportActions = [planet, moon]
+    .filter((target): target is GameGalaxyPlanet => !!target && target.actions.viewReport && target.reportId > 0)
+    .map((target) => ({
+      enabled: true,
+      href: gameReportURL(target.reportId, window.location.search),
+      icon: "s.gif",
+      key: `report-${target.id}`,
+      label: "Spy Report",
+      popupName: "Bericht_Spionage"
+    }));
+  const actions: Array<{ enabled: boolean; href: string; icon: string; key: string; label: string; onClick?: () => void; popupName?: string }> = [
+    ...reportActions,
     {
       enabled: planet.actions.spy,
       href: fleetTargetHref(planet.coordinates, planet.coordinates.position, 6),
       icon: "e.gif",
+      key: "spy",
       label: "Espionage",
       onClick: () =>
         onInstantDispatch({
@@ -10585,21 +10614,27 @@ function GalaxyActionIcons({
           amount: spyAmount
         })
     },
-    { enabled: planet.actions.message && playerID > 0, href: gameMessageComposeURL(playerID, window.location.search), icon: "m.gif", label: "Write message" },
-    { enabled: planet.actions.buddy && playerID > 0, href: gameBuddyRequestURL(playerID, window.location.search), icon: "b.gif", label: "Buddy request" },
-    { enabled: planet.actions.missile, href: gameGalaxyMissileURL(planet.coordinates, planet.id, playerID, window.location.search), icon: "r.gif", label: "Rocket attack" }
+    { enabled: planet.actions.message && playerID > 0, href: gameMessageComposeURL(playerID, window.location.search), icon: "m.gif", key: "message", label: "Write message" },
+    { enabled: planet.actions.buddy && playerID > 0, href: gameBuddyRequestURL(playerID, window.location.search), icon: "b.gif", key: "buddy", label: "Buddy request" },
+    { enabled: planet.actions.missile, href: gameGalaxyMissileURL(planet.coordinates, planet.id, playerID, window.location.search), icon: "r.gif", key: "missile", label: "Rocket attack" }
   ];
   return (
     <>
       {actions.map((action) => {
         const onClick = action.onClick;
+        const popupName = action.popupName;
         return action.enabled ? (
-          <React.Fragment key={action.icon}>
+          <React.Fragment key={action.key}>
             <a
               data-galaxy-action={action.label}
               href={action.href}
               onClick={
-                onClick
+                popupName
+                  ? (event) => {
+                      event.preventDefault();
+                      openLegacyPopup(action.href, popupName);
+                    }
+                  : onClick
                   ? (event) => {
                       event.preventDefault();
                       if (!pending) {

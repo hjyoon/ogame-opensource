@@ -100,6 +100,7 @@ type GalaxyObject struct {
 	Alliance      GalaxyAlliance
 	DebrisMetal   float64
 	DebrisCrystal float64
+	ReportID      int
 }
 
 type GalaxyObjectPlayer struct {
@@ -137,6 +138,7 @@ type GalaxyPlanet struct {
 	Diameter     int
 	Temperature  int
 	LastActivity int64
+	ReportID     int
 	ActivityText string
 	Destroyed    bool
 	Abandoned    bool
@@ -170,16 +172,17 @@ type GalaxyDebris struct {
 }
 
 type GalaxyActions struct {
-	Deploy    bool
-	Transport bool
-	Spy       bool
-	Message   bool
-	Buddy     bool
-	Missile   bool
-	Attack    bool
-	Defend    bool
-	Destroy   bool
-	Recycle   bool
+	Deploy     bool
+	Transport  bool
+	Spy        bool
+	Message    bool
+	Buddy      bool
+	ViewReport bool
+	Missile    bool
+	Attack     bool
+	Defend     bool
+	Destroy    bool
+	Recycle    bool
 }
 
 type GalaxyExtra struct {
@@ -339,11 +342,15 @@ func buildGalaxyPlanet(object GalaxyObject, viewer GalaxyViewer, now int64, moon
 		Diameter:     object.Diameter,
 		Temperature:  object.Temperature,
 		LastActivity: object.LastActivity,
+		ReportID:     object.ReportID,
 		ActivityText: activity,
 		Destroyed:    destroyed,
 		Abandoned:    abandoned,
 		Own:          own,
 		Actions:      galaxyActions(object.Type, own, viewer),
+	}
+	if !own && !destroyed && !abandoned && object.ReportID > 0 && viewer.Commander && viewer.Flags&GalaxyActionReport != 0 {
+		planet.Actions.ViewReport = true
 	}
 	if object.Alliance.ID != 0 && !destroyed && !abandoned {
 		alliance := object.Alliance

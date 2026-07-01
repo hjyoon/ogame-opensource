@@ -412,7 +412,33 @@ async function performAction(page: Page, side: SideName, action: GameDynamicActi
   }
   const locator = page.locator(selector).first();
   await locator.waitFor({ timeout: 5_000 });
-  if (action.type === "click") {
+  if (action.type === "popup") {
+    await page.evaluate(() => {
+      (window as Window & { __ogameDynamicPopup?: unknown }).__ogameDynamicPopup = null;
+    });
+    const popupPromise = page.waitForEvent("popup", { timeout: 5_000 });
+    await locator.click({ timeout: 5_000 });
+    const popup = await popupPromise;
+    await popup.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => undefined);
+    const popupWaitForSelector = actionPopupWaitForSelector(action, side);
+    if (popupWaitForSelector) {
+      await popup.locator(popupWaitForSelector).first().waitFor({ timeout: 10_000 });
+    }
+    if (action.waitMs && action.waitMs > 0) {
+      await popup.waitForTimeout(action.waitMs);
+    }
+    const popupData = await popup.evaluate(() => ({
+      bodyText: document.body?.innerText ?? "",
+      innerHeight: window.innerHeight,
+      innerWidth: window.innerWidth,
+      title: document.title,
+      url: window.location.href
+    }));
+    await page.evaluate((data) => {
+      (window as Window & { __ogameDynamicPopup?: unknown }).__ogameDynamicPopup = data;
+    }, popupData);
+    await popup.close().catch(() => undefined);
+  } else if (action.type === "click") {
     await locator.click({ timeout: 5_000 });
   } else if (action.type === "fill") {
     await locator.fill(resolveFixtureValue(action.value ?? ""), { timeout: 5_000 });
@@ -573,6 +599,12 @@ function actionWaitForSelector(action: GameDynamicAction, side: SideName): strin
   return side === "legacy"
     ? action.legacyWaitForSelector ?? action.waitForSelector
     : action.migratedWaitForSelector ?? action.waitForSelector;
+}
+
+function actionPopupWaitForSelector(action: GameDynamicAction, side: SideName): string | undefined {
+  return side === "legacy"
+    ? action.legacyPopupWaitForSelector ?? action.popupWaitForSelector
+    : action.migratedPopupWaitForSelector ?? action.popupWaitForSelector;
 }
 
 function assertionSelector(assertion: GameDynamicAssertion, side: SideName): string | undefined {

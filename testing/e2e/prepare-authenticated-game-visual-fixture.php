@@ -557,12 +557,13 @@ function auth_visual_prepare_botedit_fixture(): array
     return array('strategy_id' => $strategyId, 'strategy_name' => $name);
 }
 
-function auth_visual_prepare_report_fixture(array $user): array
+function auth_visual_prepare_report_fixture(array $user, array $galaxyHover = null): array
 {
     global $db_prefix;
 
     $playerId = (int)$user['player_id'];
-    $homePlanetId = (int)$user['home_planet_id'];
+    $planetId = $galaxyHover === null ? (int)$user['home_planet_id'] : (int)$galaxyHover['target_planet_id'];
+    $moonId = $galaxyHover === null ? 0 : (int)$galaxyHover['moon_id'];
     dbquery(
         "DELETE FROM {$db_prefix}messages WHERE owner_id={$playerId} AND subj='Visual Spy Report' " .
         "AND msgfrom='Visual Control'"
@@ -575,10 +576,16 @@ function auth_visual_prepare_report_fixture(array $user): array
         "<tr><th>Crystal</th><th>1.000.000</th></tr>" .
         "<tr><th>Deuterium</th><th>1.000.000</th></tr>" .
         "</table>";
-    $messageId = SendMessage($playerId, 'Visual Control', 'Visual Spy Report', $text, MTYP_SPY_REPORT, time(), $homePlanetId);
+    $messageId = SendMessage($playerId, 'Visual Control', 'Visual Spy Report', $text, MTYP_SPY_REPORT, time(), $planetId);
     dbquery("UPDATE {$db_prefix}messages SET shown=1 WHERE msg_id={$messageId}");
 
-    return array('report_id' => $messageId);
+    $moonMessageId = 0;
+    if ($moonId > 0) {
+        $moonMessageId = SendMessage($playerId, 'Visual Control', 'Visual Spy Report', $text, MTYP_SPY_REPORT, time(), $moonId);
+        dbquery("UPDATE {$db_prefix}messages SET shown=1 WHERE msg_id={$moonMessageId}");
+    }
+
+    return array('report_id' => $messageId, 'moon_report_id' => $moonMessageId);
 }
 
 function auth_visual_prepare_phalanx_fixture(array $user, array $galaxyHover): array
@@ -758,7 +765,7 @@ try {
         $alliance = auth_visual_prepare_alliance_fixture($user, $password);
     }
     if ($useReport) {
-        $report = auth_visual_prepare_report_fixture($user);
+        $report = auth_visual_prepare_report_fixture($user, $galaxyHover);
     }
     if ($usePhalanx) {
         $phalanx = auth_visual_prepare_phalanx_fixture($user, $galaxyHover);
