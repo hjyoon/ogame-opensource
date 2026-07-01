@@ -1,9 +1,8 @@
 # Dynamic Legacy JS Coverage
 
-This audit tracks whether legacy PHP/JS dynamic behavior is migrated to the
-Go+Bun React frontend. Exact screenshots prove visual output only when the
-state is represented in the registry; masked or normalized regions still need
-behavior tests.
+This audit tracks legacy PHP/JS dynamic behavior in the Go+Bun React frontend.
+Exact screenshots prove pixels only for states in the registry; masked regions
+also need behavior tests.
 
 ## Status Map
 
@@ -12,9 +11,9 @@ behavior tests.
 | Game shell navigation/popups | `game/core/page.php` `showGalaxy`, `fenster`, planet selector, officer hovers | Mostly migrated | relative game routes, report/phalanx pages, shell visual cases | popup window sizing and every selector action need behavior coverage |
 | Queue countdowns | `overview.php`, `buildings.php`, `b_building.php`, `phalanx_events.php` `bxx`, `setTimeout` | Migrated and normalized for screenshots | overview/building/research/shipyard/defense visual cases; queue HTTP tests | every queue completion transition is not covered by one visual suite |
 | Galaxy hover/actions | `galaxy.php`, `galaxy_js.php` overLib menus, `doit`, cursor keys | Partially migrated | planet/moon/debris/player/alliance hover visual cases; galaxy HTTP tests | keyboard navigation and all instant action variants need behavior assertions |
-| Fleet selection/targeting | `flotten1.php`, `flotten2.php`, `flotten3.php` max links, `shortInfo`, `remainingresources` | Partially migrated | fleet visual cases; dynamic all-ships, `shortInfo`, residue checks | all mission/cargo combinations need deterministic behavior tests |
-| Merchant calculator | `trader.php` `checkValue`, `setMaxValue`, exchange hovers | Partially migrated | merchant visual, HTTP, dynamic max-clamp checks | trade submit and rate variants need more behavior tests |
-| Character counters | messages, notes, buddy, alliance textareas `cntChars` | Partially migrated | compose/notes dynamic counter checks | buddy/alliance counters still need behavior coverage |
+| Fleet selection/targeting | `flotten1.php`, `flotten2.php`, `flotten3.php` max links, `shortInfo`, `remainingresources` | Partially migrated | fleet visual cases; dynamic all-ships, `shortInfo`, residue and overcapacity checks | all mission/cargo combinations need deterministic behavior tests |
+| Merchant calculator | `trader.php` `checkValue`, `setMaxValue`, exchange hovers | Partially migrated | merchant visual, HTTP, dynamic max/negative-clamp checks | trade submit and rate variants need more behavior tests |
+| Character counters | messages, notes, buddy, alliance textareas `cntChars` | Partially migrated | compose/notes/buddy dynamic counter checks | alliance counters still need behavior coverage |
 | Statistics/empire hovers | `statistics.php`, `imperium.php` overLib averages/deltas | Partially migrated | statistics tooltip and empire visual cases | tooltip text parity should be asserted for representative rows |
 | Admin tools | `pages_admin/*` simulators, filters, bot editor JS | Partially migrated | admin visual draft cases, admin HTTP tests | battle sim/bot editor dynamic JS remains highest-risk behavior gap |
 | Public auth/register | `wwwroot/*`, `registration.js` flags and polling validation | Partially migrated | auth visual/CSR cases, registration HTTP tests | username/email polling parity is not an exact visual guarantee |
@@ -29,10 +28,11 @@ not prove timer, hover, or calculation logic.
 
 ## Behavior Runner
 
-`run-playwright-authenticated-game-dynamic-e2e.sh` runs 7 shared-fixture cases:
-message/notes counters, galaxy tooltip, fleet all-ships, fleet `shortInfo`,
-fleet residue, and merchant max clamp. Merchant resource text allows +/-1 for
-live production tick drift; the action result is still compared numerically.
+`run-playwright-authenticated-game-dynamic-e2e.sh` runs 10 shared-fixture cases:
+message/notes/buddy counters, galaxy tooltip, fleet all-ships, fleet
+`shortInfo`, residue and overcapacity, plus merchant max/negative clamps.
+Merchant resource text allows +/-1 for live production tick drift; the action
+result is still compared numerically.
 
 ## Required Follow-up
 
@@ -45,6 +45,5 @@ live production tick drift; the action result is still compared numerically.
    then document unsupported legacy-only cases here instead of hiding them in
    visual masks.
 
-Current conclusion: core visible dynamics are substantially migrated, but the
-legacy dynamic surface is not yet fully proven. The remaining work is mostly
-fine-grained client behavior, not static page layout.
+Current conclusion: core visible dynamics are substantially migrated. Remaining
+work is fine-grained client behavior, not static page layout.

@@ -8891,6 +8891,7 @@ function FleetDispatchResourcesTable({ draft, fleet }: { draft: GameFleetDispatc
                 aria-label={resource.name}
                 data-resource-id={resource.id}
                 name={`resource${index + 1}`}
+                onChange={(event) => legacyFleetUpdateTransportCapacity(event.currentTarget.form)}
                 size={10}
                 title={`${resource.name} ${formatLegacyNumber(resource.available)}`}
                 type="text"

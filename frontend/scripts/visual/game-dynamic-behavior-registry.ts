@@ -66,6 +66,18 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers cntchar-style keyup behavior on the notes form."]
   },
   {
+    name: "buddy-request-text-counter",
+    legacyPage: "buddy",
+    legacyQuery: { action: "7", buddy_id: "$fixture.galaxy_hover.target_player_id" },
+    migratedPath: "/game/buddy",
+    migratedQuery: { action: "7", buddy_id: "$fixture.galaxy_hover.target_player_id" },
+    legacyReady: "#content form textarea[name='text']",
+    migratedReady: ".legacy-buddy-table textarea[name='text']",
+    actions: [{ type: "type", selector: "textarea[name='text']", value: "buddy" }],
+    assertions: [{ name: "counter", type: "text", selector: "#cntChars", expected: "5" }],
+    notes: ["Covers cntchar-style keyup behavior on the buddy request form."]
+  },
+  {
     name: "galaxy-planet-hover-tooltip",
     legacyPage: "galaxy",
     migratedPath: "/game/galaxy",
@@ -166,6 +178,35 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers flotten3 resource residue color/text update."]
   },
   {
+    name: "fleet-transport-overcapacity-residue",
+    legacyPage: "flotten1",
+    migratedPath: "/game/fleet",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-fleet-table",
+    applicabilitySelector: "input[name='ship202']",
+    actions: [
+      { type: "fill", selector: "input[name='ship202']", value: "1" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='continue']",
+        migratedSelector: ".legacy-fleet-select-table input[type='submit'][value='continue']",
+        legacyWaitForSelector: "#content input[name='galaxy']",
+        migratedWaitForSelector: ".legacy-fleet-target-table input[name='galaxy']"
+      },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='Next']",
+        migratedSelector: ".legacy-fleet-target-table input[type='submit'][value='Next']",
+        legacyWaitForSelector: "#remainingresources",
+        migratedWaitForSelector: "#remainingresources"
+      },
+      { type: "fill", selector: "input[name='resource1']", value: "999999" },
+      { type: "press", selector: "input[name='resource1']", value: "Tab" }
+    ],
+    assertions: [{ name: "remaining-resources", type: "html", selector: "#remainingresources", compareSides: true }],
+    notes: ["Covers red residue output when flotten3 cargo input exceeds available capacity."]
+  },
+  {
     name: "merchant-exchange-max-clamp",
     legacyPage: "trader",
     migratedPath: "/game/merchant",
@@ -184,6 +225,20 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "crystal-storage", type: "text", selector: "[id='2_storage']", compareSides: true, tolerance: 1 }
     ],
     notes: ["Skipped unless the fixture currently has an active merchant exchange table."]
+  },
+  {
+    name: "merchant-exchange-negative-clamp",
+    legacyPage: "trader",
+    migratedPath: "/game/merchant",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-merchant-call-table",
+    applicabilitySelector: "input[name='2_value']",
+    actions: [{ type: "type", selector: "input[name='2_value']", value: "-123" }],
+    assertions: [
+      { name: "crystal-value", type: "value", selector: "input[name='2_value']", compareSides: true },
+      { name: "crystal-storage", type: "text", selector: "[id='2_storage']", compareSides: true, tolerance: 1 }
+    ],
+    notes: ["Covers trader checkValue negative-input normalization."]
   }
 ];
 
