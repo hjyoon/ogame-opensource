@@ -75,6 +75,7 @@ function auth_visual_prepare_user(string $name, string $password, int $adminLeve
         "admin={$adminLevel}, vacation=0, vacation_until=0, banned=0, banned_until=0, disable=0, disable_until=0, " .
         "ally_id=0, allyrank=0, joindate=0, com_until=0, dm=0, dmfree=5000, trader=1, rate_m=3, rate_k=2, rate_d=1, " .
         "`" . GID_R_COMPUTER . "`=3, `" . GID_R_COMBUST_DRIVE . "`=2, " .
+        "score1=10000, score2=0, score3=0, place1=1, place2=1, place3=1, " .
         "noattack=0, noattack_until=0, lang='en', skin='/evolution/', useskin=1, " .
         "hplanetid={$homePlanetId}, aktplanet={$homePlanetId}, lastclick={$now} WHERE player_id={$playerId}"
     );
@@ -86,7 +87,7 @@ function auth_visual_prepare_user(string $name, string $password, int $adminLeve
         "UPDATE {$db_prefix}planets SET " .
         "`" . GID_RC_METAL . "`=1000000, `" . GID_RC_CRYSTAL . "`=1000000, `" . GID_RC_DEUTERIUM . "`=1000000, " .
         "`" . GID_B_SHIPYARD . "`=2, `" . GID_B_METAL_STOR . "`=10, `" . GID_B_CRYS_STOR . "`=10, `" . GID_B_DEUT_STOR . "`=10, " .
-        "`" . GID_F_SC . "`=3, `" . GID_F_LC . "`=1, " .
+        "`" . GID_F_SC . "`=3, `" . GID_F_LC . "`=1, `" . GID_F_RECYCLER . "`=25, `" . GID_F_PROBE . "`=25, " .
         "prod1=1, prod2=1, prod3=1, prod4=1, prod12=1, prod212=1, fields=0, maxfields=200, lastpeek={$now} " .
         "WHERE planet_id={$homePlanetId} AND owner_id={$playerId}"
     );
@@ -150,7 +151,7 @@ function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password)
     auth_visual_place_planet($targetPlanetId, $targetId, 'Visual Hover Planet', $g, $s, 1);
     auth_visual_place_planet($viewerPlanetId, $viewerId, 'Visual Home', $g, $s, 2);
     dbquery("UPDATE {$db_prefix}users SET hplanetid={$viewerPlanetId}, aktplanet={$viewerPlanetId}, lastclick={$now} WHERE player_id={$viewerId}");
-    dbquery("UPDATE {$db_prefix}users SET hplanetid={$targetPlanetId}, aktplanet={$targetPlanetId}, lastclick={$now}, score1=1, score2=0, score3=0, place1=1, place2=1, place3=1 WHERE player_id={$targetId}");
+    dbquery("UPDATE {$db_prefix}users SET hplanetid={$targetPlanetId}, aktplanet={$targetPlanetId}, lastclick={$now}, score1=10000, score2=0, score3=0, place1=1, place2=1, place3=1 WHERE player_id={$targetId}");
 
     $moonId = PlanetHasMoon($targetPlanetId);
     if ($moonId <= 0) {
@@ -182,7 +183,7 @@ function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password)
         DismissAlly((int)$existingAlly['ally_id']);
     }
     $allyId = CreateAlly($targetId, 'VGHT', 'Visual Hover Alliance');
-    dbquery("UPDATE {$db_prefix}ally SET place1=1, place2=1, place3=1, score1=1, score2=0, score3=0 WHERE ally_id={$allyId}");
+    dbquery("UPDATE {$db_prefix}ally SET place1=1, place2=1, place3=1, score1=10000, score2=0, score3=0 WHERE ally_id={$allyId}");
     InvalidateUserCache();
     SelectPlanet($viewerId, $viewerPlanetId);
 

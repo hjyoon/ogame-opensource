@@ -146,6 +146,46 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers a galaxy action icon navigating to the buddy request screen without DB mutation."]
   },
   {
+    name: "galaxy-instant-spy-dispatch-success",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[onclick*='doit(6']",
+        migratedSelector: ".legacy-galaxy-actions a[data-galaxy-action='Espionage']",
+        waitForSelector: "#fleetstatustable tr"
+      }
+    ],
+    assertions: [
+      { name: "status-row", type: "text", selector: "#fleetstatustable tr:first-child", compareSides: true },
+      { name: "status-result", type: "text", selector: "#fleetstatustable tr:first-child td:nth-child(2)", expected: "done" }
+    ],
+    notes: ["Covers successful legacy galaxy doit(6) espionage dispatch status row parity."]
+  },
+  {
+    name: "galaxy-instant-recycle-dispatch-success",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[onclick*='doit(8']",
+        migratedSelector: ".legacy-galaxy-hover[data-galaxy-hover='debris'] > a",
+        waitForSelector: "#fleetstatustable tr"
+      }
+    ],
+    assertions: [
+      { name: "status-row", type: "text", selector: "#fleetstatustable tr:first-child", compareSides: true },
+      { name: "status-result", type: "text", selector: "#fleetstatustable tr:first-child td:nth-child(2)", expected: "done" }
+    ],
+    notes: ["Covers successful legacy galaxy doit(8) recycle dispatch status row parity."]
+  },
+  {
     name: "alliance-circular-text-counter",
     legacyPage: "allianzen",
     legacyQuery: { a: "17" },

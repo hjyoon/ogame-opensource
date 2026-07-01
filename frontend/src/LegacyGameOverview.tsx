@@ -204,6 +204,8 @@ export type GameGalaxyInstantDispatch = {
   amount: number;
 };
 
+type GameGalaxyActionIssue = { code: string; message: string };
+
 export type GameDefenseStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
@@ -1905,7 +1907,7 @@ export function LegacyGameOverview({
   const galaxyIssue =
     galaxyStatus && !galaxyStatus.authenticated ? galaxyStatus.issues[0]?.message ?? "Session is invalid." : null;
   const galaxyActionIssue = galaxyStatus?.authenticated ? galaxyStatus.actionIssue : undefined;
-  const galaxyActionTone = galaxyActionIssue?.code === "rocket_launched" ? "neutral" : "error";
+  const galaxyActionTone = galaxyActionIssue?.code === "rocket_launched" || galaxyActionIssue?.code === "fleet_dispatched" ? "neutral" : "error";
   const defense = defenseStatus?.authenticated ? defenseStatus.defense : undefined;
   const defenseIssue =
     defenseStatus && !defenseStatus.authenticated ? defenseStatus.issues[0]?.message ?? "Session is invalid." : null;
@@ -2277,6 +2279,7 @@ export function LegacyGameOverview({
         {galaxy && route.key === "galaxy" ? (
           <GalaxyTable
             adminLevel={overview?.adminLevel ?? 0}
+            actionIssue={galaxyActionIssue}
             galaxy={galaxy}
             onInstantDispatch={onGalaxyInstantDispatch}
             onMissileLaunch={onGalaxyMissileLaunch}
@@ -9510,18 +9513,46 @@ function setLegacyFleetTemplateShips(template: GameFleetTemplate) {
 }
 
 function GalaxyTable({
+  actionIssue,
   adminLevel,
   galaxy,
   onInstantDispatch,
   onMissileLaunch,
   pending
 }: {
+  actionIssue?: GameGalaxyActionIssue;
   adminLevel: number;
   galaxy: GameGalaxy;
   onInstantDispatch: (draft: GameGalaxyInstantDispatch) => void;
   onMissileLaunch: (draft: GameGalaxyMissileLaunch) => void;
   pending: boolean;
 }) {
+  const [instantRows, setInstantRows] = React.useState<Array<{ draft: GameGalaxyInstantDispatch; issue: GameGalaxyActionIssue }>>([]);
+  const [lastInstantDraft, setLastInstantDraft] = React.useState<GameGalaxyInstantDispatch | null>(null);
+  const lastInstantIssueKey = React.useRef("");
+  React.useEffect(() => {
+    setInstantRows([]);
+    setLastInstantDraft(null);
+    lastInstantIssueKey.current = "";
+  }, [galaxy.coordinates.galaxy, galaxy.coordinates.system, galaxy.currentPlanet.id]);
+  React.useEffect(() => {
+    if (!actionIssue || !lastInstantDraft) {
+      return;
+    }
+    const key = `${actionIssue.code}|${actionIssue.message}|${lastInstantDraft.action}|${lastInstantDraft.targetType}|${lastInstantDraft.target.galaxy}:${lastInstantDraft.target.system}:${lastInstantDraft.target.position}:${lastInstantDraft.amount}`;
+    if (lastInstantIssueKey.current === key) {
+      return;
+    }
+    lastInstantIssueKey.current = key;
+    setInstantRows((current) => [{ draft: lastInstantDraft, issue: actionIssue }, ...current].slice(0, 3));
+  }, [actionIssue, lastInstantDraft]);
+  const handleInstantDispatch = React.useCallback(
+    (draft: GameGalaxyInstantDispatch) => {
+      setLastInstantDraft(draft);
+      onInstantDispatch(draft);
+    },
+    [onInstantDispatch]
+  );
   const navigateTo = (coordinates: Coordinates) => {
     const search = new URLSearchParams(window.location.search);
     search.set("galaxy", String(clampNumber(coordinates.galaxy, 1, galaxy.bounds.galaxies)));
@@ -9669,7 +9700,7 @@ function GalaxyTable({
             ))}
           </tr>
           {galaxy.rows.map((row) => (
-            <GalaxyTableRow adminLevel={adminLevel} galaxy={galaxy} key={row.position} onInstantDispatch={onInstantDispatch} pending={pending} row={row} />
+            <GalaxyTableRow adminLevel={adminLevel} galaxy={galaxy} key={row.position} onInstantDispatch={handleInstantDispatch} pending={pending} row={row} />
           ))}
           <tr>
             <th style={{ height: 32 }}>16</th>
@@ -9685,10 +9716,19 @@ function GalaxyTable({
               </a>
             </td>
           </tr>
-          <tr id="fleetstatusrow" style={{ display: "none" }}>
+          <tr id="fleetstatusrow" style={instantRows.length > 0 ? undefined : { display: "none" }}>
             <th colSpan={8}>
               <table id="fleetstatustable" style={{ fontWeight: "bold" }} width="100%">
-                <tbody />
+                <tbody>
+                  {instantRows.map((row, index) => (
+                    <tr key={`${row.issue.code}-${index}`}>
+                      <td>{legacyGalaxyInstantInfo(row.draft)}</td>
+                      <td>
+                        <span className={legacyGalaxyInstantClass(row.issue)}>{legacyGalaxyInstantMessage(row.issue, row.draft)}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
               </table>
             </th>
           </tr>
@@ -9722,6 +9762,43 @@ function GalaxyTable({
       <br />
     </>
   );
+}
+
+function legacyGalaxyInstantInfo(draft: GameGalaxyInstantDispatch): string {
+  return `  Dispatch ${formatLegacyNumber(draft.amount)} ships to ${formatCoordinates(draft.target)} `;
+}
+
+function legacyGalaxyInstantMessage(issue: GameGalaxyActionIssue, draft: GameGalaxyInstantDispatch): string {
+  switch (issue.code) {
+    case "fleet_dispatched":
+      return "done";
+    case "fleet_no_ships":
+      return "Error! No ships to send";
+    case "fleet_max_fleet":
+      return "Not enough room for a fleet";
+    case "fleet_no_fuel":
+      return "You don't have enough deuterium";
+    case "fleet_no_cargo":
+      return "Error! Insufficient carrying capacity!";
+    case "fleet_invalid_target":
+      if (draft.targetType === 3) {
+        return "Error, the moon doesn't exist";
+      }
+      if (draft.targetType === 1) {
+        return "There's no planet here";
+      }
+      return "There was an error";
+    case "fleet_target_noob":
+      return "Error! It is impossible to fly to the player, because he is under noob protection!";
+    case "fleet_vacation_other":
+      return "Impossible, the player is in vacation mode";
+    default:
+      return issue.message;
+  }
+}
+
+function legacyGalaxyInstantClass(issue: GameGalaxyActionIssue): string {
+  return issue.code === "fleet_dispatched" ? "success" : "error";
 }
 
 const galaxyMissileTargets = [
