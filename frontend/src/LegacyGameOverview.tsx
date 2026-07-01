@@ -554,6 +554,13 @@ type GameFleetDispatchDraft = {
   expeditionHours?: number[];
 };
 
+type GameFleetLaunchSuccessSummary = {
+  draft: GameFleetDispatchDraft;
+  launch: GameFleetDispatchLaunch;
+  origin: Coordinates;
+  launchedAt: number;
+};
+
 type GameFleetMissionOption = {
   id: number;
   name: string;
@@ -2345,7 +2352,14 @@ export function LegacyGameOverview({
           <LegacyMessage tone="error" text={fleetActionIssue.message} />
         ) : null}
         {fleet && route.key === "fleet" ? (
-          <FleetTable fleet={fleet} onLaunch={onFleetLaunch} onPrepare={onFleetPrepare} onRecall={onFleetRecall} pending={fleetPending} />
+          <FleetTable
+            actionIssue={fleetActionIssue}
+            fleet={fleet}
+            onLaunch={onFleetLaunch}
+            onPrepare={onFleetPrepare}
+            onRecall={onFleetRecall}
+            pending={fleetPending}
+          />
         ) : null}
         {fleet && route.key === "fleetTemplates" ? (
           <FleetTemplatesTable fleet={fleet} onAction={onFleetTemplateAction} pending={fleetPending} />
@@ -8162,12 +8176,14 @@ function shipyardQueueActiveHTML(active: GameShipyardQueueEntry, remaining: numb
 }
 
 function FleetTable({
+  actionIssue,
   fleet,
   onPrepare,
   onLaunch,
   onRecall,
   pending
 }: {
+  actionIssue?: { code: string; message: string };
   fleet: GameFleet;
   onPrepare: (draft: GameFleetDispatchPrepare) => void;
   onLaunch: (draft: GameFleetDispatchLaunch) => void;
@@ -8177,6 +8193,11 @@ function FleetTable({
   const [dispatchStage, setDispatchStage] = React.useState<"ships" | "target" | "mission">("ships");
   const [unionMission, setUnionMission] = React.useState<GameFleetMission | null>(null);
   const [pendingMissionDraftKey, setPendingMissionDraftKey] = React.useState<string | null>(null);
+  const [launchSuccess, setLaunchSuccess] = React.useState<GameFleetLaunchSuccessSummary | null>(null);
+  const [pendingLaunchSuccess, setPendingLaunchSuccess] = React.useState<{
+    summary: GameFleetLaunchSuccessSummary;
+    sawPending: boolean;
+  } | null>(null);
   const targetPrefill = gameFleetTargetPrefillFromSearch(window.location.search);
   const dispatchTarget = targetPrefill
     ? {
@@ -8189,6 +8210,8 @@ function FleetTable({
   const dispatchMission = targetPrefill?.targetMission ?? 0;
   const submitDispatchDraft = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setLaunchSuccess(null);
+    setPendingLaunchSuccess(null);
     setDispatchStage("target");
     onPrepare({
       ships: collectLegacyFleetShips(event.currentTarget),
@@ -8228,6 +8251,30 @@ function FleetTable({
       setDispatchStage("mission");
     }
   }, [dispatchDraft, pendingMissionDraftKey]);
+  React.useEffect(() => {
+    if (!pendingLaunchSuccess) {
+      return;
+    }
+    if (pending) {
+      if (!pendingLaunchSuccess.sawPending) {
+        setPendingLaunchSuccess({ ...pendingLaunchSuccess, sawPending: true });
+      }
+      return;
+    }
+    if (!pendingLaunchSuccess.sawPending) {
+      return;
+    }
+    if (actionIssue) {
+      setLaunchSuccess(null);
+      setPendingLaunchSuccess(null);
+      return;
+    }
+    setLaunchSuccess(pendingLaunchSuccess.summary);
+    setPendingLaunchSuccess(null);
+  }, [actionIssue, pending, pendingLaunchSuccess]);
+  if (launchSuccess) {
+    return <FleetLaunchSuccessTable summary={launchSuccess} />;
+  }
   if (dispatchDraft && dispatchStage === "target") {
     return (
       <>
@@ -8250,7 +8297,24 @@ function FleetTable({
   if (dispatchDraft && dispatchStage === "mission") {
     return (
       <>
-        <FleetDispatchPreviewTable draft={dispatchDraft} fleet={fleet} onLaunch={onLaunch} pending={pending} />
+        <FleetDispatchPreviewTable
+          draft={dispatchDraft}
+          fleet={fleet}
+          onLaunch={(launch) => {
+            setLaunchSuccess(null);
+            setPendingLaunchSuccess({
+              summary: {
+                draft: dispatchDraft,
+                launch,
+                origin: fleet.currentPlanet.coordinates,
+                launchedAt: Math.floor(Date.now() / 1000)
+              },
+              sawPending: false
+            });
+            onLaunch(launch);
+          }}
+          pending={pending}
+        />
         <br />
         <br />
         <br />
@@ -8808,6 +8872,79 @@ function FleetTargetStepTable({
         </tbody>
       </table>
     </form>
+  );
+}
+
+function FleetLaunchSuccessTable({ summary }: { summary: GameFleetLaunchSuccessSummary }) {
+  const flightSeconds = Math.max(0, Math.round(summary.draft.durationSeconds));
+  const holdSeconds =
+    summary.launch.mission === 5 ? Math.max(0, summary.launch.holdHours) * 3600 : Math.max(0, summary.launch.expeditionHours) * 3600;
+  const arrivalAt = summary.launchedAt + flightSeconds;
+  const returnAt = arrivalAt + flightSeconds + holdSeconds;
+  const selectedShips = summary.draft.ships.filter((ship) => ship.count > 0);
+  return (
+    <>
+      <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-launch-result-table" width={519}>
+        <tbody>
+          <tr style={{ height: 20 }}>
+            <td className="c" colSpan={2}>
+              <span className="success">Fleet dispatched:</span>
+            </td>
+          </tr>
+          <tr style={{ height: 20 }}>
+            <th>Mission</th>
+            <th>{legacyOverviewMissionText(summary.launch.mission)}</th>
+          </tr>
+          <tr style={{ height: 20 }}>
+            <th>Distance</th>
+            <th>{formatLegacyNumber(summary.draft.distance)}</th>
+          </tr>
+          <tr style={{ height: 20 }}>
+            <th>Speed</th>
+            <th>{formatLegacyNumber(summary.draft.maxSpeed)}</th>
+          </tr>
+          <tr style={{ height: 20 }}>
+            <th>Consumption</th>
+            <th>{formatLegacyNumber(summary.draft.fuelConsumption)}</th>
+          </tr>
+          <tr style={{ height: 20 }}>
+            <th>Sent from</th>
+            <th>
+              <a href={overviewGalaxyHref(summary.origin)}>{`[${formatCoordinates(summary.origin)}]`}</a>
+            </th>
+          </tr>
+          <tr style={{ height: 20 }}>
+            <th>Sent to</th>
+            <th>
+              <a href={overviewGalaxyHref(summary.draft.target)}>{`[${formatCoordinates(summary.draft.target)}]`}</a>
+            </th>
+          </tr>
+          <tr style={{ height: 20 }}>
+            <th>Arrival time</th>
+            <th>{formatFleetTimestamp(arrivalAt)}</th>
+          </tr>
+          <tr style={{ height: 20 }}>
+            <th>Return time</th>
+            <th>{formatFleetTimestamp(returnAt)}</th>
+          </tr>
+          <tr style={{ height: 20 }}>
+            <td className="c" colSpan={2}>
+              Ships
+            </td>
+          </tr>
+          {selectedShips.map((ship) => (
+            <tr data-fleet-launch-ship-row={ship.id} key={ship.id} style={{ height: 20 }}>
+              <th style={{ width: "50%" }}>{ship.name}</th>
+              <th>{formatLegacyNumber(ship.count)}</th>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <br />
+      <br />
+      <br />
+      <br />
+    </>
   );
 }
 

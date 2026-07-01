@@ -841,6 +841,72 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers final flottenversand/fleet launch-submit vacation target parity."]
   },
   {
+    name: "fleet-attack-launch-success-result",
+    isolateSides: true,
+    fixedClock: false,
+    legacyPage: "flotten1",
+    migratedPath: "/game/fleet",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-fleet-table",
+    applicabilitySelector: "input[name='ship202']",
+    actions: [
+      { type: "fill", selector: "input[name='ship202']", value: "1" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='continue']",
+        migratedSelector: ".legacy-fleet-select-table input[type='submit'][value='continue']",
+        legacyWaitForSelector: "#content input[name='galaxy']",
+        migratedWaitForSelector: ".legacy-fleet-target-table input[name='galaxy']"
+      },
+      { type: "type", selector: "input[name='galaxy']", value: "$fixture.galaxy_hover.galaxy" },
+      { type: "type", selector: "input[name='system']", value: "$fixture.galaxy_hover.system" },
+      { type: "type", selector: "input[name='planet']", value: "$fixture.galaxy_hover.target_position" },
+      { type: "select", selector: "select[name='planettype']", value: "1" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='Next']",
+        migratedSelector: ".legacy-fleet-target-table input[type='submit'][value='Next']",
+        legacyWaitForSelector: "#content input[name='order'][value='1']",
+        migratedWaitForSelector: ".legacy-fleet-dispatch-table input[name='order'][value='1']"
+      },
+      { type: "click", selector: "input[name='order'][value='1']" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='Next']",
+        migratedSelector: ".legacy-fleet-dispatch-table input[type='submit'][value='Next']",
+        legacyWaitForSelector: "#content table:has(span.success:has-text('Fleet dispatched:'))",
+        migratedWaitForSelector: ".legacy-fleet-launch-result-table span.success:has-text('Fleet dispatched:')"
+      }
+    ],
+    assertions: [
+      {
+        name: "launch-heading",
+        type: "text",
+        legacySelector: "#content table:has(span.success) span.success",
+        migratedSelector: ".legacy-fleet-launch-result-table span.success",
+        compareSides: true,
+        expected: "Fleet dispatched:"
+      },
+      {
+        name: "launch-mission",
+        type: "text",
+        legacySelector: "#content table:has(span.success) tr:nth-child(2) th:nth-child(2)",
+        migratedSelector: ".legacy-fleet-launch-result-table tr:nth-child(2) th:nth-child(2)",
+        compareSides: true,
+        expected: "Attack"
+      },
+      {
+        name: "launch-ship",
+        type: "text",
+        legacySelector: "#content table:has(span.success) tr:has-text('Small Cargo')",
+        migratedSelector: ".legacy-fleet-launch-result-table tr[data-fleet-launch-ship-row='202']",
+        compareSides: true,
+        contains: "Small Cargo"
+      }
+    ],
+    notes: ["Covers successful final flottenversand/fleet launch-submit result table parity."]
+  },
+  {
     name: "buildings-short-queue-completion-refresh",
     fixtureProfile: "queue_short",
     isolateSides: true,
