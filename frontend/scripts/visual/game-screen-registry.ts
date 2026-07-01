@@ -294,11 +294,11 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
   {
     name: "game-galaxy-hover",
     area: "hover",
-    defaultEnabled: false,
     legacyPage: "galaxy",
     migratedPath: "/game/galaxy",
     legacyReady: "#content",
     migratedReady: ".legacy-galaxy-table",
+    requiredBoxes: ["menu", "content"],
     expectedTexts: ["Galaxy", "Actions"],
     actions: [
       {
@@ -308,7 +308,7 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
         waitMs: 850
       }
     ],
-    notes: ["Explicit tooltip/popover state. Non-default until the legacy overlib and React tooltip visuals are equivalent."]
+    notes: ["Explicit galaxy overlib tooltip capture."]
   },
   {
     name: "game-defense",

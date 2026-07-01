@@ -33,7 +33,7 @@ Default-enabled screenshots cover the normal authenticated navigation surface:
 
 - overview, rename planet, buildings, resources, merchant
 - research, shipyard, fleet, technology, technology detail
-- galaxy, defense, alliance menu/create/search
+- galaxy, galaxy hover tooltip, defense, alliance menu/create/search
 - officers, statistics player/alliance
 - search, messages, compose message
 - buddy, options, notes, create note
@@ -54,7 +54,6 @@ The registry also records fixture-gated screens that are disabled by default:
 - report popup
 - phalanx popup
 - changelog direct screen
-- explicit galaxy hover tooltip capture
 
 ## Determinism
 

@@ -1,4 +1,5 @@
 import React from "react";
+import { createPortal } from "react-dom";
 import {
   gameBuddyRequestURL,
   gameFleetTargetPrefillFromSearch,
@@ -2294,6 +2295,7 @@ export function LegacyGameOverview({
           <MigrationPendingGameTable route={route} />
         ) : null}
       </section>
+      <div id="overDiv" style={{ left: -10000, position: "absolute", top: -10000, visibility: "hidden", zIndex: 1000 }} />
     </main>
   );
 }
@@ -9734,7 +9736,7 @@ function GalaxyTableRow({
       </th>
       <th {...cellWidth(30)}>
         {planet && planet.type === 1 ? (
-          <GalaxyHoverMenu html={galaxyPlanetHoverHTML(planet, galaxy, adminLevel)} onClick={handleInstantMenuClick}>
+          <GalaxyHoverMenu html={galaxyPlanetHoverHTML(planet, galaxy, adminLevel)} offsetX={-40} onClick={handleInstantMenuClick}>
             <a href="#" onClick={(event) => event.preventDefault()}>
               <img alt="" height={30} src={galaxyPlanetImagePath(planet, true)} width={30} />
             </a>
@@ -9758,7 +9760,7 @@ function GalaxyTableRow({
               </span>
             </GalaxyHoverMenu>
           ) : (
-            <GalaxyHoverMenu html={galaxyMoonHoverHTML(row.moon, galaxy, adminLevel)} onClick={handleInstantMenuClick} offsetY={-110}>
+            <GalaxyHoverMenu html={galaxyMoonHoverHTML(row.moon, galaxy, adminLevel)} offsetX={-40} offsetY={-110} onClick={handleInstantMenuClick}>
               <a
                 href="#"
                 onClick={(event) => {
@@ -9781,7 +9783,7 @@ function GalaxyTableRow({
       </th>
       <th {...cellWidth(30)}>
         {row.debris?.visible && debrisCoordinates ? (
-          <GalaxyHoverMenu html={galaxyDebrisHoverHTML(row.debris, debrisCoordinates, row.position)} onClick={handleInstantMenuClick}>
+          <GalaxyHoverMenu html={galaxyDebrisHoverHTML(row.debris, debrisCoordinates, row.position)} offsetX={-40} onClick={handleInstantMenuClick}>
             <a
               href="#"
               onClick={(event) => {
@@ -9830,50 +9832,118 @@ function GalaxyTableRow({
 function GalaxyHoverMenu({
   children,
   html,
+  offsetX = 0,
   offsetY = -40,
   onClick,
+  placementWidth,
   text = false,
   width = 240
 }: {
   children: React.ReactNode;
   html: string;
+  offsetX?: number;
   offsetY?: number;
   onClick?: React.MouseEventHandler<HTMLElement>;
+  placementWidth?: number;
   text?: boolean;
   width?: number;
 }) {
   const [open, setOpen] = React.useState(false);
+  const [position, setPosition] = React.useState<{ x: number; y: number } | null>(null);
+  const [portalTarget, setPortalTarget] = React.useState<HTMLElement | null>(null);
   const timerRef = React.useRef<number | null>(null);
+  const overlibWidth = placementWidth ?? (width === 240 ? 200 : width);
   const clearTimer = React.useCallback(() => {
     if (timerRef.current !== null) {
       window.clearTimeout(timerRef.current);
       timerRef.current = null;
     }
   }, []);
-  const show = React.useCallback(() => {
-    clearTimer();
-    timerRef.current = window.setTimeout(() => setOpen(true), 750);
-  }, [clearTimer]);
+  const show = React.useCallback(
+    (nextPosition: { x: number; y: number }) => {
+      setPosition(nextPosition);
+      clearTimer();
+      timerRef.current = window.setTimeout(() => setOpen(true), 750);
+    },
+    [clearTimer]
+  );
+  const showFromMouse = React.useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      show({ x: event.clientX, y: event.clientY });
+    },
+    [show]
+  );
+  const showFromFocus = React.useCallback(
+    (event: React.FocusEvent<HTMLElement>) => {
+      const box = event.currentTarget.getBoundingClientRect();
+      show({ x: box.left + box.width / 2, y: box.top + box.height / 2 });
+    },
+    [show]
+  );
+  const trackMouse = React.useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      if (!open) {
+        setPosition({ x: event.clientX, y: event.clientY });
+      }
+    },
+    [open]
+  );
   const hide = React.useCallback(() => {
     clearTimer();
     setOpen(false);
   }, [clearTimer]);
 
+  React.useEffect(() => {
+    setPortalTarget(document.getElementById("overDiv"));
+  }, []);
   React.useEffect(() => clearTimer, [clearTimer]);
+  React.useEffect(() => {
+    if (!portalTarget) {
+      return;
+    }
+    portalTarget.style.visibility = open ? "visible" : "hidden";
+    portalTarget.style.left = open ? "0px" : "-10000px";
+    portalTarget.style.top = open ? "0px" : "-10000px";
+  }, [open, portalTarget]);
+
+  const tooltip =
+    open && position && portalTarget
+      ? createPortal(
+          <span
+            className="legacy-galaxy-tooltip"
+            style={{
+              display: "block",
+              left: Math.max(0, position.x + offsetX - overlibWidth / 2),
+              position: "fixed",
+              top: position.y + offsetY,
+              transform: "none",
+              width: "auto"
+            }}
+            dangerouslySetInnerHTML={{ __html: legacyOverlibHTML(html, overlibWidth) }}
+          />,
+          portalTarget
+        )
+      : null;
 
   return (
     <span
       className={`legacy-galaxy-hover${open ? " legacy-galaxy-hover-open" : ""}${text ? " legacy-galaxy-hover-text" : ""}`}
       onBlur={hide}
       onClick={onClick}
-      onFocus={show}
-      onMouseEnter={show}
+      onFocus={showFromFocus}
+      onMouseEnter={showFromMouse}
       onMouseLeave={hide}
+      onMouseMove={trackMouse}
     >
       {children}
-      <span className="legacy-galaxy-tooltip" style={{ top: offsetY, width }} dangerouslySetInnerHTML={{ __html: html }} />
+      {tooltip}
     </span>
   );
+}
+
+function legacyOverlibHTML(html: string, width = 200): string {
+  const overlibWidth = Math.max(1, Math.floor(width));
+  return `<table class="legacy-overlib-frame" width="${overlibWidth}" border="0" cellpadding="1" cellspacing="0" bgcolor="#333399"><tr><td><table class="legacy-overlib-body" width="100%" border="0" cellpadding="2" cellspacing="0" bgcolor="#CCCCFF"><tr><td valign="TOP"><font face="Verdana,Arial,Helvetica" color="#000000" size="1">${html}</font></td></tr></table></td></tr></table>`;
 }
 
 function galaxyPlayerCellHTML(player: GameGalaxyPlayer): string {
@@ -9913,7 +9983,7 @@ function galaxyPlanetHoverHTML(planet: GameGalaxyPlanet, galaxy: GameGalaxy, adm
     }
   }
   if (adminLevel >= 1) {
-    actions += galaxyAnchor(adminPlanetHref(planet.id), "Admin");
+    actions += galaxyAnchor(adminPlanetHref(planet.id), "Planet management");
   }
   return `<table width=240><tr><td class=c colspan=2>${legacyHTMLText(title)}</td></tr><tr><th width=80><img src="${legacyHTMLAttribute(
     galaxyPlanetImagePath(planet, true)
@@ -9948,7 +10018,7 @@ function galaxyMoonHoverHTML(moon: GameGalaxyPlanet, galaxy: GameGalaxy, adminLe
     }
   }
   if (adminLevel >= 1) {
-    actions += galaxyAnchor(adminPlanetHref(moon.id), "Admin");
+    actions += galaxyAnchor(adminPlanetHref(moon.id), "Planet management");
   }
   return `<table width=240><tr><td class=c colspan=2>${legacyHTMLText(title)}</td></tr><tr><th width=80><img src="${legacyHTMLAttribute(galaxyPlanetImagePath(moon, true))}" height=75 width=75 alt="${legacyHTMLAttribute(
     `Moon (size: ${formatLegacyNumber(moon.diameter)})`
@@ -10766,7 +10836,6 @@ function MessageComposeIssue({ issue }: { issue: { code: string; message: string
 function ReportTable({ report }: { report: GameReport }) {
   return (
     <>
-      <div id="overDiv" style={{ position: "absolute", visibility: "hidden", zIndex: 1000 }} />
       <table className="legacy-report-table" width="99%">
         <tbody>
           <tr>

@@ -843,6 +843,11 @@ body.legacy-game-body {
   border-spacing: 2px;
 }
 
+.legacy-game-shell #overDiv .legacy-overlib-frame,
+.legacy-game-shell #overDiv .legacy-overlib-body {
+  border-spacing: 0;
+}
+
 .legacy-game-shell .legacy-galaxy-tooltip th,
 .legacy-game-shell .legacy-galaxy-tooltip td.c {
   background-color: #344566;
@@ -852,16 +857,15 @@ body.legacy-game-body {
   font-size: 11px;
   padding-left: 3px;
   padding-right: 3px;
+}
+
+.legacy-game-shell .legacy-galaxy-tooltip th {
   text-align: center;
 }
 
 .legacy-game-shell .legacy-galaxy-tooltip td.c {
   background-image: var(--legacy-title-bg);
   font-weight: bold;
-}
-
-.legacy-game-shell .legacy-galaxy-tooltip th[align="left"] {
-  text-align: left;
 }
 
 .legacy-game-shell .legacy-statistics-delta {
