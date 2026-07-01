@@ -81,7 +81,8 @@ func (r GalaxyRepository) GetGalaxy(ctx context.Context, query appgame.GalaxyQue
 		return domaingame.Galaxy{}, err
 	}
 	viewer.PlayerID = query.PlayerID
-	viewer.SpyProbes, viewer.Recyclers, viewer.Missiles, err = r.loadGalaxyUnits(ctx, planetsTable, query.PlayerID, overview.CurrentPlanet.ID)
+	viewer.CurrentPlanet = overview.CurrentPlanet
+	viewer.SpyProbes, viewer.Recyclers, viewer.Missiles, viewer.PhalanxLevel, err = r.loadGalaxyUnits(ctx, planetsTable, query.PlayerID, overview.CurrentPlanet.ID)
 	if err != nil {
 		return domaingame.Galaxy{}, err
 	}
@@ -390,33 +391,34 @@ func (r GalaxyRepository) loadGalaxyViewer(ctx context.Context, usersTable strin
 	return viewer, nil
 }
 
-func (r GalaxyRepository) loadGalaxyUnits(ctx context.Context, planetsTable string, playerID int, planetID int) (int, int, int, error) {
+func (r GalaxyRepository) loadGalaxyUnits(ctx context.Context, planetsTable string, playerID int, planetID int) (int, int, int, int, error) {
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT `%d`, `%d`, `%d` FROM %s WHERE planet_id = ? AND owner_id = ? LIMIT 1", domaingame.FleetEspionageProbe, domaingame.FleetRecycler, domaingame.DefenseInterplanetaryMissile, planetsTable),
+		fmt.Sprintf("SELECT `%d`, `%d`, `%d`, `%d` FROM %s WHERE planet_id = ? AND owner_id = ? LIMIT 1", domaingame.FleetEspionageProbe, domaingame.FleetRecycler, domaingame.DefenseInterplanetaryMissile, domaingame.BuildingSensorPhalanx, planetsTable),
 		planetID,
 		playerID,
 	)
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, 0, 0, err
 	}
 	defer rows.Close()
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
-			return 0, 0, 0, err
+			return 0, 0, 0, 0, err
 		}
-		return 0, 0, 0, errors.New("galaxy current planet units not found")
+		return 0, 0, 0, 0, errors.New("galaxy current planet units not found")
 	}
 	var spyProbes int
 	var recyclers int
 	var missiles int
-	if err := rows.Scan(&spyProbes, &recyclers, &missiles); err != nil {
-		return 0, 0, 0, err
+	var phalanxLevel int
+	if err := rows.Scan(&spyProbes, &recyclers, &missiles, &phalanxLevel); err != nil {
+		return 0, 0, 0, 0, err
 	}
 	if err := rows.Err(); err != nil {
-		return 0, 0, 0, err
+		return 0, 0, 0, 0, err
 	}
-	return spyProbes, recyclers, missiles, nil
+	return spyProbes, recyclers, missiles, phalanxLevel, nil
 }
 
 func (r GalaxyRepository) loadGalaxyMissileOrigin(ctx context.Context, planetsTable string, usersTable string, playerID int, planetID int) (galaxyMissilePlanet, bool, error) {

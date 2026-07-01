@@ -145,5 +145,8 @@ describe("game route model", () => {
     expect(gameGalaxyMissileURL({ galaxy: 1, system: 2, position: 3 }, 77, 42, "?session=abc&cp=99")).toBe(
       "/game/galaxy?session=abc&cp=99&mode=1&p1=1&p2=2&p3=3&pdd=77&zp=42&galaxy=1&system=2&position=3"
     );
+    expect(gameRouteURL("/game/phalanx", "?session=abc&cp=99&scanid=42&spid=77&lgn=1")).toBe(
+      "/game/phalanx?session=abc&cp=99&scanid=42&spid=77"
+    );
   });
 });

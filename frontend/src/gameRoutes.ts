@@ -170,7 +170,7 @@ const gameRouteQueryKeys = new Map<string, Set<string>>([
   ["/game/search", new Set(["searchtext", "type"])],
   ["/game/messages", new Set(["messageziel", "re", "betreff", "dsp"])],
   ["/game/report", new Set(["bericht"])],
-  ["/game/phalanx", new Set(["galaxy", "system", "planet", "planettype"])],
+  ["/game/phalanx", new Set(["galaxy", "system", "planet", "planettype", "scanid", "spid"])],
   ["/game/notes", new Set(["a", "n"])],
   ["/game/buddy", new Set(["action", "buddy_id"])],
   ["/game/admin", new Set(["mode", "action", "fname", "player_id", "galaxy", "system", "filter", "modname"])]

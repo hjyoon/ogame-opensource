@@ -417,7 +417,11 @@ async function performAction(page: Page, side: SideName, action: GameDynamicActi
       (window as Window & { __ogameDynamicPopup?: unknown }).__ogameDynamicPopup = null;
     });
     const popupPromise = page.waitForEvent("popup", { timeout: 5_000 });
-    await locator.click({ timeout: 5_000 });
+    if (actionDispatchClick(action, side)) {
+      await locator.dispatchEvent("click");
+    } else {
+      await locator.click({ timeout: 5_000 });
+    }
     const popup = await popupPromise;
     await popup.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => undefined);
     const popupWaitForSelector = actionPopupWaitForSelector(action, side);
@@ -605,6 +609,12 @@ function actionPopupWaitForSelector(action: GameDynamicAction, side: SideName): 
   return side === "legacy"
     ? action.legacyPopupWaitForSelector ?? action.popupWaitForSelector
     : action.migratedPopupWaitForSelector ?? action.popupWaitForSelector;
+}
+
+function actionDispatchClick(action: GameDynamicAction, side: SideName): boolean {
+  return side === "legacy"
+    ? action.legacyDispatchClick ?? action.dispatchClick ?? false
+    : action.migratedDispatchClick ?? action.dispatchClick ?? false;
 }
 
 function assertionSelector(assertion: GameDynamicAssertion, side: SideName): string | undefined {

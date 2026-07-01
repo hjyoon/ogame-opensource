@@ -112,13 +112,15 @@ func TestBuildGalaxyDebrisMoonActivityAndActions(t *testing.T) {
 	galaxy := BuildGalaxy(galaxyOverview(10000), GalaxyInput{
 		Bounds: GalaxyBounds{Galaxies: 9, Systems: 499},
 		Viewer: GalaxyViewer{
-			PlayerID:  42,
-			Score:     10000,
-			Flags:     GalaxyActionSpy | GalaxyActionMessage | GalaxyActionBuddy | GalaxyActionMissile | GalaxyActionReport,
-			SpyProbes: 4,
-			Recyclers: 3,
-			Missiles:  2,
-			Commander: true,
+			PlayerID:      42,
+			Score:         10000,
+			Flags:         GalaxyActionSpy | GalaxyActionMessage | GalaxyActionBuddy | GalaxyActionMissile | GalaxyActionReport,
+			SpyProbes:     4,
+			Recyclers:     3,
+			Missiles:      2,
+			Commander:     true,
+			CurrentPlanet: PlanetOverview{Type: PlanetTypeMoon, Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 3}},
+			PhalanxLevel:  3,
 		},
 		FleetSlots: FleetSlots{Used: 2, BaseMax: 3, Max: 3},
 		Objects: []GalaxyObject{
@@ -152,7 +154,8 @@ func TestBuildGalaxyDebrisMoonActivityAndActions(t *testing.T) {
 	})
 
 	row := galaxy.Rows[2]
-	if row.Planet == nil || row.Planet.ActivityText != "(*)" || !row.Planet.Actions.Spy || !row.Planet.Actions.Missile || !row.Planet.Actions.ViewReport || row.Planet.ReportID != 901 {
+	if row.Planet == nil || row.Planet.ActivityText != "(*)" || !row.Planet.Actions.Spy || !row.Planet.Actions.Missile ||
+		!row.Planet.Actions.ViewReport || !row.Planet.Actions.Phalanx || row.Planet.ReportID != 901 {
 		t.Fatalf("unexpected planet row: %+v", row.Planet)
 	}
 	if row.Moon == nil || !row.Moon.Actions.Destroy || !row.Moon.Actions.ViewReport || row.Moon.ReportID != 902 {

@@ -114,6 +114,7 @@ type gameGalaxyActionsResponse struct {
 	Message    bool `json:"message"`
 	Buddy      bool `json:"buddy"`
 	ViewReport bool `json:"viewReport"`
+	Phalanx    bool `json:"phalanx"`
 	Missile    bool `json:"missile"`
 	Attack     bool `json:"attack"`
 	Defend     bool `json:"defend"`
@@ -396,6 +397,7 @@ func toGameGalaxyPlanet(planet *domaingame.GalaxyPlanet) *gameGalaxyPlanet {
 			Message:    planet.Actions.Message,
 			Buddy:      planet.Actions.Buddy,
 			ViewReport: planet.Actions.ViewReport,
+			Phalanx:    planet.Actions.Phalanx,
 			Missile:    planet.Actions.Missile,
 			Attack:     planet.Actions.Attack,
 			Defend:     planet.Actions.Defend,

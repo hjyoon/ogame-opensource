@@ -12,6 +12,9 @@ export type GameDynamicAction = {
   popupWaitForSelector?: string;
   legacyPopupWaitForSelector?: string;
   migratedPopupWaitForSelector?: string;
+  dispatchClick?: boolean;
+  legacyDispatchClick?: boolean;
+  migratedDispatchClick?: boolean;
   waitMs?: number;
 };
 
@@ -261,6 +264,112 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       }
     ],
     notes: ["Covers the second legacy spy-report popup button when both planet and moon reports are shared."]
+  },
+  {
+    name: "galaxy-phalanx-name-popup-window",
+    legacyPage: "galaxy",
+    legacyQuery: { cp: "$fixture.phalanx.source_moon_id", galaxy: "$fixture.galaxy_hover.galaxy", system: "$fixture.galaxy_hover.system" },
+    migratedPath: "/game/galaxy",
+    migratedQuery: { cp: "$fixture.phalanx.source_moon_id", galaxy: "$fixture.galaxy_hover.galaxy", system: "$fixture.galaxy_hover.system" },
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    requiredFixtureFeatures: ["phalanx"],
+    actions: [
+      {
+        type: "popup",
+        legacySelector: "#content th[width='130'] a[onclick*='page=phalanx']",
+        migratedSelector: ".legacy-galaxy-name a[data-galaxy-action='Phalanx']",
+        legacyPopupWaitForSelector: "body",
+        migratedPopupWaitForSelector: ".legacy-phalanx-table"
+      }
+    ],
+    assertions: [
+      {
+        name: "popup-body",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.bodyText ?? ''",
+        contains: "Sensor report"
+      },
+      {
+        name: "popup-width",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.innerWidth ?? 0",
+        compareSides: true,
+        tolerance: 4
+      },
+      {
+        name: "popup-height",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.innerHeight ?? 0",
+        compareSides: true,
+        tolerance: 4
+      },
+      {
+        name: "popup-target-param",
+        type: "evaluate",
+        expression: "/spid=\\d+/.test(window.__ogameDynamicPopup?.url ?? '')",
+        expected: "true"
+      }
+    ],
+    notes: ["Covers legacy fenster(..., Bericht_Phalanx) behavior from the galaxy planet-name phalanx link."]
+  },
+  {
+    name: "galaxy-phalanx-hover-popup-window",
+    legacyPage: "galaxy",
+    legacyQuery: { cp: "$fixture.phalanx.source_moon_id", galaxy: "$fixture.galaxy_hover.galaxy", system: "$fixture.galaxy_hover.system" },
+    migratedPath: "/game/galaxy",
+    migratedQuery: { cp: "$fixture.phalanx.source_moon_id", galaxy: "$fixture.galaxy_hover.galaxy", system: "$fixture.galaxy_hover.system" },
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    requiredFixtureFeatures: ["phalanx"],
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='Planet Visual Hover Planet']",
+        migratedSelector: ".legacy-galaxy-hover[data-galaxy-hover='planet'] a",
+        waitMs: 850
+      },
+      {
+        type: "popup",
+        legacySelector: "#overDiv a[onclick*='page=phalanx']",
+        migratedSelector: ".legacy-galaxy-tooltip a[data-galaxy-popup='Bericht_Phalanx']",
+        legacyPopupWaitForSelector: "body",
+        migratedPopupWaitForSelector: ".legacy-phalanx-table",
+        migratedDispatchClick: true
+      }
+    ],
+    assertions: [
+      {
+        name: "popup-body",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.bodyText ?? ''",
+        contains: "Sensor report"
+      },
+      {
+        name: "popup-width",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.innerWidth ?? 0",
+        compareSides: true,
+        tolerance: 4
+      },
+      {
+        name: "popup-height",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.innerHeight ?? 0",
+        compareSides: true,
+        tolerance: 4
+      },
+      {
+        name: "popup-target-param",
+        type: "evaluate",
+        expression: "/spid=\\d+/.test(window.__ogameDynamicPopup?.url ?? '')",
+        expected: "true"
+      }
+    ],
+    notes: [
+      "Covers the legacy planet hover-menu Phalanx popup action.",
+      "The migrated portal tooltip uses dispatched click after hover to avoid Playwright mouseleave timing while still executing the popup handler."
+    ]
   },
   {
     name: "galaxy-keyboard-system-left",

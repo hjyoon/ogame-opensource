@@ -2511,7 +2511,7 @@ func TestGameGalaxyEndpointReturnsGalaxy(t *testing.T) {
 					},
 					Alliance: &domaingame.GalaxyAlliance{ID: 5, Tag: "TAG"},
 					ReportID: 701,
-					Actions:  domaingame.GalaxyActions{Spy: true, Message: true, Buddy: true, ViewReport: true},
+					Actions:  domaingame.GalaxyActions{Spy: true, Message: true, Buddy: true, ViewReport: true, Phalanx: true},
 				},
 				Debris: &domaingame.GalaxyDebris{ID: 201, Metal: 200, Crystal: 100, Harvesters: 1, Visible: true},
 			}},
@@ -2539,7 +2539,8 @@ func TestGameGalaxyEndpointReturnsGalaxy(t *testing.T) {
 	}
 	if response.Galaxy.Rows[0].Planet == nil || response.Galaxy.Rows[0].Planet.Player == nil ||
 		response.Galaxy.Rows[0].Planet.Player.Suffixes[0].Text != "n" || response.Galaxy.Rows[0].Planet.ReportID != 701 ||
-		!response.Galaxy.Rows[0].Planet.Actions.ViewReport || response.Galaxy.Rows[0].Debris.Harvesters != 1 {
+		!response.Galaxy.Rows[0].Planet.Actions.ViewReport || !response.Galaxy.Rows[0].Planet.Actions.Phalanx ||
+		response.Galaxy.Rows[0].Debris.Harvesters != 1 {
 		t.Fatalf("unexpected galaxy row mapping: %+v", response.Galaxy.Rows[0])
 	}
 	if response.Galaxy.Extra.SpyProbes != 4 || !response.Galaxy.Extra.Commander {

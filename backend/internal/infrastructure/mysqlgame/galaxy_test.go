@@ -47,7 +47,7 @@ func TestGalaxyRepositoryReadsLegacyGalaxyScreen(t *testing.T) {
 	if galaxy.Slots.Used != 1 || galaxy.Slots.BaseMax != 4 || galaxy.Slots.Max != 6 || !galaxy.Slots.Admiral {
 		t.Fatalf("unexpected fleet slots: %+v", galaxy.Slots)
 	}
-	if !strings.Contains(queryer.calls[5].sql, "`210`, `209`, `503`") ||
+	if !strings.Contains(queryer.calls[5].sql, "`210`, `209`, `503`, `42`") ||
 		!strings.Contains(queryer.calls[10].sql, "p.`700`, p.`701`") ||
 		!strings.Contains(queryer.calls[10].sql, "SELECT m.msg_id") {
 		t.Fatalf("expected legacy numeric columns, got %+v", queryer.calls)
@@ -805,19 +805,19 @@ func TestGalaxyRepositoryLoadersHandleRowsAndScanEdges(t *testing.T) {
 
 	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}
 	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
-	if _, _, _, err := repository.loadGalaxyUnits(context.Background(), "ogame_planets", 42, 99); err == nil || !strings.Contains(err.Error(), "galaxy current planet units not found") {
+	if _, _, _, _, err := repository.loadGalaxyUnits(context.Background(), "ogame_planets", 42, 99); err == nil || !strings.Contains(err.Error(), "galaxy current planet units not found") {
 		t.Fatalf("expected missing units error, got %v", err)
 	}
 
-	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("units rows failed"), []any{1, 2, 3})}}}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("units rows failed"), []any{1, 2, 3, 4})}}}
 	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
-	if _, _, _, err := repository.loadGalaxyUnits(context.Background(), "ogame_planets", 42, 99); err == nil || !strings.Contains(err.Error(), "units rows failed") {
+	if _, _, _, _, err := repository.loadGalaxyUnits(context.Background(), "ogame_planets", 42, 99); err == nil || !strings.Contains(err.Error(), "units rows failed") {
 		t.Fatalf("expected units rows error, got %v", err)
 	}
 
-	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", 2, 3})}}}
+	queryer = &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", 2, 3, 4})}}}
 	repository = NewGalaxyRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
-	if _, _, _, err := repository.loadGalaxyUnits(context.Background(), "ogame_planets", 42, 99); err == nil || !strings.Contains(err.Error(), "expected int") {
+	if _, _, _, _, err := repository.loadGalaxyUnits(context.Background(), "ogame_planets", 42, 99); err == nil || !strings.Contains(err.Error(), "expected int") {
 		t.Fatalf("expected units scan error, got %v", err)
 	}
 
@@ -961,7 +961,7 @@ func TestGalaxyRepositoryMissileLoadersAndMutatorsHandleEdges(t *testing.T) {
 func galaxyViewerPrefixResults(now time.Time) []fakeQueryResult {
 	return append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(10000), 0, 0, domaingame.GalaxyActionSpy | domaingame.GalaxyActionMessage | domaingame.GalaxyActionBuddy | domaingame.GalaxyActionMissile | domaingame.GalaxyActionReport, 4, now.Add(time.Hour).Unix()})},
-		fakeQueryResult{rows: fakeRowsFromValues([]any{4, 3, 2})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{4, 3, 2, 0})},
 	)
 }
 

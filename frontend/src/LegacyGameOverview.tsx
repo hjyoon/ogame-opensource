@@ -680,6 +680,7 @@ type GameGalaxyActions = {
   message: boolean;
   buddy: boolean;
   viewReport: boolean;
+  phalanx: boolean;
   missile: boolean;
   attack: boolean;
   defend: boolean;
@@ -10165,6 +10166,12 @@ function GalaxyTableRow({
   const cellWidth = (value: number) => ({ width: String(value) }) as unknown as React.ThHTMLAttributes<HTMLTableCellElement>;
   const handleInstantMenuClick = React.useCallback(
     (event: React.MouseEvent<HTMLElement>) => {
+      const popupAnchor = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[data-galaxy-popup]");
+      if (popupAnchor && event.currentTarget.contains(popupAnchor)) {
+        event.preventDefault();
+        openLegacyPopup(popupAnchor.href, popupAnchor.dataset.galaxyPopup ?? "");
+        return;
+      }
       const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[data-galaxy-instant]");
       if (!anchor || !event.currentTarget.contains(anchor)) {
         return;
@@ -10193,6 +10200,13 @@ function GalaxyTableRow({
     },
     [onInstantDispatch, pending]
   );
+  const planetNameContent = planet ? (
+    <>
+      <span className={planet.abandoned ? "longinactive" : planet.destroyed ? "banned" : undefined}>{planet.displayName}</span>
+      {planet.activityText ? <> {planet.activityText}</> : null}
+    </>
+  ) : null;
+  const phalanxHref = planet?.actions.phalanx && planet.player ? gamePhalanxURL(planet, window.location.search) : "";
 
   return (
     <tr data-galaxy-position={row.position}>
@@ -10210,10 +10224,21 @@ function GalaxyTableRow({
       </th>
       <th className="legacy-galaxy-name" style={{ whiteSpace: "nowrap" }} {...cellWidth(130)}>
         {planet ? (
-          <>
-            <span className={planet.abandoned ? "longinactive" : planet.destroyed ? "banned" : undefined}>{planet.displayName}</span>
-            {planet.activityText ? <> {planet.activityText}</> : null}
-          </>
+          phalanxHref ? (
+            <a
+              data-galaxy-action="Phalanx"
+              href={phalanxHref}
+              onClick={(event) => {
+                event.preventDefault();
+                openLegacyPopup(phalanxHref, "Bericht_Phalanx");
+              }}
+              title="Phalanx"
+            >
+              {planetNameContent}
+            </a>
+          ) : (
+            planetNameContent
+          )
         ) : null}
       </th>
       <th style={{ whiteSpace: "nowrap" }} {...cellWidth(30)}>
@@ -10357,8 +10382,23 @@ function GalaxyHoverMenu({
   );
   const hide = React.useCallback(() => {
     clearTimer();
-    setOpen(false);
+    timerRef.current = window.setTimeout(() => setOpen(false), 1000);
   }, [clearTimer]);
+  const keepOpen = React.useCallback(() => {
+    clearTimer();
+    setOpen(true);
+  }, [clearTimer]);
+  const hideUnlessEnteringTooltip = React.useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      const nextTarget = event.relatedTarget;
+      if (portalTarget && nextTarget instanceof Node && portalTarget.contains(nextTarget)) {
+        keepOpen();
+        return;
+      }
+      hide();
+    },
+    [hide, keepOpen, portalTarget]
+  );
 
   React.useEffect(() => {
     setPortalTarget(document.getElementById("overDiv"));
@@ -10378,6 +10418,9 @@ function GalaxyHoverMenu({
       ? createPortal(
           <span
             className="legacy-galaxy-tooltip"
+            onClick={onClick}
+            onMouseEnter={keepOpen}
+            onMouseLeave={hide}
             style={{
               display: "block",
               left: Math.max(0, position.x + offsetX - overlibWidth / 2),
@@ -10400,7 +10443,7 @@ function GalaxyHoverMenu({
       onClick={onClick}
       onFocus={showFromFocus}
       onMouseEnter={showFromMouse}
-      onMouseLeave={hide}
+      onMouseLeave={hideUnlessEnteringTooltip}
       onMouseMove={trackMouse}
     >
       {children}
@@ -10438,6 +10481,9 @@ function galaxyPlanetHoverHTML(planet: GameGalaxyPlanet, galaxy: GameGalaxy, adm
     if (planet.actions.spy) {
       actions += galaxyInstantMenuLink("dispatch-spy", planet.coordinates, planet.coordinates.position, 1, Math.max(1, galaxy.extra.maxSpy || 0), "Espionage");
       actions += "<br />";
+    }
+    if (planet.actions.phalanx) {
+      actions += galaxyPopupAnchor(gamePhalanxURL(planet, window.location.search), "Phalanx", "Bericht_Phalanx");
     }
     if (planet.actions.missile) {
       actions += galaxyAnchor(gameGalaxyMissileURL(planet.coordinates, planet.id, planet.player?.id ?? 0, window.location.search), "Rocket attack");
@@ -10548,8 +10594,18 @@ function galaxyMenuAnchor(href: string, label: string): string {
   return `<a href="${legacyHTMLAttribute(href)}">${legacyHTMLText(label)}</a>`;
 }
 
+function galaxyPopupAnchor(href: string, label: string, popupName: string): string {
+  const jsPopupName = escapeHTML(JSON.stringify(popupName));
+  const jsFeatures = escapeHTML(JSON.stringify(legacyPopupFeatures));
+  return `<a href="${legacyHTMLAttribute(
+    href
+  )}" data-galaxy-popup="${legacyHTMLAttribute(popupName)}" onclick="var w=window.open(this.href, ${jsPopupName}, ${jsFeatures}); if (w) w.focus(); return false;">${legacyHTMLText(label)}</a><br />`;
+}
+
+const legacyPopupFeatures = "scrollbars=yes,menubar=no,top=0,left=0,toolbar=no,width=550,height=280,resizable=yes";
+
 function openLegacyPopup(href: string, windowName: string) {
-  const popup = window.open(href, windowName, "scrollbars=yes,menubar=no,top=0,left=0,toolbar=no,width=550,height=280,resizable=yes");
+  const popup = window.open(href, windowName, legacyPopupFeatures);
   if (popup) {
     popup.focus();
   }
@@ -10559,6 +10615,13 @@ function gameReportURL(reportID: number, searchInput: string): string {
   const query = new URLSearchParams(searchInput);
   query.set("bericht", String(reportID));
   return gameRouteURL("/game/report", query.toString());
+}
+
+function gamePhalanxURL(planet: GameGalaxyPlanet, searchInput: string): string {
+  const query = new URLSearchParams(searchInput);
+  query.set("scanid", String(planet.player?.id ?? 0));
+  query.set("spid", String(planet.id));
+  return gameRouteURL("/game/phalanx", query.toString());
 }
 
 function galaxyStatisticsURL(place: number, who: "player" | "ally"): string {

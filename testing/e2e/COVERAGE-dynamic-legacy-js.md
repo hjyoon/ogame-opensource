@@ -7,7 +7,7 @@ screenshots prove pixels; masked regions need behavior tests too.
 
 | Area | Legacy source | Go+Bun status | Evidence | Gap |
 | --- | --- | --- | --- | --- |
-| Game shell navigation/popups | `game/core/page.php` `showGalaxy`, `fenster`, planet selector, officer hovers | Mostly migrated | relative routes, report/phalanx pages, shell visual cases, report popup sizing/body checks | phalanx popup and selector edge cases remain |
+| Game shell navigation/popups | `game/core/page.php` `showGalaxy`, `fenster`, planet selector, officer hovers | Mostly migrated | relative routes, report/phalanx pages, shell visual cases, report/phalanx popup sizing/body checks | add selector variants only if bugs appear |
 | Queue countdowns | `overview.php`, `buildings.php`, `b_building.php`, `phalanx_events.php` `bxx`, `setTimeout` | Mostly migrated | overview/building/research/shipyard/defense visual cases; queue HTTP tests; building/research/shipyard completion and phalanx event countdown checks | add more countdown variants only if bugs appear |
 | Galaxy hover/actions | `galaxy.php`, `galaxy_js.php` overLib menus, `doit`, cursor keys | Mostly migrated | hover, action nav, keyboard, instant success/failures incl. cargo, galaxy HTTP tests | add exotic target cases if bugs appear |
 | Fleet selection/targeting | `flotten1.php`, `flotten2.php`, `flotten3.php` max links, `shortInfo`, `remainingresources` | Mostly migrated | fleet visual cases; dynamic all-ships, target `shortInfo`, maxResources, mission radio, residue/overcapacity, launch-submit attack/ACS/expedition/noob/vacation | add exotic fleet variants only if bugs appear |
@@ -25,11 +25,11 @@ placement, and selected admin tables. Masked pixels need DOM/text assertions.
 
 ## Behavior Runner
 
-`run-playwright-authenticated-game-dynamic-e2e.sh` runs 53 shared-fixture cases:
+`run-playwright-authenticated-game-dynamic-e2e.sh` runs 55 shared-fixture cases:
 message/notes/buddy/alliance/application counters, galaxy tooltip/action
 navigation/keyboard/instant dispatch, fleet all-ships, target metrics, cargo/mission controls,
 launch-submit success/errors, merchant clamps/tooltips/submit, statistics/empire tooltips,
-building/research/shipyard/phalanx queue countdowns, report popup sizing/body,
+building/research/shipyard/phalanx queue countdowns, report/phalanx popup sizing/body,
 BattleSim slot sync, and BotEdit init/load/save/rename/new/preview/export.
 `run-playwright-public-registration-dynamic-e2e.sh` separately compares public
 register focus help, username polling, direct error URLs, and submit errors.

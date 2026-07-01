@@ -76,16 +76,18 @@ type GalaxyInput struct {
 }
 
 type GalaxyViewer struct {
-	PlayerID   int
-	Score      int64
-	AllianceID int
-	Admin      int
-	Flags      int
-	MaxSpy     int
-	Commander  bool
-	SpyProbes  int
-	Recyclers  int
-	Missiles   int
+	PlayerID      int
+	Score         int64
+	AllianceID    int
+	Admin         int
+	Flags         int
+	MaxSpy        int
+	Commander     bool
+	CurrentPlanet PlanetOverview
+	PhalanxLevel  int
+	SpyProbes     int
+	Recyclers     int
+	Missiles      int
 }
 
 type GalaxyObject struct {
@@ -178,6 +180,7 @@ type GalaxyActions struct {
 	Message    bool
 	Buddy      bool
 	ViewReport bool
+	Phalanx    bool
 	Missile    bool
 	Attack     bool
 	Defend     bool
@@ -351,6 +354,9 @@ func buildGalaxyPlanet(object GalaxyObject, viewer GalaxyViewer, now int64, moon
 	}
 	if !own && !destroyed && !abandoned && object.ReportID > 0 && viewer.Commander && viewer.Flags&GalaxyActionReport != 0 {
 		planet.Actions.ViewReport = true
+	}
+	if canGalaxyPhalanx(viewer, object) {
+		planet.Actions.Phalanx = true
 	}
 	if object.Alliance.ID != 0 && !destroyed && !abandoned {
 		alliance := object.Alliance
@@ -549,6 +555,16 @@ func galaxyActions(objectType int, own bool, viewer GalaxyViewer) GalaxyActions 
 		Transport: objectType == PlanetTypePlanet || objectType == PlanetTypeMoon,
 		Destroy:   objectType == PlanetTypeMoon,
 	}
+}
+
+func canGalaxyPhalanx(viewer GalaxyViewer, object GalaxyObject) bool {
+	return viewer.PhalanxLevel > 0 &&
+		object.Type == PlanetTypePlanet &&
+		object.Owner.ID != 0 &&
+		object.Owner.ID != viewer.PlayerID &&
+		viewer.CurrentPlanet.Type == PlanetTypeMoon &&
+		object.Coordinates.Galaxy == viewer.CurrentPlanet.Coordinates.Galaxy &&
+		int(math.Abs(float64(viewer.CurrentPlanet.Coordinates.System-object.Coordinates.System))) <= PhalanxRadius(viewer.PhalanxLevel)
 }
 
 func buildGalaxyDebris(object GalaxyObject) *GalaxyDebris {
