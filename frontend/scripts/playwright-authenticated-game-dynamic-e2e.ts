@@ -19,6 +19,7 @@ type AuthFixture = {
   home_planet_id?: number;
   login_user?: string;
   cookies?: Record<string, string>;
+  features?: Partial<Record<"alliance" | "commander" | "phalanx" | "report", boolean>>;
 };
 
 type SideResult = {
@@ -199,6 +200,22 @@ async function runSide(context: BrowserContext, side: SideName, spec: GameDynami
     }
   });
 
+  const missingFeature = missingFixtureFeature(spec);
+  if (missingFeature) {
+    await page.close();
+    return {
+      status: null,
+      url,
+      skipped: true,
+      skipReason: `missing fixture feature: ${missingFeature}`,
+      consoleErrors,
+      failedRequests,
+      badResponses,
+      actionErrors,
+      assertions: {}
+    };
+  }
+
   const response = await page.goto(url, { waitUntil: "networkidle", timeout: 15_000 });
   const readySelector = side === "legacy" ? spec.legacyReady : spec.migratedReady;
   await page.locator(readySelector).first().waitFor({ timeout: 10_000 });
@@ -245,6 +262,15 @@ async function runSide(context: BrowserContext, side: SideName, spec: GameDynami
     actionErrors,
     assertions
   };
+}
+
+function missingFixtureFeature(spec: GameDynamicBehaviorSpec): string | null {
+  for (const feature of spec.requiredFixtureFeatures ?? []) {
+    if (fixture.features?.[feature] !== true) {
+      return feature;
+    }
+  }
+  return null;
 }
 
 async function isApplicable(page: Page, side: SideName, spec: GameDynamicBehaviorSpec): Promise<{ ok: boolean; reason?: string }> {

@@ -35,6 +35,7 @@ export type GameDynamicBehaviorSpec = {
   applicabilitySelector?: string;
   legacyApplicabilitySelector?: string;
   migratedApplicabilitySelector?: string;
+  requiredFixtureFeatures?: Array<"alliance" | "commander" | "phalanx" | "report">;
   actions: GameDynamicAction[];
   assertions: GameDynamicAssertion[];
   notes?: string[];
@@ -101,6 +102,61 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       }
     ],
     notes: ["Proves the overLib replacement opens and carries the expected planet tooltip content."]
+  },
+  {
+    name: "galaxy-action-message-compose-link",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[href*='page=writemessages'][href*='messageziel=']",
+        migratedSelector: ".legacy-galaxy-actions a[href*='/game/messages'][href*='messageziel=']",
+        legacyWaitForSelector: "#content form textarea[name='text']",
+        migratedWaitForSelector: ".legacy-messages-compose-table textarea[name='text']"
+      }
+    ],
+    assertions: [
+      { name: "compose-visible", type: "visible", selector: "textarea[name='text']", expected: "true" },
+      { name: "counter", type: "text", selector: "#cntChars", expected: "0" }
+    ],
+    notes: ["Covers a galaxy action icon navigating to the message compose screen without DB mutation."]
+  },
+  {
+    name: "galaxy-action-buddy-request-link",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[href*='page=buddy'][href*='action=7'][href*='buddy_id=']",
+        migratedSelector: ".legacy-galaxy-actions a[href*='/game/buddy'][href*='action=7'][href*='buddy_id=']",
+        legacyWaitForSelector: "#content form textarea[name='text']",
+        migratedWaitForSelector: ".legacy-buddy-table textarea[name='text']"
+      }
+    ],
+    assertions: [
+      { name: "request-visible", type: "visible", selector: "textarea[name='text']", expected: "true" },
+      { name: "counter", type: "text", selector: "#cntChars", expected: "0" }
+    ],
+    notes: ["Covers a galaxy action icon navigating to the buddy request screen without DB mutation."]
+  },
+  {
+    name: "alliance-circular-text-counter",
+    legacyPage: "allianzen",
+    legacyQuery: { a: "17" },
+    migratedPath: "/game/alliance",
+    migratedQuery: { a: "17" },
+    legacyReady: "#content textarea[name='text']",
+    migratedReady: ".legacy-alliance-circular-table textarea[name='text']",
+    requiredFixtureFeatures: ["alliance"],
+    actions: [{ type: "type", selector: "textarea[name='text']", value: "ally" }],
+    assertions: [{ name: "counter", type: "text", selector: "#cntChars", expected: "4" }],
+    notes: ["Covers cntchar-style keyup behavior on the alliance circular message form."]
   },
   {
     name: "fleet-select-all-ships",
