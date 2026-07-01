@@ -9553,14 +9553,34 @@ function GalaxyTable({
     },
     [onInstantDispatch]
   );
-  const navigateTo = (coordinates: Coordinates) => {
+  const navigateTo = React.useCallback((coordinates: Coordinates) => {
     const search = new URLSearchParams(window.location.search);
     search.set("galaxy", String(clampNumber(coordinates.galaxy, 1, galaxy.bounds.galaxies)));
     search.set("system", String(clampNumber(coordinates.system, 1, galaxy.bounds.systems)));
     search.set("position", String(clampNumber(coordinates.position, 1, 16)));
     window.history.pushState({}, "", gameRouteURL("/game/galaxy", search.toString()));
     window.dispatchEvent(new PopStateEvent("popstate"));
-  };
+  }, [galaxy.bounds.galaxies, galaxy.bounds.systems]);
+  React.useEffect(() => {
+    const handleKeyUp = (event: KeyboardEvent) => {
+      switch (event.key) {
+        case "ArrowLeft":
+          navigateTo({ ...galaxy.coordinates, system: galaxy.coordinates.system - 1 });
+          break;
+        case "ArrowRight":
+          navigateTo({ ...galaxy.coordinates, system: galaxy.coordinates.system + 1 });
+          break;
+        case "ArrowUp":
+          navigateTo({ ...galaxy.coordinates, galaxy: galaxy.coordinates.galaxy + 1 });
+          break;
+        case "ArrowDown":
+          navigateTo({ ...galaxy.coordinates, galaxy: galaxy.coordinates.galaxy - 1 });
+          break;
+      }
+    };
+    document.addEventListener("keyup", handleKeyUp);
+    return () => document.removeEventListener("keyup", handleKeyUp);
+  }, [galaxy.coordinates, navigateTo]);
   const submitCoordinates = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);

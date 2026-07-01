@@ -146,6 +146,58 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers a galaxy action icon navigating to the buddy request screen without DB mutation."]
   },
   {
+    name: "galaxy-keyboard-system-left",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [{ type: "press", selector: "body", value: "ArrowLeft", waitMs: 700 }],
+    assertions: [
+      { name: "galaxy", type: "value", selector: "input[name='galaxy']", compareSides: true },
+      { name: "system", type: "value", selector: "input[name='system']", compareSides: true }
+    ],
+    notes: ["Covers legacy document.onkeyup systemLeft behavior."]
+  },
+  {
+    name: "galaxy-keyboard-system-right",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [{ type: "press", selector: "body", value: "ArrowRight", waitMs: 700 }],
+    assertions: [
+      { name: "galaxy", type: "value", selector: "input[name='galaxy']", compareSides: true },
+      { name: "system", type: "value", selector: "input[name='system']", compareSides: true }
+    ],
+    notes: ["Covers legacy document.onkeyup systemRight behavior."]
+  },
+  {
+    name: "galaxy-keyboard-galaxy-up",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [{ type: "press", selector: "body", value: "ArrowUp", waitMs: 700 }],
+    assertions: [
+      { name: "galaxy", type: "value", selector: "input[name='galaxy']", compareSides: true },
+      { name: "system", type: "value", selector: "input[name='system']", compareSides: true }
+    ],
+    notes: ["Covers legacy document.onkeyup galaxyRight behavior."]
+  },
+  {
+    name: "galaxy-keyboard-galaxy-down",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [{ type: "press", selector: "body", value: "ArrowDown", waitMs: 700 }],
+    assertions: [
+      { name: "galaxy", type: "value", selector: "input[name='galaxy']", compareSides: true },
+      { name: "system", type: "value", selector: "input[name='system']", compareSides: true }
+    ],
+    notes: ["Covers legacy document.onkeyup galaxyLeft behavior."]
+  },
+  {
     name: "galaxy-instant-spy-dispatch-success",
     legacyPage: "galaxy",
     migratedPath: "/game/galaxy",
