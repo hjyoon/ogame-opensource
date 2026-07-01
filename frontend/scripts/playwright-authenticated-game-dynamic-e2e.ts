@@ -302,6 +302,17 @@ async function performAction(page: Page, side: SideName, action: GameDynamicActi
   if (!selector) {
     throw new Error("missing selector");
   }
+  if (action.type === "press" && /^(body|html)$/i.test(selector.trim())) {
+    await page.keyboard.press(action.value ?? "Tab");
+    const waitForSelector = actionWaitForSelector(action, side);
+    if (waitForSelector) {
+      await page.locator(waitForSelector).first().waitFor({ timeout: 10_000 });
+    }
+    if (action.waitMs && action.waitMs > 0) {
+      await page.waitForTimeout(action.waitMs);
+    }
+    return;
+  }
   const locator = page.locator(selector).first();
   await locator.waitFor({ timeout: 5_000 });
   if (action.type === "click") {

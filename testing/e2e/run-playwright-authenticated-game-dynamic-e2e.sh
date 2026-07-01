@@ -8,6 +8,7 @@ GO_BASE_URL="${OGAME_GO_BASE_URL:-http://127.0.0.1:8890}"
 LEGACY_E2E_CONTAINER_DIR="${OGAME_E2E_CONTAINER_DIR:-/tmp/ogame-e2e}"
 FIXTURE_FILE="${OGAME_GAME_VISUAL_FIXTURE_FILE:-$ROOT_DIR/.tmp/authenticated-game-dynamic-fixture.json}"
 BROWSERS="${OGAME_GAME_DYNAMIC_BROWSERS:-${OGAME_PLAYWRIGHT_BROWSER:-chromium firefox}}"
+BROWSERS="$(printf '%s' "$BROWSERS" | tr ',' ' ')"
 
 mkdir -p "$ROOT_DIR/.tmp"
 
@@ -28,20 +29,19 @@ wait_for_url() {
 wait_for_url "$LEGACY_BASE_URL/home.php"
 wait_for_url "$GO_BASE_URL/api/healthz"
 
-if [ "${OGAME_GAME_DYNAMIC_PREPARE_FIXTURE:-1}" = "1" ]; then
-  docker compose cp "$SCRIPT_DIR/prepare-authenticated-game-visual-fixture.php" "server:$LEGACY_E2E_CONTAINER_DIR/prepare-authenticated-game-visual-fixture.php" >/dev/null
-  docker compose exec -T \
-    -e OGAME_GAME_VISUAL_COMMANDER_FIXTURE="${OGAME_GAME_VISUAL_COMMANDER_FIXTURE:-0}" \
-    -e OGAME_GAME_VISUAL_ALLIANCE_FIXTURE="${OGAME_GAME_VISUAL_ALLIANCE_FIXTURE:-1}" \
-    -e OGAME_GAME_VISUAL_REPORT_FIXTURE="${OGAME_GAME_VISUAL_REPORT_FIXTURE:-0}" \
-    -e OGAME_GAME_VISUAL_PHALANX_FIXTURE="${OGAME_GAME_VISUAL_PHALANX_FIXTURE:-0}" \
-    -e OGAME_GAME_VISUAL_USER="${OGAME_GAME_VISUAL_USER:-}" \
-    -e OGAME_GAME_VISUAL_PASS="${OGAME_GAME_VISUAL_PASS:-}" \
-    -e OGAME_GAME_VISUAL_ADMIN="${OGAME_GAME_VISUAL_ADMIN:-}" \
-    server php "$LEGACY_E2E_CONTAINER_DIR/prepare-authenticated-game-visual-fixture.php" > "$FIXTURE_FILE"
-fi
-
 for browser in $BROWSERS; do
+  if [ "${OGAME_GAME_DYNAMIC_PREPARE_FIXTURE:-1}" = "1" ]; then
+    docker compose cp "$SCRIPT_DIR/prepare-authenticated-game-visual-fixture.php" "server:$LEGACY_E2E_CONTAINER_DIR/prepare-authenticated-game-visual-fixture.php" >/dev/null
+    docker compose exec -T \
+      -e OGAME_GAME_VISUAL_COMMANDER_FIXTURE="${OGAME_GAME_VISUAL_COMMANDER_FIXTURE:-1}" \
+      -e OGAME_GAME_VISUAL_ALLIANCE_FIXTURE="${OGAME_GAME_VISUAL_ALLIANCE_FIXTURE:-1}" \
+      -e OGAME_GAME_VISUAL_REPORT_FIXTURE="${OGAME_GAME_VISUAL_REPORT_FIXTURE:-0}" \
+      -e OGAME_GAME_VISUAL_PHALANX_FIXTURE="${OGAME_GAME_VISUAL_PHALANX_FIXTURE:-0}" \
+      -e OGAME_GAME_VISUAL_USER="${OGAME_GAME_VISUAL_USER:-}" \
+      -e OGAME_GAME_VISUAL_PASS="${OGAME_GAME_VISUAL_PASS:-}" \
+      -e OGAME_GAME_VISUAL_ADMIN="${OGAME_GAME_VISUAL_ADMIN:-}" \
+      server php "$LEGACY_E2E_CONTAINER_DIR/prepare-authenticated-game-visual-fixture.php" > "$FIXTURE_FILE"
+  fi
   printf 'Authenticated game dynamic behavior E2E (%s)\n' "$browser"
   (
     cd "$ROOT_DIR/frontend"

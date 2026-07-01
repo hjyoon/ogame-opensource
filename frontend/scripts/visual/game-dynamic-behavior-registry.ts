@@ -374,6 +374,87 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers cntchar-style keyup behavior on the alliance application rejection reason form."]
   },
   {
+    name: "statistics-player-delta-tooltip",
+    legacyPage: "statistics",
+    legacyQuery: { type: "ressources", start: "1" },
+    migratedPath: "/game/statistics",
+    migratedQuery: { type: "ressources", start: "1" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-statistics-player-table",
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='From']",
+        migratedSelector: ".legacy-statistics-player-table .legacy-statistics-delta",
+        legacyWaitForSelector: "#overDiv",
+        migratedWaitForSelector: ".legacy-statistics-player-table .legacy-statistics-tooltip"
+      }
+    ],
+    assertions: [
+      {
+        name: "tooltip",
+        type: "text",
+        legacySelector: "#overDiv",
+        migratedSelector: ".legacy-statistics-player-table .legacy-statistics-tooltip",
+        compareSides: true,
+        contains: "From"
+      }
+    ],
+    notes: ["Covers statistics.php rank delta overlib text parity for player rows."]
+  },
+  {
+    name: "statistics-alliance-delta-tooltip",
+    legacyPage: "statistics",
+    legacyQuery: { who: "ally", type: "ressources", start: "1" },
+    migratedPath: "/game/statistics",
+    migratedQuery: { who: "ally", type: "ressources", start: "1" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-statistics-alliance-table",
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='From']",
+        migratedSelector: ".legacy-statistics-alliance-table .legacy-statistics-delta",
+        legacyWaitForSelector: "#overDiv",
+        migratedWaitForSelector: ".legacy-statistics-alliance-table .legacy-statistics-tooltip"
+      }
+    ],
+    assertions: [
+      {
+        name: "tooltip",
+        type: "text",
+        legacySelector: "#overDiv",
+        migratedSelector: ".legacy-statistics-alliance-table .legacy-statistics-tooltip",
+        compareSides: true,
+        contains: "From"
+      }
+    ],
+    notes: ["Covers statistics.php rank delta overlib text parity for alliance rows."]
+  },
+  {
+    name: "empire-average-tooltip",
+    legacyPage: "imperium",
+    legacyQuery: { planettype: "1", no_header: "1" },
+    migratedPath: "/game/empire",
+    migratedQuery: { planettype: "1" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-empire-table",
+    requiredFixtureFeatures: ["commander"],
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='Average per planet']",
+        migratedSelector: ".legacy-empire-table a[onmouseover*='Average per planet']",
+        waitForSelector: "#overDiv"
+      }
+    ],
+    assertions: [
+      { name: "tooltip", type: "text", selector: "#overDiv", compareSides: true, contains: "Average per planet" },
+      { name: "tooltip-html", type: "html", selector: "#overDiv", compareSides: true }
+    ],
+    notes: ["Covers imperium.php average overlib text and frame parity."]
+  },
+  {
     name: "admin-battlesim-slot-sync",
     legacyPage: "admin",
     legacyQuery: { mode: "BattleSim" },

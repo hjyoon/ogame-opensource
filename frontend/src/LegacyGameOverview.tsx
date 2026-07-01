@@ -1752,6 +1752,82 @@ function useLegacyTextCounterCompatibility() {
   }, []);
 }
 
+function useLegacyOverlibCompatibility() {
+  React.useEffect(() => {
+    type OverlibWindow = Window &
+      Record<"ABOVE" | "BGCOLOR" | "CAPTION" | "CENTER" | "DELAY" | "FGCOLOR" | "LEFT" | "MOUSEOFF" | "OFFSETX" | "OFFSETY" | "RIGHT" | "STICKY" | "WIDTH", string> & {
+        nd?: () => true;
+        overlib?: (html: string, ...args: unknown[]) => true;
+      };
+    const overlibWindow = window as unknown as OverlibWindow;
+    const constants = [
+      "ABOVE",
+      "BGCOLOR",
+      "CAPTION",
+      "CENTER",
+      "DELAY",
+      "FGCOLOR",
+      "LEFT",
+      "MOUSEOFF",
+      "OFFSETX",
+      "OFFSETY",
+      "RIGHT",
+      "STICKY",
+      "WIDTH"
+    ] as const;
+    let mouse = { x: 0, y: 0 };
+
+    const onMouseMove = (event: MouseEvent) => {
+      mouse = { x: event.clientX, y: event.clientY };
+    };
+    const hide = () => {
+      const target = document.getElementById("overDiv");
+      if (target) {
+        target.style.visibility = "hidden";
+        target.style.left = "-10000px";
+        target.style.top = "-10000px";
+        target.innerHTML = "";
+      }
+      return true as const;
+    };
+    const numericArgAfter = (args: unknown[], marker: string, fallback: number): number => {
+      const index = args.findIndex((arg) => arg === marker);
+      const parsed = Number(index >= 0 ? args[index + 1] : undefined);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
+
+    for (const constant of constants) {
+      overlibWindow[constant] = constant;
+    }
+    overlibWindow.nd = hide;
+    overlibWindow.overlib = (html: string, ...args: unknown[]) => {
+      const target = document.getElementById("overDiv");
+      if (!target) {
+        return true;
+      }
+      const width = Math.max(1, numericArgAfter(args, "WIDTH", 200));
+      const offsetX = numericArgAfter(args, "OFFSETX", 10);
+      const offsetY = numericArgAfter(args, "OFFSETY", 12);
+      target.innerHTML = legacyOverlibHTML(html, width, false);
+      target.style.left = `${Math.max(0, mouse.x + offsetX)}px`;
+      target.style.top = `${Math.max(0, mouse.y + offsetY)}px`;
+      target.style.visibility = "visible";
+      return true;
+    };
+
+    document.addEventListener("mousemove", onMouseMove, true);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove, true);
+      hide();
+      delete overlibWindow.nd;
+      delete overlibWindow.overlib;
+      for (const constant of constants) {
+        delete overlibWindow[constant];
+      }
+    };
+  }, []);
+}
+
 export function LegacyGameOverview({
   status,
   error,
@@ -1848,6 +1924,7 @@ export function LegacyGameOverview({
   const overview = status?.authenticated ? status.overview : undefined;
   const issue = status && !status.authenticated ? status.issues[0]?.message ?? "Session is invalid." : null;
   useLegacyTextCounterCompatibility();
+  useLegacyOverlibCompatibility();
   React.useEffect(() => {
     const legacyWindow = window as Window & { showGalaxy?: (galaxy: number, system: number, planet: number) => void };
     legacyWindow.showGalaxy = (galaxy: number, system: number, planet: number) => {
@@ -2792,7 +2869,7 @@ function allianceStatisticsHTML(statistics: GameStatistics): string {
 }
 
 function statisticsDeltaHTML(row: GameStatisticsRow): string {
-  const title = `From ${formatLegacyDateTime(row.scoreDate)}`;
+  const title = `From ${formatLegacyServerDateTime(row.scoreDate)}`;
   let color = "87CEEB";
   let marker = "*";
   let tooltip = "*";
@@ -10177,9 +10254,11 @@ function GalaxyHoverMenu({
   );
 }
 
-function legacyOverlibHTML(html: string, width = 200): string {
+function legacyOverlibHTML(html: string, width = 200, includeClasses = true): string {
   const overlibWidth = Math.max(1, Math.floor(width));
-  return `<table class="legacy-overlib-frame" width="${overlibWidth}" border="0" cellpadding="1" cellspacing="0" bgcolor="#333399"><tr><td><table class="legacy-overlib-body" width="100%" border="0" cellpadding="2" cellspacing="0" bgcolor="#CCCCFF"><tr><td valign="TOP"><font face="Verdana,Arial,Helvetica" color="#000000" size="1">${html}</font></td></tr></table></td></tr></table>`;
+  const frameClass = includeClasses ? ' class="legacy-overlib-frame"' : "";
+  const bodyClass = includeClasses ? ' class="legacy-overlib-body"' : "";
+  return `<table${frameClass} width="${overlibWidth}" border="0" cellpadding="1" cellspacing="0" bgcolor="#333399"><tr><td><table${bodyClass} width="100%" border="0" cellpadding="2" cellspacing="0" bgcolor="#CCCCFF"><tr><td valign="TOP"><font face="Verdana,Arial,Helvetica" color="#000000" size="1">${html}</font></td></tr></table></td></tr></table>`;
 }
 
 function galaxyPlayerCellHTML(player: GameGalaxyPlayer): string {
@@ -12232,7 +12311,7 @@ function EmpireResourceRow({ planets, row }: { planets: GameEmpirePlanet[]; row:
 
 function empireFieldsSummaryHTML(sumFields: number, avgFields: number, sumMaxFields: number, avgMaxFields: number) {
   const averageLink = (value: number) =>
-    `<a href='#' onMouseOver="return overlib('<font color=white>Average per planet</font>');" onMouseOut="return nd();">(${formatLegacyNumber(
+    `<a href='#' onmouseover="return overlib('<font color=white>Average per planet</font>');" onmouseout="return nd();">(${formatLegacyNumber(
       value
     )})</a>`;
   return `${formatLegacyNumber(sumFields)}&nbsp;${averageLink(avgFields)}&nbsp;/&nbsp;${formatLegacyNumber(
@@ -13662,7 +13741,7 @@ function formatLegacyAdminBattleReportDate(seconds: number): string {
 }
 
 function formatLegacyStatisticsDateTime(seconds: number): string {
-  return formatLegacyDateTime(seconds).replace(" ", ", ");
+  return formatLegacyServerDateTime(seconds).replace(" ", ", ");
 }
 
 function formatFleetTimestamp(seconds: number): string {

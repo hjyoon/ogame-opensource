@@ -14,7 +14,7 @@ behavior tests.
 | Fleet selection/targeting | `flotten1.php`, `flotten2.php`, `flotten3.php` max links, `shortInfo`, `remainingresources` | Partially migrated | fleet visual cases; dynamic all-ships, `shortInfo`, residue and overcapacity checks | all mission/cargo combinations need deterministic behavior tests |
 | Merchant calculator | `trader.php` `checkValue`, `setMaxValue`, exchange hovers | Partially migrated | merchant visual, HTTP, dynamic max/negative-clamp checks | trade submit and rate variants need more behavior tests |
 | Character counters | messages, notes, buddy, alliance textareas `cntChars` | Mostly migrated | compose/notes/buddy/alliance/application counter checks | remaining counters should be added when found |
-| Statistics/empire hovers | `statistics.php`, `imperium.php` overLib averages/deltas | Partially migrated | statistics tooltip and empire visual cases | tooltip text parity should be asserted for representative rows |
+| Statistics/empire hovers | `statistics.php`, `imperium.php` overLib averages/deltas | Mostly migrated | player/alliance delta and empire average tooltip text checks | add more row variants only if bugs appear |
 | Admin tools | `pages_admin/*` simulators, filters, bot editor JS | Partially migrated | admin visual/HTTP plus BattleSim slot-sync checks | bot editor dynamic JS remains highest-risk behavior gap |
 | Public auth/register | `wwwroot/*`, `registration.js` flags and polling validation | Partially migrated | auth visual/CSR cases, registration HTTP tests | username/email polling parity is not an exact visual guarantee |
 
@@ -28,10 +28,10 @@ not prove timer, hover, or calculation logic.
 
 ## Behavior Runner
 
-`run-playwright-authenticated-game-dynamic-e2e.sh` runs 26 shared-fixture cases:
+`run-playwright-authenticated-game-dynamic-e2e.sh` runs 29 shared-fixture cases:
 message/notes/buddy/alliance/application counters, galaxy tooltip/action
 navigation/keyboard/instant dispatch, fleet all-ships, `shortInfo`, residue/overcapacity,
-merchant max/negative clamps, and BattleSim slot sync. Merchant text allows
+merchant max/negative clamps, statistics/empire tooltips, and BattleSim slot sync. Merchant text allows
 +/-1 for live production drift; action results are still compared numerically.
 
 ## Required Follow-up
