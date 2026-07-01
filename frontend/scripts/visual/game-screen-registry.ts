@@ -689,9 +689,9 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     legacyReady: "table[width='519']",
     migratedReady: ".legacy-phalanx-table, .legacy-overview-table",
     requiredBoxes: [],
-    expectedTexts: ["Sensor report from the moon", "Fleet movements", "No cheating!"],
+    expectedTexts: ["Sensor report from the moon", "Fleet movements", "Visual Hover Planet"],
     viewports: ["popup"],
-    notes: ["Requires OGAME_GAME_VISUAL_PHALANX_FIXTURE=1; default state is missing-sensor to avoid scan mutation."]
+    notes: ["Requires OGAME_GAME_VISUAL_PHALANX_FIXTURE=1; seeds an active target fleet and spends phalanx deuterium per scan."]
   },
   {
     name: "game-buddy",

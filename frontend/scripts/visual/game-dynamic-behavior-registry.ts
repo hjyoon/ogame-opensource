@@ -1119,6 +1119,37 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers short shipyard countdown completion and Expected tasks completed state without freezing Date."]
   },
   {
+    name: "phalanx-event-countdown-decrements",
+    fixedClock: false,
+    legacyPage: "phalanx",
+    legacyQuery: { cp: "$fixture.phalanx.source_moon_id", spid: "$fixture.phalanx.target_planet_id" },
+    migratedPath: "/game/phalanx",
+    migratedQuery: { cp: "$fixture.phalanx.source_moon_id", spid: "$fixture.phalanx.target_planet_id" },
+    legacyReady: "#bxx1",
+    migratedReady: "#bxx1",
+    requiredFixtureFeatures: ["phalanx"],
+    actions: [{ type: "wait", waitMs: 1500 }],
+    assertions: [
+      { name: "phalanx-event-count", type: "count", selector: ".phalanx_fleet", compareSides: true, expected: "2" },
+      {
+        name: "phalanx-countdown-seconds",
+        type: "evaluate",
+        expression:
+          "(() => { const text = document.querySelector('#bxx1')?.textContent?.trim() ?? ''; const match = text.match(/^(\\d+):(\\d\\d):(\\d\\d)$/); return match ? Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) : -1; })()",
+        compareSides: true,
+        tolerance: 5
+      },
+      {
+        name: "phalanx-countdown-decremented",
+        type: "evaluate",
+        expression:
+          "(() => { const el = document.querySelector('#bxx1'); const text = el?.textContent?.trim() ?? ''; const match = text.match(/^(\\d+):(\\d\\d):(\\d\\d)$/); const shown = match ? Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) : -1; const initial = Number(el?.getAttribute('title') ?? '-1'); return initial > 0 && shown >= 0 && shown < initial; })()",
+        expected: "true"
+      }
+    ],
+    notes: ["Requires OGAME_GAME_VISUAL_PHALANX_FIXTURE=1; covers phalanx bxx countdown text changing while the legacy title stays at the initial duration."]
+  },
+  {
     name: "merchant-exchange-rate-tooltip",
     legacyPage: "trader",
     migratedPath: "/game/merchant",

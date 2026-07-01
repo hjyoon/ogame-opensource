@@ -580,11 +580,73 @@ function auth_visual_prepare_report_fixture(array $user): array
     return array('report_id' => $messageId);
 }
 
-function auth_visual_prepare_phalanx_fixture(array $galaxyHover): array
+function auth_visual_prepare_phalanx_fixture(array $user, array $galaxyHover): array
 {
+    global $db_prefix;
+
+    $viewerId = (int)$user['player_id'];
+    $viewerPlanetId = (int)$user['home_planet_id'];
+    $targetId = (int)$galaxyHover['target_player_id'];
+    $targetPlanetId = (int)$galaxyHover['target_planet_id'];
+    $g = (int)$galaxyHover['galaxy'];
+    $s = (int)$galaxyHover['system'];
+    $viewerPosition = (int)$galaxyHover['viewer_position'];
+    $now = time();
+
+    $sourceMoonId = PlanetHasMoon($viewerPlanetId);
+    if ($sourceMoonId <= 0) {
+        $sourceMoonId = CreatePlanet($g, $s, $viewerPosition, $viewerId, 1, 1, 20, $now);
+    }
+    if ($sourceMoonId <= 0) {
+        throw new RuntimeException('failed to create visual phalanx moon');
+    }
+    dbquery(
+        "UPDATE {$db_prefix}planets SET " .
+        "name='Visual Phalanx Moon', g={$g}, s={$s}, p={$viewerPosition}, type=" . PTYP_MOON . ", owner_id={$viewerId}, " .
+        "`" . GID_B_LUNAR_BASE . "`=1, `" . GID_B_PHALANX . "`=3, " .
+        "`" . GID_RC_METAL . "`=100000, `" . GID_RC_CRYSTAL . "`=100000, `" . GID_RC_DEUTERIUM . "`=20000, " .
+        "diameter=7777, temp=-42, fields=2, maxfields=4, lastpeek={$now}, lastakt={$now} WHERE planet_id={$sourceMoonId}"
+    );
+    dbquery("UPDATE {$db_prefix}users SET aktplanet={$sourceMoonId}, hplanetid={$viewerPlanetId}, lastclick={$now} WHERE player_id={$viewerId}");
+
+    dbquery(
+        "DELETE q FROM {$db_prefix}queue q JOIN {$db_prefix}fleet f ON q.sub_id=f.fleet_id " .
+        "WHERE q.type='" . QTYP_FLEET . "' AND (f.start_planet IN ({$viewerPlanetId},{$targetPlanetId}) OR f.target_planet IN ({$viewerPlanetId},{$targetPlanetId}))"
+    );
+    dbquery(
+        "DELETE FROM {$db_prefix}fleet WHERE start_planet IN ({$viewerPlanetId},{$targetPlanetId}) " .
+        "OR target_planet IN ({$viewerPlanetId},{$targetPlanetId})"
+    );
+
+    $origin = LoadPlanetById($targetPlanetId);
+    $target = LoadPlanetById($viewerPlanetId);
+    if ($origin === null || $target === null) {
+        throw new RuntimeException('failed to load visual phalanx fleet planets');
+    }
+    $fleet = array();
+    foreach ($GLOBALS['fleetmap'] as $gid) {
+        $fleet[$gid] = 0;
+    }
+    $fleet[GID_F_SC] = 1;
+    $resources = array();
+    foreach ($GLOBALS['transportableResources'] as $rc) {
+        $resources[$rc] = 0;
+    }
+    $duration = 600;
+    $fleetId = DispatchFleet($fleet, $origin, $target, FTYP_TRANSPORT, $duration, $resources, 0, $now);
+    if ($fleetId <= 0) {
+        throw new RuntimeException('failed to dispatch visual phalanx fleet');
+    }
+
+    InvalidateUserCache();
+    SelectPlanet($viewerId, $sourceMoonId);
+
     return array(
-        'target_planet_id' => (int)$galaxyHover['target_planet_id'],
-        'state' => 'missing_sensor',
+        'source_moon_id' => $sourceMoonId,
+        'target_planet_id' => $targetPlanetId,
+        'fleet_id' => $fleetId,
+        'initial_seconds' => $duration,
+        'state' => 'active_event',
     );
 }
 
@@ -643,7 +705,7 @@ try {
         $report = auth_visual_prepare_report_fixture($user);
     }
     if ($usePhalanx) {
-        $phalanx = auth_visual_prepare_phalanx_fixture($galaxyHover);
+        $phalanx = auth_visual_prepare_phalanx_fixture($user, $galaxyHover);
     }
     $adminAuth = auth_visual_prepare_session((int)$adminUser['player_id']);
     $auth = auth_visual_prepare_session((int)$user['player_id']);

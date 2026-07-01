@@ -88,6 +88,21 @@ const browser = await browserType.launch({
 try {
   const results: CaseResult[] = [];
   for (const spec of selectedSpecs) {
+    const missingFeature = missingFixtureFeature(spec);
+    if (missingFeature) {
+      const skipReason = `missing fixture feature: ${missingFeature}`;
+      results.push({
+        name: spec.name,
+        pass: true,
+        skipped: true,
+        notes: spec.notes ?? [],
+        legacy: skippedSideResult(skipReason),
+        migrated: skippedSideResult(skipReason),
+        comparisons: []
+      });
+      continue;
+    }
+
     if (spec.isolateSides) {
       fixture = await refreshAuthFixture();
     }
@@ -151,6 +166,20 @@ try {
   }
 } finally {
   await browser.close();
+}
+
+function skippedSideResult(skipReason: string): SideResult {
+  return {
+    status: null,
+    url: "",
+    skipped: true,
+    skipReason,
+    consoleErrors: [],
+    failedRequests: [],
+    badResponses: [],
+    actionErrors: [],
+    assertions: {}
+  };
 }
 
 async function loadAuthFixture(path: string | undefined): Promise<AuthFixture> {

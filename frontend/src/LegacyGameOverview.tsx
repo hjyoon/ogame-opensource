@@ -11357,6 +11357,7 @@ function phalanxHeadingHTML(phalanx: GamePhalanx): string {
 }
 
 function PhalanxEventRows({ events }: { events: GameFleetMission[] }) {
+  const [initialNow] = React.useState(() => Math.floor(Date.now() / 1000));
   const [now, setNow] = React.useState(() => Math.floor(Date.now() / 1000));
   React.useEffect(() => {
     const update = () => setNow(Math.floor(Date.now() / 1000));
@@ -11374,11 +11375,12 @@ function PhalanxEventRows({ events }: { events: GameFleetMission[] }) {
     <>
       {events.map((event, index) => {
         const remaining = event.arrivalAt - now;
+        const initialRemaining = Math.max(0, event.arrivalAt - initialNow);
         const groupMissions = overviewEventGroupMissions(event);
         return (
           <tr className={overviewEventRowClass(event)} key={event.id}>
             <th>
-              <div id={`bxx${index + 1}`} title={String(Math.max(0, remaining))}>
+              <div id={`bxx${index + 1}`} title={String(initialRemaining)}>
                 {remaining < 0 ? "-" : formatLegacyCountdown(remaining)}
               </div>
             </th>

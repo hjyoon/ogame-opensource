@@ -31,8 +31,8 @@ func TestPhalanxRepositoryScansEventsAndSpendsDeuterium(t *testing.T) {
 	if phalanx.Commander != "legor" || phalanx.Source.ID != 10 || phalanx.Target.ID != 20 {
 		t.Fatalf("unexpected phalanx result: %+v", phalanx)
 	}
-	if phalanx.RemainingDeuterium != 15_000 || len(phalanx.Events) != 2 || phalanx.Events[0].ID != 300 {
-		t.Fatalf("expected spent deuterium and outgoing/return events, got %+v", phalanx)
+	if phalanx.RemainingDeuterium != 15_000 || len(phalanx.Events) != 2 || phalanx.Events[0].Mission != domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset || phalanx.Events[1].ID != 300 {
+		t.Fatalf("expected spent deuterium and legacy return/outgoing event order, got %+v", phalanx)
 	}
 	if len(runner.execCalls) != 1 {
 		t.Fatalf("expected one deuterium update, got %+v", runner.execCalls)

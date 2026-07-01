@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
@@ -191,5 +192,8 @@ func (r PhalanxRepository) loadPhalanxEvents(ctx context.Context, queueTable str
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	sort.SliceStable(events, func(left int, right int) bool {
+		return events[left].ArrivalAt > events[right].ArrivalAt
+	})
 	return events, nil
 }
