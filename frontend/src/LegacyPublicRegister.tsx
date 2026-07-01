@@ -13,12 +13,19 @@ export type PublicRegistrationIssue = {
   field: string;
   code: string;
   message: string;
+  legacyErrorCode: number;
 };
 
 export type PublicRegistrationResult = {
   valid: boolean;
   created?: boolean;
   issues: PublicRegistrationIssue[];
+  draft: {
+    character: string;
+    email: string;
+    universe: string;
+    agb: boolean;
+  };
   session?: {
     redirectTo: string;
     universeNumber: number;
@@ -327,10 +334,14 @@ function RegistrationFeedback({
       </div>
     );
   }
+  const statusCode = legacyRegistrationStatusCode(result.issues);
+  const statusMessage = statusCode === 0 ? "" : legacyRegistrationMessage(statusCode) ?? result.issues.map((issue) => issue.message).join(" ");
+  const statusClass = legacyRegistrationClass(statusCode);
   return (
-    <div id="statustext">
-      <span className="warning">{result.issues.map((issue) => issue.message).join(" ")}</span>
-    </div>
+    <>
+      <div id="infotext" dangerouslySetInnerHTML={{ __html: result.draft.agb ? "" : registerHelpHTML("204") }} />
+      <div id="statustext">{statusMessage ? <span className={statusClass}>{statusMessage}</span> : null}</div>
+    </>
   );
 }
 
@@ -346,4 +357,44 @@ function registerHelpHTML(code: RegisterHelpCode): string {
     default:
       return "Name in the game: <br />This is the name you use in the game. It is unique throughout the universe.";
   }
+}
+
+export function legacyRegistrationMessage(errorCode: number): string | null {
+  switch (errorCode) {
+    case 0:
+      return "OK";
+    case 101:
+      return "Player's name is already taken!";
+    case 102:
+      return "E-Mail-Address is already in use!";
+    case 103:
+      return "The name must be between 3 and 20 characters long!";
+    case 104:
+      return "You need to enter a valid e-mail-address!";
+    case 105:
+      return "Player's name OK";
+    case 106:
+      return "E-Mail-Address OK";
+    case 107:
+      return "Password must be at least 8 characters long!";
+    case 108:
+      return "Cannot register from same IP in next 10 minutes!";
+    case 109:
+      return "The maximum number of players has been reached!";
+    default:
+      return null;
+  }
+}
+
+function legacyRegistrationClass(errorCode: number): "fine" | "warning" {
+  return errorCode === 0 || errorCode === 105 || errorCode === 106 ? "fine" : "warning";
+}
+
+function legacyRegistrationStatusCode(issues: PublicRegistrationResult["issues"]): number {
+  for (const issue of issues) {
+    if (issue.legacyErrorCode > 0 && issue.legacyErrorCode !== 204) {
+      return issue.legacyErrorCode;
+    }
+  }
+  return 0;
 }

@@ -38,7 +38,7 @@ import {
 import { LegacyPublicAbout } from "./LegacyPublicAbout";
 import { LegacyPublicHome } from "./LegacyPublicHome";
 import { LegacyPublicLegal } from "./LegacyPublicLegal";
-import { LegacyPublicRegister } from "./LegacyPublicRegister";
+import { LegacyPublicRegister, legacyRegistrationMessage } from "./LegacyPublicRegister";
 import { LegacyPublicRules } from "./LegacyPublicRules";
 import { LegacyPublicScreenshots } from "./LegacyPublicScreenshots";
 import { LegacyPublicStory } from "./LegacyPublicStory";
@@ -132,6 +132,25 @@ type LoginDraft = {
   pass: string;
   universe: string;
 };
+
+function legacyRegistrationIssueFromCode(errorCode: number): RegistrationIssue {
+  const fieldByCode: Record<number, string> = {
+    101: "character",
+    102: "email",
+    103: "character",
+    104: "email",
+    107: "password",
+    108: "remoteAddr",
+    109: "universe",
+    204: "agb"
+  };
+  return {
+    field: fieldByCode[errorCode] ?? "registration",
+    code: `legacy_${errorCode}`,
+    message: legacyRegistrationMessage(errorCode) ?? "",
+    legacyErrorCode: errorCode
+  };
+}
 
 const phases = [
   { key: "legacy", label: "Legacy QA", state: "active", owner: "PHP E2E" },
@@ -376,6 +395,55 @@ function App() {
       }
     }
   }, [registrationDraft.universe, search, universes]);
+
+  useEffect(() => {
+    if (route.key !== "register") {
+      return;
+    }
+    const params = new URLSearchParams(search);
+    if (!params.has("errorCode")) {
+      return;
+    }
+    const rawErrorCode = Number(params.get("errorCode") ?? "0");
+    const errorCode = Number.isFinite(rawErrorCode) ? rawErrorCode : 0;
+    const agb = params.get("agb") === "1";
+    const draft = {
+      character: params.get("character") ?? "",
+      password: "",
+      email: params.get("email") ?? "",
+      universe: params.get("universe") ?? "",
+      agb
+    };
+    setRegistrationDraft((current) => {
+      if (
+        current.character === draft.character &&
+        current.password === draft.password &&
+        current.email === draft.email &&
+        current.universe === draft.universe &&
+        current.agb === draft.agb
+      ) {
+        return current;
+      }
+      return draft;
+    });
+    const issues = errorCode > 0 ? [legacyRegistrationIssueFromCode(errorCode)] : agb ? [] : [legacyRegistrationIssueFromCode(204)];
+    setRegistrationResult(
+      issues.length > 0
+        ? {
+            valid: false,
+            created: false,
+            issues,
+            draft: {
+              character: draft.character,
+              email: draft.email,
+              universe: draft.universe,
+              agb: draft.agb
+            }
+          }
+        : null
+    );
+    setRegistrationError(null);
+  }, [route.key, search]);
 
   useEffect(() => {
     const onPopState = () => {

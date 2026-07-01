@@ -109,6 +109,7 @@ async function runSide(context: BrowserContext, side: SideName): Promise<Registe
 
   const response = await page.goto(registerURL(side), { waitUntil: "domcontentloaded", timeout: 20_000 });
   await page.locator("form[name='registerForm']").waitFor({ timeout: 10_000 });
+  const selectedUniverse = await waitForUniverse(page);
 
   const username = `Dyn${browserName}${Date.now().toString(36).slice(-5)}`.slice(0, 18);
   const states: RegisterState["states"] = {};
@@ -133,6 +134,22 @@ async function runSide(context: BrowserContext, side: SideName): Promise<Registe
   await page.waitForTimeout(100);
   states.termsHelp = await readRegisterState(page);
 
+  states.passwordErrorDirect = await captureURLState(page, side, {
+    errorCode: "107",
+    agb: "1",
+    character: "DynErrorUser",
+    email: "dyn-error@example.local",
+    universe: selectedUniverse
+  });
+  states.termsOnlyDirect = await captureURLState(page, side, {
+    errorCode: "0",
+    agb: "0",
+    character: "DynTermsUser",
+    email: "dyn-terms@example.local",
+    universe: selectedUniverse
+  });
+  states.submitPasswordTermsError = await captureSubmitError(page, side);
+
   const currentURL = page.url();
   await page.close();
   return {
@@ -145,8 +162,52 @@ async function runSide(context: BrowserContext, side: SideName): Promise<Registe
   };
 }
 
-function registerURL(side: SideName): string {
-  return side === "legacy" ? `${legacyBaseURL}/register.php` : `${migratedBaseURL}/register`;
+async function captureURLState(page: Page, side: SideName, params: Record<string, string>) {
+  await page.goto(registerURL(side, params), { waitUntil: "domcontentloaded", timeout: 20_000 });
+  await page.locator("form[name='registerForm']").waitFor({ timeout: 10_000 });
+  if (params.errorCode === "0" && params.agb === "0") {
+    await page.locator("#infotext").filter({ hasText: "T&C" }).waitFor({ timeout: 10_000 });
+  } else {
+    await page.locator("#statustext").filter({ hasText: "Password must be at least 8 characters long!" }).waitFor({ timeout: 10_000 });
+  }
+  return readRegisterState(page);
+}
+
+async function captureSubmitError(page: Page, side: SideName) {
+  await page.goto(registerURL(side), { waitUntil: "domcontentloaded", timeout: 20_000 });
+  await page.locator("form[name='registerForm']").waitFor({ timeout: 10_000 });
+  await waitForUniverse(page);
+  const suffix = `${browserName}${Date.now().toString(36).slice(-6)}`;
+  await page.locator("input[name='character']").fill(`Err${suffix}`.slice(0, 18));
+  await page.locator("input[name='email']").fill(`err-${suffix}@example.local`);
+  await page.locator("input[name='password']").fill("short");
+  const terms = page.locator("input[name='agb']");
+  if (await terms.isChecked()) {
+    await terms.click();
+  }
+  await page.locator("#register_submit").click();
+  await page.locator("#infotext").filter({ hasText: "T&C" }).waitFor({ timeout: 15_000 });
+  await page.locator("#statustext").filter({ hasText: "Password must be at least 8 characters long!" }).waitFor({ timeout: 15_000 });
+  return readRegisterState(page);
+}
+
+async function waitForUniverse(page: Page): Promise<string> {
+  const selector = "form[name='registerForm'] select[name='universe']";
+  await page.locator(selector).waitFor({ timeout: 10_000 });
+  await page.waitForFunction(() => {
+    const select = document.querySelector<HTMLSelectElement>("form[name='registerForm'] select[name='universe']");
+    return Boolean(select?.value);
+  }, null, { timeout: 10_000 });
+  return page.locator(selector).inputValue({ timeout: 5_000 });
+}
+
+function registerURL(side: SideName, params?: Record<string, string>): string {
+  const base = side === "legacy" ? `${legacyBaseURL}/register.php` : `${migratedBaseURL}/register`;
+  if (!params) {
+    return base;
+  }
+  const query = new URLSearchParams(params);
+  return `${base}?${query.toString()}`;
 }
 
 async function readRegisterState(page: Page) {
