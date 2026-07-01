@@ -628,6 +628,56 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers BotEdit legacy SACK new action and reload with the inserted strategy option."]
   },
   {
+    name: "admin-botedit-preview-popup",
+    fixtureProfile: "admin",
+    legacyPage: "admin",
+    legacyQuery: { mode: "BotEdit", action: "preview", strat: "$fixture.botedit.strategy_id" },
+    migratedPath: "/game/index.php",
+    migratedQuery: { page: "admin", mode: "BotEdit", action: "preview", strat: "$fixture.botedit.strategy_id" },
+    legacyReady: "#preview_img",
+    migratedReady: "#preview_img",
+    actions: [{ type: "wait", waitMs: 1200 }],
+    assertions: [
+      {
+        name: "preview-image-data-url",
+        type: "evaluate",
+        expression: "document.querySelector('#preview_img')?.getAttribute('src')?.startsWith('data:image/png') ?? false",
+        compareSides: true,
+        expected: "true"
+      },
+      {
+        name: "preview-strategy-name",
+        type: "value",
+        selector: "#strategyName",
+        compareSides: true
+      },
+      {
+        name: "preview-source",
+        type: "value",
+        selector: "#mySavedModel",
+        compareSides: true,
+        contains: "Visual Start"
+      }
+    ],
+    notes: ["Covers BotEdit Show popup URL, hidden editor bootstrap, AJAX load, and generated preview image."]
+  },
+  {
+    name: "admin-botedit-export-popup",
+    fixtureProfile: "admin",
+    legacyPage: "admin",
+    legacyQuery: { mode: "BotEdit", action: "export", strat: "$fixture.botedit.strategy_id" },
+    migratedPath: "/game/index.php",
+    migratedQuery: { page: "admin", mode: "BotEdit", action: "export", strat: "$fixture.botedit.strategy_id" },
+    legacyReady: "body",
+    migratedReady: "body",
+    actions: [],
+    assertions: [
+      { name: "export-source", type: "text", selector: "body", compareSides: true, contains: "Visual Start" },
+      { name: "export-model-class", type: "text", selector: "body", contains: "go.GraphLinksModel" }
+    ],
+    notes: ["Covers BotEdit Export popup URL and raw strategy JSON response parity."]
+  },
+  {
     name: "fleet-select-all-ships",
     legacyPage: "flotten1",
     migratedPath: "/game/fleet",

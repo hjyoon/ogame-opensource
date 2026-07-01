@@ -1183,14 +1183,14 @@ func (r AdminRepository) MutateAdminBotEdit(ctx context.Context, query appgame.A
 	}
 	switch query.Action {
 	case domaingame.AdminActionBotEditLoad:
-		source, err := r.loadAdminBotStrategySource(ctx, botstratTable, query.StrategyID)
+		source, name, err := r.loadAdminBotStrategy(ctx, botstratTable, query.StrategyID)
 		if err != nil {
 			return appgame.AdminBotEditMutationResult{}, err
 		}
-		return appgame.AdminBotEditMutationResult{Source: source, SelectedStrategyID: query.StrategyID}, nil
+		return appgame.AdminBotEditMutationResult{Source: source, Name: name, SelectedStrategyID: query.StrategyID}, nil
 	case domaingame.AdminActionBotEditSave:
 		if query.StrategyID > 1 {
-			source, err := r.loadAdminBotStrategySource(ctx, botstratTable, query.StrategyID)
+			source, _, err := r.loadAdminBotStrategy(ctx, botstratTable, query.StrategyID)
 			if err != nil {
 				return appgame.AdminBotEditMutationResult{}, err
 			}
@@ -1221,23 +1221,24 @@ func (r AdminRepository) MutateAdminBotEdit(ctx context.Context, query appgame.A
 	}
 }
 
-func (r AdminRepository) loadAdminBotStrategySource(ctx context.Context, botstratTable string, strategyID int) (string, error) {
-	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COALESCE(source, '') FROM %s WHERE id = ? LIMIT 1", botstratTable), strategyID)
+func (r AdminRepository) loadAdminBotStrategy(ctx context.Context, botstratTable string, strategyID int) (string, string, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COALESCE(source, ''), COALESCE(name, '') FROM %s WHERE id = ? LIMIT 1", botstratTable), strategyID)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer rows.Close()
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
-			return "", err
+			return "", "", err
 		}
-		return "", nil
+		return "", "", nil
 	}
 	var source string
-	if err := rows.Scan(&source); err != nil {
-		return "", err
+	var name string
+	if err := rows.Scan(&source, &name); err != nil {
+		return "", "", err
 	}
-	return source, rows.Err()
+	return source, name, rows.Err()
 }
 
 func defaultAdminBotStrategySource() string {

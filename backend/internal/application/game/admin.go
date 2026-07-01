@@ -121,6 +121,7 @@ type AdminBotEditMutationResult struct {
 	Issues             []domainpublicsite.SessionIssue
 	ActionIssue        *domaingame.AdminActionIssue
 	Source             string
+	Name               string
 	Strategies         []domaingame.AdminBotStrategy
 	SelectedStrategyID int
 }
