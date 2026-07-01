@@ -11,7 +11,7 @@ behavior tests.
 | Game shell navigation/popups | `game/core/page.php` `showGalaxy`, `fenster`, planet selector, officer hovers | Mostly migrated | relative game routes, report/phalanx pages, shell visual cases | popup window sizing and every selector action need behavior coverage |
 | Queue countdowns | `overview.php`, `buildings.php`, `b_building.php`, `phalanx_events.php` `bxx`, `setTimeout` | Migrated and normalized for screenshots | overview/building/research/shipyard/defense visual cases; queue HTTP tests | every queue completion transition is not covered by one visual suite |
 | Galaxy hover/actions | `galaxy.php`, `galaxy_js.php` overLib menus, `doit`, cursor keys | Mostly migrated | hover, action nav, keyboard, instant success/failures incl. cargo, galaxy HTTP tests | add exotic target cases if bugs appear |
-| Fleet selection/targeting | `flotten1.php`, `flotten2.php`, `flotten3.php` max links, `shortInfo`, `remainingresources` | Partially migrated | fleet visual cases; dynamic all-ships, `shortInfo`, residue and overcapacity checks | all mission/cargo combinations need deterministic behavior tests |
+| Fleet selection/targeting | `flotten1.php`, `flotten2.php`, `flotten3.php` max links, `shortInfo`, `remainingresources` | Mostly migrated | fleet visual cases; dynamic all-ships, target `shortInfo`, maxResources, mission radio, residue/overcapacity | launch-submit mission variants still need more isolated cases |
 | Merchant calculator | `trader.php` `checkValue`, `setMaxValue`, exchange hovers | Mostly migrated | max/negative/rate-tooltip/submit checks plus HTTP edges | more offer-ID variants can be added if bugs appear |
 | Character counters | messages, notes, buddy, alliance textareas `cntChars` | Mostly migrated | compose/notes/buddy/alliance/application counter checks | remaining counters should be added when found |
 | Statistics/empire hovers | `statistics.php`, `imperium.php` overLib averages/deltas | Mostly migrated | player/alliance delta and empire average tooltip text checks | add more row variants only if bugs appear |
@@ -28,9 +28,9 @@ not prove timer, hover, or calculation logic.
 
 ## Behavior Runner
 
-`run-playwright-authenticated-game-dynamic-e2e.sh` runs 32 shared-fixture cases:
+`run-playwright-authenticated-game-dynamic-e2e.sh` runs 35 shared-fixture cases:
 message/notes/buddy/alliance/application counters, galaxy tooltip/action
-navigation/keyboard/instant dispatch, fleet all-ships, `shortInfo`, residue/overcapacity,
+navigation/keyboard/instant dispatch, fleet all-ships, target metrics, cargo/mission controls,
 merchant clamps/tooltips/submit, statistics/empire tooltips, and BattleSim slot sync. Merchant text allows
 +/-1 for live production drift; action results are still compared numerically.
 

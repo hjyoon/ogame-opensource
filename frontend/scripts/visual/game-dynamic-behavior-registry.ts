@@ -14,7 +14,7 @@ export type GameDynamicAction = {
 
 export type GameDynamicAssertion = {
   name: string;
-  type: "text" | "html" | "value" | "visible" | "count";
+  type: "text" | "html" | "value" | "visible" | "count" | "checked";
   selector?: string;
   legacySelector?: string;
   migratedSelector?: string;
@@ -545,6 +545,36 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers flotten2 shortInfo recalculation after changing fleet speed."]
   },
   {
+    name: "fleet-target-coordinate-short-info",
+    legacyPage: "flotten1",
+    migratedPath: "/game/fleet",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-fleet-table",
+    applicabilitySelector: "input[name='ship202']",
+    actions: [
+      { type: "fill", selector: "input[name='ship202']", value: "1" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='continue']",
+        migratedSelector: ".legacy-fleet-select-table input[type='submit'][value='continue']",
+        legacyWaitForSelector: "#content input[name='galaxy']",
+        migratedWaitForSelector: ".legacy-fleet-target-table input[name='galaxy']"
+      },
+      { type: "type", selector: "input[name='galaxy']", value: "$fixture.galaxy_hover.galaxy" },
+      { type: "type", selector: "input[name='system']", value: "$fixture.galaxy_hover.system" },
+      { type: "type", selector: "input[name='planet']", value: "$fixture.galaxy_hover.target_position" },
+      { type: "select", selector: "select[name='planettype']", value: "1" },
+      { type: "select", selector: "select[name='speed']", value: "5" }
+    ],
+    assertions: [
+      { name: "distance", type: "text", selector: "#distance", compareSides: true },
+      { name: "duration", type: "text", selector: "#duration", compareSides: true },
+      { name: "consumption", type: "html", selector: "#consumption", compareSides: true },
+      { name: "storage", type: "html", selector: "#storage", compareSides: true }
+    ],
+    notes: ["Covers flotten2 shortInfo recalculation after changing target coordinates and planet type."]
+  },
+  {
     name: "fleet-transport-residue",
     legacyPage: "flotten1",
     migratedPath: "/game/fleet",
@@ -604,6 +634,83 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     ],
     assertions: [{ name: "remaining-resources", type: "html", selector: "#remainingresources", compareSides: true }],
     notes: ["Covers red residue output when flotten3 cargo input exceeds available capacity."]
+  },
+  {
+    name: "fleet-transport-all-resources",
+    legacyPage: "flotten1",
+    migratedPath: "/game/fleet",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-fleet-table",
+    applicabilitySelector: "input[name='ship202']",
+    actions: [
+      { type: "fill", selector: "input[name='ship202']", value: "1" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='continue']",
+        migratedSelector: ".legacy-fleet-select-table input[type='submit'][value='continue']",
+        legacyWaitForSelector: "#content input[name='galaxy']",
+        migratedWaitForSelector: ".legacy-fleet-target-table input[name='galaxy']"
+      },
+      { type: "type", selector: "input[name='galaxy']", value: "$fixture.galaxy_hover.galaxy" },
+      { type: "type", selector: "input[name='system']", value: "$fixture.galaxy_hover.system" },
+      { type: "type", selector: "input[name='planet']", value: "$fixture.galaxy_hover.target_position" },
+      { type: "select", selector: "select[name='planettype']", value: "1" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='Next']",
+        migratedSelector: ".legacy-fleet-target-table input[type='submit'][value='Next']",
+        legacyWaitForSelector: "#remainingresources",
+        migratedWaitForSelector: "#remainingresources"
+      },
+      {
+        type: "click",
+        legacySelector: "#content a[href^='javascript:maxResources']",
+        migratedSelector: ".legacy-fleet-dispatch-table a[href='#max-resources']"
+      }
+    ],
+    assertions: [
+      { name: "metal", type: "value", selector: "input[name='resource1']", compareSides: true },
+      { name: "crystal", type: "value", selector: "input[name='resource2']", compareSides: true },
+      { name: "deuterium", type: "value", selector: "input[name='resource3']", compareSides: true },
+      { name: "remaining-resources", type: "html", selector: "#remainingresources", compareSides: true }
+    ],
+    notes: ["Covers flotten3 maxResources cargo distribution and residue update."]
+  },
+  {
+    name: "fleet-attack-mission-radio-selection",
+    legacyPage: "flotten1",
+    migratedPath: "/game/fleet",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-fleet-table",
+    applicabilitySelector: "input[name='ship202']",
+    actions: [
+      { type: "fill", selector: "input[name='ship202']", value: "1" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='continue']",
+        migratedSelector: ".legacy-fleet-select-table input[type='submit'][value='continue']",
+        legacyWaitForSelector: "#content input[name='galaxy']",
+        migratedWaitForSelector: ".legacy-fleet-target-table input[name='galaxy']"
+      },
+      { type: "type", selector: "input[name='galaxy']", value: "$fixture.galaxy_hover.galaxy" },
+      { type: "type", selector: "input[name='system']", value: "$fixture.galaxy_hover.system" },
+      { type: "type", selector: "input[name='planet']", value: "$fixture.galaxy_hover.target_position" },
+      { type: "select", selector: "select[name='planettype']", value: "1" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='Next']",
+        migratedSelector: ".legacy-fleet-target-table input[type='submit'][value='Next']",
+        legacyWaitForSelector: "#content input[name='order'][value='1']",
+        migratedWaitForSelector: ".legacy-fleet-dispatch-table input[name='order'][value='1']"
+      },
+      { type: "click", selector: "input[name='order'][value='1']" }
+    ],
+    assertions: [
+      { name: "attack-option-count", type: "count", selector: "input[name='order'][value='1']", expected: "1" },
+      { name: "transport-option-count", type: "count", selector: "input[name='order'][value='3']", expected: "1" },
+      { name: "attack-selected", type: "checked", selector: "input[name='order'][value='1']", compareSides: true, expected: "true" }
+    ],
+    notes: ["Covers flotten3 mission radio availability and selected-state parity for enemy planet dispatch."]
   },
   {
     name: "merchant-exchange-rate-tooltip",

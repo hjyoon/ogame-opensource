@@ -359,7 +359,7 @@ async function performAction(page: Page, side: SideName, action: GameDynamicActi
     throw new Error("missing selector");
   }
   if (action.type === "press" && /^(body|html)$/i.test(selector.trim())) {
-    await page.keyboard.press(action.value ?? "Tab");
+    await page.keyboard.press(resolveFixtureValue(action.value ?? "Tab"));
     const waitForSelector = actionWaitForSelector(action, side);
     if (waitForSelector) {
       await page.locator(waitForSelector).first().waitFor({ timeout: 10_000 });
@@ -374,16 +374,16 @@ async function performAction(page: Page, side: SideName, action: GameDynamicActi
   if (action.type === "click") {
     await locator.click({ timeout: 5_000 });
   } else if (action.type === "fill") {
-    await locator.fill(action.value ?? "", { timeout: 5_000 });
+    await locator.fill(resolveFixtureValue(action.value ?? ""), { timeout: 5_000 });
   } else if (action.type === "type") {
     await locator.fill("", { timeout: 5_000 });
-    await locator.pressSequentially(action.value ?? "", { timeout: 5_000 });
+    await locator.pressSequentially(resolveFixtureValue(action.value ?? ""), { timeout: 5_000 });
   } else if (action.type === "select") {
-    await locator.selectOption(action.value ?? "", { timeout: 5_000 });
+    await locator.selectOption(resolveFixtureValue(action.value ?? ""), { timeout: 5_000 });
   } else if (action.type === "hover") {
     await locator.hover({ timeout: 5_000 });
   } else {
-    await locator.press(action.value ?? "Tab", { timeout: 5_000 });
+    await locator.press(resolveFixtureValue(action.value ?? "Tab"), { timeout: 5_000 });
   }
   const waitForSelector = actionWaitForSelector(action, side);
   if (waitForSelector) {
@@ -411,6 +411,9 @@ async function readAssertion(page: Page, side: SideName, assertion: GameDynamicA
   }
   if (assertion.type === "visible") {
     return await locator.isVisible({ timeout: 5_000 });
+  }
+  if (assertion.type === "checked") {
+    return await locator.isChecked({ timeout: 5_000 });
   }
   if (assertion.type === "html") {
     return compactHTML(await locator.evaluate((element) => element.innerHTML));
@@ -458,7 +461,7 @@ function legacyURL(spec: GameDynamicBehaviorSpec): string {
     query.set("cp", String(profile.home_planet_id));
   }
   for (const [key, value] of Object.entries(spec.legacyQuery ?? {})) {
-    query.set(key, resolveFixtureQueryValue(value));
+    query.set(key, resolveFixtureValue(value));
   }
   return `${legacyBaseURL}/game/index.php?${query.toString()}`;
 }
@@ -470,7 +473,7 @@ function migratedURL(spec: GameDynamicBehaviorSpec): string {
     query.set("cp", String(profile.home_planet_id));
   }
   for (const [key, value] of Object.entries(spec.migratedQuery ?? {})) {
-    query.set(key, resolveFixtureQueryValue(value));
+    query.set(key, resolveFixtureValue(value));
   }
   return `${migratedBaseURL}${spec.migratedPath}?${query.toString()}`;
 }
@@ -486,7 +489,7 @@ function fixtureProfile(spec: GameDynamicBehaviorSpec): AuthProfile {
   return fixture;
 }
 
-function resolveFixtureQueryValue(value: string): string {
+function resolveFixtureValue(value: string): string {
   const prefix = "$fixture.";
   if (!value.startsWith(prefix)) {
     return value;
