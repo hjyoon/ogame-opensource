@@ -8491,8 +8491,27 @@ function FleetTargetStepTable({
     (planet) => planet.id !== fleet.currentPlanet.id && planet.type !== 2
   );
   const battleUnions = fleetBattleUnions(fleet);
-  const metrics = legacyFleetTargetMetrics(draft, fleet.ships);
+  const [dynamicDraft, setDynamicDraft] = React.useState(draft);
+  React.useEffect(() => setDynamicDraft(draft), [draft]);
+  const metrics = legacyFleetTargetMetrics(dynamicDraft, fleet.ships);
   const capacityColor = metrics.storage >= 0 ? "lime" : "red";
+  const updateDynamicDraft = (form: HTMLFormElement | null) => {
+    if (!form) {
+      return;
+    }
+    const target = {
+      galaxy: legacyFleetInputInt(form, "galaxy", dynamicDraft.target.galaxy),
+      system: legacyFleetInputInt(form, "system", dynamicDraft.target.system),
+      position: legacyFleetInputInt(form, "planet", dynamicDraft.target.position)
+    };
+    setDynamicDraft((current) => ({
+      ...current,
+      target,
+      targetType: legacyFleetInputInt(form, "planettype", current.targetType),
+      speed: legacyFleetInputInt(form, "speed", current.speed),
+      distance: legacyFleetCoordinateDistance(fleet.currentPlanet.coordinates, target)
+    }));
+  };
   const selectTarget = (form: HTMLFormElement | null, target: GamePlanetSummary) => {
     if (!form) {
       return;
@@ -8501,6 +8520,7 @@ function FleetTargetStepTable({
     setLegacyFormInputValue(form, "system", target.coordinates.system);
     setLegacyFormInputValue(form, "planet", target.coordinates.position);
     setLegacyFormInputValue(form, "planettype", target.type);
+    updateDynamicDraft(form);
   };
   const selectUnionTarget = (form: HTMLFormElement | null, mission: GameFleetMission) => {
     if (!form) {
@@ -8511,6 +8531,7 @@ function FleetTargetStepTable({
     setLegacyFormInputValue(form, "planet", mission.target.position);
     setLegacyFormInputValue(form, "planettype", mission.targetType);
     setLegacyFormInputValue(form, "union2", mission.unionId);
+    updateDynamicDraft(form);
   };
   const submitTarget = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -8528,7 +8549,13 @@ function FleetTargetStepTable({
     });
   };
   return (
-    <form className="legacy-fleet-target-form" data-dispatch-action="prepare-target" onSubmit={submitTarget}>
+    <form
+      className="legacy-fleet-target-form"
+      data-dispatch-action="prepare-target"
+      onChange={(event) => updateDynamicDraft(event.currentTarget)}
+      onInput={(event) => updateDynamicDraft(event.currentTarget)}
+      onSubmit={submitTarget}
+    >
       {battleUnions.length > 0 ? <input name="union2" type="hidden" value={0} /> : null}
       <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-target-table" width={519}>
         <tbody>
@@ -8566,7 +8593,7 @@ function FleetTargetStepTable({
           <tr style={{ height: 20 }}>
             <th>Distance</th>
             <th>
-              <div id="distance">{formatLegacyNumber(draft.distance)}</div>
+              <div id="distance">{formatLegacyNumber(dynamicDraft.distance)}</div>
             </th>
           </tr>
           <tr style={{ height: 20 }}>
@@ -8579,21 +8606,21 @@ function FleetTargetStepTable({
             <th>Fuel consumption</th>
             <th>
               <div id="consumption">
-                <span style={{ color: capacityColor }}>{formatLegacyNumber(metrics.fuelConsumption)}</span>
+                <LegacyFont color={capacityColor}>{formatLegacyNumber(metrics.fuelConsumption)}</LegacyFont>
               </div>
             </th>
           </tr>
           <tr style={{ height: 20 }}>
             <th>Maximum speed</th>
             <th>
-              <div id="maxspeed">{formatLegacyNumber(draft.maxSpeed)}</div>
+              <div id="maxspeed">{formatLegacyNumber(dynamicDraft.maxSpeed)}</div>
             </th>
           </tr>
           <tr style={{ height: 20 }}>
             <th>Load capacity</th>
             <th>
               <div id="storage">
-                <span style={{ color: capacityColor }}>{formatLegacySignedNumber(metrics.storage)}</span>
+                <LegacyFont color={capacityColor}>{formatLegacySignedNumber(metrics.storage)}</LegacyFont>
               </div>
             </th>
           </tr>
@@ -9209,6 +9236,19 @@ function legacyFleetFormDistance(form: HTMLFormElement): number {
   }
   if (targetPlanet - thisPlanet !== 0) {
     return Math.abs(targetPlanet - thisPlanet) * 5 + 1000;
+  }
+  return 5;
+}
+
+function legacyFleetCoordinateDistance(origin: Coordinates, target: Coordinates): number {
+  if (target.galaxy - origin.galaxy !== 0) {
+    return Math.abs(target.galaxy - origin.galaxy) * 20000;
+  }
+  if (target.system - origin.system !== 0) {
+    return Math.abs(target.system - origin.system) * 5 * 19 + 2700;
+  }
+  if (target.position - origin.position !== 0) {
+    return Math.abs(target.position - origin.position) * 5 + 1000;
   }
   return 5;
 }

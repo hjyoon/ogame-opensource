@@ -281,6 +281,10 @@ async function performAction(page: Page, side: SideName, action: GameDynamicActi
   } else {
     await locator.press(action.value ?? "Tab", { timeout: 5_000 });
   }
+  const waitForSelector = actionWaitForSelector(action, side);
+  if (waitForSelector) {
+    await page.locator(waitForSelector).first().waitFor({ timeout: 10_000 });
+  }
   if (action.waitMs && action.waitMs > 0) {
     await page.waitForTimeout(action.waitMs);
   }
@@ -303,6 +307,9 @@ async function readAssertion(page: Page, side: SideName, assertion: GameDynamicA
   }
   if (assertion.type === "count") {
     return await page.locator(selector).count();
+  }
+  if (assertion.type === "html") {
+    return compactHTML(await locator.evaluate((element) => element.innerHTML));
   }
   return compact(await locator.textContent({ timeout: 5_000 }));
 }
@@ -332,8 +339,9 @@ function compareAssertions(spec: GameDynamicBehaviorSpec, legacy: SideResult, mi
         errors.push(`${assertion.name} expected ${side} to contain ${assertion.contains}, got ${String(value)}`);
       }
     }
-    if (assertion.compareSides && legacyValue !== migratedValue) {
-      errors.push(`${assertion.name} differs: legacy=${String(legacyValue)} migrated=${String(migratedValue)}`);
+    if (assertion.compareSides && !valuesEquivalent(legacyValue, migratedValue, assertion.tolerance)) {
+      const suffix = assertion.tolerance === undefined ? "" : ` tolerance=${assertion.tolerance}`;
+      errors.push(`${assertion.name} differs: legacy=${String(legacyValue)} migrated=${String(migratedValue)}${suffix}`);
     }
   }
   return errors;
@@ -382,6 +390,12 @@ function resolveFixtureQueryValue(value: string): string {
 
 function actionSelector(action: GameDynamicAction, side: SideName): string | undefined {
   return side === "legacy" ? action.legacySelector ?? action.selector : action.migratedSelector ?? action.selector;
+}
+
+function actionWaitForSelector(action: GameDynamicAction, side: SideName): string | undefined {
+  return side === "legacy"
+    ? action.legacyWaitForSelector ?? action.waitForSelector
+    : action.migratedWaitForSelector ?? action.waitForSelector;
 }
 
 function assertionSelector(assertion: GameDynamicAssertion, side: SideName): string | undefined {
@@ -449,6 +463,37 @@ function browserEnv(name: string, fallback: BrowserName): BrowserName {
 
 function compact(value: string | null | undefined): string {
   return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function compactHTML(value: string | null | undefined): string {
+  return compact(value).replaceAll(/; ?/g, ";");
+}
+
+function valuesEquivalent(
+  left: string | number | boolean | null | undefined,
+  right: string | number | boolean | null | undefined,
+  tolerance: number | undefined
+): boolean {
+  if (tolerance === undefined) {
+    return left === right;
+  }
+  const leftNumber = legacyNumber(left);
+  const rightNumber = legacyNumber(right);
+  if (leftNumber === null || rightNumber === null) {
+    return left === right;
+  }
+  return Math.abs(leftNumber - rightNumber) <= tolerance;
+}
+
+function legacyNumber(value: string | number | boolean | null | undefined): number | null {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+  const parsed = Number.parseInt(value.replaceAll(".", "").replace(/[^0-9-]/g, ""), 10);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function errorMessage(error: unknown): string {

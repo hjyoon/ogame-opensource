@@ -1684,7 +1684,7 @@ func storageCapacity(level int) int {
 	if level < 0 {
 		level = 0
 	}
-	capacity := 100000.0 + 50000.0*(math.Ceil(math.Pow(1.6, float64(level)))-1)
+	capacity := 100000.0 + 50000.0*math.Ceil(math.Pow(1.6, float64(level))-1)
 	return int(capacity)
 }
 

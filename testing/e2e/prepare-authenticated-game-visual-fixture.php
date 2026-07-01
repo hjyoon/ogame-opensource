@@ -73,7 +73,8 @@ function auth_visual_prepare_user(string $name, string $password, int $adminLeve
         "password='" . auth_visual_sql_escape($passwordHash) . "', pemail='" . auth_visual_sql_escape($lower . '@visual.local') . "', " .
         "email='" . auth_visual_sql_escape($lower . '@visual.local') . "', validated=1, validatemd='', deact_ip=1, " .
         "admin={$adminLevel}, vacation=0, vacation_until=0, banned=0, banned_until=0, disable=0, disable_until=0, " .
-        "ally_id=0, allyrank=0, joindate=0, com_until=0, `" . GID_R_COMPUTER . "`=0, " .
+        "ally_id=0, allyrank=0, joindate=0, com_until=0, dm=0, dmfree=5000, trader=1, rate_m=3, rate_k=2, rate_d=1, " .
+        "`" . GID_R_COMPUTER . "`=3, `" . GID_R_COMBUST_DRIVE . "`=2, " .
         "noattack=0, noattack_until=0, lang='en', skin='/evolution/', useskin=1, " .
         "hplanetid={$homePlanetId}, aktplanet={$homePlanetId}, lastclick={$now} WHERE player_id={$playerId}"
     );
@@ -84,6 +85,8 @@ function auth_visual_prepare_user(string $name, string $password, int $adminLeve
     dbquery(
         "UPDATE {$db_prefix}planets SET " .
         "`" . GID_RC_METAL . "`=1000000, `" . GID_RC_CRYSTAL . "`=1000000, `" . GID_RC_DEUTERIUM . "`=1000000, " .
+        "`" . GID_B_SHIPYARD . "`=2, `" . GID_B_METAL_STOR . "`=10, `" . GID_B_CRYS_STOR . "`=10, `" . GID_B_DEUT_STOR . "`=10, " .
+        "`" . GID_F_SC . "`=3, `" . GID_F_LC . "`=1, " .
         "prod1=1, prod2=1, prod3=1, prod4=1, prod12=1, prod212=1, fields=0, maxfields=200, lastpeek={$now} " .
         "WHERE planet_id={$homePlanetId} AND owner_id={$playerId}"
     );
