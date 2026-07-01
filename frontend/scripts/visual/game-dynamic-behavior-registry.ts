@@ -14,10 +14,11 @@ export type GameDynamicAction = {
 
 export type GameDynamicAssertion = {
   name: string;
-  type: "text" | "html" | "value" | "visible" | "count" | "checked";
+  type: "text" | "html" | "value" | "visible" | "count" | "checked" | "evaluate";
   selector?: string;
   legacySelector?: string;
   migratedSelector?: string;
+  expression?: string;
   compareSides?: boolean;
   expected?: string;
   contains?: string;
@@ -500,6 +501,34 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "defender-slot-count", type: "value", selector: "#dnum", expected: "2" }
     ],
     notes: ["Covers BattleSim visible inputs, hidden slot state, tech state, and attacker/defender counters."]
+  },
+  {
+    name: "admin-botedit-init-palette",
+    legacyPage: "admin",
+    legacyQuery: { mode: "BotEdit" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "BotEdit" },
+    legacyReady: "#myDiagram canvas",
+    migratedReady: "#myDiagram canvas",
+    actions: [{ type: "wait", waitMs: 100 }],
+    assertions: [
+      { name: "diagram-canvas-count", type: "count", selector: "#myDiagram canvas", compareSides: true },
+      { name: "palette-canvas-count", type: "count", selector: "#myPalette canvas", compareSides: true },
+      {
+        name: "diagram-and-palette-ready",
+        type: "evaluate",
+        expression: "Boolean(window.myDiagram && window.myPalette)",
+        expected: "true"
+      },
+      {
+        name: "palette-node-count",
+        type: "evaluate",
+        expression: "window.myPalette && window.myPalette.model && window.myPalette.model.nodeDataArray ? window.myPalette.model.nodeDataArray.length : 0",
+        compareSides: true,
+        expected: "7"
+      }
+    ],
+    notes: ["Covers BotEdit GoJS init and palette model state; legacy load() uses a flaky SACK race in headless browsers."]
   },
   {
     name: "fleet-select-all-ships",

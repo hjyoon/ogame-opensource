@@ -395,6 +395,9 @@ async function performAction(page: Page, side: SideName, action: GameDynamicActi
 }
 
 async function readAssertion(page: Page, side: SideName, assertion: GameDynamicAssertion): Promise<string | number | boolean | null> {
+  if (assertion.type === "evaluate") {
+    return normalizeEvaluation(await page.evaluate(assertion.expression ?? "undefined"));
+  }
   const selector = assertionSelector(assertion, side);
   if (!selector) {
     return null;
@@ -419,6 +422,19 @@ async function readAssertion(page: Page, side: SideName, assertion: GameDynamicA
     return compactHTML(await locator.evaluate((element) => element.innerHTML));
   }
   return compact(await locator.textContent({ timeout: 5_000 }));
+}
+
+function normalizeEvaluation(value: unknown): string | number | boolean | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === "string") {
+    return compact(value);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  return JSON.stringify(value);
 }
 
 function compareAssertions(spec: GameDynamicBehaviorSpec, legacy: SideResult, migrated: SideResult): string[] {

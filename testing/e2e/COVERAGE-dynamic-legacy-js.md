@@ -15,7 +15,7 @@ behavior tests.
 | Merchant calculator | `trader.php` `checkValue`, `setMaxValue`, exchange hovers | Mostly migrated | max/negative/rate-tooltip/submit checks plus HTTP edges | more offer-ID variants can be added if bugs appear |
 | Character counters | messages, notes, buddy, alliance textareas `cntChars` | Mostly migrated | compose/notes/buddy/alliance/application counter checks | remaining counters should be added when found |
 | Statistics/empire hovers | `statistics.php`, `imperium.php` overLib averages/deltas | Mostly migrated | player/alliance delta and empire average tooltip text checks | add more row variants only if bugs appear |
-| Admin tools | `pages_admin/*` simulators, filters, bot editor JS | Partially migrated | admin visual/HTTP plus BattleSim slot-sync checks | bot editor dynamic JS remains highest-risk behavior gap |
+| Admin tools | `pages_admin/*` simulators, filters, bot editor JS | Mostly migrated | admin visual/HTTP, BattleSim slot-sync, BotEdit init/palette checks | BotEdit SACK load/new/rename/save remains isolated follow-up |
 | Public auth/register | `wwwroot/*`, `registration.js` flags and polling validation | Partially migrated | auth visual/CSR cases, registration HTTP tests | username/email polling parity is not an exact visual guarantee |
 
 ## Masked Or Normalized Dynamic Regions
@@ -28,10 +28,10 @@ not prove timer, hover, or calculation logic.
 
 ## Behavior Runner
 
-`run-playwright-authenticated-game-dynamic-e2e.sh` runs 35 shared-fixture cases:
+`run-playwright-authenticated-game-dynamic-e2e.sh` runs 36 shared-fixture cases:
 message/notes/buddy/alliance/application counters, galaxy tooltip/action
 navigation/keyboard/instant dispatch, fleet all-ships, target metrics, cargo/mission controls,
-merchant clamps/tooltips/submit, statistics/empire tooltips, and BattleSim slot sync. Merchant text allows
+merchant clamps/tooltips/submit, statistics/empire tooltips, BattleSim slot sync, and BotEdit init. Merchant text allows
 +/-1 for live production drift; action results are still compared numerically.
 
 ## Required Follow-up
