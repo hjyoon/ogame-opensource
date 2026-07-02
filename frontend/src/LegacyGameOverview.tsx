@@ -854,10 +854,18 @@ type GameMessages = {
   commander: string;
   currentPlanet: GamePlanetOverview;
   planetSwitcher: GamePlanetSummary[];
-  action: "inbox" | "compose";
+  action: "summary" | "inbox" | "compose";
   rows: GameMessage[];
+  summary: GameMessageCategoryCount[];
   operators: GameMessageOperator[];
   compose?: GameMessageCompose;
+};
+
+type GameMessageCategoryCount = {
+  key: string;
+  label: string;
+  total: number;
+  unread: number;
 };
 
 type GameMessage = {
@@ -2719,7 +2727,7 @@ function LegacyMenuRoute({ activeRoute, entry }: { activeRoute: GameRoute; entry
         <div className="legacy-center">
           <a
             aria-current={route.key === activeRoute.key ? "page" : undefined}
-            href={gameMenuRouteURL(route.path, window.location.search)}
+            href={legacyMenuRouteHref(route, window.location.search)}
             id={entry.id}
             style={entry.id === "darkmatter2" ? { cursor: "pointer", width: 110 } : undefined}
           >
@@ -2729,6 +2737,15 @@ function LegacyMenuRoute({ activeRoute, entry }: { activeRoute: GameRoute; entry
       </td>
     </tr>
   );
+}
+
+function legacyMenuRouteHref(route: GameRoute, searchInput: string): string {
+  if (route.key !== "messages") {
+    return gameMenuRouteURL(route.path, searchInput);
+  }
+  const query = new URLSearchParams(searchInput);
+  query.set("dsp", "1");
+  return gameMenuRouteURL(route.path, query.toString());
 }
 
 function MigrationPendingGameTable({ route }: { route: GameRoute }) {
@@ -11192,6 +11209,9 @@ function MessagesTable({
   if (messages.action === "compose" && messages.compose) {
     return <MessageComposeTable actionIssue={actionIssue} compose={messages.compose} onSend={onSend} pending={pending} />;
   }
+  if (messages.action === "summary") {
+    return <MessageSummaryTable messages={messages} pending={pending} />;
+  }
   const submitMessages = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -11306,6 +11326,118 @@ function MessagesTable({
       </table>
     </form>
   );
+}
+
+function MessageSummaryTable({ messages, pending }: { messages: GameMessages; pending: boolean }) {
+  const categories = messages.summary.length > 0 ? messages.summary : defaultMessageSummaryCategories();
+  return (
+    <form action={gameRouteURL("/game/messages", window.location.search)} method="post">
+      <table className="legacy-overview-table legacy-messages-table" width={519}>
+        <tbody>
+          <tr>
+            <th colSpan={4}>
+              <select defaultValue="deletemarked" disabled={pending} name="deletemessages">
+                <option value="deletemarked">Delete highlighted messages</option>
+                <option value="deletenonmarked">Delete all unselected messages</option>
+                <option value="deleteallshown">Delete all displayed messages </option>
+                <option value="deleteall">Delete all messages</option>
+              </select>{" "}
+              <input disabled={pending} type="submit" value="ok" />
+            </th>
+          </tr>
+          <tr>
+            <td className="legacy-c c" colSpan={4}>
+              Messages
+            </td>
+          </tr>
+          <tr>
+            <th>Show</th>
+            <th colSpan={2}>Type</th>
+            <th>Total / New</th>
+          </tr>
+          {categories.map((category) => (
+            <tr key={category.key}>
+              <th>
+                <input disabled={pending} name={messageSummaryCheckboxName(category.key)} type="checkbox" />
+              </th>
+              <th colSpan={2}>
+                <a href={messageSummaryCategoryHref(category.key)}>{category.label}</a>
+              </th>
+              <th>
+                {category.total} / {category.unread}
+              </th>
+            </tr>
+          ))}
+          <tr>
+            <th colSpan={4}>
+              <input disabled={pending} name="fullreports" type="checkbox" />{" "}
+              Show intelligence data partially{" "}
+            </th>
+          </tr>
+          <tr>
+            <td className="legacy-c c">Action</td>
+            <td className="legacy-c c">Date</td>
+            <td className="legacy-c c">From</td>
+            <td className="legacy-c c">Subject</td>
+          </tr>
+          <tr>
+            <th colSpan={4} style={{ padding: "0px 105px" }} />
+          </tr>
+          <tr>
+            <td colSpan={4}>
+              <center>     </center>
+            </td>
+          </tr>
+          <tr>
+            <td className="legacy-c c" colSpan={4}>
+              Operators
+            </td>
+          </tr>
+          {messages.operators.map((operator) => (
+            <tr key={operator.playerId} dangerouslySetInnerHTML={{ __html: messageOperatorRowHTML(operator) }} />
+          ))}
+        </tbody>
+      </table>
+    </form>
+  );
+}
+
+function messageSummaryCheckboxName(key: string): string {
+  const names: Record<string, string> = {
+    spy: "espioopen",
+    battle: "combatopen",
+    expedition: "expopen",
+    alliance: "allyopen",
+    personal: "useropen",
+    other: "generalopen"
+  };
+  return names[key] ?? key;
+}
+
+function messageSummaryCategoryHref(key: string): string {
+  const messageTypes: Record<string, string> = {
+    spy: "1",
+    battle: "2",
+    expedition: "3",
+    alliance: "4",
+    personal: "0",
+    other: "5"
+  };
+  const query = new URLSearchParams(window.location.search);
+  query.set("dsp", "1");
+  query.set("pm", messageTypes[key] ?? "5");
+  return gameRouteURL("/game/messages", query.toString());
+}
+
+function defaultMessageSummaryCategories(): GameMessageCategoryCount[] {
+  return [
+    { key: "spy", label: "Spy Reports", total: 0, unread: 0 },
+    { key: "battle", label: "Combat Reports", total: 0, unread: 0 },
+    { key: "expedition", label: "Expedition Reports", total: 0, unread: 0 },
+    { key: "alliance", label: "Alliance Reports", total: 0, unread: 0 },
+    { key: "personal", label: "Personal Messages", total: 0, unread: 0 },
+    { key: "other", label: "Other", total: 0, unread: 0 }
+  ];
 }
 
 function messageOperatorRowHTML(operator: GameMessageOperator): string {

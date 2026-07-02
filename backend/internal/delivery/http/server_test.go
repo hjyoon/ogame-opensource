@@ -3744,7 +3744,7 @@ func TestGameMessagesEndpointReturnsInbox(t *testing.T) {
 		},
 	}}
 	server := testServerWithGameMessages(t, messages)
-	req := httptest.NewRequest(http.MethodGet, "/api/game/messages?session=public&cp=99&messageziel=77&betreff=Re%3ASubject", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/messages?session=public&cp=99&messageziel=77&betreff=Re%3ASubject&dsp=1", nil)
 	req.RemoteAddr = "203.0.113.10:4321"
 	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
 	rec := httptest.NewRecorder()
@@ -3765,7 +3765,7 @@ func TestGameMessagesEndpointReturnsInbox(t *testing.T) {
 		t.Fatalf("unexpected message row mapping: %+v", row)
 	}
 	if messages.command.PublicSession != "public" || messages.command.PlanetID != 99 || messages.command.TargetPlayerID != 77 ||
-		messages.command.Subject != "Re:Subject" || messages.command.RemoteAddr != "203.0.113.10" {
+		messages.command.Subject != "Re:Subject" || !messages.command.ShowSummary || messages.command.RemoteAddr != "203.0.113.10" {
 		t.Fatalf("unexpected messages command: %+v", messages.command)
 	}
 	if messages.command.PrivateSessions["prsess_42_1"] != "private" {

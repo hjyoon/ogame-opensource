@@ -20,6 +20,7 @@ type MessagesQuery struct {
 	PlanetID       int
 	TargetPlayerID int
 	Subject        string
+	ShowSummary    bool
 	PublicSession  string
 }
 
@@ -30,6 +31,7 @@ type MessagesCommand struct {
 	PlanetID        int
 	TargetPlayerID  int
 	Subject         string
+	ShowSummary     bool
 }
 
 type MessagesResult struct {
@@ -102,6 +104,7 @@ func (s MessagesService) GetMessages(ctx context.Context, command MessagesComman
 		PlanetID:       command.PlanetID,
 		TargetPlayerID: command.TargetPlayerID,
 		Subject:        command.Subject,
+		ShowSummary:    command.ShowSummary,
 		PublicSession:  command.PublicSession,
 	})
 	if err != nil {

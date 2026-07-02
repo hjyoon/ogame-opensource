@@ -6,6 +6,8 @@ ROOT_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
 LEGACY_BASE_URL="${OGAME_LEGACY_BASE_URL:-http://127.0.0.1:8888}"
 GO_BASE_URL="${OGAME_GO_BASE_URL:-http://127.0.0.1:${OGAME_GO_PORT:-8890}}"
 URL_CHECK_FILE="$ROOT_DIR/.tmp/navigation-url-check"
+LEGACY_E2E_CONTAINER_DIR="${OGAME_E2E_CONTAINER_DIR:-/tmp/ogame-e2e}"
+FIXTURE_FILE="${OGAME_NAV_VISUAL_FIXTURE_FILE:-$ROOT_DIR/.tmp/navigation-visual-fixture.json}"
 mkdir -p "$ROOT_DIR/.tmp"
 
 wait_for_url() {
@@ -24,6 +26,22 @@ wait_for_url() {
 
 wait_for_url "$LEGACY_BASE_URL/home.php"
 wait_for_url "$GO_BASE_URL/api/healthz"
+
+prepare_navigation_fixture() {
+  if [ "${OGAME_NAV_VISUAL_PREPARE_FIXTURE:-1}" = "0" ]; then
+    return 0
+  fi
+
+  docker compose cp "$SCRIPT_DIR/prepare-authenticated-game-visual-fixture.php" "server:$LEGACY_E2E_CONTAINER_DIR/prepare-authenticated-game-visual-fixture.php" >/dev/null
+  docker compose exec -T \
+    -e OGAME_GAME_VISUAL_COMMANDER_FIXTURE="${OGAME_GAME_VISUAL_COMMANDER_FIXTURE:-1}" \
+    -e OGAME_GAME_VISUAL_ALLIANCE_FIXTURE="${OGAME_GAME_VISUAL_ALLIANCE_FIXTURE:-1}" \
+    -e OGAME_GAME_VISUAL_REPORT_FIXTURE="${OGAME_GAME_VISUAL_REPORT_FIXTURE:-1}" \
+    -e OGAME_GAME_VISUAL_PHALANX_FIXTURE="${OGAME_GAME_VISUAL_PHALANX_FIXTURE:-1}" \
+    -e OGAME_GAME_VISUAL_USER="${OGAME_NAV_VISUAL_USER:-legor}" \
+    -e OGAME_GAME_VISUAL_PASS="${OGAME_NAV_VISUAL_PASS:-admin}" \
+    server php "$LEGACY_E2E_CONTAINER_DIR/prepare-authenticated-game-visual-fixture.php" > "$FIXTURE_FILE"
+}
 
 sync_docker_visual_fixtures() {
   if [ "${OGAME_NAV_VISUAL_SYNC_DOCKER_FIXTURES:-1}" = "0" ]; then
@@ -56,6 +74,7 @@ sync_docker_visual_fixtures() {
   done
 }
 
+prepare_navigation_fixture
 sync_docker_visual_fixtures
 
 cd "$ROOT_DIR/frontend"

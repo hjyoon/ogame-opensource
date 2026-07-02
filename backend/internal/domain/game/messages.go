@@ -1,6 +1,7 @@
 package game
 
 const (
+	MessagesActionSummary = "summary"
 	MessagesActionInbox   = "inbox"
 	MessagesActionCompose = "compose"
 
@@ -40,8 +41,16 @@ type Messages struct {
 	PlanetSwitcher []PlanetSummary
 	Action         string
 	Rows           []Message
+	Summary        []MessageCategoryCount
 	Operators      []MessageOperator
 	Compose        *MessageCompose
+}
+
+type MessageCategoryCount struct {
+	Key    string
+	Label  string
+	Total  int
+	Unread int
 }
 
 type Message struct {
@@ -93,9 +102,12 @@ func NormalizeMessagesLimit(commanderActive bool) int {
 	return MessagesLimitRegular
 }
 
-func NormalizeMessagesAction(targetPlayerID int) string {
+func NormalizeMessagesAction(targetPlayerID int, showSummary bool) string {
 	if targetPlayerID > 0 {
 		return MessagesActionCompose
+	}
+	if showSummary {
+		return MessagesActionSummary
 	}
 	return MessagesActionInbox
 }

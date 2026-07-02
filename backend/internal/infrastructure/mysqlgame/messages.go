@@ -71,7 +71,7 @@ func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.Messa
 		Commander:      overview.Commander,
 		CurrentPlanet:  overview.CurrentPlanet,
 		PlanetSwitcher: overview.PlanetSwitcher,
-		Action:         domaingame.NormalizeMessagesAction(query.TargetPlayerID),
+		Action:         domaingame.NormalizeMessagesAction(query.TargetPlayerID, query.ShowSummary),
 	}
 	if query.TargetPlayerID > 0 {
 		compose, err := r.loadComposeTarget(ctx, usersTable, planetsTable, query.TargetPlayerID)
@@ -92,6 +92,19 @@ func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.Messa
 	if err := r.deleteExpiredInboxMessages(ctx, messagesTable, query.PlayerID, retention); err != nil {
 		return domaingame.Messages{}, err
 	}
+	if query.ShowSummary {
+		summary, err := r.loadMessageCategoryCounts(ctx, messagesTable, query.PlayerID)
+		if err != nil {
+			return domaingame.Messages{}, err
+		}
+		messages.Summary = summary
+		operators, err := r.loadOperators(ctx, usersTable, uniTable, query.PlayerID)
+		if err != nil {
+			return domaingame.Messages{}, err
+		}
+		messages.Operators = operators
+		return messages, nil
+	}
 	rows, err := r.loadInboxRows(ctx, messagesTable, query.PlayerID, domaingame.NormalizeMessagesLimit(retention.CommanderActive))
 	if err != nil {
 		return domaingame.Messages{}, err
@@ -106,6 +119,64 @@ func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.Messa
 	}
 	messages.Operators = operators
 	return messages, nil
+}
+
+func (r MessagesRepository) loadMessageCategoryCounts(ctx context.Context, messagesTable string, playerID int) ([]domaingame.MessageCategoryCount, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT pm, COUNT(*), COALESCE(SUM(CASE WHEN shown = 0 THEN 1 ELSE 0 END), 0) FROM %s WHERE owner_id = ? AND pm <> ? GROUP BY pm", messagesTable),
+		playerID,
+		domaingame.MessageTypeBattleReportText,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	counts := defaultMessageCategoryCounts()
+	for rows.Next() {
+		var messageType int
+		var total int
+		var unread int
+		if err := rows.Scan(&messageType, &total, &unread); err != nil {
+			return nil, err
+		}
+		index := messageCategoryIndex(messageType)
+		counts[index].Total += total
+		counts[index].Unread += unread
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return counts, nil
+}
+
+func defaultMessageCategoryCounts() []domaingame.MessageCategoryCount {
+	return []domaingame.MessageCategoryCount{
+		{Key: "spy", Label: "Spy Reports"},
+		{Key: "battle", Label: "Combat Reports"},
+		{Key: "expedition", Label: "Expedition Reports"},
+		{Key: "alliance", Label: "Alliance Reports"},
+		{Key: "personal", Label: "Personal Messages"},
+		{Key: "other", Label: "Other"},
+	}
+}
+
+func messageCategoryIndex(messageType int) int {
+	switch messageType {
+	case domaingame.MessageTypeSpyReport:
+		return 0
+	case domaingame.MessageTypeBattleReportLink:
+		return 1
+	case domaingame.MessageTypeExpedition:
+		return 2
+	case domaingame.MessageTypeAlliance:
+		return 3
+	case domaingame.MessageTypePM:
+		return 4
+	default:
+		return 5
+	}
 }
 
 func (r MessagesRepository) loadOperators(ctx context.Context, usersTable string, uniTable string, playerID int) ([]domaingame.MessageOperator, error) {

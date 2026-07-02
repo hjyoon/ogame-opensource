@@ -53,6 +53,8 @@ const adminSeedStates = Array.from(new Set(reports.map((report) => (report.seedO
 const matchedEdges = reports.reduce((sum, report) => sum + report.summary.matchedEdges, 0);
 const totalEdges = reports.reduce((sum, report) => sum + report.summary.edges, 0);
 const exactFailures = reports.reduce((sum, report) => sum + report.summary.exactDiffFail, 0);
+const shownGapKeys = gapKeys.slice(0, 12);
+const hiddenGapCount = Math.max(0, gapKeys.length - shownGapKeys.length);
 const lines = [
   "# Navigation Visual Coverage",
   "",
@@ -85,7 +87,8 @@ const lines = [
   "| --- | ---: | ---: |",
   ...(gapKeys.length === 0
     ? ["| None | 0 | 0 |"]
-    : gapKeys.map((key) => `| \`${key}\` | ${gapCell(reports.find((report) => report.browserName === "chromium"), key)} | ${gapCell(reports.find((report) => report.browserName === "firefox"), key)} |`)),
+    : shownGapKeys.map((key) => `| \`${key}\` | ${gapCell(reports.find((report) => report.browserName === "chromium"), key)} | ${gapCell(reports.find((report) => report.browserName === "firefox"), key)} |`)),
+  ...(hiddenGapCount > 0 ? [`| ${hiddenGapCount} more in JSON | - | - |`] : []),
   "",
   "## Normalized Volatile Pixels",
   "",

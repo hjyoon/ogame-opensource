@@ -8,10 +8,12 @@ import { publicRouteManifest } from "../src/publicRouteManifest";
 type BrowserName = "chromium" | "firefox";
 type Area = "public" | "game";
 type Side = "legacy" | "migrated";
+type AuthRole = "player" | "admin";
 
 type SeedSpec = {
   name: string;
   area: Area;
+  authRole?: AuthRole;
   legacyURL: (session: string) => string;
   migratedURL: (session: string) => string;
 };
@@ -31,6 +33,7 @@ type CanonicalTarget = {
 };
 
 type EdgeSide = RawTarget & {
+  authRole?: AuthRole;
   canonical: CanonicalTarget;
 };
 
@@ -95,6 +98,8 @@ const legacyBaseURL = trimTrailingSlash(process.env.OGAME_LEGACY_BASE_URL ?? "ht
 const migratedBaseURL = trimTrailingSlash(process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890");
 const loginUser = process.env.OGAME_NAV_VISUAL_USER ?? "legor";
 const loginPassword = process.env.OGAME_NAV_VISUAL_PASS ?? "admin";
+const adminLoginUser = process.env.OGAME_NAV_VISUAL_ADMIN_USER ?? "visualadmin";
+const adminLoginPassword = process.env.OGAME_NAV_VISUAL_ADMIN_PASS ?? loginPassword;
 const enforceDiff = process.env.OGAME_NAV_VISUAL_ENFORCE_DIFF !== "0";
 const maxDiffRatio = numberEnv("OGAME_NAV_VISUAL_MAX_DIFF_RATIO", 0);
 const colorDeltaThreshold = numberEnv("OGAME_NAV_VISUAL_COLOR_DELTA", 0);
@@ -188,7 +193,9 @@ const adminModes = [
   "Mods"
 ];
 
-const adminSeeds: SeedSpec[] = adminModes.map((mode) => gameSeed(`game-admin-${kebab(mode)}`, "admin", "/game/admin", { mode }, { mode }));
+const adminSeeds: SeedSpec[] = adminModes.map((mode) =>
+  gameSeed(`game-admin-${kebab(mode)}`, "admin", "/game/admin", { mode }, { mode }, "admin")
+);
 
 const authSeeds: SeedSpec[] = [
   gameSeed("game-overview", "overview", "/game/overview"),
@@ -241,6 +248,7 @@ const seeds = [...publicSeeds, ...authSeeds, ...(includeAdminSeeds ? adminSeeds 
 const knownGamePaths = new Set([...gameRoutes.map((route) => route.path), "/game/changelog", "/game/reg/mail.php"]);
 const dynamicQueryKeys = new Set([
   "allyid",
+  "bericht",
   "betreff",
   "buddy_id",
   "cp",
@@ -334,6 +342,7 @@ try {
     browserName,
     browserExecutable: browserExecutable ?? "playwright-default",
     loginUser,
+    adminLoginUser,
     seedOptions: { includeAdminSeeds },
     thresholds: { enforceDiff, maxDiffRatio, colorDeltaThreshold },
     allPass: edges.every((edge) => edge.pass) && targetResults.every((target) => target.pass),
@@ -364,11 +373,13 @@ function gameSeed(
   legacyPage: string,
   migratedPath: string,
   legacyQuery: Record<string, string> = {},
-  migratedQuery: Record<string, string> = {}
+  migratedQuery: Record<string, string> = {},
+  authRole: AuthRole = "player"
 ): SeedSpec {
   return {
     name,
     area: "game",
+    authRole,
     legacyURL: (session) => {
       const query = new URLSearchParams({ page: legacyPage, session });
       for (const [key, value] of Object.entries(legacyQuery)) {
@@ -395,10 +406,15 @@ async function newContext(browser: Browser): Promise<BrowserContext> {
   });
 }
 
-async function loginLegacy(context: BrowserContext): Promise<string> {
+function credentialsForAuthRole(authRole: AuthRole = "player"): { user: string; password: string } {
+  return authRole === "admin" ? { user: adminLoginUser, password: adminLoginPassword } : { user: loginUser, password: loginPassword };
+}
+
+async function loginLegacy(context: BrowserContext, authRole: AuthRole = "player"): Promise<string> {
+  const credentials = credentialsForAuthRole(authRole);
   const page = await context.newPage();
   await page.goto(
-    `${legacyBaseURL}/game/reg/login2.php?login=${encodeURIComponent(loginUser)}&pass=${encodeURIComponent(loginPassword)}`,
+    `${legacyBaseURL}/game/reg/login2.php?login=${encodeURIComponent(credentials.user)}&pass=${encodeURIComponent(credentials.password)}`,
     { waitUntil: "networkidle", timeout: 15_000 }
   );
   const session = new URL(page.url()).searchParams.get("session") ?? "";
@@ -409,13 +425,14 @@ async function loginLegacy(context: BrowserContext): Promise<string> {
   return session;
 }
 
-async function loginMigrated(context: BrowserContext): Promise<string> {
+async function loginMigrated(context: BrowserContext, authRole: AuthRole = "player"): Promise<string> {
+  const credentials = credentialsForAuthRole(authRole);
   const page = await context.newPage();
   await page.goto(`${migratedBaseURL}/home`, { waitUntil: "networkidle", timeout: 15_000 });
   const universe = (await page.locator("select[name='universe'] option").nth(1).getAttribute("value")) ?? "http://localhost:8888";
   await page.locator("select[name='universe']").selectOption(universe);
-  await page.locator("input[name='login']").fill(loginUser);
-  await page.locator("input[name='pass']").fill(loginPassword);
+  await page.locator("input[name='login']").fill(credentials.user);
+  await page.locator("input[name='pass']").fill(credentials.password);
   await page.locator("input.legacy-public-login-button").click();
   await page.waitForFunction(() => window.location.pathname === "/game/overview" && window.location.search.includes("session="), undefined, {
     timeout: 10_000
@@ -443,14 +460,14 @@ async function discoverSeeds(browser: Browser, specs: SeedSpec[]): Promise<Disco
 async function collectSeedSide(browser: Browser, side: Side, seed: SeedSpec): Promise<EdgeSide[]> {
   const context = await newContext(browser);
   try {
-    const session = side === "legacy" ? await loginLegacy(context) : await loginMigrated(context);
+    const session = side === "legacy" ? await loginLegacy(context, seed.authRole) : await loginMigrated(context, seed.authRole);
     const url = side === "legacy" ? seed.legacyURL(session) : seed.migratedURL(session);
     return await collectSideTargets(context, side, seed, url);
   } catch (error) {
     if (!(error instanceof InvalidGameSessionError)) {
       throw error;
     }
-    const session = side === "legacy" ? await loginLegacy(context) : await loginMigrated(context);
+    const session = side === "legacy" ? await loginLegacy(context, seed.authRole) : await loginMigrated(context, seed.authRole);
     const url = side === "legacy" ? seed.legacyURL(session) : seed.migratedURL(session);
     return await collectSideTargets(context, side, seed, url);
   } finally {
@@ -589,8 +606,9 @@ async function collectSideTargets(context: BrowserContext, side: Side, seed: See
       }
       return targets;
     });
+    rawTargets.push(...(await collectInteractiveHoverTargets(page)));
     const canonicalTargets = rawTargets
-      .map((target) => toEdgeSide(target, page.url(), side, seed.area))
+      .map((target) => toEdgeSide(target, page.url(), side, seed.area, seed.authRole))
       .filter((target): target is EdgeSide => target !== null);
     return dedupeTargets(canonicalTargets);
   } finally {
@@ -598,7 +616,52 @@ async function collectSideTargets(context: BrowserContext, side: Side, seed: See
   }
 }
 
-function toEdgeSide(raw: RawTarget, baseURL: string, side: Side, area: Area): EdgeSide | null {
+async function collectInteractiveHoverTargets(page: Page): Promise<RawTarget[]> {
+  const hoverSelector = "[data-galaxy-hover], .legacy-statistics-delta, .legacy-galaxy-hover";
+  const hoverLocators = page.locator(hoverSelector);
+  const count = Math.min(await hoverLocators.count().catch(() => 0), 120);
+  const targets: RawTarget[] = [];
+  const seen = new Set<string>();
+  for (let index = 0; index < count; index += 1) {
+    const hover = hoverLocators.nth(index);
+    if (!(await hover.isVisible().catch(() => false))) {
+      continue;
+    }
+    await hover.hover({ timeout: 1_000 }).catch(() => undefined);
+    await page.waitForTimeout(25);
+    const hoveredTargets = await page.evaluate(() => {
+      const visibleLabel = (element: Element): string => {
+        const text = element.textContent?.replace(/\s+/g, " ").trim() ?? "";
+        if (text !== "") {
+          return text;
+        }
+        const image = element.querySelector("img");
+        return image?.getAttribute("alt") || image?.getAttribute("title") || element.getAttribute("title") || element.getAttribute("name") || "";
+      };
+      const targets: RawTarget[] = [];
+      for (const anchor of Array.from(
+        document.querySelectorAll<HTMLAnchorElement>(
+          "#overDiv a[href], .legacy-galaxy-hover-open a[href], .legacy-galaxy-tooltip a[href], .legacy-statistics-tooltip a[href]"
+        )
+      )) {
+        const rawHref = anchor.getAttribute("href") ?? "";
+        targets.push({ kind: "hover", label: visibleLabel(anchor), url: rawHref, method: "GET" });
+      }
+      return targets;
+    });
+    for (const target of hoveredTargets) {
+      const key = `${target.kind}:${target.method}:${target.url}:${target.label}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        targets.push(target);
+      }
+    }
+  }
+  await page.mouse.move(0, 0).catch(() => undefined);
+  return targets;
+}
+
+function toEdgeSide(raw: RawTarget, baseURL: string, side: Side, area: Area, authRole: AuthRole = "player"): EdgeSide | null {
   const absolute = absoluteURL(raw.url, baseURL);
   if (!absolute || !isAllowedNavigation(absolute, side)) {
     return null;
@@ -607,7 +670,7 @@ function toEdgeSide(raw: RawTarget, baseURL: string, side: Side, area: Area): Ed
   if (!canonical) {
     return null;
   }
-  return { ...raw, url: absolute.toString(), canonical };
+  return { ...raw, url: absolute.toString(), authRole, canonical };
 }
 
 function dedupeTargets(targets: EdgeSide[]): EdgeSide[] {
@@ -697,7 +760,7 @@ function canonicalGamePath(url: URL): string | null {
 
 function normalizedQuery(params: URLSearchParams, target: { area: Area; path: string }): string {
   const normalizedParams = canonicalQueryParams(params, target);
-  const ignored = new Set(["session", "lgn", "chose", "v", "no_header", "dsp"]);
+  const ignored = new Set(["session", "lgn", "chose", "v", "no_header"]);
   if (target.area === "game") {
     ignored.add("page");
     if (target.path === "/game/research" || target.path === "/game/shipyard" || target.path === "/game/defense") {
@@ -753,6 +816,9 @@ function canonicalQueryParams(params: URLSearchParams, target: { area: Area; pat
       normalized.delete("pdd");
       normalized.delete("zp");
     }
+  }
+  if (target.path === "/game/empire" && normalized.get("planettype") === "1") {
+    normalized.delete("planettype");
   }
   if (target.path === "/game/fleet") {
     if (!normalized.has("planet") && normalized.has("position")) {
@@ -811,7 +877,7 @@ async function compareTargets(
     const safeName = safeFileName(representative.canonical.key);
 
     const legacyLoginContext = await newContext(browser);
-    const legacySession = await loginLegacy(legacyLoginContext);
+    const legacySession = await loginLegacy(legacyLoginContext, representative.legacy.authRole);
     let legacy: Capture;
     try {
       const legacyURL = withSession(representative.legacy.url, legacySession);
@@ -821,7 +887,7 @@ async function compareTargets(
     }
 
     const migratedLoginContext = await newContext(browser);
-    const migratedSession = await loginMigrated(migratedLoginContext);
+    const migratedSession = await loginMigrated(migratedLoginContext, representative.migrated.authRole);
     try {
       results.set(representative.canonical.key, await compareCapturedTarget(browser, representative, legacy, migratedSession, migratedLoginContext));
     } finally {
@@ -1265,6 +1331,7 @@ function renderReport(report: {
   browserName: string;
   browserExecutable: string;
   loginUser: string;
+  adminLoginUser: string;
   seedOptions: { includeAdminSeeds: boolean };
   thresholds: { enforceDiff: boolean; maxDiffRatio: number; colorDeltaThreshold: number };
   allPass: boolean;
@@ -1280,6 +1347,7 @@ function renderReport(report: {
     `- Migrated: ${report.migratedBaseURL}`,
     `- Browser: ${report.browserName} (${report.browserExecutable})`,
     `- Login User: ${report.loginUser}`,
+    `- Admin Login User: ${report.adminLoginUser}`,
     `- Admin Seeds: ${report.seedOptions.includeAdminSeeds ? "included" : "excluded"}`,
     `- Diff Enforced: ${report.thresholds.enforceDiff}`,
     `- Max Diff Ratio: ${formatNumber(report.thresholds.maxDiffRatio)}`,
@@ -1323,6 +1391,7 @@ function renderCoverage(report: {
   migratedBaseURL: string;
   browserName: string;
   loginUser: string;
+  adminLoginUser: string;
   seedOptions: { includeAdminSeeds: boolean };
   thresholds: { enforceDiff: boolean; maxDiffRatio: number; colorDeltaThreshold: number };
   allPass: boolean;
@@ -1345,6 +1414,7 @@ function renderCoverage(report: {
     `- Migrated: ${report.migratedBaseURL}`,
     `- Browser: ${report.browserName}`,
     `- Login User: ${report.loginUser}`,
+    `- Admin Login User: ${report.adminLoginUser}`,
     `- Admin Seeds: ${report.seedOptions.includeAdminSeeds ? "included" : "excluded"}`,
     `- Exact diff threshold: ${formatNumber(report.thresholds.maxDiffRatio)}`,
     `- Result: ${report.allPass ? "PASS" : "FAIL"}`,

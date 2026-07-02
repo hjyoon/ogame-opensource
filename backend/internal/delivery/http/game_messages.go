@@ -22,8 +22,16 @@ type gameMessagesSummary struct {
 	PlanetSwitcher []gamePlanetSummaryResponse `json:"planetSwitcher"`
 	Action         string                      `json:"action"`
 	Rows           []gameMessageResponse       `json:"rows"`
+	Summary        []gameMessageCategoryCount  `json:"summary"`
 	Operators      []gameMessageOperator       `json:"operators"`
 	Compose        *gameMessageComposeResponse `json:"compose,omitempty"`
+}
+
+type gameMessageCategoryCount struct {
+	Key    string `json:"key"`
+	Label  string `json:"label"`
+	Total  int    `json:"total"`
+	Unread int    `json:"unread"`
 }
 
 type gameMessageResponse struct {
@@ -108,6 +116,7 @@ func (a app) handleGameMessagesGet(w http.ResponseWriter, r *http.Request) {
 		PlanetID:        planetID,
 		TargetPlayerID:  targetPlayerID,
 		Subject:         r.URL.Query().Get("betreff"),
+		ShowSummary:     r.URL.Query().Get("dsp") == "1",
 	})
 	if err != nil {
 		http.Error(w, "game messages unavailable", http.StatusServiceUnavailable)
@@ -193,6 +202,15 @@ func toGameMessagesSummary(messages domaingame.Messages) gameMessagesSummary {
 	for _, row := range messages.Rows {
 		rows = append(rows, toGameMessageResponse(row))
 	}
+	summary := make([]gameMessageCategoryCount, 0, len(messages.Summary))
+	for _, category := range messages.Summary {
+		summary = append(summary, gameMessageCategoryCount{
+			Key:    category.Key,
+			Label:  category.Label,
+			Total:  category.Total,
+			Unread: category.Unread,
+		})
+	}
 	operators := make([]gameMessageOperator, 0, len(messages.Operators))
 	for _, operator := range messages.Operators {
 		operators = append(operators, toGameMessageOperator(operator))
@@ -208,6 +226,7 @@ func toGameMessagesSummary(messages domaingame.Messages) gameMessagesSummary {
 		PlanetSwitcher: planets,
 		Action:         messages.Action,
 		Rows:           rows,
+		Summary:        summary,
 		Operators:      operators,
 		Compose:        compose,
 	}

@@ -1848,7 +1848,7 @@ function App() {
     }
     const currentSearch = new URLSearchParams(search);
     const messagesRequest = new URLSearchParams({ session: publicSession });
-    for (const key of ["cp", "messageziel", "re", "betreff"]) {
+    for (const key of ["cp", "dsp", "messageziel", "re", "betreff"]) {
       const value = currentSearch.get(key);
       if (value) {
         messagesRequest.set(key, value);

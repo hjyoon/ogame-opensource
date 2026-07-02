@@ -149,6 +149,9 @@ export function gameMenuRouteURL(path: string, search: string): string {
   const query = new URLSearchParams();
   copyQueryValue(source, query, "session");
   copyQueryValue(source, query, "cp");
+  if (normalizeGamePath(path) === "/game/messages") {
+    copyQueryValue(source, query, "dsp");
+  }
   const encoded = query.toString();
   return encoded ? `${path}?${encoded}` : path;
 }

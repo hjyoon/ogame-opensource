@@ -9,7 +9,9 @@ func TestMessagesNormalization(t *testing.T) {
 	if NormalizeMessagesLimit(false) != MessagesLimitRegular || NormalizeMessagesLimit(true) != MessagesLimitCommander {
 		t.Fatal("unexpected messages limit")
 	}
-	if NormalizeMessagesAction(7) != MessagesActionCompose || NormalizeMessagesAction(0) != MessagesActionInbox {
+	if NormalizeMessagesAction(7, true) != MessagesActionCompose ||
+		NormalizeMessagesAction(0, false) != MessagesActionInbox ||
+		NormalizeMessagesAction(0, true) != MessagesActionSummary {
 		t.Fatal("unexpected messages action")
 	}
 	if NormalizeMessagesMutationAction(MessagesMutationActionSend) != MessagesMutationActionSend ||
