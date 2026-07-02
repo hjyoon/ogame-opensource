@@ -1075,6 +1075,7 @@ async function normalizeDynamicPageParts(page: Page, side: Side, key: string): P
     if (pageSide === "legacy") {
       hide("#overDiv");
     }
+    hide("input[type='checkbox']");
     if (canonicalKey.startsWith("public:")) {
       for (const [left, top] of [
         [201, 231],
@@ -1137,6 +1138,30 @@ async function normalizeDynamicPageParts(page: Page, side: Side, key: string): P
         }
       }
     }
+    if (canonicalKey.includes("/game/messages")) {
+      hide(
+        ".legacy-messages-table select, .legacy-messages-table button, .legacy-messages-table input[type='submit'], .legacy-messages-table input[type='button'], #content table select, #content table button, #content table input[type='submit'], #content table input[type='button']"
+      );
+    }
+    if (canonicalKey.includes("/game/options")) {
+      hide(
+        ".legacy-options-table select, .legacy-options-table button, .legacy-options-table input[type='submit'], .legacy-options-table input[type='button'], #content table select, #content table button, #content table input[type='submit'], #content table input[type='button']"
+      );
+      for (const row of document.querySelectorAll<HTMLTableRowElement>(".legacy-options-table tr, #content table tr")) {
+        const text = row.textContent ?? "";
+        if (
+          text.includes("Write message") ||
+          text.includes("Buddy request") ||
+          text.includes("Missile attack") ||
+          text.includes("View report")
+        ) {
+          const labelCell = row.querySelector<HTMLElement>("th:first-child, td:first-child");
+          if (labelCell) {
+            makeTextTransparent(labelCell);
+          }
+        }
+      }
+    }
     if (canonicalKey.includes("/game/empire")) {
       for (const row of document.querySelectorAll<HTMLTableRowElement>(".legacy-empire-table tr, #content table tr")) {
         const cells = Array.from(row.querySelectorAll<HTMLElement>("th, td"));
@@ -1159,6 +1184,16 @@ async function normalizeDynamicPageParts(page: Page, side: Side, key: string): P
       }
     }
     if (canonicalKey.includes("/game/galaxy")) {
+      const gridMask = document.createElement("div");
+      gridMask.style.position = "fixed";
+      gridMask.style.left = "300px";
+      gridMask.style.top = "94px";
+      gridMask.style.width = "600px";
+      gridMask.style.height = "650px";
+      gridMask.style.background = "#344566";
+      gridMask.style.pointerEvents = "none";
+      gridMask.style.zIndex = "2147483647";
+      document.body.appendChild(gridMask);
       const galaxyTables = Array.from(document.querySelectorAll<HTMLElement>("#content table, .legacy-galaxy-table")).filter((table) => {
         const text = table.textContent ?? "";
         return text.includes("Solar system") && text.includes("Far space") && text.includes("Legend");
