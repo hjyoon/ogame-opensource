@@ -1789,7 +1789,13 @@ func (r AdminRepository) loadAdminPlanetDetail(ctx context.Context, planetID int
 func (r AdminRepository) loadAdminRelatedPlanet(ctx context.Context, planetsTable string, coordinates domaingame.Coordinates, planetType int) (*domaingame.AdminPlanetRow, error) {
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT planet_id, COALESCE(name, ''), COALESCE(date, 0), COALESCE(g, 0), COALESCE(s, 0), COALESCE(p, 0) FROM %s WHERE g = ? AND s = ? AND p = ? AND type = ? LIMIT 1", planetsTable),
+		fmt.Sprintf(
+			"SELECT planet_id, COALESCE(name, ''), COALESCE(date, 0), COALESCE(g, 0), COALESCE(s, 0), COALESCE(p, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0) FROM %s WHERE g = ? AND s = ? AND p = ? AND type = ? LIMIT 1",
+			resourceMetal,
+			resourceCrystal,
+			resourceDeuterium,
+			planetsTable,
+		),
 		coordinates.Galaxy,
 		coordinates.System,
 		coordinates.Position,
@@ -1803,7 +1809,17 @@ func (r AdminRepository) loadAdminRelatedPlanet(ctx context.Context, planetsTabl
 		return nil, rows.Err()
 	}
 	var row domaingame.AdminPlanetRow
-	if err := rows.Scan(&row.ID, &row.Name, &row.Date, &row.Coordinates.Galaxy, &row.Coordinates.System, &row.Coordinates.Position); err != nil {
+	if err := rows.Scan(
+		&row.ID,
+		&row.Name,
+		&row.Date,
+		&row.Coordinates.Galaxy,
+		&row.Coordinates.System,
+		&row.Coordinates.Position,
+		&row.Resources.Metal,
+		&row.Resources.Crystal,
+		&row.Resources.Deuterium,
+	); err != nil {
 		return nil, err
 	}
 	return &row, rows.Err()

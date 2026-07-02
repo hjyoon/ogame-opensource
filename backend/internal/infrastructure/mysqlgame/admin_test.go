@@ -2145,7 +2145,7 @@ func TestAdminRepositoryReadsSelectedPlanetDetail(t *testing.T) {
 			map[int]int{domaingame.FleetSmallCargo: 4, domaingame.FleetSolarSatellite: 3},
 			map[int]int{domaingame.DefenseRocketLauncher: 5},
 		))},
-		fakeQueryResult{rows: fakeRowsFromValues([]any{801, "Moon", int64(1700000200), 1, 55, 7})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{801, "Moon", int64(1700000200), 1, 55, 7, float64(0), float64(0), float64(0)})},
 		fakeQueryResult{rows: fakeRowsFromValues()},
 		fakeQueryResult{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{
 			ID:       901,

@@ -183,6 +183,7 @@ type AdminPlanetRow struct {
 	Name        string
 	Date        int64
 	Coordinates Coordinates
+	Resources   Resources
 	Owner       *AdminUserRow
 }
 

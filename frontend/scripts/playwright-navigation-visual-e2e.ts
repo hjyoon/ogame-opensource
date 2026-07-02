@@ -1162,6 +1162,26 @@ async function normalizeDynamicPageParts(page: Page, side: Side, key: string): P
         }
       }
     }
+    if (canonicalKey.includes("/game/defense")) {
+      hide(
+        ".legacy-defense-table input[type='submit'], .legacy-defense-table input[type='button'], .legacy-defense-table button, #content table input[type='submit'], #content table input[type='button'], #content table button"
+      );
+    }
+    if (canonicalKey.includes("/game/fleet-templates")) {
+      for (const title of document.querySelectorAll<HTMLElement>(".legacy-fleet-templates-table tr:first-child td, #content table tr:first-child td")) {
+        if (title.textContent?.includes("Standard Fleets")) {
+          makeTextTransparent(title);
+        }
+      }
+    }
+    if (canonicalKey.includes("/game/merchant")) {
+      for (const row of document.querySelectorAll<HTMLTableRowElement>(".legacy-merchant-exchange-table tr, #content table tr")) {
+        const cells = Array.from(row.querySelectorAll<HTMLElement>("th, td"));
+        if (cells.length >= 4 && !row.textContent?.includes("Free storage")) {
+          makeTextTransparent(cells[2]);
+        }
+      }
+    }
     if (canonicalKey.includes("/game/empire")) {
       for (const row of document.querySelectorAll<HTMLTableRowElement>(".legacy-empire-table tr, #content table tr")) {
         const cells = Array.from(row.querySelectorAll<HTMLElement>("th, td"));
@@ -1212,6 +1232,11 @@ async function normalizeDynamicPageParts(page: Page, side: Side, key: string): P
       hide("#content img[src$='b.gif'], .legacy-galaxy-table img[src$='b.gif']");
     }
     if (canonicalKey.includes("/game/statistics")) {
+      hide("#resources tr:nth-child(2) td");
+      hide("#resources tr:nth-child(3) td");
+      if (canonicalKey.includes("who=ally")) {
+        hide(".legacy-statistics-form select, .legacy-statistics-form input[type='submit'], #content form select, #content form input[type='submit']");
+      }
       for (const cell of document.querySelectorAll<HTMLTableCellElement>(".legacy-statistics-head-table td, #content table td")) {
         if (cell.textContent?.trim().startsWith("Statistics (as of:")) {
           cell.textContent = "Statistics (as of: 2026-06-19, 00:00:00)";

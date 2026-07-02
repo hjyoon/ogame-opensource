@@ -175,6 +175,7 @@ type gameAdminPlanetRow struct {
 	Name        string                  `json:"name"`
 	Date        int64                   `json:"date"`
 	Coordinates gameCoordinatesResponse `json:"coordinates"`
+	Resources   gameResourcesResponse   `json:"resources"`
 	Owner       *gameAdminUserRow       `json:"owner,omitempty"`
 }
 
@@ -756,7 +757,12 @@ func toGameAdminPlanetRow(row domaingame.AdminPlanetRow) gameAdminPlanetRow {
 		Name:        row.Name,
 		Date:        row.Date,
 		Coordinates: toGameCoordinatesResponse(row.Coordinates),
-		Owner:       owner,
+		Resources: gameResourcesResponse{
+			Metal:     row.Resources.Metal,
+			Crystal:   row.Resources.Crystal,
+			Deuterium: row.Resources.Deuterium,
+		},
+		Owner: owner,
 	}
 }
 
