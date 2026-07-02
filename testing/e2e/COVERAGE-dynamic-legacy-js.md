@@ -35,11 +35,12 @@ BattleSim slot sync, and BotEdit init/load/save/rename/new/preview/export.
 `run-playwright-public-registration-dynamic-e2e.sh` separately compares public
 register focus help, username polling, direct error URLs, and submit errors.
 
-## Required Follow-up
+## Maintenance Rules
 
 1. Keep DOM/text assertions for every masked selector.
-2. Add isolated cases for unsupported legacy-only mutating JS.
+2. Add isolated cases when unsupported legacy-only mutating JS is found.
 3. Run both legacy PHP and Go+Bun where possible.
 
-Current conclusion: core visible dynamics are substantially migrated. Remaining
-work is fine-grained client behavior, not static page layout.
+Current conclusion: the finite authenticated dynamic registry has 55 cases and
+no listed remaining cases. Future additions are discovery-driven fine-grained
+client behavior, not static page layout.
