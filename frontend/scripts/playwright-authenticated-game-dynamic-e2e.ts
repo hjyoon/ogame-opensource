@@ -10,6 +10,7 @@ import {
   type GameDynamicAction,
   type GameDynamicAssertion,
   type GameDynamicBehaviorSpec,
+  type GameFixtureFeature,
   type SideName
 } from "./visual/game-dynamic-behavior-registry";
 import { deterministicScreenshotCSS, numberEnv, trimTrailingSlash } from "./visual/game-visual-utils";
@@ -104,14 +105,14 @@ try {
     }
 
     if (spec.isolateSides) {
-      fixture = await refreshAuthFixture();
+      fixture = await refreshAuthFixture(spec);
     }
     const legacyContext = await newContext(browser, legacyBaseURL, spec);
     const legacy = await runSide(legacyContext, "legacy", spec, legacyURL(spec));
     await legacyContext.close();
 
     if (spec.isolateSides) {
-      fixture = await refreshAuthFixture();
+      fixture = await refreshAuthFixture(spec);
     }
     const migratedContext = await newContext(browser, migratedBaseURL, spec);
     const migrated = await runSide(migratedContext, "migrated", spec, migratedURL(spec));
@@ -202,7 +203,7 @@ function parseAuthFixture(raw: string, label: string): AuthFixture {
   return parsed;
 }
 
-async function refreshAuthFixture(): Promise<AuthFixture> {
+async function refreshAuthFixture(spec?: GameDynamicBehaviorSpec): Promise<AuthFixture> {
   if (process.env.OGAME_GAME_DYNAMIC_PREPARE_FIXTURE === "0") {
     return loadAuthFixture(fixtureFile);
   }
@@ -217,15 +218,15 @@ async function refreshAuthFixture(): Promise<AuthFixture> {
       "exec",
       "-T",
       "-e",
-      `OGAME_GAME_VISUAL_COMMANDER_FIXTURE=${process.env.OGAME_GAME_VISUAL_COMMANDER_FIXTURE ?? "1"}`,
+      `OGAME_GAME_VISUAL_COMMANDER_FIXTURE=${fixtureFeatureFlag(spec, "commander", "1")}`,
       "-e",
-      `OGAME_GAME_VISUAL_ALLIANCE_FIXTURE=${process.env.OGAME_GAME_VISUAL_ALLIANCE_FIXTURE ?? "1"}`,
+      `OGAME_GAME_VISUAL_ALLIANCE_FIXTURE=${fixtureFeatureFlag(spec, "alliance", "1")}`,
       "-e",
-      `OGAME_GAME_VISUAL_REPORT_FIXTURE=${process.env.OGAME_GAME_VISUAL_REPORT_FIXTURE ?? "0"}`,
+      `OGAME_GAME_VISUAL_REPORT_FIXTURE=${fixtureFeatureFlag(spec, "report", "1")}`,
       "-e",
-      `OGAME_GAME_VISUAL_PHALANX_FIXTURE=${process.env.OGAME_GAME_VISUAL_PHALANX_FIXTURE ?? "0"}`,
+      `OGAME_GAME_VISUAL_PHALANX_FIXTURE=${fixtureFeatureFlag(spec, "phalanx", "1")}`,
       "-e",
-      `OGAME_GAME_VISUAL_ACS_FIXTURE=${process.env.OGAME_GAME_VISUAL_ACS_FIXTURE ?? "0"}`,
+      `OGAME_GAME_VISUAL_ACS_FIXTURE=${fixtureFeatureFlag(spec, "acs", "1")}`,
       "-e",
       `OGAME_GAME_VISUAL_USER=${process.env.OGAME_GAME_VISUAL_USER ?? ""}`,
       "-e",
@@ -242,6 +243,15 @@ async function refreshAuthFixture(): Promise<AuthFixture> {
     await writeFile(resolve(rootDir, fixtureFile), stdout);
   }
   return parseAuthFixture(stdout, "refreshed authenticated game fixture");
+}
+
+function fixtureFeatureFlag(spec: GameDynamicBehaviorSpec | undefined, feature: GameFixtureFeature, defaultValue: "0" | "1"): string {
+  const override = spec?.fixtureFeatures?.[feature];
+  if (override !== undefined) {
+    return override ? "1" : "0";
+  }
+  const envName = `OGAME_GAME_VISUAL_${feature.toUpperCase()}_FIXTURE`;
+  return process.env[envName] ?? defaultValue;
 }
 
 async function newContext(browserInstance: Browser, baseURL: string, spec: GameDynamicBehaviorSpec): Promise<BrowserContext> {

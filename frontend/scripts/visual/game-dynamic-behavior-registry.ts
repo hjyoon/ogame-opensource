@@ -1,4 +1,5 @@
 export type SideName = "legacy" | "migrated";
+export type GameFixtureFeature = "acs" | "alliance" | "commander" | "phalanx" | "report";
 
 export type GameDynamicAction = {
   type: "click" | "fill" | "type" | "select" | "hover" | "press" | "wait" | "popup";
@@ -44,7 +45,8 @@ export type GameDynamicBehaviorSpec = {
   applicabilitySelector?: string;
   legacyApplicabilitySelector?: string;
   migratedApplicabilitySelector?: string;
-  requiredFixtureFeatures?: Array<"acs" | "alliance" | "commander" | "phalanx" | "report">;
+  requiredFixtureFeatures?: GameFixtureFeature[];
+  fixtureFeatures?: Partial<Record<GameFixtureFeature, boolean>>;
   isolateSides?: boolean;
   actions: GameDynamicAction[];
   assertions: GameDynamicAssertion[];
@@ -1474,7 +1476,9 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
   },
   {
     name: "phalanx-event-countdown-decrements",
+    isolateSides: true,
     fixedClock: false,
+    fixtureFeatures: { acs: false },
     legacyPage: "phalanx",
     legacyQuery: { cp: "$fixture.phalanx.source_moon_id", spid: "$fixture.phalanx.target_planet_id" },
     migratedPath: "/game/phalanx",
@@ -1501,7 +1505,10 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
         expected: "true"
       }
     ],
-    notes: ["Requires OGAME_GAME_VISUAL_PHALANX_FIXTURE=1; covers phalanx bxx countdown text changing while the legacy title stays at the initial duration."]
+    notes: [
+      "Requires OGAME_GAME_VISUAL_PHALANX_FIXTURE=1; covers phalanx bxx countdown text changing while the legacy title stays at the initial duration.",
+      "Runs with ACS disabled so the scanned target has only the dedicated phalanx fixture fleet pair."
+    ]
   },
   {
     name: "merchant-exchange-rate-tooltip",
