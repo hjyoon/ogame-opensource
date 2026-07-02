@@ -540,6 +540,14 @@ async function collectSideTargets(context: BrowserContext, side: Side, seed: See
         if (/changeAction\(['"]getpw['"]\)/i.test(script)) {
           return "/game/reg/mail.php";
         }
+        const messageMenuMatch = script.match(/showMessageMenu\((\d+)\)/i);
+        if (messageMenuMatch?.[1]) {
+          return `index.php?page=writemessages&messageziel=${messageMenuMatch[1]}`;
+        }
+        const escapedLocationMatch = script.match(/(?:document\.)?location(?:\.href)?\s*=\s*\\['"]([^'"]+)\\['"]/i);
+        if (escapedLocationMatch?.[1]) {
+          return escapedLocationMatch[1];
+        }
         const locationMatch = script.match(/(?:document\.)?location(?:\.href)?\s*=\s*['"]([^'"]+)['"]/i);
         if (locationMatch?.[1]) {
           return locationMatch[1];
@@ -628,7 +636,7 @@ async function collectInteractiveHoverTargets(page: Page): Promise<RawTarget[]> 
       continue;
     }
     await hover.hover({ timeout: 1_000 }).catch(() => undefined);
-    await page.waitForTimeout(25);
+    await page.waitForTimeout(850);
     const hoveredTargets = await page.evaluate(() => {
       const visibleLabel = (element: Element): string => {
         const text = element.textContent?.replace(/\s+/g, " ").trim() ?? "";
@@ -825,6 +833,9 @@ function canonicalQueryParams(params: URLSearchParams, target: { area: Area; pat
       normalized.set("planet", normalized.get("position") ?? "");
     }
     normalized.delete("position");
+  }
+  if (target.path === "/game/messages" && !normalized.has("messageziel")) {
+    normalized.set("dsp", "1");
   }
   if (target.path === "/game/alliance" && normalized.get("page") === "bewerben" && !normalized.has("a")) {
     normalized.set("a", "2");
@@ -1123,6 +1134,27 @@ async function normalizeDynamicPageParts(page: Page, side: Side, key: string): P
         }
         if (cells[0]?.textContent?.trim() === "Points" && cells[1]) {
           cells[1].textContent = "0 (Rank 0 of 1.066)";
+        }
+      }
+    }
+    if (canonicalKey.includes("/game/empire")) {
+      for (const row of document.querySelectorAll<HTMLTableRowElement>(".legacy-empire-table tr, #content table tr")) {
+        const cells = Array.from(row.querySelectorAll<HTMLElement>("th, td"));
+        const label = cells[0]?.textContent?.trim() ?? "";
+        if (label === "Coordinates") {
+          for (const cell of cells.slice(1, -1)) {
+            cell.textContent = "[0:0:0]";
+          }
+        }
+        if (label === "Metal" || label === "Crystal" || label === "Deuterium") {
+          for (const cell of cells.slice(1)) {
+            cell.textContent = "000.000 / 0";
+          }
+        }
+        if (label === "Energy") {
+          for (const cell of cells.slice(1)) {
+            cell.textContent = "0 / 0";
+          }
         }
       }
     }

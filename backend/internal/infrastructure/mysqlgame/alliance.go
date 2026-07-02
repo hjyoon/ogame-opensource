@@ -256,6 +256,13 @@ func (r AllianceRepository) populateOwnAlliance(ctx context.Context, alliance do
 	alliance.Own = own
 	alliance.TextKind = domaingame.NormalizeAllianceTextKind(query.TextKind)
 	switch query.View {
+	case domaingame.AllianceViewApply:
+		target, err := r.loadAllianceInfo(ctx, query.AllianceID)
+		if err != nil {
+			return domaingame.Alliance{}, err
+		}
+		alliance.Target = target
+		alliance.View = domaingame.AllianceViewApply
 	case domaingame.AllianceViewApplications:
 		alliance.View = domaingame.AllianceViewApplications
 		applications, err := r.loadAllianceApplications(ctx, alliance.Viewer.AllianceID)
@@ -309,6 +316,8 @@ func (r AllianceRepository) populateOwnAlliance(ctx context.Context, alliance do
 			return domaingame.Alliance{}, err
 		}
 		alliance.Ranks = ranks
+	case domaingame.AllianceViewRenameTag, domaingame.AllianceViewRenameName:
+		alliance.View = query.View
 	default:
 		alliance.View = domaingame.AllianceViewHome
 	}

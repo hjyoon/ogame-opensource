@@ -3765,7 +3765,7 @@ func TestGameMessagesEndpointReturnsInbox(t *testing.T) {
 		t.Fatalf("unexpected message row mapping: %+v", row)
 	}
 	if messages.command.PublicSession != "public" || messages.command.PlanetID != 99 || messages.command.TargetPlayerID != 77 ||
-		messages.command.Subject != "Re:Subject" || !messages.command.ShowSummary || messages.command.RemoteAddr != "203.0.113.10" {
+		messages.command.Subject != "Re:Subject" || messages.command.ShowSummary || messages.command.RemoteAddr != "203.0.113.10" {
 		t.Fatalf("unexpected messages command: %+v", messages.command)
 	}
 	if messages.command.PrivateSessions["prsess_42_1"] != "private" {
@@ -3773,6 +3773,24 @@ func TestGameMessagesEndpointReturnsInbox(t *testing.T) {
 	}
 	if bytes.Contains(rec.Body.Bytes(), []byte("private")) {
 		t.Fatalf("game messages response must not echo private session: %s", rec.Body.String())
+	}
+}
+
+func TestGameMessagesEndpointRequestsSummaryForDefaultInbox(t *testing.T) {
+	messages := &fakeGameMessages{result: appgame.MessagesResult{
+		Authenticated: true,
+		Messages:      domaingame.Messages{Action: domaingame.MessagesActionSummary},
+	}}
+	server := testServerWithGameMessages(t, messages)
+	req := httptest.NewRequest(http.MethodGet, "/api/game/messages?session=public", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if !messages.command.ShowSummary || messages.command.TargetPlayerID != 0 {
+		t.Fatalf("expected default messages query to request summary, got %+v", messages.command)
 	}
 }
 

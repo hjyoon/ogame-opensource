@@ -58,6 +58,8 @@ const (
 	AllianceViewManagement   AllianceView = "management"
 	AllianceViewRanks        AllianceView = "ranks"
 	AllianceViewCircular     AllianceView = "circular"
+	AllianceViewRenameTag    AllianceView = "rename_tag"
+	AllianceViewRenameName   AllianceView = "rename_name"
 )
 
 type Alliance struct {

@@ -393,6 +393,7 @@ type GameEmpireLevelRow = {
 type GameEmpireLevelValue = {
   planetId: number;
   level: number;
+  canBuild: boolean;
   queue?: GameEmpireBuildQueueEntry[];
 };
 
@@ -6170,6 +6171,9 @@ function AllianceTable({
   if (alliance.view === "ranks" && alliance.own) {
     return <AllianceRanksTable alliance={alliance} onAction={onAction} pending={pending} />;
   }
+  if ((alliance.view === "rename_tag" || alliance.view === "rename_name") && alliance.own) {
+    return <AllianceRenameTable alliance={alliance} />;
+  }
   if (alliance.view === "management" && alliance.own) {
     return <AllianceManagementTable alliance={alliance} onAction={onAction} pending={pending} />;
   }
@@ -7098,6 +7102,50 @@ ${textValue.length}</span> / 5000 characters)`
   );
 }
 
+function AllianceRenameTable({ alliance }: { alliance: GameAlliance }) {
+  const own = alliance.own;
+  if (!own) {
+    return null;
+  }
+  const changingTag = alliance.view === "rename_tag";
+  const fieldName = changingTag ? "newtag" : "newname";
+  const maxLength = changingTag ? 8 : 30;
+  const action = allianceURL({ a: changingTag ? "9" : "10", weiter: "1" });
+  const heading = changingTag
+    ? `How should the alliance "${own.tag}" be renamed?New abbreviation: ${own.tag}.`
+    : `How should alliance "${own.name}" be renamed?New name:`;
+  const label = changingTag ? "New abbreviation: #1." : "New name:";
+  return (
+    <LegacyCenter>
+      <script src="/public-assets/game/js/cntchar.js" type="text/javascript" />
+      <script src="/public-assets/game/js/win.js" type="text/javascript" />
+      <form
+        action={action}
+        method="post"
+        onSubmit={(event) => {
+          event.preventDefault();
+        }}
+      >
+        <table width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c" colSpan={2}>
+                {heading}
+              </td>
+            </tr>
+            <tr>
+              <th>{label}</th>
+              <th>
+                <input maxLength={maxLength} name={fieldName} type="text" /> <input type="submit" value="Rename" />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+    </LegacyCenter>
+  );
+}
+
 function AllianceApplicationsTable({
   alliance,
   onAction,
@@ -7407,8 +7455,8 @@ function allianceMemberSettingsHTML(alliance: GameAlliance): string {
     <th><a href="${legacyHTMLAttribute(allianceURL({ a: "7", sort1: "3", sort2: nextSort2 }))}">Points</a></th>
     <th><a href="${legacyHTMLAttribute(allianceURL({ a: "7", sort1: "0", sort2: nextSort2 }))}">Coordinates</a></th>
     <th><a href="${legacyHTMLAttribute(allianceURL({ a: "7", sort1: "4", sort2: nextSort2 }))}">Entry</a></th>
-    <th><a href="${legacyHTMLAttribute(allianceURL({ a: "7", sort1: "5", sort2: nextSort2 }))}">Inactive days</a></th>
-    <th>Action</th></tr>
+    <th><a href="${legacyHTMLAttribute(allianceURL({ a: "7", sort1: "5", sort2: nextSort2 }))}">Inactive</a></th>
+    <th>Function</th></tr>
 ${rows}</table>`;
 }
 
@@ -12610,19 +12658,19 @@ function EmpireTable({ empire }: { empire: GameEmpire }) {
           ))}
           <EmpireSectionTitle colSpan={colSpan} title="Buildings" />
           {empire.buildings.map((row) => (
-            <EmpireLevelRow key={row.id} planets={planets} row={row} showAverage />
+            <EmpireLevelRow key={row.id} linkPath="/game/buildings" planets={planets} row={row} showAverage useBuildability />
           ))}
           <EmpireSectionTitle colSpan={colSpan} title="Research" />
           {empire.research.map((row) => (
-            <EmpireLevelRow key={row.id} planets={planets} row={row} />
+            <EmpireLevelRow key={row.id} linkPath="/game/research" planets={planets} row={row} />
           ))}
           <EmpireSectionTitle colSpan={colSpan} title="Ships" />
           {empire.fleet.map((row) => (
-            <EmpireCountRow key={row.id} planets={planets} row={row} />
+            <EmpireCountRow key={row.id} linkPath="/game/shipyard" planets={planets} row={row} />
           ))}
           <EmpireSectionTitle colSpan={colSpan} title="Defense" />
           {empire.defense.map((row) => (
-            <EmpireCountRow key={row.id} planets={planets} row={row} />
+            <EmpireCountRow key={row.id} linkPath="/game/defense" planets={planets} row={row} />
           ))}
         </tbody>
       </table>
@@ -12707,11 +12755,17 @@ function empireFieldsSummaryHTML(sumFields: number, avgFields: number, sumMaxFie
 function empirePlanetImageCellHTML(planet: GameEmpirePlanet) {
   return [
     "  ",
-    `                    <a href="${legacyHTMLAttribute(planetHref(planet.id))}">`,
+    `                    <a href="${legacyHTMLAttribute(empirePlanetOverviewURL(planet.id))}">`,
     `                        <img src="${legacyHTMLAttribute(planetImagePath(planet, false))}" width="75" height="71" border="0">`,
     "                    </a>",
     "            "
   ].join("\n");
+}
+
+function empirePlanetOverviewURL(planetID: number): string {
+  const search = new URLSearchParams(window.location.search);
+  search.set("cp", String(planetID));
+  return gameRouteURL("/game/overview", search.toString());
 }
 
 function empireEnergyCellHTML(amount: number, production: number) {
@@ -12720,7 +12774,19 @@ function empireEnergyCellHTML(amount: number, production: number) {
   return `${amountHTML} / ${formatLegacyPlainNumber(production)} `;
 }
 
-function EmpireLevelRow({ planets, row, showAverage = false }: { planets: GameEmpirePlanet[]; row: GameEmpireLevelRow; showAverage?: boolean }) {
+function EmpireLevelRow({
+  planets,
+  row,
+  linkPath,
+  showAverage = false,
+  useBuildability = false
+}: {
+  planets: GameEmpirePlanet[];
+  row: GameEmpireLevelRow;
+  linkPath: string;
+  showAverage?: boolean;
+  useBuildability?: boolean;
+}) {
   return (
     <tr data-empire-level-row={row.id} {...empireRowHeight20Attrs}>
       <th {...empireWidth75Attrs}>
@@ -12728,12 +12794,13 @@ function EmpireLevelRow({ planets, row, showAverage = false }: { planets: GameEm
       </th>
       {planets.map((planet) => {
         const value = empireLevelValue(row, planet.id);
+        const levelColor = useBuildability && !value.canBuild ? "red" : "lime";
         return (
           <th key={planet.id} {...empireWidth75Attrs}>
             {value.level > 0 ? (
               <>
-                <a href={gameRouteURL("/game/buildings", withPlanetSearch(planet.id))}>
-                  <span style={{ color: "lime" }}>{formatLegacyPlainNumber(value.level)}</span>
+                <a href={gameRouteURL(linkPath, withPlanetSearch(planet.id))}>
+                  <span style={{ color: levelColor }}>{formatLegacyPlainNumber(value.level)}</span>
                 </a>
                 <EmpireBuildQueueLinks planetID={planet.id} queue={value.queue ?? []} />
               </>
@@ -12780,7 +12847,7 @@ function EmpireBuildQueueLinks({ planetID, queue }: { planetID: number; queue: G
   );
 }
 
-function EmpireCountRow({ planets, row }: { planets: GameEmpirePlanet[]; row: GameEmpireCountRow }) {
+function EmpireCountRow({ planets, row, linkPath }: { planets: GameEmpirePlanet[]; row: GameEmpireCountRow; linkPath: string }) {
   return (
     <tr data-empire-count-row={row.id} {...empireRowHeight20Attrs}>
       <th {...empireWidth75Attrs}>
@@ -12791,7 +12858,7 @@ function EmpireCountRow({ planets, row }: { planets: GameEmpirePlanet[]; row: Ga
         return (
           <th key={planet.id} {...empireWidth75Attrs}>
             {value.count > 0 ? (
-              <a href={gameRouteURL("/game/shipyard", withPlanetSearch(planet.id))}>
+              <a href={gameRouteURL(linkPath, withPlanetSearch(planet.id))}>
                 <span style={{ color: "lime" }}>{formatLegacyPlainNumber(value.count)}</span>
               </a>
             ) : (
@@ -12830,7 +12897,7 @@ function empireResourceValue(row: GameEmpireResourceRow, planetID: number): Game
 }
 
 function empireLevelValue(row: GameEmpireLevelRow, planetID: number): GameEmpireLevelValue {
-  return row.values.find((value) => value.planetId === planetID) ?? { planetId: planetID, level: 0, queue: [] };
+  return row.values.find((value) => value.planetId === planetID) ?? { planetId: planetID, level: 0, canBuild: false, queue: [] };
 }
 
 function empireCountValue(row: GameEmpireCountRow, planetID: number): GameEmpireCountValue {

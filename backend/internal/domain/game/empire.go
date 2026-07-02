@@ -80,6 +80,7 @@ type EmpireLevelRow struct {
 type EmpireLevelValue struct {
 	PlanetID int
 	Level    int
+	CanBuild bool
 	Queue    []EmpireBuildQueueEntry
 }
 
@@ -120,8 +121,8 @@ func BuildEmpire(
 		HasMoons:        hasMoons,
 		Planets:         planets,
 		Resources:       buildEmpireResourceRows(planets),
-		Buildings:       buildEmpireLevelRows(BuildingIDs(), planets, nil, true),
-		Research:        buildEmpireLevelRows(ResearchIDs(), planets, research, false),
+		Buildings:       buildEmpireLevelRows(BuildingIDs(), planets, research, true, "buildings"),
+		Research:        buildEmpireLevelRows(ResearchIDs(), planets, research, false, "research"),
 		Fleet:           buildEmpireCountRows(FleetIDs(), planets, "fleet"),
 		Defense:         buildEmpireCountRows(DefenseIDs(), planets, "defense"),
 	}
@@ -181,7 +182,7 @@ func buildEmpireResourceRow(id int, name string, planets []EmpirePlanet, value f
 	return EmpireResourceRow{ID: id, Name: name, Values: values, Total: total, Production: production}
 }
 
-func buildEmpireLevelRows(ids []int, planets []EmpirePlanet, research ResearchLevels, skipZero bool) []EmpireLevelRow {
+func buildEmpireLevelRows(ids []int, planets []EmpirePlanet, research ResearchLevels, skipZero bool, source string) []EmpireLevelRow {
 	rows := make([]EmpireLevelRow, 0, len(ids))
 	for _, id := range ids {
 		values := make([]EmpireLevelValue, 0, len(planets))
@@ -189,30 +190,44 @@ func buildEmpireLevelRows(ids []int, planets []EmpirePlanet, research ResearchLe
 		for _, planet := range planets {
 			level := planet.Levels[id]
 			queue := planet.BuildQueue[id]
-			if research != nil {
+			canBuild := false
+			if source == "research" {
 				level = research[id]
 				queue = nil
+			} else if source == "buildings" {
+				canBuild = empireBuildingCanBuild(id, planet, research)
 			}
 			total += level
-			values = append(values, EmpireLevelValue{PlanetID: planet.ID, Level: level, Queue: queue})
+			values = append(values, EmpireLevelValue{PlanetID: planet.ID, Level: level, CanBuild: canBuild, Queue: queue})
 		}
 		if total == 0 && skipZero {
 			continue
 		}
-		if research != nil && total == 0 {
+		if source == "research" && total == 0 {
 			continue
 		}
 		average := 0.0
 		if len(planets) > 0 {
 			average = math.Round((float64(total)/float64(len(planets)))*100) / 100
 		}
-		if research != nil && len(planets) > 0 {
+		if source == "research" && len(planets) > 0 {
 			total = values[0].Level
 			average = float64(total)
 		}
 		rows = append(rows, EmpireLevelRow{ID: id, Name: TechnologyName(id), Values: values, Total: total, Average: average})
 	}
 	return rows
+}
+
+func empireBuildingCanBuild(id int, planet EmpirePlanet, research ResearchLevels) bool {
+	spec, ok := buildingSpecByID(id)
+	if !ok || !spec.allowedPlanetTypes[planet.Type] || !requirementsMet(spec.requirements, planet.Levels, research) {
+		return false
+	}
+	if planet.Fields >= planet.MaxFields {
+		return false
+	}
+	return spec.price(planet.Levels[id] + 1).enough(planet.Resources)
 }
 
 func buildEmpireCountRows(ids []int, planets []EmpirePlanet, source string) []EmpireCountRow {

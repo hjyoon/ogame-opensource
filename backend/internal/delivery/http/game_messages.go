@@ -108,6 +108,7 @@ func (a app) handleGameMessagesGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid message target", http.StatusBadRequest)
 		return
 	}
+	showSummary := targetPlayerID == 0
 
 	result, err := a.deps.GameMessages.GetMessages(r.Context(), appgame.MessagesCommand{
 		PublicSession:   r.URL.Query().Get("session"),
@@ -116,7 +117,7 @@ func (a app) handleGameMessagesGet(w http.ResponseWriter, r *http.Request) {
 		PlanetID:        planetID,
 		TargetPlayerID:  targetPlayerID,
 		Subject:         r.URL.Query().Get("betreff"),
-		ShowSummary:     r.URL.Query().Get("dsp") == "1",
+		ShowSummary:     showSummary,
 	})
 	if err != nil {
 		http.Error(w, "game messages unavailable", http.StatusServiceUnavailable)

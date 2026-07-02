@@ -331,6 +331,20 @@ func TestAllianceRepositoryReadsHomeCreateAndDeniedMemberViews(t *testing.T) {
 	}
 
 	queryer = &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(42, "legor", 1, 7, 0, "Founder", domaingame.AllianceFounderRights))},
+		fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 2, 0))},
+		fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(8, "APP", "Apply Alliance", 1, 1))},
+	)}
+	repository = NewAllianceRepositoryWithQueryer(queryer, "ogame_", time.Now)
+	alliance, err = repository.GetAlliance(context.Background(), appgame.AllianceQuery{PlayerID: 42, PlanetID: 99, View: domaingame.AllianceViewApply, AllianceID: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alliance.View != domaingame.AllianceViewApply || alliance.Own == nil || alliance.Target == nil || alliance.Target.Tag != "APP" {
+		t.Fatalf("expected own-alliance apply view to preserve target, got %+v", alliance)
+	}
+
+	queryer = &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(43, "newcomer", 1, 0, 0, "", 0))},
 		fakeQueryResult{rows: fakeRowsFromValues()},
 	)}
@@ -941,6 +955,22 @@ func TestAllianceRepositoryPopulateOwnAlliancePermissionAndErrorBranches(t *test
 	alliance, err = repository.populateOwnAlliance(ctx, base, appgame.AllianceQuery{View: domaingame.AllianceViewManagement, TextKind: 9})
 	if err != nil || alliance.View != domaingame.AllianceViewManagement || alliance.TextKind != 1 || len(alliance.Ranks) != 0 {
 		t.Fatalf("expected management permission short-circuit, alliance=%+v err=%v", alliance, err)
+	}
+
+	repository = NewAllianceRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 1, 0))},
+	}}, "ogame_", time.Now)
+	alliance, err = repository.populateOwnAlliance(ctx, base, appgame.AllianceQuery{View: domaingame.AllianceViewRenameTag})
+	if err != nil || alliance.View != domaingame.AllianceViewRenameTag || alliance.Own == nil || alliance.Own.Tag != "TAG" {
+		t.Fatalf("expected rename tag view to keep own alliance data, alliance=%+v err=%v", alliance, err)
+	}
+
+	repository = NewAllianceRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 1, 0))},
+	}}, "ogame_", time.Now)
+	alliance, err = repository.populateOwnAlliance(ctx, base, appgame.AllianceQuery{View: domaingame.AllianceViewRenameName})
+	if err != nil || alliance.View != domaingame.AllianceViewRenameName || alliance.Own == nil || alliance.Own.Name != "The Alliance" {
+		t.Fatalf("expected rename name view to keep own alliance data, alliance=%+v err=%v", alliance, err)
 	}
 
 	repository = NewAllianceRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{

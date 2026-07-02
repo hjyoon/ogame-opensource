@@ -71,6 +71,7 @@ type gameEmpireLevelRow struct {
 type gameEmpireLevelValue struct {
 	PlanetID int                         `json:"planetId"`
 	Level    int                         `json:"level"`
+	CanBuild bool                        `json:"canBuild"`
 	Queue    []gameEmpireBuildQueueEntry `json:"queue,omitempty"`
 }
 
@@ -264,7 +265,7 @@ func toGameEmpireLevelRows(rows []domaingame.EmpireLevelRow) []gameEmpireLevelRo
 	for _, row := range rows {
 		values := make([]gameEmpireLevelValue, 0, len(row.Values))
 		for _, value := range row.Values {
-			values = append(values, gameEmpireLevelValue{PlanetID: value.PlanetID, Level: value.Level, Queue: toGameEmpireBuildQueueEntries(value.Queue)})
+			values = append(values, gameEmpireLevelValue{PlanetID: value.PlanetID, Level: value.Level, CanBuild: value.CanBuild, Queue: toGameEmpireBuildQueueEntries(value.Queue)})
 		}
 		mapped = append(mapped, gameEmpireLevelRow{ID: row.ID, Name: row.Name, Values: values, Total: row.Total, Average: row.Average})
 	}

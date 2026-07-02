@@ -64,12 +64,18 @@ func TestBuildEmpireAggregatesLegacyRows(t *testing.T) {
 	if metalMine.Total != 16 || metalMine.Average != 8 {
 		t.Fatalf("unexpected building row: %+v", metalMine)
 	}
+	if metalMine.Values[0].CanBuild || metalMine.Values[1].CanBuild {
+		t.Fatalf("expected unaffordable metal mine levels to be marked unbuildable: %+v", metalMine.Values)
+	}
 	if queue := metalMine.Values[0].Queue; len(queue) != 2 || !queue[0].Active || queue[0].Level != 13 || queue[1].ListID != 2 {
 		t.Fatalf("unexpected building queue values: %+v", queue)
 	}
 	research := findEmpireLevelRow(t, empire.Research, ResearchComputer)
 	if research.Total != 3 || research.Average != 3 || research.Values[1].Level != 3 {
 		t.Fatalf("unexpected research row: %+v", research)
+	}
+	if research.Values[0].CanBuild || research.Values[1].CanBuild {
+		t.Fatalf("research rows must not use building buildability: %+v", research.Values)
 	}
 	if len(research.Values[0].Queue) != 0 {
 		t.Fatalf("research rows must not inherit building queue values: %+v", research.Values[0].Queue)
