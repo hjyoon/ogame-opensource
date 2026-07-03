@@ -57,6 +57,7 @@ type FleetDispatchPrepareCommand struct {
 	TargetType      int
 	Mission         int
 	Speed           int
+	UnionID         int
 }
 
 type FleetDispatchValidateCommand struct {
@@ -238,6 +239,7 @@ func (s FleetService) PrepareFleetDispatch(ctx context.Context, command FleetDis
 		TargetType: command.TargetType,
 		Mission:    command.Mission,
 		Speed:      command.Speed,
+		UnionID:    command.UnionID,
 	})
 	if draft.HasSelection {
 		fleet.DispatchDraft = &draft

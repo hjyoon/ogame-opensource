@@ -1,5 +1,5 @@
 import { chromium, firefox, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { gameRoutes, normalizeGamePath } from "../src/gameRoutes";
@@ -35,6 +35,21 @@ type CanonicalTarget = {
 type EdgeSide = RawTarget & {
   authRole?: AuthRole;
   canonical: CanonicalTarget;
+};
+
+type TargetRepresentative = {
+  key: string;
+  canonical: CanonicalTarget;
+  authRole: AuthRole;
+  legacy?: EdgeSide;
+  migrated?: EdgeSide;
+};
+
+type NavigationFixture = {
+  home_planet_id?: number;
+  admin?: {
+    home_planet_id?: number;
+  };
 };
 
 type EdgeResult = {
@@ -96,6 +111,8 @@ const outputDir = resolve(rootDir, ".tmp/playwright-navigation-visual", browserN
 const screenshotDir = join(outputDir, "screenshots");
 const legacyBaseURL = trimTrailingSlash(process.env.OGAME_LEGACY_BASE_URL ?? "http://127.0.0.1:8888");
 const migratedBaseURL = trimTrailingSlash(process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890");
+const fixturePath = process.env.OGAME_NAV_VISUAL_FIXTURE_FILE ?? resolve(rootDir, ".tmp/navigation-visual-fixture.json");
+const navigationFixture = loadNavigationFixture(fixturePath);
 const loginUser = process.env.OGAME_NAV_VISUAL_USER ?? "legor";
 const loginPassword = process.env.OGAME_NAV_VISUAL_PASS ?? "admin";
 const adminLoginUser = process.env.OGAME_NAV_VISUAL_ADMIN_USER ?? "visualadmin";
@@ -309,7 +326,7 @@ try {
   const discoveries = await discoverSeeds(browser, seeds);
   const discoveredEdgeCount = discoveries.reduce((total, discovery) => total + discovery.edges.length, 0);
   progress(`build target representatives from ${discoveries.length} discoveries and ${discoveredEdgeCount} edges`);
-  const targetRepresentatives = new Map<string, { canonical: CanonicalTarget; legacy?: EdgeSide; migrated?: EdgeSide }>();
+  const targetRepresentatives = new Map<string, TargetRepresentative>();
 
   for (const discovery of discoveries) {
     for (const edge of discovery.edges) {
@@ -317,14 +334,16 @@ try {
       if (!canonical) {
         continue;
       }
-      const representative = targetRepresentatives.get(canonical.key) ?? { canonical };
+      const authRole = edge.legacy?.authRole ?? edge.migrated?.authRole ?? "player";
+      const representativeKey = targetRepresentativeKey(canonical, authRole);
+      const representative = targetRepresentatives.get(representativeKey) ?? { key: representativeKey, canonical, authRole };
       representative.legacy ??= edge.legacy;
       representative.migrated ??= edge.migrated;
-      targetRepresentatives.set(canonical.key, representative);
+      targetRepresentatives.set(representativeKey, representative);
     }
   }
 
-  let representatives = Array.from(targetRepresentatives.values()).sort((a, b) => a.canonical.key.localeCompare(b.canonical.key));
+  let representatives = Array.from(targetRepresentatives.values()).sort((a, b) => a.key.localeCompare(b.key));
   if (targetFilter !== "") {
     representatives = representatives.filter((representative) => representative.canonical.key.includes(targetFilter));
   }
@@ -843,6 +862,45 @@ function canonicalQueryParams(params: URLSearchParams, target: { area: Area; pat
   return normalized;
 }
 
+function targetRepresentativeKey(canonical: CanonicalTarget, authRole: AuthRole): string {
+  return `${canonical.key}#auth=${authRole}`;
+}
+
+function comparableTargetURL(rawURL: string, canonical: CanonicalTarget, authRole: AuthRole): string {
+  const url = new URL(rawURL);
+  if (canonical.area === "game" && url.searchParams.has("cp")) {
+    const homePlanetID = homePlanetIDForAuthRole(authRole);
+    if (homePlanetID > 0) {
+      url.searchParams.set("cp", String(homePlanetID));
+    }
+  }
+  if (canonical.area === "game" && canonical.path === "/game/messages") {
+    if (!url.searchParams.has("messageziel")) {
+      url.searchParams.set("dsp", "1");
+    }
+    if (url.searchParams.has("messageziel") && url.searchParams.has("betreff")) {
+      url.searchParams.set("betreff", "Re:Navigation visual message");
+    }
+  }
+  return url.toString();
+}
+
+function homePlanetIDForAuthRole(authRole: AuthRole): number {
+  const value = authRole === "admin" ? navigationFixture.admin?.home_planet_id : navigationFixture.home_planet_id;
+  return Number.isFinite(Number(value)) ? Number(value) : 0;
+}
+
+function loadNavigationFixture(path: string): NavigationFixture {
+  if (!existsSync(path)) {
+    return {};
+  }
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as NavigationFixture;
+  } catch {
+    return {};
+  }
+}
+
 function sameInternalOrigin(url: URL, base: URL): boolean {
   if (url.host === base.host) {
     return true;
@@ -862,10 +920,7 @@ function effectivePort(url: URL): string {
   return url.protocol === "https:" ? "443" : "80";
 }
 
-async function compareTargets(
-  browser: Browser,
-  representatives: { canonical: CanonicalTarget; legacy?: EdgeSide; migrated?: EdgeSide }[]
-): Promise<TargetResult[]> {
+async function compareTargets(browser: Browser, representatives: TargetRepresentative[]): Promise<TargetResult[]> {
   const results = new Map<string, TargetResult>();
   const comparable = representatives.filter((representative) => {
     const notes: string[] = [];
@@ -876,23 +931,26 @@ async function compareTargets(
       notes.push("missing migrated representative");
     }
     if (notes.length > 0) {
-      results.set(representative.canonical.key, { key: representative.canonical.key, area: representative.canonical.area, pass: false, notes });
+      results.set(representative.key, { key: representative.key, area: representative.canonical.area, pass: false, notes });
       return false;
     }
     return true;
-  }) as { canonical: CanonicalTarget; legacy: EdgeSide; migrated: EdgeSide }[];
+  }) as (TargetRepresentative & { legacy: EdgeSide; migrated: EdgeSide })[];
 
   progress(`compare targets: ${comparable.length} comparable, ${representatives.length} total`);
   for (const [index, representative] of comparable.entries()) {
-    progressEvery(index, comparable.length, `target ${representative.canonical.key}`);
-    const safeName = safeFileName(representative.canonical.key);
+    progressEvery(index, comparable.length, `target ${representative.key}`);
+    const safeName = safeFileName(representative.key);
 
     const legacyLoginContext = await newContext(browser);
     const legacySession = await loginLegacy(legacyLoginContext, representative.legacy.authRole);
     let legacy: Capture;
     try {
-      const legacyURL = withSession(representative.legacy.url, legacySession);
-      legacy = await captureURLInContext(legacyLoginContext, legacyURL, `${safeName}-legacy.png`, "legacy", representative.canonical.key);
+      const legacyURL = withSession(
+        comparableTargetURL(representative.legacy.url, representative.canonical, representative.authRole),
+        legacySession
+      );
+      legacy = await captureURLInContext(legacyLoginContext, legacyURL, `${safeName}-legacy.png`, "legacy", representative.key);
     } finally {
       await legacyLoginContext.close();
     }
@@ -900,16 +958,16 @@ async function compareTargets(
     const migratedLoginContext = await newContext(browser);
     const migratedSession = await loginMigrated(migratedLoginContext, representative.migrated.authRole);
     try {
-      results.set(representative.canonical.key, await compareCapturedTarget(browser, representative, legacy, migratedSession, migratedLoginContext));
+      results.set(representative.key, await compareCapturedTarget(browser, representative, legacy, migratedSession, migratedLoginContext));
     } finally {
       await migratedLoginContext.close();
     }
   }
 
   return representatives.map((representative) => {
-    const result = results.get(representative.canonical.key);
+    const result = results.get(representative.key);
     if (!result) {
-      return { key: representative.canonical.key, area: representative.canonical.area, pass: false, notes: ["missing target result"] };
+      return { key: representative.key, area: representative.canonical.area, pass: false, notes: ["missing target result"] };
     }
     return result;
   });
@@ -917,17 +975,20 @@ async function compareTargets(
 
 async function compareCapturedTarget(
   browser: Browser,
-  representative: { canonical: CanonicalTarget; legacy: EdgeSide; migrated: EdgeSide },
+  representative: TargetRepresentative & { legacy: EdgeSide; migrated: EdgeSide },
   legacy: Capture,
   migratedSession: string,
   context?: BrowserContext
 ): Promise<TargetResult> {
   const notes: string[] = [];
-  const safeName = safeFileName(representative.canonical.key);
-  const migratedURL = withSession(representative.migrated.url, migratedSession);
+  const safeName = safeFileName(representative.key);
+  const migratedURL = withSession(
+    comparableTargetURL(representative.migrated.url, representative.canonical, representative.authRole),
+    migratedSession
+  );
   const migrated = context
-    ? await captureURLInContext(context, migratedURL, `${safeName}-migrated.png`, "migrated", representative.canonical.key)
-    : await captureURL(browser, migratedURL, `${safeName}-migrated.png`, "migrated", representative.canonical.key);
+    ? await captureURLInContext(context, migratedURL, `${safeName}-migrated.png`, "migrated", representative.key)
+    : await captureURL(browser, migratedURL, `${safeName}-migrated.png`, "migrated", representative.key);
   const diffPath = join(screenshotDir, `${safeName}-diff.png`);
   const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath, diffPath);
   if (legacy.status !== 200) {
@@ -946,7 +1007,7 @@ async function compareCapturedTarget(
     notes.push(`exact diff ${formatNumber(diff.diffRatio)} (${diff.changedPixels}/${diff.totalPixels})`);
   }
   return {
-    key: representative.canonical.key,
+    key: representative.key,
     area: representative.canonical.area,
     pass:
       legacy.status === 200 &&
@@ -1306,6 +1367,15 @@ async function normalizeDynamicPageParts(page: Page, side: Side, key: string): P
       for (const image of document.querySelectorAll<HTMLImageElement>("img")) {
         if (image.src.includes("/evolution/planeten/small/") || image.src.includes("/public-assets/evolution/planeten/small/")) {
           image.style.visibility = "hidden";
+        }
+      }
+      for (const row of document.querySelectorAll<HTMLTableRowElement>("tr")) {
+        const cells = Array.from(row.querySelectorAll<HTMLElement>("th, td"));
+        const label = cells[0]?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+        if (label === "Last activity" || label === "Last state update") {
+          for (const cell of cells.slice(1)) {
+            cell.textContent = "2026-01-01 00:00:00";
+          }
         }
       }
     }

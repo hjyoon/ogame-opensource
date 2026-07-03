@@ -106,6 +106,7 @@ type FleetDispatchDraftInput struct {
 	TargetType int
 	Mission    int
 	Speed      int
+	UnionID    int
 }
 
 type FleetDispatchValidationInput struct {
@@ -127,6 +128,7 @@ type FleetDispatchDraft struct {
 	TargetType      int
 	Mission         int
 	Speed           int
+	UnionID         int
 	Cargo           int
 	Distance        int
 	DurationSeconds int
@@ -314,6 +316,7 @@ func BuildFleetDispatchDraft(fleet Fleet, input FleetDispatchDraftInput) FleetDi
 		TargetType:      targetType,
 		Mission:         selectedMission,
 		Speed:           speed,
+		UnionID:         input.UnionID,
 		Cargo:           cargo,
 		Distance:        distance,
 		DurationSeconds: durationSeconds,
@@ -335,6 +338,7 @@ func BuildFleetDispatchValidation(fleet Fleet, input FleetDispatchValidationInpu
 		TargetType: input.TargetType,
 		Mission:    input.Mission,
 		Speed:      input.Speed,
+		UnionID:    input.UnionID,
 	})
 	if input.Mission == FleetMissionACSHold && draft.Mission == 0 {
 		draft.Mission = FleetMissionACSHold

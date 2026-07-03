@@ -1036,10 +1036,16 @@ body.legacy-game-body {
   border-spacing: 2px;
 }
 
+.legacy-game-shell .legacy-messages-outer {
+  margin: 0 auto;
+}
+
+.legacy-game-shell .legacy-messages-outer form {
+  margin: 0;
+}
+
 .legacy-game-shell .legacy-messages-table {
   background-color: #344566;
-  margin-top: 3px;
-  outline: 1px solid #344566;
 }
 
 .legacy-game-shell .legacy-messages-table img {

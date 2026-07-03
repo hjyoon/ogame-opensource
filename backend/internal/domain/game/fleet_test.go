@@ -121,9 +121,10 @@ func TestBuildFleetDispatchDraftNormalizesLegacySelection(t *testing.T) {
 		TargetType: GamePlanetTypeMoon,
 		Mission:    FleetMissionSpy,
 		Speed:      99,
+		UnionID:    7,
 	})
 
-	if !draft.HasSelection || draft.TotalShips != 6 || draft.Speed != 10 || draft.TargetType != GamePlanetTypeMoon || draft.Mission != FleetMissionSpy {
+	if !draft.HasSelection || draft.TotalShips != 6 || draft.Speed != 10 || draft.TargetType != GamePlanetTypeMoon || draft.Mission != FleetMissionSpy || draft.UnionID != 7 {
 		t.Fatalf("unexpected dispatch draft header: %+v", draft)
 	}
 	if len(draft.Ships) != 2 || draft.Ships[0].ID != FleetSmallCargo || draft.Ships[0].Count != 4 || draft.Ships[1].ID != FleetEspionageProbe || draft.Ships[1].Count != 2 {

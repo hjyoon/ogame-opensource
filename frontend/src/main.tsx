@@ -1108,7 +1108,7 @@ function App() {
     }
     const currentSearch = new URLSearchParams(search);
     const adminSearch = new URLSearchParams({ session: publicSession });
-    for (const key of ["cp", "mode", "action", "fname", "player_id", "galaxy", "system", "filter", "modname"]) {
+    for (const key of ["cp", "mode", "action", "fname", "player_id", "galaxy", "system", "filter", "modname", "from"]) {
       const value = currentSearch.get(key);
       if (value) {
         adminSearch.set(key, value);
@@ -1139,7 +1139,7 @@ function App() {
     }
     const currentSearch = new URLSearchParams(search);
     const adminSearch = new URLSearchParams({ session: publicSession });
-    for (const key of ["cp", "mode", "action", "fname", "player_id", "galaxy", "system", "filter", "modname"]) {
+    for (const key of ["cp", "mode", "action", "fname", "player_id", "galaxy", "system", "filter", "modname", "from"]) {
       const value = currentSearch.get(key);
       if (value) {
         adminSearch.set(key, value);
@@ -1848,11 +1848,14 @@ function App() {
     }
     const currentSearch = new URLSearchParams(search);
     const messagesRequest = new URLSearchParams({ session: publicSession });
-    for (const key of ["cp", "dsp", "messageziel", "re", "betreff"]) {
+    for (const key of ["cp", "dsp", "pm", "messageziel", "re", "betreff", "summary"]) {
       const value = currentSearch.get(key);
       if (value) {
         messagesRequest.set(key, value);
       }
+    }
+    if (!messagesRequest.has("messageziel")) {
+      messagesRequest.set("dsp", "1");
     }
     fetch(`/api/game/messages?${messagesRequest.toString()}`, { credentials: "same-origin" })
       .then((response) => response.json() as Promise<GameMessagesStatus>)

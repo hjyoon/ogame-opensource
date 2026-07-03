@@ -124,6 +124,7 @@ type gameFleetDispatchDraft struct {
 	TargetType      int                          `json:"targetType"`
 	Mission         int                          `json:"mission"`
 	Speed           int                          `json:"speed"`
+	UnionID         int                          `json:"unionId"`
 	Cargo           int                          `json:"cargo"`
 	Distance        int                          `json:"distance"`
 	DurationSeconds int                          `json:"durationSeconds"`
@@ -257,6 +258,7 @@ func (a app) handleGameFleetPost(w http.ResponseWriter, r *http.Request) {
 			TargetType: payload.TargetType,
 			Mission:    payload.Mission,
 			Speed:      payload.Speed,
+			UnionID:    payload.UnionID,
 		})
 	case "validate-dispatch":
 		result, err = a.deps.GameFleet.ValidateFleetDispatch(r.Context(), appgame.FleetDispatchValidateCommand{
@@ -575,6 +577,7 @@ func toGameFleetDispatchDraft(draft *domaingame.FleetDispatchDraft) *gameFleetDi
 		TargetType:      draft.TargetType,
 		Mission:         draft.Mission,
 		Speed:           draft.Speed,
+		UnionID:         draft.UnionID,
 		Cargo:           draft.Cargo,
 		Distance:        draft.Distance,
 		DurationSeconds: draft.DurationSeconds,

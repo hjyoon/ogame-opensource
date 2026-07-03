@@ -130,7 +130,9 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 	case "BotEdit":
 		admin.BotStrategies, err = r.loadAdminBotStrategies(ctx)
 	case "Coupons":
-		admin.CouponRows, err = r.loadAdminCouponRows(ctx)
+		admin.CouponRows, admin.CouponTotal, err = r.loadAdminCouponRows(ctx, query.CouponFrom)
+		admin.CouponFrom = normalizeAdminCouponFrom(query.CouponFrom)
+		admin.CouponPageSize = adminCouponPageSize
 		if err == nil {
 			admin.CouponQueueRows, err = r.loadAdminCouponQueueRows(ctx)
 		}
@@ -906,28 +908,54 @@ const (
 	adminCouponQueueType     = "Coupon"
 	adminCouponQueueOwnerID  = 99999
 	adminCouponQueuePriority = 520
+	adminCouponPageSize      = 15
 )
 
-func (r AdminRepository) loadAdminCouponRows(ctx context.Context) ([]domaingame.AdminCouponRow, error) {
-	if r.masterQueryer == nil {
-		return []domaingame.AdminCouponRow{}, nil
+func normalizeAdminCouponFrom(from int) int {
+	if from < 0 {
+		return 0
 	}
-	rows, err := r.masterQueryer.QueryContext(ctx, "SELECT id, COALESCE(code, ''), COALESCE(amount, 0), COALESCE(used, 0), COALESCE(user_uni, 0), COALESCE(user_id, 0), COALESCE(user_name, '') FROM coupons ORDER BY id DESC LIMIT 15")
+	return from
+}
+
+func (r AdminRepository) loadAdminCouponRows(ctx context.Context, from int) ([]domaingame.AdminCouponRow, int, error) {
+	if r.masterQueryer == nil {
+		return []domaingame.AdminCouponRow{}, 0, nil
+	}
+	totalRows, err := r.masterQueryer.QueryContext(ctx, "SELECT COUNT(*) FROM coupons")
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	total := 0
+	if totalRows.Next() {
+		if err := totalRows.Scan(&total); err != nil {
+			totalRows.Close()
+			return nil, 0, err
+		}
+	}
+	if err := totalRows.Err(); err != nil {
+		totalRows.Close()
+		return nil, 0, err
+	}
+	if err := totalRows.Close(); err != nil {
+		return nil, 0, err
+	}
+	rows, err := r.masterQueryer.QueryContext(ctx, "SELECT id, COALESCE(code, ''), COALESCE(amount, 0), COALESCE(used, 0), COALESCE(user_uni, 0), COALESCE(user_id, 0), COALESCE(user_name, '') FROM coupons ORDER BY id DESC LIMIT ? OFFSET ?", adminCouponPageSize, normalizeAdminCouponFrom(from))
+	if err != nil {
+		return nil, 0, err
 	}
 	defer rows.Close()
-	result := make([]domaingame.AdminCouponRow, 0, 15)
+	result := make([]domaingame.AdminCouponRow, 0, adminCouponPageSize)
 	for rows.Next() {
 		var row domaingame.AdminCouponRow
 		var used int
 		if err := rows.Scan(&row.ID, &row.Code, &row.Amount, &used, &row.UserUniverse, &row.UserID, &row.UserName); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		row.Used = used != 0
 		result = append(result, row)
 	}
-	return result, rows.Err()
+	return result, total, rows.Err()
 }
 
 func (r AdminRepository) loadAdminCouponQueueRows(ctx context.Context) ([]domaingame.AdminCouponQueueRow, error) {

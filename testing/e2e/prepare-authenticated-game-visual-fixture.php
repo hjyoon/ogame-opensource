@@ -168,6 +168,52 @@ function auth_visual_place_planet(int $planetId, int $ownerId, string $name, int
     );
 }
 
+function auth_visual_delete_planets_by_name(array $names): void
+{
+    global $db_prefix;
+
+    if (empty($names)) {
+        return;
+    }
+    $quoted = implode(',', array_map(fn($name) => "'" . auth_visual_sql_escape($name) . "'", $names));
+    $res = dbquery("SELECT planet_id FROM {$db_prefix}planets WHERE name IN ({$quoted})");
+    $planetIds = array();
+    while ($row = dbarray($res)) {
+        $planetIds[] = (int)$row['planet_id'];
+    }
+    $planetIds = array_values(array_unique(array_filter($planetIds, fn($id) => $id > 0)));
+    if (empty($planetIds)) {
+        return;
+    }
+
+    $planetList = implode(',', $planetIds);
+    $fleetIds = array();
+    $fleetRes = dbquery("SELECT fleet_id FROM {$db_prefix}fleet WHERE start_planet IN ({$planetList}) OR target_planet IN ({$planetList})");
+    while ($row = dbarray($fleetRes)) {
+        $fleetIds[] = (int)$row['fleet_id'];
+    }
+    $fleetIds = array_values(array_unique(array_filter($fleetIds, fn($id) => $id > 0)));
+    if (!empty($fleetIds)) {
+        $fleetList = implode(',', $fleetIds);
+        dbquery("DELETE FROM {$db_prefix}queue WHERE type='" . QTYP_FLEET . "' AND sub_id IN ({$fleetList})");
+        dbquery("DELETE FROM {$db_prefix}fleet WHERE fleet_id IN ({$fleetList})");
+    }
+
+    $buildIds = array();
+    $buildRes = dbquery("SELECT id FROM {$db_prefix}buildqueue WHERE planet_id IN ({$planetList})");
+    while ($row = dbarray($buildRes)) {
+        $buildIds[] = (int)$row['id'];
+    }
+    $buildIds = array_values(array_unique(array_filter($buildIds, fn($id) => $id > 0)));
+    if (!empty($buildIds)) {
+        $buildList = implode(',', $buildIds);
+        dbquery("DELETE FROM {$db_prefix}queue WHERE type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "') AND sub_id IN ({$buildList})");
+        dbquery("DELETE FROM {$db_prefix}buildqueue WHERE id IN ({$buildList})");
+    }
+
+    dbquery("DELETE FROM {$db_prefix}planets WHERE planet_id IN ({$planetList})");
+}
+
 function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password): array
 {
     global $db_prefix;
@@ -201,6 +247,7 @@ function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password)
     $lowFuelPlanetId = (int)$lowFuelUser['home_planet_id'];
     $cargoUserId = (int)$cargoUser['player_id'];
     $cargoPlanetId = (int)$cargoUser['home_planet_id'];
+    auth_visual_delete_planets_by_name(array('Visual Hover Moon', 'Visual Phalanx Moon'));
     [$g, $s] = auth_visual_find_empty_hover_system();
     [$cargoG, $cargoS, $cargoP] = auth_visual_find_far_empty_position($g, $s, 10);
     $now = time();
@@ -247,6 +294,7 @@ function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password)
     $lowFuelAuth = auth_visual_prepare_session($lowFuelUserId);
     $cargoAuth = auth_visual_prepare_session($cargoUserId);
 
+    auth_visual_delete_planets_by_name(array('Visual Hover Moon'));
     $moonId = PlanetHasMoon($targetPlanetId);
     if ($moonId <= 0) {
         $moonId = CreatePlanet($g, $s, 1, $targetId, 1, 1, 20, $now);
@@ -601,6 +649,7 @@ function auth_visual_prepare_phalanx_fixture(array $user, array $galaxyHover): a
     $viewerPosition = (int)$galaxyHover['viewer_position'];
     $now = time();
 
+    auth_visual_delete_planets_by_name(array('Visual Phalanx Moon'));
     $sourceMoonId = PlanetHasMoon($viewerPlanetId);
     if ($sourceMoonId <= 0) {
         $sourceMoonId = CreatePlanet($g, $s, $viewerPosition, $viewerId, 1, 1, 20, $now);

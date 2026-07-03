@@ -15,7 +15,7 @@ import (
 func TestMessagesRepositoryReadsLegacyInbox(t *testing.T) {
 	now := time.Unix(1700000000, 0)
 	queryer := &fakeQueryer{results: messageInboxResults(
-		fakeQueryResult{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix(), domaingame.AdminLevelPlayer})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix(), domaingame.AdminLevelPlayer, int64(0)})},
 		fakeQueryResult{rows: fakeRowsFromValues(
 			[]any{11, domaingame.MessageTypePM, `Sender\\Name`, `Subject\"Line`, `Player Gophalaxtarget\'s fleet`, 0, int64(1700000000)},
 			[]any{10, domaingame.MessageTypeSpyReport, "Spy", "<a>Report</a>", "<table></table>", 1, int64(1699999900)},
@@ -43,6 +43,131 @@ func TestMessagesRepositoryReadsLegacyInbox(t *testing.T) {
 		queryer.calls[5].args[1] != domaingame.MessageTypeBattleReportText ||
 		queryer.calls[5].args[2] != domaingame.MessagesLimitCommander {
 		t.Fatalf("expected legacy messages query, got %+v", queryer.calls[5])
+	}
+}
+
+func TestMessagesRepositoryLoadsMessageCategoryCounts(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(
+		[]any{domaingame.MessageTypeSpyReport, 2, 1},
+		[]any{domaingame.MessageTypeBattleReportLink, 3, 0},
+		[]any{domaingame.MessageTypeExpedition, 4, 2},
+		[]any{domaingame.MessageTypeAlliance, 5, 3},
+		[]any{domaingame.MessageTypePM, 6, 4},
+		[]any{domaingame.MessageTypeMisc, 7, 5},
+		[]any{domaingame.MessageTypeMisc, 8, 6},
+	)}}}
+	repository := NewMessagesRepositoryWithQueryer(queryer, "ogame_", time.Now)
+
+	counts, err := repository.loadMessageCategoryCounts(context.Background(), "`ogame_messages`", 42)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []struct {
+		key    string
+		total  int
+		unread int
+	}{
+		{key: "spy", total: 2, unread: 1},
+		{key: "battle", total: 3, unread: 0},
+		{key: "expedition", total: 4, unread: 2},
+		{key: "alliance", total: 5, unread: 3},
+		{key: "personal", total: 6, unread: 4},
+		{key: "other", total: 15, unread: 11},
+	}
+	if len(counts) != len(want) {
+		t.Fatalf("unexpected category count length: %+v", counts)
+	}
+	for index, expected := range want {
+		if counts[index].Key != expected.key || counts[index].Total != expected.total || counts[index].Unread != expected.unread {
+			t.Fatalf("unexpected category at %d: got %+v want %+v", index, counts[index], expected)
+		}
+	}
+	if len(queryer.calls) != 1 || !strings.Contains(queryer.calls[0].sql, "GROUP BY pm") ||
+		queryer.calls[0].args[0] != 42 || queryer.calls[0].args[1] != domaingame.MessageTypeBattleReportText {
+		t.Fatalf("unexpected category query: %+v", queryer.calls)
+	}
+}
+
+func TestMessagesRepositoryReadsSummaryCategories(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: messageInboxResults(
+		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer, int64(0)})},
+		fakeQueryResult{rows: fakeRowsFromValues(
+			[]any{domaingame.MessageTypeSpyReport, 2, 1},
+			[]any{domaingame.MessageTypePM, 3, 2},
+		)},
+	)}}
+	repository := NewMessagesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	messages, err := repository.GetMessages(context.Background(), appgame.MessagesQuery{
+		PlayerID:    42,
+		PlanetID:    99,
+		ShowSummary: true,
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messages.Action != domaingame.MessagesActionSummary || len(messages.Summary) != 6 ||
+		messages.Summary[0].Total != 2 || messages.Summary[0].Unread != 1 ||
+		messages.Summary[4].Total != 3 || messages.Summary[4].Unread != 2 {
+		t.Fatalf("unexpected summary payload: %+v", messages)
+	}
+	if len(messages.Operators) != 1 || !messages.Operators[0].HideEmail ||
+		messages.Operators[0].Subject != "Question from Legor of the 1 universe" {
+		t.Fatalf("unexpected summary operators: %+v", messages.Operators)
+	}
+	if len(runner.execs) != 1 || !strings.Contains(runner.execs[0].sql, "DELETE FROM `ogame_messages` WHERE owner_id = ? AND date <= ?") ||
+		runner.execs[0].args[0] != 42 ||
+		runner.execs[0].args[1] != now.Add(-24*time.Hour).Unix() {
+		t.Fatalf("unexpected summary expiry cleanup: %+v", runner.execs)
+	}
+}
+
+func TestMessagesRepositoryUsesLegacyCommanderFolderSummary(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: messageInboxResults(
+		fakeQueryResult{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix(), domaingame.AdminLevelPlayer, int64(0)})},
+		fakeQueryResult{rows: fakeRowsFromValues(
+			[]any{domaingame.MessageTypeSpyReport, 2, 1},
+			[]any{domaingame.MessageTypePM, 3, 2},
+		)},
+	)}}
+	repository := NewMessagesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	messages, err := repository.GetMessages(context.Background(), appgame.MessagesQuery{
+		PlayerID:            42,
+		PlanetID:            99,
+		LegacyFolderDisplay: true,
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messages.Action != domaingame.MessagesActionSummary || len(messages.Rows) != 0 ||
+		len(messages.Summary) != 6 || messages.Summary[0].Total != 2 || messages.Summary[4].Total != 3 {
+		t.Fatalf("unexpected legacy folder summary payload: %+v", messages)
+	}
+	if len(runner.execs) != 1 || !strings.Contains(runner.execs[0].sql, "DELETE FROM `ogame_messages` WHERE owner_id = ? AND date <= ?") {
+		t.Fatalf("expected expiry cleanup before folder summary, got %+v", runner.execs)
+	}
+}
+
+func TestMessagesRepositoryMessageCategoryCountEdges(t *testing.T) {
+	repository := NewMessagesRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("category query failed")}}}, "ogame_", time.Now)
+	if _, err := repository.loadMessageCategoryCounts(context.Background(), "`ogame_messages`", 42); err == nil || !strings.Contains(err.Error(), "category query failed") {
+		t.Fatalf("expected category query error, got %v", err)
+	}
+
+	repository = NewMessagesRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", 1, 0})}}}, "ogame_", time.Now)
+	if _, err := repository.loadMessageCategoryCounts(context.Background(), "`ogame_messages`", 42); err == nil || !strings.Contains(err.Error(), "expected int") {
+		t.Fatalf("expected category scan error, got %v", err)
+	}
+
+	repository = NewMessagesRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("category rows failed"), []any{domaingame.MessageTypePM, 1, 0})}}}, "ogame_", time.Now)
+	if _, err := repository.loadMessageCategoryCounts(context.Background(), "`ogame_messages`", 42); err == nil || !strings.Contains(err.Error(), "category rows failed") {
+		t.Fatalf("expected category rows error, got %v", err)
 	}
 }
 
@@ -74,7 +199,7 @@ func TestMessagesRepositoryDeletesExpiredInboxMessagesOnRead(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: messageInboxResults(
-				fakeQueryResult{rows: fakeRowsFromValues([]any{tt.commanderUntil, tt.adminLevel})},
+				fakeQueryResult{rows: fakeRowsFromValues([]any{tt.commanderUntil, tt.adminLevel, int64(0)})},
 				fakeQueryResult{rows: fakeRowsFromValues()},
 			)}}
 			repository := NewMessagesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
@@ -100,7 +225,7 @@ func TestMessagesRepositoryDeletesExpiredInboxMessagesOnRead(t *testing.T) {
 func TestMessagesRepositoryMarksVisibleInboxMessagesReadOnRead(t *testing.T) {
 	now := time.Unix(1700000000, 0)
 	runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: messageInboxResults(
-		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer, int64(0)})},
 		fakeQueryResult{rows: fakeRowsFromValues(
 			[]any{11, domaingame.MessageTypePM, "Sender", "Subject", "Body", 0, int64(1)},
 			[]any{12, domaingame.MessageTypeMisc, "System", "Notice", "Text", 1, int64(2)},
@@ -564,7 +689,7 @@ func TestMessagesRepositoryPostRowErrorEdges(t *testing.T) {
 		t.Fatalf("expected commander post rows error, got %v", err)
 	}
 
-	repository = NewMessagesRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("retention post rows failed"), []any{int64(1700000000), domaingame.AdminLevelPlayer})}}}, "ogame_", time.Now)
+	repository = NewMessagesRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("retention post rows failed"), []any{int64(1700000000), domaingame.AdminLevelPlayer, int64(0)})}}}, "ogame_", time.Now)
 	if _, err := repository.loadMessageRetentionState(context.Background(), "`ogame_users`", 42); err == nil || !strings.Contains(err.Error(), "retention post rows failed") {
 		t.Fatalf("expected retention post rows error, got %v", err)
 	}
@@ -581,8 +706,8 @@ func TestMessagesRepositoryReturnsErrors(t *testing.T) {
 		{name: "unsafe prefix", prefix: "bad-prefix_", queryer: &fakeQueryer{}, want: "invalid database table prefix"},
 		{name: "overview", prefix: "ogame_", queryer: &fakeQueryer{results: []fakeQueryResult{{err: errors.New("overview failed")}}}, want: "overview failed"},
 		{name: "commander query", prefix: "ogame_", queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{err: errors.New("commander failed")})}, want: "commander failed"},
-		{name: "inbox query", prefix: "ogame_", queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer})}, fakeQueryResult{err: errors.New("inbox failed")})}, want: "inbox failed"},
-		{name: "operators query", prefix: "ogame_", queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer})}, fakeQueryResult{rows: fakeRowsFromValues()}, fakeQueryResult{err: errors.New("operator subject failed")})}, want: "operator subject failed"},
+		{name: "inbox query", prefix: "ogame_", queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer, int64(0)})}, fakeQueryResult{err: errors.New("inbox failed")})}, want: "inbox failed"},
+		{name: "operators query", prefix: "ogame_", queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer, int64(0)})}, fakeQueryResult{rows: fakeRowsFromValues()}, fakeQueryResult{err: errors.New("operator subject failed")})}, want: "operator subject failed"},
 		{name: "compose query", prefix: "ogame_", queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{err: errors.New("compose failed")})}, query: appgame.MessagesQuery{TargetPlayerID: 77}, want: "compose failed"},
 		{name: "missing compose target", prefix: "ogame_", queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues()})}, query: appgame.MessagesQuery{TargetPlayerID: 77}, want: "message target not found"},
 	}
@@ -600,7 +725,7 @@ func TestMessagesRepositoryReturnsErrors(t *testing.T) {
 func TestMessagesRepositoryGetMessagesWriteErrorEdges(t *testing.T) {
 	runner := &fakeMessagesRunner{
 		fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
-			fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer})},
+			fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer, int64(0)})},
 		)},
 		execErr: errors.New("delete expired failed"),
 	}
@@ -611,7 +736,7 @@ func TestMessagesRepositoryGetMessagesWriteErrorEdges(t *testing.T) {
 
 	runner = &fakeMessagesRunner{
 		fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
-			fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer})},
+			fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0), domaingame.AdminLevelPlayer, int64(0)})},
 			fakeQueryResult{rows: fakeRowsFromValues([]any{11, domaingame.MessageTypePM, "Sender", "Subject", "Body", 0, int64(1)})},
 		)},
 		execErrs: []error{nil, errors.New("mark read failed")},
@@ -846,9 +971,9 @@ func TestMessagesRepositoryRetentionAndLegacySlashEdges(t *testing.T) {
 		{name: "query error", err: errors.New("retention query failed"), match: "retention query failed"},
 		{name: "missing row", rows: fakeRowsFromValues(), match: "message retention state not found"},
 		{name: "rows error", rows: fakeRowsError(errors.New("retention rows failed")), match: "retention rows failed"},
-		{name: "scan error", rows: fakeRowsFromValues([]any{"bad", domaingame.AdminLevelPlayer}), match: "expected int64"},
-		{name: "player", rows: fakeRowsFromValues([]any{now.Add(-time.Hour).Unix(), domaingame.AdminLevelPlayer}), want: messageRetentionState{}},
-		{name: "commander admin", rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix(), domaingame.AdminLevelOperator}), want: messageRetentionState{CommanderActive: true, Admin: true}},
+		{name: "scan error", rows: fakeRowsFromValues([]any{"bad", domaingame.AdminLevelPlayer, int64(0)}), match: "expected int64"},
+		{name: "player", rows: fakeRowsFromValues([]any{now.Add(-time.Hour).Unix(), domaingame.AdminLevelPlayer, int64(0)}), want: messageRetentionState{}},
+		{name: "commander admin", rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix(), domaingame.AdminLevelOperator, int64(messageUserFlagDontUseFolders)}), want: messageRetentionState{CommanderActive: true, Admin: true, Flags: messageUserFlagDontUseFolders}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

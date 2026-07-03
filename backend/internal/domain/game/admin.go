@@ -74,6 +74,9 @@ type Admin struct {
 	BotStrategies   []AdminBotStrategy
 	CouponRows      []AdminCouponRow
 	CouponQueueRows []AdminCouponQueueRow
+	CouponFrom      int
+	CouponPageSize  int
+	CouponTotal     int
 }
 
 type AdminViewer struct {

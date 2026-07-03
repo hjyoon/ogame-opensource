@@ -735,6 +735,26 @@ try {
     $firstBulkPlanetRow = $firstBulkPlanet === null ? null : LoadPlanetById((int)$firstBulkPlanet['planet_id']);
     $firstBulkRank = $firstBulkPlanet === null ? null : e2e_one_row("SELECT place1 FROM {$db_prefix}users WHERE player_id=" . (int)$firstBulkPlanet['player_id'] . " LIMIT 1");
     $statsStart = $firstBulkRank === null ? 1 : max(1, ((int)floor(((int)$firstBulkRank['place1'] - 1) / 100) * 100) + 1);
+    $bulkRankRows = array();
+    $statsPageBuckets = array();
+    $statsBucketMax = 0;
+    if (!empty($bulkUserIds)) {
+        $rankRes = e2e_sql_exec("SELECT player_id, name, place1 FROM {$db_prefix}users WHERE player_id IN ({$bulkUserList})");
+        while ($rankRow = dbarray($rankRes)) {
+            $place = (int)$rankRow['place1'];
+            $bulkRankRows[] = array('player_id' => (int)$rankRow['player_id'], 'name' => $rankRow['name'], 'place1' => $place);
+            if ($place > 0) {
+                $bucketStart = max(1, ((int)floor(($place - 1) / 100) * 100) + 1);
+                $statsPageBuckets[$bucketStart] = ($statsPageBuckets[$bucketStart] ?? 0) + 1;
+            }
+        }
+        foreach ($statsPageBuckets as $bucketStart => $bucketCount) {
+            if ($bucketCount > $statsBucketMax) {
+                $statsBucketMax = $bucketCount;
+                $statsStart = (int)$bucketStart;
+            }
+        }
+    }
     $galaxyQuery = $firstBulkPlanetRow === null
         ? '&galaxy=1&system=1'
         : '&galaxy=' . (int)$firstBulkPlanetRow['g'] . '&system=' . (int)$firstBulkPlanetRow['s'];
@@ -778,7 +798,7 @@ try {
                 e2e_case(count($bulkUsers) === 28, 'bulk smoke creates the expected number of temporary users', array('created' => count($bulkUsers))),
                 e2e_case($bulkQueueRows === 28, 'bulk smoke creates one queued task per temporary user', array('queue_rows' => $bulkQueueRows)),
                 e2e_case($bulkOverview['elapsed_ms'] < 10000 && $bulkGalaxy['elapsed_ms'] < 10000 && $bulkStats['elapsed_ms'] < 10000 && $bulkAdminQueue['elapsed_ms'] < 10000, 'bulk pages render before the HTTP timeout budget', array('overview_ms' => $bulkOverview['elapsed_ms'], 'galaxy_ms' => $bulkGalaxy['elapsed_ms'], 'statistics_ms' => $bulkStats['elapsed_ms'], 'admin_queue_ms' => $bulkAdminQueue['elapsed_ms'])),
-                e2e_case($bulkNamesInStats >= 5, 'statistics page includes multiple temporary users under load', array('names_found' => $bulkNamesInStats, 'start' => $statsStart, 'first_bulk_rank' => $firstBulkRank ?? array())),
+                e2e_case($statsBucketMax >= 5 && $bulkNamesInStats >= min(5, $statsBucketMax), 'statistics page includes multiple temporary users under load', array('names_found' => $bulkNamesInStats, 'start' => $statsStart, 'first_bulk_rank' => $firstBulkRank ?? array(), 'rank_buckets' => $statsPageBuckets, 'bulk_ranks' => $bulkRankRows)),
                 e2e_case($seededSystemPlanets >= 5 && strlen($bulkGalaxy['body']) > 1000, 'galaxy page renders a seeded multi-player system under load', array('seeded_system_planets' => $seededSystemPlanets, 'names_found' => $bulkNamesInGalaxy, 'query' => $galaxyQuery, 'body_len' => strlen($bulkGalaxy['body']))),
                 e2e_case(strlen($bulkStats['body']) > 1000 && strlen($bulkAdminQueue['body']) > 1000, 'statistics and admin queue pages render substantial documents under load', array('statistics_body_len' => strlen($bulkStats['body']), 'admin_queue_body_len' => strlen($bulkAdminQueue['body']))),
                 e2e_case(stripos($bulkAdminQueue['body'], 'Queue') !== false || stripos($bulkAdminQueue['body'], 'Task') !== false || stripos($bulkAdminQueue['body'], QTYP_DEBUG) !== false, 'admin queue page renders queue content under load'),

@@ -102,6 +102,49 @@ func TestBuildEmpireAggregatesLegacyRows(t *testing.T) {
 	}
 }
 
+func TestEmpireBuildingCanBuildCases(t *testing.T) {
+	base := EmpirePlanet{
+		ID:        1,
+		Type:      PlanetTypePlanet,
+		Fields:    10,
+		MaxFields: 160,
+		Resources: Resources{
+			Metal:     1_000_000,
+			Crystal:   1_000_000,
+			Deuterium: 1_000_000,
+		},
+		Levels: BuildingLevels{},
+	}
+	if !empireBuildingCanBuild(BuildingMetalMine, base, ResearchLevels{}) {
+		t.Fatal("expected affordable metal mine on planet to be buildable")
+	}
+	if empireBuildingCanBuild(999999, base, ResearchLevels{}) {
+		t.Fatal("unknown building must not be buildable")
+	}
+
+	moon := base
+	moon.Type = PlanetTypeMoon
+	if empireBuildingCanBuild(BuildingMetalMine, moon, ResearchLevels{}) {
+		t.Fatal("planet-only building must not be buildable on moon")
+	}
+
+	full := base
+	full.Fields = full.MaxFields
+	if empireBuildingCanBuild(BuildingMetalMine, full, ResearchLevels{}) {
+		t.Fatal("planet with no free fields must not be buildable")
+	}
+
+	poor := base
+	poor.Resources = Resources{}
+	if empireBuildingCanBuild(BuildingMetalMine, poor, ResearchLevels{}) {
+		t.Fatal("unaffordable building must not be buildable")
+	}
+
+	if empireBuildingCanBuild(BuildingNaniteFactory, base, ResearchLevels{}) {
+		t.Fatal("building with unmet requirements must not be buildable")
+	}
+}
+
 func findEmpireResourceRow(t *testing.T, rows []EmpireResourceRow, id int) EmpireResourceRow {
 	t.Helper()
 	for _, row := range rows {

@@ -25,12 +25,12 @@ func TestGameAdminHandlerReturnsAdminHome(t *testing.T) {
 			"Users",
 		),
 	}}
-	request := httptest.NewRequest(http.MethodGet, "/api/game/admin?session=pub&cp=99&mode=Users", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/game/admin?session=pub&cp=99&mode=Users&from=15", nil)
 	response := httptest.NewRecorder()
 
 	app{deps: Dependencies{GameAdmin: usecase}}.handleGameAdmin(response, request)
 
-	if response.Code != http.StatusOK || usecase.command.PlanetID != 99 || usecase.command.Mode != "Users" {
+	if response.Code != http.StatusOK || usecase.command.PlanetID != 99 || usecase.command.Mode != "Users" || usecase.command.CouponFrom != 15 {
 		t.Fatalf("unexpected response status=%d command=%+v body=%s", response.Code, usecase.command, response.Body.String())
 	}
 	var payload gameAdminResponse
@@ -56,7 +56,7 @@ func TestGameAdminHandlerMutatesBans(t *testing.T) {
 		),
 		ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueActionSaved),
 	}}
-	request := httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=99&mode=Bans", strings.NewReader(`{"action":"ban","taskId":1001,"targetIds":[77],"banMode":1,"days":0,"hours":2,"reason":"test"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=99&mode=Bans&from=30", strings.NewReader(`{"action":"ban","taskId":1001,"targetIds":[77],"banMode":1,"days":0,"hours":2,"reason":"test"}`))
 	request.RemoteAddr = "203.0.113.10:4321"
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
@@ -68,7 +68,7 @@ func TestGameAdminHandlerMutatesBans(t *testing.T) {
 	}
 	if usecase.mutation.PlanetID != 99 || usecase.mutation.Mode != "Bans" || usecase.mutation.Action != "ban" ||
 		usecase.mutation.TaskID != 1001 || len(usecase.mutation.TargetIDs) != 1 || usecase.mutation.TargetIDs[0] != 77 || usecase.mutation.BanMode != 1 ||
-		usecase.mutation.Hours != 2 || usecase.mutation.RemoteAddr != "203.0.113.10" {
+		usecase.mutation.Hours != 2 || usecase.mutation.RemoteAddr != "203.0.113.10" || usecase.mutation.CouponFrom != 30 {
 		t.Fatalf("unexpected mutation command: %+v", usecase.mutation)
 	}
 }
@@ -190,6 +190,18 @@ func TestGameAdminHandlerRejectsInvalidAndUnauthenticatedRequests(t *testing.T) 
 	}
 
 	response = httptest.NewRecorder()
+	app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{}}}.handleGameAdmin(response, httptest.NewRequest(http.MethodGet, "/api/game/admin?session=pub&from=bad", nil))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid coupon from bad request, got %d", response.Code)
+	}
+
+	response = httptest.NewRecorder()
+	app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{}}}.handleGameAdmin(response, httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&from=-1", strings.NewReader(`{}`)))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid post coupon from bad request, got %d", response.Code)
+	}
+
+	response = httptest.NewRecorder()
 	app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{}}}.handleGameAdmin(response, httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub", strings.NewReader(`{`)))
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("expected invalid post bad request, got %d", response.Code)
@@ -222,6 +234,20 @@ func TestSelectedAdminPlayerIDHandlesLegacyQuery(t *testing.T) {
 	}
 	if _, err := selectedAdminPlayerID(httptest.NewRequest(http.MethodGet, "/api/game/admin?player_id=-1", nil)); err == nil {
 		t.Fatal("expected negative player id to fail")
+	}
+	couponFrom, err := selectedAdminCouponFrom(httptest.NewRequest(http.MethodGet, "/api/game/admin?from=15", nil))
+	if err != nil || couponFrom != 15 {
+		t.Fatalf("expected coupon from 15, got from=%d err=%v", couponFrom, err)
+	}
+	couponFrom, err = selectedAdminCouponFrom(httptest.NewRequest(http.MethodGet, "/api/game/admin", nil))
+	if err != nil || couponFrom != 0 {
+		t.Fatalf("expected missing coupon from to be zero, got from=%d err=%v", couponFrom, err)
+	}
+	if _, err := selectedAdminCouponFrom(httptest.NewRequest(http.MethodGet, "/api/game/admin?from=bad", nil)); err == nil {
+		t.Fatal("expected invalid coupon from to fail")
+	}
+	if _, err := selectedAdminCouponFrom(httptest.NewRequest(http.MethodGet, "/api/game/admin?from=-1", nil)); err == nil {
+		t.Fatal("expected negative coupon from to fail")
 	}
 	if toGameAdminPlanetRowPointer(nil) != nil {
 		t.Fatal("expected nil planet row pointer conversion")
@@ -486,6 +512,28 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 		Rows:  []domaingame.AdminChecksumRow{{Path: "core.php", Checksum: "abc", Status: "ok"}},
 	}}
 	admin.BotStrategies = []domaingame.AdminBotStrategy{{ID: 701, Name: "bot"}}
+	admin.CouponRows = []domaingame.AdminCouponRow{{
+		ID:           801,
+		Code:         "ABCD-EFGH-IJKL-MNOP-QRST",
+		Amount:       5000,
+		Used:         true,
+		UserUniverse: 1,
+		UserID:       7,
+		UserName:     "owner",
+	}}
+	admin.CouponQueueRows = []domaingame.AdminCouponQueueRow{{
+		ID:           802,
+		Amount:       9000,
+		InactiveDays: 7,
+		IngameDays:   3,
+		PeriodicDays: 14,
+		Start:        1,
+		End:          2,
+		Priority:     520,
+	}}
+	admin.CouponFrom = 15
+	admin.CouponPageSize = 15
+	admin.CouponTotal = 30
 
 	payload := toGameAdminSummary(admin)
 
@@ -535,6 +583,11 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 		len(payload.BotStrategies) != 1 {
 		t.Fatalf("expected admin detail rows to map: %+v", payload)
 	}
+	if len(payload.CouponRows) != 1 || !payload.CouponRows[0].Used || payload.CouponRows[0].Code != "ABCD-EFGH-IJKL-MNOP-QRST" ||
+		len(payload.CouponQueueRows) != 1 || payload.CouponQueueRows[0].PeriodicDays != 14 ||
+		payload.CouponFrom != 15 || payload.CouponPageSize != 15 || payload.CouponTotal != 30 {
+		t.Fatalf("expected coupon rows and pagination to map: %+v", payload)
+	}
 	if issue := toGameAdminActionIssue(&domaingame.AdminActionIssue{Code: "blocked", Message: "Blocked"}); issue == nil || issue.Code != "blocked" || issue.Message != "Blocked" {
 		t.Fatalf("expected non-nil action issue conversion, got %+v", issue)
 	}
@@ -558,10 +611,13 @@ func TestLogGameAdminError(t *testing.T) {
 }
 
 type fakeGameAdminUseCase struct {
-	result   appgame.AdminResult
-	err      error
-	command  appgame.AdminCommand
-	mutation appgame.AdminMutationCommand
+	result      appgame.AdminResult
+	err         error
+	command     appgame.AdminCommand
+	mutation    appgame.AdminMutationCommand
+	botResult   appgame.AdminBotEditMutationResult
+	botErr      error
+	botMutation appgame.AdminBotEditMutationCommand
 }
 
 func (f *fakeGameAdminUseCase) GetAdmin(_ context.Context, command appgame.AdminCommand) (appgame.AdminResult, error) {
@@ -572,4 +628,9 @@ func (f *fakeGameAdminUseCase) GetAdmin(_ context.Context, command appgame.Admin
 func (f *fakeGameAdminUseCase) MutateAdmin(_ context.Context, command appgame.AdminMutationCommand) (appgame.AdminResult, error) {
 	f.mutation = command
 	return f.result, f.err
+}
+
+func (f *fakeGameAdminUseCase) MutateAdminBotEdit(_ context.Context, command appgame.AdminBotEditMutationCommand) (appgame.AdminBotEditMutationResult, error) {
+	f.botMutation = command
+	return f.botResult, f.botErr
 }

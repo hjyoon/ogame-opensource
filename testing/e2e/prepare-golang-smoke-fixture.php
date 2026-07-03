@@ -160,6 +160,41 @@ function smoke_cleanup_fleets(array $userIds, array $planetIds): void
 	dbquery("DELETE FROM {$db_prefix}queue WHERE type='" . QTYP_FLEET . "' AND owner_id IN ({$userList})");
 }
 
+function smoke_delete_planets(array $planetIds): void
+{
+    global $db_prefix;
+
+    $planetIds = array_values(array_unique(array_filter(array_map('intval', $planetIds), fn($id) => $id > 0)));
+    if (empty($planetIds)) {
+        return;
+    }
+
+    $planetList = implode(',', $planetIds);
+    $fleetIds = array();
+    $res = dbquery("SELECT fleet_id FROM {$db_prefix}fleet WHERE start_planet IN ({$planetList}) OR target_planet IN ({$planetList})");
+    while ($row = dbarray($res)) {
+        $fleetIds[] = (int)$row['fleet_id'];
+    }
+    if (!empty($fleetIds)) {
+        $fleetList = implode(',', array_values(array_unique($fleetIds)));
+        dbquery("DELETE FROM {$db_prefix}queue WHERE type='" . QTYP_FLEET . "' AND sub_id IN ({$fleetList})");
+        dbquery("DELETE FROM {$db_prefix}fleet WHERE fleet_id IN ({$fleetList})");
+    }
+
+    $buildIds = array();
+    $res = dbquery("SELECT id FROM {$db_prefix}buildqueue WHERE planet_id IN ({$planetList})");
+    while ($row = dbarray($res)) {
+        $buildIds[] = (int)$row['id'];
+    }
+    if (!empty($buildIds)) {
+        $buildList = implode(',', array_values(array_unique($buildIds)));
+        dbquery("DELETE FROM {$db_prefix}queue WHERE type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "') AND sub_id IN ({$buildList})");
+        dbquery("DELETE FROM {$db_prefix}buildqueue WHERE id IN ({$buildList})");
+    }
+
+    dbquery("DELETE FROM {$db_prefix}planets WHERE planet_id IN ({$planetList})");
+}
+
 function smoke_prepare_admin_queue_fixture(int $adminOwnerId, int $targetOwnerId): array
 {
 	global $db_prefix;
@@ -244,6 +279,35 @@ function smoke_find_empty_position(array $near): array
     return $positions[0];
 }
 
+function smoke_find_phalanx_target_position(array $source, int $radius): array
+{
+    $g = (int)$source['g'];
+    $system = (int)$source['s'];
+    $maxSystems = (int)$GLOBALS['GlobalUni']['systems'];
+    $systems = array($system);
+    for ($offset = 1; $offset <= $radius; $offset++) {
+        if ($system - $offset >= 1) {
+            $systems[] = $system - $offset;
+        }
+        if ($system + $offset <= $maxSystems) {
+            $systems[] = $system + $offset;
+        }
+    }
+
+    foreach ($systems as $candidateSystem) {
+        for ($p = 1; $p <= 15; $p++) {
+            if ($candidateSystem === $system && $p === (int)$source['p']) {
+                continue;
+            }
+            if (!HasPlanet($g, $candidateSystem, $p)) {
+                return array($g, $candidateSystem, $p);
+            }
+        }
+    }
+
+    throw new RuntimeException('Not enough empty planet positions found inside the Go phalanx fixture range.');
+}
+
 function smoke_find_empty_positions(array $near, int $count): array
 {
     $g = (int)$near['g'];
@@ -309,6 +373,16 @@ function smoke_prepare_moon(int $homePlanetId, int $ownerId): int
     if ($home === null) {
         throw new RuntimeException('Cannot prepare phalanx moon without a home planet.');
     }
+    $staleMoons = array();
+    $res = dbquery(
+        "SELECT planet_id FROM {$db_prefix}planets WHERE owner_id={$ownerId} AND type=" . PTYP_MOON . " AND name='Go Smoke Moon' " .
+        "AND NOT (g=" . (int)$home['g'] . " AND s=" . (int)$home['s'] . " AND p=" . (int)$home['p'] . ")"
+    );
+    while ($row = dbarray($res)) {
+        $staleMoons[] = (int)$row['planet_id'];
+    }
+    smoke_delete_planets($staleMoons);
+
     $moonId = PlanetHasMoon($homePlanetId);
     if ($moonId <= 0) {
         $moonId = CreatePlanet((int)$home['g'], (int)$home['s'], (int)$home['p'], $ownerId, 1, 1, 20, time());
@@ -2633,10 +2707,8 @@ $home = LoadPlanetById((int)$login['home_planet_id']);
 if ($home === null) {
 	throw new RuntimeException('Go smoke home planet is missing.');
 }
-$targetCoords = smoke_find_empty_position($home);
 smoke_cleanup_fleets(array((int)$login['player_id'], (int)$operator['player_id'], (int)$target['player_id'], (int)$freezeVictim['player_id']), array((int)$login['home_planet_id'], (int)$operator['home_planet_id'], (int)$target['home_planet_id'], (int)$freezeVictim['home_planet_id']));
 smoke_prepare_planet((int)$login['home_planet_id'], (int)$login['player_id'], 'Go Smoke Home', array((int)$home['g'], (int)$home['s'], (int)$home['p']));
-smoke_prepare_planet((int)$target['home_planet_id'], (int)$target['player_id'], 'Go Smoke Target', $targetCoords);
 smoke_prepare_planet((int)$freezeVictim['home_planet_id'], (int)$freezeVictim['player_id'], 'Go Freeze', smoke_find_empty_position($home));
 $premiumDmFixture = smoke_prepare_premium_dm_fixture($password, $home);
 $vacationFreezeFixture = smoke_prepare_vacation_freeze_fixture($password, $home);
@@ -2647,6 +2719,12 @@ $concurrencyRaceFixture = smoke_prepare_concurrency_race_fixture($password, $hom
 $merchantFixture = smoke_prepare_merchant_fixture($password, $home);
 $moonBuildFixture = smoke_prepare_moon_build_fixture($password, $home);
 $moonId = smoke_prepare_moon((int)$login['home_planet_id'], (int)$login['player_id']);
+$moon = LoadPlanetById($moonId);
+if ($moon === null) {
+    throw new RuntimeException('Go smoke phalanx moon is missing.');
+}
+$targetCoords = smoke_find_phalanx_target_position($moon, GetPhalanxRadius((int)$moon[GID_B_PHALANX]));
+smoke_prepare_planet((int)$target['home_planet_id'], (int)$target['player_id'], 'Go Smoke Target', $targetCoords);
 $targetHome = LoadPlanetById((int)$target['home_planet_id']);
 if ($targetHome === null) {
     throw new RuntimeException('Go smoke target planet is missing.');

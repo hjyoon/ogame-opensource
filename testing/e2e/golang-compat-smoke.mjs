@@ -441,6 +441,7 @@ const cases = [];
 
 try {
   const runId = Date.now().toString(36);
+  const nameRunId = runId.replace(/\d/g, (digit) => "abcdefghij"[Number(digit)] ?? "a");
   const smokeFixture = await readOptionalJSON(smokeFixtureFile);
   const phalanxFixture = smokeFixture?.phalanx ?? {};
   const phalanxEdgesFixture = smokeFixture?.phalanx_edges ?? {};
@@ -1125,7 +1126,7 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      character: `Pilot${runId}`,
+      character: `Pilot${nameRunId}`,
       password: "E2E_http123",
       email: `pilot-${runId}@example.local`,
       universe: universes[0]?.baseUrl ?? "http://localhost:8888",
@@ -1174,7 +1175,7 @@ try {
   }));
 
   const registrationPassword = "E2E_http123";
-  const registrationCharacter = `NewPilot${runId}`;
+  const registrationCharacter = `NewPilot${nameRunId}`;
   const registrationEmail = `new-pilot-${runId}@example.local`;
   const mailhogClear = await clearMailhog();
   const createdRegistration = await request("/api/public/registration", {
@@ -1307,7 +1308,7 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      character: `DupEmail${runId}`.slice(0, 20),
+      character: `DupEmail${nameRunId}`.slice(0, 20),
       password: registrationPassword,
       email: registrationEmail,
       universe: universes[0]?.baseUrl ?? "http://localhost:8888",
@@ -1392,7 +1393,7 @@ try {
   }));
 
   const rotationUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
-  const rotationCharacter = `RotatePilot${runId}`;
+  const rotationCharacter = `RotatePilot${nameRunId}`;
   const rotationPassword = "E2E_http123";
   const rotationEmail = `rotate-pilot-${runId}@example.local`;
   const rotationMailClear = await clearMailhog();
@@ -1476,7 +1477,7 @@ try {
   }));
 
   const accountSecurityUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
-  const accountSecurityCharacter = `Sec${runId}`;
+  const accountSecurityCharacter = `Sec${nameRunId}`;
   const accountSecurityPassword = "E2E_http123";
   const accountSecurityNewPassword = "Changed_123";
   const accountSecurityEmail = `security-pilot-${runId}@example.local`;
@@ -1719,7 +1720,7 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      character: `LegacyBad${runId}`,
+      character: `LegacyBad${nameRunId}`,
       email: `legacy-bad-${runId}@example.local`,
       universe: legacyRegistrationUniverse,
       agb: "on"
@@ -1729,7 +1730,7 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      character: `LegacyTerms${runId}`,
+      character: `LegacyTerms${nameRunId}`,
       password: "E2E_http123",
       email: `legacy-terms-${runId}@example.local`,
       universe: legacyRegistrationUniverse
@@ -1742,7 +1743,7 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      character: `LegacyForm${runId}`,
+      character: `LegacyForm${nameRunId}`,
       password: legacyRegistrationPassword,
       email: legacyRegistrationEmail,
       universe: legacyRegistrationUniverse,

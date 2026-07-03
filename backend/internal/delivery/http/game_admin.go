@@ -71,6 +71,9 @@ type gameAdminSummary struct {
 	BotStrategies   []gameAdminBotStrategy      `json:"botStrategies,omitempty"`
 	CouponRows      []gameAdminCouponRow        `json:"couponRows,omitempty"`
 	CouponQueueRows []gameAdminCouponQueueRow   `json:"couponQueueRows,omitempty"`
+	CouponFrom      int                         `json:"couponFrom,omitempty"`
+	CouponPageSize  int                         `json:"couponPageSize,omitempty"`
+	CouponTotal     int                         `json:"couponTotal,omitempty"`
 }
 
 type gameAdminViewer struct {
@@ -375,6 +378,11 @@ func (a app) handleGameAdminGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid selected player", http.StatusBadRequest)
 		return
 	}
+	couponFrom, err := selectedAdminCouponFrom(r)
+	if err != nil {
+		http.Error(w, "invalid coupon page", http.StatusBadRequest)
+		return
+	}
 	result, err := a.deps.GameAdmin.GetAdmin(r.Context(), appgame.AdminCommand{
 		PublicSession:   r.URL.Query().Get("session"),
 		PrivateSessions: cookieMap(r),
@@ -384,6 +392,7 @@ func (a app) handleGameAdminGet(w http.ResponseWriter, r *http.Request) {
 		TargetPlayerID:  targetPlayerID,
 		TargetPlanetID:  planetID,
 		Filter:          r.URL.Query().Get("filter"),
+		CouponFrom:      couponFrom,
 	})
 	if err != nil {
 		logGameAdminError(a.deps.Logger, r, "game admin get failed", err)
@@ -408,6 +417,11 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid selected player", http.StatusBadRequest)
 		return
 	}
+	couponFrom, err := selectedAdminCouponFrom(r)
+	if err != nil {
+		http.Error(w, "invalid coupon page", http.StatusBadRequest)
+		return
+	}
 	var request gameAdminMutationRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		http.Error(w, "invalid admin request", http.StatusBadRequest)
@@ -422,6 +436,7 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		TargetPlayerID:  targetPlayerID,
 		TargetPlanetID:  planetID,
 		Filter:          r.URL.Query().Get("filter"),
+		CouponFrom:      couponFrom,
 		Action:          request.Action,
 		TaskID:          request.TaskID,
 		TargetIDs:       request.TargetIDs,
@@ -462,6 +477,18 @@ func selectedAdminPlayerID(r *http.Request) (int, error) {
 		return 0, strconv.ErrSyntax
 	}
 	return playerID, nil
+}
+
+func selectedAdminCouponFrom(r *http.Request) (int, error) {
+	raw := r.URL.Query().Get("from")
+	if raw == "" {
+		return 0, nil
+	}
+	from, err := strconv.Atoi(raw)
+	if err != nil || from < 0 {
+		return 0, strconv.ErrSyntax
+	}
+	return from, nil
 }
 
 func logGameAdminError(logger *slog.Logger, r *http.Request, message string, err error) {
@@ -662,6 +689,9 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		BotStrategies:   botStrategies,
 		CouponRows:      couponRows,
 		CouponQueueRows: couponQueueRows,
+		CouponFrom:      admin.CouponFrom,
+		CouponPageSize:  admin.CouponPageSize,
+		CouponTotal:     admin.CouponTotal,
 	}
 }
 

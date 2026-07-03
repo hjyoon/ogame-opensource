@@ -19,7 +19,7 @@ if (!$prem['commander']) {
     MyGoto ("overview");
 }
 
-$planettype = intval($_GET['planettype']);
+$planettype = intval($_GET['planettype'] ?? 1);
 
 if ( $GlobalUni['moons'] ) {
     if ( $planettype != 1 && $planettype != 3) $planettype = 1;

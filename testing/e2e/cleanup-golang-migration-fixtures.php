@@ -51,6 +51,36 @@ function cleanup_go_int_list(array $ids): string
     return empty($ids) ? '0' : implode(',', $ids);
 }
 
+function cleanup_go_delete_planets(array $planetIds): void
+{
+    global $db_prefix;
+
+    $planetIds = array_values(array_unique(array_filter(array_map('intval', $planetIds), fn($id) => $id > 0)));
+    if (empty($planetIds)) {
+        return;
+    }
+
+    $planetList = cleanup_go_int_list($planetIds);
+    $fleetIds = cleanup_go_ids(
+        "SELECT fleet_id FROM {$db_prefix}fleet WHERE start_planet IN ({$planetList}) OR target_planet IN ({$planetList})",
+        'fleet_id'
+    );
+    if (!empty($fleetIds)) {
+        $fleetList = cleanup_go_int_list($fleetIds);
+        dbquery("DELETE FROM {$db_prefix}queue WHERE type='" . QTYP_FLEET . "' AND sub_id IN ({$fleetList})");
+        dbquery("DELETE FROM {$db_prefix}fleet WHERE fleet_id IN ({$fleetList})");
+    }
+
+    $buildIds = cleanup_go_ids("SELECT id FROM {$db_prefix}buildqueue WHERE planet_id IN ({$planetList})", 'id');
+    if (!empty($buildIds)) {
+        $buildList = cleanup_go_int_list($buildIds);
+        dbquery("DELETE FROM {$db_prefix}queue WHERE type IN ('" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "') AND sub_id IN ({$buildList})");
+        dbquery("DELETE FROM {$db_prefix}buildqueue WHERE id IN ({$buildList})");
+    }
+
+    dbquery("DELETE FROM {$db_prefix}planets WHERE planet_id IN ({$planetList})");
+}
+
 function cleanup_go_quoted_list(array $values): string
 {
     return implode(',', array_map(fn($value) => "'" . cleanup_go_sql_escape($value) . "'", $values));
@@ -72,6 +102,28 @@ function cleanup_go_fixture_names(): array
         'empirevisual',
         'alliancevisual',
         'allianceapplicant',
+        'gooperator',
+        'gophalaxtarget',
+        'gofreezevictim',
+        'gophalanxlow',
+        'gorecovery',
+        'gorecoverytemp',
+        'gopremiumlow',
+        'gopremiummixed',
+        'gopremiumextend',
+        'gopremiuminvalid',
+        'gofleetattacker',
+        'gofleetweak',
+        'gofleetblocked',
+        'gofleetnoob',
+        'gofleetstrong',
+        'gofleetvacation',
+        'gofleetoperator',
+        'gofleetcomparable',
+        'govacbuild',
+        'govacfleet',
+        'govacmutate',
+        'govacdefender',
         'gotecnanlock',
         'gotecnanopen',
         'gotecreslock',
@@ -98,15 +150,45 @@ function cleanup_go_fixture_names(): array
         'goconcmissile',
         'goconcfleet',
         'goconcfleettarget',
+        'gomerchantlow',
+        'gomerchantcall',
+        'gomerchanttrade',
+        'gomerchantreject',
+        'gomoonbuilder',
+        'gotemplatecommander',
+        'gotemplatenocom',
+        'gotemplateforeign',
+        'gogalaxyremote',
+        'gogalaxynodeut',
+        'gogmissile',
+        'gogmissilet',
+        'gobuddya',
+        'gobuddyb',
+        'gomsgown',
+        'gomsgfor',
+        'gomsgret',
+        'gomsgadm',
+        'gomsgbulk',
+        'gomsgnon',
+        'gomsgsnd',
+        'gomsgrcv',
+        'goresown',
+        'goresfor',
         'goexpedition',
         'goexpedcycle',
         'gofleetlife',
         'gofleetlifetarget',
+        'gorecallatt',
+        'gorecalldef',
         'goacshold',
         'goacsholdbuddy',
         'goacsholdstranger',
         'gopctxown',
         'gopctxfor',
+        'gohardenatt',
+        'gohardendef',
+        'gostatslead',
+        'gostatschamp',
     );
 }
 
@@ -132,6 +214,9 @@ global $db_prefix;
 if (MDBConnect()) {
     MDBQuery("DELETE FROM unis WHERE num IN (9901,9902)");
 }
+
+$visualPlanetNames = cleanup_go_quoted_list(array('Visual Hover Moon', 'Visual Phalanx Moon'));
+cleanup_go_delete_planets(cleanup_go_ids("SELECT planet_id FROM {$db_prefix}planets WHERE name IN ({$visualPlanetNames})", 'planet_id'));
 
 $names = array_map(fn($name) => mb_strtolower($name, 'UTF-8'), cleanup_go_fixture_names());
 $nameList = cleanup_go_quoted_list($names);

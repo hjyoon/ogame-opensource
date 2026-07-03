@@ -143,12 +143,16 @@ func TestFleetServicePreparesDispatchDraft(t *testing.T) {
 		TargetType:      domaingame.GamePlanetTypeMoon,
 		Mission:         domaingame.FleetMissionTransport,
 		Speed:           9,
+		UnionID:         7,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !result.Authenticated || result.Fleet.DispatchDraft == nil || result.Fleet.DispatchDraft.TotalShips != 3 {
 		t.Fatalf("unexpected prepare result: %+v", result)
+	}
+	if result.Fleet.DispatchDraft.UnionID != 7 {
+		t.Fatalf("expected prepare to preserve ACS union id, got %+v", result.Fleet.DispatchDraft)
 	}
 	if repository.query.PlayerID != 42 || repository.query.PlanetID != 99 {
 		t.Fatalf("expected prepare to load selected fleet screen, got %+v", repository.query)

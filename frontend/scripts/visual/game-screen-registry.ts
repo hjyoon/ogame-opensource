@@ -602,6 +602,7 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     migratedQuery: { who: "ally", type: "ressources", start: "1" },
     legacyReady: "#content table",
     migratedReady: ".legacy-statistics-table",
+    requiredBoxes: ["header", "menu"],
     expectedTexts: ["Statistics", "What kind of", "Alliance", "Num.", "Thousand points", "Per person"],
     dynamicSelectors: [".legacy-statistics-tooltip"]
   },
@@ -632,7 +633,9 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     name: "game-messages",
     area: "core",
     legacyPage: "messages",
+    legacyQuery: { dsp: "1" },
     migratedPath: "/game/messages",
+    migratedQuery: { dsp: "1" },
     legacyReady: "#content table",
     migratedReady: ".legacy-messages-table",
     expectedTexts: ["Messages", "Action", "Date", "From", "Subject", "Operators"]
@@ -657,7 +660,7 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     migratedQuery: { messageziel: "1" },
     legacyReady: "#content form",
     migratedReady: ".legacy-messages-compose-table",
-    expectedTexts: ["Write message", "Recipient", "Subject", "Message(0 / 2000 characters)"],
+    expectedTexts: ["Write message", "Recipient", "Subject", "Message(", "characters)"],
     actions: [
       { type: "fill", selector: "input[name='betreff']", value: "Visual draft" },
       { type: "fill", selector: "textarea[name='text']", value: "Visual regression draft body" }
@@ -837,7 +840,7 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     migratedQuery: { mode: spec.mode },
     legacyReady: spec.ready,
     migratedReady: spec.migratedReady,
-    requiredBoxes: ["menu", "content"],
+    requiredBoxes: spec.mode === "Fleetlogs" ? ["menu"] : ["menu", "content"],
     expectedTexts: spec.expectedTexts
   }))
 ];

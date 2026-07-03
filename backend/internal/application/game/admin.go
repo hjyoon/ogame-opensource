@@ -25,6 +25,7 @@ type AdminQuery struct {
 	TargetPlayerID int
 	TargetPlanetID int
 	Filter         string
+	CouponFrom     int
 }
 
 type AdminCommand struct {
@@ -36,6 +37,7 @@ type AdminCommand struct {
 	TargetPlayerID  int
 	TargetPlanetID  int
 	Filter          string
+	CouponFrom      int
 }
 
 type AdminMutationQuery struct {
@@ -74,6 +76,7 @@ type AdminMutationCommand struct {
 	TargetPlayerID  int
 	TargetPlanetID  int
 	Filter          string
+	CouponFrom      int
 	Action          string
 	TaskID          int
 	TargetIDs       []int
@@ -164,6 +167,7 @@ func (s AdminService) GetAdmin(ctx context.Context, command AdminCommand) (Admin
 		TargetPlayerID: command.TargetPlayerID,
 		TargetPlanetID: command.TargetPlanetID,
 		Filter:         command.Filter,
+		CouponFrom:     command.CouponFrom,
 	})
 	if err != nil {
 		return AdminResult{}, err
@@ -197,6 +201,7 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		TargetPlayerID: command.TargetPlayerID,
 		TargetPlanetID: command.TargetPlanetID,
 		Filter:         command.Filter,
+		CouponFrom:     command.CouponFrom,
 	})
 	if err != nil {
 		return AdminResult{}, err
@@ -243,6 +248,7 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		TargetPlayerID: command.TargetPlayerID,
 		TargetPlanetID: command.TargetPlanetID,
 		Filter:         command.Filter,
+		CouponFrom:     command.CouponFrom,
 	})
 	if err != nil {
 		return AdminResult{}, err

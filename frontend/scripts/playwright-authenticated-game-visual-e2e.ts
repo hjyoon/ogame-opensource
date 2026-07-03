@@ -40,6 +40,14 @@ type AuthFixture = {
   home_planet_id?: number;
   private_session?: string;
   cookies?: Record<string, string>;
+  admin?: {
+    session: string;
+    player_id?: number;
+    login_user?: string;
+    home_planet_id?: number;
+    private_session?: string;
+    cookies?: Record<string, string>;
+  };
   report?: {
     report_id?: number;
   } | null;
@@ -123,20 +131,21 @@ const browser = await browserType.launch({
 try {
   const results: CaseResult[] = [];
   for (const spec of selectedScreens) {
+    const activeFixture = authFixtureForScreen(spec, fixture);
     const viewportsForSpec =
       !viewportFilterActive && spec.viewports ? selectGameVisualViewports(spec.viewports.join(",")) : selectedViewports;
     for (const viewport of viewportsForSpec) {
       if (viewportFilterActive && spec.viewports && !spec.viewports.includes(viewport.name)) {
         continue;
       }
-      const legacyContext = await newContext(browser, viewport, legacyBaseURL, fixture);
-      const legacySession = fixture?.session ?? (await loginLegacy(legacyContext));
-      const legacy = await capturePage(legacyContext, spec, "legacy", legacyURL(spec, legacySession, fixture), viewport);
+      const legacyContext = await newContext(browser, viewport, legacyBaseURL, activeFixture);
+      const legacySession = activeFixture?.session ?? (await loginLegacy(legacyContext));
+      const legacy = await capturePage(legacyContext, spec, "legacy", legacyURL(spec, legacySession, activeFixture), viewport);
       await legacyContext.close();
 
-      const migratedContext = await newContext(browser, viewport, migratedBaseURL, fixture);
-      const migratedSession = fixture?.session ?? (await loginMigrated(migratedContext));
-      const migrated = await capturePage(migratedContext, spec, "migrated", migratedURL(spec, migratedSession, fixture), viewport);
+      const migratedContext = await newContext(browser, viewport, migratedBaseURL, activeFixture);
+      const migratedSession = activeFixture?.session ?? (await loginMigrated(migratedContext));
+      const migrated = await capturePage(migratedContext, spec, "migrated", migratedURL(spec, migratedSession, activeFixture), viewport);
       await migratedContext.close();
 
       const diffPath = join(screenshotDir, `${spec.name}-${viewport.name}-diff.png`);
@@ -221,6 +230,16 @@ try {
   }
 } finally {
   await browser.close();
+}
+
+function authFixtureForScreen(spec: GameVisualScreenSpec, authFixture: AuthFixture | undefined): AuthFixture | undefined {
+  if (!authFixture || !spec.name.startsWith("game-admin") || !authFixture.admin?.session) {
+    return authFixture;
+  }
+  return {
+    ...authFixture,
+    ...authFixture.admin
+  };
 }
 
 async function loadAuthFixture(path: string | undefined): Promise<AuthFixture | undefined> {

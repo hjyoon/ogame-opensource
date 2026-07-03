@@ -108,16 +108,19 @@ func (a app) handleGameMessagesGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid message target", http.StatusBadRequest)
 		return
 	}
-	showSummary := targetPlayerID == 0
+	query := r.URL.Query()
+	showSummary := targetPlayerID == 0 && query.Get("summary") == "1"
+	legacyFolderDisplay := targetPlayerID == 0 && query.Get("dsp") == "1"
 
 	result, err := a.deps.GameMessages.GetMessages(r.Context(), appgame.MessagesCommand{
-		PublicSession:   r.URL.Query().Get("session"),
-		PrivateSessions: cookieMap(r),
-		RemoteAddr:      remoteIP(r.RemoteAddr),
-		PlanetID:        planetID,
-		TargetPlayerID:  targetPlayerID,
-		Subject:         r.URL.Query().Get("betreff"),
-		ShowSummary:     showSummary,
+		PublicSession:       query.Get("session"),
+		PrivateSessions:     cookieMap(r),
+		RemoteAddr:          remoteIP(r.RemoteAddr),
+		PlanetID:            planetID,
+		TargetPlayerID:      targetPlayerID,
+		Subject:             query.Get("betreff"),
+		ShowSummary:         showSummary,
+		LegacyFolderDisplay: legacyFolderDisplay,
 	})
 	if err != nil {
 		http.Error(w, "game messages unavailable", http.StatusServiceUnavailable)

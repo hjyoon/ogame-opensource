@@ -2152,6 +2152,7 @@ func TestGameFleetEndpointPreparesDispatchDraft(t *testing.T) {
 				TargetType:      domaingame.GamePlanetTypeMoon,
 				Mission:         domaingame.FleetMissionTransport,
 				Speed:           9,
+				UnionID:         7,
 				Cargo:           15000,
 				Distance:        20000,
 				DurationSeconds: 2121,
@@ -2173,7 +2174,7 @@ func TestGameFleetEndpointPreparesDispatchDraft(t *testing.T) {
 		},
 	}}
 	server := testServerWithGameFleet(t, fleet)
-	body := `{"action":"prepare","ships":{"202":3},"target":{"galaxy":2,"system":3,"position":4},"targetType":3,"mission":3,"speed":9}`
+	body := `{"action":"prepare","ships":{"202":3},"target":{"galaxy":2,"system":3,"position":4},"targetType":3,"mission":3,"speed":9,"unionId":7}`
 	req := httptest.NewRequest(http.MethodPost, "/api/game/fleet?session=public&cp=99", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "203.0.113.10:4321"
@@ -2184,7 +2185,7 @@ func TestGameFleetEndpointPreparesDispatchDraft(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if fleet.prepare.PublicSession != "public" || fleet.prepare.PlanetID != 99 || fleet.prepare.Ships[domaingame.FleetSmallCargo] != 3 || fleet.prepare.Target.Position != 4 || fleet.prepare.TargetType != 3 || fleet.prepare.Mission != 3 || fleet.prepare.Speed != 9 {
+	if fleet.prepare.PublicSession != "public" || fleet.prepare.PlanetID != 99 || fleet.prepare.Ships[domaingame.FleetSmallCargo] != 3 || fleet.prepare.Target.Position != 4 || fleet.prepare.TargetType != 3 || fleet.prepare.Mission != 3 || fleet.prepare.Speed != 9 || fleet.prepare.UnionID != 7 {
 		t.Fatalf("unexpected fleet prepare command: %+v", fleet.prepare)
 	}
 	if fleet.prepare.PrivateSessions["prsess_42_1"] != "private" {
@@ -2194,7 +2195,7 @@ func TestGameFleetEndpointPreparesDispatchDraft(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if !response.Authenticated || response.Fleet == nil || response.Fleet.DispatchDraft == nil || response.Fleet.DispatchDraft.Cargo != 15000 || response.Fleet.DispatchDraft.Ships[0].Count != 3 {
+	if !response.Authenticated || response.Fleet == nil || response.Fleet.DispatchDraft == nil || response.Fleet.DispatchDraft.Cargo != 15000 || response.Fleet.DispatchDraft.Ships[0].Count != 3 || response.Fleet.DispatchDraft.UnionID != 7 {
 		t.Fatalf("unexpected prepare response: %+v", response)
 	}
 	if response.Fleet.DispatchDraft.MissionOptions[0].ID != domaingame.FleetMissionTransport || response.Fleet.DispatchDraft.Resources[0].Available != 1200 {
@@ -3765,7 +3766,8 @@ func TestGameMessagesEndpointReturnsInbox(t *testing.T) {
 		t.Fatalf("unexpected message row mapping: %+v", row)
 	}
 	if messages.command.PublicSession != "public" || messages.command.PlanetID != 99 || messages.command.TargetPlayerID != 77 ||
-		messages.command.Subject != "Re:Subject" || messages.command.ShowSummary || messages.command.RemoteAddr != "203.0.113.10" {
+		messages.command.Subject != "Re:Subject" || messages.command.ShowSummary || messages.command.LegacyFolderDisplay ||
+		messages.command.RemoteAddr != "203.0.113.10" {
 		t.Fatalf("unexpected messages command: %+v", messages.command)
 	}
 	if messages.command.PrivateSessions["prsess_42_1"] != "private" {
@@ -3776,10 +3778,10 @@ func TestGameMessagesEndpointReturnsInbox(t *testing.T) {
 	}
 }
 
-func TestGameMessagesEndpointRequestsSummaryForDefaultInbox(t *testing.T) {
+func TestGameMessagesEndpointDefaultsToInboxAndSupportsExplicitSummary(t *testing.T) {
 	messages := &fakeGameMessages{result: appgame.MessagesResult{
 		Authenticated: true,
-		Messages:      domaingame.Messages{Action: domaingame.MessagesActionSummary},
+		Messages:      domaingame.Messages{Action: domaingame.MessagesActionInbox},
 	}}
 	server := testServerWithGameMessages(t, messages)
 	req := httptest.NewRequest(http.MethodGet, "/api/game/messages?session=public", nil)
@@ -3789,8 +3791,41 @@ func TestGameMessagesEndpointRequestsSummaryForDefaultInbox(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
-	if !messages.command.ShowSummary || messages.command.TargetPlayerID != 0 {
-		t.Fatalf("expected default messages query to request summary, got %+v", messages.command)
+	if messages.command.ShowSummary || messages.command.LegacyFolderDisplay || messages.command.TargetPlayerID != 0 {
+		t.Fatalf("expected default messages query to request inbox, got %+v", messages.command)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/game/messages?session=public&summary=1", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected explicit summary 200, got %d", rec.Code)
+	}
+	if !messages.command.ShowSummary || messages.command.LegacyFolderDisplay || messages.command.TargetPlayerID != 0 {
+		t.Fatalf("expected explicit summary query to request summary, got %+v", messages.command)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/game/messages?session=public&dsp=1", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected legacy dsp inbox 200, got %d", rec.Code)
+	}
+	if messages.command.ShowSummary || !messages.command.LegacyFolderDisplay || messages.command.TargetPlayerID != 0 {
+		t.Fatalf("expected legacy dsp query to request legacy folder display without explicit summary, got %+v", messages.command)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/game/messages?session=public&cp=99&dsp=1", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected legacy cp dsp inbox 200, got %d", rec.Code)
+	}
+	if messages.command.ShowSummary || !messages.command.LegacyFolderDisplay || messages.command.TargetPlayerID != 0 || messages.command.PlanetID != 99 {
+		t.Fatalf("expected legacy cp dsp query to request legacy folder display without explicit summary, got %+v", messages.command)
 	}
 }
 

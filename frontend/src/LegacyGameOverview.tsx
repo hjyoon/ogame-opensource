@@ -175,6 +175,7 @@ export type GameFleetDispatchPrepare = {
   targetType: number;
   mission: number;
   speed: number;
+  unionId?: number;
 };
 
 export type GameFleetDispatchLaunch = GameFleetDispatchPrepare & {
@@ -540,6 +541,7 @@ type GameFleetDispatchDraft = {
   targetType: number;
   mission: number;
   speed: number;
+  unionId: number;
   cargo: number;
   distance: number;
   durationSeconds: number;
@@ -1249,6 +1251,9 @@ type GameAdmin = {
   botStrategies?: GameAdminBotStrategy[];
   couponRows?: GameAdminCouponRow[];
   couponQueueRows?: GameAdminCouponQueueRow[];
+  couponFrom?: number;
+  couponPageSize?: number;
+  couponTotal?: number;
 };
 
 type GameAdminViewer = {
@@ -4046,6 +4051,11 @@ function AdminCouponsTable({ admin, onAdminAction }: { admin: GameAdmin; onAdmin
       periodicDays: Math.max(0, Number(data.get("periodic")) || 0)
     });
   };
+  const couponFrom = Math.max(0, Math.floor(admin.couponFrom ?? 0));
+  const couponPageSize = Math.max(1, Math.floor(admin.couponPageSize ?? 15));
+  const couponTotal = Math.max(0, Math.floor(admin.couponTotal ?? 0));
+  const previousFrom = Math.max(0, couponFrom - couponPageSize);
+  const nextFrom = couponFrom + couponPageSize;
   return (
     <>
       <table border={0} cellPadding={2} cellSpacing={1} className="legacy-admin-coupons-table">
@@ -4081,7 +4091,14 @@ function AdminCouponsTable({ admin, onAdminAction }: { admin: GameAdmin; onAdmin
             </tr>
           ))}
           <tr>
-            <th colSpan={6} />
+            <th colSpan={6}>
+              {couponFrom >= couponPageSize ? (
+                <>
+                  <a href={adminCouponPageHref(previousFrom)}>&lt;&lt; Prev {couponPageSize}</a>&nbsp;&nbsp;&nbsp;&nbsp;
+                </>
+              ) : null}
+              {couponFrom < couponTotal && nextFrom < couponTotal ? <a href={adminCouponPageHref(nextFrom)}>Next {couponPageSize} &gt;&gt;</a> : null}
+            </th>
           </tr>
         </tbody>
       </table>
@@ -4155,6 +4172,13 @@ function AdminCouponsTable({ admin, onAdminAction }: { admin: GameAdmin; onAdmin
       </form>
     </>
   );
+}
+
+function adminCouponPageHref(from: number) {
+  const query = new URLSearchParams(window.location.search);
+  query.set("mode", "Coupons");
+  query.set("from", String(Math.max(0, Math.floor(from))));
+  return gameRouteURL("/game/admin", `?${query.toString()}`);
 }
 
 function adminCouponQueuePrintR(row: GameAdminCouponQueueRow) {
@@ -8315,7 +8339,8 @@ function FleetTable({
       target: dispatchTarget,
       targetType: dispatchTargetType,
       mission: dispatchMission,
-      speed: 10
+      speed: 10,
+      unionId: 0
     });
   };
   const submitFleetCommand = (event: React.FormEvent<HTMLDivElement>) => {
@@ -8767,6 +8792,7 @@ function FleetTargetStepTable({
       target,
       targetType: legacyFleetInputInt(form, "planettype", current.targetType),
       speed: legacyFleetInputInt(form, "speed", current.speed),
+      unionId: legacyFleetInputInt(form, "union2", current.unionId),
       distance: legacyFleetCoordinateDistance(fleet.currentPlanet.coordinates, target)
     }));
   };
@@ -8803,7 +8829,8 @@ function FleetTargetStepTable({
       },
       targetType: legacyFormInt(form.get("planettype"), draft.targetType),
       mission: draft.mission,
-      speed: legacyFormInt(form.get("speed"), draft.speed)
+      speed: legacyFormInt(form.get("speed"), draft.speed),
+      unionId: legacyFormInt(form.get("union2"), draft.unionId)
     });
   };
   return (
@@ -8814,7 +8841,7 @@ function FleetTargetStepTable({
       onInput={(event) => updateDynamicDraft(event.currentTarget)}
       onSubmit={submitTarget}
     >
-      {battleUnions.length > 0 ? <input name="union2" type="hidden" value={0} /> : null}
+      {battleUnions.length > 0 ? <input name="union2" type="hidden" readOnly value={dynamicDraft.unionId} /> : null}
       <table border={0} cellPadding={0} cellSpacing={1} className="legacy-overview-table legacy-fleet-target-table" width={519}>
         <tbody>
           <tr style={{ height: 20 }}>
@@ -9917,7 +9944,36 @@ function GalaxyTable({
     });
   };
   const showGalaxyMoonDeuterium = galaxy.currentPlanet.type === LegacyPlanetTypeMoon;
-  const hasGalaxyInfo = galaxy.extra.commander || showGalaxyMoonDeuterium;
+  const galaxyInfoParts: React.ReactNode[] = [];
+  if (galaxy.extra.commander) {
+    if (galaxy.extra.spyProbes > 0) {
+      galaxyInfoParts.push(
+        <span key="probes">
+          <span id="probes">{formatLegacyNumber(galaxy.extra.spyProbes)}</span> Spy probes{" "}
+        </span>
+      );
+    }
+    if (galaxy.extra.recyclers > 0) {
+      galaxyInfoParts.push(
+        <span key="recyclers">
+          <span id="recyclers">{formatLegacyNumber(galaxy.extra.recyclers)}</span> Recyclers{" "}
+        </span>
+      );
+    }
+    if (galaxy.extra.missiles > 0) {
+      galaxyInfoParts.push(
+        <span key="missiles">
+          <span id="missiles">{formatLegacyNumber(galaxy.extra.missiles)}</span> Interplanetary rockets{" "}
+        </span>
+      );
+    }
+    galaxyInfoParts.push(
+      <span key="slots">
+        &nbsp;&nbsp;&nbsp;&nbsp;<span id="slots">{galaxy.extra.slots.used}</span>&nbsp;of the {galaxy.extra.slots.max} slots are in service
+      </span>
+    );
+  }
+  const hasGalaxyInfo = galaxyInfoParts.length > 0 || showGalaxyMoonDeuterium;
 
   return (
     <>
@@ -10062,6 +10118,19 @@ function GalaxyTable({
               </a>
             </td>
           </tr>
+          {hasGalaxyInfo ? (
+            <tr className="legacy-galaxy-info-row">
+              <td className="c" colSpan={8}>
+                {galaxyInfoParts}
+                {showGalaxyMoonDeuterium ? (
+                  <>
+                    {galaxyInfoParts.length > 0 ? <br /> : null}
+                    Deuterium: {formatLegacyNumber(galaxy.currentPlanet.resources.deuterium)}
+                  </>
+                ) : null}
+              </td>
+            </tr>
+          ) : null}
           <tr id="fleetstatusrow" style={instantRows.length > 0 ? undefined : { display: "none" }}>
             <th colSpan={8}>
               <table id="fleetstatustable" style={{ fontWeight: "bold" }} width="100%">
@@ -10080,30 +10149,6 @@ function GalaxyTable({
           </tr>
         </tbody>
       </table>
-      {hasGalaxyInfo ? (
-        <table className="legacy-overview-table legacy-galaxy-info-table" width={569}>
-          <tbody>
-            <tr>
-              <td className="c" colSpan={2}>
-                {galaxy.extra.commander ? (
-                  <>
-                    Espionage Probes {formatLegacyNumber(galaxy.extra.spyProbes)} Recycler {formatLegacyNumber(galaxy.extra.recyclers)}{" "}
-                    Interplanetary Missiles {formatLegacyNumber(galaxy.extra.missiles)}
-                    <br />
-                    {galaxy.extra.slots.used} of {galaxy.extra.slots.max} slots are in use
-                  </>
-                ) : null}
-                {showGalaxyMoonDeuterium ? (
-                  <>
-                    {galaxy.extra.commander ? <br /> : null}
-                    Deuterium: {formatLegacyNumber(galaxy.currentPlanet.resources.deuterium)}
-                  </>
-                ) : null}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      ) : null}
       <br />
       <br />
     </>
@@ -11310,34 +11355,35 @@ function MessagesTable({
     onDelete(deleteMode, messageIDs, reportIDs);
   };
   return (
-    <form
-      action={gameRouteURL("/game/messages", window.location.search)}
-      method="post"
-      onSubmit={submitMessages}
-    >
-      <table className="legacy-overview-table legacy-messages-table" width={519}>
-        <tbody>
-          <tr>
-            <td className="legacy-c c" colSpan={4}>
-              Messages
-            </td>
-          </tr>
-          <tr>
-            <th>
-              Action
-            </th>
-            <th>
-              Date
-            </th>
-            <th>
-              From
-            </th>
-            <th>
-              Subject
-            </th>
-          </tr>
-          {messages.rows.map((message) => (
-            <React.Fragment key={message.id}>
+    <MessagesOuterTable>
+      <form
+        action={gameRouteURL("/game/messages", window.location.search)}
+        method="post"
+        onSubmit={submitMessages}
+      >
+        <table className="legacy-overview-table legacy-messages-table" width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c" colSpan={4}>
+                Messages
+              </td>
+            </tr>
+            <tr>
+              <th>
+                Action
+              </th>
+              <th>
+                Date
+              </th>
+              <th>
+                From
+              </th>
+              <th>
+                Subject
+              </th>
+            </tr>
+            {messages.rows.map((message) => (
+              <React.Fragment key={message.id}>
               <tr data-message-row={message.id}>
                 <th>
                   <input disabled={pending} name={`delmes${message.id}`} type="checkbox" value="on" />
@@ -11364,117 +11410,134 @@ function MessagesTable({
                   </th>
                 </tr>
               ) : null}
-            </React.Fragment>
-          ))}
-          <tr>
-            <th colSpan={4} style={{ padding: "0px 105px" }} />
-          </tr>
-          <tr>
-            <th colSpan={4}>
-              <input disabled={pending} name="fullreports" type="checkbox" /> Show intelligence data partially{" "}
-            </th>
-          </tr>
-          <tr>
-            <th colSpan={4}>
-              <select defaultValue="deletemarked" disabled={pending} name="deletemessages">
-                <option value="deletemarked">Delete highlighted messages</option>
-                <option value="deletenonmarked">Delete all unselected messages</option>
-                <option value="deleteallshown">Delete all displayed messages </option>
-                <option value="deleteall">Delete all messages</option>
-              </select>
-              <input disabled={pending} type="submit" value="ok" />
-            </th>
-          </tr>
-          <tr>
-            <td colSpan={4}>
-              <center>     </center>
-            </td>
-          </tr>
-          <tr>
-            <td className="legacy-c c" colSpan={4}>
-              Operators
-            </td>
-          </tr>
-          {messages.operators.map((operator) => (
-            <tr key={operator.playerId} dangerouslySetInnerHTML={{ __html: messageOperatorRowHTML(operator) }} />
-          ))}
-        </tbody>
-      </table>
-    </form>
+              </React.Fragment>
+            ))}
+            <tr>
+              <th colSpan={4} style={{ padding: "0px 105px" }} />
+            </tr>
+            <tr>
+              <th colSpan={4}>
+                <input disabled={pending} name="fullreports" type="checkbox" /> Show intelligence data partially{" "}
+              </th>
+            </tr>
+            <tr>
+              <th colSpan={4}>
+                <select defaultValue="deletemarked" disabled={pending} name="deletemessages">
+                  <option value="deletemarked">Delete highlighted messages</option>
+                  <option value="deletenonmarked">Delete all unselected messages</option>
+                  <option value="deleteallshown">Delete all displayed messages </option>
+                  <option value="deleteall">Delete all messages</option>
+                </select>
+                <input disabled={pending} type="submit" value="ok" />
+              </th>
+            </tr>
+            <tr>
+              <td colSpan={4}>
+                <center>     </center>
+              </td>
+            </tr>
+            <tr>
+              <td className="legacy-c c" colSpan={4}>
+                Operators
+              </td>
+            </tr>
+            {messages.operators.map((operator) => (
+              <tr key={operator.playerId} dangerouslySetInnerHTML={{ __html: messageOperatorRowHTML(operator) }} />
+            ))}
+          </tbody>
+        </table>
+      </form>
+    </MessagesOuterTable>
   );
 }
 
 function MessageSummaryTable({ messages, pending }: { messages: GameMessages; pending: boolean }) {
   const categories = messages.summary.length > 0 ? messages.summary : defaultMessageSummaryCategories();
   return (
-    <form action={gameRouteURL("/game/messages", window.location.search)} method="post">
-      <table className="legacy-overview-table legacy-messages-table" width={519}>
-        <tbody>
-          <tr>
-            <th colSpan={4}>
-              <select defaultValue="deletemarked" disabled={pending} name="deletemessages">
-                <option value="deletemarked">Delete highlighted messages</option>
-                <option value="deletenonmarked">Delete all unselected messages</option>
-                <option value="deleteallshown">Delete all displayed messages </option>
-                <option value="deleteall">Delete all messages</option>
-              </select>{" "}
-              <input disabled={pending} type="submit" value="ok" />
-            </th>
-          </tr>
-          <tr>
-            <td className="legacy-c c" colSpan={4}>
-              Messages
-            </td>
-          </tr>
-          <tr>
-            <th>Show</th>
-            <th colSpan={2}>Type</th>
-            <th>Total / New</th>
-          </tr>
-          {categories.map((category) => (
-            <tr key={category.key}>
-              <th>
-                <input disabled={pending} name={messageSummaryCheckboxName(category.key)} type="checkbox" />
-              </th>
-              <th colSpan={2}>
-                <a href={messageSummaryCategoryHref(category.key)}>{category.label}</a>
-              </th>
-              <th>
-                {category.total} / {category.unread}
+    <MessagesOuterTable>
+      <form action={gameRouteURL("/game/messages", window.location.search)} method="post">
+        <table className="legacy-overview-table legacy-messages-table" width={519}>
+          <tbody>
+            <tr>
+              <th colSpan={4}>
+                <select defaultValue="deletemarked" disabled={pending} name="deletemessages">
+                  <option value="deletemarked">Delete highlighted messages</option>
+                  <option value="deletenonmarked">Delete all unselected messages</option>
+                  <option value="deleteallshown">Delete all displayed messages </option>
+                  <option value="deleteall">Delete all messages</option>
+                </select>{" "}
+                <input disabled={pending} type="submit" value="ok" />
               </th>
             </tr>
-          ))}
-          <tr>
-            <th colSpan={4}>
-              <input disabled={pending} name="fullreports" type="checkbox" />{" "}
-              Show intelligence data partially{" "}
-            </th>
-          </tr>
-          <tr>
-            <td className="legacy-c c">Action</td>
-            <td className="legacy-c c">Date</td>
-            <td className="legacy-c c">From</td>
-            <td className="legacy-c c">Subject</td>
-          </tr>
-          <tr>
-            <th colSpan={4} style={{ padding: "0px 105px" }} />
-          </tr>
-          <tr>
-            <td colSpan={4}>
-              <center>     </center>
-            </td>
-          </tr>
-          <tr>
-            <td className="legacy-c c" colSpan={4}>
-              Operators
-            </td>
-          </tr>
-          {messages.operators.map((operator) => (
-            <tr key={operator.playerId} dangerouslySetInnerHTML={{ __html: messageOperatorRowHTML(operator) }} />
-          ))}
-        </tbody>
-      </table>
-    </form>
+            <tr>
+              <td className="legacy-c c" colSpan={4}>
+                Messages
+              </td>
+            </tr>
+            <tr>
+              <th>Show</th>
+              <th colSpan={2}>Type</th>
+              <th>Total / New</th>
+            </tr>
+            {categories.map((category) => (
+              <tr key={category.key}>
+                <th>
+                  <input disabled={pending} name={messageSummaryCheckboxName(category.key)} type="checkbox" />
+                </th>
+                <th colSpan={2}>
+                  <a href={messageSummaryCategoryHref(category.key)}>{category.label}</a>
+                </th>
+                <th>
+                  {category.total} / {category.unread}
+                </th>
+              </tr>
+            ))}
+            <tr>
+              <th colSpan={4}>
+                <input disabled={pending} name="fullreports" type="checkbox" />{" "}
+                Show intelligence data partially{" "}
+              </th>
+            </tr>
+            <tr>
+              <td className="legacy-c c">Action</td>
+              <td className="legacy-c c">Date</td>
+              <td className="legacy-c c">From</td>
+              <td className="legacy-c c">Subject</td>
+            </tr>
+            <tr>
+              <th colSpan={4} style={{ padding: "0px 105px" }} />
+            </tr>
+            <tr>
+              <td colSpan={4}>
+                <center>     </center>
+              </td>
+            </tr>
+            <tr>
+              <td className="legacy-c c" colSpan={4}>
+                Operators
+              </td>
+            </tr>
+            {messages.operators.map((operator) => (
+              <tr key={operator.playerId} dangerouslySetInnerHTML={{ __html: messageOperatorRowHTML(operator) }} />
+            ))}
+          </tbody>
+        </table>
+      </form>
+    </MessagesOuterTable>
+  );
+}
+
+function MessagesOuterTable({ children }: { children: React.ReactNode }) {
+  return (
+    <table className="header legacy-messages-outer" width={525}>
+      <tbody>
+        <tr className="header">
+          <td>
+            {children}
+          </td>
+        </tr>
+      </tbody>
+    </table>
   );
 }
 
@@ -13464,7 +13527,7 @@ function legacyOverviewEventInnerHTML(event: GameFleetMission): string {
   const originFrom = legacyOverviewPlanetFrom(event.origin, event.originName, missionClass, originType);
   const targetTo = legacyOverviewPlanetTo(event.target, event.targetName, missionClass, targetType);
   const targetFrom = legacyOverviewPlanetFrom(event.target, event.targetName, missionClass, targetType);
-  const missionText = legacyOverviewMissionText(baseMission);
+  const missionText = legacyOverviewEventMissionText(baseMission);
 
   if (baseMission === 1 || baseMission === 21) {
     if (event.mission >= 100 && event.mission < 200) {
@@ -13765,6 +13828,13 @@ function legacyOverviewMissionText(baseMission: number): string {
     default:
       return "Custom task";
   }
+}
+
+function legacyOverviewEventMissionText(baseMission: number): string {
+  if (baseMission === 2) {
+    return "ACS Attack";
+  }
+  return legacyOverviewMissionText(baseMission);
 }
 
 function legacyOverviewPlanetFrom(coordinates: Coordinates, name: string, missionClass: string, planetType = 1): string {

@@ -191,6 +191,90 @@ func TestAdminServiceReturnsUnauthenticatedAndErrors(t *testing.T) {
 	}
 }
 
+func TestAdminServiceMutatesBotEdit(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}
+	repository := &fakeAdminRepository{
+		admin: domaingame.Admin{Mode: "BotEdit", Viewer: domaingame.AdminViewer{PlayerID: 42, Level: domaingame.AdminLevelAdmin}},
+		botResult: AdminBotEditMutationResult{
+			Source:             "source",
+			Name:               "strategy",
+			SelectedStrategyID: 7,
+			Strategies:         []domaingame.AdminBotStrategy{{ID: 7, Name: "strategy"}},
+		},
+	}
+	service := NewAdminService(sessions, repository)
+
+	result, err := service.MutateAdminBotEdit(context.Background(), AdminBotEditMutationCommand{
+		PublicSession:   "pub",
+		PrivateSessions: map[string]string{"prsess_42_1": "priv"},
+		RemoteAddr:      "203.0.113.10",
+		PlanetID:        99,
+		Action:          domaingame.AdminActionBotEditRename,
+		StrategyID:      7,
+		Name:            "strategy",
+		Source:          "source",
+	})
+
+	if err != nil {
+		t.Fatalf("MutateAdminBotEdit returned error: %v", err)
+	}
+	if !result.Authenticated || result.Source != "source" || result.SelectedStrategyID != 7 ||
+		repository.botMutation.PlayerID != 42 || repository.botMutation.Action != domaingame.AdminActionBotEditRename ||
+		repository.botMutation.StrategyID != 7 || repository.botMutation.Name != "strategy" ||
+		repository.botMutation.Source != "source" || repository.query.Mode != "BotEdit" ||
+		sessions.command.RemoteAddr != "203.0.113.10" {
+		t.Fatalf("unexpected result=%+v mutation=%+v query=%+v session=%+v", result, repository.botMutation, repository.query, sessions.command)
+	}
+}
+
+func TestAdminServiceBotEditReturnsAccessDeniedWithoutMutating(t *testing.T) {
+	service := NewAdminService(
+		&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{Authenticated: true, Session: domainpublicsite.GameSession{PlayerID: 42}}},
+		&fakeAdminRepository{admin: domaingame.Admin{Mode: "BotEdit", Viewer: domaingame.AdminViewer{PlayerID: 42, Level: domaingame.AdminLevelOperator}}},
+	)
+
+	result, err := service.MutateAdminBotEdit(context.Background(), AdminBotEditMutationCommand{Action: domaingame.AdminActionBotEditLoad})
+
+	repository := service.repository.(*fakeAdminRepository)
+	if err != nil || !result.Authenticated || result.ActionIssue == nil ||
+		result.ActionIssue.Code != domaingame.AdminIssueAccessDenied || repository.botMutated {
+		t.Fatalf("expected access denied without mutation, result=%+v mutated=%v err=%v", result, repository.botMutated, err)
+	}
+}
+
+func TestAdminServiceBotEditErrors(t *testing.T) {
+	issue := domainpublicsite.SessionIssue{Code: "missing", Message: "Session is invalid."}
+	service := NewAdminService(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{Issues: []domainpublicsite.SessionIssue{issue}}}, &fakeAdminRepository{})
+	result, err := service.MutateAdminBotEdit(context.Background(), AdminBotEditMutationCommand{})
+	if err != nil || result.Authenticated || len(result.Issues) != 1 {
+		t.Fatalf("expected unauthenticated botedit result, got result=%+v err=%v", result, err)
+	}
+	if _, err := (AdminService{}).MutateAdminBotEdit(context.Background(), AdminBotEditMutationCommand{}); err == nil || !strings.Contains(err.Error(), "dependencies") {
+		t.Fatalf("expected botedit dependency error, got %v", err)
+	}
+	if _, err := NewAdminService(&fakeSessionLookup{err: errors.New("session failed")}, &fakeAdminRepository{}).MutateAdminBotEdit(context.Background(), AdminBotEditMutationCommand{}); err == nil || !strings.Contains(err.Error(), "session failed") {
+		t.Fatalf("expected botedit session error, got %v", err)
+	}
+	authenticated := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{Authenticated: true, Session: domainpublicsite.GameSession{PlayerID: 42}}}
+	if _, err := NewAdminService(authenticated, &fakeAdminRepository{err: errors.New("admin failed")}).MutateAdminBotEdit(context.Background(), AdminBotEditMutationCommand{}); err == nil || !strings.Contains(err.Error(), "admin failed") {
+		t.Fatalf("expected botedit admin load error, got %v", err)
+	}
+	readOnly := &fakeAdminReadOnlyRepository{admin: domaingame.Admin{Mode: "BotEdit", Viewer: domaingame.AdminViewer{Level: domaingame.AdminLevelAdmin}}}
+	if _, err := NewAdminService(authenticated, readOnly).MutateAdminBotEdit(context.Background(), AdminBotEditMutationCommand{Action: domaingame.AdminActionBotEditLoad}); err == nil || !strings.Contains(err.Error(), "botedit mutation unavailable") {
+		t.Fatalf("expected missing botedit repository error, got %v", err)
+	}
+	if _, err := NewAdminService(authenticated, &fakeAdminRepository{
+		admin:     domaingame.Admin{Mode: "BotEdit", Viewer: domaingame.AdminViewer{Level: domaingame.AdminLevelAdmin}},
+		botErr:    errors.New("botedit failed"),
+		botResult: AdminBotEditMutationResult{SelectedStrategyID: 7},
+	}).MutateAdminBotEdit(context.Background(), AdminBotEditMutationCommand{Action: domaingame.AdminActionBotEditLoad}); err == nil || !strings.Contains(err.Error(), "botedit failed") {
+		t.Fatalf("expected botedit repository error, got %v", err)
+	}
+}
+
 type fakeAdminRepository struct {
 	admin       domaingame.Admin
 	err         error
@@ -201,6 +285,10 @@ type fakeAdminRepository struct {
 	mutation    AdminMutationQuery
 	mutated     bool
 	getCalls    int
+	botResult   AdminBotEditMutationResult
+	botErr      error
+	botMutation AdminBotEditMutationQuery
+	botMutated  bool
 }
 
 func (f *fakeAdminRepository) GetAdmin(_ context.Context, query AdminQuery) (domaingame.Admin, error) {
@@ -216,4 +304,26 @@ func (f *fakeAdminRepository) MutateAdmin(_ context.Context, query AdminMutation
 	f.mutation = query
 	f.mutated = true
 	return f.actionIssue, f.mutationErr
+}
+
+func (f *fakeAdminRepository) MutateAdminBotEdit(_ context.Context, query AdminBotEditMutationQuery) (AdminBotEditMutationResult, error) {
+	f.botMutation = query
+	f.botMutated = true
+	return f.botResult, f.botErr
+}
+
+type fakeAdminReadOnlyRepository struct {
+	admin    domaingame.Admin
+	query    AdminQuery
+	mutation AdminMutationQuery
+}
+
+func (f *fakeAdminReadOnlyRepository) GetAdmin(_ context.Context, query AdminQuery) (domaingame.Admin, error) {
+	f.query = query
+	return f.admin, nil
+}
+
+func (f *fakeAdminReadOnlyRepository) MutateAdmin(_ context.Context, query AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
+	f.mutation = query
+	return nil, nil
 }

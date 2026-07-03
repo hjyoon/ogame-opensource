@@ -21,6 +21,22 @@ type MessagesRepository struct {
 	now     func() time.Time
 }
 
+const (
+	messageUserFlagDontUseFolders    int64 = 0x20
+	messageUserFlagFolderEspionage   int64 = 0x100
+	messageUserFlagFolderCombat      int64 = 0x200
+	messageUserFlagFolderExpedition  int64 = 0x400
+	messageUserFlagFolderAlliance    int64 = 0x800
+	messageUserFlagFolderPlayer      int64 = 0x1000
+	messageUserFlagFolderOther       int64 = 0x2000
+	messageUserFlagFolderCategoryAll       = messageUserFlagFolderEspionage |
+		messageUserFlagFolderCombat |
+		messageUserFlagFolderExpedition |
+		messageUserFlagFolderAlliance |
+		messageUserFlagFolderPlayer |
+		messageUserFlagFolderOther
+)
+
 func NewMessagesRepository(db *sql.DB, prefix string) MessagesRepository {
 	runner := SQLQueryer{DB: db}
 	return MessagesRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now}
@@ -92,7 +108,9 @@ func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.Messa
 	if err := r.deleteExpiredInboxMessages(ctx, messagesTable, query.PlayerID, retention); err != nil {
 		return domaingame.Messages{}, err
 	}
-	if query.ShowSummary {
+	showSummary := query.ShowSummary || (query.LegacyFolderDisplay && retention.showLegacyFolderSummaryOnly())
+	if showSummary {
+		messages.Action = domaingame.MessagesActionSummary
 		summary, err := r.loadMessageCategoryCounts(ctx, messagesTable, query.PlayerID)
 		if err != nil {
 			return domaingame.Messages{}, err
@@ -662,10 +680,17 @@ func (r MessagesRepository) loadCommanderActive(ctx context.Context, usersTable 
 type messageRetentionState struct {
 	CommanderActive bool
 	Admin           bool
+	Flags           int64
+}
+
+func (s messageRetentionState) showLegacyFolderSummaryOnly() bool {
+	return s.CommanderActive &&
+		s.Flags&messageUserFlagDontUseFolders == 0 &&
+		s.Flags&messageUserFlagFolderCategoryAll == 0
 }
 
 func (r MessagesRepository) loadMessageRetentionState(ctx context.Context, usersTable string, playerID int) (messageRetentionState, error) {
-	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT com_until, admin FROM %s WHERE player_id = ? LIMIT 1", usersTable), playerID)
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT com_until, admin, COALESCE(flags, 0) FROM %s WHERE player_id = ? LIMIT 1", usersTable), playerID)
 	if err != nil {
 		return messageRetentionState{}, err
 	}
@@ -678,7 +703,8 @@ func (r MessagesRepository) loadMessageRetentionState(ctx context.Context, users
 	}
 	var commanderUntil int64
 	var adminLevel int
-	if err := rows.Scan(&commanderUntil, &adminLevel); err != nil {
+	var flags int64
+	if err := rows.Scan(&commanderUntil, &adminLevel, &flags); err != nil {
 		return messageRetentionState{}, err
 	}
 	if err := rows.Err(); err != nil {
@@ -687,6 +713,7 @@ func (r MessagesRepository) loadMessageRetentionState(ctx context.Context, users
 	return messageRetentionState{
 		CommanderActive: commanderUntil > r.now().Unix(),
 		Admin:           adminLevel > domaingame.AdminLevelPlayer,
+		Flags:           flags,
 	}, nil
 }
 

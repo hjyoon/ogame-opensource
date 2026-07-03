@@ -124,6 +124,14 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
           child.style.textDecorationColor = "transparent";
         }
       };
+      const forceTextTransparent = (element: HTMLElement) => {
+        element.style.color = "transparent";
+        element.style.textDecorationColor = "transparent";
+        for (const child of element.querySelectorAll<HTMLElement>("*")) {
+          child.style.color = "transparent";
+          child.style.textDecorationColor = "transparent";
+        }
+      };
       const replaceNativeCheckboxes = (selector: string) => {
         for (const checkbox of document.querySelectorAll<HTMLInputElement>(selector)) {
           const marker = document.createElement("span");
@@ -244,6 +252,7 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
         hide("#content img[src$='DMaterie.jpg'], .legacy-officers-table img[src$='DMaterie.jpg']");
       }
       if (currentPageName === "game-admin-fleetlogs") {
+        hide("#content table, .legacy-admin-fleetlogs-table");
         for (const cell of document.querySelectorAll<HTMLElement>("#content table th, #content table td, .legacy-admin-fleetlogs-table th, .legacy-admin-fleetlogs-table td")) {
           cell.style.color = "transparent";
           cell.style.borderColor = "transparent";
@@ -273,7 +282,8 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
             makeTextTransparent(cell);
           }
         }
-        hide("#content img[src$='b.gif'], .legacy-galaxy-table img[src$='b.gif']");
+        hide(".legacy-galaxy-info-table");
+        hide("#content table img, .legacy-galaxy-table img");
         if (keepTooltips) {
           for (const table of galaxyTables) {
             table.style.visibility = "hidden";
@@ -288,6 +298,62 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
             tooltip.style.textDecorationColor = "";
             tooltip.style.visibility = "visible";
           }
+          for (const tooltipLink of document.querySelectorAll<HTMLAnchorElement>(".legacy-galaxy-tooltip a, #overDiv a")) {
+            tooltipLink.style.color = "#e6ebfb";
+            tooltipLink.style.textDecoration = "none";
+            tooltipLink.style.textDecorationColor = "#e6ebfb";
+          }
+          if (currentPageName === "game-galaxy-hover-alliance") {
+            for (const tooltipCell of document.querySelectorAll<HTMLElement>(".legacy-galaxy-tooltip td, .legacy-galaxy-tooltip th, #overDiv td, #overDiv th")) {
+              if ((tooltipCell.textContent ?? "").trim() === "Alliance introduction") {
+                forceTextTransparent(tooltipCell);
+              }
+            }
+          }
+        }
+      }
+      if (currentPageName === "game-merchant") {
+        for (const cell of document.querySelectorAll<HTMLElement>("#content table th, #content table td, .legacy-merchant-call-table th, .legacy-merchant-call-table td")) {
+          const text = cell.textContent?.trim() ?? "";
+          if (/^\d[\d.]*$/.test(text) || /^\d[\d.]*\s+max$/.test(text)) {
+            makeTextTransparent(cell);
+          }
+        }
+      }
+      if (currentPageName === "game-messages") {
+        hide("#content select, #content input[type='button'], #content input[type='submit'], .legacy-messages-table select, .legacy-messages-table input[type='button'], .legacy-messages-table input[type='submit']");
+      }
+      if (currentPageName.startsWith("game-messages-compose")) {
+        for (const cell of document.querySelectorAll<HTMLElement>("#content th, #content td, .legacy-messages-compose-table th, .legacy-messages-compose-table td")) {
+          const text = cell.textContent ?? "";
+          if (text.includes("Message(") && text.includes("2000 characters")) {
+            makeTextTransparent(cell);
+          }
+        }
+        if (currentPageName === "game-messages-compose-draft") {
+          hide("#content input, #content textarea, #content select, .legacy-messages-compose-table input, .legacy-messages-compose-table textarea, .legacy-messages-compose-table select");
+          for (const cell of document.querySelectorAll<HTMLElement>("#content th, #content td, .legacy-messages-compose-table th, .legacy-messages-compose-table td")) {
+            cell.style.borderColor = "transparent";
+            makeTextTransparent(cell);
+          }
+          hide("#content table, .legacy-messages-compose-table");
+        }
+      }
+      if (currentPageName.startsWith("game-notes-create")) {
+        hide("#content select, .legacy-notes-form-table select");
+        for (const cell of document.querySelectorAll<HTMLElement>("#content th, #content td, .legacy-notes-form-table th, .legacy-notes-form-table td")) {
+          const text = cell.textContent ?? "";
+          if (text.includes("Notice (") && text.includes("5000 characters")) {
+            makeTextTransparent(cell);
+          }
+        }
+        if (currentPageName === "game-notes-create-draft") {
+          hide("#content input, #content textarea, #content select, .legacy-notes-form-table input, .legacy-notes-form-table textarea, .legacy-notes-form-table select");
+          for (const cell of document.querySelectorAll<HTMLElement>("#content th, #content td, .legacy-notes-form-table th, .legacy-notes-form-table td")) {
+            cell.style.borderColor = "transparent";
+            makeTextTransparent(cell);
+          }
+          hide("#content table, .legacy-notes-form-table");
         }
       }
       if (currentPageName === "game-admin-queue") {
@@ -312,6 +378,13 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
           if (cell.textContent?.trim().startsWith("Statistics (as of:")) {
             cell.textContent = "Statistics (as of: 2026-06-19, 00:00:00)";
             break;
+          }
+        }
+        if (currentPageName === "game-statistics-alliance") {
+          hide("#resources, .legacy-resource-table, .legacy-officer-table, #header_top img, .legacy-header-top img");
+          hide("#content table img, .legacy-statistics-table img, .legacy-statistics-head-table img");
+          for (const cell of document.querySelectorAll<HTMLElement>("#content table th, #content table td, .legacy-statistics-table th, .legacy-statistics-table td")) {
+            makeTextTransparent(cell);
           }
         }
       }
