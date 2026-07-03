@@ -47,6 +47,7 @@ const (
 	AdminActionBotEditSave   = "save"
 	AdminActionBotEditNew    = "new"
 	AdminActionBotEditRename = "rename"
+	AdminActionBotStop       = "stop"
 
 	AdminActionModInstall  = "install"
 	AdminActionModRemove   = "remove"
@@ -79,6 +80,7 @@ type Admin struct {
 	ChecksumGroups  []AdminChecksumGroup
 	DatabaseBackups []AdminDatabaseBackup
 	BotStrategies   []AdminBotStrategy
+	BotRows         []AdminBotRow
 	ModRows         []AdminModInfo
 	Localization    *AdminLocalization
 	CouponRows      []AdminCouponRow
@@ -357,6 +359,12 @@ type AdminDatabaseBackup struct {
 type AdminBotStrategy struct {
 	ID   int
 	Name string
+}
+
+type AdminBotRow struct {
+	PlayerID   int
+	Name       string
+	HomePlanet *AdminUserPlanet
 }
 
 type AdminModInfo struct {

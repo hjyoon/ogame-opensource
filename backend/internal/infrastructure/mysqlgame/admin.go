@@ -109,6 +109,8 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		admin.MessageRows, err = r.loadAdminMessageRows(ctx, "errors", false, "")
 	case "Logins":
 		admin.LoginRows, err = r.loadAdminLoginRows(ctx, query.LoginName, query.LoginUserID, query.LoginIP)
+	case "Bots":
+		admin.BotRows, err = r.loadAdminBotRows(ctx)
 	case "Queue":
 		admin.QueueRows, err = r.loadAdminQueueRows(ctx)
 	case "UserLogs":
@@ -304,6 +306,13 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 		}
 		return r.mutateAdminMods(ctx, uniTable, query)
 	}
+	if mode == "Bots" && query.Action == domaingame.AdminActionBotStop {
+		queueTable, err := tableName(r.prefix, "queue")
+		if err != nil {
+			return nil, err
+		}
+		return r.mutateAdminBotStop(ctx, queueTable, query.TargetIDs)
+	}
 	if mode == "Users" {
 		usersTable, err := tableName(r.prefix, "users")
 		if err != nil {
@@ -359,6 +368,21 @@ func (r AdminRepository) mutateAdminMods(ctx context.Context, uniTable string, q
 	}
 	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET modlist = ?", uniTable), domaingame.JoinAdminModList(next)); err != nil {
 		return nil, err
+	}
+	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+}
+
+func (r AdminRepository) mutateAdminBotStop(ctx context.Context, queueTable string, targetIDs []int) (*domaingame.AdminActionIssue, error) {
+	if len(targetIDs) == 0 {
+		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+	}
+	for _, playerID := range targetIDs {
+		if playerID <= 0 {
+			continue
+		}
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE type = ? AND owner_id = ?", queueTable), "AI", playerID); err != nil {
+			return nil, err
+		}
 	}
 	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
 }
@@ -1478,6 +1502,57 @@ func (r AdminRepository) loadAdminBotStrategies(ctx context.Context) ([]domainga
 		var row domaingame.AdminBotStrategy
 		if err := rows.Scan(&row.ID, &row.Name); err != nil {
 			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+func (r AdminRepository) loadAdminBotRows(ctx context.Context) ([]domaingame.AdminBotRow, error) {
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return nil, err
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT bots.owner_id, COALESCE(u.oname, ''), COALESCE(p.planet_id, 0), COALESCE(p.name, ''), COALESCE(p.g, 0), COALESCE(p.s, 0), COALESCE(p.p, 0) FROM (SELECT owner_id FROM %s WHERE type = ? GROUP BY owner_id) bots LEFT JOIN %s u ON u.player_id = bots.owner_id LEFT JOIN %s p ON p.planet_id = u.hplanetid ORDER BY bots.owner_id ASC",
+			queueTable,
+			usersTable,
+			planetsTable,
+		),
+		"AI",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domaingame.AdminBotRow, 0)
+	for rows.Next() {
+		var row domaingame.AdminBotRow
+		var planetID, galaxy, system, position int
+		var planetName string
+		if err := rows.Scan(&row.PlayerID, &row.Name, &planetID, &planetName, &galaxy, &system, &position); err != nil {
+			return nil, err
+		}
+		if planetID != 0 {
+			row.HomePlanet = &domaingame.AdminUserPlanet{
+				ID:   planetID,
+				Name: planetName,
+				Coordinates: domaingame.Coordinates{
+					Galaxy:   galaxy,
+					System:   system,
+					Position: position,
+				},
+			}
 		}
 		result = append(result, row)
 	}

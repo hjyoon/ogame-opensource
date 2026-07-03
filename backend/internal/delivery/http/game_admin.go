@@ -73,6 +73,7 @@ type gameAdminSummary struct {
 	ChecksumGroups  []gameAdminChecksumGroup    `json:"checksumGroups,omitempty"`
 	DatabaseBackups []gameAdminDatabaseBackup   `json:"databaseBackups,omitempty"`
 	BotStrategies   []gameAdminBotStrategy      `json:"botStrategies,omitempty"`
+	BotRows         []gameAdminBotRow           `json:"botRows,omitempty"`
 	ModRows         []gameAdminModInfo          `json:"modRows,omitempty"`
 	Localization    *gameAdminLocalization      `json:"localization,omitempty"`
 	CouponRows      []gameAdminCouponRow        `json:"couponRows,omitempty"`
@@ -355,6 +356,12 @@ type gameAdminBotStrategy struct {
 	Name string `json:"name"`
 }
 
+type gameAdminBotRow struct {
+	PlayerID   int                  `json:"playerId"`
+	Name       string               `json:"name"`
+	HomePlanet *gameAdminUserPlanet `json:"homePlanet,omitempty"`
+}
+
 type gameAdminModInfo struct {
 	Folder      string `json:"folder"`
 	Name        string `json:"name"`
@@ -577,6 +584,45 @@ func (a app) handleLegacyAdminModsGet(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/game/index.php?page=admin&session="+url.QueryEscape(r.URL.Query().Get("session"))+"&mode=Mods", http.StatusFound)
 }
 
+func (a app) handleLegacyAdminBotsGet(w http.ResponseWriter, r *http.Request) {
+	if a.deps.GameAdmin == nil {
+		http.Error(w, "game admin unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if r.URL.Query().Get("action") != domaingame.AdminActionBotStop {
+		a.handleFrontend(w, r)
+		return
+	}
+	planetID, err := selectedPlanetID(r)
+	if err != nil {
+		http.Error(w, "invalid selected planet", http.StatusBadRequest)
+		return
+	}
+	result, err := a.deps.GameAdmin.MutateAdmin(r.Context(), appgame.AdminMutationCommand{
+		PublicSession:   r.URL.Query().Get("session"),
+		PrivateSessions: cookieMap(r),
+		RemoteAddr:      remoteIP(r.RemoteAddr),
+		PlanetID:        planetID,
+		Mode:            "Bots",
+		Action:          domaingame.AdminActionBotStop,
+		TargetIDs:       []int{legacyBotEditInt(r.URL.Query().Get("id"))},
+	})
+	if err != nil {
+		logGameAdminError(a.deps.Logger, r, "legacy admin bots mutation failed", err)
+		http.Error(w, "game admin unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !result.Authenticated {
+		http.Error(w, "unauthenticated", http.StatusForbidden)
+		return
+	}
+	if result.ActionIssue != nil && result.ActionIssue.Code == domaingame.AdminIssueAccessDenied {
+		http.Error(w, result.ActionIssue.Message, http.StatusForbidden)
+		return
+	}
+	http.Redirect(w, r, "/game/index.php?page=admin&session="+url.QueryEscape(r.URL.Query().Get("session"))+"&mode=Bots", http.StatusFound)
+}
+
 func selectedAdminPlayerID(r *http.Request) (int, error) {
 	raw := r.URL.Query().Get("player_id")
 	if raw == "" {
@@ -768,6 +814,14 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			Name: strategy.Name,
 		})
 	}
+	botRows := make([]gameAdminBotRow, 0, len(admin.BotRows))
+	for _, row := range admin.BotRows {
+		botRows = append(botRows, gameAdminBotRow{
+			PlayerID:   row.PlayerID,
+			Name:       row.Name,
+			HomePlanet: toGameAdminUserPlanetPointer(row.HomePlanet),
+		})
+	}
 	modRows := make([]gameAdminModInfo, 0, len(admin.ModRows))
 	for _, row := range admin.ModRows {
 		modRows = append(modRows, gameAdminModInfo{
@@ -836,6 +890,7 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		ChecksumGroups:  checksumGroups,
 		DatabaseBackups: databaseBackups,
 		BotStrategies:   botStrategies,
+		BotRows:         botRows,
 		ModRows:         modRows,
 		Localization:    localization,
 		CouponRows:      couponRows,

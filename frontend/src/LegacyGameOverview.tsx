@@ -133,6 +133,10 @@ export type GameAdminAction =
   | {
       action: "install" | "remove" | "move_up" | "move_down";
       modName: string;
+    }
+  | {
+      action: "stop";
+      targetIds: number[];
     };
 
 export type GameAllianceAction =
@@ -1287,6 +1291,7 @@ type GameAdmin = {
   checksumGroups?: GameAdminChecksumGroup[];
   databaseBackups?: GameAdminDatabaseBackup[];
   botStrategies?: GameAdminBotStrategy[];
+  botRows?: GameAdminBotRow[];
   modRows?: AdminModInfo[];
   localization?: GameAdminLocalization;
   couponRows?: GameAdminCouponRow[];
@@ -1583,6 +1588,12 @@ type GameAdminDatabaseBackup = {
 type GameAdminBotStrategy = {
   id: number;
   name: string;
+};
+
+type GameAdminBotRow = {
+  playerId: number;
+  name: string;
+  homePlanet?: GameAdminUserPlanet;
 };
 
 type GameAdminCouponRow = {
@@ -3604,7 +3615,7 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "Bots") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminBotsTable admin={admin} />
+        <AdminBotsTable admin={admin} onAdminAction={onAdminAction} rows={admin.botRows ?? []} />
       </AdminModeShell>
     );
   }
@@ -4111,16 +4122,64 @@ function AdminReportsTable({ onAdminAction, rows }: { onAdminAction: (action: Ga
   );
 }
 
-function AdminBotsTable({ admin }: { admin: GameAdmin }) {
+function AdminBotsTable({
+  admin,
+  onAdminAction,
+  rows,
+}: {
+  admin: GameAdmin;
+  onAdminAction: (action: GameAdminAction) => void;
+  rows: GameAdminBotRow[];
+}) {
   if (admin.viewer.level < 2) {
     return <LegacyFont color="red">Access denied.</LegacyFont>;
   }
+  const stopBot = (event: React.MouseEvent<HTMLAnchorElement>, playerId: number) => {
+    event.preventDefault();
+    onAdminAction({ action: "stop", targetIds: [playerId] });
+  };
   return (
     <>
       <center />
       <h2>Bot List:</h2>
-      No bots found
-      <br />
+      {rows.length === 0 ? (
+        <>
+          No bots found
+          <br />
+        </>
+      ) : (
+        <table>
+          <tbody>
+            <tr>
+              <td className="c">ID</td>
+              <td className="c">Name</td>
+              <td className="c">Home Planet</td>
+              <td className="c">Action</td>
+            </tr>
+            {rows.map((row) => (
+              <tr key={row.playerId}>
+                <td>{row.playerId}</td>
+                <td>
+                  <AdminUserLink ownerId={row.playerId} ownerName={row.name} />
+                </td>
+                <td>
+                  {row.homePlanet ? (
+                    <>
+                      <a href={adminPlanetHref(row.homePlanet.id)}>{row.homePlanet.name}</a> [
+                      <a href={adminGalaxyHref(row.homePlanet.coordinates)}>{formatCoordinates(row.homePlanet.coordinates)}</a>]
+                    </>
+                  ) : null}
+                </td>
+                <td>
+                  <a href={`${adminModeActionHref("Bots", "stop")}&id=${row.playerId}`} onClick={(event) => stopBot(event, row.playerId)}>
+                    Stop
+                  </a>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
       <h2>Add bot:</h2>
       <form action={adminModeHref("Bots")} method="POST" onSubmit={(event) => event.preventDefault()}>
         <table className="legacy-admin-bots-table">

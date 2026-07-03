@@ -96,6 +96,28 @@ func TestGameAdminHandlerMutatesMods(t *testing.T) {
 	}
 }
 
+func TestGameAdminHandlerMutatesBots(t *testing.T) {
+	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{
+		Authenticated: true,
+		Admin: domaingame.NewAdmin(
+			domaingame.Overview{Commander: "legor", CurrentPlanet: domaingame.PlanetOverview{ID: 99}},
+			domaingame.AdminViewer{PlayerID: 42, Name: "legor", Level: domaingame.AdminLevelAdmin},
+			"Bots",
+		),
+		ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueActionSaved),
+	}}
+	request := httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=99&mode=Bots", strings.NewReader(`{"action":"stop","targetIds":[77]}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	app{deps: Dependencies{GameAdmin: usecase}}.handleGameAdmin(response, request)
+
+	if response.Code != http.StatusOK || usecase.mutation.Mode != "Bots" || usecase.mutation.Action != "stop" ||
+		len(usecase.mutation.TargetIDs) != 1 || usecase.mutation.TargetIDs[0] != 77 {
+		t.Fatalf("unexpected bots mutation: status=%d command=%+v body=%s", response.Code, usecase.mutation, response.Body.String())
+	}
+}
+
 func TestLegacyAdminModsGetMutatesAndRedirects(t *testing.T) {
 	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{Authenticated: true, ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueActionSaved)}}
 	request := httptest.NewRequest(http.MethodGet, "/game/index.php?page=admin&session=pub+id&cp=99&mode=Mods&action=move_up&modname=GalaxyTool", nil)
@@ -108,6 +130,77 @@ func TestLegacyAdminModsGetMutatesAndRedirects(t *testing.T) {
 	}
 	if usecase.mutation.Mode != "Mods" || usecase.mutation.Action != "move_up" || usecase.mutation.ModName != "GalaxyTool" || usecase.mutation.PlanetID != 99 {
 		t.Fatalf("unexpected legacy mods mutation: %+v", usecase.mutation)
+	}
+}
+
+func TestLegacyAdminBotsGetMutatesAndRedirects(t *testing.T) {
+	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{Authenticated: true, ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueActionSaved)}}
+	request := httptest.NewRequest(http.MethodGet, "/game/index.php?page=admin&session=pub+id&cp=99&mode=Bots&action=stop&id=77", nil)
+	response := httptest.NewRecorder()
+
+	New(Dependencies{GameAdmin: usecase}).ServeHTTP(response, request)
+
+	if response.Code != http.StatusFound || response.Header().Get("Location") != "/game/index.php?page=admin&session=pub+id&mode=Bots" {
+		t.Fatalf("unexpected legacy bots redirect: status=%d location=%q body=%s", response.Code, response.Header().Get("Location"), response.Body.String())
+	}
+	if usecase.mutation.Mode != "Bots" || usecase.mutation.Action != "stop" ||
+		len(usecase.mutation.TargetIDs) != 1 || usecase.mutation.TargetIDs[0] != 77 || usecase.mutation.PlanetID != 99 {
+		t.Fatalf("unexpected legacy bots mutation: %+v", usecase.mutation)
+	}
+}
+
+func TestLegacyAdminBotsGetGuards(t *testing.T) {
+	tests := []struct {
+		name     string
+		handler  http.Handler
+		path     string
+		wantCode int
+		wantBody string
+	}{
+		{
+			name:     "missing dependency",
+			handler:  New(Dependencies{}),
+			path:     "/game/index.php?page=admin&session=pub&mode=Bots&action=stop&id=77",
+			wantCode: http.StatusServiceUnavailable,
+			wantBody: "game admin unavailable",
+		},
+		{
+			name:     "invalid cp",
+			handler:  New(Dependencies{GameAdmin: &fakeGameAdminUseCase{}}),
+			path:     "/game/index.php?page=admin&session=pub&cp=bad&mode=Bots&action=stop&id=77",
+			wantCode: http.StatusBadRequest,
+			wantBody: "invalid selected planet",
+		},
+		{
+			name:     "usecase error",
+			handler:  New(Dependencies{GameAdmin: &fakeGameAdminUseCase{err: errors.New("repo down")}}),
+			path:     "/game/index.php?page=admin&session=pub&mode=Bots&action=stop&id=77",
+			wantCode: http.StatusServiceUnavailable,
+			wantBody: "game admin unavailable",
+		},
+		{
+			name:     "unauthenticated",
+			handler:  New(Dependencies{GameAdmin: &fakeGameAdminUseCase{result: appgame.AdminResult{Authenticated: false}}}),
+			path:     "/game/index.php?page=admin&session=pub&mode=Bots&action=stop&id=77",
+			wantCode: http.StatusForbidden,
+			wantBody: "unauthenticated",
+		},
+		{
+			name:     "access denied",
+			handler:  New(Dependencies{GameAdmin: &fakeGameAdminUseCase{result: appgame.AdminResult{Authenticated: true, ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueAccessDenied)}}}),
+			path:     "/game/index.php?page=admin&session=pub&mode=Bots&action=stop&id=77",
+			wantCode: http.StatusForbidden,
+			wantBody: "Access denied",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			tt.handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, tt.path, nil))
+			if response.Code != tt.wantCode || !strings.Contains(response.Body.String(), tt.wantBody) {
+				t.Fatalf("unexpected guard response: status=%d body=%q", response.Code, response.Body.String())
+			}
+		})
 	}
 }
 
@@ -622,6 +715,19 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 		Rows:  []domaingame.AdminChecksumRow{{Path: "core.php", Checksum: "abc", Status: "ok"}},
 	}}
 	admin.BotStrategies = []domaingame.AdminBotStrategy{{ID: 701, Name: "bot"}}
+	admin.BotRows = []domaingame.AdminBotRow{{
+		PlayerID: 77,
+		Name:     "bot-player",
+		HomePlanet: &domaingame.AdminUserPlanet{
+			ID:   909,
+			Name: "Bot Home",
+			Coordinates: domaingame.Coordinates{
+				Galaxy:   4,
+				System:   5,
+				Position: 6,
+			},
+		},
+	}}
 	admin.ModRows = []domaingame.AdminModInfo{{
 		Folder:      "GalaxyTool",
 		Name:        "GalaxyTool",
@@ -716,7 +822,9 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 	if len(payload.QueueRows) != 1 || !payload.QueueRows[0].Freeze ||
 		len(payload.FleetLogRows) != 1 || payload.FleetLogRows[0].Origin.OwnerID != 7 || payload.FleetLogRows[0].Cargo[0].Loaded != 123 ||
 		len(payload.BattleReports) != 1 || len(payload.ChecksumGroups) != 1 ||
-		len(payload.BotStrategies) != 1 || len(payload.ModRows) != 1 || payload.ModRows[0].Folder != "GalaxyTool" ||
+		len(payload.BotStrategies) != 1 || len(payload.BotRows) != 1 || payload.BotRows[0].HomePlanet == nil ||
+		payload.BotRows[0].HomePlanet.Coordinates.Position != 6 ||
+		len(payload.ModRows) != 1 || payload.ModRows[0].Folder != "GalaxyTool" ||
 		!payload.ModRows[0].Installed || !payload.ModRows[0].Active ||
 		payload.Localization == nil || payload.Localization.Source != "en_en" || payload.Localization.Files[0].Rows[0].Key != "ADM_TEST" {
 		t.Fatalf("expected admin detail rows to map: %+v", payload)
