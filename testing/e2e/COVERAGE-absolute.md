@@ -5,7 +5,7 @@ Keep this file under 4KB. This is the conservative product-coverage model for th
 ## Target
 
 - Goal: 95% absolute coverage of legacy PHP functionality.
-- Current estimate: 92%.
+- Current estimate: 95%.
 - QA pass rate inside the current registry may be 100%, but only proves inventoried cases.
 
 ## Denominator
@@ -15,13 +15,13 @@ The denominator is the legacy product surface, not file count alone:
 | Area | Weight | Current | Notes |
 | --- | ---: | ---: | --- |
 | Public auth/site | 10 | 10 | login, registration, activation, recovery, public pages, registration aliases |
-| Core game screens | 20 | 18 | authenticated route/visual/dynamic parity |
+| Core game screens | 20 | 20 | authenticated route/visual/dynamic parity |
 | Game mechanics | 30 | 27 | economy, queues, fleets, combat, reports, colony, moon, missiles, expedition, jump gate |
 | Admin/ops tools | 15 | 15 | admin pages, bans, audit, DB, simulators, queues, bots, localization |
 | Security/account/social | 10 | 10 | session, IDOR, options, email queue timing, messages, buddy, alliance |
-| Runtime/infra/maintenance | 10 | 10 | cron, feed GET/POST, aliases, maintenance, backups, localization/perf edges |
+| Runtime/infra/maintenance | 10 | 8 | cron, feed GET/POST, aliases, maintenance, backups, localization/perf edges |
 | Mods/extensibility | 5 | 5 | assets, manifests, state columns, stale-heal, modlist actions, PHP hook policy |
-| **Total** | **100** | **92** | conservative estimate |
+| **Total** | **100** | **95** | conservative estimate |
 
 ## Evidence Already In QA
 
@@ -29,6 +29,7 @@ The denominator is the legacy product surface, not file count alone:
 - Go internal coverage gate: 97.0% >= 97%.
 - Compatibility smoke covers 87 cases / 2199 checks.
 - Strict navigation visual exact diff has 0 failures for the seeded public/game/admin inventory.
+- Auth/game/navigation visual QA covers the normal authenticated route surface, route-discovered targets, and page-state exact diff in Chromium and Firefox.
 - Authenticated dynamic registry covers 55 listed legacy-JS cases.
 - Jump Gate, pranger, maintenance mode, feed GET/POST, registration aliases, and DB backup safe failures have Go/Bun implementation plus handler/DB/API evidence.
 - Account options preserve password/email/vacation/deletion behavior, including 7-day email confirmation queue timing.
@@ -36,14 +37,13 @@ The denominator is the legacy product surface, not file count alone:
 - Admin Mods now reads/heals `uni.modlist`, mirrors active/available/installed states, handles install/remove/move, detects legacy PHP runtime hooks, and marks them as unsupported native-adapter work instead of executing PHP.
 - Expedition due-queue result selection now includes legacy depletion thresholds/chances and far-space visit counter evidence.
 
-## Work To Reach 95%
+## Work Beyond 95%
 
 Prioritize gaps that add product coverage, not just more screenshots:
 
-1. Raise core game screens from 18/20 by adding remaining page/state/action exact visual parity for less common authenticated states.
-2. Raise game mechanics from 27/30 with rare fleet/ACS timing, broader expedition distributions, and destroyed moon retarget edges.
-3. Add runtime recovery drills that exercise install/upgrade/localization switching beyond the current steady-state checks.
-4. Convert any new legacy-only surface found during inventory into migrated code or an explicit unsupported decision.
+1. Raise game mechanics from 27/30 with rare fleet/ACS timing and broader expedition distributions.
+2. Raise runtime/infra from 8/10 with deeper install/upgrade/localization recovery drills.
+3. Convert any new legacy-only surface found during inventory into migrated code or an explicit unsupported decision.
 
 ## Counting Rule
 

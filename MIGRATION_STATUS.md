@@ -31,7 +31,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` migration tracker. Keep this file under 4K
 - Legacy PHP Docker E2E passes before Go/Bun checks.
 - Frontend build/typecheck/unit tests pass: 20 tests / 172 expects.
 - Backend tests and the 97% internal coverage gate pass: `97.0% >= 97%`.
-- Absolute legacy coverage target: 95%; current estimate: 92% in [COVERAGE-absolute.md](./testing/e2e/COVERAGE-absolute.md).
+- Absolute legacy coverage target: 95%; current estimate: 95% in [COVERAGE-absolute.md](./testing/e2e/COVERAGE-absolute.md).
 - Go compatibility smoke registry covers 87 cases / 2199 checks.
 - User-type API and Chromium/Firefox Playwright QA pass.
 - Auth visual, authenticated game visual, dynamic behavior, empire, alliance, overview fleet, overview all-cases, fleet continue, and fleet all-cases suites pass in Chromium and Firefox.
@@ -42,6 +42,6 @@ React 19/Bun 1.3 + Go 1.25 `net/http` migration tracker. Keep this file under 4K
 
 - No current strict navigation visual gap remains in the seeded public/game/admin route inventory.
 - No concrete listed authenticated dynamic E2E case remains in [COVERAGE-dynamic-legacy-js.md](./testing/e2e/COVERAGE-dynamic-legacy-js.md); add more only when new legacy-JS behavior is found.
-- Highest absolute-coverage gaps are rare game mechanics, less common authenticated visual states, and runtime recovery drills.
+- Highest post-95 absolute-coverage gaps are rare game mechanics and runtime recovery drills.
 - Continue adding route/state/action inventory when new pages or unseeded legacy flows are migrated.
 - Keep API endpoint inventory aligned with [Backend API Endpoints](./backend/API_ENDPOINTS.md).
