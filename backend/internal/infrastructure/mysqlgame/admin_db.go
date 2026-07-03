@@ -54,13 +54,13 @@ func (r AdminRepository) mutateAdminDatabase(ctx context.Context, query appgame.
 	case domaingame.AdminActionDatabaseDelete:
 		name, err := r.deleteAdminDatabaseBackup(query.FileName)
 		if err != nil {
-			return nil, err
+			return domaingame.AdminIssueWithMessage(domaingame.AdminIssueActionFailed, "Backup delete failed."), nil
 		}
 		return domaingame.AdminIssueWithMessage(domaingame.AdminIssueActionSaved, fmt.Sprintf("Backup deleted %s", name)), nil
 	case domaingame.AdminActionDatabaseRestore:
 		name, err := r.restoreAdminDatabaseBackup(ctx, query.FileName)
 		if err != nil {
-			return nil, err
+			return domaingame.AdminIssueWithMessage(domaingame.AdminIssueActionFailed, "Backup restore failed."), nil
 		}
 		return domaingame.AdminIssueWithMessage(domaingame.AdminIssueActionSaved, fmt.Sprintf("Backup restored from file %s", name)), nil
 	default:

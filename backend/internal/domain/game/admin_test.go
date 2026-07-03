@@ -77,6 +77,9 @@ func TestNewAdminNormalizesModeAndCopiesMenu(t *testing.T) {
 	if issue := AdminIssueWithMessage(AdminIssueActionSaved, ""); issue == nil || issue.Message != "Action saved." {
 		t.Fatalf("unexpected empty custom admin issue: %+v", issue)
 	}
+	if issue := AdminIssue(AdminIssueActionFailed); issue == nil || issue.Message != "Admin action could not be completed." {
+		t.Fatalf("unexpected failed admin issue: %+v", issue)
+	}
 	if issue := AdminIssue("unknown"); issue == nil || issue.Code != "unknown" {
 		t.Fatalf("unexpected unknown admin issue: %+v", issue)
 	}

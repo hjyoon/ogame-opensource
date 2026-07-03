@@ -9,6 +9,7 @@ const (
 
 	AdminIssueAccessDenied = "access_denied"
 	AdminIssueActionSaved  = "action_saved"
+	AdminIssueActionFailed = "action_failed"
 	AdminIssueBotAdded     = "bot_added"
 	AdminIssueBotExists    = "bot_exists"
 	AdminIssueBotNoStart   = "bot_no_start"
@@ -534,6 +535,8 @@ func AdminIssue(code string) *AdminActionIssue {
 		return &AdminActionIssue{Code: code, Message: "Access denied."}
 	case AdminIssueActionSaved:
 		return &AdminActionIssue{Code: code, Message: "Action saved."}
+	case AdminIssueActionFailed:
+		return &AdminActionIssue{Code: code, Message: "Admin action could not be completed."}
 	case AdminIssueBotAdded:
 		return &AdminActionIssue{Code: code, Message: "Bot has been successfully added."}
 	case AdminIssueBotExists:

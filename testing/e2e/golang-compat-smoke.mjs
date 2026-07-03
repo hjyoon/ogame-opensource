@@ -10393,6 +10393,18 @@ try {
       })
     : null;
   const adminDbDeleteBody = adminDbDelete ? parseJSON(adminDbDelete) : {};
+  const adminDbMissingRestore = await request(`/api/game/admin${withQueryParam(adminDbSearch, "mode", "DB")}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: adminDbCookie },
+    body: JSON.stringify({ action: "restore", fileName: "backup_missing_golang_smoke.json" })
+  });
+  const adminDbMissingRestoreBody = parseJSON(adminDbMissingRestore);
+  const adminDbUnsafeDelete = await request(`/api/game/admin${withQueryParam(adminDbSearch, "mode", "DB")}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: adminDbCookie },
+    body: JSON.stringify({ action: "delete", fileName: "../backup_missing_golang_smoke.json" })
+  });
+  const adminDbUnsafeDeleteBody = parseJSON(adminDbUnsafeDelete);
   cases.push(finalize({
     case: "go_admin_database_backup_restore_api",
     checks: [
@@ -10440,7 +10452,19 @@ try {
       check(!adminDbCreatedFile || !(adminDbDeleteBody.admin?.databaseBackups ?? []).some((row) => String(row.fileName ?? "") === adminDbCreatedFile), "admin DB backup delete reload removes the backup file", {
         adminDbCreatedFile,
         backups: adminDbDeleteBody.admin?.databaseBackups ?? []
-      })
+      }),
+      check(adminDbMissingRestore.status === 200, "admin DB missing restore keeps the admin API available", {
+        status: adminDbMissingRestore.status
+      }),
+      check(adminDbMissingRestoreBody.actionIssue?.code === "action_failed", "admin DB missing restore returns an action failure issue", adminDbMissingRestoreBody.actionIssue ?? {}),
+      check(String(adminDbMissingRestoreBody.actionIssue?.message ?? "") === "Backup restore failed.", "admin DB missing restore reports a safe failure message", adminDbMissingRestoreBody.actionIssue ?? {}),
+      check(adminDbMissingRestoreBody.admin?.mode === "DB", "admin DB missing restore reloads the DB screen", adminDbMissingRestoreBody.admin ?? {}),
+      check(adminDbUnsafeDelete.status === 200, "admin DB unsafe delete keeps the admin API available", {
+        status: adminDbUnsafeDelete.status
+      }),
+      check(adminDbUnsafeDeleteBody.actionIssue?.code === "action_failed", "admin DB unsafe delete returns an action failure issue", adminDbUnsafeDeleteBody.actionIssue ?? {}),
+      check(String(adminDbUnsafeDeleteBody.actionIssue?.message ?? "") === "Backup delete failed.", "admin DB unsafe delete reports a safe failure message", adminDbUnsafeDeleteBody.actionIssue ?? {}),
+      check(adminDbUnsafeDeleteBody.admin?.mode === "DB", "admin DB unsafe delete reloads the DB screen", adminDbUnsafeDeleteBody.admin ?? {})
     ]
   }));
 } catch (error) {

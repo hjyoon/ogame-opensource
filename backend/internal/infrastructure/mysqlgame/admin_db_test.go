@@ -275,11 +275,11 @@ func TestAdminRepositoryDatabaseBackupMutationErrorBranches(t *testing.T) {
 	if _, err := repository.mutateAdminDatabase(context.Background(), appgame.AdminMutationQuery{Action: domaingame.AdminActionDatabaseCreate}); err == nil {
 		t.Fatal("expected create mutation error")
 	}
-	if _, err := repository.mutateAdminDatabase(context.Background(), appgame.AdminMutationQuery{Action: domaingame.AdminActionDatabaseDelete, FileName: "backup_missing.json"}); err == nil {
-		t.Fatal("expected delete mutation error")
+	if issue, err := repository.mutateAdminDatabase(context.Background(), appgame.AdminMutationQuery{Action: domaingame.AdminActionDatabaseDelete, FileName: "backup_missing.json"}); err != nil || issue.Code != domaingame.AdminIssueActionFailed || issue.Message != "Backup delete failed." {
+		t.Fatalf("expected delete mutation failure issue, issue=%+v err=%v", issue, err)
 	}
-	if _, err := repository.mutateAdminDatabase(context.Background(), appgame.AdminMutationQuery{Action: domaingame.AdminActionDatabaseRestore, FileName: "backup_missing.json"}); err == nil {
-		t.Fatal("expected restore mutation error")
+	if issue, err := repository.mutateAdminDatabase(context.Background(), appgame.AdminMutationQuery{Action: domaingame.AdminActionDatabaseRestore, FileName: "backup_missing.json"}); err != nil || issue.Code != domaingame.AdminIssueActionFailed || issue.Message != "Backup restore failed." {
+		t.Fatalf("expected restore mutation failure issue, issue=%+v err=%v", issue, err)
 	}
 
 	for _, execErrAt := range []int{1, 2, 3, 4} {
