@@ -743,11 +743,17 @@ func adminLastInsertID(result sql.Result) (int, error) {
 }
 
 func randomBotPassword() (string, error) {
-	syllables := []string{"er", "in", "tia", "wol", "fe", "pre", "vet", "jo", "nes", "al", "len", "son", "cha", "ir", "ler", "bo", "ok", "tio", "nar", "sim", "ple", "bla", "ten", "toe", "cho", "co", "lat", "spe", "ak", "er", "po", "co", "lor", "pen", "cil", "li", "ght", "wh", "at", "the", "he", "ck", "is", "mam", "bo", "no", "fi", "ve", "any", "way", "pol", "iti", "cs", "ra", "dio", "sou", "rce", "sea", "rch", "pa", "per", "com"}
 	entropy := make([]byte, 8)
-	if _, err := rand.Read(entropy); err != nil {
+	if _, err := randomBotPasswordRead(entropy); err != nil {
 		return "", err
 	}
+	return formatRandomBotPassword(entropy), nil
+}
+
+var randomBotPasswordRead = rand.Read
+
+func formatRandomBotPassword(entropy []byte) string {
+	syllables := []string{"er", "in", "tia", "wol", "fe", "pre", "vet", "jo", "nes", "al", "len", "son", "cha", "ir", "ler", "bo", "ok", "tio", "nar", "sim", "ple", "bla", "ten", "toe", "cho", "co", "lat", "spe", "ak", "er", "po", "co", "lor", "pen", "cil", "li", "ght", "wh", "at", "the", "he", "ck", "is", "mam", "bo", "no", "fi", "ve", "any", "way", "pol", "iti", "cs", "ra", "dio", "sou", "rce", "sea", "rch", "pa", "per", "com"}
 	var builder strings.Builder
 	for count := 0; count < 4; count++ {
 		mode := entropy[count*2]
@@ -758,7 +764,7 @@ func randomBotPassword() (string, error) {
 		}
 		builder.WriteString(syllables[int(value)%len(syllables)])
 	}
-	return builder.String(), nil
+	return builder.String()
 }
 
 func (r AdminRepository) loadAdminModList(ctx context.Context, uniTable string) ([]string, error) {

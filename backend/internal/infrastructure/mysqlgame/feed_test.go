@@ -112,11 +112,12 @@ func TestFeedRepositoryReadsFeedItemWhenOwnerAndLastfeedAllow(t *testing.T) {
 
 func TestFeedRepositoryRejectsForeignOrFutureFeedItem(t *testing.T) {
 	tests := []struct {
-		name string
-		row  []any
+		name      string
+		row       []any
+		wantPlain string
 	}{
 		{name: "foreign owner", row: []any{43, "Subject", "Text", int64(900)}},
-		{name: "future item", row: []any{42, "Subject", "Text", int64(1001)}},
+		{name: "future item", row: []any{42, "Subject", "Text", int64(1001)}, wantPlain: "The message cannot be viewed yet"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -130,7 +131,7 @@ func TestFeedRepositoryRejectsForeignOrFutureFeedItem(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetFeedItem returned error: %v", err)
 			}
-			if item.Subject != "" || item.Text != "" {
+			if item.Subject != "" || item.Text != "" || item.PlainText != tt.wantPlain {
 				t.Fatalf("expected empty item, got %+v", item)
 			}
 		})
@@ -248,26 +249,29 @@ func TestFeedRepositoryGetFeedErrorBranches(t *testing.T) {
 
 func TestFeedRepositoryGetFeedItemEmptyBranches(t *testing.T) {
 	tests := []struct {
-		name    string
-		results []fakeQueryResult
+		name      string
+		results   []fakeQueryResult
+		wantPlain string
 	}{
 		{
 			name:    "global feed disabled",
 			results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{-1})}},
 		},
 		{
-			name: "missing user",
+			name: "missing user auth failure",
 			results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{5})},
 				{rows: fakeRowsFromValues()},
 			},
+			wantPlain: "Authentifizierung fehlgeschlagen",
 		},
 		{
-			name: "feed disabled",
+			name: "feed disabled auth failure",
 			results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{5})},
 				{rows: fakeRowsFromValues([]any{42, "Legor", 0, int64(1000)})},
 			},
+			wantPlain: "Authentifizierung fehlgeschlagen",
 		},
 		{
 			name: "missing item",
@@ -276,13 +280,14 @@ func TestFeedRepositoryGetFeedItemEmptyBranches(t *testing.T) {
 				{rows: fakeRowsFromValues([]any{42, "Legor", domaingame.UserFlagFeedEnable, int64(1000)})},
 				{rows: fakeRowsFromValues()},
 			},
+			wantPlain: "No message",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repository := NewFeedRepositoryWithRunner(&fakeFeedRunner{fakeQueryer: fakeQueryer{results: tt.results}}, nil, "ogame_", time.Now)
 			item, err := repository.GetFeedItem(context.Background(), appgame.FeedItemQuery{FeedID: "abcdef", MessageID: 11})
-			if err != nil || item.Subject != "" || item.Text != "" {
+			if err != nil || item.Subject != "" || item.Text != "" || item.PlainText != tt.wantPlain {
 				t.Fatalf("expected empty item without error, got %+v err=%v", item, err)
 			}
 		})

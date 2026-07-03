@@ -28,8 +28,9 @@ type FeedMessage struct {
 }
 
 type FeedItem struct {
-	Subject string
-	Text    string
+	Subject   string
+	Text      string
+	PlainText string
 }
 
 var (

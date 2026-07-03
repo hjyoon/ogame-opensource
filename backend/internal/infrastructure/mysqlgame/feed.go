@@ -91,14 +91,23 @@ func (r FeedRepository) GetFeedItem(ctx context.Context, query appgame.FeedItemQ
 		return domaingame.FeedItem{}, nil
 	}
 	user, ok, err := r.loadFeedUser(ctx, tables.users, query.FeedID)
-	if err != nil || !ok || user.flags&domaingame.UserFlagFeedEnable == 0 {
+	if err != nil {
 		return domaingame.FeedItem{}, err
+	}
+	if !ok || user.flags&domaingame.UserFlagFeedEnable == 0 {
+		return domaingame.FeedItem{PlainText: "Authentifizierung fehlgeschlagen"}, nil
 	}
 	item, ok, err := r.loadFeedItem(ctx, tables.messages, query.MessageID)
-	if err != nil || !ok {
+	if err != nil {
 		return domaingame.FeedItem{}, err
 	}
-	if item.ownerID != user.playerID || (user.lastFeed != 0 && item.date > user.lastFeed) {
+	if !ok {
+		return domaingame.FeedItem{PlainText: "No message"}, nil
+	}
+	if user.lastFeed != 0 && item.date > user.lastFeed {
+		return domaingame.FeedItem{PlainText: "The message cannot be viewed yet"}, nil
+	}
+	if item.ownerID != user.playerID {
 		return domaingame.FeedItem{}, nil
 	}
 	return domaingame.FeedItem{Subject: item.subject, Text: item.text}, nil

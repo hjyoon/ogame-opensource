@@ -949,6 +949,15 @@ func TestAdminRepositoryBotAddHelperEdges(t *testing.T) {
 		if err != nil || password == "" {
 			t.Fatalf("unexpected random bot password %q err=%v", password, err)
 		}
+		if got := formatRandomBotPassword([]byte{1, 49, 2, 0, 12, 0, 3, 1}); got != "50ererin" {
+			t.Fatalf("unexpected formatted bot password: %q", got)
+		}
+		originalReader := randomBotPasswordRead
+		randomBotPasswordRead = func([]byte) (int, error) { return 0, errors.New("entropy failed") }
+		t.Cleanup(func() { randomBotPasswordRead = originalReader })
+		if _, err := randomBotPassword(); err == nil || !strings.Contains(err.Error(), "entropy failed") {
+			t.Fatalf("expected random bot password entropy error, got %v", err)
+		}
 	})
 
 	t.Run("start strategy errors", func(t *testing.T) {

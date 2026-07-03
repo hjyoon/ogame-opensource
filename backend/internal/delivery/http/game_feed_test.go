@@ -87,6 +87,32 @@ func TestGameFeedItemRendersEscapedHTML(t *testing.T) {
 	}
 }
 
+func TestGameFeedAcceptsLegacyPostRequests(t *testing.T) {
+	usecase := &fakeGameFeedUseCase{
+		feed: domaingame.Feed{FeedID: "abcdef", Owner: "Legor", LastFeed: 1000},
+		item: domaingame.FeedItem{Subject: "Subject", Text: "Body"},
+	}
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/game/feed/show.php", strings.NewReader("feedid=abcdef"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	New(Dependencies{GameFeed: usecase}).ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "<rss") || usecase.feedQuery.FeedID != "abcdef" {
+		t.Fatalf("unexpected POST feed response: status=%d query=%+v body=%s", recorder.Code, usecase.feedQuery, recorder.Body.String())
+	}
+
+	recorder = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/game/feed/viewitem.php", strings.NewReader("feedid=abcdef&mid=11"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	New(Dependencies{GameFeed: usecase}).ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "<h1>Subject</h1>") || usecase.itemQuery.MessageID != 11 {
+		t.Fatalf("unexpected POST feed item response: status=%d query=%+v body=%s", recorder.Code, usecase.itemQuery, recorder.Body.String())
+	}
+}
+
 func TestGameFeedInputGuards(t *testing.T) {
 	tests := []struct {
 		path string
@@ -96,7 +122,7 @@ func TestGameFeedInputGuards(t *testing.T) {
 		{path: "/game/feed/show.php?feedid=bad-token", want: legacyFeedValidationError},
 		{path: "/game/feed/viewitem.php?feedid=bad-token&mid=11", want: legacyFeedValidationError},
 		{path: "/game/feed/viewitem.php?feedid=abcdef", want: "No message specified"},
-		{path: "/game/feed/viewitem.php?feedid=abcdef&mid=abc", want: "Error validating request parameters: mid"},
+		{path: "/game/feed/viewitem.php?feedid=abcdef&mid=abc", want: legacyFeedValidationError},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
@@ -110,12 +136,24 @@ func TestGameFeedInputGuards(t *testing.T) {
 	}
 }
 
-func TestGameFeedRequiresGET(t *testing.T) {
+func TestGameFeedRejectsMalformedPostForm(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/game/feed/show.php?feedid=abcdef", nil)
+	req := httptest.NewRequest(http.MethodPost, "/game/feed/show.php", strings.NewReader("%zz"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 	New(Dependencies{GameFeed: &fakeGameFeedUseCase{}}).ServeHTTP(recorder, req)
-	if recorder.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected method not allowed, got %d", recorder.Code)
+
+	if recorder.Code != http.StatusOK || recorder.Body.String() != legacyFeedValidationError {
+		t.Fatalf("unexpected malformed form response: status=%d body=%q", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestGameFeedRejectsUnsupportedMethods(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/game/feed/show.php?feedid=abcdef", nil)
+	New(Dependencies{GameFeed: &fakeGameFeedUseCase{}}).ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusMethodNotAllowed || recorder.Header().Get("Allow") != "GET, HEAD, POST" {
+		t.Fatalf("expected method not allowed, got %d allow=%s", recorder.Code, recorder.Header().Get("Allow"))
 	}
 }
 
@@ -168,6 +206,13 @@ func TestGameFeedUnavailableAndErrorBranches(t *testing.T) {
 			path:     "/game/feed/viewitem.php?feedid=abcdef&mid=11",
 			wantCode: http.StatusOK,
 			wantBody: "",
+		},
+		{
+			name:     "item legacy plain text",
+			handler:  New(Dependencies{GameFeed: &fakeGameFeedUseCase{item: domaingame.FeedItem{PlainText: "No message"}}}),
+			path:     "/game/feed/viewitem.php?feedid=abcdef&mid=11",
+			wantCode: http.StatusOK,
+			wantBody: "No message",
 		},
 	}
 	for _, tt := range tests {

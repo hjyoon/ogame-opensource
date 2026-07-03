@@ -24,10 +24,16 @@ type GameFeedUseCase interface {
 
 var legacyFeedIDPattern = regexp.MustCompile(`^[A-Fa-f0-9]{1,32}$`)
 
-const legacyFeedValidationError = "Error validating request parameters: feedid"
+const legacyFeedValidationError = "Error validating request parameters. Too smart users will be sent to the admin for a proctological examination."
 
 func (a app) handleGameFeedShow(w http.ResponseWriter, r *http.Request) {
-	feedID := r.URL.Query().Get("feedid")
+	if !allowLegacyFeedMethod(w, r) {
+		return
+	}
+	feedID, ok := legacyFeedFormValue(w, r, "feedid")
+	if !ok {
+		return
+	}
 	if feedID == "" {
 		writeLegacyFeedText(w, "No feed specified")
 		return
@@ -62,7 +68,13 @@ func (a app) handleGameFeedShow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a app) handleGameFeedItem(w http.ResponseWriter, r *http.Request) {
-	feedID := r.URL.Query().Get("feedid")
+	if !allowLegacyFeedMethod(w, r) {
+		return
+	}
+	feedID, ok := legacyFeedFormValue(w, r, "feedid")
+	if !ok {
+		return
+	}
 	if feedID == "" {
 		writeLegacyFeedText(w, "No feed specified")
 		return
@@ -71,14 +83,17 @@ func (a app) handleGameFeedItem(w http.ResponseWriter, r *http.Request) {
 		writeLegacyFeedText(w, legacyFeedValidationError)
 		return
 	}
-	messageIDRaw := r.URL.Query().Get("mid")
+	messageIDRaw, ok := legacyFeedFormValue(w, r, "mid")
+	if !ok {
+		return
+	}
 	if messageIDRaw == "" {
 		writeLegacyFeedText(w, "No message specified")
 		return
 	}
 	messageID, err := strconv.Atoi(messageIDRaw)
 	if err != nil || messageID <= 0 {
-		writeLegacyFeedText(w, "Error validating request parameters: mid")
+		writeLegacyFeedText(w, legacyFeedValidationError)
 		return
 	}
 	if a.deps.GameFeed == nil {
@@ -93,6 +108,10 @@ func (a app) handleGameFeedItem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "game feed item unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	if item.PlainText != "" {
+		writeLegacyFeedText(w, item.PlainText)
+		return
+	}
 	if item.Subject == "" && item.Text == "" {
 		writeLegacyFeedText(w, "")
 		return
@@ -102,6 +121,23 @@ func (a app) handleGameFeedItem(w http.ResponseWriter, r *http.Request) {
 	text := html.EscapeString(domaingame.FeedText(item.Text))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = fmt.Fprintf(w, "<html><head><title>%s</title></head><body><h1>%s</h1><p>%s</p><body></html>", subject, subject, text)
+}
+
+func allowLegacyFeedMethod(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodPost {
+		return true
+	}
+	w.Header().Set("Allow", "GET, HEAD, POST")
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	return false
+}
+
+func legacyFeedFormValue(w http.ResponseWriter, r *http.Request, name string) (string, bool) {
+	if err := r.ParseForm(); err != nil {
+		writeLegacyFeedText(w, legacyFeedValidationError)
+		return "", false
+	}
+	return r.Form.Get(name), true
 }
 
 func writeLegacyFeedText(w http.ResponseWriter, body string) {
