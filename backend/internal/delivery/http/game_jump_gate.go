@@ -3,9 +3,11 @@ package httpdelivery
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
@@ -179,6 +181,88 @@ func (a app) handleLegacyJumpGatePost(w http.ResponseWriter, r *http.Request) {
 	}
 	redirect := "/game/index.php?page=infos&session=" + url.QueryEscape(r.URL.Query().Get("session")) + "&cp=" + strconv.Itoa(target) + "&gid=43"
 	http.Redirect(w, r, redirect, http.StatusFound)
+}
+
+func (a app) handleLegacyJumpGateInfoGet(w http.ResponseWriter, r *http.Request) {
+	if a.deps.GameJumpGate == nil {
+		http.Error(w, "game jump gate unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	planetID, err := selectedPlanetID(r)
+	if err != nil {
+		http.Error(w, "invalid selected planet", http.StatusBadRequest)
+		return
+	}
+	result, err := a.deps.GameJumpGate.GetJumpGate(r.Context(), appgame.JumpGateCommand{
+		PublicSession:   r.URL.Query().Get("session"),
+		PrivateSessions: cookieMap(r),
+		RemoteAddr:      remoteIP(r.RemoteAddr),
+		PlanetID:        planetID,
+	})
+	if err != nil {
+		if a.deps.Logger != nil {
+			a.deps.Logger.Error("legacy jump gate info unavailable", "error", err.Error())
+		}
+		http.Error(w, "game jump gate unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !result.Authenticated {
+		http.Error(w, "unauthenticated", http.StatusForbidden)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(legacyJumpGateInfoHTML(r.URL.Query().Get("session"), result.JumpGate)))
+}
+
+func legacyJumpGateInfoHTML(session string, jumpGate domaingame.JumpGate) string {
+	if jumpGate.ActionIssue != nil && jumpGate.ActionIssue.Code != domaingame.JumpGateIssueMoved {
+		return "<center><font color=#FF0000>" + jumpGate.ActionIssue.Message + "</font></center>\n"
+	}
+	var builder strings.Builder
+	escapedSession := html.EscapeString(session)
+	builder.WriteString(`<form action="index.php?page=sprungtor&session=`)
+	builder.WriteString(escapedSession)
+	builder.WriteString(`" method="post">` + "\n\n")
+	builder.WriteString(`  <input type="hidden" name="qm" value="`)
+	builder.WriteString(strconv.Itoa(jumpGate.Source.ID))
+	builder.WriteString(`" />` + "\n")
+	builder.WriteString(`  <table border="1">` + "\n")
+	builder.WriteString("    <tr>\n      <td>Start moon</td>\n      <td>")
+	builder.WriteString(legacyJumpGateCoordinateLink(session, jumpGate.Source.Coordinates))
+	builder.WriteString("</td>\n    </tr>\n")
+	builder.WriteString("    <tr>\n      <td>Target moon</td>\n      <td>\n        <select name=\"zm\">\n")
+	for _, target := range jumpGate.Targets {
+		builder.WriteString(`             <option value="`)
+		builder.WriteString(strconv.Itoa(target.ID))
+		builder.WriteString(`">`)
+		builder.WriteString(html.EscapeString(target.Name))
+		builder.WriteString(" ")
+		builder.WriteString(legacyJumpGateCoordinateLink(session, target.Coordinates))
+		builder.WriteString("</option>\n")
+	}
+	builder.WriteString("        </select>\n      </td>\n    </tr>\n  </table>\n")
+	builder.WriteString("  <table width=\"519\">\n    <tr>\n      <td class=\"c\" colspan=\"2\">Use jump gate: Select spaceships</td>\n    </tr>\n")
+	for _, ship := range jumpGate.Ships {
+		builder.WriteString("    <tr>\n      <th><a href=\"index.php?page=infos&session=")
+		builder.WriteString(escapedSession)
+		builder.WriteString("&gid=")
+		builder.WriteString(strconv.Itoa(ship.ID))
+		builder.WriteString("\">")
+		builder.WriteString(html.EscapeString(ship.Name))
+		builder.WriteString("</a> (")
+		builder.WriteString(strconv.Itoa(ship.Count))
+		builder.WriteString(" available)</th>\n      <th><input tabindex=\"1\" type=\"text\" name=\"c")
+		builder.WriteString(strconv.Itoa(ship.ID))
+		builder.WriteString("\" size=\"7\" maxlength=\"7\" value=\"0\"></th>\n    </tr>\n")
+	}
+	builder.WriteString("    <tr>\n      <th colspan=\"2\"><input type=\"submit\" value=\"Execute Jump!\" /></th>\n    </tr>\n  </table>\n</form>\n")
+	return builder.String()
+}
+
+func legacyJumpGateCoordinateLink(session string, coordinates domaingame.Coordinates) string {
+	escapedSession := html.EscapeString(session)
+	label := fmt.Sprintf("[%d:%d:%d]", coordinates.Galaxy, coordinates.System, coordinates.Position)
+	return fmt.Sprintf(`<a href="index.php?page=galaxy&galaxy=%d&system=%d&position=%d&session=%s" >%s</a>`, coordinates.Galaxy, coordinates.System, coordinates.Position, escapedSession, label)
 }
 
 func toGameJumpGateSummary(jumpGate domaingame.JumpGate) gameJumpGateSummary {

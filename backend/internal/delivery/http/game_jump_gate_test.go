@@ -82,6 +82,78 @@ func TestLegacyJumpGatePostRedirectsOnMovedAndRendersErrors(t *testing.T) {
 	}
 }
 
+func TestLegacyJumpGateInfoGetRendersRawFormAndErrors(t *testing.T) {
+	usecase := &fakeGameJumpGate{result: appgame.JumpGateResult{Authenticated: true, JumpGate: jumpGateFixture(nil)}}
+	server := testServerWithGameJumpGate(t, usecase, nil)
+	req := httptest.NewRequest(http.MethodGet, "/game/index.php?page=infos&session=public&cp=10&gid=43", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	body := rec.Body.String()
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, body)
+	}
+	for _, want := range []string{
+		`page=sprungtor`,
+		`name="qm" value="10"`,
+		`<option value="20">`,
+		`name="c202"`,
+		`Execute Jump!`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected body to contain %q, body=%s", want, body)
+		}
+	}
+	if usecase.command.PlanetID != 10 || usecase.command.PublicSession != "public" {
+		t.Fatalf("unexpected command: %+v", usecase.command)
+	}
+
+	usecase = &fakeGameJumpGate{result: appgame.JumpGateResult{Authenticated: true, JumpGate: jumpGateFixture(&domaingame.JumpGateActionIssue{Code: domaingame.JumpGateIssueCooldown, Message: "The Jump Gate is in recharge mode!"})}}
+	server = testServerWithGameJumpGate(t, usecase, nil)
+	req = httptest.NewRequest(http.MethodGet, "/game/index.php?page=infos&session=public&cp=10&gid=43", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	body = rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(body, "The Jump Gate is in recharge mode") || strings.Contains(body, "page=sprungtor") {
+		t.Fatalf("expected cooldown message without form, code=%d body=%s", rec.Code, body)
+	}
+}
+
+func TestLegacyJumpGateInfoGetRejectsUnavailableInvalidUnauthenticatedAndErrors(t *testing.T) {
+	server := testServerWithGameJumpGate(t, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/game/index.php?page=infos&session=public&cp=10&gid=43", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected missing usecase 503, got %d", rec.Code)
+	}
+
+	server = testServerWithGameJumpGate(t, &fakeGameJumpGate{}, nil)
+	req = httptest.NewRequest(http.MethodGet, "/game/index.php?page=infos&session=public&cp=bad&gid=43", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid cp 400, got %d", rec.Code)
+	}
+
+	server = testServerWithGameJumpGate(t, &fakeGameJumpGate{result: appgame.JumpGateResult{Authenticated: false}}, nil)
+	req = httptest.NewRequest(http.MethodGet, "/game/index.php?page=infos&session=public&cp=10&gid=43", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected unauthenticated 403, got %d", rec.Code)
+	}
+
+	logs := bytes.Buffer{}
+	server = testServerWithGameJumpGate(t, &fakeGameJumpGate{err: errors.New("info failed")}, slog.New(slog.NewJSONHandler(&logs, nil)))
+	req = httptest.NewRequest(http.MethodGet, "/game/index.php?page=infos&session=public&cp=10&gid=43", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable || !bytes.Contains(logs.Bytes(), []byte("info failed")) {
+		t.Fatalf("expected logged 503, code=%d logs=%s", rec.Code, logs.String())
+	}
+}
+
 func TestGameJumpGateEndpointUnauthorizedInvalidAndUnavailable(t *testing.T) {
 	server := testServerWithGameJumpGate(t, &fakeGameJumpGate{result: appgame.JumpGateResult{
 		Authenticated: false,
