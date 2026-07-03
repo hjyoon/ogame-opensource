@@ -64,7 +64,7 @@ Source of truth: `backend/internal/delivery/http/server.go`. Keep this file unde
 | --- | --- | --- |
 | `GET/POST` | `/game/reg/newredirect.php` | Legacy registration |
 | `GET` | `/game/validate.php`, `/activation` | Account activation |
-| `GET/HEAD/POST` | `/game/index.php` | Legacy game entry, BotEdit, `sprungtor`, `pranger` |
+| `GET/HEAD/POST` | `/game/index.php` | Legacy game entry, BotEdit, Mods actions, `sprungtor`, `pranger` |
 | `GET` | `/game/pranger.php` | Legacy public pillory/ban list |
 | `GET` | `/game/maintenance.php` | Legacy maintenance redirect/page |
 | `GET` | `/game/redir.php`, `/game/pic.php` | Legacy redirect/image proxy |

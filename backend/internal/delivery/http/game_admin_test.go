@@ -73,6 +73,97 @@ func TestGameAdminHandlerMutatesBans(t *testing.T) {
 	}
 }
 
+func TestGameAdminHandlerMutatesMods(t *testing.T) {
+	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{
+		Authenticated: true,
+		Admin: domaingame.NewAdmin(
+			domaingame.Overview{Commander: "legor", CurrentPlanet: domaingame.PlanetOverview{ID: 99}},
+			domaingame.AdminViewer{PlayerID: 42, Name: "legor", Level: domaingame.AdminLevelAdmin},
+			"Mods",
+		),
+		ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueActionSaved),
+	}}
+	request := httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=99&mode=Mods", strings.NewReader(`{"action":"install","modName":"GalaxyTool"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	app{deps: Dependencies{GameAdmin: usecase}}.handleGameAdmin(response, request)
+
+	if response.Code != http.StatusOK || usecase.mutation.Mode != "Mods" || usecase.mutation.Action != "install" || usecase.mutation.ModName != "GalaxyTool" {
+		t.Fatalf("unexpected mods mutation: status=%d command=%+v body=%s", response.Code, usecase.mutation, response.Body.String())
+	}
+}
+
+func TestLegacyAdminModsGetMutatesAndRedirects(t *testing.T) {
+	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{Authenticated: true, ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueActionSaved)}}
+	request := httptest.NewRequest(http.MethodGet, "/game/index.php?page=admin&session=pub+id&cp=99&mode=Mods&action=move_up&modname=GalaxyTool", nil)
+	response := httptest.NewRecorder()
+
+	New(Dependencies{GameAdmin: usecase}).ServeHTTP(response, request)
+
+	if response.Code != http.StatusFound || response.Header().Get("Location") != "/game/index.php?page=admin&session=pub+id&mode=Mods" {
+		t.Fatalf("unexpected legacy mods redirect: status=%d location=%q body=%s", response.Code, response.Header().Get("Location"), response.Body.String())
+	}
+	if usecase.mutation.Mode != "Mods" || usecase.mutation.Action != "move_up" || usecase.mutation.ModName != "GalaxyTool" || usecase.mutation.PlanetID != 99 {
+		t.Fatalf("unexpected legacy mods mutation: %+v", usecase.mutation)
+	}
+}
+
+func TestLegacyAdminModsGetGuards(t *testing.T) {
+	tests := []struct {
+		name     string
+		handler  http.Handler
+		path     string
+		wantCode int
+		wantBody string
+	}{
+		{
+			name:     "missing dependency",
+			handler:  New(Dependencies{}),
+			path:     "/game/index.php?page=admin&session=pub&mode=Mods&action=install&modname=GalaxyTool",
+			wantCode: http.StatusServiceUnavailable,
+			wantBody: "game admin unavailable",
+		},
+		{
+			name:     "invalid cp",
+			handler:  New(Dependencies{GameAdmin: &fakeGameAdminUseCase{}}),
+			path:     "/game/index.php?page=admin&session=pub&cp=bad&mode=Mods&action=install&modname=GalaxyTool",
+			wantCode: http.StatusBadRequest,
+			wantBody: "invalid selected planet",
+		},
+		{
+			name:     "usecase error",
+			handler:  New(Dependencies{GameAdmin: &fakeGameAdminUseCase{err: errors.New("repo down")}}),
+			path:     "/game/index.php?page=admin&session=pub&mode=Mods&action=install&modname=GalaxyTool",
+			wantCode: http.StatusServiceUnavailable,
+			wantBody: "game admin unavailable",
+		},
+		{
+			name:     "unauthenticated",
+			handler:  New(Dependencies{GameAdmin: &fakeGameAdminUseCase{result: appgame.AdminResult{Authenticated: false}}}),
+			path:     "/game/index.php?page=admin&session=pub&mode=Mods&action=install&modname=GalaxyTool",
+			wantCode: http.StatusForbidden,
+			wantBody: "unauthenticated",
+		},
+		{
+			name:     "access denied",
+			handler:  New(Dependencies{GameAdmin: &fakeGameAdminUseCase{result: appgame.AdminResult{Authenticated: true, ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueAccessDenied)}}}),
+			path:     "/game/index.php?page=admin&session=pub&mode=Mods&action=install&modname=GalaxyTool",
+			wantCode: http.StatusForbidden,
+			wantBody: "Access denied",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			tt.handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, tt.path, nil))
+			if response.Code != tt.wantCode || !strings.Contains(response.Body.String(), tt.wantBody) {
+				t.Fatalf("unexpected guard response: status=%d body=%q", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestGameAdminHandlerMutatesExpeditionSettings(t *testing.T) {
 	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{
 		Authenticated: true,
@@ -519,6 +610,8 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 		Author:      "ogamespec",
 		Description: "Integrated Galaxytool",
 		Website:     "https://example.test",
+		Installed:   true,
+		Active:      true,
 	}}
 	admin.CouponRows = []domaingame.AdminCouponRow{{
 		ID:           801,
@@ -588,7 +681,8 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 	if len(payload.QueueRows) != 1 || !payload.QueueRows[0].Freeze ||
 		len(payload.FleetLogRows) != 1 || payload.FleetLogRows[0].Origin.OwnerID != 7 || payload.FleetLogRows[0].Cargo[0].Loaded != 123 ||
 		len(payload.BattleReports) != 1 || len(payload.ChecksumGroups) != 1 ||
-		len(payload.BotStrategies) != 1 || len(payload.ModRows) != 1 || payload.ModRows[0].Folder != "GalaxyTool" {
+		len(payload.BotStrategies) != 1 || len(payload.ModRows) != 1 || payload.ModRows[0].Folder != "GalaxyTool" ||
+		!payload.ModRows[0].Installed || !payload.ModRows[0].Active {
 		t.Fatalf("expected admin detail rows to map: %+v", payload)
 	}
 	if len(payload.CouponRows) != 1 || !payload.CouponRows[0].Used || payload.CouponRows[0].Code != "ABCD-EFGH-IJKL-MNOP-QRST" ||

@@ -95,6 +95,7 @@ func TestAdminRepositoryReadsModManifests(t *testing.T) {
 	}
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"ZedMod"})},
 	)}
 	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_").WithLegacyGameDir(root)
 
@@ -103,15 +104,57 @@ func TestAdminRepositoryReadsModManifests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAdmin returned error: %v", err)
 	}
-	if len(admin.ModRows) != 2 || admin.ModRows[0].Folder != "AlphaMod" || admin.ModRows[0].Name != "Alpha Mod" ||
-		admin.ModRows[1].Folder != "ZedMod" || admin.ModRows[1].Website != "https://zed.example" {
+	if len(admin.ModRows) != 2 || admin.ModRows[0].Folder != "ZedMod" || !admin.ModRows[0].Installed ||
+		admin.ModRows[1].Folder != "AlphaMod" || admin.ModRows[1].Installed {
 		t.Fatalf("unexpected mod rows: %+v", admin.ModRows)
 	}
 
 	missingRoot := t.TempDir()
-	rows, err := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").WithLegacyGameDir(missingRoot).loadAdminMods()
+	rows, err := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").WithLegacyGameDir(missingRoot).loadAdminMods(context.Background())
 	if err != nil || len(rows) != 0 {
 		t.Fatalf("missing mods dir should be empty, rows=%+v err=%v", rows, err)
+	}
+
+	fileRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fileRoot, "mods"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").WithLegacyGameDir(fileRoot).loadAdminMods(context.Background()); err == nil {
+		t.Fatal("expected mods path file to fail")
+	}
+
+	noQueryRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(noQueryRoot, "mods", "SoloMod"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(noQueryRoot, "mods", "SoloMod", "manifest.json"), []byte(`{"name":"Solo Mod"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rows, err = NewAdminRepositoryWithQueryer(nil, "ogame_").WithLegacyGameDir(noQueryRoot).loadAdminMods(context.Background())
+	if err != nil || len(rows) != 1 || rows[0].Folder != "SoloMod" || rows[0].Installed {
+		t.Fatalf("expected available mod without installed state, rows=%+v err=%v", rows, err)
+	}
+
+	readErrRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(readErrRoot, "mods", "BrokenMod", "manifest.json"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").WithLegacyGameDir(readErrRoot).loadAdminMods(context.Background()); err == nil {
+		t.Fatal("expected unreadable manifest path to fail")
+	}
+
+	badPrefixRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(badPrefixRoot, "mods", "AlphaMod"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(badPrefixRoot, "mods", "AlphaMod", "manifest.json"), []byte(`{"name":"Alpha Mod"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_").WithLegacyGameDir(badPrefixRoot).loadAdminMods(context.Background()); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected loadAdminMods bad prefix error, got %v", err)
+	}
+	if _, err := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("modlist query failed")}}}, "ogame_").WithLegacyGameDir(badPrefixRoot).loadAdminMods(context.Background()); err == nil || !strings.Contains(err.Error(), "modlist query failed") {
+		t.Fatalf("expected loadAdminMods modlist query error, got %v", err)
 	}
 
 	badRoot := t.TempDir()
@@ -121,8 +164,153 @@ func TestAdminRepositoryReadsModManifests(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(badRoot, "mods", "BadMod", "manifest.json"), []byte(`{`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").WithLegacyGameDir(badRoot).loadAdminMods(); err == nil {
+	if _, err := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").WithLegacyGameDir(badRoot).loadAdminMods(context.Background()); err == nil {
 		t.Fatal("expected invalid manifest JSON to fail")
+	}
+}
+
+func TestAdminRepositoryMutatesModList(t *testing.T) {
+	root := t.TempDir()
+	for _, folder := range []string{"AlphaMod", "BetaMod"} {
+		if err := os.MkdirAll(filepath.Join(root, "mods", folder), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "mods", folder, "manifest.json"), []byte(`{"name":"`+folder+`","version":"1","author":"ops","description":"test","website":"https://example.test"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"AlphaMod"})},
+	}}}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_").WithLegacyGameDir(root)
+	issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Mods", Action: domaingame.AdminActionModInstall, ModName: "BetaMod"})
+	if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved {
+		t.Fatalf("unexpected install issue=%+v err=%v", issue, err)
+	}
+	if len(runner.execCalls) != 1 || !strings.Contains(runner.execCalls[0].sql, "UPDATE `ogame_uni` SET modlist = ?") || runner.execCalls[0].args[0] != "AlphaMod;BetaMod" {
+		t.Fatalf("unexpected install exec: %+v", runner.execCalls)
+	}
+
+	runner = &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"AlphaMod;BetaMod"})}}}}
+	repository = NewAdminRepositoryWithQueryer(runner, "ogame_").WithLegacyGameDir(root)
+	_, err = repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Mods", Action: domaingame.AdminActionModMoveUp, ModName: "BetaMod"})
+	if err != nil || len(runner.execCalls) != 1 || runner.execCalls[0].args[0] != "BetaMod;AlphaMod" {
+		t.Fatalf("unexpected move up execs=%+v err=%v", runner.execCalls, err)
+	}
+
+	runner = &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"AlphaMod;BetaMod"})}}}}
+	repository = NewAdminRepositoryWithQueryer(runner, "ogame_").WithLegacyGameDir(root)
+	_, err = repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Mods", Action: domaingame.AdminActionModRemove, ModName: "AlphaMod"})
+	if err != nil || len(runner.execCalls) != 1 || runner.execCalls[0].args[0] != "BetaMod" {
+		t.Fatalf("unexpected remove execs=%+v err=%v", runner.execCalls, err)
+	}
+
+	runner = &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"AlphaMod"})}}}}
+	repository = NewAdminRepositoryWithQueryer(runner, "ogame_").WithLegacyGameDir(root)
+	_, err = repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Mods", Action: domaingame.AdminActionModInstall, ModName: "MissingMod"})
+	if err != nil || len(runner.execCalls) != 0 {
+		t.Fatalf("unavailable install should no-op, execs=%+v err=%v", runner.execCalls, err)
+	}
+
+	runner = &fakeGalaxyRunner{}
+	repository = NewAdminRepositoryWithQueryer(runner, "ogame_").WithLegacyGameDir(root)
+	_, err = repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Mods", Action: domaingame.AdminActionModInstall})
+	if err != nil || len(runner.execCalls) != 0 {
+		t.Fatalf("missing mod name should no-op, execs=%+v err=%v", runner.execCalls, err)
+	}
+
+	runner = &fakeGalaxyRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"AlphaMod"})}}},
+		execErrs:    []error{errors.New("modlist update failed")},
+	}
+	repository = NewAdminRepositoryWithQueryer(runner, "ogame_").WithLegacyGameDir(root)
+	_, err = repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Mods", Action: domaingame.AdminActionModInstall, ModName: "BetaMod"})
+	if err == nil || !strings.Contains(err.Error(), "modlist update failed") {
+		t.Fatalf("expected modlist update error, got %v", err)
+	}
+
+	runner = &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("modlist load failed")}}}}
+	repository = NewAdminRepositoryWithQueryer(runner, "ogame_").WithLegacyGameDir(root)
+	_, err = repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Mods", Action: domaingame.AdminActionModInstall, ModName: "AlphaMod"})
+	if err == nil || !strings.Contains(err.Error(), "modlist load failed") {
+		t.Fatalf("expected modlist load error, got %v", err)
+	}
+
+	badRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(badRoot, "mods", "BadJSON"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(badRoot, "mods", "BadJSON", "manifest.json"), []byte(`{`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runner = &fakeGalaxyRunner{}
+	repository = NewAdminRepositoryWithQueryer(runner, "ogame_").WithLegacyGameDir(badRoot)
+	_, err = repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Mods", Action: domaingame.AdminActionModInstall, ModName: "BadJSON"})
+	if err == nil {
+		t.Fatal("expected bad mod manifest to fail")
+	}
+
+	repository = NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "bad-prefix_").WithLegacyGameDir(root)
+	if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Mods", Action: domaingame.AdminActionModInstall, ModName: "BetaMod"}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected bad prefix error, got %v", err)
+	}
+}
+
+func TestAdminRepositoryModListErrors(t *testing.T) {
+	repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("modlist query failed")}}}, "ogame_")
+	if _, err := repository.loadAdminModList(context.Background(), "`ogame_uni`"); err == nil || !strings.Contains(err.Error(), "modlist query failed") {
+		t.Fatalf("expected modlist query error, got %v", err)
+	}
+	repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("modlist rows failed"))}}}, "ogame_")
+	if _, err := repository.loadAdminModList(context.Background(), "`ogame_uni`"); err == nil || !strings.Contains(err.Error(), "modlist rows failed") {
+		t.Fatalf("expected empty rows error, got %v", err)
+	}
+	repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}, "ogame_")
+	if _, err := repository.loadAdminModList(context.Background(), "`ogame_uni`"); err == nil || !strings.Contains(err.Error(), "expected string") {
+		t.Fatalf("expected modlist scan error, got %v", err)
+	}
+	repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("modlist trailer failed"), []any{"Alpha"})}}}, "ogame_")
+	if _, err := repository.loadAdminModList(context.Background(), "`ogame_uni`"); err == nil || !strings.Contains(err.Error(), "modlist trailer failed") {
+		t.Fatalf("expected modlist rows trailer error, got %v", err)
+	}
+}
+
+func TestAdminRepositoryAdminModAvailableEdges(t *testing.T) {
+	root := t.TempDir()
+	repository := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").WithLegacyGameDir(root)
+	for _, name := range []string{"", "../Bad", "Bad/Name"} {
+		available, err := repository.adminModAvailable(name)
+		if err != nil || available {
+			t.Fatalf("expected invalid name %q to be unavailable without error, available=%v err=%v", name, available, err)
+		}
+	}
+	if available, err := repository.adminModAvailable("Missing"); err != nil || available {
+		t.Fatalf("missing manifest should be unavailable, available=%v err=%v", available, err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "mods", "BadJSON"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "mods", "BadJSON", "manifest.json"), []byte(`{`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.adminModAvailable("BadJSON"); err == nil {
+		t.Fatal("expected invalid manifest JSON error")
+	}
+	if err := os.MkdirAll(filepath.Join(root, "mods", "ManifestDir", "manifest.json"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.adminModAvailable("ManifestDir"); err == nil {
+		t.Fatal("expected unreadable manifest path error")
+	}
+	if err := os.MkdirAll(filepath.Join(root, "mods", "NoName"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "mods", "NoName", "manifest.json"), []byte(`{"name":" "}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if available, err := repository.adminModAvailable("NoName"); err != nil || available {
+		t.Fatalf("empty manifest name should be unavailable, available=%v err=%v", available, err)
 	}
 }
 

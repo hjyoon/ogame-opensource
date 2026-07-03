@@ -129,6 +129,10 @@ export type GameAdminAction =
       inactiveDays: number;
       ingameDays: number;
       periodicDays: number;
+    }
+  | {
+      action: "install" | "remove" | "move_up" | "move_down";
+      modName: string;
     };
 
 export type GameAllianceAction =
@@ -3705,7 +3709,7 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "Mods") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminModsTable admin={admin} />
+        <AdminModsTable admin={admin} onAdminAction={onAdminAction} />
       </AdminModeShell>
     );
   }
@@ -6089,6 +6093,8 @@ type AdminModInfo = {
   author: string;
   description: string;
   website: string;
+  installed?: boolean;
+  active?: boolean;
 };
 
 const adminAvailableMods: AdminModInfo[] = [
@@ -6128,43 +6134,79 @@ const adminAvailableMods: AdminModInfo[] = [
   }
 ];
 
-function AdminModsTable({ admin }: { admin: GameAdmin }) {
+function AdminModsTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
   const availableMods = admin.modRows && admin.modRows.length > 0 ? admin.modRows : adminAvailableMods;
+  const activeMods = availableMods.filter((mod) => mod.active || mod.installed);
+  const inactiveMods = availableMods.filter((mod) => !mod.active && !mod.installed);
   return (
     <>
       <h2 className="legacy-admin-mods-heading">ADM_MODS_HEAD</h2>
       <div className="legacy-admin-mods-table mods-container">
         <div className="mod-column">
           <h3>ADM_MODS_HEAD_ACITVE</h3>
-          <div className="empty-message">ADM_MODS_NO_ACTIVE</div>
+          {activeMods.length > 0 ? (
+            activeMods.map((mod) => <AdminModPanel key={mod.folder} active mod={mod} onAdminAction={onAdminAction} />)
+          ) : (
+            <div className="empty-message">ADM_MODS_NO_ACTIVE</div>
+          )}
         </div>
         <div className="mod-column">
           <h3>ADM_MODS_HEAD_AVAILABLE</h3>
-          {availableMods.map((mod) => (
-            <AdminModPanel key={mod.folder} mod={mod} />
-          ))}
+          {inactiveMods.length > 0 ? (
+            inactiveMods.map((mod) => <AdminModPanel key={mod.folder} mod={mod} onAdminAction={onAdminAction} />)
+          ) : (
+            <div className="empty-message">ADM_MODS_NO_AVAILABLE</div>
+          )}
         </div>
       </div>
       <div style={{ color: "#E6EBFB", marginTop: 20, textAlign: "center" }}>
-        <p>ADM_MODS_TOT_ACTIVE: 0 | ADM_MODS_TOT_AVAILABLE: {availableMods.length}</p>
+        <p>ADM_MODS_TOT_ACTIVE: {activeMods.length} | ADM_MODS_TOT_AVAILABLE: {availableMods.length}</p>
       </div>
     </>
   );
 }
 
-function AdminModPanel({ mod }: { mod: AdminModInfo }) {
+function AdminModPanel({
+  active = false,
+  mod,
+  onAdminAction
+}: {
+  active?: boolean;
+  mod: AdminModInfo;
+  onAdminAction: (action: GameAdminAction) => void;
+}) {
+  const onClick = (action: "install" | "remove" | "move_up" | "move_down") => (event: React.MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    onAdminAction({ action, modName: mod.folder });
+  };
   return (
     <div className="mod-item">
-      <span className="status-indicator status-inactive">ADM_MODS_STATE_AVAILABLE</span>
+      <span className={`status-indicator ${active ? "" : "status-inactive"}`}>
+        {active ? "ADM_MODS_STATE_ACTIVE" : "ADM_MODS_STATE_AVAILABLE"}
+      </span>
       <img alt={mod.name} className="mod-background" src={`/public-assets/game/mods/${mod.folder}/img/bg.png`} />
       <div className="mod-content">
         <div className="mod-title">{mod.name}</div>
         <div className="mod-description">{mod.description}</div>
         <div className="mod-info" dangerouslySetInnerHTML={{ __html: adminModInfoHTML(mod) }} />
         <div className="mod-actions">
-          <a className="mod-action-link" href={adminModeModActionHref("Mods", "install", mod.folder)}>
-            ADM_MODS_OP_INSTALL
-          </a>
+          {active ? (
+            <>
+              <a className="mod-action-link" href={adminModeModActionHref("Mods", "move_up", mod.folder)} onClick={onClick("move_up")}>
+                ADM_MODS_OP_MOVEUP
+              </a>
+              <a className="mod-action-link" href={adminModeModActionHref("Mods", "move_down", mod.folder)} onClick={onClick("move_down")}>
+                ADM_MODS_OP_MOVEDOWN
+              </a>
+              <a className="mod-action-link" href={adminModeModActionHref("Mods", "remove", mod.folder)} onClick={onClick("remove")}>
+                ADM_MODS_OP_REMOVE
+              </a>
+            </>
+          ) : (
+            <a className="mod-action-link" href={adminModeModActionHref("Mods", "install", mod.folder)} onClick={onClick("install")}>
+              ADM_MODS_OP_INSTALL
+            </a>
+          )}
         </div>
       </div>
     </div>

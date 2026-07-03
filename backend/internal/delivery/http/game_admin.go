@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
@@ -44,6 +45,7 @@ type gameAdminMutationRequest struct {
 	InactiveDays int            `json:"inactiveDays"`
 	IngameDays   int            `json:"ingameDays"`
 	PeriodicDays int            `json:"periodicDays"`
+	ModName      string         `json:"modName"`
 }
 
 type gameAdminSummary struct {
@@ -338,6 +340,8 @@ type gameAdminModInfo struct {
 	Author      string `json:"author"`
 	Description string `json:"description"`
 	Website     string `json:"website"`
+	Installed   bool   `json:"installed"`
+	Active      bool   `json:"active"`
 }
 
 type gameAdminCouponRow struct {
@@ -468,6 +472,7 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		InactiveDays:    request.InactiveDays,
 		IngameDays:      request.IngameDays,
 		PeriodicDays:    request.PeriodicDays,
+		ModName:         request.ModName,
 	})
 	if err != nil {
 		logGameAdminError(a.deps.Logger, r, "game admin mutation failed", err)
@@ -475,6 +480,49 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeGameAdminResponse(w, result)
+}
+
+func (a app) handleLegacyAdminModsGet(w http.ResponseWriter, r *http.Request) {
+	if a.deps.GameAdmin == nil {
+		http.Error(w, "game admin unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	action := r.URL.Query().Get("action")
+	if action != domaingame.AdminActionModInstall &&
+		action != domaingame.AdminActionModRemove &&
+		action != domaingame.AdminActionModMoveUp &&
+		action != domaingame.AdminActionModMoveDown {
+		a.handleFrontend(w, r)
+		return
+	}
+	planetID, err := selectedPlanetID(r)
+	if err != nil {
+		http.Error(w, "invalid selected planet", http.StatusBadRequest)
+		return
+	}
+	result, err := a.deps.GameAdmin.MutateAdmin(r.Context(), appgame.AdminMutationCommand{
+		PublicSession:   r.URL.Query().Get("session"),
+		PrivateSessions: cookieMap(r),
+		RemoteAddr:      remoteIP(r.RemoteAddr),
+		PlanetID:        planetID,
+		Mode:            "Mods",
+		Action:          action,
+		ModName:         r.URL.Query().Get("modname"),
+	})
+	if err != nil {
+		logGameAdminError(a.deps.Logger, r, "legacy admin mods mutation failed", err)
+		http.Error(w, "game admin unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !result.Authenticated {
+		http.Error(w, "unauthenticated", http.StatusForbidden)
+		return
+	}
+	if result.ActionIssue != nil && result.ActionIssue.Code == domaingame.AdminIssueAccessDenied {
+		http.Error(w, result.ActionIssue.Message, http.StatusForbidden)
+		return
+	}
+	http.Redirect(w, r, "/game/index.php?page=admin&session="+url.QueryEscape(r.URL.Query().Get("session"))+"&mode=Mods", http.StatusFound)
 }
 
 func selectedAdminPlayerID(r *http.Request) (int, error) {
@@ -654,6 +702,8 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			Author:      row.Author,
 			Description: row.Description,
 			Website:     row.Website,
+			Installed:   row.Installed,
+			Active:      row.Active,
 		})
 	}
 	couponRows := make([]gameAdminCouponRow, 0, len(admin.CouponRows))

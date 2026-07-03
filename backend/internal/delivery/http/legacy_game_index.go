@@ -21,6 +21,10 @@ func (a app) handleLegacyGameIndex(w http.ResponseWriter, r *http.Request) {
 			a.handleLegacyBotEditGet(w, r)
 			return
 		}
+		if r.Method == http.MethodGet && r.URL.Query().Get("page") == "admin" && strings.EqualFold(r.URL.Query().Get("mode"), "Mods") && r.URL.Query().Get("action") != "" {
+			a.handleLegacyAdminModsGet(w, r)
+			return
+		}
 		if r.Method == http.MethodGet && r.URL.Query().Get("page") == "infos" && r.URL.Query().Get("gid") == "43" {
 			a.handleLegacyJumpGateInfoGet(w, r)
 			return

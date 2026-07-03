@@ -134,7 +134,7 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 	case "BotEdit":
 		admin.BotStrategies, err = r.loadAdminBotStrategies(ctx)
 	case "Mods":
-		admin.ModRows, err = r.loadAdminMods()
+		admin.ModRows, err = r.loadAdminMods(ctx)
 	case "Coupons":
 		admin.CouponRows, admin.CouponTotal, err = r.loadAdminCouponRows(ctx, query.CouponFrom)
 		admin.CouponFrom = normalizeAdminCouponFrom(query.CouponFrom)
@@ -157,7 +157,7 @@ type adminModManifest struct {
 	Website     string `json:"website"`
 }
 
-func (r AdminRepository) loadAdminMods() ([]domaingame.AdminModInfo, error) {
+func (r AdminRepository) loadAdminMods(ctx context.Context) ([]domaingame.AdminModInfo, error) {
 	modsDir := filepath.Join(r.legacyGameDir, "mods")
 	entries, err := os.ReadDir(modsDir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -192,7 +192,36 @@ func (r AdminRepository) loadAdminMods() ([]domaingame.AdminModInfo, error) {
 			Website:     strings.TrimSpace(manifest.Website),
 		})
 	}
-	sort.Slice(mods, func(i, j int) bool {
+	installed := map[string]int{}
+	if len(mods) > 0 && r.queryer != nil {
+		uniTable, err := tableName(r.prefix, "uni")
+		if err != nil {
+			return nil, err
+		}
+		list, err := r.loadAdminModList(ctx, uniTable)
+		if err != nil {
+			return nil, err
+		}
+		for index, mod := range list {
+			installed[mod] = index + 1
+		}
+		for index := range mods {
+			mods[index].Installed = installed[mods[index].Folder] > 0
+			mods[index].Active = mods[index].Installed
+		}
+	}
+	sort.SliceStable(mods, func(i, j int) bool {
+		leftInstalled := installed[mods[i].Folder]
+		rightInstalled := installed[mods[j].Folder]
+		if leftInstalled != 0 || rightInstalled != 0 {
+			if leftInstalled == 0 {
+				return false
+			}
+			if rightInstalled == 0 {
+				return true
+			}
+			return leftInstalled < rightInstalled
+		}
 		return mods[i].Folder < mods[j].Folder
 	})
 	return mods, nil
@@ -260,6 +289,13 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 	if mode == "Coupons" {
 		return r.mutateAdminCoupons(ctx, query)
 	}
+	if mode == "Mods" {
+		uniTable, err := tableName(r.prefix, "uni")
+		if err != nil {
+			return nil, err
+		}
+		return r.mutateAdminMods(ctx, uniTable, query)
+	}
 	if mode == "Users" {
 		usersTable, err := tableName(r.prefix, "users")
 		if err != nil {
@@ -291,6 +327,70 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 		return nil, err
 	}
 	return r.mutateAdminBans(ctx, usersTable, queueTable, prangerTable, query)
+}
+
+func (r AdminRepository) mutateAdminMods(ctx context.Context, uniTable string, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
+	if query.ModName == "" {
+		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+	}
+	available := true
+	if query.Action == domaingame.AdminActionModInstall {
+		var err error
+		available, err = r.adminModAvailable(query.ModName)
+		if err != nil {
+			return nil, err
+		}
+	}
+	installed, err := r.loadAdminModList(ctx, uniTable)
+	if err != nil {
+		return nil, err
+	}
+	next, changed := domaingame.ApplyAdminModAction(installed, query.Action, query.ModName, available)
+	if !changed {
+		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+	}
+	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET modlist = ?", uniTable), domaingame.JoinAdminModList(next)); err != nil {
+		return nil, err
+	}
+	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+}
+
+func (r AdminRepository) loadAdminModList(ctx context.Context, uniTable string) ([]string, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COALESCE(modlist, '') FROM %s LIMIT 1", uniTable))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	var raw string
+	if err := rows.Scan(&raw); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return domaingame.NormalizeAdminModList(raw), nil
+}
+
+func (r AdminRepository) adminModAvailable(modName string) (bool, error) {
+	if modName == "" || filepath.Base(modName) != modName || strings.ContainsAny(modName, `/\`) {
+		return false, nil
+	}
+	manifestPath := filepath.Join(r.legacyGameDir, "mods", modName, "manifest.json")
+	data, err := os.ReadFile(manifestPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var manifest adminModManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(manifest.Name) != "", nil
 }
 
 func (r AdminRepository) mutateAdminBattleSim(ctx context.Context, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {

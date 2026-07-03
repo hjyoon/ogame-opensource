@@ -65,6 +65,7 @@ type AdminMutationQuery struct {
 	InactiveDays int
 	IngameDays   int
 	PeriodicDays int
+	ModName      string
 }
 
 type AdminMutationCommand struct {
@@ -98,6 +99,7 @@ type AdminMutationCommand struct {
 	InactiveDays    int
 	IngameDays      int
 	PeriodicDays    int
+	ModName         string
 }
 
 type AdminBotEditMutationQuery struct {
@@ -237,6 +239,7 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		InactiveDays: command.InactiveDays,
 		IngameDays:   command.IngameDays,
 		PeriodicDays: command.PeriodicDays,
+		ModName:      command.ModName,
 	})
 	if err != nil {
 		return AdminResult{}, err

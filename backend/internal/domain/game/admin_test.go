@@ -75,3 +75,52 @@ func TestNewAdminNormalizesModeAndCopiesMenu(t *testing.T) {
 		t.Fatalf("unexpected unknown admin issue: %+v", issue)
 	}
 }
+
+func TestAdminModListNormalizationAndActions(t *testing.T) {
+	if got := JoinAdminModList(NormalizeAdminModList("Alpha;;Beta;Alpha; ")); got != "Alpha;Beta" {
+		t.Fatalf("unexpected normalized mod list: %q", got)
+	}
+	if got := JoinAdminModList([]string{"", "Alpha", "Alpha", " Beta "}); got != "Alpha;Beta" {
+		t.Fatalf("unexpected direct joined mod list: %q", got)
+	}
+	next, changed := ApplyAdminModAction([]string{"Alpha"}, AdminActionModInstall, "Beta", true)
+	if !changed || JoinAdminModList(next) != "Alpha;Beta" {
+		t.Fatalf("expected install to append available mod, changed=%v next=%v", changed, next)
+	}
+	next, changed = ApplyAdminModAction(next, AdminActionModInstall, "Beta", true)
+	if changed || JoinAdminModList(next) != "Alpha;Beta" {
+		t.Fatalf("expected duplicate install to no-op, changed=%v next=%v", changed, next)
+	}
+	next, changed = ApplyAdminModAction(next, AdminActionModMoveUp, "Beta", true)
+	if !changed || JoinAdminModList(next) != "Beta;Alpha" {
+		t.Fatalf("expected move up to swap, changed=%v next=%v", changed, next)
+	}
+	next, changed = ApplyAdminModAction(next, AdminActionModMoveDown, "Beta", true)
+	if !changed || JoinAdminModList(next) != "Alpha;Beta" {
+		t.Fatalf("expected move down to swap, changed=%v next=%v", changed, next)
+	}
+	next, changed = ApplyAdminModAction(next, AdminActionModRemove, "Alpha", true)
+	if !changed || JoinAdminModList(next) != "Beta" {
+		t.Fatalf("expected remove to delete installed mod, changed=%v next=%v", changed, next)
+	}
+	next, changed = ApplyAdminModAction(next, AdminActionModInstall, "Missing", false)
+	if changed || JoinAdminModList(next) != "Beta" {
+		t.Fatalf("expected unavailable install to no-op, changed=%v next=%v", changed, next)
+	}
+	next, changed = ApplyAdminModAction(next, AdminActionModMoveUp, "Beta", true)
+	if changed || JoinAdminModList(next) != "Beta" {
+		t.Fatalf("expected first move up to no-op, changed=%v next=%v", changed, next)
+	}
+	next, changed = ApplyAdminModAction(next, AdminActionModMoveDown, "Beta", true)
+	if changed || JoinAdminModList(next) != "Beta" {
+		t.Fatalf("expected last move down to no-op, changed=%v next=%v", changed, next)
+	}
+	next, changed = ApplyAdminModAction(next, "unknown", "Beta", true)
+	if changed || JoinAdminModList(next) != "Beta" {
+		t.Fatalf("expected unknown action to no-op, changed=%v next=%v", changed, next)
+	}
+	next, changed = ApplyAdminModAction(next, AdminActionModRemove, "", true)
+	if changed || JoinAdminModList(next) != "Beta" {
+		t.Fatalf("expected empty mod name to no-op, changed=%v next=%v", changed, next)
+	}
+}

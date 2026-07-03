@@ -47,6 +47,11 @@ const (
 	AdminActionBotEditSave   = "save"
 	AdminActionBotEditNew    = "new"
 	AdminActionBotEditRename = "rename"
+
+	AdminActionModInstall  = "install"
+	AdminActionModRemove   = "remove"
+	AdminActionModMoveUp   = "move_up"
+	AdminActionModMoveDown = "move_down"
 )
 
 type Admin struct {
@@ -339,6 +344,8 @@ type AdminModInfo struct {
 	Author      string
 	Description string
 	Website     string
+	Installed   bool
+	Active      bool
 }
 
 type AdminCouponRow struct {
@@ -474,6 +481,76 @@ func AdminIssue(code string) *AdminActionIssue {
 		return &AdminActionIssue{Code: code, Message: "Action saved."}
 	default:
 		return &AdminActionIssue{Code: code, Message: "Admin action could not be completed."}
+	}
+}
+
+func NormalizeAdminModList(raw string) []string {
+	parts := strings.Split(strings.TrimSpace(raw), ";")
+	mods := make([]string, 0, len(parts))
+	seen := make(map[string]bool, len(parts))
+	for _, part := range parts {
+		mod := strings.TrimSpace(part)
+		if mod == "" || seen[mod] {
+			continue
+		}
+		seen[mod] = true
+		mods = append(mods, mod)
+	}
+	return mods
+}
+
+func JoinAdminModList(mods []string) string {
+	normalized := make([]string, 0, len(mods))
+	seen := make(map[string]bool, len(mods))
+	for _, mod := range mods {
+		mod = strings.TrimSpace(mod)
+		if mod == "" || seen[mod] {
+			continue
+		}
+		seen[mod] = true
+		normalized = append(normalized, mod)
+	}
+	return strings.Join(normalized, ";")
+}
+
+func ApplyAdminModAction(installed []string, action string, modName string, available bool) ([]string, bool) {
+	modName = strings.TrimSpace(modName)
+	if modName == "" {
+		return append([]string(nil), installed...), false
+	}
+	next := NormalizeAdminModList(JoinAdminModList(installed))
+	index := -1
+	for i, mod := range next {
+		if mod == modName {
+			index = i
+			break
+		}
+	}
+	switch action {
+	case AdminActionModInstall:
+		if !available || index >= 0 {
+			return next, false
+		}
+		return append(next, modName), true
+	case AdminActionModRemove:
+		if index < 0 {
+			return next, false
+		}
+		return append(next[:index], next[index+1:]...), true
+	case AdminActionModMoveUp:
+		if index <= 0 {
+			return next, false
+		}
+		next[index-1], next[index] = next[index], next[index-1]
+		return next, true
+	case AdminActionModMoveDown:
+		if index < 0 || index >= len(next)-1 {
+			return next, false
+		}
+		next[index], next[index+1] = next[index+1], next[index]
+		return next, true
+	default:
+		return next, false
 	}
 }
 
