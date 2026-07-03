@@ -5,7 +5,7 @@ Keep this file under 4KB. This is the conservative product-coverage model for th
 ## Target
 
 - Goal: 90% absolute coverage of legacy PHP functionality.
-- Current estimate: 87%.
+- Current estimate: 88%.
 - QA pass rate inside the current registry may be 100%, but that only proves the inventoried cases.
 
 ## Denominator
@@ -18,10 +18,10 @@ The denominator is the legacy product surface, not file count alone:
 | Core game screens | 20 | 18 | authenticated route/visual/dynamic parity |
 | Game mechanics | 30 | 26 | economy, queues, fleets, combat, reports, colony, moon, missiles, expedition, jump gate |
 | Admin/ops tools | 15 | 15 | admin pages, bans, audit Logins/Browse, Loca compare, Bots add/stop/list, pranger |
-| Security/account/social | 10 | 9 | session, IDOR, options, messages, buddy, alliance |
+| Security/account/social | 10 | 10 | session, IDOR, options, email queue timing, messages, buddy, alliance |
 | Runtime/infra/maintenance | 10 | 9 | cron, feed GET/POST, backup, direct aliases, maintenance mode, localization/performance edges |
 | Mods/extensibility | 5 | 4 | mod assets, manifests, state columns, stale-heal, modlist install/remove/move |
-| **Total** | **100** | **87** | conservative estimate |
+| **Total** | **100** | **88** | conservative estimate |
 
 ## Evidence Already In QA
 
@@ -34,6 +34,7 @@ The denominator is the legacy product surface, not file count alone:
 - Pranger/Pillory now has legacy `/game/pranger.php` and `index.php?page=pranger` HTML compatibility, pagination, DB query tests, and handler guard tests.
 - Maintenance mode now reads `uni.freeze`, returns legacy redirect/page HTML, preserves board links, and has DB/handler tests.
 - Feed endpoints now match legacy GET/POST `$_REQUEST`, token validation, auth/no-message/future-item text, and RSS/Atom variants.
+- Account options now preserve legacy password/email/vacation/deletion behavior, including 7-day email confirmation queue timing.
 - Admin Mods now reads/heals `uni.modlist`, mirrors active/available/installed columns, handles install/remove/move, and supports legacy GET links.
 - Admin Logins/Browse now read `iplogs`/`browse`, render CSR rows, and support legacy Logins form POST.
 - Admin Loca now scans `game/loca`, compares source/target PHP locale keys, and supports legacy form POST.

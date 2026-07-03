@@ -365,7 +365,7 @@ func TestOptionsRepositoryChangesEmailAndQueuesPermanentUpdate(t *testing.T) {
 	if runner.execs[0].args[0] != legacyPasswordHash(fmt.Sprintf("%d", now.Unix()), "secret") || runner.execs[0].args[1] != "new@example.test" {
 		t.Fatalf("unexpected email update args: %+v", runner.execs[0].args)
 	}
-	if runner.execs[2].args[0] != 42 || runner.execs[2].args[1] != "ChangeEmail" || runner.execs[2].args[6] != now.Unix()+(now.Unix()+7*24*60*60) {
+	if runner.execs[2].args[0] != 42 || runner.execs[2].args[1] != "ChangeEmail" || runner.execs[2].args[6] != now.Unix()+7*24*60*60 {
 		t.Fatalf("unexpected change-email queue args: %+v", runner.execs[2].args)
 	}
 }

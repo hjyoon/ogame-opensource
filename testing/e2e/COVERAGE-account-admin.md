@@ -6,7 +6,7 @@ Keep this file under 4KB. Add a new topic file when this grows.
 
 - Registration, activation links, duplicate username/email rejection, missing-field hardening, and welcome mail delivery.
 - Login/logout, public/private session rotation, private-session cookie enforcement, session expiry, and existing-session admin downgrade.
-- Account options for language, skin, sorting, notification settings, password/email change, vacation mode, and account deletion schedule/cancel.
+- Account options for language, skin, sorting, notification settings, password/email change, 7-day email confirmation, vacation mode, and account deletion schedule/cancel.
 - Notes, private messages, reports, report popup access control, message deletion/read state, operator PM reports, and report retention after source deletion.
 - Password recovery through permanent/temporary email lookup, MailHog delivery, old password invalidation, and recovered-password login.
 

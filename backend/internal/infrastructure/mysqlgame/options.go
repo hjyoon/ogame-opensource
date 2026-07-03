@@ -398,7 +398,7 @@ func (r OptionsRepository) addChangeEmailEvent(ctx context.Context, queueTable s
 	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE type = ? AND owner_id = ?", queueTable), "ChangeEmail", playerID); err != nil {
 		return err
 	}
-	legacyEnd := now + (now + 7*24*60*60)
+	legacyEnd := now + 7*24*60*60
 	_, err := r.execer.ExecContext(
 		ctx,
 		fmt.Sprintf("INSERT INTO %s (owner_id, type, sub_id, obj_id, level, start, end, prio) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", queueTable),
