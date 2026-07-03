@@ -179,47 +179,49 @@ type GamePaymentUseCase interface {
 }
 
 type Dependencies struct {
-	Health             HealthUseCase
-	UniverseNumber     int
-	Universes          UniverseCatalogUseCase
-	RegistrationDrafts RegistrationDraftUseCase
-	Registration       RegistrationUseCase
-	Activation         RegistrationActivationUseCase
-	DirectEntry        DirectEntryUseCase
-	PasswordRecovery   PasswordRecoveryUseCase
-	LoginDrafts        LoginDraftUseCase
-	Login              LoginUseCase
-	GameSessions       GameSessionUseCase
-	Logout             LogoutUseCase
-	GameOverview       GameOverviewUseCase
-	GameBuildings      GameBuildingsUseCase
-	GameEmpire         GameEmpireUseCase
-	GameResources      GameResourcesUseCase
-	GameMerchant       GameMerchantUseCase
-	GameOfficers       GameOfficersUseCase
-	GameAlliance       GameAllianceUseCase
-	GameAdmin          GameAdminUseCase
-	GameResearch       GameResearchUseCase
-	GameShipyard       GameShipyardUseCase
-	GameFleet          GameFleetUseCase
-	GameGalaxy         GameGalaxyUseCase
-	GameDefense        GameDefenseUseCase
-	GameTechnology     GameTechnologyUseCase
-	GameStatistics     GameStatisticsUseCase
-	GameSearch         GameSearchUseCase
-	GameBuddy          GameBuddyUseCase
-	GameNotes          GameNotesUseCase
-	GameMessages       GameMessagesUseCase
-	GameReport         GameReportUseCase
-	GamePhalanx        GamePhalanxUseCase
-	GameJumpGate       GameJumpGateUseCase
-	GamePranger        gamePrangerUseCase
-	GameFeed           GameFeedUseCase
-	GameOptions        GameOptionsUseCase
-	GamePayment        GamePaymentUseCase
-	Frontend           FrontendAssets
-	LegacyAssets       http.FileSystem
-	Logger             *slog.Logger
+	Health               HealthUseCase
+	UniverseNumber       int
+	MaintenanceStartPage string
+	Universes            UniverseCatalogUseCase
+	RegistrationDrafts   RegistrationDraftUseCase
+	Registration         RegistrationUseCase
+	Activation           RegistrationActivationUseCase
+	DirectEntry          DirectEntryUseCase
+	PasswordRecovery     PasswordRecoveryUseCase
+	LoginDrafts          LoginDraftUseCase
+	Login                LoginUseCase
+	GameSessions         GameSessionUseCase
+	Logout               LogoutUseCase
+	GameOverview         GameOverviewUseCase
+	GameBuildings        GameBuildingsUseCase
+	GameEmpire           GameEmpireUseCase
+	GameResources        GameResourcesUseCase
+	GameMerchant         GameMerchantUseCase
+	GameOfficers         GameOfficersUseCase
+	GameAlliance         GameAllianceUseCase
+	GameAdmin            GameAdminUseCase
+	GameResearch         GameResearchUseCase
+	GameShipyard         GameShipyardUseCase
+	GameFleet            GameFleetUseCase
+	GameGalaxy           GameGalaxyUseCase
+	GameDefense          GameDefenseUseCase
+	GameTechnology       GameTechnologyUseCase
+	GameStatistics       GameStatisticsUseCase
+	GameSearch           GameSearchUseCase
+	GameBuddy            GameBuddyUseCase
+	GameNotes            GameNotesUseCase
+	GameMessages         GameMessagesUseCase
+	GameReport           GameReportUseCase
+	GamePhalanx          GamePhalanxUseCase
+	GameJumpGate         GameJumpGateUseCase
+	GamePranger          gamePrangerUseCase
+	GameMaintenance      gameMaintenanceUseCase
+	GameFeed             GameFeedUseCase
+	GameOptions          GameOptionsUseCase
+	GamePayment          GamePaymentUseCase
+	Frontend             FrontendAssets
+	LegacyAssets         http.FileSystem
+	Logger               *slog.Logger
 }
 
 func (d Dependencies) CurrentUniverseNumber() int {
@@ -227,6 +229,13 @@ func (d Dependencies) CurrentUniverseNumber() int {
 		return 1
 	}
 	return d.UniverseNumber
+}
+
+func (d Dependencies) CurrentMaintenanceStartPage() string {
+	if d.MaintenanceStartPage == "" {
+		return "/"
+	}
+	return d.MaintenanceStartPage
 }
 
 type app struct {
@@ -245,6 +254,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/activation", getOnly(a.handleRegistrationActivation))
 	mux.HandleFunc("/game/index.php", a.handleLegacyGameIndex)
 	mux.HandleFunc("/game/pranger.php", getOnly(a.handleLegacyPranger))
+	mux.HandleFunc("/game/maintenance.php", getOnly(a.handleLegacyMaintenance))
 	mux.HandleFunc("/game/redir.php", getOnly(a.handleLegacyRedirect))
 	mux.HandleFunc("/game/pic.php", getOnly(a.handleLegacyImageProxy))
 	mux.HandleFunc("/game/cron.php", handleLegacyForbiddenScript)

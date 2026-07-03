@@ -85,52 +85,55 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	gamePhalanx := gamePhalanxService(cfg, logger, gameSessions)
 	gameJumpGate := gameJumpGateService(cfg, logger, gameSessions)
 	gamePranger := gamePrangerService(cfg, logger)
+	gameMaintenance := gameMaintenanceService(cfg, logger)
 	gameFeed := gameFeedService(cfg, logger)
 	gameOptions := gameOptionsService(cfg, logger, gameSessions)
 	gamePayment := gamePaymentService(cfg, logger, gameSessions)
 
 	return httpdelivery.New(httpdelivery.Dependencies{
-		Health:             health,
-		UniverseNumber:     cfg.UniNumber,
-		Universes:          universes,
-		RegistrationDrafts: registrationDrafts,
-		Registration:       registration,
-		Activation:         activation,
-		DirectEntry:        directEntry,
-		PasswordRecovery:   passwordRecovery,
-		LoginDrafts:        loginDrafts,
-		Login:              login,
-		GameSessions:       gameSessions,
-		Logout:             logout,
-		GameOverview:       gameOverview,
-		GameBuildings:      gameBuildings,
-		GameEmpire:         gameEmpire,
-		GameResources:      gameResources,
-		GameMerchant:       gameMerchant,
-		GameOfficers:       gameOfficers,
-		GameAlliance:       gameAlliance,
-		GameAdmin:          gameAdmin,
-		GameResearch:       gameResearch,
-		GameShipyard:       gameShipyard,
-		GameFleet:          gameFleet,
-		GameGalaxy:         gameGalaxy,
-		GameDefense:        gameDefense,
-		GameTechnology:     gameTechnology,
-		GameStatistics:     gameStatistics,
-		GameSearch:         gameSearch,
-		GameBuddy:          gameBuddy,
-		GameNotes:          gameNotes,
-		GameMessages:       gameMessages,
-		GameReport:         gameReport,
-		GamePhalanx:        gamePhalanx,
-		GameJumpGate:       gameJumpGate,
-		GamePranger:        gamePranger,
-		GameFeed:           gameFeed,
-		GameOptions:        gameOptions,
-		GamePayment:        gamePayment,
-		Frontend:           filesystem.StaticDir{Root: cfg.StaticDir},
-		LegacyAssets:       filesystem.NewNoListingFS(cfg.LegacyAssetDir),
-		Logger:             logger,
+		Health:               health,
+		UniverseNumber:       cfg.UniNumber,
+		MaintenanceStartPage: "/",
+		Universes:            universes,
+		RegistrationDrafts:   registrationDrafts,
+		Registration:         registration,
+		Activation:           activation,
+		DirectEntry:          directEntry,
+		PasswordRecovery:     passwordRecovery,
+		LoginDrafts:          loginDrafts,
+		Login:                login,
+		GameSessions:         gameSessions,
+		Logout:               logout,
+		GameOverview:         gameOverview,
+		GameBuildings:        gameBuildings,
+		GameEmpire:           gameEmpire,
+		GameResources:        gameResources,
+		GameMerchant:         gameMerchant,
+		GameOfficers:         gameOfficers,
+		GameAlliance:         gameAlliance,
+		GameAdmin:            gameAdmin,
+		GameResearch:         gameResearch,
+		GameShipyard:         gameShipyard,
+		GameFleet:            gameFleet,
+		GameGalaxy:           gameGalaxy,
+		GameDefense:          gameDefense,
+		GameTechnology:       gameTechnology,
+		GameStatistics:       gameStatistics,
+		GameSearch:           gameSearch,
+		GameBuddy:            gameBuddy,
+		GameNotes:            gameNotes,
+		GameMessages:         gameMessages,
+		GameReport:           gameReport,
+		GamePhalanx:          gamePhalanx,
+		GameJumpGate:         gameJumpGate,
+		GamePranger:          gamePranger,
+		GameMaintenance:      gameMaintenance,
+		GameFeed:             gameFeed,
+		GameOptions:          gameOptions,
+		GamePayment:          gamePayment,
+		Frontend:             filesystem.StaticDir{Root: cfg.StaticDir},
+		LegacyAssets:         filesystem.NewNoListingFS(cfg.LegacyAssetDir),
+		Logger:               logger,
 	})
 }
 
@@ -1057,6 +1060,34 @@ func gamePrangerService(cfg config.Config, logger *slog.Logger) appgame.PrangerS
 
 	logger.Info("universe DB game pranger enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
 	return appgame.NewPrangerService(mysqlgame.NewPrangerRepository(db, cfg.UniDBPrefix))
+}
+
+func gameMaintenanceService(cfg config.Config, logger *slog.Logger) appgame.MaintenanceService {
+	if !cfg.UniDBEnabled {
+		return appgame.MaintenanceService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game maintenance disabled", "error", err)
+		return appgame.MaintenanceService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game maintenance disabled", "error", err)
+		_ = db.Close()
+		return appgame.MaintenanceService{}
+	}
+
+	logger.Info("universe DB game maintenance enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
+	return appgame.NewMaintenanceService(mysqlgame.NewMaintenanceRepository(db, cfg.UniDBPrefix))
 }
 
 func gameFeedService(cfg config.Config, logger *slog.Logger) appgame.FeedService {
