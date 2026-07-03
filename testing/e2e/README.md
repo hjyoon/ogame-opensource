@@ -34,7 +34,7 @@ Result files:
 Run final equivalence with the legacy oracle included:
 
 ```sh
-OGAME_RUN_LEGACY_E2E=1 OGAME_GO_PORT=8895 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run-golang-migration-qa.sh
+OGAME_KEEP_GO_DOCKER=1 testing/e2e/run-golang-migration-qa.sh
 ```
 
 This wrapper runs:
@@ -50,7 +50,7 @@ This wrapper runs:
 - navigation visual discovery for all migrated public/game `GET` paths
 - final `.tmp/golang-migration-qa-summary.{json,md}` aggregation
 
-Do not set `OGAME_RUN_LEGACY_E2E=0` for final validation. It is only for local smoke work while iterating on frontend/backend code.
+The wrapper includes legacy PHP E2E by default and starts the migrated Go app on the default Go port, currently `8890`. Do not set `OGAME_RUN_LEGACY_E2E=0` for final validation; it is only for local smoke work while iterating on frontend/backend code.
 
 ## Visual Parity
 
