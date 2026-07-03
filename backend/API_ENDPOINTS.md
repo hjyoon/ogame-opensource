@@ -69,5 +69,5 @@ Source of truth: `backend/internal/delivery/http/server.go`. Keep this file unde
 | `GET` | `/game/reg/mail.php` | Legacy password recovery form |
 | `POST` | `/game/reg/fa_pass.php` | Legacy password recovery submit |
 | `GET` | `/game/feed/show.php`, `/game/feed/viewitem.php` | RSS/Atom feed |
-| `GET` | `/game/css/*`, `/game/img/*`, `/evolution/*`, `/legacy-assets/*` | Static legacy assets |
+| `GET` | `/game/css/*`, `/game/img/*`, `/game/js/*`, `/game/mods/*`, `/evolution/*`, `/legacy-assets/*` | Static legacy assets |
 | `GET` | `/` and non-API paths | React shell/static fallback |

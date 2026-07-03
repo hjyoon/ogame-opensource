@@ -51,7 +51,10 @@ func (a app) handleLegacyEvolutionAsset(w http.ResponseWriter, r *http.Request) 
 
 func (a app) handleLegacyGameStaticAsset(w http.ResponseWriter, r *http.Request) {
 	cleanPath := path.Clean("/" + r.URL.Path)
-	if !strings.HasPrefix(cleanPath, "/game/css/") && !strings.HasPrefix(cleanPath, "/game/img/") {
+	if !strings.HasPrefix(cleanPath, "/game/css/") &&
+		!strings.HasPrefix(cleanPath, "/game/img/") &&
+		!strings.HasPrefix(cleanPath, "/game/js/") &&
+		!strings.HasPrefix(cleanPath, "/game/mods/") {
 		http.NotFound(w, r)
 		return
 	}
