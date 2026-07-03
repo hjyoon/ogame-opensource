@@ -647,6 +647,137 @@ func TestAdminRepositorySkipsRestrictedOperatorModeData(t *testing.T) {
 	}
 }
 
+func TestAdminRepositoryReadsBrowseRows(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{901, 77, "target", "/e2e/audit/token", "GET", `a:1:{s:5:"token";s:4:"test";}`, `a:0:{}`, int64(1700000000)})},
+	)}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "Browse"})
+
+	if err != nil {
+		t.Fatalf("GetAdmin returned error: %v", err)
+	}
+	if len(admin.BrowseRows) != 1 || admin.BrowseRows[0].OwnerName != "target" ||
+		admin.BrowseRows[0].URL != "/e2e/audit/token" || admin.BrowseRows[0].GetData == "" {
+		t.Fatalf("unexpected browse rows: %+v", admin.BrowseRows)
+	}
+	lastSQL := queryer.calls[len(queryer.calls)-1].sql
+	if !strings.Contains(lastSQL, "`ogame_browse` b LEFT JOIN `ogame_users` u") || !strings.Contains(lastSQL, "ORDER BY b.date DESC") {
+		t.Fatalf("expected browse history query, got %s", lastSQL)
+	}
+}
+
+func TestAdminRepositoryReadsLoginRows(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{11, 77, "target", "203.0.113.11", int64(1700000001)})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{12, 77, "target", "203.0.113.12", int64(1700000002)})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{13, 88, "other", "203.0.113.13", int64(1700000003)})},
+	)}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{
+		PlayerID:    42,
+		PlanetID:    99,
+		Mode:        "Logins",
+		LoginName:   "tar",
+		LoginUserID: 77,
+		LoginIP:     "203.0.113.13",
+	})
+
+	if err != nil {
+		t.Fatalf("GetAdmin returned error: %v", err)
+	}
+	if len(admin.LoginRows) != 3 || admin.LoginRows[0].IP != "203.0.113.11" || admin.LoginRows[2].UserName != "other" {
+		t.Fatalf("unexpected login rows: %+v", admin.LoginRows)
+	}
+	nameCall := queryer.calls[len(queryer.calls)-3]
+	idCall := queryer.calls[len(queryer.calls)-2]
+	ipCall := queryer.calls[len(queryer.calls)-1]
+	if !strings.Contains(nameCall.sql, "u.oname LIKE ?") || nameCall.args[0] != "tar%" ||
+		!strings.Contains(idCall.sql, "l.user_id = ?") || idCall.args[0] != 77 ||
+		!strings.Contains(ipCall.sql, "l.ip = ?") || ipCall.args[0] != "203.0.113.13" {
+		t.Fatalf("unexpected login search calls: name=%+v id=%+v ip=%+v", nameCall, idCall, ipCall)
+	}
+}
+
+func TestAdminRepositoryAuditRowEdges(t *testing.T) {
+	t.Run("browse bad prefix", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_")
+		if _, err := repository.loadAdminBrowseRows(context.Background()); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+			t.Fatalf("expected browse prefix error, got %v", err)
+		}
+	})
+
+	t.Run("browse query error", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("browse query failed")}}}, "ogame_")
+		if _, err := repository.loadAdminBrowseRows(context.Background()); err == nil || !strings.Contains(err.Error(), "browse query failed") {
+			t.Fatalf("expected browse query error, got %v", err)
+		}
+	})
+
+	t.Run("browse scan error", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}, "ogame_")
+		if _, err := repository.loadAdminBrowseRows(context.Background()); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+			t.Fatalf("expected browse scan error, got %v", err)
+		}
+	})
+
+	t.Run("browse rows error", func(t *testing.T) {
+		validRow := []any{901, 77, "target", "/url", "GET", "", "", int64(1700000000)}
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("browse rows failed"), validRow)}}}, "ogame_")
+		if _, err := repository.loadAdminBrowseRows(context.Background()); err == nil || !strings.Contains(err.Error(), "browse rows failed") {
+			t.Fatalf("expected browse rows error, got %v", err)
+		}
+	})
+
+	t.Run("login no filters", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_")
+		rows, err := repository.loadAdminLoginRows(context.Background(), "", 0, "")
+		if err != nil || len(rows) != 0 {
+			t.Fatalf("expected empty login rows without filters, rows=%+v err=%v", rows, err)
+		}
+	})
+
+	t.Run("login bad prefix", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_")
+		if _, err := repository.queryAdminLoginRows(context.Background(), "l.user_id = ?", 77); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+			t.Fatalf("expected login prefix error, got %v", err)
+		}
+	})
+
+	t.Run("login query error", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("login query failed")}}}, "ogame_")
+		if _, err := repository.queryAdminLoginRows(context.Background(), "l.user_id = ?", 77); err == nil || !strings.Contains(err.Error(), "login query failed") {
+			t.Fatalf("expected login query error, got %v", err)
+		}
+	})
+
+	t.Run("login scan error", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}, "ogame_")
+		if _, err := repository.queryAdminLoginRows(context.Background(), "l.user_id = ?", 77); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+			t.Fatalf("expected login scan error, got %v", err)
+		}
+	})
+
+	t.Run("login rows error", func(t *testing.T) {
+		validRow := []any{11, 77, "target", "203.0.113.11", int64(1700000001)}
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("login rows failed"), validRow)}}}, "ogame_")
+		if _, err := repository.queryAdminLoginRows(context.Background(), "l.user_id = ?", 77); err == nil || !strings.Contains(err.Error(), "login rows failed") {
+			t.Fatalf("expected login rows error, got %v", err)
+		}
+	})
+
+	t.Run("login loader propagates search error", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("login name failed")}}}, "ogame_")
+		if _, err := repository.loadAdminLoginRows(context.Background(), "target", 0, ""); err == nil || !strings.Contains(err.Error(), "login name failed") {
+			t.Fatalf("expected login name error, got %v", err)
+		}
+	})
+}
+
 func TestAdminRepositoryReadsFleetLogRows(t *testing.T) {
 	fleetIDs := domaingame.FleetIDs()
 	shipValues := make([]any, len(fleetIDs))

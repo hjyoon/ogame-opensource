@@ -156,6 +156,112 @@ func TestLegacyGameIndexBotEditPostSaveNewAndErrors(t *testing.T) {
 	}
 }
 
+func TestLegacyGameIndexAdminLoginsPostRendersSearchResults(t *testing.T) {
+	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{
+		Authenticated: true,
+		Admin: domaingame.Admin{
+			LoginRows: []domaingame.AdminLoginRow{{
+				ID:       10,
+				UserID:   77,
+				UserName: `target<user>`,
+				IP:       "203.0.113.77",
+				Date:     1700000000,
+			}},
+		},
+	}}
+	form := url.Values{}
+	form.Set("name", "")
+	form.Set("id", "77")
+	form.Set("ip", "")
+	req := httptest.NewRequest(http.MethodPost, "/game/index.php?page=admin&mode=Logins&session=pub&cp=99", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.RemoteAddr = "198.51.100.10:4321"
+	rec := httptest.NewRecorder()
+
+	app{deps: Dependencies{GameAdmin: usecase}}.handleLegacyGameIndex(rec, req)
+
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(body, "203.0.113.77") || !strings.Contains(body, "target&lt;user&gt;") ||
+		!strings.Contains(body, `mode=Logins`) {
+		t.Fatalf("unexpected legacy logins response: status=%d body=%s", rec.Code, body)
+	}
+	if usecase.command.Mode != "Logins" || usecase.command.LoginUserID != 77 || usecase.command.PlanetID != 99 ||
+		usecase.command.RemoteAddr != "198.51.100.10" {
+		t.Fatalf("unexpected legacy logins command: %+v", usecase.command)
+	}
+}
+
+func TestLegacyGameIndexAdminLoginsPostGuards(t *testing.T) {
+	tests := []struct {
+		name     string
+		handler  app
+		path     string
+		body     string
+		wantCode int
+		wantBody string
+	}{
+		{
+			name:     "missing usecase",
+			handler:  app{},
+			path:     "/game/index.php?page=admin&mode=Logins&session=pub&cp=99",
+			body:     "id=77",
+			wantCode: http.StatusServiceUnavailable,
+			wantBody: "game admin unavailable",
+		},
+		{
+			name:     "invalid form",
+			handler:  app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{}}},
+			path:     "/game/index.php?page=admin&mode=Logins&session=pub&cp=99",
+			body:     "%zz",
+			wantCode: http.StatusBadRequest,
+			wantBody: "invalid admin logins request",
+		},
+		{
+			name:     "invalid cp",
+			handler:  app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{}}},
+			path:     "/game/index.php?page=admin&mode=Logins&session=pub&cp=bad",
+			body:     "id=77",
+			wantCode: http.StatusBadRequest,
+			wantBody: "invalid selected planet",
+		},
+		{
+			name:     "usecase error",
+			handler:  app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{err: errors.New("repo down")}}},
+			path:     "/game/index.php?page=admin&mode=Logins&session=pub&cp=99",
+			body:     "id=77",
+			wantCode: http.StatusServiceUnavailable,
+			wantBody: "game admin unavailable",
+		},
+		{
+			name:     "unauthenticated",
+			handler:  app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{result: appgame.AdminResult{Authenticated: false}}}},
+			path:     "/game/index.php?page=admin&mode=Logins&session=pub&cp=99",
+			body:     "id=77",
+			wantCode: http.StatusForbidden,
+			wantBody: "unauthenticated",
+		},
+		{
+			name:     "access denied",
+			handler:  app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{result: appgame.AdminResult{Authenticated: true, ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueAccessDenied)}}}},
+			path:     "/game/index.php?page=admin&mode=Logins&session=pub&cp=99",
+			body:     "id=77",
+			wantCode: http.StatusForbidden,
+			wantBody: "Access denied",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rec := httptest.NewRecorder()
+			tt.handler.handleLegacyGameIndex(rec, req)
+			if rec.Code != tt.wantCode || !strings.Contains(rec.Body.String(), tt.wantBody) {
+				t.Fatalf("unexpected response status=%d body=%q", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestLegacyGameIndexBotEditGetUnknownActionFallsBackToFrontend(t *testing.T) {
 	assets := &fakeFrontendAssets{bodies: map[string]string{"index.html": "react shell"}}
 	rec := httptest.NewRecorder()

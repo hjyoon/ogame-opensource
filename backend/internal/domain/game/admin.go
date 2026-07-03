@@ -62,6 +62,8 @@ type Admin struct {
 	Mode            string
 	Menu            []AdminMenuItem
 	MessageRows     []AdminMessageRow
+	LoginRows       []AdminLoginRow
+	BrowseRows      []AdminBrowseRow
 	UserLogRows     []AdminUserLogRow
 	UserRows        []AdminUserRow
 	ActiveUsers     []AdminUserRow
@@ -109,6 +111,25 @@ type AdminMessageRow struct {
 	IP        string
 	Agent     string
 	Text      string
+	Date      int64
+}
+
+type AdminLoginRow struct {
+	ID       int
+	UserID   int
+	UserName string
+	IP       string
+	Date     int64
+}
+
+type AdminBrowseRow struct {
+	ID        int
+	OwnerID   int
+	OwnerName string
+	URL       string
+	Method    string
+	GetData   string
+	PostData  string
 	Date      int64
 }
 

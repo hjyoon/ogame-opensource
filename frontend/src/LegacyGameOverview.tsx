@@ -1270,6 +1270,8 @@ type GameAdmin = {
   mode: string;
   menu: GameAdminMenuItem[];
   messageRows?: GameAdminMessageRow[];
+  loginRows?: GameAdminLoginRow[];
+  browseRows?: GameAdminBrowseRow[];
   userLogRows?: GameAdminUserLogRow[];
   userRows?: GameAdminUserRow[];
   activeUsers?: GameAdminUserRow[];
@@ -1312,6 +1314,25 @@ type GameAdminMessageRow = {
   ip: string;
   agent: string;
   text: string;
+  date: number;
+};
+
+type GameAdminLoginRow = {
+  id: number;
+  userId: number;
+  userName: string;
+  ip: string;
+  date: number;
+};
+
+type GameAdminBrowseRow = {
+  id: number;
+  ownerId: number;
+  ownerName: string;
+  url: string;
+  method: string;
+  getData: string;
+  postData: string;
   date: number;
 };
 
@@ -3597,7 +3618,7 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "Logins") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminLoginsTable />
+        <AdminLoginsTable rows={admin.loginRows ?? []} />
       </AdminModeShell>
     );
   }
@@ -3611,7 +3632,7 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "Browse") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminBrowseTable />
+        <AdminBrowseTable rows={admin.browseRows ?? []} />
       </AdminModeShell>
     );
   }
@@ -4375,39 +4396,61 @@ function AdminUserLink({ blankWhenMissing = false, ownerId, ownerName }: { blank
   return <a href={gameRouteURL("/game/admin", `?${query.toString()}`)}>{label}</a>;
 }
 
-function AdminLoginsTable() {
+function AdminLoginsTable({ rows }: { rows: GameAdminLoginRow[] }) {
+  const query = new URLSearchParams(window.location.search);
+  const session = query.get("session") ?? "";
+  const selectedPlanet = query.get("cp") ?? "";
   return (
-    <form action={adminModeHref("Logins")} method="POST" onSubmit={(event) => event.preventDefault()}>
-      <table className="legacy-admin-logins-table">
-        <tbody>
-          <tr>
-            <td className="d">By user name:</td>
-            <td>
-              <input name="name" size={20} type="text" />
-            </td>
-          </tr>
-          <tr>
-            <td className="d">By User ID:</td>
-            <td>
-              <input name="id" size={20} type="text" />
-            </td>
-          </tr>
-          <tr>
-            <td className="d">By IP address:</td>
-            <td>
-              <input name="ip" size={20} type="text" />
-            </td>
-          </tr>
-          <tr>
-            <td className="d" colSpan={2}>
-              <center>
-                <input type="submit" value="Search" />
-              </center>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </form>
+    <>
+      {rows.length > 0 ? (
+        <table>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id || `${row.userId}-${row.ip}-${row.date}`}>
+                <td>
+                  {`${formatLegacyAdminDateTime(row.date)} ${row.ip} `}
+                  <AdminUserLink ownerId={row.userId} ownerName={row.userName} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+      <form action={gameRouteURL("/game/admin", "")} method="GET">
+        <input name="session" type="hidden" value={session} />
+        <input name="mode" type="hidden" value="Logins" />
+        {selectedPlanet ? <input name="cp" type="hidden" value={selectedPlanet} /> : null}
+        <table className="legacy-admin-logins-table">
+          <tbody>
+            <tr>
+              <td className="d">By user name:</td>
+              <td>
+                <input defaultValue={query.get("name") ?? ""} name="name" size={20} type="text" />
+              </td>
+            </tr>
+            <tr>
+              <td className="d">By User ID:</td>
+              <td>
+                <input defaultValue={query.get("id") ?? ""} name="id" size={20} type="text" />
+              </td>
+            </tr>
+            <tr>
+              <td className="d">By IP address:</td>
+              <td>
+                <input defaultValue={query.get("ip") ?? ""} name="ip" size={20} type="text" />
+              </td>
+            </tr>
+            <tr>
+              <td className="d" colSpan={2}>
+                <center>
+                  <input type="submit" value="Search" />
+                </center>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+    </>
   );
 }
 
@@ -4494,16 +4537,58 @@ function AdminUserLogsTable({ rows }: { rows: GameAdminUserLogRow[] }) {
   );
 }
 
-function AdminBrowseTable() {
+function AdminBrowseTable({ rows }: { rows: GameAdminBrowseRow[] }) {
   return (
     <>
       <span className="legacy-admin-browse-title">Recent history of transitions (50 entries):</span>
       <br />
       <table className="legacy-admin-browse-table">
-        <tbody />
+        <tbody>
+          {rows.map((row) => {
+            const parts = formatLegacyAdminBrowseDateParts(row.date);
+            return (
+              <tr key={row.id || `${row.ownerId}-${row.url}-${row.date}`}>
+                <td>
+                  <table>
+                    <tbody>
+                      <tr>
+                        <th>{row.ownerName}</th>
+                        <th>{row.url}</th>
+                      </tr>
+                      <tr>
+                        <th rowSpan={2}>
+                          {row.method}
+                          <br />
+                          {parts.date}
+                          <br />
+                          {parts.time}
+                        </th>
+                        <th>{legacyAdminBrowsePayload(row.getData)}</th>
+                      </tr>
+                      <tr>
+                        <th>{legacyAdminBrowsePayload(row.postData)}</th>
+                      </tr>
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
       </table>
     </>
   );
+}
+
+function legacyAdminBrowsePayload(value: string): string {
+  if (!value) {
+    return "Array ( )";
+  }
+  const pairs = Array.from(value.matchAll(/s:\d+:"([^"]*)";s:\d+:"([^"]*)";/g));
+  if (pairs.length === 0) {
+    return value;
+  }
+  return `Array ( ${pairs.map((pair) => `[${pair[1]}] => ${pair[2]}`).join(" ")} )`;
 }
 
 function AdminFleetlogsTable({ onAdminAction, rows }: { onAdminAction: (action: GameAdminAction) => void; rows: GameAdminFleetLogRow[] }) {
@@ -14459,6 +14544,15 @@ function formatLegacyAdminFleetLogDateParts(seconds: number): { date: string; ti
   const date = new Date((seconds + 3 * 60 * 60) * 1000);
   return {
     date: `${String(date.getUTCDate()).padStart(2, "0")}.${String(date.getUTCMonth() + 1).padStart(2, "0")}.${date.getUTCFullYear()}`,
+    time: `${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`,
+  };
+}
+
+function formatLegacyAdminBrowseDateParts(seconds: number): { date: string; time: string } {
+  const date = new Date((seconds + 3 * 60 * 60) * 1000);
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return {
+    date: `${String(date.getUTCDate()).padStart(2, "0")} ${months[date.getUTCMonth()]} ${date.getUTCFullYear()}`,
     time: `${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:${String(date.getUTCSeconds()).padStart(2, "0")}`,
   };
 }

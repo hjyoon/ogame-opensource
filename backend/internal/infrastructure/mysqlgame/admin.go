@@ -99,10 +99,14 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 	switch admin.Mode {
 	case "Fleetlogs":
 		admin.FleetLogRows, err = r.loadAdminFleetLogRows(ctx)
+	case "Browse":
+		admin.BrowseRows, err = r.loadAdminBrowseRows(ctx)
 	case "Debug":
 		admin.MessageRows, err = r.loadAdminMessageRows(ctx, "debug", true, query.Filter)
 	case "Errors":
 		admin.MessageRows, err = r.loadAdminMessageRows(ctx, "errors", false, "")
+	case "Logins":
+		admin.LoginRows, err = r.loadAdminLoginRows(ctx, query.LoginName, query.LoginUserID, query.LoginIP)
 	case "Queue":
 		admin.QueueRows, err = r.loadAdminQueueRows(ctx)
 	case "UserLogs":
@@ -1426,10 +1430,102 @@ func (r AdminRepository) loadAdminBotStrategy(ctx context.Context, botstratTable
 
 func defaultAdminBotStrategySource() string {
 	return `{ "class": "go.GraphLinksModel",
-                             "linkFromPortIdProperty": "fromPort",
-                             "linkToPortIdProperty": "toPort",
-                             "nodeDataArray": [ ],
-                             "linkDataArray": [ ]}`
+	                             "linkFromPortIdProperty": "fromPort",
+	                             "linkToPortIdProperty": "toPort",
+	                             "nodeDataArray": [ ],
+	                             "linkDataArray": [ ]}`
+}
+
+func (r AdminRepository) loadAdminBrowseRows(ctx context.Context) ([]domaingame.AdminBrowseRow, error) {
+	browseTable, err := tableName(r.prefix, "browse")
+	if err != nil {
+		return nil, err
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT b.log_id, COALESCE(b.owner_id, 0), COALESCE(u.oname, ''), COALESCE(b.url, ''), COALESCE(b.method, ''), COALESCE(b.getdata, ''), COALESCE(b.postdata, ''), COALESCE(b.date, 0) FROM %s b LEFT JOIN %s u ON u.player_id = b.owner_id ORDER BY b.date DESC, b.log_id DESC LIMIT 50",
+			browseTable,
+			usersTable,
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domaingame.AdminBrowseRow, 0, 50)
+	for rows.Next() {
+		var row domaingame.AdminBrowseRow
+		if err := rows.Scan(&row.ID, &row.OwnerID, &row.OwnerName, &row.URL, &row.Method, &row.GetData, &row.PostData, &row.Date); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+func (r AdminRepository) loadAdminLoginRows(ctx context.Context, name string, userID int, ip string) ([]domaingame.AdminLoginRow, error) {
+	var result []domaingame.AdminLoginRow
+	if strings.TrimSpace(name) != "" {
+		rows, err := r.queryAdminLoginRows(ctx, "u.oname LIKE ?", strings.TrimSpace(name)+"%")
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, rows...)
+	}
+	if userID > 0 {
+		rows, err := r.queryAdminLoginRows(ctx, "l.user_id = ?", userID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, rows...)
+	}
+	if strings.TrimSpace(ip) != "" {
+		rows, err := r.queryAdminLoginRows(ctx, "l.ip = ?", strings.TrimSpace(ip))
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, rows...)
+	}
+	return result, nil
+}
+
+func (r AdminRepository) queryAdminLoginRows(ctx context.Context, where string, args ...any) ([]domaingame.AdminLoginRow, error) {
+	iplogsTable, err := tableName(r.prefix, "iplogs")
+	if err != nil {
+		return nil, err
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT l.log_id, COALESCE(l.user_id, 0), COALESCE(u.oname, ''), COALESCE(l.ip, ''), COALESCE(l.date, 0) FROM %s l LEFT JOIN %s u ON u.player_id = l.user_id WHERE l.reg = 0 AND %s ORDER BY l.date DESC, l.log_id DESC LIMIT 250",
+			iplogsTable,
+			usersTable,
+			where,
+		),
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domaingame.AdminLoginRow, 0)
+	for rows.Next() {
+		var row domaingame.AdminLoginRow
+		if err := rows.Scan(&row.ID, &row.UserID, &row.UserName, &row.IP, &row.Date); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
 }
 
 func (r AdminRepository) loadAdminMessageRows(ctx context.Context, rawTable string, includeErrorIDOrder bool, filter string) ([]domaingame.AdminMessageRow, error) {

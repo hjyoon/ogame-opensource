@@ -1112,7 +1112,7 @@ function App() {
     }
     const currentSearch = new URLSearchParams(search);
     const adminSearch = new URLSearchParams({ session: publicSession });
-    for (const key of ["cp", "mode", "action", "fname", "player_id", "galaxy", "system", "filter", "modname", "from"]) {
+    for (const key of ["cp", "mode", "action", "fname", "player_id", "galaxy", "system", "filter", "modname", "from", "name", "id", "ip"]) {
       const value = currentSearch.get(key);
       if (value) {
         adminSearch.set(key, value);
@@ -1143,7 +1143,7 @@ function App() {
     }
     const currentSearch = new URLSearchParams(search);
     const adminSearch = new URLSearchParams({ session: publicSession });
-    for (const key of ["cp", "mode", "action", "fname", "player_id", "galaxy", "system", "filter", "modname", "from"]) {
+    for (const key of ["cp", "mode", "action", "fname", "player_id", "galaxy", "system", "filter", "modname", "from", "name", "id", "ip"]) {
       const value = currentSearch.get(key);
       if (value) {
         adminSearch.set(key, value);

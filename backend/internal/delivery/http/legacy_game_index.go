@@ -7,8 +7,10 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
+	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 )
 
 type gameAdminBotEditUseCase interface {
@@ -40,12 +42,96 @@ func (a app) handleLegacyGameIndex(w http.ResponseWriter, r *http.Request) {
 		a.handleLegacyBotEditPost(w, r)
 		return
 	}
+	if r.Method == http.MethodPost && r.URL.Query().Get("page") == "admin" && strings.EqualFold(r.URL.Query().Get("mode"), "Logins") {
+		a.handleLegacyAdminLoginsPost(w, r)
+		return
+	}
 	if r.Method == http.MethodPost && r.URL.Query().Get("page") == "sprungtor" {
 		a.handleLegacyJumpGatePost(w, r)
 		return
 	}
 	w.Header().Set("Allow", "GET, HEAD, POST")
 	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+}
+
+func (a app) handleLegacyAdminLoginsPost(w http.ResponseWriter, r *http.Request) {
+	if a.deps.GameAdmin == nil {
+		http.Error(w, "game admin unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid admin logins request", http.StatusBadRequest)
+		return
+	}
+	planetID, err := selectedPlanetID(r)
+	if err != nil {
+		http.Error(w, "invalid selected planet", http.StatusBadRequest)
+		return
+	}
+	result, err := a.deps.GameAdmin.GetAdmin(r.Context(), appgame.AdminCommand{
+		PublicSession:   r.URL.Query().Get("session"),
+		PrivateSessions: cookieMap(r),
+		RemoteAddr:      remoteIP(r.RemoteAddr),
+		PlanetID:        planetID,
+		Mode:            "Logins",
+		LoginName:       formLast(r, "name"),
+		LoginUserID:     legacyBotEditInt(formLast(r, "id")),
+		LoginIP:         formLast(r, "ip"),
+	})
+	if err != nil {
+		http.Error(w, "game admin unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !result.Authenticated {
+		http.Error(w, "unauthenticated", http.StatusForbidden)
+		return
+	}
+	if result.ActionIssue != nil && result.ActionIssue.Code == domaingame.AdminIssueAccessDenied {
+		http.Error(w, result.ActionIssue.Message, http.StatusForbidden)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(legacyAdminLoginsHTML(r.URL.Query().Get("session"), result.Admin.LoginRows)))
+}
+
+func legacyAdminLoginsHTML(session string, rows []domaingame.AdminLoginRow) string {
+	var builder strings.Builder
+	if len(rows) > 0 {
+		builder.WriteString("<table>")
+		for _, row := range rows {
+			builder.WriteString("<tr><td>")
+			builder.WriteString(html.EscapeString(legacyAdminDateTime(row.Date)))
+			builder.WriteString(" ")
+			builder.WriteString(html.EscapeString(row.IP))
+			builder.WriteString(" ")
+			if row.UserID > 0 {
+				builder.WriteString(`<a href="index.php?page=admin&amp;session=`)
+				builder.WriteString(html.EscapeString(url.QueryEscape(session)))
+				builder.WriteString(`&amp;mode=Users&amp;player_id=`)
+				builder.WriteString(strconv.Itoa(row.UserID))
+				builder.WriteString(`">`)
+				builder.WriteString(html.EscapeString(row.UserName))
+				builder.WriteString("</a>")
+			} else {
+				builder.WriteString(html.EscapeString(row.UserName))
+			}
+			builder.WriteString("</td></tr>")
+		}
+		builder.WriteString("</table>")
+	}
+	builder.WriteString(`<form action="index.php?page=admin&amp;session=`)
+	builder.WriteString(html.EscapeString(url.QueryEscape(session)))
+	builder.WriteString(`&amp;mode=Logins" method="POST"><table>`)
+	builder.WriteString(`<tr><td class=d>By user name:</td><td><input type=text size=20 name=name></td></tr>`)
+	builder.WriteString(`<tr><td class=d>By User ID:</td><td><input type=text size=20 name=id></td></tr>`)
+	builder.WriteString(`<tr><td class=d>By IP address:</td><td><input type=text size=20 name=ip></td></tr>`)
+	builder.WriteString(`<tr><td colspan=2 class=d><center><input type="submit" value="Search"></center></td></tr>`)
+	builder.WriteString(`</table></form>`)
+	return builder.String()
+}
+
+func legacyAdminDateTime(timestamp int64) string {
+	return time.Unix(timestamp+3*60*60, 0).UTC().Format("2006-01-02 15:04:05")
 }
 
 func (a app) handleLegacyBotEditGet(w http.ResponseWriter, r *http.Request) {

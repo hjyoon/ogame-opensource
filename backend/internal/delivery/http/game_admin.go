@@ -56,6 +56,8 @@ type gameAdminSummary struct {
 	Mode            string                      `json:"mode"`
 	Menu            []gameAdminMenuItem         `json:"menu"`
 	MessageRows     []gameAdminMessageRow       `json:"messageRows,omitempty"`
+	LoginRows       []gameAdminLoginRow         `json:"loginRows,omitempty"`
+	BrowseRows      []gameAdminBrowseRow        `json:"browseRows,omitempty"`
 	UserLogRows     []gameAdminUserLogRow       `json:"userLogRows,omitempty"`
 	UserRows        []gameAdminUserRow          `json:"userRows,omitempty"`
 	ActiveUsers     []gameAdminUserRow          `json:"activeUsers,omitempty"`
@@ -98,6 +100,25 @@ type gameAdminMessageRow struct {
 	IP        string `json:"ip"`
 	Agent     string `json:"agent"`
 	Text      string `json:"text"`
+	Date      int64  `json:"date"`
+}
+
+type gameAdminLoginRow struct {
+	ID       int    `json:"id"`
+	UserID   int    `json:"userId"`
+	UserName string `json:"userName"`
+	IP       string `json:"ip"`
+	Date     int64  `json:"date"`
+}
+
+type gameAdminBrowseRow struct {
+	ID        int    `json:"id"`
+	OwnerID   int    `json:"ownerId"`
+	OwnerName string `json:"ownerName"`
+	URL       string `json:"url"`
+	Method    string `json:"method"`
+	GetData   string `json:"getData"`
+	PostData  string `json:"postData"`
 	Date      int64  `json:"date"`
 }
 
@@ -406,6 +427,9 @@ func (a app) handleGameAdminGet(w http.ResponseWriter, r *http.Request) {
 		TargetPlayerID:  targetPlayerID,
 		TargetPlanetID:  planetID,
 		Filter:          r.URL.Query().Get("filter"),
+		LoginName:       r.URL.Query().Get("name"),
+		LoginUserID:     legacyBotEditInt(r.URL.Query().Get("id")),
+		LoginIP:         r.URL.Query().Get("ip"),
 		CouponFrom:      couponFrom,
 	})
 	if err != nil {
@@ -451,6 +475,9 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		TargetPlanetID:  planetID,
 		Filter:          r.URL.Query().Get("filter"),
 		CouponFrom:      couponFrom,
+		LoginName:       r.URL.Query().Get("name"),
+		LoginUserID:     legacyBotEditInt(r.URL.Query().Get("id")),
+		LoginIP:         r.URL.Query().Get("ip"),
 		Action:          request.Action,
 		TaskID:          request.TaskID,
 		TargetIDs:       request.TargetIDs,
@@ -612,6 +639,29 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			Date:      row.Date,
 		})
 	}
+	loginRows := make([]gameAdminLoginRow, 0, len(admin.LoginRows))
+	for _, row := range admin.LoginRows {
+		loginRows = append(loginRows, gameAdminLoginRow{
+			ID:       row.ID,
+			UserID:   row.UserID,
+			UserName: row.UserName,
+			IP:       row.IP,
+			Date:     row.Date,
+		})
+	}
+	browseRows := make([]gameAdminBrowseRow, 0, len(admin.BrowseRows))
+	for _, row := range admin.BrowseRows {
+		browseRows = append(browseRows, gameAdminBrowseRow{
+			ID:        row.ID,
+			OwnerID:   row.OwnerID,
+			OwnerName: row.OwnerName,
+			URL:       row.URL,
+			Method:    row.Method,
+			GetData:   row.GetData,
+			PostData:  row.PostData,
+			Date:      row.Date,
+		})
+	}
 	userRows := make([]gameAdminUserRow, 0, len(admin.UserRows))
 	for _, row := range admin.UserRows {
 		userRows = append(userRows, toGameAdminUserRow(row))
@@ -743,6 +793,8 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		Mode:            admin.Mode,
 		Menu:            menu,
 		MessageRows:     messageRows,
+		LoginRows:       loginRows,
+		BrowseRows:      browseRows,
 		UserLogRows:     userLogRows,
 		UserRows:        userRows,
 		ActiveUsers:     activeUsers,

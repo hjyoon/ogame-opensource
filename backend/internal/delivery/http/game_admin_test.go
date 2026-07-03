@@ -25,12 +25,13 @@ func TestGameAdminHandlerReturnsAdminHome(t *testing.T) {
 			"Users",
 		),
 	}}
-	request := httptest.NewRequest(http.MethodGet, "/api/game/admin?session=pub&cp=99&mode=Users&from=15", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/game/admin?session=pub&cp=99&mode=Users&from=15&name=target&id=77&ip=203.0.113.7", nil)
 	response := httptest.NewRecorder()
 
 	app{deps: Dependencies{GameAdmin: usecase}}.handleGameAdmin(response, request)
 
-	if response.Code != http.StatusOK || usecase.command.PlanetID != 99 || usecase.command.Mode != "Users" || usecase.command.CouponFrom != 15 {
+	if response.Code != http.StatusOK || usecase.command.PlanetID != 99 || usecase.command.Mode != "Users" || usecase.command.CouponFrom != 15 ||
+		usecase.command.LoginName != "target" || usecase.command.LoginUserID != 77 || usecase.command.LoginIP != "203.0.113.7" {
 		t.Fatalf("unexpected response status=%d command=%+v body=%s", response.Code, usecase.command, response.Body.String())
 	}
 	var payload gameAdminResponse
@@ -399,6 +400,23 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 		Text:      "message",
 		Date:      111,
 	}}
+	admin.LoginRows = []domaingame.AdminLoginRow{{
+		ID:       12,
+		UserID:   7,
+		UserName: "owner",
+		IP:       "203.0.113.7",
+		Date:     113,
+	}}
+	admin.BrowseRows = []domaingame.AdminBrowseRow{{
+		ID:        13,
+		OwnerID:   7,
+		OwnerName: "owner",
+		URL:       "/game/index.php?page=overview",
+		Method:    "GET",
+		GetData:   `a:1:{s:5:"token";s:4:"test";}`,
+		PostData:  `a:0:{}`,
+		Date:      114,
+	}}
 	admin.UserLogRows = []domaingame.AdminUserLogRow{{
 		ID:        11,
 		OwnerID:   7,
@@ -642,9 +660,11 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 		t.Fatalf("unexpected admin identity mapping: %+v", payload)
 	}
 	if len(payload.MessageRows) != 1 || payload.MessageRows[0].Text != "message" ||
+		len(payload.LoginRows) != 1 || payload.LoginRows[0].IP != "203.0.113.7" ||
+		len(payload.BrowseRows) != 1 || payload.BrowseRows[0].URL != "/game/index.php?page=overview" ||
 		len(payload.UserLogRows) != 1 || payload.UserLogRows[0].Type != "ADMIN" ||
 		payload.UserLogRows[0].LastClick != 99 || !payload.UserLogRows[0].Vacation {
-		t.Fatalf("expected message and user log rows to map: %+v", payload)
+		t.Fatalf("expected audit, message, and user log rows to map: %+v", payload)
 	}
 	if len(payload.UserRows) != 2 || payload.UserRows[0].HomePlanet == nil ||
 		payload.UserRows[0].HomePlanet.Coordinates.System != 42 || payload.UserRows[1].HomePlanet != nil {
