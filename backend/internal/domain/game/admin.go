@@ -72,6 +72,7 @@ type Admin struct {
 	ChecksumGroups  []AdminChecksumGroup
 	DatabaseBackups []AdminDatabaseBackup
 	BotStrategies   []AdminBotStrategy
+	ModRows         []AdminModInfo
 	CouponRows      []AdminCouponRow
 	CouponQueueRows []AdminCouponQueueRow
 	CouponFrom      int
@@ -329,6 +330,15 @@ type AdminDatabaseBackup struct {
 type AdminBotStrategy struct {
 	ID   int
 	Name string
+}
+
+type AdminModInfo struct {
+	Folder      string
+	Name        string
+	Version     string
+	Author      string
+	Description string
+	Website     string
 }
 
 type AdminCouponRow struct {

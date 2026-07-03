@@ -4,10 +4,14 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
 	"math/big"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -129,6 +133,8 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		admin.DatabaseBackups, err = r.loadAdminDatabaseBackups(ctx)
 	case "BotEdit":
 		admin.BotStrategies, err = r.loadAdminBotStrategies(ctx)
+	case "Mods":
+		admin.ModRows, err = r.loadAdminMods()
 	case "Coupons":
 		admin.CouponRows, admin.CouponTotal, err = r.loadAdminCouponRows(ctx, query.CouponFrom)
 		admin.CouponFrom = normalizeAdminCouponFrom(query.CouponFrom)
@@ -141,6 +147,55 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		return domaingame.Admin{}, err
 	}
 	return admin, nil
+}
+
+type adminModManifest struct {
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Author      string `json:"author"`
+	Description string `json:"description"`
+	Website     string `json:"website"`
+}
+
+func (r AdminRepository) loadAdminMods() ([]domaingame.AdminModInfo, error) {
+	modsDir := filepath.Join(r.legacyGameDir, "mods")
+	entries, err := os.ReadDir(modsDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	mods := make([]domaingame.AdminModInfo, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		manifestPath := filepath.Join(modsDir, entry.Name(), "manifest.json")
+		data, err := os.ReadFile(manifestPath)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		var manifest adminModManifest
+		if err := json.Unmarshal(data, &manifest); err != nil {
+			return nil, err
+		}
+		mods = append(mods, domaingame.AdminModInfo{
+			Folder:      entry.Name(),
+			Name:        strings.TrimSpace(manifest.Name),
+			Version:     strings.TrimSpace(manifest.Version),
+			Author:      strings.TrimSpace(manifest.Author),
+			Description: strings.TrimSpace(manifest.Description),
+			Website:     strings.TrimSpace(manifest.Website),
+		})
+	}
+	sort.Slice(mods, func(i, j int) bool {
+		return mods[i].Folder < mods[j].Folder
+	})
+	return mods, nil
 }
 
 func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {

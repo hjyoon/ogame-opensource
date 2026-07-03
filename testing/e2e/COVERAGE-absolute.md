@@ -5,7 +5,7 @@ Keep this file under 4KB. This is the conservative product-coverage model for th
 ## Target
 
 - Goal: 90% absolute coverage of legacy PHP functionality.
-- Current estimate: 75%.
+- Current estimate: 76%.
 - QA pass rate inside the current registry may be 100%, but that only proves the inventoried cases.
 
 ## Denominator
@@ -20,8 +20,8 @@ The denominator is the legacy product surface, not file count alone:
 | Admin/ops tools | 15 | 10 | admin pages and core mutations covered; some tools remain shallow |
 | Security/account/social | 10 | 9 | session, IDOR, options, messages, buddy, alliance |
 | Runtime/infra/maintenance | 10 | 6 | cron, feed, backup, localization, performance, install/maintenance edges |
-| Mods/extensibility | 5 | 1 | mod assets/listing only; runtime mod behavior is mostly not migrated |
-| **Total** | **100** | **75** | conservative estimate |
+| Mods/extensibility | 5 | 2 | mod assets plus manifest-backed listing; runtime mod behavior is mostly not migrated |
+| **Total** | **100** | **76** | conservative estimate |
 
 ## Evidence Already In QA
 

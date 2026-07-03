@@ -1249,6 +1249,7 @@ type GameAdmin = {
   checksumGroups?: GameAdminChecksumGroup[];
   databaseBackups?: GameAdminDatabaseBackup[];
   botStrategies?: GameAdminBotStrategy[];
+  modRows?: AdminModInfo[];
   couponRows?: GameAdminCouponRow[];
   couponQueueRows?: GameAdminCouponQueueRow[];
   couponFrom?: number;
@@ -3646,7 +3647,7 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "Mods") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminModsTable />
+        <AdminModsTable admin={admin} />
       </AdminModeShell>
     );
   }
@@ -6069,7 +6070,8 @@ const adminAvailableMods: AdminModInfo[] = [
   }
 ];
 
-function AdminModsTable() {
+function AdminModsTable({ admin }: { admin: GameAdmin }) {
+  const availableMods = admin.modRows && admin.modRows.length > 0 ? admin.modRows : adminAvailableMods;
   return (
     <>
       <h2 className="legacy-admin-mods-heading">ADM_MODS_HEAD</h2>
@@ -6080,13 +6082,13 @@ function AdminModsTable() {
         </div>
         <div className="mod-column">
           <h3>ADM_MODS_HEAD_AVAILABLE</h3>
-          {adminAvailableMods.map((mod) => (
+          {availableMods.map((mod) => (
             <AdminModPanel key={mod.folder} mod={mod} />
           ))}
         </div>
       </div>
       <div style={{ color: "#E6EBFB", marginTop: 20, textAlign: "center" }}>
-        <p>ADM_MODS_TOT_ACTIVE: 0 | ADM_MODS_TOT_AVAILABLE: {adminAvailableMods.length}</p>
+        <p>ADM_MODS_TOT_ACTIVE: 0 | ADM_MODS_TOT_AVAILABLE: {availableMods.length}</p>
       </div>
     </>
   );

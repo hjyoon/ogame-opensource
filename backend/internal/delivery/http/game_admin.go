@@ -69,6 +69,7 @@ type gameAdminSummary struct {
 	ChecksumGroups  []gameAdminChecksumGroup    `json:"checksumGroups,omitempty"`
 	DatabaseBackups []gameAdminDatabaseBackup   `json:"databaseBackups,omitempty"`
 	BotStrategies   []gameAdminBotStrategy      `json:"botStrategies,omitempty"`
+	ModRows         []gameAdminModInfo          `json:"modRows,omitempty"`
 	CouponRows      []gameAdminCouponRow        `json:"couponRows,omitempty"`
 	CouponQueueRows []gameAdminCouponQueueRow   `json:"couponQueueRows,omitempty"`
 	CouponFrom      int                         `json:"couponFrom,omitempty"`
@@ -328,6 +329,15 @@ type gameAdminDatabaseBackup struct {
 type gameAdminBotStrategy struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
+}
+
+type gameAdminModInfo struct {
+	Folder      string `json:"folder"`
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Author      string `json:"author"`
+	Description string `json:"description"`
+	Website     string `json:"website"`
 }
 
 type gameAdminCouponRow struct {
@@ -635,6 +645,17 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			Name: strategy.Name,
 		})
 	}
+	modRows := make([]gameAdminModInfo, 0, len(admin.ModRows))
+	for _, row := range admin.ModRows {
+		modRows = append(modRows, gameAdminModInfo{
+			Folder:      row.Folder,
+			Name:        row.Name,
+			Version:     row.Version,
+			Author:      row.Author,
+			Description: row.Description,
+			Website:     row.Website,
+		})
+	}
 	couponRows := make([]gameAdminCouponRow, 0, len(admin.CouponRows))
 	for _, row := range admin.CouponRows {
 		couponRows = append(couponRows, gameAdminCouponRow{
@@ -687,6 +708,7 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		ChecksumGroups:  checksumGroups,
 		DatabaseBackups: databaseBackups,
 		BotStrategies:   botStrategies,
+		ModRows:         modRows,
 		CouponRows:      couponRows,
 		CouponQueueRows: couponQueueRows,
 		CouponFrom:      admin.CouponFrom,

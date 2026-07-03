@@ -512,6 +512,14 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 		Rows:  []domaingame.AdminChecksumRow{{Path: "core.php", Checksum: "abc", Status: "ok"}},
 	}}
 	admin.BotStrategies = []domaingame.AdminBotStrategy{{ID: 701, Name: "bot"}}
+	admin.ModRows = []domaingame.AdminModInfo{{
+		Folder:      "GalaxyTool",
+		Name:        "GalaxyTool",
+		Version:     "1.0.0",
+		Author:      "ogamespec",
+		Description: "Integrated Galaxytool",
+		Website:     "https://example.test",
+	}}
 	admin.CouponRows = []domaingame.AdminCouponRow{{
 		ID:           801,
 		Code:         "ABCD-EFGH-IJKL-MNOP-QRST",
@@ -580,7 +588,7 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 	if len(payload.QueueRows) != 1 || !payload.QueueRows[0].Freeze ||
 		len(payload.FleetLogRows) != 1 || payload.FleetLogRows[0].Origin.OwnerID != 7 || payload.FleetLogRows[0].Cargo[0].Loaded != 123 ||
 		len(payload.BattleReports) != 1 || len(payload.ChecksumGroups) != 1 ||
-		len(payload.BotStrategies) != 1 {
+		len(payload.BotStrategies) != 1 || len(payload.ModRows) != 1 || payload.ModRows[0].Folder != "GalaxyTool" {
 		t.Fatalf("expected admin detail rows to map: %+v", payload)
 	}
 	if len(payload.CouponRows) != 1 || !payload.CouponRows[0].Used || payload.CouponRows[0].Code != "ABCD-EFGH-IJKL-MNOP-QRST" ||

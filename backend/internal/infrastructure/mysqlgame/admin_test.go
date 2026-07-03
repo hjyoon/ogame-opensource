@@ -68,6 +68,64 @@ func TestNewAdminRepositoryWithQueryerKeepsMutationRunner(t *testing.T) {
 	}
 }
 
+func TestAdminRepositoryReadsModManifests(t *testing.T) {
+	root := t.TempDir()
+	for _, folder := range []string{"ZedMod", "AlphaMod", "NoManifest"} {
+		if err := os.MkdirAll(filepath.Join(root, "mods", folder), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "mods", "ZedMod", "manifest.json"), []byte(`{
+		"name":"Zed Mod",
+		"version":"2.0.0",
+		"author":"ops",
+		"description":"Last alphabetically",
+		"website":"https://zed.example"
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "mods", "AlphaMod", "manifest.json"), []byte(`{
+		"name":"Alpha Mod",
+		"version":"1.0.0",
+		"author":"ops",
+		"description":"First alphabetically",
+		"website":"https://alpha.example"
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+	)}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_").WithLegacyGameDir(root)
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "Mods"})
+
+	if err != nil {
+		t.Fatalf("GetAdmin returned error: %v", err)
+	}
+	if len(admin.ModRows) != 2 || admin.ModRows[0].Folder != "AlphaMod" || admin.ModRows[0].Name != "Alpha Mod" ||
+		admin.ModRows[1].Folder != "ZedMod" || admin.ModRows[1].Website != "https://zed.example" {
+		t.Fatalf("unexpected mod rows: %+v", admin.ModRows)
+	}
+
+	missingRoot := t.TempDir()
+	rows, err := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").WithLegacyGameDir(missingRoot).loadAdminMods()
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("missing mods dir should be empty, rows=%+v err=%v", rows, err)
+	}
+
+	badRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(badRoot, "mods", "BadMod"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(badRoot, "mods", "BadMod", "manifest.json"), []byte(`{`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").WithLegacyGameDir(badRoot).loadAdminMods(); err == nil {
+		t.Fatal("expected invalid manifest JSON to fail")
+	}
+}
+
 func TestAdminRepositoryReadsCouponRows(t *testing.T) {
 	uni := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
