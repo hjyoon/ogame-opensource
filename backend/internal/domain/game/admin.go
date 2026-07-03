@@ -80,6 +80,7 @@ type Admin struct {
 	DatabaseBackups []AdminDatabaseBackup
 	BotStrategies   []AdminBotStrategy
 	ModRows         []AdminModInfo
+	Localization    *AdminLocalization
 	CouponRows      []AdminCouponRow
 	CouponQueueRows []AdminCouponQueueRow
 	CouponFrom      int
@@ -367,6 +368,26 @@ type AdminModInfo struct {
 	Website     string
 	Installed   bool
 	Active      bool
+}
+
+type AdminLocalization struct {
+	Languages []string
+	Source    string
+	Target    string
+	Files     []AdminLocalizationFile
+}
+
+type AdminLocalizationFile struct {
+	Name          string
+	TargetMissing bool
+	Rows          []AdminLocalizationRow
+}
+
+type AdminLocalizationRow struct {
+	Key    string
+	Source string
+	Target string
+	Status string
 }
 
 type AdminCouponRow struct {

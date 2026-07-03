@@ -1288,6 +1288,7 @@ type GameAdmin = {
   databaseBackups?: GameAdminDatabaseBackup[];
   botStrategies?: GameAdminBotStrategy[];
   modRows?: AdminModInfo[];
+  localization?: GameAdminLocalization;
   couponRows?: GameAdminCouponRow[];
   couponQueueRows?: GameAdminCouponQueueRow[];
   couponFrom?: number;
@@ -1334,6 +1335,26 @@ type GameAdminBrowseRow = {
   getData: string;
   postData: string;
   date: number;
+};
+
+type GameAdminLocalization = {
+  languages: string[];
+  source: string;
+  target: string;
+  files: GameAdminLocalizationFile[];
+};
+
+type GameAdminLocalizationFile = {
+  name: string;
+  targetMissing: boolean;
+  rows: GameAdminLocalizationRow[];
+};
+
+type GameAdminLocalizationRow = {
+  key: string;
+  source: string;
+  target: string;
+  status: string;
 };
 
 type GameAdminUserLogRow = {
@@ -3723,7 +3744,7 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "Loca") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminLocaTable />
+        <AdminLocaTable localization={admin.localization} />
       </AdminModeShell>
     );
   }
@@ -6124,50 +6145,92 @@ function adminRakSimHTML(): string {
   return html;
 }
 
-function AdminLocaTable() {
-  const locaDirectories = ["de_de", "en_en", "es_es", "fr_fr", "it_it", "jp_jp", "ru_ru"];
+function AdminLocaTable({ localization }: { localization?: GameAdminLocalization }) {
+  const query = new URLSearchParams(window.location.search);
+  const session = query.get("session") ?? "";
+  const selectedPlanet = query.get("cp") ?? "";
+  const languages = localization?.languages?.length ? localization.languages : ["de_de", "en_en", "es_es", "fr_fr", "it_it", "jp_jp", "ru_ru"];
+  const source = localization?.source || query.get("loca_src") || languages[0] || "";
+  const target = localization?.target || query.get("loca_dst") || languages[0] || "";
   return (
-    <form action={adminModeActionHref("Loca", "search")} method="POST" onSubmit={(event) => event.preventDefault()}>
-      <table className="legacy-admin-loca-table">
-        <tbody>
-          <tr>
-            <td className="c" colSpan={2}>
-              Compare localization between the specified languages
-            </td>
-          </tr>
-          <tr>
-            <td>Source language:</td>
-            <td>
-              <select name="loca_src" defaultValue="de_de">
-                {locaDirectories.map((directory) => (
-                  <option key={directory} value={directory}>
-                    {directory}
-                  </option>
-                ))}
-              </select>
-            </td>
-          </tr>
-          <tr />
-          <tr>
-            <td>Target language:</td>
-            <td>
-              <select name="loca_dst" defaultValue="de_de">
-                {locaDirectories.map((directory) => (
-                  <option key={directory} value={directory}>
-                    {directory}
-                  </option>
-                ))}
-              </select>
-            </td>
-          </tr>
-          <tr>
-            <td className="c" colSpan={2}>
-              <input type="submit" value="Compare" />
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </form>
+    <>
+      <form action={gameRouteURL("/game/admin", "")} method="GET">
+        <input name="session" type="hidden" value={session} />
+        <input name="mode" type="hidden" value="Loca" />
+        <input name="action" type="hidden" value="search" />
+        {selectedPlanet ? <input name="cp" type="hidden" value={selectedPlanet} /> : null}
+        <table className="legacy-admin-loca-table">
+          <tbody>
+            <tr>
+              <td className="c" colSpan={2}>
+                Compare localization between the specified languages
+              </td>
+            </tr>
+            <tr>
+              <td>Source language:</td>
+              <td>
+                <select name="loca_src" defaultValue={source}>
+                  {languages.map((directory) => (
+                    <option key={directory} value={directory}>
+                      {directory}
+                    </option>
+                  ))}
+                </select>
+              </td>
+            </tr>
+            <tr />
+            <tr>
+              <td>Target language:</td>
+              <td>
+                <select name="loca_dst" defaultValue={target}>
+                  {languages.map((directory) => (
+                    <option key={directory} value={directory}>
+                      {directory}
+                    </option>
+                  ))}
+                </select>
+              </td>
+            </tr>
+            <tr>
+              <td className="c" colSpan={2}>
+                <input type="submit" value="Compare" />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+      <br />
+      {localization?.files?.map((file) => (
+        <React.Fragment key={file.name}>
+          <h2>{file.name}</h2>
+          {file.targetMissing ? (
+            <>
+              <span style={{ color: "red" }}>The file is not localized!</span>
+              <br />
+            </>
+          ) : (
+            <table>
+              <tbody>
+                {file.rows.map((row) => {
+                  const color = row.status === "same" ? "orange" : row.status === "missing" ? "red" : "green";
+                  return (
+                    <tr key={`${file.name}-${row.key}`}>
+                      <td style={{ backgroundColor: color }}>{row.key}</td>
+                      <td style={{ backgroundColor: color }}>
+                        <pre>{row.source}</pre>
+                      </td>
+                      <td style={{ backgroundColor: color }}>
+                        <pre>{row.target}</pre>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </React.Fragment>
+      ))}
+    </>
   );
 }
 

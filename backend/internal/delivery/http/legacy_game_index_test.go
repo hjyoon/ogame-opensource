@@ -262,6 +262,138 @@ func TestLegacyGameIndexAdminLoginsPostGuards(t *testing.T) {
 	}
 }
 
+func TestLegacyGameIndexAdminLocaPostRendersComparison(t *testing.T) {
+	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{
+		Authenticated: true,
+		Admin: domaingame.Admin{
+			Localization: &domaingame.AdminLocalization{
+				Languages: []string{"de_de", "en_en"},
+				Source:    "en_en",
+				Target:    "de_de",
+				Files: []domaingame.AdminLocalizationFile{{
+					Name: "admin.php",
+					Rows: []domaingame.AdminLocalizationRow{
+						{
+							Key:    "ADM_TEST",
+							Source: "<source>",
+							Target: "The string is missing!",
+							Status: "missing",
+						},
+						{
+							Key:    "ADM_SAME",
+							Source: "Same",
+							Target: "Same",
+							Status: "same",
+						},
+						{
+							Key:    "ADM_OK",
+							Source: "Source",
+							Target: "Ziel",
+							Status: "ok",
+						},
+					},
+				}, {
+					Name:          "missing.php",
+					TargetMissing: true,
+				}},
+			},
+		},
+	}}
+	form := url.Values{}
+	form.Set("loca_src", "en_en")
+	form.Set("loca_dst", "de_de")
+	req := httptest.NewRequest(http.MethodPost, "/game/index.php?page=admin&mode=Loca&session=pub&cp=99", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	app{deps: Dependencies{GameAdmin: usecase}}.handleLegacyGameIndex(rec, req)
+
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(body, "admin.php") || !strings.Contains(body, "ADM_TEST") ||
+		!strings.Contains(body, "&lt;source&gt;") || !strings.Contains(body, "background-color: red") ||
+		!strings.Contains(body, "background-color: orange") || !strings.Contains(body, "background-color: green") ||
+		!strings.Contains(body, "The file is not localized!") {
+		t.Fatalf("unexpected legacy loca response: status=%d body=%s", rec.Code, body)
+	}
+	if usecase.command.Mode != "Loca" || usecase.command.LocaSource != "en_en" || usecase.command.LocaTarget != "de_de" {
+		t.Fatalf("unexpected legacy loca command: %+v", usecase.command)
+	}
+	if html := legacyAdminLocaHTML("pub", nil); !strings.Contains(html, "mode=Loca") {
+		t.Fatalf("expected nil localization helper to render form, got %s", html)
+	}
+}
+
+func TestLegacyGameIndexAdminLocaPostGuards(t *testing.T) {
+	tests := []struct {
+		name     string
+		handler  app
+		path     string
+		body     string
+		wantCode int
+		wantBody string
+	}{
+		{
+			name:     "missing usecase",
+			handler:  app{},
+			path:     "/game/index.php?page=admin&mode=Loca&session=pub&cp=99",
+			body:     "loca_src=en_en&loca_dst=de_de",
+			wantCode: http.StatusServiceUnavailable,
+			wantBody: "game admin unavailable",
+		},
+		{
+			name:     "invalid form",
+			handler:  app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{}}},
+			path:     "/game/index.php?page=admin&mode=Loca&session=pub&cp=99",
+			body:     "%zz",
+			wantCode: http.StatusBadRequest,
+			wantBody: "invalid admin localization request",
+		},
+		{
+			name:     "invalid cp",
+			handler:  app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{}}},
+			path:     "/game/index.php?page=admin&mode=Loca&session=pub&cp=bad",
+			body:     "loca_src=en_en&loca_dst=de_de",
+			wantCode: http.StatusBadRequest,
+			wantBody: "invalid selected planet",
+		},
+		{
+			name:     "usecase error",
+			handler:  app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{err: errors.New("repo down")}}},
+			path:     "/game/index.php?page=admin&mode=Loca&session=pub&cp=99",
+			body:     "loca_src=en_en&loca_dst=de_de",
+			wantCode: http.StatusServiceUnavailable,
+			wantBody: "game admin unavailable",
+		},
+		{
+			name:     "unauthenticated",
+			handler:  app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{result: appgame.AdminResult{Authenticated: false}}}},
+			path:     "/game/index.php?page=admin&mode=Loca&session=pub&cp=99",
+			body:     "loca_src=en_en&loca_dst=de_de",
+			wantCode: http.StatusForbidden,
+			wantBody: "unauthenticated",
+		},
+		{
+			name:     "access denied",
+			handler:  app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{result: appgame.AdminResult{Authenticated: true, ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueAccessDenied)}}}},
+			path:     "/game/index.php?page=admin&mode=Loca&session=pub&cp=99",
+			body:     "loca_src=en_en&loca_dst=de_de",
+			wantCode: http.StatusForbidden,
+			wantBody: "Access denied",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rec := httptest.NewRecorder()
+			tt.handler.handleLegacyGameIndex(rec, req)
+			if rec.Code != tt.wantCode || !strings.Contains(rec.Body.String(), tt.wantBody) {
+				t.Fatalf("unexpected response status=%d body=%q", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestLegacyGameIndexBotEditGetUnknownActionFallsBackToFrontend(t *testing.T) {
 	assets := &fakeFrontendAssets{bodies: map[string]string{"index.html": "react shell"}}
 	rec := httptest.NewRecorder()

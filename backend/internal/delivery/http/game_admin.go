@@ -74,6 +74,7 @@ type gameAdminSummary struct {
 	DatabaseBackups []gameAdminDatabaseBackup   `json:"databaseBackups,omitempty"`
 	BotStrategies   []gameAdminBotStrategy      `json:"botStrategies,omitempty"`
 	ModRows         []gameAdminModInfo          `json:"modRows,omitempty"`
+	Localization    *gameAdminLocalization      `json:"localization,omitempty"`
 	CouponRows      []gameAdminCouponRow        `json:"couponRows,omitempty"`
 	CouponQueueRows []gameAdminCouponQueueRow   `json:"couponQueueRows,omitempty"`
 	CouponFrom      int                         `json:"couponFrom,omitempty"`
@@ -365,6 +366,26 @@ type gameAdminModInfo struct {
 	Active      bool   `json:"active"`
 }
 
+type gameAdminLocalization struct {
+	Languages []string                    `json:"languages"`
+	Source    string                      `json:"source"`
+	Target    string                      `json:"target"`
+	Files     []gameAdminLocalizationFile `json:"files"`
+}
+
+type gameAdminLocalizationFile struct {
+	Name          string                     `json:"name"`
+	TargetMissing bool                       `json:"targetMissing"`
+	Rows          []gameAdminLocalizationRow `json:"rows"`
+}
+
+type gameAdminLocalizationRow struct {
+	Key    string `json:"key"`
+	Source string `json:"source"`
+	Target string `json:"target"`
+	Status string `json:"status"`
+}
+
 type gameAdminCouponRow struct {
 	ID           int    `json:"id"`
 	Code         string `json:"code"`
@@ -430,6 +451,8 @@ func (a app) handleGameAdminGet(w http.ResponseWriter, r *http.Request) {
 		LoginName:       r.URL.Query().Get("name"),
 		LoginUserID:     legacyBotEditInt(r.URL.Query().Get("id")),
 		LoginIP:         r.URL.Query().Get("ip"),
+		LocaSource:      r.URL.Query().Get("loca_src"),
+		LocaTarget:      r.URL.Query().Get("loca_dst"),
 		CouponFrom:      couponFrom,
 	})
 	if err != nil {
@@ -478,6 +501,8 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		LoginName:       r.URL.Query().Get("name"),
 		LoginUserID:     legacyBotEditInt(r.URL.Query().Get("id")),
 		LoginIP:         r.URL.Query().Get("ip"),
+		LocaSource:      r.URL.Query().Get("loca_src"),
+		LocaTarget:      r.URL.Query().Get("loca_dst"),
 		Action:          request.Action,
 		TaskID:          request.TaskID,
 		TargetIDs:       request.TargetIDs,
@@ -756,6 +781,7 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			Active:      row.Active,
 		})
 	}
+	localization := toGameAdminLocalization(admin.Localization)
 	couponRows := make([]gameAdminCouponRow, 0, len(admin.CouponRows))
 	for _, row := range admin.CouponRows {
 		couponRows = append(couponRows, gameAdminCouponRow{
@@ -811,11 +837,43 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		DatabaseBackups: databaseBackups,
 		BotStrategies:   botStrategies,
 		ModRows:         modRows,
+		Localization:    localization,
 		CouponRows:      couponRows,
 		CouponQueueRows: couponQueueRows,
 		CouponFrom:      admin.CouponFrom,
 		CouponPageSize:  admin.CouponPageSize,
 		CouponTotal:     admin.CouponTotal,
+	}
+}
+
+func toGameAdminLocalization(localization *domaingame.AdminLocalization) *gameAdminLocalization {
+	if localization == nil {
+		return nil
+	}
+	files := make([]gameAdminLocalizationFile, 0, len(localization.Files))
+	for _, file := range localization.Files {
+		rows := make([]gameAdminLocalizationRow, 0, len(file.Rows))
+		for _, row := range file.Rows {
+			rows = append(rows, gameAdminLocalizationRow{
+				Key:    row.Key,
+				Source: row.Source,
+				Target: row.Target,
+				Status: row.Status,
+			})
+		}
+		files = append(files, gameAdminLocalizationFile{
+			Name:          file.Name,
+			TargetMissing: file.TargetMissing,
+			Rows:          rows,
+		})
+	}
+	languages := make([]string, len(localization.Languages))
+	copy(languages, localization.Languages)
+	return &gameAdminLocalization{
+		Languages: languages,
+		Source:    localization.Source,
+		Target:    localization.Target,
+		Files:     files,
 	}
 }
 

@@ -314,6 +314,102 @@ func TestAdminRepositoryAdminModAvailableEdges(t *testing.T) {
 	}
 }
 
+func TestAdminRepositoryReadsLocalizationComparison(t *testing.T) {
+	root := t.TempDir()
+	for _, directory := range []string{"en_en", "de_de"} {
+		if err := os.MkdirAll(filepath.Join(root, "loca", directory), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	source := `<?php
+$LOCA["en"]["ADM_ALPHA"] = "Alpha";
+$LOCA["en"]["ADM_BETA"] = "Same";
+$LOCA["en"]["ADM_QUOTE"] = "Source \"quote\"";
+?>`
+	target := `<?php
+$LOCA["de"]["ADM_BETA"] = "Same";
+$LOCA["de"]["ADM_QUOTE"] = "Ziel";
+?>`
+	if err := os.WriteFile(filepath.Join(root, "loca", "en_en", "admin.php"), []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "loca", "de_de", "admin.php"), []byte(target), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "loca", "en_en", "messages.php"), []byte(`<?php $LOCA["en"]["MSG"] = "Message"; ?>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+	)}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_").WithLegacyGameDir(root)
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "Loca", LocaSource: "en_en", LocaTarget: "de_de"})
+
+	if err != nil {
+		t.Fatalf("GetAdmin returned error: %v", err)
+	}
+	loca := admin.Localization
+	if loca == nil || loca.Source != "en_en" || loca.Target != "de_de" || len(loca.Languages) != 2 || len(loca.Files) != 2 {
+		t.Fatalf("unexpected localization payload: %+v", loca)
+	}
+	if loca.Files[0].Name != "admin.php" || loca.Files[0].TargetMissing || len(loca.Files[0].Rows) != 3 {
+		t.Fatalf("unexpected admin.php comparison: %+v", loca.Files[0])
+	}
+	if loca.Files[0].Rows[0].Key != "ADM_ALPHA" || loca.Files[0].Rows[0].Status != "missing" ||
+		loca.Files[0].Rows[1].Status != "same" || loca.Files[0].Rows[2].Source != `Source "quote"` {
+		t.Fatalf("unexpected localization rows: %+v", loca.Files[0].Rows)
+	}
+	if loca.Files[1].Name != "messages.php" || !loca.Files[1].TargetMissing {
+		t.Fatalf("expected missing target localization file, got %+v", loca.Files[1])
+	}
+
+	empty, err := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").WithLegacyGameDir(t.TempDir()).loadAdminLocalization("en_en", "de_de")
+	if err != nil || len(empty.Languages) != 0 {
+		t.Fatalf("missing loca dir should be empty, payload=%+v err=%v", empty, err)
+	}
+	invalid, err := repository.loadAdminLocalization("missing", "de_de")
+	if err != nil || invalid.Source != "" || len(invalid.Files) != 0 {
+		t.Fatalf("invalid localization source should not compare, payload=%+v err=%v", invalid, err)
+	}
+	fileRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fileRoot, "loca"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").WithLegacyGameDir(fileRoot).loadAdminLocalization("en_en", "de_de"); err == nil {
+		t.Fatal("expected loca path file to fail")
+	}
+	targetReadRoot := t.TempDir()
+	for _, directory := range []string{"en_en", "de_de"} {
+		if err := os.MkdirAll(filepath.Join(targetReadRoot, "loca", directory), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(targetReadRoot, "loca", "en_en", "admin.php"), []byte(`<?php $LOCA["en"]["A"] = "A"; ?>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(targetReadRoot, "loca", "de_de", "admin.php"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").WithLegacyGameDir(targetReadRoot).loadAdminLocalization("en_en", "de_de"); err == nil {
+		t.Fatal("expected target localization read error")
+	}
+	escapePath := filepath.Join(root, "loca", "en_en", "escape.php")
+	if err := os.WriteFile(escapePath, []byte(`<?php $LOCA["en"]["BAD"] = "bad\q"; ?>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	values, err := readAdminLocalizationFile(escapePath, "en")
+	if err != nil || values["BAD"] != `bad\q` {
+		t.Fatalf("expected invalid escape fallback, values=%+v err=%v", values, err)
+	}
+	if _, err := readAdminLocalizationFile(filepath.Join(root, "loca", "en_en", "missing.php"), "en"); err == nil {
+		t.Fatal("expected missing localization file error")
+	}
+	if adminLocaLanguage("en_en") != "en" || adminLocaLanguage("custom") != "custom" {
+		t.Fatal("unexpected localization language normalization")
+	}
+}
+
 func TestAdminRepositoryReadsCouponRows(t *testing.T) {
 	uni := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},

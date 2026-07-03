@@ -5,7 +5,7 @@ Keep this file under 4KB. This is the conservative product-coverage model for th
 ## Target
 
 - Goal: 90% absolute coverage of legacy PHP functionality.
-- Current estimate: 82%.
+- Current estimate: 83%.
 - QA pass rate inside the current registry may be 100%, but that only proves the inventoried cases.
 
 ## Denominator
@@ -17,11 +17,11 @@ The denominator is the legacy product surface, not file count alone:
 | Public auth/site | 10 | 9 | login, registration, activation, recovery, public pages |
 | Core game screens | 20 | 18 | authenticated route/visual/dynamic parity |
 | Game mechanics | 30 | 26 | economy, queues, fleets, combat, reports, colony, moon, missiles, expedition, jump gate |
-| Admin/ops tools | 15 | 12 | admin pages, bans, audit Logins/Browse, pranger; some tools remain shallow |
+| Admin/ops tools | 15 | 13 | admin pages, bans, audit Logins/Browse, Loca compare, pranger; some tools remain shallow |
 | Security/account/social | 10 | 9 | session, IDOR, options, messages, buddy, alliance |
 | Runtime/infra/maintenance | 10 | 8 | cron, feed, backup, direct aliases, maintenance mode, localization/performance edges |
 | Mods/extensibility | 5 | 3 | mod assets, manifest listing, and modlist install/remove/move state transitions |
-| **Total** | **100** | **82** | conservative estimate |
+| **Total** | **100** | **83** | conservative estimate |
 
 ## Evidence Already In QA
 
@@ -35,12 +35,13 @@ The denominator is the legacy product surface, not file count alone:
 - Maintenance mode now reads `uni.freeze`, returns legacy redirect/page HTML, preserves board links, and has DB/handler tests.
 - Admin Mods now reads `uni.modlist`, exposes active/available state, handles install/remove/move actions, and supports legacy GET links.
 - Admin Logins/Browse now read `iplogs`/`browse`, render CSR rows, and support legacy Logins form POST.
+- Admin Loca now scans `game/loca`, compares source/target PHP locale keys, and supports legacy form POST.
 
 ## Work To Reach 90%
 
 Prioritize gaps that add product coverage, not just more screenshots:
 
-1. Deepen admin/ops behavior: Bots/Loca/simulator variants, destructive safety edges.
+1. Deepen admin/ops behavior: Bots/simulator variants, destructive safety edges.
 2. Expand runtime/infra: feed token variants, maintenance/install compatibility, DB backup restore failure cases, localization switching.
 3. Add mod compatibility boundaries: manifest discovery, static asset aliases, disabled/available/active states, safe no-op install behavior.
 4. Add long-tail mechanics: rare fleet/ACS timing, expedition depletion distributions, destroyed moon retarget edge cases.

@@ -28,6 +28,8 @@ type AdminQuery struct {
 	LoginName      string
 	LoginUserID    int
 	LoginIP        string
+	LocaSource     string
+	LocaTarget     string
 	CouponFrom     int
 }
 
@@ -43,6 +45,8 @@ type AdminCommand struct {
 	LoginName       string
 	LoginUserID     int
 	LoginIP         string
+	LocaSource      string
+	LocaTarget      string
 	CouponFrom      int
 }
 
@@ -87,6 +91,8 @@ type AdminMutationCommand struct {
 	LoginName       string
 	LoginUserID     int
 	LoginIP         string
+	LocaSource      string
+	LocaTarget      string
 	Action          string
 	TaskID          int
 	TargetIDs       []int
@@ -181,6 +187,8 @@ func (s AdminService) GetAdmin(ctx context.Context, command AdminCommand) (Admin
 		LoginName:      command.LoginName,
 		LoginUserID:    command.LoginUserID,
 		LoginIP:        command.LoginIP,
+		LocaSource:     command.LocaSource,
+		LocaTarget:     command.LocaTarget,
 		CouponFrom:     command.CouponFrom,
 	})
 	if err != nil {
@@ -218,6 +226,8 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		LoginName:      command.LoginName,
 		LoginUserID:    command.LoginUserID,
 		LoginIP:        command.LoginIP,
+		LocaSource:     command.LocaSource,
+		LocaTarget:     command.LocaTarget,
 		CouponFrom:     command.CouponFrom,
 	})
 	if err != nil {
@@ -269,6 +279,8 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		LoginName:      command.LoginName,
 		LoginUserID:    command.LoginUserID,
 		LoginIP:        command.LoginIP,
+		LocaSource:     command.LocaSource,
+		LocaTarget:     command.LocaTarget,
 		CouponFrom:     command.CouponFrom,
 	})
 	if err != nil {

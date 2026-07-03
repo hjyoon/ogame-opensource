@@ -11,7 +11,9 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -139,6 +141,8 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		admin.BotStrategies, err = r.loadAdminBotStrategies(ctx)
 	case "Mods":
 		admin.ModRows, err = r.loadAdminMods(ctx)
+	case "Loca":
+		admin.Localization, err = r.loadAdminLocalization(query.LocaSource, query.LocaTarget)
 	case "Coupons":
 		admin.CouponRows, admin.CouponTotal, err = r.loadAdminCouponRows(ctx, query.CouponFrom)
 		admin.CouponFrom = normalizeAdminCouponFrom(query.CouponFrom)
@@ -395,6 +399,126 @@ func (r AdminRepository) adminModAvailable(modName string) (bool, error) {
 		return false, err
 	}
 	return strings.TrimSpace(manifest.Name) != "", nil
+}
+
+var adminLocaAssignmentPattern = regexp.MustCompile(`\$LOCA\["([^"]+)"\]\["([^"]+)"\]\s*=\s*"((?:\\.|[^"\\])*)";`)
+
+func (r AdminRepository) loadAdminLocalization(source string, target string) (*domaingame.AdminLocalization, error) {
+	locaDir := filepath.Join(r.legacyGameDir, "loca")
+	entries, err := os.ReadDir(locaDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return &domaingame.AdminLocalization{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	languages := make([]string, 0, len(entries))
+	valid := map[string]bool{}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			languages = append(languages, entry.Name())
+			valid[entry.Name()] = true
+		}
+	}
+	sort.Strings(languages)
+	result := &domaingame.AdminLocalization{Languages: languages}
+	source = strings.TrimSpace(source)
+	target = strings.TrimSpace(target)
+	if !valid[source] || !valid[target] {
+		return result, nil
+	}
+	result.Source = source
+	result.Target = target
+	sourceDir := filepath.Join(locaDir, source)
+	sourceFiles, err := os.ReadDir(sourceDir)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range sourceFiles {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".php") {
+			continue
+		}
+		file, err := r.compareAdminLocalizationFile(locaDir, source, target, entry.Name())
+		if err != nil {
+			return nil, err
+		}
+		result.Files = append(result.Files, file)
+	}
+	sort.SliceStable(result.Files, func(i, j int) bool {
+		return result.Files[i].Name < result.Files[j].Name
+	})
+	return result, nil
+}
+
+func (r AdminRepository) compareAdminLocalizationFile(locaDir string, source string, target string, fileName string) (domaingame.AdminLocalizationFile, error) {
+	sourcePath := filepath.Join(locaDir, source, fileName)
+	targetPath := filepath.Join(locaDir, target, fileName)
+	sourceLang := adminLocaLanguage(source)
+	targetLang := adminLocaLanguage(target)
+	sourceValues, err := readAdminLocalizationFile(sourcePath, sourceLang)
+	if err != nil {
+		return domaingame.AdminLocalizationFile{}, err
+	}
+	targetValues, err := readAdminLocalizationFile(targetPath, targetLang)
+	if errors.Is(err, os.ErrNotExist) {
+		targetValues = map[string]string{}
+	} else if err != nil {
+		return domaingame.AdminLocalizationFile{}, err
+	}
+	file := domaingame.AdminLocalizationFile{
+		Name:          fileName,
+		TargetMissing: len(targetValues) == 0,
+		Rows:          make([]domaingame.AdminLocalizationRow, 0, len(sourceValues)),
+	}
+	keys := make([]string, 0, len(sourceValues))
+	for key := range sourceValues {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		sourceValue := sourceValues[key]
+		targetValue, ok := targetValues[key]
+		status := "ok"
+		if !ok {
+			targetValue = "The string is missing!"
+			status = "missing"
+		} else if sourceValue != "" && sourceValue == targetValue {
+			status = "same"
+		}
+		file.Rows = append(file.Rows, domaingame.AdminLocalizationRow{
+			Key:    key,
+			Source: sourceValue,
+			Target: targetValue,
+			Status: status,
+		})
+	}
+	return file, nil
+}
+
+func readAdminLocalizationFile(path string, language string) (map[string]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	values := map[string]string{}
+	for _, match := range adminLocaAssignmentPattern.FindAllStringSubmatch(string(data), -1) {
+		if language != "" && match[1] != language {
+			continue
+		}
+		value, err := strconv.Unquote(`"` + match[3] + `"`)
+		if err != nil {
+			value = match[3]
+		}
+		values[match[2]] = value
+	}
+	return values, nil
+}
+
+func adminLocaLanguage(directory string) string {
+	if index := strings.Index(directory, "_"); index > 0 {
+		return directory[:index]
+	}
+	return directory
 }
 
 func (r AdminRepository) mutateAdminBattleSim(ctx context.Context, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {

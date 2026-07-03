@@ -25,13 +25,14 @@ func TestGameAdminHandlerReturnsAdminHome(t *testing.T) {
 			"Users",
 		),
 	}}
-	request := httptest.NewRequest(http.MethodGet, "/api/game/admin?session=pub&cp=99&mode=Users&from=15&name=target&id=77&ip=203.0.113.7", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/game/admin?session=pub&cp=99&mode=Users&from=15&name=target&id=77&ip=203.0.113.7&loca_src=en_en&loca_dst=de_de", nil)
 	response := httptest.NewRecorder()
 
 	app{deps: Dependencies{GameAdmin: usecase}}.handleGameAdmin(response, request)
 
 	if response.Code != http.StatusOK || usecase.command.PlanetID != 99 || usecase.command.Mode != "Users" || usecase.command.CouponFrom != 15 ||
-		usecase.command.LoginName != "target" || usecase.command.LoginUserID != 77 || usecase.command.LoginIP != "203.0.113.7" {
+		usecase.command.LoginName != "target" || usecase.command.LoginUserID != 77 || usecase.command.LoginIP != "203.0.113.7" ||
+		usecase.command.LocaSource != "en_en" || usecase.command.LocaTarget != "de_de" {
 		t.Fatalf("unexpected response status=%d command=%+v body=%s", response.Code, usecase.command, response.Body.String())
 	}
 	var payload gameAdminResponse
@@ -631,6 +632,20 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 		Installed:   true,
 		Active:      true,
 	}}
+	admin.Localization = &domaingame.AdminLocalization{
+		Languages: []string{"de_de", "en_en"},
+		Source:    "en_en",
+		Target:    "de_de",
+		Files: []domaingame.AdminLocalizationFile{{
+			Name: "admin.php",
+			Rows: []domaingame.AdminLocalizationRow{{
+				Key:    "ADM_TEST",
+				Source: "source",
+				Target: "target",
+				Status: "ok",
+			}},
+		}},
+	}
 	admin.CouponRows = []domaingame.AdminCouponRow{{
 		ID:           801,
 		Code:         "ABCD-EFGH-IJKL-MNOP-QRST",
@@ -702,7 +717,8 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 		len(payload.FleetLogRows) != 1 || payload.FleetLogRows[0].Origin.OwnerID != 7 || payload.FleetLogRows[0].Cargo[0].Loaded != 123 ||
 		len(payload.BattleReports) != 1 || len(payload.ChecksumGroups) != 1 ||
 		len(payload.BotStrategies) != 1 || len(payload.ModRows) != 1 || payload.ModRows[0].Folder != "GalaxyTool" ||
-		!payload.ModRows[0].Installed || !payload.ModRows[0].Active {
+		!payload.ModRows[0].Installed || !payload.ModRows[0].Active ||
+		payload.Localization == nil || payload.Localization.Source != "en_en" || payload.Localization.Files[0].Rows[0].Key != "ADM_TEST" {
 		t.Fatalf("expected admin detail rows to map: %+v", payload)
 	}
 	if len(payload.CouponRows) != 1 || !payload.CouponRows[0].Used || payload.CouponRows[0].Code != "ABCD-EFGH-IJKL-MNOP-QRST" ||
