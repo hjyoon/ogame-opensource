@@ -83,10 +83,31 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/index.php", "?page=techtree")).toMatchObject({ key: "technology", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=changelog")).toMatchObject({ key: "changelog", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=allianzen")).toMatchObject({ key: "alliance", migrated: true });
+    for (const page of [
+      "ainfo",
+      "allianzdepot",
+      "allianzen_circular",
+      "allianzen_main",
+      "allianzen_members",
+      "allianzen_misc",
+      "allianzen_ranks",
+      "allianzen_settings"
+    ]) {
+      expect(resolveGameRoute("/game/index.php", `?page=${page}`)).toMatchObject({ key: "alliance", migrated: true });
+    }
     expect(resolveGameRoute("/game/index.php", "?page=imperium")).toMatchObject({ key: "empire", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=trader")).toMatchObject({ key: "merchant", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=micropayment")).toMatchObject({ key: "officers", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=admin")).toMatchObject({ key: "admin", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=overview_events")).toMatchObject({ key: "overview", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=event_list")).toMatchObject({ key: "overview", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=flottenversand_ajax")).toMatchObject({ key: "fleet", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=galaxy_js")).toMatchObject({ key: "galaxy", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=phalanx_events")).toMatchObject({ key: "phalanx", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=techtreedetails&gid=1")).toMatchObject({ key: "technology", migrated: true });
+    expect(resolveGameRoute("/game/ainfo.php", "?allyid=7")).toMatchObject({ key: "alliance", migrated: true });
+    expect(resolveGameRoute("/game/pranger.php")).toMatchObject({ key: "overview", migrated: true });
+    expect(resolveGameRoute("/game/maintenance.php")).toMatchObject({ key: "overview", migrated: true });
   });
 
   test("falls back unknown game paths to overview", () => {

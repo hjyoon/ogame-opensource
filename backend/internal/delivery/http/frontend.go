@@ -66,5 +66,10 @@ func (a app) handleLegacyGameStaticAsset(w http.ResponseWriter, r *http.Request)
 }
 
 func isLegacyGameHTMLPath(cleanPath string) bool {
-	return cleanPath == "/game/index.php"
+	switch cleanPath {
+	case "/game/ainfo.php", "/game/index.php", "/game/maintenance.php", "/game/pranger.php":
+		return true
+	default:
+		return false
+	}
 }

@@ -65,7 +65,11 @@ export const gameRoutes: GameRoute[] = [
 const overviewRoute = gameRoutes[0];
 const routeByPath = new Map(gameRoutes.map((route) => [route.path, route]));
 const legacyPageAliases = new Map<string, string>([
+  ["ainfo", "/game/alliance"],
+  ["allianzdepot", "/game/alliance"],
   ["overview", "/game/overview"],
+  ["overview_events", "/game/overview"],
+  ["event_list", "/game/overview"],
   ["renameplanet", "/game/rename-planet"],
   ["admin", "/game/admin"],
   ["imperium", "/game/empire"],
@@ -80,14 +84,23 @@ const legacyPageAliases = new Map<string, string>([
   ["flotten2", "/game/fleet"],
   ["flotten3", "/game/fleet"],
   ["flottenversand", "/game/fleet"],
+  ["flottenversand_ajax", "/game/fleet"],
   ["fleet_templates", "/game/fleet-templates"],
   ["technology", "/game/technology"],
   ["techtree", "/game/technology"],
+  ["techtreedetails", "/game/technology"],
   ["infos", "/game/technology"],
   ["changelog", "/game/changelog"],
   ["galaxy", "/game/galaxy"],
+  ["galaxy_js", "/game/galaxy"],
   ["defense", "/game/defense"],
   ["allianzen", "/game/alliance"],
+  ["allianzen_circular", "/game/alliance"],
+  ["allianzen_main", "/game/alliance"],
+  ["allianzen_members", "/game/alliance"],
+  ["allianzen_misc", "/game/alliance"],
+  ["allianzen_ranks", "/game/alliance"],
+  ["allianzen_settings", "/game/alliance"],
   ["bewerben", "/game/alliance"],
   ["bewerbungen", "/game/alliance"],
   ["trader", "/game/merchant"],
@@ -100,11 +113,18 @@ const legacyPageAliases = new Map<string, string>([
   ["messages", "/game/messages"],
   ["bericht", "/game/report"],
   ["phalanx", "/game/phalanx"],
+  ["phalanx_events", "/game/phalanx"],
   ["notes", "/game/notes"],
   ["notizen", "/game/notes"],
   ["buddy", "/game/buddy"],
   ["options", "/game/options"],
   ["logout", "/game/logout"]
+]);
+
+const legacyPathAliases = new Map<string, string>([
+  ["/game/ainfo.php", "/game/alliance"],
+  ["/game/pranger.php", "/game/overview"],
+  ["/game/maintenance.php", "/game/overview"]
 ]);
 
 export function normalizeGamePath(pathname: string, search = ""): string {
@@ -130,6 +150,10 @@ export function normalizeGamePath(pathname: string, search = ""): string {
       }
     }
     return legacyPageAliases.get(page) ?? "/game/overview";
+  }
+  const directLegacyAlias = legacyPathAliases.get(normalized);
+  if (directLegacyAlias) {
+    return directLegacyAlias;
   }
   return normalized;
 }
