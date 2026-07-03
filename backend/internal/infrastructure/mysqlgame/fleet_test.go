@@ -3074,19 +3074,40 @@ func TestFleetRepositoryFinishDueFleetQueueHelpers(t *testing.T) {
 		t.Fatal("maxInt64 should return the larger value")
 	}
 	defaultSettings := expeditionSettings{
-		ChanceSuccess: 70,
-		ChanceAlien:   95,
-		ChancePirates: 85,
-		ChanceDM:      70,
-		ChanceLost:    69,
-		ChanceDelay:   63,
-		ChanceAccel:   60,
-		ChanceRes:     25,
-		ChanceFleet:   1,
-		DMFactor:      3,
+		ChanceSuccess:     70,
+		DepletedMin:       25,
+		DepletedMed:       50,
+		DepletedMax:       75,
+		ChanceDepletedMin: 25,
+		ChanceDepletedMed: 50,
+		ChanceDepletedMax: 75,
+		ChanceAlien:       95,
+		ChancePirates:     85,
+		ChanceDM:          70,
+		ChanceLost:        69,
+		ChanceDelay:       63,
+		ChanceAccel:       60,
+		ChanceRes:         25,
+		ChanceFleet:       1,
+		DMFactor:          3,
 	}
-	if expeditionForcedResult(defaultSettings) != expeditionResultNothing {
+	if expeditionForcedResult(defaultSettings, 0, 0) != expeditionResultNothing {
 		t.Fatal("default expedition settings should not force a legacy E2E outcome")
+	}
+	forcedSettings := defaultSettings
+	forcedSettings.ChanceDM = 0
+	forcedSettings.ChanceDepletedMax = 100
+	if expeditionForcedResult(forcedSettings, 76, 0) != expeditionResultNothing {
+		t.Fatal("severe depletion with 100% failure should block a forced expedition success")
+	}
+	if expeditionForcedResult(forcedSettings, 25, 0) != expeditionResultDarkMatter {
+		t.Fatal("not-depleted expedition should still allow a forced dark matter outcome")
+	}
+	if expeditionDepletionFailureChance(defaultSettings, 25) != 0 ||
+		expeditionDepletionFailureChance(defaultSettings, 26) != 25 ||
+		expeditionDepletionFailureChance(defaultSettings, 51) != 50 ||
+		expeditionDepletionFailureChance(defaultSettings, 76) != 75 {
+		t.Fatal("unexpected expedition depletion failure thresholds")
 	}
 }
 
@@ -3480,16 +3501,22 @@ func recallFleetTestRow(mission int, unionID int, ships map[int]int) []any {
 
 func expeditionSettingsTestRow(event string) []any {
 	settings := map[string]int{
-		"chance_success": 100,
-		"chance_alien":   100,
-		"chance_pirates": 100,
-		"chance_dm":      100,
-		"chance_lost":    100,
-		"chance_delay":   100,
-		"chance_accel":   100,
-		"chance_res":     100,
-		"chance_fleet":   100,
-		"dm_factor":      3,
+		"chance_success":      100,
+		"depleted_min":        25,
+		"depleted_med":        50,
+		"depleted_max":        75,
+		"chance_depleted_min": 25,
+		"chance_depleted_med": 50,
+		"chance_depleted_max": 75,
+		"chance_alien":        100,
+		"chance_pirates":      100,
+		"chance_dm":           100,
+		"chance_lost":         100,
+		"chance_delay":        100,
+		"chance_accel":        100,
+		"chance_res":          100,
+		"chance_fleet":        100,
+		"dm_factor":           3,
 	}
 	switch event {
 	case "nothing":
@@ -3516,6 +3543,12 @@ func expeditionSettingsTestRow(event string) []any {
 	}
 	return []any{
 		settings["chance_success"],
+		settings["depleted_min"],
+		settings["depleted_med"],
+		settings["depleted_max"],
+		settings["chance_depleted_min"],
+		settings["chance_depleted_med"],
+		settings["chance_depleted_max"],
 		settings["chance_alien"],
 		settings["chance_pirates"],
 		settings["chance_dm"],

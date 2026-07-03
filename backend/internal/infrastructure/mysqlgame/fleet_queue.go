@@ -17,16 +17,22 @@ type fleetQueueTask struct {
 }
 
 type expeditionSettings struct {
-	ChanceSuccess int
-	ChanceAlien   int
-	ChancePirates int
-	ChanceDM      int
-	ChanceLost    int
-	ChanceDelay   int
-	ChanceAccel   int
-	ChanceRes     int
-	ChanceFleet   int
-	DMFactor      int
+	ChanceSuccess     int
+	DepletedMin       int
+	DepletedMed       int
+	DepletedMax       int
+	ChanceDepletedMin int
+	ChanceDepletedMed int
+	ChanceDepletedMax int
+	ChanceAlien       int
+	ChancePirates     int
+	ChanceDM          int
+	ChanceLost        int
+	ChanceDelay       int
+	ChanceAccel       int
+	ChanceRes         int
+	ChanceFleet       int
+	DMFactor          int
 }
 
 type expeditionTargetState struct {
@@ -207,7 +213,7 @@ func (r FleetRepository) finishExpeditionHold(ctx context.Context, fleetTable st
 	if err != nil {
 		return err
 	}
-	result := expeditionForcedResult(settings)
+	result := expeditionForcedResult(settings, target.VisitCounter, fleet.FlightTime/3600)
 	messageText := "Expedition report: Nothing happened."
 
 	switch result {
@@ -375,7 +381,7 @@ func (r FleetRepository) insertExpeditionBattleMessage(ctx context.Context, mess
 func (r FleetRepository) loadExpeditionSettings(ctx context.Context, expeditionTable string) (expeditionSettings, error) {
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT chance_success, chance_alien, chance_pirates, chance_dm, chance_lost, chance_delay, chance_accel, chance_res, chance_fleet, dm_factor FROM %s LIMIT 1", expeditionTable),
+		fmt.Sprintf("SELECT chance_success, depleted_min, depleted_med, depleted_max, chance_depleted_min, chance_depleted_med, chance_depleted_max, chance_alien, chance_pirates, chance_dm, chance_lost, chance_delay, chance_accel, chance_res, chance_fleet, dm_factor FROM %s LIMIT 1", expeditionTable),
 	)
 	if err != nil {
 		return expeditionSettings{}, err
@@ -390,6 +396,12 @@ func (r FleetRepository) loadExpeditionSettings(ctx context.Context, expeditionT
 	var settings expeditionSettings
 	if err := rows.Scan(
 		&settings.ChanceSuccess,
+		&settings.DepletedMin,
+		&settings.DepletedMed,
+		&settings.DepletedMax,
+		&settings.ChanceDepletedMin,
+		&settings.ChanceDepletedMed,
+		&settings.ChanceDepletedMax,
 		&settings.ChanceAlien,
 		&settings.ChancePirates,
 		&settings.ChanceDM,
@@ -444,8 +456,11 @@ func (r FleetRepository) activateExpeditionTrader(ctx context.Context, usersTabl
 	return err
 }
 
-func expeditionForcedResult(settings expeditionSettings) expeditionResult {
-	if settings.ChanceSuccess <= 0 {
+func expeditionForcedResult(settings expeditionSettings, visitCounter int, holdHours int) expeditionResult {
+	if settings.ChanceSuccess+holdHours <= 0 {
+		return expeditionResultNothing
+	}
+	if expeditionDepletionFailureChance(settings, visitCounter) >= 100 {
 		return expeditionResultNothing
 	}
 	if settings.ChanceAlien <= 0 {
@@ -484,6 +499,19 @@ func expeditionForcedResult(settings expeditionSettings) expeditionResult {
 		return expeditionResultTrader
 	}
 	return expeditionResultNothing
+}
+
+func expeditionDepletionFailureChance(settings expeditionSettings, visitCounter int) int {
+	if visitCounter <= settings.DepletedMin {
+		return 0
+	}
+	if visitCounter <= settings.DepletedMed {
+		return settings.ChanceDepletedMin
+	}
+	if visitCounter <= settings.DepletedMax {
+		return settings.ChanceDepletedMed
+	}
+	return settings.ChanceDepletedMax
 }
 
 func copyFleetCounts(counts domaingame.FleetCounts) domaingame.FleetCounts {
