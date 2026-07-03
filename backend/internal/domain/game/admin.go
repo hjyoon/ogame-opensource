@@ -9,6 +9,10 @@ const (
 
 	AdminIssueAccessDenied = "access_denied"
 	AdminIssueActionSaved  = "action_saved"
+	AdminIssueBotAdded     = "bot_added"
+	AdminIssueBotExists    = "bot_exists"
+	AdminIssueBotNoStart   = "bot_no_start"
+	AdminIssueBotStopped   = "bot_stopped"
 )
 
 const (
@@ -47,6 +51,7 @@ const (
 	AdminActionBotEditSave   = "save"
 	AdminActionBotEditNew    = "new"
 	AdminActionBotEditRename = "rename"
+	AdminActionBotAdd        = "add"
 	AdminActionBotStop       = "stop"
 
 	AdminActionModInstall  = "install"
@@ -529,6 +534,14 @@ func AdminIssue(code string) *AdminActionIssue {
 		return &AdminActionIssue{Code: code, Message: "Access denied."}
 	case AdminIssueActionSaved:
 		return &AdminActionIssue{Code: code, Message: "Action saved."}
+	case AdminIssueBotAdded:
+		return &AdminActionIssue{Code: code, Message: "Bot has been successfully added."}
+	case AdminIssueBotExists:
+		return &AdminActionIssue{Code: code, Message: "A player with that name already exists."}
+	case AdminIssueBotNoStart:
+		return &AdminActionIssue{Code: code, Message: "No starting bot strategy was found."}
+	case AdminIssueBotStopped:
+		return &AdminActionIssue{Code: code, Message: "Bot stopped."}
 	default:
 		return &AdminActionIssue{Code: code, Message: "Admin action could not be completed."}
 	}

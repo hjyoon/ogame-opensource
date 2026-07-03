@@ -601,7 +601,7 @@ func gameAdminService(cfg config.Config, logger *slog.Logger, sessions apppublic
 	}
 
 	logger.Info("universe DB game admin enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
-	repository := mysqlgame.NewAdminRepository(db, cfg.UniDBPrefix).WithLegacyGameDir(cfg.LegacyGameDir)
+	repository := mysqlgame.NewAdminRepository(db, cfg.UniDBPrefix).WithLegacyGameDir(cfg.LegacyGameDir).WithSecret(cfg.UniDBSecret)
 	if masterDB := openMasterDBForGame(cfg, logger, "admin coupons"); masterDB != nil {
 		masterRunner := mysqlgame.SQLQueryer{DB: masterDB}
 		repository = repository.WithMasterRunner(masterRunner, masterRunner).WithUniverseNumber(cfg.UniNumber)

@@ -135,6 +135,10 @@ export type GameAdminAction =
       modName: string;
     }
   | {
+      action: "add";
+      name: string;
+    }
+  | {
       action: "stop";
       targetIds: number[];
     };
@@ -4138,6 +4142,11 @@ function AdminBotsTable({
     event.preventDefault();
     onAdminAction({ action: "stop", targetIds: [playerId] });
   };
+  const addBot = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    onAdminAction({ action: "add", name: String(data.get("name") ?? "") });
+  };
   return (
     <>
       <center />
@@ -4181,7 +4190,7 @@ function AdminBotsTable({
         </table>
       )}
       <h2>Add bot:</h2>
-      <form action={adminModeHref("Bots")} method="POST" onSubmit={(event) => event.preventDefault()}>
+      <form action={adminModeHref("Bots")} method="POST" onSubmit={addBot}>
         <table className="legacy-admin-bots-table">
           <tbody>
             <tr>

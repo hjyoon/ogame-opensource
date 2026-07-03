@@ -42,6 +42,18 @@ func TestLegacyMaintenanceRendersFrozenPage(t *testing.T) {
 	if !strings.Contains(body, "OGame is currently under maintenance.") || !strings.Contains(body, `href="https://board.example.test"`) {
 		t.Fatalf("maintenance page missing copy/link: %s", body)
 	}
+
+	recorder = httptest.NewRecorder()
+	usecase = &fakeGameMaintenanceUseCase{maintenance: domaingame.Maintenance{
+		Frozen:   true,
+		Language: "fr",
+		BoardURL: "https://board.example.test/fr",
+	}}
+	New(Dependencies{GameMaintenance: usecase}).ServeHTTP(recorder, req)
+	body = recorder.Body.String()
+	if recorder.Code != http.StatusOK || !strings.Contains(body, "OGame est en maintenance.") || !strings.Contains(body, `href="https://board.example.test/fr"`) {
+		t.Fatalf("maintenance page missing French copy/link: status=%d body=%s", recorder.Code, body)
+	}
 }
 
 func TestLegacyMaintenanceGuards(t *testing.T) {

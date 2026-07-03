@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -30,8 +31,10 @@ type AdminRepository struct {
 	prefix        string
 	legacyGameDir string
 	uniNumber     int
+	secret        string
 	now           func() time.Time
 	couponCode    func() (string, error)
+	botPassword   func() (string, error)
 }
 
 func NewAdminRepository(db *sql.DB, prefix string) AdminRepository {
@@ -45,6 +48,7 @@ func NewAdminRepository(db *sql.DB, prefix string) AdminRepository {
 		uniNumber:     1,
 		now:           time.Now,
 		couponCode:    randomCouponCode,
+		botPassword:   randomBotPassword,
 	}
 }
 
@@ -62,6 +66,7 @@ func NewAdminRepositoryWithQueryer(queryer Queryer, prefix string) AdminReposito
 		uniNumber:     1,
 		now:           time.Now,
 		couponCode:    randomCouponCode,
+		botPassword:   randomBotPassword,
 	}
 }
 
@@ -75,6 +80,11 @@ func (r AdminRepository) WithUniverseNumber(number int) AdminRepository {
 	if number > 0 {
 		r.uniNumber = number
 	}
+	return r
+}
+
+func (r AdminRepository) WithSecret(secret string) AdminRepository {
+	r.secret = secret
 	return r
 }
 
@@ -313,6 +323,9 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 		}
 		return r.mutateAdminBotStop(ctx, queueTable, query.TargetIDs)
 	}
+	if mode == "Bots" && query.Action == domaingame.AdminActionBotAdd {
+		return r.mutateAdminBotAdd(ctx, query)
+	}
 	if mode == "Users" {
 		usersTable, err := tableName(r.prefix, "users")
 		if err != nil {
@@ -374,7 +387,7 @@ func (r AdminRepository) mutateAdminMods(ctx context.Context, uniTable string, q
 
 func (r AdminRepository) mutateAdminBotStop(ctx context.Context, queueTable string, targetIDs []int) (*domaingame.AdminActionIssue, error) {
 	if len(targetIDs) == 0 {
-		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+		return domaingame.AdminIssue(domaingame.AdminIssueBotStopped), nil
 	}
 	for _, playerID := range targetIDs {
 		if playerID <= 0 {
@@ -384,7 +397,368 @@ func (r AdminRepository) mutateAdminBotStop(ctx context.Context, queueTable stri
 			return nil, err
 		}
 	}
-	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+	return domaingame.AdminIssue(domaingame.AdminIssueBotStopped), nil
+}
+
+type adminBotStartStrategy struct {
+	ID           int
+	StartBlockID int
+	HasStart     bool
+}
+
+type adminBotUniverse struct {
+	Systems  int
+	Galaxies int
+	Language string
+	StartDM  int
+}
+
+type adminBotCoordinates struct {
+	Galaxy   int
+	System   int
+	Position int
+}
+
+func (r AdminRepository) mutateAdminBotAdd(ctx context.Context, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
+	uniTable, err := tableName(r.prefix, "uni")
+	if err != nil {
+		return nil, err
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return nil, err
+	}
+	iplogsTable, err := tableName(r.prefix, "iplogs")
+	if err != nil {
+		return nil, err
+	}
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return nil, err
+	}
+	botvarsTable, err := tableName(r.prefix, "botvars")
+	if err != nil {
+		return nil, err
+	}
+	botstratTable, err := tableName(r.prefix, "botstrat")
+	if err != nil {
+		return nil, err
+	}
+
+	start, found, err := r.loadAdminBotStartStrategy(ctx, botstratTable)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return domaingame.AdminIssue(domaingame.AdminIssueBotNoStart), nil
+	}
+	name := strings.TrimSpace(query.Name)
+	lowerName := strings.ToLower(name)
+	exists, err := r.adminBotUserExists(ctx, usersTable, lowerName)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return domaingame.AdminIssue(domaingame.AdminIssueBotExists), nil
+	}
+	universe, err := r.loadAdminBotUniverse(ctx, uniTable)
+	if err != nil {
+		return nil, err
+	}
+	coords, err := r.nextAdminBotHomePlanet(ctx, planetsTable, universe)
+	if err != nil {
+		return nil, err
+	}
+	passwordGenerator := r.botPassword
+	if passwordGenerator == nil {
+		passwordGenerator = randomBotPassword
+	}
+	password, err := passwordGenerator()
+	if err != nil {
+		return nil, err
+	}
+	now := int(r.now().Unix())
+	remoteAddr := query.RemoteAddr
+	if remoteAddr == "" {
+		remoteAddr = "0.0.0.0"
+	}
+	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET usercount = usercount + 1", uniTable)); err != nil {
+		return nil, err
+	}
+	playerID, err := r.insertAdminBotUser(ctx, usersTable, name, lowerName, password, remoteAddr, universe, now)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.insertAdminBotIPLog(ctx, iplogsTable, playerID, remoteAddr, now); err != nil {
+		return nil, err
+	}
+	planetID, err := r.insertAdminBotHomePlanet(ctx, planetsTable, playerID, coords, now)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET hplanetid = ?, aktplanet = ? WHERE player_id = ?", usersTable), planetID, planetID, playerID); err != nil {
+		return nil, err
+	}
+	if err := r.insertAdminBotVar(ctx, botvarsTable, playerID, "TimeLimit", "94608000"); err != nil {
+		return nil, err
+	}
+	if err := r.insertAdminBotVar(ctx, botvarsTable, playerID, "password", password); err != nil {
+		return nil, err
+	}
+	if start.HasStart {
+		if _, err := r.execer.ExecContext(
+			ctx,
+			fmt.Sprintf("INSERT INTO %s (owner_id, type, sub_id, obj_id, level, start, end, prio) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", queueTable),
+			playerID,
+			"AI",
+			start.ID,
+			start.StartBlockID,
+			0,
+			now,
+			now,
+			1000,
+		); err != nil {
+			return nil, err
+		}
+	}
+	if err := r.overview.recalcRanks(ctx, usersTable); err != nil {
+		return nil, err
+	}
+	return domaingame.AdminIssue(domaingame.AdminIssueBotAdded), nil
+}
+
+func (r AdminRepository) loadAdminBotStartStrategy(ctx context.Context, botstratTable string) (adminBotStartStrategy, bool, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT id, COALESCE(source, '') FROM %s WHERE name = ? LIMIT 1", botstratTable), "_start")
+	if err != nil {
+		return adminBotStartStrategy{}, false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return adminBotStartStrategy{}, false, rows.Err()
+	}
+	var id int
+	var source string
+	if err := rows.Scan(&id, &source); err != nil {
+		return adminBotStartStrategy{}, false, err
+	}
+	if err := rows.Err(); err != nil {
+		return adminBotStartStrategy{}, false, err
+	}
+	start := adminBotStartStrategy{ID: id}
+	var graph struct {
+		Nodes []struct {
+			Key      int    `json:"key"`
+			Category string `json:"category"`
+		} `json:"nodeDataArray"`
+	}
+	if err := json.Unmarshal([]byte(source), &graph); err != nil {
+		return start, true, nil
+	}
+	for _, node := range graph.Nodes {
+		if node.Category == "Start" {
+			start.StartBlockID = node.Key
+			start.HasStart = true
+			break
+		}
+	}
+	return start, true, nil
+}
+
+func (r AdminRepository) adminBotUserExists(ctx context.Context, usersTable string, lowerName string) (bool, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT player_id FROM %s WHERE name = ? LIMIT 1", usersTable), lowerName)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	exists := rows.Next()
+	return exists, rows.Err()
+}
+
+func (r AdminRepository) loadAdminBotUniverse(ctx context.Context, uniTable string) (adminBotUniverse, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT systems, galaxies, lang, start_dm FROM %s LIMIT 1", uniTable))
+	if err != nil {
+		return adminBotUniverse{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return adminBotUniverse{}, errors.New("admin bot universe row not found")
+	}
+	var universe adminBotUniverse
+	if err := rows.Scan(&universe.Systems, &universe.Galaxies, &universe.Language, &universe.StartDM); err != nil {
+		return adminBotUniverse{}, err
+	}
+	if err := rows.Err(); err != nil {
+		return adminBotUniverse{}, err
+	}
+	if universe.Systems <= 0 || universe.Galaxies <= 0 {
+		return adminBotUniverse{}, errors.New("admin bot universe has invalid galaxy layout")
+	}
+	if strings.TrimSpace(universe.Language) == "" {
+		universe.Language = "en"
+	}
+	return universe, nil
+}
+
+func (r AdminRepository) nextAdminBotHomePlanet(ctx context.Context, planetsTable string, universe adminBotUniverse) (adminBotCoordinates, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT g, s, p FROM %s WHERE g >= 1 AND p <= 15 AND type <> ? ORDER BY g, s, p", planetsTable), planetTypeDestroyedMoon)
+	if err != nil {
+		return adminBotCoordinates{}, err
+	}
+	defer rows.Close()
+	occupied := make(map[int]bool)
+	planetsPerGalaxy := 15 * universe.Systems
+	for rows.Next() {
+		var coords adminBotCoordinates
+		if err := rows.Scan(&coords.Galaxy, &coords.System, &coords.Position); err != nil {
+			return adminBotCoordinates{}, err
+		}
+		if coords.Galaxy < 1 || coords.System < 1 || coords.Position < 1 {
+			continue
+		}
+		index := ((coords.Galaxy - 1) * planetsPerGalaxy) + ((coords.System - 1) * 15) + coords.Position - 1
+		occupied[index] = true
+	}
+	if err := rows.Err(); err != nil {
+		return adminBotCoordinates{}, err
+	}
+	for distance := 0.0; distance < float64(planetsPerGalaxy*universe.Galaxies); distance += 1.3 {
+		index := int(math.Floor(distance))
+		galaxy := index/planetsPerGalaxy + 1
+		if galaxy > universe.Galaxies {
+			break
+		}
+		withinGalaxy := index - ((galaxy - 1) * planetsPerGalaxy)
+		system := withinGalaxy/15 + 1
+		position := withinGalaxy%15 + 1
+		if position > 3 && position < 13 && !occupied[index] {
+			return adminBotCoordinates{Galaxy: galaxy, System: system, Position: position}, nil
+		}
+	}
+	return adminBotCoordinates{}, errors.New("no admin bot home planet slots available")
+}
+
+func (r AdminRepository) insertAdminBotUser(ctx context.Context, usersTable string, originalName string, lowerName string, password string, remoteAddr string, universe adminBotUniverse, now int) (int, error) {
+	columns := []string{
+		"regdate", "ally_id", "joindate", "allyrank", "session", "private_session", "name", "oname", "name_changed", "name_until",
+		"password", "temp_pass", "pemail", "email", "email_changed", "email_until", "disable", "disable_until", "vacation", "vacation_until",
+		"banned", "banned_until", "noattack", "noattack_until", "lastlogin", "lastclick", "ip_addr", "validated", "validatemd", "hplanetid",
+		"admin", "sortby", "sortorder", "skin", "useskin", "deact_ip", "maxspy", "maxfleetmsg", "lang", "aktplanet",
+		"dm", "dmfree", "sniff", "debug", "trader", "rate_m", "rate_k", "rate_d", "score1", "score2", "score3", "place1", "place2", "place3",
+		"oldscore1", "oldscore2", "oldscore3", "oldplace1", "oldplace2", "oldplace3", "scoredate", "flags", "feedid", "lastfeed",
+		"com_until", "adm_until", "eng_until", "geo_until", "tec_until",
+	}
+	args := []any{
+		now, 0, 0, 0, "", "", lowerName, originalName, 0, 0,
+		hashOverviewPassword(password, r.secret), "", "", "", 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, remoteAddr, 1, "", 0,
+		0, 0, 0, "/evolution/", 1, 0, 1, 3, universe.Language, 0,
+		0, universe.StartDM, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 31, "", 0,
+		0, 0, 0, 0, 0,
+	}
+	result, err := r.execer.ExecContext(ctx, adminInsertStatement(usersTable, columns), args...)
+	if err != nil {
+		return 0, err
+	}
+	return adminLastInsertID(result)
+}
+
+func (r AdminRepository) insertAdminBotIPLog(ctx context.Context, iplogsTable string, playerID int, remoteAddr string, now int) error {
+	_, err := r.execer.ExecContext(ctx, adminInsertStatement(iplogsTable, []string{"ip", "user_id", "reg", "date"}), remoteAddr, playerID, 1, now)
+	return err
+}
+
+func (r AdminRepository) insertAdminBotHomePlanet(ctx context.Context, planetsTable string, playerID int, coords adminBotCoordinates, now int) (int, error) {
+	columns := []string{"name", "type", "g", "s", "p", "owner_id", "diameter", "temp", "fields", "maxfields", "date", "700", "701", "702", "lastpeek", "lastakt", "gate_until", "remove"}
+	args := []any{
+		"Homeplanet",
+		1,
+		coords.Galaxy,
+		coords.System,
+		coords.Position,
+		playerID,
+		12800,
+		adminBotHomePlanetTemperature(coords.Position, now%10),
+		0,
+		163,
+		now,
+		500,
+		500,
+		0,
+		now,
+		now,
+		0,
+		0,
+	}
+	result, err := r.execer.ExecContext(ctx, adminInsertStatement(planetsTable, columns), args...)
+	if err != nil {
+		return 0, err
+	}
+	return adminLastInsertID(result)
+}
+
+func (r AdminRepository) insertAdminBotVar(ctx context.Context, botvarsTable string, playerID int, name string, value string) error {
+	_, err := r.execer.ExecContext(ctx, adminInsertStatement(botvarsTable, []string{"owner_id", "var", "value"}), playerID, name, value)
+	return err
+}
+
+func adminBotHomePlanetTemperature(position int, jitter int) int {
+	switch {
+	case position <= 3:
+		return 80 + jitter - 2*position
+	case position >= 4 && position <= 6:
+		return 30 + jitter - 2*position
+	case position >= 7 && position <= 9:
+		return 10 + jitter - 2*position
+	case position >= 10 && position <= 12:
+		return -10 + jitter - 2*position
+	default:
+		return -60 + jitter - 2*position
+	}
+}
+
+func adminInsertStatement(table string, columns []string) string {
+	quoted := make([]string, 0, len(columns))
+	values := make([]string, 0, len(columns))
+	for _, column := range columns {
+		quoted = append(quoted, "`"+column+"`")
+		values = append(values, "?")
+	}
+	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", table, strings.Join(quoted, ", "), strings.Join(values, ", "))
+}
+
+func adminLastInsertID(result sql.Result) (int, error) {
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if id <= 0 {
+		return 0, errors.New("database returned empty id")
+	}
+	return int(id), nil
+}
+
+func randomBotPassword() (string, error) {
+	syllables := []string{"er", "in", "tia", "wol", "fe", "pre", "vet", "jo", "nes", "al", "len", "son", "cha", "ir", "ler", "bo", "ok", "tio", "nar", "sim", "ple", "bla", "ten", "toe", "cho", "co", "lat", "spe", "ak", "er", "po", "co", "lor", "pen", "cil", "li", "ght", "wh", "at", "the", "he", "ck", "is", "mam", "bo", "no", "fi", "ve", "any", "way", "pol", "iti", "cs", "ra", "dio", "sou", "rce", "sea", "rch", "pa", "per", "com"}
+	entropy := make([]byte, 8)
+	if _, err := rand.Read(entropy); err != nil {
+		return "", err
+	}
+	var builder strings.Builder
+	for count := 0; count < 4; count++ {
+		mode := entropy[count*2]
+		value := entropy[count*2+1]
+		if mode%10 == 1 {
+			builder.WriteString(strconv.Itoa(int(value%50) + 1))
+			continue
+		}
+		builder.WriteString(syllables[int(value)%len(syllables)])
+	}
+	return builder.String(), nil
 }
 
 func (r AdminRepository) loadAdminModList(ctx context.Context, uniTable string) ([]string, error) {

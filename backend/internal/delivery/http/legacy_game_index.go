@@ -46,6 +46,10 @@ func (a app) handleLegacyGameIndex(w http.ResponseWriter, r *http.Request) {
 		a.handleLegacyBotEditPost(w, r)
 		return
 	}
+	if r.Method == http.MethodPost && r.URL.Query().Get("page") == "admin" && strings.EqualFold(r.URL.Query().Get("mode"), "Bots") {
+		a.handleLegacyAdminBotsPost(w, r)
+		return
+	}
 	if r.Method == http.MethodPost && r.URL.Query().Get("page") == "admin" && strings.EqualFold(r.URL.Query().Get("mode"), "Logins") {
 		a.handleLegacyAdminLoginsPost(w, r)
 		return
@@ -60,6 +64,108 @@ func (a app) handleLegacyGameIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Allow", "GET, HEAD, POST")
 	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+}
+
+func (a app) handleLegacyAdminBotsPost(w http.ResponseWriter, r *http.Request) {
+	if a.deps.GameAdmin == nil {
+		http.Error(w, "game admin unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid admin bots request", http.StatusBadRequest)
+		return
+	}
+	planetID, err := selectedPlanetID(r)
+	if err != nil {
+		http.Error(w, "invalid selected planet", http.StatusBadRequest)
+		return
+	}
+	result, err := a.deps.GameAdmin.MutateAdmin(r.Context(), appgame.AdminMutationCommand{
+		PublicSession:   r.URL.Query().Get("session"),
+		PrivateSessions: cookieMap(r),
+		RemoteAddr:      remoteIP(r.RemoteAddr),
+		PlanetID:        planetID,
+		Mode:            "Bots",
+		Action:          domaingame.AdminActionBotAdd,
+		Name:            formLast(r, "name"),
+	})
+	if err != nil {
+		http.Error(w, "game admin unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !result.Authenticated {
+		http.Error(w, "unauthenticated", http.StatusForbidden)
+		return
+	}
+	if result.ActionIssue != nil && result.ActionIssue.Code == domaingame.AdminIssueAccessDenied {
+		http.Error(w, result.ActionIssue.Message, http.StatusForbidden)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(legacyAdminBotsHTML(r.URL.Query().Get("session"), result.Admin.BotRows, result.ActionIssue)))
+}
+
+func legacyAdminBotsHTML(session string, rows []domaingame.AdminBotRow, issue *domaingame.AdminActionIssue) string {
+	var builder strings.Builder
+	if issue != nil {
+		color := "lime"
+		if issue.Code == domaingame.AdminIssueBotExists || issue.Code == domaingame.AdminIssueBotNoStart || issue.Code == domaingame.AdminIssueAccessDenied {
+			color = "red"
+		}
+		builder.WriteString(`<center><font color=`)
+		builder.WriteString(color)
+		builder.WriteString(`>`)
+		builder.WriteString(html.EscapeString(issue.Message))
+		builder.WriteString(`</font></center>`)
+	}
+	builder.WriteString("<h2>Bot List:</h2>")
+	if len(rows) == 0 {
+		builder.WriteString("No bots found<br>")
+	} else {
+		builder.WriteString(`<table><tr><td class=c>ID</td><td class=c>Name</td><td class=c>Home Planet</td><td class=c>Action</td></tr>`)
+		for _, row := range rows {
+			builder.WriteString("<tr><td>")
+			builder.WriteString(strconv.Itoa(row.PlayerID))
+			builder.WriteString(`</td><td><a href="index.php?page=admin&amp;session=`)
+			builder.WriteString(html.EscapeString(url.QueryEscape(session)))
+			builder.WriteString(`&amp;mode=Users&amp;player_id=`)
+			builder.WriteString(strconv.Itoa(row.PlayerID))
+			builder.WriteString(`">`)
+			builder.WriteString(html.EscapeString(row.Name))
+			builder.WriteString("</a></td><td>")
+			if row.HomePlanet != nil {
+				builder.WriteString(`<a href="index.php?page=admin&amp;session=`)
+				builder.WriteString(html.EscapeString(url.QueryEscape(session)))
+				builder.WriteString(`&amp;mode=Planets&amp;cp=`)
+				builder.WriteString(strconv.Itoa(row.HomePlanet.ID))
+				builder.WriteString(`">`)
+				builder.WriteString(html.EscapeString(row.HomePlanet.Name))
+				builder.WriteString(`</a> [<a href="index.php?page=galaxy&amp;session=`)
+				builder.WriteString(html.EscapeString(url.QueryEscape(session)))
+				builder.WriteString(`&amp;galaxy=`)
+				builder.WriteString(strconv.Itoa(row.HomePlanet.Coordinates.Galaxy))
+				builder.WriteString(`&amp;system=`)
+				builder.WriteString(strconv.Itoa(row.HomePlanet.Coordinates.System))
+				builder.WriteString(`">`)
+				builder.WriteString(strconv.Itoa(row.HomePlanet.Coordinates.Galaxy))
+				builder.WriteString(":")
+				builder.WriteString(strconv.Itoa(row.HomePlanet.Coordinates.System))
+				builder.WriteString(":")
+				builder.WriteString(strconv.Itoa(row.HomePlanet.Coordinates.Position))
+				builder.WriteString(`</a>]`)
+			}
+			builder.WriteString(`</td><td><a href="index.php?page=admin&amp;session=`)
+			builder.WriteString(html.EscapeString(url.QueryEscape(session)))
+			builder.WriteString(`&amp;mode=Bots&amp;action=stop&amp;id=`)
+			builder.WriteString(strconv.Itoa(row.PlayerID))
+			builder.WriteString(`">Stop</a></td></tr>`)
+		}
+		builder.WriteString("</table>")
+	}
+	builder.WriteString(`<h2>Add bot:</h2><form action="index.php?page=admin&amp;session=`)
+	builder.WriteString(html.EscapeString(url.QueryEscape(session)))
+	builder.WriteString(`&amp;mode=Bots" method="POST"><table><tr><td>Name <input type=text size=10 name="name" /> <input type=submit value="Submit" /></td></tr></table></form>`)
+	return builder.String()
 }
 
 func (a app) handleLegacyAdminLoginsPost(w http.ResponseWriter, r *http.Request) {

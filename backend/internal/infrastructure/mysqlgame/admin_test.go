@@ -678,6 +678,12 @@ func TestAdminRepositoryCouponEdgeCases(t *testing.T) {
 			t.Fatalf("expected remove no-op for empty id, issue=%+v err=%v exec=%+v", issue, err, master.execCalls)
 		}
 
+		master = &fakeGalaxyRunner{execErrs: []error{errors.New("coupon delete failed")}}
+		repository = NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "ogame_").WithMasterRunner(master, master)
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Coupons", Action: domaingame.AdminActionCouponRemoveOne, ItemID: 7}); err == nil || !strings.Contains(err.Error(), "coupon delete failed") {
+			t.Fatalf("expected coupon delete error, got %v", err)
+		}
+
 		repository = NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "ogame_")
 		issue, err = repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Coupons", Action: "unknown"})
 		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved {
@@ -799,6 +805,370 @@ func TestAdminRepositoryBotRowsEdges(t *testing.T) {
 	})
 }
 
+func TestAdminRepositoryMutatesBotAdd(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	startSource := `{"nodeDataArray":[{"key":12,"category":"Start"}]}`
+	runner := &fakeGalaxyRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{5, startSource})},
+			{rows: fakeRowsFromValues()},
+			{rows: fakeRowsFromValues([]any{499, 9, "en", 8000})},
+			{rows: fakeRowsFromValues([]any{1, 1, 4})},
+		}},
+		execResults: []sql.Result{
+			galaxySQLResult{rows: 1},
+			galaxySQLResult{id: 77, rows: 1},
+			galaxySQLResult{rows: 1},
+			galaxySQLResult{id: 909, rows: 1},
+		},
+	}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_").WithSecret("secret")
+	repository.now = func() time.Time { return now }
+	repository.botPassword = func() (string, error) { return "botpass", nil }
+
+	issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+		Mode:       "Bots",
+		Action:     domaingame.AdminActionBotAdd,
+		Name:       "BotUser",
+		RemoteAddr: "203.0.113.7",
+	})
+
+	if err != nil || issue == nil || issue.Code != domaingame.AdminIssueBotAdded {
+		t.Fatalf("unexpected bot add issue=%+v err=%v", issue, err)
+	}
+	if len(runner.execCalls) != 16 {
+		t.Fatalf("expected user/planet/queue writes plus rank recalculation, got %+v", runner.execCalls)
+	}
+	userInsert := runner.execCalls[1]
+	if !strings.Contains(userInsert.sql, "INSERT INTO `ogame_users`") ||
+		userInsert.args[6] != "botuser" || userInsert.args[7] != "BotUser" ||
+		userInsert.args[10] != hashOverviewPassword("botpass", "secret") ||
+		userInsert.args[26] != "203.0.113.7" || userInsert.args[27] != 1 ||
+		userInsert.args[38] != "en" || userInsert.args[41] != 8000 {
+		t.Fatalf("unexpected bot user insert: %+v", userInsert)
+	}
+	if runner.execCalls[3].args[0] != "Homeplanet" || runner.execCalls[3].args[5] != 77 {
+		t.Fatalf("unexpected bot home planet insert: %+v", runner.execCalls[3])
+	}
+	if runner.execCalls[5].args[1] != "TimeLimit" || runner.execCalls[6].args[1] != "password" || runner.execCalls[6].args[2] != "botpass" {
+		t.Fatalf("unexpected bot vars: %+v %+v", runner.execCalls[5], runner.execCalls[6])
+	}
+	queueInsert := runner.execCalls[7]
+	if !strings.Contains(queueInsert.sql, "INSERT INTO `ogame_queue`") ||
+		queueInsert.args[0] != 77 || queueInsert.args[1] != "AI" ||
+		queueInsert.args[2] != 5 || queueInsert.args[3] != 12 ||
+		queueInsert.args[5] != int(now.Unix()) || queueInsert.args[6] != int(now.Unix()) || queueInsert.args[7] != 1000 {
+		t.Fatalf("unexpected bot queue insert: %+v", queueInsert)
+	}
+}
+
+func TestAdminRepositoryBotAddEdges(t *testing.T) {
+	startSource := `{"nodeDataArray":[{"key":12,"category":"Start"}]}`
+
+	t.Run("missing start strategy", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Bots", Action: domaingame.AdminActionBotAdd, Name: "BotUser"})
+
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueBotNoStart || len(runner.execCalls) != 0 {
+			t.Fatalf("unexpected no-start issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		}
+	})
+
+	t.Run("duplicate user", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{5, startSource})},
+			{rows: fakeRowsFromValues([]any{77})},
+		}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Bots", Action: domaingame.AdminActionBotAdd, Name: "BotUser"})
+
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueBotExists || len(runner.execCalls) != 0 {
+			t.Fatalf("unexpected duplicate issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+		}
+	})
+
+	t.Run("strategy without start node still creates user", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{5, `{"nodeDataArray":[]}`})},
+				{rows: fakeRowsFromValues()},
+				{rows: fakeRowsFromValues([]any{1, 1, "", 0})},
+				{rows: fakeRowsFromValues()},
+			}},
+			execResults: []sql.Result{
+				galaxySQLResult{rows: 1},
+				galaxySQLResult{id: 77, rows: 1},
+				galaxySQLResult{rows: 1},
+				galaxySQLResult{id: 909, rows: 1},
+			},
+		}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		repository.now = func() time.Time { return time.Unix(1700000000, 0) }
+		repository.botPassword = func() (string, error) { return "botpass", nil }
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Bots", Action: domaingame.AdminActionBotAdd, Name: "BotUser"})
+
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueBotAdded {
+			t.Fatalf("unexpected no-start-node issue=%+v err=%v", issue, err)
+		}
+		for _, call := range runner.execCalls {
+			if strings.Contains(call.sql, "INSERT INTO `ogame_queue`") {
+				t.Fatalf("strategy without Start node should not enqueue AI task: %+v", runner.execCalls)
+			}
+		}
+	})
+}
+
+func TestAdminRepositoryBotAddHelperEdges(t *testing.T) {
+	t.Run("temperature branches", func(t *testing.T) {
+		cases := map[int]int{1: 87, 5: 29, 8: 3, 11: -23, 14: -79}
+		for position, want := range cases {
+			if got := adminBotHomePlanetTemperature(position, 9); got != want {
+				t.Fatalf("position %d temperature=%d want %d", position, got, want)
+			}
+		}
+	})
+
+	t.Run("last insert id", func(t *testing.T) {
+		if id, err := adminLastInsertID(galaxySQLResult{id: 7, rows: 1}); err != nil || id != 7 {
+			t.Fatalf("unexpected last insert id=%d err=%v", id, err)
+		}
+		if _, err := adminLastInsertID(galaxySQLResult{}); err == nil || !strings.Contains(err.Error(), "empty id") {
+			t.Fatalf("expected empty id error, got %v", err)
+		}
+		if _, err := adminLastInsertID(adminSQLResultWithLastInsertErr{err: errors.New("last id failed")}); err == nil || !strings.Contains(err.Error(), "last id failed") {
+			t.Fatalf("expected last id error, got %v", err)
+		}
+	})
+
+	t.Run("random password", func(t *testing.T) {
+		password, err := randomBotPassword()
+		if err != nil || password == "" {
+			t.Fatalf("unexpected random bot password %q err=%v", password, err)
+		}
+	})
+
+	t.Run("start strategy errors", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("start query failed")}}}, "ogame_")
+		if _, _, err := repository.loadAdminBotStartStrategy(context.Background(), "`ogame_botstrat`"); err == nil || !strings.Contains(err.Error(), "start query failed") {
+			t.Fatalf("expected start query error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{5})}}}, "ogame_")
+		if _, _, err := repository.loadAdminBotStartStrategy(context.Background(), "`ogame_botstrat`"); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+			t.Fatalf("expected start scan error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("start rows failed"), []any{5, "{}"})}}}, "ogame_")
+		if _, _, err := repository.loadAdminBotStartStrategy(context.Background(), "`ogame_botstrat`"); err == nil || !strings.Contains(err.Error(), "start rows failed") {
+			t.Fatalf("expected start rows error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{5, "not-json"})}}}, "ogame_")
+		start, found, err := repository.loadAdminBotStartStrategy(context.Background(), "`ogame_botstrat`")
+		if err != nil || !found || start.ID != 5 || start.HasStart {
+			t.Fatalf("invalid JSON should keep strategy found without Start node, start=%+v found=%v err=%v", start, found, err)
+		}
+	})
+
+	t.Run("user exists errors", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("exists query failed")}}}, "ogame_")
+		if _, err := repository.adminBotUserExists(context.Background(), "`ogame_users`", "bot"); err == nil || !strings.Contains(err.Error(), "exists query failed") {
+			t.Fatalf("expected exists query error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("exists rows failed"))}}}, "ogame_")
+		if _, err := repository.adminBotUserExists(context.Background(), "`ogame_users`", "bot"); err == nil || !strings.Contains(err.Error(), "exists rows failed") {
+			t.Fatalf("expected exists rows error, got %v", err)
+		}
+	})
+
+	t.Run("universe errors", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("universe query failed")}}}, "ogame_")
+		if _, err := repository.loadAdminBotUniverse(context.Background(), "`ogame_uni`"); err == nil || !strings.Contains(err.Error(), "universe query failed") {
+			t.Fatalf("expected universe query error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "ogame_")
+		if _, err := repository.loadAdminBotUniverse(context.Background(), "`ogame_uni`"); err == nil || !strings.Contains(err.Error(), "universe row not found") {
+			t.Fatalf("expected missing universe error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}, "ogame_")
+		if _, err := repository.loadAdminBotUniverse(context.Background(), "`ogame_uni`"); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+			t.Fatalf("expected universe scan error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{0, 1, "en", 0})}}}, "ogame_")
+		if _, err := repository.loadAdminBotUniverse(context.Background(), "`ogame_uni`"); err == nil || !strings.Contains(err.Error(), "invalid galaxy layout") {
+			t.Fatalf("expected invalid layout error, got %v", err)
+		}
+	})
+
+	t.Run("home planet errors", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("planet query failed")}}}, "ogame_")
+		if _, err := repository.nextAdminBotHomePlanet(context.Background(), "`ogame_planets`", adminBotUniverse{Systems: 1, Galaxies: 1}); err == nil || !strings.Contains(err.Error(), "planet query failed") {
+			t.Fatalf("expected planet query error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}, "ogame_")
+		if _, err := repository.nextAdminBotHomePlanet(context.Background(), "`ogame_planets`", adminBotUniverse{Systems: 1, Galaxies: 1}); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+			t.Fatalf("expected planet scan error, got %v", err)
+		}
+
+		occupied := [][]any{
+			{1, 1, 4}, {1, 1, 6}, {1, 1, 7}, {1, 1, 8}, {1, 1, 10}, {1, 1, 11}, {1, 1, 12},
+		}
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(occupied...)}}}, "ogame_")
+		if _, err := repository.nextAdminBotHomePlanet(context.Background(), "`ogame_planets`", adminBotUniverse{Systems: 1, Galaxies: 1}); err == nil || !strings.Contains(err.Error(), "no admin bot home planet slots") {
+			t.Fatalf("expected no slot error, got %v", err)
+		}
+	})
+
+	t.Run("insert errors", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{execErrs: []error{errors.New("user insert failed")}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.insertAdminBotUser(context.Background(), "`ogame_users`", "Bot", "bot", "pass", "127.0.0.1", adminBotUniverse{Language: "en"}, 1); err == nil || !strings.Contains(err.Error(), "user insert failed") {
+			t.Fatalf("expected user insert error, got %v", err)
+		}
+
+		runner = &fakeGalaxyRunner{execErrs: []error{errors.New("planet insert failed")}}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.insertAdminBotHomePlanet(context.Background(), "`ogame_planets`", 77, adminBotCoordinates{Galaxy: 1, System: 1, Position: 6}, 1); err == nil || !strings.Contains(err.Error(), "planet insert failed") {
+			t.Fatalf("expected planet insert error, got %v", err)
+		}
+	})
+
+	t.Run("bot strategy and related planet edges", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "ogame_")
+		source, name, err := repository.loadAdminBotStrategy(context.Background(), "`ogame_botstrat`", 7)
+		if err != nil || source != "" || name != "" {
+			t.Fatalf("expected missing strategy to return empty values, source=%q name=%q err=%v", source, name, err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "ogame_")
+		related, err := repository.loadAdminRelatedPlanet(context.Background(), "`ogame_planets`", domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, domaingame.PlanetTypeMoon)
+		if err != nil || related != nil {
+			t.Fatalf("expected missing related planet, related=%+v err=%v", related, err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{77})}}}, "ogame_")
+		if _, err := repository.loadAdminRelatedPlanet(context.Background(), "`ogame_planets`", domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, domaingame.PlanetTypeMoon); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+			t.Fatalf("expected related planet scan error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("related rows failed"), []any{77, "Moon", int64(1700000000), 1, 2, 3, 100, 50, 25})}}}, "ogame_")
+		if _, err := repository.loadAdminRelatedPlanet(context.Background(), "`ogame_planets`", domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, domaingame.PlanetTypeMoon); err == nil || !strings.Contains(err.Error(), "related rows failed") {
+			t.Fatalf("expected related planet rows error, got %v", err)
+		}
+	})
+}
+
+func TestAdminRepositoryBotAddMutationEdges(t *testing.T) {
+	startSource := `{"nodeDataArray":[{"key":12,"category":"Start"}]}`
+	baseResults := func(extra ...fakeQueryResult) []fakeQueryResult {
+		results := []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{5, startSource})},
+			{rows: fakeRowsFromValues()},
+			{rows: fakeRowsFromValues([]any{499, 9, "en", 8000})},
+			{rows: fakeRowsFromValues()},
+		}
+		if len(extra) > 0 {
+			return extra
+		}
+		return results
+	}
+	baseExecResults := []sql.Result{
+		galaxySQLResult{rows: 1},
+		galaxySQLResult{id: 77, rows: 1},
+		galaxySQLResult{rows: 1},
+		galaxySQLResult{id: 909, rows: 1},
+	}
+	mutate := func(repository AdminRepository) (*domaingame.AdminActionIssue, error) {
+		return repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode:       "Bots",
+			Action:     domaingame.AdminActionBotAdd,
+			Name:       "BotUser",
+			RemoteAddr: "203.0.113.7",
+		})
+	}
+
+	t.Run("bad prefix", func(t *testing.T) {
+		_, err := mutate(NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "bad-prefix_"))
+		if err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+			t.Fatalf("expected bad prefix error, got %v", err)
+		}
+	})
+
+	for _, tc := range []struct {
+		name    string
+		results []fakeQueryResult
+		want    string
+	}{
+		{name: "start query", results: []fakeQueryResult{{err: errors.New("start failed")}}, want: "start failed"},
+		{name: "exists query", results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{5, startSource})}, {err: errors.New("exists failed")}}, want: "exists failed"},
+		{name: "universe query", results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{5, startSource})}, {rows: fakeRowsFromValues()}, {err: errors.New("universe failed")}}, want: "universe failed"},
+		{name: "planet query", results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{5, startSource})}, {rows: fakeRowsFromValues()}, {rows: fakeRowsFromValues([]any{499, 9, "en", 8000})}, {err: errors.New("planet failed")}}, want: "planet failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: tc.results}}
+			repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+			repository.botPassword = func() (string, error) { return "botpass", nil }
+			if _, err := mutate(repository); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q, got %v", tc.want, err)
+			}
+		})
+	}
+
+	t.Run("password error", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: baseResults()}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		repository.botPassword = func() (string, error) { return "", errors.New("password failed") }
+		if _, err := mutate(repository); err == nil || !strings.Contains(err.Error(), "password failed") || len(runner.execCalls) != 0 {
+			t.Fatalf("expected password error before writes, err=%v execs=%+v", err, runner.execCalls)
+		}
+	})
+
+	for _, tc := range []struct {
+		name      string
+		errIndex  int
+		want      string
+		wantExecs int
+	}{
+		{name: "usercount update", errIndex: 0, want: "usercount failed", wantExecs: 1},
+		{name: "user insert", errIndex: 1, want: "user insert failed", wantExecs: 2},
+		{name: "ip log insert", errIndex: 2, want: "iplog failed", wantExecs: 3},
+		{name: "planet insert", errIndex: 3, want: "planet insert failed", wantExecs: 4},
+		{name: "home planet update", errIndex: 4, want: "home update failed", wantExecs: 5},
+		{name: "timelimit var", errIndex: 5, want: "timelimit failed", wantExecs: 6},
+		{name: "password var", errIndex: 6, want: "password var failed", wantExecs: 7},
+		{name: "queue insert", errIndex: 7, want: "queue insert failed", wantExecs: 8},
+		{name: "rank recalc", errIndex: 8, want: "rank failed", wantExecs: 9},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			execErrs := make([]error, tc.errIndex+1)
+			execErrs[tc.errIndex] = errors.New(tc.want)
+			runner := &fakeGalaxyRunner{
+				fakeQueryer: fakeQueryer{results: baseResults()},
+				execResults: baseExecResults,
+				execErrs:    execErrs,
+			}
+			repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+			repository.now = func() time.Time { return time.Unix(1700000000, 0) }
+			repository.botPassword = func() (string, error) { return "botpass", nil }
+
+			_, err := mutate(repository)
+
+			if err == nil || !strings.Contains(err.Error(), tc.want) || len(runner.execCalls) != tc.wantExecs {
+				t.Fatalf("expected %q with %d execs, err=%v execs=%+v", tc.want, tc.wantExecs, err, runner.execCalls)
+			}
+		})
+	}
+}
+
 func TestAdminRepositoryMutatesBotStop(t *testing.T) {
 	runner := &fakeGalaxyRunner{}
 	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
@@ -809,7 +1179,7 @@ func TestAdminRepositoryMutatesBotStop(t *testing.T) {
 		TargetIDs: []int{77, 0, -1, 88},
 	})
 
-	if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved {
+	if err != nil || issue == nil || issue.Code != domaingame.AdminIssueBotStopped {
 		t.Fatalf("unexpected bot stop issue=%+v err=%v", issue, err)
 	}
 	if len(runner.execCalls) != 2 || !strings.Contains(runner.execCalls[0].sql, "DELETE FROM `ogame_queue` WHERE type = ? AND owner_id = ?") ||

@@ -46,6 +46,7 @@ type gameAdminMutationRequest struct {
 	IngameDays   int            `json:"ingameDays"`
 	PeriodicDays int            `json:"periodicDays"`
 	ModName      string         `json:"modName"`
+	Name         string         `json:"name"`
 }
 
 type gameAdminSummary struct {
@@ -532,6 +533,7 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		IngameDays:      request.IngameDays,
 		PeriodicDays:    request.PeriodicDays,
 		ModName:         request.ModName,
+		Name:            request.Name,
 	})
 	if err != nil {
 		logGameAdminError(a.deps.Logger, r, "game admin mutation failed", err)

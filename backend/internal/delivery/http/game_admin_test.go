@@ -116,6 +116,140 @@ func TestGameAdminHandlerMutatesBots(t *testing.T) {
 		len(usecase.mutation.TargetIDs) != 1 || usecase.mutation.TargetIDs[0] != 77 {
 		t.Fatalf("unexpected bots mutation: status=%d command=%+v body=%s", response.Code, usecase.mutation, response.Body.String())
 	}
+
+	usecase = &fakeGameAdminUseCase{result: appgame.AdminResult{
+		Authenticated: true,
+		Admin: domaingame.NewAdmin(
+			domaingame.Overview{Commander: "legor", CurrentPlanet: domaingame.PlanetOverview{ID: 99}},
+			domaingame.AdminViewer{PlayerID: 42, Name: "legor", Level: domaingame.AdminLevelAdmin},
+			"Bots",
+		),
+		ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueBotAdded),
+	}}
+	request = httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=99&mode=Bots", strings.NewReader(`{"action":"add","name":"Bot Alpha"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+
+	app{deps: Dependencies{GameAdmin: usecase}}.handleGameAdmin(response, request)
+
+	if response.Code != http.StatusOK || usecase.mutation.Mode != "Bots" || usecase.mutation.Action != "add" || usecase.mutation.Name != "Bot Alpha" {
+		t.Fatalf("unexpected bots add mutation: status=%d command=%+v body=%s", response.Code, usecase.mutation, response.Body.String())
+	}
+}
+
+func TestLegacyAdminBotsPostMutatesAndRenders(t *testing.T) {
+	admin := domaingame.NewAdmin(
+		domaingame.Overview{Commander: "legor", CurrentPlanet: domaingame.PlanetOverview{ID: 99}},
+		domaingame.AdminViewer{PlayerID: 42, Name: "legor", Level: domaingame.AdminLevelAdmin},
+		"Bots",
+	)
+	admin.BotRows = []domaingame.AdminBotRow{{
+		PlayerID: 77,
+		Name:     "Bot Alpha",
+		HomePlanet: &domaingame.AdminUserPlanet{
+			ID:   909,
+			Name: "Homeplanet",
+			Coordinates: domaingame.Coordinates{
+				Galaxy:   1,
+				System:   2,
+				Position: 6,
+			},
+		},
+	}}
+	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{Authenticated: true, Admin: admin, ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueBotAdded)}}
+	request := httptest.NewRequest(http.MethodPost, "/game/index.php?page=admin&session=pub+id&cp=99&mode=Bots", strings.NewReader("name=Bot+Alpha"))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+
+	New(Dependencies{GameAdmin: usecase}).ServeHTTP(response, request)
+
+	body := response.Body.String()
+	if response.Code != http.StatusOK || usecase.mutation.Mode != "Bots" || usecase.mutation.Action != "add" ||
+		usecase.mutation.Name != "Bot Alpha" || usecase.mutation.PlanetID != 99 ||
+		!strings.Contains(body, "Bot has been successfully added.") || !strings.Contains(body, "Bot Alpha") || !strings.Contains(body, "1:2:6") {
+		t.Fatalf("unexpected legacy bots post: status=%d command=%+v body=%s", response.Code, usecase.mutation, body)
+	}
+}
+
+func TestLegacyAdminBotsPostGuards(t *testing.T) {
+	tests := []struct {
+		name        string
+		handler     http.Handler
+		path        string
+		body        string
+		contentType string
+		wantCode    int
+		wantBody    string
+	}{
+		{
+			name:     "missing dependency",
+			handler:  New(Dependencies{}),
+			path:     "/game/index.php?page=admin&session=pub&mode=Bots",
+			body:     "name=Bot",
+			wantCode: http.StatusServiceUnavailable,
+			wantBody: "game admin unavailable",
+		},
+		{
+			name:        "invalid form",
+			handler:     New(Dependencies{GameAdmin: &fakeGameAdminUseCase{}}),
+			path:        "/game/index.php?page=admin&session=pub&mode=Bots",
+			body:        "%zz",
+			contentType: "application/x-www-form-urlencoded",
+			wantCode:    http.StatusBadRequest,
+			wantBody:    "invalid admin bots request",
+		},
+		{
+			name:     "invalid cp",
+			handler:  New(Dependencies{GameAdmin: &fakeGameAdminUseCase{}}),
+			path:     "/game/index.php?page=admin&session=pub&cp=bad&mode=Bots",
+			body:     "name=Bot",
+			wantCode: http.StatusBadRequest,
+			wantBody: "invalid selected planet",
+		},
+		{
+			name:     "usecase error",
+			handler:  New(Dependencies{GameAdmin: &fakeGameAdminUseCase{err: errors.New("repo down")}}),
+			path:     "/game/index.php?page=admin&session=pub&mode=Bots",
+			body:     "name=Bot",
+			wantCode: http.StatusServiceUnavailable,
+			wantBody: "game admin unavailable",
+		},
+		{
+			name:     "unauthenticated",
+			handler:  New(Dependencies{GameAdmin: &fakeGameAdminUseCase{result: appgame.AdminResult{Authenticated: false}}}),
+			path:     "/game/index.php?page=admin&session=pub&mode=Bots",
+			body:     "name=Bot",
+			wantCode: http.StatusForbidden,
+			wantBody: "unauthenticated",
+		},
+		{
+			name:     "access denied",
+			handler:  New(Dependencies{GameAdmin: &fakeGameAdminUseCase{result: appgame.AdminResult{Authenticated: true, ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueAccessDenied)}}}),
+			path:     "/game/index.php?page=admin&session=pub&mode=Bots",
+			body:     "name=Bot",
+			wantCode: http.StatusForbidden,
+			wantBody: "Access denied",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
+			if tt.contentType != "" {
+				request.Header.Set("Content-Type", tt.contentType)
+			}
+			response := httptest.NewRecorder()
+
+			tt.handler.ServeHTTP(response, request)
+
+			if response.Code != tt.wantCode || !strings.Contains(response.Body.String(), tt.wantBody) {
+				t.Fatalf("unexpected guard response: status=%d body=%q", response.Code, response.Body.String())
+			}
+		})
+	}
+
+	if body := legacyAdminBotsHTML("pub", nil, nil); !strings.Contains(body, "No bots found") || !strings.Contains(body, "Add bot:") {
+		t.Fatalf("unexpected empty legacy bots html: %s", body)
+	}
 }
 
 func TestLegacyAdminModsGetMutatesAndRedirects(t *testing.T) {

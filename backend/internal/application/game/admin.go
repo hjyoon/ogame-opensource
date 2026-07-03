@@ -53,6 +53,7 @@ type AdminCommand struct {
 type AdminMutationQuery struct {
 	PlayerID     int
 	PlanetID     int
+	RemoteAddr   string
 	Mode         string
 	Action       string
 	TaskID       int
@@ -76,6 +77,7 @@ type AdminMutationQuery struct {
 	IngameDays   int
 	PeriodicDays int
 	ModName      string
+	Name         string
 }
 
 type AdminMutationCommand struct {
@@ -115,6 +117,7 @@ type AdminMutationCommand struct {
 	IngameDays      int
 	PeriodicDays    int
 	ModName         string
+	Name            string
 }
 
 type AdminBotEditMutationQuery struct {
@@ -242,6 +245,7 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 	issue, err := s.repository.MutateAdmin(ctx, AdminMutationQuery{
 		PlayerID:     session.Session.PlayerID,
 		PlanetID:     command.PlanetID,
+		RemoteAddr:   command.RemoteAddr,
 		Mode:         admin.Mode,
 		Action:       command.Action,
 		TaskID:       command.TaskID,
@@ -265,6 +269,7 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		IngameDays:   command.IngameDays,
 		PeriodicDays: command.PeriodicDays,
 		ModName:      command.ModName,
+		Name:         command.Name,
 	})
 	if err != nil {
 		return AdminResult{}, err

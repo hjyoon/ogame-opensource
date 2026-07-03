@@ -103,6 +103,8 @@ func TestAdminServiceMutatesAdminAndRefreshes(t *testing.T) {
 		InactiveDays:    7,
 		IngameDays:      3,
 		PeriodicDays:    14,
+		ModName:         "GalaxyTool",
+		Name:            "Bot Alpha",
 	})
 
 	if err != nil {
@@ -117,7 +119,8 @@ func TestAdminServiceMutatesAdminAndRefreshes(t *testing.T) {
 		repository.mutation.Amount != 5000 || repository.mutation.ItemID != 55 ||
 		repository.mutation.DayMonth != "31.12" || repository.mutation.HourMinute != "23:59" ||
 		repository.mutation.InactiveDays != 7 || repository.mutation.IngameDays != 3 ||
-		repository.mutation.PeriodicDays != 14 ||
+		repository.mutation.PeriodicDays != 14 || repository.mutation.RemoteAddr != "203.0.113.10" ||
+		repository.mutation.ModName != "GalaxyTool" || repository.mutation.Name != "Bot Alpha" ||
 		repository.query.Mode != "Bans" {
 		t.Fatalf("unexpected result=%+v mutation=%+v query=%+v", result, repository.mutation, repository.query)
 	}
