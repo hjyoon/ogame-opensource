@@ -93,6 +93,27 @@ func TestAdminRepositoryReadsModManifests(t *testing.T) {
 	}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "mods", "AlphaMod", "main.php"), []byte("<?php"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "mods", "AlphaMod", "pages"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "mods", "AlphaMod", "pages", "alpha.php"), []byte("<?php"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "mods", "AlphaMod", "pages", ".htaccess"), []byte("deny from all"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "mods", "AlphaMod", "pages_admin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "mods", "AlphaMod", "pages_admin", "admin_alpha.php"), []byte("<?php"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "mods", "AlphaMod", "pages_admin", "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{"ZedMod;MissingMod"})},
@@ -107,6 +128,12 @@ func TestAdminRepositoryReadsModManifests(t *testing.T) {
 	if len(admin.ModRows) != 2 || admin.ModRows[0].Folder != "ZedMod" || !admin.ModRows[0].Installed ||
 		admin.ModRows[1].Folder != "AlphaMod" || admin.ModRows[1].Installed {
 		t.Fatalf("unexpected mod rows: %+v", admin.ModRows)
+	}
+	if got := strings.Join(admin.ModRows[1].RuntimeHooks, ","); got != "main.php,pages/alpha.php,pages_admin/admin_alpha.php" {
+		t.Fatalf("expected AlphaMod PHP runtime hooks, got %q", got)
+	}
+	if admin.ModRows[1].RuntimePolicy != domaingame.AdminModRuntimePolicyUnsupportedPHP {
+		t.Fatalf("expected unsupported PHP runtime policy, got %q", admin.ModRows[1].RuntimePolicy)
 	}
 	if len(runner.execCalls) != 1 || !strings.Contains(runner.execCalls[0].sql, "UPDATE `ogame_uni` SET modlist = ?") || runner.execCalls[0].args[0] != "ZedMod" {
 		t.Fatalf("expected stale modlist healing, execs=%+v", runner.execCalls)
@@ -136,6 +163,9 @@ func TestAdminRepositoryReadsModManifests(t *testing.T) {
 	rows, err = NewAdminRepositoryWithQueryer(nil, "ogame_").WithLegacyGameDir(noQueryRoot).loadAdminMods(context.Background())
 	if err != nil || len(rows) != 1 || rows[0].Folder != "SoloMod" || rows[0].Installed {
 		t.Fatalf("expected available mod without installed state, rows=%+v err=%v", rows, err)
+	}
+	if rows[0].RuntimePolicy != domaingame.AdminModRuntimePolicyNoHooks {
+		t.Fatalf("expected no-hook runtime policy, got %q", rows[0].RuntimePolicy)
 	}
 
 	readErrRoot := t.TempDir()
@@ -169,6 +199,46 @@ func TestAdminRepositoryReadsModManifests(t *testing.T) {
 	}
 	if _, err := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").WithLegacyGameDir(badRoot).loadAdminMods(context.Background()); err == nil {
 		t.Fatal("expected invalid manifest JSON to fail")
+	}
+}
+
+func TestAdminRepositoryModRuntimeHookEdges(t *testing.T) {
+	root := t.TempDir()
+
+	noHookDir := filepath.Join(root, "NoHooks")
+	if err := os.MkdirAll(noHookDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hooks, err := loadAdminModRuntimeHooks(noHookDir)
+	if err != nil || len(hooks) != 0 {
+		t.Fatalf("expected no runtime hooks, hooks=%+v err=%v", hooks, err)
+	}
+
+	mainDir := filepath.Join(root, "MainDir")
+	if err := os.MkdirAll(filepath.Join(mainDir, "main.php"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hooks, err = loadAdminModRuntimeHooks(mainDir)
+	if err != nil || len(hooks) != 0 {
+		t.Fatalf("directory main.php should not be a runtime hook, hooks=%+v err=%v", hooks, err)
+	}
+
+	brokenPagesDir := filepath.Join(root, "BrokenPages")
+	if err := os.MkdirAll(brokenPagesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(brokenPagesDir, "pages"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadAdminModRuntimeHooks(brokenPagesDir); err == nil {
+		t.Fatal("expected pages path file to fail")
+	}
+
+	if _, err := regularFileExists(string([]byte{0})); err == nil {
+		t.Fatal("expected invalid runtime hook path to fail")
+	}
+	if _, err := loadAdminModRuntimeHooks(string([]byte{0})); err == nil {
+		t.Fatal("expected invalid mod runtime hook path to fail")
 	}
 }
 

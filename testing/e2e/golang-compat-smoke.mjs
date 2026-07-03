@@ -1021,9 +1021,9 @@ try {
       check(!feedFixtureReady || !unsafeFeedMarkup.test(feedItem.body), "feed item strips unsafe raw markup"),
       check(!feedFixtureReady || feedForeignItem?.status === 200, "foreign feed item request returns HTTP 200", { status: feedForeignItem?.status }),
       check(!feedFixtureReady || !feedForeignItem.body.includes(String(feedFixture.foreign_secret)), "foreign feed item does not leak another user's message"),
-      check(!feedFixtureReady || feedBadID?.body.includes("Error validating request parameters: feedid"), "invalid feedid returns legacy validation text", { body: feedBadID?.body }),
+      check(!feedFixtureReady || feedBadID?.body.includes("Error validating request parameters. Too smart users will be sent to the admin"), "invalid feedid returns legacy validation text", { body: feedBadID?.body }),
       check(!feedFixtureReady || !feedBadID.body.includes(String(feedFixture.owner_secret)), "invalid feedid does not leak owner feed"),
-      check(!feedFixtureReady || feedBadMID?.body.includes("Error validating request parameters: mid"), "invalid message id returns legacy validation text", { body: feedBadMID?.body }),
+      check(!feedFixtureReady || feedBadMID?.body.includes("Error validating request parameters. Too smart users will be sent to the admin"), "invalid message id returns legacy validation text", { body: feedBadMID?.body }),
       check(feedMissingID.body === "No feed specified", "missing feed id returns legacy text", { body: feedMissingID.body })
     ]
   }));
@@ -9177,7 +9177,12 @@ try {
         check(item.body.authenticated === true, `admin ${item.mode} tool request authenticates`, item.body),
         check(item.body.admin?.mode === item.mode, `admin ${item.mode} tool request resolves legacy mode`, item.body.admin ?? {}),
         check(item.body.actionIssue === undefined, `admin ${item.mode} tool request is not denied`, item.body.actionIssue ?? {})
-      ])
+      ]),
+      check((adminToolModeResponses.find((item) => item.mode === "Mods")?.body.admin?.modRows ?? []).some((mod) =>
+        mod.runtimePolicy === "php_runtime_hooks_unsupported_go_native_adapter_required" &&
+        Array.isArray(mod.runtimeHooks) &&
+        mod.runtimeHooks.includes("main.php")
+      ), "admin Mods API marks unsupported PHP runtime hooks")
     ]
   }));
 
@@ -10013,6 +10018,7 @@ try {
       check(js.body.includes("legacy-admin-raksim-table"), "React bundle contains legacy game admin missile simulator layout"),
       check(js.body.includes("legacy-admin-loca-table"), "React bundle contains legacy game admin localization layout"),
       check(js.body.includes("legacy-admin-mods-table"), "React bundle contains legacy game admin mods layout"),
+      check(js.body.includes("legacy-admin-mod-runtime-policy") && js.body.includes("php_runtime_hooks_unsupported_go_native_adapter_required"), "React bundle marks unsupported PHP mod runtime hooks"),
       check(js.body.includes("legacy-buddy-table"), "React bundle contains legacy game buddy layout"),
       check(js.body.includes("legacy-research-table"), "React bundle contains legacy game research layout"),
       check(js.body.includes("legacy-shipyard-table"), "React bundle contains legacy game shipyard layout"),
@@ -10115,10 +10121,10 @@ try {
       check(hasHeader(postLegacyRedirect, "allow", "GET, HEAD"), "legacy redirect method rejection returns Allow header"),
       check(postLegacyPic.status === 405, "POST legacy image proxy endpoint is rejected", { status: postLegacyPic.status }),
       check(hasHeader(postLegacyPic, "allow", "GET, HEAD"), "legacy image proxy method rejection returns Allow header"),
-      check(postFeedShow.status === 405, "POST legacy feed endpoint is rejected", { status: postFeedShow.status }),
-      check(hasHeader(postFeedShow, "allow", "GET, HEAD"), "legacy feed method rejection returns Allow header"),
-      check(postFeedItem.status === 405, "POST legacy feed item endpoint is rejected", { status: postFeedItem.status }),
-      check(hasHeader(postFeedItem, "allow", "GET, HEAD"), "legacy feed item method rejection returns Allow header"),
+      check(postFeedShow.status === 200, "POST legacy feed endpoint is accepted like PHP REQUEST", { status: postFeedShow.status }),
+      check(!hasHeader(postFeedShow, "allow", "GET, HEAD"), "POST legacy feed endpoint does not emit method rejection Allow header"),
+      check(postFeedItem.status === 200, "POST legacy feed item endpoint is accepted like PHP REQUEST", { status: postFeedItem.status }),
+      check(!hasHeader(postFeedItem, "allow", "GET, HEAD"), "POST legacy feed item endpoint does not emit method rejection Allow header"),
       check(postGameSession.status === 405, "POST game session endpoint is rejected", { status: postGameSession.status }),
       check(hasHeader(postGameSession, "allow", "GET, HEAD"), "game session method rejection returns Allow header"),
       check(putGameOverview.status === 405, "PUT game overview endpoint is rejected", { status: putGameOverview.status }),

@@ -6309,6 +6309,8 @@ type AdminModInfo = {
   author: string;
   description: string;
   website: string;
+  runtimeHooks?: string[];
+  runtimePolicy?: string;
   installed?: boolean;
   active?: boolean;
 };
@@ -6320,7 +6322,9 @@ const adminAvailableMods: AdminModInfo[] = [
     version: "1.0.0",
     author: "ogamespec",
     description: "A simple modification to demonstrate the capabilities",
-    website: "https://github.com/ogamespec/ogame-opensource"
+    website: "https://github.com/ogamespec/ogame-opensource",
+    runtimeHooks: ["main.php", "pages/tipoftheday.php"],
+    runtimePolicy: "php_runtime_hooks_unsupported_go_native_adapter_required"
   },
   {
     folder: "DeepSpaceHorror",
@@ -6329,7 +6333,9 @@ const adminAvailableMods: AdminModInfo[] = [
     author: "ogamespec",
     description:
       "Ancient cosmic horrors stir from the abyss, roaming the galaxy and leaving behind only fleet wreckage and bountiful rewards for the bold.",
-    website: "https://github.com/ogamespec/ogame-opensource"
+    website: "https://github.com/ogamespec/ogame-opensource",
+    runtimeHooks: ["main.php"],
+    runtimePolicy: "php_runtime_hooks_unsupported_go_native_adapter_required"
   },
   {
     folder: "GalaxyTool",
@@ -6337,7 +6343,9 @@ const adminAvailableMods: AdminModInfo[] = [
     version: "1.0.0",
     author: "ogamespec",
     description: "Integrated Galaxytool",
-    website: "https://github.com/ogamespec/ogame-opensource"
+    website: "https://github.com/ogamespec/ogame-opensource",
+    runtimeHooks: ["main.php", "pages/galaxytool.php", "pages_admin/admin_galaxytool.php"],
+    runtimePolicy: "php_runtime_hooks_unsupported_go_native_adapter_required"
   },
   {
     folder: "SpaceStorm",
@@ -6346,7 +6354,9 @@ const adminAvailableMods: AdminModInfo[] = [
     author: "ogamespec",
     description:
       "As a global event, the Space Storm can temporarily change the game mechanics themselves, creating unique tactical situations.",
-    website: "https://github.com/ogamespec/ogame-opensource"
+    website: "https://github.com/ogamespec/ogame-opensource",
+    runtimeHooks: ["main.php"],
+    runtimePolicy: "php_runtime_hooks_unsupported_go_native_adapter_required"
   }
 ];
 
@@ -6406,9 +6416,13 @@ function AdminModPanel({
   const statusClass = active ? "" : canInstall ? "status-inactive" : "status-installed";
   const statusText = active ? "ADM_MODS_STATE_ACTIVE" : canInstall ? "ADM_MODS_STATE_AVAILABLE" : "ADM_MODS_STATE_INSTALLED";
   const showInfo = active || canInstall;
+  const runtimeHooks = mod.runtimeHooks ?? [];
+  const runtimePolicy =
+    mod.runtimePolicy ?? (runtimeHooks.length > 0 ? "php_runtime_hooks_unsupported_go_native_adapter_required" : "no_php_runtime_hooks_detected");
   return (
-    <div className="mod-item">
+    <div className="mod-item" data-runtime-hooks={runtimeHooks.join(";")} data-runtime-policy={runtimePolicy}>
       <span className={`status-indicator ${statusClass}`}>{statusText}</span>
+      <span className="legacy-admin-mod-runtime-policy" data-hooks={runtimeHooks.join(";")} data-policy={runtimePolicy} hidden />
       <img alt={mod.name} className="mod-background" src={`/public-assets/game/mods/${mod.folder}/img/bg.png`} />
       <div className="mod-content">
         <div className="mod-title">{mod.name}</div>

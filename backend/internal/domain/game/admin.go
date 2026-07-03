@@ -374,15 +374,22 @@ type AdminBotRow struct {
 }
 
 type AdminModInfo struct {
-	Folder      string
-	Name        string
-	Version     string
-	Author      string
-	Description string
-	Website     string
-	Installed   bool
-	Active      bool
+	Folder        string
+	Name          string
+	Version       string
+	Author        string
+	Description   string
+	Website       string
+	RuntimeHooks  []string
+	RuntimePolicy string
+	Installed     bool
+	Active        bool
 }
+
+const (
+	AdminModRuntimePolicyNoHooks        = "no_php_runtime_hooks_detected"
+	AdminModRuntimePolicyUnsupportedPHP = "php_runtime_hooks_unsupported_go_native_adapter_required"
+)
 
 type AdminLocalization struct {
 	Languages []string

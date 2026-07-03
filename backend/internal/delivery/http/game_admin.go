@@ -364,14 +364,16 @@ type gameAdminBotRow struct {
 }
 
 type gameAdminModInfo struct {
-	Folder      string `json:"folder"`
-	Name        string `json:"name"`
-	Version     string `json:"version"`
-	Author      string `json:"author"`
-	Description string `json:"description"`
-	Website     string `json:"website"`
-	Installed   bool   `json:"installed"`
-	Active      bool   `json:"active"`
+	Folder        string   `json:"folder"`
+	Name          string   `json:"name"`
+	Version       string   `json:"version"`
+	Author        string   `json:"author"`
+	Description   string   `json:"description"`
+	Website       string   `json:"website"`
+	RuntimeHooks  []string `json:"runtimeHooks,omitempty"`
+	RuntimePolicy string   `json:"runtimePolicy,omitempty"`
+	Installed     bool     `json:"installed"`
+	Active        bool     `json:"active"`
 }
 
 type gameAdminLocalization struct {
@@ -827,14 +829,16 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 	modRows := make([]gameAdminModInfo, 0, len(admin.ModRows))
 	for _, row := range admin.ModRows {
 		modRows = append(modRows, gameAdminModInfo{
-			Folder:      row.Folder,
-			Name:        row.Name,
-			Version:     row.Version,
-			Author:      row.Author,
-			Description: row.Description,
-			Website:     row.Website,
-			Installed:   row.Installed,
-			Active:      row.Active,
+			Folder:        row.Folder,
+			Name:          row.Name,
+			Version:       row.Version,
+			Author:        row.Author,
+			Description:   row.Description,
+			Website:       row.Website,
+			RuntimeHooks:  row.RuntimeHooks,
+			RuntimePolicy: row.RuntimePolicy,
+			Installed:     row.Installed,
+			Active:        row.Active,
 		})
 	}
 	localization := toGameAdminLocalization(admin.Localization)

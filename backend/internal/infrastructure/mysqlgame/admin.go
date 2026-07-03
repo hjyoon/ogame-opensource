@@ -191,7 +191,8 @@ func (r AdminRepository) loadAdminMods(ctx context.Context) ([]domaingame.AdminM
 		if !entry.IsDir() {
 			continue
 		}
-		manifestPath := filepath.Join(modsDir, entry.Name(), "manifest.json")
+		modDir := filepath.Join(modsDir, entry.Name())
+		manifestPath := filepath.Join(modDir, "manifest.json")
 		data, err := os.ReadFile(manifestPath)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -203,13 +204,23 @@ func (r AdminRepository) loadAdminMods(ctx context.Context) ([]domaingame.AdminM
 		if err := json.Unmarshal(data, &manifest); err != nil {
 			return nil, err
 		}
+		runtimeHooks, err := loadAdminModRuntimeHooks(modDir)
+		if err != nil {
+			return nil, err
+		}
+		runtimePolicy := domaingame.AdminModRuntimePolicyNoHooks
+		if len(runtimeHooks) > 0 {
+			runtimePolicy = domaingame.AdminModRuntimePolicyUnsupportedPHP
+		}
 		mods = append(mods, domaingame.AdminModInfo{
-			Folder:      entry.Name(),
-			Name:        strings.TrimSpace(manifest.Name),
-			Version:     strings.TrimSpace(manifest.Version),
-			Author:      strings.TrimSpace(manifest.Author),
-			Description: strings.TrimSpace(manifest.Description),
-			Website:     strings.TrimSpace(manifest.Website),
+			Folder:        entry.Name(),
+			Name:          strings.TrimSpace(manifest.Name),
+			Version:       strings.TrimSpace(manifest.Version),
+			Author:        strings.TrimSpace(manifest.Author),
+			Description:   strings.TrimSpace(manifest.Description),
+			Website:       strings.TrimSpace(manifest.Website),
+			RuntimeHooks:  runtimeHooks,
+			RuntimePolicy: runtimePolicy,
 		})
 	}
 	installed := map[string]int{}
@@ -263,6 +274,47 @@ func (r AdminRepository) loadAdminMods(ctx context.Context) ([]domaingame.AdminM
 		return mods[i].Folder < mods[j].Folder
 	})
 	return mods, nil
+}
+
+func loadAdminModRuntimeHooks(modDir string) ([]string, error) {
+	hooks := make([]string, 0, 4)
+	if exists, err := regularFileExists(filepath.Join(modDir, "main.php")); err != nil {
+		return nil, err
+	} else if exists {
+		hooks = append(hooks, "main.php")
+	}
+	for _, relDir := range []string{"pages", "pages_admin"} {
+		entries, err := os.ReadDir(filepath.Join(modDir, relDir))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".php") {
+				continue
+			}
+			names = append(names, entry.Name())
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			hooks = append(hooks, filepath.ToSlash(filepath.Join(relDir, name)))
+		}
+	}
+	return hooks, nil
+}
+
+func regularFileExists(path string) (bool, error) {
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return !info.IsDir(), nil
 }
 
 func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
