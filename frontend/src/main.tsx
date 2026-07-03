@@ -16,6 +16,7 @@ import {
   type GameGalaxyInstantDispatch,
   type GameGalaxyMissileLaunch,
   type GameGalaxyStatus,
+  type GameJumpGateStatus,
   type GameLogoutStatus,
   type GameMerchantStatus,
   type GameMerchantTradeValues,
@@ -323,6 +324,9 @@ function App() {
   const [gameReportError, setGameReportError] = useState<string | null>(null);
   const [gamePhalanx, setGamePhalanx] = useState<GamePhalanxStatus | null>(null);
   const [gamePhalanxError, setGamePhalanxError] = useState<string | null>(null);
+  const [gameJumpGate, setGameJumpGate] = useState<GameJumpGateStatus | null>(null);
+  const [gameJumpGateError, setGameJumpGateError] = useState<string | null>(null);
+  const [gameJumpGatePending, setGameJumpGatePending] = useState(false);
   const [gameOptions, setGameOptions] = useState<GameOptionsStatus | null>(null);
   const [gameOptionsError, setGameOptionsError] = useState<string | null>(null);
   const [gameOptionsPending, setGameOptionsPending] = useState(false);
@@ -1718,6 +1722,74 @@ function App() {
 
   useEffect(() => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "jumpGate" || publicSession === "") {
+      setGameJumpGate(null);
+      setGameJumpGateError(null);
+      setGameJumpGatePending(false);
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const jumpGateRequest = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      jumpGateRequest.set("cp", selectedPlanet);
+    }
+    fetch(`/api/game/jump-gate?${jumpGateRequest.toString()}`, { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<GameJumpGateStatus>)
+      .then((payload) => {
+        setGameJumpGate(payload);
+        setGameJumpGateError(null);
+      })
+      .catch((err: unknown) => setGameJumpGateError(err instanceof Error ? err.message : String(err)));
+  }, [gameRoute?.key, search]);
+
+  const submitGameJumpGate = (sourceMoonId: number, targetMoonId: number, ships: Record<string, number>) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (!publicSession) {
+      setGameJumpGateError("Session is missing.");
+      return;
+    }
+    const currentSearch = new URLSearchParams(search);
+    const jumpGateRequest = new URLSearchParams({ session: publicSession });
+    const selectedPlanet = currentSearch.get("cp");
+    if (selectedPlanet) {
+      jumpGateRequest.set("cp", selectedPlanet);
+    }
+    setGameJumpGatePending(true);
+    setGameJumpGateError(null);
+    fetch(`/api/game/jump-gate?${jumpGateRequest.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ sourceMoonId, targetMoonId, ships })
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameJumpGateStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `jump gate returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("jump gate response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameJumpGate(payload);
+        setGameJumpGateError(null);
+        if (payload.jumpGate?.actionIssue?.code === "moved") {
+          const next = new URLSearchParams(search);
+          next.set("cp", String(targetMoonId));
+          window.history.replaceState({}, "", gameRouteURL("/game/jump-gate", next.toString()));
+          window.dispatchEvent(new PopStateEvent("popstate"));
+        }
+      })
+      .catch((err: unknown) => setGameJumpGateError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameJumpGatePending(false));
+  };
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (gameRoute?.key !== "statistics" || publicSession === "") {
       setGameStatistics(null);
       setGameStatisticsError(null);
@@ -2247,6 +2319,10 @@ function App() {
         reportStatus={gameReport}
         phalanxError={gamePhalanxError}
         phalanxStatus={gamePhalanx}
+        jumpGateError={gameJumpGateError}
+        jumpGatePending={gameJumpGatePending}
+        jumpGateStatus={gameJumpGate}
+        onJumpGateSubmit={submitGameJumpGate}
         researchError={gameResearchError}
         researchPending={gameResearchPending}
         researchStatus={gameResearch}

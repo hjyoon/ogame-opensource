@@ -28,6 +28,10 @@ func (a app) handleLegacyGameIndex(w http.ResponseWriter, r *http.Request) {
 		a.handleLegacyBotEditPost(w, r)
 		return
 	}
+	if r.Method == http.MethodPost && r.URL.Query().Get("page") == "sprungtor" {
+		a.handleLegacyJumpGatePost(w, r)
+		return
+	}
 	w.Header().Set("Allow", "GET, HEAD, POST")
 	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }

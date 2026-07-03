@@ -23,6 +23,7 @@ describe("game route model", () => {
     expect(gameRoutes.map((route) => route.path)).toContain("/game/report");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/merchant");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/officers");
+    expect(gameRoutes.map((route) => route.path)).toContain("/game/jump-gate");
   });
 
   test("normalizes game paths", () => {
@@ -38,6 +39,8 @@ describe("game route model", () => {
     expect(normalizeGamePath("/game/index.php?page=flotten1&session=abc")).toBe("/game/fleet");
     expect(normalizeGamePath("/game/index.php?page=writemessages&messageziel=42&session=abc")).toBe("/game/messages");
     expect(normalizeGamePath("/game/index.php?page=bericht&bericht=11&session=abc")).toBe("/game/report");
+    expect(normalizeGamePath("/game/index.php?page=infos&gid=43&session=abc")).toBe("/game/jump-gate");
+    expect(normalizeGamePath("/game/index.php?page=sprungtor&session=abc")).toBe("/game/jump-gate");
     expect(normalizeGamePath("/game/index.php?page=notizen&session=abc")).toBe("/game/notes");
     expect(normalizeGamePath("/game/index.php?page=options&session=abc")).toBe("/game/options");
     expect(normalizeGamePath("/game/index.php?page=suche&session=abc")).toBe("/game/search");
@@ -73,6 +76,8 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/messages")).toMatchObject({ key: "messages", migrated: true });
     expect(resolveGameRoute("/game/report")).toMatchObject({ key: "report", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=bericht&bericht=11")).toMatchObject({ key: "report", migrated: true });
+    expect(resolveGameRoute("/game/jump-gate")).toMatchObject({ key: "jumpGate", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=infos&gid=43")).toMatchObject({ key: "jumpGate", migrated: true });
   });
 
   test("maps legacy php pages to migrated or pending natural routes", () => {
@@ -104,6 +109,7 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/index.php", "?page=flottenversand_ajax")).toMatchObject({ key: "fleet", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=galaxy_js")).toMatchObject({ key: "galaxy", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=phalanx_events")).toMatchObject({ key: "phalanx", migrated: true });
+    expect(resolveGameRoute("/game/index.php", "?page=sprungtor")).toMatchObject({ key: "jumpGate", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=techtreedetails&gid=1")).toMatchObject({ key: "technology", migrated: true });
     expect(resolveGameRoute("/game/ainfo.php", "?allyid=7")).toMatchObject({ key: "alliance", migrated: true });
     expect(resolveGameRoute("/game/pranger.php")).toMatchObject({ key: "overview", migrated: true });
@@ -117,6 +123,9 @@ describe("game route model", () => {
   test("preserves active session query parameters in menu links", () => {
     expect(gameRouteURL("/game/buildings", "?session=abc&cp=42")).toBe("/game/buildings?session=abc&cp=42");
     expect(gameRouteURL("/game/fleet", "session=abc")).toBe("/game/fleet?session=abc");
+    expect(gameRouteURL("/game/jump-gate", "?session=abc&cp=42&gid=43&page=infos&unused=1")).toBe(
+      "/game/jump-gate?session=abc&cp=42&gid=43"
+    );
     expect(gameRouteURL("/game/buildings", "?session=abc&lgn=1&cp=42")).toBe("/game/buildings?session=abc&cp=42");
     expect(gameRouteURL("/game/overview", "")).toBe("/game/overview");
   });

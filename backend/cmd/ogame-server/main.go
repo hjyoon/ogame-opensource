@@ -83,6 +83,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	gameMessages := gameMessagesService(cfg, logger, gameSessions)
 	gameReport := gameReportService(cfg, logger, gameSessions)
 	gamePhalanx := gamePhalanxService(cfg, logger, gameSessions)
+	gameJumpGate := gameJumpGateService(cfg, logger, gameSessions)
 	gameFeed := gameFeedService(cfg, logger)
 	gameOptions := gameOptionsService(cfg, logger, gameSessions)
 	gamePayment := gamePaymentService(cfg, logger, gameSessions)
@@ -120,6 +121,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		GameMessages:       gameMessages,
 		GameReport:         gameReport,
 		GamePhalanx:        gamePhalanx,
+		GameJumpGate:       gameJumpGate,
 		GameFeed:           gameFeed,
 		GameOptions:        gameOptions,
 		GamePayment:        gamePayment,
@@ -996,6 +998,34 @@ func gamePhalanxService(cfg config.Config, logger *slog.Logger, sessions apppubl
 
 	logger.Info("universe DB game phalanx enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewPhalanxService(sessions, mysqlgame.NewPhalanxRepository(db, cfg.UniDBPrefix))
+}
+
+func gameJumpGateService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.JumpGateService {
+	if !cfg.UniDBEnabled {
+		return appgame.JumpGateService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game jump gate disabled", "error", err)
+		return appgame.JumpGateService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game jump gate disabled", "error", err)
+		_ = db.Close()
+		return appgame.JumpGateService{}
+	}
+
+	logger.Info("universe DB game jump gate enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
+	return appgame.NewJumpGateService(sessions, mysqlgame.NewJumpGateRepository(db, cfg.UniDBPrefix))
 }
 
 func gameFeedService(cfg config.Config, logger *slog.Logger) appgame.FeedService {

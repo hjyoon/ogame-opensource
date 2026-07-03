@@ -163,6 +163,11 @@ type GamePhalanxUseCase interface {
 	GetPhalanx(context.Context, appgame.PhalanxCommand) (appgame.PhalanxResult, error)
 }
 
+type GameJumpGateUseCase interface {
+	GetJumpGate(context.Context, appgame.JumpGateCommand) (appgame.JumpGateResult, error)
+	Jump(context.Context, appgame.JumpGateMutationCommand) (appgame.JumpGateResult, error)
+}
+
 type GameOptionsUseCase interface {
 	GetOptions(context.Context, appgame.OptionsCommand) (appgame.OptionsResult, error)
 	UpdateOptions(context.Context, appgame.OptionsUpdateCommand) (appgame.OptionsResult, error)
@@ -206,6 +211,7 @@ type Dependencies struct {
 	GameMessages       GameMessagesUseCase
 	GameReport         GameReportUseCase
 	GamePhalanx        GamePhalanxUseCase
+	GameJumpGate       GameJumpGateUseCase
 	GameFeed           GameFeedUseCase
 	GameOptions        GameOptionsUseCase
 	GamePayment        GamePaymentUseCase
@@ -266,6 +272,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/game/messages", a.handleGameMessages)
 	mux.HandleFunc("/api/game/report", getOnly(a.handleGameReport))
 	mux.HandleFunc("/api/game/phalanx", getOnly(a.handleGamePhalanx))
+	mux.HandleFunc("/api/game/jump-gate", a.handleGameJumpGate)
 	mux.HandleFunc("/api/game/options", a.handleGameOptions)
 	mux.HandleFunc("/api/game/payment", a.handleGamePayment)
 	mux.HandleFunc("/game/feed/show.php", getOnly(a.handleGameFeedShow))

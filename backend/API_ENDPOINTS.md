@@ -54,6 +54,7 @@ Source of truth: `backend/internal/delivery/http/server.go`. Keep this file unde
 | `GET/POST` | `/api/game/messages` | Messages, compose, delete/report |
 | `GET` | `/api/game/report` | Report by `bericht` or `report` |
 | `GET` | `/api/game/phalanx` | Phalanx by `spid`/`targetPlanetId` |
+| `GET/POST` | `/api/game/jump-gate` | Jump Gate screen and ship transfer |
 | `GET/POST` | `/api/game/options` | User/game options |
 | `GET/POST` | `/api/game/payment` | Coupon payment |
 
@@ -63,7 +64,7 @@ Source of truth: `backend/internal/delivery/http/server.go`. Keep this file unde
 | --- | --- | --- |
 | `GET/POST` | `/game/reg/newredirect.php` | Legacy registration |
 | `GET` | `/game/validate.php`, `/activation` | Account activation |
-| `GET/HEAD/POST` | `/game/index.php` | Legacy game entry and BotEdit |
+| `GET/HEAD/POST` | `/game/index.php` | Legacy game entry, BotEdit, `sprungtor` |
 | `GET` | `/game/redir.php`, `/game/pic.php` | Legacy redirect/image proxy |
 | any | `/game/cron.php` | Forbidden legacy script |
 | `GET` | `/game/reg/mail.php` | Legacy password recovery form |

@@ -21,6 +21,7 @@ export type GameRouteKey =
   | "messages"
   | "report"
   | "phalanx"
+  | "jumpGate"
   | "notes"
   | "buddy"
   | "options"
@@ -56,6 +57,7 @@ export const gameRoutes: GameRoute[] = [
   { key: "messages", label: "Messages", path: "/game/messages", migrated: true },
   { key: "report", label: "Report", path: "/game/report", migrated: true },
   { key: "phalanx", label: "Sensor Phalanx", path: "/game/phalanx", migrated: true },
+  { key: "jumpGate", label: "Jump Gate", path: "/game/jump-gate", migrated: true },
   { key: "notes", label: "Notes", path: "/game/notes", migrated: true },
   { key: "buddy", label: "Buddylist", path: "/game/buddy", migrated: true },
   { key: "options", label: "Options", path: "/game/options", migrated: true },
@@ -114,6 +116,7 @@ const legacyPageAliases = new Map<string, string>([
   ["bericht", "/game/report"],
   ["phalanx", "/game/phalanx"],
   ["phalanx_events", "/game/phalanx"],
+  ["sprungtor", "/game/jump-gate"],
   ["notes", "/game/notes"],
   ["notizen", "/game/notes"],
   ["buddy", "/game/buddy"],
@@ -148,6 +151,9 @@ export function normalizeGamePath(pathname: string, search = ""): string {
       if (mode === "Verteidigung") {
         return "/game/defense";
       }
+    }
+    if (page === "infos" && params.get("gid") === "43") {
+      return "/game/jump-gate";
     }
     return legacyPageAliases.get(page) ?? "/game/overview";
   }
@@ -198,6 +204,7 @@ const gameRouteQueryKeys = new Map<string, Set<string>>([
   ["/game/messages", new Set(["messageziel", "re", "betreff", "dsp"])],
   ["/game/report", new Set(["bericht"])],
   ["/game/phalanx", new Set(["galaxy", "system", "planet", "planettype", "scanid", "spid"])],
+  ["/game/jump-gate", new Set(["gid", "qm", "zm"])],
   ["/game/notes", new Set(["a", "n"])],
   ["/game/buddy", new Set(["action", "buddy_id"])],
   ["/game/admin", new Set(["mode", "action", "fname", "player_id", "galaxy", "system", "filter", "modname"])]

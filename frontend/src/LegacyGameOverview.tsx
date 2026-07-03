@@ -264,6 +264,12 @@ export type GamePhalanxStatus = {
   phalanx?: GamePhalanx;
 };
 
+export type GameJumpGateStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  jumpGate?: GameJumpGate;
+};
+
 export type GameOptionsStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
@@ -744,6 +750,32 @@ type GamePhalanxPlanet = {
   coordinates: Coordinates;
   phalanxLevel: number;
   deuterium: number;
+};
+
+type GameJumpGate = {
+  commander: string;
+  currentPlanet: GamePlanetOverview;
+  planetSwitcher: GamePlanetSummary[];
+  source: GameJumpGateMoon;
+  targets: GameJumpGateMoon[];
+  ships: GameJumpGateShip[];
+  actionIssue?: { code: string; message: string };
+};
+
+type GameJumpGateMoon = {
+  id: number;
+  ownerId: number;
+  name: string;
+  type: number;
+  coordinates: Coordinates;
+  gateLevel: number;
+  gateUntil: number;
+};
+
+type GameJumpGateShip = {
+  id: number;
+  name: string;
+  count: number;
 };
 
 type GameStatistics = {
@@ -1643,6 +1675,10 @@ type LegacyGameOverviewProps = {
   reportError: string | null;
   phalanxStatus: GamePhalanxStatus | null;
   phalanxError: string | null;
+  jumpGateStatus: GameJumpGateStatus | null;
+  jumpGateError: string | null;
+  jumpGatePending: boolean;
+  onJumpGateSubmit: (sourceMoonID: number, targetMoonID: number, ships: Record<string, number>) => void;
   optionsStatus: GameOptionsStatus | null;
   optionsError: string | null;
   optionsPending: boolean;
@@ -1940,6 +1976,10 @@ export function LegacyGameOverview({
   reportError,
   phalanxStatus,
   phalanxError,
+  jumpGateStatus,
+  jumpGateError,
+  jumpGatePending,
+  onJumpGateSubmit,
   optionsStatus,
   optionsError,
   optionsPending,
@@ -2035,6 +2075,10 @@ export function LegacyGameOverview({
   const phalanxIssue =
     phalanxStatus && !phalanxStatus.authenticated ? phalanxStatus.issues[0]?.message ?? "Session is invalid." : null;
   const phalanxActionIssue = phalanx?.actionIssue;
+  const jumpGate = jumpGateStatus?.authenticated ? jumpGateStatus.jumpGate : undefined;
+  const jumpGateIssue =
+    jumpGateStatus && !jumpGateStatus.authenticated ? jumpGateStatus.issues[0]?.message ?? "Session is invalid." : null;
+  const jumpGateActionIssue = jumpGate?.actionIssue;
   const options = optionsStatus?.authenticated ? optionsStatus.options : undefined;
   const optionsIssue =
     optionsStatus && !optionsStatus.authenticated ? optionsStatus.issues[0]?.message ?? "Session is invalid." : null;
@@ -2288,6 +2332,13 @@ export function LegacyGameOverview({
         {route.key === "technology" && !technologyError && technologyIssue ? (
           <LegacyMessage tone="error" text={technologyIssue} />
         ) : null}
+        {route.key === "jumpGate" && jumpGateError ? <LegacyMessage tone="error" text={jumpGateError} /> : null}
+        {route.key === "jumpGate" && !jumpGateError && jumpGateActionIssue ? (
+          <LegacyMessage tone={jumpGateActionIssue.code === "moved" ? "neutral" : "error"} text={jumpGateActionIssue.message} />
+        ) : null}
+        {route.key === "jumpGate" && !jumpGateError && !jumpGateActionIssue && jumpGateIssue ? (
+          <LegacyMessage tone="error" text={jumpGateIssue} />
+        ) : null}
         {route.key === "statistics" && statisticsError ? <LegacyMessage tone="error" text={statisticsError} /> : null}
         {route.key === "statistics" && !statisticsError && statisticsIssue ? (
           <LegacyMessage tone="error" text={statisticsIssue} />
@@ -2410,6 +2461,12 @@ export function LegacyGameOverview({
           <LegacyMessage tone="neutral" text="Loading technology..." />
         ) : null}
         {technology && route.key === "technology" ? <TechnologyTable onBuildingAction={onBuildingAction} technology={technology} /> : null}
+        {overview && route.key === "jumpGate" && !jumpGate && !jumpGateError && !jumpGateIssue && !jumpGateActionIssue ? (
+          <LegacyMessage tone="neutral" text="Loading jump gate..." />
+        ) : null}
+        {jumpGate && route.key === "jumpGate" ? (
+          <JumpGateTable jumpGate={jumpGate} onSubmit={onJumpGateSubmit} pending={jumpGatePending} />
+        ) : null}
         {overview && route.key === "changelog" ? <ChangelogTable /> : null}
         {overview && route.key === "statistics" && !statistics && !statisticsError && !statisticsIssue ? (
           <LegacyMessage tone="neutral" text="Loading statistics..." />
@@ -2472,6 +2529,7 @@ export function LegacyGameOverview({
         route.key !== "galaxy" &&
         route.key !== "defense" &&
         route.key !== "technology" &&
+        route.key !== "jumpGate" &&
         route.key !== "changelog" &&
         route.key !== "statistics" &&
         route.key !== "search" &&
@@ -11718,6 +11776,112 @@ function PhalanxTable({ phalanx }: { phalanx: GamePhalanx }) {
       </table>
     </>
   );
+}
+
+function JumpGateTable({
+  jumpGate,
+  onSubmit,
+  pending
+}: {
+  jumpGate: GameJumpGate;
+  onSubmit: (sourceMoonID: number, targetMoonID: number, ships: Record<string, number>) => void;
+  pending: boolean;
+}) {
+  const [targetMoonID, setTargetMoonID] = React.useState(() => jumpGate.targets[0]?.id ?? 0);
+  const [ships, setShips] = React.useState<Record<string, number>>({});
+  React.useEffect(() => {
+    setTargetMoonID(jumpGate.targets[0]?.id ?? 0);
+    setShips({});
+  }, [jumpGate.source.id, jumpGate.targets]);
+  const blockingIssue =
+    jumpGate.actionIssue &&
+    jumpGate.actionIssue.code !== "moved" &&
+    (jumpGate.actionIssue.code === "source_moon_missing" ||
+      jumpGate.actionIssue.code === "source_gate_missing" ||
+      jumpGate.actionIssue.code === "foreign_moon" ||
+      jumpGate.actionIssue.code === "cooldown");
+  if (blockingIssue) {
+    return (
+      <center>
+        <LegacyFont color="#FF0000">{jumpGate.actionIssue?.message ?? ""}</LegacyFont>
+      </center>
+    );
+  }
+  const session = overviewSessionSearch().get("session") ?? "";
+  return (
+    <form
+      action={`index.php?page=sprungtor&session=${encodeURIComponent(session)}`}
+      method="post"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit(jumpGate.source.id, targetMoonID, ships);
+      }}
+    >
+      <input name="qm" type="hidden" value={jumpGate.source.id} />
+      <table border={1}>
+        <tbody>
+          <tr>
+            <td>Start moon</td>
+            <td>
+              <a href={overviewGalaxyHref(jumpGate.source.coordinates)}>[{formatCoordinates(jumpGate.source.coordinates)}]</a>
+            </td>
+          </tr>
+          <tr>
+            <td>Target moon</td>
+            <td>
+              <select name="zm" onChange={(event) => setTargetMoonID(parseJumpGateNumber(event.target.value))} value={targetMoonID}>
+                {jumpGate.targets.map((target) => (
+                  <option key={target.id} value={target.id}>
+                    {target.name} [{formatCoordinates(target.coordinates)}]
+                  </option>
+                ))}
+              </select>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <table width={519}>
+        <tbody>
+          <tr>
+            <td className="c" colSpan={2}>
+              Use jump gate: Select spaceships
+            </td>
+          </tr>
+          {jumpGate.ships.map((ship) => (
+            <tr key={ship.id}>
+              <th>
+                <a href={gameRouteURL("/game/technology", `session=${encodeURIComponent(session)}&gid=${ship.id}`)}>{ship.name}</a> (
+                {formatLegacyNumber(ship.count)} available)
+              </th>
+              <th>
+                <input
+                  maxLength={7}
+                  name={`c${ship.id}`}
+                  onChange={(event) =>
+                    setShips((current) => ({ ...current, [String(ship.id)]: parseJumpGateNumber(event.target.value) }))
+                  }
+                  size={7}
+                  tabIndex={1}
+                  type="text"
+                  value={ships[String(ship.id)] ?? 0}
+                />
+              </th>
+            </tr>
+          ))}
+          <tr>
+            <th colSpan={2}>
+              <input disabled={pending} type="submit" value="Execute Jump!" />
+            </th>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  );
+}
+
+function parseJumpGateNumber(value: string): number {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function phalanxHeadingHTML(phalanx: GamePhalanx): string {
