@@ -213,7 +213,7 @@ func (r AdminRepository) loadAdminMods(ctx context.Context) ([]domaingame.AdminM
 		})
 	}
 	installed := map[string]int{}
-	if len(mods) > 0 && r.queryer != nil {
+	if r.queryer != nil {
 		uniTable, err := tableName(r.prefix, "uni")
 		if err != nil {
 			return nil, err
@@ -222,7 +222,25 @@ func (r AdminRepository) loadAdminMods(ctx context.Context) ([]domaingame.AdminM
 		if err != nil {
 			return nil, err
 		}
-		for index, mod := range list {
+		available := make(map[string]bool, len(mods))
+		for _, mod := range mods {
+			available[mod.Folder] = true
+		}
+		cleanList := make([]string, 0, len(list))
+		changed := false
+		for _, mod := range list {
+			if !available[mod] {
+				changed = true
+				continue
+			}
+			cleanList = append(cleanList, mod)
+		}
+		if changed && r.execer != nil {
+			if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET modlist = ?", uniTable), domaingame.JoinAdminModList(cleanList)); err != nil {
+				return nil, err
+			}
+		}
+		for index, mod := range cleanList {
 			installed[mod] = index + 1
 		}
 		for index := range mods {

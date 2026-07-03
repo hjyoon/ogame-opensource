@@ -93,11 +93,11 @@ func TestAdminRepositoryReadsModManifests(t *testing.T) {
 	}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
-		fakeQueryResult{rows: fakeRowsFromValues([]any{"ZedMod"})},
-	)}
-	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_").WithLegacyGameDir(root)
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"ZedMod;MissingMod"})},
+	)}}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_").WithLegacyGameDir(root)
 
 	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "Mods"})
 
@@ -107,6 +107,9 @@ func TestAdminRepositoryReadsModManifests(t *testing.T) {
 	if len(admin.ModRows) != 2 || admin.ModRows[0].Folder != "ZedMod" || !admin.ModRows[0].Installed ||
 		admin.ModRows[1].Folder != "AlphaMod" || admin.ModRows[1].Installed {
 		t.Fatalf("unexpected mod rows: %+v", admin.ModRows)
+	}
+	if len(runner.execCalls) != 1 || !strings.Contains(runner.execCalls[0].sql, "UPDATE `ogame_uni` SET modlist = ?") || runner.execCalls[0].args[0] != "ZedMod" {
+		t.Fatalf("expected stale modlist healing, execs=%+v", runner.execCalls)
 	}
 
 	missingRoot := t.TempDir()

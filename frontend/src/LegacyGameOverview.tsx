@@ -6353,7 +6353,6 @@ const adminAvailableMods: AdminModInfo[] = [
 function AdminModsTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
   const availableMods = admin.modRows && admin.modRows.length > 0 ? admin.modRows : adminAvailableMods;
   const activeMods = availableMods.filter((mod) => mod.active || mod.installed);
-  const inactiveMods = availableMods.filter((mod) => !mod.active && !mod.installed);
   return (
     <>
       <h2 className="legacy-admin-mods-heading">ADM_MODS_HEAD</h2>
@@ -6368,8 +6367,15 @@ function AdminModsTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAct
         </div>
         <div className="mod-column">
           <h3>ADM_MODS_HEAD_AVAILABLE</h3>
-          {inactiveMods.length > 0 ? (
-            inactiveMods.map((mod) => <AdminModPanel key={mod.folder} mod={mod} onAdminAction={onAdminAction} />)
+          {availableMods.length > 0 ? (
+            availableMods.map((mod) => (
+              <AdminModPanel
+                key={`${mod.folder}-available`}
+                canInstall={!mod.active && !mod.installed}
+                mod={mod}
+                onAdminAction={onAdminAction}
+              />
+            ))
           ) : (
             <div className="empty-message">ADM_MODS_NO_AVAILABLE</div>
           )}
@@ -6384,10 +6390,12 @@ function AdminModsTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAct
 
 function AdminModPanel({
   active = false,
+  canInstall = false,
   mod,
   onAdminAction
 }: {
   active?: boolean;
+  canInstall?: boolean;
   mod: AdminModInfo;
   onAdminAction: (action: GameAdminAction) => void;
 }) {
@@ -6395,16 +6403,17 @@ function AdminModPanel({
     event.preventDefault();
     onAdminAction({ action, modName: mod.folder });
   };
+  const statusClass = active ? "" : canInstall ? "status-inactive" : "status-installed";
+  const statusText = active ? "ADM_MODS_STATE_ACTIVE" : canInstall ? "ADM_MODS_STATE_AVAILABLE" : "ADM_MODS_STATE_INSTALLED";
+  const showInfo = active || canInstall;
   return (
     <div className="mod-item">
-      <span className={`status-indicator ${active ? "" : "status-inactive"}`}>
-        {active ? "ADM_MODS_STATE_ACTIVE" : "ADM_MODS_STATE_AVAILABLE"}
-      </span>
+      <span className={`status-indicator ${statusClass}`}>{statusText}</span>
       <img alt={mod.name} className="mod-background" src={`/public-assets/game/mods/${mod.folder}/img/bg.png`} />
       <div className="mod-content">
         <div className="mod-title">{mod.name}</div>
         <div className="mod-description">{mod.description}</div>
-        <div className="mod-info" dangerouslySetInnerHTML={{ __html: adminModInfoHTML(mod) }} />
+        {showInfo ? <div className="mod-info" dangerouslySetInnerHTML={{ __html: adminModInfoHTML(mod) }} /> : null}
         <div className="mod-actions">
           {active ? (
             <>
@@ -6418,10 +6427,12 @@ function AdminModPanel({
                 ADM_MODS_OP_REMOVE
               </a>
             </>
-          ) : (
+          ) : canInstall ? (
             <a className="mod-action-link" href={adminModeModActionHref("Mods", "install", mod.folder)} onClick={onClick("install")}>
               ADM_MODS_OP_INSTALL
             </a>
+          ) : (
+            null
           )}
         </div>
       </div>
