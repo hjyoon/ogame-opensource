@@ -5,7 +5,7 @@ Keep this file under 4KB. This is the conservative product-coverage model for th
 ## Target
 
 - Goal: 90% absolute coverage of legacy PHP functionality.
-- Current estimate: 78%.
+- Current estimate: 79%.
 - QA pass rate inside the current registry may be 100%, but that only proves the inventoried cases.
 
 ## Denominator
@@ -17,11 +17,11 @@ The denominator is the legacy product surface, not file count alone:
 | Public auth/site | 10 | 9 | login, registration, activation, recovery, public pages |
 | Core game screens | 20 | 18 | authenticated route/visual/dynamic parity |
 | Game mechanics | 30 | 26 | economy, queues, fleets, combat, reports, colony, moon, missiles, expedition, jump gate |
-| Admin/ops tools | 15 | 10 | admin pages and core mutations covered; some tools remain shallow |
+| Admin/ops tools | 15 | 11 | admin pages, ban mutations, and pranger list covered; some tools remain shallow |
 | Security/account/social | 10 | 9 | session, IDOR, options, messages, buddy, alliance |
 | Runtime/infra/maintenance | 10 | 7 | cron, feed, backup, direct aliases, localization, performance, install/maintenance edges |
 | Mods/extensibility | 5 | 2 | mod assets plus manifest-backed listing; runtime mod behavior is mostly not migrated |
-| **Total** | **100** | **78** | conservative estimate |
+| **Total** | **100** | **79** | conservative estimate |
 
 ## Evidence Already In QA
 
@@ -31,6 +31,7 @@ The denominator is the legacy product surface, not file count alone:
 - Strict navigation visual exact diff has 0 failures for the seeded public/game/admin inventory.
 - Authenticated dynamic registry covers 55 listed legacy-JS cases.
 - Jump Gate now has Go/Bun API, React route, legacy `sprungtor` POST compatibility, DB mutation tests, and edge validation tests.
+- Pranger/Pillory now has legacy `/game/pranger.php` and `index.php?page=pranger` HTML compatibility, pagination, DB query tests, and handler guard tests.
 
 ## Work To Reach 90%
 

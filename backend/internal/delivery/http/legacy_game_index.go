@@ -25,6 +25,10 @@ func (a app) handleLegacyGameIndex(w http.ResponseWriter, r *http.Request) {
 			a.handleLegacyJumpGateInfoGet(w, r)
 			return
 		}
+		if r.Method == http.MethodGet && r.URL.Query().Get("page") == "pranger" {
+			a.handleLegacyPranger(w, r)
+			return
+		}
 		a.handleFrontend(w, r)
 		return
 	}

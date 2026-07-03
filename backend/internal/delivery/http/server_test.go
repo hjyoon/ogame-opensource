@@ -69,7 +69,7 @@ func TestFrontendServesIndexAndSpaFallback(t *testing.T) {
 
 	server := testServer(config.Config{StaticDir: staticDir, LegacyAssetDir: t.TempDir()})
 
-	for _, target := range []string{"/", "/game/overview", "/game/ainfo.php?allyid=7", "/game/pranger.php", "/game/maintenance.php"} {
+	for _, target := range []string{"/", "/game/overview", "/game/ainfo.php?allyid=7", "/game/maintenance.php"} {
 		req := httptest.NewRequest(http.MethodGet, target, nil)
 		rec := httptest.NewRecorder()
 		server.ServeHTTP(rec, req)

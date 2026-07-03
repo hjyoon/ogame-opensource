@@ -84,12 +84,14 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	gameReport := gameReportService(cfg, logger, gameSessions)
 	gamePhalanx := gamePhalanxService(cfg, logger, gameSessions)
 	gameJumpGate := gameJumpGateService(cfg, logger, gameSessions)
+	gamePranger := gamePrangerService(cfg, logger)
 	gameFeed := gameFeedService(cfg, logger)
 	gameOptions := gameOptionsService(cfg, logger, gameSessions)
 	gamePayment := gamePaymentService(cfg, logger, gameSessions)
 
 	return httpdelivery.New(httpdelivery.Dependencies{
 		Health:             health,
+		UniverseNumber:     cfg.UniNumber,
 		Universes:          universes,
 		RegistrationDrafts: registrationDrafts,
 		Registration:       registration,
@@ -122,6 +124,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		GameReport:         gameReport,
 		GamePhalanx:        gamePhalanx,
 		GameJumpGate:       gameJumpGate,
+		GamePranger:        gamePranger,
 		GameFeed:           gameFeed,
 		GameOptions:        gameOptions,
 		GamePayment:        gamePayment,
@@ -1026,6 +1029,34 @@ func gameJumpGateService(cfg config.Config, logger *slog.Logger, sessions apppub
 
 	logger.Info("universe DB game jump gate enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewJumpGateService(sessions, mysqlgame.NewJumpGateRepository(db, cfg.UniDBPrefix))
+}
+
+func gamePrangerService(cfg config.Config, logger *slog.Logger) appgame.PrangerService {
+	if !cfg.UniDBEnabled {
+		return appgame.PrangerService{}
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB game pranger disabled", "error", err)
+		return appgame.PrangerService{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB game pranger disabled", "error", err)
+		_ = db.Close()
+		return appgame.PrangerService{}
+	}
+
+	logger.Info("universe DB game pranger enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
+	return appgame.NewPrangerService(mysqlgame.NewPrangerRepository(db, cfg.UniDBPrefix))
 }
 
 func gameFeedService(cfg config.Config, logger *slog.Logger) appgame.FeedService {

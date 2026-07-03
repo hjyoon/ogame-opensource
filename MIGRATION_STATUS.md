@@ -7,7 +7,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` migration tracker. Keep this file under 4K
 ## Current State
 
 - Backend follows Clean Architecture under `backend/internal/{domain,application,infrastructure,delivery}`.
-- Go serves the React production build and legacy static aliases from the current `compose.golang.yaml` `goapp` container on port 8890.
+- Go serves the React build and legacy static aliases from `compose.golang.yaml` `goapp` on port 8890.
 - Natural routes and legacy `.php`/`page=` aliases share route manifests; the UI is CSR, while Go serves the built assets.
 - Public assets, `evolution` skin, game CSS/images/js/mod assets, and `/game/css`, `/game/img`, `/evolution` aliases are served by Go.
 - Registration, activation, login/logout, sessions, private cookies, IP/ban/session expiry, and `/game` redirects are ported.
@@ -22,7 +22,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` migration tracker. Keep this file under 4K
 - Authenticated dynamic E2E now runs all 55 listed legacy-JS cases with commander, alliance, report, phalanx, and ACS fixtures enabled by default.
 - Fixed Firefox legacy host/session drift by keeping the configured legacy base URL instead of adopting a redirected `localhost` origin.
 - Fixed route parity issues around static aliases, planet selector URLs, statistics defaults, register blank selects, reply prefill, fleet union, commander folders, and galaxy hovers.
-- Jump Gate now has a natural route, legacy `sprungtor` POST compatibility, fleet-speed cooldown, satellite exclusion, and source/target validation.
+- Jump Gate has natural/legacy `sprungtor` compatibility; pranger/pillory has raw legacy HTML compatibility.
 - Overview, buildings/resources/research/shipyard/defense, fleet, galaxy, statistics, search, messages, report, notes, buddy, options, merchant/officers, alliance, and admin use legacy chrome and route aliases where implemented.
 
 ## Verified QA
@@ -31,7 +31,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` migration tracker. Keep this file under 4K
 - Legacy PHP Docker E2E passes before Go/Bun checks.
 - Frontend build/typecheck/unit tests pass: 20 tests / 168 expects.
 - Backend tests and the 97% internal coverage gate pass: `97.0% >= 97%`.
-- Absolute legacy coverage target: 90%; current estimate: 78% in [COVERAGE-absolute.md](./testing/e2e/COVERAGE-absolute.md).
+- Absolute legacy coverage target: 90%; current estimate: 79% in [COVERAGE-absolute.md](./testing/e2e/COVERAGE-absolute.md).
 - Go compatibility smoke passes: 87 cases / 2186 checks.
 - User-type API and Chromium/Firefox Playwright QA pass.
 - Auth visual, authenticated game visual, dynamic behavior, empire, alliance, overview fleet, overview all-cases, fleet continue, and fleet all-cases suites pass in Chromium and Firefox.

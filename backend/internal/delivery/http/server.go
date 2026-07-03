@@ -180,6 +180,7 @@ type GamePaymentUseCase interface {
 
 type Dependencies struct {
 	Health             HealthUseCase
+	UniverseNumber     int
 	Universes          UniverseCatalogUseCase
 	RegistrationDrafts RegistrationDraftUseCase
 	Registration       RegistrationUseCase
@@ -212,12 +213,20 @@ type Dependencies struct {
 	GameReport         GameReportUseCase
 	GamePhalanx        GamePhalanxUseCase
 	GameJumpGate       GameJumpGateUseCase
+	GamePranger        gamePrangerUseCase
 	GameFeed           GameFeedUseCase
 	GameOptions        GameOptionsUseCase
 	GamePayment        GamePaymentUseCase
 	Frontend           FrontendAssets
 	LegacyAssets       http.FileSystem
 	Logger             *slog.Logger
+}
+
+func (d Dependencies) CurrentUniverseNumber() int {
+	if d.UniverseNumber <= 0 {
+		return 1
+	}
+	return d.UniverseNumber
 }
 
 type app struct {
@@ -235,6 +244,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/game/validate.php", getOnly(a.handleRegistrationActivation))
 	mux.HandleFunc("/activation", getOnly(a.handleRegistrationActivation))
 	mux.HandleFunc("/game/index.php", a.handleLegacyGameIndex)
+	mux.HandleFunc("/game/pranger.php", getOnly(a.handleLegacyPranger))
 	mux.HandleFunc("/game/redir.php", getOnly(a.handleLegacyRedirect))
 	mux.HandleFunc("/game/pic.php", getOnly(a.handleLegacyImageProxy))
 	mux.HandleFunc("/game/cron.php", handleLegacyForbiddenScript)
