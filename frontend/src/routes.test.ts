@@ -33,6 +33,7 @@ describe("public route model", () => {
   test("keeps legacy php paths as aliases only", () => {
     const home = resolvePublicRoute("/home.php");
     const register = resolvePublicRoute("/register.php");
+    const legacyRegisterForm = resolvePublicRoute("/game/reg/new.php");
     const impressum = resolvePublicRoute("/impressum.php");
 
     expect(home.route.key).toBe("home");
@@ -40,6 +41,9 @@ describe("public route model", () => {
     expect(home.isLegacyAlias).toBe(true);
     expect(register.route.key).toBe("register");
     expect(register.canonicalPath).toBe("/register");
+    expect(legacyRegisterForm.route.key).toBe("register");
+    expect(legacyRegisterForm.canonicalPath).toBe("/register");
+    expect(legacyRegisterForm.isLegacyAlias).toBe(true);
     expect(impressum.route.key).toBe("legal");
   });
 
@@ -49,7 +53,7 @@ describe("public route model", () => {
     expect(publicRouteAliases.get("/impressum.php")).toBe("/legal");
     expect(legacyPublicRouteKeys.has("home")).toBe(true);
     expect(legacyPublicRouteKeys.has("legal")).toBe(false);
-    for (const path of ["/", "/home", "/home.php", "/register", "/register.php", "/about.php", "/regeln.php", "/unis.php"]) {
+    for (const path of ["/", "/home", "/home.php", "/register", "/register.php", "/game/reg/new.php", "/about.php", "/regeln.php", "/unis.php"]) {
       expect(legacyPublicBootstrapPaths).toContain(path);
     }
     expect(legacyPublicBootstrapPaths).not.toContain("/legal");

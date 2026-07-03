@@ -27,6 +27,7 @@ const publicRouteAliases = new Map([
   ["/index.php", "/home"],
   ["/install.php", "/home"],
   ["/register.php", "/register"],
+  ["/game/reg/new.php", "/register"],
   ["/unis.php", "/universes"],
   ["/about.php", "/about"],
   ["/story.php", "/story"],

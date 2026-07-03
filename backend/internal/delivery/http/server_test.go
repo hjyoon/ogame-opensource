@@ -4948,6 +4948,7 @@ func TestLegacyPublicHTMLRoutesServeReactShell(t *testing.T) {
 		"/index.php",
 		"/install.php",
 		"/register.php",
+		"/game/reg/new.php",
 		"/regeln.php",
 		"/screenshots.php",
 		"/story.php",

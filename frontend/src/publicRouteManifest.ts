@@ -33,7 +33,7 @@ export const publicRouteManifest: PublicRouteManifestEntry[] = [
     status: "Creation API",
     image: "/legacy-assets/use/uV/planeten/small/s_dschjungelplanet03.jpg",
     points: ["Legacy field names", "Universe selection", "Login after registration"],
-    legacyAliases: ["/register.php"],
+    legacyAliases: ["/register.php", "/game/reg/new.php"],
     legacyPublicChrome: true,
     legacyVisualPath: "/register.php"
   },

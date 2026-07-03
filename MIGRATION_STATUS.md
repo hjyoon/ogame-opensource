@@ -31,7 +31,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` migration tracker. Keep this file under 4K
 - Legacy PHP Docker E2E passes before Go/Bun checks.
 - Frontend build/typecheck/unit tests pass: 20 tests / 168 expects.
 - Backend tests and the 97% internal coverage gate pass: `97.0% >= 97%`.
-- Absolute legacy coverage target: 90%; current estimate: 88% in [COVERAGE-absolute.md](./testing/e2e/COVERAGE-absolute.md).
+- Absolute legacy coverage target: 90%; current estimate: 89% in [COVERAGE-absolute.md](./testing/e2e/COVERAGE-absolute.md).
 - Go compatibility smoke passes: 87 cases / 2186 checks.
 - User-type API and Chromium/Firefox Playwright QA pass.
 - Auth visual, authenticated game visual, dynamic behavior, empire, alliance, overview fleet, overview all-cases, fleet continue, and fleet all-cases suites pass in Chromium and Firefox.
