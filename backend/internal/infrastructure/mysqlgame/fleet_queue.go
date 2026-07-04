@@ -464,28 +464,28 @@ func expeditionForcedResult(settings expeditionSettings, visitCounter int, holdH
 		return expeditionResultNothing
 	}
 	if settings.ChanceAlien <= 0 {
-		return expeditionResultAliens
+		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
 	}
 	if settings.ChancePirates <= 0 {
-		return expeditionResultPirates
+		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
 	}
 	if settings.ChanceDM <= 0 {
-		return expeditionResultDarkMatter
+		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
 	}
 	if settings.ChanceLost <= 0 {
-		return expeditionResultBlackHole
+		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
 	}
 	if settings.ChanceDelay <= 0 {
-		return expeditionResultDelay
+		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
 	}
 	if settings.ChanceAccel <= 0 {
-		return expeditionResultAccel
+		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
 	}
 	if settings.ChanceRes <= 0 {
-		return expeditionResultResources
+		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
 	}
 	if settings.ChanceFleet <= 0 {
-		return expeditionResultFleet
+		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
 	}
 	if settings.ChanceSuccess >= 100 &&
 		settings.ChanceAlien >= 100 &&
@@ -496,9 +496,43 @@ func expeditionForcedResult(settings expeditionSettings, visitCounter int, holdH
 		settings.ChanceAccel >= 100 &&
 		settings.ChanceRes >= 100 &&
 		settings.ChanceFleet >= 100 {
-		return expeditionResultTrader
+		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
 	}
 	return expeditionResultNothing
+}
+
+func expeditionLegacyRollResult(settings expeditionSettings, visitCounter int, holdHours int, successRoll int, eventRoll int) expeditionResult {
+	if successRoll >= settings.ChanceSuccess+holdHours {
+		return expeditionResultNothing
+	}
+	if eventRoll < expeditionDepletionFailureChance(settings, visitCounter) {
+		return expeditionResultNothing
+	}
+	if eventRoll >= settings.ChanceAlien {
+		return expeditionResultAliens
+	}
+	if eventRoll >= settings.ChancePirates {
+		return expeditionResultPirates
+	}
+	if eventRoll >= settings.ChanceDM {
+		return expeditionResultDarkMatter
+	}
+	if eventRoll >= settings.ChanceLost {
+		return expeditionResultBlackHole
+	}
+	if eventRoll >= settings.ChanceDelay {
+		return expeditionResultDelay
+	}
+	if eventRoll >= settings.ChanceAccel {
+		return expeditionResultAccel
+	}
+	if eventRoll >= settings.ChanceRes {
+		return expeditionResultResources
+	}
+	if eventRoll >= settings.ChanceFleet {
+		return expeditionResultFleet
+	}
+	return expeditionResultTrader
 }
 
 func expeditionDepletionFailureChance(settings expeditionSettings, visitCounter int) int {

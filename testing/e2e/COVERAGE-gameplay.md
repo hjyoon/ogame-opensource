@@ -34,4 +34,4 @@ Keep this file under 4KB. Add a new topic file when this grows.
 - Jump Gate target filtering, invalid source/target moons, missing gates, foreign moons, empty/oversized ship selections, cooldown rejection, same-moon rejection, and solar-satellite exclusion.
 - Merchant, officer, paid/free Dark Matter spending order, invalid/insufficient premium purchases, lunar base, jump gates, and phalanx scans.
 - Sensor Phalanx edge coverage for missing arrays, insufficient deuterium, own targets, out-of-range targets, exact 5,000 deuterium spend, and event rendering.
-- Expedition flow, result cases, hold-time success chance, far-space visit counter, and depletion min/med/max failure cases.
+- Expedition flow, success/event roll buckets, result cases, hold-time success chance, far-space visit counter, and depletion min/med/max failure cases.

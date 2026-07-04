@@ -3197,6 +3197,68 @@ func TestFleetRepositoryFinishDueFleetQueueHelpers(t *testing.T) {
 	}
 }
 
+func TestFleetRepositoryExpeditionLegacyRollResultMatchesThresholdBuckets(t *testing.T) {
+	settings := expeditionSettings{
+		ChanceSuccess:     70,
+		DepletedMin:       25,
+		DepletedMed:       50,
+		DepletedMax:       75,
+		ChanceDepletedMin: 25,
+		ChanceDepletedMed: 50,
+		ChanceDepletedMax: 75,
+		ChanceAlien:       95,
+		ChancePirates:     85,
+		ChanceDM:          70,
+		ChanceLost:        69,
+		ChanceDelay:       63,
+		ChanceAccel:       60,
+		ChanceRes:         25,
+		ChanceFleet:       1,
+		DMFactor:          3,
+	}
+
+	if expeditionLegacyRollResult(settings, 0, 0, 70, 99) != expeditionResultNothing {
+		t.Fatal("success roll equal to chance_success should fail like legacy")
+	}
+	if expeditionLegacyRollResult(settings, 0, 0, 69, 0) != expeditionResultTrader {
+		t.Fatal("success roll below chance_success should enter the event table")
+	}
+	holdSettings := settings
+	holdSettings.ChanceSuccess = 0
+	if expeditionLegacyRollResult(holdSettings, 0, 1, 0, 0) != expeditionResultTrader {
+		t.Fatal("hold hours should raise the legacy success chance")
+	}
+	if expeditionLegacyRollResult(settings, 26, 0, 0, 24) != expeditionResultNothing {
+		t.Fatal("event roll below depletion failure chance should fail")
+	}
+	if expeditionLegacyRollResult(settings, 26, 0, 0, 25) != expeditionResultResources {
+		t.Fatal("event roll equal to depletion failure chance should continue into event buckets")
+	}
+
+	for _, tt := range []struct {
+		name      string
+		eventRoll int
+		want      expeditionResult
+	}{
+		{name: "alien high bucket", eventRoll: 99, want: expeditionResultAliens},
+		{name: "alien boundary", eventRoll: 95, want: expeditionResultAliens},
+		{name: "pirate boundary", eventRoll: 85, want: expeditionResultPirates},
+		{name: "dark matter boundary", eventRoll: 70, want: expeditionResultDarkMatter},
+		{name: "black hole boundary", eventRoll: 69, want: expeditionResultBlackHole},
+		{name: "delay boundary", eventRoll: 63, want: expeditionResultDelay},
+		{name: "accel boundary", eventRoll: 60, want: expeditionResultAccel},
+		{name: "resources boundary", eventRoll: 25, want: expeditionResultResources},
+		{name: "fleet boundary", eventRoll: 1, want: expeditionResultFleet},
+		{name: "trader fallthrough", eventRoll: 0, want: expeditionResultTrader},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := expeditionLegacyRollResult(settings, 0, 0, 0, tt.eventRoll); got != tt.want {
+				t.Fatalf("event roll %d returned %v, want %v", tt.eventRoll, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFleetRepositoryExpeditionQueueLoadersEdges(t *testing.T) {
 	repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("settings query failed")}}}, "ogame_", nil)
 	if _, err := repository.loadExpeditionSettings(context.Background(), "ogame_exptab"); err == nil || !strings.Contains(err.Error(), "settings query failed") {
