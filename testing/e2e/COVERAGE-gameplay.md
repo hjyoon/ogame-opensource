@@ -15,7 +15,7 @@ Keep this file under 4KB. Add a new topic file when this grows.
 
 - Transport delivery/return, deploy arrival, recall, cargo returns, active fleet slot limits, and computer technology limits.
 - Target restrictions for noob/strong score protection, vacation targets, operator/admin targets, temporary attack bans, and Galaxy AJAX errors.
-- ACS attack/hold, union creation, invited participant join, participant recall before battle, battle resolution, report recipients, and return.
+- ACS attack/hold, 30% slowdown boundary, union creation, invited participant join, participant recall before battle, battle resolution, report recipients, and return.
 - Fleet templates, Commander template access, create/update/delete limits, and template use on dispatch pages.
 - Fleet all-cases visual/contract coverage for initial, union, target, enemy planet, own colony, debris, moon destroy, expedition, probe-only, and colonize-empty previews.
 

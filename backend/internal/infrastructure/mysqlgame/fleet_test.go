@@ -1766,6 +1766,55 @@ func TestFleetRepositoryLaunchAllowsACSAttackAndSyncsUnionQueue(t *testing.T) {
 	}
 }
 
+func TestFleetRepositoryLaunchACSAttackAllowsLegacySlowdownLimit(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues([]any{100, 43, domaingame.PlanetTypePlanet})},
+		{rows: fakeRowsFromValues([]any{2, "42,99", int64(1_200), 1})},
+		{rows: fakeRowsFromValues(fleetLaunchUserStateRow(42, 10_000, 0, 0, 0, 0, now.Unix()))},
+		{rows: fakeRowsFromValues(fleetLaunchUserStateRow(43, 10_000, 0, 0, 0, 0, now.Unix()))},
+		{rows: fakeRowsFromValues([]any{int64(1_260)})},
+	}}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	issue, err := repository.LaunchFleetDispatch(context.Background(), appgame.FleetLaunchQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Origin: domaingame.PlanetOverview{
+			Type:        domaingame.PlanetTypePlanet,
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Resources:   domaingame.Resources{Metal: 1000, Crystal: 1000, Deuterium: 1000},
+		},
+		Draft: domaingame.FleetDispatchDraft{
+			Ships: []domaingame.FleetShipCount{{
+				ID:    domaingame.FleetLightFighter,
+				Count: 1,
+			}},
+			Ready:           true,
+			Mission:         domaingame.FleetMissionACSAttack,
+			Target:          domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+			TargetType:      domaingame.GamePlanetTypePlanet,
+			DurationSeconds: 260,
+		},
+		UnionID: 55,
+	})
+	if err != nil || issue != nil {
+		t.Fatalf("expected ACS launch at 30%% slowdown boundary, issue=%+v err=%v", issue, err)
+	}
+	if len(runner.execCalls) != 6 {
+		t.Fatalf("expected normal launch writes plus ACS queue sync, got %+v", runner.execCalls)
+	}
+	insertQueue := runner.execCalls[4]
+	if !strings.Contains(insertQueue.sql, "INSERT INTO `ogame_queue`") || insertQueue.args[6] != int64(1_260) {
+		t.Fatalf("expected slowdown-limit ACS queue at requested flight end, got %+v", insertQueue)
+	}
+	syncQueue := runner.execCalls[5]
+	if !strings.Contains(syncQueue.sql, "UPDATE `ogame_queue` q JOIN `ogame_fleet` f") || syncQueue.args[0] != int64(1_260) || syncQueue.args[2] != 55 {
+		t.Fatalf("expected ACS queue sync to the later slowdown-limited arrival, got %+v", syncQueue)
+	}
+}
+
 func TestFleetRepositoryLaunchTargetHelpersHandleEdges(t *testing.T) {
 	now := time.Unix(1_000, 0)
 	coordinates := domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4}

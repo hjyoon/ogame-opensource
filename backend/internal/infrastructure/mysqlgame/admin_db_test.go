@@ -389,6 +389,30 @@ func TestAdminRepositoryDatabaseBackupPropagatesNestedErrors(t *testing.T) {
 	}
 }
 
+func TestAdminRepositoryDatabaseBackupRestoreRejectsUnsafeLogicalTableBeforeDestructiveSQL(t *testing.T) {
+	runner := &fakeAdminDBRunner{}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+	err := repository.deserializeAdminDatabaseBackup(context.Background(), map[string]adminDatabaseBackupTable{
+		"../users": {
+			Cols:   []string{"player_id"},
+			Values: [][]any{{"1"}},
+		},
+	})
+
+	if err == nil || !strings.Contains(err.Error(), "invalid database table") {
+		t.Fatalf("expected unsafe logical table name error, got %v", err)
+	}
+	if len(runner.execs) != 2 || runner.execs[0] != "SET FOREIGN_KEY_CHECKS=0" || runner.execs[1] != "SET FOREIGN_KEY_CHECKS=1" {
+		t.Fatalf("restore should only bracket FK checks before rejecting unsafe table, execs=%+v", runner.execs)
+	}
+	for _, exec := range runner.execs {
+		if strings.Contains(exec, "TRUNCATE TABLE") || strings.Contains(exec, "INSERT INTO") || strings.Contains(exec, "ALTER TABLE") {
+			t.Fatalf("unsafe restore must not execute destructive table SQL, execs=%+v", runner.execs)
+		}
+	}
+}
+
 type fakeAdminDBRunner struct {
 	fakeQueryer
 	execs     []string

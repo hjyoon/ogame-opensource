@@ -8,6 +8,7 @@ Keep this file under 4KB. Add a new topic file when this grows.
 - Root/login pages, post-login redirects, resource URLs, internal assets, and public host behavior are covered.
 - Legacy feed endpoints accept GET/POST request parameters and preserve auth/no-message/future-item text.
 - Options localization covers supported language saves, invalid fallback, and DB `force_lang` override.
+- DB backup restore rejects unsafe logical table names before destructive table SQL and restores FK checks.
 - Public host strict mode can fail loopback host leaks:
 
 ```sh
