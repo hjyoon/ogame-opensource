@@ -71,6 +71,44 @@ func TestOptionsRepositoryUpdatesLegacyOptionsAndQueuesDeletion(t *testing.T) {
 	}
 }
 
+func TestOptionsRepositoryForcedUniverseLanguageOverridesUserMutation(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	results := append(optionsOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(optionsUserRowWithLanguage(now, 0, 0, "en"))},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"de", 1, 60, 128})},
+	)
+	results = append(results, optionsOverviewResults()...)
+	results = append(results,
+		fakeQueryResult{rows: fakeRowsFromValues(optionsUserRowWithLanguage(now, 0, 0, "de"))},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"de", 1, 60, 128})},
+	)
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewOptionsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	options, issue, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.OptionsMutation{
+			Language:         "fr",
+			SkinPath:         "/evolution/",
+			MaxSpy:           5,
+			MaxFleetMessages: 8,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue == nil || issue.Code != domaingame.OptionsIssueSaved {
+		t.Fatalf("unexpected issue: %+v", issue)
+	}
+	if runner.execArgs[7] != "de" {
+		t.Fatalf("forced universe language should be stored instead of user mutation, args=%+v", runner.execArgs)
+	}
+	if !options.Universe.ForceLanguage || options.Settings.Language != "de" {
+		t.Fatalf("forced universe language should be reflected in the response, got %+v", options)
+	}
+}
+
 func TestOptionsRepositoryKeepsExistingDeletionDateAndClearsDeletion(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	existingDeletion := now.Add(3 * 24 * time.Hour).Unix()
@@ -664,6 +702,12 @@ func optionsOverviewResults() []fakeQueryResult {
 
 func optionsUserRow(now time.Time, deletionQueued int, deletionAt int64) []any {
 	return optionsUserRowWithVacationAndPassword(now, deletionQueued, deletionAt, 0, 0, legacyPasswordHash("oldpass123", "secret"))
+}
+
+func optionsUserRowWithLanguage(now time.Time, deletionQueued int, deletionAt int64, language string) []any {
+	row := optionsUserRow(now, deletionQueued, deletionAt)
+	row[5] = language
+	return row
 }
 
 func optionsUserRowWithVacation(now time.Time, deletionQueued int, deletionAt int64, vacation int, vacationUntil int64) []any {

@@ -3096,12 +3096,49 @@ func TestFleetRepositoryFinishDueFleetQueueHelpers(t *testing.T) {
 	}
 	forcedSettings := defaultSettings
 	forcedSettings.ChanceDM = 0
-	forcedSettings.ChanceDepletedMax = 100
-	if expeditionForcedResult(forcedSettings, 76, 0) != expeditionResultNothing {
-		t.Fatal("severe depletion with 100% failure should block a forced expedition success")
-	}
 	if expeditionForcedResult(forcedSettings, 25, 0) != expeditionResultDarkMatter {
 		t.Fatal("not-depleted expedition should still allow a forced dark matter outcome")
+	}
+	holdSettings := defaultSettings
+	holdSettings.ChanceSuccess = 0
+	holdSettings.ChanceDM = 0
+	if expeditionForcedResult(holdSettings, 0, 1) != expeditionResultDarkMatter {
+		t.Fatal("expedition hold time should keep legacy success chance above zero")
+	}
+	for _, tt := range []struct {
+		name         string
+		visitCounter int
+		configure    func(*expeditionSettings)
+	}{
+		{
+			name:         "minor depletion",
+			visitCounter: 26,
+			configure: func(settings *expeditionSettings) {
+				settings.ChanceDepletedMin = 100
+			},
+		},
+		{
+			name:         "medium depletion",
+			visitCounter: 51,
+			configure: func(settings *expeditionSettings) {
+				settings.ChanceDepletedMed = 100
+			},
+		},
+		{
+			name:         "severe depletion",
+			visitCounter: 76,
+			configure: func(settings *expeditionSettings) {
+				settings.ChanceDepletedMax = 100
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			settings := forcedSettings
+			tt.configure(&settings)
+			if expeditionForcedResult(settings, tt.visitCounter, 0) != expeditionResultNothing {
+				t.Fatalf("%s with 100%% failure should block a forced expedition success", tt.name)
+			}
+		})
 	}
 	if expeditionDepletionFailureChance(defaultSettings, 25) != 0 ||
 		expeditionDepletionFailureChance(defaultSettings, 26) != 25 ||

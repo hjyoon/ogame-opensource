@@ -7,6 +7,7 @@ Keep this file under 4KB. Add a new topic file when this grows.
 - Docker auto-install must skip installer screens when environment variables provide master and universe DB settings.
 - Root/login pages, post-login redirects, resource URLs, internal assets, and public host behavior are covered.
 - Legacy feed endpoints accept GET/POST request parameters and preserve auth/no-message/future-item text.
+- Options localization covers supported language saves, invalid fallback, and DB `force_lang` override.
 - Public host strict mode can fail loopback host leaks:
 
 ```sh
