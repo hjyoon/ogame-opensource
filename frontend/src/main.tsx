@@ -153,6 +153,36 @@ function legacyRegistrationIssueFromCode(errorCode: number): RegistrationIssue {
   };
 }
 
+function legacyLoginErrorTarget(draft: LoginDraft, result: LoginValidation, universes: UniverseSummary[]): string | null {
+  const issue = result.issues.find((item) => item.legacyErrorCode === 2 || item.legacyErrorCode === 3);
+  if (!issue) {
+    return null;
+  }
+  const params = new URLSearchParams({
+    errorcode: String(issue.legacyErrorCode),
+    arg1: String(loginUniverseNumber(draft.universe, universes)),
+    arg2: draft.login
+  });
+  return `/game/reg/errorpage.php?${params.toString()}`;
+}
+
+function loginUniverseNumber(selectedUniverse: string, universes: UniverseSummary[]): number {
+  const selected = normalizeUniverseURL(selectedUniverse);
+  const match = universes.find((universe) => normalizeUniverseURL(universe.baseUrl) === selected);
+  return match?.number ?? 1;
+}
+
+function normalizeUniverseURL(value: string): string {
+  try {
+    const url = new URL(value, window.location.origin);
+    url.hash = "";
+    url.search = "";
+    return url.toString().replace(/\/+$/, "");
+  } catch {
+    return value.replace(/\/+$/, "");
+  }
+}
+
 const phases = [
   { key: "legacy", label: "Legacy QA", state: "active", owner: "PHP E2E" },
   { key: "shell", label: "React Shell", state: "active", owner: "Bun 1.3" },
@@ -2386,6 +2416,10 @@ function App() {
 
   const submitLogin = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (loginDraft.universe === "") {
+      window.alert("You haven't chosen a universe.");
+      return;
+    }
     setLoginPending(true);
     setLoginError(null);
     fetch("/api/public/login", {
@@ -2401,6 +2435,13 @@ function App() {
       })
       .then((result) => {
         setLoginResult(result);
+        if (!result.valid) {
+          const legacyTarget = legacyLoginErrorTarget(loginDraft, result, universes);
+          if (legacyTarget) {
+            window.location.assign(legacyTarget);
+          }
+          return;
+        }
         if (result.valid && result.session?.redirectTo) {
           const target = new URL(result.session.redirectTo, window.location.origin);
           window.history.pushState({}, "", `${target.pathname}${target.search}`);
