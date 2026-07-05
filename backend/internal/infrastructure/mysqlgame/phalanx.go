@@ -179,7 +179,7 @@ func (r PhalanxRepository) loadPhalanxEvents(ctx context.Context, queueTable str
 	now := r.now().Unix()
 	events := make([]domaingame.FleetMission, 0)
 	for rows.Next() {
-		scanned, err := scanOverviewEventRow(rows, fleetIDs, resourceIDs, target.OwnerID)
+		scanned, err := scanOverviewEventRow(rows, fleetIDs, resourceIDs, target.OwnerID, 99)
 		if err != nil {
 			return nil, err
 		}

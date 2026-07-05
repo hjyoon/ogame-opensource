@@ -249,7 +249,9 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
         }
       }
       if (currentPageName === "game-officers") {
-        hide("#content img[src$='DMaterie.jpg'], .legacy-officers-table img[src$='DMaterie.jpg']");
+        hide(
+          "#content img[src$='DMaterie.jpg'], .legacy-officers-table img[src$='DMaterie.jpg'], #content img[src$='dm_klein_1.jpg'], .legacy-officers-table img[src$='dm_klein_1.jpg']"
+        );
       }
       if (currentPageName === "game-admin-fleetlogs") {
         hide("#content table, .legacy-admin-fleetlogs-table");

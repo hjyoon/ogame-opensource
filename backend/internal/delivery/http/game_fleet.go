@@ -47,34 +47,35 @@ type gameExpeditionSlotsResponse struct {
 }
 
 type gameFleetMissionResponse struct {
-	ID              int                          `json:"id"`
-	OwnerID         int                          `json:"ownerId"`
-	OwnerName       string                       `json:"ownerName"`
-	Own             bool                         `json:"own"`
-	Mission         int                          `json:"mission"`
-	MissionName     string                       `json:"missionName"`
-	StateTitle      string                       `json:"stateTitle"`
-	StateShort      string                       `json:"stateShort"`
-	Ships           []gameFleetShipCountResponse `json:"ships"`
-	TotalShips      int                          `json:"totalShips"`
-	LoadedResources map[string]int               `json:"loadedResources"`
-	MissileAmount   int                          `json:"missileAmount"`
-	MissileTargetID int                          `json:"missileTargetId"`
-	MissileTarget   string                       `json:"missileTarget"`
-	UnionID         int                          `json:"unionId"`
-	UnionName       string                       `json:"unionName"`
-	UnionPlayers    []gameFleetUnionPlayer       `json:"unionPlayers"`
-	GroupMissions   []gameFleetMissionResponse   `json:"groupMissions"`
-	Origin          gameCoordinatesResponse      `json:"origin"`
-	OriginName      string                       `json:"originName"`
-	Target          gameCoordinatesResponse      `json:"target"`
-	TargetName      string                       `json:"targetName"`
-	TargetType      int                          `json:"targetType"`
-	TargetOwnerName string                       `json:"targetOwnerName"`
-	DepartureAt     int64                        `json:"departureAt"`
-	ArrivalAt       int64                        `json:"arrivalAt"`
-	CanRecall       bool                         `json:"canRecall"`
-	CanCreateUnion  bool                         `json:"canCreateUnion"`
+	ID               int                          `json:"id"`
+	OwnerID          int                          `json:"ownerId"`
+	OwnerName        string                       `json:"ownerName"`
+	Own              bool                         `json:"own"`
+	Mission          int                          `json:"mission"`
+	MissionName      string                       `json:"missionName"`
+	StateTitle       string                       `json:"stateTitle"`
+	StateShort       string                       `json:"stateShort"`
+	FleetDetailLevel int                          `json:"fleetDetailLevel"`
+	Ships            []gameFleetShipCountResponse `json:"ships"`
+	TotalShips       int                          `json:"totalShips"`
+	LoadedResources  map[string]int               `json:"loadedResources"`
+	MissileAmount    int                          `json:"missileAmount"`
+	MissileTargetID  int                          `json:"missileTargetId"`
+	MissileTarget    string                       `json:"missileTarget"`
+	UnionID          int                          `json:"unionId"`
+	UnionName        string                       `json:"unionName"`
+	UnionPlayers     []gameFleetUnionPlayer       `json:"unionPlayers"`
+	GroupMissions    []gameFleetMissionResponse   `json:"groupMissions"`
+	Origin           gameCoordinatesResponse      `json:"origin"`
+	OriginName       string                       `json:"originName"`
+	Target           gameCoordinatesResponse      `json:"target"`
+	TargetName       string                       `json:"targetName"`
+	TargetType       int                          `json:"targetType"`
+	TargetOwnerName  string                       `json:"targetOwnerName"`
+	DepartureAt      int64                        `json:"departureAt"`
+	ArrivalAt        int64                        `json:"arrivalAt"`
+	CanRecall        bool                         `json:"canRecall"`
+	CanCreateUnion   bool                         `json:"canCreateUnion"`
 }
 
 type gameFleetUnionPlayer struct {
@@ -471,34 +472,35 @@ func toGameFleetMissionResponse(mission domaingame.FleetMission) gameFleetMissio
 		})
 	}
 	return gameFleetMissionResponse{
-		ID:              mission.ID,
-		OwnerID:         mission.OwnerID,
-		OwnerName:       mission.OwnerName,
-		Own:             !mission.Foreign,
-		Mission:         mission.Mission,
-		MissionName:     mission.MissionName,
-		StateTitle:      mission.StateTitle,
-		StateShort:      mission.StateShort,
-		Ships:           ships,
-		TotalShips:      mission.TotalShips,
-		LoadedResources: loadedResources,
-		MissileAmount:   mission.MissileAmount,
-		MissileTargetID: mission.MissileTargetID,
-		MissileTarget:   mission.MissileTarget,
-		UnionID:         mission.UnionID,
-		UnionName:       mission.UnionName,
-		UnionPlayers:    unionPlayers,
-		GroupMissions:   groupMissions,
-		Origin:          toGameCoordinatesResponse(mission.Origin),
-		OriginName:      mission.OriginName,
-		Target:          toGameCoordinatesResponse(mission.Target),
-		TargetName:      mission.TargetName,
-		TargetType:      mission.TargetType,
-		TargetOwnerName: mission.TargetOwnerName,
-		DepartureAt:     mission.DepartureAt,
-		ArrivalAt:       mission.ArrivalAt,
-		CanRecall:       mission.CanRecall,
-		CanCreateUnion:  mission.CanCreateUnion,
+		ID:               mission.ID,
+		OwnerID:          mission.OwnerID,
+		OwnerName:        mission.OwnerName,
+		Own:              !mission.Foreign,
+		Mission:          mission.Mission,
+		MissionName:      mission.MissionName,
+		StateTitle:       mission.StateTitle,
+		StateShort:       mission.StateShort,
+		FleetDetailLevel: mission.FleetDetailLevel,
+		Ships:            ships,
+		TotalShips:       mission.TotalShips,
+		LoadedResources:  loadedResources,
+		MissileAmount:    mission.MissileAmount,
+		MissileTargetID:  mission.MissileTargetID,
+		MissileTarget:    mission.MissileTarget,
+		UnionID:          mission.UnionID,
+		UnionName:        mission.UnionName,
+		UnionPlayers:     unionPlayers,
+		GroupMissions:    groupMissions,
+		Origin:           toGameCoordinatesResponse(mission.Origin),
+		OriginName:       mission.OriginName,
+		Target:           toGameCoordinatesResponse(mission.Target),
+		TargetName:       mission.TargetName,
+		TargetType:       mission.TargetType,
+		TargetOwnerName:  mission.TargetOwnerName,
+		DepartureAt:      mission.DepartureAt,
+		ArrivalAt:        mission.ArrivalAt,
+		CanRecall:        mission.CanRecall,
+		CanCreateUnion:   mission.CanCreateUnion,
 	}
 }
 

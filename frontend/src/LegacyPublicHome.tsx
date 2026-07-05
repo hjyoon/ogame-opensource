@@ -245,6 +245,7 @@ export function LoginStrip({
   autoFocusUniverse = true
 }: LegacyPublicLoginProps & { autoFocusUniverse?: boolean }) {
   const universeRef = React.useRef<HTMLSelectElement>(null);
+  const passwordReminderHref = loginDraft.universe ? legacyPublicUniverseActionURL(loginDraft.universe, "/game/reg/mail.php") : "/game/reg/mail.php";
 
   useLegacyPublicAutoFocus(universeRef, autoFocusUniverse);
 
@@ -347,7 +348,7 @@ export function LoginStrip({
       </div>
       <div className="legacy-public-login-links" id="login_text_2">
         <div className="legacy-public-remind">
-          <a href="#" onClick={handlePasswordReminder}>Forgot your password?</a>
+          <a href={passwordReminderHref} onClick={handlePasswordReminder}>Forgot your password?</a>
         </div>
         <div className="legacy-public-login-confirm">
           By logging in, I accept the <a href="#" target="_blank">T&amp;C&apos;s</a>.

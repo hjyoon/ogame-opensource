@@ -721,6 +721,7 @@ type GameFleetMission = {
   missionName: string;
   stateTitle: string;
   stateShort: string;
+  fleetDetailLevel: number;
   ships: { id: number; name: string; count: number }[];
   totalShips: number;
   loadedResources?: Record<string, number>;
@@ -14378,23 +14379,41 @@ function legacyOverviewFleetAnchor(event: GameFleetMission, summary: 0 | 1, clas
 }
 
 function legacyOverviewShouldShowFleetDetails(event: GameFleetMission, summary: 0 | 1): boolean {
-  if (!summary || event.own !== false) {
-    return true;
+  return legacyOverviewFleetDetailLevel(event, summary) >= 2;
+}
+
+function legacyOverviewFleetDetailLevel(event: GameFleetMission, summary: 0 | 1): number {
+  if (!summary || event.own !== false || legacyOverviewIgnoresForeignFleetDetailLevel(event)) {
+    return 99;
   }
+  const level = Number(event.fleetDetailLevel ?? 0);
+  if (!Number.isFinite(level)) {
+    return 0;
+  }
+  return Math.max(0, Math.trunc(level));
+}
+
+function legacyOverviewIgnoresForeignFleetDetailLevel(event: GameFleetMission): boolean {
   return overviewEventBaseMission(event.mission) === 5 && event.mission >= 200;
 }
 
 function legacyOverviewFleetTitle(event: GameFleetMission, summary: 0 | 1): string {
-  if (!legacyOverviewShouldShowFleetDetails(event, summary)) {
+  const level = legacyOverviewFleetDetailLevel(event, summary);
+  if (level < 2) {
     return "";
   }
   const parts: string[] = [];
   if (summary) {
     parts.push(`Number of ships: ${formatLegacyNumber(event.totalShips)}`);
   }
-  const shipTitle = overviewEventShipTitle(event);
-  if (shipTitle) {
-    parts.push(shipTitle);
+  if (level >= 4) {
+    const ships = event.ships
+      .filter((ship) => ship.count > 0)
+      .map((ship) => (level >= 8 ? `${ship.name} ${formatLegacyNumber(ship.count)}` : ship.name))
+      .join(" ");
+    if (ships) {
+      parts.push(ships);
+    }
   }
   return parts.join(" ");
 }
@@ -14541,13 +14560,17 @@ function legacyOverviewCargoHTML(event: GameFleetMission, missionClass: string, 
 }
 
 function legacyOverviewFleetOverlib(event: GameFleetMission, summary: 0 | 1): string {
+  const level = legacyOverviewFleetDetailLevel(event, summary);
   const lines: string[] = [];
   if (summary) {
     lines.push(`Number of ships: ${formatLegacyNumber(event.totalShips)} <br>`);
   }
-  for (const ship of event.ships) {
-    if (ship.count > 0) {
-      lines.push(`${escapeLegacyHTML(ship.name)} ${formatLegacyNumber(ship.count)}<br>`);
+  if (level >= 4) {
+    for (const ship of event.ships) {
+      if (ship.count > 0) {
+        const count = level >= 8 ? ` ${formatLegacyNumber(ship.count)}` : "";
+        lines.push(`${escapeLegacyHTML(ship.name)}${count}<br>`);
+      }
     }
   }
   return `<font color=white><b>${lines.join("")}</b></font>`;

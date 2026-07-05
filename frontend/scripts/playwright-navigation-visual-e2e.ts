@@ -137,6 +137,8 @@ for (const route of publicRouteManifest) {
   }
 }
 publicAliasToPath.set("/", "/home");
+publicAliasToPath.set("/game/reg/mail.php", "/game/reg/mail.php");
+const publicGameAliasPaths = new Set(["/game/reg/mail.php"]);
 
 const legacyPageToPath = new Map<string, string>([
   ["overview", "/game/overview"],
@@ -262,7 +264,7 @@ const publicSeeds: SeedSpec[] = publicRouteManifest
   }));
 
 const seeds = [...publicSeeds, ...authSeeds, ...(includeAdminSeeds ? adminSeeds : [])];
-const knownGamePaths = new Set([...gameRoutes.map((route) => route.path), "/game/changelog", "/game/reg/mail.php"]);
+const knownGamePaths = new Set([...gameRoutes.map((route) => route.path), "/game/changelog"]);
 const dynamicQueryKeys = new Set([
   "allyid",
   "bericht",
@@ -735,8 +737,9 @@ function isAllowedNavigation(url: URL, side: Side): boolean {
 }
 
 function canonicalizeURL(url: URL, sourceArea: Area): CanonicalTarget | null {
-  const publicPath = publicAliasToPath.get(normalizePath(url.pathname));
-  if (publicPath && !url.pathname.startsWith("/game")) {
+  const path = normalizePath(url.pathname);
+  const publicPath = publicAliasToPath.get(path);
+  if (publicPath && (!path.startsWith("/game") || sourceArea === "public" || publicGameAliasPaths.has(path))) {
     const query = normalizedQuery(url.searchParams, { area: "public", path: publicPath });
     return { key: `public:${publicPath}${query ? `?${query}` : ""}`, area: "public", path: publicPath, query };
   }

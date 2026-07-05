@@ -229,7 +229,7 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 	}
 	events := []domaingame.FleetMission(nil)
 	if r.includeEvents {
-		events, err = r.loadOverviewEvents(ctx, queueTable, fleetTable, planetsTable, usersTable, unionTable, query.PlayerID)
+		events, err = r.loadOverviewEvents(ctx, queueTable, fleetTable, planetsTable, usersTable, unionTable, query.PlayerID, overviewFleetDetailLevel(user))
 		if err != nil {
 			return domaingame.Overview{}, err
 		}
@@ -807,25 +807,26 @@ func (r OverviewRepository) resolveCurrentPlanet(ctx context.Context, planetsTab
 }
 
 type overviewUser struct {
-	Commander      string
-	Score          int64
-	Rank           int
-	ActivePlanetID int
-	HomePlanetID   int
-	SortBy         int
-	SortOrder      int
-	AdminLevel     int
-	Vacation       bool
-	DarkMatter     int
-	EnergyResearch int
-	Engineer       bool
-	Officers       domaingame.OverviewOfficers
+	Commander         string
+	Score             int64
+	Rank              int
+	ActivePlanetID    int
+	HomePlanetID      int
+	SortBy            int
+	SortOrder         int
+	AdminLevel        int
+	Vacation          bool
+	DarkMatter        int
+	EnergyResearch    int
+	EspionageResearch int
+	Engineer          bool
+	Officers          domaingame.OverviewOfficers
 }
 
 func (r OverviewRepository) loadUser(ctx context.Context, usersTable string, playerID int) (overviewUser, error) {
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT oname, score1, place1, aktplanet, hplanetid, sortby, sortorder, admin, COALESCE(vacation, 0), COALESCE(dm, 0), COALESCE(dmfree, 0), `%d`, COALESCE(com_until, 0), COALESCE(adm_until, 0), COALESCE(eng_until, 0), COALESCE(geo_until, 0), COALESCE(tec_until, 0) FROM %s WHERE player_id = ? LIMIT 1", domaingame.ResearchEnergy, usersTable),
+		fmt.Sprintf("SELECT oname, score1, place1, aktplanet, hplanetid, sortby, sortorder, admin, COALESCE(vacation, 0), COALESCE(dm, 0), COALESCE(dmfree, 0), `%d`, `%d`, COALESCE(com_until, 0), COALESCE(adm_until, 0), COALESCE(eng_until, 0), COALESCE(geo_until, 0), COALESCE(tec_until, 0) FROM %s WHERE player_id = ? LIMIT 1", domaingame.ResearchEnergy, domaingame.ResearchEspionage, usersTable),
 		playerID,
 	)
 	if err != nil {
@@ -871,6 +872,7 @@ func (r OverviewRepository) scanOverviewUser(rows Rows) (overviewUser, error) {
 		&darkMatter,
 		&freeDarkMatter,
 		&user.EnergyResearch,
+		&user.EspionageResearch,
 		&commanderUntil,
 		&admiralUntil,
 		&engineerUntil,
@@ -903,6 +905,40 @@ func (r OverviewRepository) scanOverviewUser(rows Rows) (overviewUser, error) {
 		&user.SortBy,
 		&user.SortOrder,
 		&user.AdminLevel,
+		&vacation,
+		&darkMatter,
+		&freeDarkMatter,
+		&user.EnergyResearch,
+		&commanderUntil,
+		&admiralUntil,
+		&engineerUntil,
+		&geologistUntil,
+		&technocratUntil,
+	); err == nil {
+		now := r.currentTime().Unix()
+		user.Vacation = vacation != 0
+		user.DarkMatter = darkMatter + freeDarkMatter
+		user.Engineer = engineerUntil > now
+		user.Officers = domaingame.OverviewOfficers{
+			Commander:  commanderUntil > now,
+			Admiral:    admiralUntil > now,
+			Engineer:   engineerUntil > now,
+			Geologist:  geologistUntil > now,
+			Technocrat: technocratUntil > now,
+		}
+		return user, nil
+	} else if !scanDestinationCountError(err) {
+		return overviewUser{}, err
+	}
+	if err := rows.Scan(
+		&user.Commander,
+		&user.Score,
+		&user.Rank,
+		&user.ActivePlanetID,
+		&user.HomePlanetID,
+		&user.SortBy,
+		&user.SortOrder,
+		&user.AdminLevel,
 		&darkMatter,
 		&freeDarkMatter,
 		&user.EnergyResearch,
@@ -918,6 +954,17 @@ func (r OverviewRepository) scanOverviewUser(rows Rows) (overviewUser, error) {
 		return overviewUser{}, err
 	}
 	return user, nil
+}
+
+func overviewFleetDetailLevel(user overviewUser) int {
+	level := user.EspionageResearch
+	if user.Officers.Technocrat {
+		level += 2
+	}
+	if level < 0 {
+		return 0
+	}
+	return level
 }
 
 func overviewMessages(user overviewUser) []string {
@@ -1208,7 +1255,7 @@ func (r OverviewRepository) loadUnreadMessages(ctx context.Context, messagesTabl
 	return count, nil
 }
 
-func (r OverviewRepository) loadOverviewEvents(ctx context.Context, queueTable string, fleetTable string, planetsTable string, usersTable string, unionTable string, playerID int) ([]domaingame.FleetMission, error) {
+func (r OverviewRepository) loadOverviewEvents(ctx context.Context, queueTable string, fleetTable string, planetsTable string, usersTable string, unionTable string, playerID int, fleetDetailLevel int) ([]domaingame.FleetMission, error) {
 	fleetIDs := domaingame.FleetIDs()
 	resourceIDs := overviewTransportableResourceIDs()
 	now := r.currentTime().Unix()
@@ -1242,7 +1289,7 @@ func (r OverviewRepository) loadOverviewEvents(ctx context.Context, queueTable s
 
 	missions := make([]domaingame.FleetMission, 0)
 	for rows.Next() {
-		scanned, err := scanOverviewEventRow(rows, fleetIDs, resourceIDs, playerID)
+		scanned, err := scanOverviewEventRow(rows, fleetIDs, resourceIDs, playerID, fleetDetailLevel)
 		if err != nil {
 			return nil, err
 		}
@@ -1252,7 +1299,7 @@ func (r OverviewRepository) loadOverviewEvents(ctx context.Context, queueTable s
 		return nil, err
 	}
 	events := domaingame.BuildOverviewEvents(missions)
-	unionEvents, err := r.loadOverviewUnionEvents(ctx, queueTable, fleetTable, planetsTable, usersTable, unionTable, fleetIDs, playerID)
+	unionEvents, err := r.loadOverviewUnionEvents(ctx, queueTable, fleetTable, planetsTable, usersTable, unionTable, fleetIDs, playerID, fleetDetailLevel)
 	if err != nil {
 		return nil, err
 	}
@@ -1268,7 +1315,7 @@ type overviewUnionRow struct {
 	TargetPlayer int
 }
 
-func (r OverviewRepository) loadOverviewUnionEvents(ctx context.Context, queueTable string, fleetTable string, planetsTable string, usersTable string, unionTable string, fleetIDs []int, playerID int) ([]domaingame.FleetMission, error) {
+func (r OverviewRepository) loadOverviewUnionEvents(ctx context.Context, queueTable string, fleetTable string, planetsTable string, usersTable string, unionTable string, fleetIDs []int, playerID int, fleetDetailLevel int) ([]domaingame.FleetMission, error) {
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf("SELECT union_id, target_player FROM %s WHERE target_player = ? OR CONCAT(',', players, ',') LIKE ? ORDER BY union_id ASC", unionTable),
@@ -1294,7 +1341,7 @@ func (r OverviewRepository) loadOverviewUnionEvents(ctx context.Context, queueTa
 
 	events := make([]domaingame.FleetMission, 0, len(unions))
 	for _, union := range unions {
-		unionEvents, err := r.loadOverviewUnionEvent(ctx, queueTable, fleetTable, planetsTable, usersTable, fleetIDs, playerID, union.ID)
+		unionEvents, err := r.loadOverviewUnionEvent(ctx, queueTable, fleetTable, planetsTable, usersTable, fleetIDs, playerID, union.ID, fleetDetailLevel)
 		if err != nil {
 			return nil, err
 		}
@@ -1303,7 +1350,7 @@ func (r OverviewRepository) loadOverviewUnionEvents(ctx context.Context, queueTa
 	return events, nil
 }
 
-func (r OverviewRepository) loadOverviewUnionEvent(ctx context.Context, queueTable string, fleetTable string, planetsTable string, usersTable string, fleetIDs []int, playerID int, unionID int) ([]domaingame.FleetMission, error) {
+func (r OverviewRepository) loadOverviewUnionEvent(ctx context.Context, queueTable string, fleetTable string, planetsTable string, usersTable string, fleetIDs []int, playerID int, unionID int, fleetDetailLevel int) ([]domaingame.FleetMission, error) {
 	resourceIDs := overviewTransportableResourceIDs()
 	now := r.currentTime().Unix()
 	rows, err := r.queryer.QueryContext(
@@ -1333,7 +1380,7 @@ func (r OverviewRepository) loadOverviewUnionEvent(ctx context.Context, queueTab
 	returnMissions := make([]domaingame.FleetMission, 0)
 	arrivalAt := int64(0)
 	for rows.Next() {
-		scanned, err := scanOverviewEventRow(rows, fleetIDs, resourceIDs, playerID)
+		scanned, err := scanOverviewEventRow(rows, fleetIDs, resourceIDs, playerID, fleetDetailLevel)
 		if err != nil {
 			return nil, err
 		}
@@ -1489,7 +1536,7 @@ func overviewTransportableResourceIDs() []int {
 	return []int{domaingame.ResourceMetal, domaingame.ResourceCrystal, domaingame.ResourceDeuterium}
 }
 
-func scanOverviewEventRow(rows Rows, fleetIDs []int, resourceIDs []int, playerID int) (overviewEventScan, error) {
+func scanOverviewEventRow(rows Rows, fleetIDs []int, resourceIDs []int, playerID int, fleetDetailLevel int) (overviewEventScan, error) {
 	var id int
 	var departureAt int64
 	var arrivalAt int64
@@ -1549,6 +1596,7 @@ func scanOverviewEventRow(rows Rows, fleetIDs []int, resourceIDs []int, playerID
 	event.OriginName = originName
 	event.TargetName = targetName
 	event.Foreign = ownerID != 0 && ownerID != playerID
+	event.FleetDetailLevel = fleetDetailLevel
 	event.MissileAmount = missileAmount
 	event.MissileTargetID = missileTargetID
 	if missileTargetID > 0 {

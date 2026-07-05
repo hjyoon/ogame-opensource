@@ -49,34 +49,35 @@ type ExpeditionSlots struct {
 }
 
 type FleetMission struct {
-	ID              int
-	OwnerID         int
-	OwnerName       string
-	Foreign         bool
-	Mission         int
-	MissionName     string
-	StateTitle      string
-	StateShort      string
-	Ships           []FleetShipCount
-	TotalShips      int
-	LoadedResources map[int]int
-	MissileAmount   int
-	MissileTargetID int
-	MissileTarget   string
-	UnionID         int
-	UnionName       string
-	UnionPlayers    []FleetUnionPlayer
-	GroupMissions   []FleetMission
-	Origin          Coordinates
-	OriginName      string
-	Target          Coordinates
-	TargetName      string
-	TargetType      int
-	TargetOwnerName string
-	DepartureAt     int64
-	ArrivalAt       int64
-	CanRecall       bool
-	CanCreateUnion  bool
+	ID               int
+	OwnerID          int
+	OwnerName        string
+	Foreign          bool
+	Mission          int
+	MissionName      string
+	StateTitle       string
+	StateShort       string
+	FleetDetailLevel int
+	Ships            []FleetShipCount
+	TotalShips       int
+	LoadedResources  map[int]int
+	MissileAmount    int
+	MissileTargetID  int
+	MissileTarget    string
+	UnionID          int
+	UnionName        string
+	UnionPlayers     []FleetUnionPlayer
+	GroupMissions    []FleetMission
+	Origin           Coordinates
+	OriginName       string
+	Target           Coordinates
+	TargetName       string
+	TargetType       int
+	TargetOwnerName  string
+	DepartureAt      int64
+	ArrivalAt        int64
+	CanRecall        bool
+	CanCreateUnion   bool
 }
 
 type FleetUnionPlayer struct {

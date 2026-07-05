@@ -18,7 +18,7 @@ import (
 
 func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	queryer := &fakeQueryer{results: []fakeQueryResult{
-		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 7, 99, 1, 0, 0, 0, 30, 7, 3, int64(2000000000)})},
+		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 7, 99, 1, 0, 0, 0, 0, 30, 7, 3, 6, int64(0), int64(0), int64(2000000000), int64(0), int64(2000000000)})},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 12, 163, 1234.5, 234.5, 12.0, 0, 1, 2, 1, 1, 0, 3, 0, 2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0})},
 		{rows: fakeRowsFromValues(
 			[]any{99, "Arakis", 1, 1, 2, 3},
@@ -91,6 +91,7 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 		!overview.Events[1].Foreign ||
 		overview.Events[1].MissionName != "Attack" ||
 		overview.Events[1].TotalShips != 5 ||
+		overview.Events[1].FleetDetailLevel != 8 ||
 		overview.Events[1].CanRecall {
 		t.Fatalf("unexpected incoming overview event: %+v", overview.Events[1])
 	}
@@ -590,6 +591,112 @@ func TestOverviewRepositoryFallsBackToHomePlanet(t *testing.T) {
 	}
 	if !strings.Contains(queryer.calls[3].sql, "ORDER BY g DESC, s DESC, p DESC, type DESC") {
 		t.Fatalf("expected coordinate sort fallback, got %q", queryer.calls[3].sql)
+	}
+}
+
+func TestOverviewFleetDetailLevel(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		user overviewUser
+		want int
+	}{
+		{name: "research only", user: overviewUser{EspionageResearch: 4}, want: 4},
+		{name: "technocrat bonus", user: overviewUser{EspionageResearch: 6, Officers: domaingame.OverviewOfficers{Technocrat: true}}, want: 8},
+		{name: "negative clamp", user: overviewUser{EspionageResearch: -1}, want: 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := overviewFleetDetailLevel(tt.user); got != tt.want {
+				t.Fatalf("expected detail level %d, got %d", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestScanOverviewUserSupportsLegacyRowShapes(t *testing.T) {
+	repository := NewOverviewRepositoryWithQueryer(&fakeQueryer{}, "ogame_")
+	repository.now = func() time.Time { return time.Unix(1000, 0) }
+
+	tests := []struct {
+		name   string
+		row    []any
+		assert func(t *testing.T, user overviewUser)
+	}{
+		{
+			name: "current full row",
+			row:  []any{"new", int64(10), 2, 99, 1, 0, 1, 0, 1, 7, 3, 5, 6, int64(2000), int64(0), int64(2001), int64(2002), int64(2003)},
+			assert: func(t *testing.T, user overviewUser) {
+				if user.Commander != "new" ||
+					!user.Vacation ||
+					user.DarkMatter != 10 ||
+					user.EnergyResearch != 5 ||
+					user.EspionageResearch != 6 ||
+					!user.Officers.Commander ||
+					user.Officers.Admiral ||
+					!user.Officers.Engineer ||
+					!user.Officers.Geologist ||
+					!user.Officers.Technocrat {
+					t.Fatalf("unexpected current full user row: %+v", user)
+				}
+			},
+		},
+		{
+			name: "legacy full row without espionage",
+			row:  []any{"old", int64(11), 3, 98, 2, 1, 0, 0, 0, 4, 6, 7, int64(0), int64(2000), int64(2001), int64(0), int64(2002)},
+			assert: func(t *testing.T, user overviewUser) {
+				if user.Commander != "old" ||
+					user.Vacation ||
+					user.DarkMatter != 10 ||
+					user.EnergyResearch != 7 ||
+					user.EspionageResearch != 0 ||
+					user.Officers.Commander ||
+					!user.Officers.Admiral ||
+					!user.Officers.Engineer ||
+					user.Officers.Geologist ||
+					!user.Officers.Technocrat {
+					t.Fatalf("unexpected legacy full user row: %+v", user)
+				}
+			},
+		},
+		{
+			name: "partial premium row",
+			row:  []any{"partial", int64(12), 4, 97, 3, 1, 1, 0, 8, 9, 10, int64(2004)},
+			assert: func(t *testing.T, user overviewUser) {
+				if user.Commander != "partial" ||
+					user.DarkMatter != 17 ||
+					user.EnergyResearch != 10 ||
+					!user.Engineer ||
+					user.Officers.Engineer {
+					t.Fatalf("unexpected partial premium user row: %+v", user)
+				}
+			},
+		},
+		{
+			name: "minimal row",
+			row:  []any{"minimal", int64(13), 5, 96, 4, 0, 0, 2},
+			assert: func(t *testing.T, user overviewUser) {
+				if user.Commander != "minimal" ||
+					user.AdminLevel != 2 ||
+					user.DarkMatter != 0 ||
+					user.EnergyResearch != 0 ||
+					user.EspionageResearch != 0 {
+					t.Fatalf("unexpected minimal user row: %+v", user)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rows := fakeRowsFromValues(tt.row)
+			if !rows.Next() {
+				t.Fatal("expected fake row")
+			}
+			user, err := repository.scanOverviewUser(rows)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tt.assert(t, user)
+		})
 	}
 }
 
@@ -1891,7 +1998,7 @@ func TestOverviewRepositoryLoadOverviewEventsEdges(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			repository := NewOverviewRepositoryWithQueryer(tt.queryer, "ogame_")
-			if _, err := repository.loadOverviewEvents(context.Background(), "`ogame_queue`", "`ogame_fleet`", "`ogame_planets`", "`ogame_users`", "`ogame_union`", 42); err == nil || !strings.Contains(err.Error(), tt.want) {
+			if _, err := repository.loadOverviewEvents(context.Background(), "`ogame_queue`", "`ogame_fleet`", "`ogame_planets`", "`ogame_users`", "`ogame_union`", 42, 8); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("expected %q error, got %v", tt.want, err)
 			}
 		})
@@ -1909,7 +2016,7 @@ func TestOverviewRepositoryLoadsACSOverviewEvents(t *testing.T) {
 	}}
 	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
 
-	events, err := repository.loadOverviewEvents(context.Background(), "`ogame_queue`", "`ogame_fleet`", "`ogame_planets`", "`ogame_users`", "`ogame_union`", 42)
+	events, err := repository.loadOverviewEvents(context.Background(), "`ogame_queue`", "`ogame_fleet`", "`ogame_planets`", "`ogame_users`", "`ogame_union`", 42, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1959,7 +2066,7 @@ func TestOverviewRepositoryLoadsNonACSOverviewPseudoEvents(t *testing.T) {
 	repository := NewOverviewRepositoryWithQueryer(queryer, "ogame_")
 	repository.now = func() time.Time { return time.Unix(99, 0) }
 
-	events, err := repository.loadOverviewEvents(context.Background(), "`ogame_queue`", "`ogame_fleet`", "`ogame_planets`", "`ogame_users`", "`ogame_union`", 42)
+	events, err := repository.loadOverviewEvents(context.Background(), "`ogame_queue`", "`ogame_fleet`", "`ogame_planets`", "`ogame_users`", "`ogame_union`", 42, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2117,7 +2224,7 @@ func TestOverviewRepositoryLoadOverviewUnionEventsEdges(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			repository := NewOverviewRepositoryWithQueryer(tt.queryer, "ogame_")
-			events, err := repository.loadOverviewUnionEvents(context.Background(), "`ogame_queue`", "`ogame_fleet`", "`ogame_planets`", "`ogame_users`", "`ogame_union`", fleetIDs, 42)
+			events, err := repository.loadOverviewUnionEvents(context.Background(), "`ogame_queue`", "`ogame_fleet`", "`ogame_planets`", "`ogame_users`", "`ogame_union`", fleetIDs, 42, 8)
 			if tt.want != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.want) {
 					t.Fatalf("expected %q error, got %v", tt.want, err)
