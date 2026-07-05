@@ -24,6 +24,34 @@ type LoginFailureCapture = {
   badResponses: string[];
 };
 
+type LanguageFlagSpec = {
+  label: string;
+  cookieValue: string;
+};
+
+type LanguageFlagCapture = {
+  url: string;
+  status: number | null;
+  beforePathname: string;
+  afterPathname: string;
+  afterHash: string;
+  cookieValue: string;
+  reloaded: boolean;
+  probeAfter?: string;
+  localizedText: Record<string, string>;
+  consoleErrors: string[];
+  failedRequests: string[];
+  badResponses: string[];
+};
+
+type LanguageFlagComparison = {
+  name: string;
+  pass: boolean;
+  mismatches: string[];
+  legacy: LanguageFlagCapture;
+  migrated: LanguageFlagCapture;
+};
+
 const rootDir = resolve(import.meta.dir, "../..");
 const browserName = browserEnv("OGAME_PLAYWRIGHT_BROWSER", "chromium");
 const outputDir = resolve(rootDir, `.tmp/playwright-public-login-dynamic/${browserName}`);
@@ -39,6 +67,13 @@ const defaultBrowserExecutable = browserName === "firefox" ? undefined : default
 const browserExecutable =
   process.env.OGAME_PLAYWRIGHT_EXECUTABLE ??
   (defaultBrowserExecutable && existsSync(defaultBrowserExecutable) ? defaultBrowserExecutable : undefined);
+const languageFlags: LanguageFlagSpec[] = [
+  { label: "Deutschland", cookieValue: "de" },
+  { label: "English", cookieValue: "en" },
+  { label: "France", cookieValue: "fr" },
+  { label: "Italy", cookieValue: "it" },
+  { label: "Russia", cookieValue: "ru" }
+];
 
 await mkdir(screenshotDir, { recursive: true });
 
@@ -55,6 +90,12 @@ try {
   const migrated = await captureInvalidLogin(migratedContext, "migrated");
   await legacyContext.close();
   await migratedContext.close();
+  const languageFlagComparisons: LanguageFlagComparison[] = [];
+  for (const flag of languageFlags) {
+    const legacyFlag = await captureLanguageFlagClick("legacy", flag);
+    const migratedFlag = await captureLanguageFlagClick("migrated", flag);
+    languageFlagComparisons.push(compareLanguageFlagCaptures(flag, legacyFlag, migratedFlag));
+  }
 
   const diffPath = join(screenshotDir, "invalid-login-diff.png");
   const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath, diffPath, colorDeltaThreshold);
@@ -69,7 +110,8 @@ try {
     migrated.failedRequests.length === 0 &&
     legacy.badResponses.length === 0 &&
     migrated.badResponses.length === 0 &&
-    diff.diffRatio <= maxDiffRatio;
+    diff.diffRatio <= maxDiffRatio &&
+    languageFlagComparisons.every((comparison) => comparison.pass);
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -84,7 +126,8 @@ try {
     migrated,
     diff,
     diffPath,
-    comparisons
+    comparisons,
+    languageFlagComparisons
   };
   await writeFile(join(outputDir, "report.json"), JSON.stringify(report, null, 2));
   await writeFile(join(outputDir, "report.md"), renderMarkdown(report));
@@ -94,6 +137,87 @@ try {
   }
 } finally {
   await browser.close();
+}
+
+async function captureLanguageFlagClick(side: SideName, flag: LanguageFlagSpec): Promise<LanguageFlagCapture> {
+  const baseURL = side === "legacy" ? legacyBaseURL : migratedBaseURL;
+  const context = await newContext(baseURL);
+  const page = await context.newPage();
+  const consoleErrors: string[] = [];
+  const failedRequests: string[] = [];
+  const badResponses: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error" && !ignoredConsoleError(message.text())) {
+      consoleErrors.push(message.text());
+    }
+  });
+  page.on("requestfailed", (request) => {
+    if (!ignoredBadResponse(request.url())) {
+      failedRequests.push(`${request.method()} ${request.url()} ${request.failure()?.errorText ?? ""}`.trim());
+    }
+  });
+  page.on("response", (response) => {
+    const status = response.status();
+    if (status >= 400 && !ignoredBadResponse(response.url())) {
+      badResponses.push(`${status} ${response.url()}`);
+    }
+  });
+  try {
+    const response = await page.goto(homeURL(side), { waitUntil: "networkidle", timeout: 20_000 });
+    const beforePathname = await page.evaluate(() => window.location.pathname);
+    await page.evaluate(() => {
+      (window as Window & { __ogamePublicLanguageProbe?: string }).__ogamePublicLanguageProbe = "before";
+    });
+    const navigation = page
+      .waitForNavigation({ waitUntil: "domcontentloaded", timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    await page.locator(`a:has(img[alt='${flag.label}'])`).click();
+    await navigation;
+    await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => undefined);
+    await page.waitForTimeout(50);
+    const state = await page.evaluate(() => ({
+      url: window.location.href,
+      afterPathname: window.location.pathname,
+      afterHash: window.location.hash,
+      cookieValue:
+        document.cookie
+          .split("; ")
+          .find((cookie) => cookie.startsWith("ogamelang="))
+          ?.split("=")[1] ?? "",
+      probeAfter: (window as Window & { __ogamePublicLanguageProbe?: string }).__ogamePublicLanguageProbe,
+      localizedText: {
+        chooseLanguage: document.querySelector(".products a:last-child")?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+        mainMenu: document.querySelector("#mainmenu")?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+        homeTitle: document.querySelector("#title")?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+        homeText1: document.querySelector("#text1")?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+        homeText2: document.querySelector("#text2")?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+        registerButton: document.querySelector("#register")?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+        loginLabels: document.querySelector("#login_text_1")?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+        loginLinks: document.querySelector("#login_text_2")?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+        firstUniverseOption: document.querySelector("select[name='universe'] option")?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+        copyright: document.querySelector("#copyright")?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+        downmenu: document.querySelector("#downmenu")?.textContent?.replace(/\s+/g, " ").trim() ?? ""
+      }
+    }));
+    return {
+      url: state.url,
+      status: response?.status() ?? null,
+      beforePathname,
+      afterPathname: state.afterPathname,
+      afterHash: state.afterHash,
+      cookieValue: state.cookieValue,
+      reloaded: state.probeAfter === undefined,
+      probeAfter: state.probeAfter,
+      localizedText: state.localizedText,
+      consoleErrors,
+      failedRequests,
+      badResponses
+    };
+  } finally {
+    await page.close().catch(() => undefined);
+    await context.close().catch(() => undefined);
+  }
 }
 
 async function newContext(baseURL: string): Promise<BrowserContext> {
@@ -174,6 +298,54 @@ async function selectFirstUniverse(page: Page): Promise<void> {
   await page.locator(selector).selectOption(value);
 }
 
+function compareLanguageFlagCaptures(flag: LanguageFlagSpec, legacy: LanguageFlagCapture, migrated: LanguageFlagCapture): LanguageFlagComparison {
+  const mismatches: string[] = [];
+  for (const [side, capture] of [
+    ["legacy", legacy],
+    ["migrated", migrated]
+  ] as const) {
+    if (capture.status !== 200) {
+      mismatches.push(`${side} status ${capture.status}`);
+    }
+    if (capture.cookieValue !== flag.cookieValue) {
+      mismatches.push(`${side} cookie ${capture.cookieValue}`);
+    }
+    if (!capture.reloaded) {
+      mismatches.push(`${side} did not reload`);
+    }
+    if (capture.probeAfter !== undefined) {
+      mismatches.push(`${side} preserved in-memory probe`);
+    }
+    if (capture.beforePathname !== capture.afterPathname) {
+      mismatches.push(`${side} pathname ${capture.beforePathname}->${capture.afterPathname}`);
+    }
+    if (capture.afterHash !== "") {
+      mismatches.push(`${side} hash ${capture.afterHash}`);
+    }
+    if (capture.consoleErrors.length > 0) {
+      mismatches.push(`${side} console errors ${capture.consoleErrors.join("; ")}`);
+    }
+    if (capture.failedRequests.length > 0) {
+      mismatches.push(`${side} failed requests ${capture.failedRequests.join("; ")}`);
+    }
+    if (capture.badResponses.length > 0) {
+      mismatches.push(`${side} bad responses ${capture.badResponses.join("; ")}`);
+    }
+  }
+  for (const key of new Set([...Object.keys(legacy.localizedText), ...Object.keys(migrated.localizedText)])) {
+    if (legacy.localizedText[key] !== migrated.localizedText[key]) {
+      mismatches.push(`localized ${key} ${JSON.stringify(legacy.localizedText[key])}/${JSON.stringify(migrated.localizedText[key])}`);
+    }
+  }
+  return {
+    name: `language flag ${flag.cookieValue}`,
+    pass: mismatches.length === 0,
+    mismatches,
+    legacy,
+    migrated
+  };
+}
+
 function compareCaptures(legacy: LoginFailureCapture, migrated: LoginFailureCapture, diff: DiffResult): string[] {
   const errors: string[] = [];
   const requiredText = [
@@ -225,6 +397,7 @@ function renderMarkdown(report: {
   pass: boolean;
   diff: DiffResult;
   comparisons: string[];
+  languageFlagComparisons: LanguageFlagComparison[];
   legacy: LoginFailureCapture;
   migrated: LoginFailureCapture;
 }) {
@@ -242,6 +415,10 @@ function renderMarkdown(report: {
     `| Legacy | ${report.legacy.url} | ${report.legacy.text} |`,
     `| Migrated | ${report.migrated.url} | ${report.migrated.text} |`
   ];
+  lines.push("", "## Language Flags", "", "| Flag | Result | Mismatches |", "| --- | --- | --- |");
+  for (const comparison of report.languageFlagComparisons) {
+    lines.push(`| ${comparison.name} | ${comparison.pass ? "PASS" : "FAIL"} | ${comparison.mismatches.join(", ") || "-"} |`);
+  }
   if (report.comparisons.length > 0) {
     lines.push("", "## Differences", "", ...report.comparisons.map((item) => `- ${item}`));
   }

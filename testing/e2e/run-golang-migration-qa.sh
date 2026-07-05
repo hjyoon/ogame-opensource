@@ -62,6 +62,14 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
       printf 'Go user type Playwright QA (%s)\n' "$browser"
       (cd "$ROOT_DIR/frontend" && OGAME_PLAYWRIGHT_BROWSER="$browser" OGAME_GO_BASE_URL="$GO_BASE_URL" OGAME_USER_TYPE_FIXTURE_FILE="$ROOT_DIR/.tmp/golang-user-type-fixture.json" bun run e2e:user-types)
     done
+    if [ "${OGAME_RUN_PUBLIC_VISUAL:-1}" = "1" ]; then
+      for browser in ${OGAME_PUBLIC_VISUAL_BROWSERS:-chromium firefox}; do
+        printf 'Public visual E2E (%s)\n' "$browser"
+        OGAME_PLAYWRIGHT_BROWSER="$browser" \
+        OGAME_GO_BASE_URL="$GO_BASE_URL" \
+        "$SCRIPT_DIR/run-playwright-visual-e2e.sh"
+      done
+    fi
     if [ "${OGAME_RUN_AUTH_VISUAL:-1}" = "1" ]; then
       for browser in ${OGAME_AUTH_VISUAL_BROWSERS:-chromium firefox}; do
         printf 'Authenticated visual E2E (%s)\n' "$browser"

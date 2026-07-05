@@ -181,6 +181,14 @@ const publicShellContracts: DomContractSpec[] = [
   { name: "downmenu", selector: "#downmenu", includeInnerHTML: true }
 ];
 
+const publicLanguageFlags = [
+  { label: "Deutschland", cookieValue: "de" },
+  { label: "English", cookieValue: "en" },
+  { label: "France", cookieValue: "fr" },
+  { label: "Italy", cookieValue: "it" },
+  { label: "Russia", cookieValue: "ru" }
+];
+
 const viewports: ViewportSpec[] = [
   { name: "desktop", width: 1024, height: 768 },
   { name: "mobile", width: 390, height: 844 }
@@ -266,12 +274,18 @@ try {
     }
     await context.close();
   }
+  const languageFlagResults: BehaviorResult[] = [];
+  for (const flag of publicLanguageFlags) {
+    languageFlagResults.push(
+      await comparePublicBehavior(browser, `public language flag ${flag.cookieValue}`, `a:has(img[alt='${flag.label}'])`, {
+        cookieValue: flag.cookieValue,
+        reloaded: true,
+        afterHrefEndsWithHash: false
+      })
+    );
+  }
   const behaviorResults = [
-    await comparePublicBehavior(browser, "public language flag", "a:has(img[alt='Deutschland'])", {
-      cookieValue: "de",
-      reloaded: true,
-      afterHrefEndsWithHash: false
-    }),
+    ...languageFlagResults,
     await comparePublicBehavior(browser, "public choose language link", ".products a:last-child", {
       cookieValue: "",
       reloaded: false,

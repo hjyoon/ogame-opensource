@@ -15,6 +15,14 @@ const artifacts = [
     path: `.tmp/playwright-user-types/${browser}/report.json`
   })),
   ...browserNames.map((browser) => ({
+    name: `public visual ${browser}`,
+    path: `.tmp/playwright-visual/${browser}/report.json`
+  })),
+  ...browserNames.map((browser) => ({
+    name: `public login dynamic ${browser}`,
+    path: `.tmp/playwright-public-login-dynamic/${browser}/report.json`
+  })),
+  ...browserNames.map((browser) => ({
     name: `auth visual ${browser}`,
     path: `.tmp/playwright-auth-visual/auth/${browser}/report.json`
   })),

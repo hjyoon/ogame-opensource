@@ -47,6 +47,160 @@ export type LegacyPublicLoginProps = Pick<
 
 export const publicImageBase = "/public-assets/img";
 const legacyAlignRightProps = { align: "right" } as React.HTMLAttributes<HTMLDivElement> & { align: string };
+type LegacyPublicLanguage = "de" | "en" | "fr" | "it" | "ru";
+
+type LegacyPublicTexts = {
+  menuStart: string;
+  menuAbout: string;
+  menuPictures: string;
+  menuRegister: string;
+  loginLink: string;
+  loginName: string;
+  loginPass: string;
+  loginChooseUniverse: string;
+  loginUniverse: string;
+  loginConfirm: string;
+  loginImpressum: string;
+  loginRemind: string;
+  loginNotChosen: string;
+  chooseLanguage: string;
+  copyright: string;
+  downRules: string;
+  downImprint: string;
+  downTerms: string;
+  homeTitle: string;
+  homeText1: string;
+  homeText2: string;
+  homeButton: string;
+};
+
+const legacyPublicTextsByLanguage: Record<LegacyPublicLanguage, LegacyPublicTexts> = {
+  de: {
+    menuStart: "Startseite",
+    menuAbout: "Über OGame",
+    menuPictures: "Bilder",
+    menuRegister: "Mitspielen",
+    loginLink: "Link Login",
+    loginName: "Spielername",
+    loginPass: "Passwort",
+    loginChooseUniverse: "Universum auswählen...",
+    loginUniverse: "Universum",
+    loginConfirm: "Mit dem Login akzeptiere ich die",
+    loginImpressum: "AGB",
+    loginRemind: "Passwort vergessen?",
+    loginNotChosen: "Du hast kein Universum ausgewählt.",
+    chooseLanguage: "Wählen Sie Ihre Sprache",
+    copyright: "Alle Rechte vorbehalten.",
+    downRules: "Regeln",
+    downImprint: "Impressum",
+    downTerms: "AGB",
+    homeTitle: "Willkommen bei OGame",
+    homeText1:
+      "<strong>OGame</strong> ist ein <strong>Strategiespiel, das im Weltraum</strong> spielt. <strong>Tausende Spieler</strong> treten zur <strong>gleichen Zeit</strong> gegeneinander an. Zum Spielen brauchst du nur einen normalen Webbrowser.",
+    homeText2: "Melde dich an und lerne die fantastische Welt von OGame kennen!",
+    homeButton: "Jetzt kostenlos mitspielen!"
+  },
+  en: {
+    menuStart: "Start",
+    menuAbout: "About OGame",
+    menuPictures: "Pictures",
+    menuRegister: "Join Now!",
+    loginLink: "Link Login",
+    loginName: "Username",
+    loginPass: "Password",
+    loginChooseUniverse: "Choose a universe...",
+    loginUniverse: "Universe",
+    loginConfirm: "By logging in, I accept the",
+    loginImpressum: "T&C's",
+    loginRemind: "Forgot your password?",
+    loginNotChosen: "You haven't chosen a universe.",
+    chooseLanguage: "Choose your language",
+    copyright: "All rights reserved.",
+    downRules: "Rules",
+    downImprint: "Imprint",
+    downTerms: "T&C's",
+    homeTitle: "Welcome to OGame",
+    homeText1:
+      "<strong>OGame</strong> is a <strong>strategic space simulation game</strong>with \n<strong>thousands of players</strong> across the world competing with each other <strong>simultaneously</strong>. All you need to play is a standard web browser.",
+    homeText2: "Register now and enter the fantastic world of OGame!",
+    homeButton: "Play for free now!"
+  },
+  fr: {
+    menuStart: "Page de démarrage",
+    menuAbout: "A propos d'OGame",
+    menuPictures: "Captures d'écran",
+    menuRegister: "S'inscrire",
+    loginLink: "Link Login",
+    loginName: "Nom de joueur",
+    loginPass: "Mot de passe",
+    loginChooseUniverse: "Choisissez l'univers...",
+    loginUniverse: "Univers",
+    loginConfirm: "En me loggant, j'accepte les ",
+    loginImpressum: "conditions générales",
+    loginRemind: "Vous avez oublié votre mot de passe ?",
+    loginNotChosen: "Vous n'avez pas choisi d'univers.",
+    chooseLanguage: "Choisissez votre langue",
+    copyright: "Tous droits réservés.",
+    downRules: "Règles du jeu",
+    downImprint: "Informations légales",
+    downTerms: "conditions générales",
+    homeTitle: "Bienvenue sur OGame",
+    homeText1:
+      "<strong>OGame</strong> est un <strong>jeu de stratégie dans l'espace</strong>. <strong>Des milliers de joueurs</strong> s'y affrontent en <strong>même temps</strong>. Pour jouer, il suffit d'un navigateur internet.",
+    homeText2: "Inscrivez-vous et découvrez le monde fantastique d'OGame",
+    homeButton: "Jouez dès maintenant gratuitement!"
+  },
+  it: {
+    menuStart: "Pagina Iniziale",
+    menuAbout: "A proposito di OGame",
+    menuPictures: "Immagini",
+    menuRegister: "Registrati ora!",
+    loginLink: "Link Login",
+    loginName: "Nick di gioco",
+    loginPass: "Password",
+    loginChooseUniverse: "Scegli un universo...",
+    loginUniverse: "Universo",
+    loginConfirm: "Entrando, accetti i",
+    loginImpressum: "T&C;",
+    loginRemind: "Hai dimenticato la tua password?",
+    loginNotChosen: "Non hai scelto nessun universo.",
+    chooseLanguage: "Scegliere la lingua",
+    copyright: "Tutti i diritti riservati.",
+    downRules: "Regole",
+    downImprint: "Contatti",
+    downTerms: "T&C;",
+    homeTitle: "Benvenuti a OGame",
+    homeText1:
+      "<strong>OGame</strong> è un <strong>gioco strategico di simulazione spaziale</strong> con <strong>migliaia di giocatori</strong> impegnati <strong>contemporaneamente</strong>, all'interno del medesimo universo, a competere fra di loro.. Tutto ciò che vi serve è uno standard browser web.",
+    homeText2: "Registrati ora ed entra nel fantastico mondo di OGame!",
+    homeButton: "Gioca ora, gratis!"
+  },
+  ru: {
+    menuStart: "Главная",
+    menuAbout: "Про ОГейм",
+    menuPictures: "Картинки",
+    menuRegister: "Присоединиться",
+    loginLink: "Link Логин",
+    loginName: "Имя",
+    loginPass: "Пароль",
+    loginChooseUniverse: "Вселенная...",
+    loginUniverse: "Вселенная",
+    loginConfirm: "Заходя в игру, я принимаю",
+    loginImpressum: "Основные положения",
+    loginRemind: "Забыли пароль?",
+    loginNotChosen: "Вы не выбрали вселенную.",
+    chooseLanguage: "Выберите свой язык",
+    copyright: "Все права защищены.",
+    downRules: "Правила",
+    downImprint: "Impressum",
+    downTerms: "Основные положения",
+    homeTitle: "Добро пожаловать в ОГейм",
+    homeText1:
+      "<strong>ОГейм</strong> - это <strong>космическая стратегия</strong>. \n<strong>Тысячи игроков</strong> выступают <strong>одновременно</strong> против друг друга. Для игры Вам нужен всего лишь нормальный браузер.",
+    homeText2: "Зарегистрируйтесь и откройте для себя фантастический мир ОГейм!",
+    homeButton: "РЕГИСТРИРУЙТЕСЬ И ИГРАЙТЕ!"
+  }
+};
 
 export function legacyPublicStyle(panelImage = "part_register.jpg"): React.CSSProperties {
   return {
@@ -57,6 +211,35 @@ export function legacyPublicStyle(panelImage = "part_register.jpg"): React.CSSPr
     "--legacy-public-input-bg": `url("${publicImageBase}/eingabe_back.png")`,
     "--legacy-public-point-bg": `url("${publicImageBase}/point.png")`
   } as React.CSSProperties;
+}
+
+export function legacyPublicLanguage(): LegacyPublicLanguage {
+  if (typeof document === "undefined") {
+    return "en";
+  }
+  const cookieLanguage = document.cookie
+    .split("; ")
+    .find((cookie) => cookie.startsWith("ogamelang="))
+    ?.split("=")[1];
+  return isLegacyPublicLanguage(cookieLanguage) ? cookieLanguage : "en";
+}
+
+export function legacyPublicTexts(): LegacyPublicTexts {
+  return legacyPublicTextsByLanguage[legacyPublicLanguage()];
+}
+
+function isLegacyPublicLanguage(value: string | undefined): value is LegacyPublicLanguage {
+  return value === "de" || value === "en" || value === "fr" || value === "it" || value === "ru";
+}
+
+function escapeLegacyPublicHTML(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
+function legacyDownmenuHTML(texts: LegacyPublicTexts): string {
+  return `\n        <a href="regeln.php">${escapeLegacyPublicHTML(texts.downRules)}</a>&nbsp;\n        <a target="_blank" href="impressum.php">${escapeLegacyPublicHTML(
+    texts.downImprint
+  )}</a>&nbsp;\n        <a target="_blank" href="#">${escapeLegacyPublicHTML(texts.downTerms)}</a>\n\n     `;
 }
 
 export function useLegacyPublicAutoFocus<T extends HTMLElement>(ref: React.RefObject<T | null>, enabled = true) {
@@ -116,10 +299,11 @@ export function LegacyPublicHome({
   onLoginChange,
   onLoginSubmit
 }: LegacyPublicHomeProps) {
+  const texts = legacyPublicTexts();
   return (
     <main className="legacy-public-page" style={legacyPublicStyle()}>
       <a className="legacy-public-skip" href="#pustekuchen">
-        Link Login
+        {texts.loginLink}
       </a>
       <div className="legacy-public-main" id="main">
         <LanguageLinks />
@@ -140,6 +324,7 @@ export function LegacyPublicHome({
 }
 
 export function LanguageLinks() {
+  const texts = legacyPublicTexts();
   const flags = [
     ["de", "Deutschland", "de.gif"],
     ["en", "English", "gb.gif"],
@@ -163,7 +348,7 @@ export function LanguageLinks() {
           </a>{" "}
         </React.Fragment>
       ))}
-      <a href="#">Choose your language</a>
+      <a href="#">{texts.chooseLanguage}</a>
     </div>
   );
 }
@@ -176,26 +361,29 @@ function setLegacyLanguage(lang: string) {
 }
 
 export function MainMenu({ active, withHomeCounterSpace = false }: { active?: "home" | "about" | "preview" | "reg"; withHomeCounterSpace?: boolean }) {
+  const texts = legacyPublicTexts();
   const items = [
-    { key: "home", label: "Start", href: "home.php" },
-    { key: "about", label: "About OGame", href: "about.php" },
-    { key: "preview", label: "Pictures", href: "screenshots.php" },
-    { key: "reg", label: "Join Now!", href: "register.php" }
+    { key: "home", label: texts.menuStart, href: "home.php" },
+    { key: "about", label: texts.menuAbout, href: "about.php" },
+    { key: "preview", label: texts.menuPictures, href: "screenshots.php" },
+    { key: "reg", label: texts.menuRegister, href: "register.php" }
   ] as const;
 
   return (
     <div className="legacy-public-mainmenu" id="mainmenu">
-      {items.map((item) =>
-        item.key === active ? (
-          <div className="menupoint legacy-public-menupoint" key={item.key}>
-            {item.label}
-          </div>
-        ) : (
-          <a href={item.href} key={item.key}>
-            {item.label}
-          </a>
-        )
-      )}
+      {items.map((item) => (
+        <React.Fragment key={item.key}>
+          {item.key === active ? (
+            <div className="menupoint legacy-public-menupoint">
+              {item.label}
+            </div>
+          ) : (
+            <a href={item.href}>
+              {item.label}
+            </a>
+          )}{" "}
+        </React.Fragment>
+      ))}
       {withHomeCounterSpace ? (
         <>
           <br />
@@ -207,15 +395,15 @@ export function MainMenu({ active, withHomeCounterSpace = false }: { active?: "h
 }
 
 function HomeContent() {
+  const texts = legacyPublicTexts();
   return (
     <section className="rightmenu legacy-public-rightmenu" id="rightmenu">
-      <div className="legacy-public-title" id="title">Welcome to OGame</div>
+      <div className="legacy-public-title" id="title">{texts.homeTitle}</div>
       <div className="legacy-public-content" id="content">
         <div
           id="text1"
           dangerouslySetInnerHTML={{
-            __html:
-              "<strong>OGame</strong> is a <strong>strategic space simulation game</strong>with \n<strong>thousands of players</strong> across the world competing with each other <strong>simultaneously</strong>. All you need to play is a standard web browser."
+            __html: texts.homeText1
           }}
         />
         <div
@@ -226,9 +414,9 @@ function HomeContent() {
             window.dispatchEvent(new PopStateEvent("popstate"));
           }}
         >
-          Play for free now!
+          {texts.homeButton}
         </div>
-        <div className="legacy-public-text2" id="text2">Register now and enter the fantastic world of OGame!</div>
+        <div className="legacy-public-text2" id="text2">{texts.homeText2}</div>
       </div>
     </section>
   );
@@ -245,14 +433,15 @@ export function LoginStrip({
   autoFocusUniverse = true
 }: LegacyPublicLoginProps & { autoFocusUniverse?: boolean }) {
   const universeRef = React.useRef<HTMLSelectElement>(null);
-  const passwordReminderHref = loginDraft.universe ? legacyPublicUniverseActionURL(loginDraft.universe, "/game/reg/mail.php") : "/game/reg/mail.php";
+  const language = legacyPublicLanguage();
+  const texts = legacyPublicTexts();
 
   useLegacyPublicAutoFocus(universeRef, autoFocusUniverse);
 
   const handlePasswordReminder = (event: React.MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
     if (!loginDraft.universe) {
-      window.alert("You haven't chosen a universe.");
+      window.alert(texts.loginNotChosen);
       return;
     }
     const form = document.forms.namedItem("loginForm");
@@ -266,8 +455,9 @@ export function LoginStrip({
     <section className="legacy-public-login" id="login">
       <a id="pustekuchen"></a>
       <div className="legacy-public-login-labels" id="login_text_1">
-        <div className="legacy-public-login-name">Username</div>
-        <div className="legacy-public-login-pass">Password</div>
+        <div className="legacy-public-login-name">{texts.loginName}</div>
+        {" "}
+        <div className="legacy-public-login-pass">{texts.loginPass}</div>
       </div>
       <div className="legacy-public-login-input" id="login_input">
         <table cellPadding={0} cellSpacing={0}>
@@ -286,10 +476,10 @@ export function LoginStrip({
                       tabIndex={1}
                       value={loginDraft.universe}
                     >
-                      <option value="">Choose a universe...</option>
+                      <option value="">{texts.loginChooseUniverse}</option>
                       {universes.map((universe) => (
                         <option key={universe.number} value={universe.baseUrl}>
-                          {universe.number}. Universe
+                          {universe.number}. {texts.loginUniverse}
                         </option>
                       ))}
                     </select>
@@ -348,22 +538,26 @@ export function LoginStrip({
       </div>
       <div className="legacy-public-login-links" id="login_text_2">
         <div className="legacy-public-remind">
-          <a href={passwordReminderHref} onClick={handlePasswordReminder}>Forgot your password?</a>
+          <a href="#" onClick={handlePasswordReminder}>{texts.loginRemind}</a>
         </div>
+        {" "}
         <div className="legacy-public-login-confirm">
-          By logging in, I accept the <a href="#" target="_blank">T&amp;C&apos;s</a>.
+          {language === "en" ? (
+            <>By logging in, I accept the <a href="#" target="_blank">T&amp;C&apos;s</a>.</>
+          ) : (
+            <>{texts.loginConfirm} <a href="#" target="_blank">{texts.loginImpressum}</a>.</>
+          )}
         </div>
       </div>
       <LoginFeedback loginError={loginError} loginResult={loginResult} />
       <div className="legacy-public-copyright" id="copyright">
-        (C) 2007 by <a href="http://www.gameforge.de" target="_blank">Gameforge Productions GmbH</a>. All rights reserved.&nbsp;&nbsp;
+        (C) 2007 by <a href="http://www.gameforge.de" target="_blank">Gameforge Productions GmbH</a>. {texts.copyright}&nbsp;&nbsp;
       </div>
       <div
         className="legacy-public-downmenu"
         id="downmenu"
         dangerouslySetInnerHTML={{
-          __html:
-            '\n        <a href="regeln.php">Rules</a>&nbsp;\n        <a target="_blank" href="impressum.php">Imprint</a>&nbsp;\n        <a target="_blank" href="#">T&amp;C\'s</a>\n\n     '
+          __html: legacyDownmenuHTML(texts)
         }}
       />
     </section>
