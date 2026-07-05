@@ -19,6 +19,7 @@ type LoginFailureCapture = {
   status: number | null;
   text: string;
   screenshotPath: string;
+  inlineFeedbackBeforeNavigation: boolean;
   consoleErrors: string[];
   failedRequests: string[];
   badResponses: string[];
@@ -258,10 +259,15 @@ async function captureInvalidLogin(context: BrowserContext, side: SideName): Pro
   await selectFirstUniverse(page);
   await page.locator("input[name='login']").fill(invalidLogin);
   await page.locator("input[name='pass']").fill(invalidPassword);
+  const inlineFeedbackBeforeNavigationPromise = Promise.race([
+    page.locator(".legacy-public-login-feedback").waitFor({ state: "visible", timeout: 20_000 }).then(() => true),
+    page.waitForURL(/\/game\/reg\/errorpage\.php\?/, { timeout: 20_000 }).then(() => false)
+  ]).catch(() => false);
   await Promise.all([
     page.waitForURL(/\/game\/reg\/errorpage\.php\?/, { timeout: 20_000 }),
     page.locator("input.loginButton, input.legacy-public-login-button").click()
   ]);
+  const inlineFeedbackBeforeNavigation = await inlineFeedbackBeforeNavigationPromise;
   await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => undefined);
   await page.locator("table").filter({ hasText: "This account does not exist" }).waitFor({ timeout: 10_000 });
   await waitForImages(page);
@@ -278,6 +284,7 @@ async function captureInvalidLogin(context: BrowserContext, side: SideName): Pro
     status: response?.status() ?? null,
     text,
     screenshotPath,
+    inlineFeedbackBeforeNavigation,
     consoleErrors,
     failedRequests,
     badResponses
@@ -371,6 +378,12 @@ function compareCaptures(legacy: LoginFailureCapture, migrated: LoginFailureCapt
   if (diff.diffRatio > maxDiffRatio) {
     errors.push(`exact diff ${diff.diffRatio} (${diff.changedPixels}/${diff.totalPixels})`);
   }
+  if (legacy.inlineFeedbackBeforeNavigation) {
+    errors.push("legacy showed inline feedback before errorpage navigation");
+  }
+  if (migrated.inlineFeedbackBeforeNavigation) {
+    errors.push("migrated showed inline feedback before errorpage navigation");
+  }
   return errors;
 }
 
@@ -413,7 +426,10 @@ function renderMarkdown(report: {
     "| Side | URL | Text |",
     "| --- | --- | --- |",
     `| Legacy | ${report.legacy.url} | ${report.legacy.text} |`,
-    `| Migrated | ${report.migrated.url} | ${report.migrated.text} |`
+    `| Migrated | ${report.migrated.url} | ${report.migrated.text} |`,
+    "",
+    `- Legacy inline feedback before navigation: ${report.legacy.inlineFeedbackBeforeNavigation ? "yes" : "no"}`,
+    `- Migrated inline feedback before navigation: ${report.migrated.inlineFeedbackBeforeNavigation ? "yes" : "no"}`
   ];
   lines.push("", "## Language Flags", "", "| Flag | Result | Mismatches |", "| --- | --- | --- |");
   for (const comparison of report.languageFlagComparisons) {

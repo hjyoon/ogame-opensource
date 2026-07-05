@@ -2434,14 +2434,16 @@ function App() {
         return response.json() as Promise<LoginValidation>;
       })
       .then((result) => {
-        setLoginResult(result);
         if (!result.valid) {
           const legacyTarget = legacyLoginErrorTarget(loginDraft, result, universes);
           if (legacyTarget) {
             window.location.assign(legacyTarget);
+            return;
           }
+          setLoginResult(result);
           return;
         }
+        setLoginResult(result);
         if (result.valid && result.session?.redirectTo) {
           const target = new URL(result.session.redirectTo, window.location.origin);
           window.history.pushState({}, "", `${target.pathname}${target.search}`);
