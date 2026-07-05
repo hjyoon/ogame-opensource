@@ -108,19 +108,26 @@ func (a app) handleGameMessagesGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid message target", http.StatusBadRequest)
 		return
 	}
+	messageTypeFilter, hasMessageTypeFilter, err := selectedMessageTypeFilter(r)
+	if err != nil {
+		http.Error(w, "invalid message type", http.StatusBadRequest)
+		return
+	}
 	query := r.URL.Query()
 	showSummary := targetPlayerID == 0 && query.Get("summary") == "1"
 	legacyFolderDisplay := targetPlayerID == 0 && query.Get("dsp") == "1"
 
 	result, err := a.deps.GameMessages.GetMessages(r.Context(), appgame.MessagesCommand{
-		PublicSession:       query.Get("session"),
-		PrivateSessions:     cookieMap(r),
-		RemoteAddr:          remoteIP(r.RemoteAddr),
-		PlanetID:            planetID,
-		TargetPlayerID:      targetPlayerID,
-		Subject:             query.Get("betreff"),
-		ShowSummary:         showSummary,
-		LegacyFolderDisplay: legacyFolderDisplay,
+		PublicSession:        query.Get("session"),
+		PrivateSessions:      cookieMap(r),
+		RemoteAddr:           remoteIP(r.RemoteAddr),
+		PlanetID:             planetID,
+		TargetPlayerID:       targetPlayerID,
+		Subject:              query.Get("betreff"),
+		ShowSummary:          showSummary,
+		LegacyFolderDisplay:  legacyFolderDisplay,
+		MessageTypeFilter:    messageTypeFilter,
+		HasMessageTypeFilter: hasMessageTypeFilter,
 	})
 	if err != nil {
 		http.Error(w, "game messages unavailable", http.StatusServiceUnavailable)
@@ -195,6 +202,18 @@ func selectedMessageTargetID(r *http.Request) (int, error) {
 		return 0, strconv.ErrSyntax
 	}
 	return targetID, nil
+}
+
+func selectedMessageTypeFilter(r *http.Request) (int, bool, error) {
+	raw := r.URL.Query().Get("pm")
+	if raw == "" || r.URL.Query().Get("messageziel") != "" {
+		return 0, false, nil
+	}
+	messageType, err := strconv.Atoi(raw)
+	if err != nil || messageType < 0 {
+		return 0, false, strconv.ErrSyntax
+	}
+	return messageType, true, nil
 }
 
 func toGameMessagesSummary(messages domaingame.Messages) gameMessagesSummary {

@@ -28,11 +28,13 @@ func TestMessagesServiceReturnsMessagesForAuthenticatedSession(t *testing.T) {
 	service := NewMessagesService(sessions, repository)
 
 	result, err := service.GetMessages(context.Background(), MessagesCommand{
-		PublicSession:   "public",
-		PrivateSessions: map[string]string{"private": "token"},
-		RemoteAddr:      "203.0.113.9",
-		PlanetID:        99,
-		TargetPlayerID:  77,
+		PublicSession:        "public",
+		PrivateSessions:      map[string]string{"private": "token"},
+		RemoteAddr:           "203.0.113.9",
+		PlanetID:             99,
+		TargetPlayerID:       77,
+		MessageTypeFilter:    domaingame.MessageTypePM,
+		HasMessageTypeFilter: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -40,7 +42,8 @@ func TestMessagesServiceReturnsMessagesForAuthenticatedSession(t *testing.T) {
 	if !result.Authenticated || result.Messages.Commander != "legor" || result.Messages.Rows[0].Text != "text public" {
 		t.Fatalf("unexpected messages result: %+v", result)
 	}
-	if repository.query.PlayerID != 42 || repository.query.PlanetID != 99 || repository.query.TargetPlayerID != 77 {
+	if repository.query.PlayerID != 42 || repository.query.PlanetID != 99 || repository.query.TargetPlayerID != 77 ||
+		!repository.query.HasMessageTypeFilter || repository.query.MessageTypeFilter != domaingame.MessageTypePM {
 		t.Fatalf("unexpected messages query: %+v", repository.query)
 	}
 	if sessions.command.PublicSession != "public" || sessions.command.RemoteAddr != "203.0.113.9" {

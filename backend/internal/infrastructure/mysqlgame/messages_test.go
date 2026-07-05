@@ -46,6 +46,37 @@ func TestMessagesRepositoryReadsLegacyInbox(t *testing.T) {
 	}
 }
 
+func TestMessagesRepositoryFiltersLegacyInboxByMessageType(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	queryer := &fakeQueryer{results: messageInboxResults(
+		fakeQueryResult{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix(), domaingame.AdminLevelPlayer, int64(0)})},
+		fakeQueryResult{rows: fakeRowsFromValues(
+			[]any{12, domaingame.MessageTypeMisc, "System", "Notice", "Text", 1, int64(1700000001)},
+		)},
+	)}
+	repository := NewMessagesRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+
+	messages, err := repository.GetMessages(context.Background(), appgame.MessagesQuery{
+		PlayerID:             42,
+		PlanetID:             99,
+		LegacyFolderDisplay:  true,
+		MessageTypeFilter:    domaingame.MessageTypeMisc,
+		HasMessageTypeFilter: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messages.Action != domaingame.MessagesActionInbox || len(messages.Rows) != 1 || messages.Rows[0].Type != domaingame.MessageTypeMisc {
+		t.Fatalf("unexpected filtered inbox payload: %+v", messages)
+	}
+	if !strings.Contains(queryer.calls[5].sql, "pm <> ? AND pm = ? ORDER BY date DESC, msg_id DESC LIMIT ?") ||
+		queryer.calls[5].args[1] != domaingame.MessageTypeBattleReportText ||
+		queryer.calls[5].args[2] != domaingame.MessageTypeMisc ||
+		queryer.calls[5].args[3] != domaingame.MessagesLimitCommander {
+		t.Fatalf("expected filtered legacy messages query, got %+v", queryer.calls[5])
+	}
+}
+
 func TestMessagesRepositoryLoadsMessageCategoryCounts(t *testing.T) {
 	queryer := &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(
 		[]any{domaingame.MessageTypeSpyReport, 2, 1},
@@ -919,12 +950,12 @@ func (f *fakeMessagesRunner) ExecContext(_ context.Context, query string, args .
 
 func TestMessagesRepositoryScanEdges(t *testing.T) {
 	repository := NewMessagesRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", 0, "from", "subj", "text", 0, int64(1)})}}}, "ogame_", time.Now)
-	if _, err := repository.loadInboxRows(context.Background(), "ogame_messages", 42, 25); err == nil || !strings.Contains(err.Error(), "expected int") {
+	if _, err := repository.loadInboxRows(context.Background(), "ogame_messages", 42, 25, 0, false); err == nil || !strings.Contains(err.Error(), "expected int") {
 		t.Fatalf("expected inbox scan error, got %v", err)
 	}
 
 	repository = NewMessagesRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("inbox rows failed"), []any{11, 0, "from", "subj", "text", 0, int64(1)})}}}, "ogame_", time.Now)
-	if _, err := repository.loadInboxRows(context.Background(), "ogame_messages", 42, 25); err == nil || !strings.Contains(err.Error(), "inbox rows failed") {
+	if _, err := repository.loadInboxRows(context.Background(), "ogame_messages", 42, 25, 0, false); err == nil || !strings.Contains(err.Error(), "inbox rows failed") {
 		t.Fatalf("expected inbox rows error, got %v", err)
 	}
 

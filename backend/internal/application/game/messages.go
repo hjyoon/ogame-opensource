@@ -16,24 +16,28 @@ type MessagesRepository interface {
 }
 
 type MessagesQuery struct {
-	PlayerID            int
-	PlanetID            int
-	TargetPlayerID      int
-	Subject             string
-	ShowSummary         bool
-	LegacyFolderDisplay bool
-	PublicSession       string
+	PlayerID             int
+	PlanetID             int
+	TargetPlayerID       int
+	Subject              string
+	ShowSummary          bool
+	LegacyFolderDisplay  bool
+	MessageTypeFilter    int
+	HasMessageTypeFilter bool
+	PublicSession        string
 }
 
 type MessagesCommand struct {
-	PublicSession       string
-	PrivateSessions     map[string]string
-	RemoteAddr          string
-	PlanetID            int
-	TargetPlayerID      int
-	Subject             string
-	ShowSummary         bool
-	LegacyFolderDisplay bool
+	PublicSession        string
+	PrivateSessions      map[string]string
+	RemoteAddr           string
+	PlanetID             int
+	TargetPlayerID       int
+	Subject              string
+	ShowSummary          bool
+	LegacyFolderDisplay  bool
+	MessageTypeFilter    int
+	HasMessageTypeFilter bool
 }
 
 type MessagesResult struct {
@@ -102,13 +106,15 @@ func (s MessagesService) GetMessages(ctx context.Context, command MessagesComman
 	}
 
 	messages, err := s.repository.GetMessages(ctx, MessagesQuery{
-		PlayerID:            session.Session.PlayerID,
-		PlanetID:            command.PlanetID,
-		TargetPlayerID:      command.TargetPlayerID,
-		Subject:             command.Subject,
-		ShowSummary:         command.ShowSummary,
-		LegacyFolderDisplay: command.LegacyFolderDisplay,
-		PublicSession:       command.PublicSession,
+		PlayerID:             session.Session.PlayerID,
+		PlanetID:             command.PlanetID,
+		TargetPlayerID:       command.TargetPlayerID,
+		Subject:              command.Subject,
+		ShowSummary:          command.ShowSummary,
+		LegacyFolderDisplay:  command.LegacyFolderDisplay,
+		MessageTypeFilter:    command.MessageTypeFilter,
+		HasMessageTypeFilter: command.HasMessageTypeFilter,
+		PublicSession:        command.PublicSession,
 	})
 	if err != nil {
 		return MessagesResult{}, err

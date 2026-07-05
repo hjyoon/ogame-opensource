@@ -4,6 +4,7 @@ import {
   gameFleetTargetPrefillFromSearch,
   gameFleetTargetURL,
   gameGalaxyMissileURL,
+  gameLegacyRouteURL,
   gameMessageComposeURL,
   gamePlanetSwitchURL,
   gameRouteURL,
@@ -127,7 +128,23 @@ describe("game route model", () => {
       "/game/jump-gate?session=abc&cp=42&gid=43"
     );
     expect(gameRouteURL("/game/buildings", "?session=abc&lgn=1&cp=42")).toBe("/game/buildings?session=abc&cp=42");
+    expect(gameRouteURL("/game/messages", "?session=abc&dsp=1&pm=5&lgn=1")).toBe("/game/messages?session=abc&dsp=1&pm=5");
     expect(gameRouteURL("/game/overview", "")).toBe("/game/overview");
+  });
+
+  test("rewrites legacy in-game hrefs to migrated natural routes", () => {
+    expect(gameLegacyRouteURL("index.php?page=writemessages&messageziel=42&re=1&betreff=Re%3ATest", "?session=abc&cp=99")).toBe(
+      "/game/messages?messageziel=42&re=1&betreff=Re%3ATest&session=abc&cp=99"
+    );
+    expect(gameLegacyRouteURL("index.php?page=galaxy&galaxy=1&system=2&position=3&session=abc", "?cp=99")).toBe(
+      "/game/galaxy?galaxy=1&system=2&position=3&session=abc&cp=99"
+    );
+    expect(gameLegacyRouteURL("/game/index.php?page=bericht&bericht=11&session=abc", "")).toBe(
+      "/game/report?bericht=11&session=abc"
+    );
+    expect(gameLegacyRouteURL("#")).toBeNull();
+    expect(gameLegacyRouteURL("mailto:operator@example.local")).toBeNull();
+    expect(gameLegacyRouteURL("/game/redir.php?url=https%3A%2F%2Fexample.com")).toBeNull();
   });
 
   test("switches planets without leaving the active game page", () => {

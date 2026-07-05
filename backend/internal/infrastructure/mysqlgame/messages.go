@@ -108,7 +108,7 @@ func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.Messa
 	if err := r.deleteExpiredInboxMessages(ctx, messagesTable, query.PlayerID, retention); err != nil {
 		return domaingame.Messages{}, err
 	}
-	showSummary := query.ShowSummary || (query.LegacyFolderDisplay && retention.showLegacyFolderSummaryOnly())
+	showSummary := query.ShowSummary || (query.LegacyFolderDisplay && !query.HasMessageTypeFilter && retention.showLegacyFolderSummaryOnly())
 	if showSummary {
 		messages.Action = domaingame.MessagesActionSummary
 		summary, err := r.loadMessageCategoryCounts(ctx, messagesTable, query.PlayerID)
@@ -123,7 +123,14 @@ func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.Messa
 		messages.Operators = operators
 		return messages, nil
 	}
-	rows, err := r.loadInboxRows(ctx, messagesTable, query.PlayerID, domaingame.NormalizeMessagesLimit(retention.CommanderActive))
+	rows, err := r.loadInboxRows(
+		ctx,
+		messagesTable,
+		query.PlayerID,
+		domaingame.NormalizeMessagesLimit(retention.CommanderActive),
+		query.MessageTypeFilter,
+		query.HasMessageTypeFilter,
+	)
 	if err != nil {
 		return domaingame.Messages{}, err
 	}
@@ -297,13 +304,19 @@ func (r MessagesRepository) MutateMessages(ctx context.Context, query appgame.Me
 	}
 }
 
-func (r MessagesRepository) loadInboxRows(ctx context.Context, messagesTable string, playerID int, limit int) ([]domaingame.Message, error) {
+func (r MessagesRepository) loadInboxRows(ctx context.Context, messagesTable string, playerID int, limit int, messageTypeFilter int, hasMessageTypeFilter bool) ([]domaingame.Message, error) {
+	statement := fmt.Sprintf("SELECT msg_id, pm, msgfrom, subj, text, shown, date FROM %s WHERE owner_id = ? AND pm <> ?", messagesTable)
+	args := []any{playerID, domaingame.MessageTypeBattleReportText}
+	if hasMessageTypeFilter {
+		statement += " AND pm = ?"
+		args = append(args, messageTypeFilter)
+	}
+	statement += " ORDER BY date DESC, msg_id DESC LIMIT ?"
+	args = append(args, limit)
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT msg_id, pm, msgfrom, subj, text, shown, date FROM %s WHERE owner_id = ? AND pm <> ? ORDER BY date DESC, msg_id DESC LIMIT ?", messagesTable),
-		playerID,
-		domaingame.MessageTypeBattleReportText,
-		limit,
+		statement,
+		args...,
 	)
 	if err != nil {
 		return nil, err
@@ -335,7 +348,7 @@ func (r MessagesRepository) mutateInboxMessages(ctx context.Context, messagesTab
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.loadInboxRows(ctx, messagesTable, query.PlayerID, domaingame.NormalizeMessagesLimit(commanderActive))
+	rows, err := r.loadInboxRows(ctx, messagesTable, query.PlayerID, domaingame.NormalizeMessagesLimit(commanderActive), 0, false)
 	if err != nil {
 		return nil, err
 	}

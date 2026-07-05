@@ -186,6 +186,34 @@ export function gameMenuRouteURL(path: string, search: string): string {
   return encoded ? `${path}?${encoded}` : path;
 }
 
+export function gameLegacyRouteURL(href: string, currentSearch = ""): string | null {
+  const trimmed = href.trim();
+  if (trimmed === "" || trimmed.startsWith("#")) {
+    return null;
+  }
+  if (/^(?:mailto|javascript|data|tel):/i.test(trimmed)) {
+    return null;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed, "http://ogame.local/game/");
+  } catch {
+    return null;
+  }
+  const path = normalizeGamePath(parsed.pathname, parsed.search);
+  if (!routeByPath.has(path)) {
+    return null;
+  }
+  const query = new URLSearchParams(parsed.search);
+  const current = new URLSearchParams(currentSearch);
+  for (const key of ["session", "cp"]) {
+    if (!query.has(key)) {
+      copyQueryValue(current, query, key);
+    }
+  }
+  return gameRouteURL(path, query.toString());
+}
+
 const globalGameRouteQueryKeys = new Set(["session", "cp"]);
 const gameRouteQueryKeys = new Map<string, Set<string>>([
   ["/game/rename-planet", new Set(["pl"])],
@@ -201,7 +229,7 @@ const gameRouteQueryKeys = new Map<string, Set<string>>([
   ["/game/officers", new Set(["buynow", "type", "days"])],
   ["/game/statistics", new Set(["who", "type", "start", "sort_per_member"])],
   ["/game/search", new Set(["searchtext", "type"])],
-  ["/game/messages", new Set(["messageziel", "re", "betreff", "dsp"])],
+  ["/game/messages", new Set(["messageziel", "re", "betreff", "dsp", "pm"])],
   ["/game/report", new Set(["bericht"])],
   ["/game/phalanx", new Set(["galaxy", "system", "planet", "planettype", "scanid", "spid"])],
   ["/game/jump-gate", new Set(["gid", "qm", "zm"])],

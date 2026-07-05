@@ -67,6 +67,93 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers legacy cntchar-style keyup behavior for React-rendered compose forms."]
   },
   {
+    name: "messages-summary-category-link-filter",
+    legacyPage: "messages",
+    legacyQuery: { dsp: "1" },
+    migratedPath: "/game/messages",
+    migratedQuery: { dsp: "1" },
+    legacyReady: "#content a[href*='pm=1']",
+    migratedReady: ".legacy-messages-table a[href*='pm=1']",
+    requiredFixtureFeatures: ["commander", "report"],
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[href*='page=messages'][href*='pm=1']",
+        migratedSelector: ".legacy-messages-table a[href*='/game/messages'][href*='pm=1']",
+        legacyWaitForSelector: "#content input[name^='delmes']",
+        migratedWaitForSelector: ".legacy-messages-table [data-message-row]"
+      }
+    ],
+    assertions: [
+      {
+        name: "message-type-param",
+        type: "evaluate",
+        expression: "new URL(window.location.href).searchParams.get('pm')",
+        expected: "1"
+      },
+      {
+        name: "message-row-count",
+        type: "count",
+        legacySelector: "#content input[name^='delmes']",
+        migratedSelector: ".legacy-messages-table [data-message-row]",
+        compareSides: true
+      },
+      {
+        name: "spy-report-visible",
+        type: "text",
+        legacySelector: "#content",
+        migratedSelector: ".legacy-messages-table",
+        contains: "Visual Spy Report"
+      }
+    ],
+    notes: ["Covers legacy messages category links preserving pm= and filtering the inbox by message type."]
+  },
+  {
+    name: "messages-personal-reply-link",
+    legacyPage: "messages",
+    legacyQuery: { dsp: "1", pm: "0" },
+    migratedPath: "/game/messages",
+    migratedQuery: { dsp: "1", pm: "0" },
+    legacyReady: "#content a[href*='page=writemessages'][href*='messageziel=']",
+    migratedReady: ".legacy-messages-table a[href*='/game/messages'][href*='messageziel=']",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[href*='page=writemessages'][href*='messageziel=']",
+        migratedSelector: ".legacy-messages-table a[href*='/game/messages'][href*='messageziel=']",
+        legacyWaitForSelector: "#content textarea[name='text']",
+        migratedWaitForSelector: ".legacy-messages-compose-table textarea[name='text']"
+      }
+    ],
+    assertions: [
+      { name: "compose-visible", type: "visible", selector: "textarea[name='text']", expected: "true" },
+      { name: "compose-heading", type: "text", legacySelector: "#content", migratedSelector: ".legacy-messages-compose-table", contains: "Write message" }
+    ],
+    notes: ["Covers reply links embedded in personal message rows."]
+  },
+  {
+    name: "messages-personal-galaxy-link",
+    legacyPage: "messages",
+    legacyQuery: { dsp: "1", pm: "0" },
+    migratedPath: "/game/messages",
+    migratedQuery: { dsp: "1", pm: "0" },
+    legacyReady: "#content a[href*='page=galaxy'][href*='galaxy=']",
+    migratedReady: ".legacy-messages-table a[href*='/game/galaxy'][href*='galaxy=']",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[href*='page=galaxy'][href*='galaxy=']",
+        migratedSelector: ".legacy-messages-table a[href*='/game/galaxy'][href*='galaxy=']",
+        waitForSelector: "input[name='galaxy']"
+      }
+    ],
+    assertions: [
+      { name: "galaxy", type: "value", selector: "input[name='galaxy']", compareSides: true },
+      { name: "system", type: "value", selector: "input[name='system']", compareSides: true }
+    ],
+    notes: ["Covers coordinate links embedded in personal message rows."]
+  },
+  {
     name: "notes-create-text-counter",
     legacyPage: "notizen",
     legacyQuery: { a: "1" },

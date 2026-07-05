@@ -5,6 +5,7 @@ import {
   gameFleetTargetPrefillFromSearch,
   gameFleetTargetURL,
   gameGalaxyMissileURL,
+  gameLegacyRouteURL,
   gameMenuRouteURL,
   gameMessageComposeURL,
   gamePlanetSwitchURL,
@@ -12669,6 +12670,13 @@ function sanitizeLegacyMessageHTML(value: string): string {
     if (reportHref && element instanceof HTMLAnchorElement) {
       element.href = reportHref;
       element.removeAttribute("target");
+    }
+    if (element instanceof HTMLAnchorElement) {
+      const migratedHref = gameLegacyRouteURL(element.getAttribute("href") ?? "", typeof window === "undefined" ? "" : window.location.search);
+      if (migratedHref) {
+        element.setAttribute("href", migratedHref);
+        element.removeAttribute("target");
+      }
     }
     for (const attribute of Array.from(element.attributes)) {
       const name = attribute.name.toLowerCase();

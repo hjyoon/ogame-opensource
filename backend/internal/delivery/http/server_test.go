@@ -3846,6 +3846,17 @@ func TestGameMessagesEndpointDefaultsToInboxAndSupportsExplicitSummary(t *testin
 	if messages.command.ShowSummary || !messages.command.LegacyFolderDisplay || messages.command.TargetPlayerID != 0 || messages.command.PlanetID != 99 {
 		t.Fatalf("expected legacy cp dsp query to request legacy folder display without explicit summary, got %+v", messages.command)
 	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/game/messages?session=public&dsp=1&pm=5", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected legacy pm filter 200, got %d", rec.Code)
+	}
+	if !messages.command.LegacyFolderDisplay || !messages.command.HasMessageTypeFilter || messages.command.MessageTypeFilter != domaingame.MessageTypeMisc {
+		t.Fatalf("expected legacy pm filter command, got %+v", messages.command)
+	}
 }
 
 func TestGameMessagesEndpointReturnsComposeTarget(t *testing.T) {
