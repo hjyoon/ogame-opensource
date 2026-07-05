@@ -44,6 +44,7 @@ import { LegacyPublicRules } from "./LegacyPublicRules";
 import { LegacyPublicScreenshots } from "./LegacyPublicScreenshots";
 import { LegacyPublicStory } from "./LegacyPublicStory";
 import { LegacyPublicUniverses } from "./LegacyPublicUniverses";
+import { LegacyRegistrationForm } from "./LegacyRegistrationForm";
 import { gameRouteURL, resolveGameRoute } from "./gameRoutes";
 import { legacyPublicCssHrefs, legacyPublicRouteKeys, publicRoutes, resolvePublicRoute } from "./routes";
 import "./styles.css";
@@ -195,6 +196,12 @@ const legacyGameCssHrefs = [
   "/public-assets/game/css/combox.css",
   "/public-assets/evolution/formate.css"
 ];
+const legacyRegistrationCssHrefs = ["/evolution/formate.css", "/game/css/registration.css"];
+const legacyRegistrationFormPath = "/game/reg/new.php";
+
+function isLegacyRegistrationFormPath(pathname: string) {
+  return pathname === legacyRegistrationFormPath;
+}
 
 function isLegacyPublicPath(pathname: string) {
   return legacyPublicRouteKeys.has(resolvePublicRoute(pathname).route.key);
@@ -221,6 +228,27 @@ function syncLegacyPublicChrome(enabled: boolean) {
   }
   document.body.style.removeProperty("--legacy-public-body-bg");
   document.head.querySelectorAll("link[data-legacy-public-css]").forEach((link) => link.remove());
+}
+
+function ensureLegacyRegistrationCss() {
+  for (const href of legacyRegistrationCssHrefs) {
+    if (!document.head.querySelector(`link[data-legacy-registration-css="${href}"]`)) {
+      const link = document.createElement("link");
+      link.dataset.legacyRegistrationCss = href;
+      link.href = href;
+      link.rel = "stylesheet";
+      document.head.appendChild(link);
+    }
+  }
+}
+
+function syncLegacyRegistrationChrome(enabled: boolean) {
+  document.body.classList.toggle("legacy-registration-body", enabled);
+  if (enabled) {
+    ensureLegacyRegistrationCss();
+    return;
+  }
+  document.head.querySelectorAll("link[data-legacy-registration-css]").forEach((link) => link.remove());
 }
 
 function ensureLegacyGameCss() {
@@ -364,13 +392,15 @@ function App() {
   const [gameLogoutError, setGameLogoutError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
-  const gameRoute = pathname.startsWith("/game") ? resolveGameRoute(pathname, search) : null;
-  const isLegacyPublicRoute = legacyPublicRouteKeys.has(route.key);
+  const isLegacyRegistrationRoute = isLegacyRegistrationFormPath(pathname);
+  const gameRoute = pathname.startsWith("/game") && !isLegacyRegistrationRoute ? resolveGameRoute(pathname, search) : null;
+  const isLegacyPublicRoute = legacyPublicRouteKeys.has(route.key) && !isLegacyRegistrationRoute;
 
   useLayoutEffect(() => {
     syncLegacyPublicChrome(isLegacyPublicRoute);
+    syncLegacyRegistrationChrome(isLegacyRegistrationRoute);
     syncLegacyGameChrome(gameRoute !== null);
-  }, [gameRoute, isLegacyPublicRoute]);
+  }, [gameRoute, isLegacyPublicRoute, isLegacyRegistrationRoute]);
 
   useEffect(() => {
     const onClick = (event: MouseEvent) => {
@@ -2271,7 +2301,7 @@ function App() {
     dispatchClientNavigation(path);
   };
 
-  if (pathname.startsWith("/game")) {
+  if (pathname.startsWith("/game") && !isLegacyRegistrationRoute) {
     return (
       <LegacyGameOverview
         adminError={gameAdminError}
@@ -2454,6 +2484,10 @@ function App() {
       .catch((err: unknown) => setLoginError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoginPending(false));
   };
+
+  if (isLegacyRegistrationRoute) {
+    return <LegacyRegistrationForm universeNumber={universes[0]?.number ?? 1} />;
+  }
 
   if (route.key === "home") {
     return (

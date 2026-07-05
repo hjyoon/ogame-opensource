@@ -2,7 +2,7 @@ import { chromium, firefox, type BrowserContext, type Page } from "@playwright/t
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { trimTrailingSlash } from "./visual/game-visual-utils";
+import { compareScreenshots, trimTrailingSlash, waitForImages, waitForStablePaint, type DiffResult } from "./visual/game-visual-utils";
 
 type BrowserName = "chromium" | "firefox";
 type SideName = "legacy" | "migrated";
@@ -16,9 +16,38 @@ type RegisterState = {
   states: Record<string, { info: string; status: string; statusClass: string }>;
 };
 
+type LegacyNewFormState = {
+  url: string;
+  status: number | null;
+  screenshotPath: string;
+  title: string;
+  playerInfoHeader: string;
+  playerNameLabel: string;
+  emailLabel: string;
+  acceptLabel: string;
+  submitValue: string;
+  infoHeader: string;
+  formMethod: string;
+  formAction: string;
+  inputNames: string[];
+  cssHrefs: string[];
+  legacyPublicChrome: boolean;
+  legacyGameChrome: boolean;
+  legacyRegistrationChrome: boolean;
+};
+
+type LegacyNewFormComparison = {
+  pass: boolean;
+  diff: DiffResult;
+  mismatches: string[];
+  legacy: LegacyNewFormState;
+  migrated: LegacyNewFormState;
+};
+
 const rootDir = resolve(import.meta.dir, "../..");
 const browserName = browserEnv("OGAME_PLAYWRIGHT_BROWSER", "chromium");
 const outputDir = resolve(rootDir, `.tmp/playwright-public-registration-dynamic/${browserName}`);
+const screenshotDir = join(outputDir, "screenshots");
 const legacyBaseURL = trimTrailingSlash(process.env.OGAME_LEGACY_BASE_URL ?? "http://127.0.0.1:8888");
 const migratedBaseURL = trimTrailingSlash(process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890");
 const defaultChromeExecutable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -27,7 +56,7 @@ const browserExecutable =
   process.env.OGAME_PLAYWRIGHT_EXECUTABLE ??
   (defaultBrowserExecutable && existsSync(defaultBrowserExecutable) ? defaultBrowserExecutable : undefined);
 
-await mkdir(outputDir, { recursive: true });
+await mkdir(screenshotDir, { recursive: true });
 
 const browserType = browserName === "firefox" ? firefox : chromium;
 const browser = await browserType.launch({
@@ -40,6 +69,7 @@ try {
   const migratedContext = await newContext(migratedBaseURL);
   const legacy = await runSide(legacyContext, "legacy");
   const migrated = await runSide(migratedContext, "migrated");
+  const legacyNewForm = await compareLegacyNewForm();
   await legacyContext.close();
   await migratedContext.close();
 
@@ -53,7 +83,8 @@ try {
     migrated.failedRequests.length === 0 &&
     legacy.badResponses.length === 0 &&
     migrated.badResponses.length === 0 &&
-    comparisons.length === 0;
+    comparisons.length === 0 &&
+    legacyNewForm.pass;
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -64,6 +95,7 @@ try {
     pass,
     legacy,
     migrated,
+    legacyNewForm,
     comparisons
   };
   await writeFile(join(outputDir, "report.json"), JSON.stringify(report, null, 2));
@@ -258,6 +290,106 @@ function compareStates(legacy: RegisterState, migrated: RegisterState): string[]
   return errors;
 }
 
+async function compareLegacyNewForm(): Promise<LegacyNewFormComparison> {
+  const legacyContext = await newContext(legacyBaseURL);
+  const migratedContext = await newContext(migratedBaseURL);
+  try {
+    const legacy = await captureLegacyNewForm(legacyContext, "legacy");
+    const migrated = await captureLegacyNewForm(migratedContext, "migrated");
+    const diffPath = join(screenshotDir, "legacy-new-form-diff.png");
+    const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath, diffPath, 0);
+    const mismatches = compareLegacyNewFormState(legacy, migrated, diff);
+    return {
+      pass: mismatches.length === 0,
+      diff,
+      mismatches,
+      legacy,
+      migrated
+    };
+  } finally {
+    await legacyContext.close();
+    await migratedContext.close();
+  }
+}
+
+async function captureLegacyNewForm(context: BrowserContext, side: SideName): Promise<LegacyNewFormState> {
+  const page = await context.newPage();
+  const response = await page.goto(`${side === "legacy" ? legacyBaseURL : migratedBaseURL}/game/reg/new.php`, {
+    waitUntil: "networkidle",
+    timeout: 20_000
+  });
+  await page.locator("form#registration").waitFor({ timeout: 10_000 });
+  await waitForImages(page);
+  await waitForStablePaint(page);
+  await page.waitForTimeout(100);
+  const screenshotPath = join(screenshotDir, `legacy-new-form-${side}.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: false, animations: "disabled" });
+  const state = await page.evaluate(() => {
+    const compactText = (selector: string) => document.querySelector(selector)?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+    const form = document.querySelector<HTMLFormElement>("form#registration");
+    return {
+      url: window.location.href,
+      title: compactText("h1"),
+      playerInfoHeader: compactText("form#registration table table td.c"),
+      playerNameLabel: compactText("input[name='character']") || compactText("form#registration table table tr:nth-of-type(2) th:first-child"),
+      emailLabel: compactText("form#registration table table tr:nth-of-type(3) th:first-child"),
+      acceptLabel: compactText("input[name='agb']") || compactText("form#registration table table tr:nth-of-type(4) th:first-child"),
+      submitValue: document.querySelector<HTMLInputElement>("form#registration input[type='submit']")?.value ?? "",
+      infoHeader: Array.from(document.querySelectorAll("td.c")).map((node) => node.textContent?.replace(/\s+/g, " ").trim() ?? "")[1] ?? "",
+      formMethod: form?.method.toLowerCase() ?? "",
+      formAction: form?.getAttribute("action") ?? "",
+      inputNames: Array.from(document.querySelectorAll<HTMLInputElement>("form#registration input[name]")).map((input) => input.name),
+      cssHrefs: Array.from(document.querySelectorAll<HTMLLinkElement>("link[rel='stylesheet']")).map((link) => new URL(link.href).pathname),
+      legacyPublicChrome: document.body.classList.contains("legacy-public-body"),
+      legacyGameChrome: document.body.classList.contains("legacy-game-body"),
+      legacyRegistrationChrome: document.body.classList.contains("legacy-registration-body")
+    };
+  });
+  await page.close();
+  return {
+    ...state,
+    status: response?.status() ?? null,
+    screenshotPath
+  };
+}
+
+function compareLegacyNewFormState(legacy: LegacyNewFormState, migrated: LegacyNewFormState, diff: DiffResult): string[] {
+  const errors: string[] = [];
+  const comparableFields = [
+    "title",
+    "playerInfoHeader",
+    "emailLabel",
+    "acceptLabel",
+    "submitValue",
+    "infoHeader",
+    "formMethod",
+    "formAction"
+  ] as const;
+  if (legacy.status !== 200 || migrated.status !== 200) {
+    errors.push(`legacy new.php status ${legacy.status}/${migrated.status}`);
+  }
+  for (const field of comparableFields) {
+    if (legacy[field] !== migrated[field]) {
+      errors.push(`legacy new.php ${field} differs: legacy=${legacy[field]} migrated=${migrated[field]}`);
+    }
+  }
+  if (JSON.stringify(legacy.inputNames) !== JSON.stringify(migrated.inputNames)) {
+    errors.push(`legacy new.php input names differ: legacy=${legacy.inputNames.join(",")} migrated=${migrated.inputNames.join(",")}`);
+  }
+  if (!migrated.cssHrefs.includes("/evolution/formate.css") || !migrated.cssHrefs.includes("/game/css/registration.css")) {
+    errors.push(`legacy new.php migrated css missing: ${migrated.cssHrefs.join(",")}`);
+  }
+  if (migrated.legacyPublicChrome || migrated.legacyGameChrome || !migrated.legacyRegistrationChrome) {
+    errors.push(
+      `legacy new.php chrome flags public=${migrated.legacyPublicChrome} game=${migrated.legacyGameChrome} registration=${migrated.legacyRegistrationChrome}`
+    );
+  }
+  if (diff.diffRatio > 0) {
+    errors.push(`legacy new.php exact diff ${diff.diffRatio} (${diff.changedPixels}/${diff.totalPixels})`);
+  }
+  return errors;
+}
+
 function compact(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -289,6 +421,7 @@ function renderMarkdown(report: {
   browserExecutable: string;
   pass: boolean;
   comparisons: string[];
+  legacyNewForm: LegacyNewFormComparison;
   legacy: RegisterState;
   migrated: RegisterState;
 }) {
@@ -304,6 +437,19 @@ function renderMarkdown(report: {
   ];
   for (const key of Object.keys(report.legacy.states)) {
     lines.push(`| ${key} | ${stateSummary(report.legacy.states[key])} | ${stateSummary(report.migrated.states[key])} |`);
+  }
+  lines.push(
+    "",
+    "## Legacy /game/reg/new.php",
+    "",
+    `- Result: ${report.legacyNewForm.pass ? "PASS" : "FAIL"}`,
+    `- Diff Ratio: ${report.legacyNewForm.diff.diffRatio}`,
+    `- Changed Pixels: ${report.legacyNewForm.diff.changedPixels}`,
+    `- Legacy title: ${report.legacyNewForm.legacy.title}`,
+    `- Migrated title: ${report.legacyNewForm.migrated.title}`
+  );
+  if (report.legacyNewForm.mismatches.length > 0) {
+    lines.push("", "### Legacy new.php Differences", "", ...report.legacyNewForm.mismatches.map((item) => `- ${item}`));
   }
   if (report.comparisons.length > 0) {
     lines.push("", "## Differences", "", ...report.comparisons.map((item) => `- ${item}`));

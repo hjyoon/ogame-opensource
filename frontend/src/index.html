@@ -7,14 +7,24 @@
     <script>
       (function () {
         var aliases = /* __OGAME_LEGACY_PUBLIC_BOOTSTRAP_PATHS__ */ { "/": true };
-        if (aliases[window.location.pathname]) {
+        var legacyRegistration = window.location.pathname === "/game/reg/new.php";
+        if (legacyRegistration) {
+          document.documentElement.dataset.legacyRegistration = "true";
+          [
+            "/evolution/formate.css",
+            "/game/css/registration.css"
+          ].forEach(function (href) {
+            document.write('<link data-legacy-registration-css="' + href + '" rel="stylesheet" href="' + href + '">');
+          });
+        }
+        if (!legacyRegistration && aliases[window.location.pathname]) {
           document.documentElement.dataset.legacyPublic = "true";
           var cssHrefs = /* __OGAME_LEGACY_PUBLIC_CSS_HREFS__ */ ["/public-assets/css/styles.css", "/public-assets/css/about.css"];
           cssHrefs.forEach(function (href) {
             document.write('<link data-legacy-public-css="' + href + '" rel="stylesheet" href="' + href + '">');
           });
         }
-        if (window.location.pathname.indexOf("/game") === 0) {
+        if (!legacyRegistration && window.location.pathname.indexOf("/game") === 0) {
           document.documentElement.dataset.legacyGame = "true";
           [
             "/public-assets/game/css/default.css",
@@ -36,6 +46,9 @@
       }
       if (document.documentElement.dataset.legacyGame === "true") {
         document.body.classList.add("legacy-game-body");
+      }
+      if (document.documentElement.dataset.legacyRegistration === "true") {
+        document.body.classList.add("legacy-registration-body");
       }
     </script>
     <div id="root"></div>

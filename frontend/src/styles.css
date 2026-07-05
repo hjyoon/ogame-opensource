@@ -83,8 +83,28 @@ h1 {
   line-height: 1.1;
 }
 
+body.legacy-registration-body center {
+  margin-top: calc(1px - 1.34em);
+}
+
+@-moz-document url-prefix() {
+  body.legacy-registration-body center {
+    margin-top: 0;
+  }
+}
+
+body.legacy-registration-body h1 {
+  font-size: 2em;
+  line-height: normal;
+  margin-block: 0.67em;
+}
+
 h2 {
   font-size: 16px;
+}
+
+body.legacy-registration-body p {
+  margin-block: 1em;
 }
 
 .subtle {
