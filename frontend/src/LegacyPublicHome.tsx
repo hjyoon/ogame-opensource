@@ -248,6 +248,19 @@ export function LoginStrip({
 
   useLegacyPublicAutoFocus(universeRef, autoFocusUniverse);
 
+  const handlePasswordReminder = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    if (!loginDraft.universe) {
+      window.alert("You haven't chosen a universe.");
+      return;
+    }
+    const form = document.forms.namedItem("loginForm");
+    if (form instanceof HTMLFormElement) {
+      form.action = legacyPublicUniverseActionURL(loginDraft.universe, "/game/reg/mail.php");
+      form.submit();
+    }
+  };
+
   return (
     <section className="legacy-public-login" id="login">
       <a id="pustekuchen"></a>
@@ -318,6 +331,12 @@ export function LoginStrip({
                   disabled={loginPending}
                   form="legacy-public-login-form"
                   name="button"
+                  onMouseOut={(event) => {
+                    event.currentTarget.src = `${publicImageBase}/login_button.jpg`;
+                  }}
+                  onMouseOver={(event) => {
+                    event.currentTarget.src = `${publicImageBase}/login_button2.jpg`;
+                  }}
                   src={`${publicImageBase}/login_button.jpg`}
                   type="image"
                 />
@@ -328,7 +347,7 @@ export function LoginStrip({
       </div>
       <div className="legacy-public-login-links" id="login_text_2">
         <div className="legacy-public-remind">
-          <a href="/game/reg/mail.php">Forgot your password?</a>
+          <a href="#" onClick={handlePasswordReminder}>Forgot your password?</a>
         </div>
         <div className="legacy-public-login-confirm">
           By logging in, I accept the <a href="#" target="_blank">T&amp;C&apos;s</a>.
@@ -348,6 +367,18 @@ export function LoginStrip({
       />
     </section>
   );
+}
+
+function legacyPublicUniverseActionURL(universe: string, actionPath: string): string {
+  try {
+    const url = new URL(universe, window.location.href);
+    url.pathname = actionPath;
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return actionPath;
+  }
 }
 
 function LoginFeedback({ loginError, loginResult }: Pick<LegacyPublicHomeProps, "loginError" | "loginResult">) {

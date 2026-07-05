@@ -119,6 +119,9 @@ type PublicBehaviorObservation = {
   cookieValue: string;
   reloaded: boolean;
   probeAfter?: string;
+  imageSrcBefore?: string;
+  imageSrcHover?: string;
+  imageSrcAfterMouseOut?: string;
 };
 
 type BehaviorResult = {
@@ -273,7 +276,8 @@ try {
       cookieValue: "",
       reloaded: false,
       afterHrefEndsWithHash: true
-    })
+    }),
+    await comparePublicHoverImageBehavior(browser, "public login button hover", "input.loginButton", "login_button.jpg", "login_button2.jpg")
   ];
 
   const report = {
@@ -671,6 +675,92 @@ async function observePublicBehavior(browser: Browser, url: string, selector: st
     };
   } finally {
     await context.close();
+  }
+}
+
+async function comparePublicHoverImageBehavior(
+  browser: Browser,
+  name: string,
+  selector: string,
+  initialImage: string,
+  hoverImage: string
+): Promise<BehaviorResult> {
+  const legacy = await observePublicHoverImageBehavior(browser, legacyBaseURL + "/home.php", selector);
+  const migrated = await observePublicHoverImageBehavior(browser, migratedBaseURL + "/home", selector);
+  const mismatches: string[] = [];
+  if (legacy.status !== 200) {
+    mismatches.push(`legacy status ${legacy.status}`);
+  }
+  if (migrated.status !== 200) {
+    mismatches.push(`migrated status ${migrated.status}`);
+  }
+  if (!imagePathEndsWith(legacy.imageSrcBefore, initialImage) || !imagePathEndsWith(migrated.imageSrcBefore, initialImage)) {
+    mismatches.push(`initial image ${legacy.imageSrcBefore ?? ""}/${migrated.imageSrcBefore ?? ""}`);
+  }
+  if (!imagePathEndsWith(legacy.imageSrcHover, hoverImage) || !imagePathEndsWith(migrated.imageSrcHover, hoverImage)) {
+    mismatches.push(`hover image ${legacy.imageSrcHover ?? ""}/${migrated.imageSrcHover ?? ""}`);
+  }
+  if (!imagePathEndsWith(legacy.imageSrcAfterMouseOut, initialImage) || !imagePathEndsWith(migrated.imageSrcAfterMouseOut, initialImage)) {
+    mismatches.push(`mouseout image ${legacy.imageSrcAfterMouseOut ?? ""}/${migrated.imageSrcAfterMouseOut ?? ""}`);
+  }
+  return {
+    name,
+    pass: mismatches.length === 0,
+    mismatches,
+    legacy,
+    migrated
+  };
+}
+
+async function observePublicHoverImageBehavior(browser: Browser, url: string, selector: string): Promise<PublicBehaviorObservation> {
+  const context = await browser.newContext({
+    viewport: { width: 1024, height: 768 },
+    deviceScaleFactor: 1,
+    locale: "en-US"
+  });
+  try {
+    const page = await context.newPage();
+    const response = await page.goto(url, { waitUntil: "networkidle", timeout: 15_000 });
+    const locator = page.locator(selector).first();
+    await locator.waitFor({ timeout: 10_000 });
+    const before = await page.evaluate(() => ({
+      href: window.location.href,
+      pathname: window.location.pathname,
+      hash: window.location.hash
+    }));
+    const imageSrcBefore = (await locator.getAttribute("src")) ?? undefined;
+    await locator.hover({ timeout: 5_000 });
+    await page.waitForTimeout(50);
+    const imageSrcHover = (await locator.getAttribute("src")) ?? undefined;
+    await page.mouse.move(0, 0);
+    await page.waitForTimeout(50);
+    const imageSrcAfterMouseOut = (await locator.getAttribute("src")) ?? undefined;
+    return {
+      status: response?.status() ?? null,
+      beforeHref: before.href,
+      afterHref: page.url(),
+      beforePathname: before.pathname,
+      afterPathname: new URL(page.url()).pathname,
+      afterHash: new URL(page.url()).hash,
+      cookieValue: "",
+      reloaded: false,
+      imageSrcBefore,
+      imageSrcHover,
+      imageSrcAfterMouseOut
+    };
+  } finally {
+    await context.close();
+  }
+}
+
+function imagePathEndsWith(src: string | null | undefined, suffix: string): boolean {
+  if (!src) {
+    return false;
+  }
+  try {
+    return new URL(src, legacyBaseURL).pathname.endsWith(suffix);
+  } catch {
+    return src.endsWith(suffix);
   }
 }
 

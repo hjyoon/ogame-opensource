@@ -95,6 +95,9 @@ export type GameAdminAction =
       values: Record<string, number>;
     }
   | {
+      action: "sim";
+    }
+  | {
       action: "broadcast_send";
       category: number;
       subject: string;
@@ -3860,8 +3863,17 @@ function AdminQuickPanel({ admin }: { admin: GameAdmin }) {
 }
 
 function AdminBansTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
-  const [searched, setSearched] = React.useState(false);
-  const users = searched ? uniqueAdminUsers([...(admin.userRows ?? []), ...(admin.activeUsers ?? [])]) : [];
+  const [searchCriteria, setSearchCriteria] = React.useState<{ searchBy: number; text: string } | null>(null);
+  const users = searchCriteria ? filterAdminBanUsers(uniqueAdminUsers([...(admin.userRows ?? []), ...(admin.activeUsers ?? [])]), searchCriteria) : [];
+  const setAllBanCheckboxes = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const form = event.currentTarget.form;
+    if (!form) {
+      return;
+    }
+    for (const checkbox of Array.from(form.querySelectorAll<HTMLInputElement>("input.ids[type='checkbox']"))) {
+      checkbox.checked = event.currentTarget.checked;
+    }
+  };
   return (
     <>
       <form
@@ -3869,7 +3881,11 @@ function AdminBansTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAct
         method="POST"
         onSubmit={(event) => {
           event.preventDefault();
-          setSearched(true);
+          const data = new FormData(event.currentTarget);
+          setSearchCriteria({
+            searchBy: Number(data.get("searchby") ?? 0),
+            text: String(data.get("text") ?? "")
+          });
         }}
       >
         <table className="legacy-admin-bans-table">
@@ -3904,7 +3920,7 @@ function AdminBansTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAct
           </tbody>
         </table>
       </form>
-      {searched ? (
+      {searchCriteria ? (
         <form
           action={adminModeActionHref("Bans", "ban")}
           id="banform"
@@ -3929,7 +3945,9 @@ function AdminBansTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAct
           <table className="legacy-admin-bans-table">
             <tbody>
               <tr>
-                <td className="c">ID</td>
+                <td className="c">
+                  <input onChange={setAllBanCheckboxes} type="checkbox" /> ID
+                </td>
                 <td className="c">Name</td>
                 <td className="c">Home Planet</td>
                 <td className="c">Status</td>
@@ -3995,6 +4013,28 @@ function uniqueAdminUsers(users: GameAdminUserRow[]): GameAdminUserRow[] {
     result.push(user);
   }
   return result;
+}
+
+function filterAdminBanUsers(users: GameAdminUserRow[], criteria: { searchBy: number; text: string }): GameAdminUserRow[] {
+  switch (criteria.searchBy) {
+    case 0:
+      return users.filter((user) => user.banned && user.vacation);
+    case 1:
+      return users.filter((user) => user.banned && !user.vacation);
+    case 2:
+      return users.filter((user) => user.noAttack);
+    case 3: {
+      const days = Math.max(0, Number(criteria.text) || 0);
+      const since = Math.floor(Date.now() / 1000) - days * 24 * 60 * 60;
+      return users.filter((user) => user.regDate >= since);
+    }
+    case 4: {
+      const prefix = criteria.text.toLocaleLowerCase();
+      return users.filter((user) => user.name.toLocaleLowerCase().startsWith(prefix));
+    }
+    default:
+      return [];
+  }
 }
 
 function AdminBroadcastTable({ onAdminAction }: { onAdminAction: (action: GameAdminAction) => void }) {
@@ -5281,6 +5321,7 @@ function AdminPlanetsTable({ admin }: { admin: GameAdmin }) {
       <div
         className="legacy-admin-planets-detail"
         dangerouslySetInnerHTML={{ __html: adminPlanetDetailHTML(admin.selectedPlanet) }}
+        onClick={handleAdminPlanetDetailClick}
         style={{ display: "contents" }}
       />
     );
@@ -5292,6 +5333,61 @@ function AdminPlanetsTable({ admin }: { admin: GameAdmin }) {
       style={{ display: "contents" }}
     />
   );
+}
+
+function handleAdminPlanetDetailClick(event: React.MouseEvent<HTMLDivElement>) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  const action = target.closest<HTMLAnchorElement>("#admin-planet-spio, #admin-planet-reset");
+  if (!action) {
+    return;
+  }
+  event.preventDefault();
+  if (action.id === "admin-planet-spio") {
+    parseAdminPlanetSpyReport(action.closest(".legacy-admin-planets-detail") ?? document);
+  } else {
+    resetAdminPlanetParserValues(action.closest(".legacy-admin-planets-detail") ?? document);
+  }
+}
+
+function parseAdminPlanetSpyReport(root: ParentNode) {
+  const report = root.querySelector<HTMLTextAreaElement>("#spiotext")?.value ?? "";
+  const normalized = report.replaceAll(".", "").replaceAll(":", "");
+  const labelMap = adminPlanetParserLabelMap(root);
+  for (const [label, input] of labelMap) {
+    const pattern = new RegExp(`${escapeRegExp(label)}\\s+([0-9]{1,})`, "i");
+    const match = normalized.match(pattern);
+    if (match) {
+      input.value = String(Number.parseInt(match[1], 10));
+    }
+  }
+}
+
+function resetAdminPlanetParserValues(root: ParentNode) {
+  for (const input of Array.from(root.querySelectorAll<HTMLInputElement>("input[id^='obj']"))) {
+    const objectID = Number.parseInt(input.id.slice(3), 10);
+    if (Number.isFinite(objectID) && objectID < 700) {
+      input.value = "0";
+    }
+  }
+}
+
+function adminPlanetParserLabelMap(root: ParentNode): Map<string, HTMLInputElement> {
+  const labels = new Map<string, HTMLInputElement>();
+  for (const input of Array.from(root.querySelectorAll<HTMLInputElement>("input[id^='obj']"))) {
+    const row = input.closest("tr");
+    const label = row?.querySelector("th")?.textContent?.replace(/\s+/g, " ").trim();
+    if (label) {
+      labels.set(label, input);
+    }
+  }
+  return labels;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function adminPlanetDetailHTML(planet: GameAdminPlanetDetail): string {
@@ -5330,7 +5426,7 @@ function adminPlanetDetailHTML(planet: GameAdminPlanetDetail): string {
     html += "<br/><br/>\n";
   }
   html += '<br><br><textarea rows=10 cols=10 id="spiotext"></textarea>';
-  html += '<a href="#">Parse espionage report</a> <br><a href="#">Reset</a>';
+  html += '<a href="#" id="admin-planet-spio">Parse espionage report</a> <br><a href="#" id="admin-planet-reset">Reset</a>';
   html += "</th>";
   html += `<th valign=top>${adminTechnologyValueTableHTML(planet.buildings, true)}</th>\n`;
   html += `<th valign=top>${adminTechnologyValueTableHTML(planet.fleet, true)}</th>\n`;
@@ -5931,6 +6027,7 @@ function adminBattleSimOnChangeTechValue(attackerValue: number): void {
 }
 
 function AdminExpeditionTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
+  const [showSimulationResult, setShowSimulationResult] = React.useState(false);
   if (!admin.expedition) {
     return null;
   }
@@ -5941,6 +6038,11 @@ function AdminExpeditionTable({ admin, onAdminAction }: { admin: GameAdmin; onAd
     }
     event.preventDefault();
     const action = new URL(form.action, window.location.href).searchParams.get("action") ?? "";
+    if (action === "sim") {
+      setShowSimulationResult(true);
+      onAdminAction({ action: "sim" });
+      return;
+    }
     if (action !== "settings") {
       return;
     }
@@ -5952,12 +6054,20 @@ function AdminExpeditionTable({ admin, onAdminAction }: { admin: GameAdmin; onAd
     onAdminAction({ action: "settings", values });
   };
   return (
-    <div
-      className="legacy-admin-expedition-table"
-      dangerouslySetInnerHTML={{ __html: adminExpeditionHTML(admin.expedition) }}
-      onSubmit={handleSubmit}
-      style={{ display: "contents" }}
-    />
+    <>
+      <div
+        className="legacy-admin-expedition-table"
+        dangerouslySetInnerHTML={{ __html: adminExpeditionHTML(admin.expedition) }}
+        onSubmit={handleSubmit}
+        style={{ display: "contents" }}
+      />
+      {showSimulationResult ? (
+        <div className="legacy-admin-expedition-result">
+          <h2>Expedition simulation result</h2>
+          <canvas id="myChart" style={{ maxWidth: 800, width: "100%" }} />
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -7353,7 +7463,7 @@ function AllianceManagementTable({
           });
         }}
       >
-        <table width={519}>
+        <table className="legacy-alliance-settings-table" width={519}>
           <tbody>
             <tr>
               <td className="legacy-c c" colSpan={3}>
@@ -13339,9 +13449,13 @@ function EmpireLevelRow({
           <th key={planet.id} {...empireWidth75Attrs}>
             {value.level > 0 ? (
               <>
-                <a href={gameRouteURL(linkPath, withPlanetSearch(planet.id))}>
+                <EmpireLevelShortcutLink
+                  addHref={useBuildability ? empireQueueAddURL(planet.id, row.id) : undefined}
+                  href={gameRouteURL(linkPath, withPlanetSearch(planet.id))}
+                  techID={row.id}
+                >
                   <span style={{ color: levelColor }}>{formatLegacyPlainNumber(value.level)}</span>
-                </a>
+                </EmpireLevelShortcutLink>
                 <EmpireBuildQueueLinks planetID={planet.id} queue={value.queue ?? []} />
               </>
             ) : (
@@ -13356,6 +13470,68 @@ function EmpireLevelRow({
       </th>
     </tr>
   );
+}
+
+function EmpireLevelShortcutLink({
+  addHref,
+  children,
+  href,
+  techID
+}: {
+  addHref?: string;
+  children: React.ReactNode;
+  href: string;
+  techID: number;
+}) {
+  const clickTimer = React.useRef<number | undefined>(undefined);
+  React.useEffect(
+    () => () => {
+      if (clickTimer.current !== undefined) {
+        window.clearTimeout(clickTimer.current);
+      }
+    },
+    []
+  );
+
+  const clearClickTimer = () => {
+    if (clickTimer.current !== undefined) {
+      window.clearTimeout(clickTimer.current);
+      clickTimer.current = undefined;
+    }
+  };
+
+  if (!addHref) {
+    return <a href={href}>{children}</a>;
+  }
+
+  return (
+    <a
+      data-empire-queue-add={techID}
+      href={href}
+      onClick={(event) => {
+        event.preventDefault();
+        clearClickTimer();
+        clickTimer.current = window.setTimeout(() => {
+          clickTimer.current = undefined;
+          dispatchLegacyGameClientNavigation(href);
+        }, 500);
+      }}
+      onDoubleClick={(event) => {
+        event.preventDefault();
+        clearClickTimer();
+        dispatchLegacyGameClientNavigation(addHref);
+      }}
+      style={{ cursor: "pointer" }}
+      title="Click once to open the building screen, double-click to enqueue from empire overview."
+    >
+      {children}
+    </a>
+  );
+}
+
+function dispatchLegacyGameClientNavigation(url: string) {
+  window.history.pushState({}, "", url);
+  window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
 function EmpireBuildQueueLinks({ planetID, queue }: { planetID: number; queue: GameEmpireBuildQueueEntry[] }) {
@@ -13429,6 +13605,14 @@ function empireQueueRemoveURL(planetID: number, listID: number): string {
   search.set("planet", String(planetID));
   search.set("modus", "remove");
   search.set("listid", String(listID));
+  return gameRouteURL("/game/empire", search.toString());
+}
+
+function empireQueueAddURL(planetID: number, techID: number): string {
+  const search = new URLSearchParams(window.location.search);
+  search.set("planet", String(planetID));
+  search.set("modus", "add");
+  search.set("techid", String(techID));
   return gameRouteURL("/game/empire", search.toString());
 }
 
@@ -14185,12 +14369,25 @@ function legacyOverviewEventInnerHTML(event: GameFleetMission): string {
 }
 
 function legacyOverviewFleetAnchor(event: GameFleetMission, summary: 0 | 1, className: string): string {
-  void event;
-  void summary;
-  return `<a href="#" class="${escapeLegacyAttribute(className)}">`;
+  if (!legacyOverviewShouldShowFleetDetails(event, summary)) {
+    return `<a href="#" class="${escapeLegacyAttribute(className)}">`;
+  }
+  const overlib = legacyOverviewFleetOverlib(event, summary);
+  const handler = legacyInlineHandler(`return overlib(${JSON.stringify(overlib)});`);
+  return `<a href="#" onmouseover='${handler}' onmouseout='return nd();' class="${escapeLegacyAttribute(className)}">`;
+}
+
+function legacyOverviewShouldShowFleetDetails(event: GameFleetMission, summary: 0 | 1): boolean {
+  if (!summary || event.own !== false) {
+    return true;
+  }
+  return overviewEventBaseMission(event.mission) === 5 && event.mission >= 200;
 }
 
 function legacyOverviewFleetTitle(event: GameFleetMission, summary: 0 | 1): string {
+  if (!legacyOverviewShouldShowFleetDetails(event, summary)) {
+    return "";
+  }
   const parts: string[] = [];
   if (summary) {
     parts.push(`Number of ships: ${formatLegacyNumber(event.totalShips)}`);
@@ -14333,10 +14530,31 @@ function legacyOverviewCargoHTML(event: GameFleetMission, missionClass: string, 
   if (total <= 0) {
     return `<span class='class'>${escapedText}</span>`;
   }
+  const overlib = `<font color=white><b>Transport:${resources
+    .map((resource) => `<br />${escapeLegacyHTML(resource.name)}: ${formatLegacyNumber(resource.amount)}`)
+    .join("")}</b></font>`;
+  const handler = legacyInlineHandler(`return overlib(${JSON.stringify(overlib)});`);
   const title = `Transport:${resources.map((resource) => ` ${resource.name}: ${formatLegacyNumber(resource.amount)}`).join("")}`;
-  return `<a href="#" class="${escapeLegacyAttribute(missionClass)}">${escapedText}</a><a href="#" title="${escapeLegacyAttribute(
-    title
-  )}"></a>`;
+  return `<a href="#" onmouseover='${handler}' onmouseout='return nd();' class="${escapeLegacyAttribute(
+    missionClass
+  )}">${escapedText}</a><a href="#" title="${escapeLegacyAttribute(title)}"></a>`;
+}
+
+function legacyOverviewFleetOverlib(event: GameFleetMission, summary: 0 | 1): string {
+  const lines: string[] = [];
+  if (summary) {
+    lines.push(`Number of ships: ${formatLegacyNumber(event.totalShips)} <br>`);
+  }
+  for (const ship of event.ships) {
+    if (ship.count > 0) {
+      lines.push(`${escapeLegacyHTML(ship.name)} ${formatLegacyNumber(ship.count)}<br>`);
+    }
+  }
+  return `<font color=white><b>${lines.join("")}</b></font>`;
+}
+
+function legacyInlineHandler(js: string): string {
+  return escapeLegacyAttribute(js);
 }
 
 function overviewBuildQueueText(queue: GameOverviewBuildQueue | undefined, includeLevel: boolean): string {

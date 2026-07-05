@@ -3,7 +3,6 @@ import {
   LoginStrip,
   MainMenu,
   legacyPublicStyle,
-  publicImageBase,
   type LegacyPublicLoginProps
 } from "./LegacyPublicHome";
 
@@ -40,15 +39,23 @@ export function LegacyPublicScreenshots({
 }
 
 const screenshots = [
-  { label: "Overview", thumb: "overview_t.jpg", full: "overview.JPG" },
-  { label: "Buildings", thumb: "buildings_t.jpg", full: "buildings.JPG" },
-  { label: "Shipyard", thumb: "shipyard_t.jpg", full: "shipyard.JPG" },
-  { label: "Empire", thumb: "empire_t.jpg", full: "empire.JPG" }
+  { label: "Overview", thumb: "img/overview_t.jpg", href: "screenshot.php?pic=overview&type=JPG&path=img/" },
+  { label: "Buildings", thumb: "img/buildings_t.jpg", href: "screenshot.php?pic=buildings&type=JPG&path=img/" },
+  { label: "Shipyard", thumb: "img/shipyard_t.jpg", href: "screenshot.php?pic=shipyard&type=JPG&path=img/" },
+  { label: "Empire", thumb: "img/empire_t.jpg", href: "screenshot.php?pic=empire&type=JPG&path=img/" }
 ];
 
 const wallpapers = [
-  { label: "Battleship", thumb: "battleship_t.jpg", full: "wallpapers/battleship_1280x1024.jpg" },
-  { label: "Destroyer", thumb: "destroyer_t.jpg", full: "wallpapers/destroyer_1280x1024.jpg" }
+  {
+    label: "Battleship",
+    thumb: "img/battleship_t.jpg",
+    href: "screenshot.php?pic=battleship_1280x1024&type=jpg&path=img/wallpapers/"
+  },
+  {
+    label: "Destroyer",
+    thumb: "img/destroyer_t.jpg",
+    href: "screenshot.php?pic=destroyer_1280x1024&type=jpg&path=img/wallpapers/"
+  }
 ];
 
 function ScreenshotsContent() {
@@ -71,11 +78,11 @@ function ScreenshotsContent() {
   );
 }
 
-function ScreenshotLink({ item }: { item: { label: string; thumb: string; full: string } }) {
+function ScreenshotLink({ item }: { item: { label: string; thumb: string; href: string } }) {
   return (
     <div className="image legacy-screenshot-image">
-      <a href={`${publicImageBase}/${item.full}`}>
-        <img alt={item.label} src={`${publicImageBase}/${item.thumb}`} />
+      <a href={item.href}>
+        <img alt={item.label} src={item.thumb} />
       </a>
     </div>
   );

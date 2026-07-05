@@ -49,6 +49,19 @@ func (a app) handleLegacyEvolutionAsset(w http.ResponseWriter, r *http.Request) 
 	http.NotFound(w, r)
 }
 
+func (a app) handleLegacyPublicStaticAsset(w http.ResponseWriter, r *http.Request) {
+	cleanPath := path.Clean("/" + r.URL.Path)
+	if !strings.HasPrefix(cleanPath, "/img/") {
+		http.NotFound(w, r)
+		return
+	}
+	rel := "public-assets" + cleanPath
+	if a.deps.Frontend.Serve(w, r, rel) {
+		return
+	}
+	http.NotFound(w, r)
+}
+
 func (a app) handleLegacyGameStaticAsset(w http.ResponseWriter, r *http.Request) {
 	cleanPath := path.Clean("/" + r.URL.Path)
 	if !strings.HasPrefix(cleanPath, "/game/css/") &&

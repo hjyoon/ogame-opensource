@@ -2,7 +2,7 @@ export type SideName = "legacy" | "migrated";
 export type GameFixtureFeature = "acs" | "alliance" | "commander" | "phalanx" | "report";
 
 export type GameDynamicAction = {
-  type: "click" | "fill" | "type" | "select" | "hover" | "press" | "wait" | "popup";
+  type: "click" | "dblclick" | "fill" | "type" | "select" | "hover" | "press" | "wait" | "popup";
   selector?: string;
   legacySelector?: string;
   migratedSelector?: string;
@@ -624,6 +624,19 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers cntchar-style keyup behavior on the alliance application rejection reason form."]
   },
   {
+    name: "alliance-settings-text-counter",
+    legacyPage: "allianzen",
+    legacyQuery: { a: "11", d: "2" },
+    migratedPath: "/game/alliance",
+    migratedQuery: { a: "11", d: "2" },
+    legacyReady: "#content textarea[name='text']",
+    migratedReady: ".legacy-alliance-settings-table textarea[name='text']",
+    requiredFixtureFeatures: ["alliance"],
+    actions: [{ type: "type", selector: "textarea[name='text']", value: "cfg" }],
+    assertions: [{ name: "counter", type: "text", selector: "#cntChars", expected: "3" }],
+    notes: ["Covers the allianzen_settings.php cntchar variant in the alliance settings editor."]
+  },
+  {
     name: "statistics-player-delta-tooltip",
     legacyPage: "statistics",
     legacyQuery: { type: "ressources", start: "1" },
@@ -703,6 +716,199 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "tooltip-html", type: "html", selector: "#overDiv", compareSides: true }
     ],
     notes: ["Covers imperium.php average overlib text and frame parity."]
+  },
+  {
+    name: "empire-building-double-click-enqueue-route",
+    isolateSides: true,
+    legacyPage: "imperium",
+    legacyQuery: { planettype: "1", no_header: "1" },
+    migratedPath: "/game/empire",
+    migratedQuery: { planettype: "1" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-empire-table",
+    requiredFixtureFeatures: ["commander"],
+    legacyApplicabilitySelector: "#content a[ondblclick*='modus=add']",
+    migratedApplicabilitySelector: ".legacy-empire-table a[data-empire-queue-add]",
+    actions: [
+      {
+        type: "dblclick",
+        legacySelector: "#content a[ondblclick*='modus=add']",
+        migratedSelector: ".legacy-empire-table a[data-empire-queue-add]",
+        legacyWaitForSelector: "#content table",
+        migratedWaitForSelector: ".legacy-empire-table",
+        waitMs: 700
+      }
+    ],
+    assertions: [
+      {
+        name: "empire-add-query",
+        type: "evaluate",
+        expression: "window.location.href.includes('modus=add') && /[?&]techid=\\d+/.test(window.location.href)",
+        compareSides: true,
+        expected: "true"
+      }
+    ],
+    notes: ["Covers the imperium.php double-click building enqueue shortcut route."]
+  },
+  {
+    name: "fleet-templates-edit-form-populates",
+    legacyPage: "fleet_templates",
+    migratedPath: "/game/fleet-templates",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-fleet-templates-table",
+    requiredFixtureFeatures: ["commander"],
+    legacyApplicabilitySelector: "#content a[onclick*='show_input']",
+    migratedApplicabilitySelector: ".legacy-fleet-templates-table tr[data-fleet-template-row] a",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[onclick*='show_input']",
+        migratedSelector: ".legacy-fleet-templates-table tr[data-fleet-template-row] a",
+        waitForSelector: "#input_field"
+      }
+    ],
+    assertions: [
+      {
+        name: "input-field-visible",
+        type: "evaluate",
+        expression: "getComputedStyle(document.querySelector('#input_field')).visibility",
+        compareSides: true,
+        expected: "visible"
+      },
+      { name: "template-name", type: "value", selector: "input[name='template_name']", compareSides: true },
+      { name: "small-cargo", type: "value", selector: "input[name='ship[202]']", compareSides: true }
+    ],
+    notes: ["Covers fleet_templates.php show_input() behavior via the React standard-fleet editor state."]
+  },
+  {
+    name: "admin-bans-select-all-checkbox",
+    fixtureProfile: "admin",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Bans" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Bans" },
+    legacyReady: "#content select[name='searchby']",
+    migratedReady: ".legacy-admin-bans-table select[name='searchby']",
+    actions: [
+      { type: "select", selector: "select[name='searchby']", value: "4" },
+      { type: "fill", selector: "input[name='text']", value: "$fixture.login_user" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='Submit']",
+        migratedSelector: ".legacy-admin-bans-table input[type='submit'][value='Submit']",
+        legacyWaitForSelector: "input.ids",
+        migratedWaitForSelector: "input.ids"
+      },
+      {
+        type: "click",
+        selector: "input[type='checkbox']:not(.ids)"
+      }
+    ],
+    assertions: [
+      {
+        name: "checked-count",
+        type: "evaluate",
+        expression: "Array.from(document.querySelectorAll('input.ids')).filter((box) => box.checked).length",
+        compareSides: true
+      },
+      {
+        name: "all-checked",
+        type: "evaluate",
+        expression: "(() => { const boxes = Array.from(document.querySelectorAll('input.ids')); return boxes.length > 0 && boxes.every((box) => box.checked); })()",
+        expected: "true"
+      }
+    ],
+    notes: ["Covers admin_bans.php SetClearCheckbox(this.checked) select-all behavior."]
+  },
+  {
+    name: "admin-planets-spy-report-parser",
+    fixtureProfile: "admin",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Planets" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Planets" },
+    legacyReady: "#spiotext",
+    migratedReady: "#spiotext",
+    actions: [
+      { type: "fill", selector: "#spiotext", value: "Spy report\nMetal 123\nCrystal 456\nDeuterium 789\nSmall Cargo 12\nRocket Launcher 34" },
+      {
+        type: "click",
+        legacySelector: "#content a[onclick*='spio'], #content a:has-text('Parse espionage report')",
+        migratedSelector: "#admin-planet-spio",
+        waitMs: 100
+      }
+    ],
+    assertions: [
+      { name: "metal", type: "value", selector: "#obj700", compareSides: true, expected: "123" },
+      { name: "crystal", type: "value", selector: "#obj701", compareSides: true, expected: "456" },
+      { name: "deuterium", type: "value", selector: "#obj702", compareSides: true, expected: "789" },
+      { name: "small-cargo", type: "value", selector: "#obj202", compareSides: true, expected: "12" },
+      { name: "rocket-launcher", type: "value", selector: "#obj401", compareSides: true, expected: "34" }
+    ],
+    notes: ["Covers admin_planets.php spio() parsing from espionage report text into object fields."]
+  },
+  {
+    name: "admin-planets-spy-report-reset",
+    fixtureProfile: "admin",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Planets" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Planets" },
+    legacyReady: "#spiotext",
+    migratedReady: "#spiotext",
+    actions: [
+      { type: "fill", selector: "#spiotext", value: "Spy report\nMetal 123\nCrystal 456\nDeuterium 789\nSmall Cargo 12\nRocket Launcher 34" },
+      {
+        type: "click",
+        legacySelector: "#content a[onclick*='spio'], #content a:has-text('Parse espionage report')",
+        migratedSelector: "#admin-planet-spio",
+        waitMs: 100
+      },
+      {
+        type: "click",
+        legacySelector: "#content a[onclick*='reset'], #content a:has-text('Reset')",
+        migratedSelector: "#admin-planet-reset",
+        waitMs: 100
+      }
+    ],
+    assertions: [
+      { name: "metal", type: "value", selector: "#obj700", compareSides: true, expected: "123" },
+      { name: "crystal", type: "value", selector: "#obj701", compareSides: true, expected: "456" },
+      { name: "deuterium", type: "value", selector: "#obj702", compareSides: true, expected: "789" },
+      { name: "small-cargo", type: "value", selector: "#obj202", compareSides: true, expected: "0" },
+      { name: "rocket-launcher", type: "value", selector: "#obj401", compareSides: true, expected: "0" }
+    ],
+    notes: ["Covers admin_planets.php reset() clearing parsed object fields."]
+  },
+  {
+    name: "admin-expedition-simulator-chart-result",
+    fixtureProfile: "admin",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Expedition" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Expedition" },
+    legacyReady: "#content input[name='expcount']",
+    migratedReady: ".legacy-admin-expedition-table input[name='expcount']",
+    actions: [
+      { type: "fill", selector: "input[name='expcount']", value: "7" },
+      {
+        type: "click",
+        legacySelector: "#content form[action*='action=sim'] input[type='submit']",
+        migratedSelector: ".legacy-admin-expedition-table form[action*='action=sim'] input[type='submit']",
+        waitForSelector: "#myChart"
+      }
+    ],
+    assertions: [
+      { name: "chart-count", type: "count", selector: "#myChart", compareSides: true, expected: "1" },
+      {
+        name: "chart-present",
+        type: "evaluate",
+        expression: "Boolean(document.querySelector('#myChart'))",
+        compareSides: true,
+        expected: "true"
+      }
+    ],
+    notes: ["Covers admin_expedition.php simulator POST result exposing the myChart canvas marker."]
   },
   {
     name: "admin-battlesim-slot-sync",
@@ -1509,6 +1715,72 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       "Requires OGAME_GAME_VISUAL_PHALANX_FIXTURE=1; covers phalanx bxx countdown text changing while the legacy title stays at the initial duration.",
       "Runs with ACS disabled so the scanned target has only the dedicated phalanx fixture fleet pair."
     ]
+  },
+  {
+    name: "overview-event-fleet-tooltip",
+    legacyPage: "overview",
+    migratedPath: "/game/overview",
+    legacyReady: "#content #bxx1",
+    migratedReady: ".legacy-overview-event-timer",
+    legacyApplicabilitySelector: "#content a[onmouseover*='Small Cargo']:not([onmouseover*='Number of ships'])",
+    migratedApplicabilitySelector: ".legacy-overview-table a[onmouseover*='Small Cargo']:not([onmouseover*='Number of ships'])",
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='Small Cargo']:not([onmouseover*='Number of ships'])",
+        migratedSelector: ".legacy-overview-table a[onmouseover*='Small Cargo']:not([onmouseover*='Number of ships'])",
+        waitForSelector: "#overDiv"
+      }
+    ],
+    assertions: [
+      { name: "tooltip-visible", type: "visible", selector: "#overDiv", expected: "true" },
+      { name: "tooltip-text", type: "text", selector: "#overDiv", compareSides: true }
+    ],
+    notes: ["Covers event_list.php OverFleet() non-summary overlib hover in overview event rows."]
+  },
+  {
+    name: "overview-event-summary-fleet-tooltip",
+    legacyPage: "overview",
+    migratedPath: "/game/overview",
+    legacyReady: "#content #bxx1",
+    migratedReady: ".legacy-overview-event-timer",
+    legacyApplicabilitySelector: "#content a[onmouseover*='Number of ships']",
+    migratedApplicabilitySelector: ".legacy-overview-table a[onmouseover*='Number of ships']",
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='Number of ships']",
+        migratedSelector: ".legacy-overview-table a[onmouseover*='Number of ships']",
+        waitForSelector: "#overDiv"
+      }
+    ],
+    assertions: [
+      { name: "tooltip-visible", type: "visible", selector: "#overDiv", expected: "true" },
+      { name: "tooltip-text", type: "text", selector: "#overDiv", compareSides: true, contains: "Number of ships" }
+    ],
+    notes: ["Covers event_list.php OverFleet() summary overlib hover for visible foreign/allied overview events."]
+  },
+  {
+    name: "overview-event-cargo-tooltip",
+    legacyPage: "overview",
+    migratedPath: "/game/overview",
+    legacyReady: "#content #bxx1",
+    migratedReady: ".legacy-overview-event-timer",
+    legacyApplicabilitySelector: "#content a[onmouseover*='Transport:']",
+    migratedApplicabilitySelector: ".legacy-overview-table a[onmouseover*='Transport:']",
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='Transport:']",
+        migratedSelector: ".legacy-overview-table a[onmouseover*='Transport:']",
+        waitForSelector: "#overDiv"
+      }
+    ],
+    assertions: [
+      { name: "tooltip-visible", type: "visible", selector: "#overDiv", expected: "true" },
+      { name: "tooltip-text", type: "text", selector: "#overDiv", compareSides: true, contains: "Transport" }
+    ],
+    notes: ["Covers event_list.php Cargo() overlib hover when an overview event carries resources."]
   },
   {
     name: "merchant-exchange-rate-tooltip",

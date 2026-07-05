@@ -454,6 +454,8 @@ async function performAction(page: Page, side: SideName, action: GameDynamicActi
     await popup.close().catch(() => undefined);
   } else if (action.type === "click") {
     await locator.click({ timeout: 5_000 });
+  } else if (action.type === "dblclick") {
+    await locator.dblclick({ timeout: 5_000 });
   } else if (action.type === "fill") {
     await locator.fill(resolveFixtureValue(action.value ?? ""), { timeout: 5_000 });
   } else if (action.type === "type") {

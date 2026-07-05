@@ -38,6 +38,7 @@ for browser in $BROWSERS; do
   if [ "${OGAME_GAME_DYNAMIC_PREPARE_FIXTURE:-1}" = "1" ]; then
     printf 'Authenticated game dynamic fixtures: commander=%s alliance=%s report=%s phalanx=%s acs=%s\n' \
       "$DYNAMIC_FIXTURE_COMMANDER" "$DYNAMIC_FIXTURE_ALLIANCE" "$DYNAMIC_FIXTURE_REPORT" "$DYNAMIC_FIXTURE_PHALANX" "$DYNAMIC_FIXTURE_ACS"
+    docker compose exec -T server mkdir -p "$LEGACY_E2E_CONTAINER_DIR" >/dev/null
     docker compose cp "$SCRIPT_DIR/prepare-authenticated-game-visual-fixture.php" "server:$LEGACY_E2E_CONTAINER_DIR/prepare-authenticated-game-visual-fixture.php" >/dev/null
     docker compose exec -T \
       -e OGAME_GAME_VISUAL_COMMANDER_FIXTURE="$DYNAMIC_FIXTURE_COMMANDER" \

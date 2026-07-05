@@ -9,7 +9,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` migration tracker. Keep this file under 4K
 - Backend follows Clean Architecture under `backend/internal/{domain,application,infrastructure,delivery}`.
 - Go serves the React build and legacy static aliases from `compose.golang.yaml` `goapp` on port 8890.
 - Natural routes and legacy `.php`/`page=` aliases share route manifests; the UI is CSR, while Go serves the built assets.
-- Public assets, `evolution` skin, game CSS/images/js/mod assets, and `/game/css`, `/game/img`, `/evolution` aliases are served by Go.
+- Public assets, `evolution` skin, game CSS/images/js/mod assets, and `/img`, `/game/css`, `/game/img`, `/evolution` aliases are served by Go.
 - Registration, activation, login/logout, sessions, private cookies, IP/ban/session expiry, and `/game` redirects are ported.
 - `/api/game/*` covers overview, buildings, resources, merchant/officers, research, shipyard/defense, fleet, galaxy, alliance, admin, statistics, search, messages, report, phalanx, jump gate, notes, buddy, options, and logout.
 - Mutations exist for overview, buildings, resources, merchant/officers, alliance, research, shipyard/defense, fleet, buddy, notes, messages, and options.
@@ -19,7 +19,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` migration tracker. Keep this file under 4K
 
 - Navigation visual E2E scans GET anchors, JS navigation, popups, hovers, select URLs, and GET forms.
 - The navigation wrapper continues across Chromium and Firefox even when exact visual diffs remain, then writes a combined report to [COVERAGE-navigation-visual.md](./testing/e2e/COVERAGE-navigation-visual.md).
-- Authenticated dynamic E2E now runs all 55 listed legacy-JS cases with commander, alliance, report, phalanx, and ACS fixtures enabled by default.
+- Authenticated dynamic E2E now runs all 65 listed legacy-JS cases with commander, alliance, report, phalanx, and ACS fixtures enabled by default.
 - Fixed Firefox legacy host/session drift by keeping the configured legacy base URL instead of adopting a redirected `localhost` origin.
 - Fixed route parity issues around static aliases, planet selector URLs, statistics defaults, register blank selects, reply prefill, fleet union, commander folders, and galaxy hovers.
 - Jump Gate, ACS slowdown, expedition roll/depletion buckets, options force-language, pranger, maintenance, feed GET/POST, DB safe restore, Mods PHP-hook policy, Logins/Browse, Loca, and Bots are migrated.

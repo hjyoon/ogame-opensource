@@ -95,6 +95,9 @@ func TestLegacyAssetAliasesServeStaticFiles(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(staticDir, "public-assets", "evolution"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(staticDir, "public-assets", "img"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(filepath.Join(staticDir, "public-assets", "game", "css"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -109,6 +112,7 @@ func TestLegacyAssetAliasesServeStaticFiles(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(staticDir, "index.html"), "ogame react shell")
 	writeFile(t, filepath.Join(staticDir, "public-assets", "evolution", "formate.css"), "body{background:#000}")
+	writeFile(t, filepath.Join(staticDir, "public-assets", "img", "overview_t.jpg"), "JPEG")
 	writeFile(t, filepath.Join(staticDir, "public-assets", "game", "css", "default.css"), "th{color:#fff}")
 	writeFile(t, filepath.Join(staticDir, "public-assets", "game", "img", "planet.gif"), "GIF89a")
 	writeFile(t, filepath.Join(staticDir, "public-assets", "game", "js", "go-game.js"), "function go(){}")
@@ -117,6 +121,7 @@ func TestLegacyAssetAliasesServeStaticFiles(t *testing.T) {
 
 	for _, target := range []string{
 		"/evolution/formate.css",
+		"/img/overview_t.jpg",
 		"/game/css/default.css",
 		"/game/img/planet.gif",
 		"/game/js/go-game.js",

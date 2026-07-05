@@ -222,8 +222,6 @@ function php_str_replace(search, replace, subject) {
 
 function spio ()
 {
-    global $GlobalUni;
-
     //
     // List all technologies for all languages, as well as resources
     //

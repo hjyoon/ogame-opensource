@@ -266,6 +266,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/game/js/", getOnly(a.handleLegacyGameStaticAsset))
 	mux.HandleFunc("/game/mods/", getOnly(a.handleLegacyGameStaticAsset))
 	mux.HandleFunc("/evolution/", getOnly(a.handleLegacyEvolutionAsset))
+	mux.HandleFunc("/img/", getOnly(a.handleLegacyPublicStaticAsset))
 	mux.HandleFunc("/api/public/login/validate", postOnly(a.handleLoginValidation))
 	mux.HandleFunc("/api/public/login", postOnly(a.handleLogin))
 	mux.HandleFunc("/api/game/session", getOnly(a.handleGameSession))

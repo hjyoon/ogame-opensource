@@ -10,6 +10,7 @@ import (
 func TestLegacyAssetHandlersDirectBranches(t *testing.T) {
 	assets := &fakeFrontendAssets{bodies: map[string]string{
 		"public-assets/evolution/formate.css":           "evolution css",
+		"public-assets/img/overview_t.jpg":              "JPEG",
 		"public-assets/game/img/planet.gif":             "GIF89a",
 		"public-assets/game/js/go-game.js":              "function go(){}",
 		"public-assets/game/mods/GalaxyTool/img/bg.png": "PNG",
@@ -29,9 +30,21 @@ func TestLegacyAssetHandlersDirectBranches(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
+	handler.handleLegacyPublicStaticAsset(rec, httptest.NewRequest(http.MethodGet, "/img/overview_t.jpg", nil))
+	if rec.Code != http.StatusOK || rec.Body.String() != "JPEG" {
+		t.Fatalf("expected public image asset, code=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
 	handler.handleLegacyEvolutionAsset(rec, httptest.NewRequest(http.MethodGet, "/evolution/missing.css", nil))
 	if rec.Code != http.StatusNotFound || assets.rels[len(assets.rels)-1] != "public-assets/evolution/missing.css" {
 		t.Fatalf("expected missing evolution asset lookup, code=%d rels=%+v", rec.Code, assets.rels)
+	}
+
+	rec = httptest.NewRecorder()
+	handler.handleLegacyPublicStaticAsset(rec, httptest.NewRequest(http.MethodGet, "/css/styles.css", nil))
+	if rec.Code != http.StatusNotFound || strings.Contains(strings.Join(assets.rels, ","), "css/styles.css") {
+		t.Fatalf("expected unsupported public prefix 404 without asset lookup, code=%d rels=%+v", rec.Code, assets.rels)
 	}
 
 	rec = httptest.NewRecorder()
