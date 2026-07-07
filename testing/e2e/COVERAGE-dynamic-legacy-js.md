@@ -26,7 +26,7 @@ placement, and selected admin tables. Masked pixels need DOM/text assertions.
 ## Behavior Runner
 
 `run-playwright-authenticated-game-dynamic-e2e.sh` enables commander/alliance/
-report/phalanx/ACS fixtures by default and runs 74 cases: counters, galaxy
+report/phalanx/ACS fixtures by default and runs 75 cases: counters, galaxy
 action/hover links/keyboard, fleet controls/launch errors, merchant clamps/
 tooltips/submit, statistics/empire tooltips, overview event overLib, queue
 countdowns, popup sizing/body, admin Bans/Planets/Expedition/BattleSim/BotEdit,
@@ -46,5 +46,5 @@ Route-changing dynamic links are tracked separately here:
 2. Add isolated cases when unsupported legacy-only mutating JS is found.
 3. Run both legacy PHP and Go+Bun where possible.
 
-Conclusion: the authenticated dynamic registry has 74 cases and no listed
+Conclusion: the authenticated dynamic registry has 75 cases and no listed
 remaining cases. Future additions are discovery-driven client behavior.

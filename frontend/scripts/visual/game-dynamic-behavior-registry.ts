@@ -450,6 +450,54 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers clicking the Statistics link inside the galaxy player hover tooltip."]
   },
   {
+    name: "galaxy-alliance-hover-introduction-popup-link",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='Alliance VGHT']",
+        migratedSelector: ".legacy-galaxy-hover[data-galaxy-hover='alliance'] a",
+        waitMs: 850
+      },
+      {
+        type: "popup",
+        legacySelector: "#overDiv a[href*='ainfo.php'][target='_ally']",
+        migratedSelector: ".legacy-galaxy-tooltip a[href*='/game/alliance'][target='_ally']",
+        legacyPopupWaitForSelector: "text=Alliance Information",
+        migratedPopupWaitForSelector: "text=Alliance Information"
+      }
+    ],
+    assertions: [
+      {
+        name: "popup-body",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.bodyText ?? ''",
+        contains: "Alliance Information"
+      },
+      {
+        name: "popup-target-param",
+        type: "evaluate",
+        expression: "/allyid=\\d+/.test(window.__ogameDynamicPopup?.url ?? '')",
+        expected: "true"
+      }
+    ],
+    linkAudit: {
+      ignoreTargets: ["/game/alliance?allyid=#", "/game/bewerben?allyid=#", "/game/statistics?start=#&who=ally"],
+      expected: [
+        {
+          name: "galaxy-hover-alliance-introduction-target",
+          target: "/game/alliance?*allyid=#*",
+          scope: "action",
+          classification: "popup"
+        }
+      ]
+    },
+    notes: ["Covers the Alliance introduction target link inside the galaxy alliance hover tooltip."]
+  },
+  {
     name: "galaxy-action-message-compose-link",
     legacyPage: "galaxy",
     migratedPath: "/game/galaxy",

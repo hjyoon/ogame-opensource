@@ -184,7 +184,7 @@ if ( $who === 'ally' ) {
     <!-- points per member -->
     <th>
       
-      <?php echo nicenum ( ceil ( $score / $members) ) ;?>
+      <?php echo nicenum ( $members > 0 ? ceil ( $score / $members) : 0 ) ;?>
               
     </th>
     

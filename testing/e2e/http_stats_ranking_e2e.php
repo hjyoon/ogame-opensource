@@ -284,6 +284,7 @@ $defenderName = getenv('OGAME_E2E_DEFENDER_NAME') ?: '';
 $base = rtrim(getenv('OGAME_E2E_HTTP_BASE') ?: 'http://127.0.0.1', '/');
 $gameBase = $base . '/game';
 $cases = array();
+$zeroAllyId = 0;
 
 try {
     if ($attackerId <= 0 || $attackerPlanet <= 0 || $defenderId <= 0 || $defenderPlanet <= 0) {
@@ -420,6 +421,45 @@ try {
     $statsResponse = e2e_http_request('GET', $gameBase . '/index.php?page=statistics&session=' . rawurlencode($auth['session']) . '&start=1&type=ressources', array(), $cookies);
     $fleetResponse = e2e_http_request('GET', $gameBase . '/index.php?page=statistics&session=' . rawurlencode($auth['session']) . '&start=1&type=fleet', array(), $cookies);
     $researchResponse = e2e_http_request('GET', $gameBase . '/index.php?page=statistics&session=' . rawurlencode($auth['session']) . '&start=1&type=research', array(), $cookies);
+    $zeroAllyId = AddDBRow(array(
+        'tag' => 'ZRANK',
+        'name' => 'Zero Rank Members',
+        'owner_id' => 0,
+        'homepage' => '',
+        'imglogo' => '',
+        'open' => 0,
+        'insertapp' => 0,
+        'exttext' => 'Zero member ranking fixture.',
+        'inttext' => '',
+        'apptext' => '',
+        'nextrank' => 0,
+        'old_tag' => '',
+        'old_name' => '',
+        'tag_until' => 0,
+        'name_until' => 0,
+        'score1' => 0,
+        'score2' => 0,
+        'score3' => 0,
+        'place1' => 0,
+        'place2' => 0,
+        'place3' => 0,
+        'oldscore1' => 0,
+        'oldscore2' => 0,
+        'oldscore3' => 0,
+        'oldplace1' => 0,
+        'oldplace2' => 0,
+        'oldplace3' => 0,
+        'scoredate' => time(),
+    ), 'ally');
+    RecalcAllyStats();
+    RecalcAllyRanks();
+    $zeroAlly = e2e_one_row("SELECT place1 FROM {$db_prefix}ally WHERE ally_id={$zeroAllyId} LIMIT 1");
+    $zeroStart = $zeroAlly === null ? 1 : (int)(floor((((int)$zeroAlly['place1']) - 1) / 100) * 100 + 1);
+    if ($zeroStart < 1) {
+        $zeroStart = 1;
+    }
+    $allyResponse = e2e_http_request('GET', $gameBase . '/index.php?page=statistics&session=' . rawurlencode($auth['session']) . '&who=ally&start=' . $zeroStart . '&type=ressources', array(), $cookies);
+    $zeroRowMatches = preg_match('/ZRANK.*?<!-- amount members -->.*?<th>\s*0\s*<\/th>.*?<!-- points -->.*?<th>\s*0\s*<\/th>.*?<!-- points per member -->.*?<th>\s*0\s*<\/th>/s', $allyResponse['body']) === 1;
     $cases[] = e2e_finalize_case(array(
         'case' => 'statistics_page_renders_ranked_fixture_users',
         'checks' => array_merge(
@@ -435,6 +475,17 @@ try {
             )
         ),
     ));
+    $cases[] = e2e_finalize_case(array(
+        'case' => 'statistics_alliance_zero_members_does_not_divide_by_zero',
+        'checks' => array_merge(
+            e2e_response_check($allyResponse),
+            array(
+                e2e_case(strpos($allyResponse['body'], 'DivisionByZeroError') === false, 'alliance statistics page does not emit DivisionByZeroError'),
+                e2e_case(strpos($allyResponse['body'], 'ZRANK') !== false, 'alliance statistics page includes the zero-member fixture alliance'),
+                e2e_case($zeroRowMatches, 'zero-member alliance renders 0 members, 0 points, and 0 points per member'),
+            )
+        ),
+    ));
 } catch (Throwable $e) {
     $cases[] = array(
         'case' => 'stats_ranking_exception',
@@ -442,6 +493,11 @@ try {
         'pass' => false,
     );
 } finally {
+    if ($zeroAllyId > 0) {
+        dbquery("DELETE FROM {$db_prefix}allyapps WHERE ally_id={$zeroAllyId}");
+        dbquery("DELETE FROM {$db_prefix}allyranks WHERE ally_id={$zeroAllyId}");
+        dbquery("DELETE FROM {$db_prefix}ally WHERE ally_id={$zeroAllyId}");
+    }
     if ($attackerId > 0 && $attackerPlanet > 0 && $defenderId > 0 && $defenderPlanet > 0) {
         e2e_reset_fixture(array($attackerId, $defenderId), array($attackerPlanet, $defenderPlanet));
     }

@@ -26,6 +26,7 @@ action or same-URL dynamic route targets. Link inventories are written to
 | galaxy-report-moon-popup-window | moon spy-report popup link | yes (`bericht`) | DOM/popup |
 | galaxy-phalanx-name-popup-window | planet-name phalanx popup link | yes (`spid`) | DOM/popup |
 | galaxy-phalanx-hover-popup-window | hover-menu phalanx popup link | yes (`spid`) | DOM/popup |
+| galaxy-alliance-hover-introduction-popup-link | hover-menu alliance intro popup link | yes (`allyid`) | DOM/popup |
 | galaxy-planet-hover-tooltip | hover-menu fleet/phalanx/missile links | optional by fixture; registered if present | DOM/popup |
 | research-short-queue-completion-done | completed research `next` link | yes (`/game/research`) | DOM |
 | overview-player-write-message-link | event-row write message icon | yes (legacy `showMessageMenu`, migrated `messageziel`) | yes |

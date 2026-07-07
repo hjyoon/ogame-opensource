@@ -30,7 +30,7 @@ The denominator is the legacy product surface, not file count alone:
 - Compatibility smoke covers 87 cases / 2199 checks.
 - Strict navigation visual exact diff has 0 failures for the seeded public/game/admin inventory.
 - Auth/game/navigation visual QA covers the normal authenticated route surface, route-discovered targets, and page-state exact diff in Chromium and Firefox.
-- Authenticated dynamic registry covers 74 listed legacy-JS cases.
+- Authenticated dynamic registry covers 75 listed legacy-JS cases.
 - Jump Gate, pranger, maintenance mode, feed GET/POST, registration aliases, DB backup safe failures, and unsafe restore rejection have Go/Bun implementation plus handler/DB/API evidence.
 - Account options preserve password/email/vacation/deletion behavior, including 7-day email confirmation queue timing and forced-universe language.
 - Admin Logins/Browse, Loca, Bots, Mods, DB, simulators, destructive actions, and queue operations are migrated with API/unit/smoke evidence.

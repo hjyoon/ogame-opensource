@@ -2227,8 +2227,6 @@ export function LegacyGameOverview({
     window.history.replaceState({}, "", gameRouteURL("/game/overview", search.toString()));
     window.dispatchEvent(new PopStateEvent("popstate"));
   }, [fleet, route.key]);
-  const hasStatisticsLegacyDivisionByZero =
-    route.key === "statistics" && Boolean(statistics && statisticsHasLegacyDivisionByZero(statistics));
   const contentClassName =
     route.key === "overview"
       ? "legacy-content legacy-content-overview"
@@ -2238,9 +2236,7 @@ export function LegacyGameOverview({
         ? "legacy-content legacy-content-popup"
         : "legacy-content";
   const contentStyle: React.CSSProperties =
-    hasStatisticsLegacyDivisionByZero
-      ? { height: "calc(100vh - 11px)", top: "1px" }
-      : route.key === "overview"
+    route.key === "overview"
       ? overviewContentLayout
         ? { height: overviewContentLayout.height, top: `${overviewContentLayout.top}px` }
         : { height: "calc(100vh - 124px)" }
@@ -2964,10 +2960,6 @@ function StatisticsTable({ statistics }: { statistics: GameStatistics }) {
   });
 }
 
-function statisticsHasLegacyDivisionByZero(statistics: GameStatistics): boolean {
-  return statistics.who === "ally" && statistics.rows.some((row) => row.members === 0);
-}
-
 function statisticsHTML(statistics: GameStatistics): string {
   const windows = statisticsWindows(statistics.total, statistics.start);
   const action = legacyHTMLAttribute(gameRouteURL("/game/statistics", window.location.search));
@@ -2983,9 +2975,6 @@ function statisticsHTML(statistics: GameStatistics): string {
     .join("");
   html += `        </select> \n          \n${statisticsHiddenInputsHTML()}        <input type="hidden" id="sort_per_member" name="sort_per_member" value="${legacyHTMLAttribute(statisticsSortValue())}" /> \n        <input type=submit value="Show"> \n      </th> \n    </tr> \n  </table> \n  <!-- end head table --> \n    \n</form> \n<!-- end header form --> \n\n<!-- begin statistic data --> \n`;
   html += who === "ally" ? allianceStatisticsHTML(statistics) : playerStatisticsHTML(statistics);
-  if (statisticsHasLegacyDivisionByZero(statistics)) {
-    return html;
-  }
   html += "\n<!-- end statistic data --><br><br><br><br>";
   return html;
 }
@@ -3039,23 +3028,11 @@ function allianceStatisticsHTML(statistics: GameStatistics): string {
         ? `      <a href="${legacyHTMLAttribute(applyHref)}">\n        <img src="${skinBase}/img/m.gif" border="0" alt="Write message" />\n      </a>\n`
         : "";
     html += `  <tr data-statistics-row="${row.place}">\n  \n    <!-- rank -->\n    <th>\n      ${row.place}&nbsp;&nbsp;\n\n      ${statisticsDeltaHTML(row)} \n    </th>\n    \n    <!--  name -->\n    <th>\n      <a href="${legacyHTMLAttribute(allyHref)}"${row.own ? " style='color:lime;'" : " target='_ally'"}>      \n \n      ${legacyHTMLText(tag)}    </a>\n    </th>\n    \n    <!-- bewerben -->\n    <th>\n${applicationIcon}      &nbsp;\n    </th>\n    \n    <!-- amount members -->\n    <th>\n      ${formatLegacyNumber(row.members)} </th>\n    \n    <!-- points -->\n    <th>\n      ${formatLegacyNumber(row.displayScore)}     \n      \n    </th>\n    \n    <!-- points per member -->\n    <th>\n      \n      `;
-    if (row.members === 0) {
-      html += legacyStatisticsDivisionByZeroError();
-      return html;
-    }
-    html += `${formatLegacyNumber(row.perMember)}\n              \n    </th>\n    \n  </tr>\n  \n  <tr>\n`;
+    const perMember = row.members > 0 ? row.perMember : 0;
+    html += `${formatLegacyNumber(perMember)}\n              \n    </th>\n    \n  </tr>\n  \n  <tr>\n`;
   }
   html += "</table>\n<!-- end ally -->";
   return html;
-}
-
-function legacyStatisticsDivisionByZeroError(): string {
-  return `<br />
-<b>Fatal error</b>:  Uncaught DivisionByZeroError: Division by zero in /var/www/html/game/pages/statistics.php:187
-Stack trace:
-#0 /var/www/html/game/index.php(213): include()
-#1 {main}
-  thrown in <b>/var/www/html/game/pages/statistics.php</b> on line <b>187</b><br />`;
 }
 
 function statisticsDeltaHTML(row: GameStatisticsRow): string {
@@ -10989,7 +10966,7 @@ function GalaxyHoverMenu({
       return;
     }
     const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[href]");
-    if (!anchor || !event.currentTarget.contains(anchor) || (anchor.target && anchor.target !== "_self")) {
+    if (!anchor || !event.currentTarget.contains(anchor)) {
       return;
     }
     if (anchor.dataset.galaxyPopup) {
@@ -11012,13 +10989,21 @@ function GalaxyHoverMenu({
     if (!target) {
       return;
     }
+    if (anchor.target && anchor.target !== "_self") {
+      event.preventDefault();
+      event.stopPropagation();
+      clearTimer();
+      setOpen(false);
+      window.open(target, anchor.target)?.focus();
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     clearTimer();
     setOpen(false);
     window.history.pushState({}, "", target);
     window.dispatchEvent(new PopStateEvent("popstate"));
-  }, [clearTimer]);
+  }, [clearTimer, onClick]);
 
   React.useEffect(() => clearTimer, [clearTimer]);
 
