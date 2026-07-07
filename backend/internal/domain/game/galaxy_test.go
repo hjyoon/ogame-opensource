@@ -252,7 +252,7 @@ func TestGalaxyHelpersCoverLegacyEdgeCases(t *testing.T) {
 	}
 }
 
-func TestBuildGalaxyKeepsStandaloneMoonDebrisAndSkipsInvalidObjects(t *testing.T) {
+func TestBuildGalaxyKeepsStandaloneDebrisButHidesStandaloneMoonsAndSkipsInvalidObjects(t *testing.T) {
 	galaxy := BuildGalaxy(galaxyOverview(1000), GalaxyInput{
 		Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 3},
 		Bounds:      GalaxyBounds{Galaxies: 9, Systems: 499},
@@ -289,10 +289,10 @@ func TestBuildGalaxyKeepsStandaloneMoonDebrisAndSkipsInvalidObjects(t *testing.T
 	})
 
 	if galaxy.Populated != 0 {
-		t.Fatalf("standalone moon/debris should not count as populated planets: %+v", galaxy)
+		t.Fatalf("standalone debris and hidden moons should not count as populated planets: %+v", galaxy)
 	}
-	if galaxy.Rows[4].Moon == nil || galaxy.Rows[4].Moon.Name != "Orphan Moon" {
-		t.Fatalf("expected standalone moon row, got %+v", galaxy.Rows[4])
+	if galaxy.Rows[4].Moon != nil {
+		t.Fatalf("legacy galaxy does not render standalone moon rows, got %+v", galaxy.Rows[4])
 	}
 	if galaxy.Rows[5].Debris == nil || !galaxy.Rows[5].Debris.Visible {
 		t.Fatalf("expected standalone visible debris row, got %+v", galaxy.Rows[5])

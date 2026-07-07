@@ -248,12 +248,6 @@ func BuildGalaxy(overview Overview, input GalaxyInput) Galaxy {
 			rows[position-1].Debris = buildGalaxyDebris(debrisObject)
 		}
 	}
-	for position, moonObject := range moonByPosition {
-		if rows[position-1].Moon == nil {
-			moon := buildGalaxyPlanet(moonObject, input.Viewer, input.Now, nil)
-			rows[position-1].Moon = &moon
-		}
-	}
 
 	remoteSystem := overview.CurrentPlanet.Coordinates.Galaxy != coordinates.Galaxy || overview.CurrentPlanet.Coordinates.System != coordinates.System
 	return Galaxy{

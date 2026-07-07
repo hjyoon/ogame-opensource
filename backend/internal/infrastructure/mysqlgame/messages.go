@@ -108,7 +108,10 @@ func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.Messa
 	if err := r.deleteExpiredInboxMessages(ctx, messagesTable, query.PlayerID, retention); err != nil {
 		return domaingame.Messages{}, err
 	}
-	showSummary := query.ShowSummary || (query.LegacyFolderDisplay && !query.HasMessageTypeFilter && retention.showLegacyFolderSummaryOnly())
+	showLegacyFolders := query.LegacyFolderDisplay &&
+		retention.CommanderActive &&
+		retention.Flags&messageUserFlagDontUseFolders == 0
+	showSummary := query.ShowSummary || (showLegacyFolders && !query.HasMessageTypeFilter && retention.showLegacyFolderSummaryOnly())
 	if showSummary {
 		messages.Action = domaingame.MessagesActionSummary
 		summary, err := r.loadMessageCategoryCounts(ctx, messagesTable, query.PlayerID)
@@ -133,6 +136,13 @@ func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.Messa
 	)
 	if err != nil {
 		return domaingame.Messages{}, err
+	}
+	if showLegacyFolders {
+		summary, err := r.loadMessageCategoryCounts(ctx, messagesTable, query.PlayerID)
+		if err != nil {
+			return domaingame.Messages{}, err
+		}
+		messages.Summary = summary
 	}
 	if err := r.markInboxRowsRead(ctx, messagesTable, query.PlayerID, rows); err != nil {
 		return domaingame.Messages{}, err

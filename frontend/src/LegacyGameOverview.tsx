@@ -10399,36 +10399,8 @@ function GalaxyTable({
     });
   };
   const showGalaxyMoonDeuterium = galaxy.currentPlanet.type === LegacyPlanetTypeMoon;
-  const galaxyInfoParts: React.ReactNode[] = [];
-  if (galaxy.extra.commander) {
-    if (galaxy.extra.spyProbes > 0) {
-      galaxyInfoParts.push(
-        <span key="probes">
-          <span id="probes">{formatLegacyNumber(galaxy.extra.spyProbes)}</span> Spy probes{" "}
-        </span>
-      );
-    }
-    if (galaxy.extra.recyclers > 0) {
-      galaxyInfoParts.push(
-        <span key="recyclers">
-          <span id="recyclers">{formatLegacyNumber(galaxy.extra.recyclers)}</span> Recyclers{" "}
-        </span>
-      );
-    }
-    if (galaxy.extra.missiles > 0) {
-      galaxyInfoParts.push(
-        <span key="missiles">
-          <span id="missiles">{formatLegacyNumber(galaxy.extra.missiles)}</span> Interplanetary rockets{" "}
-        </span>
-      );
-    }
-    galaxyInfoParts.push(
-      <span key="slots">
-        &nbsp;&nbsp;&nbsp;&nbsp;<span id="slots">{galaxy.extra.slots.used}</span>&nbsp;of the {galaxy.extra.slots.max} slots are in service
-      </span>
-    );
-  }
-  const hasGalaxyInfo = galaxyInfoParts.length > 0 || showGalaxyMoonDeuterium;
+  const galaxyInfoHTML = legacyGalaxyInfoHTML(galaxy, showGalaxyMoonDeuterium);
+  const hasGalaxyInfo = galaxyInfoHTML !== "";
 
   return (
     <>
@@ -10575,15 +10547,7 @@ function GalaxyTable({
           </tr>
           {hasGalaxyInfo ? (
             <tr className="legacy-galaxy-info-row">
-              <td className="c" colSpan={8}>
-                {galaxyInfoParts}
-                {showGalaxyMoonDeuterium ? (
-                  <>
-                    {galaxyInfoParts.length > 0 ? <br /> : null}
-                    Deuterium: {formatLegacyNumber(galaxy.currentPlanet.resources.deuterium)}
-                  </>
-                ) : null}
-              </td>
+              <td className="c" colSpan={8} dangerouslySetInnerHTML={{ __html: galaxyInfoHTML }} />
             </tr>
           ) : null}
           <tr id="fleetstatusrow" style={instantRows.length > 0 ? undefined : { display: "none" }}>
@@ -10612,6 +10576,36 @@ function GalaxyTable({
 
 function legacyGalaxyInstantInfo(draft: GameGalaxyInstantDispatch): string {
   return `  Dispatch ${formatLegacyNumber(draft.amount)} ships to ${formatCoordinates(draft.target)} `;
+}
+
+function legacyGalaxyInfoHTML(galaxy: GameGalaxy, showMoonDeuterium: boolean): string {
+  let html = "";
+  const separator = "&nbsp;&nbsp;&nbsp;&nbsp;";
+  let separatorRequired = false;
+  if (galaxy.extra.commander && galaxy.extra.spyProbes > 0) {
+    html += `<span id="probes">${formatLegacyNumber(galaxy.extra.spyProbes)}</span> Spy probes `;
+    separatorRequired = true;
+  }
+  if (galaxy.extra.commander && galaxy.extra.recyclers > 0) {
+    if (separatorRequired) {
+      html += separator;
+    }
+    html += `<span id="recyclers">${formatLegacyNumber(galaxy.extra.recyclers)}</span> Recyclers  `;
+    separatorRequired = true;
+  }
+  if (galaxy.extra.commander && galaxy.extra.missiles > 0) {
+    if (separatorRequired) {
+      html += separator;
+    }
+    html += `<span id="missiles">${formatLegacyNumber(galaxy.extra.missiles)}</span> Interplanetary rockets  `;
+  }
+  if (showMoonDeuterium) {
+    html += `Deuterium:  ${formatLegacyNumber(galaxy.currentPlanet.resources.deuterium)}`;
+  }
+  if (galaxy.extra.commander) {
+    html += `${separator}<span id='slots'>${galaxy.extra.slots.used}</span>&nbsp;of the ${galaxy.extra.slots.max} slots are in service`;
+  }
+  return html;
 }
 
 function legacyGalaxyInstantMessage(issue: GameGalaxyActionIssue, draft: GameGalaxyInstantDispatch): string {
@@ -11788,6 +11782,7 @@ function MessagesTable({
   if (messages.action === "summary") {
     return <MessageSummaryTable messages={messages} pending={pending} />;
   }
+  const showLegacyFolders = messages.summary.length > 0;
   const submitMessages = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -11818,25 +11813,60 @@ function MessagesTable({
       >
         <table className="legacy-overview-table legacy-messages-table" width={519}>
           <tbody>
+            {showLegacyFolders ? (
+              <tr>
+                <th colSpan={4}>
+                  <select defaultValue="deletemarked" disabled={pending} name="deletemessages">
+                    <option value="deletemarked">Delete highlighted messages</option>
+                    <option value="deletenonmarked">Delete all unselected messages</option>
+                    <option value="deleteallshown">Delete all displayed messages </option>
+                    <option value="deleteall">Delete all messages</option>
+                  </select>
+                  <input disabled={pending} type="submit" value="ok" />
+                </th>
+              </tr>
+            ) : null}
             <tr>
               <td className="legacy-c c" colSpan={4}>
                 Messages
               </td>
             </tr>
-            <tr>
-              <th>
-                Action
-              </th>
-              <th>
-                Date
-              </th>
-              <th>
-                From
-              </th>
-              <th>
-                Subject
-              </th>
-            </tr>
+            {showLegacyFolders ? (
+              <>
+                <tr>
+                  <th>Show</th>
+                  <th colSpan={2}>Type</th>
+                  <th>Total / New</th>
+                </tr>
+                <MessageSummaryRows categories={messages.summary} pending={pending} />
+                <tr>
+                  <th colSpan={4}>
+                    <input disabled={pending} name="fullreports" type="checkbox" /> Show intelligence data partially{" "}
+                  </th>
+                </tr>
+                <tr>
+                  <td className="legacy-c c">Action</td>
+                  <td className="legacy-c c">Date</td>
+                  <td className="legacy-c c">From</td>
+                  <td className="legacy-c c">Subject</td>
+                </tr>
+              </>
+            ) : (
+              <tr>
+                <th>
+                  Action
+                </th>
+                <th>
+                  Date
+                </th>
+                <th>
+                  From
+                </th>
+                <th>
+                  Subject
+                </th>
+              </tr>
+            )}
             {messages.rows.map((message) => (
               <React.Fragment key={message.id}>
               <tr data-message-row={message.id}>
@@ -11870,22 +11900,26 @@ function MessagesTable({
             <tr>
               <th colSpan={4} style={{ padding: "0px 105px" }} />
             </tr>
-            <tr>
-              <th colSpan={4}>
-                <input disabled={pending} name="fullreports" type="checkbox" /> Show intelligence data partially{" "}
-              </th>
-            </tr>
-            <tr>
-              <th colSpan={4}>
-                <select defaultValue="deletemarked" disabled={pending} name="deletemessages">
-                  <option value="deletemarked">Delete highlighted messages</option>
-                  <option value="deletenonmarked">Delete all unselected messages</option>
-                  <option value="deleteallshown">Delete all displayed messages </option>
-                  <option value="deleteall">Delete all messages</option>
-                </select>
-                <input disabled={pending} type="submit" value="ok" />
-              </th>
-            </tr>
+            {!showLegacyFolders ? (
+              <>
+                <tr>
+                  <th colSpan={4}>
+                    <input disabled={pending} name="fullreports" type="checkbox" /> Show intelligence data partially{" "}
+                  </th>
+                </tr>
+                <tr>
+                  <th colSpan={4}>
+                    <select defaultValue="deletemarked" disabled={pending} name="deletemessages">
+                      <option value="deletemarked">Delete highlighted messages</option>
+                      <option value="deletenonmarked">Delete all unselected messages</option>
+                      <option value="deleteallshown">Delete all displayed messages </option>
+                      <option value="deleteall">Delete all messages</option>
+                    </select>
+                    <input disabled={pending} type="submit" value="ok" />
+                  </th>
+                </tr>
+              </>
+            ) : null}
             <tr>
               <td colSpan={4}>
                 <center>     </center>
@@ -11934,19 +11968,7 @@ function MessageSummaryTable({ messages, pending }: { messages: GameMessages; pe
               <th colSpan={2}>Type</th>
               <th>Total / New</th>
             </tr>
-            {categories.map((category) => (
-              <tr key={category.key}>
-                <th>
-                  <input disabled={pending} name={messageSummaryCheckboxName(category.key)} type="checkbox" />
-                </th>
-                <th colSpan={2}>
-                  <a href={messageSummaryCategoryHref(category.key)}>{category.label}</a>
-                </th>
-                <th>
-                  {category.total} / {category.unread}
-                </th>
-              </tr>
-            ))}
+            <MessageSummaryRows categories={categories} pending={pending} />
             <tr>
               <th colSpan={4}>
                 <input disabled={pending} name="fullreports" type="checkbox" />{" "}
@@ -11979,6 +12001,31 @@ function MessageSummaryTable({ messages, pending }: { messages: GameMessages; pe
         </table>
       </form>
     </MessagesOuterTable>
+  );
+}
+
+function MessageSummaryRows({ categories, pending }: { categories: GameMessageCategoryCount[]; pending: boolean }) {
+  return (
+    <>
+      {categories.map((category) => (
+        <tr key={category.key}>
+          <th>
+            <input
+              defaultChecked={messageSummaryCategoryChecked(category.key)}
+              disabled={pending}
+              name={messageSummaryCheckboxName(category.key)}
+              type="checkbox"
+            />
+          </th>
+          <th colSpan={2}>
+            <a href={messageSummaryCategoryHref(category.key)}>{category.label}</a>
+          </th>
+          <th>
+            {category.total} / {category.unread}
+          </th>
+        </tr>
+      ))}
+    </>
   );
 }
 
@@ -12021,6 +12068,19 @@ function messageSummaryCategoryHref(key: string): string {
   query.set("dsp", "1");
   query.set("pm", messageTypes[key] ?? "5");
   return gameRouteURL("/game/messages", query.toString());
+}
+
+function messageSummaryCategoryChecked(key: string): boolean {
+  const messageTypes: Record<string, string> = {
+    spy: "1",
+    battle: "2",
+    expedition: "3",
+    alliance: "4",
+    personal: "0",
+    other: "5"
+  };
+  const selected = new URLSearchParams(window.location.search).get("pm");
+  return selected !== null && selected === (messageTypes[key] ?? "5");
 }
 
 function defaultMessageSummaryCategories(): GameMessageCategoryCount[] {

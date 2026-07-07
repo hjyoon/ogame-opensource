@@ -244,14 +244,16 @@ const browser = await browserType.launch({
 try {
   const results: CaseResult[] = [];
   for (const viewport of viewports) {
-    const context = await browser.newContext({
-      viewport: { width: viewport.width, height: viewport.height },
-      deviceScaleFactor: 1,
-      locale: "en-US"
-    });
     for (const spec of pageSpecs) {
-      const legacy = await capturePage(context, spec, "legacy", legacyBaseURL + spec.legacyPath, viewport);
-      const migrated = await capturePage(context, spec, "migrated", migratedBaseURL + spec.migratedPath, viewport);
+      const context = await newVisualContext(browser, viewport);
+      let legacy: PageCapture;
+      let migrated: PageCapture;
+      try {
+        legacy = await capturePage(context, spec, "legacy", legacyBaseURL + spec.legacyPath, viewport);
+        migrated = await capturePage(context, spec, "migrated", migratedBaseURL + spec.migratedPath, viewport);
+      } finally {
+        await context.close();
+      }
       const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath);
       const maxBoxDelta = defaultMaxBoxDelta;
       const boxChecks = spec.boxes.map((pair) => compareBoxes(pair.name, legacy.boxes[pair.name], migrated.boxes[pair.name], maxBoxDelta));
@@ -272,7 +274,6 @@ try {
         contractChecks.every((check) => check.pass);
       results.push({ page: spec.name, viewport: viewport.name, pass, legacy, migrated, diff, maxDiffRatio, boxChecks, contractChecks });
     }
-    await context.close();
   }
   const languageFlagResults: BehaviorResult[] = [];
   for (const flag of publicLanguageFlags) {
@@ -319,6 +320,14 @@ try {
   await browser.close();
 }
 
+async function newVisualContext(browser: Browser, viewport: ViewportSpec): Promise<BrowserContext> {
+  return await browser.newContext({
+    viewport: { width: viewport.width, height: viewport.height },
+    deviceScaleFactor: 1,
+    locale: "en-US"
+  });
+}
+
 async function capturePage(
   context: BrowserContext,
   spec: PageSpec,
@@ -347,9 +356,13 @@ async function capturePage(
 
   const response = await page.goto(url, { waitUntil: "networkidle", timeout: 15_000 });
   await waitForImages(page);
+  await waitForBackgroundImages(page);
+  await prepareDeterministicCapture(page);
   await waitForStablePaint(page);
   await page.waitForTimeout(250);
   await page.keyboard.press("Escape").catch(() => undefined);
+  await prepareDeterministicCapture(page);
+  await normalizePublicDynamicParts(page, spec);
   await page.waitForTimeout(50);
   const boxes: Record<string, Box | null> = {};
   for (const pair of spec.boxes) {
@@ -379,18 +392,90 @@ async function waitForImages(page: Page): Promise<void> {
       const images = Array.from(document.images);
       await Promise.all(
         images.map(async (image) => {
-          if (image.complete && image.naturalWidth > 0) {
-            return;
-          }
           await image.decode().catch(
             () =>
               new Promise<void>((resolve) => {
+                if (image.complete && image.naturalWidth > 0) {
+                  resolve();
+                  return;
+                }
                 image.addEventListener("load", () => resolve(), { once: true });
                 image.addEventListener("error", () => resolve(), { once: true });
               })
           );
         })
       );
+    })
+    .catch(() => undefined);
+}
+
+async function waitForBackgroundImages(page: Page): Promise<void> {
+  await page
+    .evaluate(async () => {
+      const urls = new Set<string>();
+      const collectURLs = (backgroundImage: string) => {
+        const pattern = /url\((?:"([^"]+)"|'([^']+)'|([^)"']+))\)/g;
+        let match: RegExpExecArray | null;
+        while ((match = pattern.exec(backgroundImage)) !== null) {
+          const rawURL = match[1] ?? match[2] ?? match[3] ?? "";
+          if (rawURL !== "") {
+            urls.add(new URL(rawURL, document.baseURI).href);
+          }
+        }
+      };
+      for (const element of [document.documentElement, document.body, ...Array.from(document.querySelectorAll<HTMLElement>("*"))]) {
+        collectURLs(getComputedStyle(element).backgroundImage);
+      }
+      await Promise.all(
+        Array.from(urls).map(
+          (url) =>
+            new Promise<void>((resolve) => {
+              const image = new Image();
+              image.onload = () => {
+                image.decode().then(() => resolve(), () => resolve());
+              };
+              image.onerror = () => resolve();
+              image.src = url;
+              if (image.complete) {
+                image.decode().then(() => resolve(), () => resolve());
+              }
+            })
+        )
+      );
+    })
+    .catch(() => undefined);
+}
+
+async function prepareDeterministicCapture(page: Page): Promise<void> {
+  await page
+    .evaluate(() => {
+      let style = document.getElementById("ogame-public-visual-stability");
+      if (!style) {
+        style = document.createElement("style");
+        style.id = "ogame-public-visual-stability";
+        style.textContent = "*, *::before, *::after { animation: none !important; caret-color: transparent !important; transition: none !important; }";
+        document.head.appendChild(style);
+      }
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    })
+    .catch(() => undefined);
+}
+
+async function normalizePublicDynamicParts(page: Page, spec: PageSpec): Promise<void> {
+  if (spec.name !== "register") {
+    return;
+  }
+  await page
+    .evaluate(() => {
+      if (new URL(window.location.href).searchParams.has("errorCode")) {
+        return;
+      }
+      const statusText = document.querySelector("#statustext");
+      if (statusText) {
+        statusText.textContent = "";
+      }
     })
     .catch(() => undefined);
 }

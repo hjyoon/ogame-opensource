@@ -604,7 +604,7 @@ async function collectSideTargets(context: BrowserContext, side: Side, seed: See
         if (anchor.closest("option, select")) {
           continue;
         }
-        const rawHref = anchor.getAttribute("href") ?? "";
+        const rawHref = anchor.getAttribute("data-navigation-href") ?? anchor.getAttribute("href") ?? "";
         targets.push({ kind: "anchor", label: visibleLabel(anchor), url: extractScriptNavigationHref(rawHref) ?? rawHref, method: "GET" });
       }
       for (const element of Array.from(document.querySelectorAll<HTMLElement>("[onclick]"))) {

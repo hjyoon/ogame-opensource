@@ -538,7 +538,7 @@ export function LoginStrip({
       </div>
       <div className="legacy-public-login-links" id="login_text_2">
         <div className="legacy-public-remind">
-          <a href="#" onClick={handlePasswordReminder}>{texts.loginRemind}</a>
+          <a data-navigation-href="/game/reg/mail.php" href="#" onClick={handlePasswordReminder}>{texts.loginRemind}</a>
         </div>
         {" "}
         <div className="legacy-public-login-confirm">

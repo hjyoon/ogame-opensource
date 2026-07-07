@@ -104,6 +104,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     legacyReady: "#content a[href*='pm=1']",
     migratedReady: ".legacy-messages-table a[href*='pm=1']",
     requiredFixtureFeatures: ["commander", "report"],
+    isolateSides: true,
     actions: [
       {
         type: "click",
@@ -210,7 +211,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     ],
     visual: {
       enabled: true,
-      normalizePageName: "game-messages"
+      normalizePageName: "game-galaxy"
     },
     linkAudit: {
       expected: [

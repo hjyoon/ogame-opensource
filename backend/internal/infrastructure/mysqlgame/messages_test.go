@@ -53,6 +53,9 @@ func TestMessagesRepositoryFiltersLegacyInboxByMessageType(t *testing.T) {
 		fakeQueryResult{rows: fakeRowsFromValues(
 			[]any{12, domaingame.MessageTypeMisc, "System", "Notice", "Text", 1, int64(1700000001)},
 		)},
+		fakeQueryResult{rows: fakeRowsFromValues(
+			[]any{domaingame.MessageTypeMisc, 1, 0},
+		)},
 	)}
 	repository := NewMessagesRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
 
@@ -66,7 +69,8 @@ func TestMessagesRepositoryFiltersLegacyInboxByMessageType(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if messages.Action != domaingame.MessagesActionInbox || len(messages.Rows) != 1 || messages.Rows[0].Type != domaingame.MessageTypeMisc {
+	if messages.Action != domaingame.MessagesActionInbox || len(messages.Rows) != 1 || messages.Rows[0].Type != domaingame.MessageTypeMisc ||
+		len(messages.Summary) != 6 || messages.Summary[5].Total != 1 {
 		t.Fatalf("unexpected filtered inbox payload: %+v", messages)
 	}
 	if !strings.Contains(queryer.calls[5].sql, "pm <> ? AND pm = ? ORDER BY date DESC, msg_id DESC LIMIT ?") ||

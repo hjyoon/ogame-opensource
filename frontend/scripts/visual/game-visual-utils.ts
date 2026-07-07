@@ -172,7 +172,9 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
       });
 
       if (currentPageName.startsWith("game-overview") || currentPageName === "game-empire-redirect") {
-        hide("#content img[width='50'][height='50'], .legacy-overview-main-table img[width='50'][height='50']");
+        hide(
+          "#content img[width='50'][height='50'], .legacy-overview-main-table img[width='50'][height='50'], #content img[width='200'][height='200'], .legacy-overview-main-table img[width='200'][height='200']"
+        );
         for (const headerCell of document.querySelectorAll<HTMLTableCellElement>(".legacy-overview-main-table th, #content table th")) {
           if (headerCell.textContent?.trim() === "Server time") {
             const timeCell = headerCell.nextElementSibling;
@@ -324,10 +326,22 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
       }
       if (currentPageName === "game-messages") {
         hide("#content select, #content input[type='button'], #content input[type='submit'], .legacy-messages-table select, .legacy-messages-table input[type='button'], .legacy-messages-table input[type='submit']");
+        for (const cell of document.querySelectorAll<HTMLElement>("#content th, #content td, .legacy-messages-table th, .legacy-messages-table td")) {
+          const text = (cell.textContent ?? "").trim();
+          if (/^\d+\s*\/\s*\d+$/.test(text)) {
+            cell.textContent = "00 / 0";
+          }
+          if (/^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/.test(text)) {
+            cell.textContent = "00-00 00:00:00";
+          }
+        }
       }
       if (currentPageName.startsWith("game-messages-compose")) {
         for (const cell of document.querySelectorAll<HTMLElement>("#content th, #content td, .legacy-messages-compose-table th, .legacy-messages-compose-table td")) {
           const text = cell.textContent ?? "";
+          if (/\[\d+:\d+:\d+\]/.test(text)) {
+            cell.textContent = text.replace(/\[\d+:\d+:\d+\]/g, "[0:0:0]");
+          }
           if (text.includes("Message(") && text.includes("2000 characters")) {
             makeTextTransparent(cell);
           }

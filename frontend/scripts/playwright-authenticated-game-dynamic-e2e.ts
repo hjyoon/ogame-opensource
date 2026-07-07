@@ -388,7 +388,11 @@ async function runSide(
     }
   });
   page.on("requestfailed", (request) => {
-    failedRequests.push(`${request.method()} ${request.url()} ${request.failure()?.errorText ?? ""}`.trim());
+    const errorText = request.failure()?.errorText ?? "";
+    if (isBenignNavigationAbort(request.method(), errorText)) {
+      return;
+    }
+    failedRequests.push(`${request.method()} ${request.url()} ${errorText}`.trim());
   });
   page.on("response", (response) => {
     const status = response.status();
@@ -1054,6 +1058,10 @@ function missingFixtureFeature(spec: GameDynamicBehaviorSpec): string | null {
     }
   }
   return null;
+}
+
+function isBenignNavigationAbort(method: string, errorText: string): boolean {
+  return method === "GET" && errorText === "NS_BINDING_ABORTED";
 }
 
 async function isApplicable(page: Page, side: SideName, spec: GameDynamicBehaviorSpec): Promise<{ ok: boolean; reason?: string }> {
