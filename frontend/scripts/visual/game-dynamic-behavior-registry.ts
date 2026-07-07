@@ -1952,6 +1952,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     migratedPath: "/game/overview",
     legacyReady: "#content #bxx1",
     migratedReady: ".legacy-overview-main-table .legacy-overview-event-timer",
+    applicabilitySelector: ".legacy-overview-position-link",
     actions: [
       {
         type: "click",
@@ -1984,6 +1985,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     migratedPath: "/game/overview",
     legacyReady: "#content #bxx1",
     migratedReady: ".legacy-overview-main-table .legacy-overview-event-timer",
+    applicabilitySelector: ".legacy-overview-rank-link",
     actions: [
       {
         type: "click",
