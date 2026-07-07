@@ -1901,6 +1901,115 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers event_list.php Cargo() overlib hover when an overview event carries resources."]
   },
   {
+    name: "overview-player-write-message-link",
+    legacyPage: "overview",
+    migratedPath: "/game/overview",
+    legacyReady: "#content #bxx1",
+    migratedReady: ".legacy-overview-main-table .legacy-overview-event-timer",
+    legacyApplicabilitySelector: ".legacy-overview-main-table .legacy-overview-event-timer + th a[href*='messageziel='] img[alt='Write message']",
+    migratedApplicabilitySelector: ".legacy-overview-main-table .legacy-overview-event-timer + th a[href*='messageziel='] img[alt='Write message']",
+    actions: [
+      {
+        type: "click",
+        legacySelector: ".legacy-overview-main-table .legacy-overview-event-timer + th a[href*='messageziel=']",
+        migratedSelector: ".legacy-overview-main-table .legacy-overview-event-timer + th a[href*='messageziel=']",
+        waitForSelector: "textarea[name='text']",
+        legacyWaitForSelector: "#content textarea[name='text']",
+        migratedWaitForSelector: ".legacy-messages-compose-table textarea[name='text']"
+      }
+    ],
+    assertions: [
+      {
+        name: "compose-visible",
+        type: "visible",
+        selector: "textarea[name='text']",
+        expected: "true"
+      },
+      {
+        name: "compose-messageziel",
+        type: "evaluate",
+        expression: "Number(new URL(window.location.href).searchParams.get('messageziel') ?? 0) > 0",
+        expected: "true"
+      },
+      {
+        name: "compose-heading",
+        type: "text",
+        legacySelector: "#content",
+        migratedSelector: ".legacy-messages-compose-table",
+        contains: "Write message"
+      },
+      { name: "compose-counter", type: "text", selector: "#cntChars", expected: "0", compareSides: true }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-messages-compose"
+    },
+    notes: ["Covers overview event Write message icon links resolving to the migrated message compose screen."]
+  },
+  {
+    name: "overview-planet-position-link",
+    legacyPage: "overview",
+    migratedPath: "/game/overview",
+    legacyReady: "#content #bxx1",
+    migratedReady: ".legacy-overview-main-table .legacy-overview-event-timer",
+    actions: [
+      {
+        type: "click",
+        legacySelector: ".legacy-overview-position-link",
+        migratedSelector: ".legacy-overview-position-link",
+        legacyWaitForSelector: "input[name='galaxy']",
+        migratedWaitForSelector: "input[name='galaxy']"
+      }
+    ],
+    assertions: [
+      {
+        name: "route-to-galaxy",
+        type: "evaluate",
+        expression: "new URL(window.location.href).pathname",
+        expected: "/game/galaxy"
+      },
+      {
+        name: "route-query-galaxy",
+        type: "evaluate",
+        expression:
+          "Number(new URL(window.location.href).searchParams.get('galaxy') ?? 0) > 0 && Number(new URL(window.location.href).searchParams.get('system') ?? 0) > 0",
+        expected: "true"
+      }
+    ],
+    notes: ["Covers overview main table Planet link navigates to /game/galaxy with coordinates preserved."]
+  },
+  {
+    name: "overview-player-rank-link",
+    legacyPage: "overview",
+    migratedPath: "/game/overview",
+    legacyReady: "#content #bxx1",
+    migratedReady: ".legacy-overview-main-table .legacy-overview-event-timer",
+    actions: [
+      {
+        type: "click",
+        legacySelector: ".legacy-overview-rank-link",
+        migratedSelector: ".legacy-overview-rank-link",
+        legacyWaitForSelector: "#content table",
+        migratedWaitForSelector: "#content table"
+      }
+    ],
+    assertions: [
+      {
+        name: "route-to-statistics",
+        type: "evaluate",
+        expression: "new URL(window.location.href).pathname",
+        expected: "/game/statistics"
+      },
+      {
+        name: "statistics-has-start",
+        type: "evaluate",
+        expression: "new URL(window.location.href).searchParams.get('start') !== null",
+        expected: "true"
+      }
+    ],
+    notes: ["Covers overview rank link navigation and start-offset parity for statistics deep-linking."]
+  },
+  {
     name: "merchant-exchange-rate-tooltip",
     legacyPage: "trader",
     migratedPath: "/game/merchant",
