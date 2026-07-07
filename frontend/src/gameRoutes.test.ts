@@ -139,6 +139,9 @@ describe("game route model", () => {
     expect(gameLegacyRouteURL("index.php?page=galaxy&galaxy=1&system=2&position=3&session=abc", "?cp=99")).toBe(
       "/game/galaxy?galaxy=1&system=2&position=3&session=abc&cp=99"
     );
+    expect(gameLegacyRouteURL("index.php?page=galaxy&galaxy=1&system=2&position=3&session={PUBLIC_SESSION}", "?session=abc&cp=99")).toBe(
+      "/game/galaxy?galaxy=1&system=2&position=3&session=abc&cp=99"
+    );
     expect(gameLegacyRouteURL("/game/index.php?page=bericht&bericht=11&session=abc", "")).toBe(
       "/game/report?bericht=11&session=abc"
     );

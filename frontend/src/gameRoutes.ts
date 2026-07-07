@@ -207,11 +207,19 @@ export function gameLegacyRouteURL(href: string, currentSearch = ""): string | n
   const query = new URLSearchParams(parsed.search);
   const current = new URLSearchParams(currentSearch);
   for (const key of ["session", "cp"]) {
-    if (!query.has(key)) {
+    const isSessionPlaceholder = key === "session" && isPublicSessionPlaceholder(query.get(key));
+    if (!query.has(key) || isSessionPlaceholder) {
       copyQueryValue(current, query, key);
+      if (isSessionPlaceholder && !current.get(key)) {
+        query.delete(key);
+      }
     }
   }
   return gameRouteURL(path, query.toString());
+}
+
+function isPublicSessionPlaceholder(value: string | null): boolean {
+  return value !== null && value.trim().toUpperCase() === "{PUBLIC_SESSION}";
 }
 
 const globalGameRouteQueryKeys = new Set(["session", "cp"]);
