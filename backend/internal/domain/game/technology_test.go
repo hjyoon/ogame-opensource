@@ -205,11 +205,22 @@ func TestBuildTechnologyInfoUsesLegacyInfosPreview(t *testing.T) {
 		t.Fatalf("unexpected description-only info: %+v", description)
 	}
 
+	research, ok := BuildTechnologyInfoWithSpeed(ResearchEnergy, PlanetOverview{}, BuildingLevels{ResearchEnergy: 9}, ResearchLevels{ResearchEnergy: 4}, 128)
+	if !ok {
+		t.Fatal("expected research info")
+	}
+	if research.Level != 4 || research.Kind != "description" {
+		t.Fatalf("research info should use research levels, got %+v", research)
+	}
+
 	if _, ok := BuildTechnologyInfoWithSpeed(9999, PlanetOverview{}, BuildingLevels{}, ResearchLevels{}, 128); ok {
 		t.Fatal("expected unknown technology info id to be rejected")
 	}
 	if production, energy, deuterium := technologyInfoProduction(9999, 0, PlanetOverview{}, ResearchLevels{}, 128); production != 0 || energy != 0 || deuterium != 0 {
 		t.Fatalf("expected empty production for invalid level, got production=%d energy=%d deuterium=%d", production, energy, deuterium)
+	}
+	if production, energy, deuterium := technologyInfoProduction(9999, 1, PlanetOverview{}, ResearchLevels{}, 128); production != 0 || energy != 0 || deuterium != 0 {
+		t.Fatalf("expected empty production for unknown producer, got production=%d energy=%d deuterium=%d", production, energy, deuterium)
 	}
 }
 

@@ -61,4 +61,9 @@ func TestNormalizePlanetNameMatchesLegacy(t *testing.T) {
 	if !ok || name != "\u043f\u043b\u0430\u043d\u0435\u0442\u0430" {
 		t.Fatalf("empty planet name should use legacy default: name=%q ok=%t", name, ok)
 	}
+
+	name, ok = NormalizePlanetName(`   ()*"'\   `, PlanetTypeMoon)
+	if !ok || name != "Moon" {
+		t.Fatalf("empty moon name should use legacy moon default: name=%q ok=%t", name, ok)
+	}
 }

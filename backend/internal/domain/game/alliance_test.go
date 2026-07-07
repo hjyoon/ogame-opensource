@@ -49,7 +49,7 @@ func TestAllianceDomainNormalizesManagementInputs(t *testing.T) {
 	if got := NormalizeAllianceURL("   "); got != "" {
 		t.Fatalf("expected blank url to stay blank, got %q", got)
 	}
-	for _, raw := range []string{"javascript:alert(1)", "https://", "http://user:pass@example.com", "https://example.com/a\nb"} {
+	for _, raw := range []string{"javascript:alert(1)", "https://", "http://user:pass@example.com", "https://example.com/a\nb", "ftp://example.com/file"} {
 		if got := NormalizeAllianceURL(raw); got != "" {
 			t.Fatalf("expected unsafe url %q to be stripped, got %q", raw, got)
 		}

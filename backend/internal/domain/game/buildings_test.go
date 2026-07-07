@@ -36,6 +36,11 @@ func TestBuildBuildingsUsesLegacyCostAndDurationFormula(t *testing.T) {
 	if !metalMine.CanBuild {
 		t.Fatalf("expected affordable metal mine: %+v", metalMine)
 	}
+
+	defaultSpeed := BuildBuildings(overview, BuildingLevels{BuildingMetalMine: 2}, ResearchLevels{}, 0)
+	if got := findBuilding(t, defaultSpeed, BuildingMetalMine).DurationSeconds; got != 243 {
+		t.Fatalf("non-positive universe speed should fall back to 1x duration, got %d", got)
+	}
 }
 
 func TestBuildBuildingsFiltersByRequirementsAndPlanetType(t *testing.T) {

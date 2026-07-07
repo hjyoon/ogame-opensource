@@ -4500,11 +4500,37 @@ try {
       })
     : null;
   const merchantCallBody = merchantCall ? parseJSON(merchantCall) : {};
+  const merchantTradeValues = { metal: 0, crystal: 2000, deuterium: 1000 };
+  const merchantTradeBefore = merchantReady
+    ? await request(`/api/game/merchant${merchantTradeLogin.search}`, {
+        headers: { Cookie: merchantTradeLogin.cookiePair }
+      })
+    : null;
+  const merchantTradeBeforeBody = merchantTradeBefore ? parseJSON(merchantTradeBefore) : {};
+  const merchantTradeBeforeMetal = merchantRow(merchantTradeBeforeBody, 1);
+  const merchantTradeBeforeCrystal = merchantRow(merchantTradeBeforeBody, 2);
+  const merchantTradeBeforeDeuterium = merchantRow(merchantTradeBeforeBody, 3);
+  const merchantTradeMetalRate = Number(merchantTradeBeforeMetal?.rate ?? 0);
+  const merchantTradeCrystalRate = Number(merchantTradeBeforeCrystal?.rate ?? 0);
+  const merchantTradeDeuteriumRate = Number(merchantTradeBeforeDeuterium?.rate ?? 0);
+  const merchantTradeExpectedMetalCost =
+    merchantTradeMetalRate > 0 && merchantTradeCrystalRate > 0 && merchantTradeDeuteriumRate > 0
+      ? Math.trunc(
+          (merchantTradeValues.crystal / merchantTradeCrystalRate) * merchantTradeMetalRate +
+            (merchantTradeValues.deuterium / merchantTradeDeuteriumRate) * merchantTradeMetalRate
+        )
+      : 6000;
+  const merchantTradeExpectedMetal =
+    Math.trunc(Number(merchantTradeBeforeMetal?.value ?? Number.NaN)) - merchantTradeExpectedMetalCost;
+  const merchantTradeExpectedCrystal =
+    Math.trunc(Number(merchantTradeBeforeCrystal?.value ?? Number.NaN)) + merchantTradeValues.crystal;
+  const merchantTradeExpectedDeuterium =
+    Math.trunc(Number(merchantTradeBeforeDeuterium?.value ?? Number.NaN)) + merchantTradeValues.deuterium;
   const merchantTrade = merchantReady
     ? await request(`/api/game/merchant${merchantTradeLogin.search}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: merchantTradeLogin.cookiePair },
-        body: JSON.stringify({ action: "trade", values: { metal: 0, crystal: 2000, deuterium: 1000 } })
+        body: JSON.stringify({ action: "trade", values: merchantTradeValues })
       })
     : null;
   const merchantTradeBody = merchantTrade ? parseJSON(merchantTrade) : {};
@@ -4515,7 +4541,7 @@ try {
     ? await request(`/api/game/merchant${merchantRejectLogin.search}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: merchantRejectLogin.cookiePair },
-        body: JSON.stringify({ action: "trade", values: { metal: 0, crystal: 2000, deuterium: 1000 } })
+        body: JSON.stringify({ action: "trade", values: merchantTradeValues })
       })
     : null;
   const merchantRejectBody = merchantReject ? parseJSON(merchantReject) : {};
@@ -7829,10 +7855,21 @@ try {
       }),
       check(!merchantReady || merchantTradeBody.actionIssue === undefined, "merchant exchange has no error issue", merchantTradeBody.actionIssue ?? {}),
       check(!merchantReady || merchantTradeBody.merchant?.activeOfferId === 0, "successful merchant exchange consumes active offer", merchantTradeBody.merchant ?? {}),
-      check(!merchantReady || Number(merchantTradeMetal?.value ?? -1) >= 994000 && Number(merchantTradeMetal?.value ?? -1) < 994100, "merchant exchange subtracts calculated metal cost", merchantTradeMetal ?? {}),
-      check(!merchantReady || Number(merchantTradeCrystal?.value ?? -1) >= 102000 && Number(merchantTradeCrystal?.value ?? -1) < 102100 && Number(merchantTradeDeuterium?.value ?? -1) >= 101000 && Number(merchantTradeDeuterium?.value ?? -1) < 101100, "merchant exchange adds requested crystal and deuterium", {
+      check(!merchantReady || Math.trunc(Number(merchantTradeMetal?.value ?? Number.NaN)) === merchantTradeExpectedMetal, "merchant exchange subtracts calculated metal cost", {
+        before: merchantTradeBeforeMetal,
+        after: merchantTradeMetal,
+        expectedMetal: merchantTradeExpectedMetal,
+        expectedCost: merchantTradeExpectedMetalCost
+      }),
+      check(!merchantReady || Math.trunc(Number(merchantTradeCrystal?.value ?? Number.NaN)) === merchantTradeExpectedCrystal && Math.trunc(Number(merchantTradeDeuterium?.value ?? Number.NaN)) === merchantTradeExpectedDeuterium, "merchant exchange adds requested crystal and deuterium", {
+        before: {
+          crystal: merchantTradeBeforeCrystal,
+          deuterium: merchantTradeBeforeDeuterium
+        },
         crystal: merchantTradeCrystal,
-        deuterium: merchantTradeDeuterium
+        deuterium: merchantTradeDeuterium,
+        expectedCrystal: merchantTradeExpectedCrystal,
+        expectedDeuterium: merchantTradeExpectedDeuterium
       }),
       check(!merchantReady || merchantReject?.status === 200, "insufficient-resource merchant exchange returns HTTP 200", {
         status: merchantReject?.status

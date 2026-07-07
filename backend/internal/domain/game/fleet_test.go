@@ -106,6 +106,7 @@ func TestBuildFleetDispatchDraftNormalizesLegacySelection(t *testing.T) {
 		},
 	}, FleetCounts{
 		FleetSmallCargo:     4,
+		FleetLargeCargo:     1,
 		FleetEspionageProbe: 5,
 		FleetSolarSatellite: 9,
 	}, ResearchLevels{ResearchCombustionDrive: 1, ResearchExpedition: 4}, nil, false, false)
@@ -204,6 +205,20 @@ func TestBuildFleetDispatchDraftMissionOptionsMatchLegacyEdges(t *testing.T) {
 	})
 	if len(colony.MissionOptions) != 3 || colony.MissionOptions[2].ID != FleetMissionColonize {
 		t.Fatalf("planet target with colony ship should include colonize draft option: %+v", colony.MissionOptions)
+	}
+
+	acs := BuildFleet(Overview{
+		CurrentPlanet: PlanetOverview{Type: PlanetTypePlanet, Coordinates: Coordinates{Galaxy: 1, System: 2, Position: 3}},
+	}, FleetCounts{FleetSmallCargo: 1}, ResearchLevels{ResearchCombustionDrive: 1}, []FleetMission{
+		{UnionID: 7, Target: Coordinates{Galaxy: 1, System: 2, Position: 6}, TargetType: PlanetTypePlanet},
+	}, false, false)
+	acsDraft := BuildFleetDispatchDraft(acs, FleetDispatchDraftInput{
+		Ships:      map[int]int{FleetSmallCargo: 1},
+		Target:     Coordinates{Galaxy: 1, System: 2, Position: 6},
+		TargetType: GamePlanetTypePlanet,
+	})
+	if len(acsDraft.MissionOptions) != 3 || acsDraft.MissionOptions[2].ID != FleetMissionACSAttack {
+		t.Fatalf("target with ACS union should include ACS attack: %+v", acsDraft.MissionOptions)
 	}
 }
 

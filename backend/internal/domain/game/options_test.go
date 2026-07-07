@@ -110,6 +110,11 @@ func TestNormalizeOptionsMutationFallsBackForUnsupportedLanguage(t *testing.T) {
 	if current.Settings.Language != "en" {
 		t.Fatalf("unsupported universe language should fall back to English, got %+v", current.Settings)
 	}
+
+	current = NewOptions(Overview{}, OptionsUser{}, OptionsUniverse{Language: "english"}, OptionsSettings{}, OptionsAccount{}, 0)
+	if current.Settings.Language != "en" {
+		t.Fatalf("long unsupported fallback language should be truncated before falling back, got %+v", current.Settings)
+	}
 }
 
 func TestOptionsCredentialMutationValidation(t *testing.T) {

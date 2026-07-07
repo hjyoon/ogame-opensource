@@ -234,6 +234,9 @@ func TestGalaxyHelpersCoverLegacyEdgeCases(t *testing.T) {
 	if got := galaxyActivityText(3600-30*60, 0, false, 3600); got != "(30 min)" {
 		t.Fatalf("expected minute activity marker, got %q", got)
 	}
+	if got := galaxyActivityText(1, 0, false, 3601); got != "" {
+		t.Fatalf("activity older than one hour should be empty, got %q", got)
+	}
 	if got := galaxyActivityText(0, 0, false, 3600); got != "" {
 		t.Fatalf("missing activity should be empty, got %q", got)
 	}
@@ -244,7 +247,7 @@ func TestGalaxyHelpersCoverLegacyEdgeCases(t *testing.T) {
 	if actions := galaxyActions(PlanetTypeAbandoned, false, GalaxyViewer{Flags: GalaxyActionSpy}); actions.Spy || actions.Attack {
 		t.Fatalf("abandoned planets should not expose actions: %+v", actions)
 	}
-	if legacyMinutes(-10) != "0" || legacyMinutes(125) != "2" {
+	if legacyMinutes(-61) != "0" || legacyMinutes(125) != "2" {
 		t.Fatalf("unexpected legacy minute formatting")
 	}
 }

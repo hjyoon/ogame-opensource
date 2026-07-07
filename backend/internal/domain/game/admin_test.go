@@ -132,4 +132,8 @@ func TestAdminModListNormalizationAndActions(t *testing.T) {
 	if changed || JoinAdminModList(next) != "Beta" {
 		t.Fatalf("expected empty mod name to no-op, changed=%v next=%v", changed, next)
 	}
+	next, changed = ApplyAdminModAction(next, AdminActionModRemove, "Missing", true)
+	if changed || JoinAdminModList(next) != "Beta" {
+		t.Fatalf("expected missing remove to no-op, changed=%v next=%v", changed, next)
+	}
 }
