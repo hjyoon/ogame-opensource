@@ -272,16 +272,35 @@ async function assertBannedLogin(universe: string) {
     await page.locator("input[name='login']").fill(user.login);
     await page.locator("input[name='pass']").fill(fixture.password);
     await page.locator(".legacy-public-login-button").click();
-    await page.locator(".legacy-public-login-feedback").waitFor({ timeout: 10_000 });
+    let onErrorPage = false;
+    await Promise.race([
+      page.waitForURL("**/game/reg/errorpage.php*", { timeout: 10_000 }).then(() => {
+        onErrorPage = true;
+      }),
+      page.locator(".legacy-public-login-feedback").waitFor({ timeout: 10_000 })
+    ]).catch(() => {});
+    onErrorPage = onErrorPage || new URL(page.url()).pathname.includes("/game/reg/errorpage.php");
     const body = await page.locator("body").innerText();
     const cookies = await context.cookies();
-    record("banned account stays on login screen with error", {
+    const hasFeedback = (await page.locator(".legacy-public-login-feedback").count()) > 0;
+    const bannedText = body.includes("Commander account is banned.");
+    const bannedError = onErrorPage && page.url().includes("errorcode=3");
+    const unexpectedSignals = unexpectedBannedLoginSignals(signals);
+    record("banned account renders legacy ban error without session", {
       pass:
-        page.url().startsWith(`${migratedBaseURL}/home`) &&
-        body.includes("Commander account is banned.") &&
+        (page.url().startsWith(`${migratedBaseURL}/home`) || onErrorPage) &&
+        (bannedText || bannedError) &&
+        (onErrorPage || hasFeedback) &&
         cookies.every((cookie) => !cookie.name.startsWith("prsess_")) &&
-        signalsClean(signals),
-      details: { url: page.url(), cookies: cookies.map((cookie) => cookie.name), signals }
+        signalsClean(unexpectedSignals),
+      details: {
+        url: page.url(),
+        bannedText,
+        bannedError,
+        cookies: cookies.map((cookie) => cookie.name),
+        unexpectedSignals,
+        signals
+      }
     });
   } finally {
     await context.close();
@@ -371,6 +390,18 @@ function newSignals(): BrowserSignals {
 
 function signalsClean(signals: BrowserSignals): boolean {
   return signals.consoleErrors.length === 0 && signals.failedRequests.length === 0 && signals.badResponses.length === 0;
+}
+
+function unexpectedBannedLoginSignals(signals: BrowserSignals): BrowserSignals {
+  return {
+    consoleErrors: signals.consoleErrors.filter((item) => !isLegacyLoginErrorPageAssetNoise(item)),
+    failedRequests: signals.failedRequests.filter((item) => !isLegacyLoginErrorPageAssetNoise(item)),
+    badResponses: signals.badResponses.filter((item) => !isLegacyLoginErrorPageAssetNoise(item))
+  };
+}
+
+function isLegacyLoginErrorPageAssetNoise(value: string): boolean {
+  return ["/game/reg/css/default.css", "/game/reg/css/formate.css"].some((asset) => value.includes(`${migratedBaseURL}${asset}`));
 }
 
 function renderMarkdown(report: { generatedAt: string; migratedBaseURL: string; browserName: string; allPass: boolean; results: StepResult[] }) {

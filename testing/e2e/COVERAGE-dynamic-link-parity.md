@@ -13,9 +13,9 @@ This matrix tracks legacy-originated dynamic elements that create clickable link
 | messages-personal-galaxy-link | coordinates link in personal PM row | yes (`galaxy/system`) | yes |
 | galaxy-action-message-compose-link | galaxy action icon → write-message | yes (`messageziel`) | yes |
 | galaxy-action-buddy-request-link | galaxy action icon → buddy form | yes (`action/buddy_id`) | yes |
-| overview-player-write-message-link | event-row write message icon | yes (`messageziel`) | yes |
-| overview-planet-position-link | overview position link → galaxy | yes (`/game/galaxy` and coords) | yes |
-| overview-player-rank-link | overview rank link → statistics | yes (`/game/statistics` and `start`) | yes |
+| overview-player-write-message-link | event-row write message icon | yes (legacy `showMessageMenu`, migrated `messageziel`) | yes |
+| overview-planet-position-link | overview position link -> galaxy | yes (legacy `page=galaxy`, migrated `/game/galaxy`, coords preserved) | yes |
+| overview-player-rank-link | overview rank link -> statistics | yes (legacy `page=statistics`, migrated `/game/statistics`, `start` preserved) | yes |
 
 ## Notes
 

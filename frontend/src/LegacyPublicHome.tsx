@@ -564,9 +564,13 @@ export function LoginStrip({
   );
 }
 
-function legacyPublicUniverseActionURL(universe: string, actionPath: string): string {
+export function legacyPublicUniverseActionURL(universe: string, actionPath: string, currentHref = window.location.href): string {
   try {
-    const url = new URL(universe, window.location.href);
+    const selectedUniverse = new URL(universe, currentHref);
+    if (isLocalLegacyUniverseURL(selectedUniverse)) {
+      return actionPath;
+    }
+    const url = new URL(selectedUniverse.toString());
     url.pathname = actionPath;
     url.search = "";
     url.hash = "";
@@ -574,6 +578,10 @@ function legacyPublicUniverseActionURL(universe: string, actionPath: string): st
   } catch {
     return actionPath;
   }
+}
+
+function isLocalLegacyUniverseURL(url: URL): boolean {
+  return ["localhost", "127.0.0.1", "[::1]", "::1"].includes(url.hostname);
 }
 
 function LoginFeedback({ loginError, loginResult }: Pick<LegacyPublicHomeProps, "loginError" | "loginResult">) {

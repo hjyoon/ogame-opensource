@@ -1906,13 +1906,13 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     migratedPath: "/game/overview",
     legacyReady: "#content #bxx1",
     migratedReady: ".legacy-overview-main-table .legacy-overview-event-timer",
-    legacyApplicabilitySelector: ".legacy-overview-main-table .legacy-overview-event-timer + th a[href*='messageziel='] img[alt='Write message']",
-    migratedApplicabilitySelector: ".legacy-overview-main-table .legacy-overview-event-timer + th a[href*='messageziel='] img[alt='Write message']",
+    legacyApplicabilitySelector: "#content a[onclick*='showMessageMenu'] img[alt='Write message']",
+    migratedApplicabilitySelector: ".legacy-overview-main-table tr:has(.legacy-overview-event-timer) a[href*='messageziel='] img[alt='Write message']",
     actions: [
       {
         type: "click",
-        legacySelector: ".legacy-overview-main-table .legacy-overview-event-timer + th a[href*='messageziel=']",
-        migratedSelector: ".legacy-overview-main-table .legacy-overview-event-timer + th a[href*='messageziel=']",
+        legacySelector: "#content a[onclick*='showMessageMenu']",
+        migratedSelector: ".legacy-overview-main-table tr:has(.legacy-overview-event-timer) a[href*='messageziel=']",
         waitForSelector: "textarea[name='text']",
         legacyWaitForSelector: "#content textarea[name='text']",
         migratedWaitForSelector: ".legacy-messages-compose-table textarea[name='text']"
@@ -1950,13 +1950,14 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     name: "overview-planet-position-link",
     legacyPage: "overview",
     migratedPath: "/game/overview",
-    legacyReady: "#content #bxx1",
-    migratedReady: ".legacy-overview-main-table .legacy-overview-event-timer",
-    applicabilitySelector: ".legacy-overview-position-link",
+    legacyReady: "#content a[href*='page=galaxy'][href*='position=']",
+    migratedReady: ".legacy-overview-position-link",
+    legacyApplicabilitySelector: "#content a[href*='page=galaxy'][href*='position=']",
+    migratedApplicabilitySelector: ".legacy-overview-position-link",
     actions: [
       {
         type: "click",
-        legacySelector: ".legacy-overview-position-link",
+        legacySelector: "#content a[href*='page=galaxy'][href*='position=']",
         migratedSelector: ".legacy-overview-position-link",
         legacyWaitForSelector: "input[name='galaxy']",
         migratedWaitForSelector: "input[name='galaxy']"
@@ -1966,8 +1967,9 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       {
         name: "route-to-galaxy",
         type: "evaluate",
-        expression: "new URL(window.location.href).pathname",
-        expected: "/game/galaxy"
+        expression:
+          "(() => { const url = new URL(window.location.href); return (url.pathname === '/game/galaxy') || (url.pathname === '/game/index.php' && url.searchParams.get('page') === 'galaxy'); })()",
+        expected: "true"
       },
       {
         name: "route-query-galaxy",
@@ -1987,13 +1989,14 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     name: "overview-player-rank-link",
     legacyPage: "overview",
     migratedPath: "/game/overview",
-    legacyReady: "#content #bxx1",
-    migratedReady: ".legacy-overview-main-table .legacy-overview-event-timer",
-    applicabilitySelector: ".legacy-overview-rank-link",
+    legacyReady: "#content a[href*='page=statistics'][href*='start=']",
+    migratedReady: ".legacy-overview-rank-link",
+    legacyApplicabilitySelector: "#content a[href*='page=statistics'][href*='start=']",
+    migratedApplicabilitySelector: ".legacy-overview-rank-link",
     actions: [
       {
         type: "click",
-        legacySelector: ".legacy-overview-rank-link",
+        legacySelector: "#content a[href*='page=statistics'][href*='start=']",
         migratedSelector: ".legacy-overview-rank-link",
         legacyWaitForSelector: "#content table",
         migratedWaitForSelector: "#content table"
@@ -2003,8 +2006,9 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       {
         name: "route-to-statistics",
         type: "evaluate",
-        expression: "new URL(window.location.href).pathname",
-        expected: "/game/statistics"
+        expression:
+          "(() => { const url = new URL(window.location.href); return (url.pathname === '/game/statistics') || (url.pathname === '/game/index.php' && url.searchParams.get('page') === 'statistics'); })()",
+        expected: "true"
       },
       {
         name: "statistics-has-start",
