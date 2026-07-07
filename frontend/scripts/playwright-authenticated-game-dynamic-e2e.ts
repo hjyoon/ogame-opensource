@@ -11,6 +11,7 @@ import {
   type GameDynamicAssertion,
   type GameDynamicBehaviorSpec,
   type GameFixtureFeature,
+  type GameDynamicLinkAuditExpectation,
   type SideName
 } from "./visual/game-dynamic-behavior-registry";
 import {
@@ -58,7 +59,35 @@ type SideResult = {
   badResponses: string[];
   actionErrors: string[];
   assertions: Record<string, string | number | boolean | null>;
+  linkAudit?: LinkAuditSideResult;
   screenshotPath?: string;
+};
+
+type RawLinkCandidate = {
+  element: string;
+  href: string | null;
+  hrefAttr: string | null;
+  onclick: string | null;
+  ondblclick: string | null;
+  text: string;
+};
+
+type RouteLink = {
+  target: string;
+  element: string;
+  rawTarget: string;
+  text: string;
+};
+
+type LinkAuditSideResult = {
+  enabled: boolean;
+  beforeTargets: string[];
+  afterTargets: string[];
+  actionTargets: string[];
+  dynamicTargets: string[];
+  missingExpected: string[];
+  unexpectedActionTargets: string[];
+  unexpectedDynamicTargets: string[];
 };
 
 type CaseResult = {
@@ -79,11 +108,13 @@ const browserName = browserEnv("OGAME_PLAYWRIGHT_BROWSER", "chromium");
 const outputDir = resolve(rootDir, process.env.OGAME_GAME_DYNAMIC_OUTPUT_DIR ?? `.tmp/playwright-authenticated-game-dynamic/${browserName}`);
 const screenshotDir = join(outputDir, "screenshots");
 const diffDir = join(outputDir, "diffs");
+const linkInventoryDir = join(outputDir, "link-inventory");
 const legacyBaseURL = trimTrailingSlash(process.env.OGAME_LEGACY_BASE_URL ?? "http://127.0.0.1:8888");
 const migratedBaseURL = trimTrailingSlash(process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890");
 const fixtureFile = process.env.OGAME_GAME_VISUAL_FIXTURE_FILE;
 let fixture = await loadAuthFixture(fixtureFile);
 const selectedSpecs = selectGameDynamicBehaviorSpecs(process.env.OGAME_GAME_DYNAMIC_CASES ?? "");
+validateLinkAuditSpecs(selectedSpecs);
 const fixedNowMs = numberEnv("OGAME_GAME_DYNAMIC_FIXED_NOW_MS", 1_765_584_000_000);
 const maxDiffRatio = numberEnv("OGAME_GAME_DYNAMIC_MAX_DIFF_RATIO", 0);
 const colorDeltaThreshold = numberEnv("OGAME_GAME_DYNAMIC_COLOR_DELTA", 0);
@@ -96,6 +127,7 @@ const browserExecutable =
 await mkdir(outputDir, { recursive: true });
 await mkdir(screenshotDir, { recursive: true });
 await mkdir(diffDir, { recursive: true });
+await mkdir(linkInventoryDir, { recursive: true });
 
 const browserType = browserName === "firefox" ? firefox : chromium;
 const browser = await browserType.launch({
@@ -148,7 +180,7 @@ try {
     await migratedContext.close();
 
     const visualComparison = await compareVisualAfterActions(spec, legacy, migrated);
-    const comparisons = [...compareAssertions(spec, legacy, migrated), ...visualComparison.notes];
+    const comparisons = [...compareAssertions(spec, legacy, migrated), ...compareLinkAudits(spec, legacy, migrated), ...visualComparison.notes];
     const bothSkipped = legacy.skipped && migrated.skipped;
     const oneSkipped = legacy.skipped !== migrated.skipped;
     const pass =
@@ -403,14 +435,41 @@ async function runSide(
     };
   }
 
+  const linkAuditEnabled = spec.linkAudit?.enabled !== false;
+  const linkAuditBeforeURL = page.url();
+  const beforeLinks = linkAuditEnabled ? await collectRouteLinks(page, side) : [];
+  const actionLinks: RouteLink[] = [];
   for (const action of spec.actions) {
     try {
+      if (linkAuditEnabled) {
+        const actionLink = await readActionRouteLink(page, side, action);
+        if (actionLink) {
+          actionLinks.push(actionLink);
+        }
+      }
       await performAction(page, side, action);
     } catch (error) {
       actionErrors.push(`${action.type} ${actionSelector(action, side) ?? ""}: ${errorMessage(error)}`);
     }
   }
   await page.waitForTimeout(100);
+  const afterLinks = linkAuditEnabled ? await collectRouteLinks(page, side) : [];
+  const linkAuditAfterURL = page.url();
+  const linkAudit = linkAuditEnabled
+    ? await buildLinkAuditResult(spec, side, beforeLinks, afterLinks, actionLinks, sameRouteForLinkDelta(linkAuditBeforeURL, linkAuditAfterURL))
+    : {
+        enabled: false,
+        beforeTargets: [],
+        afterTargets: [],
+        actionTargets: [],
+        dynamicTargets: [],
+        missingExpected: [],
+        unexpectedActionTargets: [],
+        unexpectedDynamicTargets: []
+      };
+  if (linkAuditEnabled) {
+    await writeLinkInventory(spec, side, beforeLinks, afterLinks, actionLinks, linkAudit);
+  }
   const assertions: Record<string, string | number | boolean | null> = {};
   for (const assertion of spec.assertions) {
     assertions[assertion.name] = await readAssertion(page, side, assertion);
@@ -435,8 +494,506 @@ async function runSide(
     badResponses,
     actionErrors,
     assertions,
+    linkAudit,
     screenshotPath: spec.visual?.enabled && screenshotPath ? screenshotPath : undefined
   };
+}
+
+async function collectRouteLinks(page: Page, side: SideName): Promise<RouteLink[]> {
+  const candidates = await page.evaluate(() => {
+    const visible = (element: Element): boolean => {
+      const style = window.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden") {
+        return false;
+      }
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const describe = (element: Element): string => {
+      const tag = element.tagName.toLowerCase();
+      const id = element.id ? `#${element.id}` : "";
+      const className =
+        element instanceof HTMLElement && element.className
+          ? `.${String(element.className)
+              .split(/\s+/)
+              .filter(Boolean)
+              .slice(0, 3)
+              .join(".")}`
+          : "";
+      return `${tag}${id}${className}`;
+    };
+    return Array.from(document.querySelectorAll("a[href], [onclick], [ondblclick]"))
+      .filter(visible)
+      .map((element) => {
+        const anchor = element instanceof HTMLAnchorElement ? element : null;
+        const text =
+          ((element instanceof HTMLElement ? element.innerText : element.textContent) ?? "").trim() ||
+          element.querySelector("img")?.getAttribute("alt") ||
+          element.getAttribute("title") ||
+          "";
+        return {
+          element: describe(element),
+          href: anchor?.href ?? null,
+          hrefAttr: anchor?.getAttribute("href") ?? null,
+          onclick: element.getAttribute("onclick"),
+          ondblclick: element.getAttribute("ondblclick"),
+          text
+        };
+      });
+  });
+  return uniqueRouteLinks(candidates.map((candidate) => routeLinkFromCandidate(candidate, side, "inventory")).filter(isRouteLink));
+}
+
+async function readActionRouteLink(page: Page, side: SideName, action: GameDynamicAction): Promise<RouteLink | null> {
+  if (action.type !== "click" && action.type !== "popup") {
+    return null;
+  }
+  const selector = actionSelector(action, side);
+  if (!selector) {
+    return null;
+  }
+  const locator = page.locator(selector).first();
+  if ((await locator.count()) === 0) {
+    return null;
+  }
+  const candidate = await locator.evaluate((element) => {
+    const anchor = element instanceof HTMLAnchorElement ? element : null;
+    const text =
+      ((element instanceof HTMLElement ? element.innerText : element.textContent) ?? "").trim() ||
+      element.querySelector("img")?.getAttribute("alt") ||
+      element.getAttribute("title") ||
+      "";
+    return {
+      element: element.tagName.toLowerCase(),
+      href: anchor?.href ?? null,
+      hrefAttr: anchor?.getAttribute("href") ?? null,
+      onclick: element.getAttribute("onclick"),
+      ondblclick: element.getAttribute("ondblclick"),
+      text
+    };
+  });
+  return routeLinkFromCandidate(candidate, side, "action");
+}
+
+async function buildLinkAuditResult(
+  spec: GameDynamicBehaviorSpec,
+  side: SideName,
+  beforeLinks: RouteLink[],
+  afterLinks: RouteLink[],
+  actionLinks: RouteLink[],
+  sameRoute: boolean
+): Promise<LinkAuditSideResult> {
+  const beforeTargets = routeTargets(beforeLinks);
+  const afterTargets = routeTargets(afterLinks);
+  const actionTargets = routeTargets(actionLinks);
+  const dynamicTargets = sameRoute ? afterTargets.filter((target) => !beforeTargets.includes(target)) : [];
+  const expectations = spec.linkAudit?.expected ?? [];
+  const ignoredPatterns = spec.linkAudit?.ignoreTargets ?? [];
+  const allowedPatterns = [...expectations.map((expectation) => expectation.target), ...ignoredPatterns];
+  const missingExpected: string[] = [];
+  for (const expectation of expectations) {
+    if (expectation.required === false) {
+      continue;
+    }
+    const scope = expectation.scope ?? "delta";
+    const scopedTargets = scopedAuditTargets(scope, beforeTargets, afterTargets, actionTargets, dynamicTargets);
+    if (!scopedTargets.some((target) => routeTargetMatches(target, expectation.target))) {
+      missingExpected.push(`${expectation.name} missing ${scope} target ${expectation.target}`);
+    }
+  }
+  const unexpectedActionTargets = actionTargets.filter((target) => !matchesAnyRouteTarget(target, allowedPatterns));
+  const unexpectedDynamicTargets = dynamicTargets.filter((target) => !matchesAnyRouteTarget(target, allowedPatterns));
+  return {
+    enabled: true,
+    beforeTargets,
+    afterTargets,
+    actionTargets,
+    dynamicTargets,
+    missingExpected,
+    unexpectedActionTargets,
+    unexpectedDynamicTargets
+  };
+}
+
+async function writeLinkInventory(
+  spec: GameDynamicBehaviorSpec,
+  side: SideName,
+  beforeLinks: RouteLink[],
+  afterLinks: RouteLink[],
+  actionLinks: RouteLink[],
+  linkAudit: LinkAuditSideResult
+): Promise<void> {
+  const fileName = `${sanitizeFileName(spec.name)}-${side}.json`;
+  await writeFile(
+    join(linkInventoryDir, fileName),
+    JSON.stringify(
+      {
+        spec: spec.name,
+        side,
+        before: beforeLinks,
+        after: afterLinks,
+        actions: actionLinks,
+        audit: linkAudit
+      },
+      null,
+      2
+    )
+  );
+}
+
+function routeLinkFromCandidate(candidate: RawLinkCandidate, side: SideName, source: "action" | "inventory"): RouteLink | null {
+  const rawTarget = rawTargetFromCandidate(candidate);
+  if (!rawTarget) {
+    return null;
+  }
+  const target = normalizeRouteTarget(rawTarget, side);
+  if (!target) {
+    return null;
+  }
+  return {
+    target,
+    element: candidate.element,
+    rawTarget,
+    text: compact(candidate.text) || source
+  };
+}
+
+function rawTargetFromCandidate(candidate: RawLinkCandidate): string | null {
+  const onclickTarget = rawTargetFromScript(candidate.onclick);
+  const hrefTarget = rawTargetFromHref(candidate.hrefAttr, candidate.href);
+  if (onclickTarget && (!hrefTarget || isHashOrJavaScript(candidate.hrefAttr))) {
+    return onclickTarget;
+  }
+  if (hrefTarget) {
+    return hrefTarget;
+  }
+  return onclickTarget ?? rawTargetFromScript(candidate.ondblclick);
+}
+
+function rawTargetFromHref(hrefAttr: string | null, href: string | null): string | null {
+  const raw = cleanRouteScript(hrefAttr ?? "");
+  if (!raw || raw === "#" || raw.startsWith("#")) {
+    return null;
+  }
+  if (/^javascript:/i.test(raw)) {
+    return rawTargetFromScript(raw);
+  }
+  return href ?? raw;
+}
+
+function rawTargetFromScript(script: string | null): string | null {
+  if (!script) {
+    return null;
+  }
+  const value = cleanRouteScript(script);
+  const messageMatch = /showMessageMenu\s*\(\s*(\d+)\s*\)/i.exec(value);
+  if (messageMatch) {
+    return `index.php?page=writemessages&messageziel=${messageMatch[1]}`;
+  }
+  const galaxyMatch = /showGalaxy\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/i.exec(value);
+  if (galaxyMatch) {
+    return `index.php?page=galaxy&galaxy=${galaxyMatch[1]}&system=${galaxyMatch[2]}&position=${galaxyMatch[3]}`;
+  }
+  const fensterMatch = /fenster\s*\(\s*['"]([^'"]+)['"]/i.exec(value);
+  if (fensterMatch) {
+    return fensterMatch[1];
+  }
+  const windowOpenMatch = /window\.open\s*\(\s*['"]([^'"]+)['"]/i.exec(value);
+  if (windowOpenMatch) {
+    return windowOpenMatch[1];
+  }
+  const locationMatch = /(?:document|window)?\.?location(?:\.href)?\s*=\s*['"]([^'"]+)['"]/i.exec(value);
+  if (locationMatch) {
+    return locationMatch[1];
+  }
+  return null;
+}
+
+function cleanRouteScript(value: string): string {
+  return value
+    .replaceAll("&amp;", "&")
+    .replaceAll("\\'", "'")
+    .replaceAll('\\"', '"')
+    .trim();
+}
+
+function normalizeRouteTarget(rawTarget: string, side: SideName): string | null {
+  const baseURL = side === "legacy" ? legacyBaseURL : migratedBaseURL;
+  let url: URL;
+  try {
+    url = new URL(cleanRouteScript(rawTarget), `${baseURL}/game/`);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return null;
+  }
+  const params = new URLSearchParams(url.search);
+  let path = url.pathname;
+  const page = params.get("page");
+  if (page) {
+    path = legacyPagePath(page, params);
+    params.delete("page");
+  } else if (path.endsWith("/index.php")) {
+    return null;
+  } else {
+    path = normalizeGamePath(path);
+  }
+  if (!path.startsWith("/game/")) {
+    return null;
+  }
+  for (const key of ["session", "cp", "no_header", "_", "ajax", "ts", "t"]) {
+    params.delete(key);
+  }
+  pruneCanonicalRouteParams(path, params);
+  const query = normalizedQueryString(params);
+  return query ? `${path}?${query}` : path;
+}
+
+function legacyPagePath(page: string, params: URLSearchParams): string {
+  if (page === "writemessages" || page === "messages") {
+    return "/game/messages";
+  }
+  if (page === "galaxy") {
+    return "/game/galaxy";
+  }
+  if (page === "statistics") {
+    return "/game/statistics";
+  }
+  if (page === "buddy") {
+    return "/game/buddy";
+  }
+  if (page === "bericht") {
+    return "/game/report";
+  }
+  if (page === "phalanx") {
+    return "/game/phalanx";
+  }
+  if (page === "b_building") {
+    return "/game/buildings";
+  }
+  if (page === "buildings") {
+    const mode = params.get("mode");
+    if (mode === "Forschung") {
+      params.delete("mode");
+      return "/game/research";
+    }
+    if (mode === "Flotte") {
+      params.delete("mode");
+      return "/game/shipyard";
+    }
+    if (mode === "Verteidigung") {
+      params.delete("mode");
+      return "/game/defense";
+    }
+    return "/game/buildings";
+  }
+  if (page === "flotten1" || page === "flotten2" || page === "flotten3") {
+    return "/game/fleet";
+  }
+  if (page === "trader") {
+    return "/game/merchant";
+  }
+  if (page === "imperium") {
+    return "/game/empire";
+  }
+  if (page === "allianzen" || page === "ainfo" || page === "bewerbungen") {
+    return "/game/alliance";
+  }
+  if (page === "suche") {
+    return "/game/search";
+  }
+  if (page === "notizen") {
+    return "/game/notes";
+  }
+  if (page === "overview") {
+    return "/game/overview";
+  }
+  if (page === "renameplanet") {
+    return "/game/rename-planet";
+  }
+  if (page === "infos") {
+    return "/game/infos";
+  }
+  if (page === "admin") {
+    return "/game/admin";
+  }
+  return `/game/${page.replaceAll("_", "-")}`;
+}
+
+function normalizeGamePath(path: string): string {
+  if (path.endsWith("/game/index.php")) {
+    return "/game/index.php";
+  }
+  if (path.endsWith("/game/ainfo.php")) {
+    return "/game/alliance";
+  }
+  return path.replace(/\/+$/, "") || "/";
+}
+
+function pruneCanonicalRouteParams(path: string, params: URLSearchParams): void {
+  if (path === "/game/phalanx") {
+    params.delete("galaxy");
+    params.delete("system");
+  }
+  if (path === "/game/fleet" && params.has("planet")) {
+    params.delete("position");
+  }
+}
+
+function normalizedQueryString(params: URLSearchParams): string {
+  const entries = Array.from(params.entries())
+    .filter(([key, value]) => key !== "" && value !== "")
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => {
+      const masked = maskRouteValue(value);
+      return `${encodeURIComponent(key)}=${masked === "#" ? "#" : encodeURIComponent(masked)}`;
+    });
+  return entries.join("&");
+}
+
+function maskRouteValue(value: string): string {
+  return /^-?\d+$/.test(value) ? "#" : value;
+}
+
+function routeTargets(links: RouteLink[]): string[] {
+  return Array.from(new Set(links.map((link) => link.target))).sort();
+}
+
+function uniqueRouteLinks(links: RouteLink[]): RouteLink[] {
+  const seen = new Set<string>();
+  const unique: RouteLink[] = [];
+  for (const link of links) {
+    const key = `${link.target}\n${link.rawTarget}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(link);
+    }
+  }
+  return unique;
+}
+
+function scopedAuditTargets(
+  scope: GameDynamicLinkAuditExpectation["scope"],
+  beforeTargets: string[],
+  afterTargets: string[],
+  actionTargets: string[],
+  dynamicTargets: string[]
+): string[] {
+  if (scope === "before") {
+    return beforeTargets;
+  }
+  if (scope === "after") {
+    return afterTargets;
+  }
+  if (scope === "action") {
+    return actionTargets;
+  }
+  if (scope === "any") {
+    return Array.from(new Set([...beforeTargets, ...afterTargets, ...actionTargets, ...dynamicTargets])).sort();
+  }
+  return dynamicTargets;
+}
+
+function compareLinkAudits(spec: GameDynamicBehaviorSpec, legacy: SideResult, migrated: SideResult): string[] {
+  const errors: string[] = [];
+  if (legacy.skipped || migrated.skipped) {
+    return errors;
+  }
+  for (const [side, audit] of [
+    ["legacy", legacy.linkAudit],
+    ["migrated", migrated.linkAudit]
+  ] as const) {
+    if (!audit?.enabled) {
+      continue;
+    }
+    for (const missing of audit.missingExpected) {
+      errors.push(`link audit ${side}: ${missing}`);
+    }
+    for (const target of audit.unexpectedActionTargets) {
+      errors.push(`link audit ${side}: unregistered action route ${target}`);
+    }
+    for (const target of audit.unexpectedDynamicTargets) {
+      errors.push(`link audit ${side}: unregistered dynamic route ${target}`);
+    }
+  }
+  if (legacy.linkAudit?.enabled && migrated.linkAudit?.enabled) {
+    const legacyActionTargets = comparableAuditTargets(spec, legacy.linkAudit.actionTargets);
+    const migratedActionTargets = comparableAuditTargets(spec, migrated.linkAudit.actionTargets);
+    const legacyDynamicTargets = comparableAuditTargets(spec, legacy.linkAudit.dynamicTargets);
+    const migratedDynamicTargets = comparableAuditTargets(spec, migrated.linkAudit.dynamicTargets);
+    if (!stringArraysEqual(legacyActionTargets, migratedActionTargets)) {
+      errors.push(
+        `link audit action targets differ: legacy=${legacyActionTargets.join(",") || "-"} migrated=${
+          migratedActionTargets.join(",") || "-"
+        }`
+      );
+    }
+    if (!stringArraysEqual(legacyDynamicTargets, migratedDynamicTargets)) {
+      errors.push(
+        `link audit dynamic targets differ: legacy=${legacyDynamicTargets.join(",") || "-"} migrated=${
+          migratedDynamicTargets.join(",") || "-"
+        }`
+      );
+    }
+  }
+  return errors.map((error) => `${spec.name}: ${error}`);
+}
+
+function comparableAuditTargets(spec: GameDynamicBehaviorSpec, targets: string[]): string[] {
+  const ignoredPatterns = spec.linkAudit?.ignoreTargets ?? [];
+  return targets.filter((target) => !matchesAnyRouteTarget(target, ignoredPatterns));
+}
+
+function validateLinkAuditSpecs(specs: GameDynamicBehaviorSpec[]): void {
+  const errors: string[] = [];
+  for (const spec of specs) {
+    for (const expectation of spec.linkAudit?.expected ?? []) {
+      if (expectation.classification === "visual" && !spec.visual?.enabled) {
+        errors.push(`${spec.name}.${expectation.name}: visual link audit expectation requires visual.enabled`);
+      }
+      if ((expectation.classification === "dom" || expectation.classification === "popup") && spec.assertions.length === 0) {
+        errors.push(`${spec.name}.${expectation.name}: ${expectation.classification} link audit expectation requires DOM/popup assertions`);
+      }
+    }
+  }
+  if (errors.length > 0) {
+    throw new Error(`invalid dynamic link audit registry:\n${errors.join("\n")}`);
+  }
+}
+
+function matchesAnyRouteTarget(target: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => routeTargetMatches(target, pattern));
+}
+
+function stringArraysEqual(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((value, index) => value === right[index]);
+}
+
+function routeTargetMatches(target: string, pattern: string): boolean {
+  const escaped = pattern
+    .split("*")
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join(".*");
+  return new RegExp(`^${escaped}$`).test(target);
+}
+
+function sameRouteForLinkDelta(beforeURL: string, afterURL: string): boolean {
+  const before = normalizeRouteTarget(beforeURL, "migrated") ?? normalizeRouteTarget(beforeURL, "legacy") ?? beforeURL;
+  const after = normalizeRouteTarget(afterURL, "migrated") ?? normalizeRouteTarget(afterURL, "legacy") ?? afterURL;
+  return before === after;
+}
+
+function isHashOrJavaScript(value: string | null): boolean {
+  const raw = (value ?? "").trim();
+  return raw === "" || raw === "#" || raw.startsWith("#") || /^javascript:/i.test(raw);
+}
+
+function isRouteLink(link: RouteLink | null): link is RouteLink {
+  return link !== null;
 }
 
 async function applyDeterministicSnapshotState(page: Page, spec: GameDynamicBehaviorSpec, side: SideName): Promise<void> {

@@ -42,6 +42,23 @@ export type GameDynamicVisualRegression = {
   colorDeltaThreshold?: number;
 };
 
+export type GameDynamicLinkAuditClassification = "visual" | "dom" | "popup";
+export type GameDynamicLinkAuditScope = "action" | "before" | "after" | "delta" | "any";
+
+export type GameDynamicLinkAuditExpectation = {
+  name: string;
+  target: string;
+  scope?: GameDynamicLinkAuditScope;
+  classification: GameDynamicLinkAuditClassification;
+  required?: boolean;
+};
+
+export type GameDynamicLinkAudit = {
+  enabled?: boolean;
+  expected?: GameDynamicLinkAuditExpectation[];
+  ignoreTargets?: string[];
+};
+
 export type GameDynamicBehaviorSpec = {
   name: string;
   fixtureProfile?: "admin" | "max_fleet" | "no_ships" | "low_fuel" | "no_cargo" | "queue_short" | "research_short" | "shipyard_short";
@@ -61,6 +78,7 @@ export type GameDynamicBehaviorSpec = {
   actions: GameDynamicAction[];
   assertions: GameDynamicAssertion[];
   visual?: GameDynamicVisualRegression;
+  linkAudit?: GameDynamicLinkAudit;
   notes?: string[];
 };
 
@@ -121,6 +139,16 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       enabled: true,
       normalizePageName: "game-messages"
     },
+    linkAudit: {
+      expected: [
+        {
+          name: "message-category-pm-filter",
+          target: "/game/messages?*pm=#*",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
+    },
     notes: ["Covers legacy messages category links preserving pm= and filtering the inbox by message type."]
   },
   {
@@ -148,6 +176,16 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       enabled: true,
       normalizePageName: "game-messages-compose"
     },
+    linkAudit: {
+      expected: [
+        {
+          name: "message-reply-compose-target",
+          target: "/game/messages?*messageziel=#*",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
+    },
     notes: ["Covers reply links embedded in personal message rows."]
   },
   {
@@ -173,6 +211,16 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     visual: {
       enabled: true,
       normalizePageName: "game-messages"
+    },
+    linkAudit: {
+      expected: [
+        {
+          name: "message-coordinate-galaxy-target",
+          target: "/game/galaxy?*galaxy=#*system=#*",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
     },
     notes: ["Covers coordinate links embedded in personal message rows."]
   },
@@ -223,6 +271,31 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
         contains: "Visual Hover Planet"
       }
     ],
+    linkAudit: {
+      expected: [
+        {
+          name: "galaxy-planet-hover-fleet-target",
+          target: "/game/fleet?*target_mission=#*",
+          scope: "delta",
+          classification: "dom",
+          required: false
+        },
+        {
+          name: "galaxy-planet-hover-phalanx-target",
+          target: "/game/phalanx?*spid=#*",
+          scope: "delta",
+          classification: "popup",
+          required: false
+        },
+        {
+          name: "galaxy-planet-hover-missile-target",
+          target: "/game/galaxy?*mode=#*p1=#*p2=#*p3=#*",
+          scope: "delta",
+          classification: "dom",
+          required: false
+        }
+      ]
+    },
     notes: ["Proves the overLib replacement opens and carries the expected planet tooltip content."]
   },
   {
@@ -248,6 +321,16 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       enabled: true,
       normalizePageName: "game-messages-compose"
     },
+    linkAudit: {
+      expected: [
+        {
+          name: "galaxy-action-message-compose-target",
+          target: "/game/messages?*messageziel=#*",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
+    },
     notes: ["Covers a galaxy action icon navigating to the message compose screen without DB mutation."]
   },
   {
@@ -272,6 +355,16 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     visual: {
       enabled: true,
       normalizePageName: "game-buddy"
+    },
+    linkAudit: {
+      expected: [
+        {
+          name: "galaxy-action-buddy-target",
+          target: "/game/buddy?*action=#*buddy_id=#*",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
     },
     notes: ["Covers a galaxy action icon navigating to the buddy request screen without DB mutation."]
   },
@@ -328,6 +421,16 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
         expected: "true"
       }
     ],
+    linkAudit: {
+      expected: [
+        {
+          name: "galaxy-planet-report-popup-target",
+          target: "/game/report?*bericht=#*",
+          scope: "action",
+          classification: "popup"
+        }
+      ]
+    },
     notes: ["Covers legacy fenster(..., Bericht_Spionage) behavior for the planet spy-report action icon."]
   },
   {
@@ -383,6 +486,16 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
         expected: "true"
       }
     ],
+    linkAudit: {
+      expected: [
+        {
+          name: "galaxy-moon-report-popup-target",
+          target: "/game/report?*bericht=#*",
+          scope: "action",
+          classification: "popup"
+        }
+      ]
+    },
     notes: ["Covers the second legacy spy-report popup button when both planet and moon reports are shared."]
   },
   {
@@ -431,6 +544,16 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
         expected: "true"
       }
     ],
+    linkAudit: {
+      expected: [
+        {
+          name: "galaxy-name-phalanx-popup-target",
+          target: "/game/phalanx?*spid=#*",
+          scope: "action",
+          classification: "popup"
+        }
+      ]
+    },
     notes: ["Covers legacy fenster(..., Bericht_Phalanx) behavior from the galaxy planet-name phalanx link."]
   },
   {
@@ -486,6 +609,23 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
         expected: "true"
       }
     ],
+    linkAudit: {
+      expected: [
+        {
+          name: "galaxy-hover-phalanx-popup-target",
+          target: "/game/phalanx?*spid=#*",
+          scope: "action",
+          classification: "popup"
+        },
+        {
+          name: "galaxy-hover-phalanx-dynamic-link",
+          target: "/game/phalanx?*spid=#*",
+          scope: "delta",
+          classification: "popup",
+          required: false
+        }
+      ]
+    },
     notes: [
       "Covers the legacy planet hover-menu Phalanx popup action.",
       "The migrated portal tooltip uses dispatched click after hover to avoid Playwright mouseleave timing while still executing the popup handler."
@@ -566,6 +706,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
         expected: "Error! It is impossible to fly to the player, because he is under noob protection!"
       }
     ],
+    linkAudit: { ignoreTargets: ["/game/fleet?*target_mission=#*"] },
     notes: ["Covers legacy galaxy doit(6) noob-protection failure row parity."]
   },
   {
@@ -587,6 +728,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "status-result", type: "text", selector: "#fleetstatustable tr:first-child td:nth-child(2)", expected: "Impossible, the player is in vacation mode" },
       { name: "status-result-html", type: "html", selector: "#fleetstatustable tr:first-child td:nth-child(2)", compareSides: true }
     ],
+    linkAudit: { ignoreTargets: ["/game/fleet?*target_mission=#*"] },
     notes: ["Covers legacy galaxy doit(6) vacation failure message and class parity."]
   },
   {
@@ -607,6 +749,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "status-row", type: "text", selector: "#fleetstatustable tr:first-child", compareSides: true },
       { name: "status-result", type: "text", selector: "#fleetstatustable tr:first-child td:nth-child(2)", expected: "done" }
     ],
+    linkAudit: { ignoreTargets: ["/game/fleet?*target_mission=#*"] },
     notes: ["Covers successful legacy galaxy doit(6) espionage dispatch status row parity."]
   },
   {
@@ -648,6 +791,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "status-row", type: "text", selector: "#fleetstatustable tr:first-child", compareSides: true },
       { name: "status-result", type: "text", selector: "#fleetstatustable tr:first-child td:nth-child(2)", expected: "Not enough room for a fleet" }
     ],
+    linkAudit: { ignoreTargets: ["/game/fleet?*target_mission=#*"] },
     notes: ["Covers legacy galaxy doit(6) max-fleet failure after slot exhaustion."]
   },
   {
@@ -669,6 +813,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "status-row", type: "text", selector: "#fleetstatustable tr:first-child", compareSides: true },
       { name: "status-result", type: "text", selector: "#fleetstatustable tr:first-child td:nth-child(2)", expected: "Error! No ships to send" }
     ],
+    linkAudit: { ignoreTargets: ["/game/fleet?*target_mission=#*"] },
     notes: ["Covers legacy galaxy doit(6) no-probe failure row parity."]
   },
   {
@@ -713,6 +858,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "status-row", type: "text", selector: "#fleetstatustable tr:first-child", compareSides: true },
       { name: "status-result", type: "text", selector: "#fleetstatustable tr:first-child td:nth-child(2)", expected: "Error! Insufficient carrying capacity!" }
     ],
+    linkAudit: { ignoreTargets: ["/game/fleet?*target_mission=#*"] },
     notes: ["Covers legacy galaxy doit(6) probe fuel cargo-capacity failure row parity."]
   },
   {
@@ -936,6 +1082,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
         expected: "true"
       }
     ],
+    linkAudit: { ignoreTargets: ["/game/admin?mode=Users&player_id=#"] },
     notes: ["Covers admin_bans.php SetClearCheckbox(this.checked) select-all behavior."]
   },
   {
@@ -1750,6 +1897,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
         expected: "true"
       }
     ],
+    linkAudit: { ignoreTargets: ["/game/buildings?*modus=add*techid=#*"] },
     notes: ["Covers short building countdown completion, automatic refresh, and queue removal without freezing Date."]
   },
   {
@@ -1773,6 +1921,16 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
         expected: "1"
       }
     ],
+    linkAudit: {
+      expected: [
+        {
+          name: "research-completion-next-link",
+          target: "/game/research*",
+          scope: "after",
+          classification: "dom"
+        }
+      ]
+    },
     notes: ["Covers short research countdown completion and Done/next state without freezing Date."]
   },
   {
@@ -1944,6 +2102,16 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       enabled: true,
       normalizePageName: "game-messages-compose"
     },
+    linkAudit: {
+      expected: [
+        {
+          name: "overview-event-write-message-target",
+          target: "/game/messages?*messageziel=#*",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
+    },
     notes: ["Covers overview event Write message icon links resolving to the migrated message compose screen."]
   },
   {
@@ -1983,6 +2151,16 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       enabled: true,
       normalizePageName: "game-galaxy"
     },
+    linkAudit: {
+      expected: [
+        {
+          name: "overview-planet-position-galaxy-target",
+          target: "/game/galaxy?*galaxy=#*system=#*",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
+    },
     notes: ["Covers overview main table Planet link navigates to /game/galaxy with coordinates preserved."]
   },
   {
@@ -2020,6 +2198,16 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     visual: {
       enabled: true,
       normalizePageName: "game-statistics"
+    },
+    linkAudit: {
+      expected: [
+        {
+          name: "overview-player-rank-statistics-target",
+          target: "/game/statistics?*start=#*",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
     },
     notes: ["Covers overview rank link navigation and start-offset parity for statistics deep-linking."]
   },
