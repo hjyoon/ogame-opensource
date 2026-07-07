@@ -60,6 +60,7 @@ type ForgotPasswordCapture = {
   side: SideName;
   beforeURL: string;
   afterURL: string;
+  clickedHref: string;
   navigatedToMail: boolean;
   status: number | null;
   dialogMessage: string | null;
@@ -293,6 +294,7 @@ async function captureForgotPassword(side: SideName, mode: ForgotPasswordMode): 
     }
 
     const forgotPasswordLink = page.getByText("Forgot your password?");
+    const clickedHref = (await forgotPasswordLink.getAttribute("href")) ?? "";
     const beforeURL = page.url();
     await forgotPasswordLink.click();
     const navigatedToMail = await Promise.race([
@@ -317,6 +319,7 @@ async function captureForgotPassword(side: SideName, mode: ForgotPasswordMode): 
       side,
       beforeURL,
       afterURL,
+      clickedHref,
       navigatedToMail,
       status: navigatedToMail ? mailStatus : status,
       dialogMessage,
@@ -496,6 +499,13 @@ function compareForgotPassword(mode: ForgotPasswordMode, legacy: ForgotPasswordC
         if (!capture.status || capture.status >= 400) {
           mismatches.push(`${side} mail form status is invalid: ${capture.status}`);
         }
+        if (capture.clickedHref && /^https?:\/\//.test(capture.clickedHref)) {
+          const clickedUrl = new URL(capture.clickedHref);
+          const expectedOrigin = new URL(side === "legacy" ? legacyBaseURL : migratedBaseURL).origin;
+          if (clickedUrl.origin !== expectedOrigin) {
+            mismatches.push(`${side} used absolute href to unexpected origin ${clickedUrl.origin}`);
+          }
+        }
       }
       if (capture.dialogMessage) {
         mismatches.push(`${side} unexpectedly showed dialog: ${capture.dialogMessage}`);
@@ -512,10 +522,15 @@ function compareForgotPassword(mode: ForgotPasswordMode, legacy: ForgotPasswordC
   if (legacy.beforeURL === "" || migrated.beforeURL === "" || legacy.afterURL === "" || migrated.afterURL === "") {
     mismatches.push("forgot password case did not capture before/after URLs");
   }
-  for (const key of ["beforeURL", "afterURL"] as const) {
-    if (legacy[key] !== migrated[key]) {
-      mismatches.push(`${key} differs: legacy=${legacy[key]} migrated=${migrated[key]}`);
-    }
+  const comparableLegacyBefore = normalizePublicPagePath(legacy.beforeURL, "legacy");
+  const comparableMigratedBefore = normalizePublicPagePath(migrated.beforeURL, "migrated");
+  if (comparableLegacyBefore !== comparableMigratedBefore) {
+    mismatches.push(`before path differs: legacy=${comparableLegacyBefore} migrated=${comparableMigratedBefore}`);
+  }
+  const comparableLegacyAfter = normalizePublicPagePath(legacy.afterURL, "legacy");
+  const comparableMigratedAfter = normalizePublicPagePath(migrated.afterURL, "migrated");
+  if (comparableLegacyAfter !== comparableMigratedAfter) {
+    mismatches.push(`after path differs: legacy=${comparableLegacyAfter} migrated=${comparableMigratedAfter}`);
   }
   return {
     mode,
@@ -524,6 +539,25 @@ function compareForgotPassword(mode: ForgotPasswordMode, legacy: ForgotPasswordC
     legacy,
     migrated
   };
+}
+
+function normalizePublicPagePath(raw: string, side: SideName): string {
+  try {
+    const parsed = new URL(raw);
+    const path = parsed.pathname || "/";
+    if ((side === "legacy" && path === "/home.php") || path === "/") {
+      return "/";
+    }
+    if (side === "legacy" && path === "/index.php") {
+      return "/";
+    }
+    if (side === "migrated" && path === "/home") {
+      return "/";
+    }
+    return path.replace(/\/+$/, "") || "/";
+  } catch {
+    return raw;
+  }
 }
 
 function compareCaptures(legacy: LoginFailureCapture, migrated: LoginFailureCapture, diff: DiffResult): string[] {
