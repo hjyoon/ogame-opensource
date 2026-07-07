@@ -25,12 +25,12 @@ placement, and selected admin tables. Masked pixels need DOM/text assertions.
 
 ## Behavior Runner
 
-`run-playwright-authenticated-game-dynamic-e2e.sh` enables the optional
-commander/alliance/report/phalanx/ACS fixtures by default and runs 71 cases:
-counters, galaxy action/hover/keyboard, fleet controls/launch errors, merchant
-clamps/tooltips/submit, statistics/empire tooltips, overview event overLib,
-queue countdowns, popup sizing/body, admin Bans/Planets/Expedition/BattleSim/
-BotEdit, and empire double-click enqueue routing.
+`run-playwright-authenticated-game-dynamic-e2e.sh` enables commander/alliance/
+report/phalanx/ACS fixtures by default and runs 74 cases: counters, galaxy
+action/hover links/keyboard, fleet controls/launch errors, merchant clamps/
+tooltips/submit, statistics/empire tooltips, overview event overLib, queue
+countdowns, popup sizing/body, admin Bans/Planets/Expedition/BattleSim/BotEdit,
+and empire double-click enqueue routing.
 `run-playwright-public-registration-dynamic-e2e.sh` separately compares public
 register focus help, username polling, direct error URLs, and submit errors.
 `run-playwright-public-login-dynamic-e2e.sh` compares invalid-login feedback and
@@ -46,6 +46,5 @@ Route-changing dynamic links are tracked separately here:
 2. Add isolated cases when unsupported legacy-only mutating JS is found.
 3. Run both legacy PHP and Go+Bun where possible.
 
-Current conclusion: the finite authenticated dynamic registry has 71 cases and
-no listed remaining cases. Future additions are discovery-driven fine-grained
-client behavior, not static page layout.
+Conclusion: the authenticated dynamic registry has 74 cases and no listed
+remaining cases. Future additions are discovery-driven client behavior.

@@ -864,7 +864,9 @@ body.legacy-game-body {
 }
 
 .legacy-game-shell #overDiv .legacy-overlib-frame,
-.legacy-game-shell #overDiv .legacy-overlib-body {
+.legacy-game-shell #overDiv .legacy-overlib-body,
+.legacy-game-shell .legacy-galaxy-tooltip .legacy-overlib-frame,
+.legacy-game-shell .legacy-galaxy-tooltip .legacy-overlib-body {
   border-spacing: 0;
 }
 

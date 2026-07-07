@@ -1,5 +1,4 @@
 import React from "react";
-import { createPortal } from "react-dom";
 import {
   gameBuddyRequestURL,
   gameFleetTargetPrefillFromSearch,
@@ -10929,7 +10928,6 @@ function GalaxyHoverMenu({
 }) {
   const [open, setOpen] = React.useState(false);
   const [position, setPosition] = React.useState<{ x: number; y: number } | null>(null);
-  const [portalTarget, setPortalTarget] = React.useState<HTMLElement | null>(null);
   const timerRef = React.useRef<number | null>(null);
   const overlibWidth = placementWidth ?? (width === 240 ? 200 : width);
   const clearTimer = React.useCallback(() => {
@@ -10978,48 +10976,72 @@ function GalaxyHoverMenu({
   const hideUnlessEnteringTooltip = React.useCallback(
     (event: React.MouseEvent<HTMLElement>) => {
       const nextTarget = event.relatedTarget;
-      if (portalTarget && nextTarget instanceof Node && portalTarget.contains(nextTarget)) {
+      if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
         keepOpen();
         return;
       }
       hide();
     },
-    [hide, keepOpen, portalTarget]
+    [hide, keepOpen]
   );
-
-  React.useEffect(() => {
-    setPortalTarget(document.getElementById("overDiv"));
-  }, []);
-  React.useEffect(() => clearTimer, [clearTimer]);
-  React.useEffect(() => {
-    if (!portalTarget) {
+  const navigateTooltipLink = React.useCallback((event: React.MouseEvent<HTMLElement>) => {
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
       return;
     }
-    portalTarget.style.visibility = open ? "visible" : "hidden";
-    portalTarget.style.left = open ? "0px" : "-10000px";
-    portalTarget.style.top = open ? "0px" : "-10000px";
-  }, [open, portalTarget]);
+    const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[href]");
+    if (!anchor || !event.currentTarget.contains(anchor) || (anchor.target && anchor.target !== "_self")) {
+      return;
+    }
+    if (anchor.dataset.galaxyPopup) {
+      event.preventDefault();
+      event.stopPropagation();
+      clearTimer();
+      setOpen(false);
+      openLegacyPopup(anchor.href, anchor.dataset.galaxyPopup);
+      return;
+    }
+    if (anchor.dataset.galaxyInstant) {
+      onClick?.(event);
+      if (event.defaultPrevented) {
+        clearTimer();
+        setOpen(false);
+      }
+      return;
+    }
+    const target = gameLegacyRouteURL(anchor.getAttribute("href") ?? "", window.location.search);
+    if (!target) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    clearTimer();
+    setOpen(false);
+    window.history.pushState({}, "", target);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, [clearTimer]);
+
+  React.useEffect(() => clearTimer, [clearTimer]);
 
   const tooltip =
-    open && position && portalTarget
-      ? createPortal(
-          <span
-            className="legacy-galaxy-tooltip"
-            onClick={onClick}
-            onMouseEnter={keepOpen}
-            onMouseLeave={hide}
-            style={{
-              display: "block",
-              left: Math.max(0, position.x + offsetX - overlibWidth / 2),
-              position: "fixed",
-              top: position.y + offsetY,
-              transform: "none",
-              width: "auto"
-            }}
-            dangerouslySetInnerHTML={{ __html: legacyOverlibHTML(html, overlibWidth) }}
-          />,
-          portalTarget
-        )
+    open && position
+      ? (
+        <span
+          className="legacy-galaxy-tooltip"
+          onClick={onClick}
+          onMouseEnter={keepOpen}
+          onMouseLeave={hide}
+          onMouseDown={navigateTooltipLink}
+          style={{
+            display: "block",
+            left: Math.max(0, position.x + offsetX - overlibWidth / 2),
+            position: "fixed",
+            top: position.y + offsetY,
+            transform: "none",
+            width: "auto"
+          }}
+          dangerouslySetInnerHTML={{ __html: legacyOverlibHTML(html, overlibWidth) }}
+        />
+      )
       : null;
 
   return (

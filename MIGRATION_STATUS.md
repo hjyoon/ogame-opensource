@@ -19,7 +19,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` migration tracker. Keep this file under 4K
 
 - Navigation visual E2E scans GET anchors, JS navigation, popups, hovers, select URLs, and GET forms.
 - The navigation wrapper continues across Chromium and Firefox even when exact visual diffs remain, then writes a combined report to [COVERAGE-navigation-visual.md](./testing/e2e/COVERAGE-navigation-visual.md).
-- Authenticated dynamic E2E now runs all 65 listed legacy-JS cases with commander, alliance, report, phalanx, and ACS fixtures enabled by default.
+- Authenticated dynamic E2E now runs all 74 listed legacy-JS cases with commander, alliance, report, phalanx, and ACS fixtures enabled by default.
 - Fixed Firefox legacy host/session drift by keeping the configured legacy base URL instead of adopting a redirected `localhost` origin.
 - Fixed route parity issues around static aliases, planet selector URLs, statistics defaults, register blank selects, reply prefill, fleet union, commander folders, and galaxy hovers.
 - Jump Gate, ACS slowdown, expedition roll/depletion buckets, options force-language, pranger, maintenance, feed GET/POST, DB safe restore, Mods PHP-hook policy, Logins/Browse, Loca, and Bots are migrated.

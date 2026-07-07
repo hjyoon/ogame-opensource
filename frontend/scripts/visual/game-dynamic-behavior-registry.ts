@@ -300,6 +300,156 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Proves the overLib replacement opens and carries the expected planet tooltip content."]
   },
   {
+    name: "galaxy-planet-hover-fleet-target-link",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='Planet Visual Hover Planet']",
+        migratedSelector: ".legacy-galaxy-hover[data-galaxy-hover='planet'] a",
+        waitMs: 850
+      },
+      {
+        type: "click",
+        legacySelector: "#overDiv a[href*='target_mission=']",
+        migratedSelector: ".legacy-galaxy-tooltip a[href*='/game/fleet'][href*='target_mission=']",
+        legacyWaitForSelector: "#content table",
+        migratedWaitForSelector: ".legacy-fleet-table"
+      }
+    ],
+    assertions: [
+      {
+        name: "route-to-fleet",
+        type: "evaluate",
+        expression:
+          "(() => { const url = new URL(window.location.href); return (url.pathname === '/game/fleet') || (url.pathname === '/game/index.php' && ['fleet','fleet1','flotten1'].includes(url.searchParams.get('page') ?? '')); })()",
+        expected: "true"
+      },
+      {
+        name: "fleet-target-mission",
+        type: "evaluate",
+        expression: "new URL(window.location.href).searchParams.get('target_mission') !== null",
+        expected: "true"
+      }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-fleet"
+    },
+    linkAudit: {
+      expected: [
+        {
+          name: "galaxy-hover-fleet-target",
+          target: "/game/fleet?*target_mission=#*",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
+    },
+    notes: ["Covers clicking normal href fleet target links inside the galaxy planet hover tooltip."]
+  },
+  {
+    name: "galaxy-player-hover-message-compose-link",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='Visualhover']",
+        migratedSelector: ".legacy-galaxy-hover[data-galaxy-hover='player'] a",
+        waitMs: 850
+      },
+      {
+        type: "click",
+        legacySelector: "#overDiv a[href*='page=writemessages'][href*='messageziel=']",
+        migratedSelector: ".legacy-galaxy-tooltip a[href*='/game/messages'][href*='messageziel=']",
+        legacyWaitForSelector: "#content textarea[name='text']",
+        migratedWaitForSelector: ".legacy-messages-compose-table textarea[name='text']"
+      }
+    ],
+    assertions: [
+      { name: "compose-visible", type: "visible", selector: "textarea[name='text']", expected: "true" },
+      {
+        name: "compose-messageziel",
+        type: "evaluate",
+        expression: "Number(new URL(window.location.href).searchParams.get('messageziel') ?? 0) > 0",
+        expected: "true"
+      }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-messages-compose"
+    },
+    linkAudit: {
+      expected: [
+        {
+          name: "galaxy-hover-message-compose-target",
+          target: "/game/messages?*messageziel=#*",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
+    },
+    notes: ["Covers clicking the Write a message link inside the galaxy player hover tooltip."]
+  },
+  {
+    name: "galaxy-player-hover-statistics-link",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='Visualhover']",
+        migratedSelector: ".legacy-galaxy-hover[data-galaxy-hover='player'] a",
+        waitMs: 850
+      },
+      {
+        type: "click",
+        legacySelector: "#overDiv a[href*='page=statistics'][href*='start=']",
+        migratedSelector: ".legacy-galaxy-tooltip a[href*='/game/statistics'][href*='start=']",
+        legacyWaitForSelector: "#content table",
+        migratedWaitForSelector: ".legacy-statistics-player-table"
+      }
+    ],
+    assertions: [
+      {
+        name: "route-to-statistics",
+        type: "evaluate",
+        expression:
+          "(() => { const url = new URL(window.location.href); return (url.pathname === '/game/statistics') || (url.pathname === '/game/index.php' && url.searchParams.get('page') === 'statistics'); })()",
+        expected: "true"
+      },
+      {
+        name: "statistics-start",
+        type: "evaluate",
+        expression: "new URL(window.location.href).searchParams.get('start') !== null",
+        expected: "true"
+      }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-statistics"
+    },
+    linkAudit: {
+      expected: [
+        {
+          name: "galaxy-hover-statistics-target",
+          target: "/game/statistics?*start=#*",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
+    },
+    notes: ["Covers clicking the Statistics link inside the galaxy player hover tooltip."]
+  },
+  {
     name: "galaxy-action-message-compose-link",
     legacyPage: "galaxy",
     migratedPath: "/game/galaxy",
@@ -578,8 +728,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
         legacySelector: "#overDiv a[onclick*='page=phalanx']",
         migratedSelector: ".legacy-galaxy-tooltip a[data-galaxy-popup='Bericht_Phalanx']",
         legacyPopupWaitForSelector: "body",
-        migratedPopupWaitForSelector: ".legacy-phalanx-table",
-        migratedDispatchClick: true
+        migratedPopupWaitForSelector: ".legacy-phalanx-table"
       }
     ],
     assertions: [
@@ -629,7 +778,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     },
     notes: [
       "Covers the legacy planet hover-menu Phalanx popup action.",
-      "The migrated portal tooltip uses dispatched click after hover to avoid Playwright mouseleave timing while still executing the popup handler."
+      "The migrated tooltip is clicked with real mouse events so hover-menu links remain covered as user-facing actions."
     ]
   },
   {
