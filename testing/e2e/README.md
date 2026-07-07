@@ -82,6 +82,7 @@ Detailed coverage is split by topic:
 - [Migration Visual Equivalence](./COVERAGE-migration.md)
 - [Navigation Visual Coverage](./COVERAGE-navigation-visual.md)
 - [Authenticated Game Visual Coverage](./COVERAGE-authenticated-game-visual.md)
+- [Public Auth Dynamic Coverage](./COVERAGE-public-auth-dynamic.md)
 - [Dynamic Legacy JS Coverage](./COVERAGE-dynamic-legacy-js.md)
 - [Infrastructure and Invariants](./COVERAGE-infra.md)
 
