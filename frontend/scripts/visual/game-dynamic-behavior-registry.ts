@@ -1977,6 +1977,10 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
         expected: "true"
       }
     ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-galaxy"
+    },
     notes: ["Covers overview main table Planet link navigates to /game/galaxy with coordinates preserved."]
   },
   {
@@ -2009,6 +2013,10 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
         expected: "true"
       }
     ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-statistics"
+    },
     notes: ["Covers overview rank link navigation and start-offset parity for statistics deep-linking."]
   },
   {

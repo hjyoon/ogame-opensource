@@ -36,6 +36,10 @@ register focus help, username polling, direct error URLs, and submit errors.
 `run-playwright-public-login-dynamic-e2e.sh` compares invalid-login feedback and
 language flags plus forgot-password behavior with/without universe selection.
 
+Route-changing dynamic links are tracked separately here:
+
+- [Dynamic Link Parity](./COVERAGE-dynamic-link-parity.md)
+
 ## Maintenance Rules
 
 1. Keep DOM/text assertions for every masked selector.

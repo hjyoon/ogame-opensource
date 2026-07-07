@@ -84,6 +84,7 @@ Detailed coverage is split by topic:
 - [Authenticated Game Visual Coverage](./COVERAGE-authenticated-game-visual.md)
 - [Public Auth Dynamic Coverage](./COVERAGE-public-auth-dynamic.md)
 - [Dynamic Legacy JS Coverage](./COVERAGE-dynamic-legacy-js.md)
+- [Dynamic Link Parity](./COVERAGE-dynamic-link-parity.md)
 - [Infrastructure and Invariants](./COVERAGE-infra.md)
 
 `run-playwright-navigation-visual-e2e.sh` scans every currently seeded public/game/admin screen for internal navigation edges and compares target screenshots in Chromium and Firefox at an exact `0` threshold. The wrapper continues across browsers even when one browser has nonzero visual diffs, then writes the combined summary to `COVERAGE-navigation-visual.md`.
