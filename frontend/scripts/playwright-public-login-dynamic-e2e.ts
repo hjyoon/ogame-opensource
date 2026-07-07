@@ -53,6 +53,30 @@ type LanguageFlagComparison = {
   migrated: LanguageFlagCapture;
 };
 
+type ForgotPasswordMode = "with-universe" | "without-universe";
+
+type ForgotPasswordCapture = {
+  mode: ForgotPasswordMode;
+  side: SideName;
+  beforeURL: string;
+  afterURL: string;
+  navigatedToMail: boolean;
+  status: number | null;
+  dialogMessage: string | null;
+  screenshotPath: string;
+  consoleErrors: string[];
+  failedRequests: string[];
+  badResponses: string[];
+};
+
+type ForgotPasswordComparison = {
+  mode: ForgotPasswordMode;
+  pass: boolean;
+  mismatches: string[];
+  legacy: ForgotPasswordCapture;
+  migrated: ForgotPasswordCapture;
+};
+
 const rootDir = resolve(import.meta.dir, "../..");
 const browserName = browserEnv("OGAME_PLAYWRIGHT_BROWSER", "chromium");
 const outputDir = resolve(rootDir, `.tmp/playwright-public-login-dynamic/${browserName}`);
@@ -97,6 +121,12 @@ try {
     const migratedFlag = await captureLanguageFlagClick("migrated", flag);
     languageFlagComparisons.push(compareLanguageFlagCaptures(flag, legacyFlag, migratedFlag));
   }
+  const forgotPasswordComparisons: ForgotPasswordComparison[] = [];
+  for (const mode of ["with-universe", "without-universe"] as const) {
+    const legacyForgot = await captureForgotPassword("legacy", mode);
+    const migratedForgot = await captureForgotPassword("migrated", mode);
+    forgotPasswordComparisons.push(compareForgotPassword(mode, legacyForgot, migratedForgot));
+  }
 
   const diffPath = join(screenshotDir, "invalid-login-diff.png");
   const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath, diffPath, colorDeltaThreshold);
@@ -112,7 +142,8 @@ try {
     legacy.badResponses.length === 0 &&
     migrated.badResponses.length === 0 &&
     diff.diffRatio <= maxDiffRatio &&
-    languageFlagComparisons.every((comparison) => comparison.pass);
+    languageFlagComparisons.every((comparison) => comparison.pass) &&
+    forgotPasswordComparisons.every((comparison) => comparison.pass);
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -128,7 +159,8 @@ try {
     diff,
     diffPath,
     comparisons,
-    languageFlagComparisons
+    languageFlagComparisons,
+    forgotPasswordComparisons
   };
   await writeFile(join(outputDir, "report.json"), JSON.stringify(report, null, 2));
   await writeFile(join(outputDir, "report.md"), renderMarkdown(report));
@@ -211,6 +243,84 @@ async function captureLanguageFlagClick(side: SideName, flag: LanguageFlagSpec):
       reloaded: state.probeAfter === undefined,
       probeAfter: state.probeAfter,
       localizedText: state.localizedText,
+      consoleErrors,
+      failedRequests,
+      badResponses
+    };
+  } finally {
+    await page.close().catch(() => undefined);
+    await context.close().catch(() => undefined);
+  }
+}
+
+async function captureForgotPassword(side: SideName, mode: ForgotPasswordMode): Promise<ForgotPasswordCapture> {
+  const baseURL = side === "legacy" ? legacyBaseURL : migratedBaseURL;
+  const context = await newContext(baseURL);
+  const page = await context.newPage();
+  const consoleErrors: string[] = [];
+  const failedRequests: string[] = [];
+  const badResponses: string[] = [];
+  let dialogMessage: string | null = null;
+  let mailStatus: number | null = null;
+  page.on("console", (message) => {
+    if (message.type() === "error" && !ignoredConsoleError(message.text())) {
+      consoleErrors.push(message.text());
+    }
+  });
+  page.on("dialog", async (dialog) => {
+    dialogMessage = dialog.message();
+    await dialog.dismiss().catch(() => undefined);
+  });
+  page.on("requestfailed", (request) => {
+    if (!ignoredBadResponse(request.url())) {
+      failedRequests.push(`${request.method()} ${request.url()} ${request.failure()?.errorText ?? ""}`.trim());
+    }
+  });
+  page.on("response", (response) => {
+    if (new URL(response.url()).pathname.endsWith("/game/reg/mail.php")) {
+      mailStatus = response.status();
+    }
+    const status = response.status();
+    if (status >= 400 && !ignoredBadResponse(response.url())) {
+      badResponses.push(`${status} ${response.url()}`);
+    }
+  });
+  try {
+    const response = await page.goto(homeURL(side), { waitUntil: "networkidle", timeout: 20_000 });
+    await selectFirstUniverse(page);
+    if (mode === "without-universe") {
+      await page.locator("select[name='universe']").selectOption({ value: "" });
+    }
+
+    const forgotPasswordLink = page.getByText("Forgot your password?");
+    const beforeURL = page.url();
+    await forgotPasswordLink.click();
+    const navigatedToMail = await Promise.race([
+      page.waitForURL(/\/game\/reg\/mail\.php(?:\?.*)?$/).then(() => true),
+      page.waitForTimeout(2_500).then(() => false)
+    ]);
+    if (navigatedToMail) {
+      await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => undefined);
+      await waitForImages(page);
+      await waitForStablePaint(page);
+    } else if (mode === "without-universe") {
+      await page.waitForTimeout(300);
+    } else {
+      await page.waitForTimeout(1_000);
+    }
+    const afterURL = page.url();
+    const status = response?.status() ?? null;
+    const screenshotPath = join(screenshotDir, `forgot-password-${mode}-${side}.png`);
+    await page.screenshot({ path: screenshotPath, fullPage: false, animations: "disabled" });
+    return {
+      mode,
+      side,
+      beforeURL,
+      afterURL,
+      navigatedToMail,
+      status: navigatedToMail ? mailStatus : status,
+      dialogMessage,
+      screenshotPath,
       consoleErrors,
       failedRequests,
       badResponses
@@ -353,6 +463,69 @@ function compareLanguageFlagCaptures(flag: LanguageFlagSpec, legacy: LanguageFla
   };
 }
 
+function compareForgotPassword(mode: ForgotPasswordMode, legacy: ForgotPasswordCapture, migrated: ForgotPasswordCapture): ForgotPasswordComparison {
+  const mismatches: string[] = [];
+  for (const [side, capture] of [
+    ["legacy", legacy],
+    ["migrated", migrated]
+  ] as const) {
+    if (capture.side !== side) {
+      mismatches.push(`${side} side mismatch: captured=${capture.side}`);
+    }
+    if (capture.consoleErrors.length > 0) {
+      mismatches.push(`${side} console errors: ${capture.consoleErrors.join("; ")}`);
+    }
+    if (capture.failedRequests.length > 0) {
+      mismatches.push(`${side} failed requests: ${capture.failedRequests.join("; ")}`);
+    }
+    if (capture.badResponses.length > 0) {
+      mismatches.push(`${side} bad responses: ${capture.badResponses.join("; ")}`);
+    }
+    if (mode === "with-universe") {
+      if (!capture.navigatedToMail) {
+        mismatches.push(`${side} did not navigate to mail form`);
+      } else {
+        const url = new URL(capture.afterURL);
+        const expectedOrigin = new URL(side === "legacy" ? legacyBaseURL : migratedBaseURL).origin;
+        if (url.origin !== expectedOrigin) {
+          mismatches.push(`${side} navigated to unexpected origin ${url.origin}`);
+        }
+        if (!capture.afterURL.includes("/game/reg/mail.php")) {
+          mismatches.push(`${side} navigated URL does not include mail endpoint: ${capture.afterURL}`);
+        }
+        if (!capture.status || capture.status >= 400) {
+          mismatches.push(`${side} mail form status is invalid: ${capture.status}`);
+        }
+      }
+      if (capture.dialogMessage) {
+        mismatches.push(`${side} unexpectedly showed dialog: ${capture.dialogMessage}`);
+      }
+    } else {
+      if (capture.navigatedToMail) {
+        mismatches.push(`${side} navigated to mail form despite missing universe`);
+      }
+      if (!capture.dialogMessage || !capture.dialogMessage.includes("haven't chosen a universe")) {
+        mismatches.push(`${side} did not show expected universe-required alert`);
+      }
+    }
+  }
+  if (legacy.beforeURL === "" || migrated.beforeURL === "" || legacy.afterURL === "" || migrated.afterURL === "") {
+    mismatches.push("forgot password case did not capture before/after URLs");
+  }
+  for (const key of ["beforeURL", "afterURL"] as const) {
+    if (legacy[key] !== migrated[key]) {
+      mismatches.push(`${key} differs: legacy=${legacy[key]} migrated=${migrated[key]}`);
+    }
+  }
+  return {
+    mode,
+    pass: mismatches.length === 0,
+    mismatches,
+    legacy,
+    migrated
+  };
+}
+
 function compareCaptures(legacy: LoginFailureCapture, migrated: LoginFailureCapture, diff: DiffResult): string[] {
   const errors: string[] = [];
   const requiredText = [
@@ -411,6 +584,7 @@ function renderMarkdown(report: {
   diff: DiffResult;
   comparisons: string[];
   languageFlagComparisons: LanguageFlagComparison[];
+  forgotPasswordComparisons: ForgotPasswordComparison[];
   legacy: LoginFailureCapture;
   migrated: LoginFailureCapture;
 }) {
@@ -434,6 +608,11 @@ function renderMarkdown(report: {
   lines.push("", "## Language Flags", "", "| Flag | Result | Mismatches |", "| --- | --- | --- |");
   for (const comparison of report.languageFlagComparisons) {
     lines.push(`| ${comparison.name} | ${comparison.pass ? "PASS" : "FAIL"} | ${comparison.mismatches.join(", ") || "-"} |`);
+  }
+  lines.push("", "## Forgot Password", "", "| Mode | Result | Mismatches |", "| --- | --- | --- |");
+  for (const comparison of report.forgotPasswordComparisons) {
+    const name = comparison.mode === "with-universe" ? "Forgot password (universe selected)" : "Forgot password (no universe)";
+    lines.push(`| ${name} | ${comparison.pass ? "PASS" : "FAIL"} | ${comparison.mismatches.join(", ") || "-"} |`);
   }
   if (report.comparisons.length > 0) {
     lines.push("", "## Differences", "", ...report.comparisons.map((item) => `- ${item}`));
