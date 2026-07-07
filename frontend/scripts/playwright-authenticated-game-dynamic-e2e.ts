@@ -13,7 +13,15 @@ import {
   type GameFixtureFeature,
   type SideName
 } from "./visual/game-dynamic-behavior-registry";
-import { deterministicScreenshotCSS, numberEnv, trimTrailingSlash } from "./visual/game-visual-utils";
+import {
+  compareScreenshots,
+  deterministicScreenshotCSS,
+  formatNumber,
+  normalizeDynamicPageParts,
+  numberEnv,
+  trimTrailingSlash,
+  waitForStablePaint
+} from "./visual/game-visual-utils";
 
 type BrowserName = "chromium" | "firefox";
 
@@ -50,6 +58,7 @@ type SideResult = {
   badResponses: string[];
   actionErrors: string[];
   assertions: Record<string, string | number | boolean | null>;
+  screenshotPath?: string;
 };
 
 type CaseResult = {
@@ -60,18 +69,24 @@ type CaseResult = {
   legacy: SideResult;
   migrated: SideResult;
   comparisons: string[];
+  visualDiffRatio?: number;
+  visualDiffPath?: string;
 };
 
 const rootDir = resolve(import.meta.dir, "../..");
 const execFileAsync = promisify(execFile);
 const browserName = browserEnv("OGAME_PLAYWRIGHT_BROWSER", "chromium");
 const outputDir = resolve(rootDir, process.env.OGAME_GAME_DYNAMIC_OUTPUT_DIR ?? `.tmp/playwright-authenticated-game-dynamic/${browserName}`);
+const screenshotDir = join(outputDir, "screenshots");
+const diffDir = join(outputDir, "diffs");
 const legacyBaseURL = trimTrailingSlash(process.env.OGAME_LEGACY_BASE_URL ?? "http://127.0.0.1:8888");
 const migratedBaseURL = trimTrailingSlash(process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890");
 const fixtureFile = process.env.OGAME_GAME_VISUAL_FIXTURE_FILE;
 let fixture = await loadAuthFixture(fixtureFile);
 const selectedSpecs = selectGameDynamicBehaviorSpecs(process.env.OGAME_GAME_DYNAMIC_CASES ?? "");
 const fixedNowMs = numberEnv("OGAME_GAME_DYNAMIC_FIXED_NOW_MS", 1_765_584_000_000);
+const maxDiffRatio = numberEnv("OGAME_GAME_DYNAMIC_MAX_DIFF_RATIO", 0);
+const colorDeltaThreshold = numberEnv("OGAME_GAME_DYNAMIC_COLOR_DELTA", 0);
 const defaultChromeExecutable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const defaultBrowserExecutable = browserName === "firefox" ? undefined : defaultChromeExecutable;
 const browserExecutable =
@@ -79,6 +94,8 @@ const browserExecutable =
   (defaultBrowserExecutable && existsSync(defaultBrowserExecutable) ? defaultBrowserExecutable : undefined);
 
 await mkdir(outputDir, { recursive: true });
+await mkdir(screenshotDir, { recursive: true });
+await mkdir(diffDir, { recursive: true });
 
 const browserType = browserName === "firefox" ? firefox : chromium;
 const browser = await browserType.launch({
@@ -108,17 +125,30 @@ try {
       fixture = await refreshAuthFixture(spec);
     }
     const legacyContext = await newContext(browser, legacyBaseURL, spec);
-    const legacy = await runSide(legacyContext, "legacy", spec, legacyURL(spec));
+    const legacy = await runSide(
+      legacyContext,
+      "legacy",
+      spec,
+      legacyURL(spec),
+      visualScreenshotPath(spec, "legacy")
+    );
     await legacyContext.close();
 
     if (spec.isolateSides) {
       fixture = await refreshAuthFixture(spec);
     }
     const migratedContext = await newContext(browser, migratedBaseURL, spec);
-    const migrated = await runSide(migratedContext, "migrated", spec, migratedURL(spec));
+    const migrated = await runSide(
+      migratedContext,
+      "migrated",
+      spec,
+      migratedURL(spec),
+      visualScreenshotPath(spec, "migrated")
+    );
     await migratedContext.close();
 
-    const comparisons = compareAssertions(spec, legacy, migrated);
+    const visualComparison = await compareVisualAfterActions(spec, legacy, migrated);
+    const comparisons = [...compareAssertions(spec, legacy, migrated), ...visualComparison.notes];
     const bothSkipped = legacy.skipped && migrated.skipped;
     const oneSkipped = legacy.skipped !== migrated.skipped;
     const pass =
@@ -134,7 +164,8 @@ try {
         migrated.badResponses.length === 0 &&
         legacy.actionErrors.length === 0 &&
         migrated.actionErrors.length === 0 &&
-        comparisons.length === 0);
+        comparisons.length === 0 &&
+        visualComparison.pass);
     results.push({
       name: spec.name,
       pass,
@@ -142,7 +173,9 @@ try {
       notes: spec.notes ?? [],
       legacy,
       migrated,
-      comparisons
+      comparisons,
+      visualDiffRatio: visualComparison.ratio,
+      visualDiffPath: visualComparison.diffPath
     });
   }
 
@@ -193,6 +226,14 @@ async function loadAuthFixture(path: string | undefined): Promise<AuthFixture> {
   }
   const parsed = parseAuthFixture(await readFile(resolved, "utf8"), resolved);
   return parsed;
+}
+
+function visualScreenshotPath(spec: GameDynamicBehaviorSpec, side: SideName): string {
+  if (!spec.visual?.enabled) {
+    return "";
+  }
+  const fileName = `${sanitizeFileName(spec.name)}-${side}.png`;
+  return join(screenshotDir, fileName);
 }
 
 function parseAuthFixture(raw: string, label: string): AuthFixture {
@@ -297,7 +338,13 @@ async function newContext(browserInstance: Browser, baseURL: string, spec: GameD
   return context;
 }
 
-async function runSide(context: BrowserContext, side: SideName, spec: GameDynamicBehaviorSpec, url: string): Promise<SideResult> {
+async function runSide(
+  context: BrowserContext,
+  side: SideName,
+  spec: GameDynamicBehaviorSpec,
+  url: string,
+  screenshotPath: string
+): Promise<SideResult> {
   const page = await context.newPage();
   const consoleErrors: string[] = [];
   const failedRequests: string[] = [];
@@ -368,6 +415,15 @@ async function runSide(context: BrowserContext, side: SideName, spec: GameDynami
   for (const assertion of spec.assertions) {
     assertions[assertion.name] = await readAssertion(page, side, assertion);
   }
+
+  if (spec.visual?.enabled && screenshotPath) {
+    await applyDeterministicSnapshotState(page, spec, side);
+    if (spec.visual.stableWaitMs && spec.visual.stableWaitMs > 0) {
+      await page.waitForTimeout(spec.visual.stableWaitMs);
+    }
+    await page.screenshot({ path: screenshotPath, fullPage: false });
+  }
+
   const currentURL = page.url();
   await page.close();
   return {
@@ -378,7 +434,59 @@ async function runSide(context: BrowserContext, side: SideName, spec: GameDynami
     failedRequests,
     badResponses,
     actionErrors,
-    assertions
+    assertions,
+    screenshotPath: spec.visual?.enabled && screenshotPath ? screenshotPath : undefined
+  };
+}
+
+async function applyDeterministicSnapshotState(page: Page, spec: GameDynamicBehaviorSpec, side: SideName): Promise<void> {
+  await waitForStablePaint(page);
+  const pageName = spec.visual?.normalizePageName ?? `game-${spec.legacyPage}`;
+  const maskSelectors = spec.visual?.maskSelectors ?? [];
+  await normalizeDynamicPageParts(
+    page,
+    side,
+    {
+      name: pageName,
+      area: "core",
+      legacyPage: spec.legacyPage,
+      migratedPath: spec.migratedPath,
+      legacyReady: spec.legacyReady,
+      migratedReady: spec.migratedReady,
+      expectedTexts: []
+    },
+    [
+      "#header_top img[width='50'][height='50']",
+      ".legacy-header-top img[width='50'][height='50']",
+      ...maskSelectors
+    ]
+  );
+}
+
+async function compareVisualAfterActions(
+  spec: GameDynamicBehaviorSpec,
+  legacy: SideResult,
+  migrated: SideResult
+): Promise<{ pass: boolean; notes: string[]; ratio?: number; diffPath?: string }> {
+  if (!spec.visual?.enabled) {
+    return { pass: true, notes: [] };
+  }
+  if (legacy.screenshotPath === undefined || migrated.screenshotPath === undefined) {
+    return { pass: false, notes: ["visual snapshot missing for one or both sides"] };
+  }
+  if (legacy.skipped || migrated.skipped) {
+    return { pass: false, notes: ["visual compare skipped due fixture/state mismatch on one side"] };
+  }
+  const diffPath = join(diffDir, `${sanitizeFileName(spec.name)}.png`);
+  const ratioLimit = spec.visual.maxDiffRatio ?? maxDiffRatio;
+  const deltaThreshold = spec.visual.colorDeltaThreshold ?? colorDeltaThreshold;
+  const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath, diffPath, deltaThreshold);
+  const pass = diff.diffRatio <= ratioLimit;
+  return {
+    pass,
+    ratio: diff.diffRatio,
+    diffPath,
+    notes: pass ? [] : [`visual diff ratio ${formatNumber(diff.diffRatio)} > ${formatNumber(ratioLimit)} (threshold)`]
   };
 }
 
@@ -729,4 +837,12 @@ function legacyNumber(value: string | number | boolean | null | undefined): numb
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message.split("\n")[0] : String(error);
+}
+
+function sanitizeFileName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/(^-|-$)/g, "");
 }

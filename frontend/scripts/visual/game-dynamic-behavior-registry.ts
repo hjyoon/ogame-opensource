@@ -32,6 +32,16 @@ export type GameDynamicAssertion = {
   tolerance?: number;
 };
 
+export type GameDynamicVisualRegression = {
+  enabled?: boolean;
+  normalizePageName?: string;
+  keepTooltips?: boolean;
+  stableWaitMs?: number;
+  maskSelectors?: string[];
+  maxDiffRatio?: number;
+  colorDeltaThreshold?: number;
+};
+
 export type GameDynamicBehaviorSpec = {
   name: string;
   fixtureProfile?: "admin" | "max_fleet" | "no_ships" | "low_fuel" | "no_cargo" | "queue_short" | "research_short" | "shipyard_short";
@@ -50,6 +60,7 @@ export type GameDynamicBehaviorSpec = {
   isolateSides?: boolean;
   actions: GameDynamicAction[];
   assertions: GameDynamicAssertion[];
+  visual?: GameDynamicVisualRegression;
   notes?: string[];
 };
 
@@ -106,6 +117,10 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
         contains: "Visual Spy Report"
       }
     ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-messages"
+    },
     notes: ["Covers legacy messages category links preserving pm= and filtering the inbox by message type."]
   },
   {
@@ -129,6 +144,10 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "compose-visible", type: "visible", selector: "textarea[name='text']", expected: "true" },
       { name: "compose-heading", type: "text", legacySelector: "#content", migratedSelector: ".legacy-messages-compose-table", contains: "Write message" }
     ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-messages-compose"
+    },
     notes: ["Covers reply links embedded in personal message rows."]
   },
   {
@@ -151,6 +170,10 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "galaxy", type: "value", selector: "input[name='galaxy']", compareSides: true },
       { name: "system", type: "value", selector: "input[name='system']", compareSides: true }
     ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-messages"
+    },
     notes: ["Covers coordinate links embedded in personal message rows."]
   },
   {
@@ -221,6 +244,10 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "compose-visible", type: "visible", selector: "textarea[name='text']", expected: "true" },
       { name: "counter", type: "text", selector: "#cntChars", expected: "0" }
     ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-messages-compose"
+    },
     notes: ["Covers a galaxy action icon navigating to the message compose screen without DB mutation."]
   },
   {
@@ -242,6 +269,10 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "request-visible", type: "visible", selector: "textarea[name='text']", expected: "true" },
       { name: "counter", type: "text", selector: "#cntChars", expected: "0" }
     ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-buddy"
+    },
     notes: ["Covers a galaxy action icon navigating to the buddy request screen without DB mutation."]
   },
   {
