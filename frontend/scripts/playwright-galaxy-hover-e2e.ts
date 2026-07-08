@@ -1,4 +1,4 @@
-import { chromium } from "@playwright/test";
+import { chromium, type Locator, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
 
 const migratedBaseURL = trimTrailingSlash(process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890");
@@ -29,7 +29,9 @@ try {
   await page.locator(".legacy-galaxy-table").waitFor({ timeout: 15_000 });
   await page.locator(".legacy-galaxy-table .legacy-galaxy-hover").first().hover();
   await page.waitForTimeout(850);
-  await page.locator(".legacy-galaxy-hover-open .legacy-galaxy-tooltip").first().waitFor({ timeout: 5_000 });
+  const tooltip = page.locator(".legacy-galaxy-hover-open .legacy-galaxy-tooltip").first();
+  await tooltip.waitFor({ timeout: 5_000 });
+  const tooltipUX = await verifyTooltipUX(page, tooltip);
 
   const result = await page.evaluate(() => {
     const tooltip = document.querySelector(".legacy-galaxy-hover-open .legacy-galaxy-tooltip");
@@ -46,8 +48,8 @@ try {
     };
   });
 
-  console.log(JSON.stringify({ migratedBaseURL, loginUser, ...result }, null, 2));
-  if (!result.pass) {
+  console.log(JSON.stringify({ migratedBaseURL, loginUser, ...result, tooltipUX }, null, 2));
+  if (!result.pass || !tooltipUX.pass) {
     process.exitCode = 1;
   }
 } finally {
@@ -61,4 +63,32 @@ function trimTrailingSlash(value: string): string {
 function windowSearch(value: string): string {
   const search = new URL(value).search;
   return search || "";
+}
+
+async function verifyTooltipUX(page: Page, tooltip: Locator) {
+  const before = await tooltip.boundingBox();
+  if (!before) {
+    return { pass: false, reason: "tooltip bounding box missing" };
+  }
+  const cursor = await tooltip.evaluate((element) => window.getComputedStyle(element).cursor);
+  const firstLink = tooltip.locator("a").first();
+  const linkCursor = (await firstLink.count()) > 0 ? await firstLink.evaluate((element) => window.getComputedStyle(element).cursor) : null;
+  const outsideX = before.x > 80 ? before.x - 40 : Math.min(1000, before.x + before.width + 40);
+  const outsideY = before.y > 80 ? before.y - 40 : Math.min(740, before.y + before.height + 40);
+  await page.mouse.move(outsideX, outsideY);
+  await page.waitForTimeout(120);
+  await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+  await page.waitForTimeout(150);
+  const after = await tooltip.boundingBox();
+  const positionDelta = after ? { x: Math.abs(after.x - before.x), y: Math.abs(after.y - before.y) } : { x: Number.POSITIVE_INFINITY, y: Number.POSITIVE_INFINITY };
+  const visibleAfterReentry = await tooltip.isVisible().catch(() => false);
+  const positionStable = positionDelta.x <= 1 && positionDelta.y <= 1;
+  return {
+    cursor,
+    linkCursor,
+    pass: cursor !== "pointer" && (linkCursor === null || linkCursor === "pointer") && visibleAfterReentry && positionStable,
+    positionDelta,
+    positionStable,
+    visibleAfterReentry
+  };
 }

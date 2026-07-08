@@ -10998,11 +10998,19 @@ function GalaxyHoverMenu({
     },
     [clearTimer]
   );
+  const keepOpen = React.useCallback(() => {
+    clearTimer();
+    setOpen(true);
+  }, [clearTimer]);
   const showFromMouse = React.useCallback(
     (event: React.MouseEvent<HTMLElement>) => {
+      if (isGalaxyTooltipEventTarget(event)) {
+        keepOpen();
+        return;
+      }
       show({ x: event.clientX, y: event.clientY });
     },
-    [show]
+    [keepOpen, show]
   );
   const showFromFocus = React.useCallback(
     (event: React.FocusEvent<HTMLElement>) => {
@@ -11022,10 +11030,6 @@ function GalaxyHoverMenu({
   const hide = React.useCallback(() => {
     clearTimer();
     timerRef.current = window.setTimeout(() => setOpen(false), 1000);
-  }, [clearTimer]);
-  const keepOpen = React.useCallback(() => {
-    clearTimer();
-    setOpen(true);
   }, [clearTimer]);
   const hideUnlessEnteringTooltip = React.useCallback(
     (event: React.MouseEvent<HTMLElement>) => {
@@ -11092,8 +11096,12 @@ function GalaxyHoverMenu({
         <span
           className="legacy-galaxy-tooltip"
           onClick={onClick}
-          onMouseEnter={keepOpen}
+          onMouseEnter={(event) => {
+            event.stopPropagation();
+            keepOpen();
+          }}
           onMouseLeave={hide}
+          onMouseMove={(event) => event.stopPropagation()}
           onMouseDown={navigateTooltipLink}
           style={{
             display: "block",
@@ -11123,6 +11131,11 @@ function GalaxyHoverMenu({
       {tooltip}
     </span>
   );
+}
+
+function isGalaxyTooltipEventTarget(event: React.MouseEvent<HTMLElement>): boolean {
+  const target = event.target;
+  return target instanceof Element && event.currentTarget.contains(target) && target.closest(".legacy-galaxy-tooltip") !== null;
 }
 
 function legacyOverlibHTML(html: string, width = 200, includeClasses = true): string {

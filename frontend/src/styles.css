@@ -845,6 +845,7 @@ body.legacy-game-body {
 }
 
 .legacy-game-shell .legacy-galaxy-tooltip {
+  cursor: default;
   display: none;
   left: 50%;
   line-height: normal;
@@ -852,6 +853,10 @@ body.legacy-game-body {
   text-align: left;
   transform: translateX(-50%);
   z-index: 5000;
+}
+
+.legacy-game-shell .legacy-galaxy-tooltip a {
+  cursor: pointer;
 }
 
 .legacy-game-shell .legacy-galaxy-hover-open > .legacy-galaxy-tooltip {
