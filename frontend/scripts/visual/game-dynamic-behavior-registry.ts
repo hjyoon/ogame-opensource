@@ -1625,13 +1625,13 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     legacyPage: "flotten1",
     migratedPath: "/game/fleet",
     legacyReady: "#content table",
-    migratedReady: ".legacy-fleet-table",
+    migratedReady: ".legacy-fleet-select-table",
     requiredFixtureFeatures: ["commander"],
     actions: [
       {
         type: "click",
-        legacySelector: "#content a[href^='javascript:setShips']",
-        migratedSelector: ".legacy-fleet-table a[href^='javascript:setShips']",
+        legacySelector: "#content a[href^='javascript:setShips']:has-text('Visual Template')",
+        migratedSelector: ".legacy-fleet-select-table a:has-text('Visual Template')",
         waitMs: 300
       }
     ],
@@ -1649,6 +1649,36 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       enabled: false
     },
     notes: ["Covers Commander fleet handling automation by applying a saved Standard Fleet template on the fleet dispatch screen."]
+  },
+  {
+    name: "commander-fleet-template-hover-underline",
+    legacyPage: "flotten1",
+    migratedPath: "/game/fleet",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-fleet-select-table",
+    requiredFixtureFeatures: ["commander"],
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[href^='javascript:setShips']:has-text('Visual Template')",
+        migratedSelector: ".legacy-fleet-select-table a:has-text('Visual Template')",
+        waitMs: 100
+      }
+    ],
+    assertions: [
+      {
+        name: "template-hover-decoration",
+        type: "evaluate",
+        expression:
+          "(() => { const link = Array.from(document.querySelectorAll('a')).find((anchor) => anchor.textContent?.trim() === 'Visual Template'); if (!link) return ''; const style = getComputedStyle(link); return `${style.textDecorationLine}|${style.color}`; })()",
+        compareSides: true,
+        contains: "underline"
+      }
+    ],
+    linkAudit: {
+      enabled: false
+    },
+    notes: ["Covers the legacy anchor hover styling for the Commander Visual Template link on the fleet selection screen."]
   },
   {
     name: "admin-bans-select-all-checkbox",
