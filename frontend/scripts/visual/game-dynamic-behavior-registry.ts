@@ -352,6 +352,105 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers combat report links embedded in message rows opening the legacy Bericht_Kampf popup."]
   },
   {
+    name: "messages-spy-report-coordinate-link",
+    legacyPage: "messages",
+    legacyQuery: { dsp: "1", pm: "1" },
+    migratedPath: "/game/messages",
+    migratedQuery: { dsp: "1", pm: "1" },
+    legacyReady: "#content a[onclick*='showGalaxy']",
+    migratedReady: ".legacy-messages-table .legacy-message-text a[href*='/game/galaxy'][href*='galaxy=']",
+    requiredFixtureFeatures: ["report"],
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[onclick*='showGalaxy']",
+        migratedSelector: ".legacy-messages-table .legacy-message-text a[href*='/game/galaxy'][href*='galaxy=']",
+        legacyWaitForSelector: "#content input[name='galaxy']",
+        migratedWaitForSelector: "input[name='galaxy']"
+      }
+    ],
+    assertions: [
+      {
+        name: "route-to-galaxy",
+        type: "evaluate",
+        expression:
+          "(() => { const url = new URL(window.location.href); return (url.pathname === '/game/galaxy') || (url.pathname === '/game/index.php' && url.searchParams.get('page') === 'galaxy'); })()",
+        expected: "true"
+      },
+      { name: "galaxy", type: "value", selector: "input[name='galaxy']", compareSides: true },
+      { name: "system", type: "value", selector: "input[name='system']", compareSides: true }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-galaxy"
+    },
+    linkAudit: {
+      expected: [
+        {
+          name: "spy-report-coordinate-galaxy-target",
+          target: "/game/galaxy?*galaxy=#*system=#*",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
+    },
+    notes: ["Covers showGalaxy(...) coordinate links embedded inside spy report message bodies."]
+  },
+  {
+    name: "messages-spy-report-attack-link",
+    legacyPage: "messages",
+    legacyQuery: { dsp: "1", pm: "1" },
+    migratedPath: "/game/messages",
+    migratedQuery: { dsp: "1", pm: "1" },
+    legacyReady: "#content a[onclick*='showFleetMenu']",
+    migratedReady: ".legacy-messages-table .legacy-message-text a[href*='/game/fleet'][href*='target_mission=1']",
+    requiredFixtureFeatures: ["report"],
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[onclick*='showFleetMenu']",
+        migratedSelector: ".legacy-messages-table .legacy-message-text a[href*='/game/fleet'][href*='target_mission=1']",
+        legacyWaitForSelector: "#content table",
+        migratedWaitForSelector: ".legacy-fleet-table"
+      }
+    ],
+    assertions: [
+      {
+        name: "route-to-fleet",
+        type: "evaluate",
+        expression:
+          "(() => { const url = new URL(window.location.href); return (url.pathname === '/game/fleet') || (url.pathname === '/game/index.php' && ['fleet','fleet1','flotten1'].includes(url.searchParams.get('page') ?? '')); })()",
+        expected: "true"
+      },
+      {
+        name: "fleet-target-mission",
+        type: "evaluate",
+        expression: "new URL(window.location.href).searchParams.get('target_mission') === '1'",
+        expected: "true"
+      },
+      { name: "fleet-target-galaxy", type: "value", selector: "input[name='target_galaxy']", compareSides: true },
+      { name: "fleet-target-system", type: "value", selector: "input[name='target_system']", compareSides: true },
+      { name: "fleet-target-planet", type: "value", selector: "input[name='target_planet']", compareSides: true },
+      { name: "fleet-target-planettype", type: "value", selector: "input[name='target_planettype']", compareSides: true },
+      { name: "fleet-target-mission-hidden", type: "value", selector: "input[name='target_mission']", compareSides: true, expected: "1" }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-fleet"
+    },
+    linkAudit: {
+      expected: [
+        {
+          name: "spy-report-attack-fleet-target",
+          target: "/game/fleet?*target_mission=#*",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
+    },
+    notes: ["Covers showFleetMenu(...) Attack links embedded inside spy report message bodies."]
+  },
+  {
     name: "notes-create-text-counter",
     legacyPage: "notizen",
     legacyQuery: { a: "1" },

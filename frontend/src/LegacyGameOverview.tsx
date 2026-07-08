@@ -12831,6 +12831,13 @@ function sanitizeLegacyMessageHTML(value: string): string {
       element.removeAttribute("target");
     }
     if (element instanceof HTMLAnchorElement) {
+      const inlineRouteHref = legacyInlineActionRouteHref(
+        `${element.getAttribute("onclick") ?? ""};${element.getAttribute("href") ?? ""}`
+      );
+      if (inlineRouteHref) {
+        element.setAttribute("href", inlineRouteHref);
+        element.removeAttribute("target");
+      }
       const migratedHref = gameLegacyRouteURL(element.getAttribute("href") ?? "", typeof window === "undefined" ? "" : window.location.search);
       if (migratedHref) {
         element.setAttribute("href", migratedHref);
@@ -12869,7 +12876,7 @@ function legacyReportPopupFromOnClick(value: string): { href: string; name: stri
   if (!value.toLowerCase().includes("page=bericht")) {
     return null;
   }
-  const normalized = value.replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/&amp;/g, "&").replace(/&#039;/g, "'");
+  const normalized = legacyInlineActionValue(value);
   const match = /(?:index\.php\?)?page=bericht[^'")\s]*/i.exec(normalized);
   if (!match) {
     return null;
@@ -12888,6 +12895,40 @@ function legacyReportPopupFromOnClick(value: string): { href: string; name: stri
   }
   const popupMatch = /fenster\s*\(\s*['"][^'"]+['"]\s*,\s*['"]([^'"]+)['"]/i.exec(normalized);
   return { href: gameRouteURL("/game/report", query.toString()), name: popupMatch?.[1] ?? "Bericht" };
+}
+
+function legacyInlineActionRouteHref(value: string): string | null {
+  const normalized = legacyInlineActionValue(value);
+  const galaxyMatch = /showGalaxy\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/i.exec(normalized);
+  if (galaxyMatch) {
+    const query = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
+    query.set("galaxy", galaxyMatch[1]);
+    query.set("system", galaxyMatch[2]);
+    query.set("position", galaxyMatch[3]);
+    return gameRouteURL("/game/galaxy", query.toString());
+  }
+  const fleetMatch = /showFleetMenu\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/i.exec(normalized);
+  if (fleetMatch) {
+    return gameFleetTargetURL(
+      {
+        galaxy: Number(fleetMatch[1]),
+        system: Number(fleetMatch[2]),
+        position: Number(fleetMatch[3]),
+        planetType: Number(fleetMatch[4]),
+        mission: Number(fleetMatch[5])
+      },
+      typeof window === "undefined" ? "" : window.location.search
+    );
+  }
+  const messageMatch = /showMessageMenu\s*\(\s*(\d+)\s*\)/i.exec(normalized);
+  if (messageMatch) {
+    return gameMessageComposeURL(Number(messageMatch[1]), typeof window === "undefined" ? "" : window.location.search);
+  }
+  return null;
+}
+
+function legacyInlineActionValue(value: string): string {
+  return value.replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/&amp;/g, "&").replace(/&#039;/g, "'").trim();
 }
 
 function NotesTable({

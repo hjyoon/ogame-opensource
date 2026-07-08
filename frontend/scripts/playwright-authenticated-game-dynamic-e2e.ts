@@ -700,6 +700,10 @@ function rawTargetFromScript(script: string | null): string | null {
   if (galaxyMatch) {
     return `index.php?page=galaxy&galaxy=${galaxyMatch[1]}&system=${galaxyMatch[2]}&position=${galaxyMatch[3]}`;
   }
+  const fleetMatch = /showFleetMenu\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/i.exec(value);
+  if (fleetMatch) {
+    return `index.php?page=flotten1&galaxy=${fleetMatch[1]}&system=${fleetMatch[2]}&planet=${fleetMatch[3]}&planettype=${fleetMatch[4]}&target_mission=${fleetMatch[5]}`;
+  }
   const fensterMatch = /fenster\s*\(\s*['"]([^'"]+)['"]/i.exec(value);
   if (fensterMatch) {
     return fensterMatch[1];
