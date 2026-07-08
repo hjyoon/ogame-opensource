@@ -485,7 +485,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       }
     ],
     linkAudit: {
-      ignoreTargets: ["/game/alliance?allyid=#", "/game/bewerben?allyid=#", "/game/statistics?start=#&who=ally"],
+      ignoreTargets: ["/game/alliance?allyid=#", "/game/alliance?a=#&allyid=#", "/game/bewerben?allyid=#", "/game/statistics?start=#&who=ally"],
       expected: [
         {
           name: "galaxy-hover-alliance-introduction-target",
@@ -496,6 +496,100 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       ]
     },
     notes: ["Covers the Alliance introduction target link inside the galaxy alliance hover tooltip."]
+  },
+  {
+    name: "galaxy-alliance-hover-apply-link",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='Alliance VGHT']",
+        migratedSelector: ".legacy-galaxy-hover[data-galaxy-hover='alliance'] a",
+        waitMs: 850
+      },
+      {
+        type: "click",
+        legacySelector: "#overDiv a[href*='page=bewerben'][href*='allyid=']",
+        migratedSelector: ".legacy-galaxy-tooltip a[href*='/game/alliance'][href*='a=2'][href*='allyid=']",
+        legacyWaitForSelector: "#content textarea[name='text']",
+        migratedWaitForSelector: "textarea[name='text']"
+      }
+    ],
+    assertions: [
+      {
+        name: "route-to-alliance-apply",
+        type: "evaluate",
+        expression:
+          "(() => { const url = new URL(window.location.href); return (url.pathname === '/game/alliance' && url.searchParams.get('a') === '2') || (url.pathname === '/game/index.php' && url.searchParams.get('page') === 'bewerben'); })()",
+        expected: "true"
+      },
+      { name: "application-textarea", type: "visible", selector: "textarea[name='text']", expected: "true" }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-alliance-search"
+    },
+    linkAudit: {
+      expected: [
+        {
+          name: "galaxy-hover-alliance-apply-target",
+          target: "/game/alliance?*a=#*allyid=#*",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
+    },
+    notes: ["Covers clicking the Apply link inside the galaxy alliance hover tooltip."]
+  },
+  {
+    name: "galaxy-alliance-hover-statistics-link",
+    legacyPage: "galaxy",
+    migratedPath: "/game/galaxy",
+    legacyReady: "#content",
+    migratedReady: ".legacy-galaxy-table",
+    actions: [
+      {
+        type: "hover",
+        legacySelector: "#content a[onmouseover*='Alliance VGHT']",
+        migratedSelector: ".legacy-galaxy-hover[data-galaxy-hover='alliance'] a",
+        waitMs: 850
+      },
+      {
+        type: "click",
+        legacySelector: "#overDiv a[href*='page=statistics'][href*='who=ally']",
+        migratedSelector: ".legacy-galaxy-tooltip a[href*='/game/statistics'][href*='who=ally']",
+        legacyWaitForSelector: "#content table",
+        migratedWaitForSelector: ".legacy-statistics-alliance-table"
+      }
+    ],
+    assertions: [
+      {
+        name: "route-to-alliance-statistics",
+        type: "evaluate",
+        expression:
+          "(() => { const url = new URL(window.location.href); return (url.pathname === '/game/statistics' || (url.pathname === '/game/index.php' && url.searchParams.get('page') === 'statistics')) && url.searchParams.get('who') === 'ally'; })()",
+        expected: "true"
+      },
+      { name: "alliance-statistics-table", type: "visible", migratedSelector: ".legacy-statistics-alliance-table", legacySelector: "#content table", expected: "true" }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-statistics-alliance"
+    },
+    linkAudit: {
+      expected: [
+        {
+          name: "galaxy-hover-alliance-statistics-target",
+          target: "/game/statistics?*start=#*who=ally*",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
+    },
+    notes: ["Covers clicking the Statistics link inside the galaxy alliance hover tooltip."]
   },
   {
     name: "galaxy-action-message-compose-link",

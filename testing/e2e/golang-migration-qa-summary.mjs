@@ -61,6 +61,10 @@ const artifacts = [
   ...browserNames.map((browser) => ({
     name: `fleet all-cases ${browser}`,
     path: `.tmp/playwright-fleet-all-cases/${browser}/report.json`
+  })),
+  ...browserNames.map((browser) => ({
+    name: `navigation visual ${browser}`,
+    path: `.tmp/playwright-navigation-visual/${browser}/report.json`
   }))
 ];
 

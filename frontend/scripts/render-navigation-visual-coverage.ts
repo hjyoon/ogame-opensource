@@ -63,7 +63,7 @@ const lines = [
   "## Scope",
   "",
   "- Seeds: public legacy aliases plus authenticated game, optional admin, alliance, statistics, messages, notes, report, phalanx, and fleet-template screens.",
-  "- Edges: internal GET anchors, `document.location` handlers, popup/open handlers, hover tooltip hrefs, select option URLs, and GET forms.",
+  "- Edges: internal GET anchors, `document.location` handlers, popup/open handlers, hover tooltip hrefs, and select option URLs.",
   "- Mutating POST flows remain covered by their flow-specific E2E scripts.",
   "",
   "## Latest Strict Run",

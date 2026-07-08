@@ -801,6 +801,10 @@ function legacyPagePath(page: string, params: URLSearchParams): string {
   if (page === "imperium") {
     return "/game/empire";
   }
+  if (page === "bewerben") {
+    params.set("a", "2");
+    return "/game/alliance";
+  }
   if (page === "allianzen" || page === "ainfo" || page === "bewerbungen") {
     return "/game/alliance";
   }

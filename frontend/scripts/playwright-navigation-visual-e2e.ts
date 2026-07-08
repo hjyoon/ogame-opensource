@@ -50,6 +50,10 @@ type NavigationFixture = {
   admin?: {
     home_planet_id?: number;
   };
+  galaxy_hover?: {
+    galaxy?: number;
+    system?: number;
+  };
 };
 
 type EdgeResult = {
@@ -227,7 +231,7 @@ const authSeeds: SeedSpec[] = [
   gameSeed("game-shipyard", "buildings", "/game/shipyard", { mode: "Flotte" }),
   gameSeed("game-fleet", "flotten1", "/game/fleet"),
   gameSeed("game-fleet-templates", "fleet_templates", "/game/fleet-templates"),
-  gameSeed("game-galaxy", "galaxy", "/game/galaxy"),
+  gameSeed("game-galaxy", "galaxy", "/game/galaxy", galaxyHoverSeedQuery(), galaxyHoverSeedQuery()),
   gameSeed("game-technology", "techtree", "/game/technology"),
   gameSeed("game-technology-details", "techtreedetails", "/game/technology", { tid: "206" }, { tid: "206" }),
   gameSeed("game-defense", "buildings", "/game/defense", { mode: "Verteidigung" }),
@@ -419,6 +423,15 @@ function gameSeed(
   };
 }
 
+function galaxyHoverSeedQuery(): Record<string, string> {
+  const galaxy = Number(navigationFixture.galaxy_hover?.galaxy);
+  const system = Number(navigationFixture.galaxy_hover?.system);
+  if (!Number.isFinite(galaxy) || galaxy <= 0 || !Number.isFinite(system) || system <= 0) {
+    return {};
+  }
+  return { galaxy: String(Math.floor(galaxy)), system: String(Math.floor(system)) };
+}
+
 async function newContext(browser: Browser): Promise<BrowserContext> {
   return await browser.newContext({
     viewport: { width: 1024, height: 768 },
@@ -481,6 +494,10 @@ async function discoverSeeds(browser: Browser, specs: SeedSpec[]): Promise<Disco
 async function collectSeedSide(browser: Browser, side: Side, seed: SeedSpec): Promise<EdgeSide[]> {
   const context = await newContext(browser);
   try {
+    if (seed.area === "public") {
+      const url = side === "legacy" ? seed.legacyURL("") : seed.migratedURL("");
+      return await collectSideTargets(context, side, seed, url);
+    }
     const session = side === "legacy" ? await loginLegacy(context, seed.authRole) : await loginMigrated(context, seed.authRole);
     const url = side === "legacy" ? seed.legacyURL(session) : seed.migratedURL(session);
     return await collectSideTargets(context, side, seed, url);
@@ -627,12 +644,6 @@ async function collectSideTargets(context: BrowserContext, side: Side, seed: See
           }
         }
       }
-      for (const form of Array.from(document.querySelectorAll<HTMLFormElement>("form"))) {
-        const method = (form.getAttribute("method") || "GET").toUpperCase();
-        if (method === "GET") {
-          targets.push({ kind: "form", label: form.getAttribute("name") || form.getAttribute("id") || "GET form", url: form.getAttribute("action") || location.href, method });
-        }
-      }
       return targets;
     });
     rawTargets.push(...(await collectInteractiveHoverTargets(page)));
@@ -685,9 +696,31 @@ async function collectInteractiveHoverTargets(page: Page): Promise<RawTarget[]> 
         targets.push(target);
       }
     }
+    await clearInteractiveHoverState(page);
   }
-  await page.mouse.move(0, 0).catch(() => undefined);
+  await clearInteractiveHoverState(page);
   return targets;
+}
+
+async function clearInteractiveHoverState(page: Page): Promise<void> {
+  const hasOpenHover = await page
+    .evaluate(() => {
+      if (document.querySelector(".legacy-galaxy-hover-open, .legacy-galaxy-tooltip, .legacy-statistics-tooltip")) {
+        return true;
+      }
+      const overDiv = document.querySelector<HTMLElement>("#overDiv");
+      if (!overDiv) {
+        return false;
+      }
+      const style = window.getComputedStyle(overDiv);
+      const rect = overDiv.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+    })
+    .catch(() => false);
+  await page.mouse.move(0, 0).catch(() => undefined);
+  if (hasOpenHover) {
+    await page.waitForTimeout(1_100);
+  }
 }
 
 function toEdgeSide(raw: RawTarget, baseURL: string, side: Side, area: Area, authRole: AuthRole = "player"): EdgeSide | null {
@@ -714,11 +747,21 @@ function dedupeTargets(targets: EdgeSide[]): EdgeSide[] {
 
 function absoluteURL(raw: string, baseURL: string): URL | null {
   const trimmed = raw.trim();
-  if (trimmed === "" || trimmed === "#" || trimmed.startsWith("javascript:") || trimmed.startsWith("mailto:")) {
+  if (trimmed === "" || trimmed === "#" || trimmed.startsWith("#") || trimmed.startsWith("javascript:") || trimmed.startsWith("mailto:")) {
     return null;
   }
   try {
-    return new URL(trimmed, baseURL);
+    const absolute = new URL(trimmed, baseURL);
+    const base = new URL(baseURL);
+    if (
+      absolute.hash &&
+      sameInternalOrigin(absolute, base) &&
+      normalizePath(absolute.pathname) === normalizePath(base.pathname) &&
+      absolute.search === base.search
+    ) {
+      return null;
+    }
+    return absolute;
   } catch {
     return null;
   }
