@@ -471,6 +471,87 @@ func TestMessagesRepositoryDeletesAndReportsInboxMessages(t *testing.T) {
 	}
 }
 
+func TestMessagesRepositoryMutatesMessageDisplayFlags(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	oldFlags := messageUserFlagPartialReports | messageUserFlagFolderCategoryAll
+	runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix()})},
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix(), domaingame.AdminLevelPlayer, oldFlags})},
+	}}}
+	repository := NewMessagesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	partialReports := false
+	_, err := repository.MutateMessages(context.Background(), appgame.MessagesMutationQuery{
+		PlayerID:       42,
+		DeleteMode:     domaingame.MessageDeleteModeNone,
+		PartialReports: &partialReports,
+		FolderSelection: &appgame.MessageFolderSelection{
+			Spy:        true,
+			Battle:     false,
+			Expedition: true,
+			Alliance:   false,
+			Personal:   true,
+			Other:      false,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantFlags := (oldFlags &^ messageUserFlagPartialReports &^ messageUserFlagFolderCategoryAll) |
+		messageUserFlagFolderEspionage |
+		messageUserFlagFolderExpedition |
+		messageUserFlagFolderPlayer
+	if len(runner.execs) != 1 ||
+		!strings.Contains(runner.execs[0].sql, "UPDATE `ogame_users` SET flags = ? WHERE player_id = ?") ||
+		runner.execs[0].args[0] != wantFlags ||
+		runner.execs[0].args[1] != 42 {
+		t.Fatalf("unexpected flag update execs: %+v", runner.execs)
+	}
+}
+
+func TestMessagesRepositoryAppliesMessageDisplayFlagsOnRead(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	flags := messageUserFlagPartialReports | messageUserFlagFolderEspionage | messageUserFlagFolderPlayer
+	runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: messageInboxResults(
+		fakeQueryResult{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix(), domaingame.AdminLevelPlayer, flags})},
+		fakeQueryResult{rows: fakeRowsFromValues(
+			[]any{11, domaingame.MessageTypeSpyReport, "Visual Control", "Visual Spy Report", "Spy body", 0, int64(1)},
+			[]any{12, domaingame.MessageTypePM, "Sender", "Personal", "Body", 0, int64(2)},
+		)},
+		fakeQueryResult{rows: fakeRowsFromValues(
+			[]any{domaingame.MessageTypeSpyReport, 1, 1},
+			[]any{domaingame.MessageTypePM, 1, 1},
+		)},
+	)}}
+	repository := NewMessagesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	messages, err := repository.GetMessages(context.Background(), appgame.MessagesQuery{
+		PlayerID:            42,
+		PlanetID:            99,
+		LegacyFolderDisplay: true,
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !messages.PartialReports || len(messages.Rows) != 2 ||
+		messages.Rows[0].Text != "" || !strings.Contains(messages.Rows[0].Subject, "page=bericht") ||
+		!messages.Summary[0].Checked || messages.Summary[1].Checked || !messages.Summary[4].Checked {
+		t.Fatalf("unexpected messages payload: %+v", messages)
+	}
+	foundFolderFilter := false
+	for _, call := range runner.calls {
+		if strings.Contains(call.sql, "pm IN") {
+			foundFolderFilter = true
+			break
+		}
+	}
+	if !foundFolderFilter {
+		t.Fatalf("expected folder flag inbox SQL filter, calls=%+v", runner.calls)
+	}
+}
+
 func TestMessagesRepositoryDeleteModesSelectVisibleRows(t *testing.T) {
 	repository := NewMessagesRepositoryWithRunner(&fakeMessagesRunner{}, &fakeMessagesRunner{}, "ogame_", time.Now)
 	rows := []domaingame.Message{{ID: 1}, {ID: 2}, {ID: 3}}

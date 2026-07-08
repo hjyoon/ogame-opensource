@@ -21,6 +21,7 @@ type gameMessagesSummary struct {
 	CurrentPlanet  gamePlanetOverviewResponse  `json:"currentPlanet"`
 	PlanetSwitcher []gamePlanetSummaryResponse `json:"planetSwitcher"`
 	Action         string                      `json:"action"`
+	PartialReports bool                        `json:"partialReports"`
 	Rows           []gameMessageResponse       `json:"rows"`
 	Summary        []gameMessageCategoryCount  `json:"summary"`
 	Operators      []gameMessageOperator       `json:"operators"`
@@ -28,10 +29,11 @@ type gameMessagesSummary struct {
 }
 
 type gameMessageCategoryCount struct {
-	Key    string `json:"key"`
-	Label  string `json:"label"`
-	Total  int    `json:"total"`
-	Unread int    `json:"unread"`
+	Key     string `json:"key"`
+	Label   string `json:"label"`
+	Total   int    `json:"total"`
+	Unread  int    `json:"unread"`
+	Checked bool   `json:"checked"`
 }
 
 type gameMessageResponse struct {
@@ -66,13 +68,24 @@ type gameMessageTargetResponse struct {
 }
 
 type gameMessagesMutationRequest struct {
-	Action         string `json:"action"`
-	TargetPlayerID int    `json:"targetPlayerId"`
-	Subject        string `json:"subject"`
-	Text           string `json:"text"`
-	DeleteMode     string `json:"deleteMode"`
-	MessageIDs     []int  `json:"messageIds"`
-	ReportIDs      []int  `json:"reportIds"`
+	Action          string                             `json:"action"`
+	TargetPlayerID  int                                `json:"targetPlayerId"`
+	Subject         string                             `json:"subject"`
+	Text            string                             `json:"text"`
+	DeleteMode      string                             `json:"deleteMode"`
+	MessageIDs      []int                              `json:"messageIds"`
+	ReportIDs       []int                              `json:"reportIds"`
+	PartialReports  *bool                              `json:"partialReports,omitempty"`
+	FolderSelection *gameMessageFolderSelectionRequest `json:"folderSelection,omitempty"`
+}
+
+type gameMessageFolderSelectionRequest struct {
+	Spy        bool `json:"spy"`
+	Battle     bool `json:"battle"`
+	Expedition bool `json:"expedition"`
+	Alliance   bool `json:"alliance"`
+	Personal   bool `json:"personal"`
+	Other      bool `json:"other"`
 }
 
 type gameMessageIssueResponse struct {
@@ -162,19 +175,31 @@ func (a app) handleGameMessagesPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid messages request", http.StatusBadRequest)
 		return
 	}
+	messageTypeFilter, hasMessageTypeFilter, err := selectedMessageTypeFilter(r)
+	if err != nil {
+		http.Error(w, "invalid message type", http.StatusBadRequest)
+		return
+	}
+	query := r.URL.Query()
+	legacyFolderDisplay := query.Get("dsp") == "1"
 
 	result, err := a.deps.GameMessages.MutateMessages(r.Context(), appgame.MessagesMutationCommand{
-		PublicSession:   r.URL.Query().Get("session"),
-		PrivateSessions: cookieMap(r),
-		RemoteAddr:      remoteIP(r.RemoteAddr),
-		PlanetID:        planetID,
-		Action:          request.Action,
-		TargetPlayerID:  request.TargetPlayerID,
-		Subject:         request.Subject,
-		Text:            request.Text,
-		DeleteMode:      request.DeleteMode,
-		MessageIDs:      request.MessageIDs,
-		ReportIDs:       request.ReportIDs,
+		PublicSession:        query.Get("session"),
+		PrivateSessions:      cookieMap(r),
+		RemoteAddr:           remoteIP(r.RemoteAddr),
+		PlanetID:             planetID,
+		Action:               request.Action,
+		TargetPlayerID:       request.TargetPlayerID,
+		Subject:              request.Subject,
+		Text:                 request.Text,
+		DeleteMode:           request.DeleteMode,
+		MessageIDs:           request.MessageIDs,
+		ReportIDs:            request.ReportIDs,
+		PartialReports:       request.PartialReports,
+		FolderSelection:      request.FolderSelection.toCommand(),
+		LegacyFolderDisplay:  legacyFolderDisplay,
+		MessageTypeFilter:    messageTypeFilter,
+		HasMessageTypeFilter: hasMessageTypeFilter,
 	})
 	if err != nil {
 		http.Error(w, "game messages unavailable", http.StatusServiceUnavailable)
@@ -228,10 +253,11 @@ func toGameMessagesSummary(messages domaingame.Messages) gameMessagesSummary {
 	summary := make([]gameMessageCategoryCount, 0, len(messages.Summary))
 	for _, category := range messages.Summary {
 		summary = append(summary, gameMessageCategoryCount{
-			Key:    category.Key,
-			Label:  category.Label,
-			Total:  category.Total,
-			Unread: category.Unread,
+			Key:     category.Key,
+			Label:   category.Label,
+			Total:   category.Total,
+			Unread:  category.Unread,
+			Checked: category.Checked,
 		})
 	}
 	operators := make([]gameMessageOperator, 0, len(messages.Operators))
@@ -248,10 +274,25 @@ func toGameMessagesSummary(messages domaingame.Messages) gameMessagesSummary {
 		CurrentPlanet:  toGamePlanetOverviewResponse(messages.CurrentPlanet),
 		PlanetSwitcher: planets,
 		Action:         messages.Action,
+		PartialReports: messages.PartialReports,
 		Rows:           rows,
 		Summary:        summary,
 		Operators:      operators,
 		Compose:        compose,
+	}
+}
+
+func (request *gameMessageFolderSelectionRequest) toCommand() *appgame.MessageFolderSelection {
+	if request == nil {
+		return nil
+	}
+	return &appgame.MessageFolderSelection{
+		Spy:        request.Spy,
+		Battle:     request.Battle,
+		Expedition: request.Expedition,
+		Alliance:   request.Alliance,
+		Personal:   request.Personal,
+		Other:      request.Other,
 	}
 }
 

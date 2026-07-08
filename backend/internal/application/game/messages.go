@@ -48,22 +48,7 @@ type MessagesResult struct {
 }
 
 type MessagesMutationQuery struct {
-	PlayerID       int
-	PlanetID       int
-	Action         string
-	TargetPlayerID int
-	Subject        string
-	Text           string
-	DeleteMode     string
-	MessageIDs     []int
-	ReportIDs      []int
-	PublicSession  string
-}
-
-type MessagesMutationCommand struct {
-	PublicSession   string
-	PrivateSessions map[string]string
-	RemoteAddr      string
+	PlayerID        int
 	PlanetID        int
 	Action          string
 	TargetPlayerID  int
@@ -72,6 +57,37 @@ type MessagesMutationCommand struct {
 	DeleteMode      string
 	MessageIDs      []int
 	ReportIDs       []int
+	PartialReports  *bool
+	FolderSelection *MessageFolderSelection
+	PublicSession   string
+}
+
+type MessagesMutationCommand struct {
+	PublicSession        string
+	PrivateSessions      map[string]string
+	RemoteAddr           string
+	PlanetID             int
+	Action               string
+	TargetPlayerID       int
+	Subject              string
+	Text                 string
+	DeleteMode           string
+	MessageIDs           []int
+	ReportIDs            []int
+	PartialReports       *bool
+	FolderSelection      *MessageFolderSelection
+	LegacyFolderDisplay  bool
+	MessageTypeFilter    int
+	HasMessageTypeFilter bool
+}
+
+type MessageFolderSelection struct {
+	Spy        bool
+	Battle     bool
+	Expedition bool
+	Alliance   bool
+	Personal   bool
+	Other      bool
 }
 
 type MessagesMutationOutcome struct {
@@ -141,16 +157,18 @@ func (s MessagesService) MutateMessages(ctx context.Context, command MessagesMut
 	}
 
 	outcome, err := s.repository.MutateMessages(ctx, MessagesMutationQuery{
-		PlayerID:       session.Session.PlayerID,
-		PlanetID:       command.PlanetID,
-		Action:         command.Action,
-		TargetPlayerID: command.TargetPlayerID,
-		Subject:        command.Subject,
-		Text:           command.Text,
-		DeleteMode:     command.DeleteMode,
-		MessageIDs:     domaingame.NormalizeMessageIDs(command.MessageIDs),
-		ReportIDs:      domaingame.NormalizeMessageIDs(command.ReportIDs),
-		PublicSession:  command.PublicSession,
+		PlayerID:        session.Session.PlayerID,
+		PlanetID:        command.PlanetID,
+		Action:          command.Action,
+		TargetPlayerID:  command.TargetPlayerID,
+		Subject:         command.Subject,
+		Text:            command.Text,
+		DeleteMode:      command.DeleteMode,
+		MessageIDs:      domaingame.NormalizeMessageIDs(command.MessageIDs),
+		ReportIDs:       domaingame.NormalizeMessageIDs(command.ReportIDs),
+		PartialReports:  command.PartialReports,
+		FolderSelection: command.FolderSelection,
+		PublicSession:   command.PublicSession,
 	})
 	if err != nil {
 		return MessagesResult{}, err
@@ -161,10 +179,13 @@ func (s MessagesService) MutateMessages(ctx context.Context, command MessagesMut
 		nextTarget = command.TargetPlayerID
 	}
 	messages, err := s.repository.GetMessages(ctx, MessagesQuery{
-		PlayerID:       session.Session.PlayerID,
-		PlanetID:       command.PlanetID,
-		TargetPlayerID: nextTarget,
-		PublicSession:  command.PublicSession,
+		PlayerID:             session.Session.PlayerID,
+		PlanetID:             command.PlanetID,
+		TargetPlayerID:       nextTarget,
+		PublicSession:        command.PublicSession,
+		LegacyFolderDisplay:  command.LegacyFolderDisplay,
+		MessageTypeFilter:    command.MessageTypeFilter,
+		HasMessageTypeFilter: command.HasMessageTypeFilter,
 	})
 	if err != nil {
 		return MessagesResult{}, err

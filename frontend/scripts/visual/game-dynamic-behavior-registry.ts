@@ -221,6 +221,48 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers legacy messages category links preserving pm= and filtering the inbox by message type."]
   },
   {
+    name: "messages-folder-checkbox-state-persists",
+    legacyPage: "messages",
+    legacyQuery: { dsp: "1" },
+    migratedPath: "/game/messages",
+    migratedQuery: { dsp: "1" },
+    legacyReady: "#content input[name='espioopen']",
+    migratedReady: ".legacy-messages-table input[name='espioopen']",
+    requiredFixtureFeatures: ["commander", "report"],
+    isolateSides: true,
+    actions: [
+      { type: "click", selector: "input[name='espioopen']" },
+      { type: "click", selector: "input[name='combatopen']" },
+      { type: "click", selector: "input[name='fullreports']" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='ok']",
+        migratedSelector: ".legacy-messages-table input[type='submit'][value='ok']",
+        waitForSelector: "input[name='espioopen']:checked",
+        waitMs: 200
+      }
+    ],
+    assertions: [
+      { name: "spy-folder-checked", type: "checked", selector: "input[name='espioopen']", compareSides: true },
+      { name: "combat-folder-checked", type: "checked", selector: "input[name='combatopen']", compareSides: true },
+      { name: "expedition-folder-unchecked", type: "checked", selector: "input[name='expopen']", compareSides: true },
+      { name: "partial-reports-checked", type: "checked", selector: "input[name='fullreports']", compareSides: true },
+      {
+        name: "partial-spy-popup-link-count",
+        type: "count",
+        legacySelector: "#content a[onclick*='page=bericht']",
+        migratedSelector: ".legacy-messages-table a[data-legacy-popup][href*='/game/report']",
+        compareSides: true
+      }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-messages"
+    },
+    linkAudit: { enabled: false },
+    notes: ["Covers multiple Commander message folder checkboxes, fullreports persistence, and partial spy report rendering after ok."]
+  },
+  {
     name: "messages-personal-reply-link",
     legacyPage: "messages",
     legacyQuery: { dsp: "1", pm: "0" },

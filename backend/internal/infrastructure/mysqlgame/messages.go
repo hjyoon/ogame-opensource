@@ -23,6 +23,7 @@ type MessagesRepository struct {
 
 const (
 	messageUserFlagDontUseFolders    int64 = 0x20
+	messageUserFlagPartialReports    int64 = 0x40
 	messageUserFlagFolderEspionage   int64 = 0x100
 	messageUserFlagFolderCombat      int64 = 0x200
 	messageUserFlagFolderExpedition  int64 = 0x400
@@ -105,6 +106,7 @@ func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.Messa
 	if err != nil {
 		return domaingame.Messages{}, err
 	}
+	messages.PartialReports = retention.Flags&messageUserFlagPartialReports != 0
 	if err := r.deleteExpiredInboxMessages(ctx, messagesTable, query.PlayerID, retention); err != nil {
 		return domaingame.Messages{}, err
 	}
@@ -118,6 +120,7 @@ func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.Messa
 		if err != nil {
 			return domaingame.Messages{}, err
 		}
+		applyMessageCategoryChecks(summary, retention.Flags, query.HasMessageTypeFilter, query.MessageTypeFilter)
 		messages.Summary = summary
 		operators, err := r.loadOperators(ctx, usersTable, uniTable, query.PlayerID)
 		if err != nil {
@@ -126,14 +129,7 @@ func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.Messa
 		messages.Operators = operators
 		return messages, nil
 	}
-	rows, err := r.loadInboxRows(
-		ctx,
-		messagesTable,
-		query.PlayerID,
-		domaingame.NormalizeMessagesLimit(retention.CommanderActive),
-		query.MessageTypeFilter,
-		query.HasMessageTypeFilter,
-	)
+	rows, err := r.loadLegacyInboxRows(ctx, messagesTable, query.PlayerID, domaingame.NormalizeMessagesLimit(retention.CommanderActive), query, showLegacyFolders, retention.Flags)
 	if err != nil {
 		return domaingame.Messages{}, err
 	}
@@ -142,10 +138,14 @@ func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.Messa
 		if err != nil {
 			return domaingame.Messages{}, err
 		}
+		applyMessageCategoryChecks(summary, retention.Flags, query.HasMessageTypeFilter, query.MessageTypeFilter)
 		messages.Summary = summary
 	}
 	if err := r.markInboxRowsRead(ctx, messagesTable, query.PlayerID, rows); err != nil {
 		return domaingame.Messages{}, err
+	}
+	if messages.PartialReports {
+		applyPartialSpyReports(rows)
 	}
 	messages.Rows = rows
 	operators, err := r.loadOperators(ctx, usersTable, uniTable, query.PlayerID)
@@ -315,11 +315,36 @@ func (r MessagesRepository) MutateMessages(ctx context.Context, query appgame.Me
 }
 
 func (r MessagesRepository) loadInboxRows(ctx context.Context, messagesTable string, playerID int, limit int, messageTypeFilter int, hasMessageTypeFilter bool) ([]domaingame.Message, error) {
+	messageTypes := []int{}
+	if hasMessageTypeFilter {
+		messageTypes = append(messageTypes, messageTypeFilter)
+	}
+	return r.loadInboxRowsByMessageTypes(ctx, messagesTable, playerID, limit, messageTypes)
+}
+
+func (r MessagesRepository) loadLegacyInboxRows(ctx context.Context, messagesTable string, playerID int, limit int, query appgame.MessagesQuery, showLegacyFolders bool, flags int64) ([]domaingame.Message, error) {
+	if query.HasMessageTypeFilter {
+		return r.loadInboxRowsByMessageTypes(ctx, messagesTable, playerID, limit, []int{query.MessageTypeFilter})
+	}
+	if showLegacyFolders {
+		return r.loadInboxRowsByMessageTypes(ctx, messagesTable, playerID, limit, legacyMessageTypesForFolderFlags(flags))
+	}
+	return r.loadInboxRowsByMessageTypes(ctx, messagesTable, playerID, limit, nil)
+}
+
+func (r MessagesRepository) loadInboxRowsByMessageTypes(ctx context.Context, messagesTable string, playerID int, limit int, messageTypes []int) ([]domaingame.Message, error) {
 	statement := fmt.Sprintf("SELECT msg_id, pm, msgfrom, subj, text, shown, date FROM %s WHERE owner_id = ? AND pm <> ?", messagesTable)
 	args := []any{playerID, domaingame.MessageTypeBattleReportText}
-	if hasMessageTypeFilter {
+	if len(messageTypes) == 1 {
 		statement += " AND pm = ?"
-		args = append(args, messageTypeFilter)
+		args = append(args, messageTypes[0])
+	} else if len(messageTypes) > 1 {
+		placeholders := make([]string, 0, len(messageTypes))
+		for _, messageType := range messageTypes {
+			placeholders = append(placeholders, "?")
+			args = append(args, messageType)
+		}
+		statement += " AND pm IN (" + strings.Join(placeholders, ", ") + ")"
 	}
 	statement += " ORDER BY date DESC, msg_id DESC LIMIT ?"
 	args = append(args, limit)
@@ -347,11 +372,89 @@ func (r MessagesRepository) loadInboxRows(ctx context.Context, messagesTable str
 	return messages, nil
 }
 
+func applyPartialSpyReports(rows []domaingame.Message) {
+	for index := range rows {
+		if rows[index].Type != domaingame.MessageTypeSpyReport {
+			continue
+		}
+		rows[index].Subject = fmt.Sprintf(
+			"<a href=\"#\" onclick=\"fenster('index.php?page=bericht&session={PUBLIC_SESSION}&bericht=%d', 'Bericht_Spionage');\" >%s</a>",
+			rows[index].ID,
+			rows[index].Subject,
+		)
+		rows[index].Text = ""
+	}
+}
+
+func applyMessageCategoryChecks(counts []domaingame.MessageCategoryCount, flags int64, hasMessageTypeFilter bool, messageTypeFilter int) {
+	for index := range counts {
+		messageType := messageTypeForMessageCategoryKey(counts[index].Key)
+		if hasMessageTypeFilter {
+			counts[index].Checked = messageType == messageTypeFilter
+			continue
+		}
+		counts[index].Checked = flags&messageFolderFlagForMessageType(messageType) != 0
+	}
+}
+
+func legacyMessageTypesForFolderFlags(flags int64) []int {
+	messageTypes := []int{}
+	for _, messageType := range []int{
+		domaingame.MessageTypeSpyReport,
+		domaingame.MessageTypeBattleReportLink,
+		domaingame.MessageTypeExpedition,
+		domaingame.MessageTypeAlliance,
+		domaingame.MessageTypePM,
+		domaingame.MessageTypeMisc,
+	} {
+		if flags&messageFolderFlagForMessageType(messageType) != 0 {
+			messageTypes = append(messageTypes, messageType)
+		}
+	}
+	return messageTypes
+}
+
+func messageTypeForMessageCategoryKey(key string) int {
+	switch key {
+	case "spy":
+		return domaingame.MessageTypeSpyReport
+	case "battle":
+		return domaingame.MessageTypeBattleReportLink
+	case "expedition":
+		return domaingame.MessageTypeExpedition
+	case "alliance":
+		return domaingame.MessageTypeAlliance
+	case "personal":
+		return domaingame.MessageTypePM
+	default:
+		return domaingame.MessageTypeMisc
+	}
+}
+
+func messageFolderFlagForMessageType(messageType int) int64 {
+	switch messageType {
+	case domaingame.MessageTypeSpyReport:
+		return messageUserFlagFolderEspionage
+	case domaingame.MessageTypeBattleReportLink:
+		return messageUserFlagFolderCombat
+	case domaingame.MessageTypeExpedition:
+		return messageUserFlagFolderExpedition
+	case domaingame.MessageTypeAlliance:
+		return messageUserFlagFolderAlliance
+	case domaingame.MessageTypePM:
+		return messageUserFlagFolderPlayer
+	default:
+		return messageUserFlagFolderOther
+	}
+}
+
 func (r MessagesRepository) mutateInboxMessages(ctx context.Context, messagesTable string, usersTable string, reportsTable string, query appgame.MessagesMutationQuery) (*domaingame.MessageActionIssue, error) {
 	deleteMode := domaingame.NormalizeMessageDeleteMode(query.DeleteMode)
 	if deleteMode == domaingame.MessageDeleteModeAllMessages {
-		_, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE owner_id = ?", messagesTable), query.PlayerID)
-		return nil, err
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE owner_id = ?", messagesTable), query.PlayerID); err != nil {
+			return nil, err
+		}
+		return nil, r.updateMessageUserFlags(ctx, usersTable, query)
 	}
 
 	commanderActive, err := r.loadCommanderActive(ctx, usersTable, query.PlayerID)
@@ -388,7 +491,48 @@ func (r MessagesRepository) mutateInboxMessages(ctx context.Context, messagesTab
 			return nil, err
 		}
 	}
+	if err := r.updateMessageUserFlags(ctx, usersTable, query); err != nil {
+		return nil, err
+	}
 	return issue, nil
+}
+
+func (r MessagesRepository) updateMessageUserFlags(ctx context.Context, usersTable string, query appgame.MessagesMutationQuery) error {
+	if query.PartialReports == nil && query.FolderSelection == nil {
+		return nil
+	}
+	state, err := r.loadMessageRetentionState(ctx, usersTable, query.PlayerID)
+	if err != nil {
+		return err
+	}
+	flags := state.Flags
+	if query.PartialReports != nil {
+		if *query.PartialReports {
+			flags |= messageUserFlagPartialReports
+		} else {
+			flags &^= messageUserFlagPartialReports
+		}
+	}
+	if query.FolderSelection != nil && state.CommanderActive && flags&messageUserFlagDontUseFolders == 0 {
+		flags = setMessageFolderFlag(flags, messageUserFlagFolderEspionage, query.FolderSelection.Spy)
+		flags = setMessageFolderFlag(flags, messageUserFlagFolderCombat, query.FolderSelection.Battle)
+		flags = setMessageFolderFlag(flags, messageUserFlagFolderExpedition, query.FolderSelection.Expedition)
+		flags = setMessageFolderFlag(flags, messageUserFlagFolderAlliance, query.FolderSelection.Alliance)
+		flags = setMessageFolderFlag(flags, messageUserFlagFolderPlayer, query.FolderSelection.Personal)
+		flags = setMessageFolderFlag(flags, messageUserFlagFolderOther, query.FolderSelection.Other)
+	}
+	if flags == state.Flags {
+		return nil
+	}
+	_, err = r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET flags = ? WHERE player_id = ?", usersTable), flags, query.PlayerID)
+	return err
+}
+
+func setMessageFolderFlag(flags int64, flag int64, enabled bool) int64 {
+	if enabled {
+		return flags | flag
+	}
+	return flags &^ flag
 }
 
 func (r MessagesRepository) messageDeleteIDs(mode string, rows []domaingame.Message, selected []int) []int {

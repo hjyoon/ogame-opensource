@@ -267,6 +267,20 @@ export type GameMessagesStatus = {
   messages?: GameMessages;
 };
 
+export type GameMessagesMutationOptions = {
+  partialReports: boolean;
+  folderSelection?: GameMessageFolderSelection;
+};
+
+export type GameMessageFolderSelection = {
+  spy: boolean;
+  battle: boolean;
+  expedition: boolean;
+  alliance: boolean;
+  personal: boolean;
+  other: boolean;
+};
+
 export type GameReportStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
@@ -906,6 +920,7 @@ type GameMessages = {
   currentPlanet: GamePlanetOverview;
   planetSwitcher: GamePlanetSummary[];
   action: "summary" | "inbox" | "compose";
+  partialReports: boolean;
   rows: GameMessage[];
   summary: GameMessageCategoryCount[];
   operators: GameMessageOperator[];
@@ -917,6 +932,7 @@ type GameMessageCategoryCount = {
   label: string;
   total: number;
   unread: number;
+  checked: boolean;
 };
 
 type GameMessage = {
@@ -1734,7 +1750,7 @@ type LegacyGameOverviewProps = {
   messagesStatus: GameMessagesStatus | null;
   messagesError: string | null;
   messagesPending: boolean;
-  onMessagesDelete: (deleteMode: string, messageIDs: number[], reportIDs: number[]) => void;
+  onMessagesDelete: (deleteMode: string, messageIDs: number[], reportIDs: number[], options?: GameMessagesMutationOptions) => void;
   onMessageSend: (targetPlayerID: number, subject: string, text: string) => void;
   reportStatus: GameReportStatus | null;
   reportError: string | null;
@@ -11871,7 +11887,7 @@ function MessagesTable({
 }: {
   actionIssue?: { code: string; message: string };
   messages: GameMessages;
-  onDelete: (deleteMode: string, messageIDs: number[], reportIDs: number[]) => void;
+  onDelete: (deleteMode: string, messageIDs: number[], reportIDs: number[], options?: GameMessagesMutationOptions) => void;
   onSend: (targetPlayerID: number, subject: string, text: string) => void;
   pending: boolean;
 }) {
@@ -11879,29 +11895,13 @@ function MessagesTable({
     return <MessageComposeTable actionIssue={actionIssue} compose={messages.compose} onSend={onSend} pending={pending} />;
   }
   if (messages.action === "summary") {
-    return <MessageSummaryTable messages={messages} pending={pending} />;
+    return <MessageSummaryTable messages={messages} onDelete={onDelete} pending={pending} />;
   }
   const showLegacyFolders = messages.summary.length > 0;
   const submitMessages = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const nativeEvent = event.nativeEvent as SubmitEvent;
-    const submitter = nativeEvent.submitter instanceof HTMLInputElement ? nativeEvent.submitter : null;
-    const deleteMode =
-      submitter?.dataset.deleteMode ?? (submitter?.name === "deletemessages" ? submitter.value : String(data.get("deletemessages") ?? ""));
-    const messageIDs: number[] = [];
-    const reportIDs: number[] = [];
-    for (const [key] of data) {
-      const deleteMatch = /^delmes(\d+)$/.exec(key);
-      if (deleteMatch) {
-        messageIDs.push(Number(deleteMatch[1]));
-      }
-      const reportMatch = /^sneak(\d+)$/.exec(key);
-      if (reportMatch) {
-        reportIDs.push(Number(reportMatch[1]));
-      }
-    }
-    onDelete(deleteMode, messageIDs, reportIDs);
+    const mutation = collectMessagesFormMutation(event, showLegacyFolders);
+    onDelete(mutation.deleteMode, mutation.messageIDs, mutation.reportIDs, mutation.options);
   };
   const handleMessageClick = (event: React.MouseEvent<HTMLElement>) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
@@ -11952,7 +11952,7 @@ function MessagesTable({
                 <MessageSummaryRows categories={messages.summary} pending={pending} />
                 <tr>
                   <th colSpan={4}>
-                    <input disabled={pending} name="fullreports" type="checkbox" /> Show intelligence data partially{" "}
+                    <input defaultChecked={messages.partialReports} disabled={pending} name="fullreports" type="checkbox" /> Show intelligence data partially{" "}
                   </th>
                 </tr>
                 <tr>
@@ -12015,7 +12015,7 @@ function MessagesTable({
               <>
                 <tr>
                   <th colSpan={4}>
-                    <input disabled={pending} name="fullreports" type="checkbox" /> Show intelligence data partially{" "}
+                    <input defaultChecked={messages.partialReports} disabled={pending} name="fullreports" type="checkbox" /> Show intelligence data partially{" "}
                   </th>
                 </tr>
                 <tr>
@@ -12051,11 +12051,63 @@ function MessagesTable({
   );
 }
 
-function MessageSummaryTable({ messages, pending }: { messages: GameMessages; pending: boolean }) {
+function collectMessagesFormMutation(event: React.FormEvent<HTMLFormElement>, includeFolderSelection: boolean): {
+  deleteMode: string;
+  messageIDs: number[];
+  reportIDs: number[];
+  options: GameMessagesMutationOptions;
+} {
+  const data = new FormData(event.currentTarget);
+  const nativeEvent = event.nativeEvent as SubmitEvent;
+  const submitter = nativeEvent.submitter instanceof HTMLInputElement ? nativeEvent.submitter : null;
+  const deleteMode =
+    submitter?.dataset.deleteMode ?? (submitter?.name === "deletemessages" ? submitter.value : String(data.get("deletemessages") ?? ""));
+  const messageIDs: number[] = [];
+  const reportIDs: number[] = [];
+  for (const [key] of data) {
+    const deleteMatch = /^delmes(\d+)$/.exec(key);
+    if (deleteMatch) {
+      messageIDs.push(Number(deleteMatch[1]));
+    }
+    const reportMatch = /^sneak(\d+)$/.exec(key);
+    if (reportMatch) {
+      reportIDs.push(Number(reportMatch[1]));
+    }
+  }
+  const options: GameMessagesMutationOptions = {
+    partialReports: data.get("fullreports") === "on"
+  };
+  if (includeFolderSelection) {
+    options.folderSelection = {
+      spy: data.get("espioopen") === "on",
+      battle: data.get("combatopen") === "on",
+      expedition: data.get("expopen") === "on",
+      alliance: data.get("allyopen") === "on",
+      personal: data.get("useropen") === "on",
+      other: data.get("generalopen") === "on"
+    };
+  }
+  return { deleteMode, messageIDs, reportIDs, options };
+}
+
+function MessageSummaryTable({
+  messages,
+  onDelete,
+  pending
+}: {
+  messages: GameMessages;
+  onDelete: (deleteMode: string, messageIDs: number[], reportIDs: number[], options?: GameMessagesMutationOptions) => void;
+  pending: boolean;
+}) {
   const categories = messages.summary.length > 0 ? messages.summary : defaultMessageSummaryCategories();
+  const submitMessages = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const mutation = collectMessagesFormMutation(event, true);
+    onDelete(mutation.deleteMode, mutation.messageIDs, mutation.reportIDs, mutation.options);
+  };
   return (
     <MessagesOuterTable>
-      <form action={gameRouteURL("/game/messages", window.location.search)} method="post">
+      <form action={gameRouteURL("/game/messages", window.location.search)} method="post" onSubmit={submitMessages}>
         <table className="legacy-overview-table legacy-messages-table" width={519}>
           <tbody>
             <tr>
@@ -12082,7 +12134,7 @@ function MessageSummaryTable({ messages, pending }: { messages: GameMessages; pe
             <MessageSummaryRows categories={categories} pending={pending} />
             <tr>
               <th colSpan={4}>
-                <input disabled={pending} name="fullreports" type="checkbox" />{" "}
+                <input defaultChecked={messages.partialReports} disabled={pending} name="fullreports" type="checkbox" />{" "}
                 Show intelligence data partially{" "}
               </th>
             </tr>
@@ -12122,7 +12174,7 @@ function MessageSummaryRows({ categories, pending }: { categories: GameMessageCa
         <tr key={category.key}>
           <th>
             <input
-              defaultChecked={messageSummaryCategoryChecked(category.key)}
+              defaultChecked={messageSummaryCategoryChecked(category)}
               disabled={pending}
               name={messageSummaryCheckboxName(category.key)}
               type="checkbox"
@@ -12181,7 +12233,7 @@ function messageSummaryCategoryHref(key: string): string {
   return gameRouteURL("/game/messages", query.toString());
 }
 
-function messageSummaryCategoryChecked(key: string): boolean {
+function messageSummaryCategoryChecked(category: GameMessageCategoryCount): boolean {
   const messageTypes: Record<string, string> = {
     spy: "1",
     battle: "2",
@@ -12191,17 +12243,20 @@ function messageSummaryCategoryChecked(key: string): boolean {
     other: "5"
   };
   const selected = new URLSearchParams(window.location.search).get("pm");
-  return selected !== null && selected === (messageTypes[key] ?? "5");
+  if (selected !== null) {
+    return selected === (messageTypes[category.key] ?? "5");
+  }
+  return category.checked;
 }
 
 function defaultMessageSummaryCategories(): GameMessageCategoryCount[] {
   return [
-    { key: "spy", label: "Spy Reports", total: 0, unread: 0 },
-    { key: "battle", label: "Combat Reports", total: 0, unread: 0 },
-    { key: "expedition", label: "Expedition Reports", total: 0, unread: 0 },
-    { key: "alliance", label: "Alliance Reports", total: 0, unread: 0 },
-    { key: "personal", label: "Personal Messages", total: 0, unread: 0 },
-    { key: "other", label: "Other", total: 0, unread: 0 }
+    { key: "spy", label: "Spy Reports", total: 0, unread: 0, checked: false },
+    { key: "battle", label: "Combat Reports", total: 0, unread: 0, checked: false },
+    { key: "expedition", label: "Expedition Reports", total: 0, unread: 0, checked: false },
+    { key: "alliance", label: "Alliance Reports", total: 0, unread: 0, checked: false },
+    { key: "personal", label: "Personal Messages", total: 0, unread: 0, checked: false },
+    { key: "other", label: "Other", total: 0, unread: 0, checked: false }
   ];
 }
 

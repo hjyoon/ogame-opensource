@@ -3902,7 +3902,7 @@ func TestGameMessagesEndpointMutatesMessages(t *testing.T) {
 		},
 	}}
 	server := testServerWithGameMessages(t, messages)
-	req := httptest.NewRequest(http.MethodPost, "/api/game/messages?session=public&cp=99", strings.NewReader(`{"action":"send","targetPlayerId":77,"subject":"Hi","text":"Body","deleteMode":"deletemarked","messageIds":[1,2],"reportIds":[3]}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/game/messages?session=public&cp=99&dsp=1&pm=1", strings.NewReader(`{"action":"send","targetPlayerId":77,"subject":"Hi","text":"Body","deleteMode":"deletemarked","messageIds":[1,2],"reportIds":[3],"partialReports":true,"folderSelection":{"spy":true,"battle":false,"expedition":true,"alliance":false,"personal":true,"other":false}}`))
 	req.RemoteAddr = "203.0.113.10:4321"
 	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
 	rec := httptest.NewRecorder()
@@ -3922,6 +3922,11 @@ func TestGameMessagesEndpointMutatesMessages(t *testing.T) {
 		messages.mutationCommand.Subject != "Hi" || messages.mutationCommand.Text != "Body" ||
 		messages.mutationCommand.DeleteMode != "deletemarked" || len(messages.mutationCommand.MessageIDs) != 2 ||
 		len(messages.mutationCommand.ReportIDs) != 1 || messages.mutationCommand.PlanetID != 99 ||
+		messages.mutationCommand.PartialReports == nil || !*messages.mutationCommand.PartialReports ||
+		messages.mutationCommand.FolderSelection == nil || !messages.mutationCommand.FolderSelection.Spy ||
+		messages.mutationCommand.FolderSelection.Battle || !messages.mutationCommand.FolderSelection.Expedition ||
+		!messages.mutationCommand.LegacyFolderDisplay || !messages.mutationCommand.HasMessageTypeFilter ||
+		messages.mutationCommand.MessageTypeFilter != domaingame.MessageTypeSpyReport ||
 		messages.mutationCommand.PrivateSessions["prsess_42_1"] != "private" {
 		t.Fatalf("unexpected mutation command: %+v", messages.mutationCommand)
 	}

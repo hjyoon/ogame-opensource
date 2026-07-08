@@ -76,7 +76,7 @@ function auth_visual_prepare_user(string $name, string $password, int $adminLeve
         "ally_id=0, allyrank=0, joindate=0, com_until=0, adm_until=0, eng_until=0, geo_until=0, tec_until=0, dm=0, dmfree=5000, trader=1, rate_m=3, rate_k=2, rate_d=1, " .
         "`" . GID_R_COMPUTER . "`=3, `" . GID_R_COMBUST_DRIVE . "`=2, `" . GID_R_EXPEDITION . "`=3, " .
         "score1=10000, score2=0, score3=0, place1=1, place2=1, place3=1, " .
-        "noattack=0, noattack_until=0, lang='en', skin='/evolution/', useskin=1, " .
+        "noattack=0, noattack_until=0, lang='en', skin='/evolution/', useskin=1, flags=" . USER_FLAG_DEFAULT . ", " .
         "hplanetid={$homePlanetId}, aktplanet={$homePlanetId}, lastclick={$now} WHERE player_id={$playerId}"
     );
 

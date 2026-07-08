@@ -67,16 +67,21 @@ func TestMessagesServiceMutatesMessagesForAuthenticatedSession(t *testing.T) {
 	service := NewMessagesService(sessions, repository)
 
 	result, err := service.MutateMessages(context.Background(), MessagesMutationCommand{
-		PublicSession:   "public",
-		PrivateSessions: map[string]string{"private": "token"},
-		RemoteAddr:      "203.0.113.9",
-		PlanetID:        99,
-		Action:          domaingame.MessagesMutationActionSend,
-		TargetPlayerID:  77,
-		Subject:         "hello",
-		Text:            "body",
-		MessageIDs:      []int{1, 1, -2},
-		ReportIDs:       []int{3, 3, 0},
+		PublicSession:        "public",
+		PrivateSessions:      map[string]string{"private": "token"},
+		RemoteAddr:           "203.0.113.9",
+		PlanetID:             99,
+		Action:               domaingame.MessagesMutationActionSend,
+		TargetPlayerID:       77,
+		Subject:              "hello",
+		Text:                 "body",
+		MessageIDs:           []int{1, 1, -2},
+		ReportIDs:            []int{3, 3, 0},
+		PartialReports:       boolPtr(true),
+		FolderSelection:      &MessageFolderSelection{Spy: true, Battle: true, Expedition: false, Alliance: true, Personal: false, Other: true},
+		LegacyFolderDisplay:  true,
+		MessageTypeFilter:    domaingame.MessageTypeSpyReport,
+		HasMessageTypeFilter: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -86,10 +91,13 @@ func TestMessagesServiceMutatesMessagesForAuthenticatedSession(t *testing.T) {
 	}
 	if repository.mutation.PlayerID != 42 || repository.mutation.PlanetID != 99 || repository.mutation.TargetPlayerID != 77 ||
 		repository.mutation.Subject != "hello" || repository.mutation.Text != "body" || len(repository.mutation.MessageIDs) != 1 ||
-		len(repository.mutation.ReportIDs) != 1 {
+		len(repository.mutation.ReportIDs) != 1 || repository.mutation.PartialReports == nil || !*repository.mutation.PartialReports ||
+		repository.mutation.FolderSelection == nil || !repository.mutation.FolderSelection.Spy || !repository.mutation.FolderSelection.Battle {
 		t.Fatalf("unexpected mutation query: %+v", repository.mutation)
 	}
-	if repository.query.TargetPlayerID != 77 || sessions.command.RemoteAddr != "203.0.113.9" {
+	if repository.query.TargetPlayerID != 77 || !repository.query.LegacyFolderDisplay ||
+		!repository.query.HasMessageTypeFilter || repository.query.MessageTypeFilter != domaingame.MessageTypeSpyReport ||
+		sessions.command.RemoteAddr != "203.0.113.9" {
 		t.Fatalf("unexpected returned query/session command: query=%+v session=%+v", repository.query, sessions.command)
 	}
 }
@@ -193,4 +201,8 @@ func (f *fakeMessagesRepository) MutateMessages(_ context.Context, query Message
 		return MessagesMutationOutcome{}, f.err
 	}
 	return f.outcome, nil
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }

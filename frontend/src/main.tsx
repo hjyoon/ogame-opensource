@@ -21,6 +21,7 @@ import {
   type GameMerchantStatus,
   type GameMerchantTradeValues,
   type GameMessagesStatus,
+  type GameMessagesMutationOptions,
   type GameOfficerRecruitment,
   type GameOfficersStatus,
   type GameNoteDraft,
@@ -2016,9 +2017,11 @@ function App() {
     }
     const currentSearch = new URLSearchParams(search);
     const messagesSearch = new URLSearchParams({ session: publicSession });
-    const selectedPlanet = currentSearch.get("cp");
-    if (selectedPlanet) {
-      messagesSearch.set("cp", selectedPlanet);
+    for (const key of ["cp", "dsp", "pm"]) {
+      const value = currentSearch.get(key);
+      if (value) {
+        messagesSearch.set(key, value);
+      }
     }
     setGameMessagesPending(true);
     setGameMessagesError(null);
@@ -2047,8 +2050,13 @@ function App() {
       .finally(() => setGameMessagesPending(false));
   };
 
-  const submitGameMessagesDelete = (deleteMode: string, messageIds: number[], reportIds: number[]) => {
-    submitGameMessagesMutation({ action: "delete", deleteMode, messageIds, reportIds });
+  const submitGameMessagesDelete = (
+    deleteMode: string,
+    messageIds: number[],
+    reportIds: number[],
+    options?: GameMessagesMutationOptions
+  ) => {
+    submitGameMessagesMutation({ action: "delete", deleteMode, messageIds, reportIds, ...(options ?? {}) });
   };
 
   const submitGameMessageSend = (targetPlayerId: number, subject: string, text: string) => {

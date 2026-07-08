@@ -40,6 +40,7 @@ type Messages struct {
 	CurrentPlanet  PlanetOverview
 	PlanetSwitcher []PlanetSummary
 	Action         string
+	PartialReports bool
 	Rows           []Message
 	Summary        []MessageCategoryCount
 	Operators      []MessageOperator
@@ -47,10 +48,11 @@ type Messages struct {
 }
 
 type MessageCategoryCount struct {
-	Key    string
-	Label  string
-	Total  int
-	Unread int
+	Key     string
+	Label   string
+	Total   int
+	Unread  int
+	Checked bool
 }
 
 type Message struct {
