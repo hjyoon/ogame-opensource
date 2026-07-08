@@ -294,6 +294,64 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers coordinate links embedded in personal message rows."]
   },
   {
+    name: "messages-combat-report-popup-link",
+    legacyPage: "messages",
+    legacyQuery: { dsp: "1", pm: "2" },
+    migratedPath: "/game/messages",
+    migratedQuery: { dsp: "1", pm: "2" },
+    legacyReady: "#content a[onclick*='page=bericht']",
+    migratedReady: ".legacy-messages-table a[data-legacy-popup][href*='/game/report']",
+    requiredFixtureFeatures: ["report"],
+    actions: [
+      {
+        type: "popup",
+        legacySelector: "#content a[onclick*='page=bericht']",
+        migratedSelector: ".legacy-messages-table a[data-legacy-popup][href*='/game/report']",
+        legacyPopupWaitForSelector: "body",
+        migratedPopupWaitForSelector: ".legacy-report-table"
+      }
+    ],
+    assertions: [
+      {
+        name: "popup-body",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.bodyText ?? ''",
+        contains: "Contact with the attacking fleet"
+      },
+      {
+        name: "popup-width",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.innerWidth ?? 0",
+        compareSides: true,
+        tolerance: 4
+      },
+      {
+        name: "popup-height",
+        type: "evaluate",
+        expression: "window.__ogameDynamicPopup?.innerHeight ?? 0",
+        compareSides: true,
+        tolerance: 4
+      },
+      {
+        name: "popup-report-param",
+        type: "evaluate",
+        expression: "/bericht=\\d+/.test(window.__ogameDynamicPopup?.url ?? '')",
+        expected: "true"
+      }
+    ],
+    linkAudit: {
+      expected: [
+        {
+          name: "messages-combat-report-popup-target",
+          target: "/game/report?*bericht=#*",
+          scope: "action",
+          classification: "popup"
+        }
+      ]
+    },
+    notes: ["Covers combat report links embedded in message rows opening the legacy Bericht_Kampf popup."]
+  },
+  {
     name: "notes-create-text-counter",
     legacyPage: "notizen",
     legacyQuery: { a: "1" },
@@ -2462,6 +2520,36 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "tooltip-text", type: "text", selector: "#overDiv", compareSides: true }
     ],
     notes: ["Covers event_list.php OverFleet() non-summary overlib hover in overview event rows."]
+  },
+  {
+    name: "overview-event-fleet-text-click-noop",
+    legacyPage: "overview",
+    migratedPath: "/game/overview",
+    legacyReady: "#content a[href='#']:has-text('fleet')",
+    migratedReady: ".legacy-overview-table a[href='#']:has-text('fleet')",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[href='#']:has-text('fleet')",
+        migratedSelector: ".legacy-overview-table a[href='#']:has-text('fleet')"
+      }
+    ],
+    assertions: [
+      {
+        name: "route-stays-overview",
+        type: "evaluate",
+        expression:
+          "(() => { const url = new URL(window.location.href); return (url.pathname === '/game/overview') || (url.pathname === '/game/index.php' && url.searchParams.get('page') === 'overview'); })()",
+        expected: "true"
+      },
+      {
+        name: "hash-only-anchor",
+        type: "evaluate",
+        expression: "window.location.href.endsWith('#')",
+        expected: "true"
+      }
+    ],
+    notes: ["Covers the legacy href=# fleet text anchor, which is hover-only and does not navigate to another game route."]
   },
   {
     name: "overview-event-summary-fleet-tooltip",

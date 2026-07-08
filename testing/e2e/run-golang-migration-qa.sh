@@ -86,6 +86,9 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     if [ "${OGAME_RUN_PUBLIC_LOGIN_DYNAMIC:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-public-login-dynamic-e2e.sh"
     fi
+    if [ "${OGAME_RUN_SESSION_EXPIRY_VISUAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-session-expiry-visual-e2e.sh"
+    fi
     if [ "${OGAME_RUN_AUTH_GAME_VISUAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-authenticated-game-visual-e2e.sh"
     fi

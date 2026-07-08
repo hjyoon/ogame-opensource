@@ -555,6 +555,16 @@ function App() {
     loadGameOverview();
   }, [gameRoute?.key, pathname, search]);
 
+  useEffect(() => {
+    if (!pathname.startsWith("/game") || gameOverview?.authenticated !== false) {
+      return;
+    }
+    const issueCode = gameOverview.issues[0]?.code ?? "";
+    if (issueCode === "session_invalid") {
+      window.location.replace("/");
+    }
+  }, [gameOverview, pathname]);
+
   const submitGamePlanetRename = (name: string) => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (publicSession === "") {

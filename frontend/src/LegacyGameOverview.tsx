@@ -2053,7 +2053,8 @@ export function LegacyGameOverview({
   logoutError
 }: LegacyGameOverviewProps) {
   const overview = status?.authenticated ? status.overview : undefined;
-  const issue = status && !status.authenticated ? status.issues[0]?.message ?? "Session is invalid." : null;
+  const primaryIssue = status && !status.authenticated ? status.issues[0] : undefined;
+  const issue = primaryIssue ? primaryIssue.message || "Session is invalid." : null;
   useLegacyTextCounterCompatibility();
   useLegacyOverlibCompatibility();
   React.useEffect(() => {
@@ -2313,6 +2314,10 @@ export function LegacyGameOverview({
         <div id="overDiv" style={{ left: -10000, position: "absolute", top: -10000, visibility: "hidden", zIndex: 1000 }} />
       </main>
     );
+  }
+
+  if (primaryIssue?.code === "private_session_invalid" || primaryIssue?.code === "ip_mismatch") {
+    return <LegacyInvalidSessionPage />;
   }
 
   return (
@@ -2685,6 +2690,37 @@ const LegacyPageError = React.forwardRef<HTMLDivElement, { messages: string[]; s
     </div>
   );
 });
+
+function LegacyInvalidSessionPage() {
+  return (
+    <main className="legacy-invalid-session-page">
+      <center>
+        <span style={{ fontSize: 16 }}>
+          <b>
+            {"    "}
+            <br />
+            <br />
+            <span style={{ color: "#FF0000" }}>An error occurred</span>
+            <br />
+            <br />
+            The session is invalid.
+            <br />
+            <br />
+            This can be due to several reasons:
+            <br />
+            - You logged into the same account several times;
+            <br />
+            - Your IP address has changed since the last time you logged in;
+            <br />- You are accessing the Internet through AOL or a proxy. Turn off IP verification in the "Settings" menu of your account.
+            <br />
+            <br />
+            Error-ID: <span className="legacy-invalid-session-error-id">0</span>{" "}
+          </b>
+        </span>
+      </center>
+    </main>
+  );
+}
 
 function isSearchPageErrorMessage(message: string): boolean {
   return message.startsWith("Too few characters!");
@@ -11854,11 +11890,23 @@ function MessagesTable({
     }
     onDelete(deleteMode, messageIDs, reportIDs);
   };
+  const handleMessageClick = (event: React.MouseEvent<HTMLElement>) => {
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+      return;
+    }
+    const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[data-legacy-popup]");
+    if (!anchor || !event.currentTarget.contains(anchor)) {
+      return;
+    }
+    event.preventDefault();
+    openLegacyPopup(anchor.href, anchor.dataset.legacyPopup ?? "");
+  };
   return (
     <MessagesOuterTable>
       <form
         action={gameRouteURL("/game/messages", window.location.search)}
         method="post"
+        onClick={handleMessageClick}
         onSubmit={submitMessages}
       >
         <table className="legacy-overview-table legacy-messages-table" width={519}>
@@ -12776,9 +12824,10 @@ function sanitizeLegacyMessageHTML(value: string): string {
   const doc = new DOMParser().parseFromString(`<div>${value}</div>`, "text/html");
   doc.querySelectorAll("script,style,iframe,object,embed,meta,link").forEach((node) => node.remove());
   doc.body.querySelectorAll("*").forEach((element) => {
-    const reportHref = legacyReportHrefFromOnClick(element.getAttribute("onclick") ?? "");
-    if (reportHref && element instanceof HTMLAnchorElement) {
-      element.href = reportHref;
+    const reportPopup = legacyReportPopupFromOnClick(element.getAttribute("onclick") ?? "");
+    if (reportPopup && element instanceof HTMLAnchorElement) {
+      element.href = reportPopup.href;
+      element.setAttribute("data-legacy-popup", reportPopup.name);
       element.removeAttribute("target");
     }
     if (element instanceof HTMLAnchorElement) {
@@ -12816,7 +12865,7 @@ function escapeHTML(value: string): string {
     .replaceAll("'", "&#039;");
 }
 
-function legacyReportHrefFromOnClick(value: string): string | null {
+function legacyReportPopupFromOnClick(value: string): { href: string; name: string } | null {
   if (!value.toLowerCase().includes("page=bericht")) {
     return null;
   }
@@ -12837,7 +12886,8 @@ function legacyReportHrefFromOnClick(value: string): string | null {
   if (session) {
     query.set("session", session);
   }
-  return gameRouteURL("/game/report", query.toString());
+  const popupMatch = /fenster\s*\(\s*['"][^'"]+['"]\s*,\s*['"]([^'"]+)['"]/i.exec(normalized);
+  return { href: gameRouteURL("/game/report", query.toString()), name: popupMatch?.[1] ?? "Bericht" };
 }
 
 function NotesTable({
