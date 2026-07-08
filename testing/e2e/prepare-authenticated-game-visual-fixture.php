@@ -427,6 +427,16 @@ function auth_visual_prepare_commander_fixture(array $user): void
     );
 }
 
+function auth_visual_prepare_premium_fixture(array $user): void
+{
+    global $db_prefix;
+
+    $playerId = (int)$user['player_id'];
+    dbquery("UPDATE {$db_prefix}users SET dm=250000, dmfree=50000 WHERE player_id={$playerId}");
+    InvalidateUserCache();
+    SelectPlanet($playerId, (int)$user['home_planet_id']);
+}
+
 function auth_visual_prepare_alliance_fixture(array $user, string $password): array
 {
     global $db_prefix;
@@ -788,6 +798,7 @@ try {
     $useReport = getenv('OGAME_GAME_VISUAL_REPORT_FIXTURE') === '1';
     $usePhalanx = getenv('OGAME_GAME_VISUAL_PHALANX_FIXTURE') === '1';
     $useAcs = getenv('OGAME_GAME_VISUAL_ACS_FIXTURE') === '1';
+    $usePremium = getenv('OGAME_GAME_VISUAL_PREMIUM_FIXTURE') === '1';
     $user = auth_visual_prepare_user($name, $password, $adminLevel);
     $adminUser = auth_visual_prepare_user('visualadmin', $password, USER_TYPE_ADMIN);
     $galaxyHover = auth_visual_prepare_galaxy_hover_fixture($user, $password);
@@ -809,6 +820,9 @@ try {
     $acs = null;
     if ($useCommander) {
         auth_visual_prepare_commander_fixture($user);
+    }
+    if ($usePremium) {
+        auth_visual_prepare_premium_fixture($user);
     }
     if ($useAlliance) {
         $alliance = auth_visual_prepare_alliance_fixture($user, $password);
@@ -855,6 +869,7 @@ try {
             'report' => $useReport,
             'phalanx' => $usePhalanx,
             'acs' => $useAcs,
+            'premium' => $usePremium,
         ),
         'session' => $auth['session'],
         'private_session' => $auth['private_session'],

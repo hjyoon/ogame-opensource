@@ -14,6 +14,7 @@ DYNAMIC_FIXTURE_ALLIANCE="${OGAME_GAME_VISUAL_ALLIANCE_FIXTURE:-1}"
 DYNAMIC_FIXTURE_REPORT="${OGAME_GAME_VISUAL_REPORT_FIXTURE:-1}"
 DYNAMIC_FIXTURE_PHALANX="${OGAME_GAME_VISUAL_PHALANX_FIXTURE:-1}"
 DYNAMIC_FIXTURE_ACS="${OGAME_GAME_VISUAL_ACS_FIXTURE:-1}"
+DYNAMIC_FIXTURE_PREMIUM="${OGAME_GAME_VISUAL_PREMIUM_FIXTURE:-1}"
 
 mkdir -p "$ROOT_DIR/.tmp"
 
@@ -36,8 +37,8 @@ wait_for_url "$GO_BASE_URL/api/healthz"
 
 for browser in $BROWSERS; do
   if [ "${OGAME_GAME_DYNAMIC_PREPARE_FIXTURE:-1}" = "1" ]; then
-    printf 'Authenticated game dynamic fixtures: commander=%s alliance=%s report=%s phalanx=%s acs=%s\n' \
-      "$DYNAMIC_FIXTURE_COMMANDER" "$DYNAMIC_FIXTURE_ALLIANCE" "$DYNAMIC_FIXTURE_REPORT" "$DYNAMIC_FIXTURE_PHALANX" "$DYNAMIC_FIXTURE_ACS"
+    printf 'Authenticated game dynamic fixtures: commander=%s alliance=%s report=%s phalanx=%s acs=%s premium=%s\n' \
+      "$DYNAMIC_FIXTURE_COMMANDER" "$DYNAMIC_FIXTURE_ALLIANCE" "$DYNAMIC_FIXTURE_REPORT" "$DYNAMIC_FIXTURE_PHALANX" "$DYNAMIC_FIXTURE_ACS" "$DYNAMIC_FIXTURE_PREMIUM"
     docker compose exec -T server mkdir -p "$LEGACY_E2E_CONTAINER_DIR" >/dev/null
     docker compose cp "$SCRIPT_DIR/prepare-authenticated-game-visual-fixture.php" "server:$LEGACY_E2E_CONTAINER_DIR/prepare-authenticated-game-visual-fixture.php" >/dev/null
     docker compose exec -T \
@@ -46,6 +47,7 @@ for browser in $BROWSERS; do
       -e OGAME_GAME_VISUAL_REPORT_FIXTURE="$DYNAMIC_FIXTURE_REPORT" \
       -e OGAME_GAME_VISUAL_PHALANX_FIXTURE="$DYNAMIC_FIXTURE_PHALANX" \
       -e OGAME_GAME_VISUAL_ACS_FIXTURE="$DYNAMIC_FIXTURE_ACS" \
+      -e OGAME_GAME_VISUAL_PREMIUM_FIXTURE="$DYNAMIC_FIXTURE_PREMIUM" \
       -e OGAME_GAME_VISUAL_USER="${OGAME_GAME_VISUAL_USER:-}" \
       -e OGAME_GAME_VISUAL_PASS="${OGAME_GAME_VISUAL_PASS:-}" \
       -e OGAME_GAME_VISUAL_ADMIN="${OGAME_GAME_VISUAL_ADMIN:-}" \
@@ -63,6 +65,7 @@ for browser in $BROWSERS; do
     OGAME_GAME_VISUAL_REPORT_FIXTURE="$DYNAMIC_FIXTURE_REPORT" \
     OGAME_GAME_VISUAL_PHALANX_FIXTURE="$DYNAMIC_FIXTURE_PHALANX" \
     OGAME_GAME_VISUAL_ACS_FIXTURE="$DYNAMIC_FIXTURE_ACS" \
+    OGAME_GAME_VISUAL_PREMIUM_FIXTURE="$DYNAMIC_FIXTURE_PREMIUM" \
     OGAME_GAME_DYNAMIC_OUTPUT_DIR="$ROOT_DIR/.tmp/playwright-authenticated-game-dynamic/$browser" \
     bun run e2e:dynamic:game-auth
   )

@@ -89,6 +89,13 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     if [ "${OGAME_RUN_AUTH_GAME_VISUAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-authenticated-game-visual-e2e.sh"
     fi
+    if [ "${OGAME_RUN_AUTH_GAME_COMMANDER_VISUAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" \
+      OGAME_GAME_VISUAL_COMMANDER_FIXTURE=1 \
+      OGAME_GAME_VISUAL_OUTPUT_ROOT="$ROOT_DIR/.tmp/playwright-authenticated-game-commander-visual" \
+      OGAME_GAME_VISUAL_FIXTURE_FILE="$ROOT_DIR/.tmp/authenticated-game-commander-visual-fixture.json" \
+      "$SCRIPT_DIR/run-playwright-authenticated-game-visual-e2e.sh"
+    fi
     if [ "${OGAME_RUN_AUTH_GAME_DYNAMIC:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-authenticated-game-dynamic-e2e.sh"
     fi

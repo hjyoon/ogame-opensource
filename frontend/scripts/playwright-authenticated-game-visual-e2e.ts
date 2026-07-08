@@ -113,7 +113,7 @@ const screenFilter =
   process.env.OGAME_GAME_VISUAL_SCREEN ?? process.env.OGAME_GAME_VISUAL_SCREENS ?? process.env.OGAME_GAME_VISUAL_AREA ?? "";
 const viewportFilter = process.env.OGAME_GAME_VISUAL_VIEWPORTS ?? process.env.OGAME_GAME_VISUAL_VIEWPORT ?? "";
 const fixture = await loadAuthFixture(process.env.OGAME_GAME_VISUAL_FIXTURE_FILE);
-const selectedScreens = selectGameVisualScreens(screenFilter);
+const selectedScreens = selectGameVisualScreens(screenFilter, { enabledFixtureFeatures: fixture?.features });
 const selectedViewports = selectGameVisualViewports(viewportFilter);
 const viewportFilterActive = viewportFilter.trim().length > 0;
 

@@ -39,7 +39,7 @@ type AuthFixture = {
   queue_short?: AuthProfile;
   research_short?: AuthProfile;
   shipyard_short?: AuthProfile;
-  features?: Partial<Record<"acs" | "alliance" | "commander" | "phalanx" | "report", boolean>>;
+  features?: Partial<Record<"acs" | "alliance" | "commander" | "phalanx" | "premium" | "report", boolean>>;
 };
 
 type AuthProfile = {
@@ -300,6 +300,8 @@ async function refreshAuthFixture(spec?: GameDynamicBehaviorSpec): Promise<AuthF
       `OGAME_GAME_VISUAL_PHALANX_FIXTURE=${fixtureFeatureFlag(spec, "phalanx", "1")}`,
       "-e",
       `OGAME_GAME_VISUAL_ACS_FIXTURE=${fixtureFeatureFlag(spec, "acs", "1")}`,
+      "-e",
+      `OGAME_GAME_VISUAL_PREMIUM_FIXTURE=${fixtureFeatureFlag(spec, "premium", "1")}`,
       "-e",
       `OGAME_GAME_VISUAL_USER=${process.env.OGAME_GAME_VISUAL_USER ?? ""}`,
       "-e",
@@ -798,6 +800,9 @@ function legacyPagePath(page: string, params: URLSearchParams): string {
   if (page === "trader") {
     return "/game/merchant";
   }
+  if (page === "micropayment" || page === "payment") {
+    return "/game/officers";
+  }
   if (page === "imperium") {
     return "/game/empire";
   }
@@ -1005,6 +1010,15 @@ function isRouteLink(link: RouteLink | null): link is RouteLink {
 }
 
 async function applyDeterministicSnapshotState(page: Page, spec: GameDynamicBehaviorSpec, side: SideName): Promise<void> {
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+    document.scrollingElement?.scrollTo(0, 0);
+    const content = document.getElementById("content");
+    if (content) {
+      content.scrollTop = 0;
+      content.scrollLeft = 0;
+    }
+  });
   await waitForStablePaint(page);
   const pageName = spec.visual?.normalizePageName ?? `game-${spec.legacyPage}`;
   const maskSelectors = spec.visual?.maskSelectors ?? [];

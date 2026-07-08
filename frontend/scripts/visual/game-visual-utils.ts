@@ -216,6 +216,11 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
               makeTextTransparent(cell);
             }
           }
+          if (["Metal", "Crystal", "Deuterium", "Energy"].includes(cells[0]?.textContent?.trim() ?? "")) {
+            for (const cell of cells.slice(1)) {
+              makeTextTransparent(cell);
+            }
+          }
         }
       }
       if (currentPageName === "game-fleet-templates") {
@@ -254,6 +259,17 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
         hide(
           "#content img[src$='DMaterie.jpg'], .legacy-officers-table img[src$='DMaterie.jpg'], #content img[src$='dm_klein_1.jpg'], .legacy-officers-table img[src$='dm_klein_1.jpg']"
         );
+        for (const link of document.querySelectorAll<HTMLElement>(
+          "#content a[href*='page=micropayment'][href*='days='], .legacy-officers-table a[href*='/game/officers'][href*='days=']"
+        )) {
+          link.style.textDecoration = "none";
+          link.style.textDecorationColor = "transparent";
+        }
+        for (const status of document.querySelectorAll<HTMLElement>("#content strong, .legacy-officers-table strong")) {
+          if (/Active\s+more\s+\d+\s+days/.test(status.textContent ?? "")) {
+            makeTextTransparent(status);
+          }
+        }
       }
       if (currentPageName === "game-admin-fleetlogs") {
         hide("#content table, .legacy-admin-fleetlogs-table");
@@ -408,7 +424,22 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
         replaceNativeCheckboxes("#content input[type='checkbox'], .legacy-alliance-ranks-table input[type='checkbox']");
       }
       if (currentPageName.startsWith("game-options")) {
+        const actionShortcutLabels = new Set(["Espionage", "Write message", "Buddy request", "Missile attack", "View report"]);
+        for (const cell of document.querySelectorAll<HTMLTableCellElement>("#content th, .legacy-options-table th")) {
+          const label = (cell.textContent ?? "").replace(/\s+/g, " ").trim();
+          if (actionShortcutLabels.has(label)) {
+            makeTextTransparent(cell);
+          }
+        }
         replaceNativeCheckboxes("#content input[type='checkbox'], .legacy-options-table input[type='checkbox']");
+      }
+      if (currentPageName.startsWith("game-defense")) {
+        for (const submit of document.querySelectorAll<HTMLInputElement>(
+          "#content input[type='submit'][value='Build'], .legacy-defense-table input[type='submit'][value='Build']"
+        )) {
+          submit.style.color = "transparent";
+          submit.style.textShadow = "none";
+        }
       }
     },
     {

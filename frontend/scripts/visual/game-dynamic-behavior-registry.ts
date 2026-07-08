@@ -1,5 +1,5 @@
 export type SideName = "legacy" | "migrated";
-export type GameFixtureFeature = "acs" | "alliance" | "commander" | "phalanx" | "report";
+export type GameFixtureFeature = "acs" | "alliance" | "commander" | "phalanx" | "premium" | "report";
 
 export type GameDynamicAction = {
   type: "click" | "dblclick" | "fill" | "type" | "select" | "hover" | "press" | "wait" | "popup";
@@ -82,7 +82,75 @@ export type GameDynamicBehaviorSpec = {
   notes?: string[];
 };
 
+const officerPurchaseTargets = [
+  { id: 1, key: "commander", name: "Commander" },
+  { id: 2, key: "admiral", name: "Admiral" },
+  { id: 3, key: "engineer", name: "Engineer" },
+  { id: 4, key: "geologist", name: "Geologist" },
+  { id: 5, key: "technocrat", name: "Technocrat" }
+] as const;
+
+const officerPurchaseVisualSpecs: GameDynamicBehaviorSpec[] = officerPurchaseTargets.map((officer) => ({
+  name: `officers-purchase-${officer.key}-visual`,
+  legacyPage: "micropayment",
+  migratedPath: "/game/officers",
+  legacyReady: "#content table",
+  migratedReady: ".legacy-officers-table",
+  requiredFixtureFeatures: ["premium"],
+  fixtureFeatures: { commander: false, premium: true },
+  isolateSides: true,
+  actions: [
+    {
+      type: "click",
+      legacySelector: `#content a[href*='type=${officer.id}'][href*='days=7']`,
+      migratedSelector: `.legacy-officers-table a[href*='type=${officer.id}'][href*='days=7']`,
+      waitForSelector: "text=The renewal was successful!"
+    }
+  ],
+  assertions: [
+    {
+      name: "purchase-success-message",
+      type: "evaluate",
+      expression: "document.body.innerText.includes('The renewal was successful!')",
+      expected: "true"
+    },
+    {
+      name: "purchased-officer-active",
+      type: "evaluate",
+      expression: `(() => { const text = document.body.innerText.replace(/\\s+/g, " "); const index = text.indexOf("${officer.name}"); return index >= 0 && text.slice(index, index + 220).includes("Active more"); })()`,
+      expected: "true"
+    },
+    {
+      name: "route-stays-officers",
+      type: "evaluate",
+      expression:
+        "(() => { const url = new URL(window.location.href); return url.pathname === '/game/officers' || (url.pathname === '/game/index.php' && url.searchParams.get('page') === 'micropayment'); })()",
+      expected: "true"
+    }
+  ],
+  visual: {
+    enabled: true,
+    normalizePageName: "game-officers",
+    maskSelectors: [
+      "#content a[href*='page=micropayment'][href*='days=']",
+      ".legacy-officers-table a[href*='/game/officers'][href*='days=']"
+    ]
+  },
+  linkAudit: {
+    expected: [
+      {
+        name: `${officer.key}-purchase-target`,
+        target: "/game/officers?*buynow=#*days=#*type=#*",
+        scope: "action",
+        classification: "visual"
+      }
+    ]
+  },
+  notes: [`Covers buying the ${officer.name} for 7 days, including exact post-purchase visual parity.`]
+}));
+
 export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
+  ...officerPurchaseVisualSpecs,
   {
     name: "messages-compose-text-counter",
     legacyPage: "writemessages",
@@ -1307,6 +1375,61 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers the imperium.php double-click building enqueue shortcut route."]
   },
   {
+    name: "commander-buildings-two-item-queue-visual",
+    isolateSides: true,
+    legacyPage: "b_building",
+    migratedPath: "/game/buildings",
+    legacyReady: "#content img[src*='gebaeude/1.gif']",
+    migratedReady: "[data-building-row='1']",
+    requiredFixtureFeatures: ["commander"],
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[href*='modus=add'][href*='techid=1']",
+        migratedSelector: ".legacy-buildings-table a[href*='modus=add'][href*='techid=1']",
+        waitForSelector: "#bxx",
+        waitMs: 300
+      },
+      {
+        type: "click",
+        legacySelector: "#content a[href*='modus=add'][href*='techid=2']",
+        migratedSelector: ".legacy-buildings-table a[href*='modus=add'][href*='techid=2']",
+        waitForSelector: "text=2.:",
+        waitMs: 300
+      }
+    ],
+    assertions: [
+      {
+        name: "two-queue-entries",
+        type: "evaluate",
+        expression: "document.body.innerText.includes('1.:') && document.body.innerText.includes('2.:')",
+        expected: "true"
+      },
+      {
+        name: "commander-queue-link-visible",
+        type: "evaluate",
+        expression: "document.body.innerText.includes('In the queue for construction')",
+        expected: "true"
+      }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-buildings",
+      maskSelectors: ["#bxx", "[id^='bxx']"]
+    },
+    linkAudit: {
+      expected: [
+        {
+          name: "commander-building-queue-add-target",
+          target: "/game/buildings?*modus=add*techid=#*",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
+    },
+    notes: ["Covers Commander construction queue automation by enqueueing two building tasks and exact-diffing the queued state."]
+  },
+  {
     name: "fleet-templates-edit-form-populates",
     legacyPage: "fleet_templates",
     migratedPath: "/game/fleet-templates",
@@ -1334,7 +1457,41 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "template-name", type: "value", selector: "input[name='template_name']", compareSides: true },
       { name: "small-cargo", type: "value", selector: "input[name='ship[202]']", compareSides: true }
     ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-fleet-templates"
+    },
     notes: ["Covers fleet_templates.php show_input() behavior via the React standard-fleet editor state."]
+  },
+  {
+    name: "commander-fleet-template-applies-to-selection-visual",
+    legacyPage: "flotten1",
+    migratedPath: "/game/fleet",
+    legacyReady: "#content table",
+    migratedReady: ".legacy-fleet-table",
+    requiredFixtureFeatures: ["commander"],
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[href^='javascript:setShips']",
+        migratedSelector: ".legacy-fleet-table a[href^='javascript:setShips']",
+        waitMs: 300
+      }
+    ],
+    assertions: [
+      { name: "small-cargo-selected", type: "value", selector: "input[name='ship202']", compareSides: true },
+      { name: "large-cargo-selected", type: "value", selector: "input[name='ship203']", compareSides: true },
+      { name: "recycler-selected", type: "value", selector: "input[name='ship209']", compareSides: true },
+      { name: "probe-selected", type: "value", selector: "input[name='ship210']", compareSides: true }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-fleet"
+    },
+    linkAudit: {
+      enabled: false
+    },
+    notes: ["Covers Commander fleet handling automation by applying a saved Standard Fleet template on the fleet dispatch screen."]
   },
   {
     name: "admin-bans-select-all-checkbox",

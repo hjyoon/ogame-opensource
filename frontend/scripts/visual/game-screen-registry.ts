@@ -1,6 +1,7 @@
 export type BrowserName = "chromium" | "firefox";
 export type SideName = "legacy" | "migrated";
 export type LayoutBoxName = "header" | "menu" | "content";
+export type GameVisualFixtureFeature = "acs" | "alliance" | "commander" | "phalanx" | "premium" | "report";
 export type GameVisualArea =
   | "core"
   | "admin"
@@ -43,7 +44,13 @@ export type GameVisualScreenSpec = {
   maskSelectors?: string[];
   actions?: GameVisualAction[];
   viewports?: string[];
+  requiredFixtureFeatures?: GameVisualFixtureFeature[];
+  excludedFixtureFeatures?: GameVisualFixtureFeature[];
   notes?: string[];
+};
+
+export type GameVisualSelectionOptions = {
+  enabledFixtureFeatures?: Partial<Record<GameVisualFixtureFeature, boolean>>;
 };
 
 export const gameVisualViewports: ViewportSpec[] = [
@@ -156,6 +163,7 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     legacyReady: "#content",
     migratedReady: ".legacy-overview-table",
     expectedTexts: ["Legor", "Diameter", "Temperature", "Points", "administrator mode"],
+    excludedFixtureFeatures: ["commander"],
     notes: ["Default legor fixture without Commander redirects to overview."]
   },
   {
@@ -170,6 +178,7 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     migratedReady: ".legacy-empire-table",
     requiredBoxes: ["menu", "content"],
     expectedTexts: ["Empire Overview", "Name", "Coordinates", "Fields", "Resources", "Buildings", "Research", "Ships", "Defense"],
+    requiredFixtureFeatures: ["commander"],
     notes: ["Requires a Commander-enabled account/fixture."]
   },
   {
@@ -245,6 +254,7 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     legacyReady: "#content",
     migratedReady: ".legacy-fleet-templates-table, .legacy-overview-table",
     expectedTexts: ["Standard Fleets", "Title", "Process", "Delete"],
+    requiredFixtureFeatures: ["commander"],
     notes: ["Requires OGAME_GAME_VISUAL_COMMANDER_FIXTURE=1 for the fleet-template table."]
   },
   {
@@ -845,10 +855,10 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
   }))
 ];
 
-export function selectGameVisualScreens(filterValue: string): GameVisualScreenSpec[] {
+export function selectGameVisualScreens(filterValue: string, options: GameVisualSelectionOptions = {}): GameVisualScreenSpec[] {
   const filter = parseNameFilter(filterValue);
   if (filter.length === 0) {
-    return gameVisualScreens.filter((spec) => spec.defaultEnabled !== false);
+    return gameVisualScreens.filter((spec) => defaultEnabledForFixture(spec, options.enabledFixtureFeatures));
   }
   const selected = gameVisualScreens.filter((spec) => filter.includes(spec.name) || filter.includes(spec.area));
   const selectedNames = new Set(selected.flatMap((spec) => [spec.name, spec.area]));
@@ -857,6 +867,19 @@ export function selectGameVisualScreens(filterValue: string): GameVisualScreenSp
     throw new Error(`unknown authenticated game visual filter: ${missing.join(", ")}`);
   }
   return selected;
+}
+
+function defaultEnabledForFixture(
+  spec: GameVisualScreenSpec,
+  enabledFixtureFeatures: Partial<Record<GameVisualFixtureFeature, boolean>> = {}
+): boolean {
+  if ((spec.excludedFixtureFeatures ?? []).some((feature) => enabledFixtureFeatures[feature] === true)) {
+    return false;
+  }
+  if (spec.defaultEnabled !== false) {
+    return true;
+  }
+  return (spec.requiredFixtureFeatures ?? []).some((feature) => enabledFixtureFeatures[feature] === true);
 }
 
 export function selectGameVisualViewports(filterValue: string): ViewportSpec[] {

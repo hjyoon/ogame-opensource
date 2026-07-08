@@ -2087,7 +2087,12 @@ export function LegacyGameOverview({
   const officersIssue =
     officersStatus && !officersStatus.authenticated ? officersStatus.issues[0]?.message ?? "Session is invalid." : null;
   const officersActionIssue = officersStatus?.authenticated ? officersStatus.actionIssue : undefined;
-  const officersActionTone = officersActionIssue?.code === "recruited" ? "neutral" : "error";
+  const officersPageMessage =
+    route.key === "officers" && officersActionIssue?.code === "recruited" ? officersActionIssue.message : "";
+  const officersPageError =
+    route.key === "officers"
+      ? officersError || (officersActionIssue && officersActionIssue.code !== "recruited" ? officersActionIssue.message : "")
+      : "";
   const alliance = allianceStatus?.authenticated ? allianceStatus.alliance : undefined;
   const allianceIssue =
     allianceStatus && !allianceStatus.authenticated ? allianceStatus.issues[0]?.message ?? "Session is invalid." : null;
@@ -2169,16 +2174,24 @@ export function LegacyGameOverview({
   const searchPageError =
     route.key === "search" && search?.message && isSearchPageErrorMessage(search.message) ? search.message : "";
   const hasSearchPageFooter = Boolean(searchPageMessage || searchPageError);
+  const hasOfficersPageFooter = Boolean(officersPageMessage || officersPageError);
   const pageMessageRef = React.useRef<HTMLDivElement | null>(null);
   const pageErrorRef = React.useRef<HTMLDivElement | null>(null);
   const searchMessageRef = React.useRef<HTMLDivElement | null>(null);
   const searchErrorRef = React.useRef<HTMLDivElement | null>(null);
+  const officersMessageRef = React.useRef<HTMLDivElement | null>(null);
+  const officersErrorRef = React.useRef<HTMLDivElement | null>(null);
   const [overviewContentLayout, setOverviewContentLayout] = React.useState<{ height: string; top: number; errorTop: number } | null>(
     null
   );
   const [searchContentLayout, setSearchContentLayout] = React.useState<{ height: string; top: number; errorTop: number } | null>(
     null
   );
+  const [officersContentLayout, setOfficersContentLayout] = React.useState<{
+    height: string;
+    top: number;
+    errorTop: number;
+  } | null>(null);
   React.useLayoutEffect(() => {
     if (route.key !== "overview") {
       setOverviewContentLayout(null);
@@ -2219,6 +2232,26 @@ export function LegacyGameOverview({
     window.addEventListener("resize", updateSearchContentLayout);
     return () => window.removeEventListener("resize", updateSearchContentLayout);
   }, [hasSearchPageFooter, route.key, searchPageError, searchPageMessage]);
+  React.useLayoutEffect(() => {
+    if (route.key !== "officers" || !hasOfficersPageFooter) {
+      setOfficersContentLayout(null);
+      return;
+    }
+    const updateOfficersContentLayout = () => {
+      const headerHeight = 81;
+      const messageHeight = officersMessageRef.current?.offsetHeight ?? 0;
+      const errorHeight = officersErrorRef.current?.offsetHeight ?? 0;
+      const top = headerHeight + errorHeight + messageHeight + 10;
+      const height = `${Math.max(0, window.innerHeight - messageHeight - errorHeight - headerHeight - 20)}px`;
+      const errorTop = headerHeight + messageHeight + 5;
+      setOfficersContentLayout((current) =>
+        current?.top === top && current.height === height && current.errorTop === errorTop ? current : { height, top, errorTop }
+      );
+    };
+    updateOfficersContentLayout();
+    window.addEventListener("resize", updateOfficersContentLayout);
+    return () => window.removeEventListener("resize", updateOfficersContentLayout);
+  }, [hasOfficersPageFooter, officersPageError, officersPageMessage, route.key]);
   React.useEffect(() => {
     if (route.key !== "fleetTemplates" || !fleet || fleet.templates.commanderActive) {
       return;
@@ -2243,6 +2276,10 @@ export function LegacyGameOverview({
       : hasSearchPageFooter
         ? searchContentLayout
           ? { height: searchContentLayout.height, top: `${searchContentLayout.top}px` }
+          : { height: "calc(100vh - 130px)", top: "120px" }
+      : hasOfficersPageFooter
+        ? officersContentLayout
+          ? { height: officersContentLayout.height, top: `${officersContentLayout.top}px` }
           : { height: "calc(100vh - 130px)", top: "120px" }
       : route.key === "galaxy" ||
           route.key === "admin" ||
@@ -2320,6 +2357,14 @@ export function LegacyGameOverview({
           style={{ top: searchContentLayout && searchPageMessage ? `${searchContentLayout.errorTop}px` : "86px" }}
         />
       ) : null}
+      {officersPageMessage ? <LegacyPageMessage ref={officersMessageRef} messages={[officersPageMessage]} /> : null}
+      {officersPageError ? (
+        <LegacyPageError
+          ref={officersErrorRef}
+          messages={[officersPageError]}
+          style={{ top: officersContentLayout && officersPageMessage ? `${officersContentLayout.errorTop}px` : "80px" }}
+        />
+      ) : null}
       <section className={contentClassName} id="content" style={contentStyle}>
         {error ? <LegacyMessage tone="error" text={error} /> : null}
         {!error && issue ? <LegacyMessage tone="error" text={issue} /> : null}
@@ -2349,11 +2394,7 @@ export function LegacyGameOverview({
         {route.key === "merchant" && !merchantError && !merchantActionIssue && merchantIssue ? (
           <LegacyMessage tone="error" text={merchantIssue} />
         ) : null}
-        {route.key === "officers" && officersError ? <LegacyMessage tone="error" text={officersError} /> : null}
-        {route.key === "officers" && !officersError && officersActionIssue ? (
-          <LegacyMessage tone={officersActionTone} text={officersActionIssue.message} />
-        ) : null}
-        {route.key === "officers" && !officersError && !officersActionIssue && officersIssue ? (
+        {route.key === "officers" && !officersPageError && !officersPageMessage && officersIssue ? (
           <LegacyMessage tone="error" text={officersIssue} />
         ) : null}
         {route.key === "alliance" && allianceError ? <LegacyMessage tone="error" text={allianceError} /> : null}
@@ -11007,6 +11048,8 @@ function GalaxyHoverMenu({
 
   React.useEffect(() => clearTimer, [clearTimer]);
 
+  const legacyMoonOffsetX =
+    hoverKind === "moon" && !(typeof navigator !== "undefined" && /Firefox\//.test(navigator.userAgent)) ? -1 : 0;
   const tooltip =
     open && position
       ? (
@@ -11018,7 +11061,7 @@ function GalaxyHoverMenu({
           onMouseDown={navigateTooltipLink}
           style={{
             display: "block",
-            left: Math.max(0, position.x + offsetX - overlibWidth / 2),
+            left: Math.max(0, position.x + offsetX - overlibWidth / 2 + legacyMoonOffsetX),
             position: "fixed",
             top: position.y + offsetY,
             transform: "none",
