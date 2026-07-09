@@ -1053,6 +1053,9 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
       cell.textContent = normalizedResourceValues[index] ?? "0";
     });
     if (currentPageName === "game-overview" || currentPageName === "game-empire-redirect") {
+      hide(
+        "#content img[width='50'][height='50'], .legacy-overview-main-table img[width='50'][height='50'], #content img[width='200'][height='200'], .legacy-overview-main-table img[width='200'][height='200']"
+      );
       for (const headerCell of document.querySelectorAll<HTMLTableCellElement>(".legacy-overview-main-table th, #content table th")) {
         if (headerCell.textContent?.trim() === "Server time") {
           const timeCell = headerCell.nextElementSibling;

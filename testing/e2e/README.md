@@ -84,6 +84,7 @@ Detailed coverage is split by topic:
 - [Authenticated Game Visual Coverage](./COVERAGE-authenticated-game-visual.md)
 - [Public Auth Dynamic Coverage](./COVERAGE-public-auth-dynamic.md)
 - [Dynamic Legacy JS Coverage](./COVERAGE-dynamic-legacy-js.md)
+- [Bot Migration Coverage](./COVERAGE-bot-migration.md)
 - [Dynamic Link Parity](./COVERAGE-dynamic-link-parity.md)
 - [Infrastructure and Invariants](./COVERAGE-infra.md)
 

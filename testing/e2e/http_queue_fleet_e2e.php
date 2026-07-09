@@ -297,6 +297,9 @@ try {
     $response = e2e_http_request('GET', $gameBase . '/index.php?page=b_building&session=' . rawurlencode($session) . '&cp=' . $attackerPlanet . '&modus=add&techid=' . GID_B_METAL_MINE . '&planet=' . $attackerPlanet, array(), $cookies);
     $buildRow = e2e_one_row("SELECT id, list_id, tech_id, level FROM {$db_prefix}buildqueue WHERE owner_id={$attackerId} AND planet_id={$attackerPlanet} ORDER BY id DESC LIMIT 1");
     $buildTask = e2e_one_row("SELECT task_id, type, sub_id FROM {$db_prefix}queue WHERE owner_id={$attackerId} AND type='" . QTYP_BUILD . "' ORDER BY task_id DESC LIMIT 1");
+    if ($buildTask !== null) {
+        e2e_keep_queue_active((int)$buildTask['task_id']);
+    }
     $responseCancel = e2e_http_request('GET', $gameBase . '/index.php?page=b_building&session=' . rawurlencode($session) . '&cp=' . $attackerPlanet . '&modus=remove&listid=1&planet=' . $attackerPlanet, array(), $cookies);
     $afterCancel = e2e_one_row("SELECT `" . GID_RC_METAL . "` AS metal, `" . GID_RC_CRYSTAL . "` AS crystal FROM {$db_prefix}planets WHERE planet_id={$attackerPlanet} LIMIT 1");
     $cases[] = e2e_finalize_case(array(

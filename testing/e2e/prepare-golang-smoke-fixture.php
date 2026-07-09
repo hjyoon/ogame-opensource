@@ -1231,6 +1231,15 @@ function smoke_prepare_bot_runtime_fixture(string $password, array $near): array
     smoke_upsert_bot_strategy('go_bot_research', $researchSource);
     smoke_upsert_bot_strategy('go_bot_shipyard', $shipyardSource);
     smoke_upsert_bot_strategy('go_bot_resources', $resourcesSource);
+    $importTargetId = smoke_upsert_bot_strategy('go_bot_import_target', smoke_bot_strategy_source(
+        array(
+            array('key' => 1, 'category' => 'Start', 'text' => 'Original Import Start'),
+            array('key' => 2, 'category' => 'End', 'text' => 'Original Import End'),
+        ),
+        array(
+            array('from' => 1, 'to' => 2, 'text' => ''),
+        )
+    ));
     $startTaskId = AddQueue($botId, QTYP_AI, $startStrategyId, 1, 0, $now - 5, 0, QUEUE_PRIO_BOT);
     InvalidateUserCache();
 
@@ -1240,6 +1249,7 @@ function smoke_prepare_bot_runtime_fixture(string $password, array $near): array
         'home_planet_id' => $planetId,
         'start_strategy_id' => $startStrategyId,
         'start_task_id' => $startTaskId,
+        'botedit_import_strategy_id' => $importTargetId,
         'building_id' => GID_B_METAL_MINE,
         'research_id' => GID_R_ENERGY,
         'ship_id' => GID_F_SC,
@@ -1252,7 +1262,7 @@ function smoke_prepare_bot_runtime_fixture(string $password, array $near): array
             'fusion' => 100,
             'satellite' => 80,
         ),
-        'strategy_names' => array('_start', 'go_bot_build', 'go_bot_research', 'go_bot_shipyard', 'go_bot_resources'),
+        'strategy_names' => array('_start', 'go_bot_build', 'go_bot_research', 'go_bot_shipyard', 'go_bot_resources', 'go_bot_import_target'),
     );
 }
 

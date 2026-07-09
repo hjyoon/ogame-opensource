@@ -1,6 +1,6 @@
 # Migration Status
 
-Updated: 2026-07-04 KST, branch `hjyoon/golang`.
+Updated: 2026-07-09 KST, branch `hjyoon/golang`.
 
 React 19/Bun 1.3 + Go 1.25 `net/http` migration tracker. Keep this file under 4KB; split detail docs when needed.
 
@@ -19,10 +19,10 @@ React 19/Bun 1.3 + Go 1.25 `net/http` migration tracker. Keep this file under 4K
 
 - Navigation visual E2E scans GET anchors, JS navigation, popups, hovers, select URLs, and GET forms.
 - The navigation wrapper continues across Chromium and Firefox even when exact visual diffs remain, then writes a combined report to [COVERAGE-navigation-visual.md](./testing/e2e/COVERAGE-navigation-visual.md).
-- Authenticated dynamic E2E now runs all 75 listed legacy-JS cases with commander, alliance, report, phalanx, and ACS fixtures enabled by default.
+- Authenticated dynamic E2E runs 91 listed legacy-JS cases with commander, alliance, report, phalanx, and ACS fixtures enabled by default.
 - Fixed Firefox legacy host/session drift by keeping the configured legacy base URL instead of adopting a redirected `localhost` origin.
 - Fixed route parity issues around static aliases, planet selector URLs, statistics defaults, register blank selects, reply prefill, fleet union, commander folders, and galaxy hovers.
-- Jump Gate, ACS slowdown, expedition roll/depletion buckets, options force-language, pranger, maintenance, feed GET/POST, DB safe restore, Mods PHP-hook policy, Logins/Browse, Loca, and Bots are migrated.
+- Jump Gate, ACS slowdown, expedition buckets, options force-language, pranger, maintenance, feed GET/POST, DB safe restore, Mods PHP-hook policy, Logins/Browse, Loca, Bots, and BotEdit import are migrated.
 - Overview, buildings/resources/research/shipyard/defense, fleet, galaxy, statistics, search, messages, report, notes, buddy, options, merchant/officers, alliance, and admin use legacy chrome and route aliases where implemented.
 
 ## Verified QA
@@ -32,10 +32,10 @@ React 19/Bun 1.3 + Go 1.25 `net/http` migration tracker. Keep this file under 4K
 - Frontend build/typecheck/unit tests pass: 20 tests / 172 expects.
 - Backend tests and the 97% internal coverage gate pass: `97.0% >= 97%`.
 - Absolute legacy coverage target: 100%; current estimate: 100% in [COVERAGE-absolute.md](./testing/e2e/COVERAGE-absolute.md).
-- Go compatibility smoke registry covers 87 cases / 2199 checks.
+- Go compatibility smoke registry covers 88 cases / 2209 checks.
 - User-type API and Chromium/Firefox Playwright QA pass.
 - Auth visual, authenticated game visual, dynamic behavior, empire, alliance, overview fleet, overview all-cases, fleet continue, and fleet all-cases suites pass in Chromium and Firefox.
-- Strict navigation visual threshold `0`: Chromium 170/170 and Firefox 169/169 pass.
+- Strict navigation visual threshold `0`: Chromium 173/173 and Firefox 172/172 pass.
 - Full summary is in `.tmp/golang-migration-qa-summary.md`; navigation details are in [COVERAGE-navigation-visual.md](./testing/e2e/COVERAGE-navigation-visual.md).
 
 ## Remaining Work

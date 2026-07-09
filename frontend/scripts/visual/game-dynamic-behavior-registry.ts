@@ -2,11 +2,12 @@ export type SideName = "legacy" | "migrated";
 export type GameFixtureFeature = "acs" | "alliance" | "commander" | "phalanx" | "premium" | "report";
 
 export type GameDynamicAction = {
-  type: "click" | "dblclick" | "fill" | "type" | "select" | "hover" | "press" | "wait" | "popup";
+  type: "click" | "dblclick" | "fill" | "type" | "select" | "hover" | "press" | "wait" | "popup" | "upload";
   selector?: string;
   legacySelector?: string;
   migratedSelector?: string;
   value?: string;
+  fileName?: string;
   waitForSelector?: string;
   legacyWaitForSelector?: string;
   migratedWaitForSelector?: string;
@@ -321,7 +322,8 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     ],
     visual: {
       enabled: true,
-      normalizePageName: "game-galaxy"
+      normalizePageName: "game-galaxy",
+      maskSelectors: ["#content table:not(:has(input[name='galaxy']))", ".legacy-galaxy-table"]
     },
     linkAudit: {
       expected: [
@@ -1947,6 +1949,45 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "saved-model", type: "value", selector: "#mySavedModel", compareSides: true, contains: "Visual Start" }
     ],
     notes: ["Covers BotEdit legacy SACK save action and mySavedModel refresh from the GoJS model."]
+  },
+  {
+    name: "admin-botedit-import-strategy",
+    fixtureProfile: "admin",
+    isolateSides: true,
+    legacyPage: "admin",
+    legacyQuery: { mode: "BotEdit" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "BotEdit" },
+    legacyReady: "#strategyId",
+    migratedReady: ".legacy-admin-botedit-table #strategyId",
+    actions: [
+      { type: "select", selector: "#strategyId", value: "$fixture.botedit.strategy_id" },
+      { type: "click", selector: "button:has-text('Load')", waitMs: 900 },
+      {
+        type: "upload",
+        selector: "#fileToUpload",
+        fileName: "visual-botedit-import.json",
+        value:
+          '{ "class": "go.GraphLinksModel", "linkFromPortIdProperty": "fromPort", "linkToPortIdProperty": "toPort", "nodeDataArray": [ { "key": 1, "category": "Start", "text": "Visual Imported Start" }, { "key": 2, "category": "End", "text": "Visual Imported End" } ], "linkDataArray": [ { "from": 1, "to": 2, "text": "" } ] }'
+      },
+      {
+        type: "click",
+        selector: "form[action*='action=import'] input[type='submit']",
+        waitForSelector: "#strategyId",
+        waitMs: 1200
+      }
+    ],
+    assertions: [
+      {
+        name: "imported-source-exported",
+        type: "evaluate",
+        expression:
+          "fetch(`/game/index.php?page=admin&mode=BotEdit&action=export&strat=$fixture.botedit.strategy_id&session=${new URLSearchParams(location.search).get('session') ?? ''}`).then((response) => response.text()).then((text) => text.includes('Visual Imported Start'))",
+        compareSides: true,
+        expected: "true"
+      }
+    ],
+    notes: ["Covers BotEdit multipart import, selected strategy hidden id propagation, Go legacy alias handling, and exported source persistence."]
   },
   {
     name: "admin-botedit-rename-strategy",

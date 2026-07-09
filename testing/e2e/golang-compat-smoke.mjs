@@ -525,6 +525,8 @@ try {
     Number(botRuntimeFixture.research_id ?? 0) > 0 &&
     Number(botRuntimeFixture.ship_id ?? 0) > 0
   );
+  const botEditImportStrategyID = Number(botRuntimeFixture.botedit_import_strategy_id ?? 0);
+  const botEditImportReady = botRuntimeReady && botEditImportStrategyID > 1;
   const queueFreezeDrainFixture = smokeFixture?.queue_freeze_drain ?? {};
   const queueFreezeDrainReady = Boolean(
     typeof queueFreezeDrainFixture.login === "string" &&
@@ -4747,6 +4749,27 @@ try {
     Number(botRuntimeProductionRows.solar?.percent ?? -1) === Number(botRuntimeExpectedProduction.solar ?? 100) &&
     Number(botRuntimeProductionRows.fusion?.percent ?? -1) === Number(botRuntimeExpectedProduction.fusion ?? 100) &&
     Number(botRuntimeProductionRows.satellite?.percent ?? -1) === Number(botRuntimeExpectedProduction.satellite ?? 80);
+  const botEditImportSource = '{ "class": "go.GraphLinksModel", "nodeDataArray": [ { "key": 1, "category": "Start", "text": "Go Smoke Imported Start" }, { "key": 2, "category": "End", "text": "Go Smoke Imported End" } ], "linkDataArray": [ { "from": 1, "to": 2, "text": "" } ] }';
+  let botEditImportResponse = null;
+  let botEditImportExport = null;
+  if (botEditImportReady) {
+    const importForm = new FormData();
+    importForm.append("strategyId_ForImport", String(botEditImportStrategyID));
+    importForm.append("fileToUpload", new Blob([botEditImportSource], { type: "application/json" }), "go-smoke-bot-import.json");
+    botEditImportResponse = await request(`/game/index.php${withQueryParams(sessionSearch, { page: "admin", mode: "BotEdit", action: "import" })}`, {
+      method: "POST",
+      headers: { Cookie: sessionCookiePair },
+      body: importForm
+    });
+    botEditImportExport = await request(`/game/index.php${withQueryParams(sessionSearch, { page: "admin", mode: "BotEdit", action: "export", strat: botEditImportStrategyID })}`, {
+      headers: { Cookie: sessionCookiePair }
+    });
+  }
+  const botEditImportOK =
+    !botEditImportReady ||
+    ((botEditImportResponse?.status === 302 || botEditImportResponse?.status === 303) &&
+      botEditImportExport?.status === 200 &&
+      botEditImportExport.body.includes("Go Smoke Imported Start"));
 
   const queueCancelUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
   const queueCancelBuildLogin = queueCancelReady
@@ -8118,6 +8141,15 @@ try {
       check(!botRuntimeReady || botRuntimeProductionOK, "BotResourceSettings persists legacy production percentages", {
         expected: botRuntimeExpectedProduction,
         rows: botRuntimeProductionRows
+      }),
+      check(!botRuntimeReady || botEditImportReady, "go smoke fixture exposes BotEdit import target strategy", {
+        botEditImportStrategyID
+      }),
+      check(botEditImportOK, "BotEdit multipart import persists strategy source through legacy alias", {
+        importStatus: botEditImportResponse?.status,
+        importLocation: botEditImportResponse?.headers?.location,
+        exportStatus: botEditImportExport?.status,
+        exportPreview: botEditImportExport?.body?.slice(0, 180)
       })
     ]
   }));

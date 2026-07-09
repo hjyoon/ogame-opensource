@@ -52,6 +52,7 @@ const (
 	AdminActionBotEditSave   = "save"
 	AdminActionBotEditNew    = "new"
 	AdminActionBotEditRename = "rename"
+	AdminActionBotEditImport = "import"
 	AdminActionBotAdd        = "add"
 	AdminActionBotStop       = "stop"
 

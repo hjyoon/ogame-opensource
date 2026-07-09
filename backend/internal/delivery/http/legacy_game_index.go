@@ -3,6 +3,7 @@ package httpdelivery
 import (
 	"context"
 	"html"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -409,6 +410,10 @@ func (a app) handleLegacyBotEditPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "game admin botedit unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	if r.URL.Query().Get("action") == domaingame.AdminActionBotEditImport {
+		a.handleLegacyBotEditImportPost(w, r, usecase)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "invalid botedit request", http.StatusBadRequest)
 		return
@@ -453,6 +458,55 @@ func (a app) handleLegacyBotEditPost(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.WriteHeader(http.StatusOK)
 	}
+}
+
+func (a app) handleLegacyBotEditImportPost(w http.ResponseWriter, r *http.Request, usecase gameAdminBotEditUseCase) {
+	if err := r.ParseMultipartForm(2 << 20); err != nil {
+		http.Error(w, "invalid botedit import request", http.StatusBadRequest)
+		return
+	}
+	planetID, err := selectedPlanetID(r)
+	if err != nil {
+		http.Error(w, "invalid selected planet", http.StatusBadRequest)
+		return
+	}
+	file, _, err := r.FormFile("fileToUpload")
+	if err != nil {
+		http.Error(w, "invalid botedit import file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+	sourceBytes, err := io.ReadAll(io.LimitReader(file, 2<<20))
+	if err != nil {
+		http.Error(w, "invalid botedit import file", http.StatusBadRequest)
+		return
+	}
+	result, err := usecase.MutateAdminBotEdit(r.Context(), appgame.AdminBotEditMutationCommand{
+		PublicSession:   r.URL.Query().Get("session"),
+		PrivateSessions: cookieMap(r),
+		RemoteAddr:      remoteIP(r.RemoteAddr),
+		PlanetID:        planetID,
+		Action:          domaingame.AdminActionBotEditImport,
+		StrategyID:      legacyBotEditInt(formLast(r, "strategyId_ForImport")),
+		Source:          string(sourceBytes),
+	})
+	if err != nil {
+		http.Error(w, "game admin botedit unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !result.Authenticated {
+		http.Error(w, "unauthenticated", http.StatusForbidden)
+		return
+	}
+	if result.ActionIssue != nil && result.ActionIssue.Code == domaingame.AdminIssueAccessDenied {
+		http.Error(w, result.ActionIssue.Message, http.StatusForbidden)
+		return
+	}
+	target := "/game/index.php?page=admin&session=" + url.QueryEscape(r.URL.Query().Get("session")) + "&mode=BotEdit"
+	if cp := r.URL.Query().Get("cp"); cp != "" {
+		target += "&cp=" + url.QueryEscape(cp)
+	}
+	http.Redirect(w, r, target, http.StatusFound)
 }
 
 func legacyBotEditOptionsHTML(result appgame.AdminBotEditMutationResult) string {

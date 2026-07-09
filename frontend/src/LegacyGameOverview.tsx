@@ -4,6 +4,7 @@ import {
   gameFleetTargetPrefillFromSearch,
   gameFleetTargetURL,
   gameGalaxyMissileURL,
+  gameLegacyIndexActionURL,
   gameLegacyRouteURL,
   gameMenuRouteURL,
   gameMessageComposeURL,
@@ -6320,7 +6321,7 @@ function loadLegacyScript(src: string): Promise<void> {
 }
 
 function adminBotEditHTML(admin: GameAdmin): string {
-  const importAction = legacyHTMLAttribute(adminModeActionHref("BotEdit", "import"));
+  const importAction = legacyHTMLAttribute(adminLegacyModeActionHref("BotEdit", "import"));
   const strategyOptions = (admin.botStrategies ?? [])
     .map((strategy) => `<option value="${strategy.id}">${legacyHTMLText(strategy.name)}</option>\n`)
     .join("");
@@ -6667,6 +6668,10 @@ function adminModeActionHref(mode: string, action: string) {
   query.set("mode", mode);
   query.set("action", action);
   return gameRouteURL("/game/admin", `?${query.toString()}`);
+}
+
+function adminLegacyModeActionHref(mode: string, action: string) {
+  return gameLegacyIndexActionURL(window.location.search, "admin", mode, action);
 }
 
 function adminModeFileActionHref(mode: string, action: string, fileName: string) {

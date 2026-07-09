@@ -174,6 +174,15 @@ export function gameRouteURL(path: string, search: string): string {
   return encoded ? `${path}?${encoded}` : path;
 }
 
+export function gameLegacyIndexActionURL(search: string, page: string, mode: string, action: string): string {
+  const query = new URLSearchParams(search);
+  query.set("page", page);
+  query.set("mode", mode);
+  query.set("action", action);
+  const encoded = query.toString();
+  return encoded ? `/game/index.php?${encoded}` : "/game/index.php";
+}
+
 export function gameMenuRouteURL(path: string, search: string): string {
   const source = new URLSearchParams(search);
   const query = new URLSearchParams();

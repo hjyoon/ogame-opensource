@@ -1,7 +1,9 @@
 package httpdelivery
 
 import (
+	"bytes"
 	"errors"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -154,6 +156,128 @@ func TestLegacyGameIndexBotEditPostSaveNewAndErrors(t *testing.T) {
 	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), issue.Message) {
 		t.Fatalf("expected action issue post 403, got %d body=%s", rec.Code, rec.Body.String())
 	}
+}
+
+func TestLegacyGameIndexBotEditPostImport(t *testing.T) {
+	usecase := &fakeGameAdminUseCase{botResult: appgame.AdminBotEditMutationResult{Authenticated: true}}
+	handler := app{deps: Dependencies{GameAdmin: usecase}}
+	req := newLegacyBotEditImportRequest(t, "/game/index.php?page=admin&mode=BotEdit&action=import&session=pub&cp=88", "7", `{"nodeDataArray":[{"key":1,"category":"Start","text":"Imported"}]}`, true)
+	req.RemoteAddr = "198.51.100.9:1234"
+	rec := httptest.NewRecorder()
+
+	handler.handleLegacyGameIndex(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected import redirect, got status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if location := rec.Header().Get("Location"); location != "/game/index.php?page=admin&session=pub&mode=BotEdit&cp=88" {
+		t.Fatalf("unexpected redirect location %q", location)
+	}
+	if usecase.botMutation.Action != domaingame.AdminActionBotEditImport ||
+		usecase.botMutation.StrategyID != 7 ||
+		usecase.botMutation.Source != `{"nodeDataArray":[{"key":1,"category":"Start","text":"Imported"}]}` ||
+		usecase.botMutation.PlanetID != 88 ||
+		usecase.botMutation.RemoteAddr != "198.51.100.9" {
+		t.Fatalf("unexpected import command: %+v", usecase.botMutation)
+	}
+}
+
+func TestLegacyGameIndexBotEditPostImportGuards(t *testing.T) {
+	tests := []struct {
+		name    string
+		handler app
+		request *http.Request
+		want    int
+		body    string
+	}{
+		{
+			name:    "invalid multipart",
+			handler: app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{}}},
+			request: httptest.NewRequest(http.MethodPost, "/game/index.php?page=admin&mode=BotEdit&action=import&session=pub&cp=88", strings.NewReader("not multipart")),
+			want:    http.StatusBadRequest,
+			body:    "invalid botedit import request",
+		},
+		{
+			name:    "invalid selected planet",
+			handler: app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{}}},
+			request: newLegacyBotEditImportRequest(t, "/game/index.php?page=admin&mode=BotEdit&action=import&session=pub&cp=bad", "7", "source", true),
+			want:    http.StatusBadRequest,
+			body:    "invalid selected planet",
+		},
+		{
+			name:    "missing file",
+			handler: app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{}}},
+			request: newLegacyBotEditImportRequest(t, "/game/index.php?page=admin&mode=BotEdit&action=import&session=pub&cp=88", "7", "", false),
+			want:    http.StatusBadRequest,
+			body:    "invalid botedit import file",
+		},
+		{
+			name:    "usecase error",
+			handler: app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{botErr: errors.New("botedit down")}}},
+			request: newLegacyBotEditImportRequest(t, "/game/index.php?page=admin&mode=BotEdit&action=import&session=pub&cp=88", "7", "source", true),
+			want:    http.StatusServiceUnavailable,
+			body:    "game admin botedit unavailable",
+		},
+		{
+			name:    "unauthenticated",
+			handler: app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{botResult: appgame.AdminBotEditMutationResult{Authenticated: false}}}},
+			request: newLegacyBotEditImportRequest(t, "/game/index.php?page=admin&mode=BotEdit&action=import&session=pub&cp=88", "7", "source", true),
+			want:    http.StatusForbidden,
+			body:    "unauthenticated",
+		},
+		{
+			name: "access denied",
+			handler: app{deps: Dependencies{GameAdmin: &fakeGameAdminUseCase{botResult: appgame.AdminBotEditMutationResult{
+				Authenticated: true,
+				ActionIssue:   domaingame.AdminIssue(domaingame.AdminIssueAccessDenied),
+			}}}},
+			request: newLegacyBotEditImportRequest(t, "/game/index.php?page=admin&mode=BotEdit&action=import&session=pub&cp=88", "7", "source", true),
+			want:    http.StatusForbidden,
+			body:    "Access denied.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			tt.handler.handleLegacyGameIndex(rec, tt.request)
+			if rec.Code != tt.want || !strings.Contains(rec.Body.String(), tt.body) {
+				t.Fatalf("status=%d body=%q, want status=%d body containing %q", rec.Code, rec.Body.String(), tt.want, tt.body)
+			}
+		})
+	}
+
+	usecase := &fakeGameAdminUseCase{botResult: appgame.AdminBotEditMutationResult{Authenticated: true}}
+	rec := httptest.NewRecorder()
+	req := newLegacyBotEditImportRequest(t, "/game/index.php?page=admin&mode=BotEdit&action=import&session=pub", "7", "source", true)
+	app{deps: Dependencies{GameAdmin: usecase}}.handleLegacyGameIndex(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/game/index.php?page=admin&session=pub&mode=BotEdit" {
+		t.Fatalf("unexpected no-cp redirect status=%d location=%q", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+func newLegacyBotEditImportRequest(t *testing.T, path string, strategyID string, source string, includeFile bool) *http.Request {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("strategyId_ForImport", strategyID); err != nil {
+		t.Fatalf("WriteField returned error: %v", err)
+	}
+	if includeFile {
+		file, err := writer.CreateFormFile("fileToUpload", "strategy.json")
+		if err != nil {
+			t.Fatalf("CreateFormFile returned error: %v", err)
+		}
+		if _, err := file.Write([]byte(source)); err != nil {
+			t.Fatalf("file write returned error: %v", err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer close returned error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, path, &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	return req
 }
 
 func TestLegacyGameIndexAdminLoginsPostRendersSearchResults(t *testing.T) {

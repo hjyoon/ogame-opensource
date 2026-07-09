@@ -9,7 +9,7 @@ import {
   resolvePublicRoute
 } from "./routes";
 import { publicRouteManifest } from "./publicRouteManifest";
-import { gameMenuRouteURL, gamePlanetSwitchURL, gameRouteURL } from "./gameRoutes";
+import { gameLegacyIndexActionURL, gameMenuRouteURL, gamePlanetSwitchURL, gameRouteURL } from "./gameRoutes";
 
 describe("public route model", () => {
   test("uses natural route paths without php suffixes", () => {
@@ -96,6 +96,12 @@ describe("game route URL model", () => {
     expect(gameRouteURL("/game/galaxy", "?session=abc&mode=Planets&galaxy=1&system=2")).toBe("/game/galaxy?session=abc&galaxy=1&system=2");
     expect(gameRouteURL("/game/galaxy", "?session=abc&mode=1&p1=1&p2=2&p3=3&pdd=4&zp=5")).toBe(
       "/game/galaxy?session=abc&mode=1&p1=1&p2=2&p3=3&pdd=4&zp=5"
+    );
+  });
+
+  test("preserves legacy index action query parameters for multipart aliases", () => {
+    expect(gameLegacyIndexActionURL("?session=abc&cp=42&tid=206", "admin", "BotEdit", "import")).toBe(
+      "/game/index.php?session=abc&cp=42&tid=206&page=admin&mode=BotEdit&action=import"
     );
   });
 

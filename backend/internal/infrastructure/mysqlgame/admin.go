@@ -2038,6 +2038,25 @@ func (r AdminRepository) MutateAdminBotEdit(ctx context.Context, query appgame.A
 			}
 		}
 		return appgame.AdminBotEditMutationResult{SelectedStrategyID: query.StrategyID}, nil
+	case domaingame.AdminActionBotEditImport:
+		if query.StrategyID == 0 {
+			return appgame.AdminBotEditMutationResult{ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueActionFailed)}, nil
+		}
+		source, name, err := r.loadAdminBotStrategy(ctx, botstratTable, query.StrategyID)
+		if err != nil {
+			return appgame.AdminBotEditMutationResult{}, err
+		}
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET source = ? WHERE id = 1", botstratTable), source); err != nil {
+			return appgame.AdminBotEditMutationResult{}, err
+		}
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET source = ? WHERE id = ?", botstratTable), query.Source, query.StrategyID); err != nil {
+			return appgame.AdminBotEditMutationResult{}, err
+		}
+		return appgame.AdminBotEditMutationResult{
+			ActionIssue:        domaingame.AdminIssue(domaingame.AdminIssueActionSaved),
+			Name:               name,
+			SelectedStrategyID: query.StrategyID,
+		}, nil
 	case domaingame.AdminActionBotEditNew:
 		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (name, source) VALUES (?, ?)", botstratTable), query.Name, defaultAdminBotStrategySource()); err != nil {
 			return appgame.AdminBotEditMutationResult{}, err

@@ -3415,6 +3415,47 @@ func TestAdminRepositoryMutatesBotEditStrategies(t *testing.T) {
 		}
 	})
 
+	t.Run("import active strategy and backup", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{"previous-source", "Imported"})},
+		}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		result, err := repository.MutateAdminBotEdit(context.Background(), appgame.AdminBotEditMutationQuery{
+			Action:     domaingame.AdminActionBotEditImport,
+			StrategyID: 7,
+			Source:     "imported-source",
+		})
+
+		if err != nil {
+			t.Fatalf("MutateAdminBotEdit returned error: %v", err)
+		}
+		if result.SelectedStrategyID != 7 || result.Name != "Imported" || result.ActionIssue == nil ||
+			result.ActionIssue.Code != domaingame.AdminIssueActionSaved {
+			t.Fatalf("unexpected import result: %+v", result)
+		}
+		if len(runner.execCalls) != 2 ||
+			!strings.Contains(runner.execCalls[0].sql, "SET source = ? WHERE id = 1") || runner.execCalls[0].args[0] != "previous-source" ||
+			!strings.Contains(runner.execCalls[1].sql, "SET source = ? WHERE id = ?") || runner.execCalls[1].args[0] != "imported-source" || runner.execCalls[1].args[1] != 7 {
+			t.Fatalf("unexpected import execs: %+v", runner.execCalls)
+		}
+	})
+
+	t.Run("import without selected strategy fails like legacy empty selection", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+		result, err := repository.MutateAdminBotEdit(context.Background(), appgame.AdminBotEditMutationQuery{
+			Action: domaingame.AdminActionBotEditImport,
+			Source: "ignored-source",
+		})
+
+		if err != nil || result.ActionIssue == nil || result.ActionIssue.Code != domaingame.AdminIssueActionFailed ||
+			len(runner.calls) != 0 || len(runner.execCalls) != 0 {
+			t.Fatalf("expected failed import no-op, result=%+v err=%v calls=%+v execs=%+v", result, err, runner.calls, runner.execCalls)
+		}
+	})
+
 	t.Run("new", func(t *testing.T) {
 		runner := &fakeGalaxyRunner{}
 		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
@@ -3544,6 +3585,31 @@ func TestAdminRepositoryBotEditMutationEdges(t *testing.T) {
 		}, "ogame_")
 		if _, err := repository.MutateAdminBotEdit(context.Background(), appgame.AdminBotEditMutationQuery{Action: domaingame.AdminActionBotEditRename, StrategyID: 7}); err == nil || !strings.Contains(err.Error(), "reload failed") {
 			t.Fatalf("expected rename reload error, got %v", err)
+		}
+	})
+
+	t.Run("import errors", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{err: errors.New("import load failed")},
+		}}}, "ogame_")
+		if _, err := repository.MutateAdminBotEdit(context.Background(), appgame.AdminBotEditMutationQuery{Action: domaingame.AdminActionBotEditImport, StrategyID: 7}); err == nil || !strings.Contains(err.Error(), "import load failed") {
+			t.Fatalf("expected import load error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"backup", "name"})}}},
+			execErrs:    []error{errors.New("import backup failed")},
+		}, "ogame_")
+		if _, err := repository.MutateAdminBotEdit(context.Background(), appgame.AdminBotEditMutationQuery{Action: domaingame.AdminActionBotEditImport, StrategyID: 7}); err == nil || !strings.Contains(err.Error(), "import backup failed") {
+			t.Fatalf("expected import backup error, got %v", err)
+		}
+
+		repository = NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"backup", "name"})}}},
+			execErrs:    []error{nil, errors.New("import update failed")},
+		}, "ogame_")
+		if _, err := repository.MutateAdminBotEdit(context.Background(), appgame.AdminBotEditMutationQuery{Action: domaingame.AdminActionBotEditImport, StrategyID: 7}); err == nil || !strings.Contains(err.Error(), "import update failed") {
+			t.Fatalf("expected import update error, got %v", err)
 		}
 	})
 }

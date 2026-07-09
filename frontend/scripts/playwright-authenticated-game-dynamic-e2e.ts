@@ -1,5 +1,6 @@
 import { chromium, firefox, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { execFile } from "node:child_process";
+import { Buffer } from "node:buffer";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -1161,6 +1162,12 @@ async function performAction(page: Page, side: SideName, action: GameDynamicActi
     await locator.pressSequentially(resolveFixtureValue(action.value ?? ""), { timeout: 5_000 });
   } else if (action.type === "select") {
     await locator.selectOption(resolveFixtureValue(action.value ?? ""), { timeout: 5_000 });
+  } else if (action.type === "upload") {
+    await locator.setInputFiles({
+      name: action.fileName ?? "upload.txt",
+      mimeType: "application/json",
+      buffer: Buffer.from(resolveFixtureValue(action.value ?? ""), "utf8")
+    });
   } else if (action.type === "hover") {
     await locator.hover({ timeout: 5_000 });
   } else {
@@ -1177,7 +1184,7 @@ async function performAction(page: Page, side: SideName, action: GameDynamicActi
 
 async function readAssertion(page: Page, side: SideName, assertion: GameDynamicAssertion): Promise<string | number | boolean | null> {
   if (assertion.type === "evaluate") {
-    return normalizeEvaluation(await page.evaluate(assertion.expression ?? "undefined"));
+    return normalizeEvaluation(await page.evaluate(resolveFixtureTemplate(assertion.expression ?? "undefined")));
   }
   const selector = assertionSelector(assertion, side);
   if (!selector) {
@@ -1303,6 +1310,10 @@ function resolveFixtureValue(value: string): string {
     throw new Error(`dynamic query value ${value} resolved to a non-scalar fixture value`);
   }
   return String(current);
+}
+
+function resolveFixtureTemplate(value: string): string {
+  return value.replace(/\$fixture\.([A-Za-z0-9_.]+)/g, (match) => resolveFixtureValue(match));
 }
 
 function actionSelector(action: GameDynamicAction, side: SideName): string | undefined {
