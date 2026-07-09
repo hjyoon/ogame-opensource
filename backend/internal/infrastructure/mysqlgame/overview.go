@@ -32,6 +32,7 @@ const (
 	queueTypeResearch        = "Research"
 	queueTypeShipyard        = "Shipyard"
 	queueTypeRecalcPoints    = "RecalcPoints"
+	queueTypeAI              = "AI"
 )
 
 type Queryer interface {
@@ -63,6 +64,7 @@ type OverviewRepository struct {
 	includeUnread     bool
 	includeBuildQueue bool
 	includeEvents     bool
+	includeBotQueue   bool
 }
 
 func NewOverviewRepository(db *sql.DB, prefix string) OverviewRepository {
@@ -71,7 +73,7 @@ func NewOverviewRepository(db *sql.DB, prefix string) OverviewRepository {
 
 func NewOverviewRepositoryWithSecret(db *sql.DB, prefix string, secret string) OverviewRepository {
 	runner := SQLQueryer{DB: db}
-	return OverviewRepository{queryer: runner, execer: runner, prefix: prefix, secret: secret, now: time.Now, updateResources: true, includeUnread: true, includeBuildQueue: true, includeEvents: true}
+	return OverviewRepository{queryer: runner, execer: runner, prefix: prefix, secret: secret, now: time.Now, updateResources: true, includeUnread: true, includeBuildQueue: true, includeEvents: true, includeBotQueue: true}
 }
 
 func NewOverviewRepositoryWithQueryer(queryer Queryer, prefix string) OverviewRepository {
@@ -139,6 +141,12 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 		buildings := BuildingsRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now, updateResources: r.updateResources}
 		if err := buildings.FinishDueBuildingQueues(ctx, int(r.currentTime().Unix())); err != nil {
 			return domaingame.Overview{}, err
+		}
+		if r.includeBotQueue {
+			bots := BotRuntimeRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now}
+			if err := bots.FinishDueBotQueues(ctx, int(r.currentTime().Unix())); err != nil {
+				return domaingame.Overview{}, err
+			}
 		}
 		recalculated, err := r.finishDueRecalcPointQueues(ctx, int(r.currentTime().Unix()))
 		if err != nil {

@@ -3647,6 +3647,7 @@ func TestLegacyAdminQueueDescriptionCoversKnownTypes(t *testing.T) {
 		"CleanPlayers":     "Deleting inactive players and players put up for deletion",
 		"UnbanPlayer":      "Unban a player",
 		"AllowAttacks":     "Allow attacks",
+		queueTypeAI:        "Bot Task (Strategy #0)",
 	}
 	for queueType, want := range cases {
 		if got := legacyAdminQueueDescription(queueType, 0, 0, 0, ""); got != want {

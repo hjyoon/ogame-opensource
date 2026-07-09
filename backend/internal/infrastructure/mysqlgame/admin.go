@@ -3013,6 +3013,8 @@ func legacyAdminQueueDescription(queueType string, subID int, objID int, level i
 		return "Unban a player"
 	case "AllowAttacks":
 		return "Allow attacks"
+	case queueTypeAI:
+		return fmt.Sprintf("Bot Task (Strategy #%d)", subID)
 	}
 	return fmt.Sprintf("Unknown task type (type=%s, sub_id=%d, obj_id=%d, level=%d)", queueType, subID, objID, level)
 }
