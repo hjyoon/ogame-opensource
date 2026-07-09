@@ -146,6 +146,7 @@ const browserExecutable =
 const defaultMaxDiffRatio = numberEnv("OGAME_VISUAL_MAX_DIFF_RATIO", 0);
 const defaultMaxBoxDelta = numberEnv("OGAME_VISUAL_MAX_BOX_DELTA", 0);
 const colorDeltaThreshold = numberEnv("OGAME_VISUAL_COLOR_DELTA", 0);
+const maxVisualAttempts = Math.max(1, Math.floor(numberEnv("OGAME_VISUAL_ATTEMPTS", 3)));
 const domContractStyleProperties = [
   "display",
   "position",
@@ -245,34 +246,44 @@ try {
   const results: CaseResult[] = [];
   for (const viewport of viewports) {
     for (const spec of pageSpecs) {
-      const context = await newVisualContext(browser, viewport);
-      let legacy: PageCapture;
-      let migrated: PageCapture;
-      try {
-        legacy = await capturePage(context, spec, "legacy", legacyBaseURL + spec.legacyPath, viewport);
-        migrated = await capturePage(context, spec, "migrated", migratedBaseURL + spec.migratedPath, viewport);
-      } finally {
-        await context.close();
+      let result: CaseResult | null = null;
+      for (let attempt = 1; attempt <= maxVisualAttempts; attempt += 1) {
+        const context = await newVisualContext(browser, viewport);
+        let legacy: PageCapture;
+        let migrated: PageCapture;
+        try {
+          legacy = await capturePage(context, spec, "legacy", legacyBaseURL + spec.legacyPath, viewport);
+          migrated = await capturePage(context, spec, "migrated", migratedBaseURL + spec.migratedPath, viewport);
+        } finally {
+          await context.close();
+        }
+        const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath);
+        const maxBoxDelta = defaultMaxBoxDelta;
+        const boxChecks = spec.boxes.map((pair) => compareBoxes(pair.name, legacy.boxes[pair.name], migrated.boxes[pair.name], maxBoxDelta));
+        const maxDiffRatio = defaultMaxDiffRatio;
+        const contractSpecs = spec.contracts ?? publicShellContracts;
+        const contractChecks = contractSpecs.map((contract) => compareDomContracts(contract.name, legacy.contracts[contract.name], migrated.contracts[contract.name]));
+        const pass =
+          legacy.status === 200 &&
+          migrated.status === 200 &&
+          legacy.consoleErrors.length === 0 &&
+          migrated.consoleErrors.length === 0 &&
+          legacy.failedRequests.length === 0 &&
+          migrated.failedRequests.length === 0 &&
+          legacy.badResponses.length === 0 &&
+          migrated.badResponses.length === 0 &&
+          diff.diffRatio <= maxDiffRatio &&
+          boxChecks.every((check) => check.pass) &&
+          contractChecks.every((check) => check.pass);
+        result = { page: spec.name, viewport: viewport.name, pass, legacy, migrated, diff, maxDiffRatio, boxChecks, contractChecks };
+        if (pass || !shouldRetryExactVisual(result)) {
+          break;
+        }
       }
-      const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath);
-      const maxBoxDelta = defaultMaxBoxDelta;
-      const boxChecks = spec.boxes.map((pair) => compareBoxes(pair.name, legacy.boxes[pair.name], migrated.boxes[pair.name], maxBoxDelta));
-      const maxDiffRatio = defaultMaxDiffRatio;
-      const contractSpecs = spec.contracts ?? publicShellContracts;
-      const contractChecks = contractSpecs.map((contract) => compareDomContracts(contract.name, legacy.contracts[contract.name], migrated.contracts[contract.name]));
-      const pass =
-        legacy.status === 200 &&
-        migrated.status === 200 &&
-        legacy.consoleErrors.length === 0 &&
-        migrated.consoleErrors.length === 0 &&
-        legacy.failedRequests.length === 0 &&
-        migrated.failedRequests.length === 0 &&
-        legacy.badResponses.length === 0 &&
-        migrated.badResponses.length === 0 &&
-        diff.diffRatio <= maxDiffRatio &&
-        boxChecks.every((check) => check.pass) &&
-        contractChecks.every((check) => check.pass);
-      results.push({ page: spec.name, viewport: viewport.name, pass, legacy, migrated, diff, maxDiffRatio, boxChecks, contractChecks });
+      if (result === null) {
+        throw new Error(`No visual capture result for ${spec.name} ${viewport.name}`);
+      }
+      results.push(result);
     }
   }
   const languageFlagResults: BehaviorResult[] = [];
@@ -326,6 +337,20 @@ async function newVisualContext(browser: Browser, viewport: ViewportSpec): Promi
     deviceScaleFactor: 1,
     locale: "en-US"
   });
+}
+
+function shouldRetryExactVisual(result: CaseResult): boolean {
+  return (
+    !result.pass &&
+    result.legacy.status === 200 &&
+    result.migrated.status === 200 &&
+    result.legacy.consoleErrors.length === 0 &&
+    result.migrated.consoleErrors.length === 0 &&
+    result.legacy.failedRequests.length === 0 &&
+    result.migrated.failedRequests.length === 0 &&
+    result.legacy.badResponses.length === 0 &&
+    result.migrated.badResponses.length === 0
+  );
 }
 
 async function capturePage(

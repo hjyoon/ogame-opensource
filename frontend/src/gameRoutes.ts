@@ -226,7 +226,7 @@ const globalGameRouteQueryKeys = new Set(["session", "cp"]);
 const gameRouteQueryKeys = new Map<string, Set<string>>([
   ["/game/rename-planet", new Set(["pl"])],
   ["/game/empire", new Set(["planettype", "planet", "modus", "listid", "techid"])],
-  ["/game/buildings", new Set(["modus", "techid", "listid"])],
+  ["/game/buildings", new Set(["modus", "techid", "listid", "planet"])],
   ["/game/research", new Set(["bau", "unbau"])],
   ["/game/shipyard", new Set(["mode", "auftr"])],
   ["/game/fleet", new Set(["galaxy", "system", "position", "planet", "planettype", "target_mission"])],

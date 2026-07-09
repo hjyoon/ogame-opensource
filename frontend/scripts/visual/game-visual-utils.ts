@@ -74,7 +74,12 @@ export async function performVisualActions(page: Page, side: SideName, actions: 
       continue;
     }
     if (action.type === "hover") {
-      await locator.hover({ timeout: 5_000 });
+      await locator.scrollIntoViewIfNeeded({ timeout: 5_000 });
+      const box = await locator.boundingBox({ timeout: 5_000 });
+      if (!box) {
+        continue;
+      }
+      await page.mouse.move(Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2));
     } else if (action.type === "focus") {
       await locator.focus({ timeout: 5_000 });
     } else if (action.type === "click") {
@@ -353,6 +358,11 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
         }
       }
       if (currentPageName.startsWith("game-messages-compose")) {
+        for (const input of document.querySelectorAll<HTMLInputElement>("#content input, .legacy-messages-compose-table input")) {
+          if (/\[\d+:\d+:\d+\]/.test(input.value)) {
+            input.value = input.value.replace(/\[\d+:\d+:\d+\]/g, "[0:0:0]");
+          }
+        }
         for (const cell of document.querySelectorAll<HTMLElement>("#content th, #content td, .legacy-messages-compose-table th, .legacy-messages-compose-table td")) {
           const text = cell.textContent ?? "";
           if (/\[\d+:\d+:\d+\]/.test(text)) {

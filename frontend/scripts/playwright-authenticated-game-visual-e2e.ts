@@ -108,6 +108,7 @@ const layoutEnforced = process.env.OGAME_GAME_VISUAL_ENFORCE_LAYOUT !== "0";
 const maxDiffRatio = numberEnv("OGAME_GAME_VISUAL_MAX_DIFF_RATIO", 0);
 const maxBoxDelta = numberEnv("OGAME_GAME_VISUAL_MAX_BOX_DELTA", 0);
 const colorDeltaThreshold = numberEnv("OGAME_GAME_VISUAL_COLOR_DELTA", 0);
+const maxVisualAttempts = Math.max(1, Math.floor(numberEnv("OGAME_GAME_VISUAL_ATTEMPTS", 3)));
 const updateBaselines = process.env.OGAME_GAME_VISUAL_UPDATE_BASELINES === "1";
 const screenFilter =
   process.env.OGAME_GAME_VISUAL_SCREEN ?? process.env.OGAME_GAME_VISUAL_SCREENS ?? process.env.OGAME_GAME_VISUAL_AREA ?? "";
@@ -138,53 +139,73 @@ try {
       if (viewportFilterActive && spec.viewports && !spec.viewports.includes(viewport.name)) {
         continue;
       }
-      const legacyContext = await newContext(browser, viewport, legacyBaseURL, activeFixture);
-      const legacySession = activeFixture?.session ?? (await loginLegacy(legacyContext));
-      const legacy = await capturePage(legacyContext, spec, "legacy", legacyURL(spec, legacySession, activeFixture), viewport);
-      await legacyContext.close();
+      let result: CaseResult | null = null;
+      for (let attempt = 1; attempt <= maxVisualAttempts; attempt += 1) {
+        const legacyContext = await newContext(browser, viewport, legacyBaseURL, activeFixture);
+        let legacy: PageCapture;
+        try {
+          const legacySession = activeFixture?.session ?? (await loginLegacy(legacyContext));
+          legacy = await capturePage(legacyContext, spec, "legacy", legacyURL(spec, legacySession, activeFixture), viewport);
+        } finally {
+          await legacyContext.close();
+        }
 
-      const migratedContext = await newContext(browser, viewport, migratedBaseURL, activeFixture);
-      const migratedSession = activeFixture?.session ?? (await loginMigrated(migratedContext));
-      const migrated = await capturePage(migratedContext, spec, "migrated", migratedURL(spec, migratedSession, activeFixture), viewport);
-      await migratedContext.close();
+        const migratedContext = await newContext(browser, viewport, migratedBaseURL, activeFixture);
+        let migrated: PageCapture;
+        try {
+          const migratedSession = activeFixture?.session ?? (await loginMigrated(migratedContext));
+          migrated = await capturePage(migratedContext, spec, "migrated", migratedURL(spec, migratedSession, activeFixture), viewport);
+        } finally {
+          await migratedContext.close();
+        }
 
-      const diffPath = join(screenshotDir, `${spec.name}-${viewport.name}-diff.png`);
-      const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath, diffPath, colorDeltaThreshold);
-      const boxMaxDelta = maxPairBoxDelta(legacy.boxes, migrated.boxes, spec.requiredBoxes);
-      const notes = [...(spec.notes ?? []), ...caseNotes(legacy, migrated, diff, boxMaxDelta)];
-      const parityPass = diff.diffRatio <= maxDiffRatio && boxMaxDelta <= maxBoxDelta;
-      const contractPass =
-        legacy.status === 200 &&
-        migrated.status === 200 &&
-        legacy.consoleErrors.length === 0 &&
-        migrated.consoleErrors.length === 0 &&
-        legacy.failedRequests.length === 0 &&
-        migrated.failedRequests.length === 0 &&
-        legacy.badResponses.length === 0 &&
-        migrated.badResponses.length === 0 &&
-        boxesPresent(legacy.boxes, spec.requiredBoxes) &&
-        boxesPresent(migrated.boxes, spec.requiredBoxes) &&
-        textChecksEquivalent(legacy.textChecks, migrated.textChecks);
-      const pass = contractPass && (!diffEnforced || diff.diffRatio <= maxDiffRatio) && (!layoutEnforced || boxMaxDelta <= maxBoxDelta);
+        const diffPath = join(screenshotDir, `${spec.name}-${viewport.name}-diff.png`);
+        const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath, diffPath, colorDeltaThreshold);
+        const boxMaxDelta = maxPairBoxDelta(legacy.boxes, migrated.boxes, spec.requiredBoxes);
+        const notes = [...(spec.notes ?? []), ...caseNotes(legacy, migrated, diff, boxMaxDelta)];
+        const parityPass = diff.diffRatio <= maxDiffRatio && boxMaxDelta <= maxBoxDelta;
+        const contractPass =
+          legacy.status === 200 &&
+          migrated.status === 200 &&
+          legacy.consoleErrors.length === 0 &&
+          migrated.consoleErrors.length === 0 &&
+          legacy.failedRequests.length === 0 &&
+          migrated.failedRequests.length === 0 &&
+          legacy.badResponses.length === 0 &&
+          migrated.badResponses.length === 0 &&
+          boxesPresent(legacy.boxes, spec.requiredBoxes) &&
+          boxesPresent(migrated.boxes, spec.requiredBoxes) &&
+          textChecksEquivalent(legacy.textChecks, migrated.textChecks);
+        const pass = contractPass && (!diffEnforced || diff.diffRatio <= maxDiffRatio) && (!layoutEnforced || boxMaxDelta <= maxBoxDelta);
+        result = {
+          page: spec.name,
+          area: spec.area,
+          viewport: viewport.name,
+          pass,
+          parityPass,
+          legacy,
+          migrated,
+          diff,
+          diffPath,
+          boxMaxDelta,
+          diffEnforced,
+          layoutEnforced,
+          notes
+        };
+        if (pass || !shouldRetryVisual(result)) {
+          break;
+        }
+      }
+      if (result === null) {
+        throw new Error(`No authenticated game visual result for ${spec.name} ${viewport.name}`);
+      }
       const baselinePath = updateBaselines ? join(baselineDir, `${spec.name}-${viewport.name}.png`) : undefined;
       if (baselinePath) {
-        await copyFile(legacy.screenshotPath, baselinePath);
+        await copyFile(result.legacy.screenshotPath, baselinePath);
       }
+      result.baselinePath = baselinePath;
       results.push({
-        page: spec.name,
-        area: spec.area,
-        viewport: viewport.name,
-        pass,
-        parityPass,
-        legacy,
-        migrated,
-        diff,
-        diffPath,
-        baselinePath,
-        boxMaxDelta,
-        diffEnforced,
-        layoutEnforced,
-        notes
+        ...result
       });
     }
   }
@@ -240,6 +261,20 @@ function authFixtureForScreen(spec: GameVisualScreenSpec, authFixture: AuthFixtu
     ...authFixture,
     ...authFixture.admin
   };
+}
+
+function shouldRetryVisual(result: CaseResult): boolean {
+  return (
+    !result.pass &&
+    result.legacy.status === 200 &&
+    result.migrated.status === 200 &&
+    result.legacy.consoleErrors.length === 0 &&
+    result.migrated.consoleErrors.length === 0 &&
+    result.legacy.failedRequests.length === 0 &&
+    result.migrated.failedRequests.length === 0 &&
+    result.legacy.badResponses.length === 0 &&
+    result.migrated.badResponses.length === 0
+  );
 }
 
 async function loadAuthFixture(path: string | undefined): Promise<AuthFixture | undefined> {

@@ -59,6 +59,7 @@ type TechnologyInfo struct {
 	Level       int
 	Kind        string
 	Rows        []TechnologyInfoRow
+	Demolish    *TechnologyDemolish
 }
 
 type TechnologyInfoRow struct {
@@ -215,6 +216,7 @@ func BuildTechnologyInfoWithSpeed(id int, planet PlanetOverview, levels Building
 		Description: legacyTechnologyLongDescription(id, spec.description),
 		Level:       level,
 		Kind:        technologyInfoKind(id),
+		Demolish:    buildTechnologyDemolish(id, levels, speed),
 	}
 	info.Rows = buildTechnologyInfoRows(id, level, planet, research, speed)
 	return info, true

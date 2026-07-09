@@ -976,6 +976,73 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
         child.style.textDecorationColor = "transparent";
       }
     };
+    const replaceNativeCheckboxes = (selector: string) => {
+      for (const checkbox of document.querySelectorAll<HTMLInputElement>(selector)) {
+        const marker = document.createElement("span");
+        marker.setAttribute("data-visual-checkbox", checkbox.checked ? "checked" : "unchecked");
+        marker.textContent = checkbox.checked ? "\u2713" : "";
+        marker.style.background = checkbox.checked ? "#1a73e8" : "#ffffff";
+        marker.style.border = "1px solid #9aa9bd";
+        marker.style.boxSizing = "border-box";
+        marker.style.color = "#ffffff";
+        marker.style.display = "inline-block";
+        marker.style.fontFamily = "Arial, sans-serif";
+        marker.style.fontSize = "11px";
+        marker.style.height = "13px";
+        marker.style.lineHeight = "11px";
+        marker.style.margin = getComputedStyle(checkbox).margin;
+        marker.style.textAlign = "center";
+        marker.style.verticalAlign = "middle";
+        marker.style.width = "13px";
+        checkbox.replaceWith(marker);
+      }
+    };
+    const maskTextSuffix = (node: Text, start: number) => {
+      const text = node.nodeValue ?? "";
+      if (start < 0 || start >= text.length) {
+        return;
+      }
+      const fragment = document.createDocumentFragment();
+      if (start > 0) {
+        fragment.append(document.createTextNode(text.slice(0, start)));
+      }
+      const span = document.createElement("span");
+      span.textContent = text.slice(start);
+      span.style.color = "transparent";
+      span.style.textDecorationColor = "transparent";
+      fragment.append(span);
+      node.replaceWith(fragment);
+    };
+    const maskOfficerStatusLines = () => {
+      for (const cell of document.querySelectorAll<HTMLElement>("#content td, .legacy-officers-table td")) {
+        const text = cell.textContent ?? "";
+        if (!/(Active more \d+ days|Inactive)/.test(text)) {
+          continue;
+        }
+        const walker = document.createTreeWalker(cell, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+        const textNodes: { node: Text; start: number }[] = [];
+        let statusStarted = false;
+        let current = walker.nextNode();
+        while (current) {
+          if (current instanceof HTMLBRElement) {
+            break;
+          }
+          if (current.nodeType === Node.TEXT_NODE) {
+            const node = current as Text;
+            const value = node.nodeValue ?? "";
+            const start = statusStarted ? 0 : value.indexOf("(");
+            if (start >= 0) {
+              statusStarted = true;
+              textNodes.push({ node, start });
+            }
+          }
+          current = walker.nextNode();
+        }
+        for (const item of textNodes) {
+          maskTextSuffix(item.node, item.start);
+        }
+      }
+    };
     if (pageSide === "legacy") {
       hide("#overDiv");
     }
@@ -1047,6 +1114,7 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
     }
     if (currentPageName === "game-officers") {
       hide("#content img[src$='DMaterie.jpg'], .legacy-officers-table img[src$='DMaterie.jpg']");
+      maskOfficerStatusLines();
     }
     if (currentPageName === "game-admin-fleetlogs") {
       for (const cell of document.querySelectorAll<HTMLElement>("#content table th, #content table td, .legacy-admin-fleetlogs-table th, .legacy-admin-fleetlogs-table td")) {
@@ -1110,6 +1178,14 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
     }
     if (currentPageName === "game-messages") {
       hide("#content select, #content input[type='button'], #content input[type='submit'], .legacy-messages-table select, .legacy-messages-table input[type='button'], .legacy-messages-table input[type='submit']");
+      replaceNativeCheckboxes("#content input[type='checkbox'], .legacy-messages-table input[type='checkbox']");
+      for (const row of document.querySelectorAll<HTMLTableRowElement>("#content table tr, .legacy-messages-table tr")) {
+        const cells = Array.from(row.querySelectorAll<HTMLElement>("th, td"));
+        const statsCell = cells[cells.length - 1];
+        if (statsCell && /^\d+\s*\/\s*\d+$/.test(statsCell.textContent?.trim() ?? "")) {
+          makeTextTransparent(statsCell);
+        }
+      }
     }
     if (currentPageName === "game-alliance-ranks") {
       for (const checkbox of document.querySelectorAll<HTMLInputElement>("#content input[type='checkbox'], .legacy-alliance-ranks-table input[type='checkbox']")) {

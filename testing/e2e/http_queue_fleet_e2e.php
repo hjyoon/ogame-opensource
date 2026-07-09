@@ -208,6 +208,15 @@ function e2e_force_complete_queue(int $taskId, int $unitSeconds = 1): void
     UpdateQueue($now);
 }
 
+function e2e_keep_queue_active(int $taskId, int $seconds = 3600): void
+{
+    global $db_prefix;
+    $now = time();
+    $end = $now + max(60, $seconds);
+    dbquery("UPDATE {$db_prefix}queue SET start={$now}, end={$end}, freeze=0, frozen=0 WHERE task_id={$taskId}");
+    dbquery("UPDATE {$db_prefix}buildqueue SET start={$now}, end={$end} WHERE id = ANY (SELECT sub_id FROM {$db_prefix}queue WHERE task_id={$taskId})");
+}
+
 function e2e_options_payload(array $user): array
 {
     return array(
@@ -373,13 +382,18 @@ try {
 
     e2e_reset_user_and_planet($attackerId, $attackerPlanet);
     $response = e2e_http_request('GET', $gameBase . '/index.php?page=b_building&session=' . rawurlencode($session) . '&cp=' . $attackerPlanet . '&modus=add&techid=' . GID_B_METAL_MINE . '&planet=' . $attackerPlanet, array(), $cookies);
+    $buildTaskBeforeVacation = e2e_one_row("SELECT task_id FROM {$db_prefix}queue WHERE owner_id={$attackerId} AND type='" . QTYP_BUILD . "' ORDER BY task_id DESC LIMIT 1");
+    if ($buildTaskBeforeVacation !== null) {
+        e2e_keep_queue_active((int)$buildTaskBeforeVacation['task_id']);
+    }
+    $activeBuildQueueBeforeVacation = e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}queue WHERE owner_id={$attackerId} AND type='" . QTYP_BUILD . "'") === 1;
     $user = LoadUser($attackerId);
     $responseVacation = e2e_http_request('POST', $gameBase . '/index.php?page=options&session=' . rawurlencode($session) . '&cp=' . $attackerPlanet . '&mode=change', e2e_options_payload($user), $cookies);
     $userAfterVacationAttempt = e2e_one_row("SELECT player_id, vacation, vacation_until FROM {$db_prefix}users WHERE player_id={$attackerId} LIMIT 1");
     $cases[] = e2e_finalize_case(array(
         'case' => 'active_queue_blocks_vacation_mode',
         'checks' => array_merge(e2e_response_check($response), e2e_response_check($responseVacation), array(
-            e2e_case(e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}queue WHERE owner_id={$attackerId} AND type='" . QTYP_BUILD . "'") === 1, 'active build queue exists before vacation attempt'),
+            e2e_case($activeBuildQueueBeforeVacation, 'active build queue exists before vacation attempt', $buildTaskBeforeVacation ?? array()),
             e2e_case($userAfterVacationAttempt !== null && (int)$userAfterVacationAttempt['vacation'] === 0 && (int)$userAfterVacationAttempt['vacation_until'] === 0, 'vacation mode is not enabled while account has active queue', $userAfterVacationAttempt ?? array()),
         )),
     ));

@@ -615,6 +615,22 @@ function auth_visual_prepare_botedit_fixture(): array
     return array('strategy_id' => $strategyId, 'strategy_name' => $name);
 }
 
+function auth_visual_spy_report_text(array $target): string
+{
+    $g = (int)($target['g'] ?? 1);
+    $s = (int)($target['s'] ?? 1);
+    $p = (int)($target['p'] ?? 1);
+    $type = (int)($target['type'] ?? 1);
+    return
+        "Visual Spy Report <a href=\"#\" onclick=\"showGalaxy({$g},{$s},{$p});\" >[{$g}:{$s}:{$p}]</a><br>" .
+        "<table>" .
+        "<tr><th>Metal</th><th>1.000.000</th></tr>" .
+        "<tr><th>Crystal</th><th>1.000.000</th></tr>" .
+        "<tr><th>Deuterium</th><th>1.000.000</th></tr>" .
+        "</table>" .
+        "<center><a href=\"#\" onclick=\"showFleetMenu({$g},{$s},{$p},{$type},1);\">Attack</a></center>";
+}
+
 function auth_visual_prepare_report_fixture(array $user, array $galaxyHover = null): array
 {
     global $db_prefix;
@@ -622,28 +638,71 @@ function auth_visual_prepare_report_fixture(array $user, array $galaxyHover = nu
     $playerId = (int)$user['player_id'];
     $planetId = $galaxyHover === null ? (int)$user['home_planet_id'] : (int)$galaxyHover['target_planet_id'];
     $moonId = $galaxyHover === null ? 0 : (int)$galaxyHover['moon_id'];
+    $now = time();
     dbquery(
         "DELETE FROM {$db_prefix}messages WHERE owner_id={$playerId} AND subj='Visual Spy Report' " .
         "AND msgfrom='Visual Control'"
     );
+    dbquery(
+        "DELETE FROM {$db_prefix}messages WHERE owner_id={$playerId} AND " .
+        "(msgfrom='Visual Battle Control' OR subj LIKE '%Visual Battle Report%')"
+    );
 
-    $text =
-        "Visual Spy Report<br>" .
-        "<table>" .
-        "<tr><th>Metal</th><th>1.000.000</th></tr>" .
-        "<tr><th>Crystal</th><th>1.000.000</th></tr>" .
-        "<tr><th>Deuterium</th><th>1.000.000</th></tr>" .
-        "</table>";
-    $messageId = SendMessage($playerId, 'Visual Control', 'Visual Spy Report', $text, MTYP_SPY_REPORT, time(), $planetId);
+    $target = auth_visual_one_row("SELECT g, s, p, type FROM {$db_prefix}planets WHERE planet_id={$planetId} LIMIT 1");
+    if ($target === null) {
+        $target = array('g' => 1, 's' => 1, 'p' => 1, 'type' => 1);
+    }
+    $text = auth_visual_spy_report_text($target);
+    $messageId = SendMessage($playerId, 'Visual Control', 'Visual Spy Report', $text, MTYP_SPY_REPORT, $now, $planetId);
     dbquery("UPDATE {$db_prefix}messages SET shown=1 WHERE msg_id={$messageId}");
 
     $moonMessageId = 0;
     if ($moonId > 0) {
-        $moonMessageId = SendMessage($playerId, 'Visual Control', 'Visual Spy Report', $text, MTYP_SPY_REPORT, time(), $moonId);
+        $moonTarget = auth_visual_one_row("SELECT g, s, p, type FROM {$db_prefix}planets WHERE planet_id={$moonId} LIMIT 1");
+        if ($moonTarget === null) {
+            $moonTarget = array('g' => $target['g'], 's' => $target['s'], 'p' => $target['p'], 'type' => 3);
+        }
+        $moonMessageId = SendMessage($playerId, 'Visual Control', 'Visual Spy Report', auth_visual_spy_report_text($moonTarget), MTYP_SPY_REPORT, $now, $moonId);
         dbquery("UPDATE {$db_prefix}messages SET shown=1 WHERE msg_id={$moonMessageId}");
     }
 
-    return array('report_id' => $messageId, 'moon_report_id' => $moonMessageId);
+    $battleText =
+        "<table class=\"battleReport\" border=\"1\" width=\"100%\">" .
+        "<tr><th>Visual Battle Report</th></tr>" .
+        "<tr><td>Contact with the attacking fleet has been lost. <br> (That means it was destroyed during the first round.)</td></tr>" .
+        "</table>";
+    $battleTextId = SendMessage(
+        $playerId,
+        'Visual Battle Control',
+        'Visual Battle Report Text',
+        $battleText,
+        MTYP_BATTLE_REPORT_TEXT,
+        $now + 1,
+        $planetId
+    );
+    dbquery("UPDATE {$db_prefix}messages SET shown=1 WHERE msg_id={$battleTextId}");
+
+    $g = (int)$target['g'];
+    $s = (int)$target['s'];
+    $p = (int)$target['p'];
+    $battleSubject = "<a href=\"#\" onclick=\"fenster(\\'index.php?page=bericht&session={PUBLIC_SESSION}&bericht={$battleTextId}\\', \\'Bericht_Kampf\\');\" ><span class=\"combatreport_ididattack_ilost\">Visual Battle Report [{$g}:{$s}:{$p}] (V:0,A:1.000)</span></a>";
+    $battleLinkId = SendMessage(
+        $playerId,
+        'Visual Battle Control',
+        $battleSubject,
+        '',
+        MTYP_BATTLE_REPORT_LINK,
+        $now + 2,
+        $planetId
+    );
+    dbquery("UPDATE {$db_prefix}messages SET shown=1 WHERE msg_id={$battleLinkId}");
+
+    return array(
+        'report_id' => $messageId,
+        'moon_report_id' => $moonMessageId,
+        'battle_report_id' => $battleTextId,
+        'battle_report_link_id' => $battleLinkId
+    );
 }
 
 function auth_visual_prepare_phalanx_fixture(array $user, array $galaxyHover): array

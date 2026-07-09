@@ -63,12 +63,13 @@ type gameTechnologyDemolishResponse struct {
 }
 
 type gameTechnologyInfoResponse struct {
-	ID          int                         `json:"id"`
-	Name        string                      `json:"name"`
-	Description string                      `json:"description"`
-	Level       int                         `json:"level"`
-	Kind        string                      `json:"kind"`
-	Rows        []gameTechnologyInfoRowItem `json:"rows"`
+	ID          int                             `json:"id"`
+	Name        string                          `json:"name"`
+	Description string                          `json:"description"`
+	Level       int                             `json:"level"`
+	Kind        string                          `json:"kind"`
+	Rows        []gameTechnologyInfoRowItem     `json:"rows"`
+	Demolish    *gameTechnologyDemolishResponse `json:"demolish,omitempty"`
 }
 
 type gameTechnologyInfoRowItem struct {
@@ -252,6 +253,7 @@ func toGameTechnologyInfoResponse(info *domaingame.TechnologyInfo) *gameTechnolo
 		Level:       info.Level,
 		Kind:        info.Kind,
 		Rows:        rows,
+		Demolish:    toGameTechnologyDemolishResponse(info.Demolish),
 	}
 }
 

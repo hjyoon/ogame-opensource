@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -122,6 +123,34 @@ func TestAdminRepositoryRestoresDatabaseBackupTables(t *testing.T) {
 	}
 	if len(runner.args) != 1 || len(runner.args[0]) != 2 || runner.args[0][0] != "1" || runner.args[0][1] != "legor" {
 		t.Fatalf("unexpected insert args: %+v", runner.args)
+	}
+}
+
+func TestAdminRepositoryBatchesDatabaseBackupRestoreRows(t *testing.T) {
+	runner := &fakeAdminDBRunner{}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+
+	err := repository.insertAdminDatabaseBackupRows(context.Background(), "`ogame_messages`", adminDatabaseBackupTable{
+		Cols: []string{"msg_id", "subj"},
+		Values: [][]any{
+			{"1", "first"},
+			{"2", "second"},
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("insertAdminDatabaseBackupRows returned error: %v", err)
+	}
+	if len(runner.execs) != 1 {
+		t.Fatalf("expected one batched insert, execs=%+v", runner.execs)
+	}
+	wantSQL := "INSERT INTO `ogame_messages` (`msg_id`, `subj`) VALUES (?, ?), (?, ?)"
+	if runner.execs[0] != wantSQL {
+		t.Fatalf("unexpected batched insert SQL:\nwant %s\ngot  %s", wantSQL, runner.execs[0])
+	}
+	wantArgs := []any{"1", "first", "2", "second"}
+	if !reflect.DeepEqual(runner.args[0], wantArgs) {
+		t.Fatalf("unexpected batched insert args: %+v", runner.args[0])
 	}
 }
 

@@ -1095,6 +1095,7 @@ type GameTechnologyInfo = {
   level: number;
   kind: "mine" | "solar" | "fusion" | "storage" | "description";
   rows: GameTechnologyInfoRow[];
+  demolish?: GameTechnologyDemolish;
 };
 
 type GameTechnologyInfoRow = {
@@ -3442,6 +3443,10 @@ function legacyHTMLAttribute(value: string): string {
 function buildingActionURL(action: "add" | "destroy" | "remove", techID: number, listID?: number) {
   const query = new URLSearchParams(window.location.search);
   query.set("modus", action);
+  const currentPlanet = query.get("cp");
+  if (currentPlanet && !query.has("planet")) {
+    query.set("planet", currentPlanet);
+  }
   if (action === "add" || action === "destroy") {
     query.set("techid", String(techID));
   }
@@ -5809,6 +5814,8 @@ const adminSimFleetRows = [
   { id: 214, name: "Deathstar" },
   { id: 215, name: "Battlecruiser" }
 ];
+
+const legacyFleetTemplateShips = adminSimFleetRows.filter((ship) => ship.id !== 212);
 
 const adminSimDefenseRows = ["Rocket Launcher", "Light Laser", "Heavy Laser", "Gauss Cannon", "Ion Cannon", "Plasma Turret", "Small Shield Dome", "Large Shield Dome"];
 const adminBattleSimMaxSlot = 9;
@@ -10228,7 +10235,22 @@ function FleetTemplatesTable({
   onAction: (action: "save" | "delete", templateID: number, name: string, ships: Record<string, number>) => void;
   pending: boolean;
 }) {
-  const selectableShips = fleet.ships.filter((ship) => ship.selectable && ship.id !== 212);
+  const selectableShips = React.useMemo<GameFleetShip[]>(
+    () =>
+      legacyFleetTemplateShips.map((catalogShip) => {
+        const existing = fleet.ships.find((ship) => ship.id === catalogShip.id);
+        return {
+          id: catalogShip.id,
+          name: existing?.name ?? catalogShip.name,
+          count: existing?.count ?? 0,
+          speed: existing?.speed ?? 0,
+          cargo: existing?.cargo ?? 0,
+          consumption: existing?.consumption ?? 0,
+          selectable: true
+        };
+      }),
+    [fleet.ships]
+  );
   const emptyDraft = React.useMemo<Record<string, number>>(
     () => Object.fromEntries(selectableShips.map((ship) => [String(ship.id), 0])),
     [selectableShips]
@@ -10337,7 +10359,7 @@ function FleetTemplatesTable({
               </td>
             </tr>
             <tr>
-              <th>Name</th>
+              <th>Title</th>
               <th>
                 <input name="template_name" onChange={(event) => setName(event.target.value)} size={20} type="text" value={name} />
                 <input name="template_id" size={6} type="hidden" value={templateID} />
@@ -11104,8 +11126,6 @@ function GalaxyHoverMenu({
 
   React.useEffect(() => clearTimer, [clearTimer]);
 
-  const legacyMoonOffsetX =
-    hoverKind === "moon" && !(typeof navigator !== "undefined" && /Firefox\//.test(navigator.userAgent)) ? -1 : 0;
   const tooltip =
     open && position
       ? (
@@ -11121,7 +11141,7 @@ function GalaxyHoverMenu({
           onMouseDown={navigateTooltipLink}
           style={{
             display: "block",
-            left: Math.max(0, position.x + offsetX - overlibWidth / 2 + legacyMoonOffsetX),
+            left: Math.max(0, position.x + offsetX - overlibWidth / 2),
             position: "fixed",
             top: position.y + offsetY,
             transform: "none",
@@ -13311,7 +13331,7 @@ function TechnologyTable({
   technology: GameTechnology;
 }) {
   if (technology.info) {
-    return <TechnologyInfoTable info={technology.info} />;
+    return <TechnologyInfoTable currentPlanet={technology.currentPlanet} info={technology.info} />;
   }
   if (technology.details) {
     return <TechnologyDetailsTable details={technology.details} />;
@@ -13368,11 +13388,11 @@ function TechnologyDetailsTable({ details }: { details: GameTechnologyDetails })
   return <div dangerouslySetInnerHTML={{ __html: technologyDetailsHTML(details) }} />;
 }
 
-function TechnologyInfoTable({ info }: { info: GameTechnologyInfo }) {
-  return <div dangerouslySetInnerHTML={{ __html: technologyInfoHTML(info) }} />;
+function TechnologyInfoTable({ currentPlanet, info }: { currentPlanet: GamePlanetOverview; info: GameTechnologyInfo }) {
+  return <div dangerouslySetInnerHTML={{ __html: technologyInfoHTML(info, currentPlanet) }} />;
 }
 
-function technologyInfoHTML(info: GameTechnologyInfo): string {
+function technologyInfoHTML(info: GameTechnologyInfo, currentPlanet: GamePlanetOverview): string {
   let html = "<center>\n";
   html += '<table width="519">\n';
   html += `<tr><td class="c">${legacyHTMLText(info.name)}</td></tr>\n`;
@@ -13382,9 +13402,34 @@ function technologyInfoHTML(info: GameTechnologyInfo): string {
   html += "</table></th></tr>\n";
   html += technologyInfoRowsHTML(info);
   html += "</table>\n";
+  html += technologyInfoDemolishHTML(info, currentPlanet.id);
   html += "<br><br><br><br>\n";
   html += "</center>";
   return html;
+}
+
+function technologyInfoDemolishHTML(info: GameTechnologyInfo, planetID: number): string {
+  if (!info.demolish) {
+    return "";
+  }
+  const search = new URLSearchParams();
+  const current = new URLSearchParams(window.location.search);
+  const session = current.get("session");
+  if (session) {
+    search.set("session", session);
+  }
+  search.set("techid", String(info.id));
+  search.set("modus", "destroy");
+  search.set("planet", String(planetID));
+  const href = gameRouteURL("/game/buildings", search.toString());
+  const resourceText = costParts(info.demolish.cost)
+    .map((part) => `${part.name.toLowerCase()}:<b>${formatLegacyNumber(part.value)}</b>`)
+    .join(" ");
+  return `<table width=519 >
+<tr><td class=c align=center><a href="${legacyHTMLAttribute(href)}">Demolish: ${legacyHTMLText(info.name)} Level ${info.demolish.level} destroy?</a></td></tr>
+<br><tr><th>Required ${resourceText}${resourceText ? " " : ""}</th></tr>
+<tr><th><br>Duration of demolition:  ${formatLegacyDuration(info.demolish.durationSeconds)}<br></th></tr></table>
+`;
 }
 
 function technologyInfoRowsHTML(info: GameTechnologyInfo): string {

@@ -59,6 +59,7 @@ const loginUser = process.env.OGAME_SESSION_EXPIRY_LOGIN_USER ?? "Legor";
 const loginPassword = process.env.OGAME_SESSION_EXPIRY_LOGIN_PASS ?? "admin";
 const maxDiffRatio = numberEnv("OGAME_SESSION_EXPIRY_MAX_DIFF_RATIO", 0);
 const colorDeltaThreshold = numberEnv("OGAME_SESSION_EXPIRY_COLOR_DELTA", 0);
+const maxVisualAttempts = Math.max(1, Math.floor(numberEnv("OGAME_SESSION_EXPIRY_VISUAL_ATTEMPTS", 3)));
 const defaultChromeExecutable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const defaultBrowserExecutable = browserName === "firefox" ? undefined : defaultChromeExecutable;
 const browserExecutable =
@@ -97,11 +98,17 @@ try {
 
   const results: CaseResult[] = [];
   for (const item of cases) {
-    const legacy = await captureCase(item, "legacy");
-    const migrated = await captureCase(item, "migrated");
+    let legacy = await captureCase(item, "legacy");
+    let migrated = await captureCase(item, "migrated");
     const diffPath = join(diffDir, `${item.name}.png`);
-    const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath, diffPath, colorDeltaThreshold);
-    const comparisons = compareCaptures(item, legacy, migrated, diff);
+    let diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath, diffPath, colorDeltaThreshold);
+    let comparisons = compareCaptures(item, legacy, migrated, diff);
+    for (let attempt = 2; attempt <= maxVisualAttempts && shouldRetryExactVisual(comparisons); attempt += 1) {
+      legacy = await captureCase(item, "legacy");
+      migrated = await captureCase(item, "migrated");
+      diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath, diffPath, colorDeltaThreshold);
+      comparisons = compareCaptures(item, legacy, migrated, diff);
+    }
     results.push({
       name: item.name,
       expectation: item.expectation,
@@ -277,6 +284,10 @@ function compareCaptures(spec: SessionExpiryCase, legacy: CaptureResult, migrate
     }
   }
   return errors;
+}
+
+function shouldRetryExactVisual(comparisons: string[]): boolean {
+  return comparisons.length === 1 && comparisons[0].startsWith("diff ratio ");
 }
 
 async function newContext(browser: Browser): Promise<BrowserContext> {

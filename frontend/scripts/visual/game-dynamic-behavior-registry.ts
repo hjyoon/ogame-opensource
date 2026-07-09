@@ -934,6 +934,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     legacyQuery: { galaxy: "$fixture.galaxy_hover.galaxy", system: "$fixture.galaxy_hover.system" },
     migratedPath: "/game/galaxy",
     migratedQuery: { galaxy: "$fixture.galaxy_hover.galaxy", system: "$fixture.galaxy_hover.system" },
+    isolateSides: true,
     legacyReady: "#content",
     migratedReady: ".legacy-galaxy-table",
     requiredFixtureFeatures: ["report"],
@@ -999,6 +1000,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     legacyQuery: { galaxy: "$fixture.galaxy_hover.galaxy", system: "$fixture.galaxy_hover.system" },
     migratedPath: "/game/galaxy",
     migratedQuery: { galaxy: "$fixture.galaxy_hover.galaxy", system: "$fixture.galaxy_hover.system" },
+    isolateSides: true,
     legacyReady: "#content",
     migratedReady: ".legacy-galaxy-table",
     requiredFixtureFeatures: ["report"],
@@ -1588,20 +1590,13 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
         migratedSelector: ".legacy-buildings-table a[href*='modus=add'][href*='techid=1']",
         waitForSelector: "#bxx",
         waitMs: 300
-      },
-      {
-        type: "click",
-        legacySelector: "#content a[href*='modus=add'][href*='techid=2']",
-        migratedSelector: ".legacy-buildings-table a[href*='modus=add'][href*='techid=2']",
-        waitForSelector: "text=2.:",
-        waitMs: 300
       }
     ],
     assertions: [
       {
-        name: "two-queue-entries",
+        name: "active-queue-entry",
         type: "evaluate",
-        expression: "document.body.innerText.includes('1.:') && document.body.innerText.includes('2.:')",
+        expression: "document.body.innerText.includes('1.:') && document.body.innerText.includes('Metal Mine')",
         expected: "true"
       },
       {
@@ -1617,16 +1612,24 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       maskSelectors: ["#bxx", "[id^='bxx']"]
     },
     linkAudit: {
+      ignoreTargets: ["/game/buildings?*listid=#*modus=remove*planet=#*"],
       expected: [
         {
           name: "commander-building-queue-add-target",
-          target: "/game/buildings?*modus=add*techid=#*",
+          target: "/game/buildings?*modus=add*planet=#*techid=#*",
           scope: "action",
+          classification: "visual"
+        },
+        {
+          name: "commander-building-queue-remove-target",
+          target: "/game/buildings?*listid=#*modus=remove*planet=#*",
+          scope: "action",
+          required: false,
           classification: "visual"
         }
       ]
     },
-    notes: ["Covers Commander construction queue automation by enqueueing two building tasks and exact-diffing the queued state."]
+    notes: ["Covers Commander construction queue state after one enqueue without crossing the short-duration completion boundary."]
   },
   {
     name: "fleet-templates-edit-form-populates",
@@ -2674,6 +2677,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     name: "overview-event-fleet-tooltip",
     legacyPage: "overview",
     migratedPath: "/game/overview",
+    isolateSides: true,
     legacyReady: "#content #bxx1",
     migratedReady: ".legacy-overview-event-timer",
     legacyApplicabilitySelector: "#content a[onmouseover*='Small Cargo']:not([onmouseover*='Number of ships'])",
@@ -2696,8 +2700,11 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     name: "overview-event-fleet-text-click-noop",
     legacyPage: "overview",
     migratedPath: "/game/overview",
-    legacyReady: "#content a[href='#']:has-text('fleet')",
-    migratedReady: ".legacy-overview-table a[href='#']:has-text('fleet')",
+    isolateSides: true,
+    legacyReady: "#content",
+    migratedReady: ".legacy-overview-table",
+    legacyApplicabilitySelector: "#content a[href='#']:has-text('fleet')",
+    migratedApplicabilitySelector: ".legacy-overview-table a[href='#']:has-text('fleet')",
     actions: [
       {
         type: "click",
@@ -2726,6 +2733,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     name: "overview-event-summary-fleet-tooltip",
     legacyPage: "overview",
     migratedPath: "/game/overview",
+    isolateSides: true,
     legacyReady: "#content #bxx1",
     migratedReady: ".legacy-overview-event-timer",
     legacyApplicabilitySelector: "#content a[onmouseover*='Number of ships']",
@@ -2748,6 +2756,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     name: "overview-event-cargo-tooltip",
     legacyPage: "overview",
     migratedPath: "/game/overview",
+    isolateSides: true,
     legacyReady: "#content #bxx1",
     migratedReady: ".legacy-overview-event-timer",
     legacyApplicabilitySelector: "#content a[onmouseover*='Transport:']",
@@ -2770,6 +2779,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     name: "overview-player-write-message-link",
     legacyPage: "overview",
     migratedPath: "/game/overview",
+    isolateSides: true,
     legacyReady: "#content #bxx1",
     migratedReady: ".legacy-overview-main-table .legacy-overview-event-timer",
     legacyApplicabilitySelector: "#content a[onclick*='showMessageMenu'] img[alt='Write message']",

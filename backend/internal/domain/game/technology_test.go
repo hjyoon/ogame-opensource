@@ -180,6 +180,9 @@ func TestBuildTechnologyInfoUsesLegacyInfosPreview(t *testing.T) {
 	if deuterium.Kind != "mine" || !deuterium.Rows[2].Current || deuterium.Rows[2].Production <= 0 || deuterium.Rows[2].Energy >= 0 {
 		t.Fatalf("unexpected deuterium synthesizer info: %+v", deuterium)
 	}
+	if deuterium.Demolish == nil || deuterium.Demolish.Level != 4 || deuterium.Demolish.Cost.Metal <= 0 {
+		t.Fatalf("expected mine info to expose legacy demolish block, got %+v", deuterium.Demolish)
+	}
 
 	solar, ok := BuildTechnologyInfoWithSpeed(BuildingSolarPlant, PlanetOverview{}, BuildingLevels{BuildingSolarPlant: 2}, ResearchLevels{}, 128)
 	if !ok {
@@ -211,6 +214,9 @@ func TestBuildTechnologyInfoUsesLegacyInfosPreview(t *testing.T) {
 	}
 	if research.Level != 4 || research.Kind != "description" {
 		t.Fatalf("research info should use research levels, got %+v", research)
+	}
+	if research.Demolish != nil {
+		t.Fatalf("research info must not expose demolition, got %+v", research.Demolish)
 	}
 
 	if _, ok := BuildTechnologyInfoWithSpeed(9999, PlanetOverview{}, BuildingLevels{}, ResearchLevels{}, 128); ok {

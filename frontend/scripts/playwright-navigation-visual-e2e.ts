@@ -462,21 +462,39 @@ async function loginLegacy(context: BrowserContext, authRole: AuthRole = "player
 async function loginMigrated(context: BrowserContext, authRole: AuthRole = "player"): Promise<string> {
   const credentials = credentialsForAuthRole(authRole);
   const page = await context.newPage();
-  await page.goto(`${migratedBaseURL}/home`, { waitUntil: "networkidle", timeout: 15_000 });
-  const universe = (await page.locator("select[name='universe'] option").nth(1).getAttribute("value")) ?? "http://localhost:8888";
-  await page.locator("select[name='universe']").selectOption(universe);
-  await page.locator("input[name='login']").fill(credentials.user);
-  await page.locator("input[name='pass']").fill(credentials.password);
-  await page.locator("input.legacy-public-login-button").click();
-  await page.waitForFunction(() => window.location.pathname === "/game/overview" && window.location.search.includes("session="), undefined, {
-    timeout: 10_000
-  });
-  const session = new URL(page.url()).searchParams.get("session") ?? "";
-  await page.close();
-  if (!session) {
+  try {
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      await page.goto(`${migratedBaseURL}/home`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+      const universe =
+        (await page.locator("select[name='universe'] option").nth(1).getAttribute("value", { timeout: 10_000 })) ??
+        "http://localhost:8888";
+      await page.locator("select[name='universe']").selectOption(universe);
+      await page.locator("input[name='login']").fill(credentials.user);
+      await page.locator("input[name='pass']").fill(credentials.password);
+      try {
+        await Promise.all([
+          page.waitForURL((url) => url.pathname === "/game/overview" && url.searchParams.has("session"), {
+            timeout: 30_000
+          }),
+          page.locator("input.legacy-public-login-button").click()
+        ]);
+        const session = new URL(page.url()).searchParams.get("session") ?? "";
+        if (session) {
+          return session;
+        }
+      } catch (err) {
+        if (attempt >= 2) {
+          const body = await page.locator("body").innerText({ timeout: 1_000 }).catch(() => "");
+          throw new Error(
+            `migrated login did not return a session at ${page.url()}: ${body.slice(0, 240)} (${err instanceof Error ? err.message : String(err)})`
+          );
+        }
+      }
+    }
     throw new Error("migrated login did not return a session");
+  } finally {
+    await page.close();
   }
-  return session;
 }
 
 async function discoverSeeds(browser: Browser, specs: SeedSpec[]): Promise<DiscoveryResult[]> {

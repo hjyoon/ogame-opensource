@@ -18,6 +18,8 @@ import (
 
 var adminDatabaseBackupPattern = regexp.MustCompile(`^backup_[A-Za-z0-9_.-]+\.json$`)
 
+const adminDatabaseBackupInsertBatchSize = 100
+
 type adminDatabaseBackupTable struct {
 	AutoIncrement *int64   `json:"auto_increment"`
 	Cols          []string `json:"cols"`
@@ -341,9 +343,25 @@ func (r AdminRepository) insertAdminDatabaseBackupRows(ctx context.Context, phys
 		}
 		quotedColumns = append(quotedColumns, quotedColumn)
 	}
-	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", physicalTable, strings.Join(quotedColumns, ", "), placeholders(len(table.Cols)))
-	for _, row := range table.Values {
-		if _, err := r.execer.ExecContext(ctx, query, row...); err != nil {
+	valuePlaceholders := "(" + placeholders(len(table.Cols)) + ")"
+	batchSize := adminDatabaseBackupInsertBatchSize
+	if batchSize < 1 {
+		batchSize = 1
+	}
+	for start := 0; start < len(table.Values); start += batchSize {
+		end := start + batchSize
+		if end > len(table.Values) {
+			end = len(table.Values)
+		}
+		rows := table.Values[start:end]
+		rowPlaceholders := make([]string, 0, len(rows))
+		args := make([]any, 0, len(rows)*len(table.Cols))
+		for _, row := range rows {
+			rowPlaceholders = append(rowPlaceholders, valuePlaceholders)
+			args = append(args, row...)
+		}
+		query := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s", physicalTable, strings.Join(quotedColumns, ", "), strings.Join(rowPlaceholders, ", "))
+		if _, err := r.execer.ExecContext(ctx, query, args...); err != nil {
 			return err
 		}
 	}
