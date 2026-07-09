@@ -141,6 +141,18 @@ func TestBuildTechnologyDetailsIncludesLegacyDemolishInfo(t *testing.T) {
 	}
 }
 
+func TestBuildTechnologyDemolishRejectsInvalidTargets(t *testing.T) {
+	if demolish := buildTechnologyDemolish(BuildingMetalMine, BuildingLevels{BuildingMetalMine: 0}, 128); demolish != nil {
+		t.Fatalf("zero-level building must not expose demolition: %+v", demolish)
+	}
+	if demolish := buildTechnologyDemolish(ResearchEnergy, BuildingLevels{ResearchEnergy: 1}, 128); demolish != nil {
+		t.Fatalf("research must not expose demolition: %+v", demolish)
+	}
+	if demolish := buildTechnologyDemolish(BuildingTerraformer, BuildingLevels{BuildingTerraformer: 1}, 128); demolish != nil {
+		t.Fatalf("non-demolishable building must not expose demolition: %+v", demolish)
+	}
+}
+
 func TestBuildTechnologyInfoUsesLegacyInfosPreview(t *testing.T) {
 	info, ok := BuildTechnologyInfoWithSpeed(BuildingMetalMine, PlanetOverview{}, BuildingLevels{}, ResearchLevels{}, 128)
 	if !ok {

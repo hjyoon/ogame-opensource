@@ -147,9 +147,93 @@ func TestOverviewRepositoryReadsLegacyOverview(t *testing.T) {
 	}
 }
 
+func TestOverviewRepositoryGetOverviewUpdatesResourcesBeforeRead(t *testing.T) {
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
+		{rows: fakeRowsFromValues(resourceUpdatePlanetRow(resourceUpdatePlanetFixture{
+			lastPeek: 1000,
+			metal:    1000,
+			crystal:  1000,
+			deut:     1000,
+			levels: map[int]int{
+				domaingame.BuildingMetalMine:  1,
+				domaingame.BuildingSolarPlant: 1,
+			},
+		}))},
+		{rows: fakeRowsFromValues(resourceUpdateUserRow(42, 0, 0, 0))},
+		{rows: fakeRowsFromValues([]any{1.0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3})},
+		{rows: fakeRowsFromValues([]any{1})},
+	}}}
+	repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+	repository.updateResources = true
+	repository.now = func() time.Time { return time.Unix(4600, 0) }
+
+	overview, err := repository.GetOverview(context.Background(), overviewQuery(42, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.CurrentPlanet.ID != 99 || overview.CurrentPlanet.Name != "Arakis" {
+		t.Fatalf("unexpected overview after resource update: %+v", overview.CurrentPlanet)
+	}
+	if len(runner.execCalls) != 1 ||
+		!strings.Contains(runner.execCalls[0].sql, "lastpeek = ? WHERE planet_id = ? AND owner_id = ? AND lastpeek = ?") ||
+		runner.execCalls[0].args[3] != 4600 ||
+		runner.execCalls[0].args[4] != 99 ||
+		runner.execCalls[0].args[5] != 42 ||
+		runner.execCalls[0].args[6] != 1000 {
+		t.Fatalf("expected resource update before overview read, execs=%+v", runner.execCalls)
+	}
+}
+
+func TestOverviewRepositoryFallbackUpdatesHomeResources(t *testing.T) {
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 0, 99, 0, 0, 0})},
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues(resourceUpdatePlanetRow(resourceUpdatePlanetFixture{
+			planetID: 99,
+			lastPeek: 1000,
+			metal:    1000,
+			crystal:  1000,
+			deut:     1000,
+			levels: map[int]int{
+				domaingame.BuildingMetalMine:  1,
+				domaingame.BuildingSolarPlant: 1,
+			},
+		}))},
+		{rows: fakeRowsFromValues(resourceUpdateUserRow(42, 0, 0, 0))},
+		{rows: fakeRowsFromValues([]any{1.0})},
+		{rows: fakeRowsFromValues([]any{99, "Homeworld", 1, 1, 2, 3, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{99, "Homeworld", 1, 1, 2, 3})},
+		{rows: fakeRowsFromValues([]any{1})},
+	}}}
+	repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+	repository.updateResources = true
+	repository.now = func() time.Time { return time.Unix(4600, 0) }
+
+	overview, err := repository.GetOverview(context.Background(), overviewQuery(42, 100))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.CurrentPlanet.ID != 99 || overview.CurrentPlanet.Name != "Homeworld" {
+		t.Fatalf("expected fallback to home planet, got %+v", overview.CurrentPlanet)
+	}
+	if len(runner.execCalls) != 2 ||
+		!strings.Contains(runner.execCalls[0].sql, "lastpeek = ? WHERE planet_id = ? AND owner_id = ? AND lastpeek = ?") ||
+		!strings.Contains(runner.execCalls[1].sql, "UPDATE `ogame_users` SET aktplanet = ?") ||
+		runner.execCalls[1].args[0] != 99 {
+		t.Fatalf("expected home resource update and active planet persistence, execs=%+v", runner.execCalls)
+	}
+}
+
 func TestOverviewRepositoryFinishesDueBuildingQueuesBeforeRead(t *testing.T) {
 	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{128.0, 0})},
+		{rows: fakeRowsFromValues()},
 		{rows: fakeRowsFromValues([]any{128.0, 0})},
 		{rows: fakeRowsFromValues()},
 		{rows: fakeRowsFromValues([]any{128.0, 0})},
@@ -162,6 +246,7 @@ func TestOverviewRepositoryFinishesDueBuildingQueuesBeforeRead(t *testing.T) {
 	repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
 	repository.updateResources = false
 	repository.includeBuildQueue = true
+	repository.includeBotQueue = true
 	repository.now = func() time.Time { return time.Unix(2000, 0) }
 
 	if _, err := repository.GetOverview(context.Background(), overviewQuery(42, 0)); err != nil {
@@ -173,9 +258,11 @@ func TestOverviewRepositoryFinishesDueBuildingQueuesBeforeRead(t *testing.T) {
 		!strings.Contains(runner.calls[1].sql, "SELECT speed, freeze FROM `ogame_uni`") ||
 		!strings.Contains(runner.calls[2].sql, "WHERE end <= ?") ||
 		runner.calls[2].args[0] != 2000 ||
-		!strings.Contains(runner.calls[4].sql, "type = ? AND end <= ?") ||
-		runner.calls[4].args[0] != queueTypeRecalcPoints ||
-		runner.calls[4].args[1] != 2000 {
+		!strings.Contains(runner.calls[4].sql, "type = ?") ||
+		runner.calls[4].args[1] != queueTypeAI ||
+		!strings.Contains(runner.calls[6].sql, "type = ? AND end <= ?") ||
+		runner.calls[6].args[0] != queueTypeRecalcPoints ||
+		runner.calls[6].args[1] != 2000 {
 		t.Fatalf("expected due queue flushes before overview read, got %+v", runner.calls)
 	}
 }

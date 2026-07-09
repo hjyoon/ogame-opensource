@@ -486,7 +486,7 @@ async function runSide(
     if (spec.visual.stableWaitMs && spec.visual.stableWaitMs > 0) {
       await page.waitForTimeout(spec.visual.stableWaitMs);
     }
-    await page.screenshot({ path: screenshotPath, fullPage: false });
+    await page.screenshot({ path: screenshotPath, fullPage: false, animations: "disabled", caret: "hide" });
   }
 
   const currentURL = page.url();
@@ -1014,6 +1014,9 @@ function isRouteLink(link: RouteLink | null): link is RouteLink {
 }
 
 async function applyDeterministicSnapshotState(page: Page, spec: GameDynamicBehaviorSpec, side: SideName): Promise<void> {
+  if (spec.visual?.keepTooltips !== true) {
+    await page.mouse.move(1, 1);
+  }
   await page.evaluate(() => {
     window.scrollTo(0, 0);
     document.scrollingElement?.scrollTo(0, 0);

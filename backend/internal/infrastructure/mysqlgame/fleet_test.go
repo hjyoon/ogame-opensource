@@ -2865,6 +2865,15 @@ func TestFleetRepositoryFinishDueFleetQueuesSkipsFrozenAndRejectsInvalidSetup(t 
 		t.Fatalf("expected freeze query error, got %v", err)
 	}
 
+	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{err: errors.New("due fleet failed")},
+	}}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+	if err := repository.FinishDueFleetQueues(context.Background(), 2_000); err == nil || !strings.Contains(err.Error(), "due fleet failed") {
+		t.Fatalf("expected due fleet query error, got %v", err)
+	}
+
 	repository = NewFleetRepositoryWithRunner(runner, runner, "bad-prefix_", func() time.Time { return time.Unix(2_000, 0) })
 	if err := repository.FinishDueFleetQueues(context.Background(), 2_000); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
 		t.Fatalf("expected unsafe prefix error, got %v", err)

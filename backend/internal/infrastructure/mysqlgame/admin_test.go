@@ -4031,6 +4031,13 @@ func TestAdminRepositoryAdminRowsErrEdges(t *testing.T) {
 			},
 		},
 		{
+			name: "user planet rows",
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminUserPlanetRows(context.Background(), "`ogame_planets`", 42)
+				return err
+			},
+		},
+		{
 			name: "queue rows",
 			run: func(repository AdminRepository) error {
 				_, err := repository.loadAdminQueueRows(context.Background())
@@ -4098,6 +4105,14 @@ func TestAdminRepositoryAdminScanEdges(t *testing.T) {
 			rows: fakeRowsFromValues([]any{"bad"}),
 			run: func(repository AdminRepository) error {
 				_, err := repository.loadAdminPlanetRows(context.Background())
+				return err
+			},
+		},
+		{
+			name: "user planet rows",
+			rows: fakeRowsFromValues([]any{"bad"}),
+			run: func(repository AdminRepository) error {
+				_, err := repository.loadAdminUserPlanetRows(context.Background(), "`ogame_planets`", 42)
 				return err
 			},
 		},

@@ -1089,6 +1089,173 @@ function smoke_prepare_queue_idempotency_fixture(string $password, array $near):
     );
 }
 
+function smoke_bot_strategy_source(array $nodes, array $links): string
+{
+    return json_encode(
+        array('nodeDataArray' => $nodes, 'linkDataArray' => $links),
+        JSON_UNESCAPED_SLASHES
+    );
+}
+
+function smoke_upsert_bot_strategy(string $name, string $source): int
+{
+    global $db_prefix;
+
+    $escapedName = smoke_sql_escape($name);
+    $escapedSource = smoke_sql_escape($source);
+    $row = smoke_one_row("SELECT id FROM {$db_prefix}botstrat WHERE name='{$escapedName}' LIMIT 1");
+    if ($row !== null) {
+        dbquery("UPDATE {$db_prefix}botstrat SET source='{$escapedSource}' WHERE id=" . (int)$row['id']);
+        return (int)$row['id'];
+    }
+    return AddDBRow(array('name' => $name, 'source' => $source), 'botstrat');
+}
+
+function smoke_prepare_bot_runtime_fixture(string $password, array $near): array
+{
+    global $db_prefix, $resmap;
+
+    $bot = smoke_prepare_user('gobotruntime', $password, 'gobotruntime@example.local', USER_TYPE_PLAYER);
+    $botId = (int)$bot['player_id'];
+    $planetId = (int)$bot['home_planet_id'];
+
+    smoke_cleanup_alliances(array($botId));
+    smoke_cleanup_fleets(array($botId), array($planetId));
+    dbquery(
+        "DELETE FROM {$db_prefix}queue WHERE owner_id={$botId} AND type IN ('" .
+        QTYP_AI . "','" . QTYP_BUILD . "','" . QTYP_DEMOLISH . "','" . QTYP_RESEARCH . "','" . QTYP_SHIPYARD . "','" . QTYP_FLEET . "')"
+    );
+    dbquery("DELETE FROM {$db_prefix}buildqueue WHERE owner_id={$botId} OR planet_id={$planetId}");
+    dbquery("DELETE FROM {$db_prefix}botvars WHERE owner_id={$botId}");
+
+    $positions = smoke_find_empty_positions($near, 1);
+    smoke_prepare_planet($planetId, $botId, 'GoBotRuntime', $positions[0]);
+
+    $researchColumns = array();
+    foreach ($resmap as $gid) {
+        $level = $gid === GID_R_COMBUST_DRIVE ? 2 : 0;
+        $researchColumns[] = "`{$gid}`={$level}";
+    }
+    $now = time();
+    dbquery(
+        "UPDATE {$db_prefix}users SET " . implode(',', $researchColumns) . ", admin=0, validated=1, deact_ip=1, " .
+        "vacation=0, vacation_until=0, banned=0, banned_until=0, noattack=0, noattack_until=0, " .
+        "disable=0, disable_until=0, lang='en', skin='/evolution/', useskin=1, hplanetid={$planetId}, aktplanet={$planetId}, " .
+        "score1=0, score2=0, score3=0, oldscore1=0, oldscore2=0, oldscore3=0, " .
+        "place1=1, place2=1, place3=1, oldplace1=0, oldplace2=0, oldplace3=0, scoredate={$now}, lastclick={$now} " .
+        "WHERE player_id={$botId}"
+    );
+    dbquery(
+        "UPDATE {$db_prefix}planets SET " .
+        "`" . GID_RC_METAL . "`=10000000, `" . GID_RC_CRYSTAL . "`=10000000, `" . GID_RC_DEUTERIUM . "`=10000000, " .
+        "`" . GID_B_METAL_MINE . "`=0, `" . GID_B_CRYS_MINE . "`=1, `" . GID_B_DEUT_SYNTH . "`=1, " .
+        "`" . GID_B_SOLAR . "`=20, `" . GID_B_FUSION . "`=1, `" . GID_B_ROBOTS . "`=10, `" . GID_B_SHIPYARD . "`=10, " .
+        "`" . GID_B_RES_LAB . "`=10, `" . GID_B_NANITES . "`=0, `" . GID_F_SC . "`=0, `" . GID_F_SAT . "`=5, " .
+        "prod1=0, prod2=0, prod3=0, prod4=0, prod12=0, prod212=0, fields=0, maxfields=200, type=" . PTYP_PLANET . " " .
+        "WHERE planet_id={$planetId} AND owner_id={$botId}"
+    );
+
+    $startSource = smoke_bot_strategy_source(
+        array(
+            array('key' => 1, 'category' => 'Start', 'text' => ''),
+            array('key' => 2, 'category' => 'Cond', 'text' => 'BotStrategyExists("go_bot_build") && BotEnergyAbove(-9999)'),
+            array('key' => 3, 'category' => 'Block', 'text' => 'BotIdle(); BotSetVar("phase", "ready"); BotExec("go_bot_build"); BotExec("go_bot_research"); BotExec("go_bot_shipyard"); BotExec("go_bot_resources"); return 0'),
+            array('key' => 99, 'category' => 'End', 'text' => ''),
+        ),
+        array(
+            array('from' => 1, 'to' => 2, 'text' => ''),
+            array('from' => 2, 'to' => 3, 'text' => 'Yes'),
+            array('from' => 2, 'to' => 99, 'text' => 'No'),
+            array('from' => 3, 'to' => 99, 'text' => ''),
+        )
+    );
+    $buildSource = smoke_bot_strategy_source(
+        array(
+            array('key' => 1, 'category' => 'Start', 'text' => ''),
+            array('key' => 2, 'category' => 'Cond', 'text' => 'BotCanBuild(' . GID_B_METAL_MINE . ')'),
+            array('key' => 3, 'category' => 'Block', 'text' => 'return BotBuild(' . GID_B_METAL_MINE . ')'),
+            array('key' => 99, 'category' => 'End', 'text' => ''),
+        ),
+        array(
+            array('from' => 1, 'to' => 2, 'text' => ''),
+            array('from' => 2, 'to' => 3, 'text' => 'Yes'),
+            array('from' => 2, 'to' => 99, 'text' => 'No'),
+            array('from' => 3, 'to' => 99, 'text' => ''),
+        )
+    );
+    $researchSource = smoke_bot_strategy_source(
+        array(
+            array('key' => 1, 'category' => 'Start', 'text' => ''),
+            array('key' => 2, 'category' => 'Cond', 'text' => 'BotCanResearch(' . GID_R_ENERGY . ')'),
+            array('key' => 3, 'category' => 'Block', 'text' => 'return BotResearch(' . GID_R_ENERGY . ')'),
+            array('key' => 99, 'category' => 'End', 'text' => ''),
+        ),
+        array(
+            array('from' => 1, 'to' => 2, 'text' => ''),
+            array('from' => 2, 'to' => 3, 'text' => 'Yes'),
+            array('from' => 2, 'to' => 99, 'text' => 'No'),
+            array('from' => 3, 'to' => 99, 'text' => ''),
+        )
+    );
+    $shipyardSource = smoke_bot_strategy_source(
+        array(
+            array('key' => 1, 'category' => 'Start', 'text' => ''),
+            array('key' => 2, 'category' => 'Cond', 'text' => 'BotGetBuild(' . GID_B_SHIPYARD . ') >= 2 && BotGetResearch(' . GID_R_COMBUST_DRIVE . ') >= 2'),
+            array('key' => 3, 'category' => 'Block', 'text' => 'return BotBuildFleet(' . GID_F_SC . ', 2)'),
+            array('key' => 99, 'category' => 'End', 'text' => ''),
+        ),
+        array(
+            array('from' => 1, 'to' => 2, 'text' => ''),
+            array('from' => 2, 'to' => 3, 'text' => 'Yes'),
+            array('from' => 2, 'to' => 99, 'text' => 'No'),
+            array('from' => 3, 'to' => 99, 'text' => ''),
+        )
+    );
+    $resourcesSource = smoke_bot_strategy_source(
+        array(
+            array('key' => 1, 'category' => 'Start', 'text' => ''),
+            array('key' => 2, 'category' => 'Cond', 'text' => 'BotGetVar("phase", "missing") === "ready"'),
+            array('key' => 3, 'category' => 'Block', 'text' => 'BotResourceSettings(70, 60, 50, 100, 100, 80); return 0'),
+            array('key' => 99, 'category' => 'End', 'text' => ''),
+        ),
+        array(
+            array('from' => 1, 'to' => 2, 'text' => ''),
+            array('from' => 2, 'to' => 3, 'text' => 'Yes'),
+            array('from' => 2, 'to' => 99, 'text' => 'No'),
+            array('from' => 3, 'to' => 99, 'text' => ''),
+        )
+    );
+
+    $startStrategyId = smoke_upsert_bot_strategy('_start', $startSource);
+    smoke_upsert_bot_strategy('go_bot_build', $buildSource);
+    smoke_upsert_bot_strategy('go_bot_research', $researchSource);
+    smoke_upsert_bot_strategy('go_bot_shipyard', $shipyardSource);
+    smoke_upsert_bot_strategy('go_bot_resources', $resourcesSource);
+    $startTaskId = AddQueue($botId, QTYP_AI, $startStrategyId, 1, 0, $now - 5, 0, QUEUE_PRIO_BOT);
+    InvalidateUserCache();
+
+    return array(
+        'login' => mb_strtolower($bot['name'], 'UTF-8'),
+        'player_id' => $botId,
+        'home_planet_id' => $planetId,
+        'start_strategy_id' => $startStrategyId,
+        'start_task_id' => $startTaskId,
+        'building_id' => GID_B_METAL_MINE,
+        'research_id' => GID_R_ENERGY,
+        'ship_id' => GID_F_SC,
+        'expected_ship_count' => 2,
+        'expected_production' => array(
+            'metal' => 70,
+            'crystal' => 60,
+            'deuterium' => 50,
+            'solar' => 100,
+            'fusion' => 100,
+            'satellite' => 80,
+        ),
+        'strategy_names' => array('_start', 'go_bot_build', 'go_bot_research', 'go_bot_shipyard', 'go_bot_resources'),
+    );
+}
+
 function smoke_prepare_queue_freeze_drain_fixture(string $password, array $near): array
 {
     global $db_prefix;
@@ -2713,6 +2880,7 @@ smoke_prepare_planet((int)$freezeVictim['home_planet_id'], (int)$freezeVictim['p
 $premiumDmFixture = smoke_prepare_premium_dm_fixture($password, $home);
 $vacationFreezeFixture = smoke_prepare_vacation_freeze_fixture($password, $home);
 $queueIdempotencyFixture = smoke_prepare_queue_idempotency_fixture($password, $home);
+$botRuntimeFixture = smoke_prepare_bot_runtime_fixture($password, $home);
 $queueFreezeDrainFixture = smoke_prepare_queue_freeze_drain_fixture($password, $home);
 $queueCancelFixture = smoke_prepare_queue_cancel_fixture($password, $home);
 $concurrencyRaceFixture = smoke_prepare_concurrency_race_fixture($password, $home);
@@ -2800,6 +2968,7 @@ echo json_encode(array(
 	'premium_dm' => $premiumDmFixture,
 	'vacation_freeze' => $vacationFreezeFixture,
 	'queue_idempotency' => $queueIdempotencyFixture,
+	'bot_runtime' => $botRuntimeFixture,
 	'queue_freeze_drain' => $queueFreezeDrainFixture,
 	'queue_cancel' => $queueCancelFixture,
 	'concurrency_race' => $concurrencyRaceFixture,

@@ -84,3 +84,24 @@ func TestSelectedMessageTargetIDHandlesLegacyQuery(t *testing.T) {
 		t.Fatal("expected negative target id to fail")
 	}
 }
+
+func TestSelectedMessageTypeFilterHandlesLegacyQuery(t *testing.T) {
+	messageType, hasFilter, err := selectedMessageTypeFilter(httptest.NewRequest(http.MethodGet, "/api/game/messages?pm=5", nil))
+	if err != nil || !hasFilter || messageType != 5 {
+		t.Fatalf("expected pm filter 5, type=%d has=%v err=%v", messageType, hasFilter, err)
+	}
+	messageType, hasFilter, err = selectedMessageTypeFilter(httptest.NewRequest(http.MethodGet, "/api/game/messages?pm=5&messageziel=77", nil))
+	if err != nil || hasFilter || messageType != 0 {
+		t.Fatalf("compose target should suppress pm filter, type=%d has=%v err=%v", messageType, hasFilter, err)
+	}
+	messageType, hasFilter, err = selectedMessageTypeFilter(httptest.NewRequest(http.MethodGet, "/api/game/messages", nil))
+	if err != nil || hasFilter || messageType != 0 {
+		t.Fatalf("missing pm should not set filter, type=%d has=%v err=%v", messageType, hasFilter, err)
+	}
+	if _, _, err := selectedMessageTypeFilter(httptest.NewRequest(http.MethodGet, "/api/game/messages?pm=bad", nil)); err == nil {
+		t.Fatal("expected invalid pm filter to fail")
+	}
+	if _, _, err := selectedMessageTypeFilter(httptest.NewRequest(http.MethodGet, "/api/game/messages?pm=-1", nil)); err == nil {
+		t.Fatal("expected negative pm filter to fail")
+	}
+}

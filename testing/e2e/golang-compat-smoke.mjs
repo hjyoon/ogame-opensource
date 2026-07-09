@@ -152,6 +152,12 @@ function buildingItemByID(body, itemID) {
     : undefined;
 }
 
+function buildingQueueByID(body, itemID) {
+  return Array.isArray(body.buildings?.queue)
+    ? body.buildings.queue.find((row) => Number(row.techId ?? 0) === Number(itemID))
+    : undefined;
+}
+
 function researchItemByID(body, itemID) {
   return Array.isArray(body.research?.items)
     ? body.research.items.find((row) => Number(row.id ?? 0) === Number(itemID))
@@ -509,6 +515,15 @@ try {
     Number(queueIdempotencyFixture.build?.expected_score1 ?? 0) > 0 &&
     Number(queueIdempotencyFixture.research?.expected_score1 ?? 0) > 0 &&
     Number(queueIdempotencyFixture.shipyard?.expected_score1 ?? 0) > 0
+  );
+  const botRuntimeFixture = smokeFixture?.bot_runtime ?? {};
+  const botRuntimeReady = Boolean(
+    typeof botRuntimeFixture.login === "string" &&
+    Number(botRuntimeFixture.home_planet_id ?? 0) > 0 &&
+    Number(botRuntimeFixture.start_task_id ?? 0) > 0 &&
+    Number(botRuntimeFixture.building_id ?? 0) > 0 &&
+    Number(botRuntimeFixture.research_id ?? 0) > 0 &&
+    Number(botRuntimeFixture.ship_id ?? 0) > 0
   );
   const queueFreezeDrainFixture = smokeFixture?.queue_freeze_drain ?? {};
   const queueFreezeDrainReady = Boolean(
@@ -4670,6 +4685,69 @@ try {
     expected: queueIdempotencyFixture.shipyard?.expected_score2
   };
 
+  const botRuntimeUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
+  const botRuntimeLogin = botRuntimeReady
+    ? await loginGameUser(botRuntimeFixture.login, loginSmokePassword, botRuntimeUniverse)
+    : null;
+  const botRuntimeSearch = withQueryParam(botRuntimeLogin?.search ?? "?session=", "cp", Number(botRuntimeFixture.home_planet_id ?? 0));
+  const botRuntimeOverviewResponses = [];
+  if (botRuntimeReady) {
+    for (let iteration = 0; iteration < 12; iteration += 1) {
+      botRuntimeOverviewResponses.push(await request(`/api/game/overview${botRuntimeSearch}`, { headers: { Cookie: botRuntimeLogin.cookiePair } }));
+    }
+  }
+  const botRuntimeOverviewBodies = botRuntimeOverviewResponses.map((response) => parseJSON(response));
+  const botRuntimeBuildings = botRuntimeReady
+    ? await request(`/api/game/buildings${botRuntimeSearch}`, { headers: { Cookie: botRuntimeLogin.cookiePair } })
+    : null;
+  const botRuntimeResearch = botRuntimeReady
+    ? await request(`/api/game/research${botRuntimeSearch}`, { headers: { Cookie: botRuntimeLogin.cookiePair } })
+    : null;
+  const botRuntimeShipyard = botRuntimeReady
+    ? await request(`/api/game/shipyard${botRuntimeSearch}`, { headers: { Cookie: botRuntimeLogin.cookiePair } })
+    : null;
+  const botRuntimeResources = botRuntimeReady
+    ? await request(`/api/game/resources${botRuntimeSearch}`, { headers: { Cookie: botRuntimeLogin.cookiePair } })
+    : null;
+  const botRuntimeBuildingsBody = botRuntimeBuildings ? parseJSON(botRuntimeBuildings) : {};
+  const botRuntimeResearchBody = botRuntimeResearch ? parseJSON(botRuntimeResearch) : {};
+  const botRuntimeShipyardBody = botRuntimeShipyard ? parseJSON(botRuntimeShipyard) : {};
+  const botRuntimeResourcesBody = botRuntimeResources ? parseJSON(botRuntimeResources) : {};
+  const botRuntimeBuildingID = Number(botRuntimeFixture.building_id ?? 1);
+  const botRuntimeResearchID = Number(botRuntimeFixture.research_id ?? 113);
+  const botRuntimeShipID = Number(botRuntimeFixture.ship_id ?? 202);
+  const botRuntimeExpectedShipCount = Number(botRuntimeFixture.expected_ship_count ?? 2);
+  const botRuntimeExpectedProduction = botRuntimeFixture.expected_production ?? {};
+  const botRuntimeBuildingItem = buildingItemByID(botRuntimeBuildingsBody, botRuntimeBuildingID);
+  const botRuntimeBuildingQueue = buildingQueueByID(botRuntimeBuildingsBody, botRuntimeBuildingID);
+  const botRuntimeResearchItem = researchItemByID(botRuntimeResearchBody, botRuntimeResearchID);
+  const botRuntimeShipItem = shipyardItemByID(botRuntimeShipyardBody, botRuntimeShipID);
+  const botRuntimeShipQueue = shipyardQueueByID(botRuntimeShipyardBody, botRuntimeShipID);
+  const botRuntimeProductionRows = {
+    metal: resourceRowByID(botRuntimeResourcesBody, 1),
+    crystal: resourceRowByID(botRuntimeResourcesBody, 2),
+    deuterium: resourceRowByID(botRuntimeResourcesBody, 3),
+    solar: resourceRowByID(botRuntimeResourcesBody, 4),
+    fusion: resourceRowByID(botRuntimeResourcesBody, 12),
+    satellite: resourceRowByID(botRuntimeResourcesBody, 212)
+  };
+  const botRuntimeBuildActionOK =
+    Number(botRuntimeBuildingQueue?.techId ?? 0) === botRuntimeBuildingID ||
+    Number(botRuntimeBuildingItem?.level ?? 0) >= 1;
+  const botRuntimeResearchActionOK =
+    Number(botRuntimeResearchBody.research?.active?.techId ?? 0) === botRuntimeResearchID ||
+    Number(botRuntimeResearchItem?.level ?? 0) >= 1;
+  const botRuntimeShipActionOK =
+    (Number(botRuntimeShipQueue?.unitId ?? 0) === botRuntimeShipID && Number(botRuntimeShipQueue?.count ?? 0) === botRuntimeExpectedShipCount) ||
+    Number(botRuntimeShipItem?.count ?? 0) >= botRuntimeExpectedShipCount;
+  const botRuntimeProductionOK =
+    Number(botRuntimeProductionRows.metal?.percent ?? -1) === Number(botRuntimeExpectedProduction.metal ?? 70) &&
+    Number(botRuntimeProductionRows.crystal?.percent ?? -1) === Number(botRuntimeExpectedProduction.crystal ?? 60) &&
+    Number(botRuntimeProductionRows.deuterium?.percent ?? -1) === Number(botRuntimeExpectedProduction.deuterium ?? 50) &&
+    Number(botRuntimeProductionRows.solar?.percent ?? -1) === Number(botRuntimeExpectedProduction.solar ?? 100) &&
+    Number(botRuntimeProductionRows.fusion?.percent ?? -1) === Number(botRuntimeExpectedProduction.fusion ?? 100) &&
+    Number(botRuntimeProductionRows.satellite?.percent ?? -1) === Number(botRuntimeExpectedProduction.satellite ?? 80);
+
   const queueCancelUniverse = universes[0]?.baseUrl ?? "http://localhost:8888";
   const queueCancelBuildLogin = queueCancelReady
     ? await loginGameUser(queueCancelFixture.build.login, loginSmokePassword, queueCancelUniverse)
@@ -7984,6 +8062,63 @@ try {
       ),
       check(!queueIdempotencyReady || queueShipyardPointScoreOK, "shipyard completion adds produced ship cost to total score", queueShipyardPointScoreContext),
       check(!queueIdempotencyReady || queueShipyardFleetScoreOK, "shipyard completion increments fleet score by produced ship count", queueShipyardFleetScoreContext)
+    ]
+  }));
+
+  cases.push(finalize({
+    case: "go_bot_runtime_strategy_api",
+    checks: [
+      check(!smokeFixtureFile || botRuntimeReady, "go smoke fixture exposes bot runtime strategy state", { botRuntimeFixture }),
+      check(!botRuntimeReady || botRuntimeLogin?.response.status === 200, "bot runtime user can log in", {
+        status: botRuntimeLogin?.response.status
+      }),
+      check(
+        !botRuntimeReady ||
+          botRuntimeOverviewResponses.length === 12 &&
+            botRuntimeOverviewResponses.every((response) => response.status === 200) &&
+            botRuntimeOverviewBodies.every((body) => body.authenticated === true),
+        "_start bot strategy can be drained through repeated overview loads",
+        botRuntimeOverviewResponses.map((response, index) => ({
+          index,
+          status: response.status,
+          elapsedMs: response.elapsedMs,
+          authenticated: botRuntimeOverviewBodies[index]?.authenticated
+        }))
+      ),
+      check(
+        !botRuntimeReady ||
+          botRuntimeBuildings?.status === 200 &&
+            botRuntimeResearch?.status === 200 &&
+            botRuntimeShipyard?.status === 200 &&
+            botRuntimeResources?.status === 200,
+        "bot runtime result screens return HTTP 200",
+        {
+          buildings: botRuntimeBuildings?.status,
+          research: botRuntimeResearch?.status,
+          shipyard: botRuntimeShipyard?.status,
+          resources: botRuntimeResources?.status
+        }
+      ),
+      check(!botRuntimeReady || botRuntimeBuildActionOK, "BotBuild starts or completes the expected building", {
+        expectedBuildingID: botRuntimeBuildingID,
+        item: botRuntimeBuildingItem,
+        queue: botRuntimeBuildingsBody.buildings?.queue ?? []
+      }),
+      check(!botRuntimeReady || botRuntimeResearchActionOK, "BotResearch starts or completes the expected research", {
+        expectedResearchID: botRuntimeResearchID,
+        item: botRuntimeResearchItem,
+        active: botRuntimeResearchBody.research?.active ?? null
+      }),
+      check(!botRuntimeReady || botRuntimeShipActionOK, "BotBuildFleet starts or completes the expected shipyard order", {
+        expectedShipID: botRuntimeShipID,
+        expectedCount: botRuntimeExpectedShipCount,
+        item: botRuntimeShipItem,
+        queue: botRuntimeShipyardBody.shipyard?.queue ?? []
+      }),
+      check(!botRuntimeReady || botRuntimeProductionOK, "BotResourceSettings persists legacy production percentages", {
+        expected: botRuntimeExpectedProduction,
+        rows: botRuntimeProductionRows
+      })
     ]
   }));
 

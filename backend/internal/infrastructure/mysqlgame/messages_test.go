@@ -81,6 +81,24 @@ func TestMessagesRepositoryFiltersLegacyInboxByMessageType(t *testing.T) {
 	}
 }
 
+func TestMessagesRepositoryLoadInboxRowsFilterBranch(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(
+		[]any{12, domaingame.MessageTypePM, "Sender", "Subject", "Body", 1, int64(1700000001)},
+	)}}}
+	repository := NewMessagesRepositoryWithQueryer(queryer, "ogame_", time.Now)
+
+	rows, err := repository.loadInboxRows(context.Background(), "`ogame_messages`", 42, 25, domaingame.MessageTypePM, true)
+	if err != nil || len(rows) != 1 || rows[0].Type != domaingame.MessageTypePM {
+		t.Fatalf("expected filtered inbox row, rows=%+v err=%v", rows, err)
+	}
+	if !strings.Contains(queryer.calls[0].sql, "pm <> ? AND pm = ? ORDER BY date DESC, msg_id DESC LIMIT ?") ||
+		queryer.calls[0].args[1] != domaingame.MessageTypeBattleReportText ||
+		queryer.calls[0].args[2] != domaingame.MessageTypePM ||
+		queryer.calls[0].args[3] != 25 {
+		t.Fatalf("expected typed inbox query, got %+v", queryer.calls[0])
+	}
+}
+
 func TestMessagesRepositoryLoadsMessageCategoryCounts(t *testing.T) {
 	queryer := &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(
 		[]any{domaingame.MessageTypeSpyReport, 2, 1},

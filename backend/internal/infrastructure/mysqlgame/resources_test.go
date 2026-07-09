@@ -427,7 +427,7 @@ func (f *fakeResourceRunner) ExecContext(_ context.Context, query string, args .
 type fakeSQLResult int64
 
 func (r fakeSQLResult) LastInsertId() (int64, error) {
-	return 0, nil
+	return int64(r), nil
 }
 
 func (r fakeSQLResult) RowsAffected() (int64, error) {
