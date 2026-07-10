@@ -28,6 +28,8 @@ Implemented:
   - Uses the same game public session plus private session cookie as other
     authenticated `/api/game/*` endpoints.
   - Stores only SHA-256 token hashes in `uni*_mcp_tokens`.
+- React options page UI for listing, creating, showing one-time secrets, and
+  revoking DB-backed MCP tokens.
 - JSON audit logging for every `tools/call` request path. Audit logs include
   tool name, authorization outcome, player id/scopes when authenticated,
   duration, and error text. Bearer token secrets are never logged.
@@ -89,9 +91,8 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Add a React account-settings UI for DB token create/revoke.
-2. Add E2E smoke calls against `/mcp`.
-3. Add OAuth 2.1/OIDC consent flow before public user rollout.
+1. Add E2E smoke calls against `/mcp`.
+2. Add OAuth 2.1/OIDC consent flow before public user rollout.
 
 ## General User Policy
 

@@ -22,6 +22,7 @@ import {
   type GameMerchantTradeValues,
   type GameMessagesStatus,
   type GameMessagesMutationOptions,
+  type GameMCPTokensStatus,
   type GameOfficerRecruitment,
   type GameOfficersStatus,
   type GameNoteDraft,
@@ -134,6 +135,19 @@ type LoginDraft = {
   login: string;
   pass: string;
   universe: string;
+};
+
+type GameMCPTokenCreationStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  token?: GameMCPTokensStatus["tokens"][number];
+  secret?: string;
+};
+
+type GameMCPTokenRevokeStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  revoked: boolean;
 };
 
 function legacyRegistrationIssueFromCode(errorCode: number): RegistrationIssue {
@@ -389,6 +403,10 @@ function App() {
   const [gameOptions, setGameOptions] = useState<GameOptionsStatus | null>(null);
   const [gameOptionsError, setGameOptionsError] = useState<string | null>(null);
   const [gameOptionsPending, setGameOptionsPending] = useState(false);
+  const [gameMCPTokens, setGameMCPTokens] = useState<GameMCPTokensStatus | null>(null);
+  const [gameMCPTokensError, setGameMCPTokensError] = useState<string | null>(null);
+  const [gameMCPTokensPending, setGameMCPTokensPending] = useState(false);
+  const [gameMCPTokenSecret, setGameMCPTokenSecret] = useState<string | null>(null);
   const [gameLogout, setGameLogout] = useState<GameLogoutStatus | null>(null);
   const [gameLogoutError, setGameLogoutError] = useState<string | null>(null);
   const resolution = resolvePublicRoute(pathname);
@@ -2111,6 +2129,47 @@ function App() {
       .catch((err: unknown) => setGameOptionsError(err instanceof Error ? err.message : String(err)));
   }, [gameRoute?.key, search]);
 
+  const loadGameMCPTokens = (showPending = false) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (gameRoute?.key !== "options" || publicSession === "") {
+      setGameMCPTokens(null);
+      setGameMCPTokensError(null);
+      setGameMCPTokensPending(false);
+      setGameMCPTokenSecret(null);
+      return;
+    }
+    const tokensRequest = new URLSearchParams({ session: publicSession });
+    if (showPending) {
+      setGameMCPTokensPending(true);
+    }
+    fetch(`/api/game/mcp-tokens?${tokensRequest.toString()}`, { credentials: "same-origin" })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameMCPTokensStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `mcp tokens returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("mcp tokens response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setGameMCPTokens(payload);
+        setGameMCPTokensError(null);
+      })
+      .catch((err: unknown) => setGameMCPTokensError(err instanceof Error ? err.message : String(err)))
+      .finally(() => {
+        if (showPending) {
+          setGameMCPTokensPending(false);
+        }
+      });
+  };
+
+  useEffect(() => {
+    loadGameMCPTokens();
+  }, [gameRoute?.key, search]);
+
   const submitGameOptions = (settings: {
     language: string;
     skinPath: string;
@@ -2163,6 +2222,97 @@ function App() {
       })
       .catch((err: unknown) => setGameOptionsError(err instanceof Error ? err.message : String(err)))
       .finally(() => setGameOptionsPending(false));
+  };
+
+  const submitGameMCPTokenCreate = (name: string, scopes: string[]) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameMCPTokensError("Session is invalid.");
+      return;
+    }
+    const tokensRequest = new URLSearchParams({ session: publicSession });
+    setGameMCPTokensPending(true);
+    setGameMCPTokensError(null);
+    setGameMCPTokenSecret(null);
+    fetch(`/api/game/mcp-tokens?${tokensRequest.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ name, scopes: scopes.length > 0 ? scopes : ["mcp:read"] })
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameMCPTokenCreationStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `mcp token create returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("mcp token create response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        if (!payload.authenticated) {
+          setGameMCPTokens({ authenticated: false, issues: payload.issues, tokens: [] });
+          setGameMCPTokensError(null);
+          return;
+        }
+        if (payload.token) {
+          setGameMCPTokens((current) => ({
+            authenticated: true,
+            issues: [],
+            tokens: [payload.token!, ...(current?.tokens ?? []).filter((token) => token.id !== payload.token!.id)]
+          }));
+        }
+        setGameMCPTokenSecret(payload.secret ?? null);
+        setGameMCPTokensError(null);
+      })
+      .catch((err: unknown) => setGameMCPTokensError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameMCPTokensPending(false));
+  };
+
+  const submitGameMCPTokenRevoke = (tokenID: number) => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (publicSession === "") {
+      setGameMCPTokensError("Session is invalid.");
+      return;
+    }
+    const tokensRequest = new URLSearchParams({ session: publicSession });
+    setGameMCPTokensPending(true);
+    setGameMCPTokensError(null);
+    setGameMCPTokenSecret(null);
+    fetch(`/api/game/mcp-tokens/revoke?${tokensRequest.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ tokenId: tokenID })
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as GameMCPTokenRevokeStatus) : null;
+        if (!response.ok && response.status !== 401) {
+          throw new Error(text || `mcp token revoke returned ${response.status}`);
+        }
+        if (!payload) {
+          throw new Error("mcp token revoke response was empty");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        if (!payload.authenticated) {
+          setGameMCPTokens({ authenticated: false, issues: payload.issues, tokens: [] });
+          setGameMCPTokensError(null);
+          return;
+        }
+        if (payload.revoked) {
+          setGameMCPTokens((current) =>
+            current ? { ...current, tokens: current.tokens.filter((token) => token.id !== tokenID) } : current
+          );
+        }
+        setGameMCPTokensError(null);
+      })
+      .catch((err: unknown) => setGameMCPTokensError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGameMCPTokensPending(false));
   };
 
   useEffect(() => {
@@ -2354,6 +2504,10 @@ function App() {
         messagesError={gameMessagesError}
         messagesPending={gameMessagesPending}
         messagesStatus={gameMessages}
+        mcpTokenSecret={gameMCPTokenSecret}
+        mcpTokensError={gameMCPTokensError}
+        mcpTokensPending={gameMCPTokensPending}
+        mcpTokensStatus={gameMCPTokens}
         notesError={gameNotesError}
         notesPending={gameNotesPending}
         notesStatus={gameNotes}
@@ -2370,6 +2524,8 @@ function App() {
         onOptionsSubmit={submitGameOptions}
         onMessagesDelete={submitGameMessagesDelete}
         onMessageSend={submitGameMessageSend}
+        onMCPTokenCreate={submitGameMCPTokenCreate}
+        onMCPTokenRevoke={submitGameMCPTokenRevoke}
         onBuddyAction={submitGameBuddyAction}
         onBuddyRequest={submitGameBuddyRequest}
         onAllianceAction={submitGameAllianceAction}

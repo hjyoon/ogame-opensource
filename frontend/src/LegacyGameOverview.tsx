@@ -307,6 +307,21 @@ export type GameOptionsStatus = {
   options?: GameOptions;
 };
 
+export type GameMCPToken = {
+  id: number;
+  name: string;
+  scopes: string[];
+  createdAt: number;
+  lastUsedAt?: number;
+  revokedAt?: number;
+};
+
+export type GameMCPTokensStatus = {
+  authenticated: boolean;
+  issues: { code: string; message: string }[];
+  tokens: GameMCPToken[];
+};
+
 export type GameLogoutStatus = {
   loggedOut: boolean;
   redirectTo: string;
@@ -1765,6 +1780,10 @@ type LegacyGameOverviewProps = {
   optionsStatus: GameOptionsStatus | null;
   optionsError: string | null;
   optionsPending: boolean;
+  mcpTokensStatus: GameMCPTokensStatus | null;
+  mcpTokensError: string | null;
+  mcpTokensPending: boolean;
+  mcpTokenSecret: string | null;
   onOptionsSubmit: (settings: {
     language: string;
     skinPath: string;
@@ -1781,6 +1800,8 @@ type LegacyGameOverviewProps = {
     vacationMode: boolean;
     deleteAccount: boolean;
   }) => void;
+  onMCPTokenCreate: (name: string, scopes: string[]) => void;
+  onMCPTokenRevoke: (tokenID: number) => void;
   logoutStatus: GameLogoutStatus | null;
   logoutError: string | null;
 };
@@ -2066,7 +2087,13 @@ export function LegacyGameOverview({
   optionsStatus,
   optionsError,
   optionsPending,
+  mcpTokensStatus,
+  mcpTokensError,
+  mcpTokensPending,
+  mcpTokenSecret,
   onOptionsSubmit,
+  onMCPTokenCreate,
+  onMCPTokenRevoke,
   logoutStatus,
   logoutError
 }: LegacyGameOverviewProps) {
@@ -2635,7 +2662,17 @@ export function LegacyGameOverview({
           <LegacyMessage tone="neutral" text="Loading options..." />
         ) : null}
         {options && route.key === "options" ? (
-          <OptionsTable onSubmit={onOptionsSubmit} options={options} pending={optionsPending} />
+          <OptionsTable
+            mcpTokenSecret={mcpTokenSecret}
+            mcpTokensError={mcpTokensError}
+            mcpTokensPending={mcpTokensPending}
+            mcpTokensStatus={mcpTokensStatus}
+            onMCPTokenCreate={onMCPTokenCreate}
+            onMCPTokenRevoke={onMCPTokenRevoke}
+            onSubmit={onOptionsSubmit}
+            options={options}
+            pending={optionsPending}
+          />
         ) : null}
         {overview &&
         route.key !== "overview" &&
@@ -12589,10 +12626,22 @@ function PhalanxEventRows({ events }: { events: GameFleetMission[] }) {
 }
 
 function OptionsTable({
+  mcpTokenSecret,
+  mcpTokensError,
+  mcpTokensPending,
+  mcpTokensStatus,
+  onMCPTokenCreate,
+  onMCPTokenRevoke,
   onSubmit,
   options,
   pending
 }: {
+  mcpTokenSecret: string | null;
+  mcpTokensError: string | null;
+  mcpTokensPending: boolean;
+  mcpTokensStatus: GameMCPTokensStatus | null;
+  onMCPTokenCreate: (name: string, scopes: string[]) => void;
+  onMCPTokenRevoke: (tokenID: number) => void;
   onSubmit: (settings: {
     language: string;
     skinPath: string;
@@ -12634,8 +12683,9 @@ function OptionsTable({
   };
 
   return (
-    <form action={gameRouteURL("/game/options", window.location.search)} method="POST" onSubmit={submitOptions}>
-      <table className="legacy-overview-table legacy-options-table" width={519}>
+    <>
+      <form action={gameRouteURL("/game/options", window.location.search)} method="POST" onSubmit={submitOptions}>
+        <table className="legacy-overview-table legacy-options-table" width={519}>
         <tbody>
           <tr>
             <td className="legacy-c c" colSpan={2}>
@@ -12864,8 +12914,131 @@ function OptionsTable({
             </th>
           </tr>
         </tbody>
-      </table>
-    </form>
+        </table>
+      </form>
+      <MCPTokenTable
+        error={mcpTokensError}
+        onCreate={onMCPTokenCreate}
+        onRevoke={onMCPTokenRevoke}
+        pending={mcpTokensPending}
+        secret={mcpTokenSecret}
+        status={mcpTokensStatus}
+      />
+    </>
+  );
+}
+
+function MCPTokenTable({
+  error,
+  onCreate,
+  onRevoke,
+  pending,
+  secret,
+  status
+}: {
+  error: string | null;
+  onCreate: (name: string, scopes: string[]) => void;
+  onRevoke: (tokenID: number) => void;
+  pending: boolean;
+  secret: string | null;
+  status: GameMCPTokensStatus | null;
+}) {
+  const submitCreate = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const scopes = form
+      .getAll("mcp_scope")
+      .map((value) => String(value))
+      .filter((value) => value !== "");
+    onCreate(String(form.get("mcp_name") ?? ""), scopes);
+  };
+  const issue = status && !status.authenticated ? status.issues[0]?.message ?? "Session is invalid." : "";
+  return (
+    <table className="legacy-overview-table legacy-options-table" width={519}>
+      <tbody>
+        <tr>
+          <td className="legacy-c c" colSpan={5}>
+            MCP Tokens
+          </td>
+        </tr>
+        {error ? (
+          <tr>
+            <th colSpan={5}>
+              <span className="legacy-error">{error}</span>
+            </th>
+          </tr>
+        ) : null}
+        {issue ? (
+          <tr>
+            <th colSpan={5}>
+              <span className="legacy-error">{issue}</span>
+            </th>
+          </tr>
+        ) : null}
+        {secret ? (
+          <tr>
+            <th>New token secret</th>
+            <th colSpan={4}>
+              <input readOnly size={64} type="text" value={secret} />
+            </th>
+          </tr>
+        ) : null}
+        <tr>
+          <th>Name</th>
+          <th>Scopes</th>
+          <th>Created</th>
+          <th>Last used</th>
+          <th>Action</th>
+        </tr>
+        {!status && !error ? (
+          <tr>
+            <th colSpan={5}>Loading MCP tokens...</th>
+          </tr>
+        ) : null}
+        {status?.authenticated && status.tokens.length === 0 ? (
+          <tr>
+            <th colSpan={5}>No MCP tokens</th>
+          </tr>
+        ) : null}
+        {status?.authenticated
+          ? status.tokens.map((token) => (
+              <tr key={token.id}>
+                <th>{token.name}</th>
+                <th>{token.scopes.join(", ")}</th>
+                <th>{formatLegacyTimestamp(token.createdAt)}</th>
+                <th>{token.lastUsedAt ? formatLegacyTimestamp(token.lastUsedAt) : "-"}</th>
+                <th>
+                  <button disabled={pending} onClick={() => onRevoke(token.id)} type="button">
+                    revoke
+                  </button>
+                </th>
+              </tr>
+            ))
+          : null}
+        <tr>
+          <td className="legacy-c c" colSpan={5}>
+            Create token
+          </td>
+        </tr>
+        <tr>
+          <th colSpan={5}>
+            <form action={gameRouteURL("/game/options", window.location.search)} method="POST" onSubmit={submitCreate}>
+              <input defaultValue="MCP client" maxLength={64} name="mcp_name" size={20} type="text" />
+              <label>
+                <input defaultChecked name="mcp_scope" type="checkbox" value="mcp:read" /> read
+              </label>
+              <label>
+                <input name="mcp_scope" type="checkbox" value="mcp:messages" /> messages
+              </label>
+              <label>
+                <input name="mcp_scope" type="checkbox" value="mcp:fleet" /> fleet
+              </label>
+              <input disabled={pending} type="submit" value="create token" />
+            </form>
+          </th>
+        </tr>
+      </tbody>
+    </table>
   );
 }
 
