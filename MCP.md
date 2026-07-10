@@ -1,6 +1,6 @@
 # MCP Server Plan
 
-Keep this file under 4KB. Split implementation details if needed.
+Keep under 4KB; split details if needed.
 
 ## Current Step
 
@@ -14,7 +14,7 @@ Implemented:
 - `initialize`, `ping`, `tools/list`, and `tools/call`.
 - Protocol version guard for `2025-06-18` and legacy fallback `2025-03-26`.
 - Browser `Origin` validation to reduce DNS rebinding risk.
-- Clean Architecture split:
+- Clean Architecture packages:
   - `internal/domain/mcp`
   - `internal/application/mcp`
   - `internal/delivery/http`
@@ -25,8 +25,7 @@ Implemented:
   - `GET /api/game/mcp-tokens?session=...`
   - `POST /api/game/mcp-tokens?session=...`
   - `POST /api/game/mcp-tokens/revoke?session=...`
-  - Uses the same game public session plus private session cookie as other
-    authenticated `/api/game/*` endpoints.
+  - Uses game public session plus private session cookie.
   - Stores only SHA-256 token hashes in `uni*_mcp_tokens`.
 - React options page UI for listing, creating, showing one-time secrets, and
   revoking DB-backed MCP tokens.
@@ -42,7 +41,7 @@ Implemented:
   - `/oauth/register` DCR
   - `/oauth/token` code + PKCE S256; `id_token` for `openid`
   - `/oauth/revoke` access-token revocation
-  - Strict OAuth `resource`
+  - Strict OAuth `resource`; codes bind client, redirect, resource, PKCE, scopes
   - `/.well-known/jwks.json` Ed25519 JWKS
   - Codes are one-time hashes in `uni*_mcp_oauth_codes`.
   - External redirects require `OGAME_MCP_OAUTH_REDIRECT_URIS`.
@@ -98,7 +97,7 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Persist OAuth resource binding.
+1. Add MCP rate limits and consent hardening.
 
 ## General User Policy
 

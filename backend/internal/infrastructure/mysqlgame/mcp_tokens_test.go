@@ -28,14 +28,64 @@ func TestMCPTokenRepositoryEnsuresSchema(t *testing.T) {
 }
 
 func TestMCPTokenRepositoryEnsuresOAuthCodeSchema(t *testing.T) {
-	runner := &fakeMCPTokenRunner{}
+	runner := &fakeMCPTokenRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{0})}}},
+	}
 	repository := NewMCPTokenRepositoryWithRunner(runner, runner, "uni1_")
 
 	if err := repository.EnsureMCPOAuthCodeSchema(context.Background()); err != nil {
 		t.Fatalf("EnsureMCPOAuthCodeSchema returned error: %v", err)
 	}
-	if !strings.Contains(runner.execCalls[0].sql, "CREATE TABLE IF NOT EXISTS `uni1_mcp_oauth_codes`") || !strings.Contains(runner.execCalls[0].sql, "code_challenge_method") {
+	if !strings.Contains(runner.execCalls[0].sql, "CREATE TABLE IF NOT EXISTS `uni1_mcp_oauth_codes`") || !strings.Contains(runner.execCalls[0].sql, "resource TEXT NOT NULL") {
 		t.Fatalf("unexpected oauth code schema SQL: %s", runner.execCalls[0].sql)
+	}
+	if !strings.Contains(runner.execCalls[1].sql, "ALTER TABLE `uni1_mcp_oauth_codes` ADD COLUMN resource") {
+		t.Fatalf("expected oauth code resource migration, got %+v", runner.execCalls)
+	}
+
+	runner = &fakeMCPTokenRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}},
+	}
+	repository = NewMCPTokenRepositoryWithRunner(runner, runner, "uni1_")
+	if err := repository.EnsureMCPOAuthCodeSchema(context.Background()); err != nil {
+		t.Fatalf("EnsureMCPOAuthCodeSchema existing resource returned error: %v", err)
+	}
+	if len(runner.execCalls) != 1 {
+		t.Fatalf("expected no resource migration when column exists, got %+v", runner.execCalls)
+	}
+
+	repository = NewMCPTokenRepositoryWithRunner(runner, nil, "uni1_")
+	if err := repository.EnsureMCPOAuthCodeSchema(context.Background()); err == nil {
+		t.Fatalf("expected nil execer oauth schema error")
+	}
+	repository = NewMCPTokenRepositoryWithRunner(nil, runner, "uni1_")
+	if err := repository.EnsureMCPOAuthCodeSchema(context.Background()); err == nil {
+		t.Fatalf("expected nil queryer oauth schema error")
+	}
+	repository = NewMCPTokenRepositoryWithRunner(runner, runner, "uni1_;DROP")
+	if err := repository.EnsureMCPOAuthCodeSchema(context.Background()); err == nil {
+		t.Fatalf("expected unsafe oauth schema prefix error")
+	}
+}
+
+func TestMCPTokenRepositoryEnsuresOAuthCodeResourceColumnErrors(t *testing.T) {
+	wantErr := errors.New("resource column failed")
+	for _, tt := range []struct {
+		name   string
+		runner *fakeMCPTokenRunner
+	}{
+		{name: "query", runner: &fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: wantErr}}}}},
+		{name: "missing", runner: &fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}}},
+		{name: "scan", runner: &fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}}},
+		{name: "rows", runner: &fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(wantErr, []any{0})}}}}},
+		{name: "alter", runner: &fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{0})}}}, err: wantErr}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewMCPTokenRepositoryWithRunner(tt.runner, tt.runner, "uni1_")
+			if err := repository.ensureOAuthCodeResourceColumn(context.Background(), "`uni1_mcp_oauth_codes`", "uni1_mcp_oauth_codes"); err == nil {
+				t.Fatalf("expected resource column error")
+			}
+		})
 	}
 }
 
@@ -92,7 +142,7 @@ func TestMCPTokenRepositoryCreatesListsAndRevokesTokens(t *testing.T) {
 func TestMCPTokenRepositoryCreatesAndConsumesOAuthCodes(t *testing.T) {
 	runner := &fakeMCPTokenRunner{
 		fakeQueryer: fakeQueryer{results: []fakeQueryResult{{
-			rows: fakeRowsFromValues([]any{11, 42, "desktop", "http://127.0.0.1:9000/callback", "hash", strings.Repeat("a", 43), "S256", "openid,mcp:read", int64(1700), int64(2300), int64(1800)}),
+			rows: fakeRowsFromValues([]any{11, 42, "desktop", "http://127.0.0.1:9000/callback", "https://game.example/mcp", "hash", strings.Repeat("a", 43), "S256", "openid,mcp:read", int64(1700), int64(2300), int64(1800)}),
 		}}},
 		result: fakeSQLResult(11),
 	}
@@ -102,6 +152,7 @@ func TestMCPTokenRepositoryCreatesAndConsumesOAuthCodes(t *testing.T) {
 		PlayerID:            42,
 		ClientID:            " desktop ",
 		RedirectURI:         " http://127.0.0.1:9000/callback ",
+		Resource:            " https://game.example/mcp/ ",
 		CodeHash:            "hash",
 		CodeChallenge:       strings.Repeat("a", 43),
 		CodeChallengeMethod: "S256",
@@ -112,10 +163,10 @@ func TestMCPTokenRepositoryCreatesAndConsumesOAuthCodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateMCPOAuthCode returned error: %v", err)
 	}
-	if code.ID != 11 || code.ClientID != "desktop" || strings.Join(code.Scopes, ",") != "openid,mcp:read" {
+	if code.ID != 11 || code.ClientID != "desktop" || code.Resource != "https://game.example/mcp" || strings.Join(code.Scopes, ",") != "openid,mcp:read" {
 		t.Fatalf("unexpected oauth code result: %+v", code)
 	}
-	if !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `uni1_mcp_oauth_codes`") || runner.execCalls[0].args[3] != "hash" {
+	if !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `uni1_mcp_oauth_codes`") || runner.execCalls[0].args[3] != "https://game.example/mcp" || runner.execCalls[0].args[4] != "hash" {
 		t.Fatalf("unexpected oauth code insert: %+v", runner.execCalls[0])
 	}
 
@@ -123,7 +174,7 @@ func TestMCPTokenRepositoryCreatesAndConsumesOAuthCodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConsumeMCPOAuthCode returned error: %v", err)
 	}
-	if consumed.ID != 11 || consumed.PlayerID != 42 || consumed.ConsumedAt != 1800 || consumed.Scopes[1] != domainmcp.ScopeRead {
+	if consumed.ID != 11 || consumed.PlayerID != 42 || consumed.Resource != "https://game.example/mcp" || consumed.ConsumedAt != 1800 || consumed.Scopes[1] != domainmcp.ScopeRead {
 		t.Fatalf("unexpected consumed code: %+v", consumed)
 	}
 	if !strings.Contains(runner.execCalls[1].sql, "consumed_at = ?") || runner.execCalls[1].args[2] != int64(1800) {
@@ -310,11 +361,11 @@ func TestMCPTokenRepositoryCoversErrorBranches(t *testing.T) {
 	if _, err := repository.ConsumeMCPOAuthCode(context.Background(), "hash", 1); !errors.Is(err, domainmcp.ErrUnauthorized) {
 		t.Fatalf("expected oauth consume empty rows unauthorized, got %v", err)
 	}
-	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", 42, "client", "redirect", "hash", "challenge", "S256", "mcp:read", int64(1), int64(2), int64(3)})}}}}, &fakeMCPTokenRunner{result: fakeSQLResult(1)}, "uni1_")
+	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", 42, "client", "redirect", "resource", "hash", "challenge", "S256", "mcp:read", int64(1), int64(2), int64(3)})}}}}, &fakeMCPTokenRunner{result: fakeSQLResult(1)}, "uni1_")
 	if _, err := repository.ConsumeMCPOAuthCode(context.Background(), "hash", 1); err == nil {
 		t.Fatalf("expected oauth consume scan error")
 	}
-	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(wantErr, []any{11, 42, "client", "redirect", "hash", "challenge", "S256", "mcp:read", int64(1), int64(2), int64(3)})}}}}, &fakeMCPTokenRunner{result: fakeSQLResult(1)}, "uni1_")
+	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(wantErr, []any{11, 42, "client", "redirect", "resource", "hash", "challenge", "S256", "mcp:read", int64(1), int64(2), int64(3)})}}}}, &fakeMCPTokenRunner{result: fakeSQLResult(1)}, "uni1_")
 	if _, err := repository.ConsumeMCPOAuthCode(context.Background(), "hash", 1); !errors.Is(err, wantErr) {
 		t.Fatalf("expected oauth consume rows error, got %v", err)
 	}

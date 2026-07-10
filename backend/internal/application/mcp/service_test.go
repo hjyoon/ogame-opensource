@@ -239,7 +239,7 @@ func TestServiceOAuthAuthorizeConsentAndTokenExchange(t *testing.T) {
 	if !strings.Contains(authorized.RedirectTo, "code=ogmcp_code_authorized") || !strings.Contains(authorized.RedirectTo, "state=state-1") {
 		t.Fatalf("expected redirect with code and state, got %+v", authorized)
 	}
-	if repository.oauthCode.PlayerID != 42 || repository.oauthCode.CodeHash != HashToken("ogmcp_code_authorized") || repository.oauthCode.ExpiresAt != now.Add(mcpOAuthCodeTTL).Unix() {
+	if repository.oauthCode.PlayerID != 42 || repository.oauthCode.CodeHash != HashToken("ogmcp_code_authorized") || repository.oauthCode.Resource != "https://game.example/mcp" || repository.oauthCode.ExpiresAt != now.Add(mcpOAuthCodeTTL).Unix() {
 		t.Fatalf("unexpected stored OAuth code: %+v", repository.oauthCode)
 	}
 
@@ -271,6 +271,7 @@ func TestServiceOAuthRejectsInvalidRequestsAndGrants(t *testing.T) {
 		PlayerID:            42,
 		ClientID:            "desktop-client",
 		RedirectURI:         "http://127.0.0.1:9911/callback",
+		Resource:            "https://game.example/mcp",
 		Scopes:              []string{domainmcp.ScopeRead},
 		CodeHash:            HashToken("code"),
 		CodeChallenge:       testPKCEChallenge(strings.Repeat("a", 43)),
@@ -325,6 +326,22 @@ func TestServiceOAuthRejectsInvalidRequestsAndGrants(t *testing.T) {
 	})
 	if !errors.Is(err, ErrInvalidOAuthGrant) {
 		t.Fatalf("expected PKCE invalid grant, got %v", err)
+	}
+
+	resourceMismatch := validStoredOAuthCode(strings.Repeat("a", 43), "desktop-client")
+	resourceMismatch.Resource = "https://game.example/other"
+	service = oauthExchangeService(&fakeTokenRepository{oauthCode: resourceMismatch}, fakeTokenGenerator{secret: "token"})
+	_, err = service.ExchangeOAuthCode(context.Background(), OAuthTokenCommand{
+		GrantType:    "authorization_code",
+		Code:         "code",
+		RedirectURI:  "http://127.0.0.1:9911/callback",
+		Resource:     "https://game.example/mcp",
+		ClientID:     "desktop-client",
+		CodeVerifier: strings.Repeat("a", 43),
+		Issuer:       "https://game.example",
+	})
+	if !errors.Is(err, ErrInvalidOAuthGrant) {
+		t.Fatalf("expected resource mismatch invalid grant, got %v", err)
 	}
 }
 
@@ -1411,6 +1428,7 @@ func validStoredOAuthCode(verifier string, clientID string) domainmcp.OAuthAutho
 		PlayerID:            42,
 		ClientID:            clientID,
 		RedirectURI:         "http://127.0.0.1:9911/callback",
+		Resource:            "https://game.example/mcp",
 		Scopes:              []string{domainmcp.ScopeRead},
 		CodeHash:            HashToken("code"),
 		CodeChallenge:       testPKCEChallenge(verifier),

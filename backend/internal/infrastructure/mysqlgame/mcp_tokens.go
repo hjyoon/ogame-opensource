@@ -56,15 +56,20 @@ func (r MCPTokenRepository) EnsureMCPOAuthCodeSchema(ctx context.Context) error 
 	if r.execer == nil {
 		return errors.New("mcp oauth code repository execer unavailable")
 	}
+	if r.queryer == nil {
+		return errors.New("mcp oauth code repository queryer unavailable")
+	}
 	table, err := tableName(r.prefix, "mcp_oauth_codes")
 	if err != nil {
 		return err
 	}
+	physicalTable := r.prefix + "mcp_oauth_codes"
 	_, err = r.execer.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS "+table+" ("+
 		"id INT NOT NULL AUTO_INCREMENT,"+
 		"player_id INT NOT NULL,"+
 		"client_id VARCHAR(128) NOT NULL,"+
 		"redirect_uri TEXT NOT NULL,"+
+		"resource TEXT NOT NULL,"+
 		"code_hash CHAR(64) NOT NULL,"+
 		"code_challenge VARCHAR(128) NOT NULL,"+
 		"code_challenge_method VARCHAR(16) NOT NULL,"+
@@ -78,7 +83,10 @@ func (r MCPTokenRepository) EnsureMCPOAuthCodeSchema(ctx context.Context) error 
 		"KEY idx_expires_at (expires_at),"+
 		"KEY idx_consumed_at (consumed_at)"+
 		") CHARACTER SET utf8 COLLATE utf8_general_ci")
-	return err
+	if err != nil {
+		return err
+	}
+	return r.ensureOAuthCodeResourceColumn(ctx, table, physicalTable)
 }
 
 func (r MCPTokenRepository) ListMCPTokens(ctx context.Context, playerID int) ([]domainmcp.Token, error) {
@@ -185,10 +193,11 @@ func (r MCPTokenRepository) CreateMCPOAuthCode(ctx context.Context, code domainm
 	if err != nil {
 		return domainmcp.OAuthAuthorizationCode{}, err
 	}
-	result, err := r.execer.ExecContext(ctx, "INSERT INTO "+table+" (player_id, client_id, redirect_uri, code_hash, code_challenge, code_challenge_method, scopes, created_at, expires_at, consumed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+	result, err := r.execer.ExecContext(ctx, "INSERT INTO "+table+" (player_id, client_id, redirect_uri, resource, code_hash, code_challenge, code_challenge_method, scopes, created_at, expires_at, consumed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
 		code.PlayerID,
 		strings.TrimSpace(code.ClientID),
 		strings.TrimSpace(code.RedirectURI),
+		strings.TrimRight(strings.TrimSpace(code.Resource), "/"),
 		strings.TrimSpace(code.CodeHash),
 		strings.TrimSpace(code.CodeChallenge),
 		strings.TrimSpace(code.CodeChallengeMethod),
@@ -206,6 +215,7 @@ func (r MCPTokenRepository) CreateMCPOAuthCode(ctx context.Context, code domainm
 	code.ID = int(id)
 	code.ClientID = strings.TrimSpace(code.ClientID)
 	code.RedirectURI = strings.TrimSpace(code.RedirectURI)
+	code.Resource = strings.TrimRight(strings.TrimSpace(code.Resource), "/")
 	code.CodeHash = strings.TrimSpace(code.CodeHash)
 	code.CodeChallenge = strings.TrimSpace(code.CodeChallenge)
 	code.CodeChallengeMethod = strings.TrimSpace(code.CodeChallengeMethod)
@@ -234,7 +244,7 @@ func (r MCPTokenRepository) ConsumeMCPOAuthCode(ctx context.Context, codeHash st
 	if affected == 0 {
 		return domainmcp.OAuthAuthorizationCode{}, domainmcp.ErrUnauthorized
 	}
-	rows, err := r.queryer.QueryContext(ctx, "SELECT id, player_id, client_id, redirect_uri, code_hash, code_challenge, code_challenge_method, scopes, created_at, expires_at, consumed_at FROM "+table+" WHERE code_hash = ? LIMIT 1", codeHash)
+	rows, err := r.queryer.QueryContext(ctx, "SELECT id, player_id, client_id, redirect_uri, COALESCE(resource, ''), code_hash, code_challenge, code_challenge_method, scopes, created_at, expires_at, consumed_at FROM "+table+" WHERE code_hash = ? LIMIT 1", codeHash)
 	if err != nil {
 		return domainmcp.OAuthAuthorizationCode{}, err
 	}
@@ -244,7 +254,7 @@ func (r MCPTokenRepository) ConsumeMCPOAuthCode(ctx context.Context, codeHash st
 	}
 	var code domainmcp.OAuthAuthorizationCode
 	var scopes string
-	if err := rows.Scan(&code.ID, &code.PlayerID, &code.ClientID, &code.RedirectURI, &code.CodeHash, &code.CodeChallenge, &code.CodeChallengeMethod, &scopes, &code.CreatedAt, &code.ExpiresAt, &code.ConsumedAt); err != nil {
+	if err := rows.Scan(&code.ID, &code.PlayerID, &code.ClientID, &code.RedirectURI, &code.Resource, &code.CodeHash, &code.CodeChallenge, &code.CodeChallengeMethod, &scopes, &code.CreatedAt, &code.ExpiresAt, &code.ConsumedAt); err != nil {
 		return domainmcp.OAuthAuthorizationCode{}, err
 	}
 	if err := rows.Err(); err != nil {
@@ -252,6 +262,29 @@ func (r MCPTokenRepository) ConsumeMCPOAuthCode(ctx context.Context, codeHash st
 	}
 	code.Scopes = parseMCPScopes(scopes)
 	return code, nil
+}
+
+func (r MCPTokenRepository) ensureOAuthCodeResourceColumn(ctx context.Context, table string, physicalTable string) error {
+	rows, err := r.queryer.QueryContext(ctx, "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'resource'", physicalTable)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return errors.New("mcp oauth code resource column check returned no rows")
+	}
+	var count int
+	if err := rows.Scan(&count); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	_, err = r.execer.ExecContext(ctx, "ALTER TABLE "+table+" ADD COLUMN resource TEXT NULL AFTER redirect_uri")
+	return err
 }
 
 func (r MCPTokenRepository) VerifyMCPToken(ctx context.Context, secret string) (domainmcp.Access, error) {

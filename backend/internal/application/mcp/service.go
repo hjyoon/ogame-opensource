@@ -421,6 +421,7 @@ func (s Service) AuthorizeOAuth(ctx context.Context, command OAuthAuthorizeComma
 		PlayerID:            session.Session.PlayerID,
 		ClientID:            request.ClientID,
 		RedirectURI:         request.RedirectURI,
+		Resource:            request.Resource,
 		Scopes:              request.Scopes,
 		CodeHash:            HashToken(code),
 		CodeChallenge:       request.CodeChallenge,
@@ -479,7 +480,8 @@ func (s Service) ExchangeOAuthCode(ctx context.Context, command OAuthTokenComman
 		}
 		return OAuthTokenResult{}, err
 	}
-	if stored.PlayerID <= 0 || stored.ClientID != clientID || stored.RedirectURI != redirectURI || stored.CodeChallengeMethod != "S256" || !pkceS256Matches(verifier, stored.CodeChallenge) {
+	resource := strings.TrimRight(strings.TrimSpace(command.Resource), "/")
+	if stored.PlayerID <= 0 || stored.ClientID != clientID || stored.RedirectURI != redirectURI || stored.Resource != resource || stored.CodeChallengeMethod != "S256" || !pkceS256Matches(verifier, stored.CodeChallenge) {
 		return OAuthTokenResult{}, ErrInvalidOAuthGrant
 	}
 	scopes, err := normalizeOAuthScopes(strings.Join(stored.Scopes, " "))

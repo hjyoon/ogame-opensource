@@ -82,6 +82,7 @@ type OAuthAuthorizationCode struct {
 	PlayerID            int
 	ClientID            string
 	RedirectURI         string
+	Resource            string
 	Scopes              []string
 	CodeHash            string
 	CodeChallenge       string
