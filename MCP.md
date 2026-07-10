@@ -38,7 +38,8 @@ Implemented:
 - OAuth 2.1 public-client base:
   - `/.well-known/oauth-authorization-server`
   - `/oauth/authorize` consent page and code redirect
-  - `/oauth/token` code + PKCE S256; returns `id_token` for `openid`
+  - `/oauth/token` code + PKCE S256; `id_token` for `openid`
+  - `/oauth/revoke` access-token revocation
   - `/.well-known/jwks.json` Ed25519 JWKS
   - Codes are one-time hashes in `uni*_mcp_oauth_codes`.
   - External redirects require `OGAME_MCP_OAUTH_REDIRECT_URIS`.
@@ -104,7 +105,7 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Add OAuth client revocation metadata and endpoint.
+1. Add dynamic client registration review.
 
 ## General User Policy
 

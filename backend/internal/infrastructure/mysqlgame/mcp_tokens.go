@@ -158,6 +158,25 @@ func (r MCPTokenRepository) RevokeMCPToken(ctx context.Context, playerID int, to
 	return affected > 0, nil
 }
 
+func (r MCPTokenRepository) RevokeMCPTokenByHash(ctx context.Context, tokenHash string, revokedAt int64) (bool, error) {
+	if r.execer == nil {
+		return false, errors.New("mcp token repository execer unavailable")
+	}
+	table, err := tableName(r.prefix, "mcp_tokens")
+	if err != nil {
+		return false, err
+	}
+	result, err := r.execer.ExecContext(ctx, "UPDATE "+table+" SET revoked_at = ? WHERE token_hash = ? AND revoked_at = 0", revokedAt, strings.TrimSpace(tokenHash))
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
 func (r MCPTokenRepository) CreateMCPOAuthCode(ctx context.Context, code domainmcp.OAuthAuthorizationCode) (domainmcp.OAuthAuthorizationCode, error) {
 	if r.execer == nil {
 		return domainmcp.OAuthAuthorizationCode{}, errors.New("mcp oauth code repository execer unavailable")

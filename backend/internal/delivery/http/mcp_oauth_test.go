@@ -65,6 +65,7 @@ func TestMCPOAuthAuthorizeConsentRedirectAndToken(t *testing.T) {
 			Scope:       "mcp:read mcp:fleet",
 			IDToken:     "id.token.signature",
 		},
+		revokeResult: appmcp.OAuthRevokeResult{Revoked: true},
 	}
 	server := New(Dependencies{MCPOAuth: oauth})
 
@@ -98,6 +99,21 @@ func TestMCPOAuthAuthorizeConsentRedirectAndToken(t *testing.T) {
 	if tokenBody["access_token"] != "ogmcp_access" || tokenBody["token_type"] != "Bearer" || tokenBody["id_token"] != "id.token.signature" {
 		t.Fatalf("unexpected token response: %+v", tokenBody)
 	}
+
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/oauth/revoke", strings.NewReader("token=ogmcp_access&token_type_hint=access_token"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || oauth.revokeCommand.Token != "ogmcp_access" || oauth.revokeCommand.TokenTypeHint != "access_token" {
+		t.Fatalf("unexpected revoke response status=%d body=%q command=%+v", rec.Code, rec.Body.String(), oauth.revokeCommand)
+	}
+	var revokeBody map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &revokeBody); err != nil {
+		t.Fatalf("decode revoke response: %v", err)
+	}
+	if revokeBody["revoked"] != true {
+		t.Fatalf("unexpected revoke body: %+v", revokeBody)
+	}
 }
 
 func TestMCPOAuthErrors(t *testing.T) {
@@ -114,6 +130,22 @@ func TestMCPOAuthErrors(t *testing.T) {
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected unavailable token, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/oauth/revoke", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected unavailable revoke, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	server = New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{}})
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/oauth/revoke", strings.NewReader("%"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_request") {
+		t.Fatalf("expected malformed revoke request, got status=%d body=%q", rec.Code, rec.Body.String())
 	}
 
 	server = New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{authorizeResult: appmcp.OAuthAuthorizeResult{Authenticated: false}}})
@@ -165,6 +197,15 @@ func TestMCPOAuthErrors(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "temporarily_unavailable") {
 		t.Fatalf("expected unavailable token error, got status=%d body=%q", rec.Code, rec.Body.String())
 	}
+
+	server = New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{revokeErr: appmcp.ErrInvalidOAuthRequest}})
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/oauth/revoke", strings.NewReader("token="))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_request") {
+		t.Fatalf("expected invalid revoke request, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
 }
 
 func TestMCPOAuthMetadataUnavailableAndMethodGuards(t *testing.T) {
@@ -195,12 +236,15 @@ func TestMCPOAuthMetadataUnavailableAndMethodGuards(t *testing.T) {
 type fakeMCPOAuthUseCase struct {
 	authorizeResult appmcp.OAuthAuthorizeResult
 	exchangeResult  appmcp.OAuthTokenResult
+	revokeResult    appmcp.OAuthRevokeResult
 	jwksResult      domainmcp.JSONWebKeySet
 	authorizeErr    error
 	exchangeErr     error
+	revokeErr       error
 
 	authorizeCommand appmcp.OAuthAuthorizeCommand
 	tokenCommand     appmcp.OAuthTokenCommand
+	revokeCommand    appmcp.OAuthRevokeCommand
 }
 
 func (f *fakeMCPOAuthUseCase) OAuthAuthorizationServerMetadata(_ context.Context, issuer string) domainmcp.OAuthAuthorizationServerMetadata {
@@ -225,4 +269,12 @@ func (f *fakeMCPOAuthUseCase) ExchangeOAuthCode(_ context.Context, command appmc
 		return appmcp.OAuthTokenResult{}, f.exchangeErr
 	}
 	return f.exchangeResult, nil
+}
+
+func (f *fakeMCPOAuthUseCase) RevokeOAuthToken(_ context.Context, command appmcp.OAuthRevokeCommand) (appmcp.OAuthRevokeResult, error) {
+	f.revokeCommand = command
+	if f.revokeErr != nil {
+		return appmcp.OAuthRevokeResult{}, f.revokeErr
+	}
+	return f.revokeResult, nil
 }

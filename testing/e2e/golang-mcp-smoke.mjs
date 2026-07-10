@@ -162,6 +162,7 @@ try {
   const oauthMetadata = await request("/.well-known/oauth-authorization-server");
   const oauthJWKS = await request("/.well-known/jwks.json");
   const oauthTokenUnavailable = await request("/oauth/token", { method: "POST" });
+  const oauthRevokeUnavailable = await request("/oauth/revoke", { method: "POST" });
   const oauthExternalRedirectReject = await request(`/oauth/authorize?response_type=code&client_id=external&redirect_uri=${encodeURIComponent("https://client.example/callback")}&scope=mcp:read&code_challenge=${"a".repeat(43)}&code_challenge_method=S256`);
   const mcpParseErrorBody = parseJSON(mcpParseError);
   const mcpInitializeBody = parseJSON(mcpInitialize);
@@ -172,6 +173,7 @@ try {
   const oauthMetadataBody = parseJSON(oauthMetadata);
   const oauthJWKSBody = parseJSON(oauthJWKS);
   const oauthTokenUnavailableBody = parseJSON(oauthTokenUnavailable);
+  const oauthRevokeUnavailableBody = parseJSON(oauthRevokeUnavailable);
   const oauthExternalRedirectRejectBody = parseJSON(oauthExternalRedirectReject);
   cases.push(finalize({
     case: "go_mcp_public_transport",
@@ -192,10 +194,12 @@ try {
       check(hasHeader(mcpUnauthorizedAccess, "www-authenticate", "Bearer"), "Unauthorized MCP response includes Bearer challenge"),
       check(oauthMetadata.status === 200 && oauthMetadataBody.issuer === baseUrl, "OAuth authorization server metadata uses current origin issuer", oauthMetadataBody),
       check(oauthMetadataBody.authorization_endpoint === `${baseUrl}/oauth/authorize`, "OAuth metadata exposes authorize endpoint", oauthMetadataBody),
+      check(oauthMetadataBody.revocation_endpoint === `${baseUrl}/oauth/revoke`, "OAuth metadata exposes revocation endpoint", oauthMetadataBody),
       check((oauthMetadataBody.code_challenge_methods_supported ?? []).includes("S256"), "OAuth metadata requires PKCE S256 support", oauthMetadataBody),
       check(oauthMetadataBody.jwks_uri === `${baseUrl}/.well-known/jwks.json` && (oauthMetadataBody.id_token_signing_alg_values_supported ?? []).includes("EdDSA"), "OAuth metadata exposes OIDC JWKS and EdDSA", oauthMetadataBody),
       check(oauthJWKS.status === 200 && (oauthJWKSBody.keys ?? []).some((key) => key.kty === "OKP" && key.crv === "Ed25519"), "OIDC JWKS exposes Ed25519 signing key", oauthJWKSBody),
       check(oauthTokenUnavailable.status === 400 && oauthTokenUnavailableBody.error === "invalid_request", "OAuth token endpoint rejects malformed exchange requests", oauthTokenUnavailableBody),
+      check(oauthRevokeUnavailable.status === 400 && oauthRevokeUnavailableBody.error === "invalid_request", "OAuth revoke endpoint rejects missing token requests", oauthRevokeUnavailableBody),
       check(oauthExternalRedirectReject.status === 400 && oauthExternalRedirectRejectBody.error === "invalid_request", "OAuth authorize rejects non-loopback redirects without allow-list", oauthExternalRedirectRejectBody)
     ]
   }));
@@ -246,12 +250,17 @@ try {
   });
   const oauthTokenListBody = parseJSON(oauthTokenList);
   const oauthTokenRow = (oauthTokenListBody.tokens ?? []).find((token) => String(token.name ?? "") === `OAuth ${oauthClientID}`);
-  const oauthRevoke = await request(`/api/game/mcp-tokens/revoke${login.search}`, {
+  const oauthRevoke = await request("/oauth/revoke", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
-    body: JSON.stringify({ tokenId: Number(oauthTokenRow?.id ?? 0) })
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      token: oauthSecret,
+      token_type_hint: "access_token"
+    }).toString()
   });
   const oauthRevokeBody = parseJSON(oauthRevoke);
+  const oauthAccessAfterRevoke = await mcpJSONRPC("tools/call", { name: "get_mcp_access", arguments: {} }, { id: 19, headers: { Authorization: `Bearer ${oauthSecret}` } });
+  const oauthAccessAfterRevokeBody = parseJSON(oauthAccessAfterRevoke);
   const tokenListBefore = await request(`/api/game/mcp-tokens${login.search}`, {
     headers: { Cookie: login.cookiePair }
   });
@@ -330,7 +339,8 @@ try {
       check(oauthIDToken.split(".").length === 3 && oauthIDClaims.iss === baseUrl && oauthIDClaims.aud === oauthClientID && oauthIDClaims.sub === `player:${login.playerID}`, "OAuth openid exchange returns ID token claims", oauthIDClaims),
       check(oauthTools.status === 200 && expectedTools.every((name) => toolNames(oauthToolsBody).includes(name)), "OAuth bearer token exposes MCP read tools", { oauthToolNames: toolNames(oauthToolsBody) }),
       check(Number(oauthTokenRow?.id ?? 0) > 0, "OAuth exchange persists a revocable MCP token row", { oauthTokenRow }),
-      check(oauthRevoke.status === 200 && oauthRevokeBody.revoked === true, "OAuth-created MCP token can be revoked", oauthRevokeBody),
+      check(oauthRevoke.status === 200 && oauthRevokeBody.revoked === true, "OAuth revocation endpoint revokes created MCP token", oauthRevokeBody),
+      check(oauthAccessAfterRevoke.status === 401 && oauthAccessAfterRevokeBody.error?.code === -32001, "OAuth-revoked bearer token is rejected by MCP", oauthAccessAfterRevokeBody),
       check(tokenListBefore.status === 200 && tokenListBeforeBody.authenticated === true && Array.isArray(tokenListBeforeBody.tokens), "MCP token list authenticates game session", tokenListBeforeBody),
       check(tokenCreate.status === 200 && tokenCreateBody.authenticated === true && tokenID > 0, "MCP token create returns a persisted token id", tokenCreateBody.token ?? {}),
       check(secret.startsWith("ogmcp_") && secret.length > 12, "MCP token create returns a one-time bearer secret", {

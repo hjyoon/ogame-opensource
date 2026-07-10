@@ -54,6 +54,7 @@ type TokenRepository interface {
 	ListMCPTokens(context.Context, int) ([]domainmcp.Token, error)
 	CreateMCPToken(context.Context, domainmcp.Token, string) (domainmcp.Token, error)
 	RevokeMCPToken(context.Context, int, int, int64) (bool, error)
+	RevokeMCPTokenByHash(context.Context, string, int64) (bool, error)
 }
 
 type OAuthCodeRepository interface {
@@ -144,12 +145,21 @@ type OAuthTokenCommand struct {
 	Issuer       string
 }
 
+type OAuthRevokeCommand struct {
+	Token         string
+	TokenTypeHint string
+}
+
 type OAuthTokenResult struct {
 	AccessToken string
 	TokenType   string
 	Scope       string
 	IDToken     string
 	Token       domainmcp.Token
+}
+
+type OAuthRevokeResult struct {
+	Revoked bool
 }
 
 type TokenListResult struct {
@@ -262,10 +272,12 @@ func (s Service) OAuthAuthorizationServerMetadata(ctx context.Context, issuer st
 		Issuer:                            issuer,
 		AuthorizationEndpoint:             issuer + "/oauth/authorize",
 		TokenEndpoint:                     issuer + "/oauth/token",
+		RevocationEndpoint:                issuer + "/oauth/revoke",
 		ResponseTypesSupported:            []string{"code"},
 		GrantTypesSupported:               []string{"authorization_code"},
 		CodeChallengeMethodsSupported:     []string{"S256"},
 		TokenEndpointAuthMethodsSupported: []string{"none"},
+		RevocationEndpointAuthMethods:     []string{"none"},
 		ScopesSupported: []string{
 			"openid",
 			"profile",
@@ -416,6 +428,21 @@ func (s Service) ExchangeOAuthCode(ctx context.Context, command OAuthTokenComman
 		IDToken:     idToken,
 		Token:       token,
 	}, nil
+}
+
+func (s Service) RevokeOAuthToken(ctx context.Context, command OAuthRevokeCommand) (OAuthRevokeResult, error) {
+	if s.tokenRepository == nil {
+		return OAuthRevokeResult{}, errors.New("mcp oauth token revocation dependencies unavailable")
+	}
+	token := strings.TrimSpace(command.Token)
+	if token == "" {
+		return OAuthRevokeResult{}, fmt.Errorf("%w: token is required", ErrInvalidOAuthRequest)
+	}
+	revoked, err := s.tokenRepository.RevokeMCPTokenByHash(ctx, HashToken(token), s.now().Unix())
+	if err != nil {
+		return OAuthRevokeResult{}, err
+	}
+	return OAuthRevokeResult{Revoked: revoked}, nil
 }
 
 func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsCommand) (domainmcp.ListToolsResult, error) {

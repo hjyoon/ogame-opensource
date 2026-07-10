@@ -40,7 +40,7 @@ func TestServiceBuildsOAuthAuthorizationServerMetadata(t *testing.T) {
 	service := NewService(fakeHealthProvider{})
 
 	metadata := service.OAuthAuthorizationServerMetadata(context.Background(), "https://game.example/")
-	if metadata.Issuer != "https://game.example" || metadata.AuthorizationEndpoint != "https://game.example/oauth/authorize" || metadata.TokenEndpoint != "https://game.example/oauth/token" {
+	if metadata.Issuer != "https://game.example" || metadata.AuthorizationEndpoint != "https://game.example/oauth/authorize" || metadata.TokenEndpoint != "https://game.example/oauth/token" || metadata.RevocationEndpoint != "https://game.example/oauth/revoke" {
 		t.Fatalf("unexpected metadata endpoints: %+v", metadata)
 	}
 	if strings.Join(metadata.ResponseTypesSupported, ",") != "code" || strings.Join(metadata.GrantTypesSupported, ",") != "authorization_code" {
@@ -48,6 +48,9 @@ func TestServiceBuildsOAuthAuthorizationServerMetadata(t *testing.T) {
 	}
 	if strings.Join(metadata.CodeChallengeMethodsSupported, ",") != "S256" || strings.Join(metadata.TokenEndpointAuthMethodsSupported, ",") != "none" {
 		t.Fatalf("expected PKCE public-client metadata, got %+v", metadata)
+	}
+	if strings.Join(metadata.RevocationEndpointAuthMethods, ",") != "none" {
+		t.Fatalf("expected public-client revocation metadata, got %+v", metadata)
 	}
 	scopes := strings.Join(metadata.ScopesSupported, ",")
 	if !strings.Contains(scopes, "openid") || !strings.Contains(scopes, domainmcp.ScopeRead) {
@@ -66,6 +69,55 @@ func TestServiceBuildsOAuthAuthorizationServerMetadata(t *testing.T) {
 	jwks := service.OAuthJWKS(context.Background())
 	if len(jwks.Keys) != 1 || jwks.Keys[0].KeyID != "kid" {
 		t.Fatalf("unexpected JWKS: %+v", jwks)
+	}
+}
+
+func TestServiceOAuthRevokeToken(t *testing.T) {
+	repository := &fakeTokenRepository{}
+	service := NewServiceWithTokenManagement(
+		fakeHealthProvider{},
+		nil,
+		repository,
+		fakeSessionLookup{},
+		fakeTokenGenerator{secret: "token"},
+		func() time.Time { return time.Unix(1700, 0) },
+	)
+
+	result, err := service.RevokeOAuthToken(context.Background(), OAuthRevokeCommand{
+		Token:         " ogmcp_access ",
+		TokenTypeHint: "access_token",
+	})
+	if err != nil {
+		t.Fatalf("RevokeOAuthToken returned error: %v", err)
+	}
+	if !result.Revoked || repository.revokedHash != HashToken("ogmcp_access") || repository.revokedAt != 1700 {
+		t.Fatalf("unexpected revoke result=%+v repository=%+v", result, repository)
+	}
+
+	repository.revokedHash = ""
+	repository.revokeByHashResult = false
+	result, err = service.RevokeOAuthToken(context.Background(), OAuthRevokeCommand{Token: "missing"})
+	if err != nil {
+		t.Fatalf("RevokeOAuthToken missing token returned error: %v", err)
+	}
+	if result.Revoked || repository.revokedHash != HashToken("missing") {
+		t.Fatalf("expected missing token to be a non-error miss, result=%+v repository=%+v", result, repository)
+	}
+
+	_, err = service.RevokeOAuthToken(context.Background(), OAuthRevokeCommand{})
+	if !errors.Is(err, ErrInvalidOAuthRequest) {
+		t.Fatalf("expected invalid revoke request, got %v", err)
+	}
+
+	_, err = NewService(fakeHealthProvider{}).RevokeOAuthToken(context.Background(), OAuthRevokeCommand{Token: "token"})
+	if err == nil {
+		t.Fatalf("expected dependency error")
+	}
+
+	repository.revokeErr = errors.New("update down")
+	_, err = service.RevokeOAuthToken(context.Background(), OAuthRevokeCommand{Token: "token"})
+	if !errors.Is(err, repository.revokeErr) {
+		t.Fatalf("expected revoke repository error, got %v", err)
 	}
 }
 
@@ -1173,15 +1225,17 @@ func (f fakeTokenGenerator) NewMCPOAuthCode() (string, error) {
 }
 
 type fakeTokenRepository struct {
-	created         domainmcp.Token
-	hash            string
-	revokedAt       int64
-	oauthCode       domainmcp.OAuthAuthorizationCode
-	listErr         error
-	createErr       error
-	revokeErr       error
-	oauthCreateErr  error
-	oauthConsumeErr error
+	created            domainmcp.Token
+	hash               string
+	revokedHash        string
+	revokedAt          int64
+	oauthCode          domainmcp.OAuthAuthorizationCode
+	listErr            error
+	createErr          error
+	revokeErr          error
+	revokeByHashResult bool
+	oauthCreateErr     error
+	oauthConsumeErr    error
 }
 
 func (f *fakeTokenRepository) ListMCPTokens(context.Context, int) ([]domainmcp.Token, error) {
@@ -1210,6 +1264,18 @@ func (f *fakeTokenRepository) RevokeMCPToken(_ context.Context, playerID int, to
 	}
 	f.revokedAt = revokedAt
 	return true, nil
+}
+
+func (f *fakeTokenRepository) RevokeMCPTokenByHash(_ context.Context, tokenHash string, revokedAt int64) (bool, error) {
+	if f.revokeErr != nil {
+		return false, f.revokeErr
+	}
+	f.revokedHash = tokenHash
+	f.revokedAt = revokedAt
+	if f.revokeByHashResult {
+		return true, nil
+	}
+	return tokenHash == HashToken("ogmcp_access"), nil
 }
 
 func (f *fakeTokenRepository) CreateMCPOAuthCode(_ context.Context, code domainmcp.OAuthAuthorizationCode) (domainmcp.OAuthAuthorizationCode, error) {

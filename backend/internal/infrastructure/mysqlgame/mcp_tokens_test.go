@@ -79,6 +79,14 @@ func TestMCPTokenRepositoryCreatesListsAndRevokesTokens(t *testing.T) {
 	if !revoked || !strings.Contains(runner.execCalls[1].sql, "UPDATE `uni1_mcp_tokens` SET revoked_at") {
 		t.Fatalf("unexpected revoke result=%v exec=%+v", revoked, runner.execCalls[1])
 	}
+
+	revoked, err = repository.RevokeMCPTokenByHash(context.Background(), " hash ", 1950)
+	if err != nil {
+		t.Fatalf("RevokeMCPTokenByHash returned error: %v", err)
+	}
+	if !revoked || !strings.Contains(runner.execCalls[2].sql, "WHERE token_hash = ?") || runner.execCalls[2].args[1] != "hash" {
+		t.Fatalf("unexpected hash revoke result=%v exec=%+v", revoked, runner.execCalls[2])
+	}
 }
 
 func TestMCPTokenRepositoryCreatesAndConsumesOAuthCodes(t *testing.T) {
@@ -181,6 +189,13 @@ func TestMCPTokenRepositoryCoversErrorBranches(t *testing.T) {
 	if _, err := repository.RevokeMCPToken(context.Background(), 42, 7, 1); err == nil {
 		t.Fatalf("expected nil execer revoke error")
 	}
+	if _, err := repository.RevokeMCPTokenByHash(context.Background(), "hash", 1); err == nil {
+		t.Fatalf("expected nil execer hash revoke error")
+	}
+	repository = NewMCPTokenRepositoryWithRunner(nil, &fakeMCPTokenRunner{}, "uni1_;DROP")
+	if _, err := repository.RevokeMCPTokenByHash(context.Background(), "hash", 1); err == nil {
+		t.Fatalf("expected unsafe prefix hash revoke error")
+	}
 	if _, err := repository.VerifyMCPToken(context.Background(), "secret"); err == nil {
 		t.Fatalf("expected nil queryer verify error")
 	}
@@ -229,6 +244,20 @@ func TestMCPTokenRepositoryCoversErrorBranches(t *testing.T) {
 	revoked, err := repository.RevokeMCPToken(context.Background(), 42, 7, 1)
 	if err != nil || revoked {
 		t.Fatalf("expected no-op revoke, got revoked=%v err=%v", revoked, err)
+	}
+
+	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{}, &fakeMCPTokenRunner{err: wantErr}, "uni1_")
+	if _, err := repository.RevokeMCPTokenByHash(context.Background(), "hash", 1); !errors.Is(err, wantErr) {
+		t.Fatalf("expected hash revoke exec error, got %v", err)
+	}
+	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{}, &fakeMCPTokenRunner{result: fakeFleetSQLErrorResult{rowsErr: wantErr}}, "uni1_")
+	if _, err := repository.RevokeMCPTokenByHash(context.Background(), "hash", 1); !errors.Is(err, wantErr) {
+		t.Fatalf("expected hash revoke rows affected error, got %v", err)
+	}
+	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{}, &fakeMCPTokenRunner{result: fakeFleetSQLErrorResult{rows: 0}}, "uni1_")
+	revoked, err = repository.RevokeMCPTokenByHash(context.Background(), "hash", 1)
+	if err != nil || revoked {
+		t.Fatalf("expected no-op hash revoke, got revoked=%v err=%v", revoked, err)
 	}
 
 	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: wantErr}}}}, nil, "uni1_")

@@ -34,6 +34,7 @@ type MCPOAuthUseCase interface {
 	OAuthJWKS(context.Context) domainmcp.JSONWebKeySet
 	AuthorizeOAuth(context.Context, appmcp.OAuthAuthorizeCommand) (appmcp.OAuthAuthorizeResult, error)
 	ExchangeOAuthCode(context.Context, appmcp.OAuthTokenCommand) (appmcp.OAuthTokenResult, error)
+	RevokeOAuthToken(context.Context, appmcp.OAuthRevokeCommand) (appmcp.OAuthRevokeResult, error)
 }
 
 type FrontendAssets interface {
@@ -275,6 +276,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/.well-known/jwks.json", getOnly(a.handleMCPOAuthJWKS))
 	mux.HandleFunc("/oauth/authorize", getOnly(a.handleMCPOAuthAuthorize))
 	mux.HandleFunc("/oauth/token", postOnly(a.handleMCPOAuthToken))
+	mux.HandleFunc("/oauth/revoke", postOnly(a.handleMCPOAuthRevoke))
 	mux.HandleFunc("/api/game/mcp-tokens", a.handleGameMCPTokens)
 	mux.HandleFunc("/api/game/mcp-tokens/revoke", postOnly(a.handleGameMCPTokenRevoke))
 	mux.HandleFunc("/api/public/universes", getOnly(a.handleUniverses))

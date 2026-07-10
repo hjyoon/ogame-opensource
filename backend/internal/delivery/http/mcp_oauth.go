@@ -92,6 +92,28 @@ func (a app) handleMCPOAuthToken(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
+func (a app) handleMCPOAuthRevoke(w http.ResponseWriter, r *http.Request) {
+	if a.deps.MCPOAuth == nil {
+		writeOAuthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "OAuth token revocation is unavailable.")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "OAuth revocation request is invalid.")
+		return
+	}
+	result, err := a.deps.MCPOAuth.RevokeOAuthToken(r.Context(), appmcp.OAuthRevokeCommand{
+		Token:         r.Form.Get("token"),
+		TokenTypeHint: r.Form.Get("token_type_hint"),
+	})
+	if err != nil {
+		writeOAuthApplicationError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"revoked": result.Revoked})
+}
+
 func requestIssuer(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
