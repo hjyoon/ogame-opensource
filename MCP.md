@@ -28,11 +28,9 @@ Implemented:
   - Tokens expire after `OGAME_MCP_TOKEN_TTL_SECONDS` seconds; default 30 days,
     `0` disables expiry.
 - React options UI for DB token list/create/one-time secret/revoke.
-- Dedicated Go MCP smoke E2E:
-  - `testing/e2e/golang-mcp-smoke.mjs`
-  - Runs from `testing/e2e/run-golang-migration-qa.sh`.
-  - Covers transport guards, DB tokens, OAuth, read/message tools, send dry-run,
-    invalid params, expiry metadata, and revoke.
+- Go MCP smoke E2E: `testing/e2e/golang-mcp-smoke.mjs`, run by
+  `testing/e2e/run-golang-migration-qa.sh`; covers transport guards, DB tokens,
+  OAuth, read/message tools, dry-run mutations, invalid params, expiry, revoke.
 - OAuth 2.1 public-client base:
   - `/.well-known/oauth-authorization-server`
   - PRM endpoint and 401 discovery challenge
@@ -54,8 +52,9 @@ Implemented:
   These are read-only and avoid legacy queue/resource mutations.
 - Authenticated `mcp:messages` tools: `list_messages` and `get_message`.
   They read owned inbox rows without marking messages read or cleanup mutation.
-- Authenticated `mcp:message_write` tool: `send_message`. Defaults to dry-run;
-  execution requires `dryRun:false` plus the exact returned confirmation string.
+- Authenticated `mcp:message_write` tools: `send_message`, `delete_messages`.
+  Both default to dry-run; execution requires `dryRun:false` plus the returned
+  confirmation string.
 
 ## Static Token Format
 
@@ -96,7 +95,7 @@ dry-run, and explicit confirmation.
 ## Next Steps
 
 1. Add more scoped dry-run mutation tools: fleet dispatch, building/research
-   queue actions, and message delete/report.
+   queue actions, and message report.
 
 ## General User Policy
 

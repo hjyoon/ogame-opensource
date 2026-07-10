@@ -413,6 +413,74 @@ func TestMessagesRepositoryMCPSendMessagePreviewAndExecute(t *testing.T) {
 	}
 }
 
+func TestMessagesRepositoryMCPDeleteMessagesPreviewAndExecute(t *testing.T) {
+	messageRows := func() *fakeRows {
+		return fakeRowsFromValues(
+			[]any{11, domaingame.MessageTypePM, "Sender", "Subject", "Body", 0, int64(1)},
+			[]any{12, domaingame.MessageTypeSpyReport, "Spy", "Spy", "Text", 0, int64(2)},
+		)
+	}
+	runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{int64(0)})},
+		{rows: messageRows()},
+		{rows: fakeRowsFromValues([]any{int64(0)})},
+		{rows: messageRows()},
+		{rows: fakeRowsFromValues([]any{int64(0)})},
+		{rows: messageRows()},
+	}}}
+	repository := NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+
+	preview, err := repository.PreviewMCPDeleteMessages(context.Background(), 42, domainmcp.DeleteMessagesCommand{MessageIDs: []int{12, 99}})
+	if err != nil {
+		t.Fatalf("PreviewMCPDeleteMessages returned error: %v", err)
+	}
+	if !preview.DryRun || preview.Executed || preview.DeleteCount != 1 || len(preview.MessageIDs) != 1 || preview.MessageIDs[0] != 12 || len(runner.execs) != 0 {
+		t.Fatalf("unexpected delete preview=%+v execs=%+v", preview, runner.execs)
+	}
+
+	deleted, err := repository.DeleteMCPMessages(context.Background(), 42, domainmcp.DeleteMessagesCommand{MessageIDs: []int{12, 99}})
+	if err != nil {
+		t.Fatalf("DeleteMCPMessages returned error: %v", err)
+	}
+	if deleted.DryRun || !deleted.Executed || deleted.DeleteCount != 1 || len(deleted.MessageIDs) != 1 || deleted.MessageIDs[0] != 12 {
+		t.Fatalf("unexpected delete execute: %+v", deleted)
+	}
+	if len(runner.execs) != 1 || !strings.Contains(runner.execs[0].sql, "DELETE FROM `ogame_messages` WHERE owner_id = ? AND msg_id = ?") ||
+		runner.execs[0].args[0] != 42 || runner.execs[0].args[1] != 12 {
+		t.Fatalf("expected legacy marked delete exec, got %+v", runner.execs)
+	}
+}
+
+func TestMessagesRepositoryMCPDeleteMessagesValidationAndErrors(t *testing.T) {
+	repository := NewMessagesRepositoryWithRunner(nil, nil, "ogame_", time.Now)
+	if _, err := repository.PreviewMCPDeleteMessages(context.Background(), 42, domainmcp.DeleteMessagesCommand{MessageIDs: []int{7}}); err == nil {
+		t.Fatalf("expected preview queryer error")
+	}
+
+	repository = NewMessagesRepositoryWithRunner(&fakeMessagesRunner{}, nil, "ogame_", time.Now)
+	if _, err := repository.DeleteMCPMessages(context.Background(), 42, domainmcp.DeleteMessagesCommand{MessageIDs: []int{7}}); err == nil {
+		t.Fatalf("expected execute updater error")
+	}
+
+	repository = NewMessagesRepositoryWithRunner(&fakeMessagesRunner{}, &fakeMessagesRunner{}, "bad-prefix_", time.Now)
+	if _, err := repository.PreviewMCPDeleteMessages(context.Background(), 42, domainmcp.DeleteMessagesCommand{MessageIDs: []int{7}}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected unsafe prefix error, got %v", err)
+	}
+
+	runner := &fakeMessagesRunner{}
+	repository = NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	preview, err := repository.PreviewMCPDeleteMessages(context.Background(), 42, domainmcp.DeleteMessagesCommand{})
+	if err != nil || !preview.DryRun || preview.DeleteCount != 0 || len(runner.calls) != 0 || len(runner.execs) != 0 {
+		t.Fatalf("expected empty delete no-op, preview=%+v err=%v calls=%+v execs=%+v", preview, err, runner.calls, runner.execs)
+	}
+
+	runner = &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("commander failed")}}}}
+	repository = NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, err := repository.PreviewMCPDeleteMessages(context.Background(), 42, domainmcp.DeleteMessagesCommand{MessageIDs: []int{7}}); err == nil || !strings.Contains(err.Error(), "commander failed") {
+		t.Fatalf("expected commander error, got %v", err)
+	}
+}
+
 func TestMessagesRepositoryMCPSendMessageValidationAndErrors(t *testing.T) {
 	repository := NewMessagesRepositoryWithRunner(&fakeMessagesRunner{}, &fakeMessagesRunner{}, "ogame_", time.Now)
 	preview, err := repository.PreviewMCPSendMessage(context.Background(), 42, domainmcp.SendMessageCommand{Subject: "Hi", Text: "body"})

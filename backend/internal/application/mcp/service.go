@@ -12,6 +12,7 @@ import (
 	"math"
 	"net"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -78,6 +79,8 @@ type ReadRepository interface {
 type WriteRepository interface {
 	PreviewMCPSendMessage(context.Context, int, domainmcp.SendMessageCommand) (domainmcp.SendMessageResult, error)
 	SendMCPMessage(context.Context, int, domainmcp.SendMessageCommand) (domainmcp.SendMessageResult, error)
+	PreviewMCPDeleteMessages(context.Context, int, domainmcp.DeleteMessagesCommand) (domainmcp.DeleteMessagesResult, error)
+	DeleteMCPMessages(context.Context, int, domainmcp.DeleteMessagesCommand) (domainmcp.DeleteMessagesResult, error)
 }
 
 type TokenSecretGenerator interface {
@@ -588,7 +591,7 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		tools = append(tools, listMessagesTool(), getMessageTool())
 	}
 	if access.HasScope(domainmcp.ScopeMessageWrite) && s.writeRepository != nil {
-		tools = append(tools, sendMessageTool())
+		tools = append(tools, sendMessageTool(), deleteMessagesTool())
 	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
 }
@@ -689,6 +692,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callSendMessage(ctx, access, command.Arguments)
+	case "delete_messages":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeMessageWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callDeleteMessages(ctx, access, command.Arguments)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -995,6 +1007,50 @@ func (s Service) callSendMessage(ctx context.Context, access domainmcp.Access, a
 		result.Confirmation = confirmation
 	}
 	structured := map[string]any{"sendMessage": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callDeleteMessages(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.writeRepository == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp write repository unavailable")
+	}
+	command, err := mcpDeleteMessagesCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	confirmation := mcpDeleteMessagesConfirmation(command)
+	var result domainmcp.DeleteMessagesResult
+	if command.DryRun {
+		result, err = s.writeRepository.PreviewMCPDeleteMessages(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = true
+		result.Executed = false
+		if result.DeleteCount > 0 {
+			result.RequiresConfirmation = true
+			result.Confirmation = confirmation
+		}
+	} else {
+		if strings.TrimSpace(command.Confirm) != confirmation {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+		}
+		result, err = s.writeRepository.DeleteMCPMessages(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = false
+		result.RequiresConfirmation = false
+		result.Confirmation = confirmation
+	}
+	structured := map[string]any{"deleteMessages": result}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -1352,6 +1408,10 @@ func optionalNonNegativeIntArgument(arguments map[string]any, name string) (int,
 	if !ok || raw == nil {
 		return 0, nil
 	}
+	return nonNegativeIntValue(raw, name)
+}
+
+func nonNegativeIntValue(raw any, name string) (int, error) {
 	maxIntValue := int64(^uint(0) >> 1)
 	var value int64
 	switch typed := raw.(type) {
@@ -1426,6 +1486,35 @@ func mcpSendMessageConfirmation(command domainmcp.SendMessageCommand) string {
 	return fmt.Sprintf("send_message:%d:%s", command.TargetPlayerID, hex.EncodeToString(sum[:])[:12])
 }
 
+func mcpDeleteMessagesCommand(arguments map[string]any) (domainmcp.DeleteMessagesCommand, error) {
+	messageIDs, err := positiveIntSliceArgument(arguments, "messageIds")
+	if err != nil || len(messageIDs) == 0 {
+		return domainmcp.DeleteMessagesCommand{}, domainmcp.ErrInvalidParams
+	}
+	dryRun := true
+	if arguments != nil && arguments["dryRun"] != nil {
+		dryRun, err = optionalBoolArgument(arguments, "dryRun")
+		if err != nil {
+			return domainmcp.DeleteMessagesCommand{}, err
+		}
+	}
+	confirm, err := optionalStringArgument(arguments, "confirm")
+	if err != nil {
+		return domainmcp.DeleteMessagesCommand{}, err
+	}
+	return domainmcp.DeleteMessagesCommand{MessageIDs: messageIDs, DryRun: dryRun, Confirm: confirm}, nil
+}
+
+func mcpDeleteMessagesConfirmation(command domainmcp.DeleteMessagesCommand) string {
+	ids := make([]string, 0, len(command.MessageIDs))
+	for _, id := range command.MessageIDs {
+		ids = append(ids, strconv.Itoa(id))
+	}
+	payload := strings.Join(ids, ",")
+	sum := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("delete_messages:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
+}
+
 func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
 	limit, err := optionalNonNegativeIntArgument(arguments, "limit")
 	if err != nil {
@@ -1466,6 +1555,38 @@ func optionalStringArgument(arguments map[string]any, name string) (string, erro
 		return "", fmt.Errorf("%w: %s must be a string", domainmcp.ErrInvalidParams, name)
 	}
 	return value, nil
+}
+
+func positiveIntSliceArgument(arguments map[string]any, name string) ([]int, error) {
+	if arguments == nil {
+		return nil, nil
+	}
+	raw, ok := arguments[name]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	values, ok := raw.([]any)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s must be an array", domainmcp.ErrInvalidParams, name)
+	}
+	seen := map[int]struct{}{}
+	result := make([]int, 0, len(values))
+	for _, value := range values {
+		id, err := nonNegativeIntValue(value, name)
+		if err != nil {
+			return nil, err
+		}
+		if id <= 0 {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+	sort.Ints(result)
+	return result, nil
 }
 
 func optionalBoolArgument(arguments map[string]any, name string) (bool, error) {
@@ -1918,6 +2039,58 @@ func sendMessageTool() domainmcp.Tool {
 		Annotations: map[string]any{
 			"readOnlyHint":    false,
 			"destructiveHint": false,
+			"idempotentHint":  false,
+		},
+	}
+}
+
+func deleteMessagesTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "delete_messages",
+		Title:       "Delete Messages",
+		Description: "Dry-run or explicitly confirm deleting selected owned inbox messages. Only positive messageIds are accepted; broad delete-all modes are not exposed.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"messageIds": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "integer", "minimum": 1},
+					"description": "Owned inbox message ids to delete.",
+				},
+				"dryRun": map[string]any{
+					"type":        "boolean",
+					"description": "Defaults to true. Set false only with a matching confirmation value.",
+				},
+				"confirm": map[string]any{
+					"type":        "string",
+					"description": "Exact confirmation string returned by a dry-run for the same messageIds.",
+				},
+			},
+			"required":             []string{"messageIds"},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"deleteMessages": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":             map[string]any{"type": "integer"},
+						"messageIds":           map[string]any{"type": "array", "items": map[string]any{"type": "integer"}},
+						"deleteCount":          map[string]any{"type": "integer"},
+						"dryRun":               map[string]any{"type": "boolean"},
+						"requiresConfirmation": map[string]any{"type": "boolean"},
+						"confirmation":         map[string]any{"type": "string"},
+						"executed":             map[string]any{"type": "boolean"},
+					},
+					"required": []string{"playerId", "messageIds", "deleteCount", "dryRun", "requiresConfirmation", "executed"},
+				},
+			},
+			"required": []string{"deleteMessages"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    false,
+			"destructiveHint": true,
 			"idempotentHint":  false,
 		},
 	}

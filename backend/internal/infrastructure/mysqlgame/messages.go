@@ -323,6 +323,14 @@ func (r MessagesRepository) SendMCPMessage(ctx context.Context, playerID int, co
 	return r.mcpSendMessage(ctx, playerID, command, true)
 }
 
+func (r MessagesRepository) PreviewMCPDeleteMessages(ctx context.Context, playerID int, command domainmcp.DeleteMessagesCommand) (domainmcp.DeleteMessagesResult, error) {
+	return r.mcpDeleteMessages(ctx, playerID, command, false)
+}
+
+func (r MessagesRepository) DeleteMCPMessages(ctx context.Context, playerID int, command domainmcp.DeleteMessagesCommand) (domainmcp.DeleteMessagesResult, error) {
+	return r.mcpDeleteMessages(ctx, playerID, command, true)
+}
+
 func (r MessagesRepository) mcpSendMessage(ctx context.Context, playerID int, command domainmcp.SendMessageCommand, execute bool) (domainmcp.SendMessageResult, error) {
 	if r.queryer == nil {
 		return domainmcp.SendMessageResult{}, errors.New("messages queryer unavailable")
@@ -398,6 +406,52 @@ func mcpActionIssue(issue *domaingame.MessageActionIssue) *domainmcp.ActionIssue
 		return nil
 	}
 	return &domainmcp.ActionIssue{Code: issue.Code, Message: issue.Message}
+}
+
+func (r MessagesRepository) mcpDeleteMessages(ctx context.Context, playerID int, command domainmcp.DeleteMessagesCommand, execute bool) (domainmcp.DeleteMessagesResult, error) {
+	if r.queryer == nil {
+		return domainmcp.DeleteMessagesResult{}, errors.New("messages queryer unavailable")
+	}
+	if execute && r.execer == nil {
+		return domainmcp.DeleteMessagesResult{}, errors.New("messages updater unavailable")
+	}
+	messagesTable, err := tableName(r.prefix, "messages")
+	if err != nil {
+		return domainmcp.DeleteMessagesResult{}, err
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return domainmcp.DeleteMessagesResult{}, err
+	}
+	ids := domaingame.NormalizeMessageIDs(command.MessageIDs)
+	result := domainmcp.DeleteMessagesResult{PlayerID: playerID, DryRun: !execute}
+	if len(ids) == 0 {
+		return result, nil
+	}
+	commanderActive, err := r.loadCommanderActive(ctx, usersTable, playerID)
+	if err != nil {
+		return domainmcp.DeleteMessagesResult{}, err
+	}
+	rows, err := r.loadInboxRows(ctx, messagesTable, playerID, domaingame.NormalizeMessagesLimit(commanderActive), 0, false)
+	if err != nil {
+		return domainmcp.DeleteMessagesResult{}, err
+	}
+	deleteIDs := r.messageDeleteIDs(domaingame.MessageDeleteModeMarked, rows, ids)
+	result.MessageIDs = deleteIDs
+	result.DeleteCount = len(deleteIDs)
+	if !execute {
+		return result, nil
+	}
+	if _, err := r.MutateMessages(ctx, appgame.MessagesMutationQuery{
+		PlayerID:   playerID,
+		Action:     domaingame.MessagesMutationActionDelete,
+		DeleteMode: domaingame.MessageDeleteModeMarked,
+		MessageIDs: ids,
+	}); err != nil {
+		return domainmcp.DeleteMessagesResult{}, err
+	}
+	result.Executed = result.DeleteCount > 0
+	return result, nil
 }
 
 func (r MessagesRepository) loadInboxRows(ctx context.Context, messagesTable string, playerID int, limit int, messageTypeFilter int, hasMessageTypeFilter bool) ([]domaingame.Message, error) {

@@ -660,7 +660,7 @@ func TestServiceListsSendMessageToolForMessageWriteScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,send_message" {
+	if strings.Join(names, ",") != "get_server_health,send_message,delete_messages" {
 		t.Fatalf("unexpected message-write tools: %v", names)
 	}
 }
@@ -1170,6 +1170,81 @@ func TestServiceSendMessageRequiresScopeRepositoryAndValidConfirmation(t *testin
 	}
 }
 
+func TestServiceCallsDeleteMessagesWithDryRunAndConfirmation(t *testing.T) {
+	repository := &fakeWriteRepository{
+		deletePreview: domainmcp.DeleteMessagesResult{PlayerID: 42, MessageIDs: []int{5, 7}, DeleteCount: 2},
+		deleted:       domainmcp.DeleteMessagesResult{PlayerID: 42, MessageIDs: []int{5, 7}, DeleteCount: 2, Executed: true},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeMessageWrite}},
+		},
+	}).WithWriteRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "delete_messages",
+		AccessToken: "write",
+		Arguments:   map[string]any{"messageIds": []any{float64(7), float64(5), float64(5)}},
+	})
+	if err != nil {
+		t.Fatalf("delete_messages dry-run returned error: %v", err)
+	}
+	preview := result.StructuredContent.(map[string]any)["deleteMessages"].(domainmcp.DeleteMessagesResult)
+	if !preview.DryRun || preview.Executed || !preview.RequiresConfirmation || !strings.HasPrefix(preview.Confirmation, "delete_messages:5,7:") {
+		t.Fatalf("unexpected delete preview: %+v", preview)
+	}
+	if repository.deletePreviewPlayerID != 42 || len(repository.deletePreviewCommand.MessageIDs) != 2 || repository.deletePreviewCommand.MessageIDs[0] != 5 || repository.deletePreviewCommand.MessageIDs[1] != 7 {
+		t.Fatalf("unexpected delete preview command: player=%d command=%+v", repository.deletePreviewPlayerID, repository.deletePreviewCommand)
+	}
+
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "delete_messages",
+		AccessToken: "write",
+		Arguments:   map[string]any{"messageIds": []any{5, 7}, "dryRun": false, "confirm": preview.Confirmation},
+	})
+	if err != nil {
+		t.Fatalf("delete_messages execute returned error: %v", err)
+	}
+	deleted := result.StructuredContent.(map[string]any)["deleteMessages"].(domainmcp.DeleteMessagesResult)
+	if deleted.DryRun || !deleted.Executed || deleted.RequiresConfirmation || deleted.Confirmation != preview.Confirmation {
+		t.Fatalf("unexpected delete execute: %+v", deleted)
+	}
+	if repository.deletePlayerID != 42 || repository.deleteCommand.Confirm != preview.Confirmation || repository.deleteCommand.DryRun {
+		t.Fatalf("unexpected delete command: player=%d command=%+v", repository.deletePlayerID, repository.deleteCommand)
+	}
+}
+
+func TestServiceDeleteMessagesRequiresScopeRepositoryAndValidConfirmation(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"messages": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeMessages}},
+			"write":    {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeMessageWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "delete_messages", AccessToken: "write", Arguments: map[string]any{"messageIds": []any{7}}}); err == nil {
+		t.Fatalf("expected missing repository error")
+	}
+
+	service = service.WithWriteRepository(&fakeWriteRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "delete_messages", AccessToken: "messages", Arguments: map[string]any{"messageIds": []any{7}}}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without message write scope, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "delete_messages", AccessToken: "write", Arguments: map[string]any{"messageIds": true}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid ids error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "delete_messages", AccessToken: "write", Arguments: map[string]any{"messageIds": []any{7}, "dryRun": false}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected missing confirmation error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "delete_messages", AccessToken: "write", Arguments: map[string]any{"messageIds": []any{7}, "dryRun": false, "confirm": "wrong"}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected wrong confirmation error, got %v", err)
+	}
+
+	service = service.WithWriteRepository(&fakeWriteRepository{err: errors.New("delete down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "delete_messages", AccessToken: "write", Arguments: map[string]any{"messageIds": []any{7}}}); err == nil {
+		t.Fatalf("expected repository error")
+	}
+}
+
 func TestMCPMessageQueryDefaultsCapsAndValidation(t *testing.T) {
 	query, err := mcpMessageQuery(nil)
 	if err != nil || query.Limit != 25 || query.HasMessageType || query.IncludeText {
@@ -1227,6 +1302,42 @@ func TestMCPSendMessageCommandDefaultsAndValidation(t *testing.T) {
 		{"targetPlayerId": 77, "subject": "Hello", "text": "Body", "confirm": false},
 	} {
 		if _, err := mcpSendMessageCommand(args); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", args, err)
+		}
+	}
+}
+
+func TestMCPDeleteMessagesCommandDefaultsAndValidation(t *testing.T) {
+	command, err := mcpDeleteMessagesCommand(map[string]any{"messageIds": []any{float64(7), 5, "7", 0}})
+	if err != nil || len(command.MessageIDs) != 2 || command.MessageIDs[0] != 5 || command.MessageIDs[1] != 7 || !command.DryRun {
+		t.Fatalf("unexpected default delete command: %+v err=%v", command, err)
+	}
+
+	command, err = mcpDeleteMessagesCommand(map[string]any{"messageIds": []any{json.Number("8")}, "dryRun": false, "confirm": "delete_messages:8:test"})
+	if err != nil || len(command.MessageIDs) != 1 || command.MessageIDs[0] != 8 || command.DryRun || command.Confirm != "delete_messages:8:test" {
+		t.Fatalf("unexpected explicit delete command: %+v err=%v", command, err)
+	}
+
+	confirmation := mcpDeleteMessagesConfirmation(domainmcp.DeleteMessagesCommand{MessageIDs: []int{5, 7}})
+	if !strings.HasPrefix(confirmation, "delete_messages:5,7:") || confirmation != mcpDeleteMessagesConfirmation(domainmcp.DeleteMessagesCommand{MessageIDs: []int{5, 7}}) {
+		t.Fatalf("unexpected confirmation: %q", confirmation)
+	}
+	if confirmation == mcpDeleteMessagesConfirmation(domainmcp.DeleteMessagesCommand{MessageIDs: []int{5, 8}}) {
+		t.Fatalf("confirmation should bind message ids")
+	}
+
+	for _, args := range []map[string]any{
+		nil,
+		{"messageIds": []any{}},
+		{"messageIds": []any{0}},
+		{"messageIds": true},
+		{"messageIds": []any{true}},
+		{"messageIds": []any{-1}},
+		{"messageIds": []any{1.5}},
+		{"messageIds": []any{7}, "dryRun": "false"},
+		{"messageIds": []any{7}, "confirm": false},
+	} {
+		if _, err := mcpDeleteMessagesCommand(args); !errors.Is(err, domainmcp.ErrInvalidParams) {
 			t.Fatalf("expected invalid params for %+v, got %v", args, err)
 		}
 	}
@@ -1697,13 +1808,19 @@ func (f fakeReadRepository) GetMCPFleetMovements(_ context.Context, playerID int
 }
 
 type fakeWriteRepository struct {
-	preview         domainmcp.SendMessageResult
-	sent            domainmcp.SendMessageResult
-	previewPlayerID int
-	sendPlayerID    int
-	previewCommand  domainmcp.SendMessageCommand
-	sendCommand     domainmcp.SendMessageCommand
-	err             error
+	preview               domainmcp.SendMessageResult
+	sent                  domainmcp.SendMessageResult
+	deletePreview         domainmcp.DeleteMessagesResult
+	deleted               domainmcp.DeleteMessagesResult
+	previewPlayerID       int
+	sendPlayerID          int
+	deletePreviewPlayerID int
+	deletePlayerID        int
+	previewCommand        domainmcp.SendMessageCommand
+	sendCommand           domainmcp.SendMessageCommand
+	deletePreviewCommand  domainmcp.DeleteMessagesCommand
+	deleteCommand         domainmcp.DeleteMessagesCommand
+	err                   error
 }
 
 func (f *fakeWriteRepository) PreviewMCPSendMessage(_ context.Context, playerID int, command domainmcp.SendMessageCommand) (domainmcp.SendMessageResult, error) {
@@ -1722,6 +1839,24 @@ func (f *fakeWriteRepository) SendMCPMessage(_ context.Context, playerID int, co
 		return domainmcp.SendMessageResult{}, f.err
 	}
 	return f.sent, nil
+}
+
+func (f *fakeWriteRepository) PreviewMCPDeleteMessages(_ context.Context, playerID int, command domainmcp.DeleteMessagesCommand) (domainmcp.DeleteMessagesResult, error) {
+	f.deletePreviewPlayerID = playerID
+	f.deletePreviewCommand = command
+	if f.err != nil {
+		return domainmcp.DeleteMessagesResult{}, f.err
+	}
+	return f.deletePreview, nil
+}
+
+func (f *fakeWriteRepository) DeleteMCPMessages(_ context.Context, playerID int, command domainmcp.DeleteMessagesCommand) (domainmcp.DeleteMessagesResult, error) {
+	f.deletePlayerID = playerID
+	f.deleteCommand = command
+	if f.err != nil {
+		return domainmcp.DeleteMessagesResult{}, f.err
+	}
+	return f.deleted, nil
 }
 
 type fakeSessionLookup struct {

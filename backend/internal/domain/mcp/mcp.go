@@ -241,6 +241,22 @@ type SendMessageResult struct {
 	Issue                *ActionIssue `json:"issue,omitempty"`
 }
 
+type DeleteMessagesCommand struct {
+	MessageIDs []int
+	DryRun     bool
+	Confirm    string
+}
+
+type DeleteMessagesResult struct {
+	PlayerID             int    `json:"playerId"`
+	MessageIDs           []int  `json:"messageIds"`
+	DeleteCount          int    `json:"deleteCount"`
+	DryRun               bool   `json:"dryRun"`
+	RequiresConfirmation bool   `json:"requiresConfirmation"`
+	Confirmation         string `json:"confirmation,omitempty"`
+	Executed             bool   `json:"executed"`
+}
+
 type FleetShip struct {
 	ID    int    `json:"id"`
 	Name  string `json:"name"`
