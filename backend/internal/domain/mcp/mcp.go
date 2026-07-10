@@ -58,6 +58,21 @@ type Planet struct {
 	Current     bool        `json:"current"`
 }
 
+type Score struct {
+	Raw     int64 `json:"raw"`
+	Display int64 `json:"display"`
+	Rank    int   `json:"rank"`
+}
+
+type AccountOverview struct {
+	PlayerID       int    `json:"playerId"`
+	Commander      string `json:"commander"`
+	Score          Score  `json:"score"`
+	CurrentPlanet  Planet `json:"currentPlanet"`
+	PlanetCount    int    `json:"planetCount"`
+	UnreadMessages int    `json:"unreadMessages"`
+}
+
 type Access struct {
 	Authenticated bool     `json:"authenticated"`
 	PlayerID      int      `json:"playerId,omitempty"`

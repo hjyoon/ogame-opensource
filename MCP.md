@@ -35,6 +35,10 @@ Implemented:
   - Requires `mcp:read`.
   - Returns selectable planets/moons using the same sort settings as the
     legacy planet switcher.
+- Account summary read tool: `get_account_overview`.
+  - Requires `mcp:read`.
+  - Returns commander, score/rank, current planet, planet count, and unread
+    message count without triggering legacy overview mutations.
 
 ## Static Token Format
 
@@ -84,7 +88,6 @@ dry-run plus explicit confirmation.
 ## Next Steps
 
 1. Add more read-only authenticated tools:
-   - `get_account_overview`
    - `get_planet_resources`
    - `get_building_queue`
    - `get_fleet_movements`

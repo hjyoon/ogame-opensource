@@ -47,6 +47,47 @@ func TestMCPReadRepositoryFallsBackToHomePlanet(t *testing.T) {
 	}
 }
 
+func TestMCPReadRepositoryGetsAccountOverview(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 1, 99, 88})},
+		{rows: fakeRowsFromValues([]any{99, "Homeworld", domaingame.PlanetTypePlanet, 1, 2, 3})},
+		{rows: fakeRowsFromValues([]any{2})},
+		{rows: fakeRowsFromValues([]any{5})},
+	}}
+	repository := NewMCPReadRepositoryWithQueryer(queryer, "uni1_")
+
+	overview, err := repository.GetMCPAccountOverview(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("GetMCPAccountOverview returned error: %v", err)
+	}
+	if overview.Commander != "legor" || overview.Score.Display != 123 || overview.CurrentPlanet.ID != 99 || overview.PlanetCount != 2 || overview.UnreadMessages != 5 {
+		t.Fatalf("unexpected account overview: %+v", overview)
+	}
+	if !strings.Contains(queryer.calls[0].sql, "FROM `uni1_users`") ||
+		!strings.Contains(queryer.calls[1].sql, "FROM `uni1_planets`") ||
+		!strings.Contains(queryer.calls[3].sql, "FROM `uni1_messages`") {
+		t.Fatalf("unexpected account overview SQL calls: %+v", queryer.calls)
+	}
+}
+
+func TestMCPReadRepositoryAccountOverviewFallsBackToHomePlanet(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(-1), 2, 0, 88})},
+		{rows: fakeRowsFromValues([]any{88, "Homeworld", domaingame.PlanetTypePlanet, 1, 2, 3})},
+		{rows: fakeRowsFromValues([]any{1})},
+		{rows: fakeRowsFromValues([]any{0})},
+	}}
+	repository := NewMCPReadRepositoryWithQueryer(queryer, "uni1_")
+
+	overview, err := repository.GetMCPAccountOverview(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("GetMCPAccountOverview returned error: %v", err)
+	}
+	if overview.CurrentPlanet.ID != 88 || overview.Score.Display != 0 {
+		t.Fatalf("unexpected fallback overview: %+v", overview)
+	}
+}
+
 func TestMCPReadRepositoryErrorBranches(t *testing.T) {
 	repository := NewMCPReadRepositoryWithQueryer(nil, "uni1_")
 	if _, err := repository.ListMCPPlanets(context.Background(), 42); err == nil {
@@ -110,5 +151,98 @@ func TestMCPReadRepositoryConstructorsAndUnknownType(t *testing.T) {
 	}
 	if got := mcpPlanetTypeName(999); got != "unknown" {
 		t.Fatalf("expected unknown type name, got %q", got)
+	}
+}
+
+func TestMCPReadRepositoryAccountOverviewErrorBranches(t *testing.T) {
+	repository := NewMCPReadRepositoryWithQueryer(nil, "uni1_")
+	if _, err := repository.GetMCPAccountOverview(context.Background(), 42); err == nil {
+		t.Fatalf("expected nil queryer error")
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{}, "uni1_;DROP")
+	if _, err := repository.GetMCPAccountOverview(context.Background(), 42); err == nil {
+		t.Fatalf("expected invalid prefix error")
+	}
+
+	wantErr := errors.New("query failed")
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: wantErr}}}, "uni1_")
+	if _, err := repository.GetMCPAccountOverview(context.Background(), 42); !errors.Is(err, wantErr) {
+		t.Fatalf("expected account query error, got %v", err)
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "uni1_")
+	if _, err := repository.GetMCPAccountOverview(context.Background(), 42); err == nil {
+		t.Fatalf("expected missing account error")
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"legor", "bad", 1, 99, 88})}}}, "uni1_")
+	if _, err := repository.GetMCPAccountOverview(context.Background(), 42); err == nil {
+		t.Fatalf("expected account scan error")
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(wantErr, []any{"legor", int64(1), 1, 99, 88})}}}, "uni1_")
+	if _, err := repository.GetMCPAccountOverview(context.Background(), 42); !errors.Is(err, wantErr) {
+		t.Fatalf("expected account rows error, got %v", err)
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(1), 1, 99, 88})},
+		{rows: fakeRowsFromValues()},
+	}}, "uni1_")
+	if _, err := repository.GetMCPAccountOverview(context.Background(), 42); err == nil {
+		t.Fatalf("expected missing current planet error")
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(1), 1, 99, 88})},
+		{err: wantErr},
+	}}, "uni1_")
+	if _, err := repository.GetMCPAccountOverview(context.Background(), 42); !errors.Is(err, wantErr) {
+		t.Fatalf("expected current planet query error, got %v", err)
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(1), 1, 99, 88})},
+		{rows: fakeRowsFromValues([]any{"bad", "Homeworld", domaingame.PlanetTypePlanet, 1, 2, 3})},
+	}}, "uni1_")
+	if _, err := repository.GetMCPAccountOverview(context.Background(), 42); err == nil {
+		t.Fatalf("expected current planet scan error")
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(1), 1, 99, 88})},
+		{rows: fakeRowsFromValuesWithErr(wantErr, []any{99, "Homeworld", domaingame.PlanetTypePlanet, 1, 2, 3})},
+	}}, "uni1_")
+	if _, err := repository.GetMCPAccountOverview(context.Background(), 42); !errors.Is(err, wantErr) {
+		t.Fatalf("expected current planet rows error, got %v", err)
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(1), 1, 99, 88})},
+		{rows: fakeRowsFromValues([]any{99, "Homeworld", domaingame.PlanetTypePlanet, 1, 2, 3})},
+		{err: wantErr},
+	}}, "uni1_")
+	if _, err := repository.GetMCPAccountOverview(context.Background(), 42); !errors.Is(err, wantErr) {
+		t.Fatalf("expected planet count error, got %v", err)
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(1), 1, 99, 88})},
+		{rows: fakeRowsFromValues([]any{99, "Homeworld", domaingame.PlanetTypePlanet, 1, 2, 3})},
+		{rows: fakeRowsFromValues([]any{1})},
+		{rows: fakeRowsFromValues([]any{"bad"})},
+	}}, "uni1_")
+	if _, err := repository.GetMCPAccountOverview(context.Background(), 42); err == nil {
+		t.Fatalf("expected unread count scan error")
+	}
+
+	emptyCount, err := (MCPReadRepository{queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}}).singleMCPCount(context.Background(), "SELECT COUNT(*)")
+	if err != nil || emptyCount != 0 {
+		t.Fatalf("expected empty count fallback, got count=%d err=%v", emptyCount, err)
+	}
+
+	if _, err := (MCPReadRepository{queryer: &fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(wantErr)}}}}).singleMCPCount(context.Background(), "SELECT COUNT(*)"); !errors.Is(err, wantErr) {
+		t.Fatalf("expected empty count rows error, got %v", err)
 	}
 }

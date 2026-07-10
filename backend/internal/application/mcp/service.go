@@ -43,6 +43,7 @@ type TokenRepository interface {
 
 type ReadRepository interface {
 	ListMCPPlanets(context.Context, int) ([]domainmcp.Planet, error)
+	GetMCPAccountOverview(context.Context, int) (domainmcp.AccountOverview, error)
 }
 
 type TokenSecretGenerator interface {
@@ -167,7 +168,7 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	if access.HasScope(domainmcp.ScopeRead) {
 		tools = append(tools, accessTool())
 		if s.readRepository != nil {
-			tools = append(tools, listPlanetsTool())
+			tools = append(tools, listPlanetsTool(), accountOverviewTool())
 		}
 	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
@@ -206,6 +207,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callListPlanets(ctx, access)
+	case "get_account_overview":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callAccountOverview(ctx, access)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -323,6 +333,25 @@ func (s Service) callListPlanets(ctx context.Context, access domainmcp.Access) (
 		"count":    len(planets),
 		"planets":  planets,
 	}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callAccountOverview(ctx context.Context, access domainmcp.Access) (domainmcp.ToolCallResult, error) {
+	if s.readRepository == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp read repository unavailable")
+	}
+	overview, err := s.readRepository.GetMCPAccountOverview(ctx, access.PlayerID)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"overview": overview}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -542,6 +571,50 @@ func listPlanetsTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"playerId", "count", "planets"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func accountOverviewTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_account_overview",
+		Title:       "Get Account Overview",
+		Description: "Return read-only account summary data for the authenticated player without triggering legacy overview mutations.",
+		InputSchema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"overview": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":       map[string]any{"type": "integer"},
+						"commander":      map[string]any{"type": "string"},
+						"planetCount":    map[string]any{"type": "integer"},
+						"unreadMessages": map[string]any{"type": "integer"},
+						"score": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"raw":     map[string]any{"type": "integer"},
+								"display": map[string]any{"type": "integer"},
+								"rank":    map[string]any{"type": "integer"},
+							},
+							"required": []string{"raw", "display", "rank"},
+						},
+						"currentPlanet": map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "commander", "score", "currentPlanet", "planetCount", "unreadMessages"},
+				},
+			},
+			"required": []string{"overview"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,

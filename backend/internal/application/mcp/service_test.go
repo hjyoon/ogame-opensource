@@ -77,7 +77,7 @@ func TestServiceListsPlanetToolWhenReadRepositoryIsAvailable(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,list_planets" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,list_planets,get_account_overview" {
 		t.Fatalf("unexpected tools: %v", names)
 	}
 }
@@ -171,6 +171,59 @@ func TestServiceListPlanetsToolRequiresRepositoryAndReadScope(t *testing.T) {
 
 	service = service.WithReadRepository(fakeReadRepository{err: errors.New("planets down")})
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "list_planets", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected read repository error")
+	}
+}
+
+func TestServiceCallsAccountOverviewTool(t *testing.T) {
+	overview := domainmcp.AccountOverview{
+		PlayerID:  42,
+		Commander: "legor",
+		Score:     domainmcp.Score{Raw: 123456, Display: 123, Rank: 1},
+		CurrentPlanet: domainmcp.Planet{
+			ID:          99,
+			Name:        "Homeworld",
+			Type:        1,
+			TypeName:    "planet",
+			Coordinates: domainmcp.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Current:     true,
+		},
+		PlanetCount:    2,
+		UnreadMessages: 5,
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithReadRepository(fakeReadRepository{overview: overview})
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_account_overview", AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	structured := result.StructuredContent.(map[string]any)
+	got := structured["overview"].(domainmcp.AccountOverview)
+	if result.IsError || got.Commander != "legor" || got.UnreadMessages != 5 {
+		t.Fatalf("unexpected account overview result: %+v", result)
+	}
+}
+
+func TestServiceAccountOverviewToolRequiresRepositoryAndReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_account_overview", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_account_overview", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithReadRepository(fakeReadRepository{err: errors.New("overview down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_account_overview", AccessToken: "read"}); err == nil {
 		t.Fatalf("expected read repository error")
 	}
 }
@@ -415,8 +468,9 @@ func (f *fakeToolCallAuditor) RecordMCPToolCall(_ context.Context, event domainm
 }
 
 type fakeReadRepository struct {
-	planets []domainmcp.Planet
-	err     error
+	planets  []domainmcp.Planet
+	overview domainmcp.AccountOverview
+	err      error
 }
 
 func (f fakeReadRepository) ListMCPPlanets(_ context.Context, playerID int) ([]domainmcp.Planet, error) {
@@ -427,6 +481,16 @@ func (f fakeReadRepository) ListMCPPlanets(_ context.Context, playerID int) ([]d
 		return nil, errors.New("unexpected player")
 	}
 	return f.planets, nil
+}
+
+func (f fakeReadRepository) GetMCPAccountOverview(_ context.Context, playerID int) (domainmcp.AccountOverview, error) {
+	if f.err != nil {
+		return domainmcp.AccountOverview{}, f.err
+	}
+	if playerID != 42 {
+		return domainmcp.AccountOverview{}, errors.New("unexpected player")
+	}
+	return f.overview, nil
 }
 
 type fakeSessionLookup struct {
