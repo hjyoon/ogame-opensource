@@ -25,6 +25,7 @@ type Token struct {
 	Name       string   `json:"name"`
 	Scopes     []string `json:"scopes"`
 	CreatedAt  int64    `json:"createdAt"`
+	ExpiresAt  int64    `json:"expiresAt,omitempty"`
 	LastUsedAt int64    `json:"lastUsedAt,omitempty"`
 	RevokedAt  int64    `json:"revokedAt,omitempty"`
 }

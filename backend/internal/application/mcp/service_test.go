@@ -255,13 +255,13 @@ func TestServiceOAuthAuthorizeConsentAndTokenExchange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExchangeOAuthCode returned error: %v", err)
 	}
-	if token.AccessToken != "ogmcp_access" || token.TokenType != "Bearer" || token.Scope != "openid mcp:read mcp:fleet" || token.IDToken != "id.token.signature" {
+	if token.AccessToken != "ogmcp_access" || token.TokenType != "Bearer" || token.Scope != "openid mcp:read mcp:fleet" || token.IDToken != "id.token.signature" || token.ExpiresIn != int64(defaultMCPTokenTTL.Seconds()) {
 		t.Fatalf("unexpected token result: %+v", token)
 	}
 	if signer.command.Issuer != "https://game.example" || signer.command.Audience != "desktop-client" || signer.command.PlayerID != 42 {
 		t.Fatalf("unexpected id token command: %+v", signer.command)
 	}
-	if repository.created.Name != "OAuth desktop-client" || repository.created.Scopes[2] != domainmcp.ScopeFleet || repository.hash != HashToken("ogmcp_access") {
+	if repository.created.Name != "OAuth desktop-client" || repository.created.Scopes[2] != domainmcp.ScopeFleet || repository.created.ExpiresAt != now.Add(defaultMCPTokenTTL).Unix() || repository.hash != HashToken("ogmcp_access") {
 		t.Fatalf("unexpected persisted OAuth token: token=%+v hash=%q", repository.created, repository.hash)
 	}
 }
@@ -1050,7 +1050,7 @@ func TestServiceManagesUserOwnedTokens(t *testing.T) {
 	if created.Creation.Token.ID != 7 || created.Creation.Token.PlayerID != 0 {
 		t.Fatalf("expected returned token id without player id, got %+v", created.Creation.Token)
 	}
-	if repository.created.PlayerID != 42 || repository.created.Name != "Claude desktop" || repository.created.CreatedAt != 1700000000 {
+	if repository.created.PlayerID != 42 || repository.created.Name != "Claude desktop" || repository.created.CreatedAt != 1700000000 || repository.created.ExpiresAt != time.Unix(1700000000, 0).Add(defaultMCPTokenTTL).Unix() {
 		t.Fatalf("unexpected repository token: %+v", repository.created)
 	}
 	if repository.hash != HashToken("secret-token") {
@@ -1115,11 +1115,24 @@ func TestServiceTokenManagementCoversErrorBranches(t *testing.T) {
 	}
 
 	defaulted := NewServiceWithTokenManagement(fakeHealthProvider{}, fakeTokenVerifier{}, &fakeTokenRepository{}, fakeSessionLookup{auth: authenticatedSession(42)}, nil, nil)
-	if defaulted.tokenGenerator == nil || defaulted.now == nil {
+	if defaulted.tokenGenerator == nil || defaulted.now == nil || defaulted.tokenTTL != defaultMCPTokenTTL {
 		t.Fatalf("expected default generator and clock")
 	}
+	if defaulted.WithTokenTTL(-time.Second).tokenTTL != defaultMCPTokenTTL {
+		t.Fatalf("expected negative token ttl to reset to default")
+	}
+	if defaulted.WithTokenTTL(0).tokenExpiresIn() != 0 {
+		t.Fatalf("expected disabled token ttl to report no expires_in")
+	}
 
-	_, err := (Service{}).ListTokens(context.Background(), TokenManagementCommand{})
+	unlimitedRepository := &fakeTokenRepository{}
+	unlimited := NewServiceWithTokenManagement(fakeHealthProvider{}, nil, unlimitedRepository, fakeSessionLookup{auth: authenticatedSession(42)}, fakeTokenGenerator{secret: "token"}, func() time.Time { return time.Unix(1700, 0) }).WithTokenTTL(0)
+	created, err := unlimited.CreateToken(context.Background(), CreateTokenCommand{Name: "Unlimited", Scopes: []string{domainmcp.ScopeRead}})
+	if err != nil || created.Creation.Token.ExpiresAt != 0 || unlimitedRepository.created.ExpiresAt != 0 {
+		t.Fatalf("expected disabled token ttl to be accepted, got created=%+v err=%v", created, err)
+	}
+
+	_, err = (Service{}).ListTokens(context.Background(), TokenManagementCommand{})
 	if err == nil {
 		t.Fatalf("expected dependency error")
 	}

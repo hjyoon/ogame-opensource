@@ -26,7 +26,10 @@ var ErrInvalidTokenRequest = errors.New("invalid mcp token request")
 var ErrInvalidOAuthRequest = errors.New("invalid mcp oauth request")
 var ErrInvalidOAuthGrant = errors.New("invalid mcp oauth grant")
 
-const mcpOAuthCodeTTL = 10 * time.Minute
+const (
+	defaultMCPTokenTTL = 30 * 24 * time.Hour
+	mcpOAuthCodeTTL    = 10 * time.Minute
+)
 
 type HealthProvider interface {
 	Get(context.Context) domainsystem.Health
@@ -178,6 +181,7 @@ type OAuthTokenResult struct {
 	TokenType   string
 	Scope       string
 	IDToken     string
+	ExpiresIn   int64
 	Token       domainmcp.Token
 }
 
@@ -215,6 +219,7 @@ type Service struct {
 	tokenGenerator  TokenSecretGenerator
 	codeGenerator   OAuthCodeGenerator
 	auditor         ToolCallAuditor
+	tokenTTL        time.Duration
 	now             func() time.Time
 }
 
@@ -244,6 +249,7 @@ func NewServiceWithTokenManagement(health HealthProvider, verifier TokenVerifier
 		sessions:        sessions,
 		tokenGenerator:  generator,
 		codeGenerator:   codeGenerator,
+		tokenTTL:        defaultMCPTokenTTL,
 		now:             now,
 	}
 }
@@ -270,6 +276,14 @@ func (s Service) WithReadRepository(repository ReadRepository) Service {
 
 func (s Service) WithToolCallAuditor(auditor ToolCallAuditor) Service {
 	s.auditor = auditor
+	return s
+}
+
+func (s Service) WithTokenTTL(ttl time.Duration) Service {
+	if ttl < 0 {
+		ttl = defaultMCPTokenTTL
+	}
+	s.tokenTTL = ttl
 	return s
 }
 
@@ -497,6 +511,7 @@ func (s Service) ExchangeOAuthCode(ctx context.Context, command OAuthTokenComman
 		Name:      truncateOAuthTokenName("OAuth "+clientID, 64),
 		Scopes:    scopes,
 		CreatedAt: now,
+		ExpiresAt: s.tokenExpiresAt(time.Unix(now, 0)),
 	}, HashToken(secret))
 	if err != nil {
 		return OAuthTokenResult{}, err
@@ -519,6 +534,7 @@ func (s Service) ExchangeOAuthCode(ctx context.Context, command OAuthTokenComman
 		TokenType:   "Bearer",
 		Scope:       strings.Join(scopes, " "),
 		IDToken:     idToken,
+		ExpiresIn:   s.tokenExpiresIn(),
 		Token:       token,
 	}, nil
 }
@@ -673,6 +689,7 @@ func (s Service) CreateToken(ctx context.Context, command CreateTokenCommand) (T
 		Name:      name,
 		Scopes:    scopes,
 		CreatedAt: now,
+		ExpiresAt: s.tokenExpiresAt(time.Unix(now, 0)),
 	}, HashToken(secret))
 	if err != nil {
 		return TokenCreationResult{}, err
@@ -703,6 +720,20 @@ func (s Service) RevokeToken(ctx context.Context, command RevokeTokenCommand) (T
 		return TokenRevokeResult{}, err
 	}
 	return TokenRevokeResult{Authenticated: true, Revoked: revoked}, nil
+}
+
+func (s Service) tokenExpiresAt(now time.Time) int64 {
+	if s.tokenTTL <= 0 {
+		return 0
+	}
+	return now.Add(s.tokenTTL).Unix()
+}
+
+func (s Service) tokenExpiresIn() int64 {
+	if s.tokenTTL <= 0 {
+		return 0
+	}
+	return int64(s.tokenTTL.Seconds())
 }
 
 func (s Service) callServerHealth(ctx context.Context) (domainmcp.ToolCallResult, error) {

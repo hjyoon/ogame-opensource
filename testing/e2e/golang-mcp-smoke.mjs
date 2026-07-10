@@ -364,19 +364,19 @@ try {
       check(clientRegistration.status === 201 && oauthClientID.startsWith("ogmcp_client_"), "OAuth dynamic client registration returns public client id", clientRegistrationBody),
       check(oauthConsent.status === 200 && oauthConsent.body.includes("Authorize MCP access") && hiddenInputValue(oauthConsent.body, "consent_token") !== "", "OAuth authorize shows consent page before approval", { status: oauthConsent.status }),
       check(oauthApprove.status === 302 && oauthApproveLocation.startsWith(oauthRedirectURI) && oauthCallback.searchParams.get("state") === "go-mcp-smoke-state" && oauthCode !== "", "OAuth authorize approval redirects with code and state", { status: oauthApprove.status, location: oauthApproveLocation }),
-      check(oauthToken.status === 200 && oauthSecret.startsWith("ogmcp_") && oauthTokenBody.token_type === "Bearer", "OAuth token exchange returns bearer access token", oauthTokenBody),
+      check(oauthToken.status === 200 && oauthSecret.startsWith("ogmcp_") && oauthTokenBody.token_type === "Bearer" && Number(oauthTokenBody.expires_in ?? 0) > 0, "OAuth token exchange returns bearer access token", oauthTokenBody),
       check(oauthIDToken.split(".").length === 3 && oauthIDClaims.iss === baseUrl && oauthIDClaims.aud === oauthClientID && oauthIDClaims.sub === `player:${login.playerID}`, "OAuth openid exchange returns ID token claims", oauthIDClaims),
       check(oauthTools.status === 200 && expectedTools.every((name) => toolNames(oauthToolsBody).includes(name)), "OAuth bearer token exposes MCP read tools", { oauthToolNames: toolNames(oauthToolsBody) }),
-      check(Number(oauthTokenRow?.id ?? 0) > 0, "OAuth exchange persists a revocable MCP token row", { oauthTokenRow }),
+      check(Number(oauthTokenRow?.id ?? 0) > 0 && Number(oauthTokenRow?.expiresAt ?? 0) > Number(oauthTokenRow?.createdAt ?? 0), "OAuth exchange persists a revocable expiring MCP token row", { oauthTokenRow }),
       check(oauthRevoke.status === 200 && oauthRevokeBody.revoked === true, "OAuth revocation endpoint revokes created MCP token", oauthRevokeBody),
       check(oauthAccessAfterRevoke.status === 401 && oauthAccessAfterRevokeBody.error?.code === -32001, "OAuth-revoked bearer token is rejected by MCP", oauthAccessAfterRevokeBody),
       check(tokenListBefore.status === 200 && tokenListBeforeBody.authenticated === true && Array.isArray(tokenListBeforeBody.tokens), "MCP token list authenticates game session", tokenListBeforeBody),
-      check(tokenCreate.status === 200 && tokenCreateBody.authenticated === true && tokenID > 0, "MCP token create returns a persisted token id", tokenCreateBody.token ?? {}),
+      check(tokenCreate.status === 200 && tokenCreateBody.authenticated === true && tokenID > 0 && Number(tokenCreateBody.token?.expiresAt ?? 0) > Number(tokenCreateBody.token?.createdAt ?? 0), "MCP token create returns a persisted expiring token id", tokenCreateBody.token ?? {}),
       check(secret.startsWith("ogmcp_") && secret.length > 12, "MCP token create returns a one-time bearer secret", {
         secretPrefix: secret.slice(0, 6),
         secretLength: secret.length
       }),
-      check(tokenRowAfterCreate !== undefined, "MCP token list includes the newly created token", { tokenID, tokenRowAfterCreate }),
+      check(tokenRowAfterCreate !== undefined && Number(tokenRowAfterCreate?.expiresAt ?? 0) > Number(tokenRowAfterCreate?.createdAt ?? 0), "MCP token list includes the newly created expiring token", { tokenID, tokenRowAfterCreate }),
       check(!String(tokenListAfterCreate.body ?? "").includes(secret), "MCP token list never exposes the plaintext secret"),
       check(authedTools.status === 200 && expectedTools.every((name) => authedToolNames.includes(name)), "bearer token exposes all current read tools", {
         authedToolNames

@@ -2,15 +2,13 @@
 
 Keep under 4KB; split details if needed.
 
-## Current Step
-
-The Go backend exposes a first MCP endpoint at `/mcp`.
+## Current State
 
 Implemented:
 
 - Streamable HTTP JSON-RPC entrypoint.
 - `POST /mcp` for JSON-RPC requests.
-- `GET /mcp` returns `405` because no server-sent event stream is implemented yet.
+- `GET /mcp` returns `405`; SSE stream is not implemented yet.
 - `initialize`, `ping`, `tools/list`, and `tools/call`.
 - Protocol guard for `2025-06-18` and legacy fallback `2025-03-26`.
 - Browser `Origin` guard against DNS rebinding.
@@ -26,13 +24,15 @@ Implemented:
   - `POST /api/game/mcp-tokens?session=...`
   - `POST /api/game/mcp-tokens/revoke?session=...`
   - Uses game public session plus private session cookie.
-  - Stores only SHA-256 token hashes in `uni*_mcp_tokens`.
+  - Stores only SHA-256 hashes in `uni*_mcp_tokens`.
+  - Tokens expire after `OGAME_MCP_TOKEN_TTL_SECONDS` seconds; default 30 days,
+    `0` disables expiry.
 - React options UI for DB token list/create/one-time secret/revoke.
 - Dedicated Go MCP smoke E2E:
   - `testing/e2e/golang-mcp-smoke.mjs`
   - Runs from `testing/e2e/run-golang-migration-qa.sh`.
-  - Covers transport guards, DB tokens, OAuth, read tools, invalid params, and
-    revoke.
+  - Covers transport guards, DB tokens, OAuth, read tools, invalid params,
+    expiry metadata, and revoke.
 - OAuth 2.1 public-client base:
   - `/.well-known/oauth-authorization-server`
   - PRM endpoint and 401 discovery challenge
@@ -48,9 +48,7 @@ Implemented:
     `OGAME_MCP_OIDC_ED25519_PREVIOUS_SEEDS_B64`.
 - Consent CSRF+UX shows resource, redirect, scopes, deny redirect.
 - MCP/OAuth rate limits on RPC, OAuth, and token API paths.
-- JSON audit logging for every `tools/call` request path. Audit logs include
-  tool, auth result, player/scopes, duration, and errors. Secrets are not
-  logged.
+- JSON audit logging for every `tools/call`; no secrets are logged.
 - Authenticated read tools requiring `mcp:read`:
   - `list_planets`: selectable planets/moons using legacy switcher ordering.
   - `get_account_overview`: commander, score/rank, current planet, planet
@@ -98,7 +96,7 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Add MCP token expiry.
+1. Add read-only message tools behind `mcp:messages`.
 
 ## General User Policy
 

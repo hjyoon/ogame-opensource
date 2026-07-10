@@ -162,6 +162,9 @@ func (a app) handleMCPOAuthToken(w http.ResponseWriter, r *http.Request) {
 	if result.IDToken != "" {
 		body["id_token"] = result.IDToken
 	}
+	if result.ExpiresIn > 0 {
+		body["expires_in"] = result.ExpiresIn
+	}
 	_ = json.NewEncoder(w).Encode(body)
 }
 

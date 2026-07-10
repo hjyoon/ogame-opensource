@@ -11,14 +11,30 @@ import (
 )
 
 func TestMCPTokenRepositoryEnsuresSchema(t *testing.T) {
-	runner := &fakeMCPTokenRunner{}
+	runner := &fakeMCPTokenRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{0})}}},
+	}
 	repository := NewMCPTokenRepositoryWithRunner(runner, runner, "uni1_")
 
 	if err := repository.EnsureMCPTokenSchema(context.Background()); err != nil {
 		t.Fatalf("EnsureMCPTokenSchema returned error: %v", err)
 	}
-	if !strings.Contains(runner.execCalls[0].sql, "CREATE TABLE IF NOT EXISTS `uni1_mcp_tokens`") {
+	if !strings.Contains(runner.execCalls[0].sql, "CREATE TABLE IF NOT EXISTS `uni1_mcp_tokens`") || !strings.Contains(runner.execCalls[0].sql, "expires_at INT NOT NULL DEFAULT 0") {
 		t.Fatalf("unexpected schema SQL: %s", runner.execCalls[0].sql)
+	}
+	if !strings.Contains(runner.execCalls[1].sql, "ALTER TABLE `uni1_mcp_tokens` ADD COLUMN expires_at") {
+		t.Fatalf("expected token expiry migration, got %+v", runner.execCalls)
+	}
+
+	runner = &fakeMCPTokenRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}},
+	}
+	repository = NewMCPTokenRepositoryWithRunner(runner, runner, "uni1_")
+	if err := repository.EnsureMCPTokenSchema(context.Background()); err != nil {
+		t.Fatalf("EnsureMCPTokenSchema existing expires column returned error: %v", err)
+	}
+	if len(runner.execCalls) != 1 {
+		t.Fatalf("expected no expiry migration when column exists, got %+v", runner.execCalls)
 	}
 
 	repository = NewMCPTokenRepositoryWithRunner(runner, runner, "uni1_;DROP")
@@ -68,6 +84,27 @@ func TestMCPTokenRepositoryEnsuresOAuthCodeSchema(t *testing.T) {
 	}
 }
 
+func TestMCPTokenRepositoryEnsuresTokenExpiresColumnErrors(t *testing.T) {
+	wantErr := errors.New("expires column failed")
+	for _, tt := range []struct {
+		name   string
+		runner *fakeMCPTokenRunner
+	}{
+		{name: "query", runner: &fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: wantErr}}}}},
+		{name: "missing", runner: &fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}}},
+		{name: "scan", runner: &fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}}},
+		{name: "rows", runner: &fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(wantErr, []any{0})}}}}},
+		{name: "alter", runner: &fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{0})}}}, err: wantErr}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewMCPTokenRepositoryWithRunner(tt.runner, tt.runner, "uni1_")
+			if err := repository.ensureMCPTokenExpiresColumn(context.Background(), "`uni1_mcp_tokens`", "uni1_mcp_tokens"); err == nil {
+				t.Fatalf("expected expires column error")
+			}
+		})
+	}
+}
+
 func TestMCPTokenRepositoryEnsuresOAuthCodeResourceColumnErrors(t *testing.T) {
 	wantErr := errors.New("resource column failed")
 	for _, tt := range []struct {
@@ -92,7 +129,7 @@ func TestMCPTokenRepositoryEnsuresOAuthCodeResourceColumnErrors(t *testing.T) {
 func TestMCPTokenRepositoryCreatesListsAndRevokesTokens(t *testing.T) {
 	runner := &fakeMCPTokenRunner{
 		fakeQueryer: fakeQueryer{results: []fakeQueryResult{{
-			rows: fakeRowsFromValues([]any{7, "Desktop", "mcp:read,mcp:messages", int64(1700), int64(0), int64(0)}),
+			rows: fakeRowsFromValues([]any{7, "Desktop", "mcp:read,mcp:messages", int64(1700), int64(2300), int64(0), int64(0)}),
 		}}},
 		result: fakeSQLResult(7),
 	}
@@ -103,11 +140,12 @@ func TestMCPTokenRepositoryCreatesListsAndRevokesTokens(t *testing.T) {
 		Name:      "Desktop",
 		Scopes:    []string{domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeRead},
 		CreatedAt: 1700,
+		ExpiresAt: 2300,
 	}, "hash")
 	if err != nil {
 		t.Fatalf("CreateMCPToken returned error: %v", err)
 	}
-	if token.ID != 7 || !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `uni1_mcp_tokens`") || runner.execCalls[0].args[3] != "mcp:read,mcp:messages" {
+	if token.ID != 7 || token.ExpiresAt != 2300 || !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `uni1_mcp_tokens`") || runner.execCalls[0].args[3] != "mcp:read,mcp:messages" || runner.execCalls[0].args[5] != int64(2300) {
 		t.Fatalf("unexpected created token=%+v exec=%+v", token, runner.execCalls[0])
 	}
 
@@ -115,10 +153,10 @@ func TestMCPTokenRepositoryCreatesListsAndRevokesTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListMCPTokens returned error: %v", err)
 	}
-	if len(tokens) != 1 || tokens[0].ID != 7 || tokens[0].Scopes[1] != domainmcp.ScopeMessages || tokens[0].RevokedAt != 0 {
+	if len(tokens) != 1 || tokens[0].ID != 7 || tokens[0].Scopes[1] != domainmcp.ScopeMessages || tokens[0].ExpiresAt != 2300 || tokens[0].RevokedAt != 0 {
 		t.Fatalf("unexpected tokens: %+v", tokens)
 	}
-	if !strings.Contains(runner.calls[0].sql, "revoked_at = 0") {
+	if !strings.Contains(runner.calls[0].sql, "revoked_at = 0") || !strings.Contains(runner.calls[0].sql, "expires_at") {
 		t.Fatalf("expected list query to hide revoked tokens, got %s", runner.calls[0].sql)
 	}
 
@@ -189,7 +227,7 @@ func TestMCPTokenRepositoryVerifiesTokenByHash(t *testing.T) {
 
 	runner := &fakeMCPTokenRunner{
 		fakeQueryer: fakeQueryer{results: []fakeQueryResult{{
-			rows: fakeRowsFromValues([]any{42, "mcp:read,mcp:fleet", int64(0)}),
+			rows: fakeRowsFromValues([]any{42, "mcp:read,mcp:fleet", int64(0), int64(2300)}),
 		}}},
 		result: fakeSQLResult(1),
 	}
@@ -208,17 +246,29 @@ func TestMCPTokenRepositoryVerifiesTokenByHash(t *testing.T) {
 	if runner.execCalls[0].args[0] != int64(2000) {
 		t.Fatalf("expected last_used_at touch, got %+v", runner.execCalls[0])
 	}
+	if runner.execCalls[0].args[2] != int64(2000) {
+		t.Fatalf("expected expiry guard on last_used_at touch, got %+v", runner.execCalls[0])
+	}
 }
 
-func TestMCPTokenRepositoryRejectsMissingOrRevokedTokens(t *testing.T) {
+func TestMCPTokenRepositoryRejectsMissingRevokedOrExpiredTokens(t *testing.T) {
+	oldNow := mcpNowUnix
+	mcpNowUnix = func() int64 { return 2000 }
+	defer func() { mcpNowUnix = oldNow }()
+
 	repository := NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}}, nil, "uni1_")
 	if _, err := repository.VerifyMCPToken(context.Background(), "missing"); !errors.Is(err, domainmcp.ErrUnauthorized) {
 		t.Fatalf("expected missing token unauthorized, got %v", err)
 	}
 
-	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{42, "mcp:read", int64(1)})}}}}, nil, "uni1_")
+	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{42, "mcp:read", int64(1), int64(2300)})}}}}, nil, "uni1_")
 	if _, err := repository.VerifyMCPToken(context.Background(), "revoked"); !errors.Is(err, domainmcp.ErrUnauthorized) {
 		t.Fatalf("expected revoked token unauthorized, got %v", err)
+	}
+
+	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{42, "mcp:read", int64(0), int64(1999)})}}}}, &fakeMCPTokenRunner{}, "uni1_")
+	if _, err := repository.VerifyMCPToken(context.Background(), "expired"); !errors.Is(err, domainmcp.ErrUnauthorized) {
+		t.Fatalf("expected expired token unauthorized, got %v", err)
 	}
 }
 
@@ -265,7 +315,7 @@ func TestMCPTokenRepositoryCoversErrorBranches(t *testing.T) {
 	if _, err := repository.ListMCPTokens(context.Background(), 42); !errors.Is(err, wantErr) {
 		t.Fatalf("expected list query error, got %v", err)
 	}
-	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", "Desktop", "mcp:read", int64(1), int64(0), int64(0)})}}}}, &fakeMCPTokenRunner{}, "uni1_")
+	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", "Desktop", "mcp:read", int64(1), int64(0), int64(0), int64(0)})}}}}, &fakeMCPTokenRunner{}, "uni1_")
 	if _, err := repository.ListMCPTokens(context.Background(), 42); err == nil {
 		t.Fatalf("expected list scan error")
 	}
@@ -315,19 +365,19 @@ func TestMCPTokenRepositoryCoversErrorBranches(t *testing.T) {
 	if _, err := repository.VerifyMCPToken(context.Background(), "secret"); !errors.Is(err, wantErr) {
 		t.Fatalf("expected verify query error, got %v", err)
 	}
-	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", "mcp:read", int64(0)})}}}}, nil, "uni1_")
+	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", "mcp:read", int64(0), int64(0)})}}}}, nil, "uni1_")
 	if _, err := repository.VerifyMCPToken(context.Background(), "secret"); err == nil {
 		t.Fatalf("expected verify scan error")
 	}
-	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{42, "", int64(0)})}}}}, nil, "uni1_")
+	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{42, "", int64(0), int64(0)})}}}}, nil, "uni1_")
 	if _, err := repository.VerifyMCPToken(context.Background(), "secret"); !errors.Is(err, domainmcp.ErrUnauthorized) {
 		t.Fatalf("expected empty scope unauthorized, got %v", err)
 	}
-	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(wantErr, []any{42, "mcp:read", int64(0)})}}}}, nil, "uni1_")
+	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(wantErr, []any{42, "mcp:read", int64(0), int64(0)})}}}}, nil, "uni1_")
 	if _, err := repository.VerifyMCPToken(context.Background(), "secret"); !errors.Is(err, wantErr) {
 		t.Fatalf("expected verify rows error, got %v", err)
 	}
-	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{42, "mcp:read", int64(0)})}}}}, nil, "uni1_")
+	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{42, "mcp:read", int64(0), int64(0)})}}}}, nil, "uni1_")
 	access, err := repository.VerifyMCPToken(context.Background(), "secret")
 	if err != nil || !access.Authenticated {
 		t.Fatalf("expected verify success without touch execer, got access=%+v err=%v", access, err)

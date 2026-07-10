@@ -312,6 +312,7 @@ export type GameMCPToken = {
   name: string;
   scopes: string[];
   createdAt: number;
+  expiresAt?: number;
   lastUsedAt?: number;
   revokedAt?: number;
 };
@@ -12957,20 +12958,20 @@ function MCPTokenTable({
     <table className="legacy-overview-table legacy-options-table" width={519}>
       <tbody>
         <tr>
-          <td className="legacy-c c" colSpan={5}>
+          <td className="legacy-c c" colSpan={6}>
             MCP Tokens
           </td>
         </tr>
         {error ? (
           <tr>
-            <th colSpan={5}>
+            <th colSpan={6}>
               <span className="legacy-error">{error}</span>
             </th>
           </tr>
         ) : null}
         {issue ? (
           <tr>
-            <th colSpan={5}>
+            <th colSpan={6}>
               <span className="legacy-error">{issue}</span>
             </th>
           </tr>
@@ -12978,7 +12979,7 @@ function MCPTokenTable({
         {secret ? (
           <tr>
             <th>New token secret</th>
-            <th colSpan={4}>
+            <th colSpan={5}>
               <input readOnly size={64} type="text" value={secret} />
             </th>
           </tr>
@@ -12987,17 +12988,18 @@ function MCPTokenTable({
           <th>Name</th>
           <th>Scopes</th>
           <th>Created</th>
+          <th>Expires</th>
           <th>Last used</th>
           <th>Action</th>
         </tr>
         {!status && !error ? (
           <tr>
-            <th colSpan={5}>Loading MCP tokens...</th>
+            <th colSpan={6}>Loading MCP tokens...</th>
           </tr>
         ) : null}
         {status?.authenticated && status.tokens.length === 0 ? (
           <tr>
-            <th colSpan={5}>No MCP tokens</th>
+            <th colSpan={6}>No MCP tokens</th>
           </tr>
         ) : null}
         {status?.authenticated
@@ -13006,6 +13008,7 @@ function MCPTokenTable({
                 <th>{token.name}</th>
                 <th>{token.scopes.join(", ")}</th>
                 <th>{formatLegacyTimestamp(token.createdAt)}</th>
+                <th>{token.expiresAt ? formatLegacyTimestamp(token.expiresAt) : "-"}</th>
                 <th>{token.lastUsedAt ? formatLegacyTimestamp(token.lastUsedAt) : "-"}</th>
                 <th>
                   <button disabled={pending} onClick={() => onRevoke(token.id)} type="button">
@@ -13016,12 +13019,12 @@ function MCPTokenTable({
             ))
           : null}
         <tr>
-          <td className="legacy-c c" colSpan={5}>
+          <td className="legacy-c c" colSpan={6}>
             Create token
           </td>
         </tr>
         <tr>
-          <th colSpan={5}>
+          <th colSpan={6}>
             <form action={gameRouteURL("/game/options", window.location.search)} method="POST" onSubmit={submitCreate}>
               <input defaultValue="MCP client" maxLength={64} name="mcp_name" size={20} type="text" />
               <label>

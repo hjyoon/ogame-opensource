@@ -25,6 +25,7 @@ type Config struct {
 	MCPOAuthRedirectURIs string
 	MCPOIDCSigningSeed   string
 	MCPOIDCPreviousSeeds string
+	MCPTokenTTLSeconds   int
 	MCPRateLimitEnabled  bool
 	MCPRateLimitPerMin   int
 	MCPRateLimitBurst    int
@@ -62,6 +63,7 @@ func Load() Config {
 		MCPOAuthRedirectURIs: env("OGAME_MCP_OAUTH_REDIRECT_URIS", ""),
 		MCPOIDCSigningSeed:   env("OGAME_MCP_OIDC_ED25519_SEED_B64", ""),
 		MCPOIDCPreviousSeeds: env("OGAME_MCP_OIDC_ED25519_PREVIOUS_SEEDS_B64", ""),
+		MCPTokenTTLSeconds:   envInt("OGAME_MCP_TOKEN_TTL_SECONDS", 2592000),
 		MCPRateLimitEnabled:  envBool("OGAME_MCP_RATE_LIMIT_ENABLE", true),
 		MCPRateLimitPerMin:   envInt("OGAME_MCP_RATE_LIMIT_PER_MINUTE", 300),
 		MCPRateLimitBurst:    envInt("OGAME_MCP_RATE_LIMIT_BURST", 60),

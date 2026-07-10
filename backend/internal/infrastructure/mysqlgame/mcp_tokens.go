@@ -35,6 +35,7 @@ func (r MCPTokenRepository) EnsureMCPTokenSchema(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	physicalTable := r.prefix + "mcp_tokens"
 	_, err = r.execer.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS "+table+" ("+
 		"id INT NOT NULL AUTO_INCREMENT,"+
 		"player_id INT NOT NULL,"+
@@ -42,14 +43,19 @@ func (r MCPTokenRepository) EnsureMCPTokenSchema(ctx context.Context) error {
 		"token_hash CHAR(64) NOT NULL,"+
 		"scopes TEXT NOT NULL,"+
 		"created_at INT NOT NULL,"+
+		"expires_at INT NOT NULL DEFAULT 0,"+
 		"last_used_at INT NOT NULL DEFAULT 0,"+
 		"revoked_at INT NOT NULL DEFAULT 0,"+
 		"PRIMARY KEY (id),"+
 		"UNIQUE KEY uniq_token_hash (token_hash),"+
 		"KEY idx_player_id (player_id),"+
+		"KEY idx_expires_at (expires_at),"+
 		"KEY idx_revoked_at (revoked_at)"+
 		") CHARACTER SET utf8 COLLATE utf8_general_ci")
-	return err
+	if err != nil {
+		return err
+	}
+	return r.ensureMCPTokenExpiresColumn(ctx, table, physicalTable)
 }
 
 func (r MCPTokenRepository) EnsureMCPOAuthCodeSchema(ctx context.Context) error {
@@ -97,7 +103,8 @@ func (r MCPTokenRepository) ListMCPTokens(ctx context.Context, playerID int) ([]
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.queryer.QueryContext(ctx, "SELECT id, name, scopes, created_at, last_used_at, revoked_at FROM "+table+" WHERE player_id = ? AND revoked_at = 0 ORDER BY id DESC", playerID)
+	now := mcpNowUnix()
+	rows, err := r.queryer.QueryContext(ctx, "SELECT id, name, scopes, created_at, expires_at, last_used_at, revoked_at FROM "+table+" WHERE player_id = ? AND revoked_at = 0 AND (expires_at = 0 OR expires_at >= ?) ORDER BY id DESC", playerID, now)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +114,7 @@ func (r MCPTokenRepository) ListMCPTokens(ctx context.Context, playerID int) ([]
 	for rows.Next() {
 		var token domainmcp.Token
 		var scopes string
-		if err := rows.Scan(&token.ID, &token.Name, &scopes, &token.CreatedAt, &token.LastUsedAt, &token.RevokedAt); err != nil {
+		if err := rows.Scan(&token.ID, &token.Name, &scopes, &token.CreatedAt, &token.ExpiresAt, &token.LastUsedAt, &token.RevokedAt); err != nil {
 			return nil, err
 		}
 		token.Scopes = parseMCPScopes(scopes)
@@ -127,12 +134,13 @@ func (r MCPTokenRepository) CreateMCPToken(ctx context.Context, token domainmcp.
 	if err != nil {
 		return domainmcp.Token{}, err
 	}
-	result, err := r.execer.ExecContext(ctx, "INSERT INTO "+table+" (player_id, name, token_hash, scopes, created_at, last_used_at, revoked_at) VALUES (?, ?, ?, ?, ?, 0, 0)",
+	result, err := r.execer.ExecContext(ctx, "INSERT INTO "+table+" (player_id, name, token_hash, scopes, created_at, expires_at, last_used_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, 0, 0)",
 		token.PlayerID,
 		token.Name,
 		strings.TrimSpace(tokenHash),
 		joinMCPScopes(token.Scopes),
 		token.CreatedAt,
+		token.ExpiresAt,
 	)
 	if err != nil {
 		return domainmcp.Token{}, err
@@ -287,6 +295,32 @@ func (r MCPTokenRepository) ensureOAuthCodeResourceColumn(ctx context.Context, t
 	return err
 }
 
+func (r MCPTokenRepository) ensureMCPTokenExpiresColumn(ctx context.Context, table string, physicalTable string) error {
+	if r.queryer == nil {
+		return nil
+	}
+	rows, err := r.queryer.QueryContext(ctx, "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'expires_at'", physicalTable)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return errors.New("mcp token expires column check returned no rows")
+	}
+	var count int
+	if err := rows.Scan(&count); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	_, err = r.execer.ExecContext(ctx, "ALTER TABLE "+table+" ADD COLUMN expires_at INT NOT NULL DEFAULT 0 AFTER created_at, ADD KEY idx_expires_at (expires_at)")
+	return err
+}
+
 func (r MCPTokenRepository) VerifyMCPToken(ctx context.Context, secret string) (domainmcp.Access, error) {
 	if r.queryer == nil {
 		return domainmcp.Access{}, errors.New("mcp token repository queryer unavailable")
@@ -295,7 +329,8 @@ func (r MCPTokenRepository) VerifyMCPToken(ctx context.Context, secret string) (
 	if err != nil {
 		return domainmcp.Access{}, err
 	}
-	rows, err := r.queryer.QueryContext(ctx, "SELECT player_id, scopes, revoked_at FROM "+table+" WHERE token_hash = ? LIMIT 1", hashMCPToken(secret))
+	now := mcpNowUnix()
+	rows, err := r.queryer.QueryContext(ctx, "SELECT player_id, scopes, revoked_at, expires_at FROM "+table+" WHERE token_hash = ? LIMIT 1", hashMCPToken(secret))
 	if err != nil {
 		return domainmcp.Access{}, err
 	}
@@ -306,18 +341,19 @@ func (r MCPTokenRepository) VerifyMCPToken(ctx context.Context, secret string) (
 	var playerID int
 	var scopesRaw string
 	var revokedAt int64
-	if err := rows.Scan(&playerID, &scopesRaw, &revokedAt); err != nil {
+	var expiresAt int64
+	if err := rows.Scan(&playerID, &scopesRaw, &revokedAt, &expiresAt); err != nil {
 		return domainmcp.Access{}, err
 	}
 	if err := rows.Err(); err != nil {
 		return domainmcp.Access{}, err
 	}
 	scopes := parseMCPScopes(scopesRaw)
-	if playerID <= 0 || revokedAt > 0 || len(scopes) == 0 {
+	if playerID <= 0 || revokedAt > 0 || (expiresAt > 0 && expiresAt < now) || len(scopes) == 0 {
 		return domainmcp.Access{}, domainmcp.ErrUnauthorized
 	}
 	if r.execer != nil {
-		_, _ = r.execer.ExecContext(ctx, "UPDATE "+table+" SET last_used_at = ? WHERE token_hash = ? AND revoked_at = 0", mcpNowUnix(), hashMCPToken(secret))
+		_, _ = r.execer.ExecContext(ctx, "UPDATE "+table+" SET last_used_at = ? WHERE token_hash = ? AND revoked_at = 0 AND (expires_at = 0 OR expires_at >= ?)", now, hashMCPToken(secret), now)
 	}
 	return domainmcp.Access{Authenticated: true, PlayerID: playerID, Scopes: scopes}, nil
 }

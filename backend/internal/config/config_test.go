@@ -15,6 +15,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("OGAME_MCP_OAUTH_REDIRECT_URIS", "")
 	t.Setenv("OGAME_MCP_OIDC_ED25519_SEED_B64", "")
 	t.Setenv("OGAME_MCP_OIDC_ED25519_PREVIOUS_SEEDS_B64", "")
+	t.Setenv("OGAME_MCP_TOKEN_TTL_SECONDS", "")
 	t.Setenv("OGAME_MCP_RATE_LIMIT_ENABLE", "")
 	t.Setenv("OGAME_MCP_RATE_LIMIT_PER_MINUTE", "")
 	t.Setenv("OGAME_MCP_RATE_LIMIT_BURST", "")
@@ -44,7 +45,7 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.StaticDir != "frontend/dist" || cfg.LegacyAssetDir != "download" || cfg.LegacyBaseURL != "http://localhost:8888" || cfg.PublicBaseURL != "http://localhost:8888" {
 		t.Fatalf("unexpected default paths: %+v", cfg)
 	}
-	if cfg.PublicUniverses != "" || cfg.MCPStaticTokens != "" || cfg.MCPOAuthRedirectURIs != "" || cfg.MCPOIDCSigningSeed != "" || cfg.MCPOIDCPreviousSeeds != "" || cfg.SMTPEnabled || cfg.SMTPAddr != "localhost:1025" || cfg.SMTPFrom != "OGame <noreply@localhost>" {
+	if cfg.PublicUniverses != "" || cfg.MCPStaticTokens != "" || cfg.MCPOAuthRedirectURIs != "" || cfg.MCPOIDCSigningSeed != "" || cfg.MCPOIDCPreviousSeeds != "" || cfg.MCPTokenTTLSeconds != 2592000 || cfg.SMTPEnabled || cfg.SMTPAddr != "localhost:1025" || cfg.SMTPFrom != "OGame <noreply@localhost>" {
 		t.Fatalf("unexpected default public universes: %+v", cfg)
 	}
 	if !cfg.MCPRateLimitEnabled || cfg.MCPRateLimitPerMin != 300 || cfg.MCPRateLimitBurst != 60 {
@@ -71,6 +72,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("OGAME_MCP_OAUTH_REDIRECT_URIS", "https://client.example/callback")
 	t.Setenv("OGAME_MCP_OIDC_ED25519_SEED_B64", "MTIz")
 	t.Setenv("OGAME_MCP_OIDC_ED25519_PREVIOUS_SEEDS_B64", "YWJj")
+	t.Setenv("OGAME_MCP_TOKEN_TTL_SECONDS", "3600")
 	t.Setenv("OGAME_MCP_RATE_LIMIT_ENABLE", "0")
 	t.Setenv("OGAME_MCP_RATE_LIMIT_PER_MINUTE", "120")
 	t.Setenv("OGAME_MCP_RATE_LIMIT_BURST", "20")
@@ -99,7 +101,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	if cfg.StaticDir != "/static" || cfg.LegacyAssetDir != "/legacy" || cfg.LegacyBaseURL != "http://legacy.local" || cfg.PublicBaseURL != "http://public.local" {
 		t.Fatalf("unexpected override paths: %+v", cfg)
 	}
-	if cfg.PublicUniverses != `[{"number":1}]` || cfg.MCPStaticTokens != "token:42:mcp:read" || cfg.MCPOAuthRedirectURIs != "https://client.example/callback" || cfg.MCPOIDCSigningSeed != "MTIz" || cfg.MCPOIDCPreviousSeeds != "YWJj" || !cfg.SMTPEnabled || cfg.SMTPAddr != "mailhog:1025" || cfg.SMTPFrom != "No Reply <no-reply@example.local>" {
+	if cfg.PublicUniverses != `[{"number":1}]` || cfg.MCPStaticTokens != "token:42:mcp:read" || cfg.MCPOAuthRedirectURIs != "https://client.example/callback" || cfg.MCPOIDCSigningSeed != "MTIz" || cfg.MCPOIDCPreviousSeeds != "YWJj" || cfg.MCPTokenTTLSeconds != 3600 || !cfg.SMTPEnabled || cfg.SMTPAddr != "mailhog:1025" || cfg.SMTPFrom != "No Reply <no-reply@example.local>" {
 		t.Fatalf("unexpected public universes override: %+v", cfg)
 	}
 	if cfg.MCPRateLimitEnabled || cfg.MCPRateLimitPerMin != 120 || cfg.MCPRateLimitBurst != 20 {
