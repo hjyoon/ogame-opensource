@@ -37,11 +37,12 @@ Implemented:
     revoke.
 - OAuth 2.1 public-client base:
   - `/.well-known/oauth-authorization-server`
-  - `/.well-known/oauth-protected-resource` and 401 discovery challenge
+  - PRM endpoint and 401 discovery challenge
   - `/oauth/authorize` consent page and code redirect
-  - `/oauth/register` dynamic client registration
+  - `/oauth/register` DCR
   - `/oauth/token` code + PKCE S256; `id_token` for `openid`
   - `/oauth/revoke` access-token revocation
+  - Strict OAuth `resource`
   - `/.well-known/jwks.json` Ed25519 JWKS
   - Codes are one-time hashes in `uni*_mcp_oauth_codes`.
   - External redirects require `OGAME_MCP_OAUTH_REDIRECT_URIS`.
@@ -97,7 +98,7 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Enforce OAuth `resource` parameter.
+1. Persist OAuth resource binding.
 
 ## General User Policy
 

@@ -318,8 +318,10 @@ func TestServiceOAuthRejectsInvalidRequestsAndGrants(t *testing.T) {
 		GrantType:    "authorization_code",
 		Code:         "code",
 		RedirectURI:  "http://127.0.0.1:9911/callback",
+		Resource:     "https://game.example/mcp",
 		ClientID:     "desktop-client",
 		CodeVerifier: strings.Repeat("b", 43),
+		Issuer:       "https://game.example",
 	})
 	if !errors.Is(err, ErrInvalidOAuthGrant) {
 		t.Fatalf("expected PKCE invalid grant, got %v", err)
@@ -333,11 +335,13 @@ func TestServiceOAuthCoversDependencyAndFailureBranches(t *testing.T) {
 		ResponseType:           "code",
 		ClientID:               "desktop-client",
 		RedirectURI:            "http://localhost:9911/callback",
+		Resource:               "http://localhost:8080/mcp",
 		Scope:                  "mcp:read",
 		State:                  "state-1",
 		CodeChallenge:          testPKCEChallenge(verifier),
 		CodeChallengeMethod:    "S256",
 		ConsentApproved:        true,
+		Issuer:                 "http://localhost:8080",
 	}
 	if _, err := (Service{}).AuthorizeOAuth(context.Background(), validCommand); err == nil {
 		t.Fatalf("expected authorize dependency error")
@@ -383,8 +387,10 @@ func TestServiceOAuthTokenExchangeCoversValidationAndFailureBranches(t *testing.
 		GrantType:    "authorization_code",
 		Code:         "code",
 		RedirectURI:  "http://127.0.0.1:9911/callback",
+		Resource:     "https://game.example/mcp",
 		ClientID:     "desktop-client",
 		CodeVerifier: verifier,
+		Issuer:       "https://game.example",
 	}
 	if _, err := (Service{}).ExchangeOAuthCode(context.Background(), validTokenCommand); err == nil {
 		t.Fatalf("expected exchange dependency error")
@@ -398,8 +404,8 @@ func TestServiceOAuthTokenExchangeCoversValidationAndFailureBranches(t *testing.
 		{name: "code", command: OAuthTokenCommand{GrantType: "authorization_code"}},
 		{name: "redirect", command: OAuthTokenCommand{GrantType: "authorization_code", Code: "code", RedirectURI: "ftp://127.0.0.1/callback"}},
 		{name: "resource", command: OAuthTokenCommand{GrantType: "authorization_code", Code: "code", RedirectURI: "http://127.0.0.1/callback", Resource: "https://other.example/mcp", Issuer: "https://game.example"}},
-		{name: "client", command: OAuthTokenCommand{GrantType: "authorization_code", Code: "code", RedirectURI: "http://127.0.0.1/callback", ClientID: "bad client"}},
-		{name: "verifier", command: OAuthTokenCommand{GrantType: "authorization_code", Code: "code", RedirectURI: "http://127.0.0.1/callback", ClientID: "desktop"}},
+		{name: "client", command: OAuthTokenCommand{GrantType: "authorization_code", Code: "code", RedirectURI: "http://127.0.0.1/callback", Resource: "https://game.example/mcp", ClientID: "bad client", Issuer: "https://game.example"}},
+		{name: "verifier", command: OAuthTokenCommand{GrantType: "authorization_code", Code: "code", RedirectURI: "http://127.0.0.1/callback", Resource: "https://game.example/mcp", ClientID: "desktop", Issuer: "https://game.example"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			service := oauthExchangeService(&fakeTokenRepository{oauthCode: validStoredOAuthCode(verifier, "desktop-client")}, fakeTokenGenerator{secret: "token"})
@@ -512,9 +518,11 @@ func TestOAuthValidationHelpers(t *testing.T) {
 		ResponseType:        "code",
 		ClientID:            "desktop",
 		RedirectURI:         "http://127.0.0.1:9000/callback",
+		Resource:            "https://game.example/mcp",
 		Scope:               domainmcp.ScopeRead,
 		CodeChallenge:       validChallenge,
 		CodeChallengeMethod: "S256",
+		Issuer:              "https://game.example",
 	}
 	for _, tt := range []struct {
 		name   string
@@ -523,6 +531,7 @@ func TestOAuthValidationHelpers(t *testing.T) {
 		{name: "response type", mutate: func(command *OAuthAuthorizeCommand) { command.ResponseType = "token" }},
 		{name: "client id", mutate: func(command *OAuthAuthorizeCommand) { command.ClientID = "" }},
 		{name: "redirect", mutate: func(command *OAuthAuthorizeCommand) { command.RedirectURI = "http://example.com/callback" }},
+		{name: "resource", mutate: func(command *OAuthAuthorizeCommand) { command.Resource = "" }},
 		{name: "challenge method", mutate: func(command *OAuthAuthorizeCommand) { command.CodeChallengeMethod = "plain" }},
 		{name: "challenge", mutate: func(command *OAuthAuthorizeCommand) { command.CodeChallenge = "short" }},
 		{name: "scope", mutate: func(command *OAuthAuthorizeCommand) { command.Scope = domainmcp.ScopeAdmin }},

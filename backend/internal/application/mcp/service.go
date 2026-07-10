@@ -1065,7 +1065,7 @@ func validOAuthRedirectURI(raw string, allowedRedirectURIs []string) bool {
 func validOAuthResource(raw string, issuer string) bool {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return true
+		return false
 	}
 	resource, ok := normalizedOAuthResource(raw)
 	if !ok {
