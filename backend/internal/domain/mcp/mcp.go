@@ -107,6 +107,24 @@ type PlanetResources struct {
 	ProductionPerHour ResourceRates    `json:"productionPerHour"`
 }
 
+type BuildingQueueEntry struct {
+	ListID           int    `json:"listId"`
+	TechID           int    `json:"techId"`
+	Name             string `json:"name"`
+	Level            int    `json:"level"`
+	Destroy          bool   `json:"destroy"`
+	Start            int    `json:"start"`
+	End              int    `json:"end"`
+	RemainingSeconds int    `json:"remainingSeconds"`
+}
+
+type BuildingQueue struct {
+	PlayerID int                  `json:"playerId"`
+	Planet   Planet               `json:"planet"`
+	Count    int                  `json:"count"`
+	Entries  []BuildingQueueEntry `json:"entries"`
+}
+
 type Access struct {
 	Authenticated bool     `json:"authenticated"`
 	PlayerID      int      `json:"playerId,omitempty"`

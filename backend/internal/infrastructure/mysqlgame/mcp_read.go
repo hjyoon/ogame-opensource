@@ -170,6 +170,60 @@ func (r MCPReadRepository) GetMCPPlanetResources(ctx context.Context, playerID i
 	return result, nil
 }
 
+func (r MCPReadRepository) GetMCPBuildingQueue(ctx context.Context, playerID int, planetID int) (domainmcp.BuildingQueue, error) {
+	if r.queryer == nil {
+		return domainmcp.BuildingQueue{}, errors.New("mcp read repository queryer unavailable")
+	}
+	usersTable, planetsTable, _, err := r.mcpReadTables()
+	if err != nil {
+		return domainmcp.BuildingQueue{}, err
+	}
+	buildQueueTable, err := tableName(r.prefix, "buildqueue")
+	if err != nil {
+		return domainmcp.BuildingQueue{}, err
+	}
+	currentPlanetID, _, _, err := r.loadMCPPlanetListSettings(ctx, usersTable, playerID)
+	if err != nil {
+		return domainmcp.BuildingQueue{}, err
+	}
+	if planetID <= 0 {
+		planetID = currentPlanetID
+	}
+	planet, err := r.loadMCPPlanet(ctx, planetsTable, playerID, planetID)
+	if err != nil {
+		return domainmcp.BuildingQueue{}, err
+	}
+	planet.Current = planet.ID == currentPlanetID
+
+	now := time.Now
+	if r.now != nil {
+		now = r.now
+	}
+	entries, err := (BuildingsRepository{queryer: r.queryer, prefix: r.prefix}).loadBuildingQueueEntries(ctx, buildQueueTable, planet.ID, int(now().Unix()))
+	if err != nil {
+		return domainmcp.BuildingQueue{}, err
+	}
+	queueEntries := make([]domainmcp.BuildingQueueEntry, 0, len(entries))
+	for _, entry := range entries {
+		queueEntries = append(queueEntries, domainmcp.BuildingQueueEntry{
+			ListID:           entry.ListID,
+			TechID:           entry.TechID,
+			Name:             entry.Name,
+			Level:            entry.Level,
+			Destroy:          entry.Destroy,
+			Start:            entry.Start,
+			End:              entry.End,
+			RemainingSeconds: entry.RemainingSeconds,
+		})
+	}
+	return domainmcp.BuildingQueue{
+		PlayerID: playerID,
+		Planet:   planet,
+		Count:    len(queueEntries),
+		Entries:  queueEntries,
+	}, nil
+}
+
 func (r MCPReadRepository) mcpReadTables() (string, string, string, error) {
 	usersTable, err := tableName(r.prefix, "users")
 	if err != nil {

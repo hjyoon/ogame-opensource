@@ -223,6 +223,100 @@ func TestMCPReadRepositoryPlanetResourcesErrorBranches(t *testing.T) {
 	}
 }
 
+func TestMCPReadRepositoryGetsBuildingQueue(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{99, 88, 0, 0})},
+		{rows: fakeRowsFromValues([]any{99, "Homeworld", domaingame.PlanetTypePlanet, 1, 2, 3})},
+		{rows: fakeRowsFromValues(
+			buildQueueRowValues(buildQueueRow{ID: 1, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: domaingame.BuildingMetalMine, Level: 3, Start: int(now.Unix()) - 10, End: int(now.Unix()) + 50}),
+			buildQueueRowValues(buildQueueRow{ID: 2, OwnerID: 42, PlanetID: 99, ListID: 2, TechID: domaingame.BuildingCrystalMine, Level: 2, Destroy: 1, Start: int(now.Unix()) - 100, End: int(now.Unix()) - 1}),
+			buildQueueRowValues(buildQueueRow{ID: 3, OwnerID: 42, PlanetID: 99, ListID: 3, TechID: 999999, Level: 1, Start: int(now.Unix()), End: int(now.Unix()) + 100}),
+		)},
+	}}
+	repository := NewMCPReadRepositoryWithQueryer(queryer, "uni1_")
+	repository.now = func() time.Time { return now }
+
+	queue, err := repository.GetMCPBuildingQueue(context.Background(), 42, 0)
+	if err != nil {
+		t.Fatalf("GetMCPBuildingQueue returned error: %v", err)
+	}
+	if queue.PlayerID != 42 ||
+		queue.Planet.ID != 99 ||
+		!queue.Planet.Current ||
+		queue.Count != 2 ||
+		queue.Entries[0].Name != "Metal Mine" ||
+		queue.Entries[0].RemainingSeconds != 50 ||
+		!queue.Entries[1].Destroy ||
+		queue.Entries[1].RemainingSeconds != 0 {
+		t.Fatalf("unexpected building queue: %+v", queue)
+	}
+	if !strings.Contains(queryer.calls[2].sql, "FROM `uni1_buildqueue`") ||
+		!strings.Contains(queryer.calls[2].sql, "ORDER BY list_id ASC") {
+		t.Fatalf("unexpected building queue SQL: %+v", queryer.calls)
+	}
+}
+
+func TestMCPReadRepositoryGetsEmptyBuildingQueueForRequestedPlanet(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{99, 88, 0, 0})},
+		{rows: fakeRowsFromValues([]any{100, "Colony", domaingame.PlanetTypePlanet, 1, 2, 4})},
+		{rows: fakeRowsFromValues()},
+	}}
+	repository := NewMCPReadRepositoryWithQueryer(queryer, "uni1_")
+
+	queue, err := repository.GetMCPBuildingQueue(context.Background(), 42, 100)
+	if err != nil {
+		t.Fatalf("GetMCPBuildingQueue returned error: %v", err)
+	}
+	if queue.Count != 0 || len(queue.Entries) != 0 || queue.Planet.Current {
+		t.Fatalf("unexpected empty requested queue: %+v", queue)
+	}
+	if len(queryer.calls[1].args) == 0 || queryer.calls[1].args[0] != 100 {
+		t.Fatalf("expected requested planet id query, got %+v", queryer.calls[1])
+	}
+}
+
+func TestMCPReadRepositoryBuildingQueueErrorBranches(t *testing.T) {
+	repository := NewMCPReadRepositoryWithQueryer(nil, "uni1_")
+	if _, err := repository.GetMCPBuildingQueue(context.Background(), 42, 0); err == nil {
+		t.Fatalf("expected nil queryer error")
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{}, "uni1_;DROP")
+	if _, err := repository.GetMCPBuildingQueue(context.Background(), 42, 0); err == nil {
+		t.Fatalf("expected invalid prefix error")
+	}
+
+	wantErr := errors.New("query failed")
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: wantErr}}}, "uni1_")
+	if _, err := repository.GetMCPBuildingQueue(context.Background(), 42, 0); !errors.Is(err, wantErr) {
+		t.Fatalf("expected settings query error, got %v", err)
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "uni1_")
+	if _, err := repository.GetMCPBuildingQueue(context.Background(), 42, 0); err == nil {
+		t.Fatalf("expected missing player error")
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{99, 88, 0, 0})},
+		{err: wantErr},
+	}}, "uni1_")
+	if _, err := repository.GetMCPBuildingQueue(context.Background(), 42, 0); !errors.Is(err, wantErr) {
+		t.Fatalf("expected planet query error, got %v", err)
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{99, 88, 0, 0})},
+		{rows: fakeRowsFromValues([]any{99, "Homeworld", domaingame.PlanetTypePlanet, 1, 2, 3})},
+		{err: wantErr},
+	}}, "uni1_")
+	if _, err := repository.GetMCPBuildingQueue(context.Background(), 42, 0); !errors.Is(err, wantErr) {
+		t.Fatalf("expected queue query error, got %v", err)
+	}
+}
+
 func TestMCPReadRepositoryErrorBranches(t *testing.T) {
 	repository := NewMCPReadRepositoryWithQueryer(nil, "uni1_")
 	if _, err := repository.ListMCPPlanets(context.Background(), 42); err == nil {

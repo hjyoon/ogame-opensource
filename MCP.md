@@ -44,6 +44,11 @@ Implemented:
   - Optional `planetId`; `0` or omitted means the active planet.
   - Returns resource amounts, dark matter, storage capacity, energy balance,
     and hourly production using the migrated legacy production formula.
+- Building queue read tool: `get_building_queue`.
+  - Requires `mcp:read`.
+  - Optional `planetId`; `0` or omitted means the active planet.
+  - Returns queued building/demolition rows without finishing due queues or
+    mutating resources.
 
 ## Static Token Format
 
@@ -93,7 +98,6 @@ dry-run plus explicit confirmation.
 ## Next Steps
 
 1. Add more read-only authenticated tools:
-   - `get_building_queue`
    - `get_fleet_movements`
 2. Add a React account-settings UI for DB token create/revoke.
 3. Add E2E smoke calls against `/mcp`.

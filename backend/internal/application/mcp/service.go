@@ -47,6 +47,7 @@ type ReadRepository interface {
 	ListMCPPlanets(context.Context, int) ([]domainmcp.Planet, error)
 	GetMCPAccountOverview(context.Context, int) (domainmcp.AccountOverview, error)
 	GetMCPPlanetResources(context.Context, int, int) (domainmcp.PlanetResources, error)
+	GetMCPBuildingQueue(context.Context, int, int) (domainmcp.BuildingQueue, error)
 }
 
 type TokenSecretGenerator interface {
@@ -171,7 +172,7 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	if access.HasScope(domainmcp.ScopeRead) {
 		tools = append(tools, accessTool())
 		if s.readRepository != nil {
-			tools = append(tools, listPlanetsTool(), accountOverviewTool(), planetResourcesTool())
+			tools = append(tools, listPlanetsTool(), accountOverviewTool(), planetResourcesTool(), buildingQueueTool())
 		}
 	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
@@ -228,6 +229,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callPlanetResources(ctx, access, command.Arguments)
+	case "get_building_queue":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callBuildingQueue(ctx, access, command.Arguments)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -387,6 +397,29 @@ func (s Service) callPlanetResources(ctx context.Context, access domainmcp.Acces
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"resources": resources}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callBuildingQueue(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.readRepository == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp read repository unavailable")
+	}
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	queue, err := s.readRepository.GetMCPBuildingQueue(ctx, access.PlayerID, planetID)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"buildingQueue": queue}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -736,6 +769,62 @@ func planetResourcesTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"resources"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func buildingQueueTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_building_queue",
+		Title:       "Get Building Queue",
+		Description: "Return read-only building queue entries for the current or requested owned planet without finishing or mutating queued work.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"minimum":     0,
+					"description": "Optional owned planet id. Omit or pass 0 to use the current active planet.",
+				},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"buildingQueue": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId": map[string]any{"type": "integer"},
+						"planet":   map[string]any{"type": "object"},
+						"count":    map[string]any{"type": "integer"},
+						"entries": map[string]any{
+							"type": "array",
+							"items": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"listId":           map[string]any{"type": "integer"},
+									"techId":           map[string]any{"type": "integer"},
+									"name":             map[string]any{"type": "string"},
+									"level":            map[string]any{"type": "integer"},
+									"destroy":          map[string]any{"type": "boolean"},
+									"start":            map[string]any{"type": "integer"},
+									"end":              map[string]any{"type": "integer"},
+									"remainingSeconds": map[string]any{"type": "integer"},
+								},
+								"required": []string{"listId", "techId", "name", "level", "destroy", "start", "end", "remainingSeconds"},
+							},
+						},
+					},
+					"required": []string{"playerId", "planet", "count", "entries"},
+				},
+			},
+			"required": []string{"buildingQueue"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,
