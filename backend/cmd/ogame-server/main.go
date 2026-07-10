@@ -20,6 +20,7 @@ import (
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/filesystem"
 	infrahttpclient "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/httpclient"
 	inframail "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mail"
+	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mcpaudit"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mcpauth"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlgame"
@@ -145,7 +146,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthService, sessions apppublicsite.GameSessionLookup) appmcp.Service {
 	staticVerifier := mcpauth.NewStaticTokenVerifier(cfg.MCPStaticTokens)
 	if !cfg.UniDBEnabled {
-		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier)
+		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier).WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
 	}
 
 	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
@@ -156,7 +157,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 	})
 	if err != nil {
 		logger.Warn("universe DB mcp token management disabled", "error", err)
-		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier)
+		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier).WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -164,19 +165,19 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 	if err := db.PingContext(ctx); err != nil {
 		logger.Warn("universe DB mcp token management disabled", "error", err)
 		_ = db.Close()
-		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier)
+		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier).WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
 	}
 
 	repository := mysqlgame.NewMCPTokenRepository(db, cfg.UniDBPrefix)
 	if err := repository.EnsureMCPTokenSchema(ctx); err != nil {
 		logger.Warn("universe DB mcp token schema unavailable", "error", err)
 		_ = db.Close()
-		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier)
+		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier).WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
 	}
 
 	logger.Info("universe DB mcp token management enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
 	verifier := mcpauth.NewCompositeTokenVerifier(repository, staticVerifier)
-	return appmcp.NewServiceWithTokenManagement(health, verifier, repository, sessions, appmcp.SecureTokenGenerator{}, time.Now)
+	return appmcp.NewServiceWithTokenManagement(health, verifier, repository, sessions, appmcp.SecureTokenGenerator{}, time.Now).WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
 }
 
 func registrationActivation(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationActivationService {

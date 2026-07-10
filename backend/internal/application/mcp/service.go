@@ -27,6 +27,10 @@ type TokenVerifier interface {
 	VerifyMCPToken(context.Context, string) (domainmcp.Access, error)
 }
 
+type ToolCallAuditor interface {
+	RecordMCPToolCall(context.Context, domainmcp.ToolCallAudit)
+}
+
 type SessionLookup interface {
 	GetGameSession(context.Context, apppublicsite.GameSessionCommand) (domainpublicsite.SessionAuthentication, error)
 }
@@ -92,6 +96,7 @@ type Service struct {
 	tokenRepository TokenRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
+	auditor         ToolCallAuditor
 	now             func() time.Time
 }
 
@@ -118,6 +123,11 @@ func NewServiceWithTokenManagement(health HealthProvider, verifier TokenVerifier
 		tokenGenerator:  generator,
 		now:             now,
 	}
+}
+
+func (s Service) WithToolCallAuditor(auditor ToolCallAuditor) Service {
+	s.auditor = auditor
+	return s
 }
 
 func (s Service) Initialize(ctx context.Context) domainmcp.InitializeResult {
@@ -150,15 +160,29 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	return domainmcp.ListToolsResult{Tools: tools}, nil
 }
 
-func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand) (domainmcp.ToolCallResult, error) {
+func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand) (result domainmcp.ToolCallResult, err error) {
+	started := s.now()
+	audit := domainmcp.ToolCallAudit{ToolName: command.Name, At: started.Unix()}
+	defer func() {
+		audit.DurationMS = s.now().Sub(started).Milliseconds()
+		if err != nil {
+			audit.Error = err.Error()
+		}
+		s.auditToolCall(ctx, audit)
+	}()
+
 	switch command.Name {
 	case "get_server_health":
+		audit.Authorized = true
 		return s.callServerHealth(ctx)
 	case "get_mcp_access":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
 		if err != nil {
 			return domainmcp.ToolCallResult{}, err
 		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
 		return callMCPAccess(access), nil
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
@@ -270,6 +294,13 @@ func (s Service) authenticateSession(ctx context.Context, command TokenManagemen
 		PrivateSessions: command.PrivateSessions,
 		RemoteAddr:      command.RemoteAddr,
 	})
+}
+
+func (s Service) auditToolCall(ctx context.Context, audit domainmcp.ToolCallAudit) {
+	if s.auditor == nil {
+		return
+	}
+	s.auditor.RecordMCPToolCall(ctx, audit)
 }
 
 func (s Service) authorize(ctx context.Context, token string, scope string) (domainmcp.Access, error) {

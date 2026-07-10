@@ -112,6 +112,38 @@ func TestServiceRejectsUnknownTools(t *testing.T) {
 	}
 }
 
+func TestServiceAuditsToolCalls(t *testing.T) {
+	auditor := &fakeToolCallAuditor{}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithToolCallAuditor(auditor)
+
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_server_health"}); err != nil {
+		t.Fatalf("CallTool health returned error: %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_mcp_access", AccessToken: "read"}); err != nil {
+		t.Fatalf("CallTool access returned error: %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "missing"}); !errors.Is(err, domainmcp.ErrToolNotFound) {
+		t.Fatalf("expected missing tool error, got %v", err)
+	}
+
+	if len(auditor.events) != 3 {
+		t.Fatalf("expected three audit events, got %+v", auditor.events)
+	}
+	if !auditor.events[0].Authorized || auditor.events[0].ToolName != "get_server_health" {
+		t.Fatalf("unexpected public audit event: %+v", auditor.events[0])
+	}
+	if auditor.events[1].PlayerID != 42 || !auditor.events[1].Authorized || len(auditor.events[1].Scopes) != 1 {
+		t.Fatalf("unexpected access audit event: %+v", auditor.events[1])
+	}
+	if auditor.events[2].Error == "" || auditor.events[2].Authorized {
+		t.Fatalf("unexpected missing tool audit event: %+v", auditor.events[2])
+	}
+}
+
 func TestServiceManagesUserOwnedTokens(t *testing.T) {
 	repository := &fakeTokenRepository{}
 	service := NewServiceWithTokenManagement(
@@ -300,6 +332,14 @@ func (f fakeTokenVerifier) VerifyMCPToken(_ context.Context, token string) (doma
 		return domainmcp.Access{}, domainmcp.ErrUnauthorized
 	}
 	return access, nil
+}
+
+type fakeToolCallAuditor struct {
+	events []domainmcp.ToolCallAudit
+}
+
+func (f *fakeToolCallAuditor) RecordMCPToolCall(_ context.Context, event domainmcp.ToolCallAudit) {
+	f.events = append(f.events, event)
 }
 
 type fakeSessionLookup struct {

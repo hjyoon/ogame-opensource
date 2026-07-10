@@ -33,6 +33,16 @@ type TokenCreation struct {
 	Secret string `json:"secret"`
 }
 
+type ToolCallAudit struct {
+	ToolName   string
+	PlayerID   int
+	Scopes     []string
+	Authorized bool
+	Error      string
+	At         int64
+	DurationMS int64
+}
+
 type Access struct {
 	Authenticated bool     `json:"authenticated"`
 	PlayerID      int      `json:"playerId,omitempty"`

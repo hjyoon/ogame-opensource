@@ -28,6 +28,9 @@ Implemented:
   - Uses the same game public session plus private session cookie as other
     authenticated `/api/game/*` endpoints.
   - Stores only SHA-256 token hashes in `uni*_mcp_tokens`.
+- JSON audit logging for every `tools/call` request path. Audit logs include
+  tool name, authorization outcome, player id/scopes when authenticated,
+  duration, and error text. Bearer token secrets are never logged.
 
 ## Static Token Format
 
@@ -76,16 +79,15 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Add audit logging for every MCP tool call.
-2. Add read-only authenticated tools:
+1. Add read-only authenticated tools:
    - `list_planets`
    - `get_account_overview`
    - `get_planet_resources`
    - `get_building_queue`
    - `get_fleet_movements`
-3. Add a React account-settings UI for DB token create/revoke.
-4. Add E2E smoke calls against `/mcp`.
-5. Add OAuth 2.1/OIDC consent flow before public user rollout.
+2. Add a React account-settings UI for DB token create/revoke.
+3. Add E2E smoke calls against `/mcp`.
+4. Add OAuth 2.1/OIDC consent flow before public user rollout.
 
 ## General User Policy
 
