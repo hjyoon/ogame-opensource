@@ -22,6 +22,7 @@ import (
 	inframail "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mail"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mcpaudit"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mcpauth"
+	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mcpoidc"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlgame"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlregistration"
@@ -146,8 +147,18 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 
 func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthService, sessions apppublicsite.GameSessionLookup) appmcp.Service {
 	staticVerifier := mcpauth.NewStaticTokenVerifier(cfg.MCPStaticTokens)
+	oidcSigner, oidcErr := mcpoidc.NewEphemeralEd25519Signer()
+	if oidcErr != nil {
+		logger.Warn("mcp oidc signer disabled", "error", oidcErr)
+	}
+	withCommonMCP := func(service appmcp.Service) appmcp.Service {
+		if oidcErr == nil {
+			service = service.WithOIDCSigner(oidcSigner)
+		}
+		return service.WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
+	}
 	if !cfg.UniDBEnabled {
-		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier).WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
+		return withCommonMCP(appmcp.NewServiceWithTokenVerifier(health, staticVerifier))
 	}
 
 	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
@@ -158,7 +169,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 	})
 	if err != nil {
 		logger.Warn("universe DB mcp token management disabled", "error", err)
-		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier).WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
+		return withCommonMCP(appmcp.NewServiceWithTokenVerifier(health, staticVerifier))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -166,29 +177,28 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 	if err := db.PingContext(ctx); err != nil {
 		logger.Warn("universe DB mcp token management disabled", "error", err)
 		_ = db.Close()
-		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier).WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
+		return withCommonMCP(appmcp.NewServiceWithTokenVerifier(health, staticVerifier))
 	}
 
 	repository := mysqlgame.NewMCPTokenRepository(db, cfg.UniDBPrefix)
 	if err := repository.EnsureMCPTokenSchema(ctx); err != nil {
 		logger.Warn("universe DB mcp token schema unavailable", "error", err)
 		_ = db.Close()
-		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier).WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
+		return withCommonMCP(appmcp.NewServiceWithTokenVerifier(health, staticVerifier))
 	}
 	if err := repository.EnsureMCPOAuthCodeSchema(ctx); err != nil {
 		logger.Warn("universe DB mcp oauth code schema unavailable", "error", err)
 		_ = db.Close()
-		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier).WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
+		return withCommonMCP(appmcp.NewServiceWithTokenVerifier(health, staticVerifier))
 	}
 
 	logger.Info("universe DB mcp token and oauth management enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
 	verifier := mcpauth.NewCompositeTokenVerifier(repository, staticVerifier)
 	readRepository := mysqlgame.NewMCPReadRepository(db, cfg.UniDBPrefix)
-	return appmcp.NewServiceWithTokenManagement(health, verifier, repository, sessions, appmcp.SecureTokenGenerator{}, time.Now).
+	return withCommonMCP(appmcp.NewServiceWithTokenManagement(health, verifier, repository, sessions, appmcp.SecureTokenGenerator{}, time.Now).
 		WithOAuthCodeRepository(repository).
 		WithOAuthRedirectURIs(appmcp.ParseOAuthRedirectURIs(cfg.MCPOAuthRedirectURIs)).
-		WithReadRepository(readRepository).
-		WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
+		WithReadRepository(readRepository))
 }
 
 func registrationActivation(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationActivationService {

@@ -38,7 +38,8 @@ Implemented:
 - OAuth 2.1 public-client base:
   - `/.well-known/oauth-authorization-server`
   - `/oauth/authorize` consent page and code redirect
-  - `/oauth/token` authorization-code + PKCE S256 exchange
+  - `/oauth/token` code + PKCE S256; returns `id_token` for `openid`
+  - `/.well-known/jwks.json` Ed25519 JWKS
   - Codes are one-time hashes in `uni*_mcp_oauth_codes`.
   - External redirects require `OGAME_MCP_OAUTH_REDIRECT_URIS`.
 - JSON audit logging for every `tools/call` request path. Audit logs include
@@ -102,7 +103,7 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Add OIDC ID-token/JWKS support before public user rollout.
+1. Persist/rotate OIDC signing keys; current key is startup-ephemeral.
 
 ## General User Policy
 

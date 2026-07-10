@@ -53,11 +53,26 @@ func TestServiceBuildsOAuthAuthorizationServerMetadata(t *testing.T) {
 	if !strings.Contains(scopes, "openid") || !strings.Contains(scopes, domainmcp.ScopeRead) {
 		t.Fatalf("expected OIDC and MCP read scopes, got %+v", metadata.ScopesSupported)
 	}
+	if jwks := service.OAuthJWKS(context.Background()); len(jwks.Keys) != 0 {
+		t.Fatalf("expected empty JWKS without signer, got %+v", jwks)
+	}
+
+	signer := &fakeOIDCSigner{token: "id.token.signature"}
+	service = service.WithOIDCSigner(signer)
+	metadata = service.OAuthAuthorizationServerMetadata(context.Background(), "https://game.example/")
+	if metadata.JWKSURI != "https://game.example/.well-known/jwks.json" || strings.Join(metadata.IDTokenSigningAlgValuesSupported, ",") != "EdDSA" {
+		t.Fatalf("expected OIDC metadata, got %+v", metadata)
+	}
+	jwks := service.OAuthJWKS(context.Background())
+	if len(jwks.Keys) != 1 || jwks.Keys[0].KeyID != "kid" {
+		t.Fatalf("unexpected JWKS: %+v", jwks)
+	}
 }
 
 func TestServiceOAuthAuthorizeConsentAndTokenExchange(t *testing.T) {
 	now := time.Unix(1700, 0)
 	repository := &fakeTokenRepository{}
+	signer := &fakeOIDCSigner{token: "id.token.signature"}
 	service := NewServiceWithTokenManagement(
 		fakeHealthProvider{},
 		nil,
@@ -65,7 +80,7 @@ func TestServiceOAuthAuthorizeConsentAndTokenExchange(t *testing.T) {
 		fakeSessionLookup{auth: authenticatedSession(42)},
 		fakeTokenGenerator{secret: "ogmcp_access", code: "ogmcp_code_authorized"},
 		func() time.Time { return now },
-	).WithOAuthCodeRepository(repository)
+	).WithOAuthCodeRepository(repository).WithOIDCSigner(signer)
 	verifier := strings.Repeat("a", 43)
 	challenge := testPKCEChallenge(verifier)
 	command := OAuthAuthorizeCommand{
@@ -105,12 +120,16 @@ func TestServiceOAuthAuthorizeConsentAndTokenExchange(t *testing.T) {
 		RedirectURI:  "http://127.0.0.1:9911/callback",
 		ClientID:     "desktop-client",
 		CodeVerifier: verifier,
+		Issuer:       "https://game.example",
 	})
 	if err != nil {
 		t.Fatalf("ExchangeOAuthCode returned error: %v", err)
 	}
-	if token.AccessToken != "ogmcp_access" || token.TokenType != "Bearer" || token.Scope != "openid mcp:read mcp:fleet" {
+	if token.AccessToken != "ogmcp_access" || token.TokenType != "Bearer" || token.Scope != "openid mcp:read mcp:fleet" || token.IDToken != "id.token.signature" {
 		t.Fatalf("unexpected token result: %+v", token)
+	}
+	if signer.command.Issuer != "https://game.example" || signer.command.Audience != "desktop-client" || signer.command.PlayerID != 42 {
+		t.Fatalf("unexpected id token command: %+v", signer.command)
 	}
 	if repository.created.Name != "OAuth desktop-client" || repository.created.Scopes[2] != domainmcp.ScopeFleet || repository.hash != HashToken("ogmcp_access") {
 		t.Fatalf("unexpected persisted OAuth token: token=%+v hash=%q", repository.created, repository.hash)
@@ -276,6 +295,13 @@ func TestServiceOAuthTokenExchangeCoversValidationAndFailureBranches(t *testing.
 	service = oauthExchangeService(&fakeTokenRepository{oauthCode: validStoredOAuthCode(verifier, "desktop-client"), createErr: errors.New("insert down")}, fakeTokenGenerator{secret: "token"})
 	if _, err := service.ExchangeOAuthCode(context.Background(), validTokenCommand); err == nil {
 		t.Fatalf("expected exchange token repository error")
+	}
+
+	openIDCode := validStoredOAuthCode(verifier, "desktop-client")
+	openIDCode.Scopes = []string{"openid", domainmcp.ScopeRead}
+	service = oauthExchangeService(&fakeTokenRepository{oauthCode: openIDCode}, fakeTokenGenerator{secret: "token"}).WithOIDCSigner(&fakeOIDCSigner{err: errors.New("sign down")})
+	if _, err := service.ExchangeOAuthCode(context.Background(), validTokenCommand); err == nil {
+		t.Fatalf("expected id token signing error")
 	}
 
 	longClient := strings.Repeat("c", 70)
@@ -1023,6 +1049,28 @@ type fakeToolCallAuditor struct {
 
 func (f *fakeToolCallAuditor) RecordMCPToolCall(_ context.Context, event domainmcp.ToolCallAudit) {
 	f.events = append(f.events, event)
+}
+
+type fakeOIDCSigner struct {
+	token   string
+	err     error
+	command domainmcp.IDTokenCommand
+}
+
+func (f *fakeOIDCSigner) Algorithm() string {
+	return "EdDSA"
+}
+
+func (f *fakeOIDCSigner) JWKS(context.Context) domainmcp.JSONWebKeySet {
+	return domainmcp.JSONWebKeySet{Keys: []domainmcp.JSONWebKey{{KeyType: "OKP", KeyID: "kid", Alg: "EdDSA"}}}
+}
+
+func (f *fakeOIDCSigner) SignIDToken(_ context.Context, command domainmcp.IDTokenCommand) (string, error) {
+	f.command = command
+	if f.err != nil {
+		return "", f.err
+	}
+	return f.token, nil
 }
 
 type fakeReadRepository struct {

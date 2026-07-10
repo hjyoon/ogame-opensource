@@ -38,11 +38,33 @@ type OAuthAuthorizationServerMetadata struct {
 	Issuer                            string   `json:"issuer"`
 	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
 	TokenEndpoint                     string   `json:"token_endpoint"`
+	JWKSURI                           string   `json:"jwks_uri,omitempty"`
 	ResponseTypesSupported            []string `json:"response_types_supported"`
 	GrantTypesSupported               []string `json:"grant_types_supported"`
 	CodeChallengeMethodsSupported     []string `json:"code_challenge_methods_supported"`
 	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
+	IDTokenSigningAlgValuesSupported  []string `json:"id_token_signing_alg_values_supported,omitempty"`
 	ScopesSupported                   []string `json:"scopes_supported"`
+}
+
+type JSONWebKey struct {
+	KeyType string `json:"kty"`
+	Use     string `json:"use,omitempty"`
+	KeyID   string `json:"kid,omitempty"`
+	Alg     string `json:"alg,omitempty"`
+	Curve   string `json:"crv,omitempty"`
+	X       string `json:"x,omitempty"`
+}
+
+type JSONWebKeySet struct {
+	Keys []JSONWebKey `json:"keys"`
+}
+
+type IDTokenCommand struct {
+	Issuer   string
+	Audience string
+	PlayerID int
+	Scopes   []string
 }
 
 type OAuthAuthorizationCode struct {

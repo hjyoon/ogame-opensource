@@ -40,6 +40,12 @@ type ToolCallAuditor interface {
 	RecordMCPToolCall(context.Context, domainmcp.ToolCallAudit)
 }
 
+type OIDCSigner interface {
+	Algorithm() string
+	JWKS(context.Context) domainmcp.JSONWebKeySet
+	SignIDToken(context.Context, domainmcp.IDTokenCommand) (string, error)
+}
+
 type SessionLookup interface {
 	GetGameSession(context.Context, apppublicsite.GameSessionCommand) (domainpublicsite.SessionAuthentication, error)
 }
@@ -135,12 +141,14 @@ type OAuthTokenCommand struct {
 	RedirectURI  string
 	ClientID     string
 	CodeVerifier string
+	Issuer       string
 }
 
 type OAuthTokenResult struct {
 	AccessToken string
 	TokenType   string
 	Scope       string
+	IDToken     string
 	Token       domainmcp.Token
 }
 
@@ -168,6 +176,7 @@ type Service struct {
 	tokenRepository TokenRepository
 	oauthRepository OAuthCodeRepository
 	oauthRedirects  []string
+	oidcSigner      OIDCSigner
 	readRepository  ReadRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
@@ -216,6 +225,11 @@ func (s Service) WithOAuthRedirectURIs(redirectURIs []string) Service {
 	return s
 }
 
+func (s Service) WithOIDCSigner(signer OIDCSigner) Service {
+	s.oidcSigner = signer
+	return s
+}
+
 func (s Service) WithReadRepository(repository ReadRepository) Service {
 	s.readRepository = repository
 	return s
@@ -244,7 +258,7 @@ func (s Service) Initialize(ctx context.Context) domainmcp.InitializeResult {
 func (s Service) OAuthAuthorizationServerMetadata(ctx context.Context, issuer string) domainmcp.OAuthAuthorizationServerMetadata {
 	_ = ctx
 	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
-	return domainmcp.OAuthAuthorizationServerMetadata{
+	metadata := domainmcp.OAuthAuthorizationServerMetadata{
 		Issuer:                            issuer,
 		AuthorizationEndpoint:             issuer + "/oauth/authorize",
 		TokenEndpoint:                     issuer + "/oauth/token",
@@ -260,6 +274,18 @@ func (s Service) OAuthAuthorizationServerMetadata(ctx context.Context, issuer st
 			domainmcp.ScopeFleet,
 		},
 	}
+	if s.oidcSigner != nil {
+		metadata.JWKSURI = issuer + "/.well-known/jwks.json"
+		metadata.IDTokenSigningAlgValuesSupported = []string{s.oidcSigner.Algorithm()}
+	}
+	return metadata
+}
+
+func (s Service) OAuthJWKS(ctx context.Context) domainmcp.JSONWebKeySet {
+	if s.oidcSigner == nil {
+		return domainmcp.JSONWebKeySet{}
+	}
+	return s.oidcSigner.JWKS(ctx)
 }
 
 func (s Service) AuthorizeOAuth(ctx context.Context, command OAuthAuthorizeCommand) (OAuthAuthorizeResult, error) {
@@ -371,10 +397,23 @@ func (s Service) ExchangeOAuthCode(ctx context.Context, command OAuthTokenComman
 		return OAuthTokenResult{}, err
 	}
 	token.PlayerID = 0
+	idToken := ""
+	if scopeAllowed(scopes, "openid") && s.oidcSigner != nil {
+		idToken, err = s.oidcSigner.SignIDToken(ctx, domainmcp.IDTokenCommand{
+			Issuer:   command.Issuer,
+			Audience: clientID,
+			PlayerID: stored.PlayerID,
+			Scopes:   scopes,
+		})
+		if err != nil {
+			return OAuthTokenResult{}, err
+		}
+	}
 	return OAuthTokenResult{
 		AccessToken: secret,
 		TokenType:   "Bearer",
 		Scope:       strings.Join(scopes, " "),
+		IDToken:     idToken,
 		Token:       token,
 	}, nil
 }
@@ -820,6 +859,15 @@ func normalizeOAuthScopes(raw string) ([]string, error) {
 
 func oauthScopeAllowed(scope string) bool {
 	return scope == "openid" || scope == "profile" || userScopeAllowed(scope)
+}
+
+func scopeAllowed(scopes []string, want string) bool {
+	for _, scope := range scopes {
+		if scope == want {
+			return true
+		}
+	}
+	return false
 }
 
 func validOAuthClientID(clientID string) bool {

@@ -31,6 +31,7 @@ type MCPTokenUseCase interface {
 
 type MCPOAuthUseCase interface {
 	OAuthAuthorizationServerMetadata(context.Context, string) domainmcp.OAuthAuthorizationServerMetadata
+	OAuthJWKS(context.Context) domainmcp.JSONWebKeySet
 	AuthorizeOAuth(context.Context, appmcp.OAuthAuthorizeCommand) (appmcp.OAuthAuthorizeResult, error)
 	ExchangeOAuthCode(context.Context, appmcp.OAuthTokenCommand) (appmcp.OAuthTokenResult, error)
 }
@@ -271,6 +272,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/api/healthz", getOnly(a.handleHealthz))
 	mux.HandleFunc("/mcp", a.handleMCP)
 	mux.HandleFunc("/.well-known/oauth-authorization-server", getOnly(a.handleMCPOAuthAuthorizationServerMetadata))
+	mux.HandleFunc("/.well-known/jwks.json", getOnly(a.handleMCPOAuthJWKS))
 	mux.HandleFunc("/oauth/authorize", getOnly(a.handleMCPOAuthAuthorize))
 	mux.HandleFunc("/oauth/token", postOnly(a.handleMCPOAuthToken))
 	mux.HandleFunc("/api/game/mcp-tokens", a.handleGameMCPTokens)

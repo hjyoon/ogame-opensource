@@ -24,6 +24,16 @@ func (a app) handleMCPOAuthAuthorizationServerMetadata(w http.ResponseWriter, r 
 	_ = json.NewEncoder(w).Encode(a.deps.MCPOAuth.OAuthAuthorizationServerMetadata(r.Context(), requestIssuer(r)))
 }
 
+func (a app) handleMCPOAuthJWKS(w http.ResponseWriter, r *http.Request) {
+	if a.deps.MCPOAuth == nil {
+		http.Error(w, "mcp oidc unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(a.deps.MCPOAuth.OAuthJWKS(r.Context()))
+}
+
 func (a app) handleMCPOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 	if a.deps.MCPOAuth == nil {
 		writeOAuthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "OAuth consent flow is unavailable.")
@@ -63,6 +73,7 @@ func (a app) handleMCPOAuthToken(w http.ResponseWriter, r *http.Request) {
 		RedirectURI:  r.Form.Get("redirect_uri"),
 		ClientID:     r.Form.Get("client_id"),
 		CodeVerifier: r.Form.Get("code_verifier"),
+		Issuer:       requestIssuer(r),
 	})
 	if err != nil {
 		writeOAuthApplicationError(w, err)
@@ -70,11 +81,15 @@ func (a app) handleMCPOAuthToken(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	body := map[string]any{
 		"access_token": result.AccessToken,
 		"token_type":   result.TokenType,
 		"scope":        result.Scope,
-	})
+	}
+	if result.IDToken != "" {
+		body["id_token"] = result.IDToken
+	}
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 func requestIssuer(r *http.Request) string {

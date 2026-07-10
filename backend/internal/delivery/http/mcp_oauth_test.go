@@ -34,6 +34,21 @@ func TestMCPOAuthAuthorizationServerMetadata(t *testing.T) {
 	if body.ResponseTypesSupported[0] != "code" || body.CodeChallengeMethodsSupported[0] != "S256" || body.TokenEndpointAuthMethodsSupported[0] != "none" {
 		t.Fatalf("unexpected OAuth 2.1 metadata: %+v", body)
 	}
+
+	server = New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{jwksResult: domainmcp.JSONWebKeySet{Keys: []domainmcp.JSONWebKey{{KeyType: "OKP", KeyID: "kid"}}}}})
+	req = httptest.NewRequest(http.MethodGet, "http://game.local/.well-known/jwks.json", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || rec.Header().Get("Cache-Control") != "public, max-age=300" {
+		t.Fatalf("unexpected JWKS response status=%d headers=%v body=%q", rec.Code, rec.Header(), rec.Body.String())
+	}
+	var jwks domainmcp.JSONWebKeySet
+	if err := json.Unmarshal(rec.Body.Bytes(), &jwks); err != nil {
+		t.Fatalf("decode JWKS: %v", err)
+	}
+	if len(jwks.Keys) != 1 || jwks.Keys[0].KeyID != "kid" {
+		t.Fatalf("unexpected JWKS: %+v", jwks)
+	}
 }
 
 func TestMCPOAuthAuthorizeConsentRedirectAndToken(t *testing.T) {
@@ -48,6 +63,7 @@ func TestMCPOAuthAuthorizeConsentRedirectAndToken(t *testing.T) {
 			AccessToken: "ogmcp_access",
 			TokenType:   "Bearer",
 			Scope:       "mcp:read mcp:fleet",
+			IDToken:     "id.token.signature",
 		},
 	}
 	server := New(Dependencies{MCPOAuth: oauth})
@@ -79,7 +95,7 @@ func TestMCPOAuthAuthorizeConsentRedirectAndToken(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &tokenBody); err != nil {
 		t.Fatalf("decode token response: %v", err)
 	}
-	if tokenBody["access_token"] != "ogmcp_access" || tokenBody["token_type"] != "Bearer" {
+	if tokenBody["access_token"] != "ogmcp_access" || tokenBody["token_type"] != "Bearer" || tokenBody["id_token"] != "id.token.signature" {
 		t.Fatalf("unexpected token response: %+v", tokenBody)
 	}
 }
@@ -160,6 +176,13 @@ func TestMCPOAuthMetadataUnavailableAndMethodGuards(t *testing.T) {
 		t.Fatalf("expected metadata unavailable, got status=%d body=%q", rec.Code, rec.Body.String())
 	}
 
+	req = httptest.NewRequest(http.MethodGet, "http://game.local/.well-known/jwks.json", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected JWKS unavailable, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
 	server = New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{}})
 	req = httptest.NewRequest(http.MethodPost, "http://game.local/.well-known/oauth-authorization-server", nil)
 	rec = httptest.NewRecorder()
@@ -172,6 +195,7 @@ func TestMCPOAuthMetadataUnavailableAndMethodGuards(t *testing.T) {
 type fakeMCPOAuthUseCase struct {
 	authorizeResult appmcp.OAuthAuthorizeResult
 	exchangeResult  appmcp.OAuthTokenResult
+	jwksResult      domainmcp.JSONWebKeySet
 	authorizeErr    error
 	exchangeErr     error
 
@@ -181,6 +205,10 @@ type fakeMCPOAuthUseCase struct {
 
 func (f *fakeMCPOAuthUseCase) OAuthAuthorizationServerMetadata(_ context.Context, issuer string) domainmcp.OAuthAuthorizationServerMetadata {
 	return (appmcp.Service{}).OAuthAuthorizationServerMetadata(context.Background(), issuer)
+}
+
+func (f *fakeMCPOAuthUseCase) OAuthJWKS(context.Context) domainmcp.JSONWebKeySet {
+	return f.jwksResult
 }
 
 func (f *fakeMCPOAuthUseCase) AuthorizeOAuth(_ context.Context, command appmcp.OAuthAuthorizeCommand) (appmcp.OAuthAuthorizeResult, error) {
