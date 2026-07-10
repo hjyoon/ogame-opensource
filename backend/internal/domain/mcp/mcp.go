@@ -4,7 +4,34 @@ import "errors"
 
 const ProtocolVersion = "2025-06-18"
 
-var ErrToolNotFound = errors.New("mcp tool not found")
+const (
+	ScopeRead     = "mcp:read"
+	ScopeWrite    = "mcp:write"
+	ScopeFleet    = "mcp:fleet"
+	ScopeMessages = "mcp:messages"
+	ScopeAdmin    = "mcp:admin"
+)
+
+var (
+	ErrToolNotFound = errors.New("mcp tool not found")
+	ErrUnauthorized = errors.New("mcp unauthorized")
+	ErrForbidden    = errors.New("mcp forbidden")
+)
+
+type Access struct {
+	Authenticated bool     `json:"authenticated"`
+	PlayerID      int      `json:"playerId,omitempty"`
+	Scopes        []string `json:"scopes,omitempty"`
+}
+
+func (a Access) HasScope(scope string) bool {
+	for _, candidate := range a.Scopes {
+		if candidate == scope {
+			return true
+		}
+	}
+	return false
+}
 
 type InitializeResult struct {
 	ProtocolVersion string       `json:"protocolVersion"`
@@ -36,7 +63,8 @@ type Tool struct {
 }
 
 type ListToolsCommand struct {
-	Cursor string
+	Cursor      string
+	AccessToken string
 }
 
 type ListToolsResult struct {
@@ -45,8 +73,9 @@ type ListToolsResult struct {
 }
 
 type CallToolCommand struct {
-	Name      string
-	Arguments map[string]any
+	Name        string
+	Arguments   map[string]any
+	AccessToken string
 }
 
 type ToolCallResult struct {

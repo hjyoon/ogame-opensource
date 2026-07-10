@@ -37,6 +37,31 @@ func TestMCPInitializeListsAndCallsTools(t *testing.T) {
 	}
 }
 
+func TestMCPPassesBearerTokenToUseCase(t *testing.T) {
+	mcp := &recordingMCPUseCase{fakeMCPUseCase: fakeMCPUseCase{}}
+	server := New(Dependencies{MCP: mcp})
+
+	req := httptest.NewRequest(http.MethodPost, "http://game.local/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_server_health"}}`))
+	req.Header.Set("Authorization", "Bearer scoped-token")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected tool call success, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+	if mcp.callCommand.AccessToken != "scoped-token" {
+		t.Fatalf("expected bearer token to be passed to MCP usecase, got %+v", mcp.callCommand)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`))
+	req.Header.Set("Authorization", "Bearer scoped-token")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || mcp.listCommand.AccessToken != "scoped-token" {
+		t.Fatalf("expected bearer token to be passed to tools/list, status=%d body=%q command=%+v", rec.Code, rec.Body.String(), mcp.listCommand)
+	}
+}
+
 func TestMCPAcceptsNotificationsWithoutJSONRPCResponse(t *testing.T) {
 	server := New(Dependencies{MCP: fakeMCPUseCase{}})
 	req := httptest.NewRequest(http.MethodPost, "http://game.local/mcp", strings.NewReader(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
@@ -193,6 +218,39 @@ func TestMCPUseCaseErrorsReturnJSONRPCInternalError(t *testing.T) {
 	}
 }
 
+func TestMCPAccessErrorsUseHTTPAuthStatus(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		mcp        fakeMCPUseCase
+		wantStatus int
+		wantCode   float64
+		wantHeader bool
+	}{
+		{name: "unauthorized", mcp: fakeMCPUseCase{callErr: domainmcp.ErrUnauthorized}, wantStatus: http.StatusUnauthorized, wantCode: -32001, wantHeader: true},
+		{name: "forbidden", mcp: fakeMCPUseCase{callErr: domainmcp.ErrForbidden}, wantStatus: http.StatusForbidden, wantCode: -32003},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			server := New(Dependencies{MCP: tt.mcp})
+			req := httptest.NewRequest(http.MethodPost, "http://game.local/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_server_health"}}`))
+			rec := httptest.NewRecorder()
+			server.ServeHTTP(rec, req)
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("unexpected status=%d body=%q", rec.Code, rec.Body.String())
+			}
+			if tt.wantHeader && rec.Header().Get("WWW-Authenticate") != `Bearer realm="ogame-mcp"` {
+				t.Fatalf("missing WWW-Authenticate header: %v", rec.Header())
+			}
+			var body map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("invalid JSON-RPC error: %v", err)
+			}
+			if body["error"].(map[string]any)["code"] != tt.wantCode {
+				t.Fatalf("unexpected error body: %+v", body)
+			}
+		})
+	}
+}
+
 func mcpPost(t *testing.T, server http.Handler, body string) map[string]any {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "http://game.local/mcp", strings.NewReader(body))
@@ -222,6 +280,22 @@ func (fakeMCPUseCase) Initialize(context.Context) domainmcp.InitializeResult {
 		Capabilities:    domainmcp.Capabilities{Tools: &domainmcp.ToolsCapability{}},
 		ServerInfo:      domainmcp.ServerInfo{Name: "ogame-opensource", Version: "test"},
 	}
+}
+
+type recordingMCPUseCase struct {
+	fakeMCPUseCase
+	listCommand domainmcp.ListToolsCommand
+	callCommand domainmcp.CallToolCommand
+}
+
+func (r *recordingMCPUseCase) ListTools(ctx context.Context, command domainmcp.ListToolsCommand) (domainmcp.ListToolsResult, error) {
+	r.listCommand = command
+	return r.fakeMCPUseCase.ListTools(ctx, command)
+}
+
+func (r *recordingMCPUseCase) CallTool(ctx context.Context, command domainmcp.CallToolCommand) (domainmcp.ToolCallResult, error) {
+	r.callCommand = command
+	return r.fakeMCPUseCase.CallTool(ctx, command)
 }
 
 func (f fakeMCPUseCase) ListTools(context.Context, domainmcp.ListToolsCommand) (domainmcp.ListToolsResult, error) {

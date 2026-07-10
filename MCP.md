@@ -19,6 +19,28 @@ Implemented:
   - `internal/application/mcp`
   - `internal/delivery/http`
 - First safe read-only tool: `get_server_health`.
+- Static bearer token verifier for early scoped testing.
+- Protected read-only tool: `get_mcp_access`.
+
+## Static Token Format
+
+`OGAME_MCP_STATIC_TOKENS` accepts semicolon-separated records:
+
+```text
+token:player_id:scope1,scope2;another-token:7:mcp:read
+```
+
+Current scopes:
+
+- `mcp:read`
+- `mcp:write`
+- `mcp:fleet`
+- `mcp:messages`
+- `mcp:admin`
+
+Static tokens are only a bootstrap path. Revocation currently means removing
+the token from config and restarting. User-owned DB tokens and UI revoke are
+the next step.
 
 ## Security Rule
 
@@ -28,7 +50,7 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Add user-owned MCP tokens with scopes and revoke support.
+1. Add user-owned DB-backed MCP tokens with scopes and revoke support.
 2. Add audit logging for every MCP tool call.
 3. Add read-only authenticated tools:
    - `list_planets`

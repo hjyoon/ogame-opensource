@@ -21,6 +21,7 @@ type Config struct {
 	LegacyBaseURL    string
 	PublicBaseURL    string
 	PublicUniverses  string
+	MCPStaticTokens  string
 	SMTPEnabled      bool
 	SMTPAddr         string
 	SMTPFrom         string
@@ -51,6 +52,7 @@ func Load() Config {
 		LegacyBaseURL:    legacyBaseURL,
 		PublicBaseURL:    env("OGAME_PUBLIC_BASE_URL", legacyBaseURL),
 		PublicUniverses:  env("OGAME_PUBLIC_UNIVERSES", ""),
+		MCPStaticTokens:  env("OGAME_MCP_STATIC_TOKENS", ""),
 		SMTPEnabled:      envBool("OGAME_SMTP_ENABLE", false),
 		SMTPAddr:         env("OGAME_SMTP_ADDR", "localhost:1025"),
 		SMTPFrom:         env("OGAME_SMTP_FROM", "OGame <noreply@localhost>"),

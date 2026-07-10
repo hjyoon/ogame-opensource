@@ -87,6 +87,7 @@ func (a app) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
+	accessToken := bearerToken(r)
 
 	switch request.Method {
 	case "initialize":
@@ -98,8 +99,14 @@ func (a app) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		result, err := a.deps.MCP.ListTools(r.Context(), domainmcp.ListToolsCommand{Cursor: params.Cursor})
+		result, err := a.deps.MCP.ListTools(r.Context(), domainmcp.ListToolsCommand{
+			Cursor:      params.Cursor,
+			AccessToken: accessToken,
+		})
 		if err != nil {
+			if writeMCPAccessError(w, request.ID, err) {
+				return
+			}
 			writeJSONRPCError(w, request.ID, http.StatusInternalServerError, -32603, "Internal error")
 			return
 		}
@@ -113,14 +120,18 @@ func (a app) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 			params.Arguments = map[string]any{}
 		}
 		result, err := a.deps.MCP.CallTool(r.Context(), domainmcp.CallToolCommand{
-			Name:      params.Name,
-			Arguments: params.Arguments,
+			Name:        params.Name,
+			Arguments:   params.Arguments,
+			AccessToken: accessToken,
 		})
 		if errors.Is(err, domainmcp.ErrToolNotFound) {
 			writeJSONRPCError(w, request.ID, http.StatusOK, -32602, "Unknown tool")
 			return
 		}
 		if err != nil {
+			if writeMCPAccessError(w, request.ID, err) {
+				return
+			}
 			writeJSONRPCError(w, request.ID, http.StatusInternalServerError, -32603, "Internal error")
 			return
 		}
@@ -128,6 +139,19 @@ func (a app) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSONRPCError(w, request.ID, http.StatusOK, -32601, "Method not found")
 	}
+}
+
+func writeMCPAccessError(w http.ResponseWriter, id json.RawMessage, err error) bool {
+	if errors.Is(err, domainmcp.ErrUnauthorized) {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="ogame-mcp"`)
+		writeJSONRPCError(w, id, http.StatusUnauthorized, -32001, "Unauthorized")
+		return true
+	}
+	if errors.Is(err, domainmcp.ErrForbidden) {
+		writeJSONRPCError(w, id, http.StatusForbidden, -32003, "Forbidden")
+		return true
+	}
+	return false
 }
 
 func decodeMCPParams[T any](w http.ResponseWriter, request jsonRPCRequest) (T, bool) {
@@ -173,6 +197,14 @@ func requestID(id json.RawMessage) json.RawMessage {
 
 func validMCPProtocolVersion(version string) bool {
 	return version == "" || version == domainmcp.ProtocolVersion || version == legacyMCPProtocolVersion
+}
+
+func bearerToken(r *http.Request) string {
+	fields := strings.Fields(r.Header.Get("Authorization"))
+	if len(fields) != 2 || !strings.EqualFold(fields[0], "Bearer") {
+		return ""
+	}
+	return fields[1]
 }
 
 func validMCPOrigin(r *http.Request) bool {

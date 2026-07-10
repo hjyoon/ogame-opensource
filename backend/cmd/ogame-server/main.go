@@ -20,6 +20,7 @@ import (
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/filesystem"
 	infrahttpclient "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/httpclient"
 	inframail "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mail"
+	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mcpauth"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlgame"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlregistration"
@@ -53,7 +54,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		BunTarget:      config.BunTarget,
 		ReactTarget:    config.ReactTarget,
 	}, filesystem.Probe{}, infraruntime.GoRuntime{})
-	mcp := appmcp.NewService(health)
+	mcp := appmcp.NewServiceWithTokenVerifier(health, mcpauth.NewStaticTokenVerifier(cfg.MCPStaticTokens))
 	universes := apppublicsite.NewUniverseCatalogService(universeRepository(cfg, logger))
 	registrationDrafts := registrationValidator(cfg, logger)
 	registration := registrationRegistrar(cfg, logger)

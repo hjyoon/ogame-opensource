@@ -11,6 +11,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("OGAME_LEGACY_BASE_URL", "")
 	t.Setenv("OGAME_PUBLIC_BASE_URL", "")
 	t.Setenv("OGAME_PUBLIC_UNIVERSES", "")
+	t.Setenv("OGAME_MCP_STATIC_TOKENS", "")
 	t.Setenv("OGAME_SMTP_ENABLE", "")
 	t.Setenv("OGAME_SMTP_ADDR", "")
 	t.Setenv("OGAME_SMTP_FROM", "")
@@ -37,7 +38,7 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.StaticDir != "frontend/dist" || cfg.LegacyAssetDir != "download" || cfg.LegacyBaseURL != "http://localhost:8888" || cfg.PublicBaseURL != "http://localhost:8888" {
 		t.Fatalf("unexpected default paths: %+v", cfg)
 	}
-	if cfg.PublicUniverses != "" || cfg.SMTPEnabled || cfg.SMTPAddr != "localhost:1025" || cfg.SMTPFrom != "OGame <noreply@localhost>" {
+	if cfg.PublicUniverses != "" || cfg.MCPStaticTokens != "" || cfg.SMTPEnabled || cfg.SMTPAddr != "localhost:1025" || cfg.SMTPFrom != "OGame <noreply@localhost>" {
 		t.Fatalf("unexpected default public universes: %+v", cfg)
 	}
 	if !cfg.MasterDBEnabled || cfg.MasterDBHost != "mysql" || cfg.MasterDBUser != "root" || cfg.MasterDBPassword != "123" || cfg.MasterDBName != "master" {
@@ -57,6 +58,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("OGAME_LEGACY_BASE_URL", "http://legacy.local")
 	t.Setenv("OGAME_PUBLIC_BASE_URL", "http://public.local")
 	t.Setenv("OGAME_PUBLIC_UNIVERSES", `[{"number":1}]`)
+	t.Setenv("OGAME_MCP_STATIC_TOKENS", "token:42:mcp:read")
 	t.Setenv("OGAME_SMTP_ENABLE", "1")
 	t.Setenv("OGAME_SMTP_ADDR", "mailhog:1025")
 	t.Setenv("OGAME_SMTP_FROM", "No Reply <no-reply@example.local>")
@@ -82,7 +84,7 @@ func TestLoadEnvOverrides(t *testing.T) {
 	if cfg.StaticDir != "/static" || cfg.LegacyAssetDir != "/legacy" || cfg.LegacyBaseURL != "http://legacy.local" || cfg.PublicBaseURL != "http://public.local" {
 		t.Fatalf("unexpected override paths: %+v", cfg)
 	}
-	if cfg.PublicUniverses != `[{"number":1}]` || !cfg.SMTPEnabled || cfg.SMTPAddr != "mailhog:1025" || cfg.SMTPFrom != "No Reply <no-reply@example.local>" {
+	if cfg.PublicUniverses != `[{"number":1}]` || cfg.MCPStaticTokens != "token:42:mcp:read" || !cfg.SMTPEnabled || cfg.SMTPAddr != "mailhog:1025" || cfg.SMTPFrom != "No Reply <no-reply@example.local>" {
 		t.Fatalf("unexpected public universes override: %+v", cfg)
 	}
 	if cfg.MasterDBEnabled || cfg.MasterDBHost != "db.local:3307" || cfg.MasterDBUser != "ogame" || cfg.MasterDBPassword != "secret" || cfg.MasterDBName != "master_test" {
