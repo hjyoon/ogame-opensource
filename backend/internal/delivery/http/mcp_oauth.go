@@ -24,6 +24,16 @@ func (a app) handleMCPOAuthAuthorizationServerMetadata(w http.ResponseWriter, r 
 	_ = json.NewEncoder(w).Encode(a.deps.MCPOAuth.OAuthAuthorizationServerMetadata(r.Context(), requestIssuer(r)))
 }
 
+func (a app) handleMCPOAuthProtectedResourceMetadata(w http.ResponseWriter, r *http.Request) {
+	if a.deps.MCPOAuth == nil {
+		http.Error(w, "mcp protected resource metadata unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	issuer := requestIssuer(r)
+	_ = json.NewEncoder(w).Encode(a.deps.MCPOAuth.OAuthProtectedResourceMetadata(r.Context(), issuer+"/mcp", issuer))
+}
+
 func (a app) handleMCPOAuthJWKS(w http.ResponseWriter, r *http.Request) {
 	if a.deps.MCPOAuth == nil {
 		http.Error(w, "mcp oidc unavailable", http.StatusServiceUnavailable)
@@ -71,6 +81,7 @@ func (a app) handleMCPOAuthToken(w http.ResponseWriter, r *http.Request) {
 		GrantType:    r.Form.Get("grant_type"),
 		Code:         r.Form.Get("code"),
 		RedirectURI:  r.Form.Get("redirect_uri"),
+		Resource:     r.Form.Get("resource"),
 		ClientID:     r.Form.Get("client_id"),
 		CodeVerifier: r.Form.Get("code_verifier"),
 		Issuer:       requestIssuer(r),
@@ -129,11 +140,13 @@ func oauthAuthorizeCommand(r *http.Request) appmcp.OAuthAuthorizeCommand {
 		ResponseType:           query.Get("response_type"),
 		ClientID:               query.Get("client_id"),
 		RedirectURI:            query.Get("redirect_uri"),
+		Resource:               query.Get("resource"),
 		Scope:                  query.Get("scope"),
 		State:                  query.Get("state"),
 		CodeChallenge:          query.Get("code_challenge"),
 		CodeChallengeMethod:    query.Get("code_challenge_method"),
 		ConsentApproved:        query.Get("consent") == "approve",
+		Issuer:                 requestIssuer(r),
 	}
 }
 
@@ -146,7 +159,7 @@ func writeOAuthConsent(w http.ResponseWriter, r *http.Request, result appmcp.OAu
 	_, _ = w.Write([]byte("<p>Client <strong>" + html.EscapeString(result.ClientID) + "</strong> requests access to this game account.</p>"))
 	_, _ = w.Write([]byte("<p>Scopes: " + html.EscapeString(strings.Join(result.Scopes, " ")) + "</p>"))
 	_, _ = w.Write([]byte("<form method=\"get\" action=\"/oauth/authorize\">"))
-	for _, key := range []string{"response_type", "client_id", "redirect_uri", "scope", "state", "code_challenge", "code_challenge_method", "session"} {
+	for _, key := range []string{"response_type", "client_id", "redirect_uri", "resource", "scope", "state", "code_challenge", "code_challenge_method", "session"} {
 		if value := query.Get(key); value != "" {
 			_, _ = w.Write([]byte("<input type=\"hidden\" name=\"" + html.EscapeString(key) + "\" value=\"" + html.EscapeString(value) + "\">"))
 		}

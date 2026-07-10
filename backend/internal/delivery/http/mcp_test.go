@@ -238,7 +238,7 @@ func TestMCPAccessErrorsUseHTTPAuthStatus(t *testing.T) {
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("unexpected status=%d body=%q", rec.Code, rec.Body.String())
 			}
-			if tt.wantHeader && rec.Header().Get("WWW-Authenticate") != `Bearer realm="ogame-mcp"` {
+			if tt.wantHeader && rec.Header().Get("WWW-Authenticate") != `Bearer realm="ogame-mcp", resource_metadata="http://game.local/.well-known/oauth-protected-resource"` {
 				t.Fatalf("missing WWW-Authenticate header: %v", rec.Header())
 			}
 			var body map[string]any

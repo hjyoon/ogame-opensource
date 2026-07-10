@@ -49,6 +49,13 @@ type OAuthAuthorizationServerMetadata struct {
 	ScopesSupported                   []string `json:"scopes_supported"`
 }
 
+type OAuthProtectedResourceMetadata struct {
+	Resource             string   `json:"resource"`
+	AuthorizationServers []string `json:"authorization_servers"`
+	ScopesSupported      []string `json:"scopes_supported,omitempty"`
+	BearerMethods        []string `json:"bearer_methods_supported,omitempty"`
+}
+
 type JSONWebKey struct {
 	KeyType string `json:"kty"`
 	Use     string `json:"use,omitempty"`

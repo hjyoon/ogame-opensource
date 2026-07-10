@@ -59,6 +59,10 @@ func TestServiceBuildsOAuthAuthorizationServerMetadata(t *testing.T) {
 	if jwks := service.OAuthJWKS(context.Background()); len(jwks.Keys) != 0 {
 		t.Fatalf("expected empty JWKS without signer, got %+v", jwks)
 	}
+	resourceMetadata := service.OAuthProtectedResourceMetadata(context.Background(), "https://game.example/mcp", "https://game.example/")
+	if resourceMetadata.Resource != "https://game.example/mcp" || strings.Join(resourceMetadata.AuthorizationServers, ",") != "https://game.example" || !strings.Contains(strings.Join(resourceMetadata.BearerMethods, ","), "header") {
+		t.Fatalf("unexpected protected resource metadata: %+v", resourceMetadata)
+	}
 
 	signer := &fakeOIDCSigner{token: "id.token.signature"}
 	service = service.WithOIDCSigner(signer)
@@ -140,10 +144,12 @@ func TestServiceOAuthAuthorizeConsentAndTokenExchange(t *testing.T) {
 		ResponseType:           "code",
 		ClientID:               "desktop-client",
 		RedirectURI:            "http://127.0.0.1:9911/callback",
+		Resource:               "https://game.example/mcp",
 		Scope:                  "openid mcp:read mcp:fleet",
 		State:                  "state-1",
 		CodeChallenge:          challenge,
 		CodeChallengeMethod:    "S256",
+		Issuer:                 "https://game.example",
 	}
 
 	consent, err := service.AuthorizeOAuth(context.Background(), command)
@@ -170,6 +176,7 @@ func TestServiceOAuthAuthorizeConsentAndTokenExchange(t *testing.T) {
 		GrantType:    "authorization_code",
 		Code:         "ogmcp_code_authorized",
 		RedirectURI:  "http://127.0.0.1:9911/callback",
+		Resource:     "https://game.example/mcp",
 		ClientID:     "desktop-client",
 		CodeVerifier: verifier,
 		Issuer:       "https://game.example",
@@ -219,6 +226,21 @@ func TestServiceOAuthRejectsInvalidRequestsAndGrants(t *testing.T) {
 	})
 	if !errors.Is(err, ErrInvalidOAuthRequest) {
 		t.Fatalf("expected invalid insecure redirect request, got %v", err)
+	}
+
+	_, err = service.AuthorizeOAuth(context.Background(), OAuthAuthorizeCommand{
+		TokenManagementCommand: TokenManagementCommand{PublicSession: "pub"},
+		ResponseType:           "code",
+		ClientID:               "desktop-client",
+		RedirectURI:            "http://127.0.0.1:9911/callback",
+		Resource:               "https://other.example/mcp",
+		CodeChallenge:          testPKCEChallenge(strings.Repeat("a", 43)),
+		CodeChallengeMethod:    "S256",
+		ConsentApproved:        true,
+		Issuer:                 "https://game.example",
+	})
+	if !errors.Is(err, ErrInvalidOAuthRequest) {
+		t.Fatalf("expected invalid OAuth resource request, got %v", err)
 	}
 
 	_, err = service.ExchangeOAuthCode(context.Background(), OAuthTokenCommand{
@@ -304,6 +326,7 @@ func TestServiceOAuthTokenExchangeCoversValidationAndFailureBranches(t *testing.
 		{name: "grant", command: OAuthTokenCommand{GrantType: "client_credentials"}},
 		{name: "code", command: OAuthTokenCommand{GrantType: "authorization_code"}},
 		{name: "redirect", command: OAuthTokenCommand{GrantType: "authorization_code", Code: "code", RedirectURI: "ftp://127.0.0.1/callback"}},
+		{name: "resource", command: OAuthTokenCommand{GrantType: "authorization_code", Code: "code", RedirectURI: "http://127.0.0.1/callback", Resource: "https://other.example/mcp", Issuer: "https://game.example"}},
 		{name: "client", command: OAuthTokenCommand{GrantType: "authorization_code", Code: "code", RedirectURI: "http://127.0.0.1/callback", ClientID: "bad client"}},
 		{name: "verifier", command: OAuthTokenCommand{GrantType: "authorization_code", Code: "code", RedirectURI: "http://127.0.0.1/callback", ClientID: "desktop"}},
 	} {

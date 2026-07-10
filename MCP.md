@@ -37,6 +37,7 @@ Implemented:
     revoke.
 - OAuth 2.1 public-client base:
   - `/.well-known/oauth-authorization-server`
+  - `/.well-known/oauth-protected-resource` and 401 discovery challenge
   - `/oauth/authorize` consent page and code redirect
   - `/oauth/token` code + PKCE S256; `id_token` for `openid`
   - `/oauth/revoke` access-token revocation
@@ -61,11 +62,7 @@ Implemented:
 
 ## Static Token Format
 
-`OGAME_MCP_STATIC_TOKENS` accepts semicolon-separated records:
-
-```text
-token:player_id:scope1,scope2;another-token:7:mcp:read
-```
+`OGAME_MCP_STATIC_TOKENS`: `token:player_id:scope1,scope2;next:7:mcp:read`.
 
 Current scopes:
 
@@ -109,6 +106,6 @@ dry-run plus explicit confirmation.
 
 ## General User Policy
 
-General users may receive read-only tools first. Fleet launch, build, research,
-message send, admin, bot, debug, and DB actions stay blocked until scoped
-authorization, rate limits, audit logs, and confirmation flow are in place.
+General users may receive read-only tools first. Fleet/build/research/message,
+admin, bot, debug, and DB actions stay blocked until scoped authorization,
+rate limits, audit logs, and confirmation flow are in place.

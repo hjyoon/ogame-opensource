@@ -104,7 +104,7 @@ func (a app) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 			AccessToken: accessToken,
 		})
 		if err != nil {
-			if writeMCPAccessError(w, request.ID, err) {
+			if writeMCPAccessError(w, request.ID, err, mcpProtectedResourceMetadataURL(r)) {
 				return
 			}
 			writeJSONRPCError(w, request.ID, http.StatusInternalServerError, -32603, "Internal error")
@@ -133,7 +133,7 @@ func (a app) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err != nil {
-			if writeMCPAccessError(w, request.ID, err) {
+			if writeMCPAccessError(w, request.ID, err, mcpProtectedResourceMetadataURL(r)) {
 				return
 			}
 			writeJSONRPCError(w, request.ID, http.StatusInternalServerError, -32603, "Internal error")
@@ -145,9 +145,9 @@ func (a app) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func writeMCPAccessError(w http.ResponseWriter, id json.RawMessage, err error) bool {
+func writeMCPAccessError(w http.ResponseWriter, id json.RawMessage, err error, metadataURL string) bool {
 	if errors.Is(err, domainmcp.ErrUnauthorized) {
-		w.Header().Set("WWW-Authenticate", `Bearer realm="ogame-mcp"`)
+		w.Header().Set("WWW-Authenticate", `Bearer realm="ogame-mcp", resource_metadata="`+metadataURL+`"`)
 		writeJSONRPCError(w, id, http.StatusUnauthorized, -32001, "Unauthorized")
 		return true
 	}
@@ -156,6 +156,10 @@ func writeMCPAccessError(w http.ResponseWriter, id json.RawMessage, err error) b
 		return true
 	}
 	return false
+}
+
+func mcpProtectedResourceMetadataURL(r *http.Request) string {
+	return requestIssuer(r) + "/.well-known/oauth-protected-resource"
 }
 
 func decodeMCPParams[T any](w http.ResponseWriter, request jsonRPCRequest) (T, bool) {

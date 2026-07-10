@@ -160,10 +160,11 @@ try {
   const mcpHealthTool = await mcpJSONRPC("tools/call", { name: "get_server_health", arguments: {} }, { id: 6 });
   const mcpUnauthorizedAccess = await mcpJSONRPC("tools/call", { name: "get_mcp_access", arguments: {} }, { id: 7 });
   const oauthMetadata = await request("/.well-known/oauth-authorization-server");
+  const protectedResourceMetadata = await request("/.well-known/oauth-protected-resource");
   const oauthJWKS = await request("/.well-known/jwks.json");
   const oauthTokenUnavailable = await request("/oauth/token", { method: "POST" });
   const oauthRevokeUnavailable = await request("/oauth/revoke", { method: "POST" });
-  const oauthExternalRedirectReject = await request(`/oauth/authorize?response_type=code&client_id=external&redirect_uri=${encodeURIComponent("https://client.example/callback")}&scope=mcp:read&code_challenge=${"a".repeat(43)}&code_challenge_method=S256`);
+  const oauthExternalRedirectReject = await request(`/oauth/authorize?response_type=code&client_id=external&redirect_uri=${encodeURIComponent("https://client.example/callback")}&resource=${encodeURIComponent(`${baseUrl}/mcp`)}&scope=mcp:read&code_challenge=${"a".repeat(43)}&code_challenge_method=S256`);
   const mcpParseErrorBody = parseJSON(mcpParseError);
   const mcpInitializeBody = parseJSON(mcpInitialize);
   const mcpPingBody = parseJSON(mcpPing);
@@ -171,6 +172,7 @@ try {
   const mcpHealthToolBody = parseJSON(mcpHealthTool);
   const mcpUnauthorizedAccessBody = parseJSON(mcpUnauthorizedAccess);
   const oauthMetadataBody = parseJSON(oauthMetadata);
+  const protectedResourceMetadataBody = parseJSON(protectedResourceMetadata);
   const oauthJWKSBody = parseJSON(oauthJWKS);
   const oauthTokenUnavailableBody = parseJSON(oauthTokenUnavailable);
   const oauthRevokeUnavailableBody = parseJSON(oauthRevokeUnavailable);
@@ -192,7 +194,9 @@ try {
       check(mcpHealthTool.status === 200 && mcpHealthToolBody.result?.structuredContent?.status === "ok", "public get_server_health tool returns structured status", mcpHealthToolBody.result ?? {}),
       check(mcpUnauthorizedAccess.status === 401 && mcpUnauthorizedAccessBody.error?.code === -32001, "protected tool without token returns Unauthorized", mcpUnauthorizedAccessBody),
       check(hasHeader(mcpUnauthorizedAccess, "www-authenticate", "Bearer"), "Unauthorized MCP response includes Bearer challenge"),
+      check(hasHeader(mcpUnauthorizedAccess, "www-authenticate", `${baseUrl}/.well-known/oauth-protected-resource`), "Unauthorized MCP response advertises protected resource metadata"),
       check(oauthMetadata.status === 200 && oauthMetadataBody.issuer === baseUrl, "OAuth authorization server metadata uses current origin issuer", oauthMetadataBody),
+      check(protectedResourceMetadata.status === 200 && protectedResourceMetadataBody.resource === `${baseUrl}/mcp` && (protectedResourceMetadataBody.authorization_servers ?? []).includes(baseUrl), "Protected resource metadata advertises MCP resource and issuer", protectedResourceMetadataBody),
       check(oauthMetadataBody.authorization_endpoint === `${baseUrl}/oauth/authorize`, "OAuth metadata exposes authorize endpoint", oauthMetadataBody),
       check(oauthMetadataBody.revocation_endpoint === `${baseUrl}/oauth/revoke`, "OAuth metadata exposes revocation endpoint", oauthMetadataBody),
       check((oauthMetadataBody.code_challenge_methods_supported ?? []).includes("S256"), "OAuth metadata requires PKCE S256 support", oauthMetadataBody),
@@ -213,6 +217,7 @@ try {
     response_type: "code",
     client_id: oauthClientID,
     redirect_uri: oauthRedirectURI,
+    resource: `${baseUrl}/mcp`,
     scope: "openid profile mcp:read mcp:messages mcp:fleet",
     state: "go-mcp-smoke-state",
     code_challenge: pkceChallenge(oauthVerifier),
@@ -235,6 +240,7 @@ try {
       grant_type: "authorization_code",
       code: oauthCode,
       redirect_uri: oauthRedirectURI,
+      resource: `${baseUrl}/mcp`,
       client_id: oauthClientID,
       code_verifier: oauthVerifier
     }).toString()

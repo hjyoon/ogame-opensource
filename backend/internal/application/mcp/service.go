@@ -118,11 +118,13 @@ type OAuthAuthorizeCommand struct {
 	ResponseType        string
 	ClientID            string
 	RedirectURI         string
+	Resource            string
 	Scope               string
 	State               string
 	CodeChallenge       string
 	CodeChallengeMethod string
 	ConsentApproved     bool
+	Issuer              string
 }
 
 type OAuthAuthorizeResult struct {
@@ -140,6 +142,7 @@ type OAuthTokenCommand struct {
 	GrantType    string
 	Code         string
 	RedirectURI  string
+	Resource     string
 	ClientID     string
 	CodeVerifier string
 	Issuer       string
@@ -293,6 +296,20 @@ func (s Service) OAuthAuthorizationServerMetadata(ctx context.Context, issuer st
 	return metadata
 }
 
+func (s Service) OAuthProtectedResourceMetadata(ctx context.Context, resource string, issuer string) domainmcp.OAuthProtectedResourceMetadata {
+	_ = ctx
+	return domainmcp.OAuthProtectedResourceMetadata{
+		Resource:             strings.TrimRight(strings.TrimSpace(resource), "/"),
+		AuthorizationServers: []string{strings.TrimRight(strings.TrimSpace(issuer), "/")},
+		ScopesSupported: []string{
+			domainmcp.ScopeRead,
+			domainmcp.ScopeMessages,
+			domainmcp.ScopeFleet,
+		},
+		BearerMethods: []string{"header"},
+	}
+}
+
 func (s Service) OAuthJWKS(ctx context.Context) domainmcp.JSONWebKeySet {
 	if s.oidcSigner == nil {
 		return domainmcp.JSONWebKeySet{}
@@ -371,6 +388,9 @@ func (s Service) ExchangeOAuthCode(ctx context.Context, command OAuthTokenComman
 	redirectURI := strings.TrimSpace(command.RedirectURI)
 	if !validOAuthRedirectURI(redirectURI, s.oauthRedirects) {
 		return OAuthTokenResult{}, fmt.Errorf("%w: redirect_uri is invalid", ErrInvalidOAuthRequest)
+	}
+	if !validOAuthResource(command.Resource, command.Issuer) {
+		return OAuthTokenResult{}, fmt.Errorf("%w: resource is invalid", ErrInvalidOAuthRequest)
 	}
 	clientID := strings.TrimSpace(command.ClientID)
 	if !validOAuthClientID(clientID) {
@@ -820,6 +840,7 @@ func userScopeAllowed(scope string) bool {
 type normalizedOAuthAuthorizeRequest struct {
 	ClientID            string
 	RedirectURI         string
+	Resource            string
 	State               string
 	Scopes              []string
 	CodeChallenge       string
@@ -838,6 +859,9 @@ func normalizeOAuthAuthorizeRequest(command OAuthAuthorizeCommand, allowedRedire
 	if !validOAuthRedirectURI(redirectURI, allowedRedirectURIs) {
 		return normalizedOAuthAuthorizeRequest{}, fmt.Errorf("%w: redirect_uri is invalid", ErrInvalidOAuthRequest)
 	}
+	if !validOAuthResource(command.Resource, command.Issuer) {
+		return normalizedOAuthAuthorizeRequest{}, fmt.Errorf("%w: resource is invalid", ErrInvalidOAuthRequest)
+	}
 	method := strings.TrimSpace(command.CodeChallengeMethod)
 	if method != "S256" {
 		return normalizedOAuthAuthorizeRequest{}, fmt.Errorf("%w: code_challenge_method must be S256", ErrInvalidOAuthRequest)
@@ -853,6 +877,7 @@ func normalizeOAuthAuthorizeRequest(command OAuthAuthorizeCommand, allowedRedire
 	return normalizedOAuthAuthorizeRequest{
 		ClientID:            clientID,
 		RedirectURI:         redirectURI,
+		Resource:            strings.TrimRight(strings.TrimSpace(command.Resource), "/"),
 		State:               strings.TrimSpace(command.State),
 		Scopes:              scopes,
 		CodeChallenge:       challenge,
@@ -915,6 +940,36 @@ func validOAuthRedirectURI(raw string, allowedRedirectURIs []string) bool {
 	default:
 		return false
 	}
+}
+
+func validOAuthResource(raw string, issuer string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return true
+	}
+	resource, ok := normalizedOAuthResource(raw)
+	if !ok {
+		return false
+	}
+	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
+	for _, candidate := range []string{issuer, issuer + "/mcp"} {
+		normalized, ok := normalizedOAuthResource(candidate)
+		if ok && resource == normalized {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizedOAuthResource(raw string) (string, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || !parsed.IsAbs() || parsed.Host == "" || parsed.Fragment != "" {
+		return "", false
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	return parsed.String(), true
 }
 
 func normalizeAllowedOAuthRedirectURIs(raw []string) []string {

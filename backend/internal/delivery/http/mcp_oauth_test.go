@@ -35,6 +35,20 @@ func TestMCPOAuthAuthorizationServerMetadata(t *testing.T) {
 		t.Fatalf("unexpected OAuth 2.1 metadata: %+v", body)
 	}
 
+	req = httptest.NewRequest(http.MethodGet, "http://game.local/.well-known/oauth-protected-resource", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected protected resource metadata success, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+	var protected domainmcp.OAuthProtectedResourceMetadata
+	if err := json.Unmarshal(rec.Body.Bytes(), &protected); err != nil {
+		t.Fatalf("decode protected resource metadata: %v", err)
+	}
+	if protected.Resource != "http://game.local/mcp" || strings.Join(protected.AuthorizationServers, ",") != "http://game.local" {
+		t.Fatalf("unexpected protected resource metadata: %+v", protected)
+	}
+
 	server = New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{jwksResult: domainmcp.JSONWebKeySet{Keys: []domainmcp.JSONWebKey{{KeyType: "OKP", KeyID: "kid"}}}}})
 	req = httptest.NewRequest(http.MethodGet, "http://game.local/.well-known/jwks.json", nil)
 	rec = httptest.NewRecorder()
@@ -69,11 +83,11 @@ func TestMCPOAuthAuthorizeConsentRedirectAndToken(t *testing.T) {
 	}
 	server := New(Dependencies{MCPOAuth: oauth})
 
-	req := httptest.NewRequest(http.MethodGet, "http://game.local/oauth/authorize?response_type=code&client_id=desktop&redirect_uri=http://127.0.0.1:9000/callback&scope=mcp:read+mcp:fleet&state=s1&code_challenge="+strings.Repeat("a", 43)+"&code_challenge_method=S256&session=pub", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://game.local/oauth/authorize?response_type=code&client_id=desktop&redirect_uri=http://127.0.0.1:9000/callback&resource=http://game.local/mcp&scope=mcp:read+mcp:fleet&state=s1&code_challenge="+strings.Repeat("a", 43)+"&code_challenge_method=S256&session=pub", nil)
 	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Authorize MCP access") || oauth.authorizeCommand.PublicSession != "pub" || oauth.authorizeCommand.ClientID != "desktop" || oauth.authorizeCommand.ConsentApproved {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Authorize MCP access") || !strings.Contains(rec.Body.String(), `name="resource"`) || oauth.authorizeCommand.PublicSession != "pub" || oauth.authorizeCommand.ClientID != "desktop" || oauth.authorizeCommand.Resource != "http://game.local/mcp" || oauth.authorizeCommand.ConsentApproved {
 		t.Fatalf("unexpected consent response status=%d body=%q command=%+v", rec.Code, rec.Body.String(), oauth.authorizeCommand)
 	}
 
@@ -85,11 +99,11 @@ func TestMCPOAuthAuthorizeConsentRedirectAndToken(t *testing.T) {
 		t.Fatalf("unexpected authorize redirect status=%d location=%q command=%+v", rec.Code, rec.Header().Get("Location"), oauth.authorizeCommand)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "http://game.local/oauth/token", strings.NewReader("grant_type=authorization_code&code=abc&redirect_uri=http%3A%2F%2F127.0.0.1%3A9000%2Fcallback&client_id=desktop&code_verifier="+strings.Repeat("b", 43)))
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/oauth/token", strings.NewReader("grant_type=authorization_code&code=abc&redirect_uri=http%3A%2F%2F127.0.0.1%3A9000%2Fcallback&resource=http%3A%2F%2Fgame.local%2Fmcp&client_id=desktop&code_verifier="+strings.Repeat("b", 43)))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || oauth.tokenCommand.Code != "abc" || oauth.tokenCommand.ClientID != "desktop" {
+	if rec.Code != http.StatusOK || oauth.tokenCommand.Code != "abc" || oauth.tokenCommand.ClientID != "desktop" || oauth.tokenCommand.Resource != "http://game.local/mcp" {
 		t.Fatalf("unexpected token response status=%d body=%q command=%+v", rec.Code, rec.Body.String(), oauth.tokenCommand)
 	}
 	var tokenBody map[string]any
@@ -224,12 +238,26 @@ func TestMCPOAuthMetadataUnavailableAndMethodGuards(t *testing.T) {
 		t.Fatalf("expected JWKS unavailable, got status=%d body=%q", rec.Code, rec.Body.String())
 	}
 
+	req = httptest.NewRequest(http.MethodGet, "http://game.local/.well-known/oauth-protected-resource", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected protected resource metadata unavailable, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
 	server = New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{}})
 	req = httptest.NewRequest(http.MethodPost, "http://game.local/.well-known/oauth-authorization-server", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
 		t.Fatalf("expected metadata method guard, got status=%d allow=%q", rec.Code, rec.Header().Get("Allow"))
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/.well-known/oauth-protected-resource", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("expected protected metadata method guard, got status=%d allow=%q", rec.Code, rec.Header().Get("Allow"))
 	}
 }
 
@@ -249,6 +277,10 @@ type fakeMCPOAuthUseCase struct {
 
 func (f *fakeMCPOAuthUseCase) OAuthAuthorizationServerMetadata(_ context.Context, issuer string) domainmcp.OAuthAuthorizationServerMetadata {
 	return (appmcp.Service{}).OAuthAuthorizationServerMetadata(context.Background(), issuer)
+}
+
+func (f *fakeMCPOAuthUseCase) OAuthProtectedResourceMetadata(_ context.Context, resource string, issuer string) domainmcp.OAuthProtectedResourceMetadata {
+	return (appmcp.Service{}).OAuthProtectedResourceMetadata(context.Background(), resource, issuer)
 }
 
 func (f *fakeMCPOAuthUseCase) OAuthJWKS(context.Context) domainmcp.JSONWebKeySet {
