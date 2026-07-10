@@ -15,6 +15,15 @@ type oauthErrorResponse struct {
 	ErrorDescription string `json:"error_description"`
 }
 
+type oauthClientRegistrationRequest struct {
+	RedirectURIs            []string `json:"redirect_uris"`
+	ClientName              string   `json:"client_name"`
+	GrantTypes              []string `json:"grant_types"`
+	ResponseTypes           []string `json:"response_types"`
+	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
+	Scope                   string   `json:"scope"`
+}
+
 func (a app) handleMCPOAuthAuthorizationServerMetadata(w http.ResponseWriter, r *http.Request) {
 	if a.deps.MCPOAuth == nil {
 		http.Error(w, "mcp oauth unavailable", http.StatusServiceUnavailable)
@@ -32,6 +41,43 @@ func (a app) handleMCPOAuthProtectedResourceMetadata(w http.ResponseWriter, r *h
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	issuer := requestIssuer(r)
 	_ = json.NewEncoder(w).Encode(a.deps.MCPOAuth.OAuthProtectedResourceMetadata(r.Context(), issuer+"/mcp", issuer))
+}
+
+func (a app) handleMCPOAuthRegister(w http.ResponseWriter, r *http.Request) {
+	if a.deps.MCPOAuth == nil {
+		writeOAuthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "OAuth client registration is unavailable.")
+		return
+	}
+	var body oauthClientRegistrationRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "OAuth client registration request is invalid.")
+		return
+	}
+	result, err := a.deps.MCPOAuth.RegisterOAuthClient(r.Context(), appmcp.OAuthClientRegistrationCommand{
+		RedirectURIs:            body.RedirectURIs,
+		ClientName:              body.ClientName,
+		GrantTypes:              body.GrantTypes,
+		ResponseTypes:           body.ResponseTypes,
+		TokenEndpointAuthMethod: body.TokenEndpointAuthMethod,
+		Scope:                   body.Scope,
+	})
+	if err != nil {
+		writeOAuthApplicationError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"client_id":                  result.ClientID,
+		"client_id_issued_at":        result.ClientIDIssuedAt,
+		"client_name":                result.ClientName,
+		"redirect_uris":              result.RedirectURIs,
+		"grant_types":                result.GrantTypes,
+		"response_types":             result.ResponseTypes,
+		"token_endpoint_auth_method": result.TokenEndpointAuthMethod,
+		"scope":                      result.Scope,
+	})
 }
 
 func (a app) handleMCPOAuthJWKS(w http.ResponseWriter, r *http.Request) {

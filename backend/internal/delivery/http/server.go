@@ -33,6 +33,7 @@ type MCPOAuthUseCase interface {
 	OAuthAuthorizationServerMetadata(context.Context, string) domainmcp.OAuthAuthorizationServerMetadata
 	OAuthProtectedResourceMetadata(context.Context, string, string) domainmcp.OAuthProtectedResourceMetadata
 	OAuthJWKS(context.Context) domainmcp.JSONWebKeySet
+	RegisterOAuthClient(context.Context, appmcp.OAuthClientRegistrationCommand) (appmcp.OAuthClientRegistrationResult, error)
 	AuthorizeOAuth(context.Context, appmcp.OAuthAuthorizeCommand) (appmcp.OAuthAuthorizeResult, error)
 	ExchangeOAuthCode(context.Context, appmcp.OAuthTokenCommand) (appmcp.OAuthTokenResult, error)
 	RevokeOAuthToken(context.Context, appmcp.OAuthRevokeCommand) (appmcp.OAuthRevokeResult, error)
@@ -277,6 +278,7 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("/.well-known/oauth-protected-resource", getOnly(a.handleMCPOAuthProtectedResourceMetadata))
 	mux.HandleFunc("/.well-known/jwks.json", getOnly(a.handleMCPOAuthJWKS))
 	mux.HandleFunc("/oauth/authorize", getOnly(a.handleMCPOAuthAuthorize))
+	mux.HandleFunc("/oauth/register", postOnly(a.handleMCPOAuthRegister))
 	mux.HandleFunc("/oauth/token", postOnly(a.handleMCPOAuthToken))
 	mux.HandleFunc("/oauth/revoke", postOnly(a.handleMCPOAuthRevoke))
 	mux.HandleFunc("/api/game/mcp-tokens", a.handleGameMCPTokens)

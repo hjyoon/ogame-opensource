@@ -39,6 +39,7 @@ Implemented:
   - `/.well-known/oauth-authorization-server`
   - `/.well-known/oauth-protected-resource` and 401 discovery challenge
   - `/oauth/authorize` consent page and code redirect
+  - `/oauth/register` dynamic client registration
   - `/oauth/token` code + PKCE S256; `id_token` for `openid`
   - `/oauth/revoke` access-token revocation
   - `/.well-known/jwks.json` Ed25519 JWKS
@@ -64,13 +65,7 @@ Implemented:
 
 `OGAME_MCP_STATIC_TOKENS`: `token:player_id:scope1,scope2;next:7:mcp:read`.
 
-Current scopes:
-
-- `mcp:read`
-- `mcp:write`
-- `mcp:fleet`
-- `mcp:messages`
-- `mcp:admin`
+Scopes: `mcp:read`, `mcp:write`, `mcp:fleet`, `mcp:messages`, `mcp:admin`.
 
 Static tokens are bootstrap-only. Prefer DB-backed user tokens because they can
 be revoked without restart.
@@ -102,7 +97,7 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Add dynamic client registration review.
+1. Enforce OAuth `resource` parameter.
 
 ## General User Policy
 

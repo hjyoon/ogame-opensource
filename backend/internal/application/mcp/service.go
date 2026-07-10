@@ -138,6 +138,26 @@ type OAuthAuthorizeResult struct {
 	Code            string
 }
 
+type OAuthClientRegistrationCommand struct {
+	RedirectURIs            []string
+	ClientName              string
+	GrantTypes              []string
+	ResponseTypes           []string
+	TokenEndpointAuthMethod string
+	Scope                   string
+}
+
+type OAuthClientRegistrationResult struct {
+	ClientID                string
+	ClientIDIssuedAt        int64
+	ClientName              string
+	RedirectURIs            []string
+	GrantTypes              []string
+	ResponseTypes           []string
+	TokenEndpointAuthMethod string
+	Scope                   string
+}
+
 type OAuthTokenCommand struct {
 	GrantType    string
 	Code         string
@@ -276,6 +296,7 @@ func (s Service) OAuthAuthorizationServerMetadata(ctx context.Context, issuer st
 		AuthorizationEndpoint:             issuer + "/oauth/authorize",
 		TokenEndpoint:                     issuer + "/oauth/token",
 		RevocationEndpoint:                issuer + "/oauth/revoke",
+		RegistrationEndpoint:              issuer + "/oauth/register",
 		ResponseTypesSupported:            []string{"code"},
 		GrantTypesSupported:               []string{"authorization_code"},
 		CodeChallengeMethodsSupported:     []string{"S256"},
@@ -308,6 +329,56 @@ func (s Service) OAuthProtectedResourceMetadata(ctx context.Context, resource st
 		},
 		BearerMethods: []string{"header"},
 	}
+}
+
+func (s Service) RegisterOAuthClient(ctx context.Context, command OAuthClientRegistrationCommand) (OAuthClientRegistrationResult, error) {
+	_ = ctx
+	redirectURIs, err := normalizeOAuthClientRedirectURIs(command.RedirectURIs, s.oauthRedirects)
+	if err != nil {
+		return OAuthClientRegistrationResult{}, err
+	}
+	grantTypes, err := normalizeOAuthClientValues(command.GrantTypes, []string{"authorization_code"}, "grant_types")
+	if err != nil {
+		return OAuthClientRegistrationResult{}, err
+	}
+	responseTypes, err := normalizeOAuthClientValues(command.ResponseTypes, []string{"code"}, "response_types")
+	if err != nil {
+		return OAuthClientRegistrationResult{}, err
+	}
+	authMethod := strings.TrimSpace(command.TokenEndpointAuthMethod)
+	if authMethod == "" {
+		authMethod = "none"
+	}
+	if authMethod != "none" {
+		return OAuthClientRegistrationResult{}, fmt.Errorf("%w: token_endpoint_auth_method must be none", ErrInvalidOAuthRequest)
+	}
+	scopes, err := normalizeOAuthScopes(command.Scope)
+	if err != nil {
+		return OAuthClientRegistrationResult{}, err
+	}
+	generator := s.tokenGenerator
+	if generator == nil {
+		generator = SecureTokenGenerator{}
+	}
+	secret, err := generator.NewMCPToken()
+	if err != nil {
+		return OAuthClientRegistrationResult{}, err
+	}
+	clientID := "ogmcp_client_" + strings.TrimPrefix(secret, "ogmcp_")
+	now := time.Now
+	if s.now != nil {
+		now = s.now
+	}
+	return OAuthClientRegistrationResult{
+		ClientID:                clientID,
+		ClientIDIssuedAt:        now().Unix(),
+		ClientName:              truncateOAuthTokenName(strings.TrimSpace(command.ClientName), 64),
+		RedirectURIs:            redirectURIs,
+		GrantTypes:              grantTypes,
+		ResponseTypes:           responseTypes,
+		TokenEndpointAuthMethod: authMethod,
+		Scope:                   strings.Join(scopes, " "),
+	}, nil
 }
 
 func (s Service) OAuthJWKS(ctx context.Context) domainmcp.JSONWebKeySet {
@@ -907,6 +978,55 @@ func normalizeOAuthScopes(raw string) ([]string, error) {
 		scopes = append(scopes, domainmcp.ScopeRead)
 	}
 	return scopes, nil
+}
+
+func normalizeOAuthClientRedirectURIs(raw []string, allowedRedirectURIs []string) ([]string, error) {
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("%w: redirect_uris are required", ErrInvalidOAuthRequest)
+	}
+	redirects := make([]string, 0, len(raw))
+	seen := map[string]bool{}
+	for _, value := range raw {
+		parsed := strings.TrimSpace(value)
+		if !validOAuthRedirectURI(parsed, allowedRedirectURIs) {
+			return nil, fmt.Errorf("%w: redirect_uri is invalid", ErrInvalidOAuthRequest)
+		}
+		normalized, ok := normalizedOAuthResource(parsed)
+		if !ok {
+			return nil, fmt.Errorf("%w: redirect_uri is invalid", ErrInvalidOAuthRequest)
+		}
+		if !seen[normalized] {
+			seen[normalized] = true
+			redirects = append(redirects, normalized)
+		}
+	}
+	return redirects, nil
+}
+
+func normalizeOAuthClientValues(raw []string, allowed []string, field string) ([]string, error) {
+	if len(raw) == 0 {
+		return append([]string(nil), allowed...), nil
+	}
+	allowedSet := map[string]bool{}
+	for _, value := range allowed {
+		allowedSet[value] = true
+	}
+	values := make([]string, 0, len(raw))
+	seen := map[string]bool{}
+	for _, value := range raw {
+		value = strings.TrimSpace(value)
+		if !allowedSet[value] {
+			return nil, fmt.Errorf("%w: %s is unsupported", ErrInvalidOAuthRequest, field)
+		}
+		if !seen[value] {
+			seen[value] = true
+			values = append(values, value)
+		}
+	}
+	if len(values) == 0 {
+		return nil, fmt.Errorf("%w: %s is required", ErrInvalidOAuthRequest, field)
+	}
+	return values, nil
 }
 
 func oauthScopeAllowed(scope string) bool {

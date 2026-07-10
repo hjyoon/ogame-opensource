@@ -198,6 +198,7 @@ try {
       check(oauthMetadata.status === 200 && oauthMetadataBody.issuer === baseUrl, "OAuth authorization server metadata uses current origin issuer", oauthMetadataBody),
       check(protectedResourceMetadata.status === 200 && protectedResourceMetadataBody.resource === `${baseUrl}/mcp` && (protectedResourceMetadataBody.authorization_servers ?? []).includes(baseUrl), "Protected resource metadata advertises MCP resource and issuer", protectedResourceMetadataBody),
       check(oauthMetadataBody.authorization_endpoint === `${baseUrl}/oauth/authorize`, "OAuth metadata exposes authorize endpoint", oauthMetadataBody),
+      check(oauthMetadataBody.registration_endpoint === `${baseUrl}/oauth/register`, "OAuth metadata exposes dynamic client registration endpoint", oauthMetadataBody),
       check(oauthMetadataBody.revocation_endpoint === `${baseUrl}/oauth/revoke`, "OAuth metadata exposes revocation endpoint", oauthMetadataBody),
       check((oauthMetadataBody.code_challenge_methods_supported ?? []).includes("S256"), "OAuth metadata requires PKCE S256 support", oauthMetadataBody),
       check(oauthMetadataBody.jwks_uri === `${baseUrl}/.well-known/jwks.json` && (oauthMetadataBody.id_token_signing_alg_values_supported ?? []).includes("EdDSA"), "OAuth metadata exposes OIDC JWKS and EdDSA", oauthMetadataBody),
@@ -211,8 +212,18 @@ try {
   const login = await loginGameUser(universe);
   const sessionID = new URLSearchParams(login.search.startsWith("?") ? login.search.slice(1) : login.search).get("session") ?? "";
   const oauthVerifier = pkceVerifier();
-  const oauthClientID = `go-mcp-smoke-${Date.now().toString(36)}`;
   const oauthRedirectURI = `${baseUrl}/oauth/callback`;
+  const clientRegistration = await request("/oauth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      redirect_uris: [oauthRedirectURI],
+      client_name: "Go MCP smoke",
+      scope: "openid profile mcp:read mcp:messages mcp:fleet"
+    })
+  });
+  const clientRegistrationBody = parseJSON(clientRegistration);
+  const oauthClientID = String(clientRegistrationBody.client_id ?? `go-mcp-smoke-${Date.now().toString(36)}`);
   const oauthParams = new URLSearchParams({
     response_type: "code",
     client_id: oauthClientID,
@@ -255,7 +266,9 @@ try {
     headers: { Cookie: login.cookiePair }
   });
   const oauthTokenListBody = parseJSON(oauthTokenList);
-  const oauthTokenRow = (oauthTokenListBody.tokens ?? []).find((token) => String(token.name ?? "") === `OAuth ${oauthClientID}`);
+  const oauthTokenRow = (oauthTokenListBody.tokens ?? []).find((token) =>
+    String(token.name ?? "").startsWith("OAuth ") && (token.scopes ?? []).includes("openid")
+  );
   const oauthRevoke = await request("/oauth/revoke", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -339,6 +352,7 @@ try {
         playerID: login.playerID
       }),
       check(sessionID !== "", "smoke login exposes a public session for OAuth consent", { sessionID }),
+      check(clientRegistration.status === 201 && oauthClientID.startsWith("ogmcp_client_"), "OAuth dynamic client registration returns public client id", clientRegistrationBody),
       check(oauthConsent.status === 200 && oauthConsent.body.includes("Authorize MCP access"), "OAuth authorize shows consent page before approval", { status: oauthConsent.status }),
       check(oauthApprove.status === 302 && oauthApproveLocation.startsWith(oauthRedirectURI) && oauthCallback.searchParams.get("state") === "go-mcp-smoke-state" && oauthCode !== "", "OAuth authorize approval redirects with code and state", { status: oauthApprove.status, location: oauthApproveLocation }),
       check(oauthToken.status === 200 && oauthSecret.startsWith("ogmcp_") && oauthTokenBody.token_type === "Bearer", "OAuth token exchange returns bearer access token", oauthTokenBody),

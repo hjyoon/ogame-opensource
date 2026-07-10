@@ -40,7 +40,7 @@ func TestServiceBuildsOAuthAuthorizationServerMetadata(t *testing.T) {
 	service := NewService(fakeHealthProvider{})
 
 	metadata := service.OAuthAuthorizationServerMetadata(context.Background(), "https://game.example/")
-	if metadata.Issuer != "https://game.example" || metadata.AuthorizationEndpoint != "https://game.example/oauth/authorize" || metadata.TokenEndpoint != "https://game.example/oauth/token" || metadata.RevocationEndpoint != "https://game.example/oauth/revoke" {
+	if metadata.Issuer != "https://game.example" || metadata.AuthorizationEndpoint != "https://game.example/oauth/authorize" || metadata.TokenEndpoint != "https://game.example/oauth/token" || metadata.RevocationEndpoint != "https://game.example/oauth/revoke" || metadata.RegistrationEndpoint != "https://game.example/oauth/register" {
 		t.Fatalf("unexpected metadata endpoints: %+v", metadata)
 	}
 	if strings.Join(metadata.ResponseTypesSupported, ",") != "code" || strings.Join(metadata.GrantTypesSupported, ",") != "authorization_code" {
@@ -73,6 +73,77 @@ func TestServiceBuildsOAuthAuthorizationServerMetadata(t *testing.T) {
 	jwks := service.OAuthJWKS(context.Background())
 	if len(jwks.Keys) != 1 || jwks.Keys[0].KeyID != "kid" {
 		t.Fatalf("unexpected JWKS: %+v", jwks)
+	}
+}
+
+func TestServiceRegistersOAuthClient(t *testing.T) {
+	service := NewServiceWithTokenManagement(
+		fakeHealthProvider{},
+		nil,
+		&fakeTokenRepository{},
+		fakeSessionLookup{},
+		fakeTokenGenerator{secret: "token"},
+		func() time.Time { return time.Unix(1700, 0) },
+	)
+
+	result, err := service.RegisterOAuthClient(context.Background(), OAuthClientRegistrationCommand{
+		RedirectURIs:            []string{" http://127.0.0.1:9911/callback ", "http://127.0.0.1:9911/callback"},
+		ClientName:              "Claude Desktop",
+		GrantTypes:              []string{"authorization_code", "authorization_code"},
+		ResponseTypes:           []string{"code", "code"},
+		TokenEndpointAuthMethod: "none",
+		Scope:                   "openid mcp:read mcp:read",
+	})
+	if err != nil {
+		t.Fatalf("RegisterOAuthClient returned error: %v", err)
+	}
+	if !strings.HasPrefix(result.ClientID, "ogmcp_client_") || result.ClientIDIssuedAt != 1700 || result.ClientName != "Claude Desktop" {
+		t.Fatalf("unexpected client registration result: %+v", result)
+	}
+	if strings.Join(result.RedirectURIs, ",") != "http://127.0.0.1:9911/callback" || strings.Join(result.GrantTypes, ",") != "authorization_code" || result.TokenEndpointAuthMethod != "none" || result.Scope != "openid mcp:read" {
+		t.Fatalf("unexpected normalized client registration result: %+v", result)
+	}
+
+	external, err := service.WithOAuthRedirectURIs([]string{"https://client.example/callback"}).RegisterOAuthClient(context.Background(), OAuthClientRegistrationCommand{
+		RedirectURIs: []string{"https://client.example/callback"},
+		Scope:        "mcp:read",
+	})
+	if err != nil {
+		t.Fatalf("RegisterOAuthClient allow-listed redirect returned error: %v", err)
+	}
+	if strings.Join(external.RedirectURIs, ",") != "https://client.example/callback" {
+		t.Fatalf("unexpected external registration result: %+v", external)
+	}
+
+	result, err = service.RegisterOAuthClient(context.Background(), OAuthClientRegistrationCommand{
+		RedirectURIs: []string{"http://localhost:9911/callback"},
+	})
+	if err != nil {
+		t.Fatalf("RegisterOAuthClient defaults returned error: %v", err)
+	}
+	if strings.Join(result.GrantTypes, ",") != "authorization_code" || strings.Join(result.ResponseTypes, ",") != "code" || result.TokenEndpointAuthMethod != "none" || result.Scope != domainmcp.ScopeRead {
+		t.Fatalf("unexpected default registration result: %+v", result)
+	}
+
+	for _, command := range []OAuthClientRegistrationCommand{
+		{},
+		{RedirectURIs: []string{"https://client.example/callback"}},
+		{RedirectURIs: []string{":"}},
+		{RedirectURIs: []string{"http://127.0.0.1:9911/callback"}, GrantTypes: []string{"client_credentials"}},
+		{RedirectURIs: []string{"http://127.0.0.1:9911/callback"}, GrantTypes: []string{" "}},
+		{RedirectURIs: []string{"http://127.0.0.1:9911/callback"}, ResponseTypes: []string{"token"}},
+		{RedirectURIs: []string{"http://127.0.0.1:9911/callback"}, ResponseTypes: []string{" "}},
+		{RedirectURIs: []string{"http://127.0.0.1:9911/callback"}, TokenEndpointAuthMethod: "client_secret_basic"},
+		{RedirectURIs: []string{"http://127.0.0.1:9911/callback"}, Scope: "mcp:admin"},
+	} {
+		if _, err := service.RegisterOAuthClient(context.Background(), command); !errors.Is(err, ErrInvalidOAuthRequest) {
+			t.Fatalf("expected invalid registration request for %+v, got %v", command, err)
+		}
+	}
+
+	failing := NewServiceWithTokenManagement(fakeHealthProvider{}, nil, &fakeTokenRepository{}, fakeSessionLookup{}, fakeTokenGenerator{err: errors.New("random down")}, time.Now)
+	if _, err := failing.RegisterOAuthClient(context.Background(), OAuthClientRegistrationCommand{RedirectURIs: []string{"http://127.0.0.1:9911/callback"}}); err == nil {
+		t.Fatalf("expected client id generator error")
 	}
 }
 

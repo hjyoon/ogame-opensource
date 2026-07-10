@@ -28,7 +28,7 @@ func TestMCPOAuthAuthorizationServerMetadata(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode metadata: %v", err)
 	}
-	if body.Issuer != "https://game.local" || body.AuthorizationEndpoint != "https://game.local/oauth/authorize" || body.TokenEndpoint != "https://game.local/oauth/token" {
+	if body.Issuer != "https://game.local" || body.AuthorizationEndpoint != "https://game.local/oauth/authorize" || body.TokenEndpoint != "https://game.local/oauth/token" || body.RegistrationEndpoint != "https://game.local/oauth/register" {
 		t.Fatalf("unexpected metadata: %+v", body)
 	}
 	if body.ResponseTypesSupported[0] != "code" || body.CodeChallengeMethodsSupported[0] != "S256" || body.TokenEndpointAuthMethodsSupported[0] != "none" {
@@ -80,12 +80,37 @@ func TestMCPOAuthAuthorizeConsentRedirectAndToken(t *testing.T) {
 			IDToken:     "id.token.signature",
 		},
 		revokeResult: appmcp.OAuthRevokeResult{Revoked: true},
+		registerResult: appmcp.OAuthClientRegistrationResult{
+			ClientID:                "ogmcp_client_test",
+			ClientIDIssuedAt:        1700,
+			ClientName:              "Claude Desktop",
+			RedirectURIs:            []string{"http://127.0.0.1:9000/callback"},
+			GrantTypes:              []string{"authorization_code"},
+			ResponseTypes:           []string{"code"},
+			TokenEndpointAuthMethod: "none",
+			Scope:                   "mcp:read",
+		},
 	}
 	server := New(Dependencies{MCPOAuth: oauth})
 
-	req := httptest.NewRequest(http.MethodGet, "http://game.local/oauth/authorize?response_type=code&client_id=desktop&redirect_uri=http://127.0.0.1:9000/callback&resource=http://game.local/mcp&scope=mcp:read+mcp:fleet&state=s1&code_challenge="+strings.Repeat("a", 43)+"&code_challenge_method=S256&session=pub", nil)
-	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	req := httptest.NewRequest(http.MethodPost, "http://game.local/oauth/register", strings.NewReader(`{"redirect_uris":["http://127.0.0.1:9000/callback"],"client_name":"Claude Desktop","scope":"mcp:read"}`))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated || oauth.registerCommand.ClientName != "Claude Desktop" || oauth.registerCommand.RedirectURIs[0] != "http://127.0.0.1:9000/callback" {
+		t.Fatalf("unexpected register response status=%d body=%q command=%+v", rec.Code, rec.Body.String(), oauth.registerCommand)
+	}
+	var registerBody map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &registerBody); err != nil {
+		t.Fatalf("decode register response: %v", err)
+	}
+	if registerBody["client_id"] != "ogmcp_client_test" || registerBody["token_endpoint_auth_method"] != "none" {
+		t.Fatalf("unexpected register body: %+v", registerBody)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "http://game.local/oauth/authorize?response_type=code&client_id=desktop&redirect_uri=http://127.0.0.1:9000/callback&resource=http://game.local/mcp&scope=mcp:read+mcp:fleet&state=s1&code_challenge="+strings.Repeat("a", 43)+"&code_challenge_method=S256&session=pub", nil)
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Authorize MCP access") || !strings.Contains(rec.Body.String(), `name="resource"`) || oauth.authorizeCommand.PublicSession != "pub" || oauth.authorizeCommand.ClientID != "desktop" || oauth.authorizeCommand.Resource != "http://game.local/mcp" || oauth.authorizeCommand.ConsentApproved {
 		t.Fatalf("unexpected consent response status=%d body=%q command=%+v", rec.Code, rec.Body.String(), oauth.authorizeCommand)
@@ -146,6 +171,13 @@ func TestMCPOAuthErrors(t *testing.T) {
 		t.Fatalf("expected unavailable token, got status=%d body=%q", rec.Code, rec.Body.String())
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/oauth/register", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected unavailable register, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
 	req = httptest.NewRequest(http.MethodPost, "http://game.local/oauth/revoke", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -160,6 +192,14 @@ func TestMCPOAuthErrors(t *testing.T) {
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_request") {
 		t.Fatalf("expected malformed revoke request, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/oauth/register", strings.NewReader(`{`))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_request") {
+		t.Fatalf("expected malformed register request, got status=%d body=%q", rec.Code, rec.Body.String())
 	}
 
 	server = New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{authorizeResult: appmcp.OAuthAuthorizeResult{Authenticated: false}}})
@@ -220,6 +260,15 @@ func TestMCPOAuthErrors(t *testing.T) {
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_request") {
 		t.Fatalf("expected invalid revoke request, got status=%d body=%q", rec.Code, rec.Body.String())
 	}
+
+	server = New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{registerErr: appmcp.ErrInvalidOAuthRequest}})
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/oauth/register", strings.NewReader(`{"redirect_uris":[]}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_request") {
+		t.Fatalf("expected invalid register request, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
 }
 
 func TestMCPOAuthMetadataUnavailableAndMethodGuards(t *testing.T) {
@@ -263,14 +312,17 @@ func TestMCPOAuthMetadataUnavailableAndMethodGuards(t *testing.T) {
 
 type fakeMCPOAuthUseCase struct {
 	authorizeResult appmcp.OAuthAuthorizeResult
+	registerResult  appmcp.OAuthClientRegistrationResult
 	exchangeResult  appmcp.OAuthTokenResult
 	revokeResult    appmcp.OAuthRevokeResult
 	jwksResult      domainmcp.JSONWebKeySet
 	authorizeErr    error
+	registerErr     error
 	exchangeErr     error
 	revokeErr       error
 
 	authorizeCommand appmcp.OAuthAuthorizeCommand
+	registerCommand  appmcp.OAuthClientRegistrationCommand
 	tokenCommand     appmcp.OAuthTokenCommand
 	revokeCommand    appmcp.OAuthRevokeCommand
 }
@@ -285,6 +337,14 @@ func (f *fakeMCPOAuthUseCase) OAuthProtectedResourceMetadata(_ context.Context, 
 
 func (f *fakeMCPOAuthUseCase) OAuthJWKS(context.Context) domainmcp.JSONWebKeySet {
 	return f.jwksResult
+}
+
+func (f *fakeMCPOAuthUseCase) RegisterOAuthClient(_ context.Context, command appmcp.OAuthClientRegistrationCommand) (appmcp.OAuthClientRegistrationResult, error) {
+	f.registerCommand = command
+	if f.registerErr != nil {
+		return appmcp.OAuthClientRegistrationResult{}, f.registerErr
+	}
+	return f.registerResult, nil
 }
 
 func (f *fakeMCPOAuthUseCase) AuthorizeOAuth(_ context.Context, command appmcp.OAuthAuthorizeCommand) (appmcp.OAuthAuthorizeResult, error) {
