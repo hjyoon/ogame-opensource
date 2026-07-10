@@ -224,6 +224,41 @@ func (r MCPReadRepository) GetMCPBuildingQueue(ctx context.Context, playerID int
 	}, nil
 }
 
+func (r MCPReadRepository) GetMCPFleetMovements(ctx context.Context, playerID int) (domainmcp.FleetMovements, error) {
+	if r.queryer == nil {
+		return domainmcp.FleetMovements{}, errors.New("mcp read repository queryer unavailable")
+	}
+	queueTable, fleetTable, planetsTable, usersTable, unionTable, err := r.mcpFleetMovementTables()
+	if err != nil {
+		return domainmcp.FleetMovements{}, err
+	}
+	now := time.Now
+	if r.now != nil {
+		now = r.now
+	}
+	detailLevel, err := r.loadMCPFleetDetailLevel(ctx, usersTable, playerID, now().Unix())
+	if err != nil {
+		return domainmcp.FleetMovements{}, err
+	}
+	overviewRepository := NewOverviewRepositoryWithQueryer(r.queryer, r.prefix)
+	overviewRepository.now = now
+	events, err := overviewRepository.loadOverviewEvents(ctx, queueTable, fleetTable, planetsTable, usersTable, unionTable, playerID, detailLevel)
+	if err != nil {
+		return domainmcp.FleetMovements{}, err
+	}
+	movements := make([]domainmcp.FleetMovement, 0, len(events))
+	nowUnix := now().Unix()
+	for _, event := range events {
+		movements = append(movements, mcpFleetMovementFromMission(event, nowUnix))
+	}
+	return domainmcp.FleetMovements{
+		PlayerID: playerID,
+		Now:      nowUnix,
+		Count:    len(movements),
+		Events:   movements,
+	}, nil
+}
+
 func (r MCPReadRepository) mcpReadTables() (string, string, string, error) {
 	usersTable, err := tableName(r.prefix, "users")
 	if err != nil {
@@ -238,6 +273,30 @@ func (r MCPReadRepository) mcpReadTables() (string, string, string, error) {
 		return "", "", "", err
 	}
 	return usersTable, planetsTable, messagesTable, nil
+}
+
+func (r MCPReadRepository) mcpFleetMovementTables() (string, string, string, string, string, error) {
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return "", "", "", "", "", err
+	}
+	fleetTable, err := tableName(r.prefix, "fleet")
+	if err != nil {
+		return "", "", "", "", "", err
+	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return "", "", "", "", "", err
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return "", "", "", "", "", err
+	}
+	unionTable, err := tableName(r.prefix, "union")
+	if err != nil {
+		return "", "", "", "", "", err
+	}
+	return queueTable, fleetTable, planetsTable, usersTable, unionTable, nil
 }
 
 type mcpAccountRow struct {
@@ -315,6 +374,36 @@ func (r MCPReadRepository) loadMCPResourceAccount(ctx context.Context, usersTabl
 	account.geologist = geologistUntil > now().Unix()
 	account.engineer = engineerUntil > now().Unix()
 	return account, nil
+}
+
+func (r MCPReadRepository) loadMCPFleetDetailLevel(ctx context.Context, usersTable string, playerID int, now int64) (int, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT COALESCE(`%d`, 0), COALESCE(tec_until, 0) FROM %s WHERE player_id = ? LIMIT 1", domaingame.ResearchEspionage, usersTable),
+		playerID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return 0, err
+		}
+		return 0, errors.New("mcp player fleet detail not found")
+	}
+	var espionage int
+	var technocratUntil int64
+	if err := rows.Scan(&espionage, &technocratUntil); err != nil {
+		return 0, err
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	return overviewFleetDetailLevel(overviewUser{
+		EspionageResearch: espionage,
+		Officers:          domaingame.OverviewOfficers{Technocrat: technocratUntil > now},
+	}), nil
 }
 
 type mcpPlanetResourceRow struct {
@@ -429,6 +518,68 @@ func (r mcpPlanetResourceRow) gamePlanet(darkMatter int) domaingame.PlanetOvervi
 			Deuterium:  r.deuterium,
 			DarkMatter: darkMatter,
 		},
+	}
+}
+
+func mcpFleetMovementFromMission(mission domaingame.FleetMission, now int64) domainmcp.FleetMovement {
+	ships := make([]domainmcp.FleetShip, 0, len(mission.Ships))
+	for _, ship := range mission.Ships {
+		ships = append(ships, domainmcp.FleetShip{
+			ID:    ship.ID,
+			Name:  ship.Name,
+			Count: ship.Count,
+		})
+	}
+	unionPlayers := make([]domainmcp.FleetUnionPlayer, 0, len(mission.UnionPlayers))
+	for _, player := range mission.UnionPlayers {
+		unionPlayers = append(unionPlayers, domainmcp.FleetUnionPlayer{
+			ID:   player.ID,
+			Name: player.Name,
+		})
+	}
+	group := make([]domainmcp.FleetMovement, 0, len(mission.GroupMissions))
+	for _, grouped := range mission.GroupMissions {
+		group = append(group, mcpFleetMovementFromMission(grouped, now))
+	}
+	remaining := mission.ArrivalAt - now
+	if remaining < 0 {
+		remaining = 0
+	}
+	return domainmcp.FleetMovement{
+		ID:               mission.ID,
+		OwnerID:          mission.OwnerID,
+		OwnerName:        mission.OwnerName,
+		Foreign:          mission.Foreign,
+		Mission:          mission.Mission,
+		MissionName:      mission.MissionName,
+		StateTitle:       mission.StateTitle,
+		StateShort:       mission.StateShort,
+		FleetDetailLevel: mission.FleetDetailLevel,
+		Ships:            ships,
+		TotalShips:       mission.TotalShips,
+		LoadedResources: domainmcp.FleetResources{
+			Metal:     mission.LoadedResources[domaingame.ResourceMetal],
+			Crystal:   mission.LoadedResources[domaingame.ResourceCrystal],
+			Deuterium: mission.LoadedResources[domaingame.ResourceDeuterium],
+		},
+		MissileAmount:    mission.MissileAmount,
+		MissileTargetID:  mission.MissileTargetID,
+		MissileTarget:    mission.MissileTarget,
+		UnionID:          mission.UnionID,
+		UnionName:        mission.UnionName,
+		UnionPlayers:     unionPlayers,
+		GroupMissions:    group,
+		Origin:           domainmcp.Coordinates{Galaxy: mission.Origin.Galaxy, System: mission.Origin.System, Position: mission.Origin.Position},
+		OriginName:       mission.OriginName,
+		Target:           domainmcp.Coordinates{Galaxy: mission.Target.Galaxy, System: mission.Target.System, Position: mission.Target.Position},
+		TargetName:       mission.TargetName,
+		TargetType:       mission.TargetType,
+		TargetOwnerName:  mission.TargetOwnerName,
+		DepartureAt:      mission.DepartureAt,
+		ArrivalAt:        mission.ArrivalAt,
+		RemainingSeconds: int(remaining),
+		CanRecall:        mission.CanRecall,
+		CanCreateUnion:   mission.CanCreateUnion,
 	}
 }
 

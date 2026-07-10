@@ -31,24 +31,16 @@ Implemented:
 - JSON audit logging for every `tools/call` request path. Audit logs include
   tool name, authorization outcome, player id/scopes when authenticated,
   duration, and error text. Bearer token secrets are never logged.
-- First authenticated read tool: `list_planets`.
-  - Requires `mcp:read`.
-  - Returns selectable planets/moons using the same sort settings as the
-    legacy planet switcher.
-- Account summary read tool: `get_account_overview`.
-  - Requires `mcp:read`.
-  - Returns commander, score/rank, current planet, planet count, and unread
-    message count without triggering legacy overview mutations.
-- Planet resource read tool: `get_planet_resources`.
-  - Requires `mcp:read`.
-  - Optional `planetId`; `0` or omitted means the active planet.
-  - Returns resource amounts, dark matter, storage capacity, energy balance,
-    and hourly production using the migrated legacy production formula.
-- Building queue read tool: `get_building_queue`.
-  - Requires `mcp:read`.
-  - Optional `planetId`; `0` or omitted means the active planet.
-  - Returns queued building/demolition rows without finishing due queues or
-    mutating resources.
+- Authenticated read tools requiring `mcp:read`:
+  - `list_planets`: selectable planets/moons using legacy switcher ordering.
+  - `get_account_overview`: commander, score/rank, current planet, planet
+    count, and unread messages without overview mutations.
+  - `get_planet_resources`: optional `planetId`; resources, dark matter,
+    storage capacity, energy, and hourly production.
+  - `get_building_queue`: optional `planetId`; queued building/demolition rows
+    without finishing due queues or mutating resources.
+  - `get_fleet_movements`: overview-style outgoing, incoming, return, hold,
+    missile, and ACS grouped events without queue mutation.
 
 ## Static Token Format
 
@@ -97,11 +89,9 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Add more read-only authenticated tools:
-   - `get_fleet_movements`
-2. Add a React account-settings UI for DB token create/revoke.
-3. Add E2E smoke calls against `/mcp`.
-4. Add OAuth 2.1/OIDC consent flow before public user rollout.
+1. Add a React account-settings UI for DB token create/revoke.
+2. Add E2E smoke calls against `/mcp`.
+3. Add OAuth 2.1/OIDC consent flow before public user rollout.
 
 ## General User Policy
 

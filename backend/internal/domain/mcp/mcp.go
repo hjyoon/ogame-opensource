@@ -125,6 +125,63 @@ type BuildingQueue struct {
 	Entries  []BuildingQueueEntry `json:"entries"`
 }
 
+type FleetShip struct {
+	ID    int    `json:"id"`
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+type FleetResources struct {
+	Metal     int `json:"metal"`
+	Crystal   int `json:"crystal"`
+	Deuterium int `json:"deuterium"`
+}
+
+type FleetUnionPlayer struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+type FleetMovement struct {
+	ID               int                `json:"id"`
+	OwnerID          int                `json:"ownerId"`
+	OwnerName        string             `json:"ownerName"`
+	Foreign          bool               `json:"foreign"`
+	Mission          int                `json:"mission"`
+	MissionName      string             `json:"missionName"`
+	StateTitle       string             `json:"stateTitle"`
+	StateShort       string             `json:"stateShort"`
+	FleetDetailLevel int                `json:"fleetDetailLevel"`
+	Ships            []FleetShip        `json:"ships"`
+	TotalShips       int                `json:"totalShips"`
+	LoadedResources  FleetResources     `json:"loadedResources"`
+	MissileAmount    int                `json:"missileAmount"`
+	MissileTargetID  int                `json:"missileTargetId"`
+	MissileTarget    string             `json:"missileTarget"`
+	UnionID          int                `json:"unionId"`
+	UnionName        string             `json:"unionName"`
+	UnionPlayers     []FleetUnionPlayer `json:"unionPlayers"`
+	GroupMissions    []FleetMovement    `json:"groupMissions"`
+	Origin           Coordinates        `json:"origin"`
+	OriginName       string             `json:"originName"`
+	Target           Coordinates        `json:"target"`
+	TargetName       string             `json:"targetName"`
+	TargetType       int                `json:"targetType"`
+	TargetOwnerName  string             `json:"targetOwnerName"`
+	DepartureAt      int64              `json:"departureAt"`
+	ArrivalAt        int64              `json:"arrivalAt"`
+	RemainingSeconds int                `json:"remainingSeconds"`
+	CanRecall        bool               `json:"canRecall"`
+	CanCreateUnion   bool               `json:"canCreateUnion"`
+}
+
+type FleetMovements struct {
+	PlayerID int             `json:"playerId"`
+	Now      int64           `json:"now"`
+	Count    int             `json:"count"`
+	Events   []FleetMovement `json:"events"`
+}
+
 type Access struct {
 	Authenticated bool     `json:"authenticated"`
 	PlayerID      int      `json:"playerId,omitempty"`

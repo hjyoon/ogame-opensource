@@ -317,6 +317,146 @@ func TestMCPReadRepositoryBuildingQueueErrorBranches(t *testing.T) {
 	}
 }
 
+func TestMCPReadRepositoryGetsFleetMovements(t *testing.T) {
+	now := time.Unix(99, 0)
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{6, now.Add(time.Hour).Unix()})},
+		{rows: fakeRowsFromValues(
+			overviewEventRow(31, 42, "legor", domaingame.FleetMissionTransport, map[int]int{domaingame.FleetSmallCargo: 1}, 100, 200, 3, 4),
+		)},
+		{rows: fakeRowsFromValues([]any{7, 42})},
+		{rows: fakeRowsFromValues(
+			overviewEventRow(21, 42, "legor", domaingame.FleetMissionACSAttackHead, map[int]int{domaingame.FleetCruiser: 2}, 100, 300, 3, 4),
+			overviewEventRow(22, 77, "support", domaingame.FleetMissionACSAttack, map[int]int{domaingame.FleetLightFighter: 5}, 110, 300, 5, 4),
+		)},
+	}}
+	repository := NewMCPReadRepositoryWithQueryer(queryer, "uni1_")
+	repository.now = func() time.Time { return now }
+
+	movements, err := repository.GetMCPFleetMovements(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("GetMCPFleetMovements returned error: %v", err)
+	}
+	if movements.PlayerID != 42 || movements.Now != now.Unix() || movements.Count != 4 {
+		t.Fatalf("unexpected movement summary: %+v", movements)
+	}
+	if movements.Events[0].MissionName != "Transport" ||
+		movements.Events[0].RemainingSeconds != 101 ||
+		movements.Events[0].FleetDetailLevel != 8 ||
+		!movements.Events[0].CanRecall ||
+		movements.Events[1].Mission != domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset ||
+		movements.Events[1].CanRecall {
+		t.Fatalf("unexpected non-ACS movements: %+v", movements.Events)
+	}
+	group := movements.Events[2]
+	if group.ID != -7 ||
+		group.UnionID != 7 ||
+		len(group.GroupMissions) != 2 ||
+		group.GroupMissions[1].OwnerName != "support" ||
+		!group.GroupMissions[1].Foreign {
+		t.Fatalf("unexpected ACS group movement: %+v", group)
+	}
+	if movements.Events[3].UnionID != 7 ||
+		movements.Events[3].Mission != domaingame.FleetMissionACSAttackHead+domaingame.FleetMissionReturnOffset ||
+		movements.Events[3].RemainingSeconds != 401 {
+		t.Fatalf("unexpected ACS return movement: %+v", movements.Events[3])
+	}
+	if !strings.Contains(queryer.calls[0].sql, "COALESCE(`106`, 0)") ||
+		!strings.Contains(queryer.calls[1].sql, "FROM `uni1_queue`") ||
+		!strings.Contains(queryer.calls[2].sql, "FROM `uni1_union`") {
+		t.Fatalf("unexpected fleet movement SQL calls: %+v", queryer.calls)
+	}
+}
+
+func TestMCPFleetMovementFromMissionPreservesDetails(t *testing.T) {
+	mission := domaingame.BuildFleetMission(
+		7,
+		domaingame.FleetMissionRecycle,
+		domaingame.FleetCounts{domaingame.FleetRecycler: 2},
+		domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+		domaingame.Coordinates{Galaxy: 1, System: 2, Position: 16},
+		domaingame.PlanetTypeDebris,
+		"debris",
+		100,
+		200,
+	)
+	mission.OwnerID = 42
+	mission.OwnerName = "legor"
+	mission.LoadedResources = map[int]int{domaingame.ResourceMetal: 10, domaingame.ResourceCrystal: 20, domaingame.ResourceDeuterium: 30}
+	mission.MissileAmount = 5
+	mission.MissileTargetID = domaingame.DefenseLightLaser
+	mission.MissileTarget = "Light Laser"
+	mission.UnionID = 9
+	mission.UnionName = "Group"
+	mission.UnionPlayers = []domaingame.FleetUnionPlayer{{ID: 42, Name: "legor"}}
+	mission.GroupMissions = []domaingame.FleetMission{
+		domaingame.BuildFleetMission(8, domaingame.FleetMissionAttack, domaingame.FleetCounts{domaingame.FleetLightFighter: 1}, domaingame.Coordinates{}, domaingame.Coordinates{}, domaingame.PlanetTypePlanet, "target", 110, 220),
+	}
+	mission = domaingame.BuildOverviewEvents([]domaingame.FleetMission{mission})[0]
+
+	got := mcpFleetMovementFromMission(mission, 150)
+	if got.ID != 7 ||
+		got.Ships[0].Name != "Recycler" ||
+		got.LoadedResources.Metal != 10 ||
+		got.LoadedResources.Crystal != 20 ||
+		got.LoadedResources.Deuterium != 30 ||
+		got.MissileTarget != "Light Laser" ||
+		got.UnionPlayers[0].Name != "legor" ||
+		len(got.GroupMissions) != 1 ||
+		got.RemainingSeconds != 50 {
+		t.Fatalf("unexpected converted movement: %+v", got)
+	}
+	if expired := mcpFleetMovementFromMission(mission, 250); expired.RemainingSeconds != 0 {
+		t.Fatalf("expected expired movement to clamp remaining seconds, got %+v", expired)
+	}
+}
+
+func TestMCPReadRepositoryFleetMovementsErrorBranches(t *testing.T) {
+	repository := NewMCPReadRepositoryWithQueryer(nil, "uni1_")
+	if _, err := repository.GetMCPFleetMovements(context.Background(), 42); err == nil {
+		t.Fatalf("expected nil queryer error")
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{}, "uni1_;DROP")
+	if _, err := repository.GetMCPFleetMovements(context.Background(), 42); err == nil {
+		t.Fatalf("expected invalid prefix error")
+	}
+
+	wantErr := errors.New("query failed")
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: wantErr}}}, "uni1_")
+	if _, err := repository.GetMCPFleetMovements(context.Background(), 42); !errors.Is(err, wantErr) {
+		t.Fatalf("expected detail query error, got %v", err)
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "uni1_")
+	if _, err := repository.GetMCPFleetMovements(context.Background(), 42); err == nil {
+		t.Fatalf("expected missing fleet detail error")
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(wantErr)}}}, "uni1_")
+	if _, err := repository.GetMCPFleetMovements(context.Background(), 42); !errors.Is(err, wantErr) {
+		t.Fatalf("expected empty detail rows error, got %v", err)
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad", int64(0)})}}}, "uni1_")
+	if _, err := repository.GetMCPFleetMovements(context.Background(), 42); err == nil {
+		t.Fatalf("expected fleet detail scan error")
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(wantErr, []any{0, int64(0)})}}}, "uni1_")
+	if _, err := repository.GetMCPFleetMovements(context.Background(), 42); !errors.Is(err, wantErr) {
+		t.Fatalf("expected detail rows error, got %v", err)
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0, int64(0)})},
+		{err: wantErr},
+	}}, "uni1_")
+	if _, err := repository.GetMCPFleetMovements(context.Background(), 42); !errors.Is(err, wantErr) {
+		t.Fatalf("expected event query error, got %v", err)
+	}
+}
+
 func TestMCPReadRepositoryErrorBranches(t *testing.T) {
 	repository := NewMCPReadRepositoryWithQueryer(nil, "uni1_")
 	if _, err := repository.ListMCPPlanets(context.Background(), 42); err == nil {

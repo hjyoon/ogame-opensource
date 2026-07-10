@@ -48,6 +48,7 @@ type ReadRepository interface {
 	GetMCPAccountOverview(context.Context, int) (domainmcp.AccountOverview, error)
 	GetMCPPlanetResources(context.Context, int, int) (domainmcp.PlanetResources, error)
 	GetMCPBuildingQueue(context.Context, int, int) (domainmcp.BuildingQueue, error)
+	GetMCPFleetMovements(context.Context, int) (domainmcp.FleetMovements, error)
 }
 
 type TokenSecretGenerator interface {
@@ -172,7 +173,7 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	if access.HasScope(domainmcp.ScopeRead) {
 		tools = append(tools, accessTool())
 		if s.readRepository != nil {
-			tools = append(tools, listPlanetsTool(), accountOverviewTool(), planetResourcesTool(), buildingQueueTool())
+			tools = append(tools, listPlanetsTool(), accountOverviewTool(), planetResourcesTool(), buildingQueueTool(), fleetMovementsTool())
 		}
 	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
@@ -238,6 +239,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callBuildingQueue(ctx, access, command.Arguments)
+	case "get_fleet_movements":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callFleetMovements(ctx, access)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -420,6 +430,25 @@ func (s Service) callBuildingQueue(ctx context.Context, access domainmcp.Access,
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"buildingQueue": queue}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callFleetMovements(ctx context.Context, access domainmcp.Access) (domainmcp.ToolCallResult, error) {
+	if s.readRepository == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp read repository unavailable")
+	}
+	movements, err := s.readRepository.GetMCPFleetMovements(ctx, access.PlayerID)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"fleetMovements": movements}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -825,6 +854,43 @@ func buildingQueueTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"buildingQueue"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func fleetMovementsTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_fleet_movements",
+		Title:       "Get Fleet Movements",
+		Description: "Return read-only overview-style fleet movements for the authenticated player, including incoming, outgoing, return, hold, and ACS grouped events.",
+		InputSchema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"fleetMovements": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId": map[string]any{"type": "integer"},
+						"now":      map[string]any{"type": "integer"},
+						"count":    map[string]any{"type": "integer"},
+						"events": map[string]any{
+							"type":  "array",
+							"items": map[string]any{"type": "object"},
+						},
+					},
+					"required": []string{"playerId", "now", "count", "events"},
+				},
+			},
+			"required": []string{"fleetMovements"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,

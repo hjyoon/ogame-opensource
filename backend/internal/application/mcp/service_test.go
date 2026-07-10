@@ -78,7 +78,7 @@ func TestServiceListsPlanetToolWhenReadRepositoryIsAvailable(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,list_planets,get_account_overview,get_planet_resources,get_building_queue" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,list_planets,get_account_overview,get_planet_resources,get_building_queue,get_fleet_movements" {
 		t.Fatalf("unexpected tools: %v", names)
 	}
 }
@@ -366,6 +366,59 @@ func TestServiceBuildingQueueToolRequiresRepositoryReadScopeAndValidArguments(t 
 	}
 }
 
+func TestServiceCallsFleetMovementsTool(t *testing.T) {
+	movements := domainmcp.FleetMovements{
+		PlayerID: 42,
+		Now:      100,
+		Count:    1,
+		Events: []domainmcp.FleetMovement{{
+			ID:               7,
+			Mission:          3,
+			MissionName:      "Transport",
+			StateShort:       "(G)",
+			RemainingSeconds: 50,
+		}},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithReadRepository(fakeReadRepository{fleetMovements: movements})
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_fleet_movements",
+		AccessToken: "read",
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	structured := result.StructuredContent.(map[string]any)
+	got := structured["fleetMovements"].(domainmcp.FleetMovements)
+	if result.IsError || got.Count != 1 || got.Events[0].MissionName != "Transport" || got.Events[0].RemainingSeconds != 50 {
+		t.Fatalf("unexpected fleet movements result: %+v", result)
+	}
+}
+
+func TestServiceFleetMovementsToolRequiresRepositoryAndReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_fleet_movements", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_fleet_movements", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithReadRepository(fakeReadRepository{err: errors.New("fleet down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_fleet_movements", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected read repository error")
+	}
+}
+
 func TestOptionalNonNegativeIntArgument(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
@@ -648,6 +701,7 @@ type fakeReadRepository struct {
 	resourcesPlanetID     int
 	buildingQueue         domainmcp.BuildingQueue
 	buildingQueuePlanetID int
+	fleetMovements        domainmcp.FleetMovements
 	err                   error
 }
 
@@ -695,6 +749,16 @@ func (f fakeReadRepository) GetMCPBuildingQueue(_ context.Context, playerID int,
 		return domainmcp.BuildingQueue{}, errors.New("unexpected planet")
 	}
 	return f.buildingQueue, nil
+}
+
+func (f fakeReadRepository) GetMCPFleetMovements(_ context.Context, playerID int) (domainmcp.FleetMovements, error) {
+	if f.err != nil {
+		return domainmcp.FleetMovements{}, f.err
+	}
+	if playerID != 42 {
+		return domainmcp.FleetMovements{}, errors.New("unexpected player")
+	}
+	return f.fleetMovements, nil
 }
 
 type fakeSessionLookup struct {
