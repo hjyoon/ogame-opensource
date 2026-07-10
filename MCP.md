@@ -31,6 +31,10 @@ Implemented:
 - JSON audit logging for every `tools/call` request path. Audit logs include
   tool name, authorization outcome, player id/scopes when authenticated,
   duration, and error text. Bearer token secrets are never logged.
+- First authenticated read tool: `list_planets`.
+  - Requires `mcp:read`.
+  - Returns selectable planets/moons using the same sort settings as the
+    legacy planet switcher.
 
 ## Static Token Format
 
@@ -79,8 +83,7 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Add read-only authenticated tools:
-   - `list_planets`
+1. Add more read-only authenticated tools:
    - `get_account_overview`
    - `get_planet_resources`
    - `get_building_queue`

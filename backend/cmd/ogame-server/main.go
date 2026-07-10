@@ -177,7 +177,10 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 
 	logger.Info("universe DB mcp token management enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
 	verifier := mcpauth.NewCompositeTokenVerifier(repository, staticVerifier)
-	return appmcp.NewServiceWithTokenManagement(health, verifier, repository, sessions, appmcp.SecureTokenGenerator{}, time.Now).WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
+	readRepository := mysqlgame.NewMCPReadRepository(db, cfg.UniDBPrefix)
+	return appmcp.NewServiceWithTokenManagement(health, verifier, repository, sessions, appmcp.SecureTokenGenerator{}, time.Now).
+		WithReadRepository(readRepository).
+		WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
 }
 
 func registrationActivation(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationActivationService {

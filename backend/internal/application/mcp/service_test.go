@@ -62,6 +62,26 @@ func TestServiceListsScopedToolsOnlyForReadableTokens(t *testing.T) {
 	}
 }
 
+func TestServiceListsPlanetToolWhenReadRepositoryIsAvailable(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithReadRepository(fakeReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,list_planets" {
+		t.Fatalf("unexpected tools: %v", names)
+	}
+}
+
 func TestServiceCallsServerHealthTool(t *testing.T) {
 	service := NewService(fakeHealthProvider{})
 
@@ -100,6 +120,58 @@ func TestServiceCallsScopedAccessTool(t *testing.T) {
 	}
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_mcp_access", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
 		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+}
+
+func TestServiceCallsListPlanetsTool(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithReadRepository(fakeReadRepository{planets: []domainmcp.Planet{{
+		ID:       99,
+		Name:     "Homeworld",
+		Type:     1,
+		TypeName: "planet",
+		Coordinates: domainmcp.Coordinates{
+			Galaxy:   1,
+			System:   2,
+			Position: 3,
+		},
+		Current: true,
+	}}})
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "list_planets", AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	structured := result.StructuredContent.(map[string]any)
+	if result.IsError || structured["playerId"] != 42 || structured["count"] != 1 {
+		t.Fatalf("unexpected list planets result: %+v", result)
+	}
+	planets := structured["planets"].([]domainmcp.Planet)
+	if planets[0].Name != "Homeworld" || !planets[0].Current {
+		t.Fatalf("unexpected planets: %+v", planets)
+	}
+}
+
+func TestServiceListPlanetsToolRequiresRepositoryAndReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "list_planets", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "list_planets", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithReadRepository(fakeReadRepository{err: errors.New("planets down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "list_planets", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected read repository error")
 	}
 }
 
@@ -340,6 +412,21 @@ type fakeToolCallAuditor struct {
 
 func (f *fakeToolCallAuditor) RecordMCPToolCall(_ context.Context, event domainmcp.ToolCallAudit) {
 	f.events = append(f.events, event)
+}
+
+type fakeReadRepository struct {
+	planets []domainmcp.Planet
+	err     error
+}
+
+func (f fakeReadRepository) ListMCPPlanets(_ context.Context, playerID int) ([]domainmcp.Planet, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if playerID != 42 {
+		return nil, errors.New("unexpected player")
+	}
+	return f.planets, nil
 }
 
 type fakeSessionLookup struct {

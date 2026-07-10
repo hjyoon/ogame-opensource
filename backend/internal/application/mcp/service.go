@@ -41,6 +41,10 @@ type TokenRepository interface {
 	RevokeMCPToken(context.Context, int, int, int64) (bool, error)
 }
 
+type ReadRepository interface {
+	ListMCPPlanets(context.Context, int) ([]domainmcp.Planet, error)
+}
+
 type TokenSecretGenerator interface {
 	NewMCPToken() (string, error)
 }
@@ -94,6 +98,7 @@ type Service struct {
 	health          HealthProvider
 	verifier        TokenVerifier
 	tokenRepository TokenRepository
+	readRepository  ReadRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
 	auditor         ToolCallAuditor
@@ -123,6 +128,11 @@ func NewServiceWithTokenManagement(health HealthProvider, verifier TokenVerifier
 		tokenGenerator:  generator,
 		now:             now,
 	}
+}
+
+func (s Service) WithReadRepository(repository ReadRepository) Service {
+	s.readRepository = repository
+	return s
 }
 
 func (s Service) WithToolCallAuditor(auditor ToolCallAuditor) Service {
@@ -156,6 +166,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	}
 	if access.HasScope(domainmcp.ScopeRead) {
 		tools = append(tools, accessTool())
+		if s.readRepository != nil {
+			tools = append(tools, listPlanetsTool())
+		}
 	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
 }
@@ -184,6 +197,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return callMCPAccess(access), nil
+	case "list_planets":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callListPlanets(ctx, access)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -277,6 +299,29 @@ func (s Service) callServerHealth(ctx context.Context) (domainmcp.ToolCallResult
 		"staticReady":       health.StaticReady,
 		"legacyAssetsReady": health.LegacyAssetsReady,
 		"legacyBaseUrl":     health.LegacyBaseURL,
+	}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callListPlanets(ctx context.Context, access domainmcp.Access) (domainmcp.ToolCallResult, error) {
+	if s.readRepository == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp read repository unavailable")
+	}
+	planets, err := s.readRepository.ListMCPPlanets(ctx, access.PlayerID)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{
+		"playerId": access.PlayerID,
+		"count":    len(planets),
+		"planets":  planets,
 	}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
@@ -448,6 +493,55 @@ func accessTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"authenticated", "playerId", "scopes"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func listPlanetsTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "list_planets",
+		Title:       "List Planets",
+		Description: "Return the authenticated player's selectable planets and moons using the legacy planet switcher ordering.",
+		InputSchema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"playerId": map[string]any{"type": "integer"},
+				"count":    map[string]any{"type": "integer"},
+				"planets": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"id":       map[string]any{"type": "integer"},
+							"name":     map[string]any{"type": "string"},
+							"type":     map[string]any{"type": "integer"},
+							"typeName": map[string]any{"type": "string"},
+							"coordinates": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"galaxy":   map[string]any{"type": "integer"},
+									"system":   map[string]any{"type": "integer"},
+									"position": map[string]any{"type": "integer"},
+								},
+								"required": []string{"galaxy", "system", "position"},
+							},
+							"current": map[string]any{"type": "boolean"},
+						},
+						"required": []string{"id", "name", "type", "typeName", "coordinates", "current"},
+					},
+				},
+			},
+			"required": []string{"playerId", "count", "planets"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,

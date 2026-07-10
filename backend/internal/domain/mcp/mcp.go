@@ -43,6 +43,21 @@ type ToolCallAudit struct {
 	DurationMS int64
 }
 
+type Coordinates struct {
+	Galaxy   int `json:"galaxy"`
+	System   int `json:"system"`
+	Position int `json:"position"`
+}
+
+type Planet struct {
+	ID          int         `json:"id"`
+	Name        string      `json:"name"`
+	Type        int         `json:"type"`
+	TypeName    string      `json:"typeName"`
+	Coordinates Coordinates `json:"coordinates"`
+	Current     bool        `json:"current"`
+}
+
 type Access struct {
 	Authenticated bool     `json:"authenticated"`
 	PlayerID      int      `json:"playerId,omitempty"`
