@@ -21,6 +21,13 @@ Implemented:
 - First safe read-only tool: `get_server_health`.
 - Static bearer token verifier for early scoped testing.
 - Protected read-only tool: `get_mcp_access`.
+- User-owned DB-backed bearer tokens:
+  - `GET /api/game/mcp-tokens?session=...`
+  - `POST /api/game/mcp-tokens?session=...`
+  - `POST /api/game/mcp-tokens/revoke?session=...`
+  - Uses the same game public session plus private session cookie as other
+    authenticated `/api/game/*` endpoints.
+  - Stores only SHA-256 token hashes in `uni*_mcp_tokens`.
 
 ## Static Token Format
 
@@ -39,8 +46,27 @@ Current scopes:
 - `mcp:admin`
 
 Static tokens are only a bootstrap path. Revocation currently means removing
-the token from config and restarting. User-owned DB tokens and UI revoke are
-the next step.
+the token from config and restarting. Prefer DB-backed user tokens for normal
+users because they can be revoked without restart.
+
+## User Token API
+
+Create body:
+
+```json
+{"name":"Claude Desktop","scopes":["mcp:read"]}
+```
+
+The plaintext `secret` is returned only in the create response. Persist it in
+the MCP client and treat it like a password.
+
+User tokens currently allow:
+
+- `mcp:read`
+- `mcp:messages`
+- `mcp:fleet`
+
+`mcp:write` and `mcp:admin` stay unavailable for self-service user tokens.
 
 ## Security Rule
 
@@ -50,14 +76,14 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Add user-owned DB-backed MCP tokens with scopes and revoke support.
-2. Add audit logging for every MCP tool call.
-3. Add read-only authenticated tools:
+1. Add audit logging for every MCP tool call.
+2. Add read-only authenticated tools:
    - `list_planets`
    - `get_account_overview`
    - `get_planet_resources`
    - `get_building_queue`
    - `get_fleet_movements`
+3. Add a React account-settings UI for DB token create/revoke.
 4. Add E2E smoke calls against `/mcp`.
 5. Add OAuth 2.1/OIDC consent flow before public user rollout.
 

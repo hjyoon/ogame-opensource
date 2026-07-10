@@ -18,6 +18,21 @@ var (
 	ErrForbidden    = errors.New("mcp forbidden")
 )
 
+type Token struct {
+	ID         int      `json:"id"`
+	PlayerID   int      `json:"playerId,omitempty"`
+	Name       string   `json:"name"`
+	Scopes     []string `json:"scopes"`
+	CreatedAt  int64    `json:"createdAt"`
+	LastUsedAt int64    `json:"lastUsedAt,omitempty"`
+	RevokedAt  int64    `json:"revokedAt,omitempty"`
+}
+
+type TokenCreation struct {
+	Token  Token  `json:"token"`
+	Secret string `json:"secret"`
+}
+
 type Access struct {
 	Authenticated bool     `json:"authenticated"`
 	PlayerID      int      `json:"playerId,omitempty"`

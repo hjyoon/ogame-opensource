@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
+	appmcp "github.com/hjyoon/ogame-opensource/backend/internal/application/mcp"
 	apppublicsite "github.com/hjyoon/ogame-opensource/backend/internal/application/publicsite"
 	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 	domainpublicsite "github.com/hjyoon/ogame-opensource/backend/internal/domain/publicsite"
@@ -20,6 +21,12 @@ type MCPUseCase interface {
 	Initialize(context.Context) domainmcp.InitializeResult
 	ListTools(context.Context, domainmcp.ListToolsCommand) (domainmcp.ListToolsResult, error)
 	CallTool(context.Context, domainmcp.CallToolCommand) (domainmcp.ToolCallResult, error)
+}
+
+type MCPTokenUseCase interface {
+	ListTokens(context.Context, appmcp.TokenManagementCommand) (appmcp.TokenListResult, error)
+	CreateToken(context.Context, appmcp.CreateTokenCommand) (appmcp.TokenCreationResult, error)
+	RevokeToken(context.Context, appmcp.RevokeTokenCommand) (appmcp.TokenRevokeResult, error)
 }
 
 type FrontendAssets interface {
@@ -188,6 +195,7 @@ type GamePaymentUseCase interface {
 type Dependencies struct {
 	Health               HealthUseCase
 	MCP                  MCPUseCase
+	MCPTokens            MCPTokenUseCase
 	UniverseNumber       int
 	MaintenanceStartPage string
 	Universes            UniverseCatalogUseCase
@@ -255,6 +263,8 @@ func New(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/healthz", getOnly(a.handleHealthz))
 	mux.HandleFunc("/mcp", a.handleMCP)
+	mux.HandleFunc("/api/game/mcp-tokens", a.handleGameMCPTokens)
+	mux.HandleFunc("/api/game/mcp-tokens/revoke", postOnly(a.handleGameMCPTokenRevoke))
 	mux.HandleFunc("/api/public/universes", getOnly(a.handleUniverses))
 	mux.HandleFunc("/api/public/registration/validate", postOnly(a.handleRegistrationValidation))
 	mux.HandleFunc("/api/public/registration", postOnly(a.handleRegistration))

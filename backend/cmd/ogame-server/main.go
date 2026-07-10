@@ -54,7 +54,6 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		BunTarget:      config.BunTarget,
 		ReactTarget:    config.ReactTarget,
 	}, filesystem.Probe{}, infraruntime.GoRuntime{})
-	mcp := appmcp.NewServiceWithTokenVerifier(health, mcpauth.NewStaticTokenVerifier(cfg.MCPStaticTokens))
 	universes := apppublicsite.NewUniverseCatalogService(universeRepository(cfg, logger))
 	registrationDrafts := registrationValidator(cfg, logger)
 	registration := registrationRegistrar(cfg, logger)
@@ -64,6 +63,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	loginDrafts := loginValidator(cfg, logger)
 	login := loginAuthenticator(cfg, logger)
 	gameSessions := gameSessionLookup(cfg, logger)
+	mcp := mcpService(cfg, logger, health, gameSessions)
 	logout := logoutService(cfg, logger)
 	gameOverview := gameOverviewService(cfg, logger, gameSessions)
 	gameBuildings := gameBuildingsService(cfg, logger, gameSessions)
@@ -96,6 +96,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	return httpdelivery.New(httpdelivery.Dependencies{
 		Health:               health,
 		MCP:                  mcp,
+		MCPTokens:            mcp,
 		UniverseNumber:       cfg.UniNumber,
 		MaintenanceStartPage: "/",
 		Universes:            universes,
@@ -139,6 +140,43 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		LegacyAssets:         filesystem.NewNoListingFS(cfg.LegacyAssetDir),
 		Logger:               logger,
 	})
+}
+
+func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthService, sessions apppublicsite.GameSessionLookup) appmcp.Service {
+	staticVerifier := mcpauth.NewStaticTokenVerifier(cfg.MCPStaticTokens)
+	if !cfg.UniDBEnabled {
+		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier)
+	}
+
+	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
+		Host:     cfg.UniDBHost,
+		User:     cfg.UniDBUser,
+		Password: cfg.UniDBPassword,
+		Name:     cfg.UniDBName,
+	})
+	if err != nil {
+		logger.Warn("universe DB mcp token management disabled", "error", err)
+		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		logger.Warn("universe DB mcp token management disabled", "error", err)
+		_ = db.Close()
+		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier)
+	}
+
+	repository := mysqlgame.NewMCPTokenRepository(db, cfg.UniDBPrefix)
+	if err := repository.EnsureMCPTokenSchema(ctx); err != nil {
+		logger.Warn("universe DB mcp token schema unavailable", "error", err)
+		_ = db.Close()
+		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier)
+	}
+
+	logger.Info("universe DB mcp token management enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
+	verifier := mcpauth.NewCompositeTokenVerifier(repository, staticVerifier)
+	return appmcp.NewServiceWithTokenManagement(health, verifier, repository, sessions, appmcp.SecureTokenGenerator{}, time.Now)
 }
 
 func registrationActivation(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationActivationService {
