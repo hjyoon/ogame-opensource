@@ -147,7 +147,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 
 func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthService, sessions apppublicsite.GameSessionLookup) appmcp.Service {
 	staticVerifier := mcpauth.NewStaticTokenVerifier(cfg.MCPStaticTokens)
-	oidcSigner, oidcErr := mcpoidc.NewEphemeralEd25519Signer()
+	oidcSigner, oidcErr := mcpOIDCSigner(cfg)
 	if oidcErr != nil {
 		logger.Warn("mcp oidc signer disabled", "error", oidcErr)
 	}
@@ -199,6 +199,13 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 		WithOAuthCodeRepository(repository).
 		WithOAuthRedirectURIs(appmcp.ParseOAuthRedirectURIs(cfg.MCPOAuthRedirectURIs)).
 		WithReadRepository(readRepository))
+}
+
+func mcpOIDCSigner(cfg config.Config) (mcpoidc.Ed25519Signer, error) {
+	if strings.TrimSpace(cfg.MCPOIDCSigningSeed) != "" {
+		return mcpoidc.NewEd25519SignerFromBase64Seed(cfg.MCPOIDCSigningSeed, time.Now)
+	}
+	return mcpoidc.NewEphemeralEd25519Signer()
 }
 
 func registrationActivation(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationActivationService {

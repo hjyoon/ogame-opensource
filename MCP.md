@@ -42,6 +42,7 @@ Implemented:
   - `/.well-known/jwks.json` Ed25519 JWKS
   - Codes are one-time hashes in `uni*_mcp_oauth_codes`.
   - External redirects require `OGAME_MCP_OAUTH_REDIRECT_URIS`.
+  - OIDC seed env: `OGAME_MCP_OIDC_ED25519_SEED_B64`.
 - JSON audit logging for every `tools/call` request path. Audit logs include
   tool, auth result, player/scopes, duration, and errors. Secrets are not
   logged.
@@ -103,7 +104,7 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Persist/rotate OIDC signing keys; current key is startup-ephemeral.
+1. Add OIDC key rotation.
 
 ## General User Policy
 

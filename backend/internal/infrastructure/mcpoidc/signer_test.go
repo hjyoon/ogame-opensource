@@ -21,6 +21,19 @@ func TestEd25519SignerSignsIDTokenAndExposesJWKS(t *testing.T) {
 		t.Fatalf("expected ephemeral signer JWKS")
 	}
 
+	seed := base64.StdEncoding.EncodeToString([]byte("12345678901234567890123456789012"))
+	seedSigner, err := NewEd25519SignerFromBase64Seed(seed, func() time.Time { return time.Unix(1700, 0) })
+	if err != nil {
+		t.Fatalf("NewEd25519SignerFromBase64Seed returned error: %v", err)
+	}
+	seedSignerAgain, err := NewEd25519SignerFromBase64Seed(seed, nil)
+	if err != nil {
+		t.Fatalf("NewEd25519SignerFromBase64Seed second call returned error: %v", err)
+	}
+	if seedSigner.JWKS(context.Background()).Keys[0].KeyID != seedSignerAgain.JWKS(context.Background()).Keys[0].KeyID {
+		t.Fatalf("expected stable key id from same seed")
+	}
+
 	privateKey := ed25519.NewKeyFromSeed([]byte("12345678901234567890123456789012"))
 	publicKey := privateKey.Public().(ed25519.PublicKey)
 	signer := NewEd25519Signer(publicKey, privateKey, func() time.Time { return time.Unix(1700, 0) })
@@ -83,5 +96,11 @@ func TestEd25519SignerHandlesMissingKeys(t *testing.T) {
 	}
 	if _, err := encodedJWTParts(map[string]any{}, map[string]any{"bad": make(chan int)}); err == nil {
 		t.Fatalf("expected claims marshal error")
+	}
+	if _, err := NewEd25519SignerFromBase64Seed("not-base64", nil); err == nil {
+		t.Fatalf("expected invalid seed base64 error")
+	}
+	if _, err := NewEd25519SignerFromBase64Seed(base64.StdEncoding.EncodeToString([]byte("short")), nil); err == nil {
+		t.Fatalf("expected invalid seed length error")
 	}
 }

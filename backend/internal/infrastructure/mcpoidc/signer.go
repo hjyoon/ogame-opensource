@@ -29,6 +29,19 @@ func NewEphemeralEd25519Signer() (Ed25519Signer, error) {
 	return NewEd25519Signer(publicKey, privateKey, time.Now), nil
 }
 
+func NewEd25519SignerFromBase64Seed(raw string, now func() time.Time) (Ed25519Signer, error) {
+	seed, err := base64.StdEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil {
+		return Ed25519Signer{}, fmt.Errorf("decode oidc ed25519 seed: %w", err)
+	}
+	if len(seed) != ed25519.SeedSize {
+		return Ed25519Signer{}, fmt.Errorf("oidc ed25519 seed must be %d bytes", ed25519.SeedSize)
+	}
+	privateKey := ed25519.NewKeyFromSeed(seed)
+	publicKey := privateKey.Public().(ed25519.PublicKey)
+	return NewEd25519Signer(publicKey, privateKey, now), nil
+}
+
 func NewEd25519Signer(publicKey ed25519.PublicKey, privateKey ed25519.PrivateKey, now func() time.Time) Ed25519Signer {
 	if now == nil {
 		now = time.Now
