@@ -81,6 +81,8 @@ type WriteRepository interface {
 	SendMCPMessage(context.Context, int, domainmcp.SendMessageCommand) (domainmcp.SendMessageResult, error)
 	PreviewMCPDeleteMessages(context.Context, int, domainmcp.DeleteMessagesCommand) (domainmcp.DeleteMessagesResult, error)
 	DeleteMCPMessages(context.Context, int, domainmcp.DeleteMessagesCommand) (domainmcp.DeleteMessagesResult, error)
+	PreviewMCPReportMessage(context.Context, int, domainmcp.ReportMessageCommand) (domainmcp.ReportMessageResult, error)
+	ReportMCPMessage(context.Context, int, domainmcp.ReportMessageCommand) (domainmcp.ReportMessageResult, error)
 }
 
 type TokenSecretGenerator interface {
@@ -591,7 +593,7 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		tools = append(tools, listMessagesTool(), getMessageTool())
 	}
 	if access.HasScope(domainmcp.ScopeMessageWrite) && s.writeRepository != nil {
-		tools = append(tools, sendMessageTool(), deleteMessagesTool())
+		tools = append(tools, sendMessageTool(), deleteMessagesTool(), reportMessageTool())
 	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
 }
@@ -701,6 +703,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callDeleteMessages(ctx, access, command.Arguments)
+	case "report_message":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeMessageWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callReportMessage(ctx, access, command.Arguments)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -1051,6 +1062,50 @@ func (s Service) callDeleteMessages(ctx context.Context, access domainmcp.Access
 		result.Confirmation = confirmation
 	}
 	structured := map[string]any{"deleteMessages": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callReportMessage(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.writeRepository == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp write repository unavailable")
+	}
+	command, err := mcpReportMessageCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	confirmation := mcpReportMessageConfirmation(command)
+	var result domainmcp.ReportMessageResult
+	if command.DryRun {
+		result, err = s.writeRepository.PreviewMCPReportMessage(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = true
+		result.Executed = false
+		if result.Reportable && result.Issue == nil {
+			result.RequiresConfirmation = true
+			result.Confirmation = confirmation
+		}
+	} else {
+		if strings.TrimSpace(command.Confirm) != confirmation {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+		}
+		result, err = s.writeRepository.ReportMCPMessage(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = false
+		result.RequiresConfirmation = false
+		result.Confirmation = confirmation
+	}
+	structured := map[string]any{"reportMessage": result}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -1513,6 +1568,31 @@ func mcpDeleteMessagesConfirmation(command domainmcp.DeleteMessagesCommand) stri
 	payload := strings.Join(ids, ",")
 	sum := sha256.Sum256([]byte(payload))
 	return fmt.Sprintf("delete_messages:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
+}
+
+func mcpReportMessageCommand(arguments map[string]any) (domainmcp.ReportMessageCommand, error) {
+	messageID, err := optionalNonNegativeIntArgument(arguments, "messageId")
+	if err != nil || messageID <= 0 {
+		return domainmcp.ReportMessageCommand{}, domainmcp.ErrInvalidParams
+	}
+	dryRun := true
+	if arguments != nil && arguments["dryRun"] != nil {
+		dryRun, err = optionalBoolArgument(arguments, "dryRun")
+		if err != nil {
+			return domainmcp.ReportMessageCommand{}, err
+		}
+	}
+	confirm, err := optionalStringArgument(arguments, "confirm")
+	if err != nil {
+		return domainmcp.ReportMessageCommand{}, err
+	}
+	return domainmcp.ReportMessageCommand{MessageID: messageID, DryRun: dryRun, Confirm: confirm}, nil
+}
+
+func mcpReportMessageConfirmation(command domainmcp.ReportMessageCommand) string {
+	payload := strconv.Itoa(command.MessageID)
+	sum := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("report_message:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
 }
 
 func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
@@ -2087,6 +2167,59 @@ func deleteMessagesTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"deleteMessages"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    false,
+			"destructiveHint": true,
+			"idempotentHint":  false,
+		},
+	}
+}
+
+func reportMessageTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "report_message",
+		Title:       "Report Message",
+		Description: "Dry-run or explicitly confirm reporting one owned inbox private message. Non-PM and non-visible messages are not reported.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"messageId": map[string]any{
+					"type":        "integer",
+					"minimum":     1,
+					"description": "Owned visible private-message id to report.",
+				},
+				"dryRun": map[string]any{
+					"type":        "boolean",
+					"description": "Defaults to true. Set false only with a matching confirmation value.",
+				},
+				"confirm": map[string]any{
+					"type":        "string",
+					"description": "Exact confirmation string returned by a dry-run for the same messageId.",
+				},
+			},
+			"required":             []string{"messageId"},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"reportMessage": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":             map[string]any{"type": "integer"},
+						"messageId":            map[string]any{"type": "integer"},
+						"reportable":           map[string]any{"type": "boolean"},
+						"dryRun":               map[string]any{"type": "boolean"},
+						"requiresConfirmation": map[string]any{"type": "boolean"},
+						"confirmation":         map[string]any{"type": "string"},
+						"executed":             map[string]any{"type": "boolean"},
+						"issue":                map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "messageId", "reportable", "dryRun", "requiresConfirmation", "executed"},
+				},
+			},
+			"required": []string{"reportMessage"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    false,

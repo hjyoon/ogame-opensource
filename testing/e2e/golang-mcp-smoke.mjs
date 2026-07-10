@@ -333,6 +333,11 @@ try {
     ? await mcpJSONRPC("tools/call", { name: "delete_messages", arguments: { messageIds: [firstMessageID] } }, { id: 31, headers: authHeaders })
     : undefined;
   const deleteMessageDryRunBody = deleteMessageDryRun === undefined ? {} : parseJSON(deleteMessageDryRun);
+  const firstReportableMessageID = Number((messagesToolBody.result?.structuredContent?.messages?.messages ?? []).find((message) => message?.reportable === true)?.id ?? 0);
+  const reportMessageDryRun = firstReportableMessageID > 0
+    ? await mcpJSONRPC("tools/call", { name: "report_message", arguments: { messageId: firstReportableMessageID } }, { id: 32, headers: authHeaders })
+    : undefined;
+  const reportMessageDryRunBody = reportMessageDryRun === undefined ? {} : parseJSON(reportMessageDryRun);
   const invalidParamsTool = await mcpJSONRPC("tools/call", { name: "get_planet_resources", arguments: { planetId: "abc" } }, { id: 27, headers: authHeaders });
   const invalidParamsToolBody = parseJSON(invalidParamsTool);
   const tokenListAfterUse = await request(`/api/game/mcp-tokens${login.search}`, {
@@ -363,7 +368,8 @@ try {
     "list_messages",
     "get_message",
     "send_message",
-    "delete_messages"
+    "delete_messages",
+    "report_message"
   ];
   const authedToolNames = toolNames(authedToolsBody);
   cases.push(finalize({
@@ -406,6 +412,10 @@ try {
       check(firstMessageID === 0 || (deleteMessageDryRun?.status === 200 && Number(deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.playerId ?? 0) === login.playerID && deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.dryRun === true && deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.requiresConfirmation === true && deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.executed === false && String(deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.confirmation ?? "").startsWith(`delete_messages:${firstMessageID}:`)), "delete_messages dry-run returns explicit confirmation for an owned visible message when available", {
         firstMessageID,
         result: deleteMessageDryRunBody.result ?? {}
+      }),
+      check(firstReportableMessageID === 0 || (reportMessageDryRun?.status === 200 && Number(reportMessageDryRunBody.result?.structuredContent?.reportMessage?.playerId ?? 0) === login.playerID && reportMessageDryRunBody.result?.structuredContent?.reportMessage?.dryRun === true && reportMessageDryRunBody.result?.structuredContent?.reportMessage?.reportable === true && reportMessageDryRunBody.result?.structuredContent?.reportMessage?.requiresConfirmation === true && reportMessageDryRunBody.result?.structuredContent?.reportMessage?.executed === false && String(reportMessageDryRunBody.result?.structuredContent?.reportMessage?.confirmation ?? "").startsWith(`report_message:${firstReportableMessageID}:`)), "report_message dry-run returns explicit confirmation for an owned reportable PM when available", {
+        firstReportableMessageID,
+        result: reportMessageDryRunBody.result ?? {}
       }),
       check(invalidParamsTool.status === 200 && invalidParamsToolBody.error?.code === -32602, "invalid tool params return JSON-RPC invalid params", invalidParamsToolBody),
       check(Number(tokenRowAfterUse?.lastUsedAt ?? 0) > 0, "bearer tool use updates token last-used timestamp", { tokenRowAfterUse }),

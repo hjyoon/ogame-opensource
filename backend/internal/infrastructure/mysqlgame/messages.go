@@ -331,6 +331,14 @@ func (r MessagesRepository) DeleteMCPMessages(ctx context.Context, playerID int,
 	return r.mcpDeleteMessages(ctx, playerID, command, true)
 }
 
+func (r MessagesRepository) PreviewMCPReportMessage(ctx context.Context, playerID int, command domainmcp.ReportMessageCommand) (domainmcp.ReportMessageResult, error) {
+	return r.mcpReportMessage(ctx, playerID, command, false)
+}
+
+func (r MessagesRepository) ReportMCPMessage(ctx context.Context, playerID int, command domainmcp.ReportMessageCommand) (domainmcp.ReportMessageResult, error) {
+	return r.mcpReportMessage(ctx, playerID, command, true)
+}
+
 func (r MessagesRepository) mcpSendMessage(ctx context.Context, playerID int, command domainmcp.SendMessageCommand, execute bool) (domainmcp.SendMessageResult, error) {
 	if r.queryer == nil {
 		return domainmcp.SendMessageResult{}, errors.New("messages queryer unavailable")
@@ -451,6 +459,68 @@ func (r MessagesRepository) mcpDeleteMessages(ctx context.Context, playerID int,
 		return domainmcp.DeleteMessagesResult{}, err
 	}
 	result.Executed = result.DeleteCount > 0
+	return result, nil
+}
+
+func (r MessagesRepository) mcpReportMessage(ctx context.Context, playerID int, command domainmcp.ReportMessageCommand, execute bool) (domainmcp.ReportMessageResult, error) {
+	if r.queryer == nil {
+		return domainmcp.ReportMessageResult{}, errors.New("messages queryer unavailable")
+	}
+	if execute && r.execer == nil {
+		return domainmcp.ReportMessageResult{}, errors.New("messages updater unavailable")
+	}
+	messagesTable, err := tableName(r.prefix, "messages")
+	if err != nil {
+		return domainmcp.ReportMessageResult{}, err
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return domainmcp.ReportMessageResult{}, err
+	}
+	reportsTable, err := tableName(r.prefix, "reports")
+	if err != nil {
+		return domainmcp.ReportMessageResult{}, err
+	}
+	result := domainmcp.ReportMessageResult{PlayerID: playerID, MessageID: command.MessageID, DryRun: !execute}
+	if command.MessageID <= 0 {
+		return result, nil
+	}
+	commanderActive, err := r.loadCommanderActive(ctx, usersTable, playerID)
+	if err != nil {
+		return domainmcp.ReportMessageResult{}, err
+	}
+	rows, err := r.loadInboxRows(ctx, messagesTable, playerID, domaingame.NormalizeMessagesLimit(commanderActive), 0, false)
+	if err != nil {
+		return domainmcp.ReportMessageResult{}, err
+	}
+	for _, row := range rows {
+		if row.ID == command.MessageID && row.Type == domaingame.MessageTypePM {
+			result.Reportable = true
+			break
+		}
+	}
+	if !result.Reportable {
+		return result, nil
+	}
+	if !execute {
+		exists, err := r.reportExists(ctx, reportsTable, command.MessageID)
+		if err != nil {
+			return domainmcp.ReportMessageResult{}, err
+		}
+		if exists {
+			result.Issue = mcpActionIssue(domaingame.MessageReportExistsIssue())
+		}
+		return result, nil
+	}
+	outcome, err := r.MutateMessages(ctx, appgame.MessagesMutationQuery{
+		PlayerID:  playerID,
+		ReportIDs: []int{command.MessageID},
+	})
+	if err != nil {
+		return domainmcp.ReportMessageResult{}, err
+	}
+	result.Issue = mcpActionIssue(outcome.ActionIssue)
+	result.Executed = result.Issue != nil && result.Issue.Code == domaingame.MessageIssueReported
 	return result, nil
 }
 

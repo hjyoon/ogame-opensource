@@ -660,7 +660,7 @@ func TestServiceListsSendMessageToolForMessageWriteScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,send_message,delete_messages" {
+	if strings.Join(names, ",") != "get_server_health,send_message,delete_messages,report_message" {
 		t.Fatalf("unexpected message-write tools: %v", names)
 	}
 }
@@ -1245,6 +1245,110 @@ func TestServiceDeleteMessagesRequiresScopeRepositoryAndValidConfirmation(t *tes
 	}
 }
 
+func TestServiceCallsReportMessageWithDryRunAndConfirmation(t *testing.T) {
+	repository := &fakeWriteRepository{
+		reportPreview: domainmcp.ReportMessageResult{PlayerID: 42, MessageID: 7, Reportable: true},
+		reported:      domainmcp.ReportMessageResult{PlayerID: 42, MessageID: 7, Reportable: true, Executed: true},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeMessageWrite}},
+		},
+	}).WithWriteRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "report_message",
+		AccessToken: "write",
+		Arguments:   map[string]any{"messageId": float64(7)},
+	})
+	if err != nil {
+		t.Fatalf("report_message dry-run returned error: %v", err)
+	}
+	preview := result.StructuredContent.(map[string]any)["reportMessage"].(domainmcp.ReportMessageResult)
+	if !preview.DryRun || preview.Executed || !preview.Reportable || !preview.RequiresConfirmation || !strings.HasPrefix(preview.Confirmation, "report_message:7:") {
+		t.Fatalf("unexpected report preview: %+v", preview)
+	}
+	if repository.reportPreviewPlayerID != 42 || repository.reportPreviewCommand.MessageID != 7 || !repository.reportPreviewCommand.DryRun {
+		t.Fatalf("unexpected report preview command: player=%d command=%+v", repository.reportPreviewPlayerID, repository.reportPreviewCommand)
+	}
+
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "report_message",
+		AccessToken: "write",
+		Arguments:   map[string]any{"messageId": 7, "dryRun": false, "confirm": preview.Confirmation},
+	})
+	if err != nil {
+		t.Fatalf("report_message execute returned error: %v", err)
+	}
+	reported := result.StructuredContent.(map[string]any)["reportMessage"].(domainmcp.ReportMessageResult)
+	if reported.DryRun || !reported.Executed || reported.RequiresConfirmation || reported.Confirmation != preview.Confirmation {
+		t.Fatalf("unexpected report execute: %+v", reported)
+	}
+	if repository.reportPlayerID != 42 || repository.reportCommand.Confirm != preview.Confirmation || repository.reportCommand.DryRun {
+		t.Fatalf("unexpected report command: player=%d command=%+v", repository.reportPlayerID, repository.reportCommand)
+	}
+}
+
+func TestServiceReportMessageDryRunIssueDoesNotRequireConfirmation(t *testing.T) {
+	repository := &fakeWriteRepository{
+		reportPreview: domainmcp.ReportMessageResult{
+			PlayerID:   42,
+			MessageID:  7,
+			Reportable: true,
+			Issue:      &domainmcp.ActionIssue{Code: "report_exists", Message: "already reported"},
+		},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeMessageWrite}},
+		},
+	}).WithWriteRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "report_message",
+		AccessToken: "write",
+		Arguments:   map[string]any{"messageId": 7},
+	})
+	if err != nil {
+		t.Fatalf("report_message dry-run issue returned error: %v", err)
+	}
+	preview := result.StructuredContent.(map[string]any)["reportMessage"].(domainmcp.ReportMessageResult)
+	if !preview.DryRun || preview.RequiresConfirmation || preview.Confirmation != "" || preview.Issue == nil {
+		t.Fatalf("expected issue dry-run without confirmation, got %+v", preview)
+	}
+}
+
+func TestServiceReportMessageRequiresScopeRepositoryAndValidConfirmation(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"messages": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeMessages}},
+			"write":    {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeMessageWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "report_message", AccessToken: "write", Arguments: map[string]any{"messageId": 7}}); err == nil {
+		t.Fatalf("expected missing repository error")
+	}
+
+	service = service.WithWriteRepository(&fakeWriteRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "report_message", AccessToken: "messages", Arguments: map[string]any{"messageId": 7}}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without message write scope, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "report_message", AccessToken: "write", Arguments: map[string]any{"messageId": true}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid id error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "report_message", AccessToken: "write", Arguments: map[string]any{"messageId": 7, "dryRun": false}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected missing confirmation error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "report_message", AccessToken: "write", Arguments: map[string]any{"messageId": 7, "dryRun": false, "confirm": "wrong"}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected wrong confirmation error, got %v", err)
+	}
+
+	service = service.WithWriteRepository(&fakeWriteRepository{err: errors.New("report down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "report_message", AccessToken: "write", Arguments: map[string]any{"messageId": 7}}); err == nil {
+		t.Fatalf("expected repository error")
+	}
+}
+
 func TestMCPMessageQueryDefaultsCapsAndValidation(t *testing.T) {
 	query, err := mcpMessageQuery(nil)
 	if err != nil || query.Limit != 25 || query.HasMessageType || query.IncludeText {
@@ -1338,6 +1442,40 @@ func TestMCPDeleteMessagesCommandDefaultsAndValidation(t *testing.T) {
 		{"messageIds": []any{7}, "confirm": false},
 	} {
 		if _, err := mcpDeleteMessagesCommand(args); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", args, err)
+		}
+	}
+}
+
+func TestMCPReportMessageCommandDefaultsAndValidation(t *testing.T) {
+	command, err := mcpReportMessageCommand(map[string]any{"messageId": float64(7)})
+	if err != nil || command.MessageID != 7 || !command.DryRun {
+		t.Fatalf("unexpected default report command: %+v err=%v", command, err)
+	}
+
+	command, err = mcpReportMessageCommand(map[string]any{"messageId": "8", "dryRun": false, "confirm": "report_message:8:test"})
+	if err != nil || command.MessageID != 8 || command.DryRun || command.Confirm != "report_message:8:test" {
+		t.Fatalf("unexpected explicit report command: %+v err=%v", command, err)
+	}
+
+	confirmation := mcpReportMessageConfirmation(domainmcp.ReportMessageCommand{MessageID: 7})
+	if !strings.HasPrefix(confirmation, "report_message:7:") || confirmation != mcpReportMessageConfirmation(domainmcp.ReportMessageCommand{MessageID: 7}) {
+		t.Fatalf("unexpected confirmation: %q", confirmation)
+	}
+	if confirmation == mcpReportMessageConfirmation(domainmcp.ReportMessageCommand{MessageID: 8}) {
+		t.Fatalf("confirmation should bind message id")
+	}
+
+	for _, args := range []map[string]any{
+		nil,
+		{"messageId": 0},
+		{"messageId": true},
+		{"messageId": -1},
+		{"messageId": 1.5},
+		{"messageId": 7, "dryRun": "false"},
+		{"messageId": 7, "confirm": false},
+	} {
+		if _, err := mcpReportMessageCommand(args); !errors.Is(err, domainmcp.ErrInvalidParams) {
 			t.Fatalf("expected invalid params for %+v, got %v", args, err)
 		}
 	}
@@ -1812,14 +1950,20 @@ type fakeWriteRepository struct {
 	sent                  domainmcp.SendMessageResult
 	deletePreview         domainmcp.DeleteMessagesResult
 	deleted               domainmcp.DeleteMessagesResult
+	reportPreview         domainmcp.ReportMessageResult
+	reported              domainmcp.ReportMessageResult
 	previewPlayerID       int
 	sendPlayerID          int
 	deletePreviewPlayerID int
 	deletePlayerID        int
+	reportPreviewPlayerID int
+	reportPlayerID        int
 	previewCommand        domainmcp.SendMessageCommand
 	sendCommand           domainmcp.SendMessageCommand
 	deletePreviewCommand  domainmcp.DeleteMessagesCommand
 	deleteCommand         domainmcp.DeleteMessagesCommand
+	reportPreviewCommand  domainmcp.ReportMessageCommand
+	reportCommand         domainmcp.ReportMessageCommand
 	err                   error
 }
 
@@ -1857,6 +2001,24 @@ func (f *fakeWriteRepository) DeleteMCPMessages(_ context.Context, playerID int,
 		return domainmcp.DeleteMessagesResult{}, f.err
 	}
 	return f.deleted, nil
+}
+
+func (f *fakeWriteRepository) PreviewMCPReportMessage(_ context.Context, playerID int, command domainmcp.ReportMessageCommand) (domainmcp.ReportMessageResult, error) {
+	f.reportPreviewPlayerID = playerID
+	f.reportPreviewCommand = command
+	if f.err != nil {
+		return domainmcp.ReportMessageResult{}, f.err
+	}
+	return f.reportPreview, nil
+}
+
+func (f *fakeWriteRepository) ReportMCPMessage(_ context.Context, playerID int, command domainmcp.ReportMessageCommand) (domainmcp.ReportMessageResult, error) {
+	f.reportPlayerID = playerID
+	f.reportCommand = command
+	if f.err != nil {
+		return domainmcp.ReportMessageResult{}, f.err
+	}
+	return f.reported, nil
 }
 
 type fakeSessionLookup struct {

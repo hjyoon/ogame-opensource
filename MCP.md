@@ -52,8 +52,9 @@ Implemented:
   These are read-only and avoid legacy queue/resource mutations.
 - Authenticated `mcp:messages` tools: `list_messages` and `get_message`.
   They read owned inbox rows without marking messages read or cleanup mutation.
-- Authenticated `mcp:message_write` tools: `send_message`, `delete_messages`.
-  Both default to dry-run; execution requires `dryRun:false` plus the returned
+- Authenticated `mcp:message_write` tools: `send_message`, `delete_messages`,
+  `report_message`. All default to dry-run; execution requires `dryRun:false`
+  plus the returned
   confirmation string.
 
 ## Static Token Format
@@ -94,8 +95,7 @@ dry-run, and explicit confirmation.
 
 ## Next Steps
 
-1. Add more scoped dry-run mutation tools: fleet dispatch, building/research
-   queue actions, and message report.
+1. Add more scoped dry-run mutation tools: fleet dispatch and queue actions.
 
 ## General User Policy
 

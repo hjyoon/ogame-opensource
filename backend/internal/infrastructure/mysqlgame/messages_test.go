@@ -481,6 +481,127 @@ func TestMessagesRepositoryMCPDeleteMessagesValidationAndErrors(t *testing.T) {
 	}
 }
 
+func TestMessagesRepositoryMCPReportMessagePreviewAndExecute(t *testing.T) {
+	messageRows := func() *fakeRows {
+		return fakeRowsFromValues(
+			[]any{11, domaingame.MessageTypePM, "Sender", "Subject", "Body", 0, int64(1)},
+			[]any{12, domaingame.MessageTypeSpyReport, "Spy", "Spy", "Text", 0, int64(2)},
+		)
+	}
+	runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{int64(0)})},
+		{rows: messageRows()},
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues([]any{int64(0)})},
+		{rows: messageRows()},
+		{rows: fakeRowsFromValues([]any{int64(0)})},
+		{rows: messageRows()},
+		{rows: fakeRowsFromValues([]any{11, domaingame.MessageTypePM, "Sender", "Subject", "Body", 0, int64(1)})},
+		{rows: fakeRowsFromValues()},
+	}}}
+	repository := NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+
+	preview, err := repository.PreviewMCPReportMessage(context.Background(), 42, domainmcp.ReportMessageCommand{MessageID: 11})
+	if err != nil {
+		t.Fatalf("PreviewMCPReportMessage returned error: %v", err)
+	}
+	if !preview.DryRun || preview.Executed || !preview.Reportable || preview.Issue != nil || len(runner.execs) != 0 {
+		t.Fatalf("unexpected report preview=%+v execs=%+v", preview, runner.execs)
+	}
+
+	reported, err := repository.ReportMCPMessage(context.Background(), 42, domainmcp.ReportMessageCommand{MessageID: 11})
+	if err != nil {
+		t.Fatalf("ReportMCPMessage returned error: %v", err)
+	}
+	if reported.DryRun || !reported.Executed || !reported.Reportable || reported.Issue == nil || reported.Issue.Code != domaingame.MessageIssueReported {
+		t.Fatalf("unexpected report execute: %+v", reported)
+	}
+	if len(runner.execs) != 1 || !strings.Contains(runner.execs[0].sql, "INSERT INTO `ogame_reports`") ||
+		runner.execs[0].args[0] != 42 || runner.execs[0].args[1] != 11 {
+		t.Fatalf("expected legacy report insert exec, got %+v", runner.execs)
+	}
+}
+
+func TestMessagesRepositoryMCPReportMessageValidationAndErrors(t *testing.T) {
+	repository := NewMessagesRepositoryWithRunner(nil, nil, "ogame_", time.Now)
+	if _, err := repository.PreviewMCPReportMessage(context.Background(), 42, domainmcp.ReportMessageCommand{MessageID: 7}); err == nil {
+		t.Fatalf("expected preview queryer error")
+	}
+
+	repository = NewMessagesRepositoryWithRunner(&fakeMessagesRunner{}, nil, "ogame_", time.Now)
+	if _, err := repository.ReportMCPMessage(context.Background(), 42, domainmcp.ReportMessageCommand{MessageID: 7}); err == nil {
+		t.Fatalf("expected execute updater error")
+	}
+
+	repository = NewMessagesRepositoryWithRunner(&fakeMessagesRunner{}, &fakeMessagesRunner{}, "bad-prefix_", time.Now)
+	if _, err := repository.PreviewMCPReportMessage(context.Background(), 42, domainmcp.ReportMessageCommand{MessageID: 7}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected unsafe prefix error, got %v", err)
+	}
+
+	runner := &fakeMessagesRunner{}
+	repository = NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	preview, err := repository.PreviewMCPReportMessage(context.Background(), 42, domainmcp.ReportMessageCommand{})
+	if err != nil || !preview.DryRun || preview.Reportable || len(runner.calls) != 0 || len(runner.execs) != 0 {
+		t.Fatalf("expected empty report no-op, preview=%+v err=%v calls=%+v execs=%+v", preview, err, runner.calls, runner.execs)
+	}
+
+	runner = &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{int64(0)})},
+		{rows: fakeRowsFromValues([]any{12, domaingame.MessageTypeSpyReport, "Spy", "Spy", "Text", 0, int64(2)})},
+	}}}
+	repository = NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	preview, err = repository.PreviewMCPReportMessage(context.Background(), 42, domainmcp.ReportMessageCommand{MessageID: 12})
+	if err != nil || preview.Reportable || preview.RequiresConfirmation || len(runner.execs) != 0 {
+		t.Fatalf("expected non-PM report no-op, preview=%+v err=%v execs=%+v", preview, err, runner.execs)
+	}
+
+	runner = &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{int64(0)})},
+		{rows: fakeRowsFromValues([]any{12, domaingame.MessageTypeSpyReport, "Spy", "Spy", "Text", 0, int64(2)})},
+	}}}
+	repository = NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	reported, err := repository.ReportMCPMessage(context.Background(), 42, domainmcp.ReportMessageCommand{MessageID: 12})
+	if err != nil || reported.Reportable || reported.Executed || len(runner.execs) != 0 {
+		t.Fatalf("expected execute non-PM report no-op, reported=%+v err=%v execs=%+v", reported, err, runner.execs)
+	}
+
+	runner = &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{int64(0)})},
+		{rows: fakeRowsFromValues([]any{11, domaingame.MessageTypePM, "Sender", "Subject", "Body", 0, int64(1)})},
+		{rows: fakeRowsFromValues([]any{99})},
+	}}}
+	repository = NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	preview, err = repository.PreviewMCPReportMessage(context.Background(), 42, domainmcp.ReportMessageCommand{MessageID: 11})
+	if err != nil || !preview.Reportable || preview.Issue == nil || preview.Issue.Code != domaingame.MessageIssueReportExists || len(runner.execs) != 0 {
+		t.Fatalf("expected duplicate report issue, preview=%+v err=%v execs=%+v", preview, err, runner.execs)
+	}
+
+	runner = &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{int64(0)})},
+		{err: errors.New("inbox failed")},
+	}}}
+	repository = NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, err := repository.PreviewMCPReportMessage(context.Background(), 42, domainmcp.ReportMessageCommand{MessageID: 11}); err == nil || !strings.Contains(err.Error(), "inbox failed") {
+		t.Fatalf("expected inbox error, got %v", err)
+	}
+
+	runner = &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{int64(0)})},
+		{rows: fakeRowsFromValues([]any{11, domaingame.MessageTypePM, "Sender", "Subject", "Body", 0, int64(1)})},
+		{err: errors.New("mutate commander failed")},
+	}}}
+	repository = NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, err := repository.ReportMCPMessage(context.Background(), 42, domainmcp.ReportMessageCommand{MessageID: 11}); err == nil || !strings.Contains(err.Error(), "mutate commander failed") {
+		t.Fatalf("expected mutate error, got %v", err)
+	}
+
+	runner = &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("commander failed")}}}}
+	repository = NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, err := repository.PreviewMCPReportMessage(context.Background(), 42, domainmcp.ReportMessageCommand{MessageID: 7}); err == nil || !strings.Contains(err.Error(), "commander failed") {
+		t.Fatalf("expected commander error, got %v", err)
+	}
+}
+
 func TestMessagesRepositoryMCPSendMessageValidationAndErrors(t *testing.T) {
 	repository := NewMessagesRepositoryWithRunner(&fakeMessagesRunner{}, &fakeMessagesRunner{}, "ogame_", time.Now)
 	preview, err := repository.PreviewMCPSendMessage(context.Background(), 42, domainmcp.SendMessageCommand{Subject: "Hi", Text: "body"})

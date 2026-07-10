@@ -257,6 +257,23 @@ type DeleteMessagesResult struct {
 	Executed             bool   `json:"executed"`
 }
 
+type ReportMessageCommand struct {
+	MessageID int
+	DryRun    bool
+	Confirm   string
+}
+
+type ReportMessageResult struct {
+	PlayerID             int          `json:"playerId"`
+	MessageID            int          `json:"messageId"`
+	Reportable           bool         `json:"reportable"`
+	DryRun               bool         `json:"dryRun"`
+	RequiresConfirmation bool         `json:"requiresConfirmation"`
+	Confirmation         string       `json:"confirmation,omitempty"`
+	Executed             bool         `json:"executed"`
+	Issue                *ActionIssue `json:"issue,omitempty"`
+}
+
 type FleetShip struct {
 	ID    int    `json:"id"`
 	Name  string `json:"name"`
