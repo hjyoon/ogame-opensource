@@ -7,12 +7,19 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	apppublicsite "github.com/hjyoon/ogame-opensource/backend/internal/application/publicsite"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 	domainpublicsite "github.com/hjyoon/ogame-opensource/backend/internal/domain/publicsite"
 	domainsystem "github.com/hjyoon/ogame-opensource/backend/internal/domain/system"
 )
 
 type HealthUseCase interface {
 	Get(context.Context) domainsystem.Health
+}
+
+type MCPUseCase interface {
+	Initialize(context.Context) domainmcp.InitializeResult
+	ListTools(context.Context, domainmcp.ListToolsCommand) (domainmcp.ListToolsResult, error)
+	CallTool(context.Context, domainmcp.CallToolCommand) (domainmcp.ToolCallResult, error)
 }
 
 type FrontendAssets interface {
@@ -180,6 +187,7 @@ type GamePaymentUseCase interface {
 
 type Dependencies struct {
 	Health               HealthUseCase
+	MCP                  MCPUseCase
 	UniverseNumber       int
 	MaintenanceStartPage string
 	Universes            UniverseCatalogUseCase
@@ -246,6 +254,7 @@ func New(deps Dependencies) http.Handler {
 	a := app{deps: deps}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/healthz", getOnly(a.handleHealthz))
+	mux.HandleFunc("/mcp", a.handleMCP)
 	mux.HandleFunc("/api/public/universes", getOnly(a.handleUniverses))
 	mux.HandleFunc("/api/public/registration/validate", postOnly(a.handleRegistrationValidation))
 	mux.HandleFunc("/api/public/registration", postOnly(a.handleRegistration))

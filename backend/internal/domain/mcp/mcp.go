@@ -1,0 +1,61 @@
+package mcp
+
+import "errors"
+
+const ProtocolVersion = "2025-06-18"
+
+var ErrToolNotFound = errors.New("mcp tool not found")
+
+type InitializeResult struct {
+	ProtocolVersion string       `json:"protocolVersion"`
+	Capabilities    Capabilities `json:"capabilities"`
+	ServerInfo      ServerInfo   `json:"serverInfo"`
+}
+
+type Capabilities struct {
+	Tools *ToolsCapability `json:"tools,omitempty"`
+}
+
+type ToolsCapability struct {
+	ListChanged bool `json:"listChanged"`
+}
+
+type ServerInfo struct {
+	Name    string `json:"name"`
+	Title   string `json:"title,omitempty"`
+	Version string `json:"version"`
+}
+
+type Tool struct {
+	Name         string         `json:"name"`
+	Title        string         `json:"title,omitempty"`
+	Description  string         `json:"description"`
+	InputSchema  map[string]any `json:"inputSchema"`
+	OutputSchema map[string]any `json:"outputSchema,omitempty"`
+	Annotations  map[string]any `json:"annotations,omitempty"`
+}
+
+type ListToolsCommand struct {
+	Cursor string
+}
+
+type ListToolsResult struct {
+	Tools      []Tool `json:"tools"`
+	NextCursor string `json:"nextCursor,omitempty"`
+}
+
+type CallToolCommand struct {
+	Name      string
+	Arguments map[string]any
+}
+
+type ToolCallResult struct {
+	Content           []Content `json:"content"`
+	StructuredContent any       `json:"structuredContent,omitempty"`
+	IsError           bool      `json:"isError"`
+}
+
+type Content struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+}

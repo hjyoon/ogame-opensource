@@ -10,6 +10,7 @@ import (
 	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
+	appmcp "github.com/hjyoon/ogame-opensource/backend/internal/application/mcp"
 	apppublicsite "github.com/hjyoon/ogame-opensource/backend/internal/application/publicsite"
 	appsystem "github.com/hjyoon/ogame-opensource/backend/internal/application/system"
 	"github.com/hjyoon/ogame-opensource/backend/internal/config"
@@ -52,6 +53,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		BunTarget:      config.BunTarget,
 		ReactTarget:    config.ReactTarget,
 	}, filesystem.Probe{}, infraruntime.GoRuntime{})
+	mcp := appmcp.NewService(health)
 	universes := apppublicsite.NewUniverseCatalogService(universeRepository(cfg, logger))
 	registrationDrafts := registrationValidator(cfg, logger)
 	registration := registrationRegistrar(cfg, logger)
@@ -92,6 +94,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 
 	return httpdelivery.New(httpdelivery.Dependencies{
 		Health:               health,
+		MCP:                  mcp,
 		UniverseNumber:       cfg.UniNumber,
 		MaintenanceStartPage: "/",
 		Universes:            universes,
