@@ -1,3 +1,5 @@
+import { createHash, randomBytes } from "node:crypto";
+
 function envURL(value, fallback) {
   return String(value ?? fallback).replace(/\/+$/, "");
 }
@@ -56,6 +58,14 @@ function toolNames(body) {
   return Array.isArray(body.result?.tools)
     ? body.result.tools.map((tool) => String(tool.name ?? "")).filter((name) => name !== "")
     : [];
+}
+
+function pkceVerifier() {
+  return randomBytes(32).toString("base64url");
+}
+
+function pkceChallenge(verifier) {
+  return createHash("sha256").update(verifier).digest("base64url");
 }
 
 async function mcpJSONRPC(method, params, options = {}) {
@@ -167,11 +177,60 @@ try {
       check(oauthMetadata.status === 200 && oauthMetadataBody.issuer === baseUrl, "OAuth authorization server metadata uses current origin issuer", oauthMetadataBody),
       check(oauthMetadataBody.authorization_endpoint === `${baseUrl}/oauth/authorize`, "OAuth metadata exposes authorize endpoint", oauthMetadataBody),
       check((oauthMetadataBody.code_challenge_methods_supported ?? []).includes("S256"), "OAuth metadata requires PKCE S256 support", oauthMetadataBody),
-      check(oauthTokenUnavailable.status === 503 && oauthTokenUnavailableBody.error === "temporarily_unavailable", "OAuth token endpoint remains closed before consent flow is implemented", oauthTokenUnavailableBody)
+      check(oauthTokenUnavailable.status === 400 && oauthTokenUnavailableBody.error === "invalid_request", "OAuth token endpoint rejects malformed exchange requests", oauthTokenUnavailableBody)
     ]
   }));
 
   const login = await loginGameUser(universe);
+  const sessionID = new URLSearchParams(login.search.startsWith("?") ? login.search.slice(1) : login.search).get("session") ?? "";
+  const oauthVerifier = pkceVerifier();
+  const oauthClientID = `go-mcp-smoke-${Date.now().toString(36)}`;
+  const oauthRedirectURI = `${baseUrl}/oauth/callback`;
+  const oauthParams = new URLSearchParams({
+    response_type: "code",
+    client_id: oauthClientID,
+    redirect_uri: oauthRedirectURI,
+    scope: "mcp:read mcp:messages mcp:fleet",
+    state: "go-mcp-smoke-state",
+    code_challenge: pkceChallenge(oauthVerifier),
+    code_challenge_method: "S256",
+    session: sessionID
+  });
+  const oauthConsent = await request(`/oauth/authorize?${oauthParams}`, {
+    headers: { Cookie: login.cookiePair }
+  });
+  const oauthApprove = await request(`/oauth/authorize?${oauthParams}&consent=approve`, {
+    headers: { Cookie: login.cookiePair }
+  });
+  const oauthApproveLocation = oauthApprove.headers.location ?? "";
+  const oauthCallback = oauthApproveLocation !== "" ? new URL(oauthApproveLocation) : new URL(`${oauthRedirectURI}?code=`);
+  const oauthCode = oauthCallback.searchParams.get("code") ?? "";
+  const oauthToken = await request("/oauth/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code: oauthCode,
+      redirect_uri: oauthRedirectURI,
+      client_id: oauthClientID,
+      code_verifier: oauthVerifier
+    }).toString()
+  });
+  const oauthTokenBody = parseJSON(oauthToken);
+  const oauthSecret = String(oauthTokenBody.access_token ?? "");
+  const oauthTools = await mcpJSONRPC("tools/list", {}, { id: 18, headers: { Authorization: `Bearer ${oauthSecret}` } });
+  const oauthToolsBody = parseJSON(oauthTools);
+  const oauthTokenList = await request(`/api/game/mcp-tokens${login.search}`, {
+    headers: { Cookie: login.cookiePair }
+  });
+  const oauthTokenListBody = parseJSON(oauthTokenList);
+  const oauthTokenRow = (oauthTokenListBody.tokens ?? []).find((token) => String(token.name ?? "") === `OAuth ${oauthClientID}`);
+  const oauthRevoke = await request(`/api/game/mcp-tokens/revoke${login.search}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
+    body: JSON.stringify({ tokenId: Number(oauthTokenRow?.id ?? 0) })
+  });
+  const oauthRevokeBody = parseJSON(oauthRevoke);
   const tokenListBefore = await request(`/api/game/mcp-tokens${login.search}`, {
     headers: { Cookie: login.cookiePair }
   });
@@ -243,6 +302,13 @@ try {
         status: login.response.status,
         playerID: login.playerID
       }),
+      check(sessionID !== "", "smoke login exposes a public session for OAuth consent", { sessionID }),
+      check(oauthConsent.status === 200 && oauthConsent.body.includes("Authorize MCP access"), "OAuth authorize shows consent page before approval", { status: oauthConsent.status }),
+      check(oauthApprove.status === 302 && oauthApproveLocation.startsWith(oauthRedirectURI) && oauthCallback.searchParams.get("state") === "go-mcp-smoke-state" && oauthCode !== "", "OAuth authorize approval redirects with code and state", { status: oauthApprove.status, location: oauthApproveLocation }),
+      check(oauthToken.status === 200 && oauthSecret.startsWith("ogmcp_") && oauthTokenBody.token_type === "Bearer", "OAuth token exchange returns bearer access token", oauthTokenBody),
+      check(oauthTools.status === 200 && expectedTools.every((name) => toolNames(oauthToolsBody).includes(name)), "OAuth bearer token exposes MCP read tools", { oauthToolNames: toolNames(oauthToolsBody) }),
+      check(Number(oauthTokenRow?.id ?? 0) > 0, "OAuth exchange persists a revocable MCP token row", { oauthTokenRow }),
+      check(oauthRevoke.status === 200 && oauthRevokeBody.revoked === true, "OAuth-created MCP token can be revoked", oauthRevokeBody),
       check(tokenListBefore.status === 200 && tokenListBeforeBody.authenticated === true && Array.isArray(tokenListBeforeBody.tokens), "MCP token list authenticates game session", tokenListBeforeBody),
       check(tokenCreate.status === 200 && tokenCreateBody.authenticated === true && tokenID > 0, "MCP token create returns a persisted token id", tokenCreateBody.token ?? {}),
       check(secret.startsWith("ogmcp_") && secret.length > 12, "MCP token create returns a one-time bearer secret", {

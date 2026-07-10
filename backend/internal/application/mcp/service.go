@@ -4,11 +4,14 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +23,10 @@ import (
 )
 
 var ErrInvalidTokenRequest = errors.New("invalid mcp token request")
+var ErrInvalidOAuthRequest = errors.New("invalid mcp oauth request")
+var ErrInvalidOAuthGrant = errors.New("invalid mcp oauth grant")
+
+const mcpOAuthCodeTTL = 10 * time.Minute
 
 type HealthProvider interface {
 	Get(context.Context) domainsystem.Health
@@ -43,6 +50,11 @@ type TokenRepository interface {
 	RevokeMCPToken(context.Context, int, int, int64) (bool, error)
 }
 
+type OAuthCodeRepository interface {
+	CreateMCPOAuthCode(context.Context, domainmcp.OAuthAuthorizationCode) (domainmcp.OAuthAuthorizationCode, error)
+	ConsumeMCPOAuthCode(context.Context, string, int64) (domainmcp.OAuthAuthorizationCode, error)
+}
+
 type ReadRepository interface {
 	ListMCPPlanets(context.Context, int) ([]domainmcp.Planet, error)
 	GetMCPAccountOverview(context.Context, int) (domainmcp.AccountOverview, error)
@@ -55,6 +67,10 @@ type TokenSecretGenerator interface {
 	NewMCPToken() (string, error)
 }
 
+type OAuthCodeGenerator interface {
+	NewMCPOAuthCode() (string, error)
+}
+
 type SecureTokenGenerator struct{}
 
 func (SecureTokenGenerator) NewMCPToken() (string, error) {
@@ -63,6 +79,14 @@ func (SecureTokenGenerator) NewMCPToken() (string, error) {
 		return "", err
 	}
 	return "ogmcp_" + hex.EncodeToString(bytes), nil
+}
+
+func (SecureTokenGenerator) NewMCPOAuthCode() (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return "ogmcp_code_" + hex.EncodeToString(bytes), nil
 }
 
 type TokenManagementCommand struct {
@@ -80,6 +104,44 @@ type CreateTokenCommand struct {
 type RevokeTokenCommand struct {
 	TokenManagementCommand
 	TokenID int
+}
+
+type OAuthAuthorizeCommand struct {
+	TokenManagementCommand
+	ResponseType        string
+	ClientID            string
+	RedirectURI         string
+	Scope               string
+	State               string
+	CodeChallenge       string
+	CodeChallengeMethod string
+	ConsentApproved     bool
+}
+
+type OAuthAuthorizeResult struct {
+	Authenticated   bool
+	Issues          []domainpublicsite.SessionIssue
+	RequiresConsent bool
+	ClientID        string
+	RedirectURI     string
+	Scopes          []string
+	RedirectTo      string
+	Code            string
+}
+
+type OAuthTokenCommand struct {
+	GrantType    string
+	Code         string
+	RedirectURI  string
+	ClientID     string
+	CodeVerifier string
+}
+
+type OAuthTokenResult struct {
+	AccessToken string
+	TokenType   string
+	Scope       string
+	Token       domainmcp.Token
 }
 
 type TokenListResult struct {
@@ -104,9 +166,11 @@ type Service struct {
 	health          HealthProvider
 	verifier        TokenVerifier
 	tokenRepository TokenRepository
+	oauthRepository OAuthCodeRepository
 	readRepository  ReadRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
+	codeGenerator   OAuthCodeGenerator
 	auditor         ToolCallAuditor
 	now             func() time.Time
 }
@@ -123,6 +187,10 @@ func NewServiceWithTokenManagement(health HealthProvider, verifier TokenVerifier
 	if generator == nil {
 		generator = SecureTokenGenerator{}
 	}
+	codeGenerator, ok := generator.(OAuthCodeGenerator)
+	if !ok {
+		codeGenerator = SecureTokenGenerator{}
+	}
 	if now == nil {
 		now = time.Now
 	}
@@ -132,8 +200,14 @@ func NewServiceWithTokenManagement(health HealthProvider, verifier TokenVerifier
 		tokenRepository: repository,
 		sessions:        sessions,
 		tokenGenerator:  generator,
+		codeGenerator:   codeGenerator,
 		now:             now,
 	}
+}
+
+func (s Service) WithOAuthCodeRepository(repository OAuthCodeRepository) Service {
+	s.oauthRepository = repository
+	return s
 }
 
 func (s Service) WithReadRepository(repository ReadRepository) Service {
@@ -180,6 +254,123 @@ func (s Service) OAuthAuthorizationServerMetadata(ctx context.Context, issuer st
 			domainmcp.ScopeFleet,
 		},
 	}
+}
+
+func (s Service) AuthorizeOAuth(ctx context.Context, command OAuthAuthorizeCommand) (OAuthAuthorizeResult, error) {
+	if s.sessions == nil || s.oauthRepository == nil || s.codeGenerator == nil {
+		return OAuthAuthorizeResult{}, errors.New("mcp oauth dependencies unavailable")
+	}
+	request, err := normalizeOAuthAuthorizeRequest(command)
+	if err != nil {
+		return OAuthAuthorizeResult{}, err
+	}
+	session, err := s.authenticateSession(ctx, command.TokenManagementCommand)
+	if err != nil {
+		return OAuthAuthorizeResult{}, err
+	}
+	if !session.Authenticated {
+		return OAuthAuthorizeResult{Authenticated: false, Issues: session.Issues}, nil
+	}
+	if !command.ConsentApproved {
+		return OAuthAuthorizeResult{
+			Authenticated:   true,
+			RequiresConsent: true,
+			ClientID:        request.ClientID,
+			RedirectURI:     request.RedirectURI,
+			Scopes:          request.Scopes,
+		}, nil
+	}
+	code, err := s.codeGenerator.NewMCPOAuthCode()
+	if err != nil {
+		return OAuthAuthorizeResult{}, err
+	}
+	now := s.now()
+	_, err = s.oauthRepository.CreateMCPOAuthCode(ctx, domainmcp.OAuthAuthorizationCode{
+		PlayerID:            session.Session.PlayerID,
+		ClientID:            request.ClientID,
+		RedirectURI:         request.RedirectURI,
+		Scopes:              request.Scopes,
+		CodeHash:            HashToken(code),
+		CodeChallenge:       request.CodeChallenge,
+		CodeChallengeMethod: request.CodeChallengeMethod,
+		CreatedAt:           now.Unix(),
+		ExpiresAt:           now.Add(mcpOAuthCodeTTL).Unix(),
+	})
+	if err != nil {
+		return OAuthAuthorizeResult{}, err
+	}
+	redirectTo, err := oauthRedirectURI(request.RedirectURI, code, request.State)
+	if err != nil {
+		return OAuthAuthorizeResult{}, err
+	}
+	return OAuthAuthorizeResult{
+		Authenticated: true,
+		ClientID:      request.ClientID,
+		RedirectURI:   request.RedirectURI,
+		Scopes:        request.Scopes,
+		RedirectTo:    redirectTo,
+		Code:          code,
+	}, nil
+}
+
+func (s Service) ExchangeOAuthCode(ctx context.Context, command OAuthTokenCommand) (OAuthTokenResult, error) {
+	if s.oauthRepository == nil || s.tokenRepository == nil || s.tokenGenerator == nil {
+		return OAuthTokenResult{}, errors.New("mcp oauth dependencies unavailable")
+	}
+	if strings.TrimSpace(command.GrantType) != "authorization_code" {
+		return OAuthTokenResult{}, fmt.Errorf("%w: grant_type must be authorization_code", ErrInvalidOAuthRequest)
+	}
+	code := strings.TrimSpace(command.Code)
+	if code == "" {
+		return OAuthTokenResult{}, fmt.Errorf("%w: code is required", ErrInvalidOAuthRequest)
+	}
+	redirectURI := strings.TrimSpace(command.RedirectURI)
+	if !validOAuthRedirectURI(redirectURI) {
+		return OAuthTokenResult{}, fmt.Errorf("%w: redirect_uri is invalid", ErrInvalidOAuthRequest)
+	}
+	clientID := strings.TrimSpace(command.ClientID)
+	if !validOAuthClientID(clientID) {
+		return OAuthTokenResult{}, fmt.Errorf("%w: client_id is required", ErrInvalidOAuthRequest)
+	}
+	verifier := strings.TrimSpace(command.CodeVerifier)
+	if !validPKCEValue(verifier) {
+		return OAuthTokenResult{}, fmt.Errorf("%w: code_verifier is invalid", ErrInvalidOAuthRequest)
+	}
+	now := s.now().Unix()
+	stored, err := s.oauthRepository.ConsumeMCPOAuthCode(ctx, HashToken(code), now)
+	if err != nil {
+		if errors.Is(err, domainmcp.ErrUnauthorized) {
+			return OAuthTokenResult{}, ErrInvalidOAuthGrant
+		}
+		return OAuthTokenResult{}, err
+	}
+	if stored.PlayerID <= 0 || stored.ClientID != clientID || stored.RedirectURI != redirectURI || stored.CodeChallengeMethod != "S256" || !pkceS256Matches(verifier, stored.CodeChallenge) {
+		return OAuthTokenResult{}, ErrInvalidOAuthGrant
+	}
+	scopes, err := normalizeOAuthScopes(strings.Join(stored.Scopes, " "))
+	if err != nil {
+		return OAuthTokenResult{}, ErrInvalidOAuthGrant
+	}
+	secret, err := s.tokenGenerator.NewMCPToken()
+	if err != nil {
+		return OAuthTokenResult{}, err
+	}
+	token, err := s.tokenRepository.CreateMCPToken(ctx, domainmcp.Token{
+		PlayerID:  stored.PlayerID,
+		Name:      truncateOAuthTokenName("OAuth "+clientID, 64),
+		Scopes:    scopes,
+		CreatedAt: now,
+	}, HashToken(secret))
+	if err != nil {
+		return OAuthTokenResult{}, err
+	}
+	token.PlayerID = 0
+	return OAuthTokenResult{
+		AccessToken: secret,
+		TokenType:   "Bearer",
+		Scope:       strings.Join(scopes, " "),
+		Token:       token,
+	}, nil
 }
 
 func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsCommand) (domainmcp.ListToolsResult, error) {
@@ -552,6 +743,145 @@ func userScopeAllowed(scope string) bool {
 	default:
 		return false
 	}
+}
+
+type normalizedOAuthAuthorizeRequest struct {
+	ClientID            string
+	RedirectURI         string
+	State               string
+	Scopes              []string
+	CodeChallenge       string
+	CodeChallengeMethod string
+}
+
+func normalizeOAuthAuthorizeRequest(command OAuthAuthorizeCommand) (normalizedOAuthAuthorizeRequest, error) {
+	if strings.TrimSpace(command.ResponseType) != "code" {
+		return normalizedOAuthAuthorizeRequest{}, fmt.Errorf("%w: response_type must be code", ErrInvalidOAuthRequest)
+	}
+	clientID := strings.TrimSpace(command.ClientID)
+	if !validOAuthClientID(clientID) {
+		return normalizedOAuthAuthorizeRequest{}, fmt.Errorf("%w: client_id is required", ErrInvalidOAuthRequest)
+	}
+	redirectURI := strings.TrimSpace(command.RedirectURI)
+	if !validOAuthRedirectURI(redirectURI) {
+		return normalizedOAuthAuthorizeRequest{}, fmt.Errorf("%w: redirect_uri is invalid", ErrInvalidOAuthRequest)
+	}
+	method := strings.TrimSpace(command.CodeChallengeMethod)
+	if method != "S256" {
+		return normalizedOAuthAuthorizeRequest{}, fmt.Errorf("%w: code_challenge_method must be S256", ErrInvalidOAuthRequest)
+	}
+	challenge := strings.TrimSpace(command.CodeChallenge)
+	if !validPKCEValue(challenge) {
+		return normalizedOAuthAuthorizeRequest{}, fmt.Errorf("%w: code_challenge is invalid", ErrInvalidOAuthRequest)
+	}
+	scopes, err := normalizeOAuthScopes(command.Scope)
+	if err != nil {
+		return normalizedOAuthAuthorizeRequest{}, err
+	}
+	return normalizedOAuthAuthorizeRequest{
+		ClientID:            clientID,
+		RedirectURI:         redirectURI,
+		State:               strings.TrimSpace(command.State),
+		Scopes:              scopes,
+		CodeChallenge:       challenge,
+		CodeChallengeMethod: method,
+	}, nil
+}
+
+func normalizeOAuthScopes(raw string) ([]string, error) {
+	parts := strings.Fields(raw)
+	if len(parts) == 0 {
+		parts = []string{domainmcp.ScopeRead}
+	}
+	seen := map[string]bool{}
+	scopes := make([]string, 0, len(parts))
+	for _, scope := range parts {
+		scope = strings.TrimSpace(scope)
+		if scope == "" || seen[scope] {
+			continue
+		}
+		if !oauthScopeAllowed(scope) {
+			return nil, fmt.Errorf("%w: scope %q is not available", ErrInvalidOAuthRequest, scope)
+		}
+		seen[scope] = true
+		scopes = append(scopes, scope)
+	}
+	if len(scopes) == 0 {
+		scopes = append(scopes, domainmcp.ScopeRead)
+	}
+	return scopes, nil
+}
+
+func oauthScopeAllowed(scope string) bool {
+	return scope == "openid" || scope == "profile" || userScopeAllowed(scope)
+}
+
+func validOAuthClientID(clientID string) bool {
+	return clientID != "" && len(clientID) <= 128 && !strings.ContainsAny(clientID, " \t\r\n")
+}
+
+func validOAuthRedirectURI(raw string) bool {
+	parsed, err := url.Parse(raw)
+	if err != nil || !parsed.IsAbs() || parsed.Host == "" || parsed.Fragment != "" {
+		return false
+	}
+	switch parsed.Scheme {
+	case "https":
+		return true
+	case "http":
+		return isLoopbackHost(parsed.Hostname())
+	default:
+		return false
+	}
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func validPKCEValue(value string) bool {
+	if len(value) < 43 || len(value) > 128 {
+		return false
+	}
+	for _, ch := range value {
+		if (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '.' || ch == '_' || ch == '~' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func pkceS256Matches(verifier string, challenge string) bool {
+	sum := sha256.Sum256([]byte(verifier))
+	computed := base64.RawURLEncoding.EncodeToString(sum[:])
+	return computed == strings.TrimSpace(challenge)
+}
+
+func oauthRedirectURI(raw string, code string, state string) (string, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	query := parsed.Query()
+	query.Set("code", code)
+	if strings.TrimSpace(state) != "" {
+		query.Set("state", strings.TrimSpace(state))
+	}
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
+}
+
+func truncateOAuthTokenName(name string, limit int) string {
+	runes := []rune(strings.TrimSpace(name))
+	if len(runes) <= limit {
+		return string(runes)
+	}
+	return string(runes[:limit])
 }
 
 func optionalNonNegativeIntArgument(arguments map[string]any, name string) (int, error) {

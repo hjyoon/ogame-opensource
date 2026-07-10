@@ -45,6 +45,20 @@ type OAuthAuthorizationServerMetadata struct {
 	ScopesSupported                   []string `json:"scopes_supported"`
 }
 
+type OAuthAuthorizationCode struct {
+	ID                  int
+	PlayerID            int
+	ClientID            string
+	RedirectURI         string
+	Scopes              []string
+	CodeHash            string
+	CodeChallenge       string
+	CodeChallengeMethod string
+	CreatedAt           int64
+	ExpiresAt           int64
+	ConsumedAt          int64
+}
+
 type ToolCallAudit struct {
 	ToolName   string
 	PlayerID   int

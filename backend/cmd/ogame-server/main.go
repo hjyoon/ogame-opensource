@@ -175,11 +175,17 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 		_ = db.Close()
 		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier).WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
 	}
+	if err := repository.EnsureMCPOAuthCodeSchema(ctx); err != nil {
+		logger.Warn("universe DB mcp oauth code schema unavailable", "error", err)
+		_ = db.Close()
+		return appmcp.NewServiceWithTokenVerifier(health, staticVerifier).WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
+	}
 
-	logger.Info("universe DB mcp token management enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
+	logger.Info("universe DB mcp token and oauth management enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
 	verifier := mcpauth.NewCompositeTokenVerifier(repository, staticVerifier)
 	readRepository := mysqlgame.NewMCPReadRepository(db, cfg.UniDBPrefix)
 	return appmcp.NewServiceWithTokenManagement(health, verifier, repository, sessions, appmcp.SecureTokenGenerator{}, time.Now).
+		WithOAuthCodeRepository(repository).
 		WithReadRepository(readRepository).
 		WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
 }

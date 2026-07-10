@@ -3,8 +3,10 @@ package httpdelivery
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	appmcp "github.com/hjyoon/ogame-opensource/backend/internal/application/mcp"
@@ -12,7 +14,7 @@ import (
 )
 
 func TestMCPOAuthAuthorizationServerMetadata(t *testing.T) {
-	server := New(Dependencies{MCPOAuth: fakeMCPOAuthUseCase{}})
+	server := New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{}})
 	req := httptest.NewRequest(http.MethodGet, "http://game.local/.well-known/oauth-authorization-server", nil)
 	req.Header.Set("X-Forwarded-Proto", "https")
 	rec := httptest.NewRecorder()
@@ -34,34 +36,118 @@ func TestMCPOAuthAuthorizationServerMetadata(t *testing.T) {
 	}
 }
 
-func TestMCPOAuthUnavailableEndpoints(t *testing.T) {
-	server := New(Dependencies{MCPOAuth: fakeMCPOAuthUseCase{}})
-	tests := []struct {
-		name   string
-		method string
-		path   string
-	}{
-		{name: "authorize", method: http.MethodGet, path: "/oauth/authorize"},
-		{name: "token", method: http.MethodPost, path: "/oauth/token"},
+func TestMCPOAuthAuthorizeConsentRedirectAndToken(t *testing.T) {
+	oauth := &fakeMCPOAuthUseCase{
+		authorizeResult: appmcp.OAuthAuthorizeResult{
+			Authenticated:   true,
+			RequiresConsent: true,
+			ClientID:        "desktop",
+			Scopes:          []string{domainmcp.ScopeRead, domainmcp.ScopeFleet},
+		},
+		exchangeResult: appmcp.OAuthTokenResult{
+			AccessToken: "ogmcp_access",
+			TokenType:   "Bearer",
+			Scope:       "mcp:read mcp:fleet",
+		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, "http://game.local"+tt.path, nil)
-			rec := httptest.NewRecorder()
+	server := New(Dependencies{MCPOAuth: oauth})
 
-			server.ServeHTTP(rec, req)
+	req := httptest.NewRequest(http.MethodGet, "http://game.local/oauth/authorize?response_type=code&client_id=desktop&redirect_uri=http://127.0.0.1:9000/callback&scope=mcp:read+mcp:fleet&state=s1&code_challenge="+strings.Repeat("a", 43)+"&code_challenge_method=S256&session=pub", nil)
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Authorize MCP access") || oauth.authorizeCommand.PublicSession != "pub" || oauth.authorizeCommand.ClientID != "desktop" || oauth.authorizeCommand.ConsentApproved {
+		t.Fatalf("unexpected consent response status=%d body=%q command=%+v", rec.Code, rec.Body.String(), oauth.authorizeCommand)
+	}
 
-			if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Cache-Control") != "no-store" {
-				t.Fatalf("unexpected OAuth unavailable response status=%d headers=%v body=%q", rec.Code, rec.Header(), rec.Body.String())
-			}
-			var body oauthUnavailableResponse
-			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-				t.Fatalf("decode OAuth error: %v", err)
-			}
-			if body.Error != "temporarily_unavailable" {
-				t.Fatalf("unexpected OAuth error body: %+v", body)
-			}
-		})
+	oauth.authorizeResult = appmcp.OAuthAuthorizeResult{Authenticated: true, RedirectTo: "http://127.0.0.1:9000/callback?code=abc&state=s1"}
+	req = httptest.NewRequest(http.MethodGet, "http://game.local/oauth/authorize?response_type=code&client_id=desktop&redirect_uri=http://127.0.0.1:9000/callback&code_challenge="+strings.Repeat("a", 43)+"&code_challenge_method=S256&consent=approve", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "http://127.0.0.1:9000/callback?code=abc&state=s1" || !oauth.authorizeCommand.ConsentApproved {
+		t.Fatalf("unexpected authorize redirect status=%d location=%q command=%+v", rec.Code, rec.Header().Get("Location"), oauth.authorizeCommand)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/oauth/token", strings.NewReader("grant_type=authorization_code&code=abc&redirect_uri=http%3A%2F%2F127.0.0.1%3A9000%2Fcallback&client_id=desktop&code_verifier="+strings.Repeat("b", 43)))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || oauth.tokenCommand.Code != "abc" || oauth.tokenCommand.ClientID != "desktop" {
+		t.Fatalf("unexpected token response status=%d body=%q command=%+v", rec.Code, rec.Body.String(), oauth.tokenCommand)
+	}
+	var tokenBody map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &tokenBody); err != nil {
+		t.Fatalf("decode token response: %v", err)
+	}
+	if tokenBody["access_token"] != "ogmcp_access" || tokenBody["token_type"] != "Bearer" {
+		t.Fatalf("unexpected token response: %+v", tokenBody)
+	}
+}
+
+func TestMCPOAuthErrors(t *testing.T) {
+	server := New(Dependencies{})
+	req := httptest.NewRequest(http.MethodGet, "http://game.local/oauth/authorize", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected unavailable authorize, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/oauth/token", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected unavailable token, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	server = New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{authorizeResult: appmcp.OAuthAuthorizeResult{Authenticated: false}}})
+	req = httptest.NewRequest(http.MethodGet, "http://game.local/oauth/authorize?response_type=code", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "Login is required") {
+		t.Fatalf("expected login-required authorize, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	server = New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{authorizeErr: appmcp.ErrInvalidOAuthRequest}})
+	req = httptest.NewRequest(http.MethodGet, "http://game.local/oauth/authorize", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_request") {
+		t.Fatalf("expected invalid authorize, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	server = New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{authorizeErr: errors.New("down")}})
+	req = httptest.NewRequest(http.MethodGet, "http://game.local/oauth/authorize", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "temporarily_unavailable") {
+		t.Fatalf("expected unavailable authorize error, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	server = New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{exchangeErr: appmcp.ErrInvalidOAuthGrant}})
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/oauth/token", strings.NewReader("grant_type=authorization_code"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_grant") {
+		t.Fatalf("expected invalid grant, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	server = New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{exchangeErr: errors.New("down")}})
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/oauth/token", strings.NewReader("%"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_request") {
+		t.Fatalf("expected malformed token request, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/oauth/token", strings.NewReader("grant_type=authorization_code"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "temporarily_unavailable") {
+		t.Fatalf("expected unavailable token error, got status=%d body=%q", rec.Code, rec.Body.String())
 	}
 }
 
@@ -74,7 +160,7 @@ func TestMCPOAuthMetadataUnavailableAndMethodGuards(t *testing.T) {
 		t.Fatalf("expected metadata unavailable, got status=%d body=%q", rec.Code, rec.Body.String())
 	}
 
-	server = New(Dependencies{MCPOAuth: fakeMCPOAuthUseCase{}})
+	server = New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{}})
 	req = httptest.NewRequest(http.MethodPost, "http://game.local/.well-known/oauth-authorization-server", nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -83,8 +169,32 @@ func TestMCPOAuthMetadataUnavailableAndMethodGuards(t *testing.T) {
 	}
 }
 
-type fakeMCPOAuthUseCase struct{}
+type fakeMCPOAuthUseCase struct {
+	authorizeResult appmcp.OAuthAuthorizeResult
+	exchangeResult  appmcp.OAuthTokenResult
+	authorizeErr    error
+	exchangeErr     error
 
-func (fakeMCPOAuthUseCase) OAuthAuthorizationServerMetadata(_ context.Context, issuer string) domainmcp.OAuthAuthorizationServerMetadata {
+	authorizeCommand appmcp.OAuthAuthorizeCommand
+	tokenCommand     appmcp.OAuthTokenCommand
+}
+
+func (f *fakeMCPOAuthUseCase) OAuthAuthorizationServerMetadata(_ context.Context, issuer string) domainmcp.OAuthAuthorizationServerMetadata {
 	return (appmcp.Service{}).OAuthAuthorizationServerMetadata(context.Background(), issuer)
+}
+
+func (f *fakeMCPOAuthUseCase) AuthorizeOAuth(_ context.Context, command appmcp.OAuthAuthorizeCommand) (appmcp.OAuthAuthorizeResult, error) {
+	f.authorizeCommand = command
+	if f.authorizeErr != nil {
+		return appmcp.OAuthAuthorizeResult{}, f.authorizeErr
+	}
+	return f.authorizeResult, nil
+}
+
+func (f *fakeMCPOAuthUseCase) ExchangeOAuthCode(_ context.Context, command appmcp.OAuthTokenCommand) (appmcp.OAuthTokenResult, error) {
+	f.tokenCommand = command
+	if f.exchangeErr != nil {
+		return appmcp.OAuthTokenResult{}, f.exchangeErr
+	}
+	return f.exchangeResult, nil
 }

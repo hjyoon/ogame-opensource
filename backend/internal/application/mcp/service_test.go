@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -50,6 +52,298 @@ func TestServiceBuildsOAuthAuthorizationServerMetadata(t *testing.T) {
 	scopes := strings.Join(metadata.ScopesSupported, ",")
 	if !strings.Contains(scopes, "openid") || !strings.Contains(scopes, domainmcp.ScopeRead) {
 		t.Fatalf("expected OIDC and MCP read scopes, got %+v", metadata.ScopesSupported)
+	}
+}
+
+func TestServiceOAuthAuthorizeConsentAndTokenExchange(t *testing.T) {
+	now := time.Unix(1700, 0)
+	repository := &fakeTokenRepository{}
+	service := NewServiceWithTokenManagement(
+		fakeHealthProvider{},
+		nil,
+		repository,
+		fakeSessionLookup{auth: authenticatedSession(42)},
+		fakeTokenGenerator{secret: "ogmcp_access", code: "ogmcp_code_authorized"},
+		func() time.Time { return now },
+	).WithOAuthCodeRepository(repository)
+	verifier := strings.Repeat("a", 43)
+	challenge := testPKCEChallenge(verifier)
+	command := OAuthAuthorizeCommand{
+		TokenManagementCommand: TokenManagementCommand{PublicSession: "pub"},
+		ResponseType:           "code",
+		ClientID:               "desktop-client",
+		RedirectURI:            "http://127.0.0.1:9911/callback",
+		Scope:                  "openid mcp:read mcp:fleet",
+		State:                  "state-1",
+		CodeChallenge:          challenge,
+		CodeChallengeMethod:    "S256",
+	}
+
+	consent, err := service.AuthorizeOAuth(context.Background(), command)
+	if err != nil {
+		t.Fatalf("AuthorizeOAuth consent returned error: %v", err)
+	}
+	if !consent.Authenticated || !consent.RequiresConsent || strings.Join(consent.Scopes, " ") != "openid mcp:read mcp:fleet" {
+		t.Fatalf("unexpected consent result: %+v", consent)
+	}
+
+	command.ConsentApproved = true
+	authorized, err := service.AuthorizeOAuth(context.Background(), command)
+	if err != nil {
+		t.Fatalf("AuthorizeOAuth approve returned error: %v", err)
+	}
+	if !strings.Contains(authorized.RedirectTo, "code=ogmcp_code_authorized") || !strings.Contains(authorized.RedirectTo, "state=state-1") {
+		t.Fatalf("expected redirect with code and state, got %+v", authorized)
+	}
+	if repository.oauthCode.PlayerID != 42 || repository.oauthCode.CodeHash != HashToken("ogmcp_code_authorized") || repository.oauthCode.ExpiresAt != now.Add(mcpOAuthCodeTTL).Unix() {
+		t.Fatalf("unexpected stored OAuth code: %+v", repository.oauthCode)
+	}
+
+	token, err := service.ExchangeOAuthCode(context.Background(), OAuthTokenCommand{
+		GrantType:    "authorization_code",
+		Code:         "ogmcp_code_authorized",
+		RedirectURI:  "http://127.0.0.1:9911/callback",
+		ClientID:     "desktop-client",
+		CodeVerifier: verifier,
+	})
+	if err != nil {
+		t.Fatalf("ExchangeOAuthCode returned error: %v", err)
+	}
+	if token.AccessToken != "ogmcp_access" || token.TokenType != "Bearer" || token.Scope != "openid mcp:read mcp:fleet" {
+		t.Fatalf("unexpected token result: %+v", token)
+	}
+	if repository.created.Name != "OAuth desktop-client" || repository.created.Scopes[2] != domainmcp.ScopeFleet || repository.hash != HashToken("ogmcp_access") {
+		t.Fatalf("unexpected persisted OAuth token: token=%+v hash=%q", repository.created, repository.hash)
+	}
+}
+
+func TestServiceOAuthRejectsInvalidRequestsAndGrants(t *testing.T) {
+	repository := &fakeTokenRepository{oauthCode: domainmcp.OAuthAuthorizationCode{
+		PlayerID:            42,
+		ClientID:            "desktop-client",
+		RedirectURI:         "http://127.0.0.1:9911/callback",
+		Scopes:              []string{domainmcp.ScopeRead},
+		CodeHash:            HashToken("code"),
+		CodeChallenge:       testPKCEChallenge(strings.Repeat("a", 43)),
+		CodeChallengeMethod: "S256",
+		ExpiresAt:           2000,
+	}}
+	service := NewServiceWithTokenManagement(
+		fakeHealthProvider{},
+		nil,
+		repository,
+		fakeSessionLookup{auth: authenticatedSession(42)},
+		fakeTokenGenerator{secret: "token", code: "code"},
+		func() time.Time { return time.Unix(1700, 0) },
+	).WithOAuthCodeRepository(repository)
+
+	_, err := service.AuthorizeOAuth(context.Background(), OAuthAuthorizeCommand{
+		TokenManagementCommand: TokenManagementCommand{PublicSession: "pub"},
+		ResponseType:           "code",
+		ClientID:               "desktop-client",
+		RedirectURI:            "http://evil.example/callback",
+		CodeChallenge:          testPKCEChallenge(strings.Repeat("a", 43)),
+		CodeChallengeMethod:    "S256",
+		ConsentApproved:        true,
+	})
+	if !errors.Is(err, ErrInvalidOAuthRequest) {
+		t.Fatalf("expected invalid insecure redirect request, got %v", err)
+	}
+
+	_, err = service.ExchangeOAuthCode(context.Background(), OAuthTokenCommand{
+		GrantType:    "authorization_code",
+		Code:         "code",
+		RedirectURI:  "http://127.0.0.1:9911/callback",
+		ClientID:     "desktop-client",
+		CodeVerifier: strings.Repeat("b", 43),
+	})
+	if !errors.Is(err, ErrInvalidOAuthGrant) {
+		t.Fatalf("expected PKCE invalid grant, got %v", err)
+	}
+}
+
+func TestServiceOAuthCoversDependencyAndFailureBranches(t *testing.T) {
+	verifier := strings.Repeat("a", 43)
+	validCommand := OAuthAuthorizeCommand{
+		TokenManagementCommand: TokenManagementCommand{PublicSession: "pub"},
+		ResponseType:           "code",
+		ClientID:               "desktop-client",
+		RedirectURI:            "http://localhost:9911/callback",
+		Scope:                  "mcp:read",
+		State:                  "state-1",
+		CodeChallenge:          testPKCEChallenge(verifier),
+		CodeChallengeMethod:    "S256",
+		ConsentApproved:        true,
+	}
+	if _, err := (Service{}).AuthorizeOAuth(context.Background(), validCommand); err == nil {
+		t.Fatalf("expected authorize dependency error")
+	}
+
+	sessionErr := errors.New("session down")
+	service := NewServiceWithTokenManagement(fakeHealthProvider{}, nil, &fakeTokenRepository{}, fakeSessionLookup{err: sessionErr}, fakeTokenGenerator{secret: "token", code: "code"}, time.Now).WithOAuthCodeRepository(&fakeTokenRepository{})
+	if _, err := service.AuthorizeOAuth(context.Background(), validCommand); !errors.Is(err, sessionErr) {
+		t.Fatalf("expected authorize session error, got %v", err)
+	}
+
+	service = NewServiceWithTokenManagement(fakeHealthProvider{}, nil, &fakeTokenRepository{}, fakeSessionLookup{auth: domainpublicsite.SessionAuthentication{Authenticated: false, Issues: []domainpublicsite.SessionIssue{{Code: domainpublicsite.SessionIssueInvalid}}}}, fakeTokenGenerator{secret: "token", code: "code"}, time.Now).WithOAuthCodeRepository(&fakeTokenRepository{})
+	result, err := service.AuthorizeOAuth(context.Background(), validCommand)
+	if err != nil || result.Authenticated || len(result.Issues) != 1 {
+		t.Fatalf("expected unauthenticated authorize result, got result=%+v err=%v", result, err)
+	}
+
+	service = NewServiceWithTokenManagement(fakeHealthProvider{}, nil, &fakeTokenRepository{}, fakeSessionLookup{auth: authenticatedSession(42)}, fakeTokenGenerator{err: errors.New("random down")}, time.Now).WithOAuthCodeRepository(&fakeTokenRepository{})
+	if _, err := service.AuthorizeOAuth(context.Background(), validCommand); err == nil {
+		t.Fatalf("expected authorize code generator error")
+	}
+
+	service = NewServiceWithTokenManagement(fakeHealthProvider{}, nil, &fakeTokenRepository{}, fakeSessionLookup{auth: authenticatedSession(42)}, fakeTokenGenerator{secret: "token", code: "code"}, time.Now).WithOAuthCodeRepository(&fakeTokenRepository{oauthCreateErr: errors.New("insert down")})
+	if _, err := service.AuthorizeOAuth(context.Background(), validCommand); err == nil {
+		t.Fatalf("expected authorize repository error")
+	}
+}
+
+func TestServiceOAuthTokenExchangeCoversValidationAndFailureBranches(t *testing.T) {
+	verifier := strings.Repeat("a", 43)
+	validTokenCommand := OAuthTokenCommand{
+		GrantType:    "authorization_code",
+		Code:         "code",
+		RedirectURI:  "http://127.0.0.1:9911/callback",
+		ClientID:     "desktop-client",
+		CodeVerifier: verifier,
+	}
+	if _, err := (Service{}).ExchangeOAuthCode(context.Background(), validTokenCommand); err == nil {
+		t.Fatalf("expected exchange dependency error")
+	}
+
+	for _, tt := range []struct {
+		name    string
+		command OAuthTokenCommand
+	}{
+		{name: "grant", command: OAuthTokenCommand{GrantType: "client_credentials"}},
+		{name: "code", command: OAuthTokenCommand{GrantType: "authorization_code"}},
+		{name: "redirect", command: OAuthTokenCommand{GrantType: "authorization_code", Code: "code", RedirectURI: "ftp://127.0.0.1/callback"}},
+		{name: "client", command: OAuthTokenCommand{GrantType: "authorization_code", Code: "code", RedirectURI: "http://127.0.0.1/callback", ClientID: "bad client"}},
+		{name: "verifier", command: OAuthTokenCommand{GrantType: "authorization_code", Code: "code", RedirectURI: "http://127.0.0.1/callback", ClientID: "desktop"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			service := oauthExchangeService(&fakeTokenRepository{oauthCode: validStoredOAuthCode(verifier, "desktop-client")}, fakeTokenGenerator{secret: "token"})
+			if _, err := service.ExchangeOAuthCode(context.Background(), tt.command); !errors.Is(err, ErrInvalidOAuthRequest) {
+				t.Fatalf("expected invalid request, got %v", err)
+			}
+		})
+	}
+
+	service := oauthExchangeService(&fakeTokenRepository{oauthConsumeErr: errors.New("db down")}, fakeTokenGenerator{secret: "token"})
+	if _, err := service.ExchangeOAuthCode(context.Background(), validTokenCommand); err == nil {
+		t.Fatalf("expected exchange repository consume error")
+	}
+
+	service = oauthExchangeService(&fakeTokenRepository{oauthCode: validStoredOAuthCode(verifier, "other-client")}, fakeTokenGenerator{secret: "token"})
+	if _, err := service.ExchangeOAuthCode(context.Background(), validTokenCommand); !errors.Is(err, ErrInvalidOAuthGrant) {
+		t.Fatalf("expected client mismatch invalid grant, got %v", err)
+	}
+
+	badMethod := validStoredOAuthCode(verifier, "desktop-client")
+	badMethod.CodeChallengeMethod = "plain"
+	service = oauthExchangeService(&fakeTokenRepository{oauthCode: badMethod}, fakeTokenGenerator{secret: "token"})
+	if _, err := service.ExchangeOAuthCode(context.Background(), validTokenCommand); !errors.Is(err, ErrInvalidOAuthGrant) {
+		t.Fatalf("expected method mismatch invalid grant, got %v", err)
+	}
+
+	badScopes := validStoredOAuthCode(verifier, "desktop-client")
+	badScopes.Scopes = []string{"mcp:admin"}
+	service = oauthExchangeService(&fakeTokenRepository{oauthCode: badScopes}, fakeTokenGenerator{secret: "token"})
+	if _, err := service.ExchangeOAuthCode(context.Background(), validTokenCommand); !errors.Is(err, ErrInvalidOAuthGrant) {
+		t.Fatalf("expected invalid stored scope grant, got %v", err)
+	}
+
+	service = oauthExchangeService(&fakeTokenRepository{oauthCode: validStoredOAuthCode(verifier, "desktop-client")}, fakeTokenGenerator{err: errors.New("random down")})
+	if _, err := service.ExchangeOAuthCode(context.Background(), validTokenCommand); err == nil {
+		t.Fatalf("expected exchange token generator error")
+	}
+
+	service = oauthExchangeService(&fakeTokenRepository{oauthCode: validStoredOAuthCode(verifier, "desktop-client"), createErr: errors.New("insert down")}, fakeTokenGenerator{secret: "token"})
+	if _, err := service.ExchangeOAuthCode(context.Background(), validTokenCommand); err == nil {
+		t.Fatalf("expected exchange token repository error")
+	}
+
+	longClient := strings.Repeat("c", 70)
+	longCommand := validTokenCommand
+	longCommand.ClientID = longClient
+	longCode := validStoredOAuthCode(verifier, longClient)
+	repository := &fakeTokenRepository{oauthCode: longCode}
+	service = oauthExchangeService(repository, fakeTokenGenerator{secret: "token"})
+	if _, err := service.ExchangeOAuthCode(context.Background(), longCommand); err != nil {
+		t.Fatalf("expected long client exchange success, got %v", err)
+	}
+	if len([]rune(repository.created.Name)) != 64 {
+		t.Fatalf("expected oauth token name truncation, got %q", repository.created.Name)
+	}
+}
+
+func TestOAuthValidationHelpers(t *testing.T) {
+	if code, err := (SecureTokenGenerator{}).NewMCPOAuthCode(); err != nil || !strings.HasPrefix(code, "ogmcp_code_") {
+		t.Fatalf("unexpected secure oauth code: code=%q err=%v", code, err)
+	}
+	service := NewServiceWithTokenManagement(fakeHealthProvider{}, nil, &fakeTokenRepository{}, fakeSessionLookup{}, nil, nil)
+	if service.tokenGenerator == nil || service.codeGenerator == nil || service.now == nil {
+		t.Fatalf("expected default token management dependencies: %+v", service)
+	}
+	if !validOAuthRedirectURI("https://example.com/callback") || !validOAuthRedirectURI("http://[::1]:9000/callback") {
+		t.Fatalf("expected https and loopback redirect URIs to be valid")
+	}
+	for _, raw := range []string{"http://example.com/callback", "http://127.0.0.1/callback#fragment", ":", "custom://callback"} {
+		if validOAuthRedirectURI(raw) {
+			t.Fatalf("expected redirect URI %q to be invalid", raw)
+		}
+	}
+	for _, value := range []string{strings.Repeat("a", 42), strings.Repeat("a", 129), strings.Repeat("!", 43)} {
+		if validPKCEValue(value) {
+			t.Fatalf("expected PKCE value %q to be invalid", value)
+		}
+	}
+	scopes, err := normalizeOAuthScopes("profile mcp:read profile")
+	if err != nil || strings.Join(scopes, " ") != "profile mcp:read" {
+		t.Fatalf("unexpected normalized scopes=%v err=%v", scopes, err)
+	}
+	scopes, err = normalizeOAuthScopes("")
+	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeRead {
+		t.Fatalf("expected default read scope, got scopes=%v err=%v", scopes, err)
+	}
+	if _, err := normalizeOAuthScopes("mcp:admin"); !errors.Is(err, ErrInvalidOAuthRequest) {
+		t.Fatalf("expected invalid oauth scope, got %v", err)
+	}
+	if _, err := oauthRedirectURI("%", "code", ""); err == nil {
+		t.Fatalf("expected redirect URI parse error")
+	}
+
+	validChallenge := testPKCEChallenge(strings.Repeat("a", 43))
+	validCommand := OAuthAuthorizeCommand{
+		ResponseType:        "code",
+		ClientID:            "desktop",
+		RedirectURI:         "http://127.0.0.1:9000/callback",
+		Scope:               domainmcp.ScopeRead,
+		CodeChallenge:       validChallenge,
+		CodeChallengeMethod: "S256",
+	}
+	for _, tt := range []struct {
+		name   string
+		mutate func(*OAuthAuthorizeCommand)
+	}{
+		{name: "response type", mutate: func(command *OAuthAuthorizeCommand) { command.ResponseType = "token" }},
+		{name: "client id", mutate: func(command *OAuthAuthorizeCommand) { command.ClientID = "" }},
+		{name: "redirect", mutate: func(command *OAuthAuthorizeCommand) { command.RedirectURI = "http://example.com/callback" }},
+		{name: "challenge method", mutate: func(command *OAuthAuthorizeCommand) { command.CodeChallengeMethod = "plain" }},
+		{name: "challenge", mutate: func(command *OAuthAuthorizeCommand) { command.CodeChallenge = "short" }},
+		{name: "scope", mutate: func(command *OAuthAuthorizeCommand) { command.Scope = domainmcp.ScopeAdmin }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			command := validCommand
+			tt.mutate(&command)
+			if _, err := normalizeOAuthAuthorizeRequest(command); !errors.Is(err, ErrInvalidOAuthRequest) {
+				t.Fatalf("expected invalid authorize request, got %v", err)
+			}
+		})
 	}
 }
 
@@ -791,6 +1085,7 @@ func (f fakeSessionLookup) GetGameSession(context.Context, apppublicsite.GameSes
 
 type fakeTokenGenerator struct {
 	secret string
+	code   string
 	err    error
 }
 
@@ -801,13 +1096,26 @@ func (f fakeTokenGenerator) NewMCPToken() (string, error) {
 	return f.secret, nil
 }
 
+func (f fakeTokenGenerator) NewMCPOAuthCode() (string, error) {
+	if f.err != nil {
+		return "", f.err
+	}
+	if f.code != "" {
+		return f.code, nil
+	}
+	return f.secret, nil
+}
+
 type fakeTokenRepository struct {
-	created   domainmcp.Token
-	hash      string
-	revokedAt int64
-	listErr   error
-	createErr error
-	revokeErr error
+	created         domainmcp.Token
+	hash            string
+	revokedAt       int64
+	oauthCode       domainmcp.OAuthAuthorizationCode
+	listErr         error
+	createErr       error
+	revokeErr       error
+	oauthCreateErr  error
+	oauthConsumeErr error
 }
 
 func (f *fakeTokenRepository) ListMCPTokens(context.Context, int) ([]domainmcp.Token, error) {
@@ -836,6 +1144,55 @@ func (f *fakeTokenRepository) RevokeMCPToken(_ context.Context, playerID int, to
 	}
 	f.revokedAt = revokedAt
 	return true, nil
+}
+
+func (f *fakeTokenRepository) CreateMCPOAuthCode(_ context.Context, code domainmcp.OAuthAuthorizationCode) (domainmcp.OAuthAuthorizationCode, error) {
+	if f.oauthCreateErr != nil {
+		return domainmcp.OAuthAuthorizationCode{}, f.oauthCreateErr
+	}
+	code.ID = 9
+	f.oauthCode = code
+	return code, nil
+}
+
+func (f *fakeTokenRepository) ConsumeMCPOAuthCode(_ context.Context, codeHash string, now int64) (domainmcp.OAuthAuthorizationCode, error) {
+	if f.oauthConsumeErr != nil {
+		return domainmcp.OAuthAuthorizationCode{}, f.oauthConsumeErr
+	}
+	if f.oauthCode.CodeHash != codeHash || f.oauthCode.ConsumedAt != 0 || f.oauthCode.ExpiresAt < now {
+		return domainmcp.OAuthAuthorizationCode{}, domainmcp.ErrUnauthorized
+	}
+	f.oauthCode.ConsumedAt = now
+	return f.oauthCode, nil
+}
+
+func testPKCEChallenge(verifier string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func validStoredOAuthCode(verifier string, clientID string) domainmcp.OAuthAuthorizationCode {
+	return domainmcp.OAuthAuthorizationCode{
+		PlayerID:            42,
+		ClientID:            clientID,
+		RedirectURI:         "http://127.0.0.1:9911/callback",
+		Scopes:              []string{domainmcp.ScopeRead},
+		CodeHash:            HashToken("code"),
+		CodeChallenge:       testPKCEChallenge(verifier),
+		CodeChallengeMethod: "S256",
+		ExpiresAt:           2000,
+	}
+}
+
+func oauthExchangeService(repository *fakeTokenRepository, generator fakeTokenGenerator) Service {
+	return NewServiceWithTokenManagement(
+		fakeHealthProvider{},
+		nil,
+		repository,
+		fakeSessionLookup{auth: authenticatedSession(42)},
+		generator,
+		func() time.Time { return time.Unix(1700, 0) },
+	).WithOAuthCodeRepository(repository)
 }
 
 func authenticatedSession(playerID int) domainpublicsite.SessionAuthentication {

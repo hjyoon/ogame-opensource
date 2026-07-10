@@ -52,6 +52,35 @@ func (r MCPTokenRepository) EnsureMCPTokenSchema(ctx context.Context) error {
 	return err
 }
 
+func (r MCPTokenRepository) EnsureMCPOAuthCodeSchema(ctx context.Context) error {
+	if r.execer == nil {
+		return errors.New("mcp oauth code repository execer unavailable")
+	}
+	table, err := tableName(r.prefix, "mcp_oauth_codes")
+	if err != nil {
+		return err
+	}
+	_, err = r.execer.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS "+table+" ("+
+		"id INT NOT NULL AUTO_INCREMENT,"+
+		"player_id INT NOT NULL,"+
+		"client_id VARCHAR(128) NOT NULL,"+
+		"redirect_uri TEXT NOT NULL,"+
+		"code_hash CHAR(64) NOT NULL,"+
+		"code_challenge VARCHAR(128) NOT NULL,"+
+		"code_challenge_method VARCHAR(16) NOT NULL,"+
+		"scopes TEXT NOT NULL,"+
+		"created_at INT NOT NULL,"+
+		"expires_at INT NOT NULL,"+
+		"consumed_at INT NOT NULL DEFAULT 0,"+
+		"PRIMARY KEY (id),"+
+		"UNIQUE KEY uniq_code_hash (code_hash),"+
+		"KEY idx_player_id (player_id),"+
+		"KEY idx_expires_at (expires_at),"+
+		"KEY idx_consumed_at (consumed_at)"+
+		") CHARACTER SET utf8 COLLATE utf8_general_ci")
+	return err
+}
+
 func (r MCPTokenRepository) ListMCPTokens(ctx context.Context, playerID int) ([]domainmcp.Token, error) {
 	if r.queryer == nil {
 		return nil, errors.New("mcp token repository queryer unavailable")
@@ -127,6 +156,83 @@ func (r MCPTokenRepository) RevokeMCPToken(ctx context.Context, playerID int, to
 		return false, err
 	}
 	return affected > 0, nil
+}
+
+func (r MCPTokenRepository) CreateMCPOAuthCode(ctx context.Context, code domainmcp.OAuthAuthorizationCode) (domainmcp.OAuthAuthorizationCode, error) {
+	if r.execer == nil {
+		return domainmcp.OAuthAuthorizationCode{}, errors.New("mcp oauth code repository execer unavailable")
+	}
+	table, err := tableName(r.prefix, "mcp_oauth_codes")
+	if err != nil {
+		return domainmcp.OAuthAuthorizationCode{}, err
+	}
+	result, err := r.execer.ExecContext(ctx, "INSERT INTO "+table+" (player_id, client_id, redirect_uri, code_hash, code_challenge, code_challenge_method, scopes, created_at, expires_at, consumed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+		code.PlayerID,
+		strings.TrimSpace(code.ClientID),
+		strings.TrimSpace(code.RedirectURI),
+		strings.TrimSpace(code.CodeHash),
+		strings.TrimSpace(code.CodeChallenge),
+		strings.TrimSpace(code.CodeChallengeMethod),
+		joinMCPScopes(code.Scopes),
+		code.CreatedAt,
+		code.ExpiresAt,
+	)
+	if err != nil {
+		return domainmcp.OAuthAuthorizationCode{}, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return domainmcp.OAuthAuthorizationCode{}, err
+	}
+	code.ID = int(id)
+	code.ClientID = strings.TrimSpace(code.ClientID)
+	code.RedirectURI = strings.TrimSpace(code.RedirectURI)
+	code.CodeHash = strings.TrimSpace(code.CodeHash)
+	code.CodeChallenge = strings.TrimSpace(code.CodeChallenge)
+	code.CodeChallengeMethod = strings.TrimSpace(code.CodeChallengeMethod)
+	code.Scopes = parseMCPScopes(joinMCPScopes(code.Scopes))
+	code.ConsumedAt = 0
+	return code, nil
+}
+
+func (r MCPTokenRepository) ConsumeMCPOAuthCode(ctx context.Context, codeHash string, now int64) (domainmcp.OAuthAuthorizationCode, error) {
+	if r.queryer == nil || r.execer == nil {
+		return domainmcp.OAuthAuthorizationCode{}, errors.New("mcp oauth code repository unavailable")
+	}
+	table, err := tableName(r.prefix, "mcp_oauth_codes")
+	if err != nil {
+		return domainmcp.OAuthAuthorizationCode{}, err
+	}
+	codeHash = strings.TrimSpace(codeHash)
+	result, err := r.execer.ExecContext(ctx, "UPDATE "+table+" SET consumed_at = ? WHERE code_hash = ? AND consumed_at = 0 AND expires_at >= ?", now, codeHash, now)
+	if err != nil {
+		return domainmcp.OAuthAuthorizationCode{}, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return domainmcp.OAuthAuthorizationCode{}, err
+	}
+	if affected == 0 {
+		return domainmcp.OAuthAuthorizationCode{}, domainmcp.ErrUnauthorized
+	}
+	rows, err := r.queryer.QueryContext(ctx, "SELECT id, player_id, client_id, redirect_uri, code_hash, code_challenge, code_challenge_method, scopes, created_at, expires_at, consumed_at FROM "+table+" WHERE code_hash = ? LIMIT 1", codeHash)
+	if err != nil {
+		return domainmcp.OAuthAuthorizationCode{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return domainmcp.OAuthAuthorizationCode{}, domainmcp.ErrUnauthorized
+	}
+	var code domainmcp.OAuthAuthorizationCode
+	var scopes string
+	if err := rows.Scan(&code.ID, &code.PlayerID, &code.ClientID, &code.RedirectURI, &code.CodeHash, &code.CodeChallenge, &code.CodeChallengeMethod, &scopes, &code.CreatedAt, &code.ExpiresAt, &code.ConsumedAt); err != nil {
+		return domainmcp.OAuthAuthorizationCode{}, err
+	}
+	if err := rows.Err(); err != nil {
+		return domainmcp.OAuthAuthorizationCode{}, err
+	}
+	code.Scopes = parseMCPScopes(scopes)
+	return code, nil
 }
 
 func (r MCPTokenRepository) VerifyMCPToken(ctx context.Context, secret string) (domainmcp.Access, error) {

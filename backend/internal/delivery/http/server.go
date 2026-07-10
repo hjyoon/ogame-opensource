@@ -31,6 +31,8 @@ type MCPTokenUseCase interface {
 
 type MCPOAuthUseCase interface {
 	OAuthAuthorizationServerMetadata(context.Context, string) domainmcp.OAuthAuthorizationServerMetadata
+	AuthorizeOAuth(context.Context, appmcp.OAuthAuthorizeCommand) (appmcp.OAuthAuthorizeResult, error)
+	ExchangeOAuthCode(context.Context, appmcp.OAuthTokenCommand) (appmcp.OAuthTokenResult, error)
 }
 
 type FrontendAssets interface {

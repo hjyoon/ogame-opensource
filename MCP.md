@@ -33,13 +33,16 @@ Implemented:
 - Dedicated Go MCP smoke E2E:
   - `testing/e2e/golang-mcp-smoke.mjs`
   - Runs from `testing/e2e/run-golang-migration-qa.sh`.
-  - Covers transport guards, DB tokens, read tools, invalid params, and revoke.
-- OAuth discovery scaffold: metadata at
-  `/.well-known/oauth-authorization-server`; `/oauth/authorize` and
-  `/oauth/token` are explicitly closed with `temporarily_unavailable`.
+  - Covers transport guards, DB tokens, OAuth code flow, read tools, invalid
+    params, and revoke.
+- OAuth 2.1 public-client base:
+  - `/.well-known/oauth-authorization-server`
+  - `/oauth/authorize` consent page and code redirect
+  - `/oauth/token` authorization-code + PKCE S256 exchange
+  - Codes are one-time hashes in `uni*_mcp_oauth_codes`.
 - JSON audit logging for every `tools/call` request path. Audit logs include
-  tool name, authorization outcome, player id/scopes when authenticated,
-  duration, and error text. Bearer token secrets are never logged.
+  tool, auth result, player/scopes, duration, and errors. Secrets are not
+  logged.
 - Authenticated read tools requiring `mcp:read`:
   - `list_planets`: selectable planets/moons using legacy switcher ordering.
   - `get_account_overview`: commander, score/rank, current planet, planet
@@ -47,7 +50,7 @@ Implemented:
   - `get_planet_resources`: optional `planetId`; resources, dark matter,
     storage capacity, energy, and hourly production.
   - `get_building_queue`: optional `planetId`; queued building/demolition rows
-    without finishing due queues or mutating resources.
+    without finishing queues or mutating resources.
   - `get_fleet_movements`: overview-style outgoing, incoming, return, hold,
     missile, and ACS grouped events without queue mutation.
 
@@ -98,7 +101,7 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Add OAuth authorization-code storage, PKCE validation, and consent UI.
+1. Add client registration/allow-list policy for non-loopback redirect URIs.
 2. Add OIDC ID-token/JWKS support before public user rollout.
 
 ## General User Policy
