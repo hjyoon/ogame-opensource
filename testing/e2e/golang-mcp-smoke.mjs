@@ -54,6 +54,12 @@ function hasHeader(response, name, expected) {
   return expected === undefined ? actual !== "" : actual.toLowerCase().includes(expected.toLowerCase());
 }
 
+function hiddenInputValue(html, name) {
+  const escapedName = String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`<input[^>]+name="${escapedName}"[^>]+value="([^"]*)"`, "i").exec(String(html ?? ""));
+  return match?.[1] ?? "";
+}
+
 function toolNames(body) {
   return Array.isArray(body.result?.tools)
     ? body.result.tools.map((tool) => String(tool.name ?? "")).filter((name) => name !== "")
@@ -238,7 +244,10 @@ try {
   const oauthConsent = await request(`/oauth/authorize?${oauthParams}`, {
     headers: { Cookie: login.cookiePair }
   });
-  const oauthApprove = await request(`/oauth/authorize?${oauthParams}&consent=approve`, {
+  const oauthApproveParams = new URLSearchParams(oauthParams);
+  oauthApproveParams.set("consent", "approve");
+  oauthApproveParams.set("consent_token", hiddenInputValue(oauthConsent.body, "consent_token"));
+  const oauthApprove = await request(`/oauth/authorize?${oauthApproveParams}`, {
     headers: { Cookie: login.cookiePair }
   });
   const oauthApproveLocation = oauthApprove.headers.location ?? "";
@@ -353,7 +362,7 @@ try {
       }),
       check(sessionID !== "", "smoke login exposes a public session for OAuth consent", { sessionID }),
       check(clientRegistration.status === 201 && oauthClientID.startsWith("ogmcp_client_"), "OAuth dynamic client registration returns public client id", clientRegistrationBody),
-      check(oauthConsent.status === 200 && oauthConsent.body.includes("Authorize MCP access"), "OAuth authorize shows consent page before approval", { status: oauthConsent.status }),
+      check(oauthConsent.status === 200 && oauthConsent.body.includes("Authorize MCP access") && hiddenInputValue(oauthConsent.body, "consent_token") !== "", "OAuth authorize shows consent page before approval", { status: oauthConsent.status }),
       check(oauthApprove.status === 302 && oauthApproveLocation.startsWith(oauthRedirectURI) && oauthCallback.searchParams.get("state") === "go-mcp-smoke-state" && oauthCode !== "", "OAuth authorize approval redirects with code and state", { status: oauthApprove.status, location: oauthApproveLocation }),
       check(oauthToken.status === 200 && oauthSecret.startsWith("ogmcp_") && oauthTokenBody.token_type === "Bearer", "OAuth token exchange returns bearer access token", oauthTokenBody),
       check(oauthIDToken.split(".").length === 3 && oauthIDClaims.iss === baseUrl && oauthIDClaims.aud === oauthClientID && oauthIDClaims.sub === `player:${login.playerID}`, "OAuth openid exchange returns ID token claims", oauthIDClaims),

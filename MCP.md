@@ -46,7 +46,7 @@ Implemented:
   - External redirects require `OGAME_MCP_OAUTH_REDIRECT_URIS`.
   - OIDC seed envs: active `OGAME_MCP_OIDC_ED25519_SEED_B64`; previous
     `OGAME_MCP_OIDC_ED25519_PREVIOUS_SEEDS_B64`.
-- Consent UX shows resource, redirect, scopes, deny redirect.
+- Consent CSRF+UX shows resource, redirect, scopes, deny redirect.
 - MCP/OAuth rate limits on RPC, OAuth, and token API paths.
 - JSON audit logging for every `tools/call` request path. Audit logs include
   tool, auth result, player/scopes, duration, and errors. Secrets are not
@@ -98,7 +98,7 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Add OAuth consent CSRF/session binding.
+1. Add MCP token expiry.
 
 ## General User Policy
 

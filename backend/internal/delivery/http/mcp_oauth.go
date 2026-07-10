@@ -1,6 +1,9 @@
 package httpdelivery
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"html"
@@ -24,6 +27,13 @@ type oauthClientRegistrationRequest struct {
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
 	Scope                   string   `json:"scope"`
 }
+
+const (
+	defaultMCPOAuthConsentSecret = "ogame-mcp-development-consent-secret"
+	oauthConsentTokenParam       = "consent_token"
+)
+
+var oauthConsentSignedFields = []string{"response_type", "client_id", "redirect_uri", "resource", "scope", "state", "code_challenge", "code_challenge_method", "session"}
 
 func (a app) handleMCPOAuthAuthorizationServerMetadata(w http.ResponseWriter, r *http.Request) {
 	if a.deps.MCPOAuth == nil {
@@ -96,7 +106,12 @@ func (a app) handleMCPOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		writeOAuthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "OAuth consent flow is unavailable.")
 		return
 	}
-	result, err := a.deps.MCPOAuth.AuthorizeOAuth(r.Context(), oauthAuthorizeCommand(r))
+	command, err := a.oauthAuthorizeCommand(r)
+	if err != nil {
+		writeOAuthApplicationError(w, err)
+		return
+	}
+	result, err := a.deps.MCPOAuth.AuthorizeOAuth(r.Context(), command)
 	if err != nil {
 		writeOAuthApplicationError(w, err)
 		return
@@ -109,7 +124,7 @@ func (a app) handleMCPOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if result.RequiresConsent {
-		writeOAuthConsent(w, r, result)
+		a.writeOAuthConsent(w, r, result)
 		return
 	}
 	http.Redirect(w, r, result.RedirectTo, http.StatusFound)
@@ -180,8 +195,12 @@ func requestIssuer(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-func oauthAuthorizeCommand(r *http.Request) appmcp.OAuthAuthorizeCommand {
+func (a app) oauthAuthorizeCommand(r *http.Request) (appmcp.OAuthAuthorizeCommand, error) {
 	query := r.URL.Query()
+	consentApproved := query.Get("consent") == "approve"
+	if consentApproved && !validOAuthConsentToken(a.currentOAuthConsentSecret(), query) {
+		return appmcp.OAuthAuthorizeCommand{}, appmcp.ErrInvalidOAuthRequest
+	}
 	return appmcp.OAuthAuthorizeCommand{
 		TokenManagementCommand: mcpTokenCommand(r),
 		ResponseType:           query.Get("response_type"),
@@ -192,12 +211,12 @@ func oauthAuthorizeCommand(r *http.Request) appmcp.OAuthAuthorizeCommand {
 		State:                  query.Get("state"),
 		CodeChallenge:          query.Get("code_challenge"),
 		CodeChallengeMethod:    query.Get("code_challenge_method"),
-		ConsentApproved:        query.Get("consent") == "approve",
+		ConsentApproved:        consentApproved,
 		Issuer:                 requestIssuer(r),
-	}
+	}, nil
 }
 
-func writeOAuthConsent(w http.ResponseWriter, r *http.Request, result appmcp.OAuthAuthorizeResult) {
+func (a app) writeOAuthConsent(w http.ResponseWriter, r *http.Request, result appmcp.OAuthAuthorizeResult) {
 	query := r.URL.Query()
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -219,12 +238,45 @@ func writeOAuthConsent(w http.ResponseWriter, r *http.Request, result appmcp.OAu
 			_, _ = w.Write([]byte("<input type=\"hidden\" name=\"" + html.EscapeString(key) + "\" value=\"" + html.EscapeString(value) + "\">"))
 		}
 	}
+	_, _ = w.Write([]byte("<input type=\"hidden\" name=\"" + oauthConsentTokenParam + "\" value=\"" + oauthConsentToken(a.currentOAuthConsentSecret(), query) + "\">"))
 	_, _ = w.Write([]byte("<input type=\"hidden\" name=\"consent\" value=\"approve\">"))
 	_, _ = w.Write([]byte("<button type=\"submit\">Authorize</button></form>"))
 	if denyTo := oauthAccessDeniedRedirect(result.RedirectURI, query.Get("state")); denyTo != "" {
 		_, _ = w.Write([]byte("<p><a href=\"" + html.EscapeString(denyTo) + "\">Deny</a></p>"))
 	}
 	_, _ = w.Write([]byte("</body></html>"))
+}
+
+func (a app) currentOAuthConsentSecret() string {
+	if strings.TrimSpace(a.deps.MCPOAuthConsentSecret) != "" {
+		return a.deps.MCPOAuthConsentSecret
+	}
+	return defaultMCPOAuthConsentSecret
+}
+
+func oauthConsentToken(secret string, query url.Values) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(oauthConsentPayload(query)))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func validOAuthConsentToken(secret string, query url.Values) bool {
+	got := strings.TrimSpace(query.Get(oauthConsentTokenParam))
+	if got == "" {
+		return false
+	}
+	want := oauthConsentToken(secret, query)
+	return hmac.Equal([]byte(got), []byte(want))
+}
+
+func oauthConsentPayload(query url.Values) string {
+	values := url.Values{}
+	for _, key := range oauthConsentSignedFields {
+		if value := query.Get(key); value != "" {
+			values.Set(key, value)
+		}
+	}
+	return values.Encode()
 }
 
 func oauthScopeDescription(scope string) string {

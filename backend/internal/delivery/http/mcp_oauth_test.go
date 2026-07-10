@@ -113,12 +113,22 @@ func TestMCPOAuthAuthorizeConsentRedirectAndToken(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Requested permissions") || !strings.Contains(rec.Body.String(), "<strong>mcp:read</strong>") || !strings.Contains(rec.Body.String(), `name="resource"`) || !strings.Contains(rec.Body.String(), "access_denied") || oauth.authorizeCommand.PublicSession != "pub" || oauth.authorizeCommand.ClientID != "desktop" || oauth.authorizeCommand.Resource != "http://game.local/mcp" || oauth.authorizeCommand.ConsentApproved {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Requested permissions") || !strings.Contains(rec.Body.String(), "<strong>mcp:read</strong>") || !strings.Contains(rec.Body.String(), `name="resource"`) || !strings.Contains(rec.Body.String(), `name="consent_token"`) || !strings.Contains(rec.Body.String(), "access_denied") || oauth.authorizeCommand.PublicSession != "pub" || oauth.authorizeCommand.ClientID != "desktop" || oauth.authorizeCommand.Resource != "http://game.local/mcp" || oauth.authorizeCommand.ConsentApproved {
 		t.Fatalf("unexpected consent response status=%d body=%q command=%+v", rec.Code, rec.Body.String(), oauth.authorizeCommand)
 	}
 
+	approveQuery := req.URL.Query()
+	approveQuery.Set("consent", "approve")
+	req = httptest.NewRequest(http.MethodGet, "http://game.local/oauth/authorize?"+approveQuery.Encode(), nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_request") {
+		t.Fatalf("expected missing consent token to be rejected, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
 	oauth.authorizeResult = appmcp.OAuthAuthorizeResult{Authenticated: true, RedirectTo: "http://127.0.0.1:9000/callback?code=abc&state=s1"}
-	req = httptest.NewRequest(http.MethodGet, "http://game.local/oauth/authorize?response_type=code&client_id=desktop&redirect_uri=http://127.0.0.1:9000/callback&code_challenge="+strings.Repeat("a", 43)+"&code_challenge_method=S256&consent=approve", nil)
+	approveQuery.Set(oauthConsentTokenParam, oauthConsentToken(defaultMCPOAuthConsentSecret, approveQuery))
+	req = httptest.NewRequest(http.MethodGet, "http://game.local/oauth/authorize?"+approveQuery.Encode(), nil)
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "http://127.0.0.1:9000/callback?code=abc&state=s1" || !oauth.authorizeCommand.ConsentApproved {
