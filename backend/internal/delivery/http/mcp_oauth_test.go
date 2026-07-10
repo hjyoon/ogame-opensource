@@ -71,6 +71,7 @@ func TestMCPOAuthAuthorizeConsentRedirectAndToken(t *testing.T) {
 			Authenticated:   true,
 			RequiresConsent: true,
 			ClientID:        "desktop",
+			RedirectURI:     "http://127.0.0.1:9000/callback",
 			Scopes:          []string{domainmcp.ScopeRead, domainmcp.ScopeFleet},
 		},
 		exchangeResult: appmcp.OAuthTokenResult{
@@ -112,7 +113,7 @@ func TestMCPOAuthAuthorizeConsentRedirectAndToken(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Authorize MCP access") || !strings.Contains(rec.Body.String(), `name="resource"`) || oauth.authorizeCommand.PublicSession != "pub" || oauth.authorizeCommand.ClientID != "desktop" || oauth.authorizeCommand.Resource != "http://game.local/mcp" || oauth.authorizeCommand.ConsentApproved {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Requested permissions") || !strings.Contains(rec.Body.String(), "<strong>mcp:read</strong>") || !strings.Contains(rec.Body.String(), `name="resource"`) || !strings.Contains(rec.Body.String(), "access_denied") || oauth.authorizeCommand.PublicSession != "pub" || oauth.authorizeCommand.ClientID != "desktop" || oauth.authorizeCommand.Resource != "http://game.local/mcp" || oauth.authorizeCommand.ConsentApproved {
 		t.Fatalf("unexpected consent response status=%d body=%q command=%+v", rec.Code, rec.Body.String(), oauth.authorizeCommand)
 	}
 
@@ -152,6 +153,21 @@ func TestMCPOAuthAuthorizeConsentRedirectAndToken(t *testing.T) {
 	}
 	if revokeBody["revoked"] != true {
 		t.Fatalf("unexpected revoke body: %+v", revokeBody)
+	}
+}
+
+func TestMCPOAuthConsentHelpers(t *testing.T) {
+	for _, scope := range []string{"openid", "profile", domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeFleet, "custom"} {
+		if got := oauthScopeDescription(scope); got == "" {
+			t.Fatalf("expected scope description for %q", scope)
+		}
+	}
+	denied := oauthAccessDeniedRedirect("http://127.0.0.1:9000/callback?existing=1", " state ")
+	if !strings.Contains(denied, "error=access_denied") || !strings.Contains(denied, "state=state") || !strings.Contains(denied, "existing=1") {
+		t.Fatalf("unexpected deny redirect: %q", denied)
+	}
+	if denied := oauthAccessDeniedRedirect(":", "state"); denied != "" {
+		t.Fatalf("expected invalid deny redirect to be empty, got %q", denied)
 	}
 }
 

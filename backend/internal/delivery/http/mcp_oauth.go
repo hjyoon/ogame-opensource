@@ -5,6 +5,7 @@ import (
 	"errors"
 	"html"
 	"net/http"
+	"net/url"
 	"strings"
 
 	appmcp "github.com/hjyoon/ogame-opensource/backend/internal/application/mcp"
@@ -203,7 +204,15 @@ func writeOAuthConsent(w http.ResponseWriter, r *http.Request, result appmcp.OAu
 	_, _ = w.Write([]byte("<!doctype html><html><head><title>Authorize MCP access</title></head><body>"))
 	_, _ = w.Write([]byte("<h1>Authorize MCP access</h1>"))
 	_, _ = w.Write([]byte("<p>Client <strong>" + html.EscapeString(result.ClientID) + "</strong> requests access to this game account.</p>"))
-	_, _ = w.Write([]byte("<p>Scopes: " + html.EscapeString(strings.Join(result.Scopes, " ")) + "</p>"))
+	_, _ = w.Write([]byte("<dl>"))
+	_, _ = w.Write([]byte("<dt>Resource</dt><dd>" + html.EscapeString(query.Get("resource")) + "</dd>"))
+	_, _ = w.Write([]byte("<dt>Redirect</dt><dd>" + html.EscapeString(result.RedirectURI) + "</dd>"))
+	_, _ = w.Write([]byte("</dl>"))
+	_, _ = w.Write([]byte("<h2>Requested permissions</h2><ul>"))
+	for _, scope := range result.Scopes {
+		_, _ = w.Write([]byte("<li><strong>" + html.EscapeString(scope) + "</strong>: " + html.EscapeString(oauthScopeDescription(scope)) + "</li>"))
+	}
+	_, _ = w.Write([]byte("</ul>"))
 	_, _ = w.Write([]byte("<form method=\"get\" action=\"/oauth/authorize\">"))
 	for _, key := range []string{"response_type", "client_id", "redirect_uri", "resource", "scope", "state", "code_challenge", "code_challenge_method", "session"} {
 		if value := query.Get(key); value != "" {
@@ -212,7 +221,42 @@ func writeOAuthConsent(w http.ResponseWriter, r *http.Request, result appmcp.OAu
 	}
 	_, _ = w.Write([]byte("<input type=\"hidden\" name=\"consent\" value=\"approve\">"))
 	_, _ = w.Write([]byte("<button type=\"submit\">Authorize</button></form>"))
+	if denyTo := oauthAccessDeniedRedirect(result.RedirectURI, query.Get("state")); denyTo != "" {
+		_, _ = w.Write([]byte("<p><a href=\"" + html.EscapeString(denyTo) + "\">Deny</a></p>"))
+	}
 	_, _ = w.Write([]byte("</body></html>"))
+}
+
+func oauthScopeDescription(scope string) string {
+	switch scope {
+	case "openid":
+		return "issue an ID token for this account"
+	case "profile":
+		return "identify the current player profile"
+	case "mcp:read":
+		return "read account, planet, resource, building queue, and fleet movement data"
+	case "mcp:messages":
+		return "read message-related MCP data when message tools are available"
+	case "mcp:fleet":
+		return "read fleet-related MCP data when fleet tools are available"
+	default:
+		return "access requested MCP capability"
+	}
+}
+
+func oauthAccessDeniedRedirect(rawRedirect string, state string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawRedirect))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	query := parsed.Query()
+	query.Set("error", "access_denied")
+	query.Set("error_description", "MCP access denied by user")
+	if strings.TrimSpace(state) != "" {
+		query.Set("state", strings.TrimSpace(state))
+	}
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }
 
 func writeOAuthApplicationError(w http.ResponseWriter, err error) {
