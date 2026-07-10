@@ -249,6 +249,7 @@ type Dependencies struct {
 	Frontend             FrontendAssets
 	LegacyAssets         http.FileSystem
 	Logger               *slog.Logger
+	MCPRateLimit         RateLimitConfig
 }
 
 func (d Dependencies) CurrentUniverseNumber() int {
@@ -271,18 +272,19 @@ type app struct {
 
 func New(deps Dependencies) http.Handler {
 	a := app{deps: deps}
+	mcpRateLimiter := newMCPRateLimiter(deps.MCPRateLimit)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/healthz", getOnly(a.handleHealthz))
-	mux.HandleFunc("/mcp", a.handleMCP)
+	mux.HandleFunc("/mcp", mcpRateLimiter.wrap("mcp-rpc", a.handleMCP))
 	mux.HandleFunc("/.well-known/oauth-authorization-server", getOnly(a.handleMCPOAuthAuthorizationServerMetadata))
 	mux.HandleFunc("/.well-known/oauth-protected-resource", getOnly(a.handleMCPOAuthProtectedResourceMetadata))
 	mux.HandleFunc("/.well-known/jwks.json", getOnly(a.handleMCPOAuthJWKS))
-	mux.HandleFunc("/oauth/authorize", getOnly(a.handleMCPOAuthAuthorize))
-	mux.HandleFunc("/oauth/register", postOnly(a.handleMCPOAuthRegister))
-	mux.HandleFunc("/oauth/token", postOnly(a.handleMCPOAuthToken))
-	mux.HandleFunc("/oauth/revoke", postOnly(a.handleMCPOAuthRevoke))
-	mux.HandleFunc("/api/game/mcp-tokens", a.handleGameMCPTokens)
-	mux.HandleFunc("/api/game/mcp-tokens/revoke", postOnly(a.handleGameMCPTokenRevoke))
+	mux.HandleFunc("/oauth/authorize", getOnly(mcpRateLimiter.wrap("mcp-oauth", a.handleMCPOAuthAuthorize)))
+	mux.HandleFunc("/oauth/register", postOnly(mcpRateLimiter.wrap("mcp-oauth", a.handleMCPOAuthRegister)))
+	mux.HandleFunc("/oauth/token", postOnly(mcpRateLimiter.wrap("mcp-oauth", a.handleMCPOAuthToken)))
+	mux.HandleFunc("/oauth/revoke", postOnly(mcpRateLimiter.wrap("mcp-oauth", a.handleMCPOAuthRevoke)))
+	mux.HandleFunc("/api/game/mcp-tokens", mcpRateLimiter.wrap("mcp-token-api", a.handleGameMCPTokens))
+	mux.HandleFunc("/api/game/mcp-tokens/revoke", postOnly(mcpRateLimiter.wrap("mcp-token-api", a.handleGameMCPTokenRevoke)))
 	mux.HandleFunc("/api/public/universes", getOnly(a.handleUniverses))
 	mux.HandleFunc("/api/public/registration/validate", postOnly(a.handleRegistrationValidation))
 	mux.HandleFunc("/api/public/registration", postOnly(a.handleRegistration))

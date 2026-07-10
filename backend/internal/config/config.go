@@ -25,6 +25,9 @@ type Config struct {
 	MCPOAuthRedirectURIs string
 	MCPOIDCSigningSeed   string
 	MCPOIDCPreviousSeeds string
+	MCPRateLimitEnabled  bool
+	MCPRateLimitPerMin   int
+	MCPRateLimitBurst    int
 	SMTPEnabled          bool
 	SMTPAddr             string
 	SMTPFrom             string
@@ -59,6 +62,9 @@ func Load() Config {
 		MCPOAuthRedirectURIs: env("OGAME_MCP_OAUTH_REDIRECT_URIS", ""),
 		MCPOIDCSigningSeed:   env("OGAME_MCP_OIDC_ED25519_SEED_B64", ""),
 		MCPOIDCPreviousSeeds: env("OGAME_MCP_OIDC_ED25519_PREVIOUS_SEEDS_B64", ""),
+		MCPRateLimitEnabled:  envBool("OGAME_MCP_RATE_LIMIT_ENABLE", true),
+		MCPRateLimitPerMin:   envInt("OGAME_MCP_RATE_LIMIT_PER_MINUTE", 300),
+		MCPRateLimitBurst:    envInt("OGAME_MCP_RATE_LIMIT_BURST", 60),
 		SMTPEnabled:          envBool("OGAME_SMTP_ENABLE", false),
 		SMTPAddr:             env("OGAME_SMTP_ADDR", "localhost:1025"),
 		SMTPFrom:             env("OGAME_SMTP_FROM", "OGame <noreply@localhost>"),

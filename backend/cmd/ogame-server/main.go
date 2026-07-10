@@ -143,6 +143,11 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		Frontend:             filesystem.StaticDir{Root: cfg.StaticDir},
 		LegacyAssets:         filesystem.NewNoListingFS(cfg.LegacyAssetDir),
 		Logger:               logger,
+		MCPRateLimit: httpdelivery.RateLimitConfig{
+			Disabled:          !cfg.MCPRateLimitEnabled,
+			RequestsPerMinute: cfg.MCPRateLimitPerMin,
+			Burst:             cfg.MCPRateLimitBurst,
+		},
 	})
 }
 

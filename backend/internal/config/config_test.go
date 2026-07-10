@@ -15,6 +15,9 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("OGAME_MCP_OAUTH_REDIRECT_URIS", "")
 	t.Setenv("OGAME_MCP_OIDC_ED25519_SEED_B64", "")
 	t.Setenv("OGAME_MCP_OIDC_ED25519_PREVIOUS_SEEDS_B64", "")
+	t.Setenv("OGAME_MCP_RATE_LIMIT_ENABLE", "")
+	t.Setenv("OGAME_MCP_RATE_LIMIT_PER_MINUTE", "")
+	t.Setenv("OGAME_MCP_RATE_LIMIT_BURST", "")
 	t.Setenv("OGAME_SMTP_ENABLE", "")
 	t.Setenv("OGAME_SMTP_ADDR", "")
 	t.Setenv("OGAME_SMTP_FROM", "")
@@ -44,6 +47,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.PublicUniverses != "" || cfg.MCPStaticTokens != "" || cfg.MCPOAuthRedirectURIs != "" || cfg.MCPOIDCSigningSeed != "" || cfg.MCPOIDCPreviousSeeds != "" || cfg.SMTPEnabled || cfg.SMTPAddr != "localhost:1025" || cfg.SMTPFrom != "OGame <noreply@localhost>" {
 		t.Fatalf("unexpected default public universes: %+v", cfg)
 	}
+	if !cfg.MCPRateLimitEnabled || cfg.MCPRateLimitPerMin != 300 || cfg.MCPRateLimitBurst != 60 {
+		t.Fatalf("unexpected default MCP rate limit config: %+v", cfg)
+	}
 	if !cfg.MasterDBEnabled || cfg.MasterDBHost != "mysql" || cfg.MasterDBUser != "root" || cfg.MasterDBPassword != "123" || cfg.MasterDBName != "master" {
 		t.Fatalf("unexpected default master DB config: %+v", cfg)
 	}
@@ -65,6 +71,9 @@ func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("OGAME_MCP_OAUTH_REDIRECT_URIS", "https://client.example/callback")
 	t.Setenv("OGAME_MCP_OIDC_ED25519_SEED_B64", "MTIz")
 	t.Setenv("OGAME_MCP_OIDC_ED25519_PREVIOUS_SEEDS_B64", "YWJj")
+	t.Setenv("OGAME_MCP_RATE_LIMIT_ENABLE", "0")
+	t.Setenv("OGAME_MCP_RATE_LIMIT_PER_MINUTE", "120")
+	t.Setenv("OGAME_MCP_RATE_LIMIT_BURST", "20")
 	t.Setenv("OGAME_SMTP_ENABLE", "1")
 	t.Setenv("OGAME_SMTP_ADDR", "mailhog:1025")
 	t.Setenv("OGAME_SMTP_FROM", "No Reply <no-reply@example.local>")
@@ -92,6 +101,9 @@ func TestLoadEnvOverrides(t *testing.T) {
 	}
 	if cfg.PublicUniverses != `[{"number":1}]` || cfg.MCPStaticTokens != "token:42:mcp:read" || cfg.MCPOAuthRedirectURIs != "https://client.example/callback" || cfg.MCPOIDCSigningSeed != "MTIz" || cfg.MCPOIDCPreviousSeeds != "YWJj" || !cfg.SMTPEnabled || cfg.SMTPAddr != "mailhog:1025" || cfg.SMTPFrom != "No Reply <no-reply@example.local>" {
 		t.Fatalf("unexpected public universes override: %+v", cfg)
+	}
+	if cfg.MCPRateLimitEnabled || cfg.MCPRateLimitPerMin != 120 || cfg.MCPRateLimitBurst != 20 {
+		t.Fatalf("unexpected MCP rate limit override: %+v", cfg)
 	}
 	if cfg.MasterDBEnabled || cfg.MasterDBHost != "db.local:3307" || cfg.MasterDBUser != "ogame" || cfg.MasterDBPassword != "secret" || cfg.MasterDBName != "master_test" {
 		t.Fatalf("unexpected master DB override: %+v", cfg)
