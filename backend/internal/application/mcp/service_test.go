@@ -200,6 +200,17 @@ func TestServiceOAuthCoversDependencyAndFailureBranches(t *testing.T) {
 	if _, err := service.AuthorizeOAuth(context.Background(), validCommand); err == nil {
 		t.Fatalf("expected authorize repository error")
 	}
+
+	repository := &fakeTokenRepository{}
+	service = NewServiceWithTokenManagement(fakeHealthProvider{}, nil, repository, fakeSessionLookup{auth: authenticatedSession(42)}, fakeTokenGenerator{secret: "token", code: "code"}, time.Now).
+		WithOAuthCodeRepository(repository).
+		WithOAuthRedirectURIs([]string{"https://client.example/callback", "bad"})
+	externalCommand := validCommand
+	externalCommand.RedirectURI = "https://client.example/callback"
+	external, err := service.AuthorizeOAuth(context.Background(), externalCommand)
+	if err != nil || external.RedirectTo == "" {
+		t.Fatalf("expected allow-listed external redirect to authorize, result=%+v err=%v", external, err)
+	}
 }
 
 func TestServiceOAuthTokenExchangeCoversValidationAndFailureBranches(t *testing.T) {
@@ -289,13 +300,20 @@ func TestOAuthValidationHelpers(t *testing.T) {
 	if service.tokenGenerator == nil || service.codeGenerator == nil || service.now == nil {
 		t.Fatalf("expected default token management dependencies: %+v", service)
 	}
-	if !validOAuthRedirectURI("https://example.com/callback") || !validOAuthRedirectURI("http://[::1]:9000/callback") {
-		t.Fatalf("expected https and loopback redirect URIs to be valid")
+	if !validOAuthRedirectURI("https://client.example/callback", []string{"https://client.example/callback"}) || !validOAuthRedirectURI("http://[::1]:9000/callback", nil) {
+		t.Fatalf("expected allow-listed https and loopback redirect URIs to be valid")
+	}
+	if validOAuthRedirectURI("https://client.example/callback", nil) {
+		t.Fatalf("expected external https redirect URI to require allow-list")
 	}
 	for _, raw := range []string{"http://example.com/callback", "http://127.0.0.1/callback#fragment", ":", "custom://callback"} {
-		if validOAuthRedirectURI(raw) {
+		if validOAuthRedirectURI(raw, nil) {
 			t.Fatalf("expected redirect URI %q to be invalid", raw)
 		}
+	}
+	allowed := ParseOAuthRedirectURIs("https://client.example/callback, invalid ; https://client.example/callback")
+	if strings.Join(allowed, ",") != "https://client.example/callback" {
+		t.Fatalf("unexpected parsed allow-list: %v", allowed)
 	}
 	for _, value := range []string{strings.Repeat("a", 42), strings.Repeat("a", 129), strings.Repeat("!", 43)} {
 		if validPKCEValue(value) {
@@ -340,7 +358,7 @@ func TestOAuthValidationHelpers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			command := validCommand
 			tt.mutate(&command)
-			if _, err := normalizeOAuthAuthorizeRequest(command); !errors.Is(err, ErrInvalidOAuthRequest) {
+			if _, err := normalizeOAuthAuthorizeRequest(command, nil); !errors.Is(err, ErrInvalidOAuthRequest) {
 				t.Fatalf("expected invalid authorize request, got %v", err)
 			}
 		})

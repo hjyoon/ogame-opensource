@@ -167,6 +167,7 @@ type Service struct {
 	verifier        TokenVerifier
 	tokenRepository TokenRepository
 	oauthRepository OAuthCodeRepository
+	oauthRedirects  []string
 	readRepository  ReadRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
@@ -207,6 +208,11 @@ func NewServiceWithTokenManagement(health HealthProvider, verifier TokenVerifier
 
 func (s Service) WithOAuthCodeRepository(repository OAuthCodeRepository) Service {
 	s.oauthRepository = repository
+	return s
+}
+
+func (s Service) WithOAuthRedirectURIs(redirectURIs []string) Service {
+	s.oauthRedirects = normalizeAllowedOAuthRedirectURIs(redirectURIs)
 	return s
 }
 
@@ -260,7 +266,7 @@ func (s Service) AuthorizeOAuth(ctx context.Context, command OAuthAuthorizeComma
 	if s.sessions == nil || s.oauthRepository == nil || s.codeGenerator == nil {
 		return OAuthAuthorizeResult{}, errors.New("mcp oauth dependencies unavailable")
 	}
-	request, err := normalizeOAuthAuthorizeRequest(command)
+	request, err := normalizeOAuthAuthorizeRequest(command, s.oauthRedirects)
 	if err != nil {
 		return OAuthAuthorizeResult{}, err
 	}
@@ -325,7 +331,7 @@ func (s Service) ExchangeOAuthCode(ctx context.Context, command OAuthTokenComman
 		return OAuthTokenResult{}, fmt.Errorf("%w: code is required", ErrInvalidOAuthRequest)
 	}
 	redirectURI := strings.TrimSpace(command.RedirectURI)
-	if !validOAuthRedirectURI(redirectURI) {
+	if !validOAuthRedirectURI(redirectURI, s.oauthRedirects) {
 		return OAuthTokenResult{}, fmt.Errorf("%w: redirect_uri is invalid", ErrInvalidOAuthRequest)
 	}
 	clientID := strings.TrimSpace(command.ClientID)
@@ -754,7 +760,7 @@ type normalizedOAuthAuthorizeRequest struct {
 	CodeChallengeMethod string
 }
 
-func normalizeOAuthAuthorizeRequest(command OAuthAuthorizeCommand) (normalizedOAuthAuthorizeRequest, error) {
+func normalizeOAuthAuthorizeRequest(command OAuthAuthorizeCommand, allowedRedirectURIs []string) (normalizedOAuthAuthorizeRequest, error) {
 	if strings.TrimSpace(command.ResponseType) != "code" {
 		return normalizedOAuthAuthorizeRequest{}, fmt.Errorf("%w: response_type must be code", ErrInvalidOAuthRequest)
 	}
@@ -763,7 +769,7 @@ func normalizeOAuthAuthorizeRequest(command OAuthAuthorizeCommand) (normalizedOA
 		return normalizedOAuthAuthorizeRequest{}, fmt.Errorf("%w: client_id is required", ErrInvalidOAuthRequest)
 	}
 	redirectURI := strings.TrimSpace(command.RedirectURI)
-	if !validOAuthRedirectURI(redirectURI) {
+	if !validOAuthRedirectURI(redirectURI, allowedRedirectURIs) {
 		return normalizedOAuthAuthorizeRequest{}, fmt.Errorf("%w: redirect_uri is invalid", ErrInvalidOAuthRequest)
 	}
 	method := strings.TrimSpace(command.CodeChallengeMethod)
@@ -820,19 +826,52 @@ func validOAuthClientID(clientID string) bool {
 	return clientID != "" && len(clientID) <= 128 && !strings.ContainsAny(clientID, " \t\r\n")
 }
 
-func validOAuthRedirectURI(raw string) bool {
+func validOAuthRedirectURI(raw string, allowedRedirectURIs []string) bool {
 	parsed, err := url.Parse(raw)
 	if err != nil || !parsed.IsAbs() || parsed.Host == "" || parsed.Fragment != "" {
 		return false
 	}
-	switch parsed.Scheme {
-	case "https":
+	if oauthRedirectAllowedByConfig(parsed.String(), allowedRedirectURIs) {
 		return true
-	case "http":
+	}
+	switch parsed.Scheme {
+	case "http", "https":
 		return isLoopbackHost(parsed.Hostname())
 	default:
 		return false
 	}
+}
+
+func normalizeAllowedOAuthRedirectURIs(raw []string) []string {
+	allowed := make([]string, 0, len(raw))
+	seen := map[string]bool{}
+	for _, value := range raw {
+		parsed, err := url.Parse(strings.TrimSpace(value))
+		if err != nil || !parsed.IsAbs() || parsed.Host == "" || parsed.Fragment != "" {
+			continue
+		}
+		normalized := parsed.String()
+		if !seen[normalized] {
+			seen[normalized] = true
+			allowed = append(allowed, normalized)
+		}
+	}
+	return allowed
+}
+
+func ParseOAuthRedirectURIs(raw string) []string {
+	return normalizeAllowedOAuthRedirectURIs(strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\t' || r == ' '
+	}))
+}
+
+func oauthRedirectAllowedByConfig(raw string, allowedRedirectURIs []string) bool {
+	for _, allowed := range allowedRedirectURIs {
+		if raw == allowed {
+			return true
+		}
+	}
+	return false
 }
 
 func isLoopbackHost(host string) bool {

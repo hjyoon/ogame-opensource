@@ -40,6 +40,7 @@ Implemented:
   - `/oauth/authorize` consent page and code redirect
   - `/oauth/token` authorization-code + PKCE S256 exchange
   - Codes are one-time hashes in `uni*_mcp_oauth_codes`.
+  - External redirects require `OGAME_MCP_OAUTH_REDIRECT_URIS`.
 - JSON audit logging for every `tools/call` request path. Audit logs include
   tool, auth result, player/scopes, duration, and errors. Secrets are not
   logged.
@@ -101,8 +102,7 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Add client registration/allow-list policy for non-loopback redirect URIs.
-2. Add OIDC ID-token/JWKS support before public user rollout.
+1. Add OIDC ID-token/JWKS support before public user rollout.
 
 ## General User Policy
 

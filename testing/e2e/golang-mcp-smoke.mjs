@@ -149,6 +149,7 @@ try {
   const mcpUnauthorizedAccess = await mcpJSONRPC("tools/call", { name: "get_mcp_access", arguments: {} }, { id: 7 });
   const oauthMetadata = await request("/.well-known/oauth-authorization-server");
   const oauthTokenUnavailable = await request("/oauth/token", { method: "POST" });
+  const oauthExternalRedirectReject = await request(`/oauth/authorize?response_type=code&client_id=external&redirect_uri=${encodeURIComponent("https://client.example/callback")}&scope=mcp:read&code_challenge=${"a".repeat(43)}&code_challenge_method=S256`);
   const mcpParseErrorBody = parseJSON(mcpParseError);
   const mcpInitializeBody = parseJSON(mcpInitialize);
   const mcpPingBody = parseJSON(mcpPing);
@@ -157,6 +158,7 @@ try {
   const mcpUnauthorizedAccessBody = parseJSON(mcpUnauthorizedAccess);
   const oauthMetadataBody = parseJSON(oauthMetadata);
   const oauthTokenUnavailableBody = parseJSON(oauthTokenUnavailable);
+  const oauthExternalRedirectRejectBody = parseJSON(oauthExternalRedirectReject);
   cases.push(finalize({
     case: "go_mcp_public_transport",
     checks: [
@@ -177,7 +179,8 @@ try {
       check(oauthMetadata.status === 200 && oauthMetadataBody.issuer === baseUrl, "OAuth authorization server metadata uses current origin issuer", oauthMetadataBody),
       check(oauthMetadataBody.authorization_endpoint === `${baseUrl}/oauth/authorize`, "OAuth metadata exposes authorize endpoint", oauthMetadataBody),
       check((oauthMetadataBody.code_challenge_methods_supported ?? []).includes("S256"), "OAuth metadata requires PKCE S256 support", oauthMetadataBody),
-      check(oauthTokenUnavailable.status === 400 && oauthTokenUnavailableBody.error === "invalid_request", "OAuth token endpoint rejects malformed exchange requests", oauthTokenUnavailableBody)
+      check(oauthTokenUnavailable.status === 400 && oauthTokenUnavailableBody.error === "invalid_request", "OAuth token endpoint rejects malformed exchange requests", oauthTokenUnavailableBody),
+      check(oauthExternalRedirectReject.status === 400 && oauthExternalRedirectRejectBody.error === "invalid_request", "OAuth authorize rejects non-loopback redirects without allow-list", oauthExternalRedirectRejectBody)
     ]
   }));
 

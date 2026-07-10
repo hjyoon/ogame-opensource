@@ -186,6 +186,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 	readRepository := mysqlgame.NewMCPReadRepository(db, cfg.UniDBPrefix)
 	return appmcp.NewServiceWithTokenManagement(health, verifier, repository, sessions, appmcp.SecureTokenGenerator{}, time.Now).
 		WithOAuthCodeRepository(repository).
+		WithOAuthRedirectURIs(appmcp.ParseOAuthRedirectURIs(cfg.MCPOAuthRedirectURIs)).
 		WithReadRepository(readRepository).
 		WithToolCallAuditor(mcpaudit.NewSlogLogger(logger))
 }
