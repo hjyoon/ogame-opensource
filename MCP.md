@@ -33,8 +33,8 @@ Implemented:
 - Dedicated Go MCP smoke E2E:
   - `testing/e2e/golang-mcp-smoke.mjs`
   - Runs from `testing/e2e/run-golang-migration-qa.sh`.
-  - Covers transport guards, DB tokens, OAuth code flow, read tools, invalid
-    params, and revoke.
+  - Covers transport guards, DB tokens, OAuth, read tools, invalid params, and
+    revoke.
 - OAuth 2.1 public-client base:
   - `/.well-known/oauth-authorization-server`
   - `/oauth/authorize` consent page and code redirect
@@ -42,7 +42,8 @@ Implemented:
   - `/.well-known/jwks.json` Ed25519 JWKS
   - Codes are one-time hashes in `uni*_mcp_oauth_codes`.
   - External redirects require `OGAME_MCP_OAUTH_REDIRECT_URIS`.
-  - OIDC seed env: `OGAME_MCP_OIDC_ED25519_SEED_B64`.
+  - OIDC seed envs: active `OGAME_MCP_OIDC_ED25519_SEED_B64`; previous
+    `OGAME_MCP_OIDC_ED25519_PREVIOUS_SEEDS_B64`.
 - JSON audit logging for every `tools/call` request path. Audit logs include
   tool, auth result, player/scopes, duration, and errors. Secrets are not
   logged.
@@ -73,9 +74,8 @@ Current scopes:
 - `mcp:messages`
 - `mcp:admin`
 
-Static tokens are only a bootstrap path. Revocation currently means removing
-the token from config and restarting. Prefer DB-backed user tokens for normal
-users because they can be revoked without restart.
+Static tokens are bootstrap-only. Prefer DB-backed user tokens because they can
+be revoked without restart.
 
 ## User Token API
 
@@ -104,7 +104,7 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Add OIDC key rotation.
+1. Add OAuth client revocation metadata and endpoint.
 
 ## General User Policy
 

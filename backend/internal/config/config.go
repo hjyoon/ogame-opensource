@@ -24,6 +24,7 @@ type Config struct {
 	MCPStaticTokens      string
 	MCPOAuthRedirectURIs string
 	MCPOIDCSigningSeed   string
+	MCPOIDCPreviousSeeds string
 	SMTPEnabled          bool
 	SMTPAddr             string
 	SMTPFrom             string
@@ -57,6 +58,7 @@ func Load() Config {
 		MCPStaticTokens:      env("OGAME_MCP_STATIC_TOKENS", ""),
 		MCPOAuthRedirectURIs: env("OGAME_MCP_OAUTH_REDIRECT_URIS", ""),
 		MCPOIDCSigningSeed:   env("OGAME_MCP_OIDC_ED25519_SEED_B64", ""),
+		MCPOIDCPreviousSeeds: env("OGAME_MCP_OIDC_ED25519_PREVIOUS_SEEDS_B64", ""),
 		SMTPEnabled:          envBool("OGAME_SMTP_ENABLE", false),
 		SMTPAddr:             env("OGAME_SMTP_ADDR", "localhost:1025"),
 		SMTPFrom:             env("OGAME_SMTP_FROM", "OGame <noreply@localhost>"),

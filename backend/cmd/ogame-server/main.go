@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	appmcp "github.com/hjyoon/ogame-opensource/backend/internal/application/mcp"
@@ -203,9 +204,15 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 
 func mcpOIDCSigner(cfg config.Config) (mcpoidc.Ed25519Signer, error) {
 	if strings.TrimSpace(cfg.MCPOIDCSigningSeed) != "" {
-		return mcpoidc.NewEd25519SignerFromBase64Seed(cfg.MCPOIDCSigningSeed, time.Now)
+		return mcpoidc.NewEd25519SignerFromBase64Seeds(cfg.MCPOIDCSigningSeed, mcpOIDCPreviousSeeds(cfg.MCPOIDCPreviousSeeds), time.Now)
 	}
 	return mcpoidc.NewEphemeralEd25519Signer()
+}
+
+func mcpOIDCPreviousSeeds(raw string) []string {
+	return strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';' || unicode.IsSpace(r)
+	})
 }
 
 func registrationActivation(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationActivationService {

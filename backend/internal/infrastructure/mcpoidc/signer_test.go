@@ -83,6 +83,45 @@ func TestEd25519SignerSignsIDTokenAndExposesJWKS(t *testing.T) {
 	}
 }
 
+func TestEd25519SignerSupportsPreviousJWKSKeys(t *testing.T) {
+	activeSeed := base64.StdEncoding.EncodeToString([]byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+	previousSeed := base64.StdEncoding.EncodeToString([]byte("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"))
+
+	signer, err := NewEd25519SignerFromBase64Seeds(activeSeed, []string{"", previousSeed, activeSeed}, func() time.Time { return time.Unix(1700, 0) })
+	if err != nil {
+		t.Fatalf("NewEd25519SignerFromBase64Seeds returned error: %v", err)
+	}
+	jwks := signer.JWKS(context.Background())
+	if len(jwks.Keys) != 2 {
+		t.Fatalf("expected active plus previous JWKS keys, got %+v", jwks.Keys)
+	}
+	if jwks.Keys[0].KeyID == jwks.Keys[1].KeyID {
+		t.Fatalf("expected duplicate active seed to be skipped: %+v", jwks.Keys)
+	}
+
+	token, err := signer.SignIDToken(context.Background(), domainmcp.IDTokenCommand{
+		Issuer:   "https://game.example",
+		Audience: "desktop-client",
+		PlayerID: 42,
+		Scopes:   []string{"openid"},
+	})
+	if err != nil {
+		t.Fatalf("SignIDToken returned error: %v", err)
+	}
+	parts := strings.Split(token, ".")
+	headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		t.Fatalf("decode header: %v", err)
+	}
+	var header map[string]any
+	if err := json.Unmarshal(headerJSON, &header); err != nil {
+		t.Fatalf("decode header json: %v", err)
+	}
+	if header["kid"] != jwks.Keys[0].KeyID {
+		t.Fatalf("expected active key id in JWT header, header=%+v jwks=%+v", header, jwks.Keys)
+	}
+}
+
 func TestEd25519SignerHandlesMissingKeys(t *testing.T) {
 	signer := Ed25519Signer{}
 	if keys := signer.JWKS(context.Background()).Keys; len(keys) != 0 {
@@ -102,5 +141,8 @@ func TestEd25519SignerHandlesMissingKeys(t *testing.T) {
 	}
 	if _, err := NewEd25519SignerFromBase64Seed(base64.StdEncoding.EncodeToString([]byte("short")), nil); err == nil {
 		t.Fatalf("expected invalid seed length error")
+	}
+	if _, err := NewEd25519SignerFromBase64Seeds(base64.StdEncoding.EncodeToString([]byte("12345678901234567890123456789012")), []string{"short"}, nil); err == nil {
+		t.Fatalf("expected invalid previous seed error")
 	}
 }
