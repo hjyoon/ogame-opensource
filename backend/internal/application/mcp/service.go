@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,6 +46,7 @@ type TokenRepository interface {
 type ReadRepository interface {
 	ListMCPPlanets(context.Context, int) ([]domainmcp.Planet, error)
 	GetMCPAccountOverview(context.Context, int) (domainmcp.AccountOverview, error)
+	GetMCPPlanetResources(context.Context, int, int) (domainmcp.PlanetResources, error)
 }
 
 type TokenSecretGenerator interface {
@@ -168,7 +171,7 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	if access.HasScope(domainmcp.ScopeRead) {
 		tools = append(tools, accessTool())
 		if s.readRepository != nil {
-			tools = append(tools, listPlanetsTool(), accountOverviewTool())
+			tools = append(tools, listPlanetsTool(), accountOverviewTool(), planetResourcesTool())
 		}
 	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
@@ -216,6 +219,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callAccountOverview(ctx, access)
+	case "get_planet_resources":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callPlanetResources(ctx, access, command.Arguments)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -362,6 +374,29 @@ func (s Service) callAccountOverview(ctx context.Context, access domainmcp.Acces
 	}, nil
 }
 
+func (s Service) callPlanetResources(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.readRepository == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp read repository unavailable")
+	}
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	resources, err := s.readRepository.GetMCPPlanetResources(ctx, access.PlayerID, planetID)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"resources": resources}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
 func (s Service) authenticateSession(ctx context.Context, command TokenManagementCommand) (domainpublicsite.SessionAuthentication, error) {
 	return s.sessions.GetGameSession(ctx, apppublicsite.GameSessionCommand{
 		PublicSession:   command.PublicSession,
@@ -434,6 +469,50 @@ func userScopeAllowed(scope string) bool {
 	default:
 		return false
 	}
+}
+
+func optionalNonNegativeIntArgument(arguments map[string]any, name string) (int, error) {
+	if arguments == nil {
+		return 0, nil
+	}
+	raw, ok := arguments[name]
+	if !ok || raw == nil {
+		return 0, nil
+	}
+	maxIntValue := int64(^uint(0) >> 1)
+	var value int64
+	switch typed := raw.(type) {
+	case int:
+		value = int64(typed)
+	case int64:
+		value = typed
+	case float64:
+		if math.Trunc(typed) != typed {
+			return 0, fmt.Errorf("%w: %s must be an integer", domainmcp.ErrInvalidParams, name)
+		}
+		if typed < 0 || typed > float64(maxIntValue) {
+			return 0, fmt.Errorf("%w: %s must be a non-negative integer", domainmcp.ErrInvalidParams, name)
+		}
+		value = int64(typed)
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil {
+			return 0, fmt.Errorf("%w: %s must be an integer", domainmcp.ErrInvalidParams, name)
+		}
+		value = parsed
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("%w: %s must be an integer", domainmcp.ErrInvalidParams, name)
+		}
+		value = parsed
+	default:
+		return 0, fmt.Errorf("%w: %s must be an integer", domainmcp.ErrInvalidParams, name)
+	}
+	if value < 0 || value > maxIntValue {
+		return 0, fmt.Errorf("%w: %s must be a non-negative integer", domainmcp.ErrInvalidParams, name)
+	}
+	return int(value), nil
 }
 
 func (s Service) verify(ctx context.Context, token string) (domainmcp.Access, error) {
@@ -615,6 +694,48 @@ func accountOverviewTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"overview"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func planetResourcesTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_planet_resources",
+		Title:       "Get Planet Resources",
+		Description: "Return read-only resource, storage, energy, and hourly production values for the current or requested owned planet.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"minimum":     0,
+					"description": "Optional owned planet id. Omit or pass 0 to use the current active planet.",
+				},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"resources": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":          map[string]any{"type": "integer"},
+						"planet":            map[string]any{"type": "object"},
+						"resources":         map[string]any{"type": "object"},
+						"capacity":          map[string]any{"type": "object"},
+						"energy":            map[string]any{"type": "object"},
+						"productionPerHour": map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "planet", "resources", "capacity", "energy", "productionPerHour"},
+				},
+			},
+			"required": []string{"resources"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,

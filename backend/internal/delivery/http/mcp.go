@@ -128,6 +128,10 @@ func (a app) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 			writeJSONRPCError(w, request.ID, http.StatusOK, -32602, "Unknown tool")
 			return
 		}
+		if errors.Is(err, domainmcp.ErrInvalidParams) {
+			writeJSONRPCError(w, request.ID, http.StatusOK, -32602, "Invalid params")
+			return
+		}
 		if err != nil {
 			if writeMCPAccessError(w, request.ID, err) {
 				return

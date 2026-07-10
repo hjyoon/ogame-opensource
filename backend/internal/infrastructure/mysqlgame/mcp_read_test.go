@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 )
@@ -85,6 +86,140 @@ func TestMCPReadRepositoryAccountOverviewFallsBackToHomePlanet(t *testing.T) {
 	}
 	if overview.CurrentPlanet.ID != 88 || overview.Score.Display != 0 {
 		t.Fatalf("unexpected fallback overview: %+v", overview)
+	}
+}
+
+func TestMCPReadRepositoryGetsPlanetResources(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", 99, 88, 1000, 37, 4, now.Add(time.Hour).Unix(), now.Add(time.Hour).Unix()})},
+		{rows: fakeRowsFromValues([]any{
+			99, "Homeworld", domaingame.PlanetTypePlanet, 1, 2, 3,
+			12345.0, 23456.0, 34567.0,
+			40,
+			10, 9, 8,
+			10, 8, 6, 12, 2, 5,
+			1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+		})},
+		{rows: fakeRowsFromValues([]any{128.0})},
+	}}
+	repository := NewMCPReadRepositoryWithQueryer(queryer, "uni1_")
+	repository.now = func() time.Time { return now }
+
+	resources, err := repository.GetMCPPlanetResources(context.Background(), 42, 0)
+	if err != nil {
+		t.Fatalf("GetMCPPlanetResources returned error: %v", err)
+	}
+	if resources.PlayerID != 42 ||
+		resources.Planet.ID != 99 ||
+		!resources.Planet.Current ||
+		resources.Resources.Metal != 12345 ||
+		resources.Resources.DarkMatter != 1037 ||
+		resources.Capacity.Metal != storageCapacity(10) ||
+		resources.Energy.Capacity <= 0 ||
+		resources.ProductionPerHour.Metal <= 0 {
+		t.Fatalf("unexpected planet resources: %+v", resources)
+	}
+	if !strings.Contains(queryer.calls[0].sql, "COALESCE(dm, 0)") ||
+		!strings.Contains(queryer.calls[1].sql, "COALESCE(`700`, 0)") ||
+		!strings.Contains(queryer.calls[2].sql, "FROM `uni1_uni`") {
+		t.Fatalf("unexpected resource SQL calls: %+v", queryer.calls)
+	}
+}
+
+func TestMCPReadRepositoryGetsMoonResourcesWithoutProduction(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", 99, 88, 1000, 37, 4, int64(0), int64(0)})},
+		{rows: fakeRowsFromValues([]any{
+			100, "Moon", domaingame.PlanetTypeMoon, 1, 2, 3,
+			100.0, 200.0, 300.0,
+			0,
+			10, 9, 8,
+			10, 8, 6, 12, 2, 5,
+			1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+		})},
+	}}
+	repository := NewMCPReadRepositoryWithQueryer(queryer, "uni1_")
+
+	resources, err := repository.GetMCPPlanetResources(context.Background(), 42, 100)
+	if err != nil {
+		t.Fatalf("GetMCPPlanetResources returned error: %v", err)
+	}
+	if resources.Planet.TypeName != "moon" ||
+		resources.Planet.Current ||
+		resources.Capacity.Metal != 0 ||
+		resources.Energy.Capacity != 0 ||
+		resources.ProductionPerHour.Metal != 0 ||
+		len(queryer.calls) != 2 {
+		t.Fatalf("unexpected moon resources: %+v calls=%+v", resources, queryer.calls)
+	}
+}
+
+func TestMCPReadRepositoryPlanetResourcesErrorBranches(t *testing.T) {
+	repository := NewMCPReadRepositoryWithQueryer(nil, "uni1_")
+	if _, err := repository.GetMCPPlanetResources(context.Background(), 42, 0); err == nil {
+		t.Fatalf("expected nil queryer error")
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{}, "uni1_;DROP")
+	if _, err := repository.GetMCPPlanetResources(context.Background(), 42, 0); err == nil {
+		t.Fatalf("expected invalid prefix error")
+	}
+
+	wantErr := errors.New("query failed")
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: wantErr}}}, "uni1_")
+	if _, err := repository.GetMCPPlanetResources(context.Background(), 42, 0); !errors.Is(err, wantErr) {
+		t.Fatalf("expected account query error, got %v", err)
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "uni1_")
+	if _, err := repository.GetMCPPlanetResources(context.Background(), 42, 0); err == nil {
+		t.Fatalf("expected missing account error")
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"legor", "bad", 88, 0, 0, 0, int64(0), int64(0)})}}}, "uni1_")
+	if _, err := repository.GetMCPPlanetResources(context.Background(), 42, 0); err == nil {
+		t.Fatalf("expected account scan error")
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", 99, 88, 0, 0, 0, int64(0), int64(0)})},
+		{err: wantErr},
+	}}, "uni1_")
+	if _, err := repository.GetMCPPlanetResources(context.Background(), 42, 0); !errors.Is(err, wantErr) {
+		t.Fatalf("expected planet resource query error, got %v", err)
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", 99, 88, 0, 0, 0, int64(0), int64(0)})},
+		{rows: fakeRowsFromValues()},
+	}}, "uni1_")
+	if _, err := repository.GetMCPPlanetResources(context.Background(), 42, 0); err == nil {
+		t.Fatalf("expected missing planet resources error")
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", 99, 88, 0, 0, 0, int64(0), int64(0)})},
+		{rows: fakeRowsFromValues([]any{"bad"})},
+	}}, "uni1_")
+	if _, err := repository.GetMCPPlanetResources(context.Background(), 42, 0); err == nil {
+		t.Fatalf("expected planet resource scan error")
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", 99, 88, 0, 0, 0, int64(0), int64(0)})},
+		{rows: fakeRowsFromValues([]any{
+			99, "Homeworld", domaingame.PlanetTypePlanet, 1, 2, 3,
+			1.0, 2.0, 3.0,
+			40,
+			0, 0, 0,
+			1, 0, 0, 0, 0, 0,
+			1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+		})},
+		{err: wantErr},
+	}}, "uni1_")
+	if _, err := repository.GetMCPPlanetResources(context.Background(), 42, 0); !errors.Is(err, wantErr) {
+		t.Fatalf("expected universe speed error, got %v", err)
 	}
 }
 

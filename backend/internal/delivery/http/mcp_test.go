@@ -228,6 +228,7 @@ func TestMCPAccessErrorsUseHTTPAuthStatus(t *testing.T) {
 	}{
 		{name: "unauthorized", mcp: fakeMCPUseCase{callErr: domainmcp.ErrUnauthorized}, wantStatus: http.StatusUnauthorized, wantCode: -32001, wantHeader: true},
 		{name: "forbidden", mcp: fakeMCPUseCase{callErr: domainmcp.ErrForbidden}, wantStatus: http.StatusForbidden, wantCode: -32003},
+		{name: "invalid params", mcp: fakeMCPUseCase{callErr: domainmcp.ErrInvalidParams}, wantStatus: http.StatusOK, wantCode: -32602},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			server := New(Dependencies{MCP: tt.mcp})

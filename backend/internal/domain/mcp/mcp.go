@@ -13,9 +13,10 @@ const (
 )
 
 var (
-	ErrToolNotFound = errors.New("mcp tool not found")
-	ErrUnauthorized = errors.New("mcp unauthorized")
-	ErrForbidden    = errors.New("mcp forbidden")
+	ErrToolNotFound  = errors.New("mcp tool not found")
+	ErrUnauthorized  = errors.New("mcp unauthorized")
+	ErrForbidden     = errors.New("mcp forbidden")
+	ErrInvalidParams = errors.New("mcp invalid params")
 )
 
 type Token struct {
@@ -71,6 +72,39 @@ type AccountOverview struct {
 	CurrentPlanet  Planet `json:"currentPlanet"`
 	PlanetCount    int    `json:"planetCount"`
 	UnreadMessages int    `json:"unreadMessages"`
+}
+
+type ResourceAmounts struct {
+	Metal      float64 `json:"metal"`
+	Crystal    float64 `json:"crystal"`
+	Deuterium  float64 `json:"deuterium"`
+	DarkMatter int     `json:"darkMatter"`
+}
+
+type ResourceCapacity struct {
+	Metal     int `json:"metal"`
+	Crystal   int `json:"crystal"`
+	Deuterium int `json:"deuterium"`
+}
+
+type ResourceRates struct {
+	Metal     float64 `json:"metal"`
+	Crystal   float64 `json:"crystal"`
+	Deuterium float64 `json:"deuterium"`
+}
+
+type Energy struct {
+	Available int `json:"available"`
+	Capacity  int `json:"capacity"`
+}
+
+type PlanetResources struct {
+	PlayerID          int              `json:"playerId"`
+	Planet            Planet           `json:"planet"`
+	Resources         ResourceAmounts  `json:"resources"`
+	Capacity          ResourceCapacity `json:"capacity"`
+	Energy            Energy           `json:"energy"`
+	ProductionPerHour ResourceRates    `json:"productionPerHour"`
 }
 
 type Access struct {

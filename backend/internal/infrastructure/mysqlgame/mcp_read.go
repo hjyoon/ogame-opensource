@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
@@ -13,6 +14,7 @@ import (
 type MCPReadRepository struct {
 	queryer Queryer
 	prefix  string
+	now     func() time.Time
 }
 
 func NewMCPReadRepository(db *sql.DB, prefix string) MCPReadRepository {
@@ -20,7 +22,7 @@ func NewMCPReadRepository(db *sql.DB, prefix string) MCPReadRepository {
 }
 
 func NewMCPReadRepositoryWithQueryer(queryer Queryer, prefix string) MCPReadRepository {
-	return MCPReadRepository{queryer: queryer, prefix: prefix}
+	return MCPReadRepository{queryer: queryer, prefix: prefix, now: time.Now}
 }
 
 func (r MCPReadRepository) ListMCPPlanets(ctx context.Context, playerID int) ([]domainmcp.Planet, error) {
@@ -82,6 +84,92 @@ func (r MCPReadRepository) GetMCPAccountOverview(ctx context.Context, playerID i
 	}, nil
 }
 
+func (r MCPReadRepository) GetMCPPlanetResources(ctx context.Context, playerID int, planetID int) (domainmcp.PlanetResources, error) {
+	if r.queryer == nil {
+		return domainmcp.PlanetResources{}, errors.New("mcp read repository queryer unavailable")
+	}
+	usersTable, planetsTable, _, err := r.mcpReadTables()
+	if err != nil {
+		return domainmcp.PlanetResources{}, err
+	}
+	account, err := r.loadMCPResourceAccount(ctx, usersTable, playerID)
+	if err != nil {
+		return domainmcp.PlanetResources{}, err
+	}
+	currentPlanetID := account.activePlanetID
+	if currentPlanetID <= 0 {
+		currentPlanetID = account.homePlanetID
+	}
+	if planetID <= 0 {
+		planetID = currentPlanetID
+	}
+
+	row, err := r.loadMCPPlanetResourceRow(ctx, planetsTable, playerID, planetID)
+	if err != nil {
+		return domainmcp.PlanetResources{}, err
+	}
+	row.planet.Current = row.planet.ID == currentPlanetID
+	result := domainmcp.PlanetResources{
+		PlayerID: playerID,
+		Planet:   row.planet,
+		Resources: domainmcp.ResourceAmounts{
+			Metal:      row.metal,
+			Crystal:    row.crystal,
+			Deuterium:  row.deuterium,
+			DarkMatter: account.darkMatter,
+		},
+	}
+	planet := row.gamePlanet(account.darkMatter)
+	if row.planet.Type != domaingame.PlanetTypeMoon {
+		result.Capacity = domainmcp.ResourceCapacity{
+			Metal:     storageCapacity(row.metalStorageLevel),
+			Crystal:   storageCapacity(row.crystalStorageLevel),
+			Deuterium: storageCapacity(row.deuteriumStorageLevel),
+		}
+		planet.Resources.MetalCapacity = result.Capacity.Metal
+		planet.Resources.CrystalCapacity = result.Capacity.Crystal
+		planet.Resources.DeuteriumCapacity = result.Capacity.Deuterium
+	}
+	if row.planet.Type == domaingame.PlanetTypePlanet {
+		speed, err := (BuildingsRepository{queryer: r.queryer, prefix: r.prefix}).loadUniverseSpeed(ctx)
+		if err != nil {
+			return domainmcp.PlanetResources{}, err
+		}
+		production := domaingame.BuildResourceProduction(domaingame.Overview{Commander: account.commander, CurrentPlanet: planet}, domaingame.ResourceProductionInputs{
+			Levels: domaingame.BuildingLevels{
+				domaingame.BuildingMetalMine:      row.metalMine,
+				domaingame.BuildingCrystalMine:    row.crystalMine,
+				domaingame.BuildingDeuteriumSynth: row.deuteriumSynth,
+				domaingame.BuildingSolarPlant:     row.solarPlant,
+				domaingame.BuildingFusionReactor:  row.fusionReactor,
+			},
+			SolarSatellites: row.solarSatellites,
+			ProductionFactors: domaingame.ProductionFactors{
+				domaingame.BuildingMetalMine:      row.prodMetal,
+				domaingame.BuildingCrystalMine:    row.prodCrystal,
+				domaingame.BuildingDeuteriumSynth: row.prodDeuterium,
+				domaingame.BuildingSolarPlant:     row.prodSolar,
+				domaingame.BuildingFusionReactor:  row.prodFusion,
+				domaingame.FleetSolarSatellite:    row.prodSatellite,
+			},
+			EnergyResearch: account.energyResearch,
+			UniverseSpeed:  speed,
+			Geologist:      account.geologist,
+			Engineer:       account.engineer,
+		})
+		result.Energy = domainmcp.Energy{
+			Available: int(production.Totals.Hour.Energy),
+			Capacity:  overviewEnergyCapacity(production),
+		}
+		result.ProductionPerHour = domainmcp.ResourceRates{
+			Metal:     production.Totals.Hour.Metal,
+			Crystal:   production.Totals.Hour.Crystal,
+			Deuterium: production.Totals.Hour.Deuterium,
+		}
+	}
+	return result, nil
+}
+
 func (r MCPReadRepository) mcpReadTables() (string, string, string, error) {
 	usersTable, err := tableName(r.prefix, "users")
 	if err != nil {
@@ -126,6 +214,168 @@ func (r MCPReadRepository) loadMCPAccount(ctx context.Context, usersTable string
 		return mcpAccountRow{}, err
 	}
 	return account, nil
+}
+
+type mcpResourceAccountRow struct {
+	commander      string
+	activePlanetID int
+	homePlanetID   int
+	darkMatter     int
+	energyResearch int
+	geologist      bool
+	engineer       bool
+}
+
+func (r MCPReadRepository) loadMCPResourceAccount(ctx context.Context, usersTable string, playerID int) (mcpResourceAccountRow, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf("SELECT COALESCE(oname, ''), COALESCE(aktplanet, 0), COALESCE(hplanetid, 0), COALESCE(dm, 0), COALESCE(dmfree, 0), COALESCE(`%d`, 0), COALESCE(geo_until, 0), COALESCE(eng_until, 0) FROM %s WHERE player_id = ? LIMIT 1", domaingame.ResearchEnergy, usersTable),
+		playerID,
+	)
+	if err != nil {
+		return mcpResourceAccountRow{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return mcpResourceAccountRow{}, err
+		}
+		return mcpResourceAccountRow{}, errors.New("mcp player not found")
+	}
+	var account mcpResourceAccountRow
+	var paidDarkMatter int
+	var freeDarkMatter int
+	var geologistUntil int64
+	var engineerUntil int64
+	if err := rows.Scan(&account.commander, &account.activePlanetID, &account.homePlanetID, &paidDarkMatter, &freeDarkMatter, &account.energyResearch, &geologistUntil, &engineerUntil); err != nil {
+		return mcpResourceAccountRow{}, err
+	}
+	if err := rows.Err(); err != nil {
+		return mcpResourceAccountRow{}, err
+	}
+	now := time.Now
+	if r.now != nil {
+		now = r.now
+	}
+	account.darkMatter = paidDarkMatter + freeDarkMatter
+	account.geologist = geologistUntil > now().Unix()
+	account.engineer = engineerUntil > now().Unix()
+	return account, nil
+}
+
+type mcpPlanetResourceRow struct {
+	planet                domainmcp.Planet
+	metal                 float64
+	crystal               float64
+	deuterium             float64
+	temperature           int
+	metalStorageLevel     int
+	crystalStorageLevel   int
+	deuteriumStorageLevel int
+	metalMine             int
+	crystalMine           int
+	deuteriumSynth        int
+	solarPlant            int
+	fusionReactor         int
+	solarSatellites       int
+	prodMetal             float64
+	prodCrystal           float64
+	prodDeuterium         float64
+	prodSolar             float64
+	prodFusion            float64
+	prodSatellite         float64
+}
+
+func (r MCPReadRepository) loadMCPPlanetResourceRow(ctx context.Context, planetsTable string, playerID int, planetID int) (mcpPlanetResourceRow, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT planet_id, name, type, g, s, p, COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(temp, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(prod%d, 0), COALESCE(prod%d, 0), COALESCE(prod%d, 0), COALESCE(prod%d, 0), COALESCE(prod%d, 0), COALESCE(prod%d, 0) FROM %s WHERE planet_id = ? AND owner_id = ? AND type < ? LIMIT 1",
+			domaingame.ResourceMetal,
+			domaingame.ResourceCrystal,
+			domaingame.ResourceDeuterium,
+			domaingame.BuildingMetalStorage,
+			domaingame.BuildingCrystalStorage,
+			domaingame.BuildingDeuteriumTank,
+			domaingame.BuildingMetalMine,
+			domaingame.BuildingCrystalMine,
+			domaingame.BuildingDeuteriumSynth,
+			domaingame.BuildingSolarPlant,
+			domaingame.BuildingFusionReactor,
+			domaingame.FleetSolarSatellite,
+			domaingame.BuildingMetalMine,
+			domaingame.BuildingCrystalMine,
+			domaingame.BuildingDeuteriumSynth,
+			domaingame.BuildingSolarPlant,
+			domaingame.BuildingFusionReactor,
+			domaingame.FleetSolarSatellite,
+			planetsTable,
+		),
+		planetID,
+		playerID,
+		planetTypeDebris,
+	)
+	if err != nil {
+		return mcpPlanetResourceRow{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return mcpPlanetResourceRow{}, err
+		}
+		return mcpPlanetResourceRow{}, errors.New("mcp planet resources not found")
+	}
+	var row mcpPlanetResourceRow
+	if err := rows.Scan(
+		&row.planet.ID,
+		&row.planet.Name,
+		&row.planet.Type,
+		&row.planet.Coordinates.Galaxy,
+		&row.planet.Coordinates.System,
+		&row.planet.Coordinates.Position,
+		&row.metal,
+		&row.crystal,
+		&row.deuterium,
+		&row.temperature,
+		&row.metalStorageLevel,
+		&row.crystalStorageLevel,
+		&row.deuteriumStorageLevel,
+		&row.metalMine,
+		&row.crystalMine,
+		&row.deuteriumSynth,
+		&row.solarPlant,
+		&row.fusionReactor,
+		&row.solarSatellites,
+		&row.prodMetal,
+		&row.prodCrystal,
+		&row.prodDeuterium,
+		&row.prodSolar,
+		&row.prodFusion,
+		&row.prodSatellite,
+	); err != nil {
+		return mcpPlanetResourceRow{}, err
+	}
+	if err := rows.Err(); err != nil {
+		return mcpPlanetResourceRow{}, err
+	}
+	row.planet.TypeName = mcpPlanetTypeName(row.planet.Type)
+	return row, nil
+}
+
+func (r mcpPlanetResourceRow) gamePlanet(darkMatter int) domaingame.PlanetOverview {
+	return domaingame.PlanetOverview{
+		ID:          r.planet.ID,
+		Name:        r.planet.Name,
+		Type:        r.planet.Type,
+		Coordinates: domaingame.Coordinates{Galaxy: r.planet.Coordinates.Galaxy, System: r.planet.Coordinates.System, Position: r.planet.Coordinates.Position},
+		Temperature: r.temperature,
+		Resources: domaingame.Resources{
+			Metal:      r.metal,
+			Crystal:    r.crystal,
+			Deuterium:  r.deuterium,
+			DarkMatter: darkMatter,
+		},
+	}
 }
 
 func (r MCPReadRepository) loadMCPPlanetListSettings(ctx context.Context, usersTable string, playerID int) (int, int, int, error) {

@@ -39,6 +39,11 @@ Implemented:
   - Requires `mcp:read`.
   - Returns commander, score/rank, current planet, planet count, and unread
     message count without triggering legacy overview mutations.
+- Planet resource read tool: `get_planet_resources`.
+  - Requires `mcp:read`.
+  - Optional `planetId`; `0` or omitted means the active planet.
+  - Returns resource amounts, dark matter, storage capacity, energy balance,
+    and hourly production using the migrated legacy production formula.
 
 ## Static Token Format
 
@@ -88,7 +93,6 @@ dry-run plus explicit confirmation.
 ## Next Steps
 
 1. Add more read-only authenticated tools:
-   - `get_planet_resources`
    - `get_building_queue`
    - `get_fleet_movements`
 2. Add a React account-settings UI for DB token create/revoke.

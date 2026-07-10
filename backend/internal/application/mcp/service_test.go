@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -77,7 +78,7 @@ func TestServiceListsPlanetToolWhenReadRepositoryIsAvailable(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,get_mcp_access,list_planets,get_account_overview" {
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,list_planets,get_account_overview,get_planet_resources" {
 		t.Fatalf("unexpected tools: %v", names)
 	}
 }
@@ -225,6 +226,108 @@ func TestServiceAccountOverviewToolRequiresRepositoryAndReadScope(t *testing.T) 
 	service = service.WithReadRepository(fakeReadRepository{err: errors.New("overview down")})
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_account_overview", AccessToken: "read"}); err == nil {
 		t.Fatalf("expected read repository error")
+	}
+}
+
+func TestServiceCallsPlanetResourcesTool(t *testing.T) {
+	resources := domainmcp.PlanetResources{
+		PlayerID: 42,
+		Planet: domainmcp.Planet{
+			ID:          99,
+			Name:        "Homeworld",
+			Type:        1,
+			TypeName:    "planet",
+			Coordinates: domainmcp.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Current:     true,
+		},
+		Resources:         domainmcp.ResourceAmounts{Metal: 100, Crystal: 200, Deuterium: 300, DarkMatter: 400},
+		Capacity:          domainmcp.ResourceCapacity{Metal: 100000, Crystal: 100000, Deuterium: 100000},
+		Energy:            domainmcp.Energy{Available: 17, Capacity: 42},
+		ProductionPerHour: domainmcp.ResourceRates{Metal: 20, Crystal: 10},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithReadRepository(fakeReadRepository{resources: resources, resourcesPlanetID: 99})
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_planet_resources",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": float64(99)},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	structured := result.StructuredContent.(map[string]any)
+	got := structured["resources"].(domainmcp.PlanetResources)
+	if result.IsError || got.Planet.Name != "Homeworld" || got.Energy.Available != 17 || got.Resources.DarkMatter != 400 {
+		t.Fatalf("unexpected planet resources result: %+v", result)
+	}
+}
+
+func TestServicePlanetResourcesToolRequiresRepositoryReadScopeAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_planet_resources", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_planet_resources", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithReadRepository(fakeReadRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_planet_resources",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": 1.5},
+	}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid planet id error, got %v", err)
+	}
+
+	service = service.WithReadRepository(fakeReadRepository{err: errors.New("resources down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_planet_resources", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected read repository error")
+	}
+}
+
+func TestOptionalNonNegativeIntArgument(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		args    map[string]any
+		want    int
+		wantErr bool
+	}{
+		{name: "nil args"},
+		{name: "missing", args: map[string]any{"other": 1}},
+		{name: "nil value", args: map[string]any{"planetId": nil}},
+		{name: "int", args: map[string]any{"planetId": 7}, want: 7},
+		{name: "int64", args: map[string]any{"planetId": int64(8)}, want: 8},
+		{name: "float64", args: map[string]any{"planetId": float64(9)}, want: 9},
+		{name: "json number", args: map[string]any{"planetId": json.Number("10")}, want: 10},
+		{name: "string", args: map[string]any{"planetId": "11"}, want: 11},
+		{name: "negative", args: map[string]any{"planetId": -1}, wantErr: true},
+		{name: "fraction", args: map[string]any{"planetId": 1.5}, wantErr: true},
+		{name: "bad json number", args: map[string]any{"planetId": json.Number("bad")}, wantErr: true},
+		{name: "bad string", args: map[string]any{"planetId": "bad"}, wantErr: true},
+		{name: "bad type", args: map[string]any{"planetId": true}, wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := optionalNonNegativeIntArgument(tt.args, "planetId")
+			if tt.wantErr {
+				if !errors.Is(err, domainmcp.ErrInvalidParams) {
+					t.Fatalf("expected invalid params error, got %v", err)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("expected %d without error, got %d err=%v", tt.want, got, err)
+			}
+		})
 	}
 }
 
@@ -468,9 +571,11 @@ func (f *fakeToolCallAuditor) RecordMCPToolCall(_ context.Context, event domainm
 }
 
 type fakeReadRepository struct {
-	planets  []domainmcp.Planet
-	overview domainmcp.AccountOverview
-	err      error
+	planets           []domainmcp.Planet
+	overview          domainmcp.AccountOverview
+	resources         domainmcp.PlanetResources
+	resourcesPlanetID int
+	err               error
 }
 
 func (f fakeReadRepository) ListMCPPlanets(_ context.Context, playerID int) ([]domainmcp.Planet, error) {
@@ -491,6 +596,19 @@ func (f fakeReadRepository) GetMCPAccountOverview(_ context.Context, playerID in
 		return domainmcp.AccountOverview{}, errors.New("unexpected player")
 	}
 	return f.overview, nil
+}
+
+func (f fakeReadRepository) GetMCPPlanetResources(_ context.Context, playerID int, planetID int) (domainmcp.PlanetResources, error) {
+	if f.err != nil {
+		return domainmcp.PlanetResources{}, f.err
+	}
+	if playerID != 42 {
+		return domainmcp.PlanetResources{}, errors.New("unexpected player")
+	}
+	if planetID != f.resourcesPlanetID {
+		return domainmcp.PlanetResources{}, errors.New("unexpected planet")
+	}
+	return f.resources, nil
 }
 
 type fakeSessionLookup struct {
