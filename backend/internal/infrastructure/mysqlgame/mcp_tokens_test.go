@@ -30,7 +30,7 @@ func TestMCPTokenRepositoryEnsuresSchema(t *testing.T) {
 func TestMCPTokenRepositoryCreatesListsAndRevokesTokens(t *testing.T) {
 	runner := &fakeMCPTokenRunner{
 		fakeQueryer: fakeQueryer{results: []fakeQueryResult{{
-			rows: fakeRowsFromValues([]any{7, "Desktop", "mcp:read,mcp:messages", int64(1700), int64(0), int64(1800)}),
+			rows: fakeRowsFromValues([]any{7, "Desktop", "mcp:read,mcp:messages", int64(1700), int64(0), int64(0)}),
 		}}},
 		result: fakeSQLResult(7),
 	}
@@ -53,8 +53,11 @@ func TestMCPTokenRepositoryCreatesListsAndRevokesTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListMCPTokens returned error: %v", err)
 	}
-	if len(tokens) != 1 || tokens[0].ID != 7 || tokens[0].Scopes[1] != domainmcp.ScopeMessages || tokens[0].RevokedAt != 1800 {
+	if len(tokens) != 1 || tokens[0].ID != 7 || tokens[0].Scopes[1] != domainmcp.ScopeMessages || tokens[0].RevokedAt != 0 {
 		t.Fatalf("unexpected tokens: %+v", tokens)
+	}
+	if !strings.Contains(runner.calls[0].sql, "revoked_at = 0") {
+		t.Fatalf("expected list query to hide revoked tokens, got %s", runner.calls[0].sql)
 	}
 
 	revoked, err := repository.RevokeMCPToken(context.Background(), 42, 7, 1900)

@@ -30,6 +30,11 @@ Implemented:
   - Stores only SHA-256 token hashes in `uni*_mcp_tokens`.
 - React options page UI for listing, creating, showing one-time secrets, and
   revoking DB-backed MCP tokens.
+- Dedicated Go MCP smoke E2E:
+  - `testing/e2e/golang-mcp-smoke.mjs`
+  - Runs from `testing/e2e/run-golang-migration-qa.sh`.
+  - Covers transport guards, public tools, DB token create/list/revoke, bearer
+    protected read tools, invalid params, and revoked-token rejection.
 - JSON audit logging for every `tools/call` request path. Audit logs include
   tool name, authorization outcome, player id/scopes when authenticated,
   duration, and error text. Bearer token secrets are never logged.
@@ -91,8 +96,7 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Add E2E smoke calls against `/mcp`.
-2. Add OAuth 2.1/OIDC consent flow before public user rollout.
+1. Add OAuth 2.1/OIDC consent flow before public user rollout.
 
 ## General User Policy
 

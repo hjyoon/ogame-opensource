@@ -51,6 +51,8 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
   wait_for_url "$GO_BASE_URL/api/healthz"
   wait_for_url "$GO_BASE_URL/"
   if command -v bun >/dev/null 2>&1; then
+    bun "$SCRIPT_DIR/golang-mcp-smoke.mjs" --go-base-url "$GO_BASE_URL" > "$ROOT_DIR/.tmp/golang-mcp-smoke.json"
+    printf 'Go MCP smoke: %s\n' "$ROOT_DIR/.tmp/golang-mcp-smoke.json"
     bun "$SCRIPT_DIR/golang-compat-smoke.mjs" --go-base-url "$GO_BASE_URL" --mailhog-base-url "$MAILHOG_BASE_URL" --fixture "$ROOT_DIR/.tmp/golang-smoke-fixture.json" > "$ROOT_DIR/.tmp/golang-compat-smoke.json"
     printf 'Go compatibility smoke: %s\n' "$ROOT_DIR/.tmp/golang-compat-smoke.json"
     docker compose exec -T server php "$LEGACY_E2E_CONTAINER_DIR/cleanup-golang-migration-fixtures.php" >/dev/null

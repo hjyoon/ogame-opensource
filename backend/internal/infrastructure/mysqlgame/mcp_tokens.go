@@ -60,7 +60,7 @@ func (r MCPTokenRepository) ListMCPTokens(ctx context.Context, playerID int) ([]
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.queryer.QueryContext(ctx, "SELECT id, name, scopes, created_at, last_used_at, revoked_at FROM "+table+" WHERE player_id = ? ORDER BY id DESC", playerID)
+	rows, err := r.queryer.QueryContext(ctx, "SELECT id, name, scopes, created_at, last_used_at, revoked_at FROM "+table+" WHERE player_id = ? AND revoked_at = 0 ORDER BY id DESC", playerID)
 	if err != nil {
 		return nil, err
 	}

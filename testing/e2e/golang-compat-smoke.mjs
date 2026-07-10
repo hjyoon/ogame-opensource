@@ -53,14 +53,17 @@ function finalize(testCase) {
 
 async function request(path, options = {}) {
   let response;
+  const targetURL = `${baseUrl}${path}`;
   const started = performance.now();
   try {
-    response = await fetch(`${baseUrl}${path}`, {
+    response = await fetch(targetURL, {
       redirect: "manual",
       ...options
     });
   } catch (error) {
-    throw new Error(`request failed for ${path}: ${error instanceof Error ? error.message : String(error)}`);
+    const message = error instanceof Error ? error.message : String(error);
+    const cause = error instanceof Error && error.cause ? ` cause=${String(error.cause)}` : "";
+    throw new Error(`request failed for ${path} (${targetURL}): ${message}${cause}`);
   }
   const headers = Object.fromEntries(response.headers.entries());
   const body = await response.text();
@@ -74,6 +77,33 @@ function parseJSON(response) {
   } catch {
     return {};
   }
+}
+
+async function mcpJSONRPC(method, params, options = {}) {
+  const { id, headers: extraHeaders = {}, ...requestOptions } = options;
+  const requestID = id ?? 1;
+  const headers = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    "MCP-Protocol-Version": "2025-06-18",
+    ...extraHeaders
+  };
+  const body = { jsonrpc: "2.0", id: requestID, method };
+  if (params !== undefined) {
+    body.params = params;
+  }
+  return request("/mcp", {
+    ...requestOptions,
+    method: "POST",
+    headers,
+    body: JSON.stringify(body)
+  });
+}
+
+function mcpToolNames(responseBody) {
+  return Array.isArray(responseBody.result?.tools)
+    ? responseBody.result.tools.map((tool) => String(tool.name ?? "")).filter((name) => name !== "")
+    : [];
 }
 
 function officerRow(body, id) {
@@ -869,6 +899,63 @@ try {
       check(hasHeader(health, "content-type", "application/json"), "health endpoint returns JSON content type"),
       check(hasHeader(health, "x-frame-options", "SAMEORIGIN"), "health endpoint has frame protection"),
       check(hasHeader(health, "x-content-type-options", "nosniff"), "health endpoint has nosniff")
+    ]
+  }));
+
+  const mcpGet = await request("/mcp");
+  const mcpBadOrigin = await request("/mcp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: "http://evil.example" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" })
+  });
+  const mcpInvalidProtocol = await request("/mcp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "MCP-Protocol-Version": "2024-01-01" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "initialize" })
+  });
+  const mcpParseError = await request("/mcp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "MCP-Protocol-Version": "2025-06-18" },
+    body: "{"
+  });
+  const mcpInitialize = await mcpJSONRPC("initialize", {
+    protocolVersion: "2025-06-18",
+    capabilities: {},
+    clientInfo: { name: "go-compat-smoke", version: "1" }
+  }, { id: 3 });
+  const mcpPing = await mcpJSONRPC("ping", {}, { id: 4 });
+  const mcpListAnon = await mcpJSONRPC("tools/list", {}, { id: 5 });
+  const mcpHealthTool = await mcpJSONRPC("tools/call", { name: "get_server_health", arguments: {} }, { id: 6 });
+  const mcpUnauthorizedAccess = await mcpJSONRPC("tools/call", { name: "get_mcp_access", arguments: {} }, { id: 7 });
+  const mcpParseErrorBody = parseJSON(mcpParseError);
+  const mcpInitializeBody = parseJSON(mcpInitialize);
+  const mcpPingBody = parseJSON(mcpPing);
+  const mcpListAnonBody = parseJSON(mcpListAnon);
+  const mcpHealthToolBody = parseJSON(mcpHealthTool);
+  const mcpUnauthorizedAccessBody = parseJSON(mcpUnauthorizedAccess);
+  const mcpAnonToolNames = mcpToolNames(mcpListAnonBody);
+  cases.push(finalize({
+    case: "go_mcp_public_smoke",
+    checks: [
+      check(mcpGet.status === 405, "GET MCP endpoint rejects unavailable stream transport", { status: mcpGet.status }),
+      check(hasHeader(mcpGet, "allow", "POST"), "GET MCP rejection returns POST Allow header"),
+      check(mcpBadOrigin.status === 403, "MCP rejects cross-origin browser requests", { status: mcpBadOrigin.status }),
+      check(mcpInvalidProtocol.status === 400, "MCP rejects unsupported protocol versions", { status: mcpInvalidProtocol.status }),
+      check(mcpParseError.status === 400, "MCP parse error returns HTTP 400", { status: mcpParseError.status }),
+      check(mcpParseErrorBody.error?.code === -32700, "MCP parse error uses JSON-RPC parse code", mcpParseErrorBody),
+      check(mcpInitialize.status === 200, "MCP initialize returns HTTP 200", { status: mcpInitialize.status }),
+      check(mcpInitializeBody.result?.protocolVersion === "2025-06-18", "MCP initialize reports current protocol version", mcpInitializeBody.result ?? {}),
+      check(mcpInitializeBody.result?.serverInfo?.name === "ogame-opensource", "MCP initialize reports server identity", mcpInitializeBody.result?.serverInfo ?? {}),
+      check(mcpPing.status === 200 && mcpPingBody.error === undefined, "MCP ping succeeds", mcpPingBody),
+      check(mcpListAnon.status === 200, "MCP anonymous tools/list returns HTTP 200", { status: mcpListAnon.status }),
+      check(mcpAnonToolNames.length === 1 && mcpAnonToolNames[0] === "get_server_health", "MCP anonymous tools only expose public health", {
+        mcpAnonToolNames
+      }),
+      check(mcpHealthTool.status === 200, "MCP public health tool returns HTTP 200", { status: mcpHealthTool.status }),
+      check(mcpHealthToolBody.result?.structuredContent?.status === "ok", "MCP public health tool returns structured ok status", mcpHealthToolBody.result ?? {}),
+      check(mcpUnauthorizedAccess.status === 401, "MCP protected tool without bearer token returns HTTP 401", { status: mcpUnauthorizedAccess.status }),
+      check(mcpUnauthorizedAccessBody.error?.code === -32001, "MCP protected tool without token returns JSON-RPC Unauthorized", mcpUnauthorizedAccessBody),
+      check(hasHeader(mcpUnauthorizedAccess, "www-authenticate", "Bearer"), "MCP unauthorized response includes Bearer challenge")
     ]
   }));
 
@@ -1908,6 +1995,118 @@ try {
     headers: { Cookie: fakeUniverseCookiePair }
   });
   const gameSessionFakeUniverseCookieBody = parseJSON(gameSessionFakeUniverseCookie);
+
+  const mcpTokensBefore = await request(`/api/game/mcp-tokens${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const mcpTokensBeforeBody = parseJSON(mcpTokensBefore);
+  const mcpTokenCreate = await request(`/api/game/mcp-tokens${sessionSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+    body: JSON.stringify({
+      name: `go-smoke-mcp-${runId}`,
+      scopes: ["mcp:read", "mcp:messages", "mcp:fleet"]
+    })
+  });
+  const mcpTokenCreateBody = parseJSON(mcpTokenCreate);
+  const mcpTokenSecret = String(mcpTokenCreateBody.secret ?? "");
+  const mcpTokenID = Number(mcpTokenCreateBody.token?.id ?? 0);
+  const mcpAuthHeaders = { Authorization: `Bearer ${mcpTokenSecret}` };
+  const mcpTokensAfterCreate = await request(`/api/game/mcp-tokens${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const mcpTokensAfterCreateBody = parseJSON(mcpTokensAfterCreate);
+  const mcpCreatedTokenRow = Array.isArray(mcpTokensAfterCreateBody.tokens)
+    ? mcpTokensAfterCreateBody.tokens.find((token) => Number(token.id ?? 0) === mcpTokenID)
+    : undefined;
+  const mcpListAuthed = await mcpJSONRPC("tools/list", {}, { id: 20, headers: mcpAuthHeaders });
+  const mcpAccessTool = await mcpJSONRPC("tools/call", { name: "get_mcp_access", arguments: {} }, { id: 21, headers: mcpAuthHeaders });
+  const mcpPlanetsTool = await mcpJSONRPC("tools/call", { name: "list_planets", arguments: {} }, { id: 22, headers: mcpAuthHeaders });
+  const mcpOverviewTool = await mcpJSONRPC("tools/call", { name: "get_account_overview", arguments: {} }, { id: 23, headers: mcpAuthHeaders });
+  const mcpResourcesTool = await mcpJSONRPC("tools/call", { name: "get_planet_resources", arguments: {} }, { id: 24, headers: mcpAuthHeaders });
+  const mcpBuildingQueueTool = await mcpJSONRPC("tools/call", { name: "get_building_queue", arguments: {} }, { id: 25, headers: mcpAuthHeaders });
+  const mcpFleetMovementsTool = await mcpJSONRPC("tools/call", { name: "get_fleet_movements", arguments: {} }, { id: 26, headers: mcpAuthHeaders });
+  const mcpInvalidPlanetTool = await mcpJSONRPC("tools/call", { name: "get_planet_resources", arguments: { planetId: "abc" } }, { id: 27, headers: mcpAuthHeaders });
+  const mcpListAuthedBody = parseJSON(mcpListAuthed);
+  const mcpAccessToolBody = parseJSON(mcpAccessTool);
+  const mcpPlanetsToolBody = parseJSON(mcpPlanetsTool);
+  const mcpOverviewToolBody = parseJSON(mcpOverviewTool);
+  const mcpResourcesToolBody = parseJSON(mcpResourcesTool);
+  const mcpBuildingQueueToolBody = parseJSON(mcpBuildingQueueTool);
+  const mcpFleetMovementsToolBody = parseJSON(mcpFleetMovementsTool);
+  const mcpInvalidPlanetToolBody = parseJSON(mcpInvalidPlanetTool);
+  const mcpAuthedToolNames = mcpToolNames(mcpListAuthedBody);
+  const mcpTokensAfterUse = await request(`/api/game/mcp-tokens${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const mcpTokensAfterUseBody = parseJSON(mcpTokensAfterUse);
+  const mcpUsedTokenRow = Array.isArray(mcpTokensAfterUseBody.tokens)
+    ? mcpTokensAfterUseBody.tokens.find((token) => Number(token.id ?? 0) === mcpTokenID)
+    : undefined;
+  const mcpTokenRevoke = await request(`/api/game/mcp-tokens/revoke${sessionSearch}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
+    body: JSON.stringify({ tokenId: mcpTokenID })
+  });
+  const mcpTokenRevokeBody = parseJSON(mcpTokenRevoke);
+  const mcpTokensAfterRevoke = await request(`/api/game/mcp-tokens${sessionSearch}`, {
+    headers: { Cookie: sessionCookiePair }
+  });
+  const mcpTokensAfterRevokeBody = parseJSON(mcpTokensAfterRevoke);
+  const mcpAccessAfterRevoke = await mcpJSONRPC("tools/call", { name: "get_mcp_access", arguments: {} }, { id: 28, headers: mcpAuthHeaders });
+  const mcpAccessAfterRevokeBody = parseJSON(mcpAccessAfterRevoke);
+  const mcpExpectedReadTools = [
+    "get_server_health",
+    "get_mcp_access",
+    "list_planets",
+    "get_account_overview",
+    "get_planet_resources",
+    "get_building_queue",
+    "get_fleet_movements"
+  ];
+  cases.push(finalize({
+    case: "go_mcp_user_token_smoke",
+    checks: [
+      check(mcpTokensBefore.status === 200, "MCP token list returns HTTP 200 for an authenticated game session", {
+        status: mcpTokensBefore.status
+      }),
+      check(mcpTokensBeforeBody.authenticated === true && Array.isArray(mcpTokensBeforeBody.tokens), "MCP token list is authenticated and returns token rows", mcpTokensBeforeBody),
+      check(mcpTokenCreate.status === 200, "MCP token create returns HTTP 200", { status: mcpTokenCreate.status }),
+      check(mcpTokenCreateBody.authenticated === true, "MCP token create authenticates the game session", mcpTokenCreateBody),
+      check(mcpTokenID > 0, "MCP token create returns a token id", mcpTokenCreateBody.token ?? {}),
+      check(mcpTokenSecret.startsWith("ogmcp_") && mcpTokenSecret.length > 12, "MCP token create returns a one-time bearer secret", {
+        secretPrefix: mcpTokenSecret.slice(0, 6),
+        secretLength: mcpTokenSecret.length
+      }),
+      check(Array.isArray(mcpTokenCreateBody.token?.scopes) && mcpTokenCreateBody.token.scopes.includes("mcp:read"), "MCP token create persists read scope", mcpTokenCreateBody.token ?? {}),
+      check(mcpTokensAfterCreate.status === 200, "MCP token list after create returns HTTP 200", { status: mcpTokensAfterCreate.status }),
+      check(mcpCreatedTokenRow !== undefined, "MCP token list includes the newly created token", { mcpTokenID, mcpCreatedTokenRow }),
+      check(!String(mcpTokensAfterCreate.body ?? "").includes(mcpTokenSecret), "MCP token list never returns the plaintext secret", {}),
+      check(mcpListAuthed.status === 200, "MCP authenticated tools/list returns HTTP 200", { status: mcpListAuthed.status }),
+      check(mcpExpectedReadTools.every((name) => mcpAuthedToolNames.includes(name)), "MCP authenticated tools/list exposes all current read tools", {
+        mcpAuthedToolNames
+      }),
+      check(mcpAccessTool.status === 200, "MCP get_mcp_access returns HTTP 200 with bearer token", { status: mcpAccessTool.status }),
+      check(Number(mcpAccessToolBody.result?.structuredContent?.playerId ?? 0) === loginPlayerId, "MCP get_mcp_access returns the authenticated player id", mcpAccessToolBody.result ?? {}),
+      check((mcpAccessToolBody.result?.structuredContent?.scopes ?? []).includes("mcp:read"), "MCP get_mcp_access returns granted scopes", mcpAccessToolBody.result?.structuredContent ?? {}),
+      check(mcpPlanetsTool.status === 200 && Array.isArray(mcpPlanetsToolBody.result?.structuredContent?.planets), "MCP list_planets returns structured planets", mcpPlanetsToolBody.result ?? {}),
+      check((mcpPlanetsToolBody.result?.structuredContent?.planets ?? []).length > 0, "MCP list_planets returns at least one selectable planet", mcpPlanetsToolBody.result?.structuredContent ?? {}),
+      check(mcpOverviewTool.status === 200 && Number(mcpOverviewToolBody.result?.structuredContent?.overview?.playerId ?? 0) === loginPlayerId, "MCP get_account_overview returns the current player overview", mcpOverviewToolBody.result ?? {}),
+      check(mcpResourcesTool.status === 200 && Number(mcpResourcesToolBody.result?.structuredContent?.resources?.playerId ?? 0) === loginPlayerId, "MCP get_planet_resources returns current-player resources", mcpResourcesToolBody.result ?? {}),
+      check(mcpBuildingQueueTool.status === 200 && Number(mcpBuildingQueueToolBody.result?.structuredContent?.buildingQueue?.playerId ?? 0) === loginPlayerId, "MCP get_building_queue returns current-player queue", mcpBuildingQueueToolBody.result ?? {}),
+      check(mcpFleetMovementsTool.status === 200 && Number(mcpFleetMovementsToolBody.result?.structuredContent?.fleetMovements?.playerId ?? 0) === loginPlayerId, "MCP get_fleet_movements returns current-player movement state", mcpFleetMovementsToolBody.result ?? {}),
+      check(mcpInvalidPlanetTool.status === 200 && mcpInvalidPlanetToolBody.error?.code === -32602, "MCP invalid tool params return JSON-RPC invalid params", mcpInvalidPlanetToolBody),
+      check(mcpTokensAfterUse.status === 200, "MCP token list after bearer use returns HTTP 200", { status: mcpTokensAfterUse.status }),
+      check(Number(mcpUsedTokenRow?.lastUsedAt ?? 0) > 0, "MCP token use updates last-used timestamp", { mcpUsedTokenRow }),
+      check(mcpTokenRevoke.status === 200 && mcpTokenRevokeBody.revoked === true, "MCP token revoke succeeds", mcpTokenRevokeBody),
+      check(!(mcpTokensAfterRevokeBody.tokens ?? []).some((token) => Number(token.id ?? 0) === mcpTokenID), "MCP token list excludes revoked token", {
+        mcpTokenID,
+        tokens: mcpTokensAfterRevokeBody.tokens ?? []
+      }),
+      check(mcpAccessAfterRevoke.status === 401, "MCP revoked bearer token is rejected", { status: mcpAccessAfterRevoke.status }),
+      check(mcpAccessAfterRevokeBody.error?.code === -32001, "MCP revoked bearer token returns JSON-RPC Unauthorized", mcpAccessAfterRevokeBody)
+    ]
+  }));
 
   const gameOverview = await request(`/api/game/overview${sessionSearch}`, {
     headers: { Cookie: sessionCookiePair }
