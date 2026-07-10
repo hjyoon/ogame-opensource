@@ -70,6 +70,8 @@ type ReadRepository interface {
 	GetMCPAccountOverview(context.Context, int) (domainmcp.AccountOverview, error)
 	GetMCPPlanetResources(context.Context, int, int) (domainmcp.PlanetResources, error)
 	GetMCPBuildingQueue(context.Context, int, int) (domainmcp.BuildingQueue, error)
+	ListMCPMessages(context.Context, int, domainmcp.MessageQuery) (domainmcp.MessageList, error)
+	GetMCPMessage(context.Context, int, int) (domainmcp.MessageDetail, error)
 	GetMCPFleetMovements(context.Context, int) (domainmcp.FleetMovements, error)
 }
 
@@ -569,6 +571,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 			tools = append(tools, listPlanetsTool(), accountOverviewTool(), planetResourcesTool(), buildingQueueTool(), fleetMovementsTool())
 		}
 	}
+	if access.HasScope(domainmcp.ScopeMessages) && s.readRepository != nil {
+		tools = append(tools, listMessagesTool(), getMessageTool())
+	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
 }
 
@@ -641,6 +646,24 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callFleetMovements(ctx, access)
+	case "list_messages":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeMessages)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callListMessages(ctx, access, command.Arguments)
+	case "get_message":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeMessages)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callGetMessage(ctx, access, command.Arguments)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -857,6 +880,52 @@ func (s Service) callFleetMovements(ctx context.Context, access domainmcp.Access
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"fleetMovements": movements}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callListMessages(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.readRepository == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp read repository unavailable")
+	}
+	query, err := mcpMessageQuery(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	messages, err := s.readRepository.ListMCPMessages(ctx, access.PlayerID, query)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"messages": messages}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callGetMessage(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.readRepository == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp read repository unavailable")
+	}
+	messageID, err := optionalNonNegativeIntArgument(arguments, "messageId")
+	if err != nil || messageID <= 0 {
+		return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+	}
+	message, err := s.readRepository.GetMCPMessage(ctx, access.PlayerID, messageID)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"message": message}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -1250,6 +1319,48 @@ func optionalNonNegativeIntArgument(arguments map[string]any, name string) (int,
 	return int(value), nil
 }
 
+func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
+	limit, err := optionalNonNegativeIntArgument(arguments, "limit")
+	if err != nil {
+		return domainmcp.MessageQuery{}, err
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	messageType, err := optionalNonNegativeIntArgument(arguments, "messageType")
+	if err != nil {
+		return domainmcp.MessageQuery{}, err
+	}
+	includeText, err := optionalBoolArgument(arguments, "includeText")
+	if err != nil {
+		return domainmcp.MessageQuery{}, err
+	}
+	return domainmcp.MessageQuery{
+		Limit:          limit,
+		MessageType:    messageType,
+		HasMessageType: arguments != nil && arguments["messageType"] != nil,
+		IncludeText:    includeText,
+	}, nil
+}
+
+func optionalBoolArgument(arguments map[string]any, name string) (bool, error) {
+	if arguments == nil {
+		return false, nil
+	}
+	raw, ok := arguments[name]
+	if !ok || raw == nil {
+		return false, nil
+	}
+	value, ok := raw.(bool)
+	if !ok {
+		return false, fmt.Errorf("%w: %s must be a boolean", domainmcp.ErrInvalidParams, name)
+	}
+	return value, nil
+}
+
 func (s Service) verify(ctx context.Context, token string) (domainmcp.Access, error) {
 	token = strings.TrimSpace(token)
 	if token == "" || s.verifier == nil {
@@ -1527,6 +1638,98 @@ func buildingQueueTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"buildingQueue"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func listMessagesTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "list_messages",
+		Title:       "List Messages",
+		Description: "Return the authenticated player's message inbox rows without marking messages read or deleting expired rows.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"limit": map[string]any{
+					"type":        "integer",
+					"minimum":     0,
+					"maximum":     50,
+					"description": "Optional row limit. Defaults to 25 and caps at 50.",
+				},
+				"messageType": map[string]any{
+					"type":        "integer",
+					"minimum":     0,
+					"description": "Optional legacy message type filter.",
+				},
+				"includeText": map[string]any{
+					"type":        "boolean",
+					"description": "Include message body text when true. Defaults to false.",
+				},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"messages": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId": map[string]any{"type": "integer"},
+						"count":    map[string]any{"type": "integer"},
+						"limit":    map[string]any{"type": "integer"},
+						"messages": map[string]any{
+							"type":  "array",
+							"items": map[string]any{"type": "object"},
+						},
+					},
+					"required": []string{"playerId", "count", "limit", "messages"},
+				},
+			},
+			"required": []string{"messages"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func getMessageTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_message",
+		Title:       "Get Message",
+		Description: "Return one owned message by id without marking it read.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"messageId": map[string]any{
+					"type":        "integer",
+					"minimum":     1,
+					"description": "Owned message id.",
+				},
+			},
+			"required":             []string{"messageId"},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"message": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId": map[string]any{"type": "integer"},
+						"message":  map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "message"},
+				},
+			},
+			"required": []string{"message"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,

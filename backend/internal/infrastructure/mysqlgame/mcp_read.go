@@ -224,6 +224,41 @@ func (r MCPReadRepository) GetMCPBuildingQueue(ctx context.Context, playerID int
 	}, nil
 }
 
+func (r MCPReadRepository) ListMCPMessages(ctx context.Context, playerID int, query domainmcp.MessageQuery) (domainmcp.MessageList, error) {
+	if r.queryer == nil {
+		return domainmcp.MessageList{}, errors.New("mcp read repository queryer unavailable")
+	}
+	_, _, messagesTable, err := r.mcpReadTables()
+	if err != nil {
+		return domainmcp.MessageList{}, err
+	}
+	rows, err := r.loadMCPMessageRows(ctx, messagesTable, playerID, query)
+	if err != nil {
+		return domainmcp.MessageList{}, err
+	}
+	return domainmcp.MessageList{
+		PlayerID: playerID,
+		Count:    len(rows),
+		Limit:    query.Limit,
+		Messages: rows,
+	}, nil
+}
+
+func (r MCPReadRepository) GetMCPMessage(ctx context.Context, playerID int, messageID int) (domainmcp.MessageDetail, error) {
+	if r.queryer == nil {
+		return domainmcp.MessageDetail{}, errors.New("mcp read repository queryer unavailable")
+	}
+	_, _, messagesTable, err := r.mcpReadTables()
+	if err != nil {
+		return domainmcp.MessageDetail{}, err
+	}
+	row, err := r.loadMCPMessageByID(ctx, messagesTable, playerID, messageID)
+	if err != nil {
+		return domainmcp.MessageDetail{}, err
+	}
+	return domainmcp.MessageDetail{PlayerID: playerID, Message: row}, nil
+}
+
 func (r MCPReadRepository) GetMCPFleetMovements(ctx context.Context, playerID int) (domainmcp.FleetMovements, error) {
 	if r.queryer == nil {
 		return domainmcp.FleetMovements{}, errors.New("mcp read repository queryer unavailable")
@@ -257,6 +292,93 @@ func (r MCPReadRepository) GetMCPFleetMovements(ctx context.Context, playerID in
 		Count:    len(movements),
 		Events:   movements,
 	}, nil
+}
+
+func (r MCPReadRepository) loadMCPMessageRows(ctx context.Context, messagesTable string, playerID int, query domainmcp.MessageQuery) ([]domainmcp.PlayerMessage, error) {
+	textColumn := "''"
+	if query.IncludeText {
+		textColumn = "text"
+	}
+	statement := fmt.Sprintf("SELECT msg_id, pm, msgfrom, subj, %s, shown, date FROM %s WHERE owner_id = ? AND pm <> ?", textColumn, messagesTable)
+	args := []any{playerID, domaingame.MessageTypeBattleReportText}
+	if query.HasMessageType {
+		statement += " AND pm = ?"
+		args = append(args, query.MessageType)
+	}
+	statement += " ORDER BY date DESC, msg_id DESC LIMIT ?"
+	args = append(args, query.Limit)
+	rows, err := r.queryer.QueryContext(ctx, statement, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	messages := []domainmcp.PlayerMessage{}
+	for rows.Next() {
+		message, err := scanMessageRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, mcpPlayerMessageFromGame(message))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return messages, nil
+}
+
+func (r MCPReadRepository) loadMCPMessageByID(ctx context.Context, messagesTable string, playerID int, messageID int) (domainmcp.PlayerMessage, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT msg_id, pm, msgfrom, subj, text, shown, date FROM %s WHERE owner_id = ? AND msg_id = ? LIMIT 1", messagesTable), playerID, messageID)
+	if err != nil {
+		return domainmcp.PlayerMessage{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return domainmcp.PlayerMessage{}, err
+		}
+		return domainmcp.PlayerMessage{}, errors.New("mcp message not found")
+	}
+	message, err := scanMessageRow(rows)
+	if err != nil {
+		return domainmcp.PlayerMessage{}, err
+	}
+	if err := rows.Err(); err != nil {
+		return domainmcp.PlayerMessage{}, err
+	}
+	return mcpPlayerMessageFromGame(message), nil
+}
+
+func mcpPlayerMessageFromGame(message domaingame.Message) domainmcp.PlayerMessage {
+	return domainmcp.PlayerMessage{
+		ID:         message.ID,
+		Type:       message.Type,
+		TypeName:   mcpMessageTypeName(message.Type),
+		From:       message.From,
+		Subject:    message.Subject,
+		Text:       message.Text,
+		Date:       message.Date,
+		Unread:     message.Unread,
+		Reportable: message.Reportable,
+	}
+}
+
+func mcpMessageTypeName(messageType int) string {
+	switch messageType {
+	case domaingame.MessageTypePM:
+		return "personal"
+	case domaingame.MessageTypeSpyReport:
+		return "spy_report"
+	case domaingame.MessageTypeBattleReportLink:
+		return "battle_report"
+	case domaingame.MessageTypeExpedition:
+		return "expedition"
+	case domaingame.MessageTypeAlliance:
+		return "alliance"
+	case domaingame.MessageTypeBattleReportText:
+		return "battle_report_text"
+	default:
+		return "other"
+	}
 }
 
 func (r MCPReadRepository) mcpReadTables() (string, string, string, error) {

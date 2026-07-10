@@ -8,6 +8,7 @@ import (
 	"time"
 
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestMCPReadRepositoryListsPlanetsWithLegacyOrdering(t *testing.T) {
@@ -274,6 +275,132 @@ func TestMCPReadRepositoryGetsEmptyBuildingQueueForRequestedPlanet(t *testing.T)
 	}
 	if len(queryer.calls[1].args) == 0 || queryer.calls[1].args[0] != 100 {
 		t.Fatalf("expected requested planet id query, got %+v", queryer.calls[1])
+	}
+}
+
+func TestMCPReadRepositoryListsMessagesWithoutMutatingInbox(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(
+			[]any{11, domaingame.MessageTypePM, `Admin`, `Hello`, "", 0, int64(1000)},
+			[]any{12, domaingame.MessageTypeAlliance, `Alliance`, `Notice`, "", 1, int64(900)},
+		)},
+		{rows: fakeRowsFromValues(
+			[]any{13, domaingame.MessageTypeExpedition, `Fleet`, `Find`, "Expedition body", 1, int64(800)},
+		)},
+	}}
+	repository := NewMCPReadRepositoryWithQueryer(queryer, "uni1_")
+
+	messages, err := repository.ListMCPMessages(context.Background(), 42, domainmcp.MessageQuery{
+		Limit:          2,
+		MessageType:    domaingame.MessageTypePM,
+		HasMessageType: true,
+	})
+	if err != nil {
+		t.Fatalf("ListMCPMessages returned error: %v", err)
+	}
+	if messages.PlayerID != 42 || messages.Count != 2 || messages.Limit != 2 || messages.Messages[0].TypeName != "personal" || !messages.Messages[0].Unread || messages.Messages[0].Text != "" {
+		t.Fatalf("unexpected messages: %+v", messages)
+	}
+	if !strings.Contains(queryer.calls[0].sql, "FROM `uni1_messages`") ||
+		!strings.Contains(queryer.calls[0].sql, "''") ||
+		!strings.Contains(queryer.calls[0].sql, "pm = ?") ||
+		strings.Contains(queryer.calls[0].sql, "UPDATE") {
+		t.Fatalf("unexpected MCP message list SQL: %+v", queryer.calls[0])
+	}
+
+	messages, err = repository.ListMCPMessages(context.Background(), 42, domainmcp.MessageQuery{Limit: 1, IncludeText: true})
+	if err != nil {
+		t.Fatalf("ListMCPMessages include text returned error: %v", err)
+	}
+	if messages.Messages[0].Text != "Expedition body" || messages.Messages[0].TypeName != "expedition" || !strings.Contains(queryer.calls[1].sql, "msgfrom, subj, text") {
+		t.Fatalf("unexpected include-text messages=%+v sql=%s", messages, queryer.calls[1].sql)
+	}
+}
+
+func TestMCPReadRepositoryGetsMessageDetail(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{{
+		rows: fakeRowsFromValues([]any{11, domaingame.MessageTypeSpyReport, `Scout`, `Spy`, `Report body`, 0, int64(1000)}),
+	}}}
+	repository := NewMCPReadRepositoryWithQueryer(queryer, "uni1_")
+
+	message, err := repository.GetMCPMessage(context.Background(), 42, 11)
+	if err != nil {
+		t.Fatalf("GetMCPMessage returned error: %v", err)
+	}
+	if message.PlayerID != 42 || message.Message.ID != 11 || message.Message.TypeName != "spy_report" || message.Message.Text != "Report body" {
+		t.Fatalf("unexpected message detail: %+v", message)
+	}
+	if queryer.calls[0].args[0] != 42 || queryer.calls[0].args[1] != 11 {
+		t.Fatalf("expected owned message lookup, got %+v", queryer.calls[0])
+	}
+}
+
+func TestMCPMessageTypeNames(t *testing.T) {
+	for _, tt := range []struct {
+		messageType int
+		want        string
+	}{
+		{domaingame.MessageTypePM, "personal"},
+		{domaingame.MessageTypeSpyReport, "spy_report"},
+		{domaingame.MessageTypeBattleReportLink, "battle_report"},
+		{domaingame.MessageTypeExpedition, "expedition"},
+		{domaingame.MessageTypeAlliance, "alliance"},
+		{domaingame.MessageTypeBattleReportText, "battle_report_text"},
+		{domaingame.MessageTypeMisc, "other"},
+		{999, "other"},
+	} {
+		if got := mcpMessageTypeName(tt.messageType); got != tt.want {
+			t.Fatalf("message type %d got %q want %q", tt.messageType, got, tt.want)
+		}
+	}
+}
+
+func TestMCPReadRepositoryMessageErrorBranches(t *testing.T) {
+	repository := NewMCPReadRepositoryWithQueryer(nil, "uni1_")
+	if _, err := repository.ListMCPMessages(context.Background(), 42, domainmcp.MessageQuery{Limit: 1}); err == nil {
+		t.Fatalf("expected nil queryer list error")
+	}
+	if _, err := repository.GetMCPMessage(context.Background(), 42, 1); err == nil {
+		t.Fatalf("expected nil queryer detail error")
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{}, "uni1_;DROP")
+	if _, err := repository.ListMCPMessages(context.Background(), 42, domainmcp.MessageQuery{Limit: 1}); err == nil {
+		t.Fatalf("expected invalid prefix list error")
+	}
+	if _, err := repository.GetMCPMessage(context.Background(), 42, 1); err == nil {
+		t.Fatalf("expected invalid prefix detail error")
+	}
+
+	wantErr := errors.New("messages failed")
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: wantErr}}}, "uni1_")
+	if _, err := repository.ListMCPMessages(context.Background(), 42, domainmcp.MessageQuery{Limit: 1}); !errors.Is(err, wantErr) {
+		t.Fatalf("expected list query error, got %v", err)
+	}
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}, "uni1_")
+	if _, err := repository.ListMCPMessages(context.Background(), 42, domainmcp.MessageQuery{Limit: 1}); err == nil {
+		t.Fatalf("expected list scan error")
+	}
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(wantErr, []any{11, domaingame.MessageTypePM, "From", "Subj", "", 0, int64(1)})}}}, "uni1_")
+	if _, err := repository.ListMCPMessages(context.Background(), 42, domainmcp.MessageQuery{Limit: 1}); !errors.Is(err, wantErr) {
+		t.Fatalf("expected list rows error, got %v", err)
+	}
+
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: wantErr}}}, "uni1_")
+	if _, err := repository.GetMCPMessage(context.Background(), 42, 1); !errors.Is(err, wantErr) {
+		t.Fatalf("expected detail query error, got %v", err)
+	}
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "uni1_")
+	if _, err := repository.GetMCPMessage(context.Background(), 42, 1); err == nil {
+		t.Fatalf("expected missing detail error")
+	}
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}, "uni1_")
+	if _, err := repository.GetMCPMessage(context.Background(), 42, 1); err == nil {
+		t.Fatalf("expected detail scan error")
+	}
+	repository = NewMCPReadRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(wantErr, []any{11, domaingame.MessageTypePM, "From", "Subj", "Body", 0, int64(1)})}}}, "uni1_")
+	if _, err := repository.GetMCPMessage(context.Background(), 42, 1); !errors.Is(err, wantErr) {
+		t.Fatalf("expected detail rows error, got %v", err)
 	}
 }
 

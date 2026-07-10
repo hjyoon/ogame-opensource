@@ -324,6 +324,8 @@ try {
   const queueToolBody = parseJSON(queueTool);
   const fleetTool = await mcpJSONRPC("tools/call", { name: "get_fleet_movements", arguments: {} }, { id: 26, headers: authHeaders });
   const fleetToolBody = parseJSON(fleetTool);
+  const messagesTool = await mcpJSONRPC("tools/call", { name: "list_messages", arguments: { limit: 5 } }, { id: 29, headers: authHeaders });
+  const messagesToolBody = parseJSON(messagesTool);
   const invalidParamsTool = await mcpJSONRPC("tools/call", { name: "get_planet_resources", arguments: { planetId: "abc" } }, { id: 27, headers: authHeaders });
   const invalidParamsToolBody = parseJSON(invalidParamsTool);
   const tokenListAfterUse = await request(`/api/game/mcp-tokens${login.search}`, {
@@ -350,7 +352,9 @@ try {
     "get_account_overview",
     "get_planet_resources",
     "get_building_queue",
-    "get_fleet_movements"
+    "get_fleet_movements",
+    "list_messages",
+    "get_message"
   ];
   const authedToolNames = toolNames(authedToolsBody);
   cases.push(finalize({
@@ -388,6 +392,7 @@ try {
       check(resourcesTool.status === 200 && Number(resourcesToolBody.result?.structuredContent?.resources?.playerId ?? 0) === login.playerID, "get_planet_resources returns current player data", resourcesToolBody.result ?? {}),
       check(queueTool.status === 200 && Number(queueToolBody.result?.structuredContent?.buildingQueue?.playerId ?? 0) === login.playerID, "get_building_queue returns current player data", queueToolBody.result ?? {}),
       check(fleetTool.status === 200 && Number(fleetToolBody.result?.structuredContent?.fleetMovements?.playerId ?? 0) === login.playerID, "get_fleet_movements returns current player data", fleetToolBody.result ?? {}),
+      check(messagesTool.status === 200 && Number(messagesToolBody.result?.structuredContent?.messages?.playerId ?? 0) === login.playerID && Array.isArray(messagesToolBody.result?.structuredContent?.messages?.messages), "list_messages returns current player message rows without mutation", messagesToolBody.result ?? {}),
       check(invalidParamsTool.status === 200 && invalidParamsToolBody.error?.code === -32602, "invalid tool params return JSON-RPC invalid params", invalidParamsToolBody),
       check(Number(tokenRowAfterUse?.lastUsedAt ?? 0) > 0, "bearer tool use updates token last-used timestamp", { tokenRowAfterUse }),
       check(revoke.status === 200 && revokeBody.revoked === true, "MCP token revoke succeeds", revokeBody),

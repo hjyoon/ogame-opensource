@@ -612,6 +612,39 @@ func TestServiceListsPlanetToolWhenReadRepositoryIsAvailable(t *testing.T) {
 	}
 }
 
+func TestServiceListsMessageToolsForMessageScopedTokens(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"messages": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeMessages}},
+			"both":     {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead, domainmcp.ScopeMessages}},
+		},
+	}).WithReadRepository(fakeReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "messages"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,list_messages,get_message" {
+		t.Fatalf("unexpected message-only tools: %v", names)
+	}
+
+	tools, err = service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "both"})
+	if err != nil {
+		t.Fatalf("ListTools both returned error: %v", err)
+	}
+	names = names[:0]
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if !strings.Contains(strings.Join(names, ","), "get_fleet_movements,list_messages,get_message") {
+		t.Fatalf("expected read and message tools, got %v", names)
+	}
+}
+
 func TestServiceCallsServerHealthTool(t *testing.T) {
 	service := NewService(fakeHealthProvider{})
 
@@ -948,6 +981,156 @@ func TestServiceFleetMovementsToolRequiresRepositoryAndReadScope(t *testing.T) {
 	}
 }
 
+func TestServiceCallsMessageTools(t *testing.T) {
+	messageList := domainmcp.MessageList{
+		PlayerID: 42,
+		Count:    1,
+		Limit:    3,
+		Messages: []domainmcp.PlayerMessage{{
+			ID:       11,
+			Type:     0,
+			TypeName: "personal",
+			From:     "Admin",
+			Subject:  "Hello",
+			Text:     "Body",
+			Date:     1000,
+			Unread:   true,
+		}},
+	}
+	detail := domainmcp.MessageDetail{PlayerID: 42, Message: messageList.Messages[0]}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"messages": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeMessages}},
+		},
+	}).WithReadRepository(fakeReadRepository{
+		messageList:   messageList,
+		messageQuery:  domainmcp.MessageQuery{Limit: 3, MessageType: 0, HasMessageType: true, IncludeText: true},
+		messageDetail: detail,
+		messageID:     11,
+	})
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "list_messages",
+		AccessToken: "messages",
+		Arguments:   map[string]any{"limit": float64(3), "messageType": float64(0), "includeText": true},
+	})
+	if err != nil {
+		t.Fatalf("list_messages returned error: %v", err)
+	}
+	listed := result.StructuredContent.(map[string]any)["messages"].(domainmcp.MessageList)
+	if result.IsError || listed.Count != 1 || listed.Messages[0].Text != "Body" {
+		t.Fatalf("unexpected message list result: %+v", result)
+	}
+
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_message",
+		AccessToken: "messages",
+		Arguments:   map[string]any{"messageId": "11"},
+	})
+	if err != nil {
+		t.Fatalf("get_message returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["message"].(domainmcp.MessageDetail)
+	if got.Message.Subject != "Hello" || !got.Message.Unread {
+		t.Fatalf("unexpected message detail: %+v", got)
+	}
+}
+
+func TestServiceMessageToolsRequireMessageScopeRepositoryAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":     {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"messages": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeMessages}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "list_messages", AccessToken: "messages"}); err == nil {
+		t.Fatalf("expected missing repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_message", AccessToken: "messages", Arguments: map[string]any{"messageId": 7}}); err == nil {
+		t.Fatalf("expected missing repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "list_messages", AccessToken: "read"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without messages scope, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_message", AccessToken: "read", Arguments: map[string]any{"messageId": 7}}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden detail without messages scope, got %v", err)
+	}
+
+	service = service.WithReadRepository(fakeReadRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "list_messages", AccessToken: "messages", Arguments: map[string]any{"limit": true}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid limit error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "list_messages", AccessToken: "messages", Arguments: map[string]any{"includeText": "yes"}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid includeText error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_message", AccessToken: "messages"}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected missing message id error, got %v", err)
+	}
+
+	service = service.WithReadRepository(fakeReadRepository{err: errors.New("messages down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_message", AccessToken: "messages", Arguments: map[string]any{"messageId": 7}}); err == nil {
+		t.Fatalf("expected repository error")
+	}
+}
+
+func TestMCPMessageQueryDefaultsCapsAndValidation(t *testing.T) {
+	query, err := mcpMessageQuery(nil)
+	if err != nil || query.Limit != 25 || query.HasMessageType || query.IncludeText {
+		t.Fatalf("unexpected default message query: %+v err=%v", query, err)
+	}
+
+	query, err = mcpMessageQuery(map[string]any{"limit": float64(99), "includeText": false})
+	if err != nil || query.Limit != 50 || query.IncludeText {
+		t.Fatalf("unexpected capped message query: %+v err=%v", query, err)
+	}
+
+	query, err = mcpMessageQuery(map[string]any{"limit": float64(0), "includeText": nil})
+	if err != nil || query.Limit != 25 || query.IncludeText {
+		t.Fatalf("unexpected zero-limit message query: %+v err=%v", query, err)
+	}
+
+	query, err = mcpMessageQuery(map[string]any{"messageType": float64(3)})
+	if err != nil || !query.HasMessageType || query.MessageType != 3 {
+		t.Fatalf("unexpected message type query: %+v err=%v", query, err)
+	}
+
+	if _, err := mcpMessageQuery(map[string]any{"limit": true}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid message limit error, got %v", err)
+	}
+	if _, err := mcpMessageQuery(map[string]any{"messageType": true}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid message type error, got %v", err)
+	}
+}
+
+func TestOptionalBoolArgument(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		args    map[string]any
+		want    bool
+		wantErr bool
+	}{
+		{name: "nil args"},
+		{name: "missing", args: map[string]any{"other": true}},
+		{name: "nil value", args: map[string]any{"includeText": nil}},
+		{name: "true", args: map[string]any{"includeText": true}, want: true},
+		{name: "false", args: map[string]any{"includeText": false}},
+		{name: "invalid", args: map[string]any{"includeText": "true"}, wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := optionalBoolArgument(tt.args, "includeText")
+			if tt.wantErr {
+				if !errors.Is(err, domainmcp.ErrInvalidParams) {
+					t.Fatalf("expected invalid params error, got %v", err)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("optionalBoolArgument got=%v err=%v want=%v", got, err, tt.want)
+			}
+		})
+	}
+}
+
 func TestOptionalNonNegativeIntArgument(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
@@ -1265,6 +1448,10 @@ type fakeReadRepository struct {
 	resourcesPlanetID     int
 	buildingQueue         domainmcp.BuildingQueue
 	buildingQueuePlanetID int
+	messageList           domainmcp.MessageList
+	messageQuery          domainmcp.MessageQuery
+	messageDetail         domainmcp.MessageDetail
+	messageID             int
 	fleetMovements        domainmcp.FleetMovements
 	err                   error
 }
@@ -1313,6 +1500,32 @@ func (f fakeReadRepository) GetMCPBuildingQueue(_ context.Context, playerID int,
 		return domainmcp.BuildingQueue{}, errors.New("unexpected planet")
 	}
 	return f.buildingQueue, nil
+}
+
+func (f fakeReadRepository) ListMCPMessages(_ context.Context, playerID int, query domainmcp.MessageQuery) (domainmcp.MessageList, error) {
+	if f.err != nil {
+		return domainmcp.MessageList{}, f.err
+	}
+	if playerID != 42 {
+		return domainmcp.MessageList{}, errors.New("unexpected player")
+	}
+	if query.Limit != f.messageQuery.Limit || query.MessageType != f.messageQuery.MessageType || query.HasMessageType != f.messageQuery.HasMessageType || query.IncludeText != f.messageQuery.IncludeText {
+		return domainmcp.MessageList{}, errors.New("unexpected message query")
+	}
+	return f.messageList, nil
+}
+
+func (f fakeReadRepository) GetMCPMessage(_ context.Context, playerID int, messageID int) (domainmcp.MessageDetail, error) {
+	if f.err != nil {
+		return domainmcp.MessageDetail{}, f.err
+	}
+	if playerID != 42 {
+		return domainmcp.MessageDetail{}, errors.New("unexpected player")
+	}
+	if messageID != f.messageID {
+		return domainmcp.MessageDetail{}, errors.New("unexpected message")
+	}
+	return f.messageDetail, nil
 }
 
 func (f fakeReadRepository) GetMCPFleetMovements(_ context.Context, playerID int) (domainmcp.FleetMovements, error) {

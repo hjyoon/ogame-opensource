@@ -31,7 +31,7 @@ Implemented:
 - Dedicated Go MCP smoke E2E:
   - `testing/e2e/golang-mcp-smoke.mjs`
   - Runs from `testing/e2e/run-golang-migration-qa.sh`.
-  - Covers transport guards, DB tokens, OAuth, read tools, invalid params,
+  - Covers transport guards, DB tokens, OAuth, read/message tools, invalid params,
     expiry metadata, and revoke.
 - OAuth 2.1 public-client base:
   - `/.well-known/oauth-authorization-server`
@@ -49,16 +49,11 @@ Implemented:
 - Consent CSRF+UX shows resource, redirect, scopes, deny redirect.
 - MCP/OAuth rate limits on RPC, OAuth, and token API paths.
 - JSON audit logging for every `tools/call`; no secrets are logged.
-- Authenticated read tools requiring `mcp:read`:
-  - `list_planets`: selectable planets/moons using legacy switcher ordering.
-  - `get_account_overview`: commander, score/rank, current planet, planet
-    count, and unread messages without overview mutations.
-  - `get_planet_resources`: optional `planetId`; resources, dark matter,
-    storage capacity, energy, and hourly production.
-  - `get_building_queue`: optional `planetId`; queued building/demolition rows
-    without finishing queues or mutating resources.
-  - `get_fleet_movements`: overview-style outgoing, incoming, return, hold,
-    missile, and ACS grouped events without queue mutation.
+- Authenticated `mcp:read` tools: `list_planets`, `get_account_overview`,
+  `get_planet_resources`, `get_building_queue`, and `get_fleet_movements`.
+  These are read-only and avoid legacy queue/resource mutations.
+- Authenticated `mcp:messages` tools: `list_messages` and `get_message`.
+  They read owned inbox rows without marking messages read or cleanup mutation.
 
 ## Static Token Format
 
@@ -96,7 +91,7 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Add read-only message tools behind `mcp:messages`.
+1. Add scoped dry-run mutation tools with explicit confirmation.
 
 ## General User Policy
 

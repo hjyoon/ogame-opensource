@@ -184,6 +184,37 @@ type BuildingQueue struct {
 	Entries  []BuildingQueueEntry `json:"entries"`
 }
 
+type MessageQuery struct {
+	Limit          int
+	MessageType    int
+	HasMessageType bool
+	IncludeText    bool
+}
+
+type PlayerMessage struct {
+	ID         int    `json:"id"`
+	Type       int    `json:"type"`
+	TypeName   string `json:"typeName"`
+	From       string `json:"from"`
+	Subject    string `json:"subject"`
+	Text       string `json:"text,omitempty"`
+	Date       int64  `json:"date"`
+	Unread     bool   `json:"unread"`
+	Reportable bool   `json:"reportable"`
+}
+
+type MessageList struct {
+	PlayerID int             `json:"playerId"`
+	Count    int             `json:"count"`
+	Limit    int             `json:"limit"`
+	Messages []PlayerMessage `json:"messages"`
+}
+
+type MessageDetail struct {
+	PlayerID int           `json:"playerId"`
+	Message  PlayerMessage `json:"message"`
+}
+
 type FleetShip struct {
 	ID    int    `json:"id"`
 	Name  string `json:"name"`
