@@ -292,6 +292,8 @@ func oauthScopeDescription(scope string) string {
 		return "read account, planet, resource, building queue, and fleet movement data"
 	case "mcp:messages":
 		return "read message-related MCP data when message tools are available"
+	case "mcp:message_write":
+		return "send in-game private messages only after dry-run and explicit confirmation"
 	case "mcp:fleet":
 		return "read fleet-related MCP data when fleet tools are available"
 	default:

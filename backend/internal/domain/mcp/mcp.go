@@ -5,11 +5,12 @@ import "errors"
 const ProtocolVersion = "2025-06-18"
 
 const (
-	ScopeRead     = "mcp:read"
-	ScopeWrite    = "mcp:write"
-	ScopeFleet    = "mcp:fleet"
-	ScopeMessages = "mcp:messages"
-	ScopeAdmin    = "mcp:admin"
+	ScopeRead         = "mcp:read"
+	ScopeWrite        = "mcp:write"
+	ScopeFleet        = "mcp:fleet"
+	ScopeMessages     = "mcp:messages"
+	ScopeMessageWrite = "mcp:message_write"
+	ScopeAdmin        = "mcp:admin"
 )
 
 var (
@@ -213,6 +214,31 @@ type MessageList struct {
 type MessageDetail struct {
 	PlayerID int           `json:"playerId"`
 	Message  PlayerMessage `json:"message"`
+}
+
+type ActionIssue struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type SendMessageCommand struct {
+	TargetPlayerID int
+	Subject        string
+	Text           string
+	DryRun         bool
+	Confirm        string
+}
+
+type SendMessageResult struct {
+	PlayerID             int          `json:"playerId"`
+	TargetPlayerID       int          `json:"targetPlayerId"`
+	Subject              string       `json:"subject"`
+	TextChars            int          `json:"textChars"`
+	DryRun               bool         `json:"dryRun"`
+	RequiresConfirmation bool         `json:"requiresConfirmation"`
+	Confirmation         string       `json:"confirmation,omitempty"`
+	Executed             bool         `json:"executed"`
+	Issue                *ActionIssue `json:"issue,omitempty"`
 }
 
 type FleetShip struct {

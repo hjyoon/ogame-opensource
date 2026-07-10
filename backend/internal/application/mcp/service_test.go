@@ -645,6 +645,26 @@ func TestServiceListsMessageToolsForMessageScopedTokens(t *testing.T) {
 	}
 }
 
+func TestServiceListsSendMessageToolForMessageWriteScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeMessageWrite}},
+		},
+	}).WithWriteRepository(&fakeWriteRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "write"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,send_message" {
+		t.Fatalf("unexpected message-write tools: %v", names)
+	}
+}
+
 func TestServiceCallsServerHealthTool(t *testing.T) {
 	service := NewService(fakeHealthProvider{})
 
@@ -1073,6 +1093,83 @@ func TestServiceMessageToolsRequireMessageScopeRepositoryAndValidArguments(t *te
 	}
 }
 
+func TestServiceCallsSendMessageWithDryRunAndConfirmation(t *testing.T) {
+	repository := &fakeWriteRepository{
+		preview: domainmcp.SendMessageResult{PlayerID: 42, TargetPlayerID: 77, Subject: "Hello", TextChars: 4},
+		sent:    domainmcp.SendMessageResult{PlayerID: 42, TargetPlayerID: 77, Subject: "Hello", TextChars: 4, Executed: true},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeMessageWrite}},
+		},
+	}).WithWriteRepository(repository)
+	arguments := map[string]any{"targetPlayerId": float64(77), "subject": "Hello", "text": "Body"}
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "send_message",
+		AccessToken: "write",
+		Arguments:   arguments,
+	})
+	if err != nil {
+		t.Fatalf("send_message dry-run returned error: %v", err)
+	}
+	preview := result.StructuredContent.(map[string]any)["sendMessage"].(domainmcp.SendMessageResult)
+	if !preview.DryRun || preview.Executed || !preview.RequiresConfirmation || !strings.HasPrefix(preview.Confirmation, "send_message:77:") {
+		t.Fatalf("unexpected dry-run result: %+v", preview)
+	}
+	if repository.previewPlayerID != 42 || repository.previewCommand.TargetPlayerID != 77 || !repository.previewCommand.DryRun {
+		t.Fatalf("unexpected preview command: player=%d command=%+v", repository.previewPlayerID, repository.previewCommand)
+	}
+
+	executeArgs := map[string]any{"targetPlayerId": 77, "subject": "Hello", "text": "Body", "dryRun": false, "confirm": preview.Confirmation}
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "send_message",
+		AccessToken: "write",
+		Arguments:   executeArgs,
+	})
+	if err != nil {
+		t.Fatalf("send_message execute returned error: %v", err)
+	}
+	sent := result.StructuredContent.(map[string]any)["sendMessage"].(domainmcp.SendMessageResult)
+	if sent.DryRun || !sent.Executed || sent.RequiresConfirmation || sent.Confirmation != preview.Confirmation {
+		t.Fatalf("unexpected sent result: %+v", sent)
+	}
+	if repository.sendPlayerID != 42 || repository.sendCommand.Confirm != preview.Confirmation || repository.sendCommand.DryRun {
+		t.Fatalf("unexpected send command: player=%d command=%+v", repository.sendPlayerID, repository.sendCommand)
+	}
+}
+
+func TestServiceSendMessageRequiresScopeRepositoryAndValidConfirmation(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"messages": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeMessages}},
+			"write":    {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeMessageWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "send_message", AccessToken: "write", Arguments: map[string]any{"targetPlayerId": 77, "subject": "Hello", "text": "Body"}}); err == nil {
+		t.Fatalf("expected missing repository error")
+	}
+
+	service = service.WithWriteRepository(&fakeWriteRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "send_message", AccessToken: "messages", Arguments: map[string]any{"targetPlayerId": 77, "subject": "Hello", "text": "Body"}}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without message write scope, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "send_message", AccessToken: "write", Arguments: map[string]any{"targetPlayerId": true, "subject": "Hello", "text": "Body"}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid target error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "send_message", AccessToken: "write", Arguments: map[string]any{"targetPlayerId": 77, "subject": "Hello", "text": "Body", "dryRun": false}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected missing confirmation error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "send_message", AccessToken: "write", Arguments: map[string]any{"targetPlayerId": 77, "subject": "Hello", "text": "Body", "dryRun": false, "confirm": "wrong"}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected wrong confirmation error, got %v", err)
+	}
+
+	service = service.WithWriteRepository(&fakeWriteRepository{err: errors.New("send down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "send_message", AccessToken: "write", Arguments: map[string]any{"targetPlayerId": 77, "subject": "Hello", "text": "Body"}}); err == nil {
+		t.Fatalf("expected repository error")
+	}
+}
+
 func TestMCPMessageQueryDefaultsCapsAndValidation(t *testing.T) {
 	query, err := mcpMessageQuery(nil)
 	if err != nil || query.Limit != 25 || query.HasMessageType || query.IncludeText {
@@ -1102,6 +1199,39 @@ func TestMCPMessageQueryDefaultsCapsAndValidation(t *testing.T) {
 	}
 }
 
+func TestMCPSendMessageCommandDefaultsAndValidation(t *testing.T) {
+	command, err := mcpSendMessageCommand(map[string]any{"targetPlayerId": float64(77), "subject": "Hello", "text": "Body"})
+	if err != nil || command.TargetPlayerID != 77 || command.Subject != "Hello" || command.Text != "Body" || !command.DryRun {
+		t.Fatalf("unexpected default send command: %+v err=%v", command, err)
+	}
+
+	command, err = mcpSendMessageCommand(map[string]any{"targetPlayerId": "77", "subject": "", "text": "", "dryRun": false, "confirm": "send_message:77:test"})
+	if err != nil || command.TargetPlayerID != 77 || command.DryRun || command.Confirm != "send_message:77:test" {
+		t.Fatalf("unexpected explicit send command: %+v err=%v", command, err)
+	}
+
+	confirmation := mcpSendMessageConfirmation(domainmcp.SendMessageCommand{TargetPlayerID: 77, Subject: "Hello", Text: "Body"})
+	if !strings.HasPrefix(confirmation, "send_message:77:") || confirmation != mcpSendMessageConfirmation(domainmcp.SendMessageCommand{TargetPlayerID: 77, Subject: "Hello", Text: "Body"}) {
+		t.Fatalf("unexpected confirmation: %q", confirmation)
+	}
+	if confirmation == mcpSendMessageConfirmation(domainmcp.SendMessageCommand{TargetPlayerID: 78, Subject: "Hello", Text: "Body"}) {
+		t.Fatalf("confirmation should bind target")
+	}
+
+	for _, args := range []map[string]any{
+		nil,
+		{"targetPlayerId": 0, "subject": "Hello", "text": "Body"},
+		{"targetPlayerId": 77, "subject": true, "text": "Body"},
+		{"targetPlayerId": 77, "subject": "Hello", "text": true},
+		{"targetPlayerId": 77, "subject": "Hello", "text": "Body", "dryRun": "false"},
+		{"targetPlayerId": 77, "subject": "Hello", "text": "Body", "confirm": false},
+	} {
+		if _, err := mcpSendMessageCommand(args); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", args, err)
+		}
+	}
+}
+
 func TestOptionalBoolArgument(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
@@ -1126,6 +1256,34 @@ func TestOptionalBoolArgument(t *testing.T) {
 			}
 			if err != nil || got != tt.want {
 				t.Fatalf("optionalBoolArgument got=%v err=%v want=%v", got, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestOptionalStringArgument(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		args    map[string]any
+		want    string
+		wantErr bool
+	}{
+		{name: "nil args"},
+		{name: "missing", args: map[string]any{"other": "value"}},
+		{name: "nil value", args: map[string]any{"subject": nil}},
+		{name: "string", args: map[string]any{"subject": "Hello"}, want: "Hello"},
+		{name: "invalid", args: map[string]any{"subject": 7}, wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := optionalStringArgument(tt.args, "subject")
+			if tt.wantErr {
+				if !errors.Is(err, domainmcp.ErrInvalidParams) {
+					t.Fatalf("expected invalid params error, got %v", err)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("optionalStringArgument got=%q err=%v want=%q", got, err, tt.want)
 			}
 		})
 	}
@@ -1536,6 +1694,34 @@ func (f fakeReadRepository) GetMCPFleetMovements(_ context.Context, playerID int
 		return domainmcp.FleetMovements{}, errors.New("unexpected player")
 	}
 	return f.fleetMovements, nil
+}
+
+type fakeWriteRepository struct {
+	preview         domainmcp.SendMessageResult
+	sent            domainmcp.SendMessageResult
+	previewPlayerID int
+	sendPlayerID    int
+	previewCommand  domainmcp.SendMessageCommand
+	sendCommand     domainmcp.SendMessageCommand
+	err             error
+}
+
+func (f *fakeWriteRepository) PreviewMCPSendMessage(_ context.Context, playerID int, command domainmcp.SendMessageCommand) (domainmcp.SendMessageResult, error) {
+	f.previewPlayerID = playerID
+	f.previewCommand = command
+	if f.err != nil {
+		return domainmcp.SendMessageResult{}, f.err
+	}
+	return f.preview, nil
+}
+
+func (f *fakeWriteRepository) SendMCPMessage(_ context.Context, playerID int, command domainmcp.SendMessageCommand) (domainmcp.SendMessageResult, error) {
+	f.sendPlayerID = playerID
+	f.sendCommand = command
+	if f.err != nil {
+		return domainmcp.SendMessageResult{}, f.err
+	}
+	return f.sent, nil
 }
 
 type fakeSessionLookup struct {

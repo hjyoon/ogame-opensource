@@ -202,11 +202,13 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 	logger.Info("universe DB mcp token and oauth management enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
 	verifier := mcpauth.NewCompositeTokenVerifier(repository, staticVerifier)
 	readRepository := mysqlgame.NewMCPReadRepository(db, cfg.UniDBPrefix)
+	writeRepository := mysqlgame.NewMessagesRepository(db, cfg.UniDBPrefix)
 	return withCommonMCP(appmcp.NewServiceWithTokenManagement(health, verifier, repository, sessions, appmcp.SecureTokenGenerator{}, time.Now).
 		WithTokenTTL(time.Duration(cfg.MCPTokenTTLSeconds) * time.Second).
 		WithOAuthCodeRepository(repository).
 		WithOAuthRedirectURIs(appmcp.ParseOAuthRedirectURIs(cfg.MCPOAuthRedirectURIs)).
-		WithReadRepository(readRepository))
+		WithReadRepository(readRepository).
+		WithWriteRepository(writeRepository))
 }
 
 func mcpOIDCSigner(cfg config.Config) (mcpoidc.Ed25519Signer, error) {

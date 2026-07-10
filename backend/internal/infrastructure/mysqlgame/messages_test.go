@@ -10,6 +10,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestMessagesRepositoryReadsLegacyInbox(t *testing.T) {
@@ -371,6 +372,147 @@ func TestMessagesRepositorySendsPrivateMessage(t *testing.T) {
 		!strings.Contains(runner.execs[1].args[3].(string), "page=writemessages") ||
 		runner.execs[1].args[4] != "Line 1<br />Line 2" {
 		t.Fatalf("unexpected send execs: %+v", runner.execs)
+	}
+}
+
+func TestMessagesRepositoryMCPSendMessagePreviewAndExecute(t *testing.T) {
+	runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{42, "Sender", 1, 0, "", 1, 2, 3})},
+		{rows: fakeRowsFromValues([]any{77, "Recipient", 1, 0, "", 2, 3, 4})},
+		{rows: fakeRowsFromValues([]any{42, "Sender", 1, 0, "", 1, 2, 3})},
+		{rows: fakeRowsFromValues([]any{77, "Recipient", 1, 0, "", 2, 3, 4})},
+		{rows: fakeRowsFromValues([]any{0})},
+	}}}
+	repository := NewMessagesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+
+	preview, err := repository.PreviewMCPSendMessage(context.Background(), 42, domainmcp.SendMessageCommand{
+		TargetPlayerID: 77,
+		Subject:        "Hello",
+		Text:           "Line 1\nLine 2",
+	})
+	if err != nil {
+		t.Fatalf("PreviewMCPSendMessage returned error: %v", err)
+	}
+	if !preview.DryRun || preview.Executed || preview.Issue != nil || preview.TargetPlayerID != 77 || preview.TextChars != len([]rune("Line 1\nLine 2")) || len(runner.execs) != 0 {
+		t.Fatalf("unexpected preview=%+v execs=%+v", preview, runner.execs)
+	}
+
+	sent, err := repository.SendMCPMessage(context.Background(), 42, domainmcp.SendMessageCommand{
+		TargetPlayerID: 77,
+		Subject:        "Hello",
+		Text:           "Line 1\nLine 2",
+	})
+	if err != nil {
+		t.Fatalf("SendMCPMessage returned error: %v", err)
+	}
+	if sent.DryRun || !sent.Executed || sent.Issue == nil || sent.Issue.Code != domaingame.MessageIssueSent || len(runner.execs) != 1 {
+		t.Fatalf("unexpected send=%+v execs=%+v", sent, runner.execs)
+	}
+	if !strings.Contains(runner.execs[0].sql, "INSERT INTO `ogame_messages`") || runner.execs[0].args[0] != 77 {
+		t.Fatalf("expected legacy insert, got %+v", runner.execs)
+	}
+}
+
+func TestMessagesRepositoryMCPSendMessageValidationAndErrors(t *testing.T) {
+	repository := NewMessagesRepositoryWithRunner(&fakeMessagesRunner{}, &fakeMessagesRunner{}, "ogame_", time.Now)
+	preview, err := repository.PreviewMCPSendMessage(context.Background(), 42, domainmcp.SendMessageCommand{Subject: "Hi", Text: "body"})
+	if err != nil {
+		t.Fatalf("missing target preview returned error: %v", err)
+	}
+	if preview.Issue != nil || preview.TargetPlayerID != 0 || !preview.DryRun {
+		t.Fatalf("expected missing target no-op preview, got %+v", preview)
+	}
+	if mcpActionIssue(nil) != nil {
+		t.Fatalf("nil game issue should map to nil mcp issue")
+	}
+
+	preview, err = repository.PreviewMCPSendMessage(context.Background(), 42, domainmcp.SendMessageCommand{TargetPlayerID: 77, Text: "body"})
+	if err != nil {
+		t.Fatalf("missing subject preview returned error: %v", err)
+	}
+	if preview.Issue == nil || preview.Issue.Code != domaingame.MessageIssueMissingSubject {
+		t.Fatalf("expected missing subject issue, got %+v", preview)
+	}
+	preview, err = repository.PreviewMCPSendMessage(context.Background(), 42, domainmcp.SendMessageCommand{TargetPlayerID: 77, Subject: "Hi"})
+	if err != nil {
+		t.Fatalf("missing text preview returned error: %v", err)
+	}
+	if preview.Issue == nil || preview.Issue.Code != domaingame.MessageIssueMissingText {
+		t.Fatalf("expected missing text issue, got %+v", preview)
+	}
+
+	runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{42, "Sender", 0, 0, "", 1, 2, 3})},
+	}}}
+	repository = NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	preview, err = repository.PreviewMCPSendMessage(context.Background(), 42, domainmcp.SendMessageCommand{TargetPlayerID: 77, Subject: "Hi", Text: "body"})
+	if err != nil {
+		t.Fatalf("not activated preview returned error: %v", err)
+	}
+	if preview.Issue == nil || preview.Issue.Code != domaingame.MessageIssueNotActivated || len(runner.execs) != 0 {
+		t.Fatalf("expected activation issue without execs, got preview=%+v execs=%+v", preview, runner.execs)
+	}
+
+	repository = NewMessagesRepositoryWithRunner(nil, nil, "ogame_", time.Now)
+	if _, err := repository.PreviewMCPSendMessage(context.Background(), 42, domainmcp.SendMessageCommand{TargetPlayerID: 77, Subject: "Hi", Text: "body"}); err == nil {
+		t.Fatalf("expected nil queryer preview error")
+	}
+	repository = NewMessagesRepositoryWithRunner(&fakeMessagesRunner{}, nil, "ogame_", time.Now)
+	if _, err := repository.SendMCPMessage(context.Background(), 42, domainmcp.SendMessageCommand{TargetPlayerID: 77, Subject: "Hi", Text: "body"}); err == nil {
+		t.Fatalf("expected nil updater send error")
+	}
+	repository = NewMessagesRepositoryWithRunner(&fakeMessagesRunner{}, &fakeMessagesRunner{}, "bad-prefix_", time.Now)
+	if _, err := repository.PreviewMCPSendMessage(context.Background(), 42, domainmcp.SendMessageCommand{TargetPlayerID: 77, Subject: "Hi", Text: "body"}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected invalid prefix preview error, got %v", err)
+	}
+
+	runner = &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{42, "Sender", 1, 0, "", 1, 2, 3})},
+		{rows: fakeRowsFromValues([]any{77, "Recipient", 1, 0, "", 2, 3, 4})},
+		{rows: fakeRowsFromValues([]any{0})},
+	}}, execErr: errors.New("mcp insert failed")}
+	repository = NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, err := repository.SendMCPMessage(context.Background(), 42, domainmcp.SendMessageCommand{TargetPlayerID: 77, Subject: "Hi", Text: "body"}); err == nil || !strings.Contains(err.Error(), "mcp insert failed") {
+		t.Fatalf("expected send insert error, got %v", err)
+	}
+}
+
+func TestMessagesRepositoryMCPSendMessageExecuteValidationIssues(t *testing.T) {
+	repository := NewMessagesRepositoryWithRunner(&fakeMessagesRunner{}, &fakeMessagesRunner{}, "ogame_", time.Now)
+	sent, err := repository.SendMCPMessage(context.Background(), 42, domainmcp.SendMessageCommand{Subject: "Hi", Text: "body"})
+	if err != nil {
+		t.Fatalf("missing target send returned error: %v", err)
+	}
+	if sent.Issue != nil || sent.TargetPlayerID != 0 || sent.DryRun {
+		t.Fatalf("expected missing target no-op send, got %+v", sent)
+	}
+
+	sent, err = repository.SendMCPMessage(context.Background(), 42, domainmcp.SendMessageCommand{TargetPlayerID: 77, Text: "body"})
+	if err != nil {
+		t.Fatalf("missing subject send returned error: %v", err)
+	}
+	if sent.Issue == nil || sent.Issue.Code != domaingame.MessageIssueMissingSubject || sent.DryRun {
+		t.Fatalf("expected missing subject send issue, got %+v", sent)
+	}
+
+	sent, err = repository.SendMCPMessage(context.Background(), 42, domainmcp.SendMessageCommand{TargetPlayerID: 77, Subject: "Hi"})
+	if err != nil {
+		t.Fatalf("missing text send returned error: %v", err)
+	}
+	if sent.Issue == nil || sent.Issue.Code != domaingame.MessageIssueMissingText || sent.DryRun {
+		t.Fatalf("expected missing text send issue, got %+v", sent)
+	}
+
+	runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{42, "Sender", 0, 0, "", 1, 2, 3})},
+	}}}
+	repository = NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	sent, err = repository.SendMCPMessage(context.Background(), 42, domainmcp.SendMessageCommand{TargetPlayerID: 77, Subject: "Hi", Text: "body"})
+	if err != nil {
+		t.Fatalf("not activated send returned error: %v", err)
+	}
+	if sent.Issue == nil || sent.Issue.Code != domaingame.MessageIssueNotActivated || sent.Executed || len(runner.execs) != 0 {
+		t.Fatalf("expected activation issue without execution, got sent=%+v execs=%+v", sent, runner.execs)
 	}
 }
 

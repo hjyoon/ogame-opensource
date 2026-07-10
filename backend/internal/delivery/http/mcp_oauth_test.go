@@ -167,10 +167,16 @@ func TestMCPOAuthAuthorizeConsentRedirectAndToken(t *testing.T) {
 }
 
 func TestMCPOAuthConsentHelpers(t *testing.T) {
-	for _, scope := range []string{"openid", "profile", domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeFleet, "custom"} {
+	for _, scope := range []string{"openid", "profile", domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeFleet, "custom"} {
 		if got := oauthScopeDescription(scope); got == "" {
 			t.Fatalf("expected scope description for %q", scope)
 		}
+	}
+	if got := (app{}).currentOAuthConsentSecret(); got != defaultMCPOAuthConsentSecret {
+		t.Fatalf("expected default consent secret, got %q", got)
+	}
+	if got := (app{deps: Dependencies{MCPOAuthConsentSecret: " custom-secret "}}).currentOAuthConsentSecret(); got != " custom-secret " {
+		t.Fatalf("expected configured consent secret, got %q", got)
 	}
 	denied := oauthAccessDeniedRedirect("http://127.0.0.1:9000/callback?existing=1", " state ")
 	if !strings.Contains(denied, "error=access_denied") || !strings.Contains(denied, "state=state") || !strings.Contains(denied, "existing=1") {

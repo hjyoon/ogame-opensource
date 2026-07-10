@@ -12,6 +12,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type MessagesRepository struct {
@@ -312,6 +313,91 @@ func (r MessagesRepository) MutateMessages(ctx context.Context, query appgame.Me
 		issue, err := r.mutateInboxMessages(ctx, messagesTable, usersTable, reportsTable, query)
 		return appgame.MessagesMutationOutcome{ActionIssue: issue}, err
 	}
+}
+
+func (r MessagesRepository) PreviewMCPSendMessage(ctx context.Context, playerID int, command domainmcp.SendMessageCommand) (domainmcp.SendMessageResult, error) {
+	return r.mcpSendMessage(ctx, playerID, command, false)
+}
+
+func (r MessagesRepository) SendMCPMessage(ctx context.Context, playerID int, command domainmcp.SendMessageCommand) (domainmcp.SendMessageResult, error) {
+	return r.mcpSendMessage(ctx, playerID, command, true)
+}
+
+func (r MessagesRepository) mcpSendMessage(ctx context.Context, playerID int, command domainmcp.SendMessageCommand, execute bool) (domainmcp.SendMessageResult, error) {
+	if r.queryer == nil {
+		return domainmcp.SendMessageResult{}, errors.New("messages queryer unavailable")
+	}
+	if execute && r.execer == nil {
+		return domainmcp.SendMessageResult{}, errors.New("messages updater unavailable")
+	}
+	messagesTable, err := tableName(r.prefix, "messages")
+	if err != nil {
+		return domainmcp.SendMessageResult{}, err
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return domainmcp.SendMessageResult{}, err
+	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return domainmcp.SendMessageResult{}, err
+	}
+
+	draft := domaingame.NormalizeMessageDraft(command.TargetPlayerID, command.Subject, command.Text)
+	result := domainmcp.SendMessageResult{
+		PlayerID:       playerID,
+		TargetPlayerID: draft.TargetPlayerID,
+		Subject:        draft.Subject,
+		TextChars:      len([]rune(draft.Text)),
+		DryRun:         !execute,
+	}
+	if draft.TargetPlayerID <= 0 {
+		return result, nil
+	}
+	if draft.Subject == "" {
+		result.Issue = mcpActionIssue(domaingame.MessageMissingSubjectIssue())
+		return result, nil
+	}
+	if draft.Text == "" {
+		result.Issue = mcpActionIssue(domaingame.MessageMissingTextIssue())
+		return result, nil
+	}
+
+	if !execute {
+		sender, err := r.loadMessageParticipant(ctx, usersTable, planetsTable, playerID)
+		if err != nil {
+			return domainmcp.SendMessageResult{}, err
+		}
+		if !sender.Validated {
+			result.Issue = mcpActionIssue(domaingame.MessageNotActivatedIssue())
+			return result, nil
+		}
+		if _, err := r.loadMessageParticipant(ctx, usersTable, planetsTable, draft.TargetPlayerID); err != nil {
+			return domainmcp.SendMessageResult{}, err
+		}
+		return result, nil
+	}
+
+	issue, err := r.sendPrivateMessage(ctx, messagesTable, usersTable, planetsTable, appgame.MessagesMutationQuery{
+		PlayerID:       playerID,
+		Action:         domaingame.MessagesMutationActionSend,
+		TargetPlayerID: draft.TargetPlayerID,
+		Subject:        draft.Subject,
+		Text:           draft.Text,
+	})
+	if err != nil {
+		return domainmcp.SendMessageResult{}, err
+	}
+	result.Issue = mcpActionIssue(issue)
+	result.Executed = issue != nil && issue.Code == domaingame.MessageIssueSent
+	return result, nil
+}
+
+func mcpActionIssue(issue *domaingame.MessageActionIssue) *domainmcp.ActionIssue {
+	if issue == nil {
+		return nil
+	}
+	return &domainmcp.ActionIssue{Code: issue.Code, Message: issue.Message}
 }
 
 func (r MessagesRepository) loadInboxRows(ctx context.Context, messagesTable string, playerID int, limit int, messageTypeFilter int, hasMessageTypeFilter bool) ([]domaingame.Message, error) {

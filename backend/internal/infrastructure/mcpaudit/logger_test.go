@@ -29,6 +29,15 @@ func TestSlogLoggerRecordsMCPToolCall(t *testing.T) {
 			t.Fatalf("expected log to contain %s, got %s", want, logged)
 		}
 	}
+
+	out.Reset()
+	NewSlogLogger(logger).RecordMCPToolCall(context.Background(), domainmcp.ToolCallAudit{
+		ToolName: "send_message",
+		Error:    "mcp forbidden",
+	})
+	if logged = out.String(); !strings.Contains(logged, `"error":"mcp forbidden"`) || strings.Contains(logged, `"player_id"`) {
+		t.Fatalf("unexpected error log: %s", logged)
+	}
 }
 
 func TestSlogLoggerAllowsNilLogger(t *testing.T) {

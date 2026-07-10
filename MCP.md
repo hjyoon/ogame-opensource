@@ -31,8 +31,8 @@ Implemented:
 - Dedicated Go MCP smoke E2E:
   - `testing/e2e/golang-mcp-smoke.mjs`
   - Runs from `testing/e2e/run-golang-migration-qa.sh`.
-  - Covers transport guards, DB tokens, OAuth, read/message tools, invalid params,
-    expiry metadata, and revoke.
+  - Covers transport guards, DB tokens, OAuth, read/message tools, send dry-run,
+    invalid params, expiry metadata, and revoke.
 - OAuth 2.1 public-client base:
   - `/.well-known/oauth-authorization-server`
   - PRM endpoint and 401 discovery challenge
@@ -54,12 +54,15 @@ Implemented:
   These are read-only and avoid legacy queue/resource mutations.
 - Authenticated `mcp:messages` tools: `list_messages` and `get_message`.
   They read owned inbox rows without marking messages read or cleanup mutation.
+- Authenticated `mcp:message_write` tool: `send_message`. Defaults to dry-run;
+  execution requires `dryRun:false` plus the exact returned confirmation string.
 
 ## Static Token Format
 
 `OGAME_MCP_STATIC_TOKENS`: `token:player_id:scope1,scope2;next:7:mcp:read`.
 
-Scopes: `mcp:read`, `mcp:write`, `mcp:fleet`, `mcp:messages`, `mcp:admin`.
+Scopes: `mcp:read`, `mcp:messages`, `mcp:message_write`, `mcp:fleet`,
+`mcp:write`, `mcp:admin`.
 
 Static tokens are bootstrap-only. Prefer DB-backed user tokens because they can
 be revoked without restart.
@@ -79,22 +82,24 @@ User tokens currently allow:
 
 - `mcp:read`
 - `mcp:messages`
+- `mcp:message_write`
 - `mcp:fleet`
 
 `mcp:write` and `mcp:admin` stay unavailable for self-service user tokens.
 
 ## Security Rule
 
-Do not expose account or game mutation tools to general users until token/OAuth
-authorization and scoped consent are implemented. Mutating tools must use
-dry-run plus explicit confirmation.
+Do not expose broad account/game mutation tools to general users. Each mutation
+needs its own narrow scope, token/OAuth consent, audit logging, rate limit,
+dry-run, and explicit confirmation.
 
 ## Next Steps
 
-1. Add scoped dry-run mutation tools with explicit confirmation.
+1. Add more scoped dry-run mutation tools: fleet dispatch, building/research
+   queue actions, and message delete/report.
 
 ## General User Policy
 
-General users may receive read-only tools first. Fleet/build/research/message,
-admin, bot, debug, and DB actions stay blocked until scoped authorization,
-rate limits, audit logs, and confirmation flow are in place.
+General users may receive read tools and individually scoped confirmed actions.
+Fleet/build/research/admin/bot/debug/DB actions stay blocked until each has
+scoped authorization, rate limits, audit logs, and confirmation flow.

@@ -130,6 +130,13 @@ func TestEd25519SignerHandlesMissingKeys(t *testing.T) {
 	if _, err := signer.SignIDToken(context.Background(), domainmcp.IDTokenCommand{}); err == nil {
 		t.Fatalf("expected missing private key error")
 	}
+	privateKey := ed25519.NewKeyFromSeed([]byte("cccccccccccccccccccccccccccccccc"))
+	publicKey := privateKey.Public().(ed25519.PublicKey)
+	signer = NewEd25519Signer(publicKey, privateKey, time.Now)
+	signer.previousKeys = []ed25519PublicKey{{}}
+	if keys := signer.JWKS(context.Background()).Keys; len(keys) != 1 {
+		t.Fatalf("expected empty previous key to be skipped, got %+v", keys)
+	}
 	if _, err := encodedJWTParts(map[string]any{"bad": make(chan int)}, map[string]any{}); err == nil {
 		t.Fatalf("expected header marshal error")
 	}

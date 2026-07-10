@@ -75,6 +75,11 @@ type ReadRepository interface {
 	GetMCPFleetMovements(context.Context, int) (domainmcp.FleetMovements, error)
 }
 
+type WriteRepository interface {
+	PreviewMCPSendMessage(context.Context, int, domainmcp.SendMessageCommand) (domainmcp.SendMessageResult, error)
+	SendMCPMessage(context.Context, int, domainmcp.SendMessageCommand) (domainmcp.SendMessageResult, error)
+}
+
 type TokenSecretGenerator interface {
 	NewMCPToken() (string, error)
 }
@@ -217,6 +222,7 @@ type Service struct {
 	oauthRedirects  []string
 	oidcSigner      OIDCSigner
 	readRepository  ReadRepository
+	writeRepository WriteRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
 	codeGenerator   OAuthCodeGenerator
@@ -276,6 +282,11 @@ func (s Service) WithReadRepository(repository ReadRepository) Service {
 	return s
 }
 
+func (s Service) WithWriteRepository(repository WriteRepository) Service {
+	s.writeRepository = repository
+	return s
+}
+
 func (s Service) WithToolCallAuditor(auditor ToolCallAuditor) Service {
 	s.auditor = auditor
 	return s
@@ -323,6 +334,7 @@ func (s Service) OAuthAuthorizationServerMetadata(ctx context.Context, issuer st
 			"profile",
 			domainmcp.ScopeRead,
 			domainmcp.ScopeMessages,
+			domainmcp.ScopeMessageWrite,
 			domainmcp.ScopeFleet,
 		},
 	}
@@ -341,6 +353,7 @@ func (s Service) OAuthProtectedResourceMetadata(ctx context.Context, resource st
 		ScopesSupported: []string{
 			domainmcp.ScopeRead,
 			domainmcp.ScopeMessages,
+			domainmcp.ScopeMessageWrite,
 			domainmcp.ScopeFleet,
 		},
 		BearerMethods: []string{"header"},
@@ -574,6 +587,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	if access.HasScope(domainmcp.ScopeMessages) && s.readRepository != nil {
 		tools = append(tools, listMessagesTool(), getMessageTool())
 	}
+	if access.HasScope(domainmcp.ScopeMessageWrite) && s.writeRepository != nil {
+		tools = append(tools, sendMessageTool())
+	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
 }
 
@@ -664,6 +680,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callGetMessage(ctx, access, command.Arguments)
+	case "send_message":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeMessageWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callSendMessage(ctx, access, command.Arguments)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -936,6 +961,50 @@ func (s Service) callGetMessage(ctx context.Context, access domainmcp.Access, ar
 	}, nil
 }
 
+func (s Service) callSendMessage(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.writeRepository == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp write repository unavailable")
+	}
+	command, err := mcpSendMessageCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	confirmation := mcpSendMessageConfirmation(command)
+	var result domainmcp.SendMessageResult
+	if command.DryRun {
+		result, err = s.writeRepository.PreviewMCPSendMessage(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = true
+		result.Executed = false
+		if result.Issue == nil {
+			result.RequiresConfirmation = true
+			result.Confirmation = confirmation
+		}
+	} else {
+		if strings.TrimSpace(command.Confirm) != confirmation {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+		}
+		result, err = s.writeRepository.SendMCPMessage(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = false
+		result.RequiresConfirmation = false
+		result.Confirmation = confirmation
+	}
+	structured := map[string]any{"sendMessage": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
 func (s Service) authenticateSession(ctx context.Context, command TokenManagementCommand) (domainpublicsite.SessionAuthentication, error) {
 	return s.sessions.GetGameSession(ctx, apppublicsite.GameSessionCommand{
 		PublicSession:   command.PublicSession,
@@ -1003,7 +1072,7 @@ func normalizeUserScopes(requested []string) []string {
 
 func userScopeAllowed(scope string) bool {
 	switch scope {
-	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeFleet:
+	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeFleet:
 		return true
 	default:
 		return false
@@ -1319,6 +1388,44 @@ func optionalNonNegativeIntArgument(arguments map[string]any, name string) (int,
 	return int(value), nil
 }
 
+func mcpSendMessageCommand(arguments map[string]any) (domainmcp.SendMessageCommand, error) {
+	targetPlayerID, err := optionalNonNegativeIntArgument(arguments, "targetPlayerId")
+	if err != nil || targetPlayerID <= 0 {
+		return domainmcp.SendMessageCommand{}, domainmcp.ErrInvalidParams
+	}
+	subject, err := optionalStringArgument(arguments, "subject")
+	if err != nil {
+		return domainmcp.SendMessageCommand{}, err
+	}
+	text, err := optionalStringArgument(arguments, "text")
+	if err != nil {
+		return domainmcp.SendMessageCommand{}, err
+	}
+	dryRun := true
+	if arguments != nil && arguments["dryRun"] != nil {
+		dryRun, err = optionalBoolArgument(arguments, "dryRun")
+		if err != nil {
+			return domainmcp.SendMessageCommand{}, err
+		}
+	}
+	confirm, err := optionalStringArgument(arguments, "confirm")
+	if err != nil {
+		return domainmcp.SendMessageCommand{}, err
+	}
+	return domainmcp.SendMessageCommand{
+		TargetPlayerID: targetPlayerID,
+		Subject:        subject,
+		Text:           text,
+		DryRun:         dryRun,
+		Confirm:        confirm,
+	}, nil
+}
+
+func mcpSendMessageConfirmation(command domainmcp.SendMessageCommand) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%d\n%s\n%s", command.TargetPlayerID, command.Subject, command.Text)))
+	return fmt.Sprintf("send_message:%d:%s", command.TargetPlayerID, hex.EncodeToString(sum[:])[:12])
+}
+
 func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
 	limit, err := optionalNonNegativeIntArgument(arguments, "limit")
 	if err != nil {
@@ -1344,6 +1451,21 @@ func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
 		HasMessageType: arguments != nil && arguments["messageType"] != nil,
 		IncludeText:    includeText,
 	}, nil
+}
+
+func optionalStringArgument(arguments map[string]any, name string) (string, error) {
+	if arguments == nil {
+		return "", nil
+	}
+	raw, ok := arguments[name]
+	if !ok || raw == nil {
+		return "", nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("%w: %s must be a string", domainmcp.ErrInvalidParams, name)
+	}
+	return value, nil
 }
 
 func optionalBoolArgument(arguments map[string]any, name string) (bool, error) {
@@ -1735,6 +1857,68 @@ func getMessageTool() domainmcp.Tool {
 			"readOnlyHint":    true,
 			"destructiveHint": false,
 			"idempotentHint":  true,
+		},
+	}
+}
+
+func sendMessageTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "send_message",
+		Title:       "Send Message",
+		Description: "Dry-run or explicitly confirm sending an in-game private message. Defaults to dry-run; confirmed execution requires the exact confirmation string returned by dry-run.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"targetPlayerId": map[string]any{
+					"type":        "integer",
+					"minimum":     1,
+					"description": "Recipient player id.",
+				},
+				"subject": map[string]any{
+					"type":        "string",
+					"description": "Message subject. Legacy rules truncate to 40 characters.",
+				},
+				"text": map[string]any{
+					"type":        "string",
+					"description": "Message body. Legacy rules truncate to 2000 characters.",
+				},
+				"dryRun": map[string]any{
+					"type":        "boolean",
+					"description": "Defaults to true. Set false only with a matching confirmation value.",
+				},
+				"confirm": map[string]any{
+					"type":        "string",
+					"description": "Exact confirmation string returned by a dry-run for the same payload.",
+				},
+			},
+			"required":             []string{"targetPlayerId", "subject", "text"},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"sendMessage": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":             map[string]any{"type": "integer"},
+						"targetPlayerId":       map[string]any{"type": "integer"},
+						"subject":              map[string]any{"type": "string"},
+						"textChars":            map[string]any{"type": "integer"},
+						"dryRun":               map[string]any{"type": "boolean"},
+						"requiresConfirmation": map[string]any{"type": "boolean"},
+						"confirmation":         map[string]any{"type": "string"},
+						"executed":             map[string]any{"type": "boolean"},
+						"issue":                map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "targetPlayerId", "subject", "textChars", "dryRun", "requiresConfirmation", "executed"},
+				},
+			},
+			"required": []string{"sendMessage"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    false,
+			"destructiveHint": false,
+			"idempotentHint":  false,
 		},
 	}
 }

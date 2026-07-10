@@ -225,7 +225,7 @@ try {
     body: JSON.stringify({
       redirect_uris: [oauthRedirectURI],
       client_name: "Go MCP smoke",
-      scope: "openid profile mcp:read mcp:messages mcp:fleet"
+      scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:fleet"
     })
   });
   const clientRegistrationBody = parseJSON(clientRegistration);
@@ -235,7 +235,7 @@ try {
     client_id: oauthClientID,
     redirect_uri: oauthRedirectURI,
     resource: `${baseUrl}/mcp`,
-    scope: "openid profile mcp:read mcp:messages mcp:fleet",
+    scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:fleet",
     state: "go-mcp-smoke-state",
     code_challenge: pkceChallenge(oauthVerifier),
     code_challenge_method: "S256",
@@ -298,7 +298,7 @@ try {
     headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
     body: JSON.stringify({
       name: `go-mcp-smoke-${Date.now().toString(36)}`,
-      scopes: ["mcp:read", "mcp:messages", "mcp:fleet"]
+      scopes: ["mcp:read", "mcp:messages", "mcp:message_write", "mcp:fleet"]
     })
   });
   const tokenCreateBody = parseJSON(tokenCreate);
@@ -326,6 +326,8 @@ try {
   const fleetToolBody = parseJSON(fleetTool);
   const messagesTool = await mcpJSONRPC("tools/call", { name: "list_messages", arguments: { limit: 5 } }, { id: 29, headers: authHeaders });
   const messagesToolBody = parseJSON(messagesTool);
+  const sendMessageDryRun = await mcpJSONRPC("tools/call", { name: "send_message", arguments: { targetPlayerId: login.playerID, subject: "MCP smoke dry-run", text: "This is a dry-run from MCP smoke." } }, { id: 30, headers: authHeaders });
+  const sendMessageDryRunBody = parseJSON(sendMessageDryRun);
   const invalidParamsTool = await mcpJSONRPC("tools/call", { name: "get_planet_resources", arguments: { planetId: "abc" } }, { id: 27, headers: authHeaders });
   const invalidParamsToolBody = parseJSON(invalidParamsTool);
   const tokenListAfterUse = await request(`/api/game/mcp-tokens${login.search}`, {
@@ -354,7 +356,8 @@ try {
     "get_building_queue",
     "get_fleet_movements",
     "list_messages",
-    "get_message"
+    "get_message",
+    "send_message"
   ];
   const authedToolNames = toolNames(authedToolsBody);
   cases.push(finalize({
@@ -370,7 +373,7 @@ try {
       check(oauthApprove.status === 302 && oauthApproveLocation.startsWith(oauthRedirectURI) && oauthCallback.searchParams.get("state") === "go-mcp-smoke-state" && oauthCode !== "", "OAuth authorize approval redirects with code and state", { status: oauthApprove.status, location: oauthApproveLocation }),
       check(oauthToken.status === 200 && oauthSecret.startsWith("ogmcp_") && oauthTokenBody.token_type === "Bearer" && Number(oauthTokenBody.expires_in ?? 0) > 0, "OAuth token exchange returns bearer access token", oauthTokenBody),
       check(oauthIDToken.split(".").length === 3 && oauthIDClaims.iss === baseUrl && oauthIDClaims.aud === oauthClientID && oauthIDClaims.sub === `player:${login.playerID}`, "OAuth openid exchange returns ID token claims", oauthIDClaims),
-      check(oauthTools.status === 200 && expectedTools.every((name) => toolNames(oauthToolsBody).includes(name)), "OAuth bearer token exposes MCP read tools", { oauthToolNames: toolNames(oauthToolsBody) }),
+      check(oauthTools.status === 200 && expectedTools.every((name) => toolNames(oauthToolsBody).includes(name)), "OAuth bearer token exposes current MCP tools", { oauthToolNames: toolNames(oauthToolsBody) }),
       check(Number(oauthTokenRow?.id ?? 0) > 0 && Number(oauthTokenRow?.expiresAt ?? 0) > Number(oauthTokenRow?.createdAt ?? 0), "OAuth exchange persists a revocable expiring MCP token row", { oauthTokenRow }),
       check(oauthRevoke.status === 200 && oauthRevokeBody.revoked === true, "OAuth revocation endpoint revokes created MCP token", oauthRevokeBody),
       check(oauthAccessAfterRevoke.status === 401 && oauthAccessAfterRevokeBody.error?.code === -32001, "OAuth-revoked bearer token is rejected by MCP", oauthAccessAfterRevokeBody),
@@ -382,7 +385,7 @@ try {
       }),
       check(tokenRowAfterCreate !== undefined && Number(tokenRowAfterCreate?.expiresAt ?? 0) > Number(tokenRowAfterCreate?.createdAt ?? 0), "MCP token list includes the newly created expiring token", { tokenID, tokenRowAfterCreate }),
       check(!String(tokenListAfterCreate.body ?? "").includes(secret), "MCP token list never exposes the plaintext secret"),
-      check(authedTools.status === 200 && expectedTools.every((name) => authedToolNames.includes(name)), "bearer token exposes all current read tools", {
+      check(authedTools.status === 200 && expectedTools.every((name) => authedToolNames.includes(name)), "bearer token exposes all current MCP tools", {
         authedToolNames
       }),
       check(accessTool.status === 200 && Number(accessToolBody.result?.structuredContent?.playerId ?? 0) === login.playerID, "get_mcp_access returns bearer player id", accessToolBody.result ?? {}),
@@ -393,6 +396,7 @@ try {
       check(queueTool.status === 200 && Number(queueToolBody.result?.structuredContent?.buildingQueue?.playerId ?? 0) === login.playerID, "get_building_queue returns current player data", queueToolBody.result ?? {}),
       check(fleetTool.status === 200 && Number(fleetToolBody.result?.structuredContent?.fleetMovements?.playerId ?? 0) === login.playerID, "get_fleet_movements returns current player data", fleetToolBody.result ?? {}),
       check(messagesTool.status === 200 && Number(messagesToolBody.result?.structuredContent?.messages?.playerId ?? 0) === login.playerID && Array.isArray(messagesToolBody.result?.structuredContent?.messages?.messages), "list_messages returns current player message rows without mutation", messagesToolBody.result ?? {}),
+      check(sendMessageDryRun.status === 200 && Number(sendMessageDryRunBody.result?.structuredContent?.sendMessage?.playerId ?? 0) === login.playerID && sendMessageDryRunBody.result?.structuredContent?.sendMessage?.dryRun === true && sendMessageDryRunBody.result?.structuredContent?.sendMessage?.requiresConfirmation === true && String(sendMessageDryRunBody.result?.structuredContent?.sendMessage?.confirmation ?? "").startsWith(`send_message:${login.playerID}:`), "send_message dry-run returns explicit confirmation without executing", sendMessageDryRunBody.result ?? {}),
       check(invalidParamsTool.status === 200 && invalidParamsToolBody.error?.code === -32602, "invalid tool params return JSON-RPC invalid params", invalidParamsToolBody),
       check(Number(tokenRowAfterUse?.lastUsedAt ?? 0) > 0, "bearer tool use updates token last-used timestamp", { tokenRowAfterUse }),
       check(revoke.status === 200 && revokeBody.revoked === true, "MCP token revoke succeeds", revokeBody),
