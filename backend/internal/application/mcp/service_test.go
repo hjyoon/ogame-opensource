@@ -34,6 +34,25 @@ func TestServiceInitializesAndListsReadOnlyTools(t *testing.T) {
 	}
 }
 
+func TestServiceBuildsOAuthAuthorizationServerMetadata(t *testing.T) {
+	service := NewService(fakeHealthProvider{})
+
+	metadata := service.OAuthAuthorizationServerMetadata(context.Background(), "https://game.example/")
+	if metadata.Issuer != "https://game.example" || metadata.AuthorizationEndpoint != "https://game.example/oauth/authorize" || metadata.TokenEndpoint != "https://game.example/oauth/token" {
+		t.Fatalf("unexpected metadata endpoints: %+v", metadata)
+	}
+	if strings.Join(metadata.ResponseTypesSupported, ",") != "code" || strings.Join(metadata.GrantTypesSupported, ",") != "authorization_code" {
+		t.Fatalf("expected authorization-code metadata, got %+v", metadata)
+	}
+	if strings.Join(metadata.CodeChallengeMethodsSupported, ",") != "S256" || strings.Join(metadata.TokenEndpointAuthMethodsSupported, ",") != "none" {
+		t.Fatalf("expected PKCE public-client metadata, got %+v", metadata)
+	}
+	scopes := strings.Join(metadata.ScopesSupported, ",")
+	if !strings.Contains(scopes, "openid") || !strings.Contains(scopes, domainmcp.ScopeRead) {
+		t.Fatalf("expected OIDC and MCP read scopes, got %+v", metadata.ScopesSupported)
+	}
+}
+
 func TestServiceListsScopedToolsOnlyForReadableTokens(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{

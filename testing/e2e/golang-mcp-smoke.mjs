@@ -137,12 +137,16 @@ try {
   const mcpListAnon = await mcpJSONRPC("tools/list", {}, { id: 5 });
   const mcpHealthTool = await mcpJSONRPC("tools/call", { name: "get_server_health", arguments: {} }, { id: 6 });
   const mcpUnauthorizedAccess = await mcpJSONRPC("tools/call", { name: "get_mcp_access", arguments: {} }, { id: 7 });
+  const oauthMetadata = await request("/.well-known/oauth-authorization-server");
+  const oauthTokenUnavailable = await request("/oauth/token", { method: "POST" });
   const mcpParseErrorBody = parseJSON(mcpParseError);
   const mcpInitializeBody = parseJSON(mcpInitialize);
   const mcpPingBody = parseJSON(mcpPing);
   const mcpListAnonBody = parseJSON(mcpListAnon);
   const mcpHealthToolBody = parseJSON(mcpHealthTool);
   const mcpUnauthorizedAccessBody = parseJSON(mcpUnauthorizedAccess);
+  const oauthMetadataBody = parseJSON(oauthMetadata);
+  const oauthTokenUnavailableBody = parseJSON(oauthTokenUnavailable);
   cases.push(finalize({
     case: "go_mcp_public_transport",
     checks: [
@@ -159,7 +163,11 @@ try {
       }),
       check(mcpHealthTool.status === 200 && mcpHealthToolBody.result?.structuredContent?.status === "ok", "public get_server_health tool returns structured status", mcpHealthToolBody.result ?? {}),
       check(mcpUnauthorizedAccess.status === 401 && mcpUnauthorizedAccessBody.error?.code === -32001, "protected tool without token returns Unauthorized", mcpUnauthorizedAccessBody),
-      check(hasHeader(mcpUnauthorizedAccess, "www-authenticate", "Bearer"), "Unauthorized MCP response includes Bearer challenge")
+      check(hasHeader(mcpUnauthorizedAccess, "www-authenticate", "Bearer"), "Unauthorized MCP response includes Bearer challenge"),
+      check(oauthMetadata.status === 200 && oauthMetadataBody.issuer === baseUrl, "OAuth authorization server metadata uses current origin issuer", oauthMetadataBody),
+      check(oauthMetadataBody.authorization_endpoint === `${baseUrl}/oauth/authorize`, "OAuth metadata exposes authorize endpoint", oauthMetadataBody),
+      check((oauthMetadataBody.code_challenge_methods_supported ?? []).includes("S256"), "OAuth metadata requires PKCE S256 support", oauthMetadataBody),
+      check(oauthTokenUnavailable.status === 503 && oauthTokenUnavailableBody.error === "temporarily_unavailable", "OAuth token endpoint remains closed before consent flow is implemented", oauthTokenUnavailableBody)
     ]
   }));
 

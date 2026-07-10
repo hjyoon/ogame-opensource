@@ -98,6 +98,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		Health:               health,
 		MCP:                  mcp,
 		MCPTokens:            mcp,
+		MCPOAuth:             mcp,
 		UniverseNumber:       cfg.UniNumber,
 		MaintenanceStartPage: "/",
 		Universes:            universes,

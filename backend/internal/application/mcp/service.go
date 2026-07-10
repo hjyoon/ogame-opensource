@@ -161,6 +161,27 @@ func (s Service) Initialize(ctx context.Context) domainmcp.InitializeResult {
 	}
 }
 
+func (s Service) OAuthAuthorizationServerMetadata(ctx context.Context, issuer string) domainmcp.OAuthAuthorizationServerMetadata {
+	_ = ctx
+	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
+	return domainmcp.OAuthAuthorizationServerMetadata{
+		Issuer:                            issuer,
+		AuthorizationEndpoint:             issuer + "/oauth/authorize",
+		TokenEndpoint:                     issuer + "/oauth/token",
+		ResponseTypesSupported:            []string{"code"},
+		GrantTypesSupported:               []string{"authorization_code"},
+		CodeChallengeMethodsSupported:     []string{"S256"},
+		TokenEndpointAuthMethodsSupported: []string{"none"},
+		ScopesSupported: []string{
+			"openid",
+			"profile",
+			domainmcp.ScopeRead,
+			domainmcp.ScopeMessages,
+			domainmcp.ScopeFleet,
+		},
+	}
+}
+
 func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsCommand) (domainmcp.ListToolsResult, error) {
 	tools := []domainmcp.Tool{serverHealthTool()}
 	if strings.TrimSpace(command.AccessToken) == "" {

@@ -29,6 +29,10 @@ type MCPTokenUseCase interface {
 	RevokeToken(context.Context, appmcp.RevokeTokenCommand) (appmcp.TokenRevokeResult, error)
 }
 
+type MCPOAuthUseCase interface {
+	OAuthAuthorizationServerMetadata(context.Context, string) domainmcp.OAuthAuthorizationServerMetadata
+}
+
 type FrontendAssets interface {
 	Serve(w http.ResponseWriter, r *http.Request, rel string) bool
 }
@@ -196,6 +200,7 @@ type Dependencies struct {
 	Health               HealthUseCase
 	MCP                  MCPUseCase
 	MCPTokens            MCPTokenUseCase
+	MCPOAuth             MCPOAuthUseCase
 	UniverseNumber       int
 	MaintenanceStartPage string
 	Universes            UniverseCatalogUseCase
@@ -263,6 +268,9 @@ func New(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/healthz", getOnly(a.handleHealthz))
 	mux.HandleFunc("/mcp", a.handleMCP)
+	mux.HandleFunc("/.well-known/oauth-authorization-server", getOnly(a.handleMCPOAuthAuthorizationServerMetadata))
+	mux.HandleFunc("/oauth/authorize", getOnly(a.handleMCPOAuthAuthorize))
+	mux.HandleFunc("/oauth/token", postOnly(a.handleMCPOAuthToken))
 	mux.HandleFunc("/api/game/mcp-tokens", a.handleGameMCPTokens)
 	mux.HandleFunc("/api/game/mcp-tokens/revoke", postOnly(a.handleGameMCPTokenRevoke))
 	mux.HandleFunc("/api/public/universes", getOnly(a.handleUniverses))

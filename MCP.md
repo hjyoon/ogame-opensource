@@ -33,8 +33,10 @@ Implemented:
 - Dedicated Go MCP smoke E2E:
   - `testing/e2e/golang-mcp-smoke.mjs`
   - Runs from `testing/e2e/run-golang-migration-qa.sh`.
-  - Covers transport guards, public tools, DB token create/list/revoke, bearer
-    protected read tools, invalid params, and revoked-token rejection.
+  - Covers transport guards, DB tokens, read tools, invalid params, and revoke.
+- OAuth discovery scaffold: metadata at
+  `/.well-known/oauth-authorization-server`; `/oauth/authorize` and
+  `/oauth/token` are explicitly closed with `temporarily_unavailable`.
 - JSON audit logging for every `tools/call` request path. Audit logs include
   tool name, authorization outcome, player id/scopes when authenticated,
   duration, and error text. Bearer token secrets are never logged.
@@ -96,7 +98,8 @@ dry-run plus explicit confirmation.
 
 ## Next Steps
 
-1. Add OAuth 2.1/OIDC consent flow before public user rollout.
+1. Add OAuth authorization-code storage, PKCE validation, and consent UI.
+2. Add OIDC ID-token/JWKS support before public user rollout.
 
 ## General User Policy
 
