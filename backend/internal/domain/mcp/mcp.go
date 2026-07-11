@@ -1189,6 +1189,30 @@ type JumpGateStatus struct {
 	Issue     *ActionIssue   `json:"issue,omitempty"`
 }
 
+type JumpGateCommand struct {
+	PlanetID     int
+	SourceMoonID int
+	TargetMoonID int
+	Ships        map[int]int
+	DryRun       bool
+	Confirm      string
+}
+
+type JumpGateResult struct {
+	PlayerID             int            `json:"playerId"`
+	PlanetID             int            `json:"planetId"`
+	SourceMoonID         int            `json:"sourceMoonId"`
+	TargetMoonID         int            `json:"targetMoonId"`
+	Ships                map[int]int    `json:"ships"`
+	TotalShips           int            `json:"totalShips"`
+	Status               JumpGateStatus `json:"status"`
+	DryRun               bool           `json:"dryRun"`
+	RequiresConfirmation bool           `json:"requiresConfirmation"`
+	Confirmation         string         `json:"confirmation,omitempty"`
+	Executed             bool           `json:"executed"`
+	Issue                *ActionIssue   `json:"issue,omitempty"`
+}
+
 type EmpireCommand struct {
 	PlanetID   int
 	PlanetType int

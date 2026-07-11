@@ -1149,6 +1149,26 @@ func TestServiceListsPhalanxToolForFleetWriteScope(t *testing.T) {
 	}
 }
 
+func TestServiceListsJumpGateToolForFleetWriteScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"fleet-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeFleetWrite}},
+		},
+	}).WithJumpGateWriteRepository(&fakeJumpGateWriteRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "fleet-write"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,jump_gate" {
+		t.Fatalf("unexpected jump gate tools: %v", names)
+	}
+}
+
 func TestServiceListsCancelBuildingQueueToolForQueueWriteScope(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -4563,6 +4583,110 @@ func TestServiceScanPhalanxRequiresScopeRepositoryAndValidConfirmation(t *testin
 	}
 }
 
+func TestServiceCallsJumpGateWithDryRunAndConfirmation(t *testing.T) {
+	status := domainmcp.JumpGateStatus{PlayerID: 42, Planet: domainmcp.Planet{ID: 10, Name: "Moon"}, Source: domainmcp.JumpGateMoon{ID: 10}, Targets: []domainmcp.JumpGateMoon{{ID: 20}}}
+	repository := &fakeJumpGateWriteRepository{
+		preview: domainmcp.JumpGateResult{
+			PlayerID:     42,
+			PlanetID:     10,
+			SourceMoonID: 10,
+			TargetMoonID: 20,
+			Ships:        map[int]int{202: 2},
+			TotalShips:   2,
+			Status:       status,
+		},
+		jumped: domainmcp.JumpGateResult{
+			PlayerID:     42,
+			PlanetID:     10,
+			SourceMoonID: 10,
+			TargetMoonID: 20,
+			Ships:        map[int]int{202: 2},
+			TotalShips:   2,
+			Status:       status,
+			Executed:     true,
+		},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"fleet-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeFleetWrite}},
+		},
+	}).WithJumpGateWriteRepository(repository)
+	arguments := map[string]any{"planetId": 10, "sourceMoonId": 10, "targetMoonId": 20, "ships": map[string]any{"202": 2}}
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "jump_gate",
+		AccessToken: "fleet-write",
+		Arguments:   arguments,
+	})
+	if err != nil {
+		t.Fatalf("jump_gate dry-run returned error: %v", err)
+	}
+	preview := result.StructuredContent.(map[string]any)["jumpGate"].(domainmcp.JumpGateResult)
+	if !preview.DryRun || preview.Executed || !preview.RequiresConfirmation || !strings.HasPrefix(preview.Confirmation, "jump_gate:10:10:20:202=2:") {
+		t.Fatalf("unexpected jump gate preview: %+v", preview)
+	}
+	if repository.previewPlayerID != 42 || repository.previewCommand.SourceMoonID != 10 || repository.previewCommand.TargetMoonID != 20 || repository.previewCommand.Ships[202] != 2 {
+		t.Fatalf("unexpected jump gate preview command: player=%d command=%+v", repository.previewPlayerID, repository.previewCommand)
+	}
+
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "jump_gate",
+		AccessToken: "fleet-write",
+		Arguments:   map[string]any{"planetId": 10, "sourceMoonId": 10, "targetMoonId": 20, "ships": map[string]any{"202": 2}, "dryRun": false, "confirm": preview.Confirmation},
+	})
+	if err != nil {
+		t.Fatalf("jump_gate execute returned error: %v", err)
+	}
+	jumped := result.StructuredContent.(map[string]any)["jumpGate"].(domainmcp.JumpGateResult)
+	if jumped.DryRun || !jumped.Executed || jumped.RequiresConfirmation || jumped.Confirmation != preview.Confirmation {
+		t.Fatalf("unexpected jump gate execute: %+v", jumped)
+	}
+	if repository.jumpPlayerID != 42 || repository.jumpCommand.Confirm != preview.Confirmation || repository.jumpCommand.DryRun {
+		t.Fatalf("unexpected jump command: player=%d command=%+v", repository.jumpPlayerID, repository.jumpCommand)
+	}
+}
+
+func TestServiceJumpGateRequiresScopeRepositoryAndValidConfirmation(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"fleet":       {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeFleet}},
+			"fleet-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeFleetWrite}},
+		},
+	})
+	valid := map[string]any{"targetMoonId": 20, "ships": map[string]any{"202": 1}}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "jump_gate", AccessToken: "fleet-write", Arguments: valid}); err == nil {
+		t.Fatalf("expected missing jump gate repository error")
+	}
+
+	service = service.WithJumpGateWriteRepository(&fakeJumpGateWriteRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "jump_gate", AccessToken: "fleet", Arguments: valid}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without fleet write scope, got %v", err)
+	}
+	for _, arguments := range []map[string]any{
+		nil,
+		{"planetId": true, "targetMoonId": 20, "ships": map[string]any{"202": 1}},
+		{"sourceMoonId": true, "targetMoonId": 20, "ships": map[string]any{"202": 1}},
+		{"targetMoonId": 0, "ships": map[string]any{"202": 1}},
+		{"targetMoonId": true, "ships": map[string]any{"202": 1}},
+		{"targetMoonId": 20, "ships": true},
+		{"targetMoonId": 20, "ships": map[string]any{}},
+		{"targetMoonId": 20, "ships": map[string]any{"bad": 1}},
+		{"targetMoonId": 20, "ships": map[string]any{"202": 1}, "dryRun": "no"},
+		{"targetMoonId": 20, "ships": map[string]any{"202": 1}, "confirm": true},
+		{"targetMoonId": 20, "ships": map[string]any{"202": 1}, "dryRun": false},
+		{"targetMoonId": 20, "ships": map[string]any{"202": 1}, "dryRun": false, "confirm": "wrong"},
+	} {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "jump_gate", AccessToken: "fleet-write", Arguments: arguments}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", arguments, err)
+		}
+	}
+
+	service = service.WithJumpGateWriteRepository(&fakeJumpGateWriteRepository{err: errors.New("jump gate down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "jump_gate", AccessToken: "fleet-write", Arguments: valid}); err == nil || !strings.Contains(err.Error(), "jump gate down") {
+		t.Fatalf("expected jump gate repository error, got %v", err)
+	}
+}
+
 func TestMCPMessageQueryDefaultsCapsAndValidation(t *testing.T) {
 	query, err := mcpMessageQuery(nil)
 	if err != nil || query.Limit != 25 || query.HasMessageType || query.IncludeText {
@@ -5317,6 +5441,34 @@ func (f *fakePhalanxWriteRepository) ScanMCPPhalanx(_ context.Context, playerID 
 		return domainmcp.PhalanxScanResult{}, f.err
 	}
 	return f.scanned, nil
+}
+
+type fakeJumpGateWriteRepository struct {
+	preview         domainmcp.JumpGateResult
+	jumped          domainmcp.JumpGateResult
+	previewPlayerID int
+	jumpPlayerID    int
+	previewCommand  domainmcp.JumpGateCommand
+	jumpCommand     domainmcp.JumpGateCommand
+	err             error
+}
+
+func (f *fakeJumpGateWriteRepository) PreviewMCPJumpGate(_ context.Context, playerID int, command domainmcp.JumpGateCommand) (domainmcp.JumpGateResult, error) {
+	f.previewPlayerID = playerID
+	f.previewCommand = command
+	if f.err != nil {
+		return domainmcp.JumpGateResult{}, f.err
+	}
+	return f.preview, nil
+}
+
+func (f *fakeJumpGateWriteRepository) JumpMCPJumpGate(_ context.Context, playerID int, command domainmcp.JumpGateCommand) (domainmcp.JumpGateResult, error) {
+	f.jumpPlayerID = playerID
+	f.jumpCommand = command
+	if f.err != nil {
+		return domainmcp.JumpGateResult{}, f.err
+	}
+	return f.jumped, nil
 }
 
 type fakeFleetWriteRepository struct {

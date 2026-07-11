@@ -51,7 +51,7 @@ Implemented:
   confirmed mutations.
 - `mcp:buddy_write`: `mutate_buddy`; confirmed mutations.
 - `mcp:fleet_write`: `validate_fleet_dispatch`, `dispatch_fleet`,
-  `recall_fleet`, `scan_phalanx`; confirmed mutations.
+  `recall_fleet`, `scan_phalanx`, `jump_gate`; confirmed mutations.
 - `mcp:queue_write`: `cancel_building_queue`,
   `cancel_research_queue`, `enqueue_shipyard_order`; confirmed mutations.
 - `mcp:resources_write`: `update_resource_production`.

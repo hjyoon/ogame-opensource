@@ -83,6 +83,76 @@ func (r JumpGateRepository) GetMCPJumpGateStatus(ctx context.Context, playerID i
 	return mcpJumpGateStatus(playerID, jumpGate), nil
 }
 
+func (r JumpGateRepository) PreviewMCPJumpGate(ctx context.Context, playerID int, command domainmcp.JumpGateCommand) (domainmcp.JumpGateResult, error) {
+	if r.queryer == nil {
+		return domainmcp.JumpGateResult{}, errors.New("jump gate reader unavailable")
+	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return domainmcp.JumpGateResult{}, err
+	}
+	uniTable, err := tableName(r.prefix, "uni")
+	if err != nil {
+		return domainmcp.JumpGateResult{}, err
+	}
+	query := mcpJumpGateMutationQuery(playerID, command)
+	sourceID := query.SourceMoonID
+	if sourceID <= 0 {
+		sourceID = query.PlanetID
+	}
+	source, sourceFound, err := r.loadJumpGateMoon(ctx, planetsTable, sourceID)
+	if err != nil {
+		return domainmcp.JumpGateResult{}, err
+	}
+	target, targetFound, err := r.loadJumpGateMoon(ctx, planetsTable, query.TargetMoonID)
+	if err != nil {
+		return domainmcp.JumpGateResult{}, err
+	}
+	selection := domaingame.NormalizeJumpGateSelection(query.Ships)
+	if issue := domaingame.JumpGateMoveIssue(playerID, source, sourceFound, target, targetFound, selection, r.now().Unix()); issue != nil {
+		jumpGate, err := r.jumpGateMutationResult(ctx, query, planetsTable, source, target, issue)
+		if err != nil {
+			return domainmcp.JumpGateResult{}, err
+		}
+		return mcpJumpGateResult(playerID, command, jumpGate), nil
+	}
+	fleetSpeed, err := r.loadJumpGateFleetSpeed(ctx, uniTable)
+	if err != nil {
+		return domainmcp.JumpGateResult{}, err
+	}
+	cooldown := domaingame.JumpGateCooldownUntil(r.now().Unix(), fleetSpeed)
+	previewSource := source
+	previewTarget := target
+	previewSource.GateUntil = cooldown
+	previewTarget.GateUntil = cooldown
+	for id, amount := range selection {
+		previewSource.Ships[id] -= amount
+		previewTarget.Ships[id] += amount
+	}
+	jumpGate, err := r.jumpGateMutationResult(ctx, query, planetsTable, previewSource, previewTarget, nil)
+	if err != nil {
+		return domainmcp.JumpGateResult{}, err
+	}
+	return mcpJumpGateResult(playerID, command, jumpGate), nil
+}
+
+func (r JumpGateRepository) JumpMCPJumpGate(ctx context.Context, playerID int, command domainmcp.JumpGateCommand) (domainmcp.JumpGateResult, error) {
+	if r.execer == nil {
+		return domainmcp.JumpGateResult{}, errors.New("jump gate writer unavailable")
+	}
+	result, err := r.PreviewMCPJumpGate(ctx, playerID, command)
+	if err != nil || result.Issue != nil {
+		return result, err
+	}
+	jumpGate, err := r.Jump(ctx, mcpJumpGateMutationQuery(playerID, command))
+	if err != nil {
+		return domainmcp.JumpGateResult{}, err
+	}
+	result = mcpJumpGateResult(playerID, command, jumpGate)
+	result.Executed = result.Issue == nil
+	return result, nil
+}
+
 func mcpJumpGateStatus(playerID int, jumpGate domaingame.JumpGate) domainmcp.JumpGateStatus {
 	return domainmcp.JumpGateStatus{
 		PlayerID: playerID,
@@ -104,6 +174,43 @@ func mcpJumpGateStatus(playerID int, jumpGate domaingame.JumpGate) domainmcp.Jum
 		Ships:     mcpJumpGateShips(jumpGate.Ships),
 		Issue:     mcpJumpGateIssue(jumpGate.ActionIssue),
 	}
+}
+
+func mcpJumpGateMutationQuery(playerID int, command domainmcp.JumpGateCommand) appgame.JumpGateMutationQuery {
+	return appgame.JumpGateMutationQuery{
+		PlayerID:     playerID,
+		PlanetID:     command.PlanetID,
+		SourceMoonID: command.SourceMoonID,
+		TargetMoonID: command.TargetMoonID,
+		Ships:        command.Ships,
+	}
+}
+
+func mcpJumpGateResult(playerID int, command domainmcp.JumpGateCommand, jumpGate domaingame.JumpGate) domainmcp.JumpGateResult {
+	status := mcpJumpGateStatus(playerID, jumpGate)
+	sourceMoonID := command.SourceMoonID
+	if sourceMoonID <= 0 {
+		sourceMoonID = status.Source.ID
+	}
+	ships := domaingame.NormalizeJumpGateSelection(command.Ships)
+	return domainmcp.JumpGateResult{
+		PlayerID:     playerID,
+		PlanetID:     status.Planet.ID,
+		SourceMoonID: sourceMoonID,
+		TargetMoonID: command.TargetMoonID,
+		Ships:        ships,
+		TotalShips:   totalJumpGateShips(ships),
+		Status:       status,
+		Issue:        mcpJumpGateBlockingIssue(jumpGate.ActionIssue),
+	}
+}
+
+func totalJumpGateShips(ships map[int]int) int {
+	total := 0
+	for _, amount := range ships {
+		total += amount
+	}
+	return total
 }
 
 func mcpJumpGateMoon(moon domaingame.JumpGateMoon) domainmcp.JumpGateMoon {
@@ -144,6 +251,13 @@ func mcpJumpGateIssue(issue *domaingame.JumpGateActionIssue) *domainmcp.ActionIs
 		return nil
 	}
 	return &domainmcp.ActionIssue{Code: issue.Code, Message: issue.Message}
+}
+
+func mcpJumpGateBlockingIssue(issue *domaingame.JumpGateActionIssue) *domainmcp.ActionIssue {
+	if issue == nil || issue.Code == domaingame.JumpGateIssueMoved {
+		return nil
+	}
+	return mcpJumpGateIssue(issue)
 }
 
 func (r JumpGateRepository) Jump(ctx context.Context, query appgame.JumpGateMutationQuery) (domaingame.JumpGate, error) {

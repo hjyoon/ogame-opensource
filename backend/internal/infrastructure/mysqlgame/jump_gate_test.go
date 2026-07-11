@@ -122,6 +122,7 @@ func TestNewJumpGateRepositoryConstructorsAndDependencyErrors(t *testing.T) {
 	if _, ok := repository.queryer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL queryer, got %T", repository.queryer)
 	}
+	_ = NewJumpGateReadRepository(nil, "ogame_")
 	repository = NewJumpGateRepositoryWithRunner(nil, nil, "ogame_", nil)
 	if repository.now == nil {
 		t.Fatal("expected default clock")
@@ -197,6 +198,108 @@ func TestJumpGateRepositoryMovesShipsAndSetsCooldown(t *testing.T) {
 	}
 	if len(targetCall.args) != 5 || targetCall.args[0] != 2 || targetCall.args[1] != 1 || targetCall.args[2] != cooldown || targetCall.args[3] != 20 || targetCall.args[4] != 42 {
 		t.Fatalf("unexpected target update args: %+v", targetCall.args)
+	}
+}
+
+func TestJumpGateRepositoryMCPPreviewAndExecute(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	command := domainmcp.JumpGateCommand{
+		PlanetID:     10,
+		SourceMoonID: 10,
+		TargetMoonID: 20,
+		Ships:        map[int]int{domaingame.FleetSmallCargo: 2, domaingame.FleetSolarSatellite: 7},
+	}
+	queryer := &fakeQueryer{results: jumpGateMCPMoveResults()}
+	repository := NewJumpGateRepositoryWithRunner(queryer, nil, "ogame_", func() time.Time { return now })
+
+	preview, err := repository.PreviewMCPJumpGate(context.Background(), 42, command)
+	if err != nil {
+		t.Fatalf("PreviewMCPJumpGate returned error: %v", err)
+	}
+	if preview.PlayerID != 42 || preview.PlanetID != 10 || preview.SourceMoonID != 10 || preview.TargetMoonID != 20 ||
+		preview.TotalShips != 2 || preview.Ships[domaingame.FleetSolarSatellite] != 0 || preview.Issue != nil ||
+		preview.Status.Source.GateUntil <= now.Unix() || preview.Status.Source.ID != 10 {
+		t.Fatalf("unexpected jump gate preview: %+v", preview)
+	}
+
+	queryer = &fakeQueryer{results: jumpGateMCPMoveResults()}
+	repository = NewJumpGateRepositoryWithRunner(queryer, nil, "ogame_", func() time.Time { return now })
+	preview, err = repository.PreviewMCPJumpGate(context.Background(), 42, domainmcp.JumpGateCommand{
+		PlanetID:     10,
+		TargetMoonID: 20,
+		Ships:        map[int]int{domaingame.FleetSmallCargo: 1},
+	})
+	if err != nil || preview.SourceMoonID != 10 {
+		t.Fatalf("expected planet id to default source moon, preview=%+v err=%v", preview, err)
+	}
+
+	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: append(jumpGateMCPMoveResults(), jumpGateMCPMoveResults()...)}}
+	repository = NewJumpGateRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	jumped, err := repository.JumpMCPJumpGate(context.Background(), 42, command)
+	if err != nil {
+		t.Fatalf("JumpMCPJumpGate returned error: %v", err)
+	}
+	if !jumped.Executed || jumped.Issue != nil || jumped.Status.Issue == nil || jumped.Status.Issue.Code != domaingame.JumpGateIssueMoved || len(runner.execCalls) != 2 {
+		t.Fatalf("unexpected jump gate execution: result=%+v exec=%+v", jumped, runner.execCalls)
+	}
+
+	if _, err := NewJumpGateRepositoryWithRunner(queryer, nil, "ogame_", func() time.Time { return now }).JumpMCPJumpGate(context.Background(), 42, command); err == nil || !strings.Contains(err.Error(), "writer unavailable") {
+		t.Fatalf("expected writer unavailable error, got %v", err)
+	}
+}
+
+func TestJumpGateRepositoryMCPPreviewErrors(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	command := domainmcp.JumpGateCommand{PlanetID: 10, SourceMoonID: 10, TargetMoonID: 20, Ships: map[int]int{domaingame.FleetSmallCargo: 1}}
+
+	repository := NewJumpGateRepositoryWithRunner(&fakeQueryer{}, nil, "bad-prefix_", func() time.Time { return now })
+	if _, err := repository.PreviewMCPJumpGate(context.Background(), 42, command); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected prefix error, got %v", err)
+	}
+
+	repository = NewJumpGateRepositoryWithRunner(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("source failed")}}}, nil, "ogame_", func() time.Time { return now })
+	if _, err := repository.PreviewMCPJumpGate(context.Background(), 42, command); err == nil || !strings.Contains(err.Error(), "source failed") {
+		t.Fatalf("expected source error, got %v", err)
+	}
+
+	repository = NewJumpGateRepositoryWithRunner(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(jumpGateMoonRow(10, 42, "Moon", domaingame.PlanetTypeMoon, 1, 0, map[int]int{}))},
+		{err: errors.New("target failed")},
+	}}, nil, "ogame_", func() time.Time { return now })
+	if _, err := repository.PreviewMCPJumpGate(context.Background(), 42, command); err == nil || !strings.Contains(err.Error(), "target failed") {
+		t.Fatalf("expected target error, got %v", err)
+	}
+
+	repository = NewJumpGateRepositoryWithRunner(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(jumpGateMoonRow(10, 42, "Moon", domaingame.PlanetTypeMoon, 1, 0, map[int]int{domaingame.FleetSmallCargo: 5}))},
+		{rows: fakeRowsFromValues(jumpGateMoonRow(20, 42, "Target", domaingame.PlanetTypeMoon, 1, 0, map[int]int{}))},
+		{err: errors.New("speed failed")},
+	}}, nil, "ogame_", func() time.Time { return now })
+	if _, err := repository.PreviewMCPJumpGate(context.Background(), 42, command); err == nil || !strings.Contains(err.Error(), "speed failed") {
+		t.Fatalf("expected speed error, got %v", err)
+	}
+
+	repository = NewJumpGateRepositoryWithRunner(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(jumpGateMoonRow(10, 42, "Moon", domaingame.PlanetTypeMoon, 1, 0, map[int]int{}))},
+		{rows: fakeRowsFromValues(jumpGateMoonRow(20, 42, "Target", domaingame.PlanetTypeMoon, 1, 0, map[int]int{}))},
+		{err: errors.New("overview failed")},
+	}}, nil, "ogame_", func() time.Time { return now })
+	if _, err := repository.PreviewMCPJumpGate(context.Background(), 42, domainmcp.JumpGateCommand{PlanetID: 10, SourceMoonID: 10, TargetMoonID: 20}); err == nil || !strings.Contains(err.Error(), "overview failed") {
+		t.Fatalf("expected mutation result error, got %v", err)
+	}
+}
+
+func TestJumpGateRepositoryMCPExecuteBlockedByPreviewIssue(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
+		{rows: fakeRowsFromValues(jumpGateMoonRow(10, 42, "Moon", domaingame.PlanetTypeMoon, 1, 0, map[int]int{domaingame.FleetSmallCargo: 5}))},
+		{rows: fakeRowsFromValues(jumpGateMoonRow(20, 42, "Target", domaingame.PlanetTypeMoon, 1, 0, map[int]int{}))},
+	}, append(jumpGateOverviewResults(10, domaingame.PlanetTypeMoon), fakeQueryResult{rows: fakeRowsFromValues()})...)}}
+	repository := NewJumpGateRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	result, err := repository.JumpMCPJumpGate(context.Background(), 42, domainmcp.JumpGateCommand{PlanetID: 10, SourceMoonID: 10, TargetMoonID: 20})
+	if err != nil || result.Issue == nil || result.Issue.Code != domaingame.JumpGateIssueNoShips || result.Executed || len(runner.execCalls) != 0 {
+		t.Fatalf("expected preview issue to block jump, result=%+v err=%v exec=%+v", result, err, runner.execCalls)
 	}
 }
 
@@ -489,6 +592,17 @@ func jumpGateOverviewResults(planetID int, planetType int) []fakeQueryResult {
 		{rows: fakeRowsFromValues(jumpGateOverviewSwitcherRow(planetID, planetType))},
 		{rows: fakeRowsFromValues([]any{1})},
 	}
+}
+
+func jumpGateMCPMoveResults() []fakeQueryResult {
+	results := []fakeQueryResult{
+		{rows: fakeRowsFromValues(jumpGateMoonRow(10, 42, "Moon", domaingame.PlanetTypeMoon, 1, 0, map[int]int{domaingame.FleetSmallCargo: 5, domaingame.FleetSolarSatellite: 7}))},
+		{rows: fakeRowsFromValues(jumpGateMoonRow(20, 42, "Target", domaingame.PlanetTypeMoon, 1, 0, map[int]int{domaingame.FleetSmallCargo: 1}))},
+		{rows: fakeRowsFromValues([]any{128.0})},
+	}
+	results = append(results, jumpGateOverviewResults(10, domaingame.PlanetTypeMoon)...)
+	results = append(results, fakeQueryResult{rows: fakeRowsFromValues()})
+	return results
 }
 
 func jumpGateOverviewUserRow(planetID int) []any {

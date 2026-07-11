@@ -182,6 +182,11 @@ type JumpGateReadRepository interface {
 	GetMCPJumpGateStatus(context.Context, int, domainmcp.JumpGateStatusCommand) (domainmcp.JumpGateStatus, error)
 }
 
+type JumpGateWriteRepository interface {
+	PreviewMCPJumpGate(context.Context, int, domainmcp.JumpGateCommand) (domainmcp.JumpGateResult, error)
+	JumpMCPJumpGate(context.Context, int, domainmcp.JumpGateCommand) (domainmcp.JumpGateResult, error)
+}
+
 type EmpireReadRepository interface {
 	GetMCPEmpire(context.Context, int, domainmcp.EmpireCommand) (domainmcp.EmpireOverview, error)
 }
@@ -378,6 +383,7 @@ type Service struct {
 	merchantRead    MerchantReadRepository
 	merchantWrite   MerchantWriteRepository
 	jumpGateRead    JumpGateReadRepository
+	jumpGateWrite   JumpGateWriteRepository
 	empireRead      EmpireReadRepository
 	technologyRead  TechnologyReadRepository
 	buildingRead    BuildingOptionsReadRepository
@@ -547,6 +553,11 @@ func (s Service) WithMerchantWriteRepository(repository MerchantWriteRepository)
 
 func (s Service) WithJumpGateReadRepository(repository JumpGateReadRepository) Service {
 	s.jumpGateRead = repository
+	return s
+}
+
+func (s Service) WithJumpGateWriteRepository(repository JumpGateWriteRepository) Service {
+	s.jumpGateWrite = repository
 	return s
 }
 
@@ -981,6 +992,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	if access.HasScope(domainmcp.ScopeFleetWrite) && s.phalanxWrite != nil {
 		tools = append(tools, scanPhalanxTool())
 	}
+	if access.HasScope(domainmcp.ScopeFleetWrite) && s.jumpGateWrite != nil {
+		tools = append(tools, jumpGateTool())
+	}
 	if access.HasScope(domainmcp.ScopeQueueWrite) && s.queueWrite != nil {
 		tools = append(tools, cancelBuildingQueueTool(), cancelResearchQueueTool(), enqueueShipyardOrderTool())
 	}
@@ -1371,6 +1385,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callScanPhalanx(ctx, access, command.Arguments)
+	case "jump_gate":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeFleetWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callJumpGate(ctx, access, command.Arguments)
 	case "cancel_building_queue":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeQueueWrite)
 		if err != nil {
@@ -2650,6 +2673,50 @@ func (s Service) callScanPhalanx(ctx context.Context, access domainmcp.Access, a
 	}, nil
 }
 
+func (s Service) callJumpGate(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.jumpGateWrite == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp jump gate write repository unavailable")
+	}
+	command, err := mcpJumpGateCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	confirmation := mcpJumpGateConfirmation(command)
+	var result domainmcp.JumpGateResult
+	if command.DryRun {
+		result, err = s.jumpGateWrite.PreviewMCPJumpGate(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = true
+		result.Executed = false
+		if result.Issue == nil {
+			result.RequiresConfirmation = true
+			result.Confirmation = confirmation
+		}
+	} else {
+		if strings.TrimSpace(command.Confirm) != confirmation {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+		}
+		result, err = s.jumpGateWrite.JumpMCPJumpGate(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = false
+		result.RequiresConfirmation = false
+		result.Confirmation = confirmation
+	}
+	structured := map[string]any{"jumpGate": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
 func (s Service) callCancelBuildingQueue(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
 	if s.queueWrite == nil {
 		return domainmcp.ToolCallResult{}, errors.New("mcp queue write repository unavailable")
@@ -3486,6 +3553,50 @@ func mcpPhalanxScanConfirmation(command domainmcp.PhalanxScanCommand) string {
 	payload := fmt.Sprintf("%d:%d", command.PlanetID, command.TargetPlanetID)
 	sum := sha256.Sum256([]byte(payload))
 	return fmt.Sprintf("scan_phalanx:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
+}
+
+func mcpJumpGateCommand(arguments map[string]any) (domainmcp.JumpGateCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.JumpGateCommand{}, err
+	}
+	sourceMoonID, err := optionalNonNegativeIntArgument(arguments, "sourceMoonId")
+	if err != nil {
+		return domainmcp.JumpGateCommand{}, err
+	}
+	targetMoonID, err := optionalNonNegativeIntArgument(arguments, "targetMoonId")
+	if err != nil || targetMoonID <= 0 {
+		return domainmcp.JumpGateCommand{}, domainmcp.ErrInvalidParams
+	}
+	ships, err := intObjectArgument(arguments, "ships")
+	if err != nil || len(ships) == 0 {
+		return domainmcp.JumpGateCommand{}, domainmcp.ErrInvalidParams
+	}
+	dryRun := true
+	if arguments != nil && arguments["dryRun"] != nil {
+		dryRun, err = optionalBoolArgument(arguments, "dryRun")
+		if err != nil {
+			return domainmcp.JumpGateCommand{}, err
+		}
+	}
+	confirm, err := optionalStringArgument(arguments, "confirm")
+	if err != nil {
+		return domainmcp.JumpGateCommand{}, err
+	}
+	return domainmcp.JumpGateCommand{
+		PlanetID:     planetID,
+		SourceMoonID: sourceMoonID,
+		TargetMoonID: targetMoonID,
+		Ships:        ships,
+		DryRun:       dryRun,
+		Confirm:      confirm,
+	}, nil
+}
+
+func mcpJumpGateConfirmation(command domainmcp.JumpGateCommand) string {
+	payload := fmt.Sprintf("%d:%d:%d:%s", command.PlanetID, command.SourceMoonID, command.TargetMoonID, stableIntMapPayload(command.Ships))
+	sum := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("jump_gate:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
 }
 
 func mcpCancelBuildingQueueCommand(arguments map[string]any) (domainmcp.CancelBuildingQueueCommand, error) {
@@ -6289,6 +6400,72 @@ func scanPhalanxTool() domainmcp.Tool {
 		Annotations: map[string]any{
 			"readOnlyHint":    false,
 			"destructiveHint": true,
+			"idempotentHint":  false,
+		},
+	}
+}
+
+func jumpGateTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "jump_gate",
+		Title:       "Jump Gate",
+		Description: "Dry-run or confirm a legacy jump gate move between owned moons. Confirmed jumps move ships and start gate cooldown.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"minimum":     0,
+					"description": "Current planet or moon id. Omit or pass 0 to use the active context.",
+				},
+				"sourceMoonId": map[string]any{
+					"type":        "integer",
+					"minimum":     0,
+					"description": "Owned source moon id. Omit or pass 0 to use planetId.",
+				},
+				"targetMoonId": map[string]any{
+					"type":        "integer",
+					"minimum":     1,
+					"description": "Owned target moon id.",
+				},
+				"ships": map[string]any{
+					"type":                 "object",
+					"description":          "Ship counts keyed by fleet technology id.",
+					"additionalProperties": map[string]any{"type": "integer", "minimum": 0},
+				},
+				"dryRun":  map[string]any{"type": "boolean", "description": "Defaults to true. Set false only with the returned confirmation."},
+				"confirm": map[string]any{"type": "string", "description": "Confirmation returned by dry-run."},
+			},
+			"required":             []string{"targetMoonId", "ships"},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"jumpGate": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":             map[string]any{"type": "integer"},
+						"planetId":             map[string]any{"type": "integer"},
+						"sourceMoonId":         map[string]any{"type": "integer"},
+						"targetMoonId":         map[string]any{"type": "integer"},
+						"ships":                map[string]any{"type": "object"},
+						"totalShips":           map[string]any{"type": "integer"},
+						"status":               map[string]any{"type": "object"},
+						"dryRun":               map[string]any{"type": "boolean"},
+						"requiresConfirmation": map[string]any{"type": "boolean"},
+						"confirmation":         map[string]any{"type": "string"},
+						"executed":             map[string]any{"type": "boolean"},
+						"issue":                map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "planetId", "sourceMoonId", "targetMoonId", "ships", "totalShips", "status", "dryRun", "requiresConfirmation", "executed"},
+				},
+			},
+			"required": []string{"jumpGate"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    false,
+			"destructiveHint": false,
 			"idempotentHint":  false,
 		},
 	}
