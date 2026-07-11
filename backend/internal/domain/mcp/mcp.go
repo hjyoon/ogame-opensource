@@ -275,6 +275,26 @@ type ReportMessageResult struct {
 	Issue                *ActionIssue `json:"issue,omitempty"`
 }
 
+type RecallFleetCommand struct {
+	FleetID int
+	DryRun  bool
+	Confirm string
+}
+
+type RecallFleetResult struct {
+	PlayerID             int          `json:"playerId"`
+	FleetID              int          `json:"fleetId"`
+	OwnerID              int          `json:"ownerId,omitempty"`
+	Mission              int          `json:"mission,omitempty"`
+	TotalShips           int          `json:"totalShips,omitempty"`
+	Recallable           bool         `json:"recallable"`
+	DryRun               bool         `json:"dryRun"`
+	RequiresConfirmation bool         `json:"requiresConfirmation"`
+	Confirmation         string       `json:"confirmation,omitempty"`
+	Executed             bool         `json:"executed"`
+	Issue                *ActionIssue `json:"issue,omitempty"`
+}
+
 type FleetShip struct {
 	ID    int    `json:"id"`
 	Name  string `json:"name"`

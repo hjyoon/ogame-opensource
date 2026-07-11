@@ -338,6 +338,8 @@ try {
     ? await mcpJSONRPC("tools/call", { name: "report_message", arguments: { messageId: firstReportableMessageID } }, { id: 32, headers: authHeaders })
     : undefined;
   const reportMessageDryRunBody = reportMessageDryRun === undefined ? {} : parseJSON(reportMessageDryRun);
+  const recallFleetDryRun = await mcpJSONRPC("tools/call", { name: "recall_fleet", arguments: { fleetId: 999999999 } }, { id: 33, headers: authHeaders });
+  const recallFleetDryRunBody = parseJSON(recallFleetDryRun);
   const invalidParamsTool = await mcpJSONRPC("tools/call", { name: "get_planet_resources", arguments: { planetId: "abc" } }, { id: 27, headers: authHeaders });
   const invalidParamsToolBody = parseJSON(invalidParamsTool);
   const tokenListAfterUse = await request(`/api/game/mcp-tokens${login.search}`, {
@@ -369,7 +371,8 @@ try {
     "get_message",
     "send_message",
     "delete_messages",
-    "report_message"
+    "report_message",
+    "recall_fleet"
   ];
   const authedToolNames = toolNames(authedToolsBody);
   cases.push(finalize({
@@ -417,6 +420,7 @@ try {
         firstReportableMessageID,
         result: reportMessageDryRunBody.result ?? {}
       }),
+      check(recallFleetDryRun.status === 200 && Number(recallFleetDryRunBody.result?.structuredContent?.recallFleet?.playerId ?? 0) === login.playerID && recallFleetDryRunBody.result?.structuredContent?.recallFleet?.dryRun === true && recallFleetDryRunBody.result?.structuredContent?.recallFleet?.executed === false && recallFleetDryRunBody.result?.structuredContent?.recallFleet?.requiresConfirmation === false && recallFleetDryRunBody.result?.structuredContent?.recallFleet?.issue?.code === "fleet_not_found", "recall_fleet dry-run is available under fleet_write and does not mutate missing fleet ids", recallFleetDryRunBody.result ?? {}),
       check(invalidParamsTool.status === 200 && invalidParamsToolBody.error?.code === -32602, "invalid tool params return JSON-RPC invalid params", invalidParamsToolBody),
       check(Number(tokenRowAfterUse?.lastUsedAt ?? 0) > 0, "bearer tool use updates token last-used timestamp", { tokenRowAfterUse }),
       check(revoke.status === 200 && revokeBody.revoked === true, "MCP token revoke succeeds", revokeBody),

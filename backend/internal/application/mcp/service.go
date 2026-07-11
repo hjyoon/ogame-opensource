@@ -85,6 +85,11 @@ type WriteRepository interface {
 	ReportMCPMessage(context.Context, int, domainmcp.ReportMessageCommand) (domainmcp.ReportMessageResult, error)
 }
 
+type FleetWriteRepository interface {
+	PreviewMCPRecallFleet(context.Context, int, domainmcp.RecallFleetCommand) (domainmcp.RecallFleetResult, error)
+	RecallMCPFleet(context.Context, int, domainmcp.RecallFleetCommand) (domainmcp.RecallFleetResult, error)
+}
+
 type TokenSecretGenerator interface {
 	NewMCPToken() (string, error)
 }
@@ -228,6 +233,7 @@ type Service struct {
 	oidcSigner      OIDCSigner
 	readRepository  ReadRepository
 	writeRepository WriteRepository
+	fleetWrite      FleetWriteRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
 	codeGenerator   OAuthCodeGenerator
@@ -289,6 +295,11 @@ func (s Service) WithReadRepository(repository ReadRepository) Service {
 
 func (s Service) WithWriteRepository(repository WriteRepository) Service {
 	s.writeRepository = repository
+	return s
+}
+
+func (s Service) WithFleetWriteRepository(repository FleetWriteRepository) Service {
+	s.fleetWrite = repository
 	return s
 }
 
@@ -597,6 +608,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	if access.HasScope(domainmcp.ScopeMessageWrite) && s.writeRepository != nil {
 		tools = append(tools, sendMessageTool(), deleteMessagesTool(), reportMessageTool())
 	}
+	if access.HasScope(domainmcp.ScopeFleetWrite) && s.fleetWrite != nil {
+		tools = append(tools, recallFleetTool())
+	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
 }
 
@@ -714,6 +728,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callReportMessage(ctx, access, command.Arguments)
+	case "recall_fleet":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeFleetWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callRecallFleet(ctx, access, command.Arguments)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -1108,6 +1131,50 @@ func (s Service) callReportMessage(ctx context.Context, access domainmcp.Access,
 		result.Confirmation = confirmation
 	}
 	structured := map[string]any{"reportMessage": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callRecallFleet(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.fleetWrite == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp fleet write repository unavailable")
+	}
+	command, err := mcpRecallFleetCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	confirmation := mcpRecallFleetConfirmation(command)
+	var result domainmcp.RecallFleetResult
+	if command.DryRun {
+		result, err = s.fleetWrite.PreviewMCPRecallFleet(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = true
+		result.Executed = false
+		if result.Recallable && result.Issue == nil {
+			result.RequiresConfirmation = true
+			result.Confirmation = confirmation
+		}
+	} else {
+		if strings.TrimSpace(command.Confirm) != confirmation {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+		}
+		result, err = s.fleetWrite.RecallMCPFleet(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = false
+		result.RequiresConfirmation = false
+		result.Confirmation = confirmation
+	}
+	structured := map[string]any{"recallFleet": result}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -1595,6 +1662,31 @@ func mcpReportMessageConfirmation(command domainmcp.ReportMessageCommand) string
 	payload := strconv.Itoa(command.MessageID)
 	sum := sha256.Sum256([]byte(payload))
 	return fmt.Sprintf("report_message:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
+}
+
+func mcpRecallFleetCommand(arguments map[string]any) (domainmcp.RecallFleetCommand, error) {
+	fleetID, err := optionalNonNegativeIntArgument(arguments, "fleetId")
+	if err != nil || fleetID <= 0 {
+		return domainmcp.RecallFleetCommand{}, domainmcp.ErrInvalidParams
+	}
+	dryRun := true
+	if arguments != nil && arguments["dryRun"] != nil {
+		dryRun, err = optionalBoolArgument(arguments, "dryRun")
+		if err != nil {
+			return domainmcp.RecallFleetCommand{}, err
+		}
+	}
+	confirm, err := optionalStringArgument(arguments, "confirm")
+	if err != nil {
+		return domainmcp.RecallFleetCommand{}, err
+	}
+	return domainmcp.RecallFleetCommand{FleetID: fleetID, DryRun: dryRun, Confirm: confirm}, nil
+}
+
+func mcpRecallFleetConfirmation(command domainmcp.RecallFleetCommand) string {
+	payload := strconv.Itoa(command.FleetID)
+	sum := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("recall_fleet:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
 }
 
 func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
@@ -2264,6 +2356,62 @@ func fleetMovementsTool() domainmcp.Tool {
 			"readOnlyHint":    true,
 			"destructiveHint": false,
 			"idempotentHint":  true,
+		},
+	}
+}
+
+func recallFleetTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "recall_fleet",
+		Title:       "Recall Fleet",
+		Description: "Recall one owned outgoing fleet. Defaults to dry-run and requires the returned confirmation string before execution.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"fleetId": map[string]any{
+					"type":        "integer",
+					"minimum":     1,
+					"description": "Owned fleet id to recall.",
+				},
+				"dryRun": map[string]any{
+					"type":        "boolean",
+					"description": "Defaults to true. Set false only with a matching confirmation value.",
+				},
+				"confirm": map[string]any{
+					"type":        "string",
+					"description": "Exact confirmation string returned by a dry-run for the same fleetId.",
+				},
+			},
+			"required":             []string{"fleetId"},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"recallFleet": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":             map[string]any{"type": "integer"},
+						"fleetId":              map[string]any{"type": "integer"},
+						"ownerId":              map[string]any{"type": "integer"},
+						"mission":              map[string]any{"type": "integer"},
+						"totalShips":           map[string]any{"type": "integer"},
+						"recallable":           map[string]any{"type": "boolean"},
+						"dryRun":               map[string]any{"type": "boolean"},
+						"requiresConfirmation": map[string]any{"type": "boolean"},
+						"confirmation":         map[string]any{"type": "string"},
+						"executed":             map[string]any{"type": "boolean"},
+						"issue":                map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "fleetId", "recallable", "dryRun", "requiresConfirmation", "executed"},
+				},
+			},
+			"required": []string{"recallFleet"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    false,
+			"destructiveHint": true,
+			"idempotentHint":  false,
 		},
 	}
 }

@@ -49,12 +49,13 @@ Implemented:
 - JSON audit logging for every `tools/call`; no secrets are logged.
 - Authenticated `mcp:read` tools: `list_planets`, `get_account_overview`,
   `get_planet_resources`, `get_building_queue`, and `get_fleet_movements`.
-  These are read-only and avoid legacy queue/resource mutations.
+  Read-only; avoid legacy queue/resource mutations.
 - Authenticated `mcp:messages` tools: `list_messages` and `get_message`.
-  They read owned inbox rows without marking messages read or cleanup mutation.
+  Read owned inbox rows without marking read or cleanup mutation.
 - Authenticated `mcp:message_write` tools: `send_message`, `delete_messages`,
   `report_message`. All default to dry-run; execution requires `dryRun:false`
   plus returned confirmation string.
+- Authenticated `mcp:fleet_write` tool: `recall_fleet`, dry-run/confirm only.
 
 ## Static Token Format
 
@@ -63,8 +64,7 @@ Implemented:
 Scopes: `mcp:read`, `mcp:messages`, `mcp:message_write`, `mcp:fleet`,
 `mcp:fleet_write`, `mcp:write`, `mcp:admin`.
 
-Static tokens are bootstrap-only. Prefer DB-backed user tokens because they can
-be revoked without restart.
+Static tokens are bootstrap-only; prefer revocable DB-backed user tokens.
 
 ## User Token API
 
@@ -85,8 +85,7 @@ User tokens allow: `mcp:read`, `mcp:messages`, `mcp:message_write`,
 ## Security Rule
 
 Do not expose broad account/game mutation tools to general users. Each mutation
-needs its own narrow scope, token/OAuth consent, audit logging, rate limit,
-dry-run, and explicit confirmation.
+needs a narrow scope, consent, audit log, rate limit, dry-run, and confirmation.
 
 ## Next Steps
 
@@ -95,5 +94,5 @@ dry-run, and explicit confirmation.
 ## General User Policy
 
 General users may receive read tools and individually scoped confirmed actions.
-Fleet/build/research/admin/bot/debug/DB actions stay blocked until each has
-scoped authorization, rate limits, audit logs, and confirmation flow.
+Build/research/admin/bot/debug/DB actions stay blocked until each has scoped
+authorization, rate limits, audit logs, and confirmation flow.

@@ -203,12 +203,14 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 	verifier := mcpauth.NewCompositeTokenVerifier(repository, staticVerifier)
 	readRepository := mysqlgame.NewMCPReadRepository(db, cfg.UniDBPrefix)
 	writeRepository := mysqlgame.NewMessagesRepository(db, cfg.UniDBPrefix)
+	fleetWriteRepository := mysqlgame.NewFleetRepository(db, cfg.UniDBPrefix)
 	return withCommonMCP(appmcp.NewServiceWithTokenManagement(health, verifier, repository, sessions, appmcp.SecureTokenGenerator{}, time.Now).
 		WithTokenTTL(time.Duration(cfg.MCPTokenTTLSeconds) * time.Second).
 		WithOAuthCodeRepository(repository).
 		WithOAuthRedirectURIs(appmcp.ParseOAuthRedirectURIs(cfg.MCPOAuthRedirectURIs)).
 		WithReadRepository(readRepository).
-		WithWriteRepository(writeRepository))
+		WithWriteRepository(writeRepository).
+		WithFleetWriteRepository(fleetWriteRepository))
 }
 
 func mcpOIDCSigner(cfg config.Config) (mcpoidc.Ed25519Signer, error) {

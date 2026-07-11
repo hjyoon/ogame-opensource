@@ -11,6 +11,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestFleetRepositoryReadsLegacyFleetScreen(t *testing.T) {
@@ -3494,6 +3495,223 @@ func TestFleetRepositoryRecallNoOpsWhenIntermediateRowsAreMissing(t *testing.T) 
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestFleetRepositoryPreviewsMCPRecallFleet(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, map[int]int{
+			domaingame.FleetSmallCargo: 2,
+			domaingame.FleetCruiser:    3,
+		}))},
+		{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
+		{rows: fakeRowsFromValues([]any{44})},
+		{rows: fakeRowsFromValues([]any{100})},
+	}}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	result, err := repository.PreviewMCPRecallFleet(context.Background(), 42, domainmcp.RecallFleetCommand{FleetID: 123})
+	if err != nil {
+		t.Fatalf("PreviewMCPRecallFleet returned error: %v", err)
+	}
+	if result.PlayerID != 42 || result.FleetID != 123 || result.OwnerID != 42 || result.Mission != domaingame.FleetMissionTransport || result.TotalShips != 5 || !result.Recallable || result.Issue != nil {
+		t.Fatalf("unexpected preview result: %+v", result)
+	}
+	if len(runner.execCalls) != 0 {
+		t.Fatalf("preview must not mutate fleet tables: %+v", runner.execCalls)
+	}
+}
+
+func TestFleetRepositoryMCPRecallFleetReturnsPreviewIssue(t *testing.T) {
+	repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues()},
+	}}, "ogame_", nil)
+
+	result, err := repository.PreviewMCPRecallFleet(context.Background(), 42, domainmcp.RecallFleetCommand{FleetID: 123})
+	if err != nil {
+		t.Fatalf("PreviewMCPRecallFleet returned error: %v", err)
+	}
+	if result.Issue == nil || result.Issue.Code != "fleet_not_found" || result.Recallable {
+		t.Fatalf("expected missing fleet issue, got %+v", result)
+	}
+}
+
+func TestFleetRepositoryMCPRecallFleetPreviewEdges(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	if _, err := (FleetRepository{}).PreviewMCPRecallFleet(context.Background(), 42, domainmcp.RecallFleetCommand{FleetID: 123}); err == nil {
+		t.Fatalf("expected nil queryer error")
+	}
+	if _, err := NewFleetRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_", nil).PreviewMCPRecallFleet(context.Background(), 42, domainmcp.RecallFleetCommand{FleetID: 123}); err == nil {
+		t.Fatalf("expected invalid prefix error")
+	}
+
+	tests := []struct {
+		name      string
+		results   []fakeQueryResult
+		wantIssue string
+		wantErr   string
+	}{
+		{
+			name:    "universe query error",
+			results: []fakeQueryResult{{err: errors.New("freeze failed")}},
+			wantErr: "freeze failed",
+		},
+		{
+			name:      "frozen",
+			results:   []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}},
+			wantIssue: "universe_frozen",
+		},
+		{
+			name: "fleet query error",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{err: errors.New("fleet failed")},
+			},
+			wantErr: "fleet failed",
+		},
+		{
+			name: "not recallable",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset, 0, nil))},
+			},
+			wantIssue: "fleet_not_recallable",
+		},
+		{
+			name: "queue query error",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, nil))},
+				{err: errors.New("queue failed")},
+			},
+			wantErr: "queue failed",
+		},
+		{
+			name: "missing queue",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, nil))},
+				{rows: fakeRowsFromValues()},
+			},
+			wantIssue: "fleet_queue_missing",
+		},
+		{
+			name: "origin query error",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, nil))},
+				{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
+				{err: errors.New("origin failed")},
+			},
+			wantErr: "origin failed",
+		},
+		{
+			name: "missing origin",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, nil))},
+				{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
+				{rows: fakeRowsFromValues()},
+			},
+			wantIssue: "fleet_origin_missing",
+		},
+		{
+			name: "target query error",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, nil))},
+				{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
+				{rows: fakeRowsFromValues([]any{44})},
+				{err: errors.New("target failed")},
+			},
+			wantErr: "target failed",
+		},
+		{
+			name: "missing target",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{0})},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, nil))},
+				{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
+				{rows: fakeRowsFromValues([]any{44})},
+				{rows: fakeRowsFromValues()},
+			},
+			wantIssue: "fleet_target_missing",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: tt.results}, "ogame_", func() time.Time { return now })
+			result, err := repository.PreviewMCPRecallFleet(context.Background(), 42, domainmcp.RecallFleetCommand{FleetID: 123})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected %q error, got result=%+v err=%v", tt.wantErr, result, err)
+				}
+				return
+			}
+			if err != nil || result.Issue == nil || result.Issue.Code != tt.wantIssue || result.RequiresConfirmation {
+				t.Fatalf("expected issue %q without confirmation, got result=%+v err=%v", tt.wantIssue, result, err)
+			}
+		})
+	}
+}
+
+func TestFleetRepositoryExecutesMCPRecallFleetThroughLegacyRecall(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	results := []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, map[int]int{domaingame.FleetSmallCargo: 2}))},
+		{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
+		{rows: fakeRowsFromValues([]any{44})},
+		{rows: fakeRowsFromValues([]any{100})},
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, map[int]int{domaingame.FleetSmallCargo: 2}))},
+		{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
+		{rows: fakeRowsFromValues([]any{44})},
+		{rows: fakeRowsFromValues([]any{100})},
+	}
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	result, err := repository.RecallMCPFleet(context.Background(), 42, domainmcp.RecallFleetCommand{FleetID: 123})
+	if err != nil {
+		t.Fatalf("RecallMCPFleet returned error: %v", err)
+	}
+	if !result.Executed || !result.Recallable || result.Issue != nil {
+		t.Fatalf("unexpected recall result: %+v", result)
+	}
+	if len(runner.execCalls) != 4 || !strings.Contains(runner.execCalls[2].sql, "DELETE FROM `ogame_fleet`") {
+		t.Fatalf("expected legacy recall mutation pipeline, got %+v", runner.execCalls)
+	}
+}
+
+func TestFleetRepositoryMCPRecallFleetDoesNotExecuteOnPreviewIssue(t *testing.T) {
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues()},
+	}}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+
+	result, err := repository.RecallMCPFleet(context.Background(), 42, domainmcp.RecallFleetCommand{FleetID: 123})
+	if err != nil || result.Issue == nil || result.Executed || len(runner.execCalls) != 0 {
+		t.Fatalf("expected preview issue without execution, result=%+v err=%v exec=%+v", result, err, runner.execCalls)
+	}
+}
+
+func TestFleetRepositoryMCPRecallFleetPropagatesRecallError(t *testing.T) {
+	results := []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, nil))},
+		{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
+		{rows: fakeRowsFromValues([]any{44})},
+		{rows: fakeRowsFromValues([]any{100})},
+		{err: errors.New("recall freeze failed")},
+	}
+	repository := NewFleetRepositoryWithRunner(&fakeFleetRunner{fakeQueryer: fakeQueryer{results: results}}, &fakeFleetRunner{}, "ogame_", nil)
+	if _, err := repository.RecallMCPFleet(context.Background(), 42, domainmcp.RecallFleetCommand{FleetID: 123}); err == nil || !strings.Contains(err.Error(), "recall freeze failed") {
+		t.Fatalf("expected recall error, got %v", err)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 const (
@@ -722,6 +723,87 @@ func (r FleetRepository) RecallFleetAnyOwner(ctx context.Context, fleetID int) e
 		return nil
 	}
 	return r.recallFleet(ctx, fleetID, r.loadRecallFleetAnyOwner, 0)
+}
+
+func (r FleetRepository) PreviewMCPRecallFleet(ctx context.Context, playerID int, command domainmcp.RecallFleetCommand) (domainmcp.RecallFleetResult, error) {
+	if r.queryer == nil {
+		return domainmcp.RecallFleetResult{}, errors.New("fleet reader unavailable")
+	}
+	result := domainmcp.RecallFleetResult{PlayerID: playerID, FleetID: command.FleetID}
+	fleetTable, err := tableName(r.prefix, "fleet")
+	if err != nil {
+		return domainmcp.RecallFleetResult{}, err
+	}
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return domainmcp.RecallFleetResult{}, err
+	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return domainmcp.RecallFleetResult{}, err
+	}
+	uniTable, err := tableName(r.prefix, "uni")
+	if err != nil {
+		return domainmcp.RecallFleetResult{}, err
+	}
+	frozen, err := r.loadUniverseFrozen(ctx, uniTable)
+	if err != nil {
+		return domainmcp.RecallFleetResult{}, err
+	}
+	if frozen {
+		result.Issue = mcpFleetIssue("universe_frozen", "Universe is frozen.")
+		return result, nil
+	}
+	fleet, found, err := r.loadRecallFleet(ctx, fleetTable, playerID, command.FleetID)
+	if err != nil {
+		return domainmcp.RecallFleetResult{}, err
+	}
+	if !found {
+		result.Issue = mcpFleetIssue("fleet_not_found", "Fleet not found.")
+		return result, nil
+	}
+	result.OwnerID = fleet.OwnerID
+	result.Mission = fleet.Mission
+	result.TotalShips = totalFleetShips(fleet.Ships)
+	result.Recallable = fleetRecallable(fleet.Mission)
+	if !result.Recallable {
+		result.Issue = mcpFleetIssue("fleet_not_recallable", "Fleet cannot be recalled.")
+		return result, nil
+	}
+	if _, found, err := r.loadRecallQueue(ctx, queueTable, fleet.ID); err != nil {
+		return domainmcp.RecallFleetResult{}, err
+	} else if !found {
+		result.Recallable = false
+		result.Issue = mcpFleetIssue("fleet_queue_missing", "Fleet queue entry not found.")
+		return result, nil
+	}
+	if _, found, err := r.loadRecallOriginOwner(ctx, planetsTable, fleet.StartPlanetID); err != nil {
+		return domainmcp.RecallFleetResult{}, err
+	} else if !found {
+		result.Recallable = false
+		result.Issue = mcpFleetIssue("fleet_origin_missing", "Fleet origin planet not found.")
+		return result, nil
+	}
+	if exists, err := r.recallPlanetExists(ctx, planetsTable, fleet.TargetPlanetID); err != nil {
+		return domainmcp.RecallFleetResult{}, err
+	} else if !exists {
+		result.Recallable = false
+		result.Issue = mcpFleetIssue("fleet_target_missing", "Fleet target planet not found.")
+		return result, nil
+	}
+	return result, nil
+}
+
+func (r FleetRepository) RecallMCPFleet(ctx context.Context, playerID int, command domainmcp.RecallFleetCommand) (domainmcp.RecallFleetResult, error) {
+	result, err := r.PreviewMCPRecallFleet(ctx, playerID, command)
+	if err != nil || result.Issue != nil {
+		return result, err
+	}
+	if err := r.RecallFleet(ctx, appgame.FleetRecallQuery{PlayerID: playerID, FleetID: command.FleetID}); err != nil {
+		return domainmcp.RecallFleetResult{}, err
+	}
+	result.Executed = true
+	return result, nil
 }
 
 func (r FleetRepository) recallFleet(ctx context.Context, fleetID int, loader recallFleetLoader, deleteOwnerID int) error {
@@ -1833,6 +1915,20 @@ func fleetCountValues(ids []int, ships map[int]int) []any {
 		values = append(values, count)
 	}
 	return values
+}
+
+func totalFleetShips(ships domaingame.FleetCounts) int {
+	total := 0
+	for _, count := range ships {
+		if count > 0 {
+			total += count
+		}
+	}
+	return total
+}
+
+func mcpFleetIssue(code string, message string) *domainmcp.ActionIssue {
+	return &domainmcp.ActionIssue{Code: code, Message: message}
 }
 
 func fleetLaunchPlanetType(targetType int) int {

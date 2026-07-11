@@ -669,6 +669,26 @@ func TestServiceListsSendMessageToolForMessageWriteScope(t *testing.T) {
 	}
 }
 
+func TestServiceListsRecallFleetToolForFleetWriteScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"fleet-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeFleetWrite}},
+		},
+	}).WithFleetWriteRepository(&fakeFleetWriteRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "fleet-write"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,recall_fleet" {
+		t.Fatalf("unexpected fleet-write tools: %v", names)
+	}
+}
+
 func TestServiceCallsServerHealthTool(t *testing.T) {
 	service := NewService(fakeHealthProvider{})
 
@@ -1353,6 +1373,115 @@ func TestServiceReportMessageRequiresScopeRepositoryAndValidConfirmation(t *test
 	}
 }
 
+func TestServiceCallsRecallFleetWithDryRunAndConfirmation(t *testing.T) {
+	repository := &fakeFleetWriteRepository{
+		preview:  domainmcp.RecallFleetResult{PlayerID: 42, FleetID: 55, OwnerID: 42, Mission: 3, TotalShips: 2, Recallable: true},
+		recalled: domainmcp.RecallFleetResult{PlayerID: 42, FleetID: 55, OwnerID: 42, Mission: 3, TotalShips: 2, Recallable: true, Executed: true},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"fleet-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeFleetWrite}},
+		},
+	}).WithFleetWriteRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "recall_fleet",
+		AccessToken: "fleet-write",
+		Arguments:   map[string]any{"fleetId": float64(55)},
+	})
+	if err != nil {
+		t.Fatalf("recall_fleet dry-run returned error: %v", err)
+	}
+	preview := result.StructuredContent.(map[string]any)["recallFleet"].(domainmcp.RecallFleetResult)
+	if !preview.DryRun || preview.Executed || !preview.Recallable || !preview.RequiresConfirmation || !strings.HasPrefix(preview.Confirmation, "recall_fleet:55:") {
+		t.Fatalf("unexpected recall preview: %+v", preview)
+	}
+	if repository.previewPlayerID != 42 || repository.previewCommand.FleetID != 55 || !repository.previewCommand.DryRun {
+		t.Fatalf("unexpected recall preview command: player=%d command=%+v", repository.previewPlayerID, repository.previewCommand)
+	}
+
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "recall_fleet",
+		AccessToken: "fleet-write",
+		Arguments:   map[string]any{"fleetId": 55, "dryRun": false, "confirm": preview.Confirmation},
+	})
+	if err != nil {
+		t.Fatalf("recall_fleet execute returned error: %v", err)
+	}
+	recalled := result.StructuredContent.(map[string]any)["recallFleet"].(domainmcp.RecallFleetResult)
+	if recalled.DryRun || !recalled.Executed || recalled.RequiresConfirmation || recalled.Confirmation != preview.Confirmation {
+		t.Fatalf("unexpected recall execute: %+v", recalled)
+	}
+	if repository.recallPlayerID != 42 || repository.recallCommand.Confirm != preview.Confirmation || repository.recallCommand.DryRun {
+		t.Fatalf("unexpected recall command: player=%d command=%+v", repository.recallPlayerID, repository.recallCommand)
+	}
+}
+
+func TestServiceRecallFleetDryRunIssueDoesNotRequireConfirmation(t *testing.T) {
+	repository := &fakeFleetWriteRepository{
+		preview: domainmcp.RecallFleetResult{
+			PlayerID: 42,
+			FleetID:  55,
+			Issue:    &domainmcp.ActionIssue{Code: "fleet_not_found", Message: "missing"},
+		},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"fleet-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeFleetWrite}},
+		},
+	}).WithFleetWriteRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "recall_fleet",
+		AccessToken: "fleet-write",
+		Arguments:   map[string]any{"fleetId": 55},
+	})
+	if err != nil {
+		t.Fatalf("recall_fleet dry-run issue returned error: %v", err)
+	}
+	preview := result.StructuredContent.(map[string]any)["recallFleet"].(domainmcp.RecallFleetResult)
+	if !preview.DryRun || preview.RequiresConfirmation || preview.Confirmation != "" || preview.Issue == nil {
+		t.Fatalf("expected issue dry-run without confirmation, got %+v", preview)
+	}
+}
+
+func TestServiceRecallFleetRequiresScopeRepositoryAndValidConfirmation(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"fleet":       {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeFleet}},
+			"fleet-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeFleetWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "recall_fleet", AccessToken: "fleet-write", Arguments: map[string]any{"fleetId": 55}}); err == nil {
+		t.Fatalf("expected missing repository error")
+	}
+
+	service = service.WithFleetWriteRepository(&fakeFleetWriteRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "recall_fleet", AccessToken: "fleet", Arguments: map[string]any{"fleetId": 55}}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without fleet write scope, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "recall_fleet", AccessToken: "fleet-write", Arguments: map[string]any{"fleetId": true}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid id error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "recall_fleet", AccessToken: "fleet-write", Arguments: map[string]any{"fleetId": 55, "dryRun": "no"}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid dryRun error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "recall_fleet", AccessToken: "fleet-write", Arguments: map[string]any{"fleetId": 55, "confirm": true}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid confirm error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "recall_fleet", AccessToken: "fleet-write", Arguments: map[string]any{"fleetId": 55, "dryRun": false}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected missing confirmation error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "recall_fleet", AccessToken: "fleet-write", Arguments: map[string]any{"fleetId": 55, "dryRun": false, "confirm": "wrong"}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected wrong confirmation error, got %v", err)
+	}
+
+	service = service.WithFleetWriteRepository(&fakeFleetWriteRepository{err: errors.New("recall down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "recall_fleet", AccessToken: "fleet-write", Arguments: map[string]any{"fleetId": 55}}); err == nil {
+		t.Fatalf("expected repository error")
+	}
+}
+
 func TestMCPMessageQueryDefaultsCapsAndValidation(t *testing.T) {
 	query, err := mcpMessageQuery(nil)
 	if err != nil || query.Limit != 25 || query.HasMessageType || query.IncludeText {
@@ -2027,6 +2156,34 @@ func (f *fakeWriteRepository) ReportMCPMessage(_ context.Context, playerID int, 
 		return domainmcp.ReportMessageResult{}, f.err
 	}
 	return f.reported, nil
+}
+
+type fakeFleetWriteRepository struct {
+	preview         domainmcp.RecallFleetResult
+	recalled        domainmcp.RecallFleetResult
+	previewPlayerID int
+	recallPlayerID  int
+	previewCommand  domainmcp.RecallFleetCommand
+	recallCommand   domainmcp.RecallFleetCommand
+	err             error
+}
+
+func (f *fakeFleetWriteRepository) PreviewMCPRecallFleet(_ context.Context, playerID int, command domainmcp.RecallFleetCommand) (domainmcp.RecallFleetResult, error) {
+	f.previewPlayerID = playerID
+	f.previewCommand = command
+	if f.err != nil {
+		return domainmcp.RecallFleetResult{}, f.err
+	}
+	return f.preview, nil
+}
+
+func (f *fakeFleetWriteRepository) RecallMCPFleet(_ context.Context, playerID int, command domainmcp.RecallFleetCommand) (domainmcp.RecallFleetResult, error) {
+	f.recallPlayerID = playerID
+	f.recallCommand = command
+	if f.err != nil {
+		return domainmcp.RecallFleetResult{}, f.err
+	}
+	return f.recalled, nil
 }
 
 type fakeSessionLookup struct {
