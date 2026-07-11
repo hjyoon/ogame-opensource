@@ -34,6 +34,10 @@ func NewResourcesRepository(db *sql.DB, prefix string) ResourcesRepository {
 	return ResourcesRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, updateResources: true}
 }
 
+func NewResourcesReadRepository(db *sql.DB, prefix string) ResourcesRepository {
+	return NewResourcesRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
+}
+
 func NewResourcesRepositoryWithQueryer(queryer Queryer, prefix string, now func() time.Time) ResourcesRepository {
 	var execer Execer
 	if runner, ok := queryer.(Execer); ok {
@@ -91,6 +95,60 @@ func (r ResourcesRepository) GetResources(ctx context.Context, query appgame.Res
 		Geologist:         geologist,
 		Engineer:          engineer,
 	}), nil
+}
+
+func (r ResourcesRepository) GetMCPResourceProductionOptions(ctx context.Context, playerID int, planetID int) (domainmcp.ResourceProductionOptions, error) {
+	if r.queryer == nil {
+		return domainmcp.ResourceProductionOptions{}, errors.New("resource production reader unavailable")
+	}
+	reader := r
+	reader.updateResources = false
+	resources, err := reader.GetResources(ctx, appgame.ResourcesQuery{PlayerID: playerID, PlanetID: planetID})
+	if err != nil {
+		return domainmcp.ResourceProductionOptions{}, err
+	}
+	rows := make([]domainmcp.ResourceProductionRow, 0, len(resources.Rows))
+	settings := make([]domainmcp.ResourceProductionSetting, 0, len(resources.Rows))
+	for _, row := range resources.Rows {
+		icons := make([]domainmcp.ResourceProductionBonusIcon, 0, len(row.BonusIcons))
+		for _, icon := range row.BonusIcons {
+			icons = append(icons, domainmcp.ResourceProductionBonusIcon{Image: icon.Image, Alt: icon.Alt})
+		}
+		rows = append(rows, domainmcp.ResourceProductionRow{
+			ID:         row.ID,
+			Name:       row.Name,
+			Level:      row.Level,
+			Percent:    row.Percent,
+			Values:     mcpResourceProductionValues(row.Values),
+			BonusIcons: icons,
+		})
+		settings = append(settings, domainmcp.ResourceProductionSetting{
+			ID:      row.ID,
+			Name:    row.Name,
+			Percent: row.Percent,
+		})
+	}
+	return domainmcp.ResourceProductionOptions{
+		PlayerID: playerID,
+		Planet: domainmcp.Planet{
+			ID:       resources.CurrentPlanet.ID,
+			Name:     resources.CurrentPlanet.Name,
+			Type:     resources.CurrentPlanet.Type,
+			TypeName: mcpPlanetTypeName(resources.CurrentPlanet.Type),
+			Coordinates: domainmcp.Coordinates{
+				Galaxy:   resources.CurrentPlanet.Coordinates.Galaxy,
+				System:   resources.CurrentPlanet.Coordinates.System,
+				Position: resources.CurrentPlanet.Coordinates.Position,
+			},
+			Current: true,
+		},
+		Factor:   resources.Factor,
+		Natural:  mcpResourceProductionValues(resources.Natural),
+		Rows:     rows,
+		Storage:  mcpResourceProductionValues(resources.Storage),
+		Totals:   mcpResourceProductionTotals(resources.Totals),
+		Settings: settings,
+	}, nil
 }
 
 func (r ResourcesRepository) UpdateProduction(ctx context.Context, query appgame.ResourcesUpdateQuery) (domaingame.ResourceProduction, error) {
@@ -285,6 +343,25 @@ func mcpResourceProductionSettings(resources domaingame.ResourceProduction, prod
 		})
 	}
 	return settings
+}
+
+func mcpResourceProductionValues(values domaingame.ResourceProductionValues) domainmcp.ResourceProductionValues {
+	return domainmcp.ResourceProductionValues{
+		Metal:        values.Metal,
+		Crystal:      values.Crystal,
+		Deuterium:    values.Deuterium,
+		Energy:       values.Energy,
+		EnergyRaw:    values.EnergyRaw,
+		EnergyStored: values.EnergyStored,
+	}
+}
+
+func mcpResourceProductionTotals(totals domaingame.ResourceProductionTotals) domainmcp.ResourceProductionTotals {
+	return domainmcp.ResourceProductionTotals{
+		Hour: mcpResourceProductionValues(totals.Hour),
+		Day:  mcpResourceProductionValues(totals.Day),
+		Week: mcpResourceProductionValues(totals.Week),
+	}
 }
 
 func (r ResourcesRepository) loadResourceUser(ctx context.Context, usersTable string, playerID int) (int, bool, bool, error) {

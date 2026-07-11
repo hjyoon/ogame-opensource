@@ -455,6 +455,46 @@ type ResourceProductionSetting struct {
 	Percent int    `json:"percent"`
 }
 
+type ResourceProductionValues struct {
+	Metal        float64 `json:"metal"`
+	Crystal      float64 `json:"crystal"`
+	Deuterium    float64 `json:"deuterium"`
+	Energy       float64 `json:"energy"`
+	EnergyRaw    float64 `json:"energyRaw"`
+	EnergyStored bool    `json:"energyStored"`
+}
+
+type ResourceProductionBonusIcon struct {
+	Image string `json:"image"`
+	Alt   string `json:"alt"`
+}
+
+type ResourceProductionRow struct {
+	ID         int                           `json:"id"`
+	Name       string                        `json:"name"`
+	Level      int                           `json:"level"`
+	Percent    int                           `json:"percent"`
+	Values     ResourceProductionValues      `json:"values"`
+	BonusIcons []ResourceProductionBonusIcon `json:"bonusIcons"`
+}
+
+type ResourceProductionTotals struct {
+	Hour ResourceProductionValues `json:"hour"`
+	Day  ResourceProductionValues `json:"day"`
+	Week ResourceProductionValues `json:"week"`
+}
+
+type ResourceProductionOptions struct {
+	PlayerID int                         `json:"playerId"`
+	Planet   Planet                      `json:"planet"`
+	Factor   float64                     `json:"factor"`
+	Natural  ResourceProductionValues    `json:"natural"`
+	Rows     []ResourceProductionRow     `json:"rows"`
+	Storage  ResourceProductionValues    `json:"storage"`
+	Totals   ResourceProductionTotals    `json:"totals"`
+	Settings []ResourceProductionSetting `json:"settings"`
+}
+
 type UpdateResourceProductionCommand struct {
 	PlanetID   int
 	Production map[int]int

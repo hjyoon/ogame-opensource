@@ -106,6 +106,10 @@ type ResourceWriteRepository interface {
 	UpdateMCPResourceProduction(context.Context, int, domainmcp.UpdateResourceProductionCommand) (domainmcp.UpdateResourceProductionResult, error)
 }
 
+type ResourceProductionReadRepository interface {
+	GetMCPResourceProductionOptions(context.Context, int, int) (domainmcp.ResourceProductionOptions, error)
+}
+
 type PremiumReadRepository interface {
 	GetMCPOfficerStatus(context.Context, int, int) (domainmcp.OfficerStatus, error)
 }
@@ -301,6 +305,7 @@ type Service struct {
 	fleetWrite      FleetWriteRepository
 	queueWrite      QueueWriteRepository
 	resourceWrite   ResourceWriteRepository
+	resourceRead    ResourceProductionReadRepository
 	premiumRead     PremiumReadRepository
 	searchRead      SearchReadRepository
 	galaxyRead      GalaxyReadRepository
@@ -389,6 +394,11 @@ func (s Service) WithQueueWriteRepository(repository QueueWriteRepository) Servi
 
 func (s Service) WithResourceWriteRepository(repository ResourceWriteRepository) Service {
 	s.resourceWrite = repository
+	return s
+}
+
+func (s Service) WithResourceProductionReadRepository(repository ResourceProductionReadRepository) Service {
+	s.resourceRead = repository
 	return s
 }
 
@@ -756,6 +766,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		if s.readRepository != nil {
 			tools = append(tools, listPlanetsTool(), accountOverviewTool(), planetResourcesTool(), buildingQueueTool(), fleetMovementsTool())
 		}
+		if s.resourceRead != nil {
+			tools = append(tools, resourceProductionOptionsTool())
+		}
 		if s.premiumRead != nil {
 			tools = append(tools, officerStatusTool())
 		}
@@ -862,6 +875,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callPlanetResources(ctx, access, command.Arguments)
+	case "get_resource_production_options":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callResourceProductionOptions(ctx, access, command.Arguments)
 	case "get_building_queue":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
 		if err != nil {
@@ -1270,6 +1292,29 @@ func (s Service) callPlanetResources(ctx context.Context, access domainmcp.Acces
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"resources": resources}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callResourceProductionOptions(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.resourceRead == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp resource production read repository unavailable")
+	}
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	options, err := s.resourceRead.GetMCPResourceProductionOptions(ctx, access.PlayerID, planetID)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"resourceProductionOptions": options}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -3711,6 +3756,49 @@ func fleetMovementsTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"fleetMovements"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func resourceProductionOptionsTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_resource_production_options",
+		Title:       "Get Resource Production Options",
+		Description: "Return read-only legacy resources screen production settings, row outputs, storage, and totals for the authenticated player's current or selected planet without updating resources.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet context.",
+				},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"resourceProductionOptions": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId": map[string]any{"type": "integer"},
+						"planet":   map[string]any{"type": "object"},
+						"factor":   map[string]any{"type": "number"},
+						"natural":  map[string]any{"type": "object"},
+						"rows":     map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"storage":  map[string]any{"type": "object"},
+						"totals":   map[string]any{"type": "object"},
+						"settings": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+					},
+					"required": []string{"playerId", "planet", "factor", "natural", "rows", "storage", "totals", "settings"},
+				},
+			},
+			"required": []string{"resourceProductionOptions"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,

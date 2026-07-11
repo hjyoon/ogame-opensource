@@ -49,6 +49,33 @@ func TestResourcesRepositoryReadsLegacyResourceProduction(t *testing.T) {
 	}
 }
 
+func TestResourcesRepositoryMapsMCPResourceProductionOptions(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	queryer := &fakeQueryer{results: resourceReadResults(now)}
+	repository := NewResourcesRepositoryWithRunner(queryer, nil, "ogame_", func() time.Time { return now })
+
+	options, err := repository.GetMCPResourceProductionOptions(context.Background(), 42, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.PlayerID != 42 || options.Planet.ID != 99 || options.Planet.TypeName != "planet" || options.Factor != 1 {
+		t.Fatalf("unexpected mcp resource production summary: %+v", options)
+	}
+	if options.Natural.Metal != 40 || options.Storage.Metal != 100000 || options.Totals.Hour.Metal != 1596 {
+		t.Fatalf("unexpected mcp resource production values: %+v", options)
+	}
+	if len(options.Rows) == 0 || len(options.Settings) != len(options.Rows) {
+		t.Fatalf("expected rows and settings, got rows=%+v settings=%+v", options.Rows, options.Settings)
+	}
+	satellite := mcpResourceProductionRowByID(t, options, domaingame.FleetSolarSatellite)
+	if satellite.Level != 3 || satellite.Percent != 100 || satellite.Values.Energy != 112.2 || len(satellite.BonusIcons) != 1 {
+		t.Fatalf("unexpected mcp satellite row: %+v", satellite)
+	}
+	if strings.Contains(queryer.calls[0].sql, "UPDATE") {
+		t.Fatalf("read-only MCP resource production options should not update rows, got %+v", queryer.calls)
+	}
+}
+
 func TestNewResourcesRepositoryKeepsSQLQueryer(t *testing.T) {
 	repository := NewResourcesRepository(nil, "ogame_")
 
@@ -63,6 +90,13 @@ func TestNewResourcesRepositoryKeepsSQLQueryer(t *testing.T) {
 	}
 	if repository.now == nil {
 		t.Fatal("expected default clock")
+	}
+	readRepository := NewResourcesReadRepository(nil, "ogame_")
+	if readRepository.execer != nil || readRepository.updateResources {
+		t.Fatalf("expected MCP read repository without writer/resource updates, got %+v", readRepository)
+	}
+	if _, err := (ResourcesRepository{}).GetMCPResourceProductionOptions(context.Background(), 42, 0); err == nil {
+		t.Fatal("expected nil resource production reader error")
 	}
 
 	withRunner := NewResourcesRepositoryWithQueryer(&fakeResourceRunner{}, "ogame_", time.Now)
@@ -476,6 +510,17 @@ func resourceRowByID(t *testing.T, resources domaingame.ResourceProduction, id i
 	}
 	t.Fatalf("resource row %d not found in %+v", id, resources.Rows)
 	return domaingame.ResourceProductionRow{}
+}
+
+func mcpResourceProductionRowByID(t *testing.T, options domainmcp.ResourceProductionOptions, id int) domainmcp.ResourceProductionRow {
+	t.Helper()
+	for _, row := range options.Rows {
+		if row.ID == id {
+			return row
+		}
+	}
+	t.Fatalf("mcp resource row %d not found in %+v", id, options.Rows)
+	return domainmcp.ResourceProductionRow{}
 }
 
 type fakeResourceRunner struct {

@@ -320,6 +320,8 @@ try {
   const overviewToolBody = parseJSON(overviewTool);
   const resourcesTool = await mcpJSONRPC("tools/call", { name: "get_planet_resources", arguments: {} }, { id: 24, headers: authHeaders });
   const resourcesToolBody = parseJSON(resourcesTool);
+  const resourceProductionTool = await mcpJSONRPC("tools/call", { name: "get_resource_production_options", arguments: {} }, { id: 52, headers: authHeaders });
+  const resourceProductionToolBody = parseJSON(resourceProductionTool);
   const queueTool = await mcpJSONRPC("tools/call", { name: "get_building_queue", arguments: {} }, { id: 25, headers: authHeaders });
   const queueToolBody = parseJSON(queueTool);
   const fleetTool = await mcpJSONRPC("tools/call", { name: "get_fleet_movements", arguments: {} }, { id: 26, headers: authHeaders });
@@ -401,6 +403,7 @@ try {
     "list_planets",
     "get_account_overview",
     "get_planet_resources",
+    "get_resource_production_options",
     "get_building_queue",
     "get_fleet_movements",
     "get_fleet_options",
@@ -462,6 +465,7 @@ try {
       check(planetsTool.status === 200 && (planetsToolBody.result?.structuredContent?.planets ?? []).length > 0, "list_planets returns at least one planet", planetsToolBody.result ?? {}),
       check(overviewTool.status === 200 && Number(overviewToolBody.result?.structuredContent?.overview?.playerId ?? 0) === login.playerID, "get_account_overview returns current player data", overviewToolBody.result ?? {}),
       check(resourcesTool.status === 200 && Number(resourcesToolBody.result?.structuredContent?.resources?.playerId ?? 0) === login.playerID, "get_planet_resources returns current player data", resourcesToolBody.result ?? {}),
+      check(resourceProductionTool.status === 200 && Number(resourceProductionToolBody.result?.structuredContent?.resourceProductionOptions?.playerId ?? 0) === login.playerID && Array.isArray(resourceProductionToolBody.result?.structuredContent?.resourceProductionOptions?.rows), "get_resource_production_options returns read-only legacy production settings", resourceProductionToolBody.result ?? {}),
       check(queueTool.status === 200 && Number(queueToolBody.result?.structuredContent?.buildingQueue?.playerId ?? 0) === login.playerID, "get_building_queue returns current player data", queueToolBody.result ?? {}),
       check(fleetTool.status === 200 && Number(fleetToolBody.result?.structuredContent?.fleetMovements?.playerId ?? 0) === login.playerID, "get_fleet_movements returns current player data", fleetToolBody.result ?? {}),
       check(fleetOptionsTool.status === 200 && Number(fleetOptionsToolBody.result?.structuredContent?.fleetOptions?.playerId ?? 0) === login.playerID && Array.isArray(fleetOptionsToolBody.result?.structuredContent?.fleetOptions?.ships), "get_fleet_options returns read-only legacy fleet screen state", fleetOptionsToolBody.result ?? {}),

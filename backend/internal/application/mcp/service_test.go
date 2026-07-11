@@ -949,6 +949,26 @@ func TestServiceListsUpdateResourceProductionToolForResourcesWriteScope(t *testi
 	}
 }
 
+func TestServiceListsResourceProductionOptionsToolForReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithResourceProductionReadRepository(&fakeResourceProductionReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_resource_production_options" {
+		t.Fatalf("unexpected read resource production tools: %v", names)
+	}
+}
+
 func TestServiceListsRecruitOfficerToolForPremiumWriteScope(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -3020,6 +3040,71 @@ func TestServiceUpdateResourceProductionRequiresScopeRepositoryAndValidParams(t 
 	}
 }
 
+func TestServiceCallsResourceProductionOptionsTool(t *testing.T) {
+	options := domainmcp.ResourceProductionOptions{
+		PlayerID: 42,
+		Planet:   domainmcp.Planet{ID: 99, Name: "Arakis"},
+		Rows: []domainmcp.ResourceProductionRow{{
+			ID:      1,
+			Name:    "Metal Mine",
+			Level:   10,
+			Percent: 80,
+		}},
+		Settings: []domainmcp.ResourceProductionSetting{{ID: 1, Name: "Metal Mine", Percent: 80}},
+	}
+	repository := &fakeResourceProductionReadRepository{result: options}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithResourceProductionReadRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_resource_production_options",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": "99"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["resourceProductionOptions"].(domainmcp.ResourceProductionOptions)
+	if result.IsError || got.PlayerID != 42 || got.Planet.ID != 99 || len(got.Rows) != 1 || got.Rows[0].Name != "Metal Mine" {
+		t.Fatalf("unexpected resource production options result: %+v", result)
+	}
+	if repository.playerID != 42 || repository.planetID != 99 {
+		t.Fatalf("unexpected resource production options command: player=%d planet=%d", repository.playerID, repository.planetID)
+	}
+}
+
+func TestServiceResourceProductionOptionsToolRequiresRepositoryReadScopeAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_resource_production_options", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing resource production read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_resource_production_options", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithResourceProductionReadRepository(&fakeResourceProductionReadRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_resource_production_options",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": true},
+	}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid planet id error, got %v", err)
+	}
+
+	service = service.WithResourceProductionReadRepository(&fakeResourceProductionReadRepository{err: errors.New("resource production down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_resource_production_options", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "resource production down") {
+		t.Fatalf("expected resource production repository error, got %v", err)
+	}
+}
+
 func TestServiceCallsRecruitOfficerWithDryRunAndConfirmation(t *testing.T) {
 	repository := &fakePremiumWriteRepository{
 		preview: domainmcp.RecruitOfficerResult{
@@ -4129,6 +4214,22 @@ func (f *fakeResourceWriteRepository) UpdateMCPResourceProduction(_ context.Cont
 		return domainmcp.UpdateResourceProductionResult{}, f.err
 	}
 	return f.updated, nil
+}
+
+type fakeResourceProductionReadRepository struct {
+	result   domainmcp.ResourceProductionOptions
+	playerID int
+	planetID int
+	err      error
+}
+
+func (f *fakeResourceProductionReadRepository) GetMCPResourceProductionOptions(_ context.Context, playerID int, planetID int) (domainmcp.ResourceProductionOptions, error) {
+	f.playerID = playerID
+	f.planetID = planetID
+	if f.err != nil {
+		return domainmcp.ResourceProductionOptions{}, f.err
+	}
+	return f.result, nil
 }
 
 type fakePremiumWriteRepository struct {
