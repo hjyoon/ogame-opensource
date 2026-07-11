@@ -338,6 +338,8 @@ try {
   const technologyTreeToolBody = parseJSON(technologyTreeTool);
   const buildingOptionsTool = await mcpJSONRPC("tools/call", { name: "get_building_options", arguments: {} }, { id: 47, headers: authHeaders });
   const buildingOptionsToolBody = parseJSON(buildingOptionsTool);
+  const researchOptionsTool = await mcpJSONRPC("tools/call", { name: "get_research_options", arguments: {} }, { id: 48, headers: authHeaders });
+  const researchOptionsToolBody = parseJSON(researchOptionsTool);
   const messagesTool = await mcpJSONRPC("tools/call", { name: "list_messages", arguments: { limit: 5 } }, { id: 29, headers: authHeaders });
   const messagesToolBody = parseJSON(messagesTool);
   const sendMessageDryRun = await mcpJSONRPC("tools/call", { name: "send_message", arguments: { targetPlayerId: login.playerID, subject: "MCP smoke dry-run", text: "This is a dry-run from MCP smoke." } }, { id: 30, headers: authHeaders });
@@ -402,6 +404,7 @@ try {
     "get_empire_overview",
     "get_technology_tree",
     "get_building_options",
+    "get_research_options",
     "list_messages",
     "get_message",
     "send_message",
@@ -459,6 +462,7 @@ try {
       check(empireOverviewTool.status === 200 && Number(empireOverviewToolBody.result?.structuredContent?.empire?.playerId ?? 0) === login.playerID && Array.isArray(empireOverviewToolBody.result?.structuredContent?.empire?.planets), "get_empire_overview returns read-only empire aggregate rows", empireOverviewToolBody.result ?? {}),
       check(technologyTreeTool.status === 200 && Number(technologyTreeToolBody.result?.structuredContent?.technology?.playerId ?? 0) === login.playerID && Array.isArray(technologyTreeToolBody.result?.structuredContent?.technology?.groups), "get_technology_tree returns legacy requirements and info rows", technologyTreeToolBody.result ?? {}),
       check(buildingOptionsTool.status === 200 && Number(buildingOptionsToolBody.result?.structuredContent?.buildingOptions?.playerId ?? 0) === login.playerID && Array.isArray(buildingOptionsToolBody.result?.structuredContent?.buildingOptions?.items), "get_building_options returns read-only legacy building options", buildingOptionsToolBody.result ?? {}),
+      check(researchOptionsTool.status === 200 && Number(researchOptionsToolBody.result?.structuredContent?.researchOptions?.playerId ?? 0) === login.playerID && Array.isArray(researchOptionsToolBody.result?.structuredContent?.researchOptions?.items), "get_research_options returns read-only legacy research options", researchOptionsToolBody.result ?? {}),
       check(messagesTool.status === 200 && Number(messagesToolBody.result?.structuredContent?.messages?.playerId ?? 0) === login.playerID && Array.isArray(messagesToolBody.result?.structuredContent?.messages?.messages), "list_messages returns current player message rows without mutation", messagesToolBody.result ?? {}),
       check(sendMessageDryRun.status === 200 && Number(sendMessageDryRunBody.result?.structuredContent?.sendMessage?.playerId ?? 0) === login.playerID && sendMessageDryRunBody.result?.structuredContent?.sendMessage?.dryRun === true && sendMessageDryRunBody.result?.structuredContent?.sendMessage?.requiresConfirmation === true && String(sendMessageDryRunBody.result?.structuredContent?.sendMessage?.confirmation ?? "").startsWith(`send_message:${login.playerID}:`), "send_message dry-run returns explicit confirmation without executing", sendMessageDryRunBody.result ?? {}),
       check(firstMessageID === 0 || (deleteMessageDryRun?.status === 200 && Number(deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.playerId ?? 0) === login.playerID && deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.dryRun === true && deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.requiresConfirmation === true && deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.executed === false && String(deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.confirmation ?? "").startsWith(`delete_messages:${firstMessageID}:`)), "delete_messages dry-run returns explicit confirmation for an owned visible message when available", {

@@ -26,7 +26,7 @@ Implemented:
 - React options UI for DB token list/create/one-time secret/revoke.
 - Go MCP smoke E2E covers transport, tokens, OAuth, tools, mutations, invalid
   params, expiry, revoke.
-- OAuth 2.1 public-client base:
+- OAuth 2.1:
   - `/.well-known/oauth-authorization-server`
   - PRM endpoint and 401 discovery challenge
   - `/oauth/authorize` consent page and code redirect
@@ -44,7 +44,7 @@ Implemented:
 - JSON audit logging for every `tools/call`; no secrets are logged.
 - Authenticated `mcp:read`: planets, overview, resources, queue,
   fleet movements, officer status, search, galaxy, statistics, empire,
-  technology, buildings. No legacy queue/resource mutations.
+  technology, buildings, research. No legacy queue/resource mutations.
 - Authenticated `mcp:messages` tools: `list_messages` and `get_message`.
   Read owned inbox rows without marking read or cleanup mutation.
 - Authenticated `mcp:message_write` tools: `send_message`, `delete_messages`,

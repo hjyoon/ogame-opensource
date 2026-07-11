@@ -756,6 +756,26 @@ func TestServiceListsBuildingOptionsToolForReadScope(t *testing.T) {
 	}
 }
 
+func TestServiceListsResearchOptionsToolForReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithResearchOptionsReadRepository(&fakeResearchOptionsReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_research_options" {
+		t.Fatalf("unexpected read research tools: %v", names)
+	}
+}
+
 func TestServiceListsMessageToolsForMessageScopedTokens(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -1745,6 +1765,72 @@ func TestServiceBuildingOptionsToolRequiresRepositoryReadScopeAndValidArguments(
 	service = service.WithBuildingOptionsReadRepository(&fakeBuildingOptionsReadRepository{err: errors.New("buildings down")})
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_building_options", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "buildings down") {
 		t.Fatalf("expected building repository error, got %v", err)
+	}
+}
+
+func TestServiceCallsResearchOptionsTool(t *testing.T) {
+	options := domainmcp.ResearchOptions{
+		PlayerID: 42,
+		Planet:   domainmcp.Planet{ID: 99, Name: "Arakis"},
+		HasLab:   true,
+		Items: []domainmcp.BuildingOption{{
+			ID:        108,
+			Name:      "Computer Technology",
+			Level:     4,
+			NextLevel: 5,
+			CanBuild:  true,
+		}},
+	}
+	repository := &fakeResearchOptionsReadRepository{result: options}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithResearchOptionsReadRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_research_options",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": "99"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["researchOptions"].(domainmcp.ResearchOptions)
+	if result.IsError || got.PlayerID != 42 || got.Planet.ID != 99 || len(got.Items) != 1 || got.Items[0].Name != "Computer Technology" {
+		t.Fatalf("unexpected research options result: %+v", result)
+	}
+	if repository.playerID != 42 || repository.planetID != 99 {
+		t.Fatalf("unexpected research options command: player=%d planet=%d", repository.playerID, repository.planetID)
+	}
+}
+
+func TestServiceResearchOptionsToolRequiresRepositoryReadScopeAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_research_options", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing research read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_research_options", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithResearchOptionsReadRepository(&fakeResearchOptionsReadRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_research_options",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": true},
+	}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid planet id error, got %v", err)
+	}
+
+	service = service.WithResearchOptionsReadRepository(&fakeResearchOptionsReadRepository{err: errors.New("research down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_research_options", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "research down") {
+		t.Fatalf("expected research repository error, got %v", err)
 	}
 }
 
@@ -3922,6 +4008,22 @@ func (f *fakeBuildingOptionsReadRepository) GetMCPBuildingOptions(_ context.Cont
 	f.planetID = planetID
 	if f.err != nil {
 		return domainmcp.BuildingOptions{}, f.err
+	}
+	return f.result, nil
+}
+
+type fakeResearchOptionsReadRepository struct {
+	result   domainmcp.ResearchOptions
+	playerID int
+	planetID int
+	err      error
+}
+
+func (f *fakeResearchOptionsReadRepository) GetMCPResearchOptions(_ context.Context, playerID int, planetID int) (domainmcp.ResearchOptions, error) {
+	f.playerID = playerID
+	f.planetID = planetID
+	if f.err != nil {
+		return domainmcp.ResearchOptions{}, f.err
 	}
 	return f.result, nil
 }

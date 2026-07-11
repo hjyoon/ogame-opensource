@@ -209,6 +209,25 @@ type BuildingOptions struct {
 	Items           []BuildingOption     `json:"items"`
 }
 
+type ResearchQueueEntry struct {
+	TaskID           int  `json:"taskId"`
+	PlanetID         int  `json:"planetId"`
+	TechID           int  `json:"techId"`
+	Level            int  `json:"level"`
+	Start            int  `json:"start"`
+	End              int  `json:"end"`
+	RemainingSeconds int  `json:"remainingSeconds"`
+	Cancelable       bool `json:"cancelable"`
+}
+
+type ResearchOptions struct {
+	PlayerID int                 `json:"playerId"`
+	Planet   Planet              `json:"planet"`
+	HasLab   bool                `json:"hasLab"`
+	Active   *ResearchQueueEntry `json:"active,omitempty"`
+	Items    []BuildingOption    `json:"items"`
+}
+
 type MessageQuery struct {
 	Limit          int
 	MessageType    int

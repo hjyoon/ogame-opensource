@@ -56,6 +56,30 @@ func TestResearchRepositoryReadsLegacyResearch(t *testing.T) {
 	}
 }
 
+func TestResearchRepositoryMapsMCPResearchOptions(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	queryer := &fakeQueryer{results: researchOptionsReadResults(now)}
+	repository := NewResearchRepositoryWithRunner(queryer, nil, "ogame_", func() time.Time { return now })
+
+	options, err := repository.GetMCPResearchOptions(context.Background(), 42, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.PlayerID != 42 || options.Planet.ID != 99 || options.Planet.TypeName != "planet" || !options.HasLab {
+		t.Fatalf("unexpected mcp research options summary: %+v", options)
+	}
+	if options.Active == nil || options.Active.TaskID != 77 || options.Active.RemainingSeconds != 50 {
+		t.Fatalf("unexpected mcp active research queue: %+v", options.Active)
+	}
+	computer := domainMCPResearchOptionByID(t, options, domaingame.ResearchComputer)
+	if computer.DurationSeconds != 59 || computer.Cost.Crystal <= 0 {
+		t.Fatalf("unexpected mcp computer option: %+v", computer)
+	}
+	if strings.Contains(queryer.calls[0].sql, "SELECT speed, freeze") {
+		t.Fatalf("read-only MCP research options should not finish queues, got first query %+v", queryer.calls[0])
+	}
+}
+
 func TestResearchRepositoryReadsResearchWithRunnerFinishingDueQueues(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
@@ -140,6 +164,13 @@ func TestNewResearchRepositoryKeepsSQLQueryer(t *testing.T) {
 	withDefaultClock = NewResearchRepositoryWithQueryer(nil, "ogame_", nil)
 	if withDefaultClock.now == nil {
 		t.Fatal("expected nil clock to default")
+	}
+	readRepository := NewResearchReadRepository(nil, "ogame_")
+	if readRepository.execer != nil || readRepository.updateResources {
+		t.Fatalf("expected MCP read repository without writer/resource updates, got %+v", readRepository)
+	}
+	if _, err := (ResearchRepository{}).GetMCPResearchOptions(context.Background(), 42, 0); err == nil {
+		t.Fatal("expected nil research reader error")
 	}
 }
 
@@ -1053,6 +1084,21 @@ func researchReadPrefixResults() []fakeQueryResult {
 	)
 }
 
+func researchOptionsReadResults(now time.Time) []fakeQueryResult {
+	return []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 7, 99, 1, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3, 12800, 19, 4, 163, 10000.0, 10000.0, 10000.0, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3})},
+		{rows: fakeRowsFromValues([]any{2})},
+		{rows: fakeRowsFromValues(buildingLevelRow(map[int]int{domaingame.BuildingResearchLab: 3}))},
+		{rows: fakeRowsFromValues(allResearchLevelRow(map[int]int{domaingame.ResearchEnergy: 1, domaingame.ResearchIntergalacticNetwork: 1}))},
+		{rows: fakeRowsFromValues([]any{99, 3}, []any{100, 7})},
+		{rows: fakeRowsFromValues([]any{2.0})},
+		{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix()})},
+		{rows: fakeRowsFromValues([]any{77, 99, domaingame.ResearchEnergy, 2, int(now.Unix() - 10), int(now.Unix() + 50), 0, 0})},
+	}
+}
+
 func researchMutationPrefixResults() []fakeQueryResult {
 	return []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{2.0, 0})},
@@ -1086,6 +1132,17 @@ func researchByID(t *testing.T, research domaingame.Research, id int) domaingame
 	}
 	t.Fatalf("research %d not found in %+v", id, research.Items)
 	return domaingame.BuildingItem{}
+}
+
+func domainMCPResearchOptionByID(t *testing.T, options domainmcp.ResearchOptions, id int) domainmcp.BuildingOption {
+	t.Helper()
+	for _, item := range options.Items {
+		if item.ID == id {
+			return item
+		}
+	}
+	t.Fatalf("research option %d not found in %+v", id, options.Items)
+	return domainmcp.BuildingOption{}
 }
 
 func containsResearch(research domaingame.Research, id int) bool {

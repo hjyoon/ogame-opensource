@@ -25,6 +25,10 @@ func NewResearchRepository(db *sql.DB, prefix string) ResearchRepository {
 	return ResearchRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, updateResources: true}
 }
 
+func NewResearchReadRepository(db *sql.DB, prefix string) ResearchRepository {
+	return NewResearchRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
+}
+
 func NewResearchRepositoryWithQueryer(queryer Queryer, prefix string, now func() time.Time) ResearchRepository {
 	var execer Execer
 	if runner, ok := queryer.(Execer); ok {
@@ -97,6 +101,64 @@ func (r ResearchRepository) GetResearch(ctx context.Context, query appgame.Resea
 
 	labLevels := domaingame.BuildResearchLabLevels(levels[domaingame.BuildingResearchLab], otherLabs, research)
 	return domaingame.BuildResearch(overview, levels, research, labLevels, speed, technocrat, active), nil
+}
+
+func (r ResearchRepository) GetMCPResearchOptions(ctx context.Context, playerID int, planetID int) (domainmcp.ResearchOptions, error) {
+	if r.queryer == nil {
+		return domainmcp.ResearchOptions{}, errors.New("research reader unavailable")
+	}
+	research, err := r.GetResearch(ctx, appgame.ResearchQuery{PlayerID: playerID, PlanetID: planetID})
+	if err != nil {
+		return domainmcp.ResearchOptions{}, err
+	}
+	items := make([]domainmcp.BuildingOption, 0, len(research.Items))
+	for _, item := range research.Items {
+		items = append(items, domainmcp.BuildingOption{
+			ID:              item.ID,
+			Name:            item.Name,
+			Description:     item.Description,
+			Level:           item.Level,
+			NextLevel:       item.NextLevel,
+			Cost:            mcpTechnologyCost(item.Cost),
+			DurationSeconds: item.DurationSeconds,
+			CanBuild:        item.CanBuild,
+			Action:          item.Action,
+		})
+	}
+	return domainmcp.ResearchOptions{
+		PlayerID: playerID,
+		Planet: domainmcp.Planet{
+			ID:       research.CurrentPlanet.ID,
+			Name:     research.CurrentPlanet.Name,
+			Type:     research.CurrentPlanet.Type,
+			TypeName: mcpPlanetTypeName(research.CurrentPlanet.Type),
+			Coordinates: domainmcp.Coordinates{
+				Galaxy:   research.CurrentPlanet.Coordinates.Galaxy,
+				System:   research.CurrentPlanet.Coordinates.System,
+				Position: research.CurrentPlanet.Coordinates.Position,
+			},
+			Current: true,
+		},
+		HasLab: research.HasLab,
+		Active: mcpResearchQueueEntry(research.Active),
+		Items:  items,
+	}, nil
+}
+
+func mcpResearchQueueEntry(queue *domaingame.ResearchQueue) *domainmcp.ResearchQueueEntry {
+	if queue == nil {
+		return nil
+	}
+	return &domainmcp.ResearchQueueEntry{
+		TaskID:           queue.TaskID,
+		PlanetID:         queue.PlanetID,
+		TechID:           queue.TechID,
+		Level:            queue.Level,
+		Start:            queue.Start,
+		End:              queue.End,
+		RemainingSeconds: queue.RemainingSeconds,
+		Cancelable:       queue.Cancelable,
+	}
 }
 
 func (r ResearchRepository) MutateResearch(ctx context.Context, query appgame.ResearchMutationQuery) (appgame.ResearchMutationOutcome, error) {
