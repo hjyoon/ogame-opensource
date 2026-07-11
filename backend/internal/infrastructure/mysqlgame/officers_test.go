@@ -45,6 +45,28 @@ func TestOfficersRepositoryReadsOfficerStatus(t *testing.T) {
 	}
 }
 
+func TestOfficersRepositoryMCPReadsOfficerStatus(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	queryer := &fakeQueryer{results: append(optionsOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{4000, 7000, now.Add(time.Hour).Unix(), int64(0), int64(0), int64(0), int64(0)})},
+	)}
+	repository := NewOfficersRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+
+	status, err := repository.GetMCPOfficerStatus(context.Background(), 42, 99)
+	if err != nil {
+		t.Fatalf("GetMCPOfficerStatus returned error: %v", err)
+	}
+	if status.PlayerID != 42 || status.PlanetID != 99 || status.PaidDarkMatter != 4000 || status.FreeDarkMatter != 7000 || len(status.Officers) != 5 {
+		t.Fatalf("unexpected officer status: %+v", status)
+	}
+	if !status.Officers[0].Active || status.Officers[0].Name != "Commander" || status.Officers[0].WeekCost != domaingame.OfficerWeekCost {
+		t.Fatalf("unexpected officer row: %+v", status.Officers[0])
+	}
+	if _, err := (OfficersRepository{}).GetMCPOfficerStatus(context.Background(), 42, 99); err == nil {
+		t.Fatalf("expected missing reader error")
+	}
+}
+
 func TestOfficersRepositoryRecruitOfficerUpdatesDMAndTimer(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: append(

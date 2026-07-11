@@ -64,6 +64,37 @@ func (r OfficersRepository) GetOfficers(ctx context.Context, query appgame.Offic
 	return domaingame.NewOfficers(overview, user, timers, r.now()), nil
 }
 
+func (r OfficersRepository) GetMCPOfficerStatus(ctx context.Context, playerID int, planetID int) (domainmcp.OfficerStatus, error) {
+	if r.queryer == nil {
+		return domainmcp.OfficerStatus{}, errors.New("officers reader unavailable")
+	}
+	officers, err := r.GetOfficers(ctx, appgame.OfficersQuery{PlayerID: playerID, PlanetID: planetID})
+	if err != nil {
+		return domainmcp.OfficerStatus{}, err
+	}
+	rows := make([]domainmcp.OfficerStatusRow, 0, len(officers.Rows))
+	for _, row := range officers.Rows {
+		rows = append(rows, domainmcp.OfficerStatusRow{
+			ID:             row.ID,
+			Key:            row.Key,
+			Name:           row.Name,
+			Active:         row.Active,
+			Until:          row.Until,
+			DaysLeft:       row.DaysLeft,
+			WeekCost:       row.WeekCost,
+			ThreeMonthCost: row.ThreeMonthCost,
+			Note:           row.Note,
+		})
+	}
+	return domainmcp.OfficerStatus{
+		PlayerID:       playerID,
+		PlanetID:       officers.CurrentPlanet.ID,
+		PaidDarkMatter: officers.User.PaidDarkMatter,
+		FreeDarkMatter: officers.User.FreeDarkMatter,
+		Officers:       rows,
+	}, nil
+}
+
 func (r OfficersRepository) RecruitOfficer(ctx context.Context, query appgame.OfficersMutationQuery) (domaingame.Officers, *domaingame.OfficerActionIssue, error) {
 	if r.execer == nil {
 		return domaingame.Officers{}, nil, errors.New("officers updater unavailable")

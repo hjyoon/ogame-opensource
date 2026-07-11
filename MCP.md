@@ -6,11 +6,10 @@ Keep <4KB; split details.
 
 Implemented:
 
-- Streamable HTTP JSON-RPC entrypoint.
-- `POST /mcp` for JSON-RPC requests.
+- Streamable HTTP JSON-RPC entrypoint: `POST /mcp`.
 - `GET /mcp` returns `405`; SSE stream is not implemented yet.
 - `initialize`, `ping`, `tools/list`, and `tools/call`.
-- Protocol guard for `2025-06-18` plus `2025-03-26` fallback.
+- Protocol guard for `2025-06-18` plus fallback.
 - Browser `Origin` guard against DNS rebinding.
 - Clean Architecture MCP packages: domain, application, HTTP delivery.
 - First safe read-only tool: `get_server_health`.
@@ -43,8 +42,8 @@ Implemented:
 - Consent CSRF+UX shows resource, redirect, scopes, deny.
 - MCP/OAuth rate limits on RPC, OAuth, and token API paths.
 - JSON audit logging for every `tools/call`; no secrets are logged.
-- Authenticated `mcp:read`: planets, overview, resources, building queue,
-  fleet movements. Read-only; avoid legacy queue/resource mutations.
+- Authenticated `mcp:read`: planets, overview, resources, queue,
+  fleet movements, officer status. No legacy queue/resource mutations.
 - Authenticated `mcp:messages` tools: `list_messages` and `get_message`.
   Read owned inbox rows without marking read or cleanup mutation.
 - Authenticated `mcp:message_write` tools: `send_message`, `delete_messages`,

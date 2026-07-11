@@ -418,6 +418,26 @@ type RecruitOfficerResult struct {
 	Issue                *ActionIssue `json:"issue,omitempty"`
 }
 
+type OfficerStatusRow struct {
+	ID             int    `json:"id"`
+	Key            string `json:"key"`
+	Name           string `json:"name"`
+	Active         bool   `json:"active"`
+	Until          int64  `json:"until,omitempty"`
+	DaysLeft       int    `json:"daysLeft,omitempty"`
+	WeekCost       int    `json:"weekCost"`
+	ThreeMonthCost int    `json:"threeMonthCost"`
+	Note           string `json:"note,omitempty"`
+}
+
+type OfficerStatus struct {
+	PlayerID       int                `json:"playerId"`
+	PlanetID       int                `json:"planetId"`
+	PaidDarkMatter int                `json:"paidDarkMatter"`
+	FreeDarkMatter int                `json:"freeDarkMatter"`
+	Officers       []OfficerStatusRow `json:"officers"`
+}
+
 type DispatchFleetCommand struct {
 	PlanetID        int
 	Ships           map[int]int

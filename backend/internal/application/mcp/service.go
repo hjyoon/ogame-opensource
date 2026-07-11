@@ -106,6 +106,10 @@ type ResourceWriteRepository interface {
 	UpdateMCPResourceProduction(context.Context, int, domainmcp.UpdateResourceProductionCommand) (domainmcp.UpdateResourceProductionResult, error)
 }
 
+type PremiumReadRepository interface {
+	GetMCPOfficerStatus(context.Context, int, int) (domainmcp.OfficerStatus, error)
+}
+
 type PremiumWriteRepository interface {
 	PreviewMCPRecruitOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
 	RecruitMCPOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
@@ -257,6 +261,7 @@ type Service struct {
 	fleetWrite      FleetWriteRepository
 	queueWrite      QueueWriteRepository
 	resourceWrite   ResourceWriteRepository
+	premiumRead     PremiumReadRepository
 	premiumWrite    PremiumWriteRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
@@ -334,6 +339,11 @@ func (s Service) WithQueueWriteRepository(repository QueueWriteRepository) Servi
 
 func (s Service) WithResourceWriteRepository(repository ResourceWriteRepository) Service {
 	s.resourceWrite = repository
+	return s
+}
+
+func (s Service) WithPremiumReadRepository(repository PremiumReadRepository) Service {
+	s.premiumRead = repository
 	return s
 }
 
@@ -646,6 +656,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		if s.readRepository != nil {
 			tools = append(tools, listPlanetsTool(), accountOverviewTool(), planetResourcesTool(), buildingQueueTool(), fleetMovementsTool())
 		}
+		if s.premiumRead != nil {
+			tools = append(tools, officerStatusTool())
+		}
 	}
 	if access.HasScope(domainmcp.ScopeMessages) && s.readRepository != nil {
 		tools = append(tools, listMessagesTool(), getMessageTool())
@@ -737,6 +750,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callFleetMovements(ctx, access)
+	case "get_officer_status":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callOfficerStatus(ctx, access, command.Arguments)
 	case "list_messages":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeMessages)
 		if err != nil {
@@ -1070,6 +1092,29 @@ func (s Service) callFleetMovements(ctx context.Context, access domainmcp.Access
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"fleetMovements": movements}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callOfficerStatus(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.premiumRead == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp premium read repository unavailable")
+	}
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	status, err := s.premiumRead.GetMCPOfficerStatus(ctx, access.PlayerID, planetID)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"officerStatus": status}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -3097,6 +3142,49 @@ func fleetMovementsTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"fleetMovements"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func officerStatusTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_officer_status",
+		Title:       "Get Officer Status",
+		Description: "Return read-only commander/officer status, remaining days, costs, and Dark Matter balances for the authenticated player.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet.",
+				},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"officerStatus": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":       map[string]any{"type": "integer"},
+						"planetId":       map[string]any{"type": "integer"},
+						"paidDarkMatter": map[string]any{"type": "integer"},
+						"freeDarkMatter": map[string]any{"type": "integer"},
+						"officers": map[string]any{
+							"type":  "array",
+							"items": map[string]any{"type": "object"},
+						},
+					},
+					"required": []string{"playerId", "planetId", "paidDarkMatter", "freeDarkMatter", "officers"},
+				},
+			},
+			"required": []string{"officerStatus"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,

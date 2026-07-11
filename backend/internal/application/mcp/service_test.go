@@ -616,6 +616,26 @@ func TestServiceListsPlanetToolWhenReadRepositoryIsAvailable(t *testing.T) {
 	}
 }
 
+func TestServiceListsOfficerStatusToolForReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithPremiumReadRepository(&fakePremiumWriteRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_officer_status" {
+		t.Fatalf("unexpected read officer tools: %v", names)
+	}
+}
+
 func TestServiceListsMessageToolsForMessageScopedTokens(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -1082,6 +1102,74 @@ func TestServiceFleetMovementsToolRequiresRepositoryAndReadScope(t *testing.T) {
 	service = service.WithReadRepository(fakeReadRepository{err: errors.New("fleet down")})
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_fleet_movements", AccessToken: "read"}); err == nil {
 		t.Fatalf("expected read repository error")
+	}
+}
+
+func TestServiceCallsOfficerStatusTool(t *testing.T) {
+	status := domainmcp.OfficerStatus{
+		PlayerID:       42,
+		PlanetID:       99,
+		PaidDarkMatter: 1000,
+		FreeDarkMatter: 2000,
+		Officers: []domainmcp.OfficerStatusRow{{
+			ID:       1,
+			Key:      "commander",
+			Name:     "Commander",
+			Active:   true,
+			DaysLeft: 3,
+			WeekCost: 10000,
+		}},
+	}
+	repository := &fakePremiumWriteRepository{status: status}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithPremiumReadRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_officer_status",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": "99"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["officerStatus"].(domainmcp.OfficerStatus)
+	if result.IsError || got.PlayerID != 42 || got.PaidDarkMatter != 1000 || len(got.Officers) != 1 || got.Officers[0].Name != "Commander" {
+		t.Fatalf("unexpected officer status result: %+v", result)
+	}
+	if repository.statusPlayerID != 42 || repository.statusPlanetID != 99 {
+		t.Fatalf("unexpected officer status command: player=%d planet=%d", repository.statusPlayerID, repository.statusPlanetID)
+	}
+}
+
+func TestServiceOfficerStatusToolRequiresRepositoryReadScopeAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_officer_status", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing premium read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_officer_status", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithPremiumReadRepository(&fakePremiumWriteRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_officer_status",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": true},
+	}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid planet id error, got %v", err)
+	}
+
+	service = service.WithPremiumReadRepository(&fakePremiumWriteRepository{err: errors.New("premium read down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_officer_status", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "premium read down") {
+		t.Fatalf("expected premium read repository error, got %v", err)
 	}
 }
 
@@ -3130,11 +3218,23 @@ func (f *fakeResourceWriteRepository) UpdateMCPResourceProduction(_ context.Cont
 type fakePremiumWriteRepository struct {
 	preview         domainmcp.RecruitOfficerResult
 	recruited       domainmcp.RecruitOfficerResult
+	status          domainmcp.OfficerStatus
 	previewPlayerID int
 	recruitPlayerID int
+	statusPlayerID  int
+	statusPlanetID  int
 	previewCommand  domainmcp.RecruitOfficerCommand
 	recruitCommand  domainmcp.RecruitOfficerCommand
 	err             error
+}
+
+func (f *fakePremiumWriteRepository) GetMCPOfficerStatus(_ context.Context, playerID int, planetID int) (domainmcp.OfficerStatus, error) {
+	f.statusPlayerID = playerID
+	f.statusPlanetID = planetID
+	if f.err != nil {
+		return domainmcp.OfficerStatus{}, f.err
+	}
+	return f.status, nil
 }
 
 func (f *fakePremiumWriteRepository) PreviewMCPRecruitOfficer(_ context.Context, playerID int, command domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error) {
