@@ -716,6 +716,26 @@ func TestServiceListsEmpireOverviewToolForReadScope(t *testing.T) {
 	}
 }
 
+func TestServiceListsTechnologyTreeToolForReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithTechnologyReadRepository(&fakeTechnologyReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_technology_tree" {
+		t.Fatalf("unexpected read technology tools: %v", names)
+	}
+}
+
 func TestServiceListsMessageToolsForMessageScopedTokens(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -1563,6 +1583,83 @@ func TestServiceEmpireOverviewToolRequiresRepositoryReadScopeAndValidArguments(t
 	command, err := mcpEmpireCommand(nil)
 	if err != nil || command.PlanetID != 0 || command.PlanetType != 0 {
 		t.Fatalf("unexpected default empire command=%+v err=%v", command, err)
+	}
+}
+
+func TestServiceCallsTechnologyTreeTool(t *testing.T) {
+	technology := domainmcp.TechnologyTree{
+		PlayerID: 42,
+		PlanetID: 99,
+		Groups: []domainmcp.TechnologyGroup{{
+			Key:  "building",
+			Name: "Buildings",
+			Items: []domainmcp.TechnologyItem{{
+				ID:   1,
+				Name: "Metal Mine",
+			}},
+		}},
+		Details: &domainmcp.TechnologyDetails{
+			Target: domainmcp.TechnologyItem{ID: 204, Name: "Cruiser"},
+		},
+		Info: &domainmcp.TechnologyInfo{ID: 1, Name: "Metal Mine", Kind: "mine"},
+	}
+	repository := &fakeTechnologyReadRepository{result: technology}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithTechnologyReadRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_technology_tree",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": "99", "detailsId": 204, "infoId": 1},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["technology"].(domainmcp.TechnologyTree)
+	if result.IsError || got.PlayerID != 42 || len(got.Groups) != 1 || got.Details == nil || got.Info == nil {
+		t.Fatalf("unexpected technology result: %+v", result)
+	}
+	if repository.playerID != 42 || repository.command.PlanetID != 99 || repository.command.DetailsID != 204 || repository.command.InfoID != 1 {
+		t.Fatalf("unexpected technology command: player=%d command=%+v", repository.playerID, repository.command)
+	}
+}
+
+func TestServiceTechnologyTreeToolRequiresRepositoryReadScopeAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_technology_tree", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing technology read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_technology_tree", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithTechnologyReadRepository(&fakeTechnologyReadRepository{})
+	for _, arguments := range []map[string]any{
+		{"planetId": true},
+		{"detailsId": -1},
+		{"infoId": "bad"},
+	} {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_technology_tree", AccessToken: "read", Arguments: arguments}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", arguments, err)
+		}
+	}
+
+	service = service.WithTechnologyReadRepository(&fakeTechnologyReadRepository{err: errors.New("technology down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_technology_tree", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "technology down") {
+		t.Fatalf("expected technology repository error, got %v", err)
+	}
+
+	command, err := mcpTechnologyCommand(nil)
+	if err != nil || command.PlanetID != 0 || command.DetailsID != 0 || command.InfoID != 0 {
+		t.Fatalf("unexpected default technology command=%+v err=%v", command, err)
 	}
 }
 
@@ -3708,6 +3805,22 @@ func (f *fakeEmpireReadRepository) GetMCPEmpire(_ context.Context, playerID int,
 	f.command = command
 	if f.err != nil {
 		return domainmcp.EmpireOverview{}, f.err
+	}
+	return f.result, nil
+}
+
+type fakeTechnologyReadRepository struct {
+	result   domainmcp.TechnologyTree
+	playerID int
+	command  domainmcp.TechnologyCommand
+	err      error
+}
+
+func (f *fakeTechnologyReadRepository) GetMCPTechnology(_ context.Context, playerID int, command domainmcp.TechnologyCommand) (domainmcp.TechnologyTree, error) {
+	f.playerID = playerID
+	f.command = command
+	if f.err != nil {
+		return domainmcp.TechnologyTree{}, f.err
 	}
 	return f.result, nil
 }

@@ -8,6 +8,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestTechnologyRepositoryReadsLegacyTechnology(t *testing.T) {
@@ -45,6 +46,35 @@ func TestTechnologyRepositoryReadsLegacyTechnology(t *testing.T) {
 	}
 }
 
+func TestTechnologyRepositoryMapsMCPTechnology(t *testing.T) {
+	queryer := &fakeQueryer{results: technologyReadResults(map[int]int{
+		domaingame.BuildingMetalMine: 12,
+	}, map[int]int{
+		domaingame.ResearchEnergy: 3,
+	})}
+	repository := NewTechnologyRepositoryWithQueryer(queryer, "ogame_")
+
+	technology, err := repository.GetMCPTechnology(context.Background(), 42, domainmcp.TechnologyCommand{
+		DetailsID: domaingame.FleetCruiser,
+		InfoID:    domaingame.BuildingMetalMine,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if technology.PlayerID != 42 || technology.PlanetID != 99 || len(technology.Groups) != 5 {
+		t.Fatalf("unexpected mcp technology summary: %+v", technology)
+	}
+	if technology.Details == nil || technology.Details.Target.ID != domaingame.FleetCruiser || len(technology.Details.Levels) == 0 {
+		t.Fatalf("expected mcp cruiser detail tree, got %+v", technology.Details)
+	}
+	if technology.Info == nil || technology.Info.ID != domaingame.BuildingMetalMine || technology.Info.Level != 12 || len(technology.Info.Rows) != 15 {
+		t.Fatalf("expected mcp metal mine info rows, got %+v", technology.Info)
+	}
+	if len(technology.Groups[0].Items) == 0 || technology.Groups[0].Items[0].Name == "" {
+		t.Fatalf("expected mcp technology group items, got %+v", technology.Groups[0])
+	}
+}
+
 func TestNewTechnologyRepositoryKeepsSQLQueryer(t *testing.T) {
 	repository := NewTechnologyRepository(nil, "ogame_")
 
@@ -53,6 +83,9 @@ func TestNewTechnologyRepositoryKeepsSQLQueryer(t *testing.T) {
 	}
 	if _, ok := repository.queryer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL queryer, got %T", repository.queryer)
+	}
+	if _, err := (TechnologyRepository{}).GetMCPTechnology(context.Background(), 42, domainmcp.TechnologyCommand{}); err == nil {
+		t.Fatal("expected nil technology reader error")
 	}
 }
 

@@ -126,6 +126,10 @@ type EmpireReadRepository interface {
 	GetMCPEmpire(context.Context, int, domainmcp.EmpireCommand) (domainmcp.EmpireOverview, error)
 }
 
+type TechnologyReadRepository interface {
+	GetMCPTechnology(context.Context, int, domainmcp.TechnologyCommand) (domainmcp.TechnologyTree, error)
+}
+
 type PremiumWriteRepository interface {
 	PreviewMCPRecruitOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
 	RecruitMCPOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
@@ -282,6 +286,7 @@ type Service struct {
 	galaxyRead      GalaxyReadRepository
 	statisticsRead  StatisticsReadRepository
 	empireRead      EmpireReadRepository
+	technologyRead  TechnologyReadRepository
 	premiumWrite    PremiumWriteRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
@@ -384,6 +389,11 @@ func (s Service) WithStatisticsReadRepository(repository StatisticsReadRepositor
 
 func (s Service) WithEmpireReadRepository(repository EmpireReadRepository) Service {
 	s.empireRead = repository
+	return s
+}
+
+func (s Service) WithTechnologyReadRepository(repository TechnologyReadRepository) Service {
+	s.technologyRead = repository
 	return s
 }
 
@@ -711,6 +721,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		if s.empireRead != nil {
 			tools = append(tools, empireOverviewTool())
 		}
+		if s.technologyRead != nil {
+			tools = append(tools, technologyTreeTool())
+		}
 	}
 	if access.HasScope(domainmcp.ScopeMessages) && s.readRepository != nil {
 		tools = append(tools, listMessagesTool(), getMessageTool())
@@ -847,6 +860,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callEmpireOverview(ctx, access, command.Arguments)
+	case "get_technology_tree":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callTechnologyTree(ctx, access, command.Arguments)
 	case "list_messages":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeMessages)
 		if err != nil {
@@ -1295,6 +1317,29 @@ func (s Service) callEmpireOverview(ctx context.Context, access domainmcp.Access
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"empire": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callTechnologyTree(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.technologyRead == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp technology read repository unavailable")
+	}
+	command, err := mcpTechnologyCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	result, err := s.technologyRead.GetMCPTechnology(ctx, access.PlayerID, command)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"technology": result}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -2690,6 +2735,22 @@ func mcpEmpireCommand(arguments map[string]any) (domainmcp.EmpireCommand, error)
 	return domainmcp.EmpireCommand{PlanetID: planetID, PlanetType: planetType}, nil
 }
 
+func mcpTechnologyCommand(arguments map[string]any) (domainmcp.TechnologyCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.TechnologyCommand{}, err
+	}
+	detailsID, err := optionalNonNegativeIntArgument(arguments, "detailsId")
+	if err != nil {
+		return domainmcp.TechnologyCommand{}, err
+	}
+	infoID, err := optionalNonNegativeIntArgument(arguments, "infoId")
+	if err != nil {
+		return domainmcp.TechnologyCommand{}, err
+	}
+	return domainmcp.TechnologyCommand{PlanetID: planetID, DetailsID: detailsID, InfoID: infoID}, nil
+}
+
 func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
 	limit, err := optionalNonNegativeIntArgument(arguments, "limit")
 	if err != nil {
@@ -3688,6 +3749,56 @@ func empireOverviewTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"empire"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func technologyTreeTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_technology_tree",
+		Title:       "Get Technology Tree",
+		Description: "Return the read-only legacy technology tree for the current planet, with optional requirements detail and info table for one technology id.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet context.",
+				},
+				"detailsId": map[string]any{
+					"type":        "integer",
+					"description": "Optional technology id for the multi-step requirements detail tree.",
+					"minimum":     0,
+				},
+				"infoId": map[string]any{
+					"type":        "integer",
+					"description": "Optional technology id for the legacy info/details table.",
+					"minimum":     0,
+				},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"technology": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId": map[string]any{"type": "integer"},
+						"planetId": map[string]any{"type": "integer"},
+						"groups":   map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"details":  map[string]any{"type": "object"},
+						"info":     map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "planetId", "groups"},
+				},
+			},
+			"required": []string{"technology"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,

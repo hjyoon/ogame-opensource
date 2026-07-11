@@ -724,6 +724,88 @@ type EmpireOverview struct {
 	Defense         []EmpireCountRow    `json:"defense"`
 }
 
+type TechnologyCommand struct {
+	PlanetID  int
+	DetailsID int
+	InfoID    int
+}
+
+type TechnologyRequirement struct {
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	Level        int    `json:"level"`
+	CurrentLevel int    `json:"currentLevel"`
+	Met          bool   `json:"met"`
+}
+
+type TechnologyItem struct {
+	ID               int                     `json:"id"`
+	Name             string                  `json:"name"`
+	Requirements     []TechnologyRequirement `json:"requirements"`
+	DetailsAvailable bool                    `json:"detailsAvailable"`
+}
+
+type TechnologyGroup struct {
+	Key   string           `json:"key"`
+	Name  string           `json:"name"`
+	Items []TechnologyItem `json:"items"`
+}
+
+type TechnologyDetailsLevel struct {
+	Step         int                     `json:"step"`
+	Requirements []TechnologyRequirement `json:"requirements"`
+}
+
+type TechnologyCost struct {
+	Metal     float64 `json:"metal"`
+	Crystal   float64 `json:"crystal"`
+	Deuterium float64 `json:"deuterium"`
+	Energy    float64 `json:"energy"`
+}
+
+type TechnologyDemolish struct {
+	Level           int            `json:"level"`
+	Cost            TechnologyCost `json:"cost"`
+	DurationSeconds int            `json:"durationSeconds"`
+}
+
+type TechnologyDetails struct {
+	Target   TechnologyItem           `json:"target"`
+	Levels   []TechnologyDetailsLevel `json:"levels"`
+	Demolish *TechnologyDemolish      `json:"demolish,omitempty"`
+}
+
+type TechnologyInfoRow struct {
+	Level                int  `json:"level"`
+	Current              bool `json:"current"`
+	Production           int  `json:"production"`
+	ProductionDifference int  `json:"productionDifference"`
+	Energy               int  `json:"energy"`
+	EnergyDifference     int  `json:"energyDifference"`
+	Storage              int  `json:"storage"`
+	StorageDifference    int  `json:"storageDifference"`
+	DeuteriumConsumption int  `json:"deuteriumConsumption"`
+	DeuteriumDifference  int  `json:"deuteriumDifference"`
+}
+
+type TechnologyInfo struct {
+	ID          int                 `json:"id"`
+	Name        string              `json:"name"`
+	Description string              `json:"description"`
+	Level       int                 `json:"level"`
+	Kind        string              `json:"kind"`
+	Rows        []TechnologyInfoRow `json:"rows"`
+	Demolish    *TechnologyDemolish `json:"demolish,omitempty"`
+}
+
+type TechnologyTree struct {
+	PlayerID int                `json:"playerId"`
+	PlanetID int                `json:"planetId"`
+	Groups   []TechnologyGroup  `json:"groups"`
+	Details  *TechnologyDetails `json:"details,omitempty"`
+	Info     *TechnologyInfo    `json:"info,omitempty"`
+}
+
 type DispatchFleetCommand struct {
 	PlanetID        int
 	Ships           map[int]int
