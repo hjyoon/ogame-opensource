@@ -10,6 +10,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type MerchantRepository struct {
@@ -29,6 +30,10 @@ func NewMerchantRepository(db *sql.DB, prefix string) MerchantRepository {
 		prefix:    prefix,
 		randomInt: randomMerchantInt,
 	}
+}
+
+func NewMerchantReadRepository(db *sql.DB, prefix string) MerchantRepository {
+	return NewMerchantRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, randomMerchantInt)
 }
 
 func NewMerchantRepositoryWithQueryer(queryer Queryer, prefix string) MerchantRepository {
@@ -62,6 +67,62 @@ func (r MerchantRepository) GetMerchant(ctx context.Context, query appgame.Merch
 		return domaingame.Merchant{}, err
 	}
 	return domaingame.NewMerchant(overview, user, activeOfferID, rates), nil
+}
+
+func (r MerchantRepository) GetMCPMerchantStatus(ctx context.Context, playerID int, command domainmcp.MerchantStatusCommand) (domainmcp.MerchantStatus, error) {
+	if r.queryer == nil {
+		return domainmcp.MerchantStatus{}, errors.New("merchant reader unavailable")
+	}
+	merchant, err := r.GetMerchant(ctx, appgame.MerchantQuery{PlayerID: playerID, PlanetID: command.PlanetID})
+	if err != nil {
+		return domainmcp.MerchantStatus{}, err
+	}
+	return mcpMerchantStatus(playerID, merchant), nil
+}
+
+func mcpMerchantStatus(playerID int, merchant domaingame.Merchant) domainmcp.MerchantStatus {
+	return domainmcp.MerchantStatus{
+		PlayerID: playerID,
+		Planet: domainmcp.Planet{
+			ID:       merchant.CurrentPlanet.ID,
+			Name:     merchant.CurrentPlanet.Name,
+			Type:     merchant.CurrentPlanet.Type,
+			TypeName: mcpPlanetTypeName(merchant.CurrentPlanet.Type),
+			Coordinates: domainmcp.Coordinates{
+				Galaxy:   merchant.CurrentPlanet.Coordinates.Galaxy,
+				System:   merchant.CurrentPlanet.Coordinates.System,
+				Position: merchant.CurrentPlanet.Coordinates.Position,
+			},
+			Current: true,
+		},
+		Commander: merchant.Commander,
+		User: domainmcp.MerchantUser{
+			PaidDarkMatter: merchant.User.PaidDarkMatter,
+			FreeDarkMatter: merchant.User.FreeDarkMatter,
+		},
+		ActiveOfferID: merchant.ActiveOfferID,
+		Rates: domainmcp.MerchantRates{
+			Metal:     merchant.Rates.Metal,
+			Crystal:   merchant.Rates.Crystal,
+			Deuterium: merchant.Rates.Deuterium,
+		},
+		Rows: mcpMerchantRows(merchant.Rows),
+	}
+}
+
+func mcpMerchantRows(rows []domaingame.MerchantResourceRow) []domainmcp.MerchantResourceRow {
+	result := make([]domainmcp.MerchantResourceRow, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, domainmcp.MerchantResourceRow{
+			ID:          row.ID,
+			Name:        row.Name,
+			Offered:     row.Offered,
+			Value:       row.Value,
+			FreeStorage: row.FreeStorage,
+			Rate:        row.Rate,
+		})
+	}
+	return result
 }
 
 func (r MerchantRepository) MutateMerchant(ctx context.Context, query appgame.MerchantMutationQuery) (domaingame.Merchant, *domaingame.MerchantActionIssue, error) {

@@ -973,6 +973,40 @@ type OptionsStatus struct {
 	Flags     OptionsFlags    `json:"flags"`
 }
 
+type MerchantStatusCommand struct {
+	PlanetID int
+}
+
+type MerchantUser struct {
+	PaidDarkMatter int `json:"paidDarkMatter"`
+	FreeDarkMatter int `json:"freeDarkMatter"`
+}
+
+type MerchantRates struct {
+	Metal     float64 `json:"metal"`
+	Crystal   float64 `json:"crystal"`
+	Deuterium float64 `json:"deuterium"`
+}
+
+type MerchantResourceRow struct {
+	ID          int     `json:"id"`
+	Name        string  `json:"name"`
+	Offered     bool    `json:"offered"`
+	Value       int     `json:"value"`
+	FreeStorage int     `json:"freeStorage"`
+	Rate        float64 `json:"rate"`
+}
+
+type MerchantStatus struct {
+	PlayerID      int                   `json:"playerId"`
+	Planet        Planet                `json:"planet"`
+	Commander     string                `json:"commander"`
+	User          MerchantUser          `json:"user"`
+	ActiveOfferID int                   `json:"activeOfferId"`
+	Rates         MerchantRates         `json:"rates"`
+	Rows          []MerchantResourceRow `json:"rows"`
+}
+
 type EmpireCommand struct {
 	PlanetID   int
 	PlanetType int

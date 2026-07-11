@@ -9,6 +9,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestMerchantRepositoryReadsMerchantStatus(t *testing.T) {
@@ -41,6 +42,57 @@ func TestMerchantRepositoryReadsMerchantStatus(t *testing.T) {
 	repository = NewMerchantRepositoryWithQueryer(&fakeQueryer{}, "ogame_")
 	if _, err := repository.GetMerchant(context.Background(), appgame.MerchantQuery{PlayerID: 42, PlanetID: 99}); err == nil {
 		t.Fatalf("expected overview query error")
+	}
+}
+
+func TestMerchantRepositoryMapsMCPMerchantStatus(t *testing.T) {
+	queryer := &fakeQueryer{results: append(optionsOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{4000, 7000, 1, 3.0, 2.0, 1.0})},
+	)}
+	repository := NewMerchantRepositoryWithQueryer(queryer, "ogame_")
+
+	status, err := repository.GetMCPMerchantStatus(context.Background(), 42, domainmcp.MerchantStatusCommand{PlanetID: 99})
+	if err != nil {
+		t.Fatalf("GetMCPMerchantStatus returned error: %v", err)
+	}
+	if status.PlayerID != 42 || status.Planet.ID != 99 || status.Planet.TypeName != "planet" ||
+		status.User.PaidDarkMatter != 4000 || status.ActiveOfferID != domaingame.MerchantResourceMetal ||
+		status.Rates.Metal != 3 || len(status.Rows) != 3 || !status.Rows[0].Offered {
+		t.Fatalf("unexpected mcp merchant status: %+v", status)
+	}
+	if _, err := (MerchantRepository{}).GetMCPMerchantStatus(context.Background(), 42, domainmcp.MerchantStatusCommand{}); err == nil {
+		t.Fatalf("expected unavailable reader error")
+	}
+}
+
+func TestMCPMerchantStatusMapsMoonAndRows(t *testing.T) {
+	status := mcpMerchantStatus(42, domaingame.Merchant{
+		Commander: "legor",
+		CurrentPlanet: domaingame.PlanetOverview{
+			ID:   99,
+			Name: "Moon",
+			Type: domaingame.PlanetTypeMoon,
+			Coordinates: domaingame.Coordinates{
+				Galaxy:   1,
+				System:   2,
+				Position: 3,
+			},
+		},
+		User:          domaingame.MerchantUser{PaidDarkMatter: 1, FreeDarkMatter: 2},
+		ActiveOfferID: domaingame.MerchantResourceCrystal,
+		Rates:         domaingame.MerchantRates{Metal: 2.4, Crystal: 2, Deuterium: 0.8},
+		Rows: []domaingame.MerchantResourceRow{{
+			ID:          domaingame.MerchantResourceCrystal,
+			Name:        "Crystal",
+			Offered:     true,
+			Value:       200,
+			FreeStorage: 9800,
+			Rate:        2,
+		}},
+	})
+	if status.Planet.TypeName != "moon" || status.User.FreeDarkMatter != 2 || status.Rates.Crystal != 2 ||
+		len(status.Rows) != 1 || !status.Rows[0].Offered || status.Rows[0].FreeStorage != 9800 {
+		t.Fatalf("unexpected mapped merchant status: %+v", status)
 	}
 }
 

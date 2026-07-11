@@ -142,6 +142,10 @@ type OptionsReadRepository interface {
 	GetMCPOptions(context.Context, int, domainmcp.OptionsStatusCommand) (domainmcp.OptionsStatus, error)
 }
 
+type MerchantReadRepository interface {
+	GetMCPMerchantStatus(context.Context, int, domainmcp.MerchantStatusCommand) (domainmcp.MerchantStatus, error)
+}
+
 type EmpireReadRepository interface {
 	GetMCPEmpire(context.Context, int, domainmcp.EmpireCommand) (domainmcp.EmpireOverview, error)
 }
@@ -330,6 +334,7 @@ type Service struct {
 	buddyRead       BuddyReadRepository
 	notesRead       NotesReadRepository
 	optionsRead     OptionsReadRepository
+	merchantRead    MerchantReadRepository
 	empireRead      EmpireReadRepository
 	technologyRead  TechnologyReadRepository
 	buildingRead    BuildingOptionsReadRepository
@@ -459,6 +464,11 @@ func (s Service) WithNotesReadRepository(repository NotesReadRepository) Service
 
 func (s Service) WithOptionsReadRepository(repository OptionsReadRepository) Service {
 	s.optionsRead = repository
+	return s
+}
+
+func (s Service) WithMerchantReadRepository(repository MerchantReadRepository) Service {
+	s.merchantRead = repository
 	return s
 }
 
@@ -833,6 +843,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		if s.optionsRead != nil {
 			tools = append(tools, optionsTool())
 		}
+		if s.merchantRead != nil {
+			tools = append(tools, merchantStatusTool())
+		}
 		if s.empireRead != nil {
 			tools = append(tools, empireOverviewTool())
 		}
@@ -1035,6 +1048,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callOptions(ctx, access, command.Arguments)
+	case "get_merchant_status":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callMerchantStatus(ctx, access, command.Arguments)
 	case "get_empire_overview":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
 		if err != nil {
@@ -1652,6 +1674,29 @@ func (s Service) callOptions(ctx context.Context, access domainmcp.Access, argum
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"options": options}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callMerchantStatus(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.merchantRead == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp merchant read repository unavailable")
+	}
+	command, err := mcpMerchantStatusCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	status, err := s.merchantRead.GetMCPMerchantStatus(ctx, access.PlayerID, command)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"merchantStatus": status}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -3253,6 +3298,14 @@ func mcpOptionsStatusCommand(arguments map[string]any) (domainmcp.OptionsStatusC
 	return domainmcp.OptionsStatusCommand{PlanetID: planetID}, nil
 }
 
+func mcpMerchantStatusCommand(arguments map[string]any) (domainmcp.MerchantStatusCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.MerchantStatusCommand{}, err
+	}
+	return domainmcp.MerchantStatusCommand{PlanetID: planetID}, nil
+}
+
 func mcpEmpireCommand(arguments map[string]any) (domainmcp.EmpireCommand, error) {
 	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
 	if err != nil {
@@ -4543,6 +4596,49 @@ func optionsTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"options"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func merchantStatusTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_merchant_status",
+		Title:       "Get Merchant Status",
+		Description: "Return read-only legacy merchant screen state for the authenticated player, including active offer, rates, dark matter, and trade resource rows.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet context.",
+					"minimum":     0,
+				},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"merchantStatus": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":      map[string]any{"type": "integer"},
+						"planet":        map[string]any{"type": "object"},
+						"commander":     map[string]any{"type": "string"},
+						"user":          map[string]any{"type": "object"},
+						"activeOfferId": map[string]any{"type": "integer"},
+						"rates":         map[string]any{"type": "object"},
+						"rows":          map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+					},
+					"required": []string{"playerId", "planet", "commander", "user", "activeOfferId", "rates", "rows"},
+				},
+			},
+			"required": []string{"merchantStatus"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,
