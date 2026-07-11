@@ -205,6 +205,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 	writeRepository := mysqlgame.NewMessagesRepository(db, cfg.UniDBPrefix)
 	fleetWriteRepository := mysqlgame.NewFleetRepository(db, cfg.UniDBPrefix)
 	queueWriteRepository := mysqlgame.NewBuildingsRepository(db, cfg.UniDBPrefix)
+	resourceWriteRepository := mysqlgame.NewResourcesRepository(db, cfg.UniDBPrefix)
 	return withCommonMCP(appmcp.NewServiceWithTokenManagement(health, verifier, repository, sessions, appmcp.SecureTokenGenerator{}, time.Now).
 		WithTokenTTL(time.Duration(cfg.MCPTokenTTLSeconds) * time.Second).
 		WithOAuthCodeRepository(repository).
@@ -212,7 +213,8 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 		WithReadRepository(readRepository).
 		WithWriteRepository(writeRepository).
 		WithFleetWriteRepository(fleetWriteRepository).
-		WithQueueWriteRepository(queueWriteRepository))
+		WithQueueWriteRepository(queueWriteRepository).
+		WithResourceWriteRepository(resourceWriteRepository))
 }
 
 func mcpOIDCSigner(cfg config.Config) (mcpoidc.Ed25519Signer, error) {

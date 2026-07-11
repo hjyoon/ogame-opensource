@@ -43,9 +43,8 @@ Implemented:
 - Consent CSRF+UX shows resource, redirect, scopes, deny redirect.
 - MCP/OAuth rate limits on RPC, OAuth, and token API paths.
 - JSON audit logging for every `tools/call`; no secrets are logged.
-- Authenticated `mcp:read` tools: `list_planets`, `get_account_overview`,
-  `get_planet_resources`, `get_building_queue`, and `get_fleet_movements`.
-  Read-only; avoid legacy queue/resource mutations.
+- Authenticated `mcp:read`: planets, overview, resources, building queue,
+  fleet movements. Read-only; avoid legacy queue/resource mutations.
 - Authenticated `mcp:messages` tools: `list_messages` and `get_message`.
   Read owned inbox rows without marking read or cleanup mutation.
 - Authenticated `mcp:message_write` tools: `send_message`, `delete_messages`,
@@ -55,13 +54,15 @@ Implemented:
   `dispatch_fleet`, `recall_fleet`; mutations require confirmation.
 - Authenticated `mcp:queue_write`: `cancel_building_queue`,
   `cancel_research_queue`, `enqueue_shipyard_order`; confirmed mutations.
+- Authenticated `mcp:resources_write`: `update_resource_production`.
 
 ## Static Token Format
 
 `OGAME_MCP_STATIC_TOKENS`: `token:player_id:scope1,scope2;next:7:mcp:read`.
 
 Scopes: `mcp:read`, `mcp:messages`, `mcp:message_write`, `mcp:fleet`,
-`mcp:fleet_write`, `mcp:queue_write`, `mcp:write`, `mcp:admin`.
+`mcp:fleet_write`, `mcp:queue_write`, `mcp:resources_write`, `mcp:write`,
+`mcp:admin`.
 
 Static tokens are bootstrap-only; prefer revocable DB-backed user tokens.
 
@@ -76,7 +77,7 @@ Create body:
 Plaintext `secret` is returned once; store it like a password.
 
 User tokens allow: `mcp:read`, `mcp:messages`, `mcp:message_write`,
-`mcp:fleet`, `mcp:fleet_write`, `mcp:queue_write`.
+`mcp:fleet`, `mcp:fleet_write`, `mcp:queue_write`, `mcp:resources_write`.
 
 `mcp:write` and `mcp:admin` stay unavailable for self-service user tokens.
 

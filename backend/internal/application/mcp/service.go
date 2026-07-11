@@ -101,6 +101,11 @@ type QueueWriteRepository interface {
 	EnqueueMCPShipyardOrder(context.Context, int, domainmcp.EnqueueShipyardOrderCommand) (domainmcp.EnqueueShipyardOrderResult, error)
 }
 
+type ResourceWriteRepository interface {
+	PreviewMCPUpdateResourceProduction(context.Context, int, domainmcp.UpdateResourceProductionCommand) (domainmcp.UpdateResourceProductionResult, error)
+	UpdateMCPResourceProduction(context.Context, int, domainmcp.UpdateResourceProductionCommand) (domainmcp.UpdateResourceProductionResult, error)
+}
+
 type TokenSecretGenerator interface {
 	NewMCPToken() (string, error)
 }
@@ -246,6 +251,7 @@ type Service struct {
 	writeRepository WriteRepository
 	fleetWrite      FleetWriteRepository
 	queueWrite      QueueWriteRepository
+	resourceWrite   ResourceWriteRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
 	codeGenerator   OAuthCodeGenerator
@@ -320,6 +326,11 @@ func (s Service) WithQueueWriteRepository(repository QueueWriteRepository) Servi
 	return s
 }
 
+func (s Service) WithResourceWriteRepository(repository ResourceWriteRepository) Service {
+	s.resourceWrite = repository
+	return s
+}
+
 func (s Service) WithToolCallAuditor(auditor ToolCallAuditor) Service {
 	s.auditor = auditor
 	return s
@@ -371,6 +382,7 @@ func (s Service) OAuthAuthorizationServerMetadata(ctx context.Context, issuer st
 			domainmcp.ScopeFleet,
 			domainmcp.ScopeFleetWrite,
 			domainmcp.ScopeQueueWrite,
+			domainmcp.ScopeResourcesWrite,
 		},
 	}
 	if s.oidcSigner != nil {
@@ -392,6 +404,7 @@ func (s Service) OAuthProtectedResourceMetadata(ctx context.Context, resource st
 			domainmcp.ScopeFleet,
 			domainmcp.ScopeFleetWrite,
 			domainmcp.ScopeQueueWrite,
+			domainmcp.ScopeResourcesWrite,
 		},
 		BearerMethods: []string{"header"},
 	}
@@ -633,6 +646,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	if access.HasScope(domainmcp.ScopeQueueWrite) && s.queueWrite != nil {
 		tools = append(tools, cancelBuildingQueueTool(), cancelResearchQueueTool(), enqueueShipyardOrderTool())
 	}
+	if access.HasScope(domainmcp.ScopeResourcesWrite) && s.resourceWrite != nil {
+		tools = append(tools, updateResourceProductionTool())
+	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
 }
 
@@ -804,6 +820,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callEnqueueShipyardOrder(ctx, access, command.Arguments)
+	case "update_resource_production":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeResourcesWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callUpdateResourceProduction(ctx, access, command.Arguments)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -1446,6 +1471,50 @@ func (s Service) callEnqueueShipyardOrder(ctx context.Context, access domainmcp.
 	}, nil
 }
 
+func (s Service) callUpdateResourceProduction(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.resourceWrite == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp resource write repository unavailable")
+	}
+	command, err := mcpUpdateResourceProductionCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	confirmation := mcpUpdateResourceProductionConfirmation(command)
+	var result domainmcp.UpdateResourceProductionResult
+	if command.DryRun {
+		result, err = s.resourceWrite.PreviewMCPUpdateResourceProduction(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = true
+		result.Executed = false
+		if result.Issue == nil && len(result.Settings) > 0 {
+			result.RequiresConfirmation = true
+			result.Confirmation = confirmation
+		}
+	} else {
+		if strings.TrimSpace(command.Confirm) != confirmation {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+		}
+		result, err = s.resourceWrite.UpdateMCPResourceProduction(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = false
+		result.RequiresConfirmation = false
+		result.Confirmation = confirmation
+	}
+	structured := map[string]any{"updateResourceProduction": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
 func (s Service) authenticateSession(ctx context.Context, command TokenManagementCommand) (domainpublicsite.SessionAuthentication, error) {
 	return s.sessions.GetGameSession(ctx, apppublicsite.GameSessionCommand{
 		PublicSession:   command.PublicSession,
@@ -1513,7 +1582,7 @@ func normalizeUserScopes(requested []string) []string {
 
 func userScopeAllowed(scope string) bool {
 	switch scope {
-	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite:
+	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite:
 		return true
 	default:
 		return false
@@ -2135,6 +2204,48 @@ func mcpEnqueueShipyardOrderConfirmation(command domainmcp.EnqueueShipyardOrderC
 	payload := fmt.Sprintf("%d:%s:%d:%d", command.PlanetID, command.Kind, command.ItemID, command.Amount)
 	sum := sha256.Sum256([]byte(payload))
 	return fmt.Sprintf("enqueue_shipyard_order:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
+}
+
+func mcpUpdateResourceProductionCommand(arguments map[string]any) (domainmcp.UpdateResourceProductionCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.UpdateResourceProductionCommand{}, err
+	}
+	production, err := intObjectArgument(arguments, "production")
+	if err != nil {
+		return domainmcp.UpdateResourceProductionCommand{}, err
+	}
+	if len(production) == 0 {
+		return domainmcp.UpdateResourceProductionCommand{}, domainmcp.ErrInvalidParams
+	}
+	for _, percent := range production {
+		if percent > 100 {
+			return domainmcp.UpdateResourceProductionCommand{}, domainmcp.ErrInvalidParams
+		}
+	}
+	dryRun := true
+	if arguments != nil && arguments["dryRun"] != nil {
+		dryRun, err = optionalBoolArgument(arguments, "dryRun")
+		if err != nil {
+			return domainmcp.UpdateResourceProductionCommand{}, err
+		}
+	}
+	confirm, err := optionalStringArgument(arguments, "confirm")
+	if err != nil {
+		return domainmcp.UpdateResourceProductionCommand{}, err
+	}
+	return domainmcp.UpdateResourceProductionCommand{
+		PlanetID:   planetID,
+		Production: production,
+		DryRun:     dryRun,
+		Confirm:    confirm,
+	}, nil
+}
+
+func mcpUpdateResourceProductionConfirmation(command domainmcp.UpdateResourceProductionCommand) string {
+	payload := fmt.Sprintf("%d:%s", command.PlanetID, stableIntMapPayload(command.Production))
+	sum := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("update_resource_production:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
 }
 
 func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
@@ -3234,6 +3345,67 @@ func enqueueShipyardOrderTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"enqueueShipyardOrder"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    false,
+			"destructiveHint": true,
+			"idempotentHint":  false,
+		},
+	}
+}
+
+func updateResourceProductionTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "update_resource_production",
+		Title:       "Update Resource Production",
+		Description: "Update owned planet resource production percentages. Defaults to dry-run and requires the returned confirmation string before execution.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet.",
+				},
+				"production": map[string]any{
+					"type":        "object",
+					"description": "Producer id to percent, for example {\"1\":80,\"2\":70}. Supported ids are legacy resource producer ids.",
+					"additionalProperties": map[string]any{
+						"type":    "integer",
+						"minimum": 0,
+						"maximum": 100,
+					},
+				},
+				"dryRun": map[string]any{
+					"type":        "boolean",
+					"description": "Defaults to true. Set false only with a matching confirmation value.",
+				},
+				"confirm": map[string]any{
+					"type":        "string",
+					"description": "Exact confirmation string returned by a dry-run for the same planet and production map.",
+				},
+			},
+			"required":             []string{"production"},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"updateResourceProduction": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":             map[string]any{"type": "integer"},
+						"planetId":             map[string]any{"type": "integer"},
+						"settings":             map[string]any{"type": "array"},
+						"dryRun":               map[string]any{"type": "boolean"},
+						"requiresConfirmation": map[string]any{"type": "boolean"},
+						"confirmation":         map[string]any{"type": "string"},
+						"executed":             map[string]any{"type": "boolean"},
+						"issue":                map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "planetId", "settings", "dryRun", "requiresConfirmation", "executed"},
+				},
+			},
+			"required": []string{"updateResourceProduction"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    false,

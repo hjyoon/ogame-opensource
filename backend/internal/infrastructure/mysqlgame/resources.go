@@ -10,6 +10,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type ResourcesRepository struct {
@@ -131,6 +132,58 @@ func (r ResourcesRepository) UpdateProduction(ctx context.Context, query appgame
 	})
 }
 
+func (r ResourcesRepository) PreviewMCPUpdateResourceProduction(ctx context.Context, playerID int, command domainmcp.UpdateResourceProductionCommand) (domainmcp.UpdateResourceProductionResult, error) {
+	if r.queryer == nil {
+		return domainmcp.UpdateResourceProductionResult{}, errors.New("resource production reader unavailable")
+	}
+	production, err := mcpResourceProductionFactors(command.Production)
+	if err != nil {
+		return domainmcp.UpdateResourceProductionResult{}, err
+	}
+	result := domainmcp.UpdateResourceProductionResult{PlayerID: playerID, PlanetID: command.PlanetID}
+	if len(production) == 0 {
+		result.Issue = &domainmcp.ActionIssue{Code: "invalid_production", Message: "No supported resource production settings were provided."}
+		return result, nil
+	}
+	preview := r
+	preview.updateResources = false
+	resources, err := preview.GetResources(ctx, appgame.ResourcesQuery{PlayerID: playerID, PlanetID: command.PlanetID})
+	if err != nil {
+		return domainmcp.UpdateResourceProductionResult{}, err
+	}
+	result.PlanetID = resources.CurrentPlanet.ID
+	result.Settings = mcpResourceProductionSettings(resources, production)
+	if len(result.Settings) == 0 {
+		result.Issue = &domainmcp.ActionIssue{Code: "invalid_production", Message: "No supported resource production settings were provided."}
+	}
+	return result, nil
+}
+
+func (r ResourcesRepository) UpdateMCPResourceProduction(ctx context.Context, playerID int, command domainmcp.UpdateResourceProductionCommand) (domainmcp.UpdateResourceProductionResult, error) {
+	if r.execer == nil {
+		return domainmcp.UpdateResourceProductionResult{}, errors.New("resource production updater unavailable")
+	}
+	result, err := r.PreviewMCPUpdateResourceProduction(ctx, playerID, command)
+	if err != nil || result.Issue != nil {
+		return result, err
+	}
+	production, err := mcpResourceProductionFactors(command.Production)
+	if err != nil {
+		return domainmcp.UpdateResourceProductionResult{}, err
+	}
+	resources, err := r.UpdateProduction(ctx, appgame.ResourcesUpdateQuery{
+		PlayerID:   playerID,
+		PlanetID:   command.PlanetID,
+		Production: production,
+	})
+	if err != nil {
+		return domainmcp.UpdateResourceProductionResult{}, err
+	}
+	result.PlanetID = resources.CurrentPlanet.ID
+	result.Executed = true
+	return result, nil
+}
+
 func (r ResourcesRepository) loadProductionSettings(ctx context.Context, planetsTable string, playerID int, planetID int) (domaingame.BuildingLevels, int, domaingame.ProductionFactors, error) {
 	rows, err := r.queryer.QueryContext(
 		ctx,
@@ -204,6 +257,34 @@ func (r ResourcesRepository) loadProductionSettings(ctx context.Context, planets
 			domaingame.FleetSolarSatellite:    prodSatellite,
 		},
 		nil
+}
+
+func mcpResourceProductionFactors(settings map[int]int) (domaingame.ProductionFactors, error) {
+	return domaingame.NormalizeProductionSettings(domaingame.ProductionPercents(settings))
+}
+
+func mcpResourceProductionSettings(resources domaingame.ResourceProduction, production domaingame.ProductionFactors) []domainmcp.ResourceProductionSetting {
+	names := map[int]string{}
+	for _, row := range resources.Rows {
+		names[row.ID] = row.Name
+	}
+	settings := make([]domainmcp.ResourceProductionSetting, 0, len(production))
+	for _, id := range domaingame.ResourceProducerIDs() {
+		factor, ok := production[id]
+		if !ok {
+			continue
+		}
+		name := names[id]
+		if name == "" {
+			name = fmt.Sprintf("prod%d", id)
+		}
+		settings = append(settings, domainmcp.ResourceProductionSetting{
+			ID:      id,
+			Name:    name,
+			Percent: int(factor*100 + 0.5),
+		})
+	}
+	return settings
 }
 
 func (r ResourcesRepository) loadResourceUser(ctx context.Context, usersTable string, playerID int) (int, bool, bool, error) {

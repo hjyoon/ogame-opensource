@@ -10,6 +10,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestResourcesRepositoryReadsLegacyResourceProduction(t *testing.T) {
@@ -106,6 +107,72 @@ func TestResourcesRepositoryUpdatesLegacyProductionSettings(t *testing.T) {
 	}
 	if len(runner.execArgs) != 6 || runner.execArgs[0] != 0.0 || runner.execArgs[1] != 0.4 || runner.execArgs[2] != 1.0 || runner.execArgs[3] != 99 || runner.execArgs[4] != 42 {
 		t.Fatalf("unexpected update args: %+v", runner.execArgs)
+	}
+}
+
+func TestResourcesRepositoryMCPUpdateResourceProductionPreviewAndExecute(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	results := append(
+		resourceReadResults(now),
+		append(resourceReadResults(now),
+			append(append(resourceOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{0})}), resourceReadResults(now)...)...,
+		)...,
+	)
+	runner := &fakeResourceRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewResourcesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	command := domainmcp.UpdateResourceProductionCommand{
+		PlanetID: 99,
+		Production: map[int]int{
+			domaingame.BuildingMetalMine: 83,
+			9999:                         50,
+		},
+	}
+
+	preview, err := repository.PreviewMCPUpdateResourceProduction(context.Background(), 42, command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Issue != nil || preview.PlayerID != 42 || preview.PlanetID != 99 || len(preview.Settings) != 1 || preview.Settings[0].Name != "Metal Mine" || preview.Settings[0].Percent != 80 {
+		t.Fatalf("unexpected preview: %+v", preview)
+	}
+
+	updated, err := repository.UpdateMCPResourceProduction(context.Background(), 42, command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated.Executed || updated.Issue != nil || updated.PlanetID != 99 || len(updated.Settings) != 1 {
+		t.Fatalf("unexpected updated result: %+v", updated)
+	}
+	if !strings.Contains(runner.execSQL, "prod1 = ?") || strings.Contains(runner.execSQL, "prod9999") {
+		t.Fatalf("expected only supported production update, got %q", runner.execSQL)
+	}
+	if len(runner.execArgs) != 4 || runner.execArgs[0] != 0.8 || runner.execArgs[1] != 99 || runner.execArgs[2] != 42 {
+		t.Fatalf("unexpected update args: %+v", runner.execArgs)
+	}
+}
+
+func TestResourcesRepositoryMCPUpdateResourceProductionEdges(t *testing.T) {
+	if _, err := (ResourcesRepository{}).PreviewMCPUpdateResourceProduction(context.Background(), 42, domainmcp.UpdateResourceProductionCommand{Production: map[int]int{domaingame.BuildingMetalMine: 80}}); err == nil {
+		t.Fatal("expected missing reader error")
+	}
+	if _, err := (ResourcesRepository{}).UpdateMCPResourceProduction(context.Background(), 42, domainmcp.UpdateResourceProductionCommand{Production: map[int]int{domaingame.BuildingMetalMine: 80}}); err == nil {
+		t.Fatal("expected missing updater error")
+	}
+
+	result, err := NewResourcesRepositoryWithQueryer(&fakeQueryer{}, "ogame_", nil).PreviewMCPUpdateResourceProduction(context.Background(), 42, domainmcp.UpdateResourceProductionCommand{Production: map[int]int{9999: 80}})
+	if err != nil || result.Issue == nil || result.Issue.Code != "invalid_production" {
+		t.Fatalf("expected invalid production issue, result=%+v err=%v", result, err)
+	}
+
+	_, err = NewResourcesRepositoryWithQueryer(&fakeQueryer{}, "ogame_", nil).PreviewMCPUpdateResourceProduction(context.Background(), 42, domainmcp.UpdateResourceProductionCommand{Production: map[int]int{domaingame.BuildingMetalMine: 101}})
+	if !errors.Is(err, domaingame.ErrProductionPercentTooHigh) {
+		t.Fatalf("expected percent error, got %v", err)
+	}
+
+	runner := &fakeResourceRunner{fakeQueryer: fakeQueryer{results: append(resourceReadResults(time.Unix(1_700_000_000, 0)), fakeQueryResult{err: errors.New("update overview failed")})}}
+	_, err = NewResourcesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(1_700_000_000, 0) }).UpdateMCPResourceProduction(context.Background(), 42, domainmcp.UpdateResourceProductionCommand{Production: map[int]int{domaingame.BuildingMetalMine: 80}})
+	if err == nil || !strings.Contains(err.Error(), "update overview failed") {
+		t.Fatalf("expected update error, got %v", err)
 	}
 }
 

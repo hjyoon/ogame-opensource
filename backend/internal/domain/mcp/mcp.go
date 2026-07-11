@@ -5,14 +5,15 @@ import "errors"
 const ProtocolVersion = "2025-06-18"
 
 const (
-	ScopeRead         = "mcp:read"
-	ScopeWrite        = "mcp:write"
-	ScopeFleet        = "mcp:fleet"
-	ScopeFleetWrite   = "mcp:fleet_write"
-	ScopeQueueWrite   = "mcp:queue_write"
-	ScopeMessages     = "mcp:messages"
-	ScopeMessageWrite = "mcp:message_write"
-	ScopeAdmin        = "mcp:admin"
+	ScopeRead           = "mcp:read"
+	ScopeWrite          = "mcp:write"
+	ScopeFleet          = "mcp:fleet"
+	ScopeFleetWrite     = "mcp:fleet_write"
+	ScopeQueueWrite     = "mcp:queue_write"
+	ScopeResourcesWrite = "mcp:resources_write"
+	ScopeMessages       = "mcp:messages"
+	ScopeMessageWrite   = "mcp:message_write"
+	ScopeAdmin          = "mcp:admin"
 )
 
 var (
@@ -363,6 +364,30 @@ type EnqueueShipyardOrderResult struct {
 	Confirmation         string       `json:"confirmation,omitempty"`
 	Executed             bool         `json:"executed"`
 	Issue                *ActionIssue `json:"issue,omitempty"`
+}
+
+type ResourceProductionSetting struct {
+	ID      int    `json:"id"`
+	Name    string `json:"name"`
+	Percent int    `json:"percent"`
+}
+
+type UpdateResourceProductionCommand struct {
+	PlanetID   int
+	Production map[int]int
+	DryRun     bool
+	Confirm    string
+}
+
+type UpdateResourceProductionResult struct {
+	PlayerID             int                         `json:"playerId"`
+	PlanetID             int                         `json:"planetId"`
+	Settings             []ResourceProductionSetting `json:"settings"`
+	DryRun               bool                        `json:"dryRun"`
+	RequiresConfirmation bool                        `json:"requiresConfirmation"`
+	Confirmation         string                      `json:"confirmation,omitempty"`
+	Executed             bool                        `json:"executed"`
+	Issue                *ActionIssue                `json:"issue,omitempty"`
 }
 
 type DispatchFleetCommand struct {

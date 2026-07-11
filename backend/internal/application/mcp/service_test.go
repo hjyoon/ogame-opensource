@@ -519,9 +519,9 @@ func TestOAuthValidationHelpers(t *testing.T) {
 	if err != nil || strings.Join(scopes, " ") != "profile mcp:read" {
 		t.Fatalf("unexpected normalized scopes=%v err=%v", scopes, err)
 	}
-	scopes, err = normalizeOAuthScopes(domainmcp.ScopeFleetWrite + " " + domainmcp.ScopeQueueWrite)
-	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite {
-		t.Fatalf("expected fleet and queue write scopes to be allowed, got scopes=%v err=%v", scopes, err)
+	scopes, err = normalizeOAuthScopes(domainmcp.ScopeFleetWrite + " " + domainmcp.ScopeQueueWrite + " " + domainmcp.ScopeResourcesWrite)
+	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite {
+		t.Fatalf("expected fleet, queue, and resources write scopes to be allowed, got scopes=%v err=%v", scopes, err)
 	}
 	scopes, err = normalizeOAuthScopes("")
 	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeRead {
@@ -706,6 +706,26 @@ func TestServiceListsCancelBuildingQueueToolForQueueWriteScope(t *testing.T) {
 	}
 	if strings.Join(names, ",") != "get_server_health,cancel_building_queue,cancel_research_queue,enqueue_shipyard_order" {
 		t.Fatalf("unexpected queue-write tools: %v", names)
+	}
+}
+
+func TestServiceListsUpdateResourceProductionToolForResourcesWriteScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"resources-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeResourcesWrite}},
+		},
+	}).WithResourceWriteRepository(&fakeResourceWriteRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "resources-write"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,update_resource_production" {
+		t.Fatalf("unexpected resources-write tools: %v", names)
 	}
 }
 
@@ -1867,6 +1887,115 @@ func TestServiceEnqueueShipyardOrderRequiresScopeRepositoryAndValidParams(t *tes
 	}
 }
 
+func TestServiceCallsUpdateResourceProductionWithDryRunAndConfirmation(t *testing.T) {
+	repository := &fakeResourceWriteRepository{
+		preview: domainmcp.UpdateResourceProductionResult{
+			PlayerID: 42,
+			PlanetID: 99,
+			Settings: []domainmcp.ResourceProductionSetting{
+				{ID: 1, Name: "Metal Mine", Percent: 80},
+				{ID: 2, Name: "Crystal Mine", Percent: 70},
+			},
+		},
+		updated: domainmcp.UpdateResourceProductionResult{
+			PlayerID: 42,
+			PlanetID: 99,
+			Settings: []domainmcp.ResourceProductionSetting{
+				{ID: 1, Name: "Metal Mine", Percent: 80},
+				{ID: 2, Name: "Crystal Mine", Percent: 70},
+			},
+			Executed: true,
+		},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"resources-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeResourcesWrite}},
+		},
+	}).WithResourceWriteRepository(repository)
+	arguments := map[string]any{"planetId": 99, "production": map[string]any{"1": 80, "2": 70}}
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "update_resource_production",
+		AccessToken: "resources-write",
+		Arguments:   arguments,
+	})
+	if err != nil {
+		t.Fatalf("update_resource_production dry-run returned error: %v", err)
+	}
+	dryRun := result.StructuredContent.(map[string]any)["updateResourceProduction"].(domainmcp.UpdateResourceProductionResult)
+	if !dryRun.DryRun || dryRun.Executed || !dryRun.RequiresConfirmation || !strings.HasPrefix(dryRun.Confirmation, "update_resource_production:99:1=80,2=70:") {
+		t.Fatalf("unexpected dry-run result: %+v", dryRun)
+	}
+	if repository.previewPlayerID != 42 || repository.previewCommand.PlanetID != 99 || repository.previewCommand.Production[1] != 80 || repository.previewCommand.Production[2] != 70 {
+		t.Fatalf("unexpected preview command: player=%d command=%+v", repository.previewPlayerID, repository.previewCommand)
+	}
+
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "update_resource_production",
+		AccessToken: "resources-write",
+		Arguments:   map[string]any{"planetId": 99, "production": map[string]any{"1": 80, "2": 70}, "dryRun": false, "confirm": dryRun.Confirmation},
+	})
+	if err != nil {
+		t.Fatalf("update_resource_production execute returned error: %v", err)
+	}
+	updated := result.StructuredContent.(map[string]any)["updateResourceProduction"].(domainmcp.UpdateResourceProductionResult)
+	if updated.DryRun || !updated.Executed || updated.RequiresConfirmation {
+		t.Fatalf("unexpected execute result: %+v", updated)
+	}
+	if repository.updatePlayerID != 42 || repository.updateCommand.Confirm != dryRun.Confirmation {
+		t.Fatalf("unexpected update command: player=%d command=%+v", repository.updatePlayerID, repository.updateCommand)
+	}
+
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "update_resource_production", AccessToken: "resources-write", Arguments: map[string]any{"planetId": 99, "production": map[string]any{"1": 80}, "dryRun": false, "confirm": "wrong"}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected wrong confirmation error, got %v", err)
+	}
+}
+
+func TestServiceUpdateResourceProductionRequiresScopeRepositoryAndValidParams(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":            {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"resources-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeResourcesWrite}},
+		},
+	})
+	valid := map[string]any{"production": map[string]any{"1": 80}}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "update_resource_production", AccessToken: "resources-write", Arguments: valid}); err == nil {
+		t.Fatalf("expected missing repository error")
+	}
+
+	service = service.WithResourceWriteRepository(&fakeResourceWriteRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "update_resource_production", AccessToken: "read", Arguments: valid}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without resources write scope, got %v", err)
+	}
+	for _, arguments := range []map[string]any{
+		{"planetId": "bad", "production": map[string]any{"1": 80}},
+		{"production": true},
+		{"production": map[string]any{}},
+		{"production": map[string]any{"x": 80}},
+		{"production": map[string]any{"1": 101}},
+		{"production": map[string]any{"1": 80}, "dryRun": "no"},
+		{"production": map[string]any{"1": 80}, "confirm": true},
+	} {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "update_resource_production", AccessToken: "resources-write", Arguments: arguments}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", arguments, err)
+		}
+	}
+
+	service = service.WithResourceWriteRepository(&fakeResourceWriteRepository{err: errors.New("resources down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "update_resource_production", AccessToken: "resources-write", Arguments: valid}); err == nil || !strings.Contains(err.Error(), "resources down") {
+		t.Fatalf("expected repository error, got %v", err)
+	}
+
+	command, err := mcpUpdateResourceProductionCommand(valid)
+	if err != nil {
+		t.Fatalf("valid command error: %v", err)
+	}
+	confirm := mcpUpdateResourceProductionConfirmation(command)
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "update_resource_production", AccessToken: "resources-write", Arguments: map[string]any{"production": map[string]any{"1": 80}, "dryRun": false, "confirm": confirm}}); err == nil || !strings.Contains(err.Error(), "resources down") {
+		t.Fatalf("expected execute repository error, got %v", err)
+	}
+}
+
 func TestServiceCallsRecallFleetWithDryRunAndConfirmation(t *testing.T) {
 	repository := &fakeFleetWriteRepository{
 		preview:  domainmcp.RecallFleetResult{PlayerID: 42, FleetID: 55, OwnerID: 42, Mission: 3, TotalShips: 2, Recallable: true},
@@ -2368,9 +2497,9 @@ func TestServiceTokenManagementRejectsUnauthenticatedAndPrivilegedScopes(t *test
 	}
 
 	service.sessions = fakeSessionLookup{auth: authenticatedSession(42)}
-	created, err := service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite}})
-	if err != nil || strings.Join(created.Creation.Token.Scopes, " ") != domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite {
-		t.Fatalf("expected fleet and queue write user token scopes to be allowed, created=%+v err=%v", created, err)
+	created, err := service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite}})
+	if err != nil || strings.Join(created.Creation.Token.Scopes, " ") != domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite {
+		t.Fatalf("expected fleet, queue, and resources write user token scopes to be allowed, created=%+v err=%v", created, err)
 	}
 	_, err = service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeAdmin}})
 	if !errors.Is(err, ErrInvalidTokenRequest) {
@@ -2830,6 +2959,34 @@ func (f *fakeQueueWriteRepository) EnqueueMCPShipyardOrder(_ context.Context, pl
 		return domainmcp.EnqueueShipyardOrderResult{}, f.err
 	}
 	return f.shipyardEnqueued, nil
+}
+
+type fakeResourceWriteRepository struct {
+	preview         domainmcp.UpdateResourceProductionResult
+	updated         domainmcp.UpdateResourceProductionResult
+	previewPlayerID int
+	updatePlayerID  int
+	previewCommand  domainmcp.UpdateResourceProductionCommand
+	updateCommand   domainmcp.UpdateResourceProductionCommand
+	err             error
+}
+
+func (f *fakeResourceWriteRepository) PreviewMCPUpdateResourceProduction(_ context.Context, playerID int, command domainmcp.UpdateResourceProductionCommand) (domainmcp.UpdateResourceProductionResult, error) {
+	f.previewPlayerID = playerID
+	f.previewCommand = command
+	if f.err != nil {
+		return domainmcp.UpdateResourceProductionResult{}, f.err
+	}
+	return f.preview, nil
+}
+
+func (f *fakeResourceWriteRepository) UpdateMCPResourceProduction(_ context.Context, playerID int, command domainmcp.UpdateResourceProductionCommand) (domainmcp.UpdateResourceProductionResult, error) {
+	f.updatePlayerID = playerID
+	f.updateCommand = command
+	if f.err != nil {
+		return domainmcp.UpdateResourceProductionResult{}, f.err
+	}
+	return f.updated, nil
 }
 
 type fakeSessionLookup struct {
