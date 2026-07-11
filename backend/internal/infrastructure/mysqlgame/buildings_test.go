@@ -126,6 +126,29 @@ func TestBuildingsRepositoryReadsLegacyBuildings(t *testing.T) {
 	}
 }
 
+func TestBuildingsRepositoryMapsMCPBuildingOptions(t *testing.T) {
+	queryer := &fakeQueryer{results: buildingOptionsReadResults()}
+	repository := NewBuildingsRepositoryWithRunner(queryer, nil, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+
+	options, err := repository.GetMCPBuildingOptions(context.Background(), 42, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.PlayerID != 42 || options.Planet.ID != 99 || options.Planet.TypeName != "planet" || !options.CommanderActive {
+		t.Fatalf("unexpected mcp building options summary: %+v", options)
+	}
+	if len(options.Queue) != 1 || options.Queue[0].TechID != domaingame.BuildingMetalStorage || options.Queue[0].RemainingSeconds != 10 {
+		t.Fatalf("unexpected mcp building queue: %+v", options.Queue)
+	}
+	metalMine := domainMCPBuildingOptionByID(t, options, domaingame.BuildingMetalMine)
+	if metalMine.Level != 2 || metalMine.NextLevel != 3 || metalMine.DurationSeconds != 11 || metalMine.Cost.Metal <= 0 {
+		t.Fatalf("unexpected mcp metal mine option: %+v", metalMine)
+	}
+	if strings.Contains(queryer.calls[0].sql, "SELECT speed, freeze") {
+		t.Fatalf("read-only MCP building options should not finish queues, got first query %+v", queryer.calls[0])
+	}
+}
+
 func TestNewBuildingsRepositoryKeepsSQLQueryer(t *testing.T) {
 	repository := NewBuildingsRepository(nil, "ogame_")
 
@@ -145,6 +168,13 @@ func TestNewBuildingsRepositoryKeepsSQLQueryer(t *testing.T) {
 	repository = NewBuildingsRepositoryWithRunner(&fakeQueryer{}, nil, "ogame_", nil)
 	if repository.now == nil {
 		t.Fatalf("expected nil clock to default")
+	}
+	repository = NewBuildingsReadRepository(nil, "ogame_")
+	if repository.execer != nil || repository.updateResources {
+		t.Fatalf("expected MCP read repository without writer/resource updates, got %+v", repository)
+	}
+	if _, err := (BuildingsRepository{}).GetMCPBuildingOptions(context.Background(), 42, 0); err == nil {
+		t.Fatal("expected nil buildings reader error")
 	}
 }
 
@@ -2007,6 +2037,36 @@ func buildingQueueTaskValues(row buildingQueueTask) []any {
 	return []any{row.TaskID, row.OwnerID, row.Type, row.SubID, row.ObjID, row.Level, row.Start, row.End, row.Prio, row.Freeze, row.Frozen}
 }
 
+func buildingOptionsReadResults() []fakeQueryResult {
+	return []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 7, 99, 1, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3, 12800, 19, 4, 163, 10000.0, 10000.0, 10000.0, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3})},
+		{rows: fakeRowsFromValues([]any{2})},
+		{rows: fakeRowsFromValues(buildingLevelRow(map[int]int{
+			domaingame.BuildingMetalMine:       2,
+			domaingame.BuildingDeuteriumSynth:  5,
+			domaingame.BuildingRoboticsFactory: 10,
+		}))},
+		{rows: fakeRowsFromValues(researchLevelRow(map[int]int{
+			domaingame.ResearchComputer: 10,
+			domaingame.ResearchEnergy:   3,
+		}))},
+		{rows: fakeRowsFromValues([]any{2.0})},
+		{rows: fakeRowsFromValues([]any{int64(3_000)})},
+		{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{
+			ID:       7,
+			OwnerID:  42,
+			PlanetID: 99,
+			ListID:   1,
+			TechID:   domaingame.BuildingMetalStorage,
+			Level:    2,
+			Start:    2_000,
+			End:      2_010,
+		}))},
+	}
+}
+
 type fakeBuildingsRunner struct {
 	fakeQueryer
 	execs    []fakeBuddyExec
@@ -2065,6 +2125,17 @@ func buildingByID(t *testing.T, buildings domaingame.Buildings, id int) domainga
 	}
 	t.Fatalf("building %d not found in %+v", id, buildings.Items)
 	return domaingame.BuildingItem{}
+}
+
+func domainMCPBuildingOptionByID(t *testing.T, options domainmcp.BuildingOptions, id int) domainmcp.BuildingOption {
+	t.Helper()
+	for _, item := range options.Items {
+		if item.ID == id {
+			return item
+		}
+	}
+	t.Fatalf("building option %d not found in %+v", id, options.Items)
+	return domainmcp.BuildingOption{}
 }
 
 func containsBuilding(buildings domaingame.Buildings, id int) bool {

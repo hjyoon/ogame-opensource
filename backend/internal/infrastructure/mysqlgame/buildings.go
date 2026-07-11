@@ -28,6 +28,10 @@ func NewBuildingsRepository(db *sql.DB, prefix string) BuildingsRepository {
 	return BuildingsRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, updateResources: true}
 }
 
+func NewBuildingsReadRepository(db *sql.DB, prefix string) BuildingsRepository {
+	return NewBuildingsRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
+}
+
 func NewBuildingsRepositoryWithQueryer(queryer Queryer, prefix string) BuildingsRepository {
 	var execer Execer
 	if runner, ok := queryer.(Execer); ok {
@@ -95,6 +99,65 @@ func (r BuildingsRepository) GetBuildings(ctx context.Context, query appgame.Bui
 	}
 
 	return domaingame.BuildBuildingsWithQueue(overview, levels, research, speed, commanderActive, queue), nil
+}
+
+func (r BuildingsRepository) GetMCPBuildingOptions(ctx context.Context, playerID int, planetID int) (domainmcp.BuildingOptions, error) {
+	if r.queryer == nil {
+		return domainmcp.BuildingOptions{}, errors.New("buildings reader unavailable")
+	}
+	buildings, err := r.GetBuildings(ctx, appgame.BuildingsQuery{PlayerID: playerID, PlanetID: planetID})
+	if err != nil {
+		return domainmcp.BuildingOptions{}, err
+	}
+	queue := make([]domainmcp.BuildingQueueEntry, 0, len(buildings.Queue))
+	for _, entry := range buildings.Queue {
+		queue = append(queue, mcpBuildingQueueEntry(entry))
+	}
+	items := make([]domainmcp.BuildingOption, 0, len(buildings.Items))
+	for _, item := range buildings.Items {
+		items = append(items, domainmcp.BuildingOption{
+			ID:              item.ID,
+			Name:            item.Name,
+			Description:     item.Description,
+			Level:           item.Level,
+			NextLevel:       item.NextLevel,
+			Cost:            mcpTechnologyCost(item.Cost),
+			DurationSeconds: item.DurationSeconds,
+			CanBuild:        item.CanBuild,
+			Action:          item.Action,
+		})
+	}
+	return domainmcp.BuildingOptions{
+		PlayerID: playerID,
+		Planet: domainmcp.Planet{
+			ID:       buildings.CurrentPlanet.ID,
+			Name:     buildings.CurrentPlanet.Name,
+			Type:     buildings.CurrentPlanet.Type,
+			TypeName: mcpPlanetTypeName(buildings.CurrentPlanet.Type),
+			Coordinates: domainmcp.Coordinates{
+				Galaxy:   buildings.CurrentPlanet.Coordinates.Galaxy,
+				System:   buildings.CurrentPlanet.Coordinates.System,
+				Position: buildings.CurrentPlanet.Coordinates.Position,
+			},
+			Current: true,
+		},
+		CommanderActive: buildings.CommanderActive,
+		Queue:           queue,
+		Items:           items,
+	}, nil
+}
+
+func mcpBuildingQueueEntry(entry domaingame.BuildingQueueEntry) domainmcp.BuildingQueueEntry {
+	return domainmcp.BuildingQueueEntry{
+		ListID:           entry.ListID,
+		TechID:           entry.TechID,
+		Name:             entry.Name,
+		Level:            entry.Level,
+		Destroy:          entry.Destroy,
+		Start:            entry.Start,
+		End:              entry.End,
+		RemainingSeconds: entry.RemainingSeconds,
+	}
 }
 
 func (r BuildingsRepository) MutateBuildings(ctx context.Context, query appgame.BuildingsMutationQuery) (appgame.BuildingsMutationOutcome, error) {

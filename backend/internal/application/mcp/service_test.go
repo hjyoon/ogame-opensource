@@ -736,6 +736,26 @@ func TestServiceListsTechnologyTreeToolForReadScope(t *testing.T) {
 	}
 }
 
+func TestServiceListsBuildingOptionsToolForReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithBuildingOptionsReadRepository(&fakeBuildingOptionsReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_building_options" {
+		t.Fatalf("unexpected read building tools: %v", names)
+	}
+}
+
 func TestServiceListsMessageToolsForMessageScopedTokens(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -1660,6 +1680,71 @@ func TestServiceTechnologyTreeToolRequiresRepositoryReadScopeAndValidArguments(t
 	command, err := mcpTechnologyCommand(nil)
 	if err != nil || command.PlanetID != 0 || command.DetailsID != 0 || command.InfoID != 0 {
 		t.Fatalf("unexpected default technology command=%+v err=%v", command, err)
+	}
+}
+
+func TestServiceCallsBuildingOptionsTool(t *testing.T) {
+	options := domainmcp.BuildingOptions{
+		PlayerID: 42,
+		Planet:   domainmcp.Planet{ID: 99, Name: "Arakis"},
+		Items: []domainmcp.BuildingOption{{
+			ID:        1,
+			Name:      "Metal Mine",
+			Level:     12,
+			NextLevel: 13,
+			CanBuild:  true,
+		}},
+	}
+	repository := &fakeBuildingOptionsReadRepository{result: options}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithBuildingOptionsReadRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_building_options",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": "99"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["buildingOptions"].(domainmcp.BuildingOptions)
+	if result.IsError || got.PlayerID != 42 || got.Planet.ID != 99 || len(got.Items) != 1 || got.Items[0].Name != "Metal Mine" {
+		t.Fatalf("unexpected building options result: %+v", result)
+	}
+	if repository.playerID != 42 || repository.planetID != 99 {
+		t.Fatalf("unexpected building options command: player=%d planet=%d", repository.playerID, repository.planetID)
+	}
+}
+
+func TestServiceBuildingOptionsToolRequiresRepositoryReadScopeAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_building_options", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing building read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_building_options", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithBuildingOptionsReadRepository(&fakeBuildingOptionsReadRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_building_options",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": true},
+	}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid planet id error, got %v", err)
+	}
+
+	service = service.WithBuildingOptionsReadRepository(&fakeBuildingOptionsReadRepository{err: errors.New("buildings down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_building_options", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "buildings down") {
+		t.Fatalf("expected building repository error, got %v", err)
 	}
 }
 
@@ -3821,6 +3906,22 @@ func (f *fakeTechnologyReadRepository) GetMCPTechnology(_ context.Context, playe
 	f.command = command
 	if f.err != nil {
 		return domainmcp.TechnologyTree{}, f.err
+	}
+	return f.result, nil
+}
+
+type fakeBuildingOptionsReadRepository struct {
+	result   domainmcp.BuildingOptions
+	playerID int
+	planetID int
+	err      error
+}
+
+func (f *fakeBuildingOptionsReadRepository) GetMCPBuildingOptions(_ context.Context, playerID int, planetID int) (domainmcp.BuildingOptions, error) {
+	f.playerID = playerID
+	f.planetID = planetID
+	if f.err != nil {
+		return domainmcp.BuildingOptions{}, f.err
 	}
 	return f.result, nil
 }

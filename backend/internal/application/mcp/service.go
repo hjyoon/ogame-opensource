@@ -130,6 +130,10 @@ type TechnologyReadRepository interface {
 	GetMCPTechnology(context.Context, int, domainmcp.TechnologyCommand) (domainmcp.TechnologyTree, error)
 }
 
+type BuildingOptionsReadRepository interface {
+	GetMCPBuildingOptions(context.Context, int, int) (domainmcp.BuildingOptions, error)
+}
+
 type PremiumWriteRepository interface {
 	PreviewMCPRecruitOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
 	RecruitMCPOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
@@ -287,6 +291,7 @@ type Service struct {
 	statisticsRead  StatisticsReadRepository
 	empireRead      EmpireReadRepository
 	technologyRead  TechnologyReadRepository
+	buildingRead    BuildingOptionsReadRepository
 	premiumWrite    PremiumWriteRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
@@ -394,6 +399,11 @@ func (s Service) WithEmpireReadRepository(repository EmpireReadRepository) Servi
 
 func (s Service) WithTechnologyReadRepository(repository TechnologyReadRepository) Service {
 	s.technologyRead = repository
+	return s
+}
+
+func (s Service) WithBuildingOptionsReadRepository(repository BuildingOptionsReadRepository) Service {
+	s.buildingRead = repository
 	return s
 }
 
@@ -724,6 +734,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		if s.technologyRead != nil {
 			tools = append(tools, technologyTreeTool())
 		}
+		if s.buildingRead != nil {
+			tools = append(tools, buildingOptionsTool())
+		}
 	}
 	if access.HasScope(domainmcp.ScopeMessages) && s.readRepository != nil {
 		tools = append(tools, listMessagesTool(), getMessageTool())
@@ -869,6 +882,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callTechnologyTree(ctx, access, command.Arguments)
+	case "get_building_options":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callBuildingOptions(ctx, access, command.Arguments)
 	case "list_messages":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeMessages)
 		if err != nil {
@@ -1340,6 +1362,29 @@ func (s Service) callTechnologyTree(ctx context.Context, access domainmcp.Access
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"technology": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callBuildingOptions(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.buildingRead == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp building read repository unavailable")
+	}
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	result, err := s.buildingRead.GetMCPBuildingOptions(ctx, access.PlayerID, planetID)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"buildingOptions": result}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -3799,6 +3844,46 @@ func technologyTreeTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"technology"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func buildingOptionsTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_building_options",
+		Title:       "Get Building Options",
+		Description: "Return read-only legacy building queue and build options for the authenticated player's current or selected planet without finishing queues or updating resources.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet context.",
+				},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"buildingOptions": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":        map[string]any{"type": "integer"},
+						"planet":          map[string]any{"type": "object"},
+						"commanderActive": map[string]any{"type": "boolean"},
+						"queue":           map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"items":           map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+					},
+					"required": []string{"playerId", "planet", "commanderActive", "queue", "items"},
+				},
+			},
+			"required": []string{"buildingOptions"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,

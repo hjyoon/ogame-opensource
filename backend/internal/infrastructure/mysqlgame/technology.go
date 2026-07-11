@@ -186,13 +186,17 @@ func mcpTechnologyDemolish(demolish *domaingame.TechnologyDemolish) *domainmcp.T
 		return nil
 	}
 	return &domainmcp.TechnologyDemolish{
-		Level: demolish.Level,
-		Cost: domainmcp.TechnologyCost{
-			Metal:     demolish.Cost.Metal,
-			Crystal:   demolish.Cost.Crystal,
-			Deuterium: demolish.Cost.Deuterium,
-			Energy:    demolish.Cost.Energy,
-		},
+		Level:           demolish.Level,
+		Cost:            mcpTechnologyCost(demolish.Cost),
 		DurationSeconds: demolish.DurationSeconds,
+	}
+}
+
+func mcpTechnologyCost(cost domaingame.BuildingCost) domainmcp.TechnologyCost {
+	return domainmcp.TechnologyCost{
+		Metal:     cost.Metal,
+		Crystal:   cost.Crystal,
+		Deuterium: cost.Deuterium,
+		Energy:    cost.Energy,
 	}
 }

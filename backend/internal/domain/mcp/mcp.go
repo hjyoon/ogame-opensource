@@ -189,6 +189,26 @@ type BuildingQueue struct {
 	Entries  []BuildingQueueEntry `json:"entries"`
 }
 
+type BuildingOption struct {
+	ID              int            `json:"id"`
+	Name            string         `json:"name"`
+	Description     string         `json:"description"`
+	Level           int            `json:"level"`
+	NextLevel       int            `json:"nextLevel"`
+	Cost            TechnologyCost `json:"cost"`
+	DurationSeconds int            `json:"durationSeconds"`
+	CanBuild        bool           `json:"canBuild"`
+	Action          string         `json:"action"`
+}
+
+type BuildingOptions struct {
+	PlayerID        int                  `json:"playerId"`
+	Planet          Planet               `json:"planet"`
+	CommanderActive bool                 `json:"commanderActive"`
+	Queue           []BuildingQueueEntry `json:"queue"`
+	Items           []BuildingOption     `json:"items"`
+}
+
 type MessageQuery struct {
 	Limit          int
 	MessageType    int
