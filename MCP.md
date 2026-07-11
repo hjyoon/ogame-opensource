@@ -42,9 +42,9 @@ Implemented:
 - Consent CSRF+UX shows resource, redirect, scopes, deny.
 - MCP/OAuth rate limits on RPC, OAuth, and token API paths.
 - JSON audit logging for every `tools/call`; no secrets are logged.
-- Auth `mcp:read`: planets, overview, resources/options, queues, fleets/options,
-  officers, search, galaxy, stats, empire, tech, buildings, research,
-  shipyard, defense, alliance. No legacy read mutations.
+- Auth `mcp:read`: planets, overview, resources/options, queues,
+  fleets/options, officers, search, galaxy, stats, alliance, buddy, empire,
+  tech, buildings, research, shipyard, defense. Read-only.
 - Authenticated `mcp:messages` tools: `list_messages` and `get_message`.
   Read owned inbox rows without marking read or cleanup mutation.
 - Authenticated `mcp:message_write` tools: `send_message`, `delete_messages`,

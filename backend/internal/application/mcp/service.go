@@ -130,6 +130,10 @@ type AllianceReadRepository interface {
 	GetMCPAllianceStatus(context.Context, int, domainmcp.AllianceStatusCommand) (domainmcp.AllianceStatus, error)
 }
 
+type BuddyReadRepository interface {
+	GetMCPBuddyStatus(context.Context, int, domainmcp.BuddyStatusCommand) (domainmcp.BuddyStatus, error)
+}
+
 type EmpireReadRepository interface {
 	GetMCPEmpire(context.Context, int, domainmcp.EmpireCommand) (domainmcp.EmpireOverview, error)
 }
@@ -315,6 +319,7 @@ type Service struct {
 	galaxyRead      GalaxyReadRepository
 	statisticsRead  StatisticsReadRepository
 	allianceRead    AllianceReadRepository
+	buddyRead       BuddyReadRepository
 	empireRead      EmpireReadRepository
 	technologyRead  TechnologyReadRepository
 	buildingRead    BuildingOptionsReadRepository
@@ -429,6 +434,11 @@ func (s Service) WithStatisticsReadRepository(repository StatisticsReadRepositor
 
 func (s Service) WithAllianceReadRepository(repository AllianceReadRepository) Service {
 	s.allianceRead = repository
+	return s
+}
+
+func (s Service) WithBuddyReadRepository(repository BuddyReadRepository) Service {
+	s.buddyRead = repository
 	return s
 }
 
@@ -794,6 +804,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		if s.allianceRead != nil {
 			tools = append(tools, allianceStatusTool())
 		}
+		if s.buddyRead != nil {
+			tools = append(tools, buddyStatusTool())
+		}
 		if s.empireRead != nil {
 			tools = append(tools, empireOverviewTool())
 		}
@@ -969,6 +982,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callAllianceStatus(ctx, access, command.Arguments)
+	case "get_buddy_status":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callBuddyStatus(ctx, access, command.Arguments)
 	case "get_empire_overview":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
 		if err != nil {
@@ -1517,6 +1539,29 @@ func (s Service) callAllianceStatus(ctx context.Context, access domainmcp.Access
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"allianceStatus": status}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callBuddyStatus(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.buddyRead == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp buddy read repository unavailable")
+	}
+	command, err := mcpBuddyStatusCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	status, err := s.buddyRead.GetMCPBuddyStatus(ctx, access.PlayerID, command)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"buddyStatus": status}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -3068,6 +3113,27 @@ func mcpAllianceStatusCommand(arguments map[string]any) (domainmcp.AllianceStatu
 	}, nil
 }
 
+func mcpBuddyStatusCommand(arguments map[string]any) (domainmcp.BuddyStatusCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.BuddyStatusCommand{}, err
+	}
+	action, err := optionalNonNegativeIntArgument(arguments, "action")
+	if err != nil {
+		return domainmcp.BuddyStatusCommand{}, err
+	}
+	switch action {
+	case 0, 5, 6, 7:
+	default:
+		return domainmcp.BuddyStatusCommand{}, domainmcp.ErrInvalidParams
+	}
+	buddyID, err := optionalNonNegativeIntArgument(arguments, "buddyId")
+	if err != nil {
+		return domainmcp.BuddyStatusCommand{}, err
+	}
+	return domainmcp.BuddyStatusCommand{PlanetID: planetID, Action: action, BuddyID: buddyID}, nil
+}
+
 func mcpEmpireCommand(arguments map[string]any) (domainmcp.EmpireCommand, error) {
 	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
 	if err != nil {
@@ -4210,6 +4276,58 @@ func allianceStatusTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"allianceStatus"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func buddyStatusTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_buddy_status",
+		Title:       "Get Buddy Status",
+		Description: "Return read-only legacy buddy screen state for the authenticated player, including accepted, incoming, outgoing, and request-target views.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet context.",
+					"minimum":     0,
+				},
+				"action": map[string]any{
+					"type":        "integer",
+					"description": "Legacy buddy view action: 0 home, 5 incoming, 6 outgoing, 7 request target.",
+					"enum":        []int{0, 5, 6, 7},
+				},
+				"buddyId": map[string]any{
+					"type":        "integer",
+					"description": "Target player id for action 7.",
+					"minimum":     0,
+				},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"buddyStatus": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":  map[string]any{"type": "integer"},
+						"planet":    map[string]any{"type": "object"},
+						"commander": map[string]any{"type": "string"},
+						"action":    map[string]any{"type": "integer"},
+						"rows":      map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"target":    map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "planet", "commander", "action", "rows"},
+				},
+			},
+			"required": []string{"buddyStatus"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,

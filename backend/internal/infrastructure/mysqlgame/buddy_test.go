@@ -10,6 +10,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestBuddyRepositoryReadsLegacyHomeRows(t *testing.T) {
@@ -33,6 +34,71 @@ func TestBuddyRepositoryReadsLegacyHomeRows(t *testing.T) {
 	}
 	if !strings.Contains(queryer.calls[4].sql, "accepted = 1") || !strings.Contains(queryer.calls[4].sql, "CASE WHEN b.request_from = ?") {
 		t.Fatalf("expected accepted buddy CASE query, got %s", queryer.calls[4].sql)
+	}
+}
+
+func TestBuddyRepositoryMapsMCPBuddyStatus(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(buddyRow(11, 43, "allymate", 7, "TAG", 0, 1, 2, 4, 1_000, "hello"))},
+	)}
+	repository := NewBuddyRepositoryWithQueryer(queryer, "ogame_")
+	repository.now = func() time.Time { return time.Unix(2_000, 0) }
+
+	status, err := repository.GetMCPBuddyStatus(context.Background(), 42, domainmcp.BuddyStatusCommand{
+		Action: domaingame.BuddyActionIncoming,
+	})
+	if err != nil {
+		t.Fatalf("GetMCPBuddyStatus returned error: %v", err)
+	}
+	if status.PlayerID != 42 || status.Planet.ID != 99 || status.Planet.TypeName != "planet" || status.Action != domaingame.BuddyActionIncoming || len(status.Rows) != 1 {
+		t.Fatalf("unexpected mcp buddy status: %+v", status)
+	}
+	row := status.Rows[0]
+	if row.BuddyID != 11 || row.Player.PlayerID != 43 || row.Player.Alliance == nil || row.Player.Alliance.Tag != "TAG" ||
+		row.Status.Text != "16 min" || row.Status.Color != "yellow" {
+		t.Fatalf("unexpected mcp buddy row: %+v", row)
+	}
+	if _, err := (BuddyRepository{}).GetMCPBuddyStatus(context.Background(), 42, domainmcp.BuddyStatusCommand{}); err == nil {
+		t.Fatalf("expected unavailable reader error")
+	}
+}
+
+func TestMCPBuddyStatusMapsTargetAndNilBranches(t *testing.T) {
+	status := mcpBuddyStatus(42, domaingame.Buddy{
+		Commander: "legor",
+		CurrentPlanet: domaingame.PlanetOverview{
+			ID:   99,
+			Name: "Moon",
+			Type: domaingame.PlanetTypeMoon,
+			Coordinates: domaingame.Coordinates{
+				Galaxy:   1,
+				System:   2,
+				Position: 3,
+			},
+		},
+		Action: domaingame.BuddyActionRequest,
+		Rows: []domaingame.BuddyRow{{
+			BuddyID: 12,
+			Player: domaingame.BuddyPlayer{
+				PlayerID: 44,
+				Name:     "without_alliance",
+			},
+			Status: domaingame.BuddyStatus{Text: "Off", Color: "red"},
+		}},
+		Target: &domaingame.BuddyPlayer{
+			PlayerID: 43,
+			Name:     "target",
+			Alliance: &domaingame.BuddyAlliance{ID: 7, Tag: "TAG", Founder: true},
+			Coordinates: domaingame.Coordinates{
+				Galaxy:   4,
+				System:   5,
+				Position: 6,
+			},
+		},
+	})
+	if status.Planet.TypeName != "moon" || status.Target == nil || status.Target.Alliance == nil || !status.Target.Alliance.Founder ||
+		len(status.Rows) != 1 || status.Rows[0].Player.Alliance != nil {
+		t.Fatalf("unexpected mapped buddy status: %+v", status)
 	}
 }
 

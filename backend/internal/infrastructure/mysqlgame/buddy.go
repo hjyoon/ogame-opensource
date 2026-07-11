@@ -11,6 +11,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type BuddyRepository struct {
@@ -23,6 +24,10 @@ type BuddyRepository struct {
 func NewBuddyRepository(db *sql.DB, prefix string) BuddyRepository {
 	runner := SQLQueryer{DB: db}
 	return BuddyRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now}
+}
+
+func NewBuddyReadRepository(db *sql.DB, prefix string) BuddyRepository {
+	return NewBuddyRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
 }
 
 func NewBuddyRepositoryWithQueryer(queryer Queryer, prefix string) BuddyRepository {
@@ -90,6 +95,92 @@ func (r BuddyRepository) GetBuddy(ctx context.Context, query appgame.BuddyQuery)
 		return domaingame.Buddy{}, err
 	}
 	return buddy, nil
+}
+
+func (r BuddyRepository) GetMCPBuddyStatus(ctx context.Context, playerID int, command domainmcp.BuddyStatusCommand) (domainmcp.BuddyStatus, error) {
+	if r.queryer == nil {
+		return domainmcp.BuddyStatus{}, errors.New("buddy reader unavailable")
+	}
+	buddy, err := r.GetBuddy(ctx, appgame.BuddyQuery{
+		PlayerID: playerID,
+		PlanetID: command.PlanetID,
+		Action:   command.Action,
+		BuddyID:  command.BuddyID,
+	})
+	if err != nil {
+		return domainmcp.BuddyStatus{}, err
+	}
+	return mcpBuddyStatus(playerID, buddy), nil
+}
+
+func mcpBuddyStatus(playerID int, buddy domaingame.Buddy) domainmcp.BuddyStatus {
+	return domainmcp.BuddyStatus{
+		PlayerID: playerID,
+		Planet: domainmcp.Planet{
+			ID:       buddy.CurrentPlanet.ID,
+			Name:     buddy.CurrentPlanet.Name,
+			Type:     buddy.CurrentPlanet.Type,
+			TypeName: mcpPlanetTypeName(buddy.CurrentPlanet.Type),
+			Coordinates: domainmcp.Coordinates{
+				Galaxy:   buddy.CurrentPlanet.Coordinates.Galaxy,
+				System:   buddy.CurrentPlanet.Coordinates.System,
+				Position: buddy.CurrentPlanet.Coordinates.Position,
+			},
+			Current: true,
+		},
+		Commander: buddy.Commander,
+		Action:    buddy.Action,
+		Rows:      mcpBuddyRows(buddy.Rows),
+		Target:    mcpBuddyPlayer(buddy.Target),
+	}
+}
+
+func mcpBuddyRows(rows []domaingame.BuddyRow) []domainmcp.BuddyRow {
+	result := make([]domainmcp.BuddyRow, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, domainmcp.BuddyRow{
+			BuddyID: row.BuddyID,
+			Player:  mcpBuddyPlayerValue(row.Player),
+			Text:    row.Text,
+			Status: domainmcp.BuddyOnlineStatus{
+				Text:  row.Status.Text,
+				Color: row.Status.Color,
+			},
+		})
+	}
+	return result
+}
+
+func mcpBuddyPlayer(player *domaingame.BuddyPlayer) *domainmcp.BuddyPlayer {
+	if player == nil {
+		return nil
+	}
+	result := mcpBuddyPlayerValue(*player)
+	return &result
+}
+
+func mcpBuddyPlayerValue(player domaingame.BuddyPlayer) domainmcp.BuddyPlayer {
+	return domainmcp.BuddyPlayer{
+		PlayerID: player.PlayerID,
+		Name:     player.Name,
+		Alliance: mcpBuddyAlliance(player.Alliance),
+		Coordinates: domainmcp.Coordinates{
+			Galaxy:   player.Coordinates.Galaxy,
+			System:   player.Coordinates.System,
+			Position: player.Coordinates.Position,
+		},
+	}
+}
+
+func mcpBuddyAlliance(alliance *domaingame.BuddyAlliance) *domainmcp.BuddyAllianceRef {
+	if alliance == nil {
+		return nil
+	}
+	return &domainmcp.BuddyAllianceRef{
+		ID:      alliance.ID,
+		Tag:     alliance.Tag,
+		Founder: alliance.Founder,
+	}
 }
 
 func (r BuddyRepository) MutateBuddy(ctx context.Context, query appgame.BuddyMutationQuery) (appgame.BuddyMutationOutcome, error) {

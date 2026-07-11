@@ -716,6 +716,26 @@ func TestServiceListsAllianceStatusToolForReadScope(t *testing.T) {
 	}
 }
 
+func TestServiceListsBuddyStatusToolForReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithBuddyReadRepository(&fakeBuddyReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_buddy_status" {
+		t.Fatalf("unexpected read buddy tools: %v", names)
+	}
+}
+
 func TestServiceListsEmpireOverviewToolForReadScope(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -1778,6 +1798,74 @@ func TestServiceAllianceStatusToolRequiresRepositoryReadScopeAndValidArguments(t
 	service = service.WithAllianceReadRepository(&fakeAllianceReadRepository{err: errors.New("alliance down")})
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_alliance_status", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "alliance down") {
 		t.Fatalf("expected alliance repository error, got %v", err)
+	}
+}
+
+func TestServiceCallsBuddyStatusTool(t *testing.T) {
+	status := domainmcp.BuddyStatus{
+		PlayerID:  42,
+		Planet:    domainmcp.Planet{ID: 99, Name: "Arakis"},
+		Commander: "legor",
+		Action:    5,
+		Rows: []domainmcp.BuddyRow{{
+			BuddyID: 11,
+			Player:  domainmcp.BuddyPlayer{PlayerID: 43, Name: "allymate"},
+			Status:  domainmcp.BuddyOnlineStatus{Text: "On", Color: "lime"},
+		}},
+	}
+	repository := &fakeBuddyReadRepository{result: status}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithBuddyReadRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_buddy_status",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": "99", "action": 5, "buddyId": 43},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["buddyStatus"].(domainmcp.BuddyStatus)
+	if result.IsError || got.PlayerID != 42 || got.Action != 5 || len(got.Rows) != 1 {
+		t.Fatalf("unexpected buddy status result: %+v", result)
+	}
+	if repository.playerID != 42 || repository.command.PlanetID != 99 || repository.command.Action != 5 || repository.command.BuddyID != 43 {
+		t.Fatalf("unexpected buddy status command: player=%d command=%+v", repository.playerID, repository.command)
+	}
+}
+
+func TestServiceBuddyStatusToolRequiresRepositoryReadScopeAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_buddy_status", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing buddy read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_buddy_status", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithBuddyReadRepository(&fakeBuddyReadRepository{})
+	for _, arguments := range []map[string]any{
+		{"planetId": true},
+		{"action": true},
+		{"action": 1},
+		{"buddyId": true},
+	} {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_buddy_status", AccessToken: "read", Arguments: arguments}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", arguments, err)
+		}
+	}
+
+	service = service.WithBuddyReadRepository(&fakeBuddyReadRepository{err: errors.New("buddy down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_buddy_status", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "buddy down") {
+		t.Fatalf("expected buddy repository error, got %v", err)
 	}
 }
 
@@ -4423,6 +4511,22 @@ func (f *fakeAllianceReadRepository) GetMCPAllianceStatus(_ context.Context, pla
 	f.command = command
 	if f.err != nil {
 		return domainmcp.AllianceStatus{}, f.err
+	}
+	return f.result, nil
+}
+
+type fakeBuddyReadRepository struct {
+	result   domainmcp.BuddyStatus
+	playerID int
+	command  domainmcp.BuddyStatusCommand
+	err      error
+}
+
+func (f *fakeBuddyReadRepository) GetMCPBuddyStatus(_ context.Context, playerID int, command domainmcp.BuddyStatusCommand) (domainmcp.BuddyStatus, error) {
+	f.playerID = playerID
+	f.command = command
+	if f.err != nil {
+		return domainmcp.BuddyStatus{}, f.err
 	}
 	return f.result, nil
 }

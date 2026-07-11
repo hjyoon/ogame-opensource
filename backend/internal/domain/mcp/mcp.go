@@ -848,6 +848,46 @@ type AllianceStatus struct {
 	CircularResult *AllianceCircularResult `json:"circularResult,omitempty"`
 }
 
+type BuddyStatusCommand struct {
+	PlanetID int
+	Action   int
+	BuddyID  int
+}
+
+type BuddyAllianceRef struct {
+	ID      int    `json:"id"`
+	Tag     string `json:"tag"`
+	Founder bool   `json:"founder"`
+}
+
+type BuddyPlayer struct {
+	PlayerID    int               `json:"playerId"`
+	Name        string            `json:"name"`
+	Alliance    *BuddyAllianceRef `json:"alliance,omitempty"`
+	Coordinates Coordinates       `json:"coordinates"`
+}
+
+type BuddyOnlineStatus struct {
+	Text  string `json:"text"`
+	Color string `json:"color"`
+}
+
+type BuddyRow struct {
+	BuddyID int               `json:"buddyId"`
+	Player  BuddyPlayer       `json:"player"`
+	Text    string            `json:"text"`
+	Status  BuddyOnlineStatus `json:"status"`
+}
+
+type BuddyStatus struct {
+	PlayerID  int          `json:"playerId"`
+	Planet    Planet       `json:"planet"`
+	Commander string       `json:"commander"`
+	Action    int          `json:"action"`
+	Rows      []BuddyRow   `json:"rows"`
+	Target    *BuddyPlayer `json:"target,omitempty"`
+}
+
 type EmpireCommand struct {
 	PlanetID   int
 	PlanetType int
