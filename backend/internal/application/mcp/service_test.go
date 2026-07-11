@@ -836,6 +836,26 @@ func TestServiceListsOptionsToolForReadScope(t *testing.T) {
 	}
 }
 
+func TestServiceListsMaintenanceToolForReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithMaintenanceReadRepository(&fakeMaintenanceReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_maintenance" {
+		t.Fatalf("unexpected read maintenance tools: %v", names)
+	}
+}
+
 func TestServiceListsMerchantStatusToolForReadScope(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -2546,6 +2566,47 @@ func TestServiceOptionsToolRequiresRepositoryReadScopeAndValidArguments(t *testi
 	service = service.WithOptionsReadRepository(&fakeOptionsReadRepository{err: errors.New("options down")})
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_options", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "options down") {
 		t.Fatalf("expected options repository error, got %v", err)
+	}
+}
+
+func TestServiceCallsMaintenanceTool(t *testing.T) {
+	repository := &fakeMaintenanceReadRepository{result: domainmcp.MaintenanceStatus{PlayerID: 42, Frozen: true, Language: "fr", BoardURL: "https://board.example.test"}}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithMaintenanceReadRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_maintenance", AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["maintenance"].(domainmcp.MaintenanceStatus)
+	if result.IsError || got.PlayerID != 42 || !got.Frozen || got.Language != "fr" {
+		t.Fatalf("unexpected maintenance result: %+v", result)
+	}
+	if repository.playerID != 42 {
+		t.Fatalf("unexpected maintenance player id: %d", repository.playerID)
+	}
+}
+
+func TestServiceMaintenanceToolRequiresRepositoryAndReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_maintenance", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing maintenance repository error")
+	}
+	service = service.WithMaintenanceReadRepository(&fakeMaintenanceReadRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_maintenance", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+	service = service.WithMaintenanceReadRepository(&fakeMaintenanceReadRepository{err: errors.New("maintenance down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_maintenance", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "maintenance down") {
+		t.Fatalf("expected maintenance repository error, got %v", err)
 	}
 }
 
@@ -5927,6 +5988,20 @@ func (f *fakeOptionsReadRepository) GetMCPOptions(_ context.Context, playerID in
 	f.command = command
 	if f.err != nil {
 		return domainmcp.OptionsStatus{}, f.err
+	}
+	return f.result, nil
+}
+
+type fakeMaintenanceReadRepository struct {
+	result   domainmcp.MaintenanceStatus
+	playerID int
+	err      error
+}
+
+func (f *fakeMaintenanceReadRepository) GetMCPMaintenance(_ context.Context, playerID int) (domainmcp.MaintenanceStatus, error) {
+	f.playerID = playerID
+	if f.err != nil {
+		return domainmcp.MaintenanceStatus{}, f.err
 	}
 	return f.result, nil
 }

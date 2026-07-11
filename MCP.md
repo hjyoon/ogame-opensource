@@ -41,7 +41,7 @@ Implemented:
 - JSON audit logging for every `tools/call`; no secrets are logged.
 - Auth `mcp:read`: planets, overview, resources/options, queues,
   fleets/options, officers, search, galaxy, stats, alliance, buddy, pranger,
-  notes, options, merchant, jump gate, empire, tech, buildings, research,
+  notes, options, maintenance, merchant, jump gate, empire, tech, buildings, research,
   shipyard, defense.
 - `mcp:messages`: `list_messages`, `get_message`, `get_report`; read owned
   inbox/report rows without read marks or cleanup mutation.

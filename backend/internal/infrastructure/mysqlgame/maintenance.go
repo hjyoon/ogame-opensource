@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type MaintenanceRepository struct {
@@ -51,5 +52,18 @@ func (r MaintenanceRepository) GetMaintenance(ctx context.Context) (domaingame.M
 		Frozen:   freeze != 0,
 		Language: domaingame.NormalizeMaintenanceLanguage(language),
 		BoardURL: boardURL,
+	}, nil
+}
+
+func (r MaintenanceRepository) GetMCPMaintenance(ctx context.Context, playerID int) (domainmcp.MaintenanceStatus, error) {
+	maintenance, err := r.GetMaintenance(ctx)
+	if err != nil {
+		return domainmcp.MaintenanceStatus{}, err
+	}
+	return domainmcp.MaintenanceStatus{
+		PlayerID: playerID,
+		Frozen:   maintenance.Frozen,
+		Language: maintenance.Language,
+		BoardURL: maintenance.BoardURL,
 	}, nil
 }

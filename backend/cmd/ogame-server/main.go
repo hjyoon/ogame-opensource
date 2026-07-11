@@ -220,6 +220,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 	notesReadRepository := mysqlgame.NewNotesReadRepository(db, cfg.UniDBPrefix)
 	notesWriteRepository := mysqlgame.NewNotesRepository(db, cfg.UniDBPrefix)
 	optionsReadRepository := mysqlgame.NewOptionsReadRepository(db, cfg.UniDBPrefix)
+	maintenanceReadRepository := mysqlgame.NewMaintenanceRepository(db, cfg.UniDBPrefix)
 	merchantRepository := mysqlgame.NewMerchantRepository(db, cfg.UniDBPrefix)
 	jumpGateRepository := mysqlgame.NewJumpGateRepository(db, cfg.UniDBPrefix)
 	empireReadRepository := mysqlgame.NewEmpireReadRepository(db, cfg.UniDBPrefix)
@@ -252,6 +253,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 		WithNotesReadRepository(notesReadRepository).
 		WithNotesWriteRepository(notesWriteRepository).
 		WithOptionsReadRepository(optionsReadRepository).
+		WithMaintenanceReadRepository(maintenanceReadRepository).
 		WithMerchantReadRepository(merchantRepository).
 		WithMerchantWriteRepository(merchantRepository).
 		WithJumpGateReadRepository(jumpGateRepository).

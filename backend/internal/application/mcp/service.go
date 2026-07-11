@@ -169,6 +169,10 @@ type OptionsReadRepository interface {
 	GetMCPOptions(context.Context, int, domainmcp.OptionsStatusCommand) (domainmcp.OptionsStatus, error)
 }
 
+type MaintenanceReadRepository interface {
+	GetMCPMaintenance(context.Context, int) (domainmcp.MaintenanceStatus, error)
+}
+
 type MerchantReadRepository interface {
 	GetMCPMerchantStatus(context.Context, int, domainmcp.MerchantStatusCommand) (domainmcp.MerchantStatus, error)
 }
@@ -380,6 +384,7 @@ type Service struct {
 	notesRead       NotesReadRepository
 	notesWrite      NotesWriteRepository
 	optionsRead     OptionsReadRepository
+	maintenanceRead MaintenanceReadRepository
 	merchantRead    MerchantReadRepository
 	merchantWrite   MerchantWriteRepository
 	jumpGateRead    JumpGateReadRepository
@@ -538,6 +543,11 @@ func (s Service) WithNotesWriteRepository(repository NotesWriteRepository) Servi
 
 func (s Service) WithOptionsReadRepository(repository OptionsReadRepository) Service {
 	s.optionsRead = repository
+	return s
+}
+
+func (s Service) WithMaintenanceReadRepository(repository MaintenanceReadRepository) Service {
+	s.maintenanceRead = repository
 	return s
 }
 
@@ -941,6 +951,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		if s.optionsRead != nil {
 			tools = append(tools, optionsTool())
 		}
+		if s.maintenanceRead != nil {
+			tools = append(tools, maintenanceTool())
+		}
 		if s.merchantRead != nil {
 			tools = append(tools, merchantStatusTool())
 		}
@@ -1214,6 +1227,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callOptions(ctx, access, command.Arguments)
+	case "get_maintenance":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callMaintenance(ctx, access)
 	case "get_merchant_status":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
 		if err != nil {
@@ -2084,6 +2106,25 @@ func (s Service) callOptions(ctx context.Context, access domainmcp.Access, argum
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"options": options}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callMaintenance(ctx context.Context, access domainmcp.Access) (domainmcp.ToolCallResult, error) {
+	if s.maintenanceRead == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp maintenance read repository unavailable")
+	}
+	maintenance, err := s.maintenanceRead.GetMCPMaintenance(ctx, access.PlayerID)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"maintenance": maintenance}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -5732,6 +5773,40 @@ func optionsTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"options"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func maintenanceTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_maintenance",
+		Title:       "Get Maintenance",
+		Description: "Return read-only universe maintenance state for the authenticated player.",
+		InputSchema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"maintenance": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId": map[string]any{"type": "integer"},
+						"frozen":   map[string]any{"type": "boolean"},
+						"language": map[string]any{"type": "string"},
+						"boardUrl": map[string]any{"type": "string"},
+					},
+					"required": []string{"playerId", "frozen", "language", "boardUrl"},
+				},
+			},
+			"required": []string{"maintenance"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,

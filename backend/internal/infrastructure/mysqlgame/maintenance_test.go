@@ -25,6 +25,20 @@ func TestMaintenanceRepositoryReadsUniverseFreezeState(t *testing.T) {
 	}
 }
 
+func TestMaintenanceRepositoryMapsMCPMaintenance(t *testing.T) {
+	repository := NewMaintenanceRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{1, "fr", "https://board.example.test"})},
+	}}, "ogame_")
+
+	status, err := repository.GetMCPMaintenance(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("GetMCPMaintenance returned error: %v", err)
+	}
+	if status.PlayerID != 42 || !status.Frozen || status.Language != "fr" || status.BoardURL != "https://board.example.test" {
+		t.Fatalf("unexpected MCP maintenance status: %+v", status)
+	}
+}
+
 func TestMaintenanceRepositoryDefaultsMissingUniverseToEnglishUnfrozen(t *testing.T) {
 	repository := NewMaintenanceRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues()},

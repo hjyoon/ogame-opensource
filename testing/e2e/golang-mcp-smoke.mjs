@@ -350,6 +350,8 @@ try {
   const createNoteDryRunBody = parseJSON(createNoteDryRun);
   const optionsTool = await mcpJSONRPC("tools/call", { name: "get_options", arguments: {} }, { id: 56, headers: authHeaders });
   const optionsToolBody = parseJSON(optionsTool);
+  const maintenanceTool = await mcpJSONRPC("tools/call", { name: "get_maintenance", arguments: {} }, { id: 66, headers: authHeaders });
+  const maintenanceToolBody = parseJSON(maintenanceTool);
   const merchantStatusTool = await mcpJSONRPC("tools/call", { name: "get_merchant_status", arguments: {} }, { id: 57, headers: authHeaders });
   const merchantStatusToolBody = parseJSON(merchantStatusTool);
   const merchantMutationDryRun = await mcpJSONRPC("tools/call", { name: "mutate_merchant", arguments: { action: "call", offerId: 1 } }, { id: 64, headers: authHeaders });
@@ -444,6 +446,7 @@ try {
     "get_pranger",
     "get_notes",
     "get_options",
+    "get_maintenance",
     "get_merchant_status",
     "get_jump_gate_status",
     "get_empire_overview",
@@ -523,6 +526,7 @@ try {
       check(notesTool.status === 200 && Number(notesToolBody.result?.structuredContent?.notes?.playerId ?? 0) === login.playerID && Array.isArray(notesToolBody.result?.structuredContent?.notes?.rows), "get_notes returns read-only legacy notes state", notesToolBody.result ?? {}),
       check(createNoteDryRun.status === 200 && Number(createNoteDryRunBody.result?.structuredContent?.createNote?.playerId ?? 0) === login.playerID && createNoteDryRunBody.result?.structuredContent?.createNote?.dryRun === true && createNoteDryRunBody.result?.structuredContent?.createNote?.executed === false && createNoteDryRunBody.result?.structuredContent?.createNote?.requiresConfirmation === true && String(createNoteDryRunBody.result?.structuredContent?.createNote?.confirmation ?? "").startsWith("create_note:"), "create_note dry-run is available under notes_write and does not mutate before confirmation", createNoteDryRunBody.result ?? {}),
       check(optionsTool.status === 200 && Number(optionsToolBody.result?.structuredContent?.options?.playerId ?? 0) === login.playerID && String(optionsToolBody.result?.structuredContent?.options?.user?.name ?? "") !== "", "get_options returns read-only legacy options state without secrets", optionsToolBody.result ?? {}),
+      check(maintenanceTool.status === 200 && Number(maintenanceToolBody.result?.structuredContent?.maintenance?.playerId ?? 0) === login.playerID && typeof maintenanceToolBody.result?.structuredContent?.maintenance?.frozen === "boolean", "get_maintenance returns read-only universe maintenance state", maintenanceToolBody.result ?? {}),
       check(merchantStatusTool.status === 200 && Number(merchantStatusToolBody.result?.structuredContent?.merchantStatus?.playerId ?? 0) === login.playerID && Array.isArray(merchantStatusToolBody.result?.structuredContent?.merchantStatus?.rows), "get_merchant_status returns read-only legacy merchant state", merchantStatusToolBody.result ?? {}),
       check(merchantMutationDryRun.status === 200 && Number(merchantMutationDryRunBody.result?.structuredContent?.merchantMutation?.playerId ?? 0) === login.playerID && merchantMutationDryRunBody.result?.structuredContent?.merchantMutation?.dryRun === true && merchantMutationDryRunBody.result?.structuredContent?.merchantMutation?.executed === false && (String(merchantMutationDryRunBody.result?.structuredContent?.merchantMutation?.confirmation ?? "").startsWith("mutate_merchant:") || typeof merchantMutationDryRunBody.result?.structuredContent?.merchantMutation?.issue?.code === "string"), "mutate_merchant dry-run is available under merchant_write and does not mutate before confirmation", merchantMutationDryRunBody.result ?? {}),
       check(jumpGateStatusTool.status === 200 && Number(jumpGateStatusToolBody.result?.structuredContent?.jumpGateStatus?.playerId ?? 0) === login.playerID && Array.isArray(jumpGateStatusToolBody.result?.structuredContent?.jumpGateStatus?.targets), "get_jump_gate_status returns read-only legacy jump gate state", jumpGateStatusToolBody.result ?? {}),

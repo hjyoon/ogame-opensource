@@ -1101,6 +1101,13 @@ type OptionsStatus struct {
 	Flags     OptionsFlags    `json:"flags"`
 }
 
+type MaintenanceStatus struct {
+	PlayerID int    `json:"playerId"`
+	Frozen   bool   `json:"frozen"`
+	Language string `json:"language"`
+	BoardURL string `json:"boardUrl"`
+}
+
 type MerchantStatusCommand struct {
 	PlanetID int
 }
