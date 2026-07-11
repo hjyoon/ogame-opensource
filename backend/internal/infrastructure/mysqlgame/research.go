@@ -9,6 +9,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type ResearchRepository struct {
@@ -145,6 +146,56 @@ func (r ResearchRepository) MutateResearch(ctx context.Context, query appgame.Re
 	default:
 		return appgame.ResearchMutationOutcome{ActionIssue: domaingame.BuildingActionIssue(domaingame.BuildingsIssueInvalid)}, nil
 	}
+}
+
+func (r ResearchRepository) PreviewMCPCancelResearchQueue(ctx context.Context, playerID int, command domainmcp.CancelResearchQueueCommand) (domainmcp.CancelResearchQueueResult, error) {
+	_ = command
+	if r.queryer == nil {
+		return domainmcp.CancelResearchQueueResult{}, errors.New("research reader unavailable")
+	}
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return domainmcp.CancelResearchQueueResult{}, err
+	}
+	result := domainmcp.CancelResearchQueueResult{PlayerID: playerID}
+	queue, err := r.loadActiveResearchQueue(ctx, queueTable, playerID, 0, int(r.now().Unix()))
+	if err != nil {
+		return domainmcp.CancelResearchQueueResult{}, err
+	}
+	if queue == nil {
+		result.Issue = &domainmcp.ActionIssue{Code: "queue_not_found", Message: "Research queue row not found."}
+		return result, nil
+	}
+	name := domaingame.TechnologyName(queue.TechID)
+	if name == "" {
+		name = fmt.Sprintf("NAME_%d", queue.TechID)
+	}
+	result.PlanetID = queue.PlanetID
+	result.TaskID = queue.TaskID
+	result.TechID = queue.TechID
+	result.Name = name
+	result.Level = queue.Level
+	result.Cancelable = queue.Cancelable
+	return result, nil
+}
+
+func (r ResearchRepository) CancelMCPResearchQueue(ctx context.Context, playerID int, command domainmcp.CancelResearchQueueCommand) (domainmcp.CancelResearchQueueResult, error) {
+	if r.execer == nil {
+		return domainmcp.CancelResearchQueueResult{}, errors.New("research updater unavailable")
+	}
+	result, err := r.PreviewMCPCancelResearchQueue(ctx, playerID, command)
+	if err != nil || result.Issue != nil {
+		return result, err
+	}
+	if _, err := r.MutateResearch(ctx, appgame.ResearchMutationQuery{
+		PlayerID: playerID,
+		PlanetID: result.PlanetID,
+		Action:   "cancel",
+	}); err != nil {
+		return domainmcp.CancelResearchQueueResult{}, err
+	}
+	result.Executed = true
+	return result, nil
 }
 
 func (r ResearchRepository) acquireResearchMutationLock(ctx context.Context, playerID int) (func(), error) {

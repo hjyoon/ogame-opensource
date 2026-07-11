@@ -210,6 +210,16 @@ func (r BuildingsRepository) CancelMCPBuildingQueue(ctx context.Context, playerI
 	return result, nil
 }
 
+func (r BuildingsRepository) PreviewMCPCancelResearchQueue(ctx context.Context, playerID int, command domainmcp.CancelResearchQueueCommand) (domainmcp.CancelResearchQueueResult, error) {
+	research := ResearchRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now, updateResources: r.updateResources}
+	return research.PreviewMCPCancelResearchQueue(ctx, playerID, command)
+}
+
+func (r BuildingsRepository) CancelMCPResearchQueue(ctx context.Context, playerID int, command domainmcp.CancelResearchQueueCommand) (domainmcp.CancelResearchQueueResult, error) {
+	research := ResearchRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now, updateResources: r.updateResources}
+	return research.CancelMCPResearchQueue(ctx, playerID, command)
+}
+
 func (r BuildingsRepository) acquireBuildingMutationLock(ctx context.Context, playerID int, planetID int) (func(), error) {
 	db := r.sqlDB()
 	if db == nil || planetID <= 0 {

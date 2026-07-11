@@ -704,7 +704,7 @@ func TestServiceListsCancelBuildingQueueToolForQueueWriteScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,cancel_building_queue" {
+	if strings.Join(names, ",") != "get_server_health,cancel_building_queue,cancel_research_queue" {
 		t.Fatalf("unexpected queue-write tools: %v", names)
 	}
 }
@@ -1690,6 +1690,86 @@ func TestServiceCancelBuildingQueueRequiresScopeRepositoryAndValidParams(t *test
 	}
 }
 
+func TestServiceCallsCancelResearchQueueWithDryRunAndConfirmation(t *testing.T) {
+	repository := &fakeQueueWriteRepository{
+		researchPreview:  domainmcp.CancelResearchQueueResult{PlayerID: 42, PlanetID: 99, TaskID: 7, TechID: 113, Name: "Energy Technology", Level: 2, Cancelable: true},
+		researchCanceled: domainmcp.CancelResearchQueueResult{PlayerID: 42, PlanetID: 99, TaskID: 7, TechID: 113, Name: "Energy Technology", Level: 2, Cancelable: true, Executed: true},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"queue-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeQueueWrite}},
+		},
+	}).WithQueueWriteRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "cancel_research_queue",
+		AccessToken: "queue-write",
+	})
+	if err != nil {
+		t.Fatalf("cancel_research_queue dry-run returned error: %v", err)
+	}
+	dryRun := result.StructuredContent.(map[string]any)["cancelResearchQueue"].(domainmcp.CancelResearchQueueResult)
+	if !dryRun.DryRun || dryRun.Executed || !dryRun.RequiresConfirmation || !strings.HasPrefix(dryRun.Confirmation, "cancel_research_queue:") {
+		t.Fatalf("unexpected dry-run result: %+v", dryRun)
+	}
+	if repository.researchPreviewPlayerID != 42 {
+		t.Fatalf("unexpected preview player: %d", repository.researchPreviewPlayerID)
+	}
+
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "cancel_research_queue",
+		AccessToken: "queue-write",
+		Arguments:   map[string]any{"dryRun": false, "confirm": dryRun.Confirmation},
+	})
+	if err != nil {
+		t.Fatalf("cancel_research_queue execute returned error: %v", err)
+	}
+	canceled := result.StructuredContent.(map[string]any)["cancelResearchQueue"].(domainmcp.CancelResearchQueueResult)
+	if canceled.DryRun || !canceled.Executed || canceled.RequiresConfirmation {
+		t.Fatalf("unexpected execute result: %+v", canceled)
+	}
+	if repository.researchCancelPlayerID != 42 || repository.researchCancelCommand.Confirm != dryRun.Confirmation {
+		t.Fatalf("unexpected cancel command: player=%d command=%+v", repository.researchCancelPlayerID, repository.researchCancelCommand)
+	}
+
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "cancel_research_queue", AccessToken: "queue-write", Arguments: map[string]any{"dryRun": false, "confirm": "wrong"}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected wrong confirmation error, got %v", err)
+	}
+}
+
+func TestServiceCancelResearchQueueRequiresScopeRepositoryAndValidParams(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":        {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"queue-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeQueueWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "cancel_research_queue", AccessToken: "queue-write"}); err == nil {
+		t.Fatalf("expected missing repository error")
+	}
+
+	service = service.WithQueueWriteRepository(&fakeQueueWriteRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "cancel_research_queue", AccessToken: "read"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without queue write scope, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "cancel_research_queue", AccessToken: "queue-write", Arguments: map[string]any{"dryRun": "no"}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid dry-run error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "cancel_research_queue", AccessToken: "queue-write", Arguments: map[string]any{"confirm": true}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid confirm error, got %v", err)
+	}
+
+	service = service.WithQueueWriteRepository(&fakeQueueWriteRepository{err: errors.New("queue down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "cancel_research_queue", AccessToken: "queue-write"}); err == nil || !strings.Contains(err.Error(), "queue down") {
+		t.Fatalf("expected repository error, got %v", err)
+	}
+
+	confirm := mcpCancelResearchQueueConfirmation()
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "cancel_research_queue", AccessToken: "queue-write", Arguments: map[string]any{"dryRun": false, "confirm": confirm}}); err == nil || !strings.Contains(err.Error(), "queue down") {
+		t.Fatalf("expected execute repository error, got %v", err)
+	}
+}
+
 func TestServiceCallsRecallFleetWithDryRunAndConfirmation(t *testing.T) {
 	repository := &fakeFleetWriteRepository{
 		preview:  domainmcp.RecallFleetResult{PlayerID: 42, FleetID: 55, OwnerID: 42, Mission: 3, TotalShips: 2, Recallable: true},
@@ -2580,13 +2660,19 @@ func (f *fakeFleetWriteRepository) RecallMCPFleet(_ context.Context, playerID in
 }
 
 type fakeQueueWriteRepository struct {
-	preview         domainmcp.CancelBuildingQueueResult
-	canceled        domainmcp.CancelBuildingQueueResult
-	previewPlayerID int
-	cancelPlayerID  int
-	previewCommand  domainmcp.CancelBuildingQueueCommand
-	cancelCommand   domainmcp.CancelBuildingQueueCommand
-	err             error
+	preview                 domainmcp.CancelBuildingQueueResult
+	canceled                domainmcp.CancelBuildingQueueResult
+	researchPreview         domainmcp.CancelResearchQueueResult
+	researchCanceled        domainmcp.CancelResearchQueueResult
+	previewPlayerID         int
+	cancelPlayerID          int
+	researchPreviewPlayerID int
+	researchCancelPlayerID  int
+	previewCommand          domainmcp.CancelBuildingQueueCommand
+	cancelCommand           domainmcp.CancelBuildingQueueCommand
+	researchPreviewCommand  domainmcp.CancelResearchQueueCommand
+	researchCancelCommand   domainmcp.CancelResearchQueueCommand
+	err                     error
 }
 
 func (f *fakeQueueWriteRepository) PreviewMCPCancelBuildingQueue(_ context.Context, playerID int, command domainmcp.CancelBuildingQueueCommand) (domainmcp.CancelBuildingQueueResult, error) {
@@ -2605,6 +2691,24 @@ func (f *fakeQueueWriteRepository) CancelMCPBuildingQueue(_ context.Context, pla
 		return domainmcp.CancelBuildingQueueResult{}, f.err
 	}
 	return f.canceled, nil
+}
+
+func (f *fakeQueueWriteRepository) PreviewMCPCancelResearchQueue(_ context.Context, playerID int, command domainmcp.CancelResearchQueueCommand) (domainmcp.CancelResearchQueueResult, error) {
+	f.researchPreviewPlayerID = playerID
+	f.researchPreviewCommand = command
+	if f.err != nil {
+		return domainmcp.CancelResearchQueueResult{}, f.err
+	}
+	return f.researchPreview, nil
+}
+
+func (f *fakeQueueWriteRepository) CancelMCPResearchQueue(_ context.Context, playerID int, command domainmcp.CancelResearchQueueCommand) (domainmcp.CancelResearchQueueResult, error) {
+	f.researchCancelPlayerID = playerID
+	f.researchCancelCommand = command
+	if f.err != nil {
+		return domainmcp.CancelResearchQueueResult{}, f.err
+	}
+	return f.researchCanceled, nil
 }
 
 type fakeSessionLookup struct {

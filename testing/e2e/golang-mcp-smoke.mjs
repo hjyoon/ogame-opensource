@@ -346,6 +346,8 @@ try {
   const recallFleetDryRunBody = parseJSON(recallFleetDryRun);
   const cancelBuildingQueueDryRun = await mcpJSONRPC("tools/call", { name: "cancel_building_queue", arguments: { listId: 999999999 } }, { id: 36, headers: authHeaders });
   const cancelBuildingQueueDryRunBody = parseJSON(cancelBuildingQueueDryRun);
+  const cancelResearchQueueDryRun = await mcpJSONRPC("tools/call", { name: "cancel_research_queue", arguments: {} }, { id: 37, headers: authHeaders });
+  const cancelResearchQueueDryRunBody = parseJSON(cancelResearchQueueDryRun);
   const invalidParamsTool = await mcpJSONRPC("tools/call", { name: "get_planet_resources", arguments: { planetId: "abc" } }, { id: 27, headers: authHeaders });
   const invalidParamsToolBody = parseJSON(invalidParamsTool);
   const tokenListAfterUse = await request(`/api/game/mcp-tokens${login.search}`, {
@@ -381,7 +383,8 @@ try {
     "validate_fleet_dispatch",
     "dispatch_fleet",
     "recall_fleet",
-    "cancel_building_queue"
+    "cancel_building_queue",
+    "cancel_research_queue"
   ];
   const authedToolNames = toolNames(authedToolsBody);
   cases.push(finalize({
@@ -433,6 +436,7 @@ try {
       check(dispatchFleetWrongConfirm.status === 200 && dispatchFleetWrongConfirmBody.error?.code === -32602, "dispatch_fleet rejects wrong confirmation before mutation", dispatchFleetWrongConfirmBody),
       check(recallFleetDryRun.status === 200 && Number(recallFleetDryRunBody.result?.structuredContent?.recallFleet?.playerId ?? 0) === login.playerID && recallFleetDryRunBody.result?.structuredContent?.recallFleet?.dryRun === true && recallFleetDryRunBody.result?.structuredContent?.recallFleet?.executed === false && recallFleetDryRunBody.result?.structuredContent?.recallFleet?.requiresConfirmation === false && recallFleetDryRunBody.result?.structuredContent?.recallFleet?.issue?.code === "fleet_not_found", "recall_fleet dry-run is available under fleet_write and does not mutate missing fleet ids", recallFleetDryRunBody.result ?? {}),
       check(cancelBuildingQueueDryRun.status === 200 && Number(cancelBuildingQueueDryRunBody.result?.structuredContent?.cancelBuildingQueue?.playerId ?? 0) === login.playerID && cancelBuildingQueueDryRunBody.result?.structuredContent?.cancelBuildingQueue?.dryRun === true && cancelBuildingQueueDryRunBody.result?.structuredContent?.cancelBuildingQueue?.executed === false && cancelBuildingQueueDryRunBody.result?.structuredContent?.cancelBuildingQueue?.requiresConfirmation === false && cancelBuildingQueueDryRunBody.result?.structuredContent?.cancelBuildingQueue?.issue?.code === "queue_not_found", "cancel_building_queue dry-run is available under queue_write and does not mutate missing rows", cancelBuildingQueueDryRunBody.result ?? {}),
+      check(cancelResearchQueueDryRun.status === 200 && Number(cancelResearchQueueDryRunBody.result?.structuredContent?.cancelResearchQueue?.playerId ?? 0) === login.playerID && cancelResearchQueueDryRunBody.result?.structuredContent?.cancelResearchQueue?.dryRun === true && cancelResearchQueueDryRunBody.result?.structuredContent?.cancelResearchQueue?.executed === false && cancelResearchQueueDryRunBody.result?.structuredContent?.cancelResearchQueue?.requiresConfirmation === false && cancelResearchQueueDryRunBody.result?.structuredContent?.cancelResearchQueue?.issue?.code === "queue_not_found", "cancel_research_queue dry-run is available under queue_write and does not mutate missing rows", cancelResearchQueueDryRunBody.result ?? {}),
       check(invalidParamsTool.status === 200 && invalidParamsToolBody.error?.code === -32602, "invalid tool params return JSON-RPC invalid params", invalidParamsToolBody),
       check(Number(tokenRowAfterUse?.lastUsedAt ?? 0) > 0, "bearer tool use updates token last-used timestamp", { tokenRowAfterUse }),
       check(revoke.status === 200 && revokeBody.revoked === true, "MCP token revoke succeeds", revokeBody),

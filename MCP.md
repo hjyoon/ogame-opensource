@@ -53,8 +53,8 @@ Implemented:
   plus returned confirmation string.
 - Authenticated `mcp:fleet_write`: `validate_fleet_dispatch`,
   `dispatch_fleet`, `recall_fleet`; mutations require confirmation.
-- Authenticated `mcp:queue_write`: `cancel_building_queue`; mutation requires
-  dry-run and confirmation.
+- Authenticated `mcp:queue_write`: `cancel_building_queue`,
+  `cancel_research_queue`; mutations require confirmation.
 
 ## Static Token Format
 
@@ -87,7 +87,7 @@ narrow scope, consent, audit log, rate limit, dry-run, and confirmation.
 
 ## Next Steps
 
-1. Add research and shipyard queue actions.
+1. Add shipyard queue actions.
 
 ## General User Policy
 

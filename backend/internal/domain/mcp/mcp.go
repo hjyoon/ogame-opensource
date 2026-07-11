@@ -319,6 +319,26 @@ type CancelBuildingQueueResult struct {
 	Issue                *ActionIssue `json:"issue,omitempty"`
 }
 
+type CancelResearchQueueCommand struct {
+	DryRun  bool
+	Confirm string
+}
+
+type CancelResearchQueueResult struct {
+	PlayerID             int          `json:"playerId"`
+	PlanetID             int          `json:"planetId,omitempty"`
+	TaskID               int          `json:"taskId,omitempty"`
+	TechID               int          `json:"techId,omitempty"`
+	Name                 string       `json:"name,omitempty"`
+	Level                int          `json:"level,omitempty"`
+	Cancelable           bool         `json:"cancelable"`
+	DryRun               bool         `json:"dryRun"`
+	RequiresConfirmation bool         `json:"requiresConfirmation"`
+	Confirmation         string       `json:"confirmation,omitempty"`
+	Executed             bool         `json:"executed"`
+	Issue                *ActionIssue `json:"issue,omitempty"`
+}
+
 type DispatchFleetCommand struct {
 	PlanetID        int
 	Ships           map[int]int

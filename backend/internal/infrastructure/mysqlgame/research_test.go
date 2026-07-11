@@ -11,6 +11,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestResearchRepositoryReadsLegacyResearch(t *testing.T) {
@@ -289,6 +290,89 @@ func TestResearchRepositoryCancelsResearchAndRefunds(t *testing.T) {
 		!strings.Contains(runner.execs[1].sql, "DELETE FROM `ogame_queue` WHERE task_id = ?") ||
 		runner.execs[1].args[0] != 8 {
 		t.Fatalf("unexpected research cancel execs: %+v", runner.execs)
+	}
+}
+
+func TestResearchRepositoryMCPCancelResearchQueuePreviewAndExecute(t *testing.T) {
+	now := time.Unix(2_000, 0)
+	activeResearchRow := []any{8, 99, domaingame.ResearchEnergy, 2, int(now.Unix() - 50), int(now.Unix() + 150), 0, 0}
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(activeResearchRow)},
+		{rows: fakeRowsFromValues(activeResearchRow)},
+		{rows: fakeRowsFromValues([]any{2.0, 0})},
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 99, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3, 12800, 19, 1, 163, 10_000.0, 10_000.0, 10_000.0, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", domaingame.PlanetTypePlanet, 1, 2, 3})},
+		{rows: fakeRowsFromValues([]any{1})},
+		{rows: fakeRowsFromValues([]any{2.0, 0})},
+		{rows: fakeRowsFromValues(activeResearchRow)},
+		{rows: fakeRowsFromValues(buildingMutationPlanetRowWithFields(map[int]int{domaingame.BuildingResearchLab: 1}, domaingame.PlanetTypePlanet, 1, 163))},
+	}}}
+	repository := NewResearchRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	preview, err := repository.PreviewMCPCancelResearchQueue(context.Background(), 42, domainmcp.CancelResearchQueueCommand{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.PlayerID != 42 || preview.PlanetID != 99 || preview.TaskID != 8 || preview.TechID != domaingame.ResearchEnergy || preview.Name != "Energy Technology" || preview.Level != 2 || !preview.Cancelable {
+		t.Fatalf("unexpected preview: %+v", preview)
+	}
+
+	canceled, err := repository.CancelMCPResearchQueue(context.Background(), 42, domainmcp.CancelResearchQueueCommand{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !canceled.Executed || canceled.Issue != nil || canceled.TaskID != 8 || canceled.Name != "Energy Technology" {
+		t.Fatalf("unexpected canceled result: %+v", canceled)
+	}
+	if len(runner.execs) != 2 ||
+		!strings.Contains(runner.execs[0].sql, "UPDATE `ogame_planets` SET `700` = `700` + ?") ||
+		!strings.Contains(runner.execs[1].sql, "DELETE FROM `ogame_queue` WHERE task_id = ?") ||
+		runner.execs[1].args[0] != 8 {
+		t.Fatalf("unexpected research cancel execs: %+v", runner.execs)
+	}
+}
+
+func TestResearchRepositoryMCPCancelResearchQueueEdges(t *testing.T) {
+	now := time.Unix(2_000, 0)
+	if _, err := (ResearchRepository{}).PreviewMCPCancelResearchQueue(context.Background(), 42, domainmcp.CancelResearchQueueCommand{}); err == nil {
+		t.Fatal("expected missing research reader error")
+	}
+	if _, err := NewResearchRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_", nil).PreviewMCPCancelResearchQueue(context.Background(), 42, domainmcp.CancelResearchQueueCommand{}); err == nil {
+		t.Fatal("expected bad prefix error")
+	}
+	if _, err := NewResearchRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("queue failed")}}}, "ogame_", func() time.Time { return now }).PreviewMCPCancelResearchQueue(context.Background(), 42, domainmcp.CancelResearchQueueCommand{}); err == nil || !strings.Contains(err.Error(), "queue failed") {
+		t.Fatalf("expected queue error, got %v", err)
+	}
+
+	fallback, err := NewResearchRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{8, 99, 999999, 2, int(now.Unix()), int(now.Unix() + 100), 0, 0})}}}, "ogame_", func() time.Time { return now }).PreviewMCPCancelResearchQueue(context.Background(), 42, domainmcp.CancelResearchQueueCommand{})
+	if err != nil || fallback.Name != "NAME_999999" || fallback.TechID != 999999 {
+		t.Fatalf("expected fallback name preview, result=%+v err=%v", fallback, err)
+	}
+
+	result, err := NewResearchRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "ogame_", func() time.Time { return now }).PreviewMCPCancelResearchQueue(context.Background(), 42, domainmcp.CancelResearchQueueCommand{})
+	if err != nil || result.Issue == nil || result.Issue.Code != "queue_not_found" || result.Cancelable {
+		t.Fatalf("unexpected missing queue result=%+v err=%v", result, err)
+	}
+
+	if _, err := (ResearchRepository{}).CancelMCPResearchQueue(context.Background(), 42, domainmcp.CancelResearchQueueCommand{}); err == nil {
+		t.Fatal("expected missing research updater error")
+	}
+
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}}
+	result, err = NewResearchRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_000, 0) }).CancelMCPResearchQueue(context.Background(), 42, domainmcp.CancelResearchQueueCommand{})
+	if err != nil || result.Issue == nil || result.Issue.Code != "queue_not_found" || len(runner.execs) != 0 {
+		t.Fatalf("expected missing queue cancel noop, result=%+v err=%v execs=%+v", result, err, runner.execs)
+	}
+
+	runner = &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{8, 99, domaingame.ResearchEnergy, 2, int(now.Unix()), int(now.Unix() + 100), 0, 0})},
+		{err: errors.New("mutate failed")},
+	}}}
+	_, err = NewResearchRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now }).CancelMCPResearchQueue(context.Background(), 42, domainmcp.CancelResearchQueueCommand{})
+	if err == nil || !strings.Contains(err.Error(), "mutate failed") {
+		t.Fatalf("expected mutate error, got %v", err)
 	}
 }
 

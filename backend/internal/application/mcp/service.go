@@ -95,6 +95,8 @@ type FleetWriteRepository interface {
 type QueueWriteRepository interface {
 	PreviewMCPCancelBuildingQueue(context.Context, int, domainmcp.CancelBuildingQueueCommand) (domainmcp.CancelBuildingQueueResult, error)
 	CancelMCPBuildingQueue(context.Context, int, domainmcp.CancelBuildingQueueCommand) (domainmcp.CancelBuildingQueueResult, error)
+	PreviewMCPCancelResearchQueue(context.Context, int, domainmcp.CancelResearchQueueCommand) (domainmcp.CancelResearchQueueResult, error)
+	CancelMCPResearchQueue(context.Context, int, domainmcp.CancelResearchQueueCommand) (domainmcp.CancelResearchQueueResult, error)
 }
 
 type TokenSecretGenerator interface {
@@ -627,7 +629,7 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		tools = append(tools, validateFleetDispatchTool(), dispatchFleetTool(), recallFleetTool())
 	}
 	if access.HasScope(domainmcp.ScopeQueueWrite) && s.queueWrite != nil {
-		tools = append(tools, cancelBuildingQueueTool())
+		tools = append(tools, cancelBuildingQueueTool(), cancelResearchQueueTool())
 	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
 }
@@ -782,6 +784,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callCancelBuildingQueue(ctx, access, command.Arguments)
+	case "cancel_research_queue":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeQueueWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callCancelResearchQueue(ctx, access, command.Arguments)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -1326,6 +1337,50 @@ func (s Service) callCancelBuildingQueue(ctx context.Context, access domainmcp.A
 		result.Confirmation = confirmation
 	}
 	structured := map[string]any{"cancelBuildingQueue": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callCancelResearchQueue(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.queueWrite == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp queue write repository unavailable")
+	}
+	command, err := mcpCancelResearchQueueCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	confirmation := mcpCancelResearchQueueConfirmation()
+	var result domainmcp.CancelResearchQueueResult
+	if command.DryRun {
+		result, err = s.queueWrite.PreviewMCPCancelResearchQueue(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = true
+		result.Executed = false
+		if result.Cancelable && result.Issue == nil {
+			result.RequiresConfirmation = true
+			result.Confirmation = confirmation
+		}
+	} else {
+		if strings.TrimSpace(command.Confirm) != confirmation {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+		}
+		result, err = s.queueWrite.CancelMCPResearchQueue(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = false
+		result.RequiresConfirmation = false
+		result.Confirmation = confirmation
+	}
+	structured := map[string]any{"cancelResearchQueue": result}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -1952,6 +2007,28 @@ func mcpCancelBuildingQueueConfirmation(command domainmcp.CancelBuildingQueueCom
 	payload := fmt.Sprintf("%d:%d", command.PlanetID, command.ListID)
 	sum := sha256.Sum256([]byte(payload))
 	return fmt.Sprintf("cancel_building_queue:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
+}
+
+func mcpCancelResearchQueueCommand(arguments map[string]any) (domainmcp.CancelResearchQueueCommand, error) {
+	dryRun := true
+	var err error
+	if arguments != nil && arguments["dryRun"] != nil {
+		dryRun, err = optionalBoolArgument(arguments, "dryRun")
+		if err != nil {
+			return domainmcp.CancelResearchQueueCommand{}, err
+		}
+	}
+	confirm, err := optionalStringArgument(arguments, "confirm")
+	if err != nil {
+		return domainmcp.CancelResearchQueueCommand{}, err
+	}
+	return domainmcp.CancelResearchQueueCommand{DryRun: dryRun, Confirm: confirm}, nil
+}
+
+func mcpCancelResearchQueueConfirmation() string {
+	payload := "active"
+	sum := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("cancel_research_queue:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
 }
 
 func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
@@ -2929,6 +3006,57 @@ func cancelBuildingQueueTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"cancelBuildingQueue"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    false,
+			"destructiveHint": true,
+			"idempotentHint":  false,
+		},
+	}
+}
+
+func cancelResearchQueueTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "cancel_research_queue",
+		Title:       "Cancel Research Queue",
+		Description: "Cancel the active owned research queue. Defaults to dry-run and requires the returned confirmation string before execution.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"dryRun": map[string]any{
+					"type":        "boolean",
+					"description": "Defaults to true. Set false only with a matching confirmation value.",
+				},
+				"confirm": map[string]any{
+					"type":        "string",
+					"description": "Exact confirmation string returned by a dry-run for the active research queue.",
+				},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"cancelResearchQueue": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":             map[string]any{"type": "integer"},
+						"planetId":             map[string]any{"type": "integer"},
+						"taskId":               map[string]any{"type": "integer"},
+						"techId":               map[string]any{"type": "integer"},
+						"name":                 map[string]any{"type": "string"},
+						"level":                map[string]any{"type": "integer"},
+						"cancelable":           map[string]any{"type": "boolean"},
+						"dryRun":               map[string]any{"type": "boolean"},
+						"requiresConfirmation": map[string]any{"type": "boolean"},
+						"confirmation":         map[string]any{"type": "string"},
+						"executed":             map[string]any{"type": "boolean"},
+						"issue":                map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "cancelable", "dryRun", "requiresConfirmation", "executed"},
+				},
+			},
+			"required": []string{"cancelResearchQueue"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    false,

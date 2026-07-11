@@ -324,6 +324,26 @@ func TestBuildingsRepositoryMCPCancelBuildingQueuePreviewAndExecute(t *testing.T
 	}
 }
 
+func TestBuildingsRepositoryDelegatesMCPCancelResearchQueue(t *testing.T) {
+	now := time.Unix(2_000, 0)
+	activeResearchRow := []any{8, 99, domaingame.ResearchEnergy, 2, int(now.Unix()), int(now.Unix() + 100), 0, 0}
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(activeResearchRow)},
+		{rows: fakeRowsFromValues()},
+	}}}
+	repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	preview, err := repository.PreviewMCPCancelResearchQueue(context.Background(), 42, domainmcp.CancelResearchQueueCommand{})
+	if err != nil || !preview.Cancelable || preview.TaskID != 8 || preview.Name != "Energy Technology" {
+		t.Fatalf("unexpected delegated research preview=%+v err=%v", preview, err)
+	}
+
+	missing, err := repository.CancelMCPResearchQueue(context.Background(), 42, domainmcp.CancelResearchQueueCommand{})
+	if err != nil || missing.Issue == nil || missing.Issue.Code != "queue_not_found" || missing.Executed || len(runner.execs) != 0 {
+		t.Fatalf("expected delegated research cancel noop, result=%+v err=%v execs=%+v", missing, err, runner.execs)
+	}
+}
+
 func TestBuildingsRepositoryMCPCancelBuildingQueueResolvesActivePlanet(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 4, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: 999999, Level: 1}))},
