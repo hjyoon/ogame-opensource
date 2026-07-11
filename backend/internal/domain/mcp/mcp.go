@@ -438,6 +438,49 @@ type OfficerStatus struct {
 	Officers       []OfficerStatusRow `json:"officers"`
 }
 
+type SearchCommand struct {
+	PlanetID int
+	Type     string
+	Text     string
+}
+
+type SearchAllianceRef struct {
+	ID  int    `json:"id"`
+	Tag string `json:"tag"`
+}
+
+type SearchPlayerRow struct {
+	PlayerID     int                `json:"playerId"`
+	PlayerName   string             `json:"playerName"`
+	Alliance     *SearchAllianceRef `json:"alliance,omitempty"`
+	PlanetID     int                `json:"planetId"`
+	PlanetName   string             `json:"planetName"`
+	Coordinates  Coordinates        `json:"coordinates"`
+	Rank         int                `json:"rank"`
+	Own          bool               `json:"own"`
+	SameAlliance bool               `json:"sameAlliance"`
+}
+
+type SearchAllianceRow struct {
+	AllianceID int    `json:"allianceId"`
+	Tag        string `json:"tag"`
+	Name       string `json:"name"`
+	Members    int    `json:"members"`
+	Score      int64  `json:"score"`
+	Display    int64  `json:"display"`
+	Own        bool   `json:"own"`
+}
+
+type SearchResult struct {
+	PlayerID  int                 `json:"playerId"`
+	PlanetID  int                 `json:"planetId"`
+	Type      string              `json:"type"`
+	Text      string              `json:"text"`
+	Message   string              `json:"message,omitempty"`
+	Players   []SearchPlayerRow   `json:"players"`
+	Alliances []SearchAllianceRow `json:"alliances"`
+}
+
 type DispatchFleetCommand struct {
 	PlanetID        int
 	Ships           map[int]int

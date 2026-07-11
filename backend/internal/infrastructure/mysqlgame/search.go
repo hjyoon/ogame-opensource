@@ -7,6 +7,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type SearchRepository struct {
@@ -83,6 +84,57 @@ func (r SearchRepository) GetSearch(ctx context.Context, query appgame.SearchQue
 		return domaingame.Search{}, err
 	}
 	return search, nil
+}
+
+func (r SearchRepository) SearchMCP(ctx context.Context, playerID int, command domainmcp.SearchCommand) (domainmcp.SearchResult, error) {
+	search, err := r.GetSearch(ctx, appgame.SearchQuery{
+		PlayerID: playerID,
+		PlanetID: command.PlanetID,
+		Type:     command.Type,
+		Text:     command.Text,
+	})
+	if err != nil {
+		return domainmcp.SearchResult{}, err
+	}
+	players := make([]domainmcp.SearchPlayerRow, 0, len(search.PlayerRows))
+	for _, row := range search.PlayerRows {
+		var alliance *domainmcp.SearchAllianceRef
+		if row.Alliance != nil {
+			alliance = &domainmcp.SearchAllianceRef{ID: row.Alliance.ID, Tag: row.Alliance.Tag}
+		}
+		players = append(players, domainmcp.SearchPlayerRow{
+			PlayerID:     row.PlayerID,
+			PlayerName:   row.PlayerName,
+			Alliance:     alliance,
+			PlanetID:     row.PlanetID,
+			PlanetName:   row.PlanetName,
+			Coordinates:  domainmcp.Coordinates{Galaxy: row.Coordinates.Galaxy, System: row.Coordinates.System, Position: row.Coordinates.Position},
+			Rank:         row.Place,
+			Own:          row.Own,
+			SameAlliance: row.SameAlliance,
+		})
+	}
+	alliances := make([]domainmcp.SearchAllianceRow, 0, len(search.AllianceRows))
+	for _, row := range search.AllianceRows {
+		alliances = append(alliances, domainmcp.SearchAllianceRow{
+			AllianceID: row.AllianceID,
+			Tag:        row.Tag,
+			Name:       row.Name,
+			Members:    row.Members,
+			Score:      row.Score,
+			Display:    row.DisplayScore(),
+			Own:        row.Own,
+		})
+	}
+	return domainmcp.SearchResult{
+		PlayerID:  playerID,
+		PlanetID:  search.CurrentPlanet.ID,
+		Type:      search.Type,
+		Text:      search.Text,
+		Message:   search.Message,
+		Players:   players,
+		Alliances: alliances,
+	}, nil
 }
 
 func (r SearchRepository) loadViewerAllianceID(ctx context.Context, usersTable string, playerID int) (int, error) {

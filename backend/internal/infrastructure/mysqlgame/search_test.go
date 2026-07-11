@@ -8,6 +8,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestSearchRepositoryReadsLegacyPlayerNameResults(t *testing.T) {
@@ -71,6 +72,37 @@ func TestSearchRepositoryReadsAllianceResults(t *testing.T) {
 	}
 	if !strings.Contains(queryer.calls[4].sql, "a.tag LIKE ?") {
 		t.Fatalf("expected legacy alliance search query, got %+v", queryer.calls[4])
+	}
+}
+
+func TestSearchRepositoryMCPMapsSearchResults(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{7})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{43, "target", 7, "TAG", 100, "Colony", 1, 2, 4, 102})},
+	)}
+	repository := NewSearchRepositoryWithQueryer(queryer, "ogame_")
+
+	result, err := repository.SearchMCP(context.Background(), 42, domainmcp.SearchCommand{Type: "playername", Text: "tar"})
+	if err != nil {
+		t.Fatalf("SearchMCP returned error: %v", err)
+	}
+	if result.PlayerID != 42 || result.PlanetID != 99 || result.Type != "playername" || len(result.Players) != 1 || result.Players[0].Alliance == nil {
+		t.Fatalf("unexpected MCP search result: %+v", result)
+	}
+	if result.Players[0].Coordinates.Position != 4 || result.Players[0].Alliance.Tag != "TAG" {
+		t.Fatalf("unexpected MCP player row: %+v", result.Players[0])
+	}
+
+	queryer = &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{7, "TAG", "The Alliance", 3, int64(950000000), 1})},
+	)}
+	repository = NewSearchRepositoryWithQueryer(queryer, "ogame_")
+	result, err = repository.SearchMCP(context.Background(), 42, domainmcp.SearchCommand{Type: "allytag", Text: "TA"})
+	if err != nil {
+		t.Fatalf("SearchMCP alliance returned error: %v", err)
+	}
+	if len(result.Alliances) != 1 || result.Alliances[0].Display != 950000 || !result.Alliances[0].Own {
+		t.Fatalf("unexpected MCP alliance rows: %+v", result.Alliances)
 	}
 }
 

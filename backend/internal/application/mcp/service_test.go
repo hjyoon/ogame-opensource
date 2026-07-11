@@ -636,6 +636,26 @@ func TestServiceListsOfficerStatusToolForReadScope(t *testing.T) {
 	}
 }
 
+func TestServiceListsSearchGameToolForReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithSearchReadRepository(&fakeSearchReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,search_game" {
+		t.Fatalf("unexpected read search tools: %v", names)
+	}
+}
+
 func TestServiceListsMessageToolsForMessageScopedTokens(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -1170,6 +1190,84 @@ func TestServiceOfficerStatusToolRequiresRepositoryReadScopeAndValidArguments(t 
 	service = service.WithPremiumReadRepository(&fakePremiumWriteRepository{err: errors.New("premium read down")})
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_officer_status", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "premium read down") {
 		t.Fatalf("expected premium read repository error, got %v", err)
+	}
+}
+
+func TestServiceCallsSearchGameTool(t *testing.T) {
+	search := domainmcp.SearchResult{
+		PlayerID: 42,
+		PlanetID: 99,
+		Type:     "playername",
+		Text:     "leg",
+		Players: []domainmcp.SearchPlayerRow{{
+			PlayerID:    42,
+			PlayerName:  "legor",
+			PlanetName:  "Homeworld",
+			Coordinates: domainmcp.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			Own:         true,
+		}},
+		Alliances: []domainmcp.SearchAllianceRow{},
+	}
+	repository := &fakeSearchReadRepository{result: search}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithSearchReadRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "search_game",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": "99", "type": "playername", "text": " leg "},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["search"].(domainmcp.SearchResult)
+	if result.IsError || got.PlayerID != 42 || len(got.Players) != 1 || got.Players[0].PlayerName != "legor" {
+		t.Fatalf("unexpected search result: %+v", result)
+	}
+	if repository.playerID != 42 || repository.command.PlanetID != 99 || repository.command.Type != "playername" || repository.command.Text != "leg" {
+		t.Fatalf("unexpected search command: player=%d command=%+v", repository.playerID, repository.command)
+	}
+}
+
+func TestServiceSearchGameToolRequiresRepositoryReadScopeAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	valid := map[string]any{"text": "leg"}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "search_game", AccessToken: "read", Arguments: valid}); err == nil {
+		t.Fatalf("expected missing search read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "search_game", AccessToken: "write", Arguments: valid}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithSearchReadRepository(&fakeSearchReadRepository{})
+	for _, arguments := range []map[string]any{
+		{"planetId": true, "text": "leg"},
+		{"type": true, "text": "leg"},
+		{"type": "bad", "text": "leg"},
+		{"type": "playername"},
+		{"type": "playername", "text": " "},
+	} {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "search_game", AccessToken: "read", Arguments: arguments}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", arguments, err)
+		}
+	}
+
+	service = service.WithSearchReadRepository(&fakeSearchReadRepository{err: errors.New("search down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "search_game", AccessToken: "read", Arguments: valid}); err == nil || !strings.Contains(err.Error(), "search down") {
+		t.Fatalf("expected search repository error, got %v", err)
+	}
+
+	command, err := mcpSearchCommand(map[string]any{"text": "leg"})
+	if err != nil || command.Type != "playername" || command.Text != "leg" {
+		t.Fatalf("unexpected default search command=%+v err=%v", command, err)
 	}
 }
 
@@ -3253,6 +3351,22 @@ func (f *fakePremiumWriteRepository) RecruitMCPOfficer(_ context.Context, player
 		return domainmcp.RecruitOfficerResult{}, f.err
 	}
 	return f.recruited, nil
+}
+
+type fakeSearchReadRepository struct {
+	result   domainmcp.SearchResult
+	playerID int
+	command  domainmcp.SearchCommand
+	err      error
+}
+
+func (f *fakeSearchReadRepository) SearchMCP(_ context.Context, playerID int, command domainmcp.SearchCommand) (domainmcp.SearchResult, error) {
+	f.playerID = playerID
+	f.command = command
+	if f.err != nil {
+		return domainmcp.SearchResult{}, f.err
+	}
+	return f.result, nil
 }
 
 type fakeSessionLookup struct {

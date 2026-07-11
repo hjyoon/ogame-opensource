@@ -110,6 +110,10 @@ type PremiumReadRepository interface {
 	GetMCPOfficerStatus(context.Context, int, int) (domainmcp.OfficerStatus, error)
 }
 
+type SearchReadRepository interface {
+	SearchMCP(context.Context, int, domainmcp.SearchCommand) (domainmcp.SearchResult, error)
+}
+
 type PremiumWriteRepository interface {
 	PreviewMCPRecruitOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
 	RecruitMCPOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
@@ -262,6 +266,7 @@ type Service struct {
 	queueWrite      QueueWriteRepository
 	resourceWrite   ResourceWriteRepository
 	premiumRead     PremiumReadRepository
+	searchRead      SearchReadRepository
 	premiumWrite    PremiumWriteRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
@@ -344,6 +349,11 @@ func (s Service) WithResourceWriteRepository(repository ResourceWriteRepository)
 
 func (s Service) WithPremiumReadRepository(repository PremiumReadRepository) Service {
 	s.premiumRead = repository
+	return s
+}
+
+func (s Service) WithSearchReadRepository(repository SearchReadRepository) Service {
+	s.searchRead = repository
 	return s
 }
 
@@ -659,6 +669,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		if s.premiumRead != nil {
 			tools = append(tools, officerStatusTool())
 		}
+		if s.searchRead != nil {
+			tools = append(tools, searchGameTool())
+		}
 	}
 	if access.HasScope(domainmcp.ScopeMessages) && s.readRepository != nil {
 		tools = append(tools, listMessagesTool(), getMessageTool())
@@ -759,6 +772,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callOfficerStatus(ctx, access, command.Arguments)
+	case "search_game":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callSearchGame(ctx, access, command.Arguments)
 	case "list_messages":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeMessages)
 		if err != nil {
@@ -1115,6 +1137,29 @@ func (s Service) callOfficerStatus(ctx context.Context, access domainmcp.Access,
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"officerStatus": status}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callSearchGame(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.searchRead == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp search read repository unavailable")
+	}
+	command, err := mcpSearchCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	result, err := s.searchRead.SearchMCP(ctx, access.PlayerID, command)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"search": result}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -2407,6 +2452,35 @@ func mcpRecruitOfficerConfirmation(command domainmcp.RecruitOfficerCommand) stri
 	return fmt.Sprintf("recruit_officer:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
 }
 
+func mcpSearchCommand(arguments map[string]any) (domainmcp.SearchCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.SearchCommand{}, err
+	}
+	searchType, err := optionalStringArgument(arguments, "type")
+	if err != nil {
+		return domainmcp.SearchCommand{}, err
+	}
+	searchType = strings.TrimSpace(searchType)
+	if searchType == "" {
+		searchType = "playername"
+	}
+	switch searchType {
+	case "playername", "planetname", "allytag", "allyname":
+	default:
+		return domainmcp.SearchCommand{}, domainmcp.ErrInvalidParams
+	}
+	text, err := optionalStringArgument(arguments, "text")
+	if err != nil {
+		return domainmcp.SearchCommand{}, err
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return domainmcp.SearchCommand{}, domainmcp.ErrInvalidParams
+	}
+	return domainmcp.SearchCommand{PlanetID: planetID, Type: searchType, Text: text}, nil
+}
+
 func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
 	limit, err := optionalNonNegativeIntArgument(arguments, "limit")
 	if err != nil {
@@ -3185,6 +3259,59 @@ func officerStatusTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"officerStatus"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func searchGameTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "search_game",
+		Title:       "Search Game",
+		Description: "Search players, planets, alliance tags, or alliance names using the legacy authenticated search behavior.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet context.",
+				},
+				"type": map[string]any{
+					"type":        "string",
+					"description": "Search type. Defaults to playername.",
+					"enum":        []string{"playername", "planetname", "allytag", "allyname"},
+				},
+				"text": map[string]any{
+					"type":        "string",
+					"description": "Search text. Legacy search returns a too-short message for one-character input.",
+					"minLength":   1,
+				},
+			},
+			"required":             []string{"text"},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"search": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":  map[string]any{"type": "integer"},
+						"planetId":  map[string]any{"type": "integer"},
+						"type":      map[string]any{"type": "string"},
+						"text":      map[string]any{"type": "string"},
+						"message":   map[string]any{"type": "string"},
+						"players":   map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"alliances": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+					},
+					"required": []string{"playerId", "planetId", "type", "text", "players", "alliances"},
+				},
+			},
+			"required": []string{"search"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,
