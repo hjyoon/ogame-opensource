@@ -205,6 +205,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 	reportReadRepository := mysqlgame.NewReportRepository(db, cfg.UniDBPrefix)
 	writeRepository := mysqlgame.NewMessagesRepository(db, cfg.UniDBPrefix)
 	fleetWriteRepository := mysqlgame.NewFleetRepository(db, cfg.UniDBPrefix)
+	phalanxWriteRepository := mysqlgame.NewPhalanxRepository(db, cfg.UniDBPrefix)
 	queueWriteRepository := mysqlgame.NewBuildingsRepository(db, cfg.UniDBPrefix)
 	resourceWriteRepository := mysqlgame.NewResourcesRepository(db, cfg.UniDBPrefix)
 	resourceReadRepository := mysqlgame.NewResourcesReadRepository(db, cfg.UniDBPrefix)
@@ -233,6 +234,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 		WithReportReadRepository(reportReadRepository).
 		WithWriteRepository(writeRepository).
 		WithFleetWriteRepository(fleetWriteRepository).
+		WithPhalanxWriteRepository(phalanxWriteRepository).
 		WithQueueWriteRepository(queueWriteRepository).
 		WithResourceWriteRepository(resourceWriteRepository).
 		WithResourceProductionReadRepository(resourceReadRepository).

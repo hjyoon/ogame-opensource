@@ -9,6 +9,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestPhalanxRepositoryScansEventsAndSpendsDeuterium(t *testing.T) {
@@ -47,6 +48,96 @@ func TestPhalanxRepositoryScansEventsAndSpendsDeuterium(t *testing.T) {
 	}
 }
 
+func TestPhalanxRepositoryMCPPreviewAndExecute(t *testing.T) {
+	now := time.Unix(2_000, 0)
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: phalanxSuccessfulReadResults(fakeQueryResult{rows: fakeRowsFromValues()})}}
+	repository := NewPhalanxRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	preview, err := repository.PreviewMCPPhalanxScan(context.Background(), 42, domainmcp.PhalanxScanCommand{PlanetID: 10, TargetPlanetID: 20})
+	if err != nil {
+		t.Fatalf("PreviewMCPPhalanxScan returned error: %v", err)
+	}
+	if preview.PlayerID != 42 || preview.PlanetID != 10 || preview.TargetPlanetID != 20 || preview.Cost != domaingame.PhalanxCost || preview.RemainingDeuterium != 15_000 || preview.Issue != nil {
+		t.Fatalf("unexpected MCP preview: %+v", preview)
+	}
+	if len(preview.Events) != 0 || len(runner.execCalls) != 0 {
+		t.Fatalf("preview must not expose events or spend deuterium, preview=%+v exec=%+v", preview, runner.execCalls)
+	}
+
+	runner = &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: phalanxSuccessfulReadResults(
+		fakeQueryResult{rows: fakeRowsFromValues(overviewEventRow(300, 77, "target", domaingame.FleetMissionTransport, map[int]int{domaingame.FleetSmallCargo: 1}, 2_100, 2_500, 2, 6))},
+	)}}
+	repository = NewPhalanxRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	scanned, err := repository.ScanMCPPhalanx(context.Background(), 42, domainmcp.PhalanxScanCommand{PlanetID: 10, TargetPlanetID: 20})
+	if err != nil {
+		t.Fatalf("ScanMCPPhalanx returned error: %v", err)
+	}
+	if !scanned.Executed || scanned.Issue != nil || len(scanned.Events) != 2 || len(runner.execCalls) != 1 {
+		t.Fatalf("expected executed MCP scan with events and one spend, result=%+v exec=%+v", scanned, runner.execCalls)
+	}
+}
+
+func TestPhalanxRepositoryMCPPreviewEdges(t *testing.T) {
+	if _, err := (PhalanxRepository{}).ScanMCPPhalanx(context.Background(), 42, domainmcp.PhalanxScanCommand{TargetPlanetID: 20}); err == nil || !strings.Contains(err.Error(), "reader unavailable") {
+		t.Fatalf("expected scan reader error, got %v", err)
+	}
+	if got := mcpPhalanxIssue(nil); got != nil {
+		t.Fatalf("nil phalanx issue should stay nil, got %+v", got)
+	}
+
+	repository := NewPhalanxRepositoryWithRunner(&fakeQueryer{}, nil, "bad`", nil)
+	if _, err := repository.PreviewMCPPhalanxScan(context.Background(), 42, domainmcp.PhalanxScanCommand{TargetPlanetID: 20}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected preview table prefix error, got %v", err)
+	}
+
+	repository = NewPhalanxRepositoryWithRunner(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("overview failed")}}}, nil, "ogame_", nil)
+	if _, err := repository.PreviewMCPPhalanxScan(context.Background(), 42, domainmcp.PhalanxScanCommand{TargetPlanetID: 20}); err == nil || !strings.Contains(err.Error(), "overview failed") {
+		t.Fatalf("expected preview overview error, got %v", err)
+	}
+
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(phalanxOverviewUserRow(10))},
+		{rows: fakeRowsFromValues(phalanxOverviewPlanetRow(10, "Go Smoke Moon", domaingame.PlanetTypeMoon))},
+		{rows: fakeRowsFromValues(phalanxPlanetSwitchRow(10, "Go Smoke Moon", domaingame.PlanetTypeMoon))},
+		{rows: fakeRowsFromValues(phalanxUniverseRow())},
+		{err: errors.New("source failed")},
+	}}}
+	repository = NewPhalanxRepositoryWithRunner(runner, nil, "ogame_", nil)
+	if _, err := repository.PreviewMCPPhalanxScan(context.Background(), 42, domainmcp.PhalanxScanCommand{TargetPlanetID: 20}); err == nil || !strings.Contains(err.Error(), "source failed") {
+		t.Fatalf("expected preview source error, got %v", err)
+	}
+
+	runner = &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(phalanxOverviewUserRow(10))},
+		{rows: fakeRowsFromValues(phalanxOverviewPlanetRow(10, "Go Smoke Moon", domaingame.PlanetTypeMoon))},
+		{rows: fakeRowsFromValues(phalanxPlanetSwitchRow(10, "Go Smoke Moon", domaingame.PlanetTypeMoon))},
+		{rows: fakeRowsFromValues(phalanxUniverseRow())},
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues(phalanxPlanetRow(20, 77, "Go Smoke Target", domaingame.PlanetTypePlanet, 2, 0, 1_000_000.0))},
+	}}}
+	repository = NewPhalanxRepositoryWithRunner(runner, nil, "ogame_", nil)
+	preview, err := repository.PreviewMCPPhalanxScan(context.Background(), 42, domainmcp.PhalanxScanCommand{TargetPlanetID: 20})
+	if err != nil {
+		t.Fatalf("preview source fallback returned error: %v", err)
+	}
+	if preview.Source.ID != 10 || preview.Issue == nil || preview.Issue.Code != domaingame.PhalanxIssueMissingSensor {
+		t.Fatalf("expected source fallback missing sensor issue, got %+v", preview)
+	}
+
+	runner = &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(phalanxOverviewUserRow(10))},
+		{rows: fakeRowsFromValues(phalanxOverviewPlanetRow(10, "Go Smoke Moon", domaingame.PlanetTypeMoon))},
+		{rows: fakeRowsFromValues(phalanxPlanetSwitchRow(10, "Go Smoke Moon", domaingame.PlanetTypeMoon))},
+		{rows: fakeRowsFromValues(phalanxUniverseRow())},
+		{rows: fakeRowsFromValues(phalanxPlanetRow(10, 42, "Go Smoke Moon", domaingame.PlanetTypeMoon, 6, 3, 20_000.0))},
+		{err: errors.New("target failed")},
+	}}}
+	repository = NewPhalanxRepositoryWithRunner(runner, nil, "ogame_", nil)
+	if _, err := repository.PreviewMCPPhalanxScan(context.Background(), 42, domainmcp.PhalanxScanCommand{TargetPlanetID: 20}); err == nil || !strings.Contains(err.Error(), "target failed") {
+		t.Fatalf("expected preview target error, got %v", err)
+	}
+}
+
 func TestPhalanxRepositoryReturnsLegacyIssueWithoutSpending(t *testing.T) {
 	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues(phalanxOverviewUserRow(10))},
@@ -78,6 +169,9 @@ func TestPhalanxRepositoryHandlesReaderAndRowEdges(t *testing.T) {
 
 	if _, err := (PhalanxRepository{}).GetPhalanx(context.Background(), appgame.PhalanxQuery{}); err == nil || !strings.Contains(err.Error(), "reader unavailable") {
 		t.Fatalf("expected missing reader error, got %v", err)
+	}
+	if _, err := (PhalanxRepository{}).PreviewMCPPhalanxScan(context.Background(), 42, domainmcp.PhalanxScanCommand{TargetPlanetID: 20}); err == nil || !strings.Contains(err.Error(), "reader unavailable") {
+		t.Fatalf("expected missing MCP reader error, got %v", err)
 	}
 	repository := NewPhalanxRepositoryWithRunner(&fakeQueryer{}, nil, "bad`", nil)
 	if _, err := repository.GetPhalanx(context.Background(), appgame.PhalanxQuery{}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {

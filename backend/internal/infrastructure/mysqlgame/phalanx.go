@@ -10,6 +10,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type PhalanxRepository struct {
@@ -29,6 +30,112 @@ func NewPhalanxRepositoryWithRunner(queryer Queryer, execer Execer, prefix strin
 		now = time.Now
 	}
 	return PhalanxRepository{queryer: queryer, execer: execer, prefix: prefix, now: now}
+}
+
+func (r PhalanxRepository) PreviewMCPPhalanxScan(ctx context.Context, playerID int, command domainmcp.PhalanxScanCommand) (domainmcp.PhalanxScanResult, error) {
+	if r.queryer == nil {
+		return domainmcp.PhalanxScanResult{}, errors.New("phalanx reader unavailable")
+	}
+	phalanx, err := r.previewPhalanx(ctx, appgame.PhalanxQuery{
+		PlayerID:       playerID,
+		PlanetID:       command.PlanetID,
+		TargetPlanetID: command.TargetPlanetID,
+	})
+	if err != nil {
+		return domainmcp.PhalanxScanResult{}, err
+	}
+	return mcpPhalanxScanResult(playerID, phalanx, r.now().Unix()), nil
+}
+
+func (r PhalanxRepository) ScanMCPPhalanx(ctx context.Context, playerID int, command domainmcp.PhalanxScanCommand) (domainmcp.PhalanxScanResult, error) {
+	phalanx, err := r.GetPhalanx(ctx, appgame.PhalanxQuery{
+		PlayerID:       playerID,
+		PlanetID:       command.PlanetID,
+		TargetPlanetID: command.TargetPlanetID,
+	})
+	if err != nil {
+		return domainmcp.PhalanxScanResult{}, err
+	}
+	result := mcpPhalanxScanResult(playerID, phalanx, r.now().Unix())
+	result.Executed = phalanx.ActionIssue == nil
+	return result, nil
+}
+
+func (r PhalanxRepository) previewPhalanx(ctx context.Context, query appgame.PhalanxQuery) (domaingame.Phalanx, error) {
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return domaingame.Phalanx{}, err
+	}
+	overview, err := NewOverviewRepositoryWithRunner(r.queryer, r.execer, r.prefix).GetOverview(ctx, appgame.OverviewQuery{
+		PlayerID: query.PlayerID,
+		PlanetID: query.PlanetID,
+	})
+	if err != nil {
+		return domaingame.Phalanx{}, err
+	}
+	source, found, err := r.loadPhalanxPlanet(ctx, planetsTable, overview.CurrentPlanet.ID)
+	if err != nil {
+		return domaingame.Phalanx{}, err
+	}
+	if !found {
+		source = domaingame.PhalanxPlanet{
+			ID:          overview.CurrentPlanet.ID,
+			OwnerID:     query.PlayerID,
+			Type:        overview.CurrentPlanet.Type,
+			Name:        overview.CurrentPlanet.Name,
+			Coordinates: overview.CurrentPlanet.Coordinates,
+			Deuterium:   overview.CurrentPlanet.Resources.Deuterium,
+		}
+	}
+	target, found, err := r.loadPhalanxPlanet(ctx, planetsTable, query.TargetPlanetID)
+	if err != nil {
+		return domaingame.Phalanx{}, err
+	}
+	if !found {
+		target.ID = query.TargetPlanetID
+	}
+	issue := domaingame.PhalanxScanIssue(query.PlayerID, source, target)
+	return domaingame.NewPhalanx(overview, source, target, nil, issue), nil
+}
+
+func mcpPhalanxScanResult(playerID int, phalanx domaingame.Phalanx, now int64) domainmcp.PhalanxScanResult {
+	return domainmcp.PhalanxScanResult{
+		PlayerID:           playerID,
+		PlanetID:           phalanx.Source.ID,
+		TargetPlanetID:     phalanx.Target.ID,
+		Commander:          phalanx.Commander,
+		Source:             mcpPhalanxPlanet(phalanx.Source),
+		Target:             mcpPhalanxPlanet(phalanx.Target),
+		Cost:               phalanx.Cost,
+		RemainingDeuterium: phalanx.RemainingDeuterium,
+		Events:             mcpFleetMovementsFromGame(phalanx.Events, now),
+		Issue:              mcpPhalanxIssue(phalanx.ActionIssue),
+	}
+}
+
+func mcpPhalanxPlanet(planet domaingame.PhalanxPlanet) domainmcp.PhalanxPlanet {
+	return domainmcp.PhalanxPlanet{
+		ID:       planet.ID,
+		OwnerID:  planet.OwnerID,
+		Name:     planet.Name,
+		Type:     planet.Type,
+		TypeName: mcpPlanetTypeName(planet.Type),
+		Coordinates: domainmcp.Coordinates{
+			Galaxy:   planet.Coordinates.Galaxy,
+			System:   planet.Coordinates.System,
+			Position: planet.Coordinates.Position,
+		},
+		PhalanxLevel:  planet.PhalanxLevel,
+		Deuterium:     planet.Deuterium,
+		ReportHeading: planet.ReportHeading,
+	}
+}
+
+func mcpPhalanxIssue(issue *domaingame.PhalanxActionIssue) *domainmcp.ActionIssue {
+	if issue == nil {
+		return nil
+	}
+	return &domainmcp.ActionIssue{Code: issue.Code, Message: issue.Message}
 }
 
 func (r PhalanxRepository) GetPhalanx(ctx context.Context, query appgame.PhalanxQuery) (domaingame.Phalanx, error) {

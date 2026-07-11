@@ -49,8 +49,8 @@ Implemented:
 - `mcp:message_write`: `send_message`, `delete_messages`,
   `report_message`. All default to dry-run; execution requires `dryRun:false`
   plus returned confirmation string.
-- `mcp:fleet_write`: `validate_fleet_dispatch`,
-  `dispatch_fleet`, `recall_fleet`; mutations require confirmation.
+- `mcp:fleet_write`: `validate_fleet_dispatch`, `dispatch_fleet`,
+  `recall_fleet`, `scan_phalanx`; confirmed mutations.
 - `mcp:queue_write`: `cancel_building_queue`,
   `cancel_research_queue`, `enqueue_shipyard_order`; confirmed mutations.
 - `mcp:resources_write`: `update_resource_production`.

@@ -96,6 +96,11 @@ type FleetWriteRepository interface {
 	RecallMCPFleet(context.Context, int, domainmcp.RecallFleetCommand) (domainmcp.RecallFleetResult, error)
 }
 
+type PhalanxWriteRepository interface {
+	PreviewMCPPhalanxScan(context.Context, int, domainmcp.PhalanxScanCommand) (domainmcp.PhalanxScanResult, error)
+	ScanMCPPhalanx(context.Context, int, domainmcp.PhalanxScanCommand) (domainmcp.PhalanxScanResult, error)
+}
+
 type QueueWriteRepository interface {
 	PreviewMCPCancelBuildingQueue(context.Context, int, domainmcp.CancelBuildingQueueCommand) (domainmcp.CancelBuildingQueueResult, error)
 	CancelMCPBuildingQueue(context.Context, int, domainmcp.CancelBuildingQueueCommand) (domainmcp.CancelBuildingQueueResult, error)
@@ -332,6 +337,7 @@ type Service struct {
 	reportRead      ReportReadRepository
 	writeRepository WriteRepository
 	fleetWrite      FleetWriteRepository
+	phalanxWrite    PhalanxWriteRepository
 	queueWrite      QueueWriteRepository
 	resourceWrite   ResourceWriteRepository
 	resourceRead    ResourceProductionReadRepository
@@ -424,6 +430,11 @@ func (s Service) WithWriteRepository(repository WriteRepository) Service {
 
 func (s Service) WithFleetWriteRepository(repository FleetWriteRepository) Service {
 	s.fleetWrite = repository
+	return s
+}
+
+func (s Service) WithPhalanxWriteRepository(repository PhalanxWriteRepository) Service {
+	s.phalanxWrite = repository
 	return s
 }
 
@@ -905,6 +916,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	if access.HasScope(domainmcp.ScopeFleetWrite) && s.fleetWrite != nil {
 		tools = append(tools, validateFleetDispatchTool(), dispatchFleetTool(), recallFleetTool())
 	}
+	if access.HasScope(domainmcp.ScopeFleetWrite) && s.phalanxWrite != nil {
+		tools = append(tools, scanPhalanxTool())
+	}
 	if access.HasScope(domainmcp.ScopeQueueWrite) && s.queueWrite != nil {
 		tools = append(tools, cancelBuildingQueueTool(), cancelResearchQueueTool(), enqueueShipyardOrderTool())
 	}
@@ -1229,6 +1243,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callDispatchFleet(ctx, access, command.Arguments)
+	case "scan_phalanx":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeFleetWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callScanPhalanx(ctx, access, command.Arguments)
 	case "cancel_building_queue":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeQueueWrite)
 		if err != nil {
@@ -2221,6 +2244,50 @@ func (s Service) callRecallFleet(ctx context.Context, access domainmcp.Access, a
 	}, nil
 }
 
+func (s Service) callScanPhalanx(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.phalanxWrite == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp phalanx repository unavailable")
+	}
+	command, err := mcpPhalanxScanCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	confirmation := mcpPhalanxScanConfirmation(command)
+	var result domainmcp.PhalanxScanResult
+	if command.DryRun {
+		result, err = s.phalanxWrite.PreviewMCPPhalanxScan(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = true
+		result.Executed = false
+		if result.Issue == nil {
+			result.RequiresConfirmation = true
+			result.Confirmation = confirmation
+		}
+	} else {
+		if strings.TrimSpace(command.Confirm) != confirmation {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+		}
+		result, err = s.phalanxWrite.ScanMCPPhalanx(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = false
+		result.RequiresConfirmation = false
+		result.Confirmation = confirmation
+	}
+	structured := map[string]any{"phalanxScan": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
 func (s Service) callCancelBuildingQueue(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
 	if s.queueWrite == nil {
 		return domainmcp.ToolCallResult{}, errors.New("mcp queue write repository unavailable")
@@ -3028,6 +3095,35 @@ func mcpRecallFleetConfirmation(command domainmcp.RecallFleetCommand) string {
 	payload := strconv.Itoa(command.FleetID)
 	sum := sha256.Sum256([]byte(payload))
 	return fmt.Sprintf("recall_fleet:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
+}
+
+func mcpPhalanxScanCommand(arguments map[string]any) (domainmcp.PhalanxScanCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.PhalanxScanCommand{}, err
+	}
+	targetPlanetID, err := optionalNonNegativeIntArgument(arguments, "targetPlanetId")
+	if err != nil || targetPlanetID <= 0 {
+		return domainmcp.PhalanxScanCommand{}, domainmcp.ErrInvalidParams
+	}
+	dryRun := true
+	if arguments != nil && arguments["dryRun"] != nil {
+		dryRun, err = optionalBoolArgument(arguments, "dryRun")
+		if err != nil {
+			return domainmcp.PhalanxScanCommand{}, err
+		}
+	}
+	confirm, err := optionalStringArgument(arguments, "confirm")
+	if err != nil {
+		return domainmcp.PhalanxScanCommand{}, err
+	}
+	return domainmcp.PhalanxScanCommand{PlanetID: planetID, TargetPlanetID: targetPlanetID, DryRun: dryRun, Confirm: confirm}, nil
+}
+
+func mcpPhalanxScanConfirmation(command domainmcp.PhalanxScanCommand) string {
+	payload := fmt.Sprintf("%d:%d", command.PlanetID, command.TargetPlanetID)
+	sum := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("scan_phalanx:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
 }
 
 func mcpCancelBuildingQueueCommand(arguments map[string]any) (domainmcp.CancelBuildingQueueCommand, error) {
@@ -5269,6 +5365,70 @@ func recallFleetTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"recallFleet"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    false,
+			"destructiveHint": true,
+			"idempotentHint":  false,
+		},
+	}
+}
+
+func scanPhalanxTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "scan_phalanx",
+		Title:       "Scan Sensor Phalanx",
+		Description: "Dry-run or confirm a legacy sensor phalanx scan. Confirmed scans spend deuterium and return visible fleet movements.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"minimum":     0,
+					"description": "Owned source moon id. Omit or pass 0 to use the active context.",
+				},
+				"targetPlanetId": map[string]any{
+					"type":        "integer",
+					"minimum":     1,
+					"description": "Target planet id to scan.",
+				},
+				"dryRun": map[string]any{
+					"type":        "boolean",
+					"description": "Defaults to true. Set false only with a matching confirmation value.",
+				},
+				"confirm": map[string]any{
+					"type":        "string",
+					"description": "Exact confirmation string returned by dry-run for the same source and target.",
+				},
+			},
+			"required":             []string{"targetPlanetId"},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"phalanxScan": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":             map[string]any{"type": "integer"},
+						"planetId":             map[string]any{"type": "integer"},
+						"targetPlanetId":       map[string]any{"type": "integer"},
+						"commander":            map[string]any{"type": "string"},
+						"source":               map[string]any{"type": "object"},
+						"target":               map[string]any{"type": "object"},
+						"cost":                 map[string]any{"type": "integer"},
+						"remainingDeuterium":   map[string]any{"type": "number"},
+						"events":               map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"dryRun":               map[string]any{"type": "boolean"},
+						"requiresConfirmation": map[string]any{"type": "boolean"},
+						"confirmation":         map[string]any{"type": "string"},
+						"executed":             map[string]any{"type": "boolean"},
+						"issue":                map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "planetId", "targetPlanetId", "source", "target", "cost", "remainingDeuterium", "events", "dryRun", "requiresConfirmation", "executed"},
+				},
+			},
+			"required": []string{"phalanxScan"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    false,

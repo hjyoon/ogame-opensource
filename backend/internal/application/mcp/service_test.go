@@ -1049,6 +1049,26 @@ func TestServiceListsRecallFleetToolForFleetWriteScope(t *testing.T) {
 	}
 }
 
+func TestServiceListsPhalanxToolForFleetWriteScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"fleet-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeFleetWrite}},
+		},
+	}).WithPhalanxWriteRepository(&fakePhalanxWriteRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "fleet-write"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,scan_phalanx" {
+		t.Fatalf("unexpected phalanx tools: %v", names)
+	}
+}
+
 func TestServiceListsCancelBuildingQueueToolForQueueWriteScope(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -3915,6 +3935,100 @@ func TestServiceRecallFleetRequiresScopeRepositoryAndValidConfirmation(t *testin
 	}
 }
 
+func TestServiceCallsScanPhalanxWithDryRunAndConfirmation(t *testing.T) {
+	repository := &fakePhalanxWriteRepository{
+		preview: domainmcp.PhalanxScanResult{
+			PlayerID:           42,
+			PlanetID:           10,
+			TargetPlanetID:     20,
+			Cost:               5000,
+			RemainingDeuterium: 15000,
+		},
+		scanned: domainmcp.PhalanxScanResult{
+			PlayerID:           42,
+			PlanetID:           10,
+			TargetPlanetID:     20,
+			Cost:               5000,
+			RemainingDeuterium: 15000,
+			Events:             []domainmcp.FleetMovement{{ID: 300, Mission: 3}},
+			Executed:           true,
+		},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"fleet-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeFleetWrite}},
+		},
+	}).WithPhalanxWriteRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "scan_phalanx",
+		AccessToken: "fleet-write",
+		Arguments:   map[string]any{"planetId": float64(10), "targetPlanetId": float64(20)},
+	})
+	if err != nil {
+		t.Fatalf("scan_phalanx dry-run returned error: %v", err)
+	}
+	preview := result.StructuredContent.(map[string]any)["phalanxScan"].(domainmcp.PhalanxScanResult)
+	if !preview.DryRun || preview.Executed || !preview.RequiresConfirmation || !strings.HasPrefix(preview.Confirmation, "scan_phalanx:10:20:") || len(preview.Events) != 0 {
+		t.Fatalf("unexpected phalanx preview: %+v", preview)
+	}
+	if repository.previewPlayerID != 42 || repository.previewCommand.PlanetID != 10 || repository.previewCommand.TargetPlanetID != 20 || !repository.previewCommand.DryRun {
+		t.Fatalf("unexpected phalanx preview command: player=%d command=%+v", repository.previewPlayerID, repository.previewCommand)
+	}
+
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "scan_phalanx",
+		AccessToken: "fleet-write",
+		Arguments:   map[string]any{"planetId": 10, "targetPlanetId": 20, "dryRun": false, "confirm": preview.Confirmation},
+	})
+	if err != nil {
+		t.Fatalf("scan_phalanx execute returned error: %v", err)
+	}
+	scanned := result.StructuredContent.(map[string]any)["phalanxScan"].(domainmcp.PhalanxScanResult)
+	if scanned.DryRun || !scanned.Executed || scanned.RequiresConfirmation || scanned.Confirmation != preview.Confirmation || len(scanned.Events) != 1 {
+		t.Fatalf("unexpected phalanx execute: %+v", scanned)
+	}
+	if repository.scanPlayerID != 42 || repository.scanCommand.Confirm != preview.Confirmation || repository.scanCommand.DryRun {
+		t.Fatalf("unexpected phalanx scan command: player=%d command=%+v", repository.scanPlayerID, repository.scanCommand)
+	}
+}
+
+func TestServiceScanPhalanxRequiresScopeRepositoryAndValidConfirmation(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"fleet":       {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeFleet}},
+			"fleet-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeFleetWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "scan_phalanx", AccessToken: "fleet-write", Arguments: map[string]any{"targetPlanetId": 20}}); err == nil {
+		t.Fatalf("expected missing phalanx repository error")
+	}
+
+	service = service.WithPhalanxWriteRepository(&fakePhalanxWriteRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "scan_phalanx", AccessToken: "fleet", Arguments: map[string]any{"targetPlanetId": 20}}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without fleet write scope, got %v", err)
+	}
+	for _, arguments := range []map[string]any{
+		nil,
+		{"planetId": true, "targetPlanetId": 20},
+		{"targetPlanetId": 0},
+		{"targetPlanetId": true},
+		{"targetPlanetId": 20, "dryRun": "no"},
+		{"targetPlanetId": 20, "confirm": true},
+		{"targetPlanetId": 20, "dryRun": false},
+		{"targetPlanetId": 20, "dryRun": false, "confirm": "wrong"},
+	} {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "scan_phalanx", AccessToken: "fleet-write", Arguments: arguments}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", arguments, err)
+		}
+	}
+
+	service = service.WithPhalanxWriteRepository(&fakePhalanxWriteRepository{err: errors.New("phalanx down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "scan_phalanx", AccessToken: "fleet-write", Arguments: map[string]any{"targetPlanetId": 20}}); err == nil || !strings.Contains(err.Error(), "phalanx down") {
+		t.Fatalf("expected phalanx repository error, got %v", err)
+	}
+}
+
 func TestMCPMessageQueryDefaultsCapsAndValidation(t *testing.T) {
 	query, err := mcpMessageQuery(nil)
 	if err != nil || query.Limit != 25 || query.HasMessageType || query.IncludeText {
@@ -4641,6 +4755,34 @@ func (f *fakeWriteRepository) ReportMCPMessage(_ context.Context, playerID int, 
 		return domainmcp.ReportMessageResult{}, f.err
 	}
 	return f.reported, nil
+}
+
+type fakePhalanxWriteRepository struct {
+	preview         domainmcp.PhalanxScanResult
+	scanned         domainmcp.PhalanxScanResult
+	previewPlayerID int
+	scanPlayerID    int
+	previewCommand  domainmcp.PhalanxScanCommand
+	scanCommand     domainmcp.PhalanxScanCommand
+	err             error
+}
+
+func (f *fakePhalanxWriteRepository) PreviewMCPPhalanxScan(_ context.Context, playerID int, command domainmcp.PhalanxScanCommand) (domainmcp.PhalanxScanResult, error) {
+	f.previewPlayerID = playerID
+	f.previewCommand = command
+	if f.err != nil {
+		return domainmcp.PhalanxScanResult{}, f.err
+	}
+	return f.preview, nil
+}
+
+func (f *fakePhalanxWriteRepository) ScanMCPPhalanx(_ context.Context, playerID int, command domainmcp.PhalanxScanCommand) (domainmcp.PhalanxScanResult, error) {
+	f.scanPlayerID = playerID
+	f.scanCommand = command
+	if f.err != nil {
+		return domainmcp.PhalanxScanResult{}, f.err
+	}
+	return f.scanned, nil
 }
 
 type fakeFleetWriteRepository struct {

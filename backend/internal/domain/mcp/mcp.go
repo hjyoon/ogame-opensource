@@ -393,6 +393,42 @@ type RecallFleetResult struct {
 	Issue                *ActionIssue `json:"issue,omitempty"`
 }
 
+type PhalanxScanCommand struct {
+	PlanetID       int
+	TargetPlanetID int
+	DryRun         bool
+	Confirm        string
+}
+
+type PhalanxPlanet struct {
+	ID            int         `json:"id"`
+	OwnerID       int         `json:"ownerId"`
+	Name          string      `json:"name"`
+	Type          int         `json:"type"`
+	TypeName      string      `json:"typeName"`
+	Coordinates   Coordinates `json:"coordinates"`
+	PhalanxLevel  int         `json:"phalanxLevel"`
+	Deuterium     float64     `json:"deuterium"`
+	ReportHeading string      `json:"reportHeading,omitempty"`
+}
+
+type PhalanxScanResult struct {
+	PlayerID             int             `json:"playerId"`
+	PlanetID             int             `json:"planetId"`
+	TargetPlanetID       int             `json:"targetPlanetId"`
+	Commander            string          `json:"commander"`
+	Source               PhalanxPlanet   `json:"source"`
+	Target               PhalanxPlanet   `json:"target"`
+	Cost                 int             `json:"cost"`
+	RemainingDeuterium   float64         `json:"remainingDeuterium"`
+	Events               []FleetMovement `json:"events"`
+	DryRun               bool            `json:"dryRun"`
+	RequiresConfirmation bool            `json:"requiresConfirmation"`
+	Confirmation         string          `json:"confirmation,omitempty"`
+	Executed             bool            `json:"executed"`
+	Issue                *ActionIssue    `json:"issue,omitempty"`
+}
+
 type CancelBuildingQueueCommand struct {
 	PlanetID int
 	ListID   int
