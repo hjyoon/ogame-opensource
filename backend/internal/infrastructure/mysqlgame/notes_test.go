@@ -238,6 +238,124 @@ func TestNotesRepositoryMutationsWriteLegacyRowsAndReturnList(t *testing.T) {
 	}
 }
 
+func TestNotesRepositoryMCPMutationsPreviewAndExecute(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	runner := &fakeNotesRunner{fakeQueryer: fakeQueryer{results: shipyardOverviewResults()}}
+	repository := NewNotesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	preview, err := repository.PreviewMCPCreateNote(context.Background(), 42, domainmcp.NoteMutationCommand{
+		PlanetID: 99,
+		Subject:  "Subject",
+		Text:     "Body",
+		Priority: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.PlayerID != 42 || preview.Subject != "Subject" || preview.TextSize != 4 || preview.Priority != 1 || len(runner.execs) != 0 {
+		t.Fatalf("unexpected create preview=%+v execs=%+v", preview, runner.execs)
+	}
+
+	runner = &fakeNotesRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{21, "Subject", "Body", 4, 1, now.Unix(), 0})},
+	)}}
+	repository = NewNotesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	created, err := repository.CreateMCPNote(context.Background(), 42, domainmcp.NoteMutationCommand{PlanetID: 99, Subject: "Subject", Text: "Body", Priority: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.NoteID != 21 || len(runner.execs) != 1 || !strings.Contains(runner.execs[0].sql, "INSERT INTO `ogame_notes`") {
+		t.Fatalf("unexpected create execute=%+v execs=%+v", created, runner.execs)
+	}
+
+	runner = &fakeNotesRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{21, "Old", "Body", 4, 0, now.Unix()})},
+	)}}
+	repository = NewNotesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	updatePreview, err := repository.PreviewMCPUpdateNote(context.Background(), 42, domainmcp.NoteMutationCommand{PlanetID: 99, NoteID: 21, Subject: "Updated", Text: "Text", Priority: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatePreview.NoteID != 21 || updatePreview.Notes.EditNote == nil || len(runner.execs) != 0 {
+		t.Fatalf("unexpected update preview=%+v execs=%+v", updatePreview, runner.execs)
+	}
+
+	runner = &fakeNotesRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues()})}}
+	repository = NewNotesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	updated, err := repository.UpdateMCPNote(context.Background(), 42, domainmcp.NoteMutationCommand{PlanetID: 99, NoteID: 21, Subject: "Updated", Text: "Text", Priority: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.NoteID != 21 || len(runner.execs) != 1 || !strings.Contains(runner.execs[0].sql, "UPDATE `ogame_notes` SET") {
+		t.Fatalf("unexpected update execute=%+v execs=%+v", updated, runner.execs)
+	}
+
+	listRows := fakeRowsFromValues(
+		[]any{11, "One", "Body", 4, 0, now.Unix(), 0},
+		[]any{12, "Two", "Body", 4, 1, now.Unix(), 0},
+	)
+	runner = &fakeNotesRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{rows: listRows})}}
+	repository = NewNotesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	deletePreview, err := repository.PreviewMCPDeleteNotes(context.Background(), 42, domainmcp.NoteMutationCommand{PlanetID: 99, NoteIDs: []int{11, 12, 999}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deletePreview.DeleteCount != 2 || len(deletePreview.NoteIDs) != 3 || len(runner.execs) != 0 {
+		t.Fatalf("unexpected delete preview=%+v execs=%+v", deletePreview, runner.execs)
+	}
+
+	runner = &fakeNotesRunner{fakeQueryer: fakeQueryer{results: append(append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(
+			[]any{11, "One", "Body", 4, 0, now.Unix(), 0},
+			[]any{12, "Two", "Body", 4, 1, now.Unix(), 0},
+		)}),
+		append(shipyardOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues()})...,
+	)}}
+	repository = NewNotesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	deleted, err := repository.DeleteMCPNotes(context.Background(), 42, domainmcp.NoteMutationCommand{PlanetID: 99, NoteIDs: []int{11, 12}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted.DeleteCount != 2 || len(runner.execs) != 2 || !strings.Contains(runner.execs[0].sql, "DELETE FROM `ogame_notes`") {
+		t.Fatalf("unexpected delete execute=%+v execs=%+v", deleted, runner.execs)
+	}
+}
+
+func TestNotesRepositoryMCPMutationErrors(t *testing.T) {
+	queryErr := errors.New("notes preview failed")
+	repository := NewNotesRepositoryWithRunner(&fakeQueryer{results: []fakeQueryResult{{err: queryErr}}}, nil, "ogame_", time.Now)
+	if _, err := repository.PreviewMCPCreateNote(context.Background(), 42, domainmcp.NoteMutationCommand{}); !errors.Is(err, queryErr) {
+		t.Fatalf("expected create preview error, got %v", err)
+	}
+	repository = NewNotesRepositoryWithRunner(&fakeQueryer{results: []fakeQueryResult{{err: queryErr}}}, nil, "ogame_", time.Now)
+	if _, err := repository.PreviewMCPUpdateNote(context.Background(), 42, domainmcp.NoteMutationCommand{NoteID: 7}); !errors.Is(err, queryErr) {
+		t.Fatalf("expected update preview error, got %v", err)
+	}
+	repository = NewNotesRepositoryWithRunner(&fakeQueryer{results: []fakeQueryResult{{err: queryErr}}}, nil, "ogame_", time.Now)
+	if _, err := repository.PreviewMCPDeleteNotes(context.Background(), 42, domainmcp.NoteMutationCommand{NoteIDs: []int{7}}); !errors.Is(err, queryErr) {
+		t.Fatalf("expected delete preview error, got %v", err)
+	}
+	repository = NewNotesRepositoryWithRunner(&fakeQueryer{results: []fakeQueryResult{{err: queryErr}}}, nil, "ogame_", time.Now)
+	if _, err := repository.DeleteMCPNotes(context.Background(), 42, domainmcp.NoteMutationCommand{NoteIDs: []int{7}}); !errors.Is(err, queryErr) {
+		t.Fatalf("expected delete preview error before mutation, got %v", err)
+	}
+
+	execErr := errors.New("notes exec failed")
+	runner := &fakeNotesRunner{execErr: execErr}
+	repository = NewNotesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, err := repository.CreateMCPNote(context.Background(), 42, domainmcp.NoteMutationCommand{}); !errors.Is(err, execErr) {
+		t.Fatalf("expected create exec error, got %v", err)
+	}
+	if _, err := repository.UpdateMCPNote(context.Background(), 42, domainmcp.NoteMutationCommand{NoteID: 7}); !errors.Is(err, execErr) {
+		t.Fatalf("expected update exec error, got %v", err)
+	}
+
+	runner = &fakeNotesRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{7, "Subject", "Body", 4, 0, int64(1700000000), 0})})}, execErr: execErr}
+	repository = NewNotesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, err := repository.DeleteMCPNotes(context.Background(), 42, domainmcp.NoteMutationCommand{NoteIDs: []int{7}}); !errors.Is(err, execErr) {
+		t.Fatalf("expected delete exec error, got %v", err)
+	}
+}
+
 func TestNotesRepositoryReturnsErrors(t *testing.T) {
 	tests := []struct {
 		name    string

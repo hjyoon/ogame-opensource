@@ -13037,6 +13037,9 @@ function MCPTokenTable({
                 <input name="mcp_scope" type="checkbox" value="mcp:message_write" /> message write
               </label>
               <label>
+                <input name="mcp_scope" type="checkbox" value="mcp:notes_write" /> notes write
+              </label>
+              <label>
                 <input name="mcp_scope" type="checkbox" value="mcp:fleet" /> fleet
               </label>
               <label>

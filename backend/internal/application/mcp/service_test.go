@@ -519,9 +519,9 @@ func TestOAuthValidationHelpers(t *testing.T) {
 	if err != nil || strings.Join(scopes, " ") != "profile mcp:read" {
 		t.Fatalf("unexpected normalized scopes=%v err=%v", scopes, err)
 	}
-	scopes, err = normalizeOAuthScopes(domainmcp.ScopeFleetWrite + " " + domainmcp.ScopeQueueWrite + " " + domainmcp.ScopeResourcesWrite + " " + domainmcp.ScopePremiumWrite)
-	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite+" "+domainmcp.ScopePremiumWrite {
-		t.Fatalf("expected fleet, queue, resources, and premium write scopes to be allowed, got scopes=%v err=%v", scopes, err)
+	scopes, err = normalizeOAuthScopes(domainmcp.ScopeNotesWrite + " " + domainmcp.ScopeFleetWrite + " " + domainmcp.ScopeQueueWrite + " " + domainmcp.ScopeResourcesWrite + " " + domainmcp.ScopePremiumWrite)
+	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeNotesWrite+" "+domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite+" "+domainmcp.ScopePremiumWrite {
+		t.Fatalf("expected notes, fleet, queue, resources, and premium write scopes to be allowed, got scopes=%v err=%v", scopes, err)
 	}
 	scopes, err = normalizeOAuthScopes("")
 	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeRead {
@@ -753,6 +753,26 @@ func TestServiceListsNotesToolForReadScope(t *testing.T) {
 	}
 	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_notes" {
 		t.Fatalf("unexpected read notes tools: %v", names)
+	}
+}
+
+func TestServiceListsNoteMutationToolsForNotesWriteScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"notes-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeNotesWrite}},
+		},
+	}).WithNotesWriteRepository(&fakeNotesWriteRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "notes-write"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,create_note,update_note,delete_notes" {
+		t.Fatalf("unexpected notes-write tools: %v", names)
 	}
 }
 
@@ -2051,6 +2071,166 @@ func TestServiceNotesToolRequiresRepositoryReadScopeAndValidArguments(t *testing
 	service = service.WithNotesReadRepository(&fakeNotesReadRepository{err: errors.New("notes down")})
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_notes", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "notes down") {
 		t.Fatalf("expected notes repository error, got %v", err)
+	}
+}
+
+func TestServiceCallsNoteMutationToolsWithDryRunAndConfirmation(t *testing.T) {
+	baseNotes := domainmcp.NotesStatus{PlayerID: 42, Planet: domainmcp.Planet{ID: 99, Name: "Arakis"}, Action: "list"}
+	repository := &fakeNotesWriteRepository{
+		createPreview: domainmcp.NoteMutationResult{PlayerID: 42, PlanetID: 99, Subject: "Plan", TextSize: 4, Priority: 1, Notes: baseNotes},
+		created:       domainmcp.NoteMutationResult{PlayerID: 42, PlanetID: 99, NoteID: 12, Subject: "Plan", TextSize: 4, Priority: 1, Notes: baseNotes},
+		updatePreview: domainmcp.NoteMutationResult{PlayerID: 42, PlanetID: 99, NoteID: 12, Subject: "Updated", TextSize: 7, Priority: 2, Notes: baseNotes},
+		updated:       domainmcp.NoteMutationResult{PlayerID: 42, PlanetID: 99, NoteID: 12, Subject: "Updated", TextSize: 7, Priority: 2, Notes: baseNotes},
+		deletePreview: domainmcp.NoteMutationResult{PlayerID: 42, PlanetID: 99, NoteIDs: []int{12, 13}, DeleteCount: 2, Notes: baseNotes},
+		deleted:       domainmcp.NoteMutationResult{PlayerID: 42, PlanetID: 99, NoteIDs: []int{12, 13}, DeleteCount: 2, Notes: baseNotes},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"notes-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeNotesWrite}},
+		},
+	}).WithNotesWriteRepository(repository)
+
+	createArgs := map[string]any{"planetId": 99, "subject": "Plan", "text": "Body", "priority": 1}
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "create_note", AccessToken: "notes-write", Arguments: createArgs})
+	if err != nil {
+		t.Fatalf("create_note dry-run returned error: %v", err)
+	}
+	createPreview := result.StructuredContent.(map[string]any)["createNote"].(domainmcp.NoteMutationResult)
+	if !createPreview.DryRun || createPreview.Executed || !createPreview.RequiresConfirmation || !strings.HasPrefix(createPreview.Confirmation, "create_note:99:") {
+		t.Fatalf("unexpected create dry-run: %+v", createPreview)
+	}
+	if repository.createPreviewPlayerID != 42 || repository.createPreviewCommand.Subject != "Plan" || !repository.createPreviewCommand.DryRun {
+		t.Fatalf("unexpected create preview command: player=%d command=%+v", repository.createPreviewPlayerID, repository.createPreviewCommand)
+	}
+
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "create_note", AccessToken: "notes-write", Arguments: map[string]any{"planetId": 99, "subject": "Plan", "text": "Body", "priority": 1, "dryRun": false, "confirm": createPreview.Confirmation}})
+	if err != nil {
+		t.Fatalf("create_note execute returned error: %v", err)
+	}
+	created := result.StructuredContent.(map[string]any)["createNote"].(domainmcp.NoteMutationResult)
+	if created.DryRun || !created.Executed || created.RequiresConfirmation || created.Confirmation != createPreview.Confirmation {
+		t.Fatalf("unexpected create execute: %+v", created)
+	}
+
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "update_note", AccessToken: "notes-write", Arguments: map[string]any{"planetId": 99, "noteId": 12, "subject": "Updated", "text": "Content", "priority": 2}})
+	if err != nil {
+		t.Fatalf("update_note dry-run returned error: %v", err)
+	}
+	updatePreview := result.StructuredContent.(map[string]any)["updateNote"].(domainmcp.NoteMutationResult)
+	if !updatePreview.DryRun || updatePreview.Executed || !strings.HasPrefix(updatePreview.Confirmation, "update_note:99:12:") || repository.updatePreviewCommand.NoteID != 12 {
+		t.Fatalf("unexpected update dry-run: result=%+v command=%+v", updatePreview, repository.updatePreviewCommand)
+	}
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "update_note", AccessToken: "notes-write", Arguments: map[string]any{"planetId": 99, "noteId": 12, "subject": "Updated", "text": "Content", "priority": 2, "dryRun": false, "confirm": updatePreview.Confirmation}})
+	if err != nil {
+		t.Fatalf("update_note execute returned error: %v", err)
+	}
+	updated := result.StructuredContent.(map[string]any)["updateNote"].(domainmcp.NoteMutationResult)
+	if updated.DryRun || !updated.Executed || updated.Confirmation != updatePreview.Confirmation || repository.updatePlayerID != 42 {
+		t.Fatalf("unexpected update execute: result=%+v player=%d", updated, repository.updatePlayerID)
+	}
+
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "delete_notes", AccessToken: "notes-write", Arguments: map[string]any{"planetId": 99, "noteIds": []any{13, 12, 12}}})
+	if err != nil {
+		t.Fatalf("delete_notes dry-run returned error: %v", err)
+	}
+	deletePreview := result.StructuredContent.(map[string]any)["deleteNotes"].(domainmcp.NoteMutationResult)
+	if !deletePreview.DryRun || deletePreview.Executed || !deletePreview.RequiresConfirmation || !strings.HasPrefix(deletePreview.Confirmation, "delete_notes:99:12,13:") || len(repository.deletePreviewCommand.NoteIDs) != 2 {
+		t.Fatalf("unexpected delete dry-run: result=%+v command=%+v", deletePreview, repository.deletePreviewCommand)
+	}
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "delete_notes", AccessToken: "notes-write", Arguments: map[string]any{"planetId": 99, "noteIds": []any{12, 13}, "dryRun": false, "confirm": deletePreview.Confirmation}})
+	if err != nil {
+		t.Fatalf("delete_notes execute returned error: %v", err)
+	}
+	deleted := result.StructuredContent.(map[string]any)["deleteNotes"].(domainmcp.NoteMutationResult)
+	if deleted.DryRun || !deleted.Executed || deleted.Confirmation != deletePreview.Confirmation || repository.deletePlayerID != 42 {
+		t.Fatalf("unexpected delete execute: result=%+v player=%d", deleted, repository.deletePlayerID)
+	}
+}
+
+func TestServiceNoteMutationToolsRequireScopeRepositoryAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":        {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"notes-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeNotesWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "create_note", AccessToken: "notes-write"}); err == nil {
+		t.Fatalf("expected missing notes write repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "update_note", AccessToken: "notes-write", Arguments: map[string]any{"noteId": 7}}); err == nil {
+		t.Fatalf("expected missing notes update repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "delete_notes", AccessToken: "notes-write", Arguments: map[string]any{"noteIds": []any{7}}}); err == nil {
+		t.Fatalf("expected missing notes delete repository error")
+	}
+
+	service = service.WithNotesWriteRepository(&fakeNotesWriteRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "create_note", AccessToken: "read"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without notes write scope, got %v", err)
+	}
+	for _, tt := range []struct {
+		tool string
+		args map[string]any
+	}{
+		{"create_note", map[string]any{"priority": 3}},
+		{"create_note", map[string]any{"planetId": true}},
+		{"create_note", map[string]any{"subject": true}},
+		{"create_note", map[string]any{"text": true}},
+		{"create_note", map[string]any{"priority": true}},
+		{"create_note", map[string]any{"dryRun": "no"}},
+		{"create_note", map[string]any{"dryRun": false}},
+		{"create_note", map[string]any{"dryRun": false, "confirm": "wrong"}},
+		{"update_note", map[string]any{"noteId": 0}},
+		{"update_note", map[string]any{"noteId": true}},
+		{"delete_notes", map[string]any{"noteIds": []any{}}},
+		{"delete_notes", map[string]any{"noteIds": true}},
+		{"delete_notes", map[string]any{"noteIds": []any{7}, "confirm": true}},
+		{"delete_notes", map[string]any{"noteIds": []any{7}, "dryRun": false}},
+		{"delete_notes", map[string]any{"noteIds": []any{7}, "dryRun": false, "confirm": "wrong"}},
+	} {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: tt.tool, AccessToken: "notes-write", Arguments: tt.args}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %s %+v, got %v", tt.tool, tt.args, err)
+		}
+	}
+
+	service = service.WithNotesWriteRepository(&fakeNotesWriteRepository{err: errors.New("notes write down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "create_note", AccessToken: "notes-write"}); err == nil || !strings.Contains(err.Error(), "notes write down") {
+		t.Fatalf("expected notes write repository error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "update_note", AccessToken: "notes-write", Arguments: map[string]any{"noteId": 7}}); err == nil || !strings.Contains(err.Error(), "notes write down") {
+		t.Fatalf("expected update notes write repository error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "delete_notes", AccessToken: "notes-write", Arguments: map[string]any{"noteIds": []any{7}}}); err == nil || !strings.Contains(err.Error(), "notes write down") {
+		t.Fatalf("expected delete notes write repository error, got %v", err)
+	}
+
+	createCommand := domainmcp.NoteMutationCommand{Subject: "A", Text: "B"}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "create_note", AccessToken: "notes-write", Arguments: map[string]any{"subject": "A", "text": "B", "dryRun": false, "confirm": mcpCreateNoteConfirmation(createCommand)}}); err == nil || !strings.Contains(err.Error(), "notes write down") {
+		t.Fatalf("expected create execute repository error, got %v", err)
+	}
+	updateCommand := domainmcp.NoteMutationCommand{NoteID: 7, Subject: "A", Text: "B"}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "update_note", AccessToken: "notes-write", Arguments: map[string]any{"noteId": 7, "subject": "A", "text": "B", "dryRun": false, "confirm": mcpUpdateNoteConfirmation(updateCommand)}}); err == nil || !strings.Contains(err.Error(), "notes write down") {
+		t.Fatalf("expected update execute repository error, got %v", err)
+	}
+	deleteCommand := domainmcp.NoteMutationCommand{NoteIDs: []int{7}}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "delete_notes", AccessToken: "notes-write", Arguments: map[string]any{"noteIds": []any{7}, "dryRun": false, "confirm": mcpDeleteNotesConfirmation(deleteCommand)}}); err == nil || !strings.Contains(err.Error(), "notes write down") {
+		t.Fatalf("expected delete execute repository error, got %v", err)
+	}
+
+	service = service.WithNotesWriteRepository(&fakeNotesWriteRepository{
+		deletePreview: domainmcp.NoteMutationResult{PlayerID: 42, PlanetID: 99, NoteIDs: []int{999}, Notes: domainmcp.NotesStatus{PlayerID: 42}},
+	})
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "delete_notes", AccessToken: "notes-write", Arguments: map[string]any{"planetId": 99, "noteIds": []any{999}}})
+	if err != nil {
+		t.Fatalf("delete_notes no-op dry-run returned error: %v", err)
+	}
+	noOp := result.StructuredContent.(map[string]any)["deleteNotes"].(domainmcp.NoteMutationResult)
+	if !noOp.DryRun || noOp.RequiresConfirmation || noOp.Confirmation != "" {
+		t.Fatalf("expected no-op delete dry-run without confirmation, got %+v", noOp)
+	}
+
+	if toolStructuredName("unknown_tool") != "unknown_tool" {
+		t.Fatalf("unexpected fallback structured name")
 	}
 }
 
@@ -4421,9 +4601,9 @@ func TestServiceTokenManagementRejectsUnauthenticatedAndPrivilegedScopes(t *test
 	}
 
 	service.sessions = fakeSessionLookup{auth: authenticatedSession(42)}
-	created, err := service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite}})
-	if err != nil || strings.Join(created.Creation.Token.Scopes, " ") != domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite+" "+domainmcp.ScopePremiumWrite {
-		t.Fatalf("expected fleet, queue, resources, and premium write user token scopes to be allowed, created=%+v err=%v", created, err)
+	created, err := service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeNotesWrite, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite}})
+	if err != nil || strings.Join(created.Creation.Token.Scopes, " ") != domainmcp.ScopeNotesWrite+" "+domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite+" "+domainmcp.ScopePremiumWrite {
+		t.Fatalf("expected notes, fleet, queue, resources, and premium write user token scopes to be allowed, created=%+v err=%v", created, err)
 	}
 	_, err = service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeAdmin}})
 	if !errors.Is(err, ErrInvalidTokenRequest) {
@@ -5107,6 +5287,82 @@ func (f *fakeNotesReadRepository) GetMCPNotes(_ context.Context, playerID int, c
 		return domainmcp.NotesStatus{}, f.err
 	}
 	return f.result, nil
+}
+
+type fakeNotesWriteRepository struct {
+	createPreview         domainmcp.NoteMutationResult
+	created               domainmcp.NoteMutationResult
+	updatePreview         domainmcp.NoteMutationResult
+	updated               domainmcp.NoteMutationResult
+	deletePreview         domainmcp.NoteMutationResult
+	deleted               domainmcp.NoteMutationResult
+	createPreviewPlayerID int
+	createPlayerID        int
+	updatePreviewPlayerID int
+	updatePlayerID        int
+	deletePreviewPlayerID int
+	deletePlayerID        int
+	createPreviewCommand  domainmcp.NoteMutationCommand
+	createCommand         domainmcp.NoteMutationCommand
+	updatePreviewCommand  domainmcp.NoteMutationCommand
+	updateCommand         domainmcp.NoteMutationCommand
+	deletePreviewCommand  domainmcp.NoteMutationCommand
+	deleteCommand         domainmcp.NoteMutationCommand
+	err                   error
+}
+
+func (f *fakeNotesWriteRepository) PreviewMCPCreateNote(_ context.Context, playerID int, command domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error) {
+	f.createPreviewPlayerID = playerID
+	f.createPreviewCommand = command
+	if f.err != nil {
+		return domainmcp.NoteMutationResult{}, f.err
+	}
+	return f.createPreview, nil
+}
+
+func (f *fakeNotesWriteRepository) CreateMCPNote(_ context.Context, playerID int, command domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error) {
+	f.createPlayerID = playerID
+	f.createCommand = command
+	if f.err != nil {
+		return domainmcp.NoteMutationResult{}, f.err
+	}
+	return f.created, nil
+}
+
+func (f *fakeNotesWriteRepository) PreviewMCPUpdateNote(_ context.Context, playerID int, command domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error) {
+	f.updatePreviewPlayerID = playerID
+	f.updatePreviewCommand = command
+	if f.err != nil {
+		return domainmcp.NoteMutationResult{}, f.err
+	}
+	return f.updatePreview, nil
+}
+
+func (f *fakeNotesWriteRepository) UpdateMCPNote(_ context.Context, playerID int, command domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error) {
+	f.updatePlayerID = playerID
+	f.updateCommand = command
+	if f.err != nil {
+		return domainmcp.NoteMutationResult{}, f.err
+	}
+	return f.updated, nil
+}
+
+func (f *fakeNotesWriteRepository) PreviewMCPDeleteNotes(_ context.Context, playerID int, command domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error) {
+	f.deletePreviewPlayerID = playerID
+	f.deletePreviewCommand = command
+	if f.err != nil {
+		return domainmcp.NoteMutationResult{}, f.err
+	}
+	return f.deletePreview, nil
+}
+
+func (f *fakeNotesWriteRepository) DeleteMCPNotes(_ context.Context, playerID int, command domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error) {
+	f.deletePlayerID = playerID
+	f.deleteCommand = command
+	if f.err != nil {
+		return domainmcp.NoteMutationResult{}, f.err
+	}
+	return f.deleted, nil
 }
 
 type fakeOptionsReadRepository struct {

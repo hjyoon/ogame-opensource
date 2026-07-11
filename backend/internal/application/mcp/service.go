@@ -147,6 +147,15 @@ type NotesReadRepository interface {
 	GetMCPNotes(context.Context, int, domainmcp.NotesStatusCommand) (domainmcp.NotesStatus, error)
 }
 
+type NotesWriteRepository interface {
+	PreviewMCPCreateNote(context.Context, int, domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error)
+	CreateMCPNote(context.Context, int, domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error)
+	PreviewMCPUpdateNote(context.Context, int, domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error)
+	UpdateMCPNote(context.Context, int, domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error)
+	PreviewMCPDeleteNotes(context.Context, int, domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error)
+	DeleteMCPNotes(context.Context, int, domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error)
+}
+
 type OptionsReadRepository interface {
 	GetMCPOptions(context.Context, int, domainmcp.OptionsStatusCommand) (domainmcp.OptionsStatus, error)
 }
@@ -348,6 +357,7 @@ type Service struct {
 	allianceRead    AllianceReadRepository
 	buddyRead       BuddyReadRepository
 	notesRead       NotesReadRepository
+	notesWrite      NotesWriteRepository
 	optionsRead     OptionsReadRepository
 	merchantRead    MerchantReadRepository
 	jumpGateRead    JumpGateReadRepository
@@ -488,6 +498,11 @@ func (s Service) WithNotesReadRepository(repository NotesReadRepository) Service
 	return s
 }
 
+func (s Service) WithNotesWriteRepository(repository NotesWriteRepository) Service {
+	s.notesWrite = repository
+	return s
+}
+
 func (s Service) WithOptionsReadRepository(repository OptionsReadRepository) Service {
 	s.optionsRead = repository
 	return s
@@ -591,6 +606,7 @@ func (s Service) OAuthAuthorizationServerMetadata(ctx context.Context, issuer st
 			domainmcp.ScopeRead,
 			domainmcp.ScopeMessages,
 			domainmcp.ScopeMessageWrite,
+			domainmcp.ScopeNotesWrite,
 			domainmcp.ScopeFleet,
 			domainmcp.ScopeFleetWrite,
 			domainmcp.ScopeQueueWrite,
@@ -614,6 +630,7 @@ func (s Service) OAuthProtectedResourceMetadata(ctx context.Context, resource st
 			domainmcp.ScopeRead,
 			domainmcp.ScopeMessages,
 			domainmcp.ScopeMessageWrite,
+			domainmcp.ScopeNotesWrite,
 			domainmcp.ScopeFleet,
 			domainmcp.ScopeFleetWrite,
 			domainmcp.ScopeQueueWrite,
@@ -913,6 +930,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	if access.HasScope(domainmcp.ScopeMessageWrite) && s.writeRepository != nil {
 		tools = append(tools, sendMessageTool(), deleteMessagesTool(), reportMessageTool())
 	}
+	if access.HasScope(domainmcp.ScopeNotesWrite) && s.notesWrite != nil {
+		tools = append(tools, createNoteTool(), updateNoteTool(), deleteNotesTool())
+	}
 	if access.HasScope(domainmcp.ScopeFleetWrite) && s.fleetWrite != nil {
 		tools = append(tools, validateFleetDispatchTool(), dispatchFleetTool(), recallFleetTool())
 	}
@@ -1081,6 +1101,33 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callNotes(ctx, access, command.Arguments)
+	case "create_note":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeNotesWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callCreateNote(ctx, access, command.Arguments)
+	case "update_note":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeNotesWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callUpdateNote(ctx, access, command.Arguments)
+	case "delete_notes":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeNotesWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callDeleteNotes(ctx, access, command.Arguments)
 	case "get_options":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
 		if err != nil {
@@ -1720,6 +1767,137 @@ func (s Service) callNotes(ctx context.Context, access domainmcp.Access, argumen
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"notes": notes}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callCreateNote(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.notesWrite == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp notes write repository unavailable")
+	}
+	command, err := mcpNoteMutationCommand(arguments, false, false)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	confirmation := mcpCreateNoteConfirmation(command)
+	var result domainmcp.NoteMutationResult
+	if command.DryRun {
+		result, err = s.notesWrite.PreviewMCPCreateNote(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = true
+		result.Executed = false
+		result.RequiresConfirmation = true
+		result.Confirmation = confirmation
+	} else {
+		if strings.TrimSpace(command.Confirm) != confirmation {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+		}
+		result, err = s.notesWrite.CreateMCPNote(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = false
+		result.RequiresConfirmation = false
+		result.Confirmation = confirmation
+		result.Executed = true
+	}
+	structured := map[string]any{"createNote": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callUpdateNote(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.notesWrite == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp notes write repository unavailable")
+	}
+	command, err := mcpNoteMutationCommand(arguments, true, false)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	confirmation := mcpUpdateNoteConfirmation(command)
+	var result domainmcp.NoteMutationResult
+	if command.DryRun {
+		result, err = s.notesWrite.PreviewMCPUpdateNote(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = true
+		result.Executed = false
+		result.RequiresConfirmation = true
+		result.Confirmation = confirmation
+	} else {
+		if strings.TrimSpace(command.Confirm) != confirmation {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+		}
+		result, err = s.notesWrite.UpdateMCPNote(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = false
+		result.RequiresConfirmation = false
+		result.Confirmation = confirmation
+		result.Executed = true
+	}
+	structured := map[string]any{"updateNote": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callDeleteNotes(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.notesWrite == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp notes write repository unavailable")
+	}
+	command, err := mcpNoteMutationCommand(arguments, false, true)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	confirmation := mcpDeleteNotesConfirmation(command)
+	var result domainmcp.NoteMutationResult
+	if command.DryRun {
+		result, err = s.notesWrite.PreviewMCPDeleteNotes(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = true
+		result.Executed = false
+		if result.DeleteCount > 0 {
+			result.RequiresConfirmation = true
+			result.Confirmation = confirmation
+		}
+	} else {
+		if strings.TrimSpace(command.Confirm) != confirmation {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+		}
+		result, err = s.notesWrite.DeleteMCPNotes(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = false
+		result.RequiresConfirmation = false
+		result.Confirmation = confirmation
+		result.Executed = true
+	}
+	structured := map[string]any{"deleteNotes": result}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -2575,7 +2753,7 @@ func normalizeUserScopes(requested []string) []string {
 
 func userScopeAllowed(scope string) bool {
 	switch scope {
-	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite:
+	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeNotesWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite:
 		return true
 	default:
 		return false
@@ -3476,6 +3654,83 @@ func mcpNotesStatusCommand(arguments map[string]any) (domainmcp.NotesStatusComma
 		return domainmcp.NotesStatusCommand{}, err
 	}
 	return domainmcp.NotesStatusCommand{PlanetID: planetID, Action: action, NoteID: noteID}, nil
+}
+
+func mcpNoteMutationCommand(arguments map[string]any, requireNoteID bool, requireNoteIDs bool) (domainmcp.NoteMutationCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.NoteMutationCommand{}, err
+	}
+	noteID, err := optionalNonNegativeIntArgument(arguments, "noteId")
+	if err != nil {
+		return domainmcp.NoteMutationCommand{}, err
+	}
+	if requireNoteID && noteID <= 0 {
+		return domainmcp.NoteMutationCommand{}, domainmcp.ErrInvalidParams
+	}
+	noteIDs, err := positiveIntSliceArgument(arguments, "noteIds")
+	if err != nil {
+		return domainmcp.NoteMutationCommand{}, err
+	}
+	if requireNoteIDs && len(noteIDs) == 0 {
+		return domainmcp.NoteMutationCommand{}, domainmcp.ErrInvalidParams
+	}
+	subject, err := optionalStringArgument(arguments, "subject")
+	if err != nil {
+		return domainmcp.NoteMutationCommand{}, err
+	}
+	text, err := optionalStringArgument(arguments, "text")
+	if err != nil {
+		return domainmcp.NoteMutationCommand{}, err
+	}
+	priority, err := optionalNonNegativeIntArgument(arguments, "priority")
+	if err != nil {
+		return domainmcp.NoteMutationCommand{}, err
+	}
+	if priority > 2 {
+		return domainmcp.NoteMutationCommand{}, domainmcp.ErrInvalidParams
+	}
+	dryRun := true
+	if arguments != nil && arguments["dryRun"] != nil {
+		dryRun, err = optionalBoolArgument(arguments, "dryRun")
+		if err != nil {
+			return domainmcp.NoteMutationCommand{}, err
+		}
+	}
+	confirm, err := optionalStringArgument(arguments, "confirm")
+	if err != nil {
+		return domainmcp.NoteMutationCommand{}, err
+	}
+	return domainmcp.NoteMutationCommand{
+		PlanetID: planetID,
+		NoteID:   noteID,
+		Subject:  subject,
+		Text:     text,
+		Priority: priority,
+		NoteIDs:  noteIDs,
+		DryRun:   dryRun,
+		Confirm:  confirm,
+	}, nil
+}
+
+func mcpCreateNoteConfirmation(command domainmcp.NoteMutationCommand) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%d\n%s\n%s\n%d", command.PlanetID, command.Subject, command.Text, command.Priority)))
+	return fmt.Sprintf("create_note:%d:%s", command.PlanetID, hex.EncodeToString(sum[:])[:12])
+}
+
+func mcpUpdateNoteConfirmation(command domainmcp.NoteMutationCommand) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%d\n%d\n%s\n%s\n%d", command.PlanetID, command.NoteID, command.Subject, command.Text, command.Priority)))
+	return fmt.Sprintf("update_note:%d:%d:%s", command.PlanetID, command.NoteID, hex.EncodeToString(sum[:])[:12])
+}
+
+func mcpDeleteNotesConfirmation(command domainmcp.NoteMutationCommand) string {
+	ids := make([]string, 0, len(command.NoteIDs))
+	for _, id := range command.NoteIDs {
+		ids = append(ids, strconv.Itoa(id))
+	}
+	payload := strings.Join(ids, ",")
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%d\n%s", command.PlanetID, payload)))
+	return fmt.Sprintf("delete_notes:%d:%s:%s", command.PlanetID, payload, hex.EncodeToString(sum[:])[:12])
 }
 
 func mcpOptionsStatusCommand(arguments map[string]any) (domainmcp.OptionsStatusCommand, error) {
@@ -4797,6 +5052,107 @@ func notesTool() domainmcp.Tool {
 			"destructiveHint": false,
 			"idempotentHint":  true,
 		},
+	}
+}
+
+func createNoteTool() domainmcp.Tool {
+	return noteMutationTool("create_note", "Create Note", "Create a legacy note for the authenticated player. Defaults to dry-run and requires the returned confirmation for execution.", map[string]any{
+		"planetId": notePlanetIDSchema(),
+		"subject":  map[string]any{"type": "string", "description": "Note subject. Legacy normalization defaults and truncates it."},
+		"text":     map[string]any{"type": "string", "description": "Note body. Legacy normalization defaults and truncates it."},
+		"priority": map[string]any{"type": "integer", "minimum": 0, "maximum": 2, "description": "Legacy priority: 0 normal, 1 important, 2 urgent."},
+		"dryRun":   map[string]any{"type": "boolean", "description": "Defaults to true. Set false only with the returned confirmation."},
+		"confirm":  map[string]any{"type": "string", "description": "Confirmation returned by dry-run."},
+	}, []string{})
+}
+
+func updateNoteTool() domainmcp.Tool {
+	return noteMutationTool("update_note", "Update Note", "Update one owned legacy note. Defaults to dry-run and requires the returned confirmation for execution.", map[string]any{
+		"planetId": notePlanetIDSchema(),
+		"noteId":   map[string]any{"type": "integer", "minimum": 1, "description": "Owned note id to update."},
+		"subject":  map[string]any{"type": "string", "description": "Replacement subject. Legacy normalization defaults and truncates it."},
+		"text":     map[string]any{"type": "string", "description": "Replacement body. Legacy normalization defaults and truncates it."},
+		"priority": map[string]any{"type": "integer", "minimum": 0, "maximum": 2, "description": "Legacy priority: 0 normal, 1 important, 2 urgent."},
+		"dryRun":   map[string]any{"type": "boolean", "description": "Defaults to true. Set false only with the returned confirmation."},
+		"confirm":  map[string]any{"type": "string", "description": "Confirmation returned by dry-run."},
+	}, []string{"noteId"})
+}
+
+func deleteNotesTool() domainmcp.Tool {
+	return noteMutationTool("delete_notes", "Delete Notes", "Delete owned legacy notes by id. Defaults to dry-run and requires the returned confirmation when matching rows exist.", map[string]any{
+		"planetId": notePlanetIDSchema(),
+		"noteIds": map[string]any{
+			"type":        "array",
+			"description": "Owned note ids to delete. Duplicates are ignored.",
+			"items":       map[string]any{"type": "integer", "minimum": 1},
+		},
+		"dryRun":  map[string]any{"type": "boolean", "description": "Defaults to true. Set false only with the returned confirmation."},
+		"confirm": map[string]any{"type": "string", "description": "Confirmation returned by dry-run."},
+	}, []string{"noteIds"})
+}
+
+func notePlanetIDSchema() map[string]any {
+	return map[string]any{
+		"type":        "integer",
+		"description": "Owned planet id. Omit or pass 0 to use the active planet context.",
+		"minimum":     0,
+	}
+}
+
+func noteMutationTool(name string, title string, description string, properties map[string]any, required []string) domainmcp.Tool {
+	inputSchema := map[string]any{
+		"type":                 "object",
+		"properties":           properties,
+		"additionalProperties": false,
+	}
+	if len(required) > 0 {
+		inputSchema["required"] = required
+	}
+	return domainmcp.Tool{
+		Name:        name,
+		Title:       title,
+		Description: description,
+		InputSchema: inputSchema,
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				toolStructuredName(name): map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":             map[string]any{"type": "integer"},
+						"planetId":             map[string]any{"type": "integer"},
+						"noteId":               map[string]any{"type": "integer"},
+						"noteIds":              map[string]any{"type": "array", "items": map[string]any{"type": "integer"}},
+						"deleteCount":          map[string]any{"type": "integer"},
+						"notes":                map[string]any{"type": "object"},
+						"dryRun":               map[string]any{"type": "boolean"},
+						"requiresConfirmation": map[string]any{"type": "boolean"},
+						"confirmation":         map[string]any{"type": "string"},
+						"executed":             map[string]any{"type": "boolean"},
+					},
+					"required": []string{"playerId", "planetId", "notes", "dryRun", "requiresConfirmation", "executed"},
+				},
+			},
+			"required": []string{toolStructuredName(name)},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    false,
+			"destructiveHint": true,
+			"idempotentHint":  false,
+		},
+	}
+}
+
+func toolStructuredName(toolName string) string {
+	switch toolName {
+	case "create_note":
+		return "createNote"
+	case "update_note":
+		return "updateNote"
+	case "delete_notes":
+		return "deleteNotes"
+	default:
+		return toolName
 	}
 }
 

@@ -14,6 +14,7 @@ const (
 	ScopePremiumWrite   = "mcp:premium_write"
 	ScopeMessages       = "mcp:messages"
 	ScopeMessageWrite   = "mcp:message_write"
+	ScopeNotesWrite     = "mcp:notes_write"
 	ScopeAdmin          = "mcp:admin"
 )
 
@@ -960,6 +961,33 @@ type NotesStatus struct {
 	Action    string `json:"action"`
 	Rows      []Note `json:"rows"`
 	EditNote  *Note  `json:"editNote,omitempty"`
+}
+
+type NoteMutationCommand struct {
+	PlanetID int
+	NoteID   int
+	Subject  string
+	Text     string
+	Priority int
+	NoteIDs  []int
+	DryRun   bool
+	Confirm  string
+}
+
+type NoteMutationResult struct {
+	PlayerID             int         `json:"playerId"`
+	PlanetID             int         `json:"planetId"`
+	NoteID               int         `json:"noteId,omitempty"`
+	NoteIDs              []int       `json:"noteIds,omitempty"`
+	Subject              string      `json:"subject,omitempty"`
+	TextSize             int         `json:"textSize,omitempty"`
+	Priority             int         `json:"priority,omitempty"`
+	DeleteCount          int         `json:"deleteCount,omitempty"`
+	Notes                NotesStatus `json:"notes"`
+	DryRun               bool        `json:"dryRun"`
+	RequiresConfirmation bool        `json:"requiresConfirmation"`
+	Confirmation         string      `json:"confirmation,omitempty"`
+	Executed             bool        `json:"executed"`
 }
 
 type OptionsStatusCommand struct {

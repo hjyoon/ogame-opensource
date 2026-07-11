@@ -225,7 +225,7 @@ try {
     body: JSON.stringify({
       redirect_uris: [oauthRedirectURI],
       client_name: "Go MCP smoke",
-      scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:fleet mcp:fleet_write mcp:queue_write mcp:resources_write mcp:premium_write"
+      scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:notes_write mcp:fleet mcp:fleet_write mcp:queue_write mcp:resources_write mcp:premium_write"
     })
   });
   const clientRegistrationBody = parseJSON(clientRegistration);
@@ -235,7 +235,7 @@ try {
     client_id: oauthClientID,
     redirect_uri: oauthRedirectURI,
     resource: `${baseUrl}/mcp`,
-    scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:fleet mcp:fleet_write mcp:queue_write mcp:resources_write mcp:premium_write",
+    scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:notes_write mcp:fleet mcp:fleet_write mcp:queue_write mcp:resources_write mcp:premium_write",
     state: "go-mcp-smoke-state",
     code_challenge: pkceChallenge(oauthVerifier),
     code_challenge_method: "S256",
@@ -298,7 +298,7 @@ try {
     headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
     body: JSON.stringify({
       name: `go-mcp-smoke-${Date.now().toString(36)}`,
-      scopes: ["mcp:read", "mcp:messages", "mcp:message_write", "mcp:fleet", "mcp:fleet_write", "mcp:queue_write", "mcp:resources_write", "mcp:premium_write"]
+      scopes: ["mcp:read", "mcp:messages", "mcp:message_write", "mcp:notes_write", "mcp:fleet", "mcp:fleet_write", "mcp:queue_write", "mcp:resources_write", "mcp:premium_write"]
     })
   });
   const tokenCreateBody = parseJSON(tokenCreate);
@@ -342,6 +342,8 @@ try {
   const buddyStatusToolBody = parseJSON(buddyStatusTool);
   const notesTool = await mcpJSONRPC("tools/call", { name: "get_notes", arguments: {} }, { id: 55, headers: authHeaders });
   const notesToolBody = parseJSON(notesTool);
+  const createNoteDryRun = await mcpJSONRPC("tools/call", { name: "create_note", arguments: { subject: "MCP smoke dry-run", text: "This note is not written.", priority: 1 } }, { id: 61, headers: authHeaders });
+  const createNoteDryRunBody = parseJSON(createNoteDryRun);
   const optionsTool = await mcpJSONRPC("tools/call", { name: "get_options", arguments: {} }, { id: 56, headers: authHeaders });
   const optionsToolBody = parseJSON(optionsTool);
   const merchantStatusTool = await mcpJSONRPC("tools/call", { name: "get_merchant_status", arguments: {} }, { id: 57, headers: authHeaders });
@@ -447,6 +449,9 @@ try {
     "send_message",
     "delete_messages",
     "report_message",
+    "create_note",
+    "update_note",
+    "delete_notes",
     "validate_fleet_dispatch",
     "dispatch_fleet",
     "recall_fleet",
@@ -502,6 +507,7 @@ try {
       check(allianceStatusTool.status === 200 && Number(allianceStatusToolBody.result?.structuredContent?.allianceStatus?.playerId ?? 0) === login.playerID && typeof allianceStatusToolBody.result?.structuredContent?.allianceStatus?.view === "string", "get_alliance_status returns read-only legacy alliance state", allianceStatusToolBody.result ?? {}),
       check(buddyStatusTool.status === 200 && Number(buddyStatusToolBody.result?.structuredContent?.buddyStatus?.playerId ?? 0) === login.playerID && Array.isArray(buddyStatusToolBody.result?.structuredContent?.buddyStatus?.rows), "get_buddy_status returns read-only legacy buddy state", buddyStatusToolBody.result ?? {}),
       check(notesTool.status === 200 && Number(notesToolBody.result?.structuredContent?.notes?.playerId ?? 0) === login.playerID && Array.isArray(notesToolBody.result?.structuredContent?.notes?.rows), "get_notes returns read-only legacy notes state", notesToolBody.result ?? {}),
+      check(createNoteDryRun.status === 200 && Number(createNoteDryRunBody.result?.structuredContent?.createNote?.playerId ?? 0) === login.playerID && createNoteDryRunBody.result?.structuredContent?.createNote?.dryRun === true && createNoteDryRunBody.result?.structuredContent?.createNote?.executed === false && createNoteDryRunBody.result?.structuredContent?.createNote?.requiresConfirmation === true && String(createNoteDryRunBody.result?.structuredContent?.createNote?.confirmation ?? "").startsWith("create_note:"), "create_note dry-run is available under notes_write and does not mutate before confirmation", createNoteDryRunBody.result ?? {}),
       check(optionsTool.status === 200 && Number(optionsToolBody.result?.structuredContent?.options?.playerId ?? 0) === login.playerID && String(optionsToolBody.result?.structuredContent?.options?.user?.name ?? "") !== "", "get_options returns read-only legacy options state without secrets", optionsToolBody.result ?? {}),
       check(merchantStatusTool.status === 200 && Number(merchantStatusToolBody.result?.structuredContent?.merchantStatus?.playerId ?? 0) === login.playerID && Array.isArray(merchantStatusToolBody.result?.structuredContent?.merchantStatus?.rows), "get_merchant_status returns read-only legacy merchant state", merchantStatusToolBody.result ?? {}),
       check(jumpGateStatusTool.status === 200 && Number(jumpGateStatusToolBody.result?.structuredContent?.jumpGateStatus?.playerId ?? 0) === login.playerID && Array.isArray(jumpGateStatusToolBody.result?.structuredContent?.jumpGateStatus?.targets), "get_jump_gate_status returns read-only legacy jump gate state", jumpGateStatusToolBody.result ?? {}),

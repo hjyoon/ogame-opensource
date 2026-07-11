@@ -100,6 +100,84 @@ func (r NotesRepository) GetMCPNotes(ctx context.Context, playerID int, command 
 	return mcpNotesStatus(playerID, notes), nil
 }
 
+func (r NotesRepository) PreviewMCPCreateNote(ctx context.Context, playerID int, command domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error) {
+	draft := domaingame.NormalizeNoteDraft(command.Subject, command.Text, command.Priority)
+	notes, err := r.GetNotes(ctx, appgame.NotesQuery{PlayerID: playerID, PlanetID: command.PlanetID, Action: 1})
+	if err != nil {
+		return domainmcp.NoteMutationResult{}, err
+	}
+	return mcpNoteMutationResult(playerID, command.PlanetID, 0, nil, draft, notes), nil
+}
+
+func (r NotesRepository) CreateMCPNote(ctx context.Context, playerID int, command domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error) {
+	draft := domaingame.NormalizeNoteDraft(command.Subject, command.Text, command.Priority)
+	notes, err := r.CreateNote(ctx, appgame.NotesMutationQuery{
+		PlayerID: playerID,
+		PlanetID: command.PlanetID,
+		Draft:    draft,
+	})
+	if err != nil {
+		return domainmcp.NoteMutationResult{}, err
+	}
+	noteID := 0
+	if len(notes.Rows) > 0 {
+		noteID = notes.Rows[0].ID
+	}
+	return mcpNoteMutationResult(playerID, command.PlanetID, noteID, nil, draft, notes), nil
+}
+
+func (r NotesRepository) PreviewMCPUpdateNote(ctx context.Context, playerID int, command domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error) {
+	draft := domaingame.NormalizeNoteDraft(command.Subject, command.Text, command.Priority)
+	notes, err := r.GetNotes(ctx, appgame.NotesQuery{PlayerID: playerID, PlanetID: command.PlanetID, Action: 2, NoteID: command.NoteID})
+	if err != nil {
+		return domainmcp.NoteMutationResult{}, err
+	}
+	return mcpNoteMutationResult(playerID, command.PlanetID, command.NoteID, nil, draft, notes), nil
+}
+
+func (r NotesRepository) UpdateMCPNote(ctx context.Context, playerID int, command domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error) {
+	draft := domaingame.NormalizeNoteDraft(command.Subject, command.Text, command.Priority)
+	notes, err := r.UpdateNote(ctx, appgame.NotesMutationQuery{
+		PlayerID: playerID,
+		PlanetID: command.PlanetID,
+		NoteID:   command.NoteID,
+		Draft:    draft,
+	})
+	if err != nil {
+		return domainmcp.NoteMutationResult{}, err
+	}
+	return mcpNoteMutationResult(playerID, command.PlanetID, command.NoteID, nil, draft, notes), nil
+}
+
+func (r NotesRepository) PreviewMCPDeleteNotes(ctx context.Context, playerID int, command domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error) {
+	noteIDs := domaingame.NormalizeNoteIDs(command.NoteIDs)
+	notes, err := r.GetNotes(ctx, appgame.NotesQuery{PlayerID: playerID, PlanetID: command.PlanetID})
+	if err != nil {
+		return domainmcp.NoteMutationResult{}, err
+	}
+	result := mcpNoteMutationResult(playerID, command.PlanetID, 0, noteIDs, domaingame.NoteDraft{}, notes)
+	result.DeleteCount = countMatchingNoteIDs(notes.Rows, noteIDs)
+	return result, nil
+}
+
+func (r NotesRepository) DeleteMCPNotes(ctx context.Context, playerID int, command domainmcp.NoteMutationCommand) (domainmcp.NoteMutationResult, error) {
+	preview, err := r.PreviewMCPDeleteNotes(ctx, playerID, command)
+	if err != nil {
+		return domainmcp.NoteMutationResult{}, err
+	}
+	notes, err := r.DeleteNotes(ctx, appgame.NotesDeleteQuery{
+		PlayerID: playerID,
+		PlanetID: command.PlanetID,
+		NoteIDs:  preview.NoteIDs,
+	})
+	if err != nil {
+		return domainmcp.NoteMutationResult{}, err
+	}
+	result := mcpNoteMutationResult(playerID, command.PlanetID, 0, preview.NoteIDs, domaingame.NoteDraft{}, notes)
+	result.DeleteCount = preview.DeleteCount
+	return result, nil
+}
+
 func mcpNotesStatus(playerID int, notes domaingame.Notes) domainmcp.NotesStatus {
 	return domainmcp.NotesStatus{
 		PlayerID: playerID,
@@ -120,6 +198,35 @@ func mcpNotesStatus(playerID int, notes domaingame.Notes) domainmcp.NotesStatus 
 		Rows:      mcpNotes(notes.Rows),
 		EditNote:  mcpNote(notes.EditNote),
 	}
+}
+
+func mcpNoteMutationResult(playerID int, planetID int, noteID int, noteIDs []int, draft domaingame.NoteDraft, notes domaingame.Notes) domainmcp.NoteMutationResult {
+	return domainmcp.NoteMutationResult{
+		PlayerID: playerID,
+		PlanetID: planetID,
+		NoteID:   noteID,
+		NoteIDs:  append([]int(nil), noteIDs...),
+		Subject:  draft.Subject,
+		TextSize: draft.TextSize,
+		Priority: draft.Priority,
+		Notes:    mcpNotesStatus(playerID, notes),
+		Executed: false,
+		DryRun:   true,
+	}
+}
+
+func countMatchingNoteIDs(notes []domaingame.Note, noteIDs []int) int {
+	wanted := map[int]struct{}{}
+	for _, id := range noteIDs {
+		wanted[id] = struct{}{}
+	}
+	count := 0
+	for _, note := range notes {
+		if _, ok := wanted[note.ID]; ok {
+			count++
+		}
+	}
+	return count
 }
 
 func mcpNotes(notes []domaingame.Note) []domainmcp.Note {
