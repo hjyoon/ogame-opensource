@@ -913,6 +913,66 @@ type NotesStatus struct {
 	EditNote  *Note  `json:"editNote,omitempty"`
 }
 
+type OptionsStatusCommand struct {
+	PlanetID int
+}
+
+type OptionsUser struct {
+	Name            string `json:"name"`
+	NameLocked      bool   `json:"nameLocked"`
+	Validated       bool   `json:"validated"`
+	Admin           int    `json:"admin"`
+	CommanderActive bool   `json:"commanderActive"`
+}
+
+type OptionsUniverse struct {
+	Language      string `json:"language"`
+	ForceLanguage bool   `json:"forceLanguage"`
+	FeedAge       int    `json:"feedAge"`
+	Speed         int    `json:"speed"`
+}
+
+type OptionsSettings struct {
+	Language         string `json:"language"`
+	SkinPath         string `json:"skinPath"`
+	UseSkin          bool   `json:"useSkin"`
+	DeactivateIP     bool   `json:"deactivateIp"`
+	SortBy           int    `json:"sortBy"`
+	SortOrder        int    `json:"sortOrder"`
+	MaxSpy           int    `json:"maxSpy"`
+	MaxFleetMessages int    `json:"maxFleetMessages"`
+}
+
+type OptionsAccount struct {
+	Vacation       bool  `json:"vacation"`
+	VacationUntil  int64 `json:"vacationUntil,omitempty"`
+	DeletionQueued bool  `json:"deletionQueued"`
+	DeletionAt     int64 `json:"deletionAt,omitempty"`
+}
+
+type OptionsFlags struct {
+	ShowEspionageButton bool `json:"showEspionageButton"`
+	ShowWriteMessage    bool `json:"showWriteMessage"`
+	ShowBuddy           bool `json:"showBuddy"`
+	ShowRocketAttack    bool `json:"showRocketAttack"`
+	ShowViewReport      bool `json:"showViewReport"`
+	DoNotUseFolders     bool `json:"doNotUseFolders"`
+	FeedEnabled         bool `json:"feedEnabled"`
+	FeedAtom            bool `json:"feedAtom"`
+	HideGOEmail         bool `json:"hideGoEmail"`
+}
+
+type OptionsStatus struct {
+	PlayerID  int             `json:"playerId"`
+	Planet    Planet          `json:"planet"`
+	Commander string          `json:"commander"`
+	User      OptionsUser     `json:"user"`
+	Universe  OptionsUniverse `json:"universe"`
+	Settings  OptionsSettings `json:"settings"`
+	Account   OptionsAccount  `json:"account"`
+	Flags     OptionsFlags    `json:"flags"`
+}
+
 type EmpireCommand struct {
 	PlanetID   int
 	PlanetType int

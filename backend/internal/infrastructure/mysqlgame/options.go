@@ -11,6 +11,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type OptionsRepository struct {
@@ -36,6 +37,10 @@ func NewOptionsRepositoryWithSecret(db *sql.DB, prefix string, secret string) Op
 		secret:   secret,
 		now:      time.Now,
 	}
+}
+
+func NewOptionsReadRepository(db *sql.DB, prefix string) OptionsRepository {
+	return NewOptionsRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
 }
 
 func NewOptionsRepositoryWithQueryer(queryer Queryer, prefix string, now func() time.Time) OptionsRepository {
@@ -74,6 +79,76 @@ func (r OptionsRepository) GetOptions(ctx context.Context, query appgame.Options
 		return domaingame.Options{}, err
 	}
 	return domaingame.NewOptions(overview, user, universe, settings, account, flags), nil
+}
+
+func (r OptionsRepository) GetMCPOptions(ctx context.Context, playerID int, command domainmcp.OptionsStatusCommand) (domainmcp.OptionsStatus, error) {
+	if r.queryer == nil {
+		return domainmcp.OptionsStatus{}, errors.New("options reader unavailable")
+	}
+	options, err := r.GetOptions(ctx, appgame.OptionsQuery{PlayerID: playerID, PlanetID: command.PlanetID})
+	if err != nil {
+		return domainmcp.OptionsStatus{}, err
+	}
+	return mcpOptionsStatus(playerID, options), nil
+}
+
+func mcpOptionsStatus(playerID int, options domaingame.Options) domainmcp.OptionsStatus {
+	return domainmcp.OptionsStatus{
+		PlayerID: playerID,
+		Planet: domainmcp.Planet{
+			ID:       options.CurrentPlanet.ID,
+			Name:     options.CurrentPlanet.Name,
+			Type:     options.CurrentPlanet.Type,
+			TypeName: mcpPlanetTypeName(options.CurrentPlanet.Type),
+			Coordinates: domainmcp.Coordinates{
+				Galaxy:   options.CurrentPlanet.Coordinates.Galaxy,
+				System:   options.CurrentPlanet.Coordinates.System,
+				Position: options.CurrentPlanet.Coordinates.Position,
+			},
+			Current: true,
+		},
+		Commander: options.Commander,
+		User: domainmcp.OptionsUser{
+			Name:            options.User.Name,
+			NameLocked:      options.User.NameLocked,
+			Validated:       options.User.Validated,
+			Admin:           options.User.Admin,
+			CommanderActive: options.User.CommanderOn,
+		},
+		Universe: domainmcp.OptionsUniverse{
+			Language:      options.Universe.Language,
+			ForceLanguage: options.Universe.ForceLanguage,
+			FeedAge:       options.Universe.FeedAge,
+			Speed:         options.Universe.Speed,
+		},
+		Settings: domainmcp.OptionsSettings{
+			Language:         options.Settings.Language,
+			SkinPath:         options.Settings.SkinPath,
+			UseSkin:          options.Settings.UseSkin,
+			DeactivateIP:     options.Settings.DeactivateIP,
+			SortBy:           options.Settings.SortBy,
+			SortOrder:        options.Settings.SortOrder,
+			MaxSpy:           options.Settings.MaxSpy,
+			MaxFleetMessages: options.Settings.MaxFleetMessages,
+		},
+		Account: domainmcp.OptionsAccount{
+			Vacation:       options.Account.Vacation,
+			VacationUntil:  options.Account.VacationUntil,
+			DeletionQueued: options.Account.DeletionQueued,
+			DeletionAt:     options.Account.DeletionAt,
+		},
+		Flags: domainmcp.OptionsFlags{
+			ShowEspionageButton: options.Flags.ShowEspionageButton,
+			ShowWriteMessage:    options.Flags.ShowWriteMessage,
+			ShowBuddy:           options.Flags.ShowBuddy,
+			ShowRocketAttack:    options.Flags.ShowRocketAttack,
+			ShowViewReport:      options.Flags.ShowViewReport,
+			DoNotUseFolders:     options.Flags.DoNotUseFolders,
+			FeedEnabled:         options.Flags.FeedEnabled,
+			FeedAtom:            options.Flags.FeedAtom,
+			HideGOEmail:         options.Flags.HideGOEmail,
+		},
+	}
 }
 
 func (r OptionsRepository) UpdateOptions(ctx context.Context, query appgame.OptionsUpdateQuery) (domaingame.Options, *domaingame.OptionsActionIssue, error) {

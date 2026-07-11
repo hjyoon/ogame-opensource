@@ -11,6 +11,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestOptionsRepositoryReadsLegacyOptions(t *testing.T) {
@@ -30,6 +31,80 @@ func TestOptionsRepositoryReadsLegacyOptions(t *testing.T) {
 	}
 	if !strings.Contains(queryer.calls[4].sql, "maxfleetmsg") || queryer.calls[4].args[0] != 42 {
 		t.Fatalf("expected options user query, got %+v", queryer.calls[4])
+	}
+}
+
+func TestOptionsRepositoryMapsMCPOptions(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	queryer := &fakeQueryer{results: append(optionsOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(optionsUserRow(now, 1, now.Add(7*24*time.Hour).Unix()))},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{"en", 0, 60, 128})},
+	)}
+	repository := NewOptionsRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+
+	options, err := repository.GetMCPOptions(context.Background(), 42, domainmcp.OptionsStatusCommand{PlanetID: 99})
+	if err != nil {
+		t.Fatalf("GetMCPOptions returned error: %v", err)
+	}
+	if options.PlayerID != 42 || options.Planet.ID != 99 || options.Planet.TypeName != "planet" ||
+		options.User.Name != "Legor" || !options.User.Validated || !options.User.CommanderActive ||
+		options.Universe.Speed != 128 || options.Settings.MaxSpy != 5 || !options.Flags.ShowEspionageButton ||
+		!options.Account.DeletionQueued {
+		t.Fatalf("unexpected mcp options: %+v", options)
+	}
+	if _, err := (OptionsRepository{}).GetMCPOptions(context.Background(), 42, domainmcp.OptionsStatusCommand{}); err == nil {
+		t.Fatalf("expected unavailable reader error")
+	}
+}
+
+func TestMCPOptionsStatusMapsMoonAndFlags(t *testing.T) {
+	options := mcpOptionsStatus(42, domaingame.Options{
+		Commander: "legor",
+		CurrentPlanet: domaingame.PlanetOverview{
+			ID:   99,
+			Name: "Moon",
+			Type: domaingame.PlanetTypeMoon,
+			Coordinates: domaingame.Coordinates{
+				Galaxy:   1,
+				System:   2,
+				Position: 3,
+			},
+		},
+		User: domaingame.OptionsUser{Name: "Legor", NameLocked: true, Admin: 1},
+		Universe: domaingame.OptionsUniverse{
+			Language:      "en",
+			ForceLanguage: true,
+			FeedAge:       60,
+			Speed:         128,
+		},
+		Settings: domaingame.OptionsSettings{
+			Language:         "en",
+			SkinPath:         "/evolution/",
+			UseSkin:          true,
+			DeactivateIP:     true,
+			SortBy:           2,
+			SortOrder:        1,
+			MaxSpy:           5,
+			MaxFleetMessages: 8,
+		},
+		Account: domaingame.OptionsAccount{
+			Vacation:       true,
+			VacationUntil:  1700000000,
+			DeletionQueued: true,
+			DeletionAt:     1700600000,
+		},
+		Flags: domaingame.OptionsFlags{
+			ShowWriteMessage: true,
+			ShowBuddy:        true,
+			FeedEnabled:      true,
+			FeedAtom:         true,
+			HideGOEmail:      true,
+		},
+	})
+	if options.Planet.TypeName != "moon" || !options.User.NameLocked || !options.Universe.ForceLanguage ||
+		!options.Settings.UseSkin || !options.Account.Vacation || !options.Flags.ShowBuddy ||
+		!options.Flags.HideGOEmail {
+		t.Fatalf("unexpected mapped options status: %+v", options)
 	}
 }
 

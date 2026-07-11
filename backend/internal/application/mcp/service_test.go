@@ -756,6 +756,26 @@ func TestServiceListsNotesToolForReadScope(t *testing.T) {
 	}
 }
 
+func TestServiceListsOptionsToolForReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithOptionsReadRepository(&fakeOptionsReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_options" {
+		t.Fatalf("unexpected read options tools: %v", names)
+	}
+}
+
 func TestServiceListsEmpireOverviewToolForReadScope(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -1951,6 +1971,63 @@ func TestServiceNotesToolRequiresRepositoryReadScopeAndValidArguments(t *testing
 	service = service.WithNotesReadRepository(&fakeNotesReadRepository{err: errors.New("notes down")})
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_notes", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "notes down") {
 		t.Fatalf("expected notes repository error, got %v", err)
+	}
+}
+
+func TestServiceCallsOptionsTool(t *testing.T) {
+	options := domainmcp.OptionsStatus{
+		PlayerID:  42,
+		Planet:    domainmcp.Planet{ID: 99, Name: "Arakis"},
+		Commander: "legor",
+		User:      domainmcp.OptionsUser{Name: "Legor", Validated: true, CommanderActive: true},
+		Settings:  domainmcp.OptionsSettings{Language: "en", MaxSpy: 5},
+	}
+	repository := &fakeOptionsReadRepository{result: options}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithOptionsReadRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_options",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": "99"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["options"].(domainmcp.OptionsStatus)
+	if result.IsError || got.PlayerID != 42 || got.User.Name != "Legor" || got.Settings.MaxSpy != 5 {
+		t.Fatalf("unexpected options result: %+v", result)
+	}
+	if repository.playerID != 42 || repository.command.PlanetID != 99 {
+		t.Fatalf("unexpected options command: player=%d command=%+v", repository.playerID, repository.command)
+	}
+}
+
+func TestServiceOptionsToolRequiresRepositoryReadScopeAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_options", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing options read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_options", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithOptionsReadRepository(&fakeOptionsReadRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_options", AccessToken: "read", Arguments: map[string]any{"planetId": true}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid params, got %v", err)
+	}
+
+	service = service.WithOptionsReadRepository(&fakeOptionsReadRepository{err: errors.New("options down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_options", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "options down") {
+		t.Fatalf("expected options repository error, got %v", err)
 	}
 }
 
@@ -4628,6 +4705,22 @@ func (f *fakeNotesReadRepository) GetMCPNotes(_ context.Context, playerID int, c
 	f.command = command
 	if f.err != nil {
 		return domainmcp.NotesStatus{}, f.err
+	}
+	return f.result, nil
+}
+
+type fakeOptionsReadRepository struct {
+	result   domainmcp.OptionsStatus
+	playerID int
+	command  domainmcp.OptionsStatusCommand
+	err      error
+}
+
+func (f *fakeOptionsReadRepository) GetMCPOptions(_ context.Context, playerID int, command domainmcp.OptionsStatusCommand) (domainmcp.OptionsStatus, error) {
+	f.playerID = playerID
+	f.command = command
+	if f.err != nil {
+		return domainmcp.OptionsStatus{}, f.err
 	}
 	return f.result, nil
 }
