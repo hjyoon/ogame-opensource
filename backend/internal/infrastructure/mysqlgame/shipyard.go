@@ -9,6 +9,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type ShipyardRepository struct {
@@ -22,6 +23,10 @@ type ShipyardRepository struct {
 func NewShipyardRepository(db *sql.DB, prefix string) ShipyardRepository {
 	runner := SQLQueryer{DB: db}
 	return ShipyardRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, updateResources: true}
+}
+
+func NewShipyardReadRepository(db *sql.DB, prefix string) ShipyardRepository {
+	return NewShipyardRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
 }
 
 func NewShipyardRepositoryWithQueryer(queryer Queryer, prefix string) ShipyardRepository {
@@ -104,6 +109,63 @@ func (r ShipyardRepository) GetShipyard(ctx context.Context, query appgame.Shipy
 	}
 
 	return domaingame.BuildShipyardWithQueue(overview, levels, research, fleet, speed, busy, orderCap, commanderActive, queue), nil
+}
+
+func (r ShipyardRepository) GetMCPShipyardOptions(ctx context.Context, playerID int, planetID int) (domainmcp.ShipyardOptions, error) {
+	if r.queryer == nil {
+		return domainmcp.ShipyardOptions{}, errors.New("shipyard reader unavailable")
+	}
+	shipyard, err := r.GetShipyard(ctx, appgame.ShipyardQuery{PlayerID: playerID, PlanetID: planetID})
+	if err != nil {
+		return domainmcp.ShipyardOptions{}, err
+	}
+	queue := make([]domainmcp.ShipyardQueueEntry, 0, len(shipyard.Queue))
+	for _, entry := range shipyard.Queue {
+		queue = append(queue, domainmcp.ShipyardQueueEntry{
+			TaskID:           entry.TaskID,
+			UnitID:           entry.UnitID,
+			Name:             entry.Name,
+			Count:            entry.Count,
+			Start:            entry.Start,
+			End:              entry.End,
+			RemainingSeconds: entry.RemainingSeconds,
+		})
+	}
+	items := make([]domainmcp.ShipyardOption, 0, len(shipyard.Items))
+	for _, item := range shipyard.Items {
+		items = append(items, domainmcp.ShipyardOption{
+			ID:               item.ID,
+			Name:             item.Name,
+			Description:      item.Description,
+			Count:            item.Count,
+			Cost:             mcpTechnologyCost(item.Cost),
+			DurationSeconds:  item.DurationSeconds,
+			CanBuild:         item.CanBuild,
+			MeetsRequirement: item.MeetsRequirement,
+			MaxBuild:         item.MaxBuild,
+			BlockedReason:    item.BlockedReason,
+		})
+	}
+	return domainmcp.ShipyardOptions{
+		PlayerID: playerID,
+		Planet: domainmcp.Planet{
+			ID:       shipyard.CurrentPlanet.ID,
+			Name:     shipyard.CurrentPlanet.Name,
+			Type:     shipyard.CurrentPlanet.Type,
+			TypeName: mcpPlanetTypeName(shipyard.CurrentPlanet.Type),
+			Coordinates: domainmcp.Coordinates{
+				Galaxy:   shipyard.CurrentPlanet.Coordinates.Galaxy,
+				System:   shipyard.CurrentPlanet.Coordinates.System,
+				Position: shipyard.CurrentPlanet.Coordinates.Position,
+			},
+			Current: true,
+		},
+		CommanderActive: shipyard.CommanderActive,
+		HasShipyard:     shipyard.HasShipyard,
+		Busy:            shipyard.Busy,
+		Queue:           queue,
+		Items:           items,
+	}, nil
 }
 
 func (r ShipyardRepository) loadFleetCounts(ctx context.Context, planetsTable string, playerID int, planetID int) (domaingame.FleetCounts, error) {

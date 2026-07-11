@@ -228,6 +228,39 @@ type ResearchOptions struct {
 	Items    []BuildingOption    `json:"items"`
 }
 
+type ShipyardQueueEntry struct {
+	TaskID           int    `json:"taskId"`
+	UnitID           int    `json:"unitId"`
+	Name             string `json:"name"`
+	Count            int    `json:"count"`
+	Start            int    `json:"start"`
+	End              int    `json:"end"`
+	RemainingSeconds int    `json:"remainingSeconds"`
+}
+
+type ShipyardOption struct {
+	ID               int            `json:"id"`
+	Name             string         `json:"name"`
+	Description      string         `json:"description"`
+	Count            int            `json:"count"`
+	Cost             TechnologyCost `json:"cost"`
+	DurationSeconds  int            `json:"durationSeconds"`
+	CanBuild         bool           `json:"canBuild"`
+	MeetsRequirement bool           `json:"meetsRequirement"`
+	MaxBuild         int            `json:"maxBuild"`
+	BlockedReason    string         `json:"blockedReason,omitempty"`
+}
+
+type ShipyardOptions struct {
+	PlayerID        int                  `json:"playerId"`
+	Planet          Planet               `json:"planet"`
+	CommanderActive bool                 `json:"commanderActive"`
+	HasShipyard     bool                 `json:"hasShipyard"`
+	Busy            bool                 `json:"busy"`
+	Queue           []ShipyardQueueEntry `json:"queue"`
+	Items           []ShipyardOption     `json:"items"`
+}
+
 type MessageQuery struct {
 	Limit          int
 	MessageType    int

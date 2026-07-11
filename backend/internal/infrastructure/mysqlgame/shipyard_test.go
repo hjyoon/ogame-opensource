@@ -8,6 +8,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestShipyardRepositoryReadsLegacyFleet(t *testing.T) {
@@ -40,6 +41,44 @@ func TestShipyardRepositoryReadsLegacyFleet(t *testing.T) {
 	}
 }
 
+func TestShipyardRepositoryMapsMCPShipyardOptions(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardReadPrefixResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(fleetCountRow(map[int]int{domaingame.FleetSmallCargo: 4}))},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{2.0, 999})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{domaingame.BuildingMetalMine})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})},
+		fakeQueryResult{rows: fakeRowsFromValues(buildingQueueTaskValues(buildingQueueTask{
+			TaskID:  11,
+			OwnerID: 42,
+			Type:    queueTypeShipyard,
+			SubID:   99,
+			ObjID:   domaingame.FleetSmallCargo,
+			Level:   3,
+			Start:   100,
+			End:     220,
+		}))},
+	)}
+	repository := NewShipyardRepositoryWithRunner(queryer, nil, "ogame_", nil)
+
+	options, err := repository.GetMCPShipyardOptions(context.Background(), 42, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.PlayerID != 42 || options.Planet.ID != 99 || options.Planet.TypeName != "planet" || !options.HasShipyard || options.Busy {
+		t.Fatalf("unexpected mcp shipyard options summary: %+v", options)
+	}
+	if len(options.Queue) != 1 || options.Queue[0].TaskID != 11 || options.Queue[0].UnitID != domaingame.FleetSmallCargo || options.Queue[0].Count != 3 {
+		t.Fatalf("unexpected mcp shipyard queue: %+v", options.Queue)
+	}
+	item := domainMCPShipyardOptionByID(t, options, domaingame.FleetSmallCargo)
+	if item.Count != 4 || item.DurationSeconds != 960 || item.MaxBuild != 5 || item.Cost.Metal <= 0 {
+		t.Fatalf("unexpected mcp small cargo item: %+v", item)
+	}
+	if strings.Contains(queryer.calls[0].sql, "SELECT speed, max_werf, freeze") {
+		t.Fatalf("read-only MCP shipyard options should not finish queues, got first query %+v", queryer.calls[0])
+	}
+}
+
 func TestNewShipyardRepositoryKeepsSQLQueryer(t *testing.T) {
 	repository := NewShipyardRepository(nil, "ogame_")
 
@@ -48,6 +87,13 @@ func TestNewShipyardRepositoryKeepsSQLQueryer(t *testing.T) {
 	}
 	if _, ok := repository.queryer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL queryer, got %T", repository.queryer)
+	}
+	readRepository := NewShipyardReadRepository(nil, "ogame_")
+	if readRepository.execer != nil || readRepository.updateResources {
+		t.Fatalf("expected MCP read repository without writer/resource updates, got %+v", readRepository)
+	}
+	if _, err := (ShipyardRepository{}).GetMCPShipyardOptions(context.Background(), 42, 0); err == nil {
+		t.Fatal("expected nil shipyard reader error")
 	}
 }
 
@@ -379,4 +425,15 @@ func findShipyardItem(t *testing.T, shipyard domaingame.Shipyard, id int) domain
 	}
 	t.Fatalf("shipyard item %d not found in %+v", id, shipyard.Items)
 	return domaingame.ShipyardItem{}
+}
+
+func domainMCPShipyardOptionByID(t *testing.T, options domainmcp.ShipyardOptions, id int) domainmcp.ShipyardOption {
+	t.Helper()
+	for _, item := range options.Items {
+		if item.ID == id {
+			return item
+		}
+	}
+	t.Fatalf("shipyard option %d not found in %+v", id, options.Items)
+	return domainmcp.ShipyardOption{}
 }
