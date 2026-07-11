@@ -173,6 +173,11 @@ type MerchantReadRepository interface {
 	GetMCPMerchantStatus(context.Context, int, domainmcp.MerchantStatusCommand) (domainmcp.MerchantStatus, error)
 }
 
+type MerchantWriteRepository interface {
+	PreviewMCPMutateMerchant(context.Context, int, domainmcp.MerchantMutationCommand) (domainmcp.MerchantMutationResult, error)
+	MutateMCPMerchant(context.Context, int, domainmcp.MerchantMutationCommand) (domainmcp.MerchantMutationResult, error)
+}
+
 type JumpGateReadRepository interface {
 	GetMCPJumpGateStatus(context.Context, int, domainmcp.JumpGateStatusCommand) (domainmcp.JumpGateStatus, error)
 }
@@ -371,6 +376,7 @@ type Service struct {
 	notesWrite      NotesWriteRepository
 	optionsRead     OptionsReadRepository
 	merchantRead    MerchantReadRepository
+	merchantWrite   MerchantWriteRepository
 	jumpGateRead    JumpGateReadRepository
 	empireRead      EmpireReadRepository
 	technologyRead  TechnologyReadRepository
@@ -534,6 +540,11 @@ func (s Service) WithMerchantReadRepository(repository MerchantReadRepository) S
 	return s
 }
 
+func (s Service) WithMerchantWriteRepository(repository MerchantWriteRepository) Service {
+	s.merchantWrite = repository
+	return s
+}
+
 func (s Service) WithJumpGateReadRepository(repository JumpGateReadRepository) Service {
 	s.jumpGateRead = repository
 	return s
@@ -634,6 +645,7 @@ func (s Service) OAuthAuthorizationServerMetadata(ctx context.Context, issuer st
 			domainmcp.ScopeQueueWrite,
 			domainmcp.ScopeResourcesWrite,
 			domainmcp.ScopePremiumWrite,
+			domainmcp.ScopeMerchantWrite,
 		},
 	}
 	if s.oidcSigner != nil {
@@ -659,6 +671,7 @@ func (s Service) OAuthProtectedResourceMetadata(ctx context.Context, resource st
 			domainmcp.ScopeQueueWrite,
 			domainmcp.ScopeResourcesWrite,
 			domainmcp.ScopePremiumWrite,
+			domainmcp.ScopeMerchantWrite,
 		},
 		BearerMethods: []string{"header"},
 	}
@@ -977,6 +990,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	if access.HasScope(domainmcp.ScopePremiumWrite) && s.premiumWrite != nil {
 		tools = append(tools, recruitOfficerTool())
 	}
+	if access.HasScope(domainmcp.ScopeMerchantWrite) && s.merchantWrite != nil {
+		tools = append(tools, mutateMerchantTool())
+	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
 }
 
@@ -1193,6 +1209,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callMerchantStatus(ctx, access, command.Arguments)
+	case "mutate_merchant":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeMerchantWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callMutateMerchant(ctx, access, command.Arguments)
 	case "get_jump_gate_status":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
 		if err != nil {
@@ -2069,6 +2094,50 @@ func (s Service) callMerchantStatus(ctx context.Context, access domainmcp.Access
 	}, nil
 }
 
+func (s Service) callMutateMerchant(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.merchantWrite == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp merchant write repository unavailable")
+	}
+	command, err := mcpMerchantMutationCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	confirmation := mcpMerchantMutationConfirmation(command)
+	var result domainmcp.MerchantMutationResult
+	if command.DryRun {
+		result, err = s.merchantWrite.PreviewMCPMutateMerchant(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = true
+		result.Executed = false
+		if result.Issue == nil {
+			result.RequiresConfirmation = true
+			result.Confirmation = confirmation
+		}
+	} else {
+		if strings.TrimSpace(command.Confirm) != confirmation {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+		}
+		result, err = s.merchantWrite.MutateMCPMerchant(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = false
+		result.RequiresConfirmation = false
+		result.Confirmation = confirmation
+	}
+	structured := map[string]any{"merchantMutation": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
 func (s Service) callJumpGateStatus(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
 	if s.jumpGateRead == nil {
 		return domainmcp.ToolCallResult{}, errors.New("mcp jump gate read repository unavailable")
@@ -2868,7 +2937,7 @@ func normalizeUserScopes(requested []string) []string {
 
 func userScopeAllowed(scope string) bool {
 	switch scope {
-	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeNotesWrite, domainmcp.ScopeBuddyWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite:
+	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeNotesWrite, domainmcp.ScopeBuddyWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite, domainmcp.ScopeMerchantWrite:
 		return true
 	default:
 		return false
@@ -3923,6 +3992,87 @@ func mcpMerchantStatusCommand(arguments map[string]any) (domainmcp.MerchantStatu
 		return domainmcp.MerchantStatusCommand{}, err
 	}
 	return domainmcp.MerchantStatusCommand{PlanetID: planetID}, nil
+}
+
+func mcpMerchantMutationCommand(arguments map[string]any) (domainmcp.MerchantMutationCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.MerchantMutationCommand{}, err
+	}
+	action, err := optionalStringArgument(arguments, "action")
+	if err != nil {
+		return domainmcp.MerchantMutationCommand{}, err
+	}
+	action = strings.ToLower(strings.TrimSpace(action))
+	if action != "call" && action != "trade" {
+		return domainmcp.MerchantMutationCommand{}, domainmcp.ErrInvalidParams
+	}
+	offerID, err := optionalNonNegativeIntArgument(arguments, "offerId")
+	if err != nil {
+		return domainmcp.MerchantMutationCommand{}, err
+	}
+	values, err := merchantTradeValuesArgument(arguments, "values")
+	if err != nil {
+		return domainmcp.MerchantMutationCommand{}, err
+	}
+	switch action {
+	case "call":
+		if offerID < 1 || offerID > 3 {
+			return domainmcp.MerchantMutationCommand{}, domainmcp.ErrInvalidParams
+		}
+	case "trade":
+		if values.Metal+values.Crystal+values.Deuterium <= 0 {
+			return domainmcp.MerchantMutationCommand{}, domainmcp.ErrInvalidParams
+		}
+	}
+	dryRun := true
+	if arguments != nil && arguments["dryRun"] != nil {
+		dryRun, err = optionalBoolArgument(arguments, "dryRun")
+		if err != nil {
+			return domainmcp.MerchantMutationCommand{}, err
+		}
+	}
+	confirm, err := optionalStringArgument(arguments, "confirm")
+	if err != nil {
+		return domainmcp.MerchantMutationCommand{}, err
+	}
+	return domainmcp.MerchantMutationCommand{
+		PlanetID: planetID,
+		Action:   action,
+		OfferID:  offerID,
+		Values:   values,
+		DryRun:   dryRun,
+		Confirm:  confirm,
+	}, nil
+}
+
+func merchantTradeValuesArgument(arguments map[string]any, name string) (domainmcp.MerchantTradeValues, error) {
+	if arguments == nil || arguments[name] == nil {
+		return domainmcp.MerchantTradeValues{}, nil
+	}
+	object, ok := arguments[name].(map[string]any)
+	if !ok {
+		return domainmcp.MerchantTradeValues{}, fmt.Errorf("%w: %s must be an object", domainmcp.ErrInvalidParams, name)
+	}
+	metal, err := optionalObjectNonNegativeInt(object, "metal")
+	if err != nil {
+		return domainmcp.MerchantTradeValues{}, err
+	}
+	crystal, err := optionalObjectNonNegativeInt(object, "crystal")
+	if err != nil {
+		return domainmcp.MerchantTradeValues{}, err
+	}
+	deuterium, err := optionalObjectNonNegativeInt(object, "deuterium")
+	if err != nil {
+		return domainmcp.MerchantTradeValues{}, err
+	}
+	return domainmcp.MerchantTradeValues{Metal: metal, Crystal: crystal, Deuterium: deuterium}, nil
+}
+
+func mcpMerchantMutationConfirmation(command domainmcp.MerchantMutationCommand) string {
+	payload := fmt.Sprintf("%d:%s:%d:%d:%d:%d", command.PlanetID, command.Action, command.OfferID, command.Values.Metal, command.Values.Crystal, command.Values.Deuterium)
+	sum := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("mutate_merchant:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
 }
 
 func mcpJumpGateStatusCommand(arguments map[string]any) (domainmcp.JumpGateStatusCommand, error) {
@@ -5519,6 +5669,76 @@ func merchantStatusTool() domainmcp.Tool {
 			"readOnlyHint":    true,
 			"destructiveHint": false,
 			"idempotentHint":  true,
+		},
+	}
+}
+
+func mutateMerchantTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "mutate_merchant",
+		Title:       "Mutate Merchant",
+		Description: "Call a legacy merchant offer or execute an active merchant trade. Defaults to dry-run and requires confirmation for execution.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet context.",
+					"minimum":     0,
+				},
+				"action": map[string]any{
+					"type":        "string",
+					"description": "Merchant mutation action.",
+					"enum":        []string{"call", "trade"},
+				},
+				"offerId": map[string]any{
+					"type":        "integer",
+					"description": "Resource offered by a merchant call: 1 metal, 2 crystal, 3 deuterium.",
+					"enum":        []int{1, 2, 3},
+				},
+				"values": map[string]any{
+					"type":        "object",
+					"description": "Requested resources for trade action.",
+					"properties": map[string]any{
+						"metal":     map[string]any{"type": "integer", "minimum": 0},
+						"crystal":   map[string]any{"type": "integer", "minimum": 0},
+						"deuterium": map[string]any{"type": "integer", "minimum": 0},
+					},
+					"additionalProperties": false,
+				},
+				"dryRun":  map[string]any{"type": "boolean", "description": "Defaults to true. Set false only with the returned confirmation."},
+				"confirm": map[string]any{"type": "string", "description": "Confirmation returned by dry-run."},
+			},
+			"required":             []string{"action"},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"merchantMutation": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":             map[string]any{"type": "integer"},
+						"planetId":             map[string]any{"type": "integer"},
+						"action":               map[string]any{"type": "string"},
+						"offerId":              map[string]any{"type": "integer"},
+						"values":               map[string]any{"type": "object"},
+						"status":               map[string]any{"type": "object"},
+						"issue":                map[string]any{"type": "object"},
+						"dryRun":               map[string]any{"type": "boolean"},
+						"requiresConfirmation": map[string]any{"type": "boolean"},
+						"confirmation":         map[string]any{"type": "string"},
+						"executed":             map[string]any{"type": "boolean"},
+					},
+					"required": []string{"playerId", "planetId", "action", "values", "status", "dryRun", "requiresConfirmation", "executed"},
+				},
+			},
+			"required": []string{"merchantMutation"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    false,
+			"destructiveHint": false,
+			"idempotentHint":  false,
 		},
 	}
 }

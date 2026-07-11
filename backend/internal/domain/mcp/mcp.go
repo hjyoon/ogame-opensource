@@ -12,6 +12,7 @@ const (
 	ScopeQueueWrite     = "mcp:queue_write"
 	ScopeResourcesWrite = "mcp:resources_write"
 	ScopePremiumWrite   = "mcp:premium_write"
+	ScopeMerchantWrite  = "mcp:merchant_write"
 	ScopeMessages       = "mcp:messages"
 	ScopeMessageWrite   = "mcp:message_write"
 	ScopeNotesWrite     = "mcp:notes_write"
@@ -1132,6 +1133,35 @@ type MerchantStatus struct {
 	ActiveOfferID int                   `json:"activeOfferId"`
 	Rates         MerchantRates         `json:"rates"`
 	Rows          []MerchantResourceRow `json:"rows"`
+}
+
+type MerchantTradeValues struct {
+	Metal     int `json:"metal"`
+	Crystal   int `json:"crystal"`
+	Deuterium int `json:"deuterium"`
+}
+
+type MerchantMutationCommand struct {
+	PlanetID int
+	Action   string
+	OfferID  int
+	Values   MerchantTradeValues
+	DryRun   bool
+	Confirm  string
+}
+
+type MerchantMutationResult struct {
+	PlayerID             int                 `json:"playerId"`
+	PlanetID             int                 `json:"planetId"`
+	Action               string              `json:"action"`
+	OfferID              int                 `json:"offerId,omitempty"`
+	Values               MerchantTradeValues `json:"values"`
+	Status               MerchantStatus      `json:"status"`
+	DryRun               bool                `json:"dryRun"`
+	RequiresConfirmation bool                `json:"requiresConfirmation"`
+	Confirmation         string              `json:"confirmation,omitempty"`
+	Executed             bool                `json:"executed"`
+	Issue                *ActionIssue        `json:"issue,omitempty"`
 }
 
 type JumpGateStatusCommand struct {

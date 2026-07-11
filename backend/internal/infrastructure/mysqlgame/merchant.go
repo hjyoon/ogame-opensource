@@ -80,6 +80,74 @@ func (r MerchantRepository) GetMCPMerchantStatus(ctx context.Context, playerID i
 	return mcpMerchantStatus(playerID, merchant), nil
 }
 
+func (r MerchantRepository) PreviewMCPMutateMerchant(ctx context.Context, playerID int, command domainmcp.MerchantMutationCommand) (domainmcp.MerchantMutationResult, error) {
+	if r.queryer == nil {
+		return domainmcp.MerchantMutationResult{}, errors.New("merchant reader unavailable")
+	}
+	current, err := r.GetMerchant(ctx, appgame.MerchantQuery{PlayerID: playerID, PlanetID: command.PlanetID})
+	if err != nil {
+		return domainmcp.MerchantMutationResult{}, err
+	}
+	result := mcpMerchantMutationResult(playerID, command, current)
+	switch strings.ToLower(strings.TrimSpace(command.Action)) {
+	case "call":
+		if domaingame.NormalizeMerchantOfferID(command.OfferID) == 0 {
+			result.Issue = &domainmcp.ActionIssue{Code: "invalid_offer", Message: "Unsupported merchant offer."}
+			return result, nil
+		}
+		if _, ok := domaingame.SpendMerchantDarkMatter(current.User); !ok {
+			result.Issue = mcpMerchantActionIssue(domaingame.MerchantNotEnoughDarkMatterIssue())
+		}
+	case "trade":
+		trade, issue := domaingame.ResolveMerchantTrade(current.ActiveOfferID, current.Rates, current.CurrentPlanet.Resources, mcpMerchantTradeValues(command.Values))
+		if issue != nil {
+			result.Issue = mcpMerchantActionIssue(issue)
+			return result, nil
+		}
+		if !trade.Changed {
+			result.Issue = &domainmcp.ActionIssue{Code: "no_trade", Message: "No merchant trade can be executed."}
+			return result, nil
+		}
+		preview := current
+		preview.ActiveOfferID = 0
+		preview.Rates = domaingame.MerchantRates{}
+		preview.CurrentPlanet.Resources.Metal = float64(trade.Metal)
+		preview.CurrentPlanet.Resources.Crystal = float64(trade.Crystal)
+		preview.CurrentPlanet.Resources.Deuterium = float64(trade.Deuterium)
+		preview.Rows = domaingame.MerchantRows(preview.CurrentPlanet.Resources, preview.ActiveOfferID, preview.Rates)
+		result = mcpMerchantMutationResult(playerID, command, preview)
+	default:
+		result.Issue = &domainmcp.ActionIssue{Code: "invalid_action", Message: "Unsupported merchant action."}
+	}
+	return result, nil
+}
+
+func (r MerchantRepository) MutateMCPMerchant(ctx context.Context, playerID int, command domainmcp.MerchantMutationCommand) (domainmcp.MerchantMutationResult, error) {
+	if r.execer == nil {
+		return domainmcp.MerchantMutationResult{}, errors.New("merchant updater unavailable")
+	}
+	result, err := r.PreviewMCPMutateMerchant(ctx, playerID, command)
+	if err != nil || result.Issue != nil {
+		return result, err
+	}
+	updated, issue, err := r.MutateMerchant(ctx, appgame.MerchantMutationQuery{
+		PlayerID: playerID,
+		PlanetID: command.PlanetID,
+		Mutation: domaingame.MerchantMutation{
+			Action:  command.Action,
+			OfferID: command.OfferID,
+			Values:  mcpMerchantTradeValues(command.Values),
+		},
+	})
+	if err != nil {
+		return domainmcp.MerchantMutationResult{}, err
+	}
+	result = mcpMerchantMutationResult(playerID, command, updated)
+	result.Issue = mcpMerchantActionIssue(issue)
+	result.Executed = result.Issue == nil
+	return result, nil
+}
+
 func mcpMerchantStatus(playerID int, merchant domaingame.Merchant) domainmcp.MerchantStatus {
 	return domainmcp.MerchantStatus{
 		PlayerID: playerID,
@@ -108,6 +176,32 @@ func mcpMerchantStatus(playerID int, merchant domaingame.Merchant) domainmcp.Mer
 		},
 		Rows: mcpMerchantRows(merchant.Rows),
 	}
+}
+
+func mcpMerchantMutationResult(playerID int, command domainmcp.MerchantMutationCommand, merchant domaingame.Merchant) domainmcp.MerchantMutationResult {
+	return domainmcp.MerchantMutationResult{
+		PlayerID: playerID,
+		PlanetID: merchant.CurrentPlanet.ID,
+		Action:   strings.ToLower(strings.TrimSpace(command.Action)),
+		OfferID:  command.OfferID,
+		Values:   command.Values,
+		Status:   mcpMerchantStatus(playerID, merchant),
+	}
+}
+
+func mcpMerchantTradeValues(values domainmcp.MerchantTradeValues) domaingame.MerchantTradeValues {
+	return domaingame.MerchantTradeValues{
+		Metal:     values.Metal,
+		Crystal:   values.Crystal,
+		Deuterium: values.Deuterium,
+	}
+}
+
+func mcpMerchantActionIssue(issue *domaingame.MerchantActionIssue) *domainmcp.ActionIssue {
+	if issue == nil {
+		return nil
+	}
+	return &domainmcp.ActionIssue{Code: issue.Code, Message: issue.Message}
 }
 
 func mcpMerchantRows(rows []domaingame.MerchantResourceRow) []domainmcp.MerchantResourceRow {

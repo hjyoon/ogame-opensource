@@ -50,6 +50,7 @@ func TestMerchantRepositoryMapsMCPMerchantStatus(t *testing.T) {
 		fakeQueryResult{rows: fakeRowsFromValues([]any{4000, 7000, 1, 3.0, 2.0, 1.0})},
 	)}
 	repository := NewMerchantRepositoryWithQueryer(queryer, "ogame_")
+	_ = NewMerchantReadRepository(nil, "ogame_")
 
 	status, err := repository.GetMCPMerchantStatus(context.Background(), 42, domainmcp.MerchantStatusCommand{PlanetID: 99})
 	if err != nil {
@@ -155,6 +156,51 @@ func TestMerchantRepositoryTradeMerchantUpdatesResources(t *testing.T) {
 	}
 	if merchant.ActiveOfferID != 0 {
 		t.Fatalf("trade should clear active offer in updated merchant: %+v", merchant)
+	}
+}
+
+func TestMerchantRepositoryMCPMerchantMutationPreviewAndExecute(t *testing.T) {
+	queryer := &fakeQueryer{results: append(optionsOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{0, 0, 1, 3.0, 2.0, 1.0})},
+	)}
+	repository := NewMerchantRepositoryWithRunner(queryer, nil, "ogame_", nil)
+	command := domainmcp.MerchantMutationCommand{
+		PlanetID: 99,
+		Action:   "trade",
+		Values:   domainmcp.MerchantTradeValues{Crystal: 100},
+	}
+	preview, err := repository.PreviewMCPMutateMerchant(context.Background(), 42, command)
+	if err != nil {
+		t.Fatalf("PreviewMCPMutateMerchant returned error: %v", err)
+	}
+	if preview.PlayerID != 42 || preview.PlanetID != 99 || preview.Action != "trade" || preview.Issue != nil ||
+		preview.Status.ActiveOfferID != 0 || preview.Status.Rows[1].Value != 2100 {
+		t.Fatalf("unexpected merchant preview: %+v", preview)
+	}
+
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: append(
+		append(
+			append(optionsOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{0, 0, 1, 3.0, 2.0, 1.0})}),
+			append(optionsOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{0, 0, 1, 3.0, 2.0, 1.0})})...,
+		),
+		append(optionsOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{0, 0, 0, 0.0, 0.0, 0.0})})...,
+	)}}
+	repository = NewMerchantRepositoryWithRunner(runner, runner, "ogame_", nil)
+	mutated, err := repository.MutateMCPMerchant(context.Background(), 42, command)
+	if err != nil {
+		t.Fatalf("MutateMCPMerchant returned error: %v", err)
+	}
+	if !mutated.Executed || mutated.Issue != nil || mutated.Status.ActiveOfferID != 0 || !strings.Contains(runner.execSQL, "`700` = ?") {
+		t.Fatalf("unexpected merchant mutation: result=%+v sql=%s", mutated, runner.execSQL)
+	}
+
+	_, err = (MerchantRepository{}).PreviewMCPMutateMerchant(context.Background(), 42, command)
+	if err == nil || !strings.Contains(err.Error(), "reader unavailable") {
+		t.Fatalf("expected preview reader error, got %v", err)
+	}
+	_, err = NewMerchantRepositoryWithRunner(queryer, nil, "ogame_", nil).MutateMCPMerchant(context.Background(), 42, command)
+	if err == nil || !strings.Contains(err.Error(), "updater unavailable") {
+		t.Fatalf("expected mutate updater error, got %v", err)
 	}
 }
 
@@ -339,6 +385,54 @@ func TestMerchantRepositoryMutationNoopsAndErrors(t *testing.T) {
 	_, issue, err = repository.MutateMerchant(context.Background(), appgame.MerchantMutationQuery{PlayerID: 42, PlanetID: 99, Mutation: domaingame.MerchantMutation{Action: "unknown"}})
 	if err != nil || issue != nil || runner.execSQL != "" {
 		t.Fatalf("unknown action should reload merchant only, issue=%+v err=%v exec=%s", issue, err, runner.execSQL)
+	}
+}
+
+func TestMerchantRepositoryMCPMerchantMutationIssues(t *testing.T) {
+	preview := func(command domainmcp.MerchantMutationCommand, merchantRow []any) domainmcp.MerchantMutationResult {
+		t.Helper()
+		repository := NewMerchantRepositoryWithQueryer(&fakeQueryer{results: append(optionsOverviewResults(),
+			fakeQueryResult{rows: fakeRowsFromValues(merchantRow)},
+		)}, "ogame_")
+		result, err := repository.PreviewMCPMutateMerchant(context.Background(), 42, command)
+		if err != nil {
+			t.Fatalf("PreviewMCPMutateMerchant returned error: %v", err)
+		}
+		return result
+	}
+
+	result := preview(domainmcp.MerchantMutationCommand{PlanetID: 99, Action: "call", OfferID: 99}, []any{5000, 0, 0, 0.0, 0.0, 0.0})
+	if result.Issue == nil || result.Issue.Code != "invalid_offer" {
+		t.Fatalf("expected invalid offer issue, got %+v", result)
+	}
+	result = preview(domainmcp.MerchantMutationCommand{PlanetID: 99, Action: "call", OfferID: 1}, []any{1000, 1000, 0, 0.0, 0.0, 0.0})
+	if result.Issue == nil || result.Issue.Code != domaingame.MerchantIssueNotEnoughDarkMatter {
+		t.Fatalf("expected dark matter issue, got %+v", result)
+	}
+	result = preview(domainmcp.MerchantMutationCommand{PlanetID: 99, Action: "trade", Values: domainmcp.MerchantTradeValues{Crystal: 100}}, []any{0, 0, 0, 0.0, 0.0, 0.0})
+	if result.Issue == nil || result.Issue.Code != "no_trade" {
+		t.Fatalf("expected no trade issue, got %+v", result)
+	}
+	result = preview(domainmcp.MerchantMutationCommand{PlanetID: 99, Action: "trade", Values: domainmcp.MerchantTradeValues{Crystal: 10_000}}, []any{0, 0, 1, 3.0, 2.0, 1.0})
+	if result.Issue == nil || result.Issue.Code != domaingame.MerchantIssueNotEnoughResource {
+		t.Fatalf("expected resource issue, got %+v", result)
+	}
+	result = preview(domainmcp.MerchantMutationCommand{PlanetID: 99, Action: "unknown"}, []any{0, 0, 0, 0.0, 0.0, 0.0})
+	if result.Issue == nil || result.Issue.Code != "invalid_action" {
+		t.Fatalf("expected invalid action issue, got %+v", result)
+	}
+
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: append(optionsOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{1000, 1000, 0, 0.0, 0.0, 0.0})},
+	)}}
+	repository := NewMerchantRepositoryWithRunner(runner, runner, "ogame_", nil)
+	result, err := repository.MutateMCPMerchant(context.Background(), 42, domainmcp.MerchantMutationCommand{PlanetID: 99, Action: "call", OfferID: 1})
+	if err != nil || result.Issue == nil || result.Executed || runner.execSQL != "" {
+		t.Fatalf("expected preview issue to block execute, result=%+v err=%v exec=%s", result, err, runner.execSQL)
+	}
+
+	if mcpMerchantActionIssue(nil) != nil {
+		t.Fatalf("nil merchant issue should map to nil")
 	}
 }
 

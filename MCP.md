@@ -8,8 +8,8 @@ Implemented:
 - `GET /mcp` returns `405`; SSE stream is not implemented yet.
 - `initialize`, `ping`, `tools/list`, and `tools/call`.
 - Protocol guard for `2025-06-18` plus fallback.
-- Browser `Origin` guard against DNS rebinding.
-- Clean Architecture MCP packages: domain, application, HTTP delivery.
+- Browser `Origin` guard.
+- Clean Architecture MCP packages.
 - First safe read-only tool: `get_server_health`.
 - Static bearer verifier for scoped testing.
 - Protected read-only tool: `get_mcp_access`.
@@ -25,12 +25,12 @@ Implemented:
 - Go MCP smoke E2E covers transport/tokens/OAuth/tools/mutations/errors/expiry/revoke.
 - OAuth 2.1:
   - `/.well-known/oauth-authorization-server`
-  - PRM endpoint and 401 discovery challenge
+  - PRM endpoint and 401 challenge
   - `/oauth/authorize` consent page and code redirect
   - `/oauth/register` DCR
-  - `/oauth/token` code + PKCE S256; `id_token` for `openid`
+  - `/oauth/token` code+PKCE S256; `id_token` for `openid`
   - `/oauth/revoke` access-token revocation
-  - Strict OAuth `resource`; codes bind client, redirect, resource, PKCE, scopes
+  - Strict `resource`; codes bind client, redirect, resource, PKCE, scopes
   - `/.well-known/jwks.json` Ed25519 JWKS
   - Codes are one-time hashes in `uni*_mcp_oauth_codes`.
   - External redirects require `OGAME_MCP_OAUTH_REDIRECT_URIS`.
@@ -56,6 +56,7 @@ Implemented:
   `cancel_research_queue`, `enqueue_shipyard_order`; confirmed mutations.
 - `mcp:resources_write`: `update_resource_production`.
 - `mcp:premium_write`: `recruit_officer`.
+- `mcp:merchant_write`: `mutate_merchant`.
 
 ## Static Token Format
 
@@ -63,8 +64,8 @@ Implemented:
 
 Scopes: `mcp:read`, `mcp:messages`, `mcp:message_write`,
 `mcp:notes_write`, `mcp:buddy_write`, `mcp:fleet`, `mcp:fleet_write`,
-`mcp:queue_write`, `mcp:resources_write`, `mcp:premium_write`, `mcp:write`,
-`mcp:admin`.
+`mcp:queue_write`, `mcp:resources_write`, `mcp:premium_write`,
+`mcp:merchant_write`, `mcp:write`, `mcp:admin`.
 
 ## User Token API
 
@@ -78,14 +79,15 @@ Plaintext `secret` is returned once; store it as a password.
 
 User tokens allow: `mcp:read`, `mcp:messages`, `mcp:message_write`,
 `mcp:notes_write`, `mcp:buddy_write`, `mcp:fleet`, `mcp:fleet_write`,
-`mcp:queue_write`, `mcp:resources_write`, `mcp:premium_write`.
+`mcp:queue_write`, `mcp:resources_write`, `mcp:premium_write`,
+`mcp:merchant_write`.
 
 `mcp:write` and `mcp:admin` stay unavailable for self-service user tokens.
 
 ## Security Rule
 
-No broad game mutation tools for users. Each mutation needs a narrow scope,
-consent, audit log, rate limit, dry-run, and confirmation.
+No broad user mutation tools. Each mutation needs a narrow scope, consent,
+audit, rate limit, dry-run, and confirmation.
 
 ## Next Steps
 
@@ -93,6 +95,6 @@ consent, audit log, rate limit, dry-run, and confirmation.
 
 ## General User Policy
 
-General users may receive read tools and individually scoped confirmed actions.
-Build/research/admin/bot/debug/DB actions stay blocked until each has scoped
-authorization, rate limits, audit logs, and confirmation flow.
+Users may receive read tools and scoped confirmed actions. Build/research/
+admin/bot/debug/DB actions stay blocked until each has scoped auth, rate
+limits, audit, and confirmation.
