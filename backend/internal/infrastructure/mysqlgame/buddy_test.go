@@ -63,6 +63,85 @@ func TestBuddyRepositoryMapsMCPBuddyStatus(t *testing.T) {
 	}
 }
 
+func TestBuddyRepositoryMCPMutationPreviewAndExecute(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{43, "target", 7, "TAG", 0, 1, 2, 4})},
+	)}
+	repository := NewBuddyRepositoryWithQueryer(queryer, "ogame_")
+	preview, err := repository.PreviewMCPBuddyMutation(context.Background(), 42, domainmcp.BuddyMutationCommand{
+		PlanetID: 99,
+		Action:   "add",
+		BuddyID:  43,
+		Text:     "hello",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.PlayerID != 42 || preview.LegacyAction != domaingame.BuddyActionAdd || preview.Status.Target == nil || preview.TextChars != 5 {
+		t.Fatalf("unexpected buddy preview: %+v", preview)
+	}
+
+	results := []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor"})},
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues([]any{0})},
+	}
+	results = append(results, shipyardOverviewResults()...)
+	results = append(results, fakeQueryResult{rows: fakeRowsFromValues()})
+	runner := &fakeBuddyRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository = NewBuddyRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+	mutated, err := repository.MutateMCPBuddy(context.Background(), 42, domainmcp.BuddyMutationCommand{
+		PlanetID: 99,
+		Action:   "add",
+		BuddyID:  43,
+		Text:     "hello",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mutated.LegacyAction != domaingame.BuddyActionAdd || mutated.Issue != nil || mutated.Status.Action != domaingame.BuddyActionHome || len(runner.execs) != 2 {
+		t.Fatalf("unexpected buddy mutation=%+v execs=%+v", mutated, runner.execs)
+	}
+}
+
+func TestBuddyRepositoryMCPMutationHelpersAndErrors(t *testing.T) {
+	for _, tt := range []struct {
+		action  string
+		legacy  int
+		preview int
+	}{
+		{"add", domaingame.BuddyActionAdd, domaingame.BuddyActionRequest},
+		{"ACCEPT", domaingame.BuddyActionAccept, domaingame.BuddyActionIncoming},
+		{"decline", domaingame.BuddyActionDecline, domaingame.BuddyActionIncoming},
+		{"withdraw", domaingame.BuddyActionWithdraw, domaingame.BuddyActionOutgoing},
+		{"delete", domaingame.BuddyActionDelete, domaingame.BuddyActionHome},
+		{"unknown", domaingame.BuddyActionHome, domaingame.BuddyActionHome},
+	} {
+		if got := mcpBuddyLegacyAction(tt.action); got != tt.legacy {
+			t.Fatalf("legacy action %q got %d want %d", tt.action, got, tt.legacy)
+		}
+		if got := mcpBuddyPreviewAction(tt.legacy); got != tt.preview {
+			t.Fatalf("preview action %q got %d want %d", tt.action, got, tt.preview)
+		}
+	}
+	if issue := mcpBuddyActionIssue(&domaingame.BuddyActionIssue{Code: "already_sent", Message: "duplicate"}); issue == nil || issue.Code != "already_sent" {
+		t.Fatalf("unexpected mapped issue: %+v", issue)
+	}
+
+	queryErr := errors.New("buddy preview failed")
+	repository := NewBuddyRepositoryWithRunner(&fakeQueryer{results: []fakeQueryResult{{err: queryErr}}}, nil, "ogame_", time.Now)
+	if _, err := repository.PreviewMCPBuddyMutation(context.Background(), 42, domainmcp.BuddyMutationCommand{Action: "add", BuddyID: 43}); !errors.Is(err, queryErr) {
+		t.Fatalf("expected preview error, got %v", err)
+	}
+
+	execErr := errors.New("buddy exec failed")
+	runner := &fakeBuddyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"legor"})}, {rows: fakeRowsFromValues()}, {rows: fakeRowsFromValues([]any{0})}}}, execErr: execErr}
+	repository = NewBuddyRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, err := repository.MutateMCPBuddy(context.Background(), 42, domainmcp.BuddyMutationCommand{Action: "add", BuddyID: 43}); !errors.Is(err, execErr) {
+		t.Fatalf("expected mutate exec error, got %v", err)
+	}
+}
+
 func TestMCPBuddyStatusMapsTargetAndNilBranches(t *testing.T) {
 	status := mcpBuddyStatus(42, domaingame.Buddy{
 		Commander: "legor",

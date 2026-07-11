@@ -15,6 +15,7 @@ const (
 	ScopeMessages       = "mcp:messages"
 	ScopeMessageWrite   = "mcp:message_write"
 	ScopeNotesWrite     = "mcp:notes_write"
+	ScopeBuddyWrite     = "mcp:buddy_write"
 	ScopeAdmin          = "mcp:admin"
 )
 
@@ -936,6 +937,30 @@ type BuddyStatus struct {
 	Action    int          `json:"action"`
 	Rows      []BuddyRow   `json:"rows"`
 	Target    *BuddyPlayer `json:"target,omitempty"`
+}
+
+type BuddyMutationCommand struct {
+	PlanetID int
+	Action   string
+	BuddyID  int
+	Text     string
+	DryRun   bool
+	Confirm  string
+}
+
+type BuddyMutationResult struct {
+	PlayerID             int          `json:"playerId"`
+	PlanetID             int          `json:"planetId"`
+	Action               string       `json:"action"`
+	LegacyAction         int          `json:"legacyAction"`
+	BuddyID              int          `json:"buddyId"`
+	TextChars            int          `json:"textChars"`
+	Status               BuddyStatus  `json:"status"`
+	Issue                *ActionIssue `json:"issue,omitempty"`
+	DryRun               bool         `json:"dryRun"`
+	RequiresConfirmation bool         `json:"requiresConfirmation"`
+	Confirmation         string       `json:"confirmation,omitempty"`
+	Executed             bool         `json:"executed"`
 }
 
 type NotesStatusCommand struct {

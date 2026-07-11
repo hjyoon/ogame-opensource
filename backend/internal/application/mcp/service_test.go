@@ -519,9 +519,9 @@ func TestOAuthValidationHelpers(t *testing.T) {
 	if err != nil || strings.Join(scopes, " ") != "profile mcp:read" {
 		t.Fatalf("unexpected normalized scopes=%v err=%v", scopes, err)
 	}
-	scopes, err = normalizeOAuthScopes(domainmcp.ScopeNotesWrite + " " + domainmcp.ScopeFleetWrite + " " + domainmcp.ScopeQueueWrite + " " + domainmcp.ScopeResourcesWrite + " " + domainmcp.ScopePremiumWrite)
-	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeNotesWrite+" "+domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite+" "+domainmcp.ScopePremiumWrite {
-		t.Fatalf("expected notes, fleet, queue, resources, and premium write scopes to be allowed, got scopes=%v err=%v", scopes, err)
+	scopes, err = normalizeOAuthScopes(domainmcp.ScopeNotesWrite + " " + domainmcp.ScopeBuddyWrite + " " + domainmcp.ScopeFleetWrite + " " + domainmcp.ScopeQueueWrite + " " + domainmcp.ScopeResourcesWrite + " " + domainmcp.ScopePremiumWrite)
+	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeNotesWrite+" "+domainmcp.ScopeBuddyWrite+" "+domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite+" "+domainmcp.ScopePremiumWrite {
+		t.Fatalf("expected notes, buddy, fleet, queue, resources, and premium write scopes to be allowed, got scopes=%v err=%v", scopes, err)
 	}
 	scopes, err = normalizeOAuthScopes("")
 	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeRead {
@@ -733,6 +733,26 @@ func TestServiceListsBuddyStatusToolForReadScope(t *testing.T) {
 	}
 	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_buddy_status" {
 		t.Fatalf("unexpected read buddy tools: %v", names)
+	}
+}
+
+func TestServiceListsBuddyMutationToolForBuddyWriteScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"buddy-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeBuddyWrite}},
+		},
+	}).WithBuddyWriteRepository(&fakeBuddyWriteRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "buddy-write"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,mutate_buddy" {
+		t.Fatalf("unexpected buddy-write tools: %v", names)
 	}
 }
 
@@ -2006,6 +2026,122 @@ func TestServiceBuddyStatusToolRequiresRepositoryReadScopeAndValidArguments(t *t
 	service = service.WithBuddyReadRepository(&fakeBuddyReadRepository{err: errors.New("buddy down")})
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_buddy_status", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "buddy down") {
 		t.Fatalf("expected buddy repository error, got %v", err)
+	}
+}
+
+func TestServiceCallsBuddyMutationWithDryRunAndConfirmation(t *testing.T) {
+	status := domainmcp.BuddyStatus{PlayerID: 42, Planet: domainmcp.Planet{ID: 99, Name: "Arakis"}, Rows: []domainmcp.BuddyRow{}}
+	repository := &fakeBuddyWriteRepository{
+		preview: domainmcp.BuddyMutationResult{PlayerID: 42, PlanetID: 99, Action: "add", LegacyAction: 1, BuddyID: 77, TextChars: 5, Status: status},
+		mutated: domainmcp.BuddyMutationResult{PlayerID: 42, PlanetID: 99, Action: "add", LegacyAction: 1, BuddyID: 77, TextChars: 5, Status: status},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"buddy-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeBuddyWrite}},
+		},
+	}).WithBuddyWriteRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "mutate_buddy",
+		AccessToken: "buddy-write",
+		Arguments:   map[string]any{"planetId": 99, "action": "add", "buddyId": 77, "text": "hello"},
+	})
+	if err != nil {
+		t.Fatalf("mutate_buddy dry-run returned error: %v", err)
+	}
+	preview := result.StructuredContent.(map[string]any)["buddyMutation"].(domainmcp.BuddyMutationResult)
+	if !preview.DryRun || preview.Executed || !preview.RequiresConfirmation || !strings.HasPrefix(preview.Confirmation, "mutate_buddy:99:add:77:") {
+		t.Fatalf("unexpected buddy preview: %+v", preview)
+	}
+	if repository.previewPlayerID != 42 || repository.previewCommand.Action != "add" || repository.previewCommand.BuddyID != 77 || !repository.previewCommand.DryRun {
+		t.Fatalf("unexpected buddy preview command: player=%d command=%+v", repository.previewPlayerID, repository.previewCommand)
+	}
+
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "mutate_buddy",
+		AccessToken: "buddy-write",
+		Arguments:   map[string]any{"planetId": 99, "action": "add", "buddyId": 77, "text": "hello", "dryRun": false, "confirm": preview.Confirmation},
+	})
+	if err != nil {
+		t.Fatalf("mutate_buddy execute returned error: %v", err)
+	}
+	mutated := result.StructuredContent.(map[string]any)["buddyMutation"].(domainmcp.BuddyMutationResult)
+	if mutated.DryRun || !mutated.Executed || mutated.RequiresConfirmation || mutated.Confirmation != preview.Confirmation {
+		t.Fatalf("unexpected buddy execute: %+v", mutated)
+	}
+	if repository.mutatePlayerID != 42 || repository.mutateCommand.Confirm != preview.Confirmation || repository.mutateCommand.DryRun {
+		t.Fatalf("unexpected buddy mutate command: player=%d command=%+v", repository.mutatePlayerID, repository.mutateCommand)
+	}
+}
+
+func TestServiceBuddyMutationIssueDoesNotRequireConfirmation(t *testing.T) {
+	repository := &fakeBuddyWriteRepository{
+		preview: domainmcp.BuddyMutationResult{
+			PlayerID: 42,
+			Action:   "add",
+			BuddyID:  77,
+			Issue:    &domainmcp.ActionIssue{Code: "already_sent", Message: "duplicate"},
+		},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"buddy-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeBuddyWrite}},
+		},
+	}).WithBuddyWriteRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "mutate_buddy",
+		AccessToken: "buddy-write",
+		Arguments:   map[string]any{"action": "add", "buddyId": 77},
+	})
+	if err != nil {
+		t.Fatalf("mutate_buddy issue dry-run returned error: %v", err)
+	}
+	preview := result.StructuredContent.(map[string]any)["buddyMutation"].(domainmcp.BuddyMutationResult)
+	if !preview.DryRun || preview.RequiresConfirmation || preview.Confirmation != "" || preview.Issue == nil {
+		t.Fatalf("expected issue without confirmation, got %+v", preview)
+	}
+}
+
+func TestServiceBuddyMutationRequiresScopeRepositoryAndValidConfirmation(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":        {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"buddy-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeBuddyWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "mutate_buddy", AccessToken: "buddy-write", Arguments: map[string]any{"action": "add", "buddyId": 77}}); err == nil {
+		t.Fatalf("expected missing buddy write repository error")
+	}
+
+	service = service.WithBuddyWriteRepository(&fakeBuddyWriteRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "mutate_buddy", AccessToken: "read", Arguments: map[string]any{"action": "add", "buddyId": 77}}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without buddy write scope, got %v", err)
+	}
+	for _, arguments := range []map[string]any{
+		nil,
+		{"action": "unknown", "buddyId": 77},
+		{"action": true, "buddyId": 77},
+		{"action": "add", "buddyId": 0},
+		{"action": "add", "buddyId": true},
+		{"action": "add", "buddyId": 77, "text": true},
+		{"action": "add", "buddyId": 77, "dryRun": "no"},
+		{"action": "add", "buddyId": 77, "confirm": true},
+		{"action": "add", "buddyId": 77, "dryRun": false},
+		{"action": "add", "buddyId": 77, "dryRun": false, "confirm": "wrong"},
+	} {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "mutate_buddy", AccessToken: "buddy-write", Arguments: arguments}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", arguments, err)
+		}
+	}
+
+	service = service.WithBuddyWriteRepository(&fakeBuddyWriteRepository{err: errors.New("buddy write down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "mutate_buddy", AccessToken: "buddy-write", Arguments: map[string]any{"action": "add", "buddyId": 77}}); err == nil || !strings.Contains(err.Error(), "buddy write down") {
+		t.Fatalf("expected buddy write repository error, got %v", err)
+	}
+	command := domainmcp.BuddyMutationCommand{Action: "add", BuddyID: 77}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "mutate_buddy", AccessToken: "buddy-write", Arguments: map[string]any{"action": "add", "buddyId": 77, "dryRun": false, "confirm": mcpBuddyMutationConfirmation(command)}}); err == nil || !strings.Contains(err.Error(), "buddy write down") {
+		t.Fatalf("expected buddy execute repository error, got %v", err)
 	}
 }
 
@@ -4601,9 +4737,9 @@ func TestServiceTokenManagementRejectsUnauthenticatedAndPrivilegedScopes(t *test
 	}
 
 	service.sessions = fakeSessionLookup{auth: authenticatedSession(42)}
-	created, err := service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeNotesWrite, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite}})
-	if err != nil || strings.Join(created.Creation.Token.Scopes, " ") != domainmcp.ScopeNotesWrite+" "+domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite+" "+domainmcp.ScopePremiumWrite {
-		t.Fatalf("expected notes, fleet, queue, resources, and premium write user token scopes to be allowed, created=%+v err=%v", created, err)
+	created, err := service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeNotesWrite, domainmcp.ScopeBuddyWrite, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite}})
+	if err != nil || strings.Join(created.Creation.Token.Scopes, " ") != domainmcp.ScopeNotesWrite+" "+domainmcp.ScopeBuddyWrite+" "+domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite+" "+domainmcp.ScopePremiumWrite {
+		t.Fatalf("expected notes, buddy, fleet, queue, resources, and premium write user token scopes to be allowed, created=%+v err=%v", created, err)
 	}
 	_, err = service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeAdmin}})
 	if !errors.Is(err, ErrInvalidTokenRequest) {
@@ -5271,6 +5407,34 @@ func (f *fakeBuddyReadRepository) GetMCPBuddyStatus(_ context.Context, playerID 
 		return domainmcp.BuddyStatus{}, f.err
 	}
 	return f.result, nil
+}
+
+type fakeBuddyWriteRepository struct {
+	preview         domainmcp.BuddyMutationResult
+	mutated         domainmcp.BuddyMutationResult
+	previewPlayerID int
+	mutatePlayerID  int
+	previewCommand  domainmcp.BuddyMutationCommand
+	mutateCommand   domainmcp.BuddyMutationCommand
+	err             error
+}
+
+func (f *fakeBuddyWriteRepository) PreviewMCPBuddyMutation(_ context.Context, playerID int, command domainmcp.BuddyMutationCommand) (domainmcp.BuddyMutationResult, error) {
+	f.previewPlayerID = playerID
+	f.previewCommand = command
+	if f.err != nil {
+		return domainmcp.BuddyMutationResult{}, f.err
+	}
+	return f.preview, nil
+}
+
+func (f *fakeBuddyWriteRepository) MutateMCPBuddy(_ context.Context, playerID int, command domainmcp.BuddyMutationCommand) (domainmcp.BuddyMutationResult, error) {
+	f.mutatePlayerID = playerID
+	f.mutateCommand = command
+	if f.err != nil {
+		return domainmcp.BuddyMutationResult{}, f.err
+	}
+	return f.mutated, nil
 }
 
 type fakeNotesReadRepository struct {

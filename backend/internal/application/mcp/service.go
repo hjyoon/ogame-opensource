@@ -143,6 +143,11 @@ type BuddyReadRepository interface {
 	GetMCPBuddyStatus(context.Context, int, domainmcp.BuddyStatusCommand) (domainmcp.BuddyStatus, error)
 }
 
+type BuddyWriteRepository interface {
+	PreviewMCPBuddyMutation(context.Context, int, domainmcp.BuddyMutationCommand) (domainmcp.BuddyMutationResult, error)
+	MutateMCPBuddy(context.Context, int, domainmcp.BuddyMutationCommand) (domainmcp.BuddyMutationResult, error)
+}
+
 type NotesReadRepository interface {
 	GetMCPNotes(context.Context, int, domainmcp.NotesStatusCommand) (domainmcp.NotesStatus, error)
 }
@@ -356,6 +361,7 @@ type Service struct {
 	statisticsRead  StatisticsReadRepository
 	allianceRead    AllianceReadRepository
 	buddyRead       BuddyReadRepository
+	buddyWrite      BuddyWriteRepository
 	notesRead       NotesReadRepository
 	notesWrite      NotesWriteRepository
 	optionsRead     OptionsReadRepository
@@ -493,6 +499,11 @@ func (s Service) WithBuddyReadRepository(repository BuddyReadRepository) Service
 	return s
 }
 
+func (s Service) WithBuddyWriteRepository(repository BuddyWriteRepository) Service {
+	s.buddyWrite = repository
+	return s
+}
+
 func (s Service) WithNotesReadRepository(repository NotesReadRepository) Service {
 	s.notesRead = repository
 	return s
@@ -607,6 +618,7 @@ func (s Service) OAuthAuthorizationServerMetadata(ctx context.Context, issuer st
 			domainmcp.ScopeMessages,
 			domainmcp.ScopeMessageWrite,
 			domainmcp.ScopeNotesWrite,
+			domainmcp.ScopeBuddyWrite,
 			domainmcp.ScopeFleet,
 			domainmcp.ScopeFleetWrite,
 			domainmcp.ScopeQueueWrite,
@@ -631,6 +643,7 @@ func (s Service) OAuthProtectedResourceMetadata(ctx context.Context, resource st
 			domainmcp.ScopeMessages,
 			domainmcp.ScopeMessageWrite,
 			domainmcp.ScopeNotesWrite,
+			domainmcp.ScopeBuddyWrite,
 			domainmcp.ScopeFleet,
 			domainmcp.ScopeFleetWrite,
 			domainmcp.ScopeQueueWrite,
@@ -933,6 +946,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	if access.HasScope(domainmcp.ScopeNotesWrite) && s.notesWrite != nil {
 		tools = append(tools, createNoteTool(), updateNoteTool(), deleteNotesTool())
 	}
+	if access.HasScope(domainmcp.ScopeBuddyWrite) && s.buddyWrite != nil {
+		tools = append(tools, mutateBuddyTool())
+	}
 	if access.HasScope(domainmcp.ScopeFleetWrite) && s.fleetWrite != nil {
 		tools = append(tools, validateFleetDispatchTool(), dispatchFleetTool(), recallFleetTool())
 	}
@@ -1128,6 +1144,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callDeleteNotes(ctx, access, command.Arguments)
+	case "mutate_buddy":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeBuddyWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callMutateBuddy(ctx, access, command.Arguments)
 	case "get_options":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
 		if err != nil {
@@ -1744,6 +1769,51 @@ func (s Service) callBuddyStatus(ctx context.Context, access domainmcp.Access, a
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"buddyStatus": status}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callMutateBuddy(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.buddyWrite == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp buddy write repository unavailable")
+	}
+	command, err := mcpBuddyMutationCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	confirmation := mcpBuddyMutationConfirmation(command)
+	var result domainmcp.BuddyMutationResult
+	if command.DryRun {
+		result, err = s.buddyWrite.PreviewMCPBuddyMutation(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = true
+		result.Executed = false
+		if result.Issue == nil {
+			result.RequiresConfirmation = true
+			result.Confirmation = confirmation
+		}
+	} else {
+		if strings.TrimSpace(command.Confirm) != confirmation {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+		}
+		result, err = s.buddyWrite.MutateMCPBuddy(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = false
+		result.RequiresConfirmation = false
+		result.Confirmation = confirmation
+		result.Executed = true
+	}
+	structured := map[string]any{"buddyMutation": result}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -2753,7 +2823,7 @@ func normalizeUserScopes(requested []string) []string {
 
 func userScopeAllowed(scope string) bool {
 	switch scope {
-	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeNotesWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite:
+	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeNotesWrite, domainmcp.ScopeBuddyWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite:
 		return true
 	default:
 		return false
@@ -3633,6 +3703,55 @@ func mcpBuddyStatusCommand(arguments map[string]any) (domainmcp.BuddyStatusComma
 		return domainmcp.BuddyStatusCommand{}, err
 	}
 	return domainmcp.BuddyStatusCommand{PlanetID: planetID, Action: action, BuddyID: buddyID}, nil
+}
+
+func mcpBuddyMutationCommand(arguments map[string]any) (domainmcp.BuddyMutationCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.BuddyMutationCommand{}, err
+	}
+	action, err := optionalStringArgument(arguments, "action")
+	if err != nil {
+		return domainmcp.BuddyMutationCommand{}, err
+	}
+	action = strings.ToLower(strings.TrimSpace(action))
+	switch action {
+	case "add", "accept", "decline", "withdraw", "delete":
+	default:
+		return domainmcp.BuddyMutationCommand{}, domainmcp.ErrInvalidParams
+	}
+	buddyID, err := optionalNonNegativeIntArgument(arguments, "buddyId")
+	if err != nil || buddyID <= 0 {
+		return domainmcp.BuddyMutationCommand{}, domainmcp.ErrInvalidParams
+	}
+	text, err := optionalStringArgument(arguments, "text")
+	if err != nil {
+		return domainmcp.BuddyMutationCommand{}, err
+	}
+	dryRun := true
+	if arguments != nil && arguments["dryRun"] != nil {
+		dryRun, err = optionalBoolArgument(arguments, "dryRun")
+		if err != nil {
+			return domainmcp.BuddyMutationCommand{}, err
+		}
+	}
+	confirm, err := optionalStringArgument(arguments, "confirm")
+	if err != nil {
+		return domainmcp.BuddyMutationCommand{}, err
+	}
+	return domainmcp.BuddyMutationCommand{
+		PlanetID: planetID,
+		Action:   action,
+		BuddyID:  buddyID,
+		Text:     text,
+		DryRun:   dryRun,
+		Confirm:  confirm,
+	}, nil
+}
+
+func mcpBuddyMutationConfirmation(command domainmcp.BuddyMutationCommand) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%d\n%s\n%d\n%s", command.PlanetID, strings.ToLower(strings.TrimSpace(command.Action)), command.BuddyID, command.Text)))
+	return fmt.Sprintf("mutate_buddy:%d:%s:%d:%s", command.PlanetID, strings.ToLower(strings.TrimSpace(command.Action)), command.BuddyID, hex.EncodeToString(sum[:])[:12])
 }
 
 func mcpNotesStatusCommand(arguments map[string]any) (domainmcp.NotesStatusCommand, error) {
@@ -4999,6 +5118,68 @@ func buddyStatusTool() domainmcp.Tool {
 			"readOnlyHint":    true,
 			"destructiveHint": false,
 			"idempotentHint":  true,
+		},
+	}
+}
+
+func mutateBuddyTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "mutate_buddy",
+		Title:       "Mutate Buddy",
+		Description: "Send, accept, decline, withdraw, or delete a legacy buddy relationship. Defaults to dry-run and requires confirmation for execution.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet context.",
+					"minimum":     0,
+				},
+				"action": map[string]any{
+					"type":        "string",
+					"description": "Buddy mutation action.",
+					"enum":        []string{"add", "accept", "decline", "withdraw", "delete"},
+				},
+				"buddyId": map[string]any{
+					"type":        "integer",
+					"description": "Target player id for add, or legacy buddy relation id for other actions.",
+					"minimum":     1,
+				},
+				"text":    map[string]any{"type": "string", "description": "Optional request text for add."},
+				"dryRun":  map[string]any{"type": "boolean", "description": "Defaults to true. Set false only with the returned confirmation."},
+				"confirm": map[string]any{"type": "string", "description": "Confirmation returned by dry-run."},
+			},
+			"required":             []string{"action", "buddyId"},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"buddyMutation": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":             map[string]any{"type": "integer"},
+						"planetId":             map[string]any{"type": "integer"},
+						"action":               map[string]any{"type": "string"},
+						"legacyAction":         map[string]any{"type": "integer"},
+						"buddyId":              map[string]any{"type": "integer"},
+						"textChars":            map[string]any{"type": "integer"},
+						"status":               map[string]any{"type": "object"},
+						"issue":                map[string]any{"type": "object"},
+						"dryRun":               map[string]any{"type": "boolean"},
+						"requiresConfirmation": map[string]any{"type": "boolean"},
+						"confirmation":         map[string]any{"type": "string"},
+						"executed":             map[string]any{"type": "boolean"},
+					},
+					"required": []string{"playerId", "planetId", "action", "legacyAction", "buddyId", "textChars", "status", "dryRun", "requiresConfirmation", "executed"},
+				},
+			},
+			"required": []string{"buddyMutation"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    false,
+			"destructiveHint": true,
+			"idempotentHint":  false,
 		},
 	}
 }

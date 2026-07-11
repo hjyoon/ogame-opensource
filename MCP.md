@@ -41,15 +41,17 @@ Implemented:
 - Consent CSRF+UX shows resource, redirect, scopes, deny.
 - MCP/OAuth rate limits on RPC, OAuth, and token API paths.
 - JSON audit logging for every `tools/call`; no secrets are logged.
-- Auth `mcp:read`: planets, overview, res/options, queues, fleets/options,
-  officers, search, galaxy, stats, alliance, buddy, notes, options, merchant,
-  jump gate, empire, tech, buildings, research, shipyard, defense.
+- Auth `mcp:read`: planets, overview, resources/options, queues,
+  fleets/options, officers, search, galaxy, stats, alliance, buddy, notes,
+  options, merchant, jump gate, empire, tech, buildings, research, shipyard,
+  defense.
 - `mcp:messages`: `list_messages`, `get_message`, `get_report`; read owned
   inbox/report rows without read marks or cleanup mutation.
 - `mcp:message_write`: `send_message`, `delete_messages`,
   `report_message`; confirmed mutations.
 - `mcp:notes_write`: `create_note`, `update_note`, `delete_notes`;
   confirmed mutations.
+- `mcp:buddy_write`: `mutate_buddy`; confirmed mutations.
 - `mcp:fleet_write`: `validate_fleet_dispatch`, `dispatch_fleet`,
   `recall_fleet`, `scan_phalanx`; confirmed mutations.
 - `mcp:queue_write`: `cancel_building_queue`,
@@ -62,10 +64,9 @@ Implemented:
 `OGAME_MCP_STATIC_TOKENS`: `token:player_id:scope1,scope2;next:7:mcp:read`.
 
 Scopes: `mcp:read`, `mcp:messages`, `mcp:message_write`,
-`mcp:notes_write`, `mcp:fleet`, `mcp:fleet_write`, `mcp:queue_write`,
-`mcp:resources_write`, `mcp:premium_write`, `mcp:write`, `mcp:admin`.
-
-Static tokens are bootstrap-only; prefer DB tokens.
+`mcp:notes_write`, `mcp:buddy_write`, `mcp:fleet`, `mcp:fleet_write`,
+`mcp:queue_write`, `mcp:resources_write`, `mcp:premium_write`, `mcp:write`,
+`mcp:admin`.
 
 ## User Token API
 
@@ -78,8 +79,8 @@ Create body:
 Plaintext `secret` is returned once; store it as a password.
 
 User tokens allow: `mcp:read`, `mcp:messages`, `mcp:message_write`,
-`mcp:notes_write`, `mcp:fleet`, `mcp:fleet_write`, `mcp:queue_write`,
-`mcp:resources_write`, `mcp:premium_write`.
+`mcp:notes_write`, `mcp:buddy_write`, `mcp:fleet`, `mcp:fleet_write`,
+`mcp:queue_write`, `mcp:resources_write`, `mcp:premium_write`.
 
 `mcp:write` and `mcp:admin` stay unavailable for self-service user tokens.
 

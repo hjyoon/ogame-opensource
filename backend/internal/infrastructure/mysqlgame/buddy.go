@@ -113,6 +113,43 @@ func (r BuddyRepository) GetMCPBuddyStatus(ctx context.Context, playerID int, co
 	return mcpBuddyStatus(playerID, buddy), nil
 }
 
+func (r BuddyRepository) PreviewMCPBuddyMutation(ctx context.Context, playerID int, command domainmcp.BuddyMutationCommand) (domainmcp.BuddyMutationResult, error) {
+	legacyAction := mcpBuddyLegacyAction(command.Action)
+	buddy, err := r.GetBuddy(ctx, appgame.BuddyQuery{
+		PlayerID: playerID,
+		PlanetID: command.PlanetID,
+		Action:   mcpBuddyPreviewAction(legacyAction),
+		BuddyID:  command.BuddyID,
+	})
+	if err != nil {
+		return domainmcp.BuddyMutationResult{}, err
+	}
+	return mcpBuddyMutationResult(playerID, command, legacyAction, buddy, nil), nil
+}
+
+func (r BuddyRepository) MutateMCPBuddy(ctx context.Context, playerID int, command domainmcp.BuddyMutationCommand) (domainmcp.BuddyMutationResult, error) {
+	legacyAction := mcpBuddyLegacyAction(command.Action)
+	outcome, err := r.MutateBuddy(ctx, appgame.BuddyMutationQuery{
+		PlayerID: playerID,
+		PlanetID: command.PlanetID,
+		Action:   legacyAction,
+		BuddyID:  command.BuddyID,
+		Text:     command.Text,
+	})
+	if err != nil {
+		return domainmcp.BuddyMutationResult{}, err
+	}
+	buddy, err := r.GetBuddy(ctx, appgame.BuddyQuery{
+		PlayerID: playerID,
+		PlanetID: command.PlanetID,
+		Action:   outcome.NextAction,
+	})
+	if err != nil {
+		return domainmcp.BuddyMutationResult{}, err
+	}
+	return mcpBuddyMutationResult(playerID, command, legacyAction, buddy, outcome.ActionIssue), nil
+}
+
 func mcpBuddyStatus(playerID int, buddy domaingame.Buddy) domainmcp.BuddyStatus {
 	return domainmcp.BuddyStatus{
 		PlayerID: playerID,
@@ -132,6 +169,57 @@ func mcpBuddyStatus(playerID int, buddy domaingame.Buddy) domainmcp.BuddyStatus 
 		Action:    buddy.Action,
 		Rows:      mcpBuddyRows(buddy.Rows),
 		Target:    mcpBuddyPlayer(buddy.Target),
+	}
+}
+
+func mcpBuddyMutationResult(playerID int, command domainmcp.BuddyMutationCommand, legacyAction int, buddy domaingame.Buddy, issue *domaingame.BuddyActionIssue) domainmcp.BuddyMutationResult {
+	return domainmcp.BuddyMutationResult{
+		PlayerID:     playerID,
+		PlanetID:     command.PlanetID,
+		Action:       strings.ToLower(strings.TrimSpace(command.Action)),
+		LegacyAction: legacyAction,
+		BuddyID:      command.BuddyID,
+		TextChars:    utf8.RuneCountInString(command.Text),
+		Status:       mcpBuddyStatus(playerID, buddy),
+		Issue:        mcpBuddyActionIssue(issue),
+		DryRun:       true,
+	}
+}
+
+func mcpBuddyActionIssue(issue *domaingame.BuddyActionIssue) *domainmcp.ActionIssue {
+	if issue == nil {
+		return nil
+	}
+	return &domainmcp.ActionIssue{Code: issue.Code, Message: issue.Message}
+}
+
+func mcpBuddyLegacyAction(action string) int {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "add":
+		return domaingame.BuddyActionAdd
+	case "accept":
+		return domaingame.BuddyActionAccept
+	case "decline":
+		return domaingame.BuddyActionDecline
+	case "withdraw":
+		return domaingame.BuddyActionWithdraw
+	case "delete":
+		return domaingame.BuddyActionDelete
+	default:
+		return domaingame.BuddyActionHome
+	}
+}
+
+func mcpBuddyPreviewAction(legacyAction int) int {
+	switch legacyAction {
+	case domaingame.BuddyActionAdd:
+		return domaingame.BuddyActionRequest
+	case domaingame.BuddyActionAccept, domaingame.BuddyActionDecline:
+		return domaingame.BuddyActionIncoming
+	case domaingame.BuddyActionWithdraw:
+		return domaingame.BuddyActionOutgoing
+	default:
+		return domaingame.BuddyActionHome
 	}
 }
 
