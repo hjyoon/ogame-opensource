@@ -148,6 +148,10 @@ type BuddyWriteRepository interface {
 	MutateMCPBuddy(context.Context, int, domainmcp.BuddyMutationCommand) (domainmcp.BuddyMutationResult, error)
 }
 
+type PrangerReadRepository interface {
+	GetMCPPranger(context.Context, int, domainmcp.PrangerCommand) (domainmcp.Pranger, error)
+}
+
 type NotesReadRepository interface {
 	GetMCPNotes(context.Context, int, domainmcp.NotesStatusCommand) (domainmcp.NotesStatus, error)
 }
@@ -362,6 +366,7 @@ type Service struct {
 	allianceRead    AllianceReadRepository
 	buddyRead       BuddyReadRepository
 	buddyWrite      BuddyWriteRepository
+	prangerRead     PrangerReadRepository
 	notesRead       NotesReadRepository
 	notesWrite      NotesWriteRepository
 	optionsRead     OptionsReadRepository
@@ -501,6 +506,11 @@ func (s Service) WithBuddyReadRepository(repository BuddyReadRepository) Service
 
 func (s Service) WithBuddyWriteRepository(repository BuddyWriteRepository) Service {
 	s.buddyWrite = repository
+	return s
+}
+
+func (s Service) WithPrangerReadRepository(repository PrangerReadRepository) Service {
+	s.prangerRead = repository
 	return s
 }
 
@@ -898,6 +908,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		if s.buddyRead != nil {
 			tools = append(tools, buddyStatusTool())
 		}
+		if s.prangerRead != nil {
+			tools = append(tools, prangerTool())
+		}
 		if s.notesRead != nil {
 			tools = append(tools, notesTool())
 		}
@@ -1108,6 +1121,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callBuddyStatus(ctx, access, command.Arguments)
+	case "get_pranger":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callPranger(ctx, access, command.Arguments)
 	case "get_notes":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
 		if err != nil {
@@ -1814,6 +1836,29 @@ func (s Service) callMutateBuddy(ctx context.Context, access domainmcp.Access, a
 		result.Executed = true
 	}
 	structured := map[string]any{"buddyMutation": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callPranger(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.prangerRead == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp pranger read repository unavailable")
+	}
+	command, err := mcpPrangerCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	pranger, err := s.prangerRead.GetMCPPranger(ctx, access.PlayerID, command)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"pranger": pranger}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -3754,6 +3799,18 @@ func mcpBuddyMutationConfirmation(command domainmcp.BuddyMutationCommand) string
 	return fmt.Sprintf("mutate_buddy:%d:%s:%d:%s", command.PlanetID, strings.ToLower(strings.TrimSpace(command.Action)), command.BuddyID, hex.EncodeToString(sum[:])[:12])
 }
 
+func mcpPrangerCommand(arguments map[string]any) (domainmcp.PrangerCommand, error) {
+	universe, err := optionalNonNegativeIntArgument(arguments, "universe")
+	if err != nil {
+		return domainmcp.PrangerCommand{}, err
+	}
+	from, err := optionalNonNegativeIntArgument(arguments, "from")
+	if err != nil {
+		return domainmcp.PrangerCommand{}, err
+	}
+	return domainmcp.PrangerCommand{Universe: universe, From: from}, nil
+}
+
 func mcpNotesStatusCommand(arguments map[string]any) (domainmcp.NotesStatusCommand, error) {
 	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
 	if err != nil {
@@ -5180,6 +5237,48 @@ func mutateBuddyTool() domainmcp.Tool {
 			"readOnlyHint":    false,
 			"destructiveHint": true,
 			"idempotentHint":  false,
+		},
+	}
+}
+
+func prangerTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_pranger",
+		Title:       "Get Pranger",
+		Description: "Return read-only legacy pranger ban-list rows with pagination metadata.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"universe": map[string]any{"type": "integer", "minimum": 0, "description": "Optional universe number for display metadata."},
+				"from":     map[string]any{"type": "integer", "minimum": 0, "description": "Optional zero-based row offset."},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"pranger": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":    map[string]any{"type": "integer"},
+						"universe":    map[string]any{"type": "integer"},
+						"from":        map[string]any{"type": "integer"},
+						"limit":       map[string]any{"type": "integer"},
+						"hasPrevious": map[string]any{"type": "boolean"},
+						"previous":    map[string]any{"type": "integer"},
+						"hasNext":     map[string]any{"type": "boolean"},
+						"next":        map[string]any{"type": "integer"},
+						"entries":     map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+					},
+					"required": []string{"playerId", "universe", "from", "limit", "hasPrevious", "previous", "hasNext", "next", "entries"},
+				},
+			},
+			"required": []string{"pranger"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
 		},
 	}
 }

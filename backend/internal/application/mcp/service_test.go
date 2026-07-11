@@ -756,6 +756,26 @@ func TestServiceListsBuddyMutationToolForBuddyWriteScope(t *testing.T) {
 	}
 }
 
+func TestServiceListsPrangerToolForReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithPrangerReadRepository(&fakePrangerReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_pranger" {
+		t.Fatalf("unexpected pranger tools: %v", names)
+	}
+}
+
 func TestServiceListsNotesToolForReadScope(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -2142,6 +2162,68 @@ func TestServiceBuddyMutationRequiresScopeRepositoryAndValidConfirmation(t *test
 	command := domainmcp.BuddyMutationCommand{Action: "add", BuddyID: 77}
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "mutate_buddy", AccessToken: "buddy-write", Arguments: map[string]any{"action": "add", "buddyId": 77, "dryRun": false, "confirm": mcpBuddyMutationConfirmation(command)}}); err == nil || !strings.Contains(err.Error(), "buddy write down") {
 		t.Fatalf("expected buddy execute repository error, got %v", err)
+	}
+}
+
+func TestServiceCallsPrangerTool(t *testing.T) {
+	repository := &fakePrangerReadRepository{
+		result: domainmcp.Pranger{
+			PlayerID: 42,
+			Universe: 1,
+			From:     50,
+			Limit:    50,
+			Entries:  []domainmcp.PrangerEntry{{UserName: "bad", Reason: "rule"}},
+		},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithPrangerReadRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_pranger",
+		AccessToken: "read",
+		Arguments:   map[string]any{"universe": 1, "from": 50},
+	})
+	if err != nil {
+		t.Fatalf("get_pranger returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["pranger"].(domainmcp.Pranger)
+	if result.IsError || got.PlayerID != 42 || len(got.Entries) != 1 || got.Entries[0].UserName != "bad" {
+		t.Fatalf("unexpected pranger result: %+v", result)
+	}
+	if repository.playerID != 42 || repository.command.Universe != 1 || repository.command.From != 50 {
+		t.Fatalf("unexpected pranger command: player=%d command=%+v", repository.playerID, repository.command)
+	}
+}
+
+func TestServicePrangerToolRequiresRepositoryReadScopeAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_pranger", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing pranger repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_pranger", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+	service = service.WithPrangerReadRepository(&fakePrangerReadRepository{})
+	for _, arguments := range []map[string]any{
+		{"universe": true},
+		{"from": true},
+		{"from": -1},
+	} {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_pranger", AccessToken: "read", Arguments: arguments}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", arguments, err)
+		}
+	}
+	service = service.WithPrangerReadRepository(&fakePrangerReadRepository{err: errors.New("pranger down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_pranger", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "pranger down") {
+		t.Fatalf("expected pranger repository error, got %v", err)
 	}
 }
 
@@ -5435,6 +5517,22 @@ func (f *fakeBuddyWriteRepository) MutateMCPBuddy(_ context.Context, playerID in
 		return domainmcp.BuddyMutationResult{}, f.err
 	}
 	return f.mutated, nil
+}
+
+type fakePrangerReadRepository struct {
+	result   domainmcp.Pranger
+	playerID int
+	command  domainmcp.PrangerCommand
+	err      error
+}
+
+func (f *fakePrangerReadRepository) GetMCPPranger(_ context.Context, playerID int, command domainmcp.PrangerCommand) (domainmcp.Pranger, error) {
+	f.playerID = playerID
+	f.command = command
+	if f.err != nil {
+		return domainmcp.Pranger{}, f.err
+	}
+	return f.result, nil
 }
 
 type fakeNotesReadRepository struct {

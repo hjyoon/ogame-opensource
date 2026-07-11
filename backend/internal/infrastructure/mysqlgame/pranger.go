@@ -8,6 +8,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type PrangerRepository struct {
@@ -59,4 +60,44 @@ func (r PrangerRepository) GetPranger(ctx context.Context, query appgame.Pranger
 		return domaingame.Pranger{}, err
 	}
 	return result, nil
+}
+
+func (r PrangerRepository) GetMCPPranger(ctx context.Context, playerID int, command domainmcp.PrangerCommand) (domainmcp.Pranger, error) {
+	pranger, err := r.GetPranger(ctx, appgame.PrangerQuery{
+		Universe: command.Universe,
+		From:     domaingame.NormalizePrangerFrom(command.From),
+		Internal: true,
+	})
+	if err != nil {
+		return domainmcp.Pranger{}, err
+	}
+	return mcpPranger(playerID, pranger), nil
+}
+
+func mcpPranger(playerID int, pranger domaingame.Pranger) domainmcp.Pranger {
+	return domainmcp.Pranger{
+		PlayerID:    playerID,
+		Universe:    pranger.Universe,
+		From:        pranger.From,
+		Limit:       domaingame.PrangerPageLimit,
+		HasPrevious: pranger.HasPrevious(),
+		Previous:    pranger.PreviousFrom(),
+		HasNext:     pranger.HasNext(),
+		Next:        pranger.NextFrom(),
+		Entries:     mcpPrangerEntries(pranger.Entries),
+	}
+}
+
+func mcpPrangerEntries(entries []domaingame.PrangerEntry) []domainmcp.PrangerEntry {
+	result := make([]domainmcp.PrangerEntry, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, domainmcp.PrangerEntry{
+			BanWhen:   entry.BanWhen,
+			AdminName: entry.AdminName,
+			UserName:  entry.UserName,
+			BanUntil:  entry.BanUntil,
+			Reason:    entry.Reason,
+		})
+	}
+	return result
 }

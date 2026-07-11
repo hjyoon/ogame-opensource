@@ -963,6 +963,31 @@ type BuddyMutationResult struct {
 	Executed             bool         `json:"executed"`
 }
 
+type PrangerCommand struct {
+	Universe int
+	From     int
+}
+
+type PrangerEntry struct {
+	BanWhen   int64  `json:"banWhen"`
+	AdminName string `json:"adminName"`
+	UserName  string `json:"userName"`
+	BanUntil  int64  `json:"banUntil"`
+	Reason    string `json:"reason"`
+}
+
+type Pranger struct {
+	PlayerID    int            `json:"playerId"`
+	Universe    int            `json:"universe"`
+	From        int            `json:"from"`
+	Limit       int            `json:"limit"`
+	HasPrevious bool           `json:"hasPrevious"`
+	Previous    int            `json:"previous"`
+	HasNext     bool           `json:"hasNext"`
+	Next        int            `json:"next"`
+	Entries     []PrangerEntry `json:"entries"`
+}
+
 type NotesStatusCommand struct {
 	PlanetID int
 	Action   int

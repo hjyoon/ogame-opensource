@@ -1,7 +1,5 @@
 # MCP Server Plan
 
-Keep <4KB.
-
 ## Current State
 
 Implemented:
@@ -42,9 +40,9 @@ Implemented:
 - MCP/OAuth rate limits on RPC, OAuth, and token API paths.
 - JSON audit logging for every `tools/call`; no secrets are logged.
 - Auth `mcp:read`: planets, overview, resources/options, queues,
-  fleets/options, officers, search, galaxy, stats, alliance, buddy, notes,
-  options, merchant, jump gate, empire, tech, buildings, research, shipyard,
-  defense.
+  fleets/options, officers, search, galaxy, stats, alliance, buddy, pranger,
+  notes, options, merchant, jump gate, empire, tech, buildings, research,
+  shipyard, defense.
 - `mcp:messages`: `list_messages`, `get_message`, `get_report`; read owned
   inbox/report rows without read marks or cleanup mutation.
 - `mcp:message_write`: `send_message`, `delete_messages`,

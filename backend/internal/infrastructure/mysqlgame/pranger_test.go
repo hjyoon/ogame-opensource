@@ -8,6 +8,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestPrangerRepositoryReadsBanEntries(t *testing.T) {
@@ -35,6 +36,24 @@ func TestPrangerRepositoryReadsBanEntries(t *testing.T) {
 	}
 	if len(call.args) != 2 || call.args[0] != domaingame.PrangerPageLimit || call.args[1] != 50 {
 		t.Fatalf("unexpected query args: %+v", call.args)
+	}
+}
+
+func TestPrangerRepositoryMapsMCPPranger(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{int64(300), "Admin", "Player", int64(900), "Reason"})},
+	}}
+	repository := NewPrangerRepositoryWithQueryer(queryer, "ogame_")
+
+	pranger, err := repository.GetMCPPranger(context.Background(), 42, domainmcp.PrangerCommand{Universe: 7, From: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pranger.PlayerID != 42 || pranger.Universe != 7 || pranger.From != 50 || !pranger.HasPrevious || pranger.Previous != 0 || pranger.Limit != domaingame.PrangerPageLimit || len(pranger.Entries) != 1 {
+		t.Fatalf("unexpected mcp pranger: %+v", pranger)
+	}
+	if pranger.Entries[0].UserName != "Player" || pranger.Entries[0].Reason != "Reason" {
+		t.Fatalf("unexpected mcp pranger entry: %+v", pranger.Entries[0])
 	}
 }
 
