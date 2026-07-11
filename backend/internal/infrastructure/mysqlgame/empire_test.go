@@ -10,6 +10,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestEmpireRepositoryReadsLegacyEmpire(t *testing.T) {
@@ -53,6 +54,35 @@ func TestEmpireRepositoryReadsLegacyEmpire(t *testing.T) {
 	}
 	if !strings.Contains(queryer.calls[10].sql, "FROM `ogame_buildqueue`") {
 		t.Fatalf("expected buildqueue query, got %+v", queryer.calls[10])
+	}
+}
+
+func TestEmpireRepositoryMapsMCPEmpireReadOnly(t *testing.T) {
+	now := time.Unix(1000, 0)
+	queryer := &fakeQueryer{results: empireReadResults(now, now.Add(time.Hour).Unix())}
+	repository := NewEmpireRepositoryWithRunner(queryer, nil, "ogame_", func() time.Time { return now })
+
+	empire, err := repository.GetMCPEmpire(context.Background(), 42, domainmcp.EmpireCommand{
+		PlanetID:   99,
+		PlanetType: domaingame.EmpirePlanetTypeMoons,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empire.PlayerID != 42 || empire.PlanetID != 99 || !empire.CommanderActive ||
+		empire.PlanetType != domaingame.EmpirePlanetTypeMoons || !empire.MoonEnabled || !empire.HasMoons || empire.Issue != nil {
+		t.Fatalf("unexpected mcp empire metadata: %+v", empire)
+	}
+	if len(empire.Planets) != 1 || empire.Planets[0].ID != 100 || empire.Planets[0].TypeName != "moon" ||
+		empire.Planets[0].Resources.Metal != 10 {
+		t.Fatalf("unexpected mcp empire planets: %+v", empire.Planets)
+	}
+	if len(empire.Resources) == 0 || len(empire.Buildings) == 0 || len(empire.Research) == 0 ||
+		len(empire.Fleet) == 0 || len(empire.Defense) == 0 {
+		t.Fatalf("expected mcp empire aggregate rows, got %+v", empire)
+	}
+	if strings.Contains(queryer.calls[0].sql, "SELECT speed, freeze") {
+		t.Fatalf("read-only MCP empire should not run queue flush, got first query %+v", queryer.calls[0])
 	}
 }
 
@@ -176,6 +206,10 @@ func TestNewEmpireRepositoryKeepsSQLQueryer(t *testing.T) {
 	if repository.now == nil {
 		t.Fatal("expected default clock")
 	}
+	repository = NewEmpireReadRepository(nil, "ogame_")
+	if repository.execer != nil || repository.updateResources {
+		t.Fatalf("expected MCP read repository without writer/resource updates, got %+v", repository)
+	}
 	repository = NewEmpireRepositoryWithQueryer(&fakeOptionsRunner{}, "ogame_", nil)
 	if repository.execer == nil {
 		t.Fatal("expected queryer execer to be reused")
@@ -193,6 +227,9 @@ func TestNewEmpireRepositoryKeepsSQLQueryer(t *testing.T) {
 	}
 	if _, _, err := NewEmpireRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_", time.Now).GetEmpire(context.Background(), appgame.EmpireQuery{}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
 		t.Fatalf("expected bad prefix error, got %v", err)
+	}
+	if _, err := (EmpireRepository{}).GetMCPEmpire(context.Background(), 42, domainmcp.EmpireCommand{}); err == nil {
+		t.Fatal("expected nil empire reader error")
 	}
 }
 

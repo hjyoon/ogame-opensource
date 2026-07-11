@@ -696,6 +696,26 @@ func TestServiceListsStatisticsToolForReadScope(t *testing.T) {
 	}
 }
 
+func TestServiceListsEmpireOverviewToolForReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithEmpireReadRepository(&fakeEmpireReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_empire_overview" {
+		t.Fatalf("unexpected read empire tools: %v", names)
+	}
+}
+
 func TestServiceListsMessageToolsForMessageScopedTokens(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -1462,6 +1482,87 @@ func TestServiceStatisticsToolRequiresRepositoryReadScopeAndValidArguments(t *te
 	command, err := mcpStatisticsCommand(nil)
 	if err != nil || command.Who != "player" || command.Type != "ressources" || command.Start != 0 {
 		t.Fatalf("unexpected default statistics command=%+v err=%v", command, err)
+	}
+}
+
+func TestServiceCallsEmpireOverviewTool(t *testing.T) {
+	empire := domainmcp.EmpireOverview{
+		PlayerID:        42,
+		PlanetID:        99,
+		CommanderActive: true,
+		PlanetType:      1,
+		Planets: []domainmcp.EmpirePlanet{{
+			ID:       99,
+			Name:     "Arakis",
+			TypeName: "planet",
+			Resources: domainmcp.EmpireResources{
+				Metal: 1000,
+			},
+		}},
+		Resources: []domainmcp.EmpireResourceRow{{ID: 1, Name: "Metal", Total: 1000}},
+		Buildings: []domainmcp.EmpireLevelRow{{ID: 1, Name: "Metal Mine", Total: 12}},
+		Research:  []domainmcp.EmpireLevelRow{{ID: 108, Name: "Computer Technology", Total: 4}},
+		Fleet:     []domainmcp.EmpireCountRow{{ID: 202, Name: "Small Cargo", Total: 8}},
+		Defense:   []domainmcp.EmpireCountRow{{ID: 401, Name: "Rocket Launcher", Total: 6}},
+	}
+	repository := &fakeEmpireReadRepository{result: empire}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithEmpireReadRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_empire_overview",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": "99", "planetType": 1},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["empire"].(domainmcp.EmpireOverview)
+	if result.IsError || got.PlayerID != 42 || len(got.Planets) != 1 || got.Planets[0].Name != "Arakis" || len(got.Buildings) != 1 {
+		t.Fatalf("unexpected empire result: %+v", result)
+	}
+	if repository.playerID != 42 || repository.command.PlanetID != 99 || repository.command.PlanetType != 1 {
+		t.Fatalf("unexpected empire command: player=%d command=%+v", repository.playerID, repository.command)
+	}
+}
+
+func TestServiceEmpireOverviewToolRequiresRepositoryReadScopeAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_empire_overview", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing empire read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_empire_overview", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithEmpireReadRepository(&fakeEmpireReadRepository{})
+	for _, arguments := range []map[string]any{
+		{"planetId": true},
+		{"planetType": true},
+		{"planetType": 2},
+		{"planetType": -1},
+	} {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_empire_overview", AccessToken: "read", Arguments: arguments}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", arguments, err)
+		}
+	}
+
+	service = service.WithEmpireReadRepository(&fakeEmpireReadRepository{err: errors.New("empire down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_empire_overview", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "empire down") {
+		t.Fatalf("expected empire repository error, got %v", err)
+	}
+
+	command, err := mcpEmpireCommand(nil)
+	if err != nil || command.PlanetID != 0 || command.PlanetType != 0 {
+		t.Fatalf("unexpected default empire command=%+v err=%v", command, err)
 	}
 }
 
@@ -3591,6 +3692,22 @@ func (f *fakeStatisticsReadRepository) GetMCPStatistics(_ context.Context, playe
 	f.command = command
 	if f.err != nil {
 		return domainmcp.Statistics{}, f.err
+	}
+	return f.result, nil
+}
+
+type fakeEmpireReadRepository struct {
+	result   domainmcp.EmpireOverview
+	playerID int
+	command  domainmcp.EmpireCommand
+	err      error
+}
+
+func (f *fakeEmpireReadRepository) GetMCPEmpire(_ context.Context, playerID int, command domainmcp.EmpireCommand) (domainmcp.EmpireOverview, error) {
+	f.playerID = playerID
+	f.command = command
+	if f.err != nil {
+		return domainmcp.EmpireOverview{}, f.err
 	}
 	return f.result, nil
 }

@@ -9,6 +9,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type EmpireRepository struct {
@@ -31,6 +32,10 @@ type empireUser struct {
 func NewEmpireRepository(db *sql.DB, prefix string) EmpireRepository {
 	runner := SQLQueryer{DB: db}
 	return EmpireRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, updateResources: true}
+}
+
+func NewEmpireReadRepository(db *sql.DB, prefix string) EmpireRepository {
+	return NewEmpireRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
 }
 
 func NewEmpireRepositoryWithQueryer(queryer Queryer, prefix string, now func() time.Time) EmpireRepository {
@@ -117,6 +122,39 @@ func (r EmpireRepository) GetEmpire(ctx context.Context, query appgame.EmpireQue
 	return empire, nil, nil
 }
 
+func (r EmpireRepository) GetMCPEmpire(ctx context.Context, playerID int, command domainmcp.EmpireCommand) (domainmcp.EmpireOverview, error) {
+	if r.queryer == nil {
+		return domainmcp.EmpireOverview{}, errors.New("empire reader unavailable")
+	}
+	empire, issue, err := r.GetEmpire(ctx, appgame.EmpireQuery{
+		PlayerID:   playerID,
+		PlanetID:   command.PlanetID,
+		PlanetType: command.PlanetType,
+	})
+	if err != nil {
+		return domainmcp.EmpireOverview{}, err
+	}
+	var actionIssue *domainmcp.ActionIssue
+	if issue != nil {
+		actionIssue = &domainmcp.ActionIssue{Code: issue.Code, Message: issue.Message}
+	}
+	return domainmcp.EmpireOverview{
+		PlayerID:        playerID,
+		PlanetID:        empire.CurrentPlanet.ID,
+		CommanderActive: empire.CommanderActive,
+		PlanetType:      empire.PlanetType,
+		MoonEnabled:     empire.MoonEnabled,
+		HasMoons:        empire.HasMoons,
+		Issue:           actionIssue,
+		Planets:         mcpEmpirePlanets(empire.Planets),
+		Resources:       mcpEmpireResourceRows(empire.Resources),
+		Buildings:       mcpEmpireLevelRows(empire.Buildings),
+		Research:        mcpEmpireLevelRows(empire.Research),
+		Fleet:           mcpEmpireCountRows(empire.Fleet),
+		Defense:         mcpEmpireCountRows(empire.Defense),
+	}, nil
+}
+
 func (r EmpireRepository) MutateEmpire(ctx context.Context, query appgame.EmpireMutationQuery) (appgame.EmpireMutationOutcome, error) {
 	if r.execer == nil {
 		return appgame.EmpireMutationOutcome{}, errors.New("empire updater unavailable")
@@ -140,6 +178,113 @@ func empireActionIssueFromBuildings(issue *domaingame.BuildingsActionIssue) *dom
 		return nil
 	}
 	return &domaingame.EmpireActionIssue{Code: issue.Code, Message: issue.Message}
+}
+
+func mcpEmpirePlanets(planets []domaingame.EmpirePlanet) []domainmcp.EmpirePlanet {
+	result := make([]domainmcp.EmpirePlanet, 0, len(planets))
+	for _, planet := range planets {
+		result = append(result, domainmcp.EmpirePlanet{
+			ID:       planet.ID,
+			Name:     planet.Name,
+			Type:     planet.Type,
+			TypeName: mcpPlanetTypeName(planet.Type),
+			Coordinates: domainmcp.Coordinates{
+				Galaxy:   planet.Coordinates.Galaxy,
+				System:   planet.Coordinates.System,
+				Position: planet.Coordinates.Position,
+			},
+			Fields:    planet.Fields,
+			MaxFields: planet.MaxFields,
+			Resources: domainmcp.EmpireResources{
+				Metal:     int(planet.Resources.Metal),
+				Crystal:   int(planet.Resources.Crystal),
+				Deuterium: int(planet.Resources.Deuterium),
+			},
+			Production: domainmcp.EmpireProduction{
+				MetalHourly:     planet.Production.MetalHourly,
+				CrystalHourly:   planet.Production.CrystalHourly,
+				DeuteriumHourly: planet.Production.DeuteriumHourly,
+				EnergyBalance:   planet.Production.EnergyBalance,
+				EnergyCapacity:  planet.Production.EnergyCapacity,
+			},
+		})
+	}
+	return result
+}
+
+func mcpEmpireResourceRows(rows []domaingame.EmpireResourceRow) []domainmcp.EmpireResourceRow {
+	result := make([]domainmcp.EmpireResourceRow, 0, len(rows))
+	for _, row := range rows {
+		values := make([]domainmcp.EmpireResourceValue, 0, len(row.Values))
+		for _, value := range row.Values {
+			values = append(values, domainmcp.EmpireResourceValue{
+				PlanetID:   value.PlanetID,
+				Amount:     value.Amount,
+				Production: value.Production,
+			})
+		}
+		result = append(result, domainmcp.EmpireResourceRow{
+			ID:         row.ID,
+			Name:       row.Name,
+			Values:     values,
+			Total:      row.Total,
+			Production: row.Production,
+		})
+	}
+	return result
+}
+
+func mcpEmpireLevelRows(rows []domaingame.EmpireLevelRow) []domainmcp.EmpireLevelRow {
+	result := make([]domainmcp.EmpireLevelRow, 0, len(rows))
+	for _, row := range rows {
+		values := make([]domainmcp.EmpireLevelValue, 0, len(row.Values))
+		for _, value := range row.Values {
+			values = append(values, domainmcp.EmpireLevelValue{
+				PlanetID: value.PlanetID,
+				Level:    value.Level,
+				CanBuild: value.CanBuild,
+				Queue:    mcpEmpireBuildQueue(value.Queue),
+			})
+		}
+		result = append(result, domainmcp.EmpireLevelRow{
+			ID:      row.ID,
+			Name:    row.Name,
+			Values:  values,
+			Total:   row.Total,
+			Average: row.Average,
+		})
+	}
+	return result
+}
+
+func mcpEmpireBuildQueue(entries []domaingame.EmpireBuildQueueEntry) []domainmcp.EmpireBuildQueueEntry {
+	result := make([]domainmcp.EmpireBuildQueueEntry, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, domainmcp.EmpireBuildQueueEntry{
+			ListID:   entry.ListID,
+			Level:    entry.Level,
+			Active:   entry.Active,
+			Demolish: entry.Demolish,
+		})
+	}
+	return result
+}
+
+func mcpEmpireCountRows(rows []domaingame.EmpireCountRow) []domainmcp.EmpireCountRow {
+	result := make([]domainmcp.EmpireCountRow, 0, len(rows))
+	for _, row := range rows {
+		values := make([]domainmcp.EmpireCountValue, 0, len(row.Values))
+		for _, value := range row.Values {
+			values = append(values, domainmcp.EmpireCountValue{PlanetID: value.PlanetID, Count: value.Count})
+		}
+		result = append(result, domainmcp.EmpireCountRow{
+			ID:     row.ID,
+			Name:   row.Name,
+			Values: values,
+			Total:  row.Total,
+		})
+	}
+	return result
 }
 
 func (r EmpireRepository) loadEmpireUser(ctx context.Context, usersTable string, playerID int) (empireUser, error) {

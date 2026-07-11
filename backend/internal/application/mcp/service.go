@@ -122,6 +122,10 @@ type StatisticsReadRepository interface {
 	GetMCPStatistics(context.Context, int, domainmcp.StatisticsCommand) (domainmcp.Statistics, error)
 }
 
+type EmpireReadRepository interface {
+	GetMCPEmpire(context.Context, int, domainmcp.EmpireCommand) (domainmcp.EmpireOverview, error)
+}
+
 type PremiumWriteRepository interface {
 	PreviewMCPRecruitOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
 	RecruitMCPOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
@@ -277,6 +281,7 @@ type Service struct {
 	searchRead      SearchReadRepository
 	galaxyRead      GalaxyReadRepository
 	statisticsRead  StatisticsReadRepository
+	empireRead      EmpireReadRepository
 	premiumWrite    PremiumWriteRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
@@ -374,6 +379,11 @@ func (s Service) WithGalaxyReadRepository(repository GalaxyReadRepository) Servi
 
 func (s Service) WithStatisticsReadRepository(repository StatisticsReadRepository) Service {
 	s.statisticsRead = repository
+	return s
+}
+
+func (s Service) WithEmpireReadRepository(repository EmpireReadRepository) Service {
+	s.empireRead = repository
 	return s
 }
 
@@ -698,6 +708,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		if s.statisticsRead != nil {
 			tools = append(tools, statisticsTool())
 		}
+		if s.empireRead != nil {
+			tools = append(tools, empireOverviewTool())
+		}
 	}
 	if access.HasScope(domainmcp.ScopeMessages) && s.readRepository != nil {
 		tools = append(tools, listMessagesTool(), getMessageTool())
@@ -825,6 +838,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callStatistics(ctx, access, command.Arguments)
+	case "get_empire_overview":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callEmpireOverview(ctx, access, command.Arguments)
 	case "list_messages":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeMessages)
 		if err != nil {
@@ -1250,6 +1272,29 @@ func (s Service) callStatistics(ctx context.Context, access domainmcp.Access, ar
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"statistics": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callEmpireOverview(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.empireRead == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp empire read repository unavailable")
+	}
+	command, err := mcpEmpireCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	result, err := s.empireRead.GetMCPEmpire(ctx, access.PlayerID, command)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"empire": result}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -2628,6 +2673,23 @@ func mcpStatisticsCommand(arguments map[string]any) (domainmcp.StatisticsCommand
 	return domainmcp.StatisticsCommand{PlanetID: planetID, Who: who, Type: statType, Start: start}, nil
 }
 
+func mcpEmpireCommand(arguments map[string]any) (domainmcp.EmpireCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.EmpireCommand{}, err
+	}
+	planetType, err := optionalNonNegativeIntArgument(arguments, "planetType")
+	if err != nil {
+		return domainmcp.EmpireCommand{}, err
+	}
+	switch planetType {
+	case 0, 1, 3:
+	default:
+		return domainmcp.EmpireCommand{}, domainmcp.ErrInvalidParams
+	}
+	return domainmcp.EmpireCommand{PlanetID: planetID, PlanetType: planetType}, nil
+}
+
 func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
 	limit, err := optionalNonNegativeIntArgument(arguments, "limit")
 	if err != nil {
@@ -3573,6 +3635,59 @@ func statisticsTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"statistics"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func empireOverviewTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_empire_overview",
+		Title:       "Get Empire Overview",
+		Description: "Return a read-only empire overview across the authenticated player's planets or moons without finishing queues or updating resources.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet context.",
+				},
+				"planetType": map[string]any{
+					"type":        "integer",
+					"description": "0 or 1 for planets, 3 for moons when enabled.",
+					"enum":        []int{0, 1, 3},
+				},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"empire": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":        map[string]any{"type": "integer"},
+						"planetId":        map[string]any{"type": "integer"},
+						"commanderActive": map[string]any{"type": "boolean"},
+						"planetType":      map[string]any{"type": "integer"},
+						"moonEnabled":     map[string]any{"type": "boolean"},
+						"hasMoons":        map[string]any{"type": "boolean"},
+						"issue":           map[string]any{"type": "object"},
+						"planets":         map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"resources":       map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"buildings":       map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"research":        map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"fleet":           map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"defense":         map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+					},
+					"required": []string{"playerId", "planetId", "commanderActive", "planetType", "moonEnabled", "hasMoons", "planets", "resources", "buildings", "research", "fleet", "defense"},
+				},
+			},
+			"required": []string{"empire"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,

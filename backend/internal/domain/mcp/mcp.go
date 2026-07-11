@@ -629,6 +629,101 @@ type Statistics struct {
 	Rows             []StatisticsRow `json:"rows"`
 }
 
+type EmpireCommand struct {
+	PlanetID   int
+	PlanetType int
+}
+
+type EmpireBuildQueueEntry struct {
+	ListID   int  `json:"listId"`
+	Level    int  `json:"level"`
+	Active   bool `json:"active"`
+	Demolish bool `json:"demolish"`
+}
+
+type EmpirePlanet struct {
+	ID          int              `json:"id"`
+	Name        string           `json:"name"`
+	Type        int              `json:"type"`
+	TypeName    string           `json:"typeName"`
+	Coordinates Coordinates      `json:"coordinates"`
+	Fields      int              `json:"fields"`
+	MaxFields   int              `json:"maxFields"`
+	Resources   EmpireResources  `json:"resources"`
+	Production  EmpireProduction `json:"production"`
+}
+
+type EmpireResources struct {
+	Metal     int `json:"metal"`
+	Crystal   int `json:"crystal"`
+	Deuterium int `json:"deuterium"`
+}
+
+type EmpireProduction struct {
+	MetalHourly     int `json:"metalHourly"`
+	CrystalHourly   int `json:"crystalHourly"`
+	DeuteriumHourly int `json:"deuteriumHourly"`
+	EnergyBalance   int `json:"energyBalance"`
+	EnergyCapacity  int `json:"energyCapacity"`
+}
+
+type EmpireResourceValue struct {
+	PlanetID   int `json:"planetId"`
+	Amount     int `json:"amount"`
+	Production int `json:"production"`
+}
+
+type EmpireResourceRow struct {
+	ID         int                   `json:"id"`
+	Name       string                `json:"name"`
+	Values     []EmpireResourceValue `json:"values"`
+	Total      int                   `json:"total"`
+	Production int                   `json:"production"`
+}
+
+type EmpireLevelValue struct {
+	PlanetID int                     `json:"planetId"`
+	Level    int                     `json:"level"`
+	CanBuild bool                    `json:"canBuild"`
+	Queue    []EmpireBuildQueueEntry `json:"queue,omitempty"`
+}
+
+type EmpireLevelRow struct {
+	ID      int                `json:"id"`
+	Name    string             `json:"name"`
+	Values  []EmpireLevelValue `json:"values"`
+	Total   int                `json:"total"`
+	Average float64            `json:"average"`
+}
+
+type EmpireCountValue struct {
+	PlanetID int `json:"planetId"`
+	Count    int `json:"count"`
+}
+
+type EmpireCountRow struct {
+	ID     int                `json:"id"`
+	Name   string             `json:"name"`
+	Values []EmpireCountValue `json:"values"`
+	Total  int                `json:"total"`
+}
+
+type EmpireOverview struct {
+	PlayerID        int                 `json:"playerId"`
+	PlanetID        int                 `json:"planetId"`
+	CommanderActive bool                `json:"commanderActive"`
+	PlanetType      int                 `json:"planetType"`
+	MoonEnabled     bool                `json:"moonEnabled"`
+	HasMoons        bool                `json:"hasMoons"`
+	Issue           *ActionIssue        `json:"issue,omitempty"`
+	Planets         []EmpirePlanet      `json:"planets"`
+	Resources       []EmpireResourceRow `json:"resources"`
+	Buildings       []EmpireLevelRow    `json:"buildings"`
+	Research        []EmpireLevelRow    `json:"research"`
+	Fleet           []EmpireCountRow    `json:"fleet"`
+	Defense         []EmpireCountRow    `json:"defense"`
+}
+
 type DispatchFleetCommand struct {
 	PlanetID        int
 	Ships           map[int]int
