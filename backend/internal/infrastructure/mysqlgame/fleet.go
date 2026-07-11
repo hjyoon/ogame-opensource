@@ -83,6 +83,10 @@ func NewFleetRepository(db *sql.DB, prefix string) FleetRepository {
 	return FleetRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, finishDueQueues: true}
 }
 
+func NewFleetReadRepository(db *sql.DB, prefix string) FleetRepository {
+	return NewFleetRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
+}
+
 func NewFleetRepositoryWithQueryer(queryer Queryer, prefix string, now func() time.Time) FleetRepository {
 	if now == nil {
 		now = time.Now
@@ -881,6 +885,51 @@ func (r FleetRepository) RecallMCPFleet(ctx context.Context, playerID int, comma
 	}
 	result.Executed = true
 	return result, nil
+}
+
+func (r FleetRepository) GetMCPFleetOptions(ctx context.Context, playerID int, planetID int) (domainmcp.FleetOptions, error) {
+	if r.queryer == nil {
+		return domainmcp.FleetOptions{}, errors.New("fleet reader unavailable")
+	}
+	reader := r
+	reader.finishDueQueues = false
+	fleet, err := reader.GetFleet(ctx, appgame.FleetQuery{PlayerID: playerID, PlanetID: planetID})
+	if err != nil {
+		return domainmcp.FleetOptions{}, err
+	}
+	return domainmcp.FleetOptions{
+		PlayerID: playerID,
+		Planet: domainmcp.Planet{
+			ID:       fleet.CurrentPlanet.ID,
+			Name:     fleet.CurrentPlanet.Name,
+			Type:     fleet.CurrentPlanet.Type,
+			TypeName: mcpPlanetTypeName(fleet.CurrentPlanet.Type),
+			Coordinates: domainmcp.Coordinates{
+				Galaxy:   fleet.CurrentPlanet.Coordinates.Galaxy,
+				System:   fleet.CurrentPlanet.Coordinates.System,
+				Position: fleet.CurrentPlanet.Coordinates.Position,
+			},
+			Current: true,
+		},
+		CommanderActive: fleet.CommanderActive,
+		Slots: domainmcp.FleetSlots{
+			Used:    fleet.Slots.Used,
+			Max:     fleet.Slots.Max,
+			BaseMax: fleet.Slots.BaseMax,
+			Admiral: fleet.Slots.Admiral,
+		},
+		Expeditions: domainmcp.ExpeditionSlots{
+			Used: fleet.Expeditions.Used,
+			Max:  fleet.Expeditions.Max,
+		},
+		ExpeditionLevel: fleet.ExpeditionLevel,
+		SpeedFactor:     fleet.SpeedFactor,
+		Missions:        mcpFleetMovementsFromGame(fleet.Missions, r.now().Unix()),
+		Ships:           mcpFleetShipOptions(fleet.Ships),
+		TemplateLimit:   fleet.TemplateLimit,
+		Templates:       mcpFleetTemplates(fleet.Templates),
+		DispatchDraft:   mcpFleetDispatchDraft(fleet.DispatchDraft),
+	}, nil
 }
 
 func (r FleetRepository) recallFleet(ctx context.Context, fleetID int, loader recallFleetLoader, deleteOwnerID int) error {
@@ -2013,6 +2062,102 @@ func mcpFleetActionIssue(issue *domaingame.FleetActionIssue) *domainmcp.ActionIs
 		return nil
 	}
 	return &domainmcp.ActionIssue{Code: issue.Code, Message: issue.Message}
+}
+
+func mcpFleetMovementsFromGame(missions []domaingame.FleetMission, now int64) []domainmcp.FleetMovement {
+	movements := make([]domainmcp.FleetMovement, 0, len(missions))
+	for _, mission := range missions {
+		movements = append(movements, mcpFleetMovementFromMission(mission, now))
+	}
+	return movements
+}
+
+func mcpFleetShipOptions(ships []domaingame.FleetShipSelection) []domainmcp.FleetShipOption {
+	options := make([]domainmcp.FleetShipOption, 0, len(ships))
+	for _, ship := range ships {
+		options = append(options, domainmcp.FleetShipOption{
+			ID:          ship.ID,
+			Name:        ship.Name,
+			Count:       ship.Count,
+			Speed:       ship.Speed,
+			Cargo:       ship.Cargo,
+			Consumption: ship.Consumption,
+			Selectable:  ship.Selectable,
+		})
+	}
+	return options
+}
+
+func mcpFleetTemplates(templates []domaingame.FleetTemplate) []domainmcp.FleetTemplate {
+	rows := make([]domainmcp.FleetTemplate, 0, len(templates))
+	for _, template := range templates {
+		ships := make([]domainmcp.FleetShip, 0, len(template.Ships))
+		for _, ship := range template.Ships {
+			ships = append(ships, domainmcp.FleetShip{
+				ID:    ship.ID,
+				Name:  ship.Name,
+				Count: ship.Count,
+			})
+		}
+		rows = append(rows, domainmcp.FleetTemplate{
+			ID:        template.ID,
+			Name:      template.Name,
+			UpdatedAt: template.UpdatedAt,
+			Ships:     ships,
+		})
+	}
+	return rows
+}
+
+func mcpFleetDispatchDraft(draft *domaingame.FleetDispatchDraft) *domainmcp.FleetDispatchDraft {
+	if draft == nil {
+		return nil
+	}
+	ships := make([]domainmcp.FleetShip, 0, len(draft.Ships))
+	for _, ship := range draft.Ships {
+		ships = append(ships, domainmcp.FleetShip{ID: ship.ID, Name: ship.Name, Count: ship.Count})
+	}
+	missions := make([]domainmcp.FleetMissionOption, 0, len(draft.MissionOptions))
+	for _, mission := range draft.MissionOptions {
+		missions = append(missions, domainmcp.FleetMissionOption{
+			ID:       mission.ID,
+			Name:     mission.Name,
+			Selected: mission.Selected,
+			Warning:  mission.Warning,
+		})
+	}
+	resources := make([]domainmcp.FleetResourceLoad, 0, len(draft.Resources))
+	for _, resource := range draft.Resources {
+		resources = append(resources, domainmcp.FleetResourceLoad{
+			ID:        resource.ID,
+			Name:      resource.Name,
+			Available: resource.Available,
+			Requested: resource.Requested,
+			Loaded:    resource.Loaded,
+		})
+	}
+	return &domainmcp.FleetDispatchDraft{
+		Ships:           ships,
+		TotalShips:      draft.TotalShips,
+		Target:          mcpCoordinatesFromGame(draft.Target),
+		TargetType:      draft.TargetType,
+		Mission:         draft.Mission,
+		Speed:           draft.Speed,
+		UnionID:         draft.UnionID,
+		Cargo:           draft.Cargo,
+		Distance:        draft.Distance,
+		DurationSeconds: draft.DurationSeconds,
+		MaxSpeed:        draft.MaxSpeed,
+		FuelConsumption: draft.FuelConsumption,
+		SpeedFactor:     draft.SpeedFactor,
+		RemainingCargo:  draft.RemainingCargo,
+		Ready:           draft.Ready,
+		HasSelection:    draft.HasSelection,
+		MissionOptions:  missions,
+		Resources:       resources,
+		HoldHours:       append([]int(nil), draft.HoldHours...),
+		ExpeditionHours: append([]int(nil), draft.ExpeditionHours...),
+	}
 }
 
 func mcpCoordinates(coordinates domainmcp.Coordinates) domaingame.Coordinates {

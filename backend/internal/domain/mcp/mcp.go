@@ -979,6 +979,88 @@ type FleetMovements struct {
 	Events   []FleetMovement `json:"events"`
 }
 
+type FleetSlots struct {
+	Used    int  `json:"used"`
+	Max     int  `json:"max"`
+	BaseMax int  `json:"baseMax"`
+	Admiral bool `json:"admiral"`
+}
+
+type ExpeditionSlots struct {
+	Used int `json:"used"`
+	Max  int `json:"max"`
+}
+
+type FleetShipOption struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Count       int    `json:"count"`
+	Speed       int    `json:"speed"`
+	Cargo       int    `json:"cargo"`
+	Consumption int    `json:"consumption"`
+	Selectable  bool   `json:"selectable"`
+}
+
+type FleetTemplate struct {
+	ID        int         `json:"id"`
+	Name      string      `json:"name"`
+	UpdatedAt int64       `json:"updatedAt"`
+	Ships     []FleetShip `json:"ships"`
+}
+
+type FleetMissionOption struct {
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	Selected bool   `json:"selected"`
+	Warning  string `json:"warning,omitempty"`
+}
+
+type FleetResourceLoad struct {
+	ID        int    `json:"id"`
+	Name      string `json:"name"`
+	Available int    `json:"available"`
+	Requested int    `json:"requested"`
+	Loaded    int    `json:"loaded"`
+}
+
+type FleetDispatchDraft struct {
+	Ships           []FleetShip          `json:"ships"`
+	TotalShips      int                  `json:"totalShips"`
+	Target          Coordinates          `json:"target"`
+	TargetType      int                  `json:"targetType"`
+	Mission         int                  `json:"mission"`
+	Speed           int                  `json:"speed"`
+	UnionID         int                  `json:"unionId"`
+	Cargo           int                  `json:"cargo"`
+	Distance        int                  `json:"distance"`
+	DurationSeconds int                  `json:"durationSeconds"`
+	MaxSpeed        int                  `json:"maxSpeed"`
+	FuelConsumption int                  `json:"fuelConsumption"`
+	SpeedFactor     int                  `json:"speedFactor"`
+	RemainingCargo  int                  `json:"remainingCargo"`
+	Ready           bool                 `json:"ready"`
+	HasSelection    bool                 `json:"hasSelection"`
+	MissionOptions  []FleetMissionOption `json:"missionOptions"`
+	Resources       []FleetResourceLoad  `json:"resources"`
+	HoldHours       []int                `json:"holdHours"`
+	ExpeditionHours []int                `json:"expeditionHours"`
+}
+
+type FleetOptions struct {
+	PlayerID        int                 `json:"playerId"`
+	Planet          Planet              `json:"planet"`
+	CommanderActive bool                `json:"commanderActive"`
+	Slots           FleetSlots          `json:"slots"`
+	Expeditions     ExpeditionSlots     `json:"expeditions"`
+	ExpeditionLevel int                 `json:"expeditionLevel"`
+	SpeedFactor     int                 `json:"speedFactor"`
+	Missions        []FleetMovement     `json:"missions"`
+	Ships           []FleetShipOption   `json:"ships"`
+	TemplateLimit   int                 `json:"templateLimit"`
+	Templates       []FleetTemplate     `json:"templates"`
+	DispatchDraft   *FleetDispatchDraft `json:"dispatchDraft,omitempty"`
+}
+
 type Access struct {
 	Authenticated bool     `json:"authenticated"`
 	PlayerID      int      `json:"playerId,omitempty"`

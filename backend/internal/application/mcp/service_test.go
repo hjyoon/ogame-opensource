@@ -816,6 +816,26 @@ func TestServiceListsDefenseOptionsToolForReadScope(t *testing.T) {
 	}
 }
 
+func TestServiceListsFleetOptionsToolForReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithFleetOptionsReadRepository(&fakeFleetOptionsReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_fleet_options" {
+		t.Fatalf("unexpected read fleet options tools: %v", names)
+	}
+}
+
 func TestServiceListsMessageToolsForMessageScopedTokens(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -1282,6 +1302,71 @@ func TestServiceFleetMovementsToolRequiresRepositoryAndReadScope(t *testing.T) {
 	service = service.WithReadRepository(fakeReadRepository{err: errors.New("fleet down")})
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_fleet_movements", AccessToken: "read"}); err == nil {
 		t.Fatalf("expected read repository error")
+	}
+}
+
+func TestServiceCallsFleetOptionsTool(t *testing.T) {
+	options := domainmcp.FleetOptions{
+		PlayerID: 42,
+		Planet:   domainmcp.Planet{ID: 99, Name: "Arakis"},
+		Slots:    domainmcp.FleetSlots{Used: 1, Max: 4},
+		Ships: []domainmcp.FleetShipOption{{
+			ID:         202,
+			Name:       "Small Cargo",
+			Count:      4,
+			Selectable: true,
+		}},
+	}
+	repository := &fakeFleetOptionsReadRepository{result: options}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithFleetOptionsReadRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_fleet_options",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": "99"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["fleetOptions"].(domainmcp.FleetOptions)
+	if result.IsError || got.PlayerID != 42 || got.Planet.ID != 99 || len(got.Ships) != 1 || got.Ships[0].Name != "Small Cargo" {
+		t.Fatalf("unexpected fleet options result: %+v", result)
+	}
+	if repository.playerID != 42 || repository.planetID != 99 {
+		t.Fatalf("unexpected fleet options command: player=%d planet=%d", repository.playerID, repository.planetID)
+	}
+}
+
+func TestServiceFleetOptionsToolRequiresRepositoryReadScopeAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_fleet_options", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing fleet options read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_fleet_options", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithFleetOptionsReadRepository(&fakeFleetOptionsReadRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_fleet_options",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": true},
+	}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid planet id error, got %v", err)
+	}
+
+	service = service.WithFleetOptionsReadRepository(&fakeFleetOptionsReadRepository{err: errors.New("fleet options down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_fleet_options", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "fleet options down") {
+		t.Fatalf("expected fleet options repository error, got %v", err)
 	}
 }
 
@@ -4226,6 +4311,22 @@ func (f *fakeDefenseOptionsReadRepository) GetMCPDefenseOptions(_ context.Contex
 	f.planetID = planetID
 	if f.err != nil {
 		return domainmcp.DefenseOptions{}, f.err
+	}
+	return f.result, nil
+}
+
+type fakeFleetOptionsReadRepository struct {
+	result   domainmcp.FleetOptions
+	playerID int
+	planetID int
+	err      error
+}
+
+func (f *fakeFleetOptionsReadRepository) GetMCPFleetOptions(_ context.Context, playerID int, planetID int) (domainmcp.FleetOptions, error) {
+	f.playerID = playerID
+	f.planetID = planetID
+	if f.err != nil {
+		return domainmcp.FleetOptions{}, f.err
 	}
 	return f.result, nil
 }

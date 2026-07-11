@@ -324,6 +324,8 @@ try {
   const queueToolBody = parseJSON(queueTool);
   const fleetTool = await mcpJSONRPC("tools/call", { name: "get_fleet_movements", arguments: {} }, { id: 26, headers: authHeaders });
   const fleetToolBody = parseJSON(fleetTool);
+  const fleetOptionsTool = await mcpJSONRPC("tools/call", { name: "get_fleet_options", arguments: {} }, { id: 51, headers: authHeaders });
+  const fleetOptionsToolBody = parseJSON(fleetOptionsTool);
   const officerStatusTool = await mcpJSONRPC("tools/call", { name: "get_officer_status", arguments: {} }, { id: 41, headers: authHeaders });
   const officerStatusToolBody = parseJSON(officerStatusTool);
   const searchGameTool = await mcpJSONRPC("tools/call", { name: "search_game", arguments: { type: "playername", text: loginUser.slice(0, 3) || "leg" } }, { id: 42, headers: authHeaders });
@@ -401,6 +403,7 @@ try {
     "get_planet_resources",
     "get_building_queue",
     "get_fleet_movements",
+    "get_fleet_options",
     "get_officer_status",
     "search_game",
     "get_galaxy_system",
@@ -461,6 +464,7 @@ try {
       check(resourcesTool.status === 200 && Number(resourcesToolBody.result?.structuredContent?.resources?.playerId ?? 0) === login.playerID, "get_planet_resources returns current player data", resourcesToolBody.result ?? {}),
       check(queueTool.status === 200 && Number(queueToolBody.result?.structuredContent?.buildingQueue?.playerId ?? 0) === login.playerID, "get_building_queue returns current player data", queueToolBody.result ?? {}),
       check(fleetTool.status === 200 && Number(fleetToolBody.result?.structuredContent?.fleetMovements?.playerId ?? 0) === login.playerID, "get_fleet_movements returns current player data", fleetToolBody.result ?? {}),
+      check(fleetOptionsTool.status === 200 && Number(fleetOptionsToolBody.result?.structuredContent?.fleetOptions?.playerId ?? 0) === login.playerID && Array.isArray(fleetOptionsToolBody.result?.structuredContent?.fleetOptions?.ships), "get_fleet_options returns read-only legacy fleet screen state", fleetOptionsToolBody.result ?? {}),
       check(officerStatusTool.status === 200 && Number(officerStatusToolBody.result?.structuredContent?.officerStatus?.playerId ?? 0) === login.playerID && Array.isArray(officerStatusToolBody.result?.structuredContent?.officerStatus?.officers), "get_officer_status returns current officer rows and Dark Matter balances", officerStatusToolBody.result ?? {}),
       check(searchGameTool.status === 200 && Number(searchGameToolBody.result?.structuredContent?.search?.playerId ?? 0) === login.playerID && Array.isArray(searchGameToolBody.result?.structuredContent?.search?.players), "search_game returns current player search results", searchGameToolBody.result ?? {}),
       check(galaxySystemTool.status === 200 && Number(galaxySystemToolBody.result?.structuredContent?.galaxySystem?.playerId ?? 0) === login.playerID && Array.isArray(galaxySystemToolBody.result?.structuredContent?.galaxySystem?.rows), "get_galaxy_system returns current galaxy rows without mutation", galaxySystemToolBody.result ?? {}),

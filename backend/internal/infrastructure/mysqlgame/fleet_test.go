@@ -50,6 +50,92 @@ func TestFleetRepositoryReadsLegacyFleetScreen(t *testing.T) {
 	}
 }
 
+func TestFleetRepositoryMapsMCPFleetOptions(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	queryer := &fakeQueryer{results: append(fleetReadPrefixResults(now),
+		fakeQueryResult{rows: fakeRowsFromValues(fleetMissionRow(domaingame.FleetMissionTransport, map[int]int{domaingame.FleetSmallCargo: 2}, 100, 200))},
+		fakeQueryResult{rows: fakeRowsFromValues(templateRow(7, " raid wing ", 900, map[int]int{domaingame.FleetSmallCargo: 2}))},
+	)}
+	repository := NewFleetRepositoryWithRunner(queryer, nil, "ogame_", func() time.Time { return now })
+
+	options, err := repository.GetMCPFleetOptions(context.Background(), 42, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.PlayerID != 42 || options.Planet.ID != 99 || options.Planet.TypeName != "planet" || !options.CommanderActive {
+		t.Fatalf("unexpected mcp fleet options summary: %+v", options)
+	}
+	if options.Slots.Used != 1 || options.Slots.Max != 6 || !options.Slots.Admiral || options.ExpeditionLevel != 4 || options.SpeedFactor != 128 {
+		t.Fatalf("unexpected mcp fleet slots: %+v expeditions=%+v level=%d speed=%d", options.Slots, options.Expeditions, options.ExpeditionLevel, options.SpeedFactor)
+	}
+	if len(options.Missions) != 1 || options.Missions[0].MissionName != "Transport" || options.Missions[0].RemainingSeconds != 0 {
+		t.Fatalf("unexpected mcp fleet missions: %+v", options.Missions)
+	}
+	if len(options.Ships) != 2 || options.Ships[0].ID != domaingame.FleetSmallCargo || options.Ships[0].Speed != 20000 || !options.Ships[0].Selectable {
+		t.Fatalf("unexpected mcp fleet ships: %+v", options.Ships)
+	}
+	if options.TemplateLimit != 4 || len(options.Templates) != 1 || options.Templates[0].Name != "raid wing" || len(options.Templates[0].Ships) != 1 {
+		t.Fatalf("unexpected mcp fleet templates: %+v", options.Templates)
+	}
+	if options.DispatchDraft != nil {
+		t.Fatalf("plain fleet options should not fabricate a dispatch draft: %+v", options.DispatchDraft)
+	}
+	if fleetCallContains(queryer.calls, "SELECT speed, max_werf, freeze") {
+		t.Fatalf("read-only MCP fleet options should not finish queues, got %+v", queryer.calls)
+	}
+}
+
+func TestMCPFleetDispatchDraftMapsPreparedState(t *testing.T) {
+	if mcpFleetDispatchDraft(nil) != nil {
+		t.Fatal("nil draft should stay nil")
+	}
+	draft := &domaingame.FleetDispatchDraft{
+		Ships:           []domaingame.FleetShipCount{{ID: domaingame.FleetSmallCargo, Name: "Small Cargo", Count: 2}},
+		TotalShips:      2,
+		Target:          domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4},
+		TargetType:      domaingame.GamePlanetTypePlanet,
+		Mission:         domaingame.FleetMissionTransport,
+		Speed:           10,
+		UnionID:         5,
+		Cargo:           10000,
+		Distance:        20,
+		DurationSeconds: 300,
+		MaxSpeed:        20000,
+		FuelConsumption: 40,
+		SpeedFactor:     128,
+		RemainingCargo:  9960,
+		Ready:           true,
+		HasSelection:    true,
+		MissionOptions: []domaingame.FleetMissionOption{{
+			ID:       domaingame.FleetMissionTransport,
+			Name:     "Transport",
+			Selected: true,
+			Warning:  "check target",
+		}},
+		Resources: []domaingame.FleetResourceLoad{{
+			ID:        domaingame.ResourceMetal,
+			Name:      "Metal",
+			Available: 100,
+			Requested: 30,
+			Loaded:    30,
+		}},
+		HoldHours:       []int{1, 2},
+		ExpeditionHours: []int{1},
+	}
+
+	got := mcpFleetDispatchDraft(draft)
+	if got == nil || got.TotalShips != 2 || got.Target.Galaxy != 2 || got.Mission != domaingame.FleetMissionTransport || got.FuelConsumption != 40 || !got.Ready || !got.HasSelection {
+		t.Fatalf("unexpected mapped dispatch draft: %+v", got)
+	}
+	if len(got.Ships) != 1 || got.Ships[0].Name != "Small Cargo" || len(got.MissionOptions) != 1 || got.MissionOptions[0].Warning != "check target" || len(got.Resources) != 1 || got.Resources[0].Loaded != 30 {
+		t.Fatalf("unexpected mapped dispatch collections: %+v", got)
+	}
+	got.HoldHours[0] = 99
+	if draft.HoldHours[0] == 99 {
+		t.Fatal("mapped hold hours should not alias source draft")
+	}
+}
+
 func TestFleetRepositoryPreviewsMCPDispatchFleet(t *testing.T) {
 	now := time.Unix(1_000, 0)
 	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: append(fleetReadPrefixResults(now),
@@ -252,6 +338,13 @@ func TestNewFleetRepositoryKeepsSQLQueryer(t *testing.T) {
 	}
 	if !repository.finishDueQueues {
 		t.Fatal("production fleet repository should drain due fleet queues")
+	}
+	readRepository := NewFleetReadRepository(nil, "ogame_")
+	if readRepository.execer != nil || readRepository.finishDueQueues {
+		t.Fatalf("expected MCP read repository without writer/queue finish, got %+v", readRepository)
+	}
+	if _, err := (FleetRepository{}).GetMCPFleetOptions(context.Background(), 42, 0); err == nil {
+		t.Fatal("expected nil fleet options reader error")
 	}
 	withDefaultClock := NewFleetRepositoryWithQueryer(nil, "ogame_", nil)
 	if withDefaultClock.now == nil {

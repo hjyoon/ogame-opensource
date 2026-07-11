@@ -216,6 +216,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 	researchReadRepository := mysqlgame.NewResearchReadRepository(db, cfg.UniDBPrefix)
 	shipyardReadRepository := mysqlgame.NewShipyardReadRepository(db, cfg.UniDBPrefix)
 	defenseReadRepository := mysqlgame.NewDefenseReadRepository(db, cfg.UniDBPrefix)
+	fleetReadRepository := mysqlgame.NewFleetReadRepository(db, cfg.UniDBPrefix)
 	return withCommonMCP(appmcp.NewServiceWithTokenManagement(health, verifier, repository, sessions, appmcp.SecureTokenGenerator{}, time.Now).
 		WithTokenTTL(time.Duration(cfg.MCPTokenTTLSeconds) * time.Second).
 		WithOAuthCodeRepository(repository).
@@ -235,6 +236,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 		WithResearchOptionsReadRepository(researchReadRepository).
 		WithShipyardOptionsReadRepository(shipyardReadRepository).
 		WithDefenseOptionsReadRepository(defenseReadRepository).
+		WithFleetOptionsReadRepository(fleetReadRepository).
 		WithPremiumWriteRepository(premiumRepository))
 }
 

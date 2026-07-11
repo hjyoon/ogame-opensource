@@ -146,6 +146,10 @@ type DefenseOptionsReadRepository interface {
 	GetMCPDefenseOptions(context.Context, int, int) (domainmcp.DefenseOptions, error)
 }
 
+type FleetOptionsReadRepository interface {
+	GetMCPFleetOptions(context.Context, int, int) (domainmcp.FleetOptions, error)
+}
+
 type PremiumWriteRepository interface {
 	PreviewMCPRecruitOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
 	RecruitMCPOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
@@ -307,6 +311,7 @@ type Service struct {
 	researchRead    ResearchOptionsReadRepository
 	shipyardRead    ShipyardOptionsReadRepository
 	defenseRead     DefenseOptionsReadRepository
+	fleetOptions    FleetOptionsReadRepository
 	premiumWrite    PremiumWriteRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
@@ -434,6 +439,11 @@ func (s Service) WithShipyardOptionsReadRepository(repository ShipyardOptionsRea
 
 func (s Service) WithDefenseOptionsReadRepository(repository DefenseOptionsReadRepository) Service {
 	s.defenseRead = repository
+	return s
+}
+
+func (s Service) WithFleetOptionsReadRepository(repository FleetOptionsReadRepository) Service {
+	s.fleetOptions = repository
 	return s
 }
 
@@ -776,6 +786,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		if s.defenseRead != nil {
 			tools = append(tools, defenseOptionsTool())
 		}
+		if s.fleetOptions != nil {
+			tools = append(tools, fleetOptionsTool())
+		}
 	}
 	if access.HasScope(domainmcp.ScopeMessages) && s.readRepository != nil {
 		tools = append(tools, listMessagesTool(), getMessageTool())
@@ -867,6 +880,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callFleetMovements(ctx, access)
+	case "get_fleet_options":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callFleetOptions(ctx, access, command.Arguments)
 	case "get_officer_status":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
 		if err != nil {
@@ -1290,6 +1312,29 @@ func (s Service) callFleetMovements(ctx context.Context, access domainmcp.Access
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"fleetMovements": movements}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callFleetOptions(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.fleetOptions == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp fleet options read repository unavailable")
+	}
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	options, err := s.fleetOptions.GetMCPFleetOptions(ctx, access.PlayerID, planetID)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"fleetOptions": options}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -3666,6 +3711,53 @@ func fleetMovementsTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"fleetMovements"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func fleetOptionsTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_fleet_options",
+		Title:       "Get Fleet Options",
+		Description: "Return read-only legacy fleet screen state, including slots, selectable ships, templates, active missions, and optional dispatch draft for the authenticated player's current or selected planet.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet context.",
+				},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"fleetOptions": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":        map[string]any{"type": "integer"},
+						"planet":          map[string]any{"type": "object"},
+						"commanderActive": map[string]any{"type": "boolean"},
+						"slots":           map[string]any{"type": "object"},
+						"expeditions":     map[string]any{"type": "object"},
+						"expeditionLevel": map[string]any{"type": "integer"},
+						"speedFactor":     map[string]any{"type": "integer"},
+						"missions":        map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"ships":           map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"templateLimit":   map[string]any{"type": "integer"},
+						"templates":       map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"dispatchDraft":   map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "planet", "commanderActive", "slots", "expeditions", "expeditionLevel", "speedFactor", "missions", "ships", "templateLimit", "templates"},
+				},
+			},
+			"required": []string{"fleetOptions"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,
