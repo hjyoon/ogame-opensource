@@ -9,6 +9,7 @@ const (
 	ScopeWrite        = "mcp:write"
 	ScopeFleet        = "mcp:fleet"
 	ScopeFleetWrite   = "mcp:fleet_write"
+	ScopeQueueWrite   = "mcp:queue_write"
 	ScopeMessages     = "mcp:messages"
 	ScopeMessageWrite = "mcp:message_write"
 	ScopeAdmin        = "mcp:admin"
@@ -288,6 +289,29 @@ type RecallFleetResult struct {
 	Mission              int          `json:"mission,omitempty"`
 	TotalShips           int          `json:"totalShips,omitempty"`
 	Recallable           bool         `json:"recallable"`
+	DryRun               bool         `json:"dryRun"`
+	RequiresConfirmation bool         `json:"requiresConfirmation"`
+	Confirmation         string       `json:"confirmation,omitempty"`
+	Executed             bool         `json:"executed"`
+	Issue                *ActionIssue `json:"issue,omitempty"`
+}
+
+type CancelBuildingQueueCommand struct {
+	PlanetID int
+	ListID   int
+	DryRun   bool
+	Confirm  string
+}
+
+type CancelBuildingQueueResult struct {
+	PlayerID             int          `json:"playerId"`
+	PlanetID             int          `json:"planetId"`
+	ListID               int          `json:"listId"`
+	TechID               int          `json:"techId,omitempty"`
+	Name                 string       `json:"name,omitempty"`
+	Level                int          `json:"level,omitempty"`
+	Destroy              bool         `json:"destroy,omitempty"`
+	Cancelable           bool         `json:"cancelable"`
 	DryRun               bool         `json:"dryRun"`
 	RequiresConfirmation bool         `json:"requiresConfirmation"`
 	Confirmation         string       `json:"confirmation,omitempty"`

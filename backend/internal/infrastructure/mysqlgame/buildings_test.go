@@ -13,6 +13,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 var buildingLockDriverOnce sync.Once
@@ -293,6 +294,80 @@ func TestBuildingsRepositoryDequeuesCurrentBuildingAndRefunds(t *testing.T) {
 		!strings.Contains(runner.execs[2].sql, "UPDATE `ogame_buildqueue` SET level = level - 1") ||
 		!strings.Contains(runner.execs[3].sql, "DELETE FROM `ogame_buildqueue` WHERE id = ?") {
 		t.Fatalf("unexpected building dequeue execs: %+v", runner.execs)
+	}
+}
+
+func TestBuildingsRepositoryMCPCancelBuildingQueuePreviewAndExecute(t *testing.T) {
+	row := buildQueueRow{ID: 1, OwnerID: 42, PlanetID: 99, ListID: 2, TechID: domaingame.BuildingMetalMine, Level: 3}
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(buildQueueRowValues(row))},
+	}}
+	repository := NewBuildingsRepositoryWithQueryer(queryer, "ogame_")
+	preview, err := repository.PreviewMCPCancelBuildingQueue(context.Background(), 42, domainmcp.CancelBuildingQueueCommand{PlanetID: 99, ListID: 2})
+	if err != nil || !preview.Cancelable || preview.TechID != domaingame.BuildingMetalMine || preview.Name != "Metal Mine" || preview.Level != 3 {
+		t.Fatalf("unexpected preview=%+v err=%v", preview, err)
+	}
+
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
+		{rows: fakeRowsFromValues(buildQueueRowValues(row))},
+	}, append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(buildQueueRowValues(row))},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+	)...)}}
+	repository = NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_005, 0) })
+	canceled, err := repository.CancelMCPBuildingQueue(context.Background(), 42, domainmcp.CancelBuildingQueueCommand{PlanetID: 99, ListID: 2})
+	if err != nil || !canceled.Executed || !canceled.Cancelable {
+		t.Fatalf("unexpected cancel result=%+v err=%v", canceled, err)
+	}
+	if len(runner.execs) != 2 || !strings.Contains(runner.execs[0].sql, "UPDATE `ogame_buildqueue` SET level = level - 1") || !strings.Contains(runner.execs[1].sql, "DELETE FROM `ogame_buildqueue` WHERE id = ?") {
+		t.Fatalf("expected legacy queue cancel writes, got %+v", runner.execs)
+	}
+}
+
+func TestBuildingsRepositoryMCPCancelBuildingQueueResolvesActivePlanet(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 4, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: 999999, Level: 1}))},
+	)}
+	repository := NewBuildingsRepositoryWithQueryer(queryer, "ogame_")
+	result, err := repository.PreviewMCPCancelBuildingQueue(context.Background(), 42, domainmcp.CancelBuildingQueueCommand{ListID: 1})
+	if err != nil || !result.Cancelable || result.PlanetID != 99 || result.Name != "NAME_999999" {
+		t.Fatalf("expected active planet preview with fallback name, result=%+v err=%v", result, err)
+	}
+}
+
+func TestBuildingsRepositoryMCPCancelBuildingQueueEdges(t *testing.T) {
+	if _, err := (BuildingsRepository{}).PreviewMCPCancelBuildingQueue(context.Background(), 42, domainmcp.CancelBuildingQueueCommand{PlanetID: 99, ListID: 1}); err == nil {
+		t.Fatalf("expected missing reader error")
+	}
+	if _, err := NewBuildingsRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_").PreviewMCPCancelBuildingQueue(context.Background(), 42, domainmcp.CancelBuildingQueueCommand{PlanetID: 99, ListID: 1}); err == nil {
+		t.Fatalf("expected invalid prefix error")
+	}
+	result, err := NewBuildingsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "ogame_").PreviewMCPCancelBuildingQueue(context.Background(), 42, domainmcp.CancelBuildingQueueCommand{PlanetID: 99, ListID: 1})
+	if err != nil || result.Issue == nil || result.Cancelable {
+		t.Fatalf("expected missing row issue, result=%+v err=%v", result, err)
+	}
+	if _, err := NewBuildingsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("queue row failed")}}}, "ogame_").PreviewMCPCancelBuildingQueue(context.Background(), 42, domainmcp.CancelBuildingQueueCommand{PlanetID: 99, ListID: 1}); err == nil || !strings.Contains(err.Error(), "queue row failed") {
+		t.Fatalf("expected queue row error, got %v", err)
+	}
+	if _, err := NewBuildingsRepositoryWithQueryer(&fakeQueryer{}, "ogame_").CancelMCPBuildingQueue(context.Background(), 42, domainmcp.CancelBuildingQueueCommand{PlanetID: 99, ListID: 1}); err == nil {
+		t.Fatalf("expected missing writer error")
+	}
+
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}}
+	repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_005, 0) })
+	result, err = repository.CancelMCPBuildingQueue(context.Background(), 42, domainmcp.CancelBuildingQueueCommand{PlanetID: 99, ListID: 1})
+	if err != nil || result.Issue == nil || result.Executed || len(runner.execs) != 0 {
+		t.Fatalf("expected preview issue without writes, result=%+v err=%v exec=%+v", result, err, runner.execs)
+	}
+
+	row := buildQueueRow{ID: 1, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: domaingame.BuildingMetalMine, Level: 1}
+	runner = &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(buildQueueRowValues(row))},
+		{err: errors.New("mutate overview failed")},
+	}}}
+	repository = NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_005, 0) })
+	if _, err := repository.CancelMCPBuildingQueue(context.Background(), 42, domainmcp.CancelBuildingQueueCommand{PlanetID: 99, ListID: 1}); err == nil || !strings.Contains(err.Error(), "mutate overview failed") {
+		t.Fatalf("expected mutate error, got %v", err)
 	}
 }
 

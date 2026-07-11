@@ -92,6 +92,11 @@ type FleetWriteRepository interface {
 	RecallMCPFleet(context.Context, int, domainmcp.RecallFleetCommand) (domainmcp.RecallFleetResult, error)
 }
 
+type QueueWriteRepository interface {
+	PreviewMCPCancelBuildingQueue(context.Context, int, domainmcp.CancelBuildingQueueCommand) (domainmcp.CancelBuildingQueueResult, error)
+	CancelMCPBuildingQueue(context.Context, int, domainmcp.CancelBuildingQueueCommand) (domainmcp.CancelBuildingQueueResult, error)
+}
+
 type TokenSecretGenerator interface {
 	NewMCPToken() (string, error)
 }
@@ -236,6 +241,7 @@ type Service struct {
 	readRepository  ReadRepository
 	writeRepository WriteRepository
 	fleetWrite      FleetWriteRepository
+	queueWrite      QueueWriteRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
 	codeGenerator   OAuthCodeGenerator
@@ -305,6 +311,11 @@ func (s Service) WithFleetWriteRepository(repository FleetWriteRepository) Servi
 	return s
 }
 
+func (s Service) WithQueueWriteRepository(repository QueueWriteRepository) Service {
+	s.queueWrite = repository
+	return s
+}
+
 func (s Service) WithToolCallAuditor(auditor ToolCallAuditor) Service {
 	s.auditor = auditor
 	return s
@@ -355,6 +366,7 @@ func (s Service) OAuthAuthorizationServerMetadata(ctx context.Context, issuer st
 			domainmcp.ScopeMessageWrite,
 			domainmcp.ScopeFleet,
 			domainmcp.ScopeFleetWrite,
+			domainmcp.ScopeQueueWrite,
 		},
 	}
 	if s.oidcSigner != nil {
@@ -375,6 +387,7 @@ func (s Service) OAuthProtectedResourceMetadata(ctx context.Context, resource st
 			domainmcp.ScopeMessageWrite,
 			domainmcp.ScopeFleet,
 			domainmcp.ScopeFleetWrite,
+			domainmcp.ScopeQueueWrite,
 		},
 		BearerMethods: []string{"header"},
 	}
@@ -613,6 +626,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	if access.HasScope(domainmcp.ScopeFleetWrite) && s.fleetWrite != nil {
 		tools = append(tools, validateFleetDispatchTool(), dispatchFleetTool(), recallFleetTool())
 	}
+	if access.HasScope(domainmcp.ScopeQueueWrite) && s.queueWrite != nil {
+		tools = append(tools, cancelBuildingQueueTool())
+	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
 }
 
@@ -757,6 +773,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callDispatchFleet(ctx, access, command.Arguments)
+	case "cancel_building_queue":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeQueueWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callCancelBuildingQueue(ctx, access, command.Arguments)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -1267,6 +1292,50 @@ func (s Service) callRecallFleet(ctx context.Context, access domainmcp.Access, a
 	}, nil
 }
 
+func (s Service) callCancelBuildingQueue(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.queueWrite == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp queue write repository unavailable")
+	}
+	command, err := mcpCancelBuildingQueueCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	confirmation := mcpCancelBuildingQueueConfirmation(command)
+	var result domainmcp.CancelBuildingQueueResult
+	if command.DryRun {
+		result, err = s.queueWrite.PreviewMCPCancelBuildingQueue(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = true
+		result.Executed = false
+		if result.Cancelable && result.Issue == nil {
+			result.RequiresConfirmation = true
+			result.Confirmation = confirmation
+		}
+	} else {
+		if strings.TrimSpace(command.Confirm) != confirmation {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+		}
+		result, err = s.queueWrite.CancelMCPBuildingQueue(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = false
+		result.RequiresConfirmation = false
+		result.Confirmation = confirmation
+	}
+	structured := map[string]any{"cancelBuildingQueue": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
 func (s Service) authenticateSession(ctx context.Context, command TokenManagementCommand) (domainpublicsite.SessionAuthentication, error) {
 	return s.sessions.GetGameSession(ctx, apppublicsite.GameSessionCommand{
 		PublicSession:   command.PublicSession,
@@ -1334,7 +1403,7 @@ func normalizeUserScopes(requested []string) []string {
 
 func userScopeAllowed(scope string) bool {
 	switch scope {
-	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite:
+	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite:
 		return true
 	default:
 		return false
@@ -1854,6 +1923,35 @@ func mcpRecallFleetConfirmation(command domainmcp.RecallFleetCommand) string {
 	payload := strconv.Itoa(command.FleetID)
 	sum := sha256.Sum256([]byte(payload))
 	return fmt.Sprintf("recall_fleet:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
+}
+
+func mcpCancelBuildingQueueCommand(arguments map[string]any) (domainmcp.CancelBuildingQueueCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.CancelBuildingQueueCommand{}, err
+	}
+	listID, err := optionalNonNegativeIntArgument(arguments, "listId")
+	if err != nil || listID <= 0 {
+		return domainmcp.CancelBuildingQueueCommand{}, domainmcp.ErrInvalidParams
+	}
+	dryRun := true
+	if arguments != nil && arguments["dryRun"] != nil {
+		dryRun, err = optionalBoolArgument(arguments, "dryRun")
+		if err != nil {
+			return domainmcp.CancelBuildingQueueCommand{}, err
+		}
+	}
+	confirm, err := optionalStringArgument(arguments, "confirm")
+	if err != nil {
+		return domainmcp.CancelBuildingQueueCommand{}, err
+	}
+	return domainmcp.CancelBuildingQueueCommand{PlanetID: planetID, ListID: listID, DryRun: dryRun, Confirm: confirm}, nil
+}
+
+func mcpCancelBuildingQueueConfirmation(command domainmcp.CancelBuildingQueueCommand) string {
+	payload := fmt.Sprintf("%d:%d", command.PlanetID, command.ListID)
+	sum := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("cancel_building_queue:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
 }
 
 func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
@@ -2768,6 +2866,69 @@ func recallFleetTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"recallFleet"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    false,
+			"destructiveHint": true,
+			"idempotentHint":  false,
+		},
+	}
+}
+
+func cancelBuildingQueueTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "cancel_building_queue",
+		Title:       "Cancel Building Queue",
+		Description: "Cancel one owned building queue row. Defaults to dry-run and requires the returned confirmation string before execution.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"minimum":     1,
+					"description": "Planet id. Omit to use the active planet.",
+				},
+				"listId": map[string]any{
+					"type":        "integer",
+					"minimum":     1,
+					"description": "Building queue list id to cancel.",
+				},
+				"dryRun": map[string]any{
+					"type":        "boolean",
+					"description": "Defaults to true. Set false only with a matching confirmation value.",
+				},
+				"confirm": map[string]any{
+					"type":        "string",
+					"description": "Exact confirmation string returned by a dry-run for the same planetId/listId.",
+				},
+			},
+			"required":             []string{"listId"},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"cancelBuildingQueue": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":             map[string]any{"type": "integer"},
+						"planetId":             map[string]any{"type": "integer"},
+						"listId":               map[string]any{"type": "integer"},
+						"techId":               map[string]any{"type": "integer"},
+						"name":                 map[string]any{"type": "string"},
+						"level":                map[string]any{"type": "integer"},
+						"destroy":              map[string]any{"type": "boolean"},
+						"cancelable":           map[string]any{"type": "boolean"},
+						"dryRun":               map[string]any{"type": "boolean"},
+						"requiresConfirmation": map[string]any{"type": "boolean"},
+						"confirmation":         map[string]any{"type": "string"},
+						"executed":             map[string]any{"type": "boolean"},
+						"issue":                map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "planetId", "listId", "cancelable", "dryRun", "requiresConfirmation", "executed"},
+				},
+			},
+			"required": []string{"cancelBuildingQueue"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    false,

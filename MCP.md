@@ -12,10 +12,7 @@ Implemented:
 - `initialize`, `ping`, `tools/list`, and `tools/call`.
 - Protocol guard for `2025-06-18` and legacy fallback `2025-03-26`.
 - Browser `Origin` guard against DNS rebinding.
-- Clean Architecture packages:
-  - `internal/domain/mcp`
-  - `internal/application/mcp`
-  - `internal/delivery/http`
+- Clean Architecture MCP packages: domain, application, HTTP delivery.
 - First safe read-only tool: `get_server_health`.
 - Static bearer token verifier for early scoped testing.
 - Protected read-only tool: `get_mcp_access`.
@@ -28,9 +25,8 @@ Implemented:
   - Tokens expire after `OGAME_MCP_TOKEN_TTL_SECONDS` seconds; default 30 days,
     `0` disables expiry.
 - React options UI for DB token list/create/one-time secret/revoke.
-- Go MCP smoke E2E: `testing/e2e/golang-mcp-smoke.mjs`, run by
-  `testing/e2e/run-golang-migration-qa.sh`; covers transport guards, DB tokens,
-  OAuth, read/message tools, dry-run mutations, invalid params, expiry, revoke.
+- Go MCP smoke E2E covers transport, tokens, OAuth, read tools, confirmed
+  mutations, invalid params, expiry, revoke.
 - OAuth 2.1 public-client base:
   - `/.well-known/oauth-authorization-server`
   - PRM endpoint and 401 discovery challenge
@@ -57,13 +53,15 @@ Implemented:
   plus returned confirmation string.
 - Authenticated `mcp:fleet_write`: `validate_fleet_dispatch`,
   `dispatch_fleet`, `recall_fleet`; mutations require confirmation.
+- Authenticated `mcp:queue_write`: `cancel_building_queue`; mutation requires
+  dry-run and confirmation.
 
 ## Static Token Format
 
 `OGAME_MCP_STATIC_TOKENS`: `token:player_id:scope1,scope2;next:7:mcp:read`.
 
 Scopes: `mcp:read`, `mcp:messages`, `mcp:message_write`, `mcp:fleet`,
-`mcp:fleet_write`, `mcp:write`, `mcp:admin`.
+`mcp:fleet_write`, `mcp:queue_write`, `mcp:write`, `mcp:admin`.
 
 Static tokens are bootstrap-only; prefer revocable DB-backed user tokens.
 
@@ -78,7 +76,7 @@ Create body:
 Plaintext `secret` is returned once; store it like a password.
 
 User tokens allow: `mcp:read`, `mcp:messages`, `mcp:message_write`,
-`mcp:fleet`, `mcp:fleet_write`.
+`mcp:fleet`, `mcp:fleet_write`, `mcp:queue_write`.
 
 `mcp:write` and `mcp:admin` stay unavailable for self-service user tokens.
 
@@ -89,7 +87,7 @@ narrow scope, consent, audit log, rate limit, dry-run, and confirmation.
 
 ## Next Steps
 
-1. Add queue actions.
+1. Add research and shipyard queue actions.
 
 ## General User Policy
 

@@ -10,6 +10,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type BuildingsRepository struct {
@@ -147,6 +148,66 @@ func (r BuildingsRepository) MutateBuildings(ctx context.Context, query appgame.
 		}
 	}
 	return appgame.BuildingsMutationOutcome{}, nil
+}
+
+func (r BuildingsRepository) PreviewMCPCancelBuildingQueue(ctx context.Context, playerID int, command domainmcp.CancelBuildingQueueCommand) (domainmcp.CancelBuildingQueueResult, error) {
+	if r.queryer == nil {
+		return domainmcp.CancelBuildingQueueResult{}, errors.New("buildings reader unavailable")
+	}
+	buildQueueTable, err := tableName(r.prefix, "buildqueue")
+	if err != nil {
+		return domainmcp.CancelBuildingQueueResult{}, err
+	}
+
+	planetID := command.PlanetID
+	if planetID <= 0 {
+		overviewRepository := OverviewRepository{queryer: r.queryer, prefix: r.prefix, now: r.now}
+		overview, err := overviewRepository.GetOverview(ctx, appgame.OverviewQuery{PlayerID: playerID})
+		if err != nil {
+			return domainmcp.CancelBuildingQueueResult{}, err
+		}
+		planetID = overview.CurrentPlanet.ID
+	}
+
+	result := domainmcp.CancelBuildingQueueResult{PlayerID: playerID, PlanetID: planetID, ListID: command.ListID}
+	row, err := r.loadBuildQueueRow(ctx, buildQueueTable, playerID, planetID, command.ListID)
+	if err != nil {
+		return domainmcp.CancelBuildingQueueResult{}, err
+	}
+	if row == nil {
+		result.Issue = &domainmcp.ActionIssue{Code: "queue_not_found", Message: "Building queue row not found."}
+		return result, nil
+	}
+	name := domaingame.TechnologyName(row.TechID)
+	if name == "" {
+		name = fmt.Sprintf("NAME_%d", row.TechID)
+	}
+	result.TechID = row.TechID
+	result.Name = name
+	result.Level = row.Level
+	result.Destroy = row.Destroy != 0
+	result.Cancelable = true
+	return result, nil
+}
+
+func (r BuildingsRepository) CancelMCPBuildingQueue(ctx context.Context, playerID int, command domainmcp.CancelBuildingQueueCommand) (domainmcp.CancelBuildingQueueResult, error) {
+	if r.execer == nil {
+		return domainmcp.CancelBuildingQueueResult{}, errors.New("buildings updater unavailable")
+	}
+	result, err := r.PreviewMCPCancelBuildingQueue(ctx, playerID, command)
+	if err != nil || result.Issue != nil {
+		return result, err
+	}
+	if _, err := r.MutateBuildings(ctx, appgame.BuildingsMutationQuery{
+		PlayerID: result.PlayerID,
+		PlanetID: result.PlanetID,
+		Action:   domaingame.BuildingsMutationRemove,
+		ListID:   result.ListID,
+	}); err != nil {
+		return domainmcp.CancelBuildingQueueResult{}, err
+	}
+	result.Executed = true
+	return result, nil
 }
 
 func (r BuildingsRepository) acquireBuildingMutationLock(ctx context.Context, playerID int, planetID int) (func(), error) {

@@ -298,6 +298,8 @@ func oauthScopeDescription(scope string) string {
 		return "read fleet-related MCP data when fleet tools are available"
 	case "mcp:fleet_write":
 		return "perform fleet actions only after dry-run and explicit confirmation"
+	case "mcp:queue_write":
+		return "perform queue actions only after dry-run and explicit confirmation"
 	default:
 		return "access requested MCP capability"
 	}

@@ -167,7 +167,7 @@ func TestMCPOAuthAuthorizeConsentRedirectAndToken(t *testing.T) {
 }
 
 func TestMCPOAuthConsentHelpers(t *testing.T) {
-	for _, scope := range []string{"openid", "profile", domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite, "custom"} {
+	for _, scope := range []string{"openid", "profile", domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, "custom"} {
 		if got := oauthScopeDescription(scope); got == "" {
 			t.Fatalf("expected scope description for %q", scope)
 		}

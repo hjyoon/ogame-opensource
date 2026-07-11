@@ -519,9 +519,9 @@ func TestOAuthValidationHelpers(t *testing.T) {
 	if err != nil || strings.Join(scopes, " ") != "profile mcp:read" {
 		t.Fatalf("unexpected normalized scopes=%v err=%v", scopes, err)
 	}
-	scopes, err = normalizeOAuthScopes(domainmcp.ScopeFleetWrite)
-	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeFleetWrite {
-		t.Fatalf("expected fleet write scope to be allowed, got scopes=%v err=%v", scopes, err)
+	scopes, err = normalizeOAuthScopes(domainmcp.ScopeFleetWrite + " " + domainmcp.ScopeQueueWrite)
+	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite {
+		t.Fatalf("expected fleet and queue write scopes to be allowed, got scopes=%v err=%v", scopes, err)
 	}
 	scopes, err = normalizeOAuthScopes("")
 	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeRead {
@@ -686,6 +686,26 @@ func TestServiceListsRecallFleetToolForFleetWriteScope(t *testing.T) {
 	}
 	if strings.Join(names, ",") != "get_server_health,validate_fleet_dispatch,dispatch_fleet,recall_fleet" {
 		t.Fatalf("unexpected fleet-write tools: %v", names)
+	}
+}
+
+func TestServiceListsCancelBuildingQueueToolForQueueWriteScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"queue-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeQueueWrite}},
+		},
+	}).WithQueueWriteRepository(&fakeQueueWriteRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "queue-write"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,cancel_building_queue" {
+		t.Fatalf("unexpected queue-write tools: %v", names)
 	}
 }
 
@@ -1586,6 +1606,90 @@ func TestServiceDispatchFleetRequiresScopeRepositoryAndValidParams(t *testing.T)
 	}
 }
 
+func TestServiceCallsCancelBuildingQueueWithDryRunAndConfirmation(t *testing.T) {
+	repository := &fakeQueueWriteRepository{
+		preview:  domainmcp.CancelBuildingQueueResult{PlayerID: 42, PlanetID: 99, ListID: 2, TechID: 1, Name: "Metal Mine", Level: 3, Cancelable: true},
+		canceled: domainmcp.CancelBuildingQueueResult{PlayerID: 42, PlanetID: 99, ListID: 2, TechID: 1, Name: "Metal Mine", Level: 3, Cancelable: true, Executed: true},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"queue-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeQueueWrite}},
+		},
+	}).WithQueueWriteRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "cancel_building_queue",
+		AccessToken: "queue-write",
+		Arguments:   map[string]any{"planetId": 99, "listId": 2},
+	})
+	if err != nil {
+		t.Fatalf("cancel_building_queue dry-run returned error: %v", err)
+	}
+	dryRun := result.StructuredContent.(map[string]any)["cancelBuildingQueue"].(domainmcp.CancelBuildingQueueResult)
+	if !dryRun.DryRun || dryRun.Executed || !dryRun.RequiresConfirmation || !strings.HasPrefix(dryRun.Confirmation, "cancel_building_queue:") {
+		t.Fatalf("unexpected dry-run result: %+v", dryRun)
+	}
+	if repository.previewPlayerID != 42 || repository.previewCommand.PlanetID != 99 || repository.previewCommand.ListID != 2 {
+		t.Fatalf("unexpected preview command: player=%d command=%+v", repository.previewPlayerID, repository.previewCommand)
+	}
+
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "cancel_building_queue",
+		AccessToken: "queue-write",
+		Arguments:   map[string]any{"planetId": 99, "listId": 2, "dryRun": false, "confirm": dryRun.Confirmation},
+	})
+	if err != nil {
+		t.Fatalf("cancel_building_queue execute returned error: %v", err)
+	}
+	canceled := result.StructuredContent.(map[string]any)["cancelBuildingQueue"].(domainmcp.CancelBuildingQueueResult)
+	if canceled.DryRun || !canceled.Executed || canceled.RequiresConfirmation {
+		t.Fatalf("unexpected execute result: %+v", canceled)
+	}
+	if repository.cancelPlayerID != 42 || repository.cancelCommand.ListID != 2 {
+		t.Fatalf("unexpected cancel command: player=%d command=%+v", repository.cancelPlayerID, repository.cancelCommand)
+	}
+
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "cancel_building_queue", AccessToken: "queue-write", Arguments: map[string]any{"listId": 2, "dryRun": false, "confirm": "wrong"}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected wrong confirmation error, got %v", err)
+	}
+}
+
+func TestServiceCancelBuildingQueueRequiresScopeRepositoryAndValidParams(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":        {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"queue-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeQueueWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "cancel_building_queue", AccessToken: "queue-write", Arguments: map[string]any{"listId": 1}}); err == nil {
+		t.Fatalf("expected missing repository error")
+	}
+
+	service = service.WithQueueWriteRepository(&fakeQueueWriteRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "cancel_building_queue", AccessToken: "read", Arguments: map[string]any{"listId": 1}}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without queue write scope, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "cancel_building_queue", AccessToken: "queue-write", Arguments: map[string]any{"listId": 0}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid list id error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "cancel_building_queue", AccessToken: "queue-write", Arguments: map[string]any{"listId": 1, "dryRun": "no"}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid dry-run error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "cancel_building_queue", AccessToken: "queue-write", Arguments: map[string]any{"listId": 1, "confirm": true}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid confirm error, got %v", err)
+	}
+
+	service = service.WithQueueWriteRepository(&fakeQueueWriteRepository{err: errors.New("queue down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "cancel_building_queue", AccessToken: "queue-write", Arguments: map[string]any{"listId": 1}}); err == nil || !strings.Contains(err.Error(), "queue down") {
+		t.Fatalf("expected repository error, got %v", err)
+	}
+
+	confirm := mcpCancelBuildingQueueConfirmation(domainmcp.CancelBuildingQueueCommand{ListID: 1})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "cancel_building_queue", AccessToken: "queue-write", Arguments: map[string]any{"listId": 1, "dryRun": false, "confirm": confirm}}); err == nil || !strings.Contains(err.Error(), "queue down") {
+		t.Fatalf("expected execute repository error, got %v", err)
+	}
+}
+
 func TestServiceCallsRecallFleetWithDryRunAndConfirmation(t *testing.T) {
 	repository := &fakeFleetWriteRepository{
 		preview:  domainmcp.RecallFleetResult{PlayerID: 42, FleetID: 55, OwnerID: 42, Mission: 3, TotalShips: 2, Recallable: true},
@@ -2087,9 +2191,9 @@ func TestServiceTokenManagementRejectsUnauthenticatedAndPrivilegedScopes(t *test
 	}
 
 	service.sessions = fakeSessionLookup{auth: authenticatedSession(42)}
-	created, err := service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeFleetWrite}})
-	if err != nil || strings.Join(created.Creation.Token.Scopes, " ") != domainmcp.ScopeFleetWrite {
-		t.Fatalf("expected fleet write user token scope to be allowed, created=%+v err=%v", created, err)
+	created, err := service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite}})
+	if err != nil || strings.Join(created.Creation.Token.Scopes, " ") != domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite {
+		t.Fatalf("expected fleet and queue write user token scopes to be allowed, created=%+v err=%v", created, err)
 	}
 	_, err = service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeAdmin}})
 	if !errors.Is(err, ErrInvalidTokenRequest) {
@@ -2473,6 +2577,34 @@ func (f *fakeFleetWriteRepository) RecallMCPFleet(_ context.Context, playerID in
 		return domainmcp.RecallFleetResult{}, f.err
 	}
 	return f.recalled, nil
+}
+
+type fakeQueueWriteRepository struct {
+	preview         domainmcp.CancelBuildingQueueResult
+	canceled        domainmcp.CancelBuildingQueueResult
+	previewPlayerID int
+	cancelPlayerID  int
+	previewCommand  domainmcp.CancelBuildingQueueCommand
+	cancelCommand   domainmcp.CancelBuildingQueueCommand
+	err             error
+}
+
+func (f *fakeQueueWriteRepository) PreviewMCPCancelBuildingQueue(_ context.Context, playerID int, command domainmcp.CancelBuildingQueueCommand) (domainmcp.CancelBuildingQueueResult, error) {
+	f.previewPlayerID = playerID
+	f.previewCommand = command
+	if f.err != nil {
+		return domainmcp.CancelBuildingQueueResult{}, f.err
+	}
+	return f.preview, nil
+}
+
+func (f *fakeQueueWriteRepository) CancelMCPBuildingQueue(_ context.Context, playerID int, command domainmcp.CancelBuildingQueueCommand) (domainmcp.CancelBuildingQueueResult, error) {
+	f.cancelPlayerID = playerID
+	f.cancelCommand = command
+	if f.err != nil {
+		return domainmcp.CancelBuildingQueueResult{}, f.err
+	}
+	return f.canceled, nil
 }
 
 type fakeSessionLookup struct {
