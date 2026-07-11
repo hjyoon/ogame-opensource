@@ -55,7 +55,8 @@ Implemented:
 - Authenticated `mcp:message_write` tools: `send_message`, `delete_messages`,
   `report_message`. All default to dry-run; execution requires `dryRun:false`
   plus returned confirmation string.
-- Authenticated `mcp:fleet_write` tool: `recall_fleet`, dry-run/confirm only.
+- Authenticated `mcp:fleet_write` tools: `validate_fleet_dispatch`
+  (validation only) and `recall_fleet` (dry-run/confirm).
 
 ## Static Token Format
 
@@ -74,8 +75,7 @@ Create body:
 {"name":"Claude Desktop","scopes":["mcp:read"]}
 ```
 
-The plaintext `secret` is returned only in the create response. Persist it in
-the MCP client and treat it like a password.
+Plaintext `secret` is returned once; store it like a password.
 
 User tokens allow: `mcp:read`, `mcp:messages`, `mcp:message_write`,
 `mcp:fleet`, `mcp:fleet_write`.
@@ -84,12 +84,12 @@ User tokens allow: `mcp:read`, `mcp:messages`, `mcp:message_write`,
 
 ## Security Rule
 
-Do not expose broad account/game mutation tools to general users. Each mutation
-needs a narrow scope, consent, audit log, rate limit, dry-run, and confirmation.
+No broad account/game mutation tools for general users. Each mutation needs a
+narrow scope, consent, audit log, rate limit, dry-run, and confirmation.
 
 ## Next Steps
 
-1. Add more scoped dry-run mutation tools: fleet dispatch and queue actions.
+1. Add confirmed `dispatch_fleet`, then queue actions.
 
 ## General User Policy
 

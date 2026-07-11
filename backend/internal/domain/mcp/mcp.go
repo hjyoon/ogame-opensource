@@ -295,6 +295,39 @@ type RecallFleetResult struct {
 	Issue                *ActionIssue `json:"issue,omitempty"`
 }
 
+type DispatchFleetCommand struct {
+	PlanetID        int
+	Ships           map[int]int
+	Resources       FleetResources
+	Target          Coordinates
+	TargetType      int
+	Mission         int
+	Speed           int
+	HoldHours       int
+	ExpeditionHours int
+	UnionID         int
+}
+
+type DispatchFleetValidationResult struct {
+	PlayerID             int          `json:"playerId"`
+	PlanetID             int          `json:"planetId"`
+	Ready                bool         `json:"ready"`
+	DryRun               bool         `json:"dryRun"`
+	RequiresConfirmation bool         `json:"requiresConfirmation"`
+	Confirmation         string       `json:"confirmation,omitempty"`
+	TotalShips           int          `json:"totalShips"`
+	Mission              int          `json:"mission"`
+	Target               Coordinates  `json:"target"`
+	TargetType           int          `json:"targetType"`
+	Speed                int          `json:"speed"`
+	FuelConsumption      int          `json:"fuelConsumption"`
+	Cargo                int          `json:"cargo"`
+	RemainingCargo       int          `json:"remainingCargo"`
+	DurationSeconds      int          `json:"durationSeconds"`
+	Distance             int          `json:"distance"`
+	Issue                *ActionIssue `json:"issue,omitempty"`
+}
+
 type FleetShip struct {
 	ID    int    `json:"id"`
 	Name  string `json:"name"`

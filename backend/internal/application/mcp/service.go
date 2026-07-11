@@ -86,6 +86,7 @@ type WriteRepository interface {
 }
 
 type FleetWriteRepository interface {
+	PreviewMCPDispatchFleet(context.Context, int, domainmcp.DispatchFleetCommand) (domainmcp.DispatchFleetValidationResult, error)
 	PreviewMCPRecallFleet(context.Context, int, domainmcp.RecallFleetCommand) (domainmcp.RecallFleetResult, error)
 	RecallMCPFleet(context.Context, int, domainmcp.RecallFleetCommand) (domainmcp.RecallFleetResult, error)
 }
@@ -609,7 +610,7 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		tools = append(tools, sendMessageTool(), deleteMessagesTool(), reportMessageTool())
 	}
 	if access.HasScope(domainmcp.ScopeFleetWrite) && s.fleetWrite != nil {
-		tools = append(tools, recallFleetTool())
+		tools = append(tools, validateFleetDispatchTool(), recallFleetTool())
 	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
 }
@@ -737,6 +738,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callRecallFleet(ctx, access, command.Arguments)
+	case "validate_fleet_dispatch":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeFleetWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callValidateFleetDispatch(ctx, access, command.Arguments)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -1131,6 +1141,34 @@ func (s Service) callReportMessage(ctx context.Context, access domainmcp.Access,
 		result.Confirmation = confirmation
 	}
 	structured := map[string]any{"reportMessage": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callValidateFleetDispatch(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.fleetWrite == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp fleet write repository unavailable")
+	}
+	command, err := mcpDispatchFleetCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	result, err := s.fleetWrite.PreviewMCPDispatchFleet(ctx, access.PlayerID, command)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	result.DryRun = true
+	if result.Ready && result.Issue == nil {
+		result.RequiresConfirmation = true
+		result.Confirmation = mcpDispatchFleetConfirmation(command)
+	}
+	structured := map[string]any{"fleetDispatchValidation": result}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -1664,6 +1702,91 @@ func mcpReportMessageConfirmation(command domainmcp.ReportMessageCommand) string
 	return fmt.Sprintf("report_message:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
 }
 
+func mcpDispatchFleetCommand(arguments map[string]any) (domainmcp.DispatchFleetCommand, error) {
+	ships, err := intObjectArgument(arguments, "ships")
+	if err != nil || len(ships) == 0 {
+		return domainmcp.DispatchFleetCommand{}, domainmcp.ErrInvalidParams
+	}
+	targetGalaxy, err := optionalNonNegativeIntArgument(arguments, "targetGalaxy")
+	if err != nil || targetGalaxy <= 0 {
+		return domainmcp.DispatchFleetCommand{}, domainmcp.ErrInvalidParams
+	}
+	targetSystem, err := optionalNonNegativeIntArgument(arguments, "targetSystem")
+	if err != nil || targetSystem <= 0 {
+		return domainmcp.DispatchFleetCommand{}, domainmcp.ErrInvalidParams
+	}
+	targetPosition, err := optionalNonNegativeIntArgument(arguments, "targetPosition")
+	if err != nil || targetPosition <= 0 {
+		return domainmcp.DispatchFleetCommand{}, domainmcp.ErrInvalidParams
+	}
+	targetType, err := optionalNonNegativeIntArgument(arguments, "targetType")
+	if err != nil || targetType <= 0 {
+		return domainmcp.DispatchFleetCommand{}, domainmcp.ErrInvalidParams
+	}
+	mission, err := optionalNonNegativeIntArgument(arguments, "mission")
+	if err != nil || mission <= 0 {
+		return domainmcp.DispatchFleetCommand{}, domainmcp.ErrInvalidParams
+	}
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.DispatchFleetCommand{}, err
+	}
+	speed, err := optionalNonNegativeIntArgument(arguments, "speed")
+	if err != nil {
+		return domainmcp.DispatchFleetCommand{}, err
+	}
+	holdHours, err := optionalNonNegativeIntArgument(arguments, "holdHours")
+	if err != nil {
+		return domainmcp.DispatchFleetCommand{}, err
+	}
+	expeditionHours, err := optionalNonNegativeIntArgument(arguments, "expeditionHours")
+	if err != nil {
+		return domainmcp.DispatchFleetCommand{}, err
+	}
+	unionID, err := optionalNonNegativeIntArgument(arguments, "unionId")
+	if err != nil {
+		return domainmcp.DispatchFleetCommand{}, err
+	}
+	resources, err := fleetResourcesArgument(arguments, "resources")
+	if err != nil {
+		return domainmcp.DispatchFleetCommand{}, err
+	}
+	return domainmcp.DispatchFleetCommand{
+		PlanetID:        planetID,
+		Ships:           ships,
+		Resources:       resources,
+		Target:          domainmcp.Coordinates{Galaxy: targetGalaxy, System: targetSystem, Position: targetPosition},
+		TargetType:      targetType,
+		Mission:         mission,
+		Speed:           speed,
+		HoldHours:       holdHours,
+		ExpeditionHours: expeditionHours,
+		UnionID:         unionID,
+	}, nil
+}
+
+func mcpDispatchFleetConfirmation(command domainmcp.DispatchFleetCommand) string {
+	ships := stableIntMapPayload(command.Ships)
+	payload := fmt.Sprintf("%d|%s|%d,%d,%d,%d|%d|%d|%d|%d|%d|%d,%d,%d",
+		command.PlanetID,
+		ships,
+		command.Target.Galaxy,
+		command.Target.System,
+		command.Target.Position,
+		command.TargetType,
+		command.Mission,
+		command.Speed,
+		command.HoldHours,
+		command.ExpeditionHours,
+		command.UnionID,
+		command.Resources.Metal,
+		command.Resources.Crystal,
+		command.Resources.Deuterium,
+	)
+	sum := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("dispatch_fleet:%s", hex.EncodeToString(sum[:])[:16])
+}
+
 func mcpRecallFleetCommand(arguments map[string]any) (domainmcp.RecallFleetCommand, error) {
 	fleetID, err := optionalNonNegativeIntArgument(arguments, "fleetId")
 	if err != nil || fleetID <= 0 {
@@ -1761,6 +1884,79 @@ func positiveIntSliceArgument(arguments map[string]any, name string) ([]int, err
 	}
 	sort.Ints(result)
 	return result, nil
+}
+
+func intObjectArgument(arguments map[string]any, name string) (map[int]int, error) {
+	if arguments == nil {
+		return nil, nil
+	}
+	raw, ok := arguments[name]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	object, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s must be an object", domainmcp.ErrInvalidParams, name)
+	}
+	values := map[int]int{}
+	for key, rawValue := range object {
+		id, err := strconv.Atoi(strings.TrimSpace(key))
+		if err != nil || id <= 0 {
+			return nil, fmt.Errorf("%w: %s contains an invalid id", domainmcp.ErrInvalidParams, name)
+		}
+		count, err := nonNegativeIntValue(rawValue, name+"."+key)
+		if err != nil {
+			return nil, err
+		}
+		if count > 0 {
+			values[id] = count
+		}
+	}
+	return values, nil
+}
+
+func fleetResourcesArgument(arguments map[string]any, name string) (domainmcp.FleetResources, error) {
+	if arguments == nil || arguments[name] == nil {
+		return domainmcp.FleetResources{}, nil
+	}
+	object, ok := arguments[name].(map[string]any)
+	if !ok {
+		return domainmcp.FleetResources{}, fmt.Errorf("%w: %s must be an object", domainmcp.ErrInvalidParams, name)
+	}
+	metal, err := optionalObjectNonNegativeInt(object, "metal")
+	if err != nil {
+		return domainmcp.FleetResources{}, err
+	}
+	crystal, err := optionalObjectNonNegativeInt(object, "crystal")
+	if err != nil {
+		return domainmcp.FleetResources{}, err
+	}
+	deuterium, err := optionalObjectNonNegativeInt(object, "deuterium")
+	if err != nil {
+		return domainmcp.FleetResources{}, err
+	}
+	return domainmcp.FleetResources{Metal: metal, Crystal: crystal, Deuterium: deuterium}, nil
+}
+
+func optionalObjectNonNegativeInt(object map[string]any, name string) (int, error) {
+	raw, ok := object[name]
+	if !ok || raw == nil {
+		return 0, nil
+	}
+	return nonNegativeIntValue(raw, name)
+}
+
+func stableIntMapPayload(values map[int]int) string {
+	keys := make([]int, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Ints(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%d=%d", key, values[key]))
+	}
+	return strings.Join(parts, ",")
 }
 
 func optionalBoolArgument(arguments map[string]any, name string) (bool, error) {
@@ -2351,6 +2547,70 @@ func fleetMovementsTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"fleetMovements"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func validateFleetDispatchTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "validate_fleet_dispatch",
+		Title:       "Validate Fleet Dispatch",
+		Description: "Dry-run a fleet dispatch against the authenticated player's current fleet screen and return readiness, issue, fuel, cargo, and confirmation data.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId":       map[string]any{"type": "integer", "minimum": 1},
+				"ships":          map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer", "minimum": 0}},
+				"resources":      map[string]any{"type": "object", "properties": map[string]any{"metal": map[string]any{"type": "integer", "minimum": 0}, "crystal": map[string]any{"type": "integer", "minimum": 0}, "deuterium": map[string]any{"type": "integer", "minimum": 0}}, "additionalProperties": false},
+				"targetGalaxy":   map[string]any{"type": "integer", "minimum": 1},
+				"targetSystem":   map[string]any{"type": "integer", "minimum": 1},
+				"targetPosition": map[string]any{"type": "integer", "minimum": 1},
+				"targetType":     map[string]any{"type": "integer", "minimum": 1},
+				"mission":        map[string]any{"type": "integer", "minimum": 1},
+				"speed":          map[string]any{"type": "integer", "minimum": 0},
+				"holdHours":      map[string]any{"type": "integer", "minimum": 0},
+				"expeditionHours": map[string]any{
+					"type":    "integer",
+					"minimum": 0,
+				},
+				"unionId": map[string]any{"type": "integer", "minimum": 0},
+			},
+			"required":             []string{"ships", "targetGalaxy", "targetSystem", "targetPosition", "targetType", "mission"},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"fleetDispatchValidation": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":             map[string]any{"type": "integer"},
+						"planetId":             map[string]any{"type": "integer"},
+						"ready":                map[string]any{"type": "boolean"},
+						"dryRun":               map[string]any{"type": "boolean"},
+						"requiresConfirmation": map[string]any{"type": "boolean"},
+						"confirmation":         map[string]any{"type": "string"},
+						"totalShips":           map[string]any{"type": "integer"},
+						"mission":              map[string]any{"type": "integer"},
+						"target":               map[string]any{"type": "object"},
+						"targetType":           map[string]any{"type": "integer"},
+						"speed":                map[string]any{"type": "integer"},
+						"fuelConsumption":      map[string]any{"type": "integer"},
+						"cargo":                map[string]any{"type": "integer"},
+						"remainingCargo":       map[string]any{"type": "integer"},
+						"durationSeconds":      map[string]any{"type": "integer"},
+						"distance":             map[string]any{"type": "integer"},
+						"issue":                map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "planetId", "ready", "dryRun", "requiresConfirmation", "totalShips", "mission", "target", "targetType"},
+				},
+			},
+			"required": []string{"fleetDispatchValidation"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,

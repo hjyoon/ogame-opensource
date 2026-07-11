@@ -684,7 +684,7 @@ func TestServiceListsRecallFleetToolForFleetWriteScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,recall_fleet" {
+	if strings.Join(names, ",") != "get_server_health,validate_fleet_dispatch,recall_fleet" {
 		t.Fatalf("unexpected fleet-write tools: %v", names)
 	}
 }
@@ -1373,6 +1373,127 @@ func TestServiceReportMessageRequiresScopeRepositoryAndValidConfirmation(t *test
 	}
 }
 
+func TestServiceValidatesFleetDispatchWithConfirmation(t *testing.T) {
+	repository := &fakeFleetWriteRepository{
+		dispatchPreview: domainmcp.DispatchFleetValidationResult{
+			PlayerID:        42,
+			PlanetID:        99,
+			Ready:           true,
+			TotalShips:      1,
+			Mission:         3,
+			Target:          domainmcp.Coordinates{Galaxy: 2, System: 3, Position: 4},
+			TargetType:      1,
+			FuelConsumption: 12,
+			Cargo:           5000,
+		},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"fleet-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeFleetWrite}},
+		},
+	}).WithFleetWriteRepository(repository)
+	arguments := map[string]any{
+		"planetId":       99,
+		"ships":          map[string]any{"202": float64(1)},
+		"resources":      map[string]any{"metal": float64(10), "crystal": float64(0), "deuterium": float64(0)},
+		"targetGalaxy":   2,
+		"targetSystem":   3,
+		"targetPosition": 4,
+		"targetType":     1,
+		"mission":        3,
+		"speed":          10,
+	}
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "validate_fleet_dispatch",
+		AccessToken: "fleet-write",
+		Arguments:   arguments,
+	})
+	if err != nil {
+		t.Fatalf("validate_fleet_dispatch returned error: %v", err)
+	}
+	preview := result.StructuredContent.(map[string]any)["fleetDispatchValidation"].(domainmcp.DispatchFleetValidationResult)
+	if !preview.DryRun || !preview.Ready || !preview.RequiresConfirmation || !strings.HasPrefix(preview.Confirmation, "dispatch_fleet:") {
+		t.Fatalf("unexpected dispatch validation: %+v", preview)
+	}
+	if repository.dispatchPreviewPlayerID != 42 || repository.dispatchPreviewCommand.Ships[202] != 1 || repository.dispatchPreviewCommand.Resources.Metal != 10 {
+		t.Fatalf("unexpected dispatch command: player=%d command=%+v", repository.dispatchPreviewPlayerID, repository.dispatchPreviewCommand)
+	}
+}
+
+func TestServiceValidateFleetDispatchIssueDoesNotRequireConfirmation(t *testing.T) {
+	repository := &fakeFleetWriteRepository{
+		dispatchPreview: domainmcp.DispatchFleetValidationResult{
+			PlayerID: 42,
+			PlanetID: 99,
+			Issue: &domainmcp.ActionIssue{
+				Code:    "no_ships",
+				Message: "No ships have been selected.",
+			},
+		},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"fleet-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeFleetWrite}},
+		},
+	}).WithFleetWriteRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "validate_fleet_dispatch",
+		AccessToken: "fleet-write",
+		Arguments: map[string]any{
+			"ships":          map[string]any{"202": 1},
+			"targetGalaxy":   2,
+			"targetSystem":   3,
+			"targetPosition": 4,
+			"targetType":     1,
+			"mission":        3,
+		},
+	})
+	if err != nil {
+		t.Fatalf("validate_fleet_dispatch issue returned error: %v", err)
+	}
+	preview := result.StructuredContent.(map[string]any)["fleetDispatchValidation"].(domainmcp.DispatchFleetValidationResult)
+	if !preview.DryRun || preview.RequiresConfirmation || preview.Confirmation != "" || preview.Issue == nil {
+		t.Fatalf("expected issue validation without confirmation, got %+v", preview)
+	}
+}
+
+func TestServiceValidateFleetDispatchRequiresScopeRepositoryAndValidParams(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"fleet":       {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeFleet}},
+			"fleet-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeFleetWrite}},
+		},
+	})
+	valid := map[string]any{"ships": map[string]any{"202": 1}, "targetGalaxy": 2, "targetSystem": 3, "targetPosition": 4, "targetType": 1, "mission": 3}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "validate_fleet_dispatch", AccessToken: "fleet-write", Arguments: valid}); err == nil {
+		t.Fatalf("expected missing repository error")
+	}
+
+	service = service.WithFleetWriteRepository(&fakeFleetWriteRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "validate_fleet_dispatch", AccessToken: "fleet", Arguments: valid}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without fleet write scope, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "validate_fleet_dispatch", AccessToken: "fleet-write", Arguments: map[string]any{"ships": true}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid ships error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "validate_fleet_dispatch", AccessToken: "fleet-write", Arguments: map[string]any{"ships": map[string]any{"bad": 1}, "targetGalaxy": 2, "targetSystem": 3, "targetPosition": 4, "targetType": 1, "mission": 3}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid ship id error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "validate_fleet_dispatch", AccessToken: "fleet-write", Arguments: map[string]any{"ships": map[string]any{"202": 1}, "resources": true, "targetGalaxy": 2, "targetSystem": 3, "targetPosition": 4, "targetType": 1, "mission": 3}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid resources error, got %v", err)
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "validate_fleet_dispatch", AccessToken: "fleet-write", Arguments: map[string]any{"ships": map[string]any{"202": 1}, "targetGalaxy": 0, "targetSystem": 3, "targetPosition": 4, "targetType": 1, "mission": 3}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid target error, got %v", err)
+	}
+
+	service = service.WithFleetWriteRepository(&fakeFleetWriteRepository{err: errors.New("dispatch down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "validate_fleet_dispatch", AccessToken: "fleet-write", Arguments: valid}); err == nil {
+		t.Fatalf("expected repository error")
+	}
+}
+
 func TestServiceCallsRecallFleetWithDryRunAndConfirmation(t *testing.T) {
 	repository := &fakeFleetWriteRepository{
 		preview:  domainmcp.RecallFleetResult{PlayerID: 42, FleetID: 55, OwnerID: 42, Mission: 3, TotalShips: 2, Recallable: true},
@@ -1508,6 +1629,58 @@ func TestMCPMessageQueryDefaultsCapsAndValidation(t *testing.T) {
 	}
 	if _, err := mcpMessageQuery(map[string]any{"messageType": true}); !errors.Is(err, domainmcp.ErrInvalidParams) {
 		t.Fatalf("expected invalid message type error, got %v", err)
+	}
+}
+
+func TestMCPDispatchFleetCommandValidationEdges(t *testing.T) {
+	valid := func() map[string]any {
+		return map[string]any{
+			"planetId":        99,
+			"ships":           map[string]any{"202": 1},
+			"resources":       map[string]any{"metal": 1, "crystal": 2, "deuterium": 3},
+			"targetGalaxy":    2,
+			"targetSystem":    3,
+			"targetPosition":  4,
+			"targetType":      1,
+			"mission":         3,
+			"speed":           10,
+			"holdHours":       0,
+			"expeditionHours": 0,
+			"unionId":         0,
+		}
+	}
+	command, err := mcpDispatchFleetCommand(valid())
+	if err != nil || command.PlanetID != 99 || command.Ships[202] != 1 || command.Resources.Deuterium != 3 || command.Target.Position != 4 {
+		t.Fatalf("unexpected valid dispatch command: %+v err=%v", command, err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{name: "missing ships", mutate: func(arguments map[string]any) { delete(arguments, "ships") }},
+		{name: "zero ships", mutate: func(arguments map[string]any) { arguments["ships"] = map[string]any{"202": 0} }},
+		{name: "bad ship count", mutate: func(arguments map[string]any) { arguments["ships"] = map[string]any{"202": "x"} }},
+		{name: "bad target galaxy", mutate: func(arguments map[string]any) { arguments["targetGalaxy"] = 0 }},
+		{name: "bad target system", mutate: func(arguments map[string]any) { arguments["targetSystem"] = 0 }},
+		{name: "bad target position", mutate: func(arguments map[string]any) { arguments["targetPosition"] = 0 }},
+		{name: "bad target type", mutate: func(arguments map[string]any) { arguments["targetType"] = 0 }},
+		{name: "bad mission", mutate: func(arguments map[string]any) { arguments["mission"] = 0 }},
+		{name: "bad planet", mutate: func(arguments map[string]any) { arguments["planetId"] = "x" }},
+		{name: "bad speed", mutate: func(arguments map[string]any) { arguments["speed"] = "x" }},
+		{name: "bad hold", mutate: func(arguments map[string]any) { arguments["holdHours"] = "x" }},
+		{name: "bad expedition", mutate: func(arguments map[string]any) { arguments["expeditionHours"] = "x" }},
+		{name: "bad union", mutate: func(arguments map[string]any) { arguments["unionId"] = "x" }},
+		{name: "bad resource value", mutate: func(arguments map[string]any) { arguments["resources"] = map[string]any{"metal": "x"} }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			arguments := valid()
+			tt.mutate(arguments)
+			if _, err := mcpDispatchFleetCommand(arguments); !errors.Is(err, domainmcp.ErrInvalidParams) {
+				t.Fatalf("expected invalid params, got %v", err)
+			}
+		})
 	}
 }
 
@@ -2159,13 +2332,25 @@ func (f *fakeWriteRepository) ReportMCPMessage(_ context.Context, playerID int, 
 }
 
 type fakeFleetWriteRepository struct {
-	preview         domainmcp.RecallFleetResult
-	recalled        domainmcp.RecallFleetResult
-	previewPlayerID int
-	recallPlayerID  int
-	previewCommand  domainmcp.RecallFleetCommand
-	recallCommand   domainmcp.RecallFleetCommand
-	err             error
+	dispatchPreview         domainmcp.DispatchFleetValidationResult
+	preview                 domainmcp.RecallFleetResult
+	recalled                domainmcp.RecallFleetResult
+	dispatchPreviewPlayerID int
+	previewPlayerID         int
+	recallPlayerID          int
+	dispatchPreviewCommand  domainmcp.DispatchFleetCommand
+	previewCommand          domainmcp.RecallFleetCommand
+	recallCommand           domainmcp.RecallFleetCommand
+	err                     error
+}
+
+func (f *fakeFleetWriteRepository) PreviewMCPDispatchFleet(_ context.Context, playerID int, command domainmcp.DispatchFleetCommand) (domainmcp.DispatchFleetValidationResult, error) {
+	f.dispatchPreviewPlayerID = playerID
+	f.dispatchPreviewCommand = command
+	if f.err != nil {
+		return domainmcp.DispatchFleetValidationResult{}, f.err
+	}
+	return f.dispatchPreview, nil
 }
 
 func (f *fakeFleetWriteRepository) PreviewMCPRecallFleet(_ context.Context, playerID int, command domainmcp.RecallFleetCommand) (domainmcp.RecallFleetResult, error) {

@@ -50,6 +50,54 @@ func TestFleetRepositoryReadsLegacyFleetScreen(t *testing.T) {
 	}
 }
 
+func TestFleetRepositoryPreviewsMCPDispatchFleet(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: append(fleetReadPrefixResults(now),
+		fakeQueryResult{rows: fakeRowsFromValues(fleetMissionRow(domaingame.FleetMissionTransport, map[int]int{domaingame.FleetSmallCargo: 2}, 100, 200))},
+		fakeQueryResult{rows: fakeRowsFromValues(templateRow(7, "raid wing", 900, map[int]int{domaingame.FleetSmallCargo: 2}))},
+	)}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	result, err := repository.PreviewMCPDispatchFleet(context.Background(), 42, domainmcp.DispatchFleetCommand{
+		Ships:      map[int]int{domaingame.FleetSmallCargo: 0},
+		Target:     domainmcp.Coordinates{Galaxy: 2, System: 3, Position: 4},
+		TargetType: domaingame.GamePlanetTypePlanet,
+		Mission:    domaingame.FleetMissionTransport,
+		Speed:      10,
+	})
+	if err != nil {
+		t.Fatalf("PreviewMCPDispatchFleet returned error: %v", err)
+	}
+	if result.PlayerID != 42 || result.PlanetID != 99 || result.Ready || result.Issue == nil || result.Issue.Code != domaingame.FleetIssueNoShips {
+		t.Fatalf("unexpected dispatch validation: %+v", result)
+	}
+	if len(runner.execCalls) != 0 {
+		t.Fatalf("dispatch validation must not mutate fleet queues: %+v", runner.execCalls)
+	}
+	if mcpFleetActionIssue(nil) != nil {
+		t.Fatalf("nil fleet issue should stay nil")
+	}
+}
+
+func TestFleetRepositoryPreviewMCPDispatchFleetEdges(t *testing.T) {
+	command := domainmcp.DispatchFleetCommand{
+		Ships:      map[int]int{domaingame.FleetSmallCargo: 1},
+		Target:     domainmcp.Coordinates{Galaxy: 2, System: 3, Position: 4},
+		TargetType: domaingame.GamePlanetTypePlanet,
+		Mission:    domaingame.FleetMissionTransport,
+	}
+	if _, err := (FleetRepository{}).PreviewMCPDispatchFleet(context.Background(), 42, command); err == nil {
+		t.Fatalf("expected nil queryer error")
+	}
+	if _, err := NewFleetRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_", nil).PreviewMCPDispatchFleet(context.Background(), 42, command); err == nil {
+		t.Fatalf("expected invalid prefix error")
+	}
+	repository := NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("fleet read failed")}}}, "ogame_", nil)
+	if _, err := repository.PreviewMCPDispatchFleet(context.Background(), 42, command); err == nil || !strings.Contains(err.Error(), "fleet read failed") {
+		t.Fatalf("expected fleet read error, got %v", err)
+	}
+}
+
 func TestFleetRepositorySkipsTemplatesForNonCommanderFleetScreen(t *testing.T) {
 	now := time.Unix(1_000, 0)
 	queryer := &fakeQueryer{results: append(fleetCountsPrefixResults(),

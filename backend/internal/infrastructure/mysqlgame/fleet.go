@@ -725,6 +725,49 @@ func (r FleetRepository) RecallFleetAnyOwner(ctx context.Context, fleetID int) e
 	return r.recallFleet(ctx, fleetID, r.loadRecallFleetAnyOwner, 0)
 }
 
+func (r FleetRepository) PreviewMCPDispatchFleet(ctx context.Context, playerID int, command domainmcp.DispatchFleetCommand) (domainmcp.DispatchFleetValidationResult, error) {
+	if r.queryer == nil {
+		return domainmcp.DispatchFleetValidationResult{}, errors.New("fleet reader unavailable")
+	}
+	reader := r
+	reader.finishDueQueues = false
+	fleet, err := reader.GetFleet(ctx, appgame.FleetQuery{PlayerID: playerID, PlanetID: command.PlanetID})
+	if err != nil {
+		return domainmcp.DispatchFleetValidationResult{}, err
+	}
+	draft, issue := domaingame.BuildFleetDispatchValidation(fleet, domaingame.FleetDispatchValidationInput{
+		Ships:           command.Ships,
+		Resources:       mcpFleetResources(command.Resources),
+		Target:          mcpCoordinates(command.Target),
+		TargetType:      command.TargetType,
+		Mission:         command.Mission,
+		Speed:           command.Speed,
+		HoldHours:       command.HoldHours,
+		ExpeditionHours: command.ExpeditionHours,
+		UnionID:         command.UnionID,
+	})
+	planetID := command.PlanetID
+	if planetID <= 0 {
+		planetID = fleet.CurrentPlanet.ID
+	}
+	return domainmcp.DispatchFleetValidationResult{
+		PlayerID:        playerID,
+		PlanetID:        planetID,
+		Ready:           draft.Ready,
+		TotalShips:      draft.TotalShips,
+		Mission:         draft.Mission,
+		Target:          mcpCoordinatesFromGame(draft.Target),
+		TargetType:      draft.TargetType,
+		Speed:           draft.Speed,
+		FuelConsumption: draft.FuelConsumption,
+		Cargo:           draft.Cargo,
+		RemainingCargo:  draft.RemainingCargo,
+		DurationSeconds: draft.DurationSeconds,
+		Distance:        draft.Distance,
+		Issue:           mcpFleetActionIssue(issue),
+	}, nil
+}
+
 func (r FleetRepository) PreviewMCPRecallFleet(ctx context.Context, playerID int, command domainmcp.RecallFleetCommand) (domainmcp.RecallFleetResult, error) {
 	if r.queryer == nil {
 		return domainmcp.RecallFleetResult{}, errors.New("fleet reader unavailable")
@@ -1929,6 +1972,29 @@ func totalFleetShips(ships domaingame.FleetCounts) int {
 
 func mcpFleetIssue(code string, message string) *domainmcp.ActionIssue {
 	return &domainmcp.ActionIssue{Code: code, Message: message}
+}
+
+func mcpFleetActionIssue(issue *domaingame.FleetActionIssue) *domainmcp.ActionIssue {
+	if issue == nil {
+		return nil
+	}
+	return &domainmcp.ActionIssue{Code: issue.Code, Message: issue.Message}
+}
+
+func mcpCoordinates(coordinates domainmcp.Coordinates) domaingame.Coordinates {
+	return domaingame.Coordinates{Galaxy: coordinates.Galaxy, System: coordinates.System, Position: coordinates.Position}
+}
+
+func mcpCoordinatesFromGame(coordinates domaingame.Coordinates) domainmcp.Coordinates {
+	return domainmcp.Coordinates{Galaxy: coordinates.Galaxy, System: coordinates.System, Position: coordinates.Position}
+}
+
+func mcpFleetResources(resources domainmcp.FleetResources) map[int]int {
+	return map[int]int{
+		resourceMetal:     resources.Metal,
+		resourceCrystal:   resources.Crystal,
+		resourceDeuterium: resources.Deuterium,
+	}
 }
 
 func fleetLaunchPlanetType(targetType int) int {
