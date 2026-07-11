@@ -339,6 +339,32 @@ type CancelResearchQueueResult struct {
 	Issue                *ActionIssue `json:"issue,omitempty"`
 }
 
+type EnqueueShipyardOrderCommand struct {
+	PlanetID int
+	Kind     string
+	ItemID   int
+	Amount   int
+	DryRun   bool
+	Confirm  string
+}
+
+type EnqueueShipyardOrderResult struct {
+	PlayerID             int          `json:"playerId"`
+	PlanetID             int          `json:"planetId"`
+	Kind                 string       `json:"kind"`
+	ItemID               int          `json:"itemId"`
+	Name                 string       `json:"name,omitempty"`
+	Requested            int          `json:"requested"`
+	Amount               int          `json:"amount"`
+	MaxBuild             int          `json:"maxBuild,omitempty"`
+	DurationSeconds      int          `json:"durationSeconds,omitempty"`
+	DryRun               bool         `json:"dryRun"`
+	RequiresConfirmation bool         `json:"requiresConfirmation"`
+	Confirmation         string       `json:"confirmation,omitempty"`
+	Executed             bool         `json:"executed"`
+	Issue                *ActionIssue `json:"issue,omitempty"`
+}
+
 type DispatchFleetCommand struct {
 	PlanetID        int
 	Ships           map[int]int

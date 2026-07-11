@@ -704,7 +704,7 @@ func TestServiceListsCancelBuildingQueueToolForQueueWriteScope(t *testing.T) {
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 	}
-	if strings.Join(names, ",") != "get_server_health,cancel_building_queue,cancel_research_queue" {
+	if strings.Join(names, ",") != "get_server_health,cancel_building_queue,cancel_research_queue,enqueue_shipyard_order" {
 		t.Fatalf("unexpected queue-write tools: %v", names)
 	}
 }
@@ -1770,6 +1770,103 @@ func TestServiceCancelResearchQueueRequiresScopeRepositoryAndValidParams(t *test
 	}
 }
 
+func TestServiceCallsEnqueueShipyardOrderWithDryRunAndConfirmation(t *testing.T) {
+	repository := &fakeQueueWriteRepository{
+		shipyardPreview:  domainmcp.EnqueueShipyardOrderResult{PlayerID: 42, PlanetID: 99, Kind: "fleet", ItemID: 204, Name: "Light Fighter", Requested: 2, Amount: 2, MaxBuild: 10, DurationSeconds: 5},
+		shipyardEnqueued: domainmcp.EnqueueShipyardOrderResult{PlayerID: 42, PlanetID: 99, Kind: "fleet", ItemID: 204, Name: "Light Fighter", Requested: 2, Amount: 2, MaxBuild: 10, DurationSeconds: 5, Executed: true},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"queue-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeQueueWrite}},
+		},
+	}).WithQueueWriteRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "enqueue_shipyard_order",
+		AccessToken: "queue-write",
+		Arguments:   map[string]any{"planetId": 99, "kind": "fleet", "itemId": 204, "amount": 2},
+	})
+	if err != nil {
+		t.Fatalf("enqueue_shipyard_order dry-run returned error: %v", err)
+	}
+	dryRun := result.StructuredContent.(map[string]any)["enqueueShipyardOrder"].(domainmcp.EnqueueShipyardOrderResult)
+	if !dryRun.DryRun || dryRun.Executed || !dryRun.RequiresConfirmation || !strings.HasPrefix(dryRun.Confirmation, "enqueue_shipyard_order:99:fleet:204:2:") {
+		t.Fatalf("unexpected dry-run result: %+v", dryRun)
+	}
+	if repository.shipyardPreviewPlayerID != 42 || repository.shipyardPreviewCommand.PlanetID != 99 || repository.shipyardPreviewCommand.Kind != "fleet" || repository.shipyardPreviewCommand.ItemID != 204 || repository.shipyardPreviewCommand.Amount != 2 {
+		t.Fatalf("unexpected preview command: player=%d command=%+v", repository.shipyardPreviewPlayerID, repository.shipyardPreviewCommand)
+	}
+
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "enqueue_shipyard_order",
+		AccessToken: "queue-write",
+		Arguments:   map[string]any{"planetId": 99, "kind": "fleet", "itemId": 204, "amount": 2, "dryRun": false, "confirm": dryRun.Confirmation},
+	})
+	if err != nil {
+		t.Fatalf("enqueue_shipyard_order execute returned error: %v", err)
+	}
+	enqueued := result.StructuredContent.(map[string]any)["enqueueShipyardOrder"].(domainmcp.EnqueueShipyardOrderResult)
+	if enqueued.DryRun || !enqueued.Executed || enqueued.RequiresConfirmation {
+		t.Fatalf("unexpected execute result: %+v", enqueued)
+	}
+	if repository.shipyardEnqueuePlayerID != 42 || repository.shipyardEnqueueCommand.Confirm != dryRun.Confirmation {
+		t.Fatalf("unexpected enqueue command: player=%d command=%+v", repository.shipyardEnqueuePlayerID, repository.shipyardEnqueueCommand)
+	}
+
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "enqueue_shipyard_order", AccessToken: "queue-write", Arguments: map[string]any{"planetId": 99, "kind": "fleet", "itemId": 204, "amount": 2, "dryRun": false, "confirm": "wrong"}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected wrong confirmation error, got %v", err)
+	}
+}
+
+func TestServiceEnqueueShipyardOrderRequiresScopeRepositoryAndValidParams(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":        {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"queue-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeQueueWrite}},
+		},
+	})
+	valid := map[string]any{"kind": "defense", "itemId": 401, "amount": 1}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "enqueue_shipyard_order", AccessToken: "queue-write", Arguments: valid}); err == nil {
+		t.Fatalf("expected missing repository error")
+	}
+
+	service = service.WithQueueWriteRepository(&fakeQueueWriteRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "enqueue_shipyard_order", AccessToken: "read", Arguments: valid}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without queue write scope, got %v", err)
+	}
+	for _, arguments := range []map[string]any{
+		{"planetId": "bad", "kind": "fleet", "itemId": 204, "amount": 1},
+		{"kind": true, "itemId": 401, "amount": 1},
+		{"kind": "bad", "itemId": 401, "amount": 1},
+		{"kind": "fleet", "itemId": 0, "amount": 1},
+		{"kind": "fleet", "itemId": 204, "amount": 0},
+		{"kind": "fleet", "itemId": 204, "amount": 1, "dryRun": "no"},
+		{"kind": "fleet", "itemId": 204, "amount": 1, "confirm": true},
+	} {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "enqueue_shipyard_order", AccessToken: "queue-write", Arguments: arguments}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", arguments, err)
+		}
+	}
+
+	service = service.WithQueueWriteRepository(&fakeQueueWriteRepository{err: errors.New("queue down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "enqueue_shipyard_order", AccessToken: "queue-write", Arguments: valid}); err == nil || !strings.Contains(err.Error(), "queue down") {
+		t.Fatalf("expected repository error, got %v", err)
+	}
+
+	command, err := mcpEnqueueShipyardOrderCommand(valid)
+	if err != nil {
+		t.Fatalf("valid command error: %v", err)
+	}
+	defaultCommand, err := mcpEnqueueShipyardOrderCommand(map[string]any{"itemId": "204", "amount": 2})
+	if err != nil || defaultCommand.Kind != "fleet" || !defaultCommand.DryRun || defaultCommand.ItemID != 204 || defaultCommand.Amount != 2 {
+		t.Fatalf("unexpected default command=%+v err=%v", defaultCommand, err)
+	}
+	confirm := mcpEnqueueShipyardOrderConfirmation(command)
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "enqueue_shipyard_order", AccessToken: "queue-write", Arguments: map[string]any{"kind": "defense", "itemId": 401, "amount": 1, "dryRun": false, "confirm": confirm}}); err == nil || !strings.Contains(err.Error(), "queue down") {
+		t.Fatalf("expected execute repository error, got %v", err)
+	}
+}
+
 func TestServiceCallsRecallFleetWithDryRunAndConfirmation(t *testing.T) {
 	repository := &fakeFleetWriteRepository{
 		preview:  domainmcp.RecallFleetResult{PlayerID: 42, FleetID: 55, OwnerID: 42, Mission: 3, TotalShips: 2, Recallable: true},
@@ -2664,14 +2761,20 @@ type fakeQueueWriteRepository struct {
 	canceled                domainmcp.CancelBuildingQueueResult
 	researchPreview         domainmcp.CancelResearchQueueResult
 	researchCanceled        domainmcp.CancelResearchQueueResult
+	shipyardPreview         domainmcp.EnqueueShipyardOrderResult
+	shipyardEnqueued        domainmcp.EnqueueShipyardOrderResult
 	previewPlayerID         int
 	cancelPlayerID          int
 	researchPreviewPlayerID int
 	researchCancelPlayerID  int
+	shipyardPreviewPlayerID int
+	shipyardEnqueuePlayerID int
 	previewCommand          domainmcp.CancelBuildingQueueCommand
 	cancelCommand           domainmcp.CancelBuildingQueueCommand
 	researchPreviewCommand  domainmcp.CancelResearchQueueCommand
 	researchCancelCommand   domainmcp.CancelResearchQueueCommand
+	shipyardPreviewCommand  domainmcp.EnqueueShipyardOrderCommand
+	shipyardEnqueueCommand  domainmcp.EnqueueShipyardOrderCommand
 	err                     error
 }
 
@@ -2709,6 +2812,24 @@ func (f *fakeQueueWriteRepository) CancelMCPResearchQueue(_ context.Context, pla
 		return domainmcp.CancelResearchQueueResult{}, f.err
 	}
 	return f.researchCanceled, nil
+}
+
+func (f *fakeQueueWriteRepository) PreviewMCPEnqueueShipyardOrder(_ context.Context, playerID int, command domainmcp.EnqueueShipyardOrderCommand) (domainmcp.EnqueueShipyardOrderResult, error) {
+	f.shipyardPreviewPlayerID = playerID
+	f.shipyardPreviewCommand = command
+	if f.err != nil {
+		return domainmcp.EnqueueShipyardOrderResult{}, f.err
+	}
+	return f.shipyardPreview, nil
+}
+
+func (f *fakeQueueWriteRepository) EnqueueMCPShipyardOrder(_ context.Context, playerID int, command domainmcp.EnqueueShipyardOrderCommand) (domainmcp.EnqueueShipyardOrderResult, error) {
+	f.shipyardEnqueuePlayerID = playerID
+	f.shipyardEnqueueCommand = command
+	if f.err != nil {
+		return domainmcp.EnqueueShipyardOrderResult{}, f.err
+	}
+	return f.shipyardEnqueued, nil
 }
 
 type fakeSessionLookup struct {

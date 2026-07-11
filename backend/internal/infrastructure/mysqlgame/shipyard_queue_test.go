@@ -10,6 +10,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestShipyardRepositoryMutateShipyardEnqueuesFleetOrder(t *testing.T) {
@@ -70,6 +71,147 @@ func TestDefenseRepositoryMutateDefenseEnqueuesDefenseOrder(t *testing.T) {
 	}
 	if runner.execs[1].args[1] != queueTypeShipyard || runner.execs[1].args[3] != domaingame.DefenseRocketLauncher || runner.execs[1].args[4] != 2 {
 		t.Fatalf("unexpected queue insert args: %+v", runner.execs[1].args)
+	}
+}
+
+func TestShipyardRepositoryMCPEnqueueShipyardOrderPreviewAndExecute(t *testing.T) {
+	now := time.Unix(1_700, 0)
+	research := map[int]int{domaingame.ResearchCombustionDrive: 1}
+	levels := map[int]int{domaingame.BuildingShipyard: 1}
+	results := append(
+		shipyardMCPPreviewResults(research, levels, true),
+		append(shipyardMCPPreviewResults(research, levels, true),
+			append(shipyardMutationPrefixResults(research, levels),
+				fakeQueryResult{rows: fakeRowsFromValues(fleetCountRow(nil))},
+				fakeQueryResult{rows: fakeRowsFromValues()},
+			)...,
+		)...,
+	)
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewShipyardRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	command := domainmcp.EnqueueShipyardOrderCommand{PlanetID: 99, Kind: "fleet", ItemID: domaingame.FleetLightFighter, Amount: 2}
+
+	preview, err := repository.PreviewMCPEnqueueShipyardOrder(context.Background(), 42, command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Issue != nil || preview.PlayerID != 42 || preview.PlanetID != 99 || preview.Kind != "fleet" || preview.Name != "Light Fighter" || preview.Amount != 2 || preview.MaxBuild <= 0 || preview.DurationSeconds <= 0 {
+		t.Fatalf("unexpected preview: %+v", preview)
+	}
+
+	enqueued, err := repository.EnqueueMCPShipyardOrder(context.Background(), 42, command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !enqueued.Executed || enqueued.Issue != nil || enqueued.Amount != 2 {
+		t.Fatalf("unexpected enqueue result: %+v", enqueued)
+	}
+	if len(runner.execs) != 2 || runner.execs[1].args[1] != queueTypeShipyard || runner.execs[1].args[3] != domaingame.FleetLightFighter || runner.execs[1].args[4] != 2 {
+		t.Fatalf("expected legacy shipyard queue insert, got %+v", runner.execs)
+	}
+}
+
+func TestShipyardRepositoryMCPEnqueueShipyardOrderDefensePreview(t *testing.T) {
+	queryer := &fakeQueryer{results: shipyardMCPPreviewResults(nil, map[int]int{domaingame.BuildingShipyard: 1}, false)}
+	repository := NewShipyardRepositoryWithQueryer(queryer, "ogame_")
+
+	preview, err := repository.PreviewMCPEnqueueShipyardOrder(context.Background(), 42, domainmcp.EnqueueShipyardOrderCommand{PlanetID: 99, Kind: "defense", ItemID: domaingame.DefenseRocketLauncher, Amount: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Issue != nil || preview.Kind != "defense" || preview.Name != "Rocket Launcher" || preview.Amount != 2 {
+		t.Fatalf("unexpected defense preview: %+v", preview)
+	}
+}
+
+func TestShipyardRepositoryMCPEnqueueShipyardOrderDefenseExecute(t *testing.T) {
+	now := time.Unix(1_700, 0)
+	levels := map[int]int{domaingame.BuildingShipyard: 1}
+	results := append(
+		shipyardMCPPreviewResults(nil, levels, false),
+		append(shipyardMutationPrefixResults(nil, levels),
+			fakeQueryResult{rows: fakeRowsFromValues()},
+		)...,
+	)
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewShipyardRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	enqueued, err := repository.EnqueueMCPShipyardOrder(context.Background(), 42, domainmcp.EnqueueShipyardOrderCommand{PlanetID: 99, Kind: "defense", ItemID: domaingame.DefenseRocketLauncher, Amount: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !enqueued.Executed || enqueued.Issue != nil || enqueued.Kind != "defense" || enqueued.Amount != 2 {
+		t.Fatalf("unexpected defense enqueue result: %+v", enqueued)
+	}
+	if len(runner.execs) != 2 || runner.execs[1].args[1] != queueTypeShipyard || runner.execs[1].args[3] != domaingame.DefenseRocketLauncher || runner.execs[1].args[4] != 2 {
+		t.Fatalf("expected legacy defense queue insert, got %+v", runner.execs)
+	}
+}
+
+func TestShipyardRepositoryMCPEnqueueShipyardOrderEdges(t *testing.T) {
+	if _, err := (ShipyardRepository{}).PreviewMCPEnqueueShipyardOrder(context.Background(), 42, domainmcp.EnqueueShipyardOrderCommand{Kind: "fleet", ItemID: domaingame.FleetLightFighter, Amount: 1}); err == nil {
+		t.Fatal("expected missing reader error")
+	}
+	if _, err := (ShipyardRepository{}).EnqueueMCPShipyardOrder(context.Background(), 42, domainmcp.EnqueueShipyardOrderCommand{Kind: "fleet", ItemID: domaingame.FleetLightFighter, Amount: 1}); err == nil {
+		t.Fatal("expected missing updater error")
+	}
+
+	result, err := NewShipyardRepositoryWithQueryer(&fakeQueryer{}, "ogame_").PreviewMCPEnqueueShipyardOrder(context.Background(), 42, domainmcp.EnqueueShipyardOrderCommand{Kind: "bad", ItemID: domaingame.FleetLightFighter, Amount: 1})
+	if err != nil || result.Issue == nil || result.Issue.Code != domaingame.BuildingsIssueInvalid {
+		t.Fatalf("expected invalid kind issue, result=%+v err=%v", result, err)
+	}
+
+	queryer := &fakeQueryer{results: shipyardMCPPreviewResults(map[int]int{domaingame.ResearchCombustionDrive: 1}, map[int]int{domaingame.BuildingShipyard: 1}, true)}
+	result, err = NewShipyardRepositoryWithQueryer(queryer, "ogame_").PreviewMCPEnqueueShipyardOrder(context.Background(), 42, domainmcp.EnqueueShipyardOrderCommand{PlanetID: 99, Kind: "fleet", ItemID: 999999, Amount: 1})
+	if err != nil || result.Issue == nil || result.Issue.Code != domaingame.BuildingsIssueInvalid {
+		t.Fatalf("expected unknown item issue, result=%+v err=%v", result, err)
+	}
+
+	_, err = NewShipyardRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("state failed")}}}, "ogame_").PreviewMCPEnqueueShipyardOrder(context.Background(), 42, domainmcp.EnqueueShipyardOrderCommand{PlanetID: 99, Kind: "fleet", ItemID: domaingame.FleetLightFighter, Amount: 1})
+	if err == nil || !strings.Contains(err.Error(), "state failed") {
+		t.Fatalf("expected state error, got %v", err)
+	}
+
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: append(
+		shipyardMCPPreviewResults(map[int]int{domaingame.ResearchCombustionDrive: 1}, map[int]int{domaingame.BuildingShipyard: 1}, true),
+		fakeQueryResult{err: errors.New("mutate failed")},
+	)}}
+	_, err = NewShipyardRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(1_700, 0) }).EnqueueMCPShipyardOrder(context.Background(), 42, domainmcp.EnqueueShipyardOrderCommand{PlanetID: 99, Kind: "fleet", ItemID: domaingame.FleetLightFighter, Amount: 1})
+	if err == nil || !strings.Contains(err.Error(), "mutate failed") {
+		t.Fatalf("expected mutate error, got %v", err)
+	}
+}
+
+func TestShipyardPreviewOrderIssueBranches(t *testing.T) {
+	item := domaingame.ShipyardItem{MeetsRequirement: true, MaxBuild: 1}
+	tests := []struct {
+		name   string
+		state  shipyardMutationState
+		item   domaingame.ShipyardItem
+		amount int
+		want   string
+	}{
+		{name: "vacation", state: shipyardMutationState{user: buildingMutationUser{Vacation: true}}, item: item, amount: 1, want: domaingame.BuildingsIssueVacation},
+		{name: "frozen", state: shipyardMutationState{config: shipyardMutationConfig{Frozen: true}}, item: item, amount: 1, want: domaingame.BuildingsIssueUniversePause},
+		{name: "requirements", item: domaingame.ShipyardItem{MeetsRequirement: false}, amount: 1, want: domaingame.BuildingsIssueRequirements},
+		{name: "busy", item: domaingame.ShipyardItem{MeetsRequirement: true, BlockedReason: "busy", MaxBuild: 1}, amount: 1, want: domaingame.BuildingsIssueBusy},
+		{name: "queue full", state: shipyardMutationState{queueRows: make([]buildingQueueTask, maxShipyardOrders)}, item: item, amount: 1, want: domaingame.BuildingsIssueQueueFull},
+		{name: "no resources", item: item, amount: 0, want: domaingame.BuildingsIssueNoResources},
+		{name: "ok", item: item, amount: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			issue := shipyardPreviewOrderIssue(tt.state, tt.item, tt.amount)
+			if tt.want == "" {
+				if issue != nil {
+					t.Fatalf("expected no issue, got %+v", issue)
+				}
+				return
+			}
+			if issue == nil || issue.Code != tt.want {
+				t.Fatalf("expected issue %q, got %+v", tt.want, issue)
+			}
+		})
 	}
 }
 
@@ -751,6 +893,22 @@ func shipyardMutationPrefixResults(research map[int]int, levels map[int]int) []f
 		fakeQueryResult{rows: fakeRowsFromValues(defenseCountRow(nil))},
 		fakeQueryResult{rows: fakeRowsFromValues()},
 	)...)
+}
+
+func shipyardMCPPreviewResults(research map[int]int, levels map[int]int, fleet bool) []fakeQueryResult {
+	results := append([]fakeQueryResult{
+		{rows: fakeRowsFromValues(shipyardMutationUserRow(0, 0, research))},
+		{rows: fakeRowsFromValues([]any{1.0, 999, 0})},
+	}, append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(buildingLevelRow(levels))},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+		fakeQueryResult{rows: fakeRowsFromValues(defenseCountRow(nil))},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+	)...)
+	if fleet {
+		results = append(results, fakeQueryResult{rows: fakeRowsFromValues(fleetCountRow(nil))})
+	}
+	return results
 }
 
 func shipyardMutationUserRow(vacation int, commanderUntil int64, research map[int]int) []any {

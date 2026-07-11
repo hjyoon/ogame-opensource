@@ -8,6 +8,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 const maxShipyardOrders = 99
@@ -80,6 +81,85 @@ func (r ShipyardRepository) FinishDueShipyardQueues(ctx context.Context, until i
 		}
 	}
 	return nil
+}
+
+func (r ShipyardRepository) PreviewMCPEnqueueShipyardOrder(ctx context.Context, playerID int, command domainmcp.EnqueueShipyardOrderCommand) (domainmcp.EnqueueShipyardOrderResult, error) {
+	if r.queryer == nil {
+		return domainmcp.EnqueueShipyardOrderResult{}, errors.New("shipyard reader unavailable")
+	}
+	kind, normalizedKind, ok := shipyardOrderKindFromMCP(command.Kind)
+	result := domainmcp.EnqueueShipyardOrderResult{
+		PlayerID:  playerID,
+		PlanetID:  command.PlanetID,
+		Kind:      normalizedKind,
+		ItemID:    command.ItemID,
+		Requested: command.Amount,
+	}
+	if !ok || command.ItemID <= 0 || command.Amount <= 0 {
+		result.Issue = mcpBuildingsActionIssue(domaingame.BuildingActionIssue(domaingame.BuildingsIssueInvalid))
+		return result, nil
+	}
+	state, err := r.loadShipyardMutationState(ctx, playerID, command.PlanetID, kind)
+	if err != nil {
+		return domainmcp.EnqueueShipyardOrderResult{}, err
+	}
+	result.PlanetID = state.planetID
+	for _, item := range state.items {
+		if item.ID != command.ItemID {
+			continue
+		}
+		result.Name = item.Name
+		result.MaxBuild = item.MaxBuild
+		result.DurationSeconds = item.DurationSeconds
+		result.Amount = command.Amount
+		if result.Amount > state.config.OrderCap {
+			result.Amount = state.config.OrderCap
+		}
+		if result.Amount > item.MaxBuild {
+			result.Amount = item.MaxBuild
+		}
+		result.Amount = clampDefenseShipyardAmount(item.ID, result.Amount, state.levels, state.defense, state.queueRows)
+		result.Issue = mcpBuildingsActionIssue(shipyardPreviewOrderIssue(state, item, result.Amount))
+		return result, nil
+	}
+	result.Issue = mcpBuildingsActionIssue(domaingame.BuildingActionIssue(domaingame.BuildingsIssueInvalid))
+	return result, nil
+}
+
+func (r ShipyardRepository) EnqueueMCPShipyardOrder(ctx context.Context, playerID int, command domainmcp.EnqueueShipyardOrderCommand) (domainmcp.EnqueueShipyardOrderResult, error) {
+	if r.execer == nil {
+		return domainmcp.EnqueueShipyardOrderResult{}, errors.New("shipyard updater unavailable")
+	}
+	result, err := r.PreviewMCPEnqueueShipyardOrder(ctx, playerID, command)
+	if err != nil || result.Issue != nil {
+		return result, err
+	}
+	orders := map[int]int{command.ItemID: command.Amount}
+	var issue *domaingame.BuildingsActionIssue
+	if result.Kind == "defense" {
+		outcome, err := (DefenseRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now, updateResources: r.updateResources}).MutateDefense(ctx, appgame.DefenseMutationQuery{
+			PlayerID: playerID,
+			PlanetID: command.PlanetID,
+			Orders:   orders,
+		})
+		if err != nil {
+			return domainmcp.EnqueueShipyardOrderResult{}, err
+		}
+		issue = outcome.ActionIssue
+	} else {
+		outcome, err := r.MutateShipyard(ctx, appgame.ShipyardMutationQuery{
+			PlayerID: playerID,
+			PlanetID: command.PlanetID,
+			Orders:   orders,
+		})
+		if err != nil {
+			return domainmcp.EnqueueShipyardOrderResult{}, err
+		}
+		issue = outcome.ActionIssue
+	}
+	result.Issue = mcpBuildingsActionIssue(issue)
+	result.Executed = result.Issue == nil
+	return result, nil
 }
 
 func (r ShipyardRepository) mutateShipyardOrders(ctx context.Context, playerID int, planetID int, orders map[int]int, kind shipyardOrderKind) (*domaingame.BuildingsActionIssue, error) {
@@ -345,6 +425,43 @@ func shipyardItemIssue(item domaingame.ShipyardItem) *domaingame.BuildingsAction
 		return domaingame.BuildingActionIssue(domaingame.BuildingsIssueNoResources)
 	}
 	return nil
+}
+
+func shipyardPreviewOrderIssue(state shipyardMutationState, item domaingame.ShipyardItem, amount int) *domaingame.BuildingsActionIssue {
+	if state.user.Vacation {
+		return domaingame.BuildingActionIssue(domaingame.BuildingsIssueVacation)
+	}
+	if state.config.Frozen {
+		return domaingame.BuildingActionIssue(domaingame.BuildingsIssueUniversePause)
+	}
+	if issue := shipyardItemIssue(item); issue != nil {
+		return issue
+	}
+	if len(state.queueRows) >= maxShipyardOrders {
+		return domaingame.BuildingActionIssue(domaingame.BuildingsIssueQueueFull)
+	}
+	if amount <= 0 {
+		return domaingame.BuildingActionIssue(domaingame.BuildingsIssueNoResources)
+	}
+	return nil
+}
+
+func shipyardOrderKindFromMCP(value string) (shipyardOrderKind, string, bool) {
+	switch value {
+	case "", "fleet":
+		return shipyardOrderFleet, "fleet", true
+	case "defense":
+		return shipyardOrderDefense, "defense", true
+	default:
+		return shipyardOrderFleet, value, false
+	}
+}
+
+func mcpBuildingsActionIssue(issue *domaingame.BuildingsActionIssue) *domainmcp.ActionIssue {
+	if issue == nil {
+		return nil
+	}
+	return &domainmcp.ActionIssue{Code: issue.Code, Message: issue.Message}
 }
 
 func clampDefenseShipyardAmount(id int, amount int, levels domaingame.BuildingLevels, defense domaingame.DefenseCounts, queueRows []buildingQueueTask) int {

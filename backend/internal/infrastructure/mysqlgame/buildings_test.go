@@ -344,6 +344,29 @@ func TestBuildingsRepositoryDelegatesMCPCancelResearchQueue(t *testing.T) {
 	}
 }
 
+func TestBuildingsRepositoryDelegatesMCPEnqueueShipyardOrder(t *testing.T) {
+	now := time.Unix(1_700, 0)
+	research := map[int]int{domaingame.ResearchCombustionDrive: 1}
+	levels := map[int]int{domaingame.BuildingShipyard: 1}
+	results := append(
+		shipyardMCPPreviewResults(research, levels, true),
+		shipyardMCPPreviewResults(research, levels, true)...,
+	)
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewBuildingsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	command := domainmcp.EnqueueShipyardOrderCommand{PlanetID: 99, Kind: "fleet", ItemID: domaingame.FleetLightFighter, Amount: 1}
+
+	preview, err := repository.PreviewMCPEnqueueShipyardOrder(context.Background(), 42, command)
+	if err != nil || preview.Issue != nil || preview.Name != "Light Fighter" {
+		t.Fatalf("unexpected delegated preview=%+v err=%v", preview, err)
+	}
+
+	result, err := repository.EnqueueMCPShipyardOrder(context.Background(), 42, domainmcp.EnqueueShipyardOrderCommand{PlanetID: 99, Kind: "bad", ItemID: domaingame.FleetLightFighter, Amount: 1})
+	if err != nil || result.Issue == nil || result.Issue.Code != domaingame.BuildingsIssueInvalid || len(runner.execs) != 0 {
+		t.Fatalf("expected delegated invalid enqueue noop, result=%+v err=%v execs=%+v", result, err, runner.execs)
+	}
+}
+
 func TestBuildingsRepositoryMCPCancelBuildingQueueResolvesActivePlanet(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues(buildQueueRowValues(buildQueueRow{ID: 4, OwnerID: 42, PlanetID: 99, ListID: 1, TechID: 999999, Level: 1}))},

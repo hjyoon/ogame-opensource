@@ -97,6 +97,8 @@ type QueueWriteRepository interface {
 	CancelMCPBuildingQueue(context.Context, int, domainmcp.CancelBuildingQueueCommand) (domainmcp.CancelBuildingQueueResult, error)
 	PreviewMCPCancelResearchQueue(context.Context, int, domainmcp.CancelResearchQueueCommand) (domainmcp.CancelResearchQueueResult, error)
 	CancelMCPResearchQueue(context.Context, int, domainmcp.CancelResearchQueueCommand) (domainmcp.CancelResearchQueueResult, error)
+	PreviewMCPEnqueueShipyardOrder(context.Context, int, domainmcp.EnqueueShipyardOrderCommand) (domainmcp.EnqueueShipyardOrderResult, error)
+	EnqueueMCPShipyardOrder(context.Context, int, domainmcp.EnqueueShipyardOrderCommand) (domainmcp.EnqueueShipyardOrderResult, error)
 }
 
 type TokenSecretGenerator interface {
@@ -629,7 +631,7 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		tools = append(tools, validateFleetDispatchTool(), dispatchFleetTool(), recallFleetTool())
 	}
 	if access.HasScope(domainmcp.ScopeQueueWrite) && s.queueWrite != nil {
-		tools = append(tools, cancelBuildingQueueTool(), cancelResearchQueueTool())
+		tools = append(tools, cancelBuildingQueueTool(), cancelResearchQueueTool(), enqueueShipyardOrderTool())
 	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
 }
@@ -793,6 +795,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callCancelResearchQueue(ctx, access, command.Arguments)
+	case "enqueue_shipyard_order":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeQueueWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callEnqueueShipyardOrder(ctx, access, command.Arguments)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -1381,6 +1392,50 @@ func (s Service) callCancelResearchQueue(ctx context.Context, access domainmcp.A
 		result.Confirmation = confirmation
 	}
 	structured := map[string]any{"cancelResearchQueue": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callEnqueueShipyardOrder(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.queueWrite == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp queue write repository unavailable")
+	}
+	command, err := mcpEnqueueShipyardOrderCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	confirmation := mcpEnqueueShipyardOrderConfirmation(command)
+	var result domainmcp.EnqueueShipyardOrderResult
+	if command.DryRun {
+		result, err = s.queueWrite.PreviewMCPEnqueueShipyardOrder(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = true
+		result.Executed = false
+		if result.Issue == nil && result.Amount > 0 {
+			result.RequiresConfirmation = true
+			result.Confirmation = confirmation
+		}
+	} else {
+		if strings.TrimSpace(command.Confirm) != confirmation {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+		}
+		result, err = s.queueWrite.EnqueueMCPShipyardOrder(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = false
+		result.RequiresConfirmation = false
+		result.Confirmation = confirmation
+	}
+	structured := map[string]any{"enqueueShipyardOrder": result}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -2029,6 +2084,57 @@ func mcpCancelResearchQueueConfirmation() string {
 	payload := "active"
 	sum := sha256.Sum256([]byte(payload))
 	return fmt.Sprintf("cancel_research_queue:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
+}
+
+func mcpEnqueueShipyardOrderCommand(arguments map[string]any) (domainmcp.EnqueueShipyardOrderCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.EnqueueShipyardOrderCommand{}, err
+	}
+	kind, err := optionalStringArgument(arguments, "kind")
+	if err != nil {
+		return domainmcp.EnqueueShipyardOrderCommand{}, err
+	}
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	if kind == "" {
+		kind = "fleet"
+	}
+	if kind != "fleet" && kind != "defense" {
+		return domainmcp.EnqueueShipyardOrderCommand{}, domainmcp.ErrInvalidParams
+	}
+	itemID, err := optionalNonNegativeIntArgument(arguments, "itemId")
+	if err != nil || itemID <= 0 {
+		return domainmcp.EnqueueShipyardOrderCommand{}, domainmcp.ErrInvalidParams
+	}
+	amount, err := optionalNonNegativeIntArgument(arguments, "amount")
+	if err != nil || amount <= 0 {
+		return domainmcp.EnqueueShipyardOrderCommand{}, domainmcp.ErrInvalidParams
+	}
+	dryRun := true
+	if arguments != nil && arguments["dryRun"] != nil {
+		dryRun, err = optionalBoolArgument(arguments, "dryRun")
+		if err != nil {
+			return domainmcp.EnqueueShipyardOrderCommand{}, err
+		}
+	}
+	confirm, err := optionalStringArgument(arguments, "confirm")
+	if err != nil {
+		return domainmcp.EnqueueShipyardOrderCommand{}, err
+	}
+	return domainmcp.EnqueueShipyardOrderCommand{
+		PlanetID: planetID,
+		Kind:     kind,
+		ItemID:   itemID,
+		Amount:   amount,
+		DryRun:   dryRun,
+		Confirm:  confirm,
+	}, nil
+}
+
+func mcpEnqueueShipyardOrderConfirmation(command domainmcp.EnqueueShipyardOrderCommand) string {
+	payload := fmt.Sprintf("%d:%s:%d:%d", command.PlanetID, command.Kind, command.ItemID, command.Amount)
+	sum := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("enqueue_shipyard_order:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
 }
 
 func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
@@ -3057,6 +3163,77 @@ func cancelResearchQueueTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"cancelResearchQueue"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    false,
+			"destructiveHint": true,
+			"idempotentHint":  false,
+		},
+	}
+}
+
+func enqueueShipyardOrderTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "enqueue_shipyard_order",
+		Title:       "Enqueue Shipyard Order",
+		Description: "Queue fleet or defense construction for an owned planet. Defaults to dry-run and requires the returned confirmation string before execution.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet.",
+				},
+				"kind": map[string]any{
+					"type":        "string",
+					"enum":        []string{"fleet", "defense"},
+					"description": "Order catalog. Defaults to fleet.",
+				},
+				"itemId": map[string]any{
+					"type":        "integer",
+					"description": "Fleet or defense technology id to queue.",
+				},
+				"amount": map[string]any{
+					"type":        "integer",
+					"description": "Requested unit count. The game may clamp to order cap/resources.",
+				},
+				"dryRun": map[string]any{
+					"type":        "boolean",
+					"description": "Defaults to true. Set false only with a matching confirmation value.",
+				},
+				"confirm": map[string]any{
+					"type":        "string",
+					"description": "Exact confirmation string returned by a dry-run for the same planet, kind, item, and amount.",
+				},
+			},
+			"required":             []string{"itemId", "amount"},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"enqueueShipyardOrder": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":             map[string]any{"type": "integer"},
+						"planetId":             map[string]any{"type": "integer"},
+						"kind":                 map[string]any{"type": "string"},
+						"itemId":               map[string]any{"type": "integer"},
+						"name":                 map[string]any{"type": "string"},
+						"requested":            map[string]any{"type": "integer"},
+						"amount":               map[string]any{"type": "integer"},
+						"maxBuild":             map[string]any{"type": "integer"},
+						"durationSeconds":      map[string]any{"type": "integer"},
+						"dryRun":               map[string]any{"type": "boolean"},
+						"requiresConfirmation": map[string]any{"type": "boolean"},
+						"confirmation":         map[string]any{"type": "string"},
+						"executed":             map[string]any{"type": "boolean"},
+						"issue":                map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "planetId", "kind", "itemId", "requested", "amount", "dryRun", "requiresConfirmation", "executed"},
+				},
+			},
+			"required": []string{"enqueueShipyardOrder"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    false,

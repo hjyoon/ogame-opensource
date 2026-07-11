@@ -220,6 +220,16 @@ func (r BuildingsRepository) CancelMCPResearchQueue(ctx context.Context, playerI
 	return research.CancelMCPResearchQueue(ctx, playerID, command)
 }
 
+func (r BuildingsRepository) PreviewMCPEnqueueShipyardOrder(ctx context.Context, playerID int, command domainmcp.EnqueueShipyardOrderCommand) (domainmcp.EnqueueShipyardOrderResult, error) {
+	shipyard := ShipyardRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now, updateResources: r.updateResources}
+	return shipyard.PreviewMCPEnqueueShipyardOrder(ctx, playerID, command)
+}
+
+func (r BuildingsRepository) EnqueueMCPShipyardOrder(ctx context.Context, playerID int, command domainmcp.EnqueueShipyardOrderCommand) (domainmcp.EnqueueShipyardOrderResult, error) {
+	shipyard := ShipyardRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now, updateResources: r.updateResources}
+	return shipyard.EnqueueMCPShipyardOrder(ctx, playerID, command)
+}
+
 func (r BuildingsRepository) acquireBuildingMutationLock(ctx context.Context, playerID int, planetID int) (func(), error) {
 	db := r.sqlDB()
 	if db == nil || planetID <= 0 {
