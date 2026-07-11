@@ -225,7 +225,7 @@ try {
     body: JSON.stringify({
       redirect_uris: [oauthRedirectURI],
       client_name: "Go MCP smoke",
-      scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:fleet"
+      scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:fleet mcp:fleet_write"
     })
   });
   const clientRegistrationBody = parseJSON(clientRegistration);
@@ -235,7 +235,7 @@ try {
     client_id: oauthClientID,
     redirect_uri: oauthRedirectURI,
     resource: `${baseUrl}/mcp`,
-    scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:fleet",
+    scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:fleet mcp:fleet_write",
     state: "go-mcp-smoke-state",
     code_challenge: pkceChallenge(oauthVerifier),
     code_challenge_method: "S256",
@@ -298,7 +298,7 @@ try {
     headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
     body: JSON.stringify({
       name: `go-mcp-smoke-${Date.now().toString(36)}`,
-      scopes: ["mcp:read", "mcp:messages", "mcp:message_write", "mcp:fleet"]
+      scopes: ["mcp:read", "mcp:messages", "mcp:message_write", "mcp:fleet", "mcp:fleet_write"]
     })
   });
   const tokenCreateBody = parseJSON(tokenCreate);

@@ -13039,6 +13039,9 @@ function MCPTokenTable({
               <label>
                 <input name="mcp_scope" type="checkbox" value="mcp:fleet" /> fleet
               </label>
+              <label>
+                <input name="mcp_scope" type="checkbox" value="mcp:fleet_write" /> fleet write
+              </label>
               <input disabled={pending} type="submit" value="create token" />
             </form>
           </th>

@@ -341,6 +341,7 @@ func (s Service) OAuthAuthorizationServerMetadata(ctx context.Context, issuer st
 			domainmcp.ScopeMessages,
 			domainmcp.ScopeMessageWrite,
 			domainmcp.ScopeFleet,
+			domainmcp.ScopeFleetWrite,
 		},
 	}
 	if s.oidcSigner != nil {
@@ -360,6 +361,7 @@ func (s Service) OAuthProtectedResourceMetadata(ctx context.Context, resource st
 			domainmcp.ScopeMessages,
 			domainmcp.ScopeMessageWrite,
 			domainmcp.ScopeFleet,
+			domainmcp.ScopeFleetWrite,
 		},
 		BearerMethods: []string{"header"},
 	}
@@ -1183,7 +1185,7 @@ func normalizeUserScopes(requested []string) []string {
 
 func userScopeAllowed(scope string) bool {
 	switch scope {
-	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeFleet:
+	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite:
 		return true
 	default:
 		return false

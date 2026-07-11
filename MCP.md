@@ -54,15 +54,14 @@ Implemented:
   They read owned inbox rows without marking messages read or cleanup mutation.
 - Authenticated `mcp:message_write` tools: `send_message`, `delete_messages`,
   `report_message`. All default to dry-run; execution requires `dryRun:false`
-  plus the returned
-  confirmation string.
+  plus returned confirmation string.
 
 ## Static Token Format
 
 `OGAME_MCP_STATIC_TOKENS`: `token:player_id:scope1,scope2;next:7:mcp:read`.
 
 Scopes: `mcp:read`, `mcp:messages`, `mcp:message_write`, `mcp:fleet`,
-`mcp:write`, `mcp:admin`.
+`mcp:fleet_write`, `mcp:write`, `mcp:admin`.
 
 Static tokens are bootstrap-only. Prefer DB-backed user tokens because they can
 be revoked without restart.
@@ -78,12 +77,8 @@ Create body:
 The plaintext `secret` is returned only in the create response. Persist it in
 the MCP client and treat it like a password.
 
-User tokens currently allow:
-
-- `mcp:read`
-- `mcp:messages`
-- `mcp:message_write`
-- `mcp:fleet`
+User tokens allow: `mcp:read`, `mcp:messages`, `mcp:message_write`,
+`mcp:fleet`, `mcp:fleet_write`.
 
 `mcp:write` and `mcp:admin` stay unavailable for self-service user tokens.
 

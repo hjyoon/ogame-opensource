@@ -519,6 +519,10 @@ func TestOAuthValidationHelpers(t *testing.T) {
 	if err != nil || strings.Join(scopes, " ") != "profile mcp:read" {
 		t.Fatalf("unexpected normalized scopes=%v err=%v", scopes, err)
 	}
+	scopes, err = normalizeOAuthScopes(domainmcp.ScopeFleetWrite)
+	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeFleetWrite {
+		t.Fatalf("expected fleet write scope to be allowed, got scopes=%v err=%v", scopes, err)
+	}
 	scopes, err = normalizeOAuthScopes("")
 	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeRead {
 		t.Fatalf("expected default read scope, got scopes=%v err=%v", scopes, err)
@@ -1689,6 +1693,10 @@ func TestServiceTokenManagementRejectsUnauthenticatedAndPrivilegedScopes(t *test
 	}
 
 	service.sessions = fakeSessionLookup{auth: authenticatedSession(42)}
+	created, err := service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeFleetWrite}})
+	if err != nil || strings.Join(created.Creation.Token.Scopes, " ") != domainmcp.ScopeFleetWrite {
+		t.Fatalf("expected fleet write user token scope to be allowed, created=%+v err=%v", created, err)
+	}
 	_, err = service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeAdmin}})
 	if !errors.Is(err, ErrInvalidTokenRequest) {
 		t.Fatalf("expected invalid scope request, got %v", err)

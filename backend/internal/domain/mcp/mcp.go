@@ -8,6 +8,7 @@ const (
 	ScopeRead         = "mcp:read"
 	ScopeWrite        = "mcp:write"
 	ScopeFleet        = "mcp:fleet"
+	ScopeFleetWrite   = "mcp:fleet_write"
 	ScopeMessages     = "mcp:messages"
 	ScopeMessageWrite = "mcp:message_write"
 	ScopeAdmin        = "mcp:admin"

@@ -296,6 +296,8 @@ func oauthScopeDescription(scope string) string {
 		return "send in-game private messages only after dry-run and explicit confirmation"
 	case "mcp:fleet":
 		return "read fleet-related MCP data when fleet tools are available"
+	case "mcp:fleet_write":
+		return "perform fleet actions only after dry-run and explicit confirmation"
 	default:
 		return "access requested MCP capability"
 	}
