@@ -225,7 +225,7 @@ try {
     body: JSON.stringify({
       redirect_uris: [oauthRedirectURI],
       client_name: "Go MCP smoke",
-      scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:fleet mcp:fleet_write mcp:queue_write mcp:resources_write"
+      scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:fleet mcp:fleet_write mcp:queue_write mcp:resources_write mcp:premium_write"
     })
   });
   const clientRegistrationBody = parseJSON(clientRegistration);
@@ -235,7 +235,7 @@ try {
     client_id: oauthClientID,
     redirect_uri: oauthRedirectURI,
     resource: `${baseUrl}/mcp`,
-    scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:fleet mcp:fleet_write mcp:queue_write mcp:resources_write",
+    scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:fleet mcp:fleet_write mcp:queue_write mcp:resources_write mcp:premium_write",
     state: "go-mcp-smoke-state",
     code_challenge: pkceChallenge(oauthVerifier),
     code_challenge_method: "S256",
@@ -298,7 +298,7 @@ try {
     headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
     body: JSON.stringify({
       name: `go-mcp-smoke-${Date.now().toString(36)}`,
-      scopes: ["mcp:read", "mcp:messages", "mcp:message_write", "mcp:fleet", "mcp:fleet_write", "mcp:queue_write", "mcp:resources_write"]
+      scopes: ["mcp:read", "mcp:messages", "mcp:message_write", "mcp:fleet", "mcp:fleet_write", "mcp:queue_write", "mcp:resources_write", "mcp:premium_write"]
     })
   });
   const tokenCreateBody = parseJSON(tokenCreate);
@@ -352,6 +352,8 @@ try {
   const enqueueShipyardOrderDryRunBody = parseJSON(enqueueShipyardOrderDryRun);
   const updateResourceProductionDryRun = await mcpJSONRPC("tools/call", { name: "update_resource_production", arguments: { production: { "1": 80 } } }, { id: 39, headers: authHeaders });
   const updateResourceProductionDryRunBody = parseJSON(updateResourceProductionDryRun);
+  const recruitOfficerDryRun = await mcpJSONRPC("tools/call", { name: "recruit_officer", arguments: { officerId: 1, days: 7 } }, { id: 40, headers: authHeaders });
+  const recruitOfficerDryRunBody = parseJSON(recruitOfficerDryRun);
   const invalidParamsTool = await mcpJSONRPC("tools/call", { name: "get_planet_resources", arguments: { planetId: "abc" } }, { id: 27, headers: authHeaders });
   const invalidParamsToolBody = parseJSON(invalidParamsTool);
   const tokenListAfterUse = await request(`/api/game/mcp-tokens${login.search}`, {
@@ -390,7 +392,8 @@ try {
     "cancel_building_queue",
     "cancel_research_queue",
     "enqueue_shipyard_order",
-    "update_resource_production"
+    "update_resource_production",
+    "recruit_officer"
   ];
   const authedToolNames = toolNames(authedToolsBody);
   cases.push(finalize({
@@ -445,6 +448,7 @@ try {
       check(cancelResearchQueueDryRun.status === 200 && Number(cancelResearchQueueDryRunBody.result?.structuredContent?.cancelResearchQueue?.playerId ?? 0) === login.playerID && cancelResearchQueueDryRunBody.result?.structuredContent?.cancelResearchQueue?.dryRun === true && cancelResearchQueueDryRunBody.result?.structuredContent?.cancelResearchQueue?.executed === false && cancelResearchQueueDryRunBody.result?.structuredContent?.cancelResearchQueue?.requiresConfirmation === false && cancelResearchQueueDryRunBody.result?.structuredContent?.cancelResearchQueue?.issue?.code === "queue_not_found", "cancel_research_queue dry-run is available under queue_write and does not mutate missing rows", cancelResearchQueueDryRunBody.result ?? {}),
       check(enqueueShipyardOrderDryRun.status === 200 && Number(enqueueShipyardOrderDryRunBody.result?.structuredContent?.enqueueShipyardOrder?.playerId ?? 0) === login.playerID && enqueueShipyardOrderDryRunBody.result?.structuredContent?.enqueueShipyardOrder?.kind === "fleet" && Number(enqueueShipyardOrderDryRunBody.result?.structuredContent?.enqueueShipyardOrder?.itemId ?? 0) === 204 && Number(enqueueShipyardOrderDryRunBody.result?.structuredContent?.enqueueShipyardOrder?.requested ?? 0) === 1 && enqueueShipyardOrderDryRunBody.result?.structuredContent?.enqueueShipyardOrder?.dryRun === true && enqueueShipyardOrderDryRunBody.result?.structuredContent?.enqueueShipyardOrder?.executed === false, "enqueue_shipyard_order dry-run is available under queue_write and does not mutate before confirmation", enqueueShipyardOrderDryRunBody.result ?? {}),
       check(updateResourceProductionDryRun.status === 200 && Number(updateResourceProductionDryRunBody.result?.structuredContent?.updateResourceProduction?.playerId ?? 0) === login.playerID && updateResourceProductionDryRunBody.result?.structuredContent?.updateResourceProduction?.dryRun === true && updateResourceProductionDryRunBody.result?.structuredContent?.updateResourceProduction?.executed === false && Array.isArray(updateResourceProductionDryRunBody.result?.structuredContent?.updateResourceProduction?.settings), "update_resource_production dry-run is available under resources_write and does not mutate before confirmation", updateResourceProductionDryRunBody.result ?? {}),
+      check(recruitOfficerDryRun.status === 200 && Number(recruitOfficerDryRunBody.result?.structuredContent?.recruitOfficer?.playerId ?? 0) === login.playerID && Number(recruitOfficerDryRunBody.result?.structuredContent?.recruitOfficer?.officerId ?? 0) === 1 && recruitOfficerDryRunBody.result?.structuredContent?.recruitOfficer?.dryRun === true && recruitOfficerDryRunBody.result?.structuredContent?.recruitOfficer?.executed === false, "recruit_officer dry-run is available under premium_write and does not mutate before confirmation", recruitOfficerDryRunBody.result ?? {}),
       check(invalidParamsTool.status === 200 && invalidParamsToolBody.error?.code === -32602, "invalid tool params return JSON-RPC invalid params", invalidParamsToolBody),
       check(Number(tokenRowAfterUse?.lastUsedAt ?? 0) > 0, "bearer tool use updates token last-used timestamp", { tokenRowAfterUse }),
       check(revoke.status === 200 && revokeBody.revoked === true, "MCP token revoke succeeds", revokeBody),

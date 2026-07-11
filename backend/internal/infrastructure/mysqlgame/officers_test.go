@@ -9,6 +9,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestOfficersRepositoryReadsOfficerStatus(t *testing.T) {
@@ -74,6 +75,84 @@ func TestOfficersRepositoryRecruitOfficerUpdatesDMAndTimer(t *testing.T) {
 	}
 	if officers.User.PaidDarkMatter != 0 || officers.User.FreeDarkMatter != 1000 {
 		t.Fatalf("unexpected updated officers: %+v", officers)
+	}
+}
+
+func TestOfficersRepositoryMCPRecruitOfficerPreviewAndExecute(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	command := domainmcp.RecruitOfficerCommand{
+		PlanetID:  99,
+		OfficerID: domaingame.OfficerCommander,
+		Days:      domaingame.OfficerWeekDays,
+	}
+	previewQueryer := &fakeQueryer{results: append(optionsOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{15000, 5000, int64(0), int64(0), int64(0), int64(0), int64(0)})},
+	)}
+	repository := NewOfficersRepositoryWithQueryer(previewQueryer, "ogame_", func() time.Time { return now })
+
+	preview, err := repository.PreviewMCPRecruitOfficer(context.Background(), 42, command)
+	if err != nil {
+		t.Fatalf("PreviewMCPRecruitOfficer returned error: %v", err)
+	}
+	if preview.PlayerID != 42 || preview.PlanetID != 99 || preview.OfficerID != domaingame.OfficerCommander || preview.Name != "Commander" || preview.Cost != domaingame.OfficerWeekCost {
+		t.Fatalf("unexpected preview result: %+v", preview)
+	}
+	if preview.PaidDarkMatter != 5000 || preview.FreeDarkMatter != 5000 || preview.Until != now.Add(7*24*time.Hour).Unix() || !preview.Active {
+		t.Fatalf("expected preview to show post-recruitment state, got %+v", preview)
+	}
+
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: append(
+		append(
+			append(optionsOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{15000, 5000, int64(0), int64(0), int64(0), int64(0), int64(0)})}),
+			append(optionsOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{15000, 5000, int64(0), int64(0), int64(0), int64(0), int64(0)})})...,
+		),
+		append(optionsOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{5000, 5000, now.Add(7 * 24 * time.Hour).Unix(), int64(0), int64(0), int64(0), int64(0)})})...,
+	)}}
+	repository = NewOfficersRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	recruited, err := repository.RecruitMCPOfficer(context.Background(), 42, command)
+	if err != nil {
+		t.Fatalf("RecruitMCPOfficer returned error: %v", err)
+	}
+	if !recruited.Executed || recruited.PaidDarkMatter != 5000 || recruited.FreeDarkMatter != 5000 || recruited.Until != now.Add(7*24*time.Hour).Unix() {
+		t.Fatalf("unexpected recruited result: %+v", recruited)
+	}
+	if !strings.Contains(runner.execSQL, "com_until") {
+		t.Fatalf("expected commander timer update, got %s", runner.execSQL)
+	}
+}
+
+func TestOfficersRepositoryMCPRecruitOfficerEdges(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	command := domainmcp.RecruitOfficerCommand{PlanetID: 99, OfficerID: domaingame.OfficerAdmiral, Days: domaingame.OfficerWeekDays}
+	if _, err := (OfficersRepository{}).PreviewMCPRecruitOfficer(context.Background(), 42, command); err == nil {
+		t.Fatalf("expected missing reader error")
+	}
+	if _, err := (OfficersRepository{}).RecruitMCPOfficer(context.Background(), 42, command); err == nil {
+		t.Fatalf("expected missing updater error")
+	}
+
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: append(optionsOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{9999, 0, int64(0), int64(0), int64(0), int64(0), int64(0)})},
+	)}}
+	repository := NewOfficersRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	preview, err := repository.PreviewMCPRecruitOfficer(context.Background(), 42, command)
+	if err != nil {
+		t.Fatalf("PreviewMCPRecruitOfficer returned error: %v", err)
+	}
+	if preview.Issue == nil || preview.Issue.Code != domaingame.OfficerIssueNotEnough || runner.execSQL != "" {
+		t.Fatalf("expected insufficient dark matter without exec, result=%+v exec=%s", preview, runner.execSQL)
+	}
+	recruitRunner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: append(optionsOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{9999, 0, int64(0), int64(0), int64(0), int64(0), int64(0)})},
+	)}}
+	repository = NewOfficersRepositoryWithRunner(recruitRunner, recruitRunner, "ogame_", func() time.Time { return now })
+	recruited, err := repository.RecruitMCPOfficer(context.Background(), 42, command)
+	if err != nil {
+		t.Fatalf("RecruitMCPOfficer returned error for blocking issue: %v", err)
+	}
+	if recruited.Issue == nil || recruited.Executed {
+		t.Fatalf("expected blocking issue without execution, got %+v", recruited)
 	}
 }
 

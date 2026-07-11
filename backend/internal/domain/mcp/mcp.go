@@ -11,6 +11,7 @@ const (
 	ScopeFleetWrite     = "mcp:fleet_write"
 	ScopeQueueWrite     = "mcp:queue_write"
 	ScopeResourcesWrite = "mcp:resources_write"
+	ScopePremiumWrite   = "mcp:premium_write"
 	ScopeMessages       = "mcp:messages"
 	ScopeMessageWrite   = "mcp:message_write"
 	ScopeAdmin          = "mcp:admin"
@@ -388,6 +389,33 @@ type UpdateResourceProductionResult struct {
 	Confirmation         string                      `json:"confirmation,omitempty"`
 	Executed             bool                        `json:"executed"`
 	Issue                *ActionIssue                `json:"issue,omitempty"`
+}
+
+type RecruitOfficerCommand struct {
+	PlanetID  int
+	OfficerID int
+	Days      int
+	DryRun    bool
+	Confirm   string
+}
+
+type RecruitOfficerResult struct {
+	PlayerID             int          `json:"playerId"`
+	PlanetID             int          `json:"planetId"`
+	OfficerID            int          `json:"officerId"`
+	Name                 string       `json:"name,omitempty"`
+	Days                 int          `json:"days"`
+	Cost                 int          `json:"cost"`
+	PaidDarkMatter       int          `json:"paidDarkMatter"`
+	FreeDarkMatter       int          `json:"freeDarkMatter"`
+	Until                int64        `json:"until,omitempty"`
+	DaysLeft             int          `json:"daysLeft,omitempty"`
+	Active               bool         `json:"active"`
+	DryRun               bool         `json:"dryRun"`
+	RequiresConfirmation bool         `json:"requiresConfirmation"`
+	Confirmation         string       `json:"confirmation,omitempty"`
+	Executed             bool         `json:"executed"`
+	Issue                *ActionIssue `json:"issue,omitempty"`
 }
 
 type DispatchFleetCommand struct {

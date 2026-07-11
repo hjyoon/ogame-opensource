@@ -13048,6 +13048,9 @@ function MCPTokenTable({
               <label>
                 <input name="mcp_scope" type="checkbox" value="mcp:resources_write" /> resources write
               </label>
+              <label>
+                <input name="mcp_scope" type="checkbox" value="mcp:premium_write" /> premium write
+              </label>
               <input disabled={pending} type="submit" value="create token" />
             </form>
           </th>

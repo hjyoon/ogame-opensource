@@ -519,9 +519,9 @@ func TestOAuthValidationHelpers(t *testing.T) {
 	if err != nil || strings.Join(scopes, " ") != "profile mcp:read" {
 		t.Fatalf("unexpected normalized scopes=%v err=%v", scopes, err)
 	}
-	scopes, err = normalizeOAuthScopes(domainmcp.ScopeFleetWrite + " " + domainmcp.ScopeQueueWrite + " " + domainmcp.ScopeResourcesWrite)
-	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite {
-		t.Fatalf("expected fleet, queue, and resources write scopes to be allowed, got scopes=%v err=%v", scopes, err)
+	scopes, err = normalizeOAuthScopes(domainmcp.ScopeFleetWrite + " " + domainmcp.ScopeQueueWrite + " " + domainmcp.ScopeResourcesWrite + " " + domainmcp.ScopePremiumWrite)
+	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite+" "+domainmcp.ScopePremiumWrite {
+		t.Fatalf("expected fleet, queue, resources, and premium write scopes to be allowed, got scopes=%v err=%v", scopes, err)
 	}
 	scopes, err = normalizeOAuthScopes("")
 	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeRead {
@@ -726,6 +726,26 @@ func TestServiceListsUpdateResourceProductionToolForResourcesWriteScope(t *testi
 	}
 	if strings.Join(names, ",") != "get_server_health,update_resource_production" {
 		t.Fatalf("unexpected resources-write tools: %v", names)
+	}
+}
+
+func TestServiceListsRecruitOfficerToolForPremiumWriteScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"premium-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopePremiumWrite}},
+		},
+	}).WithPremiumWriteRepository(&fakePremiumWriteRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "premium-write"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,recruit_officer" {
+		t.Fatalf("unexpected premium-write tools: %v", names)
 	}
 }
 
@@ -1996,6 +2016,124 @@ func TestServiceUpdateResourceProductionRequiresScopeRepositoryAndValidParams(t 
 	}
 }
 
+func TestServiceCallsRecruitOfficerWithDryRunAndConfirmation(t *testing.T) {
+	repository := &fakePremiumWriteRepository{
+		preview: domainmcp.RecruitOfficerResult{
+			PlayerID:       42,
+			PlanetID:       99,
+			OfficerID:      1,
+			Name:           "Commander",
+			Days:           7,
+			Cost:           10000,
+			PaidDarkMatter: 5000,
+			FreeDarkMatter: 2000,
+			Until:          1700604800,
+			DaysLeft:       7,
+			Active:         true,
+		},
+		recruited: domainmcp.RecruitOfficerResult{
+			PlayerID:       42,
+			PlanetID:       99,
+			OfficerID:      1,
+			Name:           "Commander",
+			Days:           7,
+			Cost:           10000,
+			PaidDarkMatter: 5000,
+			FreeDarkMatter: 2000,
+			Until:          1700604800,
+			DaysLeft:       7,
+			Active:         true,
+			Executed:       true,
+		},
+	}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"premium-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopePremiumWrite}},
+		},
+	}).WithPremiumWriteRepository(repository)
+	arguments := map[string]any{"planetId": 99, "officerId": 1, "days": 7}
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "recruit_officer",
+		AccessToken: "premium-write",
+		Arguments:   arguments,
+	})
+	if err != nil {
+		t.Fatalf("recruit_officer dry-run returned error: %v", err)
+	}
+	dryRun := result.StructuredContent.(map[string]any)["recruitOfficer"].(domainmcp.RecruitOfficerResult)
+	if !dryRun.DryRun || dryRun.Executed || !dryRun.RequiresConfirmation || !strings.HasPrefix(dryRun.Confirmation, "recruit_officer:99:1:7:") {
+		t.Fatalf("unexpected dry-run result: %+v", dryRun)
+	}
+	if repository.previewPlayerID != 42 || repository.previewCommand.PlanetID != 99 || repository.previewCommand.OfficerID != 1 || repository.previewCommand.Days != 7 {
+		t.Fatalf("unexpected preview command: player=%d command=%+v", repository.previewPlayerID, repository.previewCommand)
+	}
+
+	result, err = service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "recruit_officer",
+		AccessToken: "premium-write",
+		Arguments:   map[string]any{"planetId": 99, "officerId": 1, "days": 7, "dryRun": false, "confirm": dryRun.Confirmation},
+	})
+	if err != nil {
+		t.Fatalf("recruit_officer execute returned error: %v", err)
+	}
+	recruited := result.StructuredContent.(map[string]any)["recruitOfficer"].(domainmcp.RecruitOfficerResult)
+	if recruited.DryRun || !recruited.Executed || recruited.RequiresConfirmation {
+		t.Fatalf("unexpected execute result: %+v", recruited)
+	}
+	if repository.recruitPlayerID != 42 || repository.recruitCommand.Confirm != dryRun.Confirmation {
+		t.Fatalf("unexpected recruit command: player=%d command=%+v", repository.recruitPlayerID, repository.recruitCommand)
+	}
+
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "recruit_officer", AccessToken: "premium-write", Arguments: map[string]any{"officerId": 1, "dryRun": false, "confirm": "wrong"}}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected wrong confirmation error, got %v", err)
+	}
+}
+
+func TestServiceRecruitOfficerRequiresScopeRepositoryAndValidParams(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":          {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"premium-write": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopePremiumWrite}},
+		},
+	})
+	valid := map[string]any{"officerId": 1}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "recruit_officer", AccessToken: "premium-write", Arguments: valid}); err == nil {
+		t.Fatalf("expected missing repository error")
+	}
+
+	service = service.WithPremiumWriteRepository(&fakePremiumWriteRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "recruit_officer", AccessToken: "read", Arguments: valid}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without premium write scope, got %v", err)
+	}
+	for _, arguments := range []map[string]any{
+		{"planetId": "bad", "officerId": 1},
+		{"officerId": 0},
+		{"officerId": 6},
+		{"officerId": 1, "days": 1},
+		{"officerId": 1, "dryRun": "no"},
+		{"officerId": 1, "confirm": true},
+	} {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "recruit_officer", AccessToken: "premium-write", Arguments: arguments}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", arguments, err)
+		}
+	}
+
+	service = service.WithPremiumWriteRepository(&fakePremiumWriteRepository{err: errors.New("premium down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "recruit_officer", AccessToken: "premium-write", Arguments: valid}); err == nil || !strings.Contains(err.Error(), "premium down") {
+		t.Fatalf("expected repository error, got %v", err)
+	}
+
+	command, err := mcpRecruitOfficerCommand(valid)
+	if err != nil || command.Days != 7 || !command.DryRun {
+		t.Fatalf("unexpected default command=%+v err=%v", command, err)
+	}
+	confirm := mcpRecruitOfficerConfirmation(command)
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "recruit_officer", AccessToken: "premium-write", Arguments: map[string]any{"officerId": 1, "dryRun": false, "confirm": confirm}}); err == nil || !strings.Contains(err.Error(), "premium down") {
+		t.Fatalf("expected execute repository error, got %v", err)
+	}
+}
+
 func TestServiceCallsRecallFleetWithDryRunAndConfirmation(t *testing.T) {
 	repository := &fakeFleetWriteRepository{
 		preview:  domainmcp.RecallFleetResult{PlayerID: 42, FleetID: 55, OwnerID: 42, Mission: 3, TotalShips: 2, Recallable: true},
@@ -2497,9 +2635,9 @@ func TestServiceTokenManagementRejectsUnauthenticatedAndPrivilegedScopes(t *test
 	}
 
 	service.sessions = fakeSessionLookup{auth: authenticatedSession(42)}
-	created, err := service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite}})
-	if err != nil || strings.Join(created.Creation.Token.Scopes, " ") != domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite {
-		t.Fatalf("expected fleet, queue, and resources write user token scopes to be allowed, created=%+v err=%v", created, err)
+	created, err := service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite}})
+	if err != nil || strings.Join(created.Creation.Token.Scopes, " ") != domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite+" "+domainmcp.ScopePremiumWrite {
+		t.Fatalf("expected fleet, queue, resources, and premium write user token scopes to be allowed, created=%+v err=%v", created, err)
 	}
 	_, err = service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeAdmin}})
 	if !errors.Is(err, ErrInvalidTokenRequest) {
@@ -2987,6 +3125,34 @@ func (f *fakeResourceWriteRepository) UpdateMCPResourceProduction(_ context.Cont
 		return domainmcp.UpdateResourceProductionResult{}, f.err
 	}
 	return f.updated, nil
+}
+
+type fakePremiumWriteRepository struct {
+	preview         domainmcp.RecruitOfficerResult
+	recruited       domainmcp.RecruitOfficerResult
+	previewPlayerID int
+	recruitPlayerID int
+	previewCommand  domainmcp.RecruitOfficerCommand
+	recruitCommand  domainmcp.RecruitOfficerCommand
+	err             error
+}
+
+func (f *fakePremiumWriteRepository) PreviewMCPRecruitOfficer(_ context.Context, playerID int, command domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error) {
+	f.previewPlayerID = playerID
+	f.previewCommand = command
+	if f.err != nil {
+		return domainmcp.RecruitOfficerResult{}, f.err
+	}
+	return f.preview, nil
+}
+
+func (f *fakePremiumWriteRepository) RecruitMCPOfficer(_ context.Context, playerID int, command domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error) {
+	f.recruitPlayerID = playerID
+	f.recruitCommand = command
+	if f.err != nil {
+		return domainmcp.RecruitOfficerResult{}, f.err
+	}
+	return f.recruited, nil
 }
 
 type fakeSessionLookup struct {

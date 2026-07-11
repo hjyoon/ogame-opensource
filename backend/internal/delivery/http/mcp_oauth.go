@@ -300,6 +300,10 @@ func oauthScopeDescription(scope string) string {
 		return "perform fleet actions only after dry-run and explicit confirmation"
 	case "mcp:queue_write":
 		return "perform queue actions only after dry-run and explicit confirmation"
+	case "mcp:resources_write":
+		return "update resource production only after dry-run and explicit confirmation"
+	case "mcp:premium_write":
+		return "recruit officers only after dry-run and explicit confirmation"
 	default:
 		return "access requested MCP capability"
 	}

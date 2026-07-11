@@ -9,6 +9,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type OfficersRepository struct {
@@ -104,6 +105,60 @@ func (r OfficersRepository) RecruitOfficer(ctx context.Context, query appgame.Of
 	return updated, issue, nil
 }
 
+func (r OfficersRepository) PreviewMCPRecruitOfficer(ctx context.Context, playerID int, command domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error) {
+	if r.queryer == nil {
+		return domainmcp.RecruitOfficerResult{}, errors.New("officers reader unavailable")
+	}
+	current, err := r.GetOfficers(ctx, appgame.OfficersQuery{PlayerID: playerID, PlanetID: command.PlanetID})
+	if err != nil {
+		return domainmcp.RecruitOfficerResult{}, err
+	}
+	result := mcpRecruitOfficerResult(playerID, command, current)
+	timers := timersFromRows(current.Rows)
+	recruitment, issue := domaingame.ResolveOfficerRecruitment(current.User, timers, domaingame.OfficerMutation{
+		OfficerID: command.OfficerID,
+		Days:      command.Days,
+	}, r.now())
+	if issue != nil && issue.Code != domaingame.OfficerIssueRecruited {
+		result.Issue = &domainmcp.ActionIssue{Code: issue.Code, Message: issue.Message}
+		return result, nil
+	}
+	if recruitment.Changed {
+		preview := current
+		preview.User = recruitment.User
+		preview.Rows = domaingame.OfficerRows(recruitment.Timers, r.now())
+		result = mcpRecruitOfficerResult(playerID, command, preview)
+	}
+	return result, nil
+}
+
+func (r OfficersRepository) RecruitMCPOfficer(ctx context.Context, playerID int, command domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error) {
+	if r.execer == nil {
+		return domainmcp.RecruitOfficerResult{}, errors.New("officers updater unavailable")
+	}
+	result, err := r.PreviewMCPRecruitOfficer(ctx, playerID, command)
+	if err != nil || result.Issue != nil {
+		return result, err
+	}
+	updated, issue, err := r.RecruitOfficer(ctx, appgame.OfficersMutationQuery{
+		PlayerID: playerID,
+		PlanetID: command.PlanetID,
+		Mutation: domaingame.OfficerMutation{
+			OfficerID: command.OfficerID,
+			Days:      command.Days,
+		},
+	})
+	if err != nil {
+		return domainmcp.RecruitOfficerResult{}, err
+	}
+	result = mcpRecruitOfficerResult(playerID, command, updated)
+	if issue != nil && issue.Code != domaingame.OfficerIssueRecruited {
+		result.Issue = &domainmcp.ActionIssue{Code: issue.Code, Message: issue.Message}
+	}
+	result.Executed = result.Issue == nil
+	return result, nil
+}
+
 func (r OfficersRepository) loadOfficersUser(ctx context.Context, playerID int) (domaingame.OfficersUser, domaingame.OfficerTimers, error) {
 	usersTable, err := tableName(r.prefix, "users")
 	if err != nil {
@@ -142,6 +197,36 @@ func (r OfficersRepository) loadOfficersUser(ctx context.Context, playerID int) 
 		return domaingame.OfficersUser{}, domaingame.OfficerTimers{}, err
 	}
 	return domaingame.OfficersUser{PaidDarkMatter: paidDarkMatter, FreeDarkMatter: freeDarkMatter}, timers, nil
+}
+
+func mcpRecruitOfficerResult(playerID int, command domainmcp.RecruitOfficerCommand, officers domaingame.Officers) domainmcp.RecruitOfficerResult {
+	result := domainmcp.RecruitOfficerResult{
+		PlayerID:       playerID,
+		PlanetID:       officers.CurrentPlanet.ID,
+		OfficerID:      command.OfficerID,
+		Days:           command.Days,
+		Cost:           mcpOfficerCost(command.Days),
+		PaidDarkMatter: officers.User.PaidDarkMatter,
+		FreeDarkMatter: officers.User.FreeDarkMatter,
+	}
+	for _, row := range officers.Rows {
+		if row.ID != command.OfficerID {
+			continue
+		}
+		result.Name = row.Name
+		result.Until = row.Until
+		result.DaysLeft = row.DaysLeft
+		result.Active = row.Active
+		break
+	}
+	return result
+}
+
+func mcpOfficerCost(days int) int {
+	if days == domaingame.OfficerThreeMonthDays {
+		return domaingame.OfficerThreeMonthCost
+	}
+	return domaingame.OfficerWeekCost
 }
 
 func officerTimerColumn(officerID int) (string, bool) {

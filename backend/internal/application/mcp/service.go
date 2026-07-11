@@ -106,6 +106,11 @@ type ResourceWriteRepository interface {
 	UpdateMCPResourceProduction(context.Context, int, domainmcp.UpdateResourceProductionCommand) (domainmcp.UpdateResourceProductionResult, error)
 }
 
+type PremiumWriteRepository interface {
+	PreviewMCPRecruitOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
+	RecruitMCPOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
+}
+
 type TokenSecretGenerator interface {
 	NewMCPToken() (string, error)
 }
@@ -252,6 +257,7 @@ type Service struct {
 	fleetWrite      FleetWriteRepository
 	queueWrite      QueueWriteRepository
 	resourceWrite   ResourceWriteRepository
+	premiumWrite    PremiumWriteRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
 	codeGenerator   OAuthCodeGenerator
@@ -331,6 +337,11 @@ func (s Service) WithResourceWriteRepository(repository ResourceWriteRepository)
 	return s
 }
 
+func (s Service) WithPremiumWriteRepository(repository PremiumWriteRepository) Service {
+	s.premiumWrite = repository
+	return s
+}
+
 func (s Service) WithToolCallAuditor(auditor ToolCallAuditor) Service {
 	s.auditor = auditor
 	return s
@@ -383,6 +394,7 @@ func (s Service) OAuthAuthorizationServerMetadata(ctx context.Context, issuer st
 			domainmcp.ScopeFleetWrite,
 			domainmcp.ScopeQueueWrite,
 			domainmcp.ScopeResourcesWrite,
+			domainmcp.ScopePremiumWrite,
 		},
 	}
 	if s.oidcSigner != nil {
@@ -405,6 +417,7 @@ func (s Service) OAuthProtectedResourceMetadata(ctx context.Context, resource st
 			domainmcp.ScopeFleetWrite,
 			domainmcp.ScopeQueueWrite,
 			domainmcp.ScopeResourcesWrite,
+			domainmcp.ScopePremiumWrite,
 		},
 		BearerMethods: []string{"header"},
 	}
@@ -649,6 +662,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	if access.HasScope(domainmcp.ScopeResourcesWrite) && s.resourceWrite != nil {
 		tools = append(tools, updateResourceProductionTool())
 	}
+	if access.HasScope(domainmcp.ScopePremiumWrite) && s.premiumWrite != nil {
+		tools = append(tools, recruitOfficerTool())
+	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
 }
 
@@ -829,6 +845,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callUpdateResourceProduction(ctx, access, command.Arguments)
+	case "recruit_officer":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopePremiumWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callRecruitOfficer(ctx, access, command.Arguments)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -1515,6 +1540,50 @@ func (s Service) callUpdateResourceProduction(ctx context.Context, access domain
 	}, nil
 }
 
+func (s Service) callRecruitOfficer(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.premiumWrite == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp premium write repository unavailable")
+	}
+	command, err := mcpRecruitOfficerCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	confirmation := mcpRecruitOfficerConfirmation(command)
+	var result domainmcp.RecruitOfficerResult
+	if command.DryRun {
+		result, err = s.premiumWrite.PreviewMCPRecruitOfficer(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = true
+		result.Executed = false
+		if result.Issue == nil && result.OfficerID > 0 {
+			result.RequiresConfirmation = true
+			result.Confirmation = confirmation
+		}
+	} else {
+		if strings.TrimSpace(command.Confirm) != confirmation {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+		}
+		result, err = s.premiumWrite.RecruitMCPOfficer(ctx, access.PlayerID, command)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		result.DryRun = false
+		result.RequiresConfirmation = false
+		result.Confirmation = confirmation
+	}
+	structured := map[string]any{"recruitOfficer": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
 func (s Service) authenticateSession(ctx context.Context, command TokenManagementCommand) (domainpublicsite.SessionAuthentication, error) {
 	return s.sessions.GetGameSession(ctx, apppublicsite.GameSessionCommand{
 		PublicSession:   command.PublicSession,
@@ -1582,7 +1651,7 @@ func normalizeUserScopes(requested []string) []string {
 
 func userScopeAllowed(scope string) bool {
 	switch scope {
-	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite:
+	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite:
 		return true
 	default:
 		return false
@@ -2246,6 +2315,51 @@ func mcpUpdateResourceProductionConfirmation(command domainmcp.UpdateResourcePro
 	payload := fmt.Sprintf("%d:%s", command.PlanetID, stableIntMapPayload(command.Production))
 	sum := sha256.Sum256([]byte(payload))
 	return fmt.Sprintf("update_resource_production:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
+}
+
+func mcpRecruitOfficerCommand(arguments map[string]any) (domainmcp.RecruitOfficerCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.RecruitOfficerCommand{}, err
+	}
+	officerID, err := optionalNonNegativeIntArgument(arguments, "officerId")
+	if err != nil || officerID < 1 || officerID > 5 {
+		return domainmcp.RecruitOfficerCommand{}, domainmcp.ErrInvalidParams
+	}
+	days, err := optionalNonNegativeIntArgument(arguments, "days")
+	if err != nil {
+		return domainmcp.RecruitOfficerCommand{}, err
+	}
+	if days == 0 {
+		days = 7
+	}
+	if days != 7 && days != 90 {
+		return domainmcp.RecruitOfficerCommand{}, domainmcp.ErrInvalidParams
+	}
+	dryRun := true
+	if arguments != nil && arguments["dryRun"] != nil {
+		dryRun, err = optionalBoolArgument(arguments, "dryRun")
+		if err != nil {
+			return domainmcp.RecruitOfficerCommand{}, err
+		}
+	}
+	confirm, err := optionalStringArgument(arguments, "confirm")
+	if err != nil {
+		return domainmcp.RecruitOfficerCommand{}, err
+	}
+	return domainmcp.RecruitOfficerCommand{
+		PlanetID:  planetID,
+		OfficerID: officerID,
+		Days:      days,
+		DryRun:    dryRun,
+		Confirm:   confirm,
+	}, nil
+}
+
+func mcpRecruitOfficerConfirmation(command domainmcp.RecruitOfficerCommand) string {
+	payload := fmt.Sprintf("%d:%d:%d", command.PlanetID, command.OfficerID, command.Days)
+	sum := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("recruit_officer:%s:%s", payload, hex.EncodeToString(sum[:])[:12])
 }
 
 func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
@@ -3406,6 +3520,77 @@ func updateResourceProductionTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"updateResourceProduction"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    false,
+			"destructiveHint": true,
+			"idempotentHint":  false,
+		},
+	}
+}
+
+func recruitOfficerTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "recruit_officer",
+		Title:       "Recruit Officer",
+		Description: "Recruit or extend a commander/officer using Dark Matter. Defaults to dry-run and requires the returned confirmation string before execution.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet.",
+				},
+				"officerId": map[string]any{
+					"type":        "integer",
+					"description": "Legacy officer id: 1 commander, 2 admiral, 3 engineer, 4 geologist, 5 technocrat.",
+					"minimum":     1,
+					"maximum":     5,
+				},
+				"days": map[string]any{
+					"type":        "integer",
+					"description": "Recruitment duration in days. Defaults to 7; allowed values are 7 and 90.",
+					"enum":        []int{7, 90},
+				},
+				"dryRun": map[string]any{
+					"type":        "boolean",
+					"description": "Defaults to true. Set false only with a matching confirmation value.",
+				},
+				"confirm": map[string]any{
+					"type":        "string",
+					"description": "Exact confirmation string returned by a dry-run for the same planet, officer, and duration.",
+				},
+			},
+			"required":             []string{"officerId"},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"recruitOfficer": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":             map[string]any{"type": "integer"},
+						"planetId":             map[string]any{"type": "integer"},
+						"officerId":            map[string]any{"type": "integer"},
+						"name":                 map[string]any{"type": "string"},
+						"days":                 map[string]any{"type": "integer"},
+						"cost":                 map[string]any{"type": "integer"},
+						"paidDarkMatter":       map[string]any{"type": "integer"},
+						"freeDarkMatter":       map[string]any{"type": "integer"},
+						"until":                map[string]any{"type": "integer"},
+						"daysLeft":             map[string]any{"type": "integer"},
+						"active":               map[string]any{"type": "boolean"},
+						"dryRun":               map[string]any{"type": "boolean"},
+						"requiresConfirmation": map[string]any{"type": "boolean"},
+						"confirmation":         map[string]any{"type": "string"},
+						"executed":             map[string]any{"type": "boolean"},
+						"issue":                map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "planetId", "officerId", "days", "cost", "paidDarkMatter", "freeDarkMatter", "active", "dryRun", "requiresConfirmation", "executed"},
+				},
+			},
+			"required": []string{"recruitOfficer"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    false,
