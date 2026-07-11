@@ -696,6 +696,26 @@ func TestServiceListsStatisticsToolForReadScope(t *testing.T) {
 	}
 }
 
+func TestServiceListsAllianceStatusToolForReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithAllianceReadRepository(&fakeAllianceReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_alliance_status" {
+		t.Fatalf("unexpected read alliance tools: %v", names)
+	}
+}
+
 func TestServiceListsEmpireOverviewToolForReadScope(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -1687,6 +1707,77 @@ func TestServiceStatisticsToolRequiresRepositoryReadScopeAndValidArguments(t *te
 	command, err := mcpStatisticsCommand(nil)
 	if err != nil || command.Who != "player" || command.Type != "ressources" || command.Start != 0 {
 		t.Fatalf("unexpected default statistics command=%+v err=%v", command, err)
+	}
+}
+
+func TestServiceCallsAllianceStatusTool(t *testing.T) {
+	status := domainmcp.AllianceStatus{
+		PlayerID: 42,
+		Planet:   domainmcp.Planet{ID: 99, Name: "Arakis"},
+		View:     "search",
+		Viewer:   domainmcp.AllianceViewer{PlayerID: 42, Name: "legor", Validated: true},
+		SearchResults: []domainmcp.AllianceSearchResult{{
+			ID:          7,
+			Tag:         "TAG",
+			Name:        "The Alliance",
+			MemberCount: 2,
+		}},
+	}
+	repository := &fakeAllianceReadRepository{result: status}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithAllianceReadRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_alliance_status",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": "99", "view": "search", "searchText": "TA", "textKind": 2, "allianceId": 7, "applicationId": 11},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["allianceStatus"].(domainmcp.AllianceStatus)
+	if result.IsError || got.PlayerID != 42 || got.View != "search" || len(got.SearchResults) != 1 {
+		t.Fatalf("unexpected alliance status result: %+v", result)
+	}
+	if repository.playerID != 42 || repository.command.PlanetID != 99 || repository.command.View != "search" || repository.command.SearchText != "TA" || repository.command.TextKind != 2 || repository.command.AllianceID != 7 || repository.command.ApplicationID != 11 {
+		t.Fatalf("unexpected alliance status command: player=%d command=%+v", repository.playerID, repository.command)
+	}
+}
+
+func TestServiceAllianceStatusToolRequiresRepositoryReadScopeAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_alliance_status", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing alliance read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_alliance_status", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithAllianceReadRepository(&fakeAllianceReadRepository{})
+	for _, arguments := range []map[string]any{
+		{"planetId": true},
+		{"view": true},
+		{"searchText": true},
+		{"textKind": true},
+		{"allianceId": true},
+		{"applicationId": true},
+	} {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_alliance_status", AccessToken: "read", Arguments: arguments}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", arguments, err)
+		}
+	}
+
+	service = service.WithAllianceReadRepository(&fakeAllianceReadRepository{err: errors.New("alliance down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_alliance_status", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "alliance down") {
+		t.Fatalf("expected alliance repository error, got %v", err)
 	}
 }
 
@@ -4316,6 +4407,22 @@ func (f *fakeStatisticsReadRepository) GetMCPStatistics(_ context.Context, playe
 	f.command = command
 	if f.err != nil {
 		return domainmcp.Statistics{}, f.err
+	}
+	return f.result, nil
+}
+
+type fakeAllianceReadRepository struct {
+	result   domainmcp.AllianceStatus
+	playerID int
+	command  domainmcp.AllianceStatusCommand
+	err      error
+}
+
+func (f *fakeAllianceReadRepository) GetMCPAllianceStatus(_ context.Context, playerID int, command domainmcp.AllianceStatusCommand) (domainmcp.AllianceStatus, error) {
+	f.playerID = playerID
+	f.command = command
+	if f.err != nil {
+		return domainmcp.AllianceStatus{}, f.err
 	}
 	return f.result, nil
 }

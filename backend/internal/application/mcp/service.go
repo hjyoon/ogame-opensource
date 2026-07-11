@@ -126,6 +126,10 @@ type StatisticsReadRepository interface {
 	GetMCPStatistics(context.Context, int, domainmcp.StatisticsCommand) (domainmcp.Statistics, error)
 }
 
+type AllianceReadRepository interface {
+	GetMCPAllianceStatus(context.Context, int, domainmcp.AllianceStatusCommand) (domainmcp.AllianceStatus, error)
+}
+
 type EmpireReadRepository interface {
 	GetMCPEmpire(context.Context, int, domainmcp.EmpireCommand) (domainmcp.EmpireOverview, error)
 }
@@ -310,6 +314,7 @@ type Service struct {
 	searchRead      SearchReadRepository
 	galaxyRead      GalaxyReadRepository
 	statisticsRead  StatisticsReadRepository
+	allianceRead    AllianceReadRepository
 	empireRead      EmpireReadRepository
 	technologyRead  TechnologyReadRepository
 	buildingRead    BuildingOptionsReadRepository
@@ -419,6 +424,11 @@ func (s Service) WithGalaxyReadRepository(repository GalaxyReadRepository) Servi
 
 func (s Service) WithStatisticsReadRepository(repository StatisticsReadRepository) Service {
 	s.statisticsRead = repository
+	return s
+}
+
+func (s Service) WithAllianceReadRepository(repository AllianceReadRepository) Service {
+	s.allianceRead = repository
 	return s
 }
 
@@ -781,6 +791,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		if s.statisticsRead != nil {
 			tools = append(tools, statisticsTool())
 		}
+		if s.allianceRead != nil {
+			tools = append(tools, allianceStatusTool())
+		}
 		if s.empireRead != nil {
 			tools = append(tools, empireOverviewTool())
 		}
@@ -947,6 +960,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callStatistics(ctx, access, command.Arguments)
+	case "get_alliance_status":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callAllianceStatus(ctx, access, command.Arguments)
 	case "get_empire_overview":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
 		if err != nil {
@@ -1472,6 +1494,29 @@ func (s Service) callStatistics(ctx context.Context, access domainmcp.Access, ar
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"statistics": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callAllianceStatus(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.allianceRead == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp alliance read repository unavailable")
+	}
+	command, err := mcpAllianceStatusCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	status, err := s.allianceRead.GetMCPAllianceStatus(ctx, access.PlayerID, command)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"allianceStatus": status}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -2988,6 +3033,41 @@ func mcpStatisticsCommand(arguments map[string]any) (domainmcp.StatisticsCommand
 	return domainmcp.StatisticsCommand{PlanetID: planetID, Who: who, Type: statType, Start: start}, nil
 }
 
+func mcpAllianceStatusCommand(arguments map[string]any) (domainmcp.AllianceStatusCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.AllianceStatusCommand{}, err
+	}
+	view, err := optionalStringArgument(arguments, "view")
+	if err != nil {
+		return domainmcp.AllianceStatusCommand{}, err
+	}
+	searchText, err := optionalStringArgument(arguments, "searchText")
+	if err != nil {
+		return domainmcp.AllianceStatusCommand{}, err
+	}
+	textKind, err := optionalNonNegativeIntArgument(arguments, "textKind")
+	if err != nil {
+		return domainmcp.AllianceStatusCommand{}, err
+	}
+	allianceID, err := optionalNonNegativeIntArgument(arguments, "allianceId")
+	if err != nil {
+		return domainmcp.AllianceStatusCommand{}, err
+	}
+	applicationID, err := optionalNonNegativeIntArgument(arguments, "applicationId")
+	if err != nil {
+		return domainmcp.AllianceStatusCommand{}, err
+	}
+	return domainmcp.AllianceStatusCommand{
+		PlanetID:      planetID,
+		View:          view,
+		SearchText:    searchText,
+		TextKind:      textKind,
+		AllianceID:    allianceID,
+		ApplicationID: applicationID,
+	}, nil
+}
+
 func mcpEmpireCommand(arguments map[string]any) (domainmcp.EmpireCommand, error) {
 	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
 	if err != nil {
@@ -4056,6 +4136,80 @@ func statisticsTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"statistics"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func allianceStatusTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_alliance_status",
+		Title:       "Get Alliance Status",
+		Description: "Return read-only legacy alliance screen state for the authenticated player, including no-alliance, search, info, members, applications, ranks, management, and circular views.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet context.",
+				},
+				"view": map[string]any{
+					"type":        "string",
+					"description": "Legacy alliance view.",
+					"enum":        []string{"", "home", "no_alliance", "create", "search", "info", "apply", "applications", "members", "management", "ranks", "circular", "rename_tag", "rename_name"},
+				},
+				"searchText": map[string]any{
+					"type":        "string",
+					"description": "Search text for the search view.",
+				},
+				"textKind": map[string]any{
+					"type":        "integer",
+					"description": "Legacy alliance text section selector for management.",
+					"minimum":     0,
+				},
+				"allianceId": map[string]any{
+					"type":        "integer",
+					"description": "Target alliance id for info/apply views.",
+					"minimum":     0,
+				},
+				"applicationId": map[string]any{
+					"type":        "integer",
+					"description": "Target application id for applications view.",
+					"minimum":     0,
+				},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"allianceStatus": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":       map[string]any{"type": "integer"},
+						"planet":         map[string]any{"type": "object"},
+						"view":           map[string]any{"type": "string"},
+						"viewer":         map[string]any{"type": "object"},
+						"own":            map[string]any{"type": "object"},
+						"target":         map[string]any{"type": "object"},
+						"pending":        map[string]any{"type": "object"},
+						"searchText":     map[string]any{"type": "string"},
+						"textKind":       map[string]any{"type": "integer"},
+						"searchResults":  map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"applications":   map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"selectedApp":    map[string]any{"type": "object"},
+						"members":        map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"ranks":          map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"circularResult": map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "planet", "view", "viewer", "searchText", "textKind", "searchResults", "applications", "members", "ranks"},
+				},
+			},
+			"required": []string{"allianceStatus"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,

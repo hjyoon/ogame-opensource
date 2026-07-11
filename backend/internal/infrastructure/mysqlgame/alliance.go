@@ -10,6 +10,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type AllianceRepository struct {
@@ -29,6 +30,10 @@ func NewAllianceRepository(db *sql.DB, prefix string) AllianceRepository {
 		prefix:   prefix,
 		now:      time.Now,
 	}
+}
+
+func NewAllianceReadRepository(db *sql.DB, prefix string) AllianceRepository {
+	return NewAllianceRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
 }
 
 func NewAllianceRepositoryWithQueryer(queryer Queryer, prefix string, now func() time.Time) AllianceRepository {
@@ -75,6 +80,29 @@ func (r AllianceRepository) GetAlliance(ctx context.Context, query appgame.Allia
 		return r.populateNoAlliance(ctx, alliance, query)
 	}
 	return r.populateOwnAlliance(ctx, alliance, query)
+}
+
+func (r AllianceRepository) GetMCPAllianceStatus(ctx context.Context, playerID int, query domainmcp.AllianceStatusCommand) (domainmcp.AllianceStatus, error) {
+	if r.queryer == nil {
+		return domainmcp.AllianceStatus{}, errors.New("alliance reader unavailable")
+	}
+	reader := r
+	reader.execer = nil
+	reader.overview.execer = nil
+	reader.overview.updateResources = false
+	alliance, err := reader.GetAlliance(ctx, appgame.AllianceQuery{
+		PlayerID:      playerID,
+		PlanetID:      query.PlanetID,
+		View:          domaingame.AllianceView(query.View),
+		SearchText:    query.SearchText,
+		TextKind:      query.TextKind,
+		AllianceID:    query.AllianceID,
+		ApplicationID: query.ApplicationID,
+	})
+	if err != nil {
+		return domainmcp.AllianceStatus{}, err
+	}
+	return mcpAllianceStatus(playerID, alliance), nil
 }
 
 func (r AllianceRepository) MutateAlliance(ctx context.Context, query appgame.AllianceMutationQuery) (domaingame.Alliance, *domaingame.AllianceActionIssue, error) {
@@ -246,6 +274,144 @@ func (r AllianceRepository) populateNoAlliance(ctx context.Context, alliance dom
 		alliance.View = domaingame.AllianceViewNoAlliance
 	}
 	return alliance, nil
+}
+
+func mcpAllianceStatus(playerID int, alliance domaingame.Alliance) domainmcp.AllianceStatus {
+	return domainmcp.AllianceStatus{
+		PlayerID: playerID,
+		Planet: domainmcp.Planet{
+			ID:       alliance.CurrentPlanet.ID,
+			Name:     alliance.CurrentPlanet.Name,
+			Type:     alliance.CurrentPlanet.Type,
+			TypeName: mcpPlanetTypeName(alliance.CurrentPlanet.Type),
+			Coordinates: domainmcp.Coordinates{
+				Galaxy:   alliance.CurrentPlanet.Coordinates.Galaxy,
+				System:   alliance.CurrentPlanet.Coordinates.System,
+				Position: alliance.CurrentPlanet.Coordinates.Position,
+			},
+			Current: true,
+		},
+		View:           string(alliance.View),
+		Viewer:         mcpAllianceViewer(alliance.Viewer),
+		Own:            mcpAllianceInfo(alliance.Own),
+		Target:         mcpAllianceInfo(alliance.Target),
+		Pending:        mcpAllianceApplication(alliance.Pending),
+		SearchText:     alliance.SearchText,
+		TextKind:       alliance.TextKind,
+		SearchResults:  mcpAllianceSearchResults(alliance.SearchResults),
+		Applications:   mcpAllianceApplications(alliance.Applications),
+		SelectedApp:    mcpAllianceApplication(alliance.SelectedApp),
+		Members:        mcpAllianceMembers(alliance.Members),
+		Ranks:          mcpAllianceRanks(alliance.Ranks),
+		CircularResult: mcpAllianceCircularResult(alliance.CircularResult),
+	}
+}
+
+func mcpAllianceViewer(viewer domaingame.AllianceViewer) domainmcp.AllianceViewer {
+	return domainmcp.AllianceViewer{
+		PlayerID:   viewer.PlayerID,
+		Name:       viewer.Name,
+		Validated:  viewer.Validated,
+		AllianceID: viewer.AllianceID,
+		RankID:     viewer.RankID,
+		RankName:   viewer.RankName,
+		RankRights: viewer.RankRights,
+		Founder:    viewer.Founder,
+	}
+}
+
+func mcpAllianceInfo(info *domaingame.AllianceInfo) *domainmcp.AllianceInfo {
+	if info == nil {
+		return nil
+	}
+	return &domainmcp.AllianceInfo{
+		ID:               info.ID,
+		Tag:              info.Tag,
+		Name:             info.Name,
+		OwnerID:          info.OwnerID,
+		Homepage:         info.Homepage,
+		ImageLogo:        info.ImageLogo,
+		Open:             info.Open,
+		InsertApp:        info.InsertApp,
+		ExternalText:     info.ExternalText,
+		InternalText:     info.InternalText,
+		ApplicationText:  info.ApplicationText,
+		OldTag:           info.OldTag,
+		OldName:          info.OldName,
+		TagUntil:         info.TagUntil,
+		NameUntil:        info.NameUntil,
+		MemberCount:      info.MemberCount,
+		ApplicationCount: info.ApplicationCount,
+	}
+}
+
+func mcpAllianceApplication(application *domaingame.AllianceApplication) *domainmcp.AllianceApplication {
+	if application == nil {
+		return nil
+	}
+	return &domainmcp.AllianceApplication{
+		ID:         application.ID,
+		AllianceID: application.AllianceID,
+		PlayerID:   application.PlayerID,
+		PlayerName: application.PlayerName,
+		Text:       application.Text,
+		Date:       application.Date,
+	}
+}
+
+func mcpAllianceSearchResults(rows []domaingame.AllianceSearchResult) []domainmcp.AllianceSearchResult {
+	results := make([]domainmcp.AllianceSearchResult, 0, len(rows))
+	for _, row := range rows {
+		results = append(results, domainmcp.AllianceSearchResult{
+			ID:          row.ID,
+			Tag:         row.Tag,
+			Name:        row.Name,
+			MemberCount: row.MemberCount,
+		})
+	}
+	return results
+}
+
+func mcpAllianceApplications(rows []domaingame.AllianceApplication) []domainmcp.AllianceApplication {
+	applications := make([]domainmcp.AllianceApplication, 0, len(rows))
+	for _, row := range rows {
+		applications = append(applications, *mcpAllianceApplication(&row))
+	}
+	return applications
+}
+
+func mcpAllianceMembers(rows []domaingame.AllianceMember) []domainmcp.AllianceMember {
+	members := make([]domainmcp.AllianceMember, 0, len(rows))
+	for _, row := range rows {
+		members = append(members, domainmcp.AllianceMember{
+			PlayerID:  row.PlayerID,
+			Name:      row.Name,
+			RankID:    row.RankID,
+			RankName:  row.RankName,
+			Score:     row.Score,
+			JoinedAt:  row.JoinedAt,
+			LastClick: row.LastClick,
+			Galaxy:    row.Galaxy,
+			System:    row.System,
+			Position:  row.Position,
+		})
+	}
+	return members
+}
+
+func mcpAllianceRanks(rows []domaingame.AllianceRank) []domainmcp.AllianceRank {
+	ranks := make([]domainmcp.AllianceRank, 0, len(rows))
+	for _, row := range rows {
+		ranks = append(ranks, domainmcp.AllianceRank{ID: row.ID, Name: row.Name, Rights: row.Rights})
+	}
+	return ranks
+}
+
+func mcpAllianceCircularResult(result *domaingame.AllianceCircularResult) *domainmcp.AllianceCircularResult {
+	if result == nil {
+		return nil
+	}
+	return &domainmcp.AllianceCircularResult{Recipients: append([]string(nil), result.Recipients...)}
 }
 
 func (r AllianceRepository) populateOwnAlliance(ctx context.Context, alliance domaingame.Alliance, query appgame.AllianceQuery) (domaingame.Alliance, error) {

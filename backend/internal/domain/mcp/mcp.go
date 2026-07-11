@@ -751,6 +751,103 @@ type Statistics struct {
 	Rows             []StatisticsRow `json:"rows"`
 }
 
+type AllianceStatusCommand struct {
+	PlanetID      int
+	View          string
+	SearchText    string
+	TextKind      int
+	AllianceID    int
+	ApplicationID int
+}
+
+type AllianceViewer struct {
+	PlayerID   int    `json:"playerId"`
+	Name       string `json:"name"`
+	Validated  bool   `json:"validated"`
+	AllianceID int    `json:"allianceId"`
+	RankID     int    `json:"rankId"`
+	RankName   string `json:"rankName"`
+	RankRights int    `json:"rankRights"`
+	Founder    bool   `json:"founder"`
+}
+
+type AllianceInfo struct {
+	ID               int    `json:"id"`
+	Tag              string `json:"tag"`
+	Name             string `json:"name"`
+	OwnerID          int    `json:"ownerId"`
+	Homepage         string `json:"homepage"`
+	ImageLogo        string `json:"imageLogo"`
+	Open             bool   `json:"open"`
+	InsertApp        bool   `json:"insertApp"`
+	ExternalText     string `json:"externalText"`
+	InternalText     string `json:"internalText"`
+	ApplicationText  string `json:"applicationText"`
+	OldTag           string `json:"oldTag"`
+	OldName          string `json:"oldName"`
+	TagUntil         int64  `json:"tagUntil"`
+	NameUntil        int64  `json:"nameUntil"`
+	MemberCount      int    `json:"memberCount"`
+	ApplicationCount int    `json:"applicationCount"`
+}
+
+type AllianceSearchResult struct {
+	ID          int    `json:"id"`
+	Tag         string `json:"tag"`
+	Name        string `json:"name"`
+	MemberCount int    `json:"memberCount"`
+}
+
+type AllianceApplication struct {
+	ID         int    `json:"id"`
+	AllianceID int    `json:"allianceId"`
+	PlayerID   int    `json:"playerId"`
+	PlayerName string `json:"playerName"`
+	Text       string `json:"text"`
+	Date       int64  `json:"date"`
+}
+
+type AllianceMember struct {
+	PlayerID  int    `json:"playerId"`
+	Name      string `json:"name"`
+	RankID    int    `json:"rankId"`
+	RankName  string `json:"rankName"`
+	Score     int64  `json:"score"`
+	JoinedAt  int64  `json:"joinedAt"`
+	LastClick int64  `json:"lastClick"`
+	Galaxy    int    `json:"galaxy"`
+	System    int    `json:"system"`
+	Position  int    `json:"position"`
+}
+
+type AllianceRank struct {
+	ID     int    `json:"id"`
+	Name   string `json:"name"`
+	Rights int    `json:"rights"`
+}
+
+type AllianceCircularResult struct {
+	Recipients []string `json:"recipients"`
+}
+
+type AllianceStatus struct {
+	PlayerID       int                     `json:"playerId"`
+	Planet         Planet                  `json:"planet"`
+	View           string                  `json:"view"`
+	Viewer         AllianceViewer          `json:"viewer"`
+	Own            *AllianceInfo           `json:"own,omitempty"`
+	Target         *AllianceInfo           `json:"target,omitempty"`
+	Pending        *AllianceApplication    `json:"pending,omitempty"`
+	SearchText     string                  `json:"searchText"`
+	TextKind       int                     `json:"textKind"`
+	SearchResults  []AllianceSearchResult  `json:"searchResults"`
+	Applications   []AllianceApplication   `json:"applications"`
+	SelectedApp    *AllianceApplication    `json:"selectedApp,omitempty"`
+	Members        []AllianceMember        `json:"members"`
+	Ranks          []AllianceRank          `json:"ranks"`
+	CircularResult *AllianceCircularResult `json:"circularResult,omitempty"`
+}
+
 type EmpireCommand struct {
 	PlanetID   int
 	PlanetType int

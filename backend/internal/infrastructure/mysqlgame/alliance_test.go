@@ -10,6 +10,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestAllianceRepositoryReadsNoAllianceSearchAndApplyViews(t *testing.T) {
@@ -51,6 +52,117 @@ func TestAllianceRepositoryReadsNoAllianceSearchAndApplyViews(t *testing.T) {
 	}
 	if alliance.View != domaingame.AllianceViewApply || alliance.Target == nil || alliance.Target.Tag != "TAG" {
 		t.Fatalf("unexpected apply alliance: %+v", alliance)
+	}
+}
+
+func TestAllianceRepositoryMapsMCPAllianceStatus(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(42, "legor", 1, 0, 0, "", 0))},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{7, "TAG", "The Alliance", 2})},
+	)}
+	repository := NewAllianceRepositoryWithRunner(queryer, nil, "ogame_", time.Now)
+
+	status, err := repository.GetMCPAllianceStatus(context.Background(), 42, domainmcp.AllianceStatusCommand{
+		PlanetID:   99,
+		View:       string(domaingame.AllianceViewSearch),
+		SearchText: "TA",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.PlayerID != 42 || status.Planet.ID != 99 || status.Planet.TypeName != "planet" || status.View != "search" || status.Viewer.Name != "legor" || !status.Viewer.Validated {
+		t.Fatalf("unexpected mcp alliance status: %+v", status)
+	}
+	if len(status.SearchResults) != 1 || status.SearchResults[0].Tag != "TAG" || status.SearchResults[0].MemberCount != 2 {
+		t.Fatalf("unexpected mcp alliance search rows: %+v", status.SearchResults)
+	}
+	if status.Own != nil || status.Pending != nil || status.SelectedApp != nil || status.CircularResult != nil {
+		t.Fatalf("unexpected optional alliance sections: %+v", status)
+	}
+
+	readRepository := NewAllianceReadRepository(nil, "ogame_")
+	if readRepository.execer != nil || readRepository.overview.execer != nil || readRepository.overview.updateResources {
+		t.Fatalf("expected MCP read repository without writer/resource updates, got %+v", readRepository)
+	}
+	if _, err := (AllianceRepository{}).GetMCPAllianceStatus(context.Background(), 42, domainmcp.AllianceStatusCommand{}); err == nil {
+		t.Fatal("expected nil alliance reader error")
+	}
+}
+
+func TestMCPAllianceStatusMapsAllSections(t *testing.T) {
+	own := &domaingame.AllianceInfo{
+		ID:               7,
+		Tag:              "TAG",
+		Name:             "The Alliance",
+		OwnerID:          42,
+		Homepage:         "https://example.test",
+		ImageLogo:        "logo.png",
+		Open:             true,
+		InsertApp:        true,
+		ExternalText:     "external",
+		InternalText:     "internal",
+		ApplicationText:  "apply",
+		OldTag:           "OLD",
+		OldName:          "Old Name",
+		TagUntil:         100,
+		NameUntil:        200,
+		MemberCount:      2,
+		ApplicationCount: 1,
+	}
+	target := &domaingame.AllianceInfo{ID: 8, Tag: "FOE", Name: "Other Alliance"}
+	pending := &domaingame.AllianceApplication{ID: 11, AllianceID: 7, PlayerID: 43, PlayerName: "newcomer", Text: "hello", Date: 123}
+	selected := &domaingame.AllianceApplication{ID: 12, AllianceID: 7, PlayerID: 44, PlayerName: "other", Text: "hi", Date: 124}
+	status := mcpAllianceStatus(42, domaingame.Alliance{
+		CurrentPlanet: domaingame.PlanetOverview{
+			ID:          99,
+			Name:        "Arakis",
+			Type:        domaingame.PlanetTypePlanet,
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+		},
+		View:       domaingame.AllianceViewManagement,
+		Viewer:     domaingame.AllianceViewer{PlayerID: 42, Name: "legor", Validated: true, AllianceID: 7, RankID: 0, RankName: "Founder", RankRights: domaingame.AllianceFounderRights, Founder: true},
+		Own:        own,
+		Target:     target,
+		Pending:    pending,
+		SearchText: "TA",
+		TextKind:   2,
+		SearchResults: []domaingame.AllianceSearchResult{{
+			ID:          7,
+			Tag:         "TAG",
+			Name:        "The Alliance",
+			MemberCount: 2,
+		}},
+		Applications: []domaingame.AllianceApplication{*pending},
+		SelectedApp:  selected,
+		Members: []domaingame.AllianceMember{{
+			PlayerID:  42,
+			Name:      "legor",
+			RankID:    0,
+			RankName:  "Founder",
+			Score:     9000,
+			JoinedAt:  10,
+			LastClick: 20,
+			Galaxy:    1,
+			System:    2,
+			Position:  3,
+		}},
+		Ranks:          []domaingame.AllianceRank{{ID: 0, Name: "Founder", Rights: domaingame.AllianceFounderRights}},
+		CircularResult: &domaingame.AllianceCircularResult{Recipients: []string{"legor"}},
+	})
+
+	if status.Own == nil || status.Own.Homepage != "https://example.test" || status.Target == nil || status.Target.Tag != "FOE" {
+		t.Fatalf("unexpected mapped alliance info: %+v", status)
+	}
+	if status.Pending == nil || status.Pending.PlayerName != "newcomer" || status.SelectedApp == nil || status.SelectedApp.PlayerName != "other" {
+		t.Fatalf("unexpected mapped alliance applications: %+v", status)
+	}
+	if len(status.SearchResults) != 1 || len(status.Applications) != 1 || len(status.Members) != 1 || len(status.Ranks) != 1 || status.CircularResult == nil || len(status.CircularResult.Recipients) != 1 {
+		t.Fatalf("unexpected mapped alliance collections: %+v", status)
+	}
+	status.CircularResult.Recipients[0] = "changed"
+	if status.CircularResult.Recipients[0] != "changed" {
+		t.Fatal("expected mutable mapped recipient copy")
 	}
 }
 

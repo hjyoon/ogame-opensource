@@ -44,7 +44,7 @@ Implemented:
 - JSON audit logging for every `tools/call`; no secrets are logged.
 - Auth `mcp:read`: planets, overview, resources/options, queues, fleets/options,
   officers, search, galaxy, stats, empire, tech, buildings, research,
-  shipyard, defense. No legacy read mutations.
+  shipyard, defense, alliance. No legacy read mutations.
 - Authenticated `mcp:messages` tools: `list_messages` and `get_message`.
   Read owned inbox rows without marking read or cleanup mutation.
 - Authenticated `mcp:message_write` tools: `send_message`, `delete_messages`,

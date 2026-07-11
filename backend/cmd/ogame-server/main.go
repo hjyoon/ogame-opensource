@@ -211,6 +211,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 	searchReadRepository := mysqlgame.NewSearchRepository(db, cfg.UniDBPrefix)
 	galaxyReadRepository := mysqlgame.NewGalaxyReadRepository(db, cfg.UniDBPrefix)
 	statisticsReadRepository := mysqlgame.NewStatisticsRepository(db, cfg.UniDBPrefix)
+	allianceReadRepository := mysqlgame.NewAllianceReadRepository(db, cfg.UniDBPrefix)
 	empireReadRepository := mysqlgame.NewEmpireReadRepository(db, cfg.UniDBPrefix)
 	technologyReadRepository := mysqlgame.NewTechnologyRepository(db, cfg.UniDBPrefix)
 	buildingReadRepository := mysqlgame.NewBuildingsReadRepository(db, cfg.UniDBPrefix)
@@ -232,6 +233,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 		WithSearchReadRepository(searchReadRepository).
 		WithGalaxyReadRepository(galaxyReadRepository).
 		WithStatisticsReadRepository(statisticsReadRepository).
+		WithAllianceReadRepository(allianceReadRepository).
 		WithEmpireReadRepository(empireReadRepository).
 		WithTechnologyReadRepository(technologyReadRepository).
 		WithBuildingOptionsReadRepository(buildingReadRepository).
