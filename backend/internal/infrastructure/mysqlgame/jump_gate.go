@@ -10,6 +10,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type JumpGateRepository struct {
@@ -22,6 +23,10 @@ type JumpGateRepository struct {
 func NewJumpGateRepository(db *sql.DB, prefix string) JumpGateRepository {
 	runner := SQLQueryer{DB: db}
 	return JumpGateRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now}
+}
+
+func NewJumpGateReadRepository(db *sql.DB, prefix string) JumpGateRepository {
+	return JumpGateRepository{queryer: SQLQueryer{DB: db}, prefix: prefix, now: time.Now}
 }
 
 func NewJumpGateRepositoryWithRunner(queryer Queryer, execer Execer, prefix string, now func() time.Time) JumpGateRepository {
@@ -65,6 +70,80 @@ func (r JumpGateRepository) GetJumpGate(ctx context.Context, query appgame.JumpG
 	}
 	issue := r.jumpGateViewIssue(query.PlayerID, source, found)
 	return domaingame.BuildJumpGate(overview, source, targets, issue), nil
+}
+
+func (r JumpGateRepository) GetMCPJumpGateStatus(ctx context.Context, playerID int, command domainmcp.JumpGateStatusCommand) (domainmcp.JumpGateStatus, error) {
+	if r.queryer == nil {
+		return domainmcp.JumpGateStatus{}, errors.New("jump gate reader unavailable")
+	}
+	jumpGate, err := r.GetJumpGate(ctx, appgame.JumpGateQuery{PlayerID: playerID, PlanetID: command.PlanetID})
+	if err != nil {
+		return domainmcp.JumpGateStatus{}, err
+	}
+	return mcpJumpGateStatus(playerID, jumpGate), nil
+}
+
+func mcpJumpGateStatus(playerID int, jumpGate domaingame.JumpGate) domainmcp.JumpGateStatus {
+	return domainmcp.JumpGateStatus{
+		PlayerID: playerID,
+		Planet: domainmcp.Planet{
+			ID:       jumpGate.CurrentPlanet.ID,
+			Name:     jumpGate.CurrentPlanet.Name,
+			Type:     jumpGate.CurrentPlanet.Type,
+			TypeName: mcpPlanetTypeName(jumpGate.CurrentPlanet.Type),
+			Coordinates: domainmcp.Coordinates{
+				Galaxy:   jumpGate.CurrentPlanet.Coordinates.Galaxy,
+				System:   jumpGate.CurrentPlanet.Coordinates.System,
+				Position: jumpGate.CurrentPlanet.Coordinates.Position,
+			},
+			Current: true,
+		},
+		Commander: jumpGate.Commander,
+		Source:    mcpJumpGateMoon(jumpGate.Source),
+		Targets:   mcpJumpGateMoons(jumpGate.Targets),
+		Ships:     mcpJumpGateShips(jumpGate.Ships),
+		Issue:     mcpJumpGateIssue(jumpGate.ActionIssue),
+	}
+}
+
+func mcpJumpGateMoon(moon domaingame.JumpGateMoon) domainmcp.JumpGateMoon {
+	return domainmcp.JumpGateMoon{
+		ID:       moon.ID,
+		OwnerID:  moon.OwnerID,
+		Name:     moon.Name,
+		Type:     moon.Type,
+		TypeName: mcpPlanetTypeName(moon.Type),
+		Coordinates: domainmcp.Coordinates{
+			Galaxy:   moon.Coordinates.Galaxy,
+			System:   moon.Coordinates.System,
+			Position: moon.Coordinates.Position,
+		},
+		GateLevel: moon.GateLevel,
+		GateUntil: moon.GateUntil,
+	}
+}
+
+func mcpJumpGateMoons(moons []domaingame.JumpGateMoon) []domainmcp.JumpGateMoon {
+	result := make([]domainmcp.JumpGateMoon, 0, len(moons))
+	for _, moon := range moons {
+		result = append(result, mcpJumpGateMoon(moon))
+	}
+	return result
+}
+
+func mcpJumpGateShips(ships []domaingame.JumpGateShip) []domainmcp.FleetShip {
+	result := make([]domainmcp.FleetShip, 0, len(ships))
+	for _, ship := range ships {
+		result = append(result, domainmcp.FleetShip{ID: ship.ID, Name: ship.Name, Count: ship.Count})
+	}
+	return result
+}
+
+func mcpJumpGateIssue(issue *domaingame.JumpGateActionIssue) *domainmcp.ActionIssue {
+	if issue == nil {
+		return nil
+	}
+	return &domainmcp.ActionIssue{Code: issue.Code, Message: issue.Message}
 }
 
 func (r JumpGateRepository) Jump(ctx context.Context, query appgame.JumpGateMutationQuery) (domaingame.JumpGate, error) {

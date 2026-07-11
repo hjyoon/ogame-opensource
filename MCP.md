@@ -42,9 +42,9 @@ Implemented:
 - Consent CSRF+UX shows resource, redirect, scopes, deny.
 - MCP/OAuth rate limits on RPC, OAuth, and token API paths.
 - JSON audit logging for every `tools/call`; no secrets are logged.
-- Auth `mcp:read`: planets, overview, resources/options, queues,
-  fleets/options, officers, search, galaxy, stats, alliance, buddy, notes,
-  options, merchant, empire, tech, buildings, research, shipyard, defense.
+- Auth `mcp:read`: planets, overview, res/options, queues, fleets/options,
+  officers, search, galaxy, stats, alliance, buddy, notes, options, merchant,
+  jump gate, empire, tech, buildings, research, shipyard, defense.
 - Authenticated `mcp:messages` tools: `list_messages` and `get_message`.
   Read owned inbox rows without marking read or cleanup mutation.
 - Authenticated `mcp:message_write` tools: `send_message`, `delete_messages`,
@@ -65,7 +65,7 @@ Scopes: `mcp:read`, `mcp:messages`, `mcp:message_write`, `mcp:fleet`,
 `mcp:fleet_write`, `mcp:queue_write`, `mcp:resources_write`,
 `mcp:premium_write`, `mcp:write`, `mcp:admin`.
 
-Static tokens are bootstrap-only; prefer DB-backed user tokens.
+Static tokens are bootstrap-only; prefer DB tokens.
 
 ## User Token API
 

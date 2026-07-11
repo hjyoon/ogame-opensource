@@ -10,6 +10,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestJumpGateRepositoryReadsReadyMoonGate(t *testing.T) {
@@ -36,6 +37,83 @@ func TestJumpGateRepositoryReadsReadyMoonGate(t *testing.T) {
 	}
 }
 
+func TestJumpGateRepositoryReadsMCPJumpGateStatus(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	queryer := &fakeQueryer{results: append(jumpGateOverviewResults(10, domaingame.PlanetTypeMoon),
+		fakeQueryResult{rows: fakeRowsFromValues(jumpGateMoonRow(10, 42, "Moon", domaingame.PlanetTypeMoon, 1, 0, map[int]int{domaingame.FleetSmallCargo: 4, domaingame.FleetSolarSatellite: 9}))},
+		fakeQueryResult{rows: fakeRowsFromValues(jumpGateTargetRow(20, 42, "Target", 1, 0))},
+	)}
+	repository := NewJumpGateRepositoryWithRunner(queryer, nil, "ogame_", func() time.Time { return now })
+
+	status, err := repository.GetMCPJumpGateStatus(context.Background(), 42, domainmcp.JumpGateStatusCommand{PlanetID: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if status.PlayerID != 42 || status.Commander != "legor" || status.Planet.ID != 10 || status.Planet.TypeName != "moon" {
+		t.Fatalf("unexpected MCP jump gate status: %+v", status)
+	}
+	if status.Source.ID != 10 || status.Source.TypeName != "moon" || status.Source.GateLevel != 1 {
+		t.Fatalf("unexpected MCP source moon: %+v", status.Source)
+	}
+	if len(status.Targets) != 1 || status.Targets[0].ID != 20 || status.Targets[0].Coordinates.System != 3 {
+		t.Fatalf("unexpected MCP targets: %+v", status.Targets)
+	}
+	if len(status.Ships) != 1 || status.Ships[0].ID != domaingame.FleetSmallCargo || status.Ships[0].Count != 4 {
+		t.Fatalf("expected mobile ships without solar satellites, got %+v", status.Ships)
+	}
+	if status.Issue != nil {
+		t.Fatalf("expected ready moon without issue, got %+v", status.Issue)
+	}
+}
+
+func TestMCPJumpGateStatusMapsIssueAndEmptyBranches(t *testing.T) {
+	status := mcpJumpGateStatus(42, domaingame.JumpGate{
+		Commander: "legor",
+		CurrentPlanet: domaingame.PlanetOverview{
+			ID:          10,
+			Name:        "Moon",
+			Type:        domaingame.PlanetTypeMoon,
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+		},
+		Source: domaingame.JumpGateMoon{
+			ID:          10,
+			OwnerID:     42,
+			Name:        "Moon",
+			Type:        domaingame.PlanetTypeMoon,
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3},
+			GateLevel:   1,
+			GateUntil:   1_100,
+		},
+		Targets: []domaingame.JumpGateMoon{{
+			ID:          20,
+			OwnerID:     42,
+			Name:        "Target",
+			Type:        domaingame.PlanetTypeMoon,
+			Coordinates: domaingame.Coordinates{Galaxy: 1, System: 3, Position: 4},
+			GateLevel:   1,
+		}},
+		Ships: []domaingame.JumpGateShip{{ID: domaingame.FleetLightFighter, Name: "Light Fighter", Count: 2}},
+		ActionIssue: &domaingame.JumpGateActionIssue{
+			Code:    domaingame.JumpGateIssueCooldown,
+			Message: "cooldown",
+		},
+	})
+
+	if status.Issue == nil || status.Issue.Code != domaingame.JumpGateIssueCooldown || status.Issue.Message != "cooldown" {
+		t.Fatalf("expected MCP issue mapping, got %+v", status.Issue)
+	}
+	if len(status.Targets) != 1 || status.Targets[0].TypeName != "moon" || status.Targets[0].GateLevel != 1 {
+		t.Fatalf("unexpected target mapping: %+v", status.Targets)
+	}
+	if len(status.Ships) != 1 || status.Ships[0].ID != domaingame.FleetLightFighter || status.Ships[0].Count != 2 {
+		t.Fatalf("unexpected ship mapping: %+v", status.Ships)
+	}
+	if got := mcpJumpGateIssue(nil); got != nil {
+		t.Fatalf("nil issue should stay nil, got %+v", got)
+	}
+}
+
 func TestNewJumpGateRepositoryConstructorsAndDependencyErrors(t *testing.T) {
 	repository := NewJumpGateRepository(nil, "ogame_")
 	if repository.prefix != "ogame_" {
@@ -50,6 +128,9 @@ func TestNewJumpGateRepositoryConstructorsAndDependencyErrors(t *testing.T) {
 	}
 	if _, err := repository.GetJumpGate(context.Background(), appgame.JumpGateQuery{}); err == nil || !strings.Contains(err.Error(), "reader unavailable") {
 		t.Fatalf("expected reader dependency error, got %v", err)
+	}
+	if _, err := repository.GetMCPJumpGateStatus(context.Background(), 42, domainmcp.JumpGateStatusCommand{}); err == nil || !strings.Contains(err.Error(), "reader unavailable") {
+		t.Fatalf("expected MCP reader dependency error, got %v", err)
 	}
 	if _, err := repository.Jump(context.Background(), appgame.JumpGateMutationQuery{}); err == nil || !strings.Contains(err.Error(), "reader unavailable") {
 		t.Fatalf("expected mutation reader dependency error, got %v", err)

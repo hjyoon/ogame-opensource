@@ -346,6 +346,8 @@ try {
   const optionsToolBody = parseJSON(optionsTool);
   const merchantStatusTool = await mcpJSONRPC("tools/call", { name: "get_merchant_status", arguments: {} }, { id: 57, headers: authHeaders });
   const merchantStatusToolBody = parseJSON(merchantStatusTool);
+  const jumpGateStatusTool = await mcpJSONRPC("tools/call", { name: "get_jump_gate_status", arguments: {} }, { id: 58, headers: authHeaders });
+  const jumpGateStatusToolBody = parseJSON(jumpGateStatusTool);
   const empireOverviewTool = await mcpJSONRPC("tools/call", { name: "get_empire_overview", arguments: { planetType: 1 } }, { id: 45, headers: authHeaders });
   const empireOverviewToolBody = parseJSON(empireOverviewTool);
   const technologyTreeTool = await mcpJSONRPC("tools/call", { name: "get_technology_tree", arguments: { detailsId: 204, infoId: 1 } }, { id: 46, headers: authHeaders });
@@ -426,6 +428,7 @@ try {
     "get_notes",
     "get_options",
     "get_merchant_status",
+    "get_jump_gate_status",
     "get_empire_overview",
     "get_technology_tree",
     "get_building_options",
@@ -493,6 +496,7 @@ try {
       check(notesTool.status === 200 && Number(notesToolBody.result?.structuredContent?.notes?.playerId ?? 0) === login.playerID && Array.isArray(notesToolBody.result?.structuredContent?.notes?.rows), "get_notes returns read-only legacy notes state", notesToolBody.result ?? {}),
       check(optionsTool.status === 200 && Number(optionsToolBody.result?.structuredContent?.options?.playerId ?? 0) === login.playerID && String(optionsToolBody.result?.structuredContent?.options?.user?.name ?? "") !== "", "get_options returns read-only legacy options state without secrets", optionsToolBody.result ?? {}),
       check(merchantStatusTool.status === 200 && Number(merchantStatusToolBody.result?.structuredContent?.merchantStatus?.playerId ?? 0) === login.playerID && Array.isArray(merchantStatusToolBody.result?.structuredContent?.merchantStatus?.rows), "get_merchant_status returns read-only legacy merchant state", merchantStatusToolBody.result ?? {}),
+      check(jumpGateStatusTool.status === 200 && Number(jumpGateStatusToolBody.result?.structuredContent?.jumpGateStatus?.playerId ?? 0) === login.playerID && Array.isArray(jumpGateStatusToolBody.result?.structuredContent?.jumpGateStatus?.targets), "get_jump_gate_status returns read-only legacy jump gate state", jumpGateStatusToolBody.result ?? {}),
       check(empireOverviewTool.status === 200 && Number(empireOverviewToolBody.result?.structuredContent?.empire?.playerId ?? 0) === login.playerID && Array.isArray(empireOverviewToolBody.result?.structuredContent?.empire?.planets), "get_empire_overview returns read-only empire aggregate rows", empireOverviewToolBody.result ?? {}),
       check(technologyTreeTool.status === 200 && Number(technologyTreeToolBody.result?.structuredContent?.technology?.playerId ?? 0) === login.playerID && Array.isArray(technologyTreeToolBody.result?.structuredContent?.technology?.groups), "get_technology_tree returns legacy requirements and info rows", technologyTreeToolBody.result ?? {}),
       check(buildingOptionsTool.status === 200 && Number(buildingOptionsToolBody.result?.structuredContent?.buildingOptions?.playerId ?? 0) === login.playerID && Array.isArray(buildingOptionsToolBody.result?.structuredContent?.buildingOptions?.items), "get_building_options returns read-only legacy building options", buildingOptionsToolBody.result ?? {}),

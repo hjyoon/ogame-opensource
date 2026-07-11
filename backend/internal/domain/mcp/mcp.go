@@ -1007,6 +1007,31 @@ type MerchantStatus struct {
 	Rows          []MerchantResourceRow `json:"rows"`
 }
 
+type JumpGateStatusCommand struct {
+	PlanetID int
+}
+
+type JumpGateMoon struct {
+	ID          int         `json:"id"`
+	OwnerID     int         `json:"ownerId"`
+	Name        string      `json:"name"`
+	Type        int         `json:"type"`
+	TypeName    string      `json:"typeName"`
+	Coordinates Coordinates `json:"coordinates"`
+	GateLevel   int         `json:"gateLevel"`
+	GateUntil   int64       `json:"gateUntil,omitempty"`
+}
+
+type JumpGateStatus struct {
+	PlayerID  int            `json:"playerId"`
+	Planet    Planet         `json:"planet"`
+	Commander string         `json:"commander"`
+	Source    JumpGateMoon   `json:"source"`
+	Targets   []JumpGateMoon `json:"targets"`
+	Ships     []FleetShip    `json:"ships"`
+	Issue     *ActionIssue   `json:"issue,omitempty"`
+}
+
 type EmpireCommand struct {
 	PlanetID   int
 	PlanetType int

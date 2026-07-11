@@ -146,6 +146,10 @@ type MerchantReadRepository interface {
 	GetMCPMerchantStatus(context.Context, int, domainmcp.MerchantStatusCommand) (domainmcp.MerchantStatus, error)
 }
 
+type JumpGateReadRepository interface {
+	GetMCPJumpGateStatus(context.Context, int, domainmcp.JumpGateStatusCommand) (domainmcp.JumpGateStatus, error)
+}
+
 type EmpireReadRepository interface {
 	GetMCPEmpire(context.Context, int, domainmcp.EmpireCommand) (domainmcp.EmpireOverview, error)
 }
@@ -335,6 +339,7 @@ type Service struct {
 	notesRead       NotesReadRepository
 	optionsRead     OptionsReadRepository
 	merchantRead    MerchantReadRepository
+	jumpGateRead    JumpGateReadRepository
 	empireRead      EmpireReadRepository
 	technologyRead  TechnologyReadRepository
 	buildingRead    BuildingOptionsReadRepository
@@ -469,6 +474,11 @@ func (s Service) WithOptionsReadRepository(repository OptionsReadRepository) Ser
 
 func (s Service) WithMerchantReadRepository(repository MerchantReadRepository) Service {
 	s.merchantRead = repository
+	return s
+}
+
+func (s Service) WithJumpGateReadRepository(repository JumpGateReadRepository) Service {
+	s.jumpGateRead = repository
 	return s
 }
 
@@ -846,6 +856,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		if s.merchantRead != nil {
 			tools = append(tools, merchantStatusTool())
 		}
+		if s.jumpGateRead != nil {
+			tools = append(tools, jumpGateStatusTool())
+		}
 		if s.empireRead != nil {
 			tools = append(tools, empireOverviewTool())
 		}
@@ -1057,6 +1070,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callMerchantStatus(ctx, access, command.Arguments)
+	case "get_jump_gate_status":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callJumpGateStatus(ctx, access, command.Arguments)
 	case "get_empire_overview":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
 		if err != nil {
@@ -1697,6 +1719,29 @@ func (s Service) callMerchantStatus(ctx context.Context, access domainmcp.Access
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"merchantStatus": status}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callJumpGateStatus(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.jumpGateRead == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp jump gate read repository unavailable")
+	}
+	command, err := mcpJumpGateStatusCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	status, err := s.jumpGateRead.GetMCPJumpGateStatus(ctx, access.PlayerID, command)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"jumpGateStatus": status}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -3306,6 +3351,14 @@ func mcpMerchantStatusCommand(arguments map[string]any) (domainmcp.MerchantStatu
 	return domainmcp.MerchantStatusCommand{PlanetID: planetID}, nil
 }
 
+func mcpJumpGateStatusCommand(arguments map[string]any) (domainmcp.JumpGateStatusCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.JumpGateStatusCommand{}, err
+	}
+	return domainmcp.JumpGateStatusCommand{PlanetID: planetID}, nil
+}
+
 func mcpEmpireCommand(arguments map[string]any) (domainmcp.EmpireCommand, error) {
 	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
 	if err != nil {
@@ -4639,6 +4692,49 @@ func merchantStatusTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"merchantStatus"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func jumpGateStatusTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_jump_gate_status",
+		Title:       "Get Jump Gate Status",
+		Description: "Return read-only legacy jump gate screen state for the authenticated player, including source moon, targets, ships, and current issue.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet or moon id. Omit or pass 0 to use the active context.",
+					"minimum":     0,
+				},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"jumpGateStatus": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":  map[string]any{"type": "integer"},
+						"planet":    map[string]any{"type": "object"},
+						"commander": map[string]any{"type": "string"},
+						"source":    map[string]any{"type": "object"},
+						"targets":   map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"ships":     map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"issue":     map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "planet", "commander", "source", "targets", "ships"},
+				},
+			},
+			"required": []string{"jumpGateStatus"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,
