@@ -989,6 +989,26 @@ func TestServiceListsMessageToolsForMessageScopedTokens(t *testing.T) {
 	}
 }
 
+func TestServiceListsReportToolForMessageScopedTokens(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"messages": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeMessages}},
+		},
+	}).WithReportReadRepository(&fakeReportReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "messages"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_report" {
+		t.Fatalf("unexpected report tools: %v", names)
+	}
+}
+
 func TestServiceListsSendMessageToolForMessageWriteScope(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -2695,6 +2715,72 @@ func TestServiceMessageToolsRequireMessageScopeRepositoryAndValidArguments(t *te
 	service = service.WithReadRepository(fakeReadRepository{err: errors.New("messages down")})
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_message", AccessToken: "messages", Arguments: map[string]any{"messageId": 7}}); err == nil {
 		t.Fatalf("expected repository error")
+	}
+}
+
+func TestServiceCallsReportTool(t *testing.T) {
+	report := domainmcp.Report{
+		PlayerID: 42,
+		ID:       77,
+		Type:     6,
+		Title:    "Battle Report",
+		Text:     "<table>battle</table>",
+		Allowed:  true,
+	}
+	repository := &fakeReportReadRepository{result: report}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"messages": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeMessages}},
+		},
+	}).WithReportReadRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_report",
+		AccessToken: "messages",
+		Arguments:   map[string]any{"reportId": "77"},
+	})
+	if err != nil {
+		t.Fatalf("get_report returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["report"].(domainmcp.Report)
+	if result.IsError || got.ID != 77 || got.Title != "Battle Report" || !got.Allowed || got.Text == "" {
+		t.Fatalf("unexpected report result: %+v", result)
+	}
+	if repository.playerID != 42 || repository.command.ReportID != 77 {
+		t.Fatalf("unexpected report command: player=%d command=%+v", repository.playerID, repository.command)
+	}
+}
+
+func TestServiceReportToolRequiresMessageScopeRepositoryAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":     {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"messages": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeMessages}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_report", AccessToken: "messages", Arguments: map[string]any{"reportId": 7}}); err == nil {
+		t.Fatalf("expected missing report repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_report", AccessToken: "read", Arguments: map[string]any{"reportId": 7}}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without messages scope, got %v", err)
+	}
+
+	service = service.WithReportReadRepository(&fakeReportReadRepository{})
+	for _, arguments := range []map[string]any{
+		nil,
+		{"reportId": 0},
+		{"reportId": true},
+		{"reportId": -1},
+		{"reportId": 1.5},
+	} {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_report", AccessToken: "messages", Arguments: arguments}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", arguments, err)
+		}
+	}
+
+	service = service.WithReportReadRepository(&fakeReportReadRepository{err: errors.New("report down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_report", AccessToken: "messages", Arguments: map[string]any{"reportId": 7}}); err == nil || !strings.Contains(err.Error(), "report down") {
+		t.Fatalf("expected report repository error, got %v", err)
 	}
 }
 
@@ -4781,6 +4867,22 @@ func (f *fakeSearchReadRepository) SearchMCP(_ context.Context, playerID int, co
 	f.command = command
 	if f.err != nil {
 		return domainmcp.SearchResult{}, f.err
+	}
+	return f.result, nil
+}
+
+type fakeReportReadRepository struct {
+	result   domainmcp.Report
+	playerID int
+	command  domainmcp.ReportCommand
+	err      error
+}
+
+func (f *fakeReportReadRepository) GetMCPReport(_ context.Context, playerID int, command domainmcp.ReportCommand) (domainmcp.Report, error) {
+	f.playerID = playerID
+	f.command = command
+	if f.err != nil {
+		return domainmcp.Report{}, f.err
 	}
 	return f.result, nil
 }

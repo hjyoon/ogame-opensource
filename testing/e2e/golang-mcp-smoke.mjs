@@ -362,6 +362,10 @@ try {
   const defenseOptionsToolBody = parseJSON(defenseOptionsTool);
   const messagesTool = await mcpJSONRPC("tools/call", { name: "list_messages", arguments: { limit: 5 } }, { id: 29, headers: authHeaders });
   const messagesToolBody = parseJSON(messagesTool);
+  const firstSpyReportID = Number((messagesToolBody.result?.structuredContent?.messages?.messages ?? []).find((message) => Number(message?.type ?? 0) === 1)?.id ?? 0);
+  const reportIDForRead = firstSpyReportID > 0 ? firstSpyReportID : 999999999;
+  const reportTool = await mcpJSONRPC("tools/call", { name: "get_report", arguments: { reportId: reportIDForRead } }, { id: 59, headers: authHeaders });
+  const reportToolBody = parseJSON(reportTool);
   const sendMessageDryRun = await mcpJSONRPC("tools/call", { name: "send_message", arguments: { targetPlayerId: login.playerID, subject: "MCP smoke dry-run", text: "This is a dry-run from MCP smoke." } }, { id: 30, headers: authHeaders });
   const sendMessageDryRunBody = parseJSON(sendMessageDryRun);
   const firstMessageID = Number(messagesToolBody.result?.structuredContent?.messages?.messages?.[0]?.id ?? 0);
@@ -437,6 +441,7 @@ try {
     "get_defense_options",
     "list_messages",
     "get_message",
+    "get_report",
     "send_message",
     "delete_messages",
     "report_message",
@@ -504,6 +509,7 @@ try {
       check(shipyardOptionsTool.status === 200 && Number(shipyardOptionsToolBody.result?.structuredContent?.shipyardOptions?.playerId ?? 0) === login.playerID && Array.isArray(shipyardOptionsToolBody.result?.structuredContent?.shipyardOptions?.items), "get_shipyard_options returns read-only legacy shipyard options", shipyardOptionsToolBody.result ?? {}),
       check(defenseOptionsTool.status === 200 && Number(defenseOptionsToolBody.result?.structuredContent?.defenseOptions?.playerId ?? 0) === login.playerID && Array.isArray(defenseOptionsToolBody.result?.structuredContent?.defenseOptions?.items), "get_defense_options returns read-only legacy defense options", defenseOptionsToolBody.result ?? {}),
       check(messagesTool.status === 200 && Number(messagesToolBody.result?.structuredContent?.messages?.playerId ?? 0) === login.playerID && Array.isArray(messagesToolBody.result?.structuredContent?.messages?.messages), "list_messages returns current player message rows without mutation", messagesToolBody.result ?? {}),
+      check(reportTool.status === 200 && Number(reportToolBody.result?.structuredContent?.report?.playerId ?? 0) === login.playerID && Number(reportToolBody.result?.structuredContent?.report?.id ?? 0) === reportIDForRead && typeof reportToolBody.result?.structuredContent?.report?.allowed === "boolean", "get_report returns legacy report access result without mutation", reportToolBody.result ?? {}),
       check(sendMessageDryRun.status === 200 && Number(sendMessageDryRunBody.result?.structuredContent?.sendMessage?.playerId ?? 0) === login.playerID && sendMessageDryRunBody.result?.structuredContent?.sendMessage?.dryRun === true && sendMessageDryRunBody.result?.structuredContent?.sendMessage?.requiresConfirmation === true && String(sendMessageDryRunBody.result?.structuredContent?.sendMessage?.confirmation ?? "").startsWith(`send_message:${login.playerID}:`), "send_message dry-run returns explicit confirmation without executing", sendMessageDryRunBody.result ?? {}),
       check(firstMessageID === 0 || (deleteMessageDryRun?.status === 200 && Number(deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.playerId ?? 0) === login.playerID && deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.dryRun === true && deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.requiresConfirmation === true && deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.executed === false && String(deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.confirmation ?? "").startsWith(`delete_messages:${firstMessageID}:`)), "delete_messages dry-run returns explicit confirmation for an owned visible message when available", {
         firstMessageID,

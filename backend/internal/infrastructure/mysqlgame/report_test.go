@@ -8,6 +8,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestReportRepositoryReadsOwnedReport(t *testing.T) {
@@ -35,6 +36,24 @@ func TestNewReportRepositoryKeepsSQLQueryer(t *testing.T) {
 	}
 	if _, ok := repository.queryer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL queryer, got %T", repository.queryer)
+	}
+}
+
+func TestReportRepositoryMapsMCPReport(t *testing.T) {
+	repository := NewReportRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{42, domaingame.MessageTypeBattleReportText, "<table>battle</table>", 0, 7})},
+	}}, "ogame_")
+
+	report, err := repository.GetMCPReport(context.Background(), 42, domainmcp.ReportCommand{ReportID: 11})
+	if err != nil {
+		t.Fatalf("GetMCPReport returned error: %v", err)
+	}
+	if report.PlayerID != 42 || report.ID != 11 || report.Title != domaingame.ReportTitleBattle || report.Text != "<table>battle</table>" || !report.Allowed {
+		t.Fatalf("unexpected MCP report: %+v", report)
+	}
+
+	if _, err := (ReportRepository{}).GetMCPReport(context.Background(), 42, domainmcp.ReportCommand{ReportID: 11}); err == nil || !strings.Contains(err.Error(), "reader unavailable") {
+		t.Fatalf("expected MCP report reader dependency error, got %v", err)
 	}
 }
 

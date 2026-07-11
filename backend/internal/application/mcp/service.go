@@ -76,6 +76,10 @@ type ReadRepository interface {
 	GetMCPFleetMovements(context.Context, int) (domainmcp.FleetMovements, error)
 }
 
+type ReportReadRepository interface {
+	GetMCPReport(context.Context, int, domainmcp.ReportCommand) (domainmcp.Report, error)
+}
+
 type WriteRepository interface {
 	PreviewMCPSendMessage(context.Context, int, domainmcp.SendMessageCommand) (domainmcp.SendMessageResult, error)
 	SendMCPMessage(context.Context, int, domainmcp.SendMessageCommand) (domainmcp.SendMessageResult, error)
@@ -325,6 +329,7 @@ type Service struct {
 	oauthRedirects  []string
 	oidcSigner      OIDCSigner
 	readRepository  ReadRepository
+	reportRead      ReportReadRepository
 	writeRepository WriteRepository
 	fleetWrite      FleetWriteRepository
 	queueWrite      QueueWriteRepository
@@ -404,6 +409,11 @@ func (s Service) WithOIDCSigner(signer OIDCSigner) Service {
 
 func (s Service) WithReadRepository(repository ReadRepository) Service {
 	s.readRepository = repository
+	return s
+}
+
+func (s Service) WithReportReadRepository(repository ReportReadRepository) Service {
+	s.reportRead = repository
 	return s
 }
 
@@ -881,8 +891,13 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 			tools = append(tools, fleetOptionsTool())
 		}
 	}
-	if access.HasScope(domainmcp.ScopeMessages) && s.readRepository != nil {
-		tools = append(tools, listMessagesTool(), getMessageTool())
+	if access.HasScope(domainmcp.ScopeMessages) {
+		if s.readRepository != nil {
+			tools = append(tools, listMessagesTool(), getMessageTool())
+		}
+		if s.reportRead != nil {
+			tools = append(tools, getReportTool())
+		}
 	}
 	if access.HasScope(domainmcp.ScopeMessageWrite) && s.writeRepository != nil {
 		tools = append(tools, sendMessageTool(), deleteMessagesTool(), reportMessageTool())
@@ -1151,6 +1166,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callGetMessage(ctx, access, command.Arguments)
+	case "get_report":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeMessages)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callGetReport(ctx, access, command.Arguments)
 	case "send_message":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeMessageWrite)
 		if err != nil {
@@ -1926,6 +1950,29 @@ func (s Service) callGetMessage(ctx context.Context, access domainmcp.Access, ar
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"message": message}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callGetReport(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.reportRead == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp report repository unavailable")
+	}
+	reportID, err := optionalNonNegativeIntArgument(arguments, "reportId")
+	if err != nil || reportID <= 0 {
+		return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+	}
+	report, err := s.reportRead.GetMCPReport(ctx, access.PlayerID, domainmcp.ReportCommand{ReportID: reportID})
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"report": report}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -3923,6 +3970,49 @@ func getMessageTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"message"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func getReportTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_report",
+		Title:       "Get Report",
+		Description: "Return an owned battle or espionage report body by id using legacy report access rules.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"reportId": map[string]any{
+					"type":        "integer",
+					"minimum":     1,
+					"description": "Legacy report message id.",
+				},
+			},
+			"required":             []string{"reportId"},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"report": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId": map[string]any{"type": "integer"},
+						"id":       map[string]any{"type": "integer"},
+						"type":     map[string]any{"type": "integer"},
+						"title":    map[string]any{"type": "string"},
+						"text":     map[string]any{"type": "string"},
+						"allowed":  map[string]any{"type": "boolean"},
+					},
+					"required": []string{"playerId", "id", "type", "title", "text", "allowed"},
+				},
+			},
+			"required": []string{"report"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,

@@ -24,8 +24,7 @@ Implemented:
   - Tokens expire after `OGAME_MCP_TOKEN_TTL_SECONDS` seconds; default 30 days,
     `0` disables expiry.
 - React options UI for DB token list/create/one-time secret/revoke.
-- Go MCP smoke E2E covers transport, tokens, OAuth, tools, mutations, invalid
-  params, expiry, revoke.
+- Go MCP smoke E2E covers transport/tokens/OAuth/tools/mutations/errors/expiry/revoke.
 - OAuth 2.1:
   - `/.well-known/oauth-authorization-server`
   - PRM endpoint and 401 discovery challenge
@@ -45,17 +44,17 @@ Implemented:
 - Auth `mcp:read`: planets, overview, res/options, queues, fleets/options,
   officers, search, galaxy, stats, alliance, buddy, notes, options, merchant,
   jump gate, empire, tech, buildings, research, shipyard, defense.
-- Authenticated `mcp:messages` tools: `list_messages` and `get_message`.
-  Read owned inbox rows without marking read or cleanup mutation.
-- Authenticated `mcp:message_write` tools: `send_message`, `delete_messages`,
+- `mcp:messages`: `list_messages`, `get_message`, `get_report`; read owned
+  inbox/report rows without read marks or cleanup mutation.
+- `mcp:message_write`: `send_message`, `delete_messages`,
   `report_message`. All default to dry-run; execution requires `dryRun:false`
   plus returned confirmation string.
-- Authenticated `mcp:fleet_write`: `validate_fleet_dispatch`,
+- `mcp:fleet_write`: `validate_fleet_dispatch`,
   `dispatch_fleet`, `recall_fleet`; mutations require confirmation.
-- Authenticated `mcp:queue_write`: `cancel_building_queue`,
+- `mcp:queue_write`: `cancel_building_queue`,
   `cancel_research_queue`, `enqueue_shipyard_order`; confirmed mutations.
-- Authenticated `mcp:resources_write`: `update_resource_production`.
-- Authenticated `mcp:premium_write`: `recruit_officer`.
+- `mcp:resources_write`: `update_resource_production`.
+- `mcp:premium_write`: `recruit_officer`.
 
 ## Static Token Format
 

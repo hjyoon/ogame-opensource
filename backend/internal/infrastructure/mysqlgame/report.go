@@ -3,10 +3,12 @@ package mysqlgame
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type ReportRepository struct {
@@ -20,6 +22,24 @@ func NewReportRepository(db *sql.DB, prefix string) ReportRepository {
 
 func NewReportRepositoryWithQueryer(queryer Queryer, prefix string) ReportRepository {
 	return ReportRepository{queryer: queryer, prefix: prefix}
+}
+
+func (r ReportRepository) GetMCPReport(ctx context.Context, playerID int, command domainmcp.ReportCommand) (domainmcp.Report, error) {
+	if r.queryer == nil {
+		return domainmcp.Report{}, errors.New("report reader unavailable")
+	}
+	report, err := r.GetReport(ctx, appgame.ReportQuery{PlayerID: playerID, ReportID: command.ReportID})
+	if err != nil {
+		return domainmcp.Report{}, err
+	}
+	return domainmcp.Report{
+		PlayerID: playerID,
+		ID:       report.ID,
+		Type:     report.Type,
+		Title:    report.Title,
+		Text:     report.Text,
+		Allowed:  report.Allowed,
+	}, nil
 }
 
 func (r ReportRepository) GetReport(ctx context.Context, query appgame.ReportQuery) (domaingame.Report, error) {

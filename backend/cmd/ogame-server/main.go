@@ -202,6 +202,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 	logger.Info("universe DB mcp token and oauth management enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
 	verifier := mcpauth.NewCompositeTokenVerifier(repository, staticVerifier)
 	readRepository := mysqlgame.NewMCPReadRepository(db, cfg.UniDBPrefix)
+	reportReadRepository := mysqlgame.NewReportRepository(db, cfg.UniDBPrefix)
 	writeRepository := mysqlgame.NewMessagesRepository(db, cfg.UniDBPrefix)
 	fleetWriteRepository := mysqlgame.NewFleetRepository(db, cfg.UniDBPrefix)
 	queueWriteRepository := mysqlgame.NewBuildingsRepository(db, cfg.UniDBPrefix)
@@ -229,6 +230,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 		WithOAuthCodeRepository(repository).
 		WithOAuthRedirectURIs(appmcp.ParseOAuthRedirectURIs(cfg.MCPOAuthRedirectURIs)).
 		WithReadRepository(readRepository).
+		WithReportReadRepository(reportReadRepository).
 		WithWriteRepository(writeRepository).
 		WithFleetWriteRepository(fleetWriteRepository).
 		WithQueueWriteRepository(queueWriteRepository).

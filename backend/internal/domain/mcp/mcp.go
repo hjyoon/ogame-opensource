@@ -302,6 +302,19 @@ type MessageDetail struct {
 	Message  PlayerMessage `json:"message"`
 }
 
+type ReportCommand struct {
+	ReportID int
+}
+
+type Report struct {
+	PlayerID int    `json:"playerId"`
+	ID       int    `json:"id"`
+	Type     int    `json:"type"`
+	Title    string `json:"title"`
+	Text     string `json:"text"`
+	Allowed  bool   `json:"allowed"`
+}
+
 type ActionIssue struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
