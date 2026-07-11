@@ -726,14 +726,47 @@ func (r FleetRepository) RecallFleetAnyOwner(ctx context.Context, fleetID int) e
 }
 
 func (r FleetRepository) PreviewMCPDispatchFleet(ctx context.Context, playerID int, command domainmcp.DispatchFleetCommand) (domainmcp.DispatchFleetValidationResult, error) {
-	if r.queryer == nil {
-		return domainmcp.DispatchFleetValidationResult{}, errors.New("fleet reader unavailable")
+	_, _, result, err := r.mcpDispatchFleetValidation(ctx, playerID, command, false)
+	return result, err
+}
+
+func (r FleetRepository) DispatchMCPFleet(ctx context.Context, playerID int, command domainmcp.DispatchFleetCommand) (domainmcp.DispatchFleetValidationResult, error) {
+	if r.execer == nil {
+		return domainmcp.DispatchFleetValidationResult{}, errors.New("fleet writer unavailable")
 	}
-	reader := r
-	reader.finishDueQueues = false
-	fleet, err := reader.GetFleet(ctx, appgame.FleetQuery{PlayerID: playerID, PlanetID: command.PlanetID})
+	fleet, draft, result, err := r.mcpDispatchFleetValidation(ctx, playerID, command, true)
+	if err != nil || result.Issue != nil {
+		return result, err
+	}
+	issue, err := r.LaunchFleetDispatch(ctx, appgame.FleetLaunchQuery{
+		PlayerID:    playerID,
+		PlanetID:    result.PlanetID,
+		Origin:      fleet.CurrentPlanet,
+		Draft:       draft,
+		UnionID:     command.UnionID,
+		HoldSeconds: domaingame.NormalizeFleetHoldHours(command.Mission, command.HoldHours, command.ExpeditionHours, fleet.ExpeditionLevel) * 60 * 60,
+	})
 	if err != nil {
 		return domainmcp.DispatchFleetValidationResult{}, err
+	}
+	if issue != nil {
+		result.Ready = false
+		result.Issue = mcpFleetActionIssue(issue)
+		return result, nil
+	}
+	result.Executed = true
+	return result, nil
+}
+
+func (r FleetRepository) mcpDispatchFleetValidation(ctx context.Context, playerID int, command domainmcp.DispatchFleetCommand, finishDueQueues bool) (domaingame.Fleet, domaingame.FleetDispatchDraft, domainmcp.DispatchFleetValidationResult, error) {
+	if r.queryer == nil {
+		return domaingame.Fleet{}, domaingame.FleetDispatchDraft{}, domainmcp.DispatchFleetValidationResult{}, errors.New("fleet reader unavailable")
+	}
+	reader := r
+	reader.finishDueQueues = finishDueQueues
+	fleet, err := reader.GetFleet(ctx, appgame.FleetQuery{PlayerID: playerID, PlanetID: command.PlanetID})
+	if err != nil {
+		return domaingame.Fleet{}, domaingame.FleetDispatchDraft{}, domainmcp.DispatchFleetValidationResult{}, err
 	}
 	draft, issue := domaingame.BuildFleetDispatchValidation(fleet, domaingame.FleetDispatchValidationInput{
 		Ships:           command.Ships,
@@ -750,7 +783,7 @@ func (r FleetRepository) PreviewMCPDispatchFleet(ctx context.Context, playerID i
 	if planetID <= 0 {
 		planetID = fleet.CurrentPlanet.ID
 	}
-	return domainmcp.DispatchFleetValidationResult{
+	result := domainmcp.DispatchFleetValidationResult{
 		PlayerID:        playerID,
 		PlanetID:        planetID,
 		Ready:           draft.Ready,
@@ -765,7 +798,8 @@ func (r FleetRepository) PreviewMCPDispatchFleet(ctx context.Context, playerID i
 		DurationSeconds: draft.DurationSeconds,
 		Distance:        draft.Distance,
 		Issue:           mcpFleetActionIssue(issue),
-	}, nil
+	}
+	return fleet, draft, result, nil
 }
 
 func (r FleetRepository) PreviewMCPRecallFleet(ctx context.Context, playerID int, command domainmcp.RecallFleetCommand) (domainmcp.RecallFleetResult, error) {

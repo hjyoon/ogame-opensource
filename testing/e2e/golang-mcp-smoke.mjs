@@ -340,6 +340,8 @@ try {
   const reportMessageDryRunBody = reportMessageDryRun === undefined ? {} : parseJSON(reportMessageDryRun);
   const validateFleetDispatchDryRun = await mcpJSONRPC("tools/call", { name: "validate_fleet_dispatch", arguments: { ships: { "202": 1 }, targetGalaxy: 9, targetSystem: 499, targetPosition: 15, targetType: 1, mission: 3, speed: 10 } }, { id: 34, headers: authHeaders });
   const validateFleetDispatchDryRunBody = parseJSON(validateFleetDispatchDryRun);
+  const dispatchFleetWrongConfirm = await mcpJSONRPC("tools/call", { name: "dispatch_fleet", arguments: { ships: { "202": 1 }, targetGalaxy: 9, targetSystem: 499, targetPosition: 15, targetType: 1, mission: 3, speed: 10, confirm: "wrong" } }, { id: 35, headers: authHeaders });
+  const dispatchFleetWrongConfirmBody = parseJSON(dispatchFleetWrongConfirm);
   const recallFleetDryRun = await mcpJSONRPC("tools/call", { name: "recall_fleet", arguments: { fleetId: 999999999 } }, { id: 33, headers: authHeaders });
   const recallFleetDryRunBody = parseJSON(recallFleetDryRun);
   const invalidParamsTool = await mcpJSONRPC("tools/call", { name: "get_planet_resources", arguments: { planetId: "abc" } }, { id: 27, headers: authHeaders });
@@ -375,6 +377,7 @@ try {
     "delete_messages",
     "report_message",
     "validate_fleet_dispatch",
+    "dispatch_fleet",
     "recall_fleet"
   ];
   const authedToolNames = toolNames(authedToolsBody);
@@ -424,6 +427,7 @@ try {
         result: reportMessageDryRunBody.result ?? {}
       }),
       check(validateFleetDispatchDryRun.status === 200 && Number(validateFleetDispatchDryRunBody.result?.structuredContent?.fleetDispatchValidation?.playerId ?? 0) === login.playerID && validateFleetDispatchDryRunBody.result?.structuredContent?.fleetDispatchValidation?.dryRun === true, "validate_fleet_dispatch returns a dry-run validation result without mutation", validateFleetDispatchDryRunBody.result ?? {}),
+      check(dispatchFleetWrongConfirm.status === 200 && dispatchFleetWrongConfirmBody.error?.code === -32602, "dispatch_fleet rejects wrong confirmation before mutation", dispatchFleetWrongConfirmBody),
       check(recallFleetDryRun.status === 200 && Number(recallFleetDryRunBody.result?.structuredContent?.recallFleet?.playerId ?? 0) === login.playerID && recallFleetDryRunBody.result?.structuredContent?.recallFleet?.dryRun === true && recallFleetDryRunBody.result?.structuredContent?.recallFleet?.executed === false && recallFleetDryRunBody.result?.structuredContent?.recallFleet?.requiresConfirmation === false && recallFleetDryRunBody.result?.structuredContent?.recallFleet?.issue?.code === "fleet_not_found", "recall_fleet dry-run is available under fleet_write and does not mutate missing fleet ids", recallFleetDryRunBody.result ?? {}),
       check(invalidParamsTool.status === 200 && invalidParamsToolBody.error?.code === -32602, "invalid tool params return JSON-RPC invalid params", invalidParamsToolBody),
       check(Number(tokenRowAfterUse?.lastUsedAt ?? 0) > 0, "bearer tool use updates token last-used timestamp", { tokenRowAfterUse }),

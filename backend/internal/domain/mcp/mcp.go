@@ -315,6 +315,7 @@ type DispatchFleetValidationResult struct {
 	DryRun               bool         `json:"dryRun"`
 	RequiresConfirmation bool         `json:"requiresConfirmation"`
 	Confirmation         string       `json:"confirmation,omitempty"`
+	Executed             bool         `json:"executed"`
 	TotalShips           int          `json:"totalShips"`
 	Mission              int          `json:"mission"`
 	Target               Coordinates  `json:"target"`

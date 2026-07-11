@@ -98,6 +98,90 @@ func TestFleetRepositoryPreviewMCPDispatchFleetEdges(t *testing.T) {
 	}
 }
 
+func TestFleetRepositoryDispatchMCPFleetRequiresWriterAndSkipsIssue(t *testing.T) {
+	command := domainmcp.DispatchFleetCommand{
+		Ships:      map[int]int{domaingame.FleetSmallCargo: 0},
+		Target:     domainmcp.Coordinates{Galaxy: 2, System: 3, Position: 4},
+		TargetType: domaingame.GamePlanetTypePlanet,
+		Mission:    domaingame.FleetMissionTransport,
+	}
+	if _, err := NewFleetRepositoryWithQueryer(&fakeQueryer{}, "ogame_", nil).DispatchMCPFleet(context.Background(), 42, command); err == nil {
+		t.Fatalf("expected writer unavailable error")
+	}
+
+	now := time.Unix(1_000, 0)
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues()},
+	}, append(fleetCountsPrefixResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{1})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{128})},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+	)...)}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	result, err := repository.DispatchMCPFleet(context.Background(), 42, command)
+	if err != nil || result.Issue == nil || result.Executed || len(runner.execCalls) != 0 {
+		t.Fatalf("expected validation issue without launch, result=%+v err=%v exec=%+v", result, err, runner.execCalls)
+	}
+
+	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("dispatch read failed")}}}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	if _, err := repository.DispatchMCPFleet(context.Background(), 42, command); err == nil || !strings.Contains(err.Error(), "dispatch read failed") {
+		t.Fatalf("expected dispatch validation read error, got %v", err)
+	}
+}
+
+func TestFleetRepositoryDispatchMCPFleetLaunchesReadyDraft(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	readPrefix := func() []fakeQueryResult {
+		return append([]fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{0})},
+			{rows: fakeRowsFromValues()},
+		}, append(fleetCountsPrefixResults(),
+			fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})},
+			fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})},
+			fakeQueryResult{rows: fakeRowsFromValues([]any{1})},
+			fakeQueryResult{rows: fakeRowsFromValues([]any{128})},
+			fakeQueryResult{rows: fakeRowsFromValues()},
+		)...)
+	}
+	command := domainmcp.DispatchFleetCommand{
+		Ships:      map[int]int{domaingame.FleetSmallCargo: 1},
+		Resources:  domainmcp.FleetResources{Metal: 10},
+		Target:     domainmcp.Coordinates{Galaxy: 2, System: 3, Position: 4},
+		TargetType: domaingame.GamePlanetTypePlanet,
+		Mission:    domaingame.FleetMissionTransport,
+		Speed:      10,
+	}
+
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: append(readPrefix(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{100, 43, domaingame.PlanetTypePlanet})},
+		fakeQueryResult{rows: fakeRowsFromValues(fleetLaunchUserStateRow(42, 10_000, 0, 0, 0, 0, now.Unix()))},
+		fakeQueryResult{rows: fakeRowsFromValues(fleetLaunchUserStateRow(43, 10_000, 0, 0, 0, 0, now.Unix()))},
+	)}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	result, err := repository.DispatchMCPFleet(context.Background(), 42, command)
+	if err != nil || !result.Ready || !result.Executed || result.Issue != nil {
+		t.Fatalf("expected executed ready dispatch, result=%+v err=%v", result, err)
+	}
+	if len(runner.execCalls) != 5 || !strings.Contains(runner.execCalls[2].sql, "INSERT INTO `ogame_fleet`") {
+		t.Fatalf("expected legacy launch writes, exec=%+v", runner.execCalls)
+	}
+
+	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: append(readPrefix(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{1})},
+	)}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	result, err = repository.DispatchMCPFleet(context.Background(), 42, command)
+	if err != nil || result.Issue == nil || result.Executed || result.Ready {
+		t.Fatalf("expected frozen launch issue, result=%+v err=%v", result, err)
+	}
+}
+
 func TestFleetRepositorySkipsTemplatesForNonCommanderFleetScreen(t *testing.T) {
 	now := time.Unix(1_000, 0)
 	queryer := &fakeQueryer{results: append(fleetCountsPrefixResults(),

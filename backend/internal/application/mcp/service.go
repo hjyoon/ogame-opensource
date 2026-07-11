@@ -87,6 +87,7 @@ type WriteRepository interface {
 
 type FleetWriteRepository interface {
 	PreviewMCPDispatchFleet(context.Context, int, domainmcp.DispatchFleetCommand) (domainmcp.DispatchFleetValidationResult, error)
+	DispatchMCPFleet(context.Context, int, domainmcp.DispatchFleetCommand) (domainmcp.DispatchFleetValidationResult, error)
 	PreviewMCPRecallFleet(context.Context, int, domainmcp.RecallFleetCommand) (domainmcp.RecallFleetResult, error)
 	RecallMCPFleet(context.Context, int, domainmcp.RecallFleetCommand) (domainmcp.RecallFleetResult, error)
 }
@@ -610,7 +611,7 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		tools = append(tools, sendMessageTool(), deleteMessagesTool(), reportMessageTool())
 	}
 	if access.HasScope(domainmcp.ScopeFleetWrite) && s.fleetWrite != nil {
-		tools = append(tools, validateFleetDispatchTool(), recallFleetTool())
+		tools = append(tools, validateFleetDispatchTool(), dispatchFleetTool(), recallFleetTool())
 	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
 }
@@ -747,6 +748,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callValidateFleetDispatch(ctx, access, command.Arguments)
+	case "dispatch_fleet":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeFleetWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callDispatchFleet(ctx, access, command.Arguments)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -1169,6 +1179,40 @@ func (s Service) callValidateFleetDispatch(ctx context.Context, access domainmcp
 		result.Confirmation = mcpDispatchFleetConfirmation(command)
 	}
 	structured := map[string]any{"fleetDispatchValidation": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callDispatchFleet(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.fleetWrite == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp fleet write repository unavailable")
+	}
+	command, err := mcpDispatchFleetCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	confirmation := mcpDispatchFleetConfirmation(command)
+	confirm, err := optionalStringArgument(arguments, "confirm")
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	if strings.TrimSpace(confirm) != confirmation {
+		return domainmcp.ToolCallResult{}, domainmcp.ErrInvalidParams
+	}
+	result, err := s.fleetWrite.DispatchMCPFleet(ctx, access.PlayerID, command)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	result.DryRun = false
+	result.RequiresConfirmation = false
+	result.Confirmation = confirmation
+	structured := map[string]any{"fleetDispatch": result}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -2616,6 +2660,63 @@ func validateFleetDispatchTool() domainmcp.Tool {
 			"readOnlyHint":    true,
 			"destructiveHint": false,
 			"idempotentHint":  true,
+		},
+	}
+}
+
+func dispatchFleetTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "dispatch_fleet",
+		Title:       "Dispatch Fleet",
+		Description: "Execute a fleet dispatch only with the exact confirmation returned by validate_fleet_dispatch for the same arguments.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId":        map[string]any{"type": "integer", "minimum": 1},
+				"ships":           map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer", "minimum": 0}},
+				"resources":       map[string]any{"type": "object", "properties": map[string]any{"metal": map[string]any{"type": "integer", "minimum": 0}, "crystal": map[string]any{"type": "integer", "minimum": 0}, "deuterium": map[string]any{"type": "integer", "minimum": 0}}, "additionalProperties": false},
+				"targetGalaxy":    map[string]any{"type": "integer", "minimum": 1},
+				"targetSystem":    map[string]any{"type": "integer", "minimum": 1},
+				"targetPosition":  map[string]any{"type": "integer", "minimum": 1},
+				"targetType":      map[string]any{"type": "integer", "minimum": 1},
+				"mission":         map[string]any{"type": "integer", "minimum": 1},
+				"speed":           map[string]any{"type": "integer", "minimum": 0},
+				"holdHours":       map[string]any{"type": "integer", "minimum": 0},
+				"expeditionHours": map[string]any{"type": "integer", "minimum": 0},
+				"unionId":         map[string]any{"type": "integer", "minimum": 0},
+				"confirm":         map[string]any{"type": "string"},
+			},
+			"required":             []string{"ships", "targetGalaxy", "targetSystem", "targetPosition", "targetType", "mission", "confirm"},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"fleetDispatch": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":        map[string]any{"type": "integer"},
+						"planetId":        map[string]any{"type": "integer"},
+						"ready":           map[string]any{"type": "boolean"},
+						"dryRun":          map[string]any{"type": "boolean"},
+						"executed":        map[string]any{"type": "boolean"},
+						"totalShips":      map[string]any{"type": "integer"},
+						"mission":         map[string]any{"type": "integer"},
+						"target":          map[string]any{"type": "object"},
+						"targetType":      map[string]any{"type": "integer"},
+						"confirmation":    map[string]any{"type": "string"},
+						"fuelConsumption": map[string]any{"type": "integer"},
+						"issue":           map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "planetId", "ready", "dryRun", "executed", "totalShips", "mission", "target", "targetType"},
+				},
+			},
+			"required": []string{"fleetDispatch"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    false,
+			"destructiveHint": true,
+			"idempotentHint":  false,
 		},
 	}
 }

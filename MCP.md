@@ -55,8 +55,8 @@ Implemented:
 - Authenticated `mcp:message_write` tools: `send_message`, `delete_messages`,
   `report_message`. All default to dry-run; execution requires `dryRun:false`
   plus returned confirmation string.
-- Authenticated `mcp:fleet_write` tools: `validate_fleet_dispatch`
-  (validation only) and `recall_fleet` (dry-run/confirm).
+- Authenticated `mcp:fleet_write`: `validate_fleet_dispatch`,
+  `dispatch_fleet`, `recall_fleet`; mutations require confirmation.
 
 ## Static Token Format
 
@@ -89,7 +89,7 @@ narrow scope, consent, audit log, rate limit, dry-run, and confirmation.
 
 ## Next Steps
 
-1. Add confirmed `dispatch_fleet`, then queue actions.
+1. Add queue actions.
 
 ## General User Policy
 
