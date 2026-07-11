@@ -209,6 +209,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 	premiumRepository := mysqlgame.NewOfficersRepository(db, cfg.UniDBPrefix)
 	searchReadRepository := mysqlgame.NewSearchRepository(db, cfg.UniDBPrefix)
 	galaxyReadRepository := mysqlgame.NewGalaxyReadRepository(db, cfg.UniDBPrefix)
+	statisticsReadRepository := mysqlgame.NewStatisticsRepository(db, cfg.UniDBPrefix)
 	return withCommonMCP(appmcp.NewServiceWithTokenManagement(health, verifier, repository, sessions, appmcp.SecureTokenGenerator{}, time.Now).
 		WithTokenTTL(time.Duration(cfg.MCPTokenTTLSeconds) * time.Second).
 		WithOAuthCodeRepository(repository).
@@ -221,6 +222,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 		WithPremiumReadRepository(premiumRepository).
 		WithSearchReadRepository(searchReadRepository).
 		WithGalaxyReadRepository(galaxyReadRepository).
+		WithStatisticsReadRepository(statisticsReadRepository).
 		WithPremiumWriteRepository(premiumRepository))
 }
 

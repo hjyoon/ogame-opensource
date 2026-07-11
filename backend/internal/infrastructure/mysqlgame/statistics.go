@@ -3,11 +3,13 @@ package mysqlgame
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type StatisticsRepository struct {
@@ -101,6 +103,63 @@ func (r StatisticsRepository) GetStatistics(ctx context.Context, query appgame.S
 		Start:            start,
 		Total:            total,
 		GeneratedAt:      r.now().Unix(),
+		Rows:             rows,
+	}, nil
+}
+
+func (r StatisticsRepository) GetMCPStatistics(ctx context.Context, playerID int, command domainmcp.StatisticsCommand) (domainmcp.Statistics, error) {
+	if r.queryer == nil {
+		return domainmcp.Statistics{}, errors.New("statistics reader unavailable")
+	}
+	statistics, err := r.GetStatistics(ctx, appgame.StatisticsQuery{
+		PlayerID: playerID,
+		PlanetID: command.PlanetID,
+		Who:      command.Who,
+		Type:     command.Type,
+		Start:    command.Start,
+	})
+	if err != nil {
+		return domainmcp.Statistics{}, err
+	}
+	rows := make([]domainmcp.StatisticsRow, 0, len(statistics.Rows))
+	for _, row := range statistics.Rows {
+		var player *domainmcp.StatisticsPlayerRef
+		if row.Player.ID > 0 || row.Player.Name != "" {
+			player = &domainmcp.StatisticsPlayerRef{ID: row.Player.ID, Name: row.Player.Name}
+		}
+		var alliance *domainmcp.StatisticsAllianceRef
+		if row.Alliance != nil {
+			alliance = &domainmcp.StatisticsAllianceRef{ID: row.Alliance.ID, Tag: row.Alliance.Tag}
+		}
+		rows = append(rows, domainmcp.StatisticsRow{
+			Place:          row.Place,
+			PreviousPlace:  row.PreviousPlace,
+			Delta:          row.PlaceDelta(),
+			Score:          row.Score,
+			DisplayScore:   row.DisplayScore(statistics.Type),
+			ScorePerMember: row.DisplayScorePerMember(statistics.Type),
+			ScoreDate:      row.ScoreDate,
+			Player:         player,
+			Alliance:       alliance,
+			Coordinates: domainmcp.Coordinates{
+				Galaxy:   row.Coordinates.Galaxy,
+				System:   row.Coordinates.System,
+				Position: row.Coordinates.Position,
+			},
+			Members:      row.Members,
+			Own:          row.Own,
+			SameAlliance: row.SameAlliance,
+		})
+	}
+	return domainmcp.Statistics{
+		PlayerID:         playerID,
+		PlanetID:         statistics.CurrentPlanet.ID,
+		ViewerAllianceID: statistics.ViewerAllianceID,
+		Who:              statistics.Who,
+		Type:             statistics.Type,
+		Start:            statistics.Start,
+		Total:            statistics.Total,
+		GeneratedAt:      statistics.GeneratedAt,
 		Rows:             rows,
 	}, nil
 }

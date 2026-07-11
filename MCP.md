@@ -24,8 +24,8 @@ Implemented:
   - Tokens expire after `OGAME_MCP_TOKEN_TTL_SECONDS` seconds; default 30 days,
     `0` disables expiry.
 - React options UI for DB token list/create/one-time secret/revoke.
-- Go MCP smoke E2E covers transport, tokens, OAuth, tools, confirmed
-  mutations, invalid params, expiry, revoke.
+- Go MCP smoke E2E covers transport, tokens, OAuth, tools, mutations, invalid
+  params, expiry, revoke.
 - OAuth 2.1 public-client base:
   - `/.well-known/oauth-authorization-server`
   - PRM endpoint and 401 discovery challenge
@@ -43,7 +43,8 @@ Implemented:
 - MCP/OAuth rate limits on RPC, OAuth, and token API paths.
 - JSON audit logging for every `tools/call`; no secrets are logged.
 - Authenticated `mcp:read`: planets, overview, resources, queue,
-  fleet movements, officer status, search, galaxy. No legacy queue/resource mutations.
+  fleet movements, officer status, search, galaxy, statistics. No legacy
+  queue/resource mutations.
 - Authenticated `mcp:messages` tools: `list_messages` and `get_message`.
   Read owned inbox rows without marking read or cleanup mutation.
 - Authenticated `mcp:message_write` tools: `send_message`, `delete_messages`,

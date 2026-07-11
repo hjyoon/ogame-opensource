@@ -118,6 +118,10 @@ type GalaxyReadRepository interface {
 	GetMCPGalaxySystem(context.Context, int, domainmcp.GalaxySystemCommand) (domainmcp.GalaxySystem, error)
 }
 
+type StatisticsReadRepository interface {
+	GetMCPStatistics(context.Context, int, domainmcp.StatisticsCommand) (domainmcp.Statistics, error)
+}
+
 type PremiumWriteRepository interface {
 	PreviewMCPRecruitOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
 	RecruitMCPOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
@@ -272,6 +276,7 @@ type Service struct {
 	premiumRead     PremiumReadRepository
 	searchRead      SearchReadRepository
 	galaxyRead      GalaxyReadRepository
+	statisticsRead  StatisticsReadRepository
 	premiumWrite    PremiumWriteRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
@@ -364,6 +369,11 @@ func (s Service) WithSearchReadRepository(repository SearchReadRepository) Servi
 
 func (s Service) WithGalaxyReadRepository(repository GalaxyReadRepository) Service {
 	s.galaxyRead = repository
+	return s
+}
+
+func (s Service) WithStatisticsReadRepository(repository StatisticsReadRepository) Service {
+	s.statisticsRead = repository
 	return s
 }
 
@@ -685,6 +695,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		if s.galaxyRead != nil {
 			tools = append(tools, galaxySystemTool())
 		}
+		if s.statisticsRead != nil {
+			tools = append(tools, statisticsTool())
+		}
 	}
 	if access.HasScope(domainmcp.ScopeMessages) && s.readRepository != nil {
 		tools = append(tools, listMessagesTool(), getMessageTool())
@@ -803,6 +816,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callGalaxySystem(ctx, access, command.Arguments)
+	case "get_statistics":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callStatistics(ctx, access, command.Arguments)
 	case "list_messages":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeMessages)
 		if err != nil {
@@ -1205,6 +1227,29 @@ func (s Service) callGalaxySystem(ctx context.Context, access domainmcp.Access, 
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"galaxySystem": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callStatistics(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.statisticsRead == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp statistics read repository unavailable")
+	}
+	command, err := mcpStatisticsCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	result, err := s.statisticsRead.GetMCPStatistics(ctx, access.PlayerID, command)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"statistics": result}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -2542,6 +2587,47 @@ func mcpGalaxySystemCommand(arguments map[string]any) (domainmcp.GalaxySystemCom
 	return domainmcp.GalaxySystemCommand{PlanetID: planetID, Galaxy: galaxy, System: system}, nil
 }
 
+func mcpStatisticsCommand(arguments map[string]any) (domainmcp.StatisticsCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.StatisticsCommand{}, err
+	}
+	who, err := optionalStringArgument(arguments, "who")
+	if err != nil {
+		return domainmcp.StatisticsCommand{}, err
+	}
+	who = strings.TrimSpace(who)
+	if who == "" {
+		who = "player"
+	}
+	switch who {
+	case "player", "ally":
+	default:
+		return domainmcp.StatisticsCommand{}, domainmcp.ErrInvalidParams
+	}
+	statType, err := optionalStringArgument(arguments, "type")
+	if err != nil {
+		return domainmcp.StatisticsCommand{}, err
+	}
+	statType = strings.TrimSpace(statType)
+	if statType == "" {
+		statType = "ressources"
+	}
+	if statType == "resources" {
+		statType = "ressources"
+	}
+	switch statType {
+	case "ressources", "fleet", "research":
+	default:
+		return domainmcp.StatisticsCommand{}, domainmcp.ErrInvalidParams
+	}
+	start, err := optionalNonNegativeIntArgument(arguments, "start")
+	if err != nil {
+		return domainmcp.StatisticsCommand{}, err
+	}
+	return domainmcp.StatisticsCommand{PlanetID: planetID, Who: who, Type: statType, Start: start}, nil
+}
+
 func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
 	limit, err := optionalNonNegativeIntArgument(arguments, "limit")
 	if err != nil {
@@ -3428,6 +3514,65 @@ func galaxySystemTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"galaxySystem"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func statisticsTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_statistics",
+		Title:       "Get Statistics",
+		Description: "Return read-only legacy statistics rankings for players or alliances by resources, fleet, or research score.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet context.",
+				},
+				"who": map[string]any{
+					"type":        "string",
+					"description": "Ranking target. Defaults to player.",
+					"enum":        []string{"player", "ally"},
+				},
+				"type": map[string]any{
+					"type":        "string",
+					"description": "Ranking score type. Defaults to legacy ressources.",
+					"enum":        []string{"ressources", "resources", "fleet", "research"},
+				},
+				"start": map[string]any{
+					"type":        "integer",
+					"description": "One-based rank page start. Omit or pass 0 to use the authenticated player's own rank page.",
+					"minimum":     0,
+				},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"statistics": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":         map[string]any{"type": "integer"},
+						"planetId":         map[string]any{"type": "integer"},
+						"viewerAllianceId": map[string]any{"type": "integer"},
+						"who":              map[string]any{"type": "string"},
+						"type":             map[string]any{"type": "string"},
+						"start":            map[string]any{"type": "integer"},
+						"total":            map[string]any{"type": "integer"},
+						"generatedAt":      map[string]any{"type": "integer"},
+						"rows":             map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+					},
+					"required": []string{"playerId", "planetId", "viewerAllianceId", "who", "type", "start", "total", "generatedAt", "rows"},
+				},
+			},
+			"required": []string{"statistics"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,

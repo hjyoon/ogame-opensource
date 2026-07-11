@@ -676,6 +676,26 @@ func TestServiceListsGalaxySystemToolForReadScope(t *testing.T) {
 	}
 }
 
+func TestServiceListsStatisticsToolForReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithStatisticsReadRepository(&fakeStatisticsReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_statistics" {
+		t.Fatalf("unexpected read statistics tools: %v", names)
+	}
+}
+
 func TestServiceListsMessageToolsForMessageScopedTokens(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -1361,6 +1381,87 @@ func TestServiceGalaxySystemToolRequiresRepositoryReadScopeAndValidArguments(t *
 	service = service.WithGalaxyReadRepository(&fakeGalaxyReadRepository{err: errors.New("galaxy down")})
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_galaxy_system", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "galaxy down") {
 		t.Fatalf("expected galaxy repository error, got %v", err)
+	}
+}
+
+func TestServiceCallsStatisticsTool(t *testing.T) {
+	statistics := domainmcp.Statistics{
+		PlayerID:         42,
+		PlanetID:         99,
+		ViewerAllianceID: 7,
+		Who:              "player",
+		Type:             "ressources",
+		Start:            101,
+		Total:            250,
+		GeneratedAt:      123456,
+		Rows: []domainmcp.StatisticsRow{{
+			Place:        101,
+			DisplayScore: 950000,
+			Player:       &domainmcp.StatisticsPlayerRef{ID: 42, Name: "legor"},
+			Alliance:     &domainmcp.StatisticsAllianceRef{ID: 7, Tag: "TAG"},
+			Own:          true,
+		}},
+	}
+	repository := &fakeStatisticsReadRepository{result: statistics}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithStatisticsReadRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_statistics",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": "99", "who": "player", "type": "resources", "start": 101},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["statistics"].(domainmcp.Statistics)
+	if result.IsError || got.PlayerID != 42 || got.Type != "ressources" || len(got.Rows) != 1 || got.Rows[0].Player.Name != "legor" {
+		t.Fatalf("unexpected statistics result: %+v", result)
+	}
+	if repository.playerID != 42 || repository.command.PlanetID != 99 || repository.command.Who != "player" || repository.command.Type != "ressources" || repository.command.Start != 101 {
+		t.Fatalf("unexpected statistics command: player=%d command=%+v", repository.playerID, repository.command)
+	}
+}
+
+func TestServiceStatisticsToolRequiresRepositoryReadScopeAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_statistics", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing statistics read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_statistics", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithStatisticsReadRepository(&fakeStatisticsReadRepository{})
+	for _, arguments := range []map[string]any{
+		{"planetId": true},
+		{"who": true},
+		{"who": "bad"},
+		{"type": true},
+		{"type": "bad"},
+		{"start": -1},
+	} {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_statistics", AccessToken: "read", Arguments: arguments}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", arguments, err)
+		}
+	}
+
+	service = service.WithStatisticsReadRepository(&fakeStatisticsReadRepository{err: errors.New("statistics down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_statistics", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "statistics down") {
+		t.Fatalf("expected statistics repository error, got %v", err)
+	}
+
+	command, err := mcpStatisticsCommand(nil)
+	if err != nil || command.Who != "player" || command.Type != "ressources" || command.Start != 0 {
+		t.Fatalf("unexpected default statistics command=%+v err=%v", command, err)
 	}
 }
 
@@ -3474,6 +3575,22 @@ func (f *fakeGalaxyReadRepository) GetMCPGalaxySystem(_ context.Context, playerI
 	f.command = command
 	if f.err != nil {
 		return domainmcp.GalaxySystem{}, f.err
+	}
+	return f.result, nil
+}
+
+type fakeStatisticsReadRepository struct {
+	result   domainmcp.Statistics
+	playerID int
+	command  domainmcp.StatisticsCommand
+	err      error
+}
+
+func (f *fakeStatisticsReadRepository) GetMCPStatistics(_ context.Context, playerID int, command domainmcp.StatisticsCommand) (domainmcp.Statistics, error) {
+	f.playerID = playerID
+	f.command = command
+	if f.err != nil {
+		return domainmcp.Statistics{}, f.err
 	}
 	return f.result, nil
 }

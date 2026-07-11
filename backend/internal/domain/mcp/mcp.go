@@ -584,6 +584,51 @@ type GalaxySystem struct {
 	Rows                []GalaxySystemRow `json:"rows"`
 }
 
+type StatisticsCommand struct {
+	PlanetID int
+	Who      string
+	Type     string
+	Start    int
+}
+
+type StatisticsPlayerRef struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+type StatisticsAllianceRef struct {
+	ID  int    `json:"id"`
+	Tag string `json:"tag"`
+}
+
+type StatisticsRow struct {
+	Place          int                    `json:"place"`
+	PreviousPlace  int                    `json:"previousPlace"`
+	Delta          int                    `json:"delta"`
+	Score          int64                  `json:"score"`
+	DisplayScore   int64                  `json:"displayScore"`
+	ScorePerMember int64                  `json:"scorePerMember,omitempty"`
+	ScoreDate      int64                  `json:"scoreDate"`
+	Player         *StatisticsPlayerRef   `json:"player,omitempty"`
+	Alliance       *StatisticsAllianceRef `json:"alliance,omitempty"`
+	Coordinates    Coordinates            `json:"coordinates"`
+	Members        int                    `json:"members,omitempty"`
+	Own            bool                   `json:"own"`
+	SameAlliance   bool                   `json:"sameAlliance"`
+}
+
+type Statistics struct {
+	PlayerID         int             `json:"playerId"`
+	PlanetID         int             `json:"planetId"`
+	ViewerAllianceID int             `json:"viewerAllianceId"`
+	Who              string          `json:"who"`
+	Type             string          `json:"type"`
+	Start            int             `json:"start"`
+	Total            int             `json:"total"`
+	GeneratedAt      int64           `json:"generatedAt"`
+	Rows             []StatisticsRow `json:"rows"`
+}
+
 type DispatchFleetCommand struct {
 	PlanetID        int
 	Ships           map[int]int

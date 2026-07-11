@@ -9,6 +9,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestStatisticsRepositoryReadsLegacyPlayerRankings(t *testing.T) {
@@ -46,6 +47,36 @@ func TestStatisticsRepositoryReadsLegacyPlayerRankings(t *testing.T) {
 		queryer.calls[6].args[0] != 101 ||
 		queryer.calls[6].args[1] != 200 {
 		t.Fatalf("expected legacy player statistics query, got %+v", queryer.calls[6])
+	}
+}
+
+func TestStatisticsRepositoryMapsMCPStatistics(t *testing.T) {
+	now := time.Unix(123456, 0)
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{250})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{7, 101})},
+		fakeQueryResult{rows: fakeRowsFromValues(
+			[]any{42, "legor", 7, "TAG", 1, 2, 3, int64(950000000), 101, 120, int64(123400)},
+		)},
+	)}
+	repository := NewStatisticsRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
+
+	statistics, err := repository.GetMCPStatistics(context.Background(), 42, domainmcp.StatisticsCommand{
+		Type:  "ressources",
+		Start: 101,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statistics.PlayerID != 42 || statistics.PlanetID == 0 || statistics.ViewerAllianceID != 7 ||
+		statistics.Who != domaingame.StatisticsWhoPlayer || statistics.Type != domaingame.StatisticsTypeResources ||
+		statistics.Start != 101 || statistics.Total != 250 || statistics.GeneratedAt != now.Unix() {
+		t.Fatalf("unexpected mcp statistics summary: %+v", statistics)
+	}
+	if len(statistics.Rows) != 1 || statistics.Rows[0].Player == nil || statistics.Rows[0].Player.Name != "legor" ||
+		statistics.Rows[0].Alliance == nil || statistics.Rows[0].Alliance.Tag != "TAG" ||
+		statistics.Rows[0].DisplayScore != 950000 || statistics.Rows[0].Delta != -19 || !statistics.Rows[0].Own {
+		t.Fatalf("unexpected mcp statistics row: %+v", statistics.Rows)
 	}
 }
 
@@ -125,6 +156,9 @@ func TestNewStatisticsRepositoryKeepsSQLQueryer(t *testing.T) {
 	withDefaultClock := NewStatisticsRepositoryWithQueryer(&fakeQueryer{}, "ogame_", nil)
 	if withDefaultClock.now == nil {
 		t.Fatal("expected default clock")
+	}
+	if _, err := (StatisticsRepository{}).GetMCPStatistics(context.Background(), 42, domainmcp.StatisticsCommand{}); err == nil {
+		t.Fatal("expected nil statistics reader error")
 	}
 }
 
