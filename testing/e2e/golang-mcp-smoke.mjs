@@ -342,6 +342,8 @@ try {
   const researchOptionsToolBody = parseJSON(researchOptionsTool);
   const shipyardOptionsTool = await mcpJSONRPC("tools/call", { name: "get_shipyard_options", arguments: {} }, { id: 49, headers: authHeaders });
   const shipyardOptionsToolBody = parseJSON(shipyardOptionsTool);
+  const defenseOptionsTool = await mcpJSONRPC("tools/call", { name: "get_defense_options", arguments: {} }, { id: 50, headers: authHeaders });
+  const defenseOptionsToolBody = parseJSON(defenseOptionsTool);
   const messagesTool = await mcpJSONRPC("tools/call", { name: "list_messages", arguments: { limit: 5 } }, { id: 29, headers: authHeaders });
   const messagesToolBody = parseJSON(messagesTool);
   const sendMessageDryRun = await mcpJSONRPC("tools/call", { name: "send_message", arguments: { targetPlayerId: login.playerID, subject: "MCP smoke dry-run", text: "This is a dry-run from MCP smoke." } }, { id: 30, headers: authHeaders });
@@ -408,6 +410,7 @@ try {
     "get_building_options",
     "get_research_options",
     "get_shipyard_options",
+    "get_defense_options",
     "list_messages",
     "get_message",
     "send_message",
@@ -467,6 +470,7 @@ try {
       check(buildingOptionsTool.status === 200 && Number(buildingOptionsToolBody.result?.structuredContent?.buildingOptions?.playerId ?? 0) === login.playerID && Array.isArray(buildingOptionsToolBody.result?.structuredContent?.buildingOptions?.items), "get_building_options returns read-only legacy building options", buildingOptionsToolBody.result ?? {}),
       check(researchOptionsTool.status === 200 && Number(researchOptionsToolBody.result?.structuredContent?.researchOptions?.playerId ?? 0) === login.playerID && Array.isArray(researchOptionsToolBody.result?.structuredContent?.researchOptions?.items), "get_research_options returns read-only legacy research options", researchOptionsToolBody.result ?? {}),
       check(shipyardOptionsTool.status === 200 && Number(shipyardOptionsToolBody.result?.structuredContent?.shipyardOptions?.playerId ?? 0) === login.playerID && Array.isArray(shipyardOptionsToolBody.result?.structuredContent?.shipyardOptions?.items), "get_shipyard_options returns read-only legacy shipyard options", shipyardOptionsToolBody.result ?? {}),
+      check(defenseOptionsTool.status === 200 && Number(defenseOptionsToolBody.result?.structuredContent?.defenseOptions?.playerId ?? 0) === login.playerID && Array.isArray(defenseOptionsToolBody.result?.structuredContent?.defenseOptions?.items), "get_defense_options returns read-only legacy defense options", defenseOptionsToolBody.result ?? {}),
       check(messagesTool.status === 200 && Number(messagesToolBody.result?.structuredContent?.messages?.playerId ?? 0) === login.playerID && Array.isArray(messagesToolBody.result?.structuredContent?.messages?.messages), "list_messages returns current player message rows without mutation", messagesToolBody.result ?? {}),
       check(sendMessageDryRun.status === 200 && Number(sendMessageDryRunBody.result?.structuredContent?.sendMessage?.playerId ?? 0) === login.playerID && sendMessageDryRunBody.result?.structuredContent?.sendMessage?.dryRun === true && sendMessageDryRunBody.result?.structuredContent?.sendMessage?.requiresConfirmation === true && String(sendMessageDryRunBody.result?.structuredContent?.sendMessage?.confirmation ?? "").startsWith(`send_message:${login.playerID}:`), "send_message dry-run returns explicit confirmation without executing", sendMessageDryRunBody.result ?? {}),
       check(firstMessageID === 0 || (deleteMessageDryRun?.status === 200 && Number(deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.playerId ?? 0) === login.playerID && deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.dryRun === true && deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.requiresConfirmation === true && deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.executed === false && String(deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.confirmation ?? "").startsWith(`delete_messages:${firstMessageID}:`)), "delete_messages dry-run returns explicit confirmation for an owned visible message when available", {

@@ -261,6 +261,16 @@ type ShipyardOptions struct {
 	Items           []ShipyardOption     `json:"items"`
 }
 
+type DefenseOptions struct {
+	PlayerID        int                  `json:"playerId"`
+	Planet          Planet               `json:"planet"`
+	CommanderActive bool                 `json:"commanderActive"`
+	HasShipyard     bool                 `json:"hasShipyard"`
+	Busy            bool                 `json:"busy"`
+	Queue           []ShipyardQueueEntry `json:"queue"`
+	Items           []ShipyardOption     `json:"items"`
+}
+
 type MessageQuery struct {
 	Limit          int
 	MessageType    int

@@ -9,6 +9,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type DefenseRepository struct {
@@ -22,6 +23,10 @@ type DefenseRepository struct {
 func NewDefenseRepository(db *sql.DB, prefix string) DefenseRepository {
 	runner := SQLQueryer{DB: db}
 	return DefenseRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, updateResources: true}
+}
+
+func NewDefenseReadRepository(db *sql.DB, prefix string) DefenseRepository {
+	return NewDefenseRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
 }
 
 func NewDefenseRepositoryWithQueryer(queryer Queryer, prefix string) DefenseRepository {
@@ -106,6 +111,63 @@ func (r DefenseRepository) GetDefense(ctx context.Context, query appgame.Defense
 	}
 
 	return domaingame.BuildDefenseWithQueue(overview, levels, research, defense, speed, busy, orderCap, commanderActive, queue), nil
+}
+
+func (r DefenseRepository) GetMCPDefenseOptions(ctx context.Context, playerID int, planetID int) (domainmcp.DefenseOptions, error) {
+	if r.queryer == nil {
+		return domainmcp.DefenseOptions{}, errors.New("defense reader unavailable")
+	}
+	defense, err := r.GetDefense(ctx, appgame.DefenseQuery{PlayerID: playerID, PlanetID: planetID})
+	if err != nil {
+		return domainmcp.DefenseOptions{}, err
+	}
+	queue := make([]domainmcp.ShipyardQueueEntry, 0, len(defense.Queue))
+	for _, entry := range defense.Queue {
+		queue = append(queue, domainmcp.ShipyardQueueEntry{
+			TaskID:           entry.TaskID,
+			UnitID:           entry.UnitID,
+			Name:             entry.Name,
+			Count:            entry.Count,
+			Start:            entry.Start,
+			End:              entry.End,
+			RemainingSeconds: entry.RemainingSeconds,
+		})
+	}
+	items := make([]domainmcp.ShipyardOption, 0, len(defense.Items))
+	for _, item := range defense.Items {
+		items = append(items, domainmcp.ShipyardOption{
+			ID:               item.ID,
+			Name:             item.Name,
+			Description:      item.Description,
+			Count:            item.Count,
+			Cost:             mcpTechnologyCost(item.Cost),
+			DurationSeconds:  item.DurationSeconds,
+			CanBuild:         item.CanBuild,
+			MeetsRequirement: item.MeetsRequirement,
+			MaxBuild:         item.MaxBuild,
+			BlockedReason:    item.BlockedReason,
+		})
+	}
+	return domainmcp.DefenseOptions{
+		PlayerID: playerID,
+		Planet: domainmcp.Planet{
+			ID:       defense.CurrentPlanet.ID,
+			Name:     defense.CurrentPlanet.Name,
+			Type:     defense.CurrentPlanet.Type,
+			TypeName: mcpPlanetTypeName(defense.CurrentPlanet.Type),
+			Coordinates: domainmcp.Coordinates{
+				Galaxy:   defense.CurrentPlanet.Coordinates.Galaxy,
+				System:   defense.CurrentPlanet.Coordinates.System,
+				Position: defense.CurrentPlanet.Coordinates.Position,
+			},
+			Current: true,
+		},
+		CommanderActive: defense.CommanderActive,
+		HasShipyard:     defense.HasShipyard,
+		Busy:            defense.Busy,
+		Queue:           queue,
+		Items:           items,
+	}, nil
 }
 
 func (r DefenseRepository) loadDefenseCounts(ctx context.Context, planetsTable string, playerID int, planetID int) (domaingame.DefenseCounts, error) {

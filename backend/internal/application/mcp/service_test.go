@@ -796,6 +796,26 @@ func TestServiceListsShipyardOptionsToolForReadScope(t *testing.T) {
 	}
 }
 
+func TestServiceListsDefenseOptionsToolForReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithDefenseOptionsReadRepository(&fakeDefenseOptionsReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_defense_options" {
+		t.Fatalf("unexpected read defense tools: %v", names)
+	}
+}
+
 func TestServiceListsMessageToolsForMessageScopedTokens(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -1916,6 +1936,71 @@ func TestServiceShipyardOptionsToolRequiresRepositoryReadScopeAndValidArguments(
 	service = service.WithShipyardOptionsReadRepository(&fakeShipyardOptionsReadRepository{err: errors.New("shipyard down")})
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_shipyard_options", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "shipyard down") {
 		t.Fatalf("expected shipyard repository error, got %v", err)
+	}
+}
+
+func TestServiceCallsDefenseOptionsTool(t *testing.T) {
+	options := domainmcp.DefenseOptions{
+		PlayerID:    42,
+		Planet:      domainmcp.Planet{ID: 99, Name: "Arakis"},
+		HasShipyard: true,
+		Items: []domainmcp.ShipyardOption{{
+			ID:       401,
+			Name:     "Rocket Launcher",
+			CanBuild: true,
+			MaxBuild: 5,
+		}},
+	}
+	repository := &fakeDefenseOptionsReadRepository{result: options}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithDefenseOptionsReadRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_defense_options",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": "99"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["defenseOptions"].(domainmcp.DefenseOptions)
+	if result.IsError || got.PlayerID != 42 || got.Planet.ID != 99 || len(got.Items) != 1 || got.Items[0].Name != "Rocket Launcher" {
+		t.Fatalf("unexpected defense options result: %+v", result)
+	}
+	if repository.playerID != 42 || repository.planetID != 99 {
+		t.Fatalf("unexpected defense options command: player=%d planet=%d", repository.playerID, repository.planetID)
+	}
+}
+
+func TestServiceDefenseOptionsToolRequiresRepositoryReadScopeAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_defense_options", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing defense read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_defense_options", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithDefenseOptionsReadRepository(&fakeDefenseOptionsReadRepository{})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_defense_options",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": true},
+	}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+		t.Fatalf("expected invalid planet id error, got %v", err)
+	}
+
+	service = service.WithDefenseOptionsReadRepository(&fakeDefenseOptionsReadRepository{err: errors.New("defense down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_defense_options", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "defense down") {
+		t.Fatalf("expected defense repository error, got %v", err)
 	}
 }
 
@@ -4125,6 +4210,22 @@ func (f *fakeShipyardOptionsReadRepository) GetMCPShipyardOptions(_ context.Cont
 	f.planetID = planetID
 	if f.err != nil {
 		return domainmcp.ShipyardOptions{}, f.err
+	}
+	return f.result, nil
+}
+
+type fakeDefenseOptionsReadRepository struct {
+	result   domainmcp.DefenseOptions
+	playerID int
+	planetID int
+	err      error
+}
+
+func (f *fakeDefenseOptionsReadRepository) GetMCPDefenseOptions(_ context.Context, playerID int, planetID int) (domainmcp.DefenseOptions, error) {
+	f.playerID = playerID
+	f.planetID = planetID
+	if f.err != nil {
+		return domainmcp.DefenseOptions{}, f.err
 	}
 	return f.result, nil
 }

@@ -8,6 +8,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestDefenseRepositoryReadsLegacyDefense(t *testing.T) {
@@ -37,6 +38,44 @@ func TestDefenseRepositoryReadsLegacyDefense(t *testing.T) {
 	}
 }
 
+func TestDefenseRepositoryMapsMCPDefenseOptions(t *testing.T) {
+	queryer := &fakeQueryer{results: append(defenseReadPrefixResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(defenseCountRow(map[int]int{domaingame.DefenseRocketLauncher: 4}))},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{2.0, 999})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{domaingame.BuildingMetalMine})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{int64(0)})},
+		fakeQueryResult{rows: fakeRowsFromValues(buildingQueueTaskValues(buildingQueueTask{
+			TaskID:  11,
+			OwnerID: 42,
+			Type:    queueTypeShipyard,
+			SubID:   99,
+			ObjID:   domaingame.DefenseRocketLauncher,
+			Level:   3,
+			Start:   100,
+			End:     220,
+		}))},
+	)}
+	repository := NewDefenseRepositoryWithRunner(queryer, nil, "ogame_", nil)
+
+	options, err := repository.GetMCPDefenseOptions(context.Background(), 42, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.PlayerID != 42 || options.Planet.ID != 99 || options.Planet.TypeName != "planet" || !options.HasShipyard || options.Busy {
+		t.Fatalf("unexpected mcp defense options summary: %+v", options)
+	}
+	if len(options.Queue) != 1 || options.Queue[0].TaskID != 11 || options.Queue[0].UnitID != domaingame.DefenseRocketLauncher || options.Queue[0].Count != 3 {
+		t.Fatalf("unexpected mcp defense queue: %+v", options.Queue)
+	}
+	item := domainMCPDefenseOptionByID(t, options, domaingame.DefenseRocketLauncher)
+	if item.Count != 4 || item.DurationSeconds != 720 || item.MaxBuild != 5 || item.Cost.Metal <= 0 {
+		t.Fatalf("unexpected mcp rocket launcher item: %+v", item)
+	}
+	if strings.Contains(queryer.calls[0].sql, "SELECT speed, max_werf, freeze") {
+		t.Fatalf("read-only MCP defense options should not finish queues, got first query %+v", queryer.calls[0])
+	}
+}
+
 func TestNewDefenseRepositoryKeepsSQLQueryer(t *testing.T) {
 	repository := NewDefenseRepository(nil, "ogame_")
 
@@ -45,6 +84,13 @@ func TestNewDefenseRepositoryKeepsSQLQueryer(t *testing.T) {
 	}
 	if _, ok := repository.queryer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL queryer, got %T", repository.queryer)
+	}
+	readRepository := NewDefenseReadRepository(nil, "ogame_")
+	if readRepository.execer != nil || readRepository.updateResources {
+		t.Fatalf("expected MCP read repository without writer/resource updates, got %+v", readRepository)
+	}
+	if _, err := (DefenseRepository{}).GetMCPDefenseOptions(context.Background(), 42, 0); err == nil {
+		t.Fatal("expected nil defense reader error")
 	}
 }
 
@@ -182,4 +228,15 @@ func findDefenseItem(t *testing.T, defense domaingame.Defense, id int) domaingam
 	}
 	t.Fatalf("defense item %d not found in %+v", id, defense.Items)
 	return domaingame.ShipyardItem{}
+}
+
+func domainMCPDefenseOptionByID(t *testing.T, options domainmcp.DefenseOptions, id int) domainmcp.ShipyardOption {
+	t.Helper()
+	for _, item := range options.Items {
+		if item.ID == id {
+			return item
+		}
+	}
+	t.Fatalf("mcp defense option %d not found in %+v", id, options.Items)
+	return domainmcp.ShipyardOption{}
 }
