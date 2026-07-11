@@ -10,6 +10,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestNotesRepositoryReadsLegacyList(t *testing.T) {
@@ -35,6 +36,62 @@ func TestNotesRepositoryReadsLegacyList(t *testing.T) {
 		!strings.Contains(queryer.calls[4].sql, "WHERE n.owner_id = ? ORDER BY n.date DESC LIMIT ?") ||
 		queryer.calls[4].args[0] != 42 || queryer.calls[4].args[1] != domaingame.AdminNotesLimit {
 		t.Fatalf("expected legacy notes list query, got %+v", queryer.calls[4])
+	}
+}
+
+func TestNotesRepositoryMapsMCPNotes(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(
+			[]any{11, "Important", "Remember this", 13, 2, int64(1700000000), 0},
+		)},
+	)}
+	repository := NewNotesRepositoryWithQueryer(queryer, "ogame_")
+
+	notes, err := repository.GetMCPNotes(context.Background(), 42, domainmcp.NotesStatusCommand{})
+	if err != nil {
+		t.Fatalf("GetMCPNotes returned error: %v", err)
+	}
+	if notes.PlayerID != 42 || notes.Planet.ID != 99 || notes.Planet.TypeName != "planet" || notes.Action != domaingame.NotesActionList || len(notes.Rows) != 1 {
+		t.Fatalf("unexpected mcp notes: %+v", notes)
+	}
+	if notes.Rows[0].ID != 11 || notes.Rows[0].PriorityColor != "red" || notes.Rows[0].TextSize != 13 {
+		t.Fatalf("unexpected mcp note row: %+v", notes.Rows[0])
+	}
+	if _, err := (NotesRepository{}).GetMCPNotes(context.Background(), 42, domainmcp.NotesStatusCommand{}); err == nil {
+		t.Fatalf("expected unavailable reader error")
+	}
+}
+
+func TestMCPNotesStatusMapsEditAndNilBranches(t *testing.T) {
+	status := mcpNotesStatus(42, domaingame.Notes{
+		Commander: "legor",
+		CurrentPlanet: domaingame.PlanetOverview{
+			ID:   99,
+			Name: "Moon",
+			Type: domaingame.PlanetTypeMoon,
+			Coordinates: domaingame.Coordinates{
+				Galaxy:   1,
+				System:   2,
+				Position: 3,
+			},
+		},
+		Action: domaingame.NotesActionEdit,
+		Rows:   []domaingame.Note{{ID: 10, Subject: "row", Priority: 0}},
+		EditNote: &domaingame.Note{
+			ID:       11,
+			Subject:  "edit",
+			Text:     "body",
+			TextSize: 4,
+			Priority: 1,
+			Date:     1700000000,
+		},
+	})
+	if status.Planet.TypeName != "moon" || status.EditNote == nil || status.EditNote.PriorityColor != "yellow" ||
+		len(status.Rows) != 1 || status.Rows[0].PriorityColor != "lime" {
+		t.Fatalf("unexpected mapped notes status: %+v", status)
+	}
+	if mcpNote(nil) != nil {
+		t.Fatal("expected nil note mapper for nil input")
 	}
 }
 

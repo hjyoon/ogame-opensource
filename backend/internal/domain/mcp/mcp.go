@@ -888,6 +888,31 @@ type BuddyStatus struct {
 	Target    *BuddyPlayer `json:"target,omitempty"`
 }
 
+type NotesStatusCommand struct {
+	PlanetID int
+	Action   int
+	NoteID   int
+}
+
+type Note struct {
+	ID            int    `json:"id"`
+	Subject       string `json:"subject"`
+	Text          string `json:"text"`
+	TextSize      int    `json:"textSize"`
+	Priority      int    `json:"priority"`
+	PriorityColor string `json:"priorityColor"`
+	Date          int64  `json:"date"`
+}
+
+type NotesStatus struct {
+	PlayerID  int    `json:"playerId"`
+	Planet    Planet `json:"planet"`
+	Commander string `json:"commander"`
+	Action    string `json:"action"`
+	Rows      []Note `json:"rows"`
+	EditNote  *Note  `json:"editNote,omitempty"`
+}
+
 type EmpireCommand struct {
 	PlanetID   int
 	PlanetType int

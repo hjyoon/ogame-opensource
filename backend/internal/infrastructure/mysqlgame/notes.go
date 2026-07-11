@@ -9,6 +9,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type NotesRepository struct {
@@ -21,6 +22,10 @@ type NotesRepository struct {
 func NewNotesRepository(db *sql.DB, prefix string) NotesRepository {
 	runner := SQLQueryer{DB: db}
 	return NotesRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now}
+}
+
+func NewNotesReadRepository(db *sql.DB, prefix string) NotesRepository {
+	return NewNotesRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
 }
 
 func NewNotesRepositoryWithQueryer(queryer Queryer, prefix string) NotesRepository {
@@ -77,6 +82,72 @@ func (r NotesRepository) GetNotes(ctx context.Context, query appgame.NotesQuery)
 	}
 	notes.Rows = rows
 	return notes, nil
+}
+
+func (r NotesRepository) GetMCPNotes(ctx context.Context, playerID int, command domainmcp.NotesStatusCommand) (domainmcp.NotesStatus, error) {
+	if r.queryer == nil {
+		return domainmcp.NotesStatus{}, errors.New("notes reader unavailable")
+	}
+	notes, err := r.GetNotes(ctx, appgame.NotesQuery{
+		PlayerID: playerID,
+		PlanetID: command.PlanetID,
+		Action:   command.Action,
+		NoteID:   command.NoteID,
+	})
+	if err != nil {
+		return domainmcp.NotesStatus{}, err
+	}
+	return mcpNotesStatus(playerID, notes), nil
+}
+
+func mcpNotesStatus(playerID int, notes domaingame.Notes) domainmcp.NotesStatus {
+	return domainmcp.NotesStatus{
+		PlayerID: playerID,
+		Planet: domainmcp.Planet{
+			ID:       notes.CurrentPlanet.ID,
+			Name:     notes.CurrentPlanet.Name,
+			Type:     notes.CurrentPlanet.Type,
+			TypeName: mcpPlanetTypeName(notes.CurrentPlanet.Type),
+			Coordinates: domainmcp.Coordinates{
+				Galaxy:   notes.CurrentPlanet.Coordinates.Galaxy,
+				System:   notes.CurrentPlanet.Coordinates.System,
+				Position: notes.CurrentPlanet.Coordinates.Position,
+			},
+			Current: true,
+		},
+		Commander: notes.Commander,
+		Action:    notes.Action,
+		Rows:      mcpNotes(notes.Rows),
+		EditNote:  mcpNote(notes.EditNote),
+	}
+}
+
+func mcpNotes(notes []domaingame.Note) []domainmcp.Note {
+	result := make([]domainmcp.Note, 0, len(notes))
+	for _, note := range notes {
+		result = append(result, mcpNoteValue(note))
+	}
+	return result
+}
+
+func mcpNote(note *domaingame.Note) *domainmcp.Note {
+	if note == nil {
+		return nil
+	}
+	result := mcpNoteValue(*note)
+	return &result
+}
+
+func mcpNoteValue(note domaingame.Note) domainmcp.Note {
+	return domainmcp.Note{
+		ID:            note.ID,
+		Subject:       note.Subject,
+		Text:          note.Text,
+		TextSize:      note.TextSize,
+		Priority:      note.Priority,
+		PriorityColor: note.PriorityColor(),
+		Date:          note.Date,
+	}
 }
 
 func (r NotesRepository) CreateNote(ctx context.Context, query appgame.NotesMutationQuery) (domaingame.Notes, error) {

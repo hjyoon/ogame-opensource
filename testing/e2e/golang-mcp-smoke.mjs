@@ -340,6 +340,8 @@ try {
   const allianceStatusToolBody = parseJSON(allianceStatusTool);
   const buddyStatusTool = await mcpJSONRPC("tools/call", { name: "get_buddy_status", arguments: {} }, { id: 54, headers: authHeaders });
   const buddyStatusToolBody = parseJSON(buddyStatusTool);
+  const notesTool = await mcpJSONRPC("tools/call", { name: "get_notes", arguments: {} }, { id: 55, headers: authHeaders });
+  const notesToolBody = parseJSON(notesTool);
   const empireOverviewTool = await mcpJSONRPC("tools/call", { name: "get_empire_overview", arguments: { planetType: 1 } }, { id: 45, headers: authHeaders });
   const empireOverviewToolBody = parseJSON(empireOverviewTool);
   const technologyTreeTool = await mcpJSONRPC("tools/call", { name: "get_technology_tree", arguments: { detailsId: 204, infoId: 1 } }, { id: 46, headers: authHeaders });
@@ -417,6 +419,7 @@ try {
     "get_statistics",
     "get_alliance_status",
     "get_buddy_status",
+    "get_notes",
     "get_empire_overview",
     "get_technology_tree",
     "get_building_options",
@@ -481,6 +484,7 @@ try {
       check(statisticsTool.status === 200 && Number(statisticsToolBody.result?.structuredContent?.statistics?.playerId ?? 0) === login.playerID && Array.isArray(statisticsToolBody.result?.structuredContent?.statistics?.rows), "get_statistics returns current legacy ranking rows", statisticsToolBody.result ?? {}),
       check(allianceStatusTool.status === 200 && Number(allianceStatusToolBody.result?.structuredContent?.allianceStatus?.playerId ?? 0) === login.playerID && typeof allianceStatusToolBody.result?.structuredContent?.allianceStatus?.view === "string", "get_alliance_status returns read-only legacy alliance state", allianceStatusToolBody.result ?? {}),
       check(buddyStatusTool.status === 200 && Number(buddyStatusToolBody.result?.structuredContent?.buddyStatus?.playerId ?? 0) === login.playerID && Array.isArray(buddyStatusToolBody.result?.structuredContent?.buddyStatus?.rows), "get_buddy_status returns read-only legacy buddy state", buddyStatusToolBody.result ?? {}),
+      check(notesTool.status === 200 && Number(notesToolBody.result?.structuredContent?.notes?.playerId ?? 0) === login.playerID && Array.isArray(notesToolBody.result?.structuredContent?.notes?.rows), "get_notes returns read-only legacy notes state", notesToolBody.result ?? {}),
       check(empireOverviewTool.status === 200 && Number(empireOverviewToolBody.result?.structuredContent?.empire?.playerId ?? 0) === login.playerID && Array.isArray(empireOverviewToolBody.result?.structuredContent?.empire?.planets), "get_empire_overview returns read-only empire aggregate rows", empireOverviewToolBody.result ?? {}),
       check(technologyTreeTool.status === 200 && Number(technologyTreeToolBody.result?.structuredContent?.technology?.playerId ?? 0) === login.playerID && Array.isArray(technologyTreeToolBody.result?.structuredContent?.technology?.groups), "get_technology_tree returns legacy requirements and info rows", technologyTreeToolBody.result ?? {}),
       check(buildingOptionsTool.status === 200 && Number(buildingOptionsToolBody.result?.structuredContent?.buildingOptions?.playerId ?? 0) === login.playerID && Array.isArray(buildingOptionsToolBody.result?.structuredContent?.buildingOptions?.items), "get_building_options returns read-only legacy building options", buildingOptionsToolBody.result ?? {}),

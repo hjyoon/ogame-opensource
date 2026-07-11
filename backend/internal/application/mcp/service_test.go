@@ -736,6 +736,26 @@ func TestServiceListsBuddyStatusToolForReadScope(t *testing.T) {
 	}
 }
 
+func TestServiceListsNotesToolForReadScope(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithNotesReadRepository(&fakeNotesReadRepository{})
+
+	tools, err := service.ListTools(context.Background(), domainmcp.ListToolsCommand{AccessToken: "read"})
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	names := make([]string, 0, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "get_server_health,get_mcp_access,get_notes" {
+		t.Fatalf("unexpected read notes tools: %v", names)
+	}
+}
+
 func TestServiceListsEmpireOverviewToolForReadScope(t *testing.T) {
 	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
 		access: map[string]domainmcp.Access{
@@ -1866,6 +1886,71 @@ func TestServiceBuddyStatusToolRequiresRepositoryReadScopeAndValidArguments(t *t
 	service = service.WithBuddyReadRepository(&fakeBuddyReadRepository{err: errors.New("buddy down")})
 	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_buddy_status", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "buddy down") {
 		t.Fatalf("expected buddy repository error, got %v", err)
+	}
+}
+
+func TestServiceCallsNotesTool(t *testing.T) {
+	notes := domainmcp.NotesStatus{
+		PlayerID:  42,
+		Planet:    domainmcp.Planet{ID: 99, Name: "Arakis"},
+		Commander: "legor",
+		Action:    "edit",
+		Rows:      []domainmcp.Note{{ID: 7, Subject: "subject", PriorityColor: "yellow"}},
+		EditNote:  &domainmcp.Note{ID: 7, Subject: "subject", Text: "body"},
+	}
+	repository := &fakeNotesReadRepository{result: notes}
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read": {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+		},
+	}).WithNotesReadRepository(repository)
+
+	result, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{
+		Name:        "get_notes",
+		AccessToken: "read",
+		Arguments:   map[string]any{"planetId": "99", "action": 2, "noteId": 7},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	got := result.StructuredContent.(map[string]any)["notes"].(domainmcp.NotesStatus)
+	if result.IsError || got.PlayerID != 42 || got.Action != "edit" || got.EditNote == nil {
+		t.Fatalf("unexpected notes result: %+v", result)
+	}
+	if repository.playerID != 42 || repository.command.PlanetID != 99 || repository.command.Action != 2 || repository.command.NoteID != 7 {
+		t.Fatalf("unexpected notes command: player=%d command=%+v", repository.playerID, repository.command)
+	}
+}
+
+func TestServiceNotesToolRequiresRepositoryReadScopeAndValidArguments(t *testing.T) {
+	service := NewServiceWithTokenVerifier(fakeHealthProvider{}, fakeTokenVerifier{
+		access: map[string]domainmcp.Access{
+			"read":  {Authenticated: true, PlayerID: 42, Scopes: []string{domainmcp.ScopeRead}},
+			"write": {Authenticated: true, PlayerID: 43, Scopes: []string{domainmcp.ScopeWrite}},
+		},
+	})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_notes", AccessToken: "read"}); err == nil {
+		t.Fatalf("expected missing notes read repository error")
+	}
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_notes", AccessToken: "write"}); !errors.Is(err, domainmcp.ErrForbidden) {
+		t.Fatalf("expected forbidden without read scope, got %v", err)
+	}
+
+	service = service.WithNotesReadRepository(&fakeNotesReadRepository{})
+	for _, arguments := range []map[string]any{
+		{"planetId": true},
+		{"action": true},
+		{"action": 3},
+		{"noteId": true},
+	} {
+		if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_notes", AccessToken: "read", Arguments: arguments}); !errors.Is(err, domainmcp.ErrInvalidParams) {
+			t.Fatalf("expected invalid params for %+v, got %v", arguments, err)
+		}
+	}
+
+	service = service.WithNotesReadRepository(&fakeNotesReadRepository{err: errors.New("notes down")})
+	if _, err := service.CallTool(context.Background(), domainmcp.CallToolCommand{Name: "get_notes", AccessToken: "read"}); err == nil || !strings.Contains(err.Error(), "notes down") {
+		t.Fatalf("expected notes repository error, got %v", err)
 	}
 }
 
@@ -4527,6 +4612,22 @@ func (f *fakeBuddyReadRepository) GetMCPBuddyStatus(_ context.Context, playerID 
 	f.command = command
 	if f.err != nil {
 		return domainmcp.BuddyStatus{}, f.err
+	}
+	return f.result, nil
+}
+
+type fakeNotesReadRepository struct {
+	result   domainmcp.NotesStatus
+	playerID int
+	command  domainmcp.NotesStatusCommand
+	err      error
+}
+
+func (f *fakeNotesReadRepository) GetMCPNotes(_ context.Context, playerID int, command domainmcp.NotesStatusCommand) (domainmcp.NotesStatus, error) {
+	f.playerID = playerID
+	f.command = command
+	if f.err != nil {
+		return domainmcp.NotesStatus{}, f.err
 	}
 	return f.result, nil
 }

@@ -134,6 +134,10 @@ type BuddyReadRepository interface {
 	GetMCPBuddyStatus(context.Context, int, domainmcp.BuddyStatusCommand) (domainmcp.BuddyStatus, error)
 }
 
+type NotesReadRepository interface {
+	GetMCPNotes(context.Context, int, domainmcp.NotesStatusCommand) (domainmcp.NotesStatus, error)
+}
+
 type EmpireReadRepository interface {
 	GetMCPEmpire(context.Context, int, domainmcp.EmpireCommand) (domainmcp.EmpireOverview, error)
 }
@@ -320,6 +324,7 @@ type Service struct {
 	statisticsRead  StatisticsReadRepository
 	allianceRead    AllianceReadRepository
 	buddyRead       BuddyReadRepository
+	notesRead       NotesReadRepository
 	empireRead      EmpireReadRepository
 	technologyRead  TechnologyReadRepository
 	buildingRead    BuildingOptionsReadRepository
@@ -439,6 +444,11 @@ func (s Service) WithAllianceReadRepository(repository AllianceReadRepository) S
 
 func (s Service) WithBuddyReadRepository(repository BuddyReadRepository) Service {
 	s.buddyRead = repository
+	return s
+}
+
+func (s Service) WithNotesReadRepository(repository NotesReadRepository) Service {
+	s.notesRead = repository
 	return s
 }
 
@@ -807,6 +817,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		if s.buddyRead != nil {
 			tools = append(tools, buddyStatusTool())
 		}
+		if s.notesRead != nil {
+			tools = append(tools, notesTool())
+		}
 		if s.empireRead != nil {
 			tools = append(tools, empireOverviewTool())
 		}
@@ -991,6 +1004,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callBuddyStatus(ctx, access, command.Arguments)
+	case "get_notes":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callNotes(ctx, access, command.Arguments)
 	case "get_empire_overview":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
 		if err != nil {
@@ -1562,6 +1584,29 @@ func (s Service) callBuddyStatus(ctx context.Context, access domainmcp.Access, a
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"buddyStatus": status}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callNotes(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.notesRead == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp notes read repository unavailable")
+	}
+	command, err := mcpNotesStatusCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	notes, err := s.notesRead.GetMCPNotes(ctx, access.PlayerID, command)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"notes": notes}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -3134,6 +3179,27 @@ func mcpBuddyStatusCommand(arguments map[string]any) (domainmcp.BuddyStatusComma
 	return domainmcp.BuddyStatusCommand{PlanetID: planetID, Action: action, BuddyID: buddyID}, nil
 }
 
+func mcpNotesStatusCommand(arguments map[string]any) (domainmcp.NotesStatusCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.NotesStatusCommand{}, err
+	}
+	action, err := optionalNonNegativeIntArgument(arguments, "action")
+	if err != nil {
+		return domainmcp.NotesStatusCommand{}, err
+	}
+	switch action {
+	case 0, 1, 2:
+	default:
+		return domainmcp.NotesStatusCommand{}, domainmcp.ErrInvalidParams
+	}
+	noteID, err := optionalNonNegativeIntArgument(arguments, "noteId")
+	if err != nil {
+		return domainmcp.NotesStatusCommand{}, err
+	}
+	return domainmcp.NotesStatusCommand{PlanetID: planetID, Action: action, NoteID: noteID}, nil
+}
+
 func mcpEmpireCommand(arguments map[string]any) (domainmcp.EmpireCommand, error) {
 	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
 	if err != nil {
@@ -4328,6 +4394,58 @@ func buddyStatusTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"buddyStatus"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func notesTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_notes",
+		Title:       "Get Notes",
+		Description: "Return read-only legacy notes screen state for the authenticated player, including list, create form, and edit-target views.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet context.",
+					"minimum":     0,
+				},
+				"action": map[string]any{
+					"type":        "integer",
+					"description": "Legacy notes action: 0 list, 1 create, 2 edit.",
+					"enum":        []int{0, 1, 2},
+				},
+				"noteId": map[string]any{
+					"type":        "integer",
+					"description": "Owned note id for edit action.",
+					"minimum":     0,
+				},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"notes": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":  map[string]any{"type": "integer"},
+						"planet":    map[string]any{"type": "object"},
+						"commander": map[string]any{"type": "string"},
+						"action":    map[string]any{"type": "string"},
+						"rows":      map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+						"editNote":  map[string]any{"type": "object"},
+					},
+					"required": []string{"playerId", "planet", "commander", "action", "rows"},
+				},
+			},
+			"required": []string{"notes"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,
