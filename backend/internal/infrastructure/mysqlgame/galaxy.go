@@ -9,6 +9,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 type GalaxyRepository struct {
@@ -21,6 +22,10 @@ type GalaxyRepository struct {
 func NewGalaxyRepository(db *sql.DB, prefix string) GalaxyRepository {
 	runner := SQLQueryer{DB: db}
 	return GalaxyRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now}
+}
+
+func NewGalaxyReadRepository(db *sql.DB, prefix string) GalaxyRepository {
+	return NewGalaxyRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
 }
 
 func NewGalaxyRepositoryWithQueryer(queryer Queryer, prefix string, now func() time.Time) GalaxyRepository {
@@ -140,6 +145,143 @@ func (r GalaxyRepository) GetGalaxy(ctx context.Context, query appgame.GalaxyQue
 		return domaingame.Galaxy{}, err
 	}
 	return galaxy, nil
+}
+
+func (r GalaxyRepository) GetMCPGalaxySystem(ctx context.Context, playerID int, command domainmcp.GalaxySystemCommand) (domainmcp.GalaxySystem, error) {
+	if r.queryer == nil {
+		return domainmcp.GalaxySystem{}, errors.New("galaxy reader unavailable")
+	}
+	galaxy, err := r.GetGalaxy(ctx, appgame.GalaxyQuery{
+		PlayerID: playerID,
+		PlanetID: command.PlanetID,
+		Coordinates: domaingame.Coordinates{
+			Galaxy: command.Galaxy,
+			System: command.System,
+		},
+	})
+	if err != nil {
+		return domainmcp.GalaxySystem{}, err
+	}
+	rows := make([]domainmcp.GalaxySystemRow, 0, len(galaxy.Rows))
+	for _, row := range galaxy.Rows {
+		rows = append(rows, domainmcp.GalaxySystemRow{
+			Position: row.Position,
+			Planet:   mcpGalaxyObject(row.Planet),
+			Moon:     mcpGalaxyObject(row.Moon),
+			Debris:   mcpGalaxyDebris(row.Debris),
+		})
+	}
+	return domainmcp.GalaxySystem{
+		PlayerID: playerID,
+		PlanetID: galaxy.CurrentPlanet.ID,
+		Coordinates: domainmcp.Coordinates{
+			Galaxy:   galaxy.Coordinates.Galaxy,
+			System:   galaxy.Coordinates.System,
+			Position: galaxy.Coordinates.Position,
+		},
+		Bounds: domainmcp.GalaxyBounds{
+			Galaxies: galaxy.Bounds.Galaxies,
+			Systems:  galaxy.Bounds.Systems,
+		},
+		Populated: galaxy.Populated,
+		Slots:     mcpGalaxySlots(galaxy.Slots),
+		Extra: domainmcp.GalaxySystemExtra{
+			Commander: galaxy.Extra.Commander,
+			SpyProbes: galaxy.Extra.SpyProbes,
+			Recyclers: galaxy.Extra.Recyclers,
+			Missiles:  galaxy.Extra.Missiles,
+			MaxSpy:    galaxy.Extra.MaxSpy,
+			Slots:     mcpGalaxySlots(galaxy.Extra.Slots),
+		},
+		NotEnoughDeuterium:  galaxy.NotEnoughDeuterium,
+		RemoteSystemCostDue: galaxy.RemoteSystemCostDue,
+		Rows:                rows,
+	}, nil
+}
+
+func mcpGalaxyObject(planet *domaingame.GalaxyPlanet) *domainmcp.GalaxySystemObject {
+	if planet == nil {
+		return nil
+	}
+	return &domainmcp.GalaxySystemObject{
+		ID:          planet.ID,
+		Name:        planet.Name,
+		DisplayName: planet.DisplayName,
+		Type:        planet.Type,
+		Coordinates: domainmcp.Coordinates{
+			Galaxy:   planet.Coordinates.Galaxy,
+			System:   planet.Coordinates.System,
+			Position: planet.Coordinates.Position,
+		},
+		ActivityText: planet.ActivityText,
+		Destroyed:    planet.Destroyed,
+		Abandoned:    planet.Abandoned,
+		Own:          planet.Own,
+		ReportID:     planet.ReportID,
+		Player:       mcpGalaxyPlayer(planet.Player),
+		Alliance:     mcpGalaxyAlliance(planet.Alliance),
+		Actions:      mcpGalaxyActions(planet.Actions),
+	}
+}
+
+func mcpGalaxyPlayer(player *domaingame.GalaxyPlayerStatus) *domainmcp.GalaxySystemPlayer {
+	if player == nil {
+		return nil
+	}
+	suffixes := make([]string, 0, len(player.Suffixes))
+	for _, suffix := range player.Suffixes {
+		suffixes = append(suffixes, suffix.Text)
+	}
+	return &domainmcp.GalaxySystemPlayer{
+		ID:          player.ID,
+		Name:        player.Name,
+		Rank:        player.Rank,
+		Status:      player.Status,
+		StatusClass: player.StatusClass,
+		Suffixes:    suffixes,
+		Own:         player.Own,
+	}
+}
+
+func mcpGalaxyAlliance(alliance *domaingame.GalaxyAlliance) *domainmcp.GalaxySystemAlliance {
+	if alliance == nil {
+		return nil
+	}
+	return &domainmcp.GalaxySystemAlliance{ID: alliance.ID, Tag: alliance.Tag, Rank: alliance.Rank, Members: alliance.Members}
+}
+
+func mcpGalaxyActions(actions domaingame.GalaxyActions) domainmcp.GalaxySystemActions {
+	return domainmcp.GalaxySystemActions{
+		Deploy:     actions.Deploy,
+		Transport:  actions.Transport,
+		Spy:        actions.Spy,
+		Message:    actions.Message,
+		Buddy:      actions.Buddy,
+		ViewReport: actions.ViewReport,
+		Phalanx:    actions.Phalanx,
+		Missile:    actions.Missile,
+		Attack:     actions.Attack,
+		Defend:     actions.Defend,
+		Destroy:    actions.Destroy,
+		Recycle:    actions.Recycle,
+	}
+}
+
+func mcpGalaxyDebris(debris *domaingame.GalaxyDebris) *domainmcp.GalaxySystemDebris {
+	if debris == nil {
+		return nil
+	}
+	return &domainmcp.GalaxySystemDebris{
+		ID:         debris.ID,
+		Metal:      debris.Metal,
+		Crystal:    debris.Crystal,
+		Harvesters: debris.Harvesters,
+		Visible:    debris.Visible,
+	}
+}
+
+func mcpGalaxySlots(slots domaingame.FleetSlots) domainmcp.GalaxyFleetSlots {
+	return domainmcp.GalaxyFleetSlots{Used: slots.Used, Max: slots.Max, BaseMax: slots.BaseMax, Admiral: slots.Admiral}
 }
 
 func (r GalaxyRepository) chargeGalaxyRemoteSystemCost(ctx context.Context, planetsTable string, playerID int, galaxy *domaingame.Galaxy) error {

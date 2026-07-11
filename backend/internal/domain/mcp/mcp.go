@@ -481,6 +481,109 @@ type SearchResult struct {
 	Alliances []SearchAllianceRow `json:"alliances"`
 }
 
+type GalaxySystemCommand struct {
+	PlanetID int
+	Galaxy   int
+	System   int
+}
+
+type GalaxyBounds struct {
+	Galaxies int `json:"galaxies"`
+	Systems  int `json:"systems"`
+}
+
+type GalaxyFleetSlots struct {
+	Used    int  `json:"used"`
+	Max     int  `json:"max"`
+	BaseMax int  `json:"baseMax"`
+	Admiral bool `json:"admiral"`
+}
+
+type GalaxySystemExtra struct {
+	Commander bool             `json:"commander"`
+	SpyProbes int              `json:"spyProbes"`
+	Recyclers int              `json:"recyclers"`
+	Missiles  int              `json:"missiles"`
+	MaxSpy    int              `json:"maxSpy"`
+	Slots     GalaxyFleetSlots `json:"slots"`
+}
+
+type GalaxySystemActions struct {
+	Deploy     bool `json:"deploy"`
+	Transport  bool `json:"transport"`
+	Spy        bool `json:"spy"`
+	Message    bool `json:"message"`
+	Buddy      bool `json:"buddy"`
+	ViewReport bool `json:"viewReport"`
+	Phalanx    bool `json:"phalanx"`
+	Missile    bool `json:"missile"`
+	Attack     bool `json:"attack"`
+	Defend     bool `json:"defend"`
+	Destroy    bool `json:"destroy"`
+	Recycle    bool `json:"recycle"`
+}
+
+type GalaxySystemPlayer struct {
+	ID          int      `json:"id"`
+	Name        string   `json:"name"`
+	Rank        int      `json:"rank"`
+	Status      string   `json:"status"`
+	StatusClass string   `json:"statusClass"`
+	Suffixes    []string `json:"suffixes"`
+	Own         bool     `json:"own"`
+}
+
+type GalaxySystemAlliance struct {
+	ID      int    `json:"id"`
+	Tag     string `json:"tag"`
+	Rank    int    `json:"rank"`
+	Members int    `json:"members"`
+}
+
+type GalaxySystemObject struct {
+	ID           int                   `json:"id"`
+	Name         string                `json:"name"`
+	DisplayName  string                `json:"displayName"`
+	Type         int                   `json:"type"`
+	Coordinates  Coordinates           `json:"coordinates"`
+	ActivityText string                `json:"activityText,omitempty"`
+	Destroyed    bool                  `json:"destroyed"`
+	Abandoned    bool                  `json:"abandoned"`
+	Own          bool                  `json:"own"`
+	ReportID     int                   `json:"reportId,omitempty"`
+	Player       *GalaxySystemPlayer   `json:"player,omitempty"`
+	Alliance     *GalaxySystemAlliance `json:"alliance,omitempty"`
+	Actions      GalaxySystemActions   `json:"actions"`
+}
+
+type GalaxySystemDebris struct {
+	ID         int     `json:"id"`
+	Metal      float64 `json:"metal"`
+	Crystal    float64 `json:"crystal"`
+	Harvesters int     `json:"harvesters"`
+	Visible    bool    `json:"visible"`
+}
+
+type GalaxySystemRow struct {
+	Position int                 `json:"position"`
+	Planet   *GalaxySystemObject `json:"planet,omitempty"`
+	Moon     *GalaxySystemObject `json:"moon,omitempty"`
+	Debris   *GalaxySystemDebris `json:"debris,omitempty"`
+}
+
+type GalaxySystem struct {
+	PlayerID            int               `json:"playerId"`
+	PlanetID            int               `json:"planetId"`
+	Coordinates         Coordinates       `json:"coordinates"`
+	Bounds              GalaxyBounds      `json:"bounds"`
+	Populated           int               `json:"populated"`
+	Slots               GalaxyFleetSlots  `json:"slots"`
+	Extra               GalaxySystemExtra `json:"extra"`
+	NotEnoughDeuterium  bool              `json:"notEnoughDeuterium"`
+	RemoteSystemCostDue bool              `json:"remoteSystemCostDue"`
+	Rows                []GalaxySystemRow `json:"rows"`
+}
+
 type DispatchFleetCommand struct {
 	PlanetID        int
 	Ships           map[int]int

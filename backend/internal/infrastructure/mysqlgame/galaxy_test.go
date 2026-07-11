@@ -10,6 +10,7 @@ import (
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
+	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
 func TestGalaxyRepositoryReadsLegacyGalaxyScreen(t *testing.T) {
@@ -84,6 +85,35 @@ func TestGalaxyRepositoryChargesRemoteSystemDeuterium(t *testing.T) {
 	}
 	if len(call.args) != 5 || call.args[0] != domaingame.GalaxyDeuteriumCost || call.args[2] != 99 || call.args[3] != 42 || call.args[4] != domaingame.GalaxyDeuteriumCost {
 		t.Fatalf("unexpected deuterium update args: %+v", call.args)
+	}
+}
+
+func TestGalaxyRepositoryMCPReadsGalaxySystemWithoutRemoteCharge(t *testing.T) {
+	now := time.Unix(10_000, 0)
+	queryer := &fakeQueryer{results: append(galaxyReadPrefixResults(now),
+		fakeQueryResult{rows: fakeRowsFromValues(
+			galaxyObjectRow(200, "Target", domaingame.PlanetTypePlanet, 4, now.Unix()-60, 0, 0, 7, "enemy", 1000, 12, 5, now.Unix(), 0, 0, 5, "TAG", 3, 2, 901),
+			galaxyObjectRow(202, "", domaingame.PlanetTypeDebris, 4, 0, 200, 100, 0, "", 0, 0, 0, 0, 0, 0, 0, "", 0, 0, 0),
+		)},
+	)}
+	repository := NewGalaxyRepositoryWithRunner(queryer, nil, "ogame_", func() time.Time { return now })
+
+	system, err := repository.GetMCPGalaxySystem(context.Background(), 42, domainmcp.GalaxySystemCommand{Galaxy: 1, System: 3})
+	if err != nil {
+		t.Fatalf("GetMCPGalaxySystem returned error: %v", err)
+	}
+	if system.PlayerID != 42 || system.PlanetID != 99 || system.Coordinates.System != 3 || !system.RemoteSystemCostDue || system.NotEnoughDeuterium {
+		t.Fatalf("unexpected MCP galaxy summary: %+v", system)
+	}
+	row := system.Rows[3]
+	if row.Planet == nil || row.Planet.Player == nil || row.Planet.Player.Name != "enemy" || !row.Planet.Actions.ViewReport {
+		t.Fatalf("unexpected MCP galaxy planet: %+v", row.Planet)
+	}
+	if row.Debris == nil || !row.Debris.Visible || row.Debris.Harvesters != 1 {
+		t.Fatalf("unexpected MCP debris row: %+v", row.Debris)
+	}
+	if _, err := (GalaxyRepository{}).GetMCPGalaxySystem(context.Background(), 42, domainmcp.GalaxySystemCommand{}); err == nil {
+		t.Fatalf("expected missing reader error")
 	}
 }
 
@@ -176,6 +206,26 @@ func TestNewGalaxyRepositoryKeepsSQLQueryer(t *testing.T) {
 	withRunner := NewGalaxyRepositoryWithQueryer(&fakeGalaxyRunner{}, "ogame_", nil)
 	if withRunner.execer == nil {
 		t.Fatal("expected queryer execer to be reused")
+	}
+
+	readOnly := NewGalaxyReadRepository(nil, "ogame_")
+	if readOnly.execer != nil {
+		t.Fatalf("expected MCP galaxy read repository to disable execer, got %T", readOnly.execer)
+	}
+}
+
+func TestGalaxyMCPMapperNilBranches(t *testing.T) {
+	if mcpGalaxyObject(nil) != nil {
+		t.Fatalf("nil galaxy object should stay nil")
+	}
+	if mcpGalaxyPlayer(nil) != nil {
+		t.Fatalf("nil galaxy player should stay nil")
+	}
+	if mcpGalaxyAlliance(nil) != nil {
+		t.Fatalf("nil galaxy alliance should stay nil")
+	}
+	if mcpGalaxyDebris(nil) != nil {
+		t.Fatalf("nil galaxy debris should stay nil")
 	}
 }
 

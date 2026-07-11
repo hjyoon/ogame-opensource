@@ -114,6 +114,10 @@ type SearchReadRepository interface {
 	SearchMCP(context.Context, int, domainmcp.SearchCommand) (domainmcp.SearchResult, error)
 }
 
+type GalaxyReadRepository interface {
+	GetMCPGalaxySystem(context.Context, int, domainmcp.GalaxySystemCommand) (domainmcp.GalaxySystem, error)
+}
+
 type PremiumWriteRepository interface {
 	PreviewMCPRecruitOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
 	RecruitMCPOfficer(context.Context, int, domainmcp.RecruitOfficerCommand) (domainmcp.RecruitOfficerResult, error)
@@ -267,6 +271,7 @@ type Service struct {
 	resourceWrite   ResourceWriteRepository
 	premiumRead     PremiumReadRepository
 	searchRead      SearchReadRepository
+	galaxyRead      GalaxyReadRepository
 	premiumWrite    PremiumWriteRepository
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
@@ -354,6 +359,11 @@ func (s Service) WithPremiumReadRepository(repository PremiumReadRepository) Ser
 
 func (s Service) WithSearchReadRepository(repository SearchReadRepository) Service {
 	s.searchRead = repository
+	return s
+}
+
+func (s Service) WithGalaxyReadRepository(repository GalaxyReadRepository) Service {
+	s.galaxyRead = repository
 	return s
 }
 
@@ -672,6 +682,9 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 		if s.searchRead != nil {
 			tools = append(tools, searchGameTool())
 		}
+		if s.galaxyRead != nil {
+			tools = append(tools, galaxySystemTool())
+		}
 	}
 	if access.HasScope(domainmcp.ScopeMessages) && s.readRepository != nil {
 		tools = append(tools, listMessagesTool(), getMessageTool())
@@ -781,6 +794,15 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callSearchGame(ctx, access, command.Arguments)
+	case "get_galaxy_system":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID = access.PlayerID
+		audit.Scopes = access.Scopes
+		audit.Authorized = true
+		return s.callGalaxySystem(ctx, access, command.Arguments)
 	case "list_messages":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeMessages)
 		if err != nil {
@@ -1160,6 +1182,29 @@ func (s Service) callSearchGame(ctx context.Context, access domainmcp.Access, ar
 		return domainmcp.ToolCallResult{}, err
 	}
 	structured := map[string]any{"search": result}
+	text, _ := json.Marshal(structured)
+	return domainmcp.ToolCallResult{
+		Content: []domainmcp.Content{
+			{Type: "text", Text: string(text)},
+		},
+		StructuredContent: structured,
+		IsError:           false,
+	}, nil
+}
+
+func (s Service) callGalaxySystem(ctx context.Context, access domainmcp.Access, arguments map[string]any) (domainmcp.ToolCallResult, error) {
+	if s.galaxyRead == nil {
+		return domainmcp.ToolCallResult{}, errors.New("mcp galaxy read repository unavailable")
+	}
+	command, err := mcpGalaxySystemCommand(arguments)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	result, err := s.galaxyRead.GetMCPGalaxySystem(ctx, access.PlayerID, command)
+	if err != nil {
+		return domainmcp.ToolCallResult{}, err
+	}
+	structured := map[string]any{"galaxySystem": result}
 	text, _ := json.Marshal(structured)
 	return domainmcp.ToolCallResult{
 		Content: []domainmcp.Content{
@@ -2481,6 +2526,22 @@ func mcpSearchCommand(arguments map[string]any) (domainmcp.SearchCommand, error)
 	return domainmcp.SearchCommand{PlanetID: planetID, Type: searchType, Text: text}, nil
 }
 
+func mcpGalaxySystemCommand(arguments map[string]any) (domainmcp.GalaxySystemCommand, error) {
+	planetID, err := optionalNonNegativeIntArgument(arguments, "planetId")
+	if err != nil {
+		return domainmcp.GalaxySystemCommand{}, err
+	}
+	galaxy, err := optionalNonNegativeIntArgument(arguments, "galaxy")
+	if err != nil {
+		return domainmcp.GalaxySystemCommand{}, err
+	}
+	system, err := optionalNonNegativeIntArgument(arguments, "system")
+	if err != nil {
+		return domainmcp.GalaxySystemCommand{}, err
+	}
+	return domainmcp.GalaxySystemCommand{PlanetID: planetID, Galaxy: galaxy, System: system}, nil
+}
+
 func mcpMessageQuery(arguments map[string]any) (domainmcp.MessageQuery, error) {
 	limit, err := optionalNonNegativeIntArgument(arguments, "limit")
 	if err != nil {
@@ -3312,6 +3373,61 @@ func searchGameTool() domainmcp.Tool {
 				},
 			},
 			"required": []string{"search"},
+		},
+		Annotations: map[string]any{
+			"readOnlyHint":    true,
+			"destructiveHint": false,
+			"idempotentHint":  true,
+		},
+	}
+}
+
+func galaxySystemTool() domainmcp.Tool {
+	return domainmcp.Tool{
+		Name:        "get_galaxy_system",
+		Title:       "Get Galaxy System",
+		Description: "Return a read-only galaxy system view. Unlike the legacy page, MCP read mode does not charge remote-system deuterium.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"planetId": map[string]any{
+					"type":        "integer",
+					"description": "Owned planet id. Omit or pass 0 to use the active planet context.",
+				},
+				"galaxy": map[string]any{
+					"type":        "integer",
+					"description": "Galaxy number. Omit or pass 0 to use the active planet galaxy.",
+					"minimum":     0,
+				},
+				"system": map[string]any{
+					"type":        "integer",
+					"description": "System number. Omit or pass 0 to use the active planet system.",
+					"minimum":     0,
+				},
+			},
+			"additionalProperties": false,
+		},
+		OutputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"galaxySystem": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"playerId":            map[string]any{"type": "integer"},
+						"planetId":            map[string]any{"type": "integer"},
+						"coordinates":         map[string]any{"type": "object"},
+						"bounds":              map[string]any{"type": "object"},
+						"populated":           map[string]any{"type": "integer"},
+						"slots":               map[string]any{"type": "object"},
+						"extra":               map[string]any{"type": "object"},
+						"notEnoughDeuterium":  map[string]any{"type": "boolean"},
+						"remoteSystemCostDue": map[string]any{"type": "boolean"},
+						"rows":                map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+					},
+					"required": []string{"playerId", "planetId", "coordinates", "bounds", "populated", "slots", "extra", "notEnoughDeuterium", "remoteSystemCostDue", "rows"},
+				},
+			},
+			"required": []string{"galaxySystem"},
 		},
 		Annotations: map[string]any{
 			"readOnlyHint":    true,

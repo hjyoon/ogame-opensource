@@ -43,7 +43,7 @@ Implemented:
 - MCP/OAuth rate limits on RPC, OAuth, and token API paths.
 - JSON audit logging for every `tools/call`; no secrets are logged.
 - Authenticated `mcp:read`: planets, overview, resources, queue,
-  fleet movements, officer status, search. No legacy queue/resource mutations.
+  fleet movements, officer status, search, galaxy. No legacy queue/resource mutations.
 - Authenticated `mcp:messages` tools: `list_messages` and `get_message`.
   Read owned inbox rows without marking read or cleanup mutation.
 - Authenticated `mcp:message_write` tools: `send_message`, `delete_messages`,

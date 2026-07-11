@@ -328,6 +328,8 @@ try {
   const officerStatusToolBody = parseJSON(officerStatusTool);
   const searchGameTool = await mcpJSONRPC("tools/call", { name: "search_game", arguments: { type: "playername", text: loginUser.slice(0, 3) || "leg" } }, { id: 42, headers: authHeaders });
   const searchGameToolBody = parseJSON(searchGameTool);
+  const galaxySystemTool = await mcpJSONRPC("tools/call", { name: "get_galaxy_system", arguments: {} }, { id: 43, headers: authHeaders });
+  const galaxySystemToolBody = parseJSON(galaxySystemTool);
   const messagesTool = await mcpJSONRPC("tools/call", { name: "list_messages", arguments: { limit: 5 } }, { id: 29, headers: authHeaders });
   const messagesToolBody = parseJSON(messagesTool);
   const sendMessageDryRun = await mcpJSONRPC("tools/call", { name: "send_message", arguments: { targetPlayerId: login.playerID, subject: "MCP smoke dry-run", text: "This is a dry-run from MCP smoke." } }, { id: 30, headers: authHeaders });
@@ -387,6 +389,7 @@ try {
     "get_fleet_movements",
     "get_officer_status",
     "search_game",
+    "get_galaxy_system",
     "list_messages",
     "get_message",
     "send_message",
@@ -439,6 +442,7 @@ try {
       check(fleetTool.status === 200 && Number(fleetToolBody.result?.structuredContent?.fleetMovements?.playerId ?? 0) === login.playerID, "get_fleet_movements returns current player data", fleetToolBody.result ?? {}),
       check(officerStatusTool.status === 200 && Number(officerStatusToolBody.result?.structuredContent?.officerStatus?.playerId ?? 0) === login.playerID && Array.isArray(officerStatusToolBody.result?.structuredContent?.officerStatus?.officers), "get_officer_status returns current officer rows and Dark Matter balances", officerStatusToolBody.result ?? {}),
       check(searchGameTool.status === 200 && Number(searchGameToolBody.result?.structuredContent?.search?.playerId ?? 0) === login.playerID && Array.isArray(searchGameToolBody.result?.structuredContent?.search?.players), "search_game returns current player search results", searchGameToolBody.result ?? {}),
+      check(galaxySystemTool.status === 200 && Number(galaxySystemToolBody.result?.structuredContent?.galaxySystem?.playerId ?? 0) === login.playerID && Array.isArray(galaxySystemToolBody.result?.structuredContent?.galaxySystem?.rows), "get_galaxy_system returns current galaxy rows without mutation", galaxySystemToolBody.result ?? {}),
       check(messagesTool.status === 200 && Number(messagesToolBody.result?.structuredContent?.messages?.playerId ?? 0) === login.playerID && Array.isArray(messagesToolBody.result?.structuredContent?.messages?.messages), "list_messages returns current player message rows without mutation", messagesToolBody.result ?? {}),
       check(sendMessageDryRun.status === 200 && Number(sendMessageDryRunBody.result?.structuredContent?.sendMessage?.playerId ?? 0) === login.playerID && sendMessageDryRunBody.result?.structuredContent?.sendMessage?.dryRun === true && sendMessageDryRunBody.result?.structuredContent?.sendMessage?.requiresConfirmation === true && String(sendMessageDryRunBody.result?.structuredContent?.sendMessage?.confirmation ?? "").startsWith(`send_message:${login.playerID}:`), "send_message dry-run returns explicit confirmation without executing", sendMessageDryRunBody.result ?? {}),
       check(firstMessageID === 0 || (deleteMessageDryRun?.status === 200 && Number(deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.playerId ?? 0) === login.playerID && deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.dryRun === true && deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.requiresConfirmation === true && deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.executed === false && String(deleteMessageDryRunBody.result?.structuredContent?.deleteMessages?.confirmation ?? "").startsWith(`delete_messages:${firstMessageID}:`)), "delete_messages dry-run returns explicit confirmation for an owned visible message when available", {
