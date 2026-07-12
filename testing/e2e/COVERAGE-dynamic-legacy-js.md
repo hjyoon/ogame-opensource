@@ -46,5 +46,5 @@ Route-changing dynamic links are tracked separately here:
 2. Add isolated cases when unsupported legacy-only mutating JS is found.
 3. Run both legacy PHP and Go+Bun where possible.
 
-Conclusion: the authenticated dynamic registry has 91 cases and no listed
-remaining cases. Future additions are discovery-driven client behavior.
+Conclusion: all 91 listed cases pass. `Mostly migrated` means exhaustive
+legacy-JS parity is unproven; newly found handlers and states need inventory.
