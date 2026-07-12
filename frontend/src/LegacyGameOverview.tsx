@@ -12955,7 +12955,7 @@ function MCPTokenTable({
   };
   const issue = status && !status.authenticated ? status.issues[0]?.message ?? "Session is invalid." : "";
   return (
-    <table className="legacy-overview-table legacy-options-table" width={519}>
+    <table className="legacy-overview-table legacy-mcp-token-table" data-visual-exclude="mcp-tokens" width={519}>
       <tbody>
         <tr>
           <td className="legacy-c c" colSpan={6}>

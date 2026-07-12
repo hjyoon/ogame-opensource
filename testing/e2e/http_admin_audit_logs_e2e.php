@@ -140,7 +140,7 @@ function e2e_snapshot_user(int $userId): ?array
 {
     global $db_prefix;
     return e2e_one_row(
-        "SELECT player_id, admin, session, private_session, validated, deact_ip, vacation, vacation_until, banned, banned_until, " .
+        "SELECT player_id, name, oname, admin, session, private_session, validated, deact_ip, vacation, vacation_until, banned, banned_until, " .
         "noattack, noattack_until, disable, disable_until, lang, skin, useskin FROM {$db_prefix}users WHERE player_id={$userId} LIMIT 1"
     );
 }
@@ -154,7 +154,8 @@ function e2e_restore_user(?array $user): void
 
     $id = (int)$user['player_id'];
     dbquery(
-        "UPDATE {$db_prefix}users SET admin=" . (int)$user['admin'] . ", session='" . e2e_sql_escape($user['session']) . "', " .
+        "UPDATE {$db_prefix}users SET name='" . e2e_sql_escape($user['name']) . "', oname='" . e2e_sql_escape($user['oname']) . "', " .
+        "admin=" . (int)$user['admin'] . ", session='" . e2e_sql_escape($user['session']) . "', " .
         "private_session='" . e2e_sql_escape($user['private_session']) . "', validated=" . (int)$user['validated'] . ", deact_ip=" . (int)$user['deact_ip'] . ", " .
         "vacation=" . (int)$user['vacation'] . ", vacation_until=" . (int)$user['vacation_until'] . ", banned=" . (int)$user['banned'] . ", " .
         "banned_until=" . (int)$user['banned_until'] . ", noattack=" . (int)$user['noattack'] . ", noattack_until=" . (int)$user['noattack_until'] . ", " .
@@ -228,6 +229,7 @@ try {
     if ($attackerSnapshot === null || $defenderSnapshot === null) {
         throw new RuntimeException('Fixture users are missing.');
     }
+    $defenderSearchName = $defenderSnapshot['oname'] ?: $defenderName;
 
     e2e_cleanup_audit_rows($defenderId, $token, $loginIp);
     e2e_seed_audit_rows($defenderId, $token, $loginIp);
@@ -282,7 +284,7 @@ try {
     $operatorAuth = e2e_prepare_session($attackerId, USER_TYPE_GO, 'audit-operator');
     $operatorCookies = $operatorAuth['cookies'];
     $operatorUserLogsResponse = e2e_http_request('POST', $gameBase . '/index.php?page=admin&session=' . rawurlencode($operatorAuth['session']) . '&mode=UserLogs', array(
-        'name' => $defenderName,
+        'name' => $defenderSearchName,
         'type' => 'E2E_AUDIT',
         'days' => '2',
         'hours' => '0',
@@ -298,6 +300,25 @@ try {
     ), $operatorCookies);
     $debugAfter = e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}debug WHERE text LIKE '%" . e2e_sql_escape($token) . "%'");
     $errorsAfter = e2e_count("SELECT COUNT(*) AS cnt FROM {$db_prefix}errors WHERE text LIKE '%" . e2e_sql_escape($token) . "%'");
+    $operatorUserLogsBody = $operatorUserLogsResponse['body'];
+    $operatorUserLogsMarkerFound = strpos($operatorUserLogsBody, $token . ' user log marker') !== false;
+    $operatorUserLogsContext = array(
+        'searchName' => $defenderSearchName,
+        'tokenPrefix' => substr($token, 0, 12),
+    );
+    if (!$operatorUserLogsMarkerFound) {
+        $operatorUserLogsText = strip_tags($operatorUserLogsBody);
+        $operatorUserLogsHistoryPos = stripos($operatorUserLogsText, 'User history');
+        if ($operatorUserLogsHistoryPos === false) {
+            $operatorUserLogsHistoryPos = stripos($operatorUserLogsText, 'History');
+        }
+        $operatorUserLogsSampleOffset = $operatorUserLogsHistoryPos === false ? 0 : max(0, $operatorUserLogsHistoryPos - 120);
+        $operatorUserLogsContext += array(
+            'hasRefresh' => stripos($operatorUserLogsBody, 'http-equiv') !== false && stripos($operatorUserLogsBody, 'refresh') !== false,
+            'hasHistoryHeader' => stripos($operatorUserLogsBody, 'User history') !== false || stripos($operatorUserLogsBody, 'History') !== false,
+            'bodySample' => substr($operatorUserLogsText, $operatorUserLogsSampleOffset, 700),
+        );
+    }
     $cases[] = e2e_finalize_case(array(
         'case' => 'operator_can_search_userlogs_but_cannot_clear_debug_or_errors',
         'checks' => array_merge(
@@ -305,7 +326,7 @@ try {
             e2e_response_check($operatorDebugDeleteResponse, 'operator Debug delete-all POST'),
             e2e_response_check($operatorErrorsDeleteResponse, 'operator Errors delete-all POST'),
             array(
-                e2e_case(strpos($operatorUserLogsResponse['body'], $token . ' user log marker') !== false, 'operator UserLogs search can find the seeded audit marker'),
+                e2e_case($operatorUserLogsMarkerFound, 'operator UserLogs search can find the seeded audit marker', $operatorUserLogsContext),
                 e2e_case($debugBefore === 1 && $debugAfter === 1, 'operator delete-all POST does not remove debug rows', array('before' => $debugBefore, 'after' => $debugAfter)),
                 e2e_case($errorsBefore === 1 && $errorsAfter === 1, 'operator delete-all POST does not remove error rows', array('before' => $errorsBefore, 'after' => $errorsAfter)),
             )

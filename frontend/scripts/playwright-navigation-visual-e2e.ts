@@ -1179,6 +1179,11 @@ async function normalizeDynamicPageParts(page: Page, side: Side, key: string): P
         }
       }
     };
+    const remove = (selector: string) => {
+      for (const element of document.querySelectorAll(selector)) {
+        element.remove();
+      }
+    };
     const makeTextTransparent = (element: HTMLElement) => {
       element.style.color = "transparent";
       element.style.textDecorationColor = "transparent";
@@ -1269,6 +1274,9 @@ async function normalizeDynamicPageParts(page: Page, side: Side, key: string): P
       );
     }
     if (canonicalKey.includes("/game/options")) {
+      if (pageSide === "migrated") {
+        remove("[data-visual-exclude='mcp-tokens'], .legacy-mcp-token-table");
+      }
       hide(
         ".legacy-options-table select, .legacy-options-table button, .legacy-options-table input[type='submit'], .legacy-options-table input[type='button'], #content table select, #content table button, #content table input[type='submit'], #content table input[type='button']"
       );
@@ -1424,6 +1432,11 @@ async function normalizeDynamicPageParts(page: Page, side: Side, key: string): P
       for (const row of document.querySelectorAll<HTMLTableRowElement>("#content tr, .legacy-admin-content tr")) {
         if (/backup_.*\.json|Restore Delete/.test(row.textContent ?? "")) {
           row.remove();
+        }
+      }
+      for (const diagnostic of document.querySelectorAll<HTMLElement>("#content font, .legacy-admin-content font")) {
+        if (/No differences were found|is missing from the install|is missing from the database/.test(diagnostic.textContent ?? "")) {
+          makeTextTransparent(diagnostic);
         }
       }
     }

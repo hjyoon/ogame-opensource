@@ -1098,6 +1098,11 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
           row.remove();
         }
       }
+      for (const diagnostic of document.querySelectorAll<HTMLElement>("#content font, .legacy-admin-content font")) {
+        if (/No differences were found|is missing from the install|is missing from the database/.test(diagnostic.textContent ?? "")) {
+          makeTextTransparent(diagnostic);
+        }
+      }
     }
     if (currentPageName.startsWith("game-admin-")) {
       for (const image of document.querySelectorAll<HTMLImageElement>("img")) {

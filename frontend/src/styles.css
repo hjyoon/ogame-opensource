@@ -1256,6 +1256,7 @@ body.legacy-game-body {
 }
 
 .legacy-options-table,
+.legacy-mcp-token-table,
 .legacy-resources-table {
   border-collapse: separate;
   border-spacing: 2px;
@@ -1263,6 +1264,7 @@ body.legacy-game-body {
 }
 
 .legacy-game-shell .legacy-options-table th,
+.legacy-game-shell .legacy-mcp-token-table th,
 .legacy-game-shell .legacy-resources-table th {
   font-weight: bold;
 }
@@ -1273,6 +1275,8 @@ body.legacy-game-body {
 
 .legacy-options-table select,
 .legacy-options-table input,
+.legacy-mcp-token-table select,
+.legacy-mcp-token-table input,
 .legacy-resources-table select,
 .legacy-resources-table input {
   background-color: #344566;

@@ -8,6 +8,8 @@ MAILHOG_BASE_URL="http://127.0.0.1:${OGAME_MAILHOG_PORT:-8026}"
 LEGACY_E2E_CONTAINER_DIR="${OGAME_E2E_CONTAINER_DIR:-/tmp/ogame-e2e}"
 mkdir -p "$ROOT_DIR/.tmp"
 
+export OGAME_MCP_RATE_LIMIT_ENABLE="${OGAME_MCP_RATE_LIMIT_ENABLE:-0}"
+
 wait_for_url() {
   url="$1"
   attempts="${2:-30}"

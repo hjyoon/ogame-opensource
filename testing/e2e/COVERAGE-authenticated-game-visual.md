@@ -44,6 +44,8 @@ Fixture-gated screens stay disabled by default because they need mutually exclus
 
 The runner fixes viewport, scale, locale, timezone, `Date.now()`, and `Math.random()`. It disables animation/caret rendering, blurs focus, moves the mouse away, normalizes clocks/countdowns/ranks/resource headers/stat timestamps, masks known dynamic hover UI, normalizes checkbox rendering, and waits for images/fonts/stable paint.
 
+Options visual parity removes the Go-only MCP token table; MCP behavior is covered by the MCP smoke/API suites.
+
 ## Commands
 
 Run default authenticated game visual coverage:
