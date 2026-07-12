@@ -13,7 +13,8 @@ Source of truth: `backend/internal/delivery/http/server.go`. Keep this file unde
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/healthz` | Runtime and asset readiness |
+| `GET` | `/api/livez` | Process liveness; independent of DB readiness |
+| `GET` | `/api/healthz` | Static assets plus master/universe DB readiness; `503` when unavailable |
 | `GET` | `/api/public/universes` | Universe catalog |
 | `POST` | `/api/public/registration/validate` | Registration draft validation |
 | `POST` | `/api/public/registration` | Account registration |

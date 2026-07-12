@@ -15,4 +15,6 @@ type Health struct {
 	StaticReady       bool
 	LegacyAssetsReady bool
 	LegacyBaseURL     string
+	MasterDBReady     bool
+	UniverseDBReady   bool
 }

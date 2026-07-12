@@ -35,9 +35,35 @@ services:
     ports:
       - "${OGAME_GO_PORT:-8890}:8080"
     depends_on:
-      - mailhog
+      mysql:
+        condition: service_healthy
+      mailhog:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/api/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123}
+      MYSQL_DATABASE: ${OGAME_MDB_NAME:-master}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
 
   mailhog:
     image: mailhog/mailhog
     ports:
       - "${OGAME_MAILHOG_PORT:-8026}:8025"
+
+volumes:
+  mysql_data:

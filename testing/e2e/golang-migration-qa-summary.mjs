@@ -8,6 +8,7 @@ const outputMarkdown = resolve(rootDir, ".tmp/golang-migration-qa-summary.md");
 const browserNames = uniqueWords(process.env.OGAME_QA_SUMMARY_BROWSERS ?? "chromium firefox");
 
 const artifacts = [
+  { name: "go DB recovery", path: ".tmp/golang-db-recovery.json" },
   { name: "go compatibility smoke", path: ".tmp/golang-compat-smoke.json" },
   { name: "go user type API QA", path: ".tmp/golang-user-type-qa.json" },
   ...browserNames.map((browser) => ({

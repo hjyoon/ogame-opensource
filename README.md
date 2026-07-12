@@ -22,7 +22,7 @@ Local migration smoke:
 ```sh
 cd frontend && bun install && bun run build
 cd ../backend && go test ./...
-docker compose -f compose.golang.yaml up -d --build goapp
+testing/e2e/run-golang-docker.sh
 ```
 
 Full compatibility QA still starts with:

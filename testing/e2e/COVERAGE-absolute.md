@@ -6,7 +6,7 @@ Keep this file under 4KB. This is the conservative product-coverage model for th
 
 - Goal: 100% absolute coverage of legacy PHP functionality.
 - Current absolute estimate: not asserted; the repository has no exhaustive legacy denominator proving a percentage.
-- Current inventoried QA pass rate: 100% (32/32 suites in the 2026-07-12 full run).
+- Current inventoried QA pass rate: 100% (33/33 suites in the 2026-07-12 full run).
 - A passing registry proves only listed cases, not every reachable legacy behavior.
 
 ## Denominator

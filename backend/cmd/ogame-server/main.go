@@ -26,6 +26,7 @@ import (
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mcpoidc"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlgame"
+	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlhealth"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlregistration"
 	infraruntime "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/runtime"
 	infrasession "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/session"
@@ -48,15 +49,18 @@ func main() {
 }
 
 func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
+	masterDBProbe, universeDBProbe := databaseReadinessProbes(cfg, logger)
 	health := appsystem.NewHealthService(appsystem.HealthConfig{
-		Environment:    cfg.Environment,
-		StaticDir:      cfg.StaticDir,
-		LegacyAssetDir: cfg.LegacyAssetDir,
-		LegacyBaseURL:  cfg.LegacyBaseURL,
-		GoTarget:       config.GoTarget,
-		BunTarget:      config.BunTarget,
-		ReactTarget:    config.ReactTarget,
-	}, filesystem.Probe{}, infraruntime.GoRuntime{})
+		Environment:        cfg.Environment,
+		StaticDir:          cfg.StaticDir,
+		LegacyAssetDir:     cfg.LegacyAssetDir,
+		LegacyBaseURL:      cfg.LegacyBaseURL,
+		GoTarget:           config.GoTarget,
+		BunTarget:          config.BunTarget,
+		ReactTarget:        config.ReactTarget,
+		MasterDBRequired:   cfg.MasterDBEnabled,
+		UniverseDBRequired: cfg.UniDBEnabled,
+	}, filesystem.Probe{}, infraruntime.GoRuntime{}, masterDBProbe, universeDBProbe)
 	universes := apppublicsite.NewUniverseCatalogService(universeRepository(cfg, logger))
 	registrationDrafts := registrationValidator(cfg, logger)
 	registration := registrationRegistrar(cfg, logger)
@@ -179,25 +183,8 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 		return withCommonMCP(appmcp.NewServiceWithTokenVerifier(health, staticVerifier))
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB mcp token management disabled", "error", err)
-		_ = db.Close()
-		return withCommonMCP(appmcp.NewServiceWithTokenVerifier(health, staticVerifier))
-	}
-
 	repository := mysqlgame.NewMCPTokenRepository(db, cfg.UniDBPrefix)
-	if err := repository.EnsureMCPTokenSchema(ctx); err != nil {
-		logger.Warn("universe DB mcp token schema unavailable", "error", err)
-		_ = db.Close()
-		return withCommonMCP(appmcp.NewServiceWithTokenVerifier(health, staticVerifier))
-	}
-	if err := repository.EnsureMCPOAuthCodeSchema(ctx); err != nil {
-		logger.Warn("universe DB mcp oauth code schema unavailable", "error", err)
-		_ = db.Close()
-		return withCommonMCP(appmcp.NewServiceWithTokenVerifier(health, staticVerifier))
-	}
+	ensureMCPSchemaEventually(logger, repository)
 
 	logger.Info("universe DB mcp token and oauth management enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
 	verifier := mcpauth.NewCompositeTokenVerifier(repository, staticVerifier)
@@ -268,6 +255,51 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 		WithPremiumWriteRepository(premiumRepository))
 }
 
+type mcpSchemaRepository interface {
+	EnsureMCPTokenSchema(context.Context) error
+	EnsureMCPOAuthCodeSchema(context.Context) error
+}
+
+func ensureMCPSchemaEventually(logger *slog.Logger, repository mcpSchemaRepository) {
+	go func() {
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			err := repository.EnsureMCPTokenSchema(ctx)
+			if err == nil {
+				err = repository.EnsureMCPOAuthCodeSchema(ctx)
+			}
+			cancel()
+			if err == nil {
+				logger.Info("universe DB mcp schemas ready")
+				return
+			}
+			logger.Warn("universe DB mcp schemas unavailable; retrying", "error", err)
+			time.Sleep(2 * time.Second)
+		}
+	}()
+}
+
+func databaseReadinessProbes(cfg config.Config, logger *slog.Logger) (appsystem.ReadinessProbe, appsystem.ReadinessProbe) {
+	var masterProbe, universeProbe appsystem.ReadinessProbe
+	if cfg.MasterDBEnabled {
+		db, err := mysqlcatalog.Open(mysqlcatalog.MasterDBConfig{Host: cfg.MasterDBHost, User: cfg.MasterDBUser, Password: cfg.MasterDBPassword, Name: cfg.MasterDBName})
+		if err != nil {
+			logger.Warn("master DB readiness probe unavailable", "error", err)
+		} else {
+			masterProbe = mysqlhealth.New(db)
+		}
+	}
+	if cfg.UniDBEnabled {
+		db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{Host: cfg.UniDBHost, User: cfg.UniDBUser, Password: cfg.UniDBPassword, Name: cfg.UniDBName})
+		if err != nil {
+			logger.Warn("universe DB readiness probe unavailable", "error", err)
+		} else {
+			universeProbe = mysqlhealth.New(db)
+		}
+	}
+	return masterProbe, universeProbe
+}
+
 func mcpOIDCSigner(cfg config.Config) (mcpoidc.Ed25519Signer, error) {
 	if strings.TrimSpace(cfg.MCPOIDCSigningSeed) != "" {
 		return mcpoidc.NewEd25519SignerFromBase64Seeds(cfg.MCPOIDCSigningSeed, mcpOIDCPreviousSeeds(cfg.MCPOIDCPreviousSeeds), time.Now)
@@ -297,14 +329,6 @@ func registrationActivation(cfg config.Config, logger *slog.Logger) apppublicsit
 		return apppublicsite.RegistrationActivationService{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB registration activation disabled", "error", err)
-		_ = db.Close()
-		return apppublicsite.RegistrationActivationService{}
-	}
-
 	logger.Info("universe DB registration activation enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
 	return apppublicsite.NewRegistrationActivationService(
 		mysqlregistration.NewAccountActivator(db, cfg.UniDBPrefix),
@@ -327,14 +351,6 @@ func registrationRegistrar(cfg config.Config, logger *slog.Logger) apppublicsite
 	})
 	if err != nil {
 		logger.Warn("universe DB registration creation disabled", "error", err)
-		return apppublicsite.RegistrationRegistrar{}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB registration creation disabled", "error", err)
-		_ = db.Close()
 		return apppublicsite.RegistrationRegistrar{}
 	}
 
@@ -377,14 +393,6 @@ func passwordRecoveryService(cfg config.Config, logger *slog.Logger) apppublicsi
 		return apppublicsite.PasswordRecoveryService{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB password recovery disabled", "error", err)
-		_ = db.Close()
-		return apppublicsite.PasswordRecoveryService{}
-	}
-
 	logger.Info("universe DB password recovery enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
 	return apppublicsite.NewPasswordRecoveryService(
 		mysqlregistration.NewPasswordRecoveryRepository(db, cfg.UniDBPrefix, cfg.UniDBSecret),
@@ -422,14 +430,6 @@ func loginValidator(cfg config.Config, logger *slog.Logger) apppublicsite.LoginD
 		return apppublicsite.NewLoginDraftValidator()
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB login credentials disabled", "error", err)
-		_ = db.Close()
-		return apppublicsite.NewLoginDraftValidator()
-	}
-
 	logger.Info("universe DB login credentials enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return apppublicsite.NewLoginDraftValidatorWithCredentials(mysqlregistration.NewCredentialChecker(db, cfg.UniDBPrefix, cfg.UniDBSecret))
 }
@@ -447,14 +447,6 @@ func loginAuthenticator(cfg config.Config, logger *slog.Logger) apppublicsite.Lo
 	})
 	if err != nil {
 		logger.Warn("universe DB login sessions disabled", "error", err)
-		return apppublicsite.LoginAuthenticator{}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB login sessions disabled", "error", err)
-		_ = db.Close()
 		return apppublicsite.LoginAuthenticator{}
 	}
 
@@ -483,14 +475,6 @@ func gameSessionLookup(cfg config.Config, logger *slog.Logger) apppublicsite.Gam
 		return apppublicsite.GameSessionLookup{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game session lookup disabled", "error", err)
-		_ = db.Close()
-		return apppublicsite.GameSessionLookup{}
-	}
-
 	logger.Info("universe DB game session lookup enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
 	store := mysqlregistration.NewSessionStore(db, cfg.UniDBPrefix)
 	return apppublicsite.NewGameSessionLookupWithActivity(store, store, cfg.UniNumber)
@@ -509,14 +493,6 @@ func logoutService(cfg config.Config, logger *slog.Logger) apppublicsite.LogoutS
 	})
 	if err != nil {
 		logger.Warn("universe DB logout disabled", "error", err)
-		return apppublicsite.LogoutService{}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB logout disabled", "error", err)
-		_ = db.Close()
 		return apppublicsite.LogoutService{}
 	}
 
@@ -540,14 +516,6 @@ func gameOverviewService(cfg config.Config, logger *slog.Logger, sessions apppub
 		return appgame.OverviewService{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game overview disabled", "error", err)
-		_ = db.Close()
-		return appgame.OverviewService{}
-	}
-
 	logger.Info("universe DB game overview enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewOverviewService(sessions, mysqlgame.NewOverviewRepositoryWithSecret(db, cfg.UniDBPrefix, cfg.UniDBSecret))
 }
@@ -565,14 +533,6 @@ func gameBuildingsService(cfg config.Config, logger *slog.Logger, sessions apppu
 	})
 	if err != nil {
 		logger.Warn("universe DB game buildings disabled", "error", err)
-		return appgame.BuildingsService{}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game buildings disabled", "error", err)
-		_ = db.Close()
 		return appgame.BuildingsService{}
 	}
 
@@ -596,14 +556,6 @@ func gameEmpireService(cfg config.Config, logger *slog.Logger, sessions apppubli
 		return appgame.EmpireService{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game empire disabled", "error", err)
-		_ = db.Close()
-		return appgame.EmpireService{}
-	}
-
 	logger.Info("universe DB game empire enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewEmpireService(sessions, mysqlgame.NewEmpireRepository(db, cfg.UniDBPrefix))
 }
@@ -621,14 +573,6 @@ func gameResourcesService(cfg config.Config, logger *slog.Logger, sessions apppu
 	})
 	if err != nil {
 		logger.Warn("universe DB game resources disabled", "error", err)
-		return appgame.ResourcesService{}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game resources disabled", "error", err)
-		_ = db.Close()
 		return appgame.ResourcesService{}
 	}
 
@@ -652,14 +596,6 @@ func gameMerchantService(cfg config.Config, logger *slog.Logger, sessions apppub
 		return appgame.MerchantService{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game merchant disabled", "error", err)
-		_ = db.Close()
-		return appgame.MerchantService{}
-	}
-
 	logger.Info("universe DB game merchant enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewMerchantService(sessions, mysqlgame.NewMerchantRepository(db, cfg.UniDBPrefix))
 }
@@ -677,14 +613,6 @@ func gameOfficersService(cfg config.Config, logger *slog.Logger, sessions apppub
 	})
 	if err != nil {
 		logger.Warn("universe DB game officers disabled", "error", err)
-		return appgame.OfficersService{}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game officers disabled", "error", err)
-		_ = db.Close()
 		return appgame.OfficersService{}
 	}
 
@@ -708,14 +636,6 @@ func gameAllianceService(cfg config.Config, logger *slog.Logger, sessions apppub
 		return appgame.AllianceService{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game alliance disabled", "error", err)
-		_ = db.Close()
-		return appgame.AllianceService{}
-	}
-
 	logger.Info("universe DB game alliance enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewAllianceService(sessions, mysqlgame.NewAllianceRepository(db, cfg.UniDBPrefix))
 }
@@ -733,14 +653,6 @@ func gameAdminService(cfg config.Config, logger *slog.Logger, sessions apppublic
 	})
 	if err != nil {
 		logger.Warn("universe DB game admin disabled", "error", err)
-		return appgame.AdminService{}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game admin disabled", "error", err)
-		_ = db.Close()
 		return appgame.AdminService{}
 	}
 
@@ -769,13 +681,6 @@ func gamePaymentService(cfg config.Config, logger *slog.Logger, sessions apppubl
 		return appgame.PaymentService{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game payment disabled", "error", err)
-		_ = db.Close()
-		return appgame.PaymentService{}
-	}
 	masterDB := openMasterDBForGame(cfg, logger, "payment coupons")
 	if masterDB == nil {
 		_ = db.Close()
@@ -802,14 +707,6 @@ func gameResearchService(cfg config.Config, logger *slog.Logger, sessions apppub
 		return appgame.ResearchService{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game research disabled", "error", err)
-		_ = db.Close()
-		return appgame.ResearchService{}
-	}
-
 	logger.Info("universe DB game research enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewResearchService(sessions, mysqlgame.NewResearchRepository(db, cfg.UniDBPrefix))
 }
@@ -827,14 +724,6 @@ func gameShipyardService(cfg config.Config, logger *slog.Logger, sessions apppub
 	})
 	if err != nil {
 		logger.Warn("universe DB game shipyard disabled", "error", err)
-		return appgame.ShipyardService{}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game shipyard disabled", "error", err)
-		_ = db.Close()
 		return appgame.ShipyardService{}
 	}
 
@@ -858,14 +747,6 @@ func gameDefenseService(cfg config.Config, logger *slog.Logger, sessions apppubl
 		return appgame.DefenseService{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game defense disabled", "error", err)
-		_ = db.Close()
-		return appgame.DefenseService{}
-	}
-
 	logger.Info("universe DB game defense enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewDefenseService(sessions, mysqlgame.NewDefenseRepository(db, cfg.UniDBPrefix))
 }
@@ -883,14 +764,6 @@ func gameFleetService(cfg config.Config, logger *slog.Logger, sessions apppublic
 	})
 	if err != nil {
 		logger.Warn("universe DB game fleet disabled", "error", err)
-		return appgame.FleetService{}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game fleet disabled", "error", err)
-		_ = db.Close()
 		return appgame.FleetService{}
 	}
 
@@ -914,14 +787,6 @@ func gameGalaxyService(cfg config.Config, logger *slog.Logger, sessions apppubli
 		return appgame.GalaxyService{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game galaxy disabled", "error", err)
-		_ = db.Close()
-		return appgame.GalaxyService{}
-	}
-
 	logger.Info("universe DB game galaxy enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewGalaxyService(sessions, mysqlgame.NewGalaxyRepository(db, cfg.UniDBPrefix))
 }
@@ -939,14 +804,6 @@ func gameTechnologyService(cfg config.Config, logger *slog.Logger, sessions appp
 	})
 	if err != nil {
 		logger.Warn("universe DB game technology disabled", "error", err)
-		return appgame.TechnologyService{}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game technology disabled", "error", err)
-		_ = db.Close()
 		return appgame.TechnologyService{}
 	}
 
@@ -970,14 +827,6 @@ func gameStatisticsService(cfg config.Config, logger *slog.Logger, sessions appp
 		return appgame.StatisticsService{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game statistics disabled", "error", err)
-		_ = db.Close()
-		return appgame.StatisticsService{}
-	}
-
 	logger.Info("universe DB game statistics enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewStatisticsService(sessions, mysqlgame.NewStatisticsRepository(db, cfg.UniDBPrefix))
 }
@@ -995,14 +844,6 @@ func gameSearchService(cfg config.Config, logger *slog.Logger, sessions apppubli
 	})
 	if err != nil {
 		logger.Warn("universe DB game search disabled", "error", err)
-		return appgame.SearchService{}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game search disabled", "error", err)
-		_ = db.Close()
 		return appgame.SearchService{}
 	}
 
@@ -1026,14 +867,6 @@ func gameBuddyService(cfg config.Config, logger *slog.Logger, sessions apppublic
 		return appgame.BuddyService{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game buddy disabled", "error", err)
-		_ = db.Close()
-		return appgame.BuddyService{}
-	}
-
 	logger.Info("universe DB game buddy enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewBuddyService(sessions, mysqlgame.NewBuddyRepository(db, cfg.UniDBPrefix))
 }
@@ -1051,14 +884,6 @@ func gameNotesService(cfg config.Config, logger *slog.Logger, sessions apppublic
 	})
 	if err != nil {
 		logger.Warn("universe DB game notes disabled", "error", err)
-		return appgame.NotesService{}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game notes disabled", "error", err)
-		_ = db.Close()
 		return appgame.NotesService{}
 	}
 
@@ -1082,14 +907,6 @@ func gameMessagesService(cfg config.Config, logger *slog.Logger, sessions apppub
 		return appgame.MessagesService{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game messages disabled", "error", err)
-		_ = db.Close()
-		return appgame.MessagesService{}
-	}
-
 	logger.Info("universe DB game messages enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewMessagesService(sessions, mysqlgame.NewMessagesRepository(db, cfg.UniDBPrefix))
 }
@@ -1107,14 +924,6 @@ func gameReportService(cfg config.Config, logger *slog.Logger, sessions apppubli
 	})
 	if err != nil {
 		logger.Warn("universe DB game report disabled", "error", err)
-		return appgame.ReportService{}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game report disabled", "error", err)
-		_ = db.Close()
 		return appgame.ReportService{}
 	}
 
@@ -1138,14 +947,6 @@ func gamePhalanxService(cfg config.Config, logger *slog.Logger, sessions apppubl
 		return appgame.PhalanxService{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game phalanx disabled", "error", err)
-		_ = db.Close()
-		return appgame.PhalanxService{}
-	}
-
 	logger.Info("universe DB game phalanx enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewPhalanxService(sessions, mysqlgame.NewPhalanxRepository(db, cfg.UniDBPrefix))
 }
@@ -1163,14 +964,6 @@ func gameJumpGateService(cfg config.Config, logger *slog.Logger, sessions apppub
 	})
 	if err != nil {
 		logger.Warn("universe DB game jump gate disabled", "error", err)
-		return appgame.JumpGateService{}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game jump gate disabled", "error", err)
-		_ = db.Close()
 		return appgame.JumpGateService{}
 	}
 
@@ -1194,14 +987,6 @@ func gamePrangerService(cfg config.Config, logger *slog.Logger) appgame.PrangerS
 		return appgame.PrangerService{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game pranger disabled", "error", err)
-		_ = db.Close()
-		return appgame.PrangerService{}
-	}
-
 	logger.Info("universe DB game pranger enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
 	return appgame.NewPrangerService(mysqlgame.NewPrangerRepository(db, cfg.UniDBPrefix))
 }
@@ -1219,14 +1004,6 @@ func gameMaintenanceService(cfg config.Config, logger *slog.Logger) appgame.Main
 	})
 	if err != nil {
 		logger.Warn("universe DB game maintenance disabled", "error", err)
-		return appgame.MaintenanceService{}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game maintenance disabled", "error", err)
-		_ = db.Close()
 		return appgame.MaintenanceService{}
 	}
 
@@ -1250,14 +1027,6 @@ func gameFeedService(cfg config.Config, logger *slog.Logger) appgame.FeedService
 		return appgame.FeedService{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game feed disabled", "error", err)
-		_ = db.Close()
-		return appgame.FeedService{}
-	}
-
 	logger.Info("universe DB game feed enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewFeedService(mysqlgame.NewFeedRepository(db, cfg.UniDBPrefix))
 }
@@ -1278,14 +1047,6 @@ func gameOptionsService(cfg config.Config, logger *slog.Logger, sessions apppubl
 		return appgame.OptionsService{}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB game options disabled", "error", err)
-		_ = db.Close()
-		return appgame.OptionsService{}
-	}
-
 	logger.Info("universe DB game options enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	return appgame.NewOptionsService(sessions, mysqlgame.NewOptionsRepositoryWithSecret(db, cfg.UniDBPrefix, cfg.UniDBSecret))
 }
@@ -1303,14 +1064,6 @@ func registrationValidator(cfg config.Config, logger *slog.Logger) apppublicsite
 	})
 	if err != nil {
 		logger.Warn("universe DB registration availability disabled", "error", err)
-		return apppublicsite.NewRegistrationDraftValidator()
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("universe DB registration availability disabled", "error", err)
-		_ = db.Close()
 		return apppublicsite.NewRegistrationDraftValidator()
 	}
 
@@ -1358,13 +1111,6 @@ func openMasterDBForGame(cfg config.Config, logger *slog.Logger, label string) *
 	})
 	if err != nil {
 		logger.Warn("master DB "+label+" disabled", "error", err)
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		logger.Warn("master DB "+label+" disabled", "error", err)
-		_ = db.Close()
 		return nil
 	}
 	logger.Info("master DB "+label+" enabled", "host", cfg.MasterDBHost, "database", cfg.MasterDBName)

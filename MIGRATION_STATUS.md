@@ -34,7 +34,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` migration tracker. Keep this file under 4K
 - Go compatibility smoke registry covers 90 cases / 2254 checks.
 - User-type API and Chromium/Firefox Playwright QA pass.
 - Auth visual, authenticated game visual, dynamic behavior, empire, alliance, overview fleet, overview all-cases, fleet continue, and fleet all-cases suites pass in Chromium and Firefox.
-- Strict navigation visual threshold `0`: Chromium 173/173 and Firefox 172/172 pass.
+- Strict navigation visual threshold `0`: Chromium 172/172 and Firefox 171/171 pass.
 - Full summary is in `.tmp/golang-migration-qa-summary.md`; navigation details are in [COVERAGE-navigation-visual.md](./testing/e2e/COVERAGE-navigation-visual.md).
 
 ## Remaining Work

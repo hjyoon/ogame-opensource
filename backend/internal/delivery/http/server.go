@@ -275,6 +275,7 @@ func New(deps Dependencies) http.Handler {
 	a := app{deps: deps}
 	mcpRateLimiter := newMCPRateLimiter(deps.MCPRateLimit)
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/livez", getOnly(a.handleLivez))
 	mux.HandleFunc("/api/healthz", getOnly(a.handleHealthz))
 	mux.HandleFunc("/mcp", mcpRateLimiter.wrap("mcp-rpc", a.handleMCP))
 	mux.HandleFunc("/.well-known/oauth-authorization-server", getOnly(a.handleMCPOAuthAuthorizationServerMetadata))

@@ -18,7 +18,7 @@ func TestHealthServiceBuildsDomainHealth(t *testing.T) {
 
 	health := service.Get(context.Background())
 
-	if health.Status != "ok" || health.Service != "ogame-go" || health.Environment != "test" {
+	if health.Status != "unavailable" || health.Service != "ogame-go" || health.Environment != "test" {
 		t.Fatalf("unexpected identity fields: %+v", health)
 	}
 	if health.Runtime != "go-test" || health.Targets.Go != "1.25" || health.Targets.Bun != "1.3" || health.Targets.React != "19" {
@@ -32,6 +32,20 @@ func TestHealthServiceBuildsDomainHealth(t *testing.T) {
 	}
 }
 
+func TestHealthServiceReportsDatabaseReadiness(t *testing.T) {
+	service := NewHealthService(HealthConfig{
+		StaticDir:          "/static",
+		LegacyAssetDir:     "/legacy",
+		MasterDBRequired:   true,
+		UniverseDBRequired: true,
+	}, fakeProbe{ready: map[string]bool{"/static": true, "/legacy": true}}, fakeRuntime{}, fakeReadiness{ready: true}, fakeReadiness{})
+
+	health := service.Get(context.Background())
+	if health.Status != "unavailable" || !health.MasterDBReady || health.UniverseDBReady {
+		t.Fatalf("unexpected database readiness: %+v", health)
+	}
+}
+
 type fakeProbe struct {
 	ready map[string]bool
 }
@@ -42,6 +56,14 @@ func (f fakeProbe) Ready(path string) bool {
 
 type fakeRuntime struct {
 	version string
+}
+
+type fakeReadiness struct {
+	ready bool
+}
+
+func (f fakeReadiness) Ready(context.Context) bool {
+	return f.ready
 }
 
 func (f fakeRuntime) Version() string {

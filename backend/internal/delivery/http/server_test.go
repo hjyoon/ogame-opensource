@@ -62,6 +62,28 @@ func TestHealthzReportsMigrationRuntime(t *testing.T) {
 	}
 }
 
+func TestLivezDoesNotDependOnReadiness(t *testing.T) {
+	server := testServer(config.Config{StaticDir: "/missing", LegacyAssetDir: "/missing"})
+	req := httptest.NewRequest(http.MethodGet, "/api/livez", nil)
+	rec := httptest.NewRecorder()
+
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"ok"`) {
+		t.Fatalf("unexpected liveness response: code=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHealthzReturnsServiceUnavailableWhenNotReady(t *testing.T) {
+	server := testServer(config.Config{StaticDir: "/missing", LegacyAssetDir: "/missing"})
+	req := httptest.NewRequest(http.MethodGet, "/api/healthz", nil)
+	rec := httptest.NewRecorder()
+
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), `"status":"unavailable"`) {
+		t.Fatalf("unexpected readiness response: code=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestFrontendServesIndexAndSpaFallback(t *testing.T) {
 	staticDir := t.TempDir()
 	writeFile(t, filepath.Join(staticDir, "index.html"), "ogame react shell")

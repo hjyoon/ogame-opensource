@@ -18,11 +18,22 @@ type healthResponse struct {
 	StaticReady       bool   `json:"staticReady"`
 	LegacyAssetsReady bool   `json:"legacyAssetsReady"`
 	LegacyBaseURL     string `json:"legacyBaseUrl"`
+	MasterDBReady     bool   `json:"masterDbReady"`
+	UniverseDBReady   bool   `json:"universeDbReady"`
 }
 
 func (a app) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	health := a.deps.Health.Get(r.Context())
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(toHealthResponse(a.deps.Health.Get(r.Context())))
+	if health.Status != "ok" {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}
+	_ = json.NewEncoder(w).Encode(toHealthResponse(health))
+}
+
+func (a app) handleLivez(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write([]byte(`{"status":"ok","service":"ogame-go"}`))
 }
 
 func toHealthResponse(health domainsystem.Health) healthResponse {
@@ -37,5 +48,7 @@ func toHealthResponse(health domainsystem.Health) healthResponse {
 		StaticReady:       health.StaticReady,
 		LegacyAssetsReady: health.LegacyAssetsReady,
 		LegacyBaseURL:     health.LegacyBaseURL,
+		MasterDBReady:     health.MasterDBReady,
+		UniverseDBReady:   health.UniverseDBReady,
 	}
 }

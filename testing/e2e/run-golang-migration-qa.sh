@@ -47,11 +47,14 @@ fi
 
 if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
   if [ "${OGAME_KEEP_GO_DOCKER:-0}" != "1" ]; then
-    trap 'docker compose -f "$ROOT_DIR/compose.golang.yaml" down >/dev/null 2>&1 || true' EXIT INT TERM
+    trap 'docker compose -f "$ROOT_DIR/compose.golang.yaml" stop goapp >/dev/null 2>&1 || true' EXIT INT TERM
   fi
   docker compose -f "$ROOT_DIR/compose.golang.yaml" up -d --build --force-recreate goapp
   wait_for_url "$GO_BASE_URL/api/healthz"
   wait_for_url "$GO_BASE_URL/"
+  if [ "${OGAME_RUN_DB_RECOVERY_E2E:-1}" = "1" ]; then
+    OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-db-recovery-e2e.sh"
+  fi
   if command -v bun >/dev/null 2>&1; then
     bun "$SCRIPT_DIR/golang-mcp-smoke.mjs" --go-base-url "$GO_BASE_URL" > "$ROOT_DIR/.tmp/golang-mcp-smoke.json"
     printf 'Go MCP smoke: %s\n' "$ROOT_DIR/.tmp/golang-mcp-smoke.json"
