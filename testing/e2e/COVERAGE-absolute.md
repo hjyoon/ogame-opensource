@@ -39,7 +39,7 @@ The denominator is the legacy product surface, not file count alone:
 - Behavior audit freezes 463 core request inputs, 162 action values, 19 queue constants, 349 SQL mutation sites, and 149 navigation handlers; resource, construction, research, shipyard and fleet lifecycles have DB differential evidence.
 - Go rejects new PHP Mod installs; an active legacy Mod makes readiness fail instead of silently diverging.
 - Expedition DB differential exact-compares all ten result families, rewards/losses, combat reports, timing, messages, logs, scores, and cleanup.
-- Phalanx exact-compares 11 guard/debit/event cases; Jump Gate adds 13 filter/guard/move/cooldown cases.
+- Phalanx exact-compares 11 cases; Jump Gate adds 13 and Buddy adds 12 lifecycle cases.
 - ACS attack launch now covers the legacy 30% slowdown boundary and queue resync to the later union arrival.
 
 ## Remaining Closure Work

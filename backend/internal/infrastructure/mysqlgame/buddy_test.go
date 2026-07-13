@@ -272,6 +272,41 @@ func TestBuddyRepositoryAddsBuddyRequest(t *testing.T) {
 	}
 }
 
+func TestBuddyRepositoryKeepsLegacyEmptyRequestMessage(t *testing.T) {
+	runner := &fakeBuddyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor"})},
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues([]any{0})},
+	}}}
+	repository := NewBuddyRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, err := repository.MutateBuddy(context.Background(), appgame.BuddyMutationQuery{PlayerID: 42, Action: domaingame.BuddyActionAdd, BuddyID: 43}); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execs) != 2 || runner.execs[0].args[2] != "пусто" || runner.execs[1].args[3] != "" {
+		t.Fatalf("legacy stores a placeholder in the relation but sends the original empty PM: %+v", runner.execs)
+	}
+}
+
+func TestBuddyRepositoryRollsBackRelationWhenNotificationFails(t *testing.T) {
+	base := &fakeBuddyRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{"legor"})},
+			{rows: fakeRowsFromValues()},
+			{rows: fakeRowsFromValues([]any{0})},
+		}},
+		execErrs: []error{nil, errors.New("notification failed")},
+	}
+	runner := &fakeBuddyTransactionRunner{fakeBuddyRunner: base}
+	repository := NewBuddyRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	_, err := repository.MutateBuddy(context.Background(), appgame.BuddyMutationQuery{PlayerID: 42, Action: domaingame.BuddyActionAdd, BuddyID: 43, Text: "hello"})
+	if err == nil || !strings.Contains(err.Error(), "notification failed") {
+		t.Fatalf("expected notification failure, got %v", err)
+	}
+	if !runner.rolledBack || runner.committed || len(runner.execs) != 2 {
+		t.Fatalf("expected relationship and notification rollback, got %+v", runner)
+	}
+}
+
 func TestBuddyRepositoryAddReturnsAlreadySentIssue(t *testing.T) {
 	runner := &fakeBuddyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{"legor"})},
@@ -754,6 +789,21 @@ type fakeBuddyRunner struct {
 	execs    []fakeBuddyExec
 	execErr  error
 	execErrs []error
+}
+
+type fakeBuddyTransactionRunner struct {
+	*fakeBuddyRunner
+	committed  bool
+	rolledBack bool
+}
+
+func (r *fakeBuddyTransactionRunner) WithTransaction(ctx context.Context, run func(Queryer, Execer) error) error {
+	if err := run(r, r); err != nil {
+		r.rolledBack = true
+		return err
+	}
+	r.committed = true
+	return nil
 }
 
 func (f *fakeBuddyRunner) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {

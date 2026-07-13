@@ -275,6 +275,22 @@ func (r BuddyRepository) MutateBuddy(ctx context.Context, query appgame.BuddyMut
 	if r.execer == nil {
 		return appgame.BuddyMutationOutcome{}, errors.New("buddy updater unavailable")
 	}
+	if txer, ok := r.execer.(transactionRunner); ok {
+		var outcome appgame.BuddyMutationOutcome
+		err := txer.WithTransaction(ctx, func(queryer Queryer, execer Execer) error {
+			transactionRepository := r
+			transactionRepository.queryer = queryer
+			transactionRepository.execer = execer
+			var err error
+			outcome, err = transactionRepository.mutateBuddy(ctx, query)
+			return err
+		})
+		return outcome, err
+	}
+	return r.mutateBuddy(ctx, query)
+}
+
+func (r BuddyRepository) mutateBuddy(ctx context.Context, query appgame.BuddyMutationQuery) (appgame.BuddyMutationOutcome, error) {
 	usersTable, err := tableName(r.prefix, "users")
 	if err != nil {
 		return appgame.BuddyMutationOutcome{}, err
@@ -450,7 +466,7 @@ func (r BuddyRepository) addBuddyRequest(ctx context.Context, buddyTable string,
 	); err != nil {
 		return nil, err
 	}
-	return nil, r.sendBuddyMessage(ctx, messagesTable, to, fromName, "Buddy request", requestText)
+	return nil, r.sendBuddyMessage(ctx, messagesTable, to, fromName, "Buddy request", text)
 }
 
 func (r BuddyRepository) acceptBuddyRequest(ctx context.Context, buddyTable string, messagesTable string, playerID int, buddyID int, playerName string) error {

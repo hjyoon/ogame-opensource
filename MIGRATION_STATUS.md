@@ -2,7 +2,7 @@
 
 Updated: 2026-07-13 KST, branch `hjyoon/golang`.
 
-React/Bun + Go migration tracker. Keep under 4KB; split details as needed.
+React/Bun + Go migration tracker. Keep under 4KB; split details.
 
 ## Current State
 
@@ -42,7 +42,7 @@ React/Bun + Go migration tracker. Keep under 4KB; split details as needed.
 - No current strict navigation visual gap remains in the seeded public/game/admin route inventory.
 - No concrete listed authenticated dynamic E2E case remains in [COVERAGE-dynamic-legacy-js.md](./testing/e2e/COVERAGE-dynamic-legacy-js.md); add more only when new legacy-JS behavior is found.
 - Source audit inventories routes, Admin modes, public entrypoints, Bot APIs, and optional Mod hooks in [COVERAGE-legacy-inventory.md](./testing/e2e/COVERAGE-legacy-inventory.md).
-- Behavior baseline tracks behavior drift and 71 PHP/Go DB differential cases; phalanx and Jump Gate are included.
+- Behavior baseline tracks behavior drift and 83 PHP/Go DB differential cases; phalanx, Jump Gate, and Buddy are included.
 - PHP Mod execution is excluded: installs are rejected and active Mods fail readiness.
 - Migration-pending game/admin fallback text has been removed.
 - Continue adding route/state/action inventory when new pages or unseeded legacy flows are migrated.
