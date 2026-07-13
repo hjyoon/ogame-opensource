@@ -17,4 +17,5 @@ type Health struct {
 	LegacyBaseURL     string
 	MasterDBReady     bool
 	UniverseDBReady   bool
+	ModRuntimeReady   bool
 }

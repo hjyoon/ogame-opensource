@@ -9582,7 +9582,7 @@ try {
         check(item.body.actionIssue === undefined, `admin ${item.mode} tool request is not denied`, item.body.actionIssue ?? {})
       ]),
       check((adminToolModeResponses.find((item) => item.mode === "Mods")?.body.admin?.modRows ?? []).some((mod) =>
-        mod.runtimePolicy === "php_runtime_hooks_unsupported_go_native_adapter_required" &&
+        mod.runtimePolicy === "legacy_php_runtime_excluded_from_go" &&
         Array.isArray(mod.runtimeHooks) &&
         mod.runtimeHooks.includes("main.php")
       ), "admin Mods API marks unsupported PHP runtime hooks")
@@ -10421,7 +10421,7 @@ try {
       check(js.body.includes("legacy-admin-raksim-table"), "React bundle contains legacy game admin missile simulator layout"),
       check(js.body.includes("legacy-admin-loca-table"), "React bundle contains legacy game admin localization layout"),
       check(js.body.includes("legacy-admin-mods-table"), "React bundle contains legacy game admin mods layout"),
-      check(js.body.includes("legacy-admin-mod-runtime-policy") && js.body.includes("php_runtime_hooks_unsupported_go_native_adapter_required"), "React bundle marks unsupported PHP mod runtime hooks"),
+      check(js.body.includes("legacy-admin-mod-runtime-policy") && js.body.includes("legacy_php_runtime_excluded_from_go"), "React bundle marks excluded PHP mod runtime hooks"),
       check(js.body.includes("legacy-buddy-table"), "React bundle contains legacy game buddy layout"),
       check(js.body.includes("legacy-research-table"), "React bundle contains legacy game research layout"),
       check(js.body.includes("legacy-shipyard-table"), "React bundle contains legacy game shipyard layout"),

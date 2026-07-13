@@ -10,6 +10,10 @@ mkdir -p "$ROOT_DIR/.tmp"
 
 export OGAME_MCP_RATE_LIMIT_ENABLE="${OGAME_MCP_RATE_LIMIT_ENABLE:-0}"
 
+if command -v bun >/dev/null 2>&1; then
+  bun "$SCRIPT_DIR/audit-legacy-migration-inventory.mjs"
+fi
+
 wait_for_url() {
   url="$1"
   attempts="${2:-30}"
@@ -54,6 +58,12 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
   wait_for_url "$GO_BASE_URL/"
   if [ "${OGAME_RUN_DB_RECOVERY_E2E:-1}" = "1" ]; then
     OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-db-recovery-e2e.sh"
+  fi
+  if [ "${OGAME_RUN_DB_POOL_E2E:-1}" = "1" ]; then
+    OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-db-pool-e2e.sh"
+  fi
+  if [ "${OGAME_RUN_MOD_POLICY_E2E:-1}" = "1" ]; then
+    OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-mod-policy-e2e.sh"
   fi
   if command -v bun >/dev/null 2>&1; then
     bun "$SCRIPT_DIR/golang-mcp-smoke.mjs" --go-base-url "$GO_BASE_URL" > "$ROOT_DIR/.tmp/golang-mcp-smoke.json"

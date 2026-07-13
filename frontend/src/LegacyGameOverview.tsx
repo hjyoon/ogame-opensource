@@ -2675,34 +2675,6 @@ export function LegacyGameOverview({
             pending={optionsPending}
           />
         ) : null}
-        {overview &&
-        route.key !== "overview" &&
-        route.key !== "renamePlanet" &&
-        route.key !== "buildings" &&
-        route.key !== "empire" &&
-        route.key !== "resources" &&
-        route.key !== "merchant" &&
-        route.key !== "officers" &&
-        route.key !== "alliance" &&
-        route.key !== "admin" &&
-        route.key !== "research" &&
-        route.key !== "shipyard" &&
-        route.key !== "fleet" &&
-        route.key !== "fleetTemplates" &&
-        route.key !== "galaxy" &&
-        route.key !== "defense" &&
-        route.key !== "technology" &&
-        route.key !== "jumpGate" &&
-        route.key !== "changelog" &&
-        route.key !== "statistics" &&
-        route.key !== "search" &&
-        route.key !== "buddy" &&
-        route.key !== "messages" &&
-        route.key !== "notes" &&
-        route.key !== "options" &&
-        route.key !== "logout" ? (
-          <MigrationPendingGameTable route={route} />
-        ) : null}
       </section>
       <div id="overDiv" style={{ left: -10000, position: "absolute", top: -10000, visibility: "hidden", zIndex: 1000 }} />
     </main>
@@ -3010,24 +2982,6 @@ function legacyMenuRouteHref(route: GameRoute, searchInput: string): string {
   const query = new URLSearchParams(searchInput);
   query.set("dsp", "1");
   return gameMenuRouteURL(route.path, query.toString());
-}
-
-function MigrationPendingGameTable({ route }: { route: GameRoute }) {
-  return (
-    <table className="legacy-overview-table" width={519}>
-      <tbody>
-        <tr>
-          <td className="legacy-c c">{route.label}</td>
-        </tr>
-        <tr>
-          <th>This screen is queued for React and Go migration.</th>
-        </tr>
-        <tr>
-          <th>The authenticated game shell, resource header, and session guard are active.</th>
-        </tr>
-      </tbody>
-    </table>
-  );
 }
 
 function LogoutTable({ error, status }: { error: string | null; status: GameLogoutStatus | null }) {
@@ -3898,7 +3852,7 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
             </tr>
             <tr>
               <th>
-                {admin.mode} migration is pending.
+                Unknown admin mode: {admin.mode}.
                 <br />
                 <a href={adminHomeHref()}>Back</a>
               </th>
@@ -6551,7 +6505,7 @@ const adminAvailableMods: AdminModInfo[] = [
     description: "A simple modification to demonstrate the capabilities",
     website: "https://github.com/ogamespec/ogame-opensource",
     runtimeHooks: ["main.php", "pages/tipoftheday.php"],
-    runtimePolicy: "php_runtime_hooks_unsupported_go_native_adapter_required"
+    runtimePolicy: "legacy_php_runtime_excluded_from_go"
   },
   {
     folder: "DeepSpaceHorror",
@@ -6562,7 +6516,7 @@ const adminAvailableMods: AdminModInfo[] = [
       "Ancient cosmic horrors stir from the abyss, roaming the galaxy and leaving behind only fleet wreckage and bountiful rewards for the bold.",
     website: "https://github.com/ogamespec/ogame-opensource",
     runtimeHooks: ["main.php"],
-    runtimePolicy: "php_runtime_hooks_unsupported_go_native_adapter_required"
+    runtimePolicy: "legacy_php_runtime_excluded_from_go"
   },
   {
     folder: "GalaxyTool",
@@ -6572,7 +6526,7 @@ const adminAvailableMods: AdminModInfo[] = [
     description: "Integrated Galaxytool",
     website: "https://github.com/ogamespec/ogame-opensource",
     runtimeHooks: ["main.php", "pages/galaxytool.php", "pages_admin/admin_galaxytool.php"],
-    runtimePolicy: "php_runtime_hooks_unsupported_go_native_adapter_required"
+    runtimePolicy: "legacy_php_runtime_excluded_from_go"
   },
   {
     folder: "SpaceStorm",
@@ -6583,7 +6537,7 @@ const adminAvailableMods: AdminModInfo[] = [
       "As a global event, the Space Storm can temporarily change the game mechanics themselves, creating unique tactical situations.",
     website: "https://github.com/ogamespec/ogame-opensource",
     runtimeHooks: ["main.php"],
-    runtimePolicy: "php_runtime_hooks_unsupported_go_native_adapter_required"
+    runtimePolicy: "legacy_php_runtime_excluded_from_go"
   }
 ];
 
@@ -6645,7 +6599,7 @@ function AdminModPanel({
   const showInfo = active || canInstall;
   const runtimeHooks = mod.runtimeHooks ?? [];
   const runtimePolicy =
-    mod.runtimePolicy ?? (runtimeHooks.length > 0 ? "php_runtime_hooks_unsupported_go_native_adapter_required" : "no_php_runtime_hooks_detected");
+    mod.runtimePolicy ?? (runtimeHooks.length > 0 ? "legacy_php_runtime_excluded_from_go" : "no_php_runtime_hooks_detected");
   return (
     <div className="mod-item" data-runtime-hooks={runtimeHooks.join(";")} data-runtime-policy={runtimePolicy}>
       <span className={`status-indicator ${statusClass}`}>{statusText}</span>

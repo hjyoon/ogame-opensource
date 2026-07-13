@@ -7,6 +7,7 @@ export type PublicRouteKey =
   | "about"
   | "story"
   | "screenshots"
+  | "screenshot"
   | "rules"
   | "legal"
   | "migration";

@@ -44,6 +44,7 @@ import { LegacyPublicLegal } from "./LegacyPublicLegal";
 import { LegacyPublicRegister, legacyRegistrationMessage } from "./LegacyPublicRegister";
 import { LegacyPublicRules } from "./LegacyPublicRules";
 import { LegacyPublicScreenshots } from "./LegacyPublicScreenshots";
+import { LegacyPublicScreenshot } from "./LegacyPublicScreenshot";
 import { LegacyPublicStory } from "./LegacyPublicStory";
 import { LegacyPublicUniverses } from "./LegacyPublicUniverses";
 import { LegacyRegistrationForm } from "./LegacyRegistrationForm";
@@ -2737,6 +2738,10 @@ function App() {
         universes={universes}
       />
     );
+  }
+
+  if (route.key === "screenshot") {
+    return <LegacyPublicScreenshot search={search} />;
   }
 
   if (route.key === "rules") {

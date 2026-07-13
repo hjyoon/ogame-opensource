@@ -210,7 +210,7 @@ func (r AdminRepository) loadAdminMods(ctx context.Context) ([]domaingame.AdminM
 		}
 		runtimePolicy := domaingame.AdminModRuntimePolicyNoHooks
 		if len(runtimeHooks) > 0 {
-			runtimePolicy = domaingame.AdminModRuntimePolicyUnsupportedPHP
+			runtimePolicy = domaingame.AdminModRuntimePolicyLegacyPHPOnly
 		}
 		mods = append(mods, domaingame.AdminModInfo{
 			Folder:        entry.Name(),
@@ -439,6 +439,15 @@ func (r AdminRepository) mutateAdminMods(ctx context.Context, uniTable string, q
 		available, err = r.adminModAvailable(query.ModName)
 		if err != nil {
 			return nil, err
+		}
+		if available {
+			hooks, err := loadAdminModRuntimeHooks(filepath.Join(r.legacyGameDir, "mods", query.ModName))
+			if err != nil {
+				return nil, err
+			}
+			if len(hooks) > 0 {
+				return domaingame.AdminIssue(domaingame.AdminIssueModRuntimeExcluded), nil
+			}
 		}
 	}
 	installed, err := r.loadAdminModList(ctx, uniTable)

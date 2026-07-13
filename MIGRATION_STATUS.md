@@ -41,8 +41,8 @@ React 19/Bun 1.3 + Go 1.25 `net/http` migration tracker. Keep this file under 4K
 
 - No current strict navigation visual gap remains in the seeded public/game/admin route inventory.
 - No concrete listed authenticated dynamic E2E case remains in [COVERAGE-dynamic-legacy-js.md](./testing/e2e/COVERAGE-dynamic-legacy-js.md); add more only when new legacy-JS behavior is found.
-- PHP mod runtime hooks are detected but are not executed by Go; they require native Go adapters or an explicit product-level removal decision.
-- Migration-pending route/admin fallbacks are discovery guards; any reachable use is a defect.
-- Audit legacy PHP/JS surfaces beyond the seeded registry before making an absolute completion claim.
+- Source audit inventories routes, Admin modes, public entrypoints, Bot APIs, and optional Mod hooks in [COVERAGE-legacy-inventory.md](./testing/e2e/COVERAGE-legacy-inventory.md).
+- PHP Mod execution is excluded from Go: install is rejected and active legacy Mods fail readiness; native adapters are required to restore that optional scope.
+- Migration-pending game/admin fallback text has been removed.
 - Continue adding route/state/action inventory when new pages or unseeded legacy flows are migrated.
 - Keep API endpoint inventory aligned with [Backend API Endpoints](./backend/API_ENDPOINTS.md).

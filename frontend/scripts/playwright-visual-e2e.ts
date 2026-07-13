@@ -207,6 +207,10 @@ const visualBoxesByRouteKey: Partial<Record<PublicRouteKey, BoxPair[]>> = {
   about: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu_big", migrated: ".legacy-public-about-panel" }],
   story: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu_big", migrated: ".legacy-public-story-panel" }],
   screenshots: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu_big", migrated: ".legacy-public-screenshots-panel" }],
+  screenshot: [
+    { name: "heading", legacy: ".bildUeberschrift", migrated: ".bildUeberschrift" },
+    { name: "image", legacy: "body > a > img", migrated: ".legacy-public-screenshot-detail > a > img" }
+  ],
   rules: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu_big", migrated: ".legacy-public-rules-panel" }],
   universes: [...publicMainBoxes, { name: "panel", legacy: ".rightmenu_big", migrated: ".legacy-public-universes-panel" }],
   legal: [{ name: "document", legacy: "table", migrated: ".legacy-legal-document" }]
@@ -489,9 +493,30 @@ async function prepareDeterministicCapture(page: Page): Promise<void> {
 }
 
 async function normalizePublicDynamicParts(page: Page, spec: PageSpec): Promise<void> {
-  if (spec.name !== "register") {
+  if (spec.name === "screenshot") {
+    await page.evaluate(async () => {
+      const toDataURL = async (url: string) => {
+        const blob = await fetch(url).then((response) => response.blob());
+        return await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        });
+      };
+      for (const image of Array.from(document.images)) {
+        image.src = await toDataURL(image.currentSrc || image.src);
+        await image.decode();
+      }
+      const background = getComputedStyle(document.body).backgroundImage;
+      const match = background.match(/url\(["']?(.+?)["']?\)/);
+      if (match) {
+        document.body.style.backgroundImage = `url("${await toDataURL(match[1])}")`;
+      }
+    });
     return;
   }
+  if (spec.name !== "register") return;
   await page
     .evaluate(() => {
       if (new URL(window.location.href).searchParams.has("errorCode")) {

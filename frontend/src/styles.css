@@ -14,6 +14,10 @@ body.legacy-public-body {
   text-align: center;
 }
 
+.legacy-public-screenshot-detail .bildUeberschrift {
+  margin: 1em 0;
+}
+
 .app-shell {
   box-sizing: border-box;
   display: grid;

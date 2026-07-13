@@ -874,7 +874,7 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 			"pages/galaxytool.php",
 			"pages_admin/admin_galaxytool.php",
 		},
-		RuntimePolicy: domaingame.AdminModRuntimePolicyUnsupportedPHP,
+		RuntimePolicy: domaingame.AdminModRuntimePolicyLegacyPHPOnly,
 		Installed:     true,
 		Active:        true,
 	}}
@@ -966,7 +966,7 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 		payload.BotRows[0].HomePlanet.Coordinates.Position != 6 ||
 		len(payload.ModRows) != 1 || payload.ModRows[0].Folder != "GalaxyTool" ||
 		!payload.ModRows[0].Installed || !payload.ModRows[0].Active ||
-		payload.ModRows[0].RuntimePolicy != domaingame.AdminModRuntimePolicyUnsupportedPHP ||
+		payload.ModRows[0].RuntimePolicy != domaingame.AdminModRuntimePolicyLegacyPHPOnly ||
 		len(payload.ModRows[0].RuntimeHooks) != 3 ||
 		payload.Localization == nil || payload.Localization.Source != "en_en" || payload.Localization.Files[0].Rows[0].Key != "ADM_TEST" {
 		t.Fatalf("expected admin detail rows to map: %+v", payload)

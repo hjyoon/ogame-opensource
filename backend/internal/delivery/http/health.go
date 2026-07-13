@@ -20,6 +20,7 @@ type healthResponse struct {
 	LegacyBaseURL     string `json:"legacyBaseUrl"`
 	MasterDBReady     bool   `json:"masterDbReady"`
 	UniverseDBReady   bool   `json:"universeDbReady"`
+	ModRuntimeReady   bool   `json:"modRuntimeReady"`
 }
 
 func (a app) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -50,5 +51,6 @@ func toHealthResponse(health domainsystem.Health) healthResponse {
 		LegacyBaseURL:     health.LegacyBaseURL,
 		MasterDBReady:     health.MasterDBReady,
 		UniverseDBReady:   health.UniverseDBReady,
+		ModRuntimeReady:   health.ModRuntimeReady,
 	}
 }

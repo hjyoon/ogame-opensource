@@ -22,6 +22,7 @@ Go user-type QA covers:
 - credentials and options mutations
 
 Both API-level QA and Chromium/Firefox Playwright CSR checks are part of final migration QA.
+Source-derived route, Admin, public entrypoint, Bot API, and Mod hook coverage is tracked in [Legacy Migration Inventory](./COVERAGE-legacy-inventory.md).
 
 ## Visual Pages
 

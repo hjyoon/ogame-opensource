@@ -94,6 +94,20 @@ export const publicRouteManifest: PublicRouteManifestEntry[] = [
     legacyVisualPath: "/screenshots.php"
   },
   {
+    key: "screenshot",
+    path: "/screenshot",
+    label: "Screenshot",
+    eyebrow: "Visual Archive",
+    title: "Screenshot",
+    summary: "A selected legacy game screenshot.",
+    status: "Detail",
+    image: "/public-assets/img/overview.JPG",
+    points: [],
+    legacyAliases: ["/screenshot.php"],
+    legacyPublicChrome: true,
+    legacyVisualPath: "/screenshot.php?pic=overview&type=JPG&path=img/"
+  },
+  {
     key: "rules",
     path: "/rules",
     label: "Rules",

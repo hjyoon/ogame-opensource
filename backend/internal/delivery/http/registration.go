@@ -186,6 +186,21 @@ func (a app) handleLegacyRegistrationRedirect(w http.ResponseWriter, r *http.Req
 	writeLegacyRegistrationMetaRefresh(w, legacyRegistrationErrorTarget(r, termsAccepted, result.Issues))
 }
 
+func (a app) handleLegacyRegistrationCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	switch r.FormValue("action") {
+	case "check_username":
+		_, _ = w.Write([]byte("1 0"))
+	case "check_email":
+		_, _ = w.Write([]byte("2 0"))
+	}
+}
+
 func toRegistrationIssueResponses(issues []domain.RegistrationIssue) []registrationIssueResponse {
 	responses := make([]registrationIssueResponse, 0, len(issues))
 	for _, issue := range issues {

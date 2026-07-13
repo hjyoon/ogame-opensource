@@ -81,7 +81,7 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/index.php", "?page=infos&gid=43")).toMatchObject({ key: "jumpGate", migrated: true });
   });
 
-  test("maps legacy php pages to migrated or pending natural routes", () => {
+  test("maps legacy php pages to migrated natural routes", () => {
     expect(resolveGameRoute("/game/index.php", "?page=b_building")).toMatchObject({ key: "buildings", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=notizen")).toMatchObject({ key: "notes", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=options")).toMatchObject({ key: "options", migrated: true });

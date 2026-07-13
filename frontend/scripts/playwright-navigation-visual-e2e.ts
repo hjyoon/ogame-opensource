@@ -1168,9 +1168,29 @@ async function waitForStablePaint(page: Page): Promise<void> {
 }
 
 async function normalizeDynamicPageParts(page: Page, side: Side, key: string): Promise<void> {
-  await page.evaluate(({ pageSide, canonicalKey }) => {
+  await page.evaluate(async ({ pageSide, canonicalKey }) => {
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
+    }
+    if (canonicalKey.startsWith("public:/screenshot?")) {
+      const toDataURL = async (url: string) => {
+        const blob = await fetch(url).then((response) => response.blob());
+        return await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        });
+      };
+      for (const image of Array.from(document.images)) {
+        image.src = await toDataURL(image.currentSrc || image.src);
+        await image.decode();
+      }
+      const background = getComputedStyle(document.body).backgroundImage;
+      const match = background.match(/url\(["']?(.+?)["']?\)/);
+      if (match) {
+        document.body.style.backgroundImage = `url("${await toDataURL(match[1])}")`;
+      }
     }
     const hide = (selector: string) => {
       for (const element of document.querySelectorAll(selector)) {

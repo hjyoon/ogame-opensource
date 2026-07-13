@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -26,7 +27,6 @@ import (
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mcpoidc"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlgame"
-	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlhealth"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlregistration"
 	infraruntime "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/runtime"
 	infrasession "github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/session"
@@ -35,21 +35,39 @@ import (
 func main() {
 	cfg := config.Load()
 	logger := newLogger(cfg.LogLevel)
+	pools := openDatabasePools(cfg, logger)
+	defer pools.Close(logger)
 	server := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           buildHandler(cfg, logger),
+		Handler:           buildHandler(cfg, logger, pools),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	logger.Info("starting ogame go server", "addr", cfg.Addr, "env", cfg.Environment)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		logger.Error("ogame go server stopped unexpectedly", "error", err)
-		os.Exit(1)
+	shutdownSignal, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	serverError := make(chan error, 1)
+	go func() {
+		logger.Info("starting ogame go server", "addr", cfg.Addr, "env", cfg.Environment)
+		serverError <- server.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serverError:
+		if err != nil && err != http.ErrServerClosed {
+			logger.Error("ogame go server stopped unexpectedly", "error", err)
+			return
+		}
+	case <-shutdownSignal.Done():
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			logger.Error("ogame go server graceful shutdown failed", "error", err)
+		}
 	}
 }
 
-func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
-	masterDBProbe, universeDBProbe := databaseReadinessProbes(cfg, logger)
+func buildHandler(cfg config.Config, logger *slog.Logger, pools databasePools) http.Handler {
+	masterDBProbe, universeDBProbe, modRuntimeProbe := pools.readinessProbes(cfg.UniDBPrefix)
 	health := appsystem.NewHealthService(appsystem.HealthConfig{
 		Environment:        cfg.Environment,
 		StaticDir:          cfg.StaticDir,
@@ -60,45 +78,46 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 		ReactTarget:        config.ReactTarget,
 		MasterDBRequired:   cfg.MasterDBEnabled,
 		UniverseDBRequired: cfg.UniDBEnabled,
-	}, filesystem.Probe{}, infraruntime.GoRuntime{}, masterDBProbe, universeDBProbe)
-	universes := apppublicsite.NewUniverseCatalogService(universeRepository(cfg, logger))
-	registrationDrafts := registrationValidator(cfg, logger)
-	registration := registrationRegistrar(cfg, logger)
-	activation := registrationActivation(cfg, logger)
+		ModRuntimeRequired: cfg.UniDBEnabled,
+	}, filesystem.Probe{}, infraruntime.GoRuntime{}, masterDBProbe, universeDBProbe, modRuntimeProbe)
+	universes := apppublicsite.NewUniverseCatalogService(universeRepository(cfg, logger, pools))
+	registrationDrafts := registrationValidator(cfg, logger, pools)
+	registration := registrationRegistrar(cfg, logger, pools)
+	activation := registrationActivation(cfg, logger, pools)
 	directEntry := apppublicsite.NewDirectEntryService(infrahttpclient.NewExternalImageFetcher())
-	passwordRecovery := passwordRecoveryService(cfg, logger)
-	loginDrafts := loginValidator(cfg, logger)
-	login := loginAuthenticator(cfg, logger)
-	gameSessions := gameSessionLookup(cfg, logger)
-	mcp := mcpService(cfg, logger, health, gameSessions)
-	logout := logoutService(cfg, logger)
-	gameOverview := gameOverviewService(cfg, logger, gameSessions)
-	gameBuildings := gameBuildingsService(cfg, logger, gameSessions)
-	gameEmpire := gameEmpireService(cfg, logger, gameSessions)
-	gameResources := gameResourcesService(cfg, logger, gameSessions)
-	gameMerchant := gameMerchantService(cfg, logger, gameSessions)
-	gameOfficers := gameOfficersService(cfg, logger, gameSessions)
-	gameAlliance := gameAllianceService(cfg, logger, gameSessions)
-	gameAdmin := gameAdminService(cfg, logger, gameSessions)
-	gameResearch := gameResearchService(cfg, logger, gameSessions)
-	gameShipyard := gameShipyardService(cfg, logger, gameSessions)
-	gameFleet := gameFleetService(cfg, logger, gameSessions)
-	gameGalaxy := gameGalaxyService(cfg, logger, gameSessions)
-	gameDefense := gameDefenseService(cfg, logger, gameSessions)
-	gameTechnology := gameTechnologyService(cfg, logger, gameSessions)
-	gameStatistics := gameStatisticsService(cfg, logger, gameSessions)
-	gameSearch := gameSearchService(cfg, logger, gameSessions)
-	gameBuddy := gameBuddyService(cfg, logger, gameSessions)
-	gameNotes := gameNotesService(cfg, logger, gameSessions)
-	gameMessages := gameMessagesService(cfg, logger, gameSessions)
-	gameReport := gameReportService(cfg, logger, gameSessions)
-	gamePhalanx := gamePhalanxService(cfg, logger, gameSessions)
-	gameJumpGate := gameJumpGateService(cfg, logger, gameSessions)
-	gamePranger := gamePrangerService(cfg, logger)
-	gameMaintenance := gameMaintenanceService(cfg, logger)
-	gameFeed := gameFeedService(cfg, logger)
-	gameOptions := gameOptionsService(cfg, logger, gameSessions)
-	gamePayment := gamePaymentService(cfg, logger, gameSessions)
+	passwordRecovery := passwordRecoveryService(cfg, logger, pools)
+	loginDrafts := loginValidator(cfg, logger, pools)
+	login := loginAuthenticator(cfg, logger, pools)
+	gameSessions := gameSessionLookup(cfg, logger, pools)
+	mcp := mcpService(cfg, logger, health, gameSessions, pools)
+	logout := logoutService(cfg, logger, pools)
+	gameOverview := gameOverviewService(cfg, logger, gameSessions, pools)
+	gameBuildings := gameBuildingsService(cfg, logger, gameSessions, pools)
+	gameEmpire := gameEmpireService(cfg, logger, gameSessions, pools)
+	gameResources := gameResourcesService(cfg, logger, gameSessions, pools)
+	gameMerchant := gameMerchantService(cfg, logger, gameSessions, pools)
+	gameOfficers := gameOfficersService(cfg, logger, gameSessions, pools)
+	gameAlliance := gameAllianceService(cfg, logger, gameSessions, pools)
+	gameAdmin := gameAdminService(cfg, logger, gameSessions, pools)
+	gameResearch := gameResearchService(cfg, logger, gameSessions, pools)
+	gameShipyard := gameShipyardService(cfg, logger, gameSessions, pools)
+	gameFleet := gameFleetService(cfg, logger, gameSessions, pools)
+	gameGalaxy := gameGalaxyService(cfg, logger, gameSessions, pools)
+	gameDefense := gameDefenseService(cfg, logger, gameSessions, pools)
+	gameTechnology := gameTechnologyService(cfg, logger, gameSessions, pools)
+	gameStatistics := gameStatisticsService(cfg, logger, gameSessions, pools)
+	gameSearch := gameSearchService(cfg, logger, gameSessions, pools)
+	gameBuddy := gameBuddyService(cfg, logger, gameSessions, pools)
+	gameNotes := gameNotesService(cfg, logger, gameSessions, pools)
+	gameMessages := gameMessagesService(cfg, logger, gameSessions, pools)
+	gameReport := gameReportService(cfg, logger, gameSessions, pools)
+	gamePhalanx := gamePhalanxService(cfg, logger, gameSessions, pools)
+	gameJumpGate := gameJumpGateService(cfg, logger, gameSessions, pools)
+	gamePranger := gamePrangerService(cfg, logger, pools)
+	gameMaintenance := gameMaintenanceService(cfg, logger, pools)
+	gameFeed := gameFeedService(cfg, logger, pools)
+	gameOptions := gameOptionsService(cfg, logger, gameSessions, pools)
+	gamePayment := gamePaymentService(cfg, logger, gameSessions, pools)
 
 	return httpdelivery.New(httpdelivery.Dependencies{
 		Health:                health,
@@ -156,7 +175,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger) http.Handler {
 	})
 }
 
-func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthService, sessions apppublicsite.GameSessionLookup) appmcp.Service {
+func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthService, sessions apppublicsite.GameSessionLookup, pools databasePools) appmcp.Service {
 	staticVerifier := mcpauth.NewStaticTokenVerifier(cfg.MCPStaticTokens)
 	oidcSigner, oidcErr := mcpOIDCSigner(cfg)
 	if oidcErr != nil {
@@ -172,14 +191,8 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 		return withCommonMCP(appmcp.NewServiceWithTokenVerifier(health, staticVerifier))
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB mcp token management disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return withCommonMCP(appmcp.NewServiceWithTokenVerifier(health, staticVerifier))
 	}
 
@@ -279,27 +292,6 @@ func ensureMCPSchemaEventually(logger *slog.Logger, repository mcpSchemaReposito
 	}()
 }
 
-func databaseReadinessProbes(cfg config.Config, logger *slog.Logger) (appsystem.ReadinessProbe, appsystem.ReadinessProbe) {
-	var masterProbe, universeProbe appsystem.ReadinessProbe
-	if cfg.MasterDBEnabled {
-		db, err := mysqlcatalog.Open(mysqlcatalog.MasterDBConfig{Host: cfg.MasterDBHost, User: cfg.MasterDBUser, Password: cfg.MasterDBPassword, Name: cfg.MasterDBName})
-		if err != nil {
-			logger.Warn("master DB readiness probe unavailable", "error", err)
-		} else {
-			masterProbe = mysqlhealth.New(db)
-		}
-	}
-	if cfg.UniDBEnabled {
-		db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{Host: cfg.UniDBHost, User: cfg.UniDBUser, Password: cfg.UniDBPassword, Name: cfg.UniDBName})
-		if err != nil {
-			logger.Warn("universe DB readiness probe unavailable", "error", err)
-		} else {
-			universeProbe = mysqlhealth.New(db)
-		}
-	}
-	return masterProbe, universeProbe
-}
-
 func mcpOIDCSigner(cfg config.Config) (mcpoidc.Ed25519Signer, error) {
 	if strings.TrimSpace(cfg.MCPOIDCSigningSeed) != "" {
 		return mcpoidc.NewEd25519SignerFromBase64Seeds(cfg.MCPOIDCSigningSeed, mcpOIDCPreviousSeeds(cfg.MCPOIDCPreviousSeeds), time.Now)
@@ -313,19 +305,13 @@ func mcpOIDCPreviousSeeds(raw string) []string {
 	})
 }
 
-func registrationActivation(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationActivationService {
+func registrationActivation(cfg config.Config, logger *slog.Logger, pools databasePools) apppublicsite.RegistrationActivationService {
 	if !cfg.UniDBEnabled {
 		return apppublicsite.RegistrationActivationService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB registration activation disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return apppublicsite.RegistrationActivationService{}
 	}
 
@@ -338,19 +324,13 @@ func registrationActivation(cfg config.Config, logger *slog.Logger) apppublicsit
 	)
 }
 
-func registrationRegistrar(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationRegistrar {
+func registrationRegistrar(cfg config.Config, logger *slog.Logger, pools databasePools) apppublicsite.RegistrationRegistrar {
 	if !cfg.UniDBEnabled {
 		return apppublicsite.RegistrationRegistrar{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB registration creation disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return apppublicsite.RegistrationRegistrar{}
 	}
 
@@ -377,19 +357,13 @@ func registrationWelcomeMailer(cfg config.Config, logger *slog.Logger) apppublic
 	})
 }
 
-func passwordRecoveryService(cfg config.Config, logger *slog.Logger) apppublicsite.PasswordRecoveryService {
+func passwordRecoveryService(cfg config.Config, logger *slog.Logger, pools databasePools) apppublicsite.PasswordRecoveryService {
 	if !cfg.UniDBEnabled {
 		return apppublicsite.PasswordRecoveryService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB password recovery disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return apppublicsite.PasswordRecoveryService{}
 	}
 
@@ -414,19 +388,13 @@ func passwordRecoveryMailer(cfg config.Config, logger *slog.Logger) apppublicsit
 	})
 }
 
-func loginValidator(cfg config.Config, logger *slog.Logger) apppublicsite.LoginDraftValidator {
+func loginValidator(cfg config.Config, logger *slog.Logger, pools databasePools) apppublicsite.LoginDraftValidator {
 	if !cfg.UniDBEnabled {
 		return apppublicsite.NewLoginDraftValidator()
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB login credentials disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return apppublicsite.NewLoginDraftValidator()
 	}
 
@@ -434,19 +402,13 @@ func loginValidator(cfg config.Config, logger *slog.Logger) apppublicsite.LoginD
 	return apppublicsite.NewLoginDraftValidatorWithCredentials(mysqlregistration.NewCredentialChecker(db, cfg.UniDBPrefix, cfg.UniDBSecret))
 }
 
-func loginAuthenticator(cfg config.Config, logger *slog.Logger) apppublicsite.LoginAuthenticator {
+func loginAuthenticator(cfg config.Config, logger *slog.Logger, pools databasePools) apppublicsite.LoginAuthenticator {
 	if !cfg.UniDBEnabled {
 		return apppublicsite.LoginAuthenticator{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB login sessions disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return apppublicsite.LoginAuthenticator{}
 	}
 
@@ -459,19 +421,13 @@ func loginAuthenticator(cfg config.Config, logger *slog.Logger) apppublicsite.Lo
 	)
 }
 
-func gameSessionLookup(cfg config.Config, logger *slog.Logger) apppublicsite.GameSessionLookup {
+func gameSessionLookup(cfg config.Config, logger *slog.Logger, pools databasePools) apppublicsite.GameSessionLookup {
 	if !cfg.UniDBEnabled {
 		return apppublicsite.GameSessionLookup{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game session lookup disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return apppublicsite.GameSessionLookup{}
 	}
 
@@ -480,19 +436,13 @@ func gameSessionLookup(cfg config.Config, logger *slog.Logger) apppublicsite.Gam
 	return apppublicsite.NewGameSessionLookupWithActivity(store, store, cfg.UniNumber)
 }
 
-func logoutService(cfg config.Config, logger *slog.Logger) apppublicsite.LogoutService {
+func logoutService(cfg config.Config, logger *slog.Logger, pools databasePools) apppublicsite.LogoutService {
 	if !cfg.UniDBEnabled {
 		return apppublicsite.LogoutService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB logout disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return apppublicsite.LogoutService{}
 	}
 
@@ -500,19 +450,13 @@ func logoutService(cfg config.Config, logger *slog.Logger) apppublicsite.LogoutS
 	return apppublicsite.NewLogoutService(mysqlregistration.NewSessionStore(db, cfg.UniDBPrefix), cfg.UniNumber)
 }
 
-func gameOverviewService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.OverviewService {
+func gameOverviewService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.OverviewService {
 	if !cfg.UniDBEnabled {
 		return appgame.OverviewService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game overview disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.OverviewService{}
 	}
 
@@ -520,19 +464,13 @@ func gameOverviewService(cfg config.Config, logger *slog.Logger, sessions apppub
 	return appgame.NewOverviewService(sessions, mysqlgame.NewOverviewRepositoryWithSecret(db, cfg.UniDBPrefix, cfg.UniDBSecret))
 }
 
-func gameBuildingsService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.BuildingsService {
+func gameBuildingsService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.BuildingsService {
 	if !cfg.UniDBEnabled {
 		return appgame.BuildingsService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game buildings disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.BuildingsService{}
 	}
 
@@ -540,19 +478,13 @@ func gameBuildingsService(cfg config.Config, logger *slog.Logger, sessions apppu
 	return appgame.NewBuildingsService(sessions, mysqlgame.NewBuildingsRepository(db, cfg.UniDBPrefix))
 }
 
-func gameEmpireService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.EmpireService {
+func gameEmpireService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.EmpireService {
 	if !cfg.UniDBEnabled {
 		return appgame.EmpireService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game empire disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.EmpireService{}
 	}
 
@@ -560,19 +492,13 @@ func gameEmpireService(cfg config.Config, logger *slog.Logger, sessions apppubli
 	return appgame.NewEmpireService(sessions, mysqlgame.NewEmpireRepository(db, cfg.UniDBPrefix))
 }
 
-func gameResourcesService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.ResourcesService {
+func gameResourcesService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.ResourcesService {
 	if !cfg.UniDBEnabled {
 		return appgame.ResourcesService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game resources disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.ResourcesService{}
 	}
 
@@ -580,19 +506,13 @@ func gameResourcesService(cfg config.Config, logger *slog.Logger, sessions apppu
 	return appgame.NewResourcesService(sessions, mysqlgame.NewResourcesRepository(db, cfg.UniDBPrefix))
 }
 
-func gameMerchantService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.MerchantService {
+func gameMerchantService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.MerchantService {
 	if !cfg.UniDBEnabled {
 		return appgame.MerchantService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game merchant disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.MerchantService{}
 	}
 
@@ -600,19 +520,13 @@ func gameMerchantService(cfg config.Config, logger *slog.Logger, sessions apppub
 	return appgame.NewMerchantService(sessions, mysqlgame.NewMerchantRepository(db, cfg.UniDBPrefix))
 }
 
-func gameOfficersService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.OfficersService {
+func gameOfficersService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.OfficersService {
 	if !cfg.UniDBEnabled {
 		return appgame.OfficersService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game officers disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.OfficersService{}
 	}
 
@@ -620,19 +534,13 @@ func gameOfficersService(cfg config.Config, logger *slog.Logger, sessions apppub
 	return appgame.NewOfficersService(sessions, mysqlgame.NewOfficersRepository(db, cfg.UniDBPrefix))
 }
 
-func gameAllianceService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.AllianceService {
+func gameAllianceService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.AllianceService {
 	if !cfg.UniDBEnabled {
 		return appgame.AllianceService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game alliance disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.AllianceService{}
 	}
 
@@ -640,50 +548,37 @@ func gameAllianceService(cfg config.Config, logger *slog.Logger, sessions apppub
 	return appgame.NewAllianceService(sessions, mysqlgame.NewAllianceRepository(db, cfg.UniDBPrefix))
 }
 
-func gameAdminService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.AdminService {
+func gameAdminService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.AdminService {
 	if !cfg.UniDBEnabled {
 		return appgame.AdminService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game admin disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.AdminService{}
 	}
 
 	logger.Info("universe DB game admin enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
 	repository := mysqlgame.NewAdminRepository(db, cfg.UniDBPrefix).WithLegacyGameDir(cfg.LegacyGameDir).WithSecret(cfg.UniDBSecret)
-	if masterDB := openMasterDBForGame(cfg, logger, "admin coupons"); masterDB != nil {
+	if masterDB := pools.master; masterDB != nil {
 		masterRunner := mysqlgame.SQLQueryer{DB: masterDB}
 		repository = repository.WithMasterRunner(masterRunner, masterRunner).WithUniverseNumber(cfg.UniNumber)
 	}
 	return appgame.NewAdminService(sessions, repository)
 }
 
-func gamePaymentService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.PaymentService {
+func gamePaymentService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.PaymentService {
 	if !cfg.UniDBEnabled || !cfg.MasterDBEnabled {
 		return appgame.PaymentService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game payment disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.PaymentService{}
 	}
 
-	masterDB := openMasterDBForGame(cfg, logger, "payment coupons")
+	masterDB := pools.master
 	if masterDB == nil {
-		_ = db.Close()
 		return appgame.PaymentService{}
 	}
 
@@ -691,19 +586,13 @@ func gamePaymentService(cfg config.Config, logger *slog.Logger, sessions apppubl
 	return appgame.NewPaymentService(sessions, mysqlgame.NewPaymentRepository(db, masterDB, cfg.UniDBPrefix, cfg.UniNumber))
 }
 
-func gameResearchService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.ResearchService {
+func gameResearchService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.ResearchService {
 	if !cfg.UniDBEnabled {
 		return appgame.ResearchService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game research disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.ResearchService{}
 	}
 
@@ -711,19 +600,13 @@ func gameResearchService(cfg config.Config, logger *slog.Logger, sessions apppub
 	return appgame.NewResearchService(sessions, mysqlgame.NewResearchRepository(db, cfg.UniDBPrefix))
 }
 
-func gameShipyardService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.ShipyardService {
+func gameShipyardService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.ShipyardService {
 	if !cfg.UniDBEnabled {
 		return appgame.ShipyardService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game shipyard disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.ShipyardService{}
 	}
 
@@ -731,19 +614,13 @@ func gameShipyardService(cfg config.Config, logger *slog.Logger, sessions apppub
 	return appgame.NewShipyardService(sessions, mysqlgame.NewShipyardRepository(db, cfg.UniDBPrefix))
 }
 
-func gameDefenseService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.DefenseService {
+func gameDefenseService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.DefenseService {
 	if !cfg.UniDBEnabled {
 		return appgame.DefenseService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game defense disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.DefenseService{}
 	}
 
@@ -751,19 +628,13 @@ func gameDefenseService(cfg config.Config, logger *slog.Logger, sessions apppubl
 	return appgame.NewDefenseService(sessions, mysqlgame.NewDefenseRepository(db, cfg.UniDBPrefix))
 }
 
-func gameFleetService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.FleetService {
+func gameFleetService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.FleetService {
 	if !cfg.UniDBEnabled {
 		return appgame.FleetService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game fleet disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.FleetService{}
 	}
 
@@ -771,19 +642,13 @@ func gameFleetService(cfg config.Config, logger *slog.Logger, sessions apppublic
 	return appgame.NewFleetService(sessions, mysqlgame.NewFleetRepository(db, cfg.UniDBPrefix))
 }
 
-func gameGalaxyService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.GalaxyService {
+func gameGalaxyService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.GalaxyService {
 	if !cfg.UniDBEnabled {
 		return appgame.GalaxyService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game galaxy disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.GalaxyService{}
 	}
 
@@ -791,19 +656,13 @@ func gameGalaxyService(cfg config.Config, logger *slog.Logger, sessions apppubli
 	return appgame.NewGalaxyService(sessions, mysqlgame.NewGalaxyRepository(db, cfg.UniDBPrefix))
 }
 
-func gameTechnologyService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.TechnologyService {
+func gameTechnologyService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.TechnologyService {
 	if !cfg.UniDBEnabled {
 		return appgame.TechnologyService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game technology disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.TechnologyService{}
 	}
 
@@ -811,19 +670,13 @@ func gameTechnologyService(cfg config.Config, logger *slog.Logger, sessions appp
 	return appgame.NewTechnologyService(sessions, mysqlgame.NewTechnologyRepository(db, cfg.UniDBPrefix))
 }
 
-func gameStatisticsService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.StatisticsService {
+func gameStatisticsService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.StatisticsService {
 	if !cfg.UniDBEnabled {
 		return appgame.StatisticsService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game statistics disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.StatisticsService{}
 	}
 
@@ -831,19 +684,13 @@ func gameStatisticsService(cfg config.Config, logger *slog.Logger, sessions appp
 	return appgame.NewStatisticsService(sessions, mysqlgame.NewStatisticsRepository(db, cfg.UniDBPrefix))
 }
 
-func gameSearchService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.SearchService {
+func gameSearchService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.SearchService {
 	if !cfg.UniDBEnabled {
 		return appgame.SearchService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game search disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.SearchService{}
 	}
 
@@ -851,19 +698,13 @@ func gameSearchService(cfg config.Config, logger *slog.Logger, sessions apppubli
 	return appgame.NewSearchService(sessions, mysqlgame.NewSearchRepository(db, cfg.UniDBPrefix))
 }
 
-func gameBuddyService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.BuddyService {
+func gameBuddyService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.BuddyService {
 	if !cfg.UniDBEnabled {
 		return appgame.BuddyService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game buddy disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.BuddyService{}
 	}
 
@@ -871,19 +712,13 @@ func gameBuddyService(cfg config.Config, logger *slog.Logger, sessions apppublic
 	return appgame.NewBuddyService(sessions, mysqlgame.NewBuddyRepository(db, cfg.UniDBPrefix))
 }
 
-func gameNotesService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.NotesService {
+func gameNotesService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.NotesService {
 	if !cfg.UniDBEnabled {
 		return appgame.NotesService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game notes disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.NotesService{}
 	}
 
@@ -891,19 +726,13 @@ func gameNotesService(cfg config.Config, logger *slog.Logger, sessions apppublic
 	return appgame.NewNotesService(sessions, mysqlgame.NewNotesRepository(db, cfg.UniDBPrefix))
 }
 
-func gameMessagesService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.MessagesService {
+func gameMessagesService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.MessagesService {
 	if !cfg.UniDBEnabled {
 		return appgame.MessagesService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game messages disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.MessagesService{}
 	}
 
@@ -911,19 +740,13 @@ func gameMessagesService(cfg config.Config, logger *slog.Logger, sessions apppub
 	return appgame.NewMessagesService(sessions, mysqlgame.NewMessagesRepository(db, cfg.UniDBPrefix))
 }
 
-func gameReportService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.ReportService {
+func gameReportService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.ReportService {
 	if !cfg.UniDBEnabled {
 		return appgame.ReportService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game report disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.ReportService{}
 	}
 
@@ -931,19 +754,13 @@ func gameReportService(cfg config.Config, logger *slog.Logger, sessions apppubli
 	return appgame.NewReportService(sessions, mysqlgame.NewReportRepository(db, cfg.UniDBPrefix))
 }
 
-func gamePhalanxService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.PhalanxService {
+func gamePhalanxService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.PhalanxService {
 	if !cfg.UniDBEnabled {
 		return appgame.PhalanxService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game phalanx disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.PhalanxService{}
 	}
 
@@ -951,19 +768,13 @@ func gamePhalanxService(cfg config.Config, logger *slog.Logger, sessions apppubl
 	return appgame.NewPhalanxService(sessions, mysqlgame.NewPhalanxRepository(db, cfg.UniDBPrefix))
 }
 
-func gameJumpGateService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.JumpGateService {
+func gameJumpGateService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.JumpGateService {
 	if !cfg.UniDBEnabled {
 		return appgame.JumpGateService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game jump gate disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.JumpGateService{}
 	}
 
@@ -971,19 +782,13 @@ func gameJumpGateService(cfg config.Config, logger *slog.Logger, sessions apppub
 	return appgame.NewJumpGateService(sessions, mysqlgame.NewJumpGateRepository(db, cfg.UniDBPrefix))
 }
 
-func gamePrangerService(cfg config.Config, logger *slog.Logger) appgame.PrangerService {
+func gamePrangerService(cfg config.Config, logger *slog.Logger, pools databasePools) appgame.PrangerService {
 	if !cfg.UniDBEnabled {
 		return appgame.PrangerService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game pranger disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.PrangerService{}
 	}
 
@@ -991,19 +796,13 @@ func gamePrangerService(cfg config.Config, logger *slog.Logger) appgame.PrangerS
 	return appgame.NewPrangerService(mysqlgame.NewPrangerRepository(db, cfg.UniDBPrefix))
 }
 
-func gameMaintenanceService(cfg config.Config, logger *slog.Logger) appgame.MaintenanceService {
+func gameMaintenanceService(cfg config.Config, logger *slog.Logger, pools databasePools) appgame.MaintenanceService {
 	if !cfg.UniDBEnabled {
 		return appgame.MaintenanceService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game maintenance disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.MaintenanceService{}
 	}
 
@@ -1011,19 +810,13 @@ func gameMaintenanceService(cfg config.Config, logger *slog.Logger) appgame.Main
 	return appgame.NewMaintenanceService(mysqlgame.NewMaintenanceRepository(db, cfg.UniDBPrefix))
 }
 
-func gameFeedService(cfg config.Config, logger *slog.Logger) appgame.FeedService {
+func gameFeedService(cfg config.Config, logger *slog.Logger, pools databasePools) appgame.FeedService {
 	if !cfg.UniDBEnabled {
 		return appgame.FeedService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game feed disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.FeedService{}
 	}
 
@@ -1031,19 +824,13 @@ func gameFeedService(cfg config.Config, logger *slog.Logger) appgame.FeedService
 	return appgame.NewFeedService(mysqlgame.NewFeedRepository(db, cfg.UniDBPrefix))
 }
 
-func gameOptionsService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup) appgame.OptionsService {
+func gameOptionsService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.OptionsService {
 	if !cfg.UniDBEnabled {
 		return appgame.OptionsService{}
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB game options disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return appgame.OptionsService{}
 	}
 
@@ -1051,19 +838,13 @@ func gameOptionsService(cfg config.Config, logger *slog.Logger, sessions apppubl
 	return appgame.NewOptionsService(sessions, mysqlgame.NewOptionsRepositoryWithSecret(db, cfg.UniDBPrefix, cfg.UniDBSecret))
 }
 
-func registrationValidator(cfg config.Config, logger *slog.Logger) apppublicsite.RegistrationDraftValidator {
+func registrationValidator(cfg config.Config, logger *slog.Logger, pools databasePools) apppublicsite.RegistrationDraftValidator {
 	if !cfg.UniDBEnabled {
 		return apppublicsite.NewRegistrationDraftValidator()
 	}
 
-	db, err := mysqlregistration.Open(mysqlregistration.UniverseDBConfig{
-		Host:     cfg.UniDBHost,
-		User:     cfg.UniDBUser,
-		Password: cfg.UniDBPassword,
-		Name:     cfg.UniDBName,
-	})
-	if err != nil {
-		logger.Warn("universe DB registration availability disabled", "error", err)
+	db := pools.universe
+	if db == nil {
 		return apppublicsite.NewRegistrationDraftValidator()
 	}
 
@@ -1071,7 +852,7 @@ func registrationValidator(cfg config.Config, logger *slog.Logger) apppublicsite
 	return apppublicsite.NewRegistrationDraftValidatorWithAvailability(mysqlregistration.NewAvailabilityChecker(db, cfg.UniDBPrefix))
 }
 
-func universeRepository(cfg config.Config, logger *slog.Logger) apppublicsite.UniverseRepository {
+func universeRepository(cfg config.Config, logger *slog.Logger, pools databasePools) apppublicsite.UniverseRepository {
 	fallback := configcatalog.UniverseCatalog{
 		RawJSON:       cfg.PublicUniverses,
 		LegacyBaseURL: cfg.LegacyBaseURL,
@@ -1081,14 +862,8 @@ func universeRepository(cfg config.Config, logger *slog.Logger) apppublicsite.Un
 		return fallback
 	}
 
-	db, err := mysqlcatalog.Open(mysqlcatalog.MasterDBConfig{
-		Host:     cfg.MasterDBHost,
-		User:     cfg.MasterDBUser,
-		Password: cfg.MasterDBPassword,
-		Name:     cfg.MasterDBName,
-	})
-	if err != nil {
-		logger.Warn("master DB universe catalog disabled", "error", err)
+	db := pools.master
+	if db == nil {
 		return fallback
 	}
 
@@ -1097,24 +872,6 @@ func universeRepository(cfg config.Config, logger *slog.Logger) apppublicsite.Un
 		Primary:  mysqlcatalog.NewMasterUniverseCatalog(db),
 		Fallback: fallback,
 	}
-}
-
-func openMasterDBForGame(cfg config.Config, logger *slog.Logger, label string) *sql.DB {
-	if !cfg.MasterDBEnabled {
-		return nil
-	}
-	db, err := mysqlcatalog.Open(mysqlcatalog.MasterDBConfig{
-		Host:     cfg.MasterDBHost,
-		User:     cfg.MasterDBUser,
-		Password: cfg.MasterDBPassword,
-		Name:     cfg.MasterDBName,
-	})
-	if err != nil {
-		logger.Warn("master DB "+label+" disabled", "error", err)
-		return nil
-	}
-	logger.Info("master DB "+label+" enabled", "host", cfg.MasterDBHost, "database", cfg.MasterDBName)
-	return db
 }
 
 func newLogger(levelName string) *slog.Logger {

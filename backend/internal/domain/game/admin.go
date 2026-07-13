@@ -7,13 +7,14 @@ const (
 	AdminLevelOperator = 1
 	AdminLevelAdmin    = 2
 
-	AdminIssueAccessDenied = "access_denied"
-	AdminIssueActionSaved  = "action_saved"
-	AdminIssueActionFailed = "action_failed"
-	AdminIssueBotAdded     = "bot_added"
-	AdminIssueBotExists    = "bot_exists"
-	AdminIssueBotNoStart   = "bot_no_start"
-	AdminIssueBotStopped   = "bot_stopped"
+	AdminIssueAccessDenied       = "access_denied"
+	AdminIssueActionSaved        = "action_saved"
+	AdminIssueActionFailed       = "action_failed"
+	AdminIssueBotAdded           = "bot_added"
+	AdminIssueBotExists          = "bot_exists"
+	AdminIssueBotNoStart         = "bot_no_start"
+	AdminIssueBotStopped         = "bot_stopped"
+	AdminIssueModRuntimeExcluded = "mod_runtime_excluded"
 )
 
 const (
@@ -388,8 +389,8 @@ type AdminModInfo struct {
 }
 
 const (
-	AdminModRuntimePolicyNoHooks        = "no_php_runtime_hooks_detected"
-	AdminModRuntimePolicyUnsupportedPHP = "php_runtime_hooks_unsupported_go_native_adapter_required"
+	AdminModRuntimePolicyNoHooks       = "no_php_runtime_hooks_detected"
+	AdminModRuntimePolicyLegacyPHPOnly = "legacy_php_runtime_excluded_from_go"
 )
 
 type AdminLocalization struct {
@@ -553,6 +554,8 @@ func AdminIssue(code string) *AdminActionIssue {
 		return &AdminActionIssue{Code: code, Message: "No starting bot strategy was found."}
 	case AdminIssueBotStopped:
 		return &AdminActionIssue{Code: code, Message: "Bot stopped."}
+	case AdminIssueModRuntimeExcluded:
+		return &AdminActionIssue{Code: code, Message: "This legacy PHP Mod cannot be installed in the Go runtime."}
 	default:
 		return &AdminActionIssue{Code: code, Message: "Admin action could not be completed."}
 	}

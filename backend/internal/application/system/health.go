@@ -28,6 +28,7 @@ type HealthConfig struct {
 	ReactTarget        string
 	MasterDBRequired   bool
 	UniverseDBRequired bool
+	ModRuntimeRequired bool
 }
 
 type HealthService struct {
@@ -36,15 +37,19 @@ type HealthService struct {
 	runtime    RuntimeProvider
 	masterDB   ReadinessProbe
 	universeDB ReadinessProbe
+	modRuntime ReadinessProbe
 }
 
 func NewHealthService(cfg HealthConfig, assets AssetProbe, runtime RuntimeProvider, probes ...ReadinessProbe) HealthService {
-	var masterDB, universeDB ReadinessProbe
+	var masterDB, universeDB, modRuntime ReadinessProbe
 	if len(probes) > 0 {
 		masterDB = probes[0]
 	}
 	if len(probes) > 1 {
 		universeDB = probes[1]
+	}
+	if len(probes) > 2 {
+		modRuntime = probes[2]
 	}
 	return HealthService{
 		cfg:        cfg,
@@ -52,6 +57,7 @@ func NewHealthService(cfg HealthConfig, assets AssetProbe, runtime RuntimeProvid
 		runtime:    runtime,
 		masterDB:   masterDB,
 		universeDB: universeDB,
+		modRuntime: modRuntime,
 	}
 }
 
@@ -60,8 +66,9 @@ func (s HealthService) Get(ctx context.Context) domainsystem.Health {
 	legacyReady := s.assets.Ready(s.cfg.LegacyAssetDir)
 	masterReady := !s.cfg.MasterDBRequired || s.masterDB != nil && s.masterDB.Ready(ctx)
 	universeReady := !s.cfg.UniverseDBRequired || s.universeDB != nil && s.universeDB.Ready(ctx)
+	modRuntimeReady := !s.cfg.ModRuntimeRequired || s.modRuntime != nil && s.modRuntime.Ready(ctx)
 	status := "ok"
-	if !staticReady || !legacyReady || !masterReady || !universeReady {
+	if !staticReady || !legacyReady || !masterReady || !universeReady || !modRuntimeReady {
 		status = "unavailable"
 	}
 
@@ -80,5 +87,6 @@ func (s HealthService) Get(ctx context.Context) domainsystem.Health {
 		LegacyBaseURL:     s.cfg.LegacyBaseURL,
 		MasterDBReady:     masterReady,
 		UniverseDBReady:   universeReady,
+		ModRuntimeReady:   modRuntimeReady,
 	}
 }

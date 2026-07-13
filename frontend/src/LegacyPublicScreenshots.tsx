@@ -39,22 +39,22 @@ export function LegacyPublicScreenshots({
 }
 
 const screenshots = [
-  { label: "Overview", thumb: "img/overview_t.jpg", href: "screenshot.php?pic=overview&type=JPG&path=img/" },
-  { label: "Buildings", thumb: "img/buildings_t.jpg", href: "screenshot.php?pic=buildings&type=JPG&path=img/" },
-  { label: "Shipyard", thumb: "img/shipyard_t.jpg", href: "screenshot.php?pic=shipyard&type=JPG&path=img/" },
-  { label: "Empire", thumb: "img/empire_t.jpg", href: "screenshot.php?pic=empire&type=JPG&path=img/" }
+  { label: "Overview", thumb: "img/overview_t.jpg", href: "/screenshot?pic=overview&type=JPG&path=img/" },
+  { label: "Buildings", thumb: "img/buildings_t.jpg", href: "/screenshot?pic=buildings&type=JPG&path=img/" },
+  { label: "Shipyard", thumb: "img/shipyard_t.jpg", href: "/screenshot?pic=shipyard&type=JPG&path=img/" },
+  { label: "Empire", thumb: "img/empire_t.jpg", href: "/screenshot?pic=empire&type=JPG&path=img/" }
 ];
 
 const wallpapers = [
   {
     label: "Battleship",
     thumb: "img/battleship_t.jpg",
-    href: "screenshot.php?pic=battleship_1280x1024&type=jpg&path=img/wallpapers/"
+    href: "/screenshot?pic=battleship_1280x1024&type=jpg&path=img/wallpapers/"
   },
   {
     label: "Destroyer",
     thumb: "img/destroyer_t.jpg",
-    href: "screenshot.php?pic=destroyer_1280x1024&type=jpg&path=img/wallpapers/"
+    href: "/screenshot?pic=destroyer_1280x1024&type=jpg&path=img/wallpapers/"
   }
 ];
 
@@ -82,7 +82,7 @@ function ScreenshotLink({ item }: { item: { label: string; thumb: string; href: 
   return (
     <div className="image legacy-screenshot-image">
       <a href={item.href}>
-        <img alt={item.label} src={item.thumb} />
+        <img alt="" src={item.thumb} />
       </a>
     </div>
   );

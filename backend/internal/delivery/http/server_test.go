@@ -650,6 +650,77 @@ func TestLoginEndpointCreatesSessionCookie(t *testing.T) {
 	}
 }
 
+func TestLegacyLoginAliasCreatesCookieAndRedirects(t *testing.T) {
+	login := &fakeLogin{result: domainpublicsite.LoginAuthentication{Valid: true, Session: domainpublicsite.LoginSession{
+		PlayerID: 42, PublicID: "public123456", PrivateID: "private1234567890", UniverseNumber: 1, RedirectPath: "/game/overview",
+	}}}
+	server := testServerWithLogin(t, login)
+	req := httptest.NewRequest(http.MethodPost, "http://game.test/game/reg/login2.php", strings.NewReader("login=legor&pass=admin"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/game/overview?lgn=1&session=public123456" || len(rec.Result().Cookies()) != 1 {
+		t.Fatalf("unexpected legacy login response: code=%d location=%q cookies=%+v", rec.Code, rec.Header().Get("Location"), rec.Result().Cookies())
+	}
+	if login.command.Universe != "http://game.test/" || login.command.Login != "legor" || login.command.Password != "admin" {
+		t.Fatalf("unexpected legacy login command: %+v", login.command)
+	}
+}
+
+func TestLegacyLoginAliasRedirectsInvalidCredentials(t *testing.T) {
+	login := &fakeLogin{result: domainpublicsite.LoginAuthentication{Issues: []domainpublicsite.LoginIssue{{LegacyErrorCode: 2}}}}
+	server := testServerWithLogin(t, login)
+	req := httptest.NewRequest(http.MethodGet, "http://game.test/game/reg/login2.php?login=legor&pass=wrong", nil)
+	rec := httptest.NewRecorder()
+
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound || !strings.HasPrefix(rec.Header().Get("Location"), "/game/reg/errorpage.php?") {
+		t.Fatalf("unexpected invalid legacy login redirect: code=%d location=%q", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+func TestLegacyRegistrationCheckAndLoginFormAliases(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	for action, want := range map[string]string{"check_username": "1 0", "check_email": "2 0"} {
+		req := httptest.NewRequest(http.MethodGet, "/game/reg/check_registration.php?action="+action, nil)
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || rec.Body.String() != want {
+			t.Fatalf("unexpected registration check %s: code=%d body=%q", action, rec.Code, rec.Body.String())
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/game/reg/login.php", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/" {
+		t.Fatalf("unexpected legacy login form redirect: code=%d location=%q", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+func TestLegacyLoginAndRegistrationAliasesRejectUnsupportedMethods(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	for _, path := range []string{"/game/reg/login2.php", "/game/reg/check_registration.php"} {
+		req := httptest.NewRequest(http.MethodPut, path, nil)
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+		if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, POST" {
+			t.Fatalf("unexpected method response for %s: code=%d allow=%q", path, rec.Code, rec.Header().Get("Allow"))
+		}
+	}
+}
+
+func TestLegacyLoginAliasReportsUnavailableService(t *testing.T) {
+	server := testServer(config.Config{StaticDir: t.TempDir(), LegacyAssetDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodPost, "/game/reg/login2.php", strings.NewReader("login=legor&pass=admin"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected unavailable legacy login, got %d", rec.Code)
+	}
+}
+
 func TestLoginEndpointReturnsIssuesWithoutCookie(t *testing.T) {
 	login := &fakeLogin{
 		result: domainpublicsite.LoginAuthentication{

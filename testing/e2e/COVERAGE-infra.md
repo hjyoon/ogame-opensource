@@ -35,6 +35,8 @@ Do not weaken these checks to hide fixture leftovers. Fix cleanup or the underly
 - Go liveness remains `200` during DB failure; readiness becomes `503` until both DB probes recover.
 - DB recovery E2E stops MySQL, verifies degraded health, restarts it, and proves login recovers without restarting Go.
 - Migration Docker startup never uses `down` or `--remove-orphans`; PHP/MySQL oracle services remain intact.
+- Master and Universe repositories share two bounded pools; load E2E audits connection growth.
+- Active legacy PHP Mods make readiness fail and are restored by an isolated policy E2E.
 - Removed-planet cleanup recalls inbound fleets before deletion.
 - Debris cleanup preserves active recycler targets and removes inactive empty debris.
 - User state timers, disabled-player cleanup, score recalculation, old-score snapshots, and global maintenance queue scheduling are covered.

@@ -14,7 +14,7 @@ Source of truth: `backend/internal/delivery/http/server.go`. Keep this file unde
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/livez` | Process liveness; independent of DB readiness |
-| `GET` | `/api/healthz` | Static assets plus master/universe DB readiness; `503` when unavailable |
+| `GET` | `/api/healthz` | Asset, DB, and PHP-Mod compatibility readiness; `503` when unavailable |
 | `GET` | `/api/public/universes` | Universe catalog |
 | `POST` | `/api/public/registration/validate` | Registration draft validation |
 | `POST` | `/api/public/registration` | Account registration |
@@ -63,7 +63,7 @@ Source of truth: `backend/internal/delivery/http/server.go`. Keep this file unde
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET/POST` | `/game/reg/newredirect.php` | Legacy registration |
+| `GET/POST` | `/game/reg/newredirect.php`, `/game/reg/login2.php`, `/game/reg/check_registration.php` | Legacy registration/login/check |
 | `GET` | `/game/validate.php`, `/activation` | Account activation |
 | `GET/HEAD/POST` | `/game/index.php` | Legacy game entry, BotEdit, Bots add/stop, Mods, Logins/Loca POST, `sprungtor`, `pranger` |
 | `GET` | `/game/pranger.php` | Legacy public pillory/ban list |

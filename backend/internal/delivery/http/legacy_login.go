@@ -3,7 +3,53 @@ package httpdelivery
 import (
 	"html"
 	"net/http"
+	"net/url"
+	"strconv"
+
+	apppublicsite "github.com/hjyoon/ogame-opensource/backend/internal/application/publicsite"
 )
+
+func (a app) handleLegacyLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if a.deps.Login == nil {
+		http.Error(w, "login unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid login request", http.StatusBadRequest)
+		return
+	}
+	login := r.Form.Get("login")
+	result, err := a.deps.Login.AuthenticateLogin(r.Context(), apppublicsite.LoginCommand{
+		Login: login, Password: r.Form.Get("pass"), Universe: publicURL(r, "/"), RemoteAddr: remoteIP(r.RemoteAddr),
+	})
+	if err != nil {
+		http.Error(w, "login unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if result.Valid {
+		setLoginSessionCookie(w, result.Session)
+		http.Redirect(w, r, result.Session.RedirectTarget(), http.StatusFound)
+		return
+	}
+	errorCode := 2
+	if len(result.Issues) > 0 && result.Issues[0].LegacyErrorCode > 0 {
+		errorCode = result.Issues[0].LegacyErrorCode
+	}
+	query := url.Values{}
+	query.Set("errorcode", strconv.Itoa(errorCode))
+	query.Set("arg1", publicURL(r, "/"))
+	query.Set("arg2", login)
+	http.Redirect(w, r, "/game/reg/errorpage.php?"+query.Encode(), http.StatusFound)
+}
+
+func (a app) handleLegacyLoginForm(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/", http.StatusFound)
+}
 
 func (a app) handleLegacyLoginErrorPage(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()

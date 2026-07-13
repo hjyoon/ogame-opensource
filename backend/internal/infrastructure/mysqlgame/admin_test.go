@@ -132,7 +132,7 @@ func TestAdminRepositoryReadsModManifests(t *testing.T) {
 	if got := strings.Join(admin.ModRows[1].RuntimeHooks, ","); got != "main.php,pages/alpha.php,pages_admin/admin_alpha.php" {
 		t.Fatalf("expected AlphaMod PHP runtime hooks, got %q", got)
 	}
-	if admin.ModRows[1].RuntimePolicy != domaingame.AdminModRuntimePolicyUnsupportedPHP {
+	if admin.ModRows[1].RuntimePolicy != domaingame.AdminModRuntimePolicyLegacyPHPOnly {
 		t.Fatalf("expected unsupported PHP runtime policy, got %q", admin.ModRows[1].RuntimePolicy)
 	}
 	if len(runner.execCalls) != 1 || !strings.Contains(runner.execCalls[0].sql, "UPDATE `ogame_uni` SET modlist = ?") || runner.execCalls[0].args[0] != "ZedMod" {
@@ -327,6 +327,32 @@ func TestAdminRepositoryMutatesModList(t *testing.T) {
 	repository = NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "bad-prefix_").WithLegacyGameDir(root)
 	if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Mods", Action: domaingame.AdminActionModInstall, ModName: "BetaMod"}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
 		t.Fatalf("expected bad prefix error, got %v", err)
+	}
+}
+
+func TestAdminRepositoryRejectsLegacyPHPRuntimeModInstall(t *testing.T) {
+	root := t.TempDir()
+	modDir := filepath.Join(root, "mods", "LegacyMod")
+	if err := os.MkdirAll(modDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modDir, "manifest.json"), []byte(`{"name":"Legacy","version":"1"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modDir, "main.php"), []byte("<?php"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runner := &fakeGalaxyRunner{}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_").WithLegacyGameDir(root)
+
+	issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+		Mode: "Mods", Action: domaingame.AdminActionModInstall, ModName: "LegacyMod",
+	})
+	if err != nil || issue == nil || issue.Code != domaingame.AdminIssueModRuntimeExcluded {
+		t.Fatalf("expected excluded runtime issue, issue=%+v err=%v", issue, err)
+	}
+	if len(runner.execCalls) != 0 {
+		t.Fatalf("excluded mod must not mutate modlist: %+v", runner.execCalls)
 	}
 }
 

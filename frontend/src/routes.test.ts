@@ -35,6 +35,7 @@ describe("public route model", () => {
     const register = resolvePublicRoute("/register.php");
     const legacyRegisterForm = resolvePublicRoute("/game/reg/new.php");
     const impressum = resolvePublicRoute("/impressum.php");
+    const screenshot = resolvePublicRoute("/screenshot.php?pic=overview");
 
     expect(home.route.key).toBe("home");
     expect(home.canonicalPath).toBe("/home");
@@ -45,12 +46,14 @@ describe("public route model", () => {
     expect(legacyRegisterForm.canonicalPath).toBe("/register");
     expect(legacyRegisterForm.isLegacyAlias).toBe(true);
     expect(impressum.route.key).toBe("legal");
+    expect(screenshot.route.key).toBe("screenshot");
   });
 
   test("derives aliases and bootstrap chrome from the route manifest", () => {
     expect(publicRouteAliases.get("/regeln.php")).toBe("/rules");
     expect(publicRouteAliases.get("/unis.php")).toBe("/universes");
     expect(publicRouteAliases.get("/impressum.php")).toBe("/legal");
+    expect(publicRouteAliases.get("/screenshot.php")).toBe("/screenshot");
     expect(legacyPublicRouteKeys.has("home")).toBe(true);
     expect(legacyPublicRouteKeys.has("legal")).toBe(false);
     for (const path of ["/", "/home", "/home.php", "/register", "/register.php", "/game/reg/new.php", "/about.php", "/regeln.php", "/unis.php"]) {
@@ -64,11 +67,12 @@ describe("public route model", () => {
 
   test("keeps visual parity targets tied to legacy aliases", () => {
     const visualRoutes = publicRouteManifest.filter((route) => route.legacyVisualPath !== undefined);
-    expect(visualRoutes.map((route) => route.key)).toEqual(["home", "register", "universes", "about", "story", "screenshots", "rules", "legal"]);
+    expect(visualRoutes.map((route) => route.key)).toEqual(["home", "register", "universes", "about", "story", "screenshots", "screenshot", "rules", "legal"]);
     for (const route of visualRoutes) {
       const visualPath = route.legacyVisualPath ?? "";
-      expect(route.legacyAliases).toContain(visualPath);
-      expect(publicRouteAliases.get(visualPath)).toBe(route.path);
+      const visualAlias = visualPath.split("?", 1)[0];
+      expect(route.legacyAliases).toContain(visualAlias);
+      expect(publicRouteAliases.get(visualAlias)).toBe(route.path);
     }
   });
 
