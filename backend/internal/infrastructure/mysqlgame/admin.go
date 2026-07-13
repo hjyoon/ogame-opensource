@@ -10,6 +10,7 @@ import (
 	"html"
 	"math"
 	"math/big"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1053,8 +1054,8 @@ func (r AdminRepository) mutateAdminUniverseSettings(ctx context.Context, uniTab
 }
 
 func (r AdminRepository) mutateAdminBroadcast(ctx context.Context, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
-	subject := strings.TrimSpace(query.Subject)
-	text := strings.TrimSpace(query.Text)
+	subject := query.Subject
+	text := query.Text
 	if subject == "" || text == "" {
 		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
 	}
@@ -1094,7 +1095,7 @@ func (r AdminRepository) mutateAdminBroadcast(ctx context.Context, query appgame
 		query.PlayerID,
 		subject,
 	)
-	messageText := sanitizeAdminBroadcastText(text)
+	messageText := sanitizeAdminBroadcastText(legacyAdminBroadcastBBCode(text))
 	now := int(r.now().Unix())
 	for _, recipientID := range recipients {
 		if err := r.insertAdminBroadcastMessage(ctx, messagesTable, recipientID, from, messageSubject, messageText, now); err != nil {
@@ -1223,8 +1224,203 @@ func (r AdminRepository) countAdminMessages(ctx context.Context, messagesTable s
 }
 
 func sanitizeAdminBroadcastText(text string) string {
-	replacer := strings.NewReplacer(`\"`, "&quot;", `'`, "&rsquo;", "`", "&lsquo;")
-	return replacer.Replace(text)
+	text = strings.NewReplacer(`\"`, "&quot;", `'`, "&rsquo;", "\\`", "&lsquo;").Replace(text)
+	return strings.ReplaceAll(text, `"`, `\"`)
+}
+
+var adminBroadcastSimpleBBTags = []struct {
+	pattern *regexp.Regexp
+	open    string
+	close   string
+}{
+	{regexp.MustCompile(`(?is)\[b\](.*?)\[/b\]`), "<strong>", "</strong>"},
+	{regexp.MustCompile(`(?is)\[i\](.*?)\[/i\]`), "<i>", "</i>"},
+	{regexp.MustCompile(`(?is)\[u\](.*?)\[/u\]`), "<u>", "</u>"},
+	{regexp.MustCompile(`(?is)\[(?:s|strike)\](.*?)\[/(?:s|strike)\]`), "<del>", "</del>"},
+	{regexp.MustCompile(`(?is)\[sub\](.*?)\[/sub\]`), "<sub>", "</sub>"},
+	{regexp.MustCompile(`(?is)\[sup\](.*?)\[/sup\]`), "<sup>", "</sup>"},
+}
+
+var (
+	adminBroadcastURLAttribute = regexp.MustCompile(`(?is)\[url=([^\]]+)\](.*?)\[/url\]`)
+	adminBroadcastURLText      = regexp.MustCompile(`(?is)\[url\](.*?)\[/url\]`)
+	adminBroadcastColor        = regexp.MustCompile(`(?is)\[color=([^\]]+)\](.*?)\[/color\]`)
+	adminBroadcastFont         = regexp.MustCompile(`(?is)\[font([^\]]*)\](.*?)\[/font\]`)
+	adminBroadcastSize         = regexp.MustCompile(`(?is)\[size=([^\]]+)\](.*?)\[/size\]`)
+	adminBroadcastEmail        = regexp.MustCompile(`(?is)\[email(?:=([^\]]+))?\](.*?)\[/email\]`)
+	adminBroadcastAlign        = regexp.MustCompile(`(?is)\[align=([^\]]+)\](.*?)\[/align\]`)
+	adminBroadcastHorizontal   = regexp.MustCompile(`(?is)\s*\[hr\]\s*`)
+	adminBroadcastImage        = regexp.MustCompile(`(?is)\[img([^\]]*)\](.*?)\[/img\]`)
+	adminBroadcastQuote        = regexp.MustCompile(`(?is)\[quote(?:=([^\]]+))?\](.*?)\[/quote\]`)
+	adminBroadcastAttribute    = regexp.MustCompile(`(?i)([a-z]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s\]]+))`)
+)
+
+func legacyAdminBroadcastBBCode(text string) string {
+	text = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(text)
+	text = strings.ReplaceAll(text, "\n", "<br />\n")
+	for _, tag := range adminBroadcastSimpleBBTags {
+		for {
+			next := tag.pattern.ReplaceAllString(text, tag.open+"$1"+tag.close)
+			if next == text {
+				break
+			}
+			text = next
+		}
+	}
+	text = adminBroadcastColor.ReplaceAllString(text, `<font color="$1">$2</font>`)
+	text = replaceAdminBroadcastFonts(text)
+	text = replaceAdminBroadcastSizes(text)
+	text = replaceAdminBroadcastEmails(text)
+	text = replaceAdminBroadcastAlignments(text)
+	text = adminBroadcastHorizontal.ReplaceAllString(text, `<hr class="bb" />`)
+	text = replaceAdminBroadcastImages(text)
+	text = replaceAdminBroadcastQuotes(text)
+	text = replaceAdminBroadcastURLs(text, adminBroadcastURLAttribute, true)
+	return replaceAdminBroadcastURLs(text, adminBroadcastURLText, false)
+}
+
+func replaceAdminBroadcastFonts(text string) string {
+	return adminBroadcastFont.ReplaceAllStringFunc(text, func(value string) string {
+		parts := adminBroadcastFont.FindStringSubmatch(value)
+		attributes := parseAdminBroadcastAttributes("font" + parts[1])
+		result := `<font face="` + adminBroadcastAttributeValue(attributes["font"]) + `"`
+		for _, name := range []string{"color", "size"} {
+			if attributes[name] != "" {
+				result += ` ` + name + `="` + adminBroadcastAttributeValue(attributes[name]) + `"`
+			}
+		}
+		return result + `>` + parts[2] + `</font>`
+	})
+}
+
+func replaceAdminBroadcastSizes(text string) string {
+	return adminBroadcastSize.ReplaceAllStringFunc(text, func(value string) string {
+		parts := adminBroadcastSize.FindStringSubmatch(value)
+		raw := strings.TrimSpace(parts[1])
+		size, _ := strconv.Atoi(raw)
+		sign := ""
+		if strings.HasPrefix(raw, "+") {
+			sign = "+"
+		}
+		switch {
+		case size > 7:
+			size = 7
+			sign = ""
+		case size < -6:
+			size = -6
+			sign = ""
+		case size == 0:
+			size = 3
+		}
+		return fmt.Sprintf(`<font size="%s%d">%s</font>`, sign, size, parts[2])
+	})
+}
+
+func replaceAdminBroadcastEmails(text string) string {
+	return adminBroadcastEmail.ReplaceAllStringFunc(text, func(value string) string {
+		parts := adminBroadcastEmail.FindStringSubmatch(value)
+		href := parts[1]
+		if href == "" {
+			href = parts[2]
+		}
+		if !strings.HasPrefix(href, "mailto:") {
+			href = "mailto:" + href
+		}
+		return `<a class="bb_email" href="` + adminBroadcastAttributeValue(href) + `">` + parts[2] + `</a>`
+	})
+}
+
+func replaceAdminBroadcastAlignments(text string) string {
+	return adminBroadcastAlign.ReplaceAllStringFunc(text, func(value string) string {
+		parts := adminBroadcastAlign.FindStringSubmatch(value)
+		align := strings.ToLower(parts[1])
+		switch align {
+		case "left", "right", "center", "justify":
+		default:
+			align = ""
+		}
+		return `<div class="bb" align="` + align + `">` + parts[2] + `</div>`
+	})
+}
+
+func replaceAdminBroadcastImages(text string) string {
+	return adminBroadcastImage.ReplaceAllStringFunc(text, func(value string) string {
+		parts := adminBroadcastImage.FindStringSubmatch(value)
+		attributes := parseAdminBroadcastAttributes(parts[1])
+		result := `<img class="reloadimage" title="pic.php?url=` + strings.ReplaceAll(url.QueryEscape(strings.TrimSpace(parts[2])), "+", "%20") + `" src="/game/img/preload.gif"alt=""`
+		for _, name := range []string{"width", "height", "border"} {
+			if attributes[name] == "" {
+				continue
+			}
+			number, _ := strconv.Atoi(attributes[name])
+			if name != "border" && number == 0 {
+				continue
+			}
+			result += fmt.Sprintf(` %s="%d"`, name, number)
+		}
+		return result + ` />`
+	})
+}
+
+func replaceAdminBroadcastQuotes(text string) string {
+	return adminBroadcastQuote.ReplaceAllStringFunc(text, func(value string) string {
+		parts := adminBroadcastQuote.FindStringSubmatch(value)
+		author := ""
+		if parts[1] != "" {
+			author = "(\n<b style=\"color: white;\">" + adminBroadcastAttributeValue(parts[1]) + "</b>\n)"
+		}
+		header := "<div style=\"border: 3px double rgb(65, 86, 128); padding: 1px 4px 2px;\">\n\u0426\u0438\u0442\u0430\u0442\u0430 " + author + " </div>"
+		return header + `<div style="border-style: none double double; border-color: -moz-use-text-color rgb(65, 86, 128) rgb(65, 86, 128); border-width: medium 3px 3px; padding: 4px 4px 6px;">` + parts[2] + `</div>`
+	})
+}
+
+func parseAdminBroadcastAttributes(value string) map[string]string {
+	result := map[string]string{}
+	for _, match := range adminBroadcastAttribute.FindAllStringSubmatch(value, -1) {
+		attributeValue := ""
+		for index := 2; index < len(match); index++ {
+			if match[index] != "" {
+				attributeValue = match[index]
+				break
+			}
+		}
+		result[strings.ToLower(match[1])] = attributeValue
+	}
+	return result
+}
+
+func adminBroadcastAttributeValue(value string) string {
+	return strings.NewReplacer(`"`, "&quot;", `'`, "&#039;").Replace(value)
+}
+
+func replaceAdminBroadcastURLs(text string, pattern *regexp.Regexp, withAttribute bool) string {
+	return pattern.ReplaceAllStringFunc(text, func(value string) string {
+		parts := pattern.FindStringSubmatch(value)
+		if len(parts) < 2 {
+			return value
+		}
+		href := parts[1]
+		label := parts[1]
+		if withAttribute {
+			if len(parts) < 3 {
+				return value
+			}
+			label = parts[2]
+		}
+		if !adminBroadcastURLHasProtocol(href) {
+			href = "http://" + href
+		}
+		return `<a class="bb" href="` + html.EscapeString(href) + `">` + label + `</a>`
+	})
+}
+
+func adminBroadcastURLHasProtocol(value string) bool {
+	for _, prefix := range []string{"http://", "https://", "ftp://", "file://", "mailto:", "#", "/", "?", "./", "../"} {
+		if strings.HasPrefix(value, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r AdminRepository) mutateAdminQueue(ctx context.Context, queueTable string, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
@@ -1380,13 +1576,10 @@ func (r AdminRepository) mutateAdminExpeditionSettings(ctx context.Context, expe
 	for _, column := range adminExpeditionColumns {
 		value, ok := values[column]
 		if !ok {
-			continue
+			return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
 		}
 		assignments = append(assignments, "`"+column+"` = ?")
 		args = append(args, value)
-	}
-	if len(assignments) == 0 {
-		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
 	}
 	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET %s", expeditionTable, strings.Join(assignments, ", ")), args...)
 	if err != nil {

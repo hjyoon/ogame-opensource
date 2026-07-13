@@ -9,16 +9,21 @@ Generated IDs and wall-clock deltas are normalized; durable effects remain exact
 | --- | ---: | --- | --- |
 | Bans | 8 | access, ban/VM/attack flags, queues, pranger, scores and all ranks | PASS |
 | Queue/Fleetlogs | 13 | access, complete/delete/freeze/unfreeze, single/ACS timing, recall fleet/queue/logs and retention | PASS |
-| **Total** | **21** | deterministic PHP/Go DB and HTTP contracts | **PASS** |
+| Operations | 16 | broadcast recipients/BBCode/cap, report deletion, all expedition settings | PASS |
+| **Total** | **37** | deterministic PHP/Go DB and HTTP contracts | **PASS** |
 
 Queue/Fleetlogs cases include missing-target no-ops and operator rejection. Recall
 compares cargo, ships, fuel, mission, origin/target, duration, priority, fleetlog,
 userlog text, and legacy two/four-week log cleanup. Only generated fleet/task IDs
 and bounded request-time deltas are normalized.
 
+Operations covers all recipient categories, empty/whitespace fields, every legacy
+broadcast BBCode family, the 127-message cap, marked/all/empty reports, all 33
+expedition settings, malformed partial requests and access rejection.
+
 ## Pending Groups
 
-- Broadcast, Reports, Expedition settings, Battle/Rocket simulators.
+- Battle/Rocket/Expedition simulator calculations.
 - Universe settings and CRON execution.
 - Users and Planets full edit/create/destroy operations.
 - Debug, Errors, UserLogs, Browse/Logins filters and cleanup actions.
@@ -33,6 +38,7 @@ where applicable.
 ```sh
 testing/e2e/run-golang-admin-bans-differential-e2e.sh
 testing/e2e/run-golang-admin-queue-differential-e2e.sh
+testing/e2e/run-golang-admin-operations-differential-e2e.sh
 ```
 
 Both are included in `testing/e2e/run-golang-migration-qa.sh`.

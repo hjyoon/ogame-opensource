@@ -1755,6 +1755,56 @@ func TestAdminRepositoryBroadcastsToSelectedCategory(t *testing.T) {
 	}
 }
 
+func TestAdminBroadcastLegacyBBCodeAndEscaping(t *testing.T) {
+	input := `[b]Bold[/b] [i]Italic[/i] [u]Under[/u] [s]Strike[/s] [sub]Low[/sub] [sup]High[/sup] [url=example.com]Link[/url] "quote" 'tick`
+	got := sanitizeAdminBroadcastText(legacyAdminBroadcastBBCode(input))
+	want := `<strong>Bold</strong> <i>Italic</i> <u>Under</u> <del>Strike</del> <sub>Low</sub> <sup>High</sup> <a class=\"bb\" href=\"http://example.com\">Link</a> \"quote\" &rsquo;tick`
+	if got != want {
+		t.Fatalf("unexpected legacy broadcast BBCode\n got: %s\nwant: %s", got, want)
+	}
+	if got := legacyAdminBroadcastBBCode("<unsafe>\n[url]/local[/url]"); got != "&lt;unsafe&gt;<br />\n<a class=\"bb\" href=\"/local\">/local</a>" {
+		t.Fatalf("unexpected text escaping and local URL conversion: %s", got)
+	}
+	extended := `[color=red]Red[/color] [font=Arial color=blue size=5]Font[/font] [size=8]Big[/size] [email=test@example.com]Mail[/email] [align=center]Center[/align] [hr] [img width=16 height=12 border=0]http://example.com/a.png[/img] [quote=Admin]Quoted[/quote]`
+	gotExtended := sanitizeAdminBroadcastText(legacyAdminBroadcastBBCode(extended))
+	wantExtended := `<font color=\"red\">Red</font> <font face=\"Arial\" color=\"blue\" size=\"5\">Font</font> <font size=\"7\">Big</font> <a class=\"bb_email\" href=\"mailto:test@example.com\">Mail</a> <div class=\"bb\" align=\"center\">Center</div><hr class=\"bb\" /><img class=\"reloadimage\" title=\"pic.php?url=http%3A%2F%2Fexample.com%2Fa.png\" src=\"/game/img/preload.gif\"alt=\"\" width=\"16\" height=\"12\" border=\"0\" /> <div style=\"border: 3px double rgb(65, 86, 128); padding: 1px 4px 2px;\">` + "\n\u0426\u0438\u0442\u0430\u0442\u0430 (\n" + `<b style=\"color: white;\">Admin</b>` + "\n" + `) </div><div style=\"border-style: none double double; border-color: -moz-use-text-color rgb(65, 86, 128) rgb(65, 86, 128); border-width: medium 3px 3px; padding: 4px 4px 6px;\">Quoted</div>`
+	if gotExtended != wantExtended {
+		t.Fatalf("unexpected extended legacy broadcast BBCode\n got: %s\nwant: %s", gotExtended, wantExtended)
+	}
+}
+
+func TestAdminBroadcastLegacyBBCodeBoundaries(t *testing.T) {
+	quoteHeader := "<div style=\"border: 3px double rgb(65, 86, 128); padding: 1px 4px 2px;\">\n\u0426\u0438\u0442\u0430\u0442\u0430  </div>"
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"size lower", `[size=-99]x[/size]`, `<font size="-6">x</font>`},
+		{"size zero", `[size=0]x[/size]`, `<font size="3">x</font>`},
+		{"size explicit plus", `[size=+2]x[/size]`, `<font size="+2">x</font>`},
+		{"email body", `[email]test@example.com[/email]`, `<a class="bb_email" href="mailto:test@example.com">test@example.com</a>`},
+		{"email protocol", `[email=mailto:a@example.com]Mail[/email]`, `<a class="bb_email" href="mailto:a@example.com">Mail</a>`},
+		{"invalid alignment", `[align=diagonal]x[/align]`, `<div class="bb" align="">x</div>`},
+		{"zero image dimensions", `[img width=0 height=bad]a b[/img]`, `<img class="reloadimage" title="pic.php?url=a%20b" src="/game/img/preload.gif"alt="" />`},
+		{"anonymous quote", `[quote]x[/quote]`, quoteHeader + `<div style="border-style: none double double; border-color: -moz-use-text-color rgb(65, 86, 128) rgb(65, 86, 128); border-width: medium 3px 3px; padding: 4px 4px 6px;">x</div>`},
+		{"quoted font attributes", `[font="A B" color='r&d']x[/font]`, `<font face="A B" color="r&amp;d">x</font>`},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := legacyAdminBroadcastBBCode(testCase.input); got != testCase.want {
+				t.Fatalf("unexpected BBCode boundary\n got: %s\nwant: %s", got, testCase.want)
+			}
+		})
+	}
+	if got := replaceAdminBroadcastURLs("[x]", regexp.MustCompile(`\[x\]`), false); got != "[x]" {
+		t.Fatalf("unexpected URL no-capture handling: %s", got)
+	}
+	if got := replaceAdminBroadcastURLs("[x=a]", regexp.MustCompile(`\[x=([^\]]+)\]`), true); got != "[x=a]" {
+		t.Fatalf("unexpected URL missing-label handling: %s", got)
+	}
+}
+
 func TestAdminRepositoryMutatesReports(t *testing.T) {
 	t.Run("delete marked", func(t *testing.T) {
 		runner := &fakeGalaxyRunner{}
@@ -2885,15 +2935,18 @@ func TestAdminRepositoryFleetlogMutationEdges(t *testing.T) {
 func TestAdminRepositoryMutatesExpeditionSettings(t *testing.T) {
 	runner := &fakeGalaxyRunner{}
 	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+	values := make(map[string]int, len(adminExpeditionColumns)+1)
+	for index, column := range adminExpeditionColumns {
+		values[column] = index + 1
+	}
+	values["chance_success"] = 77
+	values["limit_max"] = 12345
+	values["ignored"] = 1
 
 	issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
 		Mode:   "Expedition",
 		Action: "settings",
-		Values: map[string]int{
-			"chance_success": 77,
-			"ignored":        1,
-			"limit_max":      12345,
-		},
+		Values: values,
 	})
 
 	if err != nil {
@@ -2902,8 +2955,9 @@ func TestAdminRepositoryMutatesExpeditionSettings(t *testing.T) {
 	if issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 1 {
 		t.Fatalf("unexpected expedition settings issue=%+v execs=%+v", issue, runner.execCalls)
 	}
-	if !strings.Contains(runner.execCalls[0].sql, "UPDATE `ogame_exptab` SET `chance_success` = ?, `limit_max` = ?") ||
-		len(runner.execCalls[0].args) != 2 || runner.execCalls[0].args[0] != 77 || runner.execCalls[0].args[1] != 12345 {
+	if !strings.Contains(runner.execCalls[0].sql, "UPDATE `ogame_exptab` SET `dm_factor` = ?, `chance_success` = ?") ||
+		!strings.Contains(runner.execCalls[0].sql, "`limit_max` = ?") ||
+		len(runner.execCalls[0].args) != len(adminExpeditionColumns) || runner.execCalls[0].args[1] != 77 || runner.execCalls[0].args[len(adminExpeditionColumns)-1] != 12345 {
 		t.Fatalf("unexpected expedition settings update: %+v", runner.execCalls[0])
 	}
 }
@@ -2925,10 +2979,14 @@ func TestAdminRepositoryExpeditionSettingsEdges(t *testing.T) {
 	t.Run("exec error", func(t *testing.T) {
 		runner := &fakeGalaxyRunner{execErrs: []error{errors.New("expedition update failed")}}
 		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		values := make(map[string]int, len(adminExpeditionColumns))
+		for _, column := range adminExpeditionColumns {
+			values[column] = 9
+		}
 		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
 			Mode:   "Expedition",
 			Action: "settings",
-			Values: map[string]int{"dm_factor": 9},
+			Values: values,
 		}); err == nil || !strings.Contains(err.Error(), "expedition update failed") {
 			t.Fatalf("expected expedition update error, got %v", err)
 		}
