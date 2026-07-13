@@ -12,6 +12,7 @@ import (
 
 type unguardedAttackState struct {
 	GuardCount     int
+	DefenderUnits  map[int]int
 	OriginWeapon   int
 	OriginShield   int
 	OriginArmour   int
@@ -98,7 +99,7 @@ func (r FleetRepository) loadUnguardedAttackState(ctx context.Context, planetsTa
 	}
 	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf(
 		"SELECT %s, COALESCE(ou.`%d`, 0), COALESCE(ou.`%d`, 0), COALESCE(ou.`%d`, 0), COALESCE(tu.`%d`, 0), COALESCE(tu.`%d`, 0), COALESCE(tu.`%d`, 0) FROM %s tp JOIN %s tu ON tu.player_id = tp.owner_id JOIN %s op ON op.planet_id = ? JOIN %s ou ON ou.player_id = op.owner_id WHERE tp.planet_id = ? LIMIT 1",
-		strings.Join(guardParts, "+"), domaingame.ResearchWeapon, domaingame.ResearchShield, domaingame.ResearchArmour, domaingame.ResearchWeapon, domaingame.ResearchShield, domaingame.ResearchArmour,
+		strings.Join(guardParts, ", "), domaingame.ResearchWeapon, domaingame.ResearchShield, domaingame.ResearchArmour, domaingame.ResearchWeapon, domaingame.ResearchShield, domaingame.ResearchArmour,
 		planetsTable, usersTable, planetsTable, usersTable,
 	), fleet.StartPlanetID, fleet.TargetPlanetID)
 	if err != nil {
@@ -108,9 +109,21 @@ func (r FleetRepository) loadUnguardedAttackState(ctx context.Context, planetsTa
 	if !rows.Next() {
 		return unguardedAttackState{}, false, rows.Err()
 	}
-	var state unguardedAttackState
-	if err := rows.Scan(&state.GuardCount, &state.OriginWeapon, &state.OriginShield, &state.OriginArmour, &state.DefenderWeapon, &state.DefenderShield, &state.DefenderArmour); err != nil {
+	state := unguardedAttackState{DefenderUnits: make(map[int]int, len(guardIDs))}
+	counts := make([]int, len(guardIDs))
+	destinations := make([]any, 0, len(guardIDs)+6)
+	for index := range counts {
+		destinations = append(destinations, &counts[index])
+	}
+	destinations = append(destinations, &state.OriginWeapon, &state.OriginShield, &state.OriginArmour, &state.DefenderWeapon, &state.DefenderShield, &state.DefenderArmour)
+	if err := rows.Scan(destinations...); err != nil {
 		return unguardedAttackState{}, false, err
+	}
+	for index, id := range guardIDs {
+		if counts[index] > 0 {
+			state.DefenderUnits[id] = counts[index]
+			state.GuardCount += counts[index]
+		}
 	}
 	return state, true, rows.Err()
 }
