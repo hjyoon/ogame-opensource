@@ -3004,7 +3004,7 @@ func TestFleetRepositoryFinishUnguardedAttackPlundersAndReports(t *testing.T) {
 	if plunder.args[0] != float64(3333) || plunder.args[1] != float64(3333) || plunder.args[2] != float64(3333) {
 		t.Fatalf("unexpected attack plunder: %+v", plunder)
 	}
-	if !strings.Contains(runner.execCalls[1].sql, "INSERT INTO `ogame_planets`") || runner.execCalls[1].args[0] != "Debris" {
+	if !strings.Contains(runner.execCalls[1].sql, "INSERT INTO `ogame_planets`") || runner.execCalls[1].args[0] != "Debris Field" {
 		t.Fatalf("expected legacy zero-debris field creation, got %+v", runner.execCalls[1])
 	}
 	defenderReport := runner.execCalls[3]

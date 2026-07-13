@@ -208,7 +208,7 @@ func (r FleetRepository) ensureBattleDebris(ctx context.Context, planetsTable st
 	if found {
 		return nil
 	}
-	_, err = r.execer.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (name, type, g, s, p, owner_id, diameter, temp, fields, maxfields, date, `%d`, `%d`, `%d`, lastpeek, lastakt, gate_until, remove) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, 0, 0, 0, ?, ?, 0, 0)", planetsTable, resourceMetal, resourceCrystal, resourceDeuterium), "Debris", domaingame.PlanetTypeDebris, value.TargetGalaxy, value.TargetSystem, value.TargetPosition, value.TargetOwnerID, at, at, at)
+	_, err = r.execer.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (name, type, g, s, p, owner_id, diameter, temp, fields, maxfields, date, `%d`, `%d`, `%d`, lastpeek, lastakt, gate_until, remove) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, 0, 0, 0, ?, ?, 0, 0)", planetsTable, resourceMetal, resourceCrystal, resourceDeuterium), "Debris Field", domaingame.PlanetTypeDebris, value.TargetGalaxy, value.TargetSystem, value.TargetPosition, value.TargetOwnerID, at, at, at)
 	return err
 }
 
