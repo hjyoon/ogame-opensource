@@ -603,6 +603,9 @@ func TestFleetMissionDisplayAndNames(t *testing.T) {
 	if FleetName(FleetSmallCargo) != "Small Cargo" || FleetName(123456) != "" {
 		t.Fatal("exported fleet names should use the legacy catalog")
 	}
+	if FleetCargoCapacity(FleetRecycler) != 20000 || FleetCargoCapacity(123456) != 0 {
+		t.Fatal("exported fleet cargo should use the legacy unit parameters")
+	}
 }
 
 func TestFleetShipSpeedsMatchLegacyDriveFamilies(t *testing.T) {

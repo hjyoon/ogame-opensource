@@ -793,6 +793,11 @@ func FleetName(id int) string {
 	return fleetName(id)
 }
 
+// FleetCargoCapacity returns the unmodified legacy cargo capacity per unit.
+func FleetCargoCapacity(id int) int {
+	return fleetUnitParams[id].cargo
+}
+
 type fleetUnitParam struct {
 	cargo       int
 	speed       int

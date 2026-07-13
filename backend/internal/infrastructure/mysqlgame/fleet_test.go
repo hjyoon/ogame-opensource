@@ -2899,6 +2899,120 @@ func TestFleetRepositoryFinishDueReturnRestoresOrigin(t *testing.T) {
 	}
 }
 
+func TestFleetRepositoryFinishDueRecycleHarvestsAndReturns(t *testing.T) {
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues([]any{58, 42, 126, int64(2_300)})},
+		{rows: fakeRowsFromValues(recycleFleetTestRow(5))},
+		{rows: fakeRowsFromValues([]any{domaingame.PlanetTypeDebris, float64(120_000), float64(80_000)})},
+		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
+	}}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_300, 0) })
+	repository.legacyEvents = true
+
+	if err := repository.FinishDueFleetQueues(context.Background(), 2_300); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execCalls) != 7 {
+		t.Fatalf("expected recycle harvest, return, report, log, and cleanup writes, got %+v", runner.execCalls)
+	}
+	if !strings.Contains(runner.execCalls[0].sql, "UPDATE `ogame_planets`") || runner.execCalls[0].args[0] != float64(50_000) || runner.execCalls[0].args[1] != float64(50_000) {
+		t.Fatalf("expected balanced 100k harvest, got %+v", runner.execCalls[0])
+	}
+	returnFleet := runner.execCalls[1]
+	if returnFleet.args[2] != float64(50_000) || returnFleet.args[3] != float64(50_000) || returnFleet.args[6] != domaingame.FleetMissionRecycle+domaingame.FleetMissionReturnOffset {
+		t.Fatalf("expected loaded recycle return fleet, got %+v", returnFleet)
+	}
+	if !strings.Contains(fmt.Sprint(runner.execCalls[4].args[4]), "Recycled 50.000 metal and 50.000 crystal") {
+		t.Fatalf("expected legacy recycle report, got %+v", runner.execCalls[4])
+	}
+}
+
+func TestFleetRepositoryRecycleHarvestEdges(t *testing.T) {
+	metal, crystal := recycleHarvest(120_000, 80_000, 100_000)
+	if metal != 50_000 || crystal != 50_000 {
+		t.Fatalf("unexpected balanced harvest: %v/%v", metal, crystal)
+	}
+	metal, crystal = recycleHarvest(10_000, 80_000, 100_000)
+	if metal != 10_000 || crystal != 80_000 {
+		t.Fatalf("unexpected crystal fallback harvest: %v/%v", metal, crystal)
+	}
+	metal, crystal = recycleHarvest(80_000, 10_000, 100_000)
+	if metal != 80_000 || crystal != 10_000 {
+		t.Fatalf("unexpected metal fallback harvest: %v/%v", metal, crystal)
+	}
+	if minFloat(1, 2) != 1 || minFloat(2, 1) != 1 {
+		t.Fatal("unexpected minimum helper")
+	}
+
+	fleet := recallFleetRow{ID: 123, OwnerID: 42, StartPlanetID: 99, TargetPlanetID: 100, FlightTime: 60, Mission: domaingame.FleetMissionRecycle, Ships: domaingame.FleetCounts{domaingame.FleetRecycler: 1}}
+	task := fleetQueueTask{TaskID: 55, OwnerID: 42, FleetID: 123, End: 1000}
+	for _, test := range []struct {
+		name    string
+		results []fakeQueryResult
+		want    string
+	}{
+		{name: "target query", results: []fakeQueryResult{{err: errors.New("target failed")}}, want: "target failed"},
+		{name: "missing target", results: []fakeQueryResult{{rows: fakeRowsFromValues()}}, want: "invalid recycle"},
+		{name: "target scan", results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}, want: "unexpected scan"},
+		{name: "wrong target type", results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{domaingame.PlanetTypePlanet, float64(1), float64(1)})}}, want: "invalid recycle"},
+	} {
+		runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: test.results}}
+		repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+		err := repository.finishRecycleFleetArrival(context.Background(), "`ogame_fleet`", "`ogame_fleetlogs`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", task, fleet)
+		if err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Fatalf("%s: expected %q, got %v", test.name, test.want, err)
+		}
+	}
+
+	for _, test := range []struct {
+		name     string
+		execErrs []error
+		want     string
+	}{
+		{name: "harvest", execErrs: []error{errors.New("harvest failed")}, want: "harvest failed"},
+		{name: "return fleet", execErrs: []error{nil, errors.New("return failed")}, want: "return failed"},
+		{name: "return queue", execErrs: []error{nil, nil, errors.New("queue failed")}, want: "queue failed"},
+	} {
+		runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{domaingame.PlanetTypeDebris, float64(1), float64(1)})}}}, execErrs: test.execErrs}
+		repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+		err := repository.finishRecycleFleetArrival(context.Background(), "`ogame_fleet`", "`ogame_fleetlogs`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", task, fleet)
+		if err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Fatalf("%s: expected %q, got %v", test.name, test.want, err)
+		}
+	}
+
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{domaingame.PlanetTypeDebris, float64(1), float64(1)})},
+		{err: errors.New("message context failed")},
+	}}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+	repository.legacyEvents = true
+	if err := repository.finishRecycleFleetArrival(context.Background(), "`ogame_fleet`", "`ogame_fleetlogs`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", task, fleet); err == nil || !strings.Contains(err.Error(), "message context failed") {
+		t.Fatalf("expected message context error, got %v", err)
+	}
+
+	for _, test := range []struct {
+		name     string
+		execErrs []error
+		want     string
+	}{
+		{name: "transition log", execErrs: []error{nil, nil, nil, errors.New("log failed")}, want: "log failed"},
+		{name: "arrival message", execErrs: []error{nil, nil, nil, nil, errors.New("message failed")}, want: "message failed"},
+	} {
+		runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{domaingame.PlanetTypeDebris, float64(1), float64(1)})},
+			{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
+		}}, execErrs: test.execErrs}
+		repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+		repository.legacyEvents = true
+		err := repository.finishRecycleFleetArrival(context.Background(), "`ogame_fleet`", "`ogame_fleetlogs`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", task, fleet)
+		if err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Fatalf("%s: expected %q, got %v", test.name, test.want, err)
+		}
+	}
+}
+
 func TestFleetRepositoryFinishDueExpeditionCreatesHoldAndReturn(t *testing.T) {
 	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{0})},
@@ -4251,6 +4365,12 @@ func recallFleetTestRow(mission int, unionID int, ships map[int]int) []any {
 	for _, shipID := range domaingame.FleetIDs() {
 		row = append(row, ships[shipID])
 	}
+	return row
+}
+
+func recycleFleetTestRow(recyclers int) []any {
+	row := recallFleetTestRow(domaingame.FleetMissionRecycle, 0, map[int]int{domaingame.FleetRecycler: recyclers})
+	row[3], row[4], row[5] = float64(0), float64(0), float64(0)
 	return row
 }
 

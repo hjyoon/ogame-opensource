@@ -40,6 +40,12 @@ type fleetMessageContext struct {
 	TargetDeuterium float64
 }
 
+type recycleTargetState struct {
+	Type    int
+	Metal   float64
+	Crystal float64
+}
+
 type expeditionSettings struct {
 	ChanceSuccess     int
 	DepletedMin       int
@@ -181,6 +187,8 @@ func (r FleetRepository) finishFleetQueueTask(ctx context.Context, fleetTable st
 		return r.finishTransportFleetArrival(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)
 	case domaingame.FleetMissionDeploy:
 		return r.finishDeployFleetArrival(ctx, fleetTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)
+	case domaingame.FleetMissionRecycle:
+		return r.finishRecycleFleetArrival(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)
 	case domaingame.FleetMissionExpedition:
 		return r.finishExpeditionArrival(ctx, fleetTable, queueTable, task, fleet)
 	case domaingame.FleetMissionExpedition + domaingame.FleetMissionOrbitingOffset:
@@ -250,6 +258,82 @@ func (r FleetRepository) finishDeployFleetArrival(ctx context.Context, fleetTabl
 		}
 	}
 	return r.removeCompletedFleetTask(ctx, fleetTable, queueTable, fleet.ID, task.TaskID)
+}
+
+func (r FleetRepository) finishRecycleFleetArrival(ctx context.Context, fleetTable string, fleetLogsTable string, queueTable string, planetsTable string, usersTable string, messagesTable string, task fleetQueueTask, fleet recallFleetRow) error {
+	target, found, err := r.loadRecycleTarget(ctx, planetsTable, fleet.TargetPlanetID)
+	if err != nil {
+		return err
+	}
+	recyclers := fleet.Ships[domaingame.FleetRecycler]
+	if !found || target.Type != domaingame.PlanetTypeDebris || recyclers <= 0 {
+		return errors.New("invalid recycle fleet target")
+	}
+	messageContext := fleetMessageContext{}
+	messageFound := false
+	if r.legacyEvents {
+		messageContext, messageFound, err = r.loadFleetMessageContext(ctx, usersTable, planetsTable, fleet)
+		if err != nil {
+			return err
+		}
+	}
+	loaded := maxFloat(0, fleet.Metal) + maxFloat(0, fleet.Crystal) + maxFloat(0, fleet.Deuterium)
+	totalCargo := 0
+	for id, count := range fleet.Ships {
+		if id != domaingame.FleetEspionageProbe && count > 0 {
+			totalCargo += domaingame.FleetCargoCapacity(id) * count
+		}
+	}
+	cargo := minFloat(float64(domaingame.FleetCargoCapacity(domaingame.FleetRecycler)*recyclers), maxFloat(0, float64(totalCargo)-loaded))
+	harvestMetal, harvestCrystal := recycleHarvest(target.Metal, target.Crystal, cargo)
+	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET `%d` = `%d` - ?, `%d` = `%d` - ?, lastpeek = ? WHERE planet_id = ? LIMIT 1", planetsTable, resourceMetal, resourceMetal, resourceCrystal, resourceCrystal), harvestMetal, harvestCrystal, task.End, fleet.TargetPlanetID); err != nil {
+		return err
+	}
+	returning := fleet
+	returning.Metal = maxFloat(0, fleet.Metal) + harvestMetal
+	returning.Crystal = maxFloat(0, fleet.Crystal) + harvestCrystal
+	returning.Deuterium = maxFloat(0, fleet.Deuterium)
+	returnFleetID, err := r.insertRecallFleet(ctx, fleetTable, fleet.OwnerID, returning, fleet.Mission+domaingame.FleetMissionReturnOffset, int64(fleet.FlightTime))
+	if err != nil {
+		return err
+	}
+	if err := r.insertRecallQueue(ctx, queueTable, fleet.OwnerID, returnFleetID, fleet.Mission+domaingame.FleetMissionReturnOffset, task.End, int64(fleet.FlightTime)); err != nil {
+		return err
+	}
+	if messageFound {
+		if err := r.insertFleetTransitionLog(ctx, fleetLogsTable, messageContext, returning, fleet.Mission+domaingame.FleetMissionReturnOffset, int64(fleet.FlightTime), 0, task.End); err != nil {
+			return err
+		}
+		if err := r.insertRecycleArrivalMessage(ctx, messagesTable, messageContext, recyclers, cargo, target, harvestMetal, harvestCrystal, task.End); err != nil {
+			return err
+		}
+	}
+	return r.removeCompletedFleetTask(ctx, fleetTable, queueTable, fleet.ID, task.TaskID)
+}
+
+func (r FleetRepository) loadRecycleTarget(ctx context.Context, planetsTable string, planetID int) (recycleTargetState, bool, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT type, `%d`, `%d` FROM %s WHERE planet_id = ? LIMIT 1", resourceMetal, resourceCrystal, planetsTable), planetID)
+	if err != nil {
+		return recycleTargetState{}, false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return recycleTargetState{}, false, rows.Err()
+	}
+	var target recycleTargetState
+	if err := rows.Scan(&target.Type, &target.Metal, &target.Crystal); err != nil {
+		return recycleTargetState{}, false, err
+	}
+	return target, true, rows.Err()
+}
+
+func recycleHarvest(metal float64, crystal float64, cargo float64) (float64, float64) {
+	harvestMetal := minFloat(metal, cargo/2)
+	cargo -= harvestMetal
+	harvestCrystal := minFloat(crystal, cargo)
+	cargo = maxFloat(0, cargo-harvestCrystal)
+	harvestMetal += minFloat(metal-harvestMetal, cargo)
+	return harvestMetal, harvestCrystal
 }
 
 func (r FleetRepository) finishExpeditionArrival(ctx context.Context, fleetTable string, queueTable string, task fleetQueueTask, fleet recallFleetRow) error {
@@ -414,6 +498,12 @@ func (r FleetRepository) insertTransportArrivalMessages(ctx context.Context, mes
 func (r FleetRepository) insertDeployArrivalMessage(ctx context.Context, messagesTable string, value fleetMessageContext, fleet recallFleetRow, at int64) error {
 	text := fmt.Sprintf("\nOne of your fleets (%s) reached %s\n%s\n. The fleet delivers %s metal, %s crystal and %s deuterium\n<br/>\n", fleetLegacyList(fleet.Ships), value.TargetName, fleetGalaxyLink(value.TargetGalaxy, value.TargetSystem, value.TargetPosition), fleetLegacyNumber(fleet.Metal), fleetLegacyNumber(fleet.Crystal), fleetLegacyNumber(fleet.Deuterium+float64(fleet.Fuel/2)))
 	return r.insertFleetMessage(ctx, messagesTable, value.OriginOwnerID, "Fleet Command", "Fleet retention", text, at)
+}
+
+func (r FleetRepository) insertRecycleArrivalMessage(ctx context.Context, messagesTable string, value fleetMessageContext, recyclers int, cargo float64, target recycleTargetState, metal float64, crystal float64, at int64) error {
+	subject := "\n<span class=\"espionagereport\">Intelligence</span>\n"
+	text := fmt.Sprintf("The %s recyclers have a total capacity of %s. The debris field contains %s metal and %s crystal. Recycled %s metal and %s crystal.", fleetLegacyNumber(float64(recyclers)), fleetLegacyNumber(cargo), fleetLegacyNumber(target.Metal), fleetLegacyNumber(target.Crystal), fleetLegacyNumber(metal), fleetLegacyNumber(crystal))
+	return r.insertFleetMessage(ctx, messagesTable, value.OriginOwnerID, "Fleet ", subject, text, at)
 }
 
 func (r FleetRepository) insertFleetReturnMessage(ctx context.Context, messagesTable string, value fleetMessageContext, fleet recallFleetRow, at int64) error {
@@ -708,6 +798,13 @@ func copyFleetCounts(counts domaingame.FleetCounts) domaingame.FleetCounts {
 
 func maxFloat(left float64, right float64) float64 {
 	if left > right {
+		return left
+	}
+	return right
+}
+
+func minFloat(left float64, right float64) float64 {
+	if left < right {
 		return left
 	}
 	return right
