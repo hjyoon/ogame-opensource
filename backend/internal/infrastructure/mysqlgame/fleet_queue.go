@@ -123,6 +123,10 @@ func (r FleetRepository) FinishDueFleetQueues(ctx context.Context, until int) er
 	if err != nil {
 		return err
 	}
+	battleTable, err := tableName(r.prefix, "battledata")
+	if err != nil {
+		return err
+	}
 
 	frozen, err := r.loadUniverseFrozen(ctx, uniTable)
 	if err != nil {
@@ -137,7 +141,7 @@ func (r FleetRepository) FinishDueFleetQueues(ctx context.Context, until int) er
 		return err
 	}
 	for _, task := range tasks {
-		if err := r.finishFleetQueueTask(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, messagesTable, usersTable, expeditionTable, task); err != nil {
+		if err := r.finishFleetQueueTask(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, messagesTable, usersTable, expeditionTable, battleTable, task); err != nil {
 			return err
 		}
 	}
@@ -173,7 +177,7 @@ func (r FleetRepository) loadDueFleetQueueTasks(ctx context.Context, queueTable 
 	return tasks, nil
 }
 
-func (r FleetRepository) finishFleetQueueTask(ctx context.Context, fleetTable string, fleetLogsTable string, queueTable string, planetsTable string, messagesTable string, usersTable string, expeditionTable string, task fleetQueueTask) error {
+func (r FleetRepository) finishFleetQueueTask(ctx context.Context, fleetTable string, fleetLogsTable string, queueTable string, planetsTable string, messagesTable string, usersTable string, expeditionTable string, battleTable string, task fleetQueueTask) error {
 	fleet, found, err := r.loadRecallFleetAnyOwner(ctx, fleetTable, task.FleetID)
 	if err != nil {
 		return err
@@ -183,6 +187,8 @@ func (r FleetRepository) finishFleetQueueTask(ctx context.Context, fleetTable st
 	}
 
 	switch fleet.Mission {
+	case domaingame.FleetMissionAttack:
+		return r.finishAttackFleetArrival(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, messagesTable, battleTable, task, fleet)
 	case domaingame.FleetMissionTransport:
 		return r.finishTransportFleetArrival(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)
 	case domaingame.FleetMissionDeploy:

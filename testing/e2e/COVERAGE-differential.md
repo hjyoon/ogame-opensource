@@ -14,7 +14,7 @@ HTTP/DB effects, and restore again.
 | Shipyard/defense | 2 | batch debit, per-unit completion, queue timing, units/score/ranks | PASS |
 | Advanced building | 2 | demolition, Commander queue cancel/level shift/propagation | PASS |
 | Defense limits | 3 | dome uniqueness, missile capacity, mixed queue order/completion | PASS |
-| Fleet lifecycle | 4 | dispatch, transport/recall/deploy/recycle, cargo, messages/logs | PASS |
+| Fleet lifecycle | 5 | transport/recall/deploy/recycle, unguarded attack/plunder/report | PASS |
 
 Resource cases cover partial production, 0-100 boundary values, and all-100
 production. Each side logs in immediately before its action because login rotates
@@ -40,7 +40,7 @@ after Go compatibility smoke and before fixture cleanup.
 
 ## Expansion Order
 
-1. Combat, plunder, repair, reports, moon creation/destruction.
+1. Guarded combat, losses/debris, defence repair, moon creation/destruction.
 2. Colony, missiles, expedition, phalanx and Jump Gate.
 3. Account, alliance, messages, buddy and Admin mutations.
 
