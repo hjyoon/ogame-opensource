@@ -835,7 +835,23 @@ func gameOptionsService(cfg config.Config, logger *slog.Logger, sessions apppubl
 	}
 
 	logger.Info("universe DB game options enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
-	return appgame.NewOptionsService(sessions, mysqlgame.NewOptionsRepositoryWithSecret(db, cfg.UniDBPrefix, cfg.UniDBSecret))
+	return appgame.NewOptionsServiceWithMailer(
+		sessions,
+		mysqlgame.NewOptionsRepositoryWithSecret(db, cfg.UniDBPrefix, cfg.UniDBSecret),
+		optionsChangeMailer(cfg, logger),
+	)
+}
+
+func optionsChangeMailer(cfg config.Config, logger *slog.Logger) appgame.OptionsMailer {
+	if !cfg.SMTPEnabled {
+		return nil
+	}
+	logger.Info("game options SMTP enabled", "addr", cfg.SMTPAddr, "publicBaseURL", cfg.PublicBaseURL)
+	return inframail.NewOptionsChangeMailer(inframail.SMTPConfig{
+		Addr:          cfg.SMTPAddr,
+		From:          cfg.SMTPFrom,
+		PublicBaseURL: cfg.PublicBaseURL,
+	}, cfg.UniNumber)
 }
 
 func registrationValidator(cfg config.Config, logger *slog.Logger, pools databasePools) apppublicsite.RegistrationDraftValidator {

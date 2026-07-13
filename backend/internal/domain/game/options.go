@@ -60,18 +60,27 @@ type Options struct {
 	Account        OptionsAccount
 	Flags          OptionsFlags
 	LegacyFlags    int64
+	OutboundMail   *OptionsChangeMail `json:"-"`
 }
 
 type OptionsUser struct {
-	Name         string
-	NameLocked   bool
-	Email        string
-	PlainEmail   string
-	Validated    bool
-	Admin        int
-	FeedID       string
-	CommanderOn  bool
-	PasswordHash string
+	Name           string
+	NameLocked     bool
+	Email          string
+	PlainEmail     string
+	Validated      bool
+	Admin          int
+	FeedID         string
+	CommanderOn    bool
+	PasswordHash   string
+	ValidationCode string
+}
+
+type OptionsChangeMail struct {
+	Character      string
+	Recipient      string
+	PendingEmail   string
+	ActivationCode string
 }
 
 type OptionsUniverse struct {

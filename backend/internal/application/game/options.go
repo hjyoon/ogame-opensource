@@ -14,6 +14,10 @@ type OptionsRepository interface {
 	UpdateOptions(context.Context, OptionsUpdateQuery) (domaingame.Options, *domaingame.OptionsActionIssue, error)
 }
 
+type OptionsMailer interface {
+	SendOptionsChange(context.Context, domaingame.OptionsChangeMail) error
+}
+
 type OptionsQuery struct {
 	PlayerID int
 	PlanetID int
@@ -50,10 +54,15 @@ type OptionsResult struct {
 type OptionsService struct {
 	sessions   SessionLookup
 	repository OptionsRepository
+	mailer     OptionsMailer
 }
 
 func NewOptionsService(sessions SessionLookup, repository OptionsRepository) OptionsService {
 	return OptionsService{sessions: sessions, repository: repository}
+}
+
+func NewOptionsServiceWithMailer(sessions SessionLookup, repository OptionsRepository, mailer OptionsMailer) OptionsService {
+	return OptionsService{sessions: sessions, repository: repository, mailer: mailer}
 }
 
 func (s OptionsService) GetOptions(ctx context.Context, command OptionsCommand) (OptionsResult, error) {
@@ -105,5 +114,11 @@ func (s OptionsService) UpdateOptions(ctx context.Context, command OptionsUpdate
 	if err != nil {
 		return OptionsResult{}, err
 	}
+	if options.OutboundMail != nil && s.mailer != nil {
+		if err := s.mailer.SendOptionsChange(ctx, *options.OutboundMail); err != nil {
+			return OptionsResult{}, err
+		}
+	}
+	options.OutboundMail = nil
 	return OptionsResult{Authenticated: true, Options: options, ActionIssue: issue}, nil
 }

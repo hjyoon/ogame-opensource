@@ -449,11 +449,17 @@ func TestOptionsRepositoryChangesEmailAndQueuesPermanentUpdate(t *testing.T) {
 	results := append(optionsReadResultsWithPassword(now, 0, 0, legacyPasswordHash("oldpass123", "secret")),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{0})},
 	)
-	results = append(results, optionsReadResultsWithPassword(now, 0, 0, legacyPasswordHash("oldpass123", "secret"))...)
+	updatedResults := optionsReadResultsWithPassword(now, 0, 0, legacyPasswordHash("oldpass123", "secret"))
+	updatedRow := optionsUserRowWithVacationAndPassword(now, 0, 0, 0, 0, legacyPasswordHash("oldpass123", "secret"))
+	updatedRow[2] = "new@example.test"
+	updatedRow[4] = 0
+	updatedRow[22] = legacyPasswordHash(fmt.Sprintf("%d", now.Unix()), "secret")
+	updatedResults[4] = fakeQueryResult{rows: fakeRowsFromValues(updatedRow)}
+	results = append(results, updatedResults...)
 	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: results}}
 	repository := NewOptionsRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret", func() time.Time { return now })
 
-	_, issue, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+	options, issue, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
 		PlayerID: 42,
 		PlanetID: 99,
 		Mutation: domaingame.OptionsMutation{
@@ -470,6 +476,12 @@ func TestOptionsRepositoryChangesEmailAndQueuesPermanentUpdate(t *testing.T) {
 	}
 	if issue == nil || issue.Code != domaingame.OptionsIssueEmailChanged {
 		t.Fatalf("expected email changed issue, got %+v", issue)
+	}
+	if options.OutboundMail == nil || options.OutboundMail.Character != "Legor" ||
+		options.OutboundMail.Recipient != "permanent@example.test" ||
+		options.OutboundMail.PendingEmail != "new@example.test" ||
+		options.OutboundMail.ActivationCode != legacyPasswordHash(fmt.Sprintf("%d", now.Unix()), "secret") {
+		t.Fatalf("unexpected options change mail: %+v", options.OutboundMail)
 	}
 	if len(runner.execs) < 4 ||
 		!strings.Contains(runner.execs[0].sql, "validated = 0") ||
@@ -496,12 +508,14 @@ func TestOptionsRepositoryHandlesUnvalidatedAccountBranches(t *testing.T) {
 		wantIssue  string
 		wantExecs  int
 		wantQueued bool
+		wantMail   bool
 	}{
 		{
 			name:      "resend activation",
 			mutation:  domaingame.OptionsMutation{ResendActivation: true},
 			updated:   "pending@example.test",
 			wantIssue: domaingame.OptionsIssueActivationResent,
+			wantMail:  true,
 		},
 		{
 			name:      "wrong password",
@@ -530,6 +544,7 @@ func TestOptionsRepositoryHandlesUnvalidatedAccountBranches(t *testing.T) {
 			wantIssue:  domaingame.OptionsIssueEmailChanged,
 			wantExecs:  3,
 			wantQueued: true,
+			wantMail:   true,
 		},
 	}
 	for _, tt := range tests {
@@ -553,6 +568,14 @@ func TestOptionsRepositoryHandlesUnvalidatedAccountBranches(t *testing.T) {
 			}
 			if tt.wantQueued && (!strings.Contains(runner.execs[0].sql, "validatemd") || runner.execs[2].args[1] != "ChangeEmail") {
 				t.Fatalf("expected validation and queue writes, got %+v", runner.execs)
+			}
+			if tt.wantMail {
+				if options.OutboundMail == nil || options.OutboundMail.Recipient != "permanent@example.test" ||
+					options.OutboundMail.PendingEmail != tt.updated || options.OutboundMail.ActivationCode != "validation-code" {
+					t.Fatalf("unexpected options change mail: %+v", options.OutboundMail)
+				}
+			} else if options.OutboundMail != nil {
+				t.Fatalf("unexpected options change mail: %+v", options.OutboundMail)
 			}
 		})
 	}
@@ -1029,7 +1052,7 @@ func TestOptionsRepositoryLoadErrors(t *testing.T) {
 			name: "user scan",
 			results: append(optionsOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues([]any{
 				"Legor", "bad-name-changed", "legor@example.test", "permanent@example.test", 1, "en", "/evolution/", 1, 0, 1, 1, 5, 8,
-				int64(0x1), 0, 0, 0, 0, int64(0), now.Add(time.Hour).Unix(), "feedid", legacyPasswordHash("oldpass123", "secret"),
+				int64(0x1), 0, 0, 0, 0, int64(0), now.Add(time.Hour).Unix(), "feedid", legacyPasswordHash("oldpass123", "secret"), "validation-code",
 			})}),
 			want: "expected int",
 		},
@@ -1175,7 +1198,7 @@ func optionsUserRowWithVacation(now time.Time, deletionQueued int, deletionAt in
 func optionsUserRowWithVacationAndPassword(now time.Time, deletionQueued int, deletionAt int64, vacation int, vacationUntil int64, passwordHash string) []any {
 	return []any{
 		"Legor", 0, "legor@example.test", "permanent@example.test", 1, "en", "/evolution/", 1, 0, 1, 1, 5, 8,
-		int64(0x1), 0, vacation, vacationUntil, deletionQueued, deletionAt, now.Add(time.Hour).Unix(), "feedid", passwordHash,
+		int64(0x1), 0, vacation, vacationUntil, deletionQueued, deletionAt, now.Add(time.Hour).Unix(), "feedid", passwordHash, "validation-code",
 	}
 }
 

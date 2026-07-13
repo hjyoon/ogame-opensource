@@ -205,10 +205,12 @@ func (r OptionsRepository) updateOptions(ctx context.Context, query appgame.Opti
 	disable := 0
 	disableUntil := int64(0)
 	issue := domaingame.OptionsSavedIssue()
+	mailRequested := false
 	if currentIssue, err := r.applyIdentityMutations(ctx, usersTable, queueTable, query.PlayerID, normalized.OptionsMutation, current); err != nil {
 		return domaingame.Options{}, nil, err
 	} else if currentIssue != nil {
 		issue = currentIssue
+		mailRequested = currentIssue.Code == domaingame.OptionsIssueEmailChanged
 	}
 	if normalized.VacationChanged {
 		allowed, err := r.canEnableVacation(ctx, queueTable, query.PlayerID)
@@ -224,6 +226,9 @@ func (r OptionsRepository) updateOptions(ctx context.Context, query appgame.Opti
 				return domaingame.Options{}, nil, err
 			}
 			updated, err := r.GetOptions(ctx, appgame.OptionsQuery{PlayerID: query.PlayerID, PlanetID: query.PlanetID})
+			if mailRequested {
+				attachOptionsChangeMail(&updated)
+			}
 			return updated, domaingame.OptionsVacationEnabledIssue(time.Unix(vacationUntil, 0)), err
 		}
 		issue = domaingame.OptionsVacationBlockedIssue()
@@ -295,6 +300,9 @@ func (r OptionsRepository) updateOptions(ctx context.Context, query appgame.Opti
 	if feedIssue != nil {
 		issue = feedIssue
 	}
+	if mailRequested {
+		attachOptionsChangeMail(&updated)
+	}
 	return updated, issue, nil
 }
 
@@ -328,7 +336,19 @@ func (r OptionsRepository) updateUnvalidatedOptions(ctx context.Context, query a
 		}
 	}
 	updated, err := r.GetOptions(ctx, appgame.OptionsQuery{PlayerID: query.PlayerID, PlanetID: query.PlanetID})
+	if issue.Code == domaingame.OptionsIssueEmailChanged || issue.Code == domaingame.OptionsIssueActivationResent {
+		attachOptionsChangeMail(&updated)
+	}
 	return updated, issue, err
+}
+
+func attachOptionsChangeMail(options *domaingame.Options) {
+	options.OutboundMail = &domaingame.OptionsChangeMail{
+		Character:      options.User.Name,
+		Recipient:      options.User.PlainEmail,
+		PendingEmail:   options.User.Email,
+		ActivationCode: options.User.ValidationCode,
+	}
 }
 
 func (r OptionsRepository) updateVacationOptions(ctx context.Context, query appgame.OptionsUpdateQuery, usersTable string, current domaingame.Options, mutation domaingame.OptionsMutation) (domaingame.Options, *domaingame.OptionsActionIssue, error) {
@@ -355,7 +375,7 @@ func (r OptionsRepository) loadOptions(ctx context.Context, playerID int) (domai
 
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT oname, COALESCE(name_changed, 0), COALESCE(email, ''), COALESCE(pemail, ''), COALESCE(validated, 0), COALESCE(lang, ''), COALESCE(skin, ''), COALESCE(useskin, 0), COALESCE(deact_ip, 0), COALESCE(sortby, 0), COALESCE(sortorder, 0), COALESCE(maxspy, 1), COALESCE(maxfleetmsg, 3), COALESCE(flags, 0), COALESCE(admin, 0), COALESCE(vacation, 0), COALESCE(vacation_until, 0), COALESCE(disable, 0), COALESCE(disable_until, 0), COALESCE(com_until, 0), COALESCE(feedid, ''), COALESCE(password, '') FROM %s WHERE player_id = ? LIMIT 1", usersTable),
+		fmt.Sprintf("SELECT oname, COALESCE(name_changed, 0), COALESCE(email, ''), COALESCE(pemail, ''), COALESCE(validated, 0), COALESCE(lang, ''), COALESCE(skin, ''), COALESCE(useskin, 0), COALESCE(deact_ip, 0), COALESCE(sortby, 0), COALESCE(sortorder, 0), COALESCE(maxspy, 1), COALESCE(maxfleetmsg, 3), COALESCE(flags, 0), COALESCE(admin, 0), COALESCE(vacation, 0), COALESCE(vacation_until, 0), COALESCE(disable, 0), COALESCE(disable_until, 0), COALESCE(com_until, 0), COALESCE(feedid, ''), COALESCE(password, ''), COALESCE(validatemd, '') FROM %s WHERE player_id = ? LIMIT 1", usersTable),
 		playerID,
 	)
 	if err != nil {
@@ -391,6 +411,7 @@ func (r OptionsRepository) loadOptions(ctx context.Context, playerID int) (domai
 	var commanderUntil int64
 	var feedID string
 	var passwordHash string
+	var validationCode string
 	if err := rows.Scan(
 		&name,
 		&nameChanged,
@@ -414,6 +435,7 @@ func (r OptionsRepository) loadOptions(ctx context.Context, playerID int) (domai
 		&commanderUntil,
 		&feedID,
 		&passwordHash,
+		&validationCode,
 	); err != nil {
 		return domaingame.OptionsUser{}, domaingame.OptionsUniverse{}, domaingame.OptionsSettings{}, domaingame.OptionsAccount{}, 0, err
 	}
@@ -448,15 +470,16 @@ func (r OptionsRepository) loadOptions(ctx context.Context, playerID int) (domai
 	}
 
 	return domaingame.OptionsUser{
-			Name:         name,
-			NameLocked:   nameChanged != 0,
-			Email:        email,
-			PlainEmail:   plainEmail,
-			Validated:    validated != 0,
-			Admin:        admin,
-			FeedID:       feedID,
-			CommanderOn:  commanderUntil > r.now().Unix(),
-			PasswordHash: passwordHash,
+			Name:           name,
+			NameLocked:     nameChanged != 0,
+			Email:          email,
+			PlainEmail:     plainEmail,
+			Validated:      validated != 0,
+			Admin:          admin,
+			FeedID:         feedID,
+			CommanderOn:    commanderUntil > r.now().Unix(),
+			PasswordHash:   passwordHash,
+			ValidationCode: validationCode,
 		},
 		domaingame.OptionsUniverse{
 			Language:      universeLanguage,

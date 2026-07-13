@@ -40,8 +40,12 @@ func TestOptionsServiceUpdatesOptionsForAuthenticatedSession(t *testing.T) {
 		Authenticated: true,
 		Session:       domainpublicsite.GameSession{PlayerID: 42},
 	}}
-	repository := &fakeOptionsRepository{options: domaingame.Options{Settings: domaingame.OptionsSettings{MaxSpy: 7}}, issue: issue}
-	service := NewOptionsService(sessions, repository)
+	repository := &fakeOptionsRepository{options: domaingame.Options{
+		Settings:     domaingame.OptionsSettings{MaxSpy: 7},
+		OutboundMail: &domaingame.OptionsChangeMail{Character: "Legor", Recipient: "legor@example.test"},
+	}, issue: issue}
+	mailer := &fakeOptionsMailer{}
+	service := NewOptionsServiceWithMailer(sessions, repository, mailer)
 
 	result, err := service.UpdateOptions(context.Background(), OptionsUpdateCommand{
 		PublicSession: "public",
@@ -52,7 +56,8 @@ func TestOptionsServiceUpdatesOptionsForAuthenticatedSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !result.Authenticated || result.ActionIssue.Code != domaingame.OptionsIssueSaved ||
-		repository.updateQuery.PlayerID != 42 || repository.updateQuery.Mutation.MaxSpy != 7 {
+		repository.updateQuery.PlayerID != 42 || repository.updateQuery.Mutation.MaxSpy != 7 ||
+		mailer.change.Character != "Legor" || result.Options.OutboundMail != nil {
 		t.Fatalf("unexpected update result/query: result=%+v query=%+v", result, repository.updateQuery)
 	}
 }
@@ -99,6 +104,12 @@ func TestOptionsServiceReturnsUnauthenticatedAndErrors(t *testing.T) {
 	}}, &fakeOptionsRepository{err: errors.New("update failed")}).UpdateOptions(context.Background(), OptionsUpdateCommand{}); err == nil || !strings.Contains(err.Error(), "update failed") {
 		t.Fatalf("expected update repository error, got %v", err)
 	}
+	if _, err := NewOptionsServiceWithMailer(&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{
+		Authenticated: true,
+		Session:       domainpublicsite.GameSession{PlayerID: 42},
+	}}, &fakeOptionsRepository{options: domaingame.Options{OutboundMail: &domaingame.OptionsChangeMail{Recipient: "user@example.test"}}}, &fakeOptionsMailer{err: errors.New("SMTP failed")}).UpdateOptions(context.Background(), OptionsUpdateCommand{}); err == nil || !strings.Contains(err.Error(), "SMTP failed") {
+		t.Fatalf("expected mailer error, got %v", err)
+	}
 }
 
 type fakeOptionsRepository struct {
@@ -117,4 +128,14 @@ func (f *fakeOptionsRepository) GetOptions(_ context.Context, query OptionsQuery
 func (f *fakeOptionsRepository) UpdateOptions(_ context.Context, query OptionsUpdateQuery) (domaingame.Options, *domaingame.OptionsActionIssue, error) {
 	f.updateQuery = query
 	return f.options, f.issue, f.err
+}
+
+type fakeOptionsMailer struct {
+	change domaingame.OptionsChangeMail
+	err    error
+}
+
+func (f *fakeOptionsMailer) SendOptionsChange(_ context.Context, change domaingame.OptionsChangeMail) error {
+	f.change = change
+	return f.err
 }

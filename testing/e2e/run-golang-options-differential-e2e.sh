@@ -4,6 +4,7 @@ set -eu
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 LEGACY_BASE_URL="${OGAME_LEGACY_BASE_URL:-http://127.0.0.1:8888}"
 GO_BASE_URL="${OGAME_GO_BASE_URL:-http://127.0.0.1:${OGAME_GO_PORT:-8890}}"
+MAILHOG_BASE_URL="${OGAME_MAILHOG_BASE_URL:-http://127.0.0.1:${OGAME_MAILHOG_PORT:-8026}}"
 FIXTURE="${OGAME_DIFFERENTIAL_FIXTURE:-$ROOT_DIR/.tmp/golang-smoke-fixture.json}"
 REPORT="${OGAME_OPTIONS_DIFFERENTIAL_REPORT:-$ROOT_DIR/.tmp/golang-options-differential.json}"
 PASSWORD="${OGAME_GO_LOGIN_SMOKE_PASS:-admin}"
@@ -22,6 +23,36 @@ other_id="$(jq -r '.message_send.recipient.player_id // 0' "$FIXTURE")"
 db_query() {
   docker compose -f "$ROOT_DIR/compose.golang.yaml" exec -T mysql \
     sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -N -B -r -uroot uni -e "$1"' sh "$1"
+}
+
+clear_mailhog() {
+  curl --fail --silent --show-error --request DELETE "$MAILHOG_BASE_URL/api/v1/messages" >/dev/null
+}
+
+capture_mail() {
+  mail_json="$(curl --fail --silent --show-error "$MAILHOG_BASE_URL/api/v2/messages")"
+  if [ "$expects_mail" = 1 ]; then
+    attempt=0
+    while [ "$(printf '%s' "$mail_json" | jq -r '.total // 0')" -eq 0 ] && [ "$attempt" -lt 20 ]; do
+      sleep 0.1
+      mail_json="$(curl --fail --silent --show-error "$MAILHOG_BASE_URL/api/v2/messages")"
+      attempt=$((attempt + 1))
+    done
+  fi
+  mail="$(printf '%s' "$mail_json" | jq -cS '
+    def decoded_subject:
+      if test("^=\\?UTF-8\\?B\\?.*\\?=$"; "i") then
+        capture("^=\\?UTF-8\\?B\\?(?<encoded>.*)\\?=$"; "i").encoded | @base64d
+      else . end | gsub("[[:space:]]+$"; "");
+    def normalized_body:
+      gsub("\\r"; "") |
+      gsub("https?://[^[:space:]]+/game/validate\\.php\\?ack=[^[:space:]]+"; "{activation-link}") |
+      gsub("[[:space:]]+$"; "");
+    {count:(.total // 0), messages:([.items[] | {
+      recipients:([.To[] | (.Mailbox + "@" + .Domain)] | sort),
+      subject:((.Content.Headers.Subject[0] // "") | decoded_subject),
+      body:((.Content.Body // "") | normalized_body)
+    }] | sort_by(.recipients[0]))}' )"
 }
 
 users_backup="uni1_e2e_optdiff_users_$$"
@@ -85,6 +116,7 @@ configure_case() {
   email_value="$actor_email"; vacation=0; disable_vacation=0; delete_account=0
   espionage=0; write_message=0; buddy=0; missile=0; report=0; no_folders=0
   feed_enabled=0; feed_type=""; hide_email=0; resend_activation=0
+  expects_mail=0
   case "$case_name" in
     settings) language=fr; skin_path=/download/use/lego/; use_skin=0; deactivate_ip=0; sort_by=2; sort_order=1; max_spy=9; max_fleet=11 ;;
     clamp) language=english; sort_by=9999; sort_order=-9999; max_spy=-42; max_fleet=99999 ;;
@@ -97,10 +129,10 @@ configure_case() {
     email-password-precedence) email_value=bad-email; old_password=wrongpass ;;
     email-invalid) email_value=bad-email; old_password=$PASSWORD ;;
     email-used) email_value="$other_email"; old_password=$PASSWORD ;;
-    email-success) email_value=options-new@example.local; old_password=$PASSWORD ;;
+    email-success) email_value=options-new@example.local; old_password=$PASSWORD; expects_mail=1 ;;
     unvalidated-noop) db_query "UPDATE uni1_users SET validated=0,email='pending-options@example.local',validatemd='seed-code' WHERE player_id=$actor_id" >/dev/null; email_value=pending-options@example.local; language=fr ;;
-    unvalidated-change) db_query "UPDATE uni1_users SET validated=0,email='pending-options@example.local',validatemd='seed-code' WHERE player_id=$actor_id" >/dev/null; email_value=pending-new@example.local; old_password=$PASSWORD; language=fr ;;
-    activation-resend) db_query "UPDATE uni1_users SET validated=0,email='pending-options@example.local',validatemd='seed-code' WHERE player_id=$actor_id" >/dev/null; email_value=pending-options@example.local; resend_activation=1; language=fr ;;
+    unvalidated-change) db_query "UPDATE uni1_users SET validated=0,email='pending-options@example.local',validatemd='seed-code' WHERE player_id=$actor_id" >/dev/null; email_value=pending-new@example.local; old_password=$PASSWORD; language=fr; expects_mail=1 ;;
+    activation-resend) db_query "UPDATE uni1_users SET validated=0,email='pending-options@example.local',validatemd='seed-code' WHERE player_id=$actor_id" >/dev/null; email_value=pending-options@example.local; resend_activation=1; language=fr; expects_mail=1 ;;
     deletion-queue) delete_account=1 ;;
     deletion-cancel) db_query "UPDATE uni1_users SET disable=1,disable_until=UNIX_TIMESTAMP()+600 WHERE player_id=$actor_id" >/dev/null ;;
     vacation-enable) vacation=1; language=fr; sort_by=2 ;;
@@ -166,6 +198,7 @@ FROM (SELECT * FROM uni1_planets WHERE owner_id=$actor_id ORDER BY planet_id) p"
 
 run_side() {
   side="$1"; case_name="$2"; configure_case "$case_name"
+  clear_mailhog
   form=""; append_form db_character "$name_value"; append_form db_password "$old_password"; append_form newpass1 "$new_password"
   append_form newpass2 "$repeat_password"; append_form db_email "$email_value"; append_form dpath "$skin_path"; append_form lang "$language"
   append_form settings_sort "$sort_by"; append_form settings_order "$sort_order"; append_form spio_anz "$max_spy"; append_form settings_fleetactions "$max_fleet"
@@ -205,10 +238,11 @@ feedType:$feedType,hideGoEmail:($hide==1),resendActivation:($resend==1)}')"
   cookie_cleared=false
   grep -qi '^Set-Cookie: prsess_.*\(expires=Thu, 01 Jan 1970\|Max-Age=0\)' "$TMP_DIR/$side-$case_name.headers" && cookie_cleared=true || true
   state="$(capture_state)"
+  capture_mail
   action_issue=""
   [ "$side" = go ] && action_issue="$(jq -r '.actionIssue.code // empty' "$TMP_DIR/$side-$case_name.body" 2>/dev/null || true)"
-  normalized="$(jq -ncS --argjson http "$http" --argjson cookieCleared "$cookie_cleared" --arg issue "$action_issue" --argjson state "$state" \
-    '{http:$http,cookieCleared:$cookieCleared,issue:$issue,state:$state}')"
+  normalized="$(jq -ncS --argjson http "$http" --argjson cookieCleared "$cookie_cleared" --arg issue "$action_issue" --argjson state "$state" --argjson mail "$mail" \
+    '{http:$http,cookieCleared:$cookieCleared,issue:$issue,state:$state,mail:$mail}')"
 }
 
 results="$TMP_DIR/results.jsonl"; : > "$results"; all_pass=true
@@ -222,6 +256,7 @@ for case_name in $cases; do
   run_side go "$case_name"; go="$normalized"
   pass=true
   [ "$(printf '%s' "$legacy" | jq -cS '.state')" = "$(printf '%s' "$go" | jq -cS '.state')" ] || pass=false
+  [ "$(printf '%s' "$legacy" | jq -cS '.mail')" = "$(printf '%s' "$go" | jq -cS '.mail')" ] || pass=false
   [ "$(printf '%s' "$legacy" | jq -r '.cookieCleared')" = "$(printf '%s' "$go" | jq -r '.cookieCleared')" ] || pass=false
   printf '%s' "$legacy" | jq -e '.http==200 or .http==302' >/dev/null || pass=false
   printf '%s' "$go" | jq -e '.http==200' >/dev/null || pass=false
@@ -230,7 +265,7 @@ for case_name in $cases; do
     '{name:$name,pass:$pass,legacy:$legacy,go:$go}' >> "$results"
 done
 
-jq -s --argjson pass "$all_pass" '{pass:$pass,normalization:"generated session, validation, feed IDs and wall-clock deadlines reduce to stable contracts; persisted gameplay/account values remain exact",cases:.}' "$results" > "$REPORT"
+jq -s --argjson pass "$all_pass" '{pass:$pass,normalization:"generated session, validation, feed IDs, wall-clock deadlines and activation hosts/codes reduce to stable contracts; persisted account state and normalized mail content remain exact",cases:.}' "$results" > "$REPORT"
 [ "$all_pass" = true ]
 case_count="$(printf '%s\n' $cases | wc -l | tr -d ' ')"
 printf 'Go/PHP options differential E2E: PASS (%s cases)\n' "$case_count"
