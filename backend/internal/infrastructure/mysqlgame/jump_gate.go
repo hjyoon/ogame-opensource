@@ -14,15 +14,16 @@ import (
 )
 
 type JumpGateRepository struct {
-	queryer Queryer
-	execer  Execer
-	prefix  string
-	now     func() time.Time
+	queryer         Queryer
+	execer          Execer
+	prefix          string
+	now             func() time.Time
+	updateResources bool
 }
 
 func NewJumpGateRepository(db *sql.DB, prefix string) JumpGateRepository {
 	runner := SQLQueryer{DB: db}
-	return JumpGateRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now}
+	return JumpGateRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, updateResources: true}
 }
 
 func NewJumpGateReadRepository(db *sql.DB, prefix string) JumpGateRepository {
@@ -44,7 +45,10 @@ func (r JumpGateRepository) GetJumpGate(ctx context.Context, query appgame.JumpG
 	if err != nil {
 		return domaingame.JumpGate{}, err
 	}
-	overview, err := NewOverviewRepositoryWithRunner(r.queryer, r.execer, r.prefix).GetOverview(ctx, appgame.OverviewQuery{
+	overviewRepository := NewOverviewRepositoryWithRunner(r.queryer, r.execer, r.prefix)
+	overviewRepository.now = r.now
+	overviewRepository.updateResources = r.updateResources
+	overview, err := overviewRepository.GetOverview(ctx, appgame.OverviewQuery{
 		PlayerID: query.PlayerID,
 		PlanetID: query.PlanetID,
 	})
@@ -87,6 +91,8 @@ func (r JumpGateRepository) PreviewMCPJumpGate(ctx context.Context, playerID int
 	if r.queryer == nil {
 		return domainmcp.JumpGateResult{}, errors.New("jump gate reader unavailable")
 	}
+	// A dry-run must not persist the legacy page-level resource settlement.
+	r.updateResources = false
 	planetsTable, err := tableName(r.prefix, "planets")
 	if err != nil {
 		return domainmcp.JumpGateResult{}, err
@@ -297,10 +303,7 @@ func (r JumpGateRepository) Jump(ctx context.Context, query appgame.JumpGateMuta
 		return domaingame.JumpGate{}, err
 	}
 	cooldown := domaingame.JumpGateCooldownUntil(now, fleetSpeed)
-	if err := r.adjustJumpGateShips(ctx, planetsTable, source.ID, query.PlayerID, selection, -1, cooldown); err != nil {
-		return domaingame.JumpGate{}, err
-	}
-	if err := r.adjustJumpGateShips(ctx, planetsTable, target.ID, query.PlayerID, selection, 1, cooldown); err != nil {
+	if err := r.moveJumpGateShips(ctx, planetsTable, source.ID, target.ID, query.PlayerID, selection, now, cooldown); err != nil {
 		return domaingame.JumpGate{}, err
 	}
 	source.GateUntil = cooldown
@@ -329,7 +332,10 @@ func (r JumpGateRepository) jumpGateViewIssue(playerID int, source domaingame.Ju
 }
 
 func (r JumpGateRepository) jumpGateMutationResult(ctx context.Context, query appgame.JumpGateMutationQuery, planetsTable string, source domaingame.JumpGateMoon, target domaingame.JumpGateMoon, issue *domaingame.JumpGateActionIssue) (domaingame.JumpGate, error) {
-	overview, err := NewOverviewRepositoryWithRunner(r.queryer, r.execer, r.prefix).GetOverview(ctx, appgame.OverviewQuery{
+	overviewRepository := NewOverviewRepositoryWithRunner(r.queryer, r.execer, r.prefix)
+	overviewRepository.now = r.now
+	overviewRepository.updateResources = r.updateResources
+	overview, err := overviewRepository.GetOverview(ctx, appgame.OverviewQuery{
 		PlayerID: query.PlayerID,
 		PlanetID: source.ID,
 	})
@@ -465,7 +471,23 @@ func (r JumpGateRepository) loadJumpGateFleetSpeed(ctx context.Context, uniTable
 	return speed, nil
 }
 
-func (r JumpGateRepository) adjustJumpGateShips(ctx context.Context, planetsTable string, planetID int, playerID int, ships map[int]int, direction int, cooldown int64) error {
+func (r JumpGateRepository) moveJumpGateShips(ctx context.Context, planetsTable string, sourceID int, targetID int, playerID int, ships map[int]int, now int64, cooldown int64) error {
+	move := func(queryer Queryer, execer Execer) error {
+		transactionRepository := r
+		transactionRepository.queryer = queryer
+		transactionRepository.execer = execer
+		if err := transactionRepository.adjustJumpGateShips(ctx, planetsTable, sourceID, playerID, ships, -1, now, cooldown); err != nil {
+			return err
+		}
+		return transactionRepository.adjustJumpGateShips(ctx, planetsTable, targetID, playerID, ships, 1, now, cooldown)
+	}
+	if txer, ok := r.execer.(transactionRunner); ok {
+		return txer.WithTransaction(ctx, move)
+	}
+	return move(r.queryer, r.execer)
+}
+
+func (r JumpGateRepository) adjustJumpGateShips(ctx context.Context, planetsTable string, planetID int, playerID int, ships map[int]int, direction int, now int64, cooldown int64) error {
 	ids := make([]int, 0, len(domaingame.JumpGateMobileFleetIDs()))
 	args := make([]any, 0, len(ships)+3)
 	assignments := make([]string, 0, len(ships)+1)
@@ -486,13 +508,13 @@ func (r JumpGateRepository) adjustJumpGateShips(ctx context.Context, planetsTabl
 		return nil
 	}
 	assignments = append(assignments, "gate_until = ?")
-	args = append(args, cooldown, planetID, playerID)
+	args = append(args, cooldown, planetID, playerID, domaingame.PlanetTypeMoon, now)
 	if direction < 0 {
 		for _, id := range ids {
 			args = append(args, ships[id])
 		}
 	}
-	where := "planet_id = ? AND owner_id = ?"
+	where := fmt.Sprintf("planet_id = ? AND owner_id = ? AND type = ? AND `%d` > 0 AND gate_until <= ?", domaingame.BuildingJumpGate)
 	if direction < 0 {
 		where += jumpGateEnoughShipsWhere(ids)
 	}

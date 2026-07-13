@@ -25,8 +25,40 @@ type Execer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
+type transactionRunner interface {
+	WithTransaction(context.Context, func(Queryer, Execer) error) error
+}
+
+type sqlTransactionRunner struct {
+	tx *sql.Tx
+}
+
 func (q SQLQueryer) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return q.DB.ExecContext(ctx, query, args...)
+}
+
+func (q SQLQueryer) WithTransaction(ctx context.Context, run func(Queryer, Execer) error) error {
+	if q.DB == nil {
+		return errors.New("game database unavailable")
+	}
+	tx, err := q.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	runner := sqlTransactionRunner{tx: tx}
+	if err := run(runner, runner); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r sqlTransactionRunner) QueryContext(ctx context.Context, query string, args ...any) (Rows, error) {
+	return r.tx.QueryContext(ctx, query, args...)
+}
+
+func (r sqlTransactionRunner) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return r.tx.ExecContext(ctx, query, args...)
 }
 
 func NewResourcesRepository(db *sql.DB, prefix string) ResourcesRepository {

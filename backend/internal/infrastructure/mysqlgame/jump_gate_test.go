@@ -116,13 +116,18 @@ func TestMCPJumpGateStatusMapsIssueAndEmptyBranches(t *testing.T) {
 
 func TestNewJumpGateRepositoryConstructorsAndDependencyErrors(t *testing.T) {
 	repository := NewJumpGateRepository(nil, "ogame_")
+	if !repository.updateResources {
+		t.Fatal("expected production jump gate repository to settle current-planet resources")
+	}
 	if repository.prefix != "ogame_" {
 		t.Fatalf("unexpected prefix: %q", repository.prefix)
 	}
 	if _, ok := repository.queryer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL queryer, got %T", repository.queryer)
 	}
-	_ = NewJumpGateReadRepository(nil, "ogame_")
+	if NewJumpGateReadRepository(nil, "ogame_").updateResources {
+		t.Fatal("expected read-only jump gate repository not to settle resources")
+	}
 	repository = NewJumpGateRepositoryWithRunner(nil, nil, "ogame_", nil)
 	if repository.now == nil {
 		t.Fatal("expected default clock")
@@ -186,17 +191,17 @@ func TestJumpGateRepositoryMovesShipsAndSetsCooldown(t *testing.T) {
 	}
 	cooldown := domaingame.JumpGateCooldownUntil(now.Unix(), 128)
 	sourceCall := runner.execCalls[0]
-	if !strings.Contains(sourceCall.sql, "`202` = `202` - ?") || !strings.Contains(sourceCall.sql, "`204` = `204` - ?") || strings.Contains(sourceCall.sql, "`212`") {
+	if !strings.Contains(sourceCall.sql, "`202` = `202` - ?") || !strings.Contains(sourceCall.sql, "`204` = `204` - ?") || !strings.Contains(sourceCall.sql, "type = ? AND `43` > 0 AND gate_until <= ?") || strings.Contains(sourceCall.sql, "`212`") {
 		t.Fatalf("unexpected source update sql: %s", sourceCall.sql)
 	}
-	if len(sourceCall.args) != 7 || sourceCall.args[0] != 2 || sourceCall.args[1] != 1 || sourceCall.args[2] != cooldown || sourceCall.args[3] != 10 || sourceCall.args[4] != 42 || sourceCall.args[5] != 2 || sourceCall.args[6] != 1 {
+	if len(sourceCall.args) != 9 || sourceCall.args[0] != 2 || sourceCall.args[1] != 1 || sourceCall.args[2] != cooldown || sourceCall.args[3] != 10 || sourceCall.args[4] != 42 || sourceCall.args[5] != domaingame.PlanetTypeMoon || sourceCall.args[6] != now.Unix() || sourceCall.args[7] != 2 || sourceCall.args[8] != 1 {
 		t.Fatalf("unexpected source update args: %+v", sourceCall.args)
 	}
 	targetCall := runner.execCalls[1]
 	if !strings.Contains(targetCall.sql, "`202` = `202` + ?") || !strings.Contains(targetCall.sql, "gate_until = ?") {
 		t.Fatalf("unexpected target update sql: %s", targetCall.sql)
 	}
-	if len(targetCall.args) != 5 || targetCall.args[0] != 2 || targetCall.args[1] != 1 || targetCall.args[2] != cooldown || targetCall.args[3] != 20 || targetCall.args[4] != 42 {
+	if len(targetCall.args) != 7 || targetCall.args[0] != 2 || targetCall.args[1] != 1 || targetCall.args[2] != cooldown || targetCall.args[3] != 20 || targetCall.args[4] != 42 || targetCall.args[5] != domaingame.PlanetTypeMoon || targetCall.args[6] != now.Unix() {
 		t.Fatalf("unexpected target update args: %+v", targetCall.args)
 	}
 }
@@ -327,12 +332,12 @@ func TestJumpGateRepositoryHelperEdges(t *testing.T) {
 	}
 
 	repository = NewJumpGateRepositoryWithRunner(&fakeQueryer{}, &fakeGalaxyRunner{}, "ogame_", func() time.Time { return now })
-	if err := repository.adjustJumpGateShips(context.Background(), "`ogame_planets`", 10, 42, map[int]int{}, -1, 100); err != nil {
+	if err := repository.adjustJumpGateShips(context.Background(), "`ogame_planets`", 10, 42, map[int]int{}, -1, 50, 100); err != nil {
 		t.Fatalf("empty ship adjustment should be no-op: %v", err)
 	}
 	runner := &fakeGalaxyRunner{execResults: []sql.Result{fakeSQLResult(0)}}
 	repository = NewJumpGateRepositoryWithRunner(&fakeQueryer{}, runner, "ogame_", func() time.Time { return now })
-	if err := repository.adjustJumpGateShips(context.Background(), "`ogame_planets`", 10, 42, map[int]int{domaingame.FleetSmallCargo: 1}, -1, 100); err == nil || !strings.Contains(err.Error(), "did not affect one row") {
+	if err := repository.adjustJumpGateShips(context.Background(), "`ogame_planets`", 10, 42, map[int]int{domaingame.FleetSmallCargo: 1}, -1, 50, 100); err == nil || !strings.Contains(err.Error(), "did not affect one row") {
 		t.Fatalf("expected rows-affected race error, got %v", err)
 	}
 }
@@ -513,6 +518,30 @@ func TestJumpGateRepositoryMutationResultErrors(t *testing.T) {
 	}
 }
 
+func TestJumpGateRepositoryRollsBackAtomicMoveWhenTargetUpdateFails(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	base := &fakeGalaxyRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues(jumpGateMoonRow(10, 42, "Moon", domaingame.PlanetTypeMoon, 1, 0, map[int]int{domaingame.FleetSmallCargo: 5}))},
+			{rows: fakeRowsFromValues(jumpGateMoonRow(20, 42, "Target", domaingame.PlanetTypeMoon, 1, 0, nil))},
+			{rows: fakeRowsFromValues([]any{1.0})},
+		}},
+		execErrs: []error{nil, errors.New("target update failed")},
+	}
+	runner := &fakeJumpGateTransactionRunner{fakeGalaxyRunner: base}
+	repository := NewJumpGateRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	_, err := repository.Jump(context.Background(), appgame.JumpGateMutationQuery{
+		PlayerID: 42, PlanetID: 10, SourceMoonID: 10, TargetMoonID: 20,
+		Ships: map[int]int{domaingame.FleetSmallCargo: 1},
+	})
+	if err == nil || !strings.Contains(err.Error(), "target update failed") {
+		t.Fatalf("expected target update error, got %v", err)
+	}
+	if !runner.rolledBack || runner.committed || len(runner.execCalls) != 2 {
+		t.Fatalf("expected atomic rollback after the second update, got %+v", runner)
+	}
+}
+
 func TestJumpGateRepositoryHelperErrors(t *testing.T) {
 	repository := NewJumpGateRepositoryWithRunner(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("moon query failed")}}}, nil, "ogame_", nil)
 	if _, _, err := repository.loadJumpGateMoon(context.Background(), "`ogame_planets`", 10); err == nil || !strings.Contains(err.Error(), "moon query failed") {
@@ -627,4 +656,19 @@ func jumpGateMoonRow(planetID int, ownerID int, name string, planetType int, gat
 
 func jumpGateTargetRow(planetID int, ownerID int, name string, gateLevel int, gateUntil int64) []any {
 	return []any{planetID, ownerID, name, domaingame.PlanetTypeMoon, 1, 3, 4, gateLevel, gateUntil}
+}
+
+type fakeJumpGateTransactionRunner struct {
+	*fakeGalaxyRunner
+	committed  bool
+	rolledBack bool
+}
+
+func (r *fakeJumpGateTransactionRunner) WithTransaction(ctx context.Context, run func(Queryer, Execer) error) error {
+	if err := run(r, r); err != nil {
+		r.rolledBack = true
+		return err
+	}
+	r.committed = true
+	return nil
 }

@@ -16,30 +16,17 @@ compare normalized HTTP/DB effects, then restore.
 | Fleet lifecycle | 23 | transport/recall/deploy/recycle, combat, moon, colony and missile lifecycle | PASS |
 | Expedition | 10 | every result family, rewards/loss, combat reports, timing, logs | PASS |
 | Phalanx | 11 | guards, debit, fleet visibility, ACS hold/grouping, state restore | PASS |
+| Jump Gate | 13 | target filters, guards, ship move, satellite exclusion, cooldown | PASS |
 | Combat engine | 4 | outcome, shots/power, absorption, survivors | PASS |
 
 Resource cases cover partial production and 0/100 boundaries. Each side logs in
 before its action because login rotates the private cookie.
 
-Run:
+Run all cases through `testing/e2e/run-golang-migration-qa.sh`, or run an
+individual `testing/e2e/run-golang-*-differential-e2e.sh` script. For example:
 
 ```sh
-testing/e2e/run-golang-resource-differential-e2e.sh
-testing/e2e/run-golang-building-differential-e2e.sh
-testing/e2e/run-golang-research-differential-e2e.sh
-testing/e2e/run-golang-shipyard-defense-differential-e2e.sh
-testing/e2e/run-golang-building-advanced-differential-e2e.sh
-testing/e2e/run-golang-defense-limits-differential-e2e.sh
-testing/e2e/run-golang-fleet-differential-e2e.sh
-testing/e2e/run-golang-colonization-differential-e2e.sh
-testing/e2e/run-golang-missile-differential-e2e.sh
-testing/e2e/run-golang-expedition-differential-e2e.sh
-testing/e2e/run-golang-phalanx-differential-e2e.sh
-testing/e2e/run-golang-acs-attack-differential-e2e.sh
-testing/e2e/run-golang-holding-defense-differential-e2e.sh
-testing/e2e/run-golang-battle-moon-differential-e2e.sh
-testing/e2e/run-golang-moon-destruction-differential-e2e.sh
-testing/e2e/run-golang-combat-engine-differential-e2e.sh
+testing/e2e/run-golang-jump-gate-differential-e2e.sh
 ```
 
 Reports use `.tmp/golang-*-differential.json`. Queue cases normalize generated
@@ -57,8 +44,7 @@ moon ABM use, defense state, rank effects, cleanup, and legacy report HTML.
 
 ## Expansion Order
 
-1. Jump Gate.
-2. Account, alliance, messages, buddy and Admin mutations.
+1. Account, alliance, messages, buddy and Admin mutations.
 
 ## Comparison Contract
 
