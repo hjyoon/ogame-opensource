@@ -69,8 +69,12 @@ func (r FleetRepository) finishAttackFleetArrival(ctx context.Context, uniTable 
 	if err := r.ensureBattleDebris(ctx, planetsTable, messageContext, task.End); err != nil {
 		return err
 	}
+	moon, err := r.maybeCreateBattleMoon(ctx, planetsTable, usersTable, fleet.TargetPlanetID, messageContext, domaingame.Resources{})
+	if err != nil {
+		return err
+	}
 
-	report := unguardedBattleReport(messageContext, state, fleet, captured, task.End)
+	report := unguardedBattleReport(messageContext, state, fleet, captured, moon, task.End)
 	battleID, err := r.insertBattleData(ctx, battleTable, unguardedBattleSource(messageContext, state, fleet), task.End)
 	if err != nil {
 		return err
@@ -249,7 +253,7 @@ func battleReportLinkSubject(reportID int64, value fleetMessageContext, style st
 	return fmt.Sprintf("<a href=\"#\" onclick=\"fenster(\\'index.php?page=%s&session={PUBLIC_SESSION}&bericht=%d\\', \\'%s\\');\" ><span class=\"%s\">Battle report [%d:%d:%d] (V:0,A:0)</span></a>", page, reportID, window, style, value.TargetGalaxy, value.TargetSystem, value.TargetPosition)
 }
 
-func unguardedBattleReport(value fleetMessageContext, state unguardedAttackState, fleet recallFleetRow, captured domaingame.Resources, at int64) string {
+func unguardedBattleReport(value fleetMessageContext, state unguardedAttackState, fleet recallFleetRow, captured domaingame.Resources, moon battleMoonCreation, at int64) string {
 	var report strings.Builder
 	fmt.Fprintf(&report, "At %s the following fleets met in battle::<br>", time.Unix(at, 0).Format("01-02 15:04:05"))
 	report.WriteString("<table border=1 width=100%><tr>")
@@ -260,6 +264,7 @@ func unguardedBattleReport(value fleetMessageContext, state unguardedAttackState
 	fmt.Fprintf(&report, "<br>He captured<br>%s metal %s crystal, and %s deuterium", fleetLegacyNumber(captured.Metal), fleetLegacyNumber(captured.Crystal), fleetLegacyNumber(captured.Deuterium))
 	report.WriteString("<br><p><br>The attacker lost a total of 0 units.<br>The defender lost a total of 0 units.")
 	report.WriteString("<br>At these space coordinates now float 0 metal and 0 crystal.")
+	appendBattleMoonReport(&report, moon)
 	return report.String()
 }
 

@@ -67,8 +67,12 @@ func (r FleetRepository) finishGuardedAttackFleetArrival(
 	if err := r.addGuardedBattleDebris(ctx, planetsTable, messageContext, writeback.Debris); err != nil {
 		return err
 	}
+	moon, err := r.maybeCreateBattleMoon(ctx, planetsTable, usersTable, fleet.TargetPlanetID, messageContext, writeback.Debris)
+	if err != nil {
+		return err
+	}
 
-	report := combatBattleReport(result, writeback, repaired, captured, task.End)
+	report := combatBattleReport(result, writeback, repaired, captured, moon, task.End)
 	battleID, err := r.insertBattleData(ctx, battleTable, acsBattleSource(result, settings.RapidFire), task.End)
 	if err != nil {
 		return err
@@ -243,7 +247,7 @@ func battleReportLinkSubjectWithLosses(reportID int64, value fleetMessageContext
 	return fmt.Sprintf("<a href=\"#\" onclick=\"fenster(\\'index.php?page=%s&session={PUBLIC_SESSION}&bericht=%d\\', \\'%s\\');\" ><span class=\"%s\">Battle report [%d:%d:%d] (%s)</span></a>", page, reportID, window, style, value.TargetGalaxy, value.TargetSystem, value.TargetPosition, losses)
 }
 
-func combatBattleReport(result domaingame.CombatResult, writeback domaingame.CombatWriteback, repaired []map[int]int, captured domaingame.Resources, at int64) string {
+func combatBattleReport(result domaingame.CombatResult, writeback domaingame.CombatWriteback, repaired []map[int]int, captured domaingame.Resources, moon battleMoonCreation, at int64) string {
 	var report strings.Builder
 	fmt.Fprintf(&report, "At %s the following fleets met in battle::<br>", time.Unix(at, 0).Format("01-02 15:04:05"))
 	report.WriteString("<table border=1 width=100%><tr>")
@@ -288,8 +292,18 @@ func combatBattleReport(result domaingame.CombatResult, writeback domaingame.Com
 	}
 	fmt.Fprintf(&report, "<br><p><br>The attacker lost a total of %s units.<br>The defender lost a total of %s units.", combatLegacyNumber(float64(attackerLoss)), combatLegacyNumber(float64(defenderLoss)))
 	fmt.Fprintf(&report, "<br>At these space coordinates now float %s metal and %s crystal.", combatLegacyNumber(writeback.Debris.Metal), combatLegacyNumber(writeback.Debris.Crystal))
+	appendBattleMoonReport(&report, moon)
 	appendCombatRepairReport(&report, repaired)
 	return report.String()
+}
+
+func appendBattleMoonReport(report *strings.Builder, moon battleMoonCreation) {
+	if moon.Chance > 0 {
+		fmt.Fprintf(report, "<br>The chance for a moon to be created is %d %%", moon.Chance)
+	}
+	if moon.Created {
+		report.WriteString("<br>The enormous amounts of free metal and crystal draw together and form a moon around the planet.")
+	}
 }
 
 func combatBattleSlot(slot domaingame.CombatSlot, attacker bool, showTechs bool, ids []int, units map[int]int) string {

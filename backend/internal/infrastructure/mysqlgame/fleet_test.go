@@ -3110,7 +3110,7 @@ func TestGuardedCombatReportDrawRepairAndStyles(t *testing.T) {
 		AttackerLosses: []domaingame.CombatParticipantLoss{{Points: 1_000}},
 		DefenderLosses: []domaingame.CombatParticipantLoss{{Points: 2_000}},
 		Debris:         domaingame.Resources{Metal: 300, Crystal: 400},
-	}, repaired, domaingame.Resources{}, 1_700_000_000)
+	}, repaired, domaingame.Resources{}, battleMoonCreation{}, 1_700_000_000)
 	for _, want := range []string{"battle ended in a draw", "Rocket Launcher", "Light Laser", "Heavy Laser", "Gauss Cannon", "Ion Cannon", "Small Shield Dome", "Plasma Turret", "Large Shield Dome", "could be repaired"} {
 		if !strings.Contains(report, want) {
 			t.Fatalf("expected %q in draw report: %s", want, report)

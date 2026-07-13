@@ -98,8 +98,12 @@ func (r FleetRepository) finishACSAttackFleetArrival(
 	if err := r.addGuardedBattleDebris(ctx, planetsTable, value, writeback.Debris); err != nil {
 		return err
 	}
+	moon, err := r.maybeCreateBattleMoon(ctx, planetsTable, usersTable, head.TargetPlanetID, value, writeback.Debris)
+	if err != nil {
+		return err
+	}
 
-	report := combatBattleReport(result, writeback, repaired, captured, task.End)
+	report := combatBattleReport(result, writeback, repaired, captured, moon, task.End)
 	battleID, err := r.insertBattleData(ctx, battleTable, acsBattleSource(result, settings.RapidFire), task.End)
 	if err != nil {
 		return err
