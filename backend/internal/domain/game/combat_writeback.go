@@ -53,6 +53,7 @@ func RepairCombatDefense(result CombatResult, repairPercent int, repairDelta int
 
 // BuildCombatWriteback applies repaired defence and legacy fleet/defence debris factors.
 func BuildCombatWriteback(result CombatResult, repaired []map[int]int, fleetDebrisPercent int, defenseDebrisPercent int) CombatWriteback {
+	rawDefenderSurvivors := combatResultSurvivors(result.Before.Defenders, result.Rounds, false)
 	writeback := CombatWriteback{
 		AttackerSurvivors: combatResultSurvivors(result.Before.Attackers, result.Rounds, true),
 		DefenderSurvivors: combatResultSurvivors(result.Before.Defenders, result.Rounds, false),
@@ -74,7 +75,9 @@ func BuildCombatWriteback(result CombatResult, repaired []map[int]int, fleetDebr
 		addCombatDebris(&writeback.Debris, before.Units, writeback.AttackerSurvivors[slot], fleetDebrisPercent, defenseDebrisPercent)
 	}
 	for slot, before := range result.Before.Defenders {
-		writeback.DefenderLosses[slot] = combatSlotLoss(before.Units, writeback.DefenderSurvivors[slot])
+		// Legacy score and report losses count defenses destroyed in battle, even
+		// when those defenses are subsequently repaired for planet writeback.
+		writeback.DefenderLosses[slot] = combatSlotLoss(before.Units, rawDefenderSurvivors[slot])
 		addCombatDebris(&writeback.Debris, before.Units, writeback.DefenderSurvivors[slot], fleetDebrisPercent, defenseDebrisPercent)
 	}
 	return writeback

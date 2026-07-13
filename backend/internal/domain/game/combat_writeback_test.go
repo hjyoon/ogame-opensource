@@ -26,7 +26,7 @@ func TestBuildCombatWritebackFleetLossAndDebris(t *testing.T) {
 func TestBuildCombatWritebackAppliesRepairedDefense(t *testing.T) {
 	result := CombatResult{Outcome: CombatAttackerWon}
 	result.Before.Attackers = []CombatSlot{{Units: map[int]int{FleetLightFighter: 1}}}
-	result.Before.Defenders = []CombatSlot{{Units: map[int]int{DefenseRocketLauncher: 2}}}
+	result.Before.Defenders = []CombatSlot{{Units: map[int]int{DefenseRocketLauncher: 1}}}
 	result.Rounds = []CombatRound{{
 		Attackers: []CombatRoundSlot{{Units: map[int]int{FleetLightFighter: 1}}},
 		Defenders: []CombatRoundSlot{{Units: map[int]int{}}},
@@ -35,7 +35,7 @@ func TestBuildCombatWritebackAppliesRepairedDefense(t *testing.T) {
 	if writeback.DefenderSurvivors[0][DefenseRocketLauncher] != 1 {
 		t.Fatalf("expected repaired launcher survivor: %+v", writeback.DefenderSurvivors)
 	}
-	if writeback.DefenderLosses[0].Points != 2000 || writeback.DefenderLosses[0].FleetUnits != 0 || writeback.Debris.Metal != 600 || writeback.Debris.Crystal != 0 {
+	if writeback.DefenderLosses[0].Points != 2000 || writeback.DefenderLosses[0].FleetUnits != 0 || writeback.Debris.Metal != 0 || writeback.Debris.Crystal != 0 {
 		t.Fatalf("unexpected repaired defense writeback: %+v", writeback)
 	}
 }
