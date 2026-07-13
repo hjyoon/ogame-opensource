@@ -14,6 +14,7 @@ HTTP/DB effects, and restore again.
 | Shipyard/defense | 2 | batch debit, per-unit completion, queue timing, units/score/ranks | PASS |
 | Advanced building | 2 | demolition, Commander queue cancel/level shift/propagation | PASS |
 | Defense limits | 3 | dome uniqueness, missile capacity, mixed queue order/completion | PASS |
+| Fleet lifecycle | 3 | dispatch debit, fuel/cargo, transport/recall/deploy, messages/logs | PASS |
 
 Resource cases cover partial production, 0-100 boundary values, and all-100
 production. Each side logs in immediately before its action because login rotates
@@ -28,6 +29,7 @@ testing/e2e/run-golang-research-differential-e2e.sh
 testing/e2e/run-golang-shipyard-defense-differential-e2e.sh
 testing/e2e/run-golang-building-advanced-differential-e2e.sh
 testing/e2e/run-golang-defense-limits-differential-e2e.sh
+testing/e2e/run-golang-fleet-differential-e2e.sh
 ```
 
 Reports use `.tmp/golang-*-differential.json`. Queue cases
@@ -38,10 +40,9 @@ after Go compatibility smoke and before fixture cleanup.
 
 ## Expansion Order
 
-1. Fleet dispatch/recall, slots, fuel, cargo, arrival and return.
-2. Combat, plunder, debris, repair, reports, moon creation/destruction.
-3. Colony, missiles, expedition, phalanx and Jump Gate.
-4. Account, alliance, messages, buddy and Admin mutations.
+1. Combat, plunder, debris, repair, reports, moon creation/destruction.
+2. Colony, missiles, expedition, phalanx and Jump Gate.
+3. Account, alliance, messages, buddy and Admin mutations.
 
 ## Comparison Contract
 

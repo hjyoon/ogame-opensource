@@ -600,6 +600,9 @@ func TestFleetMissionDisplayAndNames(t *testing.T) {
 	if fleetName(123456) != "" {
 		t.Fatal("unknown fleet id should not have a display name")
 	}
+	if FleetName(FleetSmallCargo) != "Small Cargo" || FleetName(123456) != "" {
+		t.Fatal("exported fleet names should use the legacy catalog")
+	}
 }
 
 func TestFleetShipSpeedsMatchLegacyDriveFamilies(t *testing.T) {

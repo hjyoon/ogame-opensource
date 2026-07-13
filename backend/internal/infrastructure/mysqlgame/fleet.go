@@ -76,11 +76,12 @@ type FleetRepository struct {
 	prefix          string
 	now             func() time.Time
 	finishDueQueues bool
+	legacyEvents    bool
 }
 
 func NewFleetRepository(db *sql.DB, prefix string) FleetRepository {
 	runner := SQLQueryer{DB: db}
-	return FleetRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, finishDueQueues: true}
+	return FleetRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, finishDueQueues: true, legacyEvents: true}
 }
 
 func NewFleetReadRepository(db *sql.DB, prefix string) FleetRepository {
@@ -953,6 +954,14 @@ func (r FleetRepository) recallFleet(ctx context.Context, fleetID int, loader re
 	if err != nil {
 		return err
 	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return err
+	}
+	fleetLogsTable, err := tableName(r.prefix, "fleetlogs")
+	if err != nil {
+		return err
+	}
 
 	frozen, err := r.loadUniverseFrozen(ctx, uniTable)
 	if err != nil {
@@ -1003,7 +1012,20 @@ func (r FleetRepository) recallFleet(ctx context.Context, fleetID int, loader re
 		return err
 	}
 	if fleet.UnionID > 0 && (fleet.Mission == domaingame.FleetMissionACSAttack || fleet.Mission == domaingame.FleetMissionACSAttackHead) {
-		return r.removeEmptyRecallUnion(ctx, fleetTable, unionTable, fleet.UnionID)
+		if err := r.removeEmptyRecallUnion(ctx, fleetTable, unionTable, fleet.UnionID); err != nil {
+			return err
+		}
+	}
+	if r.legacyEvents {
+		messageContext, found, err := r.loadFleetMessageContext(ctx, usersTable, planetsTable, fleet)
+		if err != nil {
+			return err
+		}
+		if found {
+			if err := r.insertFleetTransitionLog(ctx, fleetLogsTable, messageContext, fleet, newMission, seconds, 0, now); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

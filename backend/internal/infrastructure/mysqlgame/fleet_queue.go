@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
@@ -14,6 +15,29 @@ type fleetQueueTask struct {
 	OwnerID int
 	FleetID int
 	End     int64
+}
+
+type fleetMessageContext struct {
+	OriginOwnerID   int
+	OriginOwnerName string
+	OriginName      string
+	OriginGalaxy    int
+	OriginSystem    int
+	OriginPosition  int
+	OriginType      int
+	OriginMetal     float64
+	OriginCrystal   float64
+	OriginDeuterium float64
+	TargetOwnerID   int
+	TargetOwnerName string
+	TargetName      string
+	TargetGalaxy    int
+	TargetSystem    int
+	TargetPosition  int
+	TargetType      int
+	TargetMetal     float64
+	TargetCrystal   float64
+	TargetDeuterium float64
 }
 
 type expeditionSettings struct {
@@ -89,6 +113,10 @@ func (r FleetRepository) FinishDueFleetQueues(ctx context.Context, until int) er
 	if err != nil {
 		return err
 	}
+	fleetLogsTable, err := tableName(r.prefix, "fleetlogs")
+	if err != nil {
+		return err
+	}
 
 	frozen, err := r.loadUniverseFrozen(ctx, uniTable)
 	if err != nil {
@@ -103,7 +131,7 @@ func (r FleetRepository) FinishDueFleetQueues(ctx context.Context, until int) er
 		return err
 	}
 	for _, task := range tasks {
-		if err := r.finishFleetQueueTask(ctx, fleetTable, queueTable, planetsTable, messagesTable, usersTable, expeditionTable, task); err != nil {
+		if err := r.finishFleetQueueTask(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, messagesTable, usersTable, expeditionTable, task); err != nil {
 			return err
 		}
 	}
@@ -139,7 +167,7 @@ func (r FleetRepository) loadDueFleetQueueTasks(ctx context.Context, queueTable 
 	return tasks, nil
 }
 
-func (r FleetRepository) finishFleetQueueTask(ctx context.Context, fleetTable string, queueTable string, planetsTable string, messagesTable string, usersTable string, expeditionTable string, task fleetQueueTask) error {
+func (r FleetRepository) finishFleetQueueTask(ctx context.Context, fleetTable string, fleetLogsTable string, queueTable string, planetsTable string, messagesTable string, usersTable string, expeditionTable string, task fleetQueueTask) error {
 	fleet, found, err := r.loadRecallFleetAnyOwner(ctx, fleetTable, task.FleetID)
 	if err != nil {
 		return err
@@ -150,22 +178,31 @@ func (r FleetRepository) finishFleetQueueTask(ctx context.Context, fleetTable st
 
 	switch fleet.Mission {
 	case domaingame.FleetMissionTransport:
-		return r.finishTransportFleetArrival(ctx, fleetTable, queueTable, planetsTable, task, fleet)
+		return r.finishTransportFleetArrival(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)
 	case domaingame.FleetMissionDeploy:
-		return r.finishDeployFleetArrival(ctx, fleetTable, queueTable, planetsTable, task, fleet)
+		return r.finishDeployFleetArrival(ctx, fleetTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)
 	case domaingame.FleetMissionExpedition:
 		return r.finishExpeditionArrival(ctx, fleetTable, queueTable, task, fleet)
 	case domaingame.FleetMissionExpedition + domaingame.FleetMissionOrbitingOffset:
 		return r.finishExpeditionHold(ctx, fleetTable, queueTable, planetsTable, messagesTable, usersTable, expeditionTable, task, fleet)
 	default:
 		if fleet.Mission >= domaingame.FleetMissionReturnOffset && fleet.Mission < domaingame.FleetMissionOrbitingOffset {
-			return r.finishReturningFleetArrival(ctx, fleetTable, queueTable, planetsTable, task, fleet)
+			return r.finishReturningFleetArrival(ctx, fleetTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)
 		}
 	}
 	return nil
 }
 
-func (r FleetRepository) finishTransportFleetArrival(ctx context.Context, fleetTable string, queueTable string, planetsTable string, task fleetQueueTask, fleet recallFleetRow) error {
+func (r FleetRepository) finishTransportFleetArrival(ctx context.Context, fleetTable string, fleetLogsTable string, queueTable string, planetsTable string, usersTable string, messagesTable string, task fleetQueueTask, fleet recallFleetRow) error {
+	messageContext := fleetMessageContext{}
+	found := false
+	if r.legacyEvents {
+		var err error
+		messageContext, found, err = r.loadFleetMessageContext(ctx, usersTable, planetsTable, fleet)
+		if err != nil {
+			return err
+		}
+	}
 	if err := r.addFleetResourcesToPlanet(ctx, planetsTable, fleet.TargetPlanetID, fleet.Metal, fleet.Crystal, fleet.Deuterium, task.End); err != nil {
 		return err
 	}
@@ -180,15 +217,37 @@ func (r FleetRepository) finishTransportFleetArrival(ctx context.Context, fleetT
 	if err := r.insertRecallQueue(ctx, queueTable, fleet.OwnerID, returnFleetID, fleet.Mission+domaingame.FleetMissionReturnOffset, task.End, int64(fleet.FlightTime)); err != nil {
 		return err
 	}
+	if found {
+		if err := r.insertFleetTransitionLog(ctx, fleetLogsTable, messageContext, returning, fleet.Mission+domaingame.FleetMissionReturnOffset, int64(fleet.FlightTime), 0, task.End); err != nil {
+			return err
+		}
+		if err := r.insertTransportArrivalMessages(ctx, messagesTable, messageContext, fleet, task.End); err != nil {
+			return err
+		}
+	}
 	return r.removeCompletedFleetTask(ctx, fleetTable, queueTable, fleet.ID, task.TaskID)
 }
 
-func (r FleetRepository) finishDeployFleetArrival(ctx context.Context, fleetTable string, queueTable string, planetsTable string, task fleetQueueTask, fleet recallFleetRow) error {
+func (r FleetRepository) finishDeployFleetArrival(ctx context.Context, fleetTable string, queueTable string, planetsTable string, usersTable string, messagesTable string, task fleetQueueTask, fleet recallFleetRow) error {
+	messageContext := fleetMessageContext{}
+	found := false
+	if r.legacyEvents {
+		var err error
+		messageContext, found, err = r.loadFleetMessageContext(ctx, usersTable, planetsTable, fleet)
+		if err != nil {
+			return err
+		}
+	}
 	if err := r.addFleetResourcesToPlanet(ctx, planetsTable, fleet.TargetPlanetID, fleet.Metal, fleet.Crystal, fleet.Deuterium+float64(fleet.Fuel/2), task.End); err != nil {
 		return err
 	}
 	if err := r.addFleetShipsToPlanet(ctx, planetsTable, fleet.TargetPlanetID, fleet.Ships, task.End); err != nil {
 		return err
+	}
+	if found {
+		if err := r.insertDeployArrivalMessage(ctx, messagesTable, messageContext, fleet, task.End); err != nil {
+			return err
+		}
 	}
 	return r.removeCompletedFleetTask(ctx, fleetTable, queueTable, fleet.ID, task.TaskID)
 }
@@ -291,14 +350,105 @@ func (r FleetRepository) finishExpeditionHold(ctx context.Context, fleetTable st
 	return r.removeCompletedFleetTask(ctx, fleetTable, queueTable, fleet.ID, task.TaskID)
 }
 
-func (r FleetRepository) finishReturningFleetArrival(ctx context.Context, fleetTable string, queueTable string, planetsTable string, task fleetQueueTask, fleet recallFleetRow) error {
+func (r FleetRepository) finishReturningFleetArrival(ctx context.Context, fleetTable string, queueTable string, planetsTable string, usersTable string, messagesTable string, task fleetQueueTask, fleet recallFleetRow) error {
+	messageContext := fleetMessageContext{}
+	found := false
+	if r.legacyEvents {
+		var err error
+		messageContext, found, err = r.loadFleetMessageContext(ctx, usersTable, planetsTable, fleet)
+		if err != nil {
+			return err
+		}
+	}
 	if err := r.addFleetResourcesToPlanet(ctx, planetsTable, fleet.StartPlanetID, fleet.Metal, fleet.Crystal, fleet.Deuterium, task.End); err != nil {
 		return err
 	}
 	if err := r.addFleetShipsToPlanet(ctx, planetsTable, fleet.StartPlanetID, fleet.Ships, task.End); err != nil {
 		return err
 	}
+	if found {
+		if err := r.insertFleetReturnMessage(ctx, messagesTable, messageContext, fleet, task.End); err != nil {
+			return err
+		}
+	}
 	return r.removeCompletedFleetTask(ctx, fleetTable, queueTable, fleet.ID, task.TaskID)
+}
+
+func (r FleetRepository) loadFleetMessageContext(ctx context.Context, usersTable string, planetsTable string, fleet recallFleetRow) (fleetMessageContext, bool, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT ou.player_id, ou.oname, op.name, op.g, op.s, op.p, op.type, op.`%d`, op.`%d`, op.`%d`, tu.player_id, tu.oname, tp.name, tp.g, tp.s, tp.p, tp.type, tp.`%d`, tp.`%d`, tp.`%d` FROM %s op JOIN %s ou ON ou.player_id = op.owner_id JOIN %s tp ON tp.planet_id = ? JOIN %s tu ON tu.player_id = tp.owner_id WHERE op.planet_id = ? LIMIT 1", resourceMetal, resourceCrystal, resourceDeuterium, resourceMetal, resourceCrystal, resourceDeuterium, planetsTable, usersTable, planetsTable, usersTable), fleet.TargetPlanetID, fleet.StartPlanetID)
+	if err != nil {
+		return fleetMessageContext{}, false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return fleetMessageContext{}, false, rows.Err()
+	}
+	var value fleetMessageContext
+	if err := rows.Scan(&value.OriginOwnerID, &value.OriginOwnerName, &value.OriginName, &value.OriginGalaxy, &value.OriginSystem, &value.OriginPosition, &value.OriginType, &value.OriginMetal, &value.OriginCrystal, &value.OriginDeuterium, &value.TargetOwnerID, &value.TargetOwnerName, &value.TargetName, &value.TargetGalaxy, &value.TargetSystem, &value.TargetPosition, &value.TargetType, &value.TargetMetal, &value.TargetCrystal, &value.TargetDeuterium); err != nil {
+		return fleetMessageContext{}, false, err
+	}
+	return value, true, rows.Err()
+}
+
+func (r FleetRepository) insertFleetTransitionLog(ctx context.Context, fleetLogsTable string, value fleetMessageContext, fleet recallFleetRow, mission int, seconds int64, deploySeconds int64, at int64) error {
+	ids := domaingame.FleetIDs()
+	args := []any{value.OriginOwnerID, value.TargetOwnerID, fleet.Fuel / 2, mission, seconds, deploySeconds, at, at + seconds, value.OriginGalaxy, value.OriginSystem, value.OriginPosition, value.OriginType, value.TargetGalaxy, value.TargetSystem, value.TargetPosition, value.TargetType, int(value.OriginMetal), int(value.OriginCrystal), int(value.OriginDeuterium), fleet.Metal, fleet.Crystal, fleet.Deuterium}
+	args = append(args, fleetCountValues(ids, fleet.Ships)...)
+	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (owner_id, target_id, union_id, fuel, mission, flight_time, deploy_time, start, end, origin_g, origin_s, origin_p, origin_type, target_g, target_s, target_p, target_type, `p%d`, `p%d`, `p%d`, `%d`, `%d`, `%d`, %s) VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, %s)", fleetLogsTable, resourceMetal, resourceCrystal, resourceDeuterium, resourceMetal, resourceCrystal, resourceDeuterium, numericColumns(ids), placeholders(len(ids))), args...)
+	return err
+}
+
+func (r FleetRepository) insertTransportArrivalMessages(ctx context.Context, messagesTable string, value fleetMessageContext, fleet recallFleetRow, at int64) error {
+	targetLink := fleetGalaxyLink(value.TargetGalaxy, value.TargetSystem, value.TargetPosition)
+	ownText := fmt.Sprintf("Your fleet reaches the planet (\n%s\n) and delivers its cargo:.\n<br/>\n%s metal, %s crystal and %s deuterium.\n<br/>\n", targetLink, fleetLegacyNumber(fleet.Metal), fleetLegacyNumber(fleet.Crystal), fleetLegacyNumber(fleet.Deuterium))
+	if err := r.insertFleetMessage(ctx, messagesTable, value.OriginOwnerID, "Fleet Command", "Reaching the planet", ownText, at); err != nil {
+		return err
+	}
+	if value.OriginOwnerID == value.TargetOwnerID {
+		return nil
+	}
+	otherText := fmt.Sprintf("Player %s\\'s fleet is delivering to your planet %s\n%s\n<br/>\n%s metal, %s crystal and %s deuterium\n<br/>\nBefore you had %s metal, %s crystal and %s deuterium.\n<br/>\nNow you have %s0 metal, %s1 crystal and %s2 deuterium.\n<br/>\n", value.OriginOwnerName, value.TargetName, targetLink, fleetLegacyNumber(fleet.Metal), fleetLegacyNumber(fleet.Crystal), fleetLegacyNumber(fleet.Deuterium), fleetLegacyNumber(value.TargetMetal), fleetLegacyNumber(value.TargetCrystal), fleetLegacyNumber(value.TargetDeuterium), value.OriginOwnerName, value.OriginOwnerName, value.OriginOwnerName)
+	return r.insertFleetMessage(ctx, messagesTable, value.TargetOwnerID, "Observation", "Foreign fleet is delivering supplies", otherText, at)
+}
+
+func (r FleetRepository) insertDeployArrivalMessage(ctx context.Context, messagesTable string, value fleetMessageContext, fleet recallFleetRow, at int64) error {
+	text := fmt.Sprintf("\nOne of your fleets (%s) reached %s\n%s\n. The fleet delivers %s metal, %s crystal and %s deuterium\n<br/>\n", fleetLegacyList(fleet.Ships), value.TargetName, fleetGalaxyLink(value.TargetGalaxy, value.TargetSystem, value.TargetPosition), fleetLegacyNumber(fleet.Metal), fleetLegacyNumber(fleet.Crystal), fleetLegacyNumber(fleet.Deuterium+float64(fleet.Fuel/2)))
+	return r.insertFleetMessage(ctx, messagesTable, value.OriginOwnerID, "Fleet Command", "Fleet retention", text, at)
+}
+
+func (r FleetRepository) insertFleetReturnMessage(ctx context.Context, messagesTable string, value fleetMessageContext, fleet recallFleetRow, at int64) error {
+	text := fmt.Sprintf("One of your fleets ( %s ), sent from %s, reaches %s %s . ", fleetLegacyList(fleet.Ships), fleetGalaxyLink(value.TargetGalaxy, value.TargetSystem, value.TargetPosition), value.OriginName, fleetGalaxyLink(value.OriginGalaxy, value.OriginSystem, value.OriginPosition))
+	if fleet.Metal+fleet.Crystal+fleet.Deuterium != 0 {
+		text += fmt.Sprintf("The fleet delivers %s metal, %s crystal and %s deuterium<br>", fleetLegacyNumber(fleet.Metal), fleetLegacyNumber(fleet.Crystal), fleetLegacyNumber(fleet.Deuterium))
+	}
+	return r.insertFleetMessage(ctx, messagesTable, value.OriginOwnerID, "Fleet Command", "Return of the fleet", text, at)
+}
+
+func (r FleetRepository) insertFleetMessage(ctx context.Context, messagesTable string, ownerID int, from string, subject string, text string, at int64) error {
+	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (owner_id, pm, msgfrom, subj, text, shown, date, planet_id) VALUES (?, ?, ?, ?, ?, 0, ?, 0)", messagesTable), ownerID, domaingame.MessageTypeMisc, from, subject, text, at)
+	return err
+}
+
+func fleetGalaxyLink(galaxy int, system int, position int) string {
+	return fmt.Sprintf(`<a onclick=\"showGalaxy(%d,%d,%d);\" href=\"#\">[%d:%d:%d]</a>`, galaxy, system, position, galaxy, system, position)
+}
+
+func fleetLegacyList(ships domaingame.FleetCounts) string {
+	var result strings.Builder
+	for _, id := range domaingame.FleetIDs() {
+		if ships[id] > 0 {
+			fmt.Fprintf(&result, "%s: %s ", domaingame.FleetName(id), fleetLegacyNumber(float64(ships[id])))
+		}
+	}
+	return result.String()
+}
+
+func fleetLegacyNumber(value float64) string {
+	raw := strconv.FormatInt(int64(value), 10)
+	for index := len(raw) - 3; index > 0; index -= 3 {
+		raw = raw[:index] + "." + raw[index:]
+	}
+	return raw
 }
 
 func (r FleetRepository) addFleetResourcesToPlanet(ctx context.Context, planetsTable string, planetID int, metal float64, crystal float64, deuterium float64, activityAt int64) error {

@@ -788,6 +788,11 @@ func fleetName(id int) string {
 	return ""
 }
 
+// FleetName returns the legacy display name for a fleet unit.
+func FleetName(id int) string {
+	return fleetName(id)
+}
+
 type fleetUnitParam struct {
 	cargo       int
 	speed       int

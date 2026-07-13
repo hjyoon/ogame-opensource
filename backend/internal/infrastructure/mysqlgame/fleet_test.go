@@ -336,8 +336,8 @@ func TestNewFleetRepositoryKeepsSQLQueryer(t *testing.T) {
 	if _, ok := repository.execer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL execer, got %T", repository.execer)
 	}
-	if !repository.finishDueQueues {
-		t.Fatal("production fleet repository should drain due fleet queues")
+	if !repository.finishDueQueues || !repository.legacyEvents {
+		t.Fatal("production fleet repository should drain queues and persist legacy events")
 	}
 	readRepository := NewFleetReadRepository(nil, "ogame_")
 	if readRepository.execer != nil || readRepository.finishDueQueues {
@@ -353,6 +353,150 @@ func TestNewFleetRepositoryKeepsSQLQueryer(t *testing.T) {
 	withDefaultClock = NewFleetRepositoryWithRunner(nil, nil, "ogame_", nil)
 	if withDefaultClock.now == nil {
 		t.Fatal("expected runner nil clock to default")
+	}
+}
+
+func TestFleetRepositoryFormatsAndPersistsLegacyFleetEvents(t *testing.T) {
+	runner := &fakeFleetRunner{}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+	value := fleetMessageContext{
+		OriginOwnerID: 42, OriginOwnerName: "Player", OriginName: "Home", OriginGalaxy: 1, OriginSystem: 2, OriginPosition: 3, OriginType: 1,
+		OriginMetal: 1_000_000, OriginCrystal: 2_000_000, OriginDeuterium: 3_000_000,
+		TargetOwnerID: 43, TargetOwnerName: "Target", TargetName: "Away", TargetGalaxy: 2, TargetSystem: 3, TargetPosition: 4, TargetType: 1,
+		TargetMetal: 4_000_000, TargetCrystal: 5_000_000, TargetDeuterium: 6_000_000,
+	}
+	fleet := recallFleetRow{OwnerID: 42, Fuel: 14, Metal: 1234, Crystal: 45, Deuterium: 6, Ships: domaingame.FleetCounts{domaingame.FleetSmallCargo: 2}}
+
+	if err := repository.insertFleetTransitionLog(context.Background(), "`ogame_fleetlogs`", value, fleet, domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset, 60, 0, 1000); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.insertTransportArrivalMessages(context.Background(), "`ogame_messages`", value, fleet, 1060); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.insertDeployArrivalMessage(context.Background(), "`ogame_messages`", value, fleet, 1060); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.insertFleetReturnMessage(context.Background(), "`ogame_messages`", value, fleet, 1120); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(runner.execCalls) != 5 || !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `ogame_fleetlogs`") {
+		t.Fatalf("expected one transition log and four messages, got %+v", runner.execCalls)
+	}
+	log := runner.execCalls[0]
+	if log.args[0] != 42 || log.args[1] != 43 || log.args[2] != 7 || log.args[3] != domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset || log.args[4] != int64(60) {
+		t.Fatalf("unexpected transition log values: %+v", log)
+	}
+	transportOwn := fmt.Sprint(runner.execCalls[1].args[4])
+	transportOther := fmt.Sprint(runner.execCalls[2].args[4])
+	deploy := fmt.Sprint(runner.execCalls[3].args[4])
+	returned := fmt.Sprint(runner.execCalls[4].args[4])
+	if !strings.Contains(transportOwn, "1.234 metal") || !strings.Contains(transportOwn, `showGalaxy(2,3,4)`) {
+		t.Fatalf("unexpected transport owner message: %q", transportOwn)
+	}
+	if !strings.Contains(transportOther, "Before you had 4.000.000 metal") || !strings.Contains(transportOther, "Player0 metal") {
+		t.Fatalf("unexpected transport observer message: %q", transportOther)
+	}
+	if !strings.Contains(deploy, "Small Cargo: 2") || !strings.Contains(deploy, "13 deuterium") {
+		t.Fatalf("unexpected deploy message: %q", deploy)
+	}
+	if !strings.Contains(returned, "Small Cargo: 2") || !strings.Contains(returned, "1.234 metal") {
+		t.Fatalf("unexpected return message: %q", returned)
+	}
+}
+
+func TestFleetRepositoryLegacyFleetEventEdges(t *testing.T) {
+	fleet := recallFleetRow{StartPlanetID: 99, TargetPlanetID: 100, Ships: domaingame.FleetCounts{domaingame.FleetSmallCargo: 1}}
+
+	repository := NewFleetRepositoryWithRunner(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("context failed")}}}, nil, "ogame_", nil)
+	if _, _, err := repository.loadFleetMessageContext(context.Background(), "`ogame_users`", "`ogame_planets`", fleet); err == nil || !strings.Contains(err.Error(), "context failed") {
+		t.Fatalf("expected context query error, got %v", err)
+	}
+	repository = NewFleetRepositoryWithRunner(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, nil, "ogame_", nil)
+	if _, found, err := repository.loadFleetMessageContext(context.Background(), "`ogame_users`", "`ogame_planets`", fleet); err != nil || found {
+		t.Fatalf("expected missing context, found=%v err=%v", found, err)
+	}
+	repository = NewFleetRepositoryWithRunner(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}, nil, "ogame_", nil)
+	if _, _, err := repository.loadFleetMessageContext(context.Background(), "`ogame_users`", "`ogame_planets`", fleet); err == nil {
+		t.Fatal("expected context scan error")
+	}
+
+	runner := &fakeFleetRunner{}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+	value := fleetMessageContext{OriginOwnerID: 42, TargetOwnerID: 42, TargetGalaxy: 1, TargetSystem: 2, TargetPosition: 3}
+	if err := repository.insertTransportArrivalMessages(context.Background(), "`ogame_messages`", value, fleet, 1000); err != nil || len(runner.execCalls) != 1 {
+		t.Fatalf("same-owner transport should emit one message, calls=%+v err=%v", runner.execCalls, err)
+	}
+	runner = &fakeFleetRunner{execErr: errors.New("message failed")}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+	value.TargetOwnerID = 43
+	if err := repository.insertTransportArrivalMessages(context.Background(), "`ogame_messages`", value, fleet, 1000); err == nil || !strings.Contains(err.Error(), "message failed") {
+		t.Fatalf("expected first transport message error, got %v", err)
+	}
+	runner = &fakeFleetRunner{execErrs: []error{nil, errors.New("observer failed")}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+	if err := repository.insertTransportArrivalMessages(context.Background(), "`ogame_messages`", value, fleet, 1000); err == nil || !strings.Contains(err.Error(), "observer failed") {
+		t.Fatalf("expected observer message error, got %v", err)
+	}
+}
+
+func TestFleetRepositoryLegacyFleetEventWriteErrors(t *testing.T) {
+	fleet := recallFleetRow{ID: 123, OwnerID: 42, StartPlanetID: 99, TargetPlanetID: 100, FlightTime: 60, Fuel: 14, Ships: domaingame.FleetCounts{domaingame.FleetSmallCargo: 1}}
+	task := fleetQueueTask{TaskID: 55, OwnerID: 42, FleetID: 123, End: 1000}
+
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("metadata failed")}}}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+	repository.legacyEvents = true
+	if err := repository.finishTransportFleetArrival(context.Background(), "`ogame_fleet`", "`ogame_fleetlogs`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", task, fleet); err == nil || !strings.Contains(err.Error(), "metadata failed") {
+		t.Fatalf("expected transport metadata error, got %v", err)
+	}
+
+	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(fleetMessageContextTestRow())}}}, execErrs: []error{nil, nil, nil, errors.New("transition log failed")}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+	repository.legacyEvents = true
+	if err := repository.finishTransportFleetArrival(context.Background(), "`ogame_fleet`", "`ogame_fleetlogs`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", task, fleet); err == nil || !strings.Contains(err.Error(), "transition log failed") {
+		t.Fatalf("expected transition log error, got %v", err)
+	}
+	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(fleetMessageContextTestRow())}}}, execErrs: []error{nil, nil, nil, nil, errors.New("transport message failed")}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+	repository.legacyEvents = true
+	if err := repository.finishTransportFleetArrival(context.Background(), "`ogame_fleet`", "`ogame_fleetlogs`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", task, fleet); err == nil || !strings.Contains(err.Error(), "transport message failed") {
+		t.Fatalf("expected transport message error, got %v", err)
+	}
+
+	for _, test := range []struct {
+		name string
+		run  func(FleetRepository) error
+	}{
+		{name: "deploy", run: func(repository FleetRepository) error {
+			return repository.finishDeployFleetArrival(context.Background(), "`ogame_fleet`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", task, fleet)
+		}},
+		{name: "return", run: func(repository FleetRepository) error {
+			return repository.finishReturningFleetArrival(context.Background(), "`ogame_fleet`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", task, fleet)
+		}},
+	} {
+		runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New(test.name + " metadata failed")}}}}
+		repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+		repository.legacyEvents = true
+		if err := test.run(repository); err == nil || !strings.Contains(err.Error(), "metadata failed") {
+			t.Fatalf("expected %s metadata error, got %v", test.name, err)
+		}
+	}
+
+	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(fleetMessageContextTestRow())}}}, execErrs: []error{nil, nil, errors.New("deploy message failed")}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+	repository.legacyEvents = true
+	fleet.Mission = domaingame.FleetMissionDeploy
+	if err := repository.finishDeployFleetArrival(context.Background(), "`ogame_fleet`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", task, fleet); err == nil || !strings.Contains(err.Error(), "deploy message failed") {
+		t.Fatalf("expected deploy message error, got %v", err)
+	}
+
+	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(fleetMessageContextTestRow())}}}, execErrs: []error{nil, nil, errors.New("return message failed")}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+	repository.legacyEvents = true
+	fleet.Mission = domaingame.FleetMissionTransport + domaingame.FleetMissionReturnOffset
+	if err := repository.finishReturningFleetArrival(context.Background(), "`ogame_fleet`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", task, fleet); err == nil || !strings.Contains(err.Error(), "return message failed") {
+		t.Fatalf("expected return message error, got %v", err)
 	}
 }
 
@@ -2532,14 +2676,16 @@ func TestFleetRepositoryRecallsOutboundFleetWithLegacyReturnQueue(t *testing.T) 
 		{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
 		{rows: fakeRowsFromValues([]any{44})},
 		{rows: fakeRowsFromValues([]any{100})},
+		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 	}}}
 	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	repository.legacyEvents = true
 
 	if err := repository.RecallFleet(context.Background(), appgame.FleetRecallQuery{PlayerID: 42, FleetID: 123}); err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.execCalls) != 4 {
-		t.Fatalf("expected insert return fleet, insert queue, delete fleet, delete queue calls, got %+v", runner.execCalls)
+	if len(runner.execCalls) != 5 {
+		t.Fatalf("expected return fleet lifecycle and transition log calls, got %+v", runner.execCalls)
 	}
 	insertFleet := runner.execCalls[0]
 	if !strings.Contains(insertFleet.sql, "INSERT INTO `ogame_fleet`") {
@@ -2560,6 +2706,9 @@ func TestFleetRepositoryRecallsOutboundFleetWithLegacyReturnQueue(t *testing.T) 
 	}
 	if !strings.Contains(runner.execCalls[2].sql, "DELETE FROM `ogame_fleet`") || !strings.Contains(runner.execCalls[3].sql, "DELETE FROM `ogame_queue`") {
 		t.Fatalf("expected original fleet and queue deletes, got %+v", runner.execCalls)
+	}
+	if !strings.Contains(runner.execCalls[4].sql, "INSERT INTO `ogame_fleetlogs`") {
+		t.Fatalf("expected recall transition fleetlog, got %+v", runner.execCalls[4])
 	}
 }
 
@@ -2678,14 +2827,16 @@ func TestFleetRepositoryFinishDueTransportCreatesReturnFleet(t *testing.T) {
 		{rows: fakeRowsFromValues([]any{0})},
 		{rows: fakeRowsFromValues([]any{55, 42, 123, int64(2_000)})},
 		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, map[int]int{domaingame.FleetSmallCargo: 1}))},
+		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 	}}}
 	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+	repository.legacyEvents = true
 
 	if err := repository.FinishDueFleetQueues(context.Background(), 2_000); err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.execCalls) != 5 {
-		t.Fatalf("expected transport resource, return fleet, return queue, and cleanup writes, got %+v", runner.execCalls)
+	if len(runner.execCalls) != 8 {
+		t.Fatalf("expected transport lifecycle, message, log, and cleanup writes, got %+v", runner.execCalls)
 	}
 	if !strings.Contains(runner.execCalls[0].sql, "UPDATE `ogame_planets`") || runner.execCalls[0].args[0] != float64(100) || runner.execCalls[0].args[4] != 100 {
 		t.Fatalf("expected resources delivered to target planet, got %+v", runner.execCalls[0])
@@ -2705,14 +2856,16 @@ func TestFleetRepositoryFinishDueDeployKeepsShipsOnTarget(t *testing.T) {
 		{rows: fakeRowsFromValues([]any{0})},
 		{rows: fakeRowsFromValues([]any{56, 42, 124, int64(2_100)})},
 		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionDeploy, 0, map[int]int{domaingame.FleetSmallCargo: 2}))},
+		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 	}}}
 	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_100, 0) })
+	repository.legacyEvents = true
 
 	if err := repository.FinishDueFleetQueues(context.Background(), 2_100); err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.execCalls) != 4 {
-		t.Fatalf("expected deploy resource, ship, and cleanup writes, got %+v", runner.execCalls)
+	if len(runner.execCalls) != 5 {
+		t.Fatalf("expected deploy resource, ship, message, and cleanup writes, got %+v", runner.execCalls)
 	}
 	if runner.execCalls[0].args[2] != float64(325) || runner.execCalls[0].args[4] != 100 {
 		t.Fatalf("expected deploy to unload resources plus half fuel on target, got %+v", runner.execCalls[0])
@@ -2727,14 +2880,16 @@ func TestFleetRepositoryFinishDueReturnRestoresOrigin(t *testing.T) {
 		{rows: fakeRowsFromValues([]any{0})},
 		{rows: fakeRowsFromValues([]any{57, 42, 125, int64(2_200)})},
 		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset, 0, map[int]int{domaingame.FleetSmallCargo: 1}))},
+		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 	}}}
 	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_200, 0) })
+	repository.legacyEvents = true
 
 	if err := repository.FinishDueFleetQueues(context.Background(), 2_200); err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.execCalls) != 4 {
-		t.Fatalf("expected return resource, ship, and cleanup writes, got %+v", runner.execCalls)
+	if len(runner.execCalls) != 5 {
+		t.Fatalf("expected return resource, ship, message, and cleanup writes, got %+v", runner.execCalls)
 	}
 	if runner.execCalls[0].args[4] != 99 {
 		t.Fatalf("expected return resources to go to origin planet, got %+v", runner.execCalls[0])
@@ -4097,6 +4252,13 @@ func recallFleetTestRow(mission int, unionID int, ships map[int]int) []any {
 		row = append(row, ships[shipID])
 	}
 	return row
+}
+
+func fleetMessageContextTestRow() []any {
+	return []any{
+		42, "Player", "Home", 1, 2, 3, 1, float64(1_000_000), float64(2_000_000), float64(3_000_000),
+		43, "Target", "Away", 2, 3, 4, 1, float64(4_000_000), float64(5_000_000), float64(6_000_000),
+	}
 }
 
 func expeditionSettingsTestRow(event string) []any {
