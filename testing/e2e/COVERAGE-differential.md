@@ -15,6 +15,7 @@ HTTP/DB effects, and restore again.
 | Advanced building | 2 | demolition, Commander queue cancel/level shift/propagation | PASS |
 | Defense limits | 3 | dome uniqueness, missile capacity, mixed queue order/completion | PASS |
 | Fleet lifecycle | 5 | transport/recall/deploy/recycle, unguarded attack/plunder/report | PASS |
+| Combat engine | 4 | outcome, shots/power, absorption, survivors | PASS |
 
 Resource cases cover partial production, 0-100 boundary values, and all-100
 production. Each side logs in immediately before its action because login rotates
@@ -30,6 +31,7 @@ testing/e2e/run-golang-shipyard-defense-differential-e2e.sh
 testing/e2e/run-golang-building-advanced-differential-e2e.sh
 testing/e2e/run-golang-defense-limits-differential-e2e.sh
 testing/e2e/run-golang-fleet-differential-e2e.sh
+testing/e2e/run-golang-combat-engine-differential-e2e.sh
 ```
 
 Reports use `.tmp/golang-*-differential.json`. Queue cases
@@ -37,6 +39,8 @@ normalize generated IDs/timestamps, preserve duration, and restore the original
 planet, score/ranks, queue, log, production, vacation, and premium state. Fixtures
 come from `prepare-golang-smoke-fixture.php`; the wrapper runs differential QA
 after Go compatibility smoke and before fixture cleanup.
+The combat engine oracle separately exact-compares four deterministic PHP/Go
+round outcomes, shot totals, absorbed power, and survivor sets.
 
 ## Expansion Order
 
