@@ -1535,9 +1535,11 @@ func overviewPseudoEventID(id int, suffix int) int {
 }
 
 type overviewEventScan struct {
-	Mission    domaingame.FleetMission
-	FlightTime int64
-	DeployTime int64
+	Mission        domaingame.FleetMission
+	FlightTime     int64
+	DeployTime     int64
+	StartPlanetID  int
+	TargetPlanetID int
 }
 
 func overviewTransportableResourceIDs() []int {
@@ -1610,7 +1612,10 @@ func scanOverviewEventRow(rows Rows, fleetIDs []int, resourceIDs []int, playerID
 	if missileTargetID > 0 {
 		event.MissileTarget = overviewTechnologyName(missileTargetID)
 	}
-	return overviewEventScan{Mission: event, FlightTime: flightTime, DeployTime: deployTime}, nil
+	return overviewEventScan{
+		Mission: event, FlightTime: flightTime, DeployTime: deployTime,
+		StartPlanetID: startPlanetID, TargetPlanetID: targetPlanetID,
+	}, nil
 }
 
 func overviewTechnologyName(techID int) string {

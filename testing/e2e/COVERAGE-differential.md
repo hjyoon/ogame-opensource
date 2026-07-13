@@ -15,6 +15,7 @@ compare normalized HTTP/DB effects, then restore.
 | Defense limits | 3 | dome uniqueness, missile capacity, mixed queue order/completion | PASS |
 | Fleet lifecycle | 23 | transport/recall/deploy/recycle, combat, moon, colony and missile lifecycle | PASS |
 | Expedition | 10 | every result family, rewards/loss, combat reports, timing, logs | PASS |
+| Phalanx | 11 | guards, debit, fleet visibility, ACS hold/grouping, state restore | PASS |
 | Combat engine | 4 | outcome, shots/power, absorption, survivors | PASS |
 
 Resource cases cover partial production and 0/100 boundaries. Each side logs in
@@ -33,6 +34,7 @@ testing/e2e/run-golang-fleet-differential-e2e.sh
 testing/e2e/run-golang-colonization-differential-e2e.sh
 testing/e2e/run-golang-missile-differential-e2e.sh
 testing/e2e/run-golang-expedition-differential-e2e.sh
+testing/e2e/run-golang-phalanx-differential-e2e.sh
 testing/e2e/run-golang-acs-attack-differential-e2e.sh
 testing/e2e/run-golang-holding-defense-differential-e2e.sh
 testing/e2e/run-golang-battle-moon-differential-e2e.sh
@@ -46,8 +48,6 @@ IDs/timestamps but preserve duration. Fixtures come from
 The combat engine oracle exact-compares four deterministic round outcomes, shot
 totals, absorbed power, and survivors. Guarded DB cases also compare repair,
 losses, debris, report HTML/link messages, planet units, scores, and cleanup.
-Moon-destruction QA exact-compares the deterministic fleet-explosion outcome;
-unit coverage exercises all four moon/fleet result combinations and moon cleanup.
 Moon creation retries a deterministic 20% opportunity to success on each runtime;
 only generated diameter/temperature are range-checked instead of exact-compared.
 Colonization exact-compares success/return, consumed ship, occupied-race and
@@ -57,7 +57,7 @@ moon ABM use, defense state, rank effects, cleanup, and legacy report HTML.
 
 ## Expansion Order
 
-1. Phalanx and Jump Gate.
+1. Jump Gate.
 2. Account, alliance, messages, buddy and Admin mutations.
 
 ## Comparison Contract

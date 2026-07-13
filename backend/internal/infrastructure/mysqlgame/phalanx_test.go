@@ -21,7 +21,8 @@ func TestPhalanxRepositoryScansEventsAndSpendsDeuterium(t *testing.T) {
 		{rows: fakeRowsFromValues(phalanxUniverseRow())},
 		{rows: fakeRowsFromValues(phalanxPlanetRow(10, 42, "Go Smoke Moon", domaingame.PlanetTypeMoon, 6, 3, 20_000.0))},
 		{rows: fakeRowsFromValues(phalanxPlanetRow(20, 77, "Go Smoke Target", domaingame.PlanetTypePlanet, 2, 0, 1_000_000.0))},
-		{rows: fakeRowsFromValues(overviewEventRow(300, 77, "target", domaingame.FleetMissionTransport, map[int]int{domaingame.FleetSmallCargo: 1}, 2_100, 2_500, 2, 6))},
+		{rows: fakeRowsFromValues(phalanxEventRow(300, 77, "target", domaingame.FleetMissionTransport, map[int]int{domaingame.FleetSmallCargo: 1}, 2_100, 2_500, 20, 30, 2, 6))},
+		{rows: fakeRowsFromValues()},
 	}}}
 	repository := NewPhalanxRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
 
@@ -32,8 +33,8 @@ func TestPhalanxRepositoryScansEventsAndSpendsDeuterium(t *testing.T) {
 	if phalanx.Commander != "legor" || phalanx.Source.ID != 10 || phalanx.Target.ID != 20 {
 		t.Fatalf("unexpected phalanx result: %+v", phalanx)
 	}
-	if phalanx.RemainingDeuterium != 15_000 || len(phalanx.Events) != 2 || phalanx.Events[0].Mission != domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset || phalanx.Events[1].ID != 300 {
-		t.Fatalf("expected spent deuterium and legacy return/outgoing event order, got %+v", phalanx)
+	if phalanx.RemainingDeuterium != 15_000 || len(phalanx.Events) != 1 || phalanx.Events[0].Mission != domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset {
+		t.Fatalf("expected spent deuterium and one legacy return event, got %+v", phalanx)
 	}
 	if len(runner.execCalls) != 1 {
 		t.Fatalf("expected one deuterium update, got %+v", runner.execCalls)
@@ -42,9 +43,15 @@ func TestPhalanxRepositoryScansEventsAndSpendsDeuterium(t *testing.T) {
 	if len(args) != 4 || args[0] != float64(15_000) || args[1] != now.Unix() || args[2] != 10 || args[3] != 42 {
 		t.Fatalf("unexpected deuterium update args: %+v", args)
 	}
-	lastQuery := runner.calls[len(runner.calls)-1].sql
-	if !strings.Contains(lastQuery, "f.`202`") || strings.Contains(lastQuery, "SELECT q.sub_id, q.start, q.end, `202`") {
-		t.Fatalf("expected phalanx fleet query to use prefixed fleet columns, got %s", lastQuery)
+	eventQuery := ""
+	for _, call := range runner.calls {
+		if strings.Contains(call.sql, "SELECT q.sub_id") {
+			eventQuery = call.sql
+			break
+		}
+	}
+	if !strings.Contains(eventQuery, "f.`202`") || strings.Contains(eventQuery, "SELECT q.sub_id, q.start, q.end, `202`") {
+		t.Fatalf("expected phalanx fleet query to use prefixed fleet columns, got %s", eventQuery)
 	}
 }
 
@@ -65,14 +72,14 @@ func TestPhalanxRepositoryMCPPreviewAndExecute(t *testing.T) {
 	}
 
 	runner = &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: phalanxSuccessfulReadResults(
-		fakeQueryResult{rows: fakeRowsFromValues(overviewEventRow(300, 77, "target", domaingame.FleetMissionTransport, map[int]int{domaingame.FleetSmallCargo: 1}, 2_100, 2_500, 2, 6))},
+		fakeQueryResult{rows: fakeRowsFromValues(phalanxEventRow(300, 77, "target", domaingame.FleetMissionTransport, map[int]int{domaingame.FleetSmallCargo: 1}, 2_100, 2_500, 20, 30, 2, 6))},
 	)}}
 	repository = NewPhalanxRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
 	scanned, err := repository.ScanMCPPhalanx(context.Background(), 42, domainmcp.PhalanxScanCommand{PlanetID: 10, TargetPlanetID: 20})
 	if err != nil {
 		t.Fatalf("ScanMCPPhalanx returned error: %v", err)
 	}
-	if !scanned.Executed || scanned.Issue != nil || len(scanned.Events) != 2 || len(runner.execCalls) != 1 {
+	if !scanned.Executed || scanned.Issue != nil || len(scanned.Events) != 1 || len(runner.execCalls) != 1 {
 		t.Fatalf("expected executed MCP scan with events and one spend, result=%+v exec=%+v", scanned, runner.execCalls)
 	}
 }
@@ -220,6 +227,57 @@ func TestPhalanxRepositoryPropagatesEventAndUpdateErrors(t *testing.T) {
 	}
 }
 
+func TestPhalanxEventVisibilityMatchesLegacyRules(t *testing.T) {
+	target := domaingame.PhalanxPlanet{ID: 20, OwnerID: 77}
+	mission := func(id int, owner int, kind int, start int, end int) overviewEventScan {
+		return overviewEventScan{
+			Mission: domaingame.FleetMission{
+				ID: id, OwnerID: owner, Mission: kind, DepartureAt: 100, ArrivalAt: 200,
+				Origin: domaingame.Coordinates{Position: 2}, Target: domaingame.Coordinates{Position: 6},
+			},
+			FlightTime: 100, DeployTime: 300, StartPlanetID: start, TargetPlanetID: end,
+		}
+	}
+
+	outbound := phalanxNonUnionMissions(mission(1, 77, domaingame.FleetMissionTransport, 20, 30), target)
+	if len(outbound) != 1 || outbound[0].Mission != domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset || outbound[0].ArrivalAt != 300 || outbound[0].Target.Position != 2 {
+		t.Fatalf("outbound transport=%+v", outbound)
+	}
+	if got := phalanxNonUnionMissions(mission(2, 77, domaingame.FleetMissionDeploy, 20, 30), target); len(got) != 0 {
+		t.Fatalf("outbound deploy must be hidden: %+v", got)
+	}
+	if got := phalanxNonUnionMissions(mission(3, 88, domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset, 30, 20), target); len(got) != 0 {
+		t.Fatalf("return departing the scanned destination must be hidden: %+v", got)
+	}
+	inbound := phalanxNonUnionMissions(mission(4, 88, domaingame.FleetMissionAttack, 30, 20), target)
+	if len(inbound) != 1 || inbound[0].Mission != domaingame.FleetMissionAttack || inbound[0].ArrivalAt != 200 {
+		t.Fatalf("inbound attack=%+v", inbound)
+	}
+	hold := phalanxNonUnionMissions(mission(5, 88, domaingame.FleetMissionACSHold, 30, 20), target)
+	if len(hold) != 2 || hold[0].Mission != domaingame.FleetMissionACSHold+domaingame.FleetMissionOrbitingOffset || hold[0].ArrivalAt != 500 || hold[1].Mission != domaingame.FleetMissionACSHold {
+		t.Fatalf("foreign ACS hold=%+v", hold)
+	}
+	missile := phalanxNonUnionMissions(mission(6, 77, domaingame.FleetMissionMissile, 20, 30), target)
+	if len(missile) != 1 || missile[0].Mission != domaingame.FleetMissionMissile || missile[0].ArrivalAt != 300 {
+		t.Fatalf("outbound missile=%+v", missile)
+	}
+}
+
+func TestPhalanxUnionEventsAreGrouped(t *testing.T) {
+	runner := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{9})},
+		{rows: fakeRowsFromValues(overviewEventRow(300, 88, "attacker", domaingame.FleetMissionACSAttack, map[int]int{domaingame.FleetSmallCargo: 1}, 2_100, 2_500, 2, 6))},
+	}}
+	repository := NewPhalanxRepositoryWithRunner(runner, nil, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+	events, err := repository.loadPhalanxUnionEvents(context.Background(), "`queue`", "`fleet`", "`planets`", "`users`", domaingame.PhalanxPlanet{ID: 20, OwnerID: 77}, domaingame.FleetIDs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].UnionID != 9 || len(events[0].GroupMissions) != 1 {
+		t.Fatalf("grouped union events=%+v", events)
+	}
+}
+
 func TestPhalanxRepositoryPropagatesOverviewAndPlanetLoadErrors(t *testing.T) {
 	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("overview failed")}}}}
 	repository := NewPhalanxRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
@@ -334,7 +392,15 @@ func phalanxSuccessfulReadResults(eventResult fakeQueryResult) []fakeQueryResult
 		{rows: fakeRowsFromValues(phalanxPlanetRow(10, 42, "Go Smoke Moon", domaingame.PlanetTypeMoon, 6, 3, 20_000.0))},
 		{rows: fakeRowsFromValues(phalanxPlanetRow(20, 77, "Go Smoke Target", domaingame.PlanetTypePlanet, 2, 0, 1_000_000.0))},
 		eventResult,
+		{rows: fakeRowsFromValues()},
 	}
+}
+
+func phalanxEventRow(id int, ownerID int, ownerName string, mission int, ships map[int]int, start int64, end int64, startPlanetID int, targetPlanetID int, originPosition int, targetPosition int) []any {
+	row := overviewEventRow(id, ownerID, ownerName, mission, ships, start, end, originPosition, targetPosition)
+	row[10] = startPlanetID
+	row[11] = targetPlanetID
+	return row
 }
 
 func phalanxOverviewPlanetRow(id int, name string, planetType int) []any {

@@ -6686,8 +6686,10 @@ try {
         gamePhalanxBody.phalanx ?? {}
       ),
       check(
-        !phalanxFixtureReady || Array.isArray(gamePhalanxBody.phalanx?.events) && gamePhalanxBody.phalanx.events.some((event) => Number(event.id) === Number(phalanxFixture.fleet_id ?? 0) || Number(event.mission) === 3),
-        "game phalanx success scan returns the visible fixture fleet event",
+        !phalanxFixtureReady || Array.isArray(gamePhalanxBody.phalanx?.events) && gamePhalanxBody.phalanx.events.some((event) =>
+          Number(event.ownerId) === Number(phalanxFixture.target_player_id ?? 0) && Number(event.mission) === 103
+        ),
+        "game phalanx success scan returns the legacy outbound-as-return event",
         gamePhalanxBody.phalanx?.events ?? []
       ),
       check(!phalanxFixtureReady || !gamePhalanx.body.includes(sessionCookiePair), "game phalanx response does not echo private cookie"),
