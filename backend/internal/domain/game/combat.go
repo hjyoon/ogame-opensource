@@ -69,6 +69,20 @@ func CombatShortName(id int) string {
 	return combatUnitShortNames[id]
 }
 
+func CombatUnitCost(id int) (BuildingCost, bool) {
+	for _, spec := range fleetCatalog {
+		if spec.id == id {
+			return spec.price(1), true
+		}
+	}
+	for _, spec := range defenseCatalog {
+		if spec.id == id {
+			return spec.price(1), true
+		}
+	}
+	return BuildingCost{}, false
+}
+
 // BattlePlunder reproduces the legacy half-resource and cargo redistribution rules.
 func BattlePlunder(cargo int, resources Resources) Resources {
 	metal := maxFloat64(0, resources.Metal/2)
