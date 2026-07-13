@@ -86,6 +86,10 @@ func (r FleetRepository) finishGuardedAttackFleetArrival(
 	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE date < ?", battleTable), task.End-2*7*24*60*60); err != nil {
 		return err
 	}
+	moonDestruction, err := r.finishMoonDestruction(ctx, fleetTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet, messageContext, domaingame.FleetCounts(writeback.AttackerSurvivors[0]), result.Outcome == domaingame.CombatAttackerWon)
+	if err != nil {
+		return err
+	}
 
 	if err := r.subtractAttackPlunder(ctx, planetsTable, fleet.TargetPlanetID, captured, task.End); err != nil {
 		return err
@@ -96,8 +100,13 @@ func (r FleetRepository) finishGuardedAttackFleetArrival(
 	if err := r.writebackHoldingCombatFleets(ctx, fleetTable, queueTable, holding, writeback.DefenderSurvivors); err != nil {
 		return err
 	}
-	if err := r.returnGuardedAttackSurvivors(ctx, fleetTable, fleetLogsTable, queueTable, task, fleet, messageContext, writeback.AttackerSurvivors[0], captured); err != nil {
-		return err
+	if moonDestruction.Code&domaingame.MoonDestroyFleet == 0 {
+		if moonDestruction.ReturnTargetID > 0 {
+			fleet.TargetPlanetID = moonDestruction.ReturnTargetID
+		}
+		if err := r.returnGuardedAttackSurvivors(ctx, fleetTable, fleetLogsTable, queueTable, task, fleet, messageContext, writeback.AttackerSurvivors[0], captured); err != nil {
+			return err
+		}
 	}
 	if err := r.adjustCombatStats(ctx, usersTable, fleet.OwnerID, writeback.AttackerLosses[0]); err != nil {
 		return err

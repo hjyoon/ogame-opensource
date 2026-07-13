@@ -192,7 +192,7 @@ func (r FleetRepository) finishFleetQueueTask(ctx context.Context, uniTable stri
 	}
 
 	switch fleet.Mission {
-	case domaingame.FleetMissionAttack:
+	case domaingame.FleetMissionAttack, domaingame.FleetMissionDestroy:
 		return r.finishAttackFleetArrival(ctx, uniTable, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, messagesTable, battleTable, task, fleet)
 	case domaingame.FleetMissionACSAttack, domaingame.FleetMissionACSAttackHead:
 		return r.finishACSAttackFleetArrival(ctx, uniTable, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, messagesTable, battleTable, unionTable, task, fleet)

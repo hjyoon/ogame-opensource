@@ -88,20 +88,29 @@ func (r FleetRepository) finishAttackFleetArrival(ctx context.Context, uniTable 
 	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE date < ?", battleTable), task.End-2*7*24*60*60); err != nil {
 		return err
 	}
-
-	returning := fleet
-	returning.Metal = maxFloat(0, fleet.Metal) + captured.Metal
-	returning.Crystal = maxFloat(0, fleet.Crystal) + captured.Crystal
-	returning.Deuterium = maxFloat(0, fleet.Deuterium) + captured.Deuterium
-	returnFleetID, err := r.insertRecallFleet(ctx, fleetTable, fleet.OwnerID, returning, fleet.Mission+domaingame.FleetMissionReturnOffset, int64(fleet.FlightTime))
+	moonDestruction, err := r.finishMoonDestruction(ctx, fleetTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet, messageContext, fleet.Ships, true)
 	if err != nil {
 		return err
 	}
-	if err := r.insertRecallQueue(ctx, queueTable, fleet.OwnerID, returnFleetID, fleet.Mission+domaingame.FleetMissionReturnOffset, task.End, int64(fleet.FlightTime)); err != nil {
-		return err
-	}
-	if err := r.insertFleetTransitionLog(ctx, fleetLogsTable, messageContext, returning, fleet.Mission+domaingame.FleetMissionReturnOffset, int64(fleet.FlightTime), 0, task.End); err != nil {
-		return err
+
+	if moonDestruction.Code&domaingame.MoonDestroyFleet == 0 {
+		returning := fleet
+		if moonDestruction.ReturnTargetID > 0 {
+			returning.TargetPlanetID = moonDestruction.ReturnTargetID
+		}
+		returning.Metal = maxFloat(0, fleet.Metal) + captured.Metal
+		returning.Crystal = maxFloat(0, fleet.Crystal) + captured.Crystal
+		returning.Deuterium = maxFloat(0, fleet.Deuterium) + captured.Deuterium
+		returnFleetID, err := r.insertRecallFleet(ctx, fleetTable, fleet.OwnerID, returning, fleet.Mission+domaingame.FleetMissionReturnOffset, int64(fleet.FlightTime))
+		if err != nil {
+			return err
+		}
+		if err := r.insertRecallQueue(ctx, queueTable, fleet.OwnerID, returnFleetID, fleet.Mission+domaingame.FleetMissionReturnOffset, task.End, int64(fleet.FlightTime)); err != nil {
+			return err
+		}
+		if err := r.insertFleetTransitionLog(ctx, fleetLogsTable, messageContext, returning, fleet.Mission+domaingame.FleetMissionReturnOffset, int64(fleet.FlightTime), 0, task.End); err != nil {
+			return err
+		}
 	}
 	return r.removeCompletedFleetTask(ctx, fleetTable, queueTable, fleet.ID, task.TaskID)
 }
