@@ -1272,6 +1272,7 @@ func (r AdminRepository) mutateAdminFleetlogs(ctx context.Context, queueTable st
 			break
 		}
 		fleetRepository := NewFleetRepositoryWithRunner(r.queryer, r.execer, r.prefix, r.now)
+		fleetRepository.legacyEvents = true
 		if err := fleetRepository.RecallFleetAnyOwner(ctx, fleetID); err != nil {
 			return nil, err
 		}

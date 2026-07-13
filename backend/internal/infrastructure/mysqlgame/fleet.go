@@ -973,6 +973,10 @@ func (r FleetRepository) recallFleet(ctx context.Context, fleetID int, loader re
 	if err != nil {
 		return err
 	}
+	userLogsTable, err := tableName(r.prefix, "userlogs")
+	if err != nil {
+		return err
+	}
 
 	frozen, err := r.loadUniverseFrozen(ctx, uniTable)
 	if err != nil {
@@ -1003,6 +1007,22 @@ func (r FleetRepository) recallFleet(ctx context.Context, fleetID int, loader re
 
 	now := r.now().Unix()
 	newMission, seconds := recallMissionAndDuration(fleet, queue, now)
+	var messageContext fleetMessageContext
+	var messageContextFound bool
+	if r.legacyEvents {
+		messageContext, messageContextFound, err = r.loadFleetMessageContext(ctx, usersTable, planetsTable, fleet)
+		if err != nil {
+			return err
+		}
+		if messageContextFound {
+			if err := r.insertFleetRecallUserLog(ctx, userLogsTable, messageContext, fleet, newMission, now); err != nil {
+				return err
+			}
+		}
+		if err := r.deleteOldFleetLogs(ctx, fleetLogsTable, now); err != nil {
+			return err
+		}
+	}
 	newFleetID, err := r.insertRecallFleet(ctx, fleetTable, originOwner, fleet, newMission, seconds)
 	if err != nil {
 		return err
@@ -1027,18 +1047,79 @@ func (r FleetRepository) recallFleet(ctx context.Context, fleetID int, loader re
 			return err
 		}
 	}
-	if r.legacyEvents {
-		messageContext, found, err := r.loadFleetMessageContext(ctx, usersTable, planetsTable, fleet)
-		if err != nil {
+	if r.legacyEvents && messageContextFound {
+		if err := r.insertFleetTransitionLog(ctx, fleetLogsTable, messageContext, fleet, newMission, seconds, 0, now); err != nil {
 			return err
-		}
-		if found {
-			if err := r.insertFleetTransitionLog(ctx, fleetLogsTable, messageContext, fleet, newMission, seconds, 0, now); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
+}
+
+func (r FleetRepository) insertFleetRecallUserLog(ctx context.Context, userLogsTable string, value fleetMessageContext, fleet recallFleetRow, mission int, at int64) error {
+	text := fmt.Sprintf(
+		"Fleet Recall %d: %s %s [%d:%d:%d] &lt;- %s [%d:%d:%d]<br>%s",
+		fleet.ID,
+		fleetRecallMissionDebugName(mission),
+		value.OriginName,
+		value.OriginGalaxy,
+		value.OriginSystem,
+		value.OriginPosition,
+		value.TargetName,
+		value.TargetGalaxy,
+		value.TargetSystem,
+		value.TargetPosition,
+		fleetRecallDump(fleet.Ships),
+	)
+	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (owner_id, date, type, text) VALUES (?, ?, ?, ?)", userLogsTable), fleet.OwnerID, at, "FLEET", text); err != nil {
+		return err
+	}
+	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE date < ?", userLogsTable), at-2*7*24*60*60)
+	return err
+}
+
+func fleetRecallDump(ships domaingame.FleetCounts) string {
+	var result strings.Builder
+	for _, id := range domaingame.FleetIDs() {
+		if ships[id] > 0 {
+			fmt.Fprintf(&result, "%s %s ", domaingame.FleetName(id), fleetLegacyNumber(float64(ships[id])))
+		}
+	}
+	return result.String()
+}
+
+var fleetRecallMissionDebugNames = map[int]string{
+	domaingame.FleetMissionAttack:                                              "\u0410\u0442\u0430\u043a\u0430 \u0443\u0431\u044b\u0432\u0430\u0435\u0442",
+	domaingame.FleetMissionAttack + domaingame.FleetMissionReturnOffset:        "\u0410\u0442\u0430\u043a\u0430 \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442\u0441\u044f",
+	domaingame.FleetMissionACSAttack:                                           "\u0421\u043e\u0432\u043c\u0435\u0441\u0442\u043d\u0430\u044f \u0430\u0442\u0430\u043a\u0430 \u0443\u0431\u044b\u0432\u0430\u0435\u0442",
+	domaingame.FleetMissionACSAttack + domaingame.FleetMissionReturnOffset:     "\u0421\u043e\u0432\u043c\u0435\u0441\u0442\u043d\u0430\u044f \u0430\u0442\u0430\u043a\u0430 \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442\u0441\u044f",
+	domaingame.FleetMissionTransport:                                           "\u0422\u0440\u0430\u043d\u0441\u043f\u043e\u0440\u0442 \u0443\u0431\u044b\u0432\u0430\u0435\u0442",
+	domaingame.FleetMissionTransport + domaingame.FleetMissionReturnOffset:     "\u0422\u0440\u0430\u043d\u0441\u043f\u043e\u0440\u0442 \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442\u0441\u044f",
+	domaingame.FleetMissionDeploy:                                              "\u041e\u0441\u0442\u0430\u0432\u0438\u0442\u044c \u0443\u0431\u044b\u0432\u0430\u0435\u0442",
+	domaingame.FleetMissionDeploy + domaingame.FleetMissionReturnOffset:        "\u041e\u0441\u0442\u0430\u0432\u0438\u0442\u044c \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442\u0441\u044f",
+	domaingame.FleetMissionACSHold:                                             "\u0414\u0435\u0440\u0436\u0430\u0442\u044c\u0441\u044f \u0443\u0431\u044b\u0432\u0430\u0435\u0442",
+	domaingame.FleetMissionACSHold + domaingame.FleetMissionReturnOffset:       "\u0414\u0435\u0440\u0436\u0430\u0442\u044c\u0441\u044f \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442\u0441\u044f",
+	domaingame.FleetMissionACSHold + domaingame.FleetMissionOrbitingOffset:     "\u0414\u0435\u0440\u0436\u0430\u0442\u044c\u0441\u044f \u043d\u0430 \u043e\u0440\u0431\u0438\u0442\u0435",
+	domaingame.FleetMissionSpy:                                                 "\u0428\u043f\u0438\u043e\u043d\u0430\u0436 \u0443\u0431\u044b\u0432\u0430\u0435\u0442",
+	domaingame.FleetMissionSpy + domaingame.FleetMissionReturnOffset:           "\u0428\u043f\u0438\u043e\u043d\u0430\u0436 \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442\u0441\u044f",
+	domaingame.FleetMissionColonize:                                            "\u041a\u043e\u043b\u043e\u043d\u0438\u0437\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0443\u0431\u044b\u0432\u0430\u0435\u0442",
+	domaingame.FleetMissionColonize + domaingame.FleetMissionReturnOffset:      "\u041a\u043e\u043b\u043e\u043d\u0438\u0437\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442\u0441\u044f",
+	domaingame.FleetMissionRecycle:                                             "\u041f\u0435\u0440\u0435\u0440\u0430\u0431\u043e\u0442\u0430\u0442\u044c \u0443\u0431\u044b\u0432\u0430\u0435\u0442",
+	domaingame.FleetMissionRecycle + domaingame.FleetMissionReturnOffset:       "\u041f\u0435\u0440\u0435\u0440\u0430\u0431\u043e\u0442\u0430\u0442\u044c \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442\u0441\u044f",
+	domaingame.FleetMissionDestroy:                                             "\u0423\u043d\u0438\u0447\u0442\u043e\u0436\u0438\u0442\u044c \u0443\u0431\u044b\u0432\u0430\u0435\u0442",
+	domaingame.FleetMissionDestroy + domaingame.FleetMissionReturnOffset:       "\u0423\u043d\u0438\u0447\u0442\u043e\u0436\u0438\u0442\u044c \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442\u0441\u044f",
+	domaingame.FleetMissionExpedition:                                          "\u042d\u043a\u0441\u043f\u0435\u0434\u0438\u0446\u0438\u044f \u0443\u0431\u044b\u0432\u0430\u0435\u0442",
+	domaingame.FleetMissionExpedition + domaingame.FleetMissionReturnOffset:    "\u042d\u043a\u0441\u043f\u0435\u0434\u0438\u0446\u0438\u044f \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442\u0441\u044f",
+	domaingame.FleetMissionExpedition + domaingame.FleetMissionOrbitingOffset:  "\u042d\u043a\u0441\u043f\u0435\u0434\u0438\u0446\u0438\u044f \u043d\u0430 \u043e\u0440\u0431\u0438\u0442\u0435",
+	domaingame.FleetMissionMissile:                                             "\u0420\u0430\u043a\u0435\u0442\u043d\u0430\u044f \u0430\u0442\u0430\u043a\u0430",
+	domaingame.FleetMissionACSAttackHead:                                       "\u0410\u0442\u0430\u043a\u0430 \u0421\u0410\u0411 \u0443\u0431\u044b\u0432\u0430\u0435\u0442",
+	domaingame.FleetMissionACSAttackHead + domaingame.FleetMissionReturnOffset: "\u0410\u0442\u0430\u043a\u0430 \u0421\u0410\u0411 \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442\u0441\u044f",
+}
+
+func fleetRecallMissionDebugName(mission int) string {
+	if name, ok := fleetRecallMissionDebugNames[mission]; ok {
+		return name
+	}
+	return "\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u043e"
 }
 
 func (r FleetRepository) loadFleetLaunchTarget(ctx context.Context, planetsTable string, coordinates domaingame.Coordinates, targetType int) (fleetLaunchTarget, bool, error) {

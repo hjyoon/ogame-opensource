@@ -2705,10 +2705,19 @@ func TestFleetRepositoryRecallsOutboundFleetWithLegacyReturnQueue(t *testing.T) 
 	if err := repository.RecallFleet(context.Background(), appgame.FleetRecallQuery{PlayerID: 42, FleetID: 123}); err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.execCalls) != 5 {
+	if len(runner.execCalls) != 8 {
 		t.Fatalf("expected return fleet lifecycle and transition log calls, got %+v", runner.execCalls)
 	}
-	insertFleet := runner.execCalls[0]
+	if !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `ogame_userlogs`") ||
+		!strings.Contains(runner.execCalls[0].args[3].(string), "Fleet Recall 123:") ||
+		!strings.Contains(runner.execCalls[0].args[3].(string), "Small Cargo 2 Solar Satellite 1 ") {
+		t.Fatalf("expected legacy recall user log, got %+v", runner.execCalls[0])
+	}
+	if !strings.Contains(runner.execCalls[1].sql, "DELETE FROM `ogame_userlogs`") ||
+		!strings.Contains(runner.execCalls[2].sql, "DELETE FROM `ogame_fleetlogs`") {
+		t.Fatalf("expected legacy recall log retention cleanup, got %+v", runner.execCalls[:3])
+	}
+	insertFleet := runner.execCalls[3]
 	if !strings.Contains(insertFleet.sql, "INSERT INTO `ogame_fleet`") {
 		t.Fatalf("expected fleet insert, got %s", insertFleet.sql)
 	}
@@ -2718,18 +2727,36 @@ func TestFleetRepositoryRecallsOutboundFleetWithLegacyReturnQueue(t *testing.T) 
 	if insertFleet.args[11] != 2 || insertFleet.args[21] != 1 {
 		t.Fatalf("recall must preserve ship counts, got args: %+v", insertFleet.args)
 	}
-	insertQueue := runner.execCalls[1]
+	insertQueue := runner.execCalls[4]
 	if !strings.Contains(insertQueue.sql, "INSERT INTO `ogame_queue`") {
 		t.Fatalf("expected queue insert, got %s", insertQueue.sql)
 	}
 	if insertQueue.args[0] != 44 || insertQueue.args[1] != queueTypeFleet || insertQueue.args[2] != 1 || insertQueue.args[5] != int64(1_000) || insertQueue.args[6] != int64(1_060) {
 		t.Fatalf("unexpected return queue args: %+v", insertQueue.args)
 	}
-	if !strings.Contains(runner.execCalls[2].sql, "DELETE FROM `ogame_fleet`") || !strings.Contains(runner.execCalls[3].sql, "DELETE FROM `ogame_queue`") {
+	if !strings.Contains(runner.execCalls[5].sql, "DELETE FROM `ogame_fleet`") || !strings.Contains(runner.execCalls[6].sql, "DELETE FROM `ogame_queue`") {
 		t.Fatalf("expected original fleet and queue deletes, got %+v", runner.execCalls)
 	}
-	if !strings.Contains(runner.execCalls[4].sql, "INSERT INTO `ogame_fleetlogs`") {
-		t.Fatalf("expected recall transition fleetlog, got %+v", runner.execCalls[4])
+	if !strings.Contains(runner.execCalls[7].sql, "INSERT INTO `ogame_fleetlogs`") {
+		t.Fatalf("expected recall transition fleetlog, got %+v", runner.execCalls[7])
+	}
+}
+
+func TestFleetRecallLegacyDebugTextMappings(t *testing.T) {
+	if len(fleetRecallMissionDebugNames) != 25 {
+		t.Fatalf("expected all legacy recall mission labels, got %d", len(fleetRecallMissionDebugNames))
+	}
+	if got := fleetRecallMissionDebugName(domaingame.FleetMissionTransport + domaingame.FleetMissionReturnOffset); got != "\u0422\u0440\u0430\u043d\u0441\u043f\u043e\u0440\u0442 \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442\u0441\u044f" {
+		t.Fatalf("unexpected transport return debug label %q", got)
+	}
+	if got := fleetRecallMissionDebugName(domaingame.FleetMissionMissile); got != "\u0420\u0430\u043a\u0435\u0442\u043d\u0430\u044f \u0430\u0442\u0430\u043a\u0430" {
+		t.Fatalf("unexpected missile debug label %q", got)
+	}
+	if got := fleetRecallMissionDebugName(-1); got != "\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u043e" {
+		t.Fatalf("unexpected unknown mission debug label %q", got)
+	}
+	if got := fleetRecallDump(nil); got != "" {
+		t.Fatalf("empty fleet dump must remain empty, got %q", got)
 	}
 }
 

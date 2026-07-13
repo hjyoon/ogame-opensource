@@ -2732,8 +2732,14 @@ func TestAdminRepositoryMutatesFleetlogControls(t *testing.T) {
 				{rows: fakeRowsFromValues([]any{55, int64(940), int64(1_240)})},
 				{rows: fakeRowsFromValues([]any{44})},
 				{rows: fakeRowsFromValues([]any{100})},
+				{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 			}},
-			execResults: []sql.Result{galaxySQLResult{id: 9001, rows: 1}},
+			execResults: []sql.Result{
+				galaxySQLResult{rows: 1},
+				galaxySQLResult{rows: 1},
+				galaxySQLResult{rows: 1},
+				galaxySQLResult{id: 9001, rows: 1},
+			},
 		}
 		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
 		repository.now = func() time.Time { return time.Unix(1_000, 0) }
@@ -2742,24 +2748,28 @@ func TestAdminRepositoryMutatesFleetlogControls(t *testing.T) {
 			Action: domaingame.AdminActionFleetlogsReturn,
 			TaskID: 1003,
 		})
-		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 4 {
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 8 {
 			t.Fatalf("unexpected fleetlogs return issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
 		}
-		if !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `ogame_fleet`") ||
-			runner.execCalls[0].args[0] != 44 ||
-			runner.execCalls[0].args[6] != domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset ||
-			runner.execCalls[0].args[9] != int64(60) {
-			t.Fatalf("unexpected fleetlogs return fleet insert: %+v", runner.execCalls[0])
+		if !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `ogame_userlogs`") || runner.execCalls[0].args[0] != 42 {
+			t.Fatalf("expected admin return user log, got %+v", runner.execCalls[0])
 		}
-		if !strings.Contains(runner.execCalls[1].sql, "INSERT INTO `ogame_queue`") ||
-			runner.execCalls[1].args[0] != 44 ||
-			runner.execCalls[1].args[2] != 9001 ||
-			runner.execCalls[1].args[6] != int64(1_060) {
-			t.Fatalf("unexpected fleetlogs return queue insert: %+v", runner.execCalls[1])
+		if !strings.Contains(runner.execCalls[3].sql, "INSERT INTO `ogame_fleet`") ||
+			runner.execCalls[3].args[0] != 44 ||
+			runner.execCalls[3].args[6] != domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset ||
+			runner.execCalls[3].args[9] != int64(60) {
+			t.Fatalf("unexpected fleetlogs return fleet insert: %+v", runner.execCalls[3])
 		}
-		if !strings.Contains(runner.execCalls[2].sql, "DELETE FROM `ogame_fleet` WHERE fleet_id = ? LIMIT 1") ||
-			runner.execCalls[2].args[0] != 123 ||
-			!strings.Contains(runner.execCalls[3].sql, "DELETE FROM `ogame_queue` WHERE task_id = ? AND type = ? LIMIT 1") {
+		if !strings.Contains(runner.execCalls[4].sql, "INSERT INTO `ogame_queue`") ||
+			runner.execCalls[4].args[0] != 44 ||
+			runner.execCalls[4].args[2] != 9001 ||
+			runner.execCalls[4].args[6] != int64(1_060) {
+			t.Fatalf("unexpected fleetlogs return queue insert: %+v", runner.execCalls[4])
+		}
+		if !strings.Contains(runner.execCalls[5].sql, "DELETE FROM `ogame_fleet` WHERE fleet_id = ? LIMIT 1") ||
+			runner.execCalls[5].args[0] != 123 ||
+			!strings.Contains(runner.execCalls[6].sql, "DELETE FROM `ogame_queue` WHERE task_id = ? AND type = ? LIMIT 1") ||
+			!strings.Contains(runner.execCalls[7].sql, "INSERT INTO `ogame_fleetlogs`") {
 			t.Fatalf("expected admin recall to delete original fleet and queue without owner scope, got %+v", runner.execCalls)
 		}
 	})
