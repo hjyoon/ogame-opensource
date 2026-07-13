@@ -278,15 +278,15 @@ EOF
 $legacy_final
 EOF
   elif [ "$mode" = attack-defense ]; then
-    jq -e '.origin.shipCount == 9 and .target.plasma == 10 and .target.metal == 1000000 and .target.crystal == 1000000 and .target.deuterium == 1000000 and .debris.metal == 900 and .debris.crystal == 300 and .counts.messages == 4 and .counts.battles == 1 and .battle.report != "" and .users[0].score1 == 6000 and .users[0].score2 == -1' >/dev/null <<EOF || pass=false
+    jq -e --argjson before "$legacy_before" '.origin.shipCount == 9 and .target.plasma == 10 and .target.metal == 1000000 and .target.crystal == 1000000 and .target.deuterium == 1000000 and .debris.metal == 900 and .debris.crystal == 300 and .counts.messages == 4 and .counts.battles == 1 and .battle.report != "" and .users[0].score1 == ($before.users[0].score1 - 4000) and .users[0].score2 == ($before.users[0].score2 - 1)' >/dev/null <<EOF || pass=false
 $legacy_final
 EOF
   elif [ "$mode" = attack-guarded-win ]; then
-    jq -e '.origin.shipCount == 10 and .target.lightFighter == 0 and .target.metal < 1000000 and .target.crystal < 1000000 and .target.deuterium < 1000000 and .debris.metal == 900 and .debris.crystal == 300 and .counts.messages == 5 and .counts.battles == 1 and .battle.report != "" and .users[1].score1 == 6000 and .users[1].score2 == -1' >/dev/null <<EOF || pass=false
+    jq -e --argjson before "$legacy_before" '.origin.shipCount == 10 and .target.lightFighter == 0 and .target.metal < 1000000 and .target.crystal < 1000000 and .target.deuterium < 1000000 and .debris.metal == 900 and .debris.crystal == 300 and .counts.messages == 5 and .counts.battles == 1 and .battle.report != "" and .users[1].score1 == ($before.users[1].score1 - 4000) and .users[1].score2 == ($before.users[1].score2 - 1)' >/dev/null <<EOF || pass=false
 $legacy_final
 EOF
   elif [ "$mode" = attack-defense-repair ]; then
-    jq -e '.origin.shipCount == 10 and .target.rocketLauncher == 1 and .target.metal < 1000000 and .target.crystal < 1000000 and .target.deuterium < 1000000 and .debris.metal == 0 and .debris.crystal == 0 and .counts.messages == 5 and .counts.battles == 1 and (.battle.report | contains("1 Rocket Launchercould be repaired.")) and .users[1].score1 == 8000 and .users[1].score2 == 0' >/dev/null <<EOF || pass=false
+    jq -e --argjson before "$legacy_before" '.origin.shipCount == 10 and .target.rocketLauncher == 1 and .target.metal < 1000000 and .target.crystal < 1000000 and .target.deuterium < 1000000 and .debris.metal == 0 and .debris.crystal == 0 and .counts.messages == 5 and .counts.battles == 1 and (.battle.report | contains("1 Rocket Launchercould be repaired.")) and .users[1].score1 == ($before.users[1].score1 - 2000) and .users[1].score2 == $before.users[1].score2' >/dev/null <<EOF || pass=false
 $legacy_final
 EOF
   elif [ "$mode" = acs-hold ]; then

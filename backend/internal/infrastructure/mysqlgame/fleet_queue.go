@@ -65,6 +65,9 @@ type expeditionSettings struct {
 	ChanceRes         int
 	ChanceFleet       int
 	DMFactor          int
+	ScoreCaps         [8]int
+	PointLimits       [8]int
+	PointLimitMax     int
 }
 
 type expeditionTargetState struct {
@@ -72,22 +75,13 @@ type expeditionTargetState struct {
 	System       int
 	Position     int
 	VisitCounter int
+	Language     string
+	Trader       domaingame.ExpeditionTraderState
+	Weapon       int
+	Shield       int
+	Armour       int
+	TopScore     int64
 }
-
-type expeditionResult int
-
-const (
-	expeditionResultNothing expeditionResult = iota
-	expeditionResultAliens
-	expeditionResultPirates
-	expeditionResultDarkMatter
-	expeditionResultBlackHole
-	expeditionResultDelay
-	expeditionResultAccel
-	expeditionResultResources
-	expeditionResultFleet
-	expeditionResultTrader
-)
 
 func (r FleetRepository) FinishDueFleetQueues(ctx context.Context, until int) error {
 	if r.execer == nil {
@@ -226,9 +220,9 @@ func (r FleetRepository) finishFleetQueueTask(ctx context.Context, uniTable stri
 	case domaingame.FleetMissionRecycle:
 		return r.finishRecycleFleetArrival(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)
 	case domaingame.FleetMissionExpedition:
-		return r.finishExpeditionArrival(ctx, fleetTable, queueTable, task, fleet)
+		return r.finishExpeditionArrival(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, task, fleet)
 	case domaingame.FleetMissionExpedition + domaingame.FleetMissionOrbitingOffset:
-		return r.finishExpeditionHold(ctx, fleetTable, queueTable, planetsTable, messagesTable, usersTable, expeditionTable, task, fleet)
+		return r.finishExpeditionHold(ctx, uniTable, fleetTable, fleetLogsTable, queueTable, planetsTable, messagesTable, usersTable, expeditionTable, battleTable, task, fleet)
 	case domaingame.FleetMissionMissile:
 		return r.finishMissileArrival(ctx, fleetTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)
 	default:
@@ -462,99 +456,62 @@ func recycleHarvest(metal float64, crystal float64, cargo float64) (float64, flo
 	return harvestMetal, harvestCrystal
 }
 
-func (r FleetRepository) finishExpeditionArrival(ctx context.Context, fleetTable string, queueTable string, task fleetQueueTask, fleet recallFleetRow) error {
-	holdFleetID, err := r.insertFleetTransition(ctx, fleetTable, fleet.OwnerID, fleet, fleet.Mission+domaingame.FleetMissionOrbitingOffset, int64(fleet.DeployTime), int64(fleet.FlightTime))
+func (r FleetRepository) finishExpeditionArrival(ctx context.Context, fleetTable string, fleetLogsTable string, queueTable string, planetsTable string, usersTable string, task fleetQueueTask, fleet recallFleetRow) error {
+	value, found, err := r.loadFleetMessageContext(ctx, usersTable, planetsTable, fleet)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.New("expedition arrival context unavailable")
+	}
+	orbiting := fleet
+	orbiting.Fuel = 0
+	holdFleetID, err := r.insertFleetTransition(ctx, fleetTable, fleet.OwnerID, orbiting, fleet.Mission+domaingame.FleetMissionOrbitingOffset, int64(fleet.DeployTime), int64(fleet.FlightTime))
 	if err != nil {
 		return err
 	}
 	if err := r.insertRecallQueue(ctx, queueTable, fleet.OwnerID, holdFleetID, fleet.Mission+domaingame.FleetMissionOrbitingOffset, task.End, int64(fleet.DeployTime)); err != nil {
 		return err
 	}
+	if err := r.insertFleetTransitionLog(ctx, fleetLogsTable, value, orbiting, fleet.Mission+domaingame.FleetMissionOrbitingOffset, int64(fleet.DeployTime), int64(fleet.FlightTime), task.End); err != nil {
+		return err
+	}
 	return r.removeCompletedFleetTask(ctx, fleetTable, queueTable, fleet.ID, task.TaskID)
 }
 
-func (r FleetRepository) finishExpeditionHold(ctx context.Context, fleetTable string, queueTable string, planetsTable string, messagesTable string, usersTable string, expeditionTable string, task fleetQueueTask, fleet recallFleetRow) error {
+func (r FleetRepository) finishExpeditionHold(ctx context.Context, uniTable string, fleetTable string, fleetLogsTable string, queueTable string, planetsTable string, messagesTable string, usersTable string, expeditionTable string, battleTable string, task fleetQueueTask, fleet recallFleetRow) error {
 	settings, err := r.loadExpeditionSettings(ctx, expeditionTable)
 	if err != nil {
 		return err
 	}
-	target, err := r.loadExpeditionTargetState(ctx, planetsTable, fleet.TargetPlanetID)
+	target, err := r.loadExpeditionTargetState(ctx, planetsTable, usersTable, fleet.TargetPlanetID, fleet.OwnerID)
 	if err != nil {
 		return err
 	}
-	result := expeditionForcedResult(settings, target.VisitCounter, fleet.FlightTime/3600)
-	messageText := "Expedition report: Nothing happened."
-
-	switch result {
-	case expeditionResultDarkMatter:
-		if err := r.addExpeditionDarkMatter(ctx, usersTable, fleet.OwnerID, maxInt(100, settings.DMFactor*100)); err != nil {
-			return err
-		}
-		messageText = "Expedition report: You found Dark Matter."
-		if err := r.insertExpeditionReturn(ctx, fleetTable, queueTable, task, fleet, int64(fleet.DeployTime), fleet); err != nil {
-			return err
-		}
-	case expeditionResultResources:
-		returning := fleet
-		returning.Metal += 1000
-		messageText = "Expedition report: You got 1,000 Metal."
-		if err := r.insertExpeditionReturn(ctx, fleetTable, queueTable, task, fleet, int64(fleet.DeployTime), returning); err != nil {
-			return err
-		}
-	case expeditionResultFleet:
-		returning := fleet
-		returning.Ships = copyFleetCounts(fleet.Ships)
-		returning.Ships[domaingame.FleetSmallCargo]++
-		messageText = "Expedition report: The following ships are now part of the fleet:<br>Small Cargo 1"
-		if err := r.insertExpeditionReturn(ctx, fleetTable, queueTable, task, fleet, int64(fleet.DeployTime), returning); err != nil {
-			return err
-		}
-	case expeditionResultTrader:
-		if err := r.activateExpeditionTrader(ctx, usersTable, fleet.OwnerID); err != nil {
-			return err
-		}
-		messageText = "Expedition report: You met a representative with goods to trade."
-		if err := r.insertExpeditionReturn(ctx, fleetTable, queueTable, task, fleet, int64(fleet.DeployTime), fleet); err != nil {
-			return err
-		}
-	case expeditionResultDelay:
-		messageText = "Expedition report: The fleet will return later because the return trip will take longer."
-		if err := r.insertExpeditionReturn(ctx, fleetTable, queueTable, task, fleet, int64(fleet.DeployTime+maxInt(1, fleet.FlightTime)*2), fleet); err != nil {
-			return err
-		}
-	case expeditionResultAccel:
-		messageText = "Expedition report: The fleet will return earlier after an expedited return jump."
-		if err := r.insertExpeditionReturn(ctx, fleetTable, queueTable, task, fleet, maxInt64(1, int64(fleet.DeployTime/2)), fleet); err != nil {
-			return err
-		}
-	case expeditionResultAliens:
-		messageText = "Expedition report: An alien fleet attacked the expedition."
-		if err := r.insertExpeditionBattleMessage(ctx, messagesTable, fleet.OwnerID, target, "Battle report: alien attackers engaged the expedition.", task.End); err != nil {
-			return err
-		}
-		if err := r.insertExpeditionReturn(ctx, fleetTable, queueTable, task, fleet, int64(fleet.DeployTime), fleet); err != nil {
-			return err
-		}
-	case expeditionResultPirates:
-		messageText = "Expedition report: Pirate ships attacked the expedition."
-		if err := r.insertExpeditionBattleMessage(ctx, messagesTable, fleet.OwnerID, target, "Battle report: pirate attackers engaged the expedition.", task.End); err != nil {
-			return err
-		}
-		if err := r.insertExpeditionReturn(ctx, fleetTable, queueTable, task, fleet, int64(fleet.DeployTime), fleet); err != nil {
-			return err
-		}
-	case expeditionResultBlackHole:
-		messageText = "Expedition report: The entire expedition fleet was lost forever in a black hole."
-	default:
-		if err := r.insertExpeditionReturn(ctx, fleetTable, queueTable, task, fleet, int64(fleet.DeployTime), fleet); err != nil {
-			return err
-		}
+	value, found, err := r.loadFleetMessageContext(ctx, usersTable, planetsTable, fleet)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.New("expedition hold context unavailable")
+	}
+	result, err := domaingame.ResolveExpedition(domaingame.ExpeditionInput{
+		Settings: expeditionDomainSettings(settings), VisitCounter: target.VisitCounter,
+		HoldSeconds: fleet.FlightTime, FlightSeconds: fleet.DeployTime,
+		Fleet: fleet.Ships, Loaded: domaingame.Resources{Metal: fleet.Metal, Crystal: fleet.Crystal, Deuterium: fleet.Deuterium},
+		TopScore: target.TopScore, Trader: target.Trader,
+	}, r.combatRandom)
+	if err != nil {
+		return err
+	}
+	if err := r.applyExpeditionOutcome(ctx, uniTable, fleetTable, fleetLogsTable, queueTable, planetsTable, messagesTable, usersTable, battleTable, task, fleet, value, target, result); err != nil {
+		return err
 	}
 
 	if err := r.addFleetResourcesToPlanet(ctx, planetsTable, fleet.TargetPlanetID, 1, 0, 0, task.End); err != nil {
 		return err
 	}
-	if err := r.insertExpeditionMessage(ctx, messagesTable, fleet.OwnerID, target, messageText, task.End); err != nil {
+	if err := r.insertExpeditionMessage(ctx, messagesTable, fleet.OwnerID, target, expeditionMessageText(target.Language, result), task.End); err != nil {
 		return err
 	}
 	return r.removeCompletedFleetTask(ctx, fleetTable, queueTable, fleet.ID, task.TaskID)
@@ -718,12 +675,15 @@ func (r FleetRepository) removeCompletedFleetTask(ctx context.Context, fleetTabl
 	return (BuildingsRepository{execer: r.execer}).removeGlobalQueue(ctx, queueTable, taskID)
 }
 
-func (r FleetRepository) insertExpeditionReturn(ctx context.Context, fleetTable string, queueTable string, task fleetQueueTask, original recallFleetRow, seconds int64, returning recallFleetRow) error {
+func (r FleetRepository) insertExpeditionReturn(ctx context.Context, fleetTable string, fleetLogsTable string, queueTable string, task fleetQueueTask, original recallFleetRow, value fleetMessageContext, seconds int64, returning recallFleetRow) error {
 	returnFleetID, err := r.insertFleetTransition(ctx, fleetTable, original.OwnerID, returning, domaingame.FleetMissionExpedition+domaingame.FleetMissionReturnOffset, seconds, 0)
 	if err != nil {
 		return err
 	}
-	return r.insertRecallQueue(ctx, queueTable, original.OwnerID, returnFleetID, domaingame.FleetMissionExpedition+domaingame.FleetMissionReturnOffset, task.End, seconds)
+	if err := r.insertRecallQueue(ctx, queueTable, original.OwnerID, returnFleetID, domaingame.FleetMissionExpedition+domaingame.FleetMissionReturnOffset, task.End, seconds); err != nil {
+		return err
+	}
+	return r.insertFleetTransitionLog(ctx, fleetLogsTable, value, returning, domaingame.FleetMissionExpedition+domaingame.FleetMissionReturnOffset, seconds, 0, task.End)
 }
 
 func (r FleetRepository) insertExpeditionMessage(ctx context.Context, messagesTable string, ownerID int, target expeditionTargetState, text string, at int64) error {
@@ -732,22 +692,8 @@ func (r FleetRepository) insertExpeditionMessage(ctx context.Context, messagesTa
 		fmt.Sprintf("INSERT INTO %s (owner_id, pm, msgfrom, subj, text, shown, date, planet_id) VALUES (?, ?, ?, ?, ?, 0, ?, 0)", messagesTable),
 		ownerID,
 		domaingame.MessageTypeExpedition,
-		"Fleet command",
-		fmt.Sprintf("Expedition result [%d:%d:%d]", target.Galaxy, target.System, target.Position),
-		text,
-		at,
-	)
-	return err
-}
-
-func (r FleetRepository) insertExpeditionBattleMessage(ctx context.Context, messagesTable string, ownerID int, target expeditionTargetState, text string, at int64) error {
-	_, err := r.execer.ExecContext(
-		ctx,
-		fmt.Sprintf("INSERT INTO %s (owner_id, pm, msgfrom, subj, text, shown, date, planet_id) VALUES (?, ?, ?, ?, ?, 0, ?, 0)", messagesTable),
-		ownerID,
-		domaingame.MessageTypeBattleReportText,
-		"Fleet command",
-		fmt.Sprintf("Battle report [%d:%d:%d]", target.Galaxy, target.System, target.Position),
+		expeditionLocaleValue(target.Language, "FLEET_MESSAGE_FROM"),
+		expeditionFormat(expeditionLocaleValue(target.Language, "EXP_MESSAGE_SUBJ"), target.Galaxy, target.System, target.Position),
 		text,
 		at,
 	)
@@ -757,7 +703,7 @@ func (r FleetRepository) insertExpeditionBattleMessage(ctx context.Context, mess
 func (r FleetRepository) loadExpeditionSettings(ctx context.Context, expeditionTable string) (expeditionSettings, error) {
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT chance_success, depleted_min, depleted_med, depleted_max, chance_depleted_min, chance_depleted_med, chance_depleted_max, chance_alien, chance_pirates, chance_dm, chance_lost, chance_delay, chance_accel, chance_res, chance_fleet, dm_factor FROM %s LIMIT 1", expeditionTable),
+		fmt.Sprintf("SELECT chance_success, depleted_min, depleted_med, depleted_max, chance_depleted_min, chance_depleted_med, chance_depleted_max, chance_alien, chance_pirates, chance_dm, chance_lost, chance_delay, chance_accel, chance_res, chance_fleet, dm_factor, score_cap1, score_cap2, score_cap3, score_cap4, score_cap5, score_cap6, score_cap7, score_cap8, limit_cap1, limit_cap2, limit_cap3, limit_cap4, limit_cap5, limit_cap6, limit_cap7, limit_cap8, limit_max FROM %s LIMIT 1", expeditionTable),
 	)
 	if err != nil {
 		return expeditionSettings{}, err
@@ -787,6 +733,11 @@ func (r FleetRepository) loadExpeditionSettings(ctx context.Context, expeditionT
 		&settings.ChanceRes,
 		&settings.ChanceFleet,
 		&settings.DMFactor,
+		&settings.ScoreCaps[0], &settings.ScoreCaps[1], &settings.ScoreCaps[2], &settings.ScoreCaps[3],
+		&settings.ScoreCaps[4], &settings.ScoreCaps[5], &settings.ScoreCaps[6], &settings.ScoreCaps[7],
+		&settings.PointLimits[0], &settings.PointLimits[1], &settings.PointLimits[2], &settings.PointLimits[3],
+		&settings.PointLimits[4], &settings.PointLimits[5], &settings.PointLimits[6], &settings.PointLimits[7],
+		&settings.PointLimitMax,
 	); err != nil {
 		return expeditionSettings{}, err
 	}
@@ -796,10 +747,11 @@ func (r FleetRepository) loadExpeditionSettings(ctx context.Context, expeditionT
 	return settings, nil
 }
 
-func (r FleetRepository) loadExpeditionTargetState(ctx context.Context, planetsTable string, planetID int) (expeditionTargetState, error) {
+func (r FleetRepository) loadExpeditionTargetState(ctx context.Context, planetsTable string, usersTable string, planetID int, ownerID int) (expeditionTargetState, error) {
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT g, s, p, `%d` FROM %s WHERE planet_id = ? LIMIT 1", resourceMetal, planetsTable),
+		fmt.Sprintf("SELECT p.g, p.s, p.p, p.`%d`, COALESCE(u.lang,'en'), COALESCE(u.trader,0), COALESCE(u.rate_m,0), COALESCE(u.rate_k,0), COALESCE(u.rate_d,0), COALESCE(u.`%d`,0), COALESCE(u.`%d`,0), COALESCE(u.`%d`,0), COALESCE((SELECT MAX(score1) FROM %s),0) FROM %s p JOIN %s u ON u.player_id = ? WHERE p.planet_id = ? LIMIT 1", resourceMetal, domaingame.ResearchWeapon, domaingame.ResearchShield, domaingame.ResearchArmour, usersTable, planetsTable, usersTable),
+		ownerID,
 		planetID,
 	)
 	if err != nil {
@@ -813,7 +765,7 @@ func (r FleetRepository) loadExpeditionTargetState(ctx context.Context, planetsT
 		return expeditionTargetState{}, errors.New("expedition target not found")
 	}
 	var target expeditionTargetState
-	if err := rows.Scan(&target.Galaxy, &target.System, &target.Position, &target.VisitCounter); err != nil {
+	if err := rows.Scan(&target.Galaxy, &target.System, &target.Position, &target.VisitCounter, &target.Language, &target.Trader.OfferID, &target.Trader.Metal, &target.Trader.Crystal, &target.Trader.Deut, &target.Weapon, &target.Shield, &target.Armour, &target.TopScore); err != nil {
 		return expeditionTargetState{}, err
 	}
 	if err := rows.Err(); err != nil {
@@ -827,101 +779,9 @@ func (r FleetRepository) addExpeditionDarkMatter(ctx context.Context, usersTable
 	return err
 }
 
-func (r FleetRepository) activateExpeditionTrader(ctx context.Context, usersTable string, ownerID int) error {
-	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET trader = 1, rate_m = 3, rate_k = 2, rate_d = 1 WHERE player_id = ? LIMIT 1", usersTable), ownerID)
+func (r FleetRepository) activateExpeditionTrader(ctx context.Context, usersTable string, ownerID int, trader domaingame.ExpeditionTraderState) error {
+	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET trader = ?, rate_m = ?, rate_k = ?, rate_d = ? WHERE player_id = ? LIMIT 1", usersTable), trader.OfferID, trader.Metal, trader.Crystal, trader.Deut, ownerID)
 	return err
-}
-
-func expeditionForcedResult(settings expeditionSettings, visitCounter int, holdHours int) expeditionResult {
-	if settings.ChanceSuccess+holdHours <= 0 {
-		return expeditionResultNothing
-	}
-	if expeditionDepletionFailureChance(settings, visitCounter) >= 100 {
-		return expeditionResultNothing
-	}
-	if settings.ChanceAlien <= 0 {
-		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
-	}
-	if settings.ChancePirates <= 0 {
-		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
-	}
-	if settings.ChanceDM <= 0 {
-		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
-	}
-	if settings.ChanceLost <= 0 {
-		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
-	}
-	if settings.ChanceDelay <= 0 {
-		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
-	}
-	if settings.ChanceAccel <= 0 {
-		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
-	}
-	if settings.ChanceRes <= 0 {
-		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
-	}
-	if settings.ChanceFleet <= 0 {
-		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
-	}
-	if settings.ChanceSuccess >= 100 &&
-		settings.ChanceAlien >= 100 &&
-		settings.ChancePirates >= 100 &&
-		settings.ChanceDM >= 100 &&
-		settings.ChanceLost >= 100 &&
-		settings.ChanceDelay >= 100 &&
-		settings.ChanceAccel >= 100 &&
-		settings.ChanceRes >= 100 &&
-		settings.ChanceFleet >= 100 {
-		return expeditionLegacyRollResult(settings, visitCounter, holdHours, 0, 0)
-	}
-	return expeditionResultNothing
-}
-
-func expeditionLegacyRollResult(settings expeditionSettings, visitCounter int, holdHours int, successRoll int, eventRoll int) expeditionResult {
-	if successRoll >= settings.ChanceSuccess+holdHours {
-		return expeditionResultNothing
-	}
-	if eventRoll < expeditionDepletionFailureChance(settings, visitCounter) {
-		return expeditionResultNothing
-	}
-	if eventRoll >= settings.ChanceAlien {
-		return expeditionResultAliens
-	}
-	if eventRoll >= settings.ChancePirates {
-		return expeditionResultPirates
-	}
-	if eventRoll >= settings.ChanceDM {
-		return expeditionResultDarkMatter
-	}
-	if eventRoll >= settings.ChanceLost {
-		return expeditionResultBlackHole
-	}
-	if eventRoll >= settings.ChanceDelay {
-		return expeditionResultDelay
-	}
-	if eventRoll >= settings.ChanceAccel {
-		return expeditionResultAccel
-	}
-	if eventRoll >= settings.ChanceRes {
-		return expeditionResultResources
-	}
-	if eventRoll >= settings.ChanceFleet {
-		return expeditionResultFleet
-	}
-	return expeditionResultTrader
-}
-
-func expeditionDepletionFailureChance(settings expeditionSettings, visitCounter int) int {
-	if visitCounter <= settings.DepletedMin {
-		return 0
-	}
-	if visitCounter <= settings.DepletedMed {
-		return settings.ChanceDepletedMin
-	}
-	if visitCounter <= settings.DepletedMax {
-		return settings.ChanceDepletedMed
-	}
-	return settings.ChanceDepletedMax
 }
 
 func copyFleetCounts(counts domaingame.FleetCounts) domaingame.FleetCounts {

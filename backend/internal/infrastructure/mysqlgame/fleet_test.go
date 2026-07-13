@@ -3417,14 +3417,15 @@ func TestFleetRepositoryFinishDueExpeditionCreatesHoldAndReturn(t *testing.T) {
 		{rows: fakeRowsFromValues([]any{0})},
 		{rows: fakeRowsFromValues([]any{58, 42, 126, int64(2_300)})},
 		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionExpedition, 0, map[int]int{domaingame.FleetSmallCargo: 1, domaingame.FleetEspionageProbe: 1}))},
+		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 	}}}
 	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_300, 0) })
 
 	if err := repository.FinishDueFleetQueues(context.Background(), 2_300); err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.execCalls) != 4 {
-		t.Fatalf("expected expedition hold fleet, hold queue, and cleanup writes, got %+v", runner.execCalls)
+	if len(runner.execCalls) != 5 {
+		t.Fatalf("expected expedition hold fleet, queue, log, and cleanup writes, got %+v", runner.execCalls)
 	}
 	holdFleet := runner.execCalls[0]
 	if !strings.Contains(holdFleet.sql, "INSERT INTO `ogame_fleet`") ||
@@ -3444,14 +3445,15 @@ func TestFleetRepositoryFinishDueExpeditionCreatesHoldAndReturn(t *testing.T) {
 		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionExpedition+domaingame.FleetMissionOrbitingOffset, 0, map[int]int{domaingame.FleetSmallCargo: 1, domaingame.FleetEspionageProbe: 1}))},
 		{rows: fakeRowsFromValues(expeditionSettingsTestRow("nothing"))},
 		{rows: fakeRowsFromValues(expeditionTargetTestRow())},
+		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 	}}}
 	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_900, 0) })
 
 	if err := repository.FinishDueFleetQueues(context.Background(), 2_900); err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.execCalls) != 6 {
-		t.Fatalf("expected expedition return, visit counter, message, and cleanup writes, got %+v", runner.execCalls)
+	if len(runner.execCalls) != 7 {
+		t.Fatalf("expected expedition return, log, visit counter, message, and cleanup writes, got %+v", runner.execCalls)
 	}
 	returnFleet := runner.execCalls[0]
 	if !strings.Contains(returnFleet.sql, "INSERT INTO `ogame_fleet`") ||
@@ -3460,11 +3462,11 @@ func TestFleetRepositoryFinishDueExpeditionCreatesHoldAndReturn(t *testing.T) {
 		returnFleet.args[10] != int64(0) {
 		t.Fatalf("expected expedition hold to create return fleet with original flight time, got %+v", returnFleet)
 	}
-	visitCounter := runner.execCalls[2]
+	visitCounter := runner.execCalls[3]
 	if !strings.Contains(visitCounter.sql, "UPDATE `ogame_planets`") || visitCounter.args[0] != float64(1) || visitCounter.args[4] != 100 {
 		t.Fatalf("expected expedition hold to increment farspace visit counter, got %+v", visitCounter)
 	}
-	message := runner.execCalls[3]
+	message := runner.execCalls[4]
 	if !strings.Contains(message.sql, "INSERT INTO `ogame_messages`") ||
 		message.args[0] != 42 ||
 		message.args[1] != domaingame.MessageTypeExpedition ||
@@ -3486,7 +3488,7 @@ func TestFleetRepositoryFinishDueExpeditionForcedOutcomes(t *testing.T) {
 			name:        "nothing",
 			event:       "nothing",
 			wantReturn:  true,
-			wantMessage: "Nothing happened",
+			wantMessage: "nothing thrilling",
 		},
 		{
 			name:          "dark matter",
@@ -3502,7 +3504,7 @@ func TestFleetRepositoryFinishDueExpeditionForcedOutcomes(t *testing.T) {
 			wantMessage: "You got",
 			checkReturn: func(t *testing.T, call fakeFleetExecCall) {
 				t.Helper()
-				if call.args[2] != float64(1100) {
+				if call.args[2] != float64(2100) {
 					t.Fatalf("expected found metal to be carried home, got %+v", call)
 				}
 			},
@@ -3524,14 +3526,14 @@ func TestFleetRepositoryFinishDueExpeditionForcedOutcomes(t *testing.T) {
 			name:          "trader",
 			event:         "trader",
 			wantReturn:    true,
-			wantUserWrite: "trader = 1",
+			wantUserWrite: "SET trader = ?",
 			wantMessage:   "representative with goods to trade",
 		},
 		{
 			name:        "delay",
 			event:       "delay",
 			wantReturn:  true,
-			wantMessage: "return later",
+			wantMessage: "return trip",
 			checkReturn: func(t *testing.T, call fakeFleetExecCall) {
 				t.Helper()
 				if got := call.args[9]; got != int64(1200) {
@@ -3543,7 +3545,7 @@ func TestFleetRepositoryFinishDueExpeditionForcedOutcomes(t *testing.T) {
 			name:        "accel",
 			event:       "accel",
 			wantReturn:  true,
-			wantMessage: "return earlier",
+			wantMessage: "earlier",
 			checkReturn: func(t *testing.T, call fakeFleetExecCall) {
 				t.Helper()
 				if got := call.args[9]; got != int64(300) {
@@ -3555,32 +3557,41 @@ func TestFleetRepositoryFinishDueExpeditionForcedOutcomes(t *testing.T) {
 			name:        "aliens",
 			event:       "aliens",
 			wantReturn:  true,
-			wantMessage: "alien",
+			wantMessage: "unknown species",
 		},
 		{
 			name:        "pirates",
 			event:       "pirates",
 			wantReturn:  true,
-			wantMessage: "Pirate",
+			wantMessage: "space pirates",
 		},
 		{
 			name:        "black hole",
 			event:       "black_hole",
 			wantReturn:  false,
-			wantMessage: "lost forever",
+			wantMessage: "Transmission terminated",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			ships := expeditionTestShips(tt.event)
+			results := []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{0})},
 				{rows: fakeRowsFromValues([]any{59, 42, 127, int64(2_900)})},
-				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionExpedition+domaingame.FleetMissionOrbitingOffset, 0, map[int]int{domaingame.FleetSmallCargo: 1, domaingame.FleetEspionageProbe: 1}))},
+				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionExpedition+domaingame.FleetMissionOrbitingOffset, 0, ships))},
 				{rows: fakeRowsFromValues(expeditionSettingsTestRow(tt.event))},
 				{rows: fakeRowsFromValues(expeditionTargetTestRow())},
-			}}}
+				{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
+			}
+			if tt.event == "aliens" || tt.event == "pirates" {
+				results = append(results,
+					fakeQueryResult{rows: fakeRowsFromValues([]any{30, 0, 1, 70, 10, 5})},
+				)
+			}
+			runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: results}}
 			repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_900, 0) })
+			repository.combatRandom = func(int) int { return 0 }
 
 			if err := repository.FinishDueFleetQueues(context.Background(), 2_900); err != nil {
 				t.Fatal(err)
@@ -3674,25 +3685,25 @@ func TestFleetRepositoryFinishDueExpeditionForcedOutcomeWriteErrors(t *testing.T
 		{
 			name:     "alien battle message",
 			event:    "aliens",
-			execErrs: []error{errors.New("alien battle failed")},
+			execErrs: []error{nil, errors.New("alien battle failed")},
 			want:     "alien battle failed",
 		},
 		{
 			name:     "alien return",
 			event:    "aliens",
-			execErrs: []error{nil, errors.New("alien return failed")},
+			execErrs: []error{nil, nil, nil, nil, nil, errors.New("alien return failed")},
 			want:     "alien return failed",
 		},
 		{
 			name:     "pirate battle message",
 			event:    "pirates",
-			execErrs: []error{errors.New("pirate battle failed")},
+			execErrs: []error{nil, errors.New("pirate battle failed")},
 			want:     "pirate battle failed",
 		},
 		{
 			name:     "pirate return",
 			event:    "pirates",
-			execErrs: []error{nil, errors.New("pirate return failed")},
+			execErrs: []error{nil, nil, nil, nil, nil, errors.New("pirate return failed")},
 			want:     "pirate return failed",
 		},
 		{
@@ -3713,12 +3724,19 @@ func TestFleetRepositoryFinishDueExpeditionForcedOutcomeWriteErrors(t *testing.T
 		t.Run(tt.name, func(t *testing.T) {
 			results := tt.results
 			if results == nil {
+				ships := expeditionTestShips(tt.event)
 				results = []fakeQueryResult{
 					{rows: fakeRowsFromValues([]any{0})},
 					{rows: fakeRowsFromValues([]any{59, 42, 127, int64(2_900)})},
-					{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionExpedition+domaingame.FleetMissionOrbitingOffset, 0, map[int]int{domaingame.FleetSmallCargo: 1, domaingame.FleetEspionageProbe: 1}))},
+					{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionExpedition+domaingame.FleetMissionOrbitingOffset, 0, ships))},
 					{rows: fakeRowsFromValues(expeditionSettingsTestRow(tt.event))},
 					{rows: fakeRowsFromValues(expeditionTargetTestRow())},
+					{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
+				}
+				if tt.event == "aliens" || tt.event == "pirates" {
+					results = append(results,
+						fakeQueryResult{rows: fakeRowsFromValues([]any{30, 0, 1, 70, 10, 5})},
+					)
 				}
 			}
 			runner := &fakeFleetRunner{
@@ -3791,7 +3809,7 @@ func TestFleetRepositoryQueueHelperEdges(t *testing.T) {
 	}
 
 	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("target empty rows failed"))}}}, "ogame_", time.Now)
-	if _, err := repository.loadExpeditionTargetState(context.Background(), "`ogame_planets`", 99); err == nil || !strings.Contains(err.Error(), "target empty rows failed") {
+	if _, err := repository.loadExpeditionTargetState(context.Background(), "`ogame_planets`", "`ogame_users`", 99, 42); err == nil || !strings.Contains(err.Error(), "target empty rows failed") {
 		t.Fatalf("expected target rows error, got %v", err)
 	}
 }
@@ -3978,13 +3996,13 @@ func TestFleetRepositoryFinishDueFleetQueueWriteErrors(t *testing.T) {
 		{
 			name:     "expedition visit counter update",
 			mission:  domaingame.FleetMissionExpedition + domaingame.FleetMissionOrbitingOffset,
-			execErrs: []error{nil, nil, errors.New("expedition visit failed")},
+			execErrs: []error{nil, nil, nil, errors.New("expedition visit failed")},
 			want:     "expedition visit failed",
 		},
 		{
 			name:     "expedition message insert",
 			mission:  domaingame.FleetMissionExpedition + domaingame.FleetMissionOrbitingOffset,
-			execErrs: []error{nil, nil, nil, errors.New("expedition message failed")},
+			execErrs: []error{nil, nil, nil, nil, errors.New("expedition message failed")},
 			want:     "expedition message failed",
 		},
 	}
@@ -4000,7 +4018,10 @@ func TestFleetRepositoryFinishDueFleetQueueWriteErrors(t *testing.T) {
 				results = append(results,
 					fakeQueryResult{rows: fakeRowsFromValues(expeditionSettingsTestRow("nothing"))},
 					fakeQueryResult{rows: fakeRowsFromValues(expeditionTargetTestRow())},
+					fakeQueryResult{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 				)
+			} else if tt.mission == domaingame.FleetMissionExpedition {
+				results = append(results, fakeQueryResult{rows: fakeRowsFromValues(fleetMessageContextTestRow())})
 			}
 			runner := &fakeFleetRunner{
 				fakeQueryer: fakeQueryer{results: results},
@@ -4024,141 +4045,6 @@ func TestFleetRepositoryFinishDueFleetQueueHelpers(t *testing.T) {
 	}
 	if maxInt64(3, 1) != 3 || maxInt64(1, 3) != 3 {
 		t.Fatal("maxInt64 should return the larger value")
-	}
-	defaultSettings := expeditionSettings{
-		ChanceSuccess:     70,
-		DepletedMin:       25,
-		DepletedMed:       50,
-		DepletedMax:       75,
-		ChanceDepletedMin: 25,
-		ChanceDepletedMed: 50,
-		ChanceDepletedMax: 75,
-		ChanceAlien:       95,
-		ChancePirates:     85,
-		ChanceDM:          70,
-		ChanceLost:        69,
-		ChanceDelay:       63,
-		ChanceAccel:       60,
-		ChanceRes:         25,
-		ChanceFleet:       1,
-		DMFactor:          3,
-	}
-	if expeditionForcedResult(defaultSettings, 0, 0) != expeditionResultNothing {
-		t.Fatal("default expedition settings should not force a legacy E2E outcome")
-	}
-	forcedSettings := defaultSettings
-	forcedSettings.ChanceDM = 0
-	if expeditionForcedResult(forcedSettings, 25, 0) != expeditionResultDarkMatter {
-		t.Fatal("not-depleted expedition should still allow a forced dark matter outcome")
-	}
-	holdSettings := defaultSettings
-	holdSettings.ChanceSuccess = 0
-	holdSettings.ChanceDM = 0
-	if expeditionForcedResult(holdSettings, 0, 1) != expeditionResultDarkMatter {
-		t.Fatal("expedition hold time should keep legacy success chance above zero")
-	}
-	for _, tt := range []struct {
-		name         string
-		visitCounter int
-		configure    func(*expeditionSettings)
-	}{
-		{
-			name:         "minor depletion",
-			visitCounter: 26,
-			configure: func(settings *expeditionSettings) {
-				settings.ChanceDepletedMin = 100
-			},
-		},
-		{
-			name:         "medium depletion",
-			visitCounter: 51,
-			configure: func(settings *expeditionSettings) {
-				settings.ChanceDepletedMed = 100
-			},
-		},
-		{
-			name:         "severe depletion",
-			visitCounter: 76,
-			configure: func(settings *expeditionSettings) {
-				settings.ChanceDepletedMax = 100
-			},
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			settings := forcedSettings
-			tt.configure(&settings)
-			if expeditionForcedResult(settings, tt.visitCounter, 0) != expeditionResultNothing {
-				t.Fatalf("%s with 100%% failure should block a forced expedition success", tt.name)
-			}
-		})
-	}
-	if expeditionDepletionFailureChance(defaultSettings, 25) != 0 ||
-		expeditionDepletionFailureChance(defaultSettings, 26) != 25 ||
-		expeditionDepletionFailureChance(defaultSettings, 51) != 50 ||
-		expeditionDepletionFailureChance(defaultSettings, 76) != 75 {
-		t.Fatal("unexpected expedition depletion failure thresholds")
-	}
-}
-
-func TestFleetRepositoryExpeditionLegacyRollResultMatchesThresholdBuckets(t *testing.T) {
-	settings := expeditionSettings{
-		ChanceSuccess:     70,
-		DepletedMin:       25,
-		DepletedMed:       50,
-		DepletedMax:       75,
-		ChanceDepletedMin: 25,
-		ChanceDepletedMed: 50,
-		ChanceDepletedMax: 75,
-		ChanceAlien:       95,
-		ChancePirates:     85,
-		ChanceDM:          70,
-		ChanceLost:        69,
-		ChanceDelay:       63,
-		ChanceAccel:       60,
-		ChanceRes:         25,
-		ChanceFleet:       1,
-		DMFactor:          3,
-	}
-
-	if expeditionLegacyRollResult(settings, 0, 0, 70, 99) != expeditionResultNothing {
-		t.Fatal("success roll equal to chance_success should fail like legacy")
-	}
-	if expeditionLegacyRollResult(settings, 0, 0, 69, 0) != expeditionResultTrader {
-		t.Fatal("success roll below chance_success should enter the event table")
-	}
-	holdSettings := settings
-	holdSettings.ChanceSuccess = 0
-	if expeditionLegacyRollResult(holdSettings, 0, 1, 0, 0) != expeditionResultTrader {
-		t.Fatal("hold hours should raise the legacy success chance")
-	}
-	if expeditionLegacyRollResult(settings, 26, 0, 0, 24) != expeditionResultNothing {
-		t.Fatal("event roll below depletion failure chance should fail")
-	}
-	if expeditionLegacyRollResult(settings, 26, 0, 0, 25) != expeditionResultResources {
-		t.Fatal("event roll equal to depletion failure chance should continue into event buckets")
-	}
-
-	for _, tt := range []struct {
-		name      string
-		eventRoll int
-		want      expeditionResult
-	}{
-		{name: "alien high bucket", eventRoll: 99, want: expeditionResultAliens},
-		{name: "alien boundary", eventRoll: 95, want: expeditionResultAliens},
-		{name: "pirate boundary", eventRoll: 85, want: expeditionResultPirates},
-		{name: "dark matter boundary", eventRoll: 70, want: expeditionResultDarkMatter},
-		{name: "black hole boundary", eventRoll: 69, want: expeditionResultBlackHole},
-		{name: "delay boundary", eventRoll: 63, want: expeditionResultDelay},
-		{name: "accel boundary", eventRoll: 60, want: expeditionResultAccel},
-		{name: "resources boundary", eventRoll: 25, want: expeditionResultResources},
-		{name: "fleet boundary", eventRoll: 1, want: expeditionResultFleet},
-		{name: "trader fallthrough", eventRoll: 0, want: expeditionResultTrader},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := expeditionLegacyRollResult(settings, 0, 0, 0, tt.eventRoll); got != tt.want {
-				t.Fatalf("event roll %d returned %v, want %v", tt.eventRoll, got, tt.want)
-			}
-		})
 	}
 }
 
@@ -4186,23 +4072,23 @@ func TestFleetRepositoryExpeditionQueueLoadersEdges(t *testing.T) {
 	}
 
 	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("target query failed")}}}, "ogame_", nil)
-	if _, err := repository.loadExpeditionTargetState(context.Background(), "ogame_planets", 100); err == nil || !strings.Contains(err.Error(), "target query failed") {
+	if _, err := repository.loadExpeditionTargetState(context.Background(), "ogame_planets", "ogame_users", 100, 42); err == nil || !strings.Contains(err.Error(), "target query failed") {
 		t.Fatalf("expected target query error, got %v", err)
 	}
 	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "ogame_", nil)
-	if _, err := repository.loadExpeditionTargetState(context.Background(), "ogame_planets", 100); err == nil || !strings.Contains(err.Error(), "expedition target not found") {
+	if _, err := repository.loadExpeditionTargetState(context.Background(), "ogame_planets", "ogame_users", 100, 42); err == nil || !strings.Contains(err.Error(), "expedition target not found") {
 		t.Fatalf("expected missing target error, got %v", err)
 	}
 	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}, "ogame_", nil)
-	if _, err := repository.loadExpeditionTargetState(context.Background(), "ogame_planets", 100); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+	if _, err := repository.loadExpeditionTargetState(context.Background(), "ogame_planets", "ogame_users", 100, 42); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
 		t.Fatalf("expected target scan error, got %v", err)
 	}
 	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("target rows failed"), expeditionTargetTestRow())}}}, "ogame_", nil)
-	if _, err := repository.loadExpeditionTargetState(context.Background(), "ogame_planets", 100); err == nil || !strings.Contains(err.Error(), "target rows failed") {
+	if _, err := repository.loadExpeditionTargetState(context.Background(), "ogame_planets", "ogame_users", 100, 42); err == nil || !strings.Contains(err.Error(), "target rows failed") {
 		t.Fatalf("expected target rows error, got %v", err)
 	}
 	repository = NewFleetRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(expeditionTargetTestRow())}}}, "ogame_", nil)
-	target, err := repository.loadExpeditionTargetState(context.Background(), "ogame_planets", 100)
+	target, err := repository.loadExpeditionTargetState(context.Background(), "ogame_planets", "ogame_users", 100, 42)
 	if err != nil || target.Galaxy != 1 || target.System != 470 || target.Position != 16 {
 		t.Fatalf("unexpected target=%+v err=%v", target, err)
 	}
@@ -4864,11 +4750,25 @@ func expeditionSettingsTestRow(event string) []any {
 		settings["chance_res"],
 		settings["chance_fleet"],
 		settings["dm_factor"],
+		10000, 100000, 1000000, 5000000, 25000000, 50000000, 75000000, 100000000,
+		9000, 9000, 9000, 9000, 12000, 12000, 12000, 12000, 12000,
 	}
 }
 
 func expeditionTargetTestRow() []any {
-	return []any{1, 470, 16, 0}
+	return []any{1, 470, 16, 0, "en", 0, float64(0), float64(0), float64(0), 10, 10, 10, int64(10_000)}
+}
+
+func expeditionTestShips(event string) map[int]int {
+	if event == "aliens" || event == "pirates" {
+		return map[int]int{
+			domaingame.FleetSmallCargo:     10,
+			domaingame.FleetLightFighter:   100,
+			domaingame.FleetDeathstar:      10,
+			domaingame.FleetEspionageProbe: 1,
+		}
+	}
+	return map[int]int{domaingame.FleetSmallCargo: 1, domaingame.FleetEspionageProbe: 1}
 }
 
 func firstExecContaining(calls []fakeFleetExecCall, needle string) *fakeFleetExecCall {

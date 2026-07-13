@@ -1,8 +1,7 @@
 # PHP/Go Differential Coverage
 
-Keep this file under 4KB. Differential cases start from the same DB state, run
-one legacy PHP action, restore, run the equivalent Go action, compare normalized
-HTTP/DB effects, and restore again.
+Keep this under 4KB. Cases start from one DB snapshot, run PHP and Go separately,
+compare normalized HTTP/DB effects, then restore.
 
 ## Current Cases
 
@@ -15,11 +14,11 @@ HTTP/DB effects, and restore again.
 | Advanced building | 2 | demolition, Commander queue cancel/level shift/propagation | PASS |
 | Defense limits | 3 | dome uniqueness, missile capacity, mixed queue order/completion | PASS |
 | Fleet lifecycle | 23 | transport/recall/deploy/recycle, combat, moon, colony and missile lifecycle | PASS |
+| Expedition | 10 | every result family, rewards/loss, combat reports, timing, logs | PASS |
 | Combat engine | 4 | outcome, shots/power, absorption, survivors | PASS |
 
-Resource cases cover partial production, 0-100 boundary values, and all-100
-production. Each side logs in immediately before its action because login rotates
-the private session cookie.
+Resource cases cover partial production and 0/100 boundaries. Each side logs in
+before its action because login rotates the private cookie.
 
 Run:
 
@@ -33,6 +32,7 @@ testing/e2e/run-golang-defense-limits-differential-e2e.sh
 testing/e2e/run-golang-fleet-differential-e2e.sh
 testing/e2e/run-golang-colonization-differential-e2e.sh
 testing/e2e/run-golang-missile-differential-e2e.sh
+testing/e2e/run-golang-expedition-differential-e2e.sh
 testing/e2e/run-golang-acs-attack-differential-e2e.sh
 testing/e2e/run-golang-holding-defense-differential-e2e.sh
 testing/e2e/run-golang-battle-moon-differential-e2e.sh
@@ -40,11 +40,9 @@ testing/e2e/run-golang-moon-destruction-differential-e2e.sh
 testing/e2e/run-golang-combat-engine-differential-e2e.sh
 ```
 
-Reports use `.tmp/golang-*-differential.json`. Queue cases
-normalize generated IDs/timestamps, preserve duration, and restore the original
-planet, score/ranks, queue, log, production, vacation, and premium state. Fixtures
-come from `prepare-golang-smoke-fixture.php`; the wrapper runs differential QA
-after Go compatibility smoke and before fixture cleanup.
+Reports use `.tmp/golang-*-differential.json`. Queue cases normalize generated
+IDs/timestamps but preserve duration. Fixtures come from
+`prepare-golang-smoke-fixture.php`; every script restores changed state.
 The combat engine oracle exact-compares four deterministic round outcomes, shot
 totals, absorbed power, and survivors. Guarded DB cases also compare repair,
 losses, debris, report HTML/link messages, planet units, scores, and cleanup.
@@ -59,7 +57,7 @@ moon ABM use, defense state, rank effects, cleanup, and legacy report HTML.
 
 ## Expansion Order
 
-1. Expedition, phalanx and Jump Gate.
+1. Phalanx and Jump Gate.
 2. Account, alliance, messages, buddy and Admin mutations.
 
 ## Comparison Contract

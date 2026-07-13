@@ -2492,7 +2492,7 @@ try {
       })
     : { status: 0, headers: {}, body: "{}" };
   const expeditionLifecycleMessagesBody = parseJSON(expeditionLifecycleMessages);
-  const expeditionLifecycleMessage = messageRowContaining(expeditionLifecycleMessagesBody, "Expedition report");
+  const expeditionLifecycleMessage = messageRowContaining(expeditionLifecycleMessagesBody, "Expedition result");
   const expeditionLifecycleDarkMatterMessage = messageRowContaining(expeditionLifecycleMessagesBody, "Dark Matter");
   const expeditionLifecycleAfterReturn = expeditionLifecycleReady
     ? await request(`/api/game/fleet${expeditionLifecycleSearch}`, {

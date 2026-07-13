@@ -21,7 +21,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` migration tracker. Keep this file under 4K
 - Authenticated dynamic E2E runs 91 listed legacy-JS cases with commander, alliance, report, phalanx, and ACS fixtures enabled by default.
 - Fixed Firefox legacy host/session drift by keeping the configured legacy base URL instead of adopting a redirected `localhost` origin.
 - Fixed known route parity defects in aliases, selectors, statistics, registration, messages, fleet, commander folders, and galaxy hovers.
-- Jump Gate, ACS slowdown, expedition buckets, options force-language, pranger, maintenance, feed GET/POST, DB safe restore, Mods PHP-hook policy, Logins/Browse, Loca, Bots, and BotEdit import are migrated.
+- Jump Gate, ACS slowdown, full expedition lifecycle, option locale, pranger, maintenance, feed, DB restore, Mods hook policy, Logins/Browse, Loca, Bots, and BotEdit import are migrated.
 - Inventoried game and admin screens use legacy chrome and route aliases.
 
 ## Verified QA
@@ -42,7 +42,7 @@ React 19/Bun 1.3 + Go 1.25 `net/http` migration tracker. Keep this file under 4K
 - No current strict navigation visual gap remains in the seeded public/game/admin route inventory.
 - No concrete listed authenticated dynamic E2E case remains in [COVERAGE-dynamic-legacy-js.md](./testing/e2e/COVERAGE-dynamic-legacy-js.md); add more only when new legacy-JS behavior is found.
 - Source audit inventories routes, Admin modes, public entrypoints, Bot APIs, and optional Mod hooks in [COVERAGE-legacy-inventory.md](./testing/e2e/COVERAGE-legacy-inventory.md).
-- Behavior baseline tracks request/action/queue/SQL/navigation drift and 37 PHP/Go DB differential cases.
+- Behavior baseline tracks request/action/queue/SQL/navigation drift and 47 PHP/Go DB differential cases.
 - PHP Mod execution is excluded: installs are rejected and active Mods fail readiness.
 - Migration-pending game/admin fallback text has been removed.
 - Continue adding route/state/action inventory when new pages or unseeded legacy flows are migrated.
