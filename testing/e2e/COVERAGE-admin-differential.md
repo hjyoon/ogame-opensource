@@ -10,7 +10,8 @@ Generated IDs and wall-clock deltas are normalized; durable effects remain exact
 | Bans | 8 | access, ban/VM/attack flags, queues, pranger, scores and all ranks | PASS |
 | Queue/Fleetlogs | 13 | access, complete/delete/freeze/unfreeze, single/ACS timing, recall fleet/queue/logs and retention | PASS |
 | Operations | 16 | broadcast recipients/BBCode/cap, report deletion, all expedition settings | PASS |
-| **Total** | **37** | deterministic PHP/Go DB and HTTP contracts | **PASS** |
+| Universe | 9 | all settings/links/news/max users, freeze VM effects, access | PASS |
+| **Total** | **46** | deterministic PHP/Go DB and HTTP contracts | **PASS** |
 
 Queue/Fleetlogs cases include missing-target no-ops and operator rejection. Recall
 compares cargo, ships, fuel, mission, origin/target, duration, priority, fleetlog,
@@ -21,10 +22,13 @@ Operations covers all recipient categories, empty/whitespace fields, every legac
 broadcast BBCode family, the 127-message cap, marked/all/empty reports, all 33
 expedition settings, malformed partial requests and access rejection.
 
+Universe covers every mutable field, empty strings, news update/disable ordering,
+max-user zero preservation, freeze/unfreeze, active-user VM forcing and rejection.
+
 ## Pending Groups
 
 - Battle/Rocket/Expedition simulator calculations.
-- Universe settings and CRON execution.
+- CRON execution.
 - Users and Planets full edit/create/destroy operations.
 - Debug, Errors, UserLogs, Browse/Logins filters and cleanup actions.
 - Database backup/restore/delete, Coupons, Bots/BotEdit, Loca, checksums and colony settings.
@@ -39,6 +43,7 @@ where applicable.
 testing/e2e/run-golang-admin-bans-differential-e2e.sh
 testing/e2e/run-golang-admin-queue-differential-e2e.sh
 testing/e2e/run-golang-admin-operations-differential-e2e.sh
+testing/e2e/run-golang-admin-universe-differential-e2e.sh
 ```
 
-Both are included in `testing/e2e/run-golang-migration-qa.sh`.
+All are included in `testing/e2e/run-golang-migration-qa.sh`.

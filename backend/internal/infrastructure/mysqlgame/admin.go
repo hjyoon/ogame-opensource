@@ -339,7 +339,7 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 		if err != nil {
 			return nil, err
 		}
-		return r.mutateAdminUniverseSettings(ctx, uniTable, usersTable, query.Values)
+		return r.mutateAdminUniverseSettings(ctx, uniTable, usersTable, query.Universe)
 	}
 	if mode == "Broadcast" && query.Action == domaingame.AdminActionBroadcastSend {
 		return r.mutateAdminBroadcast(ctx, query)
@@ -1035,22 +1035,59 @@ func (r AdminRepository) mutateAdminBattleSim(ctx context.Context, query appgame
 	return domaingame.AdminIssueWithMessage(domaingame.AdminIssueActionSaved, "Battle report simulator completed."), nil
 }
 
-func (r AdminRepository) mutateAdminUniverseSettings(ctx context.Context, uniTable string, usersTable string, values map[string]int) (*domaingame.AdminActionIssue, error) {
-	freeze := 0
-	if values["freeze"] != 0 {
-		freeze = 1
+func (r AdminRepository) mutateAdminUniverseSettings(ctx context.Context, uniTable string, usersTable string, settings *domaingame.AdminUniverseMutation) (*domaingame.AdminActionIssue, error) {
+	if settings == nil {
+		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
 	}
-	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET freeze = ?", uniTable), freeze); err != nil {
+	now := int(r.now().Unix())
+	if settings.NewsUpdateDays > 0 {
+		newsUntil := now + settings.NewsUpdateDays*24*60*60
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET news1 = ?, news2 = ?, news_until = ?", uniTable), settings.News1, settings.News2, newsUntil); err != nil {
+			return nil, err
+		}
+	}
+	if settings.NewsOff {
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET news_until = 0", uniTable)); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET lang = ?, battle_engine = ?, freeze = ?, speed = ?, fspeed = ?, acs = ?, fid = ?, did = ?, defrepair = ?, defrepair_delta = ?, galaxies = ?, systems = ?, rapid = ?, moons = ?, php_battle = ?, battle_max = ?, force_lang = ?, start_dm = ?, max_werf = ?, feedage = ?", uniTable),
+		settings.Language, settings.BattleEngine, legacyBoolInt(settings.Freeze), settings.Speed, settings.FleetSpeed,
+		settings.ACS, settings.FleetDebris, settings.DefenseDebris, settings.DefenseRepair, settings.DefenseDelta,
+		settings.Galaxies, settings.Systems, legacyBoolInt(settings.RapidFire), legacyBoolInt(settings.Moons),
+		legacyBoolInt(settings.PHPBattle), settings.BattleMax, legacyBoolInt(settings.ForceLanguage),
+		settings.StartDarkMatter, settings.MaxShipyard, settings.FeedAge,
+	); err != nil {
 		return nil, err
 	}
-	if freeze != 0 {
-		now := int(r.now().Unix())
+	if _, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET ext_board = ?, ext_discord = ?, ext_tutorial = ?, ext_rules = ?, ext_impressum = ?", uniTable),
+		settings.ExtBoard, settings.ExtDiscord, settings.ExtTutorial, settings.ExtRules, settings.ExtImpressum,
+	); err != nil {
+		return nil, err
+	}
+	if settings.MaxUsers > 0 {
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET maxusers = ?", uniTable), settings.MaxUsers); err != nil {
+			return nil, err
+		}
+	}
+	if settings.Freeze {
 		activeSince := now - 7*24*60*60
 		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET vacation = 1, vacation_until = ? WHERE lastclick >= ? AND admin = 0", usersTable), now, activeSince); err != nil {
 			return nil, err
 		}
 	}
 	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+}
+
+func legacyBoolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func (r AdminRepository) mutateAdminBroadcast(ctx context.Context, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {

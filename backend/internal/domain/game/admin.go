@@ -330,6 +330,39 @@ type AdminUniverseSettings struct {
 	FeedAge         int
 }
 
+type AdminUniverseMutation struct {
+	Speed           int
+	FleetSpeed      int
+	ACS             int
+	FleetDebris     int
+	DefenseDebris   int
+	DefenseRepair   int
+	DefenseDelta    int
+	Galaxies        int
+	Systems         int
+	RapidFire       bool
+	Moons           bool
+	Freeze          bool
+	Language        string
+	BattleEngine    string
+	PHPBattle       bool
+	BattleMax       int
+	ForceLanguage   bool
+	StartDarkMatter int
+	MaxShipyard     int
+	FeedAge         int
+	ExtBoard        string
+	ExtDiscord      string
+	ExtTutorial     string
+	ExtRules        string
+	ExtImpressum    string
+	MaxUsers        int
+	News1           string
+	News2           string
+	NewsUpdateDays  int
+	NewsOff         bool
+}
+
 type AdminQueueRow struct {
 	ID          int
 	OwnerID     int

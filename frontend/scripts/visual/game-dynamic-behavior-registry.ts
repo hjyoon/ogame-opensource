@@ -1769,6 +1769,51 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers admin_bans.php SetClearCheckbox(this.checked) select-all behavior."]
   },
   {
+    name: "admin-universe-settings-submit",
+    fixtureProfile: "admin",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Uni" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Uni" },
+    legacyReady: "#content input[name='feedage']",
+    migratedReady: ".legacy-admin-universe-table input[name='feedage']",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='Save']",
+        migratedSelector: ".legacy-admin-universe-table input[type='submit'][value='Save']",
+        legacyWaitForSelector: "#content input[name='feedage']",
+        migratedWaitForSelector: ".legacy-admin-universe-table input[name='feedage']"
+      }
+    ],
+    assertions: [
+      { name: "feed-age", type: "value", selector: "input[name='feedage']", compareSides: true },
+      {
+        name: "submit-route",
+        type: "evaluate",
+        expression:
+          "document.querySelector('.legacy-admin-universe-table') ? location.pathname === '/game/admin' : location.pathname === '/game/index.php'",
+        expected: "true"
+      },
+      {
+        name: "generic-save-message-hidden",
+        type: "evaluate",
+        expression: "!document.body.innerText.includes('Action saved.')",
+        expected: "true"
+      },
+      {
+        name: "admin-api-roundtrip",
+        type: "evaluate",
+        expression:
+          "!document.querySelector('.legacy-admin-universe-table') || performance.getEntriesByType('resource').filter((entry) => entry.name.includes('/api/game/admin')).length >= 2",
+        expected: "true"
+      }
+    ],
+    visual: { enabled: true, normalizePageName: "game-admin-Uni", maxDiffRatio: 0, colorDeltaThreshold: 0 },
+    linkAudit: { enabled: false },
+    notes: ["Covers the full Universe settings POST bridge and exact post-submit parity without changing form values."]
+  },
+  {
     name: "admin-planets-spy-report-parser",
     fixtureProfile: "admin",
     legacyPage: "admin",

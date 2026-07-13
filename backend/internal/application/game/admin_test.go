@@ -90,6 +90,7 @@ func TestAdminServiceMutatesAdminAndRefreshes(t *testing.T) {
 		Hours:           2,
 		Reason:          "test",
 		Values:          map[string]int{"dm_factor": 9},
+		Universe:        &domaingame.AdminUniverseMutation{Speed: 8, Language: "de", Freeze: true},
 		Category:        3,
 		Subject:         "subject",
 		Text:            "text",
@@ -112,7 +113,8 @@ func TestAdminServiceMutatesAdminAndRefreshes(t *testing.T) {
 	}
 	if !result.Authenticated || result.ActionIssue != issue || repository.mutation.PlayerID != 42 ||
 		repository.mutation.TaskID != 1001 || repository.mutation.TargetIDs[0] != 77 || repository.mutation.BanMode != 1 ||
-		repository.mutation.Values["dm_factor"] != 9 || repository.mutation.Category != 3 ||
+		repository.mutation.Values["dm_factor"] != 9 || repository.mutation.Universe == nil ||
+		repository.mutation.Universe.Speed != 8 || repository.mutation.Universe.Language != "de" || !repository.mutation.Universe.Freeze || repository.mutation.Category != 3 ||
 		repository.mutation.Subject != "subject" || repository.mutation.Text != "text" ||
 		repository.mutation.ReportIDs[0] != 701 || repository.mutation.DeleteMode != "deletemarked" ||
 		repository.mutation.FileName != "backup_test.json" ||

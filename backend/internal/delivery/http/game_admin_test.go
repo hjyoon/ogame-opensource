@@ -418,6 +418,41 @@ func TestGameAdminHandlerMutatesExpeditionSettings(t *testing.T) {
 	}
 }
 
+func TestGameAdminHandlerMutatesUniverseSettings(t *testing.T) {
+	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{
+		Authenticated: true,
+		Admin: domaingame.NewAdmin(
+			domaingame.Overview{Commander: "legor", CurrentPlanet: domaingame.PlanetOverview{ID: 99}},
+			domaingame.AdminViewer{PlayerID: 42, Name: "legor", Level: domaingame.AdminLevelAdmin},
+			"Uni",
+		),
+		ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueActionSaved),
+	}}
+	body := `{"action":"settings","universeSettings":{"speed":8,"fleetSpeed":7,"acs":5,"fleetDebris":40,"defenseDebris":20,"defenseRepair":70,"defenseDelta":10,"galaxies":11,"systems":600,"rapidFire":true,"moons":true,"freeze":true,"language":"de","battleEngine":"/battle","phpBattle":true,"battleMax":999999,"forceLanguage":true,"startDarkMatter":2500,"maxShipyard":10000,"feedAge":30,"extBoard":"/board","extDiscord":"/discord","extTutorial":"/tutorial","extRules":"/rules","extImpressum":"/imprint","maxUsers":5000,"news1":"one","news2":"two","newsUpdateDays":3,"newsOff":true}}`
+	request := httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=99&mode=Uni", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	app{deps: Dependencies{GameAdmin: usecase}}.handleGameAdmin(response, request)
+
+	settings := usecase.mutation.Universe
+	if response.Code != http.StatusOK || usecase.mutation.Mode != "Uni" || usecase.mutation.Action != "settings" || settings == nil {
+		t.Fatalf("unexpected universe mutation status=%d command=%+v", response.Code, usecase.mutation)
+	}
+	if settings.Speed != 8 || settings.FleetSpeed != 7 || settings.ACS != 5 || settings.FleetDebris != 40 || settings.DefenseDebris != 20 ||
+		settings.DefenseRepair != 70 || settings.DefenseDelta != 10 || settings.Galaxies != 11 || settings.Systems != 600 ||
+		!settings.RapidFire || !settings.Moons || !settings.Freeze || settings.Language != "de" || settings.BattleEngine != "/battle" ||
+		!settings.PHPBattle || settings.BattleMax != 999999 || !settings.ForceLanguage || settings.StartDarkMatter != 2500 ||
+		settings.MaxShipyard != 10000 || settings.FeedAge != 30 || settings.ExtBoard != "/board" || settings.ExtDiscord != "/discord" ||
+		settings.ExtTutorial != "/tutorial" || settings.ExtRules != "/rules" || settings.ExtImpressum != "/imprint" ||
+		settings.MaxUsers != 5000 || settings.News1 != "one" || settings.News2 != "two" || settings.NewsUpdateDays != 3 || !settings.NewsOff {
+		t.Fatalf("unexpected universe settings: %+v", settings)
+	}
+	if toAdminUniverseMutation(nil) != nil {
+		t.Fatal("nil universe request must stay nil")
+	}
+}
+
 func TestGameAdminHandlerMutatesBroadcastAndReports(t *testing.T) {
 	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{
 		Authenticated: true,

@@ -63,6 +63,7 @@ type AdminMutationQuery struct {
 	Hours        int
 	Reason       string
 	Values       map[string]int
+	Universe     *domaingame.AdminUniverseMutation
 	Category     int
 	Subject      string
 	Text         string
@@ -103,6 +104,7 @@ type AdminMutationCommand struct {
 	Hours           int
 	Reason          string
 	Values          map[string]int
+	Universe        *domaingame.AdminUniverseMutation
 	Category        int
 	Subject         string
 	Text            string
@@ -255,6 +257,7 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		Hours:        command.Hours,
 		Reason:       command.Reason,
 		Values:       command.Values,
+		Universe:     command.Universe,
 		Category:     command.Category,
 		Subject:      command.Subject,
 		Text:         command.Text,

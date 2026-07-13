@@ -82,6 +82,39 @@ export type GameAdminStatus = {
   admin?: GameAdmin;
 };
 
+type GameAdminUniverseMutation = {
+  speed: number;
+  fleetSpeed: number;
+  acs: number;
+  fleetDebris: number;
+  defenseDebris: number;
+  defenseRepair: number;
+  defenseDelta: number;
+  galaxies: number;
+  systems: number;
+  rapidFire: boolean;
+  moons: boolean;
+  freeze: boolean;
+  language: string;
+  battleEngine: string;
+  phpBattle: boolean;
+  battleMax: number;
+  forceLanguage: boolean;
+  startDarkMatter: number;
+  maxShipyard: number;
+  feedAge: number;
+  extBoard: string;
+  extDiscord: string;
+  extTutorial: string;
+  extRules: string;
+  extImpressum: string;
+  maxUsers: number;
+  news1: string;
+  news2: string;
+  newsUpdateDays: number;
+  newsOff: boolean;
+};
+
 export type GameAdminAction =
   | {
       action: "ban";
@@ -94,6 +127,10 @@ export type GameAdminAction =
   | {
       action: "settings";
       values: Record<string, number>;
+    }
+  | {
+      action: "settings";
+      universeSettings: GameAdminUniverseMutation;
     }
   | {
       action: "sim";
@@ -2472,7 +2509,7 @@ export function LegacyGameOverview({
           <LegacyMessage tone="error" text={allianceIssue} />
         ) : null}
         {route.key === "admin" && adminError ? <LegacyMessage tone="error" text={adminError} /> : null}
-        {route.key === "admin" && !adminError && adminActionIssue ? (
+        {route.key === "admin" && !adminError && adminActionIssue && !(admin?.mode === "Uni" && adminActionIssue.code === "action_saved") ? (
           <LegacyMessage tone="error" text={adminActionIssue.message} />
         ) : null}
         {route.key === "admin" && !adminError && !adminActionIssue && adminIssue ? (
@@ -3791,7 +3828,7 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "Uni") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminUniverseTable admin={admin} />
+        <AdminUniverseTable admin={admin} onAdminAction={onAdminAction} />
       </AdminModeShell>
     );
   }
@@ -5622,7 +5659,7 @@ function adminPlanetCoordHTML(coordinates: Coordinates): string {
   return `[<a href="${legacyHTMLAttribute(adminGalaxyHref(coordinates))}">${coordinates.galaxy}:${coordinates.system}:${coordinates.position}</a>]`;
 }
 
-function AdminUniverseTable({ admin }: { admin: GameAdmin }) {
+function AdminUniverseTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
   const universe = admin.universe;
   if (!universe) {
     return null;
@@ -5631,9 +5668,86 @@ function AdminUniverseTable({ admin }: { admin: GameAdmin }) {
     <div
       className="legacy-admin-universe-table"
       dangerouslySetInnerHTML={{ __html: adminUniverseHTML(universe) }}
+      onSubmit={(event) => {
+        const form = event.target instanceof HTMLFormElement ? event.target : null;
+        if (!form) {
+          return;
+        }
+        event.preventDefault();
+        const data = new FormData(form);
+        onAdminAction({ action: "settings", universeSettings: adminUniverseMutationFromForm(data) });
+      }}
+      onClick={(event) => {
+        const submit = (event.target as HTMLElement).closest("input[type='submit']");
+        if (!(submit instanceof HTMLInputElement) || submit.value !== "Save") {
+          return;
+        }
+        event.preventDefault();
+        onAdminAction({
+          action: "settings",
+          universeSettings: adminUniverseMutationFromForm(adminUniverseFormData(event.currentTarget))
+        });
+      }}
       style={{ display: "contents" }}
     />
   );
+}
+
+function adminUniverseFormData(container: HTMLElement): FormData {
+  const data = new FormData();
+  for (const control of container.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input[name], select[name], textarea[name]")) {
+    if (control.disabled || control.name === "") {
+      continue;
+    }
+    if (control instanceof HTMLInputElement && (control.type === "checkbox" || control.type === "radio") && !control.checked) {
+      continue;
+    }
+    if (control instanceof HTMLSelectElement && control.multiple) {
+      for (const option of control.selectedOptions) {
+        data.append(control.name, option.value);
+      }
+      continue;
+    }
+    data.append(control.name, control.value);
+  }
+  return data;
+}
+
+function adminUniverseMutationFromForm(data: FormData): GameAdminUniverseMutation {
+  const text = (name: string) => String(data.get(name) ?? "");
+  const integer = (name: string) => legacyFormInt(data.get(name), 0);
+  return {
+    speed: integer("speed"),
+    fleetSpeed: integer("fspeed"),
+    acs: integer("acs"),
+    fleetDebris: integer("fid"),
+    defenseDebris: integer("did"),
+    defenseRepair: integer("defrepair"),
+    defenseDelta: integer("defrepair_delta"),
+    galaxies: integer("galaxies"),
+    systems: integer("systems"),
+    rapidFire: data.has("rapid"),
+    moons: data.has("moons"),
+    freeze: data.has("freeze"),
+    language: text("lang"),
+    battleEngine: text("battle_engine"),
+    phpBattle: data.has("php_battle"),
+    battleMax: integer("battle_max"),
+    forceLanguage: data.has("force_lang"),
+    startDarkMatter: integer("start_dm"),
+    maxShipyard: integer("max_werf"),
+    feedAge: integer("feedage"),
+    extBoard: text("ext_board"),
+    extDiscord: text("ext_discord"),
+    extTutorial: text("ext_tutorial"),
+    extRules: text("ext_rules"),
+    extImpressum: text("ext_impressum"),
+    maxUsers: integer("maxusers"),
+    news1: text("news1"),
+    news2: text("news2"),
+    newsUpdateDays: integer("news_upd"),
+    newsOff: data.has("news_off")
+  };
 }
 
 function adminUniverseHTML(universe: GameAdminUniverseSettings): string {

@@ -24,29 +24,63 @@ type gameAdminActionIssue struct {
 }
 
 type gameAdminMutationRequest struct {
-	Action       string         `json:"action"`
-	TaskID       int            `json:"taskId"`
-	TargetIDs    []int          `json:"targetIds"`
-	BanMode      int            `json:"banMode"`
-	Days         int            `json:"days"`
-	Hours        int            `json:"hours"`
-	Reason       string         `json:"reason"`
-	Values       map[string]int `json:"values"`
-	Category     int            `json:"category"`
-	Subject      string         `json:"subject"`
-	Text         string         `json:"text"`
-	ReportIDs    []int          `json:"reportIds"`
-	DeleteMode   string         `json:"deleteMode"`
-	FileName     string         `json:"fileName"`
-	Amount       int            `json:"amount"`
-	ItemID       int            `json:"itemId"`
-	DayMonth     string         `json:"dayMonth"`
-	HourMinute   string         `json:"hourMinute"`
-	InactiveDays int            `json:"inactiveDays"`
-	IngameDays   int            `json:"ingameDays"`
-	PeriodicDays int            `json:"periodicDays"`
-	ModName      string         `json:"modName"`
-	Name         string         `json:"name"`
+	Action       string                            `json:"action"`
+	TaskID       int                               `json:"taskId"`
+	TargetIDs    []int                             `json:"targetIds"`
+	BanMode      int                               `json:"banMode"`
+	Days         int                               `json:"days"`
+	Hours        int                               `json:"hours"`
+	Reason       string                            `json:"reason"`
+	Values       map[string]int                    `json:"values"`
+	Universe     *gameAdminUniverseMutationRequest `json:"universeSettings"`
+	Category     int                               `json:"category"`
+	Subject      string                            `json:"subject"`
+	Text         string                            `json:"text"`
+	ReportIDs    []int                             `json:"reportIds"`
+	DeleteMode   string                            `json:"deleteMode"`
+	FileName     string                            `json:"fileName"`
+	Amount       int                               `json:"amount"`
+	ItemID       int                               `json:"itemId"`
+	DayMonth     string                            `json:"dayMonth"`
+	HourMinute   string                            `json:"hourMinute"`
+	InactiveDays int                               `json:"inactiveDays"`
+	IngameDays   int                               `json:"ingameDays"`
+	PeriodicDays int                               `json:"periodicDays"`
+	ModName      string                            `json:"modName"`
+	Name         string                            `json:"name"`
+}
+
+type gameAdminUniverseMutationRequest struct {
+	Speed           int    `json:"speed"`
+	FleetSpeed      int    `json:"fleetSpeed"`
+	ACS             int    `json:"acs"`
+	FleetDebris     int    `json:"fleetDebris"`
+	DefenseDebris   int    `json:"defenseDebris"`
+	DefenseRepair   int    `json:"defenseRepair"`
+	DefenseDelta    int    `json:"defenseDelta"`
+	Galaxies        int    `json:"galaxies"`
+	Systems         int    `json:"systems"`
+	RapidFire       bool   `json:"rapidFire"`
+	Moons           bool   `json:"moons"`
+	Freeze          bool   `json:"freeze"`
+	Language        string `json:"language"`
+	BattleEngine    string `json:"battleEngine"`
+	PHPBattle       bool   `json:"phpBattle"`
+	BattleMax       int    `json:"battleMax"`
+	ForceLanguage   bool   `json:"forceLanguage"`
+	StartDarkMatter int    `json:"startDarkMatter"`
+	MaxShipyard     int    `json:"maxShipyard"`
+	FeedAge         int    `json:"feedAge"`
+	ExtBoard        string `json:"extBoard"`
+	ExtDiscord      string `json:"extDiscord"`
+	ExtTutorial     string `json:"extTutorial"`
+	ExtRules        string `json:"extRules"`
+	ExtImpressum    string `json:"extImpressum"`
+	MaxUsers        int    `json:"maxUsers"`
+	News1           string `json:"news1"`
+	News2           string `json:"news2"`
+	NewsUpdateDays  int    `json:"newsUpdateDays"`
+	NewsOff         bool   `json:"newsOff"`
 }
 
 type gameAdminSummary struct {
@@ -521,6 +555,7 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		Hours:           request.Hours,
 		Reason:          request.Reason,
 		Values:          request.Values,
+		Universe:        toAdminUniverseMutation(request.Universe),
 		Category:        request.Category,
 		Subject:         request.Subject,
 		Text:            request.Text,
@@ -543,6 +578,26 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeGameAdminResponse(w, result)
+}
+
+func toAdminUniverseMutation(request *gameAdminUniverseMutationRequest) *domaingame.AdminUniverseMutation {
+	if request == nil {
+		return nil
+	}
+	return &domaingame.AdminUniverseMutation{
+		Speed: request.Speed, FleetSpeed: request.FleetSpeed, ACS: request.ACS,
+		FleetDebris: request.FleetDebris, DefenseDebris: request.DefenseDebris,
+		DefenseRepair: request.DefenseRepair, DefenseDelta: request.DefenseDelta,
+		Galaxies: request.Galaxies, Systems: request.Systems, RapidFire: request.RapidFire,
+		Moons: request.Moons, Freeze: request.Freeze, Language: request.Language,
+		BattleEngine: request.BattleEngine, PHPBattle: request.PHPBattle,
+		BattleMax: request.BattleMax, ForceLanguage: request.ForceLanguage,
+		StartDarkMatter: request.StartDarkMatter, MaxShipyard: request.MaxShipyard,
+		FeedAge: request.FeedAge, ExtBoard: request.ExtBoard, ExtDiscord: request.ExtDiscord,
+		ExtTutorial: request.ExtTutorial, ExtRules: request.ExtRules, ExtImpressum: request.ExtImpressum,
+		MaxUsers: request.MaxUsers, News1: request.News1, News2: request.News2,
+		NewsUpdateDays: request.NewsUpdateDays, NewsOff: request.NewsOff,
+	}
 }
 
 func (a app) handleLegacyAdminModsGet(w http.ResponseWriter, r *http.Request) {

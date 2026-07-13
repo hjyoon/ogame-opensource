@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1912,62 +1913,103 @@ func TestAdminRepositoryMutatesAdminSimulators(t *testing.T) {
 }
 
 func TestAdminRepositoryMutatesUniverseSettings(t *testing.T) {
-	t.Run("freeze forces active regular users into vacation", func(t *testing.T) {
+	t.Run("full update preserves legacy statement order and forces vacation", func(t *testing.T) {
 		runner := &fakeGalaxyRunner{}
 		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
 		repository.now = func() time.Time { return time.Unix(2_000_000, 0) }
+		settings := adminUniverseMutationFixture()
+		settings.NewsUpdateDays = 3
+		settings.NewsOff = true
+		settings.Freeze = true
 
 		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
-			Mode:   "Uni",
-			Action: domaingame.AdminActionSettings,
-			Values: map[string]int{"freeze": 1},
+			Mode:     "Uni",
+			Action:   domaingame.AdminActionSettings,
+			Universe: settings,
 		})
 
 		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved {
 			t.Fatalf("unexpected universe freeze issue=%+v err=%v", issue, err)
 		}
-		if len(runner.execCalls) != 2 ||
-			runner.execCalls[0].sql != "UPDATE `ogame_uni` SET freeze = ?" ||
-			runner.execCalls[0].args[0] != 1 ||
-			!strings.Contains(runner.execCalls[1].sql, "UPDATE `ogame_users` SET vacation = 1, vacation_until = ? WHERE lastclick >= ? AND admin = 0") ||
-			runner.execCalls[1].args[0] != 2_000_000 ||
-			runner.execCalls[1].args[1] != 2_000_000-7*24*60*60 {
+		if len(runner.execCalls) != 6 ||
+			runner.execCalls[0].sql != "UPDATE `ogame_uni` SET news1 = ?, news2 = ?, news_until = ?" ||
+			runner.execCalls[0].args[0] != "news one" || runner.execCalls[0].args[1] != "news two" || runner.execCalls[0].args[2] != 2_000_000+3*24*60*60 ||
+			runner.execCalls[1].sql != "UPDATE `ogame_uni` SET news_until = 0" ||
+			!strings.Contains(runner.execCalls[2].sql, "lang = ?, battle_engine = ?, freeze = ?, speed = ?") ||
+			len(runner.execCalls[2].args) != 20 || runner.execCalls[2].args[0] != "de" || runner.execCalls[2].args[1] != "/battle" ||
+			runner.execCalls[2].args[2] != 1 || runner.execCalls[2].args[3] != 8 || runner.execCalls[2].args[19] != 30 ||
+			!strings.Contains(runner.execCalls[3].sql, "ext_board = ?, ext_discord = ?") || runner.execCalls[3].args[4] != "/imprint" ||
+			runner.execCalls[4].sql != "UPDATE `ogame_uni` SET maxusers = ?" || runner.execCalls[4].args[0] != 5000 ||
+			!strings.Contains(runner.execCalls[5].sql, "UPDATE `ogame_users` SET vacation = 1, vacation_until = ? WHERE lastclick >= ? AND admin = 0") ||
+			runner.execCalls[5].args[0] != 2_000_000 || runner.execCalls[5].args[1] != 2_000_000-7*24*60*60 {
 			t.Fatalf("unexpected universe freeze execs: %+v", runner.execCalls)
 		}
 	})
 
-	t.Run("unfreeze only toggles universe flag", func(t *testing.T) {
+	t.Run("zero max users is preserved and unfreeze has no user update", func(t *testing.T) {
 		runner := &fakeGalaxyRunner{}
 		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		settings := adminUniverseMutationFixture()
+		settings.MaxUsers = 0
+		settings.Freeze = false
 
 		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
-			Mode:   "Uni",
-			Action: domaingame.AdminActionSettings,
-			Values: map[string]int{"freeze": 0},
+			Mode:     "Uni",
+			Action:   domaingame.AdminActionSettings,
+			Universe: settings,
 		})
 
 		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved {
 			t.Fatalf("unexpected universe unfreeze issue=%+v err=%v", issue, err)
 		}
-		if len(runner.execCalls) != 1 || runner.execCalls[0].sql != "UPDATE `ogame_uni` SET freeze = ?" || runner.execCalls[0].args[0] != 0 {
+		if len(runner.execCalls) != 2 || !strings.Contains(runner.execCalls[0].sql, "freeze = ?") || runner.execCalls[0].args[2] != 0 ||
+			!strings.Contains(runner.execCalls[1].sql, "ext_board = ?") {
 			t.Fatalf("unexpected universe unfreeze execs: %+v", runner.execCalls)
 		}
 	})
 
-	t.Run("freeze propagates vacation update errors", func(t *testing.T) {
-		runner := &fakeGalaxyRunner{execErrs: []error{nil, errors.New("vacation update failed")}}
+	t.Run("missing typed settings noops", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
 		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
-
-		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
 			Mode:   "Uni",
 			Action: domaingame.AdminActionSettings,
-			Values: map[string]int{"freeze": 1},
 		})
-
-		if err == nil || !strings.Contains(err.Error(), "vacation update failed") {
-			t.Fatalf("expected vacation update error, got %v", err)
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 {
+			t.Fatalf("unexpected missing settings result issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
 		}
 	})
+
+	for failedStatement := 0; failedStatement < 6; failedStatement++ {
+		t.Run(fmt.Sprintf("statement %d error", failedStatement+1), func(t *testing.T) {
+			execErrors := make([]error, failedStatement+1)
+			execErrors[failedStatement] = errors.New("universe update failed")
+			runner := &fakeGalaxyRunner{execErrs: execErrors}
+			repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+			settings := adminUniverseMutationFixture()
+			settings.NewsUpdateDays = 1
+			settings.NewsOff = true
+			settings.Freeze = true
+			_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+				Mode: "Uni", Action: domaingame.AdminActionSettings, Universe: settings,
+			})
+			if err == nil || !strings.Contains(err.Error(), "universe update failed") || len(runner.execCalls) != failedStatement+1 {
+				t.Fatalf("expected statement %d error, got err=%v execs=%+v", failedStatement+1, err, runner.execCalls)
+			}
+		})
+	}
+}
+
+func adminUniverseMutationFixture() *domaingame.AdminUniverseMutation {
+	return &domaingame.AdminUniverseMutation{
+		Speed: 8, FleetSpeed: 7, ACS: 5, FleetDebris: 40, DefenseDebris: 20,
+		DefenseRepair: 70, DefenseDelta: 10, Galaxies: 11, Systems: 600,
+		RapidFire: true, Moons: true, Language: "de", BattleEngine: "/battle",
+		PHPBattle: true, BattleMax: 999999, ForceLanguage: true, StartDarkMatter: 2500,
+		MaxShipyard: 10000, FeedAge: 30, ExtBoard: "/board", ExtDiscord: "/discord",
+		ExtTutorial: "/tutorial", ExtRules: "/rules", ExtImpressum: "/imprint",
+		MaxUsers: 5000, News1: "news one", News2: "news two",
+	}
 }
 
 func TestAdminRepositoryAdminOperationEdges(t *testing.T) {

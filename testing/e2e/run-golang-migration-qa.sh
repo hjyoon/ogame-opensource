@@ -128,6 +128,9 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     if [ "${OGAME_RUN_ADMIN_OPERATIONS_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-admin-operations-differential-e2e.sh"
     fi
+    if [ "${OGAME_RUN_ADMIN_UNIVERSE_DIFFERENTIAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-admin-universe-differential-e2e.sh"
+    fi
     if [ "${OGAME_RUN_ACS_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-acs-attack-differential-e2e.sh"
     fi
