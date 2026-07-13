@@ -196,6 +196,7 @@ run_recall_side() {
   else
     recall_support_launch_status="$(go_launch go-recall-support "$support_cookie" "$support_session" "$support_planet" 2 "$union_id")"
   fi
+  db_query "UPDATE uni1_queue q JOIN uni1_fleet f ON f.fleet_id=q.sub_id SET q.start=UNIX_TIMESTAMP()-600,q.end=UNIX_TIMESTAMP()+3000 WHERE q.type='Fleet' AND f.owner_id IN ($head_id,$support_id) AND f.mission IN (2,21)" >/dev/null
   support_fleet_id="$(db_query "SELECT fleet_id FROM uni1_fleet WHERE owner_id=$support_id AND mission=2 ORDER BY fleet_id DESC LIMIT 1")"
   if [ "$side" = legacy ]; then
     support_recall_status="$(legacy_recall legacy-recall-support "$support_cookie" "$support_session" "$support_planet" "$support_fleet_id")"

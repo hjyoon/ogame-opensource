@@ -2983,6 +2983,7 @@ func TestFleetRepositoryFinishUnguardedAttackPlundersAndReports(t *testing.T) {
 	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 		{rows: fakeRowsFromValues(attackStateTestRow(nil, 10, 9, 8, 3, 2, 1))},
+		{rows: fakeRowsFromValues([]any{0})},
 		{rows: fakeRowsFromValues()},
 	}}}
 	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
@@ -3026,7 +3027,7 @@ func TestFleetRepositoryGuardedAttackResolvesDefenseWin(t *testing.T) {
 	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 		{rows: fakeRowsFromValues(attackStateTestRow(map[int]int{domaingame.DefensePlasmaTurret: 10}, 0, 0, 0, 0, 0, 0))},
-		{rows: fakeRowsFromValues([]any{30, 0, 0, 70, 10})},
+		{rows: fakeRowsFromValues([]any{30, 0, 0, 70, 10, 0})},
 		{rows: fakeRowsFromValues()},
 	}}}
 	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
@@ -3067,7 +3068,7 @@ func TestFleetRepositoryGuardedAttackResolvesAttackerWinAndReturns(t *testing.T)
 	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 		{rows: fakeRowsFromValues(attackStateTestRow(map[int]int{domaingame.DefenseRocketLauncher: 1}, 0, 0, 0, 0, 0, 0))},
-		{rows: fakeRowsFromValues([]any{30, 0, 0, 70, 10})},
+		{rows: fakeRowsFromValues([]any{30, 0, 0, 70, 10, 0})},
 		{rows: fakeRowsFromValues()},
 	}}}
 	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
@@ -3133,16 +3134,16 @@ func TestFleetRepositoryCombatUniverseSettingsEdges(t *testing.T) {
 		{name: "query", result: fakeQueryResult{err: errors.New("settings query failed")}, wantErr: "settings query failed"},
 		{name: "missing", result: fakeQueryResult{rows: fakeRowsFromValues()}, wantErr: "settings unavailable"},
 		{name: "scan", result: fakeQueryResult{rows: fakeRowsFromValues([]any{"bad"})}, wantErr: "unexpected scan"},
-		{name: "trailer", result: fakeQueryResult{rows: fakeRowsFromValuesWithErr(errors.New("settings trailer failed"), []any{30, 0, 1, 70, 10})}, wantErr: "settings trailer failed"},
+		{name: "trailer", result: fakeQueryResult{rows: fakeRowsFromValuesWithErr(errors.New("settings trailer failed"), []any{30, 0, 1, 70, 10, 3})}, wantErr: "settings trailer failed"},
 	} {
 		repository := NewFleetRepositoryWithRunner(&fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{test.result}}}, nil, "ogame_", nil)
 		if _, err := repository.loadCombatUniverseSettings(ctx, "`ogame_uni`"); err == nil || !strings.Contains(err.Error(), test.wantErr) {
 			t.Fatalf("%s: expected %q, got %v", test.name, test.wantErr, err)
 		}
 	}
-	repository := NewFleetRepositoryWithRunner(&fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{30, 10, 1, 70, 10})}}}}, nil, "ogame_", nil)
+	repository := NewFleetRepositoryWithRunner(&fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{30, 10, 1, 70, 10, 3})}}}}, nil, "ogame_", nil)
 	settings, err := repository.loadCombatUniverseSettings(ctx, "`ogame_uni`")
-	if err != nil || !settings.RapidFire || settings.FleetDebrisPercent != 30 || settings.DefenseDebrisPercent != 10 || settings.DefenseRepair != 70 || settings.DefenseRepairDelta != 10 {
+	if err != nil || !settings.RapidFire || settings.FleetDebrisPercent != 30 || settings.DefenseDebrisPercent != 10 || settings.DefenseRepair != 70 || settings.DefenseRepairDelta != 10 || settings.ACSLimit != 3 {
 		t.Fatalf("unexpected combat settings: %+v err=%v", settings, err)
 	}
 }
@@ -3174,7 +3175,7 @@ func TestFleetRepositoryGuardedCombatHelperErrors(t *testing.T) {
 	sameOwner.TargetOwnerID = sameOwner.OriginOwnerID
 	result := domaingame.CombatResult{Outcome: domaingame.CombatAttackerWon}
 	writeback := domaingame.CombatWriteback{AttackerLosses: []domaingame.CombatParticipantLoss{{}}, DefenderLosses: []domaingame.CombatParticipantLoss{{}}}
-	if err := repository.insertGuardedBattleMessages(ctx, "`ogame_messages`", sameOwner, "report", result, writeback, 1_000); err != nil || len(runner.execCalls) != 2 {
+	if err := repository.insertGuardedBattleMessages(ctx, "`ogame_messages`", nil, sameOwner, "report", result, writeback, 1_000); err != nil || len(runner.execCalls) != 2 {
 		t.Fatalf("same-owner battle must receive one message pair: calls=%+v err=%v", runner.execCalls, err)
 	}
 
@@ -3199,14 +3200,14 @@ func TestFleetRepositoryGuardedAttackWriteErrors(t *testing.T) {
 	if err := call(repository, fleet); err == nil || !strings.Contains(err.Error(), "guarded settings failed") {
 		t.Fatalf("expected guarded settings error, got %v", err)
 	}
-	repository = NewFleetRepositoryWithRunner(&fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{30, 0, 0, 70, 10})}}}}, nil, "ogame_", nil)
+	repository = NewFleetRepositoryWithRunner(&fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{30, 0, 0, 70, 10, 0})}}}}, nil, "ogame_", nil)
 	repository.combatRandom = nil
 	if err := call(repository, fleet); err == nil || !strings.Contains(err.Error(), "random source unavailable") {
 		t.Fatalf("expected random source error, got %v", err)
 	}
 	invalidFleet := fleet
 	invalidFleet.Ships = domaingame.FleetCounts{999: 1}
-	repository = NewFleetRepositoryWithRunner(&fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{30, 0, 0, 70, 10})}}}}, nil, "ogame_", nil)
+	repository = NewFleetRepositoryWithRunner(&fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{30, 0, 0, 70, 10, 0})}}}}, nil, "ogame_", nil)
 	repository.combatRandom = func(int) int { return 0 }
 	if err := call(repository, invalidFleet); err == nil || !strings.Contains(err.Error(), "unknown combat unit") {
 		t.Fatalf("expected combat engine validation error, got %v", err)
@@ -3216,7 +3217,7 @@ func TestFleetRepositoryGuardedAttackWriteErrors(t *testing.T) {
 		execErrs := make([]error, failAt+1)
 		execErrs[failAt] = fmt.Errorf("guarded write %d failed", failAt)
 		runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
-			{rows: fakeRowsFromValues([]any{30, 0, 0, 70, 10})},
+			{rows: fakeRowsFromValues([]any{30, 0, 0, 70, 10, 0})},
 			{rows: fakeRowsFromValues()},
 		}}, execErrs: execErrs}
 		repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
@@ -3245,9 +3246,12 @@ func TestFleetRepositoryUnguardedAttackErrors(t *testing.T) {
 		{name: "missing attack state", results: []fakeQueryResult{{rows: fakeRowsFromValues(fleetMessageContextTestRow())}, {rows: fakeRowsFromValues()}}, want: "target unavailable"},
 		{name: "attack state scan", results: []fakeQueryResult{{rows: fakeRowsFromValues(fleetMessageContextTestRow())}, {rows: fakeRowsFromValues([]any{0})}}, want: "unexpected scan"},
 		{name: "attack state trailer", results: []fakeQueryResult{{rows: fakeRowsFromValues(fleetMessageContextTestRow())}, {rows: fakeRowsFromValuesWithErr(errors.New("state trailer failed"), attackStateTestRow(nil, 0, 0, 0, 0, 0, 0))}}, want: "state trailer failed"},
-		{name: "debris query", results: []fakeQueryResult{{rows: fakeRowsFromValues(fleetMessageContextTestRow())}, {rows: fakeRowsFromValues(attackStateTestRow(nil, 0, 0, 0, 0, 0, 0))}, {err: errors.New("debris query failed")}}, want: "debris query failed"},
-		{name: "debris scan", results: []fakeQueryResult{{rows: fakeRowsFromValues(fleetMessageContextTestRow())}, {rows: fakeRowsFromValues(attackStateTestRow(nil, 0, 0, 0, 0, 0, 0))}, {rows: fakeRowsFromValues([]any{"bad"})}}, want: "expected int"},
-		{name: "debris trailer", results: []fakeQueryResult{{rows: fakeRowsFromValues(fleetMessageContextTestRow())}, {rows: fakeRowsFromValues(attackStateTestRow(nil, 0, 0, 0, 0, 0, 0))}, {rows: fakeRowsFromValuesWithErr(errors.New("debris trailer failed"))}}, want: "debris trailer failed"},
+		{name: "holding query", results: []fakeQueryResult{{rows: fakeRowsFromValues(fleetMessageContextTestRow())}, {rows: fakeRowsFromValues(attackStateTestRow(nil, 0, 0, 0, 0, 0, 0))}, {err: errors.New("holding query failed")}}, want: "holding query failed"},
+		{name: "holding missing", results: []fakeQueryResult{{rows: fakeRowsFromValues(fleetMessageContextTestRow())}, {rows: fakeRowsFromValues(attackStateTestRow(nil, 0, 0, 0, 0, 0, 0))}, {rows: fakeRowsFromValues()}}, want: "holding fleet lookup unavailable"},
+		{name: "holding scan", results: []fakeQueryResult{{rows: fakeRowsFromValues(fleetMessageContextTestRow())}, {rows: fakeRowsFromValues(attackStateTestRow(nil, 0, 0, 0, 0, 0, 0))}, {rows: fakeRowsFromValues([]any{"bad"})}}, want: "expected int"},
+		{name: "debris query", results: []fakeQueryResult{{rows: fakeRowsFromValues(fleetMessageContextTestRow())}, {rows: fakeRowsFromValues(attackStateTestRow(nil, 0, 0, 0, 0, 0, 0))}, {rows: fakeRowsFromValues([]any{0})}, {err: errors.New("debris query failed")}}, want: "debris query failed"},
+		{name: "debris scan", results: []fakeQueryResult{{rows: fakeRowsFromValues(fleetMessageContextTestRow())}, {rows: fakeRowsFromValues(attackStateTestRow(nil, 0, 0, 0, 0, 0, 0))}, {rows: fakeRowsFromValues([]any{0})}, {rows: fakeRowsFromValues([]any{"bad"})}}, want: "expected int"},
+		{name: "debris trailer", results: []fakeQueryResult{{rows: fakeRowsFromValues(fleetMessageContextTestRow())}, {rows: fakeRowsFromValues(attackStateTestRow(nil, 0, 0, 0, 0, 0, 0))}, {rows: fakeRowsFromValues([]any{0})}, {rows: fakeRowsFromValuesWithErr(errors.New("debris trailer failed"))}}, want: "debris trailer failed"},
 	} {
 		runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: test.results}}
 		err := call(NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil))
@@ -3263,6 +3267,7 @@ func TestFleetRepositoryUnguardedAttackErrors(t *testing.T) {
 		runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 			{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 			{rows: fakeRowsFromValues(attackStateTestRow(nil, 0, 0, 0, 0, 0, 0))},
+			{rows: fakeRowsFromValues([]any{0})},
 			{rows: fakeRowsFromValues()},
 		}}, execErrs: execErrs}
 		err := call(NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil))

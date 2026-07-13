@@ -28,6 +28,7 @@ type combatUniverseSettings struct {
 	RapidFire            bool
 	DefenseRepair        int
 	DefenseRepairDelta   int
+	ACSLimit             int
 }
 
 func (r FleetRepository) finishAttackFleetArrival(ctx context.Context, uniTable string, fleetTable string, fleetLogsTable string, queueTable string, planetsTable string, usersTable string, messagesTable string, battleTable string, task fleetQueueTask, fleet recallFleetRow) error {
@@ -46,6 +47,13 @@ func (r FleetRepository) finishAttackFleetArrival(ctx context.Context, uniTable 
 		return errors.New("attack target unavailable")
 	}
 	if state.GuardCount > 0 {
+		return r.finishGuardedAttackFleetArrival(ctx, uniTable, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, messagesTable, battleTable, task, fleet, messageContext, state)
+	}
+	holding, err := r.hasHoldingCombatFleet(ctx, fleetTable, fleet.TargetPlanetID)
+	if err != nil {
+		return err
+	}
+	if holding {
 		return r.finishGuardedAttackFleetArrival(ctx, uniTable, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, messagesTable, battleTable, task, fleet, messageContext, state)
 	}
 
@@ -139,7 +147,7 @@ func (r FleetRepository) loadUnguardedAttackState(ctx context.Context, planetsTa
 }
 
 func (r FleetRepository) loadCombatUniverseSettings(ctx context.Context, uniTable string) (combatUniverseSettings, error) {
-	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COALESCE(fid, 0), COALESCE(did, 0), COALESCE(rapid, 0), COALESCE(defrepair, 0), COALESCE(defrepair_delta, 0) FROM %s LIMIT 1", uniTable))
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COALESCE(fid, 0), COALESCE(did, 0), COALESCE(rapid, 0), COALESCE(defrepair, 0), COALESCE(defrepair_delta, 0), COALESCE(acs, 0) FROM %s LIMIT 1", uniTable))
 	if err != nil {
 		return combatUniverseSettings{}, err
 	}
@@ -152,7 +160,7 @@ func (r FleetRepository) loadCombatUniverseSettings(ctx context.Context, uniTabl
 	}
 	var settings combatUniverseSettings
 	var rapid int
-	if err := rows.Scan(&settings.FleetDebrisPercent, &settings.DefenseDebrisPercent, &rapid, &settings.DefenseRepair, &settings.DefenseRepairDelta); err != nil {
+	if err := rows.Scan(&settings.FleetDebrisPercent, &settings.DefenseDebrisPercent, &rapid, &settings.DefenseRepair, &settings.DefenseRepairDelta, &settings.ACSLimit); err != nil {
 		return combatUniverseSettings{}, err
 	}
 	settings.RapidFire = rapid != 0

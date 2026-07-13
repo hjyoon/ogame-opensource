@@ -14,7 +14,7 @@ HTTP/DB effects, and restore again.
 | Shipyard/defense | 2 | batch debit, per-unit completion, queue timing, units/score/ranks | PASS |
 | Advanced building | 2 | demolition, Commander queue cancel/level shift/propagation | PASS |
 | Defense limits | 3 | dome uniqueness, missile capacity, mixed queue order/completion | PASS |
-| Fleet lifecycle | 11 | transport/recall/deploy/recycle, attack/repair, ACS hold/attack/recall | PASS |
+| Fleet lifecycle | 12 | transport/recall/deploy/recycle, attack/repair, ACS hold/attack/recall/defense | PASS |
 | Combat engine | 4 | outcome, shots/power, absorption, survivors | PASS |
 
 Resource cases cover partial production, 0-100 boundary values, and all-100
@@ -32,6 +32,7 @@ testing/e2e/run-golang-building-advanced-differential-e2e.sh
 testing/e2e/run-golang-defense-limits-differential-e2e.sh
 testing/e2e/run-golang-fleet-differential-e2e.sh
 testing/e2e/run-golang-acs-attack-differential-e2e.sh
+testing/e2e/run-golang-holding-defense-differential-e2e.sh
 testing/e2e/run-golang-combat-engine-differential-e2e.sh
 ```
 
@@ -46,7 +47,7 @@ losses, debris, report HTML/link messages, planet units, scores, and cleanup.
 
 ## Expansion Order
 
-1. ACS holding defenders and moon creation/destruction.
+1. Moon creation/destruction.
 2. Colony, missiles, expedition, phalanx and Jump Gate.
 3. Account, alliance, messages, buddy and Admin mutations.
 

@@ -95,6 +95,9 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     if [ "${OGAME_RUN_ACS_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-acs-attack-differential-e2e.sh"
     fi
+    if [ "${OGAME_RUN_HOLDING_DEFENSE_DIFFERENTIAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-holding-defense-differential-e2e.sh"
+    fi
     if [ "${OGAME_RUN_COMBAT_ENGINE_DIFFERENTIAL:-1}" = "1" ]; then
       "$SCRIPT_DIR/run-golang-combat-engine-differential-e2e.sh"
     fi

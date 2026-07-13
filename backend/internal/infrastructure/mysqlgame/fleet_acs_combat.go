@@ -9,15 +9,6 @@ import (
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 )
 
-type acsCombatParticipant struct {
-	Fleet   recallFleetRow
-	Queue   recallQueueRow
-	Context fleetMessageContext
-	Weapon  int
-	Shield  int
-	Armour  int
-}
-
 func (r FleetRepository) finishACSAttackFleetArrival(
 	ctx context.Context,
 	uniTable string,
@@ -53,6 +44,10 @@ func (r FleetRepository) finishACSAttackFleetArrival(
 	if err != nil {
 		return err
 	}
+	holding, err := r.loadHoldingCombatParticipants(ctx, fleetTable, queueTable, planetsTable, usersTable, head.TargetPlanetID, settings.ACSLimit)
+	if err != nil {
+		return err
+	}
 	if r.combatRandom == nil {
 		return errors.New("combat random source unavailable")
 	}
@@ -75,24 +70,14 @@ func (r FleetRepository) finishACSAttackFleetArrival(
 		})
 	}
 	value := participants[0].Context
-	defender := domaingame.CombatSlot{
-		ObjectID: head.TargetPlanetID,
-		PlayerID: value.TargetOwnerID,
-		Name:     value.TargetOwnerName,
-		Coords: domaingame.Coordinates{
-			Galaxy: value.TargetGalaxy, System: value.TargetSystem, Position: value.TargetPosition,
-		},
-		Planet: true,
-		Weapon: state.DefenderWeapon,
-		Shield: state.DefenderShield,
-		Armour: state.DefenderArmour,
-		Units:  combatUnitCounts(state.DefenderUnits),
-	}
-	result, err := domaingame.ResolveCombat(attackers, []domaingame.CombatSlot{defender}, settings.RapidFire, domaingame.CombatMaxRounds, r.combatRandom)
+	defenders := combatDefenderSlots(head.TargetPlanetID, value, state, holding)
+	result, err := domaingame.ResolveCombat(attackers, defenders, settings.RapidFire, domaingame.CombatMaxRounds, r.combatRandom)
 	if err != nil {
 		return err
 	}
-	repaired := domaingame.RepairCombatDefense(result, settings.DefenseRepair, settings.DefenseRepairDelta, []bool{state.DefenderEngineer}, r.combatRandom)
+	engineers := make([]bool, len(defenders))
+	engineers[0] = state.DefenderEngineer
+	repaired := domaingame.RepairCombatDefense(result, settings.DefenseRepair, settings.DefenseRepairDelta, engineers, r.combatRandom)
 	writeback := domaingame.BuildCombatWriteback(result, repaired, settings.FleetDebrisPercent, settings.DefenseDebrisPercent)
 
 	capacities := make([]int, len(participants))
@@ -119,7 +104,7 @@ func (r FleetRepository) finishACSAttackFleetArrival(
 	if err != nil {
 		return err
 	}
-	if err := r.insertACSBattleMessages(ctx, messagesTable, participants, value, report, result, writeback, task.End); err != nil {
+	if err := r.insertACSBattleMessages(ctx, messagesTable, participants, holding, value, report, result, writeback, task.End); err != nil {
 		return err
 	}
 	if err := r.updateACSBattleData(ctx, battleTable, battleID, value, report, result.Outcome, writeback); err != nil {
@@ -134,6 +119,9 @@ func (r FleetRepository) finishACSAttackFleetArrival(
 	if err := r.setPlanetCombatUnits(ctx, planetsTable, head.TargetPlanetID, writeback.DefenderSurvivors[0]); err != nil {
 		return err
 	}
+	if err := r.writebackHoldingCombatFleets(ctx, fleetTable, queueTable, holding, writeback.DefenderSurvivors); err != nil {
+		return err
+	}
 
 	for index, participant := range participants {
 		share := combatPlunderShare(captured, capacities[index], totalCargo)
@@ -145,7 +133,7 @@ func (r FleetRepository) finishACSAttackFleetArrival(
 			return err
 		}
 	}
-	if err := r.adjustCombatStats(ctx, usersTable, value.TargetOwnerID, writeback.DefenderLosses[0]); err != nil {
+	if err := r.adjustCombatDefenderStats(ctx, usersTable, value, holding, writeback.DefenderLosses); err != nil {
 		return err
 	}
 	if err := (OverviewRepository{execer: r.execer}).recalcRanks(ctx, usersTable); err != nil {
@@ -160,7 +148,7 @@ func (r FleetRepository) finishACSAttackFleetArrival(
 	return err
 }
 
-func (r FleetRepository) loadACSCombatParticipants(ctx context.Context, fleetTable string, queueTable string, planetsTable string, usersTable string, unionID int) ([]acsCombatParticipant, error) {
+func (r FleetRepository) loadACSCombatParticipants(ctx context.Context, fleetTable string, queueTable string, planetsTable string, usersTable string, unionID int) ([]combatFleetParticipant, error) {
 	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT fleet_id FROM %s WHERE union_id = ? ORDER BY fleet_id", fleetTable), unionID)
 	if err != nil {
 		return nil, err
@@ -182,37 +170,13 @@ func (r FleetRepository) loadACSCombatParticipants(ctx context.Context, fleetTab
 		return nil, err
 	}
 
-	participants := make([]acsCombatParticipant, 0, len(ids))
+	participants := make([]combatFleetParticipant, 0, len(ids))
 	for _, id := range ids {
-		fleet, found, err := r.loadRecallFleetAnyOwner(ctx, fleetTable, id)
+		participant, err := r.loadCombatFleetParticipant(ctx, fleetTable, queueTable, planetsTable, usersTable, id, "ACS participant")
 		if err != nil {
 			return nil, err
 		}
-		if !found {
-			return nil, errors.New("ACS participant fleet unavailable")
-		}
-		queue, found, err := r.loadRecallQueue(ctx, queueTable, id)
-		if err != nil {
-			return nil, err
-		}
-		if !found {
-			return nil, errors.New("ACS participant queue unavailable")
-		}
-		value, found, err := r.loadFleetMessageContext(ctx, usersTable, planetsTable, fleet)
-		if err != nil {
-			return nil, err
-		}
-		if !found {
-			return nil, errors.New("ACS participant context unavailable")
-		}
-		weapon, shield, armour, found, err := r.loadCombatPlayerTechnology(ctx, usersTable, fleet.OwnerID)
-		if err != nil {
-			return nil, err
-		}
-		if !found {
-			return nil, errors.New("ACS participant technology unavailable")
-		}
-		participants = append(participants, acsCombatParticipant{Fleet: fleet, Queue: queue, Context: value, Weapon: weapon, Shield: shield, Armour: armour})
+		participants = append(participants, participant)
 	}
 	return participants, nil
 }
@@ -241,7 +205,7 @@ func combatPlunderShare(captured domaingame.Resources, capacity int, totalCapaci
 	return domaingame.Resources{Metal: captured.Metal * ratio, Crystal: captured.Crystal * ratio, Deuterium: captured.Deuterium * ratio}
 }
 
-func insertACSLossTotals(writeback domaingame.CombatWriteback) (int64, int64) {
+func combatLossTotals(writeback domaingame.CombatWriteback) (int64, int64) {
 	var attackerLoss, defenderLoss int64
 	for _, loss := range writeback.AttackerLosses {
 		attackerLoss += loss.Points
@@ -252,13 +216,19 @@ func insertACSLossTotals(writeback domaingame.CombatWriteback) (int64, int64) {
 	return attackerLoss, defenderLoss
 }
 
-func (r FleetRepository) insertACSBattleMessages(ctx context.Context, messagesTable string, participants []acsCombatParticipant, value fleetMessageContext, report string, result domaingame.CombatResult, writeback domaingame.CombatWriteback, at int64) error {
-	attackerLoss, defenderLoss := insertACSLossTotals(writeback)
+func (r FleetRepository) insertACSBattleMessages(ctx context.Context, messagesTable string, participants []combatFleetParticipant, holding []combatFleetParticipant, value fleetMessageContext, report string, result domaingame.CombatResult, writeback domaingame.CombatWriteback, at int64) error {
+	attackerLoss, defenderLoss := combatLossTotals(writeback)
 	attackerStyle, defenderStyle := guardedBattleStyles(result.Outcome)
-	if err := r.insertBattleMessagePairWithLosses(ctx, messagesTable, value.TargetOwnerID, value, report, defenderStyle, defenderLoss, attackerLoss, at); err != nil {
-		return err
+	seen := map[int]bool{}
+	for _, ownerID := range combatDefenderOwnerIDs(value, holding) {
+		if seen[ownerID] {
+			continue
+		}
+		if err := r.insertBattleMessagePairWithLosses(ctx, messagesTable, ownerID, value, report, defenderStyle, defenderLoss, attackerLoss, at); err != nil {
+			return err
+		}
+		seen[ownerID] = true
 	}
-	seen := map[int]bool{value.TargetOwnerID: true}
 	attackerReport := report
 	if result.Outcome == domaingame.CombatDefenderWon && len(result.Rounds) <= 2 {
 		attackerReport = fmt.Sprintf("Contact with the attacking fleet has been lost. <br> (That means it was destroyed during the first round.) <!--A:%d,W:%d-->", attackerLoss, defenderLoss)
@@ -276,7 +246,7 @@ func (r FleetRepository) insertACSBattleMessages(ctx context.Context, messagesTa
 }
 
 func (r FleetRepository) updateACSBattleData(ctx context.Context, battleTable string, battleID int64, value fleetMessageContext, report string, outcome domaingame.CombatOutcome, writeback domaingame.CombatWriteback) error {
-	attackerLoss, defenderLoss := insertACSLossTotals(writeback)
+	attackerLoss, defenderLoss := combatLossTotals(writeback)
 	attackerStyle, _ := guardedBattleStyles(outcome)
 	title := battleReportLinkSubjectWithLosses(battleID, value, attackerStyle, true, defenderLoss, attackerLoss)
 	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET title = ?, report = ? WHERE battle_id = ? LIMIT 1", battleTable), title, report, battleID)

@@ -30,6 +30,10 @@ func (r FleetRepository) finishGuardedAttackFleetArrival(
 	if err != nil {
 		return err
 	}
+	holding, err := r.loadHoldingCombatParticipants(ctx, fleetTable, queueTable, planetsTable, usersTable, fleet.TargetPlanetID, settings.ACSLimit)
+	if err != nil {
+		return err
+	}
 	if r.combatRandom == nil {
 		return errors.New("combat random source unavailable")
 	}
@@ -40,17 +44,14 @@ func (r FleetRepository) finishGuardedAttackFleetArrival(
 		Weapon: state.OriginWeapon, Shield: state.OriginShield, Armour: state.OriginArmour,
 		Units: combatUnitCounts(fleet.Ships),
 	}
-	defender := domaingame.CombatSlot{
-		ObjectID: fleet.TargetPlanetID, PlayerID: messageContext.TargetOwnerID, Name: messageContext.TargetOwnerName,
-		Coords: domaingame.Coordinates{Galaxy: messageContext.TargetGalaxy, System: messageContext.TargetSystem, Position: messageContext.TargetPosition},
-		Planet: true, Weapon: state.DefenderWeapon, Shield: state.DefenderShield, Armour: state.DefenderArmour,
-		Units: combatUnitCounts(state.DefenderUnits),
-	}
-	result, err := domaingame.ResolveCombat([]domaingame.CombatSlot{attacker}, []domaingame.CombatSlot{defender}, settings.RapidFire, domaingame.CombatMaxRounds, r.combatRandom)
+	defenders := combatDefenderSlots(fleet.TargetPlanetID, messageContext, state, holding)
+	result, err := domaingame.ResolveCombat([]domaingame.CombatSlot{attacker}, defenders, settings.RapidFire, domaingame.CombatMaxRounds, r.combatRandom)
 	if err != nil {
 		return err
 	}
-	repaired := domaingame.RepairCombatDefense(result, settings.DefenseRepair, settings.DefenseRepairDelta, []bool{state.DefenderEngineer}, r.combatRandom)
+	engineers := make([]bool, len(defenders))
+	engineers[0] = state.DefenderEngineer
+	repaired := domaingame.RepairCombatDefense(result, settings.DefenseRepair, settings.DefenseRepairDelta, engineers, r.combatRandom)
 	writeback := domaingame.BuildCombatWriteback(result, repaired, settings.FleetDebrisPercent, settings.DefenseDebrisPercent)
 
 	captured := domaingame.Resources{}
@@ -68,11 +69,11 @@ func (r FleetRepository) finishGuardedAttackFleetArrival(
 	}
 
 	report := combatBattleReport(result, writeback, repaired, captured, task.End)
-	battleID, err := r.insertBattleData(ctx, battleTable, guardedBattleSource(messageContext, state, fleet), task.End)
+	battleID, err := r.insertBattleData(ctx, battleTable, acsBattleSource(result, settings.RapidFire), task.End)
 	if err != nil {
 		return err
 	}
-	if err := r.insertGuardedBattleMessages(ctx, messagesTable, messageContext, report, result, writeback, task.End); err != nil {
+	if err := r.insertGuardedBattleMessages(ctx, messagesTable, holding, messageContext, report, result, writeback, task.End); err != nil {
 		return err
 	}
 	if err := r.updateGuardedBattleData(ctx, battleTable, battleID, messageContext, report, result.Outcome, writeback); err != nil {
@@ -88,13 +89,16 @@ func (r FleetRepository) finishGuardedAttackFleetArrival(
 	if err := r.setPlanetCombatUnits(ctx, planetsTable, fleet.TargetPlanetID, writeback.DefenderSurvivors[0]); err != nil {
 		return err
 	}
+	if err := r.writebackHoldingCombatFleets(ctx, fleetTable, queueTable, holding, writeback.DefenderSurvivors); err != nil {
+		return err
+	}
 	if err := r.returnGuardedAttackSurvivors(ctx, fleetTable, fleetLogsTable, queueTable, task, fleet, messageContext, writeback.AttackerSurvivors[0], captured); err != nil {
 		return err
 	}
 	if err := r.adjustCombatStats(ctx, usersTable, fleet.OwnerID, writeback.AttackerLosses[0]); err != nil {
 		return err
 	}
-	if err := r.adjustCombatStats(ctx, usersTable, messageContext.TargetOwnerID, writeback.DefenderLosses[0]); err != nil {
+	if err := r.adjustCombatDefenderStats(ctx, usersTable, messageContext, holding, writeback.DefenderLosses); err != nil {
 		return err
 	}
 	if err := (OverviewRepository{execer: r.execer}).recalcRanks(ctx, usersTable); err != nil {
@@ -172,19 +176,27 @@ func (r FleetRepository) adjustCombatStats(ctx context.Context, usersTable strin
 	return err
 }
 
-func (r FleetRepository) insertGuardedBattleMessages(ctx context.Context, messagesTable string, value fleetMessageContext, report string, result domaingame.CombatResult, writeback domaingame.CombatWriteback, at int64) error {
+func (r FleetRepository) insertGuardedBattleMessages(ctx context.Context, messagesTable string, holding []combatFleetParticipant, value fleetMessageContext, report string, result domaingame.CombatResult, writeback domaingame.CombatWriteback, at int64) error {
+	attackerLoss, defenderLoss := combatLossTotals(writeback)
 	attackerStyle, defenderStyle := guardedBattleStyles(result.Outcome)
-	if err := r.insertBattleMessagePairWithLosses(ctx, messagesTable, value.TargetOwnerID, value, report, defenderStyle, writeback.DefenderLosses[0].Points, writeback.AttackerLosses[0].Points, at); err != nil {
-		return err
+	seen := map[int]bool{}
+	for _, ownerID := range combatDefenderOwnerIDs(value, holding) {
+		if seen[ownerID] {
+			continue
+		}
+		if err := r.insertBattleMessagePairWithLosses(ctx, messagesTable, ownerID, value, report, defenderStyle, defenderLoss, attackerLoss, at); err != nil {
+			return err
+		}
+		seen[ownerID] = true
 	}
-	if value.OriginOwnerID == value.TargetOwnerID {
+	if seen[value.OriginOwnerID] {
 		return nil
 	}
 	attackerReport := report
 	if result.Outcome == domaingame.CombatDefenderWon && len(result.Rounds) <= 2 {
-		attackerReport = fmt.Sprintf("Contact with the attacking fleet has been lost. <br> (That means it was destroyed during the first round.) <!--A:%d,W:%d-->", writeback.AttackerLosses[0].Points, writeback.DefenderLosses[0].Points)
+		attackerReport = fmt.Sprintf("Contact with the attacking fleet has been lost. <br> (That means it was destroyed during the first round.) <!--A:%d,W:%d-->", attackerLoss, defenderLoss)
 	}
-	return r.insertBattleMessagePairWithLosses(ctx, messagesTable, value.OriginOwnerID, value, attackerReport, attackerStyle, writeback.DefenderLosses[0].Points, writeback.AttackerLosses[0].Points, at)
+	return r.insertBattleMessagePairWithLosses(ctx, messagesTable, value.OriginOwnerID, value, attackerReport, attackerStyle, defenderLoss, attackerLoss, at)
 }
 
 func (r FleetRepository) insertBattleMessagePairWithLosses(ctx context.Context, messagesTable string, ownerID int, value fleetMessageContext, report string, style string, defenderLoss int64, attackerLoss int64, at int64) error {
@@ -202,8 +214,9 @@ func (r FleetRepository) insertBattleMessagePairWithLosses(ctx context.Context, 
 }
 
 func (r FleetRepository) updateGuardedBattleData(ctx context.Context, battleTable string, battleID int64, value fleetMessageContext, report string, outcome domaingame.CombatOutcome, writeback domaingame.CombatWriteback) error {
+	attackerLoss, defenderLoss := combatLossTotals(writeback)
 	attackerStyle, _ := guardedBattleStyles(outcome)
-	title := battleReportLinkSubjectWithLosses(battleID, value, attackerStyle, true, writeback.DefenderLosses[0].Points, writeback.AttackerLosses[0].Points)
+	title := battleReportLinkSubjectWithLosses(battleID, value, attackerStyle, true, defenderLoss, attackerLoss)
 	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET title = ?, report = ? WHERE battle_id = ? LIMIT 1", battleTable), title, report, battleID)
 	return err
 }
@@ -228,21 +241,6 @@ func battleReportLinkSubjectWithLosses(reportID int64, value fleetMessageContext
 		return fmt.Sprintf("<a href=\"#\" onclick=\"fenster('index.php?page=%s&bericht=%d', '%s');\" ><span class=\"%s\">Battle report [%d:%d:%d] (%s)</span></a>", page, reportID, window, style, value.TargetGalaxy, value.TargetSystem, value.TargetPosition, losses)
 	}
 	return fmt.Sprintf("<a href=\"#\" onclick=\"fenster(\\'index.php?page=%s&session={PUBLIC_SESSION}&bericht=%d\\', \\'%s\\');\" ><span class=\"%s\">Battle report [%d:%d:%d] (%s)</span></a>", page, reportID, window, style, value.TargetGalaxy, value.TargetSystem, value.TargetPosition, losses)
-}
-
-func guardedBattleSource(value fleetMessageContext, state unguardedAttackState, fleet recallFleetRow) string {
-	var source strings.Builder
-	fmt.Fprintf(&source, "MaxRound = %d\nRapidfire = 0\n", domaingame.CombatMaxRounds)
-	fmt.Fprintf(&source, "Attackers = 1\nDefenders = 1\nAttacker0 = %d %d %d", state.OriginWeapon, state.OriginShield, state.OriginArmour)
-	for _, id := range domaingame.FleetIDs() {
-		fmt.Fprintf(&source, " %d %d", id, fleet.Ships[id])
-	}
-	fmt.Fprintf(&source, "\nDefender0 = %d %d %d", state.DefenderWeapon, state.DefenderShield, state.DefenderArmour)
-	for _, id := range combatReportDefenderIDs() {
-		fmt.Fprintf(&source, " %d %d", id, state.DefenderUnits[id])
-	}
-	fmt.Fprintf(&source, "\nAttacker0Name = %s\nDefender0Name = %s\n", value.OriginOwnerName, value.TargetOwnerName)
-	return source.String()
 }
 
 func combatBattleReport(result domaingame.CombatResult, writeback domaingame.CombatWriteback, repaired []map[int]int, captured domaingame.Resources, at int64) string {

@@ -134,19 +134,19 @@ func TestACSCombatHelpersAndMessageDeduplication(t *testing.T) {
 		AttackerLosses: []domaingame.CombatParticipantLoss{{Points: 100}, {Points: 200}},
 		DefenderLosses: []domaingame.CombatParticipantLoss{{Points: 400}},
 	}
-	if attacker, defender := insertACSLossTotals(writeback); attacker != 300 || defender != 400 {
+	if attacker, defender := combatLossTotals(writeback); attacker != 300 || defender != 400 {
 		t.Fatalf("unexpected ACS loss totals: %d/%d", attacker, defender)
 	}
 
 	value := fleetMessageContextTestValue()
-	participants := []acsCombatParticipant{
+	participants := []combatFleetParticipant{
 		{Fleet: recallFleetRow{OwnerID: 42}},
 		{Fleet: recallFleetRow{OwnerID: 42}},
 	}
 	result := domaingame.CombatResult{Outcome: domaingame.CombatDefenderWon}
 	runner := &fakeFleetRunner{}
 	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
-	if err := repository.insertACSBattleMessages(context.Background(), "`ogame_messages`", participants, value, "report", result, writeback, 1_000); err != nil {
+	if err := repository.insertACSBattleMessages(context.Background(), "`ogame_messages`", participants, nil, value, "report", result, writeback, 1_000); err != nil {
 		t.Fatal(err)
 	}
 	if len(runner.execCalls) != 4 || !strings.Contains(fmt.Sprint(runner.execCalls[2].args[4]), "Contact with the attacking fleet has been lost") {
@@ -209,7 +209,8 @@ func acsCombatTestFixture() ([]fakeQueryResult, recallFleetRow, fleetQueueTask) 
 		{rows: fakeRowsFromValues(supportContext)},
 		{rows: fakeRowsFromValues([]any{4, 5, 6})},
 		{rows: fakeRowsFromValues(attackStateTestRow(nil, 0, 0, 0, 0, 0, 0))},
-		{rows: fakeRowsFromValues([]any{30, 0, 1, 70, 10})},
+		{rows: fakeRowsFromValues([]any{30, 0, 1, 70, 10, 2})},
+		{rows: fakeRowsFromValues()},
 		{rows: fakeRowsFromValues()},
 	}
 	head := recallFleetRow{
