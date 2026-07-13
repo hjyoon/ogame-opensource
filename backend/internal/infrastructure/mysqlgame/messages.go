@@ -288,6 +288,22 @@ func (r MessagesRepository) MutateMessages(ctx context.Context, query appgame.Me
 	if r.execer == nil {
 		return appgame.MessagesMutationOutcome{}, errors.New("messages updater unavailable")
 	}
+	if txer, ok := r.execer.(transactionRunner); ok {
+		var outcome appgame.MessagesMutationOutcome
+		err := txer.WithTransaction(ctx, func(queryer Queryer, execer Execer) error {
+			transactionRepository := r
+			transactionRepository.queryer = queryer
+			transactionRepository.execer = execer
+			var err error
+			outcome, err = transactionRepository.mutateMessages(ctx, query)
+			return err
+		})
+		return outcome, err
+	}
+	return r.mutateMessages(ctx, query)
+}
+
+func (r MessagesRepository) mutateMessages(ctx context.Context, query appgame.MessagesMutationQuery) (appgame.MessagesMutationOutcome, error) {
 	messagesTable, err := tableName(r.prefix, "messages")
 	if err != nil {
 		return appgame.MessagesMutationOutcome{}, err

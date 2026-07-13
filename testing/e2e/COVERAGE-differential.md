@@ -18,6 +18,7 @@ compare normalized HTTP/DB effects, then restore.
 | Phalanx | 11 | guards, debit, fleet visibility, ACS hold/grouping, state restore | PASS |
 | Jump Gate | 13 | target filters, guards, ship move, satellite exclusion, cooldown | PASS |
 | Buddy | 12 | request views, guards, text limits, lifecycle, PM side effects | PASS |
+| Messages | 18 | read/retention, delete modes, reports, flags, send/cap | PASS |
 | Combat engine | 4 | outcome, shots/power, absorption, survivors | PASS |
 
 Resource cases cover partial production and 0/100 boundaries. Each side logs in
@@ -45,7 +46,7 @@ moon ABM use, defense state, rank effects, cleanup, and legacy report HTML.
 
 ## Expansion Order
 
-1. Account, alliance, messages and Admin mutations.
+1. Account, alliance and Admin mutations.
 
 ## Comparison Contract
 

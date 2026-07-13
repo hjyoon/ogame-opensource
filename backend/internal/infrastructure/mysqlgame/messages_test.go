@@ -988,6 +988,33 @@ func TestMessagesRepositoryMutationErrors(t *testing.T) {
 	}
 }
 
+func TestMessagesRepositoryTransactionsRollBackMailboxReplacement(t *testing.T) {
+	want := errors.New("message insert failed")
+	runner := &fakeMessagesTransactionRunner{fakeMessagesRunner: &fakeMessagesRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{42, "Sender", 1, 1, "/evolution/", 1, 2, 3})},
+			{rows: fakeRowsFromValues([]any{77, "Recipient", 1, 1, "/evolution/", 1, 2, 4})},
+			{rows: fakeRowsFromValues([]any{127})},
+		}},
+		execErrs: []error{nil, want},
+	}}
+	repository := NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+
+	_, err := repository.MutateMessages(context.Background(), appgame.MessagesMutationQuery{
+		PlayerID:       42,
+		Action:         domaingame.MessagesMutationActionSend,
+		TargetPlayerID: 77,
+		Subject:        "Subject",
+		Text:           "Body",
+	})
+	if !errors.Is(err, want) || !runner.rolledBack || runner.committed {
+		t.Fatalf("expected failed insert to roll back oldest-message deletion, committed=%t rolledBack=%t err=%v", runner.committed, runner.rolledBack, err)
+	}
+	if len(runner.execs) != 2 || !strings.Contains(runner.execs[0].sql, "ORDER BY date ASC LIMIT 1") || !strings.Contains(runner.execs[1].sql, "INSERT INTO") {
+		t.Fatalf("unexpected mailbox replacement statements: %+v", runner.execs)
+	}
+}
+
 func TestMessagesRepositoryReportAndCountEdges(t *testing.T) {
 	runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("owned query failed")}}}}
 	repository := NewMessagesRepositoryWithRunner(runner, runner, "ogame_", time.Now)
@@ -1351,6 +1378,21 @@ type fakeMessagesRunner struct {
 	execs    []fakeMessagesExec
 	execErr  error
 	execErrs []error
+}
+
+type fakeMessagesTransactionRunner struct {
+	*fakeMessagesRunner
+	committed  bool
+	rolledBack bool
+}
+
+func (r *fakeMessagesTransactionRunner) WithTransaction(ctx context.Context, run func(Queryer, Execer) error) error {
+	if err := run(r, r); err != nil {
+		r.rolledBack = true
+		return err
+	}
+	r.committed = true
+	return nil
 }
 
 func messageInboxResults(results ...fakeQueryResult) []fakeQueryResult {
