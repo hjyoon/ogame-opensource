@@ -1335,6 +1335,7 @@ func TestAdminRepositoryReadsBrowseRows(t *testing.T) {
 func TestAdminRepositoryReadsLoginRows(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{77})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{11, 77, "target", "203.0.113.11", int64(1700000001)})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{12, 77, "target", "203.0.113.12", int64(1700000002)})},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{13, 88, "other", "203.0.113.13", int64(1700000003)})},
@@ -1342,12 +1343,13 @@ func TestAdminRepositoryReadsLoginRows(t *testing.T) {
 	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
 
 	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{
-		PlayerID:    42,
-		PlanetID:    99,
-		Mode:        "Logins",
-		LoginName:   "tar",
-		LoginUserID: 77,
-		LoginIP:     "203.0.113.13",
+		PlayerID:       42,
+		PlanetID:       99,
+		Mode:           "Logins",
+		LoginName:      "tar",
+		LoginUserID:    77,
+		LoginUserIDSet: true,
+		LoginIP:        "203.0.113.13",
 	})
 
 	if err != nil {
@@ -1356,10 +1358,12 @@ func TestAdminRepositoryReadsLoginRows(t *testing.T) {
 	if len(admin.LoginRows) != 3 || admin.LoginRows[0].IP != "203.0.113.11" || admin.LoginRows[2].UserName != "other" {
 		t.Fatalf("unexpected login rows: %+v", admin.LoginRows)
 	}
-	nameCall := queryer.calls[len(queryer.calls)-3]
+	nameCall := queryer.calls[len(queryer.calls)-4]
+	nameLogsCall := queryer.calls[len(queryer.calls)-3]
 	idCall := queryer.calls[len(queryer.calls)-2]
 	ipCall := queryer.calls[len(queryer.calls)-1]
-	if !strings.Contains(nameCall.sql, "u.oname LIKE ?") || nameCall.args[0] != "tar%" ||
+	if !strings.Contains(nameCall.sql, "oname LIKE ?") || nameCall.args[0] != "tar%" ||
+		!strings.Contains(nameLogsCall.sql, "l.user_id = ?") || nameLogsCall.args[0] != 77 ||
 		!strings.Contains(idCall.sql, "l.user_id = ?") || idCall.args[0] != 77 ||
 		!strings.Contains(ipCall.sql, "l.ip = ?") || ipCall.args[0] != "203.0.113.13" {
 		t.Fatalf("unexpected login search calls: name=%+v id=%+v ip=%+v", nameCall, idCall, ipCall)
@@ -1398,7 +1402,7 @@ func TestAdminRepositoryAuditRowEdges(t *testing.T) {
 
 	t.Run("login no filters", func(t *testing.T) {
 		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_")
-		rows, err := repository.loadAdminLoginRows(context.Background(), "", 0, "")
+		rows, err := repository.loadAdminLoginRows(context.Background(), "", 0, false, "")
 		if err != nil || len(rows) != 0 {
 			t.Fatalf("expected empty login rows without filters, rows=%+v err=%v", rows, err)
 		}
@@ -1435,7 +1439,7 @@ func TestAdminRepositoryAuditRowEdges(t *testing.T) {
 
 	t.Run("login loader propagates search error", func(t *testing.T) {
 		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("login name failed")}}}, "ogame_")
-		if _, err := repository.loadAdminLoginRows(context.Background(), "target", 0, ""); err == nil || !strings.Contains(err.Error(), "login name failed") {
+		if _, err := repository.loadAdminLoginRows(context.Background(), "target", 0, false, ""); err == nil || !strings.Contains(err.Error(), "login name failed") {
 			t.Fatalf("expected login name error, got %v", err)
 		}
 	})
@@ -3811,6 +3815,229 @@ func TestAdminRepositoryReadsUserLogRowsInLegacyDisplayOrder(t *testing.T) {
 	if !strings.Contains(lastSQL, "`ogame_userlogs`") || !strings.Contains(lastSQL, "COALESCE(u.vacation, 0)") || !strings.Contains(lastSQL, "ORDER BY l.date DESC") {
 		t.Fatalf("expected userlogs query, got %s", lastSQL)
 	}
+}
+
+func TestAdminRepositoryLoadsLegacyUserLogSearchGroups(t *testing.T) {
+	queryer := &fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(
+			[]any{77, "Target", int64(10), 0, 0, 0, 0},
+			[]any{88, "Target2", int64(20), 1, 0, 0, 0},
+			[]any{99, "Unrelated", int64(30), 0, 0, 0, 0},
+		)},
+		{rows: fakeRowsFromValues([]any{5, int64(1704153600), "BUILD", "built"})},
+		{rows: fakeRowsFromValues()},
+	}}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
+
+	groups, err := repository.loadAdminUserLogGroups(context.Background(), domaingame.AdminUserLogSearch{
+		Name: "target", Type: "BUILD", Days: 2, Hours: 3, Since: "01.01.2024",
+	})
+
+	if err != nil {
+		t.Fatalf("loadAdminUserLogGroups returned error: %v", err)
+	}
+	if len(groups) != 2 || groups[0].User.OwnerID != 77 || len(groups[0].Rows) != 1 || len(groups[1].Rows) != 0 || !groups[1].User.Vacation {
+		t.Fatalf("unexpected legacy user-log groups: %+v", groups)
+	}
+	if len(queryer.calls) != 3 || queryer.calls[1].args[1] != int64(1704067200) || queryer.calls[1].args[2] != int64(1704250800) || queryer.calls[1].args[3] != "BUILD" {
+		t.Fatalf("unexpected user-log interval query: %+v", queryer.calls)
+	}
+}
+
+func TestAdminRepositoryGetsSearchedUserLogs(t *testing.T) {
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{77, "Target", int64(10), 0, 0, 0, 0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{5, int64(1704153600), "BUILD", "built"})},
+	)}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
+	search := &domaingame.AdminUserLogSearch{Name: "target", Type: "BUILD", Days: 2, Since: "01.01.2024"}
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "UserLogs", UserLogSearch: search})
+
+	if err != nil {
+		t.Fatalf("GetAdmin searched UserLogs returned error: %v", err)
+	}
+	if !admin.UserLogSearched || admin.UserLogType != "BUILD" || len(admin.UserLogRows) != 0 || len(admin.UserLogGroups) != 1 || len(admin.UserLogGroups[0].Rows) != 1 {
+		t.Fatalf("unexpected searched UserLogs payload: %+v", admin)
+	}
+}
+
+func TestLegacySimilarTextPercent(t *testing.T) {
+	if got := legacySimilarTextPercent("TARGET", "target"); got != 100 {
+		t.Fatalf("expected case-insensitive exact match, got %v", got)
+	}
+	if got := legacySimilarTextPercent("target", "target2"); got <= 75 {
+		t.Fatalf("expected approximate match above legacy threshold, got %v", got)
+	}
+	if got := legacySimilarTextPercent("target", "unrelated"); got > 75 {
+		t.Fatalf("expected unrelated name below legacy threshold, got %v", got)
+	}
+	if got := legacySimilarTextPercent("", ""); got != 0 {
+		t.Fatalf("expected empty names to produce zero percent, got %v", got)
+	}
+}
+
+func TestAdminRepositoryMutatesLegacyMessageWindows(t *testing.T) {
+	t.Run("debug delete all truncates", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		issue, err := repository.mutateAdminMessages(context.Background(), "Debug", appgame.AdminMutationQuery{DeleteMode: "deleteall"})
+		if err != nil || issue != nil || len(runner.execCalls) != 1 || runner.execCalls[0].sql != "TRUNCATE TABLE `ogame_debug`" {
+			t.Fatalf("unexpected debug truncate result: issue=%+v err=%v calls=%+v", issue, err, runner.execCalls)
+		}
+	})
+
+	t.Run("debug filter suppresses deletion", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if issue, err := repository.mutateAdminMessages(context.Background(), "Debug", appgame.AdminMutationQuery{DeleteMode: "deleteall", Filter: "needle"}); err != nil || issue != nil || len(runner.execCalls) != 0 {
+			t.Fatalf("filtered debug mutation must be a no-op: issue=%+v err=%v calls=%+v", issue, err, runner.execCalls)
+		}
+	})
+
+	t.Run("errors delete all is limited to shown ids", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{9}, []any{8})}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		issue, err := repository.mutateAdminMessages(context.Background(), "Errors", appgame.AdminMutationQuery{DeleteMode: "deleteall"})
+		if err != nil || issue != nil || len(runner.execCalls) != 2 || runner.execCalls[0].args[0] != 9 || runner.execCalls[1].args[0] != 8 {
+			t.Fatalf("unexpected errors delete-all window: issue=%+v err=%v calls=%+v", issue, err, runner.execCalls)
+		}
+	})
+
+	t.Run("marked deletion intersects shown ids", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{9}, []any{8})}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		_, err := repository.mutateAdminMessages(context.Background(), "Debug", appgame.AdminMutationQuery{TargetIDs: []int{8, 7}, DeleteMode: "deletemarked"})
+		if err != nil || len(runner.execCalls) != 1 || runner.execCalls[0].args[0] != 8 {
+			t.Fatalf("unexpected marked deletion: err=%v calls=%+v", err, runner.execCalls)
+		}
+	})
+}
+
+func TestAdminRepositoryLegacyAuditErrorPaths(t *testing.T) {
+	t.Run("top-level mutation dispatch", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Debug", Action: domaingame.AdminActionMessagesFilter}); err != nil || issue != nil {
+			t.Fatalf("unexpected Debug filter dispatch: issue=%+v err=%v", issue, err)
+		}
+		if issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "UserLogs", Action: domaingame.AdminActionUserLogsSearch}); err != nil || issue != nil {
+			t.Fatalf("unexpected UserLogs search dispatch: issue=%+v err=%v", issue, err)
+		}
+		runner.results = []fakeQueryResult{{rows: fakeRowsFromValues()}}
+		if issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Errors", Action: domaingame.AdminActionMessagesDelete}); err != nil || issue != nil {
+			t.Fatalf("unexpected Errors delete dispatch: issue=%+v err=%v", issue, err)
+		}
+	})
+
+	t.Run("top-level mutation dependency and table errors", func(t *testing.T) {
+		if _, err := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").MutateAdmin(context.Background(), appgame.AdminMutationQuery{}); err == nil || !strings.Contains(err.Error(), "mutation unavailable") {
+			t.Fatalf("expected missing mutation runner error, got %v", err)
+		}
+		cases := []appgame.AdminMutationQuery{
+			{Mode: "Expedition", Action: domaingame.AdminActionSettings},
+			{Mode: "Uni", Action: domaingame.AdminActionSettings},
+			{Mode: "Queue", Action: domaingame.AdminActionQueueEnd},
+			{Mode: "Fleetlogs", Action: domaingame.AdminActionFleetlogsEnd},
+			{Mode: "Mods", Action: domaingame.AdminActionModInstall},
+			{Mode: "Bots", Action: domaingame.AdminActionBotStop},
+			{Mode: "Users", Action: domaingame.AdminActionUsersUpdate},
+			{Mode: "Bans", Action: "ban"},
+		}
+		for _, query := range cases {
+			repository := NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "bad-prefix_")
+			if _, err := repository.MutateAdmin(context.Background(), query); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+				t.Fatalf("expected %s table error, got %v", query.Mode, err)
+			}
+		}
+	})
+
+	t.Run("message id loader errors", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("ids query failed")}}}, "ogame_")
+		if _, err := repository.loadAdminMessageIDs(context.Background(), "`ogame_debug`", true); err == nil || !strings.Contains(err.Error(), "ids query failed") {
+			t.Fatalf("expected id query error, got %v", err)
+		}
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1, 2})}}}, "ogame_")
+		if _, err := repository.loadAdminMessageIDs(context.Background(), "`ogame_debug`", true); err == nil {
+			t.Fatal("expected id scan error")
+		}
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("ids rows failed"), []any{1})}}}, "ogame_")
+		if _, err := repository.loadAdminMessageIDs(context.Background(), "`ogame_debug`", true); err == nil || !strings.Contains(err.Error(), "ids rows failed") {
+			t.Fatalf("expected id rows error, got %v", err)
+		}
+	})
+
+	t.Run("message mutation errors", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "bad-prefix_")
+		if _, err := repository.mutateAdminMessages(context.Background(), "Errors", appgame.AdminMutationQuery{}); err == nil {
+			t.Fatal("expected invalid message table prefix error")
+		}
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{9})}}}, execErrs: []error{errors.New("delete failed")}}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.mutateAdminMessages(context.Background(), "Errors", appgame.AdminMutationQuery{TargetIDs: []int{9}}); err == nil || !strings.Contains(err.Error(), "delete failed") {
+			t.Fatalf("expected message delete error, got %v", err)
+		}
+		runner = &fakeGalaxyRunner{execErrs: []error{errors.New("truncate failed")}}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.mutateAdminMessages(context.Background(), "Debug", appgame.AdminMutationQuery{DeleteMode: "deleteall"}); err == nil || !strings.Contains(err.Error(), "truncate failed") {
+			t.Fatalf("expected debug truncate error, got %v", err)
+		}
+		runner = &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("shown ids failed")}}}}
+		repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+		if _, err := repository.mutateAdminMessages(context.Background(), "Errors", appgame.AdminMutationQuery{}); err == nil || !strings.Contains(err.Error(), "shown ids failed") {
+			t.Fatalf("expected shown-id error, got %v", err)
+		}
+	})
+
+	t.Run("user search errors", func(t *testing.T) {
+		search := domaingame.AdminUserLogSearch{Name: "target", Type: "ALL", Since: "bad-date"}
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("users failed")}}}, "ogame_")
+		if _, err := repository.loadAdminUserLogGroups(context.Background(), search); err == nil || !strings.Contains(err.Error(), "users failed") {
+			t.Fatalf("expected users query error, got %v", err)
+		}
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}, "ogame_")
+		if _, err := repository.loadAdminUserLogGroups(context.Background(), search); err == nil {
+			t.Fatal("expected users scan error")
+		}
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("users rows failed"), []any{77, "target", int64(0), 0, 0, 0, 0})}}}, "ogame_")
+		if _, err := repository.loadAdminUserLogGroups(context.Background(), search); err == nil || !strings.Contains(err.Error(), "users rows failed") {
+			t.Fatalf("expected users rows error, got %v", err)
+		}
+		matchedUser := func() fakeQueryResult {
+			return fakeQueryResult{rows: fakeRowsFromValues([]any{77, "target", int64(0), 0, 0, 0, 0})}
+		}
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{matchedUser(), {err: errors.New("logs failed")}}}, "ogame_")
+		if _, err := repository.loadAdminUserLogGroups(context.Background(), search); err == nil || !strings.Contains(err.Error(), "logs failed") {
+			t.Fatalf("expected logs query error, got %v", err)
+		}
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{matchedUser(), {rows: fakeRowsFromValues([]any{1})}}}, "ogame_")
+		if _, err := repository.loadAdminUserLogGroups(context.Background(), search); err == nil {
+			t.Fatal("expected logs scan error")
+		}
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{matchedUser(), {rows: fakeRowsFromValuesWithErr(errors.New("logs rows failed"), []any{1, int64(2), "BUILD", "text"})}}}, "ogame_")
+		if _, err := repository.loadAdminUserLogGroups(context.Background(), search); err == nil || !strings.Contains(err.Error(), "logs rows failed") {
+			t.Fatalf("expected logs rows error, got %v", err)
+		}
+		if got := legacyUserLogSince("not-a-date"); got != 0 {
+			t.Fatalf("invalid legacy date must map to zero, got %d", got)
+		}
+	})
+
+	t.Run("login name scan and rows errors", func(t *testing.T) {
+		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1, 2})}}}, "ogame_")
+		if _, err := repository.loadAdminLoginRows(context.Background(), "target", 0, false, ""); err == nil {
+			t.Fatal("expected login user scan error")
+		}
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(errors.New("login users rows failed"), []any{77})}}}, "ogame_")
+		if _, err := repository.loadAdminLoginRows(context.Background(), "target", 0, false, ""); err == nil || !strings.Contains(err.Error(), "login users rows failed") {
+			t.Fatalf("expected login user rows error, got %v", err)
+		}
+		repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{77})}, {err: errors.New("login rows query failed")}}}, "ogame_")
+		if _, err := repository.loadAdminLoginRows(context.Background(), "target", 0, false, ""); err == nil || !strings.Contains(err.Error(), "login rows query failed") {
+			t.Fatalf("expected per-user login query error, got %v", err)
+		}
+	})
 }
 
 func TestAdminRepositoryReadsQueueRows(t *testing.T) {

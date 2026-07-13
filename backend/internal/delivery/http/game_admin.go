@@ -24,30 +24,40 @@ type gameAdminActionIssue struct {
 }
 
 type gameAdminMutationRequest struct {
-	Action       string                            `json:"action"`
-	TaskID       int                               `json:"taskId"`
-	TargetIDs    []int                             `json:"targetIds"`
-	BanMode      int                               `json:"banMode"`
-	Days         int                               `json:"days"`
-	Hours        int                               `json:"hours"`
-	Reason       string                            `json:"reason"`
-	Values       map[string]int                    `json:"values"`
-	Universe     *gameAdminUniverseMutationRequest `json:"universeSettings"`
-	Category     int                               `json:"category"`
-	Subject      string                            `json:"subject"`
-	Text         string                            `json:"text"`
-	ReportIDs    []int                             `json:"reportIds"`
-	DeleteMode   string                            `json:"deleteMode"`
-	FileName     string                            `json:"fileName"`
-	Amount       int                               `json:"amount"`
-	ItemID       int                               `json:"itemId"`
-	DayMonth     string                            `json:"dayMonth"`
-	HourMinute   string                            `json:"hourMinute"`
-	InactiveDays int                               `json:"inactiveDays"`
-	IngameDays   int                               `json:"ingameDays"`
-	PeriodicDays int                               `json:"periodicDays"`
-	ModName      string                            `json:"modName"`
-	Name         string                            `json:"name"`
+	Action        string                            `json:"action"`
+	TaskID        int                               `json:"taskId"`
+	TargetIDs     []int                             `json:"targetIds"`
+	BanMode       int                               `json:"banMode"`
+	Days          int                               `json:"days"`
+	Hours         int                               `json:"hours"`
+	Reason        string                            `json:"reason"`
+	Values        map[string]int                    `json:"values"`
+	Universe      *gameAdminUniverseMutationRequest `json:"universeSettings"`
+	Category      int                               `json:"category"`
+	Subject       string                            `json:"subject"`
+	Text          string                            `json:"text"`
+	ReportIDs     []int                             `json:"reportIds"`
+	DeleteMode    string                            `json:"deleteMode"`
+	FileName      string                            `json:"fileName"`
+	Amount        int                               `json:"amount"`
+	ItemID        int                               `json:"itemId"`
+	DayMonth      string                            `json:"dayMonth"`
+	HourMinute    string                            `json:"hourMinute"`
+	InactiveDays  int                               `json:"inactiveDays"`
+	IngameDays    int                               `json:"ingameDays"`
+	PeriodicDays  int                               `json:"periodicDays"`
+	ModName       string                            `json:"modName"`
+	Name          string                            `json:"name"`
+	Filter        string                            `json:"filter"`
+	UserLogSearch *gameAdminUserLogSearchRequest    `json:"userLogSearch"`
+}
+
+type gameAdminUserLogSearchRequest struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Days  int    `json:"days"`
+	Hours int    `json:"hours"`
+	Since string `json:"since"`
 }
 
 type gameAdminUniverseMutationRequest struct {
@@ -94,6 +104,9 @@ type gameAdminSummary struct {
 	LoginRows       []gameAdminLoginRow         `json:"loginRows,omitempty"`
 	BrowseRows      []gameAdminBrowseRow        `json:"browseRows,omitempty"`
 	UserLogRows     []gameAdminUserLogRow       `json:"userLogRows,omitempty"`
+	UserLogGroups   []gameAdminUserLogGroup     `json:"userLogGroups,omitempty"`
+	UserLogSearched bool                        `json:"userLogSearched,omitempty"`
+	UserLogType     string                      `json:"userLogType,omitempty"`
 	UserRows        []gameAdminUserRow          `json:"userRows,omitempty"`
 	ActiveUsers     []gameAdminUserRow          `json:"activeUsers,omitempty"`
 	SelectedUser    *gameAdminUserDetail        `json:"selectedUser,omitempty"`
@@ -171,6 +184,11 @@ type gameAdminUserLogRow struct {
 	Type      string `json:"type"`
 	Text      string `json:"text"`
 	Date      int64  `json:"date"`
+}
+
+type gameAdminUserLogGroup struct {
+	User gameAdminUserLogRow   `json:"user"`
+	Rows []gameAdminUserLogRow `json:"rows"`
 }
 
 type gameAdminUserRow struct {
@@ -495,6 +513,7 @@ func (a app) handleGameAdminGet(w http.ResponseWriter, r *http.Request) {
 		LoginName:       r.URL.Query().Get("name"),
 		LoginUserID:     legacyBotEditInt(r.URL.Query().Get("id")),
 		LoginIP:         r.URL.Query().Get("ip"),
+		LoginUserIDSet:  r.URL.Query().Has("id") && r.URL.Query().Get("id") != "",
 		LocaSource:      r.URL.Query().Get("loca_src"),
 		LocaTarget:      r.URL.Query().Get("loca_dst"),
 		CouponFrom:      couponFrom,
@@ -532,6 +551,10 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid admin request", http.StatusBadRequest)
 		return
 	}
+	filter := request.Filter
+	if filter == "" {
+		filter = r.URL.Query().Get("filter")
+	}
 	result, err := a.deps.GameAdmin.MutateAdmin(r.Context(), appgame.AdminMutationCommand{
 		PublicSession:   r.URL.Query().Get("session"),
 		PrivateSessions: cookieMap(r),
@@ -540,11 +563,12 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		Mode:            r.URL.Query().Get("mode"),
 		TargetPlayerID:  targetPlayerID,
 		TargetPlanetID:  planetID,
-		Filter:          r.URL.Query().Get("filter"),
+		Filter:          filter,
 		CouponFrom:      couponFrom,
 		LoginName:       r.URL.Query().Get("name"),
 		LoginUserID:     legacyBotEditInt(r.URL.Query().Get("id")),
 		LoginIP:         r.URL.Query().Get("ip"),
+		LoginUserIDSet:  r.URL.Query().Has("id") && r.URL.Query().Get("id") != "",
 		LocaSource:      r.URL.Query().Get("loca_src"),
 		LocaTarget:      r.URL.Query().Get("loca_dst"),
 		Action:          request.Action,
@@ -571,6 +595,7 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		PeriodicDays:    request.PeriodicDays,
 		ModName:         request.ModName,
 		Name:            request.Name,
+		UserLogSearch:   toAdminUserLogSearch(request.UserLogSearch),
 	})
 	if err != nil {
 		logGameAdminError(a.deps.Logger, r, "game admin mutation failed", err)
@@ -578,6 +603,15 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeGameAdminResponse(w, result)
+}
+
+func toAdminUserLogSearch(request *gameAdminUserLogSearchRequest) *domaingame.AdminUserLogSearch {
+	if request == nil {
+		return nil
+	}
+	return &domaingame.AdminUserLogSearch{
+		Name: request.Name, Type: request.Type, Days: request.Days, Hours: request.Hours, Since: request.Since,
+	}
 }
 
 func toAdminUniverseMutation(request *gameAdminUniverseMutationRequest) *domaingame.AdminUniverseMutation {
@@ -755,19 +789,15 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 	}
 	userLogRows := make([]gameAdminUserLogRow, 0, len(admin.UserLogRows))
 	for _, row := range admin.UserLogRows {
-		userLogRows = append(userLogRows, gameAdminUserLogRow{
-			ID:        row.ID,
-			OwnerID:   row.OwnerID,
-			OwnerName: row.OwnerName,
-			LastClick: row.LastClick,
-			Vacation:  row.Vacation,
-			Banned:    row.Banned,
-			NoAttack:  row.NoAttack,
-			Disable:   row.Disable,
-			Type:      row.Type,
-			Text:      row.Text,
-			Date:      row.Date,
-		})
+		userLogRows = append(userLogRows, toGameAdminUserLogRow(row))
+	}
+	userLogGroups := make([]gameAdminUserLogGroup, 0, len(admin.UserLogGroups))
+	for _, group := range admin.UserLogGroups {
+		rows := make([]gameAdminUserLogRow, 0, len(group.Rows))
+		for _, row := range group.Rows {
+			rows = append(rows, toGameAdminUserLogRow(row))
+		}
+		userLogGroups = append(userLogGroups, gameAdminUserLogGroup{User: toGameAdminUserLogRow(group.User), Rows: rows})
 	}
 	loginRows := make([]gameAdminLoginRow, 0, len(admin.LoginRows))
 	for _, row := range admin.LoginRows {
@@ -937,6 +967,9 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		LoginRows:       loginRows,
 		BrowseRows:      browseRows,
 		UserLogRows:     userLogRows,
+		UserLogGroups:   userLogGroups,
+		UserLogSearched: admin.UserLogSearched,
+		UserLogType:     admin.UserLogType,
 		UserRows:        userRows,
 		ActiveUsers:     activeUsers,
 		SelectedUser:    selectedUser,
@@ -959,6 +992,14 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		CouponFrom:      admin.CouponFrom,
 		CouponPageSize:  admin.CouponPageSize,
 		CouponTotal:     admin.CouponTotal,
+	}
+}
+
+func toGameAdminUserLogRow(row domaingame.AdminUserLogRow) gameAdminUserLogRow {
+	return gameAdminUserLogRow{
+		ID: row.ID, OwnerID: row.OwnerID, OwnerName: row.OwnerName, LastClick: row.LastClick,
+		Vacation: row.Vacation, Banned: row.Banned, NoAttack: row.NoAttack, Disable: row.Disable,
+		Type: row.Type, Text: row.Text, Date: row.Date,
 	}
 }
 

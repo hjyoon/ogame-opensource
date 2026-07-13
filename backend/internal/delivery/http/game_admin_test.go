@@ -453,6 +453,43 @@ func TestGameAdminHandlerMutatesUniverseSettings(t *testing.T) {
 	}
 }
 
+func TestGameAdminUserLogSearchConversion(t *testing.T) {
+	if toAdminUserLogSearch(nil) != nil {
+		t.Fatal("nil user-log search request must remain nil")
+	}
+	got := toAdminUserLogSearch(&gameAdminUserLogSearchRequest{Name: "target", Type: "BUILD", Days: 2, Hours: 3, Since: "1.1.2024"})
+	if got == nil || got.Name != "target" || got.Type != "BUILD" || got.Days != 2 || got.Hours != 3 || got.Since != "1.1.2024" {
+		t.Fatalf("unexpected user-log search conversion: %+v", got)
+	}
+}
+
+func TestGameAdminHandlerSubmitsAuditActions(t *testing.T) {
+	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{Authenticated: true, Admin: domaingame.NewAdmin(
+		domaingame.Overview{Commander: "legor", CurrentPlanet: domaingame.PlanetOverview{ID: 99}},
+		domaingame.AdminViewer{PlayerID: 42, Name: "legor", Level: domaingame.AdminLevelAdmin}, "UserLogs",
+	)}}
+	request := httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=99&mode=UserLogs", strings.NewReader(
+		`{"action":"userlogs_search","userLogSearch":{"name":"target","type":"BUILD","days":2,"hours":3,"since":"1.1.2024"}}`,
+	))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	app{deps: Dependencies{GameAdmin: usecase}}.handleGameAdmin(response, request)
+	search := usecase.mutation.UserLogSearch
+	if response.Code != http.StatusOK || usecase.mutation.Action != "userlogs_search" || search == nil || search.Name != "target" || search.Type != "BUILD" || search.Days != 2 || search.Hours != 3 || search.Since != "1.1.2024" {
+		t.Fatalf("unexpected UserLogs action: status=%d command=%+v", response.Code, usecase.mutation)
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=99&mode=Debug&filter=old", strings.NewReader(
+		`{"action":"messages_delete","targetIds":[7,8],"deleteMode":"deleteshown","filter":"needle"}`,
+	))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	app{deps: Dependencies{GameAdmin: usecase}}.handleGameAdmin(response, request)
+	if response.Code != http.StatusOK || usecase.mutation.Action != "messages_delete" || usecase.mutation.Filter != "needle" || usecase.mutation.DeleteMode != "deleteshown" || len(usecase.mutation.TargetIDs) != 2 {
+		t.Fatalf("unexpected message action: status=%d command=%+v", response.Code, usecase.mutation)
+	}
+}
+
 func TestGameAdminHandlerMutatesBroadcastAndReports(t *testing.T) {
 	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{
 		Authenticated: true,

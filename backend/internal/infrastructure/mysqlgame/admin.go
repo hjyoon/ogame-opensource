@@ -119,13 +119,19 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 	case "Errors":
 		admin.MessageRows, err = r.loadAdminMessageRows(ctx, "errors", false, "")
 	case "Logins":
-		admin.LoginRows, err = r.loadAdminLoginRows(ctx, query.LoginName, query.LoginUserID, query.LoginIP)
+		admin.LoginRows, err = r.loadAdminLoginRows(ctx, query.LoginName, query.LoginUserID, query.LoginUserIDSet, query.LoginIP)
 	case "Bots":
 		admin.BotRows, err = r.loadAdminBotRows(ctx)
 	case "Queue":
 		admin.QueueRows, err = r.loadAdminQueueRows(ctx)
 	case "UserLogs":
-		admin.UserLogRows, err = r.loadAdminUserLogRows(ctx)
+		if query.UserLogSearch == nil {
+			admin.UserLogRows, err = r.loadAdminUserLogRows(ctx)
+		} else {
+			admin.UserLogSearched = true
+			admin.UserLogType = query.UserLogSearch.Type
+			admin.UserLogGroups, err = r.loadAdminUserLogGroups(ctx, *query.UserLogSearch)
+		}
 	case "Users", "Bans":
 		if admin.Mode == "Users" && query.TargetPlayerID > 0 {
 			admin.SelectedUser, err = r.loadAdminUserDetail(ctx, query.TargetPlayerID)
@@ -346,6 +352,15 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 	}
 	if mode == "Reports" && query.Action == domaingame.AdminActionReportsDelete {
 		return r.mutateAdminReports(ctx, query)
+	}
+	if (mode == "Debug" || mode == "Errors") && query.Action == domaingame.AdminActionMessagesDelete {
+		return r.mutateAdminMessages(ctx, mode, query)
+	}
+	if mode == "Debug" && query.Action == domaingame.AdminActionMessagesFilter {
+		return nil, nil
+	}
+	if mode == "UserLogs" && query.Action == domaingame.AdminActionUserLogsSearch {
+		return nil, nil
 	}
 	if mode == "BattleSim" {
 		return r.mutateAdminBattleSim(ctx, query)
@@ -1159,6 +1174,66 @@ func (r AdminRepository) mutateAdminReports(ctx context.Context, query appgame.A
 		}
 	}
 	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+}
+
+func (r AdminRepository) mutateAdminMessages(ctx context.Context, mode string, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
+	rawTable := "errors"
+	includeErrorIDOrder := false
+	if mode == "Debug" {
+		rawTable = "debug"
+		includeErrorIDOrder = true
+		if query.Filter != "" {
+			return nil, nil
+		}
+	}
+	table, err := tableName(r.prefix, rawTable)
+	if err != nil {
+		return nil, err
+	}
+	if mode == "Debug" && query.DeleteMode == "deleteall" {
+		_, err := r.execer.ExecContext(ctx, "TRUNCATE TABLE "+table)
+		return nil, err
+	}
+	ids, err := r.loadAdminMessageIDs(ctx, table, includeErrorIDOrder)
+	if err != nil {
+		return nil, err
+	}
+	selected := make(map[int]struct{}, len(query.TargetIDs))
+	for _, id := range query.TargetIDs {
+		selected[id] = struct{}{}
+	}
+	deleteShown := mode == "Debug" && query.DeleteMode == "deleteshown"
+	deleteAll := mode == "Errors" && query.DeleteMode == "deleteall"
+	for _, id := range ids {
+		if _, ok := selected[id]; !ok && !deleteShown && !deleteAll {
+			continue
+		}
+		if _, err := r.execer.ExecContext(ctx, "DELETE FROM "+table+" WHERE error_id = ?", id); err != nil {
+			return nil, err
+		}
+	}
+	return nil, nil
+}
+
+func (r AdminRepository) loadAdminMessageIDs(ctx context.Context, table string, includeErrorIDOrder bool) ([]int, error) {
+	order := "date DESC"
+	if includeErrorIDOrder {
+		order += ", error_id DESC"
+	}
+	rows, err := r.queryer.QueryContext(ctx, "SELECT error_id FROM "+table+" ORDER BY "+order+" LIMIT 50")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := make([]int, 0, 50)
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 type adminBroadcastActor struct {
@@ -2375,7 +2450,7 @@ func (r AdminRepository) loadAdminBrowseRows(ctx context.Context) ([]domaingame.
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT b.log_id, COALESCE(b.owner_id, 0), COALESCE(u.oname, ''), COALESCE(b.url, ''), COALESCE(b.method, ''), COALESCE(b.getdata, ''), COALESCE(b.postdata, ''), COALESCE(b.date, 0) FROM %s b LEFT JOIN %s u ON u.player_id = b.owner_id ORDER BY b.date DESC, b.log_id DESC LIMIT 50",
+			"SELECT b.log_id, COALESCE(b.owner_id, 0), COALESCE(u.oname, ''), COALESCE(b.url, ''), COALESCE(b.method, ''), COALESCE(b.getdata, ''), COALESCE(b.postdata, ''), COALESCE(b.date, 0) FROM %s b LEFT JOIN %s u ON u.player_id = b.owner_id ORDER BY b.date DESC LIMIT 50",
 			browseTable,
 			usersTable,
 		),
@@ -2395,24 +2470,50 @@ func (r AdminRepository) loadAdminBrowseRows(ctx context.Context) ([]domaingame.
 	return result, rows.Err()
 }
 
-func (r AdminRepository) loadAdminLoginRows(ctx context.Context, name string, userID int, ip string) ([]domaingame.AdminLoginRow, error) {
+func (r AdminRepository) loadAdminLoginRows(ctx context.Context, name string, userID int, userIDSet bool, ip string) ([]domaingame.AdminLoginRow, error) {
 	var result []domaingame.AdminLoginRow
-	if strings.TrimSpace(name) != "" {
-		rows, err := r.queryAdminLoginRows(ctx, "u.oname LIKE ?", strings.TrimSpace(name)+"%")
+	if name != "" {
+		usersTable, err := tableName(r.prefix, "users")
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, rows...)
+		users, err := r.queryer.QueryContext(ctx, "SELECT player_id FROM "+usersTable+" WHERE oname LIKE ? LIMIT 25", name+"%")
+		if err != nil {
+			return nil, err
+		}
+		var userIDs []int
+		for users.Next() {
+			var id int
+			if err := users.Scan(&id); err != nil {
+				users.Close()
+				return nil, err
+			}
+			userIDs = append(userIDs, id)
+		}
+		if err := users.Err(); err != nil {
+			users.Close()
+			return nil, err
+		}
+		if err := users.Close(); err != nil {
+			return nil, err
+		}
+		for _, id := range userIDs {
+			rows, err := r.queryAdminLoginRows(ctx, "l.user_id = ?", id)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, rows...)
+		}
 	}
-	if userID > 0 {
+	if userIDSet {
 		rows, err := r.queryAdminLoginRows(ctx, "l.user_id = ?", userID)
 		if err != nil {
 			return nil, err
 		}
 		result = append(result, rows...)
 	}
-	if strings.TrimSpace(ip) != "" {
-		rows, err := r.queryAdminLoginRows(ctx, "l.ip = ?", strings.TrimSpace(ip))
+	if ip != "" {
+		rows, err := r.queryAdminLoginRows(ctx, "l.ip = ?", ip)
 		if err != nil {
 			return nil, err
 		}
@@ -2433,7 +2534,7 @@ func (r AdminRepository) queryAdminLoginRows(ctx context.Context, where string, 
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT l.log_id, COALESCE(l.user_id, 0), COALESCE(u.oname, ''), COALESCE(l.ip, ''), COALESCE(l.date, 0) FROM %s l LEFT JOIN %s u ON u.player_id = l.user_id WHERE l.reg = 0 AND %s ORDER BY l.date DESC, l.log_id DESC LIMIT 250",
+			"SELECT l.log_id, COALESCE(l.user_id, 0), COALESCE(u.oname, ''), COALESCE(l.ip, ''), COALESCE(l.date, 0) FROM %s l LEFT JOIN %s u ON u.player_id = l.user_id WHERE l.reg = 0 AND %s",
 			iplogsTable,
 			usersTable,
 			where,
@@ -2538,6 +2639,124 @@ func (r AdminRepository) loadAdminUserLogRows(ctx context.Context) ([]domaingame
 		result[left], result[right] = result[right], result[left]
 	}
 	return result, rows.Err()
+}
+
+func (r AdminRepository) loadAdminUserLogGroups(ctx context.Context, search domaingame.AdminUserLogSearch) ([]domaingame.AdminUserLogGroup, error) {
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	userLogsTable, err := tableName(r.prefix, "userlogs")
+	if err != nil {
+		return nil, err
+	}
+	users, err := r.queryer.QueryContext(ctx, fmt.Sprintf(
+		"SELECT player_id, COALESCE(oname, ''), COALESCE(lastclick, 0), COALESCE(vacation, 0), COALESCE(banned, 0), COALESCE(noattack, 0), COALESCE(disable, 0) FROM %s WHERE player_id > 0 ORDER BY player_id",
+		usersTable,
+	))
+	if err != nil {
+		return nil, err
+	}
+	var matched []domaingame.AdminUserLogRow
+	for users.Next() {
+		var user domaingame.AdminUserLogRow
+		var vacation, banned, noattack, disable int
+		if err := users.Scan(&user.OwnerID, &user.OwnerName, &user.LastClick, &vacation, &banned, &noattack, &disable); err != nil {
+			users.Close()
+			return nil, err
+		}
+		user.Vacation = vacation != 0
+		user.Banned = banned != 0
+		user.NoAttack = noattack != 0
+		user.Disable = disable != 0
+		if legacySimilarTextPercent(search.Name, user.OwnerName) > 75 {
+			matched = append(matched, user)
+		}
+	}
+	if err := users.Err(); err != nil {
+		users.Close()
+		return nil, err
+	}
+	if err := users.Close(); err != nil {
+		return nil, err
+	}
+	since := legacyUserLogSince(search.Since)
+	until := since + int64(search.Days)*24*60*60 + int64(search.Hours)*60*60
+	groups := make([]domaingame.AdminUserLogGroup, 0, len(matched))
+	for _, user := range matched {
+		query := fmt.Sprintf("SELECT id, COALESCE(date, 0), COALESCE(type, ''), COALESCE(text, '') FROM %s WHERE owner_id = ? AND (date >= ? AND date <= ?)", userLogsTable)
+		args := []any{user.OwnerID, since, until}
+		if search.Type != "ALL" {
+			query += " AND type = ?"
+			args = append(args, search.Type)
+		}
+		query += " ORDER BY date ASC"
+		rows, err := r.queryer.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, err
+		}
+		group := domaingame.AdminUserLogGroup{User: user, Rows: []domaingame.AdminUserLogRow{}}
+		for rows.Next() {
+			row := user
+			if err := rows.Scan(&row.ID, &row.Date, &row.Type, &row.Text); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			group.Rows = append(group.Rows, row)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
+		groups = append(groups, group)
+	}
+	return groups, nil
+}
+
+func legacyUserLogSince(value string) int64 {
+	parsed, err := time.ParseInLocation("2.1.2006", value, time.UTC)
+	if err != nil {
+		return 0
+	}
+	return parsed.Unix()
+}
+
+func legacySimilarTextPercent(first string, second string) float64 {
+	a := []rune(strings.ToLower(first))
+	b := []rune(strings.ToLower(second))
+	if len(a)+len(b) == 0 {
+		return 0
+	}
+	return 200 * float64(legacySimilarText(a, b)) / float64(len(a)+len(b))
+}
+
+func legacySimilarText(first []rune, second []rune) int {
+	max, firstPos, secondPos := 0, 0, 0
+	for i := range first {
+		for j := range second {
+			length := 0
+			for i+length < len(first) && j+length < len(second) && first[i+length] == second[j+length] {
+				length++
+			}
+			if length > max {
+				max, firstPos, secondPos = length, i, j
+			}
+		}
+	}
+	if max == 0 {
+		return 0
+	}
+	total := max
+	if firstPos > 0 && secondPos > 0 {
+		total += legacySimilarText(first[:firstPos], second[:secondPos])
+	}
+	if firstPos+max < len(first) && secondPos+max < len(second) {
+		total += legacySimilarText(first[firstPos+max:], second[secondPos+max:])
+	}
+	return total
 }
 
 func (r AdminRepository) loadAdminUsers(ctx context.Context) ([]domaingame.AdminUserRow, []domaingame.AdminUserRow, error) {

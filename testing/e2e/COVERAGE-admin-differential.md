@@ -11,7 +11,8 @@ Generated IDs and wall-clock deltas are normalized; durable effects remain exact
 | Queue/Fleetlogs | 13 | access, complete/delete/freeze/unfreeze, single/ACS timing, recall fleet/queue/logs and retention | PASS |
 | Operations | 16 | broadcast recipients/BBCode/cap, report deletion, all expedition settings | PASS |
 | Universe | 9 | all settings/links/news/max users, freeze VM effects, access | PASS |
-| **Total** | **46** | deterministic PHP/Go DB and HTTP contracts | **PASS** |
+| Audit/search | 20 | Debug/Errors windows, filters, UserLogs periods/types, Logins/Browse order | PASS |
+| **Total** | **66** | deterministic PHP/Go DB and HTTP contracts | **PASS** |
 
 Queue/Fleetlogs cases include missing-target no-ops and operator rejection. Recall
 compares cargo, ships, fuel, mission, origin/target, duration, priority, fleetlog,
@@ -24,13 +25,13 @@ expedition settings, malformed partial requests and access rejection.
 
 Universe covers every mutable field, empty strings, news update/disable ordering,
 max-user zero preservation, freeze/unfreeze, active-user VM forcing and rejection.
+Audit/search exact-compares marker order and post-action table state without normalization.
 
 ## Pending Groups
 
 - Battle/Rocket/Expedition simulator calculations.
 - CRON execution.
 - Users and Planets full edit/create/destroy operations.
-- Debug, Errors, UserLogs, Browse/Logins filters and cleanup actions.
 - Database backup/restore/delete, Coupons, Bots/BotEdit, Loca, checksums and colony settings.
 
 PHP Mods are excluded by project policy. A group is removed from this list only
@@ -44,6 +45,7 @@ testing/e2e/run-golang-admin-bans-differential-e2e.sh
 testing/e2e/run-golang-admin-queue-differential-e2e.sh
 testing/e2e/run-golang-admin-operations-differential-e2e.sh
 testing/e2e/run-golang-admin-universe-differential-e2e.sh
+testing/e2e/run-golang-admin-audit-differential-e2e.sh
 ```
 
 All are included in `testing/e2e/run-golang-migration-qa.sh`.

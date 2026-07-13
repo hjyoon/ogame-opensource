@@ -1259,6 +1259,7 @@ function App() {
       .then((payload) => {
         setGameAdmin(payload);
         setGameAdminError(null);
+        window.scrollTo(0, 0);
       })
       .catch((err: unknown) => setGameAdminError(err instanceof Error ? err.message : String(err)));
   };

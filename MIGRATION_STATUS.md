@@ -18,7 +18,7 @@ React/Bun + Go migration tracker. Keep under 4KB; split details.
 ## Latest Implementation
 
 - Navigation visual E2E scans links, JS navigation, popups, hovers, select URLs, and GET forms in both browsers; results are in [COVERAGE-navigation-visual.md](./testing/e2e/COVERAGE-navigation-visual.md).
-- Authenticated dynamic E2E runs 91 listed legacy-JS cases with commander, alliance, report, phalanx, and ACS fixtures enabled by default.
+- Authenticated dynamic E2E runs 95 listed legacy-JS cases with commander, alliance, report, phalanx, and ACS fixtures enabled by default.
 - Fixed Firefox legacy host/session drift by keeping the configured legacy base URL instead of adopting a redirected `localhost` origin.
 - Fixed known route parity defects in aliases, selectors, statistics, registration, messages, fleet, commander folders, and galaxy hovers.
 - Jump Gate, ACS slowdown, full expedition lifecycle, option locale, pranger, maintenance, feed, DB restore, Mods hook policy, Logins/Browse, Loca, Bots, and BotEdit import are migrated.
@@ -42,7 +42,7 @@ React/Bun + Go migration tracker. Keep under 4KB; split details.
 - No current strict navigation visual gap remains in the seeded public/game/admin route inventory.
 - No concrete listed authenticated dynamic E2E case remains in [COVERAGE-dynamic-legacy-js.md](./testing/e2e/COVERAGE-dynamic-legacy-js.md); add more only when new legacy-JS behavior is found.
 - Source audit inventories routes, Admin modes, public entrypoints, Bot APIs, and optional Mod hooks in [COVERAGE-legacy-inventory.md](./testing/e2e/COVERAGE-legacy-inventory.md).
-- Behavior baseline tracks drift and 214 PHP/Go differential cases; Admin evidence is tracked in [COVERAGE-admin-differential.md](./testing/e2e/COVERAGE-admin-differential.md).
+- Behavior baseline tracks drift and 234 PHP/Go differential cases; Admin evidence is tracked in [COVERAGE-admin-differential.md](./testing/e2e/COVERAGE-admin-differential.md).
 - PHP Mod execution is excluded: installs are rejected and active Mods fail readiness.
 - Migration-pending game/admin fallback text has been removed.
 - Continue adding route/state/action inventory when new pages or unseeded legacy flows are migrated.

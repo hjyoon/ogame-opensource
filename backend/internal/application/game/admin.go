@@ -28,6 +28,8 @@ type AdminQuery struct {
 	LoginName      string
 	LoginUserID    int
 	LoginIP        string
+	LoginUserIDSet bool
+	UserLogSearch  *domaingame.AdminUserLogSearch
 	LocaSource     string
 	LocaTarget     string
 	CouponFrom     int
@@ -45,40 +47,44 @@ type AdminCommand struct {
 	LoginName       string
 	LoginUserID     int
 	LoginIP         string
+	LoginUserIDSet  bool
+	UserLogSearch   *domaingame.AdminUserLogSearch
 	LocaSource      string
 	LocaTarget      string
 	CouponFrom      int
 }
 
 type AdminMutationQuery struct {
-	PlayerID     int
-	PlanetID     int
-	RemoteAddr   string
-	Mode         string
-	Action       string
-	TaskID       int
-	TargetIDs    []int
-	BanMode      int
-	Days         int
-	Hours        int
-	Reason       string
-	Values       map[string]int
-	Universe     *domaingame.AdminUniverseMutation
-	Category     int
-	Subject      string
-	Text         string
-	ReportIDs    []int
-	DeleteMode   string
-	FileName     string
-	Amount       int
-	ItemID       int
-	DayMonth     string
-	HourMinute   string
-	InactiveDays int
-	IngameDays   int
-	PeriodicDays int
-	ModName      string
-	Name         string
+	PlayerID      int
+	PlanetID      int
+	RemoteAddr    string
+	Mode          string
+	Action        string
+	TaskID        int
+	TargetIDs     []int
+	BanMode       int
+	Days          int
+	Hours         int
+	Reason        string
+	Values        map[string]int
+	Universe      *domaingame.AdminUniverseMutation
+	Category      int
+	Subject       string
+	Text          string
+	ReportIDs     []int
+	DeleteMode    string
+	FileName      string
+	Amount        int
+	ItemID        int
+	DayMonth      string
+	HourMinute    string
+	InactiveDays  int
+	IngameDays    int
+	PeriodicDays  int
+	ModName       string
+	Name          string
+	Filter        string
+	UserLogSearch *domaingame.AdminUserLogSearch
 }
 
 type AdminMutationCommand struct {
@@ -94,6 +100,7 @@ type AdminMutationCommand struct {
 	LoginName       string
 	LoginUserID     int
 	LoginIP         string
+	LoginUserIDSet  bool
 	LocaSource      string
 	LocaTarget      string
 	Action          string
@@ -120,6 +127,7 @@ type AdminMutationCommand struct {
 	PeriodicDays    int
 	ModName         string
 	Name            string
+	UserLogSearch   *domaingame.AdminUserLogSearch
 }
 
 type AdminBotEditMutationQuery struct {
@@ -192,6 +200,8 @@ func (s AdminService) GetAdmin(ctx context.Context, command AdminCommand) (Admin
 		LoginName:      command.LoginName,
 		LoginUserID:    command.LoginUserID,
 		LoginIP:        command.LoginIP,
+		LoginUserIDSet: command.LoginUserIDSet,
+		UserLogSearch:  command.UserLogSearch,
 		LocaSource:     command.LocaSource,
 		LocaTarget:     command.LocaTarget,
 		CouponFrom:     command.CouponFrom,
@@ -231,6 +241,7 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		LoginName:      command.LoginName,
 		LoginUserID:    command.LoginUserID,
 		LoginIP:        command.LoginIP,
+		LoginUserIDSet: command.LoginUserIDSet,
 		LocaSource:     command.LocaSource,
 		LocaTarget:     command.LocaTarget,
 		CouponFrom:     command.CouponFrom,
@@ -245,34 +256,36 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		return AdminResult{Authenticated: true, Admin: admin, ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueAccessDenied)}, nil
 	}
 	issue, err := s.repository.MutateAdmin(ctx, AdminMutationQuery{
-		PlayerID:     session.Session.PlayerID,
-		PlanetID:     command.PlanetID,
-		RemoteAddr:   command.RemoteAddr,
-		Mode:         admin.Mode,
-		Action:       command.Action,
-		TaskID:       command.TaskID,
-		TargetIDs:    command.TargetIDs,
-		BanMode:      command.BanMode,
-		Days:         command.Days,
-		Hours:        command.Hours,
-		Reason:       command.Reason,
-		Values:       command.Values,
-		Universe:     command.Universe,
-		Category:     command.Category,
-		Subject:      command.Subject,
-		Text:         command.Text,
-		ReportIDs:    command.ReportIDs,
-		DeleteMode:   command.DeleteMode,
-		FileName:     command.FileName,
-		Amount:       command.Amount,
-		ItemID:       command.ItemID,
-		DayMonth:     command.DayMonth,
-		HourMinute:   command.HourMinute,
-		InactiveDays: command.InactiveDays,
-		IngameDays:   command.IngameDays,
-		PeriodicDays: command.PeriodicDays,
-		ModName:      command.ModName,
-		Name:         command.Name,
+		PlayerID:      session.Session.PlayerID,
+		PlanetID:      command.PlanetID,
+		RemoteAddr:    command.RemoteAddr,
+		Mode:          admin.Mode,
+		Action:        command.Action,
+		TaskID:        command.TaskID,
+		TargetIDs:     command.TargetIDs,
+		BanMode:       command.BanMode,
+		Days:          command.Days,
+		Hours:         command.Hours,
+		Reason:        command.Reason,
+		Values:        command.Values,
+		Universe:      command.Universe,
+		Category:      command.Category,
+		Subject:       command.Subject,
+		Text:          command.Text,
+		ReportIDs:     command.ReportIDs,
+		DeleteMode:    command.DeleteMode,
+		FileName:      command.FileName,
+		Amount:        command.Amount,
+		ItemID:        command.ItemID,
+		DayMonth:      command.DayMonth,
+		HourMinute:    command.HourMinute,
+		InactiveDays:  command.InactiveDays,
+		IngameDays:    command.IngameDays,
+		PeriodicDays:  command.PeriodicDays,
+		ModName:       command.ModName,
+		Name:          command.Name,
+		Filter:        command.Filter,
+		UserLogSearch: command.UserLogSearch,
 	})
 	if err != nil {
 		return AdminResult{}, err
@@ -287,6 +300,8 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		LoginName:      command.LoginName,
 		LoginUserID:    command.LoginUserID,
 		LoginIP:        command.LoginIP,
+		LoginUserIDSet: command.LoginUserIDSet,
+		UserLogSearch:  command.UserLogSearch,
 		LocaSource:     command.LocaSource,
 		LocaTarget:     command.LocaTarget,
 		CouponFrom:     command.CouponFrom,

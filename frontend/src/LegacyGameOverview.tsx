@@ -147,6 +147,20 @@ export type GameAdminAction =
       deleteMode: string;
     }
   | {
+      action: "messages_delete";
+      targetIds: number[];
+      deleteMode: string;
+      filter: string;
+    }
+  | {
+      action: "messages_filter";
+      filter: string;
+    }
+  | {
+      action: "userlogs_search";
+      userLogSearch: { name: string; type: string; days: number; hours: number; since: string };
+    }
+  | {
       action: "queue_end" | "queue_remove" | "queue_freeze" | "queue_unfreeze";
       taskId: number;
     }
@@ -1360,6 +1374,9 @@ type GameAdmin = {
   loginRows?: GameAdminLoginRow[];
   browseRows?: GameAdminBrowseRow[];
   userLogRows?: GameAdminUserLogRow[];
+  userLogGroups?: GameAdminUserLogGroup[];
+  userLogSearched?: boolean;
+  userLogType?: string;
   userRows?: GameAdminUserRow[];
   activeUsers?: GameAdminUserRow[];
   selectedUser?: GameAdminUserDetail;
@@ -1457,6 +1474,11 @@ type GameAdminUserLogRow = {
   type: string;
   text: string;
   date: number;
+};
+
+type GameAdminUserLogGroup = {
+  user: GameAdminUserLogRow;
+  rows: GameAdminUserLogRow[];
 };
 
 type GameAdminUserRow = {
@@ -3765,14 +3787,14 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "Debug") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminMessagesTable className="legacy-admin-debug-table" mode="Debug" rows={admin.messageRows ?? []} withFilter />
+        <AdminMessagesTable className="legacy-admin-debug-table" mode="Debug" onAdminAction={onAdminAction} rows={admin.messageRows ?? []} withFilter />
       </AdminModeShell>
     );
   }
   if (admin.mode === "Errors") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminMessagesTable className="legacy-admin-errors-table" mode="Errors" rows={admin.messageRows ?? []} />
+        <AdminMessagesTable className="legacy-admin-errors-table" mode="Errors" onAdminAction={onAdminAction} rows={admin.messageRows ?? []} />
       </AdminModeShell>
     );
   }
@@ -3786,7 +3808,13 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "UserLogs") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminUserLogsTable rows={admin.userLogRows ?? []} />
+        <AdminUserLogsTable
+          groups={admin.userLogGroups ?? []}
+          onAdminAction={onAdminAction}
+          rows={admin.userLogRows ?? []}
+          searched={admin.userLogSearched ?? false}
+          searchType={admin.userLogType ?? "ALL"}
+        />
       </AdminModeShell>
     );
   }
@@ -4550,20 +4578,40 @@ function adminColonySettingsHTML(): string {
 function AdminMessagesTable({
   className,
   mode,
+  onAdminAction,
   rows,
   withFilter = false
 }: {
   className: string;
   mode: string;
+  onAdminAction: (action: GameAdminAction) => void;
   rows: GameAdminMessageRow[];
   withFilter?: boolean;
 }) {
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLInputElement | null;
+    const filter = String(data.get("filter") ?? "");
+    if (withFilter && submitter?.value === "Show") {
+      onAdminAction({ action: "messages_filter", filter });
+      return;
+    }
+    const targetIds = rows.filter((row) => data.get(`delmes${row.id}`) === "on").map((row) => row.id);
+    onAdminAction({
+      action: "messages_delete",
+      targetIds,
+      deleteMode: String(data.get("deletemessages") ?? "deletemarked"),
+      filter
+    });
+  };
   return (
     <table className="header legacy-admin-messages-outer">
       <tbody>
         <tr className="header">
           <td>
-            <form action={adminModeHref(mode)} method="POST" onSubmit={(event) => event.preventDefault()}>
+            <form action={adminModeHref(mode)} method="POST" onSubmit={handleSubmit}>
               <table className={className} width={519}>
                 <tbody>
                   <tr>
@@ -4705,56 +4753,111 @@ function AdminLoginsTable({ rows }: { rows: GameAdminLoginRow[] }) {
   );
 }
 
-function AdminUserLogsTable({ rows }: { rows: GameAdminUserLogRow[] }) {
+function AdminUserLogsTable({
+  groups,
+  onAdminAction,
+  rows,
+  searched,
+  searchType
+}: {
+  groups: GameAdminUserLogGroup[];
+  onAdminAction: (action: GameAdminAction) => void;
+  rows: GameAdminUserLogRow[];
+  searched: boolean;
+  searchType: string;
+}) {
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    onAdminAction({
+      action: "userlogs_search",
+      userLogSearch: {
+        name: String(data.get("name") ?? ""),
+        type: String(data.get("type") ?? "ALL"),
+        days: Math.trunc(Number(data.get("days"))) || 0,
+        hours: Math.trunc(Number(data.get("hours"))) || 0,
+        since: String(data.get("since") ?? "")
+      }
+    });
+  };
   return (
     <>
-      <h2>Recent actions of the players</h2>
-      <table className="legacy-admin-userlogs-table">
-        <tbody>
-          <tr>
-            <td className="c">Date</td>
-            <td className="c">Player</td>
-            <td className="c">Category</td>
-            <td className="c">Action</td>
-          </tr>
-          {rows.map((row) => (
-            <tr key={row.id}>
-              <td>{formatLegacyAdminUserLogDate(row.date)}</td>
-              <td>
-                <span dangerouslySetInnerHTML={{ __html: adminUserLogNameHTML(row) }} />
-              </td>
-              <td>{row.type}</td>
-              <td dangerouslySetInnerHTML={{ __html: sanitizeLegacyMessageHTML(row.text) }} />
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <h2>Action history</h2>
+      {!searched ? (
+        <>
+          <h2>Recent actions of the players</h2>
+          <table className="legacy-admin-userlogs-table">
+            <tbody>
+              <tr>
+                <td className="c">Date</td>
+                <td className="c">Player</td>
+                <td className="c">Category</td>
+                <td className="c">Action</td>
+              </tr>
+              {rows.map((row) => (
+                <tr key={row.id}>
+                  <td>{formatLegacyAdminUserLogDate(row.date)}</td>
+                  <td>
+                    <span dangerouslySetInnerHTML={{ __html: adminUserLogNameHTML(row) }} />
+                  </td>
+                  <td>{row.type}</td>
+                  <td dangerouslySetInnerHTML={{ __html: sanitizeLegacyMessageHTML(row.text) }} />
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      ) : (
+        groups.map((group) => (
+          <React.Fragment key={group.user.ownerId}>
+            <h2>
+              {`The ${searchType} player story `}
+              <span dangerouslySetInnerHTML={{ __html: adminUserLogNameHTML(group.user) }} /> ({group.rows.length})
+            </h2>
+            <table>
+              <tbody>
+                <tr>
+                  <td className="c">Date</td>
+                  <td className="c">Type</td>
+                  <td className="c">Action</td>
+                </tr>
+                {group.rows.map((row) => (
+                  <tr key={row.id}>
+                    <td>{formatLegacyAdminUserLogDate(row.date)}</td>
+                    <td>{row.type}</td>
+                    <td dangerouslySetInnerHTML={{ __html: sanitizeLegacyMessageHTML(row.text) }} />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </React.Fragment>
+        ))
+      )}
+      <h2>History of actions</h2>
       <table>
         <tbody>
           <tr>
             <td>
-              <form action={adminModeHref("UserLogs")} method="POST" onSubmit={(event) => event.preventDefault()}>
+              <form action={adminModeHref("UserLogs")} method="POST" onSubmit={handleSubmit}>
                 <table className="legacy-admin-userlogs-filter-table">
                   <tbody>
                     <tr>
-                      <td>User name</td>
+                      <td>User Name</td>
                       <td>
-                        <input name="name" size={20} type="text" /> (can be approximate)
+                        <input name="name" size={20} type="text" /> (you can roughly)
                       </td>
                     </tr>
                     <tr>
                       <td>Category</td>
                       <td>
                         <select name="type">
-                          <option value="ALL">All</option>
+                          <option value="ALL">All of them</option>
                           <option value="BUILD">Buildings / Demolition</option>
                           <option value="RESEARCH">Research</option>
-                          <option value="SHIPYARD">Fleet building</option>
-                          <option value="DEFENSE">Defense building</option>
+                          <option value="SHIPYARD">Fleet construction</option>
+                          <option value="DEFENSE">Defense construction</option>
                           <option value="FLEET">Fleet dispatch</option>
                           <option value="PLANET">Planet settings</option>
-                          <option value="SETTINGS">Account settings / VM</option>
+                          <option value="SETTINGS">Changing account settings / VM</option>
                           <option value="OPER">Operator actions</option>
                         </select>
                       </td>

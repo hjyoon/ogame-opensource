@@ -1814,6 +1814,106 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers the full Universe settings POST bridge and exact post-submit parity without changing form values."]
   },
   {
+    name: "admin-debug-filter-submit",
+    fixtureProfile: "admin",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Debug" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Debug" },
+    legacyReady: "#content input[name='filter']",
+    migratedReady: ".legacy-admin-debug-table input[name='filter']",
+    actions: [
+      { type: "fill", selector: "input[name='filter']", value: "HACKING" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='Show']",
+        migratedSelector: ".legacy-admin-debug-table input[type='submit'][value='Show']",
+        legacyWaitForSelector: "#content input[name='filter']",
+        migratedWaitForSelector: ".legacy-admin-debug-table input[name='filter']"
+      }
+    ],
+    assertions: [
+      { name: "visible-debug-checkboxes", type: "count", selector: "input[name^='delmes']", compareSides: true },
+      {
+        name: "admin-api-roundtrip",
+        type: "evaluate",
+        expression:
+          "!document.querySelector('.legacy-admin-debug-table') || performance.getEntriesByType('resource').filter((entry) => entry.name.includes('/api/game/admin')).length >= 2",
+        expected: "true"
+      }
+    ],
+    visual: { enabled: true, normalizePageName: "game-admin-Debug-filter", maxDiffRatio: 0, colorDeltaThreshold: 0 },
+    linkAudit: { enabled: false },
+    notes: ["Covers the legacy Debug filter POST state and the migrated API-backed submit action."]
+  },
+  {
+    name: "admin-userlogs-search-submit",
+    fixtureProfile: "admin",
+    fixedClock: true,
+    legacyPage: "admin",
+    legacyQuery: { mode: "UserLogs" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "UserLogs" },
+    legacyReady: "#content input[name='name']",
+    migratedReady: ".legacy-admin-userlogs-filter-table input[name='name']",
+    actions: [
+      { type: "fill", selector: "input[name='name']", value: "$fixture.login_user" },
+      { type: "select", selector: "select[name='type']", value: "ALL" },
+      { type: "fill", selector: "input[name='days']", value: "3650" },
+      { type: "fill", selector: "input[name='since']", value: "01.01.2020" },
+      {
+        type: "press",
+        selector: "input[name='name']",
+        value: "Enter",
+        waitMs: 500
+      }
+    ],
+    assertions: [
+      { name: "history-headings", type: "count", selector: "#content h2", compareSides: true },
+      {
+        name: "recent-list-hidden-after-search",
+        type: "evaluate",
+        expression: "!document.body.innerText.includes('Recent actions of the players')",
+        expected: "true"
+      }
+    ],
+    visual: { enabled: true, normalizePageName: "game-admin-UserLogs-search", maxDiffRatio: 0, colorDeltaThreshold: 0 },
+    linkAudit: { enabled: false },
+    notes: ["Covers approximate user matching, interval/category submission, and grouped UserLogs result rendering."]
+  },
+  {
+    name: "admin-logins-name-search-submit",
+    fixtureProfile: "admin",
+    legacyPage: "admin",
+    legacyQuery: { mode: "Logins" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "Logins" },
+    legacyReady: "#content input[name='name']",
+    migratedReady: ".legacy-admin-logins-table input[name='name']",
+    actions: [
+      { type: "fill", selector: "input[name='name']", value: "$fixture.login_user" },
+      {
+        type: "click",
+        legacySelector: "#content input[type='submit'][value='Search']",
+        migratedSelector: ".legacy-admin-logins-table input[type='submit'][value='Search']",
+        legacyWaitForSelector: "#content input[name='name']",
+        migratedWaitForSelector: ".legacy-admin-logins-table input[name='name']"
+      }
+    ],
+    assertions: [
+      { name: "login-result-users", type: "count", selector: "#content a[href*='mode=Users'][href*='player_id=']", compareSides: true },
+      {
+        name: "login-result-present",
+        type: "evaluate",
+        expression: "document.querySelector(\"#content a[href*='mode=Users'][href*='player_id=']\") !== null",
+        expected: "true"
+      }
+    ],
+    visual: { enabled: true, normalizePageName: "game-admin-Logins-search", maxDiffRatio: 0, colorDeltaThreshold: 0 },
+    linkAudit: { ignoreTargets: ["/game/admin?mode=Users&player_id=#"] },
+    notes: ["Covers legacy prefix login search and result ordering through the natural migrated route."]
+  },
+  {
     name: "admin-planets-spy-report-parser",
     fixtureProfile: "admin",
     legacyPage: "admin",

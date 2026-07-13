@@ -27,8 +27,11 @@ const (
 	AdminActionFleetlogsEnd        = "fleetlogs_end"
 	AdminActionFleetlogsReturn     = "fleetlogs_return"
 
-	AdminActionBroadcastSend = "broadcast_send"
-	AdminActionReportsDelete = "reports_delete"
+	AdminActionBroadcastSend  = "broadcast_send"
+	AdminActionReportsDelete  = "reports_delete"
+	AdminActionMessagesDelete = "messages_delete"
+	AdminActionMessagesFilter = "messages_filter"
+	AdminActionUserLogsSearch = "userlogs_search"
 
 	AdminActionBattleSimRun  = "battle_sim"
 	AdminActionRakSimRun     = "rak_sim"
@@ -74,6 +77,9 @@ type Admin struct {
 	LoginRows       []AdminLoginRow
 	BrowseRows      []AdminBrowseRow
 	UserLogRows     []AdminUserLogRow
+	UserLogGroups   []AdminUserLogGroup
+	UserLogSearched bool
+	UserLogType     string
 	UserRows        []AdminUserRow
 	ActiveUsers     []AdminUserRow
 	SelectedUser    *AdminUserDetail
@@ -156,6 +162,19 @@ type AdminUserLogRow struct {
 	Type      string
 	Text      string
 	Date      int64
+}
+
+type AdminUserLogGroup struct {
+	User AdminUserLogRow
+	Rows []AdminUserLogRow
+}
+
+type AdminUserLogSearch struct {
+	Name  string
+	Type  string
+	Days  int
+	Hours int
+	Since string
 }
 
 type AdminUserRow struct {
@@ -564,7 +583,9 @@ func AdminMutationRequiresAdmin(mode string, action string) bool {
 		return false
 	case "Expedition":
 		return action == "settings"
-	case "Queue", "Uni", "Coupons", "Planets", "Users", "Debug", "Errors", "Bots", "BotEdit", "DB", "ColonySettings", "Loca", "Mods":
+	case "Debug":
+		return action != AdminActionMessagesFilter
+	case "Queue", "Uni", "Coupons", "Planets", "Users", "Errors", "Bots", "BotEdit", "DB", "ColonySettings", "Loca", "Mods":
 		return true
 	default:
 		return true

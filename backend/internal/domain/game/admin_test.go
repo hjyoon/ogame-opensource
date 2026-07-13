@@ -62,6 +62,12 @@ func TestNewAdminNormalizesModeAndCopiesMenu(t *testing.T) {
 	if !AdminMutationRequiresAdmin("Unknown", "anything") {
 		t.Fatal("unknown admin mutations should default to admin-only")
 	}
+	if AdminMutationRequiresAdmin("Debug", AdminActionMessagesFilter) {
+		t.Fatal("operators must be able to use the read-only Debug filter")
+	}
+	if !AdminMutationRequiresAdmin("Debug", AdminActionMessagesDelete) {
+		t.Fatal("Debug deletion must require full admin access")
+	}
 	if issue := AdminIssue(AdminIssueAccessDenied); issue == nil || issue.Message != "Access denied." {
 		t.Fatalf("unexpected admin issue: %+v", issue)
 	}
