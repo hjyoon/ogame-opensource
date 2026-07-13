@@ -8,11 +8,13 @@ const outputMarkdown = resolve(rootDir, ".tmp/golang-migration-qa-summary.md");
 const browserNames = uniqueWords(process.env.OGAME_QA_SUMMARY_BROWSERS ?? "chromium firefox");
 
 const artifacts = [
+  { name: "legacy behavior surface", path: ".tmp/legacy-behavior-surface.json" },
   { name: "legacy source inventory", path: ".tmp/legacy-migration-inventory.json" },
   { name: "go DB recovery", path: ".tmp/golang-db-recovery.json" },
   { name: "go DB pool", path: ".tmp/golang-db-pool.json" },
   { name: "go Mod policy", path: ".tmp/golang-mod-policy.json" },
   { name: "go compatibility smoke", path: ".tmp/golang-compat-smoke.json" },
+  { name: "go/PHP resource differential", path: ".tmp/golang-resource-differential.json" },
   { name: "go user type API QA", path: ".tmp/golang-user-type-qa.json" },
   ...browserNames.map((browser) => ({
     name: `go user type Playwright ${browser}`,

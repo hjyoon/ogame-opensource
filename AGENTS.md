@@ -58,7 +58,9 @@ Keep PHP as oracle; keep one current Go `goapp` container only.
 
 During page migration, extend Playwright visual E2E before claiming parity. Public: `testing/e2e/run-playwright-visual-e2e.sh`; auth: `testing/e2e/run-playwright-auth-visual-e2e.sh`. State if auth diff/layout is enforced or audit-only.
 
-Set `OGAME_RUN_LEGACY_E2E=0` only for local smoke work. `run-docker-e2e.sh` cleans stale migration fixtures by default; set `OGAME_CLEAN_MIGRATION_FIXTURES=0` only to debug fixtures. Port HTTP black-box checks to Go with the same JSON shape.
+Use `OGAME_RUN_LEGACY_E2E=0` only for local smoke work. Port HTTP black-box checks to Go with the same JSON shape.
+
+Behavior baseline drift must be reviewed, never blindly regenerated. Add snapshot/restore PHP-Go differential cases for state-changing ports; compare HTTP, DB, queue, and report effects.
 
 Go internal package coverage must stay at or above 97%:
 

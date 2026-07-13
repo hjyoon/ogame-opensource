@@ -11,6 +11,7 @@ mkdir -p "$ROOT_DIR/.tmp"
 export OGAME_MCP_RATE_LIMIT_ENABLE="${OGAME_MCP_RATE_LIMIT_ENABLE:-0}"
 
 if command -v bun >/dev/null 2>&1; then
+  bun "$SCRIPT_DIR/audit-legacy-behavior-surface.mjs"
   bun "$SCRIPT_DIR/audit-legacy-migration-inventory.mjs"
 fi
 
@@ -70,6 +71,9 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     printf 'Go MCP smoke: %s\n' "$ROOT_DIR/.tmp/golang-mcp-smoke.json"
     bun "$SCRIPT_DIR/golang-compat-smoke.mjs" --go-base-url "$GO_BASE_URL" --mailhog-base-url "$MAILHOG_BASE_URL" --fixture "$ROOT_DIR/.tmp/golang-smoke-fixture.json" > "$ROOT_DIR/.tmp/golang-compat-smoke.json"
     printf 'Go compatibility smoke: %s\n' "$ROOT_DIR/.tmp/golang-compat-smoke.json"
+    if [ "${OGAME_RUN_RESOURCE_DIFFERENTIAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-resource-differential-e2e.sh"
+    fi
     docker compose exec -T server php "$LEGACY_E2E_CONTAINER_DIR/cleanup-golang-migration-fixtures.php" >/dev/null
     docker compose cp "$SCRIPT_DIR/prepare-golang-user-type-fixture.php" "server:$LEGACY_E2E_CONTAINER_DIR/prepare-golang-user-type-fixture.php" >/dev/null
     docker compose exec -T server php "$LEGACY_E2E_CONTAINER_DIR/prepare-golang-user-type-fixture.php" > "$ROOT_DIR/.tmp/golang-user-type-fixture.json"

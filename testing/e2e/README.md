@@ -40,6 +40,7 @@ OGAME_KEEP_GO_DOCKER=1 testing/e2e/run-golang-migration-qa.sh
 This wrapper runs:
 
 - full legacy PHP Docker E2E
+- legacy behavior-surface drift audit and PHP-Go DB differential checks
 - Go smoke fixture preparation
 - frontend `bun install`, build, typecheck, and unit tests
 - backend tests plus the 97% internal coverage gate
@@ -87,8 +88,10 @@ Detailed coverage is split by topic:
 - [Bot Migration Coverage](./COVERAGE-bot-migration.md)
 - [Dynamic Link Parity](./COVERAGE-dynamic-link-parity.md)
 - [Infrastructure and Invariants](./COVERAGE-infra.md)
+- [Legacy Behavior Surface](./COVERAGE-legacy-behavior-surface.md)
+- [PHP/Go Differential Coverage](./COVERAGE-differential.md)
 
-`run-playwright-navigation-visual-e2e.sh` scans every currently seeded public/game/admin screen for internal navigation edges and compares target screenshots in Chromium and Firefox at an exact `0` threshold. The wrapper continues across browsers even when one browser has nonzero visual diffs, then writes the combined summary to `COVERAGE-navigation-visual.md`.
+Navigation visual scans seeded public/game/admin links and compares Chromium/Firefox targets at exact threshold `0`; its combined report updates `COVERAGE-navigation-visual.md`.
 
 ## Notes
 
