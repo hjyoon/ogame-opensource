@@ -2899,6 +2899,65 @@ func TestFleetRepositoryFinishDueReturnRestoresOrigin(t *testing.T) {
 	}
 }
 
+func TestFleetRepositoryFinishDueACSHoldCreatesOrbitAndReturn(t *testing.T) {
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues([]any{58, 42, 126, int64(2_300)})},
+		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionACSHold, 0, map[int]int{domaingame.FleetLightFighter: 1}))},
+		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
+	}}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_300, 0) })
+	repository.legacyEvents = true
+
+	if err := repository.FinishDueFleetQueues(context.Background(), 2_300); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execCalls) != 6 {
+		t.Fatalf("expected activity, orbit fleet/queue/log, and cleanup writes, got %+v", runner.execCalls)
+	}
+	if !strings.Contains(runner.execCalls[0].sql, "SET lastakt = ?") || runner.execCalls[0].args[0] != int64(2_300) || runner.execCalls[0].args[1] != 100 {
+		t.Fatalf("expected hold arrival to update target activity, got %+v", runner.execCalls[0])
+	}
+	orbitFleet := runner.execCalls[1]
+	if orbitFleet.args[5] != 0 || orbitFleet.args[6] != domaingame.FleetMissionACSHold+domaingame.FleetMissionOrbitingOffset || orbitFleet.args[9] != int64(600) || orbitFleet.args[10] != int64(300) {
+		t.Fatalf("expected hold arrival to preserve hold and return timings, got %+v", orbitFleet)
+	}
+	if runner.execCalls[2].args[5] != int64(2_300) || runner.execCalls[2].args[6] != int64(2_900) {
+		t.Fatalf("expected orbit queue to use hold duration, got %+v", runner.execCalls[2])
+	}
+	if runner.execCalls[3].args[3] != domaingame.FleetMissionACSHold+domaingame.FleetMissionOrbitingOffset || runner.execCalls[3].args[4] != int64(600) || runner.execCalls[3].args[5] != int64(300) {
+		t.Fatalf("expected orbit transition log to match fleet timing, got %+v", runner.execCalls[3])
+	}
+
+	orbitRow := recallFleetTestRow(domaingame.FleetMissionACSHold+domaingame.FleetMissionOrbitingOffset, 0, map[int]int{domaingame.FleetLightFighter: 1})
+	orbitRow[6], orbitRow[10], orbitRow[11] = 0, 600, 300
+	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues([]any{59, 42, 127, int64(2_900)})},
+		{rows: fakeRowsFromValues(orbitRow)},
+		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
+	}}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_900, 0) })
+	repository.legacyEvents = true
+
+	if err := repository.FinishDueFleetQueues(context.Background(), 2_900); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execCalls) != 5 {
+		t.Fatalf("expected return fleet/queue/log and cleanup writes, got %+v", runner.execCalls)
+	}
+	returnFleet := runner.execCalls[0]
+	if returnFleet.args[5] != 0 || returnFleet.args[6] != domaingame.FleetMissionACSHold+domaingame.FleetMissionReturnOffset || returnFleet.args[9] != int64(300) || returnFleet.args[10] != int64(0) {
+		t.Fatalf("expected orbit completion to create zero-fuel return fleet, got %+v", returnFleet)
+	}
+	if runner.execCalls[1].args[5] != int64(2_900) || runner.execCalls[1].args[6] != int64(3_200) {
+		t.Fatalf("expected return queue to reuse outbound flight duration, got %+v", runner.execCalls[1])
+	}
+	if runner.execCalls[2].args[3] != domaingame.FleetMissionACSHold+domaingame.FleetMissionReturnOffset || runner.execCalls[2].args[4] != int64(300) || runner.execCalls[2].args[5] != int64(0) {
+		t.Fatalf("expected return transition log to match fleet timing, got %+v", runner.execCalls[2])
+	}
+}
+
 func TestFleetRepositoryFinishUnguardedAttackPlundersAndReports(t *testing.T) {
 	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},

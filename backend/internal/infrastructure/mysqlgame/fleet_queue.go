@@ -193,6 +193,10 @@ func (r FleetRepository) finishFleetQueueTask(ctx context.Context, uniTable stri
 		return r.finishTransportFleetArrival(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)
 	case domaingame.FleetMissionDeploy:
 		return r.finishDeployFleetArrival(ctx, fleetTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)
+	case domaingame.FleetMissionACSHold:
+		return r.finishACSHoldArrival(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, task, fleet)
+	case domaingame.FleetMissionACSHold + domaingame.FleetMissionOrbitingOffset:
+		return r.finishACSHoldOrbit(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, task, fleet)
 	case domaingame.FleetMissionRecycle:
 		return r.finishRecycleFleetArrival(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)
 	case domaingame.FleetMissionExpedition:
@@ -205,6 +209,65 @@ func (r FleetRepository) finishFleetQueueTask(ctx context.Context, uniTable stri
 		}
 	}
 	return nil
+}
+
+func (r FleetRepository) finishACSHoldArrival(ctx context.Context, fleetTable string, fleetLogsTable string, queueTable string, planetsTable string, usersTable string, task fleetQueueTask, fleet recallFleetRow) error {
+	messageContext := fleetMessageContext{}
+	found := false
+	if r.legacyEvents {
+		var err error
+		messageContext, found, err = r.loadFleetMessageContext(ctx, usersTable, planetsTable, fleet)
+		if err != nil {
+			return err
+		}
+	}
+	if err := r.updateFleetPlanetActivity(ctx, planetsTable, fleet.TargetPlanetID, task.End); err != nil {
+		return err
+	}
+	orbiting := fleet
+	orbiting.Fuel = 0
+	duration := int64(max(0, fleet.DeployTime))
+	orbitID, err := r.insertFleetTransition(ctx, fleetTable, fleet.OwnerID, orbiting, fleet.Mission+domaingame.FleetMissionOrbitingOffset, duration, int64(max(0, fleet.FlightTime)))
+	if err != nil {
+		return err
+	}
+	if err := r.insertRecallQueue(ctx, queueTable, fleet.OwnerID, orbitID, fleet.Mission+domaingame.FleetMissionOrbitingOffset, task.End, duration); err != nil {
+		return err
+	}
+	if found {
+		if err := r.insertFleetTransitionLog(ctx, fleetLogsTable, messageContext, orbiting, fleet.Mission+domaingame.FleetMissionOrbitingOffset, duration, int64(max(0, fleet.FlightTime)), task.End); err != nil {
+			return err
+		}
+	}
+	return r.removeCompletedFleetTask(ctx, fleetTable, queueTable, fleet.ID, task.TaskID)
+}
+
+func (r FleetRepository) finishACSHoldOrbit(ctx context.Context, fleetTable string, fleetLogsTable string, queueTable string, planetsTable string, usersTable string, task fleetQueueTask, fleet recallFleetRow) error {
+	messageContext := fleetMessageContext{}
+	found := false
+	if r.legacyEvents {
+		var err error
+		messageContext, found, err = r.loadFleetMessageContext(ctx, usersTable, planetsTable, fleet)
+		if err != nil {
+			return err
+		}
+	}
+	returning := fleet
+	returning.Fuel = 0
+	duration := int64(max(0, fleet.DeployTime))
+	returnID, err := r.insertFleetTransition(ctx, fleetTable, fleet.OwnerID, returning, domaingame.FleetMissionACSHold+domaingame.FleetMissionReturnOffset, duration, 0)
+	if err != nil {
+		return err
+	}
+	if err := r.insertRecallQueue(ctx, queueTable, fleet.OwnerID, returnID, domaingame.FleetMissionACSHold+domaingame.FleetMissionReturnOffset, task.End, duration); err != nil {
+		return err
+	}
+	if found {
+		if err := r.insertFleetTransitionLog(ctx, fleetLogsTable, messageContext, returning, domaingame.FleetMissionACSHold+domaingame.FleetMissionReturnOffset, duration, 0, task.End); err != nil {
+			return err
+		}
+	}
+	return r.removeCompletedFleetTask(ctx, fleetTable, queueTable, fleet.ID, task.TaskID)
 }
 
 func (r FleetRepository) finishTransportFleetArrival(ctx context.Context, fleetTable string, fleetLogsTable string, queueTable string, planetsTable string, usersTable string, messagesTable string, task fleetQueueTask, fleet recallFleetRow) error {
@@ -557,6 +620,11 @@ func (r FleetRepository) addFleetResourcesToPlanet(ctx context.Context, planetsT
 		activityAt,
 		planetID,
 	)
+	return err
+}
+
+func (r FleetRepository) updateFleetPlanetActivity(ctx context.Context, planetsTable string, planetID int, activityAt int64) error {
+	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET lastakt = ? WHERE planet_id = ? LIMIT 1", planetsTable), activityAt, planetID)
 	return err
 }
 

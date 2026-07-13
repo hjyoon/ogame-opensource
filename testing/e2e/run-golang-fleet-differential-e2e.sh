@@ -44,15 +44,16 @@ attack_s="$(db_query "SELECT s FROM uni1_planets WHERE planet_id=$transport_targ
 attack_p="$(db_query "SELECT p FROM uni1_planets WHERE planet_id=$transport_target_id")"
 uni_defrepair="$(db_query 'SELECT defrepair FROM uni1_uni LIMIT 1')"
 uni_defrepair_delta="$(db_query 'SELECT defrepair_delta FROM uni1_uni LIMIT 1')"
+buddy_marker="golang-fleet-differential-hold-$$"
 
 db_query "DROP TABLE IF EXISTS $planet_backup,$user_backup,$rank_backup,$fleet_backup,$queue_backup,$message_backup,$fleetlog_backup,$debris_backup; CREATE TABLE $planet_backup AS SELECT * FROM uni1_planets WHERE planet_id IN ($planets); CREATE TABLE $user_backup AS SELECT * FROM uni1_users WHERE player_id IN ($players); CREATE TABLE $rank_backup AS SELECT player_id,score1,score2,score3,place1,place2,place3,oldscore1,oldscore2,oldscore3,oldplace1,oldplace2,oldplace3 FROM uni1_users; CREATE TABLE $fleet_backup AS SELECT * FROM uni1_fleet WHERE owner_id IN ($players) OR start_planet IN ($planets) OR target_planet IN ($planets); CREATE TABLE $queue_backup AS SELECT * FROM uni1_queue WHERE type='Fleet' AND (owner_id IN ($players) OR sub_id IN (SELECT fleet_id FROM $fleet_backup)); CREATE TABLE $message_backup AS SELECT * FROM uni1_messages WHERE owner_id IN ($players); CREATE TABLE $fleetlog_backup AS SELECT * FROM uni1_fleetlogs WHERE owner_id IN ($players) OR target_id IN ($players); CREATE TABLE $debris_backup AS SELECT * FROM uni1_planets WHERE type=10000 AND g=$attack_g AND s=$attack_s AND p=$attack_p" >/dev/null
 
 restore_original() {
-  db_query "DELETE FROM uni1_queue WHERE type='Fleet' AND (owner_id IN ($players) OR sub_id IN (SELECT fleet_id FROM uni1_fleet WHERE owner_id IN ($players) OR start_planet IN ($planets) OR target_planet IN ($planets))); DELETE FROM uni1_fleet WHERE owner_id IN ($players) OR start_planet IN ($planets) OR target_planet IN ($planets); DELETE FROM uni1_messages WHERE owner_id IN ($players); DELETE FROM uni1_fleetlogs WHERE owner_id IN ($players) OR target_id IN ($players); DELETE FROM uni1_battledata WHERE battle_id > $battle_before_max; DELETE FROM uni1_planets WHERE type=10000 AND g=$attack_g AND s=$attack_s AND p=$attack_p; UPDATE uni1_uni SET defrepair=$uni_defrepair,defrepair_delta=$uni_defrepair_delta; UPDATE uni1_users u JOIN $user_backup b ON b.player_id=u.player_id SET u.session=b.session,u.private_session=b.private_session,u.lastlogin=b.lastlogin,u.lastclick=b.lastclick,u.ip_addr=b.ip_addr,u.aktplanet=b.aktplanet,u.vacation=b.vacation,u.vacation_until=b.vacation_until,u.banned=b.banned,u.banned_until=b.banned_until,u.noattack=b.noattack,u.noattack_until=b.noattack_until,u.disable=b.disable,u.disable_until=b.disable_until,u.validated=b.validated,u.deact_ip=b.deact_ip; UPDATE uni1_users u JOIN $rank_backup b ON b.player_id=u.player_id SET u.score1=b.score1,u.score2=b.score2,u.score3=b.score3,u.place1=b.place1,u.place2=b.place2,u.place3=b.place3,u.oldscore1=b.oldscore1,u.oldscore2=b.oldscore2,u.oldscore3=b.oldscore3,u.oldplace1=b.oldplace1,u.oldplace2=b.oldplace2,u.oldplace3=b.oldplace3; UPDATE uni1_planets p JOIN $planet_backup b ON b.planet_id=p.planet_id SET p.owner_id=b.owner_id,p.type=b.type,p.name=b.name,p.\`700\`=b.\`700\`,p.\`701\`=b.\`701\`,p.\`702\`=b.\`702\`,p.\`202\`=b.\`202\`,p.\`203\`=b.\`203\`,p.\`204\`=b.\`204\`,p.\`205\`=b.\`205\`,p.\`206\`=b.\`206\`,p.\`207\`=b.\`207\`,p.\`208\`=b.\`208\`,p.\`209\`=b.\`209\`,p.\`210\`=b.\`210\`,p.\`211\`=b.\`211\`,p.\`212\`=b.\`212\`,p.\`213\`=b.\`213\`,p.\`214\`=b.\`214\`,p.\`215\`=b.\`215\`,p.\`401\`=b.\`401\`,p.\`402\`=b.\`402\`,p.\`403\`=b.\`403\`,p.\`404\`=b.\`404\`,p.\`405\`=b.\`405\`,p.\`406\`=b.\`406\`,p.\`407\`=b.\`407\`,p.\`408\`=b.\`408\`,p.lastpeek=b.lastpeek,p.lastakt=b.lastakt,p.prod1=b.prod1,p.prod2=b.prod2,p.prod3=b.prod3,p.prod4=b.prod4,p.prod12=b.prod12,p.prod212=b.prod212; INSERT INTO uni1_planets SELECT * FROM $debris_backup; INSERT INTO uni1_fleet SELECT * FROM $fleet_backup; INSERT INTO uni1_queue SELECT * FROM $queue_backup; INSERT INTO uni1_messages SELECT * FROM $message_backup; INSERT INTO uni1_fleetlogs SELECT * FROM $fleetlog_backup; DROP TABLE IF EXISTS $planet_backup,$user_backup,$rank_backup,$fleet_backup,$queue_backup,$message_backup,$fleetlog_backup,$debris_backup" >/dev/null
+  db_query "DELETE FROM uni1_buddy WHERE text='$buddy_marker'; DELETE FROM uni1_queue WHERE type='Fleet' AND (owner_id IN ($players) OR sub_id IN (SELECT fleet_id FROM uni1_fleet WHERE owner_id IN ($players) OR start_planet IN ($planets) OR target_planet IN ($planets))); DELETE FROM uni1_fleet WHERE owner_id IN ($players) OR start_planet IN ($planets) OR target_planet IN ($planets); DELETE FROM uni1_messages WHERE owner_id IN ($players); DELETE FROM uni1_fleetlogs WHERE owner_id IN ($players) OR target_id IN ($players); DELETE FROM uni1_battledata WHERE battle_id > $battle_before_max; DELETE FROM uni1_planets WHERE type=10000 AND g=$attack_g AND s=$attack_s AND p=$attack_p; UPDATE uni1_uni SET defrepair=$uni_defrepair,defrepair_delta=$uni_defrepair_delta; UPDATE uni1_users u JOIN $user_backup b ON b.player_id=u.player_id SET u.session=b.session,u.private_session=b.private_session,u.lastlogin=b.lastlogin,u.lastclick=b.lastclick,u.ip_addr=b.ip_addr,u.aktplanet=b.aktplanet,u.vacation=b.vacation,u.vacation_until=b.vacation_until,u.banned=b.banned,u.banned_until=b.banned_until,u.noattack=b.noattack,u.noattack_until=b.noattack_until,u.disable=b.disable,u.disable_until=b.disable_until,u.validated=b.validated,u.deact_ip=b.deact_ip; UPDATE uni1_users u JOIN $rank_backup b ON b.player_id=u.player_id SET u.score1=b.score1,u.score2=b.score2,u.score3=b.score3,u.place1=b.place1,u.place2=b.place2,u.place3=b.place3,u.oldscore1=b.oldscore1,u.oldscore2=b.oldscore2,u.oldscore3=b.oldscore3,u.oldplace1=b.oldplace1,u.oldplace2=b.oldplace2,u.oldplace3=b.oldplace3; UPDATE uni1_planets p JOIN $planet_backup b ON b.planet_id=p.planet_id SET p.owner_id=b.owner_id,p.type=b.type,p.name=b.name,p.\`700\`=b.\`700\`,p.\`701\`=b.\`701\`,p.\`702\`=b.\`702\`,p.\`202\`=b.\`202\`,p.\`203\`=b.\`203\`,p.\`204\`=b.\`204\`,p.\`205\`=b.\`205\`,p.\`206\`=b.\`206\`,p.\`207\`=b.\`207\`,p.\`208\`=b.\`208\`,p.\`209\`=b.\`209\`,p.\`210\`=b.\`210\`,p.\`211\`=b.\`211\`,p.\`212\`=b.\`212\`,p.\`213\`=b.\`213\`,p.\`214\`=b.\`214\`,p.\`215\`=b.\`215\`,p.\`401\`=b.\`401\`,p.\`402\`=b.\`402\`,p.\`403\`=b.\`403\`,p.\`404\`=b.\`404\`,p.\`405\`=b.\`405\`,p.\`406\`=b.\`406\`,p.\`407\`=b.\`407\`,p.\`408\`=b.\`408\`,p.lastpeek=b.lastpeek,p.lastakt=b.lastakt,p.prod1=b.prod1,p.prod2=b.prod2,p.prod3=b.prod3,p.prod4=b.prod4,p.prod12=b.prod12,p.prod212=b.prod212; INSERT INTO uni1_planets SELECT * FROM $debris_backup; INSERT INTO uni1_fleet SELECT * FROM $fleet_backup; INSERT INTO uni1_queue SELECT * FROM $queue_backup; INSERT INTO uni1_messages SELECT * FROM $message_backup; INSERT INTO uni1_fleetlogs SELECT * FROM $fleetlog_backup; DROP TABLE IF EXISTS $planet_backup,$user_backup,$rank_backup,$fleet_backup,$queue_backup,$message_backup,$fleetlog_backup,$debris_backup" >/dev/null
 }
 
 reset_case() {
-  db_query "DELETE FROM uni1_queue WHERE type='Fleet' AND (owner_id IN ($players) OR sub_id IN (SELECT fleet_id FROM uni1_fleet WHERE owner_id IN ($players) OR start_planet IN ($planets) OR target_planet IN ($planets))); DELETE FROM uni1_fleet WHERE owner_id IN ($players) OR start_planet IN ($planets) OR target_planet IN ($planets); DELETE FROM uni1_messages WHERE owner_id IN ($players); DELETE FROM uni1_fleetlogs WHERE owner_id IN ($players) OR target_id IN ($players); DELETE FROM uni1_battledata WHERE battle_id > $battle_before_max; DELETE FROM uni1_planets WHERE type=10000 AND g=$attack_g AND s=$attack_s AND p=$attack_p; UPDATE uni1_uni SET defrepair=$current_defrepair,defrepair_delta=$current_defrepair_delta; UPDATE uni1_planets SET \`700\`=1000000,\`701\`=1000000,\`702\`=1000000,\`202\`=0,\`203\`=0,\`204\`=0,\`205\`=0,\`206\`=0,\`207\`=0,\`208\`=0,\`209\`=0,\`210\`=0,\`211\`=0,\`212\`=0,\`213\`=0,\`214\`=0,\`215\`=0,\`401\`=0,\`402\`=0,\`403\`=0,\`404\`=0,\`405\`=0,\`406\`=0,\`407\`=0,\`408\`=0,lastpeek=UNIX_TIMESTAMP(),lastakt=UNIX_TIMESTAMP(),prod1=0,prod2=0,prod3=0,prod4=0,prod12=0,prod212=0 WHERE planet_id IN ($planets); UPDATE uni1_planets SET \`$current_ship_id\`=$current_origin_ships WHERE planet_id=$origin_id; UPDATE uni1_planets SET type=$current_target_type,owner_id=$current_target_owner,\`700\`=$current_target_metal,\`701\`=$current_target_crystal,\`702\`=$current_target_deuterium,\`204\`=$current_target_light_fighter,\`401\`=$current_target_rocket,\`406\`=$current_target_plasma WHERE planet_id=$current_target_id; UPDATE uni1_users u JOIN $rank_backup b ON b.player_id=u.player_id SET u.score1=b.score1,u.score2=b.score2,u.score3=b.score3,u.place1=b.place1,u.place2=b.place2,u.place3=b.place3,u.oldscore1=b.oldscore1,u.oldscore2=b.oldscore2,u.oldscore3=b.oldscore3,u.oldplace1=b.oldplace1,u.oldplace2=b.oldplace2,u.oldplace3=b.oldplace3; UPDATE uni1_users u JOIN $user_backup b ON b.player_id=u.player_id SET u.session='',u.private_session='',u.vacation=0,u.vacation_until=0,u.banned=0,u.banned_until=0,u.noattack=0,u.noattack_until=0,u.disable=0,u.disable_until=0,u.validated=1,u.deact_ip=1,u.aktplanet=u.hplanetid WHERE u.player_id IN ($players)" >/dev/null
+  db_query "DELETE FROM uni1_buddy WHERE text='$buddy_marker'; INSERT INTO uni1_buddy (request_from,request_to,text,accepted) VALUES ($player_id,$target_player_id,'$buddy_marker',1); DELETE FROM uni1_queue WHERE type='Fleet' AND (owner_id IN ($players) OR sub_id IN (SELECT fleet_id FROM uni1_fleet WHERE owner_id IN ($players) OR start_planet IN ($planets) OR target_planet IN ($planets))); DELETE FROM uni1_fleet WHERE owner_id IN ($players) OR start_planet IN ($planets) OR target_planet IN ($planets); DELETE FROM uni1_messages WHERE owner_id IN ($players); DELETE FROM uni1_fleetlogs WHERE owner_id IN ($players) OR target_id IN ($players); DELETE FROM uni1_battledata WHERE battle_id > $battle_before_max; DELETE FROM uni1_planets WHERE type=10000 AND g=$attack_g AND s=$attack_s AND p=$attack_p; UPDATE uni1_uni SET defrepair=$current_defrepair,defrepair_delta=$current_defrepair_delta; UPDATE uni1_planets SET \`700\`=1000000,\`701\`=1000000,\`702\`=1000000,\`202\`=0,\`203\`=0,\`204\`=0,\`205\`=0,\`206\`=0,\`207\`=0,\`208\`=0,\`209\`=0,\`210\`=0,\`211\`=0,\`212\`=0,\`213\`=0,\`214\`=0,\`215\`=0,\`401\`=0,\`402\`=0,\`403\`=0,\`404\`=0,\`405\`=0,\`406\`=0,\`407\`=0,\`408\`=0,lastpeek=UNIX_TIMESTAMP(),lastakt=UNIX_TIMESTAMP(),prod1=0,prod2=0,prod3=0,prod4=0,prod12=0,prod212=0 WHERE planet_id IN ($planets); UPDATE uni1_planets SET \`$current_ship_id\`=$current_origin_ships WHERE planet_id=$origin_id; UPDATE uni1_planets SET type=$current_target_type,owner_id=$current_target_owner,\`700\`=$current_target_metal,\`701\`=$current_target_crystal,\`702\`=$current_target_deuterium,\`204\`=$current_target_light_fighter,\`401\`=$current_target_rocket,\`406\`=$current_target_plasma WHERE planet_id=$current_target_id; UPDATE uni1_users u JOIN $rank_backup b ON b.player_id=u.player_id SET u.score1=b.score1,u.score2=b.score2,u.score3=b.score3,u.place1=b.place1,u.place2=b.place2,u.place3=b.place3,u.oldscore1=b.oldscore1,u.oldscore2=b.oldscore2,u.oldscore3=b.oldscore3,u.oldplace1=b.oldplace1,u.oldplace2=b.oldplace2,u.oldplace3=b.oldplace3; UPDATE uni1_users u JOIN $user_backup b ON b.player_id=u.player_id SET u.session='',u.private_session='',u.vacation=0,u.vacation_until=0,u.banned=0,u.banned_until=0,u.noattack=0,u.noattack_until=0,u.disable=0,u.disable_until=0,u.validated=1,u.deact_ip=1,u.aktplanet=u.hplanetid WHERE u.player_id IN ($players)" >/dev/null
 }
 
 cleanup() {
@@ -155,6 +156,7 @@ legacy_launch() {
     --data-urlencode "galaxy=$tg" --data-urlencode "system=$ts" --data-urlencode "planet=$tp" --data-urlencode "planettype=$current_game_target_type" --data-urlencode 'speed=10' --data-urlencode "order=$current_mission" \
     --data-urlencode "ship202=$ship202" --data-urlencode 'ship203=0' --data-urlencode "ship204=$ship204" --data-urlencode 'ship205=0' --data-urlencode 'ship206=0' --data-urlencode 'ship207=0' --data-urlencode 'ship208=0' --data-urlencode "ship209=$ship209" --data-urlencode 'ship210=0' --data-urlencode 'ship211=0' --data-urlencode 'ship212=0' --data-urlencode "ship213=$ship213" --data-urlencode 'ship214=0' --data-urlencode 'ship215=0' \
     --data-urlencode "resource1=$current_metal" --data-urlencode "resource2=$current_crystal" --data-urlencode "resource3=$current_deuterium" \
+    --data-urlencode "holdingtime=$current_hold_hours" \
     "$LEGACY_BASE_URL/game/index.php?page=flottenversand&session=$legacy_session&cp=$origin_id")"
 }
 
@@ -162,7 +164,7 @@ go_launch() {
   prefix="$1"
   target_coords="$(coordinates "$current_target_id")"
   old_ifs="$IFS"; IFS="$(printf '\t')"; set -- $target_coords; IFS="$old_ifs"
-  payload="$(jq -nc --arg g "$1" --arg s "$2" --arg p "$3" --arg mission "$current_mission" --arg shipID "$current_ship_id" --arg ships "$current_ships" --arg m "$current_metal" --arg c "$current_crystal" --arg d "$current_deuterium" --arg targetType "$current_game_target_type" '{action:"launch-dispatch",ships:{($shipID):($ships|tonumber)},resources:{"700":($m|tonumber),"701":($c|tonumber),"702":($d|tonumber)},target:{galaxy:($g|tonumber),system:($s|tonumber),position:($p|tonumber)},targetType:($targetType|tonumber),mission:($mission|tonumber),speed:10}')"
+  payload="$(jq -nc --arg g "$1" --arg s "$2" --arg p "$3" --arg mission "$current_mission" --arg shipID "$current_ship_id" --arg ships "$current_ships" --arg m "$current_metal" --arg c "$current_crystal" --arg d "$current_deuterium" --arg targetType "$current_game_target_type" --arg hold "$current_hold_hours" '{action:"launch-dispatch",ships:{($shipID):($ships|tonumber)},resources:{"700":($m|tonumber),"701":($c|tonumber),"702":($d|tonumber)},target:{galaxy:($g|tonumber),system:($s|tonumber),position:($p|tonumber)},targetType:($targetType|tonumber),mission:($mission|tonumber),speed:10,holdHours:($hold|tonumber)}')"
   go_launch_status="$(curl --silent --show-error --max-time 15 --output "$TMP_DIR/$prefix-launch.body" --cookie "$go_cookie" --header 'Content-Type: application/json' --data "$payload" --write-out '%{http_code}' "$GO_BASE_URL/api/game/fleet?session=$go_session&cp=$origin_id")"
 }
 
@@ -196,7 +198,18 @@ run_side() {
       action_status="$(curl --silent --show-error --max-time 15 --output "$TMP_DIR/$side-$mode-action.body" --cookie "$go_cookie" --write-out '%{http_code}' "$GO_BASE_URL/api/game/fleet?session=$go_session&cp=$origin_id")"
     fi
     transitioned="$(capture_state)"
-    case "$mode" in transport|recycle|attack|attack-defense|attack-guarded-win|attack-defense-repair) force_latest_due ;; esac
+    case "$mode" in transport|recycle|attack|attack-defense|attack-guarded-win|attack-defense-repair|acs-hold) force_latest_due ;; esac
+  fi
+  hold_status=200
+  returning="$transitioned"
+  if [ "$mode" = acs-hold ]; then
+    if [ "$side" = legacy ]; then
+      hold_status="$(curl --silent --show-error --max-time 15 --output "$TMP_DIR/$side-$mode-hold.body" --cookie "$TMP_DIR/$side-$mode.cookies" --write-out '%{http_code}' "$LEGACY_BASE_URL/game/index.php?page=flotten1&session=$legacy_session&cp=$origin_id")"
+    else
+      hold_status="$(curl --silent --show-error --max-time 15 --output "$TMP_DIR/$side-$mode-hold.body" --cookie "$go_cookie" --write-out '%{http_code}' "$GO_BASE_URL/api/game/fleet?session=$go_session&cp=$origin_id")"
+    fi
+    returning="$(capture_state)"
+    force_latest_due
   fi
   if [ "$side" = legacy ]; then
     final_status="$(curl --silent --show-error --max-time 15 --output "$TMP_DIR/$side-$mode-final.body" --cookie "$TMP_DIR/$side-$mode.cookies" --write-out '%{http_code}' "$LEGACY_BASE_URL/game/index.php?page=flotten1&session=$legacy_session&cp=$origin_id")"
@@ -218,6 +231,7 @@ run_case() {
   current_defrepair="$uni_defrepair"
   current_defrepair_delta="$uni_defrepair_delta"
   current_target_rocket=0
+  current_hold_hours=0
   case "$mode" in
     transport) current_target_id="$transport_target_id"; current_mission=3; current_ship_id=202; current_ships=1; current_origin_ships=10; current_metal=123; current_crystal=45; current_deuterium=0; current_target_type=1; current_game_target_type=1; current_target_owner="$target_player_id"; current_target_metal=1000000; current_target_crystal=1000000; current_target_deuterium=1000000; current_target_light_fighter=0; current_target_plasma=0 ;;
     recall) current_target_id="$transport_target_id"; current_mission=3; current_ship_id=202; current_ships=1; current_origin_ships=10; current_metal=88; current_crystal=33; current_deuterium=0; current_target_type=1; current_game_target_type=1; current_target_owner="$target_player_id"; current_target_metal=1000000; current_target_crystal=1000000; current_target_deuterium=1000000; current_target_light_fighter=0; current_target_plasma=0 ;;
@@ -227,20 +241,23 @@ run_case() {
     attack-defense) current_target_id="$transport_target_id"; current_mission=1; current_ship_id=204; current_ships=1; current_origin_ships=10; current_metal=0; current_crystal=0; current_deuterium=0; current_target_type=1; current_game_target_type=1; current_target_owner="$target_player_id"; current_target_metal=1000000; current_target_crystal=1000000; current_target_deuterium=1000000; current_target_light_fighter=0; current_target_plasma=10 ;;
     attack-guarded-win) current_target_id="$transport_target_id"; current_mission=1; current_ship_id=213; current_ships=1; current_origin_ships=10; current_metal=0; current_crystal=0; current_deuterium=0; current_target_type=1; current_game_target_type=1; current_target_owner="$target_player_id"; current_target_metal=1000000; current_target_crystal=1000000; current_target_deuterium=1000000; current_target_light_fighter=1; current_target_plasma=0 ;;
     attack-defense-repair) current_target_id="$transport_target_id"; current_mission=1; current_ship_id=213; current_ships=1; current_origin_ships=10; current_metal=0; current_crystal=0; current_deuterium=0; current_target_type=1; current_game_target_type=1; current_target_owner="$target_player_id"; current_target_metal=1000000; current_target_crystal=1000000; current_target_deuterium=1000000; current_target_light_fighter=0; current_target_rocket=1; current_target_plasma=0; current_defrepair=100; current_defrepair_delta=0 ;;
+    acs-hold) current_target_id="$transport_target_id"; current_mission=5; current_ship_id=204; current_ships=1; current_origin_ships=10; current_metal=0; current_crystal=0; current_deuterium=0; current_target_type=1; current_game_target_type=1; current_target_owner="$target_player_id"; current_target_metal=1000000; current_target_crystal=1000000; current_target_deuterium=1000000; current_target_light_fighter=0; current_target_plasma=0; current_hold_hours=1 ;;
   esac
   run_side legacy "$mode"
-  legacy_launch_status="$launch_status"; legacy_action_status="$action_status"; legacy_final_status="$final_status"
-  legacy_before="$before"; legacy_launched="$launched"; legacy_transitioned="$transitioned"; legacy_final="$final"
+  legacy_launch_status="$launch_status"; legacy_action_status="$action_status"; legacy_hold_status="$hold_status"; legacy_final_status="$final_status"
+  legacy_before="$before"; legacy_launched="$launched"; legacy_transitioned="$transitioned"; legacy_returning="$returning"; legacy_final="$final"
   run_side go "$mode"
-  go_launch_status="$launch_status"; go_action_status="$action_status"; go_final_status="$final_status"
-  go_before="$before"; go_launched="$launched"; go_transitioned="$transitioned"; go_final="$final"
+  go_launch_status="$launch_status"; go_action_status="$action_status"; go_hold_status="$hold_status"; go_final_status="$final_status"
+  go_before="$before"; go_launched="$launched"; go_transitioned="$transitioned"; go_returning="$returning"; go_final="$final"
   pass=true
   [ "$legacy_launch_status" = 200 ] && [ "$go_launch_status" = 200 ] || pass=false
   [ "$legacy_action_status" = 200 ] && [ "$go_action_status" = 200 ] || pass=false
+  [ "$legacy_hold_status" = 200 ] && [ "$go_hold_status" = 200 ] || pass=false
   [ "$legacy_final_status" = 200 ] && [ "$go_final_status" = 200 ] || pass=false
   [ "$legacy_before" = "$go_before" ] || pass=false
   [ "$legacy_launched" = "$go_launched" ] || pass=false
   [ "$legacy_transitioned" = "$go_transitioned" ] || pass=false
+  [ "$legacy_returning" = "$go_returning" ] || pass=false
   [ "$legacy_final" = "$go_final" ] || pass=false
   jq -e '.fleet != null and .queue != null and .counts.fleets == 1 and .counts.tasks == 1 and .origin.shipCount < $before.origin.shipCount and (.origin.metal <= $before.origin.metal)' --argjson before "$legacy_before" >/dev/null <<EOF || pass=false
 $legacy_launched
@@ -272,13 +289,23 @@ EOF
     jq -e '.origin.shipCount == 10 and .target.rocketLauncher == 1 and .target.metal < 1000000 and .target.crystal < 1000000 and .target.deuterium < 1000000 and .debris.metal == 0 and .debris.crystal == 0 and .counts.messages == 5 and .counts.battles == 1 and (.battle.report | contains("1 Rocket Launchercould be repaired.")) and .users[1].score1 == 8000 and .users[1].score2 == 0' >/dev/null <<EOF || pass=false
 $legacy_final
 EOF
+  elif [ "$mode" = acs-hold ]; then
+    jq -e '.fleet.mission == 205 and .fleet.flightTime == 3600 and .fleet.deployTime > 0 and .fleet.fuel == 0 and .queue.duration == 3600 and .counts.fleets == 1 and .counts.tasks == 1 and .counts.logs == 2' >/dev/null <<EOF || pass=false
+$legacy_transitioned
+EOF
+    jq -e --argjson outbound "$legacy_launched" '.fleet.mission == 105 and .fleet.flightTime == $outbound.fleet.flightTime and .fleet.deployTime == 0 and .fleet.fuel == 0 and .queue.duration == $outbound.queue.duration and .counts.fleets == 1 and .counts.tasks == 1 and .counts.logs == 3' >/dev/null <<EOF || pass=false
+$legacy_returning
+EOF
+    jq -e '.origin.shipCount == 10 and .counts.messages == 1 and .counts.logs == 3' >/dev/null <<EOF || pass=false
+$legacy_final
+EOF
   else
     jq -e '.origin.shipCount == 10' >/dev/null <<EOF || pass=false
 $legacy_final
 EOF
   fi
   [ "$pass" = true ] || all_pass=false
-  jq -nc --arg name "fleet-$mode" --argjson pass "$pass" --arg legacyLaunch "$legacy_launch_status" --arg goLaunch "$go_launch_status" --arg legacyAction "$legacy_action_status" --arg goAction "$go_action_status" --arg legacyFinalStatus "$legacy_final_status" --arg goFinalStatus "$go_final_status" --argjson before "$legacy_before" --argjson legacyLaunched "$legacy_launched" --argjson goLaunched "$go_launched" --argjson legacyTransitioned "$legacy_transitioned" --argjson goTransitioned "$go_transitioned" --argjson legacyFinal "$legacy_final" --argjson goFinal "$go_final" '{name:$name,pass:$pass,http:{launch:{legacy:$legacyLaunch,go:$goLaunch},action:{legacy:$legacyAction,go:$goAction},final:{legacy:$legacyFinalStatus,go:$goFinalStatus}},db:{before:$before,launched:{legacy:$legacyLaunched,go:$goLaunched},transitioned:{legacy:$legacyTransitioned,go:$goTransitioned},final:{legacy:$legacyFinal,go:$goFinal}}}' >> "$case_results"
+  jq -nc --arg name "fleet-$mode" --argjson pass "$pass" --arg legacyLaunch "$legacy_launch_status" --arg goLaunch "$go_launch_status" --arg legacyAction "$legacy_action_status" --arg goAction "$go_action_status" --arg legacyHold "$legacy_hold_status" --arg goHold "$go_hold_status" --arg legacyFinalStatus "$legacy_final_status" --arg goFinalStatus "$go_final_status" --argjson before "$legacy_before" --argjson legacyLaunched "$legacy_launched" --argjson goLaunched "$go_launched" --argjson legacyTransitioned "$legacy_transitioned" --argjson goTransitioned "$go_transitioned" --argjson legacyReturning "$legacy_returning" --argjson goReturning "$go_returning" --argjson legacyFinal "$legacy_final" --argjson goFinal "$go_final" '{name:$name,pass:$pass,http:{launch:{legacy:$legacyLaunch,go:$goLaunch},action:{legacy:$legacyAction,go:$goAction},hold:{legacy:$legacyHold,go:$goHold},final:{legacy:$legacyFinalStatus,go:$goFinalStatus}},db:{before:$before,launched:{legacy:$legacyLaunched,go:$goLaunched},transitioned:{legacy:$legacyTransitioned,go:$goTransitioned},returning:{legacy:$legacyReturning,go:$goReturning},final:{legacy:$legacyFinal,go:$goFinal}}}' >> "$case_results"
 }
 
 run_case transport
@@ -289,7 +316,8 @@ run_case attack
 run_case attack-defense
 run_case attack-guarded-win
 run_case attack-defense-repair
+run_case acs-hold
 restore_original
 jq -s --argjson pass "$all_pass" --arg login "$login" --argjson playerId "$player_id" --argjson originId "$origin_id" '{pass:$pass,fixture:{login:$login,playerId:$playerId,originId:$originId},cases:.}' "$case_results" > "$REPORT"
 [ "$all_pass" = true ]
-printf 'Go/PHP fleet differential E2E: PASS (8 cases)\n'
+printf 'Go/PHP fleet differential E2E: PASS (9 cases)\n'
