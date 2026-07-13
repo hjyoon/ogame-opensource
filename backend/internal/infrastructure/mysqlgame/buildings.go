@@ -1175,6 +1175,10 @@ func (r BuildingsRepository) insertBuildQueue(ctx context.Context, buildQueueTab
 }
 
 func (r BuildingsRepository) insertGlobalQueue(ctx context.Context, queueTable string, playerID int, queueType string, subID int, objID int, level int, start int, duration int) (int, error) {
+	priority := 0
+	if queueType == queueTypeBuild || queueType == queueTypeDemolish {
+		priority = 20
+	}
 	result, err := r.execer.ExecContext(
 		ctx,
 		fmt.Sprintf("INSERT INTO %s (owner_id, type, sub_id, obj_id, level, start, end, prio) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", queueTable),
@@ -1185,7 +1189,7 @@ func (r BuildingsRepository) insertGlobalQueue(ctx context.Context, queueTable s
 		level,
 		start,
 		start+duration,
-		20,
+		priority,
 	)
 	if err != nil {
 		return 0, err

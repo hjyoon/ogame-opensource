@@ -268,7 +268,7 @@ func TestBuildingsRepositoryEnqueuesBuilding(t *testing.T) {
 		!strings.Contains(runner.execs[2].sql, "INSERT INTO `ogame_queue`") ||
 		runner.execs[1].args[0] != 42 || runner.execs[1].args[1] != 99 || runner.execs[1].args[2] != 1 ||
 		runner.execs[1].args[3] != domaingame.BuildingMetalMine || runner.execs[1].args[4] != 1 ||
-		runner.execs[2].args[1] != queueTypeBuild || runner.execs[2].args[2] != 7 {
+		runner.execs[2].args[1] != queueTypeBuild || runner.execs[2].args[2] != 7 || runner.execs[2].args[7] != 20 {
 		t.Fatalf("unexpected building enqueue execs: %+v", runner.execs)
 	}
 }

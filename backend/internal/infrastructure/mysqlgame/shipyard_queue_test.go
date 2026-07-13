@@ -458,7 +458,7 @@ func TestShipyardRepositoryEnqueueShipyardItemClampsRequestedAmount(t *testing.T
 	if issue, ok, err := repository.enqueueShipyardItem(context.Background(), state, item, 5, 1_700); err != nil || !ok || issue != nil {
 		t.Fatalf("expected capped enqueue success, ok=%v issue=%+v err=%v", ok, issue, err)
 	}
-	if runner.execs[0].args[0] != 2.0 {
+	if len(runner.execs) != 2 || runner.execs[0].args[0] != 2.0 || runner.execs[1].args[7] != 0 {
 		t.Fatalf("expected order cap to limit resource spend to two units, got args=%+v", runner.execs[0].args)
 	}
 

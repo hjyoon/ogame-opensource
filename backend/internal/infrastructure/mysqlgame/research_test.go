@@ -262,7 +262,8 @@ func TestResearchRepositoryStartsResearch(t *testing.T) {
 		runner.execs[1].args[2] != 99 ||
 		runner.execs[1].args[3] != domaingame.ResearchEnergy ||
 		runner.execs[1].args[4] != 1 ||
-		runner.execs[1].args[5] != int(now.Unix()) {
+		runner.execs[1].args[5] != int(now.Unix()) ||
+		runner.execs[1].args[7] != 0 {
 		t.Fatalf("unexpected research start execs: %+v", runner.execs)
 	}
 }

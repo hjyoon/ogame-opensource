@@ -15,6 +15,8 @@ const artifacts = [
   { name: "go Mod policy", path: ".tmp/golang-mod-policy.json" },
   { name: "go compatibility smoke", path: ".tmp/golang-compat-smoke.json" },
   { name: "go/PHP resource differential", path: ".tmp/golang-resource-differential.json" },
+  { name: "go/PHP building differential", path: ".tmp/golang-building-differential.json" },
+  { name: "go/PHP research differential", path: ".tmp/golang-research-differential.json" },
   { name: "go user type API QA", path: ".tmp/golang-user-type-qa.json" },
   ...browserNames.map((browser) => ({
     name: `go user type Playwright ${browser}`,
