@@ -14,7 +14,7 @@ HTTP/DB effects, and restore again.
 | Shipyard/defense | 2 | batch debit, per-unit completion, queue timing, units/score/ranks | PASS |
 | Advanced building | 2 | demolition, Commander queue cancel/level shift/propagation | PASS |
 | Defense limits | 3 | dome uniqueness, missile capacity, mixed queue order/completion | PASS |
-| Fleet lifecycle | 6 | transport/recall/deploy/recycle, unguarded/guarded attack | PASS |
+| Fleet lifecycle | 7 | transport/recall/deploy/recycle, unguarded/guarded attack | PASS |
 | Combat engine | 4 | outcome, shots/power, absorption, survivors | PASS |
 
 Resource cases cover partial production, 0-100 boundary values, and all-100
@@ -45,7 +45,7 @@ debris, report HTML/link messages, planet units, scores, and cleanup.
 
 ## Expansion Order
 
-1. Guarded attacker win/repair, ACS/holding fleets, moon creation/destruction.
+1. Guarded defence repair, ACS/holding fleets, moon creation/destruction.
 2. Colony, missiles, expedition, phalanx and Jump Gate.
 3. Account, alliance, messages, buddy and Admin mutations.
 
