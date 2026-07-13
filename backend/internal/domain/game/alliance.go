@@ -29,6 +29,9 @@ const (
 	AllianceIssueAccepted            = "accepted"
 	AllianceIssueRejected            = "rejected"
 	AllianceIssueLeft                = "left"
+	AllianceIssueRenamed             = "renamed"
+	AllianceIssueDismissed           = "dismissed"
+	AllianceIssueTransferred         = "transferred"
 	AllianceIssueSaved               = "saved"
 	AllianceIssueSent                = "sent"
 	AllianceIssueInvalidTag          = "invalid_tag"
@@ -42,6 +45,7 @@ const (
 	AllianceIssueNoPermission        = "no_permission"
 	AllianceIssueApplicationNotFound = "application_not_found"
 	AllianceIssueFounderCannotLeave  = "founder_cannot_leave"
+	AllianceIssueRenameCooldown      = "rename_cooldown"
 )
 
 type AllianceView string
@@ -60,6 +64,8 @@ const (
 	AllianceViewCircular     AllianceView = "circular"
 	AllianceViewRenameTag    AllianceView = "rename_tag"
 	AllianceViewRenameName   AllianceView = "rename_name"
+	AllianceViewDismiss      AllianceView = "dismiss"
+	AllianceViewTakeover     AllianceView = "takeover"
 )
 
 type Alliance struct {
@@ -239,6 +245,14 @@ func (v AllianceViewer) CanLeaveAlliance() bool {
 	return v.AllianceID > 0 && !v.Founder
 }
 
+func (v AllianceViewer) CanDismissAlliance() bool {
+	return v.AllianceID > 0 && (v.Founder || v.RankRights&AllianceRightDismiss != 0)
+}
+
+func (v AllianceViewer) CanTransferAlliance() bool {
+	return v.AllianceID > 0 && (v.Founder || v.RankRights&AllianceRightHand != 0)
+}
+
 func NormalizeAllianceTextKind(kind int) int {
 	if kind < 1 || kind > 3 {
 		return 1
@@ -307,6 +321,12 @@ func AllianceIssue(code string) *AllianceActionIssue {
 		return &AllianceActionIssue{Code: code, Message: "Application rejected."}
 	case AllianceIssueLeft:
 		return &AllianceActionIssue{Code: code, Message: "You have left the alliance."}
+	case AllianceIssueRenamed:
+		return &AllianceActionIssue{Code: code, Message: "Alliance renamed."}
+	case AllianceIssueDismissed:
+		return &AllianceActionIssue{Code: code, Message: "Alliance dissolved."}
+	case AllianceIssueTransferred:
+		return &AllianceActionIssue{Code: code, Message: "Alliance leadership transferred."}
 	case AllianceIssueSaved:
 		return &AllianceActionIssue{Code: code, Message: "Changes saved."}
 	case AllianceIssueSent:
@@ -333,6 +353,8 @@ func AllianceIssue(code string) *AllianceActionIssue {
 		return &AllianceActionIssue{Code: code, Message: "Application not found."}
 	case AllianceIssueFounderCannotLeave:
 		return &AllianceActionIssue{Code: code, Message: "The founder cannot leave the alliance from this dialog."}
+	case AllianceIssueRenameCooldown:
+		return &AllianceActionIssue{Code: code, Message: "Alliance can only be renamed once every seven days."}
 	default:
 		return &AllianceActionIssue{Code: code, Message: code}
 	}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
@@ -109,6 +110,24 @@ func (r AllianceRepository) MutateAlliance(ctx context.Context, query appgame.Al
 	if r.execer == nil {
 		return domaingame.Alliance{}, nil, errors.New("alliance updater unavailable")
 	}
+	if txer, ok := r.execer.(transactionRunner); ok {
+		var alliance domaingame.Alliance
+		var issue *domaingame.AllianceActionIssue
+		err := txer.WithTransaction(ctx, func(queryer Queryer, execer Execer) error {
+			transactionRepository := r
+			transactionRepository.queryer = queryer
+			transactionRepository.execer = execer
+			transactionRepository.overview = NewOverviewRepositoryWithRunner(queryer, execer, r.prefix)
+			var err error
+			alliance, issue, err = transactionRepository.mutateAlliance(ctx, query)
+			return err
+		})
+		return alliance, issue, err
+	}
+	return r.mutateAlliance(ctx, query)
+}
+
+func (r AllianceRepository) mutateAlliance(ctx context.Context, query appgame.AllianceMutationQuery) (domaingame.Alliance, *domaingame.AllianceActionIssue, error) {
 	viewer, err := r.loadAllianceViewer(ctx, query.PlayerID)
 	if err != nil {
 		return domaingame.Alliance{}, nil, err
@@ -153,6 +172,27 @@ func (r AllianceRepository) MutateAlliance(ctx context.Context, query appgame.Al
 		return alliance, issue, loadErr
 	case "leave":
 		issue, err := r.leaveAlliance(ctx, viewer)
+		alliance, loadErr := r.GetAlliance(ctx, appgame.AllianceQuery{PlayerID: query.PlayerID, PlanetID: query.PlanetID, View: domaingame.AllianceViewHome})
+		if err != nil {
+			return domaingame.Alliance{}, nil, err
+		}
+		return alliance, issue, loadErr
+	case "change_tag", "change_name":
+		issue, err := r.renameAlliance(ctx, viewer, mutation)
+		alliance, loadErr := r.GetAlliance(ctx, appgame.AllianceQuery{PlayerID: query.PlayerID, PlanetID: query.PlanetID, View: query.Query.View})
+		if err != nil {
+			return domaingame.Alliance{}, nil, err
+		}
+		return alliance, issue, loadErr
+	case "dismiss":
+		issue, err := r.dismissAlliance(ctx, viewer)
+		alliance, loadErr := r.GetAlliance(ctx, appgame.AllianceQuery{PlayerID: query.PlayerID, PlanetID: query.PlanetID, View: domaingame.AllianceViewHome})
+		if err != nil {
+			return domaingame.Alliance{}, nil, err
+		}
+		return alliance, issue, loadErr
+	case "transfer_founder":
+		issue, err := r.transferAllianceFounder(ctx, viewer, mutation.TargetPlayerID)
 		alliance, loadErr := r.GetAlliance(ctx, appgame.AllianceQuery{PlayerID: query.PlayerID, PlanetID: query.PlanetID, View: domaingame.AllianceViewHome})
 		if err != nil {
 			return domaingame.Alliance{}, nil, err
@@ -482,8 +522,23 @@ func (r AllianceRepository) populateOwnAlliance(ctx context.Context, alliance do
 			return domaingame.Alliance{}, err
 		}
 		alliance.Ranks = ranks
-	case domaingame.AllianceViewRenameTag, domaingame.AllianceViewRenameName:
+	case domaingame.AllianceViewRenameTag, domaingame.AllianceViewRenameName, domaingame.AllianceViewDismiss:
 		alliance.View = query.View
+	case domaingame.AllianceViewTakeover:
+		alliance.View = query.View
+		if !alliance.Viewer.Founder {
+			return alliance, nil
+		}
+		ranks, err := r.loadAllianceRanks(ctx, alliance.Viewer.AllianceID)
+		if err != nil {
+			return domaingame.Alliance{}, err
+		}
+		members, err := r.loadAllianceMembers(ctx, alliance.Viewer.AllianceID)
+		if err != nil {
+			return domaingame.Alliance{}, err
+		}
+		alliance.Ranks = ranks
+		alliance.Members = members
 	default:
 		alliance.View = domaingame.AllianceViewHome
 	}
@@ -572,7 +627,30 @@ func (r AllianceRepository) reviewApplication(ctx context.Context, viewer domain
 	if app == nil || app.AllianceID != viewer.AllianceID {
 		return domaingame.AllianceIssue(domaingame.AllianceIssueApplicationNotFound), nil
 	}
+	own, err := r.loadAllianceInfo(ctx, viewer.AllianceID)
+	if err != nil {
+		return nil, err
+	}
+	if own == nil {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueAllianceNotFound), nil
+	}
+	applicantExists := app.PlayerName != ""
 	if mutation.Action == "accept" {
+		if !applicantExists {
+			return domaingame.AllianceIssue(domaingame.AllianceIssueApplicationNotFound), nil
+		}
+		recipients, err := r.loadCircularRecipients(ctx, viewer.AllianceID, 0)
+		if err != nil {
+			return nil, err
+		}
+		for _, recipient := range recipients {
+			if err := r.sendAllianceMessage(ctx, recipient.PlayerID, allianceMessageFrom(own.Tag), " General Message", fmt.Sprintf("Player %s has been accepted into our alliance.", app.PlayerName)); err != nil {
+				return nil, err
+			}
+		}
+		if err := r.sendAllianceMessage(ctx, app.PlayerID, allianceMessageFrom(own.Tag), fmt.Sprintf("Registration [%s] has been accepted.", own.Tag), fmt.Sprintf("Congratulations, you are now a member of alliance [%s].", own.Tag)); err != nil {
+			return nil, err
+		}
 		if err := r.acceptApplication(ctx, viewer.AllianceID, app.PlayerID); err != nil {
 			return nil, err
 		}
@@ -584,6 +662,15 @@ func (r AllianceRepository) reviewApplication(ctx context.Context, viewer domain
 	if err := r.deleteApplication(ctx, app.ID); err != nil {
 		return nil, err
 	}
+	if applicantExists {
+		reason := mutation.Text
+		if reason == "" {
+			reason = "-reason not specified-"
+		}
+		if err := r.sendAllianceMessage(ctx, app.PlayerID, allianceMessageFrom(own.Tag), fmt.Sprintf("Registration [%s] rejected.", own.Tag), reason); err != nil {
+			return nil, err
+		}
+	}
 	return domaingame.AllianceIssue(domaingame.AllianceIssueRejected), nil
 }
 
@@ -594,14 +681,82 @@ func (r AllianceRepository) leaveAlliance(ctx context.Context, viewer domaingame
 	if !viewer.CanLeaveAlliance() {
 		return domaingame.AllianceIssue(domaingame.AllianceIssueNoPermission), nil
 	}
+	own, err := r.loadAllianceInfo(ctx, viewer.AllianceID)
+	if err != nil {
+		return nil, err
+	}
+	if own == nil {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueAllianceNotFound), nil
+	}
 	usersTable, err := tableName(r.prefix, "users")
 	if err != nil {
 		return nil, err
 	}
-	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET ally_id = 0, allyrank = 0, joindate = 0 WHERE player_id = ? LIMIT 1", usersTable), viewer.PlayerID); err != nil {
+	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET ally_id = 0 WHERE player_id = ? LIMIT 1", usersTable), viewer.PlayerID); err != nil {
 		return nil, err
 	}
+	recipients, err := r.loadCircularRecipients(ctx, viewer.AllianceID, 0)
+	if err != nil {
+		return nil, err
+	}
+	for _, recipient := range recipients {
+		if err := r.sendAllianceMessage(ctx, recipient.PlayerID, allianceMessageFrom(own.Tag), " General Message", fmt.Sprintf(" Player %s has left the alliance.", viewer.Name)); err != nil {
+			return nil, err
+		}
+	}
 	return domaingame.AllianceIssue(domaingame.AllianceIssueLeft), nil
+}
+
+func (r AllianceRepository) renameAlliance(ctx context.Context, viewer domaingame.AllianceViewer, mutation domaingame.AllianceMutation) (*domaingame.AllianceActionIssue, error) {
+	if viewer.AllianceID <= 0 || !viewer.CanManageAlliance() {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueNoPermission), nil
+	}
+	own, err := r.loadAllianceInfo(ctx, viewer.AllianceID)
+	if err != nil {
+		return nil, err
+	}
+	if own == nil {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueAllianceNotFound), nil
+	}
+	allyTable, err := tableName(r.prefix, "ally")
+	if err != nil {
+		return nil, err
+	}
+	now := r.now().Unix()
+	if mutation.Action == "change_tag" {
+		tag := domaingame.NormalizeAllianceTag(mutation.Tag)
+		if utf8.RuneCountInString(tag) < 3 {
+			return domaingame.AllianceIssue(domaingame.AllianceIssueInvalidTag), nil
+		}
+		if own.TagUntil > now {
+			return domaingame.AllianceIssue(domaingame.AllianceIssueRenameCooldown), nil
+		}
+		exists, err := r.allianceTagExists(ctx, tag)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			return domaingame.AllianceIssue(domaingame.AllianceIssueTagExists), nil
+		}
+		_, err = r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET old_tag = tag, tag = ?, tag_until = ? WHERE ally_id = ? LIMIT 1", allyTable), tag, now+7*24*60*60, viewer.AllianceID)
+		if err != nil {
+			return nil, err
+		}
+		return domaingame.AllianceIssue(domaingame.AllianceIssueRenamed), nil
+	}
+	name := domaingame.NormalizeAllianceName(mutation.Name)
+	if utf8.RuneCountInString(name) < 3 {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueInvalidName), nil
+	}
+	if own.NameUntil > now {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueRenameCooldown), nil
+	}
+	if own.Name != name {
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET old_name = name, name = ?, name_until = ? WHERE ally_id = ? LIMIT 1", allyTable), name, now+7*24*60*60, viewer.AllianceID); err != nil {
+			return nil, err
+		}
+	}
+	return domaingame.AllianceIssue(domaingame.AllianceIssueRenamed), nil
 }
 
 func (r AllianceRepository) saveAllianceText(ctx context.Context, viewer domaingame.AllianceViewer, mutation domaingame.AllianceMutation) (*domaingame.AllianceActionIssue, error) {
@@ -727,6 +882,17 @@ func (r AllianceRepository) kickAllianceMember(ctx context.Context, viewer domai
 	if err != nil {
 		return nil, err
 	}
+	own, err := r.loadAllianceInfo(ctx, viewer.AllianceID)
+	if err != nil {
+		return nil, err
+	}
+	target, err := r.loadAllianceMemberIdentity(ctx, mutation.TargetPlayerID)
+	if err != nil {
+		return nil, err
+	}
+	if own == nil || target == nil || target.AllianceID != viewer.AllianceID || target.RankID == domaingame.AllianceRankFounder {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueNoPermission), nil
+	}
 	_, err = r.execer.ExecContext(
 		ctx,
 		fmt.Sprintf("UPDATE %s SET ally_id = 0 WHERE player_id = ? AND ally_id = ? AND allyrank <> ? LIMIT 1", usersTable),
@@ -737,7 +903,119 @@ func (r AllianceRepository) kickAllianceMember(ctx context.Context, viewer domai
 	if err != nil {
 		return nil, err
 	}
+	recipients, err := r.loadCircularRecipients(ctx, viewer.AllianceID, 0)
+	if err != nil {
+		return nil, err
+	}
+	for _, recipient := range recipients {
+		if err := r.sendAllianceMessage(ctx, recipient.PlayerID, allianceMessageFrom(own.Tag), " General Message", fmt.Sprintf(" Player %s has been expelled from the alliance.", target.Name)); err != nil {
+			return nil, err
+		}
+	}
+	if err := r.sendAllianceMessage(ctx, target.PlayerID, allianceMessageFrom(own.Tag), fmt.Sprintf("[%s] alliance membership is terminated.", own.Tag), fmt.Sprintf(" Player %s has expelled you from alliance [%s] .<br>You may now register again.", viewer.Name, own.Tag)); err != nil {
+		return nil, err
+	}
 	return domaingame.AllianceIssue(domaingame.AllianceIssueSaved), nil
+}
+
+func (r AllianceRepository) dismissAlliance(ctx context.Context, viewer domaingame.AllianceViewer) (*domaingame.AllianceActionIssue, error) {
+	if !viewer.CanDismissAlliance() {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueNoPermission), nil
+	}
+	own, err := r.loadAllianceInfo(ctx, viewer.AllianceID)
+	if err != nil {
+		return nil, err
+	}
+	if own == nil {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueAllianceNotFound), nil
+	}
+	recipients, err := r.loadCircularRecipients(ctx, viewer.AllianceID, 0)
+	if err != nil {
+		return nil, err
+	}
+	for _, recipient := range recipients {
+		if err := r.sendAllianceMessage(ctx, recipient.PlayerID, own.Name, fmt.Sprintf("Alliance membership[%s]has ended.", own.Tag), fmt.Sprintf("[Player %s] has dissolved alliance[%s].<br>You may now join another alliance or create your own", viewer.Name, own.Tag)); err != nil {
+			return nil, err
+		}
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	ranksTable, err := tableName(r.prefix, "allyranks")
+	if err != nil {
+		return nil, err
+	}
+	appsTable, err := tableName(r.prefix, "allyapps")
+	if err != nil {
+		return nil, err
+	}
+	allyTable, err := tableName(r.prefix, "ally")
+	if err != nil {
+		return nil, err
+	}
+	statements := []struct {
+		sql  string
+		args []any
+	}{
+		{fmt.Sprintf("UPDATE %s SET ally_id = 0, joindate = 0, allyrank = 0 WHERE ally_id = ?", usersTable), []any{viewer.AllianceID}},
+		{fmt.Sprintf("DELETE FROM %s WHERE ally_id = ?", ranksTable), []any{viewer.AllianceID}},
+		{fmt.Sprintf("DELETE FROM %s WHERE ally_id = ?", appsTable), []any{viewer.AllianceID}},
+		{fmt.Sprintf("DELETE FROM %s WHERE ally_id = ?", allyTable), []any{viewer.AllianceID}},
+	}
+	for _, statement := range statements {
+		if _, err := r.execer.ExecContext(ctx, statement.sql, statement.args...); err != nil {
+			return nil, err
+		}
+	}
+	return domaingame.AllianceIssue(domaingame.AllianceIssueDismissed), nil
+}
+
+func (r AllianceRepository) transferAllianceFounder(ctx context.Context, viewer domaingame.AllianceViewer, targetPlayerID int) (*domaingame.AllianceActionIssue, error) {
+	if !viewer.CanTransferAlliance() || targetPlayerID <= 0 {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueNoPermission), nil
+	}
+	own, err := r.loadAllianceInfo(ctx, viewer.AllianceID)
+	if err != nil {
+		return nil, err
+	}
+	target, err := r.loadAllianceMemberIdentity(ctx, targetPlayerID)
+	if err != nil {
+		return nil, err
+	}
+	if own == nil || target == nil || target.AllianceID != viewer.AllianceID || target.PlayerID == viewer.PlayerID || target.RankRights&domaingame.AllianceRightHand == 0 {
+		return domaingame.AllianceIssue(domaingame.AllianceIssueNoPermission), nil
+	}
+	recipients, err := r.loadCircularRecipients(ctx, viewer.AllianceID, 0)
+	if err != nil {
+		return nil, err
+	}
+	for _, recipient := range recipients {
+		if recipient.PlayerID == own.OwnerID {
+			continue
+		}
+		if err := r.sendAllianceMessage(ctx, recipient.PlayerID, allianceMessageFrom(own.Tag), fmt.Sprintf("A change of power in alliance [%s].", own.Tag), fmt.Sprintf("Player %s, who holds the title of alliance founder, has left the alliance", viewer.Name)); err != nil {
+			return nil, err
+		}
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	allyTable, err := tableName(r.prefix, "ally")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET allyrank = ? WHERE player_id = ? LIMIT 1", usersTable), viewer.RankID, target.PlayerID); err != nil {
+		return nil, err
+	}
+	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET allyrank = ? WHERE player_id = ? LIMIT 1", usersTable), target.RankID, viewer.PlayerID); err != nil {
+		return nil, err
+	}
+	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET owner_id = ? WHERE ally_id = ? LIMIT 1", allyTable), target.PlayerID, viewer.AllianceID); err != nil {
+		return nil, err
+	}
+	return domaingame.AllianceIssue(domaingame.AllianceIssueTransferred), nil
 }
 
 func (r AllianceRepository) sendCircularMessage(ctx context.Context, viewer domaingame.AllianceViewer, mutation domaingame.AllianceMutation) (*domaingame.AllianceActionIssue, *domaingame.AllianceCircularResult, error) {
@@ -1248,6 +1526,48 @@ type allianceCircularRecipient struct {
 	Name     string
 }
 
+type allianceMemberIdentity struct {
+	PlayerID   int
+	Name       string
+	AllianceID int
+	RankID     int
+	RankRights int
+}
+
+func (r AllianceRepository) loadAllianceMemberIdentity(ctx context.Context, playerID int) (*allianceMemberIdentity, error) {
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return nil, err
+	}
+	ranksTable, err := tableName(r.prefix, "allyranks")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf(
+		"SELECT u.player_id, COALESCE(u.oname, ''), COALESCE(u.ally_id, 0), COALESCE(u.allyrank, 0), COALESCE(r.rights, 0) FROM %s u LEFT JOIN %s r ON r.ally_id = u.ally_id AND r.rank_id = u.allyrank WHERE u.player_id = ? LIMIT 1",
+		usersTable,
+		ranksTable,
+	), playerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+	var identity allianceMemberIdentity
+	if err := rows.Scan(&identity.PlayerID, &identity.Name, &identity.AllianceID, &identity.RankID, &identity.RankRights); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return &identity, nil
+}
+
 func (r AllianceRepository) loadCircularRecipients(ctx context.Context, allianceID int, rankID int) ([]allianceCircularRecipient, error) {
 	usersTable, err := tableName(r.prefix, "users")
 	if err != nil {
@@ -1300,6 +1620,18 @@ func (r AllianceRepository) insertAllianceMessage(ctx context.Context, messagesT
 		r.now().Unix(),
 	)
 	return err
+}
+
+func (r AllianceRepository) sendAllianceMessage(ctx context.Context, ownerID int, from string, subject string, text string) error {
+	messagesTable, err := tableName(r.prefix, "messages")
+	if err != nil {
+		return err
+	}
+	return r.insertAllianceMessage(ctx, messagesTable, ownerID, from, subject, text)
+}
+
+func allianceMessageFrom(tag string) string {
+	return fmt.Sprintf(" Alliance [%s]", tag)
 }
 
 func (r AllianceRepository) countAllianceMessages(ctx context.Context, messagesTable string, ownerID int) (int, error) {

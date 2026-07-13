@@ -19,6 +19,7 @@ compare normalized HTTP/DB effects, then restore.
 | Jump Gate | 13 | target filters, guards, ship move, satellite exclusion, cooldown | PASS |
 | Buddy | 12 | request views, guards, text limits, lifecycle, PM side effects | PASS |
 | Messages | 18 | read/retention, delete modes, reports, flags, send/cap | PASS |
+| Alliance | 27 | create/apply/review, ranks, text/settings, rename, leave/kick/dismiss/transfer | PASS |
 | Combat engine | 4 | outcome, shots/power, absorption, survivors | PASS |
 
 Resource cases cover partial production and 0/100 boundaries. Each side logs in
@@ -46,7 +47,7 @@ moon ABM use, defense state, rank effects, cleanup, and legacy report HTML.
 
 ## Expansion Order
 
-1. Account, alliance and Admin mutations.
+1. Account and Admin mutations.
 
 ## Comparison Contract
 
@@ -56,6 +57,7 @@ moon ABM use, defense state, rank effects, cleanup, and legacy report HTML.
   randomness explicitly listed by a case.
 - A scope decision or an existing E2E is not automatically differential proof.
 - Failed cases must leave the DB restored through a trap/finalizer.
+- Founder transfer scopes owner updates to its alliance; PHP's unscoped global update is a documented security correction.
 
 ## Completion Rule
 

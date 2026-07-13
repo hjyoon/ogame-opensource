@@ -146,6 +146,9 @@ func TestSelectedAllianceQueryAndLegacyMutationParsing(t *testing.T) {
 	}{
 		{"/api/game/alliance?page=bewerben&allyid=7", domaingame.AllianceViewApply},
 		{"/api/game/alliance?page=bewerbungen&show=3", domaingame.AllianceViewApplications},
+		{"/api/game/alliance?page=ainfo&allyid=7", domaingame.AllianceViewInfo},
+		{"/api/game/alliance?allyid=7", domaingame.AllianceViewInfo},
+		{"/api/game/alliance?a=2&allyid=7", domaingame.AllianceViewApply},
 		{"/api/game/alliance?a=1", domaingame.AllianceViewCreate},
 		{"/api/game/alliance?a=2&suchtext=TAG", domaingame.AllianceViewSearch},
 		{"/api/game/alliance?a=4", domaingame.AllianceViewMembers},
@@ -154,9 +157,11 @@ func TestSelectedAllianceQueryAndLegacyMutationParsing(t *testing.T) {
 		{"/api/game/alliance?a=6", domaingame.AllianceViewRanks},
 		{"/api/game/alliance?a=9", domaingame.AllianceViewRenameTag},
 		{"/api/game/alliance?a=10", domaingame.AllianceViewRenameName},
+		{"/api/game/alliance?a=12", domaingame.AllianceViewDismiss},
 		{"/api/game/alliance?a=11&d=2", domaingame.AllianceViewManagement},
 		{"/api/game/alliance?a=15", domaingame.AllianceViewRanks},
 		{"/api/game/alliance?a=17", domaingame.AllianceViewCircular},
+		{"/api/game/alliance?a=18", domaingame.AllianceViewTakeover},
 		{"/api/game/alliance", domaingame.AllianceViewHome},
 	}
 	for _, tt := range tests {
@@ -180,6 +185,9 @@ func TestSelectedAllianceQueryAndLegacyMutationParsing(t *testing.T) {
 		{"/api/game/alliance?page=bewerbungen&show=9", "aktion=Reject&text=no", "reject"},
 		{"/api/game/alliance?a=1&weiter=1", "tag=TAG&name=Alliance", "create"},
 		{"/api/game/alliance?a=3", "", "leave"},
+		{"/api/game/alliance?a=9&weiter=1", "newtag=NEWTAG", "change_tag"},
+		{"/api/game/alliance?a=10&weiter=1", "newname=New+Name", "change_name"},
+		{"/api/game/alliance?a=12&weiter=1", "", "dismiss"},
 		{"/api/game/alliance?a=11&d=1&t=3", "text=hello&bewforce=1", "save_text"},
 		{"/api/game/alliance?a=11&d=2", "hp=https%3A%2F%2Fexample.com&logo=&bew=1&fname=Right+Hand", "save_settings"},
 		{"/api/game/alliance?a=15", "newrangname=Officer", "add_rank"},
@@ -187,6 +195,7 @@ func TestSelectedAllianceQueryAndLegacyMutationParsing(t *testing.T) {
 		{"/api/game/alliance?a=15&d=2", "", "delete_rank"},
 		{"/api/game/alliance?a=16&u=43", "newrang=2", "assign_rank"},
 		{"/api/game/alliance?a=17&sendmail=1", "r=2&text=hello", "send_circular"},
+		{"/api/game/alliance?a=18", "s=1&uid=43", "transfer_founder"},
 		{"/api/game/alliance", "bcancel=Withdraw+application", "withdraw"},
 	} {
 		request := httptest.NewRequest(http.MethodPost, tt.url, strings.NewReader(tt.form))
@@ -215,6 +224,26 @@ func TestSelectedAllianceQueryAndLegacyMutationParsing(t *testing.T) {
 	assignRankRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if mutation, err := decodeGameAllianceMutation(assignRankRequest); err != nil || mutation.TargetPlayerID != 43 || mutation.TargetRankID != 2 {
 		t.Fatalf("unexpected assign rank mutation=%+v err=%v", mutation, err)
+	}
+	transferRequest := httptest.NewRequest(http.MethodPost, "/api/game/alliance?a=18", strings.NewReader("s=1&uid=43"))
+	transferRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if mutation, err := decodeGameAllianceMutation(transferRequest); err != nil || mutation.TargetPlayerID != 43 || mutation.Action != "transfer_founder" {
+		t.Fatalf("unexpected transfer mutation=%+v err=%v", mutation, err)
+	}
+	jsonRequest := httptest.NewRequest(http.MethodPost, "/api/game/alliance", strings.NewReader("{\"action\":\"save_ranks\",\"rankRights\":[{\"id\":2,\"rights\":136}]}"))
+	jsonRequest.Header.Set("Content-Type", "application/json")
+	if mutation, err := decodeGameAllianceMutation(jsonRequest); err != nil || len(mutation.RankRights) != 1 || mutation.RankRights[0].ID != 2 || mutation.RankRights[0].Rights != 136 {
+		t.Fatalf("unexpected JSON rank mutation=%+v err=%v", mutation, err)
+	}
+	unknownRequest := httptest.NewRequest(http.MethodPost, "/api/game/alliance?a=custom", strings.NewReader(""))
+	unknownRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if mutation, err := decodeGameAllianceMutation(unknownRequest); err != nil || mutation.Action != "custom" {
+		t.Fatalf("unexpected fallback mutation=%+v err=%v", mutation, err)
+	}
+	badFormRequest := httptest.NewRequest(http.MethodPost, "/api/game/alliance", strings.NewReader("%zz"))
+	badFormRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if _, err := decodeGameAllianceMutation(badFormRequest); err == nil {
+		t.Fatal("expected malformed form error")
 	}
 	if legacyAllianceInt("-12") != 12 || legacyAllianceInt("bad") != 0 {
 		t.Fatal("legacy int parser mismatch")

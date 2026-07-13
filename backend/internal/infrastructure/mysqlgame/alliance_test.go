@@ -328,6 +328,10 @@ func TestAllianceRepositoryAppliesAndReviewsApplications(t *testing.T) {
 		fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
 			{rows: fakeRowsFromValues(allianceViewerRow(42, "legor", 1, 7, 0, "Founder", domaingame.AllianceFounderRights))},
 			{rows: fakeRowsFromValues(allianceApplicationRow(11, 7, 43, "newcomer", "hello", 1000))},
+			{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 1, 0))},
+			{rows: fakeRowsFromValues([]any{42, "legor"})},
+			{rows: fakeRowsFromValues([]any{0})},
+			{rows: fakeRowsFromValues([]any{0})},
 		}, append(shipyardOverviewResults(),
 			fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(42, "legor", 1, 7, 0, "Founder", domaingame.AllianceFounderRights))},
 			fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 2, 0))},
@@ -346,7 +350,8 @@ func TestAllianceRepositoryAppliesAndReviewsApplications(t *testing.T) {
 		t.Fatal(err)
 	}
 	if issue == nil || issue.Code != domaingame.AllianceIssueAccepted || len(alliance.Applications) != 0 ||
-		len(runner.execCalls) != 2 || runner.execCalls[0].args[0] != 7 || runner.execCalls[0].args[1] != domaingame.AllianceRankNewcomer {
+		len(runner.execCalls) != 4 || runner.execCalls[2].args[0] != 7 || runner.execCalls[2].args[1] != domaingame.AllianceRankNewcomer ||
+		runner.execCalls[0].args[3] != " General Message" || runner.execCalls[1].args[3] != "Registration [TAG] has been accepted." {
 		t.Fatalf("unexpected accept result alliance=%+v issue=%+v exec=%+v", alliance, issue, runner.execCalls)
 	}
 
@@ -354,6 +359,8 @@ func TestAllianceRepositoryAppliesAndReviewsApplications(t *testing.T) {
 		fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
 			{rows: fakeRowsFromValues(allianceViewerRow(42, "legor", 1, 7, 0, "Founder", domaingame.AllianceFounderRights))},
 			{rows: fakeRowsFromValues(allianceApplicationRow(12, 7, 44, "rejectme", "no", 1001))},
+			{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 1, 0))},
+			{rows: fakeRowsFromValues([]any{0})},
 		}, append(shipyardOverviewResults(),
 			fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(42, "legor", 1, 7, 0, "Founder", domaingame.AllianceFounderRights))},
 			fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 2, 0))},
@@ -371,8 +378,8 @@ func TestAllianceRepositoryAppliesAndReviewsApplications(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if issue == nil || issue.Code != domaingame.AllianceIssueRejected || len(runner.execCalls) != 1 ||
-		!strings.Contains(runner.execCalls[0].sql, "DELETE FROM `ogame_allyapps`") {
+	if issue == nil || issue.Code != domaingame.AllianceIssueRejected || len(runner.execCalls) != 2 ||
+		!strings.Contains(runner.execCalls[0].sql, "DELETE FROM `ogame_allyapps`") || runner.execCalls[1].args[3] != "Registration [TAG] rejected." || runner.execCalls[1].args[4] != "-reason not specified-" {
 		t.Fatalf("unexpected reject result alliance=%+v issue=%+v exec=%+v", alliance, issue, runner.execCalls)
 	}
 }
@@ -406,6 +413,9 @@ func TestAllianceRepositoryWithdrawsAndLeavesAlliance(t *testing.T) {
 	runner = &fakeAllianceRunner{
 		fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
 			{rows: fakeRowsFromValues(allianceViewerRow(43, "member", 1, 7, 1, "Newcomer", 0))},
+			{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 1, 0))},
+			{rows: fakeRowsFromValues([]any{42, "legor"})},
+			{rows: fakeRowsFromValues([]any{0})},
 		}, append(shipyardOverviewResults(),
 			fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(43, "member", 1, 0, 0, "", 0))},
 			fakeQueryResult{rows: fakeRowsFromValues()},
@@ -423,7 +433,8 @@ func TestAllianceRepositoryWithdrawsAndLeavesAlliance(t *testing.T) {
 		t.Fatal(err)
 	}
 	if issue == nil || issue.Code != domaingame.AllianceIssueLeft || alliance.Viewer.AllianceID != 0 ||
-		len(runner.execCalls) != 1 || !strings.Contains(runner.execCalls[0].sql, "UPDATE `ogame_users` SET ally_id = 0") {
+		len(runner.execCalls) != 2 || !strings.Contains(runner.execCalls[0].sql, "UPDATE `ogame_users` SET ally_id = 0") ||
+		runner.execCalls[1].args[4] != " Player member has left the alliance." {
 		t.Fatalf("unexpected leave result alliance=%+v issue=%+v exec=%+v", alliance, issue, runner.execCalls)
 	}
 }
@@ -848,12 +859,19 @@ func TestAllianceRepositoryManagesRanksMembersAndCircularMessages(t *testing.T) 
 		t.Fatalf("unexpected assign rank issue=%+v err=%v exec=%+v", issue, err, runner.execCalls)
 	}
 
-	runner = &fakeAllianceRunner{}
+	runner = &fakeAllianceRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 1, 0))},
+		{rows: fakeRowsFromValues([]any{43, "member", 7, 1, 0})},
+		{rows: fakeRowsFromValues([]any{42, "legor"})},
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues([]any{0})},
+	}}}
 	repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
 	issue, err = repository.kickAllianceMember(ctx, founder, domaingame.AllianceMutation{TargetPlayerID: 43})
-	if err != nil || issue.Code != domaingame.AllianceIssueSaved || len(runner.execCalls) != 1 ||
+	if err != nil || issue.Code != domaingame.AllianceIssueSaved || len(runner.execCalls) != 3 ||
 		!strings.Contains(runner.execCalls[0].sql, "SET ally_id = 0") ||
-		runner.execCalls[0].args[0] != 43 {
+		runner.execCalls[0].args[0] != 43 || runner.execCalls[1].args[3] != " General Message" ||
+		runner.execCalls[2].args[3] != "[TAG] alliance membership is terminated." {
 		t.Fatalf("unexpected kick member issue=%+v err=%v exec=%+v", issue, err, runner.execCalls)
 	}
 
@@ -921,6 +939,10 @@ func TestAllianceRepositoryMutatesRankMemberCircularBranches(t *testing.T) {
 	runner = &fakeAllianceRunner{
 		fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
 			{rows: fakeRowsFromValues(founderRow)},
+			{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 1, 0))},
+			{rows: fakeRowsFromValues([]any{43, "member", 7, 1, 0})},
+			{rows: fakeRowsFromValues()},
+			{rows: fakeRowsFromValues([]any{0})},
 		}, append(shipyardOverviewResults(),
 			fakeQueryResult{rows: fakeRowsFromValues(founderRow)},
 			fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 1, 0))},
@@ -934,7 +956,7 @@ func TestAllianceRepositoryMutatesRankMemberCircularBranches(t *testing.T) {
 		Query:    appgame.AllianceQuery{PlayerID: 42, PlanetID: 99},
 		Mutation: domaingame.AllianceMutation{Action: "kick_member", TargetPlayerID: 43},
 	})
-	if err != nil || issue.Code != domaingame.AllianceIssueSaved || alliance.View != domaingame.AllianceViewMembers || len(runner.execCalls) != 1 {
+	if err != nil || issue.Code != domaingame.AllianceIssueSaved || alliance.View != domaingame.AllianceViewMembers || len(runner.execCalls) != 2 {
 		t.Fatalf("unexpected mutate kick member alliance=%+v issue=%+v err=%v exec=%+v", alliance, issue, err, runner.execCalls)
 	}
 
@@ -1008,6 +1030,8 @@ func TestAllianceRepositoryMutateRankMemberCircularErrorsReload(t *testing.T) {
 	runner = &fakeAllianceRunner{
 		fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
 			{rows: fakeRowsFromValues(founderRow)},
+			{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 1, 0))},
+			{rows: fakeRowsFromValues([]any{43, "member", 7, 1, 0})},
 		}, append(shipyardOverviewResults(),
 			fakeQueryResult{rows: fakeRowsFromValues(founderRow)},
 			fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 1, 0))},
@@ -1274,7 +1298,13 @@ func TestAllianceRepositoryRankMemberCircularHelperEdges(t *testing.T) {
 	if _, err := repository.assignMemberRank(ctx, founder, domaingame.AllianceMutation{TargetPlayerID: 43, TargetRankID: 2}); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
 		t.Fatalf("expected assign prefix error, got %v", err)
 	}
-	runner = &fakeAllianceRunner{execErr: errors.New("kick failed")}
+	runner = &fakeAllianceRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "The Alliance", 1, 0))},
+			{rows: fakeRowsFromValues([]any{43, "member", 7, 1, 0})},
+		}},
+		execErr: errors.New("kick failed"),
+	}
 	repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
 	if _, err := repository.kickAllianceMember(ctx, founder, domaingame.AllianceMutation{TargetPlayerID: 43}); err == nil || !strings.Contains(err.Error(), "kick failed") {
 		t.Fatalf("expected kick exec error, got %v", err)
@@ -1479,6 +1509,9 @@ func TestAllianceRepositoryMutationReloadErrors(t *testing.T) {
 		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 			{rows: fakeRowsFromValues(allianceViewerRow(42, "legor", 1, 7, 0, "Founder", domaingame.AllianceFounderRights))},
 			{rows: fakeRowsFromValues(allianceApplicationRow(11, 7, 43, "newcomer", "hello", 1000))},
+			{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))},
+			{rows: fakeRowsFromValues()},
+			{rows: fakeRowsFromValues([]any{0})},
 			{err: errors.New("review reload failed")},
 		}},
 	}
@@ -1495,6 +1528,8 @@ func TestAllianceRepositoryMutationReloadErrors(t *testing.T) {
 	runner = &fakeAllianceRunner{
 		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 			{rows: fakeRowsFromValues(allianceViewerRow(43, "member", 1, 7, 1, "Newcomer", 0))},
+			{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))},
+			{rows: fakeRowsFromValues()},
 			{err: errors.New("leave reload failed")},
 		}},
 	}
@@ -1853,26 +1888,39 @@ func TestAllianceRepositoryMutationHelperIssuesAndErrors(t *testing.T) {
 		t.Fatalf("expected wrong alliance issue, got issue=%+v err=%v", issue, err)
 	}
 	runner = &fakeAllianceRunner{
-		fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(allianceApplicationRow(11, 7, 43, "newcomer", "hello", 1000))}}},
-		execErr:     errors.New("accept failed"),
-		execErrAt:   1,
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues(allianceApplicationRow(11, 7, 43, "newcomer", "hello", 1000))},
+			{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))},
+			{rows: fakeRowsFromValues()},
+			{rows: fakeRowsFromValues([]any{0})},
+		}},
+		execErr:   errors.New("accept failed"),
+		execErrAt: 1,
 	}
 	repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
 	if _, err := repository.reviewApplication(ctx, founder, domaingame.AllianceMutation{Action: "accept", ApplicationID: 11}); err == nil || !strings.Contains(err.Error(), "accept failed") {
 		t.Fatalf("expected accept error, got %v", err)
 	}
 	runner = &fakeAllianceRunner{
-		fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(allianceApplicationRow(11, 7, 43, "newcomer", "hello", 1000))}}},
-		execErr:     errors.New("accept delete failed"),
-		execErrAt:   2,
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues(allianceApplicationRow(11, 7, 43, "newcomer", "hello", 1000))},
+			{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))},
+			{rows: fakeRowsFromValues()},
+			{rows: fakeRowsFromValues([]any{0})},
+		}},
+		execErr:   errors.New("accept delete failed"),
+		execErrAt: 3,
 	}
 	repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
 	if _, err := repository.reviewApplication(ctx, founder, domaingame.AllianceMutation{Action: "accept", ApplicationID: 11}); err == nil || !strings.Contains(err.Error(), "accept delete failed") {
 		t.Fatalf("expected accept delete error, got %v", err)
 	}
 	runner = &fakeAllianceRunner{
-		fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(allianceApplicationRow(11, 7, 43, "newcomer", "hello", 1000))}}},
-		execErr:     errors.New("reject delete failed"),
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues(allianceApplicationRow(11, 7, 43, "newcomer", "hello", 1000))},
+			{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))},
+		}},
+		execErr: errors.New("reject delete failed"),
 	}
 	repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
 	if _, err := repository.reviewApplication(ctx, founder, domaingame.AllianceMutation{Action: "reject", ApplicationID: 11}); err == nil || !strings.Contains(err.Error(), "reject delete failed") {
@@ -1882,10 +1930,612 @@ func TestAllianceRepositoryMutationHelperIssuesAndErrors(t *testing.T) {
 	if issue, err := repository.leaveAlliance(ctx, outsider); err != nil || issue.Code != domaingame.AllianceIssueNoPermission {
 		t.Fatalf("expected leave permission issue, got issue=%+v err=%v", issue, err)
 	}
-	runner = &fakeAllianceRunner{execErr: errors.New("leave failed")}
+	runner = &fakeAllianceRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))}}},
+		execErr:     errors.New("leave failed"),
+	}
 	repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
 	if _, err := repository.leaveAlliance(ctx, member); err == nil || !strings.Contains(err.Error(), "leave failed") {
 		t.Fatalf("expected leave exec error, got %v", err)
+	}
+}
+
+func TestAllianceRepositoryRenamesAllianceWithLegacyCooldowns(t *testing.T) {
+	ctx := context.Background()
+	founder := domaingame.AllianceViewer{PlayerID: 42, AllianceID: 7, Founder: true}
+	now := func() time.Time { return time.Unix(1000, 0) }
+
+	runner := &fakeAllianceRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))},
+		{rows: fakeRowsFromValues()},
+	}}}
+	repository := NewAllianceRepositoryWithRunner(runner, runner, "ogame_", now)
+	issue, err := repository.renameAlliance(ctx, founder, domaingame.AllianceMutation{Action: "change_tag", Tag: ` "NEWTAG" `})
+	if err != nil || issue.Code != domaingame.AllianceIssueRenamed || len(runner.execCalls) != 1 ||
+		runner.execCalls[0].args[0] != "NEWTAG" || runner.execCalls[0].args[1] != int64(605800) {
+		t.Fatalf("unexpected tag rename issue=%+v err=%v exec=%+v", issue, err, runner.execCalls)
+	}
+
+	runner = &fakeAllianceRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))}}}}
+	repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", now)
+	issue, err = repository.renameAlliance(ctx, founder, domaingame.AllianceMutation{Action: "change_name", Name: "New Alliance"})
+	if err != nil || issue.Code != domaingame.AllianceIssueRenamed || len(runner.execCalls) != 1 || runner.execCalls[0].args[0] != "New Alliance" {
+		t.Fatalf("unexpected name rename issue=%+v err=%v exec=%+v", issue, err, runner.execCalls)
+	}
+
+	member := domaingame.AllianceViewer{PlayerID: 43, AllianceID: 7}
+	if issue, err := repository.renameAlliance(ctx, member, domaingame.AllianceMutation{Action: "change_name", Name: "Denied"}); err != nil || issue.Code != domaingame.AllianceIssueNoPermission {
+		t.Fatalf("expected rename permission issue, issue=%+v err=%v", issue, err)
+	}
+	row := allianceInfoRow(7, "TAG", "Alliance", 1, 0)
+	row[13] = int64(2000)
+	repository = NewAllianceRepositoryWithRunner(&fakeAllianceRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(row)}}}}, &fakeAllianceRunner{}, "ogame_", now)
+	if issue, err := repository.renameAlliance(ctx, founder, domaingame.AllianceMutation{Action: "change_tag", Tag: "NEXT"}); err != nil || issue.Code != domaingame.AllianceIssueRenameCooldown {
+		t.Fatalf("expected tag cooldown issue, issue=%+v err=%v", issue, err)
+	}
+	repository = NewAllianceRepositoryWithRunner(&fakeAllianceRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))},
+		{rows: fakeRowsFromValues([]any{8})},
+	}}}, &fakeAllianceRunner{}, "ogame_", now)
+	if issue, err := repository.renameAlliance(ctx, founder, domaingame.AllianceMutation{Action: "change_tag", Tag: "TAKEN"}); err != nil || issue.Code != domaingame.AllianceIssueTagExists {
+		t.Fatalf("expected duplicate tag issue, issue=%+v err=%v", issue, err)
+	}
+	repository = NewAllianceRepositoryWithRunner(&fakeAllianceRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))}}}}, &fakeAllianceRunner{}, "ogame_", now)
+	if issue, err := repository.renameAlliance(ctx, founder, domaingame.AllianceMutation{Action: "change_name", Name: "x"}); err != nil || issue.Code != domaingame.AllianceIssueInvalidName {
+		t.Fatalf("expected invalid name issue, issue=%+v err=%v", issue, err)
+	}
+}
+
+func TestAllianceRepositoryDismissesAndTransfersWithMessages(t *testing.T) {
+	ctx := context.Background()
+	founder := domaingame.AllianceViewer{PlayerID: 42, Name: "legor", AllianceID: 7, RankID: 0, Founder: true}
+	now := func() time.Time { return time.Unix(1234, 0) }
+
+	runner := &fakeAllianceRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))},
+		{rows: fakeRowsFromValues([]any{42, "legor"}, []any{43, "member"})},
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues([]any{0})},
+	}}}
+	repository := NewAllianceRepositoryWithRunner(runner, runner, "ogame_", now)
+	issue, err := repository.dismissAlliance(ctx, founder)
+	if err != nil || issue.Code != domaingame.AllianceIssueDismissed || len(runner.execCalls) != 6 ||
+		runner.execCalls[0].args[2] != "Alliance" || runner.execCalls[0].args[3] != "Alliance membership[TAG]has ended." ||
+		!strings.Contains(runner.execCalls[2].sql, "UPDATE `ogame_users`") || !strings.Contains(runner.execCalls[5].sql, "DELETE FROM `ogame_ally`") {
+		t.Fatalf("unexpected dismiss issue=%+v err=%v exec=%+v", issue, err, runner.execCalls)
+	}
+	if issue, err := repository.dismissAlliance(ctx, domaingame.AllianceViewer{AllianceID: 7}); err != nil || issue.Code != domaingame.AllianceIssueNoPermission {
+		t.Fatalf("expected dismiss permission issue, issue=%+v err=%v", issue, err)
+	}
+
+	runner = &fakeAllianceRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))},
+		{rows: fakeRowsFromValues([]any{43, "member", 7, 2, domaingame.AllianceRightHand})},
+		{rows: fakeRowsFromValues([]any{42, "legor"}, []any{43, "member"})},
+		{rows: fakeRowsFromValues([]any{0})},
+	}}}
+	repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", now)
+	issue, err = repository.transferAllianceFounder(ctx, founder, 43)
+	if err != nil || issue.Code != domaingame.AllianceIssueTransferred || len(runner.execCalls) != 4 ||
+		runner.execCalls[0].args[3] != "A change of power in alliance [TAG]." || runner.execCalls[1].args[0] != 0 ||
+		runner.execCalls[2].args[0] != 2 || runner.execCalls[3].args[0] != 43 {
+		t.Fatalf("unexpected transfer issue=%+v err=%v exec=%+v", issue, err, runner.execCalls)
+	}
+	if issue, err := repository.transferAllianceFounder(ctx, domaingame.AllianceViewer{AllianceID: 7}, 43); err != nil || issue.Code != domaingame.AllianceIssueNoPermission {
+		t.Fatalf("expected transfer permission issue, issue=%+v err=%v", issue, err)
+	}
+	runner = &fakeAllianceRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))},
+		{rows: fakeRowsFromValues([]any{43, "member", 7, 2, 0})},
+	}}}
+	repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", now)
+	if issue, err := repository.transferAllianceFounder(ctx, founder, 43); err != nil || issue.Code != domaingame.AllianceIssueNoPermission {
+		t.Fatalf("expected right-hand validation issue, issue=%+v err=%v", issue, err)
+	}
+}
+
+func TestAllianceRepositoryRenameFailurePaths(t *testing.T) {
+	ctx := context.Background()
+	founder := domaingame.AllianceViewer{PlayerID: 42, AllianceID: 7, Founder: true}
+	now := func() time.Time { return time.Unix(1000, 0) }
+	info := allianceInfoRow(7, "TAG", "Alliance", 1, 0)
+
+	tests := []struct {
+		name     string
+		mutation domaingame.AllianceMutation
+		results  []fakeQueryResult
+		execErr  error
+		wantCode string
+		wantErr  string
+	}{
+		{name: "alliance query", mutation: domaingame.AllianceMutation{Action: "change_name", Name: "Next Alliance"}, results: []fakeQueryResult{{err: errors.New("alliance query failed")}}, wantErr: "alliance query failed"},
+		{name: "missing alliance", mutation: domaingame.AllianceMutation{Action: "change_name", Name: "Next Alliance"}, results: []fakeQueryResult{{rows: fakeRowsFromValues()}}, wantCode: domaingame.AllianceIssueAllianceNotFound},
+		{name: "short tag", mutation: domaingame.AllianceMutation{Action: "change_tag", Tag: "x"}, results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}}, wantCode: domaingame.AllianceIssueInvalidTag},
+		{name: "tag lookup", mutation: domaingame.AllianceMutation{Action: "change_tag", Tag: "NEXT"}, results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {err: errors.New("tag lookup failed")}}, wantErr: "tag lookup failed"},
+		{name: "tag update", mutation: domaingame.AllianceMutation{Action: "change_tag", Tag: "NEXT"}, results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues()}}, execErr: errors.New("tag update failed"), wantErr: "tag update failed"},
+		{name: "same name", mutation: domaingame.AllianceMutation{Action: "change_name", Name: "Alliance"}, results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}}, wantCode: domaingame.AllianceIssueRenamed},
+		{name: "name update", mutation: domaingame.AllianceMutation{Action: "change_name", Name: "Next Alliance"}, results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}}, execErr: errors.New("name update failed"), wantErr: "name update failed"},
+	}
+	nameCooldown := append([]any(nil), info...)
+	nameCooldown[14] = int64(2000)
+	tests = append(tests, struct {
+		name     string
+		mutation domaingame.AllianceMutation
+		results  []fakeQueryResult
+		execErr  error
+		wantCode string
+		wantErr  string
+	}{name: "name cooldown", mutation: domaingame.AllianceMutation{Action: "change_name", Name: "Next Alliance"}, results: []fakeQueryResult{{rows: fakeRowsFromValues(nameCooldown)}}, wantCode: domaingame.AllianceIssueRenameCooldown})
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeAllianceRunner{fakeQueryer: fakeQueryer{results: tt.results}, execErr: tt.execErr}
+			repository := NewAllianceRepositoryWithRunner(runner, runner, "ogame_", now)
+			issue, err := repository.renameAlliance(ctx, founder, tt.mutation)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected %q, got issue=%+v err=%v", tt.wantErr, issue, err)
+				}
+				return
+			}
+			if err != nil || issue == nil || issue.Code != tt.wantCode {
+				t.Fatalf("expected %q, got issue=%+v err=%v", tt.wantCode, issue, err)
+			}
+		})
+	}
+}
+
+func TestAllianceRepositoryDismissFailurePaths(t *testing.T) {
+	ctx := context.Background()
+	founder := domaingame.AllianceViewer{PlayerID: 42, Name: "legor", AllianceID: 7, Founder: true}
+	info := allianceInfoRow(7, "TAG", "Alliance", 1, 0)
+	wantErr := errors.New("dismiss failed")
+
+	tests := []struct {
+		name      string
+		results   []fakeQueryResult
+		execErrAt int
+		wantCode  string
+	}{
+		{name: "alliance query", results: []fakeQueryResult{{err: wantErr}}},
+		{name: "missing alliance", results: []fakeQueryResult{{rows: fakeRowsFromValues()}}, wantCode: domaingame.AllianceIssueAllianceNotFound},
+		{name: "recipients query", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {err: wantErr}}},
+		{name: "message count", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues([]any{43, "member"})}, {err: wantErr}}},
+		{name: "message insert", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues([]any{43, "member"})}, {rows: fakeRowsFromValues([]any{0})}}, execErrAt: 1},
+		{name: "users cleanup", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues()}}, execErrAt: 1},
+		{name: "ranks cleanup", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues()}}, execErrAt: 2},
+		{name: "applications cleanup", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues()}}, execErrAt: 3},
+		{name: "alliance cleanup", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues()}}, execErrAt: 4},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeAllianceRunner{fakeQueryer: fakeQueryer{results: tt.results}}
+			if tt.execErrAt > 0 {
+				runner.execErr = wantErr
+				runner.execErrAt = tt.execErrAt
+			}
+			repository := NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+			issue, err := repository.dismissAlliance(ctx, founder)
+			if tt.wantCode != "" {
+				if err != nil || issue == nil || issue.Code != tt.wantCode {
+					t.Fatalf("expected %q, got issue=%+v err=%v", tt.wantCode, issue, err)
+				}
+				return
+			}
+			if !errors.Is(err, wantErr) {
+				t.Fatalf("expected dismiss failure, got issue=%+v err=%v", issue, err)
+			}
+		})
+	}
+}
+
+func TestAllianceRepositoryTransferFailurePaths(t *testing.T) {
+	ctx := context.Background()
+	founder := domaingame.AllianceViewer{PlayerID: 42, Name: "legor", AllianceID: 7, RankID: 0, Founder: true}
+	info := allianceInfoRow(7, "TAG", "Alliance", 1, 0)
+	identity := []any{43, "member", 7, 2, domaingame.AllianceRightHand}
+	wantErr := errors.New("transfer failed")
+
+	tests := []struct {
+		name      string
+		results   []fakeQueryResult
+		execErrAt int
+		wantCode  string
+	}{
+		{name: "alliance query", results: []fakeQueryResult{{err: wantErr}}},
+		{name: "target query", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {err: wantErr}}},
+		{name: "missing alliance", results: []fakeQueryResult{{rows: fakeRowsFromValues()}, {rows: fakeRowsFromValues(identity)}}, wantCode: domaingame.AllianceIssueNoPermission},
+		{name: "missing target", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues()}}, wantCode: domaingame.AllianceIssueNoPermission},
+		{name: "wrong alliance", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues([]any{43, "member", 8, 2, domaingame.AllianceRightHand})}}, wantCode: domaingame.AllianceIssueNoPermission},
+		{name: "same player", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues([]any{42, "legor", 7, 0, domaingame.AllianceRightHand})}}, wantCode: domaingame.AllianceIssueNoPermission},
+		{name: "recipients query", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues(identity)}, {err: wantErr}}},
+		{name: "message count", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues(identity)}, {rows: fakeRowsFromValues([]any{42, "legor"}, []any{43, "member"})}, {err: wantErr}}},
+		{name: "message insert", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues(identity)}, {rows: fakeRowsFromValues([]any{42, "legor"}, []any{43, "member"})}, {rows: fakeRowsFromValues([]any{0})}}, execErrAt: 1},
+		{name: "target rank update", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues(identity)}, {rows: fakeRowsFromValues()}}, execErrAt: 1},
+		{name: "founder rank update", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues(identity)}, {rows: fakeRowsFromValues()}}, execErrAt: 2},
+		{name: "owner update", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues(identity)}, {rows: fakeRowsFromValues()}}, execErrAt: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeAllianceRunner{fakeQueryer: fakeQueryer{results: tt.results}}
+			if tt.execErrAt > 0 {
+				runner.execErr = wantErr
+				runner.execErrAt = tt.execErrAt
+			}
+			repository := NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+			issue, err := repository.transferAllianceFounder(ctx, founder, 43)
+			if tt.wantCode != "" {
+				if err != nil || issue == nil || issue.Code != tt.wantCode {
+					t.Fatalf("expected %q, got issue=%+v err=%v", tt.wantCode, issue, err)
+				}
+				return
+			}
+			if !errors.Is(err, wantErr) {
+				t.Fatalf("expected transfer failure, got issue=%+v err=%v", issue, err)
+			}
+		})
+	}
+}
+
+func TestAllianceRepositoryLoadsMemberIdentityFailurePaths(t *testing.T) {
+	ctx := context.Background()
+	wantErr := errors.New("identity failed")
+	tests := []struct {
+		name    string
+		result  fakeQueryResult
+		wantNil bool
+	}{
+		{name: "query", result: fakeQueryResult{err: wantErr}},
+		{name: "empty", result: fakeQueryResult{rows: fakeRowsFromValues()}, wantNil: true},
+		{name: "empty rows", result: fakeQueryResult{rows: fakeRowsError(wantErr)}},
+		{name: "scan", result: fakeQueryResult{rows: fakeRowsFromValues([]any{43})}},
+		{name: "trailer", result: fakeQueryResult{rows: fakeRowsFromValuesWithErr(wantErr, []any{43, "member", 7, 2, domaingame.AllianceRightHand})}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewAllianceRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{tt.result}}, "ogame_", time.Now)
+			identity, err := repository.loadAllianceMemberIdentity(ctx, 43)
+			if tt.wantNil {
+				if err != nil || identity != nil {
+					t.Fatalf("expected missing identity, got identity=%+v err=%v", identity, err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected identity error, got identity=%+v", identity)
+			}
+		})
+	}
+}
+
+func TestAllianceRepositoryReviewLeaveAndKickFailurePaths(t *testing.T) {
+	ctx := context.Background()
+	founder := domaingame.AllianceViewer{PlayerID: 42, Name: "legor", AllianceID: 7, RankID: 0, Founder: true, RankRights: domaingame.AllianceFounderRights}
+	member := domaingame.AllianceViewer{PlayerID: 43, Name: "member", AllianceID: 7, RankID: 1}
+	info := allianceInfoRow(7, "TAG", "Alliance", 1, 0)
+	app := allianceApplicationRow(11, 7, 43, "newcomer", "hello", 1000)
+	wantErr := errors.New("alliance mutation failed")
+
+	reviewCases := []struct {
+		name      string
+		app       []any
+		results   []fakeQueryResult
+		execErrAt int
+		wantCode  string
+	}{
+		{name: "alliance query", app: app, results: []fakeQueryResult{{err: wantErr}}},
+		{name: "missing alliance", app: app, results: []fakeQueryResult{{rows: fakeRowsFromValues()}}, wantCode: domaingame.AllianceIssueAllianceNotFound},
+		{name: "missing applicant", app: allianceApplicationRow(11, 7, 43, "", "hello", 1000), results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}}, wantCode: domaingame.AllianceIssueApplicationNotFound},
+		{name: "recipients query", app: app, results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {err: wantErr}}},
+		{name: "member message", app: app, results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues([]any{42, "legor"})}, {err: wantErr}}},
+		{name: "accept update", app: app, results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues()}, {rows: fakeRowsFromValues([]any{0})}}, execErrAt: 2},
+	}
+	for _, tt := range reviewCases {
+		t.Run("review "+tt.name, func(t *testing.T) {
+			results := append([]fakeQueryResult{{rows: fakeRowsFromValues(tt.app)}}, tt.results...)
+			runner := &fakeAllianceRunner{fakeQueryer: fakeQueryer{results: results}}
+			if tt.execErrAt > 0 {
+				runner.execErr = wantErr
+				runner.execErrAt = tt.execErrAt
+			}
+			repository := NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+			issue, err := repository.reviewApplication(ctx, founder, domaingame.AllianceMutation{Action: "accept", ApplicationID: 11})
+			if tt.wantCode != "" {
+				if err != nil || issue == nil || issue.Code != tt.wantCode {
+					t.Fatalf("expected %q, got issue=%+v err=%v", tt.wantCode, issue, err)
+				}
+				return
+			}
+			if !errors.Is(err, wantErr) {
+				t.Fatalf("expected review failure, got issue=%+v err=%v", issue, err)
+			}
+		})
+	}
+
+	runner := &fakeAllianceRunner{
+		fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues(app)},
+			{rows: fakeRowsFromValues(info)},
+			{rows: fakeRowsFromValues([]any{0})},
+		}},
+		execErr:   wantErr,
+		execErrAt: 2,
+	}
+	repository := NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	if _, err := repository.reviewApplication(ctx, founder, domaingame.AllianceMutation{Action: "reject", ApplicationID: 11, Text: "reason"}); !errors.Is(err, wantErr) {
+		t.Fatalf("expected rejection message failure, got %v", err)
+	}
+
+	leaveCases := []struct {
+		name      string
+		results   []fakeQueryResult
+		execErrAt int
+		wantCode  string
+	}{
+		{name: "alliance query", results: []fakeQueryResult{{err: wantErr}}},
+		{name: "missing alliance", results: []fakeQueryResult{{rows: fakeRowsFromValues()}}, wantCode: domaingame.AllianceIssueAllianceNotFound},
+		{name: "recipients query", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {err: wantErr}}},
+		{name: "message count", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues([]any{42, "legor"})}, {err: wantErr}}},
+		{name: "message insert", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues([]any{42, "legor"})}, {rows: fakeRowsFromValues([]any{0})}}, execErrAt: 2},
+	}
+	for _, tt := range leaveCases {
+		t.Run("leave "+tt.name, func(t *testing.T) {
+			runner := &fakeAllianceRunner{fakeQueryer: fakeQueryer{results: tt.results}}
+			if tt.execErrAt > 0 {
+				runner.execErr = wantErr
+				runner.execErrAt = tt.execErrAt
+			}
+			repository := NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+			issue, err := repository.leaveAlliance(ctx, member)
+			if tt.wantCode != "" {
+				if err != nil || issue == nil || issue.Code != tt.wantCode {
+					t.Fatalf("expected %q, got issue=%+v err=%v", tt.wantCode, issue, err)
+				}
+				return
+			}
+			if !errors.Is(err, wantErr) {
+				t.Fatalf("expected leave failure, got issue=%+v err=%v", issue, err)
+			}
+		})
+	}
+
+	kicker := domaingame.AllianceViewer{PlayerID: 42, Name: "legor", AllianceID: 7, RankID: 2, RankRights: domaingame.AllianceRightKick}
+	identity := []any{43, "member", 7, 1, 0}
+	kickCases := []struct {
+		name      string
+		results   []fakeQueryResult
+		execErrAt int
+		wantCode  string
+	}{
+		{name: "alliance query", results: []fakeQueryResult{{err: wantErr}}},
+		{name: "identity query", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {err: wantErr}}},
+		{name: "invalid identity", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues([]any{43, "member", 8, 1, 0})}}, wantCode: domaingame.AllianceIssueNoPermission},
+		{name: "member update", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues(identity)}}, execErrAt: 1},
+		{name: "recipients query", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues(identity)}, {err: wantErr}}},
+		{name: "circular message", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues(identity)}, {rows: fakeRowsFromValues([]any{42, "legor"})}, {err: wantErr}}},
+		{name: "target message", results: []fakeQueryResult{{rows: fakeRowsFromValues(info)}, {rows: fakeRowsFromValues(identity)}, {rows: fakeRowsFromValues()}, {err: wantErr}}},
+	}
+	for _, tt := range kickCases {
+		t.Run("kick "+tt.name, func(t *testing.T) {
+			runner := &fakeAllianceRunner{fakeQueryer: fakeQueryer{results: tt.results}}
+			if tt.execErrAt > 0 {
+				runner.execErr = wantErr
+				runner.execErrAt = tt.execErrAt
+			}
+			repository := NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+			issue, err := repository.kickAllianceMember(ctx, kicker, domaingame.AllianceMutation{TargetPlayerID: 43})
+			if tt.wantCode != "" {
+				if err != nil || issue == nil || issue.Code != tt.wantCode {
+					t.Fatalf("expected %q, got issue=%+v err=%v", tt.wantCode, issue, err)
+				}
+				return
+			}
+			if !errors.Is(err, wantErr) {
+				t.Fatalf("expected kick failure, got issue=%+v err=%v", issue, err)
+			}
+		})
+	}
+
+	badPrefix := NewAllianceRepositoryWithRunner(&fakeAllianceRunner{}, &fakeAllianceRunner{}, "bad-prefix_", time.Now)
+	if _, err := badPrefix.loadAllianceMemberIdentity(ctx, 43); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected identity prefix error, got %v", err)
+	}
+	if err := badPrefix.sendAllianceMessage(ctx, 43, "Alliance", "Subject", "Text"); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected message prefix error, got %v", err)
+	}
+}
+
+func TestAllianceRepositoryOwnViewAndStatusFailurePaths(t *testing.T) {
+	ctx := context.Background()
+	wantErr := errors.New("alliance read failed")
+	base := domaingame.Alliance{Viewer: domaingame.AllianceViewer{
+		PlayerID: 42, AllianceID: 7, Founder: true, RankRights: domaingame.AllianceFounderRights,
+	}}
+	info := allianceInfoRow(7, "TAG", "Alliance", 1, 0)
+
+	tests := []struct {
+		name    string
+		view    domaingame.AllianceView
+		results []fakeQueryResult
+	}{
+		{name: "apply", view: domaingame.AllianceViewApply, results: []fakeQueryResult{{err: wantErr}}},
+		{name: "applications", view: domaingame.AllianceViewApplications, results: []fakeQueryResult{{err: wantErr}}},
+		{name: "members", view: domaingame.AllianceViewMembers, results: []fakeQueryResult{{err: wantErr}}},
+		{name: "ranks", view: domaingame.AllianceViewRanks, results: []fakeQueryResult{{err: wantErr}}},
+		{name: "takeover ranks", view: domaingame.AllianceViewTakeover, results: []fakeQueryResult{{err: wantErr}}},
+		{name: "takeover members", view: domaingame.AllianceViewTakeover, results: []fakeQueryResult{{rows: fakeRowsFromValues(allianceRankRow(0, "Founder", domaingame.AllianceFounderRights))}, {err: wantErr}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results := append([]fakeQueryResult{{rows: fakeRowsFromValues(info)}}, tt.results...)
+			repository := NewAllianceRepositoryWithQueryer(&fakeQueryer{results: results}, "ogame_", time.Now)
+			if _, err := repository.populateOwnAlliance(ctx, base, appgame.AllianceQuery{View: tt.view, AllianceID: 8}); !errors.Is(err, wantErr) {
+				t.Fatalf("expected view failure, got %v", err)
+			}
+		})
+	}
+
+	repository := NewAllianceRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(wantErr, info)}}}, "ogame_", time.Now)
+	if _, err := repository.loadAllianceInfo(ctx, 7); !errors.Is(err, wantErr) {
+		t.Fatalf("expected alliance info trailer failure, got %v", err)
+	}
+	if _, err := scanOneAllianceApplication(fakeRowsFromValuesWithErr(wantErr, allianceApplicationRow(11, 7, 43, "member", "hello", 1000))); !errors.Is(err, wantErr) {
+		t.Fatalf("expected application trailer failure, got %v", err)
+	}
+
+	results := append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(42, "legor", 1, 7, 0, "Founder", domaingame.AllianceFounderRights))},
+		fakeQueryResult{err: wantErr},
+	)
+	repository = NewAllianceRepositoryWithQueryer(&fakeQueryer{results: results}, "ogame_", time.Now)
+	if _, err := repository.GetAlliance(ctx, appgame.AllianceQuery{PlayerID: 42, PlanetID: 99, View: domaingame.AllianceViewInfo, AllianceID: 8}); !errors.Is(err, wantErr) {
+		t.Fatalf("expected alliance target failure, got %v", err)
+	}
+	repository = NewAllianceRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: wantErr}}}, "ogame_", time.Now)
+	if _, err := repository.GetMCPAllianceStatus(ctx, 42, domainmcp.AllianceStatusCommand{PlanetID: 99}); !errors.Is(err, wantErr) {
+		t.Fatalf("expected MCP alliance status failure, got %v", err)
+	}
+
+	badPrefix := NewAllianceRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_", time.Now)
+	if _, err := badPrefix.allianceTagExists(ctx, "TAG"); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected tag lookup prefix error, got %v", err)
+	}
+}
+
+func TestAllianceRepositoryUsesTransactionBoundary(t *testing.T) {
+	runner := &fakeAllianceRunner{
+		fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
+			{rows: fakeRowsFromValues(allianceViewerRow(42, "legor", 1, 0, 0, "", 0))},
+			{rows: fakeRowsFromValues()},
+		}, append(shipyardOverviewResults(),
+			fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(42, "legor", 1, 7, 0, "Founder", domaingame.AllianceFounderRights))},
+			fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))},
+		)...),
+		},
+		insertID: 7,
+	}
+	tx := &fakeAllianceTransactionRunner{fakeAllianceRunner: runner}
+	repository := NewAllianceRepositoryWithRunner(tx, tx, "ogame_", func() time.Time { return time.Unix(1000, 0) })
+	alliance, issue, err := repository.MutateAlliance(context.Background(), appgame.AllianceMutationQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Query:    appgame.AllianceQuery{PlayerID: 42, PlanetID: 99},
+		Mutation: domaingame.AllianceMutation{Action: "create", Tag: "TAG", Name: "Alliance"},
+	})
+	if err != nil || issue.Code != domaingame.AllianceIssueCreated || alliance.Own == nil || !tx.called || tx.rolledBack {
+		t.Fatalf("unexpected transaction result alliance=%+v issue=%+v err=%v tx=%+v", alliance, issue, err, tx)
+	}
+
+	runner = &fakeAllianceRunner{
+		fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
+			{rows: fakeRowsFromValues(allianceViewerRow(42, "legor", 1, 0, 0, "", 0))},
+			{rows: fakeRowsFromValues()},
+		}, append(shipyardOverviewResults(),
+			fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(42, "legor", 1, 0, 0, "", 0))},
+			fakeQueryResult{rows: fakeRowsFromValues()},
+		)...),
+		},
+		insertID:  7,
+		execErr:   errors.New("founder update failed"),
+		execErrAt: 3,
+	}
+	tx = &fakeAllianceTransactionRunner{fakeAllianceRunner: runner}
+	repository = NewAllianceRepositoryWithRunner(tx, tx, "ogame_", time.Now)
+	if _, _, err := repository.MutateAlliance(context.Background(), appgame.AllianceMutationQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Query:    appgame.AllianceQuery{PlayerID: 42, PlanetID: 99},
+		Mutation: domaingame.AllianceMutation{Action: "create", Tag: "TAG", Name: "Alliance"},
+	}); err == nil || !strings.Contains(err.Error(), "founder update failed") || !tx.called || !tx.rolledBack {
+		t.Fatalf("expected transaction rollback, err=%v tx=%+v", err, tx)
+	}
+}
+
+func TestAllianceRepositoryDispatchesRenameDismissAndTransfer(t *testing.T) {
+	ctx := context.Background()
+	founder := allianceViewerRow(42, "legor", 1, 7, 0, "Founder", domaingame.AllianceFounderRights)
+
+	runner := &fakeAllianceRunner{fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
+		{rows: fakeRowsFromValues(founder)},
+		{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))},
+		{rows: fakeRowsFromValues()},
+	}, append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(founder)},
+		fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "NEXT", "Alliance", 1, 0))},
+	)...)}}
+	repository := NewAllianceRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(1000, 0) })
+	alliance, issue, err := repository.MutateAlliance(ctx, appgame.AllianceMutationQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Query:    appgame.AllianceQuery{PlayerID: 42, PlanetID: 99},
+		Mutation: domaingame.AllianceMutation{Action: "change_tag", Tag: "NEXT"},
+	})
+	if err != nil || issue.Code != domaingame.AllianceIssueRenamed || alliance.Own == nil || alliance.Own.Tag != "NEXT" {
+		t.Fatalf("unexpected dispatched rename alliance=%+v issue=%+v err=%v", alliance, issue, err)
+	}
+
+	runner = &fakeAllianceRunner{fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
+		{rows: fakeRowsFromValues(founder)},
+		{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))},
+		{rows: fakeRowsFromValues()},
+	}, append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(42, "legor", 1, 0, 0, "", 0))},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+	)...)}}
+	repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	alliance, issue, err = repository.MutateAlliance(ctx, appgame.AllianceMutationQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Query:    appgame.AllianceQuery{PlayerID: 42, PlanetID: 99},
+		Mutation: domaingame.AllianceMutation{Action: "dismiss"},
+	})
+	if err != nil || issue.Code != domaingame.AllianceIssueDismissed || alliance.Viewer.AllianceID != 0 || len(runner.execCalls) != 4 {
+		t.Fatalf("unexpected dispatched dismiss alliance=%+v issue=%+v err=%v exec=%+v", alliance, issue, err, runner.execCalls)
+	}
+
+	runner = &fakeAllianceRunner{fakeQueryer: fakeQueryer{results: append([]fakeQueryResult{
+		{rows: fakeRowsFromValues(founder)},
+		{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))},
+		{rows: fakeRowsFromValues([]any{43, "member", 7, 2, domaingame.AllianceRightHand})},
+		{rows: fakeRowsFromValues()},
+	}, append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues(allianceViewerRow(42, "legor", 1, 7, 2, "Officer", domaingame.AllianceRightHand))},
+		fakeQueryResult{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))},
+	)...)}}
+	repository = NewAllianceRepositoryWithRunner(runner, runner, "ogame_", time.Now)
+	alliance, issue, err = repository.MutateAlliance(ctx, appgame.AllianceMutationQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Query:    appgame.AllianceQuery{PlayerID: 42, PlanetID: 99},
+		Mutation: domaingame.AllianceMutation{Action: "transfer_founder", TargetPlayerID: 43},
+	})
+	if err != nil || issue.Code != domaingame.AllianceIssueTransferred || alliance.Viewer.RankID != 2 || len(runner.execCalls) != 3 {
+		t.Fatalf("unexpected dispatched transfer alliance=%+v issue=%+v err=%v exec=%+v", alliance, issue, err, runner.execCalls)
+	}
+}
+
+func TestAllianceRepositoryPopulatesDismissAndTakeoverViews(t *testing.T) {
+	ctx := context.Background()
+	base := domaingame.Alliance{Viewer: domaingame.AllianceViewer{PlayerID: 42, AllianceID: 7, Founder: true}}
+	repository := NewAllianceRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))},
+		{rows: fakeRowsFromValues(allianceRankRow(0, "Founder", domaingame.AllianceFounderRights), allianceRankRow(2, "Right Hand", domaingame.AllianceRightHand))},
+		{rows: fakeRowsFromValues([]any{42, "legor", 0, "Founder", int64(1000), int64(100), int64(100), 1, 2, 3}, []any{43, "member", 2, "Right Hand", int64(900), int64(101), int64(101), 1, 2, 4})},
+	}}, "ogame_", time.Now)
+	alliance, err := repository.populateOwnAlliance(ctx, base, appgame.AllianceQuery{View: domaingame.AllianceViewTakeover})
+	if err != nil || alliance.View != domaingame.AllianceViewTakeover || len(alliance.Ranks) != 2 || len(alliance.Members) != 2 {
+		t.Fatalf("unexpected takeover view alliance=%+v err=%v", alliance, err)
+	}
+	repository = NewAllianceRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))}}}, "ogame_", time.Now)
+	alliance, err = repository.populateOwnAlliance(ctx, base, appgame.AllianceQuery{View: domaingame.AllianceViewDismiss})
+	if err != nil || alliance.View != domaingame.AllianceViewDismiss {
+		t.Fatalf("unexpected dismiss view alliance=%+v err=%v", alliance, err)
+	}
+	base.Viewer.Founder = false
+	repository = NewAllianceRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(allianceInfoRow(7, "TAG", "Alliance", 1, 0))}}}, "ogame_", time.Now)
+	alliance, err = repository.populateOwnAlliance(ctx, base, appgame.AllianceQuery{View: domaingame.AllianceViewTakeover})
+	if err != nil || len(alliance.Ranks) != 0 || len(alliance.Members) != 0 {
+		t.Fatalf("unexpected non-founder takeover view alliance=%+v err=%v", alliance, err)
 	}
 }
 
@@ -1912,6 +2562,19 @@ type fakeAllianceRunner struct {
 	execErrAt int
 	lastIDErr error
 	execCalls []fakeExecCall
+}
+
+type fakeAllianceTransactionRunner struct {
+	*fakeAllianceRunner
+	called     bool
+	rolledBack bool
+}
+
+func (f *fakeAllianceTransactionRunner) WithTransaction(ctx context.Context, run func(Queryer, Execer) error) error {
+	f.called = true
+	err := run(f.fakeAllianceRunner, f.fakeAllianceRunner)
+	f.rolledBack = err != nil
+	return err
 }
 
 func (f *fakeAllianceRunner) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {

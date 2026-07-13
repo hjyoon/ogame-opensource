@@ -240,8 +240,12 @@ func selectedAllianceQuery(r *http.Request) appgame.AllianceQuery {
 		view = domaingame.AllianceViewRenameTag
 	case action == "10":
 		view = domaingame.AllianceViewRenameName
+	case action == "12":
+		view = domaingame.AllianceViewDismiss
 	case action == "17":
 		view = domaingame.AllianceViewCircular
+	case action == "18":
+		view = domaingame.AllianceViewTakeover
 	default:
 		view = domaingame.AllianceViewHome
 	}
@@ -314,6 +318,15 @@ func decodeGameAllianceMutation(r *http.Request) (domaingame.AllianceMutation, e
 		TargetRankID:    legacyAllianceInt(formLast(r, "newrang")),
 		CircularRankID:  legacyAllianceInt(formLast(r, "r")),
 	}
+	if value := formLast(r, "newtag"); value != "" {
+		mutation.Tag = value
+	}
+	if value := formLast(r, "newname"); value != "" {
+		mutation.Name = value
+	}
+	if value := legacyAllianceInt(formLast(r, "uid")); value > 0 {
+		mutation.TargetPlayerID = value
+	}
 	switch {
 	case page == "bewerben" || formLast(r, "weiter") == "Submit":
 		mutation.Action = "apply"
@@ -325,6 +338,12 @@ func decodeGameAllianceMutation(r *http.Request) (domaingame.AllianceMutation, e
 		mutation.Action = "create"
 	case action == "3":
 		mutation.Action = "leave"
+	case action == "9" && r.URL.Query().Get("weiter") == "1":
+		mutation.Action = "change_tag"
+	case action == "10" && r.URL.Query().Get("weiter") == "1":
+		mutation.Action = "change_name"
+	case action == "12" && r.URL.Query().Get("weiter") == "1":
+		mutation.Action = "dismiss"
 	case action == "15" && formLast(r, "newrangname") != "":
 		mutation.Action = "add_rank"
 	case action == "15" && r.URL.Query().Get("d") != "":
@@ -335,6 +354,8 @@ func decodeGameAllianceMutation(r *http.Request) (domaingame.AllianceMutation, e
 		mutation.Action = "assign_rank"
 	case action == "17" && r.URL.Query().Get("sendmail") == "1":
 		mutation.Action = "send_circular"
+	case action == "18" && formLast(r, "s") == "1":
+		mutation.Action = "transfer_founder"
 	case action == "11" && r.URL.Query().Get("d") == "1":
 		mutation.Action = "save_text"
 	case action == "11" && r.URL.Query().Get("d") == "2":

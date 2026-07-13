@@ -155,6 +155,10 @@ export type GameAllianceAction =
   | { action: "accept"; applicationId: number }
   | { action: "reject"; applicationId: number; text: string }
   | { action: "leave" }
+  | { action: "change_tag"; tag: string }
+  | { action: "change_name"; name: string }
+  | { action: "dismiss" }
+  | { action: "transfer_founder"; targetPlayerId: number }
   | { action: "save_text"; textKind: number; text: string; insertApp: boolean }
   | { action: "save_settings"; homepage: string; imageLogo: string; open: boolean; founderRankName: string }
   | { action: "add_rank"; rankName: string }
@@ -6753,7 +6757,13 @@ function AllianceTable({
     return <AllianceRanksTable alliance={alliance} onAction={onAction} pending={pending} />;
   }
   if ((alliance.view === "rename_tag" || alliance.view === "rename_name") && alliance.own) {
-    return <AllianceRenameTable alliance={alliance} />;
+    return <AllianceRenameTable alliance={alliance} onAction={onAction} pending={pending} />;
+  }
+  if (alliance.view === "dismiss" && alliance.own) {
+    return <AllianceDismissTable alliance={alliance} onAction={onAction} pending={pending} />;
+  }
+  if (alliance.view === "takeover" && alliance.own) {
+    return <AllianceTakeoverTable alliance={alliance} onAction={onAction} pending={pending} />;
   }
   if (alliance.view === "management" && alliance.own) {
     return <AllianceManagementTable alliance={alliance} onAction={onAction} pending={pending} />;
@@ -7651,7 +7661,14 @@ ${textValue.length}</span> / 5000 characters)`
           </tbody>
         </table>
       </form>
-      <form action={allianceURL({ a: "12" })} method="post">
+      <form
+        action={allianceURL({ a: "12" })}
+        method="post"
+        onSubmit={(event) => {
+          event.preventDefault();
+          dispatchLegacyGameClientNavigation(allianceURL({ a: "12" }));
+        }}
+      >
         <table width={519}>
           <tbody>
             <tr>
@@ -7665,7 +7682,14 @@ ${textValue.length}</span> / 5000 characters)`
           </tbody>
         </table>
       </form>
-      <form action={allianceURL({ a: "18" })} method="post">
+      <form
+        action={allianceURL({ a: "18" })}
+        method="post"
+        onSubmit={(event) => {
+          event.preventDefault();
+          dispatchLegacyGameClientNavigation(allianceURL({ a: "18" }));
+        }}
+      >
         <table width={519}>
           <tbody>
             <tr>
@@ -7683,7 +7707,15 @@ ${textValue.length}</span> / 5000 characters)`
   );
 }
 
-function AllianceRenameTable({ alliance }: { alliance: GameAlliance }) {
+function AllianceRenameTable({
+  alliance,
+  onAction,
+  pending
+}: {
+  alliance: GameAlliance;
+  onAction: (action: GameAllianceAction) => void;
+  pending: boolean;
+}) {
   const own = alliance.own;
   if (!own) {
     return null;
@@ -7705,6 +7737,12 @@ function AllianceRenameTable({ alliance }: { alliance: GameAlliance }) {
         method="post"
         onSubmit={(event) => {
           event.preventDefault();
+          if (pending) {
+            return;
+          }
+          const data = new FormData(event.currentTarget);
+          const value = String(data.get(fieldName) ?? "");
+          onAction(changingTag ? { action: "change_tag", tag: value } : { action: "change_name", name: value });
         }}
       >
         <table width={519}>
@@ -7717,12 +7755,133 @@ function AllianceRenameTable({ alliance }: { alliance: GameAlliance }) {
             <tr>
               <th>{label}</th>
               <th>
-                <input maxLength={maxLength} name={fieldName} type="text" /> <input type="submit" value="Rename" />
+                <input maxLength={maxLength} name={fieldName} type="text" /> <input disabled={pending} type="submit" value="Rename" />
               </th>
             </tr>
           </tbody>
         </table>
       </form>
+    </LegacyCenter>
+  );
+}
+
+function AllianceDismissTable({
+  alliance,
+  onAction,
+  pending
+}: {
+  alliance: GameAlliance;
+  onAction: (action: GameAllianceAction) => void;
+  pending: boolean;
+}) {
+  return (
+    <LegacyCenter>
+      <script src="/public-assets/game/js/cntchar.js" type="text/javascript" />
+      <script src="/public-assets/game/js/win.js" type="text/javascript" />
+      <form
+        action={allianceURL({ a: "12", weiter: "1" })}
+        method="post"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!pending) {
+            onAction({ action: "dismiss" });
+          }
+        }}
+      >
+        <table width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c" colSpan={2}>{` Do you really want to dissolve the "${alliance.own?.name ?? ""}" alliance?`}</td>
+            </tr>
+            <tr>
+              <th>Warning!</th>
+              <th dangerouslySetInnerHTML={{ __html: "Alliance recovery will be impossible<br>\\when all members leave the alliance!" }} />
+            </tr>
+            <tr>
+              <th colSpan={2}>
+                <br />
+                <input disabled={pending} type="submit" value=" Yes, I do!" />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+      <br />
+      <br />
+      <br />
+      <br />
+    </LegacyCenter>
+  );
+}
+
+function AllianceTakeoverTable({
+  alliance,
+  onAction,
+  pending
+}: {
+  alliance: GameAlliance;
+  onAction: (action: GameAllianceAction) => void;
+  pending: boolean;
+}) {
+  if (!alliance.viewer.founder) {
+    return (
+      <LegacyCenter>
+        <table width={519}>
+          <tbody>
+            <tr><td className="legacy-c c">Chapter still active</td></tr>
+            <tr><th><a href={allianceURL({ a: "5" })}> Back</a></th></tr>
+          </tbody>
+        </table>
+        <br /><br /><br /><br />
+      </LegacyCenter>
+    );
+  }
+  const rightHandRanks = new Set(alliance.ranks.filter((rank) => (rank.rights & 0x100) !== 0).map((rank) => rank.id));
+  const candidates = alliance.members.filter((member) => member.playerId !== alliance.viewer.playerId && rightHandRanks.has(member.rankId));
+  if (candidates.length === 0) {
+    return (
+      <LegacyCenter>
+        <table width={519}>
+          <tbody>
+            <tr><td className="legacy-c c" /></tr>
+            <tr><th><a href={allianceURL({ a: "5" })}> Back</a></th></tr>
+          </tbody>
+        </table>
+        <br /><br /><br /><br />
+      </LegacyCenter>
+    );
+  }
+  return (
+    <LegacyCenter>
+      <form
+        action={allianceURL({ a: "18" })}
+        method="post"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (pending) {
+            return;
+          }
+          const data = new FormData(event.currentTarget);
+          onAction({ action: "transfer_founder", targetPlayerId: Number(data.get("uid") ?? 0) || 0 });
+        }}
+      >
+        <input name="s" type="hidden" value="1" />
+        <table width={519}>
+          <tbody>
+            <tr><td className="legacy-c c" colSpan={2}>{` Transfer manual over "${alliance.own?.name ?? ""}"`}</td></tr>
+            <tr>
+              <th> Transfer rank</th>
+              <th>
+                <select name="uid">
+                  {candidates.map((member) => <option key={member.playerId} value={member.playerId}>{`${member.name} ( Rank: ${member.rankName})`}</option>)}
+                </select>
+              </th>
+            </tr>
+            <tr><th colSpan={2}><input disabled={pending} type="submit" value=" Transfer" /></th></tr>
+          </tbody>
+        </table>
+      </form>
+      <br /><br /><br /><br />
     </LegacyCenter>
   );
 }

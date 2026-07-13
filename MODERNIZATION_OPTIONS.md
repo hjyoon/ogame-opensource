@@ -55,3 +55,6 @@ This is a backlog, not permission to change behavior during migration. Preserve 
 8. Operations
    - Extend JSON logs with request IDs, session/user identifiers where safe, latency, and route names.
    - Add health/readiness details for DB connectivity and legacy bridge state.
+
+9. Corrected legacy defects
+   - Founder transfer is transaction-scoped to the selected alliance. Legacy PHP updates every alliance owner; preserve the Go scope and its differential restoration guard.

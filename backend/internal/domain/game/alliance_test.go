@@ -26,15 +26,15 @@ func TestAllianceDomainNormalizesAndValidatesCreation(t *testing.T) {
 
 func TestAllianceViewerRightsMatchLegacyMasks(t *testing.T) {
 	founder := AllianceViewer{AllianceID: 7, RankID: AllianceRankFounder, Founder: true}
-	if !founder.CanReadMembers() || !founder.CanWriteApplications() || !founder.CanManageAlliance() || !founder.CanKickMembers() || !founder.CanSendCircular() || founder.CanLeaveAlliance() {
+	if !founder.CanReadMembers() || !founder.CanWriteApplications() || !founder.CanManageAlliance() || !founder.CanKickMembers() || !founder.CanSendCircular() || !founder.CanDismissAlliance() || !founder.CanTransferAlliance() || founder.CanLeaveAlliance() {
 		t.Fatalf("unexpected founder permissions: %+v", founder)
 	}
-	member := AllianceViewer{AllianceID: 7, RankID: AllianceRankNewcomer, RankRights: AllianceRightMembers | AllianceRightWriteApps | AllianceRightManage | AllianceRightKick | AllianceRightCircular}
-	if !member.CanReadMembers() || !member.CanWriteApplications() || !member.CanManageAlliance() || !member.CanKickMembers() || !member.CanSendCircular() || !member.CanLeaveAlliance() {
+	member := AllianceViewer{AllianceID: 7, RankID: AllianceRankNewcomer, RankRights: AllianceRightMembers | AllianceRightWriteApps | AllianceRightManage | AllianceRightKick | AllianceRightCircular | AllianceRightDismiss | AllianceRightHand}
+	if !member.CanReadMembers() || !member.CanWriteApplications() || !member.CanManageAlliance() || !member.CanKickMembers() || !member.CanSendCircular() || !member.CanDismissAlliance() || !member.CanTransferAlliance() || !member.CanLeaveAlliance() {
 		t.Fatalf("unexpected member permissions: %+v", member)
 	}
 	outsider := AllianceViewer{}
-	if outsider.CanReadMembers() || outsider.CanWriteApplications() || outsider.CanManageAlliance() || outsider.CanKickMembers() || outsider.CanSendCircular() || outsider.CanLeaveAlliance() {
+	if outsider.CanReadMembers() || outsider.CanWriteApplications() || outsider.CanManageAlliance() || outsider.CanKickMembers() || outsider.CanSendCircular() || outsider.CanDismissAlliance() || outsider.CanTransferAlliance() || outsider.CanLeaveAlliance() {
 		t.Fatalf("unexpected outsider permissions: %+v", outsider)
 	}
 }
@@ -94,6 +94,9 @@ func TestAllianceIssueMessages(t *testing.T) {
 		AllianceIssueAccepted,
 		AllianceIssueRejected,
 		AllianceIssueLeft,
+		AllianceIssueRenamed,
+		AllianceIssueDismissed,
+		AllianceIssueTransferred,
 		AllianceIssueSaved,
 		AllianceIssueSent,
 		AllianceIssueInvalidTag,
@@ -107,6 +110,7 @@ func TestAllianceIssueMessages(t *testing.T) {
 		AllianceIssueNoPermission,
 		AllianceIssueApplicationNotFound,
 		AllianceIssueFounderCannotLeave,
+		AllianceIssueRenameCooldown,
 		"custom",
 	}
 	for _, code := range codes {
