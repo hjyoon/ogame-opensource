@@ -7,6 +7,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 )
@@ -190,6 +191,22 @@ func (r FleetRepository) finishFleetQueueTask(ctx context.Context, uniTable stri
 	if !found {
 		return (BuildingsRepository{execer: r.execer}).removeGlobalQueue(ctx, queueTable, task.TaskID)
 	}
+	if r.queueProduction {
+		originFound, err := r.updateFleetQueuePlanetResources(ctx, usersTable, planetsTable, fleet.StartPlanetID, int(task.End))
+		if err != nil {
+			return err
+		}
+		if !originFound {
+			return nil
+		}
+		targetFound, err := r.updateFleetQueuePlanetResources(ctx, usersTable, planetsTable, fleet.TargetPlanetID, int(task.End))
+		if err != nil {
+			return err
+		}
+		if !targetFound {
+			return nil
+		}
+	}
 
 	switch fleet.Mission {
 	case domaingame.FleetMissionAttack, domaingame.FleetMissionDestroy:
@@ -200,6 +217,8 @@ func (r FleetRepository) finishFleetQueueTask(ctx context.Context, uniTable stri
 		return r.finishTransportFleetArrival(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)
 	case domaingame.FleetMissionDeploy:
 		return r.finishDeployFleetArrival(ctx, fleetTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)
+	case domaingame.FleetMissionColonize:
+		return r.finishColonizationArrival(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)
 	case domaingame.FleetMissionACSHold:
 		return r.finishACSHoldArrival(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, task, fleet)
 	case domaingame.FleetMissionACSHold + domaingame.FleetMissionOrbitingOffset:
@@ -216,6 +235,35 @@ func (r FleetRepository) finishFleetQueueTask(ctx context.Context, uniTable stri
 		}
 	}
 	return nil
+}
+
+func (r FleetRepository) updateFleetQueuePlanetResources(ctx context.Context, usersTable string, planetsTable string, planetID int, until int) (bool, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT owner_id FROM %s WHERE planet_id = ? LIMIT 1", planetsTable), planetID)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	var ownerID int
+	if err := rows.Scan(&ownerID); err != nil {
+		return false, err
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	now := time.Now()
+	if r.now != nil {
+		now = r.now()
+	}
+	if err := updatePlanetResources(ctx, r.queryer, r.execer, r.prefix, usersTable, planetsTable, ownerID, planetID, until, now); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (r FleetRepository) finishACSHoldArrival(ctx context.Context, fleetTable string, fleetLogsTable string, queueTable string, planetsTable string, usersTable string, task fleetQueueTask, fleet recallFleetRow) error {
@@ -528,6 +576,11 @@ func (r FleetRepository) finishReturningFleetArrival(ctx context.Context, fleetT
 	}
 	if found {
 		if err := r.insertFleetReturnMessage(ctx, messagesTable, messageContext, fleet, task.End); err != nil {
+			return err
+		}
+	}
+	if fleet.Mission == domaingame.FleetMissionColonize+domaingame.FleetMissionReturnOffset {
+		if err := r.deleteColonizationPhantom(ctx, planetsTable, fleet.TargetPlanetID); err != nil {
 			return err
 		}
 	}

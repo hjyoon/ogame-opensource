@@ -14,7 +14,7 @@ HTTP/DB effects, and restore again.
 | Shipyard/defense | 2 | batch debit, per-unit completion, queue timing, units/score/ranks | PASS |
 | Advanced building | 2 | demolition, Commander queue cancel/level shift/propagation | PASS |
 | Defense limits | 3 | dome uniqueness, missile capacity, mixed queue order/completion | PASS |
-| Fleet lifecycle | 14 | transport/recall/deploy/recycle, attack/repair, ACS and moon lifecycle | PASS |
+| Fleet lifecycle | 18 | transport/recall/deploy/recycle, attack/repair, ACS, moon and colony lifecycle | PASS |
 | Combat engine | 4 | outcome, shots/power, absorption, survivors | PASS |
 
 Resource cases cover partial production, 0-100 boundary values, and all-100
@@ -31,6 +31,7 @@ testing/e2e/run-golang-shipyard-defense-differential-e2e.sh
 testing/e2e/run-golang-building-advanced-differential-e2e.sh
 testing/e2e/run-golang-defense-limits-differential-e2e.sh
 testing/e2e/run-golang-fleet-differential-e2e.sh
+testing/e2e/run-golang-colonization-differential-e2e.sh
 testing/e2e/run-golang-acs-attack-differential-e2e.sh
 testing/e2e/run-golang-holding-defense-differential-e2e.sh
 testing/e2e/run-golang-battle-moon-differential-e2e.sh
@@ -50,10 +51,12 @@ Moon-destruction QA exact-compares the deterministic fleet-explosion outcome;
 unit coverage exercises all four moon/fleet result combinations and moon cleanup.
 Moon creation retries a deterministic 20% opportunity to success on each runtime;
 only generated diameter/temperature are range-checked instead of exact-compared.
+Colonization exact-compares success/return, consumed ship, occupied-race and
+nine-planet-limit states; random diameter/temperature are range-checked.
 
 ## Expansion Order
 
-1. Colony, missiles, expedition, phalanx and Jump Gate.
+1. Missiles, expedition, phalanx and Jump Gate.
 2. Account, alliance, messages, buddy and Admin mutations.
 
 ## Comparison Contract

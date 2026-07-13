@@ -92,6 +92,9 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     if [ "${OGAME_RUN_FLEET_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-fleet-differential-e2e.sh"
     fi
+    if [ "${OGAME_RUN_COLONIZATION_DIFFERENTIAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-colonization-differential-e2e.sh"
+    fi
     if [ "${OGAME_RUN_ACS_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-acs-attack-differential-e2e.sh"
     fi

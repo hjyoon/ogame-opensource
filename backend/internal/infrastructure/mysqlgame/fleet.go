@@ -79,12 +79,13 @@ type FleetRepository struct {
 	now             func() time.Time
 	finishDueQueues bool
 	legacyEvents    bool
+	queueProduction bool
 	combatRandom    func(int) int
 }
 
 func NewFleetRepository(db *sql.DB, prefix string) FleetRepository {
 	runner := SQLQueryer{DB: db}
-	return FleetRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, finishDueQueues: true, legacyEvents: true, combatRandom: rand.IntN}
+	return FleetRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, finishDueQueues: true, legacyEvents: true, queueProduction: true, combatRandom: rand.IntN}
 }
 
 func NewFleetReadRepository(db *sql.DB, prefix string) FleetRepository {
