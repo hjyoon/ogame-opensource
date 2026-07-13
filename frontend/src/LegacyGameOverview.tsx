@@ -4399,19 +4399,19 @@ function AdminCouponsTable({ admin, onAdminAction }: { admin: GameAdmin; onAdmin
   const handleAddOne = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
-    onAdminAction({ action: "add_one", amount: Math.max(0, Number(data.get("dm")) || 0) });
+    onAdminAction({ action: "add_one", amount: legacyFormInt(data.get("dm"), 0) });
   };
   const handleAddDate = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     onAdminAction({
       action: "add_date",
-      amount: Math.max(0, Number(data.get("darkmatter")) || 0),
+      amount: legacyFormInt(data.get("darkmatter"), 0),
       dayMonth: String(data.get("ddmm") ?? ""),
       hourMinute: String(data.get("hhmm") ?? ""),
-      inactiveDays: Math.max(0, Number(data.get("inactive_days")) || 0),
-      ingameDays: Math.max(0, Number(data.get("ingame_days")) || 0),
-      periodicDays: Math.max(0, Number(data.get("periodic")) || 0)
+      inactiveDays: legacyFormInt(data.get("inactive_days"), 0),
+      ingameDays: legacyFormInt(data.get("ingame_days"), 0),
+      periodicDays: legacyFormInt(data.get("periodic"), 0)
     });
   };
   const couponFrom = Math.max(0, Math.floor(admin.couponFrom ?? 0));

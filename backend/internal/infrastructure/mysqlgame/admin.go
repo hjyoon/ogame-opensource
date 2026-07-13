@@ -2056,7 +2056,7 @@ func (r AdminRepository) loadAdminCouponQueueRows(ctx context.Context) ([]domain
 	}
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT task_id, COALESCE(sub_id, 0), COALESCE(obj_id, 0), COALESCE(level, 0), COALESCE(start, 0), COALESCE(end, 0), COALESCE(prio, 0) FROM %s WHERE type = ? ORDER BY end ASC, task_id ASC", queueTable),
+		fmt.Sprintf("SELECT task_id, COALESCE(sub_id, 0), COALESCE(obj_id, 0), COALESCE(level, 0), COALESCE(start, 0), COALESCE(end, 0), COALESCE(prio, 0) FROM %s WHERE type = ? ORDER BY end ASC", queueTable),
 		adminCouponQueueType,
 	)
 	if err != nil {
@@ -2100,9 +2100,6 @@ func (r AdminRepository) insertAdminCoupon(ctx context.Context, amount int) (str
 	if r.masterQueryer == nil || r.masterExecer == nil {
 		return "", errors.New("admin coupons master DB unavailable")
 	}
-	if amount < 0 {
-		amount = 0
-	}
 	generator := r.couponCode
 	if generator == nil {
 		generator = randomCouponCode
@@ -2118,6 +2115,11 @@ func (r AdminRepository) insertAdminCoupon(ctx context.Context, amount int) (str
 		}
 		if exists {
 			continue
+		}
+		// The legacy INSERT targets an unsigned INT and ignores strict-mode range
+		// errors after still reporting the generated code as successful.
+		if amount < 0 || int64(amount) > int64(^uint32(0)) {
+			return code, nil
 		}
 		if _, err := r.masterExecer.ExecContext(ctx, "INSERT INTO coupons (code, amount, used, user_uni, user_id, user_name) VALUES (?, ?, 0, 0, 0, '')", code, amount); err != nil {
 			return "", err
@@ -2157,17 +2159,18 @@ func (r AdminRepository) insertAdminCouponQueue(ctx context.Context, query appga
 	if err != nil {
 		return nil, err
 	}
-	end := parseAdminCouponQueueEnd(query.DayMonth, query.HourMinute, r.now())
-	packedCriteria := ((query.InactiveDays & 0xffff) << 16) | (query.IngameDays & 0xffff)
+	now := r.now()
+	end := int(now.Unix()) + parseAdminCouponQueueEnd(query.DayMonth, query.HourMinute, now)
+	packedCriteria := (query.InactiveDays << 16) | query.IngameDays
 	_, err = r.execer.ExecContext(
 		ctx,
 		fmt.Sprintf("INSERT INTO %s (owner_id, type, sub_id, obj_id, level, start, end, prio) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", queueTable),
 		adminCouponQueueOwnerID,
 		adminCouponQueueType,
-		maxInt(query.Amount, 0),
+		query.Amount,
 		packedCriteria,
-		maxInt(query.PeriodicDays, 0),
-		int(r.now().Unix()),
+		query.PeriodicDays,
+		int(now.Unix()),
 		end,
 		adminCouponQueuePriority,
 	)
@@ -2185,32 +2188,19 @@ func (r AdminRepository) deleteAdminCouponQueue(ctx context.Context, itemID int)
 	if itemID <= 0 {
 		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
 	}
-	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE task_id = ? AND type = ?", queueTable), itemID, adminCouponQueueType); err != nil {
+	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE task_id = ?", queueTable), itemID); err != nil {
 		return nil, err
 	}
 	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
 }
 
 func parseAdminCouponQueueEnd(dayMonth string, hourMinute string, now time.Time) int {
-	day := 1
-	month := int(now.Month())
-	hour := 0
-	minute := 0
+	day, month := 0, 0
+	hour, minute := 0, 0
 	_, _ = fmt.Sscanf(dayMonth, "%d.%d", &day, &month)
 	_, _ = fmt.Sscanf(hourMinute, "%d:%d", &hour, &minute)
-	if day < 1 {
-		day = 1
-	}
-	if month < 1 || month > 12 {
-		month = int(now.Month())
-	}
-	if hour < 0 || hour > 23 {
-		hour = 0
-	}
-	if minute < 0 || minute > 59 {
-		minute = 0
-	}
-	return int(time.Date(now.Year(), time.Month(month), day, hour, minute, 0, 0, now.Location()).Unix())
+	legacyLocation := time.FixedZone("Europe/Moscow", 3*60*60)
+	return int(time.Date(now.In(legacyLocation).Year(), time.Month(month), day, hour, minute, 0, 0, legacyLocation).Unix())
 }
 
 func randomCouponCode() (string, error) {

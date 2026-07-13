@@ -570,6 +570,24 @@ func TestAdminRepositoryMutatesCoupons(t *testing.T) {
 		}
 	})
 
+	t.Run("add out of unsigned range", func(t *testing.T) {
+		uni := &fakeGalaxyRunner{}
+		master := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}}
+		repository := NewAdminRepositoryWithQueryer(uni, "ogame_").WithMasterRunner(master, master)
+		repository.couponCode = func() (string, error) { return "ABCD-EFGH-IJKL-MNOP-QRST", nil }
+
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+			Mode: "Coupons", Action: domaingame.AdminActionCouponAddOne, Amount: -1,
+		})
+
+		if err != nil || issue == nil || !strings.Contains(issue.Message, "ABCD-EFGH-IJKL-MNOP-QRST") {
+			t.Fatalf("unexpected legacy range issue=%+v err=%v", issue, err)
+		}
+		if len(master.execCalls) != 0 {
+			t.Fatalf("legacy strict-mode range failure must not insert a coupon: %+v", master.execCalls)
+		}
+	})
+
 	t.Run("remove one", func(t *testing.T) {
 		master := &fakeGalaxyRunner{}
 		repository := NewAdminRepositoryWithQueryer(&fakeGalaxyRunner{}, "ogame_").WithMasterRunner(master, master)
@@ -613,7 +631,8 @@ func TestAdminRepositoryMutatesCoupons(t *testing.T) {
 			uni.execCalls[0].args[4] != 14 || uni.execCalls[0].args[7] != adminCouponQueuePriority {
 			t.Fatalf("unexpected coupon queue insert: %+v", uni.execCalls)
 		}
-		expectedEnd := int(time.Date(2026, time.December, 31, 23, 59, 0, 0, time.UTC).Unix())
+		legacyLocation := time.FixedZone("Europe/Moscow", 3*60*60)
+		expectedEnd := int(now.Unix()) + int(time.Date(2026, time.December, 31, 23, 59, 0, 0, legacyLocation).Unix())
 		if uni.execCalls[0].args[6] != expectedEnd {
 			t.Fatalf("unexpected queue end arg: %+v want %d", uni.execCalls[0].args[6], expectedEnd)
 		}
@@ -627,7 +646,7 @@ func TestAdminRepositoryMutatesCoupons(t *testing.T) {
 			t.Fatalf("unexpected remove date issue=%+v err=%v", issue, err)
 		}
 		if len(uni.execCalls) != 2 || !strings.Contains(uni.execCalls[1].sql, "DELETE FROM `ogame_queue`") ||
-			uni.execCalls[1].args[0] != 701 || uni.execCalls[1].args[1] != "Coupon" {
+			uni.execCalls[1].args[0] != 701 || len(uni.execCalls[1].args) != 1 {
 			t.Fatalf("unexpected coupon queue delete: %+v", uni.execCalls)
 		}
 	})
@@ -821,9 +840,10 @@ func TestAdminRepositoryCouponEdgeCases(t *testing.T) {
 
 		now := time.Date(2026, time.June, 26, 12, 0, 0, 0, time.UTC)
 		got := parseAdminCouponQueueEnd("0.99", "25:88", now)
-		want := int(time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC).Unix())
+		legacyLocation := time.FixedZone("Europe/Moscow", 3*60*60)
+		want := int(time.Date(2034, time.March, 1, 2, 28, 0, 0, legacyLocation).Unix())
 		if got != want {
-			t.Fatalf("unexpected clamped queue end %d want %d", got, want)
+			t.Fatalf("unexpected normalized queue end %d want %d", got, want)
 		}
 	})
 }
