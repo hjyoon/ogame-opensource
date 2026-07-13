@@ -16,8 +16,10 @@ import (
 
 func TestFleetRepositoryReadsLegacyFleetScreen(t *testing.T) {
 	now := time.Unix(1_000, 0)
+	missionRow := fleetMissionRow(domaingame.FleetMissionTransport, map[int]int{domaingame.FleetSmallCargo: 2}, 100, 200)
+	missionRow[9+len(domaingame.FleetIDs())] = 29.5
 	queryer := &fakeQueryer{results: append(fleetReadPrefixResults(now),
-		fakeQueryResult{rows: fakeRowsFromValues(fleetMissionRow(domaingame.FleetMissionTransport, map[int]int{domaingame.FleetSmallCargo: 2}, 100, 200))},
+		fakeQueryResult{rows: fakeRowsFromValues(missionRow)},
 		fakeQueryResult{rows: fakeRowsFromValues(templateRow(7, " raid wing ", 900, map[int]int{domaingame.FleetSmallCargo: 2, domaingame.FleetSolarSatellite: 3}))},
 	)}
 	repository := NewFleetRepositoryWithQueryer(queryer, "ogame_", func() time.Time { return now })
@@ -357,6 +359,9 @@ func TestNewFleetRepositoryKeepsSQLQueryer(t *testing.T) {
 }
 
 func TestFleetRepositoryFormatsAndPersistsLegacyFleetEvents(t *testing.T) {
+	if rounded := fleetLegacyNumber(14.5); rounded != "15" {
+		t.Fatalf("expected PHP-compatible resource rounding, got %q", rounded)
+	}
 	runner := &fakeFleetRunner{}
 	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
 	value := fleetMessageContext{

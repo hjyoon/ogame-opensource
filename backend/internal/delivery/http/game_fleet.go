@@ -212,6 +212,9 @@ func (a app) handleGameFleetGet(w http.ResponseWriter, r *http.Request) {
 		PlanetID:        planetID,
 	})
 	if err != nil {
+		if a.deps.Logger != nil {
+			a.deps.Logger.Error("game fleet unavailable", "error", err.Error(), "operation", "get")
+		}
 		http.Error(w, "game fleet unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -306,6 +309,9 @@ func (a app) handleGameFleetPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		if a.deps.Logger != nil {
+			a.deps.Logger.Error("game fleet unavailable", "error", err.Error(), "operation", payload.Action)
+		}
 		http.Error(w, "game fleet unavailable", http.StatusServiceUnavailable)
 		return
 	}

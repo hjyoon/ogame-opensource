@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"strconv"
 	"strings"
@@ -1889,7 +1890,7 @@ func scanFleetMissionRow(rows Rows, fleetIDs []int, resourceIDs []int) (domainga
 	for index := range shipValues {
 		dest = append(dest, &shipValues[index])
 	}
-	resourceValues := make([]int, len(resourceIDs))
+	resourceValues := make([]float64, len(resourceIDs))
 	for index := range resourceValues {
 		dest = append(dest, &resourceValues[index])
 	}
@@ -1915,7 +1916,7 @@ func scanFleetMissionRow(rows Rows, fleetIDs []int, resourceIDs []int) (domainga
 	}
 	loadedResources := make(map[int]int, len(resourceIDs))
 	for index, resourceID := range resourceIDs {
-		loadedResources[resourceID] = resourceValues[index]
+		loadedResources[resourceID] = int(math.Round(resourceValues[index]))
 	}
 	row := domaingame.BuildFleetMission(id, mission, ships, origin, target, targetType, targetOwner, departureAt, arrivalAt)
 	row.LoadedResources = loadedResources

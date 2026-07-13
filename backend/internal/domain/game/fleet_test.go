@@ -137,8 +137,8 @@ func TestBuildFleetDispatchDraftNormalizesLegacySelection(t *testing.T) {
 	if draft.Distance != 20000 || draft.MaxSpeed != 5500 || draft.DurationSeconds != 21116 || draft.FuelConsumption != 92 || draft.SpeedFactor != 1 {
 		t.Fatalf("unexpected legacy flight math: %+v", draft)
 	}
-	if len(draft.MissionOptions) != 3 || !draft.MissionOptions[2].Selected || draft.MissionOptions[2].ID != FleetMissionSpy {
-		t.Fatalf("expected spy to be selected from legacy mission options, got %+v", draft.MissionOptions)
+	if len(draft.MissionOptions) != 4 || !draft.MissionOptions[2].Selected || draft.MissionOptions[2].ID != FleetMissionSpy || draft.MissionOptions[3].ID != FleetMissionACSAttack {
+		t.Fatalf("expected spy selection and invited ACS option, got %+v", draft.MissionOptions)
 	}
 	if len(draft.Resources) != 3 || draft.Resources[0].Available != 1200 || draft.Resources[2].Available != 99 {
 		t.Fatalf("expected current planet transportable resources, got %+v", draft.Resources)
@@ -219,6 +219,17 @@ func TestBuildFleetDispatchDraftMissionOptionsMatchLegacyEdges(t *testing.T) {
 	})
 	if len(acsDraft.MissionOptions) != 3 || acsDraft.MissionOptions[2].ID != FleetMissionACSAttack {
 		t.Fatalf("target with ACS union should include ACS attack: %+v", acsDraft.MissionOptions)
+	}
+
+	invitedDraft := BuildFleetDispatchDraft(base, FleetDispatchDraftInput{
+		Ships:      map[int]int{FleetSmallCargo: 1},
+		Target:     Coordinates{Galaxy: 1, System: 2, Position: 6},
+		TargetType: GamePlanetTypePlanet,
+		Mission:    FleetMissionACSAttack,
+		UnionID:    8,
+	})
+	if invitedDraft.Mission != FleetMissionACSAttack || len(invitedDraft.MissionOptions) != 3 || invitedDraft.MissionOptions[2].ID != FleetMissionACSAttack {
+		t.Fatalf("explicit invited ACS union should include joint attack: %+v", invitedDraft)
 	}
 }
 

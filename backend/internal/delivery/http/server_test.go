@@ -2211,6 +2211,24 @@ func TestGameFleetEndpointReturnsUnavailableForUseCaseError(t *testing.T) {
 	}
 }
 
+func TestGameFleetEndpointLogsUseCaseErrors(t *testing.T) {
+	var logs bytes.Buffer
+	server := testServerWithGameFleetLogger(t, &fakeGameFleet{err: errors.New("fleet failed")}, slog.New(slog.NewJSONHandler(&logs, nil)))
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodGet, "/api/game/fleet?session=public", nil),
+		httptest.NewRequest(http.MethodPost, "/api/game/fleet?session=public", strings.NewReader(`{"action":"recall","fleetId":123}`)),
+	} {
+		recorder := httptest.NewRecorder()
+		server.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected fleet use case error to return 503, got %d", recorder.Code)
+		}
+	}
+	if output := logs.String(); !strings.Contains(output, `"operation":"get"`) || !strings.Contains(output, `"operation":"recall"`) || !strings.Contains(output, `"error":"fleet failed"`) {
+		t.Fatalf("expected structured fleet error operations, got %s", output)
+	}
+}
+
 func TestGameFleetEndpointRecallsFleet(t *testing.T) {
 	fleet := &fakeGameFleet{result: appgame.FleetResult{
 		Authenticated: true,
@@ -5525,6 +5543,20 @@ func testServerWithGameFleet(t *testing.T, fleet GameFleetUseCase) http.Handler 
 		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
 		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
 		GameFleet:          fleet,
+		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
+		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
+	})
+}
+
+func testServerWithGameFleetLogger(t *testing.T, fleet GameFleetUseCase, logger *slog.Logger) http.Handler {
+	t.Helper()
+	universes := apppublicsite.NewUniverseCatalogService(configcatalog.UniverseCatalog{LegacyBaseURL: "http://legacy.local"})
+	return New(Dependencies{
+		Universes:          universes,
+		RegistrationDrafts: apppublicsite.NewRegistrationDraftValidator(),
+		LoginDrafts:        apppublicsite.NewLoginDraftValidator(),
+		GameFleet:          fleet,
+		Logger:             logger,
 		Frontend:           filesystem.StaticDir{Root: t.TempDir()},
 		LegacyAssets:       filesystem.NewNoListingFS(t.TempDir()),
 	})

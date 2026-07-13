@@ -296,7 +296,7 @@ func BuildFleetDispatchDraft(fleet Fleet, input FleetDispatchDraftInput) FleetDi
 			cargo += available.Cargo * count
 		}
 	}
-	missions := fleetDispatchMissionOptions(fleet, selectedCounts, target, targetType, input.Mission)
+	missions := fleetDispatchMissionOptions(fleet, selectedCounts, target, targetType, input.Mission, input.UnionID)
 	selectedMission := input.Mission
 	if !missionOptionExists(missions, selectedMission) {
 		selectedMission = 0
@@ -447,7 +447,7 @@ func NormalizeFleetHoldHours(mission int, holdHours int, expeditionHours int, ex
 	}
 }
 
-func fleetDispatchMissionOptions(fleet Fleet, counts FleetCounts, target Coordinates, targetType int, requested int) []FleetMissionOption {
+func fleetDispatchMissionOptions(fleet Fleet, counts FleetCounts, target Coordinates, targetType int, requested int, unionID int) []FleetMissionOption {
 	ids := make([]int, 0, 5)
 	if target.Position >= GalaxyFarSpace {
 		ids = append(ids, FleetMissionExpedition)
@@ -468,7 +468,7 @@ func fleetDispatchMissionOptions(fleet Fleet, counts FleetCounts, target Coordin
 		if counts[FleetEspionageProbe] > 0 {
 			ids = append(ids, FleetMissionSpy)
 		}
-		if fleetDispatchTargetHasUnion(fleet, target, targetType) {
+		if unionID > 0 || fleetDispatchTargetHasUnion(fleet, target, targetType) {
 			ids = append(ids, FleetMissionACSAttack)
 		}
 	}
