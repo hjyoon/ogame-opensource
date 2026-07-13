@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"strconv"
 	"strings"
 	"time"
@@ -77,11 +78,12 @@ type FleetRepository struct {
 	now             func() time.Time
 	finishDueQueues bool
 	legacyEvents    bool
+	combatRandom    func(int) int
 }
 
 func NewFleetRepository(db *sql.DB, prefix string) FleetRepository {
 	runner := SQLQueryer{DB: db}
-	return FleetRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, finishDueQueues: true, legacyEvents: true}
+	return FleetRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, finishDueQueues: true, legacyEvents: true, combatRandom: rand.IntN}
 }
 
 func NewFleetReadRepository(db *sql.DB, prefix string) FleetRepository {
@@ -93,14 +95,14 @@ func NewFleetRepositoryWithQueryer(queryer Queryer, prefix string, now func() ti
 		now = time.Now
 	}
 	execer, _ := queryer.(Execer)
-	return FleetRepository{queryer: queryer, execer: execer, prefix: prefix, now: now}
+	return FleetRepository{queryer: queryer, execer: execer, prefix: prefix, now: now, combatRandom: rand.IntN}
 }
 
 func NewFleetRepositoryWithRunner(queryer Queryer, execer Execer, prefix string, now func() time.Time) FleetRepository {
 	if now == nil {
 		now = time.Now
 	}
-	return FleetRepository{queryer: queryer, execer: execer, prefix: prefix, now: now}
+	return FleetRepository{queryer: queryer, execer: execer, prefix: prefix, now: now, combatRandom: rand.IntN}
 }
 
 func (r FleetRepository) GetFleet(ctx context.Context, query appgame.FleetQuery) (domaingame.Fleet, error) {

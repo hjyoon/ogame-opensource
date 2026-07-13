@@ -14,7 +14,7 @@ HTTP/DB effects, and restore again.
 | Shipyard/defense | 2 | batch debit, per-unit completion, queue timing, units/score/ranks | PASS |
 | Advanced building | 2 | demolition, Commander queue cancel/level shift/propagation | PASS |
 | Defense limits | 3 | dome uniqueness, missile capacity, mixed queue order/completion | PASS |
-| Fleet lifecycle | 5 | transport/recall/deploy/recycle, unguarded attack/plunder/report | PASS |
+| Fleet lifecycle | 6 | transport/recall/deploy/recycle, unguarded/guarded attack | PASS |
 | Combat engine | 4 | outcome, shots/power, absorption, survivors | PASS |
 
 Resource cases cover partial production, 0-100 boundary values, and all-100
@@ -39,12 +39,13 @@ normalize generated IDs/timestamps, preserve duration, and restore the original
 planet, score/ranks, queue, log, production, vacation, and premium state. Fixtures
 come from `prepare-golang-smoke-fixture.php`; the wrapper runs differential QA
 after Go compatibility smoke and before fixture cleanup.
-The combat engine oracle separately exact-compares four deterministic PHP/Go
-round outcomes, shot totals, absorbed power, and survivor sets.
+The combat engine oracle exact-compares four deterministic round outcomes, shot
+totals, absorbed power, and survivors. The guarded DB case also compares losses,
+debris, report HTML/link messages, planet units, scores, and cleanup.
 
 ## Expansion Order
 
-1. Guarded combat, losses/debris, defence repair, moon creation/destruction.
+1. Guarded attacker win/repair, ACS/holding fleets, moon creation/destruction.
 2. Colony, missiles, expedition, phalanx and Jump Gate.
 3. Account, alliance, messages, buddy and Admin mutations.
 

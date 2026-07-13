@@ -11,17 +11,26 @@ import (
 )
 
 type unguardedAttackState struct {
-	GuardCount     int
-	DefenderUnits  map[int]int
-	OriginWeapon   int
-	OriginShield   int
-	OriginArmour   int
-	DefenderWeapon int
-	DefenderShield int
-	DefenderArmour int
+	GuardCount       int
+	DefenderUnits    map[int]int
+	OriginWeapon     int
+	OriginShield     int
+	OriginArmour     int
+	DefenderWeapon   int
+	DefenderShield   int
+	DefenderArmour   int
+	DefenderEngineer bool
 }
 
-func (r FleetRepository) finishAttackFleetArrival(ctx context.Context, fleetTable string, fleetLogsTable string, queueTable string, planetsTable string, usersTable string, messagesTable string, battleTable string, task fleetQueueTask, fleet recallFleetRow) error {
+type combatUniverseSettings struct {
+	FleetDebrisPercent   int
+	DefenseDebrisPercent int
+	RapidFire            bool
+	DefenseRepair        int
+	DefenseRepairDelta   int
+}
+
+func (r FleetRepository) finishAttackFleetArrival(ctx context.Context, uniTable string, fleetTable string, fleetLogsTable string, queueTable string, planetsTable string, usersTable string, messagesTable string, battleTable string, task fleetQueueTask, fleet recallFleetRow) error {
 	messageContext, found, err := r.loadFleetMessageContext(ctx, usersTable, planetsTable, fleet)
 	if err != nil {
 		return err
@@ -37,8 +46,7 @@ func (r FleetRepository) finishAttackFleetArrival(ctx context.Context, fleetTabl
 		return errors.New("attack target unavailable")
 	}
 	if state.GuardCount > 0 {
-		// Guarded combat is resolved by the deterministic round engine in the next migration slice.
-		return nil
+		return r.finishGuardedAttackFleetArrival(ctx, uniTable, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, messagesTable, battleTable, task, fleet, messageContext, state)
 	}
 
 	availableCargo := domaingame.FleetAvailableCargo(fleet.Ships, domaingame.Resources{
@@ -98,7 +106,7 @@ func (r FleetRepository) loadUnguardedAttackState(ctx context.Context, planetsTa
 		guardParts = append(guardParts, fmt.Sprintf("COALESCE(tp.`%d`, 0)", id))
 	}
 	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf(
-		"SELECT %s, COALESCE(ou.`%d`, 0), COALESCE(ou.`%d`, 0), COALESCE(ou.`%d`, 0), COALESCE(tu.`%d`, 0), COALESCE(tu.`%d`, 0), COALESCE(tu.`%d`, 0) FROM %s tp JOIN %s tu ON tu.player_id = tp.owner_id JOIN %s op ON op.planet_id = ? JOIN %s ou ON ou.player_id = op.owner_id WHERE tp.planet_id = ? LIMIT 1",
+		"SELECT %s, COALESCE(ou.`%d`, 0), COALESCE(ou.`%d`, 0), COALESCE(ou.`%d`, 0), COALESCE(tu.`%d`, 0), COALESCE(tu.`%d`, 0), COALESCE(tu.`%d`, 0), COALESCE(tu.eng_until, 0) FROM %s tp JOIN %s tu ON tu.player_id = tp.owner_id JOIN %s op ON op.planet_id = ? JOIN %s ou ON ou.player_id = op.owner_id WHERE tp.planet_id = ? LIMIT 1",
 		strings.Join(guardParts, ", "), domaingame.ResearchWeapon, domaingame.ResearchShield, domaingame.ResearchArmour, domaingame.ResearchWeapon, domaingame.ResearchShield, domaingame.ResearchArmour,
 		planetsTable, usersTable, planetsTable, usersTable,
 	), fleet.StartPlanetID, fleet.TargetPlanetID)
@@ -111,11 +119,12 @@ func (r FleetRepository) loadUnguardedAttackState(ctx context.Context, planetsTa
 	}
 	state := unguardedAttackState{DefenderUnits: make(map[int]int, len(guardIDs))}
 	counts := make([]int, len(guardIDs))
-	destinations := make([]any, 0, len(guardIDs)+6)
+	destinations := make([]any, 0, len(guardIDs)+7)
 	for index := range counts {
 		destinations = append(destinations, &counts[index])
 	}
-	destinations = append(destinations, &state.OriginWeapon, &state.OriginShield, &state.OriginArmour, &state.DefenderWeapon, &state.DefenderShield, &state.DefenderArmour)
+	var defenderEngineerUntil int64
+	destinations = append(destinations, &state.OriginWeapon, &state.OriginShield, &state.OriginArmour, &state.DefenderWeapon, &state.DefenderShield, &state.DefenderArmour, &defenderEngineerUntil)
 	if err := rows.Scan(destinations...); err != nil {
 		return unguardedAttackState{}, false, err
 	}
@@ -125,7 +134,29 @@ func (r FleetRepository) loadUnguardedAttackState(ctx context.Context, planetsTa
 			state.GuardCount += counts[index]
 		}
 	}
+	state.DefenderEngineer = defenderEngineerUntil > r.now().Unix()
 	return state, true, rows.Err()
+}
+
+func (r FleetRepository) loadCombatUniverseSettings(ctx context.Context, uniTable string) (combatUniverseSettings, error) {
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT COALESCE(fid, 0), COALESCE(did, 0), COALESCE(rapid, 0), COALESCE(defrepair, 0), COALESCE(defrepair_delta, 0) FROM %s LIMIT 1", uniTable))
+	if err != nil {
+		return combatUniverseSettings{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return combatUniverseSettings{}, err
+		}
+		return combatUniverseSettings{}, errors.New("combat universe settings unavailable")
+	}
+	var settings combatUniverseSettings
+	var rapid int
+	if err := rows.Scan(&settings.FleetDebrisPercent, &settings.DefenseDebrisPercent, &rapid, &settings.DefenseRepair, &settings.DefenseRepairDelta); err != nil {
+		return combatUniverseSettings{}, err
+	}
+	settings.RapidFire = rapid != 0
+	return settings, rows.Err()
 }
 
 func (r FleetRepository) subtractAttackPlunder(ctx context.Context, planetsTable string, planetID int, captured domaingame.Resources, at int64) error {

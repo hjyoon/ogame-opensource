@@ -2913,7 +2913,7 @@ func TestFleetRepositoryFinishUnguardedAttackPlundersAndReports(t *testing.T) {
 	}
 	task := fleetQueueTask{TaskID: 55, OwnerID: 42, FleetID: 123, End: 1_700_000_000}
 
-	if err := repository.finishAttackFleetArrival(context.Background(), "`ogame_fleet`", "`ogame_fleetlogs`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", "`ogame_battledata`", task, fleet); err != nil {
+	if err := repository.finishAttackFleetArrival(context.Background(), "`ogame_uni`", "`ogame_fleet`", "`ogame_fleetlogs`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", "`ogame_battledata`", task, fleet); err != nil {
 		t.Fatal(err)
 	}
 	if len(runner.execCalls) != 14 {
@@ -2942,20 +2942,208 @@ func TestFleetRepositoryFinishUnguardedAttackPlundersAndReports(t *testing.T) {
 	}
 }
 
-func TestFleetRepositoryGuardedAttackWaitsForRoundEngine(t *testing.T) {
+func TestFleetRepositoryGuardedAttackResolvesDefenseWin(t *testing.T) {
 	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
-		{rows: fakeRowsFromValues(attackStateTestRow(map[int]int{domaingame.FleetSmallCargo: 1}, 0, 0, 0, 0, 0, 0))},
+		{rows: fakeRowsFromValues(attackStateTestRow(map[int]int{domaingame.DefensePlasmaTurret: 10}, 0, 0, 0, 0, 0, 0))},
+		{rows: fakeRowsFromValues([]any{30, 0, 0, 70, 10})},
+		{rows: fakeRowsFromValues()},
 	}}}
 	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+	repository.combatRandom = func(int) int { return 0 }
 	fleet := recallFleetRow{ID: 123, OwnerID: 42, Mission: domaingame.FleetMissionAttack, StartPlanetID: 99, TargetPlanetID: 100, FlightTime: 300, Ships: domaingame.FleetCounts{domaingame.FleetLightFighter: 1}}
 	task := fleetQueueTask{TaskID: 55, OwnerID: 42, FleetID: 123, End: 1_700_000_000}
 
-	if err := repository.finishAttackFleetArrival(context.Background(), "`ogame_fleet`", "`ogame_fleetlogs`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", "`ogame_battledata`", task, fleet); err != nil {
+	if err := repository.finishAttackFleetArrival(context.Background(), "`ogame_uni`", "`ogame_fleet`", "`ogame_fleetlogs`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", "`ogame_battledata`", task, fleet); err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.execCalls) != 0 {
-		t.Fatalf("guarded combat must wait for the round engine, got %+v", runner.execCalls)
+	if len(runner.execCalls) != 23 {
+		t.Fatalf("expected guarded combat writeback, got %d calls: %+v", len(runner.execCalls), runner.execCalls)
+	}
+	if runner.execCalls[1].args[0] != float64(900) || runner.execCalls[1].args[1] != float64(300) {
+		t.Fatalf("expected light fighter debris, got %+v", runner.execCalls[1])
+	}
+	if !strings.Contains(fmt.Sprint(runner.execCalls[3].args[4]), "The defender has won the battle!") || !strings.Contains(fmt.Sprint(runner.execCalls[3].args[4]), "900 metal and 300 crystal") {
+		t.Fatalf("unexpected defender report: %+v", runner.execCalls[3])
+	}
+	if !strings.Contains(fmt.Sprint(runner.execCalls[4].args[3]), "combatreport_igotattacked_iwon") || !strings.Contains(fmt.Sprint(runner.execCalls[6].args[3]), "combatreport_ididattack_ilost") {
+		t.Fatalf("unexpected guarded battle links: %+v / %+v", runner.execCalls[4], runner.execCalls[6])
+	}
+	if !strings.Contains(fmt.Sprint(runner.execCalls[5].args[4]), "Contact with the attacking fleet has been lost") {
+		t.Fatalf("expected short attacker loss report, got %+v", runner.execCalls[5])
+	}
+	planetWrite := runner.execCalls[10]
+	if !strings.Contains(planetWrite.sql, "`406` = ?") || planetWrite.args[len(planetWrite.args)-4] != 10 {
+		t.Fatalf("expected ten surviving plasma turrets, got %+v", planetWrite)
+	}
+	for _, call := range runner.execCalls {
+		if strings.Contains(call.sql, "INSERT INTO `ogame_fleet`") {
+			t.Fatalf("destroyed attacker must not create a return fleet: %+v", call)
+		}
+	}
+}
+
+func TestFleetRepositoryGuardedAttackResolvesAttackerWinAndReturns(t *testing.T) {
+	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
+		{rows: fakeRowsFromValues(attackStateTestRow(map[int]int{domaingame.DefenseRocketLauncher: 1}, 0, 0, 0, 0, 0, 0))},
+		{rows: fakeRowsFromValues([]any{30, 0, 0, 70, 10})},
+		{rows: fakeRowsFromValues()},
+	}}}
+	repository := NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+	repository.combatRandom = func(int) int { return 0 }
+	fleet := recallFleetRow{ID: 123, OwnerID: 42, Mission: domaingame.FleetMissionAttack, StartPlanetID: 99, TargetPlanetID: 100, FlightTime: 300, Ships: domaingame.FleetCounts{domaingame.FleetDeathstar: 1}}
+	task := fleetQueueTask{TaskID: 55, OwnerID: 42, FleetID: 123, End: 1_700_000_000}
+
+	if err := repository.finishAttackFleetArrival(context.Background(), "`ogame_uni`", "`ogame_fleet`", "`ogame_fleetlogs`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", "`ogame_battledata`", task, fleet); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execCalls) != 26 {
+		t.Fatalf("expected attacker win writeback and return, got %d calls: %+v", len(runner.execCalls), runner.execCalls)
+	}
+	if !strings.Contains(fmt.Sprint(runner.execCalls[3].args[4]), "The attacker has won the battle!") || !strings.Contains(fmt.Sprint(runner.execCalls[3].args[4]), "Rocket Launcher") || !strings.Contains(fmt.Sprint(runner.execCalls[4].args[3]), "combatreport_igotattacked_ilost") {
+		t.Fatalf("unexpected attacker-win report: %+v / %+v", runner.execCalls[3], runner.execCalls[4])
+	}
+	if runner.execCalls[9].args[0] != float64(333333) || runner.execCalls[9].args[1] != float64(333333) || runner.execCalls[9].args[2] != float64(333333) {
+		t.Fatalf("unexpected attacker-win plunder: %+v", runner.execCalls[9])
+	}
+	returnFleet := runner.execCalls[11]
+	if returnFleet.args[6] != domaingame.FleetMissionAttack+domaingame.FleetMissionReturnOffset || returnFleet.args[len(returnFleet.args)-2] != 1 {
+		t.Fatalf("expected surviving deathstar return, got %+v", returnFleet)
+	}
+}
+
+func TestGuardedCombatReportDrawRepairAndStyles(t *testing.T) {
+	attacker := domaingame.CombatSlot{Name: "Attacker", Coords: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, Units: map[int]int{domaingame.FleetSmallCargo: 1}}
+	defender := domaingame.CombatSlot{Name: "Defender", Coords: domaingame.Coordinates{Galaxy: 2, System: 3, Position: 4}, Planet: true, Units: map[int]int{domaingame.DefenseRocketLauncher: 1}}
+	result := domaingame.CombatResult{Outcome: domaingame.CombatDraw}
+	result.Before.Attackers = []domaingame.CombatSlot{attacker}
+	result.Before.Defenders = []domaingame.CombatSlot{defender}
+	repaired := []map[int]int{{
+		domaingame.DefenseRocketLauncher: 1, domaingame.DefenseLightLaser: 1,
+		domaingame.DefenseHeavyLaser: 1, domaingame.DefenseGaussCannon: 1,
+		domaingame.DefenseIonCannon: 1, domaingame.DefenseSmallShieldDome: 1,
+		domaingame.DefensePlasmaTurret: 1, domaingame.DefenseLargeShieldDome: 1,
+	}}
+	report := combatBattleReport(result, domaingame.CombatWriteback{
+		AttackerLosses: []domaingame.CombatParticipantLoss{{Points: 1_000}},
+		DefenderLosses: []domaingame.CombatParticipantLoss{{Points: 2_000}},
+		Debris:         domaingame.Resources{Metal: 300, Crystal: 400},
+	}, repaired, domaingame.Resources{}, 1_700_000_000)
+	for _, want := range []string{"battle ended in a draw", "Rocket Launcher", "Light Laser", "Heavy Laser", "Gauss Cannon", "Ion Cannon", "Small Shield Dome", "Plasma Turret", "Large Shield Dome", "could be repaired"} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("expected %q in draw report: %s", want, report)
+		}
+	}
+	if attackerStyle, defenderStyle := guardedBattleStyles(domaingame.CombatDraw); attackerStyle != "combatreport_ididattack_draw" || defenderStyle != "combatreport_igotattacked_draw" {
+		t.Fatalf("unexpected draw styles: %s/%s", attackerStyle, defenderStyle)
+	}
+	if combatFleetTotal(nil) != 0 {
+		t.Fatal("empty combat fleet must have zero ships")
+	}
+}
+
+func TestFleetRepositoryCombatUniverseSettingsEdges(t *testing.T) {
+	ctx := context.Background()
+	for _, test := range []struct {
+		name    string
+		result  fakeQueryResult
+		wantErr string
+	}{
+		{name: "query", result: fakeQueryResult{err: errors.New("settings query failed")}, wantErr: "settings query failed"},
+		{name: "missing", result: fakeQueryResult{rows: fakeRowsFromValues()}, wantErr: "settings unavailable"},
+		{name: "scan", result: fakeQueryResult{rows: fakeRowsFromValues([]any{"bad"})}, wantErr: "unexpected scan"},
+		{name: "trailer", result: fakeQueryResult{rows: fakeRowsFromValuesWithErr(errors.New("settings trailer failed"), []any{30, 0, 1, 70, 10})}, wantErr: "settings trailer failed"},
+	} {
+		repository := NewFleetRepositoryWithRunner(&fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{test.result}}}, nil, "ogame_", nil)
+		if _, err := repository.loadCombatUniverseSettings(ctx, "`ogame_uni`"); err == nil || !strings.Contains(err.Error(), test.wantErr) {
+			t.Fatalf("%s: expected %q, got %v", test.name, test.wantErr, err)
+		}
+	}
+	repository := NewFleetRepositoryWithRunner(&fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{30, 10, 1, 70, 10})}}}}, nil, "ogame_", nil)
+	settings, err := repository.loadCombatUniverseSettings(ctx, "`ogame_uni`")
+	if err != nil || !settings.RapidFire || settings.FleetDebrisPercent != 30 || settings.DefenseDebrisPercent != 10 || settings.DefenseRepair != 70 || settings.DefenseRepairDelta != 10 {
+		t.Fatalf("unexpected combat settings: %+v err=%v", settings, err)
+	}
+}
+
+func TestFleetRepositoryGuardedCombatHelperErrors(t *testing.T) {
+	ctx := context.Background()
+	value := fleetMessageContext{OriginOwnerID: 42, TargetOwnerID: 43, TargetGalaxy: 1, TargetSystem: 2, TargetPosition: 3}
+	repository := NewFleetRepositoryWithRunner(&fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("debris lookup failed")}}}}, nil, "ogame_", nil)
+	if err := repository.addGuardedBattleDebris(ctx, "`ogame_planets`", value, domaingame.Resources{}); err == nil || !strings.Contains(err.Error(), "debris lookup failed") {
+		t.Fatalf("expected debris lookup error, got %v", err)
+	}
+
+	fleet := recallFleetRow{ID: 123, OwnerID: 42, Mission: domaingame.FleetMissionAttack, FlightTime: 300, Ships: domaingame.FleetCounts{domaingame.FleetSmallCargo: 1}}
+	task := fleetQueueTask{TaskID: 55, End: 1_000}
+	for failAt, want := range []string{"return fleet failed", "return queue failed", "return log failed"} {
+		execErrs := make([]error, failAt+1)
+		execErrs[failAt] = errors.New(want)
+		runner := &fakeFleetRunner{execErrs: execErrs}
+		repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+		err := repository.returnGuardedAttackSurvivors(ctx, "`ogame_fleet`", "`ogame_logs`", "`ogame_queue`", task, fleet, value, map[int]int{domaingame.FleetSmallCargo: 1}, domaingame.Resources{})
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("expected %q, got %v", want, err)
+		}
+	}
+
+	runner := &fakeFleetRunner{}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+	sameOwner := value
+	sameOwner.TargetOwnerID = sameOwner.OriginOwnerID
+	result := domaingame.CombatResult{Outcome: domaingame.CombatAttackerWon}
+	writeback := domaingame.CombatWriteback{AttackerLosses: []domaingame.CombatParticipantLoss{{}}, DefenderLosses: []domaingame.CombatParticipantLoss{{}}}
+	if err := repository.insertGuardedBattleMessages(ctx, "`ogame_messages`", sameOwner, "report", result, writeback, 1_000); err != nil || len(runner.execCalls) != 2 {
+		t.Fatalf("same-owner battle must receive one message pair: calls=%+v err=%v", runner.execCalls, err)
+	}
+
+	runner = &fakeFleetRunner{execResults: []sql.Result{fakeFleetSQLErrorResult{idErr: errors.New("guarded message id failed")}}}
+	repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+	if err := repository.insertBattleMessagePairWithLosses(ctx, "`ogame_messages`", 42, value, "report", "style", 0, 0, 1_000); err == nil || !strings.Contains(err.Error(), "guarded message id failed") {
+		t.Fatalf("expected guarded message id error, got %v", err)
+	}
+}
+
+func TestFleetRepositoryGuardedAttackWriteErrors(t *testing.T) {
+	ctx := context.Background()
+	fleet := recallFleetRow{ID: 123, OwnerID: 42, Mission: domaingame.FleetMissionAttack, StartPlanetID: 99, TargetPlanetID: 100, FlightTime: 300, Ships: domaingame.FleetCounts{domaingame.FleetDeathstar: 1}}
+	task := fleetQueueTask{TaskID: 55, OwnerID: 42, FleetID: 123, End: 1_700_000_000}
+	value := fleetMessageContextTestValue()
+	state := unguardedAttackState{GuardCount: 1, DefenderUnits: map[int]int{domaingame.DefenseRocketLauncher: 1}}
+	call := func(repository FleetRepository, testFleet recallFleetRow) error {
+		return repository.finishGuardedAttackFleetArrival(ctx, "`ogame_uni`", "`ogame_fleet`", "`ogame_fleetlogs`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", "`ogame_battledata`", task, testFleet, value, state)
+	}
+
+	repository := NewFleetRepositoryWithRunner(&fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("guarded settings failed")}}}}, nil, "ogame_", nil)
+	if err := call(repository, fleet); err == nil || !strings.Contains(err.Error(), "guarded settings failed") {
+		t.Fatalf("expected guarded settings error, got %v", err)
+	}
+	repository = NewFleetRepositoryWithRunner(&fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{30, 0, 0, 70, 10})}}}}, nil, "ogame_", nil)
+	repository.combatRandom = nil
+	if err := call(repository, fleet); err == nil || !strings.Contains(err.Error(), "random source unavailable") {
+		t.Fatalf("expected random source error, got %v", err)
+	}
+	invalidFleet := fleet
+	invalidFleet.Ships = domaingame.FleetCounts{999: 1}
+	repository = NewFleetRepositoryWithRunner(&fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{30, 0, 0, 70, 10})}}}}, nil, "ogame_", nil)
+	repository.combatRandom = func(int) int { return 0 }
+	if err := call(repository, invalidFleet); err == nil || !strings.Contains(err.Error(), "unknown combat unit") {
+		t.Fatalf("expected combat engine validation error, got %v", err)
+	}
+
+	for failAt := 0; failAt < 26; failAt++ {
+		execErrs := make([]error, failAt+1)
+		execErrs[failAt] = fmt.Errorf("guarded write %d failed", failAt)
+		runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues([]any{30, 0, 0, 70, 10})},
+			{rows: fakeRowsFromValues()},
+		}}, execErrs: execErrs}
+		repository = NewFleetRepositoryWithRunner(runner, runner, "ogame_", nil)
+		repository.combatRandom = func(int) int { return 0 }
+		if err := call(repository, fleet); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("guarded write %d failed", failAt)) {
+			t.Fatalf("write %d: unexpected error %v", failAt, err)
+		}
 	}
 }
 
@@ -2963,7 +3151,7 @@ func TestFleetRepositoryUnguardedAttackErrors(t *testing.T) {
 	fleet := recallFleetRow{ID: 123, OwnerID: 42, Mission: domaingame.FleetMissionAttack, StartPlanetID: 99, TargetPlanetID: 100, FlightTime: 300, Ships: domaingame.FleetCounts{domaingame.FleetSmallCargo: 2}}
 	task := fleetQueueTask{TaskID: 55, OwnerID: 42, FleetID: 123, End: 1_700_000_000}
 	call := func(repository FleetRepository) error {
-		return repository.finishAttackFleetArrival(context.Background(), "`ogame_fleet`", "`ogame_fleetlogs`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", "`ogame_battledata`", task, fleet)
+		return repository.finishAttackFleetArrival(context.Background(), "`ogame_uni`", "`ogame_fleet`", "`ogame_fleetlogs`", "`ogame_queue`", "`ogame_planets`", "`ogame_users`", "`ogame_messages`", "`ogame_battledata`", task, fleet)
 	}
 
 	for _, test := range []struct {
@@ -4507,6 +4695,17 @@ func fleetMessageContextTestRow() []any {
 	}
 }
 
+func fleetMessageContextTestValue() fleetMessageContext {
+	return fleetMessageContext{
+		OriginOwnerID: 42, OriginOwnerName: "Player", OriginName: "Home",
+		OriginGalaxy: 1, OriginSystem: 2, OriginPosition: 3, OriginType: 1,
+		OriginMetal: 1_000_000, OriginCrystal: 2_000_000, OriginDeuterium: 3_000_000,
+		TargetOwnerID: 43, TargetOwnerName: "Target", TargetName: "Away",
+		TargetGalaxy: 2, TargetSystem: 3, TargetPosition: 4, TargetType: 1,
+		TargetMetal: 4_000_000, TargetCrystal: 5_000_000, TargetDeuterium: 6_000_000,
+	}
+}
+
 func attackStateTestRow(units map[int]int, originWeapon int, originShield int, originArmour int, defenderWeapon int, defenderShield int, defenderArmour int) []any {
 	ids := append([]int{}, domaingame.FleetIDs()...)
 	for _, id := range domaingame.DefenseIDs() {
@@ -4514,11 +4713,11 @@ func attackStateTestRow(units map[int]int, originWeapon int, originShield int, o
 			ids = append(ids, id)
 		}
 	}
-	row := make([]any, 0, len(ids)+6)
+	row := make([]any, 0, len(ids)+7)
 	for _, id := range ids {
 		row = append(row, units[id])
 	}
-	return append(row, originWeapon, originShield, originArmour, defenderWeapon, defenderShield, defenderArmour)
+	return append(row, originWeapon, originShield, originArmour, defenderWeapon, defenderShield, defenderArmour, int64(0))
 }
 
 func expeditionSettingsTestRow(event string) []any {
