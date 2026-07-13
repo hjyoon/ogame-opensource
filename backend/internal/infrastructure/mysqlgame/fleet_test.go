@@ -4760,7 +4760,7 @@ func fleetLaunchUserStateRow(id int, score int64, admin int, vacation int, banne
 }
 
 func recallFleetTestRow(mission int, unionID int, ships map[int]int) []any {
-	row := []any{123, 42, unionID, float64(100), float64(200), float64(300), 50, mission, 99, 100, 300, 600}
+	row := []any{123, 42, unionID, float64(100), float64(200), float64(300), 50, mission, 99, 100, 300, 600, 0, 0}
 	for _, shipID := range domaingame.FleetIDs() {
 		row = append(row, ships[shipID])
 	}

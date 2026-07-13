@@ -229,6 +229,8 @@ func (r FleetRepository) finishFleetQueueTask(ctx context.Context, uniTable stri
 		return r.finishExpeditionArrival(ctx, fleetTable, queueTable, task, fleet)
 	case domaingame.FleetMissionExpedition + domaingame.FleetMissionOrbitingOffset:
 		return r.finishExpeditionHold(ctx, fleetTable, queueTable, planetsTable, messagesTable, usersTable, expeditionTable, task, fleet)
+	case domaingame.FleetMissionMissile:
+		return r.finishMissileArrival(ctx, fleetTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)
 	default:
 		if fleet.Mission >= domaingame.FleetMissionReturnOffset && fleet.Mission < domaingame.FleetMissionOrbitingOffset {
 			return r.finishReturningFleetArrival(ctx, fleetTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)

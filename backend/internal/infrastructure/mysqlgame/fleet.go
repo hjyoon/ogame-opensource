@@ -37,6 +37,8 @@ type recallFleetRow struct {
 	TargetPlanetID int
 	FlightTime     int
 	DeployTime     int
+	MissileAmount  int
+	MissileTarget  int
 	Ships          domaingame.FleetCounts
 }
 
@@ -1337,7 +1339,7 @@ func (r FleetRepository) loadRecallFleet(ctx context.Context, fleetTable string,
 	ids := domaingame.FleetIDs()
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT fleet_id, owner_id, union_id, `%d`, `%d`, `%d`, fuel, mission, start_planet, target_planet, flight_time, deploy_time, %s FROM %s WHERE fleet_id = ? AND owner_id = ? LIMIT 1", resourceMetal, resourceCrystal, resourceDeuterium, numericColumns(ids), fleetTable),
+		fmt.Sprintf("SELECT fleet_id, owner_id, union_id, `%d`, `%d`, `%d`, fuel, mission, start_planet, target_planet, flight_time, deploy_time, COALESCE(ipm_amount, 0), COALESCE(ipm_target, 0), %s FROM %s WHERE fleet_id = ? AND owner_id = ? LIMIT 1", resourceMetal, resourceCrystal, resourceDeuterium, numericColumns(ids), fleetTable),
 		fleetID,
 		playerID,
 	)
@@ -1365,7 +1367,7 @@ func (r FleetRepository) loadRecallFleetAnyOwner(ctx context.Context, fleetTable
 	ids := domaingame.FleetIDs()
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT fleet_id, owner_id, union_id, `%d`, `%d`, `%d`, fuel, mission, start_planet, target_planet, flight_time, deploy_time, %s FROM %s WHERE fleet_id = ? LIMIT 1", resourceMetal, resourceCrystal, resourceDeuterium, numericColumns(ids), fleetTable),
+		fmt.Sprintf("SELECT fleet_id, owner_id, union_id, `%d`, `%d`, `%d`, fuel, mission, start_planet, target_planet, flight_time, deploy_time, COALESCE(ipm_amount, 0), COALESCE(ipm_target, 0), %s FROM %s WHERE fleet_id = ? LIMIT 1", resourceMetal, resourceCrystal, resourceDeuterium, numericColumns(ids), fleetTable),
 		fleetID,
 	)
 	if err != nil {
@@ -1404,6 +1406,8 @@ func scanRecallFleetRow(rows Rows, ids []int) (recallFleetRow, error) {
 		&fleet.TargetPlanetID,
 		&fleet.FlightTime,
 		&fleet.DeployTime,
+		&fleet.MissileAmount,
+		&fleet.MissileTarget,
 	}
 	for index := range shipValues {
 		dest = append(dest, &shipValues[index])
