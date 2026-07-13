@@ -1532,8 +1532,8 @@ func TestAdminRepositoryMutatesBans(t *testing.T) {
 	if issue == nil || issue.Code != domaingame.AdminIssueActionSaved {
 		t.Fatalf("unexpected issue: %+v", issue)
 	}
-	if len(runner.execCalls) != 4 {
-		t.Fatalf("expected pranger/delete/queue/update execs, got %+v", runner.execCalls)
+	if len(runner.execCalls) != 12 {
+		t.Fatalf("expected pranger/delete/queue/update and rank execs, got %+v", runner.execCalls)
 	}
 	if !strings.Contains(runner.execCalls[0].sql, "ogame_pranger") || runner.execCalls[0].args[0] != "admin" || runner.execCalls[0].args[1] != "target" {
 		t.Fatalf("unexpected pranger insert: %+v", runner.execCalls[0])
@@ -1546,6 +1546,9 @@ func TestAdminRepositoryMutatesBans(t *testing.T) {
 	}
 	if !strings.Contains(runner.execCalls[3].sql, "vacation = 1") || runner.execCalls[3].args[0] != 8_200 || runner.execCalls[3].args[2] != 77 {
 		t.Fatalf("unexpected ban update: %+v", runner.execCalls[3])
+	}
+	if !strings.Contains(runner.execCalls[4].sql, "score1 = -1") || !strings.Contains(runner.execCalls[11].sql, "place1 = 0") {
+		t.Fatalf("expected rank recalculation statements, got %+v", runner.execCalls)
 	}
 }
 
@@ -1569,8 +1572,29 @@ func TestAdminRepositoryMutatesBanWithoutVacation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MutateAdmin returned error: %v", err)
 	}
-	if len(runner.execCalls) != 4 || strings.Contains(runner.execCalls[3].sql, "vacation = 1") || runner.execCalls[3].args[0] != 4_600 {
+	if len(runner.execCalls) != 12 || strings.Contains(runner.execCalls[3].sql, "vacation = 1") || runner.execCalls[3].args[0] != 4_600 {
 		t.Fatalf("unexpected ban without vacation execs: %+v", runner.execCalls)
+	}
+}
+
+func TestAdminRepositoryPreservesLegacyNegativeBanDuration(t *testing.T) {
+	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{42, "admin"})},
+		{rows: fakeRowsFromValues([]any{77, "target"})},
+	}}}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+	repository.now = func() time.Time { return time.Unix(100_000, 0) }
+
+	_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+		PlayerID: 42, Mode: "Bans", Action: "ban", TargetIDs: []int{77}, BanMode: 0, Days: -1, Hours: -2,
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.execCalls) != 12 || runner.execCalls[0].args[5] != 6_400 ||
+		runner.execCalls[2].args[3] != 106_400 || runner.execCalls[3].args[0] != 6_400 {
+		t.Fatalf("unexpected negative-duration ban effects: %+v", runner.execCalls)
 	}
 }
 
@@ -1600,9 +1624,17 @@ func TestAdminRepositoryMutatesAttackBans(t *testing.T) {
 }
 
 func TestAdminRepositoryUnbansUsers(t *testing.T) {
+	planetScoreRow := append([]any{}, buildingLevelRow(map[int]int{domaingame.BuildingMetalMine: 1})...)
+	planetScoreRow = append(planetScoreRow, fleetCountRow(map[int]int{domaingame.FleetSmallCargo: 2})...)
+	planetScoreRow = append(planetScoreRow, defenseCountRow(map[int]int{domaingame.DefenseInterplanetaryMissile: 1})...)
+	flyingFleetRow := append([]any{}, fleetCountRow(map[int]int{domaingame.FleetSmallCargo: 1})...)
+	flyingFleetRow = append(flyingFleetRow, 1)
 	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{42, "admin"})},
 		{rows: fakeRowsFromValues([]any{77, "target"})},
+		{rows: fakeRowsFromValues(planetScoreRow)},
+		{rows: fakeRowsFromValues(allResearchLevelRow(map[int]int{domaingame.ResearchComputer: 1}))},
+		{rows: fakeRowsFromValues(flyingFleetRow)},
 	}}}
 	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
 
@@ -1617,11 +1649,15 @@ func TestAdminRepositoryUnbansUsers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MutateAdmin returned error: %v", err)
 	}
-	if issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 2 {
+	if issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 11 {
 		t.Fatalf("unexpected unban issue=%+v execs=%+v", issue, runner.execCalls)
 	}
 	if runner.execCalls[0].args[0] != "UnbanPlayer" || !strings.Contains(runner.execCalls[1].sql, "banned = 0") {
 		t.Fatalf("unexpected unban execs: %+v", runner.execCalls)
+	}
+	if !strings.Contains(runner.execCalls[2].sql, "SET score1 = ?") || runner.execCalls[2].args[3] != 77 ||
+		!strings.Contains(runner.execCalls[3].sql, "score1 = -1") || !strings.Contains(runner.execCalls[10].sql, "place1 = 0") {
+		t.Fatalf("expected score and rank recalculation after unban, got %+v", runner.execCalls)
 	}
 }
 

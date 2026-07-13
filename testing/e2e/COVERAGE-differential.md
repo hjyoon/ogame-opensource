@@ -21,6 +21,7 @@ compare normalized HTTP/DB effects, then restore.
 | Messages | 18 | read/retention, delete modes, reports, flags, send/cap | PASS |
 | Alliance | 27 | create/apply/review, ranks, text/settings, rename, leave/kick/dismiss/transfer | PASS |
 | Account options | 36 | settings, identity/mail, activation, vacation/deletion, Commander/feed/operator flags | PASS |
+| Admin bans | 8 | access, ban/VM/attack, unban score/ranks, duration boundary, no-op | PASS |
 | Combat engine | 4 | outcome, shots/power, absorption, survivors | PASS |
 
 Resource cases cover partial production and 0/100 boundaries. Each side logs in
@@ -48,7 +49,7 @@ moon ABM use, defense state, rank effects, cleanup, and legacy report HTML.
 
 ## Expansion Order
 
-1. Admin mutations.
+1. Remaining Admin mutation groups.
 
 ## Comparison Contract
 

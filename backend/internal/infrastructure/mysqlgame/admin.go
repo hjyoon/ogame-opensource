@@ -422,11 +422,19 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 	if err != nil {
 		return nil, err
 	}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return nil, err
+	}
+	fleetTable, err := tableName(r.prefix, "fleet")
+	if err != nil {
+		return nil, err
+	}
 	prangerTable, err := tableName(r.prefix, "pranger")
 	if err != nil {
 		return nil, err
 	}
-	return r.mutateAdminBans(ctx, usersTable, queueTable, prangerTable, query)
+	return r.mutateAdminBans(ctx, usersTable, planetsTable, fleetTable, queueTable, prangerTable, query)
 }
 
 func (r AdminRepository) mutateAdminMods(ctx context.Context, uniTable string, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
@@ -1509,7 +1517,7 @@ type adminBanUser struct {
 	Name string
 }
 
-func (r AdminRepository) mutateAdminBans(ctx context.Context, usersTable string, queueTable string, prangerTable string, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
+func (r AdminRepository) mutateAdminBans(ctx context.Context, usersTable string, planetsTable string, fleetTable string, queueTable string, prangerTable string, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
 	targetIDs := uniquePositiveIDs(query.TargetIDs)
 	if len(targetIDs) == 0 {
 		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
@@ -1519,9 +1527,10 @@ func (r AdminRepository) mutateAdminBans(ctx context.Context, usersTable string,
 		return nil, err
 	}
 	now := int(r.now().Unix())
-	seconds := max(0, query.Days)*24*60*60 + max(0, query.Hours)*60*60
+	seconds := query.Days*24*60*60 + query.Hours*60*60
 	until := now + seconds
 	reason := sanitizeAdminBanReason(query.Reason)
+	recalculateRanks := false
 
 	for _, targetID := range targetIDs {
 		target, found, err := r.loadAdminBanUser(ctx, usersTable, targetID)
@@ -1539,6 +1548,7 @@ func (r AdminRepository) mutateAdminBans(ctx context.Context, usersTable string,
 			if err := r.banAdminUser(ctx, usersTable, queueTable, targetID, now, until, false); err != nil {
 				return nil, err
 			}
+			recalculateRanks = true
 		case 1:
 			if err := r.insertAdminBanPranger(ctx, prangerTable, actor, target, now, until, reason); err != nil {
 				return nil, err
@@ -1546,6 +1556,7 @@ func (r AdminRepository) mutateAdminBans(ctx context.Context, usersTable string,
 			if err := r.banAdminUser(ctx, usersTable, queueTable, targetID, now, until, true); err != nil {
 				return nil, err
 			}
+			recalculateRanks = true
 		case 2:
 			if err := r.insertAdminBanPranger(ctx, prangerTable, actor, target, now, until, reason); err != nil {
 				return nil, err
@@ -1557,10 +1568,18 @@ func (r AdminRepository) mutateAdminBans(ctx context.Context, usersTable string,
 			if err := r.unbanAdminUser(ctx, usersTable, queueTable, targetID); err != nil {
 				return nil, err
 			}
+			if err := r.recalcAdminUserStats(ctx, usersTable, planetsTable, fleetTable, targetID); err != nil {
+				return nil, err
+			}
 		case 4:
 			if err := r.unbanAdminUserAttacks(ctx, usersTable, queueTable, targetID); err != nil {
 				return nil, err
 			}
+		}
+	}
+	if recalculateRanks {
+		if err := r.overview.recalcRanks(ctx, usersTable); err != nil {
+			return nil, err
 		}
 	}
 	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
