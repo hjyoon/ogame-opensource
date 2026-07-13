@@ -1790,6 +1790,7 @@ type LegacyGameOverviewProps = {
   mcpTokensPending: boolean;
   mcpTokenSecret: string | null;
   onOptionsSubmit: (settings: {
+    name: string;
     language: string;
     skinPath: string;
     useSkin: boolean;
@@ -1803,7 +1804,18 @@ type LegacyGameOverviewProps = {
     newPasswordRepeat: string;
     email: string;
     vacationMode: boolean;
+    disableVacation: boolean;
     deleteAccount: boolean;
+    showEspionageButton: boolean;
+    showWriteMessage: boolean;
+    showBuddy: boolean;
+    showRocketAttack: boolean;
+    showViewReport: boolean;
+    doNotUseFolders: boolean;
+    feedEnabled: boolean;
+    feedType: string;
+    hideGoEmail: boolean;
+    resendActivation: boolean;
   }) => void;
   onMCPTokenCreate: (name: string, scopes: string[]) => void;
   onMCPTokenRevoke: (tokenID: number) => void;
@@ -12757,6 +12769,7 @@ function OptionsTable({
   onMCPTokenCreate: (name: string, scopes: string[]) => void;
   onMCPTokenRevoke: (tokenID: number) => void;
   onSubmit: (settings: {
+    name: string;
     language: string;
     skinPath: string;
     useSkin: boolean;
@@ -12770,15 +12783,28 @@ function OptionsTable({
     newPasswordRepeat: string;
     email: string;
     vacationMode: boolean;
+    disableVacation: boolean;
     deleteAccount: boolean;
+    showEspionageButton: boolean;
+    showWriteMessage: boolean;
+    showBuddy: boolean;
+    showRocketAttack: boolean;
+    showViewReport: boolean;
+    doNotUseFolders: boolean;
+    feedEnabled: boolean;
+    feedType: string;
+    hideGoEmail: boolean;
+    resendActivation: boolean;
   }) => void;
   options: GameOptions;
   pending: boolean;
 }) {
   const submitOptions = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const submitter = (event.nativeEvent as SubmitEvent).submitter;
+    const form = new FormData(event.currentTarget, submitter instanceof HTMLElement ? submitter : undefined);
     onSubmit({
+      name: String(form.get("db_character") ?? options.user.name),
       language: String(form.get("lang") ?? options.settings.language),
       skinPath: String(form.get("dpath") ?? ""),
       useSkin: form.get("design") === "on",
@@ -12792,9 +12818,74 @@ function OptionsTable({
       newPasswordRepeat: String(form.get("newpass2") ?? ""),
       email: String(form.get("db_email") ?? ""),
       vacationMode: form.get("urlaubs_modus") === "on",
-      deleteAccount: form.get("db_deaktjava") === "on"
+      disableVacation: form.get("urlaub_aus") === "on",
+      deleteAccount: form.get("db_deaktjava") === "on",
+      showEspionageButton: form.get("settings_esp") === "on",
+      showWriteMessage: form.get("settings_wri") === "on",
+      showBuddy: form.get("settings_bud") === "on",
+      showRocketAttack: form.get("settings_mis") === "on",
+      showViewReport: form.get("settings_rep") === "on",
+      doNotUseFolders: form.get("settings_folders") === "on",
+      feedEnabled: form.get("feed_activated") === "on",
+      feedType: String(form.get("feed_type") ?? ""),
+      hideGoEmail: form.get("hide_go_email") === "on",
+      resendActivation: form.has("validate")
     });
   };
+
+  if (!options.user.validated) {
+    return (
+      <form action={gameRouteURL("/game/options", window.location.search)} method="POST" onSubmit={submitOptions}>
+        <table className="legacy-overview-table legacy-options-table" width={519}>
+          <tbody>
+            <tr>
+              <td className="legacy-c c" colSpan={2}>User Data</td>
+            </tr>
+            <tr>
+              <th><a title="You can change this email address at any time. This will be entered as a permanent address after 7 days without changes.">Email address</a></th>
+              <th><input defaultValue={options.user.email} maxLength={100} name="db_email" size={20} type="text" /></th>
+            </tr>
+            <tr>
+              <th>Password</th>
+              <th><input name="db_password" size={20} type="password" /></th>
+            </tr>
+            <tr>
+              <th colSpan={2}><input disabled={pending} type="submit" value="Use the address you entered" /></th>
+            </tr>
+            <tr>
+              <th colSpan={2}>
+                <p style={{ color: "#ff0000", paddingBottom: 5, paddingTop: 10 }}>Your game account is not activated yet. Here you can order an e-mail with an activation link.</p>
+                <input disabled={pending} name="validate" type="submit" value="Request an activation link" />
+              </th>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+    );
+  }
+
+  if (options.account.vacation) {
+    const canDisable = Math.floor(Date.now() / 1000) >= options.account.vacationUntil;
+    return (
+      <form action={gameRouteURL("/game/options", window.location.search)} method="POST" onSubmit={submitOptions}>
+        <table className="legacy-overview-table legacy-options-table" width={519}>
+          <tbody>
+            <tr><td className="legacy-c c" colSpan={2}>Vacation mode</td></tr>
+            <tr><th colSpan={2}>Vacation mode has been turned on. Vacation until at least:<br />{formatLegacyVacationTimestamp(options.account.vacationUntil)}</th></tr>
+            {canDisable ? (
+              <tr><th>disable</th><th><input name="urlaub_aus" type="checkbox" /></th></tr>
+            ) : (
+              <tr>
+                <th><a title="If you mark this box, your account will be deleted automatically after 7 days.">Delete account</a></th>
+                <th><input defaultChecked={options.account.deletionQueued} name="db_deaktjava" type="checkbox" />{options.account.deletionQueued ? ` am: ${formatLegacyTimestamp(options.account.deletionAt)}` : null}</th>
+              </tr>
+            )}
+            <tr><th colSpan={2}><input disabled={pending} type="submit" value="save changes" /></th></tr>
+          </tbody>
+        </table>
+      </form>
+    );
+  }
 
   return (
     <>
@@ -12812,7 +12903,7 @@ function OptionsTable({
               {options.user.nameLocked ? (
                 options.user.name
               ) : (
-                <input disabled name="db_character" readOnly size={20} type="text" value={options.user.name} />
+                <input defaultValue={options.user.name} name="db_character" size={20} type="text" />
               )}
               <br />
             </th>
@@ -12952,7 +13043,7 @@ function OptionsTable({
                     <img alt="" src={`${skinBase}/img/${row.icon}`} /> {row.label}
                   </th>
                   <th>
-                    <input defaultChecked={row.checked} disabled name={row.name} type="checkbox" />
+                    <input defaultChecked={row.checked} name={row.name} type="checkbox" />
                   </th>
                 </tr>
               ))}
@@ -12964,7 +13055,7 @@ function OptionsTable({
               <tr>
                 <th>No folder sorting</th>
                 <th>
-                  <input defaultChecked={options.flags.doNotUseFolders} disabled name="settings_folders" type="checkbox" />
+                  <input defaultChecked={options.flags.doNotUseFolders} name="settings_folders" type="checkbox" />
                 </th>
               </tr>
               <tr>
@@ -12975,9 +13066,38 @@ function OptionsTable({
               <tr>
                 <th>{options.flags.feedEnabled ? "Activated" : "Activate"}</th>
                 <th>
-                  <input defaultChecked={options.flags.feedEnabled} disabled name="feed_activated" type="checkbox" />
+                  <input defaultChecked={options.flags.feedEnabled} name="feed_activated" type="checkbox" />
                 </th>
               </tr>
+              {options.flags.feedEnabled ? (
+                <>
+                  <tr>
+                    <th>Format</th>
+                    <th>
+                      <select defaultValue={options.flags.feedAtom ? "atom" : "rss"} name="feed_type">
+                        <option value="rss">RSS</option>
+                        <option value="atom">Atom</option>
+                      </select>
+                    </th>
+                  </tr>
+                  <tr>
+                    <th>Feed link</th>
+                    <th>
+                      <input
+                        name="feed_link"
+                        readOnly
+                        size={40}
+                        type="text"
+                        value={`${window.location.origin}/game/feed/show.php?feedid=${options.user.feedId}`}
+                      />
+                      <br />
+                      <a href={`/game/feed/show.php?feedid=${encodeURIComponent(options.user.feedId)}`} rel="noreferrer" target="_blank">
+                        Show news feed
+                      </a>
+                    </th>
+                  </tr>
+                </>
+              ) : null}
             </>
           ) : null}
           {options.user.admin === 1 ? (
@@ -12990,7 +13110,7 @@ function OptionsTable({
               <tr>
                 <th>Hide Email on message page for players</th>
                 <th>
-                  <input defaultChecked={options.flags.hideGoEmail} disabled name="hide_go_email" type="checkbox" />
+                  <input defaultChecked={options.flags.hideGoEmail} name="hide_go_email" type="checkbox" />
                 </th>
               </tr>
             </>
@@ -13217,6 +13337,15 @@ function formatLegacyTimestamp(unixSeconds: number): string {
   const date = new Date(unixSeconds * 1000);
   const pad = (value: number) => value.toString().padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function formatLegacyVacationTimestamp(unixSeconds: number): string {
+  if (unixSeconds <= 0) {
+    return "";
+  }
+  const date = new Date(unixSeconds * 1000);
+  const pad = (value: number) => value.toString().padStart(2, "0");
+  return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 function LegacyReportHTML({ html }: { html: string }) {

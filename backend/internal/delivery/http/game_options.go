@@ -83,20 +83,32 @@ type gameOptionsFlags struct {
 }
 
 type gameOptionsMutationRequest struct {
-	Language          string `json:"language"`
-	SkinPath          string `json:"skinPath"`
-	UseSkin           bool   `json:"useSkin"`
-	DeactivateIP      bool   `json:"deactivateIp"`
-	SortBy            int    `json:"sortBy"`
-	SortOrder         int    `json:"sortOrder"`
-	MaxSpy            int    `json:"maxSpy"`
-	MaxFleetMessages  int    `json:"maxFleetMessages"`
-	OldPassword       string `json:"oldPassword"`
-	NewPassword       string `json:"newPassword"`
-	NewPasswordRepeat string `json:"newPasswordRepeat"`
-	Email             string `json:"email"`
-	VacationMode      *bool  `json:"vacationMode"`
-	DeleteAccount     bool   `json:"deleteAccount"`
+	Name                string `json:"name"`
+	Language            string `json:"language"`
+	SkinPath            string `json:"skinPath"`
+	UseSkin             bool   `json:"useSkin"`
+	DeactivateIP        bool   `json:"deactivateIp"`
+	SortBy              int    `json:"sortBy"`
+	SortOrder           int    `json:"sortOrder"`
+	MaxSpy              int    `json:"maxSpy"`
+	MaxFleetMessages    int    `json:"maxFleetMessages"`
+	OldPassword         string `json:"oldPassword"`
+	NewPassword         string `json:"newPassword"`
+	NewPasswordRepeat   string `json:"newPasswordRepeat"`
+	Email               string `json:"email"`
+	VacationMode        *bool  `json:"vacationMode"`
+	DisableVacation     bool   `json:"disableVacation"`
+	DeleteAccount       bool   `json:"deleteAccount"`
+	ShowEspionageButton bool   `json:"showEspionageButton"`
+	ShowWriteMessage    bool   `json:"showWriteMessage"`
+	ShowBuddy           bool   `json:"showBuddy"`
+	ShowRocketAttack    bool   `json:"showRocketAttack"`
+	ShowViewReport      bool   `json:"showViewReport"`
+	DoNotUseFolders     bool   `json:"doNotUseFolders"`
+	FeedEnabled         bool   `json:"feedEnabled"`
+	FeedType            string `json:"feedType"`
+	HideGOEmail         bool   `json:"hideGoEmail"`
+	ResendActivation    bool   `json:"resendActivation"`
 }
 
 func (a app) handleGameOptions(w http.ResponseWriter, r *http.Request) {
@@ -128,10 +140,24 @@ func (a app) handleGameOptionsGet(w http.ResponseWriter, r *http.Request) {
 		PlanetID:        planetID,
 	})
 	if err != nil {
+		if a.deps.Logger != nil {
+			a.deps.Logger.Error("game options unavailable", "error", err.Error(), "operation", "get")
+		}
 		http.Error(w, "game options unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	writeGameOptionsResponse(w, result)
+}
+
+func clearOptionsIdentityCookies(w http.ResponseWriter, r *http.Request, issue *domaingame.OptionsActionIssue) {
+	if issue == nil || issue.Code != domaingame.OptionsIssueNameChanged && issue.Code != domaingame.OptionsIssuePasswordChanged {
+		return
+	}
+	for _, cookie := range r.Cookies() {
+		if strings.HasPrefix(cookie.Name, "prsess_") {
+			clearLoginSessionCookie(w, cookie.Name)
+		}
+	}
 }
 
 func (a app) handleGameOptionsPost(w http.ResponseWriter, r *http.Request) {
@@ -157,9 +183,13 @@ func (a app) handleGameOptionsPost(w http.ResponseWriter, r *http.Request) {
 		Mutation:        mutation,
 	})
 	if err != nil {
+		if a.deps.Logger != nil {
+			a.deps.Logger.Error("game options unavailable", "error", err.Error(), "operation", "update")
+		}
 		http.Error(w, "game options unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	clearOptionsIdentityCookies(w, r, result.ActionIssue)
 	writeGameOptionsResponse(w, result)
 }
 
@@ -173,44 +203,68 @@ func decodeGameOptionsMutation(r *http.Request) (domaingame.OptionsMutation, err
 		host, port := requestHostPort(r)
 		request.SkinPath = domaingame.NormalizeSkinPath(request.SkinPath, host, port)
 		return domaingame.OptionsMutation{
-			Language:          request.Language,
-			SkinPath:          request.SkinPath,
-			UseSkin:           request.UseSkin,
-			DeactivateIP:      request.DeactivateIP,
-			SortBy:            request.SortBy,
-			SortOrder:         request.SortOrder,
-			MaxSpy:            request.MaxSpy,
-			MaxFleetMessages:  request.MaxFleetMessages,
-			OldPassword:       request.OldPassword,
-			NewPassword:       request.NewPassword,
-			NewPasswordRepeat: request.NewPasswordRepeat,
-			Email:             request.Email,
-			VacationMode:      request.VacationMode != nil && *request.VacationMode,
-			VacationModeSet:   request.VacationMode != nil,
-			DeleteAccount:     request.DeleteAccount,
+			Name:                request.Name,
+			Language:            request.Language,
+			SkinPath:            request.SkinPath,
+			UseSkin:             request.UseSkin,
+			DeactivateIP:        request.DeactivateIP,
+			SortBy:              request.SortBy,
+			SortOrder:           request.SortOrder,
+			MaxSpy:              request.MaxSpy,
+			MaxFleetMessages:    request.MaxFleetMessages,
+			OldPassword:         request.OldPassword,
+			NewPassword:         request.NewPassword,
+			NewPasswordRepeat:   request.NewPasswordRepeat,
+			Email:               request.Email,
+			VacationMode:        request.VacationMode != nil && *request.VacationMode,
+			VacationModeSet:     request.VacationMode != nil,
+			DisableVacation:     request.DisableVacation,
+			DeleteAccount:       request.DeleteAccount,
+			ShowEspionageButton: request.ShowEspionageButton,
+			ShowWriteMessage:    request.ShowWriteMessage,
+			ShowBuddy:           request.ShowBuddy,
+			ShowRocketAttack:    request.ShowRocketAttack,
+			ShowViewReport:      request.ShowViewReport,
+			DoNotUseFolders:     request.DoNotUseFolders,
+			FeedEnabled:         request.FeedEnabled,
+			FeedType:            request.FeedType,
+			HideGOEmail:         request.HideGOEmail,
+			ResendActivation:    request.ResendActivation,
 		}, nil
 	}
 	if err := r.ParseForm(); err != nil {
 		return domaingame.OptionsMutation{}, err
 	}
 	host, port := requestHostPort(r)
-	vacationModeSet := r.PostForm.Has("urlaubs_modus") || r.PostForm.Has("urlaub_aus")
+	vacationModeSet := r.PostForm.Has("urlaubs_modus")
 	return domaingame.OptionsMutation{
-		Language:          formLast(r, "lang"),
-		SkinPath:          domaingame.NormalizeSkinPath(formLast(r, "dpath"), host, port),
-		UseSkin:           formChecked(r, "design"),
-		DeactivateIP:      formChecked(r, "noipcheck"),
-		SortBy:            legacyInt(r.PostForm["settings_sort"]),
-		SortOrder:         legacyInt(r.PostForm["settings_order"]),
-		MaxSpy:            legacyInt(r.PostForm["spio_anz"]),
-		MaxFleetMessages:  legacyInt(r.PostForm["settings_fleetactions"]),
-		OldPassword:       formLast(r, "db_password"),
-		NewPassword:       formLast(r, "newpass1"),
-		NewPasswordRepeat: formLast(r, "newpass2"),
-		Email:             formLast(r, "db_email"),
-		VacationMode:      formChecked(r, "urlaubs_modus") && !formChecked(r, "urlaub_aus"),
-		VacationModeSet:   vacationModeSet,
-		DeleteAccount:     formChecked(r, "db_deaktjava"),
+		Name:                formLast(r, "db_character"),
+		Language:            formLast(r, "lang"),
+		SkinPath:            domaingame.NormalizeSkinPath(formLast(r, "dpath"), host, port),
+		UseSkin:             formChecked(r, "design"),
+		DeactivateIP:        formChecked(r, "noipcheck"),
+		SortBy:              legacyInt(r.PostForm["settings_sort"]),
+		SortOrder:           legacyInt(r.PostForm["settings_order"]),
+		MaxSpy:              legacyInt(r.PostForm["spio_anz"]),
+		MaxFleetMessages:    legacyInt(r.PostForm["settings_fleetactions"]),
+		OldPassword:         formLast(r, "db_password"),
+		NewPassword:         formLast(r, "newpass1"),
+		NewPasswordRepeat:   formLast(r, "newpass2"),
+		Email:               formLast(r, "db_email"),
+		VacationMode:        formChecked(r, "urlaubs_modus") && !formChecked(r, "urlaub_aus"),
+		VacationModeSet:     vacationModeSet,
+		DisableVacation:     formChecked(r, "urlaub_aus"),
+		DeleteAccount:       formChecked(r, "db_deaktjava"),
+		ShowEspionageButton: formChecked(r, "settings_esp"),
+		ShowWriteMessage:    formChecked(r, "settings_wri"),
+		ShowBuddy:           formChecked(r, "settings_bud"),
+		ShowRocketAttack:    formChecked(r, "settings_mis"),
+		ShowViewReport:      formChecked(r, "settings_rep"),
+		DoNotUseFolders:     formChecked(r, "settings_folders"),
+		FeedEnabled:         formChecked(r, "feed_activated"),
+		FeedType:            formLast(r, "feed_type"),
+		HideGOEmail:         formChecked(r, "hide_go_email"),
+		ResendActivation:    r.PostForm.Has("validate"),
 	}, nil
 }
 

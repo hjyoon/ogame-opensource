@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -26,6 +27,14 @@ const (
 	OptionsIssueEmailNeedPassword     = "email_need_password"
 	OptionsIssueEmailInvalid          = "email_invalid"
 	OptionsIssueEmailUsed             = "email_used"
+	OptionsIssueNameChanged           = "name_changed"
+	OptionsIssueNameExists            = "name_exists"
+	OptionsIssueNameCooldown          = "name_cooldown"
+	OptionsIssueNameLength            = "name_length"
+	OptionsIssueNameSpecial           = "name_special"
+	OptionsIssueNameForbidden         = "name_forbidden"
+	OptionsIssueFeedProhibited        = "feed_prohibited"
+	OptionsIssueActivationResent      = "activation_resent"
 
 	UserTypePlayer = 0
 	UserTypeGO     = 1
@@ -50,6 +59,7 @@ type Options struct {
 	Settings       OptionsSettings
 	Account        OptionsAccount
 	Flags          OptionsFlags
+	LegacyFlags    int64
 }
 
 type OptionsUser struct {
@@ -102,21 +112,33 @@ type OptionsFlags struct {
 }
 
 type OptionsMutation struct {
-	Language          string
-	SkinPath          string
-	UseSkin           bool
-	DeactivateIP      bool
-	SortBy            int
-	SortOrder         int
-	MaxSpy            int
-	MaxFleetMessages  int
-	OldPassword       string
-	NewPassword       string
-	NewPasswordRepeat string
-	Email             string
-	VacationMode      bool
-	VacationModeSet   bool
-	DeleteAccount     bool
+	Name                string
+	Language            string
+	SkinPath            string
+	UseSkin             bool
+	DeactivateIP        bool
+	SortBy              int
+	SortOrder           int
+	MaxSpy              int
+	MaxFleetMessages    int
+	OldPassword         string
+	NewPassword         string
+	NewPasswordRepeat   string
+	Email               string
+	VacationMode        bool
+	VacationModeSet     bool
+	DisableVacation     bool
+	DeleteAccount       bool
+	ShowEspionageButton bool
+	ShowWriteMessage    bool
+	ShowBuddy           bool
+	ShowRocketAttack    bool
+	ShowViewReport      bool
+	DoNotUseFolders     bool
+	FeedEnabled         bool
+	FeedType            string
+	HideGOEmail         bool
+	ResendActivation    bool
 }
 
 type NormalizedOptionsMutation struct {
@@ -153,11 +175,15 @@ func NewOptions(overview Overview, user OptionsUser, universe OptionsUniverse, s
 		Settings:       settings,
 		Account:        account,
 		Flags:          OptionsFlagsFromLegacy(rawFlags),
+		LegacyFlags:    rawFlags,
 	}
 }
 
 func NormalizeOptionsMutation(command OptionsMutation, current Options) NormalizedOptionsMutation {
 	normalized := command
+	if normalized.Name == "" {
+		normalized.Name = current.User.Name
+	}
 	normalized.SkinPath = NormalizeSkinPath(command.SkinPath, "", 0)
 	normalized.SortBy = clampInt(command.SortBy, 0, 2)
 	normalized.SortOrder = clampInt(command.SortOrder, 0, 1)
@@ -181,6 +207,27 @@ func NormalizeOptionsMutation(command OptionsMutation, current Options) Normaliz
 	}
 }
 
+func (m OptionsMutation) NameChangeRequested(current Options) bool {
+	return !current.User.NameLocked && m.Name != "" && m.Name != current.User.Name
+}
+
+func (m OptionsMutation) NameValidationIssue() *OptionsActionIssue {
+	var issue *OptionsActionIssue
+	switch length := utf8.RuneCountInString(m.Name); {
+	case length < 3 || length > 20:
+		issue = OptionsNameLengthIssue()
+	case strings.ContainsAny(m.Name, "<>()[]{}\\/`\"'.,:;*+"):
+		issue = OptionsNameSpecialIssue()
+	}
+	lower := strings.ToLower(m.Name)
+	for _, fragment := range strings.Split("adolf,hitler,fick,legor,aleena,ogame,kkk,osama,bin,laden,porn,sex,hentai,god,allah,putin,nazi,gameforge,stalin,goebbels,saddam,space,admin", ",") {
+		if strings.Contains(lower, fragment) {
+			return OptionsNameForbiddenIssue()
+		}
+	}
+	return issue
+}
+
 func (m OptionsMutation) PasswordChangeRequested() bool {
 	return m.NewPassword != ""
 }
@@ -190,10 +237,7 @@ func (m OptionsMutation) EmailChangeRequested(current Options) bool {
 	if email == "" {
 		return false
 	}
-	if current.User.Validated {
-		return email != current.User.PlainEmail
-	}
-	return email != current.User.Email
+	return email != current.User.PlainEmail
 }
 
 func (m OptionsMutation) PasswordValidationIssue() *OptionsActionIssue {
@@ -249,6 +293,42 @@ func OptionsFlagsFromLegacy(flags int64) OptionsFlags {
 		FeedAtom:            flags&userFlagFeedAtom != 0,
 		HideGOEmail:         flags&UserFlagHideGOEmail != 0,
 	}
+}
+
+func ApplyOptionsFlagMutation(rawFlags int64, mutation OptionsMutation, current Options) (int64, bool, *OptionsActionIssue) {
+	flags := rawFlags
+	feedChanged := false
+	var issue *OptionsActionIssue
+	if current.User.CommanderOn {
+		flags = setLegacyFlag(flags, userFlagShowEspionageButton, mutation.ShowEspionageButton)
+		flags = setLegacyFlag(flags, userFlagShowWriteMessage, mutation.ShowWriteMessage)
+		flags = setLegacyFlag(flags, userFlagShowBuddy, mutation.ShowBuddy)
+		flags = setLegacyFlag(flags, userFlagShowRocketAttack, mutation.ShowRocketAttack)
+		flags = setLegacyFlag(flags, userFlagShowViewReport, mutation.ShowViewReport)
+		flags = setLegacyFlag(flags, userFlagDoNotUseFolders, mutation.DoNotUseFolders)
+
+		wasFeedEnabled := rawFlags&userFlagFeedEnable != 0
+		if wasFeedEnabled && mutation.FeedType != "" {
+			flags = setLegacyFlag(flags, userFlagFeedAtom, mutation.FeedType == "atom")
+		}
+		if current.Universe.FeedAge < 0 && mutation.FeedEnabled && !wasFeedEnabled {
+			issue = OptionsFeedProhibitedIssue()
+		} else if mutation.FeedEnabled != wasFeedEnabled {
+			flags = setLegacyFlag(flags, userFlagFeedEnable, mutation.FeedEnabled)
+			feedChanged = true
+		}
+	}
+	if current.User.Admin == UserTypeGO {
+		flags = setLegacyFlag(flags, UserFlagHideGOEmail, mutation.HideGOEmail)
+	}
+	return flags, feedChanged, issue
+}
+
+func setLegacyFlag(flags int64, flag int64, enabled bool) int64 {
+	if enabled {
+		return flags | flag
+	}
+	return flags &^ flag
 }
 
 func NormalizeSkinPath(skin string, requestHost string, requestPort int) string {
@@ -353,6 +433,38 @@ func OptionsEmailInvalidIssue() *OptionsActionIssue {
 
 func OptionsEmailUsedIssue() *OptionsActionIssue {
 	return &OptionsActionIssue{Code: OptionsIssueEmailUsed, Message: "This email address is already in use!"}
+}
+
+func OptionsNameChangedIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssueNameChanged, Message: "Username changed. This is permitted only once per week. Please log in again."}
+}
+
+func OptionsNameExistsIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssueNameExists, Message: "This user name is already taken."}
+}
+
+func OptionsNameCooldownIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssueNameCooldown, Message: "The username can only be changed once every seven days."}
+}
+
+func OptionsNameLengthIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssueNameLength, Message: "Player's name must be between 3 and 20 characters."}
+}
+
+func OptionsNameSpecialIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssueNameSpecial, Message: "The user name may not contain special characters."}
+}
+
+func OptionsNameForbiddenIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssueNameForbidden, Message: "Forbidden user name!"}
+}
+
+func OptionsFeedProhibitedIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssueFeedProhibited, Message: "Feed is prohibited by Universe settings!"}
+}
+
+func OptionsActivationResentIssue() *OptionsActionIssue {
+	return &OptionsActionIssue{Code: OptionsIssueActivationResent, Message: "The activation email has been sent again."}
 }
 
 func normalizeLanguage(value string, fallback string) string {

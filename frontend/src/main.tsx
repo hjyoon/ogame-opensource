@@ -2172,6 +2172,7 @@ function App() {
   }, [gameRoute?.key, search]);
 
   const submitGameOptions = (settings: {
+    name: string;
     language: string;
     skinPath: string;
     useSkin: boolean;
@@ -2185,7 +2186,18 @@ function App() {
     newPasswordRepeat: string;
     email: string;
     vacationMode: boolean;
+    disableVacation: boolean;
     deleteAccount: boolean;
+    showEspionageButton: boolean;
+    showWriteMessage: boolean;
+    showBuddy: boolean;
+    showRocketAttack: boolean;
+    showViewReport: boolean;
+    doNotUseFolders: boolean;
+    feedEnabled: boolean;
+    feedType: string;
+    hideGoEmail: boolean;
+    resendActivation: boolean;
   }) => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (publicSession === "") {

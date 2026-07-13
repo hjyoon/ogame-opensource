@@ -4269,7 +4269,7 @@ func TestGameOptionsEndpointUpdatesOptionsFromJSON(t *testing.T) {
 		ActionIssue:   domaingame.OptionsSavedIssue(),
 	}}
 	server := testServerWithGameOptions(t, optionsUseCase)
-	body := strings.NewReader(`{"language":"fr","skinPath":"http://127.0.0.1:8890/evolution","useSkin":true,"deactivateIp":true,"sortBy":2,"sortOrder":1,"maxSpy":9,"maxFleetMessages":11,"oldPassword":"oldpass123","newPassword":"newpass123","newPasswordRepeat":"newpass123","email":"new@example.test","vacationMode":true,"deleteAccount":true}`)
+	body := strings.NewReader(`{"name":"NewPilot","language":"fr","skinPath":"http://127.0.0.1:8890/evolution","useSkin":true,"deactivateIp":true,"sortBy":2,"sortOrder":1,"maxSpy":9,"maxFleetMessages":11,"oldPassword":"oldpass123","newPassword":"newpass123","newPasswordRepeat":"newpass123","email":"new@example.test","vacationMode":true,"deleteAccount":true,"showEspionageButton":true,"showWriteMessage":true,"showBuddy":true,"showRocketAttack":true,"showViewReport":true,"doNotUseFolders":true,"feedEnabled":true,"feedType":"atom","hideGoEmail":true}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/game/options?session=public&cp=99", body)
 	req.Host = "10.8.0.2:8890"
 	req.Header.Set("Content-Type", "application/json")
@@ -4279,7 +4279,7 @@ func TestGameOptionsEndpointUpdatesOptionsFromJSON(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if optionsUseCase.updateCommand.Mutation.SkinPath != "/evolution/" ||
+	if optionsUseCase.updateCommand.Mutation.Name != "NewPilot" || optionsUseCase.updateCommand.Mutation.SkinPath != "/evolution/" ||
 		optionsUseCase.updateCommand.Mutation.SortBy != 2 ||
 		optionsUseCase.updateCommand.Mutation.MaxSpy != 9 ||
 		optionsUseCase.updateCommand.Mutation.OldPassword != "oldpass123" ||
@@ -4288,7 +4288,11 @@ func TestGameOptionsEndpointUpdatesOptionsFromJSON(t *testing.T) {
 		optionsUseCase.updateCommand.Mutation.Email != "new@example.test" ||
 		!optionsUseCase.updateCommand.Mutation.VacationMode ||
 		!optionsUseCase.updateCommand.Mutation.VacationModeSet ||
-		!optionsUseCase.updateCommand.Mutation.DeleteAccount {
+		!optionsUseCase.updateCommand.Mutation.DeleteAccount || !optionsUseCase.updateCommand.Mutation.ShowEspionageButton ||
+		!optionsUseCase.updateCommand.Mutation.ShowWriteMessage || !optionsUseCase.updateCommand.Mutation.ShowBuddy ||
+		!optionsUseCase.updateCommand.Mutation.ShowRocketAttack || !optionsUseCase.updateCommand.Mutation.ShowViewReport ||
+		!optionsUseCase.updateCommand.Mutation.DoNotUseFolders || !optionsUseCase.updateCommand.Mutation.FeedEnabled ||
+		optionsUseCase.updateCommand.Mutation.FeedType != "atom" || !optionsUseCase.updateCommand.Mutation.HideGOEmail {
 		t.Fatalf("unexpected update command: %+v", optionsUseCase.updateCommand)
 	}
 	var response gameOptionsResponse
@@ -4303,7 +4307,7 @@ func TestGameOptionsEndpointUpdatesOptionsFromJSON(t *testing.T) {
 func TestGameOptionsEndpointUpdatesOptionsFromLegacyForm(t *testing.T) {
 	optionsUseCase := &fakeGameOptions{updateResult: appgame.OptionsResult{Authenticated: true, Options: sampleGameOptions()}}
 	server := testServerWithGameOptions(t, optionsUseCase)
-	body := strings.NewReader("lang=english&dpath=http%3A%2F%2F10.8.0.2%3A8890%2Fevolution&design=on&noipcheck=on&settings_sort=9999&settings_order=-9999&spio_anz=-42&settings_fleetactions=99999&db_password=oldpass123&newpass1=newpass123&newpass2=newpass123&db_email=new%40example.test&urlaubs_modus=on&db_deaktjava=on")
+	body := strings.NewReader("db_character=NewPilot&lang=english&dpath=http%3A%2F%2F10.8.0.2%3A8890%2Fevolution&design=on&noipcheck=on&settings_sort=9999&settings_order=-9999&spio_anz=-42&settings_fleetactions=99999&db_password=oldpass123&newpass1=newpass123&newpass2=newpass123&db_email=new%40example.test&urlaubs_modus=on&db_deaktjava=on&settings_esp=on&settings_wri=on&settings_bud=on&settings_mis=on&settings_rep=on&settings_folders=on&feed_activated=on&feed_type=atom&hide_go_email=on")
 	req := httptest.NewRequest(http.MethodPost, "/api/game/options?session=public", body)
 	req.Host = "10.8.0.2:8890"
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -4314,13 +4318,38 @@ func TestGameOptionsEndpointUpdatesOptionsFromLegacyForm(t *testing.T) {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	mutation := optionsUseCase.updateCommand.Mutation
-	if mutation.Language != "english" || mutation.SkinPath != "/evolution/" ||
+	if mutation.Name != "NewPilot" || mutation.Language != "english" || mutation.SkinPath != "/evolution/" ||
 		mutation.SortBy != 9999 || mutation.SortOrder != -9999 ||
 		mutation.MaxSpy != -42 || mutation.MaxFleetMessages != 99999 ||
 		mutation.OldPassword != "oldpass123" || mutation.NewPassword != "newpass123" ||
 		mutation.NewPasswordRepeat != "newpass123" || mutation.Email != "new@example.test" ||
-		!mutation.UseSkin || !mutation.DeactivateIP || !mutation.VacationMode || !mutation.VacationModeSet || !mutation.DeleteAccount {
+		!mutation.UseSkin || !mutation.DeactivateIP || !mutation.VacationMode || !mutation.VacationModeSet || !mutation.DeleteAccount ||
+		!mutation.ShowEspionageButton || !mutation.ShowWriteMessage || !mutation.ShowBuddy || !mutation.ShowRocketAttack ||
+		!mutation.ShowViewReport || !mutation.DoNotUseFolders || !mutation.FeedEnabled || mutation.FeedType != "atom" || !mutation.HideGOEmail {
 		t.Fatalf("unexpected form mutation before domain normalization: %+v", mutation)
+	}
+}
+
+func TestGameOptionsEndpointClearsPrivateCookieAfterIdentityChange(t *testing.T) {
+	optionsUseCase := &fakeGameOptions{updateResult: appgame.OptionsResult{
+		Authenticated: true,
+		Options:       sampleGameOptions(),
+		ActionIssue:   domaingame.OptionsPasswordChangedIssue(),
+	}}
+	server := testServerWithGameOptions(t, optionsUseCase)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/options?session=public", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "prsess_42_1", Value: "private"})
+	req.AddCookie(&http.Cookie{Name: "unrelated", Value: "kept"})
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != "prsess_42_1" || cookies[0].MaxAge != -1 {
+		t.Fatalf("expected only the private game cookie to expire, got %+v", cookies)
 	}
 }
 

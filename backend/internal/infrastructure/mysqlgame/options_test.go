@@ -3,6 +3,7 @@ package mysqlgame
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -54,6 +55,9 @@ func TestOptionsRepositoryMapsMCPOptions(t *testing.T) {
 	}
 	if _, err := (OptionsRepository{}).GetMCPOptions(context.Background(), 42, domainmcp.OptionsStatusCommand{}); err == nil {
 		t.Fatalf("expected unavailable reader error")
+	}
+	if _, err := NewOptionsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("overview failed")}}}, "ogame_", nil).GetMCPOptions(context.Background(), 42, domainmcp.OptionsStatusCommand{}); err == nil || !strings.Contains(err.Error(), "overview failed") {
+		t.Fatalf("expected MCP options read error, got %v", err)
 	}
 }
 
@@ -135,13 +139,13 @@ func TestOptionsRepositoryUpdatesLegacyOptionsAndQueuesDeletion(t *testing.T) {
 	if issue == nil || issue.Code != domaingame.OptionsIssueAccountDeletionQueued || !options.Account.DeletionQueued {
 		t.Fatalf("unexpected update result: options=%+v issue=%+v", options, issue)
 	}
-	if !strings.Contains(runner.execSQL, "UPDATE `ogame_users` SET skin = ?") || len(runner.execArgs) != 13 {
+	if !strings.Contains(runner.execSQL, "UPDATE `ogame_users` SET skin = ?") || len(runner.execArgs) != 14 {
 		t.Fatalf("unexpected update SQL: %s args=%+v", runner.execSQL, runner.execArgs)
 	}
 	if runner.execArgs[0] != "/evolution/" || runner.execArgs[3] != 2 || runner.execArgs[4] != 0 ||
 		runner.execArgs[5] != 1 || runner.execArgs[6] != 99 || runner.execArgs[7] != "fr" ||
 		runner.execArgs[8] != 0 || runner.execArgs[9] != int64(0) ||
-		runner.execArgs[10] != 1 || runner.execArgs[11] != now.Add(7*24*time.Hour).Unix() {
+		runner.execArgs[10] != 1 || runner.execArgs[11] != now.Add(7*24*time.Hour).Unix() || runner.execArgs[12] != int64(0) {
 		t.Fatalf("unexpected update args: %+v", runner.execArgs)
 	}
 }
@@ -258,7 +262,7 @@ func TestOptionsRepositoryEnablesVacationAndDisablesProduction(t *testing.T) {
 	if len(runner.execs) != 2 || !strings.Contains(runner.execs[1].sql, "prod1 = 0") || runner.execs[1].args[0] != 42 {
 		t.Fatalf("expected vacation production reset after user update, execs=%+v", runner.execs)
 	}
-	if runner.execs[0].args[8] != 1 || runner.execs[0].args[9] != vacationUntil {
+	if runner.execs[0].args[0] != vacationUntil || runner.execs[0].args[1] != 42 || !strings.Contains(runner.execs[0].sql, "vacation = 1") {
 		t.Fatalf("expected vacation user fields, args=%+v", runner.execs[0].args)
 	}
 }
@@ -310,8 +314,7 @@ func TestOptionsRepositoryDisablesVacationAfterMinimumAndLocksBeforeMinimum(t *t
 			SkinPath:         "/evolution/",
 			MaxSpy:           5,
 			MaxFleetMessages: 8,
-			VacationMode:     false,
-			VacationModeSet:  true,
+			DisableVacation:  true,
 		},
 	})
 	if err != nil {
@@ -320,7 +323,7 @@ func TestOptionsRepositoryDisablesVacationAfterMinimumAndLocksBeforeMinimum(t *t
 	if issue == nil || issue.Code != domaingame.OptionsIssueVacationDisabled || options.Account.Vacation {
 		t.Fatalf("unexpected vacation disable result: options=%+v issue=%+v", options, issue)
 	}
-	if runner.execs[0].args[8] != 0 || runner.execs[0].args[9] != int64(0) {
+	if len(runner.execs) != 1 || runner.execs[0].args[0] != 42 || !strings.Contains(runner.execs[0].sql, "vacation = 0") {
 		t.Fatalf("expected vacation user fields cleared, args=%+v", runner.execs[0].args)
 	}
 
@@ -336,18 +339,17 @@ func TestOptionsRepositoryDisablesVacationAfterMinimumAndLocksBeforeMinimum(t *t
 			SkinPath:         "/evolution/",
 			MaxSpy:           5,
 			MaxFleetMessages: 8,
-			VacationMode:     false,
-			VacationModeSet:  true,
+			DisableVacation:  true,
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if issue == nil || issue.Code != domaingame.OptionsIssueVacationLocked || !options.Account.Vacation {
+	if issue == nil || issue.Code != domaingame.OptionsIssueSaved || !options.Account.Vacation {
 		t.Fatalf("unexpected vacation locked result: options=%+v issue=%+v", options, issue)
 	}
-	if runner.execs[0].args[8] != 1 || runner.execs[0].args[9] != lockedUntil {
-		t.Fatalf("expected vacation user fields preserved, args=%+v", runner.execs[0].args)
+	if len(runner.execs) != 0 {
+		t.Fatalf("locked vacation page must ignore the request, execs=%+v", runner.execs)
 	}
 }
 
@@ -478,8 +480,284 @@ func TestOptionsRepositoryChangesEmailAndQueuesPermanentUpdate(t *testing.T) {
 	if runner.execs[0].args[0] != legacyPasswordHash(fmt.Sprintf("%d", now.Unix()), "secret") || runner.execs[0].args[1] != "new@example.test" {
 		t.Fatalf("unexpected email update args: %+v", runner.execs[0].args)
 	}
-	if runner.execs[2].args[0] != 42 || runner.execs[2].args[1] != "ChangeEmail" || runner.execs[2].args[6] != now.Unix()+7*24*60*60 {
+	if runner.execs[2].args[0] != 42 || runner.execs[2].args[1] != "ChangeEmail" || runner.execs[2].args[6] != now.Unix()+(now.Unix()+7*24*60*60) {
 		t.Fatalf("unexpected change-email queue args: %+v", runner.execs[2].args)
+	}
+}
+
+func TestOptionsRepositoryHandlesUnvalidatedAccountBranches(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	passwordHash := legacyPasswordHash("oldpass123", "secret")
+	tests := []struct {
+		name       string
+		mutation   domaingame.OptionsMutation
+		extra      []fakeQueryResult
+		updated    string
+		wantIssue  string
+		wantExecs  int
+		wantQueued bool
+	}{
+		{
+			name:      "resend activation",
+			mutation:  domaingame.OptionsMutation{ResendActivation: true},
+			updated:   "pending@example.test",
+			wantIssue: domaingame.OptionsIssueActivationResent,
+		},
+		{
+			name:      "wrong password",
+			mutation:  domaingame.OptionsMutation{Email: "new@example.test", OldPassword: "wrong"},
+			updated:   "pending@example.test",
+			wantIssue: domaingame.OptionsIssueEmailNeedPassword,
+		},
+		{
+			name:      "invalid email",
+			mutation:  domaingame.OptionsMutation{Email: "bad-email", OldPassword: "oldpass123"},
+			updated:   "pending@example.test",
+			wantIssue: domaingame.OptionsIssueEmailInvalid,
+		},
+		{
+			name:      "duplicate email",
+			mutation:  domaingame.OptionsMutation{Email: "used@example.test", OldPassword: "oldpass123"},
+			extra:     []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}},
+			updated:   "pending@example.test",
+			wantIssue: domaingame.OptionsIssueEmailUsed,
+		},
+		{
+			name:       "change email",
+			mutation:   domaingame.OptionsMutation{Email: "new@example.test", OldPassword: "oldpass123"},
+			extra:      []fakeQueryResult{{rows: fakeRowsFromValues([]any{0})}},
+			updated:    "new@example.test",
+			wantIssue:  domaingame.OptionsIssueEmailChanged,
+			wantExecs:  3,
+			wantQueued: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results := optionsReadResultsUnvalidated(now, "pending@example.test", passwordHash)
+			results = append(results, tt.extra...)
+			results = append(results, optionsReadResultsUnvalidated(now, tt.updated, passwordHash)...)
+			runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: results}}
+			repository := NewOptionsRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret", func() time.Time { return now })
+
+			options, issue, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+				PlayerID: 42,
+				PlanetID: 99,
+				Mutation: tt.mutation,
+			})
+			if err != nil || issue == nil || issue.Code != tt.wantIssue || options.User.Email != tt.updated || options.User.Validated {
+				t.Fatalf("unexpected unvalidated result options=%+v issue=%+v err=%v", options.User, issue, err)
+			}
+			if len(runner.execs) != tt.wantExecs {
+				t.Fatalf("unexpected unvalidated writes: %+v", runner.execs)
+			}
+			if tt.wantQueued && (!strings.Contains(runner.execs[0].sql, "validatemd") || runner.execs[2].args[1] != "ChangeEmail") {
+				t.Fatalf("expected validation and queue writes, got %+v", runner.execs)
+			}
+		})
+	}
+}
+
+func TestOptionsRepositoryChangesNameWithLegacyCooldownQueue(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	results := append(optionsReadResults(now, 0, 0),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{0})},
+	)
+	updated := optionsReadResults(now, 0, 0)
+	updatedRow := optionsUserRow(now, 0, 0)
+	updatedRow[0], updatedRow[1] = "NewPilot", 1
+	updated[4] = fakeQueryResult{rows: fakeRowsFromValues(updatedRow)}
+	results = append(results, updated...)
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewOptionsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	options, issue, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.OptionsMutation{
+			Name:             "NewPilot",
+			Language:         "en",
+			SkinPath:         "/evolution/",
+			MaxSpy:           5,
+			MaxFleetMessages: 8,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue == nil || issue.Code != domaingame.OptionsIssueNameChanged || options.User.Name != "NewPilot" || !options.User.NameLocked {
+		t.Fatalf("unexpected name-change result options=%+v issue=%+v", options.User, issue)
+	}
+	if len(runner.execs) != 3 || !strings.Contains(runner.execs[0].sql, "name_changed = 1") || !strings.Contains(runner.execs[1].sql, "INSERT INTO `ogame_queue`") {
+		t.Fatalf("expected name, queue, and settings writes, execs=%+v", runner.execs)
+	}
+	if runner.execs[0].args[0] != "newpilot" || runner.execs[0].args[1] != "NewPilot" || runner.execs[0].args[2] != now.Unix()+7*24*60*60 {
+		t.Fatalf("unexpected username update args: %+v", runner.execs[0].args)
+	}
+	if runner.execs[1].args[1] != "AllowName" || runner.execs[1].args[5] != now.Unix() || runner.execs[1].args[6] != now.Unix()+(now.Unix()+7*24*60*60) {
+		t.Fatalf("unexpected legacy AllowName queue args: %+v", runner.execs[1].args)
+	}
+}
+
+func TestOptionsRepositoryPreservesNameBranchPrecedence(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	results := append(optionsReadResultsWithPassword(now, 0, 0, legacyPasswordHash("oldpass123", "secret")),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{1})},
+	)
+	results = append(results, optionsReadResultsWithPassword(now, 0, 0, legacyPasswordHash("oldpass123", "secret"))...)
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewOptionsRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret", func() time.Time { return now })
+
+	_, issue, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.OptionsMutation{
+			Name:              "ExistingPilot",
+			Language:          "en",
+			SkinPath:          "/evolution/",
+			MaxSpy:            5,
+			MaxFleetMessages:  8,
+			OldPassword:       "oldpass123",
+			NewPassword:       "newpass123",
+			NewPasswordRepeat: "newpass123",
+		},
+	})
+	if err != nil || issue == nil || issue.Code != domaingame.OptionsIssueNameExists {
+		t.Fatalf("expected duplicate name issue, issue=%+v err=%v", issue, err)
+	}
+	if len(runner.execs) != 1 || strings.Contains(runner.execs[0].sql, "password = ?") {
+		t.Fatalf("name branch must suppress password mutation, execs=%+v", runner.execs)
+	}
+}
+
+func TestOptionsRepositoryRejectsNameDuringCooldown(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	results := append(optionsReadResults(now, 0, 0),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{0})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{1})},
+	)
+	results = append(results, optionsReadResults(now, 0, 0)...)
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewOptionsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+
+	_, issue, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.OptionsMutation{
+			Name: "NewPilot", Language: "en", SkinPath: "/evolution/", MaxSpy: 5, MaxFleetMessages: 8,
+		},
+	})
+	if err != nil || issue == nil || issue.Code != domaingame.OptionsIssueNameCooldown {
+		t.Fatalf("expected name cooldown issue, issue=%+v err=%v", issue, err)
+	}
+	if len(runner.execs) != 1 || strings.Contains(runner.execs[0].sql, "name_changed") {
+		t.Fatalf("cooldown must not change identity, execs=%+v", runner.execs)
+	}
+}
+
+func TestOptionsRepositoryIdentityMutationErrors(t *testing.T) {
+	current := domaingame.NewOptions(domaingame.Overview{}, domaingame.OptionsUser{Name: "Legor"}, domaingame.OptionsUniverse{}, domaingame.OptionsSettings{}, domaingame.OptionsAccount{}, 0)
+	mutation := domaingame.OptionsMutation{Name: "NewPilot"}
+
+	repository := NewOptionsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("name query failed")}}}, "ogame_", nil)
+	if _, err := repository.applyIdentityMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, mutation, current); err == nil || !strings.Contains(err.Error(), "name query failed") {
+		t.Fatalf("expected name query error, got %v", err)
+	}
+
+	repository = NewOptionsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{err: errors.New("cooldown query failed")},
+	}}, "ogame_", nil)
+	if _, err := repository.applyIdentityMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, mutation, current); err == nil || !strings.Contains(err.Error(), "cooldown query failed") {
+		t.Fatalf("expected cooldown query error, got %v", err)
+	}
+
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues([]any{0})},
+	}}, execErr: errors.New("name update failed")}
+	repository = NewOptionsRepositoryWithRunner(runner, runner, "ogame_", nil)
+	if _, err := repository.applyIdentityMutations(context.Background(), "`ogame_users`", "`ogame_queue`", 42, mutation, current); err == nil || !strings.Contains(err.Error(), "name update failed") {
+		t.Fatalf("expected name update error, got %v", err)
+	}
+
+	runner = &fakeOptionsRunner{execErrs: []error{nil, errors.New("name queue failed")}}
+	repository = NewOptionsRepositoryWithRunner(runner, runner, "ogame_", nil)
+	if err := repository.changeName(context.Background(), "`ogame_users`", "`ogame_queue`", 42, "NewPilot"); err == nil || !strings.Contains(err.Error(), "name queue failed") {
+		t.Fatalf("expected name queue error, got %v", err)
+	}
+}
+
+func TestOptionsRepositoryUpdatesCommanderFeedState(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	results := optionsReadResults(now, 0, 0)
+	updated := optionsReadResults(now, 0, 0)
+	updatedRow := optionsUserRow(now, 0, 0)
+	updatedRow[13] = int64(0x2 | 0x8000)
+	updatedRow[20] = "00112233445566778899aabbccddeeff"
+	updated[4] = fakeQueryResult{rows: fakeRowsFromValues(updatedRow)}
+	results = append(results, updated...)
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewOptionsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	repository.feedID = func() (string, error) { return "00112233445566778899aabbccddeeff", nil }
+
+	options, issue, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.OptionsMutation{
+			Name:             "Legor",
+			Language:         "en",
+			SkinPath:         "/evolution/",
+			MaxSpy:           5,
+			MaxFleetMessages: 8,
+			ShowWriteMessage: true,
+			FeedEnabled:      true,
+		},
+	})
+	if err != nil || issue == nil || issue.Code != domaingame.OptionsIssueSaved || !options.Flags.FeedEnabled || options.User.FeedID == "" {
+		t.Fatalf("unexpected feed update options=%+v issue=%+v err=%v", options, issue, err)
+	}
+	if len(runner.execs) != 2 || runner.execs[0].args[12] != int64(0x2|0x8000) || runner.execs[1].args[0] != "00112233445566778899aabbccddeeff" || !strings.Contains(runner.execs[1].sql, "lastfeed = 0") {
+		t.Fatalf("unexpected feed persistence: %+v", runner.execs)
+	}
+}
+
+func TestOptionsRepositoryReturnsFeedGenerationError(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: optionsReadResults(now, 0, 0)}}
+	repository := NewOptionsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	repository.feedID = func() (string, error) { return "", errors.New("random failed") }
+
+	_, _, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.OptionsMutation{
+			Name: "Legor", Language: "en", SkinPath: "/evolution/", MaxSpy: 5, MaxFleetMessages: 8, FeedEnabled: true,
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "random failed") {
+		t.Fatalf("expected feed generation error, got %v", err)
+	}
+}
+
+func TestOptionsRepositoryReturnsFeedPersistenceError(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	runner := &fakeOptionsRunner{
+		fakeQueryer: fakeQueryer{results: optionsReadResults(now, 0, 0)},
+		execErrs:    []error{nil, errors.New("feed update failed")},
+	}
+	repository := NewOptionsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	repository.feedID = func() (string, error) { return "00112233445566778899aabbccddeeff", nil }
+	_, _, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.OptionsMutation{
+			Name: "Legor", Language: "en", SkinPath: "/evolution/", MaxSpy: 5, MaxFleetMessages: 8, FeedEnabled: true,
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "feed update failed") {
+		t.Fatalf("expected feed persistence error, got %v", err)
 	}
 }
 
@@ -565,6 +843,65 @@ func TestOptionsRepositoryEmailAndQueueHelpers(t *testing.T) {
 	repository = NewOptionsRepositoryWithRunner(runner, runner, "ogame_", nil)
 	if err := repository.addChangeEmailEvent(context.Background(), "`ogame_queue`", 42, 1_700_000_000); err == nil || !strings.Contains(err.Error(), "queue insert failed") {
 		t.Fatalf("expected queue insert error, got %v", err)
+	}
+}
+
+func TestOptionsRepositoryCountErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		result fakeQueryResult
+		want   string
+	}{
+		{name: "query", result: fakeQueryResult{err: errors.New("count query failed")}, want: "count query failed"},
+		{name: "missing", result: fakeQueryResult{rows: fakeRowsFromValues()}, want: "missing count"},
+		{name: "rows", result: fakeQueryResult{rows: fakeRowsFromValuesWithErr(errors.New("count rows failed"), []any{0})}, want: "count rows failed"},
+		{name: "scan", result: fakeQueryResult{rows: fakeRowsFromValues([]any{"bad"})}, want: "expected int"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := NewOptionsRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{tt.result}}, "ogame_", nil)
+			if _, err := repository.optionsCount(context.Background(), "SELECT 1", "missing count"); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestOptionsRepositoryUnvalidatedMutationErrors(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	current := domaingame.NewOptions(domaingame.Overview{}, domaingame.OptionsUser{
+		Name: "Legor", Email: "pending@example.test", PlainEmail: "permanent@example.test", PasswordHash: legacyPasswordHash("oldpass123", "secret"),
+	}, domaingame.OptionsUniverse{}, domaingame.OptionsSettings{}, domaingame.OptionsAccount{}, 0)
+	mutation := domaingame.OptionsMutation{Email: "new@example.test", OldPassword: "oldpass123"}
+
+	runner := &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("email query failed")}}}}
+	repository := NewOptionsRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret", func() time.Time { return now })
+	if _, _, err := repository.updateUnvalidatedOptions(context.Background(), appgame.OptionsUpdateQuery{PlayerID: 42}, "`ogame_users`", "`ogame_queue`", current, mutation); err == nil || !strings.Contains(err.Error(), "email query failed") {
+		t.Fatalf("expected unvalidated email query error, got %v", err)
+	}
+
+	runner = &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{0})}}}, execErr: errors.New("email update failed")}
+	repository = NewOptionsRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret", func() time.Time { return now })
+	if _, _, err := repository.updateUnvalidatedOptions(context.Background(), appgame.OptionsUpdateQuery{PlayerID: 42}, "`ogame_users`", "`ogame_queue`", current, mutation); err == nil || !strings.Contains(err.Error(), "email update failed") {
+		t.Fatalf("expected unvalidated email update error, got %v", err)
+	}
+
+	runner = &fakeOptionsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{0})}}}, execErrs: []error{nil, errors.New("queue delete failed")}}
+	repository = NewOptionsRepositoryWithRunnerAndSecret(runner, runner, "ogame_", "secret", func() time.Time { return now })
+	if _, _, err := repository.updateUnvalidatedOptions(context.Background(), appgame.OptionsUpdateQuery{PlayerID: 42}, "`ogame_users`", "`ogame_queue`", current, mutation); err == nil || !strings.Contains(err.Error(), "queue delete failed") {
+		t.Fatalf("expected unvalidated queue error, got %v", err)
+	}
+}
+
+func TestOptionsRepositoryVacationDisableError(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	current := domaingame.NewOptions(domaingame.Overview{}, domaingame.OptionsUser{}, domaingame.OptionsUniverse{}, domaingame.OptionsSettings{}, domaingame.OptionsAccount{
+		Vacation: true, VacationUntil: now.Add(-time.Minute).Unix(),
+	}, 0)
+	runner := &fakeOptionsRunner{execErr: errors.New("vacation update failed")}
+	repository := NewOptionsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	if _, _, err := repository.updateVacationOptions(context.Background(), appgame.OptionsUpdateQuery{PlayerID: 42}, "`ogame_users`", current, domaingame.OptionsMutation{DisableVacation: true}); err == nil || !strings.Contains(err.Error(), "vacation update failed") {
+		t.Fatalf("expected vacation update error, got %v", err)
 	}
 }
 
@@ -745,6 +1082,43 @@ func TestNewOptionsRepositoryKeepsSQLQueryer(t *testing.T) {
 	if repository.execer == nil || repository.now == nil {
 		t.Fatalf("expected runner execer and default clock, got %+v", repository)
 	}
+	readRepository := NewOptionsReadRepository(nil, "ogame_")
+	if readRepository.execer != nil || readRepository.prefix != "ogame_" {
+		t.Fatalf("unexpected read-only repository: %+v", readRepository)
+	}
+}
+
+func TestOptionsRepositoryUsesTransactionRunner(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	runner := &fakeOptionsTransactionRunner{fakeOptionsRunner: fakeOptionsRunner{fakeQueryer: fakeQueryer{
+		results: append(optionsReadResults(now, 0, 0), optionsReadResults(now, 0, 0)...),
+	}}}
+	repository := NewOptionsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	_, issue, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{
+		PlayerID: 42,
+		PlanetID: 99,
+		Mutation: domaingame.OptionsMutation{Language: "en", SkinPath: "/evolution/", MaxSpy: 5, MaxFleetMessages: 8},
+	})
+	if err != nil || !runner.called || issue == nil || issue.Code != domaingame.OptionsIssueSaved {
+		t.Fatalf("unexpected transactional update issue=%+v called=%v err=%v", issue, runner.called, err)
+	}
+
+	want := errors.New("transaction failed")
+	runner = &fakeOptionsTransactionRunner{transactionErr: want}
+	repository = NewOptionsRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	if _, _, err := repository.UpdateOptions(context.Background(), appgame.OptionsUpdateQuery{}); !errors.Is(err, want) || !runner.called {
+		t.Fatalf("expected transaction error, called=%v err=%v", runner.called, err)
+	}
+}
+
+func TestSecureOptionsFeedID(t *testing.T) {
+	feedID, err := secureOptionsFeedID()
+	if err != nil || len(feedID) != 32 {
+		t.Fatalf("unexpected feed id %q: %v", feedID, err)
+	}
+	if decoded, err := hex.DecodeString(feedID); err != nil || len(decoded) != 16 {
+		t.Fatalf("feed id must encode 16 random bytes: %q err=%v", feedID, err)
+	}
 }
 
 func optionsReadResults(now time.Time, deletionQueued int, deletionAt int64) []fakeQueryResult {
@@ -764,6 +1138,15 @@ func optionsReadResultsWithVacationAndPassword(now time.Time, deletionQueued int
 		fakeQueryResult{rows: fakeRowsFromValues(optionsUserRowWithVacationAndPassword(now, deletionQueued, deletionAt, vacation, vacationUntil, passwordHash))},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{"en", 0, 60, 128})},
 	)
+}
+
+func optionsReadResultsUnvalidated(now time.Time, pendingEmail string, passwordHash string) []fakeQueryResult {
+	results := optionsReadResultsWithPassword(now, 0, 0, passwordHash)
+	row := optionsUserRowWithVacationAndPassword(now, 0, 0, 0, 0, passwordHash)
+	row[2] = pendingEmail
+	row[4] = 0
+	results[4] = fakeQueryResult{rows: fakeRowsFromValues(row)}
+	return results
 }
 
 func optionsOverviewResults() []fakeQueryResult {
@@ -808,6 +1191,20 @@ type fakeOptionsRunner struct {
 	execs    []fakeOptionsExec
 	execErr  error
 	execErrs []error
+}
+
+type fakeOptionsTransactionRunner struct {
+	fakeOptionsRunner
+	called         bool
+	transactionErr error
+}
+
+func (f *fakeOptionsTransactionRunner) WithTransaction(ctx context.Context, run func(Queryer, Execer) error) error {
+	f.called = true
+	if f.transactionErr != nil {
+		return f.transactionErr
+	}
+	return run(f, f)
 }
 
 func (f *fakeOptionsRunner) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {

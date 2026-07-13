@@ -153,6 +153,84 @@ func TestOptionsCredentialMutationValidation(t *testing.T) {
 	}
 }
 
+func TestOptionsNameMutationMatchesLegacyValidation(t *testing.T) {
+	current := NewOptions(Overview{}, OptionsUser{Name: "Legor"}, OptionsUniverse{Language: "en"}, OptionsSettings{}, OptionsAccount{}, 0)
+	if !(OptionsMutation{Name: "NewPilot"}).NameChangeRequested(current) {
+		t.Fatal("a different unlocked username should request a change")
+	}
+	if (OptionsMutation{Name: "Legor"}).NameChangeRequested(current) || (OptionsMutation{}).NameChangeRequested(current) {
+		t.Fatal("the current or omitted username should not request a change")
+	}
+	current.User.NameLocked = true
+	if (OptionsMutation{Name: "NewPilot"}).NameChangeRequested(current) {
+		t.Fatal("a locked username must ignore a requested change")
+	}
+
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "ab", want: OptionsIssueNameLength},
+		{name: "bad.name", want: OptionsIssueNameSpecial},
+		{name: "admin.name", want: OptionsIssueNameForbidden},
+		{name: "NewPilot", want: ""},
+	}
+	for _, tt := range tests {
+		issue := (OptionsMutation{Name: tt.name}).NameValidationIssue()
+		if tt.want == "" && issue != nil {
+			t.Fatalf("expected %q to be valid, got %+v", tt.name, issue)
+		}
+		if tt.want != "" && (issue == nil || issue.Code != tt.want) {
+			t.Fatalf("expected %q issue for %q, got %+v", tt.want, tt.name, issue)
+		}
+	}
+}
+
+func TestApplyOptionsFlagMutationMatchesCommanderFeedAndOperatorRules(t *testing.T) {
+	current := NewOptions(
+		Overview{},
+		OptionsUser{CommanderOn: true, Admin: UserTypeGO},
+		OptionsUniverse{Language: "en", FeedAge: 60},
+		OptionsSettings{},
+		OptionsAccount{},
+		userFlagShowEspionageButton|userFlagFeedAtom|0x40,
+	)
+	flags, feedChanged, issue := ApplyOptionsFlagMutation(current.LegacyFlags, OptionsMutation{
+		ShowWriteMessage: true,
+		ShowBuddy:        true,
+		FeedEnabled:      true,
+		FeedType:         "rss",
+		HideGOEmail:      true,
+	}, current)
+	if issue != nil || !feedChanged || flags&userFlagShowEspionageButton != 0 || flags&userFlagShowWriteMessage == 0 ||
+		flags&userFlagShowBuddy == 0 || flags&userFlagFeedEnable == 0 || flags&userFlagFeedAtom == 0 ||
+		flags&UserFlagHideGOEmail == 0 || flags&0x40 == 0 {
+		t.Fatalf("unexpected newly enabled feed flags=%x changed=%v issue=%+v", flags, feedChanged, issue)
+	}
+
+	current = NewOptions(Overview{}, OptionsUser{CommanderOn: true}, OptionsUniverse{Language: "en", FeedAge: 60}, OptionsSettings{}, OptionsAccount{}, userFlagFeedEnable)
+	flags, feedChanged, issue = ApplyOptionsFlagMutation(current.LegacyFlags, OptionsMutation{FeedEnabled: true, FeedType: "atom"}, current)
+	if issue != nil || feedChanged || flags&userFlagFeedAtom == 0 || flags&userFlagFeedEnable == 0 {
+		t.Fatalf("existing feed should only change format, flags=%x changed=%v issue=%+v", flags, feedChanged, issue)
+	}
+
+	current.Universe.FeedAge = -1
+	current.LegacyFlags = 0
+	flags, feedChanged, issue = ApplyOptionsFlagMutation(0, OptionsMutation{FeedEnabled: true}, current)
+	if issue == nil || issue.Code != OptionsIssueFeedProhibited || feedChanged || flags&userFlagFeedEnable != 0 {
+		t.Fatalf("prohibited feed should remain disabled, flags=%x changed=%v issue=%+v", flags, feedChanged, issue)
+	}
+}
+
+func TestApplyOptionsFlagMutationPreservesCommanderFlagsWithoutCommander(t *testing.T) {
+	raw := int64(userFlagShowEspionageButton | userFlagFeedEnable | UserFlagHideGOEmail)
+	current := NewOptions(Overview{}, OptionsUser{Admin: UserTypePlayer}, OptionsUniverse{Language: "en"}, OptionsSettings{}, OptionsAccount{}, raw)
+	flags, feedChanged, issue := ApplyOptionsFlagMutation(raw, OptionsMutation{}, current)
+	if flags != raw || feedChanged || issue != nil {
+		t.Fatalf("non-Commander player flags must be preserved, flags=%x changed=%v issue=%+v", flags, feedChanged, issue)
+	}
+}
+
 func TestLegacyPasswordCharactersMatchAllowedLegacySet(t *testing.T) {
 	if !legacyPasswordCharacters("") || !legacyPasswordCharacters("AZaz09_") {
 		t.Fatal("empty and alphanumeric underscore passwords should be accepted")
@@ -162,18 +240,18 @@ func TestLegacyPasswordCharactersMatchAllowedLegacySet(t *testing.T) {
 	}
 }
 
-func TestOptionsEmailChangeForUnvalidatedAccountsUsesPendingEmail(t *testing.T) {
+func TestOptionsEmailChangeForUnvalidatedAccountsStillUsesPermanentEmail(t *testing.T) {
 	current := NewOptions(Overview{}, OptionsUser{
 		Email:      "pending@example.test",
 		PlainEmail: "permanent@example.test",
 		Validated:  false,
 	}, OptionsUniverse{Language: "en"}, OptionsSettings{}, OptionsAccount{}, 0)
 
-	if (OptionsMutation{Email: "pending@example.test"}).EmailChangeRequested(current) {
-		t.Fatal("pending email should not request a change for unvalidated accounts")
+	if !(OptionsMutation{Email: "pending@example.test"}).EmailChangeRequested(current) {
+		t.Fatal("legacy options compares the pending email with the permanent address")
 	}
-	if !(OptionsMutation{Email: "permanent@example.test"}).EmailChangeRequested(current) {
-		t.Fatal("different email should request a change for unvalidated accounts")
+	if (OptionsMutation{Email: "permanent@example.test"}).EmailChangeRequested(current) {
+		t.Fatal("the permanent address should not request a change")
 	}
 }
 
@@ -253,6 +331,20 @@ func TestOptionsActionIssues(t *testing.T) {
 	}
 	if issue := OptionsEmailUsedIssue(); issue.Code != OptionsIssueEmailUsed || issue.Message == "" {
 		t.Fatalf("unexpected email used issue: %+v", issue)
+	}
+	for name, issue := range map[string]*OptionsActionIssue{
+		"name changed":      OptionsNameChangedIssue(),
+		"name exists":       OptionsNameExistsIssue(),
+		"name cooldown":     OptionsNameCooldownIssue(),
+		"name length":       OptionsNameLengthIssue(),
+		"name special":      OptionsNameSpecialIssue(),
+		"name forbidden":    OptionsNameForbiddenIssue(),
+		"feed prohibited":   OptionsFeedProhibitedIssue(),
+		"activation resent": OptionsActivationResentIssue(),
+	} {
+		if issue.Code == "" || issue.Message == "" {
+			t.Fatalf("unexpected %s issue: %+v", name, issue)
+		}
 	}
 }
 

@@ -3,7 +3,9 @@ package mysqlgame
 import (
 	"context"
 	"crypto/md5"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -21,6 +23,7 @@ type OptionsRepository struct {
 	prefix   string
 	secret   string
 	now      func() time.Time
+	feedID   func() (string, error)
 }
 
 func NewOptionsRepository(db *sql.DB, prefix string) OptionsRepository {
@@ -36,6 +39,7 @@ func NewOptionsRepositoryWithSecret(db *sql.DB, prefix string, secret string) Op
 		prefix:   prefix,
 		secret:   secret,
 		now:      time.Now,
+		feedID:   secureOptionsFeedID,
 	}
 }
 
@@ -66,6 +70,7 @@ func NewOptionsRepositoryWithRunnerAndSecret(queryer Queryer, execer Execer, pre
 		prefix:   prefix,
 		secret:   secret,
 		now:      now,
+		feedID:   secureOptionsFeedID,
 	}
 }
 
@@ -155,6 +160,24 @@ func (r OptionsRepository) UpdateOptions(ctx context.Context, query appgame.Opti
 	if r.execer == nil {
 		return domaingame.Options{}, nil, errors.New("options updater unavailable")
 	}
+	if txer, ok := r.execer.(transactionRunner); ok {
+		var options domaingame.Options
+		var issue *domaingame.OptionsActionIssue
+		err := txer.WithTransaction(ctx, func(queryer Queryer, execer Execer) error {
+			transactionRepository := r
+			transactionRepository.queryer = queryer
+			transactionRepository.execer = execer
+			transactionRepository.overview = NewOverviewRepositoryWithRunner(queryer, execer, r.prefix)
+			var err error
+			options, issue, err = transactionRepository.updateOptions(ctx, query)
+			return err
+		})
+		return options, issue, err
+	}
+	return r.updateOptions(ctx, query)
+}
+
+func (r OptionsRepository) updateOptions(ctx context.Context, query appgame.OptionsUpdateQuery) (domaingame.Options, *domaingame.OptionsActionIssue, error) {
 	current, err := r.GetOptions(ctx, appgame.OptionsQuery{PlayerID: query.PlayerID, PlanetID: query.PlanetID})
 	if err != nil {
 		return domaingame.Options{}, nil, err
@@ -172,39 +195,53 @@ func (r OptionsRepository) UpdateOptions(ctx context.Context, query appgame.Opti
 	if err != nil {
 		return domaingame.Options{}, nil, err
 	}
+	if !current.User.Validated {
+		return r.updateUnvalidatedOptions(ctx, query, usersTable, queueTable, current, normalized.OptionsMutation)
+	}
+	if current.Account.Vacation {
+		return r.updateVacationOptions(ctx, query, usersTable, current, normalized.OptionsMutation)
+	}
 
 	disable := 0
 	disableUntil := int64(0)
-	vacation := boolInt(current.Account.Vacation)
-	vacationUntil := current.Account.VacationUntil
 	issue := domaingame.OptionsSavedIssue()
-	if currentIssue, err := r.applyCredentialMutations(ctx, usersTable, queueTable, query.PlayerID, normalized.OptionsMutation, current); err != nil {
+	if currentIssue, err := r.applyIdentityMutations(ctx, usersTable, queueTable, query.PlayerID, normalized.OptionsMutation, current); err != nil {
 		return domaingame.Options{}, nil, err
 	} else if currentIssue != nil {
 		issue = currentIssue
 	}
 	if normalized.VacationChanged {
-		switch {
-		case normalized.VacationMode:
-			allowed, err := r.canEnableVacation(ctx, queueTable, query.PlayerID)
+		allowed, err := r.canEnableVacation(ctx, queueTable, query.PlayerID)
+		if err != nil {
+			return domaingame.Options{}, nil, err
+		}
+		if allowed {
+			vacationUntil := r.now().Unix() + vacationMinimumSeconds(current.Universe.Speed)
+			if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET vacation = 1, vacation_until = ? WHERE player_id = ? LIMIT 1", usersTable), vacationUntil, query.PlayerID); err != nil {
+				return domaingame.Options{}, nil, err
+			}
+			if err := r.disableProductionForVacation(ctx, planetsTable, query.PlayerID); err != nil {
+				return domaingame.Options{}, nil, err
+			}
+			updated, err := r.GetOptions(ctx, appgame.OptionsQuery{PlayerID: query.PlayerID, PlanetID: query.PlanetID})
+			return updated, domaingame.OptionsVacationEnabledIssue(time.Unix(vacationUntil, 0)), err
+		}
+		issue = domaingame.OptionsVacationBlockedIssue()
+	}
+	flags, feedChanged, feedIssue := domaingame.ApplyOptionsFlagMutation(current.LegacyFlags, normalized.OptionsMutation, current)
+	feedID := current.User.FeedID
+	if feedChanged {
+		if normalized.FeedEnabled {
+			feedIDGenerator := r.feedID
+			if feedIDGenerator == nil {
+				feedIDGenerator = secureOptionsFeedID
+			}
+			feedID, err = feedIDGenerator()
 			if err != nil {
 				return domaingame.Options{}, nil, err
 			}
-			if allowed {
-				vacation = 1
-				vacationUntil = r.now().Unix() + vacationMinimumSeconds(current.Universe.Speed)
-				issue = domaingame.OptionsVacationEnabledIssue(time.Unix(vacationUntil, 0))
-			} else {
-				normalized.VacationMode = current.Account.Vacation
-				issue = domaingame.OptionsVacationBlockedIssue()
-			}
-		case r.now().Unix() >= current.Account.VacationUntil:
-			vacation = 0
-			vacationUntil = 0
-			issue = domaingame.OptionsVacationDisabledIssue(current.User.Name)
-		default:
-			normalized.VacationMode = current.Account.Vacation
-			issue = domaingame.OptionsVacationLockedIssue(time.Unix(current.Account.VacationUntil, 0))
+		} else {
+			feedID = ""
 		}
 	}
 	if normalized.DeleteAccount {
@@ -214,16 +251,16 @@ func (r OptionsRepository) UpdateOptions(ctx context.Context, query appgame.Opti
 		} else {
 			disableUntil = r.now().Add(7 * 24 * time.Hour).Unix()
 		}
-		if normalized.AccountDeletionChanged && !normalized.VacationChanged {
+		if normalized.AccountDeletionChanged && !normalized.VacationChanged && issue.Code == domaingame.OptionsIssueSaved {
 			issue = domaingame.OptionsAccountDeletionQueuedIssue(time.Unix(disableUntil, 0))
 		}
-	} else if normalized.AccountDeletionChanged && !normalized.VacationChanged {
+	} else if normalized.AccountDeletionChanged && !normalized.VacationChanged && issue.Code == domaingame.OptionsIssueSaved {
 		issue = domaingame.OptionsAccountDeletionClearedIssue()
 	}
 
 	if _, err := r.execer.ExecContext(
 		ctx,
-		fmt.Sprintf("UPDATE %s SET skin = ?, useskin = ?, deact_ip = ?, sortby = ?, sortorder = ?, maxspy = ?, maxfleetmsg = ?, lang = ?, vacation = ?, vacation_until = ?, disable = ?, disable_until = ? WHERE player_id = ? LIMIT 1", usersTable),
+		fmt.Sprintf("UPDATE %s SET skin = ?, useskin = ?, deact_ip = ?, sortby = ?, sortorder = ?, maxspy = ?, maxfleetmsg = ?, lang = ?, vacation = ?, vacation_until = ?, disable = ?, disable_until = ?, flags = ? WHERE player_id = ? LIMIT 1", usersTable),
 		normalized.SkinPath,
 		boolInt(normalized.UseSkin),
 		boolInt(normalized.DeactivateIP),
@@ -232,25 +269,78 @@ func (r OptionsRepository) UpdateOptions(ctx context.Context, query appgame.Opti
 		normalized.MaxSpy,
 		normalized.MaxFleetMessages,
 		normalized.Language,
-		vacation,
-		vacationUntil,
+		0,
+		int64(0),
 		disable,
 		disableUntil,
+		flags,
 		query.PlayerID,
 	); err != nil {
 		return domaingame.Options{}, nil, err
 	}
-	if normalized.VacationChanged && normalized.VacationMode && vacation == 1 {
-		if err := r.disableProductionForVacation(ctx, planetsTable, query.PlayerID); err != nil {
+	if feedChanged {
+		if _, err := r.execer.ExecContext(
+			ctx,
+			fmt.Sprintf("UPDATE %s SET feedid = ?, lastfeed = 0 WHERE player_id = ? LIMIT 1", usersTable),
+			feedID,
+			query.PlayerID,
+		); err != nil {
 			return domaingame.Options{}, nil, err
 		}
 	}
-
 	updated, err := r.GetOptions(ctx, appgame.OptionsQuery{PlayerID: query.PlayerID, PlanetID: query.PlanetID})
 	if err != nil {
 		return domaingame.Options{}, nil, err
 	}
+	if feedIssue != nil {
+		issue = feedIssue
+	}
 	return updated, issue, nil
+}
+
+func (r OptionsRepository) updateUnvalidatedOptions(ctx context.Context, query appgame.OptionsUpdateQuery, usersTable string, queueTable string, current domaingame.Options, mutation domaingame.OptionsMutation) (domaingame.Options, *domaingame.OptionsActionIssue, error) {
+	issue := domaingame.OptionsSavedIssue()
+	if mutation.ResendActivation {
+		issue = domaingame.OptionsActivationResentIssue()
+	} else if email := strings.TrimSpace(mutation.Email); email != "" && email != current.User.Email {
+		if current.User.PasswordHash != legacyPasswordHash(mutation.OldPassword, r.secret) {
+			issue = domaingame.OptionsEmailNeedPasswordIssue()
+		} else {
+			pendingCurrent := current
+			pendingCurrent.User.PlainEmail = current.User.Email
+			if validationIssue := mutation.EmailValidationIssue(pendingCurrent); validationIssue != nil {
+				issue = validationIssue
+			} else if exists, err := r.emailExists(ctx, usersTable, email); err != nil {
+				return domaingame.Options{}, nil, err
+			} else if exists {
+				issue = domaingame.OptionsEmailUsedIssue()
+			} else {
+				now := r.now().Unix()
+				code := legacyPasswordHash(fmt.Sprintf("%d", now), r.secret)
+				if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET validated = 0, validatemd = ?, email = ? WHERE player_id = ? LIMIT 1", usersTable), code, email, query.PlayerID); err != nil {
+					return domaingame.Options{}, nil, err
+				}
+				if err := r.addChangeEmailEvent(ctx, queueTable, query.PlayerID, now); err != nil {
+					return domaingame.Options{}, nil, err
+				}
+				issue = domaingame.OptionsEmailChangedIssue()
+			}
+		}
+	}
+	updated, err := r.GetOptions(ctx, appgame.OptionsQuery{PlayerID: query.PlayerID, PlanetID: query.PlanetID})
+	return updated, issue, err
+}
+
+func (r OptionsRepository) updateVacationOptions(ctx context.Context, query appgame.OptionsUpdateQuery, usersTable string, current domaingame.Options, mutation domaingame.OptionsMutation) (domaingame.Options, *domaingame.OptionsActionIssue, error) {
+	issue := domaingame.OptionsSavedIssue()
+	if mutation.DisableVacation && r.now().Unix() >= current.Account.VacationUntil {
+		if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET vacation = 0, vacation_until = 0 WHERE player_id = ? LIMIT 1", usersTable), query.PlayerID); err != nil {
+			return domaingame.Options{}, nil, err
+		}
+		issue = domaingame.OptionsVacationDisabledIssue(current.User.Name)
+	}
+	updated, err := r.GetOptions(ctx, appgame.OptionsQuery{PlayerID: query.PlayerID, PlanetID: query.PlanetID})
+	return updated, issue, err
 }
 
 func (r OptionsRepository) loadOptions(ctx context.Context, playerID int) (domaingame.OptionsUser, domaingame.OptionsUniverse, domaingame.OptionsSettings, domaingame.OptionsAccount, int64, error) {
@@ -328,6 +418,10 @@ func (r OptionsRepository) loadOptions(ctx context.Context, playerID int) (domai
 		return domaingame.OptionsUser{}, domaingame.OptionsUniverse{}, domaingame.OptionsSettings{}, domaingame.OptionsAccount{}, 0, err
 	}
 	if err := rows.Err(); err != nil {
+		rows.Close()
+		return domaingame.OptionsUser{}, domaingame.OptionsUniverse{}, domaingame.OptionsSettings{}, domaingame.OptionsAccount{}, 0, err
+	}
+	if err := rows.Close(); err != nil {
 		return domaingame.OptionsUser{}, domaingame.OptionsUniverse{}, domaingame.OptionsSettings{}, domaingame.OptionsAccount{}, 0, err
 	}
 
@@ -390,6 +484,38 @@ func (r OptionsRepository) loadOptions(ctx context.Context, playerID int) (domai
 		nil
 }
 
+func (r OptionsRepository) applyIdentityMutations(ctx context.Context, usersTable string, queueTable string, playerID int, mutation domaingame.OptionsMutation, current domaingame.Options) (*domaingame.OptionsActionIssue, error) {
+	if mutation.NameChangeRequested(current) {
+		exists, err := r.nameExists(ctx, usersTable, mutation.Name)
+		if err != nil {
+			return nil, err
+		}
+		var issue *domaingame.OptionsActionIssue
+		if exists {
+			issue = domaingame.OptionsNameExistsIssue()
+		} else {
+			allowed, err := r.canChangeName(ctx, queueTable, playerID)
+			if err != nil {
+				return nil, err
+			}
+			if !allowed {
+				issue = domaingame.OptionsNameCooldownIssue()
+			}
+		}
+		if formatIssue := mutation.NameValidationIssue(); formatIssue != nil && (issue == nil || formatIssue.Code == domaingame.OptionsIssueNameForbidden) {
+			issue = formatIssue
+		}
+		if issue != nil {
+			return issue, nil
+		}
+		if err := r.changeName(ctx, usersTable, queueTable, playerID, mutation.Name); err != nil {
+			return nil, err
+		}
+		return domaingame.OptionsNameChangedIssue(), nil
+	}
+	return r.applyCredentialMutations(ctx, usersTable, queueTable, playerID, mutation, current)
+}
+
 func (r OptionsRepository) applyCredentialMutations(ctx context.Context, usersTable string, queueTable string, playerID int, mutation domaingame.OptionsMutation, current domaingame.Options) (*domaingame.OptionsActionIssue, error) {
 	if issue := mutation.PasswordValidationIssue(); issue != nil {
 		return issue, nil
@@ -409,14 +535,14 @@ func (r OptionsRepository) applyCredentialMutations(ctx context.Context, usersTa
 		return domaingame.OptionsPasswordChangedIssue(), nil
 	}
 
-	if issue := mutation.EmailValidationIssue(current); issue != nil {
-		return issue, nil
-	}
 	if !mutation.EmailChangeRequested(current) {
 		return nil, nil
 	}
 	if current.User.PasswordHash != legacyPasswordHash(mutation.OldPassword, r.secret) {
 		return domaingame.OptionsEmailNeedPasswordIssue(), nil
+	}
+	if issue := mutation.EmailValidationIssue(current); issue != nil {
+		return issue, nil
 	}
 	exists, err := r.emailExists(ctx, usersTable, mutation.Email)
 	if err != nil {
@@ -440,6 +566,66 @@ func (r OptionsRepository) applyCredentialMutations(ctx context.Context, usersTa
 		return nil, err
 	}
 	return domaingame.OptionsEmailChangedIssue(), nil
+}
+
+func (r OptionsRepository) nameExists(ctx context.Context, usersTable string, name string) (bool, error) {
+	return r.optionsCount(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE name = ?", usersTable), "options name state not found", strings.ToLower(name))
+}
+
+func (r OptionsRepository) canChangeName(ctx context.Context, queueTable string, playerID int) (bool, error) {
+	exists, err := r.optionsCount(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE type = ? AND owner_id = ?", queueTable), "options name queue state not found", "AllowName", playerID)
+	return !exists, err
+}
+
+func (r OptionsRepository) optionsCount(ctx context.Context, query string, missingMessage string, args ...any) (bool, error) {
+	rows, err := r.queryer.QueryContext(ctx, query, args...)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
+		return false, errors.New(missingMessage)
+	}
+	var count int
+	if err := rows.Scan(&count); err != nil {
+		return false, err
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (r OptionsRepository) changeName(ctx context.Context, usersTable string, queueTable string, playerID int, name string) error {
+	now := r.now().Unix()
+	nameUntil := now + 7*24*60*60
+	if _, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("UPDATE %s SET name = ?, oname = ?, name_changed = 1, name_until = ?, session = '' WHERE player_id = ? LIMIT 1", usersTable),
+		strings.ToLower(name),
+		name,
+		nameUntil,
+		playerID,
+	); err != nil {
+		return err
+	}
+	// Legacy AddAllowNameEvent passes an absolute timestamp to AddQueue's duration parameter.
+	_, err := r.execer.ExecContext(
+		ctx,
+		fmt.Sprintf("INSERT INTO %s (owner_id, type, sub_id, obj_id, level, start, end, prio) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", queueTable),
+		playerID,
+		"AllowName",
+		0,
+		0,
+		0,
+		now,
+		now+nameUntil,
+		0,
+	)
+	return err
 }
 
 func (r OptionsRepository) emailExists(ctx context.Context, usersTable string, email string) (bool, error) {
@@ -473,7 +659,7 @@ func (r OptionsRepository) addChangeEmailEvent(ctx context.Context, queueTable s
 	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE type = ? AND owner_id = ?", queueTable), "ChangeEmail", playerID); err != nil {
 		return err
 	}
-	legacyEnd := now + 7*24*60*60
+	legacyUntil := now + 7*24*60*60
 	_, err := r.execer.ExecContext(
 		ctx,
 		fmt.Sprintf("INSERT INTO %s (owner_id, type, sub_id, obj_id, level, start, end, prio) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", queueTable),
@@ -483,7 +669,7 @@ func (r OptionsRepository) addChangeEmailEvent(ctx context.Context, queueTable s
 		0,
 		0,
 		now,
-		legacyEnd,
+		now+legacyUntil,
 		0,
 	)
 	return err
@@ -550,4 +736,12 @@ func boolInt(value bool) int {
 func legacyPasswordHash(value string, secret string) string {
 	sum := md5.Sum([]byte(value + secret))
 	return fmt.Sprintf("%x", sum)
+}
+
+func secureOptionsFeedID() (string, error) {
+	value := make([]byte, 16)
+	if _, err := rand.Read(value); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(value), nil
 }
