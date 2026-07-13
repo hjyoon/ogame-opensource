@@ -193,6 +193,11 @@ func (r FleetRepository) GetFleet(ctx context.Context, query appgame.FleetQuery)
 	return fleet, nil
 }
 
+func (r FleetRepository) GetFleetSnapshot(ctx context.Context, query appgame.FleetQuery) (domaingame.Fleet, error) {
+	r.finishDueQueues = false
+	return r.GetFleet(ctx, query)
+}
+
 func (r FleetRepository) MutateFleetTemplate(ctx context.Context, query appgame.FleetTemplateMutationQuery) error {
 	if r.execer == nil {
 		return errors.New("fleet template writer unavailable")

@@ -52,6 +52,22 @@ func TestFleetRepositoryReadsLegacyFleetScreen(t *testing.T) {
 	}
 }
 
+func TestFleetRepositorySnapshotSkipsQueueDrain(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	queryer := &fakeQueryer{results: append(fleetReadPrefixResults(now),
+		fakeQueryResult{rows: fakeRowsFromValues()},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+	)}
+	repository := NewFleetRepositoryWithRunner(queryer, nil, "ogame_", func() time.Time { return now })
+	repository.finishDueQueues = true
+	if _, err := repository.GetFleetSnapshot(context.Background(), appgame.FleetQuery{PlayerID: 42}); err != nil {
+		t.Fatal(err)
+	}
+	if len(queryer.calls) == 0 || strings.Contains(queryer.calls[0].sql, "SELECT freeze") {
+		t.Fatalf("snapshot must read current state without draining queues: %+v", queryer.calls)
+	}
+}
+
 func TestFleetRepositoryMapsMCPFleetOptions(t *testing.T) {
 	now := time.Unix(1_000, 0)
 	queryer := &fakeQueryer{results: append(fleetReadPrefixResults(now),

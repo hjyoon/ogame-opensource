@@ -11,6 +11,7 @@ import (
 
 type FleetRepository interface {
 	GetFleet(context.Context, FleetQuery) (domaingame.Fleet, error)
+	GetFleetSnapshot(context.Context, FleetQuery) (domaingame.Fleet, error)
 	MutateFleetTemplate(context.Context, FleetTemplateMutationQuery) error
 	LaunchFleetDispatch(context.Context, FleetLaunchQuery) (*domaingame.FleetActionIssue, error)
 	RecallFleet(context.Context, FleetRecallQuery) error
@@ -410,7 +411,7 @@ func (s FleetService) RecallFleet(ctx context.Context, command FleetRecallComman
 		return FleetResult{}, err
 	}
 
-	fleet, err := s.repository.GetFleet(ctx, FleetQuery{
+	fleet, err := s.repository.GetFleetSnapshot(ctx, FleetQuery{
 		PlayerID: session.Session.PlayerID,
 		PlanetID: command.PlanetID,
 	})

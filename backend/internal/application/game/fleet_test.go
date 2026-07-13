@@ -537,7 +537,7 @@ func TestFleetServiceRecallsFleetAndReloadsFleet(t *testing.T) {
 	if repository.recall.PlayerID != 42 || repository.recall.FleetID != 123 {
 		t.Fatalf("unexpected recall query: %+v", repository.recall)
 	}
-	if repository.query.PlayerID != 42 || repository.query.PlanetID != 99 {
+	if !repository.snapshot || repository.query.PlayerID != 42 || repository.query.PlanetID != 99 {
 		t.Fatalf("expected recall to reload selected fleet screen, got %+v", repository.query)
 	}
 }
@@ -739,6 +739,12 @@ type fakeFleetRepository struct {
 	mutated     bool
 	launched    bool
 	recalled    bool
+	snapshot    bool
+}
+
+func (f *fakeFleetRepository) GetFleetSnapshot(ctx context.Context, query FleetQuery) (domaingame.Fleet, error) {
+	f.snapshot = true
+	return f.GetFleet(ctx, query)
 }
 
 func (f *fakeFleetRepository) GetFleet(_ context.Context, query FleetQuery) (domaingame.Fleet, error) {

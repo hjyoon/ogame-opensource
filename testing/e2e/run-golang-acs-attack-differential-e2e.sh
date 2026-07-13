@@ -103,6 +103,17 @@ go_launch() {
   curl --silent --show-error --max-time 15 --output "$TMP_DIR/$key-launch.body" --cookie "$private_cookie" --header 'Content-Type: application/json' --data "$payload" --write-out '%{http_code}' "$GO_BASE_URL/api/game/fleet?session=$public_session&cp=$origin"
 }
 
+legacy_recall() {
+  key="$1" cookie_file="$2" public_session="$3" origin="$4" recall_id="$5"
+  curl --silent --show-error --max-time 15 --output "$TMP_DIR/$key-recall.body" --cookie "$cookie_file" --data-urlencode "order_return=$recall_id" --write-out '%{http_code}' "$LEGACY_BASE_URL/game/index.php?page=flotten1&session=$public_session&cp=$origin"
+}
+
+go_recall() {
+  key="$1" private_cookie="$2" public_session="$3" origin="$4" recall_id="$5"
+  payload="$(jq -nc --arg id "$recall_id" '{action:"recall",fleetId:($id|tonumber)}')"
+  curl --silent --show-error --max-time 15 --output "$TMP_DIR/$key-recall.body" --cookie "$private_cookie" --header 'Content-Type: application/json' --data "$payload" --write-out '%{http_code}' "$GO_BASE_URL/api/game/fleet?session=$public_session&cp=$origin"
+}
+
 create_union() {
   fleet_id="$(db_query "SELECT fleet_id FROM uni1_fleet WHERE owner_id=$head_id AND mission=1 ORDER BY fleet_id DESC LIMIT 1")"
   union_id="$(db_query "INSERT INTO uni1_union (fleet_id,target_player,name,players) VALUES ($fleet_id,$target_id,'E2EACS','$head_id,$support_id'); SELECT LAST_INSERT_ID();")"
@@ -122,6 +133,10 @@ capture_state() {
   debris_json="$(db_query "SELECT JSON_OBJECT('metal',ROUND(\`700\`),'crystal',ROUND(\`701\`)) FROM uni1_planets WHERE type=10000 AND g=$target_g AND s=$target_s AND p=$target_p LIMIT 1")"
   [ -n "$debris_json" ] || debris_json=null
   jq -nc --argjson planets "$planets_json" --argjson fleets "$fleets_json" --argjson queues "$queues_json" --argjson messages "$messages_json" --argjson logs "$logs_json" --argjson battle "$battle_json" --argjson debris "$debris_json" --arg unions "$union_count" '{planets:$planets,fleets:$fleets,queues:$queues,messages:$messages,fleetLogs:$logs,battle:$battle,debris:$debris,unionCount:($unions|tonumber)}'
+}
+
+capture_recall_state() {
+  capture_state | jq -c '(.fleets[]? |= del(.flightTime)) | (.queues[]? |= del(.arrivalSkew)) | (.fleetLogs[]? |= del(.duration,.flightTime))'
 }
 
 force_due() {
@@ -163,12 +178,59 @@ run_side() {
   final="$(capture_state)"
 }
 
+run_recall_side() {
+  side="$1"
+  reset_case
+  if [ "$side" = legacy ]; then
+    login_legacy legacy-recall-head "$head_login"; head_session="$session"; head_cookie="$TMP_DIR/legacy-recall-head.cookies"
+    login_legacy legacy-recall-support "$support_login"; support_session="$session"; support_cookie="$TMP_DIR/legacy-recall-support.cookies"
+    recall_head_launch_status="$(legacy_launch legacy-recall-head "$head_cookie" "$head_session" "$head_planet" 1 0)"
+  else
+    login_go go-recall-head "$head_login"; head_session="$session"; head_cookie="$cookie"
+    login_go go-recall-support "$support_login"; support_session="$session"; support_cookie="$cookie"
+    recall_head_launch_status="$(go_launch go-recall-head "$head_cookie" "$head_session" "$head_planet" 1 0)"
+  fi
+  create_union
+  if [ "$side" = legacy ]; then
+    recall_support_launch_status="$(legacy_launch legacy-recall-support "$support_cookie" "$support_session" "$support_planet" 2 "$union_id")"
+  else
+    recall_support_launch_status="$(go_launch go-recall-support "$support_cookie" "$support_session" "$support_planet" 2 "$union_id")"
+  fi
+  support_fleet_id="$(db_query "SELECT fleet_id FROM uni1_fleet WHERE owner_id=$support_id AND mission=2 ORDER BY fleet_id DESC LIMIT 1")"
+  if [ "$side" = legacy ]; then
+    support_recall_status="$(legacy_recall legacy-recall-support "$support_cookie" "$support_session" "$support_planet" "$support_fleet_id")"
+  else
+    support_recall_status="$(go_recall go-recall-support "$support_cookie" "$support_session" "$support_planet" "$support_fleet_id")"
+  fi
+  support_recalled="$(capture_recall_state)"
+  head_fleet_id="$(db_query "SELECT fleet_id FROM uni1_fleet WHERE owner_id=$head_id AND mission=21 ORDER BY fleet_id DESC LIMIT 1")"
+  if [ "$side" = legacy ]; then
+    head_recall_status="$(legacy_recall legacy-recall-head "$head_cookie" "$head_session" "$head_planet" "$head_fleet_id")"
+  else
+    head_recall_status="$(go_recall go-recall-head "$head_cookie" "$head_session" "$head_planet" "$head_fleet_id")"
+  fi
+  all_recalled="$(capture_recall_state)"
+  force_due
+  if [ "$side" = legacy ]; then
+    recall_final_status="$(curl --silent --show-error --max-time 15 --output "$TMP_DIR/$side-recall-final.body" --cookie "$head_cookie" --write-out '%{http_code}' "$LEGACY_BASE_URL/game/index.php?page=flotten1&session=$head_session&cp=$head_planet")"
+  else
+    recall_final_status="$(curl --silent --show-error --max-time 15 --output "$TMP_DIR/$side-recall-final.body" --cookie "$head_cookie" --write-out '%{http_code}' "$GO_BASE_URL/api/game/fleet?session=$head_session&cp=$head_planet")"
+  fi
+  recall_final="$(capture_recall_state)"
+}
+
 run_side legacy
 legacy_head_status="$head_status"; legacy_support_status="$support_status"; legacy_battle_status="$battle_status"; legacy_final_status="$final_status"
 legacy_joined="$joined"; legacy_returning="$returning"; legacy_final="$final"
 run_side go
 go_head_status="$head_status"; go_support_status="$support_status"; go_battle_status="$battle_status"; go_final_status="$final_status"
 go_joined="$joined"; go_returning="$returning"; go_final="$final"
+run_recall_side legacy
+legacy_recall_head_launch_status="$recall_head_launch_status"; legacy_recall_support_launch_status="$recall_support_launch_status"; legacy_support_recall_status="$support_recall_status"; legacy_head_recall_status="$head_recall_status"; legacy_recall_final_status="$recall_final_status"
+legacy_support_recalled="$support_recalled"; legacy_all_recalled="$all_recalled"; legacy_recall_final="$recall_final"
+run_recall_side go
+go_recall_head_launch_status="$recall_head_launch_status"; go_recall_support_launch_status="$recall_support_launch_status"; go_support_recall_status="$support_recall_status"; go_head_recall_status="$head_recall_status"; go_recall_final_status="$recall_final_status"
+go_support_recalled="$support_recalled"; go_all_recalled="$all_recalled"; go_recall_final="$recall_final"
 
 pass=true
 [ "$legacy_head_status" = 200 ] && [ "$go_head_status" = 200 ] || pass=false
@@ -178,10 +240,21 @@ pass=true
 [ "$legacy_joined" = "$go_joined" ] || pass=false
 [ "$legacy_returning" = "$go_returning" ] || pass=false
 [ "$legacy_final" = "$go_final" ] || pass=false
+[ "$legacy_recall_head_launch_status" = 200 ] && [ "$go_recall_head_launch_status" = 200 ] || pass=false
+[ "$legacy_recall_support_launch_status" = 200 ] && [ "$go_recall_support_launch_status" = 200 ] || pass=false
+[ "$legacy_support_recall_status" = 200 ] && [ "$go_support_recall_status" = 200 ] || pass=false
+[ "$legacy_head_recall_status" = 200 ] && [ "$go_head_recall_status" = 200 ] || pass=false
+[ "$legacy_recall_final_status" = 200 ] && [ "$go_recall_final_status" = 200 ] || pass=false
+[ "$legacy_support_recalled" = "$go_support_recalled" ] || pass=false
+[ "$legacy_all_recalled" = "$go_all_recalled" ] || pass=false
+[ "$legacy_recall_final" = "$go_recall_final" ] || pass=false
 printf '%s' "$legacy_joined" | jq -e '.unionCount==1 and (.fleets|length)==2 and ([.fleets[].mission]|sort)==[2,21] and ([.queues[].arrivalSkew]|unique)==[0]' >/dev/null || pass=false
 printf '%s' "$legacy_returning" | jq -e '.unionCount==0 and (.fleets|length)==2 and ([.fleets[].mission]|sort)==[102,121] and (.messages|length)==6 and .battle.report!=""' >/dev/null || pass=false
 printf '%s' "$legacy_final" | jq -e '.unionCount==0 and (.fleets|length)==0 and (.queues|length)==0 and (.messages|length)==8 and ([.planets[]|select(.id=='"$head_planet"' or .id=='"$support_planet"')|.fighters]|sort)==[10,10]' >/dev/null || pass=false
+printf '%s' "$legacy_support_recalled" | jq -e '.unionCount==1 and ([.fleets[].mission]|sort)==[21,102] and ([.fleets[].inUnion]|sort)==[0,1]' >/dev/null || pass=false
+printf '%s' "$legacy_all_recalled" | jq -e '.unionCount==0 and ([.fleets[].mission]|sort)==[102,121] and ([.fleets[].inUnion]|unique)==[0]' >/dev/null || pass=false
+printf '%s' "$legacy_recall_final" | jq -e '.unionCount==0 and (.fleets|length)==0 and (.queues|length)==0 and (.messages|length)==2 and ([.planets[]|select(.id=='"$head_planet"' or .id=='"$support_planet"')|.fighters]|sort)==[10,10]' >/dev/null || pass=false
 
-jq -nc --argjson pass "$pass" --arg legacyHead "$legacy_head_status" --arg goHead "$go_head_status" --arg legacySupport "$legacy_support_status" --arg goSupport "$go_support_status" --arg legacyBattle "$legacy_battle_status" --arg goBattle "$go_battle_status" --arg legacyFinalStatus "$legacy_final_status" --arg goFinalStatus "$go_final_status" --argjson legacyJoined "$legacy_joined" --argjson goJoined "$go_joined" --argjson legacyReturning "$legacy_returning" --argjson goReturning "$go_returning" --argjson legacyFinal "$legacy_final" --argjson goFinal "$go_final" '{pass:$pass,http:{head:{legacy:$legacyHead,go:$goHead},support:{legacy:$legacySupport,go:$goSupport},battle:{legacy:$legacyBattle,go:$goBattle},final:{legacy:$legacyFinalStatus,go:$goFinalStatus}},db:{joined:{legacy:$legacyJoined,go:$goJoined},returning:{legacy:$legacyReturning,go:$goReturning},final:{legacy:$legacyFinal,go:$goFinal}}}' > "$REPORT"
+jq -nc --argjson pass "$pass" --arg legacyHead "$legacy_head_status" --arg goHead "$go_head_status" --arg legacySupport "$legacy_support_status" --arg goSupport "$go_support_status" --arg legacyBattle "$legacy_battle_status" --arg goBattle "$go_battle_status" --arg legacyFinalStatus "$legacy_final_status" --arg goFinalStatus "$go_final_status" --arg legacySupportRecall "$legacy_support_recall_status" --arg goSupportRecall "$go_support_recall_status" --arg legacyHeadRecall "$legacy_head_recall_status" --arg goHeadRecall "$go_head_recall_status" --argjson legacyJoined "$legacy_joined" --argjson goJoined "$go_joined" --argjson legacyReturning "$legacy_returning" --argjson goReturning "$go_returning" --argjson legacyFinal "$legacy_final" --argjson goFinal "$go_final" --argjson legacySupportRecalled "$legacy_support_recalled" --argjson goSupportRecalled "$go_support_recalled" --argjson legacyAllRecalled "$legacy_all_recalled" --argjson goAllRecalled "$go_all_recalled" --argjson legacyRecallFinal "$legacy_recall_final" --argjson goRecallFinal "$go_recall_final" '{pass:$pass,http:{head:{legacy:$legacyHead,go:$goHead},support:{legacy:$legacySupport,go:$goSupport},battle:{legacy:$legacyBattle,go:$goBattle},final:{legacy:$legacyFinalStatus,go:$goFinalStatus},supportRecall:{legacy:$legacySupportRecall,go:$goSupportRecall},headRecall:{legacy:$legacyHeadRecall,go:$goHeadRecall}},db:{joined:{legacy:$legacyJoined,go:$goJoined},returning:{legacy:$legacyReturning,go:$goReturning},final:{legacy:$legacyFinal,go:$goFinal},supportRecalled:{legacy:$legacySupportRecalled,go:$goSupportRecalled},allRecalled:{legacy:$legacyAllRecalled,go:$goAllRecalled},recallFinal:{legacy:$legacyRecallFinal,go:$goRecallFinal}}}' > "$REPORT"
 [ "$pass" = true ]
 printf 'Go/PHP ACS attack differential E2E: PASS\n'
