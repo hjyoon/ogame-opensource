@@ -36,7 +36,7 @@ The denominator is the legacy product surface, not file count alone:
 - Account options preserve password/email/vacation/deletion behavior, including 7-day email confirmation queue timing and forced-universe language.
 - Admin Logins/Browse, Loca, Bots, Mods, DB, simulators, destructive actions, and queue operations are migrated with API/unit/smoke evidence.
 - Source audit covers 37 game routes, 26 Admin modes, 32 public entrypoints, 14 Bot APIs, and 37 optional PHP Mod hooks.
-- Behavior audit freezes 463 core request inputs, 162 action values, 19 queue constants, 349 SQL mutation sites, and 149 navigation handlers; resource production, building, and research queues have DB differential evidence.
+- Behavior audit freezes 463 core request inputs, 162 action values, 19 queue constants, 349 SQL mutation sites, and 149 navigation handlers; resource and build/research/shipyard queues have DB differential evidence.
 - Go rejects new PHP Mod installs; an active legacy Mod makes readiness fail instead of silently diverging.
 - Expedition due-queue result selection now includes legacy success/event roll buckets, hold-time success, depletion min/med/max thresholds, and far-space visit counter evidence.
 - ACS attack launch now covers the legacy 30% slowdown boundary and queue resync to the later union arrival.

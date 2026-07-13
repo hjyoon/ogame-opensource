@@ -17,6 +17,7 @@ const artifacts = [
   { name: "go/PHP resource differential", path: ".tmp/golang-resource-differential.json" },
   { name: "go/PHP building differential", path: ".tmp/golang-building-differential.json" },
   { name: "go/PHP research differential", path: ".tmp/golang-research-differential.json" },
+  { name: "go/PHP shipyard-defense differential", path: ".tmp/golang-shipyard-defense-differential.json" },
   { name: "go user type API QA", path: ".tmp/golang-user-type-qa.json" },
   ...browserNames.map((browser) => ({
     name: `go user type Playwright ${browser}`,
