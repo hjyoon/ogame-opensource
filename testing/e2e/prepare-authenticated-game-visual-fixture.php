@@ -26,6 +26,18 @@ function auth_visual_sql_escape(string $value): string
     return mysqli_real_escape_string($db_connect, $value);
 }
 
+function auth_visual_now(): int
+{
+    static $now = null;
+    if ($now === null) {
+        $configured = getenv('OGAME_GAME_VISUAL_NOW');
+        $now = $configured !== false && ctype_digit($configured) && (int)$configured > 0
+            ? (int)$configured
+            : time();
+    }
+    return $now;
+}
+
 function auth_visual_one_row(string $sql): ?array
 {
     $res = dbquery($sql);
@@ -66,7 +78,7 @@ function auth_visual_prepare_user(string $name, string $password, int $adminLeve
     }
 
     $passwordHash = md5($password . $db_secret);
-    $now = time();
+    $now = auth_visual_now();
     dbquery(
         "UPDATE {$db_prefix}users SET " .
         "name='" . auth_visual_sql_escape($lower) . "', oname='" . auth_visual_sql_escape($displayName) . "', " .
@@ -74,7 +86,7 @@ function auth_visual_prepare_user(string $name, string $password, int $adminLeve
         "email='" . auth_visual_sql_escape($lower . '@visual.local') . "', validated=1, validatemd='', deact_ip=1, " .
         "admin={$adminLevel}, vacation=0, vacation_until=0, banned=0, banned_until=0, disable=0, disable_until=0, " .
         "ally_id=0, allyrank=0, joindate=0, com_until=0, adm_until=0, eng_until=0, geo_until=0, tec_until=0, dm=0, dmfree=5000, trader=1, rate_m=3, rate_k=2, rate_d=1, " .
-        "`" . GID_R_COMPUTER . "`=3, `" . GID_R_COMBUST_DRIVE . "`=2, `" . GID_R_EXPEDITION . "`=3, " .
+        "`" . GID_R_COMPUTER . "`=3, `" . GID_R_COMBUST_DRIVE . "`=2, `" . GID_R_ESPIONAGE . "`=8, `" . GID_R_EXPEDITION . "`=3, " .
         "score1=10000, score2=0, score3=0, place1=1, place2=1, place3=1, " .
         "noattack=0, noattack_until=0, lang='en', skin='/evolution/', useskin=1, flags=" . USER_FLAG_DEFAULT . ", " .
         "hplanetid={$homePlanetId}, aktplanet={$homePlanetId}, lastclick={$now} WHERE player_id={$playerId}"
@@ -99,30 +111,31 @@ function auth_visual_prepare_user(string $name, string $password, int $adminLeve
     return array('player_id' => $playerId, 'name' => $displayName, 'home_planet_id' => $homePlanetId);
 }
 
-function auth_visual_position_is_clear(int $g, int $s, int $p, array $ignoredPlanetIds = array()): bool
+function auth_visual_occupied_position_keys(array $ignoredPlanetIds, ?int $position = null): array
 {
     global $db_prefix;
 
     $ignored = array_values(array_unique(array_filter(array_map('intval', $ignoredPlanetIds), fn($id) => $id > 0)));
     $ignoreClause = empty($ignored) ? '' : ' AND planet_id NOT IN (' . implode(',', $ignored) . ')';
-    $occupied = auth_visual_one_row(
-        "SELECT planet_id FROM {$db_prefix}planets WHERE g={$g} AND s={$s} AND p={$p}{$ignoreClause} LIMIT 1"
-    );
-    if ($occupied !== null) {
-        return false;
+    $positionClause = $position === null ? '' : ' AND p=' . intval($position);
+    $res = dbquery("SELECT g, s, p FROM {$db_prefix}planets WHERE p BETWEEN 1 AND 15{$positionClause}{$ignoreClause}");
+    $occupied = array();
+    while ($row = dbarray($res)) {
+        $occupied[(int)$row['g'] . ':' . (int)$row['s'] . ':' . (int)$row['p']] = true;
     }
-    return true;
+    return $occupied;
 }
 
 function auth_visual_find_empty_hover_system(array $ignoredPlanetIds = array()): array
 {
     global $GlobalUni;
+    $occupied = auth_visual_occupied_position_keys($ignoredPlanetIds);
 
     for ($g = 1; $g <= (int)$GlobalUni['galaxies']; $g++) {
         for ($s = 1; $s <= (int)$GlobalUni['systems']; $s++) {
             $clear = true;
             for ($p = 1; $p <= 10; $p++) {
-                if (!auth_visual_position_is_clear($g, $s, $p, $ignoredPlanetIds)) {
+                if (isset($occupied["{$g}:{$s}:{$p}"])) {
                     $clear = false;
                     break;
                 }
@@ -138,12 +151,13 @@ function auth_visual_find_empty_hover_system(array $ignoredPlanetIds = array()):
 function auth_visual_find_far_empty_position(int $originG, int $originS, int $position, array $ignoredPlanetIds = array()): array
 {
     global $GlobalUni;
+    $occupied = auth_visual_occupied_position_keys($ignoredPlanetIds, $position);
 
     $best = null;
     $bestDistance = -1;
     for ($g = 1; $g <= (int)$GlobalUni['galaxies']; $g++) {
         for ($s = 1; $s <= (int)$GlobalUni['systems']; $s++) {
-            if (!auth_visual_position_is_clear($g, $s, $position, $ignoredPlanetIds)) {
+            if (isset($occupied["{$g}:{$s}:{$position}"])) {
                 continue;
             }
             $distance = abs($g - $originG) * 20000 + abs($s - $originS) * 95;
@@ -163,7 +177,7 @@ function auth_visual_place_planet(int $planetId, int $ownerId, string $name, int
 {
     global $db_prefix;
 
-    $now = time();
+    $now = auth_visual_now();
     dbquery(
         "UPDATE {$db_prefix}planets SET " .
         "name='" . auth_visual_sql_escape($name) . "', g={$g}, s={$s}, p={$p}, type=" . PTYP_PLANET . ", owner_id={$ownerId}, " .
@@ -295,7 +309,7 @@ function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password)
     );
     [$g, $s] = auth_visual_find_empty_hover_system($movablePlanetIds);
     [$cargoG, $cargoS, $cargoP] = auth_visual_find_far_empty_position($g, $s, 10, $movablePlanetIds);
-    $now = time();
+    $now = auth_visual_now();
 
     auth_visual_place_planet($targetPlanetId, $targetId, 'Visual Hover Planet', $g, $s, 1);
     auth_visual_place_planet($viewerPlanetId, $viewerId, 'Visual Home', $g, $s, 2);
@@ -443,7 +457,7 @@ function auth_visual_prepare_commander_fixture(array $user): void
     global $db_prefix;
 
     $playerId = (int)$user['player_id'];
-    $now = time();
+    $now = auth_visual_now();
     $commanderUntil = $now + 60 * 60 * 24 * 30;
 
     dbquery("UPDATE {$db_prefix}users SET com_until={$commanderUntil}, `" . GID_R_COMPUTER . "`=3 WHERE player_id={$playerId}");
@@ -487,7 +501,7 @@ function auth_visual_prepare_alliance_fixture(array $user, string $password): ar
     global $db_prefix;
 
     $viewerId = (int)$user['player_id'];
-    $now = time();
+    $now = auth_visual_now();
 
     $existingAlly = auth_visual_one_row("SELECT ally_id FROM {$db_prefix}ally WHERE tag='VQA' LIMIT 1");
     if ($existingAlly !== null) {
@@ -531,7 +545,7 @@ function auth_visual_prepare_short_queue_fixture(string $password): array
     $user = auth_visual_prepare_user('visualqueue', $password, USER_TYPE_PLAYER);
     $playerId = (int)$user['player_id'];
     $planetId = (int)$user['home_planet_id'];
-    $now = time();
+    $now = auth_visual_now();
     $start = $now;
     $duration = 16;
     $level = 1;
@@ -578,7 +592,7 @@ function auth_visual_prepare_short_research_fixture(string $password): array
     $user = auth_visual_prepare_user('visualresearch', $password, USER_TYPE_PLAYER);
     $playerId = (int)$user['player_id'];
     $planetId = (int)$user['home_planet_id'];
-    $now = time();
+    $now = auth_visual_now();
     $start = $now;
     $duration = 16;
     $level = 1;
@@ -613,7 +627,7 @@ function auth_visual_prepare_short_shipyard_fixture(string $password): array
     $user = auth_visual_prepare_user('visualshipyard', $password, USER_TYPE_PLAYER);
     $playerId = (int)$user['player_id'];
     $planetId = (int)$user['home_planet_id'];
-    $now = time();
+    $now = auth_visual_now();
     $start = $now;
     $duration = 16;
     $count = 1;
@@ -683,7 +697,7 @@ function auth_visual_prepare_report_fixture(array $user, array $galaxyHover = nu
     $playerId = (int)$user['player_id'];
     $planetId = $galaxyHover === null ? (int)$user['home_planet_id'] : (int)$galaxyHover['target_planet_id'];
     $moonId = $galaxyHover === null ? 0 : (int)$galaxyHover['moon_id'];
-    $now = time();
+    $now = auth_visual_now();
     dbquery(
         "DELETE FROM {$db_prefix}messages WHERE owner_id={$playerId} AND subj='Visual Spy Report' " .
         "AND msgfrom='Visual Control'"
@@ -761,7 +775,7 @@ function auth_visual_prepare_phalanx_fixture(array $user, array $galaxyHover): a
     $g = (int)$galaxyHover['galaxy'];
     $s = (int)$galaxyHover['system'];
     $viewerPosition = (int)$galaxyHover['viewer_position'];
-    $now = time();
+    $now = auth_visual_now();
 
     auth_visual_delete_planets_by_name(array('Visual Phalanx Moon'));
     $sourceMoonId = PlanetHasMoon($viewerPlanetId);
@@ -829,7 +843,7 @@ function auth_visual_prepare_session(int $playerId): array
     $private = md5('auth-game-visual-private-' . $playerId . '-' . microtime(true));
     dbquery(
         "UPDATE {$db_prefix}users SET session='" . auth_visual_sql_escape($session) . "', " .
-        "private_session='" . auth_visual_sql_escape($private) . "', lastclick=" . time() . " WHERE player_id={$playerId}"
+        "private_session='" . auth_visual_sql_escape($private) . "', lastclick=" . auth_visual_now() . " WHERE player_id={$playerId}"
     );
     InvalidateUserCache();
 
@@ -847,13 +861,17 @@ function auth_visual_prepare_acs_fixture(array $user, array $galaxyHover): array
     $playerId = (int)$user['player_id'];
     $viewerPlanetId = (int)$user['home_planet_id'];
     $targetPlanetId = (int)$galaxyHover['target_planet_id'];
-    $now = time();
+    $now = auth_visual_now();
 
     dbquery(
         "DELETE q FROM {$db_prefix}queue q JOIN {$db_prefix}fleet f ON q.sub_id=f.fleet_id " .
-        "WHERE q.type='" . QTYP_FLEET . "' AND (f.owner_id={$playerId} OR f.start_planet={$viewerPlanetId} OR f.target_planet={$targetPlanetId})"
+        "WHERE q.type='" . QTYP_FLEET . "' AND (f.owner_id={$playerId} " .
+        "OR f.start_planet IN ({$viewerPlanetId},{$targetPlanetId}) OR f.target_planet IN ({$viewerPlanetId},{$targetPlanetId}))"
     );
-    dbquery("DELETE FROM {$db_prefix}fleet WHERE owner_id={$playerId} OR start_planet={$viewerPlanetId} OR target_planet={$targetPlanetId}");
+    dbquery(
+        "DELETE FROM {$db_prefix}fleet WHERE owner_id={$playerId} " .
+        "OR start_planet IN ({$viewerPlanetId},{$targetPlanetId}) OR target_planet IN ({$viewerPlanetId},{$targetPlanetId})"
+    );
     dbquery("DELETE FROM {$db_prefix}union WHERE target_player=" . (int)$galaxyHover['target_player_id'] . " OR players REGEXP '(^|,){$playerId}(,|$)'");
     dbquery(
         "UPDATE {$db_prefix}planets SET `" . GID_RC_DEUTERIUM . "`=1000000, `" . GID_F_SC . "`=3 " .
@@ -874,6 +892,7 @@ function auth_visual_prepare_acs_fixture(array $user, array $galaxyHover): array
     foreach ($GLOBALS['transportableResources'] as $rc) {
         $resources[$rc] = 0;
     }
+    $resources[GID_RC_METAL] = 321;
     $fleetId = DispatchFleet($fleet, $origin, $target, FTYP_ATTACK, 3600, $resources, 0, $now - 60);
     if ($fleetId <= 0) {
         throw new RuntimeException('failed to dispatch visual ACS head fleet');
@@ -883,10 +902,21 @@ function auth_visual_prepare_acs_fixture(array $user, array $galaxyHover): array
         throw new RuntimeException('failed to create visual ACS union');
     }
     RenameUnion($unionId, 'Visual ACS');
+
+    $foreignFleet = $fleet;
+    $foreignFleet[GID_F_SC] = 2;
+    $foreignResources = $resources;
+    $foreignResources[GID_RC_METAL] = 654;
+    $foreignResources[GID_RC_CRYSTAL] = 123;
+    $foreignFleetId = DispatchFleet($foreignFleet, $target, $origin, FTYP_TRANSPORT, 2400, $foreignResources, 0, $now - 30);
+    if ($foreignFleetId <= 0) {
+        throw new RuntimeException('failed to dispatch visual foreign transport fleet');
+    }
     SelectPlanet($playerId, $viewerPlanetId);
 
     return array(
         'fleet_id' => $fleetId,
+        'foreign_fleet_id' => $foreignFleetId,
         'union_id' => $unionId,
         'target_planet_id' => $targetPlanetId,
         'target_position' => (int)$galaxyHover['target_position'],

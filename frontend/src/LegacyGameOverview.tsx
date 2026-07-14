@@ -16037,7 +16037,7 @@ function legacyOverviewCargoHTML(event: GameFleetMission, missionClass: string, 
   if (total <= 0) {
     return `<span class='class'>${escapedText}</span>`;
   }
-  const overlib = `<font color=white><b>Transport:${resources
+  const overlib = `<font color=white><b>Transport: ${resources
     .map((resource) => `<br />${escapeLegacyHTML(resource.name)}: ${formatLegacyNumber(resource.amount)}`)
     .join("")}</b></font>`;
   const handler = legacyInlineHandler(`return overlib(${JSON.stringify(overlib)});`);

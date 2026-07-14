@@ -119,6 +119,8 @@ validateLinkAuditSpecs(selectedSpecs);
 const fixedNowMs = numberEnv("OGAME_GAME_DYNAMIC_FIXED_NOW_MS", 1_765_584_000_000);
 const maxDiffRatio = numberEnv("OGAME_GAME_DYNAMIC_MAX_DIFF_RATIO", 0);
 const colorDeltaThreshold = numberEnv("OGAME_GAME_DYNAMIC_COLOR_DELTA", 0);
+const isolateAllCases = process.env.OGAME_GAME_DYNAMIC_ISOLATE_ALL !== "0";
+const allowSkippedCases = process.env.OGAME_GAME_DYNAMIC_ALLOW_SKIPS === "1";
 const defaultChromeExecutable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const defaultBrowserExecutable = browserName === "firefox" ? undefined : defaultChromeExecutable;
 const browserExecutable =
@@ -138,13 +140,18 @@ const browser = await browserType.launch({
 
 try {
   const results: CaseResult[] = [];
-  for (const spec of selectedSpecs) {
+  for (const [specIndex, spec] of selectedSpecs.entries()) {
+    process.stdout.write(`[${specIndex + 1}/${selectedSpecs.length}] ${spec.name}\n`);
+    const fixtureNowSeconds = Math.floor(Date.now() / 1000);
+    if (isolateAllCases || spec.isolateSides) {
+      fixture = await refreshAuthFixture(spec, fixtureNowSeconds);
+    }
     const missingFeature = missingFixtureFeature(spec);
     if (missingFeature) {
       const skipReason = `missing fixture feature: ${missingFeature}`;
       results.push({
         name: spec.name,
-        pass: true,
+        pass: allowSkippedCases,
         skipped: true,
         notes: spec.notes ?? [],
         legacy: skippedSideResult(skipReason),
@@ -154,11 +161,8 @@ try {
       continue;
     }
 
-    if (spec.isolateSides) {
-      fixture = await refreshAuthFixture(spec);
-    }
     const legacyContext = await newContext(browser, legacyBaseURL, spec);
-    const legacy = await runSide(
+    const legacy = await runSideSafely(
       legacyContext,
       "legacy",
       spec,
@@ -167,11 +171,12 @@ try {
     );
     await legacyContext.close();
 
-    if (spec.isolateSides) {
-      fixture = await refreshAuthFixture(spec);
+    if (isolateAllCases || spec.isolateSides) {
+      const migratedFixtureNowSeconds = spec.fixedClock === false ? Math.floor(Date.now() / 1000) : fixtureNowSeconds;
+      fixture = await refreshAuthFixture(spec, migratedFixtureNowSeconds);
     }
     const migratedContext = await newContext(browser, migratedBaseURL, spec);
-    const migrated = await runSide(
+    const migrated = await runSideSafely(
       migratedContext,
       "migrated",
       spec,
@@ -185,7 +190,7 @@ try {
     const bothSkipped = legacy.skipped && migrated.skipped;
     const oneSkipped = legacy.skipped !== migrated.skipped;
     const pass =
-      bothSkipped ||
+      (bothSkipped && allowSkippedCases) ||
       (!oneSkipped &&
         legacy.status === 200 &&
         migrated.status === 200 &&
@@ -210,6 +215,7 @@ try {
       visualDiffRatio: visualComparison.ratio,
       visualDiffPath: visualComparison.diffPath
     });
+    process.stdout.write(`  ${pass ? "PASS" : "FAIL"}\n`);
   }
 
   const report = {
@@ -220,6 +226,8 @@ try {
     migratedBaseURL,
     loginUser: fixture.login_user ?? "fixture",
     fixedNowMs,
+    isolateAllCases,
+    allowSkippedCases,
     selectedCases: selectedSpecs.length,
     totalCases: gameDynamicBehaviorSpecs.length,
     allPass: results.every((result) => result.pass),
@@ -277,7 +285,7 @@ function parseAuthFixture(raw: string, label: string): AuthFixture {
   return parsed;
 }
 
-async function refreshAuthFixture(spec?: GameDynamicBehaviorSpec): Promise<AuthFixture> {
+async function refreshAuthFixture(spec: GameDynamicBehaviorSpec | undefined, nowSeconds: number): Promise<AuthFixture> {
   if (process.env.OGAME_GAME_DYNAMIC_PREPARE_FIXTURE === "0") {
     return loadAuthFixture(fixtureFile);
   }
@@ -309,6 +317,8 @@ async function refreshAuthFixture(spec?: GameDynamicBehaviorSpec): Promise<AuthF
       `OGAME_GAME_VISUAL_PASS=${process.env.OGAME_GAME_VISUAL_PASS ?? ""}`,
       "-e",
       `OGAME_GAME_VISUAL_ADMIN=${process.env.OGAME_GAME_VISUAL_ADMIN ?? ""}`,
+      "-e",
+      `OGAME_GAME_VISUAL_NOW=${nowSeconds}`,
       "server",
       "php",
       containerScript
@@ -504,6 +514,30 @@ async function runSide(
     linkAudit,
     screenshotPath: spec.visual?.enabled && screenshotPath ? screenshotPath : undefined
   };
+}
+
+async function runSideSafely(
+  context: BrowserContext,
+  side: SideName,
+  spec: GameDynamicBehaviorSpec,
+  url: string,
+  screenshotPath: string
+): Promise<SideResult> {
+  try {
+    return await runSide(context, side, spec, url, screenshotPath);
+  } catch (error) {
+    const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    return {
+      status: null,
+      url,
+      skipped: false,
+      consoleErrors: [],
+      failedRequests: [],
+      badResponses: [],
+      actionErrors: [`${side} runner failure: ${message}`],
+      assertions: {}
+    };
+  }
 }
 
 async function collectRouteLinks(page: Page, side: SideName): Promise<RouteLink[]> {

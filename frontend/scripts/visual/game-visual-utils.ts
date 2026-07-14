@@ -146,16 +146,12 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
         for (const checkbox of document.querySelectorAll<HTMLInputElement>(selector)) {
           const marker = document.createElement("span");
           marker.setAttribute("data-visual-checkbox", checkbox.checked ? "checked" : "unchecked");
-          marker.textContent = checkbox.checked ? "\u2713" : "";
+          marker.textContent = "";
           marker.style.background = checkbox.checked ? "#1a73e8" : "#ffffff";
           marker.style.border = "1px solid #9aa9bd";
           marker.style.boxSizing = "border-box";
-          marker.style.color = "#ffffff";
           marker.style.display = "inline-block";
-          marker.style.fontFamily = "Arial, sans-serif";
-          marker.style.fontSize = "11px";
           marker.style.height = "13px";
-          marker.style.lineHeight = "11px";
           marker.style.margin = getComputedStyle(checkbox).margin;
           marker.style.textAlign = "center";
           marker.style.verticalAlign = "middle";
@@ -362,6 +358,7 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
       }
       if (currentPageName === "game-messages") {
         hide("#content select, #content input[type='button'], #content input[type='submit'], .legacy-messages-table select, .legacy-messages-table input[type='button'], .legacy-messages-table input[type='submit']");
+        replaceNativeCheckboxes("#content input[type='checkbox'], .legacy-messages-table input[type='checkbox']");
         for (const cell of document.querySelectorAll<HTMLElement>("#content th, #content td, .legacy-messages-table th, .legacy-messages-table td")) {
           const text = (cell.textContent ?? "").trim();
           if (/^\d+\s*\/\s*\d+$/.test(text)) {
