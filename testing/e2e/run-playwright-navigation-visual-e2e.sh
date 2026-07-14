@@ -74,12 +74,13 @@ sync_docker_visual_fixtures() {
   done
 }
 
-prepare_navigation_fixture
-sync_docker_visual_fixtures
-
 cd "$ROOT_DIR/frontend"
 status=0
 for browser in ${OGAME_NAV_VISUAL_BROWSERS:-chromium firefox}; do
+  cd "$ROOT_DIR"
+  prepare_navigation_fixture
+  sync_docker_visual_fixtures
+  cd "$ROOT_DIR/frontend"
   printf 'Navigation visual E2E (%s)\n' "$browser"
   if ! OGAME_PLAYWRIGHT_BROWSER="$browser" \
     OGAME_LEGACY_BASE_URL="$LEGACY_BASE_URL" \
