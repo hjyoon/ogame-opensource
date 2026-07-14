@@ -312,29 +312,26 @@ function smoke_find_empty_positions(array $near, int $count): array
 {
     $g = (int)$near['g'];
     $system = (int)$near['s'];
-    $positions = array();
-    for ($p = 1; $p <= 15; $p++) {
-        if ($p === (int)$near['p']) {
-            continue;
-        }
-        if (!HasPlanet($g, $system, $p)) {
-            $positions[] = array($g, $system, $p);
-            if (count($positions) >= $count) {
-                return $positions;
-            }
-        }
-    }
+    $systems = array(array($g, $system));
     for ($scanG = 1; $scanG <= (int)$GLOBALS['GlobalUni']['galaxies']; $scanG++) {
         for ($scanS = 1; $scanS <= (int)$GLOBALS['GlobalUni']['systems']; $scanS++) {
             if ($scanG === $g && $scanS === $system) {
                 continue;
             }
-            for ($p = 1; $p <= 15; $p++) {
-                if (!HasPlanet($scanG, $scanS, $p)) {
-                    $positions[] = array($scanG, $scanS, $p);
-                    if (count($positions) >= $count) {
-                        return $positions;
-                    }
+            $systems[] = array($scanG, $scanS);
+        }
+    }
+
+    foreach ($systems as [$scanG, $scanS]) {
+        $positions = array();
+        for ($p = 1; $p <= 15; $p++) {
+            if ($scanG === $g && $scanS === $system && $p === (int)$near['p']) {
+                continue;
+            }
+            if (!HasPlanet($scanG, $scanS, $p)) {
+                $positions[] = array($scanG, $scanS, $p);
+                if (count($positions) >= $count) {
+                    return $positions;
                 }
             }
         }
