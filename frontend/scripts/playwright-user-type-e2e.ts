@@ -202,16 +202,38 @@ try {
     await gotoGame(page, auth, "/game/options");
     await page.locator(".legacy-options-table").waitFor({ timeout: 10_000 });
     const body = await page.locator("body").innerText();
+    const emailControls = await page.locator("input[name='db_email']").count();
+    const passwordControls = await page.locator("input[name='db_password']").count();
+    const activationControl = page.locator("input[name='validate']");
+    const activationControls = await activationControl.count();
+    const activationValue = activationControls === 1 ? await activationControl.inputValue() : "";
     record("unvalidated account renders options screen", {
-      pass: body.includes("User Data") && body.includes("General Options") && !body.includes("Session is invalid.") && signalsClean(signals),
-      details: { signals }
+      pass:
+        body.includes("User Data") &&
+        body.includes("Email address") &&
+        body.includes("game account is not activated yet") &&
+        emailControls === 1 &&
+        passwordControls === 1 &&
+        activationControls === 1 &&
+        activationValue === "Request an activation link" &&
+        !body.includes("General Options") &&
+        !body.includes("Session is invalid.") &&
+        signalsClean(signals),
+      details: { emailControls, passwordControls, activationControls, activationValue, signals }
     });
   });
 
   await withAuthenticatedPage(browser, "vacation", universe, async (page, auth, signals) => {
     await gotoGame(page, auth, "/game/options");
     await page.locator(".legacy-options-table").waitFor({ timeout: 10_000 });
-    const vacationChecked = await page.locator("input[name='urlaubs_modus']").isChecked();
+    const optionsText = await page.locator(".legacy-options-table").innerText();
+    const vacationEnableControls = await page.locator("input[name='urlaubs_modus']").count();
+    const vacationDisableControls = await page.locator("input[name='urlaub_aus']").count();
+    const deletionControls = await page.locator("input[name='db_deaktjava']").count();
+    const vacationStateVisible =
+      optionsText.includes("Vacation mode has been turned on.") &&
+      vacationEnableControls === 0 &&
+      vacationDisableControls + deletionControls === 1;
 
     await gotoGame(page, auth, "/game/buildings");
     await page.locator("[data-building-row='1']").waitFor({ timeout: 10_000 });
@@ -224,8 +246,16 @@ try {
       vacationIssueVisible = await vacationIssue.isVisible();
     }
     record("vacation account renders state and blocks build action", {
-      pass: vacationChecked && buildLinks > 0 && vacationIssueVisible && signalsClean(signals),
-      details: { vacationChecked, buildLinks, vacationIssueVisible, signals }
+      pass: vacationStateVisible && buildLinks > 0 && vacationIssueVisible && signalsClean(signals),
+      details: {
+        vacationStateVisible,
+        vacationEnableControls,
+        vacationDisableControls,
+        deletionControls,
+        buildLinks,
+        vacationIssueVisible,
+        signals
+      }
     });
   });
 
