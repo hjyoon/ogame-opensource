@@ -216,6 +216,10 @@ func TestBuildGalaxyHandlesEmptyBoundsOwnRowsAndPhantomDebris(t *testing.T) {
 }
 
 func TestGalaxyHelpersCoverLegacyEdgeCases(t *testing.T) {
+	abandoned := buildGalaxyPlanet(GalaxyObject{Type: PlanetTypeAbandoned, Name: "Former colony"}, GalaxyViewer{}, 0, nil)
+	if abandoned.DisplayName != "Abandoned Planet" {
+		t.Fatalf("unexpected abandoned planet label: %+v", abandoned)
+	}
 	coordinates := clampGalaxyCoordinates(
 		Coordinates{Galaxy: -1, System: 999, Position: -1},
 		Coordinates{Galaxy: 2, System: 2, Position: 2},

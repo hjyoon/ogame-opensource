@@ -51,6 +51,9 @@ func TestGenerateMerchantRates(t *testing.T) {
 	if _, ok := GenerateMerchantRates(99, 0, 0, 0); ok {
 		t.Fatalf("invalid offer should not generate rates")
 	}
+	if _, ok := GenerateMerchantRates(99, 50, 0, 0); ok {
+		t.Fatalf("invalid offer should also fail in the randomized-rate branch")
+	}
 	rates, ok := GenerateMerchantRates(MerchantResourceMetal, 5, 0, 0)
 	if !ok || rates.Metal != 3 || rates.Crystal != 2 || rates.Deuterium != 1 {
 		t.Fatalf("unexpected perfect rates: %+v ok=%v", rates, ok)

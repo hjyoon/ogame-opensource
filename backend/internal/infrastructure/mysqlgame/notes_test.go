@@ -173,6 +173,11 @@ func TestNewNotesRepositoryKeepsSQLQueryer(t *testing.T) {
 	if repository.now == nil {
 		t.Fatal("nil clock should default to time.Now")
 	}
+
+	readRepository := NewNotesReadRepository(nil, "ogame_")
+	if readRepository.execer != nil || readRepository.prefix != "ogame_" {
+		t.Fatalf("unexpected read-only notes repository: %+v", readRepository)
+	}
 }
 
 func TestNotesRepositoryMutationsWriteLegacyRowsAndReturnList(t *testing.T) {

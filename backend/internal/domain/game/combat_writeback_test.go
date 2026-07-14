@@ -54,6 +54,21 @@ func TestCombatUnitCostAndWritebackEdges(t *testing.T) {
 	if writeback.AttackerLosses[0].Points != 0 || writeback.Debris.Metal != 0 {
 		t.Fatalf("unknown and zero units must not affect writeback: %+v", writeback)
 	}
+
+	result.Rounds = []CombatRound{{
+		Attackers: []CombatRoundSlot{{Units: map[int]int{}}},
+		Defenders: []CombatRoundSlot{{Units: map[int]int{}}},
+	}}
+	writeback = BuildCombatWriteback(result, nil, 30, 30)
+	if writeback.AttackerLosses[0].Points != 0 || writeback.Debris.Metal != 0 {
+		t.Fatalf("destroyed unknown units must be ignored safely: %+v", writeback)
+	}
+
+	debris := Resources{}
+	addCombatDebris(&debris, map[int]int{DefenseRocketLauncher: 1}, map[int]int{}, 0, 30)
+	if debris.Metal != 600 || debris.Crystal != 0 {
+		t.Fatalf("defense debris must use the defense factor: %+v", debris)
+	}
 }
 
 func TestRepairCombatDefenseMatchesLegacyBranches(t *testing.T) {

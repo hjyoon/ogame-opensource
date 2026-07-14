@@ -136,6 +136,9 @@ func TestOptionsCredentialMutationValidation(t *testing.T) {
 	if issue := (OptionsMutation{Email: "new@example.test"}).EmailValidationIssue(current); issue != nil {
 		t.Fatalf("expected valid email, got %+v", issue)
 	}
+	if issue := (OptionsMutation{Email: "permanent@example.test"}).EmailValidationIssue(current); issue != nil {
+		t.Fatalf("unchanged email should not be validated, got %+v", issue)
+	}
 	if issue := (OptionsMutation{NewPassword: "abcdef12", NewPasswordRepeat: "abcdef13"}).PasswordValidationIssue(); issue == nil || issue.Code != OptionsIssuePasswordMismatch {
 		t.Fatalf("expected mismatch issue, got %+v", issue)
 	}
@@ -150,6 +153,12 @@ func TestOptionsCredentialMutationValidation(t *testing.T) {
 	}
 	if issue := (OptionsMutation{}).PasswordValidationIssue(); issue != nil {
 		t.Fatalf("empty password mutation should be ignored, got %+v", issue)
+	}
+}
+
+func TestNormalizeLanguageTruncatesUnsupportedFallback(t *testing.T) {
+	if got := normalizeLanguage("zz", "english"); got != "en" {
+		t.Fatalf("long fallback should be truncated before validation, got %q", got)
 	}
 }
 

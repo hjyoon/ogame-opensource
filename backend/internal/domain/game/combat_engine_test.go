@@ -79,6 +79,30 @@ func TestResolveCombatRejectsInvalidInput(t *testing.T) {
 			t.Fatalf("expected invalid units error for %+v", units)
 		}
 	}
+	if _, err := ResolveCombat(
+		[]CombatSlot{{Units: map[int]int{FleetSmallCargo: 1}}},
+		[]CombatSlot{{Units: map[int]int{999999: 1}}},
+		false, 1, func(int) int { return 0 },
+	); err == nil || !strings.Contains(err.Error(), "unknown combat unit") {
+		t.Fatalf("expected invalid defender units error, got %v", err)
+	}
+}
+
+func TestCombatEngineHandlesExplodedShieldsAndMultipleSlots(t *testing.T) {
+	units := []combatUnit{{id: FleetSmallCargo, slot: 0, shield: 99, exploded: true}}
+	chargeCombatShields(units, []CombatSlot{{}})
+	if units[0].shield != 0 {
+		t.Fatalf("exploded unit shield should remain empty, got %+v", units[0])
+	}
+
+	result, err := ResolveCombat(
+		[]CombatSlot{{Units: map[int]int{FleetSmallCargo: 1}}, {Units: map[int]int{FleetSmallCargo: 1}}},
+		[]CombatSlot{{Units: map[int]int{FleetDeathstar: 1}}},
+		false, 1, func(int) int { return 0 },
+	)
+	if err != nil || len(result.Rounds) != 1 || result.Rounds[0].AttackerShots != 2 {
+		t.Fatalf("unexpected multi-slot combat: result=%+v err=%v", result, err)
+	}
 }
 
 func TestResolveCombatPreservesNonPositiveRoundLimits(t *testing.T) {

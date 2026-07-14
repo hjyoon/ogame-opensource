@@ -525,6 +525,10 @@ func TestNewBuddyRepositoryKeepsSQLQueryer(t *testing.T) {
 	if _, ok := repository.execer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL execer, got %T", repository.execer)
 	}
+	readRepository := NewBuddyReadRepository(nil, "ogame_")
+	if readRepository.execer != nil || readRepository.prefix != "ogame_" {
+		t.Fatalf("unexpected read-only buddy repository: %+v", readRepository)
+	}
 }
 
 func TestBuddyRepositoryReturnsErrors(t *testing.T) {
