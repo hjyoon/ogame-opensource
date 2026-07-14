@@ -31,7 +31,7 @@ The denominator is the legacy product surface, not file count alone:
 - Compatibility smoke covers 90 cases / 2254 checks.
 - Strict navigation visual exact diff has 0 failures for the seeded public/game/admin inventory.
 - Auth/game/navigation visual QA covers the normal authenticated route surface, route-discovered targets, and page-state exact diff in Chromium and Firefox.
-- Authenticated dynamic registry covers 96 listed legacy-JS cases.
+- Authenticated dynamic registry covers 98 listed legacy-JS cases.
 - Jump Gate, pranger, maintenance mode, feed GET/POST, registration aliases, DB backup safe failures, and unsafe restore rejection have Go/Bun implementation plus handler/DB/API evidence.
 - Account options preserve password/email/vacation/deletion behavior, including 7-day email confirmation queue timing and forced-universe language.
 - Admin Logins/Browse, Loca, Bots, Mods, DB, simulators, destructive actions, and queue operations are migrated with API/unit/smoke evidence.
@@ -39,7 +39,7 @@ The denominator is the legacy product surface, not file count alone:
 - Behavior audit freezes 463 core request inputs, 162 action values, 19 queue constants, 349 SQL mutation sites, and 149 navigation handlers; resource, construction, research, shipyard and fleet lifecycles have DB differential evidence.
 - Go rejects new PHP Mod installs; an active legacy Mod makes readiness fail instead of silently diverging.
 - Expedition DB differential exact-compares all ten result families, rewards/losses, combat reports, timing, messages, logs, scores, and cleanup.
-- PHP/Go differential evidence totals 340 cases, including Alliance 27, Options 36, and Admin 172.
+- PHP/Go differential evidence totals 341 cases, including Alliance 27, Options 36, and Admin 173.
 - ACS attack launch now covers the legacy 30% slowdown boundary and queue resync to the later union arrival.
 
 ## Remaining Closure Work

@@ -89,6 +89,7 @@ type GameAdminActionIssue = {
     values?: Record<string, number>;
     series?: number[];
     html?: string;
+    diagnosticsHtml?: string;
     itemId?: number;
   };
 };
@@ -6452,6 +6453,12 @@ function AdminBattleSimTable({ actionIssue, admin, onAdminAction }: { actionIssu
   };
   return (
     <>
+      {actionIssue?.result?.diagnosticsHtml ? (
+        <div
+          className="legacy-admin-battlesim-debug"
+          dangerouslySetInnerHTML={{ __html: sanitizeLegacyMessageHTML(actionIssue.result.diagnosticsHtml) }}
+        />
+      ) : null}
       <div
         dangerouslySetInnerHTML={{ __html: adminBattleSimHTML(maxSlot, admin.universe, values) }}
         onChange={handleBattleSimEvent}
@@ -6474,10 +6481,10 @@ function adminBattleSimHTML(maxSlot: number, universe: GameAdminUniverseSettings
   const did = resultValues ? values.did ?? 0 : (universe?.defenseDebris ?? 0);
   const maxRound = resultValues ? values.max_round ?? 6 : 6;
   let html = "";
-  html += `<table class="legacy-admin-battlesim-table" cellpadding=0 cellspacing=0>\n`;
-  html += `<form name="simForm" action="${action}" method="POST" >\n\n`;
+  html += `<form class="legacy-admin-battlesim-form" name="simForm" action="${action}" method="POST" >\n\n`;
   html += `<input type="hidden" id="anum" name="anum" value="${legacyHTMLAttribute(String(values.anum ?? 1))}" />\n`;
   html += `<input type="hidden" id="dnum" name="dnum" value="${legacyHTMLAttribute(String(values.dnum ?? 1))}" />\n\n`;
+  html += `<table class="legacy-admin-battlesim-table" cellpadding=0 cellspacing=0>\n`;
   html += "<tr>        <td class=c>Attacker</td>                <td class=c>Defender</td>  </tr>\n\n";
   html += "<tr> \n<td> \n";
   html += `    Weapons: <input id="a_weap" size=2  onKeyUp="OnChangeTechValue(1);"  value="${adminBattleSimValue(values, "a0_weap")}" > \n`;
@@ -6509,8 +6516,9 @@ function adminBattleSimHTML(maxSlot: number, universe: GameAdminUniverseSettings
   html += '<tr><td><textarea id="battle_source" name="battle_source"></textarea></td></tr>\n';
   html += "</table>\n</td></tr>\n\n";
   html += '<tr><td colspan=2><center><input type="submit" value="Start the Battle"></center></td></tr>\n\n';
+  html += "</table>\n";
   html += adminBattleSimHiddenInputs(maxSlot, values);
-  html += "\n</form>\n</table>\n";
+  html += "\n</form>\n";
   return html;
 }
 

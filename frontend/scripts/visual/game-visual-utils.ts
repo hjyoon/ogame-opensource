@@ -262,11 +262,16 @@ export async function normalizeDynamicPageParts(page: Page, side: SideName, spec
           }
         }
       }
-      if (currentPageName === "game-admin-battlesim") {
+      if (currentPageName.startsWith("game-admin-battle-sim")) {
         hide("#content input, #content select, #content textarea, .legacy-admin-content input, .legacy-admin-content select, .legacy-admin-content textarea");
         for (const cell of document.querySelectorAll<HTMLTableCellElement>("#content td, .legacy-admin-content td")) {
           if (cell.textContent?.trim().startsWith("Slot:")) {
             cell.innerHTML = "&nbsp;";
+          }
+        }
+        for (const report of document.querySelectorAll<HTMLElement>("#content a span, .legacy-admin-content a span")) {
+          if (report.textContent?.trim().startsWith("Battle report [")) {
+            report.textContent = "Battle report [#:#:#] (V:#,A:#)";
           }
         }
       }

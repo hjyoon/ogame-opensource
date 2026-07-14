@@ -715,6 +715,14 @@ body.legacy-game-body {
   text-align: center;
 }
 
+.legacy-game-shell .legacy-admin-battlesim-form {
+  display: contents;
+}
+
+.legacy-game-shell .legacy-admin-battlesim-table input {
+  width: auto;
+}
+
 .legacy-nowrap {
   white-space: nowrap;
 }

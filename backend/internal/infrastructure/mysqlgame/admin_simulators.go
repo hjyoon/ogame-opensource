@@ -3,6 +3,7 @@ package mysqlgame
 import (
 	"context"
 	"fmt"
+	"html"
 	"math"
 	"sort"
 	"strconv"
@@ -35,6 +36,7 @@ func (r AdminRepository) runAdminBattleSimulator(ctx context.Context, query appg
 	if err != nil {
 		return nil, err
 	}
+	source := adminBattleSource(result, rapidFire, maxRounds)
 	repaired := domaingame.RepairCombatDefense(result, universe.DefenseRepair, universe.DefenseDelta, make([]bool, len(defenders)), random)
 	writeback := domaingame.BuildCombatWriteback(result, repaired, query.Values["fid"], query.Values["did"])
 	debrisTotal := max(0.0, writeback.Debris.Metal) + max(0.0, writeback.Debris.Crystal)
@@ -51,7 +53,7 @@ func (r AdminRepository) runAdminBattleSimulator(ctx context.Context, query appg
 	if err != nil {
 		return nil, err
 	}
-	battleInsert, err := r.execer.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (source, title, report, date) VALUES (?, '', '', ?)", battleTable), adminBattleSource(result, rapidFire, maxRounds), now)
+	battleInsert, err := r.execer.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (source, title, report, date) VALUES (?, '', '', ?)", battleTable), source, now)
 	if err != nil {
 		return nil, err
 	}
@@ -86,6 +88,10 @@ func (r AdminRepository) runAdminBattleSimulator(ctx context.Context, query appg
 	}
 	style, _ := guardedBattleStyles(result.Outcome)
 	link := adminBattleSimulatorLink(messageID, target, style, defenderLoss, attackerLoss)
+	diagnostics := ""
+	if query.Values["debug"] != 0 {
+		diagnostics = adminBattleSimulatorDiagnosticsHTML(attackers, defenders, source, now, result)
+	}
 	values := make(map[string]int, len(query.Values))
 	for key, value := range query.Values {
 		values[key] = value
@@ -94,8 +100,55 @@ func (r AdminRepository) runAdminBattleSimulator(ctx context.Context, query appg
 		values["max_round"] = maxRounds
 	}
 	issue := domaingame.AdminIssueWithMessage(domaingame.AdminIssueActionSaved, "Battle simulator completed.")
-	issue.Result = &domaingame.AdminActionResult{Values: values, HTML: link, ItemID: int(messageID)}
+	issue.Result = &domaingame.AdminActionResult{Values: values, HTML: link, DiagnosticsHTML: diagnostics, ItemID: int(messageID)}
 	return issue, nil
+}
+
+func adminBattleSimulatorDiagnosticsHTML(attackers []domaingame.CombatSlot, defenders []domaingame.CombatSlot, source string, now int64, result domaingame.CombatResult) string {
+	return `<span data-debug-section="attackers">` + html.EscapeString(adminBattleDebugSlots(attackers)) + `</span><br>` +
+		`<span data-debug-section="defenders">` + html.EscapeString(adminBattleDebugSlots(defenders)) + `</span><br><hr>` +
+		`<pre data-debug-section="source">` + html.EscapeString(source) + `</pre><hr>` +
+		`<span data-debug-section="battle">` + html.EscapeString(adminBattleDebugRecord(source, now)) + `</span><hr>` +
+		`<span data-debug-section="result">` + html.EscapeString(adminBattleDebugResult(result)) + `</span><hr>`
+}
+
+func adminBattleDebugSlots(slots []domaingame.CombatSlot) string {
+	var output strings.Builder
+	output.WriteString("Array\n(\n")
+	for index, slot := range slots {
+		fmt.Fprintf(&output, "    [%d] => Array\n        (\n", index)
+		fmt.Fprintf(&output, "            [109] => %d\n            [110] => %d\n            [111] => %d\n", slot.Weapon, slot.Shield, slot.Armour)
+		fmt.Fprintf(&output, "            [oname] => %s\n            [id] => %d\n            [pf] => 2\n", slot.Name, slot.ObjectID)
+		fmt.Fprintf(&output, "            [g] => %d\n            [s] => %d\n            [p] => %d\n", slot.Coords.Galaxy, slot.Coords.System, slot.Coords.Position)
+		output.WriteString("            [units] => Array\n                (\n")
+		unitIDs := make([]int, 0, len(slot.Units))
+		for id := range slot.Units {
+			unitIDs = append(unitIDs, id)
+		}
+		sort.Ints(unitIDs)
+		for _, id := range unitIDs {
+			fmt.Fprintf(&output, "                    [%d] => %d\n", id, slot.Units[id])
+		}
+		output.WriteString("                )\n\n        )\n\n")
+	}
+	output.WriteString(")\n")
+	return output.String()
+}
+
+func adminBattleDebugRecord(source string, now int64) string {
+	return fmt.Sprintf("Array\n(\n    [source] => %s\n    [title] => \n    [report] => \n    [date] => %d\n)\n", source, now)
+}
+
+func adminBattleDebugResult(result domaingame.CombatResult) string {
+	var output strings.Builder
+	output.WriteString("Array\n(\n    [before] => Array\n        (\n")
+	fmt.Fprintf(&output, "            [attackers] => %d\n            [defenders] => %d\n        )\n", len(result.Before.Attackers), len(result.Before.Defenders))
+	output.WriteString("    [rounds] => Array\n        (\n")
+	for index, round := range result.Rounds {
+		fmt.Fprintf(&output, "            [%d] => Array ( [ashoot] => %d [apower] => %.0f [dabsorb] => %.0f [dshoot] => %d [dpower] => %.0f [aabsorb] => %.0f )\n", index, round.AttackerShots, round.AttackerPower, round.DefenderAbsorbed, round.DefenderShots, round.DefenderPower, round.AttackerAbsorbed)
+	}
+	fmt.Fprintf(&output, "        )\n    [result] => %s\n)\n", result.Outcome)
+	return output.String()
 }
 
 func adminBattleSlots(values map[string]int, prefix string, count int, defender bool, random func(int) int) []domaingame.CombatSlot {

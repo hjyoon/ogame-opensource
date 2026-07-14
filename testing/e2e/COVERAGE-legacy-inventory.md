@@ -1,6 +1,6 @@
 # Legacy Migration Inventory
 
-Generated from legacy source: 2026-07-14T05:58:45.277Z. Keep this file under 4KB.
+Generated from legacy source: 2026-07-14T11:27:02.596Z. Keep this file under 4KB.
 
 | Surface | Discovered | Covered | Missing |
 | --- | ---: | ---: | --- |

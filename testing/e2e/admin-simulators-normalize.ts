@@ -25,11 +25,11 @@ if (mode === "rocket") {
   const series = raw === "" ? [] : raw.split(",").map((value) => Number(value.trim()) || 0);
   console.log(JSON.stringify(series));
 } else if (mode === "battle-legacy") {
-  console.log(JSON.stringify(battleResult(html, battleLegacyValues(html))));
+  console.log(JSON.stringify(battleResult(html, battleLegacyValues(html), html)));
 } else if (mode === "battle-go") {
   const payload = JSON.parse(html);
   const result = payload?.actionIssue?.result ?? {};
-  console.log(JSON.stringify(battleResult(String(result.html ?? ""), battleValues(result.values ?? {}))));
+  console.log(JSON.stringify(battleResult(String(result.html ?? ""), battleValues(result.values ?? {}), String(result.diagnosticsHtml ?? ""))));
 } else if (mode === "battle-report") {
   const [encoded = "", pm = "", from = "", subject = "", shown = "", planetID = "", count = "", battleRows = ""] = html.trim().split("\t");
   const report = encoded === "" ? "" : Buffer.from(encoded, "base64").toString("utf8");
@@ -44,11 +44,25 @@ if (mode === "rocket") {
   throw new Error(`unsupported mode: ${mode}`);
 }
 
-function battleResult(resultHTML: string, values: Record<string, number>) {
+function battleResult(resultHTML: string, values: Record<string, number>, diagnosticsHTML: string) {
   const match = resultHTML.match(/<span\s+class=["']?([^"'\s>]+)["']?[^>]*>[^<]*\[[^\]]+\]\s*\(V:([^,]+),A:([^\)]+)\)<\/span>/i);
   return {
     values,
-    link: match ? { className: match[1] ?? "", defenderLoss: legacyNumber(match[2] ?? "0"), attackerLoss: legacyNumber(match[3] ?? "0") } : null
+    link: match ? { className: match[1] ?? "", defenderLoss: legacyNumber(match[2] ?? "0"), attackerLoss: legacyNumber(match[3] ?? "0") } : null,
+    debug: values.debug ? battleDebugContract(diagnosticsHTML) : null
+  };
+}
+
+function battleDebugContract(source: string) {
+  const normalized = source.replaceAll("&gt;", ">").replaceAll("&#34;", '"').replaceAll("&quot;", '"');
+  return {
+    attacker: /\[oname\]\s*=>\s*Attacker0/.test(normalized),
+    defender: /\[oname\]\s*=>\s*Defender0/.test(normalized),
+    source: /<pre[^>]*>[\s\S]*MaxRound\s*=\s*\d+[\s\S]*Attacker0\s*=/i.test(normalized),
+    battle: /\[source\]\s*=>[\s\S]*\[title\]\s*=>[\s\S]*\[date\]\s*=>\s*\d+/i.test(normalized),
+    rounds: /\[rounds\]\s*=>\s*Array/i.test(normalized),
+    result: /\[result\]\s*=>\s*(?:awon|dwon|draw)/i.test(normalized),
+    separators: (normalized.match(/<hr\b/gi) ?? []).length >= 4
   };
 }
 

@@ -2070,6 +2070,121 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers BattleSim visible inputs, hidden slot state, tech state, and attacker/defender counters."]
   },
   {
+    name: "admin-battlesim-post-action-visual",
+    fixtureProfile: "admin",
+    legacyPage: "admin",
+    legacyQuery: { mode: "BattleSim" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "BattleSim" },
+    legacyReady: "#content #battle_source",
+    migratedReady: ".legacy-admin-battlesim-table #battle_source",
+    isolateSides: true,
+    actions: [
+      { type: "type", selector: "#a_214", value: "1" },
+      { type: "type", selector: "#d_202", value: "1" },
+      {
+        type: "click",
+        selector: "input[type='submit'][value='Start the Battle']",
+        legacyWaitForSelector: "#content a[onclick*='page=bericht']",
+        migratedWaitForSelector: "#content a[data-legacy-popup][href*='/game/report']"
+      }
+    ],
+    assertions: [
+      { name: "attacker-value-preserved", type: "value", selector: "#a_214", compareSides: true, expected: "1" },
+      { name: "defender-value-preserved", type: "value", selector: "#d_202", compareSides: true, expected: "1" },
+      {
+        name: "report-link-visible",
+        type: "visible",
+        legacySelector: "#content a[onclick*='page=bericht']",
+        migratedSelector: "#content a[data-legacy-popup][href*='/game/report']",
+        expected: "true"
+      },
+      {
+        name: "report-link-target",
+        type: "evaluate",
+        expression: "Boolean(document.querySelector(\"#content a[onclick*='page=bericht'], #content a[data-legacy-popup][href*='/game/report']\"))",
+        expected: "true"
+      }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-admin-battle-sim-result",
+      maskSelectors: ["#menu", ".legacy-menu"]
+    },
+    linkAudit: {
+      expected: [
+        {
+          name: "battle-report-result-link",
+          target: "/game/report?*bericht=#*",
+          scope: "delta",
+          classification: "visual"
+        }
+      ]
+    },
+    notes: ["Covers BattleSim submission, preserved form state, generated report link, and exact post-action content parity."]
+  },
+  {
+    name: "admin-battlesim-debug-diagnostics",
+    fixtureProfile: "admin",
+    legacyPage: "admin",
+    legacyQuery: { mode: "BattleSim" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "BattleSim" },
+    legacyReady: "#content #battle_source",
+    migratedReady: ".legacy-admin-battlesim-table #battle_source",
+    isolateSides: true,
+    actions: [
+      { type: "click", selector: "input[name='debug']" },
+      { type: "type", selector: "#a_214", value: "1" },
+      { type: "type", selector: "#d_202", value: "1" },
+      {
+        type: "click",
+        selector: "input[type='submit'][value='Start the Battle']",
+        legacyWaitForSelector: "#content a[onclick*='page=bericht']",
+        migratedWaitForSelector: ".legacy-admin-battlesim-debug [data-debug-section='result']"
+      }
+    ],
+    assertions: [
+      { name: "debug-remains-checked", type: "checked", selector: "input[name='debug']", expected: "true" },
+      {
+        name: "debug-array-contract",
+        type: "evaluate",
+        expression: "(() => { const text = document.body.innerText; return text.includes('[oname] => Attacker0') && text.includes('[oname] => Defender0'); })()",
+        expected: "true"
+      },
+      {
+        name: "debug-source-contract",
+        type: "evaluate",
+        expression: "(() => { const text = document.body.innerText; return text.includes('MaxRound = 6') && text.includes('Attacker0 ='); })()",
+        expected: "true"
+      },
+      {
+        name: "debug-result-contract",
+        type: "evaluate",
+        expression: "(() => { const text = document.body.innerText; return text.includes('[source] =>') && text.includes('[rounds] => Array') && /\\[result\\] => (awon|dwon|draw)/.test(text); })()",
+        expected: "true"
+      },
+      {
+        name: "report-link-visible",
+        type: "visible",
+        legacySelector: "#content a[onclick*='page=bericht']",
+        migratedSelector: "#content a[data-legacy-popup][href*='/game/report']",
+        expected: "true"
+      }
+    ],
+    linkAudit: {
+      expected: [
+        {
+          name: "debug-battle-report-result-link",
+          target: "/game/report?*bericht=#*",
+          scope: "delta",
+          classification: "dom"
+        }
+      ]
+    },
+    notes: ["Covers the legacy debug checkbox diagnostics: participant arrays, generated source, battle record, result rounds, and report link."]
+  },
+  {
     name: "admin-botedit-init-palette",
     fixtureProfile: "admin",
     legacyPage: "admin",

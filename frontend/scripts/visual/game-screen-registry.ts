@@ -851,7 +851,9 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     legacyReady: spec.ready,
     migratedReady: spec.migratedReady,
     requiredBoxes: spec.mode === "Fleetlogs" ? ["menu"] : ["menu", "content"],
-    expectedTexts: spec.expectedTexts
+    expectedTexts: spec.expectedTexts,
+    maskSelectors: ["#menu", ".legacy-menu"],
+    notes: ["Admin left-menu interactions and pixels are covered by the navigation visual suite; this case isolates the mode content."]
   }))
 ];
 

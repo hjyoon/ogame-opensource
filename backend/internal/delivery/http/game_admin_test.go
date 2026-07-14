@@ -1123,7 +1123,7 @@ func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 		payload.CouponFrom != 15 || payload.CouponPageSize != 15 || payload.CouponTotal != 30 {
 		t.Fatalf("expected coupon rows and pagination to map: %+v", payload)
 	}
-	if issue := toGameAdminActionIssue(&domaingame.AdminActionIssue{Code: "blocked", Message: "Blocked", Result: &domaingame.AdminActionResult{Values: map[string]int{"count": 3}, Series: []int{1, 2}, HTML: "<b>result</b>", ItemID: 9}}); issue == nil || issue.Code != "blocked" || issue.Message != "Blocked" || issue.Result == nil || issue.Result.Values["count"] != 3 || len(issue.Result.Series) != 2 || issue.Result.HTML != "<b>result</b>" || issue.Result.ItemID != 9 {
+	if issue := toGameAdminActionIssue(&domaingame.AdminActionIssue{Code: "blocked", Message: "Blocked", Result: &domaingame.AdminActionResult{Values: map[string]int{"count": 3}, Series: []int{1, 2}, HTML: "<b>result</b>", DiagnosticsHTML: "<pre>debug</pre>", ItemID: 9}}); issue == nil || issue.Code != "blocked" || issue.Message != "Blocked" || issue.Result == nil || issue.Result.Values["count"] != 3 || len(issue.Result.Series) != 2 || issue.Result.HTML != "<b>result</b>" || issue.Result.DiagnosticsHTML != "<pre>debug</pre>" || issue.Result.ItemID != 9 {
 		t.Fatalf("expected non-nil action issue conversion, got %+v", issue)
 	}
 }

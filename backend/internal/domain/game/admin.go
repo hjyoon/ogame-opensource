@@ -161,10 +161,11 @@ type AdminReactivationMail struct {
 }
 
 type AdminActionResult struct {
-	Values map[string]int
-	Series []int
-	HTML   string
-	ItemID int
+	Values          map[string]int
+	Series          []int
+	HTML            string
+	DiagnosticsHTML string
+	ItemID          int
 }
 
 type AdminMessageRow struct {

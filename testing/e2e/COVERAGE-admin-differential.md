@@ -16,11 +16,11 @@ IDs and wall-clock deltas are normalized; durable effects remain exact.
 | Database | 11 | create/restore lifecycle, delete, invalid/partial/path guards, access | PASS |
 | Bots/BotEdit | 18 | list/add/stop, names, strategy CRUD/import/export, access | PASS |
 | Colony/Checksum/Loca | 13 | all colony values, serialized baselines, all localization rows/order/colors | PASS |
-| Simulators | 19 | Rocket, Expedition and Battle form/result/report/message semantics | PASS |
+| Simulators | 20 | Rocket, Expedition and Battle form/result/report/message/debug semantics | PASS |
 | CRON/cleanup/coupon | 12 | order/freeze/timers, cleanup, coupon mail and boundaries | PASS |
 | Users | 8 | full edit, planet create/collision, stats, bot controls, reactivation SMTP | PASS |
 | Planets | 13 | edit/delete, moon/debris, gates, fields/diameter, search | PASS |
-| **Total** | **172** | deterministic PHP/Go DB, files and HTTP contracts | **PASS** |
+| **Total** | **173** | deterministic PHP/Go DB, files and HTTP contracts | **PASS** |
 
 Universe covers every mutable field, empty strings, news update/disable ordering,
 max-user zero preservation, freeze/unfreeze, active-user VM forcing and rejection.
@@ -28,9 +28,9 @@ Audit/search exact-compares marker order and post-action table state without nor
 Coupons preserves legacy unsigned failure, Moscow `mktime`, packed signed criteria and unrestricted queue removal.
 Colony covers 15 values; Checksum 130 rows; Loca 2,090 rows.
 Simulators compare every rendered Rocket value, all ten Expedition buckets, and
-Battle attacker/defender/draw, defense, source import, rapid-fire, zero-round and
-Operator cases. Battle report HTML, link style/losses, message metadata, retention
-count and battledata cleanup are exact after masking time, random coordinates and IDs.
+Battle attacker/defender/draw, defense, source import, rapid-fire, zero-round,
+debug and Operator cases. Participant/source/battle/result diagnostics, report HTML,
+link/losses, messages, retention and cleanup are exact after masking generated values.
 CRON verifies PHP NULL coercion, planet/player cleanup and exemptions. Coupon CRON
 covers one-off/periodic/frozen tasks, strict date bounds and localized SMTP.
 Users covers every edit field, officer timers, rank recalculation, legacy bot queue
@@ -40,7 +40,8 @@ debris creation, gate timers, field/diameter recalculation, and both searches.
 
 ## Pending Groups
 
-- Battle simulator debug diagnostics and post-action screenshot state.
+No concrete non-Mod Admin group remains in the registered inventory. New source
+or state discovery must add a group before completion is reasserted.
 
 PHP Mods are excluded by project policy. A group is removed from this list only
 after normal, boundary, rejection, no-op and rollback/completion cases are added

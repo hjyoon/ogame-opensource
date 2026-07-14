@@ -65,7 +65,7 @@ rocket_values() {
 battle_values() {
   result='{"anum":1,"dnum":1,"rapid":0,"debug":0,"fid":30,"did":0,"max_round":6,"a0_weap":0,"a0_shld":0,"a0_armor":0,"d0_weap":0,"d0_shld":0,"d0_armor":0}'
   case "$case_name" in
-    battle-attacker|battle-operator|battle-rapid) result="$(printf '%s' "$result" | jq -c '.a0_214=1 | .d0_202=1')" ;;
+    battle-attacker|battle-debug|battle-operator|battle-rapid) result="$(printf '%s' "$result" | jq -c '.a0_214=1 | .d0_202=1')" ;;
     battle-defender) result="$(printf '%s' "$result" | jq -c '.a0_202=1 | .d0_214=1')" ;;
     battle-defense) result="$(printf '%s' "$result" | jq -c '.a0_214=1 | .d0_401=1 | .did=30')" ;;
     battle-draw) result="$(printf '%s' "$result" | jq -c '.a0_214=1 | .d0_214=1 | .max_round=1')" ;;
@@ -73,6 +73,7 @@ battle_values() {
     battle-source) result="$(printf '%s' "$result" | jq -c '.a0_202=1 | .d0_202=1')" ;;
   esac
   [ "$case_name" = battle-rapid ] && result="$(printf '%s' "$result" | jq -c 'del(.d0_202) | .d0_214=1 | .max_round=1 | .rapid=1')"
+  [ "$case_name" = battle-debug ] && result="$(printf '%s' "$result" | jq -c '.debug=1')"
   printf '%s' "$result"
 }
 
@@ -177,7 +178,7 @@ run_side() {
 }
 
 results="$TMP_DIR/results.jsonl"; : > "$results"; all_pass=true
-cases="${OGAME_ADMIN_SIMULATORS_DIFFERENTIAL_CASES:-rocket-empty rocket-intercept rocket-primary rocket-sweep rocket-operator expedition-zero expedition-negative expedition-nothing expedition-alien expedition-trader expedition-operator battle-attacker battle-defender battle-defense battle-draw battle-zero-round battle-source battle-rapid battle-operator}"
+cases="${OGAME_ADMIN_SIMULATORS_DIFFERENTIAL_CASES:-rocket-empty rocket-intercept rocket-primary rocket-sweep rocket-operator expedition-zero expedition-negative expedition-nothing expedition-alien expedition-trader expedition-operator battle-attacker battle-defender battle-defense battle-draw battle-zero-round battle-source battle-rapid battle-debug battle-operator}"
 for case_name in $cases; do
   printf 'Admin simulator differential: %s\n' "$case_name" >&2
   run_side legacy; legacy="$normalized"
@@ -190,7 +191,7 @@ for case_name in $cases; do
   jq -nc --arg name "admin-$case_name" --argjson pass "$pass" --argjson legacy "$legacy" --argjson go "$go" '{name:$name,pass:$pass,legacy:$legacy,go:$go}' >> "$results"
 done
 
-jq -s --argjson pass "$all_pass" '{pass:$pass,normalization:"HTML shell only; Rocket values, ten Expedition buckets, and Battle form/result/report/message semantics are exact after masking only timestamps, random coordinates, and generated IDs",cases:.}' "$results" > "$REPORT"
+jq -s --argjson pass "$all_pass" '{pass:$pass,normalization:"HTML shell only; Rocket values, ten Expedition buckets, and Battle form/result/report/message/debug-diagnostic semantics are exact after masking only timestamps, random coordinates, and generated IDs",cases:.}' "$results" > "$REPORT"
 [ "$all_pass" = true ]
 case_count="$(printf '%s\n' $cases | wc -l | tr -d ' ')"
 printf 'Go/PHP admin simulator differential E2E: PASS (%s cases)\n' "$case_count"

@@ -2193,7 +2193,7 @@ func TestAdminRepositoryMutatesAdminSimulators(t *testing.T) {
 		repository.now = func() time.Time { return time.Unix(2_000, 0) }
 		repository.randomIntN = func(int) int { return 0 }
 		values := map[string]int{
-			"anum": 1, "dnum": 1,
+			"anum": 1, "dnum": 1, "debug": 1,
 			"a0_weap": 10, "a0_shld": 11, "a0_armor": 12, "a0_214": 1,
 			"d0_weap": 1, "d0_shld": 2, "d0_armor": 3, "d0_202": 1,
 		}
@@ -2206,7 +2206,11 @@ func TestAdminRepositoryMutatesAdminSimulators(t *testing.T) {
 			Values:   values,
 		})
 
-		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || issue.Result == nil || issue.Result.ItemID != 701 || issue.Result.Values["max_round"] != 6 || !strings.Contains(issue.Result.HTML, "bericht=701") {
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || issue.Result == nil || issue.Result.ItemID != 701 || issue.Result.Values["max_round"] != 6 || !strings.Contains(issue.Result.HTML, "bericht=701") ||
+			!strings.Contains(issue.Result.DiagnosticsHTML, `data-debug-section="attackers"`) ||
+			!strings.Contains(issue.Result.DiagnosticsHTML, "Attacker0") ||
+			!strings.Contains(issue.Result.DiagnosticsHTML, "MaxRound = 6") ||
+			!strings.Contains(issue.Result.DiagnosticsHTML, `[result] =&gt; awon`) {
 			t.Fatalf("unexpected battle simulator issue=%+v err=%v", issue, err)
 		}
 		if len(runner.execCalls) != 3 || !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `ogame_battledata`") ||
@@ -2340,6 +2344,17 @@ func TestAdminBattleSimulatorHelpers(t *testing.T) {
 	}
 	if link := adminBattleSimulatorLink(77, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, "won", 4_000, 5_000); !strings.Contains(link, "bericht=77") || !strings.Contains(link, "[1:2:3]") || !strings.Contains(link, "V:4.000,A:5.000") {
 		t.Fatalf("unexpected battle simulator link: %s", link)
+	}
+	diagnostics := adminBattleSimulatorDiagnosticsHTML(
+		[]domaingame.CombatSlot{{ObjectID: 7, Name: "Attacker0", Coords: domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, Weapon: 4, Shield: 5, Armour: 6, Units: map[int]int{202: 3}}},
+		[]domaingame.CombatSlot{{ObjectID: 8, Name: "Defender0", Coords: domaingame.Coordinates{Galaxy: 4, System: 5, Position: 6}, Units: map[int]int{401: 2}}},
+		"MaxRound = 1\nAttacker0 = 4 5 6 202 3", 2_000,
+		domaingame.CombatResult{Outcome: domaingame.CombatAttackerWon},
+	)
+	for _, expected := range []string{`data-debug-section="attackers"`, "Attacker0", "[202] =&gt; 3", `data-debug-section="defenders"`, "Defender0", "[date] =&gt; 2000", "[result] =&gt; awon"} {
+		if !strings.Contains(diagnostics, expected) {
+			t.Fatalf("expected diagnostics to contain %q: %s", expected, diagnostics)
+		}
 	}
 }
 
