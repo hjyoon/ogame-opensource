@@ -1741,6 +1741,12 @@ func adminBroadcastURLHasProtocol(value string) bool {
 }
 
 func (r AdminRepository) mutateAdminQueue(ctx context.Context, queueTable string, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
+	if query.Action == domaingame.AdminActionQueueCron {
+		if err := r.runAdminCron(ctx, int(r.now().Unix())); err != nil {
+			return nil, err
+		}
+		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+	}
 	if query.TaskID <= 0 {
 		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
 	}

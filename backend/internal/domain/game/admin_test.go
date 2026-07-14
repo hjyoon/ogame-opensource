@@ -47,6 +47,9 @@ func TestNewAdminNormalizesModeAndCopiesMenu(t *testing.T) {
 	if !NewAdmin(Overview{}, AdminViewer{Level: AdminLevelAdmin}, "Queue").CanMutate(AdminActionQueueFreeze) {
 		t.Fatal("admins should mutate queue controls")
 	}
+	if !NewAdmin(Overview{}, AdminViewer{Level: AdminLevelAdmin}, "Queue").CanMutate(AdminActionQueueCron) {
+		t.Fatal("admins should execute the queue worker")
+	}
 	if !NewAdmin(Overview{}, AdminViewer{Level: AdminLevelOperator}, "Bans").CanMutate("ban") {
 		t.Fatal("operators should keep legacy ban mutation access")
 	}

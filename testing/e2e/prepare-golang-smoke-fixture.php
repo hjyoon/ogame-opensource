@@ -2939,6 +2939,9 @@ $fleetRecallFixture = smoke_prepare_fleet_recall_fixture($password, $home);
 $statisticsRankingFixture = smoke_prepare_statistics_ranking_fixture($password, $home);
 $adminDestructiveFixture = smoke_prepare_admin_destructive_fixture($target, $home);
 $adminQueueFixture = smoke_prepare_admin_queue_fixture((int)$login['player_id'], (int)$target['player_id']);
+dbquery("UPDATE {$db_prefix}users SET admin=" . USER_TYPE_ADMIN . " WHERE player_id=" . (int)$login['player_id']);
+dbquery("UPDATE {$db_prefix}users SET admin=" . USER_TYPE_GO . " WHERE player_id=" . (int)$operator['player_id']);
+InvalidateUserCache();
 SelectPlanet((int)$login['player_id'], (int)$login['home_planet_id']);
 
 echo json_encode(array(

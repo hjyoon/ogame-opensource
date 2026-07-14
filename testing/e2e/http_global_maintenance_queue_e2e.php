@@ -178,7 +178,7 @@ function e2e_restore_fixture_user(?array $user, int $planetId): void
     dbquery(
         "UPDATE {$db_prefix}users SET " . implode(',', $research) . ", " .
         "email='" . e2e_sql_escape($user['email']) . "', pemail='" . e2e_sql_escape($user['pemail']) . "', " .
-        "admin=0, ally_id=0, allyrank=0, joindate=0, name_changed=0, name_until=0, " .
+        "admin=" . (int)$user['admin'] . ", ally_id=0, allyrank=0, joindate=0, name_changed=0, name_until=0, " .
         "banned=0, banned_until=0, noattack=0, noattack_until=0, disable=0, disable_until=0, " .
         "validated=1, deact_ip=1, vacation=0, vacation_until=0, lang='en', skin='/evolution/', useskin=1 " .
         "WHERE player_id={$userId}"

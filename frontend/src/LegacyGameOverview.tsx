@@ -178,6 +178,9 @@ export type GameAdminAction =
       taskId: number;
     }
   | {
+      action: "queue_cron";
+    }
+  | {
       action: "fleetlogs_2min" | "fleetlogs_end" | "fleetlogs_return";
       taskId: number;
     }
@@ -5307,7 +5310,14 @@ function AdminQueueTable({ onAdminAction, rows }: { onAdminAction: (action: Game
         <input type="submit" value="Send" />
         {"\n    "}
       </form>
-      <form action={adminModeHref("Queue")} method="POST" onSubmit={(event) => event.preventDefault()}>
+      <form
+        action={adminModeHref("Queue")}
+        method="POST"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onAdminAction({ action: "queue_cron" });
+        }}
+      >
         <input name="order_cron" type="hidden" value="1" />
         <input type="submit" value="ADM_QUEUE_CRON" />
       </form>

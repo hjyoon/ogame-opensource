@@ -17,13 +17,11 @@ Generated IDs and wall-clock deltas are normalized; durable effects remain exact
 | Bots/BotEdit | 18 | list/add/stop, names, strategy CRUD/import/export, access | PASS |
 | Colony/Checksum/Loca | 13 | all colony values, serialized baselines, all localization rows/order/colors | PASS |
 | Simulators | 19 | Rocket, Expedition and Battle form/result/report/message semantics | PASS |
-| **Total** | **139** | deterministic PHP/Go DB, files and HTTP contracts | **PASS** |
+| CRON core | 7 | access, 16-task order, freeze, timers, debug/unknown | PASS |
+| **Total** | **146** | deterministic PHP/Go DB, files and HTTP contracts | **PASS** |
 
 Queue/Fleetlogs covers no-ops, access, recall state/logs and retention. Only
 generated fleet/task IDs and bounded request-time deltas are normalized.
-
-Operations covers recipients, BBCode, message cap, reports, all 33 expedition
-settings, malformed requests and access rejection.
 
 Universe covers every mutable field, empty strings, news update/disable ordering,
 max-user zero preservation, freeze/unfreeze, active-user VM forcing and rejection.
@@ -33,17 +31,17 @@ Database runs one non-empty backup at a time, restores a post-backup marker, and
 deletes the file immediately. Go rejects incomplete schemas before destructive SQL.
 Bots compares account, planet, IP log, variables, AI queue, strategy source and
 user-count effects; generated IDs, passwords, IPs, times and temperature are normalized.
-Colony covers all 15 values and unsigned boundaries. Checksum compares all 130 rows
-and exact PHP serialization. Loca compares 2,090 English rows and missing JP files.
+Colony covers 15 values. Checksum compares 130 serialized rows; Loca compares 2,090 rows.
 Simulators compare every rendered Rocket value, all ten Expedition buckets, and
 Battle attacker/defender/draw, defense, source import, rapid-fire, zero-round and
 Operator cases. Battle report HTML, link style/losses, message metadata, retention
 count and battledata cleanup are exact after masking time, random coordinates and IDs.
+CRON also verifies NULL numeric fields use PHP's zero coercion.
 
 ## Pending Groups
 
 - Battle simulator debug diagnostics and post-action screenshot state.
-- CRON execution.
+- Destructive/external CRON handlers: planet/player cleanup and coupon delivery.
 - Users and Planets full edit/create/destroy operations.
 
 PHP Mods are excluded by project policy. A group is removed from this list only
@@ -65,6 +63,7 @@ testing/e2e/run-golang-admin-colony-settings-differential-e2e.sh
 testing/e2e/run-golang-admin-checksum-differential-e2e.sh
 testing/e2e/run-golang-admin-loca-differential-e2e.sh
 testing/e2e/run-golang-admin-simulators-differential-e2e.sh
+testing/e2e/run-golang-admin-cron-differential-e2e.sh
 ```
 
 All are included in `testing/e2e/run-golang-migration-qa.sh`.

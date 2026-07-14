@@ -22,6 +22,7 @@ const (
 	AdminActionQueueRemove   = "queue_remove"
 	AdminActionQueueFreeze   = "queue_freeze"
 	AdminActionQueueUnfreeze = "queue_unfreeze"
+	AdminActionQueueCron     = "queue_cron"
 
 	AdminActionFleetlogsTwoMinutes = "fleetlogs_2min"
 	AdminActionFleetlogsEnd        = "fleetlogs_end"
