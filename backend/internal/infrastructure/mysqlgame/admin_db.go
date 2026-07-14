@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -82,7 +83,7 @@ func (r AdminRepository) createAdminDatabaseBackup(ctx context.Context) (string,
 	if err := os.MkdirAll(filepath.Join(r.legacyGameDir, "temp"), 0o755); err != nil {
 		return "", err
 	}
-	fileName := "backup_" + r.now().Format("02012006_150405") + ".json"
+	fileName := "backup_" + r.now().In(legacyAdminTimeLocation).Format("02012006_150405") + ".json"
 	path := filepath.Join(r.legacyGameDir, "temp", fileName)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return "", err
@@ -117,10 +118,45 @@ func (r AdminRepository) restoreAdminDatabaseBackup(ctx context.Context, fileNam
 	if len(backup) == 0 {
 		return "", errors.New("admin database backup is empty")
 	}
+	if err := r.validateAdminDatabaseBackupSchema(ctx, backup); err != nil {
+		return "", err
+	}
 	if err := r.deserializeAdminDatabaseBackup(ctx, backup); err != nil {
 		return "", err
 	}
 	return displayName, nil
+}
+
+func (r AdminRepository) validateAdminDatabaseBackupSchema(ctx context.Context, backup map[string]adminDatabaseBackupTable) error {
+	physicalNames, err := r.loadAdminBackupTableNames(ctx)
+	if err != nil {
+		return err
+	}
+	if len(backup) != len(physicalNames) {
+		return errors.New("admin database backup table set does not match the current schema")
+	}
+	for _, physicalName := range physicalNames {
+		logicalName := strings.TrimPrefix(physicalName, r.prefix)
+		table, ok := backup[logicalName]
+		if !ok {
+			return fmt.Errorf("admin database backup is missing table %s", logicalName)
+		}
+		if err := validateAdminDatabaseBackupTable(table); err != nil {
+			return err
+		}
+		quotedTable, err := quoteAdminDatabaseIdentifier(physicalName)
+		if err != nil {
+			return err
+		}
+		columns, err := r.loadAdminDatabaseColumns(ctx, quotedTable)
+		if err != nil {
+			return err
+		}
+		if !slices.Equal(table.Cols, columns) {
+			return fmt.Errorf("admin database backup columns do not match table %s", logicalName)
+		}
+	}
+	return nil
 }
 
 func (r AdminRepository) adminDatabaseBackupPath(fileName string) (string, string, bool) {

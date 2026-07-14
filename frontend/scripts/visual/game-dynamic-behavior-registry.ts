@@ -1728,6 +1728,48 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     notes: ["Covers the legacy anchor hover styling for the Commander Visual Template link on the fleet selection screen."]
   },
   {
+    name: "admin-database-delete-link",
+    fixtureProfile: "admin",
+    fixedClock: false,
+    legacyPage: "admin",
+    legacyQuery: { mode: "DB" },
+    migratedPath: "/game/admin",
+    migratedQuery: { mode: "DB" },
+    legacyReady: "#content a[href*='fname=backup_dynamic_delete.json']",
+    migratedReady: ".legacy-admin-db-table a[href*='fname=backup_dynamic_delete.json']",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[href*='action=delete'][href*='fname=backup_dynamic_delete.json']",
+        migratedSelector: ".legacy-admin-db-table a[href*='action=delete'][href*='fname=backup_dynamic_delete.json']",
+        waitMs: 200
+      }
+    ],
+    assertions: [
+      {
+        name: "deleted-backup-row-count",
+        type: "count",
+        selector: "a[href*='fname=backup_dynamic_delete.json']",
+        expected: "0"
+      },
+      {
+        name: "delete-confirmation",
+        type: "evaluate",
+        expression: "document.body.innerText.includes('Backup deleted')",
+        expected: "true"
+      },
+      {
+        name: "admin-api-roundtrip",
+        type: "evaluate",
+        expression:
+          "!document.querySelector('.legacy-admin-db-table') || performance.getEntriesByType('resource').filter((entry) => entry.name.includes('/api/game/admin')).length >= 2",
+        expected: "true"
+      }
+    ],
+    linkAudit: { enabled: false },
+    notes: ["Covers the Admin DB delegated delete link, API mutation and list reload; the DB screen itself is in the exact visual registry."]
+  },
+  {
     name: "admin-bans-select-all-checkbox",
     fixtureProfile: "admin",
     legacyPage: "admin",

@@ -52,6 +52,10 @@ for browser in $BROWSERS; do
       -e OGAME_GAME_VISUAL_PASS="${OGAME_GAME_VISUAL_PASS:-}" \
       -e OGAME_GAME_VISUAL_ADMIN="${OGAME_GAME_VISUAL_ADMIN:-}" \
       server php "$LEGACY_E2E_CONTAINER_DIR/prepare-authenticated-game-visual-fixture.php" > "$FIXTURE_FILE"
+    docker compose exec -T server sh -c \
+      'printf %s '\''{"dynamic":true}'\'' > /var/www/html/game/temp/backup_dynamic_delete.json'
+    docker compose -f "$ROOT_DIR/compose.golang.yaml" exec -T goapp sh -c \
+      'printf %s '\''{"dynamic":true}'\'' > /srv/ogame/game/temp/backup_dynamic_delete.json'
   fi
   printf 'Authenticated game dynamic behavior E2E (%s)\n' "$browser"
   (

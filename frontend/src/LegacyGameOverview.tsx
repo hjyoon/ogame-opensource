@@ -196,6 +196,13 @@ export type GameAdminAction =
   | {
       action: "stop";
       targetIds: number[];
+    }
+  | {
+      action: "create";
+    }
+  | {
+      action: "restore" | "delete";
+      fileName: string;
     };
 
 export type GameAllianceAction =
@@ -2229,6 +2236,10 @@ export function LegacyGameOverview({
   const adminIssue = adminStatus && !adminStatus.authenticated ? adminStatus.issues[0]?.message ?? "Session is invalid." : null;
   const adminActionIssue = adminStatus?.authenticated ? adminStatus.actionIssue : undefined;
   const adminAccessDenied = adminActionIssue?.code === "access_denied";
+  const showAdminActionIssue =
+    route.key === "admin" && adminActionIssue && !(admin?.mode === "Uni" && adminActionIssue.code === "action_saved");
+  const adminPageMessage = showAdminActionIssue && adminActionIssue.code === "action_saved" ? adminActionIssue.message : "";
+  const adminPageError = showAdminActionIssue && adminActionIssue.code !== "action_saved" ? adminActionIssue.message : "";
   const research = researchStatus?.authenticated ? researchStatus.research : undefined;
   const researchIssue =
     researchStatus && !researchStatus.authenticated ? researchStatus.issues[0]?.message ?? "Session is invalid." : null;
@@ -2303,6 +2314,8 @@ export function LegacyGameOverview({
   const searchErrorRef = React.useRef<HTMLDivElement | null>(null);
   const officersMessageRef = React.useRef<HTMLDivElement | null>(null);
   const officersErrorRef = React.useRef<HTMLDivElement | null>(null);
+  const adminMessageRef = React.useRef<HTMLDivElement | null>(null);
+  const adminErrorRef = React.useRef<HTMLDivElement | null>(null);
   const [overviewContentLayout, setOverviewContentLayout] = React.useState<{ height: string; top: number; errorTop: number } | null>(
     null
   );
@@ -2314,6 +2327,7 @@ export function LegacyGameOverview({
     top: number;
     errorTop: number;
   } | null>(null);
+  const [adminContentLayout, setAdminContentLayout] = React.useState<{ height: string; top: number; errorTop: number } | null>(null);
   React.useLayoutEffect(() => {
     if (route.key !== "overview") {
       setOverviewContentLayout(null);
@@ -2374,6 +2388,25 @@ export function LegacyGameOverview({
     window.addEventListener("resize", updateOfficersContentLayout);
     return () => window.removeEventListener("resize", updateOfficersContentLayout);
   }, [hasOfficersPageFooter, officersPageError, officersPageMessage, route.key]);
+  React.useLayoutEffect(() => {
+    if (route.key !== "admin" || (!adminPageMessage && !adminPageError)) {
+      setAdminContentLayout(null);
+      return;
+    }
+    const updateAdminContentLayout = () => {
+      const messageHeight = adminMessageRef.current?.offsetHeight ?? 0;
+      const errorHeight = adminErrorRef.current?.offsetHeight ?? 0;
+      const errorTop = messageHeight + 5;
+      const top = messageHeight + errorHeight + 10;
+      const height = `${Math.max(0, window.innerHeight - messageHeight - errorHeight - 20)}px`;
+      setAdminContentLayout((current) =>
+        current?.top === top && current.height === height && current.errorTop === errorTop ? current : { height, top, errorTop }
+      );
+    };
+    updateAdminContentLayout();
+    window.addEventListener("resize", updateAdminContentLayout);
+    return () => window.removeEventListener("resize", updateAdminContentLayout);
+  }, [adminPageError, adminPageMessage, route.key]);
   React.useEffect(() => {
     if (route.key !== "fleetTemplates" || !fleet || fleet.templates.commanderActive) {
       return;
@@ -2403,6 +2436,8 @@ export function LegacyGameOverview({
         ? officersContentLayout
           ? { height: officersContentLayout.height, top: `${officersContentLayout.top}px` }
           : { height: "calc(100vh - 130px)", top: "120px" }
+      : route.key === "admin" && adminContentLayout
+        ? { height: adminContentLayout.height, top: `${adminContentLayout.top}px` }
       : route.key === "galaxy" ||
           route.key === "admin" ||
           route.key === "empire" ||
@@ -2491,6 +2526,14 @@ export function LegacyGameOverview({
           style={{ top: officersContentLayout && officersPageMessage ? `${officersContentLayout.errorTop}px` : "80px" }}
         />
       ) : null}
+      {adminPageMessage ? <LegacyPageMessage ref={adminMessageRef} messages={[adminPageMessage]} style={{ top: 0 }} /> : null}
+      {adminPageError ? (
+        <LegacyPageError
+          ref={adminErrorRef}
+          messages={[adminPageError]}
+          style={{ top: adminContentLayout && adminPageMessage ? `${adminContentLayout.errorTop}px` : 0 }}
+        />
+      ) : null}
       <section className={contentClassName} id="content" style={contentStyle}>
         {error ? <LegacyMessage tone="error" text={error} /> : null}
         {!error && issue ? <LegacyMessage tone="error" text={issue} /> : null}
@@ -2531,9 +2574,6 @@ export function LegacyGameOverview({
           <LegacyMessage tone="error" text={allianceIssue} />
         ) : null}
         {route.key === "admin" && adminError ? <LegacyMessage tone="error" text={adminError} /> : null}
-        {route.key === "admin" && !adminError && adminActionIssue && !(admin?.mode === "Uni" && adminActionIssue.code === "action_saved") ? (
-          <LegacyMessage tone="error" text={adminActionIssue.message} />
-        ) : null}
         {route.key === "admin" && !adminError && !adminActionIssue && adminIssue ? (
           <LegacyMessage tone="error" text={adminIssue} />
         ) : null}
@@ -2756,12 +2796,12 @@ export function LegacyGameOverview({
   );
 }
 
-const LegacyPageMessage = React.forwardRef<HTMLDivElement, { messages: string[] }>(function LegacyPageMessage(
-  { messages },
+const LegacyPageMessage = React.forwardRef<HTMLDivElement, { messages: string[]; style?: React.CSSProperties }>(function LegacyPageMessage(
+  { messages, style },
   ref
 ) {
   return (
-    <div className="legacy-page-messagebox" id="messagebox" ref={ref} style={{ display: "block" }}>
+    <div className="legacy-page-messagebox" id="messagebox" ref={ref} style={{ display: "block", ...style }}>
       <center>
         {messages.map((message, index) => (
           <React.Fragment key={`${message}-${index}`}>
@@ -2972,7 +3012,7 @@ function LegacyLeftMenu({
   return (
     <aside className="legacy-leftmenu" id="leftmenu">
       <div className="legacy-center">
-        <div className="legacy-menu" id="menu">
+        <div className="legacy-menu" id="menu" style={{ position: "relative" }}>
           <p>
             <span className="legacy-nowrap">
               Universe 1 (<a href={gameRouteURL("/game/changelog", window.location.search)}>v 0.84</a>)
@@ -3870,7 +3910,7 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "DB") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminDatabaseTable backups={admin.databaseBackups ?? []} />
+        <AdminDatabaseTable backups={admin.databaseBackups ?? []} onAdminAction={onAdminAction} />
       </AdminModeShell>
     );
   }
@@ -5998,8 +6038,29 @@ function AdminChecksumTable({ groups }: { groups: GameAdminChecksumGroup[] }) {
   );
 }
 
-function AdminDatabaseTable({ backups }: { backups: GameAdminDatabaseBackup[] }) {
-  return <div dangerouslySetInnerHTML={{ __html: adminDatabaseHTML(backups) }} />;
+function AdminDatabaseTable({ backups, onAdminAction }: { backups: GameAdminDatabaseBackup[]; onAdminAction: (action: GameAdminAction) => void }) {
+  const handleSubmit = (event: React.FormEvent<HTMLDivElement>) => {
+    if (!(event.target instanceof HTMLFormElement)) {
+      return;
+    }
+    event.preventDefault();
+    onAdminAction({ action: "create" });
+  };
+  const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[href]");
+    if (!anchor) {
+      return;
+    }
+    const target = new URL(anchor.href, window.location.href);
+    const action = target.searchParams.get("action");
+    const fileName = target.searchParams.get("fname") ?? "";
+    if ((action !== "restore" && action !== "delete") || fileName === "") {
+      return;
+    }
+    event.preventDefault();
+    onAdminAction({ action, fileName });
+  };
+  return <div dangerouslySetInnerHTML={{ __html: adminDatabaseHTML(backups) }} onClick={handleClick} onSubmit={handleSubmit} />;
 }
 
 function adminDatabaseHTML(backups: GameAdminDatabaseBackup[]): string {

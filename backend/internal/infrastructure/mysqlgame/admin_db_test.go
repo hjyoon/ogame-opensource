@@ -157,7 +157,13 @@ func TestAdminRepositoryBatchesDatabaseBackupRestoreRows(t *testing.T) {
 func TestAdminRepositoryMutatesDatabaseBackupCreateRestoreDelete(t *testing.T) {
 	root := t.TempDir()
 	runner := &fakeAdminDBRunner{
-		fakeQueryer: fakeQueryer{results: adminDBCreateResults()},
+		fakeQueryer: fakeQueryer{results: append(adminDBCreateResults(),
+			fakeQueryResult{rows: fakeRowsFromValues([]any{"ogame_users"})},
+			fakeQueryResult{rows: fakeRowsFromValues(
+				[]any{"player_id", "int", "NO", "PRI", nil, "auto_increment"},
+				[]any{"oname", "varchar(64)", "YES", "", nil, ""},
+			)},
+		)},
 	}
 	repository := NewAdminRepositoryWithQueryer(runner, "ogame_").WithLegacyGameDir(root)
 	repository.now = func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
@@ -169,10 +175,10 @@ func TestAdminRepositoryMutatesDatabaseBackupCreateRestoreDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create mutate returned error: %v", err)
 	}
-	if createIssue.Code != domaingame.AdminIssueActionSaved || !strings.Contains(createIssue.Message, "temp/backup_02012026_030405.json") {
+	if createIssue.Code != domaingame.AdminIssueActionSaved || !strings.Contains(createIssue.Message, "temp/backup_02012026_060405.json") {
 		t.Fatalf("unexpected create issue: %+v", createIssue)
 	}
-	backupPath := filepath.Join(root, "temp", "backup_02012026_030405.json")
+	backupPath := filepath.Join(root, "temp", "backup_02012026_060405.json")
 	body, err := os.ReadFile(backupPath)
 	if err != nil {
 		t.Fatalf("read created backup: %v", err)
@@ -183,7 +189,7 @@ func TestAdminRepositoryMutatesDatabaseBackupCreateRestoreDelete(t *testing.T) {
 
 	restoreIssue, err := repository.mutateAdminDatabase(context.Background(), appgame.AdminMutationQuery{
 		Action:   domaingame.AdminActionDatabaseRestore,
-		FileName: "backup_02012026_030405.json",
+		FileName: "backup_02012026_060405.json",
 	})
 
 	if err != nil {
@@ -195,7 +201,7 @@ func TestAdminRepositoryMutatesDatabaseBackupCreateRestoreDelete(t *testing.T) {
 
 	deleteIssue, err := repository.mutateAdminDatabase(context.Background(), appgame.AdminMutationQuery{
 		Action:   domaingame.AdminActionDatabaseDelete,
-		FileName: "backup_02012026_030405.json",
+		FileName: "backup_02012026_060405.json",
 	})
 
 	if err != nil {
@@ -206,6 +212,93 @@ func TestAdminRepositoryMutatesDatabaseBackupCreateRestoreDelete(t *testing.T) {
 	}
 	if _, err := os.Stat(backupPath); !os.IsNotExist(err) {
 		t.Fatalf("expected backup file to be deleted, stat err=%v", err)
+	}
+}
+
+func TestAdminRepositoryRejectsPartialDatabaseBackupBeforeDestructiveSQL(t *testing.T) {
+	root := t.TempDir()
+	tempDir := filepath.Join(root, "temp")
+	if err := os.MkdirAll(tempDir, 0o755); err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "backup_partial.json"), []byte(`{"users":{"auto_increment":null,"cols":["player_id"],"values":[]}}`), 0o644); err != nil {
+		t.Fatalf("write partial backup: %v", err)
+	}
+	runner := &fakeAdminDBRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"ogame_users"}, []any{"ogame_planets"})},
+	}}}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_").WithLegacyGameDir(root)
+
+	_, err := repository.restoreAdminDatabaseBackup(context.Background(), "backup_partial.json")
+
+	if err == nil || !strings.Contains(err.Error(), "table set") {
+		t.Fatalf("expected partial backup rejection, got %v", err)
+	}
+	if len(runner.execs) != 0 {
+		t.Fatalf("partial backup must be rejected before destructive SQL: %+v", runner.execs)
+	}
+}
+
+func TestAdminRepositoryValidatesDatabaseBackupSchemaFailures(t *testing.T) {
+	validTable := adminDatabaseBackupTable{Cols: []string{"player_id"}}
+	tests := []struct {
+		name       string
+		results    []fakeQueryResult
+		backup     map[string]adminDatabaseBackupTable
+		wantErrSub string
+	}{
+		{
+			name:       "table list query",
+			results:    []fakeQueryResult{{err: sql.ErrConnDone}},
+			backup:     map[string]adminDatabaseBackupTable{"users": validTable},
+			wantErrSub: sql.ErrConnDone.Error(),
+		},
+		{
+			name:       "missing current table",
+			results:    []fakeQueryResult{{rows: fakeRowsFromValues([]any{"ogame_users"})}},
+			backup:     map[string]adminDatabaseBackupTable{"planets": validTable},
+			wantErrSub: "missing table users",
+		},
+		{
+			name:       "invalid backup table",
+			results:    []fakeQueryResult{{rows: fakeRowsFromValues([]any{"ogame_users"})}},
+			backup:     map[string]adminDatabaseBackupTable{"users": {}},
+			wantErrSub: "no columns",
+		},
+		{
+			name:       "unsafe current table identifier",
+			results:    []fakeQueryResult{{rows: fakeRowsFromValues([]any{"ogame_bad-name"})}},
+			backup:     map[string]adminDatabaseBackupTable{"bad-name": validTable},
+			wantErrSub: "invalid database identifier",
+		},
+		{
+			name: "column query",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{"ogame_users"})},
+				{err: sql.ErrConnDone},
+			},
+			backup:     map[string]adminDatabaseBackupTable{"users": validTable},
+			wantErrSub: sql.ErrConnDone.Error(),
+		},
+		{
+			name: "column mismatch",
+			results: []fakeQueryResult{
+				{rows: fakeRowsFromValues([]any{"ogame_users"})},
+				{rows: fakeRowsFromValues([]any{"oname", "varchar(64)", "YES", "", nil, ""})},
+			},
+			backup:     map[string]adminDatabaseBackupTable{"users": validTable},
+			wantErrSub: "columns do not match table users",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: test.results}, "ogame_")
+			err := repository.validateAdminDatabaseBackupSchema(context.Background(), test.backup)
+			if err == nil || !strings.Contains(err.Error(), test.wantErrSub) {
+				t.Fatalf("expected error containing %q, got %v", test.wantErrSub, err)
+			}
+		})
 	}
 }
 

@@ -25,7 +25,7 @@ placement, and selected admin tables. Masked pixels need DOM/text assertions.
 ## Behavior Runner
 
 `run-playwright-authenticated-game-dynamic-e2e.sh` enables commander/alliance/
-report/phalanx/ACS fixtures by default and runs 95 cases: counters, galaxy
+report/phalanx/ACS fixtures by default and runs 96 cases: counters, galaxy
 action/hover links/keyboard, fleet controls/launch errors, merchant clamps/
 tooltips/submit, statistics/empire tooltips, overview event overLib, queue
 countdowns, popup sizing/body, admin filters/search/Bans/Uni/Planets/Expedition/BattleSim/BotEdit,
