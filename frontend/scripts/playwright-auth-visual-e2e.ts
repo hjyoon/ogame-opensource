@@ -1216,6 +1216,9 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
       }
     }
     if (currentPageName === "game-options") {
+      for (const excluded of document.querySelectorAll("[data-visual-exclude='mcp-tokens'], .legacy-mcp-token-table")) {
+        excluded.remove();
+      }
       hide("#content img, .legacy-options-table img");
       for (const checkbox of document.querySelectorAll<HTMLInputElement>("#content input[type='checkbox'], .legacy-options-table input[type='checkbox']")) {
         const marker = document.createElement("span");

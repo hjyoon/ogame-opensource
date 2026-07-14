@@ -3099,7 +3099,7 @@ function LegacyLeftMenu({
   return (
     <aside className="legacy-leftmenu" id="leftmenu">
       <div className="legacy-center">
-        <div className="legacy-menu" id="menu" style={{ position: "relative" }}>
+        <div className="legacy-menu" id="menu">
           <p>
             <span className="legacy-nowrap">
               Universe 1 (<a href={gameRouteURL("/game/changelog", window.location.search)}>v 0.84</a>)
