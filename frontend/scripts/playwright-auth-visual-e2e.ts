@@ -871,10 +871,27 @@ async function loginMigrated(context: BrowserContext): Promise<string> {
   const page = await context.newPage();
   await page.goto(`${migratedBaseURL}/home`, { waitUntil: "networkidle", timeout: 15_000 });
   const universe = (await page.locator("select[name='universe'] option").nth(1).getAttribute("value")) ?? "http://localhost:8888";
-  await page.locator("select[name='universe']").selectOption(universe);
-  await page.locator("input[name='login']").fill(loginUser);
-  await page.locator("input[name='pass']").fill(loginPassword);
-  await page.locator("input.legacy-public-login-button").click();
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await page.locator("select[name='universe']").selectOption(universe);
+    await page.locator("input[name='login']").fill(loginUser);
+    await page.locator("input[name='pass']").fill(loginPassword);
+    const responsePromise = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === "/api/public/login" && response.request().method() === "POST",
+      { timeout: 15_000 }
+    );
+    await page.locator("input.legacy-public-login-button").click();
+    const response = await responsePromise;
+    if (response.ok()) {
+      break;
+    }
+    const transient = response.status() === 502 || response.status() === 503 || response.status() === 504;
+    if (transient && attempt < 3) {
+      await page.waitForTimeout(attempt * 250);
+      continue;
+    }
+    const body = (await response.text()).trim().slice(0, 200);
+    throw new Error(`migrated login failed with HTTP ${response.status()}: ${body}`);
+  }
   await page.waitForFunction(() => window.location.pathname === "/game/overview" && window.location.search.includes("session="), undefined, {
     timeout: 10_000
   });
@@ -1088,6 +1105,7 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
     for (const countdown of document.querySelectorAll<HTMLElement>("[id^='bxx'], .legacy-admin-queue-countdown")) {
       countdown.textContent = "0:00:00";
       countdown.setAttribute("title", "0");
+      countdown.style.visibility = "hidden";
     }
     if (currentPageName === "game-empire-redirect") {
       hide("#content img[width='200'][height='200'], .legacy-overview-table img[width='200'][height='200']");
