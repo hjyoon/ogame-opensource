@@ -162,6 +162,8 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		admin.ModRows, err = r.loadAdminMods(ctx)
 	case "Loca":
 		admin.Localization, err = r.loadAdminLocalization(query.LocaSource, query.LocaTarget)
+	case "ColonySettings":
+		admin.ColonySettings, err = r.loadAdminColonySettings(ctx)
 	case "Coupons":
 		admin.CouponRows, admin.CouponTotal, err = r.loadAdminCouponRows(ctx, query.CouponFrom)
 		admin.CouponFrom = normalizeAdminCouponFrom(query.CouponFrom)
@@ -335,6 +337,16 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 			return nil, err
 		}
 		return r.mutateAdminExpeditionSettings(ctx, expeditionTable, query.Values)
+	}
+	if mode == "ColonySettings" && query.Action == domaingame.AdminActionSettings {
+		colonyTable, err := tableName(r.prefix, "coltab")
+		if err != nil {
+			return nil, err
+		}
+		return r.mutateAdminColonySettings(ctx, colonyTable, query.Values)
+	}
+	if mode == "Checksum" && query.Action == domaingame.AdminActionChecksumFix {
+		return r.fixAdminChecksums()
 	}
 	if mode == "Uni" && query.Action == domaingame.AdminActionSettings {
 		uniTable, err := tableName(r.prefix, "uni")
@@ -908,7 +920,27 @@ func (r AdminRepository) adminModAvailable(modName string) (bool, error) {
 	return strings.TrimSpace(manifest.Name) != "", nil
 }
 
-var adminLocaAssignmentPattern = regexp.MustCompile(`\$LOCA\["([^"]+)"\]\["([^"]+)"\]\s*=\s*"((?:\\.|[^"\\])*)";`)
+var adminLocaAssignmentPattern = regexp.MustCompile(`(?s)\$LOCA\[\s*"([^"]+)"\s*\]\[\s*"([^"]+)"\s*(?:\.\s*([A-Z][A-Z0-9_]*))?\s*\]\s*=\s*((?:"(?:\\.|[^"\\])*"\s*(?:\.\s*)?)+);`)
+var adminLocaNestedAssignmentPattern = regexp.MustCompile(`(?s)\$LOCA\[\s*"([^"]+)"\s*\]\[\s*"([^"]+)"\s*\]\s*=\s*"((?:\\.|[^"\\])*)"\s*\.\s*\$LOCA\[\s*"([^"]+)"\s*\]\[\s*"([^"]+)"\s*\]\s*=\s*((?:"(?:\\.|[^"\\])*"\s*(?:\.\s*)?)+);`)
+var adminLocaStringPattern = regexp.MustCompile(`"((?:\\.|[^"\\])*)"`)
+
+var adminLocaConstants = map[string]string{
+	"GID_RC_METAL":     "700",
+	"GID_RC_CRYSTAL":   "701",
+	"GID_RC_DEUTERIUM": "702",
+	"GID_RC_ENERGY":    "703",
+	"GID_RC_DM":        "704",
+}
+
+type adminLocalizationEntry struct {
+	key   string
+	value string
+}
+
+type positionedAdminLocalizationEntry struct {
+	position int
+	entry    adminLocalizationEntry
+}
 
 func (r AdminRepository) loadAdminLocalization(source string, target string) (*domaingame.AdminLocalization, error) {
 	locaDir := filepath.Join(r.legacyGameDir, "loca")
@@ -962,39 +994,37 @@ func (r AdminRepository) compareAdminLocalizationFile(locaDir string, source str
 	targetPath := filepath.Join(locaDir, target, fileName)
 	sourceLang := adminLocaLanguage(source)
 	targetLang := adminLocaLanguage(target)
-	sourceValues, err := readAdminLocalizationFile(sourcePath, sourceLang)
+	sourceEntries, err := readAdminLocalizationEntries(sourcePath, sourceLang)
 	if err != nil {
 		return domaingame.AdminLocalizationFile{}, err
 	}
-	targetValues, err := readAdminLocalizationFile(targetPath, targetLang)
+	targetEntries, err := readAdminLocalizationEntries(targetPath, targetLang)
 	if errors.Is(err, os.ErrNotExist) {
-		targetValues = map[string]string{}
+		targetEntries = nil
 	} else if err != nil {
 		return domaingame.AdminLocalizationFile{}, err
 	}
+	targetValues := make(map[string]string, len(targetEntries))
+	for _, entry := range targetEntries {
+		targetValues[entry.key] = entry.value
+	}
 	file := domaingame.AdminLocalizationFile{
 		Name:          fileName,
-		TargetMissing: len(targetValues) == 0,
-		Rows:          make([]domaingame.AdminLocalizationRow, 0, len(sourceValues)),
+		TargetMissing: len(sourceEntries) == 0,
+		Rows:          make([]domaingame.AdminLocalizationRow, 0, len(sourceEntries)),
 	}
-	keys := make([]string, 0, len(sourceValues))
-	for key := range sourceValues {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		sourceValue := sourceValues[key]
-		targetValue, ok := targetValues[key]
+	for _, entry := range sourceEntries {
+		targetValue, ok := targetValues[entry.key]
 		status := "ok"
 		if !ok {
 			targetValue = "The string is missing!"
 			status = "missing"
-		} else if sourceValue != "" && sourceValue == targetValue {
+		} else if entry.value != "" && entry.value == targetValue {
 			status = "same"
 		}
 		file.Rows = append(file.Rows, domaingame.AdminLocalizationRow{
-			Key:    key,
-			Source: sourceValue,
+			Key:    entry.key,
+			Source: entry.value,
 			Target: targetValue,
 			Status: status,
 		})
@@ -1003,22 +1033,144 @@ func (r AdminRepository) compareAdminLocalizationFile(locaDir string, source str
 }
 
 func readAdminLocalizationFile(path string, language string) (map[string]string, error) {
+	entries, err := readAdminLocalizationEntries(path, language)
+	if err != nil {
+		return nil, err
+	}
+	values := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		values[entry.key] = entry.value
+	}
+	return values, nil
+}
+
+func readAdminLocalizationEntries(path string, language string) ([]adminLocalizationEntry, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	values := map[string]string{}
-	for _, match := range adminLocaAssignmentPattern.FindAllStringSubmatch(string(data), -1) {
-		if language != "" && match[1] != language {
+	text := string(data)
+	parsed := make([]positionedAdminLocalizationEntry, 0)
+	for _, match := range adminLocaAssignmentPattern.FindAllStringSubmatchIndex(text, -1) {
+		matchLanguage := adminLocaRegexpGroup(text, match, 1)
+		if language != "" && matchLanguage != language {
 			continue
 		}
-		value, err := strconv.Unquote(`"` + match[3] + `"`)
-		if err != nil {
-			value = match[3]
-		}
-		values[match[2]] = value
+		key := adminLocaRegexpGroup(text, match, 2) + adminLocaConstants[adminLocaRegexpGroup(text, match, 3)]
+		value := parseAdminLocaStringExpression(adminLocaRegexpGroup(text, match, 4))
+		parsed = append(parsed, positionedAdminLocalizationEntry{position: match[0], entry: adminLocalizationEntry{key: key, value: value}})
 	}
-	return values, nil
+	for _, match := range adminLocaNestedAssignmentPattern.FindAllStringSubmatchIndex(text, -1) {
+		matchLanguage := adminLocaRegexpGroup(text, match, 1)
+		if language != "" && matchLanguage != language {
+			continue
+		}
+		prefix := parseAdminLocaStringExpression(`"` + adminLocaRegexpGroup(text, match, 3) + `"`)
+		value := prefix + parseAdminLocaStringExpression(adminLocaRegexpGroup(text, match, 6))
+		parsed = append(parsed, positionedAdminLocalizationEntry{
+			position: match[1],
+			entry:    adminLocalizationEntry{key: adminLocaRegexpGroup(text, match, 2), value: value},
+		})
+	}
+	sort.SliceStable(parsed, func(i, j int) bool { return parsed[i].position < parsed[j].position })
+
+	entries := make([]adminLocalizationEntry, 0)
+	indexes := map[string]int{}
+	for _, item := range parsed {
+		entry := item.entry
+		if index, ok := indexes[entry.key]; ok {
+			entries[index] = entry
+		} else {
+			indexes[entry.key] = len(entries)
+			entries = append(entries, entry)
+		}
+	}
+	return entries, nil
+}
+
+func adminLocaRegexpGroup(text string, match []int, group int) string {
+	start := match[group*2]
+	end := match[group*2+1]
+	if start < 0 || end < 0 {
+		return ""
+	}
+	return text[start:end]
+}
+
+func parseAdminLocaStringExpression(expression string) string {
+	var value strings.Builder
+	for _, literal := range adminLocaStringPattern.FindAllStringSubmatch(expression, -1) {
+		value.WriteString(unescapePHPDoubleQuotedString(literal[1]))
+	}
+	return value.String()
+}
+
+func unescapePHPDoubleQuotedString(value string) string {
+	var builder strings.Builder
+	for index := 0; index < len(value); index++ {
+		if value[index] != '\\' || index+1 >= len(value) {
+			builder.WriteByte(value[index])
+			continue
+		}
+		index++
+		switch value[index] {
+		case 'n':
+			builder.WriteByte('\n')
+		case 'r':
+			builder.WriteByte('\r')
+		case 't':
+			builder.WriteByte('\t')
+		case 'v':
+			builder.WriteByte('\v')
+		case 'e':
+			builder.WriteByte(0x1b)
+		case 'f':
+			builder.WriteByte('\f')
+		case '\\', '"', '$':
+			builder.WriteByte(value[index])
+		case 'x':
+			parsed, consumed := parseAdminLocaEscapedInteger(value[index+1:], 16, 2)
+			if consumed == 0 {
+				builder.WriteString(`\x`)
+				continue
+			}
+			builder.WriteByte(byte(parsed))
+			index += consumed
+		default:
+			if value[index] >= '0' && value[index] <= '7' {
+				parsed, consumed := parseAdminLocaEscapedInteger(value[index:], 8, 3)
+				builder.WriteByte(byte(parsed))
+				index += consumed - 1
+				continue
+			}
+			builder.WriteByte('\\')
+			builder.WriteByte(value[index])
+		}
+	}
+	return builder.String()
+}
+
+func parseAdminLocaEscapedInteger(value string, base int, limit int) (int64, int) {
+	consumed := 0
+	for consumed < len(value) && consumed < limit {
+		character := value[consumed]
+		valid := character >= '0' && character <= '7'
+		if base == 16 {
+			valid = valid || character == '8' || character == '9' || character >= 'a' && character <= 'f' || character >= 'A' && character <= 'F'
+		}
+		if !valid {
+			break
+		}
+		consumed++
+	}
+	if consumed == 0 {
+		return 0, 0
+	}
+	parsed, err := strconv.ParseInt(value[:consumed], base, 16)
+	if err != nil {
+		return 0, 0
+	}
+	return parsed, consumed
 }
 
 func adminLocaLanguage(directory string) string {
@@ -1695,6 +1847,23 @@ func (r AdminRepository) mutateAdminExpeditionSettings(ctx context.Context, expe
 	}
 	_, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET %s", expeditionTable, strings.Join(assignments, ", ")), args...)
 	if err != nil {
+		return nil, err
+	}
+	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+}
+
+func (r AdminRepository) mutateAdminColonySettings(ctx context.Context, colonyTable string, values map[string]int) (*domaingame.AdminActionIssue, error) {
+	assignments := make([]string, 0, len(adminColonySettingsColumns))
+	args := make([]any, 0, len(adminColonySettingsColumns))
+	for _, column := range adminColonySettingsColumns {
+		value, ok := values[column]
+		if !ok {
+			return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+		}
+		assignments = append(assignments, "`"+column+"` = ?")
+		args = append(args, value)
+	}
+	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET %s", colonyTable, strings.Join(assignments, ", ")), args...); err != nil {
 		return nil, err
 	}
 	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
@@ -3408,6 +3577,45 @@ func (r AdminRepository) loadAdminExpeditionSettings(ctx context.Context) (map[s
 	}
 	result := make(map[string]int, len(adminExpeditionColumns))
 	for index, column := range adminExpeditionColumns {
+		result[column] = values[index]
+	}
+	return result, rows.Err()
+}
+
+var adminColonySettingsColumns = []string{
+	"t1_a", "t1_b", "t1_c",
+	"t2_a", "t2_b", "t2_c",
+	"t3_a", "t3_b", "t3_c",
+	"t4_a", "t4_b", "t4_c",
+	"t5_a", "t5_b", "t5_c",
+}
+
+func (r AdminRepository) loadAdminColonySettings(ctx context.Context) (map[string]int, error) {
+	colonyTable, err := tableName(r.prefix, "coltab")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT %s FROM %s LIMIT 1", numericColumnsByName(adminColonySettingsColumns), colonyTable))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return nil, errors.New("admin colony settings not found")
+	}
+	values := make([]int, len(adminColonySettingsColumns))
+	dest := make([]any, len(values))
+	for index := range values {
+		dest[index] = &values[index]
+	}
+	if err := rows.Scan(dest...); err != nil {
+		return nil, err
+	}
+	result := make(map[string]int, len(adminColonySettingsColumns))
+	for index, column := range adminColonySettingsColumns {
 		result[column] = values[index]
 	}
 	return result, rows.Err()

@@ -124,6 +124,7 @@ type gameAdminSummary struct {
 	BotRows         []gameAdminBotRow           `json:"botRows,omitempty"`
 	ModRows         []gameAdminModInfo          `json:"modRows,omitempty"`
 	Localization    *gameAdminLocalization      `json:"localization,omitempty"`
+	ColonySettings  map[string]int              `json:"colonySettings,omitempty"`
 	CouponRows      []gameAdminCouponRow        `json:"couponRows,omitempty"`
 	CouponQueueRows []gameAdminCouponQueueRow   `json:"couponQueueRows,omitempty"`
 	CouponFrom      int                         `json:"couponFrom,omitempty"`
@@ -987,6 +988,7 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		BotRows:         botRows,
 		ModRows:         modRows,
 		Localization:    localization,
+		ColonySettings:  admin.ColonySettings,
 		CouponRows:      couponRows,
 		CouponQueueRows: couponQueueRows,
 		CouponFrom:      admin.CouponFrom,

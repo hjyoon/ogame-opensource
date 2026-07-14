@@ -37,7 +37,8 @@ const (
 	AdminActionRakSimRun     = "rak_sim"
 	AdminActionExpeditionSim = "sim"
 
-	AdminActionSettings = "settings"
+	AdminActionSettings    = "settings"
+	AdminActionChecksumFix = "fix"
 
 	AdminActionDatabaseCreate  = "create"
 	AdminActionDatabaseRestore = "restore"
@@ -97,6 +98,7 @@ type Admin struct {
 	BotRows         []AdminBotRow
 	ModRows         []AdminModInfo
 	Localization    *AdminLocalization
+	ColonySettings  map[string]int
 	CouponRows      []AdminCouponRow
 	CouponQueueRows []AdminCouponQueueRow
 	CouponFrom      int
@@ -579,7 +581,7 @@ func AdminModeRequiresAdmin(mode string) bool {
 
 func AdminMutationRequiresAdmin(mode string, action string) bool {
 	switch NormalizeAdminMode(mode) {
-	case "Bans", "Reports", "Broadcast", "BattleSim", "RakSim", "UserLogs":
+	case "Bans", "Reports", "Broadcast", "BattleSim", "RakSim", "UserLogs", "Checksum":
 		return false
 	case "Expedition":
 		return action == "settings"

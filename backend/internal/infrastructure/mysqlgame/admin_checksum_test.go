@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 )
 
 func TestAdminRepositoryLoadsChecksumGroupsFromLegacyGameDir(t *testing.T) {
@@ -102,6 +104,75 @@ func TestAdminChecksumFileErrors(t *testing.T) {
 	}
 	if _, err := repository.loadAdminChecksumGroups(context.Background()); err == nil {
 		t.Fatal("expected missing checksum source to fail")
+	}
+}
+
+func TestAdminRepositoryFixesChecksumBaselines(t *testing.T) {
+	root := t.TempDir()
+	writeAdminChecksumSources(t, root)
+	repository := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").WithLegacyGameDir(root)
+
+	issue, err := repository.fixAdminChecksums()
+	if err != nil {
+		t.Fatalf("fixAdminChecksums returned error: %v", err)
+	}
+	if issue == nil || issue.Code != domaingame.AdminIssueActionSaved {
+		t.Fatalf("unexpected checksum issue: %+v", issue)
+	}
+	groups, err := repository.loadAdminChecksumGroups(context.Background())
+	if err != nil {
+		t.Fatalf("load fixed checksum groups: %v", err)
+	}
+	for _, group := range groups {
+		for _, row := range group.Rows {
+			if row.Status != "OK" {
+				t.Fatalf("expected fixed checksum row, got %+v", row)
+			}
+		}
+	}
+}
+
+func TestSerializePHPChecksumMapMatchesLegacyPHP(t *testing.T) {
+	files := []string{"ainfo.php", "core/acs.php"}
+	checksums := map[string]string{
+		"ainfo.php":    "0123456789abcdef0123456789abcdef",
+		"core/acs.php": "abcdef0123456789abcdef0123456789",
+	}
+	expected := `a:2:{s:9:"ainfo.php";s:32:"0123456789abcdef0123456789abcdef";s:12:"core/acs.php";s:32:"abcdef0123456789abcdef0123456789";}`
+	if actual := string(serializePHPChecksumMap(files, checksums)); actual != expected {
+		t.Fatalf("unexpected PHP serialization:\nwant %s\n got %s", expected, actual)
+	}
+}
+
+func TestAdminRepositoryFixChecksumErrors(t *testing.T) {
+	repository := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").WithLegacyGameDir(t.TempDir())
+	if _, err := repository.fixAdminChecksums(); err == nil {
+		t.Fatal("expected missing checksum source error")
+	}
+
+	root := t.TempDir()
+	writeAdminChecksumSources(t, root)
+	if err := os.WriteFile(filepath.Join(root, "temp"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("write blocked temp path: %v", err)
+	}
+	repository = repository.WithLegacyGameDir(root)
+	if _, err := repository.fixAdminChecksums(); err == nil {
+		t.Fatal("expected checksum temp directory error")
+	}
+}
+
+func writeAdminChecksumSources(t *testing.T, root string) {
+	t.Helper()
+	for _, group := range adminChecksumGroups {
+		for _, name := range group.files {
+			path := filepath.Join(root, name)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatalf("create checksum source directory: %v", err)
+			}
+			if err := os.WriteFile(path, []byte("legacy "+name), 0o644); err != nil {
+				t.Fatalf("write checksum source: %v", err)
+			}
+		}
 	}
 }
 

@@ -50,6 +50,9 @@ func TestNewAdminNormalizesModeAndCopiesMenu(t *testing.T) {
 	if !NewAdmin(Overview{}, AdminViewer{Level: AdminLevelOperator}, "Bans").CanMutate("ban") {
 		t.Fatal("operators should keep legacy ban mutation access")
 	}
+	if !NewAdmin(Overview{}, AdminViewer{Level: AdminLevelOperator}, "Checksum").CanMutate(AdminActionChecksumFix) {
+		t.Fatal("operators should keep legacy checksum mutation access")
+	}
 	if NewAdmin(Overview{}, AdminViewer{Level: AdminLevelOperator}, "Expedition").CanMutate("settings") {
 		t.Fatal("operators must not mutate expedition settings")
 	}

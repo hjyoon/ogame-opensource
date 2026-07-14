@@ -422,9 +422,16 @@ func TestAdminRepositoryReadsLocalizationComparison(t *testing.T) {
 		}
 	}
 	source := `<?php
+$LOCA["en"]["ADM_ZETA"] = "Zeta";
 $LOCA["en"]["ADM_ALPHA"] = "Alpha";
 $LOCA["en"]["ADM_BETA"] = "Same";
-$LOCA["en"]["ADM_QUOTE"] = "Source \"quote\"";
+$LOCA["en"]["ADM_QUOTE" ] = "Source \"quote\"";
+$LOCA["en"]["NAME_".GID_RC_METAL] =
+  "Met" .
+  "al"
+;
+$LOCA["en"]["ADM_HEAD"] = "Head:".
+$LOCA["en"]["ADM_NEW"] = "New";
 ?>`
 	target := `<?php
 $LOCA["de"]["ADM_BETA"] = "Same";
@@ -453,15 +460,17 @@ $LOCA["de"]["ADM_QUOTE"] = "Ziel";
 	if loca == nil || loca.Source != "en_en" || loca.Target != "de_de" || len(loca.Languages) != 2 || len(loca.Files) != 2 {
 		t.Fatalf("unexpected localization payload: %+v", loca)
 	}
-	if loca.Files[0].Name != "admin.php" || loca.Files[0].TargetMissing || len(loca.Files[0].Rows) != 3 {
+	if loca.Files[0].Name != "admin.php" || loca.Files[0].TargetMissing || len(loca.Files[0].Rows) != 7 {
 		t.Fatalf("unexpected admin.php comparison: %+v", loca.Files[0])
 	}
-	if loca.Files[0].Rows[0].Key != "ADM_ALPHA" || loca.Files[0].Rows[0].Status != "missing" ||
-		loca.Files[0].Rows[1].Status != "same" || loca.Files[0].Rows[2].Source != `Source "quote"` {
+	if loca.Files[0].Rows[0].Key != "ADM_ZETA" || loca.Files[0].Rows[0].Status != "missing" ||
+		loca.Files[0].Rows[2].Status != "same" || loca.Files[0].Rows[3].Source != `Source "quote"` ||
+		loca.Files[0].Rows[4].Key != "NAME_700" || loca.Files[0].Rows[4].Source != "Metal" ||
+		loca.Files[0].Rows[5].Key != "ADM_NEW" || loca.Files[0].Rows[6].Source != "Head:New" {
 		t.Fatalf("unexpected localization rows: %+v", loca.Files[0].Rows)
 	}
-	if loca.Files[1].Name != "messages.php" || !loca.Files[1].TargetMissing {
-		t.Fatalf("expected missing target localization file, got %+v", loca.Files[1])
+	if loca.Files[1].Name != "messages.php" || loca.Files[1].TargetMissing || len(loca.Files[1].Rows) != 1 || loca.Files[1].Rows[0].Status != "missing" {
+		t.Fatalf("expected legacy-style missing target rows, got %+v", loca.Files[1])
 	}
 
 	empty, err := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "ogame_").WithLegacyGameDir(t.TempDir()).loadAdminLocalization("en_en", "de_de")
@@ -507,6 +516,24 @@ $LOCA["de"]["ADM_QUOTE"] = "Ziel";
 	}
 	if adminLocaLanguage("en_en") != "en" || adminLocaLanguage("custom") != "custom" {
 		t.Fatal("unexpected localization language normalization")
+	}
+	if actual := unescapePHPDoubleQuotedString("line 1\r\nline \\\"2\\\" \\q \\x41 \\101"); actual != "line 1\r\nline \"2\" \\q A A" {
+		t.Fatalf("unexpected PHP string decoding: %q", actual)
+	}
+	if actual := unescapePHPDoubleQuotedString(`\n\r\t\v\e\f\\\"\$`); actual != "\n\r\t\v\x1b\f\\\"$" {
+		t.Fatalf("unexpected PHP control escape decoding: %q", actual)
+	}
+	if actual := unescapePHPDoubleQuotedString(`plain\`); actual != `plain\` {
+		t.Fatalf("unexpected trailing slash decoding: %q", actual)
+	}
+	if actual := unescapePHPDoubleQuotedString(`\xZ`); actual != `\xZ` {
+		t.Fatalf("unexpected invalid hexadecimal decoding: %q", actual)
+	}
+	if value, consumed := parseAdminLocaEscapedInteger("z", 16, 2); value != 0 || consumed != 0 {
+		t.Fatalf("unexpected invalid escaped integer: value=%d consumed=%d", value, consumed)
+	}
+	if value, consumed := parseAdminLocaEscapedInteger("12", 1, 2); value != 0 || consumed != 0 {
+		t.Fatalf("unexpected invalid-base escaped integer: value=%d consumed=%d", value, consumed)
 	}
 }
 
@@ -3039,6 +3066,53 @@ func TestAdminRepositoryMutatesExpeditionSettings(t *testing.T) {
 	}
 }
 
+func TestAdminRepositoryMutatesColonySettings(t *testing.T) {
+	runner := &fakeGalaxyRunner{}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+	values := make(map[string]int, len(adminColonySettingsColumns)+1)
+	for index, column := range adminColonySettingsColumns {
+		values[column] = index + 10
+	}
+	values["ignored"] = 999
+
+	issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+		Mode: "ColonySettings", Action: domaingame.AdminActionSettings, Values: values,
+	})
+
+	if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 1 {
+		t.Fatalf("unexpected colony settings mutation issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+	}
+	call := runner.execCalls[0]
+	if !strings.Contains(call.sql, "UPDATE `ogame_coltab` SET `t1_a` = ?, `t1_b` = ?, `t1_c` = ?") ||
+		!strings.Contains(call.sql, "`t5_c` = ?") || len(call.args) != len(adminColonySettingsColumns) ||
+		call.args[0] != 10 || call.args[len(call.args)-1] != 24 {
+		t.Fatalf("unexpected colony settings update: %+v", call)
+	}
+}
+
+func TestAdminRepositoryColonySettingsEdges(t *testing.T) {
+	runner := &fakeGalaxyRunner{}
+	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+	issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+		Mode: "ColonySettings", Action: domaingame.AdminActionSettings, Values: map[string]int{"t1_a": 1},
+	})
+	if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || len(runner.execCalls) != 0 {
+		t.Fatalf("incomplete colony settings should be a no-op, issue=%+v err=%v execs=%+v", issue, err, runner.execCalls)
+	}
+
+	runner = &fakeGalaxyRunner{execErrs: []error{errors.New("colony update failed")}}
+	repository = NewAdminRepositoryWithQueryer(runner, "ogame_")
+	values := make(map[string]int, len(adminColonySettingsColumns))
+	for _, column := range adminColonySettingsColumns {
+		values[column] = 1
+	}
+	if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
+		Mode: "ColonySettings", Action: domaingame.AdminActionSettings, Values: values,
+	}); err == nil || !strings.Contains(err.Error(), "colony update failed") {
+		t.Fatalf("expected colony settings update error, got %v", err)
+	}
+}
+
 func TestAdminRepositoryExpeditionSettingsEdges(t *testing.T) {
 	t.Run("no allowed values", func(t *testing.T) {
 		runner := &fakeGalaxyRunner{}
@@ -3532,6 +3606,51 @@ func TestAdminRepositoryReadsExpeditionSettings(t *testing.T) {
 	lastSQL := queryer.calls[len(queryer.calls)-1].sql
 	if !strings.Contains(lastSQL, "`ogame_exptab`") || !strings.Contains(lastSQL, "`dm_factor`") || !strings.Contains(lastSQL, "`limit_max`") {
 		t.Fatalf("expected expedition settings query, got %s", lastSQL)
+	}
+}
+
+func TestAdminRepositoryReadsColonySettings(t *testing.T) {
+	values := make([]any, len(adminColonySettingsColumns))
+	for index := range values {
+		values[index] = index + 1
+	}
+	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
+		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
+		fakeQueryResult{rows: fakeRowsFromValues(values)},
+	)}
+	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
+
+	admin, err := repository.GetAdmin(context.Background(), appgame.AdminQuery{PlayerID: 42, PlanetID: 99, Mode: "ColonySettings"})
+
+	if err != nil || admin.ColonySettings["t1_a"] != 1 || admin.ColonySettings["t5_c"] != 15 {
+		t.Fatalf("unexpected colony settings=%+v err=%v", admin.ColonySettings, err)
+	}
+	lastSQL := queryer.calls[len(queryer.calls)-1].sql
+	if !strings.Contains(lastSQL, "`ogame_coltab`") || !strings.Contains(lastSQL, "`t1_a`") || !strings.Contains(lastSQL, "`t5_c`") {
+		t.Fatalf("expected colony settings query, got %s", lastSQL)
+	}
+}
+
+func TestAdminRepositoryColonySettingsReadErrors(t *testing.T) {
+	repository := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_")
+	if _, err := repository.loadAdminColonySettings(context.Background()); err == nil || !strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected colony settings prefix error, got %v", err)
+	}
+	repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{err: errors.New("colony query failed")}}}, "ogame_")
+	if _, err := repository.loadAdminColonySettings(context.Background()); err == nil || !strings.Contains(err.Error(), "colony query failed") {
+		t.Fatalf("expected colony settings query error, got %v", err)
+	}
+	repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}, "ogame_")
+	if _, err := repository.loadAdminColonySettings(context.Background()); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected missing colony settings error, got %v", err)
+	}
+	repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{1})}}}, "ogame_")
+	if _, err := repository.loadAdminColonySettings(context.Background()); err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
+		t.Fatalf("expected colony settings scan error, got %v", err)
+	}
+	repository = NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsError(errors.New("colony rows failed"))}}}, "ogame_")
+	if _, err := repository.loadAdminColonySettings(context.Background()); err == nil || !strings.Contains(err.Error(), "colony rows failed") {
+		t.Fatalf("expected colony settings rows error, got %v", err)
 	}
 }
 

@@ -15,7 +15,8 @@ Generated IDs and wall-clock deltas are normalized; durable effects remain exact
 | Coupons | 12 | list order, create/delete, periodic queue values/timing, access | PASS |
 | Database | 11 | create/restore lifecycle, delete, invalid/partial/path guards, access | PASS |
 | Bots/BotEdit | 18 | list/add/stop, names, strategy CRUD/import/export, access | PASS |
-| **Total** | **107** | deterministic PHP/Go DB and HTTP contracts | **PASS** |
+| Colony/Checksum/Loca | 13 | all colony values, serialized baselines, all localization rows/order/colors | PASS |
+| **Total** | **120** | deterministic PHP/Go DB, files and HTTP contracts | **PASS** |
 
 Queue/Fleetlogs cases include missing-target no-ops and operator rejection. Recall
 compares cargo, ships, fuel, mission, origin/target, duration, priority, fleetlog,
@@ -34,13 +35,14 @@ Database runs one non-empty backup at a time, restores a post-backup marker, and
 deletes the file immediately. Go rejects incomplete schemas before destructive SQL.
 Bots compares account, planet, IP log, variables, AI queue, strategy source and
 user-count effects; generated IDs, passwords, IPs, times and temperature are normalized.
+Colony covers all 15 values and unsigned boundaries. Checksum compares all 130 rows
+and exact PHP serialization. Loca compares 2,090 English rows and missing JP files.
 
 ## Pending Groups
 
 - Battle/Rocket/Expedition simulator calculations.
 - CRON execution.
 - Users and Planets full edit/create/destroy operations.
-- Loca, checksums and colony settings.
 
 PHP Mods are excluded by project policy. A group is removed from this list only
 after normal, boundary, rejection, no-op and rollback/completion cases are added
@@ -57,6 +59,9 @@ testing/e2e/run-golang-admin-audit-differential-e2e.sh
 testing/e2e/run-golang-admin-coupons-differential-e2e.sh
 testing/e2e/run-golang-admin-database-differential-e2e.sh
 testing/e2e/run-golang-admin-bots-differential-e2e.sh
+testing/e2e/run-golang-admin-colony-settings-differential-e2e.sh
+testing/e2e/run-golang-admin-checksum-differential-e2e.sh
+testing/e2e/run-golang-admin-loca-differential-e2e.sh
 ```
 
 All are included in `testing/e2e/run-golang-migration-qa.sh`.

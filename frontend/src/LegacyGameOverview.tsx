@@ -201,6 +201,9 @@ export type GameAdminAction =
       action: "create";
     }
   | {
+      action: "fix";
+    }
+  | {
       action: "restore" | "delete";
       fileName: string;
     };
@@ -1401,6 +1404,7 @@ type GameAdmin = {
   botRows?: GameAdminBotRow[];
   modRows?: AdminModInfo[];
   localization?: GameAdminLocalization;
+  colonySettings?: Record<string, number>;
   couponRows?: GameAdminCouponRow[];
   couponQueueRows?: GameAdminCouponQueueRow[];
   couponFrom?: number;
@@ -3820,7 +3824,7 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "ColonySettings") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminColonySettingsTable />
+        <AdminColonySettingsTable admin={admin} onAdminAction={onAdminAction} />
       </AdminModeShell>
     );
   }
@@ -3903,7 +3907,7 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "Checksum") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminChecksumTable groups={admin.checksumGroups ?? []} />
+        <AdminChecksumTable groups={admin.checksumGroups ?? []} onAdminAction={onAdminAction} />
       </AdminModeShell>
     );
   }
@@ -4589,11 +4593,30 @@ function adminCouponQueuePrintR(row: GameAdminCouponQueueRow) {
   return `Array ( [task_id] => ${row.id} [owner_id] => 99999 [type] => Coupon [sub_id] => ${row.amount} [obj_id] => ${packedCriteria} [level] => ${row.periodicDays} [start] => ${row.start} [end] => ${row.end} [prio] => ${row.priority} )`;
 }
 
-function AdminColonySettingsTable() {
-  return React.createElement("span", { dangerouslySetInnerHTML: { __html: adminColonySettingsHTML() } });
+function AdminColonySettingsTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
+  const handleSubmit = (event: React.FormEvent<HTMLSpanElement>) => {
+    if (!(event.target instanceof HTMLFormElement)) {
+      return;
+    }
+    event.preventDefault();
+    const data = new FormData(event.target);
+    const values: Record<string, number> = {};
+    for (const name of adminColonySettingNames) {
+      values[name] = legacyFormInt(data.get(name), 0);
+    }
+    onAdminAction({ action: "settings", values });
+  };
+  return React.createElement("span", {
+    dangerouslySetInnerHTML: { __html: adminColonySettingsHTML(admin.colonySettings ?? {}) },
+    onSubmit: handleSubmit
+  });
 }
 
-function adminColonySettingsHTML(): string {
+const adminColonySettingNames = [
+  "t1_a", "t1_b", "t1_c", "t2_a", "t2_b", "t2_c", "t3_a", "t3_b", "t3_c", "t4_a", "t4_b", "t4_c", "t5_a", "t5_b", "t5_c"
+] as const;
+
+function adminColonySettingsHTML(settings: Record<string, number>): string {
   const rows = [
     ["Colonies in positions 1-3", ["50", "120", "72"], ["t1_a", "t1_b", "t1_c"]],
     ["Colonies in positions 4-6", ["50", "150", "120"], ["t2_a", "t2_b", "t2_c"]],
@@ -4607,7 +4630,8 @@ function adminColonySettingsHTML(): string {
   for (const [label, values, names] of rows) {
     html += `<tr><th>${legacyHTMLText(label)}</th><th>\n`;
     values.forEach((value, index) => {
-      html += `    <input type="text" name="${names[index]}" maxlength="3" size="3" value="${value}" />\n`;
+      const name = names[index];
+      html += `    <input type="text" name="${name}" maxlength="3" size="3" value="${settings[name] ?? value}" />\n`;
     });
     html += "</th></tr>\n\n";
   }
@@ -6002,7 +6026,7 @@ function adminChecked(checked: boolean): string {
   return checked ? "checked" : "";
 }
 
-function AdminChecksumTable({ groups }: { groups: GameAdminChecksumGroup[] }) {
+function AdminChecksumTable({ groups, onAdminAction }: { groups: GameAdminChecksumGroup[]; onAdminAction: (action: GameAdminAction) => void }) {
   return (
     <>
       {groups.map((group) => (
@@ -6031,7 +6055,14 @@ function AdminChecksumTable({ groups }: { groups: GameAdminChecksumGroup[] }) {
         </React.Fragment>
       ))}
       <br />
-      <form action={adminModeHref("Checksum")} method="POST" onSubmit={(event) => event.preventDefault()}>
+      <form
+        action={adminModeHref("Checksum")}
+        method="POST"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onAdminAction({ action: "fix" });
+        }}
+      >
         <input type="submit" value="Fix Checksums" />
       </form>
     </>

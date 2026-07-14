@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
 
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 )
@@ -231,4 +233,51 @@ func md5FileHex(path string) (string, error) {
 	}
 	sum := md5.Sum(data)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func (r AdminRepository) fixAdminChecksums() (*domaingame.AdminActionIssue, error) {
+	payloads := make(map[string][]byte, len(adminChecksumGroups))
+	for _, group := range adminChecksumGroups {
+		checksums := make(map[string]string, len(group.files))
+		for _, name := range group.files {
+			checksum, err := md5FileHex(filepath.Join(r.legacyGameDir, name))
+			if err != nil {
+				return nil, err
+			}
+			checksums[name] = checksum
+		}
+		payloads[group.baselineFile] = serializePHPChecksumMap(group.files, checksums)
+	}
+
+	tempDir := filepath.Join(r.legacyGameDir, "temp")
+	if err := os.MkdirAll(tempDir, 0o755); err != nil {
+		return nil, err
+	}
+	for _, group := range adminChecksumGroups {
+		if err := os.WriteFile(filepath.Join(tempDir, group.baselineFile), payloads[group.baselineFile], 0o644); err != nil {
+			return nil, err
+		}
+	}
+	return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
+}
+
+func serializePHPChecksumMap(files []string, checksums map[string]string) []byte {
+	var builder strings.Builder
+	builder.WriteString("a:")
+	builder.WriteString(strconv.Itoa(len(files)))
+	builder.WriteString(":{")
+	for _, name := range files {
+		checksum := checksums[name]
+		builder.WriteString("s:")
+		builder.WriteString(strconv.Itoa(len(name)))
+		builder.WriteString(":\"")
+		builder.WriteString(name)
+		builder.WriteString("\";s:")
+		builder.WriteString(strconv.Itoa(len(checksum)))
+		builder.WriteString(":\"")
+		builder.WriteString(checksum)
+		builder.WriteString("\";")
+	}
+	builder.WriteByte('}')
+	return []byte(builder.String())
 }
