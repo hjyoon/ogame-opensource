@@ -145,6 +145,13 @@ func ResolveExpedition(input ExpeditionInput, random func(int) int) (ExpeditionO
 	return outcome, err
 }
 
+func ResolveExpeditionEvent(settings ExpeditionSettings, visitCounter int, holdHours int, random func(int) int) (ExpeditionEvent, error) {
+	if random == nil {
+		return ExpeditionNothing, errors.New("expedition random source unavailable")
+	}
+	return expeditionEvent(settings, visitCounter, holdHours, random)
+}
+
 func expeditionEvent(settings ExpeditionSettings, visitCounter int, holdHours int, random func(int) int) (ExpeditionEvent, error) {
 	success, err := expeditionRoll(random, 100)
 	if err != nil || success >= settings.ChanceSuccess+holdHours {

@@ -36,6 +36,7 @@ type AdminRepository struct {
 	now           func() time.Time
 	couponCode    func() (string, error)
 	botPassword   func() (string, error)
+	randomIntN    func(int) int
 }
 
 func NewAdminRepository(db *sql.DB, prefix string) AdminRepository {
@@ -50,6 +51,7 @@ func NewAdminRepository(db *sql.DB, prefix string) AdminRepository {
 		now:           time.Now,
 		couponCode:    randomCouponCode,
 		botPassword:   randomBotPassword,
+		randomIntN:    randomAdminIntN,
 	}
 }
 
@@ -68,6 +70,7 @@ func NewAdminRepositoryWithQueryer(queryer Queryer, prefix string) AdminReposito
 		now:           time.Now,
 		couponCode:    randomCouponCode,
 		botPassword:   randomBotPassword,
+		randomIntN:    randomAdminIntN,
 	}
 }
 
@@ -378,10 +381,10 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 		return r.mutateAdminBattleSim(ctx, query)
 	}
 	if mode == "RakSim" {
-		return domaingame.AdminIssueWithMessage(domaingame.AdminIssueActionSaved, "Missile attack simulator completed. Defense result rendered."), nil
+		return r.mutateAdminRakSim(query), nil
 	}
 	if mode == "Expedition" && query.Action == domaingame.AdminActionExpeditionSim {
-		return domaingame.AdminIssueWithMessage(domaingame.AdminIssueActionSaved, "Expedition simulation result myChart generated."), nil
+		return r.mutateAdminExpeditionSim(ctx, query)
 	}
 	if mode == "Queue" {
 		queueTable, err := tableName(r.prefix, "queue")
@@ -1200,6 +1203,72 @@ func (r AdminRepository) mutateAdminBattleSim(ctx context.Context, query appgame
 		return nil, err
 	}
 	return domaingame.AdminIssueWithMessage(domaingame.AdminIssueActionSaved, "Battle report simulator completed."), nil
+}
+
+func (r AdminRepository) mutateAdminRakSim(query appgame.AdminMutationQuery) *domaingame.AdminActionIssue {
+	target := domaingame.DefenseCounts{}
+	values := make(map[string]int, len(domaingame.DefenseIDs())+4)
+	for _, name := range []string{"a_weap", "d_armor", "anz", "pziel"} {
+		values[name] = query.Values[name]
+	}
+	for _, id := range domaingame.DefenseIDs() {
+		value := query.Values[fmt.Sprintf("d_%d", id)]
+		target[id] = value
+		values[fmt.Sprintf("d_%d", id)] = value
+	}
+	result := domaingame.ResolveMissileAttack(domaingame.MissileAttackInput{
+		Amount:           values["anz"],
+		PrimaryDefenseID: values["pziel"],
+		Target:           target,
+		AttackerWeapon:   values["a_weap"],
+		DefenderArmour:   values["d_armor"],
+	})
+	for _, id := range domaingame.DefenseIDs() {
+		values[fmt.Sprintf("d_%d", id)] = result.Target[id]
+	}
+	issue := domaingame.AdminIssueWithMessage(domaingame.AdminIssueActionSaved, "Missile attack simulator completed.")
+	issue.Result = &domaingame.AdminActionResult{Values: values}
+	return issue
+}
+
+func (r AdminRepository) mutateAdminExpeditionSim(ctx context.Context, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
+	values, err := r.loadAdminExpeditionSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	settings := adminExpeditionSettings(values)
+	count := max(0, query.Values["expcount"])
+	series := make([]int, int(domaingame.ExpeditionTrader)+1)
+	random := r.randomIntN
+	if random == nil {
+		random = randomAdminIntN
+	}
+	for range count {
+		event, err := domaingame.ResolveExpeditionEvent(settings, 0, 1, random)
+		if err != nil {
+			return nil, err
+		}
+		series[int(event)]++
+	}
+	issue := domaingame.AdminIssueWithMessage(domaingame.AdminIssueActionSaved, "Expedition simulation completed.")
+	issue.Result = &domaingame.AdminActionResult{Values: map[string]int{"expcount": query.Values["expcount"]}, Series: series}
+	return issue, nil
+}
+
+func adminExpeditionSettings(values map[string]int) domaingame.ExpeditionSettings {
+	settings := domaingame.ExpeditionSettings{
+		ChanceSuccess: values["chance_success"], DepletedMin: values["depleted_min"], DepletedMed: values["depleted_med"], DepletedMax: values["depleted_max"],
+		ChanceDepletedMin: values["chance_depleted_min"], ChanceDepletedMed: values["chance_depleted_med"], ChanceDepletedMax: values["chance_depleted_max"],
+		ChanceAlien: values["chance_alien"], ChancePirates: values["chance_pirates"], ChanceDM: values["chance_dm"], ChanceLost: values["chance_lost"],
+		ChanceDelay: values["chance_delay"], ChanceAccel: values["chance_accel"], ChanceRes: values["chance_res"], ChanceFleet: values["chance_fleet"], DMFactor: values["dm_factor"],
+		PointLimitMax: values["limit_max"],
+	}
+	for index := range settings.ScoreCaps {
+		number := index + 1
+		settings.ScoreCaps[index] = values[fmt.Sprintf("score_cap%d", number)]
+		settings.PointLimits[index] = values[fmt.Sprintf("limit_cap%d", number)]
+	}
+	return settings
 }
 
 func (r AdminRepository) mutateAdminUniverseSettings(ctx context.Context, uniTable string, usersTable string, settings *domaingame.AdminUniverseMutation) (*domaingame.AdminActionIssue, error) {
@@ -2384,6 +2453,17 @@ func randomCouponCode() (string, error) {
 		bytes[index] = alphabet[value.Int64()]
 	}
 	return fmt.Sprintf("%s-%s-%s-%s-%s", bytes[0:4], bytes[4:8], bytes[8:12], bytes[12:16], bytes[16:20]), nil
+}
+
+func randomAdminIntN(maximum int) int {
+	if maximum <= 0 {
+		return 0
+	}
+	value, err := rand.Int(rand.Reader, big.NewInt(int64(maximum)))
+	if err != nil {
+		return 0
+	}
+	return int(value.Int64())
 }
 
 func uniquePositiveIDs(ids []int) []int {

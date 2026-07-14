@@ -121,6 +121,14 @@ type AdminMenuItem struct {
 type AdminActionIssue struct {
 	Code    string
 	Message string
+	Result  *AdminActionResult
+}
+
+type AdminActionResult struct {
+	Values map[string]int
+	Series []int
+	HTML   string
+	ItemID int
 }
 
 type AdminMessageRow struct {

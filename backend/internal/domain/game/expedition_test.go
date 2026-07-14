@@ -34,6 +34,16 @@ func TestExpeditionEventMatchesLegacyThresholds(t *testing.T) {
 	}
 }
 
+func TestResolveExpeditionEventValidatesAndDelegates(t *testing.T) {
+	if _, err := ResolveExpeditionEvent(ExpeditionSettings{}, 0, 1, nil); err == nil {
+		t.Fatal("expected nil random source to fail")
+	}
+	event, err := ResolveExpeditionEvent(ExpeditionSettings{ChanceSuccess: 100, ChanceAlien: 0}, 0, 1, expeditionRandomSequence(t, 0, 0))
+	if err != nil || event != ExpeditionAliens {
+		t.Fatalf("unexpected event=%d err=%v", event, err)
+	}
+}
+
 func TestResolveExpeditionDarkMatterTiers(t *testing.T) {
 	settings := expeditionTestSettings()
 	settings.DMFactor = 3

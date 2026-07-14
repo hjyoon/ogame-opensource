@@ -19,8 +19,16 @@ type gameAdminResponse struct {
 }
 
 type gameAdminActionIssue struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code    string                 `json:"code"`
+	Message string                 `json:"message"`
+	Result  *gameAdminActionResult `json:"result,omitempty"`
+}
+
+type gameAdminActionResult struct {
+	Values map[string]int `json:"values,omitempty"`
+	Series []int          `json:"series,omitempty"`
+	HTML   string         `json:"html,omitempty"`
+	ItemID int            `json:"itemId,omitempty"`
 }
 
 type gameAdminMutationRequest struct {
@@ -1299,5 +1307,9 @@ func toGameAdminActionIssue(issue *domaingame.AdminActionIssue) *gameAdminAction
 	if issue == nil {
 		return nil
 	}
-	return &gameAdminActionIssue{Code: issue.Code, Message: issue.Message}
+	result := (*gameAdminActionResult)(nil)
+	if issue.Result != nil {
+		result = &gameAdminActionResult{Values: issue.Result.Values, Series: issue.Result.Series, HTML: issue.Result.HTML, ItemID: issue.Result.ItemID}
+	}
+	return &gameAdminActionIssue{Code: issue.Code, Message: issue.Message, Result: result}
 }

@@ -1932,28 +1932,71 @@ func TestAdminRepositoryMutatesAdminSimulators(t *testing.T) {
 		}
 	})
 
-	t.Run("rak and expedition simulators render legacy result markers", func(t *testing.T) {
-		runner := &fakeGalaxyRunner{}
+	t.Run("rak and expedition simulators return calculated results", func(t *testing.T) {
+		expeditionValues := make([]any, len(adminExpeditionColumns))
+		for index, column := range adminExpeditionColumns {
+			expeditionValues[index] = 0
+			if column == "chance_success" {
+				expeditionValues[index] = 100
+			}
+		}
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(expeditionValues)}}}}
 		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		repository.randomIntN = func(int) int { return 0 }
 
 		rakIssue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
 			Mode:   "RakSim",
 			Action: domaingame.AdminActionRakSimRun,
+			Values: map[string]int{"anz": 3, "pziel": 401, "d_401": 100, "d_502": 2},
 		})
-		if err != nil || rakIssue == nil || !strings.Contains(rakIssue.Message, "Missile attack") || !strings.Contains(rakIssue.Message, "Defense") {
+		if err != nil || rakIssue == nil || rakIssue.Result == nil || rakIssue.Result.Values["d_502"] != 0 || rakIssue.Result.Values["d_401"] != 40 {
 			t.Fatalf("unexpected rak simulator issue=%+v err=%v", rakIssue, err)
 		}
 
 		expeditionIssue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
 			Mode:   "Expedition",
 			Action: domaingame.AdminActionExpeditionSim,
+			Values: map[string]int{"expcount": 3},
 		})
-		if err != nil || expeditionIssue == nil || !strings.Contains(expeditionIssue.Message, "Expedition simulation result") || !strings.Contains(expeditionIssue.Message, "myChart") {
+		if err != nil || expeditionIssue == nil || expeditionIssue.Result == nil || len(expeditionIssue.Result.Series) != 10 || expeditionIssue.Result.Series[domaingame.ExpeditionAliens] != 3 {
 			t.Fatalf("unexpected expedition simulator issue=%+v err=%v", expeditionIssue, err)
 		}
 
 		if len(runner.execCalls) != 0 {
-			t.Fatalf("rak and expedition simulator markers should not write, got %+v", runner.execCalls)
+			t.Fatalf("rak and expedition simulators should not write, got %+v", runner.execCalls)
+		}
+	})
+
+	t.Run("expedition simulator propagates settings errors", func(t *testing.T) {
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("expedition settings failed")}}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Expedition", Action: domaingame.AdminActionExpeditionSim})
+		if err == nil || !strings.Contains(err.Error(), "expedition settings failed") {
+			t.Fatalf("unexpected expedition error: %v", err)
+		}
+	})
+
+	t.Run("expedition simulator validates random source and default fallback", func(t *testing.T) {
+		settingsRow := make([]any, len(adminExpeditionColumns))
+		for index, column := range adminExpeditionColumns {
+			settingsRow[index] = 0
+			if column == "chance_success" {
+				settingsRow[index] = 100
+			}
+		}
+		runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+			{rows: fakeRowsFromValues(settingsRow)},
+			{rows: fakeRowsFromValues(settingsRow)},
+		}}}
+		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		repository.randomIntN = func(maximum int) int { return maximum }
+		if _, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Expedition", Action: domaingame.AdminActionExpeditionSim, Values: map[string]int{"expcount": 1}}); err == nil {
+			t.Fatal("expected invalid random result to fail")
+		}
+		repository.randomIntN = nil
+		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{Mode: "Expedition", Action: domaingame.AdminActionExpeditionSim, Values: map[string]int{"expcount": -1}})
+		if err != nil || issue == nil || issue.Result == nil || len(issue.Result.Series) != 10 {
+			t.Fatalf("unexpected zero-count fallback result issue=%+v err=%v", issue, err)
 		}
 	})
 
@@ -1972,6 +2015,12 @@ func TestAdminRepositoryMutatesAdminSimulators(t *testing.T) {
 			t.Fatalf("expected battle simulator insert error, got %v", err)
 		}
 	})
+}
+
+func TestRandomAdminIntNBounds(t *testing.T) {
+	if randomAdminIntN(0) != 0 || randomAdminIntN(-1) != 0 || randomAdminIntN(1) != 0 {
+		t.Fatal("random admin source escaped requested bounds")
+	}
 }
 
 func TestAdminRepositoryMutatesUniverseSettings(t *testing.T) {

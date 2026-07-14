@@ -16,7 +16,8 @@ Generated IDs and wall-clock deltas are normalized; durable effects remain exact
 | Database | 11 | create/restore lifecycle, delete, invalid/partial/path guards, access | PASS |
 | Bots/BotEdit | 18 | list/add/stop, names, strategy CRUD/import/export, access | PASS |
 | Colony/Checksum/Loca | 13 | all colony values, serialized baselines, all localization rows/order/colors | PASS |
-| **Total** | **120** | deterministic PHP/Go DB, files and HTTP contracts | **PASS** |
+| Simulators | 11 | Rocket defenses/targeting and deterministic Expedition result buckets | PASS |
+| **Total** | **131** | deterministic PHP/Go DB, files and HTTP contracts | **PASS** |
 
 Queue/Fleetlogs cases include missing-target no-ops and operator rejection. Recall
 compares cargo, ships, fuel, mission, origin/target, duration, priority, fleetlog,
@@ -37,10 +38,12 @@ Bots compares account, planet, IP log, variables, AI queue, strategy source and
 user-count effects; generated IDs, passwords, IPs, times and temperature are normalized.
 Colony covers all 15 values and unsigned boundaries. Checksum compares all 130 rows
 and exact PHP serialization. Loca compares 2,090 English rows and missing JP files.
+Simulators compare every rendered Rocket value for empty, interception, targeted,
+sweep and Operator cases, plus all ten Expedition buckets under forced outcomes.
 
 ## Pending Groups
 
-- Battle/Rocket/Expedition simulator calculations.
+- Battle simulator calculations and report generation.
 - CRON execution.
 - Users and Planets full edit/create/destroy operations.
 
@@ -62,6 +65,7 @@ testing/e2e/run-golang-admin-bots-differential-e2e.sh
 testing/e2e/run-golang-admin-colony-settings-differential-e2e.sh
 testing/e2e/run-golang-admin-checksum-differential-e2e.sh
 testing/e2e/run-golang-admin-loca-differential-e2e.sh
+testing/e2e/run-golang-admin-simulators-differential-e2e.sh
 ```
 
 All are included in `testing/e2e/run-golang-migration-qa.sh`.

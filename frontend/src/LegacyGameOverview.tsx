@@ -78,8 +78,19 @@ export type GameAllianceStatus = {
 export type GameAdminStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
-  actionIssue?: { code: string; message: string };
+  actionIssue?: GameAdminActionIssue;
   admin?: GameAdmin;
+};
+
+type GameAdminActionIssue = {
+  code: string;
+  message: string;
+  result?: {
+    values?: Record<string, number>;
+    series?: number[];
+    html?: string;
+    itemId?: number;
+  };
 };
 
 type GameAdminUniverseMutation = {
@@ -133,7 +144,9 @@ export type GameAdminAction =
       universeSettings: GameAdminUniverseMutation;
     }
   | {
-      action: "sim";
+      action: "sim" | "rak_sim" | "battle_sim";
+      values: Record<string, number>;
+      text?: string;
     }
   | {
       action: "broadcast_send";
@@ -2241,7 +2254,7 @@ export function LegacyGameOverview({
   const adminActionIssue = adminStatus?.authenticated ? adminStatus.actionIssue : undefined;
   const adminAccessDenied = adminActionIssue?.code === "access_denied";
   const showAdminActionIssue =
-    route.key === "admin" && adminActionIssue && !(admin?.mode === "Uni" && adminActionIssue.code === "action_saved");
+    route.key === "admin" && adminActionIssue && !adminActionIssue.result && !(admin?.mode === "Uni" && adminActionIssue.code === "action_saved");
   const adminPageMessage = showAdminActionIssue && adminActionIssue.code === "action_saved" ? adminActionIssue.message : "";
   const adminPageError = showAdminActionIssue && adminActionIssue.code !== "action_saved" ? adminActionIssue.message : "";
   const research = researchStatus?.authenticated ? researchStatus.research : undefined;
@@ -2678,7 +2691,7 @@ export function LegacyGameOverview({
         {overview && route.key === "admin" && !admin && !adminError && !adminIssue && !adminActionIssue ? (
           <LegacyMessage tone="neutral" text="Loading admin..." />
         ) : null}
-        {admin && route.key === "admin" && !adminAccessDenied ? <AdminTable admin={admin} onAdminAction={onAdminAction} /> : null}
+        {admin && route.key === "admin" && !adminAccessDenied ? <AdminTable actionIssue={adminActionIssue} admin={admin} onAdminAction={onAdminAction} /> : null}
         {overview && route.key === "research" && !research && !researchError && !researchIssue ? (
           <LegacyMessage tone="neutral" text="Loading research..." />
         ) : null}
@@ -3785,7 +3798,7 @@ function officerRecruitHref(officerID: number, days: number) {
   return gameRouteURL("/game/officers", `?${query.toString()}`);
 }
 
-function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
+function AdminTable({ actionIssue, admin, onAdminAction }: { actionIssue?: GameAdminActionIssue; admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
   if (admin.mode === "Bans") {
     return (
       <AdminModeShell admin={admin}>
@@ -3921,14 +3934,14 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "BattleSim") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminBattleSimTable />
+        <AdminBattleSimTable onAdminAction={onAdminAction} />
       </AdminModeShell>
     );
   }
   if (admin.mode === "Expedition") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminExpeditionTable admin={admin} onAdminAction={onAdminAction} />
+        <AdminExpeditionTable actionIssue={actionIssue} admin={admin} onAdminAction={onAdminAction} />
       </AdminModeShell>
     );
   }
@@ -3949,7 +3962,7 @@ function AdminTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction:
   if (admin.mode === "RakSim") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminRakSimTable />
+        <AdminRakSimTable actionIssue={actionIssue} onAdminAction={onAdminAction} />
       </AdminModeShell>
     );
   }
@@ -6150,7 +6163,7 @@ const adminRakSimDefenseRows = [
   { id: 503, name: "Interplanetary Missiles", missileTarget: false }
 ];
 
-function AdminBattleSimTable() {
+function AdminBattleSimTable({ onAdminAction }: { onAdminAction: (action: GameAdminAction) => void }) {
   const handleBattleSimEvent = (event: React.SyntheticEvent<HTMLDivElement>) => {
     adminBattleSimHandleEventTarget(event.target);
   };
@@ -6185,7 +6198,22 @@ function AdminBattleSimTable() {
       legacyWindow.toint = previous.toint;
     };
   }, []);
-  return <div dangerouslySetInnerHTML={{ __html: adminBattleSimHTML() }} onChange={handleBattleSimEvent} onInput={handleBattleSimEvent} onKeyUp={handleBattleSimEvent} />;
+  const handleSubmit = (event: React.FormEvent<HTMLDivElement>) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) {
+      return;
+    }
+    event.preventDefault();
+    const data = new FormData(form);
+    const values: Record<string, number> = {};
+    for (const [name, value] of data.entries()) {
+      if (name !== "battle_source") {
+        values[name] = legacyFormInt(value, 0);
+      }
+    }
+    onAdminAction({ action: "battle_sim", values, text: String(data.get("battle_source") ?? "") });
+  };
+  return <div dangerouslySetInnerHTML={{ __html: adminBattleSimHTML() }} onChange={handleBattleSimEvent} onInput={handleBattleSimEvent} onKeyUp={handleBattleSimEvent} onSubmit={handleSubmit} />;
 }
 
 function adminBattleSimHTML(): string {
@@ -6422,8 +6450,7 @@ function adminBattleSimOnChangeTechValue(attackerValue: number): void {
   }
 }
 
-function AdminExpeditionTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
-  const [showSimulationResult, setShowSimulationResult] = React.useState(false);
+function AdminExpeditionTable({ actionIssue, admin, onAdminAction }: { actionIssue?: GameAdminActionIssue; admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
   if (!admin.expedition) {
     return null;
   }
@@ -6435,8 +6462,8 @@ function AdminExpeditionTable({ admin, onAdminAction }: { admin: GameAdmin; onAd
     event.preventDefault();
     const action = new URL(form.action, window.location.href).searchParams.get("action") ?? "";
     if (action === "sim") {
-      setShowSimulationResult(true);
-      onAdminAction({ action: "sim" });
+      const data = new FormData(form);
+      onAdminAction({ action: "sim", values: { expcount: legacyFormInt(data.get("expcount"), 0) } });
       return;
     }
     if (action !== "settings") {
@@ -6453,18 +6480,120 @@ function AdminExpeditionTable({ admin, onAdminAction }: { admin: GameAdmin; onAd
     <>
       <div
         className="legacy-admin-expedition-table"
-        dangerouslySetInnerHTML={{ __html: adminExpeditionHTML(admin.expedition) }}
+        dangerouslySetInnerHTML={{ __html: adminExpeditionHTML(admin.expedition, actionIssue?.result?.values?.expcount) }}
         onSubmit={handleSubmit}
         style={{ display: "contents" }}
       />
-      {showSimulationResult ? (
-        <div className="legacy-admin-expedition-result">
-          <h2>Expedition simulation result</h2>
-          <canvas id="myChart" style={{ maxWidth: 800, width: "100%" }} />
-        </div>
-      ) : null}
+      {actionIssue?.result?.series ? <AdminExpeditionChart series={actionIssue.result.series} /> : null}
     </>
   );
+}
+
+type LegacyChartArc = {
+  _model: { innerRadius: number; outerRadius: number; startAngle: number; endAngle: number; x: number; y: number };
+};
+
+type LegacyChartDataset = {
+  data: number[];
+  _meta: Record<string, { data: LegacyChartArc[]; total: number }>;
+};
+
+type LegacyChartRenderContext = {
+  chart: { ctx: CanvasRenderingContext2D };
+  data: { datasets: LegacyChartDataset[] };
+};
+
+type LegacyChartConstructor = {
+  new (target: HTMLCanvasElement, config: Record<string, unknown>): { destroy?: () => void };
+  defaults: { global: { defaultFontColor: string; defaultFontFamily: string } };
+  helpers: { fontString: (size: number, style: string, family: string) => string };
+};
+
+let adminExpeditionChartScript: Promise<LegacyChartConstructor> | null = null;
+
+function loadAdminExpeditionChart(): Promise<LegacyChartConstructor> {
+  const legacyWindow = window as Window & { Chart?: LegacyChartConstructor };
+  if (legacyWindow.Chart) {
+    return Promise.resolve(legacyWindow.Chart);
+  }
+  if (!adminExpeditionChartScript) {
+    adminExpeditionChartScript = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "/public-assets/game/js/chart.js";
+      script.dataset.adminExpeditionChart = "true";
+      script.onload = () => {
+        if (legacyWindow.Chart) {
+          resolve(legacyWindow.Chart);
+        } else {
+          reject(new Error("legacy chart runtime unavailable"));
+        }
+      };
+      script.onerror = () => reject(new Error("legacy chart runtime failed to load"));
+      document.head.append(script);
+    });
+  }
+  return adminExpeditionChartScript;
+}
+
+function AdminExpeditionChart({ series }: { series: number[] }) {
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  React.useEffect(() => {
+    let active = true;
+    let chart: { destroy?: () => void } | undefined;
+    void loadAdminExpeditionChart().then((Chart) => {
+      if (!active || !canvasRef.current) {
+        return;
+      }
+      Chart.defaults.global.defaultFontColor = "#fff";
+      chart = new Chart(canvasRef.current, {
+        type: "doughnut",
+        data: {
+          labels: ["Nothing", "Aliens", "Pirates", "Dark Matter", "Black Hole", "Delay", "Acceleration", "Resources", "Fleet", "Merchant"],
+          datasets: [{ backgroundColor: ["#404040", "#92ffdc", "#ffb592", "#33bcdb", "#d11515", "#ff5e00", "#00c23a", "#2242e2", "#dddddd", "#fbbc04"], data: series }]
+        },
+        options: {
+          elements: { arc: { borderWidth: 0 } },
+          events: false,
+          title: { display: true, text: "Expedition simulation result" },
+          animation: {
+            duration: 200,
+            easing: "easeOutQuart",
+            onComplete(this: LegacyChartRenderContext) {
+              const ctx = this.chart.ctx;
+              ctx.font = Chart.helpers.fontString(9, "bold", Chart.defaults.global.defaultFontFamily);
+              ctx.textAlign = "center";
+              ctx.textBaseline = "bottom";
+              for (const dataset of this.data.datasets) {
+                const meta = dataset._meta[Object.keys(dataset._meta)[0] ?? ""];
+                if (!meta) {
+                  continue;
+                }
+                for (let index = 0; index < dataset.data.length; index += 1) {
+                  const model = meta.data[index]?._model;
+                  if (!model) {
+                    continue;
+                  }
+                  const midRadius = model.innerRadius + (model.outerRadius - model.innerRadius) / 2;
+                  const midAngle = model.startAngle + (model.endAngle - model.startAngle) / 2;
+                  const x = midRadius * Math.cos(midAngle);
+                  const y = midRadius * Math.sin(midAngle);
+                  ctx.fillStyle = "#111";
+                  const percent = `${((dataset.data[index] / meta.total) * 100).toFixed(2)}%`;
+                  ctx.fillText(String(dataset.data[index]), model.x + x, model.y + y);
+                  ctx.fillText(percent, model.x + x, model.y + y + 15);
+                }
+              }
+            }
+          }
+        }
+      });
+    });
+    return () => {
+      active = false;
+      chart?.destroy?.();
+    };
+  }, [series]);
+  return <canvas id="myChart" ref={canvasRef} style={{ maxWidth: 800, width: "100%" }} />;
 }
 
 const adminExpeditionSettingNames = [
@@ -6503,7 +6632,7 @@ const adminExpeditionSettingNames = [
   "limit_max"
 ];
 
-function adminExpeditionHTML(values: Record<string, number>): string {
+function adminExpeditionHTML(values: Record<string, number>, expcount = 1000): string {
   let html = "";
   html += "<h2>Expedition Settings</h2>\n";
   html += `<form action="${legacyHTMLAttribute(adminModeActionHref("Expedition", "settings"))}" method="POST">\n`;
@@ -6544,7 +6673,7 @@ function adminExpeditionHTML(values: Record<string, number>): string {
   html += "<h2>Expedition Simulator</h2>\n";
   html += `<form action="${legacyHTMLAttribute(adminModeActionHref("Expedition", "sim"))}" method="POST">\n`;
   html += "<table>\n";
-  html += '<tr><td class=d>Number of expeditions</td> <td> <input type=text size=20 name=expcount value="1000"></td></tr>\n';
+  html += `<tr><td class=d>Number of expeditions</td> <td> <input type=text size=20 name=expcount value="${legacyHTMLAttribute(String(expcount))}"></td></tr>\n`;
   html += '<tr><td colspan=2 class=d><center><input type="submit" value="Simulate"></center></td></tr>\n';
   html += "</table>\n</form>\n\n";
   return html;
@@ -6684,35 +6813,48 @@ ${strategyOptions}</select>
 <img src="" id="preview_img" style="display:none;">`;
 }
 
-function AdminRakSimTable() {
-  return <div dangerouslySetInnerHTML={{ __html: adminRakSimHTML() }} />;
+function AdminRakSimTable({ actionIssue, onAdminAction }: { actionIssue?: GameAdminActionIssue; onAdminAction: (action: GameAdminAction) => void }) {
+  const handleSubmit = (event: React.FormEvent<HTMLDivElement>) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) {
+      return;
+    }
+    event.preventDefault();
+    const data = new FormData(form);
+    const values: Record<string, number> = {};
+    for (const name of ["a_weap", "d_armor", "anz", "pziel", ...adminRakSimDefenseRows.map((row) => `d_${row.id}`)]) {
+      values[name] = legacyFormInt(data.get(name), 0);
+    }
+    onAdminAction({ action: "rak_sim", values });
+  };
+  return <div dangerouslySetInnerHTML={{ __html: adminRakSimHTML(actionIssue?.result?.values) }} onSubmit={handleSubmit} />;
 }
 
-function adminRakSimHTML(): string {
+function adminRakSimHTML(values: Record<string, number> = {}): string {
   const action = legacyHTMLAttribute(adminModeHref("RakSim"));
   let html = "";
   html += `<table class="legacy-admin-raksim-table" cellpadding=0 cellspacing=0>\n`;
   html += `<form name="simForm" action="${action}" method="POST" >\n\n`;
   html += "<tr>        <td class=c>Attacker</td>                <td class=c>Defender</td>  </tr>\n\n";
   html += "<tr> \n<td> \n";
-  html += '    Weapons: <input type="text" name="a_weap" size=2 value="0"> \n';
+  html += `    Weapons: <input type="text" name="a_weap" size=2 value="${legacyHTMLAttribute(String(values.a_weap ?? 0))}"> \n`;
   html += "<td> \n";
-  html += '    Armor: <input type="text" name="d_armor" size=2 value="0"></td> \n';
+  html += `    Armor: <input type="text" name="d_armor" size=2 value="${legacyHTMLAttribute(String(values.d_armor ?? 0))}"></td> \n`;
   html += "</tr>\n\n\n";
   html += "        <tr> <th valign=top>\n        <table>\n\n<tr><td colspan=2> \n<table>\n";
   html += "<tr><td class=c colspan=2>Settings</td></tr>\n\n";
-  html += '<tr><td>\nInterplanetary Missiles:     <input type="text" name="anz" size="2" maxlength="2" value="0"/></td></tr>\n\n';
+  html += `<tr><td>\nInterplanetary Missiles:     <input type="text" name="anz" size="2" maxlength="2" value="${legacyHTMLAttribute(String(values.anz ?? 0))}"/></td></tr>\n\n`;
   html += '    <tr><td>\n    Target:\n     <select name="pziel">\n';
-  html += '      <option value="0" selected >Target all</option>\n';
+  html += `      <option value="0" ${Number(values.pziel ?? 0) === 0 ? "selected" : ""} >Target all</option>\n`;
   for (const row of adminRakSimDefenseRows) {
     if (!row.missileTarget) {
       break;
     }
-    html += `       <option value="${row.id}" >${legacyHTMLText(row.name)}</option>\n`;
+    html += `       <option value="${row.id}" ${Number(values.pziel ?? 0) === row.id ? "selected" : ""} >${legacyHTMLText(row.name)}</option>\n`;
   }
   html += "           </select>\n    </td></tr>\n\n</table>\n</td></tr>\n\n        </table>\n        </th>\n\n\n\n        <th valign=top>\n        <table>\n\n";
   html += '<tr><td class=c colspan=2><b>Defense</b></td></tr>\n';
-  html += adminRakSimDefenseRows.map((row) => `           <tr><td> ${legacyHTMLText(row.name)} </td> <td> <input name="d_${row.id}" size=5 value=0> </td> </tr>\n`).join("");
+  html += adminRakSimDefenseRows.map((row) => `           <tr><td> ${legacyHTMLText(row.name)} </td> <td> <input name="d_${row.id}" size=5 value=${legacyHTMLAttribute(String(values[`d_${row.id}`] ?? 0))}> </td> </tr>\n`).join("");
   html += "        </table>\n        </th></tr>            \n\n\n";
   html += '<tr><td colspan=2><center><input type="submit" value="Missile attack"></center></td></tr>\n';
   html += "</form>\n</table>\n";
