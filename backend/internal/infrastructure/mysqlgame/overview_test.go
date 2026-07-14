@@ -277,7 +277,7 @@ func TestOverviewRepositoryFinishesDueRecalcPointQueues(t *testing.T) {
 			map[int]int{domaingame.DefenseRocketLauncher: 4},
 		))},
 		{rows: fakeRowsFromValues(allResearchLevelRow(map[int]int{domaingame.ResearchComputer: 1}))},
-		{rows: fakeRowsFromValues(recalcFlyingFleetScoreRow(map[int]int{domaingame.FleetLightFighter: 5}, 2))},
+		{rows: fakeRowsFromValues(recalcFlyingFleetScoreRow(2))},
 	}}}
 	repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
 
@@ -316,7 +316,7 @@ func TestOverviewRepositoryReloadsUserAfterDueRecalcPointQueue(t *testing.T) {
 			map[int]int{domaingame.DefenseRocketLauncher: 4},
 		))},
 		{rows: fakeRowsFromValues(allResearchLevelRow(map[int]int{domaingame.ResearchComputer: 1}))},
-		{rows: fakeRowsFromValues(recalcFlyingFleetScoreRow(map[int]int{domaingame.FleetLightFighter: 5}, 2))},
+		{rows: fakeRowsFromValues(recalcFlyingFleetScoreRow(2))},
 		{rows: fakeRowsFromValues([]any{"legor", int64(999), 7, 99, 1, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3})},
@@ -2578,9 +2578,8 @@ func recalcPlanetScoreRow(buildings map[int]int, fleet map[int]int, defense map[
 	return row
 }
 
-func recalcFlyingFleetScoreRow(fleet map[int]int, missiles int) []any {
-	row := fleetCountRow(fleet)
-	return append(row, missiles)
+func recalcFlyingFleetScoreRow(missiles int) []any {
+	return []any{missiles}
 }
 
 func fakeRowsError(err error) *fakeRows {

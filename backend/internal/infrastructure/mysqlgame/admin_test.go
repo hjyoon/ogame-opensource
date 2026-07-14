@@ -1962,14 +1962,12 @@ func TestAdminRepositoryUnbansUsers(t *testing.T) {
 	planetScoreRow := append([]any{}, buildingLevelRow(map[int]int{domaingame.BuildingMetalMine: 1})...)
 	planetScoreRow = append(planetScoreRow, fleetCountRow(map[int]int{domaingame.FleetSmallCargo: 2})...)
 	planetScoreRow = append(planetScoreRow, defenseCountRow(map[int]int{domaingame.DefenseInterplanetaryMissile: 1})...)
-	flyingFleetRow := append([]any{}, fleetCountRow(map[int]int{domaingame.FleetSmallCargo: 1})...)
-	flyingFleetRow = append(flyingFleetRow, 1)
 	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{42, "admin"})},
 		{rows: fakeRowsFromValues([]any{77, "target"})},
 		{rows: fakeRowsFromValues(planetScoreRow)},
 		{rows: fakeRowsFromValues(allResearchLevelRow(map[int]int{domaingame.ResearchComputer: 1}))},
-		{rows: fakeRowsFromValues(flyingFleetRow)},
+		{rows: fakeRowsFromValues([]any{1})},
 	}}}
 	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
 
@@ -2907,12 +2905,10 @@ func TestAdminRepositoryMutatesUsersRecalcStats(t *testing.T) {
 	planetScoreRow := append([]any{}, buildingLevelRow(map[int]int{domaingame.BuildingMetalMine: 1})...)
 	planetScoreRow = append(planetScoreRow, fleetCountRow(map[int]int{domaingame.FleetSmallCargo: 2})...)
 	planetScoreRow = append(planetScoreRow, defenseCountRow(map[int]int{domaingame.DefenseInterplanetaryMissile: 1})...)
-	flyingFleetRow := append([]any{}, fleetCountRow(map[int]int{domaingame.FleetSmallCargo: 1})...)
-	flyingFleetRow = append(flyingFleetRow, 1)
 	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues(planetScoreRow)},
 		{rows: fakeRowsFromValues(allResearchLevelRow(map[int]int{domaingame.ResearchComputer: 1}))},
-		{rows: fakeRowsFromValues(flyingFleetRow)},
+		{rows: fakeRowsFromValues([]any{1})},
 	}}}
 	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
 
@@ -2932,8 +2928,11 @@ func TestAdminRepositoryMutatesUsersRecalcStats(t *testing.T) {
 	if !strings.Contains(scoreUpdate.sql, "UPDATE `ogame_users` SET score1 = ?") || scoreUpdate.args[3] != 77 {
 		t.Fatalf("unexpected score update: %+v", scoreUpdate)
 	}
-	if scoreUpdate.args[0].(int64) <= 0 || scoreUpdate.args[1].(int64) <= 0 || scoreUpdate.args[2].(int64) != 1 {
+	if scoreUpdate.args[0] != int64(59_075) || scoreUpdate.args[1] != int64(2) || scoreUpdate.args[2] != int64(1) {
 		t.Fatalf("unexpected recalculated scores: %+v", scoreUpdate.args)
+	}
+	if !strings.Contains(runner.calls[2].sql, "`ogame_queue` q JOIN `ogame_fleet` f") || runner.calls[2].args[0] != queueTypeFleet {
+		t.Fatalf("expected legacy queued-missile score query, got %+v", runner.calls[2])
 	}
 	if !strings.Contains(runner.execCalls[1].sql, "score1 = -1") || !strings.Contains(runner.execCalls[8].sql, "place1 = 0") {
 		t.Fatalf("expected rank recalculation statements, got %+v", runner.execCalls)
@@ -3127,13 +3126,11 @@ func TestAdminRepositoryUsersScoringAndCreateEdges(t *testing.T) {
 	})
 
 	t.Run("flying fleet rows error", func(t *testing.T) {
-		row := append([]any{}, fleetCountRow(nil)...)
-		row = append(row, 0)
 		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
-			{rows: fakeRowsFromValuesWithErr(errors.New("fleet rows failed"), row)},
+			{rows: fakeRowsFromValuesWithErr(errors.New("fleet rows failed"), []any{0})},
 		}}, "ogame_")
 
-		_, _, err := repository.sumAdminUserFlyingFleetScore(context.Background(), "`ogame_fleet`", 77)
+		_, _, err := repository.sumAdminUserFlyingFleetScore(context.Background(), "`ogame_fleet`", "`ogame_queue`", 77)
 
 		if err == nil || !strings.Contains(err.Error(), "fleet rows failed") {
 			t.Fatalf("expected fleet rows error, got %v", err)
@@ -3142,10 +3139,10 @@ func TestAdminRepositoryUsersScoringAndCreateEdges(t *testing.T) {
 
 	t.Run("flying fleet scan error", func(t *testing.T) {
 		repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{
-			{rows: fakeRowsFromValues([]any{1})},
+			{rows: fakeRowsFromValues([]any{1, 2})},
 		}}, "ogame_")
 
-		_, _, err := repository.sumAdminUserFlyingFleetScore(context.Background(), "`ogame_fleet`", 77)
+		_, _, err := repository.sumAdminUserFlyingFleetScore(context.Background(), "`ogame_fleet`", "`ogame_queue`", 77)
 
 		if err == nil || !strings.Contains(err.Error(), "unexpected scan destination count") {
 			t.Fatalf("expected fleet scan error, got %v", err)

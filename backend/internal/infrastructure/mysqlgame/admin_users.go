@@ -376,7 +376,11 @@ func (r AdminRepository) recalcAdminUserStats(ctx context.Context, usersTable st
 		return err
 	}
 	researchPoints, researchLevels := adminResearchScore(research)
-	fleetPoints, flyingFleetPoints, err := r.sumAdminUserFlyingFleetScore(ctx, fleetTable, targetID)
+	queueTable, err := tableName(r.prefix, "queue")
+	if err != nil {
+		return err
+	}
+	fleetPoints, flyingFleetPoints, err := r.sumAdminUserFlyingFleetScore(ctx, fleetTable, queueTable, targetID)
 	if err != nil {
 		return err
 	}
@@ -464,11 +468,13 @@ func adminResearchScore(research domaingame.ResearchLevels) (points int64, level
 	return points, levels
 }
 
-func (r AdminRepository) sumAdminUserFlyingFleetScore(ctx context.Context, fleetTable string, targetID int) (points int64, fleetPoints int64, err error) {
-	fleetIDs := domaingame.FleetIDs()
+func (r AdminRepository) sumAdminUserFlyingFleetScore(ctx context.Context, fleetTable string, queueTable string, targetID int) (points int64, fleetPoints int64, err error) {
+	// Legacy RecalcStats reads nonexistent ship-prefixed keys from flying fleets,
+	// so only queued interplanetary missiles contribute to this score path.
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT %s, COALESCE(ipm_amount, 0) FROM %s WHERE owner_id = ?", numericColumns(fleetIDs), fleetTable),
+		fmt.Sprintf("SELECT COALESCE(f.ipm_amount, 0) FROM %s q JOIN %s f ON f.fleet_id = q.sub_id WHERE q.type = ? AND q.owner_id = ?", queueTable, fleetTable),
+		queueTypeFleet,
 		targetID,
 	)
 	if err != nil {
@@ -476,35 +482,14 @@ func (r AdminRepository) sumAdminUserFlyingFleetScore(ctx context.Context, fleet
 	}
 	defer rows.Close()
 	for rows.Next() {
-		rowPoints, rowFleetPoints, err := scanAdminUserFlyingFleetScore(rows, fleetIDs)
-		if err != nil {
+		var missiles int
+		if err := rows.Scan(&missiles); err != nil {
 			return 0, 0, err
 		}
-		points += rowPoints
-		fleetPoints += rowFleetPoints
-	}
-	return points, fleetPoints, rows.Err()
-}
-
-func scanAdminUserFlyingFleetScore(rows Rows, fleetIDs []int) (points int64, fleetPoints int64, err error) {
-	fleetValues := make([]int, len(fleetIDs))
-	var missiles int
-	dest := make([]any, 0, len(fleetIDs)+1)
-	dest = appendIntDest(dest, fleetValues)
-	dest = append(dest, &missiles)
-	if err := rows.Scan(dest...); err != nil {
-		return 0, 0, err
-	}
-	for index, id := range fleetIDs {
-		unitPoints, unitFleetPoints, ok := domaingame.UnitScoreForCount(id, fleetValues[index])
+		unitPoints, _, ok := domaingame.UnitScoreForCount(domaingame.DefenseInterplanetaryMissile, missiles)
 		if ok {
 			points += unitPoints
-			fleetPoints += unitFleetPoints
 		}
 	}
-	unitPoints, _, ok := domaingame.UnitScoreForCount(domaingame.DefenseInterplanetaryMissile, missiles)
-	if ok {
-		points += unitPoints
-	}
-	return points, fleetPoints, nil
+	return points, 0, rows.Err()
 }

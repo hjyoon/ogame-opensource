@@ -31,7 +31,7 @@ React/Bun + Go migration tracker. Keep under 4KB; split details.
 - Frontend build/typecheck/unit tests pass: 24 tests.
 - Backend tests and the 97% internal coverage gate pass: `97.0% >= 97%`.
 - Inventoried QA fully passes; absolute legacy coverage is not claimed as 100%. See [COVERAGE-absolute.md](./testing/e2e/COVERAGE-absolute.md).
-- Go compatibility smoke registry covers 90 cases / 2254 checks.
+- Go compatibility smoke registry covers 90 cases / 2249 checks.
 - User-type API and Chromium/Firefox Playwright QA pass.
 - Auth visual, authenticated game visual, dynamic behavior, empire, alliance, overview fleet, overview all-cases, fleet continue, and fleet all-cases suites pass in Chromium and Firefox.
 - Strict navigation visual threshold `0`: Chromium 172/172 and Firefox 171/171 pass.
