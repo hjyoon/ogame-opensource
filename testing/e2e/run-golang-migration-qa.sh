@@ -71,6 +71,9 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     printf 'Go MCP smoke: %s\n' "$ROOT_DIR/.tmp/golang-mcp-smoke.json"
     bun "$SCRIPT_DIR/golang-compat-smoke.mjs" --go-base-url "$GO_BASE_URL" --mailhog-base-url "$MAILHOG_BASE_URL" --fixture "$ROOT_DIR/.tmp/golang-smoke-fixture.json" > "$ROOT_DIR/.tmp/golang-compat-smoke.json"
     printf 'Go compatibility smoke: %s\n' "$ROOT_DIR/.tmp/golang-compat-smoke.json"
+    # Universe freeze parity intentionally moves every active player into vacation mode.
+    # Re-seed shared actors before pairwise suites so one valid smoke state cannot leak into the next suite.
+    docker compose exec -T server php "$LEGACY_E2E_CONTAINER_DIR/prepare-golang-smoke-fixture.php" > "$ROOT_DIR/.tmp/golang-smoke-fixture.json"
     if [ "${OGAME_RUN_RESOURCE_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-resource-differential-e2e.sh"
     fi
