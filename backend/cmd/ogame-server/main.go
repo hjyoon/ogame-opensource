@@ -564,7 +564,7 @@ func gameAdminService(cfg config.Config, logger *slog.Logger, sessions apppublic
 		masterRunner := mysqlgame.SQLQueryer{DB: masterDB}
 		repository = repository.WithMasterRunner(masterRunner, masterRunner).WithUniverseNumber(cfg.UniNumber)
 	}
-	return appgame.NewAdminServiceWithCouponMailer(sessions, repository, adminCouponMailer(cfg, logger))
+	return appgame.NewAdminServiceWithMailers(sessions, repository, adminCouponMailer(cfg, logger), adminReactivationMailer(cfg, logger))
 }
 
 func adminCouponMailer(cfg config.Config, logger *slog.Logger) appgame.AdminCouponMailer {
@@ -573,6 +573,18 @@ func adminCouponMailer(cfg config.Config, logger *slog.Logger) appgame.AdminCoup
 	}
 	logger.Info("admin coupon SMTP enabled", "addr", cfg.SMTPAddr, "publicBaseURL", cfg.PublicBaseURL)
 	return inframail.NewAdminCouponMailer(inframail.SMTPConfig{
+		Addr:          cfg.SMTPAddr,
+		From:          cfg.SMTPFrom,
+		PublicBaseURL: cfg.PublicBaseURL,
+	})
+}
+
+func adminReactivationMailer(cfg config.Config, logger *slog.Logger) appgame.AdminReactivationMailer {
+	if !cfg.SMTPEnabled {
+		return nil
+	}
+	logger.Info("admin reactivation SMTP enabled", "addr", cfg.SMTPAddr, "publicBaseURL", cfg.PublicBaseURL)
+	return inframail.NewAdminReactivationMailer(inframail.SMTPConfig{
 		Addr:          cfg.SMTPAddr,
 		From:          cfg.SMTPFrom,
 		PublicBaseURL: cfg.PublicBaseURL,

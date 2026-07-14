@@ -145,6 +145,23 @@ func TestAdminServiceSendsAndClearsCouponMail(t *testing.T) {
 	}
 }
 
+func TestAdminServiceSendsAndClearsReactivationMail(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{Authenticated: true, Session: domainpublicsite.GameSession{PlayerID: 42}}}
+	issue := domaingame.AdminIssue(domaingame.AdminIssueActionSaved)
+	issue.OutboundReactivationMails = []domaingame.AdminReactivationMail{{Character: "Legor", Recipient: "legor@example.local", Password: "password"}}
+	repository := &fakeAdminRepository{admin: domaingame.Admin{Mode: "Users", Viewer: domaingame.AdminViewer{PlayerID: 42, Level: domaingame.AdminLevelAdmin}}, actionIssue: issue}
+	mailer := &fakeAdminReactivationMailer{}
+	result, err := NewAdminServiceWithMailers(sessions, repository, nil, mailer).MutateAdmin(context.Background(), AdminMutationCommand{Mode: "Users", Action: domaingame.AdminActionUsersReactivate})
+	if err != nil || len(mailer.messages) != 1 || mailer.messages[0].Password != "password" || len(result.ActionIssue.OutboundReactivationMails) != 0 {
+		t.Fatalf("result=%+v messages=%+v err=%v", result, mailer.messages, err)
+	}
+	issue.OutboundReactivationMails = []domaingame.AdminReactivationMail{{Recipient: "legor@example.local"}}
+	mailer.err = errors.New("reactivation mail failed")
+	if _, err := NewAdminServiceWithMailers(sessions, repository, nil, mailer).MutateAdmin(context.Background(), AdminMutationCommand{Mode: "Users", Action: domaingame.AdminActionUsersReactivate}); err == nil || !strings.Contains(err.Error(), "reactivation mail failed") {
+		t.Fatalf("expected mail error, got %v", err)
+	}
+}
+
 func TestAdminServiceMutationReturnsAccessDeniedWithoutMutating(t *testing.T) {
 	service := NewAdminService(
 		&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{Authenticated: true, Session: domainpublicsite.GameSession{PlayerID: 42}}},
@@ -316,6 +333,16 @@ type fakeAdminRepository struct {
 type fakeAdminCouponMailer struct {
 	messages []domaingame.AdminCouponMail
 	err      error
+}
+
+type fakeAdminReactivationMailer struct {
+	messages []domaingame.AdminReactivationMail
+	err      error
+}
+
+func (f *fakeAdminReactivationMailer) SendAdminReactivation(_ context.Context, message domaingame.AdminReactivationMail) error {
+	f.messages = append(f.messages, message)
+	return f.err
 }
 
 func (f *fakeAdminCouponMailer) SendAdminCoupon(_ context.Context, message domaingame.AdminCouponMail) error {

@@ -37,6 +37,7 @@ type AdminRepository struct {
 	couponCode    func() (string, error)
 	botPassword   func() (string, error)
 	randomIntN    func(int) int
+	randomRead    func([]byte) (int, error)
 }
 
 func NewAdminRepository(db *sql.DB, prefix string) AdminRepository {
@@ -52,6 +53,7 @@ func NewAdminRepository(db *sql.DB, prefix string) AdminRepository {
 		couponCode:    randomCouponCode,
 		botPassword:   randomBotPassword,
 		randomIntN:    randomAdminIntN,
+		randomRead:    rand.Read,
 	}
 }
 
@@ -71,6 +73,7 @@ func NewAdminRepositoryWithQueryer(queryer Queryer, prefix string) AdminReposito
 		couponCode:    randomCouponCode,
 		botPassword:   randomBotPassword,
 		randomIntN:    randomAdminIntN,
+		randomRead:    rand.Read,
 	}
 }
 
@@ -430,6 +433,10 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 		return r.mutateAdminBotAdd(ctx, query)
 	}
 	if mode == "Users" {
+		uniTable, err := tableName(r.prefix, "uni")
+		if err != nil {
+			return nil, err
+		}
 		usersTable, err := tableName(r.prefix, "users")
 		if err != nil {
 			return nil, err
@@ -442,7 +449,7 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 		if err != nil {
 			return nil, err
 		}
-		return r.mutateAdminUsers(ctx, usersTable, planetsTable, fleetTable, query)
+		return r.mutateAdminUsers(ctx, uniTable, usersTable, planetsTable, fleetTable, query)
 	}
 	if mode != "Bans" || query.Action != "ban" {
 		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
@@ -639,7 +646,7 @@ func (r AdminRepository) mutateAdminBotAdd(ctx context.Context, query appgame.Ad
 			start.StartBlockID,
 			0,
 			now,
-			now,
+			now*2,
 			1000,
 		); err != nil {
 			return nil, err

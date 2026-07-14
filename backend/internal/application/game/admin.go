@@ -18,6 +18,10 @@ type AdminCouponMailer interface {
 	SendAdminCoupon(context.Context, domaingame.AdminCouponMail) error
 }
 
+type AdminReactivationMailer interface {
+	SendAdminReactivation(context.Context, domaingame.AdminReactivationMail) error
+}
+
 type AdminBotEditRepository interface {
 	MutateAdminBotEdit(context.Context, AdminBotEditMutationQuery) (AdminBotEditMutationResult, error)
 }
@@ -71,6 +75,7 @@ type AdminMutationQuery struct {
 	Hours         int
 	Reason        string
 	Values        map[string]int
+	User          *domaingame.AdminUserMutation
 	Universe      *domaingame.AdminUniverseMutation
 	Category      int
 	Subject       string
@@ -115,6 +120,7 @@ type AdminMutationCommand struct {
 	Hours           int
 	Reason          string
 	Values          map[string]int
+	User            *domaingame.AdminUserMutation
 	Universe        *domaingame.AdminUniverseMutation
 	Category        int
 	Subject         string
@@ -171,9 +177,10 @@ type AdminResult struct {
 }
 
 type AdminService struct {
-	sessions   SessionLookup
-	repository AdminRepository
-	couponMail AdminCouponMailer
+	sessions         SessionLookup
+	repository       AdminRepository
+	couponMail       AdminCouponMailer
+	reactivationMail AdminReactivationMailer
 }
 
 func NewAdminService(sessions SessionLookup, repository AdminRepository) AdminService {
@@ -182,6 +189,10 @@ func NewAdminService(sessions SessionLookup, repository AdminRepository) AdminSe
 
 func NewAdminServiceWithCouponMailer(sessions SessionLookup, repository AdminRepository, mailer AdminCouponMailer) AdminService {
 	return AdminService{sessions: sessions, repository: repository, couponMail: mailer}
+}
+
+func NewAdminServiceWithMailers(sessions SessionLookup, repository AdminRepository, couponMailer AdminCouponMailer, reactivationMailer AdminReactivationMailer) AdminService {
+	return AdminService{sessions: sessions, repository: repository, couponMail: couponMailer, reactivationMail: reactivationMailer}
 }
 
 func (s AdminService) GetAdmin(ctx context.Context, command AdminCommand) (AdminResult, error) {
@@ -277,6 +288,7 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		Hours:         command.Hours,
 		Reason:        command.Reason,
 		Values:        command.Values,
+		User:          command.User,
 		Universe:      command.Universe,
 		Category:      command.Category,
 		Subject:       command.Subject,
@@ -306,8 +318,16 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 			}
 		}
 	}
+	if issue != nil && s.reactivationMail != nil {
+		for _, message := range issue.OutboundReactivationMails {
+			if err := s.reactivationMail.SendAdminReactivation(ctx, message); err != nil {
+				return AdminResult{}, err
+			}
+		}
+	}
 	if issue != nil {
 		issue.OutboundCouponMails = nil
+		issue.OutboundReactivationMails = nil
 	}
 	admin, err = s.repository.GetAdmin(ctx, AdminQuery{
 		PlayerID:       session.Session.PlayerID,

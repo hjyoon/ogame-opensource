@@ -218,6 +218,9 @@ func (r RegistrationRegistrar) RegisterAccount(ctx context.Context, command Regi
 			Email:          draft.Email,
 			ActivationCode: account.ActivationCode,
 			UniverseNumber: r.universeNumber,
+			Language:       account.Language,
+			BoardURL:       account.BoardURL,
+			TutorialURL:    account.TutorialURL,
 		})
 		if err != nil {
 			return domain.RegistrationCreation{}, err

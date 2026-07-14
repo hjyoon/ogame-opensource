@@ -50,6 +50,9 @@ type RegisteredAccount struct {
 	HomePlanetID   int
 	ActivationCode string
 	Validated      bool
+	Language       string
+	BoardURL       string
+	TutorialURL    string
 }
 
 type RegistrationWelcomeMail struct {
@@ -58,6 +61,9 @@ type RegistrationWelcomeMail struct {
 	Email          string
 	ActivationCode string
 	UniverseNumber int
+	Language       string
+	BoardURL       string
+	TutorialURL    string
 }
 
 type ActivatedAccount struct {

@@ -649,6 +649,25 @@ func TestSelectedAdminPlayerIDHandlesLegacyQuery(t *testing.T) {
 	}
 }
 
+func TestAdminUserMutationRequestMapping(t *testing.T) {
+	if mutation := toAdminUserMutation(nil); mutation != nil {
+		t.Fatalf("nil request must remain nil: %+v", mutation)
+	}
+	mutation := toAdminUserMutation(&gameAdminUserMutationRequest{
+		PermanentEmail: "permanent@example.local", Email: "game@example.local", Skin: "skin/new/",
+		Disable: true, Vacation: true, Banned: true, NoAttack: true, Validated: true, Sniff: true, Debug: true,
+		UseSkin: true, DeactivateIP: true, AdminLevel: 2, DarkMatter: 3, DarkMatterFree: 4,
+		SortBy: 5, SortOrder: 6, MaxSpy: 7, MaxFleetMsg: 8,
+		Research: map[string]int{"106": 9, "bad": 10}, OfficerDays: map[string]int{"1": 11, "bad": 12},
+	})
+	if mutation.PermanentEmail != "permanent@example.local" || mutation.Email != "game@example.local" || mutation.Skin != "skin/new/" ||
+		!mutation.Disable || !mutation.Vacation || !mutation.Banned || !mutation.NoAttack || !mutation.Validated || !mutation.Sniff || !mutation.Debug ||
+		!mutation.UseSkin || !mutation.DeactivateIP || mutation.AdminLevel != 2 || mutation.DarkMatter != 3 || mutation.DarkMatterFree != 4 ||
+		mutation.SortBy != 5 || mutation.SortOrder != 6 || mutation.MaxSpy != 7 || mutation.MaxFleetMsg != 8 || mutation.Research[106] != 9 || mutation.OfficerDays[1] != 11 || len(mutation.Research) != 1 || len(mutation.OfficerDays) != 1 {
+		t.Fatalf("unexpected user mutation mapping: %+v", mutation)
+	}
+}
+
 func TestGameAdminSummaryMapsFullPayload(t *testing.T) {
 	home := &domaingame.AdminUserPlanet{
 		ID:   301,

@@ -40,6 +40,7 @@ type gameAdminMutationRequest struct {
 	Hours         int                               `json:"hours"`
 	Reason        string                            `json:"reason"`
 	Values        map[string]int                    `json:"values"`
+	User          *gameAdminUserMutationRequest     `json:"userSettings"`
 	Universe      *gameAdminUniverseMutationRequest `json:"universeSettings"`
 	Category      int                               `json:"category"`
 	Subject       string                            `json:"subject"`
@@ -58,6 +59,30 @@ type gameAdminMutationRequest struct {
 	Name          string                            `json:"name"`
 	Filter        string                            `json:"filter"`
 	UserLogSearch *gameAdminUserLogSearchRequest    `json:"userLogSearch"`
+}
+
+type gameAdminUserMutationRequest struct {
+	PermanentEmail string         `json:"permanentEmail"`
+	Email          string         `json:"email"`
+	Skin           string         `json:"skin"`
+	Disable        bool           `json:"disable"`
+	Vacation       bool           `json:"vacation"`
+	Banned         bool           `json:"banned"`
+	NoAttack       bool           `json:"noAttack"`
+	Validated      bool           `json:"validated"`
+	Sniff          bool           `json:"sniff"`
+	Debug          bool           `json:"debug"`
+	UseSkin        bool           `json:"useSkin"`
+	DeactivateIP   bool           `json:"deactivateIP"`
+	AdminLevel     int            `json:"adminLevel"`
+	DarkMatter     int            `json:"darkMatter"`
+	DarkMatterFree int            `json:"darkMatterFree"`
+	SortBy         int            `json:"sortBy"`
+	SortOrder      int            `json:"sortOrder"`
+	MaxSpy         int            `json:"maxSpy"`
+	MaxFleetMsg    int            `json:"maxFleetMsg"`
+	Research       map[string]int `json:"research"`
+	OfficerDays    map[string]int `json:"officerDays"`
 }
 
 type gameAdminUserLogSearchRequest struct {
@@ -588,6 +613,7 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		Hours:           request.Hours,
 		Reason:          request.Reason,
 		Values:          request.Values,
+		User:            toAdminUserMutation(request.User),
 		Universe:        toAdminUniverseMutation(request.Universe),
 		Category:        request.Category,
 		Subject:         request.Subject,
@@ -612,6 +638,33 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeGameAdminResponse(w, result)
+}
+
+func toAdminUserMutation(request *gameAdminUserMutationRequest) *domaingame.AdminUserMutation {
+	if request == nil {
+		return nil
+	}
+	return &domaingame.AdminUserMutation{
+		PermanentEmail: request.PermanentEmail, Email: request.Email, Skin: request.Skin,
+		Disable: request.Disable, Vacation: request.Vacation, Banned: request.Banned,
+		NoAttack: request.NoAttack, Validated: request.Validated, Sniff: request.Sniff,
+		Debug: request.Debug, UseSkin: request.UseSkin, DeactivateIP: request.DeactivateIP,
+		AdminLevel: request.AdminLevel, DarkMatter: request.DarkMatter,
+		DarkMatterFree: request.DarkMatterFree, SortBy: request.SortBy,
+		SortOrder: request.SortOrder, MaxSpy: request.MaxSpy, MaxFleetMsg: request.MaxFleetMsg,
+		Research: adminNumericMap(request.Research), OfficerDays: adminNumericMap(request.OfficerDays),
+	}
+}
+
+func adminNumericMap(values map[string]int) map[int]int {
+	result := make(map[int]int, len(values))
+	for key, value := range values {
+		id, err := strconv.Atoi(key)
+		if err == nil {
+			result[id] = value
+		}
+	}
+	return result
 }
 
 func toAdminUserLogSearch(request *gameAdminUserLogSearchRequest) *domaingame.AdminUserLogSearch {

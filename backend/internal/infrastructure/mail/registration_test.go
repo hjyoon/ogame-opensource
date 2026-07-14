@@ -22,6 +22,8 @@ func TestBuildRegistrationWelcomeMessageMatchesLegacyActivationMailShape(t *test
 		Email:          "pilot@example.local",
 		ActivationCode: "abcdef123456",
 		UniverseNumber: 7,
+		BoardURL:       "https://board.example",
+		TutorialURL:    "https://tutorial.example",
 	})
 
 	if err != nil {
@@ -36,6 +38,9 @@ func TestBuildRegistrationWelcomeMessageMatchesLegacyActivationMailShape(t *test
 		"Player name: Commander01",
 		"Password: E2E_http123",
 		"Universe: 7",
+		"empire in 7 of the OGame universe",
+		"forum (https://board.example)",
+		"Here (https://tutorial.example)",
 		"Your OGame team",
 	} {
 		if !strings.Contains(message, want) {

@@ -43,6 +43,9 @@ func TestAccountCreatorCreatesLegacyUserAndHomePlanet(t *testing.T) {
 	if account.PlayerID != 42 || account.HomePlanetID != 99 || account.Validated {
 		t.Fatalf("unexpected account: %+v", account)
 	}
+	if account.Language != "en" || account.BoardURL != "https://board.example" || account.TutorialURL != "https://tutorial.example" {
+		t.Fatalf("unexpected account universe metadata: %+v", account)
+	}
 	if account.ActivationCode != "000102030405060708090a0b0c0d0e0f" {
 		t.Fatalf("unexpected activation code: %q", account.ActivationCode)
 	}

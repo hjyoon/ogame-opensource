@@ -33,3 +33,13 @@ func TestAdminCouponMailerConfiguration(t *testing.T) {
 		t.Fatal("SMTP-enabled admin coupon mailer must be configured")
 	}
 }
+
+func TestAdminReactivationMailerConfiguration(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if mailer := adminReactivationMailer(config.Config{}, logger); mailer != nil {
+		t.Fatalf("SMTP-disabled admin reactivation mailer must be nil: %T", mailer)
+	}
+	if mailer := adminReactivationMailer(config.Config{SMTPEnabled: true, SMTPAddr: "mailhog:1025", PublicBaseURL: "http://game.example.local"}, logger); mailer == nil {
+		t.Fatal("SMTP-enabled admin reactivation mailer must be configured")
+	}
+}

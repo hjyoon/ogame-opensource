@@ -18,18 +18,13 @@ IDs and wall-clock deltas are normalized; durable effects remain exact.
 | Colony/Checksum/Loca | 13 | all colony values, serialized baselines, all localization rows/order/colors | PASS |
 | Simulators | 19 | Rocket, Expedition and Battle form/result/report/message semantics | PASS |
 | CRON/cleanup/coupon | 12 | order/freeze/timers, cleanup, coupon mail and boundaries | PASS |
-| **Total** | **151** | deterministic PHP/Go DB, files and HTTP contracts | **PASS** |
-
-Queue/Fleetlogs covers no-ops, access, recall state/logs and retention. Only
-generated fleet/task IDs and bounded request-time deltas are normalized.
+| Users | 8 | full edit, planet create/collision, stats, bot controls, reactivation SMTP | PASS |
+| **Total** | **159** | deterministic PHP/Go DB, files and HTTP contracts | **PASS** |
 
 Universe covers every mutable field, empty strings, news update/disable ordering,
 max-user zero preservation, freeze/unfreeze, active-user VM forcing and rejection.
 Audit/search exact-compares marker order and post-action table state without normalization.
 Coupons preserves legacy unsigned failure, Moscow `mktime`, packed signed criteria and unrestricted queue removal.
-Database restores a post-backup marker and rejects incomplete schemas before SQL.
-Bots compares account, planet, IP log, variables, AI queue, strategy source and
-user-count effects; generated IDs, passwords, IPs, times and temperature are normalized.
 Colony covers 15 values; Checksum 130 rows; Loca 2,090 rows.
 Simulators compare every rendered Rocket value, all ten Expedition buckets, and
 Battle attacker/defender/draw, defense, source import, rapid-fire, zero-round and
@@ -37,11 +32,13 @@ Operator cases. Battle report HTML, link style/losses, message metadata, retenti
 count and battledata cleanup are exact after masking time, random coordinates and IDs.
 CRON verifies PHP NULL coercion, planet/player cleanup and exemptions. Coupon CRON
 covers one-off/periodic/frozen tasks, strict date bounds and localized SMTP.
+Users covers every edit field, officer timers, rank recalculation, legacy bot queue
+timing, generated colony invariants and normalized password/activation mail.
 
 ## Pending Groups
 
 - Battle simulator debug diagnostics and post-action screenshot state.
-- Users and Planets full edit/create/destroy operations.
+- Planets full edit/create/destroy operations.
 
 PHP Mods are excluded by project policy. A group is removed from this list only
 after normal, boundary, rejection, no-op and rollback/completion cases are added
@@ -65,6 +62,7 @@ testing/e2e/run-golang-admin-simulators-differential-e2e.sh
 testing/e2e/run-golang-admin-cron-differential-e2e.sh
 testing/e2e/run-golang-admin-cleanup-differential-e2e.sh
 testing/e2e/run-golang-admin-coupon-cron-differential-e2e.sh
+testing/e2e/run-golang-admin-users-differential-e2e.sh
 ```
 
 All are included in `testing/e2e/run-golang-migration-qa.sh`.

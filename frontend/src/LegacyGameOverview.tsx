@@ -126,6 +126,30 @@ type GameAdminUniverseMutation = {
   newsOff: boolean;
 };
 
+type GameAdminUserMutation = {
+  permanentEmail: string;
+  email: string;
+  skin: string;
+  disable: boolean;
+  vacation: boolean;
+  banned: boolean;
+  noAttack: boolean;
+  validated: boolean;
+  sniff: boolean;
+  debug: boolean;
+  useSkin: boolean;
+  deactivateIP: boolean;
+  adminLevel: number;
+  darkMatter: number;
+  darkMatterFree: number;
+  sortBy: number;
+  sortOrder: number;
+  maxSpy: number;
+  maxFleetMsg: number;
+  research: Record<string, number>;
+  officerDays: Record<string, number>;
+};
+
 export type GameAdminAction =
   | {
       action: "ban";
@@ -222,6 +246,20 @@ export type GameAdminAction =
   | {
       action: "restore" | "delete";
       fileName: string;
+    }
+  | {
+      action: "update";
+      targetIds: number[];
+      userSettings: GameAdminUserMutation;
+    }
+  | {
+      action: "create_planet";
+      targetIds: number[];
+      values: Record<string, number>;
+    }
+  | {
+      action: "recalc_stats" | "reactivate" | "bot_start" | "bot_stop";
+      targetIds: number[];
     };
 
 export type GameAllianceAction =
@@ -3902,7 +3940,7 @@ function AdminTable({ actionIssue, admin, onAdminAction }: { actionIssue?: GameA
   if (admin.mode === "Users") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminUsersTable admin={admin} />
+        <AdminUsersTable admin={admin} onAdminAction={onAdminAction} />
       </AdminModeShell>
     );
   }
@@ -5325,12 +5363,15 @@ function AdminQueueTable({ onAdminAction, rows }: { onAdminAction: (action: Game
   );
 }
 
-function AdminUsersTable({ admin }: { admin: GameAdmin }) {
+function AdminUsersTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
   if (admin.selectedUser) {
+    const playerId = admin.selectedUser.playerId;
     return (
       <div
         className="legacy-admin-users-detail"
         dangerouslySetInnerHTML={{ __html: adminUserDetailHTML(admin.selectedUser) }}
+        onClick={(event) => handleAdminUserDetailClick(event, playerId, onAdminAction)}
+        onSubmit={(event) => handleAdminUserDetailSubmit(event, playerId, onAdminAction)}
         style={{ display: "contents" }}
       />
     );
@@ -5342,6 +5383,79 @@ function AdminUsersTable({ admin }: { admin: GameAdmin }) {
       style={{ display: "contents" }}
     />
   );
+}
+
+function handleAdminUserDetailSubmit(event: React.FormEvent<HTMLDivElement>, playerId: number, onAdminAction: (action: GameAdminAction) => void) {
+  const form = event.target instanceof HTMLFormElement ? event.target : null;
+  if (!form) {
+    return;
+  }
+  const action = new URL(form.action, window.location.href).searchParams.get("action") ?? "";
+  if (action !== "update" && action !== "create_planet") {
+    return;
+  }
+  event.preventDefault();
+  const data = new FormData(form);
+  if (action === "create_planet") {
+    onAdminAction({
+      action,
+      targetIds: [playerId],
+      values: { g: legacyFormInt(data.get("g"), 1), s: legacyFormInt(data.get("s"), 1), p: legacyFormInt(data.get("p"), 1) }
+    });
+    return;
+  }
+  onAdminAction({ action, targetIds: [playerId], userSettings: adminUserMutationFromForm(data) });
+}
+
+function handleAdminUserDetailClick(event: React.MouseEvent<HTMLDivElement>, playerId: number, onAdminAction: (action: GameAdminAction) => void) {
+  const anchor = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>("a[href]");
+  if (!anchor) {
+    return;
+  }
+  const action = new URL(anchor.href, window.location.href).searchParams.get("action");
+  if (action !== "recalc_stats" && action !== "reactivate" && action !== "bot_start" && action !== "bot_stop") {
+    return;
+  }
+  event.preventDefault();
+  onAdminAction({ action, targetIds: [playerId] });
+}
+
+function adminUserMutationFromForm(data: FormData): GameAdminUserMutation {
+  const integer = (name: string) => legacyFormInt(data.get(name), 0);
+  const research: Record<string, number> = {};
+  for (const row of adminResearchRows) {
+    research[String(row.id)] = integer(`r${row.id}`);
+  }
+  const officerDays: Record<string, number> = {};
+  for (let id = 1; id <= 5; id += 1) {
+    const raw = String(data.get(`pr_${id}`) ?? "");
+    if (raw !== "") {
+      officerDays[String(id)] = legacyFormInt(raw, 0);
+    }
+  }
+  return {
+    permanentEmail: String(data.get("pemail") ?? ""),
+    email: String(data.get("email") ?? ""),
+    skin: String(data.get("dpath") ?? ""),
+    disable: data.has("deaktjava"),
+    vacation: data.has("vacation"),
+    banned: data.has("banned"),
+    noAttack: data.has("noattack"),
+    validated: data.has("validated"),
+    sniff: data.has("sniff"),
+    debug: data.has("debug"),
+    useSkin: data.has("design"),
+    deactivateIP: data.has("deact_ip"),
+    adminLevel: integer("admin"),
+    darkMatter: integer("dm"),
+    darkMatterFree: integer("dmfree"),
+    sortBy: integer("settings_sort"),
+    sortOrder: integer("settings_order"),
+    maxSpy: integer("spio_anz"),
+    maxFleetMsg: integer("settings_fleetactions"),
+    research,
+    officerDays
+  };
 }
 
 const adminResearchRows = [

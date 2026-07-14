@@ -61,21 +61,27 @@ func BuildRegistrationWelcomeMessage(config SMTPConfig, welcome domain.Registrat
 	}
 	body := fmt.Sprintf(
 		"Greetings %s,\n\n"+
-			"You've decided to create your own empire in OGame of the OGame universe!\n\n"+
+			"You've decided to create your own empire in %d of the OGame universe!\n\n"+
 			"Click on this link to activate your account:\n"+
 			"%s\n\n"+
 			"Your gaming credentials:\n"+
 			"Player name: %s\n"+
 			"Password: %s\n"+
-			"Universe: %d\n\n\n"+
-			"We wish you success in building your empire and good luck in the upcoming battles!\n\n"+
-			"Your OGame team",
+			"Universe: %d\n\n\n",
 		strings.TrimSpace(welcome.Character),
+		welcome.UniverseNumber,
 		link,
 		strings.TrimSpace(welcome.Character),
 		welcome.Password,
 		welcome.UniverseNumber,
 	)
+	if boardURL := strings.TrimSpace(welcome.BoardURL); boardURL != "" {
+		body += fmt.Sprintf("If you need help or advice from other emperors, you can find it all in our forum (%s).\n\n", boardURL)
+	}
+	if tutorialURL := strings.TrimSpace(welcome.TutorialURL); tutorialURL != "" {
+		body += fmt.Sprintf("Here (%s) is all the information gathered by players and team members to help newcomers understand the game as quickly as possible.\n\n", tutorialURL)
+	}
+	body += "We wish you success in building your empire and good luck in the upcoming battles!\n\nYour OGame team"
 	return strings.Join(headers, "\r\n") + "\r\n\r\n" + strings.ReplaceAll(body, "\n", "\r\n"), nil
 }
 

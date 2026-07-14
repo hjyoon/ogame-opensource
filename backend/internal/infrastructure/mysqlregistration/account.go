@@ -191,6 +191,9 @@ func (c AccountCreator) CreateRegistrationAccount(ctx context.Context, draft dom
 		}
 		account.PlayerID = playerID
 		account.HomePlanetID = homePlanetID
+		account.Language = universe.Language
+		account.BoardURL = universe.BoardURL
+		account.TutorialURL = universe.Tutorial
 		return nil
 	})
 	if err != nil {

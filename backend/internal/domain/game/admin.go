@@ -48,6 +48,9 @@ const (
 	AdminActionUsersRecalcStats  = "recalc_stats"
 	AdminActionUsersUpdate       = "update"
 	AdminActionUsersCreatePlanet = "create_planet"
+	AdminActionUsersReactivate   = "reactivate"
+	AdminActionUsersBotStart     = "bot_start"
+	AdminActionUsersBotStop      = "bot_stop"
 
 	AdminActionCouponAddOne     = "add_one"
 	AdminActionCouponRemoveOne  = "remove_one"
@@ -120,10 +123,11 @@ type AdminMenuItem struct {
 }
 
 type AdminActionIssue struct {
-	Code                string
-	Message             string
-	Result              *AdminActionResult
-	OutboundCouponMails []AdminCouponMail
+	Code                      string
+	Message                   string
+	Result                    *AdminActionResult
+	OutboundCouponMails       []AdminCouponMail
+	OutboundReactivationMails []AdminReactivationMail
 }
 
 type AdminCouponMail struct {
@@ -131,6 +135,17 @@ type AdminCouponMail struct {
 	Recipient string
 	Language  string
 	Code      string
+}
+
+type AdminReactivationMail struct {
+	Character      string
+	Password       string
+	Recipient      string
+	ActivationCode string
+	UniverseNumber int
+	Language       string
+	BoardURL       string
+	TutorialURL    string
 }
 
 type AdminActionResult struct {
@@ -399,6 +414,30 @@ type AdminUniverseMutation struct {
 	News2           string
 	NewsUpdateDays  int
 	NewsOff         bool
+}
+
+type AdminUserMutation struct {
+	PermanentEmail string
+	Email          string
+	Skin           string
+	Disable        bool
+	Vacation       bool
+	Banned         bool
+	NoAttack       bool
+	Validated      bool
+	Sniff          bool
+	Debug          bool
+	UseSkin        bool
+	DeactivateIP   bool
+	AdminLevel     int
+	DarkMatter     int
+	DarkMatterFree int
+	SortBy         int
+	SortOrder      int
+	MaxSpy         int
+	MaxFleetMsg    int
+	Research       map[int]int
+	OfficerDays    map[int]int
 }
 
 type AdminQueueRow struct {

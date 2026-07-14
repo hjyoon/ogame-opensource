@@ -171,7 +171,7 @@ func TestRegistrationRegistrarCreatesAccountAndSavesLoginSession(t *testing.T) {
 
 func TestRegistrationRegistrarSendsWelcomeMail(t *testing.T) {
 	accounts := &recordingAccountCreator{
-		account: domain.RegisteredAccount{PlayerID: 42, HomePlanetID: 99, ActivationCode: "activation"},
+		account: domain.RegisteredAccount{PlayerID: 42, HomePlanetID: 99, ActivationCode: "activation", Language: "en", BoardURL: "/board", TutorialURL: "/tutorial"},
 	}
 	mailer := &recordingRegistrationMailer{}
 	registrar := NewRegistrationRegistrarWithClockAndMailer(
@@ -195,7 +195,7 @@ func TestRegistrationRegistrarSendsWelcomeMail(t *testing.T) {
 	if mailer.message.Character != "Commander01" || mailer.message.Password != "E2E_http123" || mailer.message.Email != "commander@example.local" {
 		t.Fatalf("unexpected welcome mail payload: %+v", mailer.message)
 	}
-	if mailer.message.ActivationCode != "activation" || mailer.message.UniverseNumber != 7 {
+	if mailer.message.ActivationCode != "activation" || mailer.message.UniverseNumber != 7 || mailer.message.Language != "en" || mailer.message.BoardURL != "/board" || mailer.message.TutorialURL != "/tutorial" {
 		t.Fatalf("unexpected welcome mail activation payload: %+v", mailer.message)
 	}
 }
