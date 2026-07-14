@@ -1,7 +1,7 @@
 # Admin Differential Coverage
 
-Keep this under 4KB. PHP and Go start each case from the same restored DB state.
-Generated IDs and wall-clock deltas are normalized; durable effects remain exact.
+Keep this under 4KB. PHP and Go start from the same restored DB state. Generated
+IDs and wall-clock deltas are normalized; durable effects remain exact.
 
 ## Verified Groups
 
@@ -17,8 +17,8 @@ Generated IDs and wall-clock deltas are normalized; durable effects remain exact
 | Bots/BotEdit | 18 | list/add/stop, names, strategy CRUD/import/export, access | PASS |
 | Colony/Checksum/Loca | 13 | all colony values, serialized baselines, all localization rows/order/colors | PASS |
 | Simulators | 19 | Rocket, Expedition and Battle form/result/report/message semantics | PASS |
-| CRON core | 7 | access, 16-task order, freeze, timers, debug/unknown | PASS |
-| **Total** | **146** | deterministic PHP/Go DB, files and HTTP contracts | **PASS** |
+| CRON/cleanup | 9 | access/order/freeze/timers; planet/player cleanup and exemptions | PASS |
+| **Total** | **148** | deterministic PHP/Go DB, files and HTTP contracts | **PASS** |
 
 Queue/Fleetlogs covers no-ops, access, recall state/logs and retention. Only
 generated fleet/task IDs and bounded request-time deltas are normalized.
@@ -27,21 +27,21 @@ Universe covers every mutable field, empty strings, news update/disable ordering
 max-user zero preservation, freeze/unfreeze, active-user VM forcing and rejection.
 Audit/search exact-compares marker order and post-action table state without normalization.
 Coupons preserves legacy unsigned failure, Moscow `mktime`, packed signed criteria and unrestricted queue removal.
-Database runs one non-empty backup at a time, restores a post-backup marker, and
-deletes the file immediately. Go rejects incomplete schemas before destructive SQL.
+Database restores a post-backup marker and rejects incomplete schemas before SQL.
 Bots compares account, planet, IP log, variables, AI queue, strategy source and
 user-count effects; generated IDs, passwords, IPs, times and temperature are normalized.
-Colony covers 15 values. Checksum compares 130 serialized rows; Loca compares 2,090 rows.
+Colony covers 15 values; Checksum 130 rows; Loca 2,090 rows.
 Simulators compare every rendered Rocket value, all ten Expedition buckets, and
 Battle attacker/defender/draw, defense, source import, rapid-fire, zero-round and
 Operator cases. Battle report HTML, link style/losses, message metadata, retention
 count and battledata cleanup are exact after masking time, random coordinates and IDs.
-CRON also verifies NULL numeric fields use PHP's zero coercion.
+CRON verifies PHP NULL coercion, expired/future planets, user/dependent-row removal,
+and admin, DM, Bot exemptions with daily rescheduling.
 
 ## Pending Groups
 
 - Battle simulator debug diagnostics and post-action screenshot state.
-- Destructive/external CRON handlers: planet/player cleanup and coupon delivery.
+- External coupon-delivery CRON handler.
 - Users and Planets full edit/create/destroy operations.
 
 PHP Mods are excluded by project policy. A group is removed from this list only
@@ -64,6 +64,7 @@ testing/e2e/run-golang-admin-checksum-differential-e2e.sh
 testing/e2e/run-golang-admin-loca-differential-e2e.sh
 testing/e2e/run-golang-admin-simulators-differential-e2e.sh
 testing/e2e/run-golang-admin-cron-differential-e2e.sh
+testing/e2e/run-golang-admin-cleanup-differential-e2e.sh
 ```
 
 All are included in `testing/e2e/run-golang-migration-qa.sh`.

@@ -22,8 +22,10 @@ const (
 	adminQueueTypeAllowAttacks     = "AllowAttacks"
 	adminQueueTypeDebug            = "Debug"
 
-	adminQueuePriorityUpdateStats = 510
-	adminQueuePriorityCleanDebris = 600
+	adminQueuePriorityUpdateStats  = 510
+	adminQueuePriorityCleanDebris  = 600
+	adminQueuePriorityCleanPlanets = 700
+	adminQueuePriorityCleanPlayers = 900
 )
 
 type adminCronTables struct {
@@ -42,6 +44,14 @@ type adminCronTables struct {
 	botstrat   string
 	botvars    string
 	debug      string
+	reports    string
+	notes      string
+	browse     string
+	template   string
+	userLogs   string
+	ipLogs     string
+	allyApps   string
+	buddy      string
 }
 
 func (r AdminRepository) runAdminCron(ctx context.Context, until int) error {
@@ -76,6 +86,9 @@ func loadAdminCronTables(prefix string) (adminCronTables, error) {
 		"fleet": &tables.fleet, "fleetlogs": &tables.fleetLogs, "messages": &tables.messages,
 		"exptab": &tables.expedition, "battledata": &tables.battle, "union": &tables.union,
 		"botstrat": &tables.botstrat, "botvars": &tables.botvars, "debug": &tables.debug,
+		"reports": &tables.reports, "notes": &tables.notes, "browse": &tables.browse,
+		"template": &tables.template, "userlogs": &tables.userLogs, "iplogs": &tables.ipLogs,
+		"allyapps": &tables.allyApps, "buddy": &tables.buddy,
 	} {
 		name, err := tableName(prefix, suffix)
 		if err != nil {
@@ -130,8 +143,12 @@ func (r AdminRepository) finishAdminCronTask(ctx context.Context, tables adminCr
 		return r.finishAdminCronUserFlag(ctx, tables, task, fmt.Sprintf("UPDATE %s SET noattack = 0, noattack_until = 0 WHERE player_id = ?", tables.users))
 	case adminQueueTypeDebug:
 		return r.removeAdminCronTask(ctx, tables.queue, task.TaskID)
-	case adminQueueTypeCleanPlanets, adminQueueTypeCleanPlayers, adminCouponQueueType:
-		// These handlers have destructive or external side effects and are dispatched by their dedicated migration steps.
+	case adminQueueTypeCleanPlanets:
+		return r.finishAdminCronCleanPlanets(ctx, tables, task, language)
+	case adminQueueTypeCleanPlayers:
+		return r.finishAdminCronCleanPlayers(ctx, tables, task)
+	case adminCouponQueueType:
+		// Coupon tasks are processed outside the locked core batch, matching legacy UpdateQueue.
 		return nil
 	default:
 		if err := r.removeAdminCronTask(ctx, tables.queue, task.TaskID); err != nil {
@@ -274,6 +291,11 @@ func nextAdminCronWeekday(at time.Time, weekday time.Weekday, hour int, minute i
 		days = 7
 	}
 	day := at.AddDate(0, 0, days)
+	return time.Date(day.Year(), day.Month(), day.Day(), hour, minute, 0, 0, at.Location())
+}
+
+func nextAdminCronDaily(at time.Time, hour int, minute int) time.Time {
+	day := at.AddDate(0, 0, 1)
 	return time.Date(day.Year(), day.Month(), day.Day(), hour, minute, 0, 0, at.Location())
 }
 

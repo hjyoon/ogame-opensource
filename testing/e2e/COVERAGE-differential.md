@@ -21,7 +21,7 @@ compare normalized HTTP/DB effects, then restore.
 | Messages | 18 | read/retention, delete modes, reports, flags, send/cap | PASS |
 | Alliance | 27 | create/apply/review, ranks, text/settings, rename, leave/kick/dismiss/transfer | PASS |
 | Account options | 36 | settings, identity/mail, activation, vacation/deletion, Commander/feed/operator flags | PASS |
-| Admin | 146 | [Mutation matrix](COVERAGE-admin-differential.md) | PASS |
+| Admin | 148 | [Mutation matrix](COVERAGE-admin-differential.md) | PASS |
 | Combat engine | 4 | outcome, shots/power, absorption, survivors | PASS |
 
 Resource cases cover partial production and 0/100 boundaries. Each side logs in

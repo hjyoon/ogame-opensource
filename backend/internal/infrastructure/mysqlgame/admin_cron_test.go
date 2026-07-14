@@ -100,14 +100,12 @@ func TestAdminCronDispatchesSimpleAndDeferredTypes(t *testing.T) {
 			t.Fatalf("%s did not remove task: %+v", queueType, runner.execCalls)
 		}
 	}
-	for _, queueType := range []string{adminQueueTypeCleanPlanets, adminQueueTypeCleanPlayers, adminCouponQueueType} {
-		runner := &fakeGalaxyRunner{}
-		err := NewAdminRepositoryWithQueryer(runner, "ogame_").finishAdminCronTask(context.Background(), tables, buildingQueueTask{Type: queueType}, "en")
-		if err != nil || len(runner.execCalls) != 0 {
-			t.Fatalf("deferred %s should no-op, calls=%+v err=%v", queueType, runner.execCalls, err)
-		}
-	}
 	runner := &fakeGalaxyRunner{}
+	err = NewAdminRepositoryWithQueryer(runner, "ogame_").finishAdminCronTask(context.Background(), tables, buildingQueueTask{Type: adminCouponQueueType}, "en")
+	if err != nil || len(runner.execCalls) != 0 {
+		t.Fatalf("deferred coupon should no-op, calls=%+v err=%v", runner.execCalls, err)
+	}
+	runner = &fakeGalaxyRunner{}
 	if err := NewAdminRepositoryWithQueryer(runner, "ogame_").finishAdminCronTask(context.Background(), tables, buildingQueueTask{TaskID: 9, Type: "Unknown"}, "de"); err != nil {
 		t.Fatal(err)
 	}
