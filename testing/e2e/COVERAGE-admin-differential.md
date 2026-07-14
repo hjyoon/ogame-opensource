@@ -14,7 +14,8 @@ Generated IDs and wall-clock deltas are normalized; durable effects remain exact
 | Audit/search | 20 | Debug/Errors windows, filters, UserLogs periods/types, Logins/Browse order | PASS |
 | Coupons | 12 | list order, create/delete, periodic queue values/timing, access | PASS |
 | Database | 11 | create/restore lifecycle, delete, invalid/partial/path guards, access | PASS |
-| **Total** | **89** | deterministic PHP/Go DB and HTTP contracts | **PASS** |
+| Bots/BotEdit | 18 | list/add/stop, names, strategy CRUD/import/export, access | PASS |
+| **Total** | **107** | deterministic PHP/Go DB and HTTP contracts | **PASS** |
 
 Queue/Fleetlogs cases include missing-target no-ops and operator rejection. Recall
 compares cargo, ships, fuel, mission, origin/target, duration, priority, fleetlog,
@@ -31,13 +32,15 @@ Audit/search exact-compares marker order and post-action table state without nor
 Coupons preserves legacy unsigned failure, Moscow `mktime`, packed signed criteria and unrestricted queue removal.
 Database runs one non-empty backup at a time, restores a post-backup marker, and
 deletes the file immediately. Go rejects incomplete schemas before destructive SQL.
+Bots compares account, planet, IP log, variables, AI queue, strategy source and
+user-count effects; generated IDs, passwords, IPs, times and temperature are normalized.
 
 ## Pending Groups
 
 - Battle/Rocket/Expedition simulator calculations.
 - CRON execution.
 - Users and Planets full edit/create/destroy operations.
-- Bots/BotEdit, Loca, checksums and colony settings.
+- Loca, checksums and colony settings.
 
 PHP Mods are excluded by project policy. A group is removed from this list only
 after normal, boundary, rejection, no-op and rollback/completion cases are added
@@ -53,6 +56,7 @@ testing/e2e/run-golang-admin-universe-differential-e2e.sh
 testing/e2e/run-golang-admin-audit-differential-e2e.sh
 testing/e2e/run-golang-admin-coupons-differential-e2e.sh
 testing/e2e/run-golang-admin-database-differential-e2e.sh
+testing/e2e/run-golang-admin-bots-differential-e2e.sh
 ```
 
 All are included in `testing/e2e/run-golang-migration-qa.sh`.

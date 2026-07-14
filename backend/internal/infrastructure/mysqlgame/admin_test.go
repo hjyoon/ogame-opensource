@@ -949,7 +949,7 @@ func TestAdminRepositoryMutatesBotAdd(t *testing.T) {
 	issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
 		Mode:       "Bots",
 		Action:     domaingame.AdminActionBotAdd,
-		Name:       "BotUser",
+		Name:       " BotUser ",
 		RemoteAddr: "203.0.113.7",
 	})
 
@@ -961,7 +961,7 @@ func TestAdminRepositoryMutatesBotAdd(t *testing.T) {
 	}
 	userInsert := runner.execCalls[1]
 	if !strings.Contains(userInsert.sql, "INSERT INTO `ogame_users`") ||
-		userInsert.args[6] != "botuser" || userInsert.args[7] != "BotUser" ||
+		userInsert.args[6] != " botuser " || userInsert.args[7] != " BotUser " ||
 		userInsert.args[10] != hashOverviewPassword("botpass", "secret") ||
 		userInsert.args[26] != "203.0.113.7" || userInsert.args[27] != 1 ||
 		userInsert.args[38] != "en" || userInsert.args[41] != 8000 {
@@ -1040,6 +1040,17 @@ func TestAdminRepositoryBotAddEdges(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestDefaultAdminBotStrategySourceMatchesLegacy(t *testing.T) {
+	want := "{ \"class\": \"go.GraphLinksModel\",\n" +
+		"                             \"linkFromPortIdProperty\": \"fromPort\",\n" +
+		"                             \"linkToPortIdProperty\": \"toPort\",\n" +
+		"                             \"nodeDataArray\": [ ],\n" +
+		"                             \"linkDataArray\": [ ]}"
+	if got := defaultAdminBotStrategySource(); got != want {
+		t.Fatalf("default bot strategy source differs from legacy:\nwant %q\ngot  %q", want, got)
+	}
 }
 
 func TestAdminRepositoryBotAddHelperEdges(t *testing.T) {

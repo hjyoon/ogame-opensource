@@ -559,7 +559,7 @@ func (r AdminRepository) mutateAdminBotAdd(ctx context.Context, query appgame.Ad
 	if !found {
 		return domaingame.AdminIssue(domaingame.AdminIssueBotNoStart), nil
 	}
-	name := strings.TrimSpace(query.Name)
+	name := query.Name
 	lowerName := strings.ToLower(name)
 	exists, err := r.adminBotUserExists(ctx, usersTable, lowerName)
 	if err != nil {
@@ -2422,11 +2422,11 @@ func (r AdminRepository) loadAdminBotStrategy(ctx context.Context, botstratTable
 }
 
 func defaultAdminBotStrategySource() string {
-	return `{ "class": "go.GraphLinksModel",
-	                             "linkFromPortIdProperty": "fromPort",
-	                             "linkToPortIdProperty": "toPort",
-	                             "nodeDataArray": [ ],
-	                             "linkDataArray": [ ]}`
+	return "{ \"class\": \"go.GraphLinksModel\",\n" +
+		"                             \"linkFromPortIdProperty\": \"fromPort\",\n" +
+		"                             \"linkToPortIdProperty\": \"toPort\",\n" +
+		"                             \"nodeDataArray\": [ ],\n" +
+		"                             \"linkDataArray\": [ ]}"
 }
 
 func (r AdminRepository) loadAdminBrowseRows(ctx context.Context) ([]domaingame.AdminBrowseRow, error) {

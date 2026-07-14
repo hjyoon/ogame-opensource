@@ -24,6 +24,7 @@ Keep this file under 4KB. This tracks the legacy bot system in the Go/Bun migrat
 - `playwright-user-type-e2e.ts` checks regular/operator denial and admin BotEdit access.
 - Backend unit tests cover BotEdit mutation paths, import success, no-selected-strategy failure, and repository error branches.
 - Legacy PHP admin smoke still verifies Bots/BotEdit page rendering as the oracle.
+- `run-golang-admin-bots-differential-e2e.sh` exact-compares 18 list/add/stop and strategy CRUD/import/export cases, including whitespace names and access denial.
 
 ## Remaining Rule
 
