@@ -340,7 +340,7 @@ func (r GalaxyRepository) DispatchInstantFleet(ctx context.Context, query appgam
 	}
 
 	amount := absInt(query.Amount)
-	draft, issue := domaingame.BuildFleetDispatchValidation(fleet, domaingame.FleetDispatchValidationInput{
+	draft, issue := domaingame.BuildFleetInstantDispatchValidation(fleet, domaingame.FleetDispatchValidationInput{
 		Ships:      map[int]int{shipID: amount},
 		Target:     query.Target,
 		TargetType: query.TargetType,

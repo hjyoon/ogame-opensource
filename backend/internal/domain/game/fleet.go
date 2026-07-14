@@ -131,6 +131,7 @@ type FleetDispatchDraft struct {
 	Speed           int
 	UnionID         int
 	Cargo           int
+	TotalCargo      int
 	Distance        int
 	DurationSeconds int
 	MaxSpeed        int
@@ -275,6 +276,7 @@ func BuildFleetDispatchDraft(fleet Fleet, input FleetDispatchDraftInput) FleetDi
 	selectedCounts := make(FleetCounts, len(fleet.Ships))
 	total := 0
 	cargo := 0
+	totalCargo := 0
 	for _, available := range fleet.Ships {
 		if available.ID == FleetSolarSatellite || !available.Selectable {
 			continue
@@ -292,6 +294,7 @@ func BuildFleetDispatchDraft(fleet Fleet, input FleetDispatchDraftInput) FleetDi
 		ships = append(ships, FleetShipCount{ID: available.ID, Name: available.Name, Count: count})
 		selectedCounts[available.ID] = count
 		total += count
+		totalCargo += available.Cargo * count
 		if available.ID != FleetEspionageProbe {
 			cargo += available.Cargo * count
 		}
@@ -319,6 +322,7 @@ func BuildFleetDispatchDraft(fleet Fleet, input FleetDispatchDraftInput) FleetDi
 		Speed:           speed,
 		UnionID:         input.UnionID,
 		Cargo:           cargo,
+		TotalCargo:      totalCargo,
 		Distance:        distance,
 		DurationSeconds: durationSeconds,
 		MaxSpeed:        maxSpeed,
@@ -330,6 +334,20 @@ func BuildFleetDispatchDraft(fleet Fleet, input FleetDispatchDraftInput) FleetDi
 		HoldHours:       fleetDispatchHoldHours(missions),
 		ExpeditionHours: fleetDispatchExpeditionHours(fleet.ExpeditionLevel),
 	}
+}
+
+// BuildFleetInstantDispatchValidation preserves the galaxy AJAX dispatch rule,
+// which counts probe cargo when checking whether the fleet can carry its fuel.
+func BuildFleetInstantDispatchValidation(fleet Fleet, input FleetDispatchValidationInput) (FleetDispatchDraft, *FleetActionIssue) {
+	draft, issue := BuildFleetDispatchValidation(fleet, input)
+	if issue != nil {
+		return draft, issue
+	}
+	if draft.TotalCargo < draft.FuelConsumption {
+		draft.Ready = false
+		return draft, FleetActionIssueFor(FleetIssueNoCargo)
+	}
+	return draft, nil
 }
 
 func BuildFleetDispatchValidation(fleet Fleet, input FleetDispatchValidationInput) (FleetDispatchDraft, *FleetActionIssue) {

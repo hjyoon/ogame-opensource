@@ -1296,6 +1296,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
   },
   {
     name: "galaxy-instant-spy-dispatch-success",
+    isolateSides: true,
     legacyPage: "galaxy",
     migratedPath: "/game/galaxy",
     legacyReady: "#content",
@@ -1317,6 +1318,7 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
   },
   {
     name: "galaxy-instant-recycle-dispatch-success",
+    isolateSides: true,
     legacyPage: "galaxy",
     migratedPath: "/game/galaxy",
     legacyReady: "#content",
@@ -2994,7 +2996,8 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
     requiredFixtureFeatures: ["phalanx"],
     actions: [{ type: "wait", waitMs: 1500 }],
     assertions: [
-      { name: "phalanx-event-count", type: "count", selector: ".phalanx_fleet", compareSides: true, expected: "2" },
+      { name: "phalanx-event-row-count", type: "count", selector: "tr.flight, tr.return, tr.holding", compareSides: true, expected: "1" },
+      { name: "phalanx-fleet-class-count", type: "count", selector: ".phalanx_fleet", compareSides: true, expected: "2" },
       {
         name: "phalanx-countdown-seconds",
         type: "evaluate",

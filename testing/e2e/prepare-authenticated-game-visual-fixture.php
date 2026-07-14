@@ -99,17 +99,22 @@ function auth_visual_prepare_user(string $name, string $password, int $adminLeve
     return array('player_id' => $playerId, 'name' => $displayName, 'home_planet_id' => $homePlanetId);
 }
 
-function auth_visual_position_is_clear(int $g, int $s, int $p): bool
+function auth_visual_position_is_clear(int $g, int $s, int $p, array $ignoredPlanetIds = array()): bool
 {
-    if (HasPlanet($g, $s, $p)) {
+    global $db_prefix;
+
+    $ignored = array_values(array_unique(array_filter(array_map('intval', $ignoredPlanetIds), fn($id) => $id > 0)));
+    $ignoreClause = empty($ignored) ? '' : ' AND planet_id NOT IN (' . implode(',', $ignored) . ')';
+    $occupied = auth_visual_one_row(
+        "SELECT planet_id FROM {$db_prefix}planets WHERE g={$g} AND s={$s} AND p={$p}{$ignoreClause} LIMIT 1"
+    );
+    if ($occupied !== null) {
         return false;
     }
-    $moon = LoadPlanet($g, $s, $p, 3);
-    $debris = LoadPlanet($g, $s, $p, 2);
-    return ($moon === null || $moon === false) && ($debris === null || $debris === false);
+    return true;
 }
 
-function auth_visual_find_empty_hover_system(): array
+function auth_visual_find_empty_hover_system(array $ignoredPlanetIds = array()): array
 {
     global $GlobalUni;
 
@@ -117,7 +122,7 @@ function auth_visual_find_empty_hover_system(): array
         for ($s = 1; $s <= (int)$GlobalUni['systems']; $s++) {
             $clear = true;
             for ($p = 1; $p <= 10; $p++) {
-                if (!auth_visual_position_is_clear($g, $s, $p)) {
+                if (!auth_visual_position_is_clear($g, $s, $p, $ignoredPlanetIds)) {
                     $clear = false;
                     break;
                 }
@@ -130,7 +135,7 @@ function auth_visual_find_empty_hover_system(): array
     throw new RuntimeException('failed to find an empty visual hover galaxy system');
 }
 
-function auth_visual_find_far_empty_position(int $originG, int $originS, int $position): array
+function auth_visual_find_far_empty_position(int $originG, int $originS, int $position, array $ignoredPlanetIds = array()): array
 {
     global $GlobalUni;
 
@@ -138,7 +143,7 @@ function auth_visual_find_far_empty_position(int $originG, int $originS, int $po
     $bestDistance = -1;
     for ($g = 1; $g <= (int)$GlobalUni['galaxies']; $g++) {
         for ($s = 1; $s <= (int)$GlobalUni['systems']; $s++) {
-            if (!auth_visual_position_is_clear($g, $s, $position)) {
+            if (!auth_visual_position_is_clear($g, $s, $position, $ignoredPlanetIds)) {
                 continue;
             }
             $distance = abs($g - $originG) * 20000 + abs($s - $originS) * 95;
@@ -170,17 +175,23 @@ function auth_visual_place_planet(int $planetId, int $ownerId, string $name, int
 
 function auth_visual_delete_planets_by_name(array $names): void
 {
-    global $db_prefix;
-
     if (empty($names)) {
         return;
     }
+    global $db_prefix;
     $quoted = implode(',', array_map(fn($name) => "'" . auth_visual_sql_escape($name) . "'", $names));
     $res = dbquery("SELECT planet_id FROM {$db_prefix}planets WHERE name IN ({$quoted})");
     $planetIds = array();
     while ($row = dbarray($res)) {
         $planetIds[] = (int)$row['planet_id'];
     }
+    auth_visual_delete_planets_by_id($planetIds);
+}
+
+function auth_visual_delete_planets_by_id(array $planetIds): void
+{
+    global $db_prefix;
+
     $planetIds = array_values(array_unique(array_filter($planetIds, fn($id) => $id > 0)));
     if (empty($planetIds)) {
         return;
@@ -212,6 +223,27 @@ function auth_visual_delete_planets_by_name(array $names): void
     }
 
     dbquery("DELETE FROM {$db_prefix}planets WHERE planet_id IN ({$planetList})");
+}
+
+function auth_visual_delete_attached_debris(int $planetId): void
+{
+    global $db_prefix;
+
+    $planet = auth_visual_one_row("SELECT g, s, p FROM {$db_prefix}planets WHERE planet_id={$planetId} LIMIT 1");
+    if ($planet === null) {
+        return;
+    }
+    $g = (int)$planet['g'];
+    $s = (int)$planet['s'];
+    $p = (int)$planet['p'];
+    $res = dbquery(
+        "SELECT planet_id FROM {$db_prefix}planets WHERE g={$g} AND s={$s} AND p={$p} AND type=" . PTYP_DF
+    );
+    $debrisIds = array();
+    while ($row = dbarray($res)) {
+        $debrisIds[] = (int)$row['planet_id'];
+    }
+    auth_visual_delete_planets_by_id($debrisIds);
 }
 
 function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password): array
@@ -248,8 +280,21 @@ function auth_visual_prepare_galaxy_hover_fixture(array $user, string $password)
     $cargoUserId = (int)$cargoUser['player_id'];
     $cargoPlanetId = (int)$cargoUser['home_planet_id'];
     auth_visual_delete_planets_by_name(array('Visual Hover Moon', 'Visual Phalanx Moon'));
-    [$g, $s] = auth_visual_find_empty_hover_system();
-    [$cargoG, $cargoS, $cargoP] = auth_visual_find_far_empty_position($g, $s, 10);
+    auth_visual_delete_attached_debris($targetPlanetId);
+    $movablePlanetIds = array(
+        $viewerPlanetId,
+        $targetPlanetId,
+        $noobTargetPlanetId,
+        $vacationTargetPlanetId,
+        $maxFleetPlanetId,
+        $maxFleetTargetPlanetId,
+        $noShipsPlanetId,
+        $noShipsTargetPlanetId,
+        $lowFuelPlanetId,
+        $cargoPlanetId,
+    );
+    [$g, $s] = auth_visual_find_empty_hover_system($movablePlanetIds);
+    [$cargoG, $cargoS, $cargoP] = auth_visual_find_far_empty_position($g, $s, 10, $movablePlanetIds);
     $now = time();
 
     auth_visual_place_planet($targetPlanetId, $targetId, 'Visual Hover Planet', $g, $s, 1);

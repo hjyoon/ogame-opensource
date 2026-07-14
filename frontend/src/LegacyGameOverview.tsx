@@ -13458,7 +13458,7 @@ function PhalanxEventRows({ events }: { events: GameFleetMission[] }) {
                   ) : null}
                   <span
                     className={`${overviewEventSpanClass(groupEvent)} phalanx_fleet`}
-                    dangerouslySetInnerHTML={{ __html: legacyOverviewEventInnerHTML(groupEvent) }}
+                    dangerouslySetInnerHTML={{ __html: legacyOverviewEventInnerHTML(groupEvent, "phalanx_fleet") }}
                   />
                 </React.Fragment>
               ))}
@@ -15638,9 +15638,9 @@ function overviewEventShipTitle(event: GameFleetMission): string {
   return event.ships.map((ship) => `${ship.name} ${formatLegacyNumber(ship.count)}`).join(" ");
 }
 
-function legacyOverviewEventInnerHTML(event: GameFleetMission): string {
+function legacyOverviewEventInnerHTML(event: GameFleetMission, linkClass?: string): string {
   const baseMission = overviewEventBaseMission(event.mission);
-  const missionClass = overviewEventMissionClass(event);
+  const missionClass = linkClass ?? overviewEventMissionClass(event);
   const shipAnchor = legacyOverviewFleetAnchor(event, event.own === false ? 1 : 0, missionClass);
   const shipTitle = legacyOverviewFleetTitle(event, event.own === false ? 1 : 0);
   const returnMission = event.mission >= 100 && event.mission < 200;

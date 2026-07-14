@@ -134,6 +134,9 @@ func TestBuildFleetDispatchDraftNormalizesLegacySelection(t *testing.T) {
 	if draft.Cargo != 4*fleetShipCargo(FleetSmallCargo) {
 		t.Fatalf("probe cargo and satellites should be excluded from legacy cargo summary, got %d", draft.Cargo)
 	}
+	if draft.TotalCargo != 4*fleetShipCargo(FleetSmallCargo)+2*fleetShipCargo(FleetEspionageProbe) {
+		t.Fatalf("total cargo should retain probe capacity for instant dispatch, got %d", draft.TotalCargo)
+	}
 	if draft.Distance != 20000 || draft.MaxSpeed != 5500 || draft.DurationSeconds != 21116 || draft.FuelConsumption != 92 || draft.SpeedFactor != 1 {
 		t.Fatalf("unexpected legacy flight math: %+v", draft)
 	}
@@ -319,6 +322,32 @@ func TestBuildFleetDispatchValidationPlansLegacyResourceLoading(t *testing.T) {
 	}
 	if len(draft.Resources) != 3 || draft.Resources[0].Loaded != 15000 || draft.Resources[1].Loaded != 4909 || draft.Resources[2].Loaded != 0 {
 		t.Fatalf("unexpected capped resource loading plan: %+v", draft.Resources)
+	}
+}
+
+func TestBuildFleetInstantDispatchValidationCountsProbeCargo(t *testing.T) {
+	fleet := BuildFleet(Overview{
+		CurrentPlanet: PlanetOverview{
+			Type:        PlanetTypePlanet,
+			Coordinates: Coordinates{Galaxy: 1, System: 1, Position: 1},
+			Resources:   Resources{Deuterium: 1_000_000},
+		},
+	}, FleetCounts{FleetEspionageProbe: 1}, ResearchLevels{ResearchComputer: 3, ResearchCombustionDrive: 2}, nil, false, false)
+	input := FleetDispatchValidationInput{
+		Ships:      map[int]int{FleetEspionageProbe: 1},
+		Target:     Coordinates{Galaxy: 9, System: 499, Position: 15},
+		TargetType: GamePlanetTypePlanet,
+		Mission:    FleetMissionSpy,
+		Speed:      10,
+	}
+
+	regular, regularIssue := BuildFleetDispatchValidation(fleet, input)
+	if regularIssue != nil || !regular.Ready {
+		t.Fatalf("regular dispatch must retain the legacy probe exception: issue=%+v draft=%+v", regularIssue, regular)
+	}
+	instant, instantIssue := BuildFleetInstantDispatchValidation(fleet, input)
+	if instantIssue == nil || instantIssue.Code != FleetIssueNoCargo || instant.Ready || instant.TotalCargo != 5 || instant.FuelConsumption <= instant.TotalCargo {
+		t.Fatalf("instant dispatch must enforce AJAX probe cargo: issue=%+v draft=%+v", instantIssue, instant)
 	}
 }
 
