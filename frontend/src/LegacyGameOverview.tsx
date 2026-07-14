@@ -150,6 +150,19 @@ type GameAdminUserMutation = {
   officerDays: Record<string, number>;
 };
 
+type GameAdminPlanetMutation = {
+  coordinates: Coordinates;
+  diameter: number;
+  type: number;
+  temperature: number;
+  resources: Record<string, number>;
+  buildings: Record<string, number>;
+  fleet: Record<string, number>;
+  defense: Record<string, number>;
+  production: Record<string, number>;
+  delete: boolean;
+};
+
 export type GameAdminAction =
   | {
       action: "ban";
@@ -260,6 +273,17 @@ export type GameAdminAction =
   | {
       action: "recalc_stats" | "reactivate" | "bot_start" | "bot_stop";
       targetIds: number[];
+    }
+  | {
+      action: "update";
+      planetSettings: GameAdminPlanetMutation;
+    }
+  | {
+      action: "search";
+      planetSearch: { type: string; text: string };
+    }
+  | {
+      action: "create_moon" | "create_debris" | "cooldown_gates" | "warmup_gates" | "recalc_fields" | "random_diam";
     };
 
 export type GameAllianceAction =
@@ -1446,6 +1470,9 @@ type GameAdmin = {
   selectedUser?: GameAdminUserDetail;
   planetRows?: GameAdminPlanetRow[];
   selectedPlanet?: GameAdminPlanetDetail;
+  planetSearchRows?: GameAdminPlanetRow[];
+  planetSearchAttempted?: boolean;
+  planetSearchBlank?: boolean;
   reportRows?: GameAdminReportRow[];
   universe?: GameAdminUniverseSettings;
   expedition?: Record<string, number>;
@@ -1648,6 +1675,7 @@ type GameAdminPlanetDetail = GameAdminPlanetRow & {
   buildQueue: GameOverviewBuildQueue[];
   moon?: GameAdminPlanetRow;
   debris?: GameAdminPlanetRow;
+  parent?: GameAdminPlanetRow;
 };
 
 type GameAdminReportRow = {
@@ -3947,7 +3975,7 @@ function AdminTable({ actionIssue, admin, onAdminAction }: { actionIssue?: GameA
   if (admin.mode === "Planets") {
     return (
       <AdminModeShell admin={admin}>
-        <AdminPlanetsTable admin={admin} />
+        <AdminPlanetsTable admin={admin} onAdminAction={onAdminAction} />
       </AdminModeShell>
     );
   }
@@ -5741,13 +5769,14 @@ function adminUserColor(user: GameAdminUserRow): string {
   return "";
 }
 
-function AdminPlanetsTable({ admin }: { admin: GameAdmin }) {
+function AdminPlanetsTable({ admin, onAdminAction }: { admin: GameAdmin; onAdminAction: (action: GameAdminAction) => void }) {
   if (admin.selectedPlanet) {
     return (
       <div
         className="legacy-admin-planets-detail"
         dangerouslySetInnerHTML={{ __html: adminPlanetDetailHTML(admin.selectedPlanet) }}
-        onClick={handleAdminPlanetDetailClick}
+        onClick={(event) => handleAdminPlanetDetailClick(event, onAdminAction)}
+        onSubmit={(event) => handleAdminPlanetDetailSubmit(event, admin.selectedPlanet!, onAdminAction)}
         style={{ display: "contents" }}
       />
     );
@@ -5756,26 +5785,76 @@ function AdminPlanetsTable({ admin }: { admin: GameAdmin }) {
     <div
       className="legacy-admin-planets-table"
       dangerouslySetInnerHTML={{ __html: adminPlanetsHTML(admin) }}
+      onSubmit={(event) => handleAdminPlanetSearchSubmit(event, onAdminAction)}
       style={{ display: "contents" }}
     />
   );
 }
 
-function handleAdminPlanetDetailClick(event: React.MouseEvent<HTMLDivElement>) {
+function handleAdminPlanetDetailClick(event: React.MouseEvent<HTMLDivElement>, onAdminAction: (action: GameAdminAction) => void) {
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
     return;
   }
-  const action = target.closest<HTMLAnchorElement>("#admin-planet-spio, #admin-planet-reset");
+  const action = target.closest<HTMLAnchorElement>("a");
   if (!action) {
     return;
   }
-  event.preventDefault();
   if (action.id === "admin-planet-spio") {
+    event.preventDefault();
     parseAdminPlanetSpyReport(action.closest(".legacy-admin-planets-detail") ?? document);
-  } else {
-    resetAdminPlanetParserValues(action.closest(".legacy-admin-planets-detail") ?? document);
+    return;
   }
+  if (action.id === "admin-planet-reset") {
+    event.preventDefault();
+    resetAdminPlanetParserValues(action.closest(".legacy-admin-planets-detail") ?? document);
+    return;
+  }
+  const adminAction = new URL(action.href, window.location.href).searchParams.get("action");
+  if (["create_moon", "create_debris", "cooldown_gates", "warmup_gates", "recalc_fields", "random_diam"].includes(adminAction ?? "")) {
+    event.preventDefault();
+    onAdminAction({ action: adminAction as "create_moon" | "create_debris" | "cooldown_gates" | "warmup_gates" | "recalc_fields" | "random_diam" });
+  }
+}
+
+function handleAdminPlanetDetailSubmit(event: React.FormEvent<HTMLDivElement>, planet: GameAdminPlanetDetail, onAdminAction: (action: GameAdminAction) => void) {
+  const form = event.target instanceof HTMLFormElement ? event.target : null;
+  if (!form) {
+    return;
+  }
+  event.preventDefault();
+  const data = new FormData(form);
+  const integer = (name: string) => Number.parseInt(String(data.get(name) ?? "0"), 10) || 0;
+  const numericValues = (rows: GameAdminTechnologyValue[]) => Object.fromEntries(rows.map((row) => [String(row.id), integer(String(row.id))]));
+  const production = Object.fromEntries(
+    [1, 2, 3, 4, 12, 212].map((id) => [String(id), Number.parseFloat(String(data.get(`prod${id}`) ?? "0")) || 0])
+  );
+  const submitter = (event.nativeEvent as SubmitEvent).submitter;
+  onAdminAction({
+    action: "update",
+    planetSettings: {
+      coordinates: { galaxy: integer("g"), system: integer("s"), position: integer("p") },
+      diameter: integer("diameter"),
+      type: integer("type"),
+      temperature: integer("temp"),
+      resources: { "700": integer("700"), "701": integer("701"), "702": integer("702") },
+      buildings: numericValues(planet.buildings),
+      fleet: numericValues(planet.fleet),
+      defense: numericValues(planet.defense),
+      production,
+      delete: submitter instanceof HTMLInputElement && submitter.name === "delete_planet"
+    }
+  });
+}
+
+function handleAdminPlanetSearchSubmit(event: React.FormEvent<HTMLDivElement>, onAdminAction: (action: GameAdminAction) => void) {
+  const form = event.target instanceof HTMLFormElement ? event.target : null;
+  if (!form) {
+    return;
+  }
+  event.preventDefault();
+  const data = new FormData(form);
+  onAdminAction({ action: "search", planetSearch: { type: String(data.get("type") ?? ""), text: String(data.get("searchtext") ?? "") } });
 }
 
 function parseAdminPlanetSpyReport(root: ParentNode) {
@@ -5850,11 +5929,15 @@ function adminPlanetDetailHTML(planet: GameAdminPlanetDetail): string {
       html += `<a href="${legacyHTMLAttribute(adminModeActionHref("Planets", "create_debris"))}" >Create debris field</a>\n`;
     }
     html += "<br/><br/>\n";
+  } else if (planet.parent) {
+    html += `<a href="${legacyHTMLAttribute(adminPlanetHref(planet.parent.id))}"><img src="${legacyHTMLAttribute(
+      planetImagePath({ id: planet.parent.id, type: 1, coordinates: planet.parent.coordinates }, true)
+    )}"><br>\n${legacyHTMLText(planet.parent.name)}</a>`;
   }
   html += '<br><br><textarea rows=10 cols=10 id="spiotext"></textarea>';
   html += '<a href="#" id="admin-planet-spio">Parse espionage report</a> <br><a href="#" id="admin-planet-reset">Reset</a>';
   html += "</th>";
-  html += `<th valign=top>${adminTechnologyValueTableHTML(planet.buildings, true)}</th>\n`;
+  html += `<th valign=top>${adminTechnologyValueTableHTML(planet.buildings, true, planet)}</th>\n`;
   html += `<th valign=top>${adminTechnologyValueTableHTML(planet.fleet, true)}</th>\n`;
   html += `<th valign=top>${adminTechnologyValueTableHTML(planet.defense, false)}</th>\n`;
   html += "</tr>\n";
@@ -5886,12 +5969,19 @@ function adminPlanetDetailHTML(planet: GameAdminPlanetDetail): string {
   return html;
 }
 
-function adminTechnologyValueTableHTML(rows: GameAdminTechnologyValue[], withProduction: boolean): string {
+function adminTechnologyValueTableHTML(rows: GameAdminTechnologyValue[], withProduction: boolean, planet?: GameAdminPlanetDetail): string {
   let html = "<table>\n";
   for (const row of rows) {
     html += `<tr><th>${legacyHTMLText(row.name)}`;
-    if (row.id === 43) {
-      html += " ";
+    if (row.id === 43 && planet?.type === 0) {
+      const remaining = planet.gateUntil - Math.floor(Date.now() / 1000);
+      if (remaining <= 0) {
+        html += ` <a href="${legacyHTMLAttribute(adminModeActionHref("Planets", "warmup_gates"))}" >warm up</a>`;
+      } else {
+        const minutes = String(Math.floor(remaining / 60) % 60).padStart(2, "0");
+        const seconds = String(remaining % 60).padStart(2, "0");
+        html += ` ${minutes}m ${seconds}s <a href="${legacyHTMLAttribute(adminModeActionHref("Planets", "cooldown_gates"))}">cool down</a>`;
+      }
     }
     html += `</th><th><nobr><input id="obj${row.id}" type="text" size=${row.id < 200 ? 3 : 6} name="${row.id}" value="${row.value}" />`;
     if (withProduction && row.percent >= 0 && adminHasProductionSelect(row.id)) {
@@ -5956,6 +6046,23 @@ function adminPlanetsHTML(admin: GameAdmin): string {
   html += "    &nbsp;&nbsp;\n";
   html += '    <input type="submit" value="Search" />\n';
   html += "   </th>\n  </tr>\n </table>\n </form>\n";
+  if (admin.planetSearchAttempted) {
+    if (admin.planetSearchBlank) {
+      html += "Specify search string<br>\n";
+    }
+    html += "<table>\n";
+    const rows = admin.planetSearchRows ?? [];
+    if (rows.length === 0) {
+      html += "Nothing found<br>\n";
+    } else {
+      for (const planet of rows) {
+        html += `<tr><th>${formatLegacyAdminDateTime(planet.date)}</th><th>${adminPlanetCoordHTML(planet.coordinates)}</th>`;
+        html += `<th><a href="${legacyHTMLAttribute(adminPlanetHref(planet.id))}">${legacyHTMLText(planet.name)}</a></th>`;
+        html += `<th>${planet.owner ? `<a href="${legacyHTMLAttribute(adminUserHref(planet.owner.playerId))}">${legacyHTMLText(planet.owner.name)}</a>` : ""}</th></tr>\n`;
+      }
+    }
+    html += "</table>\n";
+  }
   return html;
 }
 

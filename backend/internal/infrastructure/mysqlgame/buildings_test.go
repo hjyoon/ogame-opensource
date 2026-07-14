@@ -1305,6 +1305,37 @@ func TestBuildingsRepositoryQueueHelperEdges(t *testing.T) {
 	}
 }
 
+func TestBuildingsRepositoryQueueQueriesNormalizeNullableDestroy(t *testing.T) {
+	row := buildQueueRowValues(buildQueueRow{ID: 1})
+	queries := []*fakeQueryer{
+		{results: []fakeQueryResult{{rows: fakeRowsFromValues(row)}}},
+		{results: []fakeQueryResult{{rows: fakeRowsFromValues(row)}}},
+		{results: []fakeQueryResult{{rows: fakeRowsFromValues(row)}}},
+	}
+	repositories := []func(BuildingsRepository) error{
+		func(repository BuildingsRepository) error {
+			_, err := repository.loadBuildQueueRows(context.Background(), "`ogame_buildqueue`", 99)
+			return err
+		},
+		func(repository BuildingsRepository) error {
+			_, err := repository.loadBuildQueueRow(context.Background(), "`ogame_buildqueue`", 42, 99, 1)
+			return err
+		},
+		func(repository BuildingsRepository) error {
+			_, err := repository.loadBuildQueueRowByID(context.Background(), "`ogame_buildqueue`", 1)
+			return err
+		},
+	}
+	for index, queryer := range queries {
+		if err := repositories[index](NewBuildingsRepositoryWithQueryer(queryer, "ogame_")); err != nil {
+			t.Fatal(err)
+		}
+		if len(queryer.calls) != 1 || !strings.Contains(queryer.calls[0].sql, "COALESCE(destroy, 0)") {
+			t.Fatalf("queue query %d must normalize nullable destroy: %+v", index, queryer.calls)
+		}
+	}
+}
+
 func TestBuildingsRepositoryMutationBranches(t *testing.T) {
 	runner := &fakeBuildingsRunner{}
 	repository := NewBuildingsRepositoryWithRunner(runner, runner, "bad-prefix_", time.Now)

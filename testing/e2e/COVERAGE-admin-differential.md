@@ -19,7 +19,8 @@ IDs and wall-clock deltas are normalized; durable effects remain exact.
 | Simulators | 19 | Rocket, Expedition and Battle form/result/report/message semantics | PASS |
 | CRON/cleanup/coupon | 12 | order/freeze/timers, cleanup, coupon mail and boundaries | PASS |
 | Users | 8 | full edit, planet create/collision, stats, bot controls, reactivation SMTP | PASS |
-| **Total** | **159** | deterministic PHP/Go DB, files and HTTP contracts | **PASS** |
+| Planets | 13 | edit/delete, moon/debris, gates, fields/diameter, search | PASS |
+| **Total** | **172** | deterministic PHP/Go DB, files and HTTP contracts | **PASS** |
 
 Universe covers every mutable field, empty strings, news update/disable ordering,
 max-user zero preservation, freeze/unfreeze, active-user VM forcing and rejection.
@@ -34,11 +35,12 @@ CRON verifies PHP NULL coercion, planet/player cleanup and exemptions. Coupon CR
 covers one-off/periodic/frozen tasks, strict date bounds and localized SMTP.
 Users covers every edit field, officer timers, rank recalculation, legacy bot queue
 timing, generated colony invariants and normalized password/activation mail.
+Planets exact-compares typed edits, home/colony deletion and queue cleanup, moon and
+debris creation, gate timers, field/diameter recalculation, and both searches.
 
 ## Pending Groups
 
 - Battle simulator debug diagnostics and post-action screenshot state.
-- Planets full edit/create/destroy operations.
 
 PHP Mods are excluded by project policy. A group is removed from this list only
 after normal, boundary, rejection, no-op and rollback/completion cases are added
@@ -47,22 +49,8 @@ where applicable.
 ## Commands
 
 ```sh
-testing/e2e/run-golang-admin-bans-differential-e2e.sh
-testing/e2e/run-golang-admin-queue-differential-e2e.sh
-testing/e2e/run-golang-admin-operations-differential-e2e.sh
-testing/e2e/run-golang-admin-universe-differential-e2e.sh
-testing/e2e/run-golang-admin-audit-differential-e2e.sh
-testing/e2e/run-golang-admin-coupons-differential-e2e.sh
-testing/e2e/run-golang-admin-database-differential-e2e.sh
-testing/e2e/run-golang-admin-bots-differential-e2e.sh
-testing/e2e/run-golang-admin-colony-settings-differential-e2e.sh
-testing/e2e/run-golang-admin-checksum-differential-e2e.sh
-testing/e2e/run-golang-admin-loca-differential-e2e.sh
-testing/e2e/run-golang-admin-simulators-differential-e2e.sh
-testing/e2e/run-golang-admin-cron-differential-e2e.sh
-testing/e2e/run-golang-admin-cleanup-differential-e2e.sh
-testing/e2e/run-golang-admin-coupon-cron-differential-e2e.sh
-testing/e2e/run-golang-admin-users-differential-e2e.sh
+testing/e2e/run-golang-admin-planets-differential-e2e.sh
+testing/e2e/run-golang-migration-qa.sh
 ```
 
-All are included in `testing/e2e/run-golang-migration-qa.sh`.
+All `run-golang-admin-*-differential-e2e.sh` runners are in the full QA gate.

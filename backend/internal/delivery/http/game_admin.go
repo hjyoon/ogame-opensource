@@ -41,6 +41,8 @@ type gameAdminMutationRequest struct {
 	Reason        string                            `json:"reason"`
 	Values        map[string]int                    `json:"values"`
 	User          *gameAdminUserMutationRequest     `json:"userSettings"`
+	Planet        *gameAdminPlanetMutationRequest   `json:"planetSettings"`
+	PlanetSearch  *gameAdminPlanetSearchRequest     `json:"planetSearch"`
 	Universe      *gameAdminUniverseMutationRequest `json:"universeSettings"`
 	Category      int                               `json:"category"`
 	Subject       string                            `json:"subject"`
@@ -59,6 +61,24 @@ type gameAdminMutationRequest struct {
 	Name          string                            `json:"name"`
 	Filter        string                            `json:"filter"`
 	UserLogSearch *gameAdminUserLogSearchRequest    `json:"userLogSearch"`
+}
+
+type gameAdminPlanetMutationRequest struct {
+	Coordinates gameCoordinatesResponse `json:"coordinates"`
+	Diameter    int                     `json:"diameter"`
+	Type        int                     `json:"type"`
+	Temperature int                     `json:"temperature"`
+	Resources   map[string]int          `json:"resources"`
+	Buildings   map[string]int          `json:"buildings"`
+	Fleet       map[string]int          `json:"fleet"`
+	Defense     map[string]int          `json:"defense"`
+	Production  map[string]float64      `json:"production"`
+	Delete      bool                    `json:"delete"`
+}
+
+type gameAdminPlanetSearchRequest struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
 }
 
 type gameAdminUserMutationRequest struct {
@@ -127,42 +147,45 @@ type gameAdminUniverseMutationRequest struct {
 }
 
 type gameAdminSummary struct {
-	Commander       string                      `json:"commander"`
-	CurrentPlanet   gamePlanetOverviewResponse  `json:"currentPlanet"`
-	PlanetSwitcher  []gamePlanetSummaryResponse `json:"planetSwitcher"`
-	Viewer          gameAdminViewer             `json:"viewer"`
-	Mode            string                      `json:"mode"`
-	Menu            []gameAdminMenuItem         `json:"menu"`
-	MessageRows     []gameAdminMessageRow       `json:"messageRows,omitempty"`
-	LoginRows       []gameAdminLoginRow         `json:"loginRows,omitempty"`
-	BrowseRows      []gameAdminBrowseRow        `json:"browseRows,omitempty"`
-	UserLogRows     []gameAdminUserLogRow       `json:"userLogRows,omitempty"`
-	UserLogGroups   []gameAdminUserLogGroup     `json:"userLogGroups,omitempty"`
-	UserLogSearched bool                        `json:"userLogSearched,omitempty"`
-	UserLogType     string                      `json:"userLogType,omitempty"`
-	UserRows        []gameAdminUserRow          `json:"userRows,omitempty"`
-	ActiveUsers     []gameAdminUserRow          `json:"activeUsers,omitempty"`
-	SelectedUser    *gameAdminUserDetail        `json:"selectedUser,omitempty"`
-	PlanetRows      []gameAdminPlanetRow        `json:"planetRows,omitempty"`
-	SelectedPlanet  *gameAdminPlanetDetail      `json:"selectedPlanet,omitempty"`
-	ReportRows      []gameAdminReportRow        `json:"reportRows,omitempty"`
-	Universe        *gameAdminUniverseSettings  `json:"universe,omitempty"`
-	Expedition      map[string]int              `json:"expedition,omitempty"`
-	FleetLogRows    []gameAdminFleetLogRow      `json:"fleetLogRows,omitempty"`
-	QueueRows       []gameAdminQueueRow         `json:"queueRows,omitempty"`
-	BattleReports   []gameAdminBattleReportRow  `json:"battleReports,omitempty"`
-	ChecksumGroups  []gameAdminChecksumGroup    `json:"checksumGroups,omitempty"`
-	DatabaseBackups []gameAdminDatabaseBackup   `json:"databaseBackups,omitempty"`
-	BotStrategies   []gameAdminBotStrategy      `json:"botStrategies,omitempty"`
-	BotRows         []gameAdminBotRow           `json:"botRows,omitempty"`
-	ModRows         []gameAdminModInfo          `json:"modRows,omitempty"`
-	Localization    *gameAdminLocalization      `json:"localization,omitempty"`
-	ColonySettings  map[string]int              `json:"colonySettings,omitempty"`
-	CouponRows      []gameAdminCouponRow        `json:"couponRows,omitempty"`
-	CouponQueueRows []gameAdminCouponQueueRow   `json:"couponQueueRows,omitempty"`
-	CouponFrom      int                         `json:"couponFrom,omitempty"`
-	CouponPageSize  int                         `json:"couponPageSize,omitempty"`
-	CouponTotal     int                         `json:"couponTotal,omitempty"`
+	Commander             string                      `json:"commander"`
+	CurrentPlanet         gamePlanetOverviewResponse  `json:"currentPlanet"`
+	PlanetSwitcher        []gamePlanetSummaryResponse `json:"planetSwitcher"`
+	Viewer                gameAdminViewer             `json:"viewer"`
+	Mode                  string                      `json:"mode"`
+	Menu                  []gameAdminMenuItem         `json:"menu"`
+	MessageRows           []gameAdminMessageRow       `json:"messageRows,omitempty"`
+	LoginRows             []gameAdminLoginRow         `json:"loginRows,omitempty"`
+	BrowseRows            []gameAdminBrowseRow        `json:"browseRows,omitempty"`
+	UserLogRows           []gameAdminUserLogRow       `json:"userLogRows,omitempty"`
+	UserLogGroups         []gameAdminUserLogGroup     `json:"userLogGroups,omitempty"`
+	UserLogSearched       bool                        `json:"userLogSearched,omitempty"`
+	UserLogType           string                      `json:"userLogType,omitempty"`
+	UserRows              []gameAdminUserRow          `json:"userRows,omitempty"`
+	ActiveUsers           []gameAdminUserRow          `json:"activeUsers,omitempty"`
+	SelectedUser          *gameAdminUserDetail        `json:"selectedUser,omitempty"`
+	PlanetRows            []gameAdminPlanetRow        `json:"planetRows,omitempty"`
+	SelectedPlanet        *gameAdminPlanetDetail      `json:"selectedPlanet,omitempty"`
+	PlanetSearchRows      []gameAdminPlanetRow        `json:"planetSearchRows,omitempty"`
+	PlanetSearchAttempted bool                        `json:"planetSearchAttempted,omitempty"`
+	PlanetSearchBlank     bool                        `json:"planetSearchBlank,omitempty"`
+	ReportRows            []gameAdminReportRow        `json:"reportRows,omitempty"`
+	Universe              *gameAdminUniverseSettings  `json:"universe,omitempty"`
+	Expedition            map[string]int              `json:"expedition,omitempty"`
+	FleetLogRows          []gameAdminFleetLogRow      `json:"fleetLogRows,omitempty"`
+	QueueRows             []gameAdminQueueRow         `json:"queueRows,omitempty"`
+	BattleReports         []gameAdminBattleReportRow  `json:"battleReports,omitempty"`
+	ChecksumGroups        []gameAdminChecksumGroup    `json:"checksumGroups,omitempty"`
+	DatabaseBackups       []gameAdminDatabaseBackup   `json:"databaseBackups,omitempty"`
+	BotStrategies         []gameAdminBotStrategy      `json:"botStrategies,omitempty"`
+	BotRows               []gameAdminBotRow           `json:"botRows,omitempty"`
+	ModRows               []gameAdminModInfo          `json:"modRows,omitempty"`
+	Localization          *gameAdminLocalization      `json:"localization,omitempty"`
+	ColonySettings        map[string]int              `json:"colonySettings,omitempty"`
+	CouponRows            []gameAdminCouponRow        `json:"couponRows,omitempty"`
+	CouponQueueRows       []gameAdminCouponQueueRow   `json:"couponQueueRows,omitempty"`
+	CouponFrom            int                         `json:"couponFrom,omitempty"`
+	CouponPageSize        int                         `json:"couponPageSize,omitempty"`
+	CouponTotal           int                         `json:"couponTotal,omitempty"`
 }
 
 type gameAdminViewer struct {
@@ -324,6 +347,7 @@ type gameAdminPlanetDetail struct {
 	BuildQueue       []gameBuildQueueResponse   `json:"buildQueue"`
 	Moon             *gameAdminPlanetRow        `json:"moon,omitempty"`
 	Debris           *gameAdminPlanetRow        `json:"debris,omitempty"`
+	Parent           *gameAdminPlanetRow        `json:"parent,omitempty"`
 }
 
 type gamePlanetScoreResponse struct {
@@ -535,6 +559,20 @@ func (a app) handleGameAdminGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid coupon page", http.StatusBadRequest)
 		return
 	}
+	action := r.URL.Query().Get("action")
+	if r.URL.Query().Get("mode") == "Planets" && isAdminPlanetGETAction(action) {
+		result, err := a.deps.GameAdmin.MutateAdmin(r.Context(), appgame.AdminMutationCommand{
+			PublicSession: r.URL.Query().Get("session"), PrivateSessions: cookieMap(r), RemoteAddr: remoteIP(r.RemoteAddr),
+			PlanetID: planetID, Mode: "Planets", TargetPlanetID: planetID, Action: action,
+		})
+		if err != nil {
+			logGameAdminError(a.deps.Logger, r, "game admin get mutation failed", err)
+			http.Error(w, "game admin unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		writeGameAdminResponse(w, result)
+		return
+	}
 	result, err := a.deps.GameAdmin.GetAdmin(r.Context(), appgame.AdminCommand{
 		PublicSession:   r.URL.Query().Get("session"),
 		PrivateSessions: cookieMap(r),
@@ -558,6 +596,17 @@ func (a app) handleGameAdminGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeGameAdminResponse(w, result)
+}
+
+func isAdminPlanetGETAction(action string) bool {
+	switch action {
+	case domaingame.AdminActionPlanetsCreateMoon, domaingame.AdminActionPlanetsCreateDebris,
+		domaingame.AdminActionPlanetsCooldownGates, domaingame.AdminActionPlanetsWarmupGates,
+		domaingame.AdminActionPlanetsRecalcFields, domaingame.AdminActionPlanetsRandomDiameter:
+		return true
+	default:
+		return false
+	}
 }
 
 func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
@@ -614,6 +663,8 @@ func (a app) handleGameAdminPost(w http.ResponseWriter, r *http.Request) {
 		Reason:          request.Reason,
 		Values:          request.Values,
 		User:            toAdminUserMutation(request.User),
+		Planet:          toAdminPlanetMutation(request.Planet),
+		PlanetSearch:    toAdminPlanetSearch(request.PlanetSearch),
 		Universe:        toAdminUniverseMutation(request.Universe),
 		Category:        request.Category,
 		Subject:         request.Subject,
@@ -665,6 +716,39 @@ func adminNumericMap(values map[string]int) map[int]int {
 		}
 	}
 	return result
+}
+
+func adminNumericFloatMap(values map[string]float64) map[int]float64 {
+	result := make(map[int]float64, len(values))
+	for key, value := range values {
+		id, err := strconv.Atoi(key)
+		if err == nil {
+			result[id] = value
+		}
+	}
+	return result
+}
+
+func toAdminPlanetMutation(request *gameAdminPlanetMutationRequest) *domaingame.AdminPlanetMutation {
+	if request == nil {
+		return nil
+	}
+	return &domaingame.AdminPlanetMutation{
+		Coordinates: domaingame.Coordinates{
+			Galaxy: request.Coordinates.Galaxy, System: request.Coordinates.System, Position: request.Coordinates.Position,
+		},
+		Diameter: request.Diameter, Type: request.Type, Temperature: request.Temperature,
+		Resources: adminNumericMap(request.Resources), Buildings: adminNumericMap(request.Buildings),
+		Fleet: adminNumericMap(request.Fleet), Defense: adminNumericMap(request.Defense),
+		Production: adminNumericFloatMap(request.Production), Delete: request.Delete,
+	}
+}
+
+func toAdminPlanetSearch(request *gameAdminPlanetSearchRequest) *domaingame.AdminPlanetSearch {
+	if request == nil {
+		return nil
+	}
+	return &domaingame.AdminPlanetSearch{Type: request.Type, Text: request.Text}
 }
 
 func toAdminUserLogSearch(request *gameAdminUserLogSearchRequest) *domaingame.AdminUserLogSearch {
@@ -898,6 +982,10 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 		planetRows = append(planetRows, toGameAdminPlanetRow(row))
 	}
 	selectedPlanet := toGameAdminPlanetDetail(admin.SelectedPlanet)
+	planetSearchRows := make([]gameAdminPlanetRow, 0, len(admin.PlanetSearchRows))
+	for _, row := range admin.PlanetSearchRows {
+		planetSearchRows = append(planetSearchRows, toGameAdminPlanetRow(row))
+	}
 	reportRows := make([]gameAdminReportRow, 0, len(admin.ReportRows))
 	for _, row := range admin.ReportRows {
 		reportRows = append(reportRows, gameAdminReportRow{
@@ -1023,38 +1111,41 @@ func toGameAdminSummary(admin domaingame.Admin) gameAdminSummary {
 			Name:     admin.Viewer.Name,
 			Level:    admin.Viewer.Level,
 		},
-		Mode:            admin.Mode,
-		Menu:            menu,
-		MessageRows:     messageRows,
-		LoginRows:       loginRows,
-		BrowseRows:      browseRows,
-		UserLogRows:     userLogRows,
-		UserLogGroups:   userLogGroups,
-		UserLogSearched: admin.UserLogSearched,
-		UserLogType:     admin.UserLogType,
-		UserRows:        userRows,
-		ActiveUsers:     activeUsers,
-		SelectedUser:    selectedUser,
-		PlanetRows:      planetRows,
-		SelectedPlanet:  selectedPlanet,
-		ReportRows:      reportRows,
-		Universe:        universe,
-		Expedition:      admin.Expedition,
-		FleetLogRows:    fleetLogRows,
-		QueueRows:       queueRows,
-		BattleReports:   battleReports,
-		ChecksumGroups:  checksumGroups,
-		DatabaseBackups: databaseBackups,
-		BotStrategies:   botStrategies,
-		BotRows:         botRows,
-		ModRows:         modRows,
-		Localization:    localization,
-		ColonySettings:  admin.ColonySettings,
-		CouponRows:      couponRows,
-		CouponQueueRows: couponQueueRows,
-		CouponFrom:      admin.CouponFrom,
-		CouponPageSize:  admin.CouponPageSize,
-		CouponTotal:     admin.CouponTotal,
+		Mode:                  admin.Mode,
+		Menu:                  menu,
+		MessageRows:           messageRows,
+		LoginRows:             loginRows,
+		BrowseRows:            browseRows,
+		UserLogRows:           userLogRows,
+		UserLogGroups:         userLogGroups,
+		UserLogSearched:       admin.UserLogSearched,
+		UserLogType:           admin.UserLogType,
+		UserRows:              userRows,
+		ActiveUsers:           activeUsers,
+		SelectedUser:          selectedUser,
+		PlanetRows:            planetRows,
+		SelectedPlanet:        selectedPlanet,
+		PlanetSearchRows:      planetSearchRows,
+		PlanetSearchAttempted: admin.PlanetSearchAttempted,
+		PlanetSearchBlank:     admin.PlanetSearchBlank,
+		ReportRows:            reportRows,
+		Universe:              universe,
+		Expedition:            admin.Expedition,
+		FleetLogRows:          fleetLogRows,
+		QueueRows:             queueRows,
+		BattleReports:         battleReports,
+		ChecksumGroups:        checksumGroups,
+		DatabaseBackups:       databaseBackups,
+		BotStrategies:         botStrategies,
+		BotRows:               botRows,
+		ModRows:               modRows,
+		Localization:          localization,
+		ColonySettings:        admin.ColonySettings,
+		CouponRows:            couponRows,
+		CouponQueueRows:       couponQueueRows,
+		CouponFrom:            admin.CouponFrom,
+		CouponPageSize:        admin.CouponPageSize,
+		CouponTotal:           admin.CouponTotal,
 	}
 }
 
@@ -1264,6 +1355,7 @@ func toGameAdminPlanetDetail(detail *domaingame.AdminPlanetDetail) *gameAdminPla
 		BuildQueue:       buildQueue,
 		Moon:             toGameAdminPlanetRowPointer(detail.Moon),
 		Debris:           toGameAdminPlanetRowPointer(detail.Debris),
+		Parent:           toGameAdminPlanetRowPointer(detail.Parent),
 	}
 }
 

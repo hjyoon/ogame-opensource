@@ -52,6 +52,15 @@ const (
 	AdminActionUsersBotStart     = "bot_start"
 	AdminActionUsersBotStop      = "bot_stop"
 
+	AdminActionPlanetsUpdate         = "update"
+	AdminActionPlanetsSearch         = "search"
+	AdminActionPlanetsCreateMoon     = "create_moon"
+	AdminActionPlanetsCreateDebris   = "create_debris"
+	AdminActionPlanetsCooldownGates  = "cooldown_gates"
+	AdminActionPlanetsWarmupGates    = "warmup_gates"
+	AdminActionPlanetsRecalcFields   = "recalc_fields"
+	AdminActionPlanetsRandomDiameter = "random_diam"
+
 	AdminActionCouponAddOne     = "add_one"
 	AdminActionCouponRemoveOne  = "remove_one"
 	AdminActionCouponAddDate    = "add_date"
@@ -72,42 +81,45 @@ const (
 )
 
 type Admin struct {
-	Commander       string
-	CurrentPlanet   PlanetOverview
-	PlanetSwitcher  []PlanetSummary
-	Viewer          AdminViewer
-	Mode            string
-	Menu            []AdminMenuItem
-	MessageRows     []AdminMessageRow
-	LoginRows       []AdminLoginRow
-	BrowseRows      []AdminBrowseRow
-	UserLogRows     []AdminUserLogRow
-	UserLogGroups   []AdminUserLogGroup
-	UserLogSearched bool
-	UserLogType     string
-	UserRows        []AdminUserRow
-	ActiveUsers     []AdminUserRow
-	SelectedUser    *AdminUserDetail
-	PlanetRows      []AdminPlanetRow
-	SelectedPlanet  *AdminPlanetDetail
-	ReportRows      []AdminReportRow
-	Universe        *AdminUniverseSettings
-	Expedition      map[string]int
-	FleetLogRows    []AdminFleetLogRow
-	QueueRows       []AdminQueueRow
-	BattleReports   []AdminBattleReportRow
-	ChecksumGroups  []AdminChecksumGroup
-	DatabaseBackups []AdminDatabaseBackup
-	BotStrategies   []AdminBotStrategy
-	BotRows         []AdminBotRow
-	ModRows         []AdminModInfo
-	Localization    *AdminLocalization
-	ColonySettings  map[string]int
-	CouponRows      []AdminCouponRow
-	CouponQueueRows []AdminCouponQueueRow
-	CouponFrom      int
-	CouponPageSize  int
-	CouponTotal     int
+	Commander             string
+	CurrentPlanet         PlanetOverview
+	PlanetSwitcher        []PlanetSummary
+	Viewer                AdminViewer
+	Mode                  string
+	Menu                  []AdminMenuItem
+	MessageRows           []AdminMessageRow
+	LoginRows             []AdminLoginRow
+	BrowseRows            []AdminBrowseRow
+	UserLogRows           []AdminUserLogRow
+	UserLogGroups         []AdminUserLogGroup
+	UserLogSearched       bool
+	UserLogType           string
+	UserRows              []AdminUserRow
+	ActiveUsers           []AdminUserRow
+	SelectedUser          *AdminUserDetail
+	PlanetRows            []AdminPlanetRow
+	SelectedPlanet        *AdminPlanetDetail
+	PlanetSearchRows      []AdminPlanetRow
+	PlanetSearchAttempted bool
+	PlanetSearchBlank     bool
+	ReportRows            []AdminReportRow
+	Universe              *AdminUniverseSettings
+	Expedition            map[string]int
+	FleetLogRows          []AdminFleetLogRow
+	QueueRows             []AdminQueueRow
+	BattleReports         []AdminBattleReportRow
+	ChecksumGroups        []AdminChecksumGroup
+	DatabaseBackups       []AdminDatabaseBackup
+	BotStrategies         []AdminBotStrategy
+	BotRows               []AdminBotRow
+	ModRows               []AdminModInfo
+	Localization          *AdminLocalization
+	ColonySettings        map[string]int
+	CouponRows            []AdminCouponRow
+	CouponQueueRows       []AdminCouponQueueRow
+	CouponFrom            int
+	CouponPageSize        int
+	CouponTotal           int
 }
 
 type AdminViewer struct {
@@ -310,6 +322,25 @@ type AdminPlanetDetail struct {
 	BuildQueue       []BuildingQueueEntry
 	Moon             *AdminPlanetRow
 	Debris           *AdminPlanetRow
+	Parent           *AdminPlanetRow
+}
+
+type AdminPlanetMutation struct {
+	Coordinates Coordinates
+	Diameter    int
+	Type        int
+	Temperature int
+	Resources   map[int]int
+	Buildings   map[int]int
+	Fleet       map[int]int
+	Defense     map[int]int
+	Production  map[int]float64
+	Delete      bool
+}
+
+type AdminPlanetSearch struct {
+	Type string
+	Text string
 }
 
 type AdminReportRow struct {

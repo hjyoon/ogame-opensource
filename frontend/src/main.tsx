@@ -1260,6 +1260,13 @@ function App() {
         setGameAdmin(payload);
         setGameAdminError(null);
         window.scrollTo(0, 0);
+        const selectedPlanetID = payload.admin?.mode === "Planets" ? payload.admin.selectedPlanet?.id : undefined;
+        if (selectedPlanetID && currentSearch.get("cp") !== String(selectedPlanetID)) {
+          currentSearch.set("cp", String(selectedPlanetID));
+          currentSearch.delete("action");
+          window.history.replaceState({}, "", gameRouteURL("/game/admin", currentSearch.toString()));
+          window.dispatchEvent(new PopStateEvent("popstate"));
+        }
       })
       .catch((err: unknown) => setGameAdminError(err instanceof Error ? err.message : String(err)));
   };

@@ -128,6 +128,29 @@ func TestAdminServiceMutatesAdminAndRefreshes(t *testing.T) {
 	}
 }
 
+func TestAdminServiceReloadsDeletedAdminPlanetHome(t *testing.T) {
+	issue := domaingame.AdminIssue(domaingame.AdminIssueActionSaved)
+	issue.Result = &domaingame.AdminActionResult{ItemID: 7}
+	repository := &fakeAdminRepository{
+		admin:       domaingame.Admin{Mode: "Planets", Viewer: domaingame.AdminViewer{PlayerID: 42, Level: domaingame.AdminLevelAdmin}},
+		actionIssue: issue,
+	}
+	service := NewAdminService(
+		&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{Authenticated: true, Session: domainpublicsite.GameSession{PlayerID: 42}}},
+		repository,
+	)
+	planet := &domaingame.AdminPlanetMutation{Delete: true}
+	search := &domaingame.AdminPlanetSearch{Type: "planetname", Text: "Alpha"}
+	result, err := service.MutateAdmin(context.Background(), AdminMutationCommand{
+		Mode: "Planets", PlanetID: 70, TargetPlanetID: 70, Action: domaingame.AdminActionPlanetsUpdate,
+		Planet: planet, PlanetSearch: search,
+	})
+	if err != nil || result.ActionIssue != issue || repository.mutation.Planet != planet || repository.mutation.PlanetSearch != search ||
+		repository.query.TargetPlanetID != 7 || repository.query.PlanetSearch != search {
+		t.Fatalf("result=%+v mutation=%+v reload=%+v err=%v", result, repository.mutation, repository.query, err)
+	}
+}
+
 func TestAdminServiceSendsAndClearsCouponMail(t *testing.T) {
 	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{Authenticated: true, Session: domainpublicsite.GameSession{PlayerID: 42}}}
 	issue := domaingame.AdminIssue(domaingame.AdminIssueActionSaved)

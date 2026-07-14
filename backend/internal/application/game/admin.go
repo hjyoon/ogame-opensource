@@ -41,6 +41,7 @@ type AdminQuery struct {
 	LocaSource     string
 	LocaTarget     string
 	CouponFrom     int
+	PlanetSearch   *domaingame.AdminPlanetSearch
 }
 
 type AdminCommand struct {
@@ -60,6 +61,7 @@ type AdminCommand struct {
 	LocaSource      string
 	LocaTarget      string
 	CouponFrom      int
+	PlanetSearch    *domaingame.AdminPlanetSearch
 }
 
 type AdminMutationQuery struct {
@@ -76,6 +78,8 @@ type AdminMutationQuery struct {
 	Reason        string
 	Values        map[string]int
 	User          *domaingame.AdminUserMutation
+	Planet        *domaingame.AdminPlanetMutation
+	PlanetSearch  *domaingame.AdminPlanetSearch
 	Universe      *domaingame.AdminUniverseMutation
 	Category      int
 	Subject       string
@@ -121,6 +125,8 @@ type AdminMutationCommand struct {
 	Reason          string
 	Values          map[string]int
 	User            *domaingame.AdminUserMutation
+	Planet          *domaingame.AdminPlanetMutation
+	PlanetSearch    *domaingame.AdminPlanetSearch
 	Universe        *domaingame.AdminUniverseMutation
 	Category        int
 	Subject         string
@@ -225,6 +231,7 @@ func (s AdminService) GetAdmin(ctx context.Context, command AdminCommand) (Admin
 		LocaSource:     command.LocaSource,
 		LocaTarget:     command.LocaTarget,
 		CouponFrom:     command.CouponFrom,
+		PlanetSearch:   command.PlanetSearch,
 	})
 	if err != nil {
 		return AdminResult{}, err
@@ -289,6 +296,8 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		Reason:        command.Reason,
 		Values:        command.Values,
 		User:          command.User,
+		Planet:        command.Planet,
+		PlanetSearch:  command.PlanetSearch,
 		Universe:      command.Universe,
 		Category:      command.Category,
 		Subject:       command.Subject,
@@ -329,12 +338,16 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		issue.OutboundCouponMails = nil
 		issue.OutboundReactivationMails = nil
 	}
+	reloadTargetPlanetID := command.TargetPlanetID
+	if admin.Mode == "Planets" && issue != nil && issue.Result != nil && issue.Result.ItemID > 0 {
+		reloadTargetPlanetID = issue.Result.ItemID
+	}
 	admin, err = s.repository.GetAdmin(ctx, AdminQuery{
 		PlayerID:       session.Session.PlayerID,
 		PlanetID:       command.PlanetID,
 		Mode:           command.Mode,
 		TargetPlayerID: command.TargetPlayerID,
-		TargetPlanetID: command.TargetPlanetID,
+		TargetPlanetID: reloadTargetPlanetID,
 		Filter:         command.Filter,
 		LoginName:      command.LoginName,
 		LoginUserID:    command.LoginUserID,
@@ -344,6 +357,7 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		LocaSource:     command.LocaSource,
 		LocaTarget:     command.LocaTarget,
 		CouponFrom:     command.CouponFrom,
+		PlanetSearch:   command.PlanetSearch,
 	})
 	if err != nil {
 		return AdminResult{}, err

@@ -75,6 +75,62 @@ func TestGameAdminHandlerMutatesBans(t *testing.T) {
 	}
 }
 
+func TestGameAdminHandlerMutatesPlanets(t *testing.T) {
+	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{Authenticated: true}}
+	body := `{
+		"action":"update",
+		"planetSettings":{
+			"coordinates":{"galaxy":2,"system":33,"position":8},
+			"diameter":15000,"type":1,"temperature":-50,
+			"resources":{"700":100,"bad":9},"buildings":{"1":12},"fleet":{"202":4},"defense":{"401":5},
+			"production":{"1":0.5,"212":0.7,"bad":1},"delete":true
+		},
+		"planetSearch":{"type":"planetname","text":"Alpha"}
+	}`
+	request := httptest.NewRequest(http.MethodPost, "/api/game/admin?session=pub&cp=70&mode=Planets", strings.NewReader(body))
+	response := httptest.NewRecorder()
+	app{deps: Dependencies{GameAdmin: usecase}}.handleGameAdmin(response, request)
+
+	planet := usecase.mutation.Planet
+	search := usecase.mutation.PlanetSearch
+	if response.Code != http.StatusOK || usecase.mutation.Action != domaingame.AdminActionPlanetsUpdate || planet == nil || search == nil ||
+		planet.Coordinates.System != 33 || planet.Resources[700] != 100 || planet.Buildings[1] != 12 || planet.Fleet[202] != 4 ||
+		planet.Defense[401] != 5 || planet.Production[212] != .7 || !planet.Delete || search.Type != "planetname" || search.Text != "Alpha" {
+		t.Fatalf("status=%d mutation=%+v body=%s", response.Code, usecase.mutation, response.Body.String())
+	}
+	if toAdminPlanetMutation(nil) != nil || toAdminPlanetSearch(nil) != nil {
+		t.Fatal("nil planet requests must remain nil")
+	}
+}
+
+func TestGameAdminHandlerMutatesPlanetGETActions(t *testing.T) {
+	for _, action := range []string{
+		domaingame.AdminActionPlanetsCreateMoon, domaingame.AdminActionPlanetsCreateDebris,
+		domaingame.AdminActionPlanetsCooldownGates, domaingame.AdminActionPlanetsWarmupGates,
+		domaingame.AdminActionPlanetsRecalcFields, domaingame.AdminActionPlanetsRandomDiameter,
+	} {
+		usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{Authenticated: true}}
+		request := httptest.NewRequest(http.MethodGet, "/api/game/admin?session=pub&cp=70&mode=Planets&action="+action, nil)
+		response := httptest.NewRecorder()
+		app{deps: Dependencies{GameAdmin: usecase}}.handleGameAdmin(response, request)
+		if response.Code != http.StatusOK || usecase.mutation.Action != action || usecase.mutation.PlanetID != 70 || usecase.mutation.TargetPlanetID != 70 {
+			t.Fatalf("action=%s status=%d mutation=%+v body=%s", action, response.Code, usecase.mutation, response.Body.String())
+		}
+		if !isAdminPlanetGETAction(action) {
+			t.Fatalf("expected %s to be a GET action", action)
+		}
+	}
+	if isAdminPlanetGETAction("update") {
+		t.Fatal("update must remain POST-only")
+	}
+	usecase := &fakeGameAdminUseCase{err: context.Canceled}
+	response := httptest.NewRecorder()
+	app{deps: Dependencies{GameAdmin: usecase}}.handleGameAdmin(response, httptest.NewRequest(http.MethodGet, "/api/game/admin?session=pub&cp=70&mode=Planets&action=create_moon", nil))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected GET mutation error as unavailable, got %d", response.Code)
+	}
+}
+
 func TestGameAdminHandlerMutatesMods(t *testing.T) {
 	usecase := &fakeGameAdminUseCase{result: appgame.AdminResult{
 		Authenticated: true,

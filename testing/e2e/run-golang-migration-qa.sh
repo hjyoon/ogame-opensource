@@ -137,6 +137,9 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     if [ "${OGAME_RUN_ADMIN_USERS_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" OGAME_MAILHOG_BASE_URL="$MAILHOG_BASE_URL" "$SCRIPT_DIR/run-golang-admin-users-differential-e2e.sh"
     fi
+    if [ "${OGAME_RUN_ADMIN_PLANETS_DIFFERENTIAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-admin-planets-differential-e2e.sh"
+    fi
     if [ "${OGAME_RUN_ADMIN_OPERATIONS_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-admin-operations-differential-e2e.sh"
     fi

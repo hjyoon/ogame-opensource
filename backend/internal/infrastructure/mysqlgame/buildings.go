@@ -972,7 +972,7 @@ func (r BuildingsRepository) loadBuildingUniverseConfig(ctx context.Context) (bu
 }
 
 func (r BuildingsRepository) loadBuildQueueRows(ctx context.Context, buildQueueTable string, planetID int) ([]buildQueueRow, error) {
-	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT id, owner_id, planet_id, list_id, tech_id, level, destroy, start, end FROM %s WHERE planet_id = ? ORDER BY list_id ASC", buildQueueTable), planetID)
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT id, owner_id, planet_id, list_id, tech_id, level, COALESCE(destroy, 0), start, end FROM %s WHERE planet_id = ? ORDER BY list_id ASC", buildQueueTable), planetID)
 	if err != nil {
 		return nil, err
 	}
@@ -992,7 +992,7 @@ func (r BuildingsRepository) loadBuildQueueRows(ctx context.Context, buildQueueT
 }
 
 func (r BuildingsRepository) loadBuildQueueRow(ctx context.Context, buildQueueTable string, playerID int, planetID int, listID int) (*buildQueueRow, error) {
-	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT id, owner_id, planet_id, list_id, tech_id, level, destroy, start, end FROM %s WHERE owner_id = ? AND planet_id = ? AND list_id = ? LIMIT 1", buildQueueTable), playerID, planetID, listID)
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT id, owner_id, planet_id, list_id, tech_id, level, COALESCE(destroy, 0), start, end FROM %s WHERE owner_id = ? AND planet_id = ? AND list_id = ? LIMIT 1", buildQueueTable), playerID, planetID, listID)
 	if err != nil {
 		return nil, err
 	}
@@ -1014,7 +1014,7 @@ func (r BuildingsRepository) loadBuildQueueRow(ctx context.Context, buildQueueTa
 }
 
 func (r BuildingsRepository) loadBuildQueueRowByID(ctx context.Context, buildQueueTable string, buildQueueID int) (*buildQueueRow, error) {
-	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT id, owner_id, planet_id, list_id, tech_id, level, destroy, start, end FROM %s WHERE id = ? LIMIT 1", buildQueueTable), buildQueueID)
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT id, owner_id, planet_id, list_id, tech_id, level, COALESCE(destroy, 0), start, end FROM %s WHERE id = ? LIMIT 1", buildQueueTable), buildQueueID)
 	if err != nil {
 		return nil, err
 	}

@@ -149,6 +149,13 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 			admin.SelectedPlanet, err = r.loadAdminPlanetDetail(ctx, query.TargetPlanetID)
 		} else {
 			admin.PlanetRows, err = r.loadAdminPlanetRows(ctx)
+			if err == nil && query.PlanetSearch != nil {
+				admin.PlanetSearchAttempted = true
+				admin.PlanetSearchBlank = strings.TrimSpace(query.PlanetSearch.Text) == ""
+				if !admin.PlanetSearchBlank {
+					admin.PlanetSearchRows, err = r.loadAdminPlanetSearchRows(ctx, *query.PlanetSearch)
+				}
+			}
 		}
 	case "Reports":
 		admin.ReportRows, err = r.loadAdminReportRows(ctx)
@@ -450,6 +457,9 @@ func (r AdminRepository) MutateAdmin(ctx context.Context, query appgame.AdminMut
 			return nil, err
 		}
 		return r.mutateAdminUsers(ctx, uniTable, usersTable, planetsTable, fleetTable, query)
+	}
+	if mode == "Planets" {
+		return r.mutateAdminPlanets(ctx, query)
 	}
 	if mode != "Bans" || query.Action != "ban" {
 		return domaingame.AdminIssue(domaingame.AdminIssueActionSaved), nil
@@ -3444,11 +3454,41 @@ func (r AdminRepository) loadAdminPlanetDetail(ctx context.Context, planetID int
 	if err != nil {
 		return nil, err
 	}
+	if detail.Type != domaingame.PlanetTypePlanet {
+		detail.Parent, err = r.loadAdminParentPlanet(ctx, planetsTable, detail.Coordinates)
+		if err != nil {
+			return nil, err
+		}
+	}
 	detail.BuildQueue, err = (BuildingsRepository{queryer: r.queryer}).loadBuildingQueueEntries(ctx, buildQueueTable, planetID, int(r.now().Unix()))
 	if err != nil {
 		return nil, err
 	}
 	return &detail, rows.Err()
+}
+
+func (r AdminRepository) loadAdminParentPlanet(ctx context.Context, planetsTable string, coordinates domaingame.Coordinates) (*domaingame.AdminPlanetRow, error) {
+	rows, err := r.queryer.QueryContext(
+		ctx,
+		fmt.Sprintf(
+			"SELECT planet_id, COALESCE(name, ''), COALESCE(date, 0), COALESCE(g, 0), COALESCE(s, 0), COALESCE(p, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0), COALESCE(`%d`, 0) FROM %s WHERE g = ? AND s = ? AND p = ? AND type IN (?, ?, ?) LIMIT 1",
+			resourceMetal, resourceCrystal, resourceDeuterium, planetsTable,
+		),
+		coordinates.Galaxy, coordinates.System, coordinates.Position,
+		domaingame.PlanetTypePlanet, domaingame.PlanetTypeDestroyedPlanet, domaingame.PlanetTypeAbandoned,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	var row domaingame.AdminPlanetRow
+	if err := rows.Scan(&row.ID, &row.Name, &row.Date, &row.Coordinates.Galaxy, &row.Coordinates.System, &row.Coordinates.Position, &row.Resources.Metal, &row.Resources.Crystal, &row.Resources.Deuterium); err != nil {
+		return nil, err
+	}
+	return &row, rows.Err()
 }
 
 func (r AdminRepository) loadAdminRelatedPlanet(ctx context.Context, planetsTable string, coordinates domaingame.Coordinates, planetType int) (*domaingame.AdminPlanetRow, error) {
