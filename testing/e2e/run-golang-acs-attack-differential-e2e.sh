@@ -41,6 +41,13 @@ battle_before_max="$(db_query 'SELECT COALESCE(MAX(battle_id),0) FROM uni1_battl
 target_g="$(db_query "SELECT g FROM uni1_planets WHERE planet_id=$target_planet")"
 target_s="$(db_query "SELECT s FROM uni1_planets WHERE planet_id=$target_planet")"
 target_p="$(db_query "SELECT p FROM uni1_planets WHERE planet_id=$target_planet")"
+support_location="$(db_query "WITH RECURSIVE systems(sys_num) AS (SELECT 1 UNION ALL SELECT sys_num+1 FROM systems WHERE sys_num<499), slots(slot_num) AS (SELECT 1 UNION ALL SELECT slot_num+1 FROM slots WHERE slot_num<15) SELECT JSON_OBJECT('system',systems.sys_num,'position',slots.slot_num) FROM systems CROSS JOIN slots LEFT JOIN uni1_planets p ON p.g=$target_g AND p.s=systems.sys_num AND p.p=slots.slot_num AND p.type=1 WHERE p.planet_id IS NULL ORDER BY ABS(systems.sys_num-$target_s),systems.sys_num,slots.slot_num LIMIT 1")"
+if [ -z "$support_location" ]; then
+  printf 'ACS differential: target galaxy has no empty support slot\n' >&2
+  exit 1
+fi
+support_s="$(printf '%s' "$support_location" | jq -r '.system')"
+support_p="$(printf '%s' "$support_location" | jq -r '.position')"
 
 db_query "DROP TABLE IF EXISTS $planet_backup,$user_backup,$rank_backup,$fleet_backup,$queue_backup,$message_backup,$log_backup,$union_backup; CREATE TABLE $planet_backup AS SELECT * FROM uni1_planets WHERE planet_id IN ($planets); CREATE TABLE $user_backup AS SELECT * FROM uni1_users WHERE player_id IN ($players); CREATE TABLE $rank_backup AS SELECT player_id,score1,score2,score3,place1,place2,place3,oldscore1,oldscore2,oldscore3,oldplace1,oldplace2,oldplace3 FROM uni1_users; CREATE TABLE $fleet_backup AS SELECT * FROM uni1_fleet WHERE owner_id IN ($players) OR start_planet IN ($planets) OR target_planet IN ($planets); CREATE TABLE $queue_backup AS SELECT * FROM uni1_queue WHERE type='Fleet' AND sub_id IN (SELECT fleet_id FROM $fleet_backup); CREATE TABLE $message_backup AS SELECT * FROM uni1_messages WHERE owner_id IN ($players); CREATE TABLE $log_backup AS SELECT * FROM uni1_fleetlogs WHERE owner_id IN ($players) OR target_id IN ($players); CREATE TABLE $union_backup AS SELECT * FROM uni1_union WHERE fleet_id IN (SELECT fleet_id FROM $fleet_backup) OR target_player IN ($players)" >/dev/null
 
@@ -50,7 +57,7 @@ delete_case_state() {
 
 reset_case() {
   delete_case_state
-  db_query "UPDATE uni1_planets SET \`700\`=1000000,\`701\`=1000000,\`702\`=1000000,\`202\`=0,\`203\`=0,\`204\`=0,\`205\`=0,\`206\`=0,\`207\`=0,\`208\`=0,\`209\`=0,\`210\`=0,\`211\`=0,\`212\`=0,\`213\`=0,\`214\`=0,\`215\`=0,\`401\`=0,\`402\`=0,\`403\`=0,\`404\`=0,\`405\`=0,\`406\`=0,\`407\`=0,\`408\`=0,lastpeek=UNIX_TIMESTAMP(),lastakt=UNIX_TIMESTAMP(),prod1=0,prod2=0,prod3=0,prod4=0,prod12=0,prod212=0 WHERE planet_id IN ($planets); UPDATE uni1_planets SET \`204\`=10 WHERE planet_id IN ($head_planet,$support_planet); UPDATE uni1_users u JOIN $rank_backup b ON b.player_id=u.player_id SET u.score1=b.score1,u.score2=b.score2,u.score3=b.score3,u.place1=b.place1,u.place2=b.place2,u.place3=b.place3,u.oldscore1=b.oldscore1,u.oldscore2=b.oldscore2,u.oldscore3=b.oldscore3,u.oldplace1=b.oldplace1,u.oldplace2=b.oldplace2,u.oldplace3=b.oldplace3; UPDATE uni1_users u JOIN $user_backup b ON b.player_id=u.player_id SET u.session='',u.private_session='',u.vacation=0,u.vacation_until=0,u.banned=0,u.banned_until=0,u.noattack=0,u.noattack_until=0,u.disable=0,u.disable_until=0,u.validated=1,u.deact_ip=1,u.aktplanet=u.hplanetid WHERE u.player_id IN ($players)" >/dev/null
+  db_query "UPDATE uni1_planets SET \`700\`=1000000,\`701\`=1000000,\`702\`=1000000,\`202\`=0,\`203\`=0,\`204\`=0,\`205\`=0,\`206\`=0,\`207\`=0,\`208\`=0,\`209\`=0,\`210\`=0,\`211\`=0,\`212\`=0,\`213\`=0,\`214\`=0,\`215\`=0,\`401\`=0,\`402\`=0,\`403\`=0,\`404\`=0,\`405\`=0,\`406\`=0,\`407\`=0,\`408\`=0,lastpeek=UNIX_TIMESTAMP(),lastakt=UNIX_TIMESTAMP(),prod1=0,prod2=0,prod3=0,prod4=0,prod12=0,prod212=0 WHERE planet_id IN ($planets); UPDATE uni1_planets SET \`204\`=10 WHERE planet_id IN ($head_planet,$support_planet); UPDATE uni1_planets SET g=$target_g,s=$support_s,p=$support_p WHERE planet_id=$support_planet; UPDATE uni1_users u JOIN $rank_backup b ON b.player_id=u.player_id SET u.score1=b.score1,u.score2=b.score2,u.score3=b.score3,u.place1=b.place1,u.place2=b.place2,u.place3=b.place3,u.oldscore1=b.oldscore1,u.oldscore2=b.oldscore2,u.oldscore3=b.oldscore3,u.oldplace1=b.oldplace1,u.oldplace2=b.oldplace2,u.oldplace3=b.oldplace3; UPDATE uni1_users u JOIN $user_backup b ON b.player_id=u.player_id SET u.session='',u.private_session='',u.vacation=0,u.vacation_until=0,u.banned=0,u.banned_until=0,u.noattack=0,u.noattack_until=0,u.disable=0,u.disable_until=0,u.validated=1,u.deact_ip=1,u.aktplanet=u.hplanetid WHERE u.player_id IN ($players)" >/dev/null
 }
 
 restore_original() {
@@ -116,8 +123,21 @@ go_recall() {
 
 create_union() {
   fleet_id="$(db_query "SELECT fleet_id FROM uni1_fleet WHERE owner_id=$head_id AND mission=1 ORDER BY fleet_id DESC LIMIT 1")"
+  if [ -z "$fleet_id" ]; then
+    printf 'ACS differential: head fleet was not created\n' >&2
+    return 1
+  fi
   union_id="$(db_query "INSERT INTO uni1_union (fleet_id,target_player,name,players) VALUES ($fleet_id,$target_id,'E2EACS','$head_id,$support_id'); SELECT LAST_INSERT_ID();")"
-  db_query "UPDATE uni1_fleet SET union_id=$union_id,mission=21 WHERE fleet_id=$fleet_id; UPDATE uni1_queue SET start=UNIX_TIMESTAMP(),end=UNIX_TIMESTAMP()+60 WHERE type='Fleet' AND sub_id=$fleet_id" >/dev/null
+  # Keep the join window independent of universe speed and fixture coordinates.
+  db_query "UPDATE uni1_fleet SET union_id=$union_id,mission=21 WHERE fleet_id=$fleet_id; UPDATE uni1_queue SET start=UNIX_TIMESTAMP(),end=UNIX_TIMESTAMP()+604800 WHERE type='Fleet' AND sub_id=$fleet_id" >/dev/null
+}
+
+require_support_fleet() {
+  support_fleet_id="$(db_query "SELECT fleet_id FROM uni1_fleet WHERE owner_id=$support_id AND mission=2 ORDER BY fleet_id DESC LIMIT 1")"
+  if [ -z "$support_fleet_id" ]; then
+    printf 'ACS differential: %s support fleet was not created\n' "$1" >&2
+    return 1
+  fi
 }
 
 capture_state() {
@@ -161,6 +181,7 @@ run_side() {
   else
     support_status="$(go_launch go-support "$support_cookie" "$support_session" "$support_planet" 2 "$union_id")"
   fi
+  require_support_fleet "$side"
   joined="$(capture_state)"
   force_due
   if [ "$side" = legacy ]; then
@@ -196,8 +217,8 @@ run_recall_side() {
   else
     recall_support_launch_status="$(go_launch go-recall-support "$support_cookie" "$support_session" "$support_planet" 2 "$union_id")"
   fi
+  require_support_fleet "$side recall"
   db_query "UPDATE uni1_queue q JOIN uni1_fleet f ON f.fleet_id=q.sub_id SET q.start=UNIX_TIMESTAMP()-600,q.end=UNIX_TIMESTAMP()+3000 WHERE q.type='Fleet' AND f.owner_id IN ($head_id,$support_id) AND f.mission IN (2,21)" >/dev/null
-  support_fleet_id="$(db_query "SELECT fleet_id FROM uni1_fleet WHERE owner_id=$support_id AND mission=2 ORDER BY fleet_id DESC LIMIT 1")"
   if [ "$side" = legacy ]; then
     support_recall_status="$(legacy_recall legacy-recall-support "$support_cookie" "$support_session" "$support_planet" "$support_fleet_id")"
   else
