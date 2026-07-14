@@ -128,6 +128,23 @@ func TestAdminServiceMutatesAdminAndRefreshes(t *testing.T) {
 	}
 }
 
+func TestAdminServiceSendsAndClearsCouponMail(t *testing.T) {
+	sessions := &fakeSessionLookup{result: domainpublicsite.SessionAuthentication{Authenticated: true, Session: domainpublicsite.GameSession{PlayerID: 42}}}
+	issue := domaingame.AdminIssue(domaingame.AdminIssueActionSaved)
+	issue.OutboundCouponMails = []domaingame.AdminCouponMail{{Character: "Legor", Recipient: "legor@example.local", Code: "CODE"}}
+	repository := &fakeAdminRepository{admin: domaingame.Admin{Mode: "Queue", Viewer: domaingame.AdminViewer{PlayerID: 42, Level: domaingame.AdminLevelAdmin}}, actionIssue: issue}
+	mailer := &fakeAdminCouponMailer{}
+	result, err := NewAdminServiceWithCouponMailer(sessions, repository, mailer).MutateAdmin(context.Background(), AdminMutationCommand{Mode: "Queue", Action: domaingame.AdminActionQueueCron})
+	if err != nil || len(mailer.messages) != 1 || mailer.messages[0].Code != "CODE" || len(result.ActionIssue.OutboundCouponMails) != 0 {
+		t.Fatalf("result=%+v messages=%+v err=%v", result, mailer.messages, err)
+	}
+	issue.OutboundCouponMails = []domaingame.AdminCouponMail{{Recipient: "legor@example.local"}}
+	mailer.err = errors.New("mail failed")
+	if _, err := NewAdminServiceWithCouponMailer(sessions, repository, mailer).MutateAdmin(context.Background(), AdminMutationCommand{Mode: "Queue", Action: domaingame.AdminActionQueueCron}); err == nil || !strings.Contains(err.Error(), "mail failed") {
+		t.Fatalf("expected mail error, got %v", err)
+	}
+}
+
 func TestAdminServiceMutationReturnsAccessDeniedWithoutMutating(t *testing.T) {
 	service := NewAdminService(
 		&fakeSessionLookup{result: domainpublicsite.SessionAuthentication{Authenticated: true, Session: domainpublicsite.GameSession{PlayerID: 42}}},
@@ -294,6 +311,16 @@ type fakeAdminRepository struct {
 	botErr      error
 	botMutation AdminBotEditMutationQuery
 	botMutated  bool
+}
+
+type fakeAdminCouponMailer struct {
+	messages []domaingame.AdminCouponMail
+	err      error
+}
+
+func (f *fakeAdminCouponMailer) SendAdminCoupon(_ context.Context, message domaingame.AdminCouponMail) error {
+	f.messages = append(f.messages, message)
+	return f.err
 }
 
 func (f *fakeAdminRepository) GetAdmin(_ context.Context, query AdminQuery) (domaingame.Admin, error) {

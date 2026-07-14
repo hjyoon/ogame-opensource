@@ -16,9 +16,10 @@ func TestAdminCronRunsGlobalBatchAndHonorsUniverseFreeze(t *testing.T) {
 	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues(row)},
 		{rows: fakeRowsFromValues(buildingQueueTaskValues(buildingQueueTask{TaskID: 7, OwnerID: 42, Type: adminQueueTypeDebug, End: 100}))},
+		{rows: fakeRowsFromValues()},
 	}}}
 	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
-	if err := repository.runAdminCron(context.Background(), 100); err != nil {
+	if _, err := repository.runAdminCron(context.Background(), 100); err != nil {
 		t.Fatalf("runAdminCron returned error: %v", err)
 	}
 	if len(runner.execCalls) != 1 || !strings.Contains(runner.execCalls[0].sql, "DELETE FROM") {
@@ -28,7 +29,7 @@ func TestAdminCronRunsGlobalBatchAndHonorsUniverseFreeze(t *testing.T) {
 	frozen := adminUniverseSettingsRow()
 	frozen[14] = 1
 	runner = &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(frozen)}}}}
-	if err := NewAdminRepositoryWithQueryer(runner, "ogame_").runAdminCron(context.Background(), 100); err != nil || len(runner.calls) != 1 {
+	if _, err := NewAdminRepositoryWithQueryer(runner, "ogame_").runAdminCron(context.Background(), 100); err != nil || len(runner.calls) != 1 {
 		t.Fatalf("frozen universe should skip queue, calls=%+v err=%v", runner.calls, err)
 	}
 }
@@ -52,7 +53,7 @@ func TestAdminCronRunErrors(t *testing.T) {
 			if test.execErr != nil {
 				runner.execErrs = []error{test.execErr}
 			}
-			err := NewAdminRepositoryWithQueryer(runner, "ogame_").runAdminCron(context.Background(), 100)
+			_, err := NewAdminRepositoryWithQueryer(runner, "ogame_").runAdminCron(context.Background(), 100)
 			if err == nil || !strings.Contains(err.Error(), test.name+" failed") {
 				t.Fatalf("expected %s error, got %v", test.name, err)
 			}
@@ -61,7 +62,7 @@ func TestAdminCronRunErrors(t *testing.T) {
 	if _, err := loadAdminCronTables("bad-prefix_"); err == nil {
 		t.Fatal("expected invalid prefix error")
 	}
-	if err := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_").runAdminCron(context.Background(), 100); err == nil {
+	if _, err := NewAdminRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_").runAdminCron(context.Background(), 100); err == nil {
 		t.Fatal("expected run invalid prefix error")
 	}
 }
@@ -275,6 +276,7 @@ func TestAdminCronLaterWriteErrors(t *testing.T) {
 func TestAdminQueueCronMutation(t *testing.T) {
 	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues(adminUniverseSettingsRow())},
+		{rows: fakeRowsFromValues()},
 		{rows: fakeRowsFromValues()},
 	}}}
 	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")

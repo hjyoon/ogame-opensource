@@ -564,7 +564,19 @@ func gameAdminService(cfg config.Config, logger *slog.Logger, sessions apppublic
 		masterRunner := mysqlgame.SQLQueryer{DB: masterDB}
 		repository = repository.WithMasterRunner(masterRunner, masterRunner).WithUniverseNumber(cfg.UniNumber)
 	}
-	return appgame.NewAdminService(sessions, repository)
+	return appgame.NewAdminServiceWithCouponMailer(sessions, repository, adminCouponMailer(cfg, logger))
+}
+
+func adminCouponMailer(cfg config.Config, logger *slog.Logger) appgame.AdminCouponMailer {
+	if !cfg.SMTPEnabled {
+		return nil
+	}
+	logger.Info("admin coupon SMTP enabled", "addr", cfg.SMTPAddr, "publicBaseURL", cfg.PublicBaseURL)
+	return inframail.NewAdminCouponMailer(inframail.SMTPConfig{
+		Addr:          cfg.SMTPAddr,
+		From:          cfg.SMTPFrom,
+		PublicBaseURL: cfg.PublicBaseURL,
+	})
 }
 
 func gamePaymentService(cfg config.Config, logger *slog.Logger, sessions apppublicsite.GameSessionLookup, pools databasePools) appgame.PaymentService {

@@ -54,28 +54,28 @@ type adminCronTables struct {
 	buddy      string
 }
 
-func (r AdminRepository) runAdminCron(ctx context.Context, until int) error {
+func (r AdminRepository) runAdminCron(ctx context.Context, until int) ([]domaingame.AdminCouponMail, error) {
 	tables, err := loadAdminCronTables(r.prefix)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	universe, err := r.loadAdminUniverse(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if universe.Freeze {
-		return nil
+		return nil, nil
 	}
 	tasks, err := r.loadAdminCronTasks(ctx, tables.queue, until)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, task := range tasks {
 		if err := r.finishAdminCronTask(ctx, tables, task, universe.Language); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return r.finishDueAdminCouponCronTasks(ctx, tables, until)
 }
 
 func loadAdminCronTables(prefix string) (adminCronTables, error) {

@@ -120,9 +120,17 @@ type AdminMenuItem struct {
 }
 
 type AdminActionIssue struct {
-	Code    string
-	Message string
-	Result  *AdminActionResult
+	Code                string
+	Message             string
+	Result              *AdminActionResult
+	OutboundCouponMails []AdminCouponMail
+}
+
+type AdminCouponMail struct {
+	Character string
+	Recipient string
+	Language  string
+	Code      string
 }
 
 type AdminActionResult struct {

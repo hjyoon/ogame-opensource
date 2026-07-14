@@ -14,6 +14,10 @@ type AdminRepository interface {
 	MutateAdmin(context.Context, AdminMutationQuery) (*domaingame.AdminActionIssue, error)
 }
 
+type AdminCouponMailer interface {
+	SendAdminCoupon(context.Context, domaingame.AdminCouponMail) error
+}
+
 type AdminBotEditRepository interface {
 	MutateAdminBotEdit(context.Context, AdminBotEditMutationQuery) (AdminBotEditMutationResult, error)
 }
@@ -169,10 +173,15 @@ type AdminResult struct {
 type AdminService struct {
 	sessions   SessionLookup
 	repository AdminRepository
+	couponMail AdminCouponMailer
 }
 
 func NewAdminService(sessions SessionLookup, repository AdminRepository) AdminService {
 	return AdminService{sessions: sessions, repository: repository}
+}
+
+func NewAdminServiceWithCouponMailer(sessions SessionLookup, repository AdminRepository, mailer AdminCouponMailer) AdminService {
+	return AdminService{sessions: sessions, repository: repository, couponMail: mailer}
 }
 
 func (s AdminService) GetAdmin(ctx context.Context, command AdminCommand) (AdminResult, error) {
@@ -289,6 +298,16 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 	})
 	if err != nil {
 		return AdminResult{}, err
+	}
+	if issue != nil && s.couponMail != nil {
+		for _, message := range issue.OutboundCouponMails {
+			if err := s.couponMail.SendAdminCoupon(ctx, message); err != nil {
+				return AdminResult{}, err
+			}
+		}
+	}
+	if issue != nil {
+		issue.OutboundCouponMails = nil
 	}
 	admin, err = s.repository.GetAdmin(ctx, AdminQuery{
 		PlayerID:       session.Session.PlayerID,
