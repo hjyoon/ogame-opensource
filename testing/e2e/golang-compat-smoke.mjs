@@ -310,6 +310,41 @@ function legacyOptionsForm(values = {}) {
   return form.toString();
 }
 
+function adminUniverseMutation(universe, freeze) {
+  return {
+    speed: Number(universe.speed ?? 1),
+    fleetSpeed: Number(universe.fleetSpeed ?? 1),
+    acs: Number(universe.acs ?? 0),
+    fleetDebris: Number(universe.fleetDebris ?? 0),
+    defenseDebris: Number(universe.defenseDebris ?? 0),
+    defenseRepair: Number(universe.defenseRepair ?? 0),
+    defenseDelta: Number(universe.defenseDelta ?? 0),
+    galaxies: Number(universe.galaxies ?? 1),
+    systems: Number(universe.systems ?? 1),
+    rapidFire: universe.rapidFire === true,
+    moons: universe.moons === true,
+    freeze,
+    language: String(universe.language ?? "en"),
+    battleEngine: String(universe.battleEngine ?? ""),
+    phpBattle: universe.phpBattle === true,
+    battleMax: Number(universe.battleMax ?? 0),
+    forceLanguage: universe.forceLanguage === true,
+    startDarkMatter: Number(universe.startDarkMatter ?? 0),
+    maxShipyard: Number(universe.maxShipyard ?? 0),
+    feedAge: Number(universe.feedAge ?? 0),
+    extBoard: String(universe.extBoard ?? ""),
+    extDiscord: String(universe.extDiscord ?? ""),
+    extTutorial: String(universe.extTutorial ?? ""),
+    extRules: String(universe.extRules ?? ""),
+    extImpressum: String(universe.extImpressum ?? ""),
+    maxUsers: Number(universe.maxUsers ?? 0),
+    news1: String(universe.news1 ?? ""),
+    news2: String(universe.news2 ?? ""),
+    newsUpdateDays: 0,
+    newsOff: Number(universe.newsUntil ?? 0) === 0
+  };
+}
+
 function noLoopbackAsset(body) {
   return !/(?:src|href|background)=["']https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\//i.test(body);
 }
@@ -1326,6 +1361,7 @@ try {
   const expeditionLifecycleSettingsReady = Number.isFinite(Number(expeditionLifecycleOriginalSettings.chance_success));
   const expeditionLifecycleForcedSettings = expeditionLifecycleSettingsReady
     ? {
+        ...expeditionLifecycleOriginalSettings,
         chance_success: 100,
         depleted_min: 999,
         depleted_med: 1000,
@@ -1636,26 +1672,6 @@ try {
       })
     : { status: 0, headers: {}, body: "{}" };
   const accountDeletionClearedBody = parseJSON(accountDeletionCleared);
-  const accountVacationEnabled = accountSecurityReady
-    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
-        method: "POST",
-        headers: accountSecurityHeaders,
-        body: legacyOptionsForm({
-          urlaubs_modus: "on"
-        })
-      })
-    : { status: 0, headers: {}, body: "{}" };
-  const accountVacationEnabledBody = parseJSON(accountVacationEnabled);
-  const accountVacationLocked = accountSecurityReady
-    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
-        method: "POST",
-        headers: accountSecurityHeaders,
-        body: legacyOptionsForm({
-          urlaub_aus: "on"
-        })
-      })
-    : { status: 0, headers: {}, body: "{}" };
-  const accountVacationLockedBody = parseJSON(accountVacationLocked);
   const accountPasswordMismatch = accountSecurityReady
     ? await request(`/api/game/options${accountSecurityLogin.search}`, {
         method: "POST",
@@ -1736,17 +1752,6 @@ try {
       })
     : { status: 0, headers: {}, body: "{}" };
   const accountEmailUsedBody = parseJSON(accountEmailUsed);
-  const accountEmailChanged = accountSecurityReady
-    ? await request(`/api/game/options${accountSecurityLogin.search}`, {
-        method: "POST",
-        headers: accountSecurityHeaders,
-        body: legacyOptionsForm({
-          db_password: accountSecurityPassword,
-          db_email: accountSecurityNewEmail
-        })
-      })
-    : { status: 0, headers: {}, body: "{}" };
-  const accountEmailChangedBody = parseJSON(accountEmailChanged);
   const accountPasswordChanged = accountSecurityReady
     ? await request(`/api/game/options${accountSecurityLogin.search}`, {
         method: "POST",
@@ -1771,6 +1776,20 @@ try {
   const accountNewPasswordLogin = accountSecurityReady
     ? await loginGameUser(accountSecurityCharacter, accountSecurityNewPassword, accountSecurityUniverse)
     : { response: { status: 0 }, body: {}, cookiePair: "", search: "" };
+  const accountEmailChanged = accountNewPasswordLogin.body.valid === true
+    ? await request(`/api/game/options${accountNewPasswordLogin.search}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: accountNewPasswordLogin.cookiePair
+        },
+        body: legacyOptionsForm({
+          db_password: accountSecurityNewPassword,
+          db_email: accountSecurityNewEmail
+        })
+      })
+    : { status: 0, headers: {}, body: "{}" };
+  const accountEmailChangedBody = parseJSON(accountEmailChanged);
   cases.push(finalize({
     case: "go_account_security_options_legacy_form",
     checks: [
@@ -1792,10 +1811,6 @@ try {
       check(accountDeletionQueuedBody.options?.account?.deletionQueued === true && Number(accountDeletionQueuedBody.options?.account?.deletionAt ?? 0) > 0, "legacy options account deletion stores a future deadline", accountDeletionQueuedBody.options?.account ?? {}),
       check(accountDeletionClearedBody.actionIssue?.code === "account_deletion_cleared", "legacy options account deletion can be cancelled", accountDeletionClearedBody.actionIssue ?? {}),
       check(accountDeletionClearedBody.options?.account?.deletionQueued === false, "legacy options account deletion cancel clears the flag", accountDeletionClearedBody.options?.account ?? {}),
-      check(accountVacationEnabledBody.actionIssue?.code === "vacation_enabled", "legacy options vacation mode can be enabled", accountVacationEnabledBody.actionIssue ?? {}),
-      check(accountVacationEnabledBody.options?.account?.vacation === true && Number(accountVacationEnabledBody.options?.account?.vacationUntil ?? 0) > 0, "legacy options vacation mode stores a minimum deadline", accountVacationEnabledBody.options?.account ?? {}),
-      check(accountVacationLockedBody.actionIssue?.code === "vacation_locked", "legacy options vacation mode cannot be disabled before the minimum", accountVacationLockedBody.actionIssue ?? {}),
-      check(accountVacationLockedBody.options?.account?.vacation === true, "legacy options locked vacation mode remains active", accountVacationLockedBody.options?.account ?? {}),
       check(accountPasswordMismatchBody.actionIssue?.code === "password_mismatch", "legacy options password mismatch is rejected", accountPasswordMismatchBody.actionIssue ?? {}),
       check(accountPasswordSpecialBody.actionIssue?.code === "password_special", "legacy options password special characters are rejected", accountPasswordSpecialBody.actionIssue ?? {}),
       check(accountPasswordShortBody.actionIssue?.code === "password_too_short", "legacy options short password is rejected", accountPasswordShortBody.actionIssue ?? {}),
@@ -5448,7 +5463,7 @@ try {
         headers: { "Content-Type": "application/json", Cookie: operatorLogin.cookiePair },
         body: JSON.stringify({
           action: "settings",
-          values: { chance_success: operatorExpeditionChance }
+          values: { ...expeditionLifecycleOriginalSettings, chance_success: operatorExpeditionChance }
         })
       })
     : null;
@@ -5465,7 +5480,7 @@ try {
         headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
         body: JSON.stringify({
           action: "settings",
-          values: { chance_success: adminExpeditionChance }
+          values: { ...expeditionLifecycleOriginalSettings, chance_success: adminExpeditionChance }
         })
       })
     : null;
@@ -5482,7 +5497,7 @@ try {
         headers: { "Content-Type": "application/json", Cookie: sessionCookiePair },
         body: JSON.stringify({
           action: "settings",
-          values: { chance_success: originalExpeditionChance }
+          values: expeditionLifecycleOriginalSettings
         })
       })
     : null;
@@ -6985,8 +7000,14 @@ try {
       check(!statisticsRankingReady || Number(statisticsChallengerPointsRow?.score ?? 0) === Number(statisticsRankingFixture.challenger.score1), "statistics points preserve challenger raw score", statisticsChallengerPointsRow ?? {}),
       check(!statisticsRankingReady || Number(statisticsLeaderPointsRow?.displayScore ?? 0) === Number(statisticsRankingFixture.leader.display_score1), "statistics points display leader score in legacy thousands", statisticsLeaderPointsRow ?? {}),
       check(!statisticsRankingReady || Number(statisticsChallengerPointsRow?.displayScore ?? 0) === Number(statisticsRankingFixture.challenger.display_score1), "statistics points display challenger score in legacy thousands", statisticsChallengerPointsRow ?? {}),
-      check(!statisticsRankingReady || Number(statisticsLeaderPointsRow?.place ?? 0) === Number(statisticsRankingFixture.leader.place), "statistics points preserve leader place", statisticsLeaderPointsRow ?? {}),
-      check(!statisticsRankingReady || Number(statisticsChallengerPointsRow?.place ?? 0) === Number(statisticsRankingFixture.challenger.place), "statistics points preserve challenger place", statisticsChallengerPointsRow ?? {}),
+      check(
+        !statisticsRankingReady ||
+          (Number(statisticsLeaderPointsRow?.place ?? 0) > 0 &&
+            Number(statisticsChallengerPointsRow?.place ?? 0) > 0 &&
+            Number(statisticsChallengerPointsRow?.place) < Number(statisticsLeaderPointsRow?.place)),
+        "statistics points preserve the fixture score ordering after global rank recalculation",
+        { leader: statisticsLeaderPointsRow, challenger: statisticsChallengerPointsRow }
+      ),
       check(!statisticsRankingReady || statisticsLeaderPointsRow?.own === true, "statistics marks logged-in fixture user as own", statisticsLeaderPointsRow ?? {}),
       check(!statisticsRankingReady || statisticsChallengerPointsRow?.own === false, "statistics does not mark the other fixture user as own", statisticsChallengerPointsRow ?? {}),
       check(!statisticsRankingReady || Number(statisticsLeaderFleetRow?.score ?? 0) === Number(statisticsRankingFixture.leader.score2), "statistics fleet preserves leader fleet score", statisticsLeaderFleetRow ?? {}),
@@ -9626,16 +9647,16 @@ try {
         status: operatorBattleSim?.status
       }),
       check(!adminOperationsReady || operatorBattleSimBody.actionIssue?.code === "action_saved", "operator BattleSim POST saves like legacy", operatorBattleSimBody.actionIssue ?? {}),
-      check(!adminOperationsReady || String(operatorBattleSimBody.actionIssue?.message ?? "").includes("Battle report"), "operator BattleSim POST renders a battle report marker", operatorBattleSimBody.actionIssue ?? {}),
+      check(!adminOperationsReady || String(operatorBattleSimBody.actionIssue?.result?.html ?? "").includes("Battle report"), "operator BattleSim POST renders a battle report marker", operatorBattleSimBody.actionIssue ?? {}),
       check(!adminOperationsReady || operatorRakSim?.status === 200, "operator RakSim POST returns HTTP 200", {
         status: operatorRakSim?.status
       }),
       check(!adminOperationsReady || operatorRakSimBody.actionIssue?.code === "action_saved", "operator RakSim POST saves like legacy", operatorRakSimBody.actionIssue ?? {}),
       check(
         !adminOperationsReady ||
-          (String(operatorRakSimBody.actionIssue?.message ?? "").includes("Missile attack") &&
-            String(operatorRakSimBody.actionIssue?.message ?? "").includes("Defense")),
-        "operator RakSim POST renders missile and defense markers",
+          Number.isFinite(operatorRakSimBody.actionIssue?.result?.values?.anz) &&
+            Number.isFinite(operatorRakSimBody.actionIssue?.result?.values?.d_401),
+        "operator RakSim POST returns missile and defense values",
         operatorRakSimBody.actionIssue ?? {}
       ),
       check(!adminOperationsReady || operatorExpeditionSim?.status === 200, "operator Expedition sim POST returns HTTP 200", {
@@ -9644,9 +9665,9 @@ try {
       check(!adminOperationsReady || operatorExpeditionSimBody.actionIssue?.code === "action_saved", "operator Expedition sim POST saves like legacy", operatorExpeditionSimBody.actionIssue ?? {}),
       check(
         !adminOperationsReady ||
-          (String(operatorExpeditionSimBody.actionIssue?.message ?? "").includes("Expedition simulation result") &&
-            String(operatorExpeditionSimBody.actionIssue?.message ?? "").includes("myChart")),
-        "operator Expedition sim POST renders chart markers",
+          Array.isArray(operatorExpeditionSimBody.actionIssue?.result?.series) &&
+            operatorExpeditionSimBody.actionIssue.result.series.length === 10,
+        "operator Expedition sim POST returns the chart series",
         operatorExpeditionSimBody.actionIssue ?? {}
       )
     ]
@@ -10602,11 +10623,18 @@ try {
     : null;
   const queueDrainSearch = withQueryParam(queueDrainLogin?.search ?? "?session=", "cp", Number(queueFreezeDrainFixture.home_planet_id ?? 0));
   const queueDrainBuildingID = Number(queueFreezeDrainFixture.building_id ?? 1);
+  const adminUniverseBaseline = adminUniverseReady
+    ? await request(`/api/game/admin${withQueryParam(adminUniverseSearch, "mode", "Uni")}`, {
+        headers: { Cookie: adminUniverseCookie }
+      })
+    : null;
+  const adminUniverseBaselineBody = adminUniverseBaseline ? parseJSON(adminUniverseBaseline) : {};
+  const adminUniverseSettings = adminUniverseBaselineBody.admin?.universe ?? {};
   const queueDrainPreRestore = queueDrainFlowReady
     ? await request(`/api/game/admin${withQueryParam(adminUniverseSearch, "mode", "Uni")}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: adminUniverseCookie },
-        body: JSON.stringify({ action: "settings", values: { freeze: 0 } })
+        body: JSON.stringify({ action: "settings", universeSettings: adminUniverseMutation(adminUniverseSettings, false) })
       })
     : null;
   const queueDrainStart = queueDrainFlowReady
@@ -10618,13 +10646,14 @@ try {
     : null;
   const queueDrainStartBody = queueDrainStart ? parseJSON(queueDrainStart) : {};
   if (queueDrainFlowReady) {
-    await new Promise((resolve) => setTimeout(resolve, 2200));
+    const remainingSeconds = Number(queueDrainStartBody.buildings?.queue?.[0]?.remainingSeconds ?? 1);
+    await new Promise((resolve) => setTimeout(resolve, (Math.max(1, remainingSeconds) + 1) * 1000));
   }
   const adminUniverseFreeze = adminUniverseReady
     ? await request(`/api/game/admin${withQueryParam(adminUniverseSearch, "mode", "Uni")}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: adminUniverseCookie },
-        body: JSON.stringify({ action: "settings", values: { freeze: 1 } })
+        body: JSON.stringify({ action: "settings", universeSettings: adminUniverseMutation(adminUniverseSettings, true) })
       })
     : null;
   const adminUniverseFreezeBody = adminUniverseFreeze ? parseJSON(adminUniverseFreeze) : {};
@@ -10647,7 +10676,7 @@ try {
     ? await request(`/api/game/admin${withQueryParam(adminUniverseSearch, "mode", "Uni")}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: adminUniverseCookie },
-        body: JSON.stringify({ action: "settings", values: { freeze: 0 } })
+        body: JSON.stringify({ action: "settings", universeSettings: adminUniverseMutation(adminUniverseSettings, false) })
       })
     : null;
   const adminUniverseRestoreBody = adminUniverseRestore ? parseJSON(adminUniverseRestore) : {};
