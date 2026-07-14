@@ -16,17 +16,14 @@ Generated IDs and wall-clock deltas are normalized; durable effects remain exact
 | Database | 11 | create/restore lifecycle, delete, invalid/partial/path guards, access | PASS |
 | Bots/BotEdit | 18 | list/add/stop, names, strategy CRUD/import/export, access | PASS |
 | Colony/Checksum/Loca | 13 | all colony values, serialized baselines, all localization rows/order/colors | PASS |
-| Simulators | 11 | Rocket defenses/targeting and deterministic Expedition result buckets | PASS |
-| **Total** | **131** | deterministic PHP/Go DB, files and HTTP contracts | **PASS** |
+| Simulators | 19 | Rocket, Expedition and Battle form/result/report/message semantics | PASS |
+| **Total** | **139** | deterministic PHP/Go DB, files and HTTP contracts | **PASS** |
 
-Queue/Fleetlogs cases include missing-target no-ops and operator rejection. Recall
-compares cargo, ships, fuel, mission, origin/target, duration, priority, fleetlog,
-userlog text, and legacy two/four-week log cleanup. Only generated fleet/task IDs
-and bounded request-time deltas are normalized.
+Queue/Fleetlogs covers no-ops, access, recall state/logs and retention. Only
+generated fleet/task IDs and bounded request-time deltas are normalized.
 
-Operations covers all recipient categories, empty/whitespace fields, every legacy
-broadcast BBCode family, the 127-message cap, marked/all/empty reports, all 33
-expedition settings, malformed partial requests and access rejection.
+Operations covers recipients, BBCode, message cap, reports, all 33 expedition
+settings, malformed requests and access rejection.
 
 Universe covers every mutable field, empty strings, news update/disable ordering,
 max-user zero preservation, freeze/unfreeze, active-user VM forcing and rejection.
@@ -38,12 +35,14 @@ Bots compares account, planet, IP log, variables, AI queue, strategy source and
 user-count effects; generated IDs, passwords, IPs, times and temperature are normalized.
 Colony covers all 15 values and unsigned boundaries. Checksum compares all 130 rows
 and exact PHP serialization. Loca compares 2,090 English rows and missing JP files.
-Simulators compare every rendered Rocket value for empty, interception, targeted,
-sweep and Operator cases, plus all ten Expedition buckets under forced outcomes.
+Simulators compare every rendered Rocket value, all ten Expedition buckets, and
+Battle attacker/defender/draw, defense, source import, rapid-fire, zero-round and
+Operator cases. Battle report HTML, link style/losses, message metadata, retention
+count and battledata cleanup are exact after masking time, random coordinates and IDs.
 
 ## Pending Groups
 
-- Battle simulator calculations and report generation.
+- Battle simulator debug diagnostics and post-action screenshot state.
 - CRON execution.
 - Users and Planets full edit/create/destroy operations.
 

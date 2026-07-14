@@ -153,6 +153,8 @@ func (r AdminRepository) GetAdmin(ctx context.Context, query appgame.AdminQuery)
 		admin.Universe, err = r.loadAdminUniverse(ctx)
 	case "Expedition":
 		admin.Expedition, err = r.loadAdminExpeditionSettings(ctx)
+	case "BattleSim":
+		admin.Universe, err = r.loadAdminUniverse(ctx)
 	case "BattleReport":
 		admin.BattleReports, err = r.loadAdminBattleReports(ctx)
 	case "Checksum":
@@ -1184,25 +1186,7 @@ func adminLocaLanguage(directory string) string {
 }
 
 func (r AdminRepository) mutateAdminBattleSim(ctx context.Context, query appgame.AdminMutationQuery) (*domaingame.AdminActionIssue, error) {
-	messagesTable, err := tableName(r.prefix, "messages")
-	if err != nil {
-		return nil, err
-	}
-	reportText := `<table class="battleReport"><tr><th>Battle report</th></tr><tr><td>Simulator result</td></tr></table>`
-	if _, err := r.execer.ExecContext(
-		ctx,
-		fmt.Sprintf("INSERT INTO %s (owner_id, pm, msgfrom, subj, text, shown, date, planet_id) VALUES (?, ?, ?, ?, ?, 1, ?, ?)", messagesTable),
-		query.PlayerID,
-		domaingame.MessageTypeBattleReportText,
-		"Battle simulator",
-		"Battle report",
-		reportText,
-		r.now().Unix(),
-		query.PlanetID,
-	); err != nil {
-		return nil, err
-	}
-	return domaingame.AdminIssueWithMessage(domaingame.AdminIssueActionSaved, "Battle report simulator completed."), nil
+	return r.runAdminBattleSimulator(ctx, query)
 }
 
 func (r AdminRepository) mutateAdminRakSim(query appgame.AdminMutationQuery) *domaingame.AdminActionIssue {

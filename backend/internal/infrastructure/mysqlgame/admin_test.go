@@ -1906,28 +1906,48 @@ func TestAdminRepositoryMutatesReports(t *testing.T) {
 
 func TestAdminRepositoryMutatesAdminSimulators(t *testing.T) {
 	t.Run("battle simulator creates report message", func(t *testing.T) {
-		runner := &fakeGalaxyRunner{}
+		runner := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+				{rows: fakeRowsFromValues(adminUniverseSettingsRow())},
+				{rows: fakeRowsFromValues([]any{126})},
+			}},
+			execResults: []sql.Result{
+				galaxySQLResult{id: 501, rows: 1},
+				galaxySQLResult{rows: 1},
+				galaxySQLResult{id: 701, rows: 1},
+			},
+		}
 		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
 		repository.now = func() time.Time { return time.Unix(2_000, 0) }
+		repository.randomIntN = func(int) int { return 0 }
+		values := map[string]int{
+			"anum": 1, "dnum": 1,
+			"a0_weap": 10, "a0_shld": 11, "a0_armor": 12, "a0_214": 1,
+			"d0_weap": 1, "d0_shld": 2, "d0_armor": 3, "d0_202": 1,
+		}
 
 		issue, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
 			PlayerID: 42,
 			PlanetID: 99,
 			Mode:     "BattleSim",
 			Action:   domaingame.AdminActionBattleSimRun,
+			Values:   values,
 		})
 
-		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || !strings.Contains(issue.Message, "Battle report") {
+		if err != nil || issue == nil || issue.Code != domaingame.AdminIssueActionSaved || issue.Result == nil || issue.Result.ItemID != 701 || issue.Result.Values["max_round"] != 6 || !strings.Contains(issue.Result.HTML, "bericht=701") {
 			t.Fatalf("unexpected battle simulator issue=%+v err=%v", issue, err)
 		}
-		if len(runner.execCalls) != 1 || !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `ogame_messages`") ||
-			runner.execCalls[0].args[0] != 42 ||
-			runner.execCalls[0].args[1] != domaingame.MessageTypeBattleReportText ||
-			runner.execCalls[0].args[2] != "Battle simulator" ||
-			runner.execCalls[0].args[3] != "Battle report" ||
-			!strings.Contains(runner.execCalls[0].args[4].(string), "Battle report") ||
-			runner.execCalls[0].args[5] != int64(2_000) ||
-			runner.execCalls[0].args[6] != 99 {
+		if len(runner.execCalls) != 3 || !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `ogame_battledata`") ||
+			!strings.Contains(runner.execCalls[0].args[0].(string), "Attacker0 = 10 11 12") ||
+			!strings.Contains(runner.execCalls[0].args[0].(string), "214 1") ||
+			!strings.Contains(runner.execCalls[1].sql, "DELETE FROM `ogame_battledata`") || runner.execCalls[1].args[0] != int64(501) ||
+			!strings.Contains(runner.execCalls[2].sql, "INSERT INTO `ogame_messages`") ||
+			runner.execCalls[2].args[0] != 42 ||
+			runner.execCalls[2].args[1] != domaingame.MessageTypeBattleReportText ||
+			runner.execCalls[2].args[2] != "Fleet Command" ||
+			runner.execCalls[2].args[3] != "Battle report" ||
+			!strings.Contains(runner.execCalls[2].args[4].(string), "The attacker has won the battle") ||
+			runner.execCalls[2].args[5] != int64(2_000) {
 			t.Fatalf("unexpected battle simulator insert: %+v", runner.execCalls)
 		}
 	})
@@ -2001,20 +2021,89 @@ func TestAdminRepositoryMutatesAdminSimulators(t *testing.T) {
 	})
 
 	t.Run("battle simulator propagates insert errors", func(t *testing.T) {
-		runner := &fakeGalaxyRunner{execErrs: []error{errors.New("battle insert failed")}}
+		runner := &fakeGalaxyRunner{
+			fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues(adminUniverseSettingsRow())}}},
+			execErrs:    []error{errors.New("battle insert failed")},
+		}
 		repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+		repository.randomIntN = func(int) int { return 0 }
 
 		_, err := repository.MutateAdmin(context.Background(), appgame.AdminMutationQuery{
 			PlayerID: 42,
 			PlanetID: 99,
 			Mode:     "BattleSim",
 			Action:   domaingame.AdminActionBattleSimRun,
+			Values:   map[string]int{"anum": 1, "dnum": 1, "a0_214": 1, "d0_202": 1},
 		})
 
 		if err == nil || !strings.Contains(err.Error(), "battle insert failed") {
 			t.Fatalf("expected battle simulator insert error, got %v", err)
 		}
 	})
+}
+
+func TestAdminBattleSimulatorHelpers(t *testing.T) {
+	attackers, defenders := parseAdminBattleSource(strings.Join([]string{
+		"ignored",
+		"Other0 = 1 2 3 202 1",
+		"Attacker-1 = 1 2 3 202 1",
+		"Attackerx = 1 2 3 202 1",
+		"Attacker4 = 1 2",
+		"Attacker2 = 10 11 12 214 5 bad 3 202 bad",
+		"Attacker0 = 4 5 6 202 -3 203 7",
+		"Defender1 = 7 8 9 401 12 402 4",
+	}, "\n"), func(int) int { return 0 })
+
+	if len(attackers) != 2 || attackers[0].Name != "Attacker0" || attackers[1].Name != "Attacker2" ||
+		attackers[0].Weapon != 4 || attackers[0].Units[202] != 0 || attackers[0].Units[203] != 7 ||
+		attackers[1].Units[214] != 5 || len(defenders) != 1 || defenders[0].Name != "Defender1" ||
+		defenders[0].Units[401] != 12 || defenders[0].Units[402] != 4 {
+		t.Fatalf("unexpected parsed battle source attackers=%+v defenders=%+v", attackers, defenders)
+	}
+	if got := orderedAdminBattleSlots(nil); len(got) != 0 {
+		t.Fatalf("expected empty ordered slots, got %+v", got)
+	}
+	if source := adminBattleSource(domaingame.CombatResult{}, false, 3); !strings.HasPrefix(source, "MaxRound = 3\n") {
+		t.Fatalf("expected custom max round in battle source, got %q", source)
+	}
+	if link := adminBattleSimulatorLink(77, domaingame.Coordinates{Galaxy: 1, System: 2, Position: 3}, "won", 4_000, 5_000); !strings.Contains(link, "bericht=77") || !strings.Contains(link, "[1:2:3]") || !strings.Contains(link, "V:4.000,A:5.000") {
+		t.Fatalf("unexpected battle simulator link: %s", link)
+	}
+}
+
+func TestAdminBattleSimulatorPersistenceErrors(t *testing.T) {
+	query := appgame.AdminMutationQuery{
+		PlayerID: 42,
+		Mode:     "BattleSim",
+		Action:   domaingame.AdminActionBattleSimRun,
+		Values:   map[string]int{"anum": 1, "dnum": 1, "a0_214": 1, "d0_202": 1},
+	}
+	tests := []struct {
+		name         string
+		queryResults []fakeQueryResult
+		execResults  []sql.Result
+		execErrors   []error
+		want         string
+	}{
+		{name: "universe query", queryResults: []fakeQueryResult{{err: errors.New("universe failed")}}, want: "universe failed"},
+		{name: "battle insert id", queryResults: []fakeQueryResult{{rows: fakeRowsFromValues(adminUniverseSettingsRow())}}, execResults: []sql.Result{adminSQLResultWithLastInsertErr{err: errors.New("battle id failed")}}, want: "battle id failed"},
+		{name: "battle delete", queryResults: []fakeQueryResult{{rows: fakeRowsFromValues(adminUniverseSettingsRow())}}, execErrors: []error{nil, errors.New("battle delete failed")}, want: "battle delete failed"},
+		{name: "message count", queryResults: []fakeQueryResult{{rows: fakeRowsFromValues(adminUniverseSettingsRow())}, {err: errors.New("message count failed")}}, want: "message count failed"},
+		{name: "message cap delete", queryResults: []fakeQueryResult{{rows: fakeRowsFromValues(adminUniverseSettingsRow())}, {rows: fakeRowsFromValues([]any{127})}}, execErrors: []error{nil, nil, errors.New("message cap failed")}, want: "message cap failed"},
+		{name: "message insert", queryResults: []fakeQueryResult{{rows: fakeRowsFromValues(adminUniverseSettingsRow())}, {rows: fakeRowsFromValues([]any{0})}}, execErrors: []error{nil, nil, errors.New("message insert failed")}, want: "message insert failed"},
+		{name: "message insert id", queryResults: []fakeQueryResult{{rows: fakeRowsFromValues(adminUniverseSettingsRow())}, {rows: fakeRowsFromValues([]any{0})}}, execResults: []sql.Result{galaxySQLResult{id: 1}, galaxySQLResult{}, adminSQLResultWithLastInsertErr{err: errors.New("message id failed")}}, want: "message id failed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: tt.queryResults}, execResults: tt.execResults, execErrs: tt.execErrors}
+			repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
+			repository.randomIntN = func(int) int { return 0 }
+			_, err := repository.MutateAdmin(context.Background(), query)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q, got %v", tt.want, err)
+			}
+		})
+	}
 }
 
 func TestRandomAdminIntNBounds(t *testing.T) {
@@ -3579,11 +3668,7 @@ func TestAdminRepositoryReadsSelectedPlanetDetail(t *testing.T) {
 func TestAdminRepositoryReadsUniverseSettings(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
-		fakeQueryResult{rows: fakeRowsFromValues([]any{
-			1, float64(128), float64(2), 9, 499, 1000, 5, 30, 0, 1, 1, 70, 10, 42, 0,
-			"news one", "news two", int64(1700003600), int64(1700000000), "../cgi-bin/battle", "en", 3,
-			"https://board.example", "https://discord.example", "", "", "", 1, 1000000, 0, 1000, 999, 60,
-		})},
+		fakeQueryResult{rows: fakeRowsFromValues(adminUniverseSettingsRow())},
 	)}
 	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
 
@@ -3598,6 +3683,14 @@ func TestAdminRepositoryReadsUniverseSettings(t *testing.T) {
 	lastSQL := queryer.calls[len(queryer.calls)-1].sql
 	if !strings.Contains(lastSQL, "`ogame_uni`") || !strings.Contains(lastSQL, "COALESCE(start_dm, 0)") || !strings.Contains(lastSQL, "LIMIT 1") {
 		t.Fatalf("expected universe settings query, got %s", lastSQL)
+	}
+}
+
+func adminUniverseSettingsRow() []any {
+	return []any{
+		1, float64(128), float64(2), 9, 499, 1000, 5, 30, 0, 1, 1, 70, 10, 42, 0,
+		"news one", "news two", int64(1700003600), int64(1700000000), "../cgi-bin/battle", "en", 3,
+		"https://board.example", "https://discord.example", "", "", "", 1, 1000000, 0, 1000, 999, 60,
 	}
 }
 

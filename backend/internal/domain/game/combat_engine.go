@@ -92,9 +92,6 @@ func ResolveCombat(attackers []CombatSlot, defenders []CombatSlot, rapidFire boo
 	if random == nil {
 		return result, errors.New("combat random source unavailable")
 	}
-	if maxRounds <= 0 {
-		maxRounds = CombatMaxRounds
-	}
 	attackerUnits, err := initializeCombatUnits(attackers)
 	if err != nil {
 		return result, err

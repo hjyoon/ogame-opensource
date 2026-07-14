@@ -80,3 +80,13 @@ func TestResolveCombatRejectsInvalidInput(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveCombatPreservesNonPositiveRoundLimits(t *testing.T) {
+	slot := CombatSlot{Units: map[int]int{FleetDeathstar: 1}}
+	for _, rounds := range []int{0, -1} {
+		result, err := ResolveCombat([]CombatSlot{slot}, []CombatSlot{slot}, false, rounds, func(int) int { return 0 })
+		if err != nil || result.Outcome != CombatDraw || len(result.Rounds) != 0 {
+			t.Fatalf("rounds=%d should produce the legacy zero-round draw, result=%+v err=%v", rounds, result, err)
+		}
+	}
+}
