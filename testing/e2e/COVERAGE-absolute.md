@@ -6,7 +6,7 @@ Keep this file under 4KB. This is the conservative product-coverage model for th
 
 - Goal: 100% absolute coverage of legacy PHP functionality.
 - Current absolute estimate: not asserted; the repository has no exhaustive legacy denominator proving a percentage.
-- Current inventoried QA pass rate: 100% (36/36 suites in the 2026-07-12 full run).
+- Current inventoried QA pass rate: 100% (70/70 result groups in the 2026-07-15 full run).
 - A passing registry proves only listed cases, not every reachable legacy behavior.
 
 ## Denominator
@@ -28,7 +28,7 @@ The denominator is the legacy product surface, not file count alone:
 
 - Full migration QA wrapper passes with legacy PHP E2E plus Go/Bun checks.
 - Go internal coverage gate: 97.0% >= 97%.
-- Compatibility smoke covers 90 cases / 2254 checks.
+- Compatibility smoke covers 90 cases / 2249 checks.
 - Strict navigation visual exact diff has 0 failures for the seeded public/game/admin inventory.
 - Auth/game/navigation visual QA covers the normal authenticated route surface, route-discovered targets, and page-state exact diff in Chromium and Firefox.
 - Authenticated dynamic registry covers 98 listed legacy-JS cases.

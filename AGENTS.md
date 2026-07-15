@@ -51,7 +51,7 @@ testing/e2e/run-docker-e2e.sh
 Final migration QA:
 
 ```sh
-OGAME_RUN_LEGACY_E2E=1 OGAME_GO_PORT=8895 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run-golang-migration-qa.sh
+OGAME_RUN_LEGACY_E2E=1 OGAME_GO_PORT=8890 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run-golang-migration-qa.sh
 ```
 
 Keep PHP as oracle; keep one current Go `goapp` container only.

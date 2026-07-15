@@ -1,49 +1,47 @@
 # Migration Status
 
-Updated: 2026-07-14 KST, branch `hjyoon/golang`.
+Updated: 2026-07-15 KST, branch `hjyoon/golang`.
 
-React/Bun + Go migration tracker. Keep under 4KB; split details.
+React/Bun + Go migration tracker. Keep under 4KB; split details by topic.
 
 ## Current State
 
-- Backend follows Clean Architecture under `backend/internal/{domain,application,infrastructure,delivery}`.
-- Go serves the React build and legacy static aliases from `compose.golang.yaml` `goapp` on port 8890.
-- Natural routes and legacy `.php`/`page=` aliases share route manifests; the UI is CSR, while Go serves the built assets.
-- Public assets, `evolution` skin, game CSS/images/js/mod assets, and `/img`, `/game/css`, `/game/img`, `/evolution` aliases are served by Go.
-- Registration, activation, login/logout, sessions, private cookies, IP/ban/session expiry, and `/game` redirects are ported.
-- `/api/game/*` covers overview, buildings, resources, merchant/officers, research, shipyard/defense, fleet, galaxy, alliance, admin, statistics, search, messages, report, phalanx, jump gate, notes, buddy, options, and logout.
-- Mutations exist for overview, buildings, resources, merchant/officers, alliance, research, shipyard/defense, fleet, buddy, notes, messages, and options.
+- React 19 CSR is built with Bun 1.3; Go 1.25 `net/http` serves the build and legacy static assets on port 8890.
+- Backend dependencies follow Clean Architecture under `backend/internal/{domain,application,infrastructure,delivery}`.
+- Natural routes and legacy `.php`/`page=` aliases share route manifests.
+- Registration, activation, recovery, login/logout, session expiry, private cookies, IP/ban checks, and `/game` redirects are migrated.
+- `/api/game/*` implements overview, economy and queues, fleet/combat, galaxy, social/account, reports, officers/payment, and Admin/Bot operations.
+- Game mutations preserve legacy math, timing, permissions, persisted effects, reports, and scheduler behavior through PHP/Go differential cases.
+- MCP is available to ordinary authenticated users with per-user tokens; legacy visual comparisons intentionally exclude the token-only Options section.
 - Modernization candidates stay in [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
 
-## Latest Implementation
+## Source Inventory
 
-- Navigation visual E2E scans links, JS navigation, popups, hovers, select URLs, and GET forms in both browsers; results are in [COVERAGE-navigation-visual.md](./testing/e2e/COVERAGE-navigation-visual.md).
-- Authenticated dynamic E2E runs 98 listed legacy-JS cases with commander, alliance, report, phalanx, and ACS fixtures enabled by default.
-- Fixed Firefox legacy host/session drift by keeping the configured legacy base URL instead of adopting a redirected `localhost` origin.
-- Fixed known route parity defects in aliases, selectors, statistics, registration, messages, fleet, commander folders, and galaxy hovers.
-- Jump Gate, ACS slowdown, full expedition lifecycle, option locale, pranger, maintenance, feed, DB restore, Mods hook policy, Logins/Browse, Loca, Bots, and BotEdit import are migrated.
-- Inventoried game and admin screens use legacy chrome and route aliases.
+The drift gates currently map 37/37 game router keys, 26/26 Admin modes, 32/32 public PHP entrypoints, and 14/14 Bot API functions. The non-Mod behavior baseline freezes 463 request inputs, 162 action values, 19 queue constants, 349 SQL mutation sites, and 149 navigation handlers.
 
-## Verified QA
+Four optional PHP Mods and their 37 executable hooks are outside product scope. Go rejects new PHP Mod installs and fails readiness if one is active; it never silently executes arbitrary PHP.
 
-- Full migration QA wrapper passes.
-- Legacy PHP Docker E2E passes before Go/Bun checks.
-- Frontend build/typecheck/unit tests pass: 24 tests.
-- Backend tests and the 97% internal coverage gate pass: `97.0% >= 97%`.
-- Inventoried QA fully passes; absolute legacy coverage is not claimed as 100%. See [COVERAGE-absolute.md](./testing/e2e/COVERAGE-absolute.md).
-- Go compatibility smoke registry covers 90 cases / 2249 checks.
-- User-type API and Chromium/Firefox Playwright QA pass.
-- Auth visual, authenticated game visual, dynamic behavior, empire, alliance, overview fleet, overview all-cases, fleet continue, and fleet all-cases suites pass in Chromium and Firefox.
-- Strict navigation visual threshold `0`: Chromium 172/172 and Firefox 171/171 pass.
-- Full summary is in `.tmp/golang-migration-qa-summary.md`; navigation details are in [COVERAGE-navigation-visual.md](./testing/e2e/COVERAGE-navigation-visual.md).
+## Latest Full QA
 
-## Remaining Work
+The 2026-07-15 clean wrapper run completed with `70 passed, 0 failed, 0 skipped`:
 
-- No current strict navigation visual gap remains in the seeded public/game/admin route inventory.
-- No concrete listed authenticated dynamic E2E case remains in [COVERAGE-dynamic-legacy-js.md](./testing/e2e/COVERAGE-dynamic-legacy-js.md); add more only when new legacy-JS behavior is found.
-- Source audit inventories routes, Admin modes, public entrypoints, Bot APIs, and optional Mod hooks in [COVERAGE-legacy-inventory.md](./testing/e2e/COVERAGE-legacy-inventory.md).
-- Behavior baseline tracks drift and 341 PHP/Go differential cases; Admin evidence is tracked in [COVERAGE-admin-differential.md](./testing/e2e/COVERAGE-admin-differential.md).
-- PHP Mod execution is excluded: installs are rejected and active Mods fail readiness.
-- Migration-pending game/admin fallback text has been removed.
-- Continue adding route/state/action inventory when new pages or unseeded legacy flows are migrated.
-- Keep API endpoint inventory aligned with [Backend API Endpoints](./backend/API_ENDPOINTS.md).
+```sh
+OGAME_RUN_LEGACY_E2E=1 OGAME_GO_PORT=8890 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run-golang-migration-qa.sh
+```
+
+- The legacy PHP Docker oracle passed all 59 groups plus its DB invariant.
+- Frontend build, TypeScript, and 24 Bun tests passed.
+- Backend tests passed the required internal coverage gate at exactly 97.0%.
+- Compatibility smoke passed 90 cases / 2249 checks; user-type API QA passed 8 cases / 43 checks.
+- Registered PHP/Go DB and HTTP differential suites passed, including 341 cataloged domain/Admin cases plus dedicated ACS, holding, moon, colony, missile, and cleanup flows.
+- Public, authenticated, Commander, dynamic, alliance, empire, overview, fleet, expiry, and navigation Playwright suites passed in Chromium and Firefox.
+- Navigation exact diff threshold `0` passed 1,947/1,947 edges and 162/162 target representatives in each browser.
+- Authenticated dynamic registry passed all 98 listed cases in each browser.
+
+Generated details are in [navigation coverage](./testing/e2e/COVERAGE-navigation-visual.md), [differential coverage](./testing/e2e/COVERAGE-differential.md), [dynamic coverage](./testing/e2e/COVERAGE-dynamic-legacy-js.md), and `.tmp/golang-migration-qa-summary.md`.
+
+## Completion Statement
+
+All currently discovered and registered non-Mod base-product features are migrated and pass the proportional QA registry. There is no known migration-pending route, screen, action group, or dynamic case in that inventory.
+
+This is not proof of every theoretically possible legacy runtime state. A newly found route, handler, DB-state combination, or behavior expands the denominator and must add implementation plus unit/API/differential/visual evidence before the same statement remains valid. Optional PHP Mod execution remains an explicit exclusion.
