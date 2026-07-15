@@ -453,11 +453,24 @@ async function normalizeDynamicPageParts(page: Page, side: Side): Promise<void> 
     resourceValues.forEach((cell, index) => {
       cell.textContent = normalizedResourceValues[index] ?? "0";
     });
-    for (const timer of document.querySelectorAll<HTMLElement>("#content div[id^='bxx'], .legacy-fleet-target-table div[id^='bxx']")) {
-      timer.textContent = "0:00:00";
-      timer.setAttribute("title", "0");
-      timer.setAttribute("star", "0");
-    }
+    const normalizeTimers = () => {
+      for (const timer of document.querySelectorAll<HTMLElement>("#content div[id^='bxx'], .legacy-fleet-target-table div[id^='bxx']")) {
+        if (timer.textContent !== "0:00:00") {
+          timer.textContent = "0:00:00";
+        }
+        timer.setAttribute("title", "0");
+        timer.setAttribute("star", "0");
+      }
+    };
+    normalizeTimers();
+    const windowWithObserver = window as typeof window & { __fleetTimerObserver?: MutationObserver };
+    windowWithObserver.__fleetTimerObserver?.disconnect();
+    windowWithObserver.__fleetTimerObserver = new MutationObserver(normalizeTimers);
+    windowWithObserver.__fleetTimerObserver.observe(document.body, {
+      childList: true,
+      characterData: true,
+      subtree: true
+    });
   }, side);
 }
 

@@ -36,10 +36,13 @@ docker compose exec -T server mkdir -p "$CONTAINER_DIR"
 docker compose cp "$SCRIPT_DIR/cleanup-golang-migration-fixtures.php" "server:$CONTAINER_DIR/cleanup-golang-migration-fixtures.php" >/dev/null
 docker compose cp "$SCRIPT_DIR/prepare-fleet-all-cases-fixture.php" "server:$CONTAINER_DIR/prepare-fleet-all-cases-fixture.php" >/dev/null
 trap cleanup_fixture EXIT INT TERM
-docker compose exec -T server php "$CONTAINER_DIR/prepare-fleet-all-cases-fixture.php" > "$FIXTURE_FILE"
 
 cd "$ROOT_DIR/frontend"
 for browser in ${OGAME_FLEET_ALL_BROWSERS:-chromium firefox}; do
+  cd "$ROOT_DIR"
+  cleanup_fixture
+  docker compose exec -T server php "$CONTAINER_DIR/prepare-fleet-all-cases-fixture.php" > "$FIXTURE_FILE"
+  cd "$ROOT_DIR/frontend"
   printf 'Fleet all-cases E2E (%s)\n' "$browser"
   OGAME_PLAYWRIGHT_BROWSER="$browser" \
   OGAME_LEGACY_BASE_URL="$LEGACY_BASE_URL" \
