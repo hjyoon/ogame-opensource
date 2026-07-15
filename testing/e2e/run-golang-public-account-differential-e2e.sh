@@ -34,10 +34,13 @@ db_query() {
 users_backup="uni1_e2e_publicdiff_users_$$"
 ranks_backup="uni1_e2e_publicdiff_ranks_$$"
 uni_backup="uni1_e2e_publicdiff_uni_$$"
-db_query "DROP TABLE IF EXISTS $users_backup,$ranks_backup,$uni_backup;
+iplogs_backup="uni1_e2e_publicdiff_iplogs_$$"
+db_query "DROP TABLE IF EXISTS $users_backup,$ranks_backup,$uni_backup,$iplogs_backup;
 CREATE TABLE $users_backup AS SELECT * FROM uni1_users WHERE player_id IN ($actor_id,$recovery_id);
 CREATE TABLE $ranks_backup AS SELECT player_id,score1,score2,score3,place1,place2,place3 FROM uni1_users;
-CREATE TABLE $uni_backup AS SELECT * FROM uni1_uni" >/dev/null
+CREATE TABLE $uni_backup AS SELECT * FROM uni1_uni;
+CREATE TABLE $iplogs_backup AS SELECT log_id,date FROM uni1_iplogs WHERE reg=1 AND date>UNIX_TIMESTAMP()-600;
+UPDATE uni1_iplogs l JOIN $iplogs_backup b ON b.log_id=l.log_id SET l.date=UNIX_TIMESTAMP()-601" >/dev/null
 
 restore_users() {
   db_query "UPDATE uni1_users u JOIN $users_backup b ON b.player_id=u.player_id SET
@@ -75,7 +78,8 @@ u.score1=b.score1,u.score2=b.score2,u.score3=b.score3,u.place1=b.place1,u.place2
 cleanup() {
   restore_users >/dev/null 2>&1 || true
   cleanup_registered >/dev/null 2>&1 || true
-  db_query "DROP TABLE IF EXISTS $users_backup,$ranks_backup,$uni_backup" >/dev/null 2>&1 || true
+  db_query "UPDATE uni1_iplogs l JOIN $iplogs_backup b ON b.log_id=l.log_id SET l.date=b.date;
+DROP TABLE IF EXISTS $users_backup,$ranks_backup,$uni_backup,$iplogs_backup" >/dev/null 2>&1 || true
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT INT TERM
