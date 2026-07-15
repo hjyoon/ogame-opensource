@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "runner": "run-golang-runtime-queue-differential-e2e.sh",
+  "report": ".tmp/golang-runtime-queue-differential.json",
+  "entries": [
+    {"function":"BotIdle","case":"runtime-queue-ai-full"},
+    {"function":"BotStrategyExists","case":"runtime-queue-ai-full"},
+    {"function":"BotExec","case":"runtime-queue-ai-full"},
+    {"function":"BotGetVar","case":"runtime-queue-ai-full"},
+    {"function":"BotSetVar","case":"runtime-queue-ai-full"},
+    {"function":"BotCanBuild","case":"runtime-queue-ai-full"},
+    {"function":"BotBuild","case":"runtime-queue-ai-full"},
+    {"function":"BotGetBuild","case":"runtime-queue-ai-full"},
+    {"function":"BotResourceSettings","case":"runtime-queue-ai-full"},
+    {"function":"BotEnergyAbove","case":"runtime-queue-ai-full"},
+    {"function":"BotBuildFleet","case":"runtime-queue-ai-full"},
+    {"function":"BotGetResearch","case":"runtime-queue-ai-full"},
+    {"function":"BotCanResearch","case":"runtime-queue-ai-full"},
+    {"function":"BotResearch","case":"runtime-queue-ai-full"}
+  ]
+}

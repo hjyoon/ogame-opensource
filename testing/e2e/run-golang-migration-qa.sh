@@ -15,6 +15,7 @@ if command -v bun >/dev/null 2>&1; then
   bun "$SCRIPT_DIR/audit-legacy-migration-inventory.mjs"
   bun "$SCRIPT_DIR/audit-state-mutation-coverage.mjs"
   bun "$SCRIPT_DIR/audit-queue-runtime-coverage.mjs"
+  bun "$SCRIPT_DIR/audit-bot-runtime-coverage.mjs"
 fi
 
 wait_for_url() {

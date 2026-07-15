@@ -157,7 +157,7 @@ function BotEnergyAbove (int $energy) : bool
     if ($user == null) return false;
     $aktplanet = GetUpdatePlanet ( $user['aktplanet'], $BotNow );
     if ($aktplanet == null) return false;
-    $currentenergy = $aktplanet['e'];
+    $currentenergy = $aktplanet[GID_RC_ENERGY];
     if ($currentenergy >= $energy){
       return true;
     } else {
@@ -170,19 +170,17 @@ function BotEnergyAbove (int $energy) : bool
 
 function BotBuildFleet (int $obj_id, int $n) : int
 {
-    global $db_prefix, $BotID, $BotNow, $GlobalUni;
+    global $BotID, $BotNow, $GlobalUni;
     $user = LoadUser ($BotID);
     if ($user == null) return 0;
     $aktplanet = LoadPlanetById ( $user['aktplanet'] );
     if ($aktplanet == null) return 0;
-    $res = AddShipyard ($user['player_id'], $user['aktplanet'], $obj_id, $n, 0 );
+    $res = AddShipyard ($user['player_id'], $user['aktplanet'], $obj_id, $n, $BotNow );
     if ( $res ) {
         $speed = $GlobalUni['speed'];
-        $now = ShipyardLatestTime ($aktplanet, $BotNow);
         $shipyard = $aktplanet[GID_B_SHIPYARD];
         $nanits = $aktplanet[GID_B_NANITES];
         $seconds = TechDuration ( $obj_id, 1, PROD_SHIPYARD_DURATION_FACTOR, $shipyard, $nanits, $speed );
-        AddQueue ($user['player_id'], QTYP_SHIPYARD, $aktplanet['planet_id'], $obj_id, $n, $now, $seconds);
         UpdatePlanetActivity ( $user['aktplanet'], $BotNow );
         return $seconds;
     }
@@ -209,7 +207,7 @@ function BotCanResearch (int $obj_id) : bool
     if ($user == null) return false;
     $aktplanet = GetUpdatePlanet ( $user['aktplanet'], $BotNow );
     if ($aktplanet == null) return false;
-    $level = $aktplanet[$obj_id] + 1;
+    $level = $user[$obj_id] + 1;
     $text = CanResearch ($user, $aktplanet, $obj_id, $level);
     return ($text === '' );
 }
@@ -223,12 +221,11 @@ function BotResearch (int $obj_id) : int
     if ($user == null) return 0;
     $aktplanet = LoadPlanetById ( $user['aktplanet'] );
     if ($aktplanet == null) return 0;
-    $level = $aktplanet[$obj_id] + 1;
-    $text = StartResearch ($user[player_id], $user[aktplanet], $obj_id, 0);
+    $level = $user[$obj_id] + 1;
+    $text = StartResearch ($user['player_id'], $user['aktplanet'], $obj_id, $BotNow);
     if ( $text === '' ) {
-        $speed = $uni['speed'];
-        if ($now == 0) $now = time ();
-        $reslab = ResearchNetwork ( $user['planet_id'], $obj_id );
+        $speed = $GlobalUni['speed'];
+        $reslab = ResearchNetwork ( $user['aktplanet'], $obj_id );
         $prem = PremiumStatus ($user);
         if ( $prem['technocrat'] ) $r_factor = 1.1;
         else $r_factor = 1.0;

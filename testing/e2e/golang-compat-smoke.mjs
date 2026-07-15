@@ -8322,7 +8322,7 @@ try {
           botRuntimeOverviewResponses.length === 12 &&
             botRuntimeOverviewResponses.every((response) => response.status === 200) &&
             botRuntimeOverviewBodies.every((body) => body.authenticated === true),
-        "seeded bot strategy blocks execute through repeated overview loads",
+        "_start bot strategy executes through repeated overview loads",
         botRuntimeOverviewResponses.map((response, index) => ({
           index,
           status: response.status,

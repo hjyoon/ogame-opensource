@@ -1240,11 +1240,6 @@ function smoke_prepare_bot_runtime_fixture(string $password, array $near, bool $
     $queueStart = $seedDueActions ? $now - 5 : $now;
     $queueDelay = $seedDueActions ? 0 : 365 * 24 * 60 * 60;
     $startTaskId = AddQueue($botId, QTYP_AI, $startStrategyId, 1, 0, $queueStart, $queueDelay, QUEUE_PRIO_BOT);
-    if ($seedDueActions) {
-        foreach (array($startStrategyId, $buildStrategyId, $researchStrategyId, $shipyardStrategyId, $resourcesStrategyId) as $strategyId) {
-            AddQueue($botId, QTYP_AI, $strategyId, 3, 0, $queueStart, 0, QUEUE_PRIO_BOT);
-        }
-    }
     InvalidateUserCache();
 
     return array(

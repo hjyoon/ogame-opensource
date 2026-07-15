@@ -29,7 +29,7 @@ func TestBotRuntimeFinishesStartBlock(t *testing.T) {
 	insert := runner.execCalls[0]
 	if !strings.Contains(insert.sql, "INSERT INTO `ogame_queue`") ||
 		insert.args[0] != 42 || insert.args[1] != queueTypeAI || insert.args[2] != 7 ||
-		insert.args[3] != 2 || insert.args[5] != 150 || insert.args[6] != 300 || insert.args[7] != botQueuePriority {
+		insert.args[3] != 2 || insert.args[5] != 150 || insert.args[6] != 150 || insert.args[7] != botQueuePriority {
 		t.Fatalf("unexpected bot child insert: %+v", insert)
 	}
 	if !strings.Contains(runner.execCalls[1].sql, "DELETE FROM `ogame_queue` WHERE task_id = ?") || runner.execCalls[1].args[0] != 9 {
@@ -76,7 +76,7 @@ func TestBotRuntimeRegularBlockSupportsSetVarAndSleep(t *testing.T) {
 	if !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `ogame_botvars`") || runner.execCalls[0].args[0] != 42 || runner.execCalls[0].args[1] != "state" || runner.execCalls[0].args[2] != "ready" {
 		t.Fatalf("unexpected bot var insert: %+v", runner.execCalls[0])
 	}
-	if runner.execCalls[1].args[5] != 300 || runner.execCalls[1].args[6] != 607 {
+	if runner.execCalls[1].args[5] != 300 || runner.execCalls[1].args[6] != 307 {
 		t.Fatalf("expected child queue sleep to be applied, got %+v", runner.execCalls[1])
 	}
 }
@@ -99,10 +99,10 @@ func TestBotRuntimeRegularBlockSupportsBotExec(t *testing.T) {
 	if len(runner.execCalls) != 3 {
 		t.Fatalf("expected worker queue, child queue, and delete, got %+v", runner.execCalls)
 	}
-	if runner.execCalls[0].args[2] != 9 || runner.execCalls[0].args[3] != 8 || runner.execCalls[0].args[5] != 400 || runner.execCalls[0].args[6] != 800 {
+	if runner.execCalls[0].args[2] != 9 || runner.execCalls[0].args[3] != 8 || runner.execCalls[0].args[5] != 400 || runner.execCalls[0].args[6] != 400 {
 		t.Fatalf("unexpected BotExec queue insert: %+v", runner.execCalls[0])
 	}
-	if runner.execCalls[1].args[2] != 7 || runner.execCalls[1].args[3] != 2 || runner.execCalls[1].args[6] != 803 {
+	if runner.execCalls[1].args[2] != 7 || runner.execCalls[1].args[3] != 2 || runner.execCalls[1].args[6] != 403 {
 		t.Fatalf("unexpected current strategy child insert: %+v", runner.execCalls[1])
 	}
 }
@@ -1343,7 +1343,7 @@ func TestBotRuntimeAdditionalBranchEdges(t *testing.T) {
 			botStrategyGraph{},
 			[]botStrategyLink{{From: 1, To: 3}},
 		)
-		if err != nil || len(runner.execCalls) != 2 || runner.execCalls[0].args[3] != 3 || runner.execCalls[0].args[6] != task.End*2 {
+		if err != nil || len(runner.execCalls) != 2 || runner.execCalls[0].args[3] != 3 || runner.execCalls[0].args[6] != task.End {
 			t.Fatalf("statement error should queue child without sleep, err=%v execs=%+v", err, runner.execCalls)
 		}
 	})
@@ -1370,8 +1370,8 @@ func TestBotRuntimeAdditionalBranchEdges(t *testing.T) {
 		if err := repository.insertBotQueue(ctx, "`ogame_queue`", 42, 7, 2, 100, -9); err != nil {
 			t.Fatalf("negative sleep insert returned error: %v", err)
 		}
-		if runner.execCalls[0].args[6] != 191 {
-			t.Fatalf("negative sleep should retain the legacy absolute-time calculation, got %+v", runner.execCalls[0])
+		if runner.execCalls[0].args[6] != 91 {
+			t.Fatalf("negative sleep should be relative to the block time, got %+v", runner.execCalls[0])
 		}
 		if sleep, err := repository.executeBotStatements(ctx, "`ogame_botstrat`", "`ogame_botvars`", task, `; 5`); err != nil || sleep != 5 {
 			t.Fatalf("expected numeric statement sleep, sleep=%d err=%v", sleep, err)

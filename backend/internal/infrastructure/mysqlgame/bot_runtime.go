@@ -283,7 +283,7 @@ func (r BotRuntimeRepository) insertBotQueue(ctx context.Context, queueTable str
 		blockID,
 		0,
 		start,
-		start+start+seconds,
+		start+seconds,
 		botQueuePriority,
 	)
 	return err

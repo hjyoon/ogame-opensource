@@ -12,6 +12,7 @@ const artifacts = [
   { name: "legacy source inventory", path: ".tmp/legacy-migration-inventory.json" },
   { name: "state mutation coverage", path: ".tmp/golang-state-mutation-coverage.json" },
   { name: "queue runtime coverage", path: ".tmp/golang-queue-runtime-coverage.json" },
+  { name: "bot runtime coverage", path: ".tmp/golang-bot-runtime-coverage.json" },
   { name: "go DB recovery", path: ".tmp/golang-db-recovery.json" },
   { name: "go DB pool", path: ".tmp/golang-db-pool.json" },
   { name: "go Mod policy", path: ".tmp/golang-mod-policy.json" },

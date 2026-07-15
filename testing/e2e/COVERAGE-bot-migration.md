@@ -19,12 +19,18 @@ Keep this file under 4KB. This tracks the legacy bot system in the Go/Bun migrat
 
 ## QA Evidence
 
-- `go_bot_runtime_strategy_api` in `golang-compat-smoke.mjs` drains a seeded `_start` strategy and verifies build, research, shipyard, resource settings, and BotEdit import/export persistence.
+- `bot-runtime-coverage-registry.json` maps all 14 discovered PHP `Bot*` APIs to native Go dispatch and the `runtime-queue-ai-full` direct differential case; `audit-bot-runtime-coverage.mjs` is a full-QA drift gate.
+- `run-golang-runtime-queue-differential-e2e.sh` exact-compares all 7 maintenance/AI queue cases. Its isolated `_start` graph exercises every Bot API and compares branch transitions, variables, production factors, resource debit, building/research/shipyard queue levels, durations, and absolute starts.
+- `go_bot_runtime_strategy_api` in `golang-compat-smoke.mjs` drains a natural `_start` strategy and verifies build, research, shipyard, resource settings, and BotEdit import/export persistence.
 - `game-dynamic-behavior-registry.ts` covers BotEdit init, load, save, import, rename, new, preview popup, and export popup as authenticated dynamic cases.
 - `playwright-user-type-e2e.ts` checks regular/operator denial and admin BotEdit access.
 - Backend unit tests cover BotEdit mutation paths, import success, no-selected-strategy failure, and repository error branches.
 - Legacy PHP admin smoke still verifies Bots/BotEdit page rendering as the oracle.
 - `run-golang-admin-bots-differential-e2e.sh` exact-compares 18 list/add/stop and strategy CRUD/import/export cases, including whitespace names and access denial.
+
+## Legacy Runtime Repairs
+
+Direct comparison found and fixed legacy bot defects that prevented a valid oracle: AI child delays were treated as absolute timestamps twice, energy read a missing key, research used planet fields and undefined variables, and fleet build duplicated its queue row. PHP and Go now share relative scheduling and the same engine mutations.
 
 ## Remaining Rule
 
