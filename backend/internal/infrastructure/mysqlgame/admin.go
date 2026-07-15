@@ -656,7 +656,7 @@ func (r AdminRepository) mutateAdminBotAdd(ctx context.Context, query appgame.Ad
 			start.StartBlockID,
 			0,
 			now,
-			now*2,
+			now,
 			1000,
 		); err != nil {
 			return nil, err

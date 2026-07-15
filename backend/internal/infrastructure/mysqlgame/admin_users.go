@@ -143,7 +143,7 @@ func (r AdminRepository) startAdminUserBot(ctx context.Context, targetID int) er
 		return err
 	}
 	now := int(r.now().Unix())
-	_, err = r.execer.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (owner_id, type, sub_id, obj_id, level, start, end, prio) VALUES (?, ?, ?, ?, 0, ?, ?, ?)", queueTable), targetID, queueTypeAI, start.ID, start.StartBlockID, now, now*2, botQueuePriority)
+	_, err = r.execer.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (owner_id, type, sub_id, obj_id, level, start, end, prio) VALUES (?, ?, ?, ?, 0, ?, ?, ?)", queueTable), targetID, queueTypeAI, start.ID, start.StartBlockID, now, now, botQueuePriority)
 	return err
 }
 

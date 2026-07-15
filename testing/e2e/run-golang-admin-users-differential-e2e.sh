@@ -155,7 +155,7 @@ capture_planet() {
 
 capture_bot() {
   db_query "SELECT IF(COUNT(*)=0,'[]',JSON_ARRAYAGG(JSON_OBJECT('type',type,'sub_id',sub_id,'obj_id',obj_id,'level',level,'prio',prio,
-'start_window',start BETWEEN $((anchor-2)) AND UNIX_TIMESTAMP()+2,'legacy_end',end=start*2))) FROM uni1_queue WHERE owner_id=$target_id AND type='AI'"
+'start_window',start BETWEEN $((anchor-2)) AND UNIX_TIMESTAMP()+2,'relative_end',end=start))) FROM uni1_queue WHERE owner_id=$target_id AND type='AI'"
 }
 
 capture_reactivation() {
@@ -253,8 +253,8 @@ for case_name in update-full update-clear create-planet occupied-planet bot-star
     printf '%s' "$go" | jq -e '.state.disable_window and .state.vacation_window' >/dev/null || pass=false
   fi
   if [ "$case_name" = bot-start ]; then
-    printf '%s' "$legacy" | jq -e '.state[0].start_window and .state[0].legacy_end' >/dev/null || pass=false
-    printf '%s' "$go" | jq -e '.state[0].start_window and .state[0].legacy_end' >/dev/null || pass=false
+    printf '%s' "$legacy" | jq -e '.state[0].start_window and .state[0].relative_end' >/dev/null || pass=false
+    printf '%s' "$go" | jq -e '.state[0].start_window and .state[0].relative_end' >/dev/null || pass=false
   fi
   [ "$pass" = true ] || all_pass=false
   jq -nc --arg name "admin-users-$case_name" --argjson pass "$pass" --argjson legacy "$legacy" --argjson go "$go" '{name:$name,pass:$pass,legacy:$legacy,go:$go}' >> "$results"

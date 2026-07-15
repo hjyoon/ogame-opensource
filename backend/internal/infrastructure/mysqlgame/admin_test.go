@@ -1004,7 +1004,7 @@ func TestAdminRepositoryMutatesBotAdd(t *testing.T) {
 	if !strings.Contains(queueInsert.sql, "INSERT INTO `ogame_queue`") ||
 		queueInsert.args[0] != 77 || queueInsert.args[1] != "AI" ||
 		queueInsert.args[2] != 5 || queueInsert.args[3] != 12 ||
-		queueInsert.args[5] != int(now.Unix()) || queueInsert.args[6] != int(now.Unix())*2 || queueInsert.args[7] != 1000 {
+		queueInsert.args[5] != int(now.Unix()) || queueInsert.args[6] != int(now.Unix()) || queueInsert.args[7] != 1000 {
 		t.Fatalf("unexpected bot queue insert: %+v", queueInsert)
 	}
 }
@@ -1112,7 +1112,7 @@ func adminTestContainsArg(args []any, want any) bool {
 	return false
 }
 
-func TestAdminRepositoryStartsUserBotWithLegacyQueueEnd(t *testing.T) {
+func TestAdminRepositoryStartsUserBotWithRelativeQueueEnd(t *testing.T) {
 	now := time.Date(2026, time.July, 14, 10, 0, 0, 0, time.UTC)
 	runner := &fakeGalaxyRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{311, `{"nodeDataArray":[{"key":1,"category":"Start"}]}`})}}}}
 	repository := NewAdminRepositoryWithQueryer(runner, "ogame_")
@@ -1122,8 +1122,8 @@ func TestAdminRepositoryStartsUserBotWithLegacyQueueEnd(t *testing.T) {
 		t.Fatalf("unexpected bot start issue=%+v calls=%+v err=%v", issue, runner.execCalls, err)
 	}
 	call := runner.execCalls[0]
-	if call.args[0] != 42 || call.args[1] != queueTypeAI || call.args[2] != 311 || call.args[3] != 1 || call.args[4] != int(now.Unix()) || call.args[5] != int(now.Unix())*2 || call.args[6] != botQueuePriority {
-		t.Fatalf("unexpected legacy bot queue insert: %+v", call)
+	if call.args[0] != 42 || call.args[1] != queueTypeAI || call.args[2] != 311 || call.args[3] != 1 || call.args[4] != int(now.Unix()) || call.args[5] != int(now.Unix()) || call.args[6] != botQueuePriority {
+		t.Fatalf("unexpected bot queue insert: %+v", call)
 	}
 }
 
