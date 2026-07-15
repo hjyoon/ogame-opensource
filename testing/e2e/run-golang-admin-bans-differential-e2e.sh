@@ -41,12 +41,12 @@ restore_case() {
 u.score1=b.score1,u.score2=b.score2,u.score3=b.score3,u.place1=b.place1,u.place2=b.place2,u.place3=b.place3;
 DELETE FROM uni1_users WHERE player_id IN ($ids); INSERT INTO uni1_users SELECT * FROM $users_backup;
 DELETE FROM uni1_queue WHERE owner_id IN ($ids); INSERT INTO uni1_queue SELECT * FROM $queue_backup;
-DELETE FROM uni1_pranger WHERE user_id=$target_id OR admin_id IN ($admin_id,$operator_id,$regular_id);
-INSERT INTO uni1_pranger SELECT * FROM $pranger_backup" >/dev/null
+DELETE FROM uni1_pranger WHERE user_id=$target_id OR admin_id IN ($admin_id,$operator_id,$regular_id)" >/dev/null
 }
 
 restore_original() {
   restore_case
+  db_query "INSERT INTO uni1_pranger SELECT * FROM $pranger_backup" >/dev/null
   db_query "DROP TABLE IF EXISTS $users_backup,$ranks_backup,$queue_backup,$pranger_backup" >/dev/null
 }
 
