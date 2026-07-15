@@ -35,7 +35,7 @@ func TestFleetRepositoryReadsLegacyFleetScreen(t *testing.T) {
 	if fleet.SpeedFactor != 128 {
 		t.Fatalf("expected universe fleet speed factor, got %d", fleet.SpeedFactor)
 	}
-	if !fleet.CommanderActive || fleet.TemplateLimit != 4 || len(fleet.Templates) != 1 || fleet.Templates[0].Name != "raid wing" {
+	if !fleet.CommanderActive || fleet.TemplateLimit != 4 || len(fleet.Templates) != 1 || fleet.Templates[0].Name != " raid wing " {
 		t.Fatalf("unexpected fleet template summary: %+v", fleet)
 	}
 	if fleet.Slots.Used != 1 || fleet.Slots.BaseMax != 4 || fleet.Slots.Max != 6 || !fleet.Slots.Admiral {
@@ -92,7 +92,7 @@ func TestFleetRepositoryMapsMCPFleetOptions(t *testing.T) {
 	if len(options.Ships) != 2 || options.Ships[0].ID != domaingame.FleetSmallCargo || options.Ships[0].Speed != 20000 || !options.Ships[0].Selectable {
 		t.Fatalf("unexpected mcp fleet ships: %+v", options.Ships)
 	}
-	if options.TemplateLimit != 4 || len(options.Templates) != 1 || options.Templates[0].Name != "raid wing" || len(options.Templates[0].Ships) != 1 {
+	if options.TemplateLimit != 4 || len(options.Templates) != 1 || options.Templates[0].Name != " raid wing " || len(options.Templates[0].Ships) != 1 {
 		t.Fatalf("unexpected mcp fleet templates: %+v", options.Templates)
 	}
 	if options.DispatchDraft != nil {
@@ -821,7 +821,7 @@ func TestFleetRepositoryMutatesFleetTemplatesWithLegacyOwnershipRules(t *testing
 	if len(runner.execCalls) != 1 || !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `ogame_template`") {
 		t.Fatalf("expected template insert, got %+v", runner.execCalls)
 	}
-	if runner.execCalls[0].args[0] != 42 || runner.execCalls[0].args[1] != "raid wing" || runner.execCalls[0].args[2] != int64(1_000) {
+	if runner.execCalls[0].args[0] != 42 || runner.execCalls[0].args[1] != " raid wing " || runner.execCalls[0].args[2] != int64(1_000) {
 		t.Fatalf("unexpected insert args: %+v", runner.execCalls[0].args)
 	}
 	if runner.execCalls[0].args[13] != 0 {

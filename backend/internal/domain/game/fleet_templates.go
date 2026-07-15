@@ -1,6 +1,15 @@
 package game
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
+
+var (
+	fleetTemplateScriptPattern = regexp.MustCompile(`(?is)<script[^>]*?>.*?</script>`)
+	fleetTemplateTagPattern    = regexp.MustCompile(`(?is)<[/!]*?[^<>]*?>`)
+	fleetTemplateLinePattern   = regexp.MustCompile(`([\r\n])\s+`)
+)
 
 type FleetTemplate struct {
 	ID        int
@@ -37,7 +46,11 @@ func BuildFleetTemplate(id int, name string, updatedAt int64, counts FleetCounts
 }
 
 func NormalizeFleetTemplateName(name string) string {
-	return strings.TrimSpace(name)
+	name = fleetTemplateScriptPattern.ReplaceAllString(name, "")
+	name = fleetTemplateTagPattern.ReplaceAllString(name, "")
+	name = fleetTemplateLinePattern.ReplaceAllString(name, "$1")
+	name = strings.NewReplacer("`", "", "'", "", "\"", "", "%0", "").Replace(name)
+	return truncateRunes(name, 30)
 }
 
 func FleetTemplateShipIDs() []int {

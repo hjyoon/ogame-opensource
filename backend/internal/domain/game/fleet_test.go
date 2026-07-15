@@ -597,7 +597,7 @@ func TestBuildFleetTemplateUsesLegacyShipIDsWithoutSolarSatellites(t *testing.T)
 		FleetBattlecruiser:  2,
 	})
 
-	if template.ID != 7 || template.Name != "raid wing" || template.UpdatedAt != 1234 {
+	if template.ID != 7 || template.Name != "  raid wing  " || template.UpdatedAt != 1234 {
 		t.Fatalf("unexpected template header: %+v", template)
 	}
 	if len(template.Ships) != 2 || template.Ships[0].ID != FleetSmallCargo || template.Ships[1].ID != FleetBattlecruiser {
@@ -607,6 +607,16 @@ func TestBuildFleetTemplateUsesLegacyShipIDsWithoutSolarSatellites(t *testing.T)
 		if id == FleetSolarSatellite {
 			t.Fatal("solar satellites must not be selectable for standard fleets")
 		}
+	}
+}
+
+func TestNormalizeFleetTemplateNameMatchesLegacySecureText(t *testing.T) {
+	got := NormalizeFleetTemplateName(" <b>raid</b> '<script>alert(1)</script>`\"%0 wing ")
+	if got != " raid  wing " {
+		t.Fatalf("unexpected normalized fleet template name %q", got)
+	}
+	if got := NormalizeFleetTemplateName("abcdefghijklmnopqrstuvwxyz0123456789"); got != "abcdefghijklmnopqrstuvwxyz0123" {
+		t.Fatalf("fleet template name was not truncated to 30 runes: %q", got)
 	}
 }
 

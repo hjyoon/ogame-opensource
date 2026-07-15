@@ -21,6 +21,7 @@ const artifacts = [
   { name: "go/PHP advanced building differential", path: ".tmp/golang-building-advanced-differential.json" },
   { name: "go/PHP defense limits differential", path: ".tmp/golang-defense-limits-differential.json" },
   { name: "go/PHP fleet differential", path: ".tmp/golang-fleet-differential.json" },
+  { name: "go/PHP fleet-template differential", path: ".tmp/golang-fleet-template-differential.json" },
   { name: "go/PHP combat engine differential", path: ".tmp/golang-combat-engine-differential.json" },
   { name: "go/PHP expedition differential", path: ".tmp/golang-expedition-differential.json" },
   { name: "go/PHP colonization differential", path: ".tmp/golang-colonization-differential.json" },
