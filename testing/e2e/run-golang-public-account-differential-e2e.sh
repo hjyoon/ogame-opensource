@@ -50,10 +50,22 @@ u.banned=b.banned,u.banned_until=b.banned_until,u.disable=b.disable,u.disable_un
 cleanup_registered() {
   registered_id="$(db_query "SELECT COALESCE(MAX(player_id),0) FROM uni1_users WHERE name='$REG_LOGIN'")"
   if [ "$registered_id" -gt 0 ]; then
-    db_query "DELETE FROM uni1_reports WHERE owner_id=$registered_id OR msg_id IN (SELECT msg_id FROM uni1_messages WHERE owner_id=$registered_id);
-DELETE FROM uni1_messages WHERE owner_id=$registered_id; DELETE FROM uni1_botvars WHERE owner_id=$registered_id;
-DELETE FROM uni1_iplogs WHERE user_id=$registered_id; DELETE FROM uni1_planets WHERE owner_id=$registered_id;
+    db_query "DELETE FROM uni1_fleet WHERE owner_id=$registered_id;
+DELETE FROM uni1_queue WHERE owner_id=$registered_id; DELETE FROM uni1_buildqueue WHERE owner_id=$registered_id;
+DELETE FROM uni1_reports WHERE owner_id=$registered_id OR msg_id IN (SELECT msg_id FROM uni1_messages WHERE owner_id=$registered_id);
+DELETE FROM uni1_messages WHERE owner_id=$registered_id; DELETE FROM uni1_notes WHERE owner_id=$registered_id;
+DELETE FROM uni1_browse WHERE owner_id=$registered_id; DELETE FROM uni1_template WHERE owner_id=$registered_id;
+DELETE FROM uni1_botvars WHERE owner_id=$registered_id; DELETE FROM uni1_userlogs WHERE owner_id=$registered_id;
+DELETE FROM uni1_fleetlogs WHERE owner_id=$registered_id OR target_id=$registered_id;
+DELETE FROM uni1_iplogs WHERE user_id=$registered_id;
+DELETE FROM uni1_union WHERE target_player=$registered_id OR players REGEXP '(^|,)$registered_id(,|$)';
+DELETE FROM uni1_planets WHERE owner_id=$registered_id; DELETE FROM uni1_allyapps WHERE player_id=$registered_id;
+DELETE FROM uni1_buddy WHERE request_from=$registered_id OR request_to=$registered_id;
 DELETE FROM uni1_users WHERE player_id=$registered_id" >/dev/null
+    residue="$(db_query "SELECT (SELECT COUNT(*) FROM uni1_users WHERE player_id=$registered_id)+
+(SELECT COUNT(*) FROM uni1_planets WHERE owner_id=$registered_id)+(SELECT COUNT(*) FROM uni1_queue WHERE owner_id=$registered_id)+
+(SELECT COUNT(*) FROM uni1_buildqueue WHERE owner_id=$registered_id)+(SELECT COUNT(*) FROM uni1_messages WHERE owner_id=$registered_id)")"
+    [ "$residue" = 0 ]
   fi
   db_query "UPDATE uni1_uni u JOIN $uni_backup b ON b.num=u.num SET u.usercount=b.usercount;
 UPDATE uni1_users u JOIN $ranks_backup b ON b.player_id=u.player_id SET
