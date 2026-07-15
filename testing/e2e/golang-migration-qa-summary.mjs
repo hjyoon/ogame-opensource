@@ -10,6 +10,7 @@ const browserNames = uniqueWords(process.env.OGAME_QA_SUMMARY_BROWSERS ?? "chrom
 const artifacts = [
   { name: "legacy behavior surface", path: ".tmp/legacy-behavior-surface.json" },
   { name: "legacy source inventory", path: ".tmp/legacy-migration-inventory.json" },
+  { name: "state mutation coverage", path: ".tmp/golang-state-mutation-coverage.json" },
   { name: "go DB recovery", path: ".tmp/golang-db-recovery.json" },
   { name: "go DB pool", path: ".tmp/golang-db-pool.json" },
   { name: "go Mod policy", path: ".tmp/golang-mod-policy.json" },
@@ -19,6 +20,9 @@ const artifacts = [
   { name: "go/PHP officers differential", path: ".tmp/golang-officers-differential.json" },
   { name: "go/PHP merchant differential", path: ".tmp/golang-merchant-differential.json" },
   { name: "go/PHP payment differential", path: ".tmp/golang-payment-differential.json" },
+  { name: "go/PHP empire differential", path: ".tmp/golang-empire-differential.json" },
+  { name: "go/PHP galaxy actions differential", path: ".tmp/golang-galaxy-actions-differential.json" },
+  { name: "go/PHP public account differential", path: ".tmp/golang-public-account-differential.json" },
   { name: "go/PHP building differential", path: ".tmp/golang-building-differential.json" },
   { name: "go/PHP research differential", path: ".tmp/golang-research-differential.json" },
   { name: "go/PHP shipyard-defense differential", path: ".tmp/golang-shipyard-defense-differential.json" },

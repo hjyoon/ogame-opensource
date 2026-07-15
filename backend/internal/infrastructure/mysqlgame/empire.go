@@ -160,6 +160,19 @@ func (r EmpireRepository) MutateEmpire(ctx context.Context, query appgame.Empire
 		return appgame.EmpireMutationOutcome{}, errors.New("empire updater unavailable")
 	}
 	buildings := BuildingsRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now, updateResources: r.updateResources}
+	planetsTable, err := tableName(r.prefix, "planets")
+	if err != nil {
+		return appgame.EmpireMutationOutcome{}, err
+	}
+	planet, err := buildings.loadBuildingMutationPlanet(ctx, planetsTable, query.PlayerID, query.PlanetID)
+	if err != nil {
+		return appgame.EmpireMutationOutcome{}, err
+	}
+	if planet.ID == 0 {
+		return appgame.EmpireMutationOutcome{
+			ActionIssue: empireActionIssueFromBuildings(domaingame.BuildingActionIssue(domaingame.BuildingsIssueInvalid)),
+		}, nil
+	}
 	outcome, err := buildings.MutateBuildings(ctx, appgame.BuildingsMutationQuery{
 		PlayerID: query.PlayerID,
 		PlanetID: query.PlanetID,

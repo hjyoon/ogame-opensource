@@ -13,6 +13,7 @@ export OGAME_MCP_RATE_LIMIT_ENABLE="${OGAME_MCP_RATE_LIMIT_ENABLE:-0}"
 if command -v bun >/dev/null 2>&1; then
   bun "$SCRIPT_DIR/audit-legacy-behavior-surface.mjs"
   bun "$SCRIPT_DIR/audit-legacy-migration-inventory.mjs"
+  bun "$SCRIPT_DIR/audit-state-mutation-coverage.mjs"
 fi
 
 wait_for_url() {
@@ -88,6 +89,15 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     fi
     if [ "${OGAME_RUN_PAYMENT_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-payment-differential-e2e.sh"
+    fi
+    if [ "${OGAME_RUN_EMPIRE_DIFFERENTIAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-empire-differential-e2e.sh"
+    fi
+    if [ "${OGAME_RUN_GALAXY_ACTIONS_DIFFERENTIAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-galaxy-actions-differential-e2e.sh"
+    fi
+    if [ "${OGAME_RUN_PUBLIC_ACCOUNT_DIFFERENTIAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" OGAME_MAILHOG_BASE_URL="$MAILHOG_BASE_URL" "$SCRIPT_DIR/run-golang-public-account-differential-e2e.sh"
     fi
     if [ "${OGAME_RUN_BUILDING_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-building-differential-e2e.sh"

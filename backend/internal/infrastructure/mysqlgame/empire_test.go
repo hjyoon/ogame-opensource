@@ -127,7 +127,8 @@ func TestEmpireRepositoryFlushesDueQueuesWhenWritable(t *testing.T) {
 }
 
 func TestEmpireRepositoryMutatesLegacyShortcutThroughBuildings(t *testing.T) {
-	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
+	queryResults := append([]fakeQueryResult{{rows: fakeRowsFromValues(buildingMutationPlanetRow(map[int]int{}))}}, shipyardOverviewResults()...)
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: append(queryResults,
 		fakeQueryResult{rows: fakeRowsFromValues(buildingMutationUserRow(0, 9_999, nil))},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{2.0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues(buildingMutationPlanetRow(map[int]int{}))},
@@ -158,7 +159,8 @@ func TestEmpireRepositoryMutatesLegacyShortcutThroughBuildings(t *testing.T) {
 }
 
 func TestEmpireRepositoryConvertsBuildingShortcutIssue(t *testing.T) {
-	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: append(shipyardOverviewResults(),
+	queryResults := append([]fakeQueryResult{{rows: fakeRowsFromValues(buildingMutationPlanetRow(map[int]int{}))}}, shipyardOverviewResults()...)
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: append(queryResults,
 		fakeQueryResult{rows: fakeRowsFromValues(buildingMutationUserRow(0, 9_999, nil))},
 		fakeQueryResult{rows: fakeRowsFromValues([]any{2.0, 0})},
 		fakeQueryResult{rows: fakeRowsFromValues(buildingMutationPlanetRow(map[int]int{}))},
@@ -180,6 +182,27 @@ func TestEmpireRepositoryConvertsBuildingShortcutIssue(t *testing.T) {
 	}
 	if len(runner.execs) != 0 {
 		t.Fatalf("invalid shortcut should not write, got %+v", runner.execs)
+	}
+}
+
+func TestEmpireRepositoryRejectsForeignShortcutPlanet(t *testing.T) {
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues()}}}}
+	repository := NewEmpireRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return time.Unix(2_000, 0) })
+
+	outcome, err := repository.MutateEmpire(context.Background(), appgame.EmpireMutationQuery{
+		PlayerID: 42,
+		PlanetID: 999,
+		Action:   domaingame.BuildingsMutationAdd,
+		TechID:   domaingame.BuildingMetalMine,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.ActionIssue == nil || outcome.ActionIssue.Code != domaingame.BuildingsIssueInvalid {
+		t.Fatalf("expected invalid foreign planet issue, got %+v", outcome.ActionIssue)
+	}
+	if len(runner.execs) != 0 {
+		t.Fatalf("foreign shortcut planet must not write, got %+v", runner.execs)
 	}
 }
 
