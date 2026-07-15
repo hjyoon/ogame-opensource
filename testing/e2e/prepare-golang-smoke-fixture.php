@@ -1108,7 +1108,7 @@ function smoke_upsert_bot_strategy(string $name, string $source): int
     return AddDBRow(array('name' => $name, 'source' => $source), 'botstrat');
 }
 
-function smoke_prepare_bot_runtime_fixture(string $password, array $near): array
+function smoke_prepare_bot_runtime_fixture(string $password, array $near, bool $seedDueActions): array
 {
     global $db_prefix, $resmap;
 
@@ -1237,9 +1237,13 @@ function smoke_prepare_bot_runtime_fixture(string $password, array $near): array
             array('from' => 1, 'to' => 2, 'text' => ''),
         )
     ));
-    $startTaskId = AddQueue($botId, QTYP_AI, $startStrategyId, 1, 0, $now - 5, 0, QUEUE_PRIO_BOT);
-    foreach (array($startStrategyId, $buildStrategyId, $researchStrategyId, $shipyardStrategyId, $resourcesStrategyId) as $strategyId) {
-        AddQueue($botId, QTYP_AI, $strategyId, 3, 0, $now - 5, 0, QUEUE_PRIO_BOT);
+    $queueStart = $seedDueActions ? $now - 5 : $now;
+    $queueDelay = $seedDueActions ? 0 : 365 * 24 * 60 * 60;
+    $startTaskId = AddQueue($botId, QTYP_AI, $startStrategyId, 1, 0, $queueStart, $queueDelay, QUEUE_PRIO_BOT);
+    if ($seedDueActions) {
+        foreach (array($startStrategyId, $buildStrategyId, $researchStrategyId, $shipyardStrategyId, $resourcesStrategyId) as $strategyId) {
+            AddQueue($botId, QTYP_AI, $strategyId, 3, 0, $queueStart, 0, QUEUE_PRIO_BOT);
+        }
     }
     InvalidateUserCache();
 
@@ -2890,7 +2894,8 @@ smoke_prepare_planet((int)$freezeVictim['home_planet_id'], (int)$freezeVictim['p
 $premiumDmFixture = smoke_prepare_premium_dm_fixture($password, $home);
 $vacationFreezeFixture = smoke_prepare_vacation_freeze_fixture($password, $home);
 $queueIdempotencyFixture = smoke_prepare_queue_idempotency_fixture($password, $home);
-$botRuntimeFixture = smoke_prepare_bot_runtime_fixture($password, $home);
+$seedBotRuntimeActions = getenv('OGAME_SMOKE_SEED_BOT_ACTIONS') !== '0';
+$botRuntimeFixture = smoke_prepare_bot_runtime_fixture($password, $home, $seedBotRuntimeActions);
 $queueFreezeDrainFixture = smoke_prepare_queue_freeze_drain_fixture($password, $home);
 $queueCancelFixture = smoke_prepare_queue_cancel_fixture($password, $home);
 $concurrencyRaceFixture = smoke_prepare_concurrency_race_fixture($password, $home);
