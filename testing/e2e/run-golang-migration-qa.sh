@@ -80,6 +80,15 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     if [ "${OGAME_RUN_OVERVIEW_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-overview-differential-e2e.sh"
     fi
+    if [ "${OGAME_RUN_OFFICERS_DIFFERENTIAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-officers-differential-e2e.sh"
+    fi
+    if [ "${OGAME_RUN_MERCHANT_DIFFERENTIAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-merchant-differential-e2e.sh"
+    fi
+    if [ "${OGAME_RUN_PAYMENT_DIFFERENTIAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-payment-differential-e2e.sh"
+    fi
     if [ "${OGAME_RUN_BUILDING_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-building-differential-e2e.sh"
     fi
