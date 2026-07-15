@@ -116,6 +116,9 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     if [ "${OGAME_RUN_MESSAGES_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-messages-differential-e2e.sh"
     fi
+    if [ "${OGAME_RUN_NOTES_DIFFERENTIAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-notes-differential-e2e.sh"
+    fi
     if [ "${OGAME_RUN_ALLIANCE_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-alliance-differential-e2e.sh"
     fi

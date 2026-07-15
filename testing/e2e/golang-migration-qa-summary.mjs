@@ -29,6 +29,7 @@ const artifacts = [
   { name: "go/PHP jump gate differential", path: ".tmp/golang-jump-gate-differential.json" },
   { name: "go/PHP buddy differential", path: ".tmp/golang-buddy-differential.json" },
   { name: "go/PHP messages differential", path: ".tmp/golang-messages-differential.json" },
+  { name: "go/PHP notes differential", path: ".tmp/golang-notes-differential.json" },
   { name: "go/PHP alliance differential", path: ".tmp/golang-alliance-differential.json" },
   { name: "go/PHP options differential", path: ".tmp/golang-options-differential.json" },
   { name: "go/PHP ACS attack differential", path: ".tmp/golang-acs-attack-differential.json" },
