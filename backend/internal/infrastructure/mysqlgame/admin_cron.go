@@ -185,7 +185,7 @@ func (r AdminRepository) finishAdminCronUnloadAll(ctx context.Context, tables ad
 }
 
 func (r AdminRepository) finishAdminCronCleanDebris(ctx context.Context, tables adminCronTables, task buildingQueueTask) error {
-	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE p FROM %s p WHERE p.type = ? AND p.`%d` = 0 AND p.`%d` = 0 AND NOT EXISTS (SELECT 1 FROM %s f WHERE f.target_planet = p.planet_id AND f.mission IN (?, ?))", tables.planets, resourceMetal, resourceCrystal, tables.fleet), planetTypeDebris, domaingame.FleetMissionRecycle, domaingame.FleetMissionRecycle+domaingame.FleetMissionReturnOffset); err != nil {
+	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE p FROM %s p WHERE p.type = ? AND p.`%d` = 0 AND p.`%d` = 0 AND NOT EXISTS (SELECT 1 FROM %s f WHERE f.target_planet = p.planet_id AND f.mission IN (?, ?))", tables.planets, resourceMetal, resourceCrystal, tables.fleet), legacyPlanetTypeDebris, domaingame.FleetMissionRecycle, domaingame.FleetMissionRecycle+domaingame.FleetMissionReturnOffset); err != nil {
 		return err
 	}
 	if err := r.removeAdminCronTask(ctx, tables.queue, task.TaskID); err != nil {
@@ -209,7 +209,7 @@ func (r AdminRepository) finishAdminCronUpdateStats(ctx context.Context, tables 
 	if err := r.insertAdminCronTask(ctx, tables.queue, adminQueueTypeUpdateStats, task.End, int(next.Unix()), adminQueuePriorityUpdateStats); err != nil {
 		return err
 	}
-	return r.insertAdminCronDebug(ctx, tables.debug, adminCronOldStatsMessage(language, at), task.End)
+	return r.insertAdminCronDebug(ctx, tables.debug, adminCronOldStatsMessage(language, at), int(r.adminCronNow().Unix()))
 }
 
 func (r AdminRepository) finishAdminCronRecalcAllyPoints(ctx context.Context, tables adminCronTables, task buildingQueueTask) error {
@@ -266,10 +266,7 @@ func (r AdminRepository) insertAdminCronDebug(ctx context.Context, debugTable st
 }
 
 func (r AdminRepository) adminCronLocation() *time.Location {
-	if r.now == nil {
-		return time.Local
-	}
-	return r.now().Location()
+	return legacyAdminTimeLocation
 }
 
 func nextAdminCronStatsTime(at time.Time) time.Time {

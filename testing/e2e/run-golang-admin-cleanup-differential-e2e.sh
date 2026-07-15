@@ -161,8 +161,9 @@ capture_planets() {
   expired="$(db_query "SELECT COUNT(*) FROM uni1_planets WHERE planet_id=$expired_planet")"
   future="$(db_query "SELECT COUNT(*) FROM uni1_planets WHERE planet_id=$future_planet")"
   scheduled="$(db_query "SELECT COUNT(*) FROM uni1_queue WHERE type='CleanPlanets' AND end>UNIX_TIMESTAMP()")"
+  slot="$(db_query "SELECT CONCAT(DAYOFWEEK(FROM_UNIXTIME(end)),':',HOUR(FROM_UNIXTIME(end)),':',MINUTE(FROM_UNIXTIME(end))) FROM uni1_queue WHERE type='CleanPlanets' LIMIT 1")"
   debug="$(db_query "SELECT COALESCE((SELECT text FROM uni1_debug WHERE text LIKE '%destroyed planets (%' OR text LIKE '%zerstörter Planeten (%' OR text LIKE '%уничтоженных планет (%' ORDER BY error_id DESC LIMIT 1),'')")"
-  jq -ncS --argjson expired "$expired" --argjson future "$future" --argjson scheduled "$scheduled" --arg debug "$debug" '{expired:$expired,future:$future,scheduled:$scheduled,debug:$debug}'
+  jq -ncS --argjson expired "$expired" --argjson future "$future" --argjson scheduled "$scheduled" --arg slot "$slot" --arg debug "$debug" '{expired:$expired,future:$future,scheduled:$scheduled,slot:$slot,debug:$debug}'
 }
 
 capture_players() {
@@ -174,9 +175,10 @@ capture_players() {
   bot="$(db_query "SELECT COUNT(*) FROM uni1_users WHERE player_id=$bot_user")"
   bot_ai="$(db_query "SELECT COUNT(*) FROM uni1_queue WHERE owner_id=$bot_user AND type='AI'")"
   scheduled="$(db_query "SELECT COUNT(*) FROM uni1_queue WHERE type='CleanPlayers' AND end>UNIX_TIMESTAMP()")"
+  slot="$(db_query "SELECT CONCAT(DAYOFWEEK(FROM_UNIXTIME(end)),':',HOUR(FROM_UNIXTIME(end)),':',MINUTE(FROM_UNIXTIME(end))) FROM uni1_queue WHERE type='CleanPlayers' LIMIT 1")"
   aux="$(db_query "SELECT
 (SELECT COUNT(*) FROM uni1_reports WHERE owner_id=$disabled_user)+(SELECT COUNT(*) FROM uni1_messages WHERE owner_id=$disabled_user)+(SELECT COUNT(*) FROM uni1_notes WHERE owner_id=$disabled_user)+(SELECT COUNT(*) FROM uni1_browse WHERE owner_id=$disabled_user)+(SELECT COUNT(*) FROM uni1_template WHERE owner_id=$disabled_user)+(SELECT COUNT(*) FROM uni1_botvars WHERE owner_id=$disabled_user)+(SELECT COUNT(*) FROM uni1_userlogs WHERE owner_id=$disabled_user)+(SELECT COUNT(*) FROM uni1_iplogs WHERE user_id=$disabled_user)+(SELECT COUNT(*) FROM uni1_union WHERE target_player=$disabled_user OR players REGEXP '(^|,)$disabled_user(,|$)')+(SELECT COUNT(*) FROM uni1_allyapps WHERE player_id=$disabled_user)+(SELECT COUNT(*) FROM uni1_buddy WHERE request_from=$disabled_user OR request_to=$disabled_user)")"
-  jq -ncS --argjson disabled "$disabled" --argjson disabledPlanet "$disabled_planet_left" --argjson admin "$admin_left" --argjson inactive "$inactive" --argjson dm "$dm" --argjson bot "$bot" --argjson botAI "$bot_ai" --argjson scheduled "$scheduled" --argjson auxiliary "$aux" '{disabled:$disabled,disabledPlanet:$disabledPlanet,admin:$admin,inactive:$inactive,dm:$dm,bot:$bot,botAI:$botAI,scheduled:$scheduled,auxiliary:$auxiliary}'
+  jq -ncS --argjson disabled "$disabled" --argjson disabledPlanet "$disabled_planet_left" --argjson admin "$admin_left" --argjson inactive "$inactive" --argjson dm "$dm" --argjson bot "$bot" --argjson botAI "$bot_ai" --argjson scheduled "$scheduled" --arg slot "$slot" --argjson auxiliary "$aux" '{disabled:$disabled,disabledPlanet:$disabledPlanet,admin:$admin,inactive:$inactive,dm:$dm,bot:$bot,botAI:$botAI,scheduled:$scheduled,slot:$slot,auxiliary:$auxiliary}'
 }
 
 run_side() {
@@ -209,6 +211,6 @@ for case_name in planets players; do
   jq -nc --arg name "admin-cleanup-$case_name" --argjson pass "$pass" --argjson legacy "$legacy" --argjson go "$go" '{name:$name,pass:$pass,legacy:$legacy,go:$go}' >> "$results"
 done
 
-jq -s --argjson pass "$all_pass" '{pass:$pass,normalization:"generated IDs and timestamps are excluded; cleanup outcomes, retained exceptions, auxiliary rows, localized debug text and future scheduling remain exact",cases:.}' "$results" > "$REPORT"
+jq -s --argjson pass "$all_pass" '{pass:$pass,normalization:"generated IDs and dates are excluded; cleanup outcomes, retained exceptions, auxiliary rows, localized debug text and recurring UTC schedule slots remain exact",cases:.}' "$results" > "$REPORT"
 [ "$all_pass" = true ]
 printf 'Go/PHP admin cleanup differential E2E: PASS (2 cases)\n'

@@ -1224,10 +1224,10 @@ function smoke_prepare_bot_runtime_fixture(string $password, array $near): array
     );
 
     $startStrategyId = smoke_upsert_bot_strategy('_start', $startSource);
-    smoke_upsert_bot_strategy('go_bot_build', $buildSource);
-    smoke_upsert_bot_strategy('go_bot_research', $researchSource);
-    smoke_upsert_bot_strategy('go_bot_shipyard', $shipyardSource);
-    smoke_upsert_bot_strategy('go_bot_resources', $resourcesSource);
+    $buildStrategyId = smoke_upsert_bot_strategy('go_bot_build', $buildSource);
+    $researchStrategyId = smoke_upsert_bot_strategy('go_bot_research', $researchSource);
+    $shipyardStrategyId = smoke_upsert_bot_strategy('go_bot_shipyard', $shipyardSource);
+    $resourcesStrategyId = smoke_upsert_bot_strategy('go_bot_resources', $resourcesSource);
     $importTargetId = smoke_upsert_bot_strategy('go_bot_import_target', smoke_bot_strategy_source(
         array(
             array('key' => 1, 'category' => 'Start', 'text' => 'Original Import Start'),
@@ -1238,6 +1238,9 @@ function smoke_prepare_bot_runtime_fixture(string $password, array $near): array
         )
     ));
     $startTaskId = AddQueue($botId, QTYP_AI, $startStrategyId, 1, 0, $now - 5, 0, QUEUE_PRIO_BOT);
+    foreach (array($startStrategyId, $buildStrategyId, $researchStrategyId, $shipyardStrategyId, $resourcesStrategyId) as $strategyId) {
+        AddQueue($botId, QTYP_AI, $strategyId, 3, 0, $now - 5, 0, QUEUE_PRIO_BOT);
+    }
     InvalidateUserCache();
 
     return array(

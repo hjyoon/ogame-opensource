@@ -24,6 +24,7 @@ const (
 	resourceCrystal          = 701
 	resourceDeuterium        = 702
 	planetTypeDebris         = 2
+	legacyPlanetTypeDebris   = 10000
 	planetTypeDestroyed      = 10001
 	planetTypeDestroyedMoon  = 10003
 	userSpace                = 99999

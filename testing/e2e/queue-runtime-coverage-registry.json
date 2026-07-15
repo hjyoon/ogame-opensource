@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "entries": [
+    {"constant":"QTYP_UNBAN","type":"UnbanPlayer","runner":"run-golang-admin-cron-differential-e2e.sh","report":".tmp/golang-admin-cron-differential.json"},
+    {"constant":"QTYP_CHANGE_EMAIL","type":"ChangeEmail","runner":"run-golang-admin-cron-differential-e2e.sh","report":".tmp/golang-admin-cron-differential.json"},
+    {"constant":"QTYP_ALLOW_NAME","type":"AllowName","runner":"run-golang-admin-cron-differential-e2e.sh","report":".tmp/golang-admin-cron-differential.json"},
+    {"constant":"QTYP_ALLOW_ATTACKS","type":"AllowAttacks","runner":"run-golang-admin-cron-differential-e2e.sh","report":".tmp/golang-admin-cron-differential.json"},
+    {"constant":"QTYP_UNLOAD_ALL","type":"UnloadAll","runner":"run-golang-runtime-queue-differential-e2e.sh","report":".tmp/golang-runtime-queue-differential.json"},
+    {"constant":"QTYP_CLEAN_DEBRIS","type":"CleanDebris","runner":"run-golang-runtime-queue-differential-e2e.sh","report":".tmp/golang-runtime-queue-differential.json"},
+    {"constant":"QTYP_CLEAN_PLANETS","type":"CleanPlanets","runner":"run-golang-admin-cleanup-differential-e2e.sh","report":".tmp/golang-admin-cleanup-differential.json"},
+    {"constant":"QTYP_CLEAN_PLAYERS","type":"CleanPlayers","runner":"run-golang-admin-cleanup-differential-e2e.sh","report":".tmp/golang-admin-cleanup-differential.json"},
+    {"constant":"QTYP_UPDATE_STATS","type":"UpdateStats","runner":"run-golang-runtime-queue-differential-e2e.sh","report":".tmp/golang-runtime-queue-differential.json"},
+    {"constant":"QTYP_RECALC_POINTS","type":"RecalcPoints","runner":"run-golang-runtime-queue-differential-e2e.sh","report":".tmp/golang-runtime-queue-differential.json"},
+    {"constant":"QTYP_RECALC_ALLY_POINTS","type":"RecalcAllyPoints","runner":"run-golang-runtime-queue-differential-e2e.sh","report":".tmp/golang-runtime-queue-differential.json"},
+    {"constant":"QTYP_BUILD","type":"Build","runner":"run-golang-building-differential-e2e.sh","report":".tmp/golang-building-differential.json"},
+    {"constant":"QTYP_DEMOLISH","type":"Demolish","runner":"run-golang-building-differential-e2e.sh","report":".tmp/golang-building-differential.json"},
+    {"constant":"QTYP_RESEARCH","type":"Research","runner":"run-golang-research-differential-e2e.sh","report":".tmp/golang-research-differential.json"},
+    {"constant":"QTYP_SHIPYARD","type":"Shipyard","runner":"run-golang-shipyard-defense-differential-e2e.sh","report":".tmp/golang-shipyard-defense-differential.json"},
+    {"constant":"QTYP_FLEET","type":"Fleet","runner":"run-golang-fleet-differential-e2e.sh","report":".tmp/golang-fleet-differential.json"},
+    {"constant":"QTYP_DEBUG","type":"Debug","runner":"run-golang-admin-cron-differential-e2e.sh","report":".tmp/golang-admin-cron-differential.json"},
+    {"constant":"QTYP_AI","type":"AI","runner":"run-golang-runtime-queue-differential-e2e.sh","report":".tmp/golang-runtime-queue-differential.json"},
+    {"constant":"QTYP_COUPON","type":"Coupon","runner":"run-golang-admin-coupon-cron-differential-e2e.sh","report":".tmp/golang-admin-coupon-cron-differential.json"}
+  ]
+}

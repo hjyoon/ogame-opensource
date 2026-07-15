@@ -43,7 +43,8 @@ func (r AdminRepository) finishAdminCronCleanPlanets(ctx context.Context, tables
 		return err
 	}
 	now := r.adminCronNow()
-	if err := r.insertAdminCronTaskIfMissing(ctx, tables.queue, adminQueueTypeCleanPlanets, int(now.Unix()), int(nextAdminCronDaily(now, 1, 10).Unix()), adminQueuePriorityCleanPlanets); err != nil {
+	localNow := now.In(r.adminCronLocation())
+	if err := r.insertAdminCronTaskIfMissing(ctx, tables.queue, adminQueueTypeCleanPlanets, int(now.Unix()), int(nextAdminCronDaily(localNow, 1, 10).Unix()), adminQueuePriorityCleanPlanets); err != nil {
 		return err
 	}
 	return r.insertAdminCronDebug(ctx, tables.debug, adminCronCleanPlanetsMessage(language, len(planetIDs)), int(now.Unix()))
@@ -79,7 +80,8 @@ func (r AdminRepository) finishAdminCronCleanPlayers(ctx context.Context, tables
 		return err
 	}
 	now := r.adminCronNow()
-	return r.insertAdminCronTaskIfMissing(ctx, tables.queue, adminQueueTypeCleanPlayers, int(now.Unix()), int(nextAdminCronDaily(now, 1, 10).Unix()), adminQueuePriorityCleanPlayers)
+	localNow := now.In(r.adminCronLocation())
+	return r.insertAdminCronTaskIfMissing(ctx, tables.queue, adminQueueTypeCleanPlayers, int(now.Unix()), int(nextAdminCronDaily(localNow, 1, 10).Unix()), adminQueuePriorityCleanPlayers)
 }
 
 func (r AdminRepository) removeAdminCronUser(ctx context.Context, tables adminCronTables, playerID int, at int) error {

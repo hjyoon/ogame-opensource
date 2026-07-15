@@ -274,9 +274,6 @@ func (r BotRuntimeRepository) rollBotPercent() int {
 }
 
 func (r BotRuntimeRepository) insertBotQueue(ctx context.Context, queueTable string, playerID int, strategyID int, blockID int, start int, seconds int) error {
-	if seconds < 0 {
-		seconds = 0
-	}
 	_, err := r.execer.ExecContext(
 		ctx,
 		fmt.Sprintf("INSERT INTO %s (owner_id, type, sub_id, obj_id, level, start, end, prio) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", queueTable),
@@ -286,7 +283,7 @@ func (r BotRuntimeRepository) insertBotQueue(ctx context.Context, queueTable str
 		blockID,
 		0,
 		start,
-		start+seconds,
+		start+start+seconds,
 		botQueuePriority,
 	)
 	return err

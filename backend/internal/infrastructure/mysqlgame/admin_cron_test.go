@@ -312,7 +312,12 @@ func TestAdminCronTimeAndLocalizationHelpers(t *testing.T) {
 	if !strings.Contains(adminCronOldStatsMessage("de", monday), "01:10") || !strings.Contains(adminCronOldStatsMessage("en", monday), "timestamp") {
 		t.Fatal("stats localization mismatch")
 	}
-	if (AdminRepository{}).adminCronLocation() == nil {
-		t.Fatal("default location missing")
+	cronLocation := (AdminRepository{}).adminCronLocation()
+	if cronLocation != legacyAdminTimeLocation {
+		t.Fatalf("unexpected legacy cron location: %v", cronLocation)
+	}
+	stored := nextAdminCronWeekday(time.Date(2026, time.July, 13, 0, 0, 0, 0, time.UTC).In(cronLocation), time.Monday, 1, 10).UTC()
+	if stored.Weekday() != time.Sunday || stored.Hour() != 22 || stored.Minute() != 10 {
+		t.Fatalf("unexpected UTC cron slot: %v", stored)
 	}
 }

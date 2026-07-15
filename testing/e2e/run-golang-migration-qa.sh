@@ -14,6 +14,7 @@ if command -v bun >/dev/null 2>&1; then
   bun "$SCRIPT_DIR/audit-legacy-behavior-surface.mjs"
   bun "$SCRIPT_DIR/audit-legacy-migration-inventory.mjs"
   bun "$SCRIPT_DIR/audit-state-mutation-coverage.mjs"
+  bun "$SCRIPT_DIR/audit-queue-runtime-coverage.mjs"
 fi
 
 wait_for_url() {
@@ -158,6 +159,9 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     fi
     if [ "${OGAME_RUN_ADMIN_CRON_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-admin-cron-differential-e2e.sh"
+    fi
+    if [ "${OGAME_RUN_RUNTIME_QUEUE_DIFFERENTIAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-runtime-queue-differential-e2e.sh"
     fi
     if [ "${OGAME_RUN_ADMIN_CLEANUP_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-admin-cleanup-differential-e2e.sh"
