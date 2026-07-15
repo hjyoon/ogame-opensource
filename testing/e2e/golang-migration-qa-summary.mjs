@@ -10,6 +10,7 @@ const browserNames = uniqueWords(process.env.OGAME_QA_SUMMARY_BROWSERS ?? "chrom
 const artifacts = [
   { name: "legacy behavior surface", path: ".tmp/legacy-behavior-surface.json" },
   { name: "legacy source inventory", path: ".tmp/legacy-migration-inventory.json" },
+  { name: "legacy checksum baselines", path: ".tmp/golang-checksum-baseline-audit.json" },
   { name: "state mutation coverage", path: ".tmp/golang-state-mutation-coverage.json" },
   { name: "queue runtime coverage", path: ".tmp/golang-queue-runtime-coverage.json" },
   { name: "bot runtime coverage", path: ".tmp/golang-bot-runtime-coverage.json" },

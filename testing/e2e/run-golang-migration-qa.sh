@@ -13,6 +13,7 @@ export OGAME_MCP_RATE_LIMIT_ENABLE="${OGAME_MCP_RATE_LIMIT_ENABLE:-0}"
 if command -v bun >/dev/null 2>&1; then
   bun "$SCRIPT_DIR/audit-legacy-behavior-surface.mjs"
   bun "$SCRIPT_DIR/audit-legacy-migration-inventory.mjs"
+  bun "$SCRIPT_DIR/audit-checksum-baselines.mjs"
   bun "$SCRIPT_DIR/audit-state-mutation-coverage.mjs"
   bun "$SCRIPT_DIR/audit-queue-runtime-coverage.mjs"
   bun "$SCRIPT_DIR/audit-bot-runtime-coverage.mjs"
@@ -38,6 +39,10 @@ if [ "${OGAME_RUN_LEGACY_E2E:-1}" = "1" ]; then
     wait_for_url "$MAILHOG_BASE_URL/api/v2/messages"
   fi
   "$SCRIPT_DIR/run-docker-e2e.sh"
+  docker compose exec -T server env OGAME_SMOKE_SEED_BOT_ACTIONS=1 php "$LEGACY_E2E_CONTAINER_DIR/prepare-golang-smoke-fixture.php" > "$ROOT_DIR/.tmp/golang-smoke-fixture.json"
+else
+  # Partial QA still needs a fresh due bot graph for compatibility smoke.
+  docker compose cp "$SCRIPT_DIR/prepare-golang-smoke-fixture.php" "server:$LEGACY_E2E_CONTAINER_DIR/prepare-golang-smoke-fixture.php" >/dev/null
   docker compose exec -T server env OGAME_SMOKE_SEED_BOT_ACTIONS=1 php "$LEGACY_E2E_CONTAINER_DIR/prepare-golang-smoke-fixture.php" > "$ROOT_DIR/.tmp/golang-smoke-fixture.json"
 fi
 
