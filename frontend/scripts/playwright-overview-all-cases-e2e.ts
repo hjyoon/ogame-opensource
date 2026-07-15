@@ -298,23 +298,36 @@ async function normalizeDynamicPageParts(page: Page, side: "legacy" | "migrated"
         }
       }
     }
-    for (const timer of document.querySelectorAll<HTMLElement>("#content div[id^='bxx'], .legacy-overview-event-timer")) {
-      timer.textContent = "0:00:00";
-      timer.setAttribute("title", "0");
-      timer.setAttribute("data-time", "0");
-      timer.setAttribute("star", "0");
-    }
-    if (pageSide === "legacy") {
-      const eventRows = Array.from(
-        document.querySelectorAll<HTMLTableRowElement>("#content tr.flight, #content tr.return, #content tr.holding")
-      ).filter((row) => /Mission:|Rocket Attack|after order/.test((row.textContent ?? "").replace(/\s+/g, " ")));
-      for (const row of eventRows) {
-        const timerCell = row.querySelector<HTMLElement>("th, td");
-        if (timerCell) {
-          timerCell.textContent = "0:00:00";
+    const normalizeTimers = () => {
+      for (const timer of document.querySelectorAll<HTMLElement>("#content div[id^='bxx'], .legacy-overview-event-timer")) {
+        if (timer.textContent !== "0:00:00") {
+          timer.textContent = "0:00:00";
+        }
+        timer.setAttribute("title", "0");
+        timer.setAttribute("data-time", "0");
+        timer.setAttribute("star", "0");
+      }
+      if (pageSide === "legacy") {
+        const eventRows = Array.from(
+          document.querySelectorAll<HTMLTableRowElement>("#content tr.flight, #content tr.return, #content tr.holding")
+        ).filter((row) => /Mission:|Rocket Attack|after order/.test((row.textContent ?? "").replace(/\s+/g, " ")));
+        for (const row of eventRows) {
+          const timerCell = row.querySelector<HTMLElement>("th, td");
+          if (timerCell && timerCell.textContent !== "0:00:00") {
+            timerCell.textContent = "0:00:00";
+          }
         }
       }
-    }
+    };
+    normalizeTimers();
+    const windowWithObserver = window as typeof window & { __overviewTimerObserver?: MutationObserver };
+    windowWithObserver.__overviewTimerObserver?.disconnect();
+    windowWithObserver.__overviewTimerObserver = new MutationObserver(normalizeTimers);
+    windowWithObserver.__overviewTimerObserver.observe(document.body, {
+      childList: true,
+      characterData: true,
+      subtree: true
+    });
   }, side);
 }
 
@@ -460,6 +473,7 @@ async function surfaceContract(page: Page, side: "legacy" | "migrated"): Promise
 async function eventContract(page: Page, side: "legacy" | "migrated"): Promise<EventRowContract[]> {
   return await page.evaluate((pageSide) => {
     const compact = (value: string | null | undefined): string => (value ?? "").replace(/\s+/g, " ").trim();
+    const normalizeCountdown = (value: string): string => value.replace(/^\d+:\d{2}:\d{2}(?=\s)/, "0:00:00");
     const rows =
       pageSide === "legacy"
         ? Array.from(
@@ -474,7 +488,7 @@ async function eventContract(page: Page, side: "legacy" | "migrated"): Promise<E
           );
     return rows.map((row) => ({
       className: row.className,
-      text: compact(row.textContent),
+      text: normalizeCountdown(compact(row.textContent)),
       spans: Array.from(row.querySelectorAll("span")).map((span) => ({
         className: span.className,
         text: compact(span.textContent)
