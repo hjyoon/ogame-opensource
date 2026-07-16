@@ -38,6 +38,18 @@ function auth_visual_now(): int
     return $now;
 }
 
+function auth_visual_defer_relogin_event(): void
+{
+    global $db_prefix;
+
+    $now = auth_visual_now();
+    $guardUntil = $now + 12 * 60 * 60;
+    dbquery(
+        "UPDATE {$db_prefix}queue SET start={$now}, end={$guardUntil} " .
+        "WHERE type='" . QTYP_UNLOAD_ALL . "' AND end <= {$guardUntil}"
+    );
+}
+
 function auth_visual_one_row(string $sql): ?array
 {
     $res = dbquery($sql);
@@ -933,6 +945,7 @@ try {
     $usePhalanx = getenv('OGAME_GAME_VISUAL_PHALANX_FIXTURE') === '1';
     $useAcs = getenv('OGAME_GAME_VISUAL_ACS_FIXTURE') === '1';
     $usePremium = getenv('OGAME_GAME_VISUAL_PREMIUM_FIXTURE') === '1';
+    auth_visual_defer_relogin_event();
     $user = auth_visual_prepare_user($name, $password, $adminLevel);
     $adminUser = auth_visual_prepare_user('visualadmin', $password, USER_TYPE_ADMIN);
     $galaxyHover = auth_visual_prepare_galaxy_hover_fixture($user, $password);

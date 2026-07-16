@@ -3758,19 +3758,25 @@ func (r AdminRepository) loadAdminQueueRows(ctx context.Context) ([]domaingame.A
 	if err != nil {
 		return nil, err
 	}
+	botStrategyTable, err := tableName(r.prefix, "botstrat")
+	if err != nil {
+		return nil, err
+	}
 	rows, err := r.queryer.QueryContext(
 		ctx,
 		fmt.Sprintf(
-			"SELECT q.task_id, COALESCE(q.owner_id, 0), COALESCE(u.oname, ''), COALESCE(q.type, ''), COALESCE(q.sub_id, 0), COALESCE(q.obj_id, 0), COALESCE(q.level, 0), COALESCE(q.start, 0), COALESCE(q.end, 0), COALESCE(q.prio, 0), COALESCE(q.freeze, 0), COALESCE(q.frozen, 0), COALESCE(p.name, '') FROM %s q LEFT JOIN %s u ON u.player_id = q.owner_id LEFT JOIN %s bq ON bq.id = q.sub_id LEFT JOIN %s p ON p.planet_id = CASE WHEN q.type IN (?, ?) THEN bq.planet_id WHEN q.type IN (?, ?) THEN q.sub_id ELSE NULL END WHERE q.type <> ? ORDER BY q.end ASC, q.prio DESC, q.task_id ASC LIMIT 50",
+			"SELECT q.task_id, COALESCE(q.owner_id, 0), COALESCE(u.oname, ''), COALESCE(q.type, ''), COALESCE(q.sub_id, 0), COALESCE(q.obj_id, 0), COALESCE(q.level, 0), COALESCE(q.start, 0), COALESCE(q.end, 0), COALESCE(q.prio, 0), COALESCE(q.freeze, 0), COALESCE(q.frozen, 0), COALESCE(p.name, ''), COALESCE(bs.name, ''), COALESCE(bs.source, '') FROM %s q LEFT JOIN %s u ON u.player_id = q.owner_id LEFT JOIN %s bq ON bq.id = q.sub_id LEFT JOIN %s p ON p.planet_id = CASE WHEN q.type IN (?, ?) THEN bq.planet_id WHEN q.type IN (?, ?) THEN q.sub_id ELSE NULL END LEFT JOIN %s bs ON q.type = ? AND bs.id = q.sub_id WHERE q.type <> ? ORDER BY q.end ASC, q.prio DESC, q.task_id ASC LIMIT 50",
 			queueTable,
 			usersTable,
 			buildQueueTable,
 			planetsTable,
+			botStrategyTable,
 		),
 		queueTypeBuild,
 		queueTypeDemolish,
 		queueTypeShipyard,
 		queueTypeResearch,
+		queueTypeAI,
 		"Fleet",
 	)
 	if err != nil {
@@ -3782,15 +3788,34 @@ func (r AdminRepository) loadAdminQueueRows(ctx context.Context) ([]domaingame.A
 		var row domaingame.AdminQueueRow
 		var subID, objID, level int
 		var freeze int
-		var planetName string
-		if err := rows.Scan(&row.ID, &row.OwnerID, &row.OwnerName, &row.Type, &subID, &objID, &level, &row.Start, &row.End, &row.Priority, &freeze, &row.Frozen, &planetName); err != nil {
+		var planetName, botStrategyName, botStrategySource string
+		if err := rows.Scan(&row.ID, &row.OwnerID, &row.OwnerName, &row.Type, &subID, &objID, &level, &row.Start, &row.End, &row.Priority, &freeze, &row.Frozen, &planetName, &botStrategyName, &botStrategySource); err != nil {
 			return nil, err
 		}
 		row.Freeze = freeze != 0
 		row.Description = legacyAdminQueueDescription(row.Type, subID, objID, level, planetName)
+		if row.Type == queueTypeAI {
+			row.Description = legacyAdminQueueAIDescription(subID, objID, botStrategyName, botStrategySource)
+		}
 		result = append(result, row)
 	}
 	return result, rows.Err()
+}
+
+func legacyAdminQueueAIDescription(strategyID int, blockID int, strategyName string, source string) string {
+	if strategyName == "" {
+		return fmt.Sprintf("Bot Task (Strategy #%d)", strategyID)
+	}
+	blockText := ""
+	if graph, err := parseBotStrategyGraph(source); err == nil {
+		for _, node := range graph.Nodes {
+			if node.Key == blockID {
+				blockText = node.Text
+				break
+			}
+		}
+	}
+	return fmt.Sprintf("Bot Task (Strategy %s) : <br>%s", strategyName, blockText)
 }
 
 func legacyAdminQueueDescription(queueType string, subID int, objID int, level int, planetName string) string {

@@ -29,7 +29,7 @@ wait_for_url() {
 wait_for_url "$LEGACY_BASE_URL/home.php"
 wait_for_url "$GO_BASE_URL/api/healthz"
 
-if [ "${OGAME_GAME_VISUAL_PREPARE_FIXTURE:-1}" = "1" ]; then
+prepare_fixture() {
   docker compose cp "$SCRIPT_DIR/prepare-authenticated-game-visual-fixture.php" "server:$LEGACY_E2E_CONTAINER_DIR/prepare-authenticated-game-visual-fixture.php" >/dev/null
   docker compose exec -T \
     -e OGAME_GAME_VISUAL_COMMANDER_FIXTURE="${OGAME_GAME_VISUAL_COMMANDER_FIXTURE:-0}" \
@@ -41,9 +41,12 @@ if [ "${OGAME_GAME_VISUAL_PREPARE_FIXTURE:-1}" = "1" ]; then
     -e OGAME_GAME_VISUAL_PASS="${OGAME_GAME_VISUAL_PASS:-}" \
     -e OGAME_GAME_VISUAL_ADMIN="${OGAME_GAME_VISUAL_ADMIN:-}" \
     server php "$LEGACY_E2E_CONTAINER_DIR/prepare-authenticated-game-visual-fixture.php" > "$FIXTURE_FILE"
-fi
+}
 
 for browser in $BROWSERS; do
+  if [ "${OGAME_GAME_VISUAL_PREPARE_FIXTURE:-1}" = "1" ]; then
+    prepare_fixture
+  fi
   printf 'Authenticated game visual E2E (%s)\n' "$browser"
   (
     cd "$ROOT_DIR/frontend"

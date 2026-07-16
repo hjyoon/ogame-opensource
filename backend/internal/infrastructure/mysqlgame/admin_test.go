@@ -4627,9 +4627,10 @@ func TestAdminRepositoryReadsQueueRows(t *testing.T) {
 	queryer := &fakeQueryer{results: append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues([]any{42, "legor", domaingame.AdminLevelAdmin})},
 		fakeQueryResult{rows: fakeRowsFromValues(
-			[]any{21997, 99999, "space", "UpdateStats", 0, 0, 0, int64(1700000000), int64(1700003600), 510, 0, int64(0), ""},
-			[]any{21994, 1, "Legor", "RecalcPoints", 0, 0, 0, int64(1700000000), int64(1700007200), 500, 1, int64(1700000100), ""},
-			[]any{22001, 1, "Legor", "Build", 635, domaingame.BuildingMetalMine, 13, int64(1700000000), int64(1700007300), 20, 0, int64(0), "Overview Home"},
+			[]any{21997, 99999, "space", "UpdateStats", 0, 0, 0, int64(1700000000), int64(1700003600), 510, 0, int64(0), "", "", ""},
+			[]any{21994, 1, "Legor", "RecalcPoints", 0, 0, 0, int64(1700000000), int64(1700007200), 500, 1, int64(1700000100), "", "", ""},
+			[]any{22001, 1, "Legor", "Build", 635, domaingame.BuildingMetalMine, 13, int64(1700000000), int64(1700007300), 20, 0, int64(0), "Overview Home", "", ""},
+			[]any{22002, 1, "Legor", queueTypeAI, 311, 1, 0, int64(1700000000), int64(1700007400), 1000, 0, int64(0), "", "_start", `{"nodeDataArray":[{"key":1,"text":"BotIdle()"}]}`},
 		)},
 	)}
 	repository := NewAdminRepositoryWithQueryer(queryer, "ogame_")
@@ -4639,7 +4640,7 @@ func TestAdminRepositoryReadsQueueRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAdmin returned error: %v", err)
 	}
-	if len(admin.QueueRows) != 3 || admin.QueueRows[0].Description != "Save old statistics" || admin.QueueRows[1].Description != "Recalculate statistics" {
+	if len(admin.QueueRows) != 4 || admin.QueueRows[0].Description != "Save old statistics" || admin.QueueRows[1].Description != "Recalculate statistics" {
 		t.Fatalf("unexpected queue rows: %+v", admin.QueueRows)
 	}
 	if !admin.QueueRows[1].Freeze {
@@ -4648,14 +4649,17 @@ func TestAdminRepositoryReadsQueueRows(t *testing.T) {
 	if admin.QueueRows[2].Description != "Building 'Metal Mine' (13) on planet <a>Overview Home</a>" {
 		t.Fatalf("expected build queue description, got %+v", admin.QueueRows)
 	}
+	if admin.QueueRows[3].Description != "Bot Task (Strategy _start) : <br>BotIdle()" {
+		t.Fatalf("expected bot queue description, got %+v", admin.QueueRows)
+	}
 	lastSQL := queryer.calls[len(queryer.calls)-1].sql
-	if !strings.Contains(lastSQL, "`ogame_queue`") || !strings.Contains(lastSQL, "LEFT JOIN `ogame_users`") || !strings.Contains(lastSQL, "LEFT JOIN `ogame_buildqueue`") || !strings.Contains(lastSQL, "LEFT JOIN `ogame_planets`") || !strings.Contains(lastSQL, "q.type <> ?") {
+	if !strings.Contains(lastSQL, "`ogame_queue`") || !strings.Contains(lastSQL, "LEFT JOIN `ogame_users`") || !strings.Contains(lastSQL, "LEFT JOIN `ogame_buildqueue`") || !strings.Contains(lastSQL, "LEFT JOIN `ogame_planets`") || !strings.Contains(lastSQL, "LEFT JOIN `ogame_botstrat`") || !strings.Contains(lastSQL, "q.type <> ?") {
 		t.Fatalf("expected queue rows query, got %s", lastSQL)
 	}
 }
 
 func TestAdminRepositoryQueueRowsErrors(t *testing.T) {
-	validRow := []any{21997, 99999, "space", "UpdateStats", 0, 0, 0, int64(1700000000), int64(1700003600), 510, 0, int64(0), ""}
+	validRow := []any{21997, 99999, "space", "UpdateStats", 0, 0, 0, int64(1700000000), int64(1700003600), 510, 0, int64(0), "", "", ""}
 	cases := []struct {
 		name string
 		row  fakeQueryResult
