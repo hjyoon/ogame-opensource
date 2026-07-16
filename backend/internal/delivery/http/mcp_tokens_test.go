@@ -22,6 +22,8 @@ func TestGameMCPTokensListCreateAndRevoke(t *testing.T) {
 			UserType:        1,
 			Role:            "operator",
 			AvailableScopes: []string{domainmcp.ScopeRead, domainmcp.ScopeOperator},
+			MaxActiveTokens: 5,
+			ExpiryOptions:   []appmcp.TokenExpiryOption{{Seconds: 2592000, Label: "30 days", Default: true}, {Seconds: 0, Label: "Never"}},
 		},
 		createResult: appmcp.TokenCreationResult{
 			Authenticated: true,
@@ -42,15 +44,18 @@ func TestGameMCPTokensListCreateAndRevoke(t *testing.T) {
 		t.Fatalf("unexpected list status=%d body=%q command=%+v", rec.Code, rec.Body.String(), manager.listCommand)
 	}
 	var listBody map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &listBody); err != nil || listBody["role"] != "operator" || listBody["userType"] != float64(1) {
+	if err := json.Unmarshal(rec.Body.Bytes(), &listBody); err != nil || listBody["role"] != "operator" || listBody["userType"] != float64(1) || listBody["maxActiveTokens"] != float64(5) {
 		t.Fatalf("unexpected role-aware token list: body=%q parsed=%+v err=%v", rec.Body.String(), listBody, err)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "http://game.local/api/game/mcp-tokens?session=public", strings.NewReader(`{"name":"Agent","scopes":["mcp:read"]}`))
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/api/game/mcp-tokens?session=public", strings.NewReader(`{"name":"Agent","scopes":["mcp:read"],"expiresInSeconds":604800}`))
 	rec = httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || manager.createCommand.Name != "Agent" || manager.createCommand.Scopes[0] != domainmcp.ScopeRead {
 		t.Fatalf("unexpected create status=%d body=%q command=%+v", rec.Code, rec.Body.String(), manager.createCommand)
+	}
+	if manager.createCommand.ExpiresInSeconds == nil || *manager.createCommand.ExpiresInSeconds != 604800 {
+		t.Fatalf("expected selected expiration in create command, got %+v", manager.createCommand)
 	}
 	var createBody map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &createBody); err != nil {
@@ -139,6 +144,14 @@ func TestGameMCPTokensErrors(t *testing.T) {
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected unavailable token create dependency, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	server = New(Dependencies{MCPTokens: &recordingMCPTokenUseCase{createErr: appmcp.ErrTokenLimitReached}})
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/api/game/mcp-tokens", strings.NewReader(`{"name":"sixth"}`))
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "maximum of 5") {
+		t.Fatalf("expected active token conflict, got status=%d body=%q", rec.Code, rec.Body.String())
 	}
 
 	server = New(Dependencies{MCPTokens: &recordingMCPTokenUseCase{}})

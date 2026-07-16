@@ -25,12 +25,14 @@ import (
 )
 
 var ErrInvalidTokenRequest = errors.New("invalid mcp token request")
+var ErrTokenLimitReached = domainmcp.ErrTokenLimitReached
 var ErrInvalidOAuthRequest = errors.New("invalid mcp oauth request")
 var ErrInvalidOAuthGrant = errors.New("invalid mcp oauth grant")
 
 const (
-	defaultMCPTokenTTL = 30 * 24 * time.Hour
-	mcpOAuthCodeTTL    = 10 * time.Minute
+	defaultMCPTokenTTL     = 30 * 24 * time.Hour
+	mcpOAuthCodeTTL        = 10 * time.Minute
+	MaxActiveMCPTokenCount = 5
 )
 
 type HealthProvider interface {
@@ -57,7 +59,7 @@ type SessionLookup interface {
 
 type TokenRepository interface {
 	ListMCPTokens(context.Context, int) ([]domainmcp.Token, error)
-	CreateMCPToken(context.Context, domainmcp.Token, string) (domainmcp.Token, error)
+	CreateMCPToken(context.Context, domainmcp.Token, string, int, int64) (domainmcp.Token, error)
 	RevokeMCPToken(context.Context, int, int, int64) (bool, error)
 	RevokeMCPTokenByHash(context.Context, string, int64) (bool, error)
 }
@@ -263,8 +265,9 @@ type TokenManagementCommand struct {
 
 type CreateTokenCommand struct {
 	TokenManagementCommand
-	Name   string
-	Scopes []string
+	Name             string
+	Scopes           []string
+	ExpiresInSeconds *int64
 }
 
 type RevokeTokenCommand struct {
@@ -352,6 +355,14 @@ type TokenListResult struct {
 	UserType        int
 	Role            string
 	AvailableScopes []string
+	MaxActiveTokens int
+	ExpiryOptions   []TokenExpiryOption
+}
+
+type TokenExpiryOption struct {
+	Seconds int64  `json:"seconds"`
+	Label   string `json:"label"`
+	Default bool   `json:"default,omitempty"`
 }
 
 type TokenCreationResult struct {
@@ -909,7 +920,7 @@ func (s Service) ExchangeOAuthCode(ctx context.Context, command OAuthTokenComman
 		Scopes:    scopes,
 		CreatedAt: now,
 		ExpiresAt: s.tokenExpiresAt(time.Unix(now, 0)),
-	}, HashToken(secret))
+	}, HashToken(secret), MaxActiveMCPTokenCount, now)
 	if err != nil {
 		return OAuthTokenResult{}, err
 	}
@@ -1670,6 +1681,8 @@ func (s Service) ListTokens(ctx context.Context, command TokenManagementCommand)
 		UserType:        userType,
 		Role:            domaingame.AdminRoleName(userType),
 		AvailableScopes: availableScopesForUserType(userType),
+		MaxActiveTokens: MaxActiveMCPTokenCount,
+		ExpiryOptions:   mcpTokenExpiryOptions(),
 	}, nil
 }
 
@@ -1692,18 +1705,23 @@ func (s Service) CreateToken(ctx context.Context, command CreateTokenCommand) (T
 	if err != nil {
 		return TokenCreationResult{}, err
 	}
+	now := s.now()
+	expiresAt, err := s.resolveTokenExpiresAt(now, command.ExpiresInSeconds)
+	if err != nil {
+		return TokenCreationResult{}, err
+	}
 	secret, err := s.tokenGenerator.NewMCPToken()
 	if err != nil {
 		return TokenCreationResult{}, err
 	}
-	now := s.now().Unix()
+	nowUnix := now.Unix()
 	token, err := s.tokenRepository.CreateMCPToken(ctx, domainmcp.Token{
 		PlayerID:  session.Session.PlayerID,
 		Name:      name,
 		Scopes:    scopes,
-		CreatedAt: now,
-		ExpiresAt: s.tokenExpiresAt(time.Unix(now, 0)),
-	}, HashToken(secret))
+		CreatedAt: nowUnix,
+		ExpiresAt: expiresAt,
+	}, HashToken(secret), MaxActiveMCPTokenCount, nowUnix)
 	if err != nil {
 		return TokenCreationResult{}, err
 	}
@@ -1740,6 +1758,34 @@ func (s Service) tokenExpiresAt(now time.Time) int64 {
 		return 0
 	}
 	return now.Add(s.tokenTTL).Unix()
+}
+
+func (s Service) resolveTokenExpiresAt(now time.Time, expiresInSeconds *int64) (int64, error) {
+	if expiresInSeconds == nil {
+		return s.tokenExpiresAt(now), nil
+	}
+	for _, option := range mcpTokenExpiryOptions() {
+		if option.Seconds != *expiresInSeconds {
+			continue
+		}
+		if option.Seconds == 0 {
+			return 0, nil
+		}
+		return now.Add(time.Duration(option.Seconds) * time.Second).Unix(), nil
+	}
+	return 0, fmt.Errorf("%w: unsupported expiration period", ErrInvalidTokenRequest)
+}
+
+func mcpTokenExpiryOptions() []TokenExpiryOption {
+	return []TokenExpiryOption{
+		{Seconds: int64((time.Hour).Seconds()), Label: "1 hour"},
+		{Seconds: int64((24 * time.Hour).Seconds()), Label: "1 day"},
+		{Seconds: int64((7 * 24 * time.Hour).Seconds()), Label: "7 days"},
+		{Seconds: int64(defaultMCPTokenTTL.Seconds()), Label: "30 days", Default: true},
+		{Seconds: int64((90 * 24 * time.Hour).Seconds()), Label: "90 days"},
+		{Seconds: int64((365 * 24 * time.Hour).Seconds()), Label: "1 year"},
+		{Seconds: 0, Label: "Never"},
+	}
 }
 
 func (s Service) tokenExpiresIn() int64 {

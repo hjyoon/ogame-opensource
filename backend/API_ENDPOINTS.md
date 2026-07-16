@@ -40,6 +40,8 @@ Source of truth: `backend/internal/delivery/http/server.go`. Keep this file unde
 | `GET/POST` | `/api/game/mcp-tokens` | List/create role-scoped user bearer tokens |
 | `POST` | `/api/game/mcp-tokens/revoke` | Revoke a user-owned token |
 
+Token creation accepts `name`, `scopes`, and `expiresInSeconds`. The list returns allowed expiry options and role scopes. At most five unexpired, unrevoked tokens may exist per user; `expiresInSeconds: 0` means no expiry.
+
 Tools and scopes: [MCP.md](../MCP.md).
 
 ## Game Pages

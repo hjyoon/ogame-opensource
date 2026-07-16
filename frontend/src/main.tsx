@@ -2236,7 +2236,7 @@ function App() {
       .finally(() => setGameOptionsPending(false));
   };
 
-  const submitGameMCPTokenCreate = (name: string, scopes: string[]) => {
+  const submitGameMCPTokenCreate = (name: string, scopes: string[], expiresInSeconds: number) => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (publicSession === "") {
       setGameMCPTokensError("Session is invalid.");
@@ -2250,7 +2250,7 @@ function App() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
-      body: JSON.stringify({ name, scopes: scopes.length > 0 ? scopes : ["mcp:read"] })
+      body: JSON.stringify({ name, scopes: scopes.length > 0 ? scopes : ["mcp:read"], expiresInSeconds })
     })
       .then(async (response) => {
         const text = await response.text();
@@ -2265,7 +2265,16 @@ function App() {
       })
       .then((payload) => {
         if (!payload.authenticated) {
-          setGameMCPTokens({ authenticated: false, issues: payload.issues, tokens: [], userType: 0, role: "player", availableScopes: [] });
+          setGameMCPTokens({
+            authenticated: false,
+            issues: payload.issues,
+            tokens: [],
+            userType: 0,
+            role: "player",
+            availableScopes: [],
+            maxActiveTokens: 5,
+            expiryOptions: []
+          });
           setGameMCPTokensError(null);
           return;
         }
@@ -2276,6 +2285,8 @@ function App() {
             userType: current?.userType ?? 0,
             role: current?.role ?? "player",
             availableScopes: current?.availableScopes ?? ["mcp:read"],
+            maxActiveTokens: current?.maxActiveTokens ?? 5,
+            expiryOptions: current?.expiryOptions ?? [],
             tokens: [payload.token!, ...(current?.tokens ?? []).filter((token) => token.id !== payload.token!.id)]
           }));
         }
@@ -2315,7 +2326,16 @@ function App() {
       })
       .then((payload) => {
         if (!payload.authenticated) {
-          setGameMCPTokens({ authenticated: false, issues: payload.issues, tokens: [], userType: 0, role: "player", availableScopes: [] });
+          setGameMCPTokens({
+            authenticated: false,
+            issues: payload.issues,
+            tokens: [],
+            userType: 0,
+            role: "player",
+            availableScopes: [],
+            maxActiveTokens: 5,
+            expiryOptions: []
+          });
           setGameMCPTokensError(null);
           return;
         }

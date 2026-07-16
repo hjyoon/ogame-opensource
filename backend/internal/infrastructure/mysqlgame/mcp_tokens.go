@@ -167,7 +167,7 @@ func (r MCPTokenRepository) ListMCPTokens(ctx context.Context, playerID int) ([]
 	return tokens, nil
 }
 
-func (r MCPTokenRepository) CreateMCPToken(ctx context.Context, token domainmcp.Token, tokenHash string) (domainmcp.Token, error) {
+func (r MCPTokenRepository) CreateMCPToken(ctx context.Context, token domainmcp.Token, tokenHash string, maxActiveTokens int, activeAt int64) (domainmcp.Token, error) {
 	if r.execer == nil {
 		return domainmcp.Token{}, errors.New("mcp token repository execer unavailable")
 	}
@@ -175,16 +175,29 @@ func (r MCPTokenRepository) CreateMCPToken(ctx context.Context, token domainmcp.
 	if err != nil {
 		return domainmcp.Token{}, err
 	}
-	result, err := r.execer.ExecContext(ctx, "INSERT INTO "+table+" (player_id, name, token_hash, scopes, created_at, expires_at, last_used_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, 0, 0)",
+	if maxActiveTokens <= 0 {
+		return domainmcp.Token{}, errors.New("mcp active token limit must be positive")
+	}
+	result, err := r.execer.ExecContext(ctx, "INSERT INTO "+table+" (player_id, name, token_hash, scopes, created_at, expires_at, last_used_at, revoked_at) SELECT ?, ?, ?, ?, ?, ?, 0, 0 WHERE (SELECT COUNT(*) FROM "+table+" WHERE player_id = ? AND revoked_at = 0 AND (expires_at = 0 OR expires_at >= ?)) < ?",
 		token.PlayerID,
 		token.Name,
 		strings.TrimSpace(tokenHash),
 		joinMCPScopes(token.Scopes),
 		token.CreatedAt,
 		token.ExpiresAt,
+		token.PlayerID,
+		activeAt,
+		maxActiveTokens,
 	)
 	if err != nil {
 		return domainmcp.Token{}, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return domainmcp.Token{}, err
+	}
+	if affected == 0 {
+		return domainmcp.Token{}, domainmcp.ErrTokenLimitReached
 	}
 	id, err := result.LastInsertId()
 	if err != nil {

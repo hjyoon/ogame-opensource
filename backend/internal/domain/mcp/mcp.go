@@ -26,10 +26,11 @@ const (
 )
 
 var (
-	ErrToolNotFound  = errors.New("mcp tool not found")
-	ErrUnauthorized  = errors.New("mcp unauthorized")
-	ErrForbidden     = errors.New("mcp forbidden")
-	ErrInvalidParams = errors.New("mcp invalid params")
+	ErrToolNotFound      = errors.New("mcp tool not found")
+	ErrUnauthorized      = errors.New("mcp unauthorized")
+	ErrForbidden         = errors.New("mcp forbidden")
+	ErrInvalidParams     = errors.New("mcp invalid params")
+	ErrTokenLimitReached = errors.New("mcp active token limit reached")
 )
 
 type Token struct {

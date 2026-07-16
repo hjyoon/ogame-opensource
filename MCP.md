@@ -26,7 +26,7 @@ Authenticated users manage hashed, expiring bearer tokens through:
 - `GET/POST /api/game/mcp-tokens?session=...`
 - `POST /api/game/mcp-tokens/revoke?session=...`
 
-The Options UI lists, creates, and revokes tokens. Plaintext secrets are returned once. Default lifetime is 30 days via `OGAME_MCP_TOKEN_TTL_SECONDS`; `0` disables expiry.
+The Options UI lists, creates, and revokes up to five active tokens per user. It supports select-all scopes and fixed expiry choices from one hour through one year, plus `Never`. Plaintext secrets are returned once. Omitted expiry uses `OGAME_MCP_TOKEN_TTL_SECONDS` (30 days by default).
 
 Static test/service tokens use `OGAME_MCP_STATIC_TOKENS`; staff role is inferred from a privileged scope:
 

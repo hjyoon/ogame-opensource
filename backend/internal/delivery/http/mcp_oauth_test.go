@@ -267,6 +267,15 @@ func TestMCPOAuthErrors(t *testing.T) {
 		t.Fatalf("expected invalid grant, got status=%d body=%q", rec.Code, rec.Body.String())
 	}
 
+	server = New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{exchangeErr: appmcp.ErrTokenLimitReached}})
+	req = httptest.NewRequest(http.MethodPost, "http://game.local/oauth/token", strings.NewReader("grant_type=authorization_code"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "Maximum of 5") {
+		t.Fatalf("expected OAuth token limit error, got status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
 	server = New(Dependencies{MCPOAuth: &fakeMCPOAuthUseCase{exchangeErr: errors.New("down")}})
 	req = httptest.NewRequest(http.MethodPost, "http://game.local/oauth/token", strings.NewReader("%"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

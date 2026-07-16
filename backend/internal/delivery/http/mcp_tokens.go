@@ -10,8 +10,9 @@ import (
 )
 
 type mcpTokenCreateRequest struct {
-	Name   string   `json:"name"`
-	Scopes []string `json:"scopes"`
+	Name             string   `json:"name"`
+	Scopes           []string `json:"scopes"`
+	ExpiresInSeconds *int64   `json:"expiresInSeconds"`
 }
 
 type mcpTokenRevokeRequest struct {
@@ -46,6 +47,8 @@ func (a app) handleGameMCPTokenList(w http.ResponseWriter, r *http.Request) {
 		"userType":        result.UserType,
 		"role":            result.Role,
 		"availableScopes": result.AvailableScopes,
+		"maxActiveTokens": result.MaxActiveTokens,
+		"expiryOptions":   result.ExpiryOptions,
 	})
 }
 
@@ -63,6 +66,7 @@ func (a app) handleGameMCPTokenCreate(w http.ResponseWriter, r *http.Request) {
 		TokenManagementCommand: mcpTokenCommand(r),
 		Name:                   request.Name,
 		Scopes:                 request.Scopes,
+		ExpiresInSeconds:       request.ExpiresInSeconds,
 	})
 	if err != nil {
 		writeMCPTokenError(w, err)
@@ -110,6 +114,10 @@ func mcpTokenCommand(r *http.Request) appmcp.TokenManagementCommand {
 func writeMCPTokenError(w http.ResponseWriter, err error) {
 	if errors.Is(err, appmcp.ErrInvalidTokenRequest) {
 		http.Error(w, "invalid mcp token request", http.StatusBadRequest)
+		return
+	}
+	if errors.Is(err, appmcp.ErrTokenLimitReached) {
+		http.Error(w, "maximum of 5 active mcp tokens reached", http.StatusConflict)
 		return
 	}
 	http.Error(w, "mcp token management unavailable", http.StatusServiceUnavailable)

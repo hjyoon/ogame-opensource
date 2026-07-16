@@ -194,7 +194,7 @@ func TestSQLiteMCPTokenAndOAuthCodeLifecycle(t *testing.T) {
 		Scopes:    []string{"game:read"},
 		CreatedAt: now,
 		ExpiresAt: now + 3600,
-	}, hex.EncodeToString(digest[:]))
+	}, hex.EncodeToString(digest[:]), 5, now)
 	if err != nil {
 		t.Fatalf("create SQLite MCP token: %v", err)
 	}

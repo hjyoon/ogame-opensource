@@ -468,6 +468,8 @@ export type GameMCPTokensStatus = {
   userType: number;
   role: "player" | "operator" | "admin";
   availableScopes: string[];
+  maxActiveTokens: number;
+  expiryOptions: { seconds: number; label: string; default?: boolean }[];
 };
 
 export type GameLogoutStatus = {
@@ -1974,7 +1976,7 @@ type LegacyGameOverviewProps = {
     hideGoEmail: boolean;
     resendActivation: boolean;
   }) => void;
-  onMCPTokenCreate: (name: string, scopes: string[]) => void;
+  onMCPTokenCreate: (name: string, scopes: string[], expiresInSeconds: number) => void;
   onMCPTokenRevoke: (tokenID: number) => void;
   logoutStatus: GameLogoutStatus | null;
   logoutError: string | null;
@@ -13503,7 +13505,7 @@ function OptionsTable({
   mcpTokensError: string | null;
   mcpTokensPending: boolean;
   mcpTokensStatus: GameMCPTokensStatus | null;
-  onMCPTokenCreate: (name: string, scopes: string[]) => void;
+  onMCPTokenCreate: (name: string, scopes: string[], expiresInSeconds: number) => void;
   onMCPTokenRevoke: (tokenID: number) => void;
   onSubmit: (settings: {
     name: string;
@@ -13908,20 +13910,29 @@ function MCPTokenTable({
   status
 }: {
   error: string | null;
-  onCreate: (name: string, scopes: string[]) => void;
+  onCreate: (name: string, scopes: string[], expiresInSeconds: number) => void;
   onRevoke: (tokenID: number) => void;
   pending: boolean;
   secret: string | null;
   status: GameMCPTokensStatus | null;
 }) {
+  const availableScopes = status?.availableScopes ?? ["mcp:read"];
+  const [selectedScopes, setSelectedScopes] = React.useState<string[]>(["mcp:read"]);
+  React.useEffect(() => {
+    setSelectedScopes((current) => {
+      const available = new Set(availableScopes);
+      const next = current.filter((scope) => available.has(scope));
+      if (next.length === 0 && available.has("mcp:read")) {
+        return ["mcp:read"];
+      }
+      return next;
+    });
+  }, [availableScopes.join("\u0000")]);
   const submitCreate = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const scopes = form
-      .getAll("mcp_scope")
-      .map((value) => String(value))
-      .filter((value) => value !== "");
-    onCreate(String(form.get("mcp_name") ?? ""), scopes);
+    const expiresInSeconds = Number(form.get("mcp_expires") ?? 0);
+    onCreate(String(form.get("mcp_name") ?? ""), selectedScopes, expiresInSeconds);
   };
   const issue = status && !status.authenticated ? status.issues[0]?.message ?? "Session is invalid." : "";
   const scopeLabels: Record<string, string> = {
@@ -13943,7 +13954,17 @@ function MCPTokenTable({
     "mcp:operator": "operator",
     "mcp:admin": "admin"
   };
-  const availableScopes = status?.availableScopes ?? ["mcp:read"];
+  const expiryOptions = status?.expiryOptions?.length
+    ? status.expiryOptions
+    : [
+        { seconds: 2592000, label: "30 days", default: true },
+        { seconds: 0, label: "Never" }
+      ];
+  const defaultExpiry = expiryOptions.find((option) => option.default)?.seconds ?? expiryOptions[0].seconds;
+  const maxActiveTokens = status?.maxActiveTokens ?? 5;
+  const activeTokenCount = status?.tokens.length ?? 0;
+  const tokenLimitReached = Boolean(status?.authenticated && activeTokenCount >= maxActiveTokens);
+  const allScopesSelected = availableScopes.length > 0 && availableScopes.every((scope) => selectedScopes.includes(scope));
   return (
     <table className="legacy-overview-table legacy-mcp-token-table" data-visual-exclude="mcp-tokens" width={519}>
       <tbody>
@@ -13998,7 +14019,7 @@ function MCPTokenTable({
                 <th>{token.name}</th>
                 <th>{token.scopes.join(", ")}</th>
                 <th>{formatLegacyTimestamp(token.createdAt)}</th>
-                <th>{token.expiresAt ? formatLegacyTimestamp(token.expiresAt) : "-"}</th>
+                <th>{token.expiresAt ? formatLegacyTimestamp(token.expiresAt) : "Never"}</th>
                 <th>{token.lastUsedAt ? formatLegacyTimestamp(token.lastUsedAt) : "-"}</th>
                 <th>
                   <button disabled={pending} onClick={() => onRevoke(token.id)} type="button">
@@ -14010,19 +14031,46 @@ function MCPTokenTable({
           : null}
         <tr>
           <td className="legacy-c c" colSpan={6}>
-            Create token ({status?.role ?? "player"})
+            Create token ({status?.role ?? "player"}, {activeTokenCount}/{maxActiveTokens})
           </td>
         </tr>
         <tr>
           <th colSpan={6}>
             <form action={gameRouteURL("/game/options", window.location.search)} method="POST" onSubmit={submitCreate}>
               <input defaultValue="MCP client" maxLength={64} name="mcp_name" size={20} type="text" />
+              <select defaultValue={defaultExpiry} name="mcp_expires">
+                {expiryOptions.map((option) => (
+                  <option key={option.seconds} value={option.seconds}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <label>
+                <input
+                  checked={allScopesSelected}
+                  onChange={(event) => setSelectedScopes(event.currentTarget.checked ? [...availableScopes] : [])}
+                  type="checkbox"
+                />{" "}
+                all
+              </label>
               {availableScopes.map((scope) => (
                 <label key={scope}>
-                  <input defaultChecked={scope === "mcp:read"} name="mcp_scope" type="checkbox" value={scope} /> {scopeLabels[scope] ?? scope}
+                  <input
+                    checked={selectedScopes.includes(scope)}
+                    name="mcp_scope"
+                    onChange={(event) =>
+                      setSelectedScopes((current) =>
+                        event.currentTarget.checked ? [...current, scope] : current.filter((selected) => selected !== scope)
+                      )
+                    }
+                    type="checkbox"
+                    value={scope}
+                  />{" "}
+                  {scopeLabels[scope] ?? scope}
                 </label>
               ))}
-              <input disabled={pending} type="submit" value="create token" />
+              <input disabled={pending || tokenLimitReached} type="submit" value="create token" />
+              {tokenLimitReached ? " Maximum 5 active tokens." : null}
             </form>
           </th>
         </tr>

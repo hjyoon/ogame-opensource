@@ -338,6 +338,8 @@ func writeOAuthApplicationError(w http.ResponseWriter, err error) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", err.Error())
 	case errors.Is(err, appmcp.ErrInvalidOAuthGrant):
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "OAuth authorization code is invalid.")
+	case errors.Is(err, appmcp.ErrTokenLimitReached):
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "Maximum of 5 active MCP tokens reached.")
 	default:
 		writeOAuthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "OAuth flow is unavailable.")
 	}

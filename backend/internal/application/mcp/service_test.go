@@ -5099,6 +5099,9 @@ func TestServiceManagesUserOwnedTokens(t *testing.T) {
 	if repository.created.PlayerID != 42 || repository.created.Name != "Claude desktop" || repository.created.CreatedAt != 1700000000 || repository.created.ExpiresAt != time.Unix(1700000000, 0).Add(defaultMCPTokenTTL).Unix() {
 		t.Fatalf("unexpected repository token: %+v", repository.created)
 	}
+	if repository.maxActiveTokens != MaxActiveMCPTokenCount || repository.activeAt != 1700000000 {
+		t.Fatalf("unexpected active token guard: max=%d activeAt=%d", repository.maxActiveTokens, repository.activeAt)
+	}
 	if repository.hash != HashToken("secret-token") {
 		t.Fatalf("expected hashed token to be stored, got %q", repository.hash)
 	}
@@ -5110,6 +5113,9 @@ func TestServiceManagesUserOwnedTokens(t *testing.T) {
 	if !listed.Authenticated || len(listed.Tokens) != 1 || listed.Tokens[0].ID != 7 {
 		t.Fatalf("unexpected token list: %+v", listed)
 	}
+	if listed.MaxActiveTokens != 5 || len(listed.ExpiryOptions) != 7 || !listed.ExpiryOptions[3].Default || listed.ExpiryOptions[6].Seconds != 0 {
+		t.Fatalf("unexpected token policy metadata: %+v", listed)
+	}
 
 	revoked, err := service.RevokeToken(context.Background(), RevokeTokenCommand{
 		TokenManagementCommand: TokenManagementCommand{PublicSession: "pub"},
@@ -5120,6 +5126,41 @@ func TestServiceManagesUserOwnedTokens(t *testing.T) {
 	}
 	if !revoked.Authenticated || !revoked.Revoked || repository.revokedAt != 1700000000 {
 		t.Fatalf("unexpected revoke result=%+v repository=%+v", revoked, repository)
+	}
+}
+
+func TestServiceTokenManagementExpirationOptionsAndLimit(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	repository := &fakeTokenRepository{}
+	service := NewServiceWithTokenManagement(
+		fakeHealthProvider{},
+		nil,
+		repository,
+		fakeSessionLookup{auth: authenticatedSession(42)},
+		fakeTokenGenerator{secret: "token"},
+		func() time.Time { return now },
+	)
+
+	sevenDays := int64((7 * 24 * time.Hour).Seconds())
+	created, err := service.CreateToken(context.Background(), CreateTokenCommand{ExpiresInSeconds: &sevenDays})
+	if err != nil || created.Creation.Token.ExpiresAt != now.Add(7*24*time.Hour).Unix() {
+		t.Fatalf("expected selectable seven-day expiration, got result=%+v err=%v", created, err)
+	}
+
+	never := int64(0)
+	created, err = service.CreateToken(context.Background(), CreateTokenCommand{ExpiresInSeconds: &never})
+	if err != nil || created.Creation.Token.ExpiresAt != 0 || repository.created.ExpiresAt != 0 {
+		t.Fatalf("expected no-expiration token, got result=%+v err=%v", created, err)
+	}
+
+	unsupported := int64(123)
+	if _, err := service.CreateToken(context.Background(), CreateTokenCommand{ExpiresInSeconds: &unsupported}); !errors.Is(err, ErrInvalidTokenRequest) {
+		t.Fatalf("expected unsupported expiration to be rejected, got %v", err)
+	}
+
+	repository.createErr = domainmcp.ErrTokenLimitReached
+	if _, err := service.CreateToken(context.Background(), CreateTokenCommand{}); !errors.Is(err, ErrTokenLimitReached) {
+		t.Fatalf("expected active token limit error, got %v", err)
 	}
 }
 
@@ -6227,6 +6268,8 @@ type fakeTokenRepository struct {
 	revokeByHashResult bool
 	oauthCreateErr     error
 	oauthConsumeErr    error
+	maxActiveTokens    int
+	activeAt           int64
 }
 
 func (f *fakeTokenRepository) ListMCPTokens(context.Context, int) ([]domainmcp.Token, error) {
@@ -6236,12 +6279,14 @@ func (f *fakeTokenRepository) ListMCPTokens(context.Context, int) ([]domainmcp.T
 	return []domainmcp.Token{{ID: 7, Name: "Claude desktop", Scopes: []string{domainmcp.ScopeRead}}}, nil
 }
 
-func (f *fakeTokenRepository) CreateMCPToken(_ context.Context, token domainmcp.Token, hash string) (domainmcp.Token, error) {
+func (f *fakeTokenRepository) CreateMCPToken(_ context.Context, token domainmcp.Token, hash string, maxActiveTokens int, activeAt int64) (domainmcp.Token, error) {
 	if f.createErr != nil {
 		return domainmcp.Token{}, f.createErr
 	}
 	f.created = token
 	f.hash = hash
+	f.maxActiveTokens = maxActiveTokens
+	f.activeAt = activeAt
 	token.ID = 7
 	return token, nil
 }

@@ -157,7 +157,7 @@ func TestMCPTokenRepositoryRejectsUnsafePrefixesForEveryOperation(t *testing.T) 
 	checks := []func() error{
 		func() error { _, err := repository.ListMCPTokens(context.Background(), 1); return err },
 		func() error {
-			_, err := repository.CreateMCPToken(context.Background(), domainmcp.Token{}, "hash")
+			_, err := repository.CreateMCPToken(context.Background(), domainmcp.Token{}, "hash", 5, 1)
 			return err
 		},
 		func() error { _, err := repository.RevokeMCPToken(context.Background(), 1, 1, 1); return err },
@@ -232,12 +232,15 @@ func TestMCPTokenRepositoryCreatesListsAndRevokesTokens(t *testing.T) {
 		Scopes:    []string{domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeRead},
 		CreatedAt: 1700,
 		ExpiresAt: 2300,
-	}, "hash")
+	}, "hash", 5, 1700)
 	if err != nil {
 		t.Fatalf("CreateMCPToken returned error: %v", err)
 	}
 	if token.ID != 7 || token.ExpiresAt != 2300 || !strings.Contains(runner.execCalls[0].sql, "INSERT INTO `uni1_mcp_tokens`") || runner.execCalls[0].args[3] != "mcp:read,mcp:messages" || runner.execCalls[0].args[5] != int64(2300) {
 		t.Fatalf("unexpected created token=%+v exec=%+v", token, runner.execCalls[0])
+	}
+	if !strings.Contains(runner.execCalls[0].sql, "SELECT COUNT(*)") || runner.execCalls[0].args[6] != 42 || runner.execCalls[0].args[7] != int64(1700) || runner.execCalls[0].args[8] != 5 {
+		t.Fatalf("expected guarded active-token insert, got %+v", runner.execCalls[0])
 	}
 
 	tokens, err := repository.ListMCPTokens(context.Background(), 42)
@@ -406,7 +409,7 @@ func TestMCPTokenRepositoryCoversErrorBranches(t *testing.T) {
 	if _, err := repository.ListMCPTokens(context.Background(), 42); err == nil {
 		t.Fatalf("expected nil queryer list error")
 	}
-	if _, err := repository.CreateMCPToken(context.Background(), domainmcp.Token{}, "hash"); err == nil {
+	if _, err := repository.CreateMCPToken(context.Background(), domainmcp.Token{}, "hash", 5, 1); err == nil {
 		t.Fatalf("expected nil execer create error")
 	}
 	if _, err := repository.RevokeMCPToken(context.Background(), 42, 7, 1); err == nil {
@@ -447,12 +450,23 @@ func TestMCPTokenRepositoryCoversErrorBranches(t *testing.T) {
 	}
 
 	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{}, &fakeMCPTokenRunner{err: wantErr}, "uni1_")
-	if _, err := repository.CreateMCPToken(context.Background(), domainmcp.Token{}, "hash"); !errors.Is(err, wantErr) {
+	if _, err := repository.CreateMCPToken(context.Background(), domainmcp.Token{}, "hash", 5, 1); !errors.Is(err, wantErr) {
 		t.Fatalf("expected create exec error, got %v", err)
 	}
-	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{}, &fakeMCPTokenRunner{result: fakeFleetSQLErrorResult{idErr: wantErr}}, "uni1_")
-	if _, err := repository.CreateMCPToken(context.Background(), domainmcp.Token{}, "hash"); !errors.Is(err, wantErr) {
+	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{}, &fakeMCPTokenRunner{result: fakeFleetSQLErrorResult{rows: 1, idErr: wantErr}}, "uni1_")
+	if _, err := repository.CreateMCPToken(context.Background(), domainmcp.Token{}, "hash", 5, 1); !errors.Is(err, wantErr) {
 		t.Fatalf("expected last insert id error, got %v", err)
+	}
+	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{}, &fakeMCPTokenRunner{result: fakeFleetSQLErrorResult{rowsErr: wantErr}}, "uni1_")
+	if _, err := repository.CreateMCPToken(context.Background(), domainmcp.Token{}, "hash", 5, 1); !errors.Is(err, wantErr) {
+		t.Fatalf("expected create rows affected error, got %v", err)
+	}
+	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{}, &fakeMCPTokenRunner{result: fakeFleetSQLErrorResult{rows: 0}}, "uni1_")
+	if _, err := repository.CreateMCPToken(context.Background(), domainmcp.Token{}, "hash", 5, 1); !errors.Is(err, domainmcp.ErrTokenLimitReached) {
+		t.Fatalf("expected active token limit error, got %v", err)
+	}
+	if _, err := repository.CreateMCPToken(context.Background(), domainmcp.Token{}, "hash", 0, 1); err == nil {
+		t.Fatalf("expected invalid active token limit error")
 	}
 
 	repository = NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{}, &fakeMCPTokenRunner{err: wantErr}, "uni1_")

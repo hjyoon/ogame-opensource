@@ -349,7 +349,8 @@ try {
     headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
     body: JSON.stringify({
       name: `go-mcp-smoke-${Date.now().toString(36)}`,
-      scopes: ["mcp:read", "mcp:messages", "mcp:message_write", "mcp:notes_write", "mcp:buddy_write", "mcp:fleet", "mcp:fleet_write", "mcp:queue_write", "mcp:resources_write", "mcp:premium_write", "mcp:merchant_write", "mcp:planet_write", "mcp:alliance_write", "mcp:account_write", "mcp:payment_write"]
+      scopes: ["mcp:read", "mcp:messages", "mcp:message_write", "mcp:notes_write", "mcp:buddy_write", "mcp:fleet", "mcp:fleet_write", "mcp:queue_write", "mcp:resources_write", "mcp:premium_write", "mcp:merchant_write", "mcp:planet_write", "mcp:alliance_write", "mcp:account_write", "mcp:payment_write"],
+      expiresInSeconds: 604800
     })
   });
   const tokenCreateBody = parseJSON(tokenCreate);
@@ -486,6 +487,43 @@ try {
   });
   const tokenListAfterUseBody = parseJSON(tokenListAfterUse);
   const tokenRowAfterUse = (tokenListAfterUseBody.tokens ?? []).find((token) => Number(token.id ?? 0) === tokenID);
+  const noExpiryCreate = await request(`/api/game/mcp-tokens${login.search}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
+    body: JSON.stringify({ name: `go-mcp-never-${Date.now().toString(36)}`, scopes: ["mcp:read"], expiresInSeconds: 0 })
+  });
+  const noExpiryCreateBody = parseJSON(noExpiryCreate);
+  const noExpiryTokenID = Number(noExpiryCreateBody.token?.id ?? 0);
+  const tokenListBeforeLimit = await request(`/api/game/mcp-tokens${login.search}`, {
+    headers: { Cookie: login.cookiePair }
+  });
+  const tokenListBeforeLimitBody = parseJSON(tokenListBeforeLimit);
+  const noExpiryTokenRow = (tokenListBeforeLimitBody.tokens ?? []).find((token) => Number(token.id ?? 0) === noExpiryTokenID);
+  const maxActiveTokens = Number(tokenListBeforeLimitBody.maxActiveTokens ?? 0);
+  const fillerTokenIDs = [];
+  for (let index = (tokenListBeforeLimitBody.tokens ?? []).length; index < maxActiveTokens; index += 1) {
+    const filler = await request(`/api/game/mcp-tokens${login.search}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
+      body: JSON.stringify({ name: `go-mcp-limit-${index}`, scopes: ["mcp:read"], expiresInSeconds: 3600 })
+    });
+    const fillerBody = parseJSON(filler);
+    fillerTokenIDs.push(Number(fillerBody.token?.id ?? 0));
+  }
+  const tokenCreateOverLimit = await request(`/api/game/mcp-tokens${login.search}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
+    body: JSON.stringify({ name: "go-mcp-sixth", scopes: ["mcp:read"], expiresInSeconds: 3600 })
+  });
+  for (const cleanupTokenID of [noExpiryTokenID, ...fillerTokenIDs]) {
+    if (cleanupTokenID > 0) {
+      await request(`/api/game/mcp-tokens/revoke${login.search}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
+        body: JSON.stringify({ tokenId: cleanupTokenID })
+      });
+    }
+  }
   const revoke = await request(`/api/game/mcp-tokens/revoke${login.search}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
@@ -636,12 +674,15 @@ try {
       check(oauthRevoke.status === 200 && oauthRevokeBody.revoked === true, "OAuth revocation endpoint revokes created MCP token", oauthRevokeBody),
       check(oauthAccessAfterRevoke.status === 401 && oauthAccessAfterRevokeBody.error?.code === -32001, "OAuth-revoked bearer token is rejected by MCP", oauthAccessAfterRevokeBody),
       check(tokenListBefore.status === 200 && tokenListBeforeBody.authenticated === true && Array.isArray(tokenListBeforeBody.tokens), "MCP token list authenticates game session", tokenListBeforeBody),
-      check(tokenCreate.status === 200 && tokenCreateBody.authenticated === true && tokenID > 0 && Number(tokenCreateBody.token?.expiresAt ?? 0) > Number(tokenCreateBody.token?.createdAt ?? 0), "MCP token create returns a persisted expiring token id", tokenCreateBody.token ?? {}),
+      check(tokenListBeforeBody.maxActiveTokens === 5 && (tokenListBeforeBody.expiryOptions ?? []).some((option) => Number(option.seconds) === 0) && (tokenListBeforeBody.expiryOptions ?? []).some((option) => Number(option.seconds) === 604800), "MCP token list exposes active-token and expiration policies", tokenListBeforeBody),
+      check(tokenCreate.status === 200 && tokenCreateBody.authenticated === true && tokenID > 0 && Number(tokenCreateBody.token?.expiresAt ?? 0) - Number(tokenCreateBody.token?.createdAt ?? 0) === 604800, "MCP token create honors the selected expiration period", tokenCreateBody.token ?? {}),
       check(secret.startsWith("ogmcp_") && secret.length > 12, "MCP token create returns a one-time bearer secret", {
         secretPrefix: secret.slice(0, 6),
         secretLength: secret.length
       }),
-      check(tokenRowAfterCreate !== undefined && Number(tokenRowAfterCreate?.expiresAt ?? 0) > Number(tokenRowAfterCreate?.createdAt ?? 0), "MCP token list includes the newly created expiring token", { tokenID, tokenRowAfterCreate }),
+      check(tokenRowAfterCreate !== undefined && Number(tokenRowAfterCreate?.expiresAt ?? 0) - Number(tokenRowAfterCreate?.createdAt ?? 0) === 604800, "MCP token list includes the selected expiration", { tokenID, tokenRowAfterCreate }),
+      check(noExpiryCreate.status === 200 && noExpiryTokenID > 0 && Number(noExpiryCreateBody.token?.expiresAt ?? 0) === 0 && Number(noExpiryTokenRow?.expiresAt ?? 0) === 0, "MCP token create and list support no expiration", { noExpiryCreateBody, noExpiryTokenRow }),
+      check(maxActiveTokens === 5 && fillerTokenIDs.every((id) => id > 0) && tokenCreateOverLimit.status === 409 && tokenCreateOverLimit.body.includes("maximum of 5"), "MCP token creation rejects a sixth active token", { maxActiveTokens, fillerTokenIDs, status: tokenCreateOverLimit.status, body: tokenCreateOverLimit.body }),
       check(!String(tokenListAfterCreate.body ?? "").includes(secret), "MCP token list never exposes the plaintext secret"),
       check(authedTools.status === 200 && expectedTools.every((name) => authedToolNames.includes(name)), "bearer token exposes all current MCP tools", {
         authedToolNames
