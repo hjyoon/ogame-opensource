@@ -17,8 +17,11 @@ import (
 func TestGameMCPTokensListCreateAndRevoke(t *testing.T) {
 	manager := &recordingMCPTokenUseCase{
 		listResult: appmcp.TokenListResult{
-			Authenticated: true,
-			Tokens:        []domainmcp.Token{{ID: 3, Name: "Desktop", Scopes: []string{domainmcp.ScopeRead}}},
+			Authenticated:   true,
+			Tokens:          []domainmcp.Token{{ID: 3, Name: "Desktop", Scopes: []string{domainmcp.ScopeRead}}},
+			UserType:        1,
+			Role:            "operator",
+			AvailableScopes: []string{domainmcp.ScopeRead, domainmcp.ScopeOperator},
 		},
 		createResult: appmcp.TokenCreationResult{
 			Authenticated: true,
@@ -37,6 +40,10 @@ func TestGameMCPTokensListCreateAndRevoke(t *testing.T) {
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || manager.listCommand.PublicSession != "public" || manager.listCommand.PrivateSessions["prsess_42_1"] != "private" {
 		t.Fatalf("unexpected list status=%d body=%q command=%+v", rec.Code, rec.Body.String(), manager.listCommand)
+	}
+	var listBody map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &listBody); err != nil || listBody["role"] != "operator" || listBody["userType"] != float64(1) {
+		t.Fatalf("unexpected role-aware token list: body=%q parsed=%+v err=%v", rec.Body.String(), listBody, err)
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "http://game.local/api/game/mcp-tokens?session=public", strings.NewReader(`{"name":"Agent","scopes":["mcp:read"]}`))

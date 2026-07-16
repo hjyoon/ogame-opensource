@@ -337,6 +337,19 @@ func TestAdminServiceBotEditErrors(t *testing.T) {
 	}
 }
 
+func TestAdminServiceDirectPlayerIdentityDependencyErrors(t *testing.T) {
+	service := AdminService{}
+	if _, err := service.GetAdminForPlayer(context.Background(), AdminQuery{PlayerID: 42}); err == nil || !strings.Contains(err.Error(), "dependencies") {
+		t.Fatalf("expected direct admin dependency error, got %v", err)
+	}
+	if _, err := service.MutateAdminForPlayer(context.Background(), 42, AdminMutationCommand{}); err == nil || !strings.Contains(err.Error(), "dependencies") {
+		t.Fatalf("expected direct mutation dependency error, got %v", err)
+	}
+	if _, err := service.MutateAdminBotEditForPlayer(context.Background(), 42, AdminBotEditMutationCommand{}); err == nil || !strings.Contains(err.Error(), "dependencies") {
+		t.Fatalf("expected direct botedit dependency error, got %v", err)
+	}
+}
+
 type fakeAdminRepository struct {
 	admin       domaingame.Admin
 	err         error

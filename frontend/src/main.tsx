@@ -2274,7 +2274,7 @@ function App() {
       })
       .then((payload) => {
         if (!payload.authenticated) {
-          setGameMCPTokens({ authenticated: false, issues: payload.issues, tokens: [] });
+          setGameMCPTokens({ authenticated: false, issues: payload.issues, tokens: [], userType: 0, role: "player", availableScopes: [] });
           setGameMCPTokensError(null);
           return;
         }
@@ -2282,6 +2282,9 @@ function App() {
           setGameMCPTokens((current) => ({
             authenticated: true,
             issues: [],
+            userType: current?.userType ?? 0,
+            role: current?.role ?? "player",
+            availableScopes: current?.availableScopes ?? ["mcp:read"],
             tokens: [payload.token!, ...(current?.tokens ?? []).filter((token) => token.id !== payload.token!.id)]
           }));
         }
@@ -2321,7 +2324,7 @@ function App() {
       })
       .then((payload) => {
         if (!payload.authenticated) {
-          setGameMCPTokens({ authenticated: false, issues: payload.issues, tokens: [] });
+          setGameMCPTokens({ authenticated: false, issues: payload.issues, tokens: [], userType: 0, role: "player", availableScopes: [] });
           setGameMCPTokensError(null);
           return;
         }

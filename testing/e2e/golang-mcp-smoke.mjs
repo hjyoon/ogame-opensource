@@ -293,6 +293,57 @@ try {
     headers: { Cookie: login.cookiePair }
   });
   const tokenListBeforeBody = parseJSON(tokenListBefore);
+  const currentRole = String(tokenListBeforeBody.role ?? "player");
+  const currentUserType = Number(tokenListBeforeBody.userType ?? 0);
+  const availableScopes = Array.isArray(tokenListBeforeBody.availableScopes) ? tokenListBeforeBody.availableScopes : [];
+  const staffScope = currentRole === "admin" ? "mcp:admin" : currentRole === "operator" ? "mcp:operator" : "";
+  const deniedStaffScope = currentRole === "operator" ? "mcp:admin" : currentRole === "player" ? "mcp:operator" : "";
+  const deniedStaffCreate = deniedStaffScope === "" ? undefined : await request(`/api/game/mcp-tokens${login.search}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
+    body: JSON.stringify({
+      name: `go-mcp-denied-${Date.now().toString(36)}`,
+      scopes: [deniedStaffScope]
+    })
+  });
+  const staffTokenCreate = staffScope === "" ? undefined : await request(`/api/game/mcp-tokens${login.search}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
+    body: JSON.stringify({
+      name: `go-mcp-${currentRole}-${Date.now().toString(36)}`,
+      scopes: [staffScope]
+    })
+  });
+  const staffTokenCreateBody = staffTokenCreate === undefined ? {} : parseJSON(staffTokenCreate);
+  const staffSecret = String(staffTokenCreateBody.secret ?? "");
+  const staffTokenID = Number(staffTokenCreateBody.token?.id ?? 0);
+  const staffHeaders = { Authorization: `Bearer ${staffSecret}` };
+  const staffTools = staffSecret === "" ? undefined : await mcpJSONRPC("tools/list", {}, { id: 77, headers: staffHeaders });
+  const staffToolsBody = staffTools === undefined ? {} : parseJSON(staffTools);
+  const staffAccess = staffSecret === "" ? undefined : await mcpJSONRPC("tools/call", { name: "get_admin_access", arguments: {} }, { id: 78, headers: staffHeaders });
+  const staffAccessBody = staffAccess === undefined ? {} : parseJSON(staffAccess);
+  const staffPanel = staffSecret === "" ? undefined : await mcpJSONRPC("tools/call", { name: "get_admin_panel", arguments: { mode: "Home" } }, { id: 79, headers: staffHeaders });
+  const staffPanelBody = staffPanel === undefined ? {} : parseJSON(staffPanel);
+  const staffMutation = staffSecret === "" ? undefined : await mcpJSONRPC("tools/call", { name: "mutate_admin_panel", arguments: { mode: "Bans", action: "ban" } }, { id: 80, headers: staffHeaders });
+  const staffMutationBody = staffMutation === undefined ? {} : parseJSON(staffMutation);
+  const staffAdminOnlyPanel = staffSecret === "" ? undefined : await mcpJSONRPC("tools/call", { name: "get_admin_panel", arguments: { mode: "Bots" } }, { id: 81, headers: staffHeaders });
+  const staffAdminOnlyPanelBody = staffAdminOnlyPanel === undefined ? {} : parseJSON(staffAdminOnlyPanel);
+  const limitedTokenCreate = currentRole !== "admin" ? undefined : await request(`/api/game/mcp-tokens${login.search}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
+    body: JSON.stringify({
+      name: `go-mcp-operator-ceiling-${Date.now().toString(36)}`,
+      scopes: ["mcp:operator"]
+    })
+  });
+  const limitedTokenCreateBody = limitedTokenCreate === undefined ? {} : parseJSON(limitedTokenCreate);
+  const limitedSecret = String(limitedTokenCreateBody.secret ?? "");
+  const limitedTokenID = Number(limitedTokenCreateBody.token?.id ?? 0);
+  const limitedHeaders = { Authorization: `Bearer ${limitedSecret}` };
+  const limitedAccess = limitedSecret === "" ? undefined : await mcpJSONRPC("tools/call", { name: "get_admin_access", arguments: {} }, { id: 82, headers: limitedHeaders });
+  const limitedAccessBody = limitedAccess === undefined ? {} : parseJSON(limitedAccess);
+  const limitedAdminOnlyPanel = limitedSecret === "" ? undefined : await mcpJSONRPC("tools/call", { name: "get_admin_panel", arguments: { mode: "Bots" } }, { id: 83, headers: limitedHeaders });
+  const limitedAdminOnlyPanelBody = limitedAdminOnlyPanel === undefined ? {} : parseJSON(limitedAdminOnlyPanel);
   const tokenCreate = await request(`/api/game/mcp-tokens${login.search}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
@@ -447,6 +498,18 @@ try {
   const tokenListAfterRevokeBody = parseJSON(tokenListAfterRevoke);
   const accessAfterRevoke = await mcpJSONRPC("tools/call", { name: "get_mcp_access", arguments: {} }, { id: 28, headers: authHeaders });
   const accessAfterRevokeBody = parseJSON(accessAfterRevoke);
+  const staffRevoke = staffTokenID === 0 ? undefined : await request(`/api/game/mcp-tokens/revoke${login.search}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
+    body: JSON.stringify({ tokenId: staffTokenID })
+  });
+  const staffRevokeBody = staffRevoke === undefined ? {} : parseJSON(staffRevoke);
+  const limitedRevoke = limitedTokenID === 0 ? undefined : await request(`/api/game/mcp-tokens/revoke${login.search}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
+    body: JSON.stringify({ tokenId: limitedTokenID })
+  });
+  const limitedRevokeBody = limitedRevoke === undefined ? {} : parseJSON(limitedRevoke);
   const expectedTools = [
     "get_server_health",
     "get_mcp_access",
@@ -508,6 +571,53 @@ try {
     "redeem_coupon"
   ];
   const authedToolNames = toolNames(authedToolsBody);
+  const staffToolNames = toolNames(staffToolsBody);
+  const staffToolsExpected = ["get_admin_access", "get_admin_panel", "mutate_admin_panel"];
+  const roleLevelMatches = currentRole === "admin" ? currentUserType >= 2 : currentRole === "operator" ? currentUserType === 1 : currentUserType === 0;
+  const scopeInventoryMatches = availableScopes.includes("mcp:read") && (
+    currentRole === "admin"
+      ? availableScopes.includes("mcp:operator") && availableScopes.includes("mcp:admin")
+      : currentRole === "operator"
+        ? availableScopes.includes("mcp:operator") && !availableScopes.includes("mcp:admin")
+        : !availableScopes.includes("mcp:operator") && !availableScopes.includes("mcp:admin")
+  );
+  cases.push(finalize({
+    case: "go_mcp_role_scope_flow",
+    checks: [
+      check(["player", "operator", "admin"].includes(currentRole) && roleLevelMatches, "MCP token management exposes the current database role", {
+        role: currentRole,
+        userType: currentUserType
+      }),
+      check(scopeInventoryMatches, "MCP token management exposes only scopes allowed by the current role", { role: currentRole, availableScopes }),
+      check(deniedStaffScope === "" || deniedStaffCreate?.status === 400, "Player and Operator accounts cannot mint a token above their role", {
+        role: currentRole,
+        deniedScope: deniedStaffScope,
+        status: deniedStaffCreate?.status
+      }),
+      check(staffScope === "" || (staffTokenCreate?.status === 200 && staffSecret.startsWith("ogmcp_") && staffTokenID > 0), "Operator and Admin accounts can mint their role-scoped staff token", {
+        role: currentRole,
+        staffScope,
+        status: staffTokenCreate?.status,
+        tokenID: staffTokenID
+      }),
+      check(staffScope === "" || (staffTools?.status === 200 && staffToolsExpected.every((name) => staffToolNames.includes(name))), "Staff token exposes the role-aware administration tools", { role: currentRole, staffToolNames }),
+      check(staffScope === "" || (staffAccess?.status === 200 && staffAccessBody.result?.structuredContent?.adminAccess?.role === currentRole && staffAccessBody.result?.structuredContent?.adminAccess?.scopeRole === currentRole), "get_admin_access reports both account role and token scope ceiling", staffAccessBody.result ?? {}),
+      check(staffScope === "" || (staffPanel?.status === 200 && staffPanelBody.result?.structuredContent?.adminPanel?.mode === "Home" && staffPanelBody.result?.structuredContent?.adminPanel?.scopeRole === currentRole), "get_admin_panel reads a staff-accessible panel under the current role", staffPanelBody.result ?? {}),
+      check(staffScope === "" || (staffMutation?.status === 200 && staffMutationBody.result?.structuredContent?.adminMutation?.dryRun === true && staffMutationBody.result?.structuredContent?.adminMutation?.executed === false && staffMutationBody.result?.structuredContent?.adminMutation?.requiresConfirmation === true), "mutate_admin_panel defaults to a non-mutating confirmation preview", staffMutationBody.result ?? {}),
+      check(staffScope === "" || (currentRole === "admin"
+        ? staffAdminOnlyPanel?.status === 200 && staffAdminOnlyPanelBody.result?.structuredContent?.adminPanel?.mode === "Bots"
+        : staffAdminOnlyPanel?.status === 403 && staffAdminOnlyPanelBody.error?.code === -32003), "Admin-only panels follow the effective staff role", staffAdminOnlyPanelBody),
+      check(currentRole !== "admin" || (limitedTokenCreate?.status === 200 && limitedSecret.startsWith("ogmcp_") && limitedTokenID > 0), "Admin can deliberately mint an Operator-limited token", {
+        status: limitedTokenCreate?.status,
+        tokenID: limitedTokenID
+      }),
+      check(currentRole !== "admin" || (limitedAccess?.status === 200 && limitedAccessBody.result?.structuredContent?.adminAccess?.role === "admin" && limitedAccessBody.result?.structuredContent?.adminAccess?.scopeRole === "operator"), "Operator scope limits an Admin account to Operator MCP authority", limitedAccessBody.result ?? {}),
+      check(currentRole !== "admin" || (limitedAdminOnlyPanel?.status === 403 && limitedAdminOnlyPanelBody.error?.code === -32003), "Operator-limited Admin token cannot read Admin-only panels", limitedAdminOnlyPanelBody),
+      check(staffScope === "" || (staffRevoke?.status === 200 && staffRevokeBody.revoked === true), "Staff MCP token is revoked after the role smoke flow", staffRevokeBody),
+      check(currentRole !== "admin" || (limitedRevoke?.status === 200 && limitedRevokeBody.revoked === true), "Operator-limited MCP token is revoked after the scope-ceiling flow", limitedRevokeBody),
+      check(!authedToolNames.some((name) => staffToolsExpected.includes(name)), "A token without staff scope never exposes administration tools", { authedToolNames })
+    ]
+  }));
   cases.push(finalize({
     case: "go_mcp_user_token_flow",
     checks: [

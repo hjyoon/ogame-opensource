@@ -17,6 +17,17 @@ const (
 	AdminIssueModRuntimeExcluded = "mod_runtime_excluded"
 )
 
+func AdminRoleName(level int) string {
+	switch {
+	case level >= AdminLevelAdmin:
+		return "admin"
+	case level >= AdminLevelOperator:
+		return "operator"
+	default:
+		return "player"
+	}
+}
+
 const (
 	AdminActionQueueEnd      = "queue_end"
 	AdminActionQueueRemove   = "queue_remove"

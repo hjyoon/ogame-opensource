@@ -89,7 +89,8 @@ func buildHandler(cfg config.Config, logger *slog.Logger, pools databasePools) h
 	loginDrafts := loginValidator(cfg, logger, pools)
 	login := loginAuthenticator(cfg, logger, pools)
 	gameSessions := gameSessionLookup(cfg, logger, pools)
-	mcp := mcpService(cfg, logger, health, gameSessions, pools)
+	gameAdmin := gameAdminService(cfg, logger, gameSessions, pools)
+	mcp := mcpService(cfg, logger, health, gameSessions, gameAdmin, pools)
 	logout := logoutService(cfg, logger, pools)
 	gameOverview := gameOverviewService(cfg, logger, gameSessions, pools)
 	gameBuildings := gameBuildingsService(cfg, logger, gameSessions, pools)
@@ -98,7 +99,6 @@ func buildHandler(cfg config.Config, logger *slog.Logger, pools databasePools) h
 	gameMerchant := gameMerchantService(cfg, logger, gameSessions, pools)
 	gameOfficers := gameOfficersService(cfg, logger, gameSessions, pools)
 	gameAlliance := gameAllianceService(cfg, logger, gameSessions, pools)
-	gameAdmin := gameAdminService(cfg, logger, gameSessions, pools)
 	gameResearch := gameResearchService(cfg, logger, gameSessions, pools)
 	gameShipyard := gameShipyardService(cfg, logger, gameSessions, pools)
 	gameFleet := gameFleetService(cfg, logger, gameSessions, pools)
@@ -175,7 +175,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger, pools databasePools) h
 	})
 }
 
-func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthService, sessions apppublicsite.GameSessionLookup, pools databasePools) appmcp.Service {
+func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthService, sessions apppublicsite.GameSessionLookup, admin appgame.AdminService, pools databasePools) appmcp.Service {
 	staticVerifier := mcpauth.NewStaticTokenVerifier(cfg.MCPStaticTokens)
 	oidcSigner, oidcErr := mcpOIDCSigner(cfg)
 	if oidcErr != nil {
@@ -246,6 +246,8 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 	}
 	return withCommonMCP(appmcp.NewServiceWithTokenManagement(health, verifier, repository, sessions, appmcp.SecureTokenGenerator{}, time.Now).
 		WithTokenTTL(time.Duration(cfg.MCPTokenTTLSeconds) * time.Second).
+		WithUserTypeLookup(repository).
+		WithAdminService(admin).
 		WithOAuthCodeRepository(repository).
 		WithOAuthRedirectURIs(appmcp.ParseOAuthRedirectURIs(cfg.MCPOAuthRedirectURIs)).
 		WithReadRepository(readRepository).

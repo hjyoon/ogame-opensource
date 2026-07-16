@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
@@ -45,9 +46,21 @@ func parseStaticTokenRecord(record string) (string, domainmcp.Access, bool) {
 	if len(scopes) == 0 {
 		return "", domainmcp.Access{}, false
 	}
+	userType := domaingame.AdminLevelPlayer
+	for _, scope := range scopes {
+		if scope == domainmcp.ScopeAdmin {
+			userType = domaingame.AdminLevelAdmin
+			break
+		}
+		if scope == domainmcp.ScopeOperator {
+			userType = domaingame.AdminLevelOperator
+		}
+	}
 	return token, domainmcp.Access{
 		Authenticated: true,
 		PlayerID:      playerID,
+		UserType:      userType,
+		Role:          domaingame.AdminRoleName(userType),
 		Scopes:        scopes,
 	}, true
 }

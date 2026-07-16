@@ -21,6 +21,7 @@ const (
 	ScopeMessageWrite   = "mcp:message_write"
 	ScopeNotesWrite     = "mcp:notes_write"
 	ScopeBuddyWrite     = "mcp:buddy_write"
+	ScopeOperator       = "mcp:operator"
 	ScopeAdmin          = "mcp:admin"
 )
 
@@ -1577,6 +1578,8 @@ type FleetOptions struct {
 type Access struct {
 	Authenticated bool     `json:"authenticated"`
 	PlayerID      int      `json:"playerId,omitempty"`
+	UserType      int      `json:"userType"`
+	Role          string   `json:"role"`
 	Scopes        []string `json:"scopes,omitempty"`
 }
 

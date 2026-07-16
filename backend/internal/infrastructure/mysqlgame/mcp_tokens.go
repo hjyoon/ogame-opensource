@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 )
 
@@ -329,8 +330,12 @@ func (r MCPTokenRepository) VerifyMCPToken(ctx context.Context, secret string) (
 	if err != nil {
 		return domainmcp.Access{}, err
 	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return domainmcp.Access{}, err
+	}
 	now := mcpNowUnix()
-	rows, err := r.queryer.QueryContext(ctx, "SELECT player_id, scopes, revoked_at, expires_at FROM "+table+" WHERE token_hash = ? LIMIT 1", hashMCPToken(secret))
+	rows, err := r.queryer.QueryContext(ctx, "SELECT t.player_id, t.scopes, t.revoked_at, t.expires_at, COALESCE(u.admin, 0) FROM "+table+" t INNER JOIN "+usersTable+" u ON u.player_id = t.player_id WHERE t.token_hash = ? LIMIT 1", hashMCPToken(secret))
 	if err != nil {
 		return domainmcp.Access{}, err
 	}
@@ -342,7 +347,8 @@ func (r MCPTokenRepository) VerifyMCPToken(ctx context.Context, secret string) (
 	var scopesRaw string
 	var revokedAt int64
 	var expiresAt int64
-	if err := rows.Scan(&playerID, &scopesRaw, &revokedAt, &expiresAt); err != nil {
+	var userType int
+	if err := rows.Scan(&playerID, &scopesRaw, &revokedAt, &expiresAt, &userType); err != nil {
 		return domainmcp.Access{}, err
 	}
 	if err := rows.Err(); err != nil {
@@ -355,7 +361,39 @@ func (r MCPTokenRepository) VerifyMCPToken(ctx context.Context, secret string) (
 	if r.execer != nil {
 		_, _ = r.execer.ExecContext(ctx, "UPDATE "+table+" SET last_used_at = ? WHERE token_hash = ? AND revoked_at = 0 AND (expires_at = 0 OR expires_at >= ?)", now, hashMCPToken(secret), now)
 	}
-	return domainmcp.Access{Authenticated: true, PlayerID: playerID, Scopes: scopes}, nil
+	return domainmcp.Access{
+		Authenticated: true,
+		PlayerID:      playerID,
+		UserType:      userType,
+		Role:          domaingame.AdminRoleName(userType),
+		Scopes:        scopes,
+	}, nil
+}
+
+func (r MCPTokenRepository) GetMCPUserType(ctx context.Context, playerID int) (int, error) {
+	if r.queryer == nil {
+		return domaingame.AdminLevelPlayer, errors.New("mcp token repository queryer unavailable")
+	}
+	usersTable, err := tableName(r.prefix, "users")
+	if err != nil {
+		return domaingame.AdminLevelPlayer, err
+	}
+	rows, err := r.queryer.QueryContext(ctx, "SELECT COALESCE(admin, 0) FROM "+usersTable+" WHERE player_id = ? LIMIT 1", playerID)
+	if err != nil {
+		return domaingame.AdminLevelPlayer, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return domaingame.AdminLevelPlayer, domainmcp.ErrUnauthorized
+	}
+	var userType int
+	if err := rows.Scan(&userType); err != nil {
+		return domaingame.AdminLevelPlayer, err
+	}
+	if err := rows.Err(); err != nil {
+		return domaingame.AdminLevelPlayer, err
+	}
+	return userType, nil
 }
 
 var mcpNowUnix = func() int64 {

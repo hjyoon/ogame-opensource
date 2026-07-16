@@ -139,7 +139,7 @@ func TestServiceRegistersOAuthClient(t *testing.T) {
 		{RedirectURIs: []string{"http://127.0.0.1:9911/callback"}, ResponseTypes: []string{"token"}},
 		{RedirectURIs: []string{"http://127.0.0.1:9911/callback"}, ResponseTypes: []string{" "}},
 		{RedirectURIs: []string{"http://127.0.0.1:9911/callback"}, TokenEndpointAuthMethod: "client_secret_basic"},
-		{RedirectURIs: []string{"http://127.0.0.1:9911/callback"}, Scope: "mcp:admin"},
+		{RedirectURIs: []string{"http://127.0.0.1:9911/callback"}, Scope: "mcp:unknown"},
 	} {
 		if _, err := service.RegisterOAuthClient(context.Background(), command); !errors.Is(err, ErrInvalidOAuthRequest) {
 			t.Fatalf("expected invalid registration request for %+v, got %v", command, err)
@@ -532,7 +532,7 @@ func TestOAuthValidationHelpers(t *testing.T) {
 	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeRead {
 		t.Fatalf("expected default read scope, got scopes=%v err=%v", scopes, err)
 	}
-	if _, err := normalizeOAuthScopes("mcp:admin"); !errors.Is(err, ErrInvalidOAuthRequest) {
+	if _, err := normalizeOAuthScopes("mcp:unknown"); !errors.Is(err, ErrInvalidOAuthRequest) {
 		t.Fatalf("expected invalid oauth scope, got %v", err)
 	}
 	if _, err := oauthRedirectURI("%", "code", ""); err == nil {
@@ -560,7 +560,7 @@ func TestOAuthValidationHelpers(t *testing.T) {
 		{name: "resource", mutate: func(command *OAuthAuthorizeCommand) { command.Resource = "" }},
 		{name: "challenge method", mutate: func(command *OAuthAuthorizeCommand) { command.CodeChallengeMethod = "plain" }},
 		{name: "challenge", mutate: func(command *OAuthAuthorizeCommand) { command.CodeChallenge = "short" }},
-		{name: "scope", mutate: func(command *OAuthAuthorizeCommand) { command.Scope = domainmcp.ScopeAdmin }},
+		{name: "scope", mutate: func(command *OAuthAuthorizeCommand) { command.Scope = "mcp:unknown" }},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			command := validCommand

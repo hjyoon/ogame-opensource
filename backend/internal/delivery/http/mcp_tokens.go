@@ -41,7 +41,12 @@ func (a app) handleGameMCPTokenList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "mcp token management unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	writeMCPTokenResult(w, result.Authenticated, result.Issues, map[string]any{"tokens": result.Tokens})
+	writeMCPTokenResult(w, result.Authenticated, result.Issues, map[string]any{
+		"tokens":          result.Tokens,
+		"userType":        result.UserType,
+		"role":            result.Role,
+		"availableScopes": result.AvailableScopes,
+	})
 }
 
 func (a app) handleGameMCPTokenCreate(w http.ResponseWriter, r *http.Request) {

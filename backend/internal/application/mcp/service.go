@@ -18,6 +18,7 @@ import (
 	"time"
 
 	apppublicsite "github.com/hjyoon/ogame-opensource/backend/internal/application/publicsite"
+	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
 	domainmcp "github.com/hjyoon/ogame-opensource/backend/internal/domain/mcp"
 	domainpublicsite "github.com/hjyoon/ogame-opensource/backend/internal/domain/publicsite"
 	domainsystem "github.com/hjyoon/ogame-opensource/backend/internal/domain/system"
@@ -59,6 +60,10 @@ type TokenRepository interface {
 	CreateMCPToken(context.Context, domainmcp.Token, string) (domainmcp.Token, error)
 	RevokeMCPToken(context.Context, int, int, int64) (bool, error)
 	RevokeMCPTokenByHash(context.Context, string, int64) (bool, error)
+}
+
+type UserTypeLookup interface {
+	GetMCPUserType(context.Context, int) (int, error)
 }
 
 type OAuthCodeRepository interface {
@@ -341,9 +346,12 @@ type OAuthRevokeResult struct {
 }
 
 type TokenListResult struct {
-	Authenticated bool
-	Issues        []domainpublicsite.SessionIssue
-	Tokens        []domainmcp.Token
+	Authenticated   bool
+	Issues          []domainpublicsite.SessionIssue
+	Tokens          []domainmcp.Token
+	UserType        int
+	Role            string
+	AvailableScopes []string
 }
 
 type TokenCreationResult struct {
@@ -362,6 +370,7 @@ type Service struct {
 	health          HealthProvider
 	verifier        TokenVerifier
 	tokenRepository TokenRepository
+	userTypes       UserTypeLookup
 	oauthRepository OAuthCodeRepository
 	oauthRedirects  []string
 	oidcSigner      OIDCSigner
@@ -397,6 +406,7 @@ type Service struct {
 	defenseRead     DefenseOptionsReadRepository
 	fleetOptions    FleetOptionsReadRepository
 	premiumWrite    PremiumWriteRepository
+	adminService    AdminService
 	playerActions   PlayerActions
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
@@ -439,6 +449,11 @@ func NewServiceWithTokenManagement(health HealthProvider, verifier TokenVerifier
 
 func (s Service) WithOAuthCodeRepository(repository OAuthCodeRepository) Service {
 	s.oauthRepository = repository
+	return s
+}
+
+func (s Service) WithUserTypeLookup(lookup UserTypeLookup) Service {
+	s.userTypes = lookup
 	return s
 }
 
@@ -677,6 +692,8 @@ func (s Service) OAuthAuthorizationServerMetadata(ctx context.Context, issuer st
 			domainmcp.ScopeAllianceWrite,
 			domainmcp.ScopeAccountWrite,
 			domainmcp.ScopePaymentWrite,
+			domainmcp.ScopeOperator,
+			domainmcp.ScopeAdmin,
 		},
 	}
 	if s.oidcSigner != nil {
@@ -707,6 +724,8 @@ func (s Service) OAuthProtectedResourceMetadata(ctx context.Context, resource st
 			domainmcp.ScopeAllianceWrite,
 			domainmcp.ScopeAccountWrite,
 			domainmcp.ScopePaymentWrite,
+			domainmcp.ScopeOperator,
+			domainmcp.ScopeAdmin,
 		},
 		BearerMethods: []string{"header"},
 	}
@@ -783,6 +802,13 @@ func (s Service) AuthorizeOAuth(ctx context.Context, command OAuthAuthorizeComma
 	}
 	if !session.Authenticated {
 		return OAuthAuthorizeResult{Authenticated: false, Issues: session.Issues}, nil
+	}
+	userType, err := s.lookupUserType(ctx, session.Session.PlayerID)
+	if err != nil {
+		return OAuthAuthorizeResult{}, err
+	}
+	if !scopesAllowedForUserType(request.Scopes, userType) {
+		return OAuthAuthorizeResult{}, fmt.Errorf("%w: requested scope exceeds the current user role", ErrInvalidOAuthRequest)
 	}
 	if !command.ConsentApproved {
 		return OAuthAuthorizeResult{
@@ -867,6 +893,10 @@ func (s Service) ExchangeOAuthCode(ctx context.Context, command OAuthTokenComman
 	}
 	scopes, err := normalizeOAuthScopes(strings.Join(stored.Scopes, " "))
 	if err != nil {
+		return OAuthTokenResult{}, ErrInvalidOAuthGrant
+	}
+	userType, err := s.lookupUserType(ctx, stored.PlayerID)
+	if err != nil || !scopesAllowedForUserType(scopes, userType) {
 		return OAuthTokenResult{}, ErrInvalidOAuthGrant
 	}
 	secret, err := s.tokenGenerator.NewMCPToken()
@@ -996,6 +1026,16 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 			tools = append(tools, fleetOptionsTool())
 		}
 	}
+	staffLevel := staffAccessLevel(access)
+	if staffLevel > domaingame.AdminLevelPlayer {
+		if !access.HasScope(domainmcp.ScopeRead) {
+			tools = append(tools, accessTool())
+		}
+		tools = append(tools, adminAccessTool())
+		if s.adminService != nil {
+			tools = append(tools, adminPanelTool(), mutateAdminPanelTool())
+		}
+	}
 	if access.HasScope(domainmcp.ScopeMessages) {
 		if s.readRepository != nil {
 			tools = append(tools, listMessagesTool(), getMessageTool())
@@ -1084,14 +1124,38 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Authorized = true
 		return s.callServerHealth(ctx)
 	case "get_mcp_access":
-		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
+		access, err := s.verify(ctx, command.AccessToken)
 		if err != nil {
 			return domainmcp.ToolCallResult{}, err
+		}
+		if !access.HasScope(domainmcp.ScopeRead) && staffAccessLevel(access) == domaingame.AdminLevelPlayer {
+			return domainmcp.ToolCallResult{}, domainmcp.ErrForbidden
 		}
 		audit.PlayerID = access.PlayerID
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return callMCPAccess(access), nil
+	case "get_admin_access":
+		access, err := s.authorizeStaff(ctx, command.AccessToken)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID, audit.Scopes, audit.Authorized = access.PlayerID, access.Scopes, true
+		return callAdminAccess(access)
+	case "get_admin_panel":
+		access, err := s.authorizeStaff(ctx, command.AccessToken)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID, audit.Scopes, audit.Authorized = access.PlayerID, access.Scopes, true
+		return s.callGetAdminPanel(ctx, access, command.Arguments)
+	case "mutate_admin_panel":
+		access, err := s.authorizeStaff(ctx, command.AccessToken)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID, audit.Scopes, audit.Authorized = access.PlayerID, access.Scopes, true
+		return s.callMutateAdminPanel(ctx, access, command.Arguments)
 	case "list_planets":
 		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeRead)
 		if err != nil {
@@ -1596,7 +1660,17 @@ func (s Service) ListTokens(ctx context.Context, command TokenManagementCommand)
 	if err != nil {
 		return TokenListResult{}, err
 	}
-	return TokenListResult{Authenticated: true, Tokens: tokens}, nil
+	userType, err := s.lookupUserType(ctx, session.Session.PlayerID)
+	if err != nil {
+		return TokenListResult{}, err
+	}
+	return TokenListResult{
+		Authenticated:   true,
+		Tokens:          tokens,
+		UserType:        userType,
+		Role:            domaingame.AdminRoleName(userType),
+		AvailableScopes: availableScopesForUserType(userType),
+	}, nil
 }
 
 func (s Service) CreateToken(ctx context.Context, command CreateTokenCommand) (TokenCreationResult, error) {
@@ -1610,7 +1684,11 @@ func (s Service) CreateToken(ctx context.Context, command CreateTokenCommand) (T
 	if !session.Authenticated {
 		return TokenCreationResult{Authenticated: false, Issues: session.Issues}, nil
 	}
-	name, scopes, err := normalizeTokenRequest(command.Name, command.Scopes)
+	userType, err := s.lookupUserType(ctx, session.Session.PlayerID)
+	if err != nil {
+		return TokenCreationResult{}, err
+	}
+	name, scopes, err := normalizeTokenRequest(command.Name, command.Scopes, userType)
 	if err != nil {
 		return TokenCreationResult{}, err
 	}
@@ -3101,6 +3179,13 @@ func (s Service) authenticateSession(ctx context.Context, command TokenManagemen
 	})
 }
 
+func (s Service) lookupUserType(ctx context.Context, playerID int) (int, error) {
+	if s.userTypes == nil {
+		return domaingame.AdminLevelPlayer, nil
+	}
+	return s.userTypes.GetMCPUserType(ctx, playerID)
+}
+
 func (s Service) auditToolCall(ctx context.Context, audit domainmcp.ToolCallAudit) {
 	if s.auditor == nil {
 		return
@@ -3124,7 +3209,7 @@ func HashToken(secret string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func normalizeTokenRequest(name string, requested []string) (string, []string, error) {
+func normalizeTokenRequest(name string, requested []string, userType int) (string, []string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = "MCP token"
@@ -3137,7 +3222,7 @@ func normalizeTokenRequest(name string, requested []string) (string, []string, e
 		scopes = []string{domainmcp.ScopeRead}
 	}
 	for _, scope := range scopes {
-		if !userScopeAllowed(scope) {
+		if !userScopeAllowed(scope) || !scopeAllowedForUserType(scope, userType) {
 			return "", nil, fmt.Errorf("%w: scope %q is not available for user tokens", ErrInvalidTokenRequest, scope)
 		}
 	}
@@ -3160,11 +3245,48 @@ func normalizeUserScopes(requested []string) []string {
 
 func userScopeAllowed(scope string) bool {
 	switch scope {
-	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeNotesWrite, domainmcp.ScopeBuddyWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite, domainmcp.ScopeMerchantWrite, domainmcp.ScopePlanetWrite, domainmcp.ScopeAllianceWrite, domainmcp.ScopeAccountWrite, domainmcp.ScopePaymentWrite:
+	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeNotesWrite, domainmcp.ScopeBuddyWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite, domainmcp.ScopeMerchantWrite, domainmcp.ScopePlanetWrite, domainmcp.ScopeAllianceWrite, domainmcp.ScopeAccountWrite, domainmcp.ScopePaymentWrite, domainmcp.ScopeOperator, domainmcp.ScopeAdmin:
 		return true
 	default:
 		return false
 	}
+}
+
+func scopeAllowedForUserType(scope string, userType int) bool {
+	switch scope {
+	case domainmcp.ScopeAdmin:
+		return userType >= domaingame.AdminLevelAdmin
+	case domainmcp.ScopeOperator:
+		return userType >= domaingame.AdminLevelOperator
+	default:
+		return true
+	}
+}
+
+func scopesAllowedForUserType(scopes []string, userType int) bool {
+	for _, scope := range scopes {
+		if !scopeAllowedForUserType(scope, userType) {
+			return false
+		}
+	}
+	return true
+}
+
+func availableScopesForUserType(userType int) []string {
+	scopes := []string{
+		domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite,
+		domainmcp.ScopeNotesWrite, domainmcp.ScopeBuddyWrite, domainmcp.ScopeFleet,
+		domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite,
+		domainmcp.ScopePremiumWrite, domainmcp.ScopeMerchantWrite, domainmcp.ScopePlanetWrite,
+		domainmcp.ScopeAllianceWrite, domainmcp.ScopeAccountWrite, domainmcp.ScopePaymentWrite,
+	}
+	if userType >= domaingame.AdminLevelOperator {
+		scopes = append(scopes, domainmcp.ScopeOperator)
+	}
+	if userType >= domaingame.AdminLevelAdmin {
+		scopes = append(scopes, domainmcp.ScopeAdmin)
+	}
+	return scopes
 }
 
 type normalizedOAuthAuthorizeRequest struct {
@@ -4557,6 +4679,7 @@ func (s Service) verify(ctx context.Context, token string) (domainmcp.Access, er
 	if !access.Authenticated {
 		return domainmcp.Access{}, domainmcp.ErrUnauthorized
 	}
+	access.Role = domaingame.AdminRoleName(access.UserType)
 	return access, nil
 }
 
@@ -4564,6 +4687,8 @@ func callMCPAccess(access domainmcp.Access) domainmcp.ToolCallResult {
 	structured := map[string]any{
 		"authenticated": access.Authenticated,
 		"playerId":      access.PlayerID,
+		"userType":      access.UserType,
+		"role":          access.Role,
 		"scopes":        access.Scopes,
 	}
 	text, _ := json.Marshal(structured)

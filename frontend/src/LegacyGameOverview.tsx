@@ -465,6 +465,9 @@ export type GameMCPTokensStatus = {
   authenticated: boolean;
   issues: { code: string; message: string }[];
   tokens: GameMCPToken[];
+  userType: number;
+  role: "player" | "operator" | "admin";
+  availableScopes: string[];
 };
 
 export type GameLogoutStatus = {
@@ -13906,6 +13909,26 @@ function MCPTokenTable({
     onCreate(String(form.get("mcp_name") ?? ""), scopes);
   };
   const issue = status && !status.authenticated ? status.issues[0]?.message ?? "Session is invalid." : "";
+  const scopeLabels: Record<string, string> = {
+    "mcp:read": "read",
+    "mcp:messages": "messages",
+    "mcp:message_write": "message write",
+    "mcp:notes_write": "notes write",
+    "mcp:buddy_write": "buddy write",
+    "mcp:fleet": "fleet",
+    "mcp:fleet_write": "fleet write",
+    "mcp:queue_write": "queue write",
+    "mcp:resources_write": "resources write",
+    "mcp:premium_write": "premium write",
+    "mcp:merchant_write": "merchant write",
+    "mcp:planet_write": "planet write",
+    "mcp:alliance_write": "alliance write",
+    "mcp:account_write": "account write",
+    "mcp:payment_write": "payment write",
+    "mcp:operator": "operator",
+    "mcp:admin": "admin"
+  };
+  const availableScopes = status?.availableScopes ?? ["mcp:read"];
   return (
     <table className="legacy-overview-table legacy-mcp-token-table" data-visual-exclude="mcp-tokens" width={519}>
       <tbody>
@@ -13972,58 +13995,18 @@ function MCPTokenTable({
           : null}
         <tr>
           <td className="legacy-c c" colSpan={6}>
-            Create token
+            Create token ({status?.role ?? "player"})
           </td>
         </tr>
         <tr>
           <th colSpan={6}>
             <form action={gameRouteURL("/game/options", window.location.search)} method="POST" onSubmit={submitCreate}>
               <input defaultValue="MCP client" maxLength={64} name="mcp_name" size={20} type="text" />
-              <label>
-                <input defaultChecked name="mcp_scope" type="checkbox" value="mcp:read" /> read
-              </label>
-              <label>
-                <input name="mcp_scope" type="checkbox" value="mcp:messages" /> messages
-              </label>
-              <label>
-                <input name="mcp_scope" type="checkbox" value="mcp:message_write" /> message write
-              </label>
-              <label>
-                <input name="mcp_scope" type="checkbox" value="mcp:notes_write" /> notes write
-              </label>
-              <label>
-                <input name="mcp_scope" type="checkbox" value="mcp:buddy_write" /> buddy write
-              </label>
-              <label>
-                <input name="mcp_scope" type="checkbox" value="mcp:fleet" /> fleet
-              </label>
-              <label>
-                <input name="mcp_scope" type="checkbox" value="mcp:fleet_write" /> fleet write
-              </label>
-              <label>
-                <input name="mcp_scope" type="checkbox" value="mcp:queue_write" /> queue write
-              </label>
-              <label>
-                <input name="mcp_scope" type="checkbox" value="mcp:resources_write" /> resources write
-              </label>
-              <label>
-                <input name="mcp_scope" type="checkbox" value="mcp:premium_write" /> premium write
-              </label>
-              <label>
-                <input name="mcp_scope" type="checkbox" value="mcp:merchant_write" /> merchant write
-              </label>
-              <label>
-                <input name="mcp_scope" type="checkbox" value="mcp:planet_write" /> planet write
-              </label>
-              <label>
-                <input name="mcp_scope" type="checkbox" value="mcp:alliance_write" /> alliance write
-              </label>
-              <label>
-                <input name="mcp_scope" type="checkbox" value="mcp:account_write" /> account write
-              </label>
-              <label>
-                <input name="mcp_scope" type="checkbox" value="mcp:payment_write" /> payment write
-              </label>
+              {availableScopes.map((scope) => (
+                <label key={scope}>
+                  <input defaultChecked={scope === "mcp:read"} name="mcp_scope" type="checkbox" value={scope} /> {scopeLabels[scope] ?? scope}
+                </label>
+              ))}
               <input disabled={pending} type="submit" value="create token" />
             </form>
           </th>

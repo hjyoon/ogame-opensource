@@ -3,6 +3,9 @@ package game
 import "testing"
 
 func TestNewAdminNormalizesModeAndCopiesMenu(t *testing.T) {
+	if AdminRoleName(AdminLevelPlayer) != "player" || AdminRoleName(AdminLevelOperator) != "operator" || AdminRoleName(AdminLevelAdmin) != "admin" || AdminRoleName(99) != "admin" {
+		t.Fatal("admin role names mismatch")
+	}
 	overview := Overview{
 		Commander:      "legor",
 		CurrentPlanet:  PlanetOverview{ID: 99, Name: "Arakis"},

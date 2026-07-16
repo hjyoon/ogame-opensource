@@ -33,12 +33,12 @@ Source of truth: `backend/internal/delivery/http/server.go`. Keep this file unde
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/mcp` | Streamable HTTP MCP JSON-RPC; bearer optional per tool |
+| `POST` | `/mcp` | MCP JSON-RPC; live Player/Operator/Admin bearer authorization |
 | `GET` | `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`, `/.well-known/jwks.json` | OAuth/OIDC discovery and keys |
-| `GET` | `/oauth/authorize` | Player consent and authorization code |
+| `GET` | `/oauth/authorize` | Role-checked user consent and authorization code |
 | `POST` | `/oauth/register`, `/oauth/token`, `/oauth/revoke` | DCR, PKCE token exchange, revocation |
-| `GET/POST` | `/api/game/mcp-tokens` | List/create player-owned bearer tokens |
-| `POST` | `/api/game/mcp-tokens/revoke` | Revoke a player-owned token |
+| `GET/POST` | `/api/game/mcp-tokens` | List/create role-scoped user bearer tokens |
+| `POST` | `/api/game/mcp-tokens/revoke` | Revoke a user-owned token |
 
 Tools and scopes: [MCP.md](../MCP.md).
 

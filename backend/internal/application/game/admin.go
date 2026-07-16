@@ -216,7 +216,7 @@ func (s AdminService) GetAdmin(ctx context.Context, command AdminCommand) (Admin
 	if !session.Authenticated {
 		return AdminResult{Authenticated: false, Issues: session.Issues}, nil
 	}
-	admin, err := s.repository.GetAdmin(ctx, AdminQuery{
+	return s.GetAdminForPlayer(ctx, AdminQuery{
 		PlayerID:       session.Session.PlayerID,
 		PlanetID:       command.PlanetID,
 		Mode:           command.Mode,
@@ -233,6 +233,14 @@ func (s AdminService) GetAdmin(ctx context.Context, command AdminCommand) (Admin
 		CouponFrom:     command.CouponFrom,
 		PlanetSearch:   command.PlanetSearch,
 	})
+
+}
+
+func (s AdminService) GetAdminForPlayer(ctx context.Context, query AdminQuery) (AdminResult, error) {
+	if s.repository == nil {
+		return AdminResult{}, errors.New("admin dependencies unavailable")
+	}
+	admin, err := s.repository.GetAdmin(ctx, query)
 	if err != nil {
 		return AdminResult{}, err
 	}
@@ -258,8 +266,15 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 	if !session.Authenticated {
 		return AdminResult{Authenticated: false, Issues: session.Issues}, nil
 	}
+	return s.MutateAdminForPlayer(ctx, session.Session.PlayerID, command)
+}
+
+func (s AdminService) MutateAdminForPlayer(ctx context.Context, playerID int, command AdminMutationCommand) (AdminResult, error) {
+	if s.repository == nil {
+		return AdminResult{}, errors.New("admin dependencies unavailable")
+	}
 	admin, err := s.repository.GetAdmin(ctx, AdminQuery{
-		PlayerID:       session.Session.PlayerID,
+		PlayerID:       playerID,
 		PlanetID:       command.PlanetID,
 		Mode:           command.Mode,
 		TargetPlayerID: command.TargetPlayerID,
@@ -283,7 +298,7 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		return AdminResult{Authenticated: true, Admin: admin, ActionIssue: domaingame.AdminIssue(domaingame.AdminIssueAccessDenied)}, nil
 	}
 	issue, err := s.repository.MutateAdmin(ctx, AdminMutationQuery{
-		PlayerID:      session.Session.PlayerID,
+		PlayerID:      playerID,
 		PlanetID:      command.PlanetID,
 		RemoteAddr:    command.RemoteAddr,
 		Mode:          admin.Mode,
@@ -343,7 +358,7 @@ func (s AdminService) MutateAdmin(ctx context.Context, command AdminMutationComm
 		reloadTargetPlanetID = issue.Result.ItemID
 	}
 	admin, err = s.repository.GetAdmin(ctx, AdminQuery{
-		PlayerID:       session.Session.PlayerID,
+		PlayerID:       playerID,
 		PlanetID:       command.PlanetID,
 		Mode:           command.Mode,
 		TargetPlayerID: command.TargetPlayerID,
@@ -380,8 +395,15 @@ func (s AdminService) MutateAdminBotEdit(ctx context.Context, command AdminBotEd
 	if !session.Authenticated {
 		return AdminBotEditMutationResult{Authenticated: false, Issues: session.Issues}, nil
 	}
+	return s.MutateAdminBotEditForPlayer(ctx, session.Session.PlayerID, command)
+}
+
+func (s AdminService) MutateAdminBotEditForPlayer(ctx context.Context, playerID int, command AdminBotEditMutationCommand) (AdminBotEditMutationResult, error) {
+	if s.repository == nil {
+		return AdminBotEditMutationResult{}, errors.New("admin dependencies unavailable")
+	}
 	admin, err := s.repository.GetAdmin(ctx, AdminQuery{
-		PlayerID: session.Session.PlayerID,
+		PlayerID: playerID,
 		PlanetID: command.PlanetID,
 		Mode:     "BotEdit",
 	})
@@ -396,7 +418,7 @@ func (s AdminService) MutateAdminBotEdit(ctx context.Context, command AdminBotEd
 		return AdminBotEditMutationResult{}, errors.New("admin botedit mutation unavailable")
 	}
 	result, err := repository.MutateAdminBotEdit(ctx, AdminBotEditMutationQuery{
-		PlayerID:   session.Session.PlayerID,
+		PlayerID:   playerID,
 		Action:     command.Action,
 		StrategyID: command.StrategyID,
 		Name:       command.Name,

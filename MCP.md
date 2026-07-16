@@ -2,7 +2,7 @@
 
 Updated: 2026-07-16. Keep this file under 4KB.
 
-The Go backend exposes MCP to ordinary authenticated players. MCP follows the same Clean Architecture boundaries as game HTTP APIs and does not expose Admin, Bot, debug, database, or arbitrary game mutation access.
+The Go backend exposes MCP to authenticated Players, Operators, and Admins. MCP follows the same Clean Architecture boundaries and reuses game/Admin permission rules.
 
 ## Transport
 
@@ -19,16 +19,16 @@ The Go backend exposes MCP to ordinary authenticated players. MCP follows the sa
 - Consent binds client, redirect URI, MCP resource, scopes, state, and PKCE. Codes are one-time hashes.
 - Optional OIDC `openid profile` uses Ed25519 `id_token` signing and key rotation seeds.
 
-## Player Tokens
+## User Tokens
 
-Authenticated players manage hashed, expiring bearer tokens through:
+Authenticated users manage hashed, expiring bearer tokens through:
 
 - `GET/POST /api/game/mcp-tokens?session=...`
 - `POST /api/game/mcp-tokens/revoke?session=...`
 
 The Options UI lists, creates, and revokes tokens. Plaintext secrets are returned once. Default lifetime is 30 days via `OGAME_MCP_TOKEN_TTL_SECONDS`; `0` disables expiry.
 
-Static test/service tokens use `OGAME_MCP_STATIC_TOKENS`:
+Static test/service tokens use `OGAME_MCP_STATIC_TOKENS`; staff role is inferred from a privileged scope:
 
 ```text
 token:player_id:scope1,scope2;next:7:mcp:read
@@ -36,15 +36,19 @@ token:player_id:scope1,scope2;next:7:mcp:read
 
 ## Scopes And Tools
 
-The fully wired server exposes up to 58 tools: one public health tool, 26 authenticated read tools, three message readers, and 28 confirmed mutation tools. Coupon redemption is present only when both universe and master databases are available.
+The fully wired server exposes up to 61 tools. Coupon redemption requires both databases; staff tools require the Admin service.
 
-Self-service scopes are `mcp:read`, `mcp:messages`, `mcp:message_write`, `mcp:notes_write`, `mcp:buddy_write`, `mcp:fleet`, `mcp:fleet_write`, `mcp:queue_write`, `mcp:resources_write`, `mcp:premium_write`, `mcp:merchant_write`, `mcp:planet_write`, `mcp:alliance_write`, `mcp:account_write`, and `mcp:payment_write`.
+Player scopes are `mcp:read`, `mcp:messages`, `mcp:message_write`, `mcp:notes_write`, `mcp:buddy_write`, `mcp:fleet`, `mcp:fleet_write`, `mcp:queue_write`, `mcp:resources_write`, `mcp:premium_write`, `mcp:merchant_write`, `mcp:planet_write`, `mcp:alliance_write`, `mcp:account_write`, and `mcp:payment_write`.
+
+`mcp:operator` is available only at user type 1+. `mcp:admin` is available only at type 2. Current DB role is checked on issuance, OAuth exchange, tool listing, and every call, so demotion takes effect immediately. An Admin may issue an Operator-only token; its privilege ceiling remains Operator.
 
 Read tools cover access, planets, overview, resources, queues, fleets, officers, search, galaxy, statistics, alliance, buddy, pranger, notes, options, maintenance, merchant, Jump Gate, empire, technology, buildings, research, shipyard, and defense.
 
 Mutation tools also cover building construction/demolition, research start, planet rename/abandon, Commander fleet templates and cross-planet queues, all player alliance mutations, account settings/identity/vacation/deletion, interplanetary missiles, Galaxy spy/recycle quick actions, and coupon redemption. They call the same Go repositories and transactions as browser actions; game rules are not reimplemented in MCP.
 
-Mutations default to dry-run and require the returned confirmation token. Commander-only actions report `commander_required`; account results exclude password hashes and validation secrets. `mcp:write` and `mcp:admin` are reserved and unavailable to self-service tokens.
+Staff tools are `get_admin_access`, `get_admin_panel`, and `mutate_admin_panel`. They cover the legacy Admin mode inventory, including dedicated Bot strategy editing. Operator mode/action limits reuse `AdminModeRequiresAdmin` and `AdminMutationRequiresAdmin`; Admin-only data and actions return `Forbidden` to Operator tokens.
+
+Mutations default to dry-run and require the returned confirmation token. Commander-only actions report `commander_required`; account results exclude password hashes and validation secrets. `mcp:write` remains reserved.
 
 ## Verification
 
