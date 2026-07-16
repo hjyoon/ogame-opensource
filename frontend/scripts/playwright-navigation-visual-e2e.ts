@@ -1223,6 +1223,39 @@ async function normalizeDynamicPageParts(page: Page, side: Side, key: string): P
         document.body.style.backgroundImage = `url("${await toDataURL(match[1])}")`;
       }
     }
+    if (navigator.userAgent.includes("Chrome")) {
+      // Freeze scaled bitmaps at their CSS content size before Chromium captures them.
+      for (const image of Array.from(document.images)) {
+        const width = Math.round(image.clientWidth);
+        const height = Math.round(image.clientHeight);
+        if (width <= 0 || height <= 0 || image.naturalWidth <= 0 || image.naturalHeight <= 0) {
+          continue;
+        }
+        if (width === image.naturalWidth && height === image.naturalHeight) {
+          continue;
+        }
+        const computed = getComputedStyle(image);
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          continue;
+        }
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = "high";
+        context.drawImage(image, 0, 0, width, height);
+        try {
+          const source = canvas.toDataURL("image/png");
+          image.style.width = computed.width;
+          image.style.height = computed.height;
+          image.src = source;
+          await image.decode();
+        } catch {
+          // Cross-origin images remain covered by request and pixel comparison checks.
+        }
+      }
+    }
     const hide = (selector: string) => {
       for (const element of document.querySelectorAll(selector)) {
         if (element instanceof HTMLElement) {
