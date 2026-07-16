@@ -59,6 +59,7 @@ func TestLegacyRegistrationRedirectRejectedDraftUsesLegacyErrorTarget(t *testing
 		Universe:      "http://legacy.local",
 		TermsAccepted: true,
 		RemoteAddr:    "192.0.2.1",
+		PublicBaseURL: "http://example.com",
 	}) {
 		t.Fatalf("unexpected registration command: %+v", registration.command)
 	}

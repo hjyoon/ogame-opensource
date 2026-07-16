@@ -259,6 +259,13 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     if [ "${OGAME_RUN_PUBLIC_LOGIN_DYNAMIC:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-public-login-dynamic-e2e.sh"
     fi
+    if [ "${OGAME_RUN_PUBLIC_REGISTRATION_ACTIVATION:-1}" = "1" ]; then
+      OGAME_PUBLIC_REGISTRATION_ACTIVATION_ONLY=1 \
+      OGAME_PUBLIC_REGISTRATION_DYNAMIC_BROWSERS="${OGAME_PUBLIC_REGISTRATION_ACTIVATION_BROWSERS:-chromium firefox}" \
+      OGAME_GO_BASE_URL="$GO_BASE_URL" \
+      OGAME_MAILHOG_BASE_URL="$MAILHOG_BASE_URL" \
+      "$SCRIPT_DIR/run-playwright-public-registration-dynamic-e2e.sh"
+    fi
     if [ "${OGAME_RUN_SESSION_EXPIRY_VISUAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-session-expiry-visual-e2e.sh"
     fi

@@ -328,6 +328,7 @@ func TestRegistrationEndpointCreatesSessionCookie(t *testing.T) {
 	body := `{"character":"Commander01","password":"E2E_http123","email":"commander@example.local","universe":"http://localhost:8888","agb":true}`
 	req := httptest.NewRequest(http.MethodPost, "/api/public/registration", strings.NewReader(body))
 	req.RemoteAddr = "203.0.113.10:4321"
+	req.Host = "10.8.0.2:8890"
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -350,7 +351,7 @@ func TestRegistrationEndpointCreatesSessionCookie(t *testing.T) {
 	if bytes.Contains(rec.Body.Bytes(), []byte("E2E_http123")) || bytes.Contains(rec.Body.Bytes(), []byte("activation-secret")) {
 		t.Fatalf("registration response must not echo password or activation code: %s", rec.Body.String())
 	}
-	if registration.command.RemoteAddr != "203.0.113.10" || !registration.command.TermsAccepted {
+	if registration.command.RemoteAddr != "203.0.113.10" || registration.command.PublicBaseURL != "http://10.8.0.2:8890" || !registration.command.TermsAccepted {
 		t.Fatalf("unexpected registration command: %+v", registration.command)
 	}
 }
@@ -4280,6 +4281,7 @@ func TestGameOptionsEndpointUpdatesOptionsFromJSON(t *testing.T) {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	if optionsUseCase.updateCommand.Mutation.Name != "NewPilot" || optionsUseCase.updateCommand.Mutation.SkinPath != "/evolution/" ||
+		optionsUseCase.updateCommand.PublicBaseURL != "http://10.8.0.2:8890" ||
 		optionsUseCase.updateCommand.Mutation.SortBy != 2 ||
 		optionsUseCase.updateCommand.Mutation.MaxSpy != 9 ||
 		optionsUseCase.updateCommand.Mutation.OldPassword != "oldpass123" ||
@@ -4419,6 +4421,7 @@ func TestGameOptionsEndpointReturnsUnauthorizedAndErrors(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected missing use case 503, got %d", rec.Code)
 	}
+	assertGameOptionsJSONError(t, rec, "Game options are temporarily unavailable.")
 
 	req = httptest.NewRequest(http.MethodPost, "/api/game/options?session=public", strings.NewReader("{}"))
 	req.Header.Set("Content-Type", "application/json")
@@ -4427,6 +4430,7 @@ func TestGameOptionsEndpointReturnsUnauthorizedAndErrors(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected missing POST use case 503, got %d", rec.Code)
 	}
+	assertGameOptionsJSONError(t, rec, "Game options are temporarily unavailable.")
 
 	server = testServerWithGameOptions(t, &fakeGameOptions{err: errors.New("options failed")})
 	req = httptest.NewRequest(http.MethodGet, "/api/game/options?session=public", nil)
@@ -4435,6 +4439,7 @@ func TestGameOptionsEndpointReturnsUnauthorizedAndErrors(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected use case error 503, got %d", rec.Code)
 	}
+	assertGameOptionsJSONError(t, rec, "Game options are temporarily unavailable.")
 
 	server = testServerWithGameOptions(t, &fakeGameOptions{updateErr: errors.New("options update failed")})
 	req = httptest.NewRequest(http.MethodPost, "/api/game/options?session=public", strings.NewReader("{}"))
@@ -4443,6 +4448,21 @@ func TestGameOptionsEndpointReturnsUnauthorizedAndErrors(t *testing.T) {
 	server.ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected update use case error 503, got %d", rec.Code)
+	}
+	assertGameOptionsJSONError(t, rec, "Game options are temporarily unavailable.")
+}
+
+func assertGameOptionsJSONError(t *testing.T, rec *httptest.ResponseRecorder, want string) {
+	t.Helper()
+	if got := rec.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+	var response gameOptionsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("expected JSON error response, got %q: %v", rec.Body.String(), err)
+	}
+	if response.Error != want {
+		t.Fatalf("expected error %q, got %+v", want, response)
 	}
 }
 

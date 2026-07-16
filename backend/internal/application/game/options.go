@@ -42,6 +42,7 @@ type OptionsUpdateCommand struct {
 	RemoteAddr      string
 	PlanetID        int
 	Mutation        domaingame.OptionsMutation
+	PublicBaseURL   string
 }
 
 type OptionsResult struct {
@@ -115,6 +116,7 @@ func (s OptionsService) UpdateOptions(ctx context.Context, command OptionsUpdate
 		return OptionsResult{}, err
 	}
 	if options.OutboundMail != nil && s.mailer != nil {
+		options.OutboundMail.PublicBaseURL = command.PublicBaseURL
 		if err := s.mailer.SendOptionsChange(ctx, *options.OutboundMail); err != nil {
 			return OptionsResult{}, err
 		}

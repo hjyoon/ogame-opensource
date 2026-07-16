@@ -13,12 +13,13 @@ import (
 func TestBuildOptionsChangeMessageMatchesLegacyShape(t *testing.T) {
 	message, err := BuildOptionsChangeMessage(SMTPConfig{
 		From:          "OGame <noreply@example.local>",
-		PublicBaseURL: "http://game.example.local/",
+		PublicBaseURL: "http://localhost:8890/",
 	}, 7, domaingame.OptionsChangeMail{
 		Character:      "Legor",
 		Recipient:      "permanent@example.local",
 		PendingEmail:   "pending@example.local",
 		ActivationCode: "activation-code",
+		PublicBaseURL:  "http://10.8.0.2:8890",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -29,7 +30,7 @@ func TestBuildOptionsChangeMessageMatchesLegacyShape(t *testing.T) {
 		"Greetings Legor,",
 		"account in the 7 universe",
 		"pending@example.local",
-		"http://game.example.local/game/validate.php?ack=activation-code",
+		"http://10.8.0.2:8890/game/validate.php?ack=activation-code",
 	} {
 		if !strings.Contains(message, want) {
 			t.Fatalf("message missing %q:\n%s", want, message)

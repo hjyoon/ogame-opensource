@@ -51,13 +51,14 @@ func TestOptionsServiceUpdatesOptionsForAuthenticatedSession(t *testing.T) {
 		PublicSession: "public",
 		PlanetID:      99,
 		Mutation:      domaingame.OptionsMutation{MaxSpy: 7},
+		PublicBaseURL: "https://request.example",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !result.Authenticated || result.ActionIssue.Code != domaingame.OptionsIssueSaved ||
 		repository.updateQuery.PlayerID != 42 || repository.updateQuery.Mutation.MaxSpy != 7 ||
-		mailer.change.Character != "Legor" || result.Options.OutboundMail != nil {
+		mailer.change.Character != "Legor" || mailer.change.PublicBaseURL != "https://request.example" || result.Options.OutboundMail != nil {
 		t.Fatalf("unexpected update result/query: result=%+v query=%+v", result, repository.updateQuery)
 	}
 }

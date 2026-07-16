@@ -63,7 +63,7 @@ func BuildOptionsChangeMessage(config SMTPConfig, universeNumber int, change dom
 		strings.TrimSpace(change.Character),
 		universeNumber,
 		strings.TrimSpace(change.PendingEmail),
-		ActivationLink(config.PublicBaseURL, change.ActivationCode),
+		ActivationLinkForRequest(config.PublicBaseURL, change.PublicBaseURL, change.ActivationCode),
 	)
 	return strings.Join(headers, "\r\n") + "\r\n\r\n" + strings.ReplaceAll(body, "\n", "\r\n"), nil
 }

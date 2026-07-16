@@ -44,12 +44,28 @@ type LegacyNewFormComparison = {
   migrated: LegacyNewFormState;
 };
 
+type ActivationFlowState = {
+  pass: boolean;
+  username: string;
+  email: string;
+  activationURL: string;
+  activationOriginMatches: boolean;
+  finalURL: string;
+  overviewLoaded: boolean;
+  optionsLoaded: boolean;
+  consoleErrors: string[];
+  failedRequests: string[];
+  badResponses: string[];
+  error: string;
+};
+
 const rootDir = resolve(import.meta.dir, "../..");
 const browserName = browserEnv("OGAME_PLAYWRIGHT_BROWSER", "chromium");
 const outputDir = resolve(rootDir, `.tmp/playwright-public-registration-dynamic/${browserName}`);
 const screenshotDir = join(outputDir, "screenshots");
 const legacyBaseURL = trimTrailingSlash(process.env.OGAME_LEGACY_BASE_URL ?? "http://127.0.0.1:8888");
 const migratedBaseURL = trimTrailingSlash(process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890");
+const mailhogAPIURL = process.env.OGAME_MAILHOG_API_URL ?? "http://127.0.0.1:8026/api/v2/messages?limit=100";
 const defaultChromeExecutable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const defaultBrowserExecutable = browserName === "firefox" ? undefined : defaultChromeExecutable;
 const browserExecutable =
@@ -63,6 +79,25 @@ const browser = await browserType.launch({
   ...(browserExecutable ? { executablePath: browserExecutable } : {}),
   headless: true
 });
+
+if (process.env.OGAME_PUBLIC_REGISTRATION_ACTIVATION_ONLY === "1") {
+  const context = await newContext(migratedBaseURL);
+  let pass = false;
+  try {
+    const activationFlow = await runMigratedActivationFlow(context);
+    pass = activationFlow.pass;
+    const reportPath = join(outputDir, "activation-flow-report.json");
+    await writeFile(
+      reportPath,
+      JSON.stringify({ generatedAt: new Date().toISOString(), browserName, migratedBaseURL, mailhogAPIURL, activationFlow }, null, 2)
+    );
+    process.stdout.write(JSON.stringify({ pass: activationFlow.pass, report: reportPath }, null, 2) + "\n");
+  } finally {
+    await context.close();
+    await browser.close();
+  }
+  process.exit(pass ? 0 : 1);
+}
 
 try {
   const legacyContext = await newContext(legacyBaseURL);
@@ -106,6 +141,110 @@ try {
   }
 } finally {
   await browser.close();
+}
+
+async function runMigratedActivationFlow(context: BrowserContext): Promise<ActivationFlowState> {
+  const page = await context.newPage();
+  const consoleErrors: string[] = [];
+  const failedRequests: string[] = [];
+  const badResponses: string[] = [];
+  const suffix = `${browserName.slice(0, 2)}${Date.now().toString(36).slice(-8)}${Math.random().toString(36).slice(2, 4)}`;
+  const username = `Act${suffix}`.slice(0, 20);
+  const email = `activation-${username.toLowerCase()}@example.local`;
+  let activationURL = "";
+  let activationOriginMatches = false;
+  let finalURL = "";
+  let overviewLoaded = false;
+  let optionsLoaded = false;
+  let error = "";
+
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      consoleErrors.push(message.text());
+    }
+  });
+  page.on("requestfailed", (request) => {
+    failedRequests.push(`${request.method()} ${request.url()} ${request.failure()?.errorText ?? ""}`.trim());
+  });
+  page.on("response", (response) => {
+    if (response.status() >= 400 && !response.url().endsWith("/favicon.ico")) {
+      badResponses.push(`${response.status()} ${response.url()}`);
+    }
+  });
+
+  try {
+    await page.goto(`${migratedBaseURL}/register`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+    await page.locator("form[name='registerForm']").waitFor({ timeout: 10_000 });
+    await waitForUniverse(page);
+    await page.locator("input[name='character']").fill(username);
+    await page.locator("input[name='email']").fill(email);
+    await page.locator("input[name='password']").fill("E2E_http123");
+    await page.locator("input[name='agb']").check();
+    await page.locator("#register_submit").click();
+    await page.waitForURL((url) => url.pathname === "/game/overview", { timeout: 20_000 });
+    await page.locator(".legacy-overview-main-table").waitFor({ timeout: 20_000 });
+
+    activationURL = await waitForActivationLink(email);
+    activationOriginMatches = new URL(activationURL).origin === new URL(migratedBaseURL).origin;
+    await page.goto(activationURL, { waitUntil: "domcontentloaded", timeout: 20_000 });
+    await page.waitForURL((url) => url.pathname === "/game/overview", { timeout: 20_000 });
+    await page.locator(".legacy-overview-main-table").waitFor({ timeout: 20_000 });
+    overviewLoaded = true;
+    finalURL = page.url();
+
+    const activeURL = new URL(finalURL);
+    await page.goto(`${activeURL.origin}/game/options${activeURL.search}`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+    await page.locator(".legacy-options-table").first().waitFor({ timeout: 20_000 });
+    optionsLoaded = !(await page.locator("body").innerText()).includes("Unexpected token");
+  } catch (caught) {
+    error = caught instanceof Error ? caught.message : String(caught);
+  } finally {
+    await page.close();
+  }
+
+  return {
+    pass:
+      error === "" &&
+      activationURL !== "" &&
+      activationOriginMatches &&
+      overviewLoaded &&
+      optionsLoaded &&
+      consoleErrors.length === 0 &&
+      failedRequests.length === 0 &&
+      badResponses.length === 0,
+    username,
+    email,
+    activationURL,
+    activationOriginMatches,
+    finalURL,
+    overviewLoaded,
+    optionsLoaded,
+    consoleErrors,
+    failedRequests,
+    badResponses,
+    error
+  };
+}
+
+async function waitForActivationLink(email: string): Promise<string> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const response = await fetch(mailhogAPIURL);
+    if (response.ok) {
+      const payload = (await response.json()) as {
+        items?: Array<{ To?: Array<{ Mailbox?: string; Domain?: string }>; Content?: { Body?: string } }>;
+      };
+      const message = payload.items?.find((item) =>
+        item.To?.some((recipient) => `${recipient.Mailbox ?? ""}@${recipient.Domain ?? ""}`.toLowerCase() === email.toLowerCase())
+      );
+      const match = message?.Content?.Body?.match(/https?:\/\/[^\s]+\/game\/validate\.php\?ack=[^\s]+/);
+      if (match?.[0]) {
+        return match[0].replace(/&amp;/g, "&");
+      }
+    }
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
+  }
+  throw new Error(`Activation mail was not delivered for ${email}`);
 }
 
 async function newContext(baseURL: string): Promise<BrowserContext> {
@@ -239,7 +378,12 @@ async function captureSubmitError(page: Page, side: SideName) {
   }
   await page.locator("#register_submit").click();
   await page.locator("#infotext").filter({ hasText: "T&C" }).waitFor({ timeout: 15_000 });
-  await page.locator("#statustext").filter({ hasText: "Password must be at least 8 characters long!" }).waitFor({ timeout: 15_000 });
+  try {
+    await page.locator("#statustext").filter({ hasText: "Password must be at least 8 characters long!" }).waitFor({ timeout: 15_000 });
+  } catch (error) {
+    const state = await readRegisterState(page);
+    throw new Error(`${side} submit error state at ${page.url()}: ${JSON.stringify(state)}`, { cause: error });
+  }
   return readRegisterState(page);
 }
 

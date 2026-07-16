@@ -16,6 +16,7 @@ type gameOptionsResponse struct {
 	Issues        []gameSessionIssueResponse `json:"issues"`
 	Options       *gameOptionsSummary        `json:"options,omitempty"`
 	ActionIssue   *gameOptionsActionIssue    `json:"actionIssue,omitempty"`
+	Error         string                     `json:"error,omitempty"`
 }
 
 type gameOptionsActionIssue struct {
@@ -119,18 +120,18 @@ func (a app) handleGameOptions(w http.ResponseWriter, r *http.Request) {
 		a.handleGameOptionsPost(w, r)
 	default:
 		w.Header().Set("Allow", "GET, HEAD, POST")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeGameOptionsError(w, http.StatusMethodNotAllowed, "Method not allowed.")
 	}
 }
 
 func (a app) handleGameOptionsGet(w http.ResponseWriter, r *http.Request) {
 	if a.deps.GameOptions == nil {
-		http.Error(w, "game options unavailable", http.StatusServiceUnavailable)
+		writeGameOptionsError(w, http.StatusServiceUnavailable, "Game options are temporarily unavailable.")
 		return
 	}
 	planetID, err := selectedPlanetID(r)
 	if err != nil {
-		http.Error(w, "invalid selected planet", http.StatusBadRequest)
+		writeGameOptionsError(w, http.StatusBadRequest, "Invalid selected planet.")
 		return
 	}
 	result, err := a.deps.GameOptions.GetOptions(r.Context(), appgame.OptionsCommand{
@@ -143,7 +144,7 @@ func (a app) handleGameOptionsGet(w http.ResponseWriter, r *http.Request) {
 		if a.deps.Logger != nil {
 			a.deps.Logger.Error("game options unavailable", "error", err.Error(), "operation", "get")
 		}
-		http.Error(w, "game options unavailable", http.StatusServiceUnavailable)
+		writeGameOptionsError(w, http.StatusServiceUnavailable, "Game options are temporarily unavailable.")
 		return
 	}
 	writeGameOptionsResponse(w, result)
@@ -162,17 +163,17 @@ func clearOptionsIdentityCookies(w http.ResponseWriter, r *http.Request, issue *
 
 func (a app) handleGameOptionsPost(w http.ResponseWriter, r *http.Request) {
 	if a.deps.GameOptions == nil {
-		http.Error(w, "game options unavailable", http.StatusServiceUnavailable)
+		writeGameOptionsError(w, http.StatusServiceUnavailable, "Game options are temporarily unavailable.")
 		return
 	}
 	planetID, err := selectedPlanetID(r)
 	if err != nil {
-		http.Error(w, "invalid selected planet", http.StatusBadRequest)
+		writeGameOptionsError(w, http.StatusBadRequest, "Invalid selected planet.")
 		return
 	}
 	mutation, err := decodeGameOptionsMutation(r)
 	if err != nil {
-		http.Error(w, "invalid options request", http.StatusBadRequest)
+		writeGameOptionsError(w, http.StatusBadRequest, "Invalid options request.")
 		return
 	}
 	result, err := a.deps.GameOptions.UpdateOptions(r.Context(), appgame.OptionsUpdateCommand{
@@ -181,12 +182,13 @@ func (a app) handleGameOptionsPost(w http.ResponseWriter, r *http.Request) {
 		RemoteAddr:      remoteIP(r.RemoteAddr),
 		PlanetID:        planetID,
 		Mutation:        mutation,
+		PublicBaseURL:   requestIssuer(r),
 	})
 	if err != nil {
 		if a.deps.Logger != nil {
 			a.deps.Logger.Error("game options unavailable", "error", err.Error(), "operation", "update")
 		}
-		http.Error(w, "game options unavailable", http.StatusServiceUnavailable)
+		writeGameOptionsError(w, http.StatusServiceUnavailable, "Game options are temporarily unavailable.")
 		return
 	}
 	clearOptionsIdentityCookies(w, r, result.ActionIssue)
@@ -284,6 +286,16 @@ func writeGameOptionsResponse(w http.ResponseWriter, result appgame.OptionsResul
 		Issues:        toGameSessionIssueResponses(result.Issues),
 		Options:       options,
 		ActionIssue:   toGameOptionsActionIssue(result.ActionIssue),
+	})
+}
+
+func writeGameOptionsError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(gameOptionsResponse{
+		Authenticated: false,
+		Issues:        []gameSessionIssueResponse{},
+		Error:         message,
 	})
 }
 

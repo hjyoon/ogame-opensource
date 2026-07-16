@@ -44,6 +44,7 @@ type RegistrationCommand struct {
 	Universe      string
 	TermsAccepted bool
 	RemoteAddr    string
+	PublicBaseURL string
 }
 
 type RegistrationRegistrar struct {
@@ -218,6 +219,7 @@ func (r RegistrationRegistrar) RegisterAccount(ctx context.Context, command Regi
 			Email:          draft.Email,
 			ActivationCode: account.ActivationCode,
 			UniverseNumber: r.universeNumber,
+			PublicBaseURL:  command.PublicBaseURL,
 			Language:       account.Language,
 			BoardURL:       account.BoardURL,
 			TutorialURL:    account.TutorialURL,

@@ -60,6 +60,25 @@ func TestActivationLinkFallsBackToLocalhost(t *testing.T) {
 	}
 }
 
+func TestActivationLinkUsesRequestOriginForLoopbackDefaults(t *testing.T) {
+	link := ActivationLinkForRequest("http://localhost:8890", "http://10.8.0.2:8890", "ack")
+	if link != "http://10.8.0.2:8890/game/validate.php?ack=ack" {
+		t.Fatalf("unexpected request-origin activation link: %s", link)
+	}
+
+	link = ActivationLinkForRequest("http://127.0.0.1:8890", "https://game.example", "ack")
+	if link != "https://game.example/game/validate.php?ack=ack" {
+		t.Fatalf("unexpected loopback override activation link: %s", link)
+	}
+}
+
+func TestActivationLinkKeepsExplicitPublicOrigin(t *testing.T) {
+	link := ActivationLinkForRequest("https://public.example", "http://10.8.0.2:8890", "ack")
+	if link != "https://public.example/game/validate.php?ack=ack" {
+		t.Fatalf("unexpected configured activation link: %s", link)
+	}
+}
+
 func TestRegistrationWelcomeMailerReturnsContextErrorBeforeSMTP(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

@@ -61,6 +61,7 @@ type RegistrationWelcomeMail struct {
 	Email          string
 	ActivationCode string
 	UniverseNumber int
+	PublicBaseURL  string
 	Language       string
 	BoardURL       string
 	TutorialURL    string

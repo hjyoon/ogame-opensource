@@ -81,6 +81,7 @@ type OptionsChangeMail struct {
 	Recipient      string
 	PendingEmail   string
 	ActivationCode string
+	PublicBaseURL  string
 }
 
 type OptionsUniverse struct {

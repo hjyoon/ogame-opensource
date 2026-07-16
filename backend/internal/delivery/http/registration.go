@@ -107,6 +107,7 @@ func (a app) handleRegistration(w http.ResponseWriter, r *http.Request) {
 		Universe:      request.Universe,
 		TermsAccepted: termsAccepted,
 		RemoteAddr:    remoteIP(r.RemoteAddr),
+		PublicBaseURL: requestIssuer(r),
 	})
 	if err != nil {
 		http.Error(w, "registration unavailable", http.StatusServiceUnavailable)
@@ -172,6 +173,7 @@ func (a app) handleLegacyRegistrationRedirect(w http.ResponseWriter, r *http.Req
 		Universe:      r.FormValue("universe"),
 		TermsAccepted: termsAccepted,
 		RemoteAddr:    remoteIP(r.RemoteAddr),
+		PublicBaseURL: requestIssuer(r),
 	})
 	if err != nil {
 		http.Error(w, "registration unavailable", http.StatusServiceUnavailable)

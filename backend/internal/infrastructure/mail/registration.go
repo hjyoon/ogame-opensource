@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	netmail "net/mail"
 	"net/smtp"
+	"net/url"
 	"strings"
 
 	domain "github.com/hjyoon/ogame-opensource/backend/internal/domain/publicsite"
@@ -51,7 +53,7 @@ func BuildRegistrationWelcomeMessage(config SMTPConfig, welcome domain.Registrat
 	if _, err := netmail.ParseAddress(from); err != nil {
 		return "", err
 	}
-	link := ActivationLink(config.PublicBaseURL, welcome.ActivationCode)
+	link := ActivationLinkForRequest(config.PublicBaseURL, welcome.PublicBaseURL, welcome.ActivationCode)
 	headers := []string{
 		"From: " + cleanHeader(from),
 		"To: " + cleanHeader(to.String()),
@@ -86,11 +88,37 @@ func BuildRegistrationWelcomeMessage(config SMTPConfig, welcome domain.Registrat
 }
 
 func ActivationLink(publicBaseURL string, activationCode string) string {
-	base := strings.TrimRight(strings.TrimSpace(publicBaseURL), "/")
+	return ActivationLinkForRequest(publicBaseURL, "", activationCode)
+}
+
+func ActivationLinkForRequest(configuredBaseURL string, requestBaseURL string, activationCode string) string {
+	base := activationBaseURL(configuredBaseURL, requestBaseURL)
+	return base + "/game/validate.php?ack=" + strings.TrimSpace(activationCode)
+}
+
+func activationBaseURL(configuredBaseURL string, requestBaseURL string) string {
+	base := strings.TrimRight(strings.TrimSpace(configuredBaseURL), "/")
+	requestBase := strings.TrimRight(strings.TrimSpace(requestBaseURL), "/")
+	if requestBase != "" && (base == "" || loopbackBaseURL(base)) {
+		return requestBase
+	}
 	if base == "" {
 		base = "http://localhost:8890"
 	}
-	return base + "/game/validate.php?ack=" + strings.TrimSpace(activationCode)
+	return base
+}
+
+func loopbackBaseURL(value string) bool {
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return false
+	}
+	host := strings.TrimSpace(parsed.Hostname())
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func defaultFrom(value string) string {

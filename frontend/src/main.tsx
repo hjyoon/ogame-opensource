@@ -48,6 +48,7 @@ import { LegacyPublicScreenshot } from "./LegacyPublicScreenshot";
 import { LegacyPublicStory } from "./LegacyPublicStory";
 import { LegacyPublicUniverses } from "./LegacyPublicUniverses";
 import { LegacyRegistrationForm } from "./LegacyRegistrationForm";
+import { readAPIJSON } from "./apiResponse";
 import { gameRouteURL, resolveGameRoute } from "./gameRoutes";
 import { legacyPublicCssHrefs, legacyPublicRouteKeys, publicRoutes, resolvePublicRoute } from "./routes";
 import "./styles.css";
@@ -2130,7 +2131,7 @@ function App() {
       optionsRequest.set("cp", selectedPlanet);
     }
     fetch(`/api/game/options?${optionsRequest.toString()}`, { credentials: "same-origin" })
-      .then((response) => response.json() as Promise<GameOptionsStatus>)
+      .then((response) => readAPIJSON<GameOptionsStatus>(response, "options", [401]))
       .then((payload) => {
         setGameOptions(payload);
         setGameOptionsError(null);
@@ -2226,20 +2227,10 @@ function App() {
       credentials: "same-origin",
       body: JSON.stringify(settings)
     })
-      .then(async (response) => {
-        const text = await response.text();
-        const payload = text ? (JSON.parse(text) as GameOptionsStatus) : null;
-        if (!response.ok && response.status !== 401) {
-          throw new Error(text || `options returned ${response.status}`);
-        }
-        if (!payload) {
-          throw new Error("options response was empty");
-        }
-        return payload;
-      })
+      .then((response) => readAPIJSON<GameOptionsStatus>(response, "options", [401]))
       .then((payload) => {
         setGameOptions(payload);
-        setGameOptionsError(payload.actionIssue?.message ?? null);
+        setGameOptionsError(null);
       })
       .catch((err: unknown) => setGameOptionsError(err instanceof Error ? err.message : String(err)))
       .finally(() => setGameOptionsPending(false));
