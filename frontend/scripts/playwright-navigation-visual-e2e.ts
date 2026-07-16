@@ -126,6 +126,7 @@ const maxDiffRatio = numberEnv("OGAME_NAV_VISUAL_MAX_DIFF_RATIO", 0);
 const colorDeltaThreshold = numberEnv("OGAME_NAV_VISUAL_COLOR_DELTA", 0);
 const progressEnabled = process.env.OGAME_NAV_VISUAL_PROGRESS !== "0";
 const targetFilter = process.env.OGAME_NAV_VISUAL_TARGET_FILTER ?? "";
+const seedFilter = process.env.OGAME_NAV_VISUAL_SEED_FILTER ?? "";
 const includeAdminSeeds = process.env.OGAME_NAV_VISUAL_INCLUDE_ADMIN_SEEDS !== "0";
 const defaultChromeExecutable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const defaultBrowserExecutable = browserName === "firefox" ? undefined : defaultChromeExecutable;
@@ -329,7 +330,11 @@ const browser = await browserType.launch({
 });
 
 try {
-  const discoveries = await discoverSeeds(browser, seeds);
+  const selectedSeeds = seedFilter === "" ? seeds : seeds.filter((seed) => seed.name.includes(seedFilter));
+  if (selectedSeeds.length === 0) {
+    throw new Error(`navigation seed filter matched no screens: ${seedFilter}`);
+  }
+  const discoveries = await discoverSeeds(browser, selectedSeeds);
   const discoveredEdgeCount = discoveries.reduce((total, discovery) => total + discovery.edges.length, 0);
   progress(`build target representatives from ${discoveries.length} discoveries and ${discoveredEdgeCount} edges`);
   const targetRepresentatives = new Map<string, TargetRepresentative>();
@@ -351,7 +356,7 @@ try {
 
   let representatives = Array.from(targetRepresentatives.values()).sort((a, b) => a.key.localeCompare(b.key));
   if (targetFilter !== "") {
-    representatives = representatives.filter((representative) => representative.canonical.key.includes(targetFilter));
+    representatives = representatives.filter((representative) => representative.key.includes(targetFilter));
   }
   progress(`target representatives: ${representatives.length}${targetFilter ? ` filtered by ${targetFilter}` : ""}`);
   const targetResults = await compareTargets(
@@ -368,11 +373,11 @@ try {
     browserExecutable: browserExecutable ?? "playwright-default",
     loginUser,
     adminLoginUser,
-    seedOptions: { includeAdminSeeds },
+    seedOptions: { includeAdminSeeds, seedFilter, targetFilter },
     thresholds: { enforceDiff, maxDiffRatio, colorDeltaThreshold },
     allPass: edges.every((edge) => edge.pass) && targetResults.every((target) => target.pass),
     summary: {
-      screens: seeds.length,
+      screens: selectedSeeds.length,
       edges: edges.length,
       matchedEdges: edges.filter((edge) => edge.legacy && edge.migrated).length,
       targetScreens: targetResults.length,
@@ -449,7 +454,7 @@ async function loginLegacy(context: BrowserContext, authRole: AuthRole = "player
   const page = await context.newPage();
   await page.goto(
     `${legacyBaseURL}/game/reg/login2.php?login=${encodeURIComponent(credentials.user)}&pass=${encodeURIComponent(credentials.password)}`,
-    { waitUntil: "networkidle", timeout: 15_000 }
+    { waitUntil: "domcontentloaded", timeout: 30_000 }
   );
   const session = new URL(page.url()).searchParams.get("session") ?? "";
   await page.close();
@@ -575,10 +580,11 @@ function isVolatileNavigationEdge(seedName: string, target: string): boolean {
 async function collectSideTargets(context: BrowserContext, side: Side, seed: SeedSpec, url: string): Promise<EdgeSide[]> {
   const page = await context.newPage();
   try {
-    await page.goto(url, { waitUntil: "networkidle", timeout: 15_000 });
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
     if (seed.area === "game" && !new URL(page.url()).pathname.startsWith("/game/")) {
       throw new InvalidGameSessionError(side, seed.name, page.url());
     }
+    await waitForNavigationSurface(page, side, seed.area);
     await waitForImages(page);
     const rawTargets = await page.evaluate(() => {
       const visibleLabel = (element: Element): string => {
@@ -1119,7 +1125,8 @@ async function captureURLInContext(context: BrowserContext, url: string, fileNam
       badResponses.push(`${status} ${response.url()}`);
     }
   });
-  const response = await page.goto(url, { waitUntil: "networkidle", timeout: 15_000 });
+  const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  await waitForNavigationSurface(page, side, key.startsWith("public:") ? "public" : "game");
   await waitForImages(page);
   await waitForStablePaint(page);
   await normalizeDynamicPageParts(page, side, key);
@@ -1152,6 +1159,28 @@ async function waitForImages(page: Page): Promise<void> {
       );
     })
     .catch(() => undefined);
+}
+
+async function waitForNavigationSurface(page: Page, side: Side, area: Area): Promise<void> {
+  if (side === "legacy") {
+    return;
+  }
+  if (area === "public") {
+    await page.locator("#root main").first().waitFor({ state: "attached", timeout: 10_000 });
+    return;
+  }
+  await page.locator(".legacy-game-shell, .legacy-standalone-popup").first().waitFor({ state: "attached", timeout: 10_000 });
+  await page.waitForFunction(
+    () =>
+      !Array.from(document.querySelectorAll<HTMLElement>("#content th, .legacy-standalone-popup th")).some((element) => {
+        if (element.closest(".legacy-mcp-token-table")) {
+          return false;
+        }
+        return /^Loading .+\.\.\.$/.test(element.textContent?.trim() ?? "");
+      }),
+    undefined,
+    { timeout: 10_000 }
+  );
 }
 
 async function waitForStablePaint(page: Page): Promise<void> {
