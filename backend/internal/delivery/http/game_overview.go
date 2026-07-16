@@ -24,6 +24,7 @@ type gameOverviewActionIssue struct {
 type gameOverviewSummary struct {
 	Commander      string                      `json:"commander"`
 	AdminLevel     int                         `json:"adminLevel"`
+	Validated      bool                        `json:"validated"`
 	ServerTime     string                      `json:"serverTime"`
 	Officers       gameOverviewOfficers        `json:"officers"`
 	Score          gameScoreResponse           `json:"score"`
@@ -273,6 +274,7 @@ func toGameOverviewSummary(overview domaingame.Overview) gameOverviewSummary {
 	return gameOverviewSummary{
 		Commander:  overview.Commander,
 		AdminLevel: overview.AdminLevel,
+		Validated:  overview.Validated,
 		ServerTime: overview.ServerTime,
 		Officers: gameOverviewOfficers{
 			Commander:  overview.Officers.Commander,

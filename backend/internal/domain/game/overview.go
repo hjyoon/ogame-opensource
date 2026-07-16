@@ -13,6 +13,7 @@ const (
 	OverviewIssueFleetIncoming   = "fleet_incoming"
 	OverviewIssueFleetOutgoing   = "fleet_outgoing"
 	OverviewAdminNotice          = "In the administrator mode Overview and Admin do not update event queue."
+	OverviewActivationNotice     = "Your game account has not been activated yet. Go to Settings, enter your e-mail address and receive an activation link to it"
 	OverviewVacationNotice       = "vacation mode"
 	OverviewUniverseFreezeNotice = "The universe has been put on pause."
 )
@@ -20,6 +21,7 @@ const (
 type Overview struct {
 	Commander      string
 	AdminLevel     int
+	Validated      bool
 	ServerTime     string
 	Officers       OverviewOfficers
 	Score          ScoreSummary

@@ -990,6 +990,7 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 		Authenticated: true,
 		Overview: domaingame.Overview{
 			Commander:      "legor",
+			Validated:      true,
 			ServerTime:     "Fri Jun 19 18:23:07",
 			Messages:       []string{domaingame.OverviewAdminNotice},
 			UnreadMessages: 4,
@@ -1070,7 +1071,7 @@ func TestGameOverviewEndpointReturnsOverview(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if !response.Authenticated || response.Overview == nil || response.Overview.Commander != "legor" {
+	if !response.Authenticated || response.Overview == nil || response.Overview.Commander != "legor" || !response.Overview.Validated {
 		t.Fatalf("expected authenticated overview response, got %+v", response)
 	}
 	if response.Overview.Score.Points != 123 ||

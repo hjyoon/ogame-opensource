@@ -249,6 +249,7 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 	return domaingame.Overview{
 		Commander:  user.Commander,
 		AdminLevel: user.AdminLevel,
+		Validated:  user.Validated,
 		ServerTime: formatLegacyOverviewTime(r.currentTime()),
 		Officers:   user.Officers,
 		Score: domaingame.ScoreSummary{
@@ -846,6 +847,7 @@ type overviewUser struct {
 	SortOrder         int
 	AdminLevel        int
 	Vacation          bool
+	Validated         bool
 	DarkMatter        int
 	EnergyResearch    int
 	EspionageResearch int
@@ -856,7 +858,7 @@ type overviewUser struct {
 func (r OverviewRepository) loadUser(ctx context.Context, usersTable string, playerID int) (overviewUser, error) {
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT oname, score1, place1, aktplanet, hplanetid, sortby, sortorder, admin, COALESCE(vacation, 0), COALESCE(dm, 0), COALESCE(dmfree, 0), `%d`, `%d`, COALESCE(com_until, 0), COALESCE(adm_until, 0), COALESCE(eng_until, 0), COALESCE(geo_until, 0), COALESCE(tec_until, 0) FROM %s WHERE player_id = ? LIMIT 1", domaingame.ResearchEnergy, domaingame.ResearchEspionage, usersTable),
+		fmt.Sprintf("SELECT oname, score1, place1, aktplanet, hplanetid, sortby, sortorder, admin, COALESCE(vacation, 0), COALESCE(validated, 0), COALESCE(dm, 0), COALESCE(dmfree, 0), `%d`, `%d`, COALESCE(com_until, 0), COALESCE(adm_until, 0), COALESCE(eng_until, 0), COALESCE(geo_until, 0), COALESCE(tec_until, 0) FROM %s WHERE player_id = ? LIMIT 1", domaingame.ResearchEnergy, domaingame.ResearchEspionage, usersTable),
 		playerID,
 	)
 	if err != nil {
@@ -880,7 +882,7 @@ func (r OverviewRepository) loadUser(ctx context.Context, usersTable string, pla
 }
 
 func (r OverviewRepository) scanOverviewUser(rows Rows) (overviewUser, error) {
-	var user overviewUser
+	user := overviewUser{Validated: true}
 	var darkMatter int
 	var freeDarkMatter int
 	var commanderUntil int64
@@ -889,7 +891,48 @@ func (r OverviewRepository) scanOverviewUser(rows Rows) (overviewUser, error) {
 	var geologistUntil int64
 	var technocratUntil int64
 	var vacation int
+	var validated int
 	err := rows.Scan(
+		&user.Commander,
+		&user.Score,
+		&user.Rank,
+		&user.ActivePlanetID,
+		&user.HomePlanetID,
+		&user.SortBy,
+		&user.SortOrder,
+		&user.AdminLevel,
+		&vacation,
+		&validated,
+		&darkMatter,
+		&freeDarkMatter,
+		&user.EnergyResearch,
+		&user.EspionageResearch,
+		&commanderUntil,
+		&admiralUntil,
+		&engineerUntil,
+		&geologistUntil,
+		&technocratUntil,
+	)
+	if err == nil {
+		now := r.currentTime().Unix()
+		user.Vacation = vacation != 0
+		user.Validated = validated != 0
+		user.DarkMatter = darkMatter + freeDarkMatter
+		user.Engineer = engineerUntil > now
+		user.Officers = domaingame.OverviewOfficers{
+			Commander:  commanderUntil > now,
+			Admiral:    admiralUntil > now,
+			Engineer:   engineerUntil > now,
+			Geologist:  geologistUntil > now,
+			Technocrat: technocratUntil > now,
+		}
+		return user, nil
+	}
+	if !scanDestinationCountError(err) {
+		return overviewUser{}, err
+	}
+	// Keep the legacy 18-column scan for reduced test repositories and older adapters.
+	if err := rows.Scan(
 		&user.Commander,
 		&user.Score,
 		&user.Rank,
@@ -908,8 +951,7 @@ func (r OverviewRepository) scanOverviewUser(rows Rows) (overviewUser, error) {
 		&engineerUntil,
 		&geologistUntil,
 		&technocratUntil,
-	)
-	if err == nil {
+	); err == nil {
 		now := r.currentTime().Unix()
 		user.Vacation = vacation != 0
 		user.DarkMatter = darkMatter + freeDarkMatter
@@ -922,8 +964,7 @@ func (r OverviewRepository) scanOverviewUser(rows Rows) (overviewUser, error) {
 			Technocrat: technocratUntil > now,
 		}
 		return user, nil
-	}
-	if !scanDestinationCountError(err) {
+	} else if !scanDestinationCountError(err) {
 		return overviewUser{}, err
 	}
 	if err := rows.Scan(
@@ -1005,7 +1046,10 @@ func overviewMessages(user overviewUser) []string {
 }
 
 func overviewErrors(user overviewUser, universe overviewUniverse) []string {
-	errors := make([]string, 0, 2)
+	errors := make([]string, 0, 3)
+	if !user.Validated {
+		errors = append(errors, domaingame.OverviewActivationNotice)
+	}
 	if user.Vacation {
 		errors = append(errors, domaingame.OverviewVacationNotice)
 	}

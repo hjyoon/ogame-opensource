@@ -493,7 +493,7 @@ func TestOverviewRepositoryAddsAdminNotice(t *testing.T) {
 func TestOverviewRepositoryReadsUniverseNewsAndOfficerState(t *testing.T) {
 	now := time.Unix(2_000, 0)
 	queryer := &fakeQueryer{results: []fakeQueryResult{
-		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 7, 99, 1, 0, 0, 0, 1, 7, 3, 5, int64(3000), int64(3001), int64(3002), int64(3003), int64(3004)})},
+		{rows: fakeRowsFromValues([]any{"legor", int64(123456), 7, 99, 1, 0, 0, 0, 1, 0, 7, 3, 5, 6, int64(3000), int64(3001), int64(3002), int64(3003), int64(3004)})},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 12, 163, 1234.5, 234.5, 12.0, 0, 1, 2, 1, 1, 0, 3, 0, 2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0})},
 		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3})},
 		{rows: fakeRowsFromValues([]any{9, 1, "Legacy news", "Read more", int64(3000), "https://board.example.test/news", "https://discord.example.test"})},
@@ -516,10 +516,11 @@ func TestOverviewRepositoryReadsUniverseNewsAndOfficerState(t *testing.T) {
 	if !overview.Officers.Commander || !overview.Officers.Admiral || !overview.Officers.Engineer || !overview.Officers.Geologist || !overview.Officers.Technocrat {
 		t.Fatalf("expected active officer state from full user row, got %+v", overview.Officers)
 	}
-	if len(overview.Errors) != 2 ||
-		overview.Errors[0] != domaingame.OverviewVacationNotice ||
-		overview.Errors[1] != domaingame.OverviewUniverseFreezeNotice {
-		t.Fatalf("expected vacation and freeze notices, got %+v", overview.Errors)
+	if overview.Validated || len(overview.Errors) != 3 ||
+		overview.Errors[0] != domaingame.OverviewActivationNotice ||
+		overview.Errors[1] != domaingame.OverviewVacationNotice ||
+		overview.Errors[2] != domaingame.OverviewUniverseFreezeNotice {
+		t.Fatalf("expected activation, vacation, and freeze notices, got %+v", overview.Errors)
 	}
 	if overview.News == nil ||
 		overview.News.URL != "https://board.example.test/news" ||

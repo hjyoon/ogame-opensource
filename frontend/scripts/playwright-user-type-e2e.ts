@@ -199,7 +199,28 @@ try {
   });
 
   await withAuthenticatedPage(browser, "unvalidated", universe, async (page, auth, signals) => {
-    await gotoGame(page, auth, "/game/options");
+    await page.goto(new URL(auth.redirectTo, migratedBaseURL).toString(), { waitUntil: "networkidle", timeout: 15_000 });
+    await page.locator(".legacy-overview-main-table").waitFor({ timeout: 10_000 });
+    const activationNotice = page.locator("#errorbox");
+    await activationNotice.waitFor({ timeout: 10_000 });
+    const activationNoticeText = await activationNotice.innerText();
+    const settingsLink = activationNotice.locator("a", { hasText: "Settings" });
+    const settingsLinks = await settingsLink.count();
+    const settingsHref = settingsLinks === 1 ? await settingsLink.getAttribute("href") : "";
+    const settingsURL = new URL(settingsHref ?? "", migratedBaseURL);
+    record("unvalidated account first overview matches activation state", {
+      pass:
+        activationNoticeText.includes("Your game account has not been activated yet.") &&
+        activationNoticeText.includes("receive an activation link to it") &&
+        settingsLinks === 1 &&
+        settingsURL.pathname === "/game/options" &&
+        settingsURL.searchParams.get("session") === new URL(auth.redirectTo, migratedBaseURL).searchParams.get("session") &&
+        signalsClean(signals),
+      details: { activationNoticeText, settingsLinks, settingsHref, signals }
+    });
+
+    await settingsLink.click();
+    await page.waitForURL((url) => url.pathname === "/game/options", { timeout: 10_000 });
     await page.locator(".legacy-options-table").waitFor({ timeout: 10_000 });
     const body = await page.locator("body").innerText();
     const emailControls = await page.locator("input[name='db_email']").count();

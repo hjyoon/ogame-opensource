@@ -478,6 +478,7 @@ export type GameLogoutStatus = {
 type GameOverview = {
   commander: string;
   adminLevel: number;
+  validated: boolean;
   serverTime?: string;
   officers?: {
     commander: boolean;
@@ -2905,6 +2906,21 @@ const LegacyPageMessage = React.forwardRef<HTMLDivElement, { messages: string[];
   );
 });
 
+const legacyActivationNotice =
+  "Your game account has not been activated yet. Go to Settings, enter your e-mail address and receive an activation link to it";
+
+function LegacyPageErrorMessage({ message }: { message: string }) {
+  if (message !== legacyActivationNotice) {
+    return message;
+  }
+  return (
+    <>
+      Your game account has not been activated yet. Go to{" "}
+      <a href={gameRouteURL("/game/options", window.location.search)}>Settings</a>, enter your e-mail address and receive an activation link to it
+    </>
+  );
+}
+
 const LegacyPageError = React.forwardRef<HTMLDivElement, { messages: string[]; style?: React.CSSProperties }>(function LegacyPageError(
   { messages, style },
   ref
@@ -2913,11 +2929,10 @@ const LegacyPageError = React.forwardRef<HTMLDivElement, { messages: string[]; s
     <div className="legacy-page-errorbox" id="errorbox" ref={ref} style={{ display: "block", ...style }}>
       <center>
         {messages.map((message, index) => (
-          <React.Fragment key={`${message}-${index}`}>
-            {message}
+          <center key={`${message}-${index}`}>
+            <LegacyPageErrorMessage message={message} />
             <br />
-            {"\n"}
-          </React.Fragment>
+          </center>
         ))}
       </center>
     </div>
