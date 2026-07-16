@@ -1166,7 +1166,9 @@ async function waitForNavigationSurface(page: Page, side: Side, area: Area): Pro
     return;
   }
   if (area === "public") {
-    await page.locator("#root main").first().waitFor({ state: "attached", timeout: 10_000 });
+    if ((await page.locator("#root").count()) > 0) {
+      await page.locator("#root main").first().waitFor({ state: "attached", timeout: 10_000 });
+    }
     return;
   }
   await page.locator(".legacy-game-shell, .legacy-standalone-popup").first().waitFor({ state: "attached", timeout: 10_000 });
