@@ -31,11 +31,13 @@ Authenticated visual equivalence covers default game pages in Chromium and Firef
 
 Current deep visual areas include:
 
-- overview with notices, unread messages, build rows, incoming/missile/fleet pseudo-events, active planet restore, and event clicks
+- overview with notices, unread messages, build rows, incoming/missile/fleet pseudo-events, active planet restore, event clicks, active-event reload persistence, and due-fleet return transitions
 - buildings, resources, research, shipyard, defense, completion refresh, resource deduction/refund, moon pages, and queue timers
 - galaxy rows, actions, hover/click behavior, target prefill, and instant spy/recycle dispatch
 - fleet continue and fleet all-cases dispatch previews
 - statistics, search, messages, merchant, notes, buddy list, options, alliance, admin, and empire views
+
+Runtime queue QA requires due combat to create its battle report in the first Messages API response, without an overview visit or duplicate report on reload.
 
 ## Diff Policy
 

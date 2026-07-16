@@ -267,6 +267,36 @@ func TestOverviewRepositoryFinishesDueBuildingQueuesBeforeRead(t *testing.T) {
 	}
 }
 
+func TestOverviewRepositoryFinishesDueFleetQueuesBeforeReadingEvents(t *testing.T) {
+	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{"legor", int64(0), 0, 99, 1, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3, 12800, 19, 1, 163, 0.0, 0.0, 0.0, 0, 0, 0})},
+		{rows: fakeRowsFromValues([]any{99, "Arakis", 1, 1, 2, 3})},
+		{rows: fakeRowsFromValues([]any{1})},
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues()},
+	}}}
+	repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+	repository.updateResources = false
+	repository.includeEvents = true
+	repository.now = func() time.Time { return time.Unix(2000, 0) }
+
+	if _, err := repository.GetOverview(context.Background(), overviewQuery(42, 0)); err != nil {
+		t.Fatalf("overview read failed: %v; calls=%+v", err, runner.calls)
+	}
+
+	if len(runner.calls) != 8 ||
+		!strings.Contains(runner.calls[1].sql, "SELECT freeze FROM `ogame_uni`") ||
+		!strings.Contains(runner.calls[2].sql, "type = ? AND end <= ?") ||
+		runner.calls[2].args[0] != queueTypeFleet ||
+		runner.calls[2].args[1] != 2000 ||
+		!strings.Contains(runner.calls[6].sql, "q.end > ?") {
+		t.Fatalf("expected due fleet queues to finish before overview event read, got %+v", runner.calls)
+	}
+}
+
 func TestOverviewRepositoryFinishesDueRecalcPointQueues(t *testing.T) {
 	runner := &fakeOverviewRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{1.0, 0})},

@@ -204,6 +204,22 @@ $enemyFleetId = DispatchFleet($enemyFleet, $enemyOrigin, $enemyTarget, FTYP_ATTA
 if ($ownFleetId <= 0 || $enemyFleetId <= 0) {
     throw new RuntimeException('Failed to dispatch overview fixture fleets.');
 }
+$ownQueueDuration = max(0, (int)(getenv('OGAME_OVERVIEW_FLEET_OWN_QUEUE_DURATION') ?: 0));
+if ($ownQueueDuration > 0) {
+    global $db_prefix;
+    dbquery(
+        "UPDATE {$db_prefix}queue SET start={$now}, end=" . ($now + $ownQueueDuration) .
+        " WHERE type='" . QTYP_FLEET . "' AND sub_id={$ownFleetId}"
+    );
+}
+$enemyQueueDuration = max(0, (int)(getenv('OGAME_OVERVIEW_FLEET_ENEMY_QUEUE_DURATION') ?: 0));
+if ($enemyQueueDuration > 0) {
+    global $db_prefix;
+    dbquery(
+        "UPDATE {$db_prefix}queue SET start={$now}, end=" . ($now + $enemyQueueDuration) .
+        " WHERE type='" . QTYP_FLEET . "' AND sub_id={$enemyFleetId}"
+    );
+}
 
 $auth = overview_fleet_session($attacker['player_id'], 'overview-fleet');
 
@@ -215,7 +231,10 @@ echo json_encode(array(
     'target_player_id' => $defender['player_id'],
     'target_planet_id' => $defender['planet_id'],
     'own_fleet_id' => $ownFleetId,
+    'own_queue_duration' => $ownQueueDuration,
     'enemy_fleet_id' => $enemyFleetId,
+    'enemy_queue_duration' => $enemyQueueDuration,
+    'prepared_at' => $now,
     'session' => $auth['session'],
     'private_cookie_name' => $auth['cookie_name'],
     'private_cookie_value' => $auth['cookie_value'],

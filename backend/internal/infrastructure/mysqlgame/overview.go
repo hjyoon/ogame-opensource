@@ -140,25 +140,37 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 	if err != nil {
 		return domaingame.Overview{}, err
 	}
-	if r.includeBuildQueue && r.execer != nil && user.AdminLevel == 0 {
-		buildings := BuildingsRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now, updateResources: r.updateResources}
-		if err := buildings.FinishDueBuildingQueues(ctx, int(r.currentTime().Unix())); err != nil {
-			return domaingame.Overview{}, err
-		}
-		if r.includeBotQueue {
-			bots := BotRuntimeRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now}
-			if err := bots.FinishDueBotQueues(ctx, int(r.currentTime().Unix())); err != nil {
+	if r.execer != nil && user.AdminLevel == 0 {
+		now := int(r.currentTime().Unix())
+		if r.includeEvents {
+			fleets := NewFleetRepositoryWithRunner(r.queryer, r.execer, r.prefix, r.now)
+			fleets.legacyEvents = true
+			fleets.queueProduction = true
+			fleets.dialect = r.dialect
+			if err := fleets.FinishDueFleetQueues(ctx, now); err != nil {
 				return domaingame.Overview{}, err
 			}
 		}
-		recalculated, err := r.finishDueRecalcPointQueues(ctx, int(r.currentTime().Unix()))
-		if err != nil {
-			return domaingame.Overview{}, err
-		}
-		if recalculated {
-			user, err = r.loadUser(ctx, usersTable, query.PlayerID)
+		if r.includeBuildQueue {
+			buildings := BuildingsRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now, updateResources: r.updateResources}
+			if err := buildings.FinishDueBuildingQueues(ctx, now); err != nil {
+				return domaingame.Overview{}, err
+			}
+			if r.includeBotQueue {
+				bots := BotRuntimeRepository{queryer: r.queryer, execer: r.execer, prefix: r.prefix, now: r.now}
+				if err := bots.FinishDueBotQueues(ctx, now); err != nil {
+					return domaingame.Overview{}, err
+				}
+			}
+			recalculated, err := r.finishDueRecalcPointQueues(ctx, now)
 			if err != nil {
 				return domaingame.Overview{}, err
+			}
+			if recalculated {
+				user, err = r.loadUser(ctx, usersTable, query.PlayerID)
+				if err != nil {
+					return domaingame.Overview{}, err
+				}
 			}
 		}
 	}

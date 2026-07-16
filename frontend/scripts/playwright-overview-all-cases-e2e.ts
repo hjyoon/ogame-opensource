@@ -69,12 +69,14 @@ type DiffResult = {
 
 type PageCapture = {
   status: number | null;
+  reloadStatus: number | null;
   url: string;
   consoleErrors: string[];
   failedRequests: string[];
   badResponses: string[];
   surface: SurfaceContract;
   events: EventRowContract[];
+  reloadedEvents: EventRowContract[];
   screenshotPath: string;
 };
 
@@ -120,11 +122,17 @@ try {
   const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath, diffPath);
   const surfacePass = JSON.stringify(legacy.surface) === JSON.stringify(migrated.surface);
   const eventsPass = JSON.stringify(legacy.events) === JSON.stringify(migrated.events);
+  const reloadPersistencePass =
+    JSON.stringify(legacy.events) === JSON.stringify(legacy.reloadedEvents) &&
+    JSON.stringify(migrated.events) === JSON.stringify(migrated.reloadedEvents) &&
+    JSON.stringify(legacy.reloadedEvents) === JSON.stringify(migrated.reloadedEvents);
   const clicks = mergeClickResults(legacyClicks, migratedClicks);
   const clickPass = clicks.every((click) => click.pass);
   const pass =
     legacy.status === 200 &&
     migrated.status === 200 &&
+    legacy.reloadStatus === 200 &&
+    migrated.reloadStatus === 200 &&
     legacy.consoleErrors.length === 0 &&
     migrated.consoleErrors.length === 0 &&
     legacy.failedRequests.length === 0 &&
@@ -135,6 +143,7 @@ try {
     migrated.events.length >= 20 &&
     surfacePass &&
     eventsPass &&
+    reloadPersistencePass &&
     clickPass &&
     (!enforceDiff || diff.diffRatio <= maxDiffRatio);
 
@@ -155,6 +164,7 @@ try {
     pass,
     surfacePass,
     eventsPass,
+    reloadPersistencePass,
     clickPass,
     clicks,
     legacy,
@@ -170,6 +180,7 @@ try {
         pass,
         surfacePass,
         eventsPass,
+        reloadPersistencePass,
         clickPass,
         diffRatio: diff.diffRatio,
         changedPixels: diff.changedPixels,
@@ -257,17 +268,27 @@ async function capturePage(
   const events = await eventContract(page, side);
   const screenshotPath = join(screenshotDir, `overview-all-${viewportSpec.name}-${side}.png`);
   await page.screenshot({ path: screenshotPath, fullPage: false });
+  const reloadResponse = await page.reload({ waitUntil: "networkidle", timeout: 20_000 });
+  await page.locator("#content table").first().waitFor({ timeout: 10_000 });
+  await waitForImages(page);
+  await page.waitForTimeout(300);
+  await normalizeDynamicPageParts(page, side);
+  await waitForStablePaint(page);
+  await normalizeDynamicPageParts(page, side);
+  const reloadedEvents = await eventContract(page, side);
   const currentURL = page.url();
   await page.close();
 
   return {
     status: response?.status() ?? null,
+    reloadStatus: reloadResponse?.status() ?? null,
     url: currentURL,
     consoleErrors,
     failedRequests,
     badResponses,
     surface,
     events,
+    reloadedEvents,
     screenshotPath
   };
 }
@@ -417,6 +438,11 @@ async function surfaceContract(page: Page, side: "legacy" | "migrated"): Promise
       .map((text) => compact(text))
       .filter((text) => text.includes("Metal Mine") || text.includes("Crystal Mine") || text === "free");
     const newsLink = document.querySelector<HTMLAnchorElement>("#combox");
+    const errorBox = document.querySelector<HTMLElement>("#errorbox");
+    const nestedPageErrors = Array.from(errorBox?.querySelectorAll<HTMLElement>(":scope > center > center") ?? [])
+      .map((element) => compact(element.textContent))
+      .filter(Boolean);
+    const pageErrors = nestedPageErrors.length > 0 ? nestedPageErrors : compact(errorBox?.textContent) ? [compact(errorBox?.textContent)] : [];
     const menuLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>("#menu a"))
       .map((link) => ({
         text: compact(link.textContent),
@@ -435,7 +461,7 @@ async function surfaceContract(page: Page, side: "legacy" | "migrated"): Promise
       pageMessages: compact(document.querySelector("#messagebox")?.textContent)
         ? [compact(document.querySelector("#messagebox")?.textContent)]
         : [],
-      pageErrors: compact(document.querySelector("#errorbox")?.textContent) ? [compact(document.querySelector("#errorbox")?.textContent)] : [],
+      pageErrors,
       title: titleLink ? { text: compact(titleLink.textContent), href: normalizeHref(titleLink.getAttribute("href") ?? "") } : null,
       unread: unreadLink ? { text: compact(unreadLink.textContent), href: normalizeHref(unreadLink.getAttribute("href") ?? "") } : null,
       moon: moonLink ? { text: compact(moonLink.parentElement?.textContent), href: normalizeHref(moonLink.getAttribute("href") ?? "") } : null,
@@ -773,6 +799,7 @@ function renderMarkdown(report: {
   pass: boolean;
   surfacePass: boolean;
   eventsPass: boolean;
+  reloadPersistencePass: boolean;
   clickPass: boolean;
   clicks: ClickResult[];
   diff: DiffResult;
@@ -789,6 +816,7 @@ function renderMarkdown(report: {
   lines.push(`Pass: ${report.pass ? "yes" : "no"}`);
   lines.push(`Surface contract: ${report.surfacePass ? "yes" : "no"}`);
   lines.push(`Event contract: ${report.eventsPass ? "yes" : "no"}`);
+  lines.push(`Reload persistence: ${report.reloadPersistencePass ? "yes" : "no"}`);
   lines.push(`Click contract: ${report.clickPass ? "yes" : "no"}`);
   lines.push(`Exact diff ratio: ${formatNumber(report.diff.diffRatio)} (${report.diff.changedPixels}/${report.diff.totalPixels})`);
   lines.push(`Diff path: ${report.diffPath}`);
@@ -801,6 +829,8 @@ function renderMarkdown(report: {
   lines.push("## Event Rows");
   lines.push(`- Legacy: ${report.legacy.events.length}`);
   lines.push(`- Migrated: ${report.migrated.events.length}`);
+  lines.push(`- Legacy after reload: ${report.legacy.reloadedEvents.length}`);
+  lines.push(`- Migrated after reload: ${report.migrated.reloadedEvents.length}`);
   return `${lines.join("\n")}\n`;
 }
 

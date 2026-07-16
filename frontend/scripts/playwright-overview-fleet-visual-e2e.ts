@@ -53,11 +53,13 @@ type DiffResult = {
 
 type PageCapture = {
   status: number | null;
+  reloadStatus: number | null;
   url: string;
   consoleErrors: string[];
   failedRequests: string[];
   badResponses: string[];
   eventRows: EventRowContract[];
+  reloadedEventRows: EventRowContract[];
   screenshotPath: string;
 };
 
@@ -162,6 +164,10 @@ try {
   const diffPath = join(screenshotDir, `overview-fleet-${viewport.name}-diff.png`);
   const diff = await compareScreenshots(browser, legacy.screenshotPath, migrated.screenshotPath, diffPath);
   const eventContractPass = JSON.stringify(visibleEventContract(legacy.eventRows)) === JSON.stringify(visibleEventContract(migrated.eventRows));
+  const reloadPersistencePass =
+    JSON.stringify(visibleEventContract(legacy.eventRows)) === JSON.stringify(visibleEventContract(legacy.reloadedEventRows)) &&
+    JSON.stringify(visibleEventContract(migrated.eventRows)) === JSON.stringify(visibleEventContract(migrated.reloadedEventRows)) &&
+    JSON.stringify(visibleEventContract(legacy.reloadedEventRows)) === JSON.stringify(visibleEventContract(migrated.reloadedEventRows));
   const writeMessagePass =
     legacyWriteMessage.composeReady &&
     migratedWriteMessage.composeReady &&
@@ -183,6 +189,8 @@ try {
   const pass =
     legacy.status === 200 &&
     migrated.status === 200 &&
+    legacy.reloadStatus === 200 &&
+    migrated.reloadStatus === 200 &&
     legacy.consoleErrors.length === 0 &&
     migrated.consoleErrors.length === 0 &&
     legacy.failedRequests.length === 0 &&
@@ -192,6 +200,7 @@ try {
     legacy.eventRows.length >= 3 &&
     migrated.eventRows.length >= 3 &&
     eventContractPass &&
+    reloadPersistencePass &&
     writeMessagePass &&
     galaxyNavigationPass &&
     (!enforceDiff || diff.diffRatio <= maxDiffRatio);
@@ -214,6 +223,7 @@ try {
     thresholds: { enforceDiff, maxDiffRatio, colorDeltaThreshold },
     pass,
     eventContractPass,
+    reloadPersistencePass,
     writeMessagePass,
     galaxyNavigationPass,
     legacy,
@@ -227,7 +237,7 @@ try {
   };
   await writeFile(join(outputDir, "report.json"), JSON.stringify(report, null, 2));
   await writeFile(join(outputDir, "report.md"), renderMarkdown(report));
-  process.stdout.write(JSON.stringify({ pass, diffRatio: diff.diffRatio, changedPixels: diff.changedPixels, writeMessagePass, galaxyNavigationPass, report: join(outputDir, "report.json") }, null, 2) + "\n");
+  process.stdout.write(JSON.stringify({ pass, diffRatio: diff.diffRatio, changedPixels: diff.changedPixels, reloadPersistencePass, writeMessagePass, galaxyNavigationPass, report: join(outputDir, "report.json") }, null, 2) + "\n");
   if (!pass) {
     process.exitCode = 1;
   }
@@ -304,16 +314,25 @@ async function capturePage(
   const eventRows = await eventRowContract(page, side);
   const screenshotPath = join(screenshotDir, `overview-fleet-${viewportSpec.name}-${side}.png`);
   await page.screenshot({ path: screenshotPath, fullPage: false });
+  const reloadResponse = await page.reload({ waitUntil: "networkidle", timeout: 15_000 });
+  await page.locator(readySelector).first().waitFor({ timeout: 10_000 });
+  await waitForImages(page);
+  await page.waitForTimeout(250);
+  await normalizeDynamicPageParts(page, side);
+  await waitForStablePaint(page);
+  const reloadedEventRows = await eventRowContract(page, side);
   const currentURL = page.url();
   await page.close();
 
   return {
     status: response?.status() ?? null,
+    reloadStatus: reloadResponse?.status() ?? null,
     url: currentURL,
     consoleErrors,
     failedRequests,
     badResponses,
     eventRows,
+    reloadedEventRows,
     screenshotPath
   };
 }
@@ -714,6 +733,7 @@ function renderMarkdown(report: {
   migratedBaseURL: string;
   pass: boolean;
   eventContractPass: boolean;
+  reloadPersistencePass: boolean;
   writeMessagePass: boolean;
   galaxyNavigationPass: boolean;
   diff: DiffResult;
@@ -734,6 +754,7 @@ function renderMarkdown(report: {
   lines.push(`Migrated: ${report.migratedBaseURL}`);
   lines.push(`Pass: ${report.pass ? "yes" : "no"}`);
   lines.push(`Event contract pass: ${report.eventContractPass ? "yes" : "no"}`);
+  lines.push(`Event reload persistence pass: ${report.reloadPersistencePass ? "yes" : "no"}`);
   lines.push(`Write message navigation pass: ${report.writeMessagePass ? "yes" : "no"}`);
   lines.push(`Galaxy coordinate navigation pass: ${report.galaxyNavigationPass ? "yes" : "no"}`);
   lines.push(`Exact diff ratio: ${formatNumber(report.diff.diffRatio)} (${report.diff.changedPixels}/${report.diff.totalPixels})`);
@@ -749,6 +770,11 @@ function renderMarkdown(report: {
   lines.push("");
   lines.push("### Migrated");
   for (const row of report.migrated.eventRows) {
+    lines.push(`- ${row.className || "(none)"}: ${row.text}`);
+  }
+  lines.push("");
+  lines.push("### Migrated after reload");
+  for (const row of report.migrated.reloadedEventRows) {
     lines.push(`- ${row.className || "(none)"}: ${row.text}`);
   }
   lines.push("");

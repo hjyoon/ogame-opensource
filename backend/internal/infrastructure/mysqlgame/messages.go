@@ -16,10 +16,11 @@ import (
 )
 
 type MessagesRepository struct {
-	queryer Queryer
-	execer  Execer
-	prefix  string
-	now     func() time.Time
+	queryer          Queryer
+	execer           Execer
+	prefix           string
+	now              func() time.Time
+	processDueFleets bool
 }
 
 const (
@@ -41,7 +42,7 @@ const (
 
 func NewMessagesRepository(db *sql.DB, prefix string) MessagesRepository {
 	runner := SQLQueryer{DB: db}
-	return MessagesRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now}
+	return MessagesRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, processDueFleets: true}
 }
 
 func NewMessagesRepositoryWithQueryer(queryer Queryer, prefix string, now func() time.Time) MessagesRepository {
@@ -60,6 +61,14 @@ func NewMessagesRepositoryWithRunner(queryer Queryer, execer Execer, prefix stri
 }
 
 func (r MessagesRepository) GetMessages(ctx context.Context, query appgame.MessagesQuery) (domaingame.Messages, error) {
+	if r.processDueFleets && r.execer != nil {
+		fleets := NewFleetRepositoryWithRunner(r.queryer, r.execer, r.prefix, r.now)
+		fleets.legacyEvents = true
+		fleets.queueProduction = true
+		if err := fleets.FinishDueFleetQueues(ctx, int(r.now().Unix())); err != nil {
+			return domaingame.Messages{}, err
+		}
+	}
 	messagesTable, err := tableName(r.prefix, "messages")
 	if err != nil {
 		return domaingame.Messages{}, err

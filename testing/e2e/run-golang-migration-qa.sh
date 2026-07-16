@@ -304,6 +304,12 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     if [ "${OGAME_RUN_OVERVIEW_FLEET_COUNTDOWN:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-overview-fleet-countdown-e2e.sh"
     fi
+    if [ "${OGAME_RUN_OVERVIEW_FLEET_REFRESH:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-overview-fleet-refresh-e2e.sh"
+    fi
+    if [ "${OGAME_RUN_BATTLE_REPORT_IMMEDIATE:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-battle-report-immediate-e2e.sh"
+    fi
     if [ "${OGAME_RUN_OVERVIEW_ALL_CASES:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-overview-all-cases-e2e.sh"
     fi

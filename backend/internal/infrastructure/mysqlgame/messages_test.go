@@ -47,6 +47,39 @@ func TestMessagesRepositoryReadsLegacyInbox(t *testing.T) {
 	}
 }
 
+func TestMessagesRepositoryFinishesDueFleetQueuesBeforeInboxRead(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	results := append([]fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{0})},
+		{rows: fakeRowsFromValues()},
+	}, messageInboxResults(
+		fakeQueryResult{rows: fakeRowsFromValues([]any{now.Add(time.Hour).Unix(), domaingame.AdminLevelPlayer, int64(0)})},
+		fakeQueryResult{rows: fakeRowsFromValues()},
+	)...)
+	runner := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: results}}
+	repository := NewMessagesRepositoryWithRunner(runner, runner, "ogame_", func() time.Time { return now })
+	repository.processDueFleets = true
+
+	if _, err := repository.GetMessages(context.Background(), appgame.MessagesQuery{PlayerID: 42, PlanetID: 99}); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.calls) < 3 ||
+		!strings.Contains(runner.calls[0].sql, "SELECT freeze FROM `ogame_uni`") ||
+		!strings.Contains(runner.calls[1].sql, "type = ? AND end <= ?") ||
+		runner.calls[1].args[0] != queueTypeFleet ||
+		runner.calls[1].args[1] != int(now.Unix()) ||
+		!strings.Contains(runner.calls[2].sql, "FROM `ogame_users`") {
+		t.Fatalf("expected due fleet queues before inbox queries, got %+v", runner.calls)
+	}
+
+	failing := &fakeMessagesRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: errors.New("fleet queue failed")}}}}
+	repository = NewMessagesRepositoryWithRunner(failing, failing, "ogame_", func() time.Time { return now })
+	repository.processDueFleets = true
+	if _, err := repository.GetMessages(context.Background(), appgame.MessagesQuery{PlayerID: 42}); err == nil || !strings.Contains(err.Error(), "fleet queue failed") {
+		t.Fatalf("expected due fleet queue failure, got %v", err)
+	}
+}
+
 func TestMessagesRepositoryFiltersLegacyInboxByMessageType(t *testing.T) {
 	now := time.Unix(1700000000, 0)
 	queryer := &fakeQueryer{results: messageInboxResults(
@@ -324,8 +357,8 @@ func TestMessagesRepositoryReadsComposeTarget(t *testing.T) {
 
 func TestNewMessagesRepositoryKeepsSQLQueryer(t *testing.T) {
 	repository := NewMessagesRepository(nil, "ogame_")
-	if repository.prefix != "ogame_" {
-		t.Fatalf("unexpected prefix: %q", repository.prefix)
+	if repository.prefix != "ogame_" || !repository.processDueFleets {
+		t.Fatalf("unexpected repository config: prefix=%q processDueFleets=%t", repository.prefix, repository.processDueFleets)
 	}
 	if _, ok := repository.queryer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL queryer, got %T", repository.queryer)
