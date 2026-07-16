@@ -5,8 +5,8 @@ Keep this file under 4KB. This is the conservative product-coverage model for th
 ## Target
 
 - Goal: 100% absolute coverage of legacy PHP functionality.
-- Current absolute estimate: not asserted; the repository has no exhaustive legacy denominator proving a percentage.
-- Current inventoried QA pass rate: 100% (70/70 result groups in the 2026-07-15 full run).
+- Absolute estimate: not asserted; no exhaustive legacy denominator proves a percentage.
+- Inventoried QA pass rate: 100% (89/89 result groups in the 2026-07-16 full run).
 - A passing registry proves only listed cases, not every reachable legacy behavior.
 
 ## Denominator
@@ -39,7 +39,7 @@ The denominator is the legacy product surface, not file count alone:
 - Behavior audit freezes 463 core request inputs, 162 action values, 19 queue constants, 349 SQL mutation sites, and 149 navigation handlers; resource, construction, research, shipyard and fleet lifecycles have DB differential evidence.
 - Go rejects new PHP Mod installs; an active legacy Mod makes readiness fail instead of silently diverging.
 - Expedition DB differential exact-compares all ten result families, rewards/losses, combat reports, timing, messages, logs, scores, and cleanup.
-- PHP/Go differential evidence totals 341 cases, including Alliance 27, Options 36, and Admin 173.
+- PHP/Go differential evidence totals 433 result cases across 48 groups, including Alliance 27, Options 36, and Admin/runtime 180.
 - ACS attack launch now covers the legacy 30% slowdown boundary and queue resync to the later union arrival.
 
 ## Remaining Closure Work

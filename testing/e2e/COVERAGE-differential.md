@@ -7,22 +7,18 @@ compare normalized HTTP/DB effects, then restore.
 
 | Domain | Cases | Compared Effects | Status |
 | --- | ---: | --- | --- |
-| Resource production | 3 | HTTP status, `prod1/2/3/4/12/212` | PASS |
-| Building queue | 2 | debit/refund, normalized queues, duration, completion, level/fields/score | PASS |
-| Research queue | 2 | debit/refund, duration/priority, completion, level/score/ranks | PASS |
-| Shipyard/defense | 2 | batch debit, per-unit completion, queue timing, units/score/ranks | PASS |
-| Advanced building | 2 | demolition, Commander queue cancel/level shift/propagation | PASS |
-| Defense limits | 3 | dome uniqueness, missile capacity, mixed queue order/completion | PASS |
-| Fleet lifecycle | 23 | transport/recall/deploy/recycle, combat, moon, colony and missile lifecycle | PASS |
+| Public/view/economy | 69 | account, overview, officers, merchant, payment, empire, galaxy | PASS |
+| Economy queues | 14 | resources, building/research/shipyard, demolition, defense limits | PASS |
+| Fleet/colony/ACS | 23 | launch/recall/deploy/recycle, templates, colony, ACS/holding | PASS |
 | Expedition | 10 | every result family, rewards/loss, combat reports, timing, logs | PASS |
-| Phalanx | 11 | guards, debit, fleet visibility, ACS hold/grouping, state restore | PASS |
-| Jump Gate | 13 | target filters, guards, ship move, satellite exclusion, cooldown | PASS |
-| Buddy | 12 | request views, guards, text limits, lifecycle, PM side effects | PASS |
-| Messages | 18 | read/retention, delete modes, reports, flags, send/cap | PASS |
+| Missile/moon | 7 | interception/damage/report plus moon creation/destruction | PASS |
+| Phalanx/Jump Gate | 24 | guards, debit, visibility, ship move, cooldown | PASS |
+| Social | 39 | buddy, messages, notes, reports, caps and side effects | PASS |
 | Alliance | 27 | create/apply/review, ranks, text/settings, rename, leave/kick/dismiss/transfer | PASS |
 | Account options | 36 | settings, identity/mail, activation, vacation/deletion, Commander/feed/operator flags | PASS |
-| Admin | 173 | [Mutation matrix](COVERAGE-admin-differential.md) | PASS |
+| Admin/runtime | 180 | [Admin 173](COVERAGE-admin-differential.md) plus runtime queue 7 | PASS |
 | Combat engine | 4 | outcome, shots/power, absorption, survivors | PASS |
+| **Total** | **433** | **48 differential result groups** | **PASS** |
 
 Resource cases cover partial production and 0/100 boundaries. Each side logs in
 before its action because login rotates the private cookie.

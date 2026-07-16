@@ -1,6 +1,6 @@
 # Migration Status
 
-Updated: 2026-07-15 KST, branch `hjyoon/golang`.
+Updated: 2026-07-16 KST, branch `hjyoon/golang`.
 
 React/Bun + Go migration tracker. Keep under 4KB; split details by topic.
 
@@ -23,7 +23,7 @@ Four optional PHP Mods and their 37 executable hooks are outside product scope. 
 
 ## Latest Full QA
 
-The 2026-07-15 clean wrapper run completed with `70 passed, 0 failed, 0 skipped`:
+The 2026-07-16 clean wrapper run completed with `89 passed, 0 failed, 0 skipped`:
 
 ```sh
 OGAME_RUN_LEGACY_E2E=1 OGAME_GO_PORT=8890 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run-golang-migration-qa.sh
@@ -33,7 +33,7 @@ OGAME_RUN_LEGACY_E2E=1 OGAME_GO_PORT=8890 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run
 - Frontend build, TypeScript, and 24 Bun tests passed.
 - Backend tests passed the required internal coverage gate at exactly 97.0%.
 - Compatibility smoke passed 90 cases / 2249 checks; user-type API QA passed 8 cases / 43 checks.
-- Registered PHP/Go DB and HTTP differential suites passed, including 341 cataloged domain/Admin cases plus dedicated ACS, holding, moon, colony, missile, and cleanup flows.
+- All 48 registered PHP/Go DB and HTTP differential groups passed, totaling 433 result cases including dedicated one-case flows.
 - Public, authenticated, Commander, dynamic, alliance, empire, overview, fleet, expiry, and navigation Playwright suites passed in Chromium and Firefox.
 - Navigation exact diff threshold `0` passed 1,947/1,947 edges and 162/162 target representatives in each browser.
 - Authenticated dynamic registry passed all 98 listed cases in each browser.
