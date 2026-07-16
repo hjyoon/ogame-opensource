@@ -10,7 +10,7 @@
     {"method":"EmpireService.MutateEmpire","scope":"game","evidence":"differential","runner":"run-golang-empire-differential-e2e.sh","reports":[".tmp/golang-empire-differential.json"]},
     {"method":"FleetService.MutateFleetTemplate","scope":"game","evidence":"differential","runner":"run-golang-fleet-template-differential-e2e.sh","reports":[".tmp/golang-fleet-template-differential.json"]},
     {"method":"FleetService.LaunchFleetDispatch","scope":"game","evidence":"differential","runner":"run-golang-fleet-differential-e2e.sh","reports":[".tmp/golang-fleet-differential.json",".tmp/golang-expedition-differential.json",".tmp/golang-colonization-differential.json",".tmp/golang-acs-attack-differential.json"]},
-    {"method":"FleetService.RecallFleet","scope":"game","evidence":"differential","runner":"run-golang-fleet-differential-e2e.sh","reports":[".tmp/golang-fleet-differential.json"]},
+    {"method":"FleetService.RecallFleet","scope":"game","evidence":"differential","runner":"run-golang-fleet-differential-e2e.sh","reports":[".tmp/golang-fleet-differential.json",".tmp/golang-fleet-speed-recall-differential.json"]},
     {"method":"GalaxyService.DispatchInstantFleet","scope":"game","evidence":"differential","runner":"run-golang-galaxy-actions-differential-e2e.sh","reports":[".tmp/golang-galaxy-actions-differential.json"]},
     {"method":"GalaxyService.LaunchMissiles","scope":"game","evidence":"differential","runner":"run-golang-galaxy-actions-differential-e2e.sh","reports":[".tmp/golang-galaxy-actions-differential.json",".tmp/golang-missile-differential.json"]},
     {"method":"JumpGateService.Jump","scope":"game","evidence":"differential","runner":"run-golang-jump-gate-differential-e2e.sh","reports":[".tmp/golang-jump-gate-differential.json"]},

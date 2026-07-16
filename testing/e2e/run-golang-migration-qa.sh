@@ -124,6 +124,9 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     if [ "${OGAME_RUN_FLEET_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-fleet-differential-e2e.sh"
     fi
+    if [ "${OGAME_RUN_FLEET_SPEED_RECALL_DIFFERENTIAL:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-fleet-speed-recall-differential-e2e.sh"
+    fi
     if [ "${OGAME_RUN_FLEET_TEMPLATE_DIFFERENTIAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-golang-fleet-template-differential-e2e.sh"
     fi
@@ -318,6 +321,9 @@ if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
     fi
     if [ "${OGAME_RUN_FLEET_ALL_CASES:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-fleet-all-cases-e2e.sh"
+    fi
+    if [ "${OGAME_RUN_FLEET_RECALL_TIMING:-1}" = "1" ]; then
+      OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-fleet-recall-timing-e2e.sh"
     fi
     if [ "${OGAME_RUN_NAVIGATION_VISUAL:-1}" = "1" ]; then
       OGAME_GO_BASE_URL="$GO_BASE_URL" "$SCRIPT_DIR/run-playwright-navigation-visual-e2e.sh"

@@ -34,7 +34,7 @@ Current deep visual areas include:
 - overview with notices, unread messages, build rows, incoming/missile/fleet pseudo-events, active planet restore, event clicks, active-event reload persistence, and due-fleet return transitions
 - buildings, resources, research, shipyard, defense, completion refresh, resource deduction/refund, moon pages, and queue timers
 - galaxy rows, actions, hover/click behavior, target prefill, and instant spy/recycle dispatch
-- fleet continue and fleet all-cases dispatch previews
+- fleet continue, all-cases dispatch previews, and Recall button timing in Chromium/Firefox; recall return duration must equal outbound elapsed time, including accelerated fleet-speed universes
 - statistics, search, messages, merchant, notes, buddy list, options, alliance, admin, and empire views
 
 Runtime queue QA requires due combat to create its battle report in the first Messages API response, without an overview visit or duplicate report on reload.

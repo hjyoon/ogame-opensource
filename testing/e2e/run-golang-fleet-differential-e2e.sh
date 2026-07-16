@@ -8,6 +8,13 @@ GO_BASE_URL="${OGAME_GO_BASE_URL:-http://127.0.0.1:${OGAME_GO_PORT:-8890}}"
 FIXTURE="${OGAME_DIFFERENTIAL_FIXTURE:-$ROOT_DIR/.tmp/golang-smoke-fixture.json}"
 REPORT="${OGAME_FLEET_DIFFERENTIAL_REPORT:-$ROOT_DIR/.tmp/golang-fleet-differential.json}"
 PASSWORD="${OGAME_GO_LOGIN_SMOKE_PASS:-admin}"
+RECALL_ELAPSED_SECONDS="${OGAME_FLEET_RECALL_ELAPSED_SECONDS:-600}"
+FLEET_CASES="${OGAME_FLEET_DIFFERENTIAL_CASES:-transport recall deploy recycle attack attack-defense attack-guarded-win attack-defense-repair acs-hold}"
+
+case "$RECALL_ELAPSED_SECONDS" in
+  ''|*[!0-9]*) printf 'OGAME_FLEET_RECALL_ELAPSED_SECONDS must be a positive integer.\n' >&2; exit 1 ;;
+  0) printf 'OGAME_FLEET_RECALL_ELAPSED_SECONDS must be greater than zero.\n' >&2; exit 1 ;;
+esac
 
 [ -f "$FIXTURE" ] || { printf 'Missing fixture: %s\n' "$FIXTURE" >&2; exit 1; }
 command -v jq >/dev/null
@@ -44,6 +51,7 @@ attack_s="$(db_query "SELECT s FROM uni1_planets WHERE planet_id=$transport_targ
 attack_p="$(db_query "SELECT p FROM uni1_planets WHERE planet_id=$transport_target_id")"
 uni_defrepair="$(db_query 'SELECT defrepair FROM uni1_uni LIMIT 1')"
 uni_defrepair_delta="$(db_query 'SELECT defrepair_delta FROM uni1_uni LIMIT 1')"
+uni_fspeed="$(db_query 'SELECT fspeed FROM uni1_uni LIMIT 1')"
 buddy_marker="golang-fleet-differential-hold-$$"
 
 db_query "DROP TABLE IF EXISTS $planet_backup,$user_backup,$rank_backup,$fleet_backup,$queue_backup,$message_backup,$fleetlog_backup,$debris_backup; CREATE TABLE $planet_backup AS SELECT * FROM uni1_planets WHERE planet_id IN ($planets); CREATE TABLE $user_backup AS SELECT * FROM uni1_users WHERE player_id IN ($players); CREATE TABLE $rank_backup AS SELECT player_id,score1,score2,score3,place1,place2,place3,oldscore1,oldscore2,oldscore3,oldplace1,oldplace2,oldplace3 FROM uni1_users; CREATE TABLE $fleet_backup AS SELECT * FROM uni1_fleet WHERE owner_id IN ($players) OR start_planet IN ($planets) OR target_planet IN ($planets); CREATE TABLE $queue_backup AS SELECT * FROM uni1_queue WHERE type='Fleet' AND (owner_id IN ($players) OR sub_id IN (SELECT fleet_id FROM $fleet_backup)); CREATE TABLE $message_backup AS SELECT * FROM uni1_messages WHERE owner_id IN ($players); CREATE TABLE $fleetlog_backup AS SELECT * FROM uni1_fleetlogs WHERE owner_id IN ($players) OR target_id IN ($players); CREATE TABLE $debris_backup AS SELECT * FROM uni1_planets WHERE type=10000 AND g=$attack_g AND s=$attack_s AND p=$attack_p" >/dev/null
@@ -116,11 +124,11 @@ capture_state() {
 }
 
 normalize_recall_clock() {
-  jq -c '
+  jq -c --argjson expected "$RECALL_ELAPSED_SECONDS" '
     if .fleet != null and .fleet.mission == 103 then
-      if (.fleet.flightTime < 590 or .fleet.flightTime > 610 or .queue.duration < 590 or .queue.duration > 610) then error("recall duration outside deterministic window") else .fleet.flightTime=600 | .queue.duration=600 end
+      if (.fleet.flightTime < ($expected - 1) or .fleet.flightTime > ($expected + 10) or .queue.duration < ($expected - 1) or .queue.duration > ($expected + 10)) then error("recall duration outside deterministic window") else .fleet.flightTime=$expected | .queue.duration=$expected end
     else . end |
-    .fleetLogs |= map(if .mission == 103 then if (.flightTime < 590 or .flightTime > 610 or .duration < 590 or .duration > 610) then error("recall log duration outside deterministic window") else .flightTime=600 | .duration=600 end else . end)'
+    .fleetLogs |= map(if .mission == 103 then if (.flightTime < ($expected - 1) or .flightTime > ($expected + 10) or .duration < ($expected - 1) or .duration > ($expected + 10)) then error("recall log duration outside deterministic window") else .flightTime=$expected | .duration=$expected end else . end)'
 }
 
 login_legacy() {
@@ -180,7 +188,12 @@ run_side() {
   if [ "$side" = legacy ]; then legacy_launch "$side-$mode"; launch_status="$legacy_launch_status"; else go_launch "$side-$mode"; launch_status="$go_launch_status"; fi
   launched="$(capture_state)"
   if [ "$mode" = recall ]; then
-    db_query "UPDATE uni1_queue q JOIN uni1_fleet f ON f.fleet_id=q.sub_id SET q.start=UNIX_TIMESTAMP()-600,q.end=UNIX_TIMESTAMP()+3000 WHERE q.type='Fleet' AND f.owner_id=$player_id" >/dev/null
+    launched_duration="$(printf '%s' "$launched" | jq -r '.queue.duration // 0')"
+    [ "$launched_duration" -gt "$RECALL_ELAPSED_SECONDS" ] || {
+      printf 'Recall elapsed time (%ss) must be shorter than outbound flight time (%ss).\n' "$RECALL_ELAPSED_SECONDS" "$launched_duration" >&2
+      return 1
+    }
+    db_query "UPDATE uni1_queue q JOIN uni1_fleet f ON f.fleet_id=q.sub_id SET q.start=UNIX_TIMESTAMP()-$RECALL_ELAPSED_SECONDS,q.end=UNIX_TIMESTAMP()+GREATEST(f.flight_time-$RECALL_ELAPSED_SECONDS,1) WHERE q.type='Fleet' AND f.owner_id=$player_id" >/dev/null
     fleet_id="$(db_query "SELECT fleet_id FROM uni1_fleet WHERE owner_id=$player_id ORDER BY fleet_id DESC LIMIT 1")"
     if [ "$side" = legacy ]; then
       action_status="$(curl --silent --show-error --max-time 15 --output "$TMP_DIR/$side-$mode-action.body" --cookie "$TMP_DIR/$side-$mode.cookies" --data-urlencode "order_return=$fleet_id" --write-out '%{http_code}' "$LEGACY_BASE_URL/game/index.php?page=flotten1&session=$legacy_session&cp=$origin_id")"
@@ -308,16 +321,17 @@ EOF
   jq -nc --arg name "fleet-$mode" --argjson pass "$pass" --arg legacyLaunch "$legacy_launch_status" --arg goLaunch "$go_launch_status" --arg legacyAction "$legacy_action_status" --arg goAction "$go_action_status" --arg legacyHold "$legacy_hold_status" --arg goHold "$go_hold_status" --arg legacyFinalStatus "$legacy_final_status" --arg goFinalStatus "$go_final_status" --argjson before "$legacy_before" --argjson legacyLaunched "$legacy_launched" --argjson goLaunched "$go_launched" --argjson legacyTransitioned "$legacy_transitioned" --argjson goTransitioned "$go_transitioned" --argjson legacyReturning "$legacy_returning" --argjson goReturning "$go_returning" --argjson legacyFinal "$legacy_final" --argjson goFinal "$go_final" '{name:$name,pass:$pass,http:{launch:{legacy:$legacyLaunch,go:$goLaunch},action:{legacy:$legacyAction,go:$goAction},hold:{legacy:$legacyHold,go:$goHold},final:{legacy:$legacyFinalStatus,go:$goFinalStatus}},db:{before:$before,launched:{legacy:$legacyLaunched,go:$goLaunched},transitioned:{legacy:$legacyTransitioned,go:$goTransitioned},returning:{legacy:$legacyReturning,go:$goReturning},final:{legacy:$legacyFinal,go:$goFinal}}}' >> "$case_results"
 }
 
-run_case transport
-run_case recall
-run_case deploy
-run_case recycle
-run_case attack
-run_case attack-defense
-run_case attack-guarded-win
-run_case attack-defense-repair
-run_case acs-hold
+case_count=0
+for fleet_case in $FLEET_CASES; do
+  case "$fleet_case" in
+    transport|recall|deploy|recycle|attack|attack-defense|attack-guarded-win|attack-defense-repair|acs-hold) ;;
+    *) printf 'Unknown fleet differential case: %s\n' "$fleet_case" >&2; exit 1 ;;
+  esac
+  run_case "$fleet_case"
+  case_count=$((case_count + 1))
+done
+[ "$case_count" -gt 0 ]
 restore_original
-jq -s --argjson pass "$all_pass" --arg login "$login" --argjson playerId "$player_id" --argjson originId "$origin_id" '{pass:$pass,fixture:{login:$login,playerId:$playerId,originId:$originId},cases:.}' "$case_results" > "$REPORT"
+jq -s --argjson pass "$all_pass" --arg login "$login" --argjson playerId "$player_id" --argjson originId "$origin_id" --argjson fleetSpeed "$uni_fspeed" --argjson recallElapsedSeconds "$RECALL_ELAPSED_SECONDS" '{pass:$pass,fixture:{login:$login,playerId:$playerId,originId:$originId,fleetSpeed:$fleetSpeed,recallElapsedSeconds:$recallElapsedSeconds},cases:.}' "$case_results" > "$REPORT"
 [ "$all_pass" = true ]
-printf 'Go/PHP fleet differential E2E: PASS (9 cases)\n'
+printf 'Go/PHP fleet differential E2E: PASS (%s cases, fspeed=%s)\n' "$case_count" "$uni_fspeed"

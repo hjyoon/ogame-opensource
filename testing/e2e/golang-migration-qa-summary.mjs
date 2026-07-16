@@ -32,6 +32,7 @@ const artifacts = [
   { name: "go/PHP advanced building differential", path: ".tmp/golang-building-advanced-differential.json" },
   { name: "go/PHP defense limits differential", path: ".tmp/golang-defense-limits-differential.json" },
   { name: "go/PHP fleet differential", path: ".tmp/golang-fleet-differential.json" },
+  { name: "go/PHP accelerated fleet Recall differential", path: ".tmp/golang-fleet-speed-recall-differential.json" },
   { name: "go/PHP fleet-template differential", path: ".tmp/golang-fleet-template-differential.json" },
   { name: "go/PHP combat engine differential", path: ".tmp/golang-combat-engine-differential.json" },
   { name: "go/PHP expedition differential", path: ".tmp/golang-expedition-differential.json" },
@@ -122,6 +123,10 @@ const artifacts = [
   ...browserNames.map((browser) => ({
     name: `fleet all-cases ${browser}`,
     path: `.tmp/playwright-fleet-all-cases/${browser}/report.json`
+  })),
+  ...browserNames.map((browser) => ({
+    name: `fleet Recall timing ${browser}`,
+    path: `.tmp/playwright-fleet-recall-timing/${browser}/report.json`
   })),
   ...browserNames.map((browser) => ({
     name: `navigation visual ${browser}`,

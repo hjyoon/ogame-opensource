@@ -212,6 +212,14 @@ if ($ownQueueDuration > 0) {
         " WHERE type='" . QTYP_FLEET . "' AND sub_id={$ownFleetId}"
     );
 }
+$ownElapsedSeconds = max(0, (int)(getenv('OGAME_OVERVIEW_FLEET_OWN_ELAPSED_SECONDS') ?: 0));
+if ($ownElapsedSeconds > 0) {
+    global $db_prefix;
+    dbquery(
+        "UPDATE {$db_prefix}queue SET start=" . ($now - $ownElapsedSeconds) .
+        " WHERE type='" . QTYP_FLEET . "' AND sub_id={$ownFleetId}"
+    );
+}
 $enemyQueueDuration = max(0, (int)(getenv('OGAME_OVERVIEW_FLEET_ENEMY_QUEUE_DURATION') ?: 0));
 if ($enemyQueueDuration > 0) {
     global $db_prefix;
@@ -232,6 +240,7 @@ echo json_encode(array(
     'target_planet_id' => $defender['planet_id'],
     'own_fleet_id' => $ownFleetId,
     'own_queue_duration' => $ownQueueDuration,
+    'own_elapsed_seconds' => $ownElapsedSeconds,
     'enemy_fleet_id' => $enemyFleetId,
     'enemy_queue_duration' => $enemyQueueDuration,
     'prepared_at' => $now,
