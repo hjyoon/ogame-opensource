@@ -25,6 +25,7 @@ export type GameRouteKey =
   | "notes"
   | "buddy"
   | "options"
+  | "mcpGuide"
   | "logout";
 
 export type GameRoute = {
@@ -61,6 +62,7 @@ export const gameRoutes: GameRoute[] = [
   { key: "notes", label: "Notes", path: "/game/notes", migrated: true },
   { key: "buddy", label: "Buddylist", path: "/game/buddy", migrated: true },
   { key: "options", label: "Options", path: "/game/options", migrated: true },
+  { key: "mcpGuide", label: "MCP Guide", path: "/game/mcp-guide", migrated: true },
   { key: "logout", label: "Logout", path: "/game/logout", migrated: true }
 ];
 

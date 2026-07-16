@@ -1269,6 +1269,7 @@ body.legacy-game-body {
 
 .legacy-options-table,
 .legacy-mcp-token-table,
+.legacy-mcp-guide-table,
 .legacy-resources-table {
   border-collapse: separate;
   border-spacing: 2px;
@@ -1277,8 +1278,33 @@ body.legacy-game-body {
 
 .legacy-game-shell .legacy-options-table th,
 .legacy-game-shell .legacy-mcp-token-table th,
+.legacy-game-shell .legacy-mcp-guide-table th,
 .legacy-game-shell .legacy-resources-table th {
   font-weight: bold;
+}
+
+.legacy-game-shell .legacy-mcp-guide-table td.legacy-l {
+  width: 125px;
+}
+
+.legacy-game-shell .legacy-mcp-guide-table th {
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.legacy-game-shell .legacy-mcp-guide-table ol {
+  margin: 2px 0;
+  padding-left: 22px;
+}
+
+.legacy-game-shell .legacy-mcp-guide-table code {
+  color: #ffffff;
+  font-family: monospace;
+}
+
+.legacy-game-shell .legacy-mcp-guide-table small {
+  font-weight: normal;
 }
 
 .legacy-game-shell .legacy-resources-table td.legacy-c {

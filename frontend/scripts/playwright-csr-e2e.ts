@@ -21,6 +21,7 @@ const rootDir = resolve(import.meta.dir, "../..");
 const browserName = browserEnv("OGAME_PLAYWRIGHT_BROWSER", "chromium");
 const outputDir = resolve(rootDir, ".tmp/playwright-csr", browserName);
 const migratedBaseURL = trimTrailingSlash(process.env.OGAME_GO_BASE_URL ?? "http://127.0.0.1:8890");
+const mailhogAPIURL = process.env.OGAME_MAILHOG_API_URL ?? "http://127.0.0.1:8026/api/v2/messages?limit=100";
 const defaultChromeExecutable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const defaultBrowserExecutable = browserName === "firefox" ? undefined : defaultChromeExecutable;
 const browserExecutable =
@@ -113,6 +114,7 @@ try {
   await assertGameClientNavigation(page, "game buddy menu preserves CSR", "a[href^='/game/buddy']", "/game/buddy", "Buddylist");
   await assertGameClientNavigation(page, "game options menu preserves CSR", "a[href^='/game/options']", "/game/options", "Options");
   await assertOptionsMutationFlow(page);
+  await assertMCPGuideFlow(page);
   await assertGameClientNavigation(page, "game notes menu preserves CSR", "a[href^='/game/notes']", "/game/notes", "Notes");
   await assertNotesMutationFlow(page);
   await assertGameProgrammaticNavigation(page, "game overview popstate from notes preserves CSR", "/game/overview", "Overview");
@@ -236,13 +238,14 @@ async function createLoginFixture(): Promise<LoginFixture> {
   const suffix = `${browserName.slice(0, 2)}${Date.now().toString(36).slice(-8)}${Math.random().toString(36).slice(2, 4)}`;
   const login = `Csr${suffix}`.slice(0, 20);
   const password = "E2E_http123";
+  const email = `${login.toLowerCase()}@example.local`;
   const registrationResponse = await fetch(`${migratedBaseURL}/api/public/registration`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       character: login,
       password,
-      email: `${login.toLowerCase()}@example.local`,
+      email,
       universe,
       agb: true
     })
@@ -251,7 +254,33 @@ async function createLoginFixture(): Promise<LoginFixture> {
   if (registrationResponse.status !== 200 || registrationPayload.valid !== true || registrationPayload.created !== true) {
     throw new Error(`Unable to create CSR login fixture: ${JSON.stringify(registrationPayload)}`);
   }
+  const activationURL = await waitForActivationLink(email);
+  const activationResponse = await fetch(activationURL);
+  if (!activationResponse.ok || new URL(activationResponse.url).pathname !== "/game/overview") {
+    throw new Error(`Unable to activate CSR login fixture: ${activationResponse.status} ${activationResponse.url}`);
+  }
   return { login, password, universe };
+}
+
+async function waitForActivationLink(email: string): Promise<string> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const response = await fetch(mailhogAPIURL);
+    if (response.ok) {
+      const payload = (await response.json()) as {
+        items?: Array<{ To?: Array<{ Mailbox?: string; Domain?: string }>; Content?: { Body?: string } }>;
+      };
+      const message = payload.items?.find((item) =>
+        item.To?.some((recipient) => `${recipient.Mailbox ?? ""}@${recipient.Domain ?? ""}`.toLowerCase() === email.toLowerCase())
+      );
+      const match = message?.Content?.Body?.match(/https?:\/\/[^\s]+\/game\/validate\.php\?ack=[^\s]+/);
+      if (match?.[0]) {
+        return match[0].replace(/&amp;/g, "&");
+      }
+    }
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
+  }
+  throw new Error(`Activation mail was not delivered for ${email}`);
 }
 
 async function assertGameClientNavigation(
@@ -637,7 +666,7 @@ async function assertOfficerInsufficientDarkMatter(page: Page) {
     window.__ogameCsrProbe = value;
   }, marker);
   await page.locator(".legacy-officers-table").waitFor({ timeout: 10_000 });
-  await page.locator(".legacy-officers-table a[href*='type=1'][href*='days=7']").first().click();
+  await page.locator(".legacy-officers-table a[href*='type=1'][href*='days=90']").first().click();
   await page.waitForFunction(() => document.body.textContent?.includes("Not enough dark matter!"), undefined, {
     timeout: 10_000
   });
@@ -687,6 +716,77 @@ async function assertOptionsMutationFlow(page: Page) {
         state.details.optionsSortOrder === "1" &&
         state.details.optionsMaxSpy === "2" &&
         state.details.optionsMaxFleetMessages === "4" &&
+        state.details.pendingText === false,
+      details: state.details
+    };
+  });
+}
+
+async function assertMCPGuideFlow(page: Page) {
+  const guideMarker = "probe-game-mcp-guide";
+  await page.evaluate((value) => {
+    window.__ogameCsrProbe = value;
+  }, guideMarker);
+  await page.locator(".legacy-mcp-token-table a", { hasText: "Quick guide" }).click();
+  await page.waitForFunction(() => window.location.pathname === "/game/mcp-guide", undefined, { timeout: 5_000 });
+  await page.locator(".legacy-mcp-guide-table").waitFor({ timeout: 10_000 });
+  await record("game MCP guide link preserves CSR and session", async () => {
+    const state = await page.evaluate(() => {
+      const table = document.querySelector(".legacy-mcp-guide-table");
+      const text = table?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+      return {
+        pathname: window.location.pathname,
+        search: window.location.search,
+        probe: window.__ogameCsrProbe,
+        gameShell: document.querySelector(".legacy-game-shell") !== null,
+        guideTable: table !== null,
+        guideText: text,
+        endpoint: Array.from(table?.querySelectorAll("code") ?? []).find((code) => code.textContent?.endsWith("/mcp"))?.textContent ?? "",
+        toolCount: table?.querySelectorAll(".legacy-mcp-guide-tools code").length ?? 0,
+        optionsHref: table?.querySelector<HTMLAnchorElement>("a[href^='/game/options']")?.getAttribute("href") ?? "",
+        legacyCssLinks: document.head.querySelectorAll("link[data-legacy-public-css]").length,
+        legacyBody: document.body.classList.contains("legacy-public-body")
+      };
+    });
+    return {
+      pass:
+        state.pathname === "/game/mcp-guide" &&
+        state.search.includes("session=") &&
+        state.probe === guideMarker &&
+        state.gameShell &&
+        state.guideTable &&
+        state.guideText.includes("MCP Quick Guide") &&
+        state.guideText.includes("tools/list") &&
+        state.guideText.includes("get_account_overview") &&
+        state.guideText.includes("dispatch_fleet") &&
+        state.guideText.includes("mutate_admin_panel") &&
+        state.endpoint === `${migratedBaseURL}/mcp` &&
+        state.toolCount === 61 &&
+        state.optionsHref.includes("/game/options?") &&
+        state.optionsHref.includes("session=") &&
+        state.legacyCssLinks === 0 &&
+        !state.legacyBody,
+      details: state
+    };
+  });
+
+  const optionsMarker = "probe-game-mcp-guide-options";
+  await page.evaluate((value) => {
+    window.__ogameCsrProbe = value;
+  }, optionsMarker);
+  await page.locator(".legacy-mcp-guide-table a[href^='/game/options']").first().click();
+  await page.waitForFunction(() => window.location.pathname === "/game/options", undefined, { timeout: 5_000 });
+  await page.locator(".legacy-options-table").waitFor({ timeout: 10_000 });
+  await record("game MCP guide returns to Options through CSR", async () => {
+    const state = await gameShellState(page, optionsMarker, "Options");
+    return {
+      pass:
+        state.pass &&
+        state.details.pathname === "/game/options" &&
+        state.details.optionsTable === true &&
+        state.details.mcpTokenTable === true &&
+        state.details.mcpTokenText.includes("MCP Tokens") &&
+        state.details.mcpTokenText.includes("Quick guide") &&
         state.details.pendingText === false,
       details: state.details
     };
@@ -854,7 +954,7 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     officersTable: document.querySelector(".legacy-officers-table") !== null,
     officersText: document.querySelector(".legacy-officers-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     officersErrorText:
-      Array.from(document.querySelectorAll(".legacy-message-error, .legacy-message-neutral, .legacy-overview-table"))
+      Array.from(document.querySelectorAll(".legacy-page-errorbox, .legacy-message-error, .legacy-message-neutral, .legacy-overview-table"))
         .find((element) => element.textContent?.includes("Not enough dark matter!"))
         ?.textContent?.trim()
         .replace(/\s+/g, " ") ?? "",
@@ -912,6 +1012,8 @@ async function gameShellState(page: Page, expectedProbe: string, expectedMenuLab
     optionsMaxSpy: document.querySelector<HTMLInputElement>(".legacy-options-table input[name='spio_anz']")?.value ?? "",
     optionsMaxFleetMessages:
       document.querySelector<HTMLInputElement>(".legacy-options-table input[name='settings_fleetactions']")?.value ?? "",
+    mcpTokenTable: document.querySelector(".legacy-mcp-token-table") !== null,
+    mcpTokenText: document.querySelector(".legacy-mcp-token-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",
     notesTable: document.querySelector(".legacy-notes-table") !== null,
     notesRows: document.querySelectorAll("[data-note-row]").length,
     notesText: document.querySelector(".legacy-notes-table")?.textContent?.trim().replace(/\s+/g, " ") ?? "",

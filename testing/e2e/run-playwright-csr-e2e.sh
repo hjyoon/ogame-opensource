@@ -4,6 +4,8 @@ set -eu
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 ROOT_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
 GO_BASE_URL="${OGAME_GO_BASE_URL:-http://127.0.0.1:8890}"
+MAILHOG_BASE_URL="${OGAME_MAILHOG_BASE_URL:-http://127.0.0.1:${OGAME_MAILHOG_PORT:-8026}}"
+MAILHOG_API_URL="${OGAME_MAILHOG_API_URL:-$MAILHOG_BASE_URL/api/v2/messages?limit=100}"
 
 wait_for_url() {
   url="$1"
@@ -20,6 +22,7 @@ wait_for_url() {
 }
 
 wait_for_url "$GO_BASE_URL/api/healthz"
+wait_for_url "$MAILHOG_BASE_URL/api/v2/messages"
 
 cd "$ROOT_DIR/frontend"
-OGAME_GO_BASE_URL="$GO_BASE_URL" bun run e2e:csr
+OGAME_GO_BASE_URL="$GO_BASE_URL" OGAME_MAILHOG_API_URL="$MAILHOG_API_URL" bun run e2e:csr

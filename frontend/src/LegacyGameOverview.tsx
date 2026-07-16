@@ -15,6 +15,7 @@ import {
   type GameRoute
 } from "./gameRoutes";
 import { legacyChangelogRows } from "./legacyChangelogData";
+import { MCPGuidePage } from "./MCPGuidePage";
 
 export type GameOverviewStatus = {
   authenticated: boolean;
@@ -2883,6 +2884,7 @@ export function LegacyGameOverview({
             pending={optionsPending}
           />
         ) : null}
+        {overview && route.key === "mcpGuide" ? <MCPGuidePage /> : null}
       </section>
       <div id="overDiv" style={{ left: -10000, position: "absolute", top: -10000, visibility: "hidden", zIndex: 1000 }} />
     </main>
@@ -13970,7 +13972,7 @@ function MCPTokenTable({
       <tbody>
         <tr>
           <td className="legacy-c c" colSpan={6}>
-            MCP Tokens
+            MCP Tokens [<a href={gameRouteURL("/game/mcp-guide", window.location.search)}>Quick guide</a>]
           </td>
         </tr>
         {error ? (

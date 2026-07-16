@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { mcpGuideToolGroups } from "../../frontend/src/mcpGuide.ts";
 
 function envURL(value, fallback) {
   return String(value ?? fallback).replace(/\/+$/, "");
@@ -548,69 +549,11 @@ try {
     body: JSON.stringify({ tokenId: limitedTokenID })
   });
   const limitedRevokeBody = limitedRevoke === undefined ? {} : parseJSON(limitedRevoke);
-  const expectedTools = [
-    "get_server_health",
-    "get_mcp_access",
-    "list_planets",
-    "get_account_overview",
-    "get_planet_resources",
-    "get_resource_production_options",
-    "get_building_queue",
-    "get_fleet_movements",
-    "get_fleet_options",
-    "get_officer_status",
-    "search_game",
-    "get_galaxy_system",
-    "get_statistics",
-    "get_alliance_status",
-    "get_buddy_status",
-    "get_pranger",
-    "get_notes",
-    "get_options",
-    "get_maintenance",
-    "get_merchant_status",
-    "get_jump_gate_status",
-    "get_empire_overview",
-    "get_technology_tree",
-    "get_building_options",
-    "get_research_options",
-    "get_shipyard_options",
-    "get_defense_options",
-    "list_messages",
-    "get_message",
-    "get_report",
-    "send_message",
-    "delete_messages",
-    "report_message",
-    "create_note",
-    "update_note",
-    "delete_notes",
-    "mutate_buddy",
-    "mutate_merchant",
-    "validate_fleet_dispatch",
-    "dispatch_fleet",
-    "recall_fleet",
-    "scan_phalanx",
-    "jump_gate",
-    "cancel_building_queue",
-    "cancel_research_queue",
-    "enqueue_shipyard_order",
-    "update_resource_production",
-    "recruit_officer",
-    "mutate_building",
-    "start_research",
-    "mutate_commander_queue",
-    "mutate_fleet_template",
-    "launch_interplanetary_missiles",
-    "dispatch_galaxy_action",
-    "mutate_planet",
-    "mutate_alliance",
-    "update_account_options",
-    "redeem_coupon"
-  ];
+  const documentedTools = mcpGuideToolGroups.flatMap((group) => group.tools);
+  const staffToolsExpected = ["get_admin_access", "get_admin_panel", "mutate_admin_panel"];
+  const expectedTools = documentedTools.filter((name) => !staffToolsExpected.includes(name));
   const authedToolNames = toolNames(authedToolsBody);
   const staffToolNames = toolNames(staffToolsBody);
-  const staffToolsExpected = ["get_admin_access", "get_admin_panel", "mutate_admin_panel"];
   const roleLevelMatches = currentRole === "admin" ? currentUserType >= 2 : currentRole === "operator" ? currentUserType === 1 : currentUserType === 0;
   const scopeInventoryMatches = availableScopes.includes("mcp:read") && (
     currentRole === "admin"
@@ -669,7 +612,7 @@ try {
       check(oauthApprove.status === 302 && oauthApproveLocation.startsWith(oauthRedirectURI) && oauthCallback.searchParams.get("state") === "go-mcp-smoke-state" && oauthCode !== "", "OAuth authorize approval redirects with code and state", { status: oauthApprove.status, location: oauthApproveLocation }),
       check(oauthToken.status === 200 && oauthSecret.startsWith("ogmcp_") && oauthTokenBody.token_type === "Bearer" && Number(oauthTokenBody.expires_in ?? 0) > 0, "OAuth token exchange returns bearer access token", oauthTokenBody),
       check(oauthIDToken.split(".").length === 3 && oauthIDClaims.iss === baseUrl && oauthIDClaims.aud === oauthClientID && oauthIDClaims.sub === `player:${login.playerID}`, "OAuth openid exchange returns ID token claims", oauthIDClaims),
-      check(oauthTools.status === 200 && expectedTools.every((name) => toolNames(oauthToolsBody).includes(name)), "OAuth bearer token exposes current MCP tools", { oauthToolNames: toolNames(oauthToolsBody) }),
+      check(oauthTools.status === 200 && toolNames(oauthToolsBody).length === expectedTools.length && expectedTools.every((name) => toolNames(oauthToolsBody).includes(name)), "OAuth bearer token exposes exactly the documented player MCP tools", { oauthToolNames: toolNames(oauthToolsBody) }),
       check(Number(oauthTokenRow?.id ?? 0) > 0 && Number(oauthTokenRow?.expiresAt ?? 0) > Number(oauthTokenRow?.createdAt ?? 0), "OAuth exchange persists a revocable expiring MCP token row", { oauthTokenRow }),
       check(oauthRevoke.status === 200 && oauthRevokeBody.revoked === true, "OAuth revocation endpoint revokes created MCP token", oauthRevokeBody),
       check(oauthAccessAfterRevoke.status === 401 && oauthAccessAfterRevokeBody.error?.code === -32001, "OAuth-revoked bearer token is rejected by MCP", oauthAccessAfterRevokeBody),
@@ -684,7 +627,7 @@ try {
       check(noExpiryCreate.status === 200 && noExpiryTokenID > 0 && Number(noExpiryCreateBody.token?.expiresAt ?? 0) === 0 && Number(noExpiryTokenRow?.expiresAt ?? 0) === 0, "MCP token create and list support no expiration", { noExpiryCreateBody, noExpiryTokenRow }),
       check(maxActiveTokens === 5 && fillerTokenIDs.every((id) => id > 0) && tokenCreateOverLimit.status === 409 && tokenCreateOverLimit.body.includes("maximum of 5"), "MCP token creation rejects a sixth active token", { maxActiveTokens, fillerTokenIDs, status: tokenCreateOverLimit.status, body: tokenCreateOverLimit.body }),
       check(!String(tokenListAfterCreate.body ?? "").includes(secret), "MCP token list never exposes the plaintext secret"),
-      check(authedTools.status === 200 && expectedTools.every((name) => authedToolNames.includes(name)), "bearer token exposes all current MCP tools", {
+      check(authedTools.status === 200 && authedToolNames.length === expectedTools.length && expectedTools.every((name) => authedToolNames.includes(name)), "bearer token exposes exactly the documented player MCP tools", {
         authedToolNames
       }),
       check(accessTool.status === 200 && Number(accessToolBody.result?.structuredContent?.playerId ?? 0) === login.playerID, "get_mcp_access returns bearer player id", accessToolBody.result ?? {}),

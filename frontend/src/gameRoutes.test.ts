@@ -25,6 +25,7 @@ describe("game route model", () => {
     expect(gameRoutes.map((route) => route.path)).toContain("/game/merchant");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/officers");
     expect(gameRoutes.map((route) => route.path)).toContain("/game/jump-gate");
+    expect(gameRoutes.map((route) => route.path)).toContain("/game/mcp-guide");
   });
 
   test("normalizes game paths", () => {
@@ -74,6 +75,7 @@ describe("game route model", () => {
     expect(resolveGameRoute("/game/notes")).toMatchObject({ key: "notes", migrated: true });
     expect(resolveGameRoute("/game/logout")).toMatchObject({ key: "logout", migrated: true });
     expect(resolveGameRoute("/game/options")).toMatchObject({ key: "options", label: "Options", migrated: true });
+    expect(resolveGameRoute("/game/mcp-guide")).toMatchObject({ key: "mcpGuide", label: "MCP Guide", migrated: true });
     expect(resolveGameRoute("/game/messages")).toMatchObject({ key: "messages", migrated: true });
     expect(resolveGameRoute("/game/report")).toMatchObject({ key: "report", migrated: true });
     expect(resolveGameRoute("/game/index.php", "?page=bericht&bericht=11")).toMatchObject({ key: "report", migrated: true });
@@ -123,6 +125,7 @@ describe("game route model", () => {
 
   test("preserves active session query parameters in menu links", () => {
     expect(gameRouteURL("/game/buildings", "?session=abc&cp=42")).toBe("/game/buildings?session=abc&cp=42");
+    expect(gameRouteURL("/game/mcp-guide", "?session=abc&cp=42&unused=1")).toBe("/game/mcp-guide?session=abc&cp=42");
     expect(gameRouteURL("/game/buildings", "?session=abc&cp=42&planet=42&modus=add&techid=1")).toBe(
       "/game/buildings?session=abc&cp=42&planet=42&modus=add&techid=1"
     );
