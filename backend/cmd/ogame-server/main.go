@@ -230,6 +230,20 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 	shipyardReadRepository := mysqlgame.NewShipyardReadRepository(db, cfg.UniDBPrefix)
 	defenseReadRepository := mysqlgame.NewDefenseReadRepository(db, cfg.UniDBPrefix)
 	fleetReadRepository := mysqlgame.NewFleetReadRepository(db, cfg.UniDBPrefix)
+	playerActions := appmcp.PlayerActions{
+		Buildings:      queueWriteRepository,
+		Research:       mysqlgame.NewResearchRepository(db, cfg.UniDBPrefix),
+		Overview:       mysqlgame.NewOverviewRepositoryWithSecret(db, cfg.UniDBPrefix, cfg.UniDBSecret),
+		FleetTemplates: fleetWriteRepository,
+		Alliance:       mysqlgame.NewAllianceRepository(db, cfg.UniDBPrefix),
+		Options:        mysqlgame.NewOptionsRepositoryWithSecret(db, cfg.UniDBPrefix, cfg.UniDBSecret),
+		OptionsMailer:  optionsChangeMailer(cfg, logger),
+		Empire:         mysqlgame.NewEmpireRepository(db, cfg.UniDBPrefix),
+		Galaxy:         mysqlgame.NewGalaxyRepository(db, cfg.UniDBPrefix),
+	}
+	if pools.master != nil {
+		playerActions.Payment = mysqlgame.NewPaymentRepository(db, pools.master, cfg.UniDBPrefix, cfg.UniNumber)
+	}
 	return withCommonMCP(appmcp.NewServiceWithTokenManagement(health, verifier, repository, sessions, appmcp.SecureTokenGenerator{}, time.Now).
 		WithTokenTTL(time.Duration(cfg.MCPTokenTTLSeconds) * time.Second).
 		WithOAuthCodeRepository(repository).
@@ -265,7 +279,8 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 		WithShipyardOptionsReadRepository(shipyardReadRepository).
 		WithDefenseOptionsReadRepository(defenseReadRepository).
 		WithFleetOptionsReadRepository(fleetReadRepository).
-		WithPremiumWriteRepository(premiumRepository))
+		WithPremiumWriteRepository(premiumRepository).
+		WithPlayerActions(playerActions))
 }
 
 type mcpSchemaRepository interface {

@@ -225,7 +225,7 @@ try {
     body: JSON.stringify({
       redirect_uris: [oauthRedirectURI],
       client_name: "Go MCP smoke",
-      scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:notes_write mcp:buddy_write mcp:fleet mcp:fleet_write mcp:queue_write mcp:resources_write mcp:premium_write mcp:merchant_write"
+      scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:notes_write mcp:buddy_write mcp:fleet mcp:fleet_write mcp:queue_write mcp:resources_write mcp:premium_write mcp:merchant_write mcp:planet_write mcp:alliance_write mcp:account_write mcp:payment_write"
     })
   });
   const clientRegistrationBody = parseJSON(clientRegistration);
@@ -235,7 +235,7 @@ try {
     client_id: oauthClientID,
     redirect_uri: oauthRedirectURI,
     resource: `${baseUrl}/mcp`,
-    scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:notes_write mcp:buddy_write mcp:fleet mcp:fleet_write mcp:queue_write mcp:resources_write mcp:premium_write mcp:merchant_write",
+    scope: "openid profile mcp:read mcp:messages mcp:message_write mcp:notes_write mcp:buddy_write mcp:fleet mcp:fleet_write mcp:queue_write mcp:resources_write mcp:premium_write mcp:merchant_write mcp:planet_write mcp:alliance_write mcp:account_write mcp:payment_write",
     state: "go-mcp-smoke-state",
     code_challenge: pkceChallenge(oauthVerifier),
     code_challenge_method: "S256",
@@ -298,7 +298,7 @@ try {
     headers: { "Content-Type": "application/json", Cookie: login.cookiePair },
     body: JSON.stringify({
       name: `go-mcp-smoke-${Date.now().toString(36)}`,
-      scopes: ["mcp:read", "mcp:messages", "mcp:message_write", "mcp:notes_write", "mcp:buddy_write", "mcp:fleet", "mcp:fleet_write", "mcp:queue_write", "mcp:resources_write", "mcp:premium_write", "mcp:merchant_write"]
+      scopes: ["mcp:read", "mcp:messages", "mcp:message_write", "mcp:notes_write", "mcp:buddy_write", "mcp:fleet", "mcp:fleet_write", "mcp:queue_write", "mcp:resources_write", "mcp:premium_write", "mcp:merchant_write", "mcp:planet_write", "mcp:alliance_write", "mcp:account_write", "mcp:payment_write"]
     })
   });
   const tokenCreateBody = parseJSON(tokenCreate);
@@ -408,6 +408,26 @@ try {
   const updateResourceProductionDryRunBody = parseJSON(updateResourceProductionDryRun);
   const recruitOfficerDryRun = await mcpJSONRPC("tools/call", { name: "recruit_officer", arguments: { officerId: 1, days: 7 } }, { id: 40, headers: authHeaders });
   const recruitOfficerDryRunBody = parseJSON(recruitOfficerDryRun);
+  const mutateBuildingDryRun = await mcpJSONRPC("tools/call", { name: "mutate_building", arguments: { action: "add", techId: 1 } }, { id: 67, headers: authHeaders });
+  const mutateBuildingDryRunBody = parseJSON(mutateBuildingDryRun);
+  const startResearchDryRun = await mcpJSONRPC("tools/call", { name: "start_research", arguments: { techId: 106 } }, { id: 68, headers: authHeaders });
+  const startResearchDryRunBody = parseJSON(startResearchDryRun);
+  const mutatePlanetDryRun = await mcpJSONRPC("tools/call", { name: "mutate_planet", arguments: { action: "rename", planetId: Number(planetsToolBody.result?.structuredContent?.planets?.[0]?.id ?? 0), name: "MCP dry-run" } }, { id: 69, headers: authHeaders });
+  const mutatePlanetDryRunBody = parseJSON(mutatePlanetDryRun);
+  const mutateFleetTemplateDryRun = await mcpJSONRPC("tools/call", { name: "mutate_fleet_template", arguments: { action: "save", name: "MCP dry-run", ships: { "202": 1 } } }, { id: 70, headers: authHeaders });
+  const mutateFleetTemplateDryRunBody = parseJSON(mutateFleetTemplateDryRun);
+  const mutateCommanderQueueDryRun = await mcpJSONRPC("tools/call", { name: "mutate_commander_queue", arguments: { action: "add", targetPlanetId: Number(planetsToolBody.result?.structuredContent?.planets?.[0]?.id ?? 0), techId: 1 } }, { id: 71, headers: authHeaders });
+  const mutateCommanderQueueDryRunBody = parseJSON(mutateCommanderQueueDryRun);
+  const missileLaunchDryRun = await mcpJSONRPC("tools/call", { name: "launch_interplanetary_missiles", arguments: { targetPlanetId: 999999999, amount: 1, targetDefenseId: 401 } }, { id: 72, headers: authHeaders });
+  const missileLaunchDryRunBody = parseJSON(missileLaunchDryRun);
+  const galaxyDispatchDryRun = await mcpJSONRPC("tools/call", { name: "dispatch_galaxy_action", arguments: { action: "spy", targetGalaxy: 9, targetSystem: 499, targetPosition: 15, amount: 1 } }, { id: 73, headers: authHeaders });
+  const galaxyDispatchDryRunBody = parseJSON(galaxyDispatchDryRun);
+  const allianceMutationDryRun = await mcpJSONRPC("tools/call", { name: "mutate_alliance", arguments: { action: "leave" } }, { id: 74, headers: authHeaders });
+  const allianceMutationDryRunBody = parseJSON(allianceMutationDryRun);
+  const accountOptionsDryRun = await mcpJSONRPC("tools/call", { name: "update_account_options", arguments: { action: "settings" } }, { id: 75, headers: authHeaders });
+  const accountOptionsDryRunBody = parseJSON(accountOptionsDryRun);
+  const couponDryRun = await mcpJSONRPC("tools/call", { name: "redeem_coupon", arguments: { couponCode: "MCP-SMOKE-MISSING" } }, { id: 76, headers: authHeaders });
+  const couponDryRunBody = parseJSON(couponDryRun);
   const invalidParamsTool = await mcpJSONRPC("tools/call", { name: "get_planet_resources", arguments: { planetId: "abc" } }, { id: 27, headers: authHeaders });
   const invalidParamsToolBody = parseJSON(invalidParamsTool);
   const tokenListAfterUse = await request(`/api/game/mcp-tokens${login.search}`, {
@@ -475,7 +495,17 @@ try {
     "cancel_research_queue",
     "enqueue_shipyard_order",
     "update_resource_production",
-    "recruit_officer"
+    "recruit_officer",
+    "mutate_building",
+    "start_research",
+    "mutate_commander_queue",
+    "mutate_fleet_template",
+    "launch_interplanetary_missiles",
+    "dispatch_galaxy_action",
+    "mutate_planet",
+    "mutate_alliance",
+    "update_account_options",
+    "redeem_coupon"
   ];
   const authedToolNames = toolNames(authedToolsBody);
   cases.push(finalize({
@@ -557,6 +587,16 @@ try {
       check(enqueueShipyardOrderDryRun.status === 200 && Number(enqueueShipyardOrderDryRunBody.result?.structuredContent?.enqueueShipyardOrder?.playerId ?? 0) === login.playerID && enqueueShipyardOrderDryRunBody.result?.structuredContent?.enqueueShipyardOrder?.kind === "fleet" && Number(enqueueShipyardOrderDryRunBody.result?.structuredContent?.enqueueShipyardOrder?.itemId ?? 0) === 204 && Number(enqueueShipyardOrderDryRunBody.result?.structuredContent?.enqueueShipyardOrder?.requested ?? 0) === 1 && enqueueShipyardOrderDryRunBody.result?.structuredContent?.enqueueShipyardOrder?.dryRun === true && enqueueShipyardOrderDryRunBody.result?.structuredContent?.enqueueShipyardOrder?.executed === false, "enqueue_shipyard_order dry-run is available under queue_write and does not mutate before confirmation", enqueueShipyardOrderDryRunBody.result ?? {}),
       check(updateResourceProductionDryRun.status === 200 && Number(updateResourceProductionDryRunBody.result?.structuredContent?.updateResourceProduction?.playerId ?? 0) === login.playerID && updateResourceProductionDryRunBody.result?.structuredContent?.updateResourceProduction?.dryRun === true && updateResourceProductionDryRunBody.result?.structuredContent?.updateResourceProduction?.executed === false && Array.isArray(updateResourceProductionDryRunBody.result?.structuredContent?.updateResourceProduction?.settings), "update_resource_production dry-run is available under resources_write and does not mutate before confirmation", updateResourceProductionDryRunBody.result ?? {}),
       check(recruitOfficerDryRun.status === 200 && Number(recruitOfficerDryRunBody.result?.structuredContent?.recruitOfficer?.playerId ?? 0) === login.playerID && Number(recruitOfficerDryRunBody.result?.structuredContent?.recruitOfficer?.officerId ?? 0) === 1 && recruitOfficerDryRunBody.result?.structuredContent?.recruitOfficer?.dryRun === true && recruitOfficerDryRunBody.result?.structuredContent?.recruitOfficer?.executed === false, "recruit_officer dry-run is available under premium_write and does not mutate before confirmation", recruitOfficerDryRunBody.result ?? {}),
+      check(mutateBuildingDryRun.status === 200 && mutateBuildingDryRunBody.result?.structuredContent?.buildingMutation?.dryRun === true && mutateBuildingDryRunBody.result?.structuredContent?.buildingMutation?.executed === false, "mutate_building defaults to a non-mutating dry-run", mutateBuildingDryRunBody.result ?? {}),
+      check(startResearchDryRun.status === 200 && startResearchDryRunBody.result?.structuredContent?.researchMutation?.dryRun === true && startResearchDryRunBody.result?.structuredContent?.researchMutation?.executed === false, "start_research defaults to a non-mutating dry-run", startResearchDryRunBody.result ?? {}),
+      check(mutatePlanetDryRun.status === 200 && mutatePlanetDryRunBody.result?.structuredContent?.planetMutation?.dryRun === true && mutatePlanetDryRunBody.result?.structuredContent?.planetMutation?.executed === false, "mutate_planet defaults to a non-mutating dry-run", mutatePlanetDryRunBody.result ?? {}),
+      check(mutateFleetTemplateDryRun.status === 200 && mutateFleetTemplateDryRunBody.result?.structuredContent?.fleetTemplateMutation?.dryRun === true && mutateFleetTemplateDryRunBody.result?.structuredContent?.fleetTemplateMutation?.executed === false, "mutate_fleet_template validates Commander access without mutating", mutateFleetTemplateDryRunBody.result ?? {}),
+      check(mutateCommanderQueueDryRun.status === 200 && mutateCommanderQueueDryRunBody.result?.structuredContent?.commanderQueueMutation?.dryRun === true && mutateCommanderQueueDryRunBody.result?.structuredContent?.commanderQueueMutation?.executed === false, "mutate_commander_queue validates Commander access without mutating", mutateCommanderQueueDryRunBody.result ?? {}),
+      check(missileLaunchDryRun.status === 200 && missileLaunchDryRunBody.result?.structuredContent?.missileLaunch?.dryRun === true && missileLaunchDryRunBody.result?.structuredContent?.missileLaunch?.executed === false, "launch_interplanetary_missiles defaults to a non-mutating dry-run", missileLaunchDryRunBody.result ?? {}),
+      check(galaxyDispatchDryRun.status === 200 && galaxyDispatchDryRunBody.result?.structuredContent?.galaxyDispatch?.dryRun === true && galaxyDispatchDryRunBody.result?.structuredContent?.galaxyDispatch?.executed === false, "dispatch_galaxy_action defaults to a non-mutating dry-run", galaxyDispatchDryRunBody.result ?? {}),
+      check(allianceMutationDryRun.status === 200 && allianceMutationDryRunBody.result?.structuredContent?.allianceMutation?.dryRun === true && allianceMutationDryRunBody.result?.structuredContent?.allianceMutation?.executed === false, "mutate_alliance defaults to a non-mutating dry-run", allianceMutationDryRunBody.result ?? {}),
+      check(accountOptionsDryRun.status === 200 && accountOptionsDryRunBody.result?.structuredContent?.accountOptionsMutation?.dryRun === true && accountOptionsDryRunBody.result?.structuredContent?.accountOptionsMutation?.executed === false, "update_account_options preserves omitted settings during dry-run", accountOptionsDryRunBody.result ?? {}),
+      check(couponDryRun.status === 200 && couponDryRunBody.result?.structuredContent?.couponRedemption?.dryRun === true && couponDryRunBody.result?.structuredContent?.couponRedemption?.executed === false, "redeem_coupon checks the coupon without redemption during dry-run", couponDryRunBody.result ?? {}),
       check(invalidParamsTool.status === 200 && invalidParamsToolBody.error?.code === -32602, "invalid tool params return JSON-RPC invalid params", invalidParamsToolBody),
       check(Number(tokenRowAfterUse?.lastUsedAt ?? 0) > 0, "bearer tool use updates token last-used timestamp", { tokenRowAfterUse }),
       check(revoke.status === 200 && revokeBody.revoked === true, "MCP token revoke succeeds", revokeBody),

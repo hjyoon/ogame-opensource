@@ -304,6 +304,14 @@ func oauthScopeDescription(scope string) string {
 		return "update resource production only after dry-run and explicit confirmation"
 	case "mcp:premium_write":
 		return "recruit officers only after dry-run and explicit confirmation"
+	case "mcp:planet_write":
+		return "rename or abandon owned planets only after dry-run and explicit confirmation"
+	case "mcp:alliance_write":
+		return "perform alliance membership and management actions only after dry-run and explicit confirmation"
+	case "mcp:account_write":
+		return "change account settings, identity, vacation, or deletion state only after dry-run and explicit confirmation"
+	case "mcp:payment_write":
+		return "validate and redeem coupons only after dry-run and explicit confirmation"
 	default:
 		return "access requested MCP capability"
 	}

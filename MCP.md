@@ -36,15 +36,15 @@ token:player_id:scope1,scope2;next:7:mcp:read
 
 ## Scopes And Tools
 
-The fully wired server exposes up to 48 tools: one public health tool, 26 authenticated read tools, three message readers, and 18 confirmed mutation tools.
+The fully wired server exposes up to 58 tools: one public health tool, 26 authenticated read tools, three message readers, and 28 confirmed mutation tools. Coupon redemption is present only when both universe and master databases are available.
 
-Self-service scopes are `mcp:read`, `mcp:messages`, `mcp:message_write`, `mcp:notes_write`, `mcp:buddy_write`, `mcp:fleet`, `mcp:fleet_write`, `mcp:queue_write`, `mcp:resources_write`, `mcp:premium_write`, and `mcp:merchant_write`.
+Self-service scopes are `mcp:read`, `mcp:messages`, `mcp:message_write`, `mcp:notes_write`, `mcp:buddy_write`, `mcp:fleet`, `mcp:fleet_write`, `mcp:queue_write`, `mcp:resources_write`, `mcp:premium_write`, `mcp:merchant_write`, `mcp:planet_write`, `mcp:alliance_write`, `mcp:account_write`, and `mcp:payment_write`.
 
 Read tools cover access, planets, overview, resources, queues, fleets, officers, search, galaxy, statistics, alliance, buddy, pranger, notes, options, maintenance, merchant, Jump Gate, empire, technology, buildings, research, shipyard, and defense.
 
-Mutation tools cover message send/delete/report; note create/update/delete; buddy actions; fleet validate/dispatch/recall, Phalanx and Jump Gate; building/research cancellation and shipyard enqueue; resource production; officer recruitment; and merchant actions.
+Mutation tools also cover building construction/demolition, research start, planet rename/abandon, Commander fleet templates and cross-planet queues, all player alliance mutations, account settings/identity/vacation/deletion, interplanetary missiles, Galaxy spy/recycle quick actions, and coupon redemption. They call the same Go repositories and transactions as browser actions; game rules are not reimplemented in MCP.
 
-Mutations default to dry-run and require the returned confirmation token. `mcp:write` and `mcp:admin` are reserved and unavailable to self-service tokens.
+Mutations default to dry-run and require the returned confirmation token. Commander-only actions report `commander_required`; account results exclude password hashes and validation secrets. `mcp:write` and `mcp:admin` are reserved and unavailable to self-service tokens.
 
 ## Verification
 

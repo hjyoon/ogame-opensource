@@ -14012,6 +14012,18 @@ function MCPTokenTable({
               <label>
                 <input name="mcp_scope" type="checkbox" value="mcp:merchant_write" /> merchant write
               </label>
+              <label>
+                <input name="mcp_scope" type="checkbox" value="mcp:planet_write" /> planet write
+              </label>
+              <label>
+                <input name="mcp_scope" type="checkbox" value="mcp:alliance_write" /> alliance write
+              </label>
+              <label>
+                <input name="mcp_scope" type="checkbox" value="mcp:account_write" /> account write
+              </label>
+              <label>
+                <input name="mcp_scope" type="checkbox" value="mcp:payment_write" /> payment write
+              </label>
               <input disabled={pending} type="submit" value="create token" />
             </form>
           </th>

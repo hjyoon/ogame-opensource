@@ -397,6 +397,7 @@ type Service struct {
 	defenseRead     DefenseOptionsReadRepository
 	fleetOptions    FleetOptionsReadRepository
 	premiumWrite    PremiumWriteRepository
+	playerActions   PlayerActions
 	sessions        SessionLookup
 	tokenGenerator  TokenSecretGenerator
 	codeGenerator   OAuthCodeGenerator
@@ -611,6 +612,11 @@ func (s Service) WithPremiumWriteRepository(repository PremiumWriteRepository) S
 	return s
 }
 
+func (s Service) WithPlayerActions(actions PlayerActions) Service {
+	s.playerActions = actions
+	return s
+}
+
 func (s Service) WithToolCallAuditor(auditor ToolCallAuditor) Service {
 	s.auditor = auditor
 	return s
@@ -667,6 +673,10 @@ func (s Service) OAuthAuthorizationServerMetadata(ctx context.Context, issuer st
 			domainmcp.ScopeResourcesWrite,
 			domainmcp.ScopePremiumWrite,
 			domainmcp.ScopeMerchantWrite,
+			domainmcp.ScopePlanetWrite,
+			domainmcp.ScopeAllianceWrite,
+			domainmcp.ScopeAccountWrite,
+			domainmcp.ScopePaymentWrite,
 		},
 	}
 	if s.oidcSigner != nil {
@@ -693,6 +703,10 @@ func (s Service) OAuthProtectedResourceMetadata(ctx context.Context, resource st
 			domainmcp.ScopeResourcesWrite,
 			domainmcp.ScopePremiumWrite,
 			domainmcp.ScopeMerchantWrite,
+			domainmcp.ScopePlanetWrite,
+			domainmcp.ScopeAllianceWrite,
+			domainmcp.ScopeAccountWrite,
+			domainmcp.ScopePaymentWrite,
 		},
 		BearerMethods: []string{"header"},
 	}
@@ -1019,6 +1033,37 @@ func (s Service) ListTools(ctx context.Context, command domainmcp.ListToolsComma
 	}
 	if access.HasScope(domainmcp.ScopeMerchantWrite) && s.merchantWrite != nil {
 		tools = append(tools, mutateMerchantTool())
+	}
+	if access.HasScope(domainmcp.ScopeQueueWrite) {
+		if s.playerActions.Buildings != nil {
+			tools = append(tools, mutateBuildingTool())
+		}
+		if s.playerActions.Research != nil {
+			tools = append(tools, startResearchTool())
+		}
+		if s.playerActions.Empire != nil {
+			tools = append(tools, mutateCommanderQueueTool())
+		}
+	}
+	if access.HasScope(domainmcp.ScopeFleetWrite) {
+		if s.playerActions.FleetTemplates != nil {
+			tools = append(tools, mutateFleetTemplateTool())
+		}
+		if s.playerActions.Galaxy != nil {
+			tools = append(tools, launchInterplanetaryMissilesTool(), dispatchGalaxyActionTool())
+		}
+	}
+	if access.HasScope(domainmcp.ScopePlanetWrite) && s.playerActions.Overview != nil {
+		tools = append(tools, mutatePlanetTool())
+	}
+	if access.HasScope(domainmcp.ScopeAllianceWrite) && s.playerActions.Alliance != nil {
+		tools = append(tools, mutateAllianceTool())
+	}
+	if access.HasScope(domainmcp.ScopeAccountWrite) && s.playerActions.Options != nil {
+		tools = append(tools, updateAccountOptionsTool())
+	}
+	if access.HasScope(domainmcp.ScopePaymentWrite) && s.playerActions.Payment != nil {
+		tools = append(tools, redeemCouponTool())
 	}
 	return domainmcp.ListToolsResult{Tools: tools}, nil
 }
@@ -1461,6 +1506,76 @@ func (s Service) CallTool(ctx context.Context, command domainmcp.CallToolCommand
 		audit.Scopes = access.Scopes
 		audit.Authorized = true
 		return s.callRecruitOfficer(ctx, access, command.Arguments)
+	case "mutate_building":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeQueueWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID, audit.Scopes, audit.Authorized = access.PlayerID, access.Scopes, true
+		return s.callMutateBuilding(ctx, access, command.Arguments)
+	case "start_research":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeQueueWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID, audit.Scopes, audit.Authorized = access.PlayerID, access.Scopes, true
+		return s.callStartResearch(ctx, access, command.Arguments)
+	case "mutate_commander_queue":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeQueueWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID, audit.Scopes, audit.Authorized = access.PlayerID, access.Scopes, true
+		return s.callMutateCommanderQueue(ctx, access, command.Arguments)
+	case "mutate_fleet_template":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeFleetWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID, audit.Scopes, audit.Authorized = access.PlayerID, access.Scopes, true
+		return s.callMutateFleetTemplate(ctx, access, command.Arguments)
+	case "launch_interplanetary_missiles":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeFleetWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID, audit.Scopes, audit.Authorized = access.PlayerID, access.Scopes, true
+		return s.callLaunchInterplanetaryMissiles(ctx, access, command.Arguments)
+	case "dispatch_galaxy_action":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeFleetWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID, audit.Scopes, audit.Authorized = access.PlayerID, access.Scopes, true
+		return s.callDispatchGalaxyAction(ctx, access, command.Arguments)
+	case "mutate_planet":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopePlanetWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID, audit.Scopes, audit.Authorized = access.PlayerID, access.Scopes, true
+		return s.callMutatePlanet(ctx, access, command.Arguments)
+	case "mutate_alliance":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeAllianceWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID, audit.Scopes, audit.Authorized = access.PlayerID, access.Scopes, true
+		return s.callMutateAlliance(ctx, access, command.Arguments)
+	case "update_account_options":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopeAccountWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID, audit.Scopes, audit.Authorized = access.PlayerID, access.Scopes, true
+		return s.callUpdateAccountOptions(ctx, access, command.Arguments)
+	case "redeem_coupon":
+		access, err := s.authorize(ctx, command.AccessToken, domainmcp.ScopePaymentWrite)
+		if err != nil {
+			return domainmcp.ToolCallResult{}, err
+		}
+		audit.PlayerID, audit.Scopes, audit.Authorized = access.PlayerID, access.Scopes, true
+		return s.callRedeemCoupon(ctx, access, command.Arguments)
 	default:
 		return domainmcp.ToolCallResult{}, domainmcp.ErrToolNotFound
 	}
@@ -3045,7 +3160,7 @@ func normalizeUserScopes(requested []string) []string {
 
 func userScopeAllowed(scope string) bool {
 	switch scope {
-	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeNotesWrite, domainmcp.ScopeBuddyWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite, domainmcp.ScopeMerchantWrite:
+	case domainmcp.ScopeRead, domainmcp.ScopeMessages, domainmcp.ScopeMessageWrite, domainmcp.ScopeNotesWrite, domainmcp.ScopeBuddyWrite, domainmcp.ScopeFleet, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite, domainmcp.ScopeMerchantWrite, domainmcp.ScopePlanetWrite, domainmcp.ScopeAllianceWrite, domainmcp.ScopeAccountWrite, domainmcp.ScopePaymentWrite:
 		return true
 	default:
 		return false

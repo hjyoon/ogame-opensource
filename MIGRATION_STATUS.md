@@ -12,7 +12,7 @@ React/Bun + Go migration tracker. Keep under 4KB; split details by topic.
 - Registration, activation, recovery, login/logout, session expiry, private cookies, IP/ban checks, and `/game` redirects are migrated.
 - `/api/game/*` implements overview, economy and queues, fleet/combat, galaxy, social/account, reports, officers/payment, and Admin/Bot operations.
 - Game mutations preserve legacy math, timing, permissions, persisted effects, reports, and scheduler behavior through PHP/Go differential cases.
-- MCP is available to ordinary authenticated users with per-user tokens; legacy visual comparisons intentionally exclude the token-only Options section.
+- MCP is available to ordinary authenticated users with scoped per-user tokens and browser-equivalent read/write actions; legacy visual comparisons intentionally exclude the token-only Options section.
 - Modernization candidates stay in [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
 
 ## Source Inventory

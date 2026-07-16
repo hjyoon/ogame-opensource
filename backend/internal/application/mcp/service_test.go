@@ -53,8 +53,10 @@ func TestServiceBuildsOAuthAuthorizationServerMetadata(t *testing.T) {
 		t.Fatalf("expected public-client revocation metadata, got %+v", metadata)
 	}
 	scopes := strings.Join(metadata.ScopesSupported, ",")
-	if !strings.Contains(scopes, "openid") || !strings.Contains(scopes, domainmcp.ScopeRead) {
-		t.Fatalf("expected OIDC and MCP read scopes, got %+v", metadata.ScopesSupported)
+	for _, scope := range []string{"openid", domainmcp.ScopeRead, domainmcp.ScopePlanetWrite, domainmcp.ScopeAllianceWrite, domainmcp.ScopeAccountWrite, domainmcp.ScopePaymentWrite} {
+		if !strings.Contains(scopes, scope) {
+			t.Fatalf("expected OAuth scope %q, got %+v", scope, metadata.ScopesSupported)
+		}
 	}
 	if jwks := service.OAuthJWKS(context.Background()); len(jwks.Keys) != 0 {
 		t.Fatalf("expected empty JWKS without signer, got %+v", jwks)
@@ -62,6 +64,9 @@ func TestServiceBuildsOAuthAuthorizationServerMetadata(t *testing.T) {
 	resourceMetadata := service.OAuthProtectedResourceMetadata(context.Background(), "https://game.example/mcp", "https://game.example/")
 	if resourceMetadata.Resource != "https://game.example/mcp" || strings.Join(resourceMetadata.AuthorizationServers, ",") != "https://game.example" || !strings.Contains(strings.Join(resourceMetadata.BearerMethods, ","), "header") {
 		t.Fatalf("unexpected protected resource metadata: %+v", resourceMetadata)
+	}
+	if !strings.Contains(strings.Join(resourceMetadata.ScopesSupported, ","), domainmcp.ScopeAccountWrite) {
+		t.Fatalf("protected resource metadata is missing player write scopes: %+v", resourceMetadata.ScopesSupported)
 	}
 
 	signer := &fakeOIDCSigner{token: "id.token.signature"}
@@ -519,8 +524,8 @@ func TestOAuthValidationHelpers(t *testing.T) {
 	if err != nil || strings.Join(scopes, " ") != "profile mcp:read" {
 		t.Fatalf("unexpected normalized scopes=%v err=%v", scopes, err)
 	}
-	scopes, err = normalizeOAuthScopes(domainmcp.ScopeNotesWrite + " " + domainmcp.ScopeBuddyWrite + " " + domainmcp.ScopeFleetWrite + " " + domainmcp.ScopeQueueWrite + " " + domainmcp.ScopeResourcesWrite + " " + domainmcp.ScopePremiumWrite + " " + domainmcp.ScopeMerchantWrite)
-	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeNotesWrite+" "+domainmcp.ScopeBuddyWrite+" "+domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite+" "+domainmcp.ScopePremiumWrite+" "+domainmcp.ScopeMerchantWrite {
+	scopes, err = normalizeOAuthScopes(domainmcp.ScopeNotesWrite + " " + domainmcp.ScopeBuddyWrite + " " + domainmcp.ScopeFleetWrite + " " + domainmcp.ScopeQueueWrite + " " + domainmcp.ScopeResourcesWrite + " " + domainmcp.ScopePremiumWrite + " " + domainmcp.ScopeMerchantWrite + " " + domainmcp.ScopePlanetWrite + " " + domainmcp.ScopeAllianceWrite + " " + domainmcp.ScopeAccountWrite + " " + domainmcp.ScopePaymentWrite)
+	if err != nil || strings.Join(scopes, " ") != domainmcp.ScopeNotesWrite+" "+domainmcp.ScopeBuddyWrite+" "+domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite+" "+domainmcp.ScopePremiumWrite+" "+domainmcp.ScopeMerchantWrite+" "+domainmcp.ScopePlanetWrite+" "+domainmcp.ScopeAllianceWrite+" "+domainmcp.ScopeAccountWrite+" "+domainmcp.ScopePaymentWrite {
 		t.Fatalf("expected scoped write scopes to be allowed, got scopes=%v err=%v", scopes, err)
 	}
 	scopes, err = normalizeOAuthScopes("")
@@ -5140,8 +5145,8 @@ func TestServiceTokenManagementRejectsUnauthenticatedAndPrivilegedScopes(t *test
 	}
 
 	service.sessions = fakeSessionLookup{auth: authenticatedSession(42)}
-	created, err := service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeNotesWrite, domainmcp.ScopeBuddyWrite, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite, domainmcp.ScopeMerchantWrite}})
-	if err != nil || strings.Join(created.Creation.Token.Scopes, " ") != domainmcp.ScopeNotesWrite+" "+domainmcp.ScopeBuddyWrite+" "+domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite+" "+domainmcp.ScopePremiumWrite+" "+domainmcp.ScopeMerchantWrite {
+	created, err := service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeNotesWrite, domainmcp.ScopeBuddyWrite, domainmcp.ScopeFleetWrite, domainmcp.ScopeQueueWrite, domainmcp.ScopeResourcesWrite, domainmcp.ScopePremiumWrite, domainmcp.ScopeMerchantWrite, domainmcp.ScopePlanetWrite, domainmcp.ScopeAllianceWrite, domainmcp.ScopeAccountWrite, domainmcp.ScopePaymentWrite}})
+	if err != nil || strings.Join(created.Creation.Token.Scopes, " ") != domainmcp.ScopeNotesWrite+" "+domainmcp.ScopeBuddyWrite+" "+domainmcp.ScopeFleetWrite+" "+domainmcp.ScopeQueueWrite+" "+domainmcp.ScopeResourcesWrite+" "+domainmcp.ScopePremiumWrite+" "+domainmcp.ScopeMerchantWrite+" "+domainmcp.ScopePlanetWrite+" "+domainmcp.ScopeAllianceWrite+" "+domainmcp.ScopeAccountWrite+" "+domainmcp.ScopePaymentWrite {
 		t.Fatalf("expected scoped write user token scopes to be allowed, created=%+v err=%v", created, err)
 	}
 	_, err = service.CreateToken(context.Background(), CreateTokenCommand{Scopes: []string{domainmcp.ScopeAdmin}})
