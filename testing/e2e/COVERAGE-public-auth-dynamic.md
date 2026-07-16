@@ -35,3 +35,6 @@ All public auth dynamic scripts run side-by-side against
 - `report.json`
 - `report.md`
 - screenshot evidence under `.tmp/playwright-public-*/`
+
+The final migration wrapper runs the login dynamic suite. Registration dynamic
+is a standalone gate and must be run when registration UI behavior changes.

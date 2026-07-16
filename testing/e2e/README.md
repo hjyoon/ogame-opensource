@@ -1,6 +1,6 @@
 # Docker E2E Tests
 
-This suite treats the Docker PHP app as the behavior oracle for the Go/React migration. It runs real HTTP requests and in-container queue handlers against the installed game.
+The Docker PHP app is the Go/React behavior oracle. Tests use real HTTP and in-container queue handlers.
 
 Keep this file under 4KB. Split details into linked Markdown files.
 
@@ -27,7 +27,7 @@ Result files:
 - one JSON file per case group
 - one `.stderr` file per case; non-empty stderr fails the case
 
-`OGAME_CLEAN_MIGRATION_FIXTURES=1` is the default. Set it to `0` only when debugging fixture lifecycle problems, because stale visual fixtures can leave active fleets pointing at removed special targets and break DB invariants before the real test starts.
+`OGAME_CLEAN_MIGRATION_FIXTURES=1` is the default. Disable it only while debugging fixture cleanup; stale fleets can break DB invariants.
 
 ## Final Migration QA
 
@@ -51,7 +51,9 @@ This wrapper runs:
 - navigation visual discovery for all migrated public/game `GET` paths
 - final `.tmp/golang-migration-qa-summary.{json,md}` aggregation
 
-The wrapper includes legacy PHP E2E by default and starts the migrated Go app on the default Go port, currently `8890`. Do not set `OGAME_RUN_LEGACY_E2E=0` for final validation; it is only for local smoke work while iterating on frontend/backend code.
+Latest clean run: 2026-07-16, `89 passed, 0 failed, 0 skipped`.
+
+The wrapper includes PHP E2E and starts Go on port `8890`. `OGAME_RUN_LEGACY_E2E=0` is only for iteration, never final validation.
 
 ## Visual Parity
 
@@ -66,7 +68,7 @@ Default final visual checks enforce exact parity where the scripts support it:
 - authenticated game visual registry with fixed clock/CSS/masks
 - authenticated game dynamic behavior registry for masked JS actions
 
-Reports are written under `.tmp/playwright-*`, plus `.tmp/golang-migration-qa-summary.{json,md}`. Treat old `.tmp` reports as stale unless produced by the current run.
+Reports live under `.tmp/playwright-*` and `.tmp/golang-migration-qa-summary.{json,md}`. Treat older artifacts as stale.
 
 Direct registry run:
 

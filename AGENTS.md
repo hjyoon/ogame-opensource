@@ -2,21 +2,21 @@
 
 ## Scope
 
-This branch stages migration from legacy PHP to:
+This branch maintains the migration from legacy PHP to:
 
 - Frontend: React 19/Bun 1.3.
 - Backend: Go 1.25 `net/http`.
 - Oracle: Docker PHP app and `testing/e2e`.
 
-Do not remove or weaken legacy behavior. Check each migrated flow against existing E2E or a new compatibility case.
+Do not weaken legacy behavior. Check each migrated flow against existing E2E or a new compatibility case.
 
 ## Migration Interpretation
 
 Do not translate PHP files one-for-one. Reinterpret APIs, state, and modules naturally for React and Go. New routes do not need `.php` suffixes. Preserve legacy URLs only as compatibility entry points.
 
-Visible pages must match the corresponding legacy PHP layout, skin, density, labels, and assets unless a documented compatibility exception exists. Preserve parity first; record modernization options for later cleanup after tests exist.
+Visible pages must match legacy layout, skin, density, labels, and assets unless an exception is documented. Preserve parity first; record later cleanup in `MODERNIZATION_OPTIONS.md`.
 
-Game mechanics are different: resource math, timings, combat, queues, economy, targeting, reports, and permissions must behave exactly like the legacy game. Prove equivalence with focused unit tests plus E2E checks against the PHP oracle.
+Resource math, timings, combat, queues, economy, targeting, reports, and permissions must match legacy. Prove this with unit tests and PHP-oracle E2E.
 
 ## Architecture Rule
 
@@ -56,7 +56,7 @@ OGAME_RUN_LEGACY_E2E=1 OGAME_GO_PORT=8890 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run
 
 Keep PHP as oracle; keep one current Go `goapp` container only.
 
-During page migration, extend Playwright visual E2E before claiming parity. Public: `testing/e2e/run-playwright-visual-e2e.sh`; auth: `testing/e2e/run-playwright-auth-visual-e2e.sh`. State if auth diff/layout is enforced or audit-only.
+During page migration, extend Playwright visual E2E before claiming parity. Public: `testing/e2e/run-playwright-visual-e2e.sh`; auth: `testing/e2e/run-playwright-auth-visual-e2e.sh`. Keep exact diff enforced unless an exception is documented.
 
 Use `OGAME_RUN_LEGACY_E2E=0` only for local smoke work. Port HTTP black-box checks to Go with the same JSON shape.
 

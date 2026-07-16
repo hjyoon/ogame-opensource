@@ -15,23 +15,17 @@ action or same-URL dynamic route targets. Link inventories are written to
 
 ## Legacy-Oracle Coverage Status
 
-| Case | Link Behavior | Legacy/Go URL Parity | Exact Diff Enabled |
-| --- | --- | --- | --- |
-| messages-summary-category-link-filter | `pm=1` filter link in message list | yes (`pm` query param) | yes |
-| messages-personal-reply-link | reply link in personal PM row | yes (URL params preserved) | yes |
-| messages-personal-galaxy-link | coordinates link in personal PM row | yes (`galaxy/system`) | yes |
-| galaxy-action-message-compose-link | galaxy action icon → write-message | yes (`messageziel`) | yes |
-| galaxy-action-buddy-request-link | galaxy action icon → buddy form | yes (`action/buddy_id`) | yes |
-| galaxy-report-planet-popup-window | planet spy-report popup link | yes (`bericht`) | DOM/popup |
-| galaxy-report-moon-popup-window | moon spy-report popup link | yes (`bericht`) | DOM/popup |
-| galaxy-phalanx-name-popup-window | planet-name phalanx popup link | yes (`spid`) | DOM/popup |
-| galaxy-phalanx-hover-popup-window | hover-menu phalanx popup link | yes (`spid`) | DOM/popup |
-| galaxy-alliance-hover-introduction-popup-link | hover-menu alliance intro popup link | yes (`allyid`) | DOM/popup |
-| galaxy-planet-hover-tooltip | hover-menu fleet/phalanx/missile links | optional by fixture; registered if present | DOM/popup |
-| research-short-queue-completion-done | completed research `next` link | yes (`/game/research`) | DOM |
-| overview-player-write-message-link | event-row write message icon | yes (legacy `showMessageMenu`, migrated `messageziel`) | yes |
-| overview-planet-position-link | overview position link -> galaxy | yes (legacy `page=galaxy`, migrated `/game/galaxy`, coords preserved) | yes |
-| overview-player-rank-link | overview rank link -> statistics | yes (legacy `page=statistics`, migrated `/game/statistics`, `start` preserved) | yes |
+| Cases | Link Behavior | Evidence |
+| --- | --- | --- |
+| Message list/filter/reply/coordinates | folder `pm`, reply params, Galaxy coordinates | URL + exact diff |
+| Combat/spy report links | report popup, spy coordinates, Attack fleet target | URL + popup/DOM + exact diff |
+| Galaxy player actions | message, Buddy, statistics | URL + exact diff |
+| Galaxy alliance actions | introduction popup, apply, statistics | URL + popup/DOM + exact diff |
+| Galaxy planet/moon actions | fleet target, reports, Phalanx, missile | URL + tooltip/popup DOM |
+| Overview event/player links | write message, position/Galaxy, rank/statistics | URL + exact diff |
+| Research completion | completed queue `next` route | URL + DOM |
+| Empire/Commander | building double-click enqueue and queue link | route + DOM/visual |
+| Admin links | DB delete, simulator reports, BotEdit preview/export | route + popup/DOM |
 
 ## Notes
 
@@ -42,4 +36,6 @@ action or same-URL dynamic route targets. Link inventories are written to
   - legacy `doit()` AJAX galaxy instant dispatch versus migrated fallback `href`
   - normal result-page links after admin filtering or building queue refresh
 
-- If additional legacy link surfaces are discovered (e.g., from new pages), add them as separate dynamic cases and enable `visual` once fixtures are deterministic.
+- All registered route-changing cases pass in Chromium and Firefox. New link
+  surfaces must be registered and should enable exact visual checks once their
+  fixture is deterministic.

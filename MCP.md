@@ -1,100 +1,53 @@
-# MCP Server Plan
+# MCP Server
 
-## Current State
+Updated: 2026-07-16. Keep this file under 4KB.
 
-Implemented:
+The Go backend exposes MCP to ordinary authenticated players. MCP follows the same Clean Architecture boundaries as game HTTP APIs and does not expose Admin, Bot, debug, database, or arbitrary game mutation access.
 
-- Streamable HTTP JSON-RPC entrypoint: `POST /mcp`.
-- `GET /mcp` returns `405`; SSE stream is not implemented yet.
-- `initialize`, `ping`, `tools/list`, and `tools/call`.
-- Protocol guard for `2025-06-18` plus fallback.
-- Browser `Origin` guard.
-- Clean Architecture MCP packages.
-- First safe read-only tool: `get_server_health`.
-- Static bearer verifier for scoped testing.
-- Protected read-only tool: `get_mcp_access`.
-- User-owned DB-backed bearer tokens:
-  - `GET /api/game/mcp-tokens?session=...`
-  - `POST /api/game/mcp-tokens?session=...`
-  - `POST /api/game/mcp-tokens/revoke?session=...`
-  - Uses game public session plus private session cookie.
-  - Stores only SHA-256 hashes in `uni*_mcp_tokens`.
-  - Tokens expire after `OGAME_MCP_TOKEN_TTL_SECONDS` seconds; default 30 days,
-    `0` disables expiry.
-- React options UI for DB token list/create/one-time secret/revoke.
-- Go MCP smoke E2E covers transport/tokens/OAuth/tools/mutations/errors/expiry/revoke.
-- OAuth 2.1:
-  - `/.well-known/oauth-authorization-server`
-  - PRM endpoint and 401 challenge
-  - `/oauth/authorize` consent page and code redirect
-  - `/oauth/register` DCR
-  - `/oauth/token` code+PKCE S256; `id_token` for `openid`
-  - `/oauth/revoke` access-token revocation
-  - Strict `resource`; codes bind client, redirect, resource, PKCE, scopes
-  - `/.well-known/jwks.json` Ed25519 JWKS
-  - Codes are one-time hashes in `uni*_mcp_oauth_codes`.
-  - External redirects require `OGAME_MCP_OAUTH_REDIRECT_URIS`.
-  - OIDC seed envs: active `OGAME_MCP_OIDC_ED25519_SEED_B64`; previous
-    `OGAME_MCP_OIDC_ED25519_PREVIOUS_SEEDS_B64`.
-- Consent CSRF+UX shows resource, redirect, scopes, deny.
-- MCP/OAuth rate limits on RPC, OAuth, and token API paths.
-- JSON audit logging for every `tools/call`; no secrets are logged.
-- Auth `mcp:read`: planets, overview, resources/options, queues,
-  fleets/options, officers, search, galaxy, stats, alliance, buddy, pranger,
-  notes, options, maintenance, merchant, jump gate, empire, tech, buildings, research,
-  shipyard, defense.
-- `mcp:messages`: `list_messages`, `get_message`, `get_report`; read owned
-  inbox/report rows without read marks or cleanup mutation.
-- `mcp:message_write`: `send_message`, `delete_messages`,
-  `report_message`; confirmed mutations.
-- `mcp:notes_write`: `create_note`, `update_note`, `delete_notes`;
-  confirmed mutations.
-- `mcp:buddy_write`: `mutate_buddy`; confirmed mutations.
-- `mcp:fleet_write`: `validate_fleet_dispatch`, `dispatch_fleet`,
-  `recall_fleet`, `scan_phalanx`, `jump_gate`; confirmed mutations.
-- `mcp:queue_write`: `cancel_building_queue`,
-  `cancel_research_queue`, `enqueue_shipyard_order`; confirmed mutations.
-- `mcp:resources_write`: `update_resource_production`.
-- `mcp:premium_write`: `recruit_officer`.
-- `mcp:merchant_write`: `mutate_merchant`.
+## Transport
 
-## Static Token Format
+- `POST /mcp`: Streamable HTTP JSON-RPC for `initialize`, `ping`, `tools/list`, and `tools/call`.
+- `GET /mcp`: `405`; SSE is not implemented.
+- Protocol: `2025-06-18` with negotiated fallback.
+- Browser origins, bearer challenges, request rate limits, and JSON tool-call audit logs are enforced.
 
-`OGAME_MCP_STATIC_TOKENS`: `token:player_id:scope1,scope2;next:7:mcp:read`.
+## OAuth 2.1
 
-Scopes: `mcp:read`, `mcp:messages`, `mcp:message_write`,
-`mcp:notes_write`, `mcp:buddy_write`, `mcp:fleet`, `mcp:fleet_write`,
-`mcp:queue_write`, `mcp:resources_write`, `mcp:premium_write`,
-`mcp:merchant_write`, `mcp:write`, `mcp:admin`.
+- Discovery: `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`, `/.well-known/jwks.json`.
+- Authorization code + PKCE S256: `/oauth/authorize`, `/oauth/token`.
+- Dynamic client registration and revocation: `/oauth/register`, `/oauth/revoke`.
+- Consent binds client, redirect URI, MCP resource, scopes, state, and PKCE. Codes are one-time hashes.
+- Optional OIDC `openid profile` uses Ed25519 `id_token` signing and key rotation seeds.
 
-## User Token API
+## Player Tokens
 
-Create body:
+Authenticated players manage hashed, expiring bearer tokens through:
 
-```json
-{"name":"Claude Desktop","scopes":["mcp:read"]}
+- `GET/POST /api/game/mcp-tokens?session=...`
+- `POST /api/game/mcp-tokens/revoke?session=...`
+
+The Options UI lists, creates, and revokes tokens. Plaintext secrets are returned once. Default lifetime is 30 days via `OGAME_MCP_TOKEN_TTL_SECONDS`; `0` disables expiry.
+
+Static test/service tokens use `OGAME_MCP_STATIC_TOKENS`:
+
+```text
+token:player_id:scope1,scope2;next:7:mcp:read
 ```
 
-Plaintext `secret` is returned once; store it as a password.
+## Scopes And Tools
 
-User tokens allow: `mcp:read`, `mcp:messages`, `mcp:message_write`,
-`mcp:notes_write`, `mcp:buddy_write`, `mcp:fleet`, `mcp:fleet_write`,
-`mcp:queue_write`, `mcp:resources_write`, `mcp:premium_write`,
-`mcp:merchant_write`.
+The fully wired server exposes up to 48 tools: one public health tool, 26 authenticated read tools, three message readers, and 18 confirmed mutation tools.
 
-`mcp:write` and `mcp:admin` stay unavailable for self-service user tokens.
+Self-service scopes are `mcp:read`, `mcp:messages`, `mcp:message_write`, `mcp:notes_write`, `mcp:buddy_write`, `mcp:fleet`, `mcp:fleet_write`, `mcp:queue_write`, `mcp:resources_write`, `mcp:premium_write`, and `mcp:merchant_write`.
 
-## Security Rule
+Read tools cover access, planets, overview, resources, queues, fleets, officers, search, galaxy, statistics, alliance, buddy, pranger, notes, options, maintenance, merchant, Jump Gate, empire, technology, buildings, research, shipyard, and defense.
 
-No broad user mutation tools. Each mutation needs a narrow scope, consent,
-audit, rate limit, dry-run, and confirmation.
+Mutation tools cover message send/delete/report; note create/update/delete; buddy actions; fleet validate/dispatch/recall, Phalanx and Jump Gate; building/research cancellation and shipyard enqueue; resource production; officer recruitment; and merchant actions.
 
-## Next Steps
+Mutations default to dry-run and require the returned confirmation token. `mcp:write` and `mcp:admin` are reserved and unavailable to self-service tokens.
 
-1. Add more scoped actions after parity review.
+## Verification
 
-## General User Policy
+The full migration QA runs MCP transport, token, OAuth/OIDC, scope, mutation, expiry, revocation, error, rate-limit, and audit checks. Options visual parity intentionally excludes the Go-only MCP token table while API behavior is tested separately.
 
-Users may receive read tools and scoped confirmed actions. Build/research/
-admin/bot/debug/DB actions stay blocked until each has scoped auth, rate
-limits, audit, and confirmation.
+Endpoint inventory: [backend/API_ENDPOINTS.md](./backend/API_ENDPOINTS.md).

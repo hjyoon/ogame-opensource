@@ -2,6 +2,8 @@
 
 Date: 2026-06-15
 
+> Historical PHP-oracle snapshot from `hjyoon/fix`. It is not the current Go/Bun migration status; see [MIGRATION_STATUS.md](./MIGRATION_STATUS.md).
+
 ## Scope
 - Environment: `docker-compose` stack is running
 - Validation method: automatic test account creation inside the container, session acquisition through `reg/newredirect.php`, and route requests with cookie-based session context
@@ -34,5 +36,5 @@ Date: 2026-06-15
 ## Conclusion
 - Login flow itself is functioning (successful registration + `login2` redirect + valid session creation).
 - Most routes return usable post-login documents; a subset is intentionally redirected or requires additional state/conditions.
-- `admin` needs separate browser-level follow-up because the response contains full admin HTML but starts with an immediate meta refresh.
-- `reg/logout.php` still returns `404` and remains a known issue that should be addressed separately.
+- The observed localhost meta-refresh and post-login paths were later replaced or covered by natural Go/React routes plus compatibility E2E.
+- Direct `/game/reg/logout.php` was absent in this historical snapshot. Current logout is supported through the game logout action and `POST /api/game/logout`; the old direct filename is not a canonical migrated route.

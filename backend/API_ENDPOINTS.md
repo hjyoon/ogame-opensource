@@ -29,6 +29,19 @@ Source of truth: `backend/internal/delivery/http/server.go`. Keep this file unde
 | `GET` | `/api/game/session` | Current game session |
 | `POST` | `/api/game/logout` | Logout and cookie clear |
 
+## MCP And OAuth
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/mcp` | Streamable HTTP MCP JSON-RPC; bearer optional per tool |
+| `GET` | `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`, `/.well-known/jwks.json` | OAuth/OIDC discovery and keys |
+| `GET` | `/oauth/authorize` | Player consent and authorization code |
+| `POST` | `/oauth/register`, `/oauth/token`, `/oauth/revoke` | DCR, PKCE token exchange, revocation |
+| `GET/POST` | `/api/game/mcp-tokens` | List/create player-owned bearer tokens |
+| `POST` | `/api/game/mcp-tokens/revoke` | Revoke a player-owned token |
+
+Tools and scopes: [MCP.md](../MCP.md).
+
 ## Game Pages
 
 | Method | Path | Purpose |
@@ -61,17 +74,4 @@ Source of truth: `backend/internal/delivery/http/server.go`. Keep this file unde
 
 ## Compatibility
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET/POST` | `/game/reg/newredirect.php`, `/game/reg/login2.php`, `/game/reg/check_registration.php` | Legacy registration/login/check |
-| `GET` | `/game/validate.php`, `/activation` | Account activation |
-| `GET/HEAD/POST` | `/game/index.php` | Legacy game entry, BotEdit, Bots add/stop, Mods, Logins/Loca POST, `sprungtor`, `pranger` |
-| `GET` | `/game/pranger.php` | Legacy public pillory/ban list |
-| `GET` | `/game/maintenance.php` | Legacy maintenance redirect/page |
-| `GET` | `/game/redir.php`, `/game/pic.php` | Legacy redirect/image proxy |
-| any | `/game/cron.php` | Forbidden legacy script |
-| `GET` | `/game/reg/mail.php` | Legacy password recovery form |
-| `POST` | `/game/reg/fa_pass.php` | Legacy password recovery submit |
-| `GET/POST` | `/game/feed/show.php`, `/game/feed/viewitem.php` | RSS/Atom feed |
-| `GET` | `/game/css/*`, `/game/img/*`, `/game/js/*`, `/game/mods/*`, `/evolution/*`, `/legacy-assets/*` | Static legacy assets |
-| `GET` | `/` and non-API paths | React shell/static fallback |
+Legacy aliases and static routes are split into [API_COMPATIBILITY.md](./API_COMPATIBILITY.md).

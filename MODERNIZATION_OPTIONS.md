@@ -6,7 +6,7 @@ This is a backlog, not permission to change behavior during migration. Preserve 
 
 - Public pages now use strict Playwright visual parity against PHP.
 - Public CSR navigation, language flags, registration, and login are covered.
-- Authenticated overview/buildings use the `evolution` skin but remain audit-only for visual diff.
+- Authenticated screens use the `evolution` skin and enforce pairwise visual checks in Chromium and Firefox.
 - Login/session behavior still bridges legacy public session IDs and private session cookies.
 - Game overview/buildings read legacy numeric DB columns and mirror legacy formatting such as `nicenum()` and storage caps.
 
@@ -48,12 +48,12 @@ This is a backlog, not permission to change behavior during migration. Preserve 
    - Later, consolidate duplicated price, duration, capacity, production, combat, queue, and fleet calculations into cohesive domain packages.
 
 7. QA and tooling
-   - Convert auth visual audit from advisory to enforced thresholds as each page converges.
-   - Reduce flaky setup by creating deterministic test fixtures through Go test helpers instead of browser login where possible.
-   - Keep browser comparison scripts as migration gates until the PHP UI is no longer the oracle.
+   - Keep exact-zero visual gates for stable pixels; every mask needs DOM/text behavior assertions.
+   - Reduce fixture setup through typed Go helpers where this does not weaken the PHP oracle comparison.
+   - Keep browser comparison scripts as migration gates until PHP is retired as the oracle.
 
 8. Operations
-   - Extend JSON logs with request IDs, session/user identifiers where safe, latency, and route names.
+   - Existing JSON access logs include method, path, status, bytes, latency, remote address, and user agent. Add request IDs, normalized route names, tracing, and safe user/session context.
    - Add health/readiness details for DB connectivity and legacy bridge state.
 
 9. Corrected legacy defects

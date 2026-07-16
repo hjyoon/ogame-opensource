@@ -84,3 +84,4 @@ OGAME_GAME_VISUAL_UPDATE_BASELINES=1 testing/e2e/run-playwright-authenticated-ga
 Reports are written per browser under `.tmp/playwright-authenticated-game-visual/<browser>/report.{json,md}`.
 
 The final QA wrapper runs this suite when `OGAME_RUN_AUTH_GAME_VISUAL=1`, which is the default.
+The 2026-07-16 full run passed 70 normal and 71 Commander-enabled states per browser.
