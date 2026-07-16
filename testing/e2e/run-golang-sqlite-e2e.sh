@@ -4,7 +4,7 @@ set -eu
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 BASE_URL="${OGAME_SQLITE_BASE_URL:-http://127.0.0.1:${OGAME_SQLITE_PORT:-8891}}"
 UNIVERSE_URL="${OGAME_SQLITE_PUBLIC_BASE_URL:-http://localhost:${OGAME_SQLITE_PORT:-8891}}"
-COMPOSE="docker compose -f $ROOT_DIR/compose.sqlite.yaml"
+COMPOSE="docker compose -f $ROOT_DIR/docker-compose.yml"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 

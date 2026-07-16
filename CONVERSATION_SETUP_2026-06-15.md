@@ -21,7 +21,7 @@ Commit `99e4e0d7` added `docker/auto-install.php` and entrypoint integration. `O
 
 Commit `fe0491e0` added Universe installation. `OGAME_UNI_AUTO_INSTALL` and `OGAME_UNI_*` configure URL, start page, DB/prefix/secret, language/number, game and fleet speed, galaxies/systems/users, starting Dark Matter, ACS, debris, rapid fire, moons, battle engine and limits, forced language, feed age, external links, and initial Admin credentials.
 
-Exact defaults belong to `.env.example`, `compose.yaml`, and `wiki/en/install_docker.md`; this historical summary does not duplicate them.
+Exact defaults belong to `.env.example`, `docker-compose.yml`, and `wiki/en/install_docker.md`; this historical summary does not duplicate them.
 
 ## Runtime Checks
 

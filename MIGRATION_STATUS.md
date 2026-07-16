@@ -14,6 +14,7 @@ React/Bun + Go migration tracker. Keep under 4KB; split details by topic.
 - Game mutations preserve legacy math, timing, permissions, persisted effects, reports, and scheduler behavior through PHP/Go differential cases.
 - MCP supports Player, Operator, and Admin tokens with live DB-role checks, role-ceiling scopes, confirmed staff actions, and browser-equivalent player actions; visual comparisons exclude the Go-only token section.
 - The Go runtime supports MySQL by default and persistent SQLite as an optional pure-Go mode; see [SQLite](./SQLITE.md).
+- One multi-target `Dockerfile` and one `docker-compose.yml` define the PHP oracle and both Go database modes.
 - Modernization candidates stay in [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
 
 ## Source Inventory

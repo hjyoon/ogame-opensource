@@ -7,8 +7,8 @@ ORACLE_TARGET="/tmp/ogame-combat-engine-oracle.php"
 REPORT="${OGAME_COMBAT_ENGINE_DIFFERENTIAL_REPORT:-$ROOT_DIR/.tmp/golang-combat-engine-differential.json}"
 
 mkdir -p "$(dirname -- "$REPORT")"
-docker compose -f "$ROOT_DIR/compose.yaml" cp "$ORACLE_SOURCE" "server:$ORACLE_TARGET" >/dev/null
-expected="$(docker compose -f "$ROOT_DIR/compose.yaml" exec -T server php "$ORACLE_TARGET")"
+docker compose -f "$ROOT_DIR/docker-compose.yml" cp "$ORACLE_SOURCE" "server:$ORACLE_TARGET" >/dev/null
+expected="$(docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T server php "$ORACLE_TARGET")"
 (
   cd "$ROOT_DIR/backend"
   OGAME_COMBAT_ORACLE_EXPECTED="$expected" go test ./internal/domain/game -run '^TestLegacyCombatEngineOracle$' -count=1 >/dev/null

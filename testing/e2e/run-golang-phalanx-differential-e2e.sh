@@ -21,7 +21,7 @@ low_login="$(jq -r '.phalanx_edges.low_login // empty' "$FIXTURE")"
 [ "$source_id" -gt 0 ] && [ "$target_id" -gt 0 ] && [ "$home_id" -gt 0 ] && [ "$low_source_id" -gt 0 ] && [ -n "$low_login" ]
 
 db_query() {
-  docker compose -f "$ROOT_DIR/compose.golang.yaml" exec -T mysql \
+  docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T mysql \
     sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -N -B -r -uroot uni -e "$1"' sh "$1"
 }
 

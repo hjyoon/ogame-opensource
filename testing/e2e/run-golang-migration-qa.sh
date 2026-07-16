@@ -35,7 +35,7 @@ wait_for_url() {
 
 if [ "${OGAME_RUN_LEGACY_E2E:-1}" = "1" ]; then
   if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
-    docker compose -f "$ROOT_DIR/compose.golang.yaml" up -d mailhog >/dev/null
+    docker compose -f "$ROOT_DIR/docker-compose.yml" up -d mailhog >/dev/null
     wait_for_url "$MAILHOG_BASE_URL/api/v2/messages"
   fi
   "$SCRIPT_DIR/run-docker-e2e.sh"
@@ -60,9 +60,9 @@ fi
 
 if [ "${OGAME_RUN_GO_DOCKER:-1}" = "1" ]; then
   if [ "${OGAME_KEEP_GO_DOCKER:-0}" != "1" ]; then
-    trap 'docker compose -f "$ROOT_DIR/compose.golang.yaml" stop goapp >/dev/null 2>&1 || true' EXIT INT TERM
+    trap 'docker compose -f "$ROOT_DIR/docker-compose.yml" stop goapp >/dev/null 2>&1 || true' EXIT INT TERM
   fi
-  docker compose -f "$ROOT_DIR/compose.golang.yaml" up -d --build --force-recreate goapp
+  docker compose -f "$ROOT_DIR/docker-compose.yml" up -d --build --force-recreate goapp
   wait_for_url "$GO_BASE_URL/api/healthz"
   wait_for_url "$GO_BASE_URL/"
   if [ "${OGAME_RUN_DB_RECOVERY_E2E:-1}" = "1" ]; then

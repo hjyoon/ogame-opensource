@@ -6,7 +6,7 @@ BASE_URL="${OGAME_GO_BASE_URL:-http://127.0.0.1:${OGAME_GO_PORT:-8890}}"
 REPORT="${OGAME_MOD_POLICY_REPORT:-$ROOT_DIR/.tmp/golang-mod-policy.json}"
 
 mysql_query() {
-  docker compose -f "$ROOT_DIR/compose.golang.yaml" exec -T mysql \
+  docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T mysql \
     sh -c 'mysql -N -uroot -p"$MYSQL_ROOT_PASSWORD" uni' 2>/dev/null
 }
 

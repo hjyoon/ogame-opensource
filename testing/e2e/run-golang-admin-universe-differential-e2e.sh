@@ -21,7 +21,7 @@ regular_id="$(jq -r '.message_send.sender.player_id // 0' "$FIXTURE")"
 [ "$target_id" -gt 0 ] && [ "$regular_id" -gt 0 ] && [ "$target_id" -ne "$regular_id" ]
 
 db_query() {
-  docker compose -f "$ROOT_DIR/compose.golang.yaml" exec -T mysql \
+  docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T mysql \
     sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -N -B -r -uroot uni -e "$1"' sh "$1"
 }
 

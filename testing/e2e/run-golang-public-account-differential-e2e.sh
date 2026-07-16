@@ -27,7 +27,7 @@ recovery_email="$(jq -r '.password_recovery.permanent.email // empty' "$FIXTURE"
 [ "$actor_id" -gt 0 ] && [ "$actor_planet" -gt 0 ] && [ -n "$actor_login" ] && [ "$recovery_id" -gt 0 ] && [ -n "$recovery_email" ]
 
 db_query() {
-  docker compose -f "$ROOT_DIR/compose.golang.yaml" exec -T mysql \
+  docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T mysql \
     sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -N -B -r -uroot uni -e "$1"' sh "$1"
 }
 

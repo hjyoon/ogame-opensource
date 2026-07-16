@@ -3,7 +3,7 @@
 
 # This deployment only implements a single-domain configuration (the lobby and Universe 1 on the same domain). If you need to separate the universe into a subdomain like uni1.mygame.com, you'll need to come up with your own solution.
 
-FROM php:8.2-apache
+FROM php:8.2-apache AS legacy
 
 # MailHog configuration
 # Copy the msmtp configuration file into the container
@@ -76,3 +76,42 @@ RUN chmod 755 /usr/local/bin/ogame-entrypoint
 
 ENTRYPOINT ["ogame-entrypoint"]
 CMD ["apache2-foreground"]
+
+FROM golang:1.25 AS backend-builder
+WORKDIR /src/backend
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend ./
+RUN CGO_ENABLED=0 go build -o /out/ogame-server ./cmd/ogame-server
+
+FROM oven/bun:1.3 AS frontend-builder
+WORKDIR /src/frontend
+COPY frontend/package.json frontend/bun.lock ./
+RUN bun install --frozen-lockfile
+COPY frontend ./
+COPY wwwroot/img ../wwwroot/img
+COPY wwwroot/css ../wwwroot/css
+COPY wwwroot/evolution ../wwwroot/evolution
+COPY wwwroot/favicon.ico ../wwwroot/favicon.ico
+COPY game/css ../game/css
+COPY game/img ../game/img
+COPY game/js ../game/js
+COPY game/mods ../game/mods
+RUN bun run build
+
+FROM alpine:3.22 AS golang-runtime
+RUN adduser -D -H -u 10001 ogame
+WORKDIR /srv/ogame
+COPY --from=backend-builder /out/ogame-server /usr/local/bin/ogame-server
+COPY --from=frontend-builder /src/frontend/dist /srv/ogame/frontend
+COPY download /srv/ogame/download
+COPY game /srv/ogame/game
+RUN mkdir -p /srv/ogame/game/temp /srv/ogame/data && chown -R ogame:ogame /srv/ogame/game/temp /srv/ogame/data
+ENV OGAME_ENV=production
+ENV OGAME_HTTP_ADDR=:8080
+ENV OGAME_STATIC_DIR=/srv/ogame/frontend
+ENV OGAME_LEGACY_ASSET_DIR=/srv/ogame/download
+ENV OGAME_LEGACY_GAME_DIR=/srv/ogame/game
+EXPOSE 8080
+USER ogame
+ENTRYPOINT ["ogame-server"]

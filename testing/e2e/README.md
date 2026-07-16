@@ -1,6 +1,7 @@
 # Docker E2E Tests
 
 The Docker PHP app is the Go/React behavior oracle. Tests use real HTTP and in-container queue handlers.
+All PHP, Go/MySQL, and Go/SQLite services are defined in the root `docker-compose.yml`.
 
 Keep this file under 4KB. Split details into linked Markdown files.
 

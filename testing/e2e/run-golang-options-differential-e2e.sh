@@ -21,7 +21,7 @@ other_id="$(jq -r '.message_send.recipient.player_id // 0' "$FIXTURE")"
 [ "$actor_id" -gt 0 ] && [ "$other_id" -gt 0 ] && [ "$actor_planet" -gt 0 ] && [ -n "$actor_login" ]
 
 db_query() {
-  docker compose -f "$ROOT_DIR/compose.golang.yaml" exec -T mysql \
+  docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T mysql \
     sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -N -B -r -uroot uni -e "$1"' sh "$1"
 }
 

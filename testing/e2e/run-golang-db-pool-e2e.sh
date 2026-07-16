@@ -7,7 +7,7 @@ REPORT="${OGAME_DB_POOL_REPORT:-$ROOT_DIR/.tmp/golang-db-pool.json}"
 MAX_GROWTH="${OGAME_DB_POOL_MAX_GROWTH:-12}"
 
 connections() {
-  docker compose -f "$ROOT_DIR/compose.golang.yaml" exec -T mysql \
+  docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T mysql \
     sh -c 'mysql -N -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW STATUS LIKE '\''Threads_connected'\''"' 2>/dev/null | awk '{print $2}'
 }
 

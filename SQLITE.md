@@ -7,7 +7,7 @@ The Go/React runtime supports MySQL (default) and SQLite. SQLite uses the pure-G
 Start the persistent SQLite service:
 
 ```sh
-docker compose -f compose.sqlite.yaml up -d --build goapp-sqlite
+docker compose up -d --build goapp-sqlite
 ```
 
 Open `http://localhost:8891`. A new volume is initialized with universe 1, Legor, Arakis, Mond, and the legacy rule tables.
@@ -20,10 +20,10 @@ Override the port or initial admin credentials before the first start:
 
 ```sh
 OGAME_SQLITE_PORT=8892 OGAME_ADMIN_PASSWORD=secret \
-  docker compose -f compose.sqlite.yaml up -d --build goapp-sqlite
+  docker compose up -d --build goapp-sqlite
 ```
 
-Seed values are idempotent and do not overwrite an existing account. To intentionally create fresh databases, remove the SQLite volume with `docker compose -f compose.sqlite.yaml down -v` first.
+Seed values are idempotent and do not overwrite an existing account. To create fresh databases without deleting MySQL data, stop and remove `goapp-sqlite`, then remove only the `ogame-opensource_sqlite_data` Docker volume.
 
 ## Configuration
 

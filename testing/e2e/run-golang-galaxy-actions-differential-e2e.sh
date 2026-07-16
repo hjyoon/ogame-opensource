@@ -34,7 +34,7 @@ missile_target_s="$(jq -r '.galaxy_missile.target.coordinates.system // 0' "$FIX
 [ "$missile_id" -gt 0 ] && [ "$missile_planet" -gt 0 ] && [ "$missile_target_id" -gt 0 ] && [ "$missile_target_planet" -gt 0 ] && [ -n "$missile_login" ]
 
 db_query() {
-  docker compose -f "$ROOT_DIR/compose.golang.yaml" exec -T mysql \
+  docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T mysql \
     sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -N -B -r -uroot uni -e "$1"' sh "$1"
 }
 

@@ -24,7 +24,7 @@ deploy_target_id="$(jq -r '.fleet_lifecycle.deploy_planet_id // 0' "$FIXTURE")"
 [ "$target_player_id" -gt 0 ] && [ "$transport_target_id" -gt 0 ] && [ "$deploy_target_id" -gt 0 ]
 
 db_query() {
-  docker compose -f "$ROOT_DIR/compose.golang.yaml" exec -T mysql \
+  docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T mysql \
     sh -c 'exec mysql -N -B -r -uroot -p"$MYSQL_ROOT_PASSWORD" uni -e "$1"' sh "$1" 2>/dev/null
 }
 

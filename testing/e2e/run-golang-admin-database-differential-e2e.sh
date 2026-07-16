@@ -18,12 +18,12 @@ operator_id="$(jq -r '.operator.player_id // 0' "$FIXTURE")"
 [ "$admin_id" -gt 0 ] && [ "$operator_id" -gt 0 ]
 
 db_query() {
-  docker compose -f "$ROOT_DIR/compose.golang.yaml" exec -T mysql \
+  docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T mysql \
     sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -N -B -r -uroot uni -e "$1"' sh "$1"
 }
 
-legacy_container="$(docker compose -f "$ROOT_DIR/compose.yaml" ps -q server)"
-go_container="$(docker compose -f "$ROOT_DIR/compose.golang.yaml" ps -q goapp)"
+legacy_container="$(docker compose -f "$ROOT_DIR/docker-compose.yml" ps -q server)"
+go_container="$(docker compose -f "$ROOT_DIR/docker-compose.yml" ps -q goapp)"
 [ -n "$legacy_container" ] && [ -n "$go_container" ]
 
 suffix="$$"

@@ -19,7 +19,7 @@ planet_id="$(jq -r '.resource_scope.owner.home_planet_id // 0' "$FIXTURE")"
 [ -n "$login" ] && [ "$player_id" -gt 0 ] && [ "$planet_id" -gt 0 ]
 
 db_query() {
-  docker compose -f "$ROOT_DIR/compose.golang.yaml" exec -T mysql \
+  docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T mysql \
     sh -c 'exec mysql -N -B -uroot -p"$MYSQL_ROOT_PASSWORD" uni -e "$1"' sh "$1" 2>/dev/null
 }
 

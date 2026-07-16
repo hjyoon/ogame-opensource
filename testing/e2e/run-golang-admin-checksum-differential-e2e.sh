@@ -18,7 +18,7 @@ operator_id="$(jq -r '.operator.player_id // 0' "$FIXTURE")"
 [ "$admin_id" -gt 0 ] && [ "$operator_id" -gt 0 ]
 
 db_query() {
-  docker compose -f "$ROOT_DIR/compose.golang.yaml" exec -T mysql \
+  docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T mysql \
     sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -N -B -r -uroot uni -e "$1"' sh "$1"
 }
 
@@ -27,8 +27,8 @@ users_backup="uni1_e2e_adminchecksum_users_$suffix"
 db_query "DROP TABLE IF EXISTS $users_backup;
 CREATE TABLE $users_backup AS SELECT player_id,admin FROM uni1_users WHERE player_id IN ($admin_id,$operator_id)" >/dev/null
 
-legacy_container="$(docker compose -f "$ROOT_DIR/compose.yaml" ps -q server)"
-go_container="$(docker compose -f "$ROOT_DIR/compose.golang.yaml" ps -q goapp)"
+legacy_container="$(docker compose -f "$ROOT_DIR/docker-compose.yml" ps -q server)"
+go_container="$(docker compose -f "$ROOT_DIR/docker-compose.yml" ps -q goapp)"
 [ -n "$legacy_container" ] && [ -n "$go_container" ]
 baseline_files="engine.md5 page_admin.md5 page.md5 reg.md5"
 

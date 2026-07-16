@@ -24,12 +24,12 @@ wait_ready() {
 }
 
 restore_db() {
-  docker compose -f "$ROOT_DIR/compose.golang.yaml" start mysql >/dev/null 2>&1 || true
+  docker compose -f "$ROOT_DIR/docker-compose.yml" start mysql >/dev/null 2>&1 || true
 }
 trap restore_db EXIT INT TERM
 
 login | jq -e '.valid == true' >/dev/null
-docker compose -f "$ROOT_DIR/compose.golang.yaml" stop mysql >/dev/null
+docker compose -f "$ROOT_DIR/docker-compose.yml" stop mysql >/dev/null
 curl --fail --silent "$BASE_URL/api/livez" | jq -e '.status == "ok"' >/dev/null
 status="$(curl --silent --output /tmp/ogame-recovery-health.json --write-out '%{http_code}' "$BASE_URL/api/healthz")"
 [ "$status" = "503" ]
@@ -40,8 +40,8 @@ login | jq -e '.valid == true' >/dev/null
 
 # Reproduce a process starting while its database is unavailable. `restart`
 # does not start dependencies, so recovery must come from the retained pools.
-docker compose -f "$ROOT_DIR/compose.golang.yaml" stop mysql >/dev/null
-docker compose -f "$ROOT_DIR/compose.golang.yaml" restart goapp >/dev/null
+docker compose -f "$ROOT_DIR/docker-compose.yml" stop mysql >/dev/null
+docker compose -f "$ROOT_DIR/docker-compose.yml" restart goapp >/dev/null
 curl --retry 30 --retry-delay 1 --retry-all-errors --fail --silent "$BASE_URL/api/livez" >/dev/null
 status="$(curl --silent --output /tmp/ogame-startup-recovery-health.json --write-out '%{http_code}' "$BASE_URL/api/healthz")"
 [ "$status" = "503" ]

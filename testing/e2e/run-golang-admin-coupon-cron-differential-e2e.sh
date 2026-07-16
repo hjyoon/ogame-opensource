@@ -23,12 +23,12 @@ if [ "$admin_id" -le 0 ] || [ "$eligible_id" -le 0 ] || [ "$other_id" -le 0 ]; t
 fi
 
 db_query() {
-  docker compose -f "$ROOT_DIR/compose.golang.yaml" exec -T mysql \
+  docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T mysql \
     sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -N -B -r -uroot uni -e "$1"' sh "$1"
 }
 
 master_query() {
-  docker compose -f "$ROOT_DIR/compose.golang.yaml" exec -T mysql \
+  docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T mysql \
     sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -N -B -r -uroot master -e "$1"' sh "$1"
 }
 
@@ -52,10 +52,10 @@ CREATE TABLE $users_backup AS SELECT * FROM uni1_users WHERE player_id IN ($elig
 CREATE TABLE $queue_backup AS SELECT * FROM uni1_queue WHERE type='Coupon';
 CREATE TABLE $role_backup AS SELECT player_id,admin FROM uni1_users WHERE player_id=$admin_id" >/dev/null
 master_query "DROP TABLE IF EXISTS $coupon_backup; CREATE TABLE $coupon_backup AS SELECT * FROM coupons" >/dev/null
-docker compose -f "$ROOT_DIR/compose.yaml" exec -T server sh -c "if [ -f /var/www/html/game/temp/mailto.log ]; then cp /var/www/html/game/temp/mailto.log '$legacy_log_backup'; else : > '$legacy_log_missing'; fi"
+docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T server sh -c "if [ -f /var/www/html/game/temp/mailto.log ]; then cp /var/www/html/game/temp/mailto.log '$legacy_log_backup'; else : > '$legacy_log_missing'; fi"
 
 restore_legacy_log() {
-  docker compose -f "$ROOT_DIR/compose.yaml" exec -T server sh -c "if [ -f '$legacy_log_missing' ]; then rm -f /var/www/html/game/temp/mailto.log; else cp '$legacy_log_backup' /var/www/html/game/temp/mailto.log; fi" >/dev/null
+  docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T server sh -c "if [ -f '$legacy_log_missing' ]; then rm -f /var/www/html/game/temp/mailto.log; else cp '$legacy_log_backup' /var/www/html/game/temp/mailto.log; fi" >/dev/null
 }
 
 restore_case() {
@@ -72,7 +72,7 @@ cleanup() {
   db_query "UPDATE uni1_users u JOIN $role_backup b ON b.player_id=u.player_id SET u.admin=b.admin;
 DROP TABLE IF EXISTS $users_backup,$queue_backup,$role_backup" >/dev/null 2>&1 || true
   master_query "DROP TABLE IF EXISTS $coupon_backup" >/dev/null 2>&1 || true
-  docker compose -f "$ROOT_DIR/compose.yaml" exec -T server sh -c "rm -f '$legacy_log_backup' '$legacy_log_missing'" >/dev/null 2>&1 || true
+  docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T server sh -c "rm -f '$legacy_log_backup' '$legacy_log_missing'" >/dev/null 2>&1 || true
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT INT TERM
@@ -119,7 +119,7 @@ INSERT INTO uni1_queue(owner_id,type,sub_id,obj_id,level,start,end,prio,freeze,f
 }
 
 capture_legacy_mail() {
-  raw="$(docker compose -f "$ROOT_DIR/compose.yaml" exec -T server sh -c 'cat /var/www/html/game/temp/mailto.log 2>/dev/null || true' | tr -d '\r')"
+  raw="$(docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T server sh -c 'cat /var/www/html/game/temp/mailto.log 2>/dev/null || true' | tr -d '\r')"
   block="$(printf '%s\n' "$raw" | awk -v target="To: $email" '$0==target {found=1; next} found && /^To: / {exit} found {print}')"
   subject="$(printf '%s\n' "$block" | awk '/^Subj: / {sub(/^Subj: /,""); print; exit}')"
   body="$(printf '%s\n' "$block" | awk 'body {print} /^Subj: / {body=1}' | sed -e '/^[[:space:]]*$/d' -E -e 's/[0-9A-Z]{4}(-[0-9A-Z]{4}){4}/<COUPON>/g')"

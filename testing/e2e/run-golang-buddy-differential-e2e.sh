@@ -24,7 +24,7 @@ recipient_planet="$(jq -r '.buddy_lifecycle.recipient.home_planet_id // 0' "$FIX
 users="$requester_id,$recipient_id"
 
 db_query() {
-  docker compose -f "$ROOT_DIR/compose.golang.yaml" exec -T mysql \
+  docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T mysql \
     sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -N -B -r -uroot uni -e "$1"' sh "$1"
 }
 

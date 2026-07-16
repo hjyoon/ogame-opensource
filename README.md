@@ -25,6 +25,8 @@ cd ../backend && go test ./...
 testing/e2e/run-golang-docker.sh
 ```
 
+Docker uses one multi-target `Dockerfile` and one `docker-compose.yml`. The default stack is the PHP oracle; target `goapp` for Go/MySQL or `goapp-sqlite` for Go/SQLite.
+
 Final compatibility QA, including the PHP oracle, is:
 
 ```sh
