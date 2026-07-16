@@ -34,6 +34,7 @@ type AccountCreator struct {
 	secret      string
 	now         func() time.Time
 	randomBytes func(int) ([]byte, error)
+	sqlite      bool
 }
 
 type sqlRegistrationTx struct {
@@ -58,7 +59,9 @@ type planetCoordinates struct {
 }
 
 func NewAccountCreator(db *sql.DB, prefix string, secret string) AccountCreator {
-	return NewAccountCreatorWithRunner(SQLTxRunner{DB: db}, prefix, secret, time.Now, cryptoRandomBytes)
+	creator := NewAccountCreatorWithRunner(SQLTxRunner{DB: db}, prefix, secret, time.Now, cryptoRandomBytes)
+	creator.sqlite = db != nil && strings.Contains(strings.ToLower(fmt.Sprintf("%T", db.Driver())), "sqlite")
+	return creator
 }
 
 func NewAccountCreatorWithRunner(
@@ -186,7 +189,7 @@ func (c AccountCreator) CreateRegistrationAccount(ctx context.Context, draft dom
 		if err := insertRegistrationTimeLimit(ctx, tx, botvarsTable, playerID); err != nil {
 			return err
 		}
-		if err := recalcRegistrationRanks(ctx, tx, usersTable); err != nil {
+		if err := recalcRegistrationRanks(ctx, tx, usersTable, c.sqlite); err != nil {
 			return err
 		}
 		account.PlayerID = playerID
@@ -383,7 +386,7 @@ func insertRegistrationTimeLimit(ctx context.Context, tx registrationTx, botvars
 	return err
 }
 
-func recalcRegistrationRanks(ctx context.Context, tx registrationTx, usersTable string) error {
+func recalcRegistrationRanks(ctx context.Context, tx registrationTx, usersTable string, sqlite bool) error {
 	queries := []string{
 		fmt.Sprintf("UPDATE %s SET score1 = -1, score2 = -1, score3 = -1 WHERE admin > 0", usersTable),
 		"SET @pos := 0",
@@ -394,12 +397,25 @@ func recalcRegistrationRanks(ctx context.Context, tx registrationTx, usersTable 
 		fmt.Sprintf("UPDATE %s SET place3 = (SELECT @pos := @pos+1) ORDER BY score3 DESC", usersTable),
 		fmt.Sprintf("UPDATE %s SET place1 = 0, place2 = 0, place3 = 0 WHERE admin > 0", usersTable),
 	}
+	if sqlite {
+		queries = []string{
+			fmt.Sprintf("UPDATE %s SET score1 = -1, score2 = -1, score3 = -1 WHERE admin > 0", usersTable),
+			registrationRankStatement(usersTable, "score1", "place1"),
+			registrationRankStatement(usersTable, "score2", "place2"),
+			registrationRankStatement(usersTable, "score3", "place3"),
+			fmt.Sprintf("UPDATE %s SET place1 = 0, place2 = 0, place3 = 0 WHERE admin > 0", usersTable),
+		}
+	}
 	for _, query := range queries {
 		if _, err := tx.ExecContext(ctx, query); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func registrationRankStatement(usersTable string, scoreColumn string, placeColumn string) string {
+	return fmt.Sprintf("WITH ranked AS (SELECT player_id, ROW_NUMBER() OVER (ORDER BY %s DESC, player_id ASC) AS place FROM %s) UPDATE %s SET %s = COALESCE((SELECT place FROM ranked WHERE ranked.player_id = %s.player_id), 0)", scoreColumn, usersTable, usersTable, placeColumn, usersTable)
 }
 
 func registrationGreetingText(boardURL string, tutorialURL string) string {

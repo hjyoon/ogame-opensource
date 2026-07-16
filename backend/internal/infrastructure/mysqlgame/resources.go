@@ -30,10 +30,14 @@ type transactionRunner interface {
 }
 
 type sqlTransactionRunner struct {
-	tx *sql.Tx
+	tx      *sql.Tx
+	dialect SQLDialect
 }
 
 func (q SQLQueryer) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	if detectSQLDialect(q.DB) == DialectSQLite {
+		query = rewriteSQLiteLimitedMutation(query)
+	}
 	return q.DB.ExecContext(ctx, query, args...)
 }
 
@@ -45,7 +49,7 @@ func (q SQLQueryer) WithTransaction(ctx context.Context, run func(Queryer, Exece
 	if err != nil {
 		return err
 	}
-	runner := sqlTransactionRunner{tx: tx}
+	runner := sqlTransactionRunner{tx: tx, dialect: detectSQLDialect(q.DB)}
 	if err := run(runner, runner); err != nil {
 		_ = tx.Rollback()
 		return err
@@ -58,6 +62,9 @@ func (r sqlTransactionRunner) QueryContext(ctx context.Context, query string, ar
 }
 
 func (r sqlTransactionRunner) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	if r.dialect == DialectSQLite {
+		query = rewriteSQLiteLimitedMutation(query)
+	}
 	return r.tx.ExecContext(ctx, query, args...)
 }
 

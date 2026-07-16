@@ -392,6 +392,59 @@ func TestAdminRepositoryDatabaseBackupQueryErrorBranches(t *testing.T) {
 	}
 }
 
+func TestAdminRepositorySQLiteDatabaseErrorBranches(t *testing.T) {
+	wantErr := errors.New("sqlite metadata failed")
+	pragmaRow := []any{0, "id", "INTEGER", 0, nil, 1}
+	for _, test := range []struct {
+		name    string
+		result  fakeQueryResult
+		wantSub string
+	}{
+		{name: "query", result: fakeQueryResult{err: wantErr}, wantSub: wantErr.Error()},
+		{name: "scan", result: fakeQueryResult{rows: fakeRowsFromValues([]any{"bad", "id", "INTEGER", 0, nil, 1})}, wantSub: "expected int"},
+		{name: "identifier", result: fakeQueryResult{rows: fakeRowsFromValues([]any{0, "bad-name", "INTEGER", 0, nil, 1})}, wantSub: "invalid database identifier"},
+		{name: "rows", result: fakeQueryResult{rows: fakeRowsFromValuesWithErr(wantErr, pragmaRow)}, wantSub: wantErr.Error()},
+		{name: "empty", result: fakeQueryResult{rows: fakeRowsFromValues()}, wantSub: "no columns"},
+	} {
+		t.Run("columns "+test.name, func(t *testing.T) {
+			repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{test.result}}, "uni1_").WithDialect(DialectSQLite)
+			if _, err := repository.loadSQLiteAdminDatabaseColumns(context.Background(), "`uni1_users`"); err == nil || !strings.Contains(err.Error(), test.wantSub) {
+				t.Fatalf("expected %q, got %v", test.wantSub, err)
+			}
+		})
+	}
+	for _, test := range []struct {
+		name    string
+		result  fakeQueryResult
+		wantErr bool
+	}{
+		{name: "query", result: fakeQueryResult{err: wantErr}, wantErr: true},
+		{name: "scan", result: fakeQueryResult{rows: fakeRowsFromValues([]any{"bad"})}, wantErr: true},
+		{name: "rows", result: fakeQueryResult{rows: fakeRowsFromValuesWithErr(wantErr, []any{int64(2)})}, wantErr: true},
+		{name: "null", result: fakeQueryResult{rows: fakeRowsFromValues([]any{nil})}},
+	} {
+		t.Run("sequence "+test.name, func(t *testing.T) {
+			repository := NewAdminRepositoryWithQueryer(&fakeQueryer{results: []fakeQueryResult{test.result}}, "uni1_").WithDialect(DialectSQLite)
+			value, err := repository.loadAdminDatabaseAutoIncrement(context.Background(), "uni1_users")
+			if test.wantErr && err == nil {
+				t.Fatal("expected SQLite sequence error")
+			}
+			if !test.wantErr && (err != nil || value != nil) {
+				t.Fatalf("expected nil SQLite sequence, value=%v err=%v", value, err)
+			}
+		})
+	}
+	auto := int64(10)
+	backup := map[string]adminDatabaseBackupTable{"users": {AutoIncrement: &auto, Cols: []string{"id"}}}
+	for _, failAt := range []int{3, 4} {
+		runner := &fakeAdminDBRunner{execErrAt: failAt, execErr: wantErr}
+		repository := NewAdminRepositoryWithQueryer(runner, "uni1_").WithDialect(DialectSQLite)
+		if err := repository.deserializeAdminDatabaseBackup(context.Background(), backup); !errors.Is(err, wantErr) {
+			t.Fatalf("expected SQLite sequence restore error at %d, got %v", failAt, err)
+		}
+	}
+}
+
 func TestAdminRepositoryDatabaseBackupMutationErrorBranches(t *testing.T) {
 	repository := NewAdminRepositoryWithQueryer(&fakeAdminDBRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: sql.ErrConnDone}}}}, "ogame_")
 	if _, err := repository.mutateAdminDatabase(context.Background(), appgame.AdminMutationQuery{Action: domaingame.AdminActionDatabaseCreate}); err == nil {

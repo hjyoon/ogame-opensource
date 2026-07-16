@@ -9,6 +9,7 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,6 +67,7 @@ type OverviewRepository struct {
 	includeBuildQueue bool
 	includeEvents     bool
 	includeBotQueue   bool
+	dialect           SQLDialect
 }
 
 func NewOverviewRepository(db *sql.DB, prefix string) OverviewRepository {
@@ -74,7 +76,7 @@ func NewOverviewRepository(db *sql.DB, prefix string) OverviewRepository {
 
 func NewOverviewRepositoryWithSecret(db *sql.DB, prefix string, secret string) OverviewRepository {
 	runner := SQLQueryer{DB: db}
-	return OverviewRepository{queryer: runner, execer: runner, prefix: prefix, secret: secret, now: time.Now, updateResources: true, includeUnread: true, includeBuildQueue: true, includeEvents: true, includeBotQueue: true}
+	return OverviewRepository{queryer: runner, execer: runner, prefix: prefix, secret: secret, now: time.Now, updateResources: true, includeUnread: true, includeBuildQueue: true, includeEvents: true, includeBotQueue: true, dialect: detectSQLDialect(db)}
 }
 
 func NewOverviewRepositoryWithQueryer(queryer Queryer, prefix string) OverviewRepository {
@@ -90,7 +92,7 @@ func NewOverviewRepositoryWithRunner(queryer Queryer, execer Execer, prefix stri
 }
 
 func NewOverviewRepositoryWithRunnerAndSecret(queryer Queryer, execer Execer, prefix string, secret string) OverviewRepository {
-	return OverviewRepository{queryer: queryer, execer: execer, prefix: prefix, secret: secret, now: time.Now}
+	return OverviewRepository{queryer: queryer, execer: execer, prefix: prefix, secret: secret, now: time.Now, dialect: detectSQLDialectFromQueryer(queryer)}
 }
 
 func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.OverviewQuery) (domaingame.Overview, error) {
@@ -640,14 +642,29 @@ func (r OverviewRepository) adjustStats(ctx context.Context, usersTable string, 
 }
 
 func (r OverviewRepository) recalcRanks(ctx context.Context, usersTable string) error {
+	if r.dialect != DialectSQLite && detectSQLDialectFromRunner(r.execer) != DialectSQLite {
+		statements := []string{
+			fmt.Sprintf("UPDATE %s SET score1 = -1, score2 = -1, score3 = -1 WHERE admin > 0", usersTable),
+			"SET @pos := 0",
+			fmt.Sprintf("UPDATE %s SET place1 = (SELECT @pos := @pos+1) ORDER BY score1 DESC", usersTable),
+			"SET @pos := 0",
+			fmt.Sprintf("UPDATE %s SET place2 = (SELECT @pos := @pos+1) ORDER BY score2 DESC", usersTable),
+			"SET @pos := 0",
+			fmt.Sprintf("UPDATE %s SET place3 = (SELECT @pos := @pos+1) ORDER BY score3 DESC", usersTable),
+			fmt.Sprintf("UPDATE %s SET place1 = 0, place2 = 0, place3 = 0 WHERE admin > 0", usersTable),
+		}
+		for _, statement := range statements {
+			if _, err := r.execer.ExecContext(ctx, statement); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	statements := []string{
 		fmt.Sprintf("UPDATE %s SET score1 = -1, score2 = -1, score3 = -1 WHERE admin > 0", usersTable),
-		"SET @pos := 0",
-		fmt.Sprintf("UPDATE %s SET place1 = (SELECT @pos := @pos+1) ORDER BY score1 DESC", usersTable),
-		"SET @pos := 0",
-		fmt.Sprintf("UPDATE %s SET place2 = (SELECT @pos := @pos+1) ORDER BY score2 DESC", usersTable),
-		"SET @pos := 0",
-		fmt.Sprintf("UPDATE %s SET place3 = (SELECT @pos := @pos+1) ORDER BY score3 DESC", usersTable),
+		rankStatement(usersTable, "player_id", "score1", "place1"),
+		rankStatement(usersTable, "player_id", "score2", "place2"),
+		rankStatement(usersTable, "player_id", "score3", "place3"),
 		fmt.Sprintf("UPDATE %s SET place1 = 0, place2 = 0, place3 = 0 WHERE admin > 0", usersTable),
 	}
 	for _, statement := range statements {
@@ -656,6 +673,10 @@ func (r OverviewRepository) recalcRanks(ctx context.Context, usersTable string) 
 		}
 	}
 	return nil
+}
+
+func rankStatement(table string, idColumn string, scoreColumn string, placeColumn string) string {
+	return fmt.Sprintf("WITH ranked AS (SELECT %s, ROW_NUMBER() OVER (ORDER BY %s DESC, %s ASC) AS place FROM %s) UPDATE %s SET %s = COALESCE((SELECT place FROM ranked WHERE ranked.%s = %s.%s), 0)", idColumn, scoreColumn, idColumn, table, table, placeColumn, idColumn, table, idColumn)
 }
 
 type recalcPointQueueTask struct {
@@ -1325,12 +1346,13 @@ type overviewUnionRow struct {
 }
 
 func (r OverviewRepository) loadOverviewUnionEvents(ctx context.Context, queueTable string, fleetTable string, planetsTable string, usersTable string, unionTable string, fleetIDs []int, playerID int, fleetDetailLevel int) ([]domaingame.FleetMission, error) {
-	rows, err := r.queryer.QueryContext(
-		ctx,
-		fmt.Sprintf("SELECT union_id, target_player FROM %s WHERE target_player = ? OR CONCAT(',', players, ',') LIKE ? ORDER BY union_id ASC", unionTable),
-		playerID,
-		fmt.Sprintf("%%,%d,%%", playerID),
-	)
+	query := fmt.Sprintf("SELECT union_id, target_player FROM %s WHERE target_player = ? OR CONCAT(',', players, ',') LIKE ? ORDER BY union_id ASC", unionTable)
+	args := []any{playerID, fmt.Sprintf("%%,%d,%%", playerID)}
+	if r.dialect == DialectSQLite || detectSQLDialectFromRunner(r.queryer) == DialectSQLite {
+		query = fmt.Sprintf("SELECT union_id, target_player FROM %s WHERE target_player = ? OR players = ? OR players LIKE ? OR players LIKE ? OR players LIKE ? ORDER BY union_id ASC", unionTable)
+		args = []any{playerID, strconv.Itoa(playerID), fmt.Sprintf("%d,%%", playerID), fmt.Sprintf("%%,%d,%%", playerID), fmt.Sprintf("%%,%d", playerID)}
+	}
+	rows, err := r.queryer.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

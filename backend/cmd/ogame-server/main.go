@@ -78,7 +78,7 @@ func buildHandler(cfg config.Config, logger *slog.Logger, pools databasePools) h
 		ReactTarget:        config.ReactTarget,
 		MasterDBRequired:   cfg.MasterDBEnabled,
 		UniverseDBRequired: cfg.UniDBEnabled,
-		ModRuntimeRequired: cfg.UniDBEnabled,
+		ModRuntimeRequired: cfg.UniDBEnabled && pools.driver == "mysql",
 	}, filesystem.Probe{}, infraruntime.GoRuntime{}, masterDBProbe, universeDBProbe, modRuntimeProbe)
 	universes := apppublicsite.NewUniverseCatalogService(universeRepository(cfg, logger, pools))
 	registrationDrafts := registrationValidator(cfg, logger, pools)
@@ -196,7 +196,7 @@ func mcpService(cfg config.Config, logger *slog.Logger, health appsystem.HealthS
 		return withCommonMCP(appmcp.NewServiceWithTokenVerifier(health, staticVerifier))
 	}
 
-	repository := mysqlgame.NewMCPTokenRepository(db, cfg.UniDBPrefix)
+	repository := mysqlgame.NewMCPTokenRepository(db, cfg.UniDBPrefix).WithDialect(mysqlgame.SQLDialect(pools.driver))
 	ensureMCPSchemaEventually(logger, repository)
 
 	logger.Info("universe DB mcp token and oauth management enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix, "universe", cfg.UniNumber)
@@ -576,7 +576,7 @@ func gameAdminService(cfg config.Config, logger *slog.Logger, sessions apppublic
 	}
 
 	logger.Info("universe DB game admin enabled", "host", cfg.UniDBHost, "database", cfg.UniDBName, "prefix", cfg.UniDBPrefix)
-	repository := mysqlgame.NewAdminRepository(db, cfg.UniDBPrefix).WithLegacyGameDir(cfg.LegacyGameDir).WithSecret(cfg.UniDBSecret)
+	repository := mysqlgame.NewAdminRepository(db, cfg.UniDBPrefix).WithDialect(mysqlgame.SQLDialect(pools.driver)).WithLegacyGameDir(cfg.LegacyGameDir).WithSecret(cfg.UniDBSecret)
 	if masterDB := pools.master; masterDB != nil {
 		masterRunner := mysqlgame.SQLQueryer{DB: masterDB}
 		repository = repository.WithMasterRunner(masterRunner, masterRunner).WithUniverseNumber(cfg.UniNumber)

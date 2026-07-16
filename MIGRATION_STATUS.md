@@ -13,6 +13,7 @@ React/Bun + Go migration tracker. Keep under 4KB; split details by topic.
 - `/api/game/*` implements overview, economy and queues, fleet/combat, galaxy, social/account, reports, officers/payment, and Admin/Bot operations.
 - Game mutations preserve legacy math, timing, permissions, persisted effects, reports, and scheduler behavior through PHP/Go differential cases.
 - MCP supports Player, Operator, and Admin tokens with live DB-role checks, role-ceiling scopes, confirmed staff actions, and browser-equivalent player actions; visual comparisons exclude the Go-only token section.
+- The Go runtime supports MySQL by default and persistent SQLite as an optional pure-Go mode; see [SQLite](./SQLITE.md).
 - Modernization candidates stay in [MODERNIZATION_OPTIONS.md](./MODERNIZATION_OPTIONS.md).
 
 ## Source Inventory
@@ -39,6 +40,8 @@ OGAME_RUN_LEGACY_E2E=1 OGAME_GO_PORT=8890 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run
 - Authenticated dynamic registry passed all 98 listed cases in each browser.
 
 Generated details are in [navigation coverage](./testing/e2e/COVERAGE-navigation-visual.md), [differential coverage](./testing/e2e/COVERAGE-differential.md), [dynamic coverage](./testing/e2e/COVERAGE-dynamic-legacy-js.md), and `.tmp/golang-migration-qa-summary.md`.
+
+SQLite focused QA passes bootstrap, authenticated HTTP, registration/build mutation, queue completion, MCP/OAuth, coupons, Admin cron, and backup/restore. The full PHP differential baseline above remains MySQL-backed.
 
 ## Completion Statement
 

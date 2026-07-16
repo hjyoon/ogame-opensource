@@ -83,15 +83,18 @@ type FleetRepository struct {
 	legacyEvents    bool
 	queueProduction bool
 	combatRandom    func(int) int
+	dialect         SQLDialect
 }
 
 func NewFleetRepository(db *sql.DB, prefix string) FleetRepository {
 	runner := SQLQueryer{DB: db}
-	return FleetRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, finishDueQueues: true, legacyEvents: true, queueProduction: true, combatRandom: rand.IntN}
+	return FleetRepository{queryer: runner, execer: runner, prefix: prefix, now: time.Now, finishDueQueues: true, legacyEvents: true, queueProduction: true, combatRandom: rand.IntN, dialect: detectSQLDialect(db)}
 }
 
 func NewFleetReadRepository(db *sql.DB, prefix string) FleetRepository {
-	return NewFleetRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
+	repository := NewFleetRepositoryWithRunner(SQLQueryer{DB: db}, nil, prefix, time.Now)
+	repository.dialect = detectSQLDialect(db)
+	return repository
 }
 
 func NewFleetRepositoryWithQueryer(queryer Queryer, prefix string, now func() time.Time) FleetRepository {
@@ -106,7 +109,7 @@ func NewFleetRepositoryWithRunner(queryer Queryer, execer Execer, prefix string,
 	if now == nil {
 		now = time.Now
 	}
-	return FleetRepository{queryer: queryer, execer: execer, prefix: prefix, now: now, combatRandom: rand.IntN}
+	return FleetRepository{queryer: queryer, execer: execer, prefix: prefix, now: now, combatRandom: rand.IntN, dialect: detectSQLDialectFromQueryer(queryer)}
 }
 
 func (r FleetRepository) GetFleet(ctx context.Context, query appgame.FleetQuery) (domaingame.Fleet, error) {
@@ -699,9 +702,13 @@ func (r FleetRepository) syncFleetLaunchACSQueue(ctx context.Context, queueTable
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	statement := fmt.Sprintf("UPDATE %s q JOIN %s f ON f.fleet_id = q.sub_id SET q.end = ? WHERE q.type = ? AND f.union_id = ?", queueTable, fleetTable)
+	if r.dialect == DialectSQLite {
+		statement = fmt.Sprintf("UPDATE %s SET end = ? WHERE type = ? AND sub_id IN (SELECT fleet_id FROM %s WHERE union_id = ?)", queueTable, fleetTable)
+	}
 	_, err = r.execer.ExecContext(
 		ctx,
-		fmt.Sprintf("UPDATE %s q JOIN %s f ON f.fleet_id = q.sub_id SET q.end = ? WHERE q.type = ? AND f.union_id = ?", queueTable, fleetTable),
+		statement,
 		unionEnd,
 		queueTypeFleet,
 		unionID,

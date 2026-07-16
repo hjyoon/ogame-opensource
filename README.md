@@ -33,7 +33,7 @@ OGAME_RUN_LEGACY_E2E=1 OGAME_GO_PORT=8890 OGAME_KEEP_GO_DOCKER=1 testing/e2e/run
 
 Markdown files are capped at 4KB. Split larger docs by topic and link them from a short index.
 
-Docs: [status](./MIGRATION_STATUS.md), [API](./backend/API_ENDPOINTS.md), [MCP](./MCP.md), and [QA](./testing/e2e/README.md).
+Docs: [status](./MIGRATION_STATUS.md), [API](./backend/API_ENDPOINTS.md), [MCP](./MCP.md), [SQLite](./SQLITE.md), and [QA](./testing/e2e/README.md).
 
 Installation references:
 - Use the millennial guide: [install](/wiki/en/install.md)

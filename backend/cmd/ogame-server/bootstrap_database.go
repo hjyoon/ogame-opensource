@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"log/slog"
+	"strings"
 	"time"
 
 	appsystem "github.com/hjyoon/ogame-opensource/backend/internal/application/system"
@@ -10,15 +12,28 @@ import (
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlcatalog"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlhealth"
 	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/mysqlregistration"
+	"github.com/hjyoon/ogame-opensource/backend/internal/infrastructure/sqlitedb"
 )
 
 type databasePools struct {
 	master   *sql.DB
 	universe *sql.DB
+	driver   string
 }
 
 func openDatabasePools(cfg config.Config, logger *slog.Logger) databasePools {
-	var pools databasePools
+	driver := strings.ToLower(strings.TrimSpace(cfg.DBDriver))
+	if driver == "" {
+		driver = "mysql"
+	}
+	pools := databasePools{driver: driver}
+	if driver == "sqlite" {
+		return openSQLiteDatabasePools(cfg, logger, pools)
+	}
+	if driver != "mysql" {
+		logger.Error("unsupported database driver", "driver", driver)
+		return pools
+	}
 	if cfg.MasterDBEnabled {
 		db, err := mysqlcatalog.Open(mysqlcatalog.MasterDBConfig{Host: cfg.MasterDBHost, User: cfg.MasterDBUser, Password: cfg.MasterDBPassword, Name: cfg.MasterDBName})
 		if err != nil {
@@ -34,6 +49,48 @@ func openDatabasePools(cfg config.Config, logger *slog.Logger) databasePools {
 			logger.Warn("universe DB pool unavailable", "error", err)
 		} else {
 			configureDatabasePool(db, cfg)
+			pools.universe = db
+		}
+	}
+	return pools
+}
+
+func openSQLiteDatabasePools(cfg config.Config, logger *slog.Logger, pools databasePools) databasePools {
+	options := sqlitedb.BootstrapOptions{
+		Prefix:        cfg.UniDBPrefix,
+		Secret:        cfg.UniDBSecret,
+		Universe:      cfg.UniNumber,
+		PublicBaseURL: cfg.PublicBaseURL,
+		AdminEmail:    cfg.SQLiteAdminEmail,
+		AdminPassword: cfg.SQLiteAdminPassword,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if cfg.MasterDBEnabled {
+		db, err := sqlitedb.Open(cfg.SQLiteMasterPath)
+		if err == nil && cfg.SQLiteAutoMigrate {
+			err = sqlitedb.BootstrapMaster(ctx, db, options)
+		}
+		if err != nil {
+			logger.Warn("sqlite master DB unavailable", "path", cfg.SQLiteMasterPath, "error", err)
+			if db != nil {
+				_ = db.Close()
+			}
+		} else {
+			pools.master = db
+		}
+	}
+	if cfg.UniDBEnabled {
+		db, err := sqlitedb.Open(cfg.SQLiteUniversePath)
+		if err == nil && cfg.SQLiteAutoMigrate {
+			err = sqlitedb.BootstrapUniverse(ctx, db, options)
+		}
+		if err != nil {
+			logger.Warn("sqlite universe DB unavailable", "path", cfg.SQLiteUniversePath, "error", err)
+			if db != nil {
+				_ = db.Close()
+			}
+		} else {
 			pools.universe = db
 		}
 	}
@@ -59,7 +116,9 @@ func (p databasePools) readinessProbes(prefix string) (appsystem.ReadinessProbe,
 	}
 	if p.universe != nil {
 		universe = mysqlhealth.New(p.universe)
-		mods = mysqlhealth.NewModRuntimeProbe(p.universe, prefix)
+		if p.driver != "sqlite" {
+			mods = mysqlhealth.NewModRuntimeProbe(p.universe, prefix)
+		}
 	}
 	return master, universe, mods
 }

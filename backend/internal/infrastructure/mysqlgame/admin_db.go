@@ -185,7 +185,11 @@ func (r AdminRepository) serializeAdminDatabaseBackup(ctx context.Context) (map[
 }
 
 func (r AdminRepository) loadAdminBackupTableNames(ctx context.Context) ([]string, error) {
-	rows, err := r.queryer.QueryContext(ctx, "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME LIKE ?", r.prefix+"%")
+	query := "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME LIKE ?"
+	if r.dialect == DialectSQLite {
+		query = "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE ? AND name NOT LIKE 'sqlite_%'"
+	}
+	rows, err := r.queryer.QueryContext(ctx, query, r.prefix+"%")
 	if err != nil {
 		return nil, err
 	}
@@ -232,6 +236,9 @@ func (r AdminRepository) serializeAdminDatabaseTable(ctx context.Context, physic
 }
 
 func (r AdminRepository) loadAdminDatabaseColumns(ctx context.Context, quotedTable string) ([]string, error) {
+	if r.dialect == DialectSQLite {
+		return r.loadSQLiteAdminDatabaseColumns(ctx, quotedTable)
+	}
 	rows, err := r.queryer.QueryContext(ctx, "SHOW COLUMNS FROM "+quotedTable)
 	if err != nil {
 		return nil, err
@@ -258,8 +265,40 @@ func (r AdminRepository) loadAdminDatabaseColumns(ctx context.Context, quotedTab
 	return columns, nil
 }
 
+func (r AdminRepository) loadSQLiteAdminDatabaseColumns(ctx context.Context, quotedTable string) ([]string, error) {
+	rows, err := r.queryer.QueryContext(ctx, "PRAGMA table_info("+quotedTable+")")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	columns := make([]string, 0)
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return nil, err
+		}
+		if _, err := quoteAdminDatabaseIdentifier(name); err != nil {
+			return nil, err
+		}
+		columns = append(columns, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(columns) == 0 {
+		return nil, errors.New("admin database table has no columns")
+	}
+	return columns, nil
+}
+
 func (r AdminRepository) loadAdminDatabaseAutoIncrement(ctx context.Context, physicalName string) (*int64, error) {
-	rows, err := r.queryer.QueryContext(ctx, "SELECT AUTO_INCREMENT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?", physicalName)
+	query := "SELECT AUTO_INCREMENT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?"
+	if r.dialect == DialectSQLite {
+		query = "SELECT seq + 1 FROM sqlite_sequence WHERE name = ?"
+	}
+	rows, err := r.queryer.QueryContext(ctx, query, physicalName)
 	if err != nil {
 		return nil, err
 	}
@@ -316,10 +355,16 @@ func (r AdminRepository) loadAdminDatabaseValues(ctx context.Context, quotedTabl
 }
 
 func (r AdminRepository) deserializeAdminDatabaseBackup(ctx context.Context, backup map[string]adminDatabaseBackupTable) error {
-	if _, err := r.execer.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS=0"); err != nil {
+	disableForeignKeys := "SET FOREIGN_KEY_CHECKS=0"
+	enableForeignKeys := "SET FOREIGN_KEY_CHECKS=1"
+	if r.dialect == DialectSQLite {
+		disableForeignKeys = "PRAGMA foreign_keys=OFF"
+		enableForeignKeys = "PRAGMA foreign_keys=ON"
+	}
+	if _, err := r.execer.ExecContext(ctx, disableForeignKeys); err != nil {
 		return err
 	}
-	defer r.execer.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS=1")
+	defer r.execer.ExecContext(ctx, enableForeignKeys)
 
 	names := make([]string, 0, len(backup))
 	for name := range backup {
@@ -335,14 +380,25 @@ func (r AdminRepository) deserializeAdminDatabaseBackup(ctx context.Context, bac
 		if err := validateAdminDatabaseBackupTable(table); err != nil {
 			return err
 		}
-		if _, err := r.execer.ExecContext(ctx, "TRUNCATE TABLE "+physicalTable); err != nil {
+		clearStatement := "TRUNCATE TABLE " + physicalTable
+		if r.dialect == DialectSQLite {
+			clearStatement = "DELETE FROM " + physicalTable
+		}
+		if _, err := r.execer.ExecContext(ctx, clearStatement); err != nil {
 			return err
 		}
 		if err := r.insertAdminDatabaseBackupRows(ctx, physicalTable, table); err != nil {
 			return err
 		}
 		if table.AutoIncrement != nil && *table.AutoIncrement > 0 {
-			if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s AUTO_INCREMENT = %d", physicalTable, *table.AutoIncrement)); err != nil {
+			if r.dialect == DialectSQLite {
+				if _, err := r.execer.ExecContext(ctx, "DELETE FROM sqlite_sequence WHERE name = ?", r.prefix+name); err != nil {
+					return err
+				}
+				if _, err := r.execer.ExecContext(ctx, "INSERT INTO sqlite_sequence(name, seq) VALUES (?, ?)", r.prefix+name, *table.AutoIncrement-1); err != nil {
+					return err
+				}
+			} else if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s AUTO_INCREMENT = %d", physicalTable, *table.AutoIncrement)); err != nil {
 				return err
 			}
 		}

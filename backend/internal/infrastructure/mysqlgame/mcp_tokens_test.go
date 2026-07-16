@@ -84,6 +84,97 @@ func TestMCPTokenRepositoryEnsuresOAuthCodeSchema(t *testing.T) {
 	}
 }
 
+func TestMCPTokenRepositorySQLiteSchemaErrorsAndDialectOverride(t *testing.T) {
+	wantErr := errors.New("sqlite index failed")
+	for _, test := range []struct {
+		name string
+		run  func(MCPTokenRepository) error
+	}{
+		{name: "tokens", run: func(repository MCPTokenRepository) error {
+			return repository.EnsureMCPTokenSchema(context.Background())
+		}},
+		{name: "oauth", run: func(repository MCPTokenRepository) error {
+			return repository.EnsureMCPOAuthCodeSchema(context.Background())
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runner := &sequencedMCPExecer{failAt: 2, err: wantErr}
+			repository := NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{}, runner, "uni1_").WithDialect(DialectSQLite)
+			if err := test.run(repository); !errors.Is(err, wantErr) {
+				t.Fatalf("expected SQLite schema index error, got %v", err)
+			}
+			if len(runner.calls) != 2 {
+				t.Fatalf("expected create and first index calls, got %d", len(runner.calls))
+			}
+		})
+	}
+	if got := (MCPTokenRepository{}).WithDialect("unknown").dialect; got != DialectMySQL {
+		t.Fatalf("expected unknown dialect to normalize to MySQL, got %q", got)
+	}
+	for _, test := range []struct {
+		name string
+		run  func(MCPTokenRepository) error
+	}{
+		{name: "sqlite token create", run: func(repository MCPTokenRepository) error {
+			return repository.EnsureMCPTokenSchema(context.Background())
+		}},
+		{name: "sqlite oauth create", run: func(repository MCPTokenRepository) error {
+			return repository.EnsureMCPOAuthCodeSchema(context.Background())
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runner := &sequencedMCPExecer{failAt: 1, err: wantErr}
+			repository := NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{}, runner, "uni1_").WithDialect(DialectSQLite)
+			if err := test.run(repository); !errors.Is(err, wantErr) {
+				t.Fatalf("expected SQLite create error, got %v", err)
+			}
+		})
+	}
+	for _, test := range []struct {
+		name string
+		run  func(MCPTokenRepository) error
+	}{
+		{name: "mysql token create", run: func(repository MCPTokenRepository) error {
+			return repository.EnsureMCPTokenSchema(context.Background())
+		}},
+		{name: "mysql oauth create", run: func(repository MCPTokenRepository) error {
+			return repository.EnsureMCPOAuthCodeSchema(context.Background())
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runner := &fakeMCPTokenRunner{err: wantErr}
+			repository := NewMCPTokenRepositoryWithRunner(runner, runner, "uni1_")
+			if err := test.run(repository); !errors.Is(err, wantErr) {
+				t.Fatalf("expected MySQL create error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestMCPTokenRepositoryRejectsUnsafePrefixesForEveryOperation(t *testing.T) {
+	runner := &fakeMCPTokenRunner{}
+	repository := NewMCPTokenRepositoryWithRunner(runner, runner, "bad-prefix")
+	checks := []func() error{
+		func() error { _, err := repository.ListMCPTokens(context.Background(), 1); return err },
+		func() error {
+			_, err := repository.CreateMCPToken(context.Background(), domainmcp.Token{}, "hash")
+			return err
+		},
+		func() error { _, err := repository.RevokeMCPToken(context.Background(), 1, 1, 1); return err },
+		func() error {
+			_, err := repository.CreateMCPOAuthCode(context.Background(), domainmcp.OAuthAuthorizationCode{})
+			return err
+		},
+		func() error { _, err := repository.ConsumeMCPOAuthCode(context.Background(), "hash", 1); return err },
+		func() error { _, err := repository.VerifyMCPToken(context.Background(), "secret"); return err },
+	}
+	for index, check := range checks {
+		if err := check(); err == nil {
+			t.Fatalf("expected unsafe prefix error for operation %d", index)
+		}
+	}
+}
+
 func TestMCPTokenRepositoryEnsuresTokenExpiresColumnErrors(t *testing.T) {
 	wantErr := errors.New("expires column failed")
 	for _, tt := range []struct {
@@ -264,6 +355,22 @@ func TestMCPTokenRepositoryReadsCurrentUserType(t *testing.T) {
 	if _, err := repository.GetMCPUserType(context.Background(), 42); !errors.Is(err, domainmcp.ErrUnauthorized) {
 		t.Fatalf("expected missing user to be unauthorized, got %v", err)
 	}
+	wantErr := errors.New("user type failed")
+	for _, test := range []struct {
+		name       string
+		repository MCPTokenRepository
+	}{
+		{name: "prefix", repository: NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{}, nil, "bad-prefix")},
+		{name: "query", repository: NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: wantErr}}}}, nil, "uni1_")},
+		{name: "scan", repository: NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValues([]any{"bad"})}}}}, nil, "uni1_")},
+		{name: "rows", repository: NewMCPTokenRepositoryWithRunner(&fakeMCPTokenRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{rows: fakeRowsFromValuesWithErr(wantErr, []any{1})}}}}, nil, "uni1_")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := test.repository.GetMCPUserType(context.Background(), 42); err == nil {
+				t.Fatal("expected user type error")
+			}
+		})
+	}
 }
 
 func TestMCPTokenRepositoryRejectsMissingRevokedOrExpiredTokens(t *testing.T) {
@@ -441,6 +548,20 @@ type fakeMCPTokenRunner struct {
 	execCalls []fakeMCPTokenExecCall
 	result    sql.Result
 	err       error
+}
+
+type sequencedMCPExecer struct {
+	calls  []string
+	failAt int
+	err    error
+}
+
+func (f *sequencedMCPExecer) ExecContext(_ context.Context, query string, _ ...any) (sql.Result, error) {
+	f.calls = append(f.calls, query)
+	if len(f.calls) == f.failAt {
+		return nil, f.err
+	}
+	return fakeSQLResult(1), nil
 }
 
 type fakeMCPTokenExecCall struct {

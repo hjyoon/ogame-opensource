@@ -55,6 +55,8 @@ Latest clean run: 2026-07-16, `89 passed, 0 failed, 0 skipped`.
 
 The wrapper includes PHP E2E and starts Go on port `8890`. `OGAME_RUN_LEGACY_E2E=0` is only for iteration, never final validation.
 
+SQLite mode smoke: `testing/e2e/run-golang-sqlite-e2e.sh`; configuration and scope are in [SQLite Mode](../../SQLITE.md).
+
 ## Visual Parity
 
 Default final visual checks enforce exact parity where the scripts support it:

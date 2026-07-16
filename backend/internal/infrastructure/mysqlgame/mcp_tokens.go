@@ -17,15 +17,23 @@ type MCPTokenRepository struct {
 	queryer Queryer
 	execer  Execer
 	prefix  string
+	dialect SQLDialect
 }
 
 func NewMCPTokenRepository(db *sql.DB, prefix string) MCPTokenRepository {
 	runner := SQLQueryer{DB: db}
-	return NewMCPTokenRepositoryWithRunner(runner, runner, prefix)
+	repository := NewMCPTokenRepositoryWithRunner(runner, runner, prefix)
+	repository.dialect = detectSQLDialect(db)
+	return repository
 }
 
 func NewMCPTokenRepositoryWithRunner(queryer Queryer, execer Execer, prefix string) MCPTokenRepository {
-	return MCPTokenRepository{queryer: queryer, execer: execer, prefix: prefix}
+	return MCPTokenRepository{queryer: queryer, execer: execer, prefix: prefix, dialect: detectSQLDialectFromQueryer(queryer)}
+}
+
+func (r MCPTokenRepository) WithDialect(dialect SQLDialect) MCPTokenRepository {
+	r.dialect = normalizeDialect(dialect)
+	return r
 }
 
 func (r MCPTokenRepository) EnsureMCPTokenSchema(ctx context.Context) error {
@@ -37,6 +45,22 @@ func (r MCPTokenRepository) EnsureMCPTokenSchema(ctx context.Context) error {
 		return err
 	}
 	physicalTable := r.prefix + "mcp_tokens"
+	if r.dialect == DialectSQLite {
+		if _, err := r.execer.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS "+table+" (id INTEGER PRIMARY KEY AUTOINCREMENT,player_id INTEGER NOT NULL,name TEXT NOT NULL,token_hash TEXT NOT NULL,scopes TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL DEFAULT 0,last_used_at INTEGER NOT NULL DEFAULT 0,revoked_at INTEGER NOT NULL DEFAULT 0)"); err != nil {
+			return err
+		}
+		for _, statement := range []string{
+			"CREATE UNIQUE INDEX IF NOT EXISTS `" + r.prefix + "idx_mcp_tokens_hash` ON " + table + " (token_hash)",
+			"CREATE INDEX IF NOT EXISTS `" + r.prefix + "idx_mcp_tokens_player` ON " + table + " (player_id)",
+			"CREATE INDEX IF NOT EXISTS `" + r.prefix + "idx_mcp_tokens_expires` ON " + table + " (expires_at)",
+			"CREATE INDEX IF NOT EXISTS `" + r.prefix + "idx_mcp_tokens_revoked` ON " + table + " (revoked_at)",
+		} {
+			if _, err := r.execer.ExecContext(ctx, statement); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	_, err = r.execer.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS "+table+" ("+
 		"id INT NOT NULL AUTO_INCREMENT,"+
 		"player_id INT NOT NULL,"+
@@ -71,6 +95,22 @@ func (r MCPTokenRepository) EnsureMCPOAuthCodeSchema(ctx context.Context) error 
 		return err
 	}
 	physicalTable := r.prefix + "mcp_oauth_codes"
+	if r.dialect == DialectSQLite {
+		if _, err := r.execer.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS "+table+" (id INTEGER PRIMARY KEY AUTOINCREMENT,player_id INTEGER NOT NULL,client_id TEXT NOT NULL,redirect_uri TEXT NOT NULL,resource TEXT NOT NULL,code_hash TEXT NOT NULL,code_challenge TEXT NOT NULL,code_challenge_method TEXT NOT NULL,scopes TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,consumed_at INTEGER NOT NULL DEFAULT 0)"); err != nil {
+			return err
+		}
+		for _, statement := range []string{
+			"CREATE UNIQUE INDEX IF NOT EXISTS `" + r.prefix + "idx_mcp_oauth_codes_hash` ON " + table + " (code_hash)",
+			"CREATE INDEX IF NOT EXISTS `" + r.prefix + "idx_mcp_oauth_codes_player` ON " + table + " (player_id)",
+			"CREATE INDEX IF NOT EXISTS `" + r.prefix + "idx_mcp_oauth_codes_expires` ON " + table + " (expires_at)",
+			"CREATE INDEX IF NOT EXISTS `" + r.prefix + "idx_mcp_oauth_codes_consumed` ON " + table + " (consumed_at)",
+		} {
+			if _, err := r.execer.ExecContext(ctx, statement); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	_, err = r.execer.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS "+table+" ("+
 		"id INT NOT NULL AUTO_INCREMENT,"+
 		"player_id INT NOT NULL,"+
@@ -352,6 +392,9 @@ func (r MCPTokenRepository) VerifyMCPToken(ctx context.Context, secret string) (
 		return domainmcp.Access{}, err
 	}
 	if err := rows.Err(); err != nil {
+		return domainmcp.Access{}, err
+	}
+	if err := rows.Close(); err != nil {
 		return domainmcp.Access{}, err
 	}
 	scopes := parseMCPScopes(scopesRaw)

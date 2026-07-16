@@ -3,6 +3,7 @@ package mysqlgame
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
@@ -28,6 +29,7 @@ func (r AdminRepository) finishAdminCronCleanPlanets(ctx context.Context, tables
 		for _, fleetID := range fleetIDs {
 			fleet := NewFleetRepositoryWithRunner(r.queryer, r.execer, r.prefix, adminCronClock(task.End, r.adminCronLocation()))
 			fleet.legacyEvents = true
+			fleet.dialect = r.dialect
 			if err := fleet.RecallFleetAnyOwner(ctx, fleetID); err != nil {
 				return err
 			}
@@ -95,9 +97,16 @@ func (r AdminRepository) removeAdminCronUser(ctx context.Context, tables adminCr
 	for _, fleetID := range incoming {
 		fleet := NewFleetRepositoryWithRunner(r.queryer, r.execer, r.prefix, adminCronClock(at, r.adminCronLocation()))
 		fleet.legacyEvents = true
+		fleet.dialect = r.dialect
 		if err := fleet.RecallFleetAnyOwner(ctx, fleetID); err != nil {
 			return err
 		}
+	}
+	unionQuery := fmt.Sprintf("DELETE FROM %s WHERE target_player = ? OR players REGEXP ?", tables.union)
+	unionArgs := []any{playerID, fmt.Sprintf("(^|,)%d(,|$)", playerID)}
+	if r.dialect == DialectSQLite {
+		unionQuery = fmt.Sprintf("DELETE FROM %s WHERE target_player = ? OR players = ? OR players LIKE ? OR players LIKE ? OR players LIKE ?", tables.union)
+		unionArgs = []any{playerID, strconv.Itoa(playerID), fmt.Sprintf("%d,%%", playerID), fmt.Sprintf("%%,%d,%%", playerID), fmt.Sprintf("%%,%d", playerID)}
 	}
 	statements := []struct {
 		sql  string
@@ -115,7 +124,7 @@ func (r AdminRepository) removeAdminCronUser(ctx context.Context, tables adminCr
 		{fmt.Sprintf("DELETE FROM %s WHERE owner_id = ?", tables.userLogs), []any{playerID}},
 		{fmt.Sprintf("DELETE FROM %s WHERE owner_id = ? OR target_id = ?", tables.fleetLogs), []any{playerID, playerID}},
 		{fmt.Sprintf("DELETE FROM %s WHERE user_id = ?", tables.ipLogs), []any{playerID}},
-		{fmt.Sprintf("DELETE FROM %s WHERE target_player = ? OR players REGEXP ?", tables.union), []any{playerID, fmt.Sprintf("(^|,)%d(,|$)", playerID)}},
+		{unionQuery, unionArgs},
 		{fmt.Sprintf("DELETE FROM %s WHERE owner_id = ? AND type <> ?", tables.planets), []any{playerID, adminCronDebrisType}},
 		{fmt.Sprintf("UPDATE %s SET owner_id = ? WHERE owner_id = ? AND type = ?", tables.planets), []any{adminCronSpaceID, playerID, adminCronDebrisType}},
 		{fmt.Sprintf("DELETE FROM %s WHERE player_id = ?", tables.users), []any{playerID}},

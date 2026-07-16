@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
@@ -22,6 +23,8 @@ type BuildingsRepository struct {
 }
 
 const buildQueueBatch = 16
+
+var processDatabaseLocks sync.Map
 
 func NewBuildingsRepository(db *sql.DB, prefix string) BuildingsRepository {
 	runner := SQLQueryer{DB: db}
@@ -299,7 +302,37 @@ func (r BuildingsRepository) acquireBuildingMutationLock(ctx context.Context, pl
 		return func() {}, nil
 	}
 	lockName := fmt.Sprintf("%sbuilding:%d:%d", r.prefix, playerID, planetID)
-	return acquireMySQLNamedLock(ctx, db, lockName, "building mutation lock timeout")
+	return acquireDatabaseMutationLock(ctx, db, lockName, "building mutation lock timeout")
+}
+
+func acquireDatabaseMutationLock(ctx context.Context, db *sql.DB, lockName string, timeoutMessage string) (func(), error) {
+	if detectSQLDialect(db) == DialectSQLite {
+		return acquireProcessDatabaseLock(ctx, db, lockName, timeoutMessage)
+	}
+	return acquireMySQLNamedLock(ctx, db, lockName, timeoutMessage)
+}
+
+func acquireProcessDatabaseLock(ctx context.Context, db *sql.DB, lockName string, timeoutMessage string) (func(), error) {
+	if db == nil || lockName == "" {
+		return func() {}, nil
+	}
+	created := make(chan struct{}, 1)
+	created <- struct{}{}
+	// SQLite serializes writes at the database level. Reusing one process lock per
+	// pool also avoids retaining a lock entry for every player and planet.
+	value, _ := processDatabaseLocks.LoadOrStore(db, created)
+	lock := value.(chan struct{})
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-lock:
+		var once sync.Once
+		return func() { once.Do(func() { lock <- struct{}{} }) }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+		return nil, errors.New(timeoutMessage)
+	}
 }
 
 func acquireMySQLNamedLock(ctx context.Context, db *sql.DB, lockName string, timeoutMessage string) (func(), error) {

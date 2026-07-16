@@ -239,7 +239,7 @@ func (r ShipyardRepository) acquireShipyardMutationLock(ctx context.Context, pla
 	if planetID <= 0 {
 		lockName = fmt.Sprintf("%sshipyard:%d", r.prefix, playerID)
 	}
-	return acquireMySQLNamedLock(ctx, db, lockName, "shipyard mutation lock timeout")
+	return acquireDatabaseMutationLock(ctx, db, lockName, "shipyard mutation lock timeout")
 }
 
 func (r ShipyardRepository) enqueueShipyardItem(ctx context.Context, state shipyardMutationState, item domaingame.ShipyardItem, requested int, now int) (*domaingame.BuildingsActionIssue, bool, error) {

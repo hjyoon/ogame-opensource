@@ -266,7 +266,7 @@ func (r ResearchRepository) acquireResearchMutationLock(ctx context.Context, pla
 		return func() {}, nil
 	}
 	lockName := fmt.Sprintf("%sresearch:%d", r.prefix, playerID)
-	return acquireMySQLNamedLock(ctx, db, lockName, "research mutation lock timeout")
+	return acquireDatabaseMutationLock(ctx, db, lockName, "research mutation lock timeout")
 }
 
 type researchMutationUser struct {

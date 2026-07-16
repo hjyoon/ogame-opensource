@@ -171,7 +171,11 @@ func (r AdminRepository) finishAdminCronUnloadAll(ctx context.Context, tables ad
 		domaingame.FleetMissionExpedition + domaingame.FleetMissionReturnOffset,
 		domaingame.FleetMissionExpedition + domaingame.FleetMissionOrbitingOffset,
 	}
-	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE p FROM %s p WHERE p.type = ? AND NOT EXISTS (SELECT 1 FROM %s f WHERE f.target_planet = p.planet_id AND f.mission IN (?, ?, ?))", tables.planets, tables.fleet), legacyPlanetTypeFarSpace, missions[0], missions[1], missions[2]); err != nil {
+	statement := fmt.Sprintf("DELETE p FROM %s p WHERE p.type = ? AND NOT EXISTS (SELECT 1 FROM %s f WHERE f.target_planet = p.planet_id AND f.mission IN (?, ?, ?))", tables.planets, tables.fleet)
+	if r.dialect == DialectSQLite {
+		statement = fmt.Sprintf("DELETE FROM %s AS p WHERE p.type = ? AND NOT EXISTS (SELECT 1 FROM %s AS f WHERE f.target_planet = p.planet_id AND f.mission IN (?, ?, ?))", tables.planets, tables.fleet)
+	}
+	if _, err := r.execer.ExecContext(ctx, statement, legacyPlanetTypeFarSpace, missions[0], missions[1], missions[2]); err != nil {
 		return err
 	}
 	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET session = ''", tables.users)); err != nil {
@@ -185,7 +189,11 @@ func (r AdminRepository) finishAdminCronUnloadAll(ctx context.Context, tables ad
 }
 
 func (r AdminRepository) finishAdminCronCleanDebris(ctx context.Context, tables adminCronTables, task buildingQueueTask) error {
-	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("DELETE p FROM %s p WHERE p.type = ? AND p.`%d` = 0 AND p.`%d` = 0 AND NOT EXISTS (SELECT 1 FROM %s f WHERE f.target_planet = p.planet_id AND f.mission IN (?, ?))", tables.planets, resourceMetal, resourceCrystal, tables.fleet), legacyPlanetTypeDebris, domaingame.FleetMissionRecycle, domaingame.FleetMissionRecycle+domaingame.FleetMissionReturnOffset); err != nil {
+	statement := fmt.Sprintf("DELETE p FROM %s p WHERE p.type = ? AND p.`%d` = 0 AND p.`%d` = 0 AND NOT EXISTS (SELECT 1 FROM %s f WHERE f.target_planet = p.planet_id AND f.mission IN (?, ?))", tables.planets, resourceMetal, resourceCrystal, tables.fleet)
+	if r.dialect == DialectSQLite {
+		statement = fmt.Sprintf("DELETE FROM %s AS p WHERE p.type = ? AND p.`%d` = 0 AND p.`%d` = 0 AND NOT EXISTS (SELECT 1 FROM %s AS f WHERE f.target_planet = p.planet_id AND f.mission IN (?, ?))", tables.planets, resourceMetal, resourceCrystal, tables.fleet)
+	}
+	if _, err := r.execer.ExecContext(ctx, statement, legacyPlanetTypeDebris, domaingame.FleetMissionRecycle, domaingame.FleetMissionRecycle+domaingame.FleetMissionReturnOffset); err != nil {
 		return err
 	}
 	if err := r.removeAdminCronTask(ctx, tables.queue, task.TaskID); err != nil {
@@ -213,9 +221,7 @@ func (r AdminRepository) finishAdminCronUpdateStats(ctx context.Context, tables 
 }
 
 func (r AdminRepository) finishAdminCronRecalcAllyPoints(ctx context.Context, tables adminCronTables, task buildingQueueTask) error {
-	if _, err := r.execer.ExecContext(ctx, fmt.Sprintf("UPDATE %s a SET score1 = GREATEST(0, COALESCE((SELECT SUM(u.score1) FROM %s u WHERE u.ally_id = a.ally_id), 0)), score2 = GREATEST(0, COALESCE((SELECT SUM(u.score2) FROM %s u WHERE u.ally_id = a.ally_id), 0)), score3 = GREATEST(0, COALESCE((SELECT SUM(u.score3) FROM %s u WHERE u.ally_id = a.ally_id), 0))", tables.ally, tables.users, tables.users, tables.users)); err != nil {
-		return err
-	}
+	updateStatement := fmt.Sprintf("UPDATE %s a SET score1 = GREATEST(0, COALESCE((SELECT SUM(u.score1) FROM %s u WHERE u.ally_id = a.ally_id), 0)), score2 = GREATEST(0, COALESCE((SELECT SUM(u.score2) FROM %s u WHERE u.ally_id = a.ally_id), 0)), score3 = GREATEST(0, COALESCE((SELECT SUM(u.score3) FROM %s u WHERE u.ally_id = a.ally_id), 0))", tables.ally, tables.users, tables.users, tables.users)
 	statements := []string{
 		"SET @pos := 0",
 		fmt.Sprintf("UPDATE %s SET place1 = (SELECT @pos := @pos+1) ORDER BY score1 DESC", tables.ally),
@@ -223,6 +229,17 @@ func (r AdminRepository) finishAdminCronRecalcAllyPoints(ctx context.Context, ta
 		fmt.Sprintf("UPDATE %s SET place2 = (SELECT @pos := @pos+1) ORDER BY score2 DESC", tables.ally),
 		"SET @pos := 0",
 		fmt.Sprintf("UPDATE %s SET place3 = (SELECT @pos := @pos+1) ORDER BY score3 DESC", tables.ally),
+	}
+	if r.dialect == DialectSQLite {
+		updateStatement = fmt.Sprintf("UPDATE %s AS a SET score1 = CASE WHEN COALESCE((SELECT SUM(u.score1) FROM %s u WHERE u.ally_id = a.ally_id), 0) < 0 THEN 0 ELSE COALESCE((SELECT SUM(u.score1) FROM %s u WHERE u.ally_id = a.ally_id), 0) END, score2 = CASE WHEN COALESCE((SELECT SUM(u.score2) FROM %s u WHERE u.ally_id = a.ally_id), 0) < 0 THEN 0 ELSE COALESCE((SELECT SUM(u.score2) FROM %s u WHERE u.ally_id = a.ally_id), 0) END, score3 = CASE WHEN COALESCE((SELECT SUM(u.score3) FROM %s u WHERE u.ally_id = a.ally_id), 0) < 0 THEN 0 ELSE COALESCE((SELECT SUM(u.score3) FROM %s u WHERE u.ally_id = a.ally_id), 0) END", tables.ally, tables.users, tables.users, tables.users, tables.users, tables.users, tables.users)
+		statements = []string{
+			rankStatement(tables.ally, "ally_id", "score1", "place1"),
+			rankStatement(tables.ally, "ally_id", "score2", "place2"),
+			rankStatement(tables.ally, "ally_id", "score3", "place3"),
+		}
+	}
+	if _, err := r.execer.ExecContext(ctx, updateStatement); err != nil {
+		return err
 	}
 	for _, statement := range statements {
 		if _, err := r.execer.ExecContext(ctx, statement); err != nil {

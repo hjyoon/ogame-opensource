@@ -32,6 +32,12 @@ type Config struct {
 	SMTPEnabled          bool
 	SMTPAddr             string
 	SMTPFrom             string
+	DBDriver             string
+	SQLiteMasterPath     string
+	SQLiteUniversePath   string
+	SQLiteAutoMigrate    bool
+	SQLiteAdminEmail     string
+	SQLiteAdminPassword  string
 	MasterDBEnabled      bool
 	MasterDBHost         string
 	MasterDBUser         string
@@ -73,6 +79,12 @@ func Load() Config {
 		SMTPEnabled:          envBool("OGAME_SMTP_ENABLE", false),
 		SMTPAddr:             env("OGAME_SMTP_ADDR", "localhost:1025"),
 		SMTPFrom:             env("OGAME_SMTP_FROM", "OGame <noreply@localhost>"),
+		DBDriver:             env("OGAME_DB_DRIVER", "mysql"),
+		SQLiteMasterPath:     env("OGAME_SQLITE_MASTER_PATH", "data/ogame-master.sqlite"),
+		SQLiteUniversePath:   env("OGAME_SQLITE_UNIVERSE_PATH", "data/ogame-universe.sqlite"),
+		SQLiteAutoMigrate:    envBool("OGAME_SQLITE_AUTO_MIGRATE", true),
+		SQLiteAdminEmail:     env("OGAME_ADMIN_EMAIL", "admin@example.local"),
+		SQLiteAdminPassword:  env("OGAME_ADMIN_PASSWORD", "admin"),
 		MasterDBEnabled:      envBool("OGAME_MASTER_DB_ENABLE", true),
 		MasterDBHost:         env("OGAME_MDB_HOST", "mysql"),
 		MasterDBUser:         env("OGAME_MDB_USER", "root"),

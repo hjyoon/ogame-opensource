@@ -38,6 +38,7 @@ type AdminRepository struct {
 	botPassword   func() (string, error)
 	randomIntN    func(int) int
 	randomRead    func([]byte) (int, error)
+	dialect       SQLDialect
 }
 
 func NewAdminRepository(db *sql.DB, prefix string) AdminRepository {
@@ -54,6 +55,7 @@ func NewAdminRepository(db *sql.DB, prefix string) AdminRepository {
 		botPassword:   randomBotPassword,
 		randomIntN:    randomAdminIntN,
 		randomRead:    rand.Read,
+		dialect:       detectSQLDialect(db),
 	}
 }
 
@@ -74,7 +76,14 @@ func NewAdminRepositoryWithQueryer(queryer Queryer, prefix string) AdminReposito
 		botPassword:   randomBotPassword,
 		randomIntN:    randomAdminIntN,
 		randomRead:    rand.Read,
+		dialect:       detectSQLDialectFromQueryer(queryer),
 	}
+}
+
+func (r AdminRepository) WithDialect(dialect SQLDialect) AdminRepository {
+	r.dialect = normalizeDialect(dialect)
+	r.overview.dialect = r.dialect
+	return r
 }
 
 func (r AdminRepository) WithMasterRunner(queryer Queryer, execer Execer) AdminRepository {
@@ -1413,7 +1422,11 @@ func (r AdminRepository) mutateAdminMessages(ctx context.Context, mode string, q
 		return nil, err
 	}
 	if mode == "Debug" && query.DeleteMode == "deleteall" {
-		_, err := r.execer.ExecContext(ctx, "TRUNCATE TABLE "+table)
+		statement := "TRUNCATE TABLE " + table
+		if r.dialect == DialectSQLite {
+			statement = "DELETE FROM " + table
+		}
+		_, err := r.execer.ExecContext(ctx, statement)
 		return nil, err
 	}
 	ids, err := r.loadAdminMessageIDs(ctx, table, includeErrorIDOrder)
@@ -1812,6 +1825,7 @@ func (r AdminRepository) mutateAdminFleetlogs(ctx context.Context, queueTable st
 		}
 		fleetRepository := NewFleetRepositoryWithRunner(r.queryer, r.execer, r.prefix, r.now)
 		fleetRepository.legacyEvents = true
+		fleetRepository.dialect = r.dialect
 		if err := fleetRepository.RecallFleetAnyOwner(ctx, fleetID); err != nil {
 			return nil, err
 		}
@@ -1825,9 +1839,13 @@ func (r AdminRepository) updateAdminFleetlogTaskEnd(ctx context.Context, queueTa
 		return err
 	}
 	if unionID > 0 {
+		statement := fmt.Sprintf("UPDATE %s q JOIN %s f ON f.fleet_id = q.sub_id SET q.end = ? WHERE q.type = ? AND f.union_id = ?", queueTable, fleetTable)
+		if r.dialect == DialectSQLite {
+			statement = fmt.Sprintf("UPDATE %s SET end = ? WHERE type = ? AND sub_id IN (SELECT fleet_id FROM %s WHERE union_id = ?)", queueTable, fleetTable)
+		}
 		_, err = r.execer.ExecContext(
 			ctx,
-			fmt.Sprintf("UPDATE %s q JOIN %s f ON f.fleet_id = q.sub_id SET q.end = ? WHERE q.type = ? AND f.union_id = ?", queueTable, fleetTable),
+			statement,
 			end,
 			queueTypeFleet,
 			unionID,

@@ -24,7 +24,7 @@ Follow Clean Architecture.
 
 - Domain rules must not depend on HTTP, SQL, React, files, clocks, or external services.
 - Application/use-case code coordinates domain rules through explicit interfaces.
-- Infrastructure code implements those interfaces for MySQL, HTTP, files, mail, queues, and legacy adapters.
+- Infrastructure code implements those interfaces for MySQL/SQLite, HTTP, files, mail, queues, and legacy adapters.
 - Delivery code is only transport/UI: Go handlers, React components, request parsing, response shaping.
 - Dependencies point inward: `delivery -> application -> domain`; infrastructure is wired at the edge.
 - Do not put game rules in React components, HTTP handlers, SQL rows, or migration glue.
@@ -74,6 +74,7 @@ backend/scripts/test-coverage.sh
 - Use the standard library HTTP stack first: `net/http`, `http.ServeMux`, `httptest`.
 - Serve the React production build from Go. Bun is the build tool, not the runtime server.
 - Runtime logs must be JSON. Use Go `log/slog` JSON handlers at the edge.
+- Keep repository SQL portable across MySQL and SQLite or isolate differences in infrastructure dialect adapters.
 - Keep route handlers small and push game rules into package-level services.
 - Preserve legacy URLs until a compatibility redirect or replacement is covered by tests.
 

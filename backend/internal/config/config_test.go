@@ -22,6 +22,12 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("OGAME_SMTP_ENABLE", "")
 	t.Setenv("OGAME_SMTP_ADDR", "")
 	t.Setenv("OGAME_SMTP_FROM", "")
+	t.Setenv("OGAME_DB_DRIVER", "")
+	t.Setenv("OGAME_SQLITE_MASTER_PATH", "")
+	t.Setenv("OGAME_SQLITE_UNIVERSE_PATH", "")
+	t.Setenv("OGAME_SQLITE_AUTO_MIGRATE", "")
+	t.Setenv("OGAME_ADMIN_EMAIL", "")
+	t.Setenv("OGAME_ADMIN_PASSWORD", "")
 	t.Setenv("OGAME_MASTER_DB_ENABLE", "")
 	t.Setenv("OGAME_MDB_HOST", "")
 	t.Setenv("OGAME_MDB_USER", "")
@@ -54,6 +60,9 @@ func TestLoadDefaults(t *testing.T) {
 	if !cfg.MCPRateLimitEnabled || cfg.MCPRateLimitPerMin != 300 || cfg.MCPRateLimitBurst != 60 {
 		t.Fatalf("unexpected default MCP rate limit config: %+v", cfg)
 	}
+	if cfg.DBDriver != "mysql" || cfg.SQLiteMasterPath != "data/ogame-master.sqlite" || cfg.SQLiteUniversePath != "data/ogame-universe.sqlite" || !cfg.SQLiteAutoMigrate || cfg.SQLiteAdminEmail != "admin@example.local" || cfg.SQLiteAdminPassword != "admin" {
+		t.Fatalf("unexpected default SQLite config: %+v", cfg)
+	}
 	if !cfg.MasterDBEnabled || cfg.MasterDBHost != "mysql" || cfg.MasterDBUser != "root" || cfg.MasterDBPassword != "123" || cfg.MasterDBName != "master" {
 		t.Fatalf("unexpected default master DB config: %+v", cfg)
 	}
@@ -85,6 +94,12 @@ func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("OGAME_SMTP_ENABLE", "1")
 	t.Setenv("OGAME_SMTP_ADDR", "mailhog:1025")
 	t.Setenv("OGAME_SMTP_FROM", "No Reply <no-reply@example.local>")
+	t.Setenv("OGAME_DB_DRIVER", "sqlite")
+	t.Setenv("OGAME_SQLITE_MASTER_PATH", "/data/master.db")
+	t.Setenv("OGAME_SQLITE_UNIVERSE_PATH", "/data/universe.db")
+	t.Setenv("OGAME_SQLITE_AUTO_MIGRATE", "0")
+	t.Setenv("OGAME_ADMIN_EMAIL", "operator@example.local")
+	t.Setenv("OGAME_ADMIN_PASSWORD", "sqlite-secret")
 	t.Setenv("OGAME_MASTER_DB_ENABLE", "0")
 	t.Setenv("OGAME_MDB_HOST", "db.local:3307")
 	t.Setenv("OGAME_MDB_USER", "ogame")
@@ -115,6 +130,9 @@ func TestLoadEnvOverrides(t *testing.T) {
 	}
 	if cfg.MCPRateLimitEnabled || cfg.MCPRateLimitPerMin != 120 || cfg.MCPRateLimitBurst != 20 {
 		t.Fatalf("unexpected MCP rate limit override: %+v", cfg)
+	}
+	if cfg.DBDriver != "sqlite" || cfg.SQLiteMasterPath != "/data/master.db" || cfg.SQLiteUniversePath != "/data/universe.db" || cfg.SQLiteAutoMigrate || cfg.SQLiteAdminEmail != "operator@example.local" || cfg.SQLiteAdminPassword != "sqlite-secret" {
+		t.Fatalf("unexpected SQLite override: %+v", cfg)
 	}
 	if cfg.MasterDBEnabled || cfg.MasterDBHost != "db.local:3307" || cfg.MasterDBUser != "ogame" || cfg.MasterDBPassword != "secret" || cfg.MasterDBName != "master_test" {
 		t.Fatalf("unexpected master DB override: %+v", cfg)
