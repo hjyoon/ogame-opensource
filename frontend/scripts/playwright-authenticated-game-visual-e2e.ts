@@ -109,6 +109,7 @@ const maxDiffRatio = numberEnv("OGAME_GAME_VISUAL_MAX_DIFF_RATIO", 0);
 const maxBoxDelta = numberEnv("OGAME_GAME_VISUAL_MAX_BOX_DELTA", 0);
 const colorDeltaThreshold = numberEnv("OGAME_GAME_VISUAL_COLOR_DELTA", 0);
 const maxVisualAttempts = Math.max(1, Math.floor(numberEnv("OGAME_GAME_VISUAL_ATTEMPTS", 3)));
+const navigationTimeoutMs = Math.max(1_000, Math.floor(numberEnv("OGAME_GAME_VISUAL_NAVIGATION_TIMEOUT_MS", 30_000)));
 const updateBaselines = process.env.OGAME_GAME_VISUAL_UPDATE_BASELINES === "1";
 const screenFilter =
   process.env.OGAME_GAME_VISUAL_SCREEN ?? process.env.OGAME_GAME_VISUAL_SCREENS ?? process.env.OGAME_GAME_VISUAL_AREA ?? "";
@@ -399,7 +400,7 @@ async function capturePage(
     }
   });
 
-  const response = await page.goto(url, { waitUntil: "networkidle", timeout: 15_000 });
+  const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: navigationTimeoutMs });
   const readySelector = side === "legacy" ? spec.legacyReady : spec.migratedReady;
   try {
     await page.locator(readySelector).first().waitFor({ timeout: 10_000 });
