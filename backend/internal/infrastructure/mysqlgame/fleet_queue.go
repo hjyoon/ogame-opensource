@@ -219,6 +219,8 @@ func (r FleetRepository) finishFleetQueueTask(ctx context.Context, uniTable stri
 		return r.finishACSHoldOrbit(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, task, fleet)
 	case domaingame.FleetMissionRecycle:
 		return r.finishRecycleFleetArrival(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, messagesTable, task, fleet)
+	case domaingame.FleetMissionSpy:
+		return r.finishSpyFleetArrival(ctx, uniTable, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, messagesTable, battleTable, task, fleet)
 	case domaingame.FleetMissionExpedition:
 		return r.finishExpeditionArrival(ctx, fleetTable, fleetLogsTable, queueTable, planetsTable, usersTable, task, fleet)
 	case domaingame.FleetMissionExpedition + domaingame.FleetMissionOrbitingOffset:
@@ -533,7 +535,7 @@ func (r FleetRepository) finishReturningFleetArrival(ctx context.Context, fleetT
 	if err := r.addFleetShipsToPlanet(ctx, planetsTable, fleet.StartPlanetID, fleet.Ships, task.End); err != nil {
 		return err
 	}
-	if found {
+	if found && fleet.Mission != domaingame.FleetMissionSpy+domaingame.FleetMissionReturnOffset {
 		if err := r.insertFleetReturnMessage(ctx, messagesTable, messageContext, fleet, task.End); err != nil {
 			return err
 		}

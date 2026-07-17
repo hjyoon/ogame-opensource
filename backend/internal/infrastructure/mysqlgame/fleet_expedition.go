@@ -273,7 +273,7 @@ func loadExpeditionLocale(language string) map[string]string {
 		if _, err := os.Stat(locaDir); err != nil {
 			continue
 		}
-		for _, name := range []string{"expedition.php", "fleetmsg.php", "technames.php"} {
+		for _, name := range []string{"expedition.php", "espionage.php", "fleetmsg.php", "technames.php"} {
 			fileValues, err := readAdminLocalizationFile(filepath.Join(locaDir, name), language)
 			if err != nil {
 				continue

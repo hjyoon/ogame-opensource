@@ -9,7 +9,7 @@ compare normalized HTTP/DB effects, then restore.
 | --- | ---: | --- | --- |
 | Public/view/economy | 69 | account, overview, officers, merchant, payment, empire, galaxy | PASS |
 | Economy queues | 14 | resources, building/research/shipyard, demolition, defense limits | PASS |
-| Fleet/colony/ACS | 23 | launch/recall/deploy/recycle, templates, colony, ACS/holding | PASS |
+| Fleet/colony/ACS | 24 | launch/recall/deploy/recycle/spy arrival, templates, colony, ACS/holding | PASS |
 | Expedition | 10 | every result family, rewards/loss, combat reports, timing, logs | PASS |
 | Missile/moon | 7 | interception/damage/report plus moon creation/destruction | PASS |
 | Phalanx/Jump Gate | 24 | guards, debit, visibility, ship move, cooldown | PASS |
@@ -18,7 +18,7 @@ compare normalized HTTP/DB effects, then restore.
 | Account options | 36 | settings, identity/mail, activation, vacation/deletion, Commander/feed/operator flags | PASS |
 | Admin/runtime | 180 | [Admin 173](COVERAGE-admin-differential.md) plus runtime queue 7 | PASS |
 | Combat engine | 4 | outcome, shots/power, absorption, survivors | PASS |
-| **Total** | **433** | **48 differential result groups** | **PASS** |
+| **Total** | **434** | **48 differential result groups** | **PASS** |
 
 Resource cases cover partial production and 0/100 boundaries. Each side logs in
 before its action because login rotates the private cookie.

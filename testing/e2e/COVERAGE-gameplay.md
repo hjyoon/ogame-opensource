@@ -21,7 +21,7 @@ Keep this file under 4KB. Add a new topic file when this grows.
 
 ## Combat And Reports
 
-- Battle reports and espionage reports, including rapid-fire toggles, defense repair writeback, and report text.
+- Battle reports and espionage reports, including localized report levels, counter-espionage, ACS-held fleets, detected-probe combat, return, rapid fire, and defense repair.
 - Plunder, debris creation, debris recycling, competing recycler collection, resource return, and defense writeback.
 - Interplanetary missiles, anti-ballistic missiles, silo capacity, and defense destruction.
 - Moon creation, moon destruction, moon-destruction failure paths, and destroyed-moon fleet retargeting/return cleanup.

@@ -3899,7 +3899,7 @@ func TestFleetRepositoryFinishDueFleetQueueEdges(t *testing.T) {
 			results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{0})},
 				{rows: fakeRowsFromValues([]any{55, 42, 123, int64(2_000)})},
-				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionSpy, 0, nil))},
+				{rows: fakeRowsFromValues(recallFleetTestRow(99, 0, nil))},
 			},
 			wantNoErr: true,
 		},

@@ -38,6 +38,7 @@ Current deep visual areas include:
 - statistics, search, messages, merchant, notes, buddy list, options, alliance, admin, and empire views
 
 Runtime queue QA requires due combat to create its battle report in the first Messages API response, without an overview visit or duplicate report on reload.
+Due espionage missions create the localized legacy report/observation pair, apply Technocrat levels and counter-espionage, then enter combat when detected or return as mission `106` without a generic return message.
 
 ## Diff Policy
 
