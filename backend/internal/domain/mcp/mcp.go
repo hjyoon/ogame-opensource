@@ -1383,16 +1383,44 @@ type TechnologyInfoRow struct {
 	StorageDifference    int  `json:"storageDifference"`
 	DeuteriumConsumption int  `json:"deuteriumConsumption"`
 	DeuteriumDifference  int  `json:"deuteriumDifference"`
+	Radius               int  `json:"radius"`
+}
+
+type TechnologyAllianceDepotInfo struct {
+	AvailableDeuterium int `json:"availableDeuterium"`
+	Capacity           int `json:"capacity"`
+}
+
+type TechnologyRapidFire struct {
+	ID    int    `json:"id"`
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+type TechnologyUnitInfo struct {
+	Structure                int                   `json:"structure"`
+	Shield                   int                   `json:"shield"`
+	Attack                   int                   `json:"attack"`
+	Cargo                    int                   `json:"cargo"`
+	BaseSpeed                int                   `json:"baseSpeed"`
+	AlternateBaseSpeed       int                   `json:"alternateBaseSpeed"`
+	BaseConsumption          int                   `json:"baseConsumption"`
+	AlternateBaseConsumption int                   `json:"alternateBaseConsumption"`
+	DefenseRepair            int                   `json:"defenseRepair"`
+	RapidFireOut             []TechnologyRapidFire `json:"rapidFireOut"`
+	RapidFireIn              []TechnologyRapidFire `json:"rapidFireIn"`
 }
 
 type TechnologyInfo struct {
-	ID          int                 `json:"id"`
-	Name        string              `json:"name"`
-	Description string              `json:"description"`
-	Level       int                 `json:"level"`
-	Kind        string              `json:"kind"`
-	Rows        []TechnologyInfoRow `json:"rows"`
-	Demolish    *TechnologyDemolish `json:"demolish,omitempty"`
+	ID            int                          `json:"id"`
+	Name          string                       `json:"name"`
+	Description   string                       `json:"description"`
+	Level         int                          `json:"level"`
+	Kind          string                       `json:"kind"`
+	Rows          []TechnologyInfoRow          `json:"rows"`
+	Unit          *TechnologyUnitInfo          `json:"unit,omitempty"`
+	AllianceDepot *TechnologyAllianceDepotInfo `json:"allianceDepot,omitempty"`
+	Demolish      *TechnologyDemolish          `json:"demolish,omitempty"`
 }
 
 type TechnologyTree struct {

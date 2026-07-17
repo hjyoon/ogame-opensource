@@ -1,6 +1,9 @@
 package game
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestBuildTechnologyUsesLegacyGroupsAndRequirements(t *testing.T) {
 	overview := Overview{
@@ -208,23 +211,87 @@ func TestBuildTechnologyInfoUsesLegacyInfosPreview(t *testing.T) {
 	if !ok {
 		t.Fatal("expected fusion reactor info")
 	}
-	if fusion.Kind != "fusion" || !fusion.Rows[2].Current || fusion.Rows[2].Energy <= 0 || fusion.Rows[2].DeuteriumConsumption <= 0 {
+	if fusion.Kind != "fusion" || !fusion.Rows[2].Current || fusion.Rows[2].Energy <= 0 || fusion.Rows[2].DeuteriumConsumption >= 0 {
 		t.Fatalf("unexpected fusion reactor info: %+v", fusion)
+	}
+
+	allianceDepot, ok := BuildTechnologyInfoWithSettings(
+		BuildingAllianceDepot,
+		PlanetOverview{Resources: Resources{Deuterium: 25000}},
+		BuildingLevels{BuildingAllianceDepot: 1},
+		ResearchLevels{},
+		128,
+		70,
+	)
+	if !ok || allianceDepot.Kind != "alliance-depot" || allianceDepot.AllianceDepot == nil ||
+		allianceDepot.AllianceDepot.Capacity != 20000 || allianceDepot.AllianceDepot.AvailableDeuterium != 20000 {
+		t.Fatalf("unexpected alliance depot info: %+v", allianceDepot)
+	}
+
+	phalanx, ok := BuildTechnologyInfoWithSettings(
+		BuildingSensorPhalanx,
+		PlanetOverview{},
+		BuildingLevels{BuildingSensorPhalanx: 0},
+		ResearchLevels{},
+		128,
+		70,
+	)
+	if !ok || phalanx.Kind != "phalanx" || len(phalanx.Rows) != 4 ||
+		phalanx.Rows[0].Level != 1 || phalanx.Rows[0].Radius != 0 ||
+		phalanx.Rows[3].Level != 4 || phalanx.Rows[3].Radius != 15 {
+		t.Fatalf("unexpected sensor phalanx info: %+v", phalanx)
 	}
 
 	description, ok := BuildTechnologyInfoWithSpeed(FleetSmallCargo, PlanetOverview{}, BuildingLevels{}, ResearchLevels{}, 128)
 	if !ok {
 		t.Fatal("expected ship info")
 	}
-	if description.Kind != "description" || len(description.Rows) != 0 || description.Description == "" {
-		t.Fatalf("unexpected description-only info: %+v", description)
+	if description.Kind != "fleet" || len(description.Rows) != 0 || !strings.Contains(description.Description, "Transporters are about as large as fighters") ||
+		description.Unit == nil || description.Unit.Structure != 4000 || description.Unit.Cargo != 5000 ||
+		description.Unit.AlternateBaseSpeed != 10000 || description.Unit.AlternateBaseConsumption != 20 {
+		t.Fatalf("unexpected fleet info: %+v", description)
+	}
+
+	bomber, ok := BuildTechnologyInfoWithSpeed(FleetBomber, PlanetOverview{}, BuildingLevels{}, ResearchLevels{}, 128)
+	if !ok || bomber.Unit == nil || bomber.Unit.BaseSpeed != 4000 || bomber.Unit.AlternateBaseSpeed != 5000 ||
+		bomber.Unit.BaseConsumption != 1000 || bomber.Unit.AlternateBaseConsumption != 0 {
+		t.Fatalf("unexpected bomber alternate drive stats: %+v", bomber)
+	}
+
+	lightFighter, ok := BuildTechnologyInfoWithSettings(FleetLightFighter, PlanetOverview{}, BuildingLevels{}, ResearchLevels{}, 128, 70)
+	if !ok || lightFighter.Unit == nil {
+		t.Fatal("expected light fighter unit info")
+	}
+	if lightFighter.Kind != "fleet" || lightFighter.Unit.Structure != 4000 || lightFighter.Unit.Shield != 10 ||
+		lightFighter.Unit.Attack != 50 || lightFighter.Unit.Cargo != 50 || lightFighter.Unit.BaseSpeed != 12500 ||
+		lightFighter.Unit.BaseConsumption != 20 || len(lightFighter.Unit.RapidFireOut) != 2 || len(lightFighter.Unit.RapidFireIn) != 2 {
+		t.Fatalf("unexpected light fighter legacy fleet stats: %+v", lightFighter)
+	}
+	if lightFighter.Unit.RapidFireOut[0].ID != FleetEspionageProbe || lightFighter.Unit.RapidFireOut[0].Count != 5 ||
+		lightFighter.Unit.RapidFireIn[0].ID != FleetCruiser || lightFighter.Unit.RapidFireIn[0].Count != 6 ||
+		lightFighter.Unit.RapidFireIn[1].ID != FleetDeathstar || lightFighter.Unit.RapidFireIn[1].Count != 200 {
+		t.Fatalf("unexpected light fighter rapid-fire ordering: %+v", lightFighter.Unit)
+	}
+	if !strings.Contains(lightFighter.Description, "vulnerable when it is on its own") {
+		t.Fatalf("expected legacy long light fighter description, got %q", lightFighter.Description)
+	}
+
+	defense, ok := BuildTechnologyInfoWithSettings(DefenseRocketLauncher, PlanetOverview{}, BuildingLevels{}, ResearchLevels{}, 128, 70)
+	if !ok || defense.Unit == nil || defense.Kind != "defense" || defense.Unit.DefenseRepair != 70 ||
+		defense.Unit.Structure != 2000 || defense.Unit.Shield != 20 || defense.Unit.Attack != 80 ||
+		len(defense.Unit.RapidFireIn) != 3 {
+		t.Fatalf("unexpected defense info: %+v", defense)
+	}
+	if missile, ok := BuildTechnologyInfoWithSettings(DefenseAntiBallisticMissile, PlanetOverview{}, BuildingLevels{}, ResearchLevels{}, 128, 70); !ok ||
+		missile.Kind != "description" || missile.Unit != nil {
+		t.Fatalf("legacy missile info must remain description-only: %+v", missile)
 	}
 
 	research, ok := BuildTechnologyInfoWithSpeed(ResearchEnergy, PlanetOverview{}, BuildingLevels{ResearchEnergy: 9}, ResearchLevels{ResearchEnergy: 4}, 128)
 	if !ok {
 		t.Fatal("expected research info")
 	}
-	if research.Level != 4 || research.Kind != "description" {
+	if research.Level != 4 || research.Kind != "description" || !strings.Contains(research.Description, "energy distribution") {
 		t.Fatalf("research info should use research levels, got %+v", research)
 	}
 	if research.Demolish != nil {
@@ -233,6 +300,9 @@ func TestBuildTechnologyInfoUsesLegacyInfosPreview(t *testing.T) {
 
 	if _, ok := BuildTechnologyInfoWithSpeed(9999, PlanetOverview{}, BuildingLevels{}, ResearchLevels{}, 128); ok {
 		t.Fatal("expected unknown technology info id to be rejected")
+	}
+	if fallback := legacyTechnologyLongDescription(9999, "fallback"); fallback != "fallback" {
+		t.Fatalf("expected unknown legacy description to use fallback, got %q", fallback)
 	}
 	if production, energy, deuterium := technologyInfoProduction(9999, 0, PlanetOverview{}, ResearchLevels{}, 128); production != 0 || energy != 0 || deuterium != 0 {
 		t.Fatalf("expected empty production for invalid level, got production=%d energy=%d deuterium=%d", production, energy, deuterium)

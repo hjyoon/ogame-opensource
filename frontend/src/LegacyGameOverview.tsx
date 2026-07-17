@@ -1281,9 +1281,36 @@ type GameTechnologyInfo = {
   name: string;
   description: string;
   level: number;
-  kind: "mine" | "solar" | "fusion" | "storage" | "description";
+  kind: "mine" | "solar" | "fusion" | "storage" | "alliance-depot" | "phalanx" | "fleet" | "defense" | "description";
   rows: GameTechnologyInfoRow[];
+  unit?: GameTechnologyUnitInfo;
+  allianceDepot?: GameTechnologyAllianceDepotInfo;
   demolish?: GameTechnologyDemolish;
+};
+
+type GameTechnologyAllianceDepotInfo = {
+  availableDeuterium: number;
+  capacity: number;
+};
+
+type GameTechnologyRapidFire = {
+  id: number;
+  name: string;
+  count: number;
+};
+
+type GameTechnologyUnitInfo = {
+  structure: number;
+  shield: number;
+  attack: number;
+  cargo: number;
+  baseSpeed: number;
+  alternateBaseSpeed: number;
+  baseConsumption: number;
+  alternateBaseConsumption: number;
+  defenseRepair: number;
+  rapidFireOut: GameTechnologyRapidFire[];
+  rapidFireIn: GameTechnologyRapidFire[];
 };
 
 type GameTechnologyInfoRow = {
@@ -1297,6 +1324,7 @@ type GameTechnologyInfoRow = {
   storageDifference: number;
   deuteriumConsumption: number;
   deuteriumDifference: number;
+  radius: number;
 };
 
 type GameBuildingItem = {
@@ -14830,8 +14858,11 @@ function TechnologyInfoTable({ currentPlanet, info }: { currentPlanet: GamePlane
 }
 
 function technologyInfoHTML(info: GameTechnologyInfo, currentPlanet: GamePlanetOverview): string {
+  if ((info.kind === "fleet" || info.kind === "defense") && info.unit) {
+    return technologyUnitInfoHTML(info);
+  }
   let html = "<center>\n";
-  html += '<table width="519">\n';
+  html += '<table class="legacy-technology-info-table" width="519">\n';
   html += `<tr><td class="c">${legacyHTMLText(info.name)}</td></tr>\n`;
   html += "<tr><th><table>\n";
   html += `<tr><td><img border='0' src="${skinBase}/gebaeude/${info.id}.gif" align='top' width='120' height='120'></td>\n`;
@@ -14839,9 +14870,79 @@ function technologyInfoHTML(info: GameTechnologyInfo, currentPlanet: GamePlanetO
   html += "</table></th></tr>\n";
   html += technologyInfoRowsHTML(info);
   html += "</table>\n";
+  html += technologyAllianceDepotHTML(info);
   html += technologyInfoDemolishHTML(info, currentPlanet.id);
   html += "<br><br><br><br>\n";
   html += "</center>";
+  return html;
+}
+
+function technologyAllianceDepotHTML(info: GameTechnologyInfo): string {
+  if (info.kind !== "alliance-depot" || !info.allianceDepot) {
+    return "";
+  }
+  const action = gameRouteURL("/game/alliance", window.location.search);
+  return `<form action="${legacyHTMLAttribute(action)}" method="post">
+
+<table class="legacy-technology-alliance-depot-table" width='519'>
+<td class='c' colspan='2'>Capacity: ${Math.floor(info.allianceDepot.availableDeuterium)}/${Math.floor(info.allianceDepot.capacity)}</td>
+  <tr><th colspan='2'><input type='submit' value='Launch a rocket with supplies'></th>
+</table>
+
+</form>
+`;
+}
+
+function technologyUnitInfoHTML(info: GameTechnologyInfo): string {
+  const unit = info.unit;
+  if (!unit) {
+    return "";
+  }
+  const fleet = info.kind === "fleet";
+  let html = "<center>\n";
+  html += '<table class="legacy-technology-unit-info-table" width="519">\n';
+  html += "<!-- begin fleet or defense information -->\n";
+  html += `<tr><td class="c" colspan="2">${fleet ? "Fleet Information:" : "Information on defenses:"}</td></tr>\n`;
+  html += `<tr><th>Title</th><th>${legacyHTMLText(info.name)}</th></tr>\n`;
+  html += '<tr><th colspan="2">\n';
+  html += '<table border="0">\n';
+  html += `<tr><td valign="top"><img border="0" src="${skinBase}/gebaeude/${info.id}.gif" align="top" width="120" height="120"></td>\n`;
+  html += `<td>${info.description}`;
+  if (!fleet && unit.attack > 1) {
+    html += ` The ability to recover defenses after combat is up to ${unit.defenseRepair}%.`;
+  }
+  html += `<br/>${technologyRapidFireHTML(unit)}</td>\n`;
+  html += "</tr></table></th></tr>\n";
+  html += `<tr><th>Structure</th><th>${formatLegacyNumber(unit.structure)}</th></tr>\n`;
+  html += `<tr><th>Shield capacity</th><th>${formatLegacyNumber(unit.shield)}</th></tr>\n`;
+  html += `<tr><th>Attack estimation</th><th>${formatLegacyNumber(unit.attack)}</th></tr>\n`;
+  if (fleet) {
+    html += `<tr><th>Load capacity</th><th>${formatLegacyNumber(unit.cargo)}&nbsp;units</th></tr>\n`;
+    html += `<tr><th>Initial speed</th><th>${formatLegacyNumber(unit.baseSpeed)}`;
+    if (unit.alternateBaseSpeed !== 0) {
+      html += `             <font color="yellow">(${formatLegacyNumber(unit.alternateBaseSpeed)})</font> \n           `;
+    }
+    html += "</th></tr>\n";
+    html += `<tr><th>Fuel consumption (deuterium)</th><th>${formatLegacyNumber(unit.baseConsumption)}`;
+    if (unit.alternateBaseConsumption !== 0) {
+      html += `             <font color="yellow">(${formatLegacyNumber(unit.alternateBaseConsumption)})</font> \n           `;
+    }
+    html += "</th></tr>\n";
+  }
+  html += "</table>\n";
+  html += "<br><br><br><br>\n";
+  html += "</center>";
+  return html;
+}
+
+function technologyRapidFireHTML(unit: GameTechnologyUnitInfo): string {
+  let html = "";
+  for (const rapid of unit.rapidFireOut) {
+    html += `<br/>One volley strikes: <a href="${legacyHTMLAttribute(technologyInfoURL(rapid.id))}">${legacyHTMLText(rapid.name)}</a> - <font color="lime">${rapid.count}</font> units\n`;
+  }
+  for (const rapid of unit.rapidFireIn) {
+    html += `<br/><a href="${legacyHTMLAttribute(technologyInfoURL(rapid.id))}">${legacyHTMLText(rapid.name)}</a> one volley hits the <font color="red">${rapid.count}</font> unit of the type\n`;
+  }
   return html;
 }
 
@@ -14921,6 +15022,16 @@ function technologyInfoRowsHTML(info: GameTechnologyInfo): string {
       html += `<tr> <th> ${technologyInfoLevelHTML(row)}</th> <th>${formatLegacySignedNumber(row.storage)} k</th> <th>${diff}</th> </tr>\n`;
     }
     html += "</table>";
+    return html;
+  }
+  if (info.kind === "phalanx") {
+    let html =
+      "<tr><th><p><center><table border=1 ><tr><td class='c'>Level</td><td class='c'>operating radius</td></tr>";
+    for (const row of info.rows) {
+      const color = row.current ? "FF0000" : "FFFFFF";
+      html += `<tr><th align=center >&nbsp;<FONT color=${color}>${row.level}</FONT></th><th align=center >&nbsp;${row.radius}&nbsp;</th></tr>`;
+    }
+    html += "</table></center></p></th></tr>";
     return html;
   }
   return "";

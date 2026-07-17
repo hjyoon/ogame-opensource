@@ -53,13 +53,40 @@ type TechnologyDemolish struct {
 }
 
 type TechnologyInfo struct {
-	ID          int
-	Name        string
-	Description string
-	Level       int
-	Kind        string
-	Rows        []TechnologyInfoRow
-	Demolish    *TechnologyDemolish
+	ID            int
+	Name          string
+	Description   string
+	Level         int
+	Kind          string
+	Rows          []TechnologyInfoRow
+	Unit          *TechnologyUnitInfo
+	AllianceDepot *TechnologyAllianceDepotInfo
+	Demolish      *TechnologyDemolish
+}
+
+type TechnologyAllianceDepotInfo struct {
+	AvailableDeuterium int
+	Capacity           int
+}
+
+type TechnologyUnitInfo struct {
+	Structure                int
+	Shield                   int
+	Attack                   int
+	Cargo                    int
+	BaseSpeed                int
+	AlternateBaseSpeed       int
+	BaseConsumption          int
+	AlternateBaseConsumption int
+	DefenseRepair            int
+	RapidFireOut             []TechnologyRapidFire
+	RapidFireIn              []TechnologyRapidFire
+}
+
+type TechnologyRapidFire struct {
+	ID    int
+	Name  string
+	Count int
 }
 
 type TechnologyInfoRow struct {
@@ -73,6 +100,7 @@ type TechnologyInfoRow struct {
 	StorageDifference    int
 	DeuteriumConsumption int
 	DeuteriumDifference  int
+	Radius               int
 }
 
 var legacyTechnologyRequirementOrder = map[int][]int{
@@ -199,6 +227,10 @@ func BuildTechnologyDetailsWithSpeed(id int, levels BuildingLevels, research Res
 }
 
 func BuildTechnologyInfoWithSpeed(id int, planet PlanetOverview, levels BuildingLevels, research ResearchLevels, speed float64) (TechnologyInfo, bool) {
+	return BuildTechnologyInfoWithSettings(id, planet, levels, research, speed, 0)
+}
+
+func BuildTechnologyInfoWithSettings(id int, planet PlanetOverview, levels BuildingLevels, research ResearchLevels, speed float64, defenseRepair int) (TechnologyInfo, bool) {
 	spec, ok := technologySpecByID(id)
 	if !ok {
 		return TechnologyInfo{}, false
@@ -219,10 +251,18 @@ func BuildTechnologyInfoWithSpeed(id int, planet PlanetOverview, levels Building
 		Demolish:    buildTechnologyDemolish(id, levels, speed),
 	}
 	info.Rows = buildTechnologyInfoRows(id, level, planet, research, speed)
+	info.Unit = buildTechnologyUnitInfo(id, defenseRepair)
+	info.AllianceDepot = buildTechnologyAllianceDepotInfo(id, level, planet)
 	return info, true
 }
 
 func technologyInfoKind(id int) string {
+	if isFleetID(id) {
+		return "fleet"
+	}
+	if isLegacyDefenseInfoID(id) {
+		return "defense"
+	}
 	switch id {
 	case BuildingMetalMine, BuildingCrystalMine, BuildingDeuteriumSynth:
 		return "mine"
@@ -232,9 +272,78 @@ func technologyInfoKind(id int) string {
 		return "fusion"
 	case BuildingMetalStorage, BuildingCrystalStorage, BuildingDeuteriumTank:
 		return "storage"
+	case BuildingAllianceDepot:
+		return "alliance-depot"
+	case BuildingSensorPhalanx:
+		return "phalanx"
 	default:
 		return "description"
 	}
+}
+
+func buildTechnologyAllianceDepotInfo(id int, level int, planet PlanetOverview) *TechnologyAllianceDepotInfo {
+	if id != BuildingAllianceDepot {
+		return nil
+	}
+	capacity := 10000 * int(math.Pow(2, float64(max(0, level))))
+	available := 0
+	if level > 0 {
+		available = min(int(math.Floor(max(0, planet.Resources.Deuterium))), capacity)
+	}
+	return &TechnologyAllianceDepotInfo{AvailableDeuterium: available, Capacity: capacity}
+}
+
+func buildTechnologyUnitInfo(id int, defenseRepair int) *TechnologyUnitInfo {
+	if !isFleetID(id) && !isLegacyDefenseInfoID(id) {
+		return nil
+	}
+	stats, ok := CombatStatsForUnit(id)
+	if !ok {
+		return nil
+	}
+	info := &TechnologyUnitInfo{
+		Structure:     stats.Structure,
+		Shield:        stats.Shield,
+		Attack:        stats.Attack,
+		DefenseRepair: defenseRepair,
+		RapidFireOut:  technologyRapidFireOut(id),
+		RapidFireIn:   technologyRapidFireIn(id),
+	}
+	if params, fleet := fleetUnitParams[id]; fleet {
+		info.Cargo = params.cargo
+		info.BaseSpeed = params.speed
+		info.BaseConsumption = params.consumption
+		switch id {
+		case FleetSmallCargo:
+			info.AlternateBaseSpeed = params.speed + 5000
+			info.AlternateBaseConsumption = params.consumption * 2
+		case FleetBomber:
+			info.AlternateBaseSpeed = params.speed + 1000
+		}
+	}
+	return info
+}
+
+func technologyRapidFireOut(id int) []TechnologyRapidFire {
+	result := make([]TechnologyRapidFire, 0)
+	for _, targetID := range combatUnitOrder {
+		count := combatRapidFire[id][targetID]
+		if count > 1 {
+			result = append(result, TechnologyRapidFire{ID: targetID, Name: technologyName(targetID), Count: count})
+		}
+	}
+	return result
+}
+
+func technologyRapidFireIn(id int) []TechnologyRapidFire {
+	result := make([]TechnologyRapidFire, 0)
+	for _, sourceID := range combatUnitOrder {
+		count := combatRapidFire[sourceID][id]
+		if count > 1 {
+			result = append(result, TechnologyRapidFire{ID: sourceID, Name: technologyName(sourceID), Count: count})
+		}
+	}
+	return result
 }
 
 func buildTechnologyInfoRows(id int, currentLevel int, planet PlanetOverview, research ResearchLevels, speed float64) []TechnologyInfoRow {
@@ -244,19 +353,19 @@ func buildTechnologyInfoRows(id int, currentLevel int, planet PlanetOverview, re
 		if start <= 0 {
 			start = 1
 		}
-		currentProduction, currentEnergy, currentDeuterium := technologyInfoProduction(id, currentLevel, planet, research, speed)
+		currentProduction, currentEnergy, currentDeuterium := technologyInfoProductionRaw(id, currentLevel, planet, research, speed)
 		rows := make([]TechnologyInfoRow, 0, 15)
 		for level := start; level < start+15; level++ {
-			production, energy, deuterium := technologyInfoProduction(id, level, planet, research, speed)
+			production, energy, deuterium := technologyInfoProductionRaw(id, level, planet, research, speed)
 			rows = append(rows, TechnologyInfoRow{
 				Level:                level,
 				Current:              level == currentLevel,
-				Production:           production,
-				ProductionDifference: production - currentProduction,
-				Energy:               energy,
-				EnergyDifference:     energy - currentEnergy,
-				DeuteriumConsumption: deuterium,
-				DeuteriumDifference:  deuterium - currentDeuterium,
+				Production:           legacyRoundInt(production),
+				ProductionDifference: legacyRoundInt(production - currentProduction),
+				Energy:               legacyRoundInt(energy),
+				EnergyDifference:     legacyRoundInt(energy - currentEnergy),
+				DeuteriumConsumption: legacyRoundInt(deuterium),
+				DeuteriumDifference:  legacyRoundInt(deuterium - currentDeuterium),
 			})
 		}
 		return rows
@@ -265,17 +374,17 @@ func buildTechnologyInfoRows(id int, currentLevel int, planet PlanetOverview, re
 		if start <= 0 {
 			start = 1
 		}
-		_, currentEnergy, currentDeuterium := technologyInfoProduction(id, currentLevel, planet, research, speed)
+		_, currentEnergy, currentDeuterium := technologyInfoProductionRaw(id, currentLevel, planet, research, speed)
 		rows := make([]TechnologyInfoRow, 0, 15)
 		for level := start; level < start+15; level++ {
-			_, energy, deuterium := technologyInfoProduction(id, level, planet, research, speed)
+			_, energy, deuterium := technologyInfoProductionRaw(id, level, planet, research, speed)
 			rows = append(rows, TechnologyInfoRow{
 				Level:                level,
 				Current:              level == currentLevel,
-				Energy:               energy,
-				EnergyDifference:     energy - currentEnergy,
-				DeuteriumConsumption: deuterium,
-				DeuteriumDifference:  deuterium - currentDeuterium,
+				Energy:               legacyRoundInt(energy),
+				EnergyDifference:     legacyRoundInt(energy - currentEnergy),
+				DeuteriumConsumption: legacyRoundInt(deuterium),
+				DeuteriumDifference:  legacyRoundInt(deuterium - currentDeuterium),
 			})
 		}
 		return rows
@@ -293,39 +402,62 @@ func buildTechnologyInfoRows(id int, currentLevel int, planet PlanetOverview, re
 			})
 		}
 		return rows
+	case BuildingSensorPhalanx:
+		start := currentLevel - 3
+		if start <= 0 {
+			start = 1
+		}
+		rows := make([]TechnologyInfoRow, 0, 8)
+		for level := start; level < currentLevel+5; level++ {
+			rows = append(rows, TechnologyInfoRow{
+				Level:   level,
+				Current: level == currentLevel,
+				Radius:  level*level - 1,
+			})
+		}
+		return rows
 	default:
 		return nil
 	}
 }
 
 func technologyInfoProduction(id int, level int, planet PlanetOverview, research ResearchLevels, speed float64) (int, int, int) {
+	production, energy, deuterium := technologyInfoProductionRaw(id, level, planet, research, speed)
+	return legacyRoundInt(production), legacyRoundInt(energy), legacyRoundInt(deuterium)
+}
+
+func technologyInfoProductionRaw(id int, level int, planet PlanetOverview, research ResearchLevels, speed float64) (float64, float64, float64) {
 	if level <= 0 {
 		return 0, 0, 0
 	}
 	switch id {
 	case BuildingMetalMine:
-		production := int(math.Floor(30*float64(level)*math.Pow(1.1, float64(level))) * speed)
-		energy := -int(math.Ceil(10 * float64(level) * math.Pow(1.1, float64(level))))
+		production := math.Floor(30*float64(level)*math.Pow(1.1, float64(level))) * speed
+		energy := -math.Ceil(10 * float64(level) * math.Pow(1.1, float64(level)))
 		return production, energy, 0
 	case BuildingCrystalMine:
-		production := int(math.Floor(20*float64(level)*math.Pow(1.1, float64(level))) * speed)
-		energy := -int(math.Ceil(10 * float64(level) * math.Pow(1.1, float64(level))))
+		production := math.Floor(20*float64(level)*math.Pow(1.1, float64(level))) * speed
+		energy := -math.Ceil(10 * float64(level) * math.Pow(1.1, float64(level)))
 		return production, energy, 0
 	case BuildingDeuteriumSynth:
 		temperatureFactor := 1.28 - 0.002*float64(planet.Temperature+40)
-		production := int(math.Floor(10*float64(level)*math.Pow(1.1, float64(level))) * temperatureFactor * speed)
-		energy := -int(math.Ceil(20 * float64(level) * math.Pow(1.1, float64(level))))
+		production := math.Floor(10*float64(level)*math.Pow(1.1, float64(level))) * temperatureFactor * speed
+		energy := -math.Ceil(20 * float64(level) * math.Pow(1.1, float64(level)))
 		return production, energy, 0
 	case BuildingSolarPlant:
-		energy := int(math.Floor(20 * float64(level) * math.Pow(1.1, float64(level))))
+		energy := math.Floor(20 * float64(level) * math.Pow(1.1, float64(level)))
 		return 0, energy, 0
 	case BuildingFusionReactor:
-		energy := int(math.Floor(30 * float64(level) * math.Pow(1.05+float64(research[ResearchEnergy])*0.01, float64(level))))
-		deuterium := int(math.Ceil(10 * float64(level) * math.Pow(1.1, float64(level))))
+		energy := math.Floor(30 * float64(level) * math.Pow(1.05+float64(research[ResearchEnergy])*0.01, float64(level)))
+		deuterium := -math.Ceil(10 * float64(level) * math.Pow(1.1, float64(level)))
 		return 0, energy, deuterium
 	default:
 		return 0, 0, 0
 	}
+}
+
+func legacyRoundInt(value float64) int {
+	return int(math.Round(value))
 }
 
 func technologyInfoStorage(level int) int {
@@ -339,9 +471,7 @@ func legacyTechnologyLongDescription(id int, fallback string) string {
 	return fallback
 }
 
-var legacyTechnologyLongDescriptions = map[int]string{
-	BuildingMetalMine: "Metal is the primary resource used in the foundation of your Empire. At greater depths, the mines can produce more output of viable metal for use in the construction of buildings, ships, defence systems, and research. As the mines drill deeper, more energy is required for maximum production. As metal is the most abundant of all resources available, its value is considered to be the lowest of all resources for trading.",
-}
+//go:generate go run ../../../cmd/gentechlong -input ../../../../game/loca/en_en/techlong.php -output legacy_technology_descriptions_generated.go
 
 func buildTechnologyDemolish(id int, levels BuildingLevels, speed float64) *TechnologyDemolish {
 	level := levels[id]
@@ -546,6 +676,19 @@ func isResearchID(id int) bool {
 		}
 	}
 	return false
+}
+
+func isFleetID(id int) bool {
+	for _, fleetID := range FleetIDs() {
+		if fleetID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func isLegacyDefenseInfoID(id int) bool {
+	return id >= DefenseRocketLauncher && id <= DefenseLargeShieldDome
 }
 
 func isBuildingID(id int) bool {

@@ -44,6 +44,9 @@ func TestTechnologyRepositoryReadsLegacyTechnology(t *testing.T) {
 	if technology.Info == nil || technology.Info.ID != domaingame.BuildingMetalMine || len(technology.Info.Rows) != 15 {
 		t.Fatalf("expected metal mine info rows, got %+v", technology.Info)
 	}
+	if !strings.Contains(queryer.calls[6].sql, "speed") || !strings.Contains(queryer.calls[6].sql, "defrepair") {
+		t.Fatalf("expected technology universe settings query, got %+v", queryer.calls[6])
+	}
 }
 
 func TestTechnologyRepositoryMapsMCPTechnology(t *testing.T) {
@@ -73,6 +76,29 @@ func TestTechnologyRepositoryMapsMCPTechnology(t *testing.T) {
 	if len(technology.Groups[0].Items) == 0 || technology.Groups[0].Items[0].Name == "" {
 		t.Fatalf("expected mcp technology group items, got %+v", technology.Groups[0])
 	}
+
+	if mcpTechnologyUnitInfo(nil) != nil || mcpTechnologyAllianceDepotInfo(nil) != nil {
+		t.Fatal("nil technology special info must remain nil")
+	}
+	unit := mcpTechnologyUnitInfo(&domaingame.TechnologyUnitInfo{
+		Structure:    4000,
+		Shield:       10,
+		Attack:       50,
+		Cargo:        50,
+		BaseSpeed:    12500,
+		RapidFireOut: []domaingame.TechnologyRapidFire{{ID: domaingame.FleetEspionageProbe, Name: "Espionage Probe", Count: 5}},
+		RapidFireIn:  []domaingame.TechnologyRapidFire{{ID: domaingame.FleetCruiser, Name: "Cruiser", Count: 6}},
+	})
+	if unit == nil || unit.Structure != 4000 || unit.RapidFireOut[0].Count != 5 || unit.RapidFireIn[0].ID != domaingame.FleetCruiser {
+		t.Fatalf("unexpected MCP technology unit mapping: %+v", unit)
+	}
+	depot := mcpTechnologyAllianceDepotInfo(&domaingame.TechnologyAllianceDepotInfo{AvailableDeuterium: 1000, Capacity: 10000})
+	if depot == nil || depot.AvailableDeuterium != 1000 || depot.Capacity != 10000 {
+		t.Fatalf("unexpected MCP alliance depot mapping: %+v", depot)
+	}
+	if mcpTechnologyDetails(nil) != nil || mcpTechnologyInfo(nil) != nil {
+		t.Fatal("nil technology details and info must remain nil")
+	}
 }
 
 func TestNewTechnologyRepositoryKeepsSQLQueryer(t *testing.T) {
@@ -95,6 +121,7 @@ func TestTechnologyRepositoryReturnsErrors(t *testing.T) {
 		prefix  string
 		queryer *fakeQueryer
 		want    string
+		details int
 	}{
 		{
 			name:    "unsafe prefix",
@@ -120,12 +147,27 @@ func TestTechnologyRepositoryReturnsErrors(t *testing.T) {
 			queryer: &fakeQueryer{results: append(shipyardOverviewResults(), fakeQueryResult{rows: fakeRowsFromValues(buildingLevelRow(nil))}, fakeQueryResult{err: errors.New("research query failed")})},
 			want:    "research query failed",
 		},
+		{
+			name:   "universe settings",
+			prefix: "ogame_",
+			queryer: &fakeQueryer{results: append(
+				shipyardOverviewResults(),
+				fakeQueryResult{rows: fakeRowsFromValues(buildingLevelRow(nil))},
+				fakeQueryResult{rows: fakeRowsFromValues(allResearchLevelRow(nil))},
+				fakeQueryResult{err: errors.New("universe settings failed")},
+			)},
+			want:    "universe settings failed",
+			details: domaingame.FleetCruiser,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repository := NewTechnologyRepositoryWithQueryer(tt.queryer, tt.prefix)
-			_, err := repository.GetTechnology(context.Background(), appgame.TechnologyQuery{PlayerID: 42})
+			_, err := repository.GetTechnology(context.Background(), appgame.TechnologyQuery{
+				PlayerID:            42,
+				TechnologyDetailsID: tt.details,
+			})
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("expected %q error, got %v", tt.want, err)
 			}
@@ -133,11 +175,89 @@ func TestTechnologyRepositoryReturnsErrors(t *testing.T) {
 	}
 }
 
+func TestTechnologyRepositoryLoadsUniverseSettingsBranches(t *testing.T) {
+	tests := []struct {
+		name       string
+		prefix     string
+		result     fakeQueryResult
+		wantErr    string
+		wantSpeed  float64
+		wantRepair int
+	}{
+		{
+			name:    "unsafe prefix",
+			prefix:  "bad-prefix_",
+			wantErr: "invalid database table prefix",
+		},
+		{
+			name:    "query error",
+			prefix:  "ogame_",
+			result:  fakeQueryResult{err: errors.New("settings query failed")},
+			wantErr: "settings query failed",
+		},
+		{
+			name:    "empty universe",
+			prefix:  "ogame_",
+			result:  fakeQueryResult{rows: fakeRowsFromValues()},
+			wantErr: "no rows",
+		},
+		{
+			name:    "row iteration error",
+			prefix:  "ogame_",
+			result:  fakeQueryResult{rows: fakeRowsFromValuesWithErr(errors.New("settings rows failed"))},
+			wantErr: "settings rows failed",
+		},
+		{
+			name:    "scan error",
+			prefix:  "ogame_",
+			result:  fakeQueryResult{rows: fakeRowsFromValues([]any{float64(128)})},
+			wantErr: "unexpected scan destination count",
+		},
+		{
+			name:       "nonpositive speed defaults to one",
+			prefix:     "ogame_",
+			result:     fakeQueryResult{rows: fakeRowsFromValues([]any{float64(0), 70})},
+			wantSpeed:  1,
+			wantRepair: 70,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			queryer := &fakeQueryer{}
+			if tt.prefix == "ogame_" {
+				queryer.results = []fakeQueryResult{tt.result}
+			}
+			settings, err := NewTechnologyRepositoryWithQueryer(queryer, tt.prefix).loadTechnologyUniverseSettings(context.Background())
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected %q error, got %v", tt.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if settings.speed != tt.wantSpeed || settings.defenseRepair != tt.wantRepair {
+				t.Fatalf("unexpected universe settings: %+v", settings)
+			}
+		})
+	}
+}
+
+func TestTechnologyRepositoryMCPPropagatesReadError(t *testing.T) {
+	repository := NewTechnologyRepositoryWithQueryer(&fakeQueryer{}, "bad-prefix_")
+	if _, err := repository.GetMCPTechnology(context.Background(), 42, domainmcp.TechnologyCommand{}); err == nil ||
+		!strings.Contains(err.Error(), "invalid database table prefix") {
+		t.Fatalf("expected MCP technology read error, got %v", err)
+	}
+}
+
 func technologyReadResults(buildings map[int]int, research map[int]int) []fakeQueryResult {
 	return append(shipyardOverviewResults(),
 		fakeQueryResult{rows: fakeRowsFromValues(buildingLevelRow(buildings))},
 		fakeQueryResult{rows: fakeRowsFromValues(allResearchLevelRow(research))},
-		fakeQueryResult{rows: fakeRowsFromValues([]any{float64(128)})},
+		fakeQueryResult{rows: fakeRowsFromValues([]any{float64(128), 70})},
 	)
 }
 

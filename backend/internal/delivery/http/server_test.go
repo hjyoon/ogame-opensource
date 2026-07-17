@@ -3153,6 +3153,9 @@ func TestGameTechnologyEndpointReturnsTechnology(t *testing.T) {
 	if toGameTechnologyInfoResponse(nil) != nil {
 		t.Fatal("expected nil technology info to map to nil")
 	}
+	if toGameTechnologyUnitInfoResponse(nil) != nil || toGameTechnologyAllianceDepotInfoResponse(nil) != nil {
+		t.Fatal("expected nil technology special info to map to nil")
+	}
 
 	technology := &fakeGameTechnology{result: appgame.TechnologyResult{
 		Authenticated: true,
@@ -3223,12 +3226,25 @@ func TestGameTechnologyEndpointReturnsTechnology(t *testing.T) {
 				Description: "Metal mine detail",
 				Level:       3,
 				Kind:        "mine",
+				AllianceDepot: &domaingame.TechnologyAllianceDepotInfo{
+					AvailableDeuterium: 1000,
+					Capacity:           10000,
+				},
+				Unit: &domaingame.TechnologyUnitInfo{
+					Structure:    4000,
+					Shield:       10,
+					Attack:       50,
+					Cargo:        50,
+					BaseSpeed:    12500,
+					RapidFireOut: []domaingame.TechnologyRapidFire{{ID: domaingame.FleetEspionageProbe, Name: "Espionage Probe", Count: 5}},
+				},
 				Rows: []domaingame.TechnologyInfoRow{{
 					Level:                1,
 					Production:           4224,
 					ProductionDifference: 100,
 					Energy:               -11,
 					EnergyDifference:     -2,
+					Radius:               8,
 				}},
 			},
 		},
@@ -3265,6 +3281,15 @@ func TestGameTechnologyEndpointReturnsTechnology(t *testing.T) {
 	if response.Technology.Info == nil || response.Technology.Info.ID != domaingame.BuildingMetalMine ||
 		response.Technology.Info.Rows[0].Production != 4224 || response.Technology.Info.Rows[0].Energy != -11 {
 		t.Fatalf("unexpected technology info mapping: %+v", response.Technology.Info)
+	}
+	if response.Technology.Info.Unit == nil || response.Technology.Info.Unit.Structure != 4000 ||
+		response.Technology.Info.Unit.RapidFireOut[0].ID != domaingame.FleetEspionageProbe ||
+		response.Technology.Info.Unit.RapidFireOut[0].Count != 5 {
+		t.Fatalf("unexpected technology unit info mapping: %+v", response.Technology.Info.Unit)
+	}
+	if response.Technology.Info.AllianceDepot == nil || response.Technology.Info.AllianceDepot.AvailableDeuterium != 1000 ||
+		response.Technology.Info.AllianceDepot.Capacity != 10000 || response.Technology.Info.Rows[0].Radius != 8 {
+		t.Fatalf("unexpected technology special info mapping: %+v", response.Technology.Info)
 	}
 	if technology.command.PublicSession != "public" || technology.command.PlanetID != 99 ||
 		technology.command.TechnologyDetailsID != domaingame.FleetCruiser ||

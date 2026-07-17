@@ -63,13 +63,40 @@ type gameTechnologyDemolishResponse struct {
 }
 
 type gameTechnologyInfoResponse struct {
-	ID          int                             `json:"id"`
-	Name        string                          `json:"name"`
-	Description string                          `json:"description"`
-	Level       int                             `json:"level"`
-	Kind        string                          `json:"kind"`
-	Rows        []gameTechnologyInfoRowItem     `json:"rows"`
-	Demolish    *gameTechnologyDemolishResponse `json:"demolish,omitempty"`
+	ID            int                                      `json:"id"`
+	Name          string                                   `json:"name"`
+	Description   string                                   `json:"description"`
+	Level         int                                      `json:"level"`
+	Kind          string                                   `json:"kind"`
+	Rows          []gameTechnologyInfoRowItem              `json:"rows"`
+	Unit          *gameTechnologyUnitInfoResponse          `json:"unit,omitempty"`
+	AllianceDepot *gameTechnologyAllianceDepotInfoResponse `json:"allianceDepot,omitempty"`
+	Demolish      *gameTechnologyDemolishResponse          `json:"demolish,omitempty"`
+}
+
+type gameTechnologyAllianceDepotInfoResponse struct {
+	AvailableDeuterium int `json:"availableDeuterium"`
+	Capacity           int `json:"capacity"`
+}
+
+type gameTechnologyRapidFireResponse struct {
+	ID    int    `json:"id"`
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+type gameTechnologyUnitInfoResponse struct {
+	Structure                int                               `json:"structure"`
+	Shield                   int                               `json:"shield"`
+	Attack                   int                               `json:"attack"`
+	Cargo                    int                               `json:"cargo"`
+	BaseSpeed                int                               `json:"baseSpeed"`
+	AlternateBaseSpeed       int                               `json:"alternateBaseSpeed"`
+	BaseConsumption          int                               `json:"baseConsumption"`
+	AlternateBaseConsumption int                               `json:"alternateBaseConsumption"`
+	DefenseRepair            int                               `json:"defenseRepair"`
+	RapidFireOut             []gameTechnologyRapidFireResponse `json:"rapidFireOut"`
+	RapidFireIn              []gameTechnologyRapidFireResponse `json:"rapidFireIn"`
 }
 
 type gameTechnologyInfoRowItem struct {
@@ -83,6 +110,7 @@ type gameTechnologyInfoRowItem struct {
 	StorageDifference    int  `json:"storageDifference"`
 	DeuteriumConsumption int  `json:"deuteriumConsumption"`
 	DeuteriumDifference  int  `json:"deuteriumDifference"`
+	Radius               int  `json:"radius"`
 }
 
 func (a app) handleGameTechnology(w http.ResponseWriter, r *http.Request) {
@@ -244,17 +272,57 @@ func toGameTechnologyInfoResponse(info *domaingame.TechnologyInfo) *gameTechnolo
 			StorageDifference:    row.StorageDifference,
 			DeuteriumConsumption: row.DeuteriumConsumption,
 			DeuteriumDifference:  row.DeuteriumDifference,
+			Radius:               row.Radius,
 		})
 	}
 	return &gameTechnologyInfoResponse{
-		ID:          info.ID,
-		Name:        info.Name,
-		Description: info.Description,
-		Level:       info.Level,
-		Kind:        info.Kind,
-		Rows:        rows,
-		Demolish:    toGameTechnologyDemolishResponse(info.Demolish),
+		ID:            info.ID,
+		Name:          info.Name,
+		Description:   info.Description,
+		Level:         info.Level,
+		Kind:          info.Kind,
+		Rows:          rows,
+		Unit:          toGameTechnologyUnitInfoResponse(info.Unit),
+		AllianceDepot: toGameTechnologyAllianceDepotInfoResponse(info.AllianceDepot),
+		Demolish:      toGameTechnologyDemolishResponse(info.Demolish),
 	}
+}
+
+func toGameTechnologyAllianceDepotInfoResponse(info *domaingame.TechnologyAllianceDepotInfo) *gameTechnologyAllianceDepotInfoResponse {
+	if info == nil {
+		return nil
+	}
+	return &gameTechnologyAllianceDepotInfoResponse{
+		AvailableDeuterium: info.AvailableDeuterium,
+		Capacity:           info.Capacity,
+	}
+}
+
+func toGameTechnologyUnitInfoResponse(info *domaingame.TechnologyUnitInfo) *gameTechnologyUnitInfoResponse {
+	if info == nil {
+		return nil
+	}
+	return &gameTechnologyUnitInfoResponse{
+		Structure:                info.Structure,
+		Shield:                   info.Shield,
+		Attack:                   info.Attack,
+		Cargo:                    info.Cargo,
+		BaseSpeed:                info.BaseSpeed,
+		AlternateBaseSpeed:       info.AlternateBaseSpeed,
+		BaseConsumption:          info.BaseConsumption,
+		AlternateBaseConsumption: info.AlternateBaseConsumption,
+		DefenseRepair:            info.DefenseRepair,
+		RapidFireOut:             toGameTechnologyRapidFireResponses(info.RapidFireOut),
+		RapidFireIn:              toGameTechnologyRapidFireResponses(info.RapidFireIn),
+	}
+}
+
+func toGameTechnologyRapidFireResponses(items []domaingame.TechnologyRapidFire) []gameTechnologyRapidFireResponse {
+	result := make([]gameTechnologyRapidFireResponse, 0, len(items))
+	for _, item := range items {
+		result = append(result, gameTechnologyRapidFireResponse{ID: item.ID, Name: item.Name, Count: item.Count})
+	}
+	return result
 }
 
 func selectedTechnologyDetailsID(r *http.Request) (int, error) {

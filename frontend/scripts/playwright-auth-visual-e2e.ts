@@ -628,6 +628,48 @@ const pageSpecs: AuthPageSpec[] = [
     expectedTexts: ["Building conditions for", "Cruiser", "Shipyard", "Impulse Drive", "Ion Technology"]
   },
   {
+    name: "game-technology-info-light-fighter",
+    legacyPage: "infos",
+    legacyQuery: { gid: "204" },
+    migratedPath: "/game/technology",
+    migratedQuery: { gid: "204" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-technology-unit-info-table",
+    expectedTexts: [
+      "Fleet Information:",
+      "Light Fighter",
+      "Structure",
+      "Shield capacity",
+      "Attack estimation",
+      "Load capacity",
+      "Initial speed",
+      "Fuel consumption (deuterium)",
+      "Espionage Probe",
+      "Cruiser",
+      "Deathstar"
+    ]
+  },
+  {
+    name: "game-technology-info-defense",
+    legacyPage: "infos",
+    legacyQuery: { gid: "401" },
+    migratedPath: "/game/technology",
+    migratedQuery: { gid: "401" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-technology-unit-info-table",
+    expectedTexts: ["Information on defenses:", "Rocket Launcher", "recover defenses after combat", "Structure", "Shield capacity", "Attack estimation"]
+  },
+  {
+    name: "game-technology-info-research",
+    legacyPage: "infos",
+    legacyQuery: { gid: "113" },
+    migratedPath: "/game/technology",
+    migratedQuery: { gid: "113" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-technology-info-table",
+    expectedTexts: ["Energy Technology", "energy distribution", "sophisticated ships and defences"]
+  },
+  {
     name: "game-defense",
     legacyPage: "buildings",
     legacyQuery: { mode: "Verteidigung" },

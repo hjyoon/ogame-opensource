@@ -868,7 +868,7 @@ function legacyPagePath(page: string, params: URLSearchParams): string {
     return "/game/rename-planet";
   }
   if (page === "infos") {
-    return "/game/infos";
+    return "/game/technology";
   }
   if (page === "admin") {
     return "/game/admin";

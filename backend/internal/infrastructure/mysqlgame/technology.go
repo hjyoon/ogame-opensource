@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	appgame "github.com/hjyoon/ogame-opensource/backend/internal/application/game"
 	domaingame "github.com/hjyoon/ogame-opensource/backend/internal/domain/game"
@@ -54,22 +55,53 @@ func (r TechnologyRepository) GetTechnology(ctx context.Context, query appgame.T
 
 	technology := domaingame.BuildTechnology(overview, levels, research)
 	if query.TechnologyDetailsID > 0 || query.TechnologyInfoID > 0 {
-		speed, err := buildings.loadUniverseSpeed(ctx)
+		settings, err := r.loadTechnologyUniverseSettings(ctx)
 		if err != nil {
 			return domaingame.Technology{}, err
 		}
 		if query.TechnologyDetailsID > 0 {
-			if details, ok := domaingame.BuildTechnologyDetailsWithSpeed(query.TechnologyDetailsID, levels, research, speed); ok {
+			if details, ok := domaingame.BuildTechnologyDetailsWithSpeed(query.TechnologyDetailsID, levels, research, settings.speed); ok {
 				technology.Details = &details
 			}
 		}
 		if query.TechnologyInfoID > 0 {
-			if info, ok := domaingame.BuildTechnologyInfoWithSpeed(query.TechnologyInfoID, overview.CurrentPlanet, levels, research, speed); ok {
+			if info, ok := domaingame.BuildTechnologyInfoWithSettings(query.TechnologyInfoID, overview.CurrentPlanet, levels, research, settings.speed, settings.defenseRepair); ok {
 				technology.Info = &info
 			}
 		}
 	}
 	return technology, nil
+}
+
+type technologyUniverseSettings struct {
+	speed         float64
+	defenseRepair int
+}
+
+func (r TechnologyRepository) loadTechnologyUniverseSettings(ctx context.Context) (technologyUniverseSettings, error) {
+	uniTable, err := tableName(r.prefix, "uni")
+	if err != nil {
+		return technologyUniverseSettings{}, err
+	}
+	rows, err := r.queryer.QueryContext(ctx, fmt.Sprintf("SELECT speed, COALESCE(defrepair, 0) FROM %s LIMIT 1", uniTable))
+	if err != nil {
+		return technologyUniverseSettings{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return technologyUniverseSettings{}, err
+		}
+		return technologyUniverseSettings{}, sql.ErrNoRows
+	}
+	var settings technologyUniverseSettings
+	if err := rows.Scan(&settings.speed, &settings.defenseRepair); err != nil {
+		return technologyUniverseSettings{}, err
+	}
+	if settings.speed <= 0 {
+		settings.speed = 1
+	}
+	return settings, nil
 }
 
 func (r TechnologyRepository) GetMCPTechnology(ctx context.Context, playerID int, command domainmcp.TechnologyCommand) (domainmcp.TechnologyTree, error) {
@@ -168,17 +200,57 @@ func mcpTechnologyInfo(info *domaingame.TechnologyInfo) *domainmcp.TechnologyInf
 			StorageDifference:    row.StorageDifference,
 			DeuteriumConsumption: row.DeuteriumConsumption,
 			DeuteriumDifference:  row.DeuteriumDifference,
+			Radius:               row.Radius,
 		})
 	}
 	return &domainmcp.TechnologyInfo{
-		ID:          info.ID,
-		Name:        info.Name,
-		Description: info.Description,
-		Level:       info.Level,
-		Kind:        info.Kind,
-		Rows:        rows,
-		Demolish:    mcpTechnologyDemolish(info.Demolish),
+		ID:            info.ID,
+		Name:          info.Name,
+		Description:   info.Description,
+		Level:         info.Level,
+		Kind:          info.Kind,
+		Rows:          rows,
+		Unit:          mcpTechnologyUnitInfo(info.Unit),
+		AllianceDepot: mcpTechnologyAllianceDepotInfo(info.AllianceDepot),
+		Demolish:      mcpTechnologyDemolish(info.Demolish),
 	}
+}
+
+func mcpTechnologyAllianceDepotInfo(info *domaingame.TechnologyAllianceDepotInfo) *domainmcp.TechnologyAllianceDepotInfo {
+	if info == nil {
+		return nil
+	}
+	return &domainmcp.TechnologyAllianceDepotInfo{
+		AvailableDeuterium: info.AvailableDeuterium,
+		Capacity:           info.Capacity,
+	}
+}
+
+func mcpTechnologyUnitInfo(info *domaingame.TechnologyUnitInfo) *domainmcp.TechnologyUnitInfo {
+	if info == nil {
+		return nil
+	}
+	return &domainmcp.TechnologyUnitInfo{
+		Structure:                info.Structure,
+		Shield:                   info.Shield,
+		Attack:                   info.Attack,
+		Cargo:                    info.Cargo,
+		BaseSpeed:                info.BaseSpeed,
+		AlternateBaseSpeed:       info.AlternateBaseSpeed,
+		BaseConsumption:          info.BaseConsumption,
+		AlternateBaseConsumption: info.AlternateBaseConsumption,
+		DefenseRepair:            info.DefenseRepair,
+		RapidFireOut:             mcpTechnologyRapidFire(info.RapidFireOut),
+		RapidFireIn:              mcpTechnologyRapidFire(info.RapidFireIn),
+	}
+}
+
+func mcpTechnologyRapidFire(items []domaingame.TechnologyRapidFire) []domainmcp.TechnologyRapidFire {
+	result := make([]domainmcp.TechnologyRapidFire, 0, len(items))
+	for _, item := range items {
+		result = append(result, domainmcp.TechnologyRapidFire{ID: item.ID, Name: item.Name, Count: item.Count})
+	}
+	return result
 }
 
 func mcpTechnologyDemolish(demolish *domaingame.TechnologyDemolish) *domainmcp.TechnologyDemolish {

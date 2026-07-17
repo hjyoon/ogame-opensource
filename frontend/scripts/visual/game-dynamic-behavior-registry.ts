@@ -3565,6 +3565,58 @@ export const gameDynamicBehaviorSpecs: GameDynamicBehaviorSpec[] = [
       { name: "trade-button-count", type: "count", legacySelector: "#content input[name='trade']", migratedSelector: ".legacy-merchant-exchange-table input[name='trade']", expected: "0" }
     ],
     notes: ["Covers successful trader exchange submission consuming the active merchant offer."]
+  },
+  {
+    name: "technology-light-fighter-rapid-fire-link",
+    legacyPage: "infos",
+    legacyQuery: { gid: "204" },
+    migratedPath: "/game/technology",
+    migratedQuery: { gid: "204" },
+    legacyReady: "#content table",
+    migratedReady: ".legacy-technology-unit-info-table",
+    actions: [
+      {
+        type: "click",
+        legacySelector: "#content a[href*='page=infos'][href*='gid=210']",
+        migratedSelector: ".legacy-technology-unit-info-table a[href*='/game/technology'][href*='gid=210']",
+        legacyWaitForSelector: "#content table",
+        migratedWaitForSelector: ".legacy-technology-unit-info-table"
+      }
+    ],
+    assertions: [
+      {
+        name: "espionage-probe-fleet-information",
+        type: "text",
+        legacySelector: "#content",
+        migratedSelector: ".legacy-content",
+        compareSides: true,
+        contains: "Espionage Probe"
+      },
+      {
+        name: "rapid-fire-target-route",
+        type: "evaluate",
+        expression:
+          "(() => { const url = new URL(window.location.href); return (url.pathname === '/game/technology' || (url.pathname === '/game/index.php' && url.searchParams.get('page') === 'infos')) && url.searchParams.get('gid') === '210'; })()",
+        expected: "true"
+      }
+    ],
+    visual: {
+      enabled: true,
+      normalizePageName: "game-technology-info-210",
+      maxDiffRatio: 0,
+      colorDeltaThreshold: 0
+    },
+    linkAudit: {
+      expected: [
+        {
+          name: "espionage-probe-info-target",
+          target: "/game/technology?gid=#",
+          scope: "action",
+          classification: "visual"
+        }
+      ]
+    },
+    notes: ["Covers fleet information rapid-fire navigation and the destination exact visual state."]
   }
 ];
 

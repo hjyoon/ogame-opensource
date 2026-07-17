@@ -10,7 +10,8 @@ export type GameVisualArea =
   | "state"
   | "hover"
   | "popup"
-  | "permission";
+  | "permission"
+  | "technology-info";
 
 export type GameVisualAction = {
   type: "hover" | "focus" | "click" | "fill" | "select" | "check" | "uncheck" | "keyboard";
@@ -66,6 +67,85 @@ export const globalGameVisualMaskSelectors = [
   "#header_top img[width='50'][height='50']",
   ".legacy-header-top img[width='50'][height='50']"
 ];
+
+const technologyInfoDefinitions: Array<{ id: number; name: string; kind: "fleet" | "defense" | "description" }> = [
+  { id: 1, name: "Metal Mine", kind: "description" },
+  { id: 2, name: "Crystal Mine", kind: "description" },
+  { id: 3, name: "Deuterium Synthesizer", kind: "description" },
+  { id: 4, name: "Solar Plant", kind: "description" },
+  { id: 12, name: "Fusion Reactor", kind: "description" },
+  { id: 14, name: "Robotics Factory", kind: "description" },
+  { id: 15, name: "Nanite Factory", kind: "description" },
+  { id: 21, name: "Shipyard", kind: "description" },
+  { id: 22, name: "Metal Storage", kind: "description" },
+  { id: 23, name: "Crystal Storage", kind: "description" },
+  { id: 24, name: "Deuterium Tank", kind: "description" },
+  { id: 31, name: "Research Lab", kind: "description" },
+  { id: 33, name: "Terraformer", kind: "description" },
+  { id: 34, name: "Alliance Depot", kind: "description" },
+  { id: 41, name: "Lunar Base", kind: "description" },
+  { id: 42, name: "Sensor Phalanx", kind: "description" },
+  { id: 43, name: "Jump Gate", kind: "description" },
+  { id: 44, name: "Missile Silo", kind: "description" },
+  { id: 106, name: "Espionage Technology", kind: "description" },
+  { id: 108, name: "Computer Technology", kind: "description" },
+  { id: 109, name: "Weapons Technology", kind: "description" },
+  { id: 110, name: "Shielding Technology", kind: "description" },
+  { id: 111, name: "Armour Technology", kind: "description" },
+  { id: 113, name: "Energy Technology", kind: "description" },
+  { id: 114, name: "Hyperspace Technology", kind: "description" },
+  { id: 115, name: "Combustion Drive", kind: "description" },
+  { id: 117, name: "Impulse Drive", kind: "description" },
+  { id: 118, name: "Hyperspace Drive", kind: "description" },
+  { id: 120, name: "Laser Technology", kind: "description" },
+  { id: 121, name: "Ion Technology", kind: "description" },
+  { id: 122, name: "Plasma Technology", kind: "description" },
+  { id: 123, name: "Intergalactic Research Network", kind: "description" },
+  { id: 124, name: "Expedition Technology", kind: "description" },
+  { id: 199, name: "Graviton Technology", kind: "description" },
+  { id: 202, name: "Small Cargo", kind: "fleet" },
+  { id: 203, name: "Large Cargo", kind: "fleet" },
+  { id: 204, name: "Light Fighter", kind: "fleet" },
+  { id: 205, name: "Heavy Fighter", kind: "fleet" },
+  { id: 206, name: "Cruiser", kind: "fleet" },
+  { id: 207, name: "Battleship", kind: "fleet" },
+  { id: 208, name: "Colony Ship", kind: "fleet" },
+  { id: 209, name: "Recycler", kind: "fleet" },
+  { id: 210, name: "Espionage Probe", kind: "fleet" },
+  { id: 211, name: "Bomber", kind: "fleet" },
+  { id: 212, name: "Solar Satellite", kind: "fleet" },
+  { id: 213, name: "Destroyer", kind: "fleet" },
+  { id: 214, name: "Deathstar", kind: "fleet" },
+  { id: 215, name: "Battlecruiser", kind: "fleet" },
+  { id: 401, name: "Rocket Launcher", kind: "defense" },
+  { id: 402, name: "Light Laser", kind: "defense" },
+  { id: 403, name: "Heavy Laser", kind: "defense" },
+  { id: 404, name: "Gauss Cannon", kind: "defense" },
+  { id: 405, name: "Ion Cannon", kind: "defense" },
+  { id: 406, name: "Plasma Turret", kind: "defense" },
+  { id: 407, name: "Small Shield Dome", kind: "defense" },
+  { id: 408, name: "Large Shield Dome", kind: "defense" },
+  { id: 502, name: "Anti-Ballistic Missiles", kind: "description" },
+  { id: 503, name: "Interplanetary Missiles", kind: "description" }
+];
+
+const technologyInfoScreens: GameVisualScreenSpec[] = technologyInfoDefinitions.map((definition) => ({
+  name: `game-technology-info-${definition.id}`,
+  area: "technology-info",
+  defaultEnabled: false,
+  legacyPage: "infos",
+  legacyQuery: { gid: String(definition.id) },
+  migratedPath: "/game/technology",
+  migratedQuery: { gid: String(definition.id) },
+  legacyReady: "#content table",
+  migratedReady: definition.kind === "description" ? ".legacy-technology-info-table" : ".legacy-technology-unit-info-table",
+  expectedTexts: [
+    ...(definition.kind === "fleet" ? ["Fleet Information:"] : []),
+    ...(definition.kind === "defense" ? ["Information on defenses:"] : []),
+    definition.name
+  ],
+  notes: ["Legacy infos.php object detail pairwise state."]
+}));
 
 const adminModeSpecs: Array<{
   mode: string;
@@ -277,6 +357,7 @@ export const gameVisualScreens: GameVisualScreenSpec[] = [
     migratedReady: ".legacy-technology-details-table",
     expectedTexts: ["Building conditions for", "Cruiser", "Shipyard", "Impulse Drive", "Ion Technology"]
   },
+  ...technologyInfoScreens,
   {
     name: "game-changelog",
     area: "direct",
