@@ -1024,6 +1024,10 @@ function smoke_prepare_queue_idempotency_fixture(string $password, array $near):
         $planetId = (int)$user['home_planet_id'];
         dbquery("UPDATE {$db_prefix}users SET hplanetid={$planetId}, aktplanet={$planetId} WHERE player_id={$playerId}");
     }
+    dbquery(
+        "UPDATE {$db_prefix}planets SET prod" . GID_F_SAT . "=1 " .
+        "WHERE planet_id=" . (int)$shipyard['home_planet_id'] . " AND owner_id=" . (int)$shipyard['player_id']
+    );
     InvalidateUserCache();
 
     $buildError = BuildEnque(LoadUser((int)$build['player_id']), (int)$build['home_planet_id'], GID_B_METAL_MINE, 0, $now);
@@ -1040,12 +1044,12 @@ function smoke_prepare_queue_idempotency_fixture(string $password, array $near):
     }
     $researchScore = TechPriceInPoints(TechPrice(GID_R_ESPIONAGE, 1));
 
-    $shipyardOk = AddShipyard((int)$shipyard['player_id'], (int)$shipyard['home_planet_id'], GID_F_SC, 3, $now + 2);
+    $shipyardOk = AddShipyard((int)$shipyard['player_id'], (int)$shipyard['home_planet_id'], GID_F_SAT, 3, $now + 2);
     $shipyardTask = smoke_one_row("SELECT task_id, level FROM {$db_prefix}queue WHERE owner_id=" . (int)$shipyard['player_id'] . " AND type='" . QTYP_SHIPYARD . "' ORDER BY task_id DESC LIMIT 1");
     if ($shipyardTask !== null) {
         smoke_force_queue_due((int)$shipyardTask['task_id'], $now);
     }
-    $shipyardScore = TechPriceInPoints(TechPrice(GID_F_SC, 1)) * 3;
+    $shipyardScore = TechPriceInPoints(TechPrice(GID_F_SAT, 1)) * 3;
     InvalidateUserCache();
 
     return array(
@@ -1077,7 +1081,7 @@ function smoke_prepare_queue_idempotency_fixture(string $password, array $near):
             'home_planet_id' => (int)$shipyard['home_planet_id'],
             'task_id' => $shipyardTask === null ? 0 : (int)$shipyardTask['task_id'],
             'shipyard_ok' => $shipyardOk,
-            'ship_id' => GID_F_SC,
+            'ship_id' => GID_F_SAT,
             'expected_count' => 3,
             'expected_score1' => $shipyardScore,
             'expected_score2' => 3,

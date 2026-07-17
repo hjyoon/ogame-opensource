@@ -57,17 +57,18 @@ func (q SQLQueryer) QueryContext(ctx context.Context, query string, args ...any)
 }
 
 type OverviewRepository struct {
-	queryer           Queryer
-	execer            Execer
-	prefix            string
-	secret            string
-	now               func() time.Time
-	updateResources   bool
-	includeUnread     bool
-	includeBuildQueue bool
-	includeEvents     bool
-	includeBotQueue   bool
-	dialect           SQLDialect
+	queryer                 Queryer
+	execer                  Execer
+	prefix                  string
+	secret                  string
+	now                     func() time.Time
+	updateResources         bool
+	includeUnread           bool
+	includeBuildQueue       bool
+	includeProductionQueues bool
+	includeEvents           bool
+	includeBotQueue         bool
+	dialect                 SQLDialect
 }
 
 func NewOverviewRepository(db *sql.DB, prefix string) OverviewRepository {
@@ -76,7 +77,7 @@ func NewOverviewRepository(db *sql.DB, prefix string) OverviewRepository {
 
 func NewOverviewRepositoryWithSecret(db *sql.DB, prefix string, secret string) OverviewRepository {
 	runner := SQLQueryer{DB: db}
-	return OverviewRepository{queryer: runner, execer: runner, prefix: prefix, secret: secret, now: time.Now, updateResources: true, includeUnread: true, includeBuildQueue: true, includeEvents: true, includeBotQueue: true, dialect: detectSQLDialect(db)}
+	return OverviewRepository{queryer: runner, execer: runner, prefix: prefix, secret: secret, now: time.Now, updateResources: true, includeUnread: true, includeBuildQueue: true, includeProductionQueues: true, includeEvents: true, includeBotQueue: true, dialect: detectSQLDialect(db)}
 }
 
 func NewOverviewRepositoryWithQueryer(queryer Queryer, prefix string) OverviewRepository {
@@ -171,6 +172,11 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 				if err != nil {
 					return domaingame.Overview{}, err
 				}
+			}
+		}
+		if r.includeProductionQueues {
+			if err := r.finishDueProductionQueues(ctx, now); err != nil {
+				return domaingame.Overview{}, err
 			}
 		}
 	}
@@ -281,6 +287,27 @@ func (r OverviewRepository) GetOverview(ctx context.Context, query appgame.Overv
 		UnreadMessages: unreadMessages,
 		Events:         events,
 	}, nil
+}
+
+func (r OverviewRepository) finishDueProductionQueues(ctx context.Context, now int) error {
+	research := ResearchRepository{
+		queryer:         r.queryer,
+		execer:          r.execer,
+		prefix:          r.prefix,
+		now:             r.now,
+		updateResources: r.updateResources,
+	}
+	if err := research.FinishDueResearchQueues(ctx, now); err != nil {
+		return err
+	}
+	shipyard := ShipyardRepository{
+		queryer:         r.queryer,
+		execer:          r.execer,
+		prefix:          r.prefix,
+		now:             r.now,
+		updateResources: r.updateResources,
+	}
+	return shipyard.FinishDueShipyardQueues(ctx, now)
 }
 
 func (r OverviewRepository) RenamePlanet(ctx context.Context, query appgame.OverviewRenameQuery) (domaingame.Overview, error) {

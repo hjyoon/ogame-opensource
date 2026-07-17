@@ -93,6 +93,7 @@ try {
       details: state.details
     };
   });
+  await assertGameOverviewBackgroundRefresh(page);
   await assertRenamePlanetFlow(page);
   await assertGameClientNavigation(page, "game buildings menu preserves CSR", "a[href^='/game/buildings']", "/game/buildings", "Buildings");
   await assertGameClientNavigation(page, "game resources menu preserves CSR", "a[href^='/game/resources']", "/game/resources", "Resources");
@@ -260,6 +261,24 @@ async function createLoginFixture(): Promise<LoginFixture> {
     throw new Error(`Unable to activate CSR login fixture: ${activationResponse.status} ${activationResponse.url}`);
   }
   return { login, password, universe };
+}
+
+async function assertGameOverviewBackgroundRefresh(page: Page) {
+  await record("authenticated game shell refreshes overview in the background", async () => {
+    const response = await page.waitForResponse(
+      (candidate) => candidate.request().method() === "GET" && new URL(candidate.url()).pathname === "/api/game/overview",
+      { timeout: 5_000 }
+    );
+    const state = await gameShellState(page, "login-form-submit", "Overview");
+    return {
+      pass: response.ok() && state.pass,
+      details: {
+        status: response.status(),
+        pathname: state.details.pathname,
+        activeMenuLabel: state.details.activeMenuLabel
+      }
+    };
+  });
 }
 
 async function waitForActivationLink(email: string): Promise<string> {

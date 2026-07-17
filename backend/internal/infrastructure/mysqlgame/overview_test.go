@@ -651,8 +651,58 @@ func TestNewOverviewRepositoryKeepsSQLQueryer(t *testing.T) {
 	if _, ok := repository.execer.(SQLQueryer); !ok {
 		t.Fatalf("expected SQL execer, got %T", repository.execer)
 	}
-	if !repository.updateResources || !repository.includeUnread || !repository.includeBuildQueue || !repository.includeEvents {
+	if !repository.updateResources || !repository.includeUnread || !repository.includeBuildQueue || !repository.includeProductionQueues || !repository.includeEvents {
 		t.Fatalf("expected production overview repository to update resources and overview side data")
+	}
+}
+
+func TestOverviewRepositoryFinishesDueProductionQueues(t *testing.T) {
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{128.0, 0})},
+		{rows: fakeRowsFromValues()},
+		{rows: fakeRowsFromValues([]any{128.0, 999, 0})},
+		{rows: fakeRowsFromValues()},
+	}}}
+	repository := NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+
+	if err := repository.finishDueProductionQueues(context.Background(), 1_700); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.calls) != 4 {
+		t.Fatalf("expected research and shipyard config/queue queries, got %+v", runner.calls)
+	}
+	if !strings.Contains(runner.calls[1].sql, "type = ?") ||
+		!containsAny(runner.calls[1].args, queueTypeResearch) ||
+		!containsAny(runner.calls[1].args, 1_700) {
+		t.Fatalf("expected due research queue query, got %+v", runner.calls[1])
+	}
+	if !strings.Contains(runner.calls[3].sql, "type = ?") ||
+		!containsAny(runner.calls[3].args, queueTypeShipyard) ||
+		!containsAny(runner.calls[3].args, 1_700) {
+		t.Fatalf("expected due shipyard queue query, got %+v", runner.calls[3])
+	}
+}
+
+func TestOverviewRepositoryProductionQueueErrors(t *testing.T) {
+	researchErr := errors.New("research tick failed")
+	repository := NewOverviewRepositoryWithRunner(
+		&fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{{err: researchErr}}}},
+		&fakeBuildingsRunner{},
+		"ogame_",
+	)
+	if err := repository.finishDueProductionQueues(context.Background(), 1_700); !errors.Is(err, researchErr) {
+		t.Fatalf("expected research error, got %v", err)
+	}
+
+	shipyardErr := errors.New("shipyard tick failed")
+	runner := &fakeBuildingsRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
+		{rows: fakeRowsFromValues([]any{128.0, 0})},
+		{rows: fakeRowsFromValues()},
+		{err: shipyardErr},
+	}}}
+	repository = NewOverviewRepositoryWithRunner(runner, runner, "ogame_")
+	if err := repository.finishDueProductionQueues(context.Background(), 1_700); !errors.Is(err, shipyardErr) {
+		t.Fatalf("expected shipyard error, got %v", err)
 	}
 }
 

@@ -4925,6 +4925,12 @@ try {
   const queueBuildSecond = queueIdempotencyReady
     ? await request(`/api/game/buildings${queueBuildSearch}`, { headers: { Cookie: queueBuildLogin.cookiePair } })
     : null;
+  const queueShipyardOverview = queueIdempotencyReady
+    ? await request(`/api/game/overview${queueShipyardSearch}`, { headers: { Cookie: queueShipyardLogin.cookiePair } })
+    : null;
+  const queueResearchOverview = queueIdempotencyReady
+    ? await request(`/api/game/overview${queueResearchSearch}`, { headers: { Cookie: queueResearchLogin.cookiePair } })
+    : null;
   const queueResearchFirst = queueIdempotencyReady
     ? await request(`/api/game/research${queueResearchSearch}`, { headers: { Cookie: queueResearchLogin.cookiePair } })
     : null;
@@ -4954,6 +4960,8 @@ try {
     : null;
   const queueBuildFirstBody = queueBuildFirst ? parseJSON(queueBuildFirst) : {};
   const queueBuildSecondBody = queueBuildSecond ? parseJSON(queueBuildSecond) : {};
+  const queueShipyardOverviewBody = queueShipyardOverview ? parseJSON(queueShipyardOverview) : {};
+  const queueResearchOverviewBody = queueResearchOverview ? parseJSON(queueResearchOverview) : {};
   const queueResearchFirstBody = queueResearchFirst ? parseJSON(queueResearchFirst) : {};
   const queueResearchSecondBody = queueResearchSecond ? parseJSON(queueResearchSecond) : {};
   const queueShipyardFirstBody = queueShipyardFirst ? parseJSON(queueShipyardFirst) : {};
@@ -8351,6 +8359,25 @@ try {
         first: queueBuildFirstBody.buildings?.queue,
         second: queueBuildSecondBody.buildings?.queue
       }),
+      check(
+        !queueIdempotencyReady || queueShipyardOverview?.status === 200 && queueResearchOverview?.status === 200,
+        "overview runtime tick processes due production queues without opening their pages",
+        {
+          shipyard: queueShipyardOverview?.status,
+          research: queueResearchOverview?.status
+        }
+      ),
+      check(
+        !queueIdempotencyReady ||
+          Number(queueShipyardOverviewBody.overview?.currentPlanet?.resources?.energyCapacity ?? 0) > 0,
+        "overview reflects solar-satellite energy after shipyard queue completion",
+        queueShipyardOverviewBody.overview?.currentPlanet?.resources ?? {}
+      ),
+      check(
+        !queueIdempotencyReady || queueResearchOverviewBody.authenticated === true,
+        "overview remains authenticated after the common production queue tick",
+        queueResearchOverviewBody
+      ),
       check(!queueIdempotencyReady || queueResearchFirst?.status === 200 && queueResearchSecond?.status === 200, "research due queue can be loaded twice", {
         first: queueResearchFirst?.status,
         second: queueResearchSecond?.status

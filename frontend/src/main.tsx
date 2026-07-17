@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   LegacyGameOverview,
@@ -153,6 +153,11 @@ type GameMCPTokenRevokeStatus = {
   issues: { code: string; message: string }[];
   revoked: boolean;
 };
+
+type GameOverview = NonNullable<GameOverviewStatus["overview"]>;
+type GameOverviewPlanetState = Pick<GameOverview, "currentPlanet" | "planetSwitcher">;
+
+const gameOverviewRefreshIntervalMs = 2_000;
 
 function legacyRegistrationIssueFromCode(errorCode: number): RegistrationIssue {
   const fieldByCode: Record<number, string> = {
@@ -416,6 +421,9 @@ function App() {
   const [gameMCPTokenSecret, setGameMCPTokenSecret] = useState<string | null>(null);
   const [gameLogout, setGameLogout] = useState<GameLogoutStatus | null>(null);
   const [gameLogoutError, setGameLogoutError] = useState<string | null>(null);
+  const gameOverviewRequestRef = useRef<AbortController | null>(null);
+  const gameOverviewBackgroundPendingRef = useRef(false);
+  const lastGameOverviewRefreshAtRef = useRef(0);
   const resolution = resolvePublicRoute(pathname);
   const route = resolution.route;
   const isLegacyRegistrationRoute = isLegacyRegistrationFormPath(pathname);
@@ -544,11 +552,17 @@ function App() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  const loadGameOverview = (showPending = false) => {
+  const loadGameOverview = (showPending = false, background = false) => {
     const publicSession = new URLSearchParams(search).get("session") ?? "";
     if (!pathname.startsWith("/game") || gameRoute?.key === "logout" || gameRoute?.key === "report" || publicSession === "") {
+      gameOverviewRequestRef.current?.abort();
+      gameOverviewRequestRef.current = null;
+      gameOverviewBackgroundPendingRef.current = false;
       setGameOverview(null);
       setGameOverviewError(null);
+      return;
+    }
+    if (background && (gameOverviewBackgroundPendingRef.current || gameOverviewRequestRef.current !== null)) {
       return;
     }
     const currentSearch = new URLSearchParams(search);
@@ -563,14 +577,37 @@ function App() {
     if (showPending) {
       setGameOverviewPending(true);
     }
-    fetch(`/api/game/overview?${overviewSearch.toString()}`, { credentials: "same-origin" })
+    gameOverviewRequestRef.current?.abort();
+    const controller = new AbortController();
+    gameOverviewRequestRef.current = controller;
+    gameOverviewBackgroundPendingRef.current = background;
+    lastGameOverviewRefreshAtRef.current = Date.now();
+    fetch(`/api/game/overview?${overviewSearch.toString()}`, {
+      credentials: "same-origin",
+      signal: controller.signal
+    })
       .then((response) => response.json() as Promise<GameOverviewStatus>)
       .then((payload) => {
         setGameOverview(payload);
-        setGameOverviewError(null);
+        if (!background) {
+          setGameOverviewError(null);
+        }
       })
-      .catch((err: unknown) => setGameOverviewError(err instanceof Error ? err.message : String(err)))
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
+        if (!background) {
+          setGameOverviewError(err instanceof Error ? err.message : String(err));
+        }
+      })
       .finally(() => {
+        if (gameOverviewRequestRef.current === controller) {
+          gameOverviewRequestRef.current = null;
+        }
+        if (background) {
+          gameOverviewBackgroundPendingRef.current = false;
+        }
         if (showPending) {
           setGameOverviewPending(false);
         }
@@ -579,6 +616,32 @@ function App() {
 
   useEffect(() => {
     loadGameOverview();
+  }, [gameRoute?.key, pathname, search]);
+
+  useEffect(() => {
+    const publicSession = new URLSearchParams(search).get("session") ?? "";
+    if (!pathname.startsWith("/game") || gameRoute?.key === "logout" || gameRoute?.key === "report" || publicSession === "") {
+      return;
+    }
+    const refreshIfDue = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      const now = Date.now();
+      const lastRefresh = lastGameOverviewRefreshAtRef.current;
+      if (now <= lastRefresh || now - lastRefresh < gameOverviewRefreshIntervalMs) {
+        return;
+      }
+      loadGameOverview(false, true);
+    };
+    const interval = window.setInterval(refreshIfDue, 1_000);
+    document.addEventListener("visibilitychange", refreshIfDue);
+    window.addEventListener("focus", refreshIfDue);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshIfDue);
+      window.removeEventListener("focus", refreshIfDue);
+    };
   }, [gameRoute?.key, pathname, search]);
 
   useEffect(() => {
@@ -669,11 +732,10 @@ function App() {
       .finally(() => setGameOverviewPending(false));
   };
 
-  const syncGameOverviewFromBuildings = (payload: GameBuildingsStatus) => {
-    if (!payload.authenticated || !payload.buildings) {
+  const syncGameOverviewPlanet = (planetState: GameOverviewPlanetState | undefined) => {
+    if (!planetState) {
       return;
     }
-    const buildings = payload.buildings;
     setGameOverview((current) => {
       if (!current?.authenticated || !current.overview) {
         return current;
@@ -682,11 +744,17 @@ function App() {
         ...current,
         overview: {
           ...current.overview,
-          currentPlanet: buildings.currentPlanet,
-          planetSwitcher: buildings.planetSwitcher
+          currentPlanet: planetState.currentPlanet,
+          planetSwitcher: planetState.planetSwitcher
         }
       };
     });
+  };
+
+  const syncGameOverviewFromBuildings = (payload: GameBuildingsStatus) => {
+    if (payload.authenticated) {
+      syncGameOverviewPlanet(payload.buildings);
+    }
   };
 
   const loadGameBuildings = (showPending = false) => {
@@ -783,23 +851,9 @@ function App() {
   };
 
   const syncGameOverviewFromResources = (payload: GameResourcesStatus) => {
-    if (!payload.authenticated || !payload.resources) {
-      return;
+    if (payload.authenticated) {
+      syncGameOverviewPlanet(payload.resources);
     }
-    const resources = payload.resources;
-    setGameOverview((current) => {
-      if (!current?.authenticated || !current.overview) {
-        return current;
-      }
-      return {
-        ...current,
-        overview: {
-          ...current.overview,
-          currentPlanet: resources.currentPlanet,
-          planetSwitcher: resources.planetSwitcher
-        }
-      };
-    });
   };
 
   useEffect(() => {
@@ -1349,6 +1403,7 @@ function App() {
       .then((response) => response.json() as Promise<GameResearchStatus>)
       .then((payload) => {
         setGameResearch(payload);
+        syncGameOverviewPlanet(payload.research);
         setGameResearchError(null);
       })
       .catch((err: unknown) => setGameResearchError(err instanceof Error ? err.message : String(err)));
@@ -1387,6 +1442,7 @@ function App() {
       })
       .then((payload) => {
         setGameResearch(payload);
+        syncGameOverviewPlanet(payload.research);
         setGameResearchError(payload.actionIssue?.message ?? null);
         dispatchClientNavigation(`/game/research?${researchSearch.toString()}`);
       })
@@ -1415,6 +1471,7 @@ function App() {
       .then((response) => response.json() as Promise<GameShipyardStatus>)
       .then((payload) => {
         setGameShipyard(payload);
+        syncGameOverviewPlanet(payload.shipyard);
         setGameShipyardError(null);
       })
       .catch((err: unknown) => setGameShipyardError(err instanceof Error ? err.message : String(err)));
@@ -1453,6 +1510,7 @@ function App() {
       })
       .then((payload) => {
         setGameShipyard(payload);
+        syncGameOverviewPlanet(payload.shipyard);
         setGameShipyardError(payload.actionIssue?.message ?? null);
         dispatchClientNavigation(`/game/shipyard?${shipyardSearch.toString()}`);
       })
@@ -1478,6 +1536,7 @@ function App() {
       .then((response) => response.json() as Promise<GameFleetStatus>)
       .then((payload) => {
         setGameFleet(payload);
+        syncGameOverviewPlanet(payload.fleet);
         setGameFleetError(null);
       })
       .catch((err: unknown) => setGameFleetError(err instanceof Error ? err.message : String(err)));
@@ -1521,6 +1580,7 @@ function App() {
       })
       .then((payload) => {
         setGameFleet(payload);
+        syncGameOverviewPlanet(payload.fleet);
         setGameFleetError(null);
         dispatchClientNavigation(`/game/fleet-templates?${fleetSearch.toString()}`);
       })
@@ -1561,6 +1621,7 @@ function App() {
       })
       .then((payload) => {
         setGameFleet(payload);
+        syncGameOverviewPlanet(payload.fleet);
         setGameFleetError(null);
       })
       .catch((err: unknown) => setGameFleetError(err instanceof Error ? err.message : String(err)))
@@ -1600,6 +1661,7 @@ function App() {
       })
       .then((payload) => {
         setGameFleet(payload);
+        syncGameOverviewPlanet(payload.fleet);
         setGameFleetError(null);
       })
       .catch((err: unknown) => setGameFleetError(err instanceof Error ? err.message : String(err)))
@@ -1639,6 +1701,7 @@ function App() {
       })
       .then((payload) => {
         setGameFleet(payload);
+        syncGameOverviewPlanet(payload.fleet);
         setGameFleetError(null);
         dispatchClientNavigation(`/game/fleet?${fleetSearch.toString()}`);
       })
@@ -1665,6 +1728,7 @@ function App() {
       .then((response) => response.json() as Promise<GameGalaxyStatus>)
       .then((payload) => {
         setGameGalaxy(payload);
+        syncGameOverviewPlanet(payload.galaxy);
         setGameGalaxyError(null);
       })
       .catch((err: unknown) => setGameGalaxyError(err instanceof Error ? err.message : String(err)));
@@ -1706,6 +1770,7 @@ function App() {
       })
       .then((payload) => {
         setGameGalaxy(payload);
+        syncGameOverviewPlanet(payload.galaxy);
         setGameGalaxyError(null);
         dispatchClientNavigation(`/game/galaxy?${nextSearch.toString()}`);
       })
@@ -1755,6 +1820,7 @@ function App() {
       })
       .then((payload) => {
         setGameGalaxy(payload);
+        syncGameOverviewPlanet(payload.galaxy);
         setGameGalaxyError(null);
       })
       .catch((err: unknown) => setGameGalaxyError(err instanceof Error ? err.message : String(err)))
@@ -1778,6 +1844,7 @@ function App() {
       .then((response) => response.json() as Promise<GameDefenseStatus>)
       .then((payload) => {
         setGameDefense(payload);
+        syncGameOverviewPlanet(payload.defense);
         setGameDefenseError(null);
       })
       .catch((err: unknown) => setGameDefenseError(err instanceof Error ? err.message : String(err)));
@@ -1816,6 +1883,7 @@ function App() {
       })
       .then((payload) => {
         setGameDefense(payload);
+        syncGameOverviewPlanet(payload.defense);
         setGameDefenseError(payload.actionIssue?.message ?? null);
         dispatchClientNavigation(`/game/defense?${defenseSearch.toString()}`);
       })
@@ -1847,6 +1915,7 @@ function App() {
       .then((response) => response.json() as Promise<GameTechnologyStatus>)
       .then((payload) => {
         setGameTechnology(payload);
+        syncGameOverviewPlanet(payload.technology);
         setGameTechnologyError(null);
       })
       .catch((err: unknown) => setGameTechnologyError(err instanceof Error ? err.message : String(err)));
@@ -1873,6 +1942,7 @@ function App() {
       .then((response) => response.json() as Promise<GamePhalanxStatus>)
       .then((payload) => {
         setGamePhalanx(payload);
+        syncGameOverviewPlanet(payload.phalanx);
         setGamePhalanxError(null);
       })
       .catch((err: unknown) => setGamePhalanxError(err instanceof Error ? err.message : String(err)));
@@ -1896,6 +1966,7 @@ function App() {
       .then((response) => response.json() as Promise<GameJumpGateStatus>)
       .then((payload) => {
         setGameJumpGate(payload);
+        syncGameOverviewPlanet(payload.jumpGate);
         setGameJumpGateError(null);
       })
       .catch((err: unknown) => setGameJumpGateError(err instanceof Error ? err.message : String(err)));
@@ -1934,6 +2005,7 @@ function App() {
       })
       .then((payload) => {
         setGameJumpGate(payload);
+        syncGameOverviewPlanet(payload.jumpGate);
         setGameJumpGateError(null);
         if (payload.jumpGate?.actionIssue?.code === "moved") {
           const next = new URLSearchParams(search);
