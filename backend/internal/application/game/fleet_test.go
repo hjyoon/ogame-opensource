@@ -322,6 +322,7 @@ func TestFleetServiceLaunchNormalizesExpeditionHoldSeconds(t *testing.T) {
 		Slots:           domaingame.FleetSlots{Used: 0, Max: 4},
 		Expeditions:     domaingame.ExpeditionSlots{Used: 0, Max: 1},
 		ExpeditionLevel: 3,
+		SpeedFactor:     128,
 		Ships: []domaingame.FleetShipSelection{{
 			ID:          domaingame.FleetSmallCargo,
 			Name:        "Small Cargo",
@@ -349,8 +350,8 @@ func TestFleetServiceLaunchNormalizesExpeditionHoldSeconds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Authenticated || result.ActionIssue != nil || !repository.launched || repository.launch.HoldSeconds != 60*60 {
-		t.Fatalf("expected expedition hold to clamp to one hour, result=%+v launch=%+v", result, repository.launch)
+	if !result.Authenticated || result.ActionIssue != nil || !repository.launched || repository.launch.HoldHours != 1 || repository.launch.HoldSeconds != 28 {
+		t.Fatalf("expected one expedition hour to scale to 28 seconds, result=%+v launch=%+v", result, repository.launch)
 	}
 
 	repository = &fakeFleetRepository{result: repository.result}
@@ -367,8 +368,8 @@ func TestFleetServiceLaunchNormalizesExpeditionHoldSeconds(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if repository.launch.HoldSeconds != 3*60*60 {
-		t.Fatalf("expected expedition hold to clamp to research level, launch=%+v", repository.launch)
+	if repository.launch.HoldHours != 3 || repository.launch.HoldSeconds != 84 {
+		t.Fatalf("expected three expedition hours to scale to 84 seconds, launch=%+v", repository.launch)
 	}
 }
 
@@ -714,12 +715,13 @@ func TestFleetServiceRequiresDependencies(t *testing.T) {
 	if _, err := (FleetService{}).RecallFleet(context.Background(), FleetRecallCommand{}); err == nil {
 		t.Fatal("expected recall dependency error")
 	}
-	if fleetDispatchHoldSeconds(domaingame.FleetMissionTransport, 4, 4, 4) != 0 ||
-		fleetDispatchHoldSeconds(domaingame.FleetMissionACSHold, -1, 0, 4) != 0 ||
-		fleetDispatchHoldSeconds(domaingame.FleetMissionACSHold, 40, 0, 4) != 32*60*60 ||
-		fleetDispatchHoldSeconds(domaingame.FleetMissionExpedition, 0, 2, 4) != 2*60*60 ||
-		fleetDispatchHoldSeconds(domaingame.FleetMissionExpedition, 0, 0, 4) != 60*60 ||
-		fleetDispatchHoldSeconds(domaingame.FleetMissionExpedition, 0, 99, 4) != 4*60*60 {
+	if fleetDispatchHoldSeconds(domaingame.FleetMissionTransport, 4, 4, 4, 128) != 0 ||
+		fleetDispatchHoldSeconds(domaingame.FleetMissionACSHold, -1, 0, 4, 128) != 0 ||
+		fleetDispatchHoldSeconds(domaingame.FleetMissionACSHold, 40, 0, 4, 128) != 32*60*60 ||
+		fleetDispatchHoldSeconds(domaingame.FleetMissionExpedition, 0, 2, 4, 128) != 56 ||
+		fleetDispatchHoldSeconds(domaingame.FleetMissionExpedition, 0, 0, 4, 128) != 28 ||
+		fleetDispatchHoldSeconds(domaingame.FleetMissionExpedition, 0, 99, 4, 128) != 113 ||
+		fleetDispatchHoldSeconds(domaingame.FleetMissionExpedition, 0, 1, 4, 0) != 60*60 {
 		t.Fatal("unexpected fleet hold second normalization")
 	}
 }

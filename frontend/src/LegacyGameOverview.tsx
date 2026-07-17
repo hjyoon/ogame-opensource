@@ -10685,8 +10685,15 @@ function FleetTargetStepTable({
 
 function FleetLaunchSuccessTable({ summary }: { summary: GameFleetLaunchSuccessSummary }) {
   const flightSeconds = Math.max(0, Math.round(summary.draft.durationSeconds));
-  const holdSeconds =
-    summary.launch.mission === 5 ? Math.max(0, summary.launch.holdHours) * 3600 : Math.max(0, summary.launch.expeditionHours) * 3600;
+  let holdSeconds = 0;
+  if (summary.launch.mission === 5) {
+    holdSeconds = Math.max(0, summary.launch.holdHours) * 3600;
+  } else if (summary.launch.mission === 15) {
+    holdSeconds = Math.max(
+      1,
+      Math.round((Math.max(1, summary.launch.expeditionHours) * 3600) / Math.max(1, summary.draft.speedFactor))
+    );
+  }
   const arrivalAt = summary.launchedAt + flightSeconds;
   const returnAt = arrivalAt + flightSeconds + holdSeconds;
   const selectedShips = summary.draft.ships.filter((ship) => ship.count > 0);

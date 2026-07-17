@@ -731,7 +731,7 @@ function ExpeditionArrive (array $queue, array $fleet_obj, array $fleet, array $
     // Make the hold time a flight time (so that it can be used when returning the fleet)
     DispatchFleet ($fleet, $origin, $target, (FTYP_ORBITING+FTYP_EXPEDITION), $fleet_obj['deploy_time'],
         $fleet_obj,
-        0, $queue['end'], 0, $fleet_obj['flight_time']);
+        0, $queue['end'], 0, $fleet_obj['flight_time'], (int)$queue['level']);
 }
 
 // Algorithmic part of the expedition
@@ -767,7 +767,7 @@ function ExpeditionHold (array $queue, array $fleet_obj, array $fleet, array $or
 {
     $exptab = LoadExpeditionSettings ();
 
-    $hold_time = $fleet_obj['flight_time'] / 3600;
+    $hold_time = $queue['level'] > 0 ? (int)$queue['level'] : $fleet_obj['flight_time'] / 3600;
 
     $origin_user = LoadUser ( $origin['owner_id'] );
     loca_add ( "common", $origin_user['lang'] );

@@ -87,8 +87,8 @@ func TestResolveExpeditionResourcesUsesPointsAndCargo(t *testing.T) {
 
 func TestResolveExpeditionTimingAndTrader(t *testing.T) {
 	settings := expeditionTestSettings()
-	delay, err := ResolveExpedition(ExpeditionInput{Settings: settings, HoldSeconds: 3600, FlightSeconds: 120}, expeditionRandomSequence(t, 0, 63, 99, 0))
-	if err != nil || delay.Event != ExpeditionDelay || delay.ReturnSeconds != 18120 {
+	delay, err := ResolveExpedition(ExpeditionInput{Settings: settings, HoldSeconds: 28, HoldHours: 1, FlightSeconds: 120}, expeditionRandomSequence(t, 0, 63, 99, 0))
+	if err != nil || delay.Event != ExpeditionDelay || delay.ReturnSeconds != 260 {
 		t.Fatalf("delay=%+v err=%v", delay, err)
 	}
 	accel, err := ResolveExpedition(ExpeditionInput{Settings: settings, FlightSeconds: 120}, expeditionRandomSequence(t, 0, 60, 90, 0))

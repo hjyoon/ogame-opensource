@@ -16,6 +16,7 @@ type fleetQueueTask struct {
 	TaskID  int
 	OwnerID int
 	FleetID int
+	Level   int
 	End     int64
 }
 
@@ -168,7 +169,7 @@ func (r FleetRepository) loadDueFleetQueueTasks(ctx context.Context, queueTable 
 	}
 	rows, err := r.queryer.QueryContext(
 		ctx,
-		fmt.Sprintf("SELECT task_id, owner_id, sub_id, end FROM %s WHERE type = ? AND end <= ? AND freeze = 0 ORDER BY end ASC, prio DESC LIMIT ?", queueTable),
+		fmt.Sprintf("SELECT task_id, owner_id, sub_id, level, end FROM %s WHERE type = ? AND end <= ? AND freeze = 0 ORDER BY end ASC, prio DESC LIMIT ?", queueTable),
 		queueTypeFleet,
 		until,
 		limit,
@@ -180,7 +181,7 @@ func (r FleetRepository) loadDueFleetQueueTasks(ctx context.Context, queueTable 
 	tasks := []fleetQueueTask{}
 	for rows.Next() {
 		var task fleetQueueTask
-		if err := rows.Scan(&task.TaskID, &task.OwnerID, &task.FleetID, &task.End); err != nil {
+		if err := rows.Scan(&task.TaskID, &task.OwnerID, &task.FleetID, &task.Level, &task.End); err != nil {
 			return nil, err
 		}
 		tasks = append(tasks, task)
@@ -489,7 +490,7 @@ func (r FleetRepository) finishExpeditionArrival(ctx context.Context, fleetTable
 	if err != nil {
 		return err
 	}
-	if err := r.insertRecallQueue(ctx, queueTable, fleet.OwnerID, holdFleetID, fleet.Mission+domaingame.FleetMissionOrbitingOffset, task.End, int64(fleet.DeployTime)); err != nil {
+	if err := r.insertFleetQueue(ctx, queueTable, fleet.OwnerID, holdFleetID, fleet.Mission+domaingame.FleetMissionOrbitingOffset, task.Level, task.End, int64(fleet.DeployTime)); err != nil {
 		return err
 	}
 	if err := r.insertFleetTransitionLog(ctx, fleetLogsTable, value, orbiting, fleet.Mission+domaingame.FleetMissionOrbitingOffset, int64(fleet.DeployTime), int64(fleet.FlightTime), task.End); err != nil {
@@ -516,7 +517,7 @@ func (r FleetRepository) finishExpeditionHold(ctx context.Context, uniTable stri
 	}
 	result, err := domaingame.ResolveExpedition(domaingame.ExpeditionInput{
 		Settings: expeditionDomainSettings(settings), VisitCounter: target.VisitCounter,
-		HoldSeconds: fleet.FlightTime, FlightSeconds: fleet.DeployTime,
+		HoldSeconds: fleet.FlightTime, HoldHours: task.Level, FlightSeconds: fleet.DeployTime,
 		Fleet: fleet.Ships, Loaded: domaingame.Resources{Metal: fleet.Metal, Crystal: fleet.Crystal, Deuterium: fleet.Deuterium},
 		TopScore: target.TopScore, Trader: target.Trader,
 	}, r.combatRandom)

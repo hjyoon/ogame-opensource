@@ -131,31 +131,34 @@ if ($target != null) {
 }
 
 // Hold time
+$hold_hours = 0;
 $hold_time = 0;
 if ( $order == FTYP_EXPEDITION ) {
     if ( key_exists ('expeditiontime', $_POST) ) {
-        $hold_time = floor (intval($_POST['expeditiontime']));
-        if ( $hold_time > $GlobalUser[GID_R_EXPEDITION] ) $hold_time = $GlobalUser[GID_R_EXPEDITION];
-        if ( $hold_time < 1 ) $hold_time = 1;
+        $hold_hours = floor (intval($_POST['expeditiontime']));
+        if ( $hold_hours > $GlobalUser[GID_R_EXPEDITION] ) $hold_hours = $GlobalUser[GID_R_EXPEDITION];
+        if ( $hold_hours < 1 ) $hold_hours = 1;
     }
-    else $hold_time = 1;
-    $hold_time *= 60*60;        // convert to seconds
+    else $hold_hours = 1;
+    $hold_time = $hold_hours * 60*60;
 }
 else if ( $order == FTYP_ACS_HOLD ) {
     if ( key_exists ('holdingtime', $_POST) ) {
-        $hold_time = floor (intval($_POST['holdingtime']));
-        if ( $hold_time > 32 ) $hold_time = 32;
-        if ( $hold_time < 0 ) $hold_time = 0;
+        $hold_hours = floor (intval($_POST['holdingtime']));
+        if ( $hold_hours > 32 ) $hold_hours = 32;
+        if ( $hold_hours < 0 ) $hold_hours = 0;
     }
-    else $hold_time = 0;
-    $hold_time *= 60*60;        // convert to seconds
+    $hold_time = $hold_hours * 60*60;
 }
 
 // Calculate distance, flight time, and deuterium costs.
 $dist = FlightDistance ( intval($_POST['thisgalaxy']), intval($_POST['thissystem']), intval($_POST['thisplanet']), intval($_POST['galaxy']), intval($_POST['system']), intval($_POST['planet']) );
 $slowest_speed = FlightSpeed ( $fleet, $origin_user, $origin );
 $flighttime = FlightTime ( $dist, $slowest_speed, $fleetspeed / 10, $unispeed );
-$cons = FlightCons ( $fleet, $dist, $flighttime, $origin_user, $origin, $unispeed, $hold_time / 3600 );
+$cons = FlightCons ( $fleet, $dist, $flighttime, $origin_user, $origin, $unispeed, $hold_hours );
+if ( $order == FTYP_EXPEDITION ) {
+    $hold_time = max (1, (int)round ($hold_time / max (1, $unispeed)));
+}
 $cargo = $spycargo = $numships = 0;
 
 foreach ($fleet as $id=>$amount)
@@ -348,7 +351,8 @@ else {
     try {
         $fleet_id = DispatchFleet ( $fleet, $origin, $target, $order, $flighttime,
             $resources,
-            (int)($cons['fleet'] + $cons['probes']), time(), $union_id, (int)$hold_time );
+            (int)($cons['fleet'] + $cons['probes']), time(), $union_id, (int)$hold_time,
+            $order == FTYP_EXPEDITION ? (int)$hold_hours : 0 );
         $queue = GetFleetQueue ($fleet_id);
 
         UserLog ( $aktplanet['owner_id'], "FLEET",

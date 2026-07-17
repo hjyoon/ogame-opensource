@@ -99,6 +99,7 @@ type FleetLaunchQuery struct {
 	Origin      domaingame.PlanetOverview
 	Draft       domaingame.FleetDispatchDraft
 	UnionID     int
+	HoldHours   int
 	HoldSeconds int
 }
 
@@ -352,13 +353,15 @@ func (s FleetService) LaunchFleetDispatch(ctx context.Context, command FleetDisp
 	if launchPlanetID <= 0 {
 		launchPlanetID = fleet.CurrentPlanet.ID
 	}
+	holdHours := domaingame.NormalizeFleetHoldHours(draft.Mission, command.HoldHours, command.ExpeditionHours, fleet.ExpeditionLevel)
 	issue, err = s.repository.LaunchFleetDispatch(ctx, FleetLaunchQuery{
 		PlayerID:    session.Session.PlayerID,
 		PlanetID:    launchPlanetID,
 		Origin:      fleet.CurrentPlanet,
 		Draft:       draft,
 		UnionID:     command.UnionID,
-		HoldSeconds: fleetDispatchHoldSeconds(draft.Mission, command.HoldHours, command.ExpeditionHours, fleet.ExpeditionLevel),
+		HoldHours:   holdHours,
+		HoldSeconds: fleetDispatchHoldSeconds(draft.Mission, command.HoldHours, command.ExpeditionHours, fleet.ExpeditionLevel, draft.SpeedFactor),
 	})
 	if err != nil {
 		return FleetResult{}, err
@@ -424,6 +427,6 @@ func (s FleetService) RecallFleet(ctx context.Context, command FleetRecallComman
 	}, nil
 }
 
-func fleetDispatchHoldSeconds(mission int, holdHours int, expeditionHours int, expeditionLevel int) int {
-	return domaingame.NormalizeFleetHoldHours(mission, holdHours, expeditionHours, expeditionLevel) * 60 * 60
+func fleetDispatchHoldSeconds(mission int, holdHours int, expeditionHours int, expeditionLevel int, speedFactor int) int {
+	return domaingame.NormalizeFleetHoldSeconds(mission, holdHours, expeditionHours, expeditionLevel, speedFactor)
 }

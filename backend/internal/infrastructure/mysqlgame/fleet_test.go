@@ -1134,6 +1134,7 @@ func TestFleetRepositoryLaunchCreatesLegacySpecialTargets(t *testing.T) {
 				DurationSeconds: 42,
 				Ready:           true,
 			},
+			HoldHours: 3,
 		}
 	}
 
@@ -1229,6 +1230,14 @@ func TestFleetRepositoryLaunchCreatesLegacySpecialTargets(t *testing.T) {
 			insertLog := runner.execCalls[fleetInsertIndex+1]
 			if !strings.Contains(insertLog.sql, "INSERT INTO `ogame_fleetlogs`") || insertLog.args[16] != tt.wantType {
 				t.Fatalf("expected log to use special target type %d, got %+v", tt.wantType, insertLog)
+			}
+			insertQueue := runner.execCalls[fleetInsertIndex+2]
+			wantLevel := 0
+			if tt.query.Draft.Mission == domaingame.FleetMissionExpedition {
+				wantLevel = 3
+			}
+			if insertQueue.args[4] != wantLevel {
+				t.Fatalf("expected queue level %d, got %+v", wantLevel, insertQueue.args)
 			}
 		})
 	}
@@ -2975,7 +2984,7 @@ func TestFleetRepositoryRecallErrorsAndHelpers(t *testing.T) {
 func TestFleetRepositoryFinishDueTransportCreatesReturnFleet(t *testing.T) {
 	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{0})},
-		{rows: fakeRowsFromValues([]any{55, 42, 123, int64(2_000)})},
+		{rows: fakeRowsFromValues([]any{55, 42, 123, 0, int64(2_000)})},
 		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport, 0, map[int]int{domaingame.FleetSmallCargo: 1}))},
 		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 	}}}
@@ -3004,7 +3013,7 @@ func TestFleetRepositoryFinishDueTransportCreatesReturnFleet(t *testing.T) {
 func TestFleetRepositoryFinishDueDeployKeepsShipsOnTarget(t *testing.T) {
 	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{0})},
-		{rows: fakeRowsFromValues([]any{56, 42, 124, int64(2_100)})},
+		{rows: fakeRowsFromValues([]any{56, 42, 124, 0, int64(2_100)})},
 		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionDeploy, 0, map[int]int{domaingame.FleetSmallCargo: 2}))},
 		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 	}}}
@@ -3028,7 +3037,7 @@ func TestFleetRepositoryFinishDueDeployKeepsShipsOnTarget(t *testing.T) {
 func TestFleetRepositoryFinishDueReturnRestoresOrigin(t *testing.T) {
 	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{0})},
-		{rows: fakeRowsFromValues([]any{57, 42, 125, int64(2_200)})},
+		{rows: fakeRowsFromValues([]any{57, 42, 125, 0, int64(2_200)})},
 		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionTransport+domaingame.FleetMissionReturnOffset, 0, map[int]int{domaingame.FleetSmallCargo: 1}))},
 		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 	}}}
@@ -3052,7 +3061,7 @@ func TestFleetRepositoryFinishDueReturnRestoresOrigin(t *testing.T) {
 func TestFleetRepositoryFinishDueACSHoldCreatesOrbitAndReturn(t *testing.T) {
 	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{0})},
-		{rows: fakeRowsFromValues([]any{58, 42, 126, int64(2_300)})},
+		{rows: fakeRowsFromValues([]any{58, 42, 126, 0, int64(2_300)})},
 		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionACSHold, 0, map[int]int{domaingame.FleetLightFighter: 1}))},
 		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 	}}}
@@ -3083,7 +3092,7 @@ func TestFleetRepositoryFinishDueACSHoldCreatesOrbitAndReturn(t *testing.T) {
 	orbitRow[6], orbitRow[10], orbitRow[11] = 0, 600, 300
 	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{0})},
-		{rows: fakeRowsFromValues([]any{59, 42, 127, int64(2_900)})},
+		{rows: fakeRowsFromValues([]any{59, 42, 127, 0, int64(2_900)})},
 		{rows: fakeRowsFromValues(orbitRow)},
 		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 	}}}
@@ -3430,7 +3439,7 @@ func TestFleetRepositoryUnguardedAttackHelperEdges(t *testing.T) {
 func TestFleetRepositoryFinishDueRecycleHarvestsAndReturns(t *testing.T) {
 	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{0})},
-		{rows: fakeRowsFromValues([]any{58, 42, 126, int64(2_300)})},
+		{rows: fakeRowsFromValues([]any{58, 42, 126, 0, int64(2_300)})},
 		{rows: fakeRowsFromValues(recycleFleetTestRow(5))},
 		{rows: fakeRowsFromValues([]any{domaingame.PlanetTypeDebris, float64(120_000), float64(80_000)})},
 		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
@@ -3544,7 +3553,7 @@ func TestFleetRepositoryRecycleHarvestEdges(t *testing.T) {
 func TestFleetRepositoryFinishDueExpeditionCreatesHoldAndReturn(t *testing.T) {
 	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{0})},
-		{rows: fakeRowsFromValues([]any{58, 42, 126, int64(2_300)})},
+		{rows: fakeRowsFromValues([]any{58, 42, 126, 3, int64(2_300)})},
 		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionExpedition, 0, map[int]int{domaingame.FleetSmallCargo: 1, domaingame.FleetEspionageProbe: 1}))},
 		{rows: fakeRowsFromValues(fleetMessageContextTestRow())},
 	}}}
@@ -3564,13 +3573,13 @@ func TestFleetRepositoryFinishDueExpeditionCreatesHoldAndReturn(t *testing.T) {
 		t.Fatalf("expected expedition arrival to preserve hold and return timings, got %+v", holdFleet)
 	}
 	holdQueue := runner.execCalls[1]
-	if !strings.Contains(holdQueue.sql, "INSERT INTO `ogame_queue`") || holdQueue.args[5] != int64(2_300) || holdQueue.args[6] != int64(2_900) {
+	if !strings.Contains(holdQueue.sql, "INSERT INTO `ogame_queue`") || holdQueue.args[4] != 3 || holdQueue.args[5] != int64(2_300) || holdQueue.args[6] != int64(2_900) {
 		t.Fatalf("expected expedition hold queue to use deploy time, got %+v", holdQueue)
 	}
 
 	runner = &fakeFleetRunner{fakeQueryer: fakeQueryer{results: []fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{0})},
-		{rows: fakeRowsFromValues([]any{59, 42, 127, int64(2_900)})},
+		{rows: fakeRowsFromValues([]any{59, 42, 127, 3, int64(2_900)})},
 		{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionExpedition+domaingame.FleetMissionOrbitingOffset, 0, map[int]int{domaingame.FleetSmallCargo: 1, domaingame.FleetEspionageProbe: 1}))},
 		{rows: fakeRowsFromValues(expeditionSettingsTestRow("nothing"))},
 		{rows: fakeRowsFromValues(expeditionTargetTestRow())},
@@ -3707,7 +3716,7 @@ func TestFleetRepositoryFinishDueExpeditionForcedOutcomes(t *testing.T) {
 			ships := expeditionTestShips(tt.event)
 			results := []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{0})},
-				{rows: fakeRowsFromValues([]any{59, 42, 127, int64(2_900)})},
+				{rows: fakeRowsFromValues([]any{59, 42, 127, 0, int64(2_900)})},
 				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionExpedition+domaingame.FleetMissionOrbitingOffset, 0, ships))},
 				{rows: fakeRowsFromValues(expeditionSettingsTestRow(tt.event))},
 				{rows: fakeRowsFromValues(expeditionTargetTestRow())},
@@ -3758,7 +3767,7 @@ func TestFleetRepositoryFinishDueExpeditionForcedOutcomeWriteErrors(t *testing.T
 			name: "settings query",
 			results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{0})},
-				{rows: fakeRowsFromValues([]any{59, 42, 127, int64(2_900)})},
+				{rows: fakeRowsFromValues([]any{59, 42, 127, 0, int64(2_900)})},
 				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionExpedition+domaingame.FleetMissionOrbitingOffset, 0, map[int]int{domaingame.FleetSmallCargo: 1, domaingame.FleetEspionageProbe: 1}))},
 				{err: errors.New("settings failed")},
 			},
@@ -3768,7 +3777,7 @@ func TestFleetRepositoryFinishDueExpeditionForcedOutcomeWriteErrors(t *testing.T
 			name: "target query",
 			results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{0})},
-				{rows: fakeRowsFromValues([]any{59, 42, 127, int64(2_900)})},
+				{rows: fakeRowsFromValues([]any{59, 42, 127, 0, int64(2_900)})},
 				{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionExpedition+domaingame.FleetMissionOrbitingOffset, 0, map[int]int{domaingame.FleetSmallCargo: 1, domaingame.FleetEspionageProbe: 1}))},
 				{rows: fakeRowsFromValues(expeditionSettingsTestRow("nothing"))},
 				{err: errors.New("target failed")},
@@ -3856,7 +3865,7 @@ func TestFleetRepositoryFinishDueExpeditionForcedOutcomeWriteErrors(t *testing.T
 				ships := expeditionTestShips(tt.event)
 				results = []fakeQueryResult{
 					{rows: fakeRowsFromValues([]any{0})},
-					{rows: fakeRowsFromValues([]any{59, 42, 127, int64(2_900)})},
+					{rows: fakeRowsFromValues([]any{59, 42, 127, 0, int64(2_900)})},
 					{rows: fakeRowsFromValues(recallFleetTestRow(domaingame.FleetMissionExpedition+domaingame.FleetMissionOrbitingOffset, 0, ships))},
 					{rows: fakeRowsFromValues(expeditionSettingsTestRow(tt.event))},
 					{rows: fakeRowsFromValues(expeditionTargetTestRow())},
@@ -3972,7 +3981,7 @@ func TestFleetRepositoryFinishDueFleetQueueEdges(t *testing.T) {
 			name: "due queue rows",
 			results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{0})},
-				{rows: fakeRowsFromValuesWithErr(errors.New("due rows failed"), []any{55, 42, 123, int64(2_000)})},
+				{rows: fakeRowsFromValuesWithErr(errors.New("due rows failed"), []any{55, 42, 123, 0, int64(2_000)})},
 			},
 			want: "due rows failed",
 		},
@@ -3980,7 +3989,7 @@ func TestFleetRepositoryFinishDueFleetQueueEdges(t *testing.T) {
 			name: "fleet query",
 			results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{0})},
-				{rows: fakeRowsFromValues([]any{55, 42, 123, int64(2_000)})},
+				{rows: fakeRowsFromValues([]any{55, 42, 123, 0, int64(2_000)})},
 				{err: errors.New("fleet any failed")},
 			},
 			want: "fleet any failed",
@@ -3989,7 +3998,7 @@ func TestFleetRepositoryFinishDueFleetQueueEdges(t *testing.T) {
 			name: "missing fleet",
 			results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{0})},
-				{rows: fakeRowsFromValues([]any{55, 42, 123, int64(2_000)})},
+				{rows: fakeRowsFromValues([]any{55, 42, 123, 0, int64(2_000)})},
 				{rows: fakeRowsFromValues()},
 			},
 			wantNoErr:  true,
@@ -4000,7 +4009,7 @@ func TestFleetRepositoryFinishDueFleetQueueEdges(t *testing.T) {
 			name: "unsupported mission",
 			results: []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{0})},
-				{rows: fakeRowsFromValues([]any{55, 42, 123, int64(2_000)})},
+				{rows: fakeRowsFromValues([]any{55, 42, 123, 0, int64(2_000)})},
 				{rows: fakeRowsFromValues(recallFleetTestRow(99, 0, nil))},
 			},
 			wantNoErr: true,
@@ -4140,7 +4149,7 @@ func TestFleetRepositoryFinishDueFleetQueueWriteErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			results := []fakeQueryResult{
 				{rows: fakeRowsFromValues([]any{0})},
-				{rows: fakeRowsFromValues([]any{55, 42, 123, int64(2_000)})},
+				{rows: fakeRowsFromValues([]any{55, 42, 123, 0, int64(2_000)})},
 				{rows: fakeRowsFromValues(recallFleetTestRow(tt.mission, 0, map[int]int{domaingame.FleetSmallCargo: 1}))},
 			}
 			if tt.mission == domaingame.FleetMissionExpedition+domaingame.FleetMissionOrbitingOffset {

@@ -327,7 +327,11 @@ func (r FleetRepository) LaunchFleetDispatch(ctx context.Context, query appgame.
 	if err := r.insertFleetLaunchLog(ctx, fleetLogsTable, query, target, ships, resources, now); err != nil {
 		return nil, err
 	}
-	if err := r.insertRecallQueue(ctx, queueTable, query.PlayerID, fleetID, query.Draft.Mission, now, int64(query.Draft.DurationSeconds)); err != nil {
+	queueLevel := 0
+	if query.Draft.Mission == domaingame.FleetMissionExpedition {
+		queueLevel = query.HoldHours
+	}
+	if err := r.insertFleetQueue(ctx, queueTable, query.PlayerID, fleetID, query.Draft.Mission, queueLevel, now, int64(query.Draft.DurationSeconds)); err != nil {
 		return nil, err
 	}
 	if query.Draft.Mission == domaingame.FleetMissionACSAttack && query.UnionID > 0 {
@@ -798,7 +802,8 @@ func (r FleetRepository) DispatchMCPFleet(ctx context.Context, playerID int, com
 		Origin:      fleet.CurrentPlanet,
 		Draft:       draft,
 		UnionID:     command.UnionID,
-		HoldSeconds: domaingame.NormalizeFleetHoldHours(command.Mission, command.HoldHours, command.ExpeditionHours, fleet.ExpeditionLevel) * 60 * 60,
+		HoldHours:   domaingame.NormalizeFleetHoldHours(command.Mission, command.HoldHours, command.ExpeditionHours, fleet.ExpeditionLevel),
+		HoldSeconds: domaingame.NormalizeFleetHoldSeconds(command.Mission, command.HoldHours, command.ExpeditionHours, fleet.ExpeditionLevel, draft.SpeedFactor),
 	})
 	if err != nil {
 		return domainmcp.DispatchFleetValidationResult{}, err
@@ -1678,6 +1683,10 @@ func (r FleetRepository) insertFleetTransition(ctx context.Context, fleetTable s
 }
 
 func (r FleetRepository) insertRecallQueue(ctx context.Context, queueTable string, ownerID int, fleetID int, mission int, now int64, seconds int64) error {
+	return r.insertFleetQueue(ctx, queueTable, ownerID, fleetID, mission, 0, now, seconds)
+}
+
+func (r FleetRepository) insertFleetQueue(ctx context.Context, queueTable string, ownerID int, fleetID int, mission int, level int, now int64, seconds int64) error {
 	_, err := r.execer.ExecContext(
 		ctx,
 		fmt.Sprintf("INSERT INTO %s (owner_id, type, sub_id, obj_id, level, start, end, prio) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", queueTable),
@@ -1685,7 +1694,7 @@ func (r FleetRepository) insertRecallQueue(ctx context.Context, queueTable strin
 		queueTypeFleet,
 		fleetID,
 		0,
-		0,
+		level,
 		now,
 		now+seconds,
 		fleetQueuePriority(mission),

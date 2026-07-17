@@ -364,7 +364,7 @@ function FleetQueuePriority (int $order) : int
 }
 
 // Dispatch the fleet. No checks are performed. Returns the ID of the fleet.
-function DispatchFleet (array $fleet, array $origin, array $target, int $order, int $seconds, array $resources, int $cons, int $when, int $union_id=0, int $deploy_time=0) : int
+function DispatchFleet (array $fleet, array $origin, array $target, int $order, int $seconds, array $resources, int $cons, int $when, int $union_id=0, int $deploy_time=0, int $queue_level=0) : int
 {
     global $db_prefix;
     global $fleetmap;
@@ -402,7 +402,7 @@ function DispatchFleet (array $fleet, array $origin, array $target, int $order, 
     AddDBRow ($fleetlog, 'fleetlogs');
 
     // Add the task to the global event queue.
-    AddQueue ( $origin['owner_id'], "Fleet", $fleet_id, 0, 0, $now, $seconds, $prio );
+    AddQueue ( $origin['owner_id'], "Fleet", $fleet_id, 0, $queue_level, $now, $seconds, $prio );
     return $fleet_id;
 }
 

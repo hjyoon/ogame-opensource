@@ -39,7 +39,7 @@ func TestFleetRepositoryFinishesDueACSAttackQueue(t *testing.T) {
 	headRow := recallFleetTestRow(domaingame.FleetMissionACSAttackHead, 7, map[int]int{domaingame.FleetSmallCargo: 1})
 	results = append([]fakeQueryResult{
 		{rows: fakeRowsFromValues([]any{0})},
-		{rows: fakeRowsFromValues([]any{task.TaskID, task.OwnerID, task.FleetID, task.End})},
+		{rows: fakeRowsFromValues([]any{task.TaskID, task.OwnerID, task.FleetID, task.Level, task.End})},
 		{rows: fakeRowsFromValues(headRow)},
 	}, results...)
 	runner := &fakeFleetRunner{fakeQueryer: fakeQueryer{results: results}}

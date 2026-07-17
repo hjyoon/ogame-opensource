@@ -53,6 +53,7 @@ type ExpeditionInput struct {
 	Settings      ExpeditionSettings
 	VisitCounter  int
 	HoldSeconds   int
+	HoldHours     int
 	FlightSeconds int
 	Fleet         FleetCounts
 	Loaded        Resources
@@ -86,7 +87,11 @@ func ResolveExpedition(input ExpeditionInput, random func(int) int) (ExpeditionO
 	if random == nil {
 		return ExpeditionOutcome{}, errors.New("expedition random source unavailable")
 	}
-	event, err := expeditionEvent(input.Settings, input.VisitCounter, input.HoldSeconds/3600, random)
+	holdHours := input.HoldHours
+	if holdHours <= 0 {
+		holdHours = input.HoldSeconds / 3600
+	}
+	event, err := expeditionEvent(input.Settings, input.VisitCounter, holdHours, random)
 	if err != nil {
 		return ExpeditionOutcome{}, err
 	}

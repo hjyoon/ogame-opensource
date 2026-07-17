@@ -455,6 +455,18 @@ func NormalizeFleetHoldHours(mission int, holdHours int, expeditionHours int, ex
 	}
 }
 
+func NormalizeFleetHoldSeconds(mission int, holdHours int, expeditionHours int, expeditionLevel int, speedFactor int) int {
+	hours := NormalizeFleetHoldHours(mission, holdHours, expeditionHours, expeditionLevel)
+	seconds := hours * 60 * 60
+	if mission != FleetMissionExpedition || seconds == 0 {
+		return seconds
+	}
+	if speedFactor <= 0 {
+		speedFactor = 1
+	}
+	return max(1, int(math.Round(float64(seconds)/float64(speedFactor))))
+}
+
 func fleetDispatchMissionOptions(fleet Fleet, counts FleetCounts, target Coordinates, targetType int, requested int, unionID int) []FleetMissionOption {
 	ids := make([]int, 0, 5)
 	if target.Position >= GalaxyFarSpace {
